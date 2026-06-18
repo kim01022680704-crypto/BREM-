@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server/index.js",
+    "build": "node -e \"console.log('BREM static site — no build step')\"",
     "qa": "node scripts/qa-check.js",
     "check-deploy": "node scripts/check-deploy.js"
   },
