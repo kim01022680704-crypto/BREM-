@@ -85,7 +85,7 @@
         </article>
         <article class="backup-status-card">
           <span>DB 연결 상태</span>
-          <strong>${escapeHtml(isProduction() && storageStatus.supabaseHydrated ? 'Supabase' : dbLabel)}</strong>
+          <strong>${escapeHtml(isProduction() && storageStatus.supabaseHydrated ? 'Supabase Connected' : dbLabel)}</strong>
         </article>
         <article class="backup-status-card">
           <span>Supabase 설정</span>

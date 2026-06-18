@@ -16,8 +16,13 @@
   if (!form) return;
 
   async function ensureAdminAccess() {
-    const result = await BremStorage.auth.ensureAppAccess?.();
+    const result = await BremStorage.auth.ensureAppAccess?.({ requireHydrated: true });
     if (!result?.ok) {
+      window.location.replace('admin.html');
+      return false;
+    }
+    const status = BremStorage.getStorageStatus?.() || {};
+    if (status.mode === 'production' && !status.supabaseHydrated) {
       window.location.replace('admin.html');
       return false;
     }
@@ -26,7 +31,7 @@
 
   if (!(await ensureAdminAccess())) return;
 
-  await BremStorage.reloadDrivers?.();
+  await BremStorage.waitForSupabaseReady?.();
 
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
@@ -155,7 +160,7 @@
     updatePrivacyStatusUi(null);
   }
 
-  function toggleFieldHidden(fieldKey, label) {
+  async function toggleFieldHidden(fieldKey, label) {
     const id = driverIdInput.value;
     if (!id) return;
 
@@ -163,20 +168,24 @@
     if (!driver) return;
 
     const currentlyHidden = isFieldHidden(driver, fieldKey);
-    if (!currentlyHidden) {
-      if (!window.confirm(`${label} 가리기를 켜시겠습니까?\n기사 전용·기사 목록에서는 표시·수정되지 않습니다.\n(index에서는 계속 확인·수정 가능)`)) return;
-      BremStorage.drivers.setFieldHidden(id, fieldKey, true);
-      showToast(`${label} 가리기 ON`);
-    } else {
-      if (!window.confirm(`${label} 가리기를 해제하시겠습니까?\n기사 전용·기사 목록에서 다시 표시·수정됩니다.`)) return;
-      BremStorage.drivers.setFieldHidden(id, fieldKey, false);
-      showToast(`${label} 가리기 OFF`);
+    try {
+      if (!currentlyHidden) {
+        if (!window.confirm(`${label} 가리기를 켜시겠습니까?\n기사 전용·기사 목록에서는 표시·수정되지 않습니다.\n(index에서는 계속 확인·수정 가능)`)) return;
+        await BremStorage.drivers.setFieldHidden(id, fieldKey, true);
+        showToast(`${label} 가리기 ON`);
+      } else {
+        if (!window.confirm(`${label} 가리기를 해제하시겠습니까?\n기사 전용·기사 목록에서 다시 표시·수정됩니다.`)) return;
+        await BremStorage.drivers.setFieldHidden(id, fieldKey, false);
+        showToast(`${label} 가리기 OFF`);
+      }
+      await BremStorage.flushStorage?.();
+      editDriver(id);
+    } catch (error) {
+      showToast(error.message || '가리기 설정 저장에 실패했습니다.');
     }
-
-    editDriver(id);
   }
 
-  function handleHideAllResidentNumbers() {
+  async function handleHideAllResidentNumbers() {
     const all = BremStorage.drivers.getAll();
     if (!all.length) {
       showToast('등록된 기사가 없습니다.');
@@ -188,13 +197,18 @@
       return;
     }
     if (!window.confirm(`등록된 기사 ${all.length}명의 주민등록번호 가리기를 켜시겠습니까?\n기사 전용·기사 목록에만 적용됩니다.`)) return;
-    BremStorage.drivers.setFieldHiddenForAll('residentNumber', true);
-    showToast(`기사 ${all.length}명 주민번호 가리기 ON`);
-    const id = driverIdInput.value;
-    if (id) editDriver(id);
+    try {
+      await BremStorage.drivers.setFieldHiddenForAll('residentNumber', true);
+      await BremStorage.flushStorage?.();
+      showToast(`기사 ${all.length}명 주민번호 가리기 ON`);
+      const id = driverIdInput.value;
+      if (id) editDriver(id);
+    } catch (error) {
+      showToast(error.message || '가리기 설정 저장에 실패했습니다.');
+    }
   }
 
-  function handleUnhideAllResidentNumbers() {
+  async function handleUnhideAllResidentNumbers() {
     const all = BremStorage.drivers.getAll();
     if (!all.length) {
       showToast('등록된 기사가 없습니다.');
@@ -206,10 +220,15 @@
       return;
     }
     if (!window.confirm(`가려진 주민등록번호 ${hiddenCount}명분의 가리기를 해제하시겠습니까?`)) return;
-    BremStorage.drivers.setFieldHiddenForAll('residentNumber', false);
-    showToast(`기사 ${hiddenCount}명 주민번호 가리기 OFF`);
-    const id = driverIdInput.value;
-    if (id) editDriver(id);
+    try {
+      await BremStorage.drivers.setFieldHiddenForAll('residentNumber', false);
+      await BremStorage.flushStorage?.();
+      showToast(`기사 ${hiddenCount}명 주민번호 가리기 OFF`);
+      const id = driverIdInput.value;
+      if (id) editDriver(id);
+    } catch (error) {
+      showToast(error.message || '가리기 설정 저장에 실패했습니다.');
+    }
   }
 
   function normalizeResidentNumber(value) {
@@ -362,34 +381,39 @@
     return true;
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const data = getFormData();
     if (!validateFormData(data)) return;
 
-    const persist = driverIdInput.value
-      ? BremStorage.drivers.update(driverIdInput.value, data)
+    const editingId = driverIdInput.value;
+    const persist = editingId
+      ? BremStorage.drivers.update(editingId, data)
       : BremStorage.drivers.create(data);
 
-    Promise.resolve(persist).then(driver => {
-      const savedDriver = driverIdInput.value
-        ? BremStorage.drivers.getById(driverIdInput.value)
+    try {
+      const driver = await Promise.resolve(persist);
+      const savedDriver = editingId
+        ? BremStorage.drivers.getById(editingId)
         : driver;
       if (!savedDriver) return;
 
       syncDriverEventSettings(savedDriver.id, data);
-      if (driverIdInput.value) {
+      await BremStorage.flushStorage?.();
+      refreshHeader();
+
+      if (editingId) {
         showToast('기사 정보가 수정되었습니다.');
         editDriver(savedDriver.id);
-      } else {
-        showToast(`기사가 등록되었습니다. 로그인: ${makeDriverLoginId(savedDriver)} / 비밀번호: ${savedDriver.password || DEFAULT_DRIVER_PASSWORD}`);
-        resetForm();
+        return;
       }
-      refreshHeader();
-    }).catch(error => {
+
+      showToast(`기사가 등록되었습니다. 로그인: ${makeDriverLoginId(savedDriver)} / 비밀번호: ${savedDriver.password || DEFAULT_DRIVER_PASSWORD}`);
+      window.location.href = 'drivers.html';
+    } catch (error) {
       showToast(error.message || '기사 저장에 실패했습니다.');
-    });
+    }
   }
 
   function editDriver(id) {
@@ -440,15 +464,20 @@
     });
   }
 
-  function handleResetDriverPassword() {
+  async function handleResetDriverPassword() {
     const id = driverIdInput.value;
     if (id) {
       const driver = BremStorage.drivers.getById(id);
       if (!driver) return;
       if (!window.confirm(`${driver.name} 기사의 로그인 비밀번호를 1234로 초기화할까요?`)) return;
-      BremStorage.drivers.resetPassword(id, DEFAULT_DRIVER_PASSWORD);
-      passwordInput.value = DEFAULT_DRIVER_PASSWORD;
-      showToast('비밀번호를 1234로 초기화했습니다.');
+      try {
+        await BremStorage.drivers.resetPassword(id, DEFAULT_DRIVER_PASSWORD);
+        await BremStorage.flushStorage?.();
+        passwordInput.value = DEFAULT_DRIVER_PASSWORD;
+        showToast('비밀번호를 1234로 초기화했습니다.');
+      } catch (error) {
+        showToast(error.message || '비밀번호 초기화에 실패했습니다.');
+      }
       return;
     }
     passwordInput.value = DEFAULT_DRIVER_PASSWORD;

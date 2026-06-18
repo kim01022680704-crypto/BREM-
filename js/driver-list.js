@@ -29,8 +29,13 @@
   if (!tableBody) return;
 
   async function ensureAdminAccess() {
-    const result = await BremStorage.auth.ensureAppAccess?.();
+    const result = await BremStorage.auth.ensureAppAccess?.({ requireHydrated: true });
     if (!result?.ok) {
+      window.location.replace('admin.html');
+      return false;
+    }
+    const status = BremStorage.getStorageStatus?.() || {};
+    if (status.mode === 'production' && !status.supabaseHydrated) {
       window.location.replace('admin.html');
       return false;
     }
@@ -39,7 +44,8 @@
 
   if (!(await ensureAdminAccess())) return;
 
-  await BremStorage.reloadDrivers?.();
+  await BremStorage.waitForSupabaseReady?.();
+  await BremStorage.reloadDrivers?.(true);
 
   const selectedIds = new Set();
 

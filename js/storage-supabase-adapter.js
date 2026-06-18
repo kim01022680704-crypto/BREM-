@@ -55,9 +55,17 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistRiders(value) {
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
-      if (!rows.length) return;
+      if (!rows.length) {
+        console.info('[BREM:Supabase] persistRiders skipped (empty list)');
+        return;
+      }
+      console.info('[BREM:Supabase] persistRiders upsert', { count: rows.length, ids: rows.map(row => row.id) });
       const { error } = await client.from('riders').upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
+      if (error) {
+        console.error('[BREM:Supabase] persistRiders FAILED', error);
+        throw error;
+      }
+      console.info('[BREM:Supabase] persistRiders OK', { count: rows.length });
     }
 
     async function deleteRider(id) {
@@ -123,24 +131,20 @@ window.BremSupabaseStorageAdapter = (function () {
       persistQueue = persistQueue.then(async () => {
         if (persistHandlers[key]) {
           await persistHandlers[key](value);
-          return;
+        } else {
+          console.info('[BREM:Supabase] persistSetting', { key });
+          await persistSetting(key, value);
+          console.info('[BREM:Supabase] persistSetting OK', { key });
         }
-        await persistSetting(key, value);
       });
 
-      if (window.BREM_SUPABASE_CONFIG?.mode === 'production') {
-        persistQueue = persistQueue.catch(error => {
-          console.error('[BremSupabaseStorageAdapter] persist failed:', key, error);
-          document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
-            detail: { key, message: error.message || String(error) }
-          }));
-          throw error;
-        });
-      } else {
-        persistQueue = persistQueue.catch(error => {
-          console.error('[BremSupabaseStorageAdapter] persist failed, local cache kept:', key, error);
-        });
-      }
+      persistQueue = persistQueue.catch(error => {
+        console.error('[BREM:Supabase] persist FAILED', { key, error });
+        document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
+          detail: { key, message: error.message || String(error) }
+        }));
+        throw error;
+      });
 
       return persistQueue;
     }

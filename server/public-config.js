@@ -9,8 +9,10 @@ function getPublicConfig() {
     anonKey,
     mode: process.env.BREM_MODE || (isProduction ? 'production' : 'development'),
     backend: process.env.BREM_BACKEND || (isProduction ? 'supabase' : 'local'),
-    allowLocalFallback: process.env.BREM_ALLOW_LOCAL_FALLBACK === 'true'
-      || (!isProduction && process.env.BREM_ALLOW_LOCAL_FALLBACK !== 'false'),
+    allowLocalFallback: isProduction
+      ? process.env.BREM_ALLOW_LOCAL_FALLBACK === 'true'
+      : process.env.BREM_ALLOW_LOCAL_FALLBACK !== 'false',
+    isConfigured: Boolean(url && anonKey),
     functionsUrl: String(process.env.SUPABASE_FUNCTIONS_URL || '').trim()
       || (url ? `${url.replace(/\/$/, '')}/functions/v1` : ''),
     initialAdmin: {

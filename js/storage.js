@@ -44,6 +44,10 @@ const BremStorage = (function () {
   const SESSION_KEYS = {
     adminLoggedIn: 'brem_admin_logged_in',
     adminAccountId: 'brem_admin_account_id',
+    adminSessionMenus: 'brem_admin_session_menus',
+    adminSessionEditableMenus: 'brem_admin_session_editable_menus',
+    adminSessionRole: 'brem_admin_session_role',
+    adminSessionName: 'brem_admin_session_name',
     driverId: 'brem_driver_logged_in_id'
   };
 
@@ -213,6 +217,20 @@ const BremStorage = (function () {
     return getSupabaseConfig().mode === 'production';
   }
 
+  function enforceProductionStorageGuard() {
+    if (!isProductionMode()) return;
+    if (getStorageBackend() !== 'supabase') {
+      activeStorageAdapter = blockedProductionAdapter;
+    }
+  }
+
+  document.addEventListener('brem-config-ready', enforceProductionStorageGuard);
+
+  // config 로드 직후에도 운영 모드 가드 적용
+  if (window.BREM_SUPABASE_CONFIG?.mode === 'production') {
+    enforceProductionStorageGuard();
+  }
+
   const storageAdapter = {
     read(key, fallback) {
       return activeStorageAdapter.read(key, fallback);
@@ -270,7 +288,7 @@ const BremStorage = (function () {
     return {
       url: String(config.url || '').trim(),
       anonKey: String(config.anonKey || '').trim(),
-      backend: config.backend === 'supabase' ? 'supabase' : 'local',
+      backend: mode === 'production' || config.backend === 'supabase' ? 'supabase' : 'local',
       mode,
       allowLocalFallback: mode !== 'production' && config.allowLocalFallback !== false,
       functionsUrl: String(config.functionsUrl || '').trim(),
@@ -371,6 +389,55 @@ const BremStorage = (function () {
     };
   }
 
+  function persistProductionSessionAccount(account) {
+    if (!account?.id) return;
+    productionAdminSessionAccount = { ...account, menusExplicit: true };
+    sessionAdapter.write(SESSION_KEYS.adminAccountId, account.id);
+    sessionAdapter.write(SESSION_KEYS.adminLoggedIn, 'true');
+    sessionStorage.setItem(SESSION_KEYS.adminSessionMenus, JSON.stringify(account.menus || []));
+    sessionStorage.setItem(
+      SESSION_KEYS.adminSessionEditableMenus,
+      JSON.stringify(account.editableMenus || account.menus || [])
+    );
+    sessionStorage.setItem(SESSION_KEYS.adminSessionRole, account.role || ADMIN_ROLES.MANAGER);
+    sessionStorage.setItem(SESSION_KEYS.adminSessionName, account.name || '');
+  }
+
+  function readPersistedProductionSessionAccount(profile) {
+    if (!profile?.user_id) return null;
+    if (sessionAdapter.read(SESSION_KEYS.adminAccountId) !== profile.user_id) return null;
+
+    try {
+      const menusRaw = sessionStorage.getItem(SESSION_KEYS.adminSessionMenus);
+      if (menusRaw == null) return null;
+      const menus = JSON.parse(menusRaw);
+      if (!Array.isArray(menus)) return null;
+
+      const editableRaw = sessionStorage.getItem(SESSION_KEYS.adminSessionEditableMenus);
+      const editableMenus = editableRaw ? JSON.parse(editableRaw) : menus;
+
+      return {
+        id: profile.user_id,
+        email: '',
+        name: sessionStorage.getItem(SESSION_KEYS.adminSessionName) || profile.display_name || '관리자',
+        role: sessionStorage.getItem(SESSION_KEYS.adminSessionRole) || ADMIN_ROLES.MANAGER,
+        menus,
+        editableMenus: Array.isArray(editableMenus) ? editableMenus : menus,
+        active: true,
+        menusExplicit: true
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function clearPersistedProductionSessionAccount() {
+    sessionStorage.removeItem(SESSION_KEYS.adminSessionMenus);
+    sessionStorage.removeItem(SESSION_KEYS.adminSessionEditableMenus);
+    sessionStorage.removeItem(SESSION_KEYS.adminSessionRole);
+    sessionStorage.removeItem(SESSION_KEYS.adminSessionName);
+  }
+
   function getStorageStatus() {
     const config = getSupabaseConfig();
     const backend = getStorageBackend();
@@ -383,7 +450,9 @@ const BremStorage = (function () {
       supabaseConfigured: config.isConfigured,
       supabaseHydrated: connected,
       supabaseError: lastSupabaseError,
-      dbConnectionLabel: connected ? 'Supabase' : (config.mode === 'production' ? '연결 실패' : backend)
+      dbConnectionLabel: connected
+        ? 'Supabase Connected'
+        : (config.mode === 'production' ? 'Disconnected' : backend)
     };
   }
 
@@ -400,9 +469,66 @@ const BremStorage = (function () {
     await storageAdapter.flush();
   }
 
-  async function reloadDrivers() {
+  async function reloadDrivers(force = false) {
+    if (!force && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
+      return;
+    }
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
       await activeStorageAdapter.reloadRiders();
+    }
+  }
+
+  async function waitForSupabaseReady(timeoutMs = 8000) {
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
+      return true;
+    }
+    return new Promise(resolve => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve(true);
+      };
+      document.addEventListener('brem-storage-ready', finish, { once: true });
+      document.addEventListener('brem-storage-error', finish, { once: true });
+      setTimeout(finish, timeoutMs);
+    });
+  }
+
+  async function ensureSupabaseHydrated() {
+    if (activeStorageAdapter.type !== 'supabase') {
+      return { ok: false, message: 'Supabase 저장소가 연결되지 않았습니다.' };
+    }
+    if (activeStorageAdapter.isHydrated?.()) {
+      return { ok: true };
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
+    }
+
+    const { data: sessionData } = await client.auth.getSession();
+    if (!sessionData?.session) {
+      return {
+        ok: false,
+        message: 'Supabase 로그인이 필요합니다. 관리자 화면에서 먼저 로그인하세요.'
+      };
+    }
+
+    if (!activeSupabaseProfile) {
+      await loadSupabaseProfile();
+    }
+
+    try {
+      await activeStorageAdapter.hydrate();
+      lastSupabaseError = '';
+      console.info('[BREM] Supabase storage hydrated');
+      return { ok: true };
+    } catch (error) {
+      lastSupabaseError = error.message || 'Supabase 데이터 로드에 실패했습니다.';
+      console.error('[BREM] Supabase hydrate failed:', error);
+      return { ok: false, message: lastSupabaseError };
     }
   }
 
@@ -428,11 +554,8 @@ const BremStorage = (function () {
       }
       const client = window.supabase.createClient(settings.url, settings.anonKey);
       const { data: sessionData } = await client.auth.getSession();
-      const isProduction = settings.mode === 'production';
-      if (isProduction && !sessionData?.session) {
-        throw new Error('운영 모드에서는 Supabase Auth 로그인이 필요합니다.');
-      }
       activeSupabaseClient = client;
+
       if (sessionData?.session) {
         const { data: profile, error: profileError } = await client
           .from('profiles')
@@ -442,11 +565,25 @@ const BremStorage = (function () {
         if (profileError) throw profileError;
         activeSupabaseProfile = profile || null;
       }
+
       const adapter = window.BremSupabaseStorageAdapter.createSupabaseAdapter(client, KEYS);
-      await adapter.hydrate();
       activeStorageAdapter = adapter;
       setStorageBackendPreference('supabase');
       lastSupabaseError = '';
+
+      if (sessionData?.session) {
+        await adapter.hydrate();
+        console.info('[BREM] Supabase storage initialized and hydrated');
+      } else if (settings.mode === 'production') {
+        console.info('[BREM] Supabase client ready — awaiting admin login to hydrate');
+      } else {
+        try {
+          await adapter.hydrate();
+        } catch (error) {
+          console.warn('[BREM] Supabase hydrate skipped (no auth):', error.message);
+        }
+      }
+
       return { backend: 'supabase', client, adapter };
     })();
 
@@ -809,13 +946,12 @@ const BremStorage = (function () {
       const nextHiddenFields = { ...(driver.hiddenFields || {}) };
       if (hidden) nextHiddenFields[fieldKey] = true;
       else delete nextHiddenFields[fieldKey];
-      drivers.update(id, { hiddenFields: nextHiddenFields });
-      return drivers.getById(id);
+      return drivers.update(id, { hiddenFields: nextHiddenFields });
     },
 
     setFieldHiddenForAll(fieldKey, hidden) {
       const list = drivers.getAll();
-      if (!list.length) return 0;
+      if (!list.length) return Promise.resolve(0);
       const nextDrivers = list.map(driver => {
         const nextHiddenFields = { ...(driver.hiddenFields || {}) };
         if (hidden) nextHiddenFields[fieldKey] = true;
@@ -826,8 +962,7 @@ const BremStorage = (function () {
           updatedAt: new Date().toISOString()
         };
       });
-      drivers.saveAll(nextDrivers);
-      return nextDrivers.length;
+      return drivers.saveAll(nextDrivers).then(() => nextDrivers.length);
     }
   };
 
@@ -1076,8 +1211,7 @@ const BremStorage = (function () {
     },
 
     shouldUseLocalRaw() {
-      const config = getSupabaseConfig();
-      return config.backend === 'local' || config.mode !== 'production';
+      return !isProductionMode() && getSupabaseConfig().backend === 'local';
     },
 
     persistList(list) {
@@ -3185,22 +3319,42 @@ const BremStorage = (function () {
 
       const meResult = await adminUsersApi('/api/admin/users/me');
       if (meResult.ok && meResult.account) {
-        productionAdminSessionAccount = buildProductionAdminSessionAccount(profile, meResult.account);
-        return { ok: true, account: productionAdminSessionAccount };
+        const account = buildProductionAdminSessionAccount(profile, meResult.account);
+        if (account) {
+          persistProductionSessionAccount(account);
+          document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
+        }
+        return { ok: true, account };
       }
 
       await this.syncProductionAdminAccounts();
       const registryAccount = this.getAdminAccountById(profile.user_id);
       if (registryAccount) {
-        productionAdminSessionAccount = buildProductionAdminSessionAccount(profile, registryAccount);
-        return { ok: true, account: productionAdminSessionAccount };
+        const account = buildProductionAdminSessionAccount(profile, registryAccount);
+        if (account) {
+          persistProductionSessionAccount(account);
+          document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
+        }
+        return { ok: true, account };
       }
 
-      productionAdminSessionAccount = buildInitialAdminSessionAccount(profile);
-      return { ok: true, account: productionAdminSessionAccount };
+      const initialEmail = getSupabaseConfig().initialAdmin?.email?.toLowerCase();
+      const client = getSupabaseClient();
+      const { data: userData } = client ? await client.auth.getUser() : { data: null };
+      const userEmail = String(userData?.user?.email || '').trim().toLowerCase();
+      if (initialEmail && userEmail === initialEmail) {
+        const account = buildInitialAdminSessionAccount(profile);
+        persistProductionSessionAccount(account);
+        document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
+        return { ok: true, account };
+      }
+
+      productionAdminSessionAccount = null;
+      clearPersistedProductionSessionAccount();
+      return { ok: false, message: '관리자 계정 정보를 불러오지 못했습니다.' };
     },
 
-    async ensureAppAccess() {
+    async ensureAppAccess(options = {}) {
       if (window.BremSupabaseConfig?.load) {
         await window.BremSupabaseConfig.load();
       }
@@ -3219,6 +3373,13 @@ const BremStorage = (function () {
       if (config.backend === 'supabase') {
         try {
           await initStorage({ backend: 'supabase' });
+          const needsHydrated = config.mode === 'production' || options.requireHydrated;
+          if (needsHydrated) {
+            const hydrated = await ensureSupabaseHydrated();
+            if (!hydrated.ok) {
+              return hydrated;
+            }
+          }
         } catch (error) {
           return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
         }
@@ -3230,10 +3391,16 @@ const BremStorage = (function () {
           profile = await loadSupabaseProfile();
         }
         if (profile?.active && profile.role === 'admin') {
+          const persisted = readPersistedProductionSessionAccount(profile);
+          if (persisted) {
+            productionAdminSessionAccount = persisted;
+          }
           if (sessionAdapter.read(SESSION_KEYS.adminLoggedIn) !== 'true') {
             this.setAdminSession(profile.user_id);
           }
-          await this.refreshProductionAdminSession();
+          if (options.refreshMenus) {
+            await this.refreshProductionAdminSession();
+          }
           return { ok: true };
         }
         return { ok: false, message: '관리자 로그인이 필요합니다.' };
@@ -3267,6 +3434,7 @@ const BremStorage = (function () {
       sessionAdapter.remove(SESSION_KEYS.adminAccountId);
       sessionAdapter.remove(SESSION_KEYS.adminLoggedIn);
       productionAdminSessionAccount = null;
+      clearPersistedProductionSessionAccount();
     },
 
     getAdminAccounts() {
@@ -3285,14 +3453,22 @@ const BremStorage = (function () {
           if (productionAdminSessionAccount?.id === profile.user_id) {
             return { ...productionAdminSessionAccount, password: '' };
           }
+
+          const persisted = readPersistedProductionSessionAccount(profile);
+          if (persisted) {
+            productionAdminSessionAccount = persisted;
+            return { ...persisted, password: '' };
+          }
+
           const registryAccount = this.getAdminAccounts().find(account => account.id === profile.user_id);
           const sessionAccount = buildProductionAdminSessionAccount(profile, registryAccount);
           if (sessionAccount) {
             productionAdminSessionAccount = sessionAccount;
+            persistProductionSessionAccount(sessionAccount);
             return { ...sessionAccount, password: '' };
           }
-          productionAdminSessionAccount = buildInitialAdminSessionAccount(profile);
-          return { ...productionAdminSessionAccount, password: '' };
+
+          return null;
         }
         return null;
       }
@@ -3316,13 +3492,13 @@ const BremStorage = (function () {
 
     getAdminSessionMenus() {
       const account = this.getAdminSessionAccount();
-      if (!account) return [...ALL_ADMIN_MENU_IDS];
+      if (!account) return [];
       return Array.isArray(account.menus) ? [...account.menus] : normalizeAdminMenus(account.menus);
     },
 
     getAdminSessionEditableMenus() {
       const account = this.getAdminSessionAccount();
-      if (!account) return [...ALL_ADMIN_MENU_IDS];
+      if (!account) return [];
       if (Array.isArray(account.editableMenus)) return [...account.editableMenus];
       return normalizeAdminEditableMenus(account.menus, account.editableMenus);
     },
@@ -3380,7 +3556,7 @@ const BremStorage = (function () {
 
           await this.syncProductionAdminAccounts();
           await this.refreshProductionAdminSession();
-          const account = productionAdminSessionAccount || buildInitialAdminSessionAccount(payload.profile || activeSupabaseProfile);
+          const account = productionAdminSessionAccount;
           if (!account) {
             await client?.auth.signOut();
             return { ok: false, message: '중지된 관리자 계정입니다.' };
@@ -3426,6 +3602,10 @@ const BremStorage = (function () {
       const client = getSupabaseClient();
       if (client) await client.auth.signOut();
       activeSupabaseProfile = null;
+      supabaseInitPromise = null;
+      if (isProductionMode()) {
+        activeStorageAdapter = blockedProductionAdapter;
+      }
       this.clearAdminSession();
       this.setDriverSessionId(null);
     },
@@ -4053,9 +4233,12 @@ const BremStorage = (function () {
     getStorageStatus,
     getSupabaseClient,
     loadSupabaseProfile,
+    enforceProductionStorageGuard,
     useLocalStorageAdapter,
     flushStorage: flushActiveStorage,
     reloadDrivers,
+    waitForSupabaseReady,
+    ensureSupabaseHydrated,
     initStorage,
     initSupabaseStorage,
     migrateLocalStorageToSupabase,
@@ -4095,30 +4278,60 @@ const DriverStorage = {
   remove: id => BremStorage.drivers.remove(id)
 };
 
-if (BremStorage.getSupabaseConfig?.().backend === 'supabase') {
-  const boot = () => {
-    BremStorage.initStorage({ backend: 'supabase' }).then(result => {
-      document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
-    }).catch(error => {
-      const message = error.message || 'Supabase 연결에 실패했습니다.';
-      console.error('[BREM] Supabase auto init failed:', error);
-      document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
-      if (BremStorage.getSupabaseConfig?.().allowLocalFallback) {
-        BremStorage.useLocalStorageAdapter();
-      }
-      document.dispatchEvent(new CustomEvent('brem-storage-ready', {
-        detail: {
-          backend: BremStorage.getStorageBackend?.() || 'unavailable',
-          fallback: Boolean(BremStorage.getSupabaseConfig?.().allowLocalFallback),
-          error: message
-        }
-      }));
-    });
-  };
-
-  if (window.BremSupabaseConfig?.load) {
-    window.BremSupabaseConfig.load().then(boot);
-  } else {
-    boot();
+(async function bootstrapBremStorage() {
+  try {
+    if (window.BremSupabaseConfig?.load) {
+      await window.BremSupabaseConfig.load();
+    }
+  } catch (error) {
+    console.error('[BREM] Public config load failed:', error);
   }
-}
+
+  if (typeof BremStorage.enforceProductionStorageGuard === 'function') {
+    document.addEventListener('brem-config-ready', BremStorage.enforceProductionStorageGuard);
+  }
+
+  const config = BremStorage.getSupabaseConfig?.() || {};
+  BremStorage.enforceProductionStorageGuard?.();
+  const shouldUseSupabase = config.mode === 'production' || config.backend === 'supabase';
+
+  if (!shouldUseSupabase) {
+    document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+      detail: { backend: BremStorage.getStorageBackend?.() || 'local' }
+    }));
+    return;
+  }
+
+  if (!config.url || !config.anonKey) {
+    const message = 'Supabase URL/anonKey가 서버 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)에 설정되지 않았습니다.';
+    console.error('[BREM]', message);
+    document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
+    document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+      detail: {
+        backend: config.mode === 'production' ? 'blocked' : 'unavailable',
+        error: message
+      }
+    }));
+    return;
+  }
+
+  try {
+    const result = await BremStorage.initStorage({ backend: 'supabase' });
+    console.info('[BREM] Storage bootstrap complete:', result?.backend || 'supabase');
+    document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
+  } catch (error) {
+    const message = error.message || 'Supabase 연결에 실패했습니다.';
+    console.error('[BREM] Supabase auto init failed:', error);
+    document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
+    if (BremStorage.getSupabaseConfig?.().allowLocalFallback) {
+      BremStorage.useLocalStorageAdapter();
+    }
+    document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+      detail: {
+        backend: BremStorage.getStorageBackend?.() || 'unavailable',
+        fallback: Boolean(BremStorage.getSupabaseConfig?.().allowLocalFallback),
+        error: message
+      }
+    }));
+  }
+})();

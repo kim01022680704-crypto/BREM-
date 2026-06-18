@@ -751,23 +751,23 @@
 
     if (config.mode === 'production') {
       if (status.backend === 'supabase' && status.supabaseHydrated) {
-        el.textContent = 'DB 연결 상태: Supabase';
+        el.textContent = 'DB: Supabase Connected';
         el.className = 'db-status db-status--ok';
         return;
       }
       if (status.supabaseError) {
-        el.textContent = `DB 연결 실패: ${status.supabaseError}`;
+        el.textContent = `DB: Disconnected (${status.supabaseError})`;
         el.className = 'db-status db-status--error';
         return;
       }
-      el.textContent = 'DB 연결 상태: Supabase (연결 중…)';
+      el.textContent = 'DB: Connecting…';
       el.className = 'db-status db-status--pending';
       return;
     }
 
     el.textContent = status.backend === 'supabase'
-      ? 'DB 연결 상태: Supabase (개발)'
-      : 'DB 연결 상태: localStorage (개발)';
+      ? 'DB: Supabase (개발)'
+      : 'DB: localStorage (개발)';
     el.className = 'db-status db-status--dev';
   }
 
@@ -1345,14 +1345,11 @@
   function ensureDevLocalStorage() {
     const config = BremStorage.getSupabaseConfig?.() || {};
     if (config.mode === 'production') {
-      const finish = () => Promise.resolve(BremStorage.auth.syncProductionAdminAccounts?.())
-        .then(() => BremStorage.auth.refreshProductionAdminSession?.());
       const status = BremStorage.getStorageStatus?.() || {};
       if (status.backend === 'supabase' && status.supabaseHydrated) {
-        return finish();
+        return Promise.resolve();
       }
-      return Promise.resolve(BremStorage.initStorage({ backend: 'supabase' }))
-        .then(() => finish());
+      return Promise.resolve(BremStorage.initStorage({ backend: 'supabase' }));
     }
     if (config.backend === 'supabase') return Promise.resolve();
     BremStorage.setStorageBackendPreference?.('local');
@@ -2780,7 +2777,7 @@
     refreshSelects();
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  async function bootstrapAdminPage() {
     updateAdminLoginHelp();
     bindAuthEvents();
     renderDbConnectionStatus();
@@ -2791,8 +2788,37 @@
       showToast(message);
       renderDbConnectionStatus();
     });
+    document.addEventListener('brem-admin-session-ready', () => {
+      if (!$('#adminApp').classList.contains('app-hidden')) {
+        applyAdminMenuPermissions();
+        applySectionEditPermissions();
+      }
+    });
+
+    if (window.BremSupabaseConfig?.load) {
+      await window.BremSupabaseConfig.load();
+    }
+
+    const config = BremStorage.getSupabaseConfig?.() || {};
+    if (config.backend === 'supabase') {
+      await BremStorage.waitForSupabaseReady?.();
+    }
+
+    if (config.mode === 'production') {
+      const profile = await BremStorage.loadSupabaseProfile?.();
+      if (profile?.active && profile.role === 'admin') {
+        await BremStorage.auth.ensureAppAccess?.({ refreshMenus: true });
+        showAdminApp();
+        return;
+      }
+    }
+
     if (isAdminLoggedIn()) {
       showAdminApp();
     }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    bootstrapAdminPage();
   });
 })();

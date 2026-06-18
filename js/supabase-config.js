@@ -28,6 +28,12 @@
       DEFAULTS.initialAdmin,
       config.initialAdmin || {}
     );
+    window.BREM_SUPABASE_CONFIG.isConfigured = Boolean(
+      window.BREM_SUPABASE_CONFIG.url && window.BREM_SUPABASE_CONFIG.anonKey
+    );
+    document.dispatchEvent(new CustomEvent('brem-config-ready', {
+      detail: { ...window.BREM_SUPABASE_CONFIG }
+    }));
     return window.BREM_SUPABASE_CONFIG;
   }
 
