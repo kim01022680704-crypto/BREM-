@@ -1,24 +1,10 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getServiceClient } = require('./admin-bootstrap');
-
-const SETTINGS_KEY = 'brem_admin_accounts';
-
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-async function readRegistry(supabase) {
-  const { data, error } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', SETTINGS_KEY)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message || '관리자 계정 목록을 불러오지 못했습니다.');
-
-  const accounts = Array.isArray(data?.value?.accounts) ? data.value.accounts : [];
-  return accounts.map(account => ({ ...account }));
-}
+const {
+  normalizeEmail,
+  loadAdminRegistry,
+  buildFallbackAccountFromProfile
+} = require('./admin-registry');
 
 async function resolveAdminLoginEmail(loginInput) {
   const value = String(loginInput || '').trim();
@@ -41,7 +27,7 @@ async function resolveAdminLoginEmail(loginInput) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const accounts = await readRegistry(supabase);
+  const accounts = await loadAdminRegistry(supabase);
   const account = accounts.find(item => item.active !== false && String(item.name || '').trim() === value);
   if (account?.email) {
     return { ok: true, email: normalizeEmail(account.email), account };
@@ -79,6 +65,7 @@ async function signInAdmin(loginInput, password) {
 
   const serviceClient = getServiceClient();
   const userId = data.user?.id;
+  const userEmail = normalizeEmail(data.user?.email);
   const { data: profile, error: profileError } = await serviceClient
     .from('profiles')
     .select('user_id, role, active, display_name')
@@ -90,22 +77,16 @@ async function signInAdmin(loginInput, password) {
     return { ok: false, status: 403, error: '접근 권한이 없습니다.' };
   }
 
-  const accounts = await readRegistry(serviceClient);
+  const caller = {
+    userId,
+    email: userEmail,
+    profile
+  };
+  const accounts = await loadAdminRegistry(serviceClient, caller);
   let registryAccount = accounts.find(item => item.id === userId) || resolved.account || null;
 
   if (!registryAccount) {
-    const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
-    if (resolved.email === initialEmail) {
-      registryAccount = {
-        id: userId,
-        email: resolved.email,
-        name: String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim() || '관리자',
-        role: 'ceo',
-        menus: null,
-        editableMenus: null,
-        active: true
-      };
-    }
+    registryAccount = buildFallbackAccountFromProfile(caller);
   }
 
   if (registryAccount && registryAccount.active === false) {
@@ -118,17 +99,12 @@ async function signInAdmin(loginInput, password) {
     session: data.session,
     user: data.user,
     profile,
-    account: registryAccount
-      ? { ...registryAccount, id: userId, email: resolved.email, active: true }
-      : {
-        id: userId,
-        email: resolved.email,
-        name: profile.display_name || data.user.email || '관리자',
-        role: 'manager',
-        menus: [],
-        editableMenus: [],
-        active: true
-      }
+    account: {
+      ...registryAccount,
+      id: userId,
+      email: userEmail || registryAccount.email,
+      active: registryAccount.active !== false
+    }
   };
 }
 

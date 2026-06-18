@@ -448,7 +448,13 @@
 
   async function renderAdminAccountSection() {
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-      await BremStorage.auth.syncProductionAdminAccounts?.();
+      const syncResult = await BremStorage.auth.syncProductionAdminAccounts?.();
+      if (!syncResult?.ok) {
+        const message = syncResult?.message || '관리자 계정 목록을 Supabase에서 불러오지 못했습니다.';
+        showToast(message);
+        const status = $('#adminAccountStatus');
+        if (status) status.textContent = message;
+      }
     }
     updateAdminAccountSectionAccess();
     renderAdminAccountRows();

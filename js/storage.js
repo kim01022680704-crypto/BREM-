@@ -188,7 +188,26 @@ const BremStorage = (function () {
   }
 
   function isStoragePersistReady() {
-    return activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.() === true;
+    if (activeStorageAdapter.type !== 'supabase') return false;
+    if (activeStorageAdapter.isHydrated?.()) return true;
+    return Boolean(activeSupabaseProfile?.active && activeSupabaseProfile.role === 'admin');
+  }
+
+  function flushStagedSupabaseWrites() {
+    if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.enqueuePersist) return;
+    const persistKeys = [
+      KEYS.drivers,
+      KEYS.notices,
+      KEYS.promotionRules,
+      KEYS.riderInquiries
+    ];
+    if (!isProductionMode()) {
+      persistKeys.push(KEYS.adminAccounts);
+    }
+    persistKeys.forEach(key => {
+      if (!activeStorageAdapter.has(key)) return;
+      activeStorageAdapter.enqueuePersist(key, activeStorageAdapter.read(key));
+    });
   }
 
   const storageAdapter = {
@@ -199,6 +218,14 @@ const BremStorage = (function () {
       return activeStorageAdapter.readRaw(key);
     },
     write(key, value) {
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+        activeStorageAdapter.stage(key, value);
+        if (!isStoragePersistReady()) {
+          console.warn('[BREM] Storage persist deferred until Supabase session is ready:', key);
+          return undefined;
+        }
+        return activeStorageAdapter.enqueuePersist(key, value);
+      }
       if (!isStoragePersistReady()) {
         return undefined;
       }
@@ -217,6 +244,9 @@ const BremStorage = (function () {
       return activeStorageAdapter.listBremKeys();
     },
     async flush() {
+      if (isStoragePersistReady()) {
+        flushStagedSupabaseWrites();
+      }
       if (activeStorageAdapter.flush) {
         await activeStorageAdapter.flush();
       }
@@ -507,7 +537,11 @@ const BremStorage = (function () {
     try {
       await activeStorageAdapter.hydrate();
       lastSupabaseError = '';
+      flushStagedSupabaseWrites();
       finalizeStorageReady();
+      if (activeStorageAdapter.flush) {
+        await activeStorageAdapter.flush();
+      }
       console.info('[BREM] Supabase storage hydrated');
       return { ok: true };
     } catch (error) {
@@ -3139,6 +3173,13 @@ const BremStorage = (function () {
     };
   }
 
+  function parseAdminAccountsValue(raw) {
+    if (!raw) return null;
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw.accounts)) return raw.accounts;
+    return null;
+  }
+
   function readAdminAccountsRaw() {
     if (productionAdminAccountsCache?.length) {
       return productionAdminAccountsCache;
@@ -3150,15 +3191,17 @@ const BremStorage = (function () {
       return null;
     }
     const raw = storageAdapter.read(KEYS.adminAccounts, null);
-    if (!raw) return null;
-    return Array.isArray(raw) ? raw : null;
+    return parseAdminAccountsValue(raw);
   }
 
   function writeAdminAccounts(accounts) {
     const normalized = accounts.map((account, index) => normalizeAdminAccount(account, index));
     productionAdminAccountsCache = normalized;
+    if (isProductionMode()) {
+      return;
+    }
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
-      storageAdapter.write(KEYS.adminAccounts, normalized);
+      storageAdapter.write(KEYS.adminAccounts, { accounts: normalized });
     }
   }
 
@@ -3272,9 +3315,17 @@ const BremStorage = (function () {
         return { ok: true, account };
       }
 
-      productionAdminSessionAccount = null;
-      clearPersistedProductionSessionAccount();
-      return { ok: false, message: '관리자 계정 정보를 불러오지 못했습니다.' };
+      const fallbackAccount = mapProductionAdminAccount({
+        id: profile.user_id,
+        name: profile.display_name || '관리자',
+        role: ADMIN_ROLES.MANAGER,
+        menus: null,
+        editableMenus: null,
+        active: true
+      }, 0);
+      persistProductionSessionAccount(fallbackAccount);
+      document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
+      return { ok: true, account: fallbackAccount };
     },
 
     async ensureAppAccess(options = {}) {
@@ -3471,9 +3522,17 @@ const BremStorage = (function () {
             return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
           }
 
+          if (payload.account) {
+            const mapped = mapProductionAdminAccount(payload.account, 0);
+            persistProductionSessionAccount(mapped);
+          }
+
           await this.syncProductionAdminAccounts();
-          await this.refreshProductionAdminSession();
-          const account = productionAdminSessionAccount;
+          if (!productionAdminSessionAccount) {
+            await this.refreshProductionAdminSession();
+          }
+          const account = productionAdminSessionAccount
+            || (payload.account ? mapProductionAdminAccount(payload.account, 0) : null);
           if (!account) {
             await client.auth.signOut();
             return { ok: false, message: '관리자 계정 정보를 확인할 수 없습니다. 계정 상태를 확인하세요.' };

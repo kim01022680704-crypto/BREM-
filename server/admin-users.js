@@ -1,15 +1,11 @@
 const { getServiceClient } = require('./admin-bootstrap');
-
-const SETTINGS_KEY = 'brem_admin_accounts';
-const ADMIN_ROLES = Object.freeze({
-  CEO: 'ceo',
-  DIRECTOR: 'director',
-  MANAGER: 'manager'
-});
-
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
-}
+const {
+  ADMIN_ROLES,
+  normalizeEmail,
+  writeRegistry,
+  loadAdminRegistry,
+  buildFallbackAccountFromProfile
+} = require('./admin-registry');
 
 function slugifyName(name) {
   const base = String(name || '')
@@ -77,60 +73,6 @@ async function verifyAdminCaller(accessToken) {
   };
 }
 
-async function readRegistry(supabase) {
-  const { data, error } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', SETTINGS_KEY)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message || '관리자 계정 목록을 불러오지 못했습니다.');
-
-  const accounts = Array.isArray(data?.value?.accounts) ? data.value.accounts : [];
-  return accounts.map(account => ({ ...account }));
-}
-
-async function writeRegistry(supabase, accounts) {
-  const payload = {
-    key: SETTINGS_KEY,
-    value: { accounts },
-    description: 'BREM admin account registry',
-    updated_at: new Date().toISOString()
-  };
-  const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'key' });
-  if (error) throw new Error(error.message || '관리자 계정 목록을 저장하지 못했습니다.');
-}
-
-async function ensureInitialAdminRegistry(supabase, caller) {
-  const accounts = await readRegistry(supabase);
-  if (accounts.some(account => account.id === caller.userId)) {
-    return accounts;
-  }
-
-  const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
-  const initialName = String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim() || '관리자';
-  const now = new Date().toISOString();
-
-  if (initialEmail && caller.email === initialEmail) {
-    const seeded = {
-      id: caller.userId,
-      email: caller.email,
-      name: caller.profile.display_name || initialName,
-      role: ADMIN_ROLES.CEO,
-      menus: null,
-      editableMenus: null,
-      active: true,
-      createdAt: now,
-      updatedAt: now
-    };
-    const next = [seeded, ...accounts.filter(account => account.id !== caller.userId)];
-    await writeRegistry(supabase, next);
-    return next;
-  }
-
-  return accounts;
-}
-
 function getCallerRegistryAccount(accounts, userId) {
   return accounts.find(account => account.id === userId) || null;
 }
@@ -147,7 +89,7 @@ async function listAdminUsers(accessToken) {
   if (!caller.ok) return caller;
 
   const supabase = getServiceClient();
-  const accounts = await ensureInitialAdminRegistry(supabase, caller);
+  const accounts = await loadAdminRegistry(supabase, caller);
   return { ok: true, accounts };
 }
 
@@ -156,30 +98,17 @@ async function getMyAdminAccount(accessToken) {
   if (!caller.ok) return caller;
 
   const supabase = getServiceClient();
-  const accounts = await ensureInitialAdminRegistry(supabase, caller);
+  const accounts = await loadAdminRegistry(supabase, caller);
   const account = accounts.find(item => item.id === caller.userId) || null;
 
   if (account) {
     return { ok: true, account };
   }
 
-  const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
-  if (caller.email === initialEmail) {
-    return {
-      ok: true,
-      account: {
-        id: caller.userId,
-        email: caller.email,
-        name: caller.profile.display_name || String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim() || '관리자',
-        role: ADMIN_ROLES.CEO,
-        menus: null,
-        editableMenus: null,
-        active: true
-      }
-    };
-  }
-
-  return { ok: false, status: 404, error: '관리자 계정 정보를 찾을 수 없습니다.' };
+  return {
+    ok: true,
+    account: buildFallbackAccountFromProfile(caller)
+  };
 }
 
 async function createAdminUser(accessToken, body = {}) {
@@ -187,7 +116,7 @@ async function createAdminUser(accessToken, body = {}) {
   if (!caller.ok) return caller;
 
   const supabase = getServiceClient();
-  const accounts = await ensureInitialAdminRegistry(supabase, caller);
+  const accounts = await loadAdminRegistry(supabase, caller);
   const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
   const ceoCheck = assertCeo(actorAccount);
   if (!ceoCheck.ok) return ceoCheck;
@@ -273,7 +202,7 @@ async function updateAdminUser(accessToken, userId, body = {}) {
   if (!caller.ok) return caller;
 
   const supabase = getServiceClient();
-  const accounts = await ensureInitialAdminRegistry(supabase, caller);
+  const accounts = await loadAdminRegistry(supabase, caller);
   const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
   const index = accounts.findIndex(account => account.id === userId);
 
@@ -389,7 +318,7 @@ async function deleteAdminUser(accessToken, userId) {
   if (!caller.ok) return caller;
 
   const supabase = getServiceClient();
-  const accounts = await ensureInitialAdminRegistry(supabase, caller);
+  const accounts = await loadAdminRegistry(supabase, caller);
   const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
   const ceoCheck = assertCeo(actorAccount);
   if (!ceoCheck.ok) return ceoCheck;

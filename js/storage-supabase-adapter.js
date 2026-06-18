@@ -149,6 +149,14 @@ window.BremSupabaseStorageAdapter = (function () {
       return persistQueue;
     }
 
+    function stage(key, value) {
+      setCache(key, value);
+    }
+
+    function enqueuePersist(key, value) {
+      return queuePersist(key, value);
+    }
+
     return {
       type: 'supabase',
       isHydrated() {
@@ -157,6 +165,8 @@ window.BremSupabaseStorageAdapter = (function () {
       hydrate,
       reloadRiders,
       deleteRider,
+      stage,
+      enqueuePersist,
       flush() {
         return persistQueue;
       },
@@ -168,8 +178,8 @@ window.BremSupabaseStorageAdapter = (function () {
         return { exists: true, value: cache.get(key) };
       },
       write(key, value) {
-        setCache(key, value);
-        return queuePersist(key, value);
+        stage(key, value);
+        return enqueuePersist(key, value);
       },
       remove(key) {
         cache.delete(key);

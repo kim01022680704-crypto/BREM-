@@ -32,6 +32,7 @@
   if (!(await ensureAdminAccess())) return;
 
   await BremStorage.waitForSupabaseReady?.();
+  await BremStorage.resumeSupabaseAfterAuth?.();
 
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
@@ -401,6 +402,11 @@
 
       syncDriverEventSettings(savedDriver.id, data);
       await BremStorage.flushStorage?.();
+      await BremStorage.reloadDrivers?.(true);
+      const verified = BremStorage.drivers.getById(savedDriver.id);
+      if (!verified) {
+        throw new Error('Supabase에 기사 저장을 확인하지 못했습니다. DB 연결 상태를 확인하세요.');
+      }
       refreshHeader();
 
       if (editingId) {
