@@ -497,6 +497,7 @@ const BremStorage = (function () {
     try {
       await activeStorageAdapter.hydrate();
       lastSupabaseError = '';
+      finalizeStorageReady();
       console.info('[BREM] Supabase storage hydrated');
       return { ok: true };
     } catch (error) {
@@ -547,12 +548,14 @@ const BremStorage = (function () {
 
       if (sessionData?.session) {
         await adapter.hydrate();
+        finalizeStorageReady();
         console.info('[BREM] Supabase storage initialized and hydrated');
       } else if (settings.mode === 'production') {
         console.info('[BREM] Supabase client ready — awaiting admin login to hydrate');
       } else {
         try {
           await adapter.hydrate();
+          finalizeStorageReady();
         } catch (error) {
           console.warn('[BREM] Supabase hydrate skipped (no auth):', error.message);
         }
@@ -3913,6 +3916,17 @@ const BremStorage = (function () {
     }
   }
 
+  function finalizeStorageReady() {
+    if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.isHydrated?.()) {
+      return;
+    }
+    try {
+      runDataMigrations();
+    } catch (error) {
+      console.error('[BREM] Data migration failed:', error);
+    }
+  }
+
   function isArrayData(value) {
     return Array.isArray(value);
   }
@@ -4073,7 +4087,7 @@ const BremStorage = (function () {
         importedKeys.push(key);
       });
 
-      runDataMigrations();
+      finalizeStorageReady();
       return {
         mode,
         importedKeys,
@@ -4101,8 +4115,6 @@ const BremStorage = (function () {
       return `BREM_${group.id}_${stamp}.json`;
     }
   };
-
-  runDataMigrations();
 
   return {
     createId,

@@ -1,4 +1,8 @@
 (function () {
+  if (typeof BremStorage === 'undefined') {
+    console.error('[BREM] BremStorage is not loaded — check storage.js for errors.');
+    return;
+  }
   const backup = BremStorage.dataBackup;
   if (!backup) return;
 
