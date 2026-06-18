@@ -193,6 +193,8 @@
               <strong id="adminScheduleMonthTitle">-</strong>
               <button type="button" class="admin-schedule-nav-btn" id="adminScheduleNext" aria-label="다음 달">&gt;</button>
               <button type="button" class="small-btn" id="adminScheduleToday">오늘</button>
+              <button type="button" class="small-btn" id="adminScheduleMultiToggle" aria-pressed="false">여러 날짜 선택</button>
+              <button type="button" class="small-btn" id="adminScheduleMultiClear" hidden>선택 해제</button>
             </div>
           </div>
 
@@ -214,6 +216,7 @@
               <div class="admin-schedule-panel-head">
                 <h3 id="adminScheduleSelectedDateLabel">날짜를 선택하세요</h3>
                 <p class="form-help" id="adminScheduleSelectedCount">등록된 일정 0건</p>
+                <p class="form-help" id="adminScheduleMultiHelp" hidden>여러 날짜를 선택한 뒤 아래 일정 등록을 누르면 같은 일정이 한 번에 등록됩니다.</p>
                 <div class="admin-schedule-list-toolbar" id="adminScheduleListToolbar" hidden>
                   <label class="check-label admin-schedule-select-all">
                     <input type="checkbox" id="adminScheduleSelectAll">
@@ -2267,7 +2270,7 @@
           <div class="card-header">
             <h2>Supabase 이전</h2>
           </div>
-          <p class="form-help">localStorage 데이터를 Supabase 테이블로 upsert합니다. 실행 전 JSON 백업을 권장합니다. `js/supabase-config.js` 설정이 필요합니다.</p>
+          <p class="form-help">localStorage 데이터를 Supabase의 riders, notices, promotions, settings 테이블로 이전합니다. 연결 실패 시 localStorage 모드를 유지합니다.</p>
           <div class="backup-import-form">
             <label>
               Supabase URL
@@ -2368,11 +2371,11 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="js/platforms.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/storage.js"></script>
+  <script src="js/supabase-config.js"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-supabase-adapter.js"></script>
   <script src="js/storage-migrate-supabase.js"></script>
-  <script src="js/supabase-config.js"></script>
+  <script src="js/storage.js"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/settlement-formats.js"></script>
   <script src="js/settlement-client.js"></script>

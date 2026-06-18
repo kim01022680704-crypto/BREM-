@@ -5,6 +5,8 @@
   const state = {
     viewDate: new Date(),
     selectedDate: '',
+    selectedDates: new Set(),
+    multiSelectMode: false,
     selectedIds: new Set(),
     detailId: ''
   };
@@ -30,6 +32,9 @@
   const detailCreatorEl = document.getElementById('adminScheduleDetailCreator');
   const detailBodyEl = document.getElementById('adminScheduleDetailBody');
   const detailEditEl = document.getElementById('adminScheduleDetailEdit');
+  const multiToggleEl = document.getElementById('adminScheduleMultiToggle');
+  const multiClearEl = document.getElementById('adminScheduleMultiClear');
+  const multiHelpEl = document.getElementById('adminScheduleMultiHelp');
 
   function todayKey() {
     return BremDatePicker.today();
@@ -50,6 +55,17 @@
   function formatDateLabel(value) {
     if (!value) return '날짜를 선택하세요';
     return BremDatePicker.formatDate(value);
+  }
+
+  function selectedDateList() {
+    return [...state.selectedDates].sort();
+  }
+
+  function selectedDatesLabel() {
+    const dates = selectedDateList();
+    if (!state.multiSelectMode || !dates.length) return formatDateLabel(state.selectedDate);
+    if (dates.length === 1) return `${formatDateLabel(dates[0])} 선택`;
+    return `${formatDateLabel(dates[0])} 외 ${dates.length - 1}일 선택`;
   }
 
   function currentAdmin() {
@@ -234,11 +250,13 @@
       const dayScheduleItems = grouped.get(key) || [];
       const isMuted = monthKey(cursor) !== currentMonth;
       const isSelected = key === state.selectedDate;
+      const isMultiSelected = state.selectedDates.has(key);
       const isToday = key === today;
       const classes = [
         'admin-schedule-day',
         isMuted ? 'is-muted' : '',
         isSelected ? 'is-selected' : '',
+        isMultiSelected ? 'is-multi-selected' : '',
         isToday ? 'is-today' : '',
         dayScheduleItems.length ? 'has-events' : ''
       ].filter(Boolean).join(' ');
@@ -261,14 +279,60 @@
 
     daysEl.innerHTML = html;
     if (selectedDateLabelEl) {
-      selectedDateLabelEl.textContent = formatDateLabel(state.selectedDate);
+      selectedDateLabelEl.textContent = selectedDatesLabel();
     }
+    updateMultiSelectUi();
     renderDayList();
   }
 
   function selectDate(value) {
+    if (state.multiSelectMode) {
+      if (state.selectedDates.has(value)) {
+        state.selectedDates.delete(value);
+        if (state.selectedDate === value) {
+          state.selectedDate = selectedDateList().at(-1) || '';
+        }
+      } else {
+        state.selectedDates.add(value);
+        state.selectedDate = value;
+      }
+      state.selectedIds.clear();
+      closeDetail();
+      resetForm();
+      renderCalendar();
+      return;
+    }
+
     state.selectedDate = value;
+    state.selectedDates = new Set([value]);
     state.selectedIds.clear();
+    closeDetail();
+    resetForm();
+    renderCalendar();
+  }
+
+  function updateMultiSelectUi() {
+    const count = state.selectedDates.size;
+    if (multiToggleEl) {
+      multiToggleEl.classList.toggle('active', state.multiSelectMode);
+      multiToggleEl.setAttribute('aria-pressed', state.multiSelectMode ? 'true' : 'false');
+      multiToggleEl.textContent = state.multiSelectMode ? `여러 날짜 선택 중 (${count})` : '여러 날짜 선택';
+    }
+    if (multiClearEl) multiClearEl.hidden = !state.multiSelectMode || count === 0;
+    if (multiHelpEl) multiHelpEl.hidden = !state.multiSelectMode;
+    if (submitEl && !editIdEl?.value) {
+      submitEl.textContent = state.multiSelectMode && count > 1 ? `일정 일괄 등록 (${count}일)` : '일정 등록';
+    }
+  }
+
+  function setMultiSelectMode(enabled) {
+    state.multiSelectMode = Boolean(enabled);
+    if (!state.multiSelectMode && state.selectedDate) {
+      state.selectedDates = new Set([state.selectedDate]);
+    }
+    if (state.multiSelectMode && state.selectedDate && !state.selectedDates.size) {
+      state.selectedDates.add(state.selectedDate);
+    }
     closeDetail();
     resetForm();
     renderCalendar();
@@ -298,6 +362,19 @@
       const today = todayKey();
       state.viewDate = new Date(`${today}T00:00:00`);
       selectDate(today);
+    });
+
+    multiToggleEl?.addEventListener('click', () => {
+      setMultiSelectMode(!state.multiSelectMode);
+    });
+
+    multiClearEl?.addEventListener('click', () => {
+      state.selectedDates.clear();
+      state.selectedDate = '';
+      state.selectedIds.clear();
+      closeDetail();
+      resetForm();
+      renderCalendar();
     });
 
     daysEl?.addEventListener('click', event => {
@@ -380,13 +457,18 @@
 
     formEl?.addEventListener('submit', event => {
       event.preventDefault();
-      if (!state.selectedDate) {
-        showToast('날짜를 먼저 선택하세요.');
+      const editId = editIdEl?.value || '';
+      const targetDates = editId
+        ? [state.selectedDate]
+        : (state.multiSelectMode ? selectedDateList() : [state.selectedDate].filter(Boolean));
+
+      if (!targetDates.length) {
+        showToast(state.multiSelectMode ? '등록할 날짜를 하나 이상 선택하세요.' : '날짜를 먼저 선택하세요.');
         return;
       }
 
       const payload = {
-        date: state.selectedDate,
+        date: targetDates[0],
         createdBy: createdByEl?.value.trim() || '',
         title: titleEl?.value.trim() || '',
         memo: memoEl?.value.trim() || ''
@@ -402,18 +484,22 @@
         return;
       }
 
-      const editId = editIdEl?.value || '';
       if (editId) {
         schedules.update(editId, payload);
         showToast('일정이 수정되었습니다.');
         if (state.detailId === editId) openDetail(editId);
       } else {
         const admin = currentAdmin();
-        schedules.create({
-          ...payload,
-          createdById: admin?.id || ''
+        targetDates.forEach(date => {
+          schedules.create({
+            ...payload,
+            date,
+            createdById: admin?.id || ''
+          });
         });
-        showToast('일정이 등록되었습니다.');
+        showToast(targetDates.length > 1
+          ? `선택한 ${targetDates.length}일에 일정이 등록되었습니다.`
+          : '일정이 등록되었습니다.');
       }
 
       resetForm();

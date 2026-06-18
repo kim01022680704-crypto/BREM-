@@ -1,6 +1,11 @@
 /**
  * Supabase storage adapter
- * localStorage와 동일한 read/write 인터페이스 + 메모리 캐시
+ *
+ * localStorage와 같은 read/write 인터페이스를 제공한다.
+ * - riders: 기사 데이터
+ * - notices: 공지사항
+ * - promotions: 프로모션
+ * - settings: 관리자 설정 및 기타 BREM 저장 데이터
  */
 window.BremSupabaseStorageAdapter = (function () {
   const Mapper = () => window.BremSupabaseMapper;
@@ -19,143 +24,72 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function loadRiders() {
-      const { data, error } = await client.from('riders').select('*');
+      const { data, error } = await client.from('riders').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map(row => Mapper().rowToRider(row));
     }
 
-    async function loadPromotionRules() {
-      const { data: promotions, error: pErr } = await client.from('promotions').select('*');
-      if (pErr) throw pErr;
-      const { data: rules, error: rErr } = await client.from('promotion_rules').select('*');
-      if (rErr) throw rErr;
-      const grouped = new Map();
-      (rules || []).forEach(row => {
-        if (!grouped.has(row.promotion_id)) grouped.set(row.promotion_id, []);
-        grouped.get(row.promotion_id).push(row);
-      });
-      return (promotions || []).map(promotion => Mapper().rowsToPromotion(
-        promotion,
-        grouped.get(promotion.id) || []
-      ));
-    }
-
-    async function loadWeeklySettlements() {
-      const { data: headers, error: hErr } = await client.from('weekly_settlements').select('*');
-      if (hErr) throw hErr;
-      const { data: riders, error: rErr } = await client.from('weekly_settlement_riders').select('*');
-      if (rErr) throw rErr;
-      const grouped = new Map();
-      (riders || []).forEach(row => {
-        if (!grouped.has(row.weekly_settlement_id)) grouped.set(row.weekly_settlement_id, []);
-        grouped.get(row.weekly_settlement_id).push(row);
-      });
-      return (headers || []).map(header => Mapper().rowsToWeeklySettlement(
-        header,
-        grouped.get(header.id) || []
-      ));
-    }
-
-    async function loadMappings() {
-      const { data, error } = await client.from('rider_name_mappings').select('*');
-      if (error) throw error;
-      return (data || []).map(row => Mapper().rowToMapping(row));
-    }
-
     async function loadNotices() {
-      const { data, error } = await client.from('notices').select('*');
+      const { data, error } = await client.from('notices').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []).map(row => Mapper().rowToNotice(row));
     }
 
-    async function loadKvStore() {
-      const { data, error } = await client.from('system_kv_store').select('storage_key, value');
+    async function loadPromotions() {
+      const { data, error } = await client.from('promotions').select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      (data || []).forEach(row => setCache(row.storage_key, row.value));
+      return (data || []).map(row => Mapper().rowToPromotion(row));
+    }
+
+    async function loadSettings() {
+      const { data, error } = await client.from('settings').select('key, value');
+      if (error) throw error;
+      (data || []).forEach(row => setCache(row.key, row.value));
     }
 
     async function persistRiders(value) {
-      const rows = (value || []).map(item => Mapper().riderToRow(item));
-      if (!rows.length) return;
-      const { error } = await client.from('riders').upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
-    }
-
-    async function persistPromotionRules(value) {
-      const promotions = [];
-      const details = [];
-      (value || []).forEach(rule => {
-        const mapped = Mapper().promotionToRows(rule);
-        promotions.push(mapped.promotion);
-        details.push(...mapped.detailRules);
-      });
-      if (promotions.length) {
-        const { error } = await client.from('promotions').upsert(promotions, { onConflict: 'id' });
-        if (error) throw error;
-      }
-      if (details.length) {
-        const ids = promotions.map(item => item.id);
-        await client.from('promotion_rules').delete().in('promotion_id', ids);
-        const { error } = await client.from('promotion_rules').insert(details);
-        if (error) throw error;
-      }
-    }
-
-    async function persistWeeklySettlements(value) {
-      const regionRes = await client.from('regions').select('id, name, platform');
-      const regionIdMap = new Map(
-        (regionRes.data || []).map(row => [`${row.platform || 'all'}:${row.name}`, row.id])
-      );
-      for (const record of value || []) {
-        const { header, riders } = Mapper().weeklySettlementToRows(record, regionIdMap);
-        const { error: hErr } = await client.from('weekly_settlements').upsert(header, { onConflict: 'id' });
-        if (hErr) throw hErr;
-        await client.from('weekly_settlement_riders').delete().eq('weekly_settlement_id', header.id);
-        if (riders.length) {
-          const { error: rErr } = await client.from('weekly_settlement_riders').insert(riders);
-          if (rErr) throw rErr;
-        }
-      }
-    }
-
-    async function persistMappings(value) {
-      const rows = (value || []).map(item => Mapper().mappingToRow(item));
-      if (!rows.length) return;
-      const { error } = await client.from('rider_name_mappings').upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
+      const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
+      await replaceTable('riders', rows);
     }
 
     async function persistNotices(value) {
-      const rows = (value || []).map(item => Mapper().noticeToRow(item));
+      const rows = (value || []).map(item => Mapper().noticeToRow(item)).filter(row => row.id);
+      await replaceTable('notices', rows);
+    }
+
+    async function persistPromotions(value) {
+      const rows = (value || []).map(item => Mapper().promotionToRow(item)).filter(row => row.id);
+      await replaceTable('promotions', rows);
+    }
+
+    async function replaceTable(table, rows) {
+      const { error: deleteError } = await client.from(table).delete().neq('id', '__never__');
+      if (deleteError) throw deleteError;
       if (!rows.length) return;
-      const { error } = await client.from('notices').upsert(rows, { onConflict: 'id' });
+      const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
       if (error) throw error;
     }
 
-    async function persistKv(key, value) {
-      const { error } = await client.from('system_kv_store').upsert({
-        storage_key: key,
+    async function persistSetting(key, value) {
+      const { error } = await client.from('settings').upsert({
+        key,
         value,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'storage_key' });
+      }, { onConflict: 'key' });
       if (error) throw error;
     }
 
     const persistHandlers = {
       [keys.drivers]: persistRiders,
-      [keys.promotionRules]: persistPromotionRules,
-      [keys.weeklySettlements]: persistWeeklySettlements,
-      [keys.manualNameMappings]: persistMappings,
-      [keys.notices]: persistNotices
+      [keys.notices]: persistNotices,
+      [keys.promotionRules]: persistPromotions
     };
 
     async function hydrate() {
       setCache(keys.drivers, await loadRiders());
-      setCache(keys.promotionRules, await loadPromotionRules());
-      setCache(keys.weeklySettlements, await loadWeeklySettlements());
-      setCache(keys.manualNameMappings, await loadMappings());
       setCache(keys.notices, await loadNotices());
-      await loadKvStore();
+      setCache(keys.promotionRules, await loadPromotions());
+      await loadSettings();
       hydrated = true;
     }
 
@@ -165,11 +99,27 @@ window.BremSupabaseStorageAdapter = (function () {
           await persistHandlers[key](value);
           return;
         }
-        await persistKv(key, value);
+        await persistSetting(key, value);
       }).catch(error => {
-        console.error('[BremSupabaseStorageAdapter] persist failed', key, error);
+        console.error('[BremSupabaseStorageAdapter] persist failed, local cache kept:', key, error);
       });
       return persistQueue;
+    }
+
+    function writeLocalBackup(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch {
+        /* local backup is best-effort */
+      }
+    }
+
+    function removeLocalBackup(key) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        /* local backup is best-effort */
+      }
     }
 
     return {
@@ -190,10 +140,20 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       write(key, value) {
         setCache(key, value);
+        writeLocalBackup(key, value);
         queuePersist(key, value);
       },
       remove(key) {
         cache.delete(key);
+        removeLocalBackup(key);
+        persistQueue = persistQueue.then(async () => {
+          if (key === keys.drivers) await replaceTable('riders', []);
+          else if (key === keys.notices) await replaceTable('notices', []);
+          else if (key === keys.promotionRules) await replaceTable('promotions', []);
+          else await client.from('settings').delete().eq('key', key);
+        }).catch(error => {
+          console.error('[BremSupabaseStorageAdapter] remove failed:', key, error);
+        });
       },
       has(key) {
         return cache.has(key);

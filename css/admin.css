@@ -657,6 +657,13 @@ a {
   color: var(--yellow);
 }
 
+.admin-schedule-nav .small-btn.active,
+.admin-schedule-nav .small-btn[aria-pressed="true"] {
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(250, 204, 21, 0.14);
+  color: var(--yellow);
+}
+
 .admin-schedule-nav strong {
   min-width: 108px;
   text-align: center;
@@ -713,6 +720,12 @@ a {
   border-color: var(--yellow);
   background: rgba(255, 212, 0, 0.08);
   box-shadow: inset 0 0 0 1px rgba(255, 212, 0, 0.18);
+}
+
+.admin-schedule-day.is-multi-selected {
+  border-color: rgba(34, 197, 94, 0.7);
+  background: rgba(34, 197, 94, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.22);
 }
 
 .admin-schedule-day.is-today .admin-schedule-day-num {

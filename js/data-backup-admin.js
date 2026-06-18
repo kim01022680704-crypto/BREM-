@@ -184,9 +184,8 @@
         const r = result.report;
         supabaseMigrateResultEl.innerHTML = `
           <strong>Supabase 이전 완료</strong>
-          <span>기사 ${r.riders} · 프로모션 ${r.promotions} · 세부조건 ${r.promotionRules}</span>
-          <span>주간정산 ${r.weeklySettlements} · 정산기사 ${r.weeklySettlementRiders}</span>
-          <span>지역 ${r.regions} · 매칭 ${r.riderNameMappings} · 공지 ${r.notices} · KV ${r.systemKvStore}</span>
+          <span>기사 ${r.riders} · 공지 ${r.notices} · 프로모션 ${r.promotions}</span>
+          <span>관리자 설정/기타 백업 ${r.settings}</span>
         `;
       }
       showToast('Supabase 이전이 완료되었습니다.');
@@ -202,9 +201,14 @@
       if (!isSupabaseConfigured(config)) {
         throw new Error('Supabase URL과 anon key를 js/supabase-config.js 또는 화면 입력란에 설정하세요.');
       }
-      await BremStorage.initStorage({ backend: 'supabase', config });
-      if (window.BREM_SUPABASE_CONFIG) window.BREM_SUPABASE_CONFIG.backend = 'supabase';
-      showToast('Supabase 모드로 연결되었습니다.');
+      const result = await BremStorage.initStorage({ backend: 'supabase', config });
+      if (window.BREM_SUPABASE_CONFIG) {
+        window.BREM_SUPABASE_CONFIG.backend = result?.backend === 'supabase' ? 'supabase' : 'local';
+      }
+      const status = BremStorage.getStorageStatus?.();
+      showToast(status?.backend === 'supabase'
+        ? 'Supabase 모드로 연결되었습니다.'
+        : 'Supabase 연결 실패로 localStorage 모드를 유지합니다.');
       renderStatus();
     } catch (error) {
       showToast(error.message || 'Supabase 연결에 실패했습니다.');

@@ -47,6 +47,7 @@ const BremStorage = (function () {
   };
 
   const STORAGE_BACKEND_PREF_KEY = 'brem_storage_backend_preference';
+  let lastSupabaseError = '';
 
   const DEFAULT_PLATFORM = 'coupang';
 
@@ -235,7 +236,8 @@ const BremStorage = (function () {
       backend: getStorageBackend(),
       preference: getStorageBackendPreference(),
       supabaseConfigured: config.isConfigured,
-      supabaseHydrated: activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.() === true
+      supabaseHydrated: activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.() === true,
+      supabaseError: lastSupabaseError
     };
   }
 
@@ -261,6 +263,7 @@ const BremStorage = (function () {
     await adapter.hydrate();
     activeStorageAdapter = adapter;
     setStorageBackendPreference('supabase');
+    lastSupabaseError = '';
     return { backend: 'supabase', client, adapter };
   }
 
@@ -275,10 +278,20 @@ const BremStorage = (function () {
       || 'local';
     if (backend === 'supabase') {
       if (!config.url || !config.anonKey) {
-        throw new Error('Supabase url / anonKey가 js/supabase-config.js 에 설정되지 않았습니다.');
+        lastSupabaseError = 'Supabase url / anonKey가 js/supabase-config.js 에 설정되지 않았습니다.';
+        useLocalStorageAdapter();
+        return { backend: 'local', fallback: true, error: lastSupabaseError };
       }
-      return initSupabaseStorage(config);
+      try {
+        return await initSupabaseStorage(config);
+      } catch (error) {
+        lastSupabaseError = error.message || 'Supabase 연결에 실패했습니다.';
+        console.warn('[BREM] Supabase init failed. Falling back to localStorage:', error);
+        useLocalStorageAdapter();
+        return { backend: 'local', fallback: true, error: lastSupabaseError };
+      }
     }
+    lastSupabaseError = '';
     useLocalStorageAdapter();
     return { backend: 'local' };
   }
@@ -3353,3 +3366,15 @@ const DriverStorage = {
   update: (id, changes) => BremStorage.drivers.update(id, changes),
   remove: id => BremStorage.drivers.remove(id)
 };
+
+if (BremStorage.getSupabaseConfig?.().backend === 'supabase') {
+  BremStorage.initStorage({ backend: 'supabase' }).then(result => {
+    document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
+  }).catch(error => {
+    console.warn('[BREM] Supabase auto init failed:', error);
+    BremStorage.useLocalStorageAdapter();
+    document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+      detail: { backend: 'local', fallback: true, error: error.message }
+    }));
+  });
+}

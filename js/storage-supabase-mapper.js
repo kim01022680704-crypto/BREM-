@@ -2,13 +2,6 @@
  * localStorage 객체 ↔ Supabase row 변환
  */
 window.BremSupabaseMapper = (function () {
-  function parseUuid(value) {
-    const text = String(value || '').trim();
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text)
-      ? text
-      : null;
-  }
-
   function toDate(value) {
     const text = String(value || '').slice(0, 10);
     return text || null;
@@ -35,9 +28,8 @@ window.BremSupabaseMapper = (function () {
   }
 
   function riderToRow(driver) {
-    const id = parseUuid(driver.id) || driver.id;
     return {
-      id,
+      id: String(driver.id || ''),
       name: driver.name,
       phone: driver.phone,
       resident_number: String(driver.residentNumber || ''),
@@ -59,6 +51,7 @@ window.BremSupabaseMapper = (function () {
       promotion_selector_baemin: String(driver.promotionSelectorBaemin || ''),
       promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
       promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
+      raw_data: driver || {},
       created_at: toIso(driver.createdAt),
       updated_at: toIso(driver.updatedAt)
     };
@@ -93,88 +86,42 @@ window.BremSupabaseMapper = (function () {
     };
   }
 
-  function promotionToRows(rule) {
-    const promotionId = parseUuid(rule.id) || rule.id;
-    const promotion = {
-      id: promotionId,
-      name: rule.name,
-      type: rule.type,
-      platform: rule.platform,
+  function promotionToRow(rule) {
+    return {
+      id: String(rule.id || ''),
+      name: String(rule.name || ''),
+      type: String(rule.type || ''),
+      platform: String(rule.platform || 'coupang'),
       enabled: rule.enabled !== false,
-      selector_key: rule.selectorKey || '',
+      selector_key: String(rule.selectorKey || ''),
       start_date: toDate(rule.startDate),
       end_date: toDate(rule.endDate),
-      base: rule.base || {},
       priority: Number(rule.priority ?? 100),
-      allow_duplicate: Boolean(rule.allowDuplicate),
-      duplicate_strategy: rule.duplicateStrategy || 'highest_priority',
-      apply_global_accept_block: rule.applyGlobalAcceptBlock !== false,
-      no_pay_conditions: rule.noPayConditions || '',
+      payload: rule || {},
       created_at: toIso(rule.createdAt),
       updated_at: toIso(rule.updatedAt)
     };
-
-    const detailRules = [];
-    ['blockConditions', 'bonusConditions', 'referenceConditions'].forEach(kindKey => {
-      const kind = kindKey.replace('Conditions', '');
-      (rule[kindKey] || []).forEach((condition, index) => {
-        detailRules.push({
-          promotion_id: promotionId,
-          kind,
-          condition_name: condition.conditionName || '',
-          condition_type: condition.conditionType || '',
-          processing_mode: condition.processingMode || kind,
-          payload: condition,
-          sort_order: index
-        });
-      });
-    });
-
-    return { promotion, detailRules };
   }
 
-  function rowsToPromotion(promotion, detailRules) {
-    const blockConditions = [];
-    const bonusConditions = [];
-    const referenceConditions = [];
-    (detailRules || []).sort((a, b) => a.sort_order - b.sort_order).forEach(row => {
-      const condition = row.payload || {};
-      if (row.kind === 'block') blockConditions.push(condition);
-      else if (row.kind === 'bonus') bonusConditions.push(condition);
-      else referenceConditions.push(condition);
-    });
-
-    const base = promotion.base || {};
+  function rowToPromotion(row) {
     return {
-      id: promotion.id,
-      name: promotion.name,
-      type: promotion.type,
-      platform: promotion.platform,
-      enabled: promotion.enabled !== false,
-      selectorKey: promotion.selector_key || '',
-      startDate: promotion.start_date || '',
-      endDate: promotion.end_date || '',
-      base,
-      blockConditions,
-      bonusConditions,
-      referenceConditions,
-      baseCallCount: base.baseCallCount,
-      payStartCallCount: base.payStartCallCount,
-      payPerCall: base.payPerCall,
-      guaranteedUnitPrice: base.guaranteedUnitPrice,
-      callTiers: base.callTiers || [],
-      applyGlobalAcceptBlock: promotion.apply_global_accept_block !== false,
-      priority: promotion.priority,
-      allowDuplicate: promotion.allow_duplicate,
-      duplicateStrategy: promotion.duplicate_strategy,
-      noPayConditions: promotion.no_pay_conditions || '',
-      createdAt: promotion.created_at,
-      updatedAt: promotion.updated_at
+      ...(row.payload || {}),
+      id: row.id,
+      name: row.payload?.name ?? row.name,
+      type: row.payload?.type ?? row.type,
+      platform: row.payload?.platform ?? row.platform,
+      enabled: row.payload?.enabled ?? row.enabled,
+      selectorKey: row.payload?.selectorKey ?? row.selector_key ?? '',
+      startDate: row.payload?.startDate ?? row.start_date ?? '',
+      endDate: row.payload?.endDate ?? row.end_date ?? '',
+      priority: row.payload?.priority ?? row.priority,
+      createdAt: row.payload?.createdAt ?? row.created_at,
+      updatedAt: row.payload?.updatedAt ?? row.updated_at
     };
   }
 
   function weeklySettlementToRows(record, regionIdMap) {
-    const id = parseUuid(record.id) || record.id;
+    const id = record.id;
     const regionName = String(record.region || '').trim();
     const header = {
       id,
@@ -196,7 +143,7 @@ window.BremSupabaseMapper = (function () {
 
     const riders = (record.riders || []).map((rider, index) => ({
       weekly_settlement_id: id,
-      rider_id: parseUuid(rider.matchedRiderId) || rider.matchedRiderId || null,
+      rider_id: rider.matchedRiderId || null,
       original_name: rider.originalName || '',
       rider_name: rider.riderName || '',
       driver_name: rider.driverName || '',
@@ -247,10 +194,10 @@ window.BremSupabaseMapper = (function () {
 
   function mappingToRow(mapping) {
     return {
-      id: parseUuid(mapping.id) || mapping.id,
+      id: mapping.id,
       platform: mapping.platform,
       original_name: mapping.originalName,
-      rider_id: parseUuid(mapping.driverId) || mapping.driverId || null,
+      rider_id: mapping.driverId || null,
       driver_name: mapping.driverName || '',
       updated_at: toIso(mapping.updatedAt),
       created_at: toIso(mapping.updatedAt)
@@ -270,10 +217,11 @@ window.BremSupabaseMapper = (function () {
 
   function noticeToRow(notice) {
     return {
-      id: parseUuid(notice.id) || notice.id,
+      id: String(notice.id || ''),
       title: notice.title,
       content: notice.content,
       pinned: Boolean(notice.pinned),
+      raw_data: notice || {},
       created_at: toIso(notice.createdAt),
       updated_at: toIso(notice.updatedAt || notice.createdAt)
     };
@@ -281,19 +229,20 @@ window.BremSupabaseMapper = (function () {
 
   function rowToNotice(row) {
     return {
+      ...(row.raw_data || {}),
       id: row.id,
-      title: row.title,
-      content: row.content,
-      pinned: Boolean(row.pinned),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      title: row.raw_data?.title ?? row.title,
+      content: row.raw_data?.content ?? row.content,
+      pinned: row.raw_data?.pinned ?? Boolean(row.pinned),
+      createdAt: row.raw_data?.createdAt ?? row.created_at,
+      updatedAt: row.raw_data?.updatedAt ?? row.updated_at
     };
   }
 
   function riderToUserRow(driver) {
     return {
       role: 'rider',
-      rider_id: parseUuid(driver.id) || driver.id,
+      rider_id: driver.id,
       login_id: makeRiderLoginId(driver),
       password_hash: String(driver.password || '1234'),
       display_name: driver.name,
@@ -302,13 +251,12 @@ window.BremSupabaseMapper = (function () {
   }
 
   return {
-    parseUuid,
     slugifyRegion,
     makeRiderLoginId,
     riderToRow,
     rowToRider,
-    promotionToRows,
-    rowsToPromotion,
+    promotionToRow,
+    rowToPromotion,
     weeklySettlementToRows,
     rowsToWeeklySettlement,
     mappingToRow,
