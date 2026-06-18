@@ -3,11 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "description": "BREM 배달대행 관리 시스템",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "qa": "node scripts/qa-check.js",
+    "check-deploy": "node scripts/check-deploy.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.8",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "multer": "^2.0.0",
     "officecrypto-tool": "^0.0.19",

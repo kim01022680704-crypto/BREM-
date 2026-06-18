@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="BREM 라이더 지원·문의 접수">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="index,follow">
+  <title>라이더 문의 · BREM</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/brand/brem-logo-mark-transparent.png">
+  <meta property="og:title" content="라이더 문의 · BREM">
+  <meta property="og:image" content="assets/brand/brem-logo-transparent.png">
+  <link rel="stylesheet" href="css/brand.css">
+  <link rel="stylesheet" href="css/portal.css">
+  <link rel="stylesheet" href="css/portal-wave-bg.css">
+  <link rel="stylesheet" href="css/portal-home.css">
+</head>
+<body>
+  <div class="site site--dark">
+    <header class="topbar">
+      <nav class="nav" aria-label="BREM Rider Portal 메뉴">
+        <a class="brand" href="index.html" aria-label="BREM 홈">
+          <img class="brand__logo" src="assets/brand/brem-logo-mark-transparent.png" alt="BREM">
+        </a>
+        <div class="menu">
+          <a data-nav="home" href="index.html">홈</a>
+          <a data-nav="rider" href="portal-rider.html">라이더문의</a>
+          <a data-nav="process" href="portal-process.html">진행중</a>
+          <a data-nav="promotion" href="portal-promotion.html">프로모션</a>
+          <a data-nav="event" href="portal-event.html">이벤트</a>
+          <a data-nav="contact" href="portal-contact.html">협력사문의</a>
+        </div>
+        <a class="nav-cta nav-cta--staff" href="home.html">라이더 메뉴 (직원전용)</a>
+      </nav>
+    </header>
+
+    <main class="page-main">
+      <div class="page-wrap inquiry-page">
+        <div class="page-hero">
+          <p class="hero-eyebrow">Rider Inquiry</p>
+          <h1>라이더 문의</h1>
+          <p>라이더 지원, 협력사 문의, 운영 상담을 남겨주세요. 확인 후 연락드립니다.</p>
+        </div>
+
+        <div class="inquiry-layout">
+          <aside class="inquiry-side">
+            <div class="inquiry-side-card">
+              <h3>카카오톡 상담</h3>
+              <p>빠른 상담은 오픈채팅으로 연결됩니다.</p>
+              <a class="btn btn-gold inquiry-kakao" href="https://open.kakao.com/o/pnIE6uyi" target="_blank" rel="noopener noreferrer">카카오톡 상담하기</a>
+            </div>
+            <div class="inquiry-side-card">
+              <h3>안내</h3>
+              <ul class="inquiry-side-list">
+                <li>울산 지역 중심 운영</li>
+                <li>배민/쿠팡 라이더 상담 가능</li>
+                <li>리스/렌탈 프로그램 상담 가능</li>
+              </ul>
+            </div>
+          </aside>
+
+          <form class="inquiry-form" id="riderInquiryForm" action="#" method="post" novalidate>
+            <label>
+              이름
+              <input type="text" name="name" placeholder="성함을 입력하세요" required>
+            </label>
+            <label>
+              연락처
+              <input type="tel" name="phone" placeholder="010-0000-0000" required>
+            </label>
+            <label>
+              활동 지역
+              <input type="text" name="area" placeholder="예: 울산 남구">
+            </label>
+            <label>
+              문의 구분
+              <select name="inquiryType" required>
+                <option value="라이더 지원">라이더 지원</option>
+                <option value="협력사문의">협력사문의</option>
+                <option value="리스/렌탈 상담">리스/렌탈 상담</option>
+                <option value="기타 문의">기타 문의</option>
+              </select>
+            </label>
+            <label class="full">
+              문의 내용
+              <textarea name="message" rows="6" placeholder="문의 내용을 입력하세요" required></textarea>
+            </label>
+            <div class="inquiry-form-actions full">
+              <button class="btn btn-gold" type="button" id="riderInquirySubmitBtn">문의 내용 보내기</button>
+            </div>
+            <p class="inquiry-status" id="inquiryStatus" hidden></p>
+          </form>
+        </div>
+
+        <a class="page-back" href="index.html">← 홈으로</a>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <div>
+          <div class="footer-brand">BREM</div>
+          <p class="footer-meta">배달대행 운영 · 라이더 관리 플랫폼</p>
+        </div>
+        <div class="footer-links">
+          <a href="home.html">라이더 · 관리자</a>
+          <a href="portal-contact.html">협력사문의</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="js/supabase-config.js"></script>
+  <script src="js/rider-inquiry-api.js"></script>
+  <script src="js/portal-nav.js"></script>
+  <script src="js/portal-inquiry.js"></script>
+</body>
+</html>

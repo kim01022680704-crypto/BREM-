@@ -38,6 +38,60 @@ window.BremDriverUtils = (function () {
     return String(value || '').trim();
   }
 
+  function normalizeSecretDigits(value) {
+    return String(value || '').replace(/[^0-9]/g, '');
+  }
+
+  function normalizeLoginIdInput(value) {
+    return String(value || '').replace(/[\s-]/g, '');
+  }
+
+  function getDriverResidentDigits(driver) {
+    const residentDigits = normalizeSecretDigits(driver?.residentNumber);
+    if (residentDigits.length === 13) return residentDigits;
+
+    const passwordDigits = normalizeSecretDigits(driver?.password);
+    if (passwordDigits.length === 13) return passwordDigits;
+
+    return '';
+  }
+
+  function verifyDriverLoginSecret(driver, input) {
+    const inputRaw = normalizeLoginPassword(input);
+    const inputDigits = normalizeSecretDigits(input);
+
+    if (!inputRaw) {
+      return { ok: false, reason: '비밀번호를 입력하세요.' };
+    }
+
+    const savedPassword = normalizeLoginPassword(driver?.password);
+    if (savedPassword && savedPassword === inputRaw) {
+      return { ok: true };
+    }
+
+    const residentDigits = getDriverResidentDigits(driver);
+    if (residentDigits) {
+      if (inputDigits.length === 7 && residentDigits.slice(-7) === inputDigits) {
+        return { ok: true };
+      }
+      if (inputDigits.length === 13 && residentDigits === inputDigits) {
+        return { ok: true };
+      }
+      if (inputDigits && residentDigits === inputDigits) {
+        return { ok: true };
+      }
+    }
+
+    if (!savedPassword && !residentDigits) {
+      return { ok: false, reason: '비밀번호가 설정되어 있지 않습니다. 관리자에게 문의하세요.' };
+    }
+
+    return {
+      ok: false,
+      reason: '비밀번호가 일치하지 않습니다. 기본 비밀번호 1234 또는 주민번호 뒷자리 7자리를 입력하세요.'
+    };
+  }
+
   function formatDriverPlatformLabel(driver) {
     const coupang = driver?.platformCoupang !== false;
     const baemin = Boolean(driver?.platformBaemin);
@@ -173,6 +227,8 @@ window.BremDriverUtils = (function () {
     DRIVER_SENSITIVE_FIELDS,
     isDriverFieldHidden,
     normalizeLoginPassword,
+    normalizeLoginIdInput,
+    verifyDriverLoginSecret,
     formatDriverPlatformLabel,
     formatAccountSummary,
     makeDriverLoginId,

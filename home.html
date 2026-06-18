@@ -3,105 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="BREM PLUS DELIVERY AGENCY">
-  <title>BREM PLUS DELIVERY AGENCY</title>
+  <meta name="description" content="BREM PLUS DELIVERY AGENCY — 기사·관리자 앱 선택">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="noindex,nofollow">
+  <title>BREM · 라이더 · 관리자</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/brand/brem-logo-mark-transparent.png">
   <link rel="stylesheet" href="css/brand.css">
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      color: var(--brem-text);
-      background: var(--brem-black);
-      font-family: var(--brem-sans);
-    }
-
-    .brem-home {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 28px 20px 40px;
-      background:
-        radial-gradient(circle at 50% 18%, rgba(212, 175, 55, 0.12), transparent 42rem),
-        radial-gradient(circle at 80% 90%, rgba(212, 175, 55, 0.06), transparent 28rem),
-        var(--brem-black);
-    }
-
-    .brem-home-inner {
-      width: min(560px, 100%);
-      display: grid;
-      gap: 34px;
-      justify-items: center;
-      text-align: center;
-    }
-
-    .brem-logo-wrap {
-      width: min(100%, 480px);
-    }
-
-    .brem-logo-wrap img {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    .brem-portal-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      width: 100%;
-    }
-
-    .brem-home-note {
-      margin: 0;
-      color: var(--brem-text-muted);
-      font-size: 0.82rem;
-      line-height: 1.6;
-    }
-
-    @media (max-width: 520px) {
-      .brem-portal-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .brem-btn-portal {
-        min-height: 120px;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="css/home.css">
 </head>
 <body>
   <main class="brem-home">
-    <div class="brem-home-inner">
+    <div class="brem-home-top">
+      <a href="index.html">← 포털 홈</a>
+    </div>
+
+    <div class="brem-home-stage">
       <div class="brem-logo-wrap">
-        <img src="assets/brand/brem-logo.png" alt="BREM PLUS DELIVERY AGENCY">
+        <img src="assets/brand/brem-logo-transparent.png" alt="BREM PLUS DELIVERY AGENCY" width="860" height="320" decoding="async" fetchpriority="high">
       </div>
 
-      <div class="brem-portal-grid">
+      <nav class="brem-portal-grid" aria-label="앱 선택">
         <a class="brem-btn-portal" href="driver.html">
-          <svg class="brem-btn-portal-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <path d="M12 42h34l4 8H8l4-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-            <circle cx="18" cy="50" r="4" stroke="currentColor" stroke-width="2"/>
-            <circle cx="42" cy="50" r="4" stroke="currentColor" stroke-width="2"/>
-            <path d="M18 34h16l6-10h8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="46" cy="18" r="5" stroke="currentColor" stroke-width="2"/>
-            <path d="M46 23v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <svg class="brem-btn-portal-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+            <path d="M8 37h12M6 43h10M8 49h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="22" cy="58" r="9" stroke="currentColor" stroke-width="2.2"/>
+            <circle cx="56" cy="58" r="9" stroke="currentColor" stroke-width="2.2"/>
+            <circle cx="22" cy="58" r="3.5" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="56" cy="58" r="3.5" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M22 58h34" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M28 58V49l4-7h9l3 7v9" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+            <path d="M32 42h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M42 49h10l8-12h8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M58 37h7M61.5 33.5v7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            <circle cx="48" cy="24" r="6" stroke="currentColor" stroke-width="2.2"/>
+            <path d="M42 24h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M48 30v5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
           </svg>
           <span class="brem-btn-portal-label">기사앱</span>
         </a>
 
         <a class="brem-btn-portal" href="admin.html">
-          <svg class="brem-btn-portal-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <path d="M32 8 48 14v14c0 11-7 20-16 24-9-4-16-13-16-24V14L32 8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-            <circle cx="32" cy="28" r="6" stroke="currentColor" stroke-width="2"/>
-            <path d="M24 40c2.5 3 5.2 4.5 8 4.5s5.5-1.5 8-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <svg class="brem-btn-portal-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+            <path d="M40 14 58 20v18c0 15-9 27-18 30-9-3-18-15-18-30V20L40 14Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+            <circle cx="40" cy="36" r="7" stroke="currentColor" stroke-width="2.2"/>
+            <path d="M28 54c3.2 4.2 7.2 6.5 12 6.5s8.8-2.3 12-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
           </svg>
           <span class="brem-btn-portal-label">관리자앱</span>
         </a>
-      </div>
-
-      <p class="brem-home-note">기사 등록·관리: <a href="index.html" style="color: var(--brem-gold);">기사등록 프로그램</a></p>
+      </nav>
     </div>
   </main>
 </body>

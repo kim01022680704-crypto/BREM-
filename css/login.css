@@ -104,6 +104,14 @@
   letter-spacing: -0.01em;
 }
 
+.login-card__help {
+  margin: 0;
+  color: rgba(201, 169, 98, 0.72);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .login-field {
   display: grid;
   gap: 6px;

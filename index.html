@@ -3,306 +3,206 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="BREM 기사등록 프로그램">
-  <title>BREM 기사등록 프로그램</title>
-  <link rel="stylesheet" href="css/style.css">
+  <meta name="description" content="배민·쿠팡 공식협력사 BREM(브램). 울산 최대 규모 라이더 네트워크, 프로모션·정산·리스·렌탈 안내.">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="index,follow">
+  <title>BREM · Plus Delivery Agency</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/brand/brem-logo-mark-transparent.png">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BREM">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:title" content="BREM · Plus Delivery Agency">
+  <meta property="og:description" content="배민·쿠팡 공식협력사 BREM(브램). 울산 라이더 네트워크.">
+  <meta property="og:image" content="assets/brand/brem-logo-transparent.png">
+  <link rel="stylesheet" href="css/brand.css">
+  <link rel="stylesheet" href="css/portal.css">
+  <link rel="stylesheet" href="css/portal-wave-bg.css">
+  <link rel="stylesheet" href="css/portal-home.css">
 </head>
 <body>
-  <div class="app index-app">
-    <div class="index-layout">
-      <aside class="index-sidebar" id="indexSidebar" aria-label="기사 관리 메뉴">
-        <div class="index-sidebar-head">
-          <p class="index-sidebar-eyebrow">BREM ADMIN</p>
-          <strong>기사등록 프로그램</strong>
-        </div>
-        <nav class="index-nav">
-          <a class="index-nav-link active" href="index.html" aria-current="page">기사 등록</a>
-          <a class="index-nav-link" href="drivers.html">기사 목록</a>
-          <a class="index-nav-link index-nav-link--secondary" href="admin.html">전체 관리자</a>
-        </nav>
-      </aside>
+  <div class="site site--home site--dark">
+    <header class="topbar">
+      <nav class="nav" aria-label="BREM Rider Portal 메뉴">
+        <a class="brand" href="index.html" aria-label="BREM 홈">
+          <img class="brand__logo" src="assets/brand/brem-logo-mark-transparent.png" alt="BREM">
+        </a>
 
-      <div class="index-content">
-    <header class="site-header">
-      <div class="site-header__brand">
-        <img
-          class="site-header__logo"
-          src="assets/brand/brem-logo-mark.png"
-          width="120"
-          height="86"
-          alt="BREM PLUS DELIVERY AGENCY"
-        >
-        <div>
-          <p class="eyebrow">BREM ADMIN</p>
-          <h1>BREM 기사등록 프로그램</h1>
+        <div class="menu">
+          <a data-nav="home" href="index.html">홈</a>
+          <a data-nav="rider" href="portal-rider.html">라이더문의</a>
+          <a data-nav="process" href="portal-process.html">진행중</a>
+          <a data-nav="promotion" href="portal-promotion.html">프로모션</a>
+          <a data-nav="event" href="portal-event.html">이벤트</a>
+          <a data-nav="contact" href="portal-contact.html">협력사문의</a>
         </div>
-      </div>
-      <div class="header-actions">
-        <a class="admin-link" href="admin.html">전체 관리자 화면 보기</a>
-        <button type="button" class="btn ghost header-privacy-btn" id="hideAllResidentNumbersBtn">주민번호 전체 가리기</button>
-        <button type="button" class="btn ghost header-privacy-btn" id="unhideAllResidentNumbersBtn">주민번호 전체 해제</button>
-        <span class="header-privacy-status" id="residentNumberBulkStatus" hidden></span>
-        <div class="summary-card" aria-label="기사 현황">
-          <span class="summary-label">등록 기사</span>
-          <strong id="driverTotal">0명</strong>
-        </div>
-      </div>
+
+        <a class="nav-cta nav-cta--staff nav-cta--arrow" href="home.html">
+          <span>라이더 메뉴 (직원전용)</span>
+          <span class="nav-cta__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M10 12h5M13 9l2 3-2 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </a>
+      </nav>
     </header>
 
-    <main class="layout layout--page" id="mainLayout">
-      <section class="panel form-panel" aria-labelledby="formTitle">
-        <div class="panel-header">
-          <div>
-            <h2 id="formTitle">기사 등록</h2>
-            <p id="formSubtitle">기사 기본 정보를 입력하고 저장하세요.</p>
+    <main>
+      <section class="hero hero--home">
+        <div class="hero-inner">
+          <div class="hero-logo hero-logo--home">
+            <img src="assets/brand/brem-logo-transparent.png" alt="BREM Plus Delivery Agency" width="620" height="240" decoding="async" fetchpriority="high">
           </div>
-          <div class="form-mode-tabs" role="tablist" aria-label="등록 방식">
-            <button type="button" class="form-mode-tab active" role="tab" aria-selected="true" data-mode="single" id="tabSingle">개별 등록</button>
-            <button type="button" class="form-mode-tab" role="tab" aria-selected="false" data-mode="bulk" id="tabBulk">엑셀 일괄등록</button>
+
+          <h1 class="hero-headline hero-headline--partner">
+            <span class="hero-headline__gold">배민 · 쿠팡</span>
+            <span class="hero-headline__light"> 공식협력사</span>
+            <span class="hero-headline__brand"> BREM</span><span class="hero-headline__kor">(브램)</span>
+          </h1>
+
+          <div class="hero-partners" aria-label="협력 플랫폼">
+            <div class="hero-partners__bar">
+              <img
+                class="hero-partners__logos"
+                src="assets/brand/partner-baemin-coupang-transparent.png"
+                alt="배민커넥트비즈 · coupang eats plus"
+                width="640"
+                height="120"
+                decoding="async"
+                loading="lazy"
+              >
+            </div>
+          </div>
+
+          <p class="hero-lead"><span class="hero-lead__gold">더 높은 수익</span>, <span class="hero-lead__gold">더 안정적인 관리</span>. <span class="hero-lead__gold">브램</span>이 함께합니다.</p>
+
+          <div class="hero-features" aria-label="BREM 주요 혜택">
+            <div class="hero-feature">
+              <span class="hero-feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 14l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <div class="hero-feature__copy">
+                <strong class="hero-feature__title">일정산 · 주정산 모두 가능</strong>
+                <span class="hero-feature__sub">원하는 방식으로 선택 가능</span>
+              </div>
+            </div>
+            <div class="hero-feature">
+              <span class="hero-feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 18v-2a5.5 5.5 0 0 1 11 0v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 16h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H5" stroke="currentColor" stroke-width="1.5"/><path d="M19 16h-2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2" stroke="currentColor" stroke-width="1.5"/></svg>
+              </span>
+              <div class="hero-feature__copy">
+                <strong class="hero-feature__title">전담 관리자의 1:1 밀착 케어</strong>
+                <span class="hero-feature__sub">초보부터 베테랑까지 맞춤 관리</span>
+              </div>
+            </div>
+            <div class="hero-feature">
+              <span class="hero-feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="17" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="17" cy="17" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M9 17h8M10.5 12h2l1.5-3.5h2.8L18 12h-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14.5" cy="7" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M14.5 8.5V11l-2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </span>
+              <div class="hero-feature__copy">
+                <strong class="hero-feature__title">오토바이 리스 / 렌탈 가능</strong>
+                <span class="hero-feature__sub">라이더의 안정적인 시작을 지원</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-actions">
+            <a class="btn btn-gold btn--icon" href="portal-rider.html">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 14h16M7 14V9a5 5 0 0 1 10 0v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="2" stroke="currentColor" stroke-width="1.6"/></svg>
+              라이더 문의
+            </a>
+            <a class="btn btn-outline btn--icon" href="portal-promotion.html">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M12 8V5M8 5h8M12 12v4M10 14h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              프로모션 보기
+            </a>
+            <a class="btn btn-staff btn--icon" href="home.html">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M9 9h6M9 12h6M9 15h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              라이더 메뉴 (직원전용)
+            </a>
           </div>
         </div>
+      </section>
 
-        <form id="driverForm" class="driver-form">
-          <input type="hidden" id="driverId">
-
-          <section class="form-section">
-            <h3 class="form-section-title">기본 정보</h3>
-            <div class="form-grid">
-              <label class="field">
-                <span class="field-label">이름 <em>*</em></span>
-                <input type="text" id="driverName" placeholder="홍길동" required>
-              </label>
-
-              <label class="field">
-                <span class="field-label">연락처 <em>*</em></span>
-                <input type="tel" id="driverPhone" placeholder="010-0000-0000" required>
-              </label>
-
-              <label class="field">
-                <span class="field-label">주민등록번호</span>
-                <div class="field-inline-actions field-privacy-row">
-                  <input type="text" id="driverResidentNumber" placeholder="920704-1850912" inputmode="numeric" maxlength="14" autocomplete="off">
-                  <span class="field-privacy-status" id="residentNumberPrivacyStatus" hidden>가리기 OFF</span>
-                  <button type="button" class="btn ghost small field-hide-btn" id="hideResidentNumberBtn" hidden>주민번호 가리기</button>
-                </div>
-              </label>
-
-              <label class="field">
-                <span class="field-label">로그인 비밀번호 <em>*</em></span>
-                <div class="field-inline-actions">
-                  <input type="text" id="driverPassword" placeholder="신규 등록 시 1234" autocomplete="off" spellcheck="false" required>
-                  <button type="button" class="btn ghost small" id="resetDriverPasswordBtn">1234로 초기화</button>
-                </div>
-              </label>
-
-              <label class="field">
-                <span class="field-label">가입일 <em>*</em></span>
-                <input type="date" id="driverJoinDate" required>
-              </label>
-
-              <label class="field">
-                <span class="field-label">상태 <em>*</em></span>
-                <select id="driverStatus" required>
-                  <option value="근무중">근무중</option>
-                  <option value="휴무">휴무</option>
-                  <option value="퇴사">퇴사</option>
-                </select>
-              </label>
-            </div>
-            <p class="form-note form-note--login">
-              기사 로그인 아이디: <strong id="loginIdPreview">이름과 연락처 입력 후 자동 표시</strong>
-              <span class="form-note-sub">(이름 + 연락처 뒤 4자리) · 관리자가 기사별 로그인 비밀번호를 설정합니다. 초기화 시 <strong>1234</strong></span>
-            </p>
-          </section>
-
-          <section class="form-section">
-            <h3 class="form-section-title">계좌 정보</h3>
-            <div class="form-grid">
-              <label class="field">
-                <span class="field-label">은행명</span>
-                <input type="text" id="driverBankName" placeholder="예: 국민은행" autocomplete="off">
-              </label>
-
-              <label class="field">
-                <span class="field-label">예금주</span>
-                <input type="text" id="driverAccountHolder" placeholder="예: 홍길동" autocomplete="off">
-              </label>
-
-              <label class="field field--full">
-                <span class="field-label">계좌번호</span>
-                <div class="field-inline-actions field-privacy-row">
-                  <input type="text" id="driverAccountNumber" placeholder="은행 계좌번호 (선택)" inputmode="numeric" autocomplete="off">
-                  <span class="field-privacy-status" id="accountNumberPrivacyStatus" hidden>가리기 OFF</span>
-                  <button type="button" class="btn ghost small field-hide-btn" id="hideAccountNumberBtn" hidden>계좌번호 가리기</button>
-                </div>
-              </label>
-            </div>
-            <p class="form-note form-note--subtle">은행명·예금주·계좌번호는 선택 입력입니다. 가리기는 기사 전용·기사 목록에만 적용되며, index에서는 항상 확인·수정할 수 있습니다.</p>
-          </section>
-
-          <section class="form-section">
-            <h3 class="form-section-title">플랫폼 설정</h3>
-            <label class="field field--full">
-              <span class="field-label">배민 아이디</span>
-              <input type="text" id="driverBaeminId" placeholder="배민 라이더 아이디 (정산표 K열)" autocomplete="off">
-            </label>
-            <p class="form-note">배민 정산표 K열과 동일한 아이디입니다. 미입력 시 쿠팡만 수행으로 등록됩니다.</p>
-            <div class="platform-panel">
-              <span class="platform-panel-label">수행 플랫폼</span>
-              <div class="platform-checks">
-                <label class="platform-check platform-check--coupang">
-                  <input type="checkbox" id="platformCoupang" checked>
-                  <span>쿠팡</span>
-                </label>
-                <label class="platform-check platform-check--baemin">
-                  <input type="checkbox" id="platformBaemin">
-                  <span>배민</span>
-                </label>
+      <section class="cards-section cards-section--home" aria-label="라이더 포털 주요 정보">
+        <div class="cards-wrap">
+          <div class="cards-grid cards-grid--home">
+            <article class="portal-card portal-card--intro">
+              <div class="portal-card__body">
+                <span class="card-label">BREM</span>
+                <h3>최대 규모 라이더 네트워크</h3>
+                <ul class="portal-card__list">
+                  <li>배민커넥트비즈·쿠팡이츠 플러스 공식 협력 파트너</li>
+                  <li>울산 최대 규모의 프로모션 운영</li>
+                  <li>일정산·주정산 유연 운영</li>
+                </ul>
+                <a class="btn btn-gold portal-card__cta" href="portal-rider.html">라이더 지원하러 가기</a>
               </div>
-            </div>
-            <p class="form-note form-note--subtle">배민 아이디 입력 시 쿠팡·배민이 자동 선택됩니다. 필요하면 체크를 직접 변경할 수 있습니다.</p>
-          </section>
-
-          <section class="form-section">
-            <h3 class="form-section-title">장기근속 이벤트</h3>
-            <div class="form-grid">
-              <label class="field">
-                <span class="field-label">이벤트 아이템</span>
-                <select id="driverEventItem">
-                  <option value="">관리자에서 등록한 아이템 선택</option>
-                </select>
-              </label>
-
-              <label class="field event-start-field">
-                <span class="field-label">이벤트 시작일</span>
-                <button type="button" class="date-picker-button" id="driverEventStartButton">시작일 선택</button>
-                <input type="hidden" id="driverEventStartDate">
-              </label>
-            </div>
-          </section>
-
-          <section class="form-section">
-            <h3 class="form-section-title">메모</h3>
-            <label class="field field--full">
-              <span class="sr-only">메모</span>
-              <textarea id="driverMemo" rows="3" placeholder="특이사항, 근무 가능 지역 등을 입력하세요."></textarea>
-            </label>
-          </section>
-
-          <div class="form-actions">
-            <button type="submit" class="btn primary" id="submitBtn">기사 등록</button>
-            <button type="button" class="btn ghost" id="resetBtn">입력 초기화</button>
-          </div>
-        </form>
-
-        <div id="driverBulkPanel" class="driver-bulk" hidden>
-          <div class="bulk-actions">
-            <button type="button" class="btn ghost" id="bulkTemplateBtn">양식 다운로드</button>
-            <label class="bulk-file-field">
-              <span class="sr-only">엑셀 파일 선택</span>
-              <input type="file" id="bulkFileInput" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-              <span class="bulk-file-label">엑셀 파일 선택</span>
-            </label>
-          </div>
-
-          <section class="form-section bulk-guide-section">
-            <h3 class="form-section-title">엑셀 입력 순서 (1행 = 헤더, 2행부터 데이터)</h3>
-            <div class="bulk-guide-wrap">
-              <table class="bulk-guide-table">
-                <thead>
-                  <tr>
-                    <th>순서</th>
-                    <th>열</th>
-                    <th>항목</th>
-                    <th>필수</th>
-                    <th>입력 예시 / 설명</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>1</td><td>A</td><td>이름</td><td><span class="req">필수</span></td><td>홍길동</td></tr>
-                  <tr><td>2</td><td>B</td><td>연락처</td><td><span class="req">필수</span></td><td>010-1234-5678 (로그인 아이디 = 이름+뒤4자리)</td></tr>
-                  <tr><td>3</td><td>C</td><td>주민등록번호</td><td>선택</td><td>920704-1850912 (미입력 가능, 로그인 비밀번호는 1234)</td></tr>
-                  <tr><td>4</td><td>D</td><td>은행명</td><td>선택</td><td>국민은행, 신한은행 등</td></tr>
-                  <tr><td>5</td><td>E</td><td>예금주</td><td>선택</td><td>홍길동</td></tr>
-                  <tr><td>6</td><td>F</td><td>계좌번호</td><td>선택</td><td>110-123-456789</td></tr>
-                  <tr><td>7</td><td>G</td><td>배민 아이디</td><td>선택</td><td>정산표 K열 아이디 (미입력 시 쿠팡만)</td></tr>
-                  <tr><td>8</td><td>H</td><td>쿠팡 수행</td><td>선택</td><td>Y 또는 N (미입력 시 Y, 배민만 선택 시 N 가능)</td></tr>
-                  <tr><td>9</td><td>I</td><td>배민 수행</td><td>선택</td><td>Y 또는 N (배민 아이디 있으면 자동 Y)</td></tr>
-                  <tr><td>10</td><td>J</td><td>이벤트 아이템</td><td>선택</td><td>관리자에 등록된 아이템 이름</td></tr>
-                  <tr><td>11</td><td>K</td><td>이벤트 시작일</td><td>선택</td><td>2026-01-01</td></tr>
-                  <tr><td>12</td><td>L</td><td>메모</td><td>선택</td><td>특이사항, 근무 가능 지역 등</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="form-note form-note--subtle">가입일은 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 중복 기사(쿠팡아이디·연락처·배민아이디)는 미리보기에서 확인 후 자동으로 제외됩니다.</p>
-          </section>
-
-          <section class="bulk-preview-section" id="bulkPreviewSection" hidden>
-            <div class="bulk-preview-header">
-              <h3 class="form-section-title">미리보기</h3>
-              <div class="bulk-preview-stats">
-                <span>전체 <strong id="bulkTotalCount">0</strong>건</span>
-                <span class="ok">등록 가능 <strong id="bulkValidCount">0</strong>건</span>
-                <span class="dup">중복 <strong id="bulkDuplicateCount">0</strong>건</span>
-                <span class="err">오류 <strong id="bulkErrorCount">0</strong>건</span>
+              <div class="portal-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="9" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 17c.4-1.6 1.8-3 3.5-3 2.2 0 4 1.8 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </div>
-            </div>
-            <div class="bulk-preview-wrap">
-              <table class="bulk-preview-table">
-                <thead>
-                  <tr>
-                    <th>행</th>
-                    <th>이름</th>
-                    <th>연락처</th>
-                    <th>쿠팡아이디</th>
-                    <th>플랫폼</th>
-                    <th>결과</th>
-                  </tr>
-                </thead>
-                <tbody id="bulkPreviewBody"></tbody>
-              </table>
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn primary" id="bulkApplyBtn" disabled>일괄 등록</button>
-              <button type="button" class="btn ghost" id="bulkClearBtn">미리보기 초기화</button>
-            </div>
-          </section>
+            </article>
+
+            <article class="portal-card">
+              <div class="portal-card__body">
+                <span class="card-label">Promotion</span>
+                <h3>프로모션</h3>
+                <p>배민·쿠팡 주간 콜수, 단가보장, 오토바이 리스·렌탈 가능 안내.</p>
+                <a class="card-link" href="portal-promotion.html">프로모션 확인 →</a>
+              </div>
+              <div class="portal-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="8" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M12 8V5M8 5h8M12 12v4M10 14h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="home-benefits" aria-label="BREM 핵심 혜택">
+        <div class="home-benefits__inner">
+          <div class="home-benefit">
+            <span class="home-benefit__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M4 18V6l8-3 8 3v12l-8 3-8-3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9v12M8 7.5l8 3" stroke="currentColor" stroke-width="1.5"/></svg>
+            </span>
+            <strong>최대 프로모션</strong>
+            <p>프로모션·단가보장·추가 리워드</p>
+          </div>
+          <div class="home-benefit">
+            <span class="home-benefit__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </span>
+            <strong>일정산·주정산 가능</strong>
+            <p>유연한 정산</p>
+          </div>
+          <div class="home-benefit">
+            <span class="home-benefit__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="7" cy="17" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="17" cy="17" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 17h2l2-5h6l2 5h2M9 12V9h4l2 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <strong>오토바이 리스 / 렌탈 가능</strong>
+            <p>PCX·NMAX 리스·렌탈 지원</p>
+          </div>
+          <div class="home-benefit">
+            <span class="home-benefit__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M4 14h16M7 14V9a5 5 0 0 1 10 0v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17" r="2" stroke="currentColor" stroke-width="1.5"/></svg>
+            </span>
+            <strong>1:1 밀착 케어</strong>
+            <p>전담 관리자 상담</p>
+          </div>
         </div>
       </section>
     </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <div>
+          <div class="footer-brand">BREM</div>
+          <p class="footer-meta">배달대행 운영 · 라이더 관리 플랫폼</p>
+        </div>
+        <div class="footer-links">
+          <a href="home.html">라이더 · 관리자</a>
+          <a href="portal-contact.html">협력사문의</a>
+        </div>
       </div>
-    </div>
-
-    <button type="button" class="index-menu-btn" id="indexMenuBtn" aria-controls="indexSidebar">메뉴</button>
+    </footer>
   </div>
-
-  <div class="index-overlay" id="indexOverlay" hidden></div>
-
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-  <div class="range-calendar index-date-calendar" id="indexDateCalendar" hidden>
-    <div class="calendar-header">
-      <button type="button" id="indexDateCalendarPrev" aria-label="이전 달">&lt;</button>
-      <strong id="indexDateCalendarTitle">-</strong>
-      <button type="button" id="indexDateCalendarNext" aria-label="다음 달">&gt;</button>
-    </div>
-    <div class="calendar-weekdays">
-      <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
-    </div>
-    <div class="calendar-days" id="indexDateCalendarDays"></div>
-    <p class="calendar-help">시작일을 클릭하면 선택됩니다.</p>
-  </div>
-
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-config.js"></script>
-  <script src="js/storage-supabase-mapper.js"></script>
-  <script src="js/storage-supabase-adapter.js"></script>
-  <script src="js/storage.js"></script>
-  <script src="js/driver-utils.js"></script>
-  <script src="js/date-picker.js"></script>
-  <script src="js/index-nav.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/driver-bulk.js"></script>
+  <script src="js/portal-nav.js"></script>
 </body>
 </html>

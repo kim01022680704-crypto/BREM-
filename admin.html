@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="BREM 전체 관리자 화면">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="noindex,nofollow">
   <title>BREM 관리자 대시보드</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -40,7 +43,7 @@
               <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.6" fill="none"/>
               <path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
             </svg>
-            <input type="text" id="adminName" autocomplete="username" required>
+            <input type="text" id="adminName" autocomplete="username" placeholder="관리자" required>
           </span>
         </label>
 
@@ -56,6 +59,7 @@
         </label>
 
         <button class="login-submit" type="submit">로그인</button>
+        <p class="login-card__help" id="adminLoginHelp"></p>
 
         <a class="login-home-link" href="home.html">
           <svg class="login-home-link__icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -72,11 +76,15 @@
   <div class="admin-app app-hidden" id="adminApp">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
-        <strong>BREM</strong>
+        <div class="brand-row">
+          <strong>BREM</strong>
+          <a class="brand-home-link" href="index.html">홈페이지로 돌아가기</a>
+        </div>
         <span>배달대행 관리자</span>
       </div>
             <nav>
         <button class="nav-btn" data-section="notices">공지사항</button>
+        <button class="nav-btn" data-section="rider-inquiries">라이더 문의</button>
         <button class="nav-btn active" data-section="dashboard">대시보드</button>
         <button class="nav-btn" data-section="admin-schedule">관리자 스케줄표</button>
         <button class="nav-btn" data-section="mission-results">장기근속이벤트 결과</button>
@@ -93,7 +101,7 @@
         <button class="nav-btn" data-section="revenue-management">수익 관리</button>
         <button class="nav-btn" data-section="data-backup">데이터 백업</button>
       </nav>
-      <a class="driver-link" href="index.html" target="_blank" rel="noopener noreferrer">기사 관리 프로그램</a>
+      <a class="driver-link" href="rider-manage.html" target="_blank" rel="noopener noreferrer">기사 관리 프로그램</a>
     </aside>
 
     <main class="main">
@@ -104,7 +112,7 @@
           <h1 id="pageTitle">대시보드</h1>
         </div>
         <div class="topbar-actions">
-          <a class="top-link" href="index.html" target="_blank" rel="noopener noreferrer">기사등록 프로그램</a>
+          <a class="top-link" href="rider-manage.html" target="_blank" rel="noopener noreferrer">기사등록 프로그램</a>
           <a class="top-link secondary" href="driver.html">기사 전용 페이지 열기</a>
           <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
         </div>
@@ -1813,6 +1821,17 @@
         </article>
       </section>
 
+      <section class="section" id="rider-inquiries">
+        <article class="card">
+          <div class="card-header">
+            <h2>라이더 문의 접수</h2>
+            <button class="small-btn" type="button" id="riderInquiryRefreshBtn">목록 새로고침</button>
+          </div>
+          <span class="form-help" id="riderInquirySummary">홈페이지에서 접수된 문의를 확인합니다.</span>
+          <div class="notice-list" id="riderInquiryRows"></div>
+        </article>
+      </section>
+
       <section class="section" id="admin-account">
         <article class="card">
           <div class="card-header">
@@ -2376,6 +2395,7 @@
   <script src="js/storage-supabase-adapter.js"></script>
   <script src="js/storage-migrate-supabase.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/settlement-formats.js"></script>
   <script src="js/settlement-client.js"></script>

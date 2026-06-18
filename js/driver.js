@@ -166,10 +166,16 @@
   }
 
   function normalizeLoginText(value) {
-    return String(value || '').replace(/\s/g, '');
+    if (window.BremDriverUtils?.normalizeLoginIdInput) {
+      return BremDriverUtils.normalizeLoginIdInput(value);
+    }
+    return String(value || '').replace(/[\s-]/g, '');
   }
 
   function driverLoginId(driver) {
+    if (window.BremDriverUtils?.makeDriverLoginId) {
+      return BremDriverUtils.makeDriverLoginId(driver);
+    }
     return `${normalizeLoginText(driver.name)}${normalizePhone(driver.phone).slice(-4)}`;
   }
 
@@ -261,6 +267,12 @@
     const matchedDriver = BremStorage.drivers.getAll().find(driver => driverLoginId(driver) === normalizeLoginText(loginId));
     if (!matchedDriver) {
       return { ok: false, reason: '아이디가 일치하는 기사가 없습니다. 기사등록 프로그램의 로그인 아이디를 확인하세요.' };
+    }
+
+    if (window.BremDriverUtils?.verifyDriverLoginSecret) {
+      const secretResult = BremDriverUtils.verifyDriverLoginSecret(matchedDriver, password);
+      if (!secretResult.ok) return secretResult;
+      return { ok: true, driver: matchedDriver };
     }
 
     const savedPassword = normalizePassword(matchedDriver.password);
@@ -637,9 +649,12 @@
     event.target.value = BremDriverUtils.formatResidentNumber(event.target.value);
   });
 
-  loginForm.addEventListener('submit', event => {
+  loginForm.addEventListener('submit', async event => {
     event.preventDefault();
-    const loginResult = findDriverByLogin(loginIdInput.value, loginPasswordInput.value);
+    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+    const loginResult = isProduction
+      ? await BremStorage.auth.signInDriver(loginIdInput.value, loginPasswordInput.value)
+      : findDriverByLogin(loginIdInput.value, loginPasswordInput.value);
 
     if (!loginResult.ok) {
       BremStorage.auth.setDriverSessionId(null);
@@ -648,15 +663,30 @@
       return;
     }
 
-    const driver = loginResult.driver;
+    if (isProduction) {
+      await BremStorage.initStorage({ backend: 'supabase' });
+    }
+
+    const driver = isProduction
+      ? BremStorage.drivers.getById(BremStorage.auth.getDriverSessionId())
+      : loginResult.driver;
+    if (!driver) {
+      showLoggedOut();
+      showToast('기사 데이터를 찾을 수 없습니다. 관리자에게 문의하세요.');
+      return;
+    }
     BremStorage.auth.setDriverSessionId(driver.id);
     loginForm.reset();
     showLoggedIn(driver);
     showToast(`${driver.name} 기사님 로그인 성공`);
   });
 
-  logoutBtn.addEventListener('click', () => {
-    BremStorage.auth.setDriverSessionId(null);
+  logoutBtn.addEventListener('click', async () => {
+    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+      await BremStorage.auth.signOutSupabase();
+    } else {
+      BremStorage.auth.setDriverSessionId(null);
+    }
     state.currentDriver = null;
     state.selectedWeekStart = weekStartKey();
     showLoggedOut();

@@ -81,10 +81,36 @@ a {
   flex-shrink: 0;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .brand strong {
   color: var(--yellow);
   font-size: 1.8rem;
   letter-spacing: 0.08em;
+}
+
+.brand-home-link {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 214, 10, 0.45);
+  border-radius: 999px;
+  color: var(--yellow);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.brand-home-link:hover {
+  color: var(--black);
+  background: var(--yellow);
 }
 
 .brand span {
@@ -2232,6 +2258,52 @@ textarea {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+
+.inquiry-item .notice-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.inquiry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.inquiry-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.inquiry-badge--new {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.inquiry-badge--read {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.28);
+}
+
+.inquiry-badge--done {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.28);
 }
 
 .bike-row {

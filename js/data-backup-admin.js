@@ -216,6 +216,11 @@
   }
 
   function connectLocalMode() {
+    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+      showToast('운영 모드에서는 localStorage 모드로 전환할 수 없습니다.');
+      renderStatus();
+      return;
+    }
     BremStorage.useLocalStorageAdapter();
     if (window.BREM_SUPABASE_CONFIG) window.BREM_SUPABASE_CONFIG.backend = 'local';
     showToast('localStorage 모드로 전환했습니다.');

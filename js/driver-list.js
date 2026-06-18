@@ -1,4 +1,4 @@
-(function () {
+(async function () {
   const {
     makeDriverLoginId,
     formatDate,
@@ -27,6 +27,25 @@
   const toast = document.getElementById('toast');
 
   if (!tableBody) return;
+
+  async function ensureAdminAccess() {
+    const config = BremStorage.getSupabaseConfig?.();
+    if (config?.mode === 'production') {
+      try {
+        await BremStorage.initStorage({ backend: 'supabase' });
+      } catch {
+        window.location.replace('admin.html');
+        return false;
+      }
+    }
+    if (!BremStorage.auth.isAdminLoggedIn()) {
+      window.location.replace('admin.html');
+      return false;
+    }
+    return true;
+  }
+
+  if (!(await ensureAdminAccess())) return;
 
   const selectedIds = new Set();
 
@@ -292,7 +311,7 @@
 
     const { action, id } = button.dataset;
     if (action === 'edit') {
-      window.location.href = `index.html?edit=${encodeURIComponent(id)}`;
+      window.location.href = `rider-manage.html?edit=${encodeURIComponent(id)}`;
     }
     if (action === 'reset-password') resetDriverPassword(id);
     if (action === 'toggle-field-hidden') toggleFieldHidden(id, button.dataset.field);

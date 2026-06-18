@@ -29,6 +29,12 @@ window.BremSupabaseStorageAdapter = (function () {
       return (data || []).map(row => Mapper().rowToRider(row));
     }
 
+    async function loadRiderInquiries() {
+      const { data, error } = await client.from('rider_inquiries').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []).map(row => Mapper().rowToInquiry(row));
+    }
+
     async function loadNotices() {
       const { data, error } = await client.from('notices').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -50,6 +56,11 @@ window.BremSupabaseStorageAdapter = (function () {
     async function persistRiders(value) {
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
       await replaceTable('riders', rows);
+    }
+
+    async function persistRiderInquiries(value) {
+      const rows = (value || []).map(item => Mapper().inquiryToRow(item)).filter(row => row.id);
+      await replaceTable('rider_inquiries', rows);
     }
 
     async function persistNotices(value) {
@@ -82,13 +93,15 @@ window.BremSupabaseStorageAdapter = (function () {
     const persistHandlers = {
       [keys.drivers]: persistRiders,
       [keys.notices]: persistNotices,
-      [keys.promotionRules]: persistPromotions
+      [keys.promotionRules]: persistPromotions,
+      [keys.riderInquiries]: persistRiderInquiries
     };
 
     async function hydrate() {
       setCache(keys.drivers, await loadRiders());
       setCache(keys.notices, await loadNotices());
       setCache(keys.promotionRules, await loadPromotions());
+      setCache(keys.riderInquiries, await loadRiderInquiries());
       await loadSettings();
       hydrated = true;
     }
@@ -107,6 +120,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     function writeLocalBackup(key, value) {
+      if (window.BREM_SUPABASE_CONFIG?.mode === 'production') return;
       try {
         localStorage.setItem(key, JSON.stringify(value));
       } catch {
@@ -115,6 +129,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     function removeLocalBackup(key) {
+      if (window.BREM_SUPABASE_CONFIG?.mode === 'production') return;
       try {
         localStorage.removeItem(key);
       } catch {
@@ -150,6 +165,7 @@ window.BremSupabaseStorageAdapter = (function () {
           if (key === keys.drivers) await replaceTable('riders', []);
           else if (key === keys.notices) await replaceTable('notices', []);
           else if (key === keys.promotionRules) await replaceTable('promotions', []);
+          else if (key === keys.riderInquiries) await replaceTable('rider_inquiries', []);
           else await client.from('settings').delete().eq('key', key);
         }).catch(error => {
           console.error('[BremSupabaseStorageAdapter] remove failed:', key, error);

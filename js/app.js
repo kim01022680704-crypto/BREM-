@@ -1,4 +1,4 @@
-(function () {
+(async function () {
   const {
     makeDriverLoginId,
     normalizePhone,
@@ -14,6 +14,25 @@
 
   const form = document.getElementById('driverForm');
   if (!form) return;
+
+  async function ensureAdminAccess() {
+    const config = BremStorage.getSupabaseConfig?.();
+    if (config?.mode === 'production') {
+      try {
+        await BremStorage.initStorage({ backend: 'supabase' });
+      } catch {
+        window.location.replace('admin.html');
+        return false;
+      }
+    }
+    if (!BremStorage.auth.isAdminLoggedIn()) {
+      window.location.replace('admin.html');
+      return false;
+    }
+    return true;
+  }
+
+  if (!(await ensureAdminAccess())) return;
 
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
@@ -367,7 +386,7 @@
 
     const driver = BremStorage.drivers.create(data);
     syncDriverEventSettings(driver.id, data);
-    showToast('기사가 등록되었습니다.');
+    showToast(`기사가 등록되었습니다. 로그인: ${makeDriverLoginId(driver)} / 비밀번호: ${driver.password || DEFAULT_DRIVER_PASSWORD}`);
     resetForm();
     refreshHeader();
   }

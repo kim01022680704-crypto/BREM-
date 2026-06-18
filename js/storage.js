@@ -12,6 +12,7 @@ const BremStorage = (function () {
     targets: 'brem_admin_targets',
     weeklyTargets: 'brem_driver_weekly_targets',
     notices: 'brem_admin_notices',
+    riderInquiries: 'brem_rider_inquiries',
     adminSchedules: 'brem_admin_schedules',
     leases: 'brem_admin_leases',
     revenue: 'brem_admin_revenue',
@@ -48,6 +49,8 @@ const BremStorage = (function () {
 
   const STORAGE_BACKEND_PREF_KEY = 'brem_storage_backend_preference';
   let lastSupabaseError = '';
+  let activeSupabaseClient = null;
+  let activeSupabaseProfile = null;
 
   const DEFAULT_PLATFORM = 'coupang';
 
@@ -176,7 +179,31 @@ const BremStorage = (function () {
     }
   };
 
-  let activeStorageAdapter = localAdapter;
+  const blockedProductionAdapter = {
+    type: 'blocked',
+    read(key, fallback) {
+      return fallback;
+    },
+    readRaw() {
+      return { exists: false, value: null };
+    },
+    write() {
+      throw new Error('운영 모드에서는 Supabase Auth 연결 전 localStorage 저장이 차단됩니다.');
+    },
+    remove() {
+      throw new Error('운영 모드에서는 Supabase Auth 연결 전 localStorage 삭제가 차단됩니다.');
+    },
+    has() {
+      return false;
+    },
+    listBremKeys() {
+      return [];
+    }
+  };
+
+  let activeStorageAdapter = window.BREM_SUPABASE_CONFIG?.mode === 'production'
+    ? blockedProductionAdapter
+    : localAdapter;
 
   const storageAdapter = {
     read(key, fallback) {
@@ -200,6 +227,7 @@ const BremStorage = (function () {
   };
 
   function getStorageBackend() {
+    if (activeStorageAdapter.type === 'blocked') return 'blocked';
     return activeStorageAdapter.type === 'supabase' ? 'supabase' : 'local';
   }
 
@@ -222,12 +250,31 @@ const BremStorage = (function () {
 
   function getSupabaseConfig() {
     const config = window.BREM_SUPABASE_CONFIG || {};
+    const mode = config.mode === 'production' ? 'production' : 'development';
+    const initialAdmin = config.initialAdmin || {};
     return {
       url: String(config.url || '').trim(),
       anonKey: String(config.anonKey || '').trim(),
       backend: config.backend === 'supabase' ? 'supabase' : 'local',
-      isConfigured: Boolean(String(config.url || '').trim() && String(config.anonKey || '').trim())
+      mode,
+      allowLocalFallback: mode !== 'production' && config.allowLocalFallback !== false,
+      functionsUrl: String(config.functionsUrl || '').trim(),
+      isConfigured: Boolean(String(config.url || '').trim() && String(config.anonKey || '').trim()),
+      initialAdmin: {
+        loginName: String(initialAdmin.loginName || '관리자').trim() || '관리자',
+        email: String(initialAdmin.email || '').trim()
+      }
     };
+  }
+
+  function resolveAdminLoginInput(input) {
+    const value = String(input || '').trim();
+    if (!value) return value;
+    if (value.includes('@')) return value;
+
+    const { loginName, email } = getSupabaseConfig().initialAdmin;
+    if (value === loginName && email) return email;
+    return value;
   }
 
   function getStorageStatus() {
@@ -235,6 +282,8 @@ const BremStorage = (function () {
     return {
       backend: getStorageBackend(),
       preference: getStorageBackendPreference(),
+      mode: config.mode,
+      allowLocalFallback: config.allowLocalFallback,
       supabaseConfigured: config.isConfigured,
       supabaseHydrated: activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.() === true,
       supabaseError: lastSupabaseError
@@ -259,6 +308,21 @@ const BremStorage = (function () {
       throw new Error('storage-supabase-adapter.js 가 로드되지 않았습니다.');
     }
     const client = window.supabase.createClient(settings.url, settings.anonKey);
+    const { data: sessionData } = await client.auth.getSession();
+    const isProduction = settings.mode === 'production';
+    if (isProduction && !sessionData?.session) {
+      throw new Error('운영 모드에서는 Supabase Auth 로그인이 필요합니다.');
+    }
+    activeSupabaseClient = client;
+    if (sessionData?.session) {
+      const { data: profile, error: profileError } = await client
+        .from('profiles')
+        .select('*')
+        .eq('user_id', sessionData.session.user.id)
+        .maybeSingle();
+      if (profileError) throw profileError;
+      activeSupabaseProfile = profile || null;
+    }
     const adapter = window.BremSupabaseStorageAdapter.createSupabaseAdapter(client, KEYS);
     await adapter.hydrate();
     activeStorageAdapter = adapter;
@@ -272,24 +336,36 @@ const BremStorage = (function () {
       ...getSupabaseConfig(),
       ...(options.config || {})
     };
-    const backend = options.backend
-      || config.backend
-      || getStorageBackendPreference()
-      || 'local';
+    let backend = options.backend || config.backend || 'local';
+    if (config.backend === 'local') {
+      backend = 'local';
+    } else if (!options.backend) {
+      backend = getStorageBackendPreference() || config.backend || 'local';
+    }
     if (backend === 'supabase') {
       if (!config.url || !config.anonKey) {
         lastSupabaseError = 'Supabase url / anonKey가 js/supabase-config.js 에 설정되지 않았습니다.';
-        useLocalStorageAdapter();
-        return { backend: 'local', fallback: true, error: lastSupabaseError };
+        if (config.allowLocalFallback) {
+          useLocalStorageAdapter();
+          return { backend: 'local', fallback: true, error: lastSupabaseError };
+        }
+        throw new Error(lastSupabaseError);
       }
       try {
         return await initSupabaseStorage(config);
       } catch (error) {
         lastSupabaseError = error.message || 'Supabase 연결에 실패했습니다.';
-        console.warn('[BREM] Supabase init failed. Falling back to localStorage:', error);
-        useLocalStorageAdapter();
-        return { backend: 'local', fallback: true, error: lastSupabaseError };
+        if (config.allowLocalFallback) {
+          console.warn('[BREM] Supabase init failed. Falling back to localStorage:', error);
+          useLocalStorageAdapter();
+          return { backend: 'local', fallback: true, error: lastSupabaseError };
+        }
+        console.error('[BREM] Supabase init failed in production mode:', error);
+        throw error;
       }
+    }
+    if (config.mode === 'production') {
+      throw new Error('운영 모드에서는 localStorage 저장 모드를 사용할 수 없습니다.');
     }
     lastSupabaseError = '';
     useLocalStorageAdapter();
@@ -303,15 +379,74 @@ const BremStorage = (function () {
     return window.BremSupabaseMigration.migrateLocalStorageToSupabase(client, options);
   }
 
+  function getSupabaseClient() {
+    if (activeSupabaseClient) return activeSupabaseClient;
+    const config = getSupabaseConfig();
+    if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
+    activeSupabaseClient = window.supabase.createClient(config.url, config.anonKey);
+    return activeSupabaseClient;
+  }
+
+  async function loadSupabaseProfile() {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    const { data: sessionData } = await client.auth.getSession();
+    const user = sessionData?.session?.user;
+    if (!user) {
+      activeSupabaseProfile = null;
+      return null;
+    }
+    const { data, error } = await client
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (error) throw error;
+    activeSupabaseProfile = data || null;
+    return activeSupabaseProfile;
+  }
+
+  async function signInWithSupabase(email, password, expectedRole) {
+    const client = getSupabaseClient();
+    if (!client) return { ok: false, message: 'Supabase 설정이 필요합니다.' };
+    const { data, error } = await client.auth.signInWithPassword({
+      email: String(email || '').trim(),
+      password: String(password || '')
+    });
+    if (error) return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+    const profile = await loadSupabaseProfile();
+    if (!profile?.active || (expectedRole && profile.role !== expectedRole)) {
+      await client.auth.signOut();
+      return { ok: false, message: '접근 권한이 없습니다.' };
+    }
+    return { ok: true, user: data.user, profile };
+  }
+
+  const ADMIN_SESSION_KEYS = new Set([
+    SESSION_KEYS.adminLoggedIn,
+    SESSION_KEYS.adminAccountId
+  ]);
+
   const sessionAdapter = {
     read(key) {
-      return sessionStorage.getItem(key);
+      const fromSession = sessionStorage.getItem(key);
+      if (fromSession !== null) return fromSession;
+      if (ADMIN_SESSION_KEYS.has(key)) {
+        return localStorage.getItem(key);
+      }
+      return null;
     },
     write(key, value) {
       sessionStorage.setItem(key, value);
+      if (ADMIN_SESSION_KEYS.has(key)) {
+        localStorage.setItem(key, value);
+      }
     },
     remove(key) {
       sessionStorage.removeItem(key);
+      if (ADMIN_SESSION_KEYS.has(key)) {
+        localStorage.removeItem(key);
+      }
     }
   };
 
@@ -331,6 +466,8 @@ const BremStorage = (function () {
   }
 
   function normalizeDriverPasswordFields(driver) {
+    // Production note: Supabase 운영 모드에서는 기사 비밀번호를 riders 테이블에 저장하지 않는다.
+    // 이 필드는 local 개발 데이터 호환용이며, 운영 로그인은 Supabase Auth가 담당한다.
     const digitsOnly = String(driver.password || '').replace(/[^0-9]/g, '');
     let residentNumber = String(driver.residentNumber || '').replace(/[^0-9]/g, '');
     let password = String(driver.password ?? '').trim();
@@ -763,6 +900,93 @@ const BremStorage = (function () {
 
     removeById(id) {
       storageAdapter.write(KEYS.notices, notices.getAll().filter(notice => notice.id !== id));
+    }
+  };
+
+  const INQUIRY_TYPES = Object.freeze([
+    '라이더 지원',
+    '협력사문의',
+    '리스/렌탈 상담',
+    '기타 문의'
+  ]);
+
+  const riderInquiries = {
+    INQUIRY_TYPES,
+
+    readLocalRaw() {
+      try {
+        const raw = localStorage.getItem(KEYS.riderInquiries);
+        if (raw === null) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    },
+
+    shouldUseLocalRaw() {
+      const config = getSupabaseConfig();
+      return config.backend === 'local' || config.mode !== 'production';
+    },
+
+    persistList(list) {
+      const next = Array.isArray(list) ? list : [];
+      if (riderInquiries.shouldUseLocalRaw()) {
+        try {
+          localStorage.setItem(KEYS.riderInquiries, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+      }
+      storageAdapter.write(KEYS.riderInquiries, next);
+      return next;
+    },
+
+    getAll() {
+      if (riderInquiries.shouldUseLocalRaw()) {
+        return riderInquiries.readLocalRaw();
+      }
+      return storageAdapter.read(KEYS.riderInquiries, []);
+    },
+
+    syncFromLocalRaw() {
+      const localList = riderInquiries.readLocalRaw();
+      if (!riderInquiries.shouldUseLocalRaw()) return riderInquiries.getAll();
+      riderInquiries.persistList(localList);
+      return localList;
+    },
+
+    create(data) {
+      const list = riderInquiries.getAll();
+      const next = {
+        id: createId(),
+        name: String(data.name || '').trim(),
+        phone: String(data.phone || '').trim(),
+        area: String(data.area || '').trim(),
+        inquiryType: String(data.inquiryType || '라이더 지원').trim(),
+        message: String(data.message || '').trim(),
+        status: 'new',
+        createdAt: new Date().toISOString()
+      };
+      list.unshift(next);
+      riderInquiries.persistList(list);
+      return next;
+    },
+
+    updateStatus(id, status) {
+      const list = riderInquiries.getAll().map(item => (
+        item.id === id ? { ...item, status: String(status || 'new'), updatedAt: new Date().toISOString() } : item
+      ));
+      riderInquiries.persistList(list);
+      return list;
+    },
+
+    removeById(id) {
+      riderInquiries.persistList(riderInquiries.getAll().filter(item => item.id !== id));
+    },
+
+    countNew() {
+      return riderInquiries.getAll().filter(item => item.status === 'new').length;
     }
   };
 
@@ -2542,11 +2766,14 @@ const BremStorage = (function () {
 
   const DEFAULT_ADMIN_ACCOUNT = Object.freeze({
     name: '관리자',
+    // Production guard: 운영 모드에서는 이 기본 계정 로그인이 차단되고 Supabase Auth만 사용된다.
+    // local 개발 데이터 호환용 기본값이다.
     password: '1234'
   });
 
   const ALL_ADMIN_MENU_IDS = Object.freeze([
     'notices',
+    'rider-inquiries',
     'dashboard',
     'admin-schedule',
     'mission-results',
@@ -2614,6 +2841,15 @@ const BremStorage = (function () {
         normalized.splice(dashboardIndex + 1, 0, 'admin-schedule');
       } else {
         normalized.unshift('admin-schedule');
+      }
+    }
+
+    if (!normalized.includes('rider-inquiries')) {
+      const noticesIndex = normalized.indexOf('notices');
+      if (noticesIndex >= 0) {
+        normalized.splice(noticesIndex + 1, 0, 'rider-inquiries');
+      } else {
+        normalized.unshift('rider-inquiries');
       }
     }
 
@@ -2713,10 +2949,33 @@ const BremStorage = (function () {
     }
   }
 
+  function ensureDevDefaultAdminAccount(accounts) {
+    const config = getSupabaseConfig();
+    if (config.mode !== 'development' || config.backend !== 'local') return accounts;
+
+    const list = accounts.map(account => ({ ...account }));
+    const defaultIndex = list.findIndex(account => account.name === DEFAULT_ADMIN_ACCOUNT.name);
+
+    if (defaultIndex >= 0) {
+      list[defaultIndex].password = DEFAULT_ADMIN_ACCOUNT.password;
+      list[defaultIndex].active = true;
+      return list;
+    }
+
+    list.unshift(normalizeAdminAccount({
+      ...DEFAULT_ADMIN_ACCOUNT,
+      role: ADMIN_ROLES.CEO,
+      menus: ALL_ADMIN_MENU_IDS
+    }));
+    return list;
+  }
+
   function ensureDefaultAdminAccounts() {
     const existing = readAdminAccountsRaw();
     if (existing?.length) {
-      const normalized = existing.map((account, index) => normalizeAdminAccount(account, index));
+      const normalized = ensureDevDefaultAdminAccount(
+        existing.map((account, index) => normalizeAdminAccount(account, index))
+      );
       writeAdminAccounts(normalized);
       return normalized;
     }
@@ -2729,6 +2988,15 @@ const BremStorage = (function () {
     });
     writeAdminAccounts([seed]);
     return [seed];
+  }
+
+  function syncAdminSessionMirrors() {
+    const loggedIn = sessionStorage.getItem(SESSION_KEYS.adminLoggedIn);
+    const accountId = sessionStorage.getItem(SESSION_KEYS.adminAccountId);
+    if (loggedIn === 'true') {
+      localStorage.setItem(SESSION_KEYS.adminLoggedIn, 'true');
+      if (accountId) localStorage.setItem(SESSION_KEYS.adminAccountId, accountId);
+    }
   }
 
   const auth = {
@@ -2772,6 +3040,22 @@ const BremStorage = (function () {
     },
 
     getAdminSessionAccount() {
+      syncAdminSessionMirrors();
+      if (getSupabaseConfig().mode === 'production') {
+        const profile = activeSupabaseProfile;
+        if (profile?.active && profile.role === 'admin') {
+          return {
+            id: profile.user_id,
+            name: profile.display_name || '관리자',
+            role: ADMIN_ROLES.CEO,
+            menus: ALL_ADMIN_MENU_IDS,
+            editableMenus: ALL_ADMIN_MENU_IDS,
+            active: true
+          };
+        }
+        return null;
+      }
+
       const accountId = sessionAdapter.read(SESSION_KEYS.adminAccountId);
       if (accountId) {
         const account = this.getAdminAccountById(accountId);
@@ -2805,6 +3089,9 @@ const BremStorage = (function () {
     },
 
     verifyAdminLogin(name, password) {
+      if (getSupabaseConfig().mode === 'production') {
+        return { ok: false, message: '운영 모드에서는 Supabase Auth 로그인을 사용하세요.' };
+      }
       const loginName = String(name || '').trim();
       const loginPassword = String(password || '');
       const account = this.getAdminAccounts().find(item =>
@@ -2820,7 +3107,51 @@ const BremStorage = (function () {
       return { ok: true, account: { ...account } };
     },
 
+    async signInAdmin(loginInput, password) {
+      const email = resolveAdminLoginInput(loginInput);
+      if (!email.includes('@')) {
+        return {
+          ok: false,
+          message: '운영 로그인 설정이 필요합니다. supabase-config.js의 initialAdmin.email을 확인하세요.'
+        };
+      }
+
+      const result = await signInWithSupabase(email, password, 'admin');
+      if (!result.ok) return result;
+      this.setAdminSession(result.profile.user_id);
+      return {
+        ok: true,
+        account: {
+          id: result.profile.user_id,
+          name: result.profile.display_name || result.user.email || '관리자',
+          role: ADMIN_ROLES.CEO,
+          menus: ALL_ADMIN_MENU_IDS,
+          editableMenus: ALL_ADMIN_MENU_IDS,
+          active: true
+        }
+      };
+    },
+
+    async signInDriver(email, password) {
+      return signInWithSupabase(email, password, 'rider');
+    },
+
+    async signOutSupabase() {
+      const client = getSupabaseClient();
+      if (client) await client.auth.signOut();
+      activeSupabaseProfile = null;
+      this.clearAdminSession();
+      this.setDriverSessionId(null);
+    },
+
+    getSupabaseProfile() {
+      return activeSupabaseProfile ? { ...activeSupabaseProfile } : null;
+    },
+
     createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER } = {}, options = {}) {
+      if (getSupabaseConfig().mode === 'production') {
+        return { ok: false, message: '운영 모드에서는 Edge Function으로 관리자 계정을 생성하세요.' };
+      }
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
       if (actorRole !== ADMIN_ROLES.CEO) {
         return { ok: false, message: '대표만 관리자 계정을 생성할 수 있습니다.' };
@@ -2861,6 +3192,9 @@ const BremStorage = (function () {
     },
 
     updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role } = {}, options = {}) {
+      if (getSupabaseConfig().mode === 'production') {
+        return { ok: false, message: '운영 모드에서는 Edge Function으로 관리자 계정을 수정하세요.' };
+      }
       const actor = options.actor || null;
       const actorRole = actor?.role || ADMIN_ROLES.MANAGER;
       const accounts = ensureDefaultAdminAccounts();
@@ -3003,10 +3337,16 @@ const BremStorage = (function () {
     },
 
     getDriverSessionId() {
+      if (getSupabaseConfig().mode === 'production') {
+        return activeSupabaseProfile?.role === 'rider' ? activeSupabaseProfile.rider_id : '';
+      }
       return sessionAdapter.read(SESSION_KEYS.driverId);
     },
 
     setDriverSessionId(driverId) {
+      if (getSupabaseConfig().mode === 'production') {
+        return;
+      }
       if (driverId) {
         sessionAdapter.write(SESSION_KEYS.driverId, driverId);
       } else {
@@ -3330,6 +3670,8 @@ const BremStorage = (function () {
     setStorageBackendPreference,
     getSupabaseConfig,
     getStorageStatus,
+    getSupabaseClient,
+    loadSupabaseProfile,
     useLocalStorageAdapter,
     initStorage,
     initSupabaseStorage,
@@ -3340,6 +3682,7 @@ const BremStorage = (function () {
     targets,
     weeklyTargets,
     notices,
+    riderInquiries,
     adminSchedules,
     leases,
     revenue,
@@ -3357,6 +3700,8 @@ const BremStorage = (function () {
   };
 })();
 
+window.BremStorage = BremStorage;
+
 // 기존 코드 호환용 alias (신규 코드는 BremStorage 사용)
 const DriverStorage = {
   createId: () => BremStorage.createId(),
@@ -3368,13 +3713,27 @@ const DriverStorage = {
 };
 
 if (BremStorage.getSupabaseConfig?.().backend === 'supabase') {
-  BremStorage.initStorage({ backend: 'supabase' }).then(result => {
-    document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
-  }).catch(error => {
-    console.warn('[BREM] Supabase auto init failed:', error);
-    BremStorage.useLocalStorageAdapter();
-    document.dispatchEvent(new CustomEvent('brem-storage-ready', {
-      detail: { backend: 'local', fallback: true, error: error.message }
-    }));
-  });
+  const boot = () => {
+    BremStorage.initStorage({ backend: 'supabase' }).then(result => {
+      document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
+    }).catch(error => {
+      console.warn('[BREM] Supabase auto init failed:', error);
+      if (BremStorage.getSupabaseConfig?.().allowLocalFallback) {
+        BremStorage.useLocalStorageAdapter();
+      }
+      document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+        detail: {
+          backend: BremStorage.getStorageBackend?.() || 'unavailable',
+          fallback: Boolean(BremStorage.getSupabaseConfig?.().allowLocalFallback),
+          error: error.message
+        }
+      }));
+    });
+  };
+
+  if (window.BremSupabaseConfig?.load) {
+    window.BremSupabaseConfig.load().then(boot);
+  } else {
+    boot();
+  }
 }

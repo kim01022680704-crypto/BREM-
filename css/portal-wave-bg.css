@@ -1,0 +1,30 @@
+/* 포털 공통 다크 골드 배경 */
+
+body:has(.site--dark) {
+  background: #000;
+  color: #f3ede0;
+}
+
+.site--dark {
+  --home-text: #f5f2ea;
+  --home-text-muted: #a89f8c;
+  --home-gold: #d4af37;
+  --home-gold-light: #e8c547;
+  --home-gold-dark: #c9a84c;
+  --home-border: rgba(212, 175, 55, 0.28);
+  --home-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --home-shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.35);
+  color: var(--home-text);
+  background-color: #000;
+  background-image: url('../assets/brand/brem-portal-dark-bg.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+@media (max-width: 768px) {
+  .site--dark {
+    background-attachment: scroll;
+  }
+}

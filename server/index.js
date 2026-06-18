@@ -1,12 +1,17 @@
+require('dotenv').config();
+
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const { parseSettlementFile } = require('./settlement-parser');
-
+const riderInquiriesStore = require('./rider-inquiries-store');
+const riderInquiriesSupabase = require('./rider-inquiries-supabase');
+const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ROOT_DIR = path.join(__dirname, '..');
+const isProduction = process.env.NODE_ENV === 'production';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -21,12 +26,88 @@ const upload = multer({
   }
 });
 
+app.disable('x-powered-by');
+
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(ROOT_DIR));
 
-app.post('/api/settlement/preview', upload.single('file'), async (req, res) => {
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  if (/\.(css|js|png|jpg|jpeg|webp|svg|ico|woff2?)$/i.test(req.path)) {
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+  }
+  return next();
+});
+
+function useSupabaseInquiries() {
+  return riderInquiriesSupabase.isEnabled();
+}
+
+app.get('/api/public-config', (req, res) => {
+  res.json(getPublicConfig());
+});
+
+app.get('/api/rider-inquiries', async (req, res) => {
   try {
+    if (useSupabaseInquiries()) {
+      return res.json(await riderInquiriesSupabase.readAll());
+    }
+    res.json(riderInquiriesStore.readAll());
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/rider-inquiries', async (req, res) => {
+  try {
+    const { name, phone, area, inquiryType, message } = req.body || {};
+    if (!String(name || '').trim() || !String(phone || '').trim() || !String(message || '').trim()) {
+      return res.status(400).json({ error: '이름, 연락처, 문의 내용은 필수입니다.' });
+    }
+    const payload = { name, phone, area, inquiryType, message };
+    if (useSupabaseInquiries()) {
+      const record = await riderInquiriesSupabase.createInquiry(payload);
+      return res.status(201).json(record);
+    }
+    const record = riderInquiriesStore.createInquiry(payload);
+    res.status(201).json(record);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 접수에 실패했습니다.' });
+  }
+});
+
+app.patch('/api/rider-inquiries/:id', async (req, res) => {
+  try {
+    if (useSupabaseInquiries()) {
+      return res.json(await riderInquiriesSupabase.updateStatus(req.params.id, req.body?.status));
+    }
+    const list = riderInquiriesStore.updateStatus(req.params.id, req.body?.status);
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 상태 변경에 실패했습니다.' });
+  }
+});
+
+app.delete('/api/rider-inquiries/:id', async (req, res) => {
+  try {
+    if (useSupabaseInquiries()) {
+      return res.json(await riderInquiriesSupabase.removeById(req.params.id));
+    }
+    const list = riderInquiriesStore.removeById(req.params.id);
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 삭제에 실패했습니다.' });
+  }
+});
+
+app.post('/api/settlement/preview', upload.single('file'), async (req, res) => {  try {
     if (!req.file) {
       return res.status(400).json({ error: '정산표 파일을 선택해주세요.' });
     }
@@ -60,6 +141,8 @@ app.post('/api/settlement/preview', upload.single('file'), async (req, res) => {
   }
 });
 
+app.use(express.static(ROOT_DIR));
+
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     return res.status(400).json({ error: '파일 업로드에 실패했습니다.' });
@@ -70,6 +153,18 @@ app.use((error, req, res, next) => {
   return next();
 });
 
-app.listen(PORT, () => {
-  console.log(`BREM server running at http://localhost:${PORT}`);
-});
+module.exports = app;
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`BREM server running at http://localhost:${PORT}`);
+    if (useSupabaseInquiries()) {
+      console.log('Rider inquiries storage: Supabase');
+    } else {
+      console.log('Rider inquiries storage: local file (data/rider_inquiries.json)');
+    }
+    if (!isProduction) {
+      console.log('Development mode — serve pages through this server for /api routes.');
+    }
+  });
+}

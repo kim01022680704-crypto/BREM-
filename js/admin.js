@@ -47,6 +47,7 @@
 
   const ADMIN_MENU_OPTIONS = [
     { id: 'notices', label: '공지사항' },
+    { id: 'rider-inquiries', label: '라이더 문의' },
     { id: 'dashboard', label: '대시보드' },
     { id: 'admin-schedule', label: '관리자 스케줄표' },
     { id: 'mission-results', label: '장기근속이벤트 결과' },
@@ -586,6 +587,21 @@
     const help = $('#adminLoginHelp');
     if (!help) return;
 
+    const config = BremStorage.getSupabaseConfig?.() || {};
+    if (config.mode === 'development' && config.backend === 'local') {
+      help.textContent = '개발 모드: 아이디 관리자 / 비밀번호 1234';
+      return;
+    }
+
+    if (config.mode === 'production' && config.backend === 'supabase') {
+      const loginName = config.initialAdmin?.loginName || '관리자';
+      const email = config.initialAdmin?.email || '';
+      help.textContent = email
+        ? `운영 로그인: 아이디 ${loginName} · Supabase Auth(${email})에 등록한 비밀번호`
+        : `운영 로그인: 아이디 ${loginName} · initialAdmin.email 설정 필요`;
+      return;
+    }
+
     const accounts = BremStorage.auth.getAdminAccounts().filter(account => account.active);
     if (!accounts.length) {
       help.textContent = '활성 관리자 계정이 없습니다. 관리자 계정 메뉴에서 생성하세요.';
@@ -681,6 +697,28 @@
     return BremStorage.notices.getAll();
   }
 
+  function riderInquiries() {
+    return BremStorage.riderInquiries.getAll();
+  }
+
+  async function loadRiderInquiries() {
+    if (window.BremRiderInquiryApi?.ready) {
+      await window.BremRiderInquiryApi.ready;
+    }
+    if (window.BremStorage?.useLocalStorageAdapter) {
+      window.BremStorage.useLocalStorageAdapter();
+    }
+    if (window.BremRiderInquiryApi?.list) {
+      try {
+        return await window.BremRiderInquiryApi.list();
+      } catch {
+        /* fallback below */
+      }
+    }
+    BremStorage.riderInquiries.syncFromLocalRaw?.();
+    return BremStorage.riderInquiries.getAll();
+  }
+
   function settlements() {
     return BremStorage.settlements.getAll();
   }
@@ -768,6 +806,19 @@
       month: '2-digit',
       day: '2-digit'
     }).format(new Date(`${value}T00:00:00`));
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
   }
 
   function formatMonthLabel(value) {
@@ -1225,15 +1276,28 @@
   function showAdminApp() {
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
-    initDefaults();
-    bindEvents();
-    applyAdminMenuPermissions();
-    const allowedMenus = getCurrentAdminMenus();
-    const initialSection = allowedMenus.includes(state.currentSection)
-      ? state.currentSection
-      : (allowedMenus[0] || 'dashboard');
-    showSection(initialSection);
-    applySectionEditPermissions();
+    ensureDevLocalStorage().then(() => {
+      initDefaults();
+      bindEvents();
+      applyAdminMenuPermissions();
+      const allowedMenus = getCurrentAdminMenus();
+      const initialSection = allowedMenus.includes(state.currentSection)
+        ? state.currentSection
+        : (allowedMenus[0] || 'dashboard');
+      showSection(initialSection);
+      applySectionEditPermissions();
+    });
+  }
+
+  function ensureDevLocalStorage() {
+    const config = BremStorage.getSupabaseConfig?.() || {};
+    if (config.mode === 'production') return Promise.resolve();
+    if (config.backend === 'supabase') return Promise.resolve();
+    BremStorage.setStorageBackendPreference?.('local');
+    BremStorage.useLocalStorageAdapter?.();
+    return Promise.resolve(BremStorage.initStorage({ backend: 'local' })).then(() => {
+      BremStorage.riderInquiries.syncFromLocalRaw?.();
+    });
   }
 
   function bindAuthEvents() {
@@ -1248,14 +1312,22 @@
       });
     }
 
-    $('#adminLoginForm').addEventListener('submit', event => {
+    $('#adminLoginForm').addEventListener('submit', async event => {
       event.preventDefault();
       const name = $('#adminName').value.trim();
       const password = $('#adminPassword').value;
 
-      const result = BremStorage.auth.verifyAdminLogin(name, password);
+      const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+      const result = isProduction
+        ? await BremStorage.auth.signInAdmin(name, password)
+        : BremStorage.auth.verifyAdminLogin(name, password);
       if (result.ok) {
         BremStorage.auth.setAdminSession(result.account.id);
+        if (isProduction) {
+          await BremStorage.initStorage({ backend: 'supabase' });
+        } else {
+          await BremStorage.initStorage({ backend: 'local' });
+        }
         showAdminApp();
         showToast('관리자 로그인 성공');
         return;
@@ -1690,6 +1762,60 @@
     $('#noticeRows').innerHTML = renderNoticeItems(notices(), true);
   }
 
+  function inquiryStatusLabel(status) {
+    if (status === 'done') return '처리완료';
+    if (status === 'read') return '확인';
+    return '신규';
+  }
+
+  function inquiryStatusClass(status) {
+    if (status === 'done') return 'inquiry-badge inquiry-badge--done';
+    if (status === 'read') return 'inquiry-badge inquiry-badge--read';
+    return 'inquiry-badge inquiry-badge--new';
+  }
+
+  async function renderRiderInquiries() {
+    const rowsEl = $('#riderInquiryRows');
+    const summaryEl = $('#riderInquirySummary');
+    if (!rowsEl) return;
+
+    const list = await loadRiderInquiries();
+    const newCount = list.filter(item => item.status === 'new').length;
+
+    if (summaryEl) {
+      summaryEl.textContent = newCount
+        ? `미확인 문의 ${newCount}건 · 홈페이지에서 접수된 문의를 확인합니다.`
+        : '홈페이지에서 접수된 문의를 확인합니다.';
+    }
+
+    if (!list.length) {
+      rowsEl.innerHTML = '<p class="empty-state">접수된 라이더 문의가 없습니다.</p>';
+      return;
+    }
+
+    rowsEl.innerHTML = list.map(inquiry => `
+      <article class="notice-item inquiry-item">
+        <div class="notice-item-head">
+          <div>
+            <span class="${inquiryStatusClass(inquiry.status)}">${escapeHtml(inquiryStatusLabel(inquiry.status))}</span>
+            <strong>${escapeHtml(inquiry.name || '-')} · ${escapeHtml(inquiry.phone || '-')}</strong>
+          </div>
+          <span class="notice-date">${formatDateTime(inquiry.createdAt)}</span>
+        </div>
+        <p class="inquiry-meta">
+          <span>지역: ${escapeHtml(inquiry.area || '-')}</span>
+          <span>구분: ${escapeHtml(inquiry.inquiryType || '-')}</span>
+        </p>
+        <p class="notice-content">${escapeHtml(inquiry.message || '')}</p>
+        <div class="notice-actions">
+          ${inquiry.status === 'new' ? `<button class="small-btn" data-mark-inquiry="${inquiry.id}" data-status="read">확인</button>` : ''}
+          ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${inquiry.id}" data-status="done">처리완료</button>` : ''}
+          <button class="small-btn danger-btn" data-delete-inquiry="${inquiry.id}">삭제</button>
+        </div>
+      </article>
+    `).join('');
+  }
+
   function isBaeminSettlementPlatform(platform) {
     return normalizePlatform(platform) === 'baemin';
   }
@@ -2030,6 +2156,7 @@
     if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh();
     if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
     renderNotices();
+    renderRiderInquiries();
     updateDriverSearchStatus();
     applySectionEditPermissions();
   }
@@ -2103,6 +2230,9 @@
     if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
       window.BremAdminRevenue.refresh();
     }
+    if (sectionId === 'rider-inquiries') {
+      renderRiderInquiries();
+    }
     if (sectionId === 'admin-account') {
       renderAdminAccountSection();
     }
@@ -2115,6 +2245,12 @@
     bindEvents.bound = true;
 
     bindAdminAccountForm();
+
+    window.addEventListener('storage', event => {
+      if (event.key === 'brem_rider_inquiries' && state.currentSection === 'rider-inquiries') {
+        renderRiderInquiries();
+      }
+    });
 
     $$('.nav-btn').forEach(button => {
       button.addEventListener('click', () => showSection(button.dataset.section));
@@ -2173,8 +2309,12 @@
     $('#missionResultItemFilter')?.addEventListener('change', renderMissionResults);
     $('#missionResultStatusFilter')?.addEventListener('change', renderMissionResults);
 
-    $('#adminLogoutBtn').addEventListener('click', () => {
-      BremStorage.auth.clearAdminSession();
+    $('#adminLogoutBtn').addEventListener('click', async () => {
+      if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+        await BremStorage.auth.signOutSupabase();
+      } else {
+        BremStorage.auth.clearAdminSession();
+      }
       location.reload();
     });
 
@@ -2516,6 +2656,43 @@
         BremStorage.notices.removeById(deleteNoticeButton.dataset.deleteNotice);
         showToast('공지사항이 삭제되었습니다.');
         renderAll();
+      }
+
+      const markInquiryButton = event.target.closest('[data-mark-inquiry]');
+      if (markInquiryButton) {
+        const update = window.BremRiderInquiryApi?.updateStatus
+          ? window.BremRiderInquiryApi.updateStatus(
+            markInquiryButton.dataset.markInquiry,
+            markInquiryButton.dataset.status
+          )
+          : Promise.resolve(BremStorage.riderInquiries.updateStatus(
+            markInquiryButton.dataset.markInquiry,
+            markInquiryButton.dataset.status
+          ));
+        update.then(() => {
+          showToast('문의 상태가 변경되었습니다.');
+          renderRiderInquiries();
+        });
+        return;
+      }
+
+      const deleteInquiryButton = event.target.closest('[data-delete-inquiry]');
+      if (deleteInquiryButton) {
+        const remove = window.BremRiderInquiryApi?.remove
+          ? window.BremRiderInquiryApi.remove(deleteInquiryButton.dataset.deleteInquiry)
+          : Promise.resolve(BremStorage.riderInquiries.removeById(deleteInquiryButton.dataset.deleteInquiry));
+        remove.then(() => {
+          showToast('문의가 삭제되었습니다.');
+          renderRiderInquiries();
+        });
+        return;
+      }
+
+      const refreshInquiryButton = event.target.closest('#riderInquiryRefreshBtn');
+      if (refreshInquiryButton) {
+        renderRiderInquiries().then(() => {
+          showToast('라이더 문의 목록을 새로고침했습니다.');
+        });
       }
     });
   }

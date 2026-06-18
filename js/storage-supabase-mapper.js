@@ -30,10 +30,10 @@ window.BremSupabaseMapper = (function () {
   function riderToRow(driver) {
     return {
       id: String(driver.id || ''),
+      auth_user_id: driver.authUserId || null,
       name: driver.name,
       phone: driver.phone,
       resident_number: String(driver.residentNumber || ''),
-      password: String(driver.password || '1234'),
       bank_name: String(driver.bankName || ''),
       account_holder: String(driver.accountHolder || ''),
       account_number: String(driver.accountNumber || ''),
@@ -60,10 +60,11 @@ window.BremSupabaseMapper = (function () {
   function rowToRider(row) {
     return {
       id: row.id,
+      authUserId: row.auth_user_id || '',
       name: row.name,
       phone: row.phone,
       residentNumber: row.resident_number || '',
-      password: row.password || '1234',
+      password: '',
       bankName: row.bank_name || '',
       accountHolder: row.account_holder || '',
       accountNumber: row.account_number || '',
@@ -239,14 +240,33 @@ window.BremSupabaseMapper = (function () {
     };
   }
 
-  function riderToUserRow(driver) {
+  function inquiryToRow(inquiry) {
     return {
-      role: 'rider',
-      rider_id: driver.id,
-      login_id: makeRiderLoginId(driver),
-      password_hash: String(driver.password || '1234'),
-      display_name: driver.name,
-      active: driver.status !== '퇴사'
+      id: String(inquiry.id || ''),
+      name: String(inquiry.name || ''),
+      phone: String(inquiry.phone || ''),
+      area: String(inquiry.area || ''),
+      inquiry_type: String(inquiry.inquiryType || inquiry.inquiry_type || ''),
+      message: String(inquiry.message || ''),
+      status: String(inquiry.status || 'new'),
+      raw_data: inquiry || {},
+      created_at: toIso(inquiry.createdAt),
+      updated_at: toIso(inquiry.updatedAt || inquiry.createdAt)
+    };
+  }
+
+  function rowToInquiry(row) {
+    return {
+      ...(row.raw_data || {}),
+      id: row.id,
+      name: row.raw_data?.name ?? row.name ?? '',
+      phone: row.raw_data?.phone ?? row.phone ?? '',
+      area: row.raw_data?.area ?? row.area ?? '',
+      inquiryType: row.raw_data?.inquiryType ?? row.inquiry_type ?? '',
+      message: row.raw_data?.message ?? row.message ?? '',
+      status: row.raw_data?.status ?? row.status ?? 'new',
+      createdAt: row.raw_data?.createdAt ?? row.created_at,
+      updatedAt: row.raw_data?.updatedAt ?? row.updated_at
     };
   }
 
@@ -263,6 +283,7 @@ window.BremSupabaseMapper = (function () {
     rowToMapping,
     noticeToRow,
     rowToNotice,
-    riderToUserRow
+    inquiryToRow,
+    rowToInquiry
   };
 })();
