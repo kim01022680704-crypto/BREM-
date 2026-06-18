@@ -187,6 +187,10 @@ const BremStorage = (function () {
     enforceProductionStorageGuard();
   }
 
+  function isStoragePersistReady() {
+    return activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.() === true;
+  }
+
   const storageAdapter = {
     read(key, fallback) {
       return activeStorageAdapter.read(key, fallback);
@@ -195,9 +199,15 @@ const BremStorage = (function () {
       return activeStorageAdapter.readRaw(key);
     },
     write(key, value) {
+      if (!isStoragePersistReady()) {
+        return undefined;
+      }
       return activeStorageAdapter.write(key, value);
     },
     remove(key) {
+      if (!isStoragePersistReady()) {
+        return undefined;
+      }
       return activeStorageAdapter.remove(key);
     },
     has(key) {
@@ -2544,10 +2554,15 @@ const BremStorage = (function () {
 
   const promotionSettings = {
     get() {
-      if (storageAdapter.read(KEYS.promotionSettings, null) === null) {
-        storageAdapter.write(KEYS.promotionSettings, buildDefaultPromotionSettings());
+      const raw = storageAdapter.read(KEYS.promotionSettings, null);
+      if (raw === null) {
+        const defaults = buildDefaultPromotionSettings();
+        if (isStoragePersistReady()) {
+          storageAdapter.write(KEYS.promotionSettings, defaults);
+        }
+        return defaults;
       }
-      return normalizePromotionSettings(storageAdapter.read(KEYS.promotionSettings, null));
+      return normalizePromotionSettings(raw);
     },
 
     save(settings) {
@@ -2566,10 +2581,15 @@ const BremStorage = (function () {
 
   const promotionSelectorOptions = {
     getAll() {
-      if (storageAdapter.read(KEYS.promotionSelectorOptions, null) === null) {
-        storageAdapter.write(KEYS.promotionSelectorOptions, normalizeSelectorOptions(null));
+      const raw = storageAdapter.read(KEYS.promotionSelectorOptions, null);
+      if (raw === null) {
+        const defaults = normalizeSelectorOptions(null);
+        if (isStoragePersistReady()) {
+          storageAdapter.write(KEYS.promotionSelectorOptions, defaults);
+        }
+        return defaults;
       }
-      return normalizeSelectorOptions(storageAdapter.read(KEYS.promotionSelectorOptions, null));
+      return normalizeSelectorOptions(raw);
     },
 
     saveAll(list) {
@@ -2580,11 +2600,19 @@ const BremStorage = (function () {
 
   const promotionRules = {
     getAll() {
-      if (storageAdapter.read(KEYS.promotionRules, null) === null) {
-        storageAdapter.write(KEYS.promotionRules, buildExamplePromotionRules());
-      } else {
+      const raw = storageAdapter.read(KEYS.promotionRules, null);
+      if (raw === null) {
+        const seed = buildExamplePromotionRules();
+        if (isStoragePersistReady()) {
+          storageAdapter.write(KEYS.promotionRules, seed);
+        }
+        return seed.map(normalizePromotionRule);
+      }
+
+      if (isStoragePersistReady()) {
         ensureCombinedPromotionRule();
       }
+
       let list = storageAdapter.read(KEYS.promotionRules, []);
       list = patchCombinedPromotionRules(list);
       return list.map(normalizePromotionRule);
@@ -3508,9 +3536,7 @@ const BremStorage = (function () {
       if (!result.ok) return result;
 
       const accounts = (result.accounts || []).map((account, index) => mapProductionAdminAccount(account, index));
-      if (accounts.length) {
-        writeAdminAccounts(accounts);
-      }
+      writeAdminAccounts(accounts);
       return { ok: true, accounts };
     },
 
@@ -3552,9 +3578,8 @@ const BremStorage = (function () {
           return { ok: false, message: apiResult.message };
         }
 
+        await this.syncProductionAdminAccounts();
         const account = mapProductionAdminAccount(apiResult.account, 0);
-        const accounts = this.getAdminAccounts().filter(item => item.id !== account.id);
-        writeAdminAccounts([...accounts, account]);
         return {
           ok: true,
           message: apiResult.message || '관리자 계정이 생성되었습니다.',
@@ -3608,18 +3633,10 @@ const BremStorage = (function () {
         }
 
         const account = mapProductionAdminAccount(apiResult.account, 0);
-        const accounts = this.getAdminAccounts().map(item => (item.id === accountId ? account : item));
-        writeAdminAccounts(accounts);
-
+        await this.syncProductionAdminAccounts();
         if (activeSupabaseProfile?.user_id === accountId) {
           await this.refreshProductionAdminSession();
-        } else {
-          const sessionAccount = this.getAdminSessionAccount();
-          if (sessionAccount?.id === accountId) {
-            this.setAdminSession(accountId);
-          }
         }
-
         return {
           ok: true,
           message: apiResult.message || '관리자 계정이 수정되었습니다.',
@@ -3749,7 +3766,7 @@ const BremStorage = (function () {
           return { ok: false, message: apiResult.message };
         }
 
-        writeAdminAccounts(this.getAdminAccounts().filter(account => account.id !== accountId));
+        await this.syncProductionAdminAccounts();
 
         const sessionAccount = this.getAdminSessionAccount();
         if (sessionAccount?.id === accountId) {

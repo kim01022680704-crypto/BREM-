@@ -446,7 +446,10 @@
     }).join('');
   }
 
-  function renderAdminAccountSection() {
+  async function renderAdminAccountSection() {
+    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+      await BremStorage.auth.syncProductionAdminAccounts?.();
+    }
     updateAdminAccountSectionAccess();
     renderAdminAccountRows();
     if (!state.editingAdminAccountId && $('#adminAccountFormCard')?.hidden !== false) {
@@ -1335,12 +1338,17 @@
   function showAdminApp() {
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
-    ensureAdminStorage().then(result => {
+    ensureAdminStorage().then(async result => {
       if (result && result.ok === false) {
         showToast(result.message || '데이터 연결에 실패했습니다.');
         renderDbConnectionStatus();
         return;
       }
+
+      if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+        await BremStorage.auth.syncProductionAdminAccounts?.();
+      }
+
       renderDbConnectionStatus();
       initDefaults();
       bindEvents();
