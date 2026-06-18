@@ -322,12 +322,21 @@
     }).join(', ');
   }
 
+  function applyAdminAccountEmailField() {
+    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+    const isCreate = state.adminAccountFormMode === 'create';
+    const show = isProduction && isCreate;
+    if ($('#adminAccountEmailWrap')) $('#adminAccountEmailWrap').hidden = !show;
+    if ($('#adminAccountEmailHelp')) $('#adminAccountEmailHelp').hidden = !show;
+  }
+
   function resetAdminAccountForm() {
     state.adminAccountFormMode = 'create';
     state.editingAdminAccountId = '';
     $('#adminAccountId').value = '';
     $('#adminAccountName').value = '';
     $('#adminAccountName').readOnly = false;
+    if ($('#adminAccountEmail')) $('#adminAccountEmail').value = '';
     $('#adminAccountRole').value = ADMIN_ROLES.MANAGER;
     $('#adminAccountPassword').value = '';
     $('#adminAccountPasswordConfirm').value = '';
@@ -341,6 +350,7 @@
     $('#adminAccountSubmit').textContent = '계정 저장';
     renderAdminAccountMenuGrid(ADMIN_MENU_OPTIONS.map(option => option.id), ADMIN_MENU_OPTIONS.map(option => option.id));
     applyAdminAccountFormMode('create');
+    applyAdminAccountEmailField();
   }
 
   function openAdminAccountCreateForm() {
@@ -387,6 +397,7 @@
     $('#adminAccountSubmit').textContent = menuOnly ? '메뉴 저장' : '계정 저장';
     renderAdminAccountMenuGrid(account.menus, account.editableMenus || account.menus);
     applyAdminAccountFormMode(state.adminAccountFormMode);
+    applyAdminAccountEmailField();
     $('#adminAccountFormCard').hidden = false;
     if (menuOnly) {
       $('#adminAccountMenuPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -539,6 +550,7 @@
         }
         result = await BremStorage.auth.createAdminAccount({
           name,
+          email: $('#adminAccountEmail')?.value?.trim() || undefined,
           role,
           password,
           menus,

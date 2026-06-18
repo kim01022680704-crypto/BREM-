@@ -1867,6 +1867,11 @@
               관리자 이름
               <input type="text" id="adminAccountName" autocomplete="username" required>
             </label>
+            <label id="adminAccountEmailWrap" hidden>
+              로그인 이메일 (선택)
+              <input type="email" id="adminAccountEmail" autocomplete="email" placeholder="비우면 자동 생성">
+            </label>
+            <p class="form-help" id="adminAccountEmailHelp" hidden>운영 모드: Supabase 로그인용 이메일입니다. 비우면 자동 생성되며, 생성 후 토스트에 표시됩니다.</p>
             <label id="adminAccountRoleWrap">
               직책
               <select id="adminAccountRole" required>

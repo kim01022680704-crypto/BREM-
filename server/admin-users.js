@@ -15,15 +15,32 @@ function slugifyName(name) {
   const base = String(name || '')
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, '-')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 24);
-  return base || 'admin';
+    .slice(0, 20);
+  return base || '';
+}
+
+function getAdminEmailDomain() {
+  const fromEnv = String(process.env.BREM_ADMIN_EMAIL_DOMAIN || '').trim().toLowerCase();
+  if (fromEnv) return fromEnv.replace(/^@+/, '');
+
+  const adminEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
+  const at = adminEmail.lastIndexOf('@');
+  if (at > 0) return adminEmail.slice(at + 1);
+
+  return 'brem.kr';
 }
 
 function generateAdminEmail(name) {
   const suffix = Math.random().toString(36).slice(2, 10);
-  return `${slugifyName(name)}.${suffix}@brem.admin`;
+  const slug = slugifyName(name);
+  const localPart = (slug ? `${slug}.${suffix}` : `admin.${suffix}`)
+    .replace(/[^a-z0-9._+-]/g, '')
+    .slice(0, 64);
+  return `${localPart}@${getAdminEmailDomain()}`;
 }
 
 async function verifyAdminCaller(accessToken) {

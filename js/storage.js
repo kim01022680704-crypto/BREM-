@@ -318,7 +318,11 @@ const BremStorage = (function () {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        return { ok: false, message: payload.error || '관리자 계정 API 요청에 실패했습니다.' };
+        const raw = payload.error || '관리자 계정 API 요청에 실패했습니다.';
+        const message = /invalid format/i.test(raw)
+          ? '이메일 형식이 올바르지 않습니다. 영문 이메일(예: name@example.com)을 입력하세요.'
+          : raw;
+        return { ok: false, message };
       }
       return { ok: true, ...payload };
     } catch (error) {
