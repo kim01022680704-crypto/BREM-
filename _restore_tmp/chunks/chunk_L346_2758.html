@@ -1,0 +1,89 @@
+      <section class="section" id="targets">
+        <article class="card">
+          <div class="card-header">
+            <h2>월간 목표 콜수 입력</h2>
+          </div>
+          <form class="form-row" id="targetForm">
+            <label>
+              기사
+              <select id="targetDriver" required></select>
+            </label>
+            <label>
+              적용 월
+              <input type="month" id="targetMonth" required>
+            </label>
+            <label>
+              월간 목표 콜수
+              <input type="number" id="targetCount" min="1" placeholder="300" required>
+            </label>
+            <button class="primary-btn" type="submit">월간 목표 저장</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>월간 목표 현황</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>월</th>
+                  <th>현재 콜수</th>
+                  <th>월간 목표</th>
+                  <th>달성률</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="targetRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>주간 목표 콜수 입력</h2>
+          </div>
+          <form class="form-row week-target-form" id="weeklyTargetForm">
+            <label>
+              기사
+              <select id="weeklyTargetDriver" required></select>
+            </label>
+            <label>
+              <span class="label-row">
+                적용주
+                <span class="field-preview" id="adminTargetWeekRange">수요일~화요일 기준</span>
+              </span>
+              <input type="date" id="weeklyTargetWeekDate" required>
+            </label>
+            <label>
+              주간 목표 콜수
+              <input type="number" id="weeklyTargetCount" min="1" placeholder="70" required>
+            </label>
+            <button class="primary-btn" type="submit">주간 목표 저장</button>
+          </form>
+          <p class="form-help">적용주는 수요일~화요일 기준입니다. 수요일만 선택 가능합니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>주간 목표 현황</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>적용주</th>
+                  <th>현재 콜수</th>
+                  <th>주간 목표</th>
+                  <th>달성률</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklyTargetRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>

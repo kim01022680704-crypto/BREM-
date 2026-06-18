@@ -1,0 +1,30 @@
+      <section class="section" id="admin-account">
+        <article class="card">
+          <div class="card-header">
+            <h2>관리자 로그인 계정</h2>
+          </div>
+          <p class="form-help" id="adminAccountIntro">관리자 화면 로그인에 사용할 이름과 비밀번호를 설정합니다.</p>
+          <form id="adminAccountForm" class="admin-account-form">
+            <label>
+              관리자 이름
+              <input type="text" id="adminAccountName" autocomplete="username" required>
+            </label>
+            <label id="adminAccountCurrentPasswordWrap">
+              현재 비밀번호
+              <input type="password" id="adminAccountCurrentPassword" autocomplete="current-password">
+            </label>
+            <label>
+              새 비밀번호
+              <input type="password" id="adminAccountNewPassword" minlength="4" autocomplete="new-password" required>
+            </label>
+            <label>
+              새 비밀번호 확인
+              <input type="password" id="adminAccountConfirmPassword" minlength="4" autocomplete="new-password" required>
+            </label>
+            <p class="form-help" id="adminAccountStatus"></p>
+            <button class="primary-btn" type="submit" id="adminAccountSubmit">계정 저장</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="section" id="data-backup">

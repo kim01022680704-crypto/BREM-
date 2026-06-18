@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="BREM 기사 목록">
+  <title>BREM 기사 목록</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app index-app">
+    <div class="index-layout">
+      <aside class="index-sidebar" id="indexSidebar" aria-label="기사 관리 메뉴">
+        <div class="index-sidebar-head">
+          <p class="index-sidebar-eyebrow">BREM ADMIN</p>
+          <strong>기사등록 프로그램</strong>
+        </div>
+        <nav class="index-nav">
+          <a class="index-nav-link" href="index.html">기사 등록</a>
+          <a class="index-nav-link active" href="drivers.html" aria-current="page">기사 목록</a>
+          <a class="index-nav-link index-nav-link--secondary" href="admin.html">전체 관리자</a>
+        </nav>
+      </aside>
+
+      <div class="index-content">
+    <header class="site-header">
+      <div class="site-header__brand">
+        <img
+          class="site-header__logo"
+          src="assets/brand/brem-logo-mark.png"
+          width="120"
+          height="86"
+          alt="BREM PLUS DELIVERY AGENCY"
+        >
+        <div>
+          <p class="eyebrow">BREM ADMIN</p>
+          <h1>BREM 기사등록 프로그램</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="admin-link" href="admin.html">전체 관리자 화면 보기</a>
+        <div class="summary-card" aria-label="기사 현황">
+          <span class="summary-label">등록 기사</span>
+          <strong id="driverTotal">0명</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout layout--page">
+      <section class="panel list-panel" aria-labelledby="listTitle">
+        <div class="panel-header list-header">
+          <div>
+            <h2 id="listTitle">기사 목록</h2>
+            <p>등록된 기사를 검색·필터링하고 엑셀 파일로 백업할 수 있습니다.</p>
+          </div>
+          <div class="filters">
+            <label class="search-field">
+              <span class="sr-only">이름 검색</span>
+              <input type="search" id="searchInput" placeholder="이름으로 검색">
+            </label>
+            <label class="filter-field">
+              <span class="sr-only">상태 필터</span>
+              <select id="statusFilter">
+                <option value="전체">전체 상태</option>
+                <option value="근무중">근무중</option>
+                <option value="휴무">휴무</option>
+                <option value="퇴사">퇴사</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost" id="exportExcelBtn">엑셀 백업</button>
+            <button type="button" class="btn ghost danger-outline" id="bulkDeleteBtn" disabled>선택 삭제</button>
+          </div>
+        </div>
+
+        <div class="list-selection-bar" id="listSelectionBar" hidden>
+          <span id="selectedCountLabel">0명 선택</span>
+          <button type="button" class="btn small delete" id="bulkDeleteBtnBar">선택 삭제</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="driver-table">
+            <thead>
+              <tr>
+                <th class="col-select">
+                  <label class="select-all-label">
+                    <span class="sr-only">전체 선택</span>
+                    <input type="checkbox" id="selectAllDrivers" aria-label="현재 목록 전체 선택">
+                  </label>
+                </th>
+                <th class="col-name">이름</th>
+                <th class="col-phone">연락처</th>
+                <th class="col-login">로그인 ID</th>
+                <th class="col-baemin">배민 ID</th>
+                <th class="col-platform">플랫폼</th>
+                <th class="col-event">이벤트</th>
+                <th class="col-date">이벤트 시작</th>
+                <th class="col-date">가입일</th>
+                <th class="col-status">상태</th>
+                <th>메모</th>
+                <th class="col-privacy">민감정보</th>
+                <th class="col-actions">관리</th>
+              </tr>
+            </thead>
+            <tbody id="driverTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="mobile-list" id="mobileDriverList"></div>
+        <div class="empty-state" id="emptyState">등록된 기사가 없습니다.</div>
+      </section>
+    </main>
+      </div>
+    </div>
+
+    <button type="button" class="index-menu-btn" id="indexMenuBtn" aria-controls="indexSidebar">메뉴</button>
+  </div>
+
+  <div class="index-overlay" id="indexOverlay" hidden></div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/driver-utils.js"></script>
+  <script src="js/index-nav.js"></script>
+  <script src="js/driver-list.js"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+            <div class="promotion-form-grid">
+              <label>
+                프로모션명
+                <input type="text" id="promotionRuleName" required placeholder="예: 6월 콜수 보너스">
+              </label>
+              <label>
+                유형
+                <select id="promotionRuleType">
+                  <option value="count_per_order">건당 프로모션</option>
+                  <option value="guaranteed_unit_price">단가보장</option>
+                  <option value="both">건당 + 단가보장</option>
+                </select>
+              </label>
+              <label>
+                선택자 키
+                <input type="text" id="promotionRuleSelectorKey" list="promotionSelectorKeyList" placeholder="예: basic, high_price">
+              </label>
+              <datalist id="promotionSelectorKeyList"></datalist>
+              <label>
+                플랫폼
+                <select id="promotionRulePlatform">
+                  <option value="coupang">쿠팡</option>
+                  <option value="baemin">배민</option>
+                </select>
+              </label>
+              <label>
+                시작일
+                <input type="date" id="promotionRuleStartDate" class="admin-period-input" required>
+              </label>
+              <label>
+                종료일
+                <input type="date" id="promotionRuleEndDate" class="admin-period-input" required>
+              </label>
+              <label>
+                우선순위
+                <input type="number" id="promotionRulePriority" min="1" step="1" value="100">
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleEnabled" checked>
+                <span>사용</span>
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleAllowDuplicate">
+                <span>중복 지급 허용</span>
+              </label>
+              <label>
+                중복 지급 불가 시
+                <select id="promotionRuleDuplicateStrategy">
+                  <option value="highest_priority">우선순위 높은 것만</option>
+                  <option value="highest_amount">금액 가장 높은 것만</option>
+                </select>
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleApplyGlobalBlock" checked>
+                <span>전역 수락률 미지급 적용</span>
+              </label>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>콜수 · 건당 지급</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  기준 콜수
+                  <input type="number" id="promotionRuleBaseCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  지급 시작 콜수
+                  <input type="number" id="promotionRulePayStartCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  건당 지급액 (원)
+                  <input type="number" id="promotionRulePayPerCall" min="0" step="100" value="0">
+                </label>
+              </div>
+              <p class="form-help">지급건수 = 총 콜수 − (지급 시작 콜수 − 1). 예: 160건, 시작 141 → 20건 × 건당금액</p>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>수락률 조건 (건당 프로모션)</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  최소 수락률 (%)
+                  <input type="number" id="promotionRuleMinAcceptRate" min="0" max="100" step="0.1" value="0">
+                </label>
+                <label>
+                  최대 수락률 (%)
+                  <input type="number" id="promotionRuleMaxAcceptRate" min="0" max="100" step="0.1" value="100">
+                </label>
+              </div>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>주6일 · 하루 최소 콜수 (건당 프로모션)</h3>
+              <div class="promotion-form-grid">
+                <label class="promotion-checkbox-field">
+                  <input type="checkbox" id="promotionRuleRequireMinWorkingDays">
+                  <span>최소 근무일 조건 사용</span>
+                </label>
+                <label>
+                  최소 근무일 수
+                  <input type="number" id="promotionRuleMinWorkingDays" min="0" max="7" step="1" value="6">
+                </label>
+                <label class="promotion-checkbox-field">
+                  <input type="checkbox" id="promotionRuleRequireDailyMinOrders">
+                  <span>하루 최소 콜수 조건 사용</span>
+                </label>
+                <label>
+                  일일 최소 콜수
+                  <input type="number" id="promotionRuleDailyMinOrders" min="0" step="1" value="30">
+                </label>
+                <label>
+                  최소 달성일 수
+                  <input type="number" id="promotionRuleMinDailyOrderDays" min="0" max="7" step="1" value="6">
+                </label>
+              </div>
+              <p class="form-help">근무일 = 일일 최소 콜수 이상 달성한 날. 근무일 중 하루라도 최소 미달이면 고단가 조건 실패.</p>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>단가보장 · 콜수 구간</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  보장 단가 (원)
+                  <input type="number" id="promotionRuleGuaranteedUnitPrice" min="0" step="100" value="0">
+                </label>
+                <label>
+                  단가보장 최소 수락률 (%)
+                  <input type="number" id="promotionRuleGuaranteeMinAcceptRate" min="0" max="100" step="0.1" value="0">
+                </label>
+                <label class="promotion-checkbox-field">
+                  <input type="checkbox" id="promotionRuleRequireMinWorkingDaysForGuarantee">
+                  <span>단가보장에 주6일 조건 적용</span>
+                </label>
+                <label class="promotion-checkbox-field">
+                  <input type="checkbox" id="promotionRuleRequireDailyMinForGuarantee">
+                  <span>단가보장에 하루 최소 콜수 적용</span>
+                </label>
+              </div>
+              <p class="form-help">지급액 = max(0, 총콜수×보장단가 − 실제 배달수행금액)</p>
+              <div class="promotion-tier-toolbar">
+                <strong>콜수 구간</strong>
+                <button type="button" class="small-btn" id="promotionAddTierBtn">구간 추가</button>
+              </div>
+              <div id="promotionTierRows" class="promotion-tier-rows"></div>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>미지급 조건 메모</h3>
+              <label class="promotion-textarea-field">
+                미지급 조건 설명
+                <textarea id="promotionRuleNoPayConditions" rows="3" placeholder="관리자 참고용 설명"></textarea>
+              </label>
+            </div>

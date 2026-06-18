@@ -1,0 +1,74 @@
+      <section class="section" id="settlements">
+        <article class="card settlement-upload-card">
+          <div class="card-header">
+            <h2>정산표 업로드</h2>
+            <span class="settlement-format-badge" id="settlementFormatLabel">BREM 기본 정산표</span>
+          </div>
+          <form class="settlement-upload-form" id="settlementUploadForm">
+            <label>
+              엑셀 비밀번호
+              <input type="text" id="settlementPassword" placeholder="정산표 열람 비밀번호" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              정산일
+              <input type="date" id="settlementPeriod">
+            </label>
+            <label>
+              정산표 파일 (.xlsx)
+              <input type="file" id="settlementFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+            </label>
+            <button class="primary-btn" type="submit" id="settlementUploadBtn">업로드</button>
+          </form>
+          <p class="form-help">13행부터 C열(성함), F열(오더수), AC열(정산금액)을 읽습니다. 파일명 예: 브램_울산_남구중앙_20260610</p>
+          <p class="form-help settlement-file-hint" id="settlementFileHint" hidden></p>
+        </article>
+
+        <article class="card settlement-result-card" id="settlementResultCard" hidden>
+          <div class="card-header">
+            <h2>업로드 완료</h2>
+            <span class="settlement-period-badge" id="settlementResultPeriod">-</span>
+          </div>
+          <div class="settlement-result-stats">
+            <p>총 기사 <strong id="settlementTotalCount">0</strong>명</p>
+            <p>업데이트 성공 <strong id="settlementSuccessCount">0</strong>명</p>
+            <p>매칭 실패 <strong id="settlementFailedCount">0</strong>명</p>
+          </div>
+          <div class="settlement-result-block" id="settlementFailedBlock" hidden>
+            <h3>매칭 실패 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table unmatched">
+                <thead>
+                  <tr>
+                    <th>엑셀 성함</th>
+                    <th>추출 이름</th>
+                    <th>오더수</th>
+                    <th>정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementFailedRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>정산 반영 내역</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>기사명</th>
+                  <th>총 오더수</th>
+                  <th>총 정산금액</th>
+                  <th>반영일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementHistoryRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>

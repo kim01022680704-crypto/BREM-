@@ -1,0 +1,239 @@
+      <section class="section" id="settlements-coupang">
+        <article class="card settlement-upload-card">
+          <div class="card-header">
+            <h2>정산표 업로드 (쿠팡)</h2>
+            <span class="settlement-format-badge" id="settlementFormatLabel-coupang">쿠팡 기본 정산표</span>
+          </div>
+          <form class="settlement-upload-form" id="settlementUploadForm-coupang" data-platform="coupang">
+            <label>
+              엑셀 비밀번호
+              <input type="text" id="settlementPassword-coupang" placeholder="정산표 열람 비밀번호" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              정산일
+              <input type="date" id="settlementPeriod-coupang">
+            </label>
+            <label>
+              정산표 파일 (.xlsx)
+              <input type="file" id="settlementFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+            </label>
+            <button class="primary-btn" type="submit" id="settlementUploadBtn-coupang">업로드 및 미리보기</button>
+          </form>
+          <p class="form-help">쿠팡 정산표 · 13행부터 C열(성함), F열(오더수), AC열(정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다.</p>
+          <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
+        </article>
+
+        <article class="card settlement-preview-card" id="settlementPreviewCard-coupang" hidden>
+          <div class="card-header">
+            <h2>쿠팡 정산표 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <span class="settlement-period-badge" id="settlementPreviewPeriod-coupang">-</span>
+              <button class="primary-btn" type="button" id="settlementApplyBtn-coupang">반영하기</button>
+              <button class="small-btn" type="button" id="settlementCancelBtn-coupang">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats">
+            <p>총 기사 <strong id="settlementTotalCount-coupang">0</strong>명</p>
+            <p>매칭 성공 <strong id="settlementSuccessCount-coupang">0</strong>명</p>
+            <p>매칭 실패 <strong id="settlementFailedCount-coupang">0</strong>명</p>
+          </div>
+
+          <div class="settlement-preview-block">
+            <h3>매칭된 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table">
+                <thead>
+                  <tr>
+                    <th>기사명</th>
+                    <th>총 오더수</th>
+                    <th>총 정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementMatchedRows-coupang"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settlement-result-block" id="settlementFailedBlock-coupang" hidden>
+            <h3>매칭 실패 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table unmatched">
+                <thead>
+                  <tr>
+                    <th>엑셀 성함</th>
+                    <th>추출 이름</th>
+                    <th>오더수</th>
+                    <th>정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementFailedRows-coupang"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header">
+            <h2>쿠팡 미반영 기사 내역</h2>
+            <button class="small-btn danger-btn" type="button" id="settlementUnmatchedClearBtn-coupang">전체 삭제</button>
+          </div>
+          <p class="form-help">쿠팡 정산표 업로드·반영 후 매칭되지 않은 기사입니다.</p>
+          <div class="table-wrap">
+            <table class="settlement-preview-table unmatched">
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>엑셀 성함</th>
+                  <th>추출 이름</th>
+                  <th>오더수</th>
+                  <th>정산금액</th>
+                  <th>기록일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementUnmatchedHistoryRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>쿠팡 정산 반영 내역</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>기사명</th>
+                  <th>총 오더수</th>
+                  <th>총 정산금액</th>
+                  <th>반영일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementHistoryRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="settlements-baemin">
+        <article class="card settlement-upload-card">
+          <div class="card-header">
+            <h2>정산표 업로드 (배민)</h2>
+            <span class="settlement-format-badge" id="settlementFormatLabel-baemin">배민 기본 정산표</span>
+          </div>
+          <form class="settlement-upload-form" id="settlementUploadForm-baemin" data-platform="baemin">
+            <label>
+              엑셀 비밀번호
+              <input type="text" id="settlementPassword-baemin" placeholder="정산표 열람 비밀번호" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              정산일
+              <input type="date" id="settlementPeriod-baemin">
+            </label>
+            <label>
+              정산표 파일 (.xlsx)
+              <input type="file" id="settlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+            </label>
+            <button class="primary-btn" type="submit" id="settlementUploadBtn-baemin">업로드 및 미리보기</button>
+          </form>
+          <p class="form-help">배민 정산표 · 13행부터 C열(성함), F열(오더수), AC열(정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 배민 콜수에 저장됩니다.</p>
+          <p class="form-help settlement-file-hint" id="settlementFileHint-baemin" hidden></p>
+        </article>
+
+        <article class="card settlement-preview-card" id="settlementPreviewCard-baemin" hidden>
+          <div class="card-header">
+            <h2>배민 정산표 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <span class="settlement-period-badge" id="settlementPreviewPeriod-baemin">-</span>
+              <button class="primary-btn" type="button" id="settlementApplyBtn-baemin">반영하기</button>
+              <button class="small-btn" type="button" id="settlementCancelBtn-baemin">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats">
+            <p>총 기사 <strong id="settlementTotalCount-baemin">0</strong>명</p>
+            <p>매칭 성공 <strong id="settlementSuccessCount-baemin">0</strong>명</p>
+            <p>매칭 실패 <strong id="settlementFailedCount-baemin">0</strong>명</p>
+          </div>
+
+          <div class="settlement-preview-block">
+            <h3>매칭된 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table">
+                <thead>
+                  <tr>
+                    <th>기사명</th>
+                    <th>총 오더수</th>
+                    <th>총 정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementMatchedRows-baemin"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settlement-result-block" id="settlementFailedBlock-baemin" hidden>
+            <h3>매칭 실패 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table unmatched">
+                <thead>
+                  <tr>
+                    <th>엑셀 성함</th>
+                    <th>추출 이름</th>
+                    <th>오더수</th>
+                    <th>정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementFailedRows-baemin"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header">
+            <h2>배민 미반영 기사 내역</h2>
+            <button class="small-btn danger-btn" type="button" id="settlementUnmatchedClearBtn-baemin">전체 삭제</button>
+          </div>
+          <p class="form-help">배민 정산표 업로드·반영 후 매칭되지 않은 기사입니다.</p>
+          <div class="table-wrap">
+            <table class="settlement-preview-table unmatched">
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>엑셀 성함</th>
+                  <th>추출 이름</th>
+                  <th>오더수</th>
+                  <th>정산금액</th>
+                  <th>기록일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementUnmatchedHistoryRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>배민 정산 반영 내역</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>기사명</th>
+                  <th>총 오더수</th>
+                  <th>총 정산금액</th>
+                  <th>반영일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementHistoryRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>

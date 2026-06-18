@@ -1,0 +1,194 @@
+      <section class="section" id="calls-coupang">
+        <article class="card call-input-card">
+          <div class="card-header">
+            <h2>기사별 콜수 입력 (쿠팡)</h2>
+          </div>
+          <form class="form-row call-daily-form" id="callForm-coupang" data-platform="coupang">
+            <label>
+              기사
+              <select id="callDriver-coupang" class="call-driver" required></select>
+            </label>
+            <label class="call-date-field">
+              <span>날짜</span>
+              <button type="button" class="date-range-button" data-call-date-button="coupang">날짜 선택</button>
+              <input type="hidden" id="callDate-coupang" required>
+            </label>
+            <label>
+              콜수
+              <input type="number" id="callCount-coupang" min="0" placeholder="0" required>
+            </label>
+            <button class="primary-btn" type="submit">저장</button>
+          </form>
+          <p class="form-help">쿠팡 콜수를 하루 단위로 입력하면 주간·월간·장기근속이벤트 콜수가 자동으로 계산됩니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>쿠팡 콜수 기록</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>기사</th>
+                  <th>콜수</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="callRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="calls-baemin">
+        <article class="card call-input-card">
+          <div class="card-header">
+            <h2>기사별 콜수 입력 (배민)</h2>
+          </div>
+          <form class="form-row call-daily-form" id="callForm-baemin" data-platform="baemin">
+            <label>
+              기사
+              <select id="callDriver-baemin" class="call-driver" required></select>
+            </label>
+            <label class="call-date-field">
+              <span>날짜</span>
+              <button type="button" class="date-range-button" data-call-date-button="baemin">날짜 선택</button>
+              <input type="hidden" id="callDate-baemin" required>
+            </label>
+            <label>
+              콜수
+              <input type="number" id="callCount-baemin" min="0" placeholder="0" required>
+            </label>
+            <button class="primary-btn" type="submit">저장</button>
+          </form>
+          <p class="form-help">배민 콜수를 하루 단위로 입력하면 주간·월간·장기근속이벤트 콜수가 자동으로 계산됩니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>배민 콜수 기록</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>기사</th>
+                  <th>콜수</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="callRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <div class="range-calendar call-date-calendar" id="callDateCalendar" hidden>
+        <div class="calendar-header">
+          <button type="button" id="callDateCalendarPrev" aria-label="이전 달">&lt;</button>
+          <strong id="callDateCalendarTitle">-</strong>
+          <button type="button" id="callDateCalendarNext" aria-label="다음 달">&gt;</button>
+        </div>
+        <div class="calendar-weekdays">
+          <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+        </div>
+        <div class="calendar-days" id="callDateCalendarDays"></div>
+        <p class="calendar-help">날짜를 클릭하면 선택됩니다.</p>
+      </div>
+
+      <section class="section" id="rejections-coupang">
+        <article class="card">
+          <div class="card-header rejection-card-header">
+            <h2>기사별 주간 거절율 입력 (쿠팡)</h2>
+            <div class="week-nav week-nav-center">
+              <button type="button" class="small-btn" id="rejectionPrevWeekBtn-coupang">&lt;&lt;</button>
+              <label class="week-nav-date-field">
+                <span class="field-preview" id="rejectionWeekPreview-coupang">수요일~화요일 기준</span>
+                <input type="date" id="rejectionWeekDate-coupang" required>
+              </label>
+              <button type="button" class="small-btn" id="rejectionNextWeekBtn-coupang">&gt;&gt;</button>
+            </div>
+          </div>
+          <form class="form-row rejection-input-form" id="rejectionForm-coupang" data-platform="coupang">
+            <label>
+              기사
+              <select id="rejectionDriver-coupang" class="rejection-driver" required></select>
+            </label>
+            <label>
+              주간 거절율 (%)
+              <input type="number" id="rejectionRate-coupang" min="0" max="100" step="0.1" placeholder="예: 10" required>
+            </label>
+            <button class="primary-btn" type="submit">거절율 저장</button>
+          </form>
+          <p class="form-help">쿠팡 주간 거절율입니다. 수~화 기준으로 입력할 때마다 해당 주의 최신 값으로 저장됩니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>쿠팡 주간 거절율 기록</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>기사</th>
+                  <th>거절율</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="rejectionRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="rejections-baemin">
+        <article class="card">
+          <div class="card-header rejection-card-header">
+            <h2>기사별 주간 거절율 입력 (배민)</h2>
+            <div class="week-nav week-nav-center">
+              <button type="button" class="small-btn" id="rejectionPrevWeekBtn-baemin">&lt;&lt;</button>
+              <label class="week-nav-date-field">
+                <span class="field-preview" id="rejectionWeekPreview-baemin">수요일~화요일 기준</span>
+                <input type="date" id="rejectionWeekDate-baemin" required>
+              </label>
+              <button type="button" class="small-btn" id="rejectionNextWeekBtn-baemin">&gt;&gt;</button>
+            </div>
+          </div>
+          <form class="form-row rejection-input-form" id="rejectionForm-baemin" data-platform="baemin">
+            <label>
+              기사
+              <select id="rejectionDriver-baemin" class="rejection-driver" required></select>
+            </label>
+            <label>
+              주간 거절율 (%)
+              <input type="number" id="rejectionRate-baemin" min="0" max="100" step="0.1" placeholder="예: 10" required>
+            </label>
+            <button class="primary-btn" type="submit">거절율 저장</button>
+          </form>
+          <p class="form-help">배민 주간 거절율입니다. 수~화 기준으로 입력할 때마다 해당 주의 최신 값으로 저장됩니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>배민 주간 거절율 기록</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>기사</th>
+                  <th>거절율</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="rejectionRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>

@@ -1,0 +1,235 @@
+/* BREM PLUS DELIVERY AGENCY — Luxury Dark + Gold */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
+
+:root {
+  --brem-black: #000000;
+  --brem-black-soft: #080808;
+  --brem-black-card: #0f0f0f;
+  --brem-black-elevated: #151515;
+  --brem-gold: #d4af37;
+  --brem-gold-light: #e8c547;
+  --brem-gold-dark: #a8862b;
+  --brem-gold-muted: rgba(212, 175, 55, 0.55);
+  --brem-gold-glow: rgba(212, 175, 55, 0.28);
+  --brem-gold-border: rgba(212, 175, 55, 0.68);
+  --brem-gold-focus: rgba(212, 175, 55, 0.35);
+  --brem-text: #f3ede0;
+  --brem-text-muted: #9f9582;
+  --brem-serif: "Cormorant Garamond", "Times New Roman", serif;
+  --brem-sans: "Noto Sans KR", "Segoe UI", "Malgun Gothic", sans-serif;
+  --brem-radius: 18px;
+  --brem-shadow-gold: 0 0 28px rgba(212, 175, 55, 0.2);
+  --brem-shadow-card: 0 20px 50px rgba(0, 0, 0, 0.65);
+
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --radius: var(--brem-radius);
+
+  --black: var(--brem-black-soft);
+  --black-2: var(--brem-black-elevated);
+  --card: var(--brem-black-card);
+  --line: rgba(212, 175, 55, 0.2);
+  --yellow: var(--brem-gold);
+  --yellow-2: var(--brem-gold-light);
+  --text: var(--brem-text);
+  --muted: var(--brem-text-muted);
+}
+
+* { box-sizing: border-box; }
+
+.brem-page-bg {
+  min-height: 100vh;
+  color: var(--brem-text);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(212, 175, 55, 0.11), transparent 42rem),
+    radial-gradient(circle at 80% 100%, rgba(212, 175, 55, 0.06), transparent 30rem),
+    var(--brem-black);
+  font-family: var(--brem-sans);
+}
+
+.brem-logo {
+  width: min(100%, 320px);
+  margin: 0 auto;
+}
+
+.brem-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.brem-logo--sm {
+  width: min(100%, 180px);
+}
+
+.brem-logo--sidebar {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.brem-logo--sidebar img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.brem-login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 20px;
+}
+
+.brem-login-card {
+  width: min(480px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 32px 28px 28px;
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.98) 0%, rgba(0, 0, 0, 0.99) 100%);
+  border: 1px solid var(--brem-gold-border);
+  border-radius: calc(var(--brem-radius) + 6px);
+  box-shadow: var(--brem-shadow-gold), var(--brem-shadow-card);
+}
+
+.brem-login-card .brem-logo {
+  width: min(100%, 360px);
+}
+
+.brem-login-title {
+  margin: 0;
+  color: var(--brem-gold);
+  font-family: var(--brem-serif);
+  font-size: clamp(1.5rem, 4vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.brem-eyebrow {
+  margin: 0;
+  color: var(--brem-gold-muted);
+  font-family: var(--brem-serif);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.brem-help {
+  margin: 0;
+  color: var(--brem-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.brem-help strong { color: var(--brem-gold-light); }
+
+.brem-field {
+  display: grid;
+  gap: 8px;
+  color: var(--brem-text-muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.brem-field input,
+.brem-field select,
+.brem-field textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  color: var(--brem-text);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 12px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.brem-field input:focus,
+.brem-field select:focus,
+.brem-field textarea:focus {
+  border-color: var(--brem-gold);
+  box-shadow: 0 0 0 3px var(--brem-gold-focus);
+}
+
+.brem-btn-primary {
+  min-height: 50px;
+  border: 1px solid var(--brem-gold-dark);
+  border-radius: 12px;
+  padding: 0 18px;
+  color: var(--brem-black);
+  background: linear-gradient(180deg, var(--brem-gold-light), var(--brem-gold));
+  box-shadow: var(--brem-shadow-gold);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.brem-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 34px rgba(232, 197, 71, 0.38);
+}
+
+.brem-btn-ghost {
+  min-height: 44px;
+  border: 1px solid var(--brem-gold-border);
+  border-radius: 12px;
+  padding: 0 14px;
+  color: var(--brem-gold);
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.brem-card {
+  background: linear-gradient(180deg, rgba(15, 15, 15, 0.98), rgba(8, 8, 8, 0.99));
+  border: 1px solid var(--brem-gold-border);
+  border-radius: var(--brem-radius);
+  box-shadow: var(--brem-shadow-card);
+}
+
+.brem-hero {
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(18, 18, 18, 0.98), rgba(0, 0, 0, 0.99));
+  border: 1px solid var(--brem-gold-border);
+  border-radius: calc(var(--brem-radius) + 4px);
+  box-shadow: var(--brem-shadow-gold);
+}
+
+.brem-hero h1 {
+  color: var(--brem-gold);
+  font-family: var(--brem-serif);
+  letter-spacing: 0.04em;
+}
+
+.brem-btn-portal {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  min-height: 148px;
+  padding: 22px 18px;
+  color: var(--brem-gold);
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.96), rgba(0, 0, 0, 0.98));
+  border: 1px solid var(--brem-gold-border);
+  border-radius: calc(var(--brem-radius) + 4px);
+  box-shadow: var(--brem-shadow-gold);
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.brem-btn-portal:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 32px rgba(232, 197, 71, 0.35);
+}
+
+.brem-btn-portal-icon { width: 56px; height: 56px; color: var(--brem-gold); }
+.brem-btn-portal-label { font-size: 1.05rem; font-weight: 800; letter-spacing: 0.06em; }
+
+input[type="checkbox"] {
+  accent-color: var(--brem-gold);
+}

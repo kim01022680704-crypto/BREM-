@@ -1,0 +1,26 @@
+          <div class="backup-import-result" id="backupImportResult" hidden></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>Supabase 이전</h2>
+          </div>
+          <p class="form-help">localStorage 데이터를 Supabase 테이블로 upsert합니다. 실행 전 JSON 백업을 권장합니다. `js/supabase-config.js` 설정이 필요합니다.</p>
+          <div class="backup-import-form">
+            <label>
+              Supabase URL
+              <input type="text" id="supabaseUrlInput" placeholder="https://xxxx.supabase.co" autocomplete="off">
+            </label>
+            <label>
+              Supabase anon key
+              <input type="password" id="supabaseAnonKeyInput" placeholder="anon key" autocomplete="off">
+            </label>
+            <div class="backup-action-grid">
+              <button class="primary-btn" type="button" id="supabaseMigrateBtn">localStorage → Supabase 이전</button>
+              <button class="small-btn" type="button" id="supabaseConnectBtn">Supabase 모드 연결</button>
+              <button class="small-btn" type="button" id="supabaseLocalBtn">localStorage 모드</button>
+            </div>
+          </div>
+          <div class="backup-import-result" id="supabaseMigrateResult" hidden></div>
+        </article>
+      </section>

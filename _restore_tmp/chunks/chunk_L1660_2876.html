@@ -1,0 +1,52 @@
+  <title>BREM 관리자 대시보드</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/admin-login.css">
+</head>
+<body>
+  <section class="login-page" id="adminLoginPage">
+    <form class="login-card" id="adminLoginForm">
+      <header class="login-card__brand">
+        <img src="assets/brand/brem-logo.png" alt="BREM PLUS DELIVERY AGENCY">
+      </header>
+
+      <div class="login-card__divider" aria-hidden="true"><span></span></div>
+
+      <div class="login-card__intro">
+        <h1>관리자 전용</h1>
+        <p>본인 계정으로 로그인해주세요.</p>
+      </div>
+
+      <label class="login-field">
+        <span class="login-field__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </span>
+        <input type="text" id="adminName" placeholder="아이디를 입력하세요" autocomplete="username" required>
+      </label>
+
+      <label class="login-field login-field--password">
+        <span class="login-field__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        </span>
+        <input type="password" id="adminPassword" placeholder="비밀번호를 입력하세요" autocomplete="current-password" required>
+        <button type="button" class="login-field__toggle" id="adminPasswordToggle" aria-label="비밀번호 표시">
+          <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.2 17.2 0 0 1-4.1 5.2M6.1 6.1C3.4 8.1 2 12 2 12a17.2 17.2 0 0 0 6.5 5.9"/></svg>
+        </button>
+      </label>
+
+      <button class="login-submit" type="submit">로그인</button>
+
+      <div class="login-security">
+        <span class="login-security__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 7v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></svg>
+        </span>
+        <p>보안이 인증된 관리자 전용 시스템입니다.</p>
+      </div>
+
+      <p class="login-help" id="adminLoginHelp" hidden></p>
+      <p class="login-version">Version 1.0.0</p>
+    </form>
+  </section>

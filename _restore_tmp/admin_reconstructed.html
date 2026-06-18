@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="BREM 전체 관리자 화면">
+  <title>BREM 관리자 대시보드</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <strong>BREM</strong>
+        <span>배달대행 관리자</span>
+      </div>
+      <nav>
+        <button class="nav-btn active" data-section="dashboard">대시보드</button>
+        <button class="nav-btn" data-section="calls">콜수 입력</button>
+        <button class="nav-btn" data-section="rejections">거절율 입력</button>
+        <button class="nav-btn" data-section="targets">목표 콜수</button>
+        <button class="nav-btn" data-section="promotions">프로모션</button>
+        <button class="nav-btn" data-section="missions">PCX/NMAX 미션</button>
+        <button class="nav-btn" data-section="notices">공지사항</button>
+        <button class="nav-btn" data-section="admin-account">관리자 계정</button>
+        <button class="nav-btn" data-section="data-backup">데이터 백업</button>
+      </nav>
+      <a class="driver-link" href="index.html">기사 관리 프로그램</a>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn">메뉴</button>
+        <div>
+          <p>BREM ADMIN</p>
+          <h1 id="pageTitle">대시보드</h1>
+        </div>
+        <div class="topbar-actions">
+          <a class="top-link" href="index.html" target="_blank" rel="noopener noreferrer">기사등록 프로그램</a>
+          <a class="top-link secondary" href="driver.html">기사 전용 페이지 열기</a>
+          <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
+        </div>
+      </header>
+
+      <div class="driver-search-bar">
+        <label class="driver-search-field">
+          <span>기사 검색</span>
+          <input type="search" id="adminDriverSearch" placeholder="이름 또는 전화번호 입력" autocomplete="off">
+        </label>
+        <button class="small-btn" type="button" id="adminDriverSearchClear" hidden>초기화</button>
+        <p class="driver-search-result" id="adminDriverSearchResult">전체 기사 표시 중</p>
+      </div>
+
+      <section class="section active" id="dashboard">
+        <div class="stats-grid">
+          <article class="stat-card">
+            <span>등록 기사</span>
+            <strong id="statDrivers">0명</strong>
+          </article>
+          <article class="stat-card">
+            <span>오늘 총 콜수</span>
+            <strong id="statTodayCalls">0콜</strong>
+          </article>
+          <article class="stat-card">
+            <span>이번 달 달성률</span>
+            <strong id="statRate">0%</strong>
+          </article>
+
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <div class="card-header">
+              <h2>기사별 이번 달 현황</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>로그인 아이디</th>
+                    <th>기사명</th>
+                    <th>상태</th>
+                    <th>콜수</th>
+                    <th>월간 목표</th>
+                    <th>달성률</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <h2>최근 공지사항</h2>
+            </div>
+            <div class="notice-list" id="dashboardNotices"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="calls">
+        <article class="card">
+          <div class="card-header">
+            <h2>기사별 콜수 입력</h2>
+          </div>
+          <form class="form-row" id="callForm">
+            <label>
+              기사
+              <select id="callDriver" required></select>
+            </label>
+            <label>
+              날짜
+              <input type="date" id="callDate" required>
+            </label>
+            <label>
+              콜수
+              <input type="number" id="callCount" min="0" placeholder="0" required>
+            </label>
+            <button class="primary-btn" type="submit">저장</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>콜수 기록</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>기사</th>
+                  <th>콜수</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="callRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="rejections">
+        <article class="card">
+          <div class="card-header rejection-card-header">
+            <h2>기사별 주간 거절율 입력</h2>
+            <div class="week-nav week-nav-center">
+              <button type="button" class="small-btn" id="rejectionPrevWeekBtn">&lt;&lt;</button>
+              <label class="week-nav-date-field">
+                <span class="field-preview" id="rejectionWeekPreview">수요일~화요일 기준</span>
+                <input type="date" id="rejectionWeekDate" required>
+              </label>
+              <button type="button" class="small-btn" id="rejectionNextWeekBtn">&gt;&gt;</button>
+            </div>
+          </div>
+          <form class="form-row rejection-input-form" id="rejectionForm">
+            <label>
+              기사
+              <select id="rejectionDriver" required></select>
+            </label>
+            <label>
+              주간 거절율 (%)
+              <input type="number" id="rejectionRate" min="0" max="100" step="0.1" placeholder="예: 10" required>
+            </label>
+            <button class="primary-btn" type="submit">거절율 저장</button>
+          </form>
+          <p class="form-help">수~화 기준 주간 거절율입니다. 입력할 때마다 해당 주의 최신 값으로 저장됩니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>주간 거절율 기록</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>기사</th>
+                  <th>거절율</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="rejectionRows"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+      </section>
+
+      <section class="section" id="targets">
+        <article class="card">
+          <div class="card-header">
+            <h2>월간 목표 콜수 입력</h2>
+          </div>
+          <form class="form-row" id="targetForm">
+            <label>
+              기사
+              <select id="targetDriver" required></select>
+            </label>
+            <label class="period-label-block month-target-block">
+              <span class="label-row">적용 월</span>
+              <button type="button" class="month-range-label month-picker-trigger" id="targetMonthButton">
+                <span id="targetMonthLabel">월을 선택하세요</span>
+              </button>
+              <span class="period-picker-caption">클릭하여 적용월 선택</span>
+              <input type="hidden" id="targetMonth" required>
+            </label>
+            <label>
+              월간 목표 콜수
+              <input type="number" id="targetCount" min="1" placeholder="300" required>
+            </label>
+            <button class="primary-btn" type="submit">월간 목표 저장</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>월간 목표 현황</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>월</th>
+                  <th>현재 콜수</th>
+                  <th>월간 목표</th>
+                  <th>달성률</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="targetRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>주간 목표 콜수 입력</h2>
+          </div>
+          <form class="form-row week-target-form" id="weeklyTargetForm">
+            <label>
+              기사
+              <select id="weeklyTargetDriver" required></select>
+            </label>
+            <label class="period-label-block week-target-block">
+              <span class="label-row">
+                적용주
+              </span>
+              <span class="field-preview week-range-label" id="adminTargetWeekRange">수요일~화요일 기준</span>
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="form" id="weeklyTargetWeekButton">
+                <span id="weeklyTargetWeekLabel">수요일 선택</span>
+              </button>
+              <span class="period-picker-caption">클릭하여 수요일 선택</span>
+              <input type="hidden" id="weeklyTargetWeekDate" required>
+            </label>
+            <label>
+              주간 목표 콜수
+              <input type="number" id="weeklyTargetCount" min="1" placeholder="70" required>
+            </label>
+            <button class="primary-btn" type="submit">주간 목표 저장</button>
+          </form>
+          <p class="form-help">적용주는 수요일~화요일 기준입니다. 수요일만 선택 가능합니다.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>주간 목표 현황</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>적용주</th>
+                  <th>현재 콜수</th>
+                  <th>주간 목표</th>
+                  <th>달성률</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklyTargetRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="promotions">
+        <article class="card">
+          <div class="card-header">
+            <h2>프로모션 자동 계산</h2>
+            <input type="month" id="promoMonth">
+          </div>
+          <div class="rules">
+            <span>골드 100% 이상: 50,000원</span>
+            <span>실버 90% 이상: 30,000원</span>
+            <span>브론즈 80% 이상: 15,000원</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>콜수</th>
+                  <th>목표</th>
+                  <th>달성률</th>
+                  <th>등급</th>
+                  <th>금액</th>
+                </tr>
+              </thead>
+              <tbody id="promoRows"></tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="5">총 지급액</td>
+                  <td id="promoTotal">0원</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="missions">
+        <article class="card">
+          <div class="card-header">
+            <h2>장기근속이벤트 설정</h2>
+          </div>
+          <form class="form-row" id="missionForm">
+            <label>
+              목표 아이템
+              <input type="text" id="eventTargetItem" placeholder="예: PCX, NMAX, 지원금">
+            </label>
+            <label>
+              목표 갯수
+              <input type="number" id="eventTargetCount" min="1" value="500">
+            </label>
+            <button class="primary-btn" type="submit">이벤트 목표 저장</button>
+          </form>
+          <p class="hint">기사별 이벤트 아이템은 기사 등록 화면의 기본값과 연결되며, 이 화면에서도 조정할 수 있습니다.</p>
+        </article>
+
+        <div class="grid two">
+          <article class="card">
+            <div class="card-header">
+              <h2>오토바이 설정</h2>
+            </div>
+            <div id="bikeSettings" class="bike-settings"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <h2>장기근속이벤트 현황</h2>
+            </div>
+            <div id="eventRows" class="mission-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="promotions">
+        <article class="card promotion-intro-card">
+          <div class="card-header">
+            <h2>프로모션 관리</h2>
+          </div>
+          <p class="form-help">프로모션 <strong>조건만</strong> 등록·수정합니다. 실제 적용은 <a href="#" data-section-link="promotion-apply">프로모션 적용</a> 메뉴에서 저장된 주간정산서별로 계산하세요.</p>
+        </article>
+
+        <article class="card" id="promotionGlobalSettingsCard">
+          <div class="card-header">
+            <h2>전역 미지급 조건</h2>
+          </div>
+          <form id="promotionGlobalSettingsForm" class="promotion-global-settings-form">
+            <div class="promotion-form-grid">
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionGlobalBlockEnabled">
+                <span>전역 미지급 사용</span>
+              </label>
+              <label data-global-rate-field="baemin">
+                배민 최소 수락률 (%)
+                <input type="number" id="promotionGlobalMinAcceptRate" min="0" max="100" step="0.1">
+              </label>
+              <label data-global-rate-field="coupang">
+                쿠팡 최대 거절율 (%)
+                <input type="number" id="promotionGlobalMaxRejectRate" min="0" max="100" step="0.1">
+              </label>
+              <label>
+                적용 플랫폼
+                <select id="promotionGlobalBlockPlatform">
+                  <option value="all">전체</option>
+                  <option value="coupang">쿠팡</option>
+                  <option value="baemin">배민</option>
+                </select>
+              </label>
+              <label>
+                적용 프로모션
+                <select id="promotionGlobalBlockApplyTo">
+                  <option value="all">전체 프로모션</option>
+                  <option value="selected">선택 프로모션만</option>
+                </select>
+              </label>
+            </div>
+            <div id="promotionGlobalRulePickers" class="promotion-global-rule-pickers" hidden></div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">전역 조건 저장 및 적용</button>
+            </div>
+          </form>
+          <p class="form-help">배민은 <strong>수락률</strong>, 쿠팡은 <strong>거절율</strong> 기준입니다. 프로모션 적용 계산 시 반영됩니다.</p>
+        </article>
+
+        <article class="card" id="promotionRulesCard">
+          <div class="card-header">
+            <h2>프로모션 조건 관리</h2>
+            <button type="button" class="primary-btn" id="promotionRuleAddBtn">조건 추가</button>
+          </div>
+          <p class="form-help">프로모션명은 관리자가 직접 입력합니다. 조건 저장 후 프로모션 적용 메뉴에서 주간정산서별로 선택해 계산하세요.</p>
+          <div class="promotion-platform-tabs promotion-rules-tabs" role="tablist">
+            <button type="button" class="promotion-tab active" data-promotion-rules-platform="coupang">쿠팡</button>
+            <button type="button" class="promotion-tab" data-promotion-rules-platform="baemin">배민</button>
+            <button type="button" class="promotion-tab" data-promotion-rules-platform="combined">합산</button>
+          </div>
+          <div id="promotionRulesList"></div>
+        </article>
+
+        <article class="card promotion-rule-form-card" id="promotionRuleFormCard" hidden>
+          <div class="card-header">
+            <h2 id="promotionRuleFormTitle">프로모션 조건 추가</h2>
+          </div>
+          <form id="promotionRuleForm" class="promotion-rule-form">
+            <div class="promotion-form-grid">
+              <label>
+                프로모션명
+                <input type="text" id="promotionRuleName" required placeholder="원하는 이름을 입력하세요">
+              </label>
+              <label>
+                유형
+                <select id="promotionRuleType">
+                  <option value="count_per_order">건당 프로모션</option>
+                  <option value="guaranteed_unit_price">단가보장</option>
+                  <option value="both">건당 + 단가보장</option>
+                </select>
+              </label>
+              <label>
+                플랫폼
+                <input type="text" id="promotionRulePlatformDisplay" readonly tabindex="-1">
+                <input type="hidden" id="promotionRulePlatform">
+              </label>
+              <label>
+                시작일
+                <input type="date" id="promotionRuleStartDate" class="admin-period-input" required>
+              </label>
+              <label>
+                종료일
+                <input type="date" id="promotionRuleEndDate" class="admin-period-input" required>
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleEnabled" checked>
+                <span>사용</span>
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleAllowDuplicate">
+                <span>중복 지급 허용</span>
+              </label>
+              <label>
+                중복 지급 불가 시
+                <select id="promotionRuleDuplicateStrategy">
+                  <option value="highest_priority">우선순위 높은 것만</option>
+                  <option value="highest_amount">금액 가장 높은 것만</option>
+                </select>
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleApplyGlobalBlock" checked>
+                <span>전역 미지급 조건 적용</span>
+              </label>
+            </div>
+
+            <div class="promotion-form-section" id="promotionBaseSection">
+              <h3>기본 지급 조건</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  기준 콜수
+                  <input type="number" id="promotionRuleBaseCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  지급 시작 콜수
+                  <input type="number" id="promotionRulePayStartCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  기본 건당 지급액 (원)
+                  <input type="number" id="promotionRulePayPerCall" min="0" step="100" value="0">
+                </label>
+              </div>
+              <p class="form-help">지급건수 = 총 콜수 − (지급 시작 콜수 − 1). 예: 160건, 시작 141 → 20건 × 건당금액</p>
+            </div>
+
+            <div class="promotion-form-section" id="promotionBlockConditionsSection">
+              <div class="promotion-condition-toolbar">
+                <h3>미지급 조건</h3>
+                <button type="button" class="small-btn" id="promotionAddBlockConditionBtn">조건 추가</button>
+              </div>
+              <p class="form-help">하나라도 충족하지 못하면 프로모션 전액 미지급 (거절율 초과, 수락률 미만, 총 콜수 미달, 주 근무일 미달 등)</p>
+              <div id="promotionBlockConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionBonusConditionsSection">
+              <div class="promotion-condition-toolbar">
+                <h3>추가 가산 조건</h3>
+                <button type="button" class="small-btn" id="promotionAddBonusConditionBtn">조건 추가</button>
+              </div>
+              <p class="form-help">조건 충족 시 기본 지급액에 추가 지급 (건당 추가, 정액, 보장단가, 비율)</p>
+              <div id="promotionBonusConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionReferenceConditionsSection">
+              <div class="promotion-condition-toolbar">
+                <h3>단순 참고 조건</h3>
+                <button type="button" class="small-btn" id="promotionAddReferenceConditionBtn">조건 추가</button>
+              </div>
+              <p class="form-help">지급 계산에 영향 없이 참고용으로만 표시</p>
+              <div id="promotionReferenceConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionGuaranteeSection">
+              <h3>단가보장 · 콜수 구간</h3>
+              <p class="form-help">구간별 보장 단가를 설정하세요. 지급액 = max(0, 총콜수×보장단가 − 실제 배달수행금액). 수락률·근무일 등은 미지급/추가 조건에서 설정하세요.</p>
+              <div class="promotion-tier-toolbar">
+                <strong>콜수 구간</strong>
+                <button type="button" class="small-btn" id="promotionAddTierBtn">구간 추가</button>
+              </div>
+              <div id="promotionTierRows" class="promotion-tier-rows"></div>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>미지급 조건 메모</h3>
+              <label class="promotion-textarea-field">
+                미지급 조건 설명
+                <textarea id="promotionRuleNoPayConditions" rows="3" placeholder="관리자 참고용 설명"></textarea>
+              </label>
+            </div>
+
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">조건 저장</button>
+              <button type="button" class="small-btn" id="promotionRuleFormCancel">취소</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section class="section" id="settlements">
+        <div class="promotion-platform-tabs admin-section-tabs" role="tablist">
+          <button type="button" class="promotion-tab active" data-admin-platform-tab="settlements" data-platform="coupang">쿠팡</button>
+          <button type="button" class="promotion-tab" data-admin-platform-tab="settlements" data-platform="baemin">배민</button>
+        </div>
+        <div class="admin-platform-panel" id="settlements-coupang" data-platform="coupang">
+        <article class="card settlement-upload-card">
+          <div class="card-header">
+            <h2>쿠팡 일정산서 업로드</h2>
+            <span class="settlement-format-badge settlement-format-badge--coupang" id="settlementFormatLabel-coupang">쿠팡</span>
+          </div>
+          <form class="settlement-upload-form" id="settlementUploadForm-coupang" data-platform="coupang">
+            <label>
+              엑셀 비밀번호
+              <input type="text" id="settlementPassword-coupang" placeholder="정산표 열람 비밀번호" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              정산일
+              <input type="date" id="settlementPeriod-coupang" class="admin-period-input">
+            </label>
+            <label>
+              정산표 파일 (.xlsx)
+              <input type="file" id="settlementFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+            </label>
+            <button class="primary-btn" type="submit" id="settlementUploadBtn-coupang">업로드 및 미리보기</button>
+          </form>
+          <p class="form-help">쿠팡 정산표 · 13행부터 C열(성함), F열(오더수), AC열(정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다.</p>
+          <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
+        </article>
+
+        <article class="card settlement-preview-card" id="settlementPreviewCard-coupang" hidden>
+          <div class="card-header">
+            <h2>쿠팡 일정산서 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <span class="settlement-period-badge" id="settlementPreviewPeriod-coupang">-</span>
+              <button class="primary-btn" type="button" id="settlementApplyBtn-coupang">반영하기</button>
+              <button class="small-btn" type="button" id="settlementCancelBtn-coupang">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats">
+            <p>총 기사 <strong id="settlementTotalCount-coupang">0</strong>명</p>
+            <p>매칭 성공 <strong id="settlementSuccessCount-coupang">0</strong>명</p>
+            <p>매칭 실패 <strong id="settlementFailedCount-coupang">0</strong>명</p>
+          </div>
+
+          <div class="settlement-preview-block">
+            <h3>매칭된 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table">
+                <thead>
+                  <tr>
+                    <th>기사명</th>
+                    <th>총 오더수</th>
+                    <th>총 정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementMatchedRows-coupang"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settlement-result-block" id="settlementFailedBlock-coupang" hidden>
+            <h3>매칭 실패 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table unmatched">
+                <thead>
+                  <tr>
+                    <th>엑셀 성함</th>
+                    <th>추출 이름</th>
+                    <th>오더수</th>
+                    <th>정산금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementFailedRows-coupang"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header">
+            <h2>쿠팡 미반영 기사 내역</h2>
+            <button class="small-btn danger-btn" type="button" id="settlementUnmatchedClearBtn-coupang">전체 삭제</button>
+          </div>
+          <p class="form-help">쿠팡 정산표 업로드·반영 후 매칭되지 않은 기사입니다.</p>
+          <div class="table-wrap">
+            <table class="settlement-preview-table unmatched">
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>엑셀 성함</th>
+                  <th>추출 이름</th>
+                  <th>오더수</th>
+                  <th>정산금액</th>
+                  <th>기록일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementUnmatchedHistoryRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>쿠팡 정산 반영 내역</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>기사명</th>
+                  <th>총 오더수</th>
+                  <th>총 정산금액</th>
+                  <th>반영일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementHistoryRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+        <div class="admin-platform-panel" id="settlements-baemin" data-platform="baemin" hidden>
+        <article class="card settlement-upload-card">
+          <div class="card-header">
+            <h2>배민 일정산서 업로드</h2>
+            <span class="settlement-format-badge settlement-format-badge--baemin" id="settlementFormatLabel-baemin">배민</span>
+          </div>
+          <form class="settlement-upload-form" id="settlementUploadForm-baemin" data-platform="baemin">
+            <label>
+              엑셀 비밀번호 <span class="field-optional">(선택)</span>
+              <input type="text" id="settlementPassword-baemin" placeholder="암호화된 파일만 입력" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              정산일
+              <input type="date" id="settlementPeriod-baemin" class="admin-period-input">
+            </label>
+            <label>
+              배민 정산표 파일 (.xlsx)
+              <input type="file" id="settlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+            </label>
+            <button class="primary-btn" type="submit" id="settlementUploadBtn-baemin">업로드 및 미리보기</button>
+          </form>
+          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · K열 등장 횟수 = 콜수, AH열 합계 = 배달수행금액 · L열은 참고용</p>
+          <p class="form-help settlement-file-hint" id="settlementFileHint-baemin" hidden></p>
+        </article>
+
+        <article class="card settlement-preview-card" id="settlementPreviewCard-baemin" hidden>
+          <div class="card-header">
+            <h2>배민 일정산서 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <span class="settlement-period-badge" id="settlementPreviewPeriod-baemin">-</span>
+              <button class="primary-btn" type="button" id="settlementApplyBtn-baemin">반영하기</button>
+              <button class="small-btn" type="button" id="settlementCancelBtn-baemin">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats settlement-result-stats--baemin">
+            <p>총 배달건수 <strong id="settlementTotalDeliveries-baemin">0</strong></p>
+            <p>총 라이더 수 <strong id="settlementTotalRiders-baemin">0</strong></p>
+            <p>매칭 성공 <strong id="settlementSuccessCount-baemin">0</strong></p>
+            <p>매칭 실패 <strong id="settlementFailedCount-baemin">0</strong></p>
+            <p>총 배달수행금액 <strong id="settlementTotalDeliveryAmount-baemin">0원</strong></p>
+          </div>
+
+          <div class="settlement-preview-block">
+            <h3>매칭된 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table">
+                <thead>
+                  <tr>
+                    <th>라이더 아이디</th>
+                    <th>기사명</th>
+                    <th>콜수</th>
+                    <th>배달수행금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementMatchedRows-baemin"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settlement-result-block" id="settlementFailedBlock-baemin" hidden>
+            <h3>매칭 실패 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table unmatched">
+                <thead>
+                  <tr>
+                    <th>라이더 아이디</th>
+                    <th>엑셀 이름</th>
+                    <th>콜수</th>
+                    <th>배달수행금액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementFailedRows-baemin"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header">
+            <h2>배민 미반영 기사 내역</h2>
+            <button class="small-btn danger-btn" type="button" id="settlementUnmatchedClearBtn-baemin">전체 삭제</button>
+          </div>
+          <p class="form-help">배민 정산표 업로드·반영 후 매칭되지 않은 기사입니다.</p>
+          <div class="table-wrap">
+            <table class="settlement-preview-table unmatched">
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>라이더 아이디</th>
+                  <th>엑셀 이름</th>
+                  <th>콜수</th>
+                  <th>배달수행금액</th>
+                  <th>기록일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementUnmatchedHistoryRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>배민 정산 반영 내역</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>정산일</th>
+                  <th>기사명</th>
+                  <th>라이더 아이디</th>
+                  <th>콜수</th>
+                  <th>배달수행금액</th>
+                  <th>반영일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementHistoryRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+      </section>
+
+      <section class="section" id="weekly-settlement">
+        <div class="promotion-platform-tabs admin-section-tabs" role="tablist">
+          <button type="button" class="promotion-tab active" data-admin-platform-tab="weekly-settlement" data-platform="coupang">쿠팡</button>
+          <button type="button" class="promotion-tab" data-admin-platform-tab="weekly-settlement" data-platform="baemin">배민</button>
+        </div>
+        <div class="admin-platform-panel" id="weekly-settlement-coupang" data-platform="coupang">
+        <article class="card">
+          <div class="card-header">
+            <h2>쿠팡 주정산서 업로드</h2>
+            <span class="settlement-format-badge settlement-format-badge--coupang">쿠팡</span>
+          </div>
+          <p class="form-help">정산서에서 <strong>기사명만</strong> 추출해 기존 기사와 매칭합니다. 매칭된 기사만 지역별로 저장합니다. (금액·프로모션은 나중에)</p>
+          <form class="weekly-settlement-form" id="weeklySettlementUploadForm-coupang">
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <input type="text" value="쿠팡" readonly>
+              </label>
+              <label>
+                지역
+                <input type="text" id="weeklySettlementRegion-coupang" placeholder="예: 울산 남구중앙" required>
+              </label>
+              <label>
+                기준 정산일 (수요일)
+                <input type="date" id="weeklySettlementBaseDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 시작일
+                <input type="date" id="weeklySettlementStartDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 종료일
+                <input type="date" id="weeklySettlementEndDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                지급 예정일 (금요일)
+                <input type="date" id="weeklySettlementPaymentDate-coupang" class="admin-period-input">
+              </label>
+              <label>
+                정산 주차
+                <input type="text" id="weeklySettlementWeekLabel-coupang" placeholder="예: 2026년 6월 3주차">
+              </label>
+              <label>
+                엑셀 비밀번호 (선택)
+                <input type="text" id="weeklySettlementPassword-coupang" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                정산서 파일 (.xlsx)
+                <input type="file" id="weeklySettlementFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+              </label>
+            </div>
+            <div class="promotion-form-section">
+              <h3>엑셀 열 설정</h3>
+              <div class="promotion-form-grid">
+                <label>기사명 열<input type="text" id="weeklySettlementNameCol-coupang" value="C"></label>
+                <label>총 정산 오더수 열<input type="text" id="weeklySettlementOrderCol-coupang" value="F"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementStartRow-coupang" min="1" value="13"></label>
+              </div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">업로드 및 매칭</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="weeklySettlementPreviewCard-coupang" hidden>
+          <div class="card-header">
+            <h2>쿠팡 정산 인수 · 매칭 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="weeklySettlementSaveBtn-coupang">매칭 기사만 저장</button>
+              <button type="button" class="small-btn" id="weeklySettlementCancelBtn-coupang">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats" id="weeklySettlementPreviewSummary-coupang"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>원본 이름</th>
+                  <th>쿠팡 ID</th>
+                  <th>주간 오더수(F)</th>
+                  <th>시스템 콜수</th>
+                  <th>콜수 일치</th>
+                  <th>매칭</th>
+                  <th>경고</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementPreviewRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header"><h2>저장된 쿠팡 정산 인수</h2></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>인수</th>
+                  <th>매칭 기사</th>
+                  <th>파일명</th>
+                  <th>저장일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementSavedRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+        <div class="admin-platform-panel" id="weekly-settlement-baemin" data-platform="baemin" hidden>
+        <article class="card">
+          <div class="card-header">
+            <h2>배민 주정산서 업로드</h2>
+            <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
+          </div>
+          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다.</p>
+          <form class="weekly-settlement-form" id="weeklySettlementUploadForm-baemin">
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <input type="text" value="배민" readonly>
+              </label>
+              <label>
+                지역 / 팀명
+                <input type="text" id="weeklySettlementRegion-baemin" placeholder="예: 표준울산남A팀브로1" required>
+              </label>
+              <label>
+                정산 시작일
+                <input type="date" id="weeklySettlementStartDate-baemin" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 종료일
+                <input type="date" id="weeklySettlementEndDate-baemin" class="admin-period-input" required>
+              </label>
+              <label>
+                지급 예정일
+                <input type="date" id="weeklySettlementPaymentDate-baemin" class="admin-period-input">
+              </label>
+              <label>
+                정산 주차 / 기간 표시
+                <input type="text" id="weeklySettlementWeekLabel-baemin" placeholder="예: 2026-05-20 ~ 2026-05-26">
+              </label>
+              <label>
+                엑셀 비밀번호 (선택)
+                <input type="text" id="weeklySettlementPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                정산서 파일 (.xlsx)
+                <input type="file" id="weeklySettlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+              </label>
+            </div>
+            <div class="promotion-form-section">
+              <h3>엑셀 열 설정</h3>
+              <div class="promotion-form-grid">
+                <label>User ID 열<input type="text" id="weeklySettlementUserIdCol-baemin" value="B"></label>
+                <label>라이더명 열<input type="text" id="weeklySettlementNameCol-baemin" value="C"></label>
+                <label>처리건수 열<input type="text" id="weeklySettlementOrderCol-baemin" value="D"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementStartRow-baemin" min="1" value="2"></label>
+              </div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">업로드 및 매칭</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="weeklySettlementPreviewCard-baemin" hidden>
+          <div class="card-header">
+            <h2>배민 정산 인수 · 매칭 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="weeklySettlementSaveBtn-baemin">매칭 기사만 저장</button>
+              <button type="button" class="small-btn" id="weeklySettlementCancelBtn-baemin">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats" id="weeklySettlementPreviewSummary-baemin"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>원본 이름</th>
+                  <th>User ID(B)</th>
+                  <th>주간 처리건수(D)</th>
+                  <th>시스템 콜수</th>
+                  <th>콜수 일치</th>
+                  <th>매칭</th>
+                  <th>경고</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementPreviewRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header"><h2>저장된 배민 정산 인수</h2></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>인수</th>
+                  <th>매칭 기사</th>
+                  <th>파일명</th>
+                  <th>저장일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementSavedRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+      </section>
+
+      <section class="section" id="promotion-apply">
+        <article class="card">
+          <div class="card-header">
+            <h2>프로모션 적용</h2>
+          </div>
+          <p class="form-help">저장된 주간정산 인수(예: 남구중앙 홍길동, 김철수…)에 프로모션 관리에서 만든 조건을 적용해 계산합니다. 콜수·수락률/거절율은 정산표 업로드·율 입력 데이터를 사용합니다.</p>
+          <div class="promotion-platform-tabs promotion-apply-tabs" role="tablist">
+            <button type="button" class="promotion-tab active" data-promotion-apply-platform="coupang">쿠팡</button>
+            <button type="button" class="promotion-tab" data-promotion-apply-platform="baemin">배민</button>
+            <button type="button" class="promotion-tab" data-promotion-apply-platform="combined">합산</button>
+          </div>
+          <form id="promotionApplyForm" class="weekly-settlement-form">
+            <div class="promotion-apply-panel" data-promotion-apply-panel="coupang">
+              <div class="promotion-form-grid">
+                <label>
+                  저장된 쿠팡 주정산
+                  <select id="promotionApplySettlementSelect-coupang"></select>
+                </label>
+              </div>
+              <div class="promotion-form-section">
+                <h3>적용할 프로모션 조건</h3>
+                <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-coupang"></div>
+              </div>
+            </div>
+            <div class="promotion-apply-panel" data-promotion-apply-panel="baemin" hidden>
+              <div class="promotion-form-grid">
+                <label>
+                  저장된 배민 주정산
+                  <select id="promotionApplySettlementSelect-baemin"></select>
+                </label>
+                <label>
+                  배달처리비 엑셀 비밀번호
+                  <input type="text" id="promotionApplyDeliveryFeePassword-baemin" placeholder="엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
+                </label>
+                <label>
+                  배달처리비 정산서 (.xlsx)
+                  <input type="file" id="promotionApplyDeliveryFeeFile-baemin" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                </label>
+              </div>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-baemin">단가보장 프로모션 적용 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 형식 파일을 업로드하세요. <strong>K열 User ID</strong>로 기사 배민 ID와 매칭하고 AH열 배달처리비를 합산합니다. 주정산서와 정산기간이 일치해야 합니다.</p>
+              <div class="promotion-form-section">
+                <h3>적용할 프로모션 조건</h3>
+                <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-baemin"></div>
+              </div>
+            </div>
+            <div class="promotion-apply-panel" data-promotion-apply-panel="combined" hidden>
+              <p class="form-help">쿠팡·배민 주정산서를 각각 선택하세요. 쿠팡에만 있으면 <strong>거절율</strong>, 배민에만 있으면 <strong>수락률</strong> 기준으로 계산하고, 양쪽 모두 있으면 <strong>쿠팡(거절율)</strong> 기준으로 적용합니다.</p>
+              <div class="promotion-form-grid">
+                <label>
+                  저장된 쿠팡 주정산
+                  <select id="promotionApplySettlementSelect-combined-coupang"></select>
+                </label>
+                <label>
+                  저장된 배민 주정산
+                  <select id="promotionApplySettlementSelect-combined-baemin"></select>
+                </label>
+                <label>
+                  배달처리비 엑셀 비밀번호
+                  <input type="text" id="promotionApplyDeliveryFeePassword-combined" placeholder="엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
+                </label>
+                <label>
+                  배달처리비 정산서 (.xlsx)
+                  <input type="file" id="promotionApplyDeliveryFeeFile-combined" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                </label>
+              </div>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined">단가보장 조건이 있으면 배민 기사(배민 단독)에 배달처리비 정산서가 필요합니다. 파일명 기간은 배민 주정산서와 같아야 합니다.</p>
+              <div class="promotion-form-section">
+                <h3>적용할 합산 프로모션 조건</h3>
+                <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-combined"></div>
+              </div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">프로모션 계산</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="promotionApplyResultCard" hidden>
+          <div class="card-header">
+            <h2>프로모션 계산 결과</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="promotionApplySaveBtn">결과 저장</button>
+              <button type="button" class="small-btn" id="promotionApplyDownloadBtn">엑셀 다운로드</button>
+            </div>
+          </div>
+          <div class="weekly-settlement-detail-meta" id="promotionApplyResultSummary"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-detail-table">
+              <thead id="promotionApplyResultHead">
+                <tr>
+                  <th>기사</th>
+                  <th>주간 콜수</th>
+                  <th>수락/거절율</th>
+                  <th>적용 프로모션</th>
+                  <th>기본 지급</th>
+                  <th>추가 지급</th>
+                  <th>총 지급</th>
+                  <th>적용 조건</th>
+                  <th>미달성 조건</th>
+                  <th>미지급 사유</th>
+                </tr>
+              </thead>
+              <tbody id="promotionApplyResultRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header"><h2>저장된 프로모션 계산 결과</h2></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>기사</th>
+                  <th>총 프로모션</th>
+                  <th>적용 조건</th>
+                  <th>저장일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="promotionApplySavedRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <article class="card weekly-settlement-detail-card" id="weeklySettlementDetailCard" hidden>
+        <div class="card-header">
+          <h2 id="weeklySettlementDetailTitle">정산 인수 상세</h2>
+          <button type="button" class="small-btn" id="weeklySettlementDetailClose">닫기</button>
+        </div>
+        <div class="weekly-settlement-detail-meta" id="weeklySettlementDetailMeta"></div>
+        <div class="table-wrap">
+          <table class="weekly-settlement-detail-table">
+            <thead id="weeklySettlementDetailHead">
+              <tr>
+                <th>기사명</th>
+                <th>원본 이름</th>
+              </tr>
+            </thead>
+            <tbody id="weeklySettlementDetailRows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <section class="section" id="notices">
+        <article class="card">
+          <div class="card-header">
+            <h2>공지사항 작성</h2>
+          </div>
+          <form class="notice-form" id="noticeForm">
+            <input type="hidden" id="noticeId">
+            <label>
+              제목
+              <input type="text" id="noticeTitle" placeholder="공지 제목" required>
+            </label>
+            <label>
+              내용
+              <textarea id="noticeContent" rows="5" placeholder="공지 내용을 입력하세요." required></textarea>
+            </label>
+            <label class="check-label">
+              <input type="checkbox" id="noticePinned">
+              상단 고정
+            </label>
+            <button class="primary-btn" type="submit" id="noticeSubmit">공지 등록</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>공지사항 목록</h2>
+          </div>
+          <div class="notice-list" id="noticeRows"></div>
+        </article>
+      </section>
+
+      <section class="section" id="admin-account">
+        <article class="card">
+          <div class="card-header">
+            <h2>관리자 계정 목록</h2>
+            <button class="small-btn" type="button" id="adminAccountCreateBtn">새 계정 만들기</button>
+          </div>
+          <p class="form-help" id="adminAccountIntro">직책별 권한: 대표(계정·직책·메뉴) · 총괄(팀장 메뉴 수정) · 팀장(조회만)</p>
+          <div class="table-wrap">
+            <table class="admin-account-table">
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>직책</th>
+                  <th>접근 메뉴</th>
+                  <th>상태</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="adminAccountRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card" id="adminAccountFormCard" hidden>
+          <div class="card-header">
+            <h2 id="adminAccountFormTitle">관리자 계정 만들기</h2>
+            <button class="small-btn" type="button" id="adminAccountFormCancelBtn">취소</button>
+          </div>
+          <form id="adminAccountForm" class="admin-account-form">
+            <input type="hidden" id="adminAccountId">
+            <label>
+              관리자 이름
+              <input type="text" id="adminAccountName" autocomplete="username" required>
+            </label>
+            <label id="adminAccountRoleWrap">
+              직책
+              <select id="adminAccountRole" required>
+                <option value="ceo">대표</option>
+                <option value="director">총괄</option>
+                <option value="manager" selected>팀장</option>
+              </select>
+            </label>
+            <p class="form-help admin-account-role-help" id="adminAccountRoleHelp">대표: 계정 생성·직책·메뉴 설정 · 총괄: 메뉴 수정 · 팀장: 조회만</p>
+            <label id="adminAccountPasswordWrap">
+              <span id="adminAccountPasswordLabel">비밀번호</span>
+              <input type="password" id="adminAccountPassword" minlength="4" autocomplete="new-password">
+            </label>
+            <label id="adminAccountPasswordConfirmWrap">
+              <span id="adminAccountPasswordConfirmLabel">비밀번호 확인</span>
+              <input type="password" id="adminAccountPasswordConfirm" minlength="4" autocomplete="new-password">
+            </label>
+            <label class="admin-account-active-field" id="adminAccountActiveWrap">
+              <input type="checkbox" id="adminAccountActive" checked>
+              <span>계정 사용</span>
+            </label>
+            <div class="admin-account-menu-panel" id="adminAccountMenuPanel">
+              <div class="admin-account-menu-head">
+                <strong>메뉴 권한</strong>
+                <div class="admin-account-menu-actions">
+                  <button class="small-btn" type="button" id="adminAccountSelectAllMenus">전체 수정</button>
+                  <button class="small-btn" type="button" id="adminAccountSelectViewMenus">전체 노출</button>
+                  <button class="small-btn" type="button" id="adminAccountClearMenus">전체 해제</button>
+                </div>
+              </div>
+              <p class="form-help admin-account-menu-help">노출: 메뉴 표시 · 수정: 입력·저장 가능 (수정은 노출이 켜져 있어야 합니다)</p>
+              <div class="admin-account-menu-grid" id="adminAccountMenuGrid"></div>
+            </div>
+            <p class="form-help" id="adminAccountStatus"></p>
+            <button class="primary-btn" type="submit" id="adminAccountSubmit">계정 저장</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="section" id="data-backup">
+        <article class="card">
+          <div class="card-header">
+            <h2>저장 데이터 현황</h2>
+            <button class="small-btn" type="button" id="backupRefreshStatusBtn">새로고침</button>
+          </div>
+          <div id="backupStatusPanel" class="backup-status-panel"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>JSON 내보내기</h2>
+          </div>
+          <p class="form-help">localStorage에 저장된 데이터를 JSON 파일로 백업합니다. 코드 업데이트 전후 데이터 보존용입니다.</p>
+          <div class="backup-action-grid">
+            <button class="primary-btn" type="button" data-backup-export="all">전체 데이터 백업</button>
+            <button class="small-btn" type="button" data-backup-export="drivers">기사 데이터 백업</button>
+            <button class="small-btn" type="button" data-backup-export="promotions">프로모션 조건 백업</button>
+            <button class="small-btn" type="button" data-backup-export="weeklySettlements">주간정산 결과 백업</button>
+            <button class="small-btn" type="button" data-backup-export="regions">지역·매칭 데이터 백업</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>JSON 가져오기 / 복원</h2>
+          </div>
+          <p class="form-help">백업 JSON을 불러와 localStorage에 복원합니다. 기본은 <strong>병합</strong> 모드로 기존 데이터를 유지하면서 없는 항목만 추가합니다.</p>
+          <div class="backup-import-form">
+            <label>
+              복원 모드
+              <select id="backupImportMode">
+                <option value="merge">병합 (기존 데이터 유지, 없는 항목 추가)</option>
+                <option value="replace">덮어쓰기 (선택 그룹 키 교체)</option>
+              </select>
+            </label>
+            <label>
+              적용 범위
+              <select id="backupImportGroup">
+                <option value="">백업 파일 그룹 그대로</option>
+                <option value="all">전체 데이터</option>
+                <option value="drivers">기사 데이터</option>
+                <option value="promotions">프로모션 조건</option>
+                <option value="weeklySettlements">주간정산 결과</option>
+                <option value="regions">지역·매칭 데이터</option>
+              </select>
+            </label>
+            <label class="backup-file-field">
+              JSON 파일
+              <input type="file" id="backupImportFile" accept=".json,application/json">
+            </label>
+            <button class="primary-btn" type="button" id="backupImportBtn">가져오기 / 복원</button>
+          </div>
+          <div class="backup-import-result" id="backupImportResult" hidden></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>Supabase 이전</h2>
+          </div>
+          <p class="form-help">localStorage 데이터를 Supabase 테이블로 upsert합니다. 실행 전 JSON 백업을 권장합니다. `js/supabase-config.js` 설정이 필요합니다.</p>
+          <div class="backup-import-form">
+            <label>
+              Supabase URL
+              <input type="text" id="supabaseUrlInput" placeholder="https://xxxx.supabase.co" autocomplete="off">
+            </label>
+            <label>
+              Supabase anon key
+              <input type="password" id="supabaseAnonKeyInput" placeholder="anon key" autocomplete="off">
+            </label>
+            <div class="backup-action-grid">
+              <button class="primary-btn" type="button" id="supabaseMigrateBtn">localStorage → Supabase 이전</button>
+              <button class="small-btn" type="button" id="supabaseConnectBtn">Supabase 모드 연결</button>
+              <button class="small-btn" type="button" id="supabaseLocalBtn">localStorage 모드</button>
+            </div>
+          </div>
+          <div class="backup-import-result" id="supabaseMigrateResult" hidden></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="toast" id="toast"></div>
+
+  <div class="range-calendar month-calendar" id="adminTargetMonthCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="adminTargetMonthPrev" aria-label="이전 해">&lt;</button>
+      <strong id="adminTargetMonthTitle">-</strong>
+      <button type="button" id="adminTargetMonthNext" aria-label="다음 해">&gt;</button>
+    </div>
+    <div class="month-grid" id="adminTargetMonthGrid"></div>
+    <div class="month-calendar-footer">
+      <button type="button" class="month-today-btn" id="adminTargetMonthThisMonth">이번 달</button>
+    </div>
+    <p class="calendar-help">적용할 월을 선택하세요.</p>
+  </div>
+
+  <div class="range-calendar wednesday-week-calendar" id="adminWeekPickerCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="adminWeekPickerPrev" aria-label="이전 달">&lt;</button>
+      <strong id="adminWeekPickerTitle">-</strong>
+      <button type="button" id="adminWeekPickerNext" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>일</span>
+      <span>월</span>
+      <span>화</span>
+      <span>수</span>
+      <span>목</span>
+      <span>금</span>
+      <span>토</span>
+    </div>
+    <div class="calendar-days" id="adminWeekPickerDays"></div>
+    <div class="month-calendar-footer">
+      <button type="button" class="month-today-btn" id="adminWeekPickerThisWeek">이번 주</button>
+    </div>
+    <p class="calendar-help">수요일만 선택할 수 있습니다. (수요일~화요일 기준)</p>
+  </div>
+
+  <div class="range-calendar call-date-calendar" id="adminCallDateCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="adminCallDateCalendarPrev" aria-label="이전 달">&lt;</button>
+      <strong id="adminCallDateCalendarTitle">-</strong>
+      <button type="button" id="adminCallDateCalendarNext" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>일</span>
+      <span>월</span>
+      <span>화</span>
+      <span>수</span>
+      <span>목</span>
+      <span>금</span>
+      <span>토</span>
+    </div>
+    <div class="calendar-days" id="adminCallDateCalendarDays"></div>
+    <p class="calendar-help">날짜를 클릭하면 선택됩니다.</p>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="js/platforms.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/storage-supabase-mapper.js"></script>
+  <script src="js/storage-supabase-adapter.js"></script>
+  <script src="js/storage-migrate-supabase.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/date-picker.js"></script>
+  <script src="js/settlement-formats.js"></script>
+  <script src="js/settlement-client.js"></script>
+  <script src="js/rejection-bulk.js"></script>
+  <script src="js/promotion-conditions.js"></script>
+  <script src="js/promotion-engine.js"></script>
+  <script src="js/promotion-admin.js"></script>
+  <script src="js/weekly-settlement.js"></script>
+  <script src="js/weekly-settlement-admin.js"></script>
+  <script src="js/baemin-delivery-fee.js"></script>
+  <script src="js/promotion-apply.js"></script>
+  <script src="js/promotion-apply-admin.js"></script>
+  <script src="js/data-backup-admin.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

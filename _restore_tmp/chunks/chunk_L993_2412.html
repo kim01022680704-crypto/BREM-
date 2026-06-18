@@ -1,0 +1,47 @@
+            <div class="promotion-form-section" id="promotionBaseSection">
+              <h3>기본 지급 조건</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  기준 콜수
+                  <input type="number" id="promotionRuleBaseCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  지급 시작 콜수
+                  <input type="number" id="promotionRulePayStartCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  기본 건당 지급액 (원)
+                  <input type="number" id="promotionRulePayPerCall" min="0" step="100" value="0">
+                </label>
+              </div>
+              <p class="form-help">지급건수 = 총 콜수 − (지급 시작 콜수 − 1). 예: 160건, 시작 141 → 20건 × 건당금액</p>
+            </div>
+
+            <div class="promotion-form-section" id="promotionBlockConditionsSection">
+              <div class="promotion-condition-toolbar">
+                <h3>미지급 조건</h3>
+                <button type="button" class="small-btn" id="promotionAddBlockConditionBtn">조건 추가</button>
+              </div>
+              <p class="form-help">하나라도 충족하지 못하면 프로모션 전액 미지급 (거절율 초과, 수락률 미만, 총 콜수 미달, 주 근무일 미달 등)</p>
+              <div id="promotionBlockConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionBonusConditionsSection">
+              <div class="promotion-condition-toolbar">
+                <h3>추가 가산 조건</h3>
+                <button type="button" class="small-btn" id="promotionAddBonusConditionBtn">조건 추가</button>
+              </div>
+              <p class="form-help">조건 충족 시 기본 지급액에 추가 지급 (건당 추가, 정액, 보장단가, 비율)</p>
+              <div id="promotionBonusConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionReferenceConditionsSection">
+              <div class="promotion-condition-toolbar">
+                <h3>단순 참고 조건</h3>
+                <button type="button" class="small-btn" id="promotionAddReferenceConditionBtn">조건 추가</button>
+              </div>
+              <p class="form-help">지급 계산에 영향 없이 참고용으로만 표시</p>
+              <div id="promotionReferenceConditionsList" class="promotion-conditions-list"></div>
+            </div>
+
+            <div class="promotion-form-section" id="promotionGuaranteeSection">

@@ -1,0 +1,55 @@
+      </section>
+
+      <section class="section" id="promotions">
+        <article class="card promotion-intro-card">
+          <div class="card-header">
+            <h2>프로모션 관리</h2>
+          </div>
+          <p class="form-help">정산표를 <strong>매일</strong> 업로드하면 해당 일자 콜수가 저장됩니다. 프로모션 집계는 <strong>수요일~화요일</strong> 주간 기준으로 일별 콜수를 합산합니다. 배민은 기사별 <strong>콜수</strong>와 <strong>배달수행금액</strong>이 모두 필요합니다.</p>
+          <div class="promotion-toolbar">
+            <label class="promotion-week-field">
+              <span>적용 주 (수~화)</span>
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="promotion" id="promotionWeekButton">
+                <span id="promotionWeekLabel">주 선택</span>
+              </button>
+              <input type="hidden" id="promotionWeekDate">
+              <span class="promotion-week-range" id="promotionWeekRange">-</span>
+            </label>
+            <div class="promotion-platform-tabs" role="tablist" aria-label="프로모션 플랫폼">
+              <button type="button" class="promotion-tab active" data-promotion-platform="coupang" role="tab" aria-selected="true">쿠팡</button>
+              <button type="button" class="promotion-tab" data-promotion-platform="baemin" role="tab" aria-selected="false">배민</button>
+            </div>
+          </div>
+          <div class="promotion-summary" id="promotionSummary"></div>
+        </article>
+
+        <article class="card promotion-table-card" id="promotionCard-coupang" data-promotion-panel="coupang">
+          <div class="card-header">
+            <h2>쿠팡 주간 콜수 현황</h2>
+            <span class="settlement-format-badge settlement-format-badge--coupang">쿠팡</span>
+          </div>
+          <p class="form-help">일별 콜수는 <a href="#" data-section-link="settlements-coupang">쿠팡 정산표 업로드</a> 반영 데이터입니다.</p>
+          <div class="table-wrap promotion-table-wrap">
+            <table class="promotion-table promotion-table--coupang">
+              <thead id="promotionHead-coupang"></thead>
+              <tbody id="promotionRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card promotion-table-card" id="promotionCard-baemin" data-promotion-panel="baemin" hidden>
+          <div class="card-header">
+            <h2>배민 주간 콜수·배달수행금액 현황</h2>
+            <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
+          </div>
+          <p class="form-help">일별 콜수·금액은 <a href="#" data-section-link="settlements-baemin">배민 정산표 업로드</a> 반영 데이터입니다.</p>
+          <div class="table-wrap promotion-table-wrap">
+            <table class="promotion-table promotion-table--baemin">
+              <thead id="promotionHead-baemin"></thead>
+              <tbody id="promotionRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="settlements-coupang">

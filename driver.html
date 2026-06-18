@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="BREM 기사 전용 조회">
+  <title>BREM 기사앱</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/login.css">
+  <link rel="stylesheet" href="css/driver.css">
+</head>
+<body>
+  <section class="login-page" id="driverLoginCard">
+    <div class="login-page__glow" aria-hidden="true"></div>
+
+    <div class="login-shell">
+      <form class="login-card" id="driverLoginForm">
+        <div class="login-card__logo">
+          <img
+            src="assets/brand/brem-logo.png"
+            width="640"
+            height="360"
+            alt="BREM PLUS DELIVERY AGENCY"
+          >
+        </div>
+
+        <hr class="login-card__divider" aria-hidden="true">
+
+        <header class="login-card__head">
+          <h1>라이더 로그인</h1>
+          <p class="login-card__subtitle">Brem 라이더 시스템</p>
+        </header>
+
+        <label class="login-field">
+          <span class="login-field__label">아이디</span>
+          <span class="login-field__control">
+            <svg class="login-field__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.6" fill="none"/>
+              <path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="driverLoginId" autocomplete="username" required>
+          </span>
+        </label>
+
+        <label class="login-field">
+          <span class="login-field__label">비밀번호</span>
+          <span class="login-field__control">
+            <svg class="login-field__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/>
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            </svg>
+            <input type="password" id="driverLoginPassword" autocomplete="current-password" required>
+          </span>
+        </label>
+
+        <button class="login-submit" type="submit">로그인</button>
+
+        <a class="login-home-link" href="home.html">
+          <svg class="login-home-link__icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+          </svg>
+          홈으로 돌아가기
+        </a>
+      </form>
+
+      <p class="login-footnote">BREM RIDER SYSTEM</p>
+    </div>
+  </section>
+
+  <div class="driver-app" id="driverMainApp" hidden>
+      <header class="hero">
+        <div class="hero__copy">
+          <p class="eyebrow">BREM RIDER</p>
+          <h1>기사 전용 조회</h1>
+          <p class="hero-desc">본인 콜수와 장기근속이벤트 진행률을 확인합니다.</p>
+        </div>
+        <img
+          class="hero__logo"
+          src="assets/brand/brem-logo-mark.png"
+          width="120"
+          height="86"
+          alt="BREM PLUS DELIVERY AGENCY"
+        >
+        <button class="logout-btn" type="button" id="driverLogoutBtn">로그아웃</button>
+      </header>
+
+      <main>
+        <section class="result" id="result" hidden>
+          <div class="profile-card">
+            <div class="profile-card-main">
+              <p class="eyebrow">기사 정보</p>
+              <h2 id="driverName">-</h2>
+              <dl class="profile-list">
+                <div>
+                  <dt>연락처</dt>
+                  <dd id="driverPhone">-</dd>
+                </div>
+                <div>
+                  <dt>가입일</dt>
+                  <dd id="driverJoinDate">-</dd>
+                </div>
+                <div>
+                  <dt>플랫폼</dt>
+                  <dd><span class="platform-badge" id="driverPlatform">-</span></dd>
+                </div>
+                <div id="driverResidentNumberRow">
+                  <dt>주민등록번호</dt>
+                  <dd id="driverResidentNumber">-</dd>
+                </div>
+                <div>
+                  <dt>계좌번호</dt>
+                  <dd id="driverAccount">-</dd>
+                </div>
+              </dl>
+              <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle">정보 수정</button>
+            </div>
+          </div>
+
+          <article class="panel profile-edit-panel" id="driverProfileEditPanel" hidden>
+            <div class="panel-header">
+              <h2>기사 정보 수정</h2>
+            </div>
+            <form id="driverProfileEditForm" class="profile-edit-form">
+              <section class="profile-edit-section">
+                <div class="profile-edit-section-head">
+                  <h3 class="profile-edit-section-title">개인 정보</h3>
+                </div>
+                <div class="profile-edit-grid profile-edit-grid--single">
+                  <label class="profile-edit-field" id="driverEditResidentNumberField">
+                    <span class="profile-edit-label">주민등록번호</span>
+                    <input type="text" id="driverEditResidentNumber" placeholder="920704-1850912" inputmode="numeric" maxlength="14" autocomplete="off">
+                  </label>
+                </div>
+              </section>
+
+              <section class="profile-edit-section">
+                <div class="profile-edit-section-head">
+                  <h3 class="profile-edit-section-title">계좌 정보</h3>
+                </div>
+                <div class="profile-edit-grid">
+                  <label class="profile-edit-field">
+                    <span class="profile-edit-label">은행명</span>
+                    <input type="text" id="driverEditBankName" placeholder="예: 국민은행" autocomplete="off">
+                  </label>
+                  <label class="profile-edit-field">
+                    <span class="profile-edit-label">예금주</span>
+                    <input type="text" id="driverEditAccountHolder" placeholder="예: 홍길동" autocomplete="off">
+                  </label>
+                  <label class="profile-edit-field profile-edit-field--full" id="driverEditAccountNumberField">
+                    <span class="profile-edit-label">계좌번호</span>
+                    <input type="text" id="driverEditAccountNumber" placeholder="계좌번호" inputmode="numeric" autocomplete="off">
+                  </label>
+                </div>
+              </section>
+
+              <section class="profile-edit-section">
+                <div class="profile-edit-section-head">
+                  <h3 class="profile-edit-section-title">비밀번호 변경</h3>
+                  <p class="profile-edit-section-desc">변경할 때만 입력하세요.</p>
+                </div>
+                <div class="profile-edit-grid">
+                  <label class="profile-edit-field profile-edit-field--full">
+                    <span class="profile-edit-label">현재 비밀번호</span>
+                    <input type="password" id="driverEditCurrentPassword" autocomplete="current-password">
+                  </label>
+                  <label class="profile-edit-field">
+                    <span class="profile-edit-label">새 비밀번호</span>
+                    <input type="password" id="driverEditNewPassword" autocomplete="new-password" placeholder="4자 이상">
+                  </label>
+                  <label class="profile-edit-field">
+                    <span class="profile-edit-label">새 비밀번호 확인</span>
+                    <input type="password" id="driverEditConfirmPassword" autocomplete="new-password">
+                  </label>
+                </div>
+              </section>
+
+              <div class="profile-edit-actions">
+                <button type="button" class="ghost-btn profile-edit-cancel" id="driverProfileEditCancel">취소</button>
+                <button type="submit" class="target-save-btn profile-edit-save">정보 저장</button>
+              </div>
+            </form>
+          </article>
+
+          <section class="summary-section">
+            <div class="summary-grid summary-grid--metrics">
+              <button type="button" class="summary-card summary-card--metric summary-card--action" id="monthTargetCard" aria-label="월간 목표 설정">
+                <span class="summary-card__label">월간 목표</span>
+                <strong class="summary-card__value summary-card__value--unset" id="monthTarget">클릭해서 설정</strong>
+              </button>
+              <button type="button" class="summary-card summary-card--metric summary-card--action" id="weekTargetCard" aria-label="주간 목표 설정">
+                <span class="summary-card__label">주간 목표</span>
+                <strong class="summary-card__value summary-card__value--unset" id="weekTarget">클릭해서 설정</strong>
+              </button>
+              <article class="summary-card summary-card--baemin">
+                <span class="summary-card__label">이번 달 콜수 (배민)</span>
+                <strong class="summary-card__value" id="monthCallsBaemin">0콜</strong>
+              </article>
+              <article class="summary-card summary-card--baemin">
+                <span class="summary-card__label">주간 콜수 (배민)</span>
+                <strong class="summary-card__value" id="weekCallsBaemin">0콜</strong>
+              </article>
+              <article class="summary-card summary-card--coupang">
+                <span class="summary-card__label">이번 달 콜수 (쿠팡)</span>
+                <strong class="summary-card__value" id="monthCallsCoupang">0콜</strong>
+              </article>
+              <article class="summary-card summary-card--coupang">
+                <span class="summary-card__label">주간 콜수 (쿠팡)</span>
+                <strong class="summary-card__value" id="weekCallsCoupang">0콜</strong>
+              </article>
+              <article class="summary-card summary-card--metric">
+                <span class="summary-card__label">월간 목표 달성률</span>
+                <strong class="summary-card__value" id="monthAchievementRate">0%</strong>
+              </article>
+              <article class="summary-card summary-card--metric">
+                <span class="summary-card__label">주간 목표 달성률</span>
+                <strong class="summary-card__value" id="weeklyAchievementRate">0%</strong>
+              </article>
+            </div>
+
+            <div class="summary-grid summary-grid--rates">
+              <article class="summary-card summary-card--baemin">
+                <span class="summary-card__label">주간 수락율 (배민)</span>
+                <strong class="summary-card__value" id="weeklyAcceptanceRateBaemin">-</strong>
+              </article>
+              <article class="summary-card summary-card--coupang">
+                <span class="summary-card__label">주간 거절율 (쿠팡)</span>
+                <strong class="summary-card__value" id="weeklyRejectionRateCoupang">-</strong>
+              </article>
+            </div>
+          </section>
+
+          <div class="content-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <h2>일별 콜수</h2>
+                <div class="week-nav">
+                  <button type="button" id="prevWeekBtn">&lt;&lt;</button>
+                  <span id="dailyRange">전체 기록</span>
+                  <button type="button" id="nextWeekBtn">&gt;&gt;</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>날짜</th>
+                      <th>쿠팡</th>
+                      <th>배민</th>
+                      <th>합산</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dailyRows"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <h2>장기근속이벤트 진행률</h2>
+              </div>
+              <div class="progress-box">
+                <div class="progress-info">
+                  <span id="eventItem">미설정</span>
+                  <strong id="missionDetail">이벤트 아이템이 설정되면 표시됩니다.</strong>
+                </div>
+                <div class="progress-bar"><span id="missionBar"></span></div>
+                <p class="rule-text" id="missionRule">누적 콜수 기준으로 계산됩니다.</p>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <h2>공지사항</h2>
+              </div>
+              <div class="notice-list" id="noticeList"></div>
+            </article>
+          </div>
+        </section>
+      </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="driver-target-overlay" id="driverTargetModal" hidden>
+    <button type="button" class="driver-target-overlay__backdrop" data-close-driver-target aria-label="닫기"></button>
+    <div class="driver-target-dialog" role="dialog" aria-modal="true" aria-labelledby="driverTargetModalTitle">
+      <header class="driver-target-dialog__head">
+        <h2 id="driverTargetModalTitle">월간 목표 설정</h2>
+        <button type="button" class="driver-target-dialog__close" data-close-driver-target aria-label="닫기">&times;</button>
+      </header>
+      <div class="driver-target-dialog__body">
+        <div id="driverTargetModalMonth">
+          <form id="monthTargetForm" class="target-form month-target-form">
+            <label class="target-field target-field--period">
+              <span class="target-field__label">적용월</span>
+              <button type="button" class="period-picker-btn month-picker-trigger" id="driverTargetMonthButton">
+                <span class="period-picker-btn__value" id="driverTargetMonthLabel">월을 선택하세요</span>
+                <span class="period-picker-btn__hint">클릭하여 적용월 선택</span>
+              </button>
+              <input type="hidden" id="driverTargetMonth" required>
+            </label>
+            <label class="target-field target-field--count">
+              <span class="target-field__label">월 목표 콜수</span>
+              <input type="number" id="driverMonthTargetCount" min="1" placeholder="예: 300" required>
+            </label>
+            <button type="submit" class="target-save-btn">월 목표 저장</button>
+          </form>
+        </div>
+        <div id="driverTargetModalWeek" hidden>
+          <form id="weekTargetForm" class="target-form week-target-form">
+            <label class="target-field target-field--period">
+              <span class="target-field__label">적용주</span>
+              <button type="button" class="period-picker-btn week-picker-trigger" data-week-picker-trigger="driver-week" id="driverTargetWeekButton">
+                <span class="period-picker-btn__value" id="driverTargetWeekRange">수요일~화요일 기준</span>
+                <span class="period-picker-btn__hint">클릭하여 수요일 선택</span>
+              </button>
+              <input type="hidden" id="driverTargetWeekDate" required>
+            </label>
+            <label class="target-field target-field--count">
+              <span class="target-field__label">주 목표 콜수</span>
+              <input type="number" id="driverWeekTargetCount" min="1" placeholder="예: 70" required>
+            </label>
+            <button type="submit" class="target-save-btn">주 목표 저장</button>
+          </form>
+        </div>
+        <p class="target-help">월·주 목표는 관리자 화면과 자동으로 연동됩니다. 주 목표는 수요일~화요일 기준으로 저장됩니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="range-calendar month-calendar driver-month-calendar" id="driverTargetMonthCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="driverTargetMonthPrev" aria-label="이전 해">&lt;</button>
+      <strong id="driverTargetMonthTitle">-</strong>
+      <button type="button" id="driverTargetMonthNext" aria-label="다음 해">&gt;</button>
+    </div>
+    <div class="month-grid" id="driverTargetMonthGrid"></div>
+    <div class="month-calendar-footer">
+      <button type="button" class="month-today-btn" id="driverTargetMonthThisMonth">이번 달</button>
+    </div>
+    <p class="calendar-help">적용할 월을 선택하세요.</p>
+  </div>
+
+  <div class="range-calendar wednesday-week-calendar driver-week-calendar" id="driverWeekPickerCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="driverWeekPickerPrev" aria-label="이전 달">&lt;</button>
+      <strong id="driverWeekPickerTitle">-</strong>
+      <button type="button" id="driverWeekPickerNext" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>일</span>
+      <span>월</span>
+      <span>화</span>
+      <span>수</span>
+      <span>목</span>
+      <span>금</span>
+      <span>토</span>
+    </div>
+    <div class="calendar-days" id="driverWeekPickerDays"></div>
+    <div class="month-calendar-footer">
+      <button type="button" class="month-today-btn" id="driverWeekPickerThisWeek">이번 주</button>
+    </div>
+    <p class="calendar-help">수요일만 선택할 수 있습니다. (수요일~화요일 기준)</p>
+  </div>
+
+  <script src="js/platforms.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/driver-utils.js"></script>
+  <script src="js/date-picker.js"></script>
+  <script src="js/driver.js"></script>
+</body>
+</html>

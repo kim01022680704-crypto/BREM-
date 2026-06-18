@@ -1,0 +1,60 @@
+      <section class="section" id="admin-account">
+        <article class="card">
+          <div class="card-header">
+            <h2>관리자 계정 목록</h2>
+            <button class="small-btn" type="button" id="adminAccountCreateBtn">새 계정 만들기</button>
+          </div>
+          <p class="form-help">로그인 계정을 여러 개 만들고, 계정마다 접근 가능한 메뉴를 선택할 수 있습니다.</p>
+          <div class="table-wrap">
+            <table class="admin-account-table">
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>접근 메뉴</th>
+                  <th>상태</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="adminAccountRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card" id="adminAccountFormCard" hidden>
+          <div class="card-header">
+            <h2 id="adminAccountFormTitle">관리자 계정 만들기</h2>
+            <button class="small-btn" type="button" id="adminAccountFormCancelBtn">취소</button>
+          </div>
+          <form id="adminAccountForm" class="admin-account-form">
+            <input type="hidden" id="adminAccountId">
+            <label>
+              관리자 이름
+              <input type="text" id="adminAccountName" autocomplete="username" required>
+            </label>
+            <label>
+              <span id="adminAccountPasswordLabel">비밀번호</span>
+              <input type="password" id="adminAccountPassword" minlength="4" autocomplete="new-password">
+            </label>
+            <label>
+              <span id="adminAccountPasswordConfirmLabel">비밀번호 확인</span>
+              <input type="password" id="adminAccountPasswordConfirm" minlength="4" autocomplete="new-password">
+            </label>
+            <label class="admin-account-active-field">
+              <input type="checkbox" id="adminAccountActive" checked>
+              <span>계정 사용</span>
+            </label>
+            <div class="admin-account-menu-panel">
+              <div class="admin-account-menu-head">
+                <strong>접근 가능 메뉴</strong>
+                <div class="admin-account-menu-actions">
+                  <button class="small-btn" type="button" id="adminAccountSelectAllMenus">전체 선택</button>
+                  <button class="small-btn" type="button" id="adminAccountClearMenus">전체 해제</button>
+                </div>
+              </div>
+              <div class="admin-account-menu-grid" id="adminAccountMenuGrid"></div>
+            </div>
+            <p class="form-help" id="adminAccountStatus"></p>
+            <button class="primary-btn" type="submit" id="adminAccountSubmit">계정 저장</button>
+          </form>
+        </article>
+      </section>

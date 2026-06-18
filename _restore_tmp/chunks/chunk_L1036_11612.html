@@ -1,0 +1,276 @@
+      </section>
+
+      <section class="section" id="weekly-settlement-coupang">
+        <article class="card">
+          <div class="card-header">
+            <h2>주간정산서 업로드 - 쿠팡</h2>
+            <span class="settlement-format-badge settlement-format-badge--coupang">쿠팡</span>
+          </div>
+          <p class="form-help">수요일~화요일 정산 · 금요일 지급 기준. 기준 정산일(수요일)을 선택하면 시작/종료/지급일이 자동 계산됩니다. 파일명의 주차 정보는 참고용입니다.</p>
+          <form class="weekly-settlement-form" id="weeklySettlementUploadForm-coupang">
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <input type="text" value="쿠팡" readonly>
+              </label>
+              <label>
+                지역
+                <input type="text" id="weeklySettlementRegion-coupang" placeholder="예: 울산 남구중앙" required>
+              </label>
+              <label>
+                기준 정산일 (수요일)
+                <input type="date" id="weeklySettlementBaseDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 시작일
+                <input type="date" id="weeklySettlementStartDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 종료일
+                <input type="date" id="weeklySettlementEndDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                지급 예정일 (금요일)
+                <input type="date" id="weeklySettlementPaymentDate-coupang" class="admin-period-input">
+              </label>
+              <label>
+                정산 주차
+                <input type="text" id="weeklySettlementWeekLabel-coupang" placeholder="예: 2026년 6월 3주차">
+              </label>
+              <label>
+                엑셀 비밀번호 (선택)
+                <input type="text" id="weeklySettlementPassword-coupang" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                정산서 파일 (.xlsx)
+                <input type="file" id="weeklySettlementFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+              </label>
+            </div>
+            <div class="promotion-form-section">
+              <h3>엑셀 열 설정</h3>
+              <div class="promotion-form-grid">
+                <label>기사명 열<input type="text" id="weeklySettlementNameCol-coupang" value="C"></label>
+                <label>콜수 열<input type="text" id="weeklySettlementOrderCol-coupang" value="F"></label>
+                <label>정산금액 열<input type="text" id="weeklySettlementAmountCol-coupang" value="AC"></label>
+                <label>거절율 열 (선택)<input type="text" id="weeklySettlementRejectCol-coupang" placeholder="예: H"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementStartRow-coupang" min="1" value="13"></label>
+              </div>
+            </div>
+            <div class="promotion-form-section">
+              <h3>적용할 프로모션 조건</h3>
+              <div class="weekly-settlement-promotion-rules" id="weeklySettlementPromotionRules-coupang"></div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">업로드 및 계산</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="weeklySettlementPreviewCard-coupang" hidden>
+          <div class="card-header">
+            <h2>쿠팡 주간정산 계산 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="weeklySettlementSaveBtn-coupang">저장</button>
+              <button type="button" class="small-btn" id="weeklySettlementCancelBtn-coupang">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats" id="weeklySettlementPreviewSummary-coupang"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>원본 이름</th>
+                  <th>콜수</th>
+                  <th>정산금액</th>
+                  <th>거절율</th>
+                  <th>기본 프로모션</th>
+                  <th>추가 프로모션</th>
+                  <th>총 프로모션</th>
+                  <th>매칭</th>
+                  <th>미지급 사유</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementPreviewRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header"><h2>저장된 쿠팡 주간정산</h2></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>플랫폼</th>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>지급예정일</th>
+                  <th>파일명</th>
+                  <th>총 인원</th>
+                  <th>총 콜수</th>
+                  <th>총 정산금액</th>
+                  <th>총 프로모션</th>
+                  <th>저장일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementSavedRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="weekly-settlement-baemin">
+        <article class="card">
+          <div class="card-header">
+            <h2>주간정산서 업로드 - 배민</h2>
+            <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
+          </div>
+          <p class="form-help">파일명에서 정산 시작/종료일을 자동 추출합니다. 시트 “을지_협력사 소속 라이더 정산 확인용”의 C열 라이더명을 기준으로 인원을 추출합니다.</p>
+          <form class="weekly-settlement-form" id="weeklySettlementUploadForm-baemin">
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <input type="text" value="배민" readonly>
+              </label>
+              <label>
+                지역 / 팀명
+                <input type="text" id="weeklySettlementRegion-baemin" placeholder="예: 표준울산남A팀브로1" required>
+              </label>
+              <label>
+                정산 시작일
+                <input type="date" id="weeklySettlementStartDate-baemin" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 종료일
+                <input type="date" id="weeklySettlementEndDate-baemin" class="admin-period-input" required>
+              </label>
+              <label>
+                지급 예정일
+                <input type="date" id="weeklySettlementPaymentDate-baemin" class="admin-period-input">
+              </label>
+              <label>
+                정산 주차 / 기간 표시
+                <input type="text" id="weeklySettlementWeekLabel-baemin" placeholder="예: 2026-05-20 ~ 2026-05-26">
+              </label>
+              <label>
+                엑셀 비밀번호 (선택)
+                <input type="text" id="weeklySettlementPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                정산서 파일 (.xlsx)
+                <input type="file" id="weeklySettlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+              </label>
+            </div>
+            <div class="promotion-form-section">
+              <h3>엑셀 열 설정</h3>
+              <div class="promotion-form-grid">
+                <label>라이더명 열<input type="text" id="weeklySettlementNameCol-baemin" value="C"></label>
+                <label>
+                  콜수 계산 방식
+                  <select id="weeklySettlementOrderMode-baemin">
+                    <option value="group_count">이름 등장 횟수(행 수)</option>
+                    <option value="column_sum">지정 열 합산</option>
+                  </select>
+                </label>
+                <label>콜수 열 (합산 시)<input type="text" id="weeklySettlementOrderCol-baemin" placeholder="예: F"></label>
+                <label>금액 열 (선택)<input type="text" id="weeklySettlementAmountCol-baemin" placeholder="예: AH"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementStartRow-baemin" min="1" value="2"></label>
+              </div>
+            </div>
+            <div class="promotion-form-section">
+              <h3>적용할 프로모션 조건</h3>
+              <div class="weekly-settlement-promotion-rules" id="weeklySettlementPromotionRules-baemin"></div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">업로드 및 계산</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="weeklySettlementPreviewCard-baemin" hidden>
+          <div class="card-header">
+            <h2>배민 주간정산 계산 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="weeklySettlementSaveBtn-baemin">저장</button>
+              <button type="button" class="small-btn" id="weeklySettlementCancelBtn-baemin">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats" id="weeklySettlementPreviewSummary-baemin"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>원본 이름</th>
+                  <th>콜수</th>
+                  <th>정산금액</th>
+                  <th>수락률</th>
+                  <th>기본 프로모션</th>
+                  <th>추가 프로모션</th>
+                  <th>총 프로모션</th>
+                  <th>매칭</th>
+                  <th>미지급 사유</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementPreviewRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header"><h2>저장된 배민 주간정산</h2></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>플랫폼</th>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>지급예정일</th>
+                  <th>파일명</th>
+                  <th>총 인원</th>
+                  <th>총 콜수</th>
+                  <th>총 정산금액</th>
+                  <th>총 프로모션</th>
+                  <th>저장일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementSavedRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <article class="card weekly-settlement-detail-card" id="weeklySettlementDetailCard" hidden>
+        <div class="card-header">
+          <h2 id="weeklySettlementDetailTitle">주간정산 상세</h2>
+          <button type="button" class="small-btn" id="weeklySettlementDetailClose">닫기</button>
+        </div>
+        <div class="weekly-settlement-detail-meta" id="weeklySettlementDetailMeta"></div>
+        <div class="table-wrap">
+          <table class="weekly-settlement-detail-table">
+            <thead>
+              <tr>
+                <th>기사명</th>
+                <th>원본 이름</th>
+                <th>콜수</th>
+                <th>정산금액</th>
+                <th>거절/수락률</th>
+                <th>기본 프로모션</th>
+                <th>추가 프로모션</th>
+                <th>총 프로모션</th>
+                <th>적용 조건</th>
+                <th>미달성 조건</th>
+                <th>미지급 사유</th>
+                <th>매칭</th>
+              </tr>
+            </thead>
+            <tbody id="weeklySettlementDetailRows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <section class="section" id="notices">

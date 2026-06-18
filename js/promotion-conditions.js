@@ -1,0 +1,223 @@
+const BremPromotionConditions = (function () {
+  const PROCESSING_MODES = {
+    block: '미지급 조건',
+    bonus: '추가 가산 조건',
+    reference: '단순 참고 조건'
+  };
+
+  const CONDITION_TYPES = {
+    reject_rate_over: {
+      label: '거절율 초과',
+      platforms: ['coupang'],
+      fields: ['rateThreshold']
+    },
+    reject_rate_under: {
+      label: '거절율 이하',
+      platforms: ['coupang'],
+      fields: ['rateThreshold']
+    },
+    accept_rate_under: {
+      label: '수락률 미만',
+      platforms: ['baemin'],
+      fields: ['rateThreshold']
+    },
+    accept_rate_over: {
+      label: '수락률 이상',
+      platforms: ['baemin'],
+      fields: ['rateThreshold']
+    },
+    total_orders_under: {
+      label: '총 콜수 미달',
+      platforms: ['coupang', 'baemin'],
+      fields: ['minTotalOrders']
+    },
+    total_orders_over: {
+      label: '총 콜수 이상',
+      platforms: ['coupang', 'baemin'],
+      fields: ['minTotalOrders']
+    },
+    working_days: {
+      label: '주 근무일',
+      platforms: ['coupang', 'baemin'],
+      fields: ['minWorkingDays', 'dailyMinOrders']
+    },
+    daily_min_days: {
+      label: '일일 최소 콜 달성일',
+      platforms: ['coupang', 'baemin'],
+      fields: ['dailyMinOrders', 'minDailyOrderDays']
+    }
+  };
+
+  const BONUS_ACTION_TYPES = {
+    add_pay_per_order: '건당 추가 지급',
+    fixed_bonus: '정액 추가 지급',
+    guarantee_unit_add: '보장단가 추가',
+    percent_bonus: '프로모션 비율 추가'
+  };
+
+  function createId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function normalizePlatform(platform) {
+    if (typeof BremPlatforms !== 'undefined') return BremPlatforms.normalize(platform);
+    if (platform === 'combined') return 'combined';
+    return platform === 'baemin' ? 'baemin' : 'coupang';
+  }
+
+  function normalizeCondition(raw = {}, index = 0) {
+    return {
+      id: raw.id || createId(),
+      conditionName: String(raw.conditionName || '').trim(),
+      conditionType: raw.conditionType || 'working_days',
+      processingMode: raw.processingMode || 'block',
+      rateThreshold: Number(raw.rateThreshold ?? 0),
+      minTotalOrders: Number(raw.minTotalOrders ?? 0),
+      minWorkingDays: Number(raw.minWorkingDays ?? 6),
+      dailyMinOrders: Number(raw.dailyMinOrders ?? 30),
+      minDailyOrderDays: Number(raw.minDailyOrderDays ?? 6),
+      actionType: raw.actionType || 'add_pay_per_order',
+      addPayPerOrder: Number(raw.addPayPerOrder ?? 0),
+      fixedBonus: Number(raw.fixedBonus ?? 0),
+      bonusPercent: Number(raw.bonusPercent ?? 0),
+      guaranteeUnitAdd: Number(raw.guaranteeUnitAdd ?? 0),
+      sortOrder: Number(raw.sortOrder ?? index)
+    };
+  }
+
+  function normalizeBase(raw = {}, legacy = {}) {
+    return {
+      baseCallCount: Number(raw.baseCallCount ?? legacy.baseCallCount ?? legacy.minOrders ?? 0),
+      payStartCallCount: Number(raw.payStartCallCount ?? legacy.payStartCallCount ?? legacy.payStartOrder ?? 0),
+      payPerCall: Number(raw.payPerCall ?? legacy.payPerCall ?? legacy.payPerOrder ?? 0),
+      guaranteedUnitPrice: Number(raw.guaranteedUnitPrice ?? legacy.guaranteedUnitPrice ?? 0),
+      callTiers: Array.isArray(raw.callTiers ?? legacy.callTiers) ? raw.callTiers : []
+    };
+  }
+
+  function splitConditionsByMode(conditions = []) {
+    const blockConditions = [];
+    const bonusConditions = [];
+    const referenceConditions = [];
+    conditions.forEach((item, index) => {
+      const normalized = normalizeCondition(item, index);
+      if (normalized.processingMode === 'bonus') bonusConditions.push(normalized);
+      else if (normalized.processingMode === 'reference') referenceConditions.push(normalized);
+      else blockConditions.push(normalized);
+    });
+    return { blockConditions, bonusConditions, referenceConditions };
+  }
+
+  function migrateLegacyRule(rule) {
+    if (rule.base && (Array.isArray(rule.blockConditions) || Array.isArray(rule.bonusConditions))) {
+      return {
+        base: normalizeBase(rule.base, rule),
+        blockConditions: (rule.blockConditions || []).map(normalizeCondition),
+        bonusConditions: (rule.bonusConditions || []).map(normalizeCondition),
+        referenceConditions: (rule.referenceConditions || []).map(normalizeCondition)
+      };
+    }
+
+    if (Array.isArray(rule.conditions) && rule.conditions.length) {
+      const split = splitConditionsByMode(rule.conditions);
+      return { base: normalizeBase(rule.base || {}, rule), ...split };
+    }
+
+    const platform = normalizePlatform(rule.platform);
+    const base = normalizeBase({}, rule);
+    const blockConditions = [];
+    const bonusConditions = [];
+    const referenceConditions = [];
+
+    if (platform === 'baemin' && Number(rule.minRate ?? rule.minAcceptRate ?? 0) > 0) {
+      blockConditions.push(normalizeCondition({
+        conditionName: `수락률 ${rule.minRate ?? rule.minAcceptRate}% 미만 미지급`,
+        conditionType: 'accept_rate_under',
+        processingMode: 'block',
+        rateThreshold: Number(rule.minRate ?? rule.minAcceptRate ?? 0)
+      }));
+    }
+    if (platform === 'coupang' && Number(rule.maxRate ?? rule.maxAcceptRate ?? 15) < 100) {
+      blockConditions.push(normalizeCondition({
+        conditionName: `거절율 ${rule.maxRate ?? rule.maxAcceptRate}% 초과 미지급`,
+        conditionType: 'reject_rate_over',
+        processingMode: 'block',
+        rateThreshold: Number(rule.maxRate ?? rule.maxAcceptRate ?? 15)
+      }));
+    }
+    if (Number(base.baseCallCount) > 0) {
+      blockConditions.push(normalizeCondition({
+        conditionName: `총 콜수 ${base.baseCallCount}건 미달 미지급`,
+        conditionType: 'total_orders_under',
+        processingMode: 'block',
+        minTotalOrders: base.baseCallCount
+      }));
+    }
+    if (rule.requireMinWorkingDays) {
+      const item = normalizeCondition({
+        conditionName: `주 ${rule.minWorkingDays ?? 6}일 조건`,
+        conditionType: 'working_days',
+        processingMode: rule.blockOnWorkingDaysFail === false ? 'bonus' : 'block',
+        minWorkingDays: Number(rule.minWorkingDays ?? 6),
+        dailyMinOrders: Number(rule.dailyMinOrders ?? 30),
+        actionType: 'add_pay_per_order',
+        addPayPerOrder: 0
+      });
+      if (item.processingMode === 'bonus') bonusConditions.push(item);
+      else blockConditions.push(item);
+    }
+    if (rule.requireDailyMinOrders) {
+      const item = normalizeCondition({
+        conditionName: `하루 ${rule.dailyMinOrders ?? 30}건 ${rule.minDailyOrderDays ?? 6}일 조건`,
+        conditionType: 'daily_min_days',
+        processingMode: rule.blockOnDailyMinFail === false ? 'bonus' : 'block',
+        dailyMinOrders: Number(rule.dailyMinOrders ?? 30),
+        minDailyOrderDays: Number(rule.minDailyOrderDays ?? 6),
+        actionType: 'add_pay_per_order',
+        addPayPerOrder: 0
+      });
+      if (item.processingMode === 'bonus') bonusConditions.push(item);
+      else blockConditions.push(item);
+    }
+
+    return { base, blockConditions, bonusConditions, referenceConditions };
+  }
+
+  function conditionTypesForPlatform(platform, processingMode) {
+    const p = normalizePlatform(platform);
+    return Object.entries(CONDITION_TYPES)
+      .filter(([, meta]) => p === 'combined' || meta.platforms.includes(p))
+      .filter(([type]) => {
+        if (processingMode === 'block') {
+          return ['reject_rate_over', 'accept_rate_under', 'total_orders_under', 'working_days', 'daily_min_days'].includes(type);
+        }
+        if (processingMode === 'bonus') {
+          return ['reject_rate_under', 'accept_rate_over', 'total_orders_over', 'working_days', 'daily_min_days'].includes(type);
+        }
+        return true;
+      })
+      .map(([value, meta]) => ({ value, label: meta.label }));
+  }
+
+  function emptyCondition(processingMode = 'block') {
+    return normalizeCondition({
+      conditionName: '',
+      conditionType: processingMode === 'bonus' ? 'working_days' : 'total_orders_under',
+      processingMode,
+      actionType: 'add_pay_per_order'
+    });
+  }
+
+  return {
+    PROCESSING_MODES,
+    CONDITION_TYPES,
+    BONUS_ACTION_TYPES,
+    normalizeCondition,
+    normalizeBase,
+    migrateLegacyRule,
+    conditionTypesForPlatform,
+    emptyCondition,
+    createId
+  };
+})();

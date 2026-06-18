@@ -1,0 +1,136 @@
+          <div class="promotion-summary" id="promotionSummary"></div>
+        </article>
+
+        <article class="card" id="promotionRulesCard">
+          <div class="card-header">
+            <h2>프로모션 조건 관리</h2>
+            <button type="button" class="primary-btn" id="promotionRuleAddBtn">조건 추가</button>
+          </div>
+          <p class="form-help">모든 계산은 아래 저장된 설정값을 기준으로 합니다. 예시 조건은 참고용이며 수정·삭제·복사할 수 있습니다.</p>
+          <div id="promotionRulesList"></div>
+        </article>
+
+        <article class="card promotion-rule-form-card" id="promotionRuleFormCard" hidden>
+          <div class="card-header">
+            <h2 id="promotionRuleFormTitle">프로모션 조건 추가</h2>
+          </div>
+          <form id="promotionRuleForm" class="promotion-rule-form">
+            <div class="promotion-form-grid">
+              <label>
+                프로모션명
+                <input type="text" id="promotionRuleName" required placeholder="예: 6월 콜수 보너스">
+              </label>
+              <label>
+                플랫폼
+                <select id="promotionRulePlatform">
+                  <option value="coupang">쿠팡</option>
+                  <option value="baemin">배민</option>
+                </select>
+              </label>
+              <label>
+                시작일
+                <input type="date" id="promotionRuleStartDate" class="admin-period-input" required>
+              </label>
+              <label>
+                종료일
+                <input type="date" id="promotionRuleEndDate" class="admin-period-input" required>
+              </label>
+              <label class="promotion-checkbox-field">
+                <input type="checkbox" id="promotionRuleEnabled" checked>
+                <span>사용</span>
+              </label>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>콜수 · 건당 지급</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  기준 콜수
+                  <input type="number" id="promotionRuleBaseCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  지급 시작 콜수
+                  <input type="number" id="promotionRulePayStartCallCount" min="0" step="1" value="0">
+                </label>
+                <label>
+                  건당 지급액 (원)
+                  <input type="number" id="promotionRulePayPerCall" min="0" step="100" value="0">
+                </label>
+              </div>
+              <p class="form-help">예: 지급 시작 141, 건당 1,000원 → 141건째부터 1,000원씩 지급</p>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>수락률 조건</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  최소 수락률 (%)
+                  <input type="number" id="promotionRuleMinAcceptRate" min="0" max="100" step="0.1" value="0">
+                </label>
+                <label>
+                  최대 수락률 (%)
+                  <input type="number" id="promotionRuleMaxAcceptRate" min="0" max="100" step="0.1" value="100">
+                </label>
+              </div>
+              <p class="form-help">쿠팡은 거절율을 100에서 빼서 수락률로 계산합니다.</p>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>단가보장 · 콜수 구간</h3>
+              <div class="promotion-form-grid">
+                <label>
+                  보장 단가 (원)
+                  <input type="number" id="promotionRuleGuaranteedUnitPrice" min="0" step="100" value="0">
+                </label>
+              </div>
+              <p class="form-help">구간에 해당하지 않을 때 적용하는 기본 보장 단가입니다.</p>
+              <div class="promotion-tier-toolbar">
+                <strong>콜수 구간</strong>
+                <button type="button" class="small-btn" id="promotionAddTierBtn">구간 추가</button>
+              </div>
+              <div id="promotionTierRows" class="promotion-tier-rows"></div>
+              <p class="form-help">예: 50건 이상 2,800원 · 100건 이상 3,000원 … (콜수가 큰 구간 우선 적용)</p>
+            </div>
+
+            <div class="promotion-form-section">
+              <h3>미지급 조건</h3>
+              <label class="promotion-textarea-field">
+                미지급 조건 설명
+                <textarea id="promotionRuleNoPayConditions" rows="3" placeholder="예: 기준 콜수 미달, 수락률 미달, 보장 단가 이상 수행 시 추가 미지급"></textarea>
+              </label>
+            </div>
+
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">저장</button>
+              <button type="button" class="small-btn" id="promotionRuleFormCancel">취소</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="promotionPreviewCard">
+          <div class="card-header">
+            <h2>기사별 적용 결과 미리보기</h2>
+          </div>
+          <p class="form-help promotion-preview-note" id="promotionPreviewRuleName">미리볼 프로모션 조건을 선택하세요.</p>
+          <div class="table-wrap promotion-preview-wrap">
+            <table class="promotion-preview-table">
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>주간 콜수</th>
+                  <th>수락률</th>
+                  <th>적용 구간</th>
+                  <th>지급 콜수</th>
+                  <th>건당 지급</th>
+                  <th>단가보장</th>
+                  <th>합계</th>
+                  <th>업로드</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="promotionPreviewRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card promotion-table-card" id="promotionCard-coupang" data-promotion-panel="coupang">

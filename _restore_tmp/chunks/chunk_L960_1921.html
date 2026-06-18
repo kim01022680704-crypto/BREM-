@@ -1,0 +1,52 @@
+        </article>
+
+        <article class="card" id="promotionDriverSelectorCard">
+          <div class="card-header">
+            <h2>기사별 프로모션 선택</h2>
+          </div>
+          <p class="form-help">기사가 선택한 유형과 프로모션 조건의 선택자 키가 일치할 때만 해당 프로모션이 적용됩니다.</p>
+          <div class="table-wrap promotion-driver-select-wrap">
+            <table class="promotion-driver-select-table">
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>쿠팡 선택</th>
+                  <th>배민 선택</th>
+                </tr>
+              </thead>
+              <tbody id="promotionDriverSelectorRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card" id="promotionPreviewCard">
+          <div class="card-header">
+            <h2>기사별 적용 결과 미리보기</h2>
+            <div class="promotion-preview-mode">
+              <button type="button" class="small-btn active" data-promotion-preview-mode="single">단일 조건</button>
+              <button type="button" class="small-btn" data-promotion-preview-mode="combined">통합 계산</button>
+            </div>
+          </div>
+          <p class="form-help promotion-preview-note" id="promotionPreviewRuleName">미리볼 프로모션 조건을 선택하세요.</p>
+          <div class="table-wrap promotion-preview-wrap">
+            <table class="promotion-preview-table">
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>선택 유형</th>
+                  <th>주간 콜수</th>
+                  <th>수락률</th>
+                  <th>30건+일</th>
+                  <th>적용 구간</th>
+                  <th>지급 콜수</th>
+                  <th>건당 지급</th>
+                  <th>단가보장</th>
+                  <th>합계</th>
+                  <th>상태</th>
+                  <th>미지급 사유</th>
+                </tr>
+              </thead>
+              <tbody id="promotionPreviewRows"></tbody>
+            </table>
+          </div>
+        </article>

@@ -1,0 +1,59 @@
+      </section>
+
+      <section class="section" id="data-backup">
+        <article class="card">
+          <div class="card-header">
+            <h2>저장 데이터 현황</h2>
+            <button class="small-btn" type="button" id="backupRefreshStatusBtn">새로고침</button>
+          </div>
+          <div id="backupStatusPanel" class="backup-status-panel"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>JSON 내보내기</h2>
+          </div>
+          <p class="form-help">localStorage에 저장된 데이터를 JSON 파일로 백업합니다. 코드 업데이트 전후 데이터 보존용입니다.</p>
+          <div class="backup-action-grid">
+            <button class="primary-btn" type="button" data-backup-export="all">전체 데이터 백업</button>
+            <button class="small-btn" type="button" data-backup-export="drivers">기사 데이터 백업</button>
+            <button class="small-btn" type="button" data-backup-export="promotions">프로모션 조건 백업</button>
+            <button class="small-btn" type="button" data-backup-export="weeklySettlements">주간정산 결과 백업</button>
+            <button class="small-btn" type="button" data-backup-export="regions">지역·매칭 데이터 백업</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>JSON 가져오기 / 복원</h2>
+          </div>
+          <p class="form-help">백업 JSON을 불러와 localStorage에 복원합니다. 기본은 <strong>병합</strong> 모드로 기존 데이터를 유지하면서 없는 항목만 추가합니다.</p>
+          <div class="backup-import-form">
+            <label>
+              복원 모드
+              <select id="backupImportMode">
+                <option value="merge">병합 (기존 데이터 유지, 없는 항목 추가)</option>
+                <option value="replace">덮어쓰기 (선택 그룹 키 교체)</option>
+              </select>
+            </label>
+            <label>
+              적용 범위
+              <select id="backupImportGroup">
+                <option value="">백업 파일 그룹 그대로</option>
+                <option value="all">전체 데이터</option>
+                <option value="drivers">기사 데이터</option>
+                <option value="promotions">프로모션 조건</option>
+                <option value="weeklySettlements">주간정산 결과</option>
+                <option value="regions">지역·매칭 데이터</option>
+              </select>
+            </label>
+            <label class="backup-file-field">
+              JSON 파일
+              <input type="file" id="backupImportFile" accept=".json,application/json">
+            </label>
+            <button class="primary-btn" type="button" id="backupImportBtn">가져오기 / 복원</button>
+          </div>
+          <div class="backup-import-result" id="backupImportResult" hidden></div>
+        </article>
+      </section>
+    </main>

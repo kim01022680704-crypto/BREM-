@@ -1,0 +1,35 @@
+      <section class="section" id="calls">
+        <article class="card call-input-card">
+          <div class="card-header">
+            <h2>기사별 콜수 입력</h2>
+          </div>
+          <form class="form-row call-daily-form" id="callForm">
+            <label>
+              기사
+              <select id="callDriver" required></select>
+            </label>
+            <label class="call-date-field">
+              <span>날짜</span>
+              <button type="button" class="date-range-button" id="callDateButton">날짜 선택</button>
+              <input type="hidden" id="callDate" required>
+            </label>
+            <label>
+              콜수
+              <input type="number" id="callCount" min="0" placeholder="0" required>
+            </label>
+            <button class="primary-btn" type="submit">저장</button>
+          </form>
+          <div class="range-calendar call-date-calendar" id="callDateCalendar" hidden>
+            <div class="calendar-header">
+              <button type="button" id="callDateCalendarPrev" aria-label="이전 달">&lt;</button>
+              <strong id="callDateCalendarTitle">-</strong>
+              <button type="button" id="callDateCalendarNext" aria-label="다음 달">&gt;</button>
+            </div>
+            <div class="calendar-weekdays">
+              <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+            </div>
+            <div class="calendar-days" id="callDateCalendarDays"></div>
+            <p class="calendar-help">날짜를 클릭하면 선택됩니다.</p>
+          </div>
+          <p class="form-help">하루 단위로 입력하면 주간·월간·장기근속이벤트 콜수가 자동으로 계산됩니다.</p>
+        </article>

@@ -1,0 +1,645 @@
+const BremPromotionApply = (function () {
+  function normalizePlatform(platform) {
+    return BremPlatforms.normalize(platform);
+  }
+
+  function getWeekStatsForDriver(driverId, startDate, endDate, platform) {
+    const stats = BremWeeklySettlement.buildDriverCallStatsForPeriod(
+      driverId,
+      startDate,
+      endDate,
+      platform
+    );
+    return {
+      callCount: stats.callCount,
+      deliveryAmount: stats.deliveryAmount,
+      byDay: stats.byDay,
+      uploadDays: stats.uploadDays
+    };
+  }
+
+  function makeCoupangLoginIdFromDriver(driver) {
+    if (!driver) return '';
+    const name = String(driver.name || '').replace(/\s+/g, '');
+    const phone = String(driver.phone || '').replace(/[^0-9]/g, '').slice(-4);
+    return phone ? `${name}${phone}` : name;
+  }
+
+  function makeCoupangDisplayName(driver, rider) {
+    const fromDriver = makeCoupangLoginIdFromDriver(driver);
+    if (fromDriver) return fromDriver;
+
+    const name = String(rider?.driverName || rider?.riderName || '').replace(/\s+/g, '');
+    const fromRider = String(rider?.coupangLoginKey || rider?.originalName || '').trim().replace(/\s+/g, '');
+    return fromRider || name;
+  }
+
+  function makeBaeminDisplayName(driver, rider) {
+    const baeminId = BremWeeklySettlement.normalizeBaeminUserId(
+      rider?.baeminUserId || driver?.baeminId || ''
+    );
+    return baeminId || '-';
+  }
+
+  function getBaeminUserId(rider, driver) {
+    return BremWeeklySettlement.normalizeBaeminUserId(
+      rider?.baeminUserId || driver?.baeminId || ''
+    );
+  }
+
+  function resolveDriverForWeeklyRider(rider, platform) {
+    if (normalizePlatform(platform) === 'baemin') {
+      return BremWeeklySettlement.resolveBaeminDriver(rider);
+    }
+    const driverId = String(rider?.matchedRiderId || '').trim();
+    return driverId ? BremStorage.drivers.getById(driverId) || null : null;
+  }
+
+  function enrichBaeminRider(rider, driver) {
+    if (!driver) return rider;
+    return {
+      ...rider,
+      matchedRiderId: driver.id,
+      driverName: driver.name,
+      baeminUserId: getBaeminUserId(rider, driver)
+    };
+  }
+
+  function formatDriverDisplayName(platform, driver, rider) {
+    if (normalizePlatform(platform) === 'coupang') {
+      return makeCoupangDisplayName(driver, rider);
+    }
+    if (normalizePlatform(platform) === 'baemin') {
+      return makeBaeminDisplayName(driver, rider);
+    }
+    return driver?.name || rider?.driverName || rider?.riderName || '';
+  }
+
+  function getResultRowDisplayName(row, platform) {
+    const driver = row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
+    const displayPlatform = normalizePlatform(platform) === 'combined'
+      ? normalizePlatform(row.appliedPlatform || 'coupang')
+      : normalizePlatform(platform);
+    if (displayPlatform === 'coupang') {
+      return makeCoupangDisplayName(driver, row);
+    }
+    if (displayPlatform === 'baemin') {
+      return makeBaeminDisplayName(driver, row);
+    }
+    return row?.displayName || row?.driverName || row?.riderName || '';
+  }
+
+  function pickPromotionRule(driver, platform, selectedPromotionRuleIds = []) {
+    const p = normalizePlatform(platform);
+    const selected = (selectedPromotionRuleIds || []).filter(Boolean);
+
+    if (p === 'combined') {
+      const combinedIds = selected.filter(id => {
+        const rule = BremStorage.promotionRules.getById(id);
+        return rule && normalizePlatform(rule.platform) === 'combined';
+      });
+      if (combinedIds.length === 1) return BremStorage.promotionRules.getById(combinedIds[0]);
+      if (combinedIds.length) return BremStorage.promotionRules.getById(combinedIds[0]);
+      return null;
+    }
+
+    const driverRuleId = p === 'baemin'
+      ? String(driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || '').trim()
+      : String(driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || '').trim();
+
+    if (driverRuleId && selected.includes(driverRuleId)) {
+      return BremStorage.promotionRules.getById(driverRuleId);
+    }
+    if (selected.length === 1) return BremStorage.promotionRules.getById(selected[0]);
+    if (driverRuleId) return BremStorage.promotionRules.getById(driverRuleId);
+    if (selected.length) return BremStorage.promotionRules.getById(selected[0]);
+    return null;
+  }
+
+  function ruleUsesGuarantee(rule) {
+    if (!rule) return false;
+    const type = rule.type || 'count_per_order';
+    return type === 'guaranteed_unit_price' || type === 'both';
+  }
+
+  function selectedRulesNeedDeliveryFee(ruleIds = []) {
+    return (ruleIds || []).some(id => ruleUsesGuarantee(BremStorage.promotionRules.getById(id)));
+  }
+
+  function resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex) {
+    const stats = getWeekStatsForDriver(
+      driver.id,
+      settlement.startDate,
+      settlement.endDate,
+      statsPlatform
+    );
+
+    if (statsPlatform !== 'baemin' || !deliveryFeeIndex) {
+      return { stats, feeData: null };
+    }
+
+    const feeData = BremBaeminDeliveryFee.lookup(deliveryFeeIndex, rider, driver);
+    if (!feeData) {
+      return { stats, feeData: null };
+    }
+
+    const callCount = feeData.orderCount > 0
+      ? feeData.orderCount
+      : Number(rider.weeklyOrderCount || stats.callCount || 0);
+
+    return {
+      stats: {
+        ...stats,
+        callCount,
+        deliveryAmount: feeData.deliveryAmount
+      },
+      feeData: {
+        ...feeData,
+        callCount
+      }
+    };
+  }
+
+  function buildDriverAssignments(coupangSettlement, baeminSettlement) {
+    const coupangMap = new Map();
+    const baeminMap = new Map();
+
+    (coupangSettlement?.riders || []).forEach(rider => {
+      if (rider.matchedRiderId) coupangMap.set(rider.matchedRiderId, rider);
+    });
+    (baeminSettlement?.riders || []).forEach(rider => {
+      const driver = resolveDriverForWeeklyRider(rider, 'baemin');
+      if (!driver?.id) return;
+      baeminMap.set(driver.id, enrichBaeminRider(rider, driver));
+    });
+
+    const assignments = [];
+    coupangMap.forEach((rider, driverId) => {
+      const overlap = baeminMap.has(driverId);
+      assignments.push({
+        driverId,
+        appliedPlatform: 'coupang',
+        rider,
+        settlement: coupangSettlement,
+        assignmentSource: overlap ? '겹침→쿠팡' : '쿠팡'
+      });
+    });
+    baeminMap.forEach((rider, driverId) => {
+      if (!coupangMap.has(driverId)) {
+        assignments.push({
+          driverId,
+          appliedPlatform: 'baemin',
+          rider,
+          settlement: baeminSettlement,
+          assignmentSource: '배민'
+        });
+      }
+    });
+    return assignments;
+  }
+
+  function calculateRiderPromotion({
+    rider,
+    driver,
+    appliedPlatform,
+    rulePlatform,
+    settlement,
+    selectedRuleIds,
+    promotionSettings,
+    assignmentSource = '',
+    deliveryFeeIndex = null,
+    requireDeliveryFee = false
+  }) {
+    const statsPlatform = normalizePlatform(appliedPlatform);
+    const ruleP = normalizePlatform(rulePlatform);
+
+    if (!driver) {
+      return {
+        riderName: rider.riderName,
+        driverName: rider.driverName || rider.riderName,
+        displayName: formatDriverDisplayName(statsPlatform, null, rider),
+        coupangLoginKey: rider.coupangLoginKey || '',
+        originalName: rider.originalName || '',
+        baeminUserId: rider.baeminUserId || '',
+        matchedRiderId: rider.matchedRiderId || '',
+        appliedPlatform: statsPlatform,
+        assignmentSource,
+        basePromotionAmount: 0,
+        extraPromotionAmount: 0,
+        totalPromotionAmount: 0,
+        appliedConditions: [],
+        failedConditions: [],
+        failureReasons: [statsPlatform === 'baemin' ? '배민 User ID 미매칭' : '기사 데이터 없음']
+      };
+    }
+
+    const rule = pickPromotionRule(driver, ruleP, selectedRuleIds);
+    const needsDeliveryFee = statsPlatform === 'baemin'
+      && (requireDeliveryFee || ruleUsesGuarantee(rule));
+
+    if (!rule || !rule.enabled || normalizePlatform(rule.platform) !== ruleP) {
+      return {
+        riderName: rider.riderName,
+        driverName: driver.name,
+        displayName: formatDriverDisplayName(statsPlatform, driver, rider),
+        coupangLoginKey: rider.coupangLoginKey || '',
+        originalName: rider.originalName || '',
+        baeminUserId: rider.baeminUserId || driver.baeminId || '',
+        matchedRiderId: driver.id,
+        appliedPlatform: statsPlatform,
+        assignmentSource,
+        basePromotionAmount: 0,
+        extraPromotionAmount: 0,
+        totalPromotionAmount: 0,
+        appliedConditions: [],
+        failedConditions: [],
+        failureReasons: ['적용할 프로모션 조건 없음']
+      };
+    }
+
+    const { stats, feeData } = driver
+      ? resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex)
+      : { stats: { callCount: 0, deliveryAmount: 0, byDay: {}, uploadDays: 0 }, feeData: null };
+
+    if (needsDeliveryFee && !feeData) {
+      return {
+        riderName: rider.riderName,
+        driverName: driver.name,
+        displayName: formatDriverDisplayName(statsPlatform, driver, rider),
+        coupangLoginKey: rider.coupangLoginKey || '',
+        originalName: rider.originalName || '',
+        baeminUserId: rider.baeminUserId || driver.baeminId || '',
+        matchedRiderId: driver.id,
+        appliedPlatform: statsPlatform,
+        assignmentSource,
+        callCount: Number(rider.weeklyOrderCount || stats.callCount || 0),
+        deliveryAmountTotal: 0,
+        avgDeliveryUnitPrice: 0,
+        guaranteedUnitPrice: 0,
+        guaranteePromotionAmount: 0,
+        basePromotionAmount: 0,
+        extraPromotionAmount: 0,
+        totalPromotionAmount: 0,
+        appliedConditions: [],
+        failedConditions: [],
+        failureReasons: ['배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)']
+      };
+    }
+
+    const platformRate = BremStorage.rejections.getRateForWeek(driver.id, settlement.startDate, statsPlatform);
+
+    const riderData = {
+      driverId: driver.id,
+      name: driver.name,
+      platform: statsPlatform,
+      totalOrders: stats.callCount,
+      platformRate: platformRate === null || platformRate === undefined ? null : Number(platformRate),
+      rateLabel: BremPlatforms.rateLabel(statsPlatform),
+      dailyOrders: stats.byDay,
+      deliveryAmount: stats.deliveryAmount,
+      selectedPromotionRuleId: rule.id,
+      selectedPromotionName: rule.name,
+      uploadDays: stats.uploadDays,
+      weekStart: settlement.startDate,
+      weekEnd: settlement.endDate
+    };
+
+    const result = BremPromotionEngine.calculatePromotionForRider(rule, riderData, promotionSettings);
+
+    const guaranteePromotionAmount = Number(result.guaranteeBonus || 0);
+
+    return {
+      riderName: rider.riderName,
+      driverName: driver.name,
+      displayName: formatDriverDisplayName(statsPlatform, driver, rider),
+      coupangLoginKey: rider.coupangLoginKey || '',
+      originalName: rider.originalName || '',
+      baeminUserId: rider.baeminUserId || driver.baeminId || '',
+      matchedRiderId: driver.id,
+      appliedPlatform: statsPlatform,
+      assignmentSource,
+      callCount: stats.callCount,
+      platformRate: riderData.platformRate,
+      deliveryAmountTotal: Number(feeData?.deliveryAmount ?? stats.deliveryAmount ?? 0),
+      avgDeliveryUnitPrice: Number(feeData?.avgUnitPrice || 0),
+      guaranteedUnitPrice: Number(result.appliedUnitPrice || 0),
+      guaranteePromotionAmount,
+      ruleName: rule.name,
+      basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
+      extraPromotionAmount: Number(result.bonusPay || 0),
+      totalPromotionAmount: Number(result.totalBonus || 0),
+      appliedConditions: (result.appliedBonusConditions || []).map(item => item.name),
+      failedConditions: (result.failedBonusConditions || []).map(item => item.name || item.reason),
+      failureReasons: result.failureReasons || []
+    };
+  }
+
+  function applyPromotionToSettlement(settlement, selectedPromotionRuleIds = [], settings, options = {}) {
+    if (!settlement) throw new Error('저장된 주간정산을 선택하세요.');
+
+    const platform = normalizePlatform(settlement.platform);
+    const promotionSettings = settings || BremStorage.promotionSettings.get();
+    const selected = (selectedPromotionRuleIds || []).filter(Boolean);
+    if (!selected.length) throw new Error('적용할 프로모션 조건을 선택하세요.');
+
+    const deliveryFeeIndex = options.deliveryFeeIndex || null;
+    const requireDeliveryFee = options.requireDeliveryFee === true
+      || (platform === 'baemin' && selectedRulesNeedDeliveryFee(selected));
+
+    if (requireDeliveryFee && !deliveryFeeIndex) {
+      throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
+    }
+
+    const results = (settlement.riders || []).map(rider => {
+      const driver = resolveDriverForWeeklyRider(rider, platform);
+      const riderForCalc = platform === 'baemin' && driver
+        ? enrichBaeminRider(rider, driver)
+        : rider;
+      return calculateRiderPromotion({
+        rider: riderForCalc,
+        driver,
+        appliedPlatform: platform,
+        rulePlatform: platform,
+        settlement,
+        selectedRuleIds: selected,
+        promotionSettings,
+        deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
+        requireDeliveryFee
+      });
+    });
+
+    const totalPromotionAmount = results.reduce((sum, item) => sum + item.totalPromotionAmount, 0);
+
+    return {
+      settlementId: settlement.id,
+      settlementLabel: `${settlement.region} · ${settlement.matchedNamesLabel || ''}`,
+      platform,
+      region: settlement.region,
+      startDate: settlement.startDate,
+      endDate: settlement.endDate,
+      selectedPromotionRuleIds: selected,
+      selectedPromotionRuleNames: selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
+      deliveryFeeFileName: options.deliveryFeeMeta?.fileName || '',
+      deliveryFeeLabel: options.deliveryFeeMeta
+        ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
+        : '',
+      results,
+      summary: {
+        riderCount: results.length,
+        totalPromotionAmount
+      }
+    };
+  }
+
+  function applyPromotionToCombinedSettlements(
+    coupangSettlement,
+    baeminSettlement,
+    selectedPromotionRuleIds = [],
+    settings,
+    options = {}
+  ) {
+    if (!coupangSettlement) throw new Error('저장된 쿠팡 주정산서를 선택하세요.');
+    if (!baeminSettlement) throw new Error('저장된 배민 주정산서를 선택하세요.');
+
+    const promotionSettings = settings || BremStorage.promotionSettings.get();
+    const selected = (selectedPromotionRuleIds || []).filter(Boolean);
+    if (!selected.length) throw new Error('적용할 합산 프로모션 조건을 선택하세요.');
+
+    const assignments = buildDriverAssignments(coupangSettlement, baeminSettlement);
+    if (!assignments.length) throw new Error('매칭된 기사가 없습니다.');
+
+    const deliveryFeeIndex = options.deliveryFeeIndex || null;
+    const requireDeliveryFee = options.requireDeliveryFee === true
+      || selectedRulesNeedDeliveryFee(selected);
+
+    if (requireDeliveryFee && !deliveryFeeIndex) {
+      throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
+    }
+
+    const results = assignments.map(item => {
+      const driver = BremStorage.drivers.getById(item.driverId);
+      return calculateRiderPromotion({
+        rider: item.rider,
+        driver,
+        appliedPlatform: item.appliedPlatform,
+        rulePlatform: 'combined',
+        settlement: item.settlement,
+        selectedRuleIds: selected,
+        promotionSettings,
+        assignmentSource: item.assignmentSource,
+        deliveryFeeIndex: item.appliedPlatform === 'baemin' ? deliveryFeeIndex : null,
+        requireDeliveryFee: item.appliedPlatform === 'baemin' && requireDeliveryFee
+      });
+    });
+
+    const totalPromotionAmount = results.reduce((sum, item) => sum + item.totalPromotionAmount, 0);
+    const startDate = [coupangSettlement.startDate, baeminSettlement.startDate].filter(Boolean).sort()[0] || '';
+    const endDate = [coupangSettlement.endDate, baeminSettlement.endDate].filter(Boolean).sort().slice(-1)[0] || '';
+
+    return {
+      settlementId: `${coupangSettlement.id}|${baeminSettlement.id}`,
+      coupangSettlementId: coupangSettlement.id,
+      baeminSettlementId: baeminSettlement.id,
+      settlementLabel: `쿠팡 ${coupangSettlement.region || '-'} + 배민 ${baeminSettlement.region || '-'}`,
+      platform: 'combined',
+      region: `${coupangSettlement.region || ''} / ${baeminSettlement.region || ''}`.trim(),
+      startDate,
+      endDate,
+      selectedPromotionRuleIds: selected,
+      selectedPromotionRuleNames: selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
+      deliveryFeeFileName: options.deliveryFeeMeta?.fileName || '',
+      deliveryFeeLabel: options.deliveryFeeMeta
+        ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
+        : '',
+      results,
+      summary: {
+        riderCount: results.length,
+        totalPromotionAmount,
+        coupangAssigned: results.filter(item => item.appliedPlatform === 'coupang').length,
+        baeminAssigned: results.filter(item => item.appliedPlatform === 'baemin').length,
+        overlapAssigned: results.filter(item => item.assignmentSource === '겹침→쿠팡').length
+      }
+    };
+  }
+
+  function buildSaveRecord(calculationResult) {
+    if (!calculationResult) throw new Error('저장할 계산 결과가 없습니다.');
+    return {
+      id: BremStorage.createId(),
+      platform: calculationResult.platform,
+      settlementId: calculationResult.settlementId,
+      settlementLabel: calculationResult.settlementLabel,
+      region: calculationResult.region,
+      startDate: calculationResult.startDate,
+      endDate: calculationResult.endDate,
+      selectedPromotionRuleIds: calculationResult.selectedPromotionRuleIds || [],
+      selectedPromotionRuleNames: calculationResult.selectedPromotionRuleNames || [],
+      deliveryFeeFileName: String(calculationResult.deliveryFeeFileName || ''),
+      deliveryFeeLabel: String(calculationResult.deliveryFeeLabel || ''),
+      savedAt: new Date().toISOString(),
+      coupangSettlementId: calculationResult.coupangSettlementId || '',
+      baeminSettlementId: calculationResult.baeminSettlementId || '',
+      results: calculationResult.results || [],
+      summary: calculationResult.summary || { riderCount: 0, totalPromotionAmount: 0 }
+    };
+  }
+
+  function saveResult(calculationResult) {
+    return BremStorage.promotionApplyResults.save(buildSaveRecord(calculationResult));
+  }
+
+  function getSavedResults(platform) {
+    const list = BremStorage.promotionApplyResults.getAll();
+    if (!platform) return list;
+    const p = normalizePlatform(platform);
+    return list.filter(item => normalizePlatform(item.platform) === p);
+  }
+
+  function getSavedResultById(id) {
+    return BremStorage.promotionApplyResults.getById(id);
+  }
+
+  function deleteSavedResult(id) {
+    return BremStorage.promotionApplyResults.remove(id);
+  }
+
+  function formatRateForExport(value, platform) {
+    if (value === null || value === undefined || value === '') return '-';
+    return `${Number(value).toLocaleString('ko-KR')}%`;
+  }
+
+  function buildExportRows(record) {
+    const platform = normalizePlatform(record.platform);
+    const isCombined = platform === 'combined';
+    const rateLabel = isCombined ? '수락/거절율' : BremPlatforms.rateLabel(platform);
+    const metaRows = [
+      ['프로모션 적용 결과'],
+      ['플랫폼', BremPlatforms.label(platform)],
+      ['지역', record.region || ''],
+      ['정산기간', `${record.startDate || ''} ~ ${record.endDate || ''}`],
+      ['주간정산', record.settlementLabel || ''],
+      ...(isCombined ? [
+        ['쿠팡 정산서 ID', record.coupangSettlementId || ''],
+        ['배민 정산서 ID', record.baeminSettlementId || ''],
+        ['쿠팡 적용', record.summary?.coupangAssigned ?? ''],
+        ['배민 적용', record.summary?.baeminAssigned ?? ''],
+        ['겹침→쿠팡', record.summary?.overlapAssigned ?? '']
+      ] : []),
+      ['적용 프로모션', (record.selectedPromotionRuleNames || []).join(', ')],
+      ...(record.deliveryFeeLabel ? [['배달처리비', record.deliveryFeeLabel]] : []),
+      ...(record.deliveryFeeFileName ? [['배달처리비 파일', record.deliveryFeeFileName]] : []),
+      ['저장일', String(record.savedAt || '').slice(0, 19).replace('T', ' ')],
+      ['기사 수', record.summary?.riderCount || 0],
+      ['총 프로모션', record.summary?.totalPromotionAmount || 0],
+      []
+    ];
+    const driverLabel = isCombined
+      ? '기사'
+      : (platform === 'coupang' ? '쿠팡 ID' : (platform === 'baemin' ? '배민 User ID' : '기사명'));
+    const showDeliveryFee = platform === 'baemin'
+      || (isCombined && (record.results || []).some(row => BremPlatforms.normalize(row.appliedPlatform) === 'baemin'));
+    const header = [
+      driverLabel,
+      ...(isCombined ? ['적용 플랫폼', '구분'] : []),
+      '주간 콜수',
+      rateLabel,
+      '적용 프로모션',
+      ...(showDeliveryFee ? [
+        '배달처리비합계',
+        '건당실제',
+        '보장단가',
+        '단가보장지급'
+      ] : []),
+      '기본 지급',
+      '추가 지급',
+      '총 지급',
+      '적용 조건',
+      '미달성 조건',
+      '미지급 사유'
+    ];
+    const dataRows = (record.results || []).map(row => {
+      const rowPlatform = isCombined ? normalizePlatform(row.appliedPlatform || 'coupang') : platform;
+      const base = [
+        getResultRowDisplayName(row, platform),
+        ...(isCombined ? [
+          BremPlatforms.label(rowPlatform),
+          row.assignmentSource || '-'
+        ] : []),
+        Number(row.callCount || 0),
+        formatRateForExport(row.platformRate, rowPlatform),
+        row.ruleName || '',
+        ...(showDeliveryFee ? [
+          Number(row.deliveryAmountTotal || 0),
+          Number(row.avgDeliveryUnitPrice || 0),
+          Number(row.guaranteedUnitPrice || 0),
+          Number(row.guaranteePromotionAmount || 0)
+        ] : []),
+        Number(row.basePromotionAmount || 0),
+        Number(row.extraPromotionAmount || 0),
+        Number(row.totalPromotionAmount || 0),
+        (row.appliedConditions || []).join(', '),
+        (row.failedConditions || []).join(', '),
+        (row.failureReasons || []).join(', ') || '없음'
+      ];
+      return base;
+    });
+    return metaRows.concat([header], dataRows);
+  }
+
+  function buildExportFileName(record) {
+    const platform = normalizePlatform(record.platform);
+    const platformSlug = platform === 'baemin' ? '배민' : (platform === 'combined' ? '합산' : '쿠팡');
+    const region = String(record.region || '지역').replace(/[\\/:*?"<>|]/g, '_');
+    const date = String(record.startDate || record.savedAt || '').slice(0, 10);
+    return `BREM_프로모션적용_${platformSlug}_${region}_${date}.xlsx`;
+  }
+
+  function exportResultToExcel(record) {
+    if (!window.XLSX) throw new Error('엑셀 라이브러리를 불러오지 못했습니다.');
+    if (!record) throw new Error('다운로드할 결과가 없습니다.');
+
+    const rows = buildExportRows(record);
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet['!cols'] = [
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 24 },
+      { wch: 24 },
+      { wch: 24 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, '프로모션적용');
+    XLSX.writeFile(workbook, buildExportFileName(record));
+  }
+
+  function getSettlementOptions(platform) {
+    const p = normalizePlatform(platform);
+    return BremStorage.weeklySettlements.getAll()
+      .filter(item => BremStorage.resolveWeeklySettlementPlatform(item) === p)
+      .map(item => ({
+        id: item.id,
+        label: `${item.region} · ${item.matchedNamesLabel || `${item.summary?.matchedRiders || item.riders?.length || 0}명`} (${item.startDate}~${item.endDate})`
+      }));
+  }
+
+  return {
+    applyPromotionToSettlement,
+    applyPromotionToCombinedSettlements,
+    selectedRulesNeedDeliveryFee,
+    ruleUsesGuarantee,
+    getSettlementOptions,
+    getWeekStatsForDriver,
+    getResultRowDisplayName,
+    buildSaveRecord,
+    saveResult,
+    getSavedResults,
+    getSavedResultById,
+    deleteSavedResult,
+    exportResultToExcel
+  };
+})();

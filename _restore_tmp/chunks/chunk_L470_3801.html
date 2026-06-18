@@ -1,0 +1,105 @@
+      <section class="section" id="settlements">
+        <article class="card settlement-upload-card">
+          <div class="card-header">
+            <h2>정산표 업로드</h2>
+          </div>
+          <form class="settlement-upload-form" id="settlementUploadForm">
+            <label>
+              엑셀 비밀번호
+              <input type="password" id="settlementPassword" placeholder="정산표 열람 비밀번호" autocomplete="off">
+            </label>
+            <label>
+              정산 기간 (선택)
+              <input type="month" id="settlementPeriod">
+            </label>
+            <label>
+              정산표 파일 (.xlsx)
+              <input type="file" id="settlementFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+            </label>
+            <button class="primary-btn" type="submit" id="settlementUploadBtn">업로드 및 미리보기</button>
+          </form>
+          <p class="form-help">비밀번호와 원본 엑셀 파일은 서버에 저장되지 않습니다. 미리보기 확인 후 반영하기를 눌러 저장하세요.</p>
+        </article>
+
+        <article class="card settlement-preview-card" id="settlementPreviewCard" hidden>
+          <div class="card-header">
+            <h2>정산표 미리보기</h2>
+            <div class="settlement-preview-actions">
+              <span class="settlement-period-badge" id="settlementPreviewPeriod">-</span>
+              <button class="primary-btn" type="button" id="settlementApplyBtn">반영하기</button>
+              <button class="small-btn" type="button" id="settlementCancelBtn">취소</button>
+            </div>
+          </div>
+          <p class="settlement-preview-summary" id="settlementPreviewSummary">-</p>
+
+          <div class="settlement-preview-block">
+            <h3>매칭된 기사</h3>
+            <div class="table-wrap">
+              <table class="settlement-preview-table">
+                <thead>
+                  <tr>
+                    <th>기사</th>
+                    <th>연락처</th>
+                    <th>콜수</th>
+                    <th>정산금</th>
+                    <th>프로모션금</th>
+                    <th>고용보험</th>
+                    <th>산재보험</th>
+                    <th>최종지급액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementMatchedRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settlement-preview-block" id="settlementUnmatchedBlock" hidden>
+            <h3>매칭되지 않은 기사</h3>
+            <p class="form-help">등록된 기사명·전화번호와 일치하지 않아 자동 반영되지 않습니다.</p>
+            <div class="table-wrap">
+              <table class="settlement-preview-table unmatched">
+                <thead>
+                  <tr>
+                    <th>엑셀 기사명</th>
+                    <th>엑셀 연락처</th>
+                    <th>콜수</th>
+                    <th>정산금</th>
+                    <th>프로모션금</th>
+                    <th>고용보험</th>
+                    <th>산재보험</th>
+                    <th>최종지급액</th>
+                  </tr>
+                </thead>
+                <tbody id="settlementUnmatchedRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>정산 반영 내역</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>정산월</th>
+                  <th>기사</th>
+                  <th>콜수</th>
+                  <th>정산금</th>
+                  <th>프로모션금</th>
+                  <th>고용보험</th>
+                  <th>산재보험</th>
+                  <th>최종지급액</th>
+                  <th>반영일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementHistoryRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="notices">

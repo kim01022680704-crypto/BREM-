@@ -1,0 +1,47 @@
+          <div class="promotion-platform-tabs promotion-apply-tabs" role="tablist">
+            <button type="button" class="promotion-tab active" data-promotion-apply-platform="coupang">쿠팡</button>
+            <button type="button" class="promotion-tab" data-promotion-apply-platform="baemin">배민</button>
+            <button type="button" class="promotion-tab" data-promotion-apply-platform="combined">합산</button>
+          </div>
+          <form id="promotionApplyForm" class="weekly-settlement-form">
+            <div class="promotion-apply-panel" data-promotion-apply-panel="coupang">
+              <div class="promotion-form-grid">
+                <label>
+                  저장된 쿠팡 주정산
+                  <select id="promotionApplySettlementSelect-coupang"></select>
+                </label>
+              </div>
+              <div class="promotion-form-section">
+                <h3>적용할 프로모션 조건</h3>
+                <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-coupang"></div>
+              </div>
+            </div>
+            <div class="promotion-apply-panel" data-promotion-apply-panel="baemin" hidden>
+              <div class="promotion-form-grid">
+                <label>
+                  저장된 배민 주정산
+                  <select id="promotionApplySettlementSelect-baemin"></select>
+                </label>
+              </div>
+              <div class="promotion-form-section">
+                <h3>적용할 프로모션 조건</h3>
+                <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-baemin"></div>
+              </div>
+            </div>
+            <div class="promotion-apply-panel" data-promotion-apply-panel="combined" hidden>
+              <p class="form-help">쿠팡·배민 주정산서를 각각 선택하세요. 쿠팡에만 있으면 쿠팡, 배민에만 있으면 배민 기준으로 계산하고, <strong>양쪽 모두 있으면 쿠팡</strong> 기준으로 적용합니다.</p>
+              <div class="promotion-form-grid">
+                <label>
+                  저장된 쿠팡 주정산
+                  <select id="promotionApplySettlementSelect-combined-coupang"></select>
+                </label>
+                <label>
+                  저장된 배민 주정산
+                  <select id="promotionApplySettlementSelect-combined-baemin"></select>
+                </label>
+              </div>
+              <div class="promotion-form-section">
+                <h3>적용할 합산 프로모션 조건</h3>
+                <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-combined"></div>
+              </div>
+            </div>
