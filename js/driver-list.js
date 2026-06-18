@@ -229,10 +229,13 @@
     const driver = BremStorage.drivers.getById(id);
     if (!driver) return;
     if (!window.confirm(`${driver.name} 기사를 삭제하시겠습니까?`)) return;
-    BremStorage.drivers.remove(id);
-    selectedIds.delete(id);
-    render();
-    showToast(toast, '기사가 삭제되었습니다.');
+    BremStorage.drivers.remove(id).then(() => {
+      selectedIds.delete(id);
+      render();
+      showToast(toast, '기사가 삭제되었습니다.');
+    }).catch(error => {
+      showToast(toast, error.message || '기사 삭제에 실패했습니다.');
+    });
   }
 
   function deleteSelected() {
@@ -244,10 +247,13 @@
     const count = selectedIds.size;
     if (!window.confirm(`선택한 ${count}명의 기사를 삭제하시겠습니까?`)) return;
 
-    [...selectedIds].forEach(id => BremStorage.drivers.remove(id));
-    selectedIds.clear();
-    render();
-    showToast(toast, `${count}명 삭제되었습니다.`);
+    Promise.all([...selectedIds].map(id => BremStorage.drivers.remove(id))).then(() => {
+      selectedIds.clear();
+      render();
+      showToast(toast, `${count}명 삭제되었습니다.`);
+    }).catch(error => {
+      showToast(toast, error.message || '기사 삭제에 실패했습니다.');
+    });
   }
 
   function toggleDriverSelection(id, checked) {

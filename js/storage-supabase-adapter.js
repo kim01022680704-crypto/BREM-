@@ -113,9 +113,22 @@ window.BremSupabaseStorageAdapter = (function () {
           return;
         }
         await persistSetting(key, value);
-      }).catch(error => {
-        console.error('[BremSupabaseStorageAdapter] persist failed, local cache kept:', key, error);
       });
+
+      if (window.BREM_SUPABASE_CONFIG?.mode === 'production') {
+        persistQueue = persistQueue.catch(error => {
+          console.error('[BremSupabaseStorageAdapter] persist failed:', key, error);
+          document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
+            detail: { key, message: error.message || String(error) }
+          }));
+          throw error;
+        });
+      } else {
+        persistQueue = persistQueue.catch(error => {
+          console.error('[BremSupabaseStorageAdapter] persist failed, local cache kept:', key, error);
+        });
+      }
+
       return persistQueue;
     }
 
@@ -156,7 +169,7 @@ window.BremSupabaseStorageAdapter = (function () {
       write(key, value) {
         setCache(key, value);
         writeLocalBackup(key, value);
-        queuePersist(key, value);
+        return queuePersist(key, value);
       },
       remove(key) {
         cache.delete(key);

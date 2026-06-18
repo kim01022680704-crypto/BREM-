@@ -68,5 +68,6 @@ async function ensureInitialAdminFromToken(accessToken, expectedEmail) {
 
 module.exports = {
   isEnabled,
+  getServiceClient,
   ensureInitialAdminFromToken
 };

@@ -8,6 +8,7 @@ const { parseSettlementFile } = require('./settlement-parser');
 const riderInquiriesStore = require('./rider-inquiries-store');
 const riderInquiriesSupabase = require('./rider-inquiries-supabase');
 const adminBootstrap = require('./admin-bootstrap');
+const adminUsers = require('./admin-users');
 const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,6 +71,58 @@ app.post('/api/admin/ensure-profile', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '관리자 profiles 연결에 실패했습니다.' });
+  }
+});
+
+function getBearerToken(req) {
+  return String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+}
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const result = await adminUsers.listAdminUsers(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, accounts: result.accounts });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 계정 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/users', async (req, res) => {
+  try {
+    const result = await adminUsers.createAdminUser(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 계정 생성에 실패했습니다.' });
+  }
+});
+
+app.patch('/api/admin/users/:userId', async (req, res) => {
+  try {
+    const result = await adminUsers.updateAdminUser(getBearerToken(req), req.params.userId, req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 계정 수정에 실패했습니다.' });
+  }
+});
+
+app.delete('/api/admin/users/:userId', async (req, res) => {
+  try {
+    const result = await adminUsers.deleteAdminUser(getBearerToken(req), req.params.userId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 계정 삭제에 실패했습니다.' });
   }
 });
 

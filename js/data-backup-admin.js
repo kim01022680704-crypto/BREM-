@@ -10,6 +10,7 @@
   const supabaseUrlInput = document.getElementById('supabaseUrlInput');
   const supabaseAnonKeyInput = document.getElementById('supabaseAnonKeyInput');
   const supabaseMigrateResultEl = document.getElementById('supabaseMigrateResult');
+  const isProduction = () => BremStorage.getSupabaseConfig?.().mode === 'production';
 
   function getSupabaseConfigFromForm() {
     const preset = window.BREM_SUPABASE_CONFIG || {};
@@ -28,6 +29,13 @@
     const preset = window.BREM_SUPABASE_CONFIG || {};
     if (supabaseUrlInput && preset.url) supabaseUrlInput.value = preset.url;
     if (supabaseAnonKeyInput && preset.anonKey) supabaseAnonKeyInput.placeholder = '설정됨 (변경 시 입력)';
+  }
+
+  function applyProductionUi() {
+    const localBtn = document.getElementById('supabaseLocalBtn');
+    const connectBtn = document.getElementById('supabaseConnectBtn');
+    if (localBtn) localBtn.hidden = isProduction();
+    if (connectBtn) connectBtn.hidden = isProduction();
   }
 
   function createSupabaseClient() {
@@ -56,6 +64,8 @@
   function renderStatus() {
     if (!statusEl) return;
     const status = backup.getStatus();
+    const storageStatus = BremStorage.getStorageStatus?.() || {};
+    const dbLabel = storageStatus.dbConnectionLabel || storageStatus.backend || 'local';
     const groupRows = Object.values(backup.DATA_GROUPS).map(group => {
       const info = status.groups[group.id];
       return `
@@ -74,15 +84,15 @@
           <strong>${status.schemaVersion} / ${status.currentSchemaVersion}</strong>
         </article>
         <article class="backup-status-card">
-          <span>현재 저장 모드</span>
-          <strong>${escapeHtml(BremStorage.getStorageStatus?.().backend || 'local')}</strong>
+          <span>DB 연결 상태</span>
+          <strong>${escapeHtml(isProduction() && storageStatus.supabaseHydrated ? 'Supabase' : dbLabel)}</strong>
         </article>
         <article class="backup-status-card">
           <span>Supabase 설정</span>
           <strong>${BremStorage.getSupabaseConfig?.().isConfigured ? '완료' : '미설정'}</strong>
         </article>
         <article class="backup-status-card">
-          <span>localStorage BREM 키</span>
+          <span>저장 키 수</span>
           <strong>${status.bremKeyCount}개</strong>
         </article>
       </div>
@@ -98,7 +108,9 @@
           <tbody>${groupRows}</tbody>
         </table>
       </div>
-      <p class="form-help">localStorage 키 이름은 고정되어 있으며, 앱 시작 시 자동 마이그레이션이 실행됩니다. 전체 삭제(localStorage.clear)는 사용하지 않습니다.</p>
+      <p class="form-help">${isProduction()
+        ? '운영 환경에서는 모든 데이터가 Supabase에 저장됩니다. localStorage는 이전 버튼에서만 읽습니다.'
+        : '개발 환경에서는 localStorage 또는 Supabase를 선택할 수 있습니다.'}</p>
     `;
   }
 
@@ -145,7 +157,7 @@
 
     if (mode === 'replace') {
       const ok = window.confirm(
-        `${modeLabel} 복원을 진행할까요?\n선택한 그룹의 기존 localStorage 데이터가 백업 파일 값으로 교체됩니다.\n(다른 그룹 데이터는 유지됩니다.)`
+        `${modeLabel} 복원을 진행할까요?\n선택한 그룹의 기존 데이터가 백업 파일 값으로 교체됩니다.\n(다른 그룹 데이터는 유지됩니다.)`
       );
       if (!ok) return;
     }
@@ -156,6 +168,7 @@
         mode,
         groupId: groupId || null
       });
+      await BremStorage.flushStorage?.();
       renderStatus();
       if (importResultEl) {
         importResultEl.hidden = false;
@@ -179,6 +192,8 @@
     try {
       const client = createSupabaseClient();
       const result = await BremStorage.migrateLocalStorageToSupabase(client);
+      await BremStorage.initStorage({ backend: 'supabase' });
+      await BremStorage.flushStorage?.();
       if (supabaseMigrateResultEl) {
         supabaseMigrateResultEl.hidden = false;
         const r = result.report;
@@ -201,14 +216,15 @@
       if (!isSupabaseConfigured(config)) {
         throw new Error('Supabase URL과 anon key를 js/supabase-config.js 또는 화면 입력란에 설정하세요.');
       }
-      const result = await BremStorage.initStorage({ backend: 'supabase', config });
+      await BremStorage.initStorage({ backend: 'supabase', config });
       if (window.BREM_SUPABASE_CONFIG) {
-        window.BREM_SUPABASE_CONFIG.backend = result?.backend === 'supabase' ? 'supabase' : 'local';
+        window.BREM_SUPABASE_CONFIG.backend = 'supabase';
       }
       const status = BremStorage.getStorageStatus?.();
-      showToast(status?.backend === 'supabase'
-        ? 'Supabase 모드로 연결되었습니다.'
-        : 'Supabase 연결 실패로 localStorage 모드를 유지합니다.');
+      if (status?.backend !== 'supabase') {
+        throw new Error(status?.supabaseError || 'Supabase 연결에 실패했습니다.');
+      }
+      showToast('Supabase에 연결되었습니다.');
       renderStatus();
     } catch (error) {
       showToast(error.message || 'Supabase 연결에 실패했습니다.');
@@ -216,8 +232,8 @@
   }
 
   function connectLocalMode() {
-    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-      showToast('운영 모드에서는 localStorage 모드로 전환할 수 없습니다.');
+    if (isProduction()) {
+      showToast('운영 모드에서는 Supabase만 사용할 수 있습니다.');
       renderStatus();
       return;
     }
@@ -228,6 +244,7 @@
   }
 
   async function restorePreferredBackend() {
+    if (isProduction()) return;
     const config = getSupabaseConfigFromForm();
     const preference = BremStorage.getStorageBackendPreference?.() || 'local';
     if (preference !== 'supabase' || !isSupabaseConfigured(config)) return;
@@ -246,6 +263,7 @@
 
   async function init() {
     prefillSupabaseForm();
+    applyProductionUi();
     await restorePreferredBackend();
     renderStatus();
     bindExportButtons();
@@ -254,6 +272,8 @@
     document.getElementById('supabaseMigrateBtn')?.addEventListener('click', migrateToSupabase);
     document.getElementById('supabaseConnectBtn')?.addEventListener('click', connectSupabaseMode);
     document.getElementById('supabaseLocalBtn')?.addEventListener('click', connectLocalMode);
+    document.addEventListener('brem-storage-ready', renderStatus);
+    document.addEventListener('brem-storage-error', renderStatus);
   }
 
   document.addEventListener('DOMContentLoaded', init);

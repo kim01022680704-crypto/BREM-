@@ -419,19 +419,21 @@
 
     if (!window.confirm(confirmMessage)) return;
 
-    let created = 0;
-    validRows.forEach(row => {
-      const driver = BremStorage.drivers.create(row.data);
-      syncDriverEventSettings(driver.id, row.data);
-      created += 1;
+    Promise.all(validRows.map(row =>
+      BremStorage.drivers.create(row.data).then(driver => {
+        syncDriverEventSettings(driver.id, row.data);
+        return driver;
+      })
+    )).then(createdDrivers => {
+      showToast(`${createdDrivers.length}명 등록 완료${duplicateRows.length ? ` · 중복 ${duplicateRows.length}건 제외` : ''}`);
+      clearPreview();
+
+      if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {
+        window.BremDriverIndex.refresh();
+      }
+    }).catch(error => {
+      showToast(error.message || '일괄 등록에 실패했습니다.');
     });
-
-    showToast(`${created}명 등록 완료${duplicateRows.length ? ` · 중복 ${duplicateRows.length}건 제외` : ''}`);
-    clearPreview();
-
-    if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {
-      window.BremDriverIndex.refresh();
-    }
   }
 
   function init() {

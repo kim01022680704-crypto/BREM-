@@ -374,21 +374,28 @@
     const data = getFormData();
     if (!validateFormData(data)) return;
 
-    if (driverIdInput.value) {
-      const id = driverIdInput.value;
-      BremStorage.drivers.update(id, data);
-      syncDriverEventSettings(id, data);
-      showToast('기사 정보가 수정되었습니다.');
-      editDriver(id);
-      refreshHeader();
-      return;
-    }
+    const persist = driverIdInput.value
+      ? BremStorage.drivers.update(driverIdInput.value, data)
+      : BremStorage.drivers.create(data);
 
-    const driver = BremStorage.drivers.create(data);
-    syncDriverEventSettings(driver.id, data);
-    showToast(`기사가 등록되었습니다. 로그인: ${makeDriverLoginId(driver)} / 비밀번호: ${driver.password || DEFAULT_DRIVER_PASSWORD}`);
-    resetForm();
-    refreshHeader();
+    Promise.resolve(persist).then(driver => {
+      const savedDriver = driverIdInput.value
+        ? BremStorage.drivers.getById(driverIdInput.value)
+        : driver;
+      if (!savedDriver) return;
+
+      syncDriverEventSettings(savedDriver.id, data);
+      if (driverIdInput.value) {
+        showToast('기사 정보가 수정되었습니다.');
+        editDriver(savedDriver.id);
+      } else {
+        showToast(`기사가 등록되었습니다. 로그인: ${makeDriverLoginId(savedDriver)} / 비밀번호: ${savedDriver.password || DEFAULT_DRIVER_PASSWORD}`);
+        resetForm();
+      }
+      refreshHeader();
+    }).catch(error => {
+      showToast(error.message || '기사 저장에 실패했습니다.');
+    });
   }
 
   function editDriver(id) {

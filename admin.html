@@ -112,6 +112,7 @@
           <h1 id="pageTitle">대시보드</h1>
         </div>
         <div class="topbar-actions">
+          <span class="db-status db-status--pending" id="adminDbStatus" aria-live="polite">DB 연결 상태: 확인 중…</span>
           <a class="top-link" href="rider-manage.html" target="_blank" rel="noopener noreferrer">기사등록 프로그램</a>
           <a class="top-link secondary" href="driver.html">기사 전용 페이지 열기</a>
           <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
@@ -2242,7 +2243,7 @@
           <div class="card-header">
             <h2>JSON 내보내기</h2>
           </div>
-          <p class="form-help">localStorage에 저장된 데이터를 JSON 파일로 백업합니다. 코드 업데이트 전후 데이터 보존용입니다.</p>
+          <p class="form-help" id="dataBackupExportHelp">저장된 데이터를 JSON 파일로 백업합니다. 운영 환경에서는 Supabase에 저장된 데이터를 내보냅니다.</p>
           <div class="backup-action-grid">
             <button class="primary-btn" type="button" data-backup-export="all">전체 데이터 백업</button>
             <button class="small-btn" type="button" data-backup-export="drivers">기사 데이터 백업</button>
@@ -2256,7 +2257,7 @@
           <div class="card-header">
             <h2>JSON 가져오기 / 복원</h2>
           </div>
-          <p class="form-help">백업 JSON을 불러와 localStorage에 복원합니다. 기본은 <strong>병합</strong> 모드로 기존 데이터를 유지하면서 없는 항목만 추가합니다.</p>
+          <p class="form-help" id="dataBackupImportHelp">백업 JSON을 불러와 저장소에 복원합니다. 운영 환경에서는 Supabase에 반영됩니다.</p>
           <div class="backup-import-form">
             <label>
               복원 모드
@@ -2289,7 +2290,7 @@
           <div class="card-header">
             <h2>Supabase 이전</h2>
           </div>
-          <p class="form-help">localStorage 데이터를 Supabase의 riders, notices, promotions, settings 테이블로 이전합니다. 연결 실패 시 localStorage 모드를 유지합니다.</p>
+          <p class="form-help" id="dataBackupMigrateHelp">브라우저 localStorage에 남아 있는 기존 데이터를 Supabase로 한 번만 이전합니다. 운영 환경에서는 이 버튼으로 초기 데이터를 옮긴 뒤 Supabase만 사용합니다.</p>
           <div class="backup-import-form">
             <label>
               Supabase URL

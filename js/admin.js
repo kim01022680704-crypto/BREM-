@@ -471,7 +471,7 @@
       setAdminAccountMenuPermissions([], []);
     });
 
-    $('#adminAccountForm')?.addEventListener('submit', event => {
+    $('#adminAccountForm')?.addEventListener('submit', async event => {
       event.preventDefault();
 
       const actor = getSessionAdminAccount();
@@ -485,6 +485,8 @@
       const editableMenus = getSelectedAdminAccountEditableMenus();
       const status = $('#adminAccountStatus');
       const menuOnly = state.adminAccountFormMode === 'menu-only';
+      const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+      const minPasswordLength = isProduction ? 6 : 4;
 
       if (!menus.length) {
         const message = '노출 메뉴를 1개 이상 선택하세요.';
@@ -505,9 +507,15 @@
       let result;
       if (accountId) {
         if (menuOnly) {
-          result = BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus }, { actor });
+          result = await BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus }, { actor });
         } else {
-          result = BremStorage.auth.updateAdminAccount(accountId, {
+          if (password && password.length < minPasswordLength) {
+            const message = isProduction ? '비밀번호는 6자 이상 입력하세요.' : '비밀번호는 4자 이상 입력하세요.';
+            if (status) status.textContent = message;
+            showToast(message);
+            return;
+          }
+          result = await BremStorage.auth.updateAdminAccount(accountId, {
             name,
             role,
             password: password || undefined,
@@ -523,7 +531,13 @@
           showToast(message);
           return;
         }
-        result = BremStorage.auth.createAdminAccount({
+        if (password.length < minPasswordLength) {
+          const message = isProduction ? '비밀번호는 6자 이상 입력하세요.' : '비밀번호는 4자 이상 입력하세요.';
+          if (status) status.textContent = message;
+          showToast(message);
+          return;
+        }
+        result = await BremStorage.auth.createAdminAccount({
           name,
           role,
           password,
@@ -552,7 +566,7 @@
       updateAdminLoginHelp();
     });
 
-    document.addEventListener('click', event => {
+    document.addEventListener('click', async event => {
       const editButton = event.target.closest('[data-edit-admin-account]');
       if (editButton) {
         openAdminAccountEditForm(editButton.dataset.editAdminAccount);
@@ -568,7 +582,7 @@
 
       if (!window.confirm(`"${account.name}" 관리자 계정을 삭제할까요?`)) return;
 
-      const result = BremStorage.auth.deleteAdminAccount(accountId, { actor: getSessionAdminAccount() });
+      const result = await BremStorage.auth.deleteAdminAccount(accountId, { actor: getSessionAdminAccount() });
       showToast(result.message);
       if (!result.ok) return;
 
@@ -705,18 +719,48 @@
     if (window.BremRiderInquiryApi?.ready) {
       await window.BremRiderInquiryApi.ready;
     }
-    if (window.BremStorage?.useLocalStorageAdapter) {
-      window.BremStorage.useLocalStorageAdapter();
-    }
     if (window.BremRiderInquiryApi?.list) {
       try {
         return await window.BremRiderInquiryApi.list();
-      } catch {
-        /* fallback below */
+      } catch (error) {
+        if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+          throw error;
+        }
       }
     }
-    BremStorage.riderInquiries.syncFromLocalRaw?.();
+    if (BremStorage.getSupabaseConfig?.().mode !== 'production') {
+      BremStorage.riderInquiries.syncFromLocalRaw?.();
+    }
     return BremStorage.riderInquiries.getAll();
+  }
+
+  function renderDbConnectionStatus() {
+    const el = $('#adminDbStatus');
+    if (!el) return;
+
+    const status = BremStorage.getStorageStatus?.() || {};
+    const config = BremStorage.getSupabaseConfig?.() || {};
+
+    if (config.mode === 'production') {
+      if (status.backend === 'supabase' && status.supabaseHydrated) {
+        el.textContent = 'DB 연결 상태: Supabase';
+        el.className = 'db-status db-status--ok';
+        return;
+      }
+      if (status.supabaseError) {
+        el.textContent = `DB 연결 실패: ${status.supabaseError}`;
+        el.className = 'db-status db-status--error';
+        return;
+      }
+      el.textContent = 'DB 연결 상태: Supabase (연결 중…)';
+      el.className = 'db-status db-status--pending';
+      return;
+    }
+
+    el.textContent = status.backend === 'supabase'
+      ? 'DB 연결 상태: Supabase (개발)'
+      : 'DB 연결 상태: localStorage (개발)';
+    el.className = 'db-status db-status--dev';
   }
 
   function settlements() {
@@ -1277,6 +1321,7 @@
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
     ensureDevLocalStorage().then(() => {
+      renderDbConnectionStatus();
       initDefaults();
       bindEvents();
       applyAdminMenuPermissions();
@@ -1291,7 +1336,15 @@
 
   function ensureDevLocalStorage() {
     const config = BremStorage.getSupabaseConfig?.() || {};
-    if (config.mode === 'production') return Promise.resolve();
+    if (config.mode === 'production') {
+      const status = BremStorage.getStorageStatus?.() || {};
+      const syncAccounts = BremStorage.auth.syncProductionAdminAccounts?.();
+      if (status.backend === 'supabase' && status.supabaseHydrated) {
+        return Promise.resolve(syncAccounts);
+      }
+      return Promise.resolve(BremStorage.initStorage({ backend: 'supabase' }))
+        .then(() => syncAccounts);
+    }
     if (config.backend === 'supabase') return Promise.resolve();
     BremStorage.setStorageBackendPreference?.('local');
     BremStorage.useLocalStorageAdapter?.();
@@ -1323,10 +1376,17 @@
         : BremStorage.auth.verifyAdminLogin(name, password);
       if (result.ok) {
         BremStorage.auth.setAdminSession(result.account.id);
-        if (isProduction) {
-          await BremStorage.initStorage({ backend: 'supabase' });
-        } else {
-          await BremStorage.initStorage({ backend: 'local' });
+        try {
+          if (isProduction) {
+            await BremStorage.initStorage({ backend: 'supabase' });
+          } else {
+            await BremStorage.initStorage({ backend: 'local' });
+          }
+        } catch (error) {
+          BremStorage.auth.clearAdminSession();
+          showToast(error.message || 'Supabase 연결에 실패했습니다.');
+          renderDbConnectionStatus();
+          return;
         }
         showAdminApp();
         showToast('관리자 로그인 성공');
@@ -2714,6 +2774,14 @@
   document.addEventListener('DOMContentLoaded', () => {
     updateAdminLoginHelp();
     bindAuthEvents();
+    renderDbConnectionStatus();
+    document.addEventListener('brem-storage-ready', renderDbConnectionStatus);
+    document.addEventListener('brem-storage-error', renderDbConnectionStatus);
+    document.addEventListener('brem-storage-persist-error', event => {
+      const message = event.detail?.message || '데이터 저장에 실패했습니다.';
+      showToast(message);
+      renderDbConnectionStatus();
+    });
     if (isAdminLoggedIn()) {
       showAdminApp();
     }

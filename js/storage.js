@@ -205,6 +205,12 @@ const BremStorage = (function () {
     ? blockedProductionAdapter
     : localAdapter;
 
+  let productionAdminAccountsCache = null;
+
+  function isProductionMode() {
+    return getSupabaseConfig().mode === 'production';
+  }
+
   const storageAdapter = {
     read(key, fallback) {
       return activeStorageAdapter.read(key, fallback);
@@ -223,6 +229,11 @@ const BremStorage = (function () {
     },
     listBremKeys() {
       return activeStorageAdapter.listBremKeys();
+    },
+    async flush() {
+      if (activeStorageAdapter.flush) {
+        await activeStorageAdapter.flush();
+      }
     }
   };
 
@@ -232,8 +243,9 @@ const BremStorage = (function () {
   }
 
   function getStorageBackendPreference() {
+    if (isProductionMode()) return 'supabase';
     try {
-      const saved = localStorage.getItem(STORAGE_BACKEND_PREF_KEY);
+      const saved = sessionStorage.getItem(STORAGE_BACKEND_PREF_KEY);
       return saved === 'supabase' ? 'supabase' : 'local';
     } catch {
       return 'local';
@@ -241,8 +253,9 @@ const BremStorage = (function () {
   }
 
   function setStorageBackendPreference(backend) {
+    if (isProductionMode()) return;
     try {
-      localStorage.setItem(STORAGE_BACKEND_PREF_KEY, backend === 'supabase' ? 'supabase' : 'local');
+      sessionStorage.setItem(STORAGE_BACKEND_PREF_KEY, backend === 'supabase' ? 'supabase' : 'local');
     } catch {
       /* ignore */
     }
@@ -274,26 +287,82 @@ const BremStorage = (function () {
 
     const { loginName, email } = getSupabaseConfig().initialAdmin;
     if (value === loginName && email) return email;
+
+    const account = readAdminAccountsRaw()?.find(item => item.active && item.name === value);
+    if (account?.email) return String(account.email).trim();
+
     return value;
+  }
+
+  async function getAdminAccessToken() {
+    const client = getSupabaseClient();
+    if (!client) return '';
+    const { data } = await client.auth.getSession();
+    return data?.session?.access_token || '';
+  }
+
+  async function adminUsersApi(path, options = {}) {
+    const token = await getAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 만료되었습니다. 다시 로그인하세요.' };
+    }
+
+    try {
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...(options.headers || {})
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '관리자 계정 API 요청에 실패했습니다.' };
+      }
+      return { ok: true, ...payload };
+    } catch (error) {
+      return { ok: false, message: error.message || '관리자 계정 API 요청에 실패했습니다.' };
+    }
+  }
+
+  function mapProductionAdminAccount(raw, index = 0) {
+    const menus = raw?.menus == null ? [...ALL_ADMIN_MENU_IDS] : normalizeAdminMenus(raw.menus);
+    return normalizeAdminAccount({
+      ...raw,
+      menus,
+      editableMenus: raw?.editableMenus == null ? menus : raw.editableMenus,
+      password: ''
+    }, index);
   }
 
   function getStorageStatus() {
     const config = getSupabaseConfig();
+    const backend = getStorageBackend();
+    const connected = backend === 'supabase' && activeStorageAdapter.isHydrated?.() === true;
     return {
-      backend: getStorageBackend(),
+      backend,
       preference: getStorageBackendPreference(),
       mode: config.mode,
       allowLocalFallback: config.allowLocalFallback,
       supabaseConfigured: config.isConfigured,
-      supabaseHydrated: activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.() === true,
-      supabaseError: lastSupabaseError
+      supabaseHydrated: connected,
+      supabaseError: lastSupabaseError,
+      dbConnectionLabel: connected ? 'Supabase' : (config.mode === 'production' ? '연결 실패' : backend)
     };
   }
 
   function useLocalStorageAdapter() {
+    if (isProductionMode()) {
+      throw new Error('운영 모드에서는 Supabase만 사용할 수 있습니다.');
+    }
     activeStorageAdapter = localAdapter;
     setStorageBackendPreference('local');
     return getStorageBackend();
+  }
+
+  async function flushActiveStorage() {
+    await storageAdapter.flush();
   }
 
   async function initSupabaseStorage(config) {
@@ -457,31 +526,15 @@ const BremStorage = (function () {
     return { ok: true, user: data.user, profile };
   }
 
-  const ADMIN_SESSION_KEYS = new Set([
-    SESSION_KEYS.adminLoggedIn,
-    SESSION_KEYS.adminAccountId
-  ]);
-
   const sessionAdapter = {
     read(key) {
-      const fromSession = sessionStorage.getItem(key);
-      if (fromSession !== null) return fromSession;
-      if (ADMIN_SESSION_KEYS.has(key)) {
-        return localStorage.getItem(key);
-      }
-      return null;
+      return sessionStorage.getItem(key);
     },
     write(key, value) {
       sessionStorage.setItem(key, value);
-      if (ADMIN_SESSION_KEYS.has(key)) {
-        localStorage.setItem(key, value);
-      }
     },
     remove(key) {
       sessionStorage.removeItem(key);
-      if (ADMIN_SESSION_KEYS.has(key)) {
-        localStorage.removeItem(key);
-      }
     }
   };
 
@@ -611,6 +664,7 @@ const BremStorage = (function () {
 
     saveAll(nextDrivers) {
       storageAdapter.write(KEYS.drivers, nextDrivers);
+      return flushActiveStorage();
     },
 
     create(driver) {
@@ -652,8 +706,7 @@ const BremStorage = (function () {
       };
 
       list.unshift(newDriver);
-      drivers.saveAll(list);
-      return newDriver;
+      return drivers.saveAll(list).then(() => newDriver);
     },
 
     update(id, changes) {
@@ -673,11 +726,11 @@ const BremStorage = (function () {
           updatedAt: new Date().toISOString()
         };
       });
-      drivers.saveAll(nextDrivers);
+      return drivers.saveAll(nextDrivers);
     },
 
     remove(id) {
-      drivers.saveAll(drivers.getAll().filter(driver => driver.id !== id));
+      return drivers.saveAll(drivers.getAll().filter(driver => driver.id !== id));
     },
 
     resetPassword(id, defaultPassword = '1234') {
@@ -2940,8 +2993,9 @@ const BremStorage = (function () {
     const menus = normalizeAdminMenus(raw?.menus);
     return {
       id: String(raw?.id || createId()),
+      email: String(raw?.email || '').trim(),
       name: String(raw?.name || DEFAULT_ADMIN_ACCOUNT.name).trim() || DEFAULT_ADMIN_ACCOUNT.name,
-      password: String(raw?.password || DEFAULT_ADMIN_ACCOUNT.password),
+      password: raw?.password == null ? '' : String(raw.password),
       role: normalizeAdminRole(raw?.role, index),
       menus,
       editableMenus: normalizeAdminEditableMenus(menus, raw?.editableMenus ?? menus),
@@ -2952,22 +3006,25 @@ const BremStorage = (function () {
   }
 
   function readAdminAccountsRaw() {
+    if (isProductionMode()) {
+      return productionAdminAccountsCache;
+    }
+
     const raw = localAdapter.read(KEYS.adminAccounts);
     if (!raw) return null;
-
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
+    return Array.isArray(raw) ? raw : null;
   }
 
   function writeAdminAccounts(accounts) {
-    localAdapter.write(KEYS.adminAccounts, JSON.stringify(accounts));
+    if (isProductionMode()) {
+      productionAdminAccountsCache = accounts.map((account, index) => normalizeAdminAccount(account, index));
+      return;
+    }
+    localAdapter.write(KEYS.adminAccounts, accounts);
   }
 
   function migrateLegacyAdminCredentials() {
+    if (isProductionMode()) return null;
     const legacyRaw = localAdapter.read(KEYS.adminCredentials);
     if (!legacyRaw) return null;
 
@@ -3006,6 +3063,13 @@ const BremStorage = (function () {
   }
 
   function ensureDefaultAdminAccounts() {
+    if (isProductionMode()) {
+      if (productionAdminAccountsCache?.length) {
+        return productionAdminAccountsCache.map((account, index) => normalizeAdminAccount(account, index));
+      }
+      return [];
+    }
+
     const existing = readAdminAccountsRaw();
     if (existing?.length) {
       const normalized = ensureDevDefaultAdminAccount(
@@ -3026,12 +3090,7 @@ const BremStorage = (function () {
   }
 
   function syncAdminSessionMirrors() {
-    const loggedIn = sessionStorage.getItem(SESSION_KEYS.adminLoggedIn);
-    const accountId = sessionStorage.getItem(SESSION_KEYS.adminAccountId);
-    if (loggedIn === 'true') {
-      localStorage.setItem(SESSION_KEYS.adminLoggedIn, 'true');
-      if (accountId) localStorage.setItem(SESSION_KEYS.adminAccountId, accountId);
-    }
+    /* sessionStorage only — no localStorage mirror in production */
   }
 
   const auth = {
@@ -3079,6 +3138,10 @@ const BremStorage = (function () {
       if (getSupabaseConfig().mode === 'production') {
         const profile = activeSupabaseProfile;
         if (profile?.active && profile.role === 'admin') {
+          const registryAccount = this.getAdminAccounts().find(account => account.id === profile.user_id);
+          if (registryAccount?.active) {
+            return { ...registryAccount, password: '' };
+          }
           return {
             id: profile.user_id,
             name: profile.display_name || '관리자',
@@ -3153,18 +3216,20 @@ const BremStorage = (function () {
 
       const result = await signInWithSupabase(email, password, 'admin');
       if (!result.ok) return result;
-      this.setAdminSession(result.profile.user_id);
-      return {
-        ok: true,
-        account: {
-          id: result.profile.user_id,
-          name: result.profile.display_name || result.user.email || '관리자',
-          role: ADMIN_ROLES.CEO,
-          menus: ALL_ADMIN_MENU_IDS,
-          editableMenus: ALL_ADMIN_MENU_IDS,
-          active: true
-        }
+
+      await this.syncProductionAdminAccounts();
+      const registryAccount = this.getAdminAccountById(result.profile.user_id);
+      const account = registryAccount || {
+        id: result.profile.user_id,
+        name: result.profile.display_name || result.user.email || '관리자',
+        role: ADMIN_ROLES.CEO,
+        menus: ALL_ADMIN_MENU_IDS,
+        editableMenus: ALL_ADMIN_MENU_IDS,
+        active: true
       };
+
+      this.setAdminSession(account.id);
+      return { ok: true, account: { ...account, password: '' } };
     },
 
     async signInDriver(email, password) {
@@ -3183,10 +3248,20 @@ const BremStorage = (function () {
       return activeSupabaseProfile ? { ...activeSupabaseProfile } : null;
     },
 
-    createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER } = {}, options = {}) {
-      if (getSupabaseConfig().mode === 'production') {
-        return { ok: false, message: '운영 모드에서는 Edge Function으로 관리자 계정을 생성하세요.' };
+    async syncProductionAdminAccounts() {
+      if (getSupabaseConfig().mode !== 'production') return { ok: true };
+
+      const result = await adminUsersApi('/api/admin/users');
+      if (!result.ok) return result;
+
+      const accounts = (result.accounts || []).map((account, index) => mapProductionAdminAccount(account, index));
+      if (accounts.length) {
+        writeAdminAccounts(accounts);
       }
+      return { ok: true, accounts };
+    },
+
+    async createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER, email } = {}, options = {}) {
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
       if (actorRole !== ADMIN_ROLES.CEO) {
         return { ok: false, message: '대표만 관리자 계정을 생성할 수 있습니다.' };
@@ -3195,12 +3270,43 @@ const BremStorage = (function () {
       const nextName = String(name || '').trim();
       const nextPassword = String(password || '').trim();
       const nextRole = normalizeAdminRole(role, 1);
+      const isProduction = getSupabaseConfig().mode === 'production';
 
       if (!nextName) {
         return { ok: false, message: '관리자 이름을 입력하세요.' };
       }
-      if (nextPassword.length < 4) {
-        return { ok: false, message: '비밀번호는 4자 이상 입력하세요.' };
+      if (nextPassword.length < (isProduction ? 6 : 4)) {
+        return {
+          ok: false,
+          message: isProduction ? '비밀번호는 6자 이상 입력하세요.' : '비밀번호는 4자 이상 입력하세요.'
+        };
+      }
+
+      if (isProduction) {
+        const apiResult = await adminUsersApi('/api/admin/users', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: nextName,
+            password: nextPassword,
+            role: nextRole,
+            menus: normalizeAdminMenus(menus),
+            editableMenus: normalizeAdminEditableMenus(menus, editableMenus),
+            active,
+            email: String(email || '').trim() || undefined
+          })
+        });
+        if (!apiResult.ok) {
+          return { ok: false, message: apiResult.message };
+        }
+
+        const account = mapProductionAdminAccount(apiResult.account, 0);
+        const accounts = this.getAdminAccounts().filter(item => item.id !== account.id);
+        writeAdminAccounts([...accounts, account]);
+        return {
+          ok: true,
+          message: apiResult.message || '관리자 계정이 생성되었습니다.',
+          account
+        };
       }
 
       const accounts = ensureDefaultAdminAccounts();
@@ -3226,12 +3332,44 @@ const BremStorage = (function () {
       return { ok: true, message: '관리자 계정이 생성되었습니다.', account };
     },
 
-    updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role } = {}, options = {}) {
-      if (getSupabaseConfig().mode === 'production') {
-        return { ok: false, message: '운영 모드에서는 Edge Function으로 관리자 계정을 수정하세요.' };
-      }
+    async updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role } = {}, options = {}) {
       const actor = options.actor || null;
       const actorRole = actor?.role || ADMIN_ROLES.MANAGER;
+      const isProduction = getSupabaseConfig().mode === 'production';
+
+      if (isProduction) {
+        const payload = {};
+        if (name != null) payload.name = name;
+        if (password != null && password !== '') payload.password = password;
+        if (menus != null) payload.menus = menus;
+        if (editableMenus != null) payload.editableMenus = editableMenus;
+        if (active != null) payload.active = active;
+        if (role != null) payload.role = role;
+
+        const apiResult = await adminUsersApi(`/api/admin/users/${encodeURIComponent(accountId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
+        if (!apiResult.ok) {
+          return { ok: false, message: apiResult.message };
+        }
+
+        const account = mapProductionAdminAccount(apiResult.account, 0);
+        const accounts = this.getAdminAccounts().map(item => (item.id === accountId ? account : item));
+        writeAdminAccounts(accounts);
+
+        const sessionAccount = this.getAdminSessionAccount();
+        if (sessionAccount?.id === accountId) {
+          this.setAdminSession(accountId);
+        }
+
+        return {
+          ok: true,
+          message: apiResult.message || '관리자 계정이 수정되었습니다.',
+          account
+        };
+      }
+
       const accounts = ensureDefaultAdminAccounts();
       const index = accounts.findIndex(account => account.id === accountId);
       if (index < 0) {
@@ -3340,10 +3478,28 @@ const BremStorage = (function () {
       return { ok: true, message: '관리자 계정이 수정되었습니다.', account: updated };
     },
 
-    deleteAdminAccount(accountId, options = {}) {
+    async deleteAdminAccount(accountId, options = {}) {
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
       if (actorRole !== ADMIN_ROLES.CEO) {
         return { ok: false, message: '대표만 관리자 계정을 삭제할 수 있습니다.' };
+      }
+
+      if (getSupabaseConfig().mode === 'production') {
+        const apiResult = await adminUsersApi(`/api/admin/users/${encodeURIComponent(accountId)}`, {
+          method: 'DELETE'
+        });
+        if (!apiResult.ok) {
+          return { ok: false, message: apiResult.message };
+        }
+
+        writeAdminAccounts(this.getAdminAccounts().filter(account => account.id !== accountId));
+
+        const sessionAccount = this.getAdminSessionAccount();
+        if (sessionAccount?.id === accountId) {
+          this.clearAdminSession();
+        }
+
+        return { ok: true, message: apiResult.message || '관리자 계정이 삭제되었습니다.' };
       }
 
       const accounts = ensureDefaultAdminAccounts();
@@ -3708,6 +3864,7 @@ const BremStorage = (function () {
     getSupabaseClient,
     loadSupabaseProfile,
     useLocalStorageAdapter,
+    flushStorage: flushActiveStorage,
     initStorage,
     initSupabaseStorage,
     migrateLocalStorageToSupabase,
@@ -3752,7 +3909,9 @@ if (BremStorage.getSupabaseConfig?.().backend === 'supabase') {
     BremStorage.initStorage({ backend: 'supabase' }).then(result => {
       document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
     }).catch(error => {
-      console.warn('[BREM] Supabase auto init failed:', error);
+      const message = error.message || 'Supabase 연결에 실패했습니다.';
+      console.error('[BREM] Supabase auto init failed:', error);
+      document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
       if (BremStorage.getSupabaseConfig?.().allowLocalFallback) {
         BremStorage.useLocalStorageAdapter();
       }
@@ -3760,7 +3919,7 @@ if (BremStorage.getSupabaseConfig?.().backend === 'supabase') {
         detail: {
           backend: BremStorage.getStorageBackend?.() || 'unavailable',
           fallback: Boolean(BremStorage.getSupabaseConfig?.().allowLocalFallback),
-          error: error.message
+          error: message
         }
       }));
     });
