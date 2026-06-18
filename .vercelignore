@@ -1,0 +1,8 @@
+# Vercel 배포에서 제외 (정적 사이트 + /api 만 필요)
+_restore_tmp/
+supabase/
+data/
+scripts/
+*.md
+.env
+.env.*
