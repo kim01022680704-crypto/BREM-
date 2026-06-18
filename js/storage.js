@@ -332,20 +332,31 @@ const BremStorage = (function () {
 
   function mapProductionAdminAccount(raw, index = 0) {
     const menus = raw?.menus == null ? [...ALL_ADMIN_MENU_IDS] : normalizeAdminMenus(raw.menus);
+    const editableMenus = raw?.editableMenus == null
+      ? normalizeAdminEditableMenus(menus, menus)
+      : normalizeAdminEditableMenus(menus, raw.editableMenus);
     return normalizeAdminAccount({
       ...raw,
-      role: ADMIN_ROLES.CEO,
       menus,
-      editableMenus: raw?.editableMenus == null ? menus : raw.editableMenus,
+      editableMenus,
       password: ''
     }, index);
   }
 
   function buildProductionAdminSessionAccount(profile, registryAccount = null) {
+    if (registryAccount) {
+      const account = mapProductionAdminAccount(
+        { ...registryAccount, id: profile.user_id },
+        0
+      );
+      if (!account.active) return null;
+      return { ...account, password: '' };
+    }
+
     return {
       id: profile.user_id,
-      email: registryAccount?.email || '',
-      name: registryAccount?.name || profile.display_name || '관리자',
+      email: '',
+      name: profile.display_name || '관리자',
       role: ADMIN_ROLES.CEO,
       menus: ALL_ADMIN_MENU_IDS,
       editableMenus: ALL_ADMIN_MENU_IDS,
@@ -2925,7 +2936,8 @@ const BremStorage = (function () {
   }
 
   function normalizeAdminMenus(menus) {
-    const source = Array.isArray(menus) ? menus : ALL_ADMIN_MENU_IDS;
+    const isExplicitList = Array.isArray(menus);
+    const source = isExplicitList ? menus : ALL_ADMIN_MENU_IDS;
     const allowed = new Set(ALL_ADMIN_MENU_IDS);
     const normalized = source
       .map(menuId => String(menuId || '').trim())
@@ -2938,6 +2950,10 @@ const BremStorage = (function () {
       } else {
         normalized.unshift('mission-results');
       }
+    }
+
+    if (isExplicitList) {
+      return normalized;
     }
 
     if (!normalized.includes('admin-schedule')) {
@@ -3241,10 +3257,16 @@ const BremStorage = (function () {
           }
 
           await this.syncProductionAdminAccounts();
+          const registryAccount = this.getAdminAccountById(payload.profile?.user_id || payload.account?.id)
+            || payload.account;
           const account = buildProductionAdminSessionAccount(
             payload.profile || activeSupabaseProfile,
-            payload.account
+            registryAccount
           );
+          if (!account) {
+            await client?.auth.signOut();
+            return { ok: false, message: '중지된 관리자 계정입니다.' };
+          }
           this.setAdminSession(account.id);
           return { ok: true, account: { ...account, password: '' } };
         } catch (error) {

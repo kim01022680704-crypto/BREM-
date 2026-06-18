@@ -90,20 +90,45 @@ async function signInAdmin(loginInput, password) {
     return { ok: false, status: 403, error: '접근 권한이 없습니다.' };
   }
 
-  const registryAccount = resolved.account || null;
+  const accounts = await readRegistry(serviceClient);
+  let registryAccount = accounts.find(item => item.id === userId) || resolved.account || null;
+
+  if (!registryAccount) {
+    const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
+    if (resolved.email === initialEmail) {
+      registryAccount = {
+        id: userId,
+        email: resolved.email,
+        name: String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim() || '관리자',
+        role: 'ceo',
+        menus: null,
+        editableMenus: null,
+        active: true
+      };
+    }
+  }
+
+  if (registryAccount && registryAccount.active === false) {
+    await authClient.auth.signOut();
+    return { ok: false, status: 403, error: '중지된 관리자 계정입니다.' };
+  }
 
   return {
     ok: true,
     session: data.session,
     user: data.user,
     profile,
-    account: {
-      id: userId,
-      email: resolved.email,
-      name: registryAccount?.name || profile.display_name || data.user.email || '관리자',
-      role: 'ceo',
-      active: true
-    }
+    account: registryAccount
+      ? { ...registryAccount, id: userId, email: resolved.email, active: true }
+      : {
+        id: userId,
+        email: resolved.email,
+        name: profile.display_name || data.user.email || '관리자',
+        role: 'manager',
+        menus: [],
+        editableMenus: [],
+        active: true
+      }
   };
 }
 
