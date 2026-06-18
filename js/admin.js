@@ -624,6 +624,10 @@
 
     try {
       const config = BremStorage.getSupabaseConfig?.() || {};
+      if (!config.isConfigured && config.mode !== 'production') {
+        help.textContent = 'Supabase 설정을 불러오는 중…';
+        return;
+      }
       if (config.mode === 'development' && !config.isConfigured) {
         help.textContent = '개발 모드: Supabase 미설정 — settings 테이블 연결 후 관리자 계정 사용';
         return;
@@ -2826,11 +2830,18 @@
 
   async function bootstrapAdminPage() {
     bindAuthEvents();
+
+    if (window.BremSupabaseConfig?.load) {
+      await window.BremSupabaseConfig.load();
+    }
+
     try {
       updateAdminLoginHelp();
     } catch (error) {
       console.warn('[BREM] bootstrapAdminPage help text:', error.message);
     }
+    document.addEventListener('brem-config-ready', updateAdminLoginHelp);
+
     renderDbConnectionStatus();
     document.addEventListener('brem-storage-ready', renderDbConnectionStatus);
     document.addEventListener('brem-storage-error', renderDbConnectionStatus);
@@ -2845,10 +2856,6 @@
         applySectionEditPermissions();
       }
     });
-
-    if (window.BremSupabaseConfig?.load) {
-      await window.BremSupabaseConfig.load();
-    }
 
     const config = BremStorage.getSupabaseConfig?.() || {};
     if (config.backend === 'supabase') {

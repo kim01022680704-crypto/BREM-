@@ -551,6 +551,13 @@ const BremStorage = (function () {
     }
   }
 
+  function createSupabaseClient(url, anonKey) {
+    if (window.BremSupabaseConfig?.createClient) {
+      return window.BremSupabaseConfig.createClient(url, anonKey);
+    }
+    return window.supabase.createClient(url, anonKey);
+  }
+
   async function initSupabaseStorage(config) {
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
       return { backend: 'supabase', client: activeSupabaseClient, adapter: activeStorageAdapter };
@@ -571,7 +578,7 @@ const BremStorage = (function () {
       if (!window.BremSupabaseStorageAdapter?.createSupabaseAdapter) {
         throw new Error('storage-supabase-adapter.js 가 로드되지 않았습니다.');
       }
-      const client = window.supabase.createClient(settings.url, settings.anonKey);
+      const client = createSupabaseClient(settings.url, settings.anonKey);
       const { data: sessionData } = await client.auth.getSession();
       activeSupabaseClient = client;
 
@@ -617,6 +624,9 @@ const BremStorage = (function () {
   }
 
   async function migrateLocalStorageToSupabase(client, options) {
+    if (isProductionMode()) {
+      throw new Error('운영 환경에서는 localStorage 이전 기능을 사용할 수 없습니다. Supabase만 사용합니다.');
+    }
     if (!window.BremSupabaseMigration?.migrateLocalStorageToSupabase) {
       throw new Error('storage-migrate-supabase.js 가 로드되지 않았습니다.');
     }
@@ -627,7 +637,7 @@ const BremStorage = (function () {
     if (activeSupabaseClient) return activeSupabaseClient;
     const config = getSupabaseConfig();
     if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
-    activeSupabaseClient = window.supabase.createClient(config.url, config.anonKey);
+    activeSupabaseClient = createSupabaseClient(config.url, config.anonKey);
     return activeSupabaseClient;
   }
 

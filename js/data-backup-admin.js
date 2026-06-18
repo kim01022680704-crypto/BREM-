@@ -38,6 +38,21 @@
   function applyProductionUi() {
     const connectBtn = document.getElementById('supabaseConnectBtn');
     if (connectBtn) connectBtn.hidden = true;
+
+    if (!isProduction()) return;
+
+    const migrateSection = document.getElementById('supabaseMigrateSection');
+    if (migrateSection) migrateSection.hidden = true;
+
+    const migrateHelp = document.getElementById('dataBackupMigrateHelp');
+    if (migrateHelp) {
+      migrateHelp.textContent = '운영 환경: 모든 데이터는 Supabase에만 저장됩니다. localStorage는 사용하지 않습니다.';
+    }
+
+    const statusHelp = statusEl?.querySelector('.form-help');
+    if (statusHelp) {
+      statusHelp.textContent = '운영 환경: 모든 데이터는 Supabase PostgreSQL에 저장됩니다.';
+    }
   }
 
   function createSupabaseClient() {
@@ -48,7 +63,8 @@
     if (!window.supabase?.createClient) {
       throw new Error('Supabase SDK가 로드되지 않았습니다.');
     }
-    return window.supabase.createClient(config.url, config.anonKey);
+    return window.BremSupabaseConfig?.createClient(config.url, config.anonKey)
+      || window.supabase.createClient(config.url, config.anonKey);
   }
 
   function showToast(message) {
@@ -188,6 +204,10 @@
   }
 
   async function migrateToSupabase() {
+    if (isProduction()) {
+      showToast('운영 환경에서는 localStorage 이전 기능을 사용할 수 없습니다.');
+      return;
+    }
     if (!window.confirm('브라우저에 남아 있는 예전 localStorage 데이터를 Supabase로 이전할까요?\n(일회성 작업 · 이후 Supabase만 사용)')) return;
     try {
       const client = createSupabaseClient();

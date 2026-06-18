@@ -50,6 +50,37 @@
           });
       }
       return this._promise;
+    },
+
+    /** Supabase Auth 세션 — localStorage 대신 sessionStorage만 사용 */
+    createClient(url, anonKey) {
+      if (!window.supabase?.createClient) {
+        throw new Error('@supabase/supabase-js 가 로드되지 않았습니다.');
+      }
+      const prefix = 'brem_sb_';
+      const authStorage = {
+        getItem(key) {
+          try {
+            return sessionStorage.getItem(prefix + key);
+          } catch {
+            return null;
+          }
+        },
+        setItem(key, value) {
+          sessionStorage.setItem(prefix + key, value);
+        },
+        removeItem(key) {
+          sessionStorage.removeItem(prefix + key);
+        }
+      };
+      return window.supabase.createClient(url, anonKey, {
+        auth: {
+          storage: authStorage,
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
     }
   };
 

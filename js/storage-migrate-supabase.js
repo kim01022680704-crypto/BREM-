@@ -11,6 +11,13 @@ window.BremSupabaseMigration = (function () {
   const Mapper = () => window.BremSupabaseMapper;
   const KEYS = () => window.BremStorage.STORAGE_KEYS;
 
+  function assertNotProduction() {
+    const mode = window.BREM_SUPABASE_CONFIG?.mode || window.BremStorage?.getSupabaseConfig?.().mode;
+    if (mode === 'production') {
+      throw new Error('운영 환경에서는 localStorage 이전 기능을 사용할 수 없습니다.');
+    }
+  }
+
   function readLocal(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -84,6 +91,7 @@ window.BremSupabaseMigration = (function () {
   }
 
   async function migrateLocalStorageToSupabase(client) {
+    assertNotProduction();
     if (!client) throw new Error('Supabase client가 필요합니다.');
     const mapper = Mapper();
     const local = gatherLocalSnapshot();
