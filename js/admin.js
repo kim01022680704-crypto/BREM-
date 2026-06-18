@@ -613,34 +613,39 @@
     const help = $('#adminLoginHelp');
     if (!help) return;
 
-    const config = BremStorage.getSupabaseConfig?.() || {};
-    if (config.mode === 'development' && !config.isConfigured) {
-      help.textContent = '개발 모드: Supabase 미설정 — settings 테이블 연결 후 관리자 계정 사용';
-      return;
-    }
+    try {
+      const config = BremStorage.getSupabaseConfig?.() || {};
+      if (config.mode === 'development' && !config.isConfigured) {
+        help.textContent = '개발 모드: Supabase 미설정 — settings 테이블 연결 후 관리자 계정 사용';
+        return;
+      }
 
-    if (config.mode === 'development' && config.isConfigured) {
-      help.textContent = '개발 모드: Supabase Auth 로그인 (관리자 이름/이메일 + 비밀번호)';
-      return;
-    }
+      if (config.mode === 'development' && config.isConfigured) {
+        help.textContent = '개발 모드: Supabase Auth 로그인 (관리자 이름/이메일 + 비밀번호)';
+        return;
+      }
 
-    if (config.mode === 'production' && config.backend === 'supabase') {
-      help.textContent = '운영 로그인: 계정 생성 시 입력한 관리자 이름(아이디) + 비밀번호 (이메일로도 로그인 가능)';
-      return;
-    }
+      if (config.mode === 'production') {
+        help.textContent = '운영 로그인: 계정 생성 시 입력한 관리자 이름(아이디) + 비밀번호 (이메일로도 로그인 가능)';
+        return;
+      }
 
-    const accounts = BremStorage.auth.getAdminAccounts().filter(account => account.active);
-    if (!accounts.length) {
-      help.textContent = '활성 관리자 계정이 없습니다. 관리자 계정 메뉴에서 생성하세요.';
-      return;
-    }
+      const accounts = BremStorage.auth.getAdminAccounts().filter(account => account.active);
+      if (!accounts.length) {
+        help.textContent = '활성 관리자 계정이 없습니다. 관리자 계정 메뉴에서 생성하세요.';
+        return;
+      }
 
-    if (accounts.length === 1) {
-      help.textContent = `로그인 계정: ${accounts[0].name} · 계정·메뉴 권한은 로그인 후 「관리자 계정」에서 관리`;
-      return;
-    }
+      if (accounts.length === 1) {
+        help.textContent = `로그인 계정: ${accounts[0].name} · 계정·메뉴 권한은 로그인 후 「관리자 계정」에서 관리`;
+        return;
+      }
 
-    help.textContent = `등록된 관리자 ${accounts.length}명 · 로그인 후 「관리자 계정」에서 계정 생성·수정·메뉴 선택`;
+      help.textContent = `등록된 관리자 ${accounts.length}명 · 로그인 후 「관리자 계정」에서 계정 생성·수정·메뉴 선택`;
+    } catch (error) {
+      console.warn('[BREM] updateAdminLoginHelp skipped:', error.message);
+      help.textContent = 'Supabase 연결 후 로그인하세요.';
+    }
   }
 
   const $ = selector => document.querySelector(selector);
@@ -1330,7 +1335,12 @@
   function showAdminApp() {
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
-    ensureAdminStorage().then(() => {
+    ensureAdminStorage().then(result => {
+      if (result && result.ok === false) {
+        showToast(result.message || '데이터 연결에 실패했습니다.');
+        renderDbConnectionStatus();
+        return;
+      }
       renderDbConnectionStatus();
       initDefaults();
       bindEvents();
@@ -1347,9 +1357,9 @@
   function ensureAdminStorage() {
     const status = BremStorage.getStorageStatus?.() || {};
     if (status.backend === 'supabase' && status.supabaseHydrated) {
-      return Promise.resolve();
+      return Promise.resolve({ ok: true });
     }
-    return Promise.resolve(BremStorage.initStorage({ backend: 'supabase' }));
+    return BremStorage.resumeSupabaseAfterAuth?.() || BremStorage.ensureSupabaseHydrated?.();
   }
 
   function bindAuthEvents() {
@@ -1366,29 +1376,63 @@
 
     $('#adminLoginForm').addEventListener('submit', async event => {
       event.preventDefault();
+      const submitBtn = event.target.querySelector('.login-submit');
       const name = $('#adminName').value.trim();
       const password = $('#adminPassword').value;
 
-      const config = BremStorage.getSupabaseConfig?.() || {};
-      const result = config.isConfigured
-        ? await BremStorage.auth.signInAdmin(name, password)
-        : BremStorage.auth.verifyAdminLogin(name, password);
-      if (result.ok) {
-        BremStorage.auth.setAdminSession(result.account.id);
-        try {
-          await BremStorage.initStorage({ backend: 'supabase' });
-        } catch (error) {
-          BremStorage.auth.clearAdminSession();
-          showToast(error.message || 'Supabase 연결에 실패했습니다.');
-          renderDbConnectionStatus();
-          return;
-        }
-        showAdminApp();
-        showToast('관리자 로그인 성공');
+      if (!name || !password) {
+        showToast('아이디와 비밀번호를 입력하세요.');
         return;
       }
 
-      showToast(result.message || '이름 또는 비밀번호가 올바르지 않습니다.');
+      const originalLabel = submitBtn?.textContent || '로그인';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '로그인 중…';
+      }
+
+      try {
+        if (window.BremSupabaseConfig?.load) {
+          await window.BremSupabaseConfig.load();
+        }
+
+        const config = BremStorage.getSupabaseConfig?.() || {};
+        const result = config.isConfigured
+          ? await BremStorage.auth.signInAdmin(name, password)
+          : BremStorage.auth.verifyAdminLogin(name, password);
+
+        if (!result?.ok) {
+          showToast(result?.message || '이름 또는 비밀번호가 올바르지 않습니다.');
+          return;
+        }
+
+        if (!config.isConfigured) {
+          BremStorage.auth.setAdminSession(result.account.id);
+        }
+
+        const connected = await BremStorage.resumeSupabaseAfterAuth?.();
+        if (connected && connected.ok === false) {
+          if (!config.isConfigured) {
+            BremStorage.auth.clearAdminSession();
+          }
+          showToast(connected.message || 'Supabase 데이터 연결에 실패했습니다.');
+          renderDbConnectionStatus();
+          return;
+        }
+
+        showAdminApp();
+        showToast('관리자 로그인 성공');
+      } catch (error) {
+        console.error('[BREM] Admin login failed:', error);
+        BremStorage.auth.clearAdminSession?.();
+        showToast(error.message || '로그인 중 오류가 발생했습니다.');
+        renderDbConnectionStatus();
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalLabel;
+        }
+      }
     });
   }
 
@@ -2767,8 +2811,12 @@
   }
 
   async function bootstrapAdminPage() {
-    updateAdminLoginHelp();
     bindAuthEvents();
+    try {
+      updateAdminLoginHelp();
+    } catch (error) {
+      console.warn('[BREM] bootstrapAdminPage help text:', error.message);
+    }
     renderDbConnectionStatus();
     document.addEventListener('brem-storage-ready', renderDbConnectionStatus);
     document.addEventListener('brem-storage-error', renderDbConnectionStatus);
@@ -2808,6 +2856,8 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    bootstrapAdminPage();
+    bootstrapAdminPage().catch(error => {
+      console.error('[BREM] Admin bootstrap failed:', error);
+    });
   });
 })();

@@ -454,6 +454,21 @@ const BremStorage = (function () {
     });
   }
 
+  async function resumeSupabaseAfterAuth() {
+    const config = getSupabaseConfig();
+    if (!config.url || !config.anonKey) {
+      return { ok: false, message: 'Supabase 설정이 없습니다.' };
+    }
+    if (activeStorageAdapter.type !== 'supabase') {
+      try {
+        await initStorage({ backend: 'supabase' });
+      } catch (error) {
+        return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
+      }
+    }
+    return ensureSupabaseHydrated();
+  }
+
   async function ensureSupabaseHydrated() {
     if (activeStorageAdapter.type !== 'supabase') {
       return { ok: false, message: 'Supabase 저장소가 연결되지 않았습니다.' };
@@ -3094,21 +3109,26 @@ const BremStorage = (function () {
   }
 
   function readAdminAccountsRaw() {
+    if (productionAdminAccountsCache?.length) {
+      return productionAdminAccountsCache;
+    }
     if (isProductionMode()) {
       return productionAdminAccountsCache;
     }
-
+    if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.isHydrated?.()) {
+      return null;
+    }
     const raw = storageAdapter.read(KEYS.adminAccounts, null);
     if (!raw) return null;
     return Array.isArray(raw) ? raw : null;
   }
 
   function writeAdminAccounts(accounts) {
-    if (isProductionMode()) {
-      productionAdminAccountsCache = accounts.map((account, index) => normalizeAdminAccount(account, index));
-      return;
+    const normalized = accounts.map((account, index) => normalizeAdminAccount(account, index));
+    productionAdminAccountsCache = normalized;
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
+      storageAdapter.write(KEYS.adminAccounts, normalized);
     }
-    storageAdapter.write(KEYS.adminAccounts, accounts);
   }
 
   function migrateLegacyAdminCredentials() {
@@ -3404,7 +3424,10 @@ const BremStorage = (function () {
           }
 
           const client = getSupabaseClient();
-          if (client && payload.session) {
+          if (!client) {
+            return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
+          }
+          if (payload.session) {
             const { error: sessionError } = await client.auth.setSession({
               access_token: payload.session.access_token,
               refresh_token: payload.session.refresh_token
@@ -3413,14 +3436,16 @@ const BremStorage = (function () {
               return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
             }
             activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
+          } else {
+            return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
           }
 
           await this.syncProductionAdminAccounts();
           await this.refreshProductionAdminSession();
           const account = productionAdminSessionAccount;
           if (!account) {
-            await client?.auth.signOut();
-            return { ok: false, message: '중지된 관리자 계정입니다.' };
+            await client.auth.signOut();
+            return { ok: false, message: '관리자 계정 정보를 확인할 수 없습니다. 계정 상태를 확인하세요.' };
           }
           this.setAdminSession(account.id);
           return { ok: true, account: { ...account, password: '' } };
@@ -4098,6 +4123,7 @@ const BremStorage = (function () {
     reloadDrivers,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
+    resumeSupabaseAfterAuth,
     initStorage,
     initSupabaseStorage,
     migrateLocalStorageToSupabase,
