@@ -7,6 +7,7 @@ const multer = require('multer');
 const { parseSettlementFile } = require('./settlement-parser');
 const riderInquiriesStore = require('./rider-inquiries-store');
 const riderInquiriesSupabase = require('./rider-inquiries-supabase');
+const adminBootstrap = require('./admin-bootstrap');
 const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +53,24 @@ function useSupabaseInquiries() {
 
 app.get('/api/public-config', (req, res) => {
   res.json(getPublicConfig());
+});
+
+app.post('/api/admin/ensure-profile', async (req, res) => {
+  try {
+    const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    if (!token) {
+      return res.status(401).json({ error: 'Authorization Bearer 토큰이 필요합니다.' });
+    }
+
+    const config = getPublicConfig();
+    const result = await adminBootstrap.ensureInitialAdminFromToken(token, config.initialAdmin.email);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 profiles 연결에 실패했습니다.' });
+  }
 });
 
 app.get('/api/rider-inquiries', async (req, res) => {

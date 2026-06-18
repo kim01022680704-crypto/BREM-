@@ -406,6 +406,28 @@ const BremStorage = (function () {
     return activeSupabaseProfile;
   }
 
+  async function tryEnsureInitialAdminProfile(accessToken, loginEmail) {
+    const config = getSupabaseConfig();
+    const expectedEmail = String(config.initialAdmin?.email || '').trim().toLowerCase();
+    const normalizedLogin = String(loginEmail || '').trim().toLowerCase();
+    if (!accessToken || !expectedEmail || normalizedLogin !== expectedEmail) {
+      return false;
+    }
+
+    try {
+      const response = await fetch('/api/admin/ensure-profile', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function signInWithSupabase(email, password, expectedRole) {
     const client = getSupabaseClient();
     if (!client) return { ok: false, message: 'Supabase 설정이 필요합니다.' };
@@ -414,7 +436,20 @@ const BremStorage = (function () {
       password: String(password || '')
     });
     if (error) return { ok: false, message: error.message || '로그인에 실패했습니다.' };
-    const profile = await loadSupabaseProfile();
+
+    let profile = await loadSupabaseProfile();
+    const roleMismatch = !profile?.active || (expectedRole && profile.role !== expectedRole);
+
+    if (roleMismatch && expectedRole === 'admin') {
+      const bootstrapped = await tryEnsureInitialAdminProfile(
+        data.session?.access_token,
+        email
+      );
+      if (bootstrapped) {
+        profile = await loadSupabaseProfile();
+      }
+    }
+
     if (!profile?.active || (expectedRole && profile.role !== expectedRole)) {
       await client.auth.signOut();
       return { ok: false, message: '접근 권한이 없습니다.' };
