@@ -29,16 +29,8 @@
   if (!tableBody) return;
 
   async function ensureAdminAccess() {
-    const config = BremStorage.getSupabaseConfig?.();
-    if (config?.mode === 'production') {
-      try {
-        await BremStorage.initStorage({ backend: 'supabase' });
-      } catch {
-        window.location.replace('admin.html');
-        return false;
-      }
-    }
-    if (!BremStorage.auth.isAdminLoggedIn()) {
+    const result = await BremStorage.auth.ensureAppAccess?.();
+    if (!result?.ok) {
       window.location.replace('admin.html');
       return false;
     }

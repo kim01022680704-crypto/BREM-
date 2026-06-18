@@ -3136,6 +3136,52 @@ const BremStorage = (function () {
       return !!this.getAdminSessionAccount();
     },
 
+    async ensureAppAccess() {
+      if (window.BremSupabaseConfig?.load) {
+        await window.BremSupabaseConfig.load();
+      }
+
+      const config = getSupabaseConfig();
+
+      if (config.mode !== 'production' && config.backend === 'local') {
+        try {
+          await initStorage({ backend: 'local' });
+        } catch {
+          useLocalStorageAdapter();
+        }
+        return { ok: true };
+      }
+
+      if (config.backend === 'supabase') {
+        try {
+          await initStorage({ backend: 'supabase' });
+        } catch (error) {
+          return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
+        }
+      }
+
+      if (config.mode === 'production') {
+        let profile = activeSupabaseProfile;
+        if (!profile) {
+          profile = await loadSupabaseProfile();
+        }
+        if (profile?.active && profile.role === 'admin') {
+          if (sessionAdapter.read(SESSION_KEYS.adminLoggedIn) !== 'true') {
+            this.setAdminSession(profile.user_id);
+          }
+          await this.syncProductionAdminAccounts().catch(() => ({ ok: false }));
+          return { ok: true };
+        }
+        return { ok: false, message: '관리자 로그인이 필요합니다.' };
+      }
+
+      if (this.isAdminLoggedIn()) {
+        return { ok: true };
+      }
+
+      return { ok: false, message: '관리자 로그인이 필요합니다.' };
+    },
+
     setAdminLoggedIn(value) {
       if (!value) {
         this.clearAdminSession();
