@@ -39,6 +39,8 @@
 
   if (!(await ensureAdminAccess())) return;
 
+  await BremStorage.reloadDrivers?.();
+
   const selectedIds = new Set();
 
   function getFilteredDrivers() {

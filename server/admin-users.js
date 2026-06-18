@@ -151,6 +151,37 @@ async function listAdminUsers(accessToken) {
   return { ok: true, accounts };
 }
 
+async function getMyAdminAccount(accessToken) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const supabase = getServiceClient();
+  const accounts = await ensureInitialAdminRegistry(supabase, caller);
+  const account = accounts.find(item => item.id === caller.userId) || null;
+
+  if (account) {
+    return { ok: true, account };
+  }
+
+  const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
+  if (caller.email === initialEmail) {
+    return {
+      ok: true,
+      account: {
+        id: caller.userId,
+        email: caller.email,
+        name: caller.profile.display_name || String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim() || '관리자',
+        role: ADMIN_ROLES.CEO,
+        menus: null,
+        editableMenus: null,
+        active: true
+      }
+    };
+  }
+
+  return { ok: false, status: 404, error: '관리자 계정 정보를 찾을 수 없습니다.' };
+}
+
 async function createAdminUser(accessToken, body = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -394,6 +425,7 @@ async function deleteAdminUser(accessToken, userId) {
 
 module.exports = {
   listAdminUsers,
+  getMyAdminAccount,
   createAdminUser,
   updateAdminUser,
   deleteAdminUser

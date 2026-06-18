@@ -26,6 +26,8 @@
 
   if (!(await ensureAdminAccess())) return;
 
+  await BremStorage.reloadDrivers?.();
+
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
   const phoneInput = document.getElementById('driverPhone');

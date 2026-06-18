@@ -55,7 +55,20 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistRiders(value) {
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
-      await replaceTable('riders', rows);
+      if (!rows.length) return;
+      const { error } = await client.from('riders').upsert(rows, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    async function deleteRider(id) {
+      const riderId = String(id || '').trim();
+      if (!riderId) return;
+      const { error } = await client.from('riders').delete().eq('id', riderId);
+      if (error) throw error;
+    }
+
+    async function reloadRiders() {
+      setCache(keys.drivers, await loadRiders());
     }
 
     async function persistRiderInquiries(value) {
@@ -156,6 +169,8 @@ window.BremSupabaseStorageAdapter = (function () {
         return hydrated;
       },
       hydrate,
+      reloadRiders,
+      deleteRider,
       flush() {
         return persistQueue;
       },

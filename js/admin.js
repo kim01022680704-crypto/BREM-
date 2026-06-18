@@ -1345,13 +1345,14 @@
   function ensureDevLocalStorage() {
     const config = BremStorage.getSupabaseConfig?.() || {};
     if (config.mode === 'production') {
+      const finish = () => Promise.resolve(BremStorage.auth.syncProductionAdminAccounts?.())
+        .then(() => BremStorage.auth.refreshProductionAdminSession?.());
       const status = BremStorage.getStorageStatus?.() || {};
-      const syncAccounts = BremStorage.auth.syncProductionAdminAccounts?.();
       if (status.backend === 'supabase' && status.supabaseHydrated) {
-        return Promise.resolve(syncAccounts);
+        return finish();
       }
       return Promise.resolve(BremStorage.initStorage({ backend: 'supabase' }))
-        .then(() => syncAccounts);
+        .then(() => finish());
     }
     if (config.backend === 'supabase') return Promise.resolve();
     BremStorage.setStorageBackendPreference?.('local');
