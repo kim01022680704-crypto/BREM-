@@ -1,7 +1,6 @@
 {
   "version": 2,
   "installCommand": "npm install",
-  "buildCommand": "",
   "builds": [
     { "src": "api/index.js", "use": "@vercel/node" },
     { "src": "*.html", "use": "@vercel/static" },
@@ -18,7 +17,19 @@
   ],
   "headers": [
     {
-      "source": "/(.*\\.(css|js|png|jpg|jpeg|webp|svg|ico|woff2?))",
+      "source": "/css/:path*",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }
+      ]
+    },
+    {
+      "source": "/js/:path*",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }
+      ]
+    },
+    {
+      "source": "/assets/:path*",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }
       ]
