@@ -9,6 +9,7 @@ const riderInquiriesStore = require('./rider-inquiries-store');
 const riderInquiriesSupabase = require('./rider-inquiries-supabase');
 const adminBootstrap = require('./admin-bootstrap');
 const adminUsers = require('./admin-users');
+const adminAuth = require('./admin-auth');
 const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -54,6 +55,19 @@ function useSupabaseInquiries() {
 
 app.get('/api/public-config', (req, res) => {
   res.json(getPublicConfig());
+});
+
+app.post('/api/admin/sign-in', async (req, res) => {
+  try {
+    const { login, password } = req.body || {};
+    const result = await adminAuth.signInAdmin(login, password);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '관리자 로그인에 실패했습니다.' });
+  }
 });
 
 app.post('/api/admin/ensure-profile', async (req, res) => {

@@ -620,11 +620,7 @@
     }
 
     if (config.mode === 'production' && config.backend === 'supabase') {
-      const loginName = config.initialAdmin?.loginName || '관리자';
-      const email = config.initialAdmin?.email || '';
-      help.textContent = email
-        ? `운영 로그인: 아이디 ${loginName} · Supabase Auth(${email})에 등록한 비밀번호`
-        : `운영 로그인: 아이디 ${loginName} · initialAdmin.email 설정 필요`;
+      help.textContent = '운영 로그인: 계정 생성 시 입력한 관리자 이름(아이디) + 비밀번호 (이메일로도 로그인 가능)';
       return;
     }
 

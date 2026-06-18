@@ -334,10 +334,23 @@ const BremStorage = (function () {
     const menus = raw?.menus == null ? [...ALL_ADMIN_MENU_IDS] : normalizeAdminMenus(raw.menus);
     return normalizeAdminAccount({
       ...raw,
+      role: ADMIN_ROLES.CEO,
       menus,
       editableMenus: raw?.editableMenus == null ? menus : raw.editableMenus,
       password: ''
     }, index);
+  }
+
+  function buildProductionAdminSessionAccount(profile, registryAccount = null) {
+    return {
+      id: profile.user_id,
+      email: registryAccount?.email || '',
+      name: registryAccount?.name || profile.display_name || '관리자',
+      role: ADMIN_ROLES.CEO,
+      menus: ALL_ADMIN_MENU_IDS,
+      editableMenus: ALL_ADMIN_MENU_IDS,
+      active: true
+    };
   }
 
   function getStorageStatus() {
@@ -3143,17 +3156,7 @@ const BremStorage = (function () {
         const profile = activeSupabaseProfile;
         if (profile?.active && profile.role === 'admin') {
           const registryAccount = this.getAdminAccounts().find(account => account.id === profile.user_id);
-          if (registryAccount?.active) {
-            return { ...registryAccount, password: '' };
-          }
-          return {
-            id: profile.user_id,
-            name: profile.display_name || '관리자',
-            role: ADMIN_ROLES.CEO,
-            menus: ALL_ADMIN_MENU_IDS,
-            editableMenus: ALL_ADMIN_MENU_IDS,
-            active: true
-          };
+          return buildProductionAdminSessionAccount(profile, registryAccount);
         }
         return null;
       }
@@ -3210,6 +3213,45 @@ const BremStorage = (function () {
     },
 
     async signInAdmin(loginInput, password) {
+      if (getSupabaseConfig().mode === 'production') {
+        try {
+          const response = await fetch('/api/admin/sign-in', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              login: String(loginInput || '').trim(),
+              password: String(password || '')
+            })
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            return { ok: false, message: payload.error || '로그인에 실패했습니다.' };
+          }
+
+          const client = getSupabaseClient();
+          if (client && payload.session) {
+            const { error: sessionError } = await client.auth.setSession({
+              access_token: payload.session.access_token,
+              refresh_token: payload.session.refresh_token
+            });
+            if (sessionError) {
+              return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
+            }
+            activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
+          }
+
+          await this.syncProductionAdminAccounts();
+          const account = buildProductionAdminSessionAccount(
+            payload.profile || activeSupabaseProfile,
+            payload.account
+          );
+          this.setAdminSession(account.id);
+          return { ok: true, account: { ...account, password: '' } };
+        } catch (error) {
+          return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+        }
+      }
+
       const email = resolveAdminLoginInput(loginInput);
       if (!email.includes('@')) {
         return {

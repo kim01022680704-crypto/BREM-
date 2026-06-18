@@ -157,18 +157,13 @@ async function createAdminUser(accessToken, body = {}) {
 
   const supabase = getServiceClient();
   const accounts = await ensureInitialAdminRegistry(supabase, caller);
-  const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
-  const ceoCheck = assertCeo(actorAccount);
-  if (!ceoCheck.ok) return ceoCheck;
 
   const name = String(body.name || '').trim();
   const password = String(body.password || '');
-  const role = [ADMIN_ROLES.CEO, ADMIN_ROLES.DIRECTOR, ADMIN_ROLES.MANAGER].includes(body.role)
-    ? body.role
-    : ADMIN_ROLES.MANAGER;
+  const role = ADMIN_ROLES.CEO;
   const active = body.active !== false;
-  const menus = Array.isArray(body.menus) ? body.menus.map(String) : [];
-  const editableMenus = Array.isArray(body.editableMenus) ? body.editableMenus.map(String) : menus;
+  const menus = null;
+  const editableMenus = null;
   let email = normalizeEmail(body.email);
 
   if (!name) {
@@ -176,9 +171,6 @@ async function createAdminUser(accessToken, body = {}) {
   }
   if (password.length < 6) {
     return { ok: false, status: 400, error: '비밀번호는 6자 이상 입력하세요.' };
-  }
-  if (!menus.length) {
-    return { ok: false, status: 400, error: '접근 가능한 메뉴를 1개 이상 선택하세요.' };
   }
   if (accounts.some(account => account.name === name)) {
     return { ok: false, status: 400, error: '이미 사용 중인 관리자 이름입니다.' };
