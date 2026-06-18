@@ -8,8 +8,8 @@
     url: '',
     anonKey: '',
     mode: 'development',
-    backend: 'local',
-    allowLocalFallback: true,
+    backend: 'supabase',
+    allowLocalFallback: false,
     functionsUrl: '',
     inquiryStorage: 'file',
     initialAdmin: {

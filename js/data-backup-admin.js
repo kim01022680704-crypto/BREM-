@@ -17,7 +17,7 @@
     return {
       url: supabaseUrlInput?.value?.trim() || preset.url || '',
       anonKey: supabaseAnonKeyInput?.value?.trim() || preset.anonKey || '',
-      backend: preset.backend || 'local'
+      backend: 'supabase'
     };
   }
 
@@ -32,10 +32,8 @@
   }
 
   function applyProductionUi() {
-    const localBtn = document.getElementById('supabaseLocalBtn');
     const connectBtn = document.getElementById('supabaseConnectBtn');
-    if (localBtn) localBtn.hidden = isProduction();
-    if (connectBtn) connectBtn.hidden = isProduction();
+    if (connectBtn) connectBtn.hidden = true;
   }
 
   function createSupabaseClient() {
@@ -65,7 +63,7 @@
     if (!statusEl) return;
     const status = backup.getStatus();
     const storageStatus = BremStorage.getStorageStatus?.() || {};
-    const dbLabel = storageStatus.dbConnectionLabel || storageStatus.backend || 'local';
+    const dbLabel = storageStatus.dbConnectionLabel || storageStatus.backend || 'unavailable';
     const groupRows = Object.values(backup.DATA_GROUPS).map(group => {
       const info = status.groups[group.id];
       return `
@@ -85,7 +83,7 @@
         </article>
         <article class="backup-status-card">
           <span>DB 연결 상태</span>
-          <strong>${escapeHtml(isProduction() && storageStatus.supabaseHydrated ? 'Supabase Connected' : dbLabel)}</strong>
+          <strong>${escapeHtml(storageStatus.supabaseHydrated ? 'Supabase Connected' : dbLabel)}</strong>
         </article>
         <article class="backup-status-card">
           <span>Supabase 설정</span>
@@ -108,9 +106,7 @@
           <tbody>${groupRows}</tbody>
         </table>
       </div>
-      <p class="form-help">${isProduction()
-        ? '운영 환경에서는 모든 데이터가 Supabase에 저장됩니다. localStorage는 이전 버튼에서만 읽습니다.'
-        : '개발 환경에서는 localStorage 또는 Supabase를 선택할 수 있습니다.'}</p>
+      <p class="form-help">모든 데이터는 Supabase에 저장됩니다. 아래 이전 버튼은 브라우저에 남아 있는 예전 localStorage 데이터를 한 번만 가져올 때 사용합니다.</p>
     `;
   }
 
@@ -188,7 +184,7 @@
   }
 
   async function migrateToSupabase() {
-    if (!window.confirm('localStorage 데이터를 Supabase로 이전할까요?\n기존 Supabase 동일 ID 데이터는 upsert로 갱신됩니다.')) return;
+    if (!window.confirm('브라우저에 남아 있는 예전 localStorage 데이터를 Supabase로 이전할까요?\n(일회성 작업 · 이후 Supabase만 사용)')) return;
     try {
       const client = createSupabaseClient();
       const result = await BremStorage.migrateLocalStorageToSupabase(client);
@@ -210,51 +206,6 @@
     }
   }
 
-  async function connectSupabaseMode() {
-    try {
-      const config = getSupabaseConfigFromForm();
-      if (!isSupabaseConfigured(config)) {
-        throw new Error('Supabase URL과 anon key를 js/supabase-config.js 또는 화면 입력란에 설정하세요.');
-      }
-      await BremStorage.initStorage({ backend: 'supabase', config });
-      if (window.BREM_SUPABASE_CONFIG) {
-        window.BREM_SUPABASE_CONFIG.backend = 'supabase';
-      }
-      const status = BremStorage.getStorageStatus?.();
-      if (status?.backend !== 'supabase') {
-        throw new Error(status?.supabaseError || 'Supabase 연결에 실패했습니다.');
-      }
-      showToast('Supabase에 연결되었습니다.');
-      renderStatus();
-    } catch (error) {
-      showToast(error.message || 'Supabase 연결에 실패했습니다.');
-    }
-  }
-
-  function connectLocalMode() {
-    if (isProduction()) {
-      showToast('운영 모드에서는 Supabase만 사용할 수 있습니다.');
-      renderStatus();
-      return;
-    }
-    BremStorage.useLocalStorageAdapter();
-    if (window.BREM_SUPABASE_CONFIG) window.BREM_SUPABASE_CONFIG.backend = 'local';
-    showToast('localStorage 모드로 전환했습니다.');
-    renderStatus();
-  }
-
-  async function restorePreferredBackend() {
-    if (isProduction()) return;
-    const config = getSupabaseConfigFromForm();
-    const preference = BremStorage.getStorageBackendPreference?.() || 'local';
-    if (preference !== 'supabase' || !isSupabaseConfigured(config)) return;
-    try {
-      await BremStorage.initStorage({ backend: 'supabase', config });
-    } catch (error) {
-      console.warn('[BREM] Supabase auto-connect skipped:', error.message);
-    }
-  }
-
   function bindExportButtons() {
     document.querySelectorAll('[data-backup-export]').forEach(button => {
       button.addEventListener('click', () => exportGroup(button.dataset.backupExport));
@@ -264,14 +215,16 @@
   async function init() {
     prefillSupabaseForm();
     applyProductionUi();
-    await restorePreferredBackend();
+    try {
+      await BremStorage.initStorage({ backend: 'supabase' });
+    } catch (error) {
+      console.warn('[BREM] Supabase init on backup panel:', error.message);
+    }
     renderStatus();
     bindExportButtons();
     document.getElementById('backupRefreshStatusBtn')?.addEventListener('click', renderStatus);
     document.getElementById('backupImportBtn')?.addEventListener('click', importFromFile);
     document.getElementById('supabaseMigrateBtn')?.addEventListener('click', migrateToSupabase);
-    document.getElementById('supabaseConnectBtn')?.addEventListener('click', connectSupabaseMode);
-    document.getElementById('supabaseLocalBtn')?.addEventListener('click', connectLocalMode);
     document.addEventListener('brem-storage-ready', renderStatus);
     document.addEventListener('brem-storage-error', renderStatus);
   }

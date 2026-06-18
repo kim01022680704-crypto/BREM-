@@ -1,7 +1,7 @@
 /**
  * Supabase storage adapter
  *
- * localStorage와 같은 read/write 인터페이스를 제공한다.
+ * Supabase storage adapter — read/write 캐시 + DB persist
  * - riders: 기사 데이터
  * - notices: 공지사항
  * - promotions: 프로모션
@@ -149,24 +149,6 @@ window.BremSupabaseStorageAdapter = (function () {
       return persistQueue;
     }
 
-    function writeLocalBackup(key, value) {
-      if (window.BREM_SUPABASE_CONFIG?.mode === 'production') return;
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch {
-        /* local backup is best-effort */
-      }
-    }
-
-    function removeLocalBackup(key) {
-      if (window.BREM_SUPABASE_CONFIG?.mode === 'production') return;
-      try {
-        localStorage.removeItem(key);
-      } catch {
-        /* local backup is best-effort */
-      }
-    }
-
     return {
       type: 'supabase',
       isHydrated() {
@@ -187,12 +169,10 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       write(key, value) {
         setCache(key, value);
-        writeLocalBackup(key, value);
         return queuePersist(key, value);
       },
       remove(key) {
         cache.delete(key);
-        removeLocalBackup(key);
         persistQueue = persistQueue.then(async () => {
           if (key === keys.drivers) await replaceTable('riders', []);
           else if (key === keys.notices) await replaceTable('notices', []);

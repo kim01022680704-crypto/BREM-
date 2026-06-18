@@ -8,10 +8,8 @@ function getPublicConfig() {
     url,
     anonKey,
     mode: process.env.BREM_MODE || (isProduction ? 'production' : 'development'),
-    backend: process.env.BREM_BACKEND || (isProduction ? 'supabase' : 'local'),
-    allowLocalFallback: isProduction
-      ? process.env.BREM_ALLOW_LOCAL_FALLBACK === 'true'
-      : process.env.BREM_ALLOW_LOCAL_FALLBACK !== 'false',
+    backend: process.env.BREM_BACKEND || 'supabase',
+    allowLocalFallback: process.env.BREM_ALLOW_LOCAL_FALLBACK === 'true',
     isConfigured: Boolean(url && anonKey),
     functionsUrl: String(process.env.SUPABASE_FUNCTIONS_URL || '').trim()
       || (url ? `${url.replace(/\/$/, '')}/functions/v1` : ''),

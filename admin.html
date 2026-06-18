@@ -2295,7 +2295,7 @@
           <div class="card-header">
             <h2>Supabase 이전</h2>
           </div>
-          <p class="form-help" id="dataBackupMigrateHelp">브라우저 localStorage에 남아 있는 기존 데이터를 Supabase로 한 번만 이전합니다. 운영 환경에서는 이 버튼으로 초기 데이터를 옮긴 뒤 Supabase만 사용합니다.</p>
+          <p class="form-help" id="dataBackupMigrateHelp">브라우저에 남아 있는 예전 localStorage 데이터를 Supabase로 <strong>한 번만</strong> 이전할 때 사용합니다. 이후 모든 저장은 Supabase만 사용합니다.</p>
           <div class="backup-import-form">
             <label>
               Supabase URL
@@ -2306,9 +2306,7 @@
               <input type="password" id="supabaseAnonKeyInput" placeholder="anon key" autocomplete="off">
             </label>
             <div class="backup-action-grid">
-              <button class="primary-btn" type="button" id="supabaseMigrateBtn">localStorage → Supabase 이전</button>
-              <button class="small-btn" type="button" id="supabaseConnectBtn">Supabase 모드 연결</button>
-              <button class="small-btn" type="button" id="supabaseLocalBtn">localStorage 모드</button>
+              <button class="primary-btn" type="button" id="supabaseMigrateBtn">예전 localStorage → Supabase 이전</button>
             </div>
           </div>
           <div class="backup-import-result" id="supabaseMigrateResult" hidden></div>

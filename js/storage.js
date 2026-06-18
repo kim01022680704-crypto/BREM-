@@ -1,8 +1,6 @@
 /**
- * BREM 데이터 저장소
- *
- * 현재: localStorage / sessionStorage
- * 추후 Supabase 전환 시 이 파일의 adapter 구현만 교체하면 됩니다.
+ * BREM 데이터 저장소 — Supabase 전용
+ * sessionStorage는 관리자 세션(메뉴 권한) 표시용으로만 사용합니다.
  */
 const BremStorage = (function () {
   const KEYS = Object.freeze({
@@ -51,7 +49,7 @@ const BremStorage = (function () {
     driverId: 'brem_driver_logged_in_id'
   };
 
-  const STORAGE_BACKEND_PREF_KEY = 'brem_storage_backend_preference';
+
   let lastSupabaseError = '';
   let activeSupabaseClient = null;
   let activeSupabaseProfile = null;
@@ -144,47 +142,8 @@ const BremStorage = (function () {
     return normalized;
   }
 
-  // Supabase 전환 시 activeStorageAdapter만 교체합니다.
-  const localAdapter = {
-    read(key, fallback) {
-      try {
-        const raw = localStorage.getItem(key);
-        if (raw === null) return fallback;
-        return JSON.parse(raw);
-      } catch {
-        return fallback;
-      }
-    },
-    readRaw(key) {
-      try {
-        const raw = localStorage.getItem(key);
-        if (raw === null) return { exists: false, value: null };
-        return { exists: true, value: JSON.parse(raw) };
-      } catch {
-        return { exists: true, value: null, parseError: true };
-      }
-    },
-    write(key, value) {
-      localStorage.setItem(key, JSON.stringify(value));
-    },
-    remove(key) {
-      localStorage.removeItem(key);
-    },
-    has(key) {
-      return localStorage.getItem(key) !== null;
-    },
-    listBremKeys() {
-      const keys = [];
-      for (let i = 0; i < localStorage.length; i += 1) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('brem_')) keys.push(key);
-      }
-      return keys.sort();
-    }
-  };
-
-  const blockedProductionAdapter = {
-    type: 'blocked',
+  const unavailableStorageAdapter = {
+    type: 'unavailable',
     read(key, fallback) {
       return fallback;
     },
@@ -192,10 +151,10 @@ const BremStorage = (function () {
       return { exists: false, value: null };
     },
     write() {
-      throw new Error('운영 모드에서는 Supabase Auth 연결 전 localStorage 저장이 차단됩니다.');
+      throw new Error('Supabase 연결 후에만 저장할 수 있습니다.');
     },
     remove() {
-      throw new Error('운영 모드에서는 Supabase Auth 연결 전 localStorage 삭제가 차단됩니다.');
+      throw new Error('Supabase 연결 후에만 삭제할 수 있습니다.');
     },
     has() {
       return false;
@@ -205,9 +164,7 @@ const BremStorage = (function () {
     }
   };
 
-  let activeStorageAdapter = window.BREM_SUPABASE_CONFIG?.mode === 'production'
-    ? blockedProductionAdapter
-    : localAdapter;
+  let activeStorageAdapter = unavailableStorageAdapter;
 
   let productionAdminAccountsCache = null;
   let productionAdminSessionAccount = null;
@@ -218,9 +175,8 @@ const BremStorage = (function () {
   }
 
   function enforceProductionStorageGuard() {
-    if (!isProductionMode()) return;
     if (getStorageBackend() !== 'supabase') {
-      activeStorageAdapter = blockedProductionAdapter;
+      activeStorageAdapter = unavailableStorageAdapter;
     }
   }
 
@@ -258,27 +214,15 @@ const BremStorage = (function () {
   };
 
   function getStorageBackend() {
-    if (activeStorageAdapter.type === 'blocked') return 'blocked';
-    return activeStorageAdapter.type === 'supabase' ? 'supabase' : 'local';
+    return activeStorageAdapter.type === 'supabase' ? 'supabase' : 'unavailable';
   }
 
   function getStorageBackendPreference() {
-    if (isProductionMode()) return 'supabase';
-    try {
-      const saved = sessionStorage.getItem(STORAGE_BACKEND_PREF_KEY);
-      return saved === 'supabase' ? 'supabase' : 'local';
-    } catch {
-      return 'local';
-    }
+    return 'supabase';
   }
 
-  function setStorageBackendPreference(backend) {
-    if (isProductionMode()) return;
-    try {
-      sessionStorage.setItem(STORAGE_BACKEND_PREF_KEY, backend === 'supabase' ? 'supabase' : 'local');
-    } catch {
-      /* ignore */
-    }
+  function setStorageBackendPreference() {
+    /* Supabase only */
   }
 
   function getSupabaseConfig() {
@@ -288,9 +232,9 @@ const BremStorage = (function () {
     return {
       url: String(config.url || '').trim(),
       anonKey: String(config.anonKey || '').trim(),
-      backend: mode === 'production' || config.backend === 'supabase' ? 'supabase' : 'local',
+      backend: 'supabase',
       mode,
-      allowLocalFallback: mode !== 'production' && config.allowLocalFallback !== false,
+      allowLocalFallback: false,
       functionsUrl: String(config.functionsUrl || '').trim(),
       isConfigured: Boolean(String(config.url || '').trim() && String(config.anonKey || '').trim()),
       initialAdmin: {
@@ -457,12 +401,27 @@ const BremStorage = (function () {
   }
 
   function useLocalStorageAdapter() {
-    if (isProductionMode()) {
-      throw new Error('운영 모드에서는 Supabase만 사용할 수 있습니다.');
+    throw new Error('localStorage 저장 모드는 지원하지 않습니다. Supabase만 사용합니다.');
+  }
+
+  async function initStorage(options = {}) {
+    const config = {
+      ...getSupabaseConfig(),
+      ...(options.config || {})
+    };
+
+    if (!config.url || !config.anonKey) {
+      lastSupabaseError = 'Supabase url / anonKey 설정이 필요합니다.';
+      throw new Error(lastSupabaseError);
     }
-    activeStorageAdapter = localAdapter;
-    setStorageBackendPreference('local');
-    return getStorageBackend();
+
+    try {
+      return await initSupabaseStorage(config);
+    } catch (error) {
+      lastSupabaseError = error.message || 'Supabase 연결에 실패했습니다.';
+      console.error('[BREM] Supabase init failed:', error);
+      throw error;
+    }
   }
 
   async function flushActiveStorage() {
@@ -593,47 +552,6 @@ const BremStorage = (function () {
       supabaseInitPromise = null;
       throw error;
     }
-  }
-
-  async function initStorage(options = {}) {
-    const config = {
-      ...getSupabaseConfig(),
-      ...(options.config || {})
-    };
-    let backend = options.backend || config.backend || 'local';
-    if (config.backend === 'local') {
-      backend = 'local';
-    } else if (!options.backend) {
-      backend = getStorageBackendPreference() || config.backend || 'local';
-    }
-    if (backend === 'supabase') {
-      if (!config.url || !config.anonKey) {
-        lastSupabaseError = 'Supabase url / anonKey가 js/supabase-config.js 에 설정되지 않았습니다.';
-        if (config.allowLocalFallback) {
-          useLocalStorageAdapter();
-          return { backend: 'local', fallback: true, error: lastSupabaseError };
-        }
-        throw new Error(lastSupabaseError);
-      }
-      try {
-        return await initSupabaseStorage(config);
-      } catch (error) {
-        lastSupabaseError = error.message || 'Supabase 연결에 실패했습니다.';
-        if (config.allowLocalFallback) {
-          console.warn('[BREM] Supabase init failed. Falling back to localStorage:', error);
-          useLocalStorageAdapter();
-          return { backend: 'local', fallback: true, error: lastSupabaseError };
-        }
-        console.error('[BREM] Supabase init failed in production mode:', error);
-        throw error;
-      }
-    }
-    if (config.mode === 'production') {
-      throw new Error('운영 모드에서는 localStorage 저장 모드를 사용할 수 없습니다.');
-    }
-    lastSupabaseError = '';
-    useLocalStorageAdapter();
-    return { backend: 'local' };
   }
 
   async function migrateLocalStorageToSupabase(client, options) {
@@ -1199,46 +1117,14 @@ const BremStorage = (function () {
   const riderInquiries = {
     INQUIRY_TYPES,
 
-    readLocalRaw() {
-      try {
-        const raw = localStorage.getItem(KEYS.riderInquiries);
-        if (raw === null) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    },
-
-    shouldUseLocalRaw() {
-      return !isProductionMode() && getSupabaseConfig().backend === 'local';
-    },
-
     persistList(list) {
       const next = Array.isArray(list) ? list : [];
-      if (riderInquiries.shouldUseLocalRaw()) {
-        try {
-          localStorage.setItem(KEYS.riderInquiries, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-      }
       storageAdapter.write(KEYS.riderInquiries, next);
       return next;
     },
 
     getAll() {
-      if (riderInquiries.shouldUseLocalRaw()) {
-        return riderInquiries.readLocalRaw();
-      }
       return storageAdapter.read(KEYS.riderInquiries, []);
-    },
-
-    syncFromLocalRaw() {
-      const localList = riderInquiries.readLocalRaw();
-      if (!riderInquiries.shouldUseLocalRaw()) return riderInquiries.getAll();
-      riderInquiries.persistList(localList);
-      return localList;
     },
 
     create(data) {
@@ -3212,7 +3098,7 @@ const BremStorage = (function () {
       return productionAdminAccountsCache;
     }
 
-    const raw = localAdapter.read(KEYS.adminAccounts);
+    const raw = storageAdapter.read(KEYS.adminAccounts, null);
     if (!raw) return null;
     return Array.isArray(raw) ? raw : null;
   }
@@ -3222,30 +3108,16 @@ const BremStorage = (function () {
       productionAdminAccountsCache = accounts.map((account, index) => normalizeAdminAccount(account, index));
       return;
     }
-    localAdapter.write(KEYS.adminAccounts, accounts);
+    storageAdapter.write(KEYS.adminAccounts, accounts);
   }
 
   function migrateLegacyAdminCredentials() {
-    if (isProductionMode()) return null;
-    const legacyRaw = localAdapter.read(KEYS.adminCredentials);
-    if (!legacyRaw) return null;
-
-    try {
-      const legacy = JSON.parse(legacyRaw);
-      return normalizeAdminAccount({
-        name: legacy?.name,
-        password: legacy?.password,
-        role: ADMIN_ROLES.CEO,
-        menus: ALL_ADMIN_MENU_IDS
-      });
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   function ensureDevDefaultAdminAccount(accounts) {
     const config = getSupabaseConfig();
-    if (config.mode !== 'development' || config.backend !== 'local') return accounts;
+    if (config.mode !== 'development') return accounts;
 
     const list = accounts.map(account => ({ ...account }));
     const defaultIndex = list.findIndex(account => account.name === DEFAULT_ADMIN_ACCOUNT.name);
@@ -3361,28 +3233,17 @@ const BremStorage = (function () {
 
       const config = getSupabaseConfig();
 
-      if (config.mode !== 'production' && config.backend === 'local') {
-        try {
-          await initStorage({ backend: 'local' });
-        } catch {
-          useLocalStorageAdapter();
-        }
-        return { ok: true };
-      }
-
-      if (config.backend === 'supabase') {
-        try {
-          await initStorage({ backend: 'supabase' });
-          const needsHydrated = config.mode === 'production' || options.requireHydrated;
-          if (needsHydrated) {
-            const hydrated = await ensureSupabaseHydrated();
-            if (!hydrated.ok) {
-              return hydrated;
-            }
+      try {
+        await initStorage({ backend: 'supabase' });
+        const needsHydrated = config.mode === 'production' || options.requireHydrated;
+        if (needsHydrated) {
+          const hydrated = await ensureSupabaseHydrated();
+          if (!hydrated.ok) {
+            return hydrated;
           }
-        } catch (error) {
-          return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
         }
+      } catch (error) {
+        return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
       }
 
       if (config.mode === 'production') {
@@ -3603,9 +3464,7 @@ const BremStorage = (function () {
       if (client) await client.auth.signOut();
       activeSupabaseProfile = null;
       supabaseInitPromise = null;
-      if (isProductionMode()) {
-        activeStorageAdapter = blockedProductionAdapter;
-      }
+      activeStorageAdapter = unavailableStorageAdapter;
       this.clearAdminSession();
       this.setDriverSessionId(null);
     },
@@ -3920,7 +3779,7 @@ const BremStorage = (function () {
     all: Object.freeze({
       id: 'all',
       label: '전체 데이터',
-      description: '등록된 모든 BREM localStorage 데이터',
+      description: '등록된 모든 BREM Supabase/settings 데이터',
       keys: Object.freeze([
         ...Object.values(KEYS),
         SCHEMA.versionKey
@@ -4293,14 +4152,6 @@ const DriverStorage = {
 
   const config = BremStorage.getSupabaseConfig?.() || {};
   BremStorage.enforceProductionStorageGuard?.();
-  const shouldUseSupabase = config.mode === 'production' || config.backend === 'supabase';
-
-  if (!shouldUseSupabase) {
-    document.dispatchEvent(new CustomEvent('brem-storage-ready', {
-      detail: { backend: BremStorage.getStorageBackend?.() || 'local' }
-    }));
-    return;
-  }
 
   if (!config.url || !config.anonKey) {
     const message = 'Supabase URL/anonKey가 서버 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)에 설정되지 않았습니다.';
@@ -4308,7 +4159,7 @@ const DriverStorage = {
     document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
     document.dispatchEvent(new CustomEvent('brem-storage-ready', {
       detail: {
-        backend: config.mode === 'production' ? 'blocked' : 'unavailable',
+        backend: 'unavailable',
         error: message
       }
     }));
@@ -4323,13 +4174,9 @@ const DriverStorage = {
     const message = error.message || 'Supabase 연결에 실패했습니다.';
     console.error('[BREM] Supabase auto init failed:', error);
     document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
-    if (BremStorage.getSupabaseConfig?.().allowLocalFallback) {
-      BremStorage.useLocalStorageAdapter();
-    }
     document.dispatchEvent(new CustomEvent('brem-storage-ready', {
       detail: {
-        backend: BremStorage.getStorageBackend?.() || 'unavailable',
-        fallback: Boolean(BremStorage.getSupabaseConfig?.().allowLocalFallback),
+        backend: 'unavailable',
         error: message
       }
     }));
