@@ -38,6 +38,8 @@
     return;
   }
 
+  window.BremDbConnectionStatus?.bind('driverDbStatus');
+
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
   const phoneInput = document.getElementById('driverPhone');
@@ -425,6 +427,7 @@
 
       await BremStorage.reloadDrivers?.(true);
       refreshHeader();
+      window.BremDbConnectionStatus?.render('driverDbStatus');
 
       if (editingId) {
         showToast('기사 정보가 수정되었습니다.');

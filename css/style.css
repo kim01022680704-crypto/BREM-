@@ -153,6 +153,43 @@ button {
   justify-content: flex-end;
 }
 
+.db-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+  background: #fff;
+}
+
+.db-status--ok {
+  color: var(--success);
+  border-color: rgba(21, 128, 61, 0.35);
+  background: rgba(21, 128, 61, 0.08);
+}
+
+.db-status--error {
+  color: var(--danger);
+  border-color: rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.db-status--pending {
+  color: var(--warning);
+  border-color: rgba(180, 83, 9, 0.35);
+  background: rgba(180, 83, 9, 0.08);
+}
+
+.db-status--dev {
+  color: var(--muted);
+  border-color: var(--border);
+  background: #fff;
+}
+
 .admin-link {
   display: inline-flex;
   align-items: center;

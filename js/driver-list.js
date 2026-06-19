@@ -52,6 +52,8 @@
   }
   await BremStorage.reloadDrivers?.(true);
 
+  window.BremDbConnectionStatus?.bind('driverDbStatus');
+
   const selectedIds = new Set();
 
   function getFilteredDrivers() {

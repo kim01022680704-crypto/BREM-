@@ -754,32 +754,7 @@
   }
 
   function renderDbConnectionStatus() {
-    const el = $('#adminDbStatus');
-    if (!el) return;
-
-    const status = BremStorage.getStorageStatus?.() || {};
-    const config = BremStorage.getSupabaseConfig?.() || {};
-
-    if (config.mode === 'production') {
-      if (status.backend === 'supabase' && status.supabaseHydrated) {
-        el.textContent = 'DB: Supabase Connected';
-        el.className = 'db-status db-status--ok';
-        return;
-      }
-      if (status.supabaseError) {
-        el.textContent = `DB: Disconnected (${status.supabaseError})`;
-        el.className = 'db-status db-status--error';
-        return;
-      }
-      el.textContent = 'DB: Connecting…';
-      el.className = 'db-status db-status--pending';
-      return;
-    }
-
-    el.textContent = status.backend === 'supabase' && status.supabaseHydrated
-      ? 'DB: Supabase Connected (개발)'
-      : 'DB: Disconnected (개발)';
-    el.className = 'db-status db-status--dev';
+    window.BremDbConnectionStatus?.render('adminDbStatus');
   }
 
   function settlements() {
