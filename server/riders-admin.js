@@ -1,5 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
+const { provisionRiderAuthAccount } = require('./rider-auth');
 
 function toDate(value) {
   const text = String(value || '').slice(0, 10);
@@ -72,6 +73,11 @@ async function upsertRider(accessToken, rider) {
   const { error } = await supabase.from('riders').upsert(row, { onConflict: 'id' });
   if (error) {
     return { ok: false, status: 400, error: error.message || '기사 저장에 실패했습니다.' };
+  }
+
+  const provision = await provisionRiderAuthAccount(row);
+  if (!provision.ok) {
+    console.warn('[BREM] Rider auth provisioning failed:', provision.error);
   }
 
   return { ok: true, rider: row };

@@ -3954,8 +3954,50 @@ const BremStorage = (function () {
       return { ok: true, account: { ...account, password: '' } };
     },
 
-    async signInDriver(email, password) {
-      return signInWithSupabase(email, password, 'rider');
+    async signInDriver(loginInput, password) {
+      if (getSupabaseConfig().mode === 'production') {
+        try {
+          const response = await fetch('/api/rider/sign-in', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              login: String(loginInput || '').trim(),
+              password: String(password || '')
+            })
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            return {
+              ok: false,
+              reason: payload.error || '로그인에 실패했습니다.'
+            };
+          }
+
+          const client = getSupabaseClient();
+          if (!client || !payload.session) {
+            return { ok: false, reason: '로그인 세션을 받지 못했습니다.' };
+          }
+
+          const { error: sessionError } = await client.auth.setSession({
+            access_token: payload.session.access_token,
+            refresh_token: payload.session.refresh_token
+          });
+          if (sessionError) {
+            return { ok: false, reason: sessionError.message || '세션 연결에 실패했습니다.' };
+          }
+
+          activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
+          supabaseInitPromise = null;
+          if (payload.riderId) {
+            sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
+          }
+          return { ok: true, riderId: payload.riderId, profile: activeSupabaseProfile };
+        } catch (error) {
+          return { ok: false, reason: error.message || '로그인에 실패했습니다.' };
+        }
+      }
+
+      return signInWithSupabase(String(loginInput || '').trim(), password, 'rider');
     },
 
     async signOutSupabase() {
@@ -4247,7 +4289,10 @@ const BremStorage = (function () {
 
     getDriverSessionId() {
       if (getSupabaseConfig().mode === 'production') {
-        return activeSupabaseProfile?.role === 'rider' ? activeSupabaseProfile.rider_id : '';
+        if (activeSupabaseProfile?.role === 'rider') {
+          return activeSupabaseProfile.rider_id || '';
+        }
+        return sessionAdapter.read(SESSION_KEYS.driverId) || '';
       }
       return sessionAdapter.read(SESSION_KEYS.driverId);
     },

@@ -659,7 +659,7 @@
     if (!loginResult.ok) {
       BremStorage.auth.setDriverSessionId(null);
       showLoggedOut();
-      showToast(loginResult.reason);
+      showToast(loginResult.reason || loginResult.message || '로그인에 실패했습니다.');
       return;
     }
 
@@ -667,8 +667,11 @@
       await BremStorage.initStorage({ backend: 'supabase' });
     }
 
+    const riderId = isProduction
+      ? (loginResult.riderId || BremStorage.auth.getDriverSessionId())
+      : loginResult.driver?.id;
     const driver = isProduction
-      ? BremStorage.drivers.getById(BremStorage.auth.getDriverSessionId())
+      ? BremStorage.drivers.getById(riderId)
       : loginResult.driver;
     if (!driver) {
       showLoggedOut();
@@ -740,10 +743,22 @@
   document.getElementById('prevWeekBtn').addEventListener('click', () => shiftSelectedWeek(-7));
   document.getElementById('nextWeekBtn').addEventListener('click', () => shiftSelectedWeek(7));
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     setupDriverTargetMonthPicker();
     setupDriverWeekPicker();
     state.selectedWeekStart = weekStartKey();
+
+    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+    if (isProduction) {
+      try {
+        await window.BremSupabaseConfig?.load?.();
+        await BremStorage.initStorage({ backend: 'supabase' });
+      } catch {
+        showLoggedOut();
+        return;
+      }
+    }
+
     const savedDriver = findDriverById(BremStorage.auth.getDriverSessionId());
     if (savedDriver) {
       showLoggedIn(savedDriver);

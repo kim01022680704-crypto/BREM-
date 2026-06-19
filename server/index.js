@@ -11,6 +11,7 @@ const adminBootstrap = require('./admin-bootstrap');
 const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
+const riderAuth = require('./rider-auth');
 const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -150,6 +151,25 @@ app.delete('/api/admin/users/:userId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '관리자 계정 삭제에 실패했습니다.' });
+  }
+});
+
+app.post('/api/rider/sign-in', async (req, res) => {
+  try {
+    const { login, password } = req.body || {};
+    const result = await riderAuth.signInRider(login, password);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      session: result.session,
+      user: result.user,
+      riderId: result.riderId,
+      profile: result.profile
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 로그인에 실패했습니다.' });
   }
 });
 
