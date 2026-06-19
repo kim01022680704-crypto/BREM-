@@ -4,10 +4,15 @@
  * - service_role 키는 절대 프론트에 포함하지 않음
  */
 (function () {
+  const isLikelyProductionHost = (function () {
+    const host = String(window.location?.hostname || '').toLowerCase();
+    return host.endsWith('.vercel.app') || host.includes('brem');
+  })();
+
   const DEFAULTS = {
     url: '',
     anonKey: '',
-    mode: 'development',
+    mode: isLikelyProductionHost ? 'production' : 'development',
     backend: 'supabase',
     allowLocalFallback: false,
     functionsUrl: '',

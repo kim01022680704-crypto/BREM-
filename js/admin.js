@@ -624,37 +624,28 @@
 
     try {
       const config = BremStorage.getSupabaseConfig?.() || {};
-      if (!config.isConfigured && config.mode !== 'production') {
-        help.textContent = 'Supabase 설정을 불러오는 중…';
-        return;
-      }
-      if (config.mode === 'development' && !config.isConfigured) {
-        help.textContent = '개발 모드: Supabase 미설정 — settings 테이블 연결 후 관리자 계정 사용';
+      const host = String(window.location?.hostname || '').toLowerCase();
+      const onProductionHost = host.endsWith('.vercel.app') || host.includes('brem');
+      const isProduction = config.mode === 'production' || onProductionHost;
+
+      if (!config.isConfigured) {
+        help.textContent = isProduction
+          ? 'Supabase 연결 설정을 불러오는 중… (운영 환경)'
+          : 'Supabase 설정을 불러오는 중…';
         return;
       }
 
-      if (config.mode === 'development' && config.isConfigured) {
-        help.textContent = '개발 모드: Supabase Auth 로그인 (관리자 이름/이메일 + 비밀번호)';
-        return;
-      }
-
-      if (config.mode === 'production') {
+      if (isProduction) {
         help.textContent = '운영 로그인: 계정 생성 시 입력한 관리자 이름(아이디) + 비밀번호 (이메일로도 로그인 가능)';
         return;
       }
 
-      const accounts = BremStorage.auth.getAdminAccounts().filter(account => account.active);
-      if (!accounts.length) {
-        help.textContent = '활성 관리자 계정이 없습니다. 관리자 계정 메뉴에서 생성하세요.';
+      if (config.isConfigured) {
+        help.textContent = '개발 모드: Supabase Auth 로그인 (관리자 이름/이메일 + 비밀번호)';
         return;
       }
 
-      if (accounts.length === 1) {
-        help.textContent = `로그인 계정: ${accounts[0].name} · 계정·메뉴 권한은 로그인 후 「관리자 계정」에서 관리`;
-        return;
-      }
-
-      help.textContent = `등록된 관리자 ${accounts.length}명 · 로그인 후 「관리자 계정」에서 계정 생성·수정·메뉴 선택`;
+      help.textContent = '개발 모드: Supabase 미설정 — settings 테이블 연결 후 관리자 계정 사용';
     } catch (error) {
       console.warn('[BREM] updateAdminLoginHelp skipped:', error.message);
       help.textContent = 'Supabase 연결 후 로그인하세요.';
@@ -2829,18 +2820,14 @@
   }
 
   async function bootstrapAdminPage() {
-    bindAuthEvents();
+    document.addEventListener('brem-config-ready', updateAdminLoginHelp);
 
     if (window.BremSupabaseConfig?.load) {
       await window.BremSupabaseConfig.load();
     }
 
-    try {
-      updateAdminLoginHelp();
-    } catch (error) {
-      console.warn('[BREM] bootstrapAdminPage help text:', error.message);
-    }
-    document.addEventListener('brem-config-ready', updateAdminLoginHelp);
+    bindAuthEvents();
+    updateAdminLoginHelp();
 
     renderDbConnectionStatus();
     document.addEventListener('brem-storage-ready', renderDbConnectionStatus);
