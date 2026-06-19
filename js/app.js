@@ -15,6 +15,12 @@
   const form = document.getElementById('driverForm');
   if (!form) return;
 
+  const pageParams = new URLSearchParams(window.location.search);
+  if (!pageParams.get('edit') && !pageParams.get('register')) {
+    window.location.replace('drivers.html');
+    return;
+  }
+
   async function ensureAdminAccess() {
     return window.BremDriverProgramAccess?.ensure?.() ?? false;
   }
