@@ -167,6 +167,11 @@
 
       section.querySelectorAll('input, select, textarea, button').forEach(element => {
         if (element.closest('#adminAccountFormCard')) return;
+        if (section.id === 'admin-account' && canFullyEditAdminAccount()) {
+          element.disabled = false;
+          element.classList.remove('admin-view-only-field');
+          return;
+        }
         if (element.id === 'menuBtn' || element.id === 'adminLogoutBtn') return;
         if (element.classList.contains('nav-btn')) return;
         if (element.dataset.readonlyAllow === 'true') return;
@@ -448,6 +453,7 @@
 
   async function renderAdminAccountSection() {
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+      await BremStorage.auth.refreshProductionAdminSession?.().catch(() => ({}));
       const syncResult = await BremStorage.auth.syncProductionAdminAccounts?.();
       if (!syncResult?.ok) {
         const message = syncResult?.message || '관리자 계정 목록을 Supabase에서 불러오지 못했습니다.';
@@ -457,6 +463,7 @@
       }
     }
     updateAdminAccountSectionAccess();
+    applyAdminMenuPermissions();
     renderAdminAccountRows();
     if (!state.editingAdminAccountId && $('#adminAccountFormCard')?.hidden !== false) {
       resetAdminAccountForm();

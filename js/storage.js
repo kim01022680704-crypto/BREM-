@@ -3487,7 +3487,7 @@ const BremStorage = (function () {
   function normalizeAdminAccount(raw, index = 0) {
     const now = new Date().toISOString();
     const menus = normalizeAdminMenus(raw?.menus);
-    return {
+    const account = {
       id: String(raw?.id || createId()),
       email: String(raw?.email || '').trim(),
       name: String(raw?.name || DEFAULT_ADMIN_ACCOUNT.name).trim() || DEFAULT_ADMIN_ACCOUNT.name,
@@ -3499,6 +3499,20 @@ const BremStorage = (function () {
       createdAt: raw?.createdAt || now,
       updatedAt: raw?.updatedAt || now
     };
+    return applyCeoPrivileges(account);
+  }
+
+  function applyCeoPrivileges(account) {
+    if (!account || account.role !== ADMIN_ROLES.CEO) return account;
+
+    const menus = normalizeAdminMenus(account.menus);
+    const editableMenus = normalizeAdminEditableMenus(menus, account.editableMenus ?? menus);
+    const nextMenus = menus.includes('admin-account') ? menus : [...menus, 'admin-account'];
+    const nextEditable = editableMenus.includes('admin-account')
+      ? editableMenus
+      : [...editableMenus, 'admin-account'];
+
+    return { ...account, menus: nextMenus, editableMenus: nextEditable };
   }
 
   function parseAdminAccountsValue(raw) {
@@ -3783,27 +3797,30 @@ const BremStorage = (function () {
       syncAdminSessionMirrors();
       if (getSupabaseConfig().mode === 'production') {
         const profile = activeSupabaseProfile;
-        if (profile?.active && profile.role === 'admin') {
-          if (productionAdminSessionAccount?.id === profile.user_id) {
-            return { ...productionAdminSessionAccount, password: '' };
-          }
+        if (!profile?.active || profile.role !== 'admin') {
+          return null;
+        }
 
-          const persisted = readPersistedProductionSessionAccount(profile);
-          if (persisted) {
-            productionAdminSessionAccount = persisted;
-            return { ...persisted, password: '' };
-          }
-
-          const registryAccount = this.getAdminAccounts().find(account => account.id === profile.user_id);
+        const registryAccount = this.getAdminAccounts().find(account => account.id === profile.user_id);
+        if (registryAccount) {
           const sessionAccount = buildProductionAdminSessionAccount(profile, registryAccount);
           if (sessionAccount) {
             productionAdminSessionAccount = sessionAccount;
             persistProductionSessionAccount(sessionAccount);
             return { ...sessionAccount, password: '' };
           }
-
-          return null;
         }
+
+        if (productionAdminSessionAccount?.id === profile.user_id) {
+          return { ...productionAdminSessionAccount, password: '' };
+        }
+
+        const persisted = readPersistedProductionSessionAccount(profile);
+        if (persisted) {
+          productionAdminSessionAccount = persisted;
+          return { ...persisted, password: '' };
+        }
+
         return null;
       }
 

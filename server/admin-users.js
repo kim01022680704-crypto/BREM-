@@ -77,6 +77,26 @@ function getCallerRegistryAccount(accounts, userId) {
   return accounts.find(account => account.id === userId) || null;
 }
 
+function resolveActorAccount(accounts, caller) {
+  const registryAccount = getCallerRegistryAccount(accounts, caller.userId);
+  if (registryAccount) return registryAccount;
+  return buildFallbackAccountFromProfile(caller);
+}
+
+function applyCeoRegistryPrivileges(account) {
+  if (!account || account.role !== ADMIN_ROLES.CEO) return account;
+  if (account.menus == null) return account;
+
+  const menus = Array.isArray(account.menus) ? [...account.menus] : [];
+  const editableMenus = Array.isArray(account.editableMenus) ? [...account.editableMenus] : menus;
+  const nextMenus = menus.includes('admin-account') ? menus : [...menus, 'admin-account'];
+  const nextEditable = editableMenus.includes('admin-account')
+    ? editableMenus
+    : [...editableMenus, 'admin-account'];
+
+  return { ...account, menus: nextMenus, editableMenus: nextEditable };
+}
+
 function assertCeo(actorAccount) {
   if (actorAccount?.role !== ADMIN_ROLES.CEO) {
     return { ok: false, status: 403, error: '대표만 이 작업을 수행할 수 있습니다.' };
@@ -90,7 +110,7 @@ async function listAdminUsers(accessToken) {
 
   const supabase = getServiceClient();
   const accounts = await loadAdminRegistry(supabase, caller);
-  return { ok: true, accounts };
+  return { ok: true, accounts: accounts.map(applyCeoRegistryPrivileges) };
 }
 
 async function getMyAdminAccount(accessToken) {
@@ -102,12 +122,12 @@ async function getMyAdminAccount(accessToken) {
   const account = accounts.find(item => item.id === caller.userId) || null;
 
   if (account) {
-    return { ok: true, account };
+    return { ok: true, account: applyCeoRegistryPrivileges(account) };
   }
 
   return {
     ok: true,
-    account: buildFallbackAccountFromProfile(caller)
+    account: applyCeoRegistryPrivileges(buildFallbackAccountFromProfile(caller))
   };
 }
 
@@ -117,7 +137,7 @@ async function createAdminUser(accessToken, body = {}) {
 
   const supabase = getServiceClient();
   const accounts = await loadAdminRegistry(supabase, caller);
-  const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
+  const actorAccount = resolveActorAccount(accounts, caller);
   const ceoCheck = assertCeo(actorAccount);
   if (!ceoCheck.ok) return ceoCheck;
 
@@ -176,7 +196,7 @@ async function createAdminUser(accessToken, body = {}) {
   }
 
   const now = new Date().toISOString();
-  const account = {
+  const account = applyCeoRegistryPrivileges({
     id: userId,
     email,
     name,
@@ -186,7 +206,7 @@ async function createAdminUser(accessToken, body = {}) {
     active,
     createdAt: now,
     updatedAt: now
-  };
+  });
 
   await writeRegistry(supabase, [...accounts, account]);
 
@@ -203,7 +223,7 @@ async function updateAdminUser(accessToken, userId, body = {}) {
 
   const supabase = getServiceClient();
   const accounts = await loadAdminRegistry(supabase, caller);
-  const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
+  const actorAccount = resolveActorAccount(accounts, caller);
   const index = accounts.findIndex(account => account.id === userId);
 
   if (index < 0) {
@@ -307,10 +327,10 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     active,
     updatedAt: new Date().toISOString()
   };
-  accounts[index] = updated;
+  accounts[index] = applyCeoRegistryPrivileges(updated);
   await writeRegistry(supabase, accounts);
 
-  return { ok: true, account: updated, message: '관리자 계정이 수정되었습니다.' };
+  return { ok: true, account: accounts[index], message: '관리자 계정이 수정되었습니다.' };
 }
 
 async function deleteAdminUser(accessToken, userId) {
@@ -319,7 +339,7 @@ async function deleteAdminUser(accessToken, userId) {
 
   const supabase = getServiceClient();
   const accounts = await loadAdminRegistry(supabase, caller);
-  const actorAccount = getCallerRegistryAccount(accounts, caller.userId);
+  const actorAccount = resolveActorAccount(accounts, caller);
   const ceoCheck = assertCeo(actorAccount);
   if (!ceoCheck.ok) return ceoCheck;
 
