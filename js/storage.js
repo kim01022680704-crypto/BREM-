@@ -169,6 +169,8 @@ const BremStorage = (function () {
   let productionAdminAccountsCache = null;
   let productionAdminSessionAccount = null;
   let supabaseInitPromise = null;
+  let cachedAdminAccessToken = '';
+  let supabaseAuthListenerBound = false;
 
   function isProductionMode() {
     return getSupabaseConfig().mode === 'production';
@@ -298,21 +300,81 @@ const BremStorage = (function () {
     return value;
   }
 
-  async function getAdminAccessToken() {
+  function rememberAdminAccessToken(token) {
+    cachedAdminAccessToken = String(token || '').trim();
+  }
+
+  function bindSupabaseAuthListener(client) {
+    if (!client?.auth?.onAuthStateChange || supabaseAuthListenerBound) return;
+    supabaseAuthListenerBound = true;
+    client.auth.onAuthStateChange((_event, session) => {
+      rememberAdminAccessToken(session?.access_token || '');
+    });
+  }
+
+  async function resolveAdminAccessToken() {
     const client = getSupabaseClient();
     if (!client) return '';
-    const { data } = await client.auth.getSession();
-    return data?.session?.access_token || '';
+
+    bindSupabaseAuthListener(client);
+
+    let { data: sessionData } = await client.auth.getSession();
+    let session = sessionData?.session;
+
+    if (!session) {
+      const { data: refreshed, error } = await client.auth.refreshSession();
+      if (!error) session = refreshed?.session || null;
+    } else if (session.expires_at) {
+      const expiresMs = session.expires_at * 1000;
+      if (expiresMs - Date.now() < 60_000) {
+        const { data: refreshed, error } = await client.auth.refreshSession();
+        if (!error && refreshed?.session) session = refreshed.session;
+      }
+    }
+
+    const token = session?.access_token || cachedAdminAccessToken || '';
+    if (token) rememberAdminAccessToken(token);
+    return token;
+  }
+
+  async function getAdminAccessToken() {
+    return resolveAdminAccessToken();
+  }
+
+  async function verifyAdminAccessTokenWithServer(token) {
+    const accessToken = String(token || '').trim();
+    if (!accessToken) {
+      return { ok: false, message: '로그인 세션이 없습니다.' };
+    }
+
+    try {
+      const response = await fetch('/api/admin/users/me', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: response.status,
+          message: payload.error || `관리자 세션 확인에 실패했습니다. (${response.status})`
+        };
+      }
+      return { ok: true, account: payload.account };
+    } catch (error) {
+      return { ok: false, message: error.message || '관리자 세션 확인에 실패했습니다.' };
+    }
   }
 
   async function adminRidersApi(path, options = {}) {
-    const token = await getAdminAccessToken();
+    const token = await resolveAdminAccessToken();
     if (!token) {
-      return { ok: false, message: '로그인 세션이 만료되었습니다. 다시 로그인하세요.' };
+      return { ok: false, message: '로그인 세션이 만료되었습니다. 관리자 화면에서 다시 로그인하세요.' };
     }
 
     try {
       const response = await fetch(path, {
+        credentials: 'same-origin',
         ...options,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -322,7 +384,15 @@ const BremStorage = (function () {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        return { ok: false, message: payload.error || '기사 API 요청에 실패했습니다.' };
+        const serverMessage = payload.error || `기사 API 요청에 실패했습니다. (${response.status})`;
+        if (response.status === 401) {
+          return {
+            ok: false,
+            status: 401,
+            message: `${serverMessage} 관리자 화면에서 다시 로그인한 뒤 시도하세요.`
+          };
+        }
+        return { ok: false, status: response.status, message: serverMessage };
       }
       return { ok: true, ...payload };
     } catch (error) {
@@ -357,10 +427,20 @@ const BremStorage = (function () {
   }
 
   async function persistRiderViaServer(rider) {
-    const result = await adminRidersApi('/api/admin/riders', {
+    const postRider = () => adminRidersApi('/api/admin/riders', {
       method: 'POST',
       body: JSON.stringify({ rider })
     });
+
+    let result = await postRider();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postRider();
+    }
     if (!result.ok) {
       throw new Error(result.message || 'Supabase에 기사를 저장하지 못했습니다.');
     }
@@ -378,13 +458,14 @@ const BremStorage = (function () {
   }
 
   async function adminUsersApi(path, options = {}) {
-    const token = await getAdminAccessToken();
+    const token = await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 만료되었습니다. 다시 로그인하세요.' };
     }
 
     try {
       const response = await fetch(path, {
+        credentials: 'same-origin',
         ...options,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -646,13 +727,27 @@ const BremStorage = (function () {
     if (activeStorageAdapter.type !== 'supabase') {
       return { ok: false, message: 'Supabase 저장소가 연결되지 않았습니다.' };
     }
-    if (activeStorageAdapter.isHydrated?.()) {
-      return { ok: true };
-    }
-
     const client = getSupabaseClient();
     if (!client) {
       return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
+    }
+
+    const accessToken = await resolveAdminAccessToken();
+    if (!accessToken) {
+      return {
+        ok: false,
+        message: 'Supabase 로그인이 필요합니다. 관리자 화면에서 먼저 로그인하세요.'
+      };
+    }
+
+    if (activeStorageAdapter.isHydrated?.()) {
+      if (isProductionMode() && !(await resolveAdminAccessToken())) {
+        return {
+          ok: false,
+          message: 'Supabase 로그인이 필요합니다. 관리자 화면에서 먼저 로그인하세요.'
+        };
+      }
+      return { ok: true };
     }
 
     const { data: sessionData } = await client.auth.getSession();
@@ -693,10 +788,12 @@ const BremStorage = (function () {
   }
 
   function createSupabaseClient(url, anonKey) {
-    if (window.BremSupabaseConfig?.createClient) {
-      return window.BremSupabaseConfig.createClient(url, anonKey);
+    if (!window.BremSupabaseConfig?.createClient) {
+      throw new Error('supabase-config.js 가 로드되지 않았습니다.');
     }
-    return window.supabase.createClient(url, anonKey);
+    const client = window.BremSupabaseConfig.createClient(url, anonKey);
+    bindSupabaseAuthListener(client);
+    return client;
   }
 
   async function initSupabaseStorage(config) {
@@ -722,6 +819,9 @@ const BremStorage = (function () {
       const client = createSupabaseClient(settings.url, settings.anonKey);
       const { data: sessionData } = await client.auth.getSession();
       activeSupabaseClient = client;
+      if (sessionData?.session?.access_token) {
+        rememberAdminAccessToken(sessionData.session.access_token);
+      }
 
       if (sessionData?.session) {
         const { data: profile, error: profileError } = await client
@@ -787,6 +887,7 @@ const BremStorage = (function () {
     const config = getSupabaseConfig();
     if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
     activeSupabaseClient = createSupabaseClient(config.url, config.anonKey);
+    bindSupabaseAuthListener(activeSupabaseClient);
     return activeSupabaseClient;
   }
 
@@ -839,6 +940,11 @@ const BremStorage = (function () {
       password: String(password || '')
     });
     if (error) return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+
+    if (data.session?.access_token) {
+      rememberAdminAccessToken(data.session.access_token);
+      bindSupabaseAuthListener(client);
+    }
 
     let profile = await loadSupabaseProfile();
     const roleMismatch = !profile?.active || (expectedRole && profile.role !== expectedRole);
@@ -3759,7 +3865,20 @@ const BremStorage = (function () {
             if (sessionError) {
               return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
             }
+            rememberAdminAccessToken(payload.session.access_token);
+            bindSupabaseAuthListener(client);
+            supabaseInitPromise = null;
             activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
+
+            const verified = await verifyAdminAccessTokenWithServer(payload.session.access_token);
+            if (!verified.ok) {
+              await client.auth.signOut();
+              rememberAdminAccessToken('');
+              return {
+                ok: false,
+                message: verified.message || '서버가 관리자 세션을 확인하지 못했습니다. Vercel Supabase 환경변수를 확인하세요.'
+              };
+            }
           } else {
             return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
           }
@@ -3819,6 +3938,7 @@ const BremStorage = (function () {
     async signOutSupabase() {
       const client = getSupabaseClient();
       if (client) await client.auth.signOut();
+      rememberAdminAccessToken('');
       activeSupabaseProfile = null;
       supabaseInitPromise = null;
       activeStorageAdapter = unavailableStorageAdapter;
@@ -4446,6 +4566,7 @@ const BremStorage = (function () {
     getSupabaseConfig,
     getStorageStatus,
     getSupabaseClient,
+    resolveAdminAccessToken,
     loadSupabaseProfile,
     enforceProductionStorageGuard,
     useLocalStorageAdapter,
