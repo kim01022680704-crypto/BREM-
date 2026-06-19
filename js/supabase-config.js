@@ -24,6 +24,26 @@
 
   window.BREM_SUPABASE_CONFIG = Object.assign({}, DEFAULTS);
 
+  const AUTH_STORAGE_PREFIX = 'brem-auth-';
+  const LEGACY_SESSION_PREFIX = 'brem_sb_';
+  const LEGACY_LOCAL_PREFIX = 'brem-auth-';
+
+  function purgeLegacyLocalAuthStorage() {
+    try {
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (!key) continue;
+        if (key.startsWith(AUTH_STORAGE_PREFIX) || key.startsWith(LEGACY_SESSION_PREFIX)) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  purgeLegacyLocalAuthStorage();
+
   function applyConfig(config) {
     if (!config || typeof config !== 'object') return window.BREM_SUPABASE_CONFIG;
     Object.assign(window.BREM_SUPABASE_CONFIG, DEFAULTS, config);
@@ -56,53 +76,44 @@
       return this._promise;
     },
 
-    /** Supabase Auth JWT — sessionStorage (탭 종료 시 세션 소멸) */
+    /** Supabase Auth JWT — sessionStorage only (탭/창 종료 시 세션 소멸, 새로고침 시 유지) */
     createClient(url, anonKey) {
       if (!window.supabase?.createClient) {
         throw new Error('@supabase/supabase-js 가 로드되지 않았습니다.');
       }
-      const prefix = 'brem-auth-';
-      const legacyLocalPrefix = 'brem-auth-';
-      const legacySessionPrefix = 'brem_sb_';
       const authStorage = {
         getItem(key) {
           try {
-            const sessionValue = sessionStorage.getItem(prefix + key);
+            const sessionValue = sessionStorage.getItem(AUTH_STORAGE_PREFIX + key);
             if (sessionValue != null) return sessionValue;
 
-            const legacySession = sessionStorage.getItem(legacySessionPrefix + key);
+            const legacySession = sessionStorage.getItem(LEGACY_SESSION_PREFIX + key);
             if (legacySession != null) {
-              sessionStorage.setItem(prefix + key, legacySession);
-              sessionStorage.removeItem(legacySessionPrefix + key);
+              sessionStorage.setItem(AUTH_STORAGE_PREFIX + key, legacySession);
+              sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
               return legacySession;
             }
 
-            const legacyLocal = localStorage.getItem(legacyLocalPrefix + key);
-            if (legacyLocal != null) {
-              sessionStorage.setItem(prefix + key, legacyLocal);
-              localStorage.removeItem(legacyLocalPrefix + key);
-              return legacyLocal;
-            }
-
+            try { localStorage.removeItem(LEGACY_LOCAL_PREFIX + key); } catch { /* ignore */ }
             return null;
           } catch {
             return null;
           }
         },
         setItem(key, value) {
-          sessionStorage.setItem(prefix + key, value);
+          sessionStorage.setItem(AUTH_STORAGE_PREFIX + key, value);
           try {
-            localStorage.removeItem(legacyLocalPrefix + key);
-            sessionStorage.removeItem(legacySessionPrefix + key);
+            localStorage.removeItem(LEGACY_LOCAL_PREFIX + key);
+            sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
           } catch {
             /* ignore */
           }
         },
         removeItem(key) {
           try {
-            sessionStorage.removeItem(prefix + key);
-            localStorage.removeItem(legacyLocalPrefix + key);
-            sessionStorage.removeItem(legacySessionPrefix + key);
+            sessionStorage.removeItem(AUTH_STORAGE_PREFIX + key);
+            localStorage.removeItem(LEGACY_LOCAL_PREFIX + key);
+            sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
           } catch {
             /* ignore */
           }

@@ -1,6 +1,7 @@
 /**
  * BREM 데이터 저장소 — Supabase 전용
- * sessionStorage — 관리자/기사 세션 및 Supabase Auth JWT 저장
+ * 로그인 세션: sessionStorage only (탭/창 종료 시 소멸, 새로고침 시 유지)
+ * 비활성 30분 자동 로그아웃: session-security.js
  */
 const BremStorage = (function () {
   const KEYS = Object.freeze({
@@ -1137,6 +1138,8 @@ const BremStorage = (function () {
         console.error('[BREM] Public config load failed:', error);
       }
 
+      purgeLegacyAuthFromLocalStorage();
+
       if (typeof enforceProductionStorageGuard === 'function') {
         document.addEventListener('brem-config-ready', enforceProductionStorageGuard);
       }
@@ -1275,6 +1278,25 @@ const BremStorage = (function () {
     });
 
     window.BremSessionSecurity?.clearActivityMarker?.();
+  }
+
+  function purgeLegacyAuthFromLocalStorage() {
+    Object.values(SESSION_KEYS).forEach(key => {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    });
+
+    const authPrefixes = ['brem-auth-', 'brem_sb_', 'brem_session_'];
+    try {
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (!key) continue;
+        if (authPrefixes.some(prefix => key.startsWith(prefix)) || Object.values(SESSION_KEYS).includes(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   function getAdminSessionStore() {
@@ -5012,6 +5034,7 @@ const BremStorage = (function () {
     verifyRiderPersisted,
     mergeRiderInCache,
     fetchCurrentRiderFromServer,
+    purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     hydrateAdminDataInBackground,
