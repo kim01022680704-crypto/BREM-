@@ -28,10 +28,6 @@
 
   if (!tableBody) return;
 
-  if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
-
-  await BremStorage.reloadDrivers?.(true);
-
   const selectedIds = new Set();
 
   function getFilteredDrivers() {
@@ -324,8 +320,19 @@
       await BremStorage.reloadDrivers?.(true);
       render();
     });
-    render();
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
+
+  const syncResult = await BremStorage.reloadDrivers?.(true);
+  if (syncResult?.ok === false) {
+    showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
+  }
+  render();
 })();

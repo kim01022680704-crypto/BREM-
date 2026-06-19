@@ -207,6 +207,7 @@ const BremStorage = (function () {
       persistKeys.push(KEYS.adminAccounts);
     }
     persistKeys.forEach(key => {
+      if (isProductionMode() && key === KEYS.drivers) return;
       if (!activeStorageAdapter.has(key)) return;
       activeStorageAdapter.enqueuePersist(key, activeStorageAdapter.read(key));
     });
@@ -413,7 +414,16 @@ const BremStorage = (function () {
       return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
     }
 
-    const result = await adminRidersApi('/api/admin/riders');
+    const fetchRiders = () => adminRidersApi('/api/admin/riders');
+    let result = await fetchRiders();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await fetchRiders();
+    }
     if (!result.ok) return result;
 
     const mapper = window.BremSupabaseMapper;
@@ -444,6 +454,20 @@ const BremStorage = (function () {
     if (!result.ok) {
       throw new Error(result.message || 'Supabase에 기사를 저장하지 못했습니다.');
     }
+
+    const mapper = window.BremSupabaseMapper;
+    if (result.rider && mapper?.rowToRider) {
+      const saved = mapper.rowToRider(result.rider);
+      const list = drivers.getAll();
+      const index = list.findIndex(item => item.id === saved.id);
+      if (index >= 0) {
+        list[index] = { ...list[index], ...saved };
+      } else {
+        list.unshift(saved);
+      }
+      setDriversCache(list);
+    }
+
     return result;
   }
 
@@ -626,9 +650,8 @@ const BremStorage = (function () {
 
   async function reloadDrivers(force = false) {
     if (isProductionMode()) {
-      if (!force && drivers.getAll().length) return;
-      await syncDriversFromServer();
-      return;
+      if (!force && drivers.getAll().length) return { ok: true, cached: true };
+      return syncDriversFromServer();
     }
     if (!force && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
       return;
