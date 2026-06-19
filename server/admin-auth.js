@@ -2,10 +2,12 @@ const { createClient } = require('@supabase/supabase-js');
 const { getServiceClient } = require('./admin-bootstrap');
 const {
   normalizeEmail,
-  readRegistry,
+  readRegistryCached,
   buildFallbackAccountFromProfile,
   ensureInitialAdminRegistry
 } = require('./admin-registry');
+
+let anonAuthClient = null;
 
 async function resolveAdminLoginEmail(loginInput) {
   const value = String(loginInput || '').trim();
@@ -28,7 +30,7 @@ async function resolveAdminLoginEmail(loginInput) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const accounts = await readRegistry(supabase);
+  const accounts = await readRegistryCached(supabase);
   const account = accounts.find(item => item.active !== false && String(item.name || '').trim() === value);
   if (account?.email) {
     return {
@@ -43,12 +45,14 @@ async function resolveAdminLoginEmail(loginInput) {
 }
 
 function getAnonAuthClient() {
+  if (anonAuthClient) return anonAuthClient;
   const url = String(process.env.SUPABASE_URL || '').trim();
   const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
   if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
+  anonAuthClient = createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
+  return anonAuthClient;
 }
 
 async function signInAdmin(loginInput, password) {
@@ -89,7 +93,7 @@ async function signInAdmin(loginInput, password) {
     profile
   };
 
-  let accounts = resolved.preloadAccounts || await readRegistry(serviceClient);
+  let accounts = resolved.preloadAccounts || await readRegistryCached(serviceClient);
   let registryAccount = accounts.find(item => item.id === userId) || resolved.account || null;
 
   if (!registryAccount) {

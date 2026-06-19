@@ -760,19 +760,16 @@ const BremStorage = (function () {
     if (adminDataSyncPromise) return adminDataSyncPromise;
 
     window.BremPerf?.time?.('storage.syncAdminDataBackground');
-    adminDataSyncPromise = Promise.all([
-      syncDriversFromServer().catch(error => {
-        console.warn('[BREM] Background rider sync failed:', error.message || error);
-        return { ok: false };
-      }),
-      auth.syncProductionAdminAccounts().catch(error => {
-        console.warn('[BREM] Background admin account sync failed:', error.message || error);
-        return { ok: false };
-      })
-    ]).finally(() => {
+    adminDataSyncPromise = syncDriversFromServer().catch(error => {
+      console.warn('[BREM] Background rider sync failed:', error.message || error);
+      return { ok: false };
+    }).finally(() => {
       adminDataSyncPromise = null;
       window.BremPerf?.timeEnd?.('storage.syncAdminDataBackground');
       document.dispatchEvent(new CustomEvent('brem-admin-data-ready', { detail: { ok: true } }));
+    });
+    void auth.syncProductionAdminAccounts().catch(error => {
+      console.warn('[BREM] Background admin account sync failed:', error.message || error);
     });
     return adminDataSyncPromise;
   }
@@ -1037,7 +1034,7 @@ const BremStorage = (function () {
       } else if (sessionData?.session) {
         console.info('[BREM] Supabase client ready — hydrate deferred');
       } else if (settings.mode === 'production') {
-        console.info('[BREM] Supabase client ready — awaiting admin login to hydrate');
+        console.info('[BREM] Supabase client ready — awaiting login to hydrate');
       } else {
         try {
           if (!deferHydrate) {

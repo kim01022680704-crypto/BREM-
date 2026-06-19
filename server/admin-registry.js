@@ -49,6 +49,24 @@ async function writeRegistry(supabase, accounts) {
   };
   const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'key' });
   if (error) throw new Error(error.message || '관리자 계정 목록을 저장하지 못했습니다.');
+  invalidateRegistryCache();
+}
+
+let registryCache = null;
+const REGISTRY_CACHE_MS = 60_000;
+
+function invalidateRegistryCache() {
+  registryCache = null;
+}
+
+async function readRegistryCached(supabase) {
+  const now = Date.now();
+  if (registryCache && now - registryCache.at < REGISTRY_CACHE_MS) {
+    return registryCache.accounts.map(account => ({ ...account }));
+  }
+  const accounts = await readRegistry(supabase);
+  registryCache = { accounts, at: now };
+  return accounts.map(account => ({ ...account }));
 }
 
 async function fetchUserEmail(supabase, userId) {
@@ -169,6 +187,8 @@ module.exports = {
   normalizeEmail,
   parseRegistryAccounts,
   readRegistry,
+  readRegistryCached,
+  invalidateRegistryCache,
   writeRegistry,
   syncRegistryFromProfiles,
   loadAdminRegistry,

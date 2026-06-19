@@ -1399,11 +1399,25 @@
     return false;
   }
 
-  function showAdminApp(options = {}) {
-    if (!enforceAdminRouteAccess()) return;
-
+  function showAdminAppShell() {
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
+    showSection('dashboard', { skipRender: true });
+    showSectionLoadingSkeleton('dashboard');
+    showAdminDataLoading(true);
+  }
+
+  function showAdminApp(options = {}) {
+    if (!options.shellReady && !enforceAdminRouteAccess()) return;
+    if (options.shellReady && !enforceAdminRouteAccess()) {
+      showAdminLoginPageOnly();
+      return;
+    }
+
+    if (!options.shellReady) {
+      $('#adminLoginPage').classList.add('app-hidden');
+      $('#adminApp').classList.remove('app-hidden');
+    }
 
     if (options.endLoginTimer) {
       console.timeEnd('adminLogin');
@@ -1419,8 +1433,10 @@
       : (allowedMenus[0] || 'dashboard');
 
     showSection(initialSection, { skipRender: true });
-    showSectionLoadingSkeleton(initialSection);
-    showAdminDataLoading(true);
+    if (!options.shellReady) {
+      showSectionLoadingSkeleton(initialSection);
+      showAdminDataLoading(true);
+    }
     applySectionEditPermissions();
 
     startAdminSessionSecurity();
@@ -1501,6 +1517,10 @@
 
         await BremStorage.waitForStorageBootstrap?.();
 
+        showAdminAppShell();
+        console.timeEnd('adminLogin');
+        adminLoginTimerActive = false;
+
         window.BremPerf?.time?.('admin.signInApi');
         const config = BremStorage.getSupabaseConfig?.() || {};
         const result = config.isConfigured
@@ -1509,6 +1529,8 @@
         window.BremPerf?.timeEnd?.('admin.signInApi');
 
         if (!result?.ok) {
+          showAdminLoginPageOnly();
+          showAdminDataLoading(false);
           showToast(result?.message || '이름 또는 비밀번호가 올바르지 않습니다.');
           return;
         }
@@ -1519,7 +1541,7 @@
           void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
         }
 
-        showAdminApp({ endLoginTimer: true });
+        showAdminApp({ shellReady: true });
         adminLoginTimerActive = false;
         showToast('관리자 로그인 성공');
         window.BremSessionSecurity?.touchActivity?.();
