@@ -20,6 +20,15 @@
     'weekly-settlement': { title: '주정산서 업로드', defaultPlatform: 'coupang' }
   };
 
+  const DRIVER_FILTERED_SECTIONS = new Set([
+    'dashboard',
+    'calls',
+    'rejections',
+    'targets',
+    'missions',
+    'settlements'
+  ]);
+
   const LEGACY_SECTION_MAP = {
     'calls-coupang': { section: 'calls', platform: 'coupang' },
     'calls-baemin': { section: 'calls', platform: 'baemin' },
@@ -1328,10 +1337,6 @@
         return;
       }
 
-      if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-        await BremStorage.auth.syncProductionAdminAccounts?.();
-      }
-
       renderDbConnectionStatus();
       initDefaults();
       bindEvents();
@@ -1558,6 +1563,7 @@
   }
 
   function renderDashboard() {
+    window.BremPerf?.time?.('admin.renderDashboard');
     const month = currentMonth();
     const weekStart = weekStartKey();
     const allDrivers = filteredDrivers();
@@ -1607,6 +1613,7 @@
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
     $('#dashboardRows').innerHTML = rows || emptyRow(8, emptyMessage);
     $('#dashboardNotices').innerHTML = renderNoticeItems(notices().slice(0, 4), false);
+    window.BremPerf?.timeEnd?.('admin.renderDashboard');
   }
 
   function callFilterDate(platform) {
@@ -2239,22 +2246,74 @@
     showToast(`${platformLabel(p)} ${preview.matched.length}명 반영 완료${preview.unmatched.length ? ` · 미반영 ${preview.unmatched.length}명은 아래 목록에 저장됨` : ''}`);
   }
 
-  function renderAll() {
-    renderDashboard();
-    renderMissionResults();
-    renderCalls();
-    renderRejections();
-    renderTargets();
-    renderMissions();
-    renderSettlements();
-    renderPromotions();
-    if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh();
-    if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
-    renderNotices();
-    renderRiderInquiries();
+  function renderActiveSection(sectionId = state.currentSection) {
+    window.BremPerf?.time?.(`admin.renderSection:${sectionId}`);
+
+    switch (sectionId) {
+      case 'dashboard':
+        renderDashboard();
+        break;
+      case 'mission-results':
+        renderMissionResults();
+        break;
+      case 'calls':
+        renderCalls();
+        break;
+      case 'rejections':
+        renderRejections();
+        break;
+      case 'targets':
+        renderTargets();
+        break;
+      case 'missions':
+        renderMissions();
+        break;
+      case 'settlements':
+        renderSettlements();
+        break;
+      case 'promotions':
+        renderPromotions();
+        break;
+      case 'weekly-settlement':
+        if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh();
+        break;
+      case 'promotion-apply':
+        if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+        break;
+      case 'notices':
+        renderNotices();
+        break;
+      case 'rider-inquiries':
+        renderRiderInquiries();
+        break;
+      case 'admin-account':
+        renderAdminAccountSection();
+        break;
+      default:
+        break;
+    }
+
     updateDriverSearchStatus();
     applySectionEditPermissions();
+    window.BremPerf?.timeEnd?.(`admin.renderSection:${sectionId}`);
   }
+
+  function renderAll() {
+    window.BremPerf?.time?.('admin.renderAll');
+    renderActiveSection(state.currentSection);
+    window.BremPerf?.timeEnd?.('admin.renderAll');
+  }
+
+  function handleDriverSearchChange() {
+    updateDriverSearchStatus();
+    if (DRIVER_FILTERED_SECTIONS.has(state.currentSection)) {
+      renderActiveSection(state.currentSection);
+    }
+  }
+
+  const debouncedDriverSearchChange = window.BremPerf?.debounce
+    ? window.BremPerf.debounce(handleDriverSearchChange, 180)
+    : handleDriverSearchChange;
 
   function resolveSectionNavigation(id) {
     const legacy = LEGACY_SECTION_MAP[id];
@@ -2325,14 +2384,7 @@
     if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
       window.BremAdminRevenue.refresh();
     }
-    if (sectionId === 'rider-inquiries') {
-      renderRiderInquiries();
-    }
-    if (sectionId === 'admin-account') {
-      renderAdminAccountSection();
-    }
-    renderAll();
-    applySectionEditPermissions();
+    renderActiveSection(sectionId);
   }
 
   function bindEvents() {
@@ -2387,13 +2439,13 @@
 
     $('#adminDriverSearch').addEventListener('input', event => {
       state.driverSearchQuery = event.target.value;
-      renderAll();
+      debouncedDriverSearchChange();
     });
 
     $('#adminDriverSearchClear').addEventListener('click', () => {
       state.driverSearchQuery = '';
       $('#adminDriverSearch').value = '';
-      renderAll();
+      handleDriverSearchChange();
     });
 
     $('#dashboardEmptyLeaseBtn')?.addEventListener('click', () => {

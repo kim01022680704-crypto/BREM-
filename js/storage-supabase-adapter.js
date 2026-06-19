@@ -130,13 +130,34 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.riderInquiries]: persistRiderInquiries
     };
 
-    async function hydrate() {
-      setCache(keys.drivers, await loadRiders());
-      setCache(keys.notices, await loadNotices());
-      setCache(keys.promotionRules, await loadPromotions());
-      setCache(keys.riderInquiries, await loadRiderInquiries());
+    async function hydrate(options = {}) {
+      const skip = new Set(options.skipKeys || []);
+      window.BremPerf?.time?.('storage.hydrate');
+
+      const tasks = [];
+
+      if (!skip.has(keys.drivers)) {
+        tasks.push(loadRiders().then(value => setCache(keys.drivers, value)));
+      } else {
+        setCache(keys.drivers, []);
+      }
+
+      if (!skip.has(keys.notices)) {
+        tasks.push(loadNotices().then(value => setCache(keys.notices, value)));
+      }
+
+      if (!skip.has(keys.promotionRules)) {
+        tasks.push(loadPromotions().then(value => setCache(keys.promotionRules, value)));
+      }
+
+      if (!skip.has(keys.riderInquiries)) {
+        tasks.push(loadRiderInquiries().then(value => setCache(keys.riderInquiries, value)));
+      }
+
+      await Promise.all(tasks);
       await loadSettings();
       hydrated = true;
+      window.BremPerf?.timeEnd?.('storage.hydrate');
     }
 
     function queuePersist(key, value) {

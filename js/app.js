@@ -381,7 +381,9 @@
     if (!validateFormData(data)) return;
 
     const editingId = driverIdInput.value;
+    const previousLabel = submitBtn.textContent;
     submitBtn.disabled = true;
+    submitBtn.textContent = editingId ? '수정 중…' : '등록 중…';
 
     try {
       await ensureStorageReadyForSave();
@@ -399,12 +401,6 @@
       syncDriverEventSettings(savedDriver.id, data);
       await BremStorage.flushStorage?.();
 
-      const verified = await BremStorage.verifyRiderPersisted?.(savedDriver.id);
-      if (!verified?.ok) {
-        throw new Error(verified?.message || 'Supabase에 기사 저장을 확인하지 못했습니다.');
-      }
-
-      await BremStorage.reloadDrivers?.(true);
       refreshHeader();
       window.BremDbConnectionStatus?.render('driverDbStatus');
 
@@ -420,6 +416,7 @@
       showToast(error.message || '기사 저장에 실패했습니다.');
     } finally {
       submitBtn.disabled = false;
+      submitBtn.textContent = previousLabel;
     }
   }
 
@@ -539,7 +536,7 @@
 
   if (!(await ensureAdminAccess())) return;
 
-  await BremStorage.reloadDrivers?.(true).catch(() => ({}));
+  await BremStorage.reloadDrivers?.(false).catch(() => ({}));
   refreshHeader();
   loadEditFromQuery();
 })();

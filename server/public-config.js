@@ -8,6 +8,7 @@ function getPublicConfig() {
     url,
     anonKey,
     mode: process.env.BREM_MODE || (isProduction ? 'production' : 'development'),
+    nodeEnv: process.env.NODE_ENV || 'development',
     backend: process.env.BREM_BACKEND || 'supabase',
     allowLocalFallback: process.env.BREM_ALLOW_LOCAL_FALLBACK === 'true',
     isConfigured: Boolean(url && anonKey),

@@ -1485,3 +1485,29 @@ textarea:focus,
     width: 100%;
   }
 }
+
+.is-loading .skeleton-bar,
+.skeleton-card .skeleton-bar {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 25%, rgba(255, 255, 255, 0.14) 50%, rgba(255, 255, 255, 0.06) 75%);
+  background-size: 200% 100%;
+  animation: brem-skeleton 1.2s ease-in-out infinite;
+}
+
+.skeleton-row td {
+  padding: 14px 12px;
+}
+
+.skeleton-card {
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+@keyframes brem-skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

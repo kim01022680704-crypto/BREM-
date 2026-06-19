@@ -88,6 +88,9 @@
   }
 
   function render() {
+    window.BremPerf?.time?.('drivers.render');
+    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+    mobileList.classList.remove('is-loading');
     const drivers = getFilteredDrivers();
     const allIds = new Set(BremStorage.drivers.getAll().map(driver => driver.id));
     selectedIds.forEach(id => {
@@ -97,7 +100,10 @@
     updateDriverTotal(driverTotal);
     emptyState.classList.toggle('show', drivers.length === 0);
 
-    tableBody.innerHTML = drivers.map(driver => `
+    const isMobileView = window.matchMedia('(max-width: 900px)').matches;
+
+    if (!isMobileView) {
+      tableBody.innerHTML = drivers.map(driver => `
       <tr class="${selectedIds.has(driver.id) ? 'row-selected' : ''}">
         <td class="col-select">${renderCheckbox(driver.id)}</td>
         <td class="col-name"><strong>${escapeHtml(driver.name)}</strong></td>
@@ -123,8 +129,10 @@
         </td>
       </tr>
     `).join('');
-
-    mobileList.innerHTML = drivers.map(driver => `
+      mobileList.innerHTML = '';
+    } else {
+      tableBody.innerHTML = '';
+      mobileList.innerHTML = drivers.map(driver => `
       <article class="driver-card ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}">
         <div class="driver-card-select">
           <label>
@@ -163,8 +171,10 @@
         </div>
       </article>
     `).join('');
+    }
 
     updateSelectionUi();
+    window.BremPerf?.timeEnd?.('drivers.render');
   }
 
   function exportDriversToExcel() {
@@ -206,15 +216,28 @@
     showToast(toast, `${drivers.length}명 엑셀 백업 완료`);
   }
 
+  function showLoadingSkeleton() {
+    tableBody.closest('.table-wrap')?.classList.add('is-loading');
+    mobileList.classList.add('is-loading');
+    const skeletonRow = '<tr class="skeleton-row"><td colspan="13"><span class="skeleton-bar"></span></td></tr>';
+    tableBody.innerHTML = skeletonRow.repeat(5);
+    mobileList.innerHTML = '<article class="driver-card skeleton-card"><span class="skeleton-bar"></span></article>'.repeat(3);
+  }
+
   function deleteDriver(id) {
     const driver = BremStorage.drivers.getById(id);
     if (!driver) return;
     if (!window.confirm(`${driver.name} 기사를 삭제하시겠습니까?`)) return;
-    BremStorage.drivers.remove(id).then(() => {
-      selectedIds.delete(id);
-      render();
+
+    selectedIds.delete(id);
+    const removePromise = BremStorage.drivers.remove(id);
+    render();
+    showToast(toast, '기사를 삭제하는 중…');
+
+    removePromise.then(() => {
       showToast(toast, '기사가 삭제되었습니다.');
     }).catch(error => {
+      render();
       showToast(toast, error.message || '기사 삭제에 실패했습니다.');
     });
   }
@@ -305,8 +328,12 @@
     if (action === 'delete') deleteDriver(id);
   }
 
+  const debouncedRender = window.BremPerf?.debounce
+    ? window.BremPerf.debounce(render, 120)
+    : render;
+
   function init() {
-    searchInput.addEventListener('input', render);
+    searchInput.addEventListener('input', debouncedRender);
     statusFilter.addEventListener('change', render);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', exportDriversToExcel);
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
@@ -316,8 +343,7 @@
     mobileList.addEventListener('change', handleSelectionChange);
     tableBody.addEventListener('click', handleListClick);
     mobileList.addEventListener('click', handleListClick);
-    document.addEventListener('brem-storage-ready', async () => {
-      await BremStorage.reloadDrivers?.(true);
+    document.addEventListener('brem-storage-ready', () => {
       render();
     });
   }
@@ -330,7 +356,11 @@
 
   if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
 
-  const syncResult = await BremStorage.reloadDrivers?.(true);
+  showLoadingSkeleton();
+  const status = BremStorage.getStorageStatus?.() || {};
+  const syncResult = status.supabaseHydrated
+    ? await BremStorage.reloadDrivers?.(false)
+    : await BremStorage.reloadDrivers?.(true);
   if (syncResult?.ok === false) {
     showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
   }

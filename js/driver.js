@@ -664,7 +664,10 @@
     }
 
     if (isProduction) {
-      await BremStorage.initStorage({ backend: 'supabase' });
+      const status = BremStorage.getStorageStatus?.() || {};
+      if (!status.supabaseHydrated) {
+        await BremStorage.initStorage({ backend: 'supabase' });
+      }
     }
 
     const riderId = isProduction
@@ -752,7 +755,10 @@
     if (isProduction) {
       try {
         await window.BremSupabaseConfig?.load?.();
-        await BremStorage.initStorage({ backend: 'supabase' });
+        const status = BremStorage.getStorageStatus?.() || {};
+        if (!status.supabaseHydrated) {
+          await BremStorage.initStorage({ backend: 'supabase' });
+        }
       } catch {
         showLoggedOut();
         return;
