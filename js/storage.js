@@ -534,7 +534,14 @@ const BremStorage = (function () {
     }
 
     if (needsDrivers) {
-      tasks.push(reloadDrivers(Boolean(options.forceDrivers)));
+      tasks.push(
+        reloadDrivers(Boolean(options.forceDrivers)).then(result => {
+          if (result?.hasMore) {
+            void syncAllDriversPagesInBackground();
+          }
+          return result;
+        })
+      );
     }
 
     if (tasks.length) {
@@ -595,6 +602,42 @@ const BremStorage = (function () {
       total: result.total ?? riderRows.length,
       hasMore: Boolean(result.hasMore)
     };
+  }
+
+  let driversBackgroundSyncPromise = null;
+
+  async function syncAllDriversPagesInBackground() {
+    if (!isProductionMode()) return { ok: true };
+    if (driversBackgroundSyncPromise) return driversBackgroundSyncPromise;
+
+    driversBackgroundSyncPromise = (async () => {
+      window.BremPerf?.time?.('storage.syncAllDriversBackground');
+      let offset = drivers.getAll().length || 100;
+      let hasMore = true;
+      let pages = 0;
+
+      while (hasMore && pages < 100) {
+        const result = await syncDriversFromServer({
+          limit: 100,
+          offset,
+          append: true
+        });
+        if (!result.ok) break;
+        hasMore = Boolean(result.hasMore);
+        offset += 100;
+        pages += 1;
+      }
+
+      window.BremPerf?.timeEnd?.('storage.syncAllDriversBackground');
+      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+        detail: { complete: true }
+      }));
+      return { ok: true };
+    })().finally(() => {
+      driversBackgroundSyncPromise = null;
+    });
+
+    return driversBackgroundSyncPromise;
   }
 
   async function persistRiderViaServer(rider) {
@@ -5141,6 +5184,7 @@ const BremStorage = (function () {
     useLocalStorageAdapter,
     flushStorage: flushActiveStorage,
     reloadDrivers,
+    syncAllDriversPagesInBackground,
     verifyRiderPersisted,
     mergeRiderInCache,
     fetchCurrentRiderFromServer,

@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node server/index.js",
     "qa": "node scripts/qa-check.js",
-    "check-deploy": "node scripts/check-deploy.js"
+    "check-deploy": "node scripts/check-deploy.js",
+    "audit:production": "node scripts/production-audit.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",

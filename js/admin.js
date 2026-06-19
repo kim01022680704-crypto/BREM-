@@ -1512,10 +1512,6 @@
 
         await BremStorage.waitForStorageBootstrap?.();
 
-        showAdminAppShell();
-        console.timeEnd('adminLogin');
-        adminLoginTimerActive = false;
-
         window.BremPerf?.time?.('admin.signInApi');
         const config = BremStorage.getSupabaseConfig?.() || {};
         const result = config.isConfigured
@@ -1524,8 +1520,6 @@
         window.BremPerf?.timeEnd?.('admin.signInApi');
 
         if (!result?.ok) {
-          showAdminLoginPageOnly();
-          showAdminDataLoading(false);
           showToast(result?.message || '이름 또는 비밀번호가 올바르지 않습니다.');
           return;
         }
@@ -1536,7 +1530,9 @@
           void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
         }
 
+        showAdminAppShell();
         showAdminApp({ shellReady: true });
+        console.timeEnd('adminLogin');
         adminLoginTimerActive = false;
         showToast('관리자 로그인 성공');
         window.BremSessionSecurity?.touchActivity?.();

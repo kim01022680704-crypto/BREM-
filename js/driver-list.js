@@ -177,11 +177,15 @@
     window.BremPerf?.timeEnd?.('drivers.render');
   }
 
-  function exportDriversToExcel() {
+  async function exportDriversToExcel() {
     if (!window.XLSX) {
       showToast(toast, '엑셀 라이브러리를 불러오지 못했습니다.');
       return;
     }
+
+    showToast(toast, '엑셀 백업 준비 중…');
+    await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
+    await BremStorage.reloadDrivers?.(true, { search: '', status: '전체' }).catch(() => ({}));
 
     const drivers = BremStorage.drivers.getAll();
     if (!drivers.length) {
@@ -355,7 +359,7 @@
     statusFilter.addEventListener('change', () => {
       void refreshDriverList(true);
     });
-    if (exportExcelBtn) exportExcelBtn.addEventListener('click', exportDriversToExcel);
+    if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
     if (selectAllInput) selectAllInput.addEventListener('change', handleSelectAll);
