@@ -1406,6 +1406,11 @@
 
         showAdminApp();
         showToast('관리자 로그인 성공');
+
+        const returnPath = new URLSearchParams(window.location.search).get('return');
+        if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
+          window.location.replace(returnPath);
+        }
       } catch (error) {
         console.error('[BREM] Admin login failed:', error);
         BremStorage.auth.clearAdminSession?.();
@@ -2828,6 +2833,11 @@
       const profile = await BremStorage.loadSupabaseProfile?.();
       if (profile?.active && profile.role === 'admin') {
         await BremStorage.auth.ensureAppAccess?.({ refreshMenus: true });
+        const returnPath = new URLSearchParams(window.location.search).get('return');
+        if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
+          window.location.replace(returnPath);
+          return;
+        }
         showAdminApp();
         return;
       }

@@ -28,31 +28,9 @@
 
   if (!tableBody) return;
 
-  async function ensureAdminAccess() {
-    const result = await BremStorage.auth.ensureAppAccess?.({ requireHydrated: true });
-    if (!result?.ok) {
-      window.location.replace('admin.html');
-      return false;
-    }
-    const status = BremStorage.getStorageStatus?.() || {};
-    if (status.mode === 'production' && !status.supabaseHydrated) {
-      window.location.replace('admin.html');
-      return false;
-    }
-    return true;
-  }
+  if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
 
-  if (!(await ensureAdminAccess())) return;
-
-  const storageReady = await BremStorage.waitForSupabaseReady?.();
-  const resume = await BremStorage.resumeSupabaseAfterAuth?.();
-  if (!storageReady || !resume?.ok) {
-    window.location.replace('admin.html');
-    return;
-  }
   await BremStorage.reloadDrivers?.(true);
-
-  window.BremDbConnectionStatus?.bind('driverDbStatus');
 
   const selectedIds = new Set();
 

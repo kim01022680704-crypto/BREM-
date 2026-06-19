@@ -16,29 +16,10 @@
   if (!form) return;
 
   async function ensureAdminAccess() {
-    const result = await BremStorage.auth.ensureAppAccess?.({ requireHydrated: true });
-    if (!result?.ok) {
-      window.location.replace('admin.html');
-      return false;
-    }
-    const status = BremStorage.getStorageStatus?.() || {};
-    if (status.mode === 'production' && !status.supabaseHydrated) {
-      window.location.replace('admin.html');
-      return false;
-    }
-    return true;
+    return window.BremDriverProgramAccess?.ensure?.() ?? false;
   }
 
   if (!(await ensureAdminAccess())) return;
-
-  const storageReady = await BremStorage.waitForSupabaseReady?.();
-  const resume = await BremStorage.resumeSupabaseAfterAuth?.();
-  if (!storageReady || !resume?.ok) {
-    window.location.replace('admin.html');
-    return;
-  }
-
-  window.BremDbConnectionStatus?.bind('driverDbStatus');
 
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');

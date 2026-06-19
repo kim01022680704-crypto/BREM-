@@ -56,25 +56,34 @@
       return this._promise;
     },
 
-    /** Supabase Auth 세션 — localStorage 대신 sessionStorage만 사용 */
+    /** Supabase Auth JWT — localStorage only (앱 데이터와 분리, 탭/페이지 간 세션 유지) */
     createClient(url, anonKey) {
       if (!window.supabase?.createClient) {
         throw new Error('@supabase/supabase-js 가 로드되지 않았습니다.');
       }
-      const prefix = 'brem_sb_';
+      const prefix = 'brem-auth-';
+      const legacyPrefix = 'brem_sb_';
       const authStorage = {
         getItem(key) {
           try {
-            return sessionStorage.getItem(prefix + key);
+            const value = localStorage.getItem(prefix + key);
+            if (value != null) return value;
+            const legacy = sessionStorage.getItem(legacyPrefix + key);
+            if (legacy != null) {
+              localStorage.setItem(prefix + key, legacy);
+              sessionStorage.removeItem(legacyPrefix + key);
+              return legacy;
+            }
+            return null;
           } catch {
             return null;
           }
         },
         setItem(key, value) {
-          sessionStorage.setItem(prefix + key, value);
+          localStorage.setItem(prefix + key, value);
         },
         removeItem(key) {
-          sessionStorage.removeItem(prefix + key);
+          localStorage.removeItem(prefix + key);
         }
       };
       return window.supabase.createClient(url, anonKey, {

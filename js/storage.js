@@ -378,13 +378,14 @@ const BremStorage = (function () {
     productionAdminSessionAccount = { ...account, menusExplicit: true };
     sessionAdapter.write(SESSION_KEYS.adminAccountId, account.id);
     sessionAdapter.write(SESSION_KEYS.adminLoggedIn, 'true');
-    sessionStorage.setItem(SESSION_KEYS.adminSessionMenus, JSON.stringify(account.menus || []));
-    sessionStorage.setItem(
+    const menuStore = getAdminSessionStore();
+    menuStore.setItem(SESSION_KEYS.adminSessionMenus, JSON.stringify(account.menus || []));
+    menuStore.setItem(
       SESSION_KEYS.adminSessionEditableMenus,
       JSON.stringify(account.editableMenus || account.menus || [])
     );
-    sessionStorage.setItem(SESSION_KEYS.adminSessionRole, account.role || ADMIN_ROLES.MANAGER);
-    sessionStorage.setItem(SESSION_KEYS.adminSessionName, account.name || '');
+    menuStore.setItem(SESSION_KEYS.adminSessionRole, account.role || ADMIN_ROLES.MANAGER);
+    menuStore.setItem(SESSION_KEYS.adminSessionName, account.name || '');
   }
 
   function readPersistedProductionSessionAccount(profile) {
@@ -392,19 +393,20 @@ const BremStorage = (function () {
     if (sessionAdapter.read(SESSION_KEYS.adminAccountId) !== profile.user_id) return null;
 
     try {
-      const menusRaw = sessionStorage.getItem(SESSION_KEYS.adminSessionMenus);
+      const menuStore = getAdminSessionStore();
+      const menusRaw = menuStore.getItem(SESSION_KEYS.adminSessionMenus);
       if (menusRaw == null) return null;
       const menus = JSON.parse(menusRaw);
       if (!Array.isArray(menus)) return null;
 
-      const editableRaw = sessionStorage.getItem(SESSION_KEYS.adminSessionEditableMenus);
+      const editableRaw = menuStore.getItem(SESSION_KEYS.adminSessionEditableMenus);
       const editableMenus = editableRaw ? JSON.parse(editableRaw) : menus;
 
       return {
         id: profile.user_id,
         email: '',
-        name: sessionStorage.getItem(SESSION_KEYS.adminSessionName) || profile.display_name || '관리자',
-        role: sessionStorage.getItem(SESSION_KEYS.adminSessionRole) || ADMIN_ROLES.MANAGER,
+        name: menuStore.getItem(SESSION_KEYS.adminSessionName) || profile.display_name || '관리자',
+        role: menuStore.getItem(SESSION_KEYS.adminSessionRole) || ADMIN_ROLES.MANAGER,
         menus,
         editableMenus: Array.isArray(editableMenus) ? editableMenus : menus,
         active: true,
@@ -416,10 +418,11 @@ const BremStorage = (function () {
   }
 
   function clearPersistedProductionSessionAccount() {
-    sessionStorage.removeItem(SESSION_KEYS.adminSessionMenus);
-    sessionStorage.removeItem(SESSION_KEYS.adminSessionEditableMenus);
-    sessionStorage.removeItem(SESSION_KEYS.adminSessionRole);
-    sessionStorage.removeItem(SESSION_KEYS.adminSessionName);
+    const menuStore = getAdminSessionStore();
+    menuStore.removeItem(SESSION_KEYS.adminSessionMenus);
+    menuStore.removeItem(SESSION_KEYS.adminSessionEditableMenus);
+    menuStore.removeItem(SESSION_KEYS.adminSessionRole);
+    menuStore.removeItem(SESSION_KEYS.adminSessionName);
   }
 
   function getStorageStatus() {
@@ -749,15 +752,27 @@ const BremStorage = (function () {
     return { ok: true, user: data.user, profile };
   }
 
+  function getAdminSessionStore() {
+    try {
+      return getSupabaseConfig().mode === 'production' ? localStorage : sessionStorage;
+    } catch {
+      return sessionStorage;
+    }
+  }
+
   const sessionAdapter = {
     read(key) {
-      return sessionStorage.getItem(key);
+      try {
+        return getAdminSessionStore().getItem(key);
+      } catch {
+        return null;
+      }
     },
     write(key, value) {
-      sessionStorage.setItem(key, value);
+      getAdminSessionStore().setItem(key, value);
     },
     remove(key) {
-      sessionStorage.removeItem(key);
+      getAdminSessionStore().removeItem(key);
     }
   };
 
@@ -3384,6 +3399,49 @@ const BremStorage = (function () {
       persistProductionSessionAccount(fallbackAccount);
       document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
       return { ok: true, account: fallbackAccount };
+    },
+
+    async ensureDriverProgramAccess() {
+      if (window.BremSupabaseConfig?.load) {
+        await window.BremSupabaseConfig.load();
+      }
+
+      const config = getSupabaseConfig();
+
+      try {
+        await initStorage({ backend: 'supabase' });
+      } catch (error) {
+        return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
+      }
+
+      let hydrated = await ensureSupabaseHydrated();
+      if (!hydrated.ok) {
+        await waitForSupabaseReady(4000);
+        hydrated = await ensureSupabaseHydrated();
+      }
+      if (!hydrated.ok) {
+        return hydrated;
+      }
+
+      if (config.mode === 'production') {
+        const profile = activeSupabaseProfile || await loadSupabaseProfile();
+        if (!profile?.active || profile.role !== 'admin') {
+          return { ok: false, message: '관리자 로그인이 필요합니다.' };
+        }
+        const persisted = readPersistedProductionSessionAccount(profile);
+        if (persisted) {
+          productionAdminSessionAccount = persisted;
+        }
+        this.setAdminSession(profile.user_id);
+        await this.refreshProductionAdminSession().catch(() => ({}));
+        return { ok: true };
+      }
+
+      if (this.isAdminLoggedIn()) {
+        return { ok: true };
+      }
+
+      return { ok: false, message: '관리자 로그인이 필요합니다.' };
     },
 
     async ensureAppAccess(options = {}) {
