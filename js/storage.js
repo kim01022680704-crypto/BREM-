@@ -481,16 +481,88 @@ const BremStorage = (function () {
   }
 
   function getHydrateOptions() {
-    return isProductionMode() ? { skipKeys: [KEYS.drivers] } : {};
+    return {
+      skipKeys: [KEYS.drivers, KEYS.notices, KEYS.promotionRules, KEYS.riderInquiries]
+    };
   }
 
-  async function syncDriversFromServer() {
+  const ADMIN_SECTION_KEYS = Object.freeze({
+    dashboard: [KEYS.drivers, KEYS.notices],
+    notices: [KEYS.notices],
+    'rider-inquiries': [KEYS.riderInquiries],
+    promotions: [KEYS.promotionRules],
+    'promotion-apply': [KEYS.promotionRules, KEYS.drivers],
+    calls: [KEYS.drivers],
+    rejections: [KEYS.drivers],
+    targets: [KEYS.drivers],
+    missions: [KEYS.drivers],
+    'mission-results': [KEYS.drivers],
+    settlements: [KEYS.drivers],
+    'weekly-settlement': [KEYS.drivers],
+    'admin-schedule': [],
+    'lease-management': [KEYS.drivers],
+    'revenue-management': [],
+    'admin-account': [],
+    'data-backup': [KEYS.drivers, KEYS.notices, KEYS.promotionRules, KEYS.riderInquiries]
+  });
+
+  const TABLE_STORAGE_KEYS = new Set([
+    KEYS.drivers,
+    KEYS.notices,
+    KEYS.promotionRules,
+    KEYS.riderInquiries
+  ]);
+
+  async function ensureSectionLoaded(sectionId, options = {}) {
+    window.BremPerf?.time?.(`storage.ensureSection:${sectionId}`);
+    const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
+    if (!hydrated.ok) {
+      window.BremPerf?.timeEnd?.(`storage.ensureSection:${sectionId}`);
+      return hydrated;
+    }
+
+    const sectionKeys = ADMIN_SECTION_KEYS[sectionId] || [];
+    const tableKeys = sectionKeys.filter(key => TABLE_STORAGE_KEYS.has(key));
+    const needsDrivers = sectionKeys.includes(KEYS.drivers);
+    const tasks = [];
+
+    if (tableKeys.length && activeStorageAdapter.ensureKeysLoaded) {
+      const loadOptions = sectionId === 'dashboard'
+        ? { [KEYS.notices]: { limit: 10 } }
+        : {};
+      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, loadOptions));
+    }
+
+    if (needsDrivers) {
+      tasks.push(reloadDrivers(Boolean(options.forceDrivers)));
+    }
+
+    if (tasks.length) {
+      await Promise.all(tasks);
+    }
+
+    window.BremPerf?.timeEnd?.(`storage.ensureSection:${sectionId}`);
+    return { ok: true };
+  }
+
+  async function syncDriversFromServer(options = {}) {
     if (!isProductionMode()) {
       return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
     }
 
     window.BremPerf?.time?.('storage.syncDriversFromServer');
-    const fetchRiders = () => adminRidersApi('/api/admin/riders');
+    const limit = Math.min(Math.max(Number(options.limit) || 100, 1), 200);
+    const offset = Math.max(Number(options.offset) || 0, 0);
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset)
+    });
+    const search = String(options.search || '').trim();
+    const status = String(options.status || '').trim();
+    if (search) params.set('search', search);
+    if (status && status !== '전체') params.set('status', status);
+
+    const fetchRiders = () => adminRidersApi(`/api/admin/riders?${params.toString()}`);
     let result = await fetchRiders();
     if (!result.ok && result.status === 401) {
       const client = getSupabaseClient();
@@ -507,11 +579,22 @@ const BremStorage = (function () {
       return { ok: false, message: '기사 데이터 변환 모듈이 없습니다.' };
     }
 
-    const drivers = (result.riders || []).map(row => mapper.rowToRider(row));
-    setDriversCache(drivers);
+    const riderRows = (result.riders || []).map(row => mapper.rowToRider(row));
+    if (options.append) {
+      const merged = new Map(drivers.getAll().map(item => [item.id, item]));
+      riderRows.forEach(item => merged.set(item.id, item));
+      setDriversCache(Array.from(merged.values()));
+    } else {
+      setDriversCache(riderRows);
+    }
     lastDriversSyncAt = Date.now();
     window.BremPerf?.timeEnd?.('storage.syncDriversFromServer');
-    return { ok: true, count: drivers.length };
+    return {
+      ok: true,
+      count: riderRows.length,
+      total: result.total ?? riderRows.length,
+      hasMore: Boolean(result.hasMore)
+    };
   }
 
   async function persistRiderViaServer(rider) {
@@ -733,7 +816,11 @@ const BremStorage = (function () {
     const skipDriversSync = options.skipDriversSync === true;
 
     window.BremPerf?.time?.('storage.hydrateStorageData');
-    await activeStorageAdapter.hydrate(getHydrateOptions());
+    if (activeStorageAdapter.hydrateCore) {
+      await activeStorageAdapter.hydrateCore();
+    } else {
+      await activeStorageAdapter.hydrate(getHydrateOptions());
+    }
     lastSupabaseError = '';
     flushStagedSupabaseWrites();
     finalizeStorageReady();
@@ -789,8 +876,16 @@ const BremStorage = (function () {
         if (!activeStorageAdapter.isHydrated?.()) {
           coreResult = await ensureSupabaseHydrated({ skipDriversSync: true });
         }
+        if (!coreResult.ok) return coreResult;
 
-        void syncAdminDataInBackground();
+        await Promise.all([
+          ensureSectionLoaded('dashboard'),
+          auth.syncProductionAdminAccounts().catch(error => {
+            console.warn('[BREM] Background admin account sync failed:', error.message || error);
+          })
+        ]);
+
+        document.dispatchEvent(new CustomEvent('brem-admin-data-ready', { detail: { ok: true } }));
         return coreResult;
       } finally {
         adminDataHydratePromise = null;
@@ -804,26 +899,41 @@ const BremStorage = (function () {
     await storageAdapter.flush();
   }
 
-  async function reloadDrivers(force = false) {
+  async function reloadDrivers(force = false, options = {}) {
     if (isProductionMode()) {
-      if (!force && drivers.getAll().length) return { ok: true, cached: true };
-      const now = Date.now();
-      if (!force && now - lastDriversSyncAt < DRIVERS_SYNC_TTL_MS) {
-        return { ok: true, cached: true, ttl: true };
+      const hasCache = drivers.getAll().length > 0;
+      if (!force && hasCache) {
+        const now = Date.now();
+        if (now - lastDriversSyncAt < DRIVERS_SYNC_TTL_MS) {
+          return { ok: true, cached: true, ttl: true };
+        }
       }
       if (driversSyncPromise) return driversSyncPromise;
-      driversSyncPromise = syncDriversFromServer().finally(() => {
+      driversSyncPromise = syncDriversFromServer({
+        limit: options.limit || 100,
+        offset: options.offset || 0,
+        search: options.search || '',
+        status: options.status || '',
+        append: options.append === true
+      }).finally(() => {
         driversSyncPromise = null;
         document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready'));
       });
       return driversSyncPromise;
     }
-    if (!force && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
-      return;
+    if (!force && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
+      return { ok: true, cached: true };
     }
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
-      await activeStorageAdapter.reloadRiders();
+      return activeStorageAdapter.reloadRiders({
+        limit: options.limit || 100,
+        offset: options.offset || 0,
+        search: options.search || '',
+        status: options.status || '',
+        append: options.append === true
+      });
     }
+    return { ok: true };
   }
 
   async function waitForSupabaseReady(timeoutMs = 8000) {
@@ -1025,7 +1135,7 @@ const BremStorage = (function () {
       if (sessionData?.session) {
         const { data: profile, error: profileError } = await client
           .from('profiles')
-          .select('*')
+          .select('user_id,role,rider_id,display_name,active')
           .eq('user_id', sessionData.session.user.id)
           .maybeSingle();
         if (profileError) throw profileError;
@@ -1191,7 +1301,7 @@ const BremStorage = (function () {
     }
     const { data, error } = await client
       .from('profiles')
-      .select('*')
+      .select('user_id,role,rider_id,display_name,active')
       .eq('user_id', user.id)
       .maybeSingle();
     if (error) throw error;
@@ -5037,6 +5147,7 @@ const BremStorage = (function () {
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
+    ensureSectionLoaded,
     hydrateAdminDataInBackground,
     syncAdminDataInBackground,
     resumeSupabaseAfterAuth,

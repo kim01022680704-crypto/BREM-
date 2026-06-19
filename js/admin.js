@@ -1442,17 +1442,12 @@
     startAdminSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
 
-    const status = BremStorage.getStorageStatus?.() || {};
-    const hydratePromise = status.supabaseHydrated
-      ? Promise.resolve({ ok: true }).then(result => {
-          void BremStorage.syncAdminDataInBackground?.();
-          return result;
-        })
-      : BremStorage.hydrateAdminDataInBackground?.();
+    const loadPromise = BremStorage.ensureSectionLoaded?.(initialSection)
+      || BremStorage.hydrateAdminDataInBackground?.();
 
-    Promise.resolve(hydratePromise).then(result => {
+    Promise.resolve(loadPromise).then(result => {
+      showAdminDataLoading(false);
       if (result && result.ok === false) {
-        showAdminDataLoading(false);
         showToast(result.message || '데이터 연결에 실패했습니다.');
         renderDbConnectionStatus();
         return;
@@ -2474,7 +2469,7 @@
     });
   }
 
-  function showSection(id, options = {}) {
+  async function showSection(id, options = {}) {
     const nav = resolveSectionNavigation(id);
     const sectionId = nav.sectionId;
 
@@ -2503,6 +2498,21 @@
     if (options.skipRender) {
       return;
     }
+
+    showSectionLoadingSkeleton(sectionId);
+    showAdminDataLoading(true);
+    try {
+      const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
+      if (result?.ok === false) {
+        showToast(result.message || '데이터를 불러오지 못했습니다.');
+      }
+    } catch (error) {
+      console.error('[BREM] Section load failed:', error);
+      showToast(error.message || '데이터를 불러오지 못했습니다.');
+    } finally {
+      showAdminDataLoading(false);
+    }
+
     if (sectionId === 'data-backup' && window.BremDataBackupAdmin?.refresh) {
       window.BremDataBackupAdmin.refresh();
     }
@@ -2533,7 +2543,9 @@
     });
 
     $$('.nav-btn').forEach(button => {
-      button.addEventListener('click', () => showSection(button.dataset.section));
+      button.addEventListener('click', () => {
+        void showSection(button.dataset.section);
+      });
     });
 
     document.addEventListener('click', event => {

@@ -329,12 +329,32 @@
   }
 
   const debouncedRender = window.BremPerf?.debounce
-    ? window.BremPerf.debounce(render, 120)
-    : render;
+    ? window.BremPerf.debounce(() => { void refreshDriverList(false); }, 180)
+    : () => { void refreshDriverList(false); };
+
+  async function refreshDriverList(force = false) {
+    tableBody.closest('.table-wrap')?.classList.add('is-loading');
+    mobileList.classList.add('is-loading');
+
+    const syncResult = await BremStorage.reloadDrivers?.(force, {
+      search: searchInput.value.trim(),
+      status: statusFilter.value
+    });
+
+    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+    mobileList.classList.remove('is-loading');
+
+    if (syncResult?.ok === false) {
+      showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
+    }
+    render();
+  }
 
   function init() {
     searchInput.addEventListener('input', debouncedRender);
-    statusFilter.addEventListener('change', render);
+    statusFilter.addEventListener('change', () => {
+      void refreshDriverList(true);
+    });
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', exportDriversToExcel);
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
@@ -367,16 +387,5 @@
     showLoadingSkeleton();
   }
 
-  void BremStorage.reloadDrivers?.(true).then(syncResult => {
-    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-    mobileList.classList.remove('is-loading');
-    if (syncResult?.ok === false) {
-      showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
-    }
-    render();
-  }).catch(() => {
-    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-    mobileList.classList.remove('is-loading');
-    render();
-  });
+  void refreshDriverList(true);
 })();

@@ -193,11 +193,23 @@ app.get('/api/rider/me', async (req, res) => {
 
 app.get('/api/admin/riders', async (req, res) => {
   try {
-    const result = await ridersAdmin.listRiders(getBearerToken(req));
+    const result = await ridersAdmin.listRiders(getBearerToken(req), {
+      limit: req.query.limit,
+      offset: req.query.offset,
+      search: req.query.search,
+      status: req.query.status
+    });
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }
-    res.json({ ok: true, riders: result.riders });
+    res.json({
+      ok: true,
+      riders: result.riders,
+      total: result.total,
+      hasMore: result.hasMore,
+      limit: result.limit,
+      offset: result.offset
+    });
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 목록을 불러오지 못했습니다.' });
   }

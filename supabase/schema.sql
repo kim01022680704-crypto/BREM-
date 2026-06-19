@@ -216,6 +216,10 @@ create index if not exists idx_brem_riders_name on public.riders (name);
 create index if not exists idx_brem_riders_phone on public.riders (phone);
 create index if not exists idx_brem_riders_status on public.riders (status);
 create index if not exists idx_brem_riders_baemin_id on public.riders (baemin_id);
+create index if not exists idx_brem_riders_created_at on public.riders (created_at desc);
+create index if not exists idx_brem_riders_platform_coupang on public.riders (platform_coupang);
+create index if not exists idx_brem_riders_platform_baemin on public.riders (platform_baemin);
+create index if not exists idx_brem_riders_status_created on public.riders (status, created_at desc);
 
 -- ---------------------------------------------------------------------------
 -- notices: 공지사항
@@ -254,6 +258,7 @@ end $$;
 
 create index if not exists idx_brem_notices_pinned_created
   on public.notices (pinned desc, created_at desc);
+create index if not exists idx_brem_notices_created_at on public.notices (created_at desc);
 
 -- ---------------------------------------------------------------------------
 -- promotions: 프로모션
@@ -333,6 +338,8 @@ end $$;
 create index if not exists idx_brem_promotions_platform on public.promotions (platform);
 create index if not exists idx_brem_promotions_enabled on public.promotions (enabled);
 create index if not exists idx_brem_promotions_dates on public.promotions (start_date, end_date);
+create index if not exists idx_brem_promotions_created_at on public.promotions (created_at desc);
+create index if not exists idx_brem_promotions_platform_created on public.promotions (platform, created_at desc);
 
 -- ---------------------------------------------------------------------------
 -- settings: 관리자 설정 + 나머지 localStorage 백업 데이터
@@ -350,6 +357,7 @@ alter table public.settings add column if not exists description text not null d
 alter table public.settings add column if not exists updated_at timestamptz not null default now();
 
 create index if not exists idx_brem_settings_updated on public.settings (updated_at desc);
+create index if not exists idx_brem_settings_key on public.settings (key);
 
 -- ---------------------------------------------------------------------------
 -- rider_inquiries: 홈페이지 라이더/제휴 문의
@@ -395,6 +403,7 @@ end $$;
 
 create index if not exists idx_brem_rider_inquiries_status_created
   on public.rider_inquiries (status, created_at desc);
+create index if not exists idx_brem_rider_inquiries_created_at on public.rider_inquiries (created_at desc);
 
 -- ---------------------------------------------------------------------------
 -- updated_at 자동 갱신

@@ -1,19 +1,44 @@
 /**
- * Supabase storage adapter
- *
- * Supabase storage adapter — read/write 캐시 + DB persist
- * - riders: 기사 데이터
- * - notices: 공지사항
- * - promotions: 프로모션
- * - settings: 관리자 설정 및 기타 BREM 저장 데이터
+ * Supabase storage adapter — lazy load + column-pruned queries
  */
 window.BremSupabaseStorageAdapter = (function () {
   const Mapper = () => window.BremSupabaseMapper;
 
+  const DEFAULT_RIDER_PAGE_SIZE = 100;
+
+  const RIDER_SELECT = [
+    'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+    'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+    'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+    'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+    'promotion_rule_id_coupang', 'promotion_rule_id_baemin', 'created_at', 'updated_at'
+  ].join(',');
+
+  const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
+  const PROMOTION_SELECT = 'id,name,platform,type,enabled,selector_key,start_date,end_date,priority,payload,created_at,updated_at';
+  const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
+
+  const TABLE_KEYS = new Set();
+
+  function mergeRidersById(existing, incoming) {
+    const map = new Map((existing || []).map(item => [item.id, item]));
+    (incoming || []).forEach(item => {
+      const prev = map.get(item.id) || {};
+      map.set(item.id, { ...prev, ...item });
+    });
+    return Array.from(map.values()).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  }
+
   function createSupabaseAdapter(client, keys) {
     const cache = new Map();
-    let hydrated = false;
+    let coreHydrated = false;
+    const loadedTableKeys = new Set();
+    const keyLoadPromises = new Map();
     let persistQueue = Promise.resolve();
+    let ridersMeta = { total: 0, hasMore: false, pageSize: DEFAULT_RIDER_PAGE_SIZE, offset: 0 };
+
+    TABLE_KEYS.clear();
+    [keys.drivers, keys.notices, keys.promotionRules, keys.riderInquiries].forEach(key => TABLE_KEYS.add(key));
 
     function setCache(key, value) {
       cache.set(key, value);
@@ -23,61 +48,178 @@ window.BremSupabaseStorageAdapter = (function () {
       return cache.has(key) ? cache.get(key) : fallback;
     }
 
-    async function loadRiders() {
-      const { data, error } = await client.from('riders').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []).map(row => Mapper().rowToRider(row));
-    }
-
-    async function loadRiderInquiries() {
-      const { data, error } = await client.from('rider_inquiries').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []).map(row => Mapper().rowToInquiry(row));
-    }
-
-    async function loadNotices() {
-      const { data, error } = await client.from('notices').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []).map(row => Mapper().rowToNotice(row));
-    }
-
-    async function loadPromotions() {
-      const { data, error } = await client.from('promotions').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []).map(row => Mapper().rowToPromotion(row));
+    function isTableKey(key) {
+      return TABLE_KEYS.has(key);
     }
 
     async function loadSettings() {
-      const { data, error } = await client.from('settings').select('key, value');
+      window.BremPerf?.time?.('settings.fetch');
+      const { data, error } = await client.from('settings').select('key,value').order('key');
+      window.BremPerf?.timeEnd?.('settings.fetch');
       if (error) throw error;
       (data || []).forEach(row => setCache(row.key, row.value));
+    }
+
+    async function loadNotices(options = {}) {
+      window.BremPerf?.time?.('notices.fetch');
+      const limit = Number(options.limit) > 0 ? Number(options.limit) : null;
+      let query = client
+        .from('notices')
+        .select(NOTICE_SELECT)
+        .order('pinned', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (limit) query = query.limit(limit);
+      const { data, error } = await query;
+      window.BremPerf?.timeEnd?.('notices.fetch');
+      if (error) throw error;
+      const value = (data || []).map(row => Mapper().rowToNotice(row));
+      if (options.append && cache.has(keys.notices)) {
+        const merged = new Map(getCache(keys.notices, []).map(item => [item.id, item]));
+        value.forEach(item => merged.set(item.id, item));
+        setCache(keys.notices, Array.from(merged.values()));
+      } else {
+        setCache(keys.notices, value);
+      }
+      loadedTableKeys.add(keys.notices);
+      return value;
+    }
+
+    async function loadPromotions() {
+      window.BremPerf?.time?.('promotions.fetch');
+      const { data, error } = await client
+        .from('promotions')
+        .select(PROMOTION_SELECT)
+        .order('created_at', { ascending: false });
+      window.BremPerf?.timeEnd?.('promotions.fetch');
+      if (error) throw error;
+      const value = (data || []).map(row => Mapper().rowToPromotion(row));
+      setCache(keys.promotionRules, value);
+      loadedTableKeys.add(keys.promotionRules);
+      return value;
+    }
+
+    async function loadRiderInquiries() {
+      window.BremPerf?.time?.('riderInquiries.fetch');
+      const { data, error } = await client
+        .from('rider_inquiries')
+        .select(INQUIRY_SELECT)
+        .order('created_at', { ascending: false });
+      window.BremPerf?.timeEnd?.('riderInquiries.fetch');
+      if (error) throw error;
+      const value = (data || []).map(row => Mapper().rowToInquiry(row));
+      setCache(keys.riderInquiries, value);
+      loadedTableKeys.add(keys.riderInquiries);
+      return value;
+    }
+
+    async function loadRiders(options = {}) {
+      window.BremPerf?.time?.('riders.fetch');
+      const pageSize = Math.min(Math.max(Number(options.limit) || DEFAULT_RIDER_PAGE_SIZE, 1), 200);
+      const offset = Math.max(Number(options.offset) || 0, 0);
+      const append = options.append === true;
+
+      let query = client
+        .from('riders')
+        .select(RIDER_SELECT, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+      const status = String(options.status || '').trim();
+      const search = String(options.search || '').trim();
+      if (status && status !== '전체') query = query.eq('status', status);
+      if (search) query = query.ilike('name', `%${search}%`);
+
+      const { data, error, count } = await query;
+      window.BremPerf?.timeEnd?.('riders.fetch');
+      if (error) throw error;
+
+      const page = (data || []).map(row => Mapper().rowToRider(row));
+      const merged = append ? mergeRidersById(getCache(keys.drivers, []), page) : page;
+      setCache(keys.drivers, merged);
+      ridersMeta = {
+        total: count ?? merged.length,
+        hasMore: offset + page.length < (count ?? 0),
+        pageSize,
+        offset
+      };
+      loadedTableKeys.add(keys.drivers);
+      return { riders: merged, meta: ridersMeta };
+    }
+
+    async function loadKey(key, options = {}) {
+      if (key === keys.drivers) return loadRiders(options);
+      if (key === keys.notices) return loadNotices(options);
+      if (key === keys.promotionRules) return loadPromotions();
+      if (key === keys.riderInquiries) return loadRiderInquiries();
+      return null;
+    }
+
+    async function ensureKeysLoaded(targetKeys = [], options = {}) {
+      await hydrateCore();
+      const unique = [...new Set((targetKeys || []).filter(isTableKey))];
+      const missing = unique.filter(key => !loadedTableKeys.has(key));
+      if (!missing.length) return { ok: true, cached: true };
+
+      window.BremPerf?.time?.('storage.ensureKeysLoaded');
+      await Promise.all(missing.map(key => {
+        if (keyLoadPromises.has(key)) return keyLoadPromises.get(key);
+        const promise = loadKey(key, options[key] || options).finally(() => {
+          keyLoadPromises.delete(key);
+        });
+        keyLoadPromises.set(key, promise);
+        return promise;
+      }));
+      window.BremPerf?.timeEnd?.('storage.ensureKeysLoaded');
+      return { ok: true };
+    }
+
+    function invalidateKeys(targetKeys = []) {
+      (targetKeys || []).forEach(key => {
+        if (!isTableKey(key)) return;
+        loadedTableKeys.delete(key);
+        keyLoadPromises.delete(key);
+      });
+    }
+
+    async function hydrateCore() {
+      if (coreHydrated) return;
+      window.BremPerf?.time?.('storage.hydrateCore');
+      await loadSettings();
+      coreHydrated = true;
+      window.BremPerf?.timeEnd?.('storage.hydrateCore');
+    }
+
+    async function hydrate(options = {}) {
+      const skip = new Set(options.skipKeys || []);
+      window.BremPerf?.time?.('storage.hydrate');
+      await hydrateCore();
+
+      const tasks = [];
+      if (!skip.has(keys.drivers)) {
+        tasks.push(loadRiders({ limit: DEFAULT_RIDER_PAGE_SIZE }));
+      } else {
+        setCache(keys.drivers, getCache(keys.drivers, []));
+      }
+      if (!skip.has(keys.notices)) tasks.push(loadNotices());
+      if (!skip.has(keys.promotionRules)) tasks.push(loadPromotions());
+      if (!skip.has(keys.riderInquiries)) tasks.push(loadRiderInquiries());
+
+      if (tasks.length) await Promise.all(tasks);
+      window.BremPerf?.timeEnd?.('storage.hydrate');
     }
 
     async function upsertRider(driver) {
       const row = Mapper().riderToRow(driver);
       if (!row.id) throw new Error('기사 ID가 없습니다.');
-      console.info('[BREM:Supabase] upsertRider', { id: row.id, name: row.name });
       const { error } = await client.from('riders').upsert(row, { onConflict: 'id' });
-      if (error) {
-        console.error('[BREM:Supabase] upsertRider FAILED', error);
-        throw error;
-      }
-      console.info('[BREM:Supabase] upsertRider OK', { id: row.id });
+      if (error) throw error;
     }
 
     async function persistRiders(value) {
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
-      if (!rows.length) {
-        console.info('[BREM:Supabase] persistRiders skipped (empty list)');
-        return;
-      }
-      console.info('[BREM:Supabase] persistRiders upsert', { count: rows.length, ids: rows.map(row => row.id) });
+      if (!rows.length) return;
       const { error } = await client.from('riders').upsert(rows, { onConflict: 'id' });
-      if (error) {
-        console.error('[BREM:Supabase] persistRiders FAILED', error);
-        throw error;
-      }
-      console.info('[BREM:Supabase] persistRiders OK', { count: rows.length });
+      if (error) throw error;
     }
 
     async function deleteRider(id) {
@@ -87,23 +229,27 @@ window.BremSupabaseStorageAdapter = (function () {
       if (error) throw error;
     }
 
-    async function reloadRiders() {
-      setCache(keys.drivers, await loadRiders());
+    async function reloadRiders(options = {}) {
+      invalidateKeys([keys.drivers]);
+      return loadRiders(options);
     }
 
     async function persistRiderInquiries(value) {
       const rows = (value || []).map(item => Mapper().inquiryToRow(item)).filter(row => row.id);
       await replaceTable('rider_inquiries', rows);
+      loadedTableKeys.add(keys.riderInquiries);
     }
 
     async function persistNotices(value) {
       const rows = (value || []).map(item => Mapper().noticeToRow(item)).filter(row => row.id);
       await replaceTable('notices', rows);
+      loadedTableKeys.add(keys.notices);
     }
 
     async function persistPromotions(value) {
       const rows = (value || []).map(item => Mapper().promotionToRow(item)).filter(row => row.id);
       await replaceTable('promotions', rows);
+      loadedTableKeys.add(keys.promotionRules);
     }
 
     async function replaceTable(table, rows) {
@@ -130,49 +276,16 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.riderInquiries]: persistRiderInquiries
     };
 
-    async function hydrate(options = {}) {
-      const skip = new Set(options.skipKeys || []);
-      window.BremPerf?.time?.('storage.hydrate');
-
-      const tasks = [];
-
-      if (!skip.has(keys.drivers)) {
-        tasks.push(loadRiders().then(value => setCache(keys.drivers, value)));
-      } else {
-        setCache(keys.drivers, []);
-      }
-
-      if (!skip.has(keys.notices)) {
-        tasks.push(loadNotices().then(value => setCache(keys.notices, value)));
-      }
-
-      if (!skip.has(keys.promotionRules)) {
-        tasks.push(loadPromotions().then(value => setCache(keys.promotionRules, value)));
-      }
-
-      if (!skip.has(keys.riderInquiries)) {
-        tasks.push(loadRiderInquiries().then(value => setCache(keys.riderInquiries, value)));
-      }
-
-      await Promise.all(tasks);
-      await loadSettings();
-      hydrated = true;
-      window.BremPerf?.timeEnd?.('storage.hydrate');
-    }
-
     function queuePersist(key, value) {
       persistQueue = persistQueue.then(async () => {
         if (persistHandlers[key]) {
           await persistHandlers[key](value);
         } else {
-          console.info('[BREM:Supabase] persistSetting', { key });
           await persistSetting(key, value);
-          console.info('[BREM:Supabase] persistSetting OK', { key });
         }
       });
 
       persistQueue = persistQueue.catch(error => {
-        console.error('[BREM:Supabase] persist FAILED', { key, error });
         document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
           detail: { key, message: error.message || String(error) }
         }));
@@ -184,23 +297,31 @@ window.BremSupabaseStorageAdapter = (function () {
 
     function stage(key, value) {
       setCache(key, value);
-    }
-
-    function enqueuePersist(key, value) {
-      return queuePersist(key, value);
+      if (isTableKey(key)) loadedTableKeys.add(key);
     }
 
     return {
       type: 'supabase',
       isHydrated() {
-        return hydrated;
+        return coreHydrated;
+      },
+      isKeyLoaded(key) {
+        return !isTableKey(key) || loadedTableKeys.has(key);
+      },
+      getRidersMeta() {
+        return { ...ridersMeta };
       },
       hydrate,
+      hydrateCore,
+      ensureKeysLoaded,
+      invalidateKeys,
       reloadRiders,
       deleteRider,
       upsertRider,
       stage,
-      enqueuePersist,
+      enqueuePersist(key, value) {
+        return queuePersist(key, value);
+      },
       flush() {
         return persistQueue;
       },
@@ -213,10 +334,11 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       write(key, value) {
         stage(key, value);
-        return enqueuePersist(key, value);
+        return queuePersist(key, value);
       },
       remove(key) {
         cache.delete(key);
+        invalidateKeys([key]);
         persistQueue = persistQueue.then(async () => {
           if (key === keys.drivers) await replaceTable('riders', []);
           else if (key === keys.notices) await replaceTable('notices', []);
@@ -236,5 +358,5 @@ window.BremSupabaseStorageAdapter = (function () {
     };
   }
 
-  return { createSupabaseAdapter };
+  return { createSupabaseAdapter, DEFAULT_RIDER_PAGE_SIZE };
 })();
