@@ -346,6 +346,11 @@
     document.addEventListener('brem-storage-ready', () => {
       render();
     });
+    document.addEventListener('brem-drivers-sync-ready', () => {
+      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+      mobileList.classList.remove('is-loading');
+      render();
+    });
   }
 
   if (document.readyState === 'loading') {
@@ -356,13 +361,22 @@
 
   if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
 
-  showLoadingSkeleton();
-  const status = BremStorage.getStorageStatus?.() || {};
-  const syncResult = status.supabaseHydrated
-    ? await BremStorage.reloadDrivers?.(false)
-    : await BremStorage.reloadDrivers?.(true);
-  if (syncResult?.ok === false) {
-    showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
+  if (BremStorage.drivers.getAll().length) {
+    render();
+  } else {
+    showLoadingSkeleton();
   }
-  render();
+
+  void BremStorage.reloadDrivers?.(true).then(syncResult => {
+    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+    mobileList.classList.remove('is-loading');
+    if (syncResult?.ok === false) {
+      showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
+    }
+    render();
+  }).catch(() => {
+    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+    mobileList.classList.remove('is-loading');
+    render();
+  });
 })();

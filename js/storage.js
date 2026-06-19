@@ -813,6 +813,7 @@ const BremStorage = (function () {
       if (driversSyncPromise) return driversSyncPromise;
       driversSyncPromise = syncDriversFromServer().finally(() => {
         driversSyncPromise = null;
+        document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready'));
       });
       return driversSyncPromise;
     }
@@ -967,12 +968,21 @@ const BremStorage = (function () {
   }
 
   function createSupabaseClient(url, anonKey) {
+    if (activeSupabaseClient) return activeSupabaseClient;
     if (!window.BremSupabaseConfig?.createClient) {
       throw new Error('supabase-config.js 가 로드되지 않았습니다.');
     }
     const client = window.BremSupabaseConfig.createClient(url, anonKey);
     bindSupabaseAuthListener(client);
     return client;
+  }
+
+  function getStorageBootstrapOptions() {
+    const config = getSupabaseConfig() || {};
+    if (config.mode === 'production') {
+      return { backend: 'supabase', deferHydrate: true };
+    }
+    return { backend: 'supabase' };
   }
 
   async function initSupabaseStorage(config, options = {}) {
@@ -1147,7 +1157,7 @@ const BremStorage = (function () {
 
       try {
         window.BremPerf?.time?.('storage.bootstrap');
-        const result = await initStorage({ backend: 'supabase' });
+        const result = await initStorage(getStorageBootstrapOptions());
         console.info('[BREM] Storage bootstrap complete:', result?.backend || 'supabase');
         window.BremPerf?.timeEnd?.('storage.bootstrap');
         if (getStorageStatus?.().supabaseHydrated) {
@@ -3977,15 +3987,15 @@ const BremStorage = (function () {
       const config = getSupabaseConfig();
 
       try {
-        await initStorage({ backend: 'supabase' });
+        await initStorage(getStorageBootstrapOptions());
       } catch (error) {
         return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
       }
 
-      let hydrated = await ensureSupabaseHydrated();
+      let hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
       if (!hydrated.ok) {
         await waitForSupabaseReady(4000);
-        hydrated = await ensureSupabaseHydrated();
+        hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
       }
       if (!hydrated.ok) {
         return hydrated;
@@ -4001,7 +4011,8 @@ const BremStorage = (function () {
           productionAdminSessionAccount = persisted;
         }
         this.setAdminSession(profile.user_id);
-        await this.refreshProductionAdminSession().catch(() => ({}));
+        void this.refreshProductionAdminSession().catch(() => ({}));
+        void reloadDrivers(false).catch(() => ({}));
         return { ok: true };
       }
 

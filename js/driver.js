@@ -755,7 +755,7 @@
       }
 
       if (isProduction) {
-        void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
+        await BremStorage.ensureSupabaseHydrated?.({ skipDriversSync: true });
       }
 
       let driver = loginResult.driver || null;
@@ -848,7 +848,6 @@
       try {
         await window.BremSupabaseConfig?.load?.();
         await BremStorage.waitForStorageBootstrap?.();
-        await BremStorage.loadSupabaseProfile?.();
       } catch {
         showLoggedOut();
         return;
@@ -863,11 +862,27 @@
 
     if (!enforceDriverRouteAccess()) return;
 
-    let savedDriver = findDriverById(BremStorage.auth.getDriverSessionId());
-    if (!savedDriver && isProduction && BremStorage.auth.isDriverLoggedIn?.()) {
-      const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
-      if (fetched?.ok && fetched.driver) {
-        savedDriver = fetched.driver;
+    const driverSessionId = BremStorage.auth.getDriverSessionId();
+    let savedDriver = null;
+
+    if (driverSessionId || BremStorage.auth.isDriverLoggedIn?.()) {
+      if (isProduction) {
+        const profile = await BremStorage.loadSupabaseProfile?.().catch(() => null);
+        const hasRiderSession = Boolean(driverSessionId)
+          || (profile?.active && profile.role === 'rider');
+
+        if (hasRiderSession) {
+          await BremStorage.ensureSupabaseHydrated?.({ skipDriversSync: true });
+          savedDriver = findDriverById(driverSessionId || profile?.rider_id);
+          if (!savedDriver) {
+            const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
+            if (fetched?.ok && fetched.driver) {
+              savedDriver = fetched.driver;
+            }
+          }
+        }
+      } else {
+        savedDriver = findDriverById(driverSessionId);
       }
     }
 

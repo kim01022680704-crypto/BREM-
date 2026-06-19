@@ -542,7 +542,10 @@
 
   if (!(await ensureAdminAccess())) return;
 
-  await BremStorage.reloadDrivers?.(false).catch(() => ({}));
   refreshHeader();
   loadEditFromQuery();
+  void BremStorage.reloadDrivers?.(false).then(() => {
+    refreshHeader();
+    loadEditFromQuery();
+  }).catch(() => ({}));
 })();
