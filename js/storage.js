@@ -720,13 +720,15 @@ const BremStorage = (function () {
     }
   }
 
-  async function hydrateStorageData(settings = getSupabaseConfig()) {
+  async function hydrateStorageData(settings = getSupabaseConfig(), options = {}) {
     if (activeStorageAdapter.type !== 'supabase') {
       return { ok: false, message: 'Supabase 저장소가 연결되지 않았습니다.' };
     }
     if (activeStorageAdapter.isHydrated?.()) {
       return { ok: true, cached: true };
     }
+
+    const skipDriversSync = options.skipDriversSync === true;
 
     window.BremPerf?.time?.('storage.hydrateStorageData');
     await activeStorageAdapter.hydrate(getHydrateOptions());
@@ -737,7 +739,7 @@ const BremStorage = (function () {
       await activeStorageAdapter.flush();
     }
     console.info('[BREM] Supabase storage hydrated');
-    if (settings.mode === 'production' || isProductionMode()) {
+    if (!skipDriversSync && (settings.mode === 'production' || isProductionMode())) {
       await syncDriversFromServer().catch(error => {
         console.warn('[BREM] Server rider sync after hydrate failed:', error.message);
       });
@@ -747,17 +749,55 @@ const BremStorage = (function () {
     return { ok: true };
   }
 
-  async function hydrateAdminDataInBackground() {
-    if (activeStorageAdapter.isHydrated?.()) {
-      return { ok: true, cached: true };
+  let adminDataSyncPromise = null;
+
+  async function syncAdminDataInBackground() {
+    if (!isProductionMode()) {
+      document.dispatchEvent(new CustomEvent('brem-admin-data-ready', { detail: { ok: true } }));
+      return { ok: true };
     }
+    if (adminDataSyncPromise) return adminDataSyncPromise;
+
+    window.BremPerf?.time?.('storage.syncAdminDataBackground');
+    adminDataSyncPromise = Promise.all([
+      syncDriversFromServer().catch(error => {
+        console.warn('[BREM] Background rider sync failed:', error.message || error);
+        return { ok: false };
+      }),
+      auth.syncProductionAdminAccounts().catch(error => {
+        console.warn('[BREM] Background admin account sync failed:', error.message || error);
+        return { ok: false };
+      })
+    ]).finally(() => {
+      adminDataSyncPromise = null;
+      window.BremPerf?.timeEnd?.('storage.syncAdminDataBackground');
+      document.dispatchEvent(new CustomEvent('brem-admin-data-ready', { detail: { ok: true } }));
+    });
+    return adminDataSyncPromise;
+  }
+
+  async function hydrateAdminDataInBackground() {
     if (adminDataHydratePromise) return adminDataHydratePromise;
 
     window.BremPerf?.time?.('storage.hydrateAdminDataBackground');
-    adminDataHydratePromise = ensureSupabaseHydrated().finally(() => {
-      adminDataHydratePromise = null;
-      window.BremPerf?.timeEnd?.('storage.hydrateAdminDataBackground');
-    });
+    adminDataHydratePromise = (async () => {
+      try {
+        if (activeStorageAdapter.type !== 'supabase' || !activeSupabaseClient) {
+          await initStorage({ backend: 'supabase', deferHydrate: true });
+        }
+
+        let coreResult = { ok: true };
+        if (!activeStorageAdapter.isHydrated?.()) {
+          coreResult = await ensureSupabaseHydrated({ skipDriversSync: true });
+        }
+
+        void syncAdminDataInBackground();
+        return coreResult;
+      } finally {
+        adminDataHydratePromise = null;
+        window.BremPerf?.timeEnd?.('storage.hydrateAdminDataBackground');
+      }
+    })();
     return adminDataHydratePromise;
   }
 
@@ -877,7 +917,7 @@ const BremStorage = (function () {
     return ensureSupabaseHydrated();
   }
 
-  async function ensureSupabaseHydrated() {
+  async function ensureSupabaseHydrated(options = {}) {
     if (activeStorageAdapter.type !== 'supabase') {
       return { ok: false, message: 'Supabase 저장소가 연결되지 않았습니다.' };
     }
@@ -918,7 +958,7 @@ const BremStorage = (function () {
 
     try {
       window.BremPerf?.time?.('storage.ensureSupabaseHydrated');
-      const hydrated = await hydrateStorageData();
+      const hydrated = await hydrateStorageData(getSupabaseConfig(), options);
       window.BremPerf?.timeEnd?.('storage.ensureSupabaseHydrated');
       return hydrated;
     } catch (error) {
@@ -4134,7 +4174,9 @@ const BremStorage = (function () {
       const result = await signInWithSupabase(email, password, 'admin');
       if (!result.ok) return result;
 
-      await this.syncProductionAdminAccounts();
+      this.syncProductionAdminAccounts().catch(error => {
+        console.warn('[BREM] Background admin account sync after login failed:', error.message || error);
+      });
       const registryAccount = this.getAdminAccountById(result.profile.user_id);
       const account = registryAccount || {
         id: result.profile.user_id,
@@ -4861,6 +4903,7 @@ const BremStorage = (function () {
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     hydrateAdminDataInBackground,
+    syncAdminDataInBackground,
     resumeSupabaseAfterAuth,
     initStorage,
     initSupabaseStorage,

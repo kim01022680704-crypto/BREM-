@@ -61,9 +61,10 @@ window.BremSessionSecurity = (function () {
   async function runIdleLogout() {
     if (loggingOut || !config?.onIdleLogout) return;
     loggingOut = true;
+    const onIdleLogout = config.onIdleLogout;
     stop();
     try {
-      await config.onIdleLogout(IDLE_MESSAGE);
+      await onIdleLogout(IDLE_MESSAGE);
     } finally {
       loggingOut = false;
     }
@@ -77,10 +78,20 @@ window.BremSessionSecurity = (function () {
   }
 
   function start(options = {}) {
-    config = options;
     stop();
+    if (!options || typeof options.isLoggedIn !== 'function') {
+      return false;
+    }
+    config = options;
 
-    if (!config.isLoggedIn || !config.isLoggedIn()) {
+    let loggedIn = false;
+    try {
+      loggedIn = Boolean(config.isLoggedIn());
+    } catch {
+      loggedIn = false;
+    }
+    if (!loggedIn) {
+      config = null;
       return false;
     }
 

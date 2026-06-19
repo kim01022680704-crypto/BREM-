@@ -1392,11 +1392,15 @@
     return false;
   }
 
-  function showAdminApp() {
+  function showAdminApp(options = {}) {
     if (!enforceAdminRouteAccess()) return;
 
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
+
+    if (options.endLoginTimer) {
+      console.timeEnd('adminLogin');
+    }
 
     renderDbConnectionStatus();
     initDefaults();
@@ -1412,14 +1416,20 @@
     showAdminDataLoading(true);
     applySectionEditPermissions();
 
+    startAdminSessionSecurity();
+    window.BremSessionSecurity?.touchActivity?.();
+
     const status = BremStorage.getStorageStatus?.() || {};
     const hydratePromise = status.supabaseHydrated
-      ? Promise.resolve({ ok: true })
+      ? Promise.resolve({ ok: true }).then(result => {
+          void BremStorage.syncAdminDataInBackground?.();
+          return result;
+        })
       : BremStorage.hydrateAdminDataInBackground?.();
 
     Promise.resolve(hydratePromise).then(result => {
-      showAdminDataLoading(false);
       if (result && result.ok === false) {
+        showAdminDataLoading(false);
         showToast(result.message || '데이터 연결에 실패했습니다.');
         renderDbConnectionStatus();
         return;
@@ -1427,8 +1437,6 @@
       renderDbConnectionStatus();
       renderActiveSection(initialSection);
       applySectionEditPermissions();
-      startAdminSessionSecurity();
-      window.BremSessionSecurity?.touchActivity?.();
     }).catch(error => {
       showAdminDataLoading(false);
       console.error('[BREM] Admin data hydrate failed:', error);
@@ -1474,8 +1482,11 @@
         submitBtn.textContent = '로그인 중…';
       }
 
+      let adminLoginTimerActive = false;
+
       try {
         console.time('adminLogin');
+        adminLoginTimerActive = true;
 
         if (window.BremSupabaseConfig?.load) {
           await window.BremSupabaseConfig.load();
@@ -1494,10 +1505,11 @@
         if (!config.isConfigured) {
           BremStorage.auth.setAdminSession(result.account.id);
         } else {
-          await BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
+          void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
         }
 
-        showAdminApp();
+        showAdminApp({ endLoginTimer: true });
+        adminLoginTimerActive = false;
         showToast('관리자 로그인 성공');
         window.BremSessionSecurity?.touchActivity?.();
 
@@ -1511,7 +1523,9 @@
         showToast(error.message || '로그인 중 오류가 발생했습니다.');
         renderDbConnectionStatus();
       } finally {
-        console.timeEnd('adminLogin');
+        if (adminLoginTimerActive) {
+          console.timeEnd('adminLogin');
+        }
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = originalLabel;
@@ -2963,6 +2977,13 @@
         applyAdminMenuPermissions();
         applySectionEditPermissions();
       }
+    });
+    document.addEventListener('brem-admin-data-ready', () => {
+      if ($('#adminApp').classList.contains('app-hidden')) return;
+      showAdminDataLoading(false);
+      renderDbConnectionStatus();
+      renderActiveSection(state.currentSection);
+      applySectionEditPermissions();
     });
 
     const config = BremStorage.getSupabaseConfig?.() || {};
