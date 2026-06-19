@@ -422,6 +422,53 @@ const BremStorage = (function () {
     normalizedDriversSourceRef = null;
   }
 
+  function mergeRiderInCache(riderRow) {
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToRider || !riderRow?.id) return null;
+
+    const driver = mapper.rowToRider(riderRow);
+    const list = storageAdapter.read(KEYS.drivers, []);
+    const index = list.findIndex(item => item.id === driver.id);
+    if (index >= 0) {
+      list[index] = { ...list[index], ...driver };
+    } else {
+      list.unshift(driver);
+    }
+    setDriversCache(list);
+    return drivers.getById(driver.id);
+  }
+
+  async function fetchCurrentRiderFromServer() {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 없습니다.' };
+    }
+
+    try {
+      const response = await fetch('/api/rider/me', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '기사 정보를 불러오지 못했습니다.' };
+      }
+      const driver = mergeRiderInCache(payload.rider);
+      if (!driver) {
+        return { ok: false, message: '기사 데이터 변환에 실패했습니다.' };
+      }
+      if (payload.profile) {
+        activeSupabaseProfile = payload.profile;
+      }
+      if (payload.riderId) {
+        sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
+      }
+      return { ok: true, driver };
+    } catch (error) {
+      return { ok: false, message: error.message || '기사 정보 요청에 실패했습니다.' };
+    }
+  }
+
   function setDriversCache(list) {
     invalidateDriversNormalizeCache();
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
@@ -4135,11 +4182,16 @@ const BremStorage = (function () {
           }
 
           activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
-          supabaseInitPromise = null;
           if (payload.riderId) {
             sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
           }
-          return { ok: true, riderId: payload.riderId, profile: activeSupabaseProfile };
+          const driver = payload.rider ? mergeRiderInCache(payload.rider) : null;
+          return {
+            ok: true,
+            riderId: payload.riderId,
+            profile: activeSupabaseProfile,
+            driver
+          };
         } catch (error) {
           return { ok: false, reason: error.message || '로그인에 실패했습니다.' };
         }
@@ -4804,6 +4856,8 @@ const BremStorage = (function () {
     flushStorage: flushActiveStorage,
     reloadDrivers,
     verifyRiderPersisted,
+    mergeRiderInCache,
+    fetchCurrentRiderFromServer,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     hydrateAdminDataInBackground,

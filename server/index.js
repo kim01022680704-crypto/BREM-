@@ -166,10 +166,28 @@ app.post('/api/rider/sign-in', async (req, res) => {
       session: result.session,
       user: result.user,
       riderId: result.riderId,
+      rider: result.rider,
       profile: result.profile
     });
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 로그인에 실패했습니다.' });
+  }
+});
+
+app.get('/api/rider/me', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderMe(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      rider: result.rider,
+      profile: result.profile
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 정보를 불러오지 못했습니다.' });
   }
 });
 

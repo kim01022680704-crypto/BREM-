@@ -81,10 +81,14 @@ async function findRiderByLoginId(supabase, loginInput) {
     return { ok: false, status: 400, error: '아이디를 입력하세요.' };
   }
 
-  const { data, error } = await supabase
-    .from('riders')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const phoneSuffix = normalized.slice(-4);
+  let query = supabase.from('riders').select('*');
+
+  if (/^\d{4}$/.test(phoneSuffix)) {
+    query = query.ilike('phone', `%${phoneSuffix}`);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false });
 
   if (error) {
     return { ok: false, status: 500, error: error.message || '기사 정보를 불러오지 못했습니다.' };
@@ -100,6 +104,56 @@ async function findRiderByLoginId(supabase, loginInput) {
   }
 
   return { ok: true, rider };
+}
+
+async function getRiderMe(accessToken) {
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const token = String(accessToken || '').trim();
+  if (!token) {
+    return { ok: false, status: 401, error: '로그인이 필요합니다.' };
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !userData?.user) {
+    return { ok: false, status: 401, error: '로그인 세션이 만료되었습니다.' };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('user_id, role, rider_id, active, display_name')
+    .eq('user_id', userData.user.id)
+    .maybeSingle();
+
+  if (profileError || !profile?.active || profile.role !== 'rider' || !profile.rider_id) {
+    return { ok: false, status: 403, error: '기사 세션이 아닙니다.' };
+  }
+
+  const { data: rider, error: riderError } = await supabase
+    .from('riders')
+    .select('*')
+    .eq('id', profile.rider_id)
+    .maybeSingle();
+
+  if (riderError || !rider) {
+    return { ok: false, status: 404, error: '기사 정보를 찾을 수 없습니다.' };
+  }
+
+  return {
+    ok: true,
+    riderId: rider.id,
+    rider,
+    profile: {
+      user_id: profile.user_id,
+      role: profile.role,
+      rider_id: profile.rider_id,
+      display_name: profile.display_name || rider.name || '',
+      active: true
+    }
+  };
 }
 
 async function ensureRiderAuthAccount(supabase, rider, plainPassword) {
@@ -217,6 +271,7 @@ async function signInRider(loginInput, password) {
     session: data.session,
     user: data.user,
     riderId: found.rider.id,
+    rider: found.rider,
     profile: {
       user_id: account.userId,
       role: 'rider',
@@ -229,6 +284,7 @@ async function signInRider(loginInput, password) {
 
 module.exports = {
   signInRider,
+  getRiderMe,
   provisionRiderAuthAccount,
   makeRiderLoginId
 };

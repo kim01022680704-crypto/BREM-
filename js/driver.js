@@ -700,43 +700,71 @@
     event.target.value = BremDriverUtils.formatResidentNumber(event.target.value);
   });
 
+  async function resolveCurrentDriver(isProduction, loginResult) {
+    if (!isProduction) {
+      return loginResult.driver || null;
+    }
+
+    if (loginResult?.driver) {
+      return loginResult.driver;
+    }
+
+    const riderId = loginResult?.riderId || BremStorage.auth.getDriverSessionId();
+    const cached = riderId ? BremStorage.drivers.getById(riderId) : null;
+    if (cached) return cached;
+
+    const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
+    if (fetched?.ok && fetched.driver) {
+      return fetched.driver;
+    }
+
+    return null;
+  }
+
   loginForm.addEventListener('submit', async event => {
     event.preventDefault();
-    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
-    const loginResult = isProduction
-      ? await BremStorage.auth.signInDriver(loginIdInput.value, loginPasswordInput.value)
-      : findDriverByLogin(loginIdInput.value, loginPasswordInput.value);
-
-    if (!loginResult.ok) {
-      BremStorage.auth.setDriverSessionId(null);
-      showLoggedOut();
-      showToast(loginResult.reason || loginResult.message || '로그인에 실패했습니다.');
-      return;
+    const submitBtn = loginForm.querySelector('.login-submit');
+    const originalLabel = submitBtn?.textContent || '로그인';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '로그인 중…';
     }
 
-    if (isProduction) {
-      const status = BremStorage.getStorageStatus?.() || {};
-      if (!status.supabaseHydrated) {
-        await BremStorage.initStorage({ backend: 'supabase' });
+    try {
+      const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+      const loginResult = isProduction
+        ? await BremStorage.auth.signInDriver(loginIdInput.value, loginPasswordInput.value)
+        : findDriverByLogin(loginIdInput.value, loginPasswordInput.value);
+
+      if (!loginResult.ok) {
+        BremStorage.auth.setDriverSessionId(null);
+        showLoggedOut();
+        showToast(loginResult.reason || loginResult.message || '로그인에 실패했습니다.');
+        return;
+      }
+
+      if (isProduction) {
+        await BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
+      }
+
+      const driver = await resolveCurrentDriver(isProduction, loginResult);
+      if (!driver) {
+        showLoggedOut();
+        showToast('기사 데이터를 찾을 수 없습니다. 관리자에게 문의하세요.');
+        return;
+      }
+
+      BremStorage.auth.setDriverSessionId(driver.id);
+      loginForm.reset();
+      showLoggedIn(driver);
+      showToast(`${driver.name} 기사님 로그인 성공`);
+      window.BremSessionSecurity?.touchActivity?.();
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalLabel;
       }
     }
-
-    const riderId = isProduction
-      ? (loginResult.riderId || BremStorage.auth.getDriverSessionId())
-      : loginResult.driver?.id;
-    const driver = isProduction
-      ? BremStorage.drivers.getById(riderId)
-      : loginResult.driver;
-    if (!driver) {
-      showLoggedOut();
-      showToast('기사 데이터를 찾을 수 없습니다. 관리자에게 문의하세요.');
-      return;
-    }
-    BremStorage.auth.setDriverSessionId(driver.id);
-    loginForm.reset();
-    showLoggedIn(driver);
-    showToast(`${driver.name} 기사님 로그인 성공`);
-    window.BremSessionSecurity?.touchActivity?.();
   });
 
   logoutBtn.addEventListener('click', () => {
@@ -819,17 +847,16 @@
 
     if (!enforceDriverRouteAccess()) return;
 
-    const savedDriver = findDriverById(BremStorage.auth.getDriverSessionId());
+    let savedDriver = findDriverById(BremStorage.auth.getDriverSessionId());
+    if (!savedDriver && isProduction && BremStorage.auth.isDriverLoggedIn?.()) {
+      const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
+      if (fetched?.ok && fetched.driver) {
+        savedDriver = fetched.driver;
+      }
+    }
+
     if (savedDriver) {
       showLoggedIn(savedDriver);
-    } else if (isProduction && BremStorage.auth.isDriverLoggedIn?.()) {
-      const riderId = BremStorage.auth.getDriverSessionId();
-      const driver = BremStorage.drivers.getById(riderId);
-      if (driver) {
-        showLoggedIn(driver);
-      } else {
-        showLoggedOut();
-      }
     } else {
       showLoggedOut();
     }
