@@ -324,9 +324,20 @@
   }
 
   function startDriverSessionSecurity() {
+    const isLoggedIn = () => {
+      try {
+        return Boolean(
+          BremStorage.auth.isDriverLoggedIn?.()
+          || BremStorage.auth.getDriverSessionId?.()
+        );
+      } catch {
+        return false;
+      }
+    };
+    if (!isLoggedIn()) return;
     if (!window.BremSessionSecurity?.start) return;
     window.BremSessionSecurity.start({
-      isLoggedIn: () => BremStorage.auth.isDriverLoggedIn?.() || Boolean(BremStorage.auth.getDriverSessionId()),
+      isLoggedIn,
       onIdleLogout: async (message) => {
         await logoutDriver({ idle: true, message });
       }
@@ -744,10 +755,19 @@
       }
 
       if (isProduction) {
-        await BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
+        void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
       }
 
-      const driver = await resolveCurrentDriver(isProduction, loginResult);
+      let driver = loginResult.driver || null;
+      if (!driver && loginResult.riderId) {
+        driver = BremStorage.drivers.getById(loginResult.riderId);
+      }
+      if (!driver && isProduction) {
+        driver = await resolveCurrentDriver(isProduction, loginResult);
+      } else if (!driver && !isProduction) {
+        driver = loginResult.driver || null;
+      }
+
       if (!driver) {
         showLoggedOut();
         showToast('기사 데이터를 찾을 수 없습니다. 관리자에게 문의하세요.');
@@ -758,7 +778,6 @@
       loginForm.reset();
       showLoggedIn(driver);
       showToast(`${driver.name} 기사님 로그인 성공`);
-      window.BremSessionSecurity?.touchActivity?.();
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

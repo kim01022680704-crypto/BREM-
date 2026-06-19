@@ -14,8 +14,21 @@ window.BremSessionSecurity = (function () {
   let loggingOut = false;
   let boundActivity = null;
 
+  function safeIsLoggedIn(isLoggedInFn) {
+    if (typeof isLoggedInFn !== 'function') return false;
+    try {
+      return Boolean(isLoggedInFn());
+    } catch {
+      return false;
+    }
+  }
+
+  function readLoggedInState() {
+    return safeIsLoggedIn(config?.isLoggedIn);
+  }
+
   function touchActivity() {
-    if (!config?.isLoggedIn?.()) return;
+    if (!readLoggedInState()) return;
     try {
       sessionStorage.setItem(ACTIVITY_KEY, String(Date.now()));
     } catch {
@@ -59,9 +72,10 @@ window.BremSessionSecurity = (function () {
   }
 
   async function runIdleLogout() {
-    if (loggingOut || !config?.onIdleLogout) return;
+    const activeConfig = config;
+    if (loggingOut || typeof activeConfig?.onIdleLogout !== 'function') return;
     loggingOut = true;
-    const onIdleLogout = config.onIdleLogout;
+    const onIdleLogout = activeConfig.onIdleLogout;
     stop();
     try {
       await onIdleLogout(IDLE_MESSAGE);
@@ -71,32 +85,33 @@ window.BremSessionSecurity = (function () {
   }
 
   function tick() {
-    if (!config?.isLoggedIn?.()) return;
+    if (!readLoggedInState()) return;
     if (isIdleExpired()) {
-      runIdleLogout();
+      void runIdleLogout();
     }
   }
 
   function start(options = {}) {
-    stop();
-    if (!options || typeof options.isLoggedIn !== 'function') {
-      return false;
-    }
-    config = options;
+    const isLoggedInFn = typeof options?.isLoggedIn === 'function' ? options.isLoggedIn : null;
+    const onIdleLogoutFn = typeof options?.onIdleLogout === 'function' ? options.onIdleLogout : null;
 
-    let loggedIn = false;
-    try {
-      loggedIn = Boolean(config.isLoggedIn());
-    } catch {
-      loggedIn = false;
-    }
-    if (!loggedIn) {
-      config = null;
+    stop();
+
+    if (!isLoggedInFn) {
       return false;
     }
+
+    if (!safeIsLoggedIn(isLoggedInFn)) {
+      return false;
+    }
+
+    config = {
+      isLoggedIn: isLoggedInFn,
+      onIdleLogout: onIdleLogoutFn
+    };
 
     if (isIdleExpired()) {
-      runIdleLogout();
+      void runIdleLogout();
       return false;
     }
 
@@ -145,6 +160,7 @@ window.BremSessionSecurity = (function () {
     touchActivity,
     clearActivityMarker,
     consumeLogoutNotice,
-    isIdleExpired
+    isIdleExpired,
+    isActive: () => Boolean(config)
   };
 })();

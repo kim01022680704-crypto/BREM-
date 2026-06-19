@@ -1377,9 +1377,16 @@
   }
 
   function startAdminSessionSecurity() {
+    if (!BremStorage.auth.isAdminLoggedIn()) return;
     if (!window.BremSessionSecurity?.start) return;
     window.BremSessionSecurity.start({
-      isLoggedIn: () => BremStorage.auth.isAdminLoggedIn(),
+      isLoggedIn: () => {
+        try {
+          return Boolean(BremStorage.auth.isAdminLoggedIn());
+        } catch {
+          return false;
+        }
+      },
       onIdleLogout: async (message) => {
         await logoutAdmin({ idle: true, reload: false, message });
       }
