@@ -357,5 +357,6 @@ module.exports = {
   getMyAdminAccount,
   createAdminUser,
   updateAdminUser,
-  deleteAdminUser
+  deleteAdminUser,
+  verifyAdminCaller
 };

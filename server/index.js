@@ -10,6 +10,7 @@ const riderInquiriesSupabase = require('./rider-inquiries-supabase');
 const adminBootstrap = require('./admin-bootstrap');
 const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
+const ridersAdmin = require('./riders-admin');
 const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -149,6 +150,42 @@ app.delete('/api/admin/users/:userId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '관리자 계정 삭제에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/riders', async (req, res) => {
+  try {
+    const result = await ridersAdmin.listRiders(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, riders: result.riders });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/riders', async (req, res) => {
+  try {
+    const result = await ridersAdmin.upsertRider(getBearerToken(req), req.body?.rider || req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 저장에 실패했습니다.' });
+  }
+});
+
+app.delete('/api/admin/riders/:riderId', async (req, res) => {
+  try {
+    const result = await ridersAdmin.deleteRider(getBearerToken(req), req.params.riderId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 삭제에 실패했습니다.' });
   }
 });
 

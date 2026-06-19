@@ -58,13 +58,14 @@ window.BremSupabaseMapper = (function () {
   }
 
   function rowToRider(row) {
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
     return {
       id: row.id,
       authUserId: row.auth_user_id || '',
       name: row.name,
       phone: row.phone,
-      residentNumber: row.resident_number || '',
-      password: '',
+      residentNumber: row.resident_number || raw.residentNumber || '',
+      password: raw.password || '',
       bankName: row.bank_name || '',
       accountHolder: row.account_holder || '',
       accountNumber: row.account_number || '',

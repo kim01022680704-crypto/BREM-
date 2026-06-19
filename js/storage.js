@@ -305,6 +305,78 @@ const BremStorage = (function () {
     return data?.session?.access_token || '';
   }
 
+  async function adminRidersApi(path, options = {}) {
+    const token = await getAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 만료되었습니다. 다시 로그인하세요.' };
+    }
+
+    try {
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...(options.headers || {})
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '기사 API 요청에 실패했습니다.' };
+      }
+      return { ok: true, ...payload };
+    } catch (error) {
+      return { ok: false, message: error.message || '기사 API 요청에 실패했습니다.' };
+    }
+  }
+
+  function setDriversCache(list) {
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(KEYS.drivers, list);
+      return;
+    }
+    storageAdapter.write(KEYS.drivers, list);
+  }
+
+  async function syncDriversFromServer() {
+    if (!isProductionMode()) {
+      return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
+    }
+
+    const result = await adminRidersApi('/api/admin/riders');
+    if (!result.ok) return result;
+
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToRider) {
+      return { ok: false, message: '기사 데이터 변환 모듈이 없습니다.' };
+    }
+
+    const drivers = (result.riders || []).map(row => mapper.rowToRider(row));
+    setDriversCache(drivers);
+    return { ok: true, count: drivers.length };
+  }
+
+  async function persistRiderViaServer(rider) {
+    const result = await adminRidersApi('/api/admin/riders', {
+      method: 'POST',
+      body: JSON.stringify({ rider })
+    });
+    if (!result.ok) {
+      throw new Error(result.message || 'Supabase에 기사를 저장하지 못했습니다.');
+    }
+    return result;
+  }
+
+  async function deleteRiderViaServer(id) {
+    const result = await adminRidersApi(`/api/admin/riders/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    if (!result.ok) {
+      throw new Error(result.message || 'Supabase에서 기사를 삭제하지 못했습니다.');
+    }
+    return result;
+  }
+
   async function adminUsersApi(path, options = {}) {
     const token = await getAdminAccessToken();
     if (!token) {
@@ -472,6 +544,11 @@ const BremStorage = (function () {
   }
 
   async function reloadDrivers(force = false) {
+    if (isProductionMode()) {
+      if (!force && drivers.getAll().length) return;
+      await syncDriversFromServer();
+      return;
+    }
     if (!force && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
       return;
     }
@@ -504,6 +581,21 @@ const BremStorage = (function () {
     const riderId = String(id || '').trim();
     if (!riderId) {
       return { ok: false, message: '기사 ID가 없습니다.' };
+    }
+
+    if (isProductionMode()) {
+      const synced = await syncDriversFromServer();
+      if (!synced.ok) {
+        return { ok: false, message: synced.message || '서버에서 기사 목록을 확인하지 못했습니다.' };
+      }
+      const driver = drivers.getById(riderId);
+      if (!driver) {
+        return {
+          ok: false,
+          message: 'Supabase에 기사가 저장되지 않았습니다. 관리자 로그인 후 다시 시도하세요.'
+        };
+      }
+      return { ok: true, driver };
     }
 
     const cached = drivers.getById(riderId);
@@ -584,6 +676,14 @@ const BremStorage = (function () {
         await activeStorageAdapter.flush();
       }
       console.info('[BREM] Supabase storage hydrated');
+      if (isProductionMode()) {
+        await syncDriversFromServer().catch(error => {
+          console.warn('[BREM] Server rider sync after hydrate failed:', error.message);
+        });
+      }
+      document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+        detail: { backend: 'supabase', hydrated: true }
+      }));
       return { ok: true };
     } catch (error) {
       lastSupabaseError = error.message || 'Supabase 데이터 로드에 실패했습니다.';
@@ -641,7 +741,15 @@ const BremStorage = (function () {
       if (sessionData?.session) {
         await adapter.hydrate();
         finalizeStorageReady();
+        if (settings.mode === 'production') {
+          await syncDriversFromServer().catch(error => {
+            console.warn('[BREM] Server rider sync after init failed:', error.message);
+          });
+        }
         console.info('[BREM] Supabase storage initialized and hydrated');
+        document.dispatchEvent(new CustomEvent('brem-storage-ready', {
+          detail: { backend: 'supabase', hydrated: true }
+        }));
       } else if (settings.mode === 'production') {
         console.info('[BREM] Supabase client ready — awaiting admin login to hydrate');
       } else {
@@ -901,6 +1009,10 @@ const BremStorage = (function () {
     },
 
     saveAll(nextDrivers) {
+      if (isProductionMode()) {
+        setDriversCache(nextDrivers);
+        return Promise.resolve(nextDrivers);
+      }
       storageAdapter.write(KEYS.drivers, nextDrivers);
       if (!isStoragePersistReady()) {
         return Promise.reject(new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.'));
@@ -947,6 +1059,10 @@ const BremStorage = (function () {
       };
 
       list.unshift(newDriver);
+      if (isProductionMode()) {
+        setDriversCache(list);
+        return persistRiderViaServer(newDriver).then(() => newDriver);
+      }
       const persist = drivers.saveAll(list);
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.upsertRider) {
         return persist.then(async () => {
@@ -974,11 +1090,21 @@ const BremStorage = (function () {
           updatedAt: new Date().toISOString()
         };
       });
+      const updated = nextDrivers.find(driver => driver.id === id);
+      if (isProductionMode()) {
+        if (!updated) throw new Error('기사를 찾을 수 없습니다.');
+        setDriversCache(nextDrivers);
+        return persistRiderViaServer(updated).then(() => updated);
+      }
       return drivers.saveAll(nextDrivers);
     },
 
     remove(id) {
       const next = drivers.getAll().filter(driver => driver.id !== id);
+      if (isProductionMode()) {
+        setDriversCache(next);
+        return deleteRiderViaServer(id);
+      }
       const persist = drivers.saveAll(next);
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteRider) {
         return Promise.all([persist, activeStorageAdapter.deleteRider(id)]);
@@ -4400,7 +4526,9 @@ const DriverStorage = {
   try {
     const result = await BremStorage.initStorage({ backend: 'supabase' });
     console.info('[BREM] Storage bootstrap complete:', result?.backend || 'supabase');
-    document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
+    if (BremStorage.getStorageStatus?.().supabaseHydrated) {
+      document.dispatchEvent(new CustomEvent('brem-storage-ready', { detail: result }));
+    }
   } catch (error) {
     const message = error.message || 'Supabase 연결에 실패했습니다.';
     console.error('[BREM] Supabase auto init failed:', error);

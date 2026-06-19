@@ -320,6 +320,10 @@
     mobileList.addEventListener('change', handleSelectionChange);
     tableBody.addEventListener('click', handleListClick);
     mobileList.addEventListener('click', handleListClick);
+    document.addEventListener('brem-storage-ready', async () => {
+      await BremStorage.reloadDrivers?.(true);
+      render();
+    });
     render();
   }
 
