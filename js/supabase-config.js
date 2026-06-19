@@ -56,34 +56,56 @@
       return this._promise;
     },
 
-    /** Supabase Auth JWT — localStorage only (앱 데이터와 분리, 탭/페이지 간 세션 유지) */
+    /** Supabase Auth JWT — sessionStorage (탭 종료 시 세션 소멸) */
     createClient(url, anonKey) {
       if (!window.supabase?.createClient) {
         throw new Error('@supabase/supabase-js 가 로드되지 않았습니다.');
       }
       const prefix = 'brem-auth-';
-      const legacyPrefix = 'brem_sb_';
+      const legacyLocalPrefix = 'brem-auth-';
+      const legacySessionPrefix = 'brem_sb_';
       const authStorage = {
         getItem(key) {
           try {
-            const value = localStorage.getItem(prefix + key);
-            if (value != null) return value;
-            const legacy = sessionStorage.getItem(legacyPrefix + key);
-            if (legacy != null) {
-              localStorage.setItem(prefix + key, legacy);
-              sessionStorage.removeItem(legacyPrefix + key);
-              return legacy;
+            const sessionValue = sessionStorage.getItem(prefix + key);
+            if (sessionValue != null) return sessionValue;
+
+            const legacySession = sessionStorage.getItem(legacySessionPrefix + key);
+            if (legacySession != null) {
+              sessionStorage.setItem(prefix + key, legacySession);
+              sessionStorage.removeItem(legacySessionPrefix + key);
+              return legacySession;
             }
+
+            const legacyLocal = localStorage.getItem(legacyLocalPrefix + key);
+            if (legacyLocal != null) {
+              sessionStorage.setItem(prefix + key, legacyLocal);
+              localStorage.removeItem(legacyLocalPrefix + key);
+              return legacyLocal;
+            }
+
             return null;
           } catch {
             return null;
           }
         },
         setItem(key, value) {
-          localStorage.setItem(prefix + key, value);
+          sessionStorage.setItem(prefix + key, value);
+          try {
+            localStorage.removeItem(legacyLocalPrefix + key);
+            sessionStorage.removeItem(legacySessionPrefix + key);
+          } catch {
+            /* ignore */
+          }
         },
         removeItem(key) {
-          localStorage.removeItem(prefix + key);
+          try {
+            sessionStorage.removeItem(prefix + key);
+            localStorage.removeItem(legacyLocalPrefix + key);
+            sessionStorage.removeItem(legacySessionPrefix + key);
+          } catch {
+            /* ignore */
+          }
         }
       };
       return window.supabase.createClient(url, anonKey, {

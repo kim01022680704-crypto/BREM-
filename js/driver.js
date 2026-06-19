@@ -297,7 +297,52 @@
     return BremStorage.drivers.getById(id);
   }
 
+  function consumeLogoutNotice() {
+    const notice = window.BremSessionSecurity?.consumeLogoutNotice?.() || '';
+    if (notice) showToast(notice);
+  }
+
+  async function logoutDriver(options = {}) {
+    const { idle = false, message = '' } = options;
+    window.BremSessionSecurity?.stop();
+
+    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+      await BremStorage.auth.signOutSupabase();
+    } else {
+      BremStorage.auth.setDriverSessionId(null);
+      BremStorage.auth.clearSessionAuth?.();
+    }
+
+    state.currentDriver = null;
+    state.selectedWeekStart = weekStartKey();
+    showLoggedOut();
+    if (idle) {
+      showToast(message || window.BremSessionSecurity?.IDLE_MESSAGE || '로그아웃되었습니다.');
+    } else {
+      showToast('로그아웃되었습니다.');
+    }
+  }
+
+  function startDriverSessionSecurity() {
+    if (!window.BremSessionSecurity?.start) return;
+    window.BremSessionSecurity.start({
+      isLoggedIn: () => BremStorage.auth.isDriverLoggedIn?.() || Boolean(BremStorage.auth.getDriverSessionId()),
+      onIdleLogout: async (message) => {
+        await logoutDriver({ idle: true, message });
+      }
+    });
+  }
+
+  function enforceDriverRouteAccess() {
+    const loggedIn = BremStorage.auth.isDriverLoggedIn?.()
+      || Boolean(BremStorage.auth.getDriverSessionId());
+    if (loggedIn) return true;
+    showLoggedOut();
+    return false;
+  }
+
   function showLoggedOut() {
+    window.BremSessionSecurity?.stop();
     loginCard.hidden = false;
     if (mainApp) mainApp.hidden = true;
     result.hidden = true;
@@ -305,12 +350,18 @@
   }
 
   function showLoggedIn(driver) {
+    if (!driver) {
+      showLoggedOut();
+      return;
+    }
     state.currentDriver = driver;
     if (!state.selectedWeekStart) state.selectedWeekStart = weekStartKey();
     loginCard.hidden = true;
     if (mainApp) mainApp.hidden = false;
     result.hidden = false;
     renderDriver(driver);
+    startDriverSessionSecurity();
+    window.BremSessionSecurity?.touchActivity?.();
   }
 
   function driverCalls(driverId) {
@@ -685,18 +736,11 @@
     loginForm.reset();
     showLoggedIn(driver);
     showToast(`${driver.name} 기사님 로그인 성공`);
+    window.BremSessionSecurity?.touchActivity?.();
   });
 
-  logoutBtn.addEventListener('click', async () => {
-    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-      await BremStorage.auth.signOutSupabase();
-    } else {
-      BremStorage.auth.setDriverSessionId(null);
-    }
-    state.currentDriver = null;
-    state.selectedWeekStart = weekStartKey();
-    showLoggedOut();
-    showToast('로그아웃되었습니다.');
+  logoutBtn.addEventListener('click', () => {
+    logoutDriver();
   });
 
   document.getElementById('monthTargetForm').addEventListener('submit', event => {
@@ -750,6 +794,7 @@
     setupDriverTargetMonthPicker();
     setupDriverWeekPicker();
     state.selectedWeekStart = weekStartKey();
+    consumeLogoutNotice();
 
     const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
     if (isProduction) {
@@ -757,17 +802,34 @@
         await window.BremSupabaseConfig?.load?.();
         const status = BremStorage.getStorageStatus?.() || {};
         if (!status.supabaseHydrated) {
-          await BremStorage.initStorage({ backend: 'supabase' });
+          await BremStorage.initStorage({ backend: 'supabase', deferHydrate: true });
         }
+        await BremStorage.loadSupabaseProfile?.();
       } catch {
         showLoggedOut();
         return;
       }
     }
 
+    if (window.BremSessionSecurity?.isIdleExpired?.()
+      && (BremStorage.auth.isDriverLoggedIn?.() || BremStorage.auth.getDriverSessionId())) {
+      await logoutDriver({ idle: true });
+      return;
+    }
+
+    if (!enforceDriverRouteAccess()) return;
+
     const savedDriver = findDriverById(BremStorage.auth.getDriverSessionId());
     if (savedDriver) {
       showLoggedIn(savedDriver);
+    } else if (isProduction && BremStorage.auth.isDriverLoggedIn?.()) {
+      const riderId = BremStorage.auth.getDriverSessionId();
+      const driver = BremStorage.drivers.getById(riderId);
+      if (driver) {
+        showLoggedIn(driver);
+      } else {
+        showLoggedOut();
+      }
     } else {
       showLoggedOut();
     }

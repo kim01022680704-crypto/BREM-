@@ -1,6 +1,6 @@
 /**
  * BREM 데이터 저장소 — Supabase 전용
- * sessionStorage는 관리자 세션(메뉴 권한) 표시용으로만 사용합니다.
+ * sessionStorage — 관리자/기사 세션 및 Supabase Auth JWT 저장
  */
 const BremStorage = (function () {
   const KEYS = Object.freeze({
@@ -177,6 +177,8 @@ const BremStorage = (function () {
   let dataMigrationsCompleted = false;
   let normalizedDriversCache = null;
   let normalizedDriversSourceRef = null;
+
+  let adminDataHydratePromise = null;
 
   const DRIVERS_SYNC_TTL_MS = 15000;
 
@@ -663,12 +665,53 @@ const BremStorage = (function () {
     }
 
     try {
-      return await initSupabaseStorage(config);
+      return await initSupabaseStorage(config, options);
     } catch (error) {
       lastSupabaseError = error.message || 'Supabase 연결에 실패했습니다.';
       console.error('[BREM] Supabase init failed:', error);
       throw error;
     }
+  }
+
+  async function hydrateStorageData(settings = getSupabaseConfig()) {
+    if (activeStorageAdapter.type !== 'supabase') {
+      return { ok: false, message: 'Supabase 저장소가 연결되지 않았습니다.' };
+    }
+    if (activeStorageAdapter.isHydrated?.()) {
+      return { ok: true, cached: true };
+    }
+
+    window.BremPerf?.time?.('storage.hydrateStorageData');
+    await activeStorageAdapter.hydrate(getHydrateOptions());
+    lastSupabaseError = '';
+    flushStagedSupabaseWrites();
+    finalizeStorageReady();
+    if (activeStorageAdapter.flush) {
+      await activeStorageAdapter.flush();
+    }
+    console.info('[BREM] Supabase storage hydrated');
+    if (settings.mode === 'production' || isProductionMode()) {
+      await syncDriversFromServer().catch(error => {
+        console.warn('[BREM] Server rider sync after hydrate failed:', error.message);
+      });
+    }
+    window.BremPerf?.timeEnd?.('storage.hydrateStorageData');
+    dispatchStorageReadyOnce({ backend: 'supabase', hydrated: true });
+    return { ok: true };
+  }
+
+  async function hydrateAdminDataInBackground() {
+    if (activeStorageAdapter.isHydrated?.()) {
+      return { ok: true, cached: true };
+    }
+    if (adminDataHydratePromise) return adminDataHydratePromise;
+
+    window.BremPerf?.time?.('storage.hydrateAdminDataBackground');
+    adminDataHydratePromise = ensureSupabaseHydrated().finally(() => {
+      adminDataHydratePromise = null;
+      window.BremPerf?.timeEnd?.('storage.hydrateAdminDataBackground');
+    });
+    return adminDataHydratePromise;
   }
 
   async function flushActiveStorage() {
@@ -769,17 +812,20 @@ const BremStorage = (function () {
     return { ok: true, driver: cached };
   }
 
-  async function resumeSupabaseAfterAuth() {
+  async function resumeSupabaseAfterAuth(options = {}) {
     const config = getSupabaseConfig();
     if (!config.url || !config.anonKey) {
       return { ok: false, message: 'Supabase 설정이 없습니다.' };
     }
     if (activeStorageAdapter.type !== 'supabase') {
       try {
-        await initStorage({ backend: 'supabase' });
+        await initStorage({ backend: 'supabase', deferHydrate: true });
       } catch (error) {
         return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
       }
+    }
+    if (options.deferHydrate) {
+      return { ok: true, deferred: true };
     }
     return ensureSupabaseHydrated();
   }
@@ -825,22 +871,9 @@ const BremStorage = (function () {
 
     try {
       window.BremPerf?.time?.('storage.ensureSupabaseHydrated');
-      await activeStorageAdapter.hydrate(getHydrateOptions());
-      lastSupabaseError = '';
-      flushStagedSupabaseWrites();
-      finalizeStorageReady();
-      if (activeStorageAdapter.flush) {
-        await activeStorageAdapter.flush();
-      }
-      console.info('[BREM] Supabase storage hydrated');
-      if (isProductionMode()) {
-        await syncDriversFromServer().catch(error => {
-          console.warn('[BREM] Server rider sync after hydrate failed:', error.message);
-        });
-      }
+      const hydrated = await hydrateStorageData();
       window.BremPerf?.timeEnd?.('storage.ensureSupabaseHydrated');
-      dispatchStorageReadyOnce({ backend: 'supabase', hydrated: true });
-      return { ok: true };
+      return hydrated;
     } catch (error) {
       lastSupabaseError = error.message || 'Supabase 데이터 로드에 실패했습니다.';
       console.error('[BREM] Supabase hydrate failed:', error);
@@ -857,7 +890,17 @@ const BremStorage = (function () {
     return client;
   }
 
-  async function initSupabaseStorage(config) {
+  async function initSupabaseStorage(config, options = {}) {
+    const deferHydrate = Boolean(options.deferHydrate);
+    const settings = config || window.BREM_SUPABASE_CONFIG;
+
+    if (activeStorageAdapter.type === 'supabase' && activeSupabaseClient) {
+      if (!deferHydrate && !activeStorageAdapter.isHydrated?.()) {
+        await hydrateStorageData(settings);
+      }
+      return { backend: 'supabase', client: activeSupabaseClient, adapter: activeStorageAdapter };
+    }
+
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
       return { backend: 'supabase', client: activeSupabaseClient, adapter: activeStorageAdapter };
     }
@@ -867,7 +910,6 @@ const BremStorage = (function () {
     }
 
     supabaseInitPromise = (async () => {
-      const settings = config || window.BREM_SUPABASE_CONFIG;
       if (!settings?.url || !settings?.anonKey) {
         throw new Error('Supabase url / anonKey 설정이 필요합니다.');
       }
@@ -899,24 +941,20 @@ const BremStorage = (function () {
       setStorageBackendPreference('supabase');
       lastSupabaseError = '';
 
-      if (sessionData?.session) {
+      if (sessionData?.session && !deferHydrate) {
         window.BremPerf?.time?.('storage.initSupabaseStorage');
-        await adapter.hydrate(getHydrateOptions());
-        finalizeStorageReady();
-        if (settings.mode === 'production') {
-          await syncDriversFromServer().catch(error => {
-            console.warn('[BREM] Server rider sync after init failed:', error.message);
-          });
-        }
+        await hydrateStorageData(settings);
         console.info('[BREM] Supabase storage initialized and hydrated');
         window.BremPerf?.timeEnd?.('storage.initSupabaseStorage');
-        dispatchStorageReadyOnce({ backend: 'supabase', hydrated: true });
+      } else if (sessionData?.session) {
+        console.info('[BREM] Supabase client ready — hydrate deferred');
       } else if (settings.mode === 'production') {
         console.info('[BREM] Supabase client ready — awaiting admin login to hydrate');
       } else {
         try {
-          await adapter.hydrate(getHydrateOptions());
-          finalizeStorageReady();
+          if (!deferHydrate) {
+            await hydrateStorageData(settings);
+          }
         } catch (error) {
           console.warn('[BREM] Supabase hydrate skipped (no auth):', error.message);
         }
@@ -1027,12 +1065,33 @@ const BremStorage = (function () {
     return { ok: true, user: data.user, profile };
   }
 
+  function clearAllSessionAuthStorage() {
+    Object.values(SESSION_KEYS).forEach(key => {
+      try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    });
+    clearPersistedProductionSessionAccount();
+
+    const authPrefixes = ['brem-auth-', 'brem_sb_'];
+    [sessionStorage, localStorage].forEach(store => {
+      try {
+        for (let index = store.length - 1; index >= 0; index -= 1) {
+          const key = store.key(index);
+          if (!key) continue;
+          if (authPrefixes.some(prefix => key.startsWith(prefix))) {
+            store.removeItem(key);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+
+    window.BremSessionSecurity?.clearActivityMarker?.();
+  }
+
   function getAdminSessionStore() {
-    try {
-      return getSupabaseConfig().mode === 'production' ? localStorage : sessionStorage;
-    } catch {
-      return sessionStorage;
-    }
+    return sessionStorage;
   }
 
   const sessionAdapter = {
@@ -3785,7 +3844,7 @@ const BremStorage = (function () {
 
       try {
         await initStorage({ backend: 'supabase' });
-        const needsHydrated = config.mode === 'production' || options.requireHydrated;
+        const needsHydrated = (config.mode === 'production' || options.requireHydrated) && !options.deferHydrate;
         if (needsHydrated) {
           const hydrated = await ensureSupabaseHydrated();
           if (!hydrated.ok) {
@@ -3846,6 +3905,21 @@ const BremStorage = (function () {
       sessionAdapter.remove(SESSION_KEYS.adminLoggedIn);
       productionAdminSessionAccount = null;
       clearPersistedProductionSessionAccount();
+    },
+
+    clearSessionAuth() {
+      clearAllSessionAuthStorage();
+      rememberAdminAccessToken('');
+      productionAdminSessionAccount = null;
+    },
+
+    isDriverLoggedIn() {
+      if (getSupabaseConfig().mode === 'production') {
+        if (activeSupabaseProfile?.active && activeSupabaseProfile.role === 'rider') {
+          return true;
+        }
+      }
+      return Boolean(sessionAdapter.read(SESSION_KEYS.driverId));
     },
 
     getAdminAccounts() {
@@ -3970,38 +4044,32 @@ const BremStorage = (function () {
             }
             rememberAdminAccessToken(payload.session.access_token);
             bindSupabaseAuthListener(client);
-            supabaseInitPromise = null;
-            activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
-
-            const verified = await verifyAdminAccessTokenWithServer(payload.session.access_token);
-            if (!verified.ok) {
-              await client.auth.signOut();
-              rememberAdminAccessToken('');
-              return {
-                ok: false,
-                message: verified.message || '서버가 관리자 세션을 확인하지 못했습니다. Vercel Supabase 환경변수를 확인하세요.'
-              };
-            }
+            activeSupabaseProfile = payload.profile || activeSupabaseProfile || await loadSupabaseProfile();
           } else {
             return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
           }
 
+          let account = null;
           if (payload.account) {
-            const mapped = mapProductionAdminAccount(payload.account, 0);
-            persistProductionSessionAccount(mapped);
+            account = mapProductionAdminAccount(payload.account, 0);
+            persistProductionSessionAccount(account);
+            productionAdminSessionAccount = account;
           }
 
-          await this.syncProductionAdminAccounts();
-          if (!productionAdminSessionAccount) {
-            await this.refreshProductionAdminSession();
+          if (!account) {
+            account = productionAdminSessionAccount;
           }
-          const account = productionAdminSessionAccount
-            || (payload.account ? mapProductionAdminAccount(payload.account, 0) : null);
+
           if (!account) {
             await client.auth.signOut();
             return { ok: false, message: '관리자 계정 정보를 확인할 수 없습니다. 계정 상태를 확인하세요.' };
           }
+
           this.setAdminSession(account.id);
+          this.syncProductionAdminAccounts().catch(error => {
+            console.warn('[BREM] Background admin account sync after login failed:', error.message || error);
+          });
+          document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
           return { ok: true, account: { ...account, password: '' } };
         } catch (error) {
           return { ok: false, message: error.message || '로그인에 실패했습니다.' };
@@ -4087,8 +4155,9 @@ const BremStorage = (function () {
       activeSupabaseProfile = null;
       supabaseInitPromise = null;
       activeStorageAdapter = unavailableStorageAdapter;
-      this.clearAdminSession();
-      this.setDriverSessionId(null);
+      productionAdminSessionAccount = null;
+      clearAllSessionAuthStorage();
+      window.BremSessionSecurity?.stop?.();
     },
 
     getSupabaseProfile() {
@@ -4387,14 +4456,11 @@ const BremStorage = (function () {
     },
 
     setDriverSessionId(driverId) {
-      if (getSupabaseConfig().mode === 'production') {
+      if (!driverId) {
+        sessionAdapter.remove(SESSION_KEYS.driverId);
         return;
       }
-      if (driverId) {
-        sessionAdapter.write(SESSION_KEYS.driverId, driverId);
-      } else {
-        sessionAdapter.remove(SESSION_KEYS.driverId);
-      }
+      sessionAdapter.write(SESSION_KEYS.driverId, driverId);
     }
   };
 
@@ -4740,6 +4806,7 @@ const BremStorage = (function () {
     verifyRiderPersisted,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
+    hydrateAdminDataInBackground,
     resumeSupabaseAfterAuth,
     initStorage,
     initSupabaseStorage,

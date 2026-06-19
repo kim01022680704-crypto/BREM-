@@ -1327,26 +1327,113 @@
     return BremStorage.auth.isAdminLoggedIn();
   }
 
+  function showAdminDataLoading(loading) {
+    $('#adminApp')?.classList.toggle('is-data-loading', loading);
+  }
+
+  function showSectionLoadingSkeleton(sectionId) {
+    if (sectionId === 'dashboard') {
+      $('#statDrivers').textContent = '…';
+      $('#statWeekCallsCoupang').textContent = '…';
+      $('#statWeekCallsBaemin').textContent = '…';
+      $('#statWeekCallsTotal').textContent = '…';
+      $('#statMonthCalls').textContent = '…';
+      if ($('#statEmptyLease')) $('#statEmptyLease').textContent = '…';
+      $('#dashboardRows').innerHTML = emptyRow(8, '데이터 불러오는 중…');
+      $('#dashboardNotices').innerHTML = '<p class="empty-state">공지 불러오는 중…</p>';
+    }
+  }
+
+  function showAdminLoginPageOnly() {
+    $('#adminLoginPage').classList.remove('app-hidden');
+    $('#adminApp').classList.add('app-hidden');
+  }
+
+  function consumeLogoutNotice() {
+    const notice = window.BremSessionSecurity?.consumeLogoutNotice?.() || '';
+    if (notice) showToast(notice);
+  }
+
+  async function logoutAdmin(options = {}) {
+    const { idle = false, reload = !idle, message = '' } = options;
+    window.BremSessionSecurity?.stop();
+
+    if (BremStorage.getSupabaseConfig?.().mode === 'production') {
+      await BremStorage.auth.signOutSupabase();
+    } else {
+      BremStorage.auth.clearAdminSession();
+      BremStorage.auth.clearSessionAuth?.();
+    }
+
+    if (reload) {
+      location.reload();
+      return;
+    }
+
+    showAdminLoginPageOnly();
+    if (idle) {
+      showToast(message || window.BremSessionSecurity?.IDLE_MESSAGE || '로그아웃되었습니다.');
+    }
+  }
+
+  function startAdminSessionSecurity() {
+    if (!window.BremSessionSecurity?.start) return;
+    window.BremSessionSecurity.start({
+      isLoggedIn: () => BremStorage.auth.isAdminLoggedIn(),
+      onIdleLogout: async (message) => {
+        await logoutAdmin({ idle: true, reload: false, message });
+      }
+    });
+  }
+
+  function enforceAdminRouteAccess() {
+    if (BremStorage.auth.isAdminLoggedIn()) return true;
+    showAdminLoginPageOnly();
+    return false;
+  }
+
   function showAdminApp() {
+    if (!enforceAdminRouteAccess()) return;
+
     $('#adminLoginPage').classList.add('app-hidden');
     $('#adminApp').classList.remove('app-hidden');
-    ensureAdminStorage().then(async result => {
+
+    renderDbConnectionStatus();
+    initDefaults();
+    bindEvents();
+    applyAdminMenuPermissions();
+    const allowedMenus = getCurrentAdminMenus();
+    const initialSection = allowedMenus.includes(state.currentSection)
+      ? state.currentSection
+      : (allowedMenus[0] || 'dashboard');
+
+    showSection(initialSection, { skipRender: true });
+    showSectionLoadingSkeleton(initialSection);
+    showAdminDataLoading(true);
+    applySectionEditPermissions();
+
+    const status = BremStorage.getStorageStatus?.() || {};
+    const hydratePromise = status.supabaseHydrated
+      ? Promise.resolve({ ok: true })
+      : BremStorage.hydrateAdminDataInBackground?.();
+
+    Promise.resolve(hydratePromise).then(result => {
+      showAdminDataLoading(false);
       if (result && result.ok === false) {
         showToast(result.message || '데이터 연결에 실패했습니다.');
         renderDbConnectionStatus();
         return;
       }
-
       renderDbConnectionStatus();
-      initDefaults();
-      bindEvents();
-      applyAdminMenuPermissions();
-      const allowedMenus = getCurrentAdminMenus();
-      const initialSection = allowedMenus.includes(state.currentSection)
-        ? state.currentSection
-        : (allowedMenus[0] || 'dashboard');
-      showSection(initialSection);
+      renderActiveSection(initialSection);
       applySectionEditPermissions();
+      startAdminSessionSecurity();
+      window.BremSessionSecurity?.touchActivity?.();
+    }).catch(error => {
+      showAdminDataLoading(false);
+      console.error('[BREM] Admin data hydrate failed:', error);
+      showToast(error.message || '데이터 연결에 실패했습니다.');
+      renderDbConnectionStatus();
     });
   }
 
@@ -1355,7 +1442,7 @@
     if (status.backend === 'supabase' && status.supabaseHydrated) {
       return Promise.resolve({ ok: true });
     }
-    return BremStorage.resumeSupabaseAfterAuth?.() || BremStorage.ensureSupabaseHydrated?.();
+    return BremStorage.hydrateAdminDataInBackground?.() || BremStorage.ensureSupabaseHydrated?.();
   }
 
   function bindAuthEvents() {
@@ -1388,6 +1475,8 @@
       }
 
       try {
+        console.time('adminLogin');
+
         if (window.BremSupabaseConfig?.load) {
           await window.BremSupabaseConfig.load();
         }
@@ -1404,20 +1493,13 @@
 
         if (!config.isConfigured) {
           BremStorage.auth.setAdminSession(result.account.id);
-        }
-
-        const connected = await BremStorage.resumeSupabaseAfterAuth?.();
-        if (connected && connected.ok === false) {
-          if (!config.isConfigured) {
-            BremStorage.auth.clearAdminSession();
-          }
-          showToast(connected.message || 'Supabase 데이터 연결에 실패했습니다.');
-          renderDbConnectionStatus();
-          return;
+        } else {
+          await BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
         }
 
         showAdminApp();
         showToast('관리자 로그인 성공');
+        window.BremSessionSecurity?.touchActivity?.();
 
         const returnPath = new URLSearchParams(window.location.search).get('return');
         if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
@@ -1429,6 +1511,7 @@
         showToast(error.message || '로그인 중 오류가 발생했습니다.');
         renderDbConnectionStatus();
       } finally {
+        console.timeEnd('adminLogin');
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = originalLabel;
@@ -2344,7 +2427,7 @@
     });
   }
 
-  function showSection(id) {
+  function showSection(id, options = {}) {
     const nav = resolveSectionNavigation(id);
     const sectionId = nav.sectionId;
 
@@ -2369,6 +2452,9 @@
     if (sectionId !== 'weekly-settlement' && sectionId !== 'promotion-apply') {
       const detailCard = $('#weeklySettlementDetailCard');
       if (detailCard) detailCard.hidden = true;
+    }
+    if (options.skipRender) {
+      return;
     }
     if (sectionId === 'data-backup' && window.BremDataBackupAdmin?.refresh) {
       window.BremDataBackupAdmin.refresh();
@@ -2456,13 +2542,8 @@
     $('#missionResultItemFilter')?.addEventListener('change', renderMissionResults);
     $('#missionResultStatusFilter')?.addEventListener('change', renderMissionResults);
 
-    $('#adminLogoutBtn').addEventListener('click', async () => {
-      if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-        await BremStorage.auth.signOutSupabase();
-      } else {
-        BremStorage.auth.clearAdminSession();
-      }
-      location.reload();
+    $('#adminLogoutBtn').addEventListener('click', () => {
+      logoutAdmin({ reload: true });
     });
 
     $('#menuBtn').addEventListener('click', () => {
@@ -2867,6 +2948,7 @@
 
     bindAuthEvents();
     updateAdminLoginHelp();
+    consumeLogoutNotice();
 
     renderDbConnectionStatus();
     document.addEventListener('brem-storage-ready', renderDbConnectionStatus);
@@ -2884,14 +2966,17 @@
     });
 
     const config = BremStorage.getSupabaseConfig?.() || {};
-    if (config.backend === 'supabase') {
-      await BremStorage.waitForSupabaseReady?.();
-    }
 
     if (config.mode === 'production') {
       const profile = await BremStorage.loadSupabaseProfile?.();
       if (profile?.active && profile.role === 'admin') {
-        await BremStorage.auth.ensureAppAccess?.({ refreshMenus: true });
+        if (!BremStorage.auth.isAdminLoggedIn()) {
+          BremStorage.auth.setAdminSession(profile.user_id);
+        }
+        if (window.BremSessionSecurity?.isIdleExpired?.()) {
+          await logoutAdmin({ idle: true, reload: false });
+          return;
+        }
         const returnPath = new URLSearchParams(window.location.search).get('return');
         if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
           window.location.replace(returnPath);
@@ -2903,7 +2988,13 @@
     }
 
     if (isAdminLoggedIn()) {
+      if (window.BremSessionSecurity?.isIdleExpired?.()) {
+        await logoutAdmin({ idle: true, reload: false });
+        return;
+      }
       showAdminApp();
+    } else {
+      showAdminLoginPageOnly();
     }
   }
 

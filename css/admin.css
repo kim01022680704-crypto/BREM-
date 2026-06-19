@@ -4204,6 +4204,16 @@ textarea {
   .revenue-final-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.admin-app.is-data-loading .main-content {
+  opacity: 0.92;
+}
+
+.admin-app.is-data-loading .stat-card strong,
+.admin-app.is-data-loading #dashboardRows td {
+  color: rgba(255, 255, 255, 0.55);
+}
 
   .revenue-form-grid .span-2 {
     grid-column: span 1;
