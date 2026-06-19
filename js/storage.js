@@ -169,6 +169,7 @@ const BremStorage = (function () {
   let productionAdminAccountsCache = null;
   let productionAdminSessionAccount = null;
   let supabaseInitPromise = null;
+  let storageBootstrapPromise = null;
   let cachedAdminAccessToken = '';
   let supabaseAuthListenerBound = false;
   let syncAdminAccountsPromise = null;
@@ -1070,6 +1071,7 @@ const BremStorage = (function () {
 
   function getSupabaseClient() {
     if (activeSupabaseClient) return activeSupabaseClient;
+    if (supabaseInitPromise || storageBootstrapPromise) return null;
     const config = getSupabaseConfig();
     if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
     activeSupabaseClient = createSupabaseClient(config.url, config.anonKey);
@@ -1077,8 +1079,99 @@ const BremStorage = (function () {
     return activeSupabaseClient;
   }
 
+  async function ensureSupabaseClient() {
+    if (activeSupabaseClient) return activeSupabaseClient;
+    if (supabaseInitPromise) {
+      try {
+        await supabaseInitPromise;
+      } catch {
+        /* bootstrap may fail; fall through */
+      }
+      if (activeSupabaseClient) return activeSupabaseClient;
+    }
+    if (storageBootstrapPromise) {
+      try {
+        await storageBootstrapPromise;
+      } catch {
+        /* bootstrap may fail; fall through */
+      }
+      if (activeSupabaseClient) return activeSupabaseClient;
+    }
+    const config = getSupabaseConfig();
+    if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
+    activeSupabaseClient = createSupabaseClient(config.url, config.anonKey);
+    bindSupabaseAuthListener(activeSupabaseClient);
+    return activeSupabaseClient;
+  }
+
+  async function waitForStorageBootstrap() {
+    if (storageBootstrapPromise) {
+      try {
+        await storageBootstrapPromise;
+      } catch {
+        /* ignore */
+      }
+    }
+    return {
+      ok: activeStorageAdapter.type === 'supabase' && Boolean(activeSupabaseClient),
+      backend: activeStorageAdapter.type
+    };
+  }
+
+  function startStorageBootstrap() {
+    if (storageBootstrapPromise) return storageBootstrapPromise;
+
+    storageBootstrapPromise = (async () => {
+      try {
+        if (window.BremSupabaseConfig?.load) {
+          await window.BremSupabaseConfig.load();
+        }
+      } catch (error) {
+        console.error('[BREM] Public config load failed:', error);
+      }
+
+      if (typeof enforceProductionStorageGuard === 'function') {
+        document.addEventListener('brem-config-ready', enforceProductionStorageGuard);
+      }
+
+      const config = getSupabaseConfig() || {};
+      enforceProductionStorageGuard?.();
+
+      if (!config.url || !config.anonKey) {
+        const message = 'Supabase URL/anonKey가 서버 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)에 설정되지 않았습니다.';
+        console.error('[BREM]', message);
+        document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
+        dispatchStorageReadyOnce({
+          backend: 'unavailable',
+          error: message
+        });
+        return;
+      }
+
+      try {
+        window.BremPerf?.time?.('storage.bootstrap');
+        const result = await initStorage({ backend: 'supabase' });
+        console.info('[BREM] Storage bootstrap complete:', result?.backend || 'supabase');
+        window.BremPerf?.timeEnd?.('storage.bootstrap');
+        if (getStorageStatus?.().supabaseHydrated) {
+          dispatchStorageReadyOnce(result);
+        }
+      } catch (error) {
+        const message = error.message || 'Supabase 연결에 실패했습니다.';
+        console.error('[BREM] Supabase auto init failed:', error);
+        document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
+        dispatchStorageReadyOnce({
+          backend: 'unavailable',
+          error: message
+        });
+      }
+    })();
+
+    return storageBootstrapPromise;
+  }
+
   async function loadSupabaseProfile() {
-    const client = getSupabaseClient();
+    const client = await ensureSupabaseClient();
     if (!client) return null;
     const { data: sessionData } = await client.auth.getSession();
     const user = sessionData?.session?.user;
@@ -4117,7 +4210,7 @@ const BremStorage = (function () {
             return { ok: false, message: payload.error || '로그인에 실패했습니다.' };
           }
 
-          const client = getSupabaseClient();
+          const client = await ensureSupabaseClient();
           if (!client) {
             return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
           }
@@ -4131,7 +4224,11 @@ const BremStorage = (function () {
             }
             rememberAdminAccessToken(payload.session.access_token);
             bindSupabaseAuthListener(client);
-            activeSupabaseProfile = payload.profile || activeSupabaseProfile || await loadSupabaseProfile();
+            if (payload.profile) {
+              activeSupabaseProfile = payload.profile;
+            } else if (!activeSupabaseProfile) {
+              activeSupabaseProfile = await loadSupabaseProfile();
+            }
           } else {
             return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
           }
@@ -4210,7 +4307,7 @@ const BremStorage = (function () {
             };
           }
 
-          const client = getSupabaseClient();
+          const client = await ensureSupabaseClient();
           if (!client || !payload.session) {
             return { ok: false, reason: '로그인 세션을 받지 못했습니다.' };
           }
@@ -4223,7 +4320,11 @@ const BremStorage = (function () {
             return { ok: false, reason: sessionError.message || '세션 연결에 실패했습니다.' };
           }
 
-          activeSupabaseProfile = payload.profile || await loadSupabaseProfile();
+          if (payload.profile) {
+            activeSupabaseProfile = payload.profile;
+          } else if (!activeSupabaseProfile) {
+            activeSupabaseProfile = await loadSupabaseProfile();
+          }
           if (payload.riderId) {
             sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
           }
@@ -4891,6 +4992,9 @@ const BremStorage = (function () {
     getSupabaseConfig,
     getStorageStatus,
     getSupabaseClient,
+    ensureSupabaseClient,
+    waitForStorageBootstrap,
+    startStorageBootstrap,
     resolveAdminAccessToken,
     loadSupabaseProfile,
     enforceProductionStorageGuard,
@@ -4944,48 +5048,4 @@ const DriverStorage = {
   remove: id => BremStorage.drivers.remove(id)
 };
 
-(async function bootstrapBremStorage() {
-  try {
-    if (window.BremSupabaseConfig?.load) {
-      await window.BremSupabaseConfig.load();
-    }
-  } catch (error) {
-    console.error('[BREM] Public config load failed:', error);
-  }
-
-  if (typeof BremStorage.enforceProductionStorageGuard === 'function') {
-    document.addEventListener('brem-config-ready', BremStorage.enforceProductionStorageGuard);
-  }
-
-  const config = BremStorage.getSupabaseConfig?.() || {};
-  BremStorage.enforceProductionStorageGuard?.();
-
-  if (!config.url || !config.anonKey) {
-    const message = 'Supabase URL/anonKey가 서버 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)에 설정되지 않았습니다.';
-    console.error('[BREM]', message);
-    document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
-    dispatchStorageReadyOnce({
-      backend: 'unavailable',
-      error: message
-    });
-    return;
-  }
-
-  try {
-    window.BremPerf?.time?.('storage.bootstrap');
-    const result = await BremStorage.initStorage({ backend: 'supabase' });
-    console.info('[BREM] Storage bootstrap complete:', result?.backend || 'supabase');
-    window.BremPerf?.timeEnd?.('storage.bootstrap');
-    if (BremStorage.getStorageStatus?.().supabaseHydrated) {
-      dispatchStorageReadyOnce(result);
-    }
-  } catch (error) {
-    const message = error.message || 'Supabase 연결에 실패했습니다.';
-    console.error('[BREM] Supabase auto init failed:', error);
-    document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
-    dispatchStorageReadyOnce({
-      backend: 'unavailable',
-      error: message
-    });
-  }
-})();
+BremStorage.startStorageBootstrap?.();

@@ -237,13 +237,11 @@
   }
 
   async function init() {
+    if (window.BremSupabaseConfig?.load) {
+      await window.BremSupabaseConfig.load();
+    }
     prefillSupabaseForm();
     applyProductionUi();
-    try {
-      await BremStorage.initStorage({ backend: 'supabase' });
-    } catch (error) {
-      console.warn('[BREM] Supabase init on backup panel:', error.message);
-    }
     renderStatus();
     bindExportButtons();
     document.getElementById('backupRefreshStatusBtn')?.addEventListener('click', renderStatus);
@@ -251,6 +249,7 @@
     document.getElementById('supabaseMigrateBtn')?.addEventListener('click', migrateToSupabase);
     document.addEventListener('brem-storage-ready', renderStatus);
     document.addEventListener('brem-storage-error', renderStatus);
+    document.addEventListener('brem-config-ready', renderStatus);
   }
 
   document.addEventListener('DOMContentLoaded', init);

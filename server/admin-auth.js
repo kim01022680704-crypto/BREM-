@@ -2,8 +2,9 @@ const { createClient } = require('@supabase/supabase-js');
 const { getServiceClient } = require('./admin-bootstrap');
 const {
   normalizeEmail,
-  loadAdminRegistry,
-  buildFallbackAccountFromProfile
+  readRegistry,
+  buildFallbackAccountFromProfile,
+  ensureInitialAdminRegistry
 } = require('./admin-registry');
 
 async function resolveAdminLoginEmail(loginInput) {
@@ -27,10 +28,15 @@ async function resolveAdminLoginEmail(loginInput) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const accounts = await loadAdminRegistry(supabase);
+  const accounts = await readRegistry(supabase);
   const account = accounts.find(item => item.active !== false && String(item.name || '').trim() === value);
   if (account?.email) {
-    return { ok: true, email: normalizeEmail(account.email), account };
+    return {
+      ok: true,
+      email: normalizeEmail(account.email),
+      account,
+      preloadAccounts: accounts
+    };
   }
 
   return { ok: false, status: 404, error: '등록되지 않은 관리자 아이디입니다. 생성 시 안내된 이메일로도 로그인할 수 있습니다.' };
@@ -82,8 +88,14 @@ async function signInAdmin(loginInput, password) {
     email: userEmail,
     profile
   };
-  const accounts = await loadAdminRegistry(serviceClient, caller);
+
+  let accounts = resolved.preloadAccounts || await readRegistry(serviceClient);
   let registryAccount = accounts.find(item => item.id === userId) || resolved.account || null;
+
+  if (!registryAccount) {
+    accounts = await ensureInitialAdminRegistry(serviceClient, caller, accounts);
+    registryAccount = accounts.find(item => item.id === userId) || null;
+  }
 
   if (!registryAccount) {
     registryAccount = buildFallbackAccountFromProfile(caller);

@@ -1499,10 +1499,14 @@
           await window.BremSupabaseConfig.load();
         }
 
+        await BremStorage.waitForStorageBootstrap?.();
+
+        window.BremPerf?.time?.('admin.signInApi');
         const config = BremStorage.getSupabaseConfig?.() || {};
         const result = config.isConfigured
           ? await BremStorage.auth.signInAdmin(name, password)
           : BremStorage.auth.verifyAdminLogin(name, password);
+        window.BremPerf?.timeEnd?.('admin.signInApi');
 
         if (!result?.ok) {
           showToast(result?.message || '이름 또는 비밀번호가 올바르지 않습니다.');
@@ -2994,6 +2998,8 @@
     });
 
     const config = BremStorage.getSupabaseConfig?.() || {};
+
+    await BremStorage.waitForStorageBootstrap?.();
 
     if (config.mode === 'production') {
       const profile = await BremStorage.loadSupabaseProfile?.();

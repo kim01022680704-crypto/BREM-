@@ -847,10 +847,7 @@
     if (isProduction) {
       try {
         await window.BremSupabaseConfig?.load?.();
-        const status = BremStorage.getStorageStatus?.() || {};
-        if (!status.supabaseHydrated) {
-          await BremStorage.initStorage({ backend: 'supabase', deferHydrate: true });
-        }
+        await BremStorage.waitForStorageBootstrap?.();
         await BremStorage.loadSupabaseProfile?.();
       } catch {
         showLoggedOut();
