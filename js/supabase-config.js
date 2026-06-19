@@ -4,10 +4,9 @@
  * - service_role 키는 절대 프론트에 포함하지 않음
  */
 (function () {
-  const isLikelyProductionHost = (function () {
-    const host = String(window.location?.hostname || '').toLowerCase();
-    return host.endsWith('.vercel.app') || host.includes('brem');
-  })();
+  const host = String(window.location?.hostname || '');
+  const isLikelyProductionHost = window.BremEnv?.isProductionHost?.(host) === true
+    || /(^|\.)brem\.kr$/i.test(host.trim().toLowerCase());
 
   const DEFAULTS = {
     url: '',

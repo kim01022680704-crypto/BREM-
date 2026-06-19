@@ -31,8 +31,12 @@
 
   if (!(await ensureAdminAccess())) return;
 
-  await BremStorage.waitForSupabaseReady?.();
-  await BremStorage.resumeSupabaseAfterAuth?.();
+  const storageReady = await BremStorage.waitForSupabaseReady?.();
+  const resume = await BremStorage.resumeSupabaseAfterAuth?.();
+  if (!storageReady || !resume?.ok) {
+    window.location.replace('admin.html');
+    return;
+  }
 
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
@@ -382,6 +386,13 @@
     return true;
   }
 
+  async function ensureStorageReadyForSave() {
+    const resume = await BremStorage.resumeSupabaseAfterAuth?.();
+    if (!resume?.ok) {
+      throw new Error(resume?.message || 'Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -389,11 +400,15 @@
     if (!validateFormData(data)) return;
 
     const editingId = driverIdInput.value;
-    const persist = editingId
-      ? BremStorage.drivers.update(editingId, data)
-      : BremStorage.drivers.create(data);
+    submitBtn.disabled = true;
 
     try {
+      await ensureStorageReadyForSave();
+
+      const persist = editingId
+        ? BremStorage.drivers.update(editingId, data)
+        : BremStorage.drivers.create(data);
+
       const driver = await Promise.resolve(persist);
       const savedDriver = editingId
         ? BremStorage.drivers.getById(editingId)
@@ -402,11 +417,13 @@
 
       syncDriverEventSettings(savedDriver.id, data);
       await BremStorage.flushStorage?.();
-      await BremStorage.reloadDrivers?.(true);
-      const verified = BremStorage.drivers.getById(savedDriver.id);
-      if (!verified) {
-        throw new Error('Supabase에 기사 저장을 확인하지 못했습니다. DB 연결 상태를 확인하세요.');
+
+      const verified = await BremStorage.verifyRiderPersisted?.(savedDriver.id);
+      if (!verified?.ok) {
+        throw new Error(verified?.message || 'Supabase에 기사 저장을 확인하지 못했습니다.');
       }
+
+      await BremStorage.reloadDrivers?.(true);
       refreshHeader();
 
       if (editingId) {
@@ -419,6 +436,8 @@
       window.location.href = 'drivers.html';
     } catch (error) {
       showToast(error.message || '기사 저장에 실패했습니다.');
+    } finally {
+      submitBtn.disabled = false;
     }
   }
 

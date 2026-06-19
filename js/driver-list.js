@@ -44,8 +44,12 @@
 
   if (!(await ensureAdminAccess())) return;
 
-  await BremStorage.waitForSupabaseReady?.();
-  await BremStorage.resumeSupabaseAfterAuth?.();
+  const storageReady = await BremStorage.waitForSupabaseReady?.();
+  const resume = await BremStorage.resumeSupabaseAfterAuth?.();
+  if (!storageReady || !resume?.ok) {
+    window.location.replace('admin.html');
+    return;
+  }
   await BremStorage.reloadDrivers?.(true);
 
   const selectedIds = new Set();

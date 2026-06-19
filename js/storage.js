@@ -189,7 +189,7 @@ const BremStorage = (function () {
 
   function isStoragePersistReady() {
     if (activeStorageAdapter.type !== 'supabase') return false;
-    if (activeStorageAdapter.isHydrated?.()) return true;
+    if (!activeStorageAdapter.isHydrated?.()) return false;
     return Boolean(activeSupabaseProfile?.active && activeSupabaseProfile.role === 'admin');
   }
 
@@ -483,15 +483,53 @@ const BremStorage = (function () {
     }
     return new Promise(resolve => {
       let done = false;
-      const finish = () => {
+      const finish = value => {
         if (done) return;
         done = true;
-        resolve(true);
+        resolve(Boolean(value));
       };
-      document.addEventListener('brem-storage-ready', finish, { once: true });
-      document.addEventListener('brem-storage-error', finish, { once: true });
-      setTimeout(finish, timeoutMs);
+      const checkHydrated = () => {
+        if (activeStorageAdapter.isHydrated?.()) finish(true);
+      };
+      document.addEventListener('brem-storage-ready', checkHydrated, { once: true });
+      document.addEventListener('brem-storage-error', () => finish(false), { once: true });
+      setTimeout(() => finish(activeStorageAdapter.isHydrated?.()), timeoutMs);
     });
+  }
+
+  async function verifyRiderPersisted(id) {
+    const riderId = String(id || '').trim();
+    if (!riderId) {
+      return { ok: false, message: '기사 ID가 없습니다.' };
+    }
+
+    const cached = drivers.getById(riderId);
+    if (!cached) {
+      return { ok: false, message: '기사 데이터가 캐시에 없습니다.' };
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
+    }
+
+    const { data, error } = await client
+      .from('riders')
+      .select('id')
+      .eq('id', riderId)
+      .maybeSingle();
+
+    if (error) {
+      return { ok: false, message: error.message || 'Supabase 기사 조회에 실패했습니다.' };
+    }
+    if (!data?.id) {
+      return {
+        ok: false,
+        message: 'Supabase에 기사가 저장되지 않았습니다. 관리자 로그인 후 다시 시도하세요.'
+      };
+    }
+
+    return { ok: true, driver: cached };
   }
 
   async function resumeSupabaseAfterAuth() {
@@ -849,6 +887,9 @@ const BremStorage = (function () {
 
     saveAll(nextDrivers) {
       storageAdapter.write(KEYS.drivers, nextDrivers);
+      if (!isStoragePersistReady()) {
+        return Promise.reject(new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.'));
+      }
       return flushActiveStorage();
     },
 
@@ -891,7 +932,14 @@ const BremStorage = (function () {
       };
 
       list.unshift(newDriver);
-      return drivers.saveAll(list).then(() => newDriver);
+      const persist = drivers.saveAll(list);
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.upsertRider) {
+        return persist.then(async () => {
+          await activeStorageAdapter.upsertRider(newDriver);
+          return newDriver;
+        });
+      }
+      return persist.then(() => newDriver);
     },
 
     update(id, changes) {
@@ -4219,6 +4267,7 @@ const BremStorage = (function () {
     useLocalStorageAdapter,
     flushStorage: flushActiveStorage,
     reloadDrivers,
+    verifyRiderPersisted,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     resumeSupabaseAfterAuth,

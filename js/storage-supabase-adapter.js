@@ -53,6 +53,18 @@ window.BremSupabaseStorageAdapter = (function () {
       (data || []).forEach(row => setCache(row.key, row.value));
     }
 
+    async function upsertRider(driver) {
+      const row = Mapper().riderToRow(driver);
+      if (!row.id) throw new Error('기사 ID가 없습니다.');
+      console.info('[BREM:Supabase] upsertRider', { id: row.id, name: row.name });
+      const { error } = await client.from('riders').upsert(row, { onConflict: 'id' });
+      if (error) {
+        console.error('[BREM:Supabase] upsertRider FAILED', error);
+        throw error;
+      }
+      console.info('[BREM:Supabase] upsertRider OK', { id: row.id });
+    }
+
     async function persistRiders(value) {
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
       if (!rows.length) {
@@ -165,6 +177,7 @@ window.BremSupabaseStorageAdapter = (function () {
       hydrate,
       reloadRiders,
       deleteRider,
+      upsertRider,
       stage,
       enqueuePersist,
       flush() {

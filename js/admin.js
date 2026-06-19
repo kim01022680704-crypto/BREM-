@@ -625,8 +625,8 @@
     try {
       const config = BremStorage.getSupabaseConfig?.() || {};
       const host = String(window.location?.hostname || '').toLowerCase();
-      const onProductionHost = host.endsWith('.vercel.app') || host.includes('brem');
-      const isProduction = config.mode === 'production' || onProductionHost;
+      const isProduction = config.mode === 'production'
+        || window.BremEnv?.isProductionHost?.(host) === true;
 
       if (!config.isConfigured) {
         help.textContent = isProduction
