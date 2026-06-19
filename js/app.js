@@ -19,8 +19,6 @@
     return window.BremDriverProgramAccess?.ensure?.() ?? false;
   }
 
-  if (!(await ensureAdminAccess())) return;
-
   const driverIdInput = document.getElementById('driverId');
   const nameInput = document.getElementById('driverName');
   const phoneInput = document.getElementById('driverPhone');
@@ -533,5 +531,15 @@
     window.BremDriverIndex = { refresh: refreshHeader };
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  if (!(await ensureAdminAccess())) return;
+
+  await BremStorage.reloadDrivers?.(true).catch(() => ({}));
+  refreshHeader();
+  loadEditFromQuery();
 })();
