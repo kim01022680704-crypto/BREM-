@@ -13,11 +13,15 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260620d';
+const SERVER_VERSION = '20260620e';
+const SCRIPT_PATH = __filename;
 
 let activeJob = null;
 let activeContext = null;
 let activeRunToken = 0;
+let refreshLoopRunning = false;
+/** ERP 재요청 시 최신 setup 토큰으로 저장 (브라우저는 닫지 않음) */
+let activeSetup = { setupId: '', setupSecret: '', apiBase: 'https://brem.kr' };
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -305,20 +309,15 @@ async function closeContextSafely(context) {
   }
 }
 
-async function resetActiveSession() {
-  activeRunToken += 1;
-  if (activeContext) {
-    await closeContextSafely(activeContext);
-  }
-  if (isJobRunning()) {
-    console.log('[BREM] 이전 세션 갱신 작업을 종료하고 새로 시작합니다.');
-  }
+function updateActiveSetup(setupId, setupSecret, apiBase) {
+  activeSetup = {
+    setupId: String(setupId || '').trim(),
+    setupSecret: String(setupSecret || '').trim(),
+    apiBase: String(apiBase || 'https://brem.kr').trim()
+  };
 }
 
 async function saveSessionAndComplete({
-  setupId,
-  setupSecret,
-  apiBase,
   context,
   cookieHeader,
   pageUrl,
@@ -327,6 +326,11 @@ async function saveSessionAndComplete({
 }) {
   if (runToken !== activeRunToken) return false;
 
+  const { setupId, setupSecret, apiBase } = activeSetup;
+  if (!setupId || !setupSecret) {
+    throw new Error('setupId/setupSecret 없음 — ERP에서 [배민 세션 갱신]을 다시 누르세요');
+  }
+
   activeJob = {
     status: 'saving',
     message: '세션 쿠키를 Supabase에 저장하는 중…',
@@ -334,7 +338,7 @@ async function saveSessionAndComplete({
     currentUrl: pageUrl,
     updatedAt: Date.now()
   };
-  console.log(`[BREM] [저장 시작] Supabase settings | URL: ${pageUrl}`);
+  console.log(`[BREM] [저장 시작] Supabase settings | URL: ${pageUrl} | setupId=${setupId}`);
 
   await postSessionToApi(apiBase, setupId, setupSecret, cookieHeader);
 
@@ -349,17 +353,27 @@ async function saveSessionAndComplete({
   };
   console.log(`[BREM] [완료] 세션 저장 완료 | URL: ${pageUrl} | ${verifyReason || ''}`);
   await showBrowserBanner(context, '세션 저장 완료 — ERP로 돌아가세요', false);
+  await delay(2000);
   await closeContextSafely(context);
+  refreshLoopRunning = false;
   return true;
 }
 
-async function runSessionRefresh(setupId, setupSecret, apiBase) {
+async function runSessionRefresh() {
+  if (refreshLoopRunning) {
+    console.log('[BREM] [시작] 이미 갱신 루프 실행 중 — 브라우저 유지');
+    return;
+  }
+  refreshLoopRunning = true;
+
   const runToken = activeRunToken;
   const playwright = await loadPlaywright();
   if (!playwright) {
+    refreshLoopRunning = false;
     throw new Error('playwright 패키지가 없습니다. npm install playwright 후 다시 시도하세요.');
   }
 
+  const setupId = activeSetup.setupId;
   activeJob = {
     status: 'opening_browser',
     message: '브라우저를 여는 중…',
@@ -367,15 +381,22 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
     updatedAt: Date.now()
   };
   console.log(`[BREM] [시작] 세션 갱신 | setupId=${setupId} | server=${SERVER_VERSION}`);
+  console.log(`[BREM] [시작] script=${SCRIPT_PATH}`);
 
   let context = null;
 
   try {
-    context = await playwright.chromium.launchPersistentContext(PROFILE_DIR, {
-      headless: false,
-      viewport: { width: 1280, height: 900 }
-    });
-    activeContext = context;
+    if (isContextAlive(activeContext)) {
+      context = activeContext;
+      console.log('[BREM] [브라우저] 기존 Playwright 창 재사용');
+    } else {
+      context = await playwright.chromium.launchPersistentContext(PROFILE_DIR, {
+        headless: false,
+        viewport: { width: 1280, height: 900 }
+      });
+      activeContext = context;
+      console.log('[BREM] [브라우저] 새 Playwright 창 실행');
+    }
 
     context.on('page', (newPage) => {
       console.log(`[BREM] [탭 열림] ${safePageUrlSync(newPage)}`);
@@ -457,9 +478,6 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
 
           if (verify.ok) {
             const saved = await saveSessionAndComplete({
-              setupId,
-              setupSecret,
-              apiBase,
               context,
               cookieHeader,
               pageUrl,
@@ -477,18 +495,20 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
     }
 
     failJob(
-      setupId,
+      activeSetup.setupId,
       '세션 갱신 시간 초과',
       tabs.url,
       lastVerifyReason || '배달이력 페이지 진입 또는 쿠키 검증 실패'
     );
     await showBrowserBanner(context, activeJob.message, true);
+    refreshLoopRunning = false;
   } catch (error) {
     const tabs = context ? scanBrowserTabs(context) : { url: '' };
-    failJob(setupId, '세션 갱신 오류', tabs.url, error.message);
+    failJob(activeSetup.setupId, '세션 갱신 오류', tabs.url, error.message);
     if (context && isContextAlive(context)) {
       await showBrowserBanner(context, error.message, true);
     }
+    refreshLoopRunning = false;
   }
 }
 
@@ -563,21 +583,20 @@ const server = http.createServer(async (req, res) => {
       return sendHtml(res, renderStartPage('', 'setupId/setupSecret 필요 — ERP에서 [배민 세션 갱신]을 다시 누르세요.'));
     }
 
-    const sameJob = isJobRunning() && activeJob?.setupId === setupId;
-    if (sameJob) {
-      console.log(`[BREM] [start] 동일 setupId 폴링 재접속 | ${setupId}`);
+    updateActiveSetup(setupId, setupSecret, apiBase);
+
+    if (isJobRunning() || refreshLoopRunning) {
+      console.log(`[BREM] [start] 브라우저 유지 — setupId만 갱신 | ${setupId}`);
       return sendHtml(res, renderStartPage(setupId));
     }
 
-    if (isJobRunning()) {
-      await resetActiveSession();
-    }
-
     sendHtml(res, renderStartPage(setupId));
-    console.log(`[BREM] [start] 세션 갱신 시작 요청 | setupId=${setupId}`);
+    console.log(`[BREM] [start] 세션 갱신 시작 | setupId=${setupId} | v=${SERVER_VERSION}`);
 
-    void runSessionRefresh(setupId, setupSecret, apiBase).catch(error => {
+    void runSessionRefresh().catch(error => {
+      refreshLoopRunning = false;
       failJob(setupId, '세션 갱신 실패', '', error.message);
+      console.error(`[BREM] [오류] ${error.stack || error.message}`);
     });
     return;
   }
@@ -586,8 +605,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', async () => {
-  console.log(`[BREM] Baemin session local server v${SERVER_VERSION}: http://127.0.0.1:${PORT}`);
-  console.log('[BREM] ERP [배민 세션 갱신] 또는 /start URL을 사용하세요.');
+  console.log('========================================');
+  console.log(`[BREM] Baemin session server v${SERVER_VERSION}`);
+  console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
+  console.log(`[BREM] Script: ${SCRIPT_PATH}`);
+  console.log('[BREM] 구버전이면 git pull 후 서버를 재시작하세요.');
+  console.log('========================================');
   const playwright = await loadPlaywright();
   if (!playwright) {
     console.warn('[BREM] playwright 미설치 — npm install playwright && npx playwright install chromium');
