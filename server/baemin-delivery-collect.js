@@ -1,5 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
+const baeminSession = require('./baemin-delivery-session');
 
 const API_BASE = 'https://deliverycenter.baemin.com/delivery-status';
 const DEFAULT_PAGE_SIZE = 20;
@@ -11,7 +12,11 @@ function todayDateString() {
 function resolveSessionCookie(options = {}) {
   const fromBody = String(options.sessionCookie || '').trim();
   if (fromBody) return fromBody;
-  return String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim();
+  return String(options.resolvedCookie || '').trim();
+}
+
+async function resolveSessionCookieAsync(options = {}) {
+  return baeminSession.resolveStoredSessionCookie(options);
 }
 
 function isPlaywrightFeasibleOnVercel() {
@@ -157,7 +162,7 @@ async function fetchAllDeliveryStatus(sessionCookie, options = {}) {
       ok: false,
       status: 400,
       error: 'SESSION_COOKIE_MISSING',
-      message: '배민 세션 쿠키가 없습니다. Vercel 환경변수 BAEMIN_BIZ_SESSION_COOKIE를 설정하거나 수집 시 쿠키를 입력하세요.'
+      message: '배민 세션 쿠키가 없습니다. [배민 세션 갱신]으로 로그인하거나 고급 설정에서 쿠키를 입력하세요.'
     };
   }
 
@@ -305,11 +310,19 @@ function buildCollectSummary(fetchResult, saveResult) {
 }
 
 async function collectFromApi(accessToken, options = {}) {
-  const cookie = resolveSessionCookie(options);
+  const resolvedCookie = await resolveSessionCookieAsync(options);
+  const cookie = resolveSessionCookie({ ...options, resolvedCookie });
   const captureDate = String(options.captureDate || todayDateString()).slice(0, 10);
 
   const fetched = await fetchAllDeliveryStatus(cookie, options);
-  if (!fetched.ok) return fetched;
+  if (!fetched.ok) {
+    if (fetched.status === 401 || fetched.status === 403 || fetched.error === '배민 로그인 만료') {
+      await baeminSession.markSessionError(fetched.message || '배민 로그인 만료');
+    }
+    return fetched;
+  }
+
+  await baeminSession.markSessionValidated();
 
   const saveResult = await saveRows(accessToken, fetched.items, captureDate);
   if (!saveResult.ok) return saveResult;
@@ -384,19 +397,24 @@ async function getConfig(accessToken) {
   if (!caller.ok) return caller;
 
   const tableStatus = await getTableStatus();
-  const cookieConfigured = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
-  const loginConfigured = Boolean(
-    String(process.env.BAEMIN_BIZ_LOGIN_ID || '').trim()
-    && String(process.env.BAEMIN_BIZ_LOGIN_PASSWORD || '').trim()
-  );
+  const sessionStatus = await baeminSession.getSessionStatus(accessToken);
+  const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
 
   return {
     ok: true,
     tableExists: tableStatus.tableExists === true,
-    cookieConfigured,
-    loginConfigured,
+    sessionConfigured: sessionStatus.sessionConfigured || envCookie,
+    sessionUpdatedAt: sessionStatus.updatedAt || null,
+    sessionUpdatedBy: sessionStatus.updatedBy || '',
+    sessionSource: sessionStatus.source || (envCookie ? 'env' : ''),
+    sessionLastError: sessionStatus.lastError || '',
+    sessionLastValidatedAt: sessionStatus.lastValidatedAt || null,
+    envCookieConfigured: envCookie,
+    cookieConfigured: sessionStatus.sessionConfigured || envCookie,
+    localSessionUrl: sessionStatus.localSessionUrl,
+    localHealthUrl: sessionStatus.localSessionUrl ? `${sessionStatus.localSessionUrl}/health` : '',
     playwright: isPlaywrightFeasibleOnVercel(),
-    collectMode: cookieConfigured ? 'env_cookie' : 'manual_cookie_or_json'
+    collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none')
   };
 }
 
@@ -411,5 +429,6 @@ module.exports = {
   extractDataArray,
   mapItemToRow,
   resolveSessionCookie,
+  resolveSessionCookieAsync,
   isPlaywrightFeasibleOnVercel
 };

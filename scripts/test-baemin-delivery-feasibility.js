@@ -9,7 +9,7 @@ require('dotenv').config();
 
 const {
   fetchAllDeliveryStatus,
-  resolveSessionCookie,
+  resolveSessionCookieAsync,
   isPlaywrightFeasibleOnVercel
 } = require('../server/baemin-delivery-collect');
 
@@ -17,10 +17,10 @@ async function main() {
   console.log('=== Playwright on Vercel ===');
   console.log(JSON.stringify(isPlaywrightFeasibleOnVercel(), null, 2));
 
-  const cookie = resolveSessionCookie({});
+  const cookie = await resolveSessionCookieAsync({});
   if (!cookie) {
-    console.error('\nFAIL: BAEMIN_BIZ_SESSION_COOKIE 가 설정되지 않았습니다.');
-    console.error('배민Biz(deliverycenter.baemin.com)에 로그인 → DevTools → Network → delivery-status 요청의 Cookie 값을 복사하세요.');
+    console.error('\nFAIL: 배민 세션이 없습니다.');
+    console.error('ERP [배민 세션 갱신] 또는 BAEMIN_BIZ_SESSION_COOKIE / Supabase settings 를 설정하세요.');
     process.exit(1);
   }
 

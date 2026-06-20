@@ -15,7 +15,9 @@
     "bootstrap:missions": "node scripts/apply-missions-bootstrap.js",
     "test:baemin-feasibility": "node scripts/test-baemin-delivery-feasibility.js",
     "test:baemin-playwright": "node scripts/test-baemin-playwright-login.js",
-    "collect:baemin-local": "node scripts/collect-baemin-delivery-local.js"
+    "collect:baemin-local": "node scripts/collect-baemin-delivery-local.js",
+    "baemin:session-server": "node scripts/baemin-session-local-server.js",
+    "baemin:session-refresh": "node scripts/baemin-session-refresh-cli.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",

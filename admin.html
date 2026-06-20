@@ -488,21 +488,35 @@
           <div class="card-header">
             <h2>배민Biz 배달 현황 수집</h2>
           </div>
-          <p class="form-help" id="baeminDeliveryConfigHint">배민Biz API는 서버에서만 호출합니다. 브라우저에서 직접 호출하지 않습니다.</p>
+          <p class="form-help" id="baeminDeliveryConfigHint">배민Biz API는 서버에서만 호출합니다.</p>
+          <div id="baeminDeliverySessionStatus" class="baemin-session-status baemin-session-status--warn">세션 상태 확인 중…</div>
           <div class="form-row baemin-collect-toolbar">
             <label>
               수집 날짜
               <input type="date" id="baeminDeliveryCaptureDate" class="admin-period-input">
             </label>
+            <button type="button" class="primary-btn" id="baeminDeliverySessionRefreshBtn">배민 세션 갱신</button>
             <button type="button" class="primary-btn" id="baeminDeliveryAutoCollectBtn">배민 자동 수집</button>
             <button type="button" class="small-btn" id="baeminDeliveryJsonPasteBtn">배민 JSON 붙여넣기</button>
           </div>
-          <label id="baeminDeliveryCookieField" hidden>
-            세션 쿠키 (환경변수 미설정 시, 저장되지 않음)
+          <details class="baemin-advanced-panel" id="baeminDeliveryAdvancedPanel">
+            <summary>고급 / 비상용 쿠키 입력</summary>
+            <p class="form-help">세션 갱신이 불가능할 때만 Cookie 헤더 값을 직접 붙여넣으세요. Supabase settings에 저장됩니다.</p>
             <textarea id="baeminDeliverySessionCookie" rows="2" placeholder="deliverycenter.baemin.com Cookie 헤더 값" spellcheck="false"></textarea>
-          </label>
+            <button type="button" class="small-btn" id="baeminDeliveryManualCookieSaveBtn">비상용 쿠키 저장</button>
+          </details>
           <div id="baeminDeliveryCollectResult" class="baemin-collect-result" hidden></div>
         </article>
+
+        <dialog class="baemin-json-dialog" id="baeminDeliverySessionDialog">
+          <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
+            <h3>배민Biz 세션 갱신</h3>
+            <div id="baeminDeliverySessionDialogBody"></div>
+            <div class="baemin-json-dialog__actions">
+              <button type="button" class="small-btn" id="baeminDeliverySessionDialogCloseBtn">닫기</button>
+            </div>
+          </form>
+        </dialog>
 
         <dialog class="baemin-json-dialog" id="baeminDeliveryJsonDialog">
           <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
@@ -2572,7 +2586,7 @@
   <script src="js/weekly-settlement.js"></script>
   <script src="js/weekly-settlement-admin.js"></script>
   <script src="js/baemin-delivery-fee.js"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260620b"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
   <script src="js/promotion-apply.js"></script>
   <script src="js/promotion-apply-admin.js"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

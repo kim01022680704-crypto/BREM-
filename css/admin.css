@@ -2086,6 +2086,64 @@ textarea {
   justify-content: flex-end;
 }
 
+.baemin-session-status {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+
+.baemin-session-status--ok {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(20, 83, 45, 0.18);
+  color: #bbf7d0;
+}
+
+.baemin-session-status--warn {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(120, 53, 15, 0.18);
+  color: #fde68a;
+}
+
+.baemin-session-status--error {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+}
+
+.baemin-advanced-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+
+.baemin-advanced-panel textarea {
+  width: 100%;
+  margin: 8px 0;
+}
+
+.baemin-cli-block {
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #111827;
+  color: #e5e7eb;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
 .settlement-result-block {
   padding: 0 18px 18px;
 }

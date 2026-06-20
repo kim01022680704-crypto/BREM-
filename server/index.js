@@ -13,6 +13,7 @@ const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
+const baeminDeliverySession = require('./baemin-delivery-session');
 const riderAuth = require('./rider-auth');
 const { getPublicConfig } = require('./public-config');
 const app = express();
@@ -327,6 +328,86 @@ app.get('/api/admin/baemin-delivery/config', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 수집 설정을 확인하지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/baemin-delivery/session', async (req, res) => {
+  try {
+    const result = await baeminDeliverySession.getSessionStatus(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 세션 상태를 확인하지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/session/setup', async (req, res) => {
+  try {
+    const result = await baeminDeliverySession.createSessionSetup(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 세션 갱신 준비에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/baemin-delivery/session/setup', async (req, res) => {
+  try {
+    const result = await baeminDeliverySession.getSessionSetupStatus(
+      getBearerToken(req),
+      req.query.setupId
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 세션 갱신 상태를 확인하지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/session', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const setupId = String(body.setupId || '').trim();
+    const setupSecret = String(body.setupSecret || '').trim();
+    const cookie = String(body.cookie || '').trim();
+
+    let result;
+    if (setupId && setupSecret) {
+      result = await baeminDeliverySession.completeSessionSetup(setupId, setupSecret, cookie, {
+        source: 'playwright_local'
+      });
+    } else {
+      result = await baeminDeliverySession.saveSessionViaAdmin(
+        getBearerToken(req),
+        cookie,
+        'manual_admin'
+      );
+    }
+
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 세션 저장에 실패했습니다.' });
   }
 });
 

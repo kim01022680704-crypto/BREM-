@@ -10,7 +10,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const {
   fetchAllDeliveryStatus,
-  resolveSessionCookie,
+  resolveSessionCookieAsync,
   mapItemToRow
 } = require('../server/baemin-delivery-collect');
 
@@ -22,9 +22,9 @@ async function main() {
     process.exit(1);
   }
 
-  const cookie = resolveSessionCookie({});
+  const cookie = await resolveSessionCookieAsync({});
   if (!cookie) {
-    console.error('BAEMIN_BIZ_SESSION_COOKIE 가 필요합니다.');
+    console.error('배민 세션이 없습니다. ERP [배민 세션 갱신] 또는 BAEMIN_BIZ_SESSION_COOKIE 를 설정하세요.');
     process.exit(1);
   }
 
