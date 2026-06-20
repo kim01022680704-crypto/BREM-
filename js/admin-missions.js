@@ -98,6 +98,36 @@
     } else if (submitBtn) {
       submitBtn.disabled = false;
     }
+
+    const deleteBtn = $('missionFormDelete');
+    if (deleteBtn) deleteBtn.hidden = !isEditing;
+  }
+
+  async function deleteMission(missionId) {
+    const mission = missionsApi.getById(missionId);
+    if (!mission) {
+      showToast('삭제할 미션을 찾을 수 없습니다.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `「${mission.title}」 미션을 삭제할까요?\n배정된 기사의 미션 선택도 해제됩니다.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await missionsApi.remove(missionId);
+      if (state.editingId === missionId) {
+        state.editingId = '';
+        fillMissionForm(null);
+      }
+      await BremStorage.reloadDrivers?.(true);
+      showToast('미션이 삭제되었습니다.');
+      renderMissionCards();
+      renderDriverMissionAssignments();
+    } catch (error) {
+      showToast(formatMissionError(error) || '미션 삭제에 실패했습니다.');
+    }
   }
 
   function renderMissionCards() {
@@ -118,6 +148,7 @@
         <p class="hint"><strong>유형:</strong> ${escapeHtml(mission.type || '-')}</p>
         <div class="notice-actions">
           <button type="button" class="small-btn" data-edit-mission="${escapeHtml(mission.id)}">수정</button>
+          <button type="button" class="small-btn danger-btn" data-delete-mission="${escapeHtml(mission.id)}">삭제</button>
         </div>
       </article>
     `).join('') || '<p class="empty-state">등록된 미션이 없습니다. 아래에서 새 미션을 등록하세요.</p>';
@@ -207,10 +238,17 @@
     });
 
     $('missionCatalogList')?.addEventListener('click', event => {
-      const button = event.target.closest('[data-edit-mission]');
-      if (!button) return;
-      const mission = missionsApi.getById(button.dataset.editMission);
-      if (mission) fillMissionForm(mission);
+      const editButton = event.target.closest('[data-edit-mission]');
+      if (editButton) {
+        const mission = missionsApi.getById(editButton.dataset.editMission);
+        if (mission) fillMissionForm(mission);
+        return;
+      }
+
+      const deleteButton = event.target.closest('[data-delete-mission]');
+      if (deleteButton) {
+        void deleteMission(deleteButton.dataset.deleteMission);
+      }
     });
 
     $('missionFormReset')?.addEventListener('click', () => {
@@ -232,6 +270,12 @@
       }
       fillMissionForm(null);
       $('missionTitle')?.focus();
+    });
+
+    $('missionFormDelete')?.addEventListener('click', () => {
+      const editId = $('missionEditId')?.value.trim();
+      if (!editId) return;
+      void deleteMission(editId);
     });
 
     $('riderMissionMgmtForm')?.addEventListener('submit', event => {

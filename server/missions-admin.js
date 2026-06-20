@@ -149,8 +149,83 @@ async function getMissionsStatus(accessToken) {
   return { ok: true, tableExists: true, count: count ?? 0 };
 }
 
+async function clearMissionFromRiders(supabase, missionId) {
+  const id = String(missionId || '').trim();
+  if (!id) return;
+
+  const columns = ['selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang'];
+  for (const column of columns) {
+    const { error } = await supabase
+      .from('riders')
+      .update({ [column]: '' })
+      .eq(column, id);
+    if (error && !String(error.message || '').toLowerCase().includes('column')) {
+      throw error;
+    }
+  }
+}
+
+async function deleteMission(accessToken, missionId) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const id = String(missionId || '').trim();
+  if (!id) {
+    return { ok: false, status: 400, error: '미션 ID가 없습니다.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { data: existing, error: readError } = await supabase
+    .from('missions')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (readError) {
+    if (isMissingTableError(readError)) {
+      return {
+        ok: false,
+        status: 503,
+        error: 'TABLE_MISSING',
+        message: 'public.missions 테이블이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 500, error: readError.message || '미션을 확인하지 못했습니다.' };
+  }
+
+  if (!existing) {
+    return { ok: false, status: 404, error: '삭제할 미션을 찾을 수 없습니다.' };
+  }
+
+  try {
+    await clearMissionFromRiders(supabase, id);
+  } catch (error) {
+    return { ok: false, status: 500, error: error.message || '기사 미션 배정 해제에 실패했습니다.' };
+  }
+
+  const { error } = await supabase.from('missions').delete().eq('id', id);
+  if (error) {
+    if (isMissingTableError(error)) {
+      return {
+        ok: false,
+        status: 503,
+        error: 'TABLE_MISSING',
+        message: 'public.missions 테이블이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 400, error: error.message || '미션 삭제에 실패했습니다.' };
+  }
+
+  return { ok: true, id };
+}
+
 module.exports = {
   listMissions,
   upsertMission,
-  getMissionsStatus
+  getMissionsStatus,
+  deleteMission
 };

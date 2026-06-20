@@ -611,6 +611,59 @@ const BremStorage = (function () {
     return saved;
   }
 
+  function clearMissionFromDriverCache(missionId) {
+    const id = String(missionId || '').trim();
+    if (!id) return;
+
+    const list = storageAdapter.read(KEYS.drivers, []);
+    let changed = false;
+    const next = list.map(driver => {
+      const patch = {};
+      if (driver.selectedMissionId === id) patch.selectedMissionId = '';
+      if (driver.selectedMissionIdBaemin === id) patch.selectedMissionIdBaemin = '';
+      if (driver.selectedMissionIdCoupang === id) patch.selectedMissionIdCoupang = '';
+      if (!Object.keys(patch).length) return driver;
+      changed = true;
+      return { ...driver, ...patch };
+    });
+    if (changed) {
+      setDriversCache(next);
+      window.BremDataCache?.set?.(KEYS.drivers, next);
+    }
+  }
+
+  async function deleteMissionViaServer(id) {
+    const missionId = String(id || '').trim();
+    if (!missionId) throw new Error('미션 ID가 없습니다.');
+
+    const deleteRequest = () => adminRidersApi(`/api/admin/missions/${encodeURIComponent(missionId)}`, {
+      method: 'DELETE'
+    });
+
+    let result = await deleteRequest();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await deleteRequest();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '미션 삭제에 실패했습니다.');
+    }
+
+    const list = missions.getAll().filter(item => item.id !== missionId);
+    setMissionsCache(list);
+    if (list.length) {
+      window.BremDataCache?.set?.(KEYS.missions, list);
+    } else {
+      window.BremDataCache?.invalidate?.(KEYS.missions);
+    }
+    clearMissionFromDriverCache(missionId);
+    return { ok: true, id: missionId };
+  }
+
   async function reloadMissions(force = false) {
     if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
       const cached = window.BremDataCache.getData(KEYS.missions);
@@ -2421,6 +2474,33 @@ const BremStorage = (function () {
         updatedAt: new Date().toISOString()
       };
       return missions.persistMission(updated);
+    },
+
+    async remove(id) {
+      const missionId = String(id || '').trim();
+      if (!missionId) throw new Error('미션 ID가 없습니다.');
+      if (!missions.getById(missionId)) throw new Error('미션을 찾을 수 없습니다.');
+      if (!isStoragePersistReady()) {
+        throw new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
+      }
+
+      if (isProductionMode()) {
+        return deleteMissionViaServer(missionId);
+      }
+
+      if (activeStorageAdapter.deleteTableRow) {
+        await activeStorageAdapter.deleteTableRow('missions', missionId);
+      }
+
+      const list = missions.getAll().filter(item => item.id !== missionId);
+      setMissionsCache(list);
+      if (list.length) {
+        window.BremDataCache?.set?.(KEYS.missions, list);
+      } else {
+        window.BremDataCache?.invalidate?.(KEYS.missions);
+      }
+      clearMissionFromDriverCache(missionId);
+      return { ok: true, id: missionId };
     },
 
     async fetchById(id) {

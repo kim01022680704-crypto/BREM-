@@ -282,6 +282,21 @@ app.post('/api/admin/missions', async (req, res) => {
   }
 });
 
+app.delete('/api/admin/missions/:missionId', async (req, res) => {
+  try {
+    const result = await missionsAdmin.deleteMission(getBearerToken(req), req.params.missionId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 삭제에 실패했습니다.' });
+  }
+});
+
 app.get('/api/rider-inquiries', async (req, res) => {
   try {
     if (useSupabaseInquiries()) {
