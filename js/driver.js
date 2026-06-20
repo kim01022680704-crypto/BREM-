@@ -703,7 +703,7 @@
     toggleProfileEditPanel(false);
   });
 
-  document.getElementById('driverProfileEditForm')?.addEventListener('submit', event => {
+  document.getElementById('driverProfileEditForm')?.addEventListener('submit', async event => {
     event.preventDefault();
     const driver = refreshCurrentDriver();
     if (!driver) return;
@@ -733,12 +733,17 @@
     const currentPassword = normalizePassword(document.getElementById('driverEditCurrentPassword').value);
     const newPassword = normalizePassword(document.getElementById('driverEditNewPassword').value);
     const confirmPassword = normalizePassword(document.getElementById('driverEditConfirmPassword').value);
-    const savedPassword = normalizePassword(driver.password);
 
     const wantsPasswordChange = Boolean(newPassword || confirmPassword || currentPassword);
     if (wantsPasswordChange) {
-      if (!currentPassword || currentPassword !== savedPassword) {
-        showToast('현재 비밀번호가 일치하지 않습니다.');
+      if (window.BremDriverUtils?.verifyDriverLoginSecret) {
+        const verify = BremDriverUtils.verifyDriverLoginSecret(driver, currentPassword);
+        if (!verify.ok) {
+          showToast(verify.reason || '현재 비밀번호가 일치하지 않습니다.');
+          return;
+        }
+      } else if (!currentPassword) {
+        showToast('현재 비밀번호를 입력하세요.');
         return;
       }
       if (!newPassword || newPassword.length < 4) {
@@ -749,14 +754,23 @@
         showToast('새 비밀번호 확인이 일치하지 않습니다.');
         return;
       }
-      changes.password = newPassword;
+      changes.currentPassword = currentPassword;
+      changes.newPassword = newPassword;
     }
 
-    BremStorage.drivers.update(driver.id, changes);
-    state.currentDriver = BremStorage.drivers.getById(driver.id);
-    toggleProfileEditPanel(false);
-    renderDriver(state.currentDriver);
-    showToast('기사 정보가 저장되었습니다.');
+    const submitBtn = event.submitter || event.target.querySelector('[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      await BremStorage.drivers.update(driver.id, changes);
+      state.currentDriver = BremStorage.drivers.getById(driver.id);
+      toggleProfileEditPanel(false);
+      renderDriver(state.currentDriver);
+      showToast('기사 정보가 저장되었습니다.');
+    } catch (error) {
+      showToast(error.message || '기사 정보 저장에 실패했습니다.');
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
   });
 
   document.getElementById('driverEditResidentNumber')?.addEventListener('input', event => {

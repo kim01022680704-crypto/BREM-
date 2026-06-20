@@ -192,6 +192,23 @@ app.get('/api/rider/me', async (req, res) => {
   }
 });
 
+app.post('/api/rider/profile', async (req, res) => {
+  try {
+    const result = await riderAuth.updateRiderProfile(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      rider: result.rider,
+      profile: result.profile
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 정보 저장에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/riders', async (req, res) => {
   try {
     const result = await ridersAdmin.listRiders(getBearerToken(req), {

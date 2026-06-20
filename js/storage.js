@@ -984,6 +984,47 @@ const BremStorage = (function () {
     return driversBackgroundSyncPromise;
   }
 
+  function isRiderSelfUpdate(id) {
+    if (!activeSupabaseProfile || activeSupabaseProfile.role !== 'rider') return false;
+    return String(activeSupabaseProfile.rider_id || '') === String(id || '');
+  }
+
+  async function persistRiderSelfViaServer(id, changes = {}) {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      throw new Error('로그인 세션이 없습니다. 다시 로그인하세요.');
+    }
+
+    const body = {};
+    if (changes.bankName !== undefined) body.bankName = changes.bankName;
+    if (changes.accountHolder !== undefined) body.accountHolder = changes.accountHolder;
+    if (changes.accountNumber !== undefined) body.accountNumber = changes.accountNumber;
+    if (changes.residentNumber !== undefined) body.residentNumber = changes.residentNumber;
+    if (changes.currentPassword !== undefined) body.currentPassword = changes.currentPassword;
+    if (changes.newPassword !== undefined) body.newPassword = changes.newPassword;
+
+    const response = await fetch('/api/rider/profile', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || '기사 정보를 저장하지 못했습니다.');
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (payload.rider && mapper?.rowToRider) {
+      mergeRiderInCache(payload.rider);
+    }
+
+    return payload;
+  }
+
   async function persistRiderViaServer(rider) {
     const postRider = () => adminRidersApi('/api/admin/riders', {
       method: 'POST',
@@ -2054,10 +2095,15 @@ const BremStorage = (function () {
 
     update(id, changes) {
       const prevList = drivers.getAll();
+      const isSelf = isRiderSelfUpdate(id);
       const nextDrivers = prevList.map(driver => {
         if (driver.id !== id) return driver;
         const merged = { ...driver, ...changes };
-        if ('password' in changes || 'residentNumber' in changes) {
+        delete merged.currentPassword;
+        delete merged.newPassword;
+        if (changes.newPassword) {
+          merged.password = String(changes.newPassword).trim();
+        } else if ('password' in changes || 'residentNumber' in changes) {
           const authFields = normalizeDriverPasswordFields(merged);
           merged.residentNumber = authFields.residentNumber;
           merged.password = authFields.password;
@@ -2074,7 +2120,10 @@ const BremStorage = (function () {
       if (isProductionMode()) {
         if (!updated) throw new Error('기사를 찾을 수 없습니다.');
         setDriversCache(nextDrivers);
-        return persistRiderViaServer(updated)
+        const persist = isSelf
+          ? persistRiderSelfViaServer(id, changes)
+          : persistRiderViaServer(updated);
+        return persist
           .then(() => {
             scheduleDataRefetch(KEYS.drivers);
             return updated;

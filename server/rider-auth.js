@@ -236,6 +236,87 @@ async function provisionRiderAuthAccount(riderRow) {
   return ensureRiderAuthAccount(supabase, riderRow, password);
 }
 
+async function updateRiderProfile(accessToken, body = {}) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const rider = me.rider;
+  const raw = rider.raw_data && typeof rider.raw_data === 'object' ? { ...rider.raw_data } : {};
+  const {
+    bankName,
+    accountHolder,
+    accountNumber,
+    residentNumber,
+    currentPassword,
+    newPassword
+  } = body || {};
+
+  const nextPassword = String(newPassword || '').trim();
+  const wantsPasswordChange = Boolean(nextPassword);
+  if (wantsPasswordChange) {
+    const verified = verifyRiderSecret(rider, currentPassword);
+    if (!verified.ok) {
+      return { ok: false, status: 400, error: '현재 비밀번호가 일치하지 않습니다.' };
+    }
+    if (nextPassword.length < 4) {
+      return { ok: false, status: 400, error: '새 비밀번호는 4자 이상 입력하세요.' };
+    }
+    raw.password = nextPassword;
+  }
+
+  const updatePayload = {
+    updated_at: new Date().toISOString(),
+    raw_data: raw
+  };
+
+  if (bankName !== undefined) {
+    updatePayload.bank_name = String(bankName || '').trim();
+    raw.bankName = updatePayload.bank_name;
+  }
+  if (accountHolder !== undefined) {
+    updatePayload.account_holder = String(accountHolder || '').trim();
+    raw.accountHolder = updatePayload.account_holder;
+  }
+  if (accountNumber !== undefined) {
+    updatePayload.account_number = String(accountNumber || '').trim();
+    raw.accountNumber = updatePayload.account_number;
+  }
+  if (residentNumber !== undefined) {
+    const digits = normalizeDigits(residentNumber);
+    updatePayload.resident_number = digits;
+    raw.residentNumber = digits;
+  }
+
+  updatePayload.raw_data = raw;
+
+  const { data: updated, error } = await supabase
+    .from('riders')
+    .update(updatePayload)
+    .eq('id', rider.id)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    return { ok: false, status: 500, error: error?.message || '기사 정보를 저장하지 못했습니다.' };
+  }
+
+  const plainPassword = readRiderSecrets(updated).password;
+  const authResult = await ensureRiderAuthAccount(supabase, updated, plainPassword);
+  if (!authResult.ok) return authResult;
+
+  return {
+    ok: true,
+    riderId: updated.id,
+    rider: updated,
+    profile: me.profile
+  };
+}
+
 async function signInRider(loginInput, password) {
   const supabase = getServiceClient();
   const authClient = getAnonAuthClient();
@@ -285,6 +366,7 @@ async function signInRider(loginInput, password) {
 module.exports = {
   signInRider,
   getRiderMe,
+  updateRiderProfile,
   provisionRiderAuthAccount,
   makeRiderLoginId
 };

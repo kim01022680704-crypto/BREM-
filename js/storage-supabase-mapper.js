@@ -68,7 +68,7 @@ window.BremSupabaseMapper = (function () {
       name: row.name,
       phone: row.phone,
       residentNumber: row.resident_number || raw.residentNumber || '',
-      password: raw.password || '',
+      password: String(raw.password ?? '').trim() || '1234',
       bankName: row.bank_name || '',
       accountHolder: row.account_holder || '',
       accountNumber: row.account_number || '',
