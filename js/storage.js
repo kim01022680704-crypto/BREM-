@@ -582,7 +582,12 @@ const BremStorage = (function () {
     }
     const refetch = () => refetchDataKey(key);
     if (activeStorageAdapter.flush) {
-      void activeStorageAdapter.flush().then(refetch).catch(refetch);
+      void activeStorageAdapter.flush().then(refetch).catch(error => {
+        console.error('[BREM] Persist failed — keeping local data, skip refetch:', key, error);
+        document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
+          detail: { key, message: error?.message || String(error) }
+        }));
+      });
     } else {
       void refetch();
     }
@@ -2215,6 +2220,18 @@ const BremStorage = (function () {
       return missions.getAll();
     },
 
+    async persistMission(mission) {
+      if (!isStoragePersistReady()) {
+        throw new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
+      }
+      if (!activeStorageAdapter.upsertMission) {
+        throw new Error('미션 저장 기능을 사용할 수 없습니다.');
+      }
+      const saved = await activeStorageAdapter.upsertMission(mission);
+      window.BremDataCache?.set?.(KEYS.missions, missions.getAll());
+      return saved;
+    },
+
     create(data) {
       const next = {
         id: createId(),
@@ -2226,15 +2243,14 @@ const BremStorage = (function () {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      missions.saveAll([next, ...missions.getAll()]);
-      return next;
+      return missions.persistMission(next);
     },
 
     update(id, changes) {
       const list = missions.getAll();
       const index = list.findIndex(item => item.id === id);
       if (index === -1) throw new Error('미션을 찾을 수 없습니다.');
-      list[index] = {
+      const updated = {
         ...list[index],
         ...changes,
         id,
@@ -2245,8 +2261,7 @@ const BremStorage = (function () {
         isActive: changes.isActive != null ? Boolean(changes.isActive) : list[index].isActive !== false,
         updatedAt: new Date().toISOString()
       };
-      missions.saveAll(list);
-      return list[index];
+      return missions.persistMission(updated);
     },
 
     async fetchById(id) {

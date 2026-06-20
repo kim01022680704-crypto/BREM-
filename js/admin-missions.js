@@ -114,8 +114,12 @@
   }
 
   async function refresh() {
-    await BremStorage.reloadDrivers?.(true).catch(() => ({}));
-    await BremStorage.ensureMissionsLoaded?.({ force: true }).catch(() => ({}));
+    try {
+      await BremStorage.reloadDrivers?.(true);
+      await BremStorage.ensureMissionsLoaded?.({ force: true });
+    } catch (error) {
+      showToast(error?.message || '미션 데이터를 불러오지 못했습니다. Supabase missions 테이블을 확인하세요.');
+    }
     renderMissionCards();
     renderDriverMissionAssignments();
     if (!state.editingId) fillMissionForm(null);
@@ -151,20 +155,35 @@
         return;
       }
 
-      try {
-        const editId = $('missionEditId').value.trim();
-        if (editId) {
-          missionsApi.update(editId, payload);
-          showToast('미션이 저장되었습니다. 선택한 기사앱에 제목이 반영됩니다.');
-        } else {
-          missionsApi.create(payload);
-          showToast('미션이 등록되었습니다.');
-        }
-        fillMissionForm(null);
-        void refresh();
-      } catch (error) {
-        showToast(error.message || '미션 저장에 실패했습니다.');
+      const editId = $('missionEditId').value.trim();
+      const submitBtn = $('missionFormSubmit');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '저장 중…';
       }
+
+      const savePromise = editId
+        ? missionsApi.update(editId, payload)
+        : missionsApi.create(payload);
+
+      void Promise.resolve(savePromise)
+        .then(() => {
+          showToast(editId
+            ? '미션이 Supabase에 저장되었습니다. 기사앱에도 반영됩니다.'
+            : '미션이 등록되었습니다.');
+          fillMissionForm(null);
+          renderMissionCards();
+          renderDriverMissionAssignments();
+        })
+        .catch(error => {
+          showToast(error?.message || '미션 저장에 실패했습니다. Supabase 연결과 missions 테이블을 확인하세요.');
+        })
+        .finally(() => {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = editId ? '미션 저장' : '미션 등록';
+          }
+        });
     });
 
     $('missionDriverRows')?.addEventListener('change', event => {

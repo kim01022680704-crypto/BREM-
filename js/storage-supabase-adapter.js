@@ -129,7 +129,7 @@ window.BremSupabaseStorageAdapter = (function () {
     async function loadMissions(options = {}) {
       if (!options.force && window.BremDataCache?.isValid(keys.missions)) {
         const cached = window.BremDataCache.getData(keys.missions);
-        if (Array.isArray(cached)) {
+        if (Array.isArray(cached) && cached.length > 0) {
           setCache(keys.missions, cached);
           loadedTableKeys.add(keys.missions);
           return cached;
@@ -146,7 +146,11 @@ window.BremSupabaseStorageAdapter = (function () {
       const value = (data || []).map(row => Mapper().rowToMission(row));
       setCache(keys.missions, value);
       loadedTableKeys.add(keys.missions);
-      window.BremDataCache?.set?.(keys.missions, value);
+      if (value.length) {
+        window.BremDataCache?.set?.(keys.missions, value);
+      } else {
+        window.BremDataCache?.invalidate?.(keys.missions);
+      }
       return value;
     }
 
@@ -405,6 +409,23 @@ window.BremSupabaseStorageAdapter = (function () {
       loadedTableKeys.add(keys.missions);
     }
 
+    async function upsertMission(mission) {
+      const row = Mapper().missionToRow(mission);
+      if (!row.id) throw new Error('미션 ID가 없습니다.');
+      const { error } = await client.from('missions').upsert(row, { onConflict: 'id' });
+      if (error) throw error;
+
+      const list = getCache(keys.missions, []);
+      const exists = list.some(item => item.id === mission.id);
+      const next = exists
+        ? list.map(item => (item.id === mission.id ? mission : item))
+        : [mission, ...list];
+      setCache(keys.missions, next);
+      loadedTableKeys.add(keys.missions);
+      window.BremDataCache?.set?.(keys.missions, next);
+      return mission;
+    }
+
     async function fetchMissionById(id) {
       const missionId = String(id || '').trim();
       if (!missionId) return null;
@@ -528,6 +549,7 @@ window.BremSupabaseStorageAdapter = (function () {
       fetchMissionById,
       deleteRider,
       deleteTableRow,
+      upsertMission,
       upsertRider,
       stage,
       enqueuePersist(key, value) {
