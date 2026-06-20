@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex,nofollow">
   <title>BREM 기사등록 관리 프로그램</title>
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=20260620p">
+  <link rel="stylesheet" href="css/style.css?v=20260620q">
 </head>
 <body>
   <div class="app index-app">
@@ -27,37 +27,34 @@
         </div>
       </aside>
 
-      <div class="index-content">
-    <header class="site-header">
-      <div class="site-header__brand">
-        <img
-          class="site-header__logo"
-          src="assets/brand/brem-logo-mark.png"
-          width="120"
-          height="86"
-          alt="BREM PLUS DELIVERY AGENCY"
-        >
-        <div>
-          <p class="eyebrow">BREM ADMIN</p>
-          <h1>BREM 기사등록 프로그램</h1>
+      <div class="index-content index-content--register">
+    <div class="register-top">
+      <header class="site-header site-header--compact">
+        <div class="site-header__brand site-header__brand--compact">
+          <p class="eyebrow eyebrow--compact">BREM ADMIN · 기사등록 프로그램</p>
+          <h1>기사 등록</h1>
+        </div>
+        <div class="header-actions header-actions--compact">
+          <span class="db-status db-status--sm db-status--pending" id="driverDbStatus" aria-live="polite">DB: 확인 중…</span>
+          <div class="summary-card summary-card--compact" aria-label="기사 현황">
+            <span class="summary-label">등록 기사</span>
+            <strong id="driverTotal">0명</strong>
+          </div>
+        </div>
+      </header>
+      <div class="register-toolbar">
+        <a class="register-toolbar-link" href="admin.html">전체 관리자 화면</a>
+        <div class="register-toolbar-actions">
+          <button type="button" class="btn ghost small header-privacy-btn" id="hideAllResidentNumbersBtn">주민번호 전체 가리기</button>
+          <button type="button" class="btn ghost small header-privacy-btn" id="unhideAllResidentNumbersBtn">주민번호 전체 해제</button>
+          <span class="header-privacy-status register-toolbar-status" id="residentNumberBulkStatus" hidden></span>
         </div>
       </div>
-      <div class="header-actions">
-        <span class="db-status db-status--pending" id="driverDbStatus" aria-live="polite">DB: 확인 중…</span>
-        <a class="admin-link" href="admin.html">전체 관리자 화면 보기</a>
-        <button type="button" class="btn ghost header-privacy-btn" id="hideAllResidentNumbersBtn">주민번호 전체 가리기</button>
-        <button type="button" class="btn ghost header-privacy-btn" id="unhideAllResidentNumbersBtn">주민번호 전체 해제</button>
-        <span class="header-privacy-status" id="residentNumberBulkStatus" hidden></span>
-        <div class="summary-card" aria-label="기사 현황">
-          <span class="summary-label">등록 기사</span>
-          <strong id="driverTotal">0명</strong>
-        </div>
-      </div>
-    </header>
+    </div>
 
-    <main class="layout layout--page" id="mainLayout">
-      <section class="panel form-panel" aria-labelledby="formTitle">
-        <div class="panel-header">
+    <main class="layout layout--page layout--register" id="mainLayout">
+      <section class="panel form-panel form-panel--register" aria-labelledby="formTitle">
+        <div class="panel-header panel-header--register">
           <div>
             <h2 id="formTitle">기사 등록</h2>
             <p id="formSubtitle">기사 기본 정보를 입력하고 저장하세요.</p>
@@ -68,12 +65,12 @@
           </div>
         </div>
 
-        <form id="driverForm" class="driver-form">
+        <form id="driverForm" class="driver-form driver-form--register">
           <input type="hidden" id="driverId">
 
           <section class="form-section">
             <h3 class="form-section-title">기본 정보</h3>
-            <div class="form-grid">
+            <div class="form-grid form-grid--aligned">
               <label class="field">
                 <span class="field-label">이름 <em>*</em></span>
                 <input type="text" id="driverName" placeholder="홍길동" required>
@@ -86,7 +83,7 @@
 
               <label class="field">
                 <span class="field-label">주민등록번호</span>
-                <div class="field-inline-actions field-privacy-row">
+                <div class="field-inline-actions field-inline-actions--stacked field-privacy-row">
                   <input type="text" id="driverResidentNumber" placeholder="920704-1850912" inputmode="numeric" maxlength="14" autocomplete="off">
                   <span class="field-privacy-status" id="residentNumberPrivacyStatus" hidden>가리기 OFF</span>
                   <button type="button" class="btn ghost small field-hide-btn" id="hideResidentNumberBtn" hidden>주민번호 가리기</button>
@@ -95,7 +92,7 @@
 
               <label class="field">
                 <span class="field-label">로그인 비밀번호 <em>*</em></span>
-                <div class="field-inline-actions">
+                <div class="field-inline-actions field-inline-actions--stacked">
                   <input type="text" id="driverPassword" placeholder="신규 등록 시 1234" autocomplete="off" spellcheck="false" required>
                   <button type="button" class="btn ghost small" id="resetDriverPasswordBtn">1234로 초기화</button>
                 </div>
@@ -123,7 +120,7 @@
 
           <section class="form-section">
             <h3 class="form-section-title">계좌 정보</h3>
-            <div class="form-grid">
+            <div class="form-grid form-grid--aligned">
               <label class="field">
                 <span class="field-label">은행명</span>
                 <input type="text" id="driverBankName" placeholder="예: 국민은행" autocomplete="off">
@@ -136,7 +133,7 @@
 
               <label class="field field--full">
                 <span class="field-label">계좌번호</span>
-                <div class="field-inline-actions field-privacy-row">
+                <div class="field-inline-actions field-inline-actions--stacked field-privacy-row">
                   <input type="text" id="driverAccountNumber" placeholder="은행 계좌번호 (선택)" inputmode="numeric" autocomplete="off">
                   <span class="field-privacy-status" id="accountNumberPrivacyStatus" hidden>가리기 OFF</span>
                   <button type="button" class="btn ghost small field-hide-btn" id="hideAccountNumberBtn" hidden>계좌번호 가리기</button>
@@ -171,7 +168,7 @@
 
           <section class="form-section">
             <h3 class="form-section-title">장기근속 이벤트</h3>
-            <div class="form-grid">
+            <div class="form-grid form-grid--aligned">
               <label class="field">
                 <span class="field-label">이벤트 아이템</span>
                 <select id="driverEventItem">
