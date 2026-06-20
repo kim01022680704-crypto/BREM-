@@ -170,7 +170,13 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { ok: false, message: 'Not found' });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] Baemin session local server: http://127.0.0.1:${PORT}`);
   console.log('ERP [배민 세션 갱신] 버튼을 사용하거나 /start URL을 열어주세요.');
+  const playwright = await loadPlaywright();
+  if (!playwright) {
+    console.warn('[BREM] playwright 미설치 — 세션 갱신 전에 다음을 실행하세요:');
+    console.warn('  npm install playwright');
+    console.warn('  npx playwright install chromium');
+  }
 });
