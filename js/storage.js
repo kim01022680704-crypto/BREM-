@@ -4497,6 +4497,15 @@ const BremStorage = (function () {
       }
     }
 
+    if (!normalized.includes('baemin-delivery-status')) {
+      const callsIndex = normalized.indexOf('calls');
+      if (callsIndex >= 0) {
+        normalized.splice(callsIndex + 1, 0, 'baemin-delivery-status');
+      } else {
+        normalized.push('baemin-delivery-status');
+      }
+    }
+
     if (isExplicitList) {
       return normalized;
     }
@@ -4533,15 +4542,6 @@ const BremStorage = (function () {
         normalized.splice(leaseIndex, 1);
         const nextCallsIndex = normalized.indexOf('calls');
         normalized.splice(nextCallsIndex, 0, 'lease-management');
-      }
-    }
-
-    if (!normalized.includes('baemin-delivery-status')) {
-      const callsIndex = normalized.indexOf('calls');
-      if (callsIndex >= 0) {
-        normalized.splice(callsIndex + 1, 0, 'baemin-delivery-status');
-      } else {
-        normalized.push('baemin-delivery-status');
       }
     }
 
@@ -4599,9 +4599,12 @@ const BremStorage = (function () {
     const menus = normalizeAdminMenus(account.menus);
     const editableMenus = normalizeAdminEditableMenus(menus, account.editableMenus ?? menus);
     const nextMenus = menus.includes('admin-account') ? menus : [...menus, 'admin-account'];
-    const nextEditable = editableMenus.includes('admin-account')
+    let nextEditable = editableMenus.includes('admin-account')
       ? editableMenus
       : [...editableMenus, 'admin-account'];
+    if (nextMenus.includes('baemin-delivery-status') && !nextEditable.includes('baemin-delivery-status')) {
+      nextEditable = [...nextEditable, 'baemin-delivery-status'];
+    }
 
     return { ...account, menus: nextMenus, editableMenus: nextEditable };
   }
