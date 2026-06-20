@@ -532,6 +532,67 @@
       </section>
 
             <section class="section" id="rejections">
+        <article class="card rejection-bulk-card" data-rejection-bulk-combined>
+          <div class="card-header rejection-card-header">
+            <div>
+              <h2>거절율·수락율 엑셀 일괄등록 (쿠팡+배민)</h2>
+              <p class="form-help">매일 업로드용 통합 양식입니다. 1행 헤더 유지, 2행부터 입력 후 업로드하세요.</p>
+            </div>
+            <button type="button" class="primary-btn" data-rejection-bulk-combined-template>일괄등록 양식 다운로드</button>
+          </div>
+          <p class="rejection-bulk-week-note" data-rejection-bulk-combined-week-note>적용주: 쿠팡·배민 탭 상단 기준일을 사용합니다.</p>
+          <div class="bulk-actions">
+            <label class="bulk-file-field">
+              <span class="bulk-file-label">엑셀 파일 선택 (.xlsx)</span>
+              <input type="file" data-rejection-bulk-combined-file accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="button" class="primary-btn" data-rejection-bulk-combined-apply disabled>일괄 등록</button>
+            <button type="button" class="small-btn" data-rejection-bulk-combined-clear>초기화</button>
+          </div>
+          <div class="bulk-guide-wrap">
+            <h3>양식 열 구성</h3>
+            <div class="table-wrap">
+              <table class="bulk-guide-table">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>쿠팡아이디</th>
+                    <th>거절율(%)</th>
+                    <th>이름</th>
+                    <th>배민아이디</th>
+                    <th>수락율(%)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>홍길동</td>
+                    <td>홍길동5678</td>
+                    <td>10</td>
+                    <td>홍길동</td>
+                    <td>bm_sample</td>
+                    <td>90</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="bulk-preview-wrap" data-rejection-bulk-combined-preview hidden>
+            <p class="bulk-preview-summary">
+              전체 <strong data-rejection-bulk-combined-total>0</strong>행 ·
+              등록 가능 <strong data-rejection-bulk-combined-valid>0</strong>건 ·
+              오류 <strong data-rejection-bulk-combined-error>0</strong>건
+            </p>
+            <div class="table-wrap">
+              <table class="bulk-preview-table">
+                <thead>
+                  <tr data-rejection-bulk-combined-preview-head></tr>
+                </thead>
+                <tbody data-rejection-bulk-combined-preview-body></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
         <div class="promotion-platform-tabs admin-section-tabs" role="tablist">
           <button type="button" class="promotion-tab active" data-admin-platform-tab="rejections" data-platform="coupang">쿠팡</button>
           <button type="button" class="promotion-tab" data-admin-platform-tab="rejections" data-platform="baemin">배민</button>
@@ -561,6 +622,40 @@
             <button class="primary-btn" type="submit">거절율 저장</button>
           </form>
           <p class="form-help">쿠팡 주간 거절율입니다. 수~화 기준으로 입력할 때마다 해당 주의 최신 값으로 저장됩니다.</p>
+        </article>
+
+        <article class="card rejection-bulk-card" data-rejection-bulk="coupang">
+          <div class="card-header">
+            <div>
+              <h2>쿠팡 거절율 엑셀 일괄등록</h2>
+              <p class="form-help">이름·쿠팡아이디·거절율 3열 또는 쿠팡아이디·거절율 2열 양식</p>
+            </div>
+            <button type="button" class="primary-btn" data-rejection-bulk-template>양식 다운로드</button>
+          </div>
+          <p class="rejection-bulk-week-note" data-rejection-bulk-week-note>상단에서 적용주(수요일)를 먼저 선택하세요.</p>
+          <div class="bulk-actions">
+            <label class="bulk-file-field">
+              <span class="bulk-file-label">엑셀 파일 선택 (.xlsx)</span>
+              <input type="file" data-rejection-bulk-file accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="button" class="primary-btn" data-rejection-bulk-apply disabled>일괄 등록</button>
+            <button type="button" class="small-btn" data-rejection-bulk-clear>초기화</button>
+          </div>
+          <div class="bulk-preview-wrap" data-rejection-bulk-preview hidden>
+            <p class="bulk-preview-summary">
+              전체 <strong data-rejection-bulk-total>0</strong>건 ·
+              등록 가능 <strong data-rejection-bulk-valid>0</strong>건 ·
+              오류 <strong data-rejection-bulk-error>0</strong>건
+            </p>
+            <div class="table-wrap">
+              <table class="bulk-preview-table">
+                <thead>
+                  <tr data-rejection-bulk-preview-head></tr>
+                </thead>
+                <tbody data-rejection-bulk-preview-body></tbody>
+              </table>
+            </div>
+          </div>
         </article>
 
         <article class="card">
@@ -607,6 +702,40 @@
             <button class="primary-btn" type="submit">수락율 저장</button>
           </form>
           <p class="form-help">배민 주간 수락율입니다. 수~화 기준으로 입력할 때마다 해당 주의 최신 값으로 저장됩니다.</p>
+        </article>
+
+        <article class="card rejection-bulk-card" data-rejection-bulk="baemin">
+          <div class="card-header">
+            <div>
+              <h2>배민 수락율 엑셀 일괄등록</h2>
+              <p class="form-help">이름·배민아이디·수락율 3열 또는 배민아이디·수락율 2열 양식</p>
+            </div>
+            <button type="button" class="primary-btn" data-rejection-bulk-template>양식 다운로드</button>
+          </div>
+          <p class="rejection-bulk-week-note" data-rejection-bulk-week-note>상단에서 적용주(수요일)를 먼저 선택하세요.</p>
+          <div class="bulk-actions">
+            <label class="bulk-file-field">
+              <span class="bulk-file-label">엑셀 파일 선택 (.xlsx)</span>
+              <input type="file" data-rejection-bulk-file accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </label>
+            <button type="button" class="primary-btn" data-rejection-bulk-apply disabled>일괄 등록</button>
+            <button type="button" class="small-btn" data-rejection-bulk-clear>초기화</button>
+          </div>
+          <div class="bulk-preview-wrap" data-rejection-bulk-preview hidden>
+            <p class="bulk-preview-summary">
+              전체 <strong data-rejection-bulk-total>0</strong>건 ·
+              등록 가능 <strong data-rejection-bulk-valid>0</strong>건 ·
+              오류 <strong data-rejection-bulk-error>0</strong>건
+            </p>
+            <div class="table-wrap">
+              <table class="bulk-preview-table">
+                <thead>
+                  <tr data-rejection-bulk-preview-head></tr>
+                </thead>
+                <tbody data-rejection-bulk-preview-body></tbody>
+              </table>
+            </div>
+          </div>
         </article>
 
         <article class="card">
@@ -2579,7 +2708,7 @@
   <script src="js/date-picker.js"></script>
   <script src="js/settlement-formats.js"></script>
   <script src="js/settlement-client.js"></script>
-  <script src="js/rejection-bulk.js"></script>
+  <script src="js/rejection-bulk.js?v=20260620"></script>
   <script src="js/promotion-conditions.js"></script>
   <script src="js/promotion-engine.js"></script>
   <script src="js/promotion-admin.js"></script>
