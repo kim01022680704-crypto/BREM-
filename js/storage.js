@@ -462,7 +462,7 @@ const BremStorage = (function () {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const serverMessage = payload.error || `기사 API 요청에 실패했습니다. (${response.status})`;
+        const serverMessage = payload.message || payload.error || `기사 API 요청에 실패했습니다. (${response.status})`;
         if (response.status === 401) {
           return {
             ok: false,
@@ -539,6 +539,108 @@ const BremStorage = (function () {
     storageAdapter.write(KEYS.drivers, list);
   }
 
+  function setMissionsCache(list) {
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(KEYS.missions, list);
+      return;
+    }
+    storageAdapter.write(KEYS.missions, list);
+  }
+
+  async function syncMissionsFromServer() {
+    if (!isProductionMode()) {
+      return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
+    }
+
+    const result = await adminRidersApi('/api/admin/missions');
+    if (!result.ok) {
+      return {
+        ok: false,
+        status: result.status,
+        message: result.message || result.error || '미션 목록을 불러오지 못했습니다.'
+      };
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToMission) {
+      return { ok: false, message: '미션 데이터 변환 모듈이 없습니다.' };
+    }
+
+    const missionRows = (result.missions || []).map(row => mapper.rowToMission(row));
+    setMissionsCache(missionRows);
+    if (missionRows.length) {
+      window.BremDataCache?.set?.(KEYS.missions, missionRows);
+    } else {
+      window.BremDataCache?.invalidate?.(KEYS.missions);
+    }
+    return { ok: true, count: missionRows.length };
+  }
+
+  async function persistMissionViaServer(mission) {
+    const postMission = () => adminRidersApi('/api/admin/missions', {
+      method: 'POST',
+      body: JSON.stringify({ mission })
+    });
+
+    let result = await postMission();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postMission();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '미션 저장에 실패했습니다.');
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToMission || !result.mission) {
+      throw new Error('저장된 미션을 확인하지 못했습니다.');
+    }
+
+    const saved = mapper.rowToMission(result.mission);
+    const list = missions.getAll();
+    const exists = list.some(item => item.id === saved.id);
+    const next = exists
+      ? list.map(item => (item.id === saved.id ? saved : item))
+      : [saved, ...list];
+    setMissionsCache(next);
+    window.BremDataCache?.set?.(KEYS.missions, next);
+    return saved;
+  }
+
+  async function reloadMissions(force = false) {
+    if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
+      const cached = window.BremDataCache.getData(KEYS.missions);
+      if (Array.isArray(cached) && cached.length > 0) {
+        setMissionsCache(cached);
+        return { ok: true, cached: true };
+      }
+    }
+
+    if (isProductionMode()) {
+      return syncMissionsFromServer();
+    }
+
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.ensureKeysLoaded) {
+      return activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force });
+    }
+    return { ok: true };
+  }
+
+  async function getMissionsTableStatus() {
+    if (!isProductionMode()) {
+      return { ok: true, tableExists: true };
+    }
+    const result = await adminRidersApi('/api/admin/missions/status');
+    if (!result.ok) {
+      return { ok: false, message: result.message || result.error || '미션 테이블 상태를 확인하지 못했습니다.' };
+    }
+    return result;
+  }
+
   function getHydrateOptions() {
     return {
       skipKeys: [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
@@ -598,8 +700,8 @@ const BremStorage = (function () {
       if (key === KEYS.drivers) {
         return reloadDrivers(true);
       }
-      if (key === KEYS.missions && activeStorageAdapter.ensureKeysLoaded) {
-        return activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force: true });
+      if (key === KEYS.missions) {
+        return reloadMissions(true);
       }
       if (TABLE_STORAGE_KEYS.has(key) && activeStorageAdapter.ensureKeysLoaded) {
         return activeStorageAdapter.ensureKeysLoaded([key], { force: true });
@@ -650,12 +752,18 @@ const BremStorage = (function () {
     const sectionKeys = ADMIN_SECTION_KEYS[sectionId] || [];
     const tableKeys = sectionKeys.filter(key => TABLE_STORAGE_KEYS.has(key));
     const needsDrivers = sectionKeys.includes(KEYS.drivers);
+    const needsMissions = sectionKeys.includes(KEYS.missions);
     const tasks = [];
 
-    if (tableKeys.length && activeStorageAdapter.ensureKeysLoaded) {
-      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, {
+    const tableKeysWithoutMissions = tableKeys.filter(key => key !== KEYS.missions);
+    if (tableKeysWithoutMissions.length && activeStorageAdapter.ensureKeysLoaded) {
+      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutMissions, {
         force: Boolean(options.force)
       }));
+    }
+
+    if (needsMissions) {
+      tasks.push(reloadMissions(Boolean(options.force)));
     }
 
     if (needsDrivers) {
@@ -2224,6 +2332,9 @@ const BremStorage = (function () {
       if (!isStoragePersistReady()) {
         throw new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
       }
+      if (isProductionMode()) {
+        return persistMissionViaServer(mission);
+      }
       if (!activeStorageAdapter.upsertMission) {
         throw new Error('미션 저장 기능을 사용할 수 없습니다.');
       }
@@ -2275,10 +2386,10 @@ const BremStorage = (function () {
   };
 
   async function ensureMissionsLoaded(options = {}) {
-    if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.ensureKeysLoaded) {
+    if (activeStorageAdapter.type !== 'supabase') {
       return { ok: true, cached: true };
     }
-    return activeStorageAdapter.ensureKeysLoaded([KEYS.missions], options);
+    return reloadMissions(Boolean(options.force));
   }
 
   const INQUIRY_TYPES = Object.freeze([
@@ -5497,6 +5608,8 @@ const BremStorage = (function () {
     useLocalStorageAdapter,
     flushStorage: flushActiveStorage,
     reloadDrivers,
+    reloadMissions,
+    getMissionsTableStatus,
     syncAllDriversPagesInBackground,
     verifyRiderPersisted,
     mergeRiderInCache,

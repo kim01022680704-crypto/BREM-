@@ -90,9 +90,29 @@ set
   end
 where coalesce(selected_mission_id, '') <> '';
 
+-- brem_is_admin() — RLS용 (profiles 테이블 필요)
+create or replace function public.brem_current_role()
+returns text
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select role from public.profiles where user_id = auth.uid() and active = true
+$$;
+
+create or replace function public.brem_is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select coalesce(public.brem_current_role() = 'admin', false)
+$$;
+
 -- ---------------------------------------------------------------------------
 -- RLS (관리자 CRUD + 기사/라이더 read)
--- brem_is_admin() 은 schema.sql 에서 생성되어 있어야 합니다.
 -- ---------------------------------------------------------------------------
 alter table public.missions enable row level security;
 

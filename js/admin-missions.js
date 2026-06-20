@@ -2,7 +2,7 @@
   const missionsApi = BremStorage.missions;
   if (!missionsApi) return;
 
-  const state = { editingId: '' };
+  const state = { editingId: '', tableReady: null };
 
   function $(id) {
     return document.getElementById(id);
@@ -18,6 +18,27 @@
 
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
+  }
+
+  function formatMissionError(error) {
+    const message = String(error?.message || error || '');
+    if (/could not find the table.*missions|relation.*missions.*does not exist|TABLE_MISSING/i.test(message)) {
+      return 'public.missions 테이블이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 전체를 실행하세요.';
+    }
+    return message || '미션 데이터를 불러오지 못했습니다.';
+  }
+
+  async function updateSetupBanner() {
+    const banner = $('missionSetupBanner');
+    if (!banner || !BremStorage.getMissionsTableStatus) return;
+
+    try {
+      const status = await BremStorage.getMissionsTableStatus();
+      state.tableReady = status.tableExists === true;
+      banner.hidden = state.tableReady;
+    } catch {
+      banner.hidden = false;
+    }
   }
 
   function missionOptions(selectedId = '') {
@@ -59,7 +80,7 @@
           <button type="button" class="small-btn" data-edit-mission="${escapeHtml(mission.id)}">수정</button>
         </div>
       </article>
-    `).join('') || '<p class="empty-state">등록된 미션이 없습니다.</p>';
+    `).join('') || '<p class="empty-state">등록된 미션이 없습니다. SQL 마이그레이션 후 기본 미션이 표시됩니다.</p>';
   }
 
   function fillMissionForm(mission) {
@@ -113,18 +134,17 @@
     }).join('');
   }
 
-  function formatMissionError(error) {
-    const message = String(error?.message || error || '');
-    if (/could not find the table.*missions|relation.*missions.*does not exist/i.test(message)) {
-      return 'public.missions 테이블이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 전체를 실행하세요.';
-    }
-    return message || '미션 데이터를 불러오지 못했습니다.';
-  }
-
   async function refresh() {
+    await updateSetupBanner();
+    if (state.tableReady === false) {
+      renderMissionCards();
+      renderDriverMissionAssignments();
+      return;
+    }
+
     try {
       await BremStorage.reloadDrivers?.(true);
-      await BremStorage.ensureMissionsLoaded?.({ force: true });
+      await BremStorage.reloadMissions?.(true);
     } catch (error) {
       showToast(formatMissionError(error));
     }
@@ -136,6 +156,10 @@
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
+
+    $('missionSetupRecheckBtn')?.addEventListener('click', () => {
+      void refresh();
+    });
 
     $('missionCatalogList')?.addEventListener('click', event => {
       const button = event.target.closest('[data-edit-mission]');
@@ -150,6 +174,11 @@
 
     $('riderMissionMgmtForm')?.addEventListener('submit', event => {
       event.preventDefault();
+      if (state.tableReady === false) {
+        showToast('먼저 Supabase SQL Editor에서 missions_migration.sql 을 실행하세요.');
+        return;
+      }
+
       const payload = {
         title: $('missionTitle').value.trim(),
         description: $('missionDescription').value.trim(),

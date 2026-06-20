@@ -11,6 +11,7 @@ const adminBootstrap = require('./admin-bootstrap');
 const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
+const missionsAdmin = require('./missions-admin');
 const riderAuth = require('./rider-auth');
 const { getPublicConfig } = require('./public-config');
 const app = express();
@@ -236,6 +237,48 @@ app.delete('/api/admin/riders/:riderId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 삭제에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/missions/status', async (req, res) => {
+  try {
+    const result = await missionsAdmin.getMissionsStatus(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 테이블 상태를 확인하지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/missions', async (req, res) => {
+  try {
+    const result = await missionsAdmin.listMissions(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json({ ok: true, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/missions', async (req, res) => {
+  try {
+    const result = await missionsAdmin.upsertMission(getBearerToken(req), req.body?.mission || req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 저장에 실패했습니다.' });
   }
 });
 

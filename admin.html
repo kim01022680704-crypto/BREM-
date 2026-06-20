@@ -995,6 +995,17 @@
       </section>
 
       <section class="section" id="mission-management">
+        <article class="card mission-setup-banner-card" id="missionSetupBanner" hidden>
+          <p class="mission-setup-banner" role="alert">
+            <strong>미션 DB 설정 필요:</strong> Supabase에 <code>public.missions</code> 테이블이 없습니다.
+            Supabase Dashboard → SQL Editor에서
+            <strong>supabase/missions_migration.sql</strong> 파일 내용 전체를 붙여넣고 Run 하세요.
+            실행 후 Table Editor에서 <code>missions</code> 테이블이 보이면 이 페이지를 새로고침하세요.
+          </p>
+          <div class="form-actions">
+            <button type="button" class="small-btn" id="missionSetupRecheckBtn">다시 확인</button>
+          </div>
+        </article>
         <article class="card">
           <div class="card-header">
             <h2>미션 관리</h2>
@@ -2478,7 +2489,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js"></script>
-  <script src="js/storage.js?v=20260620j"></script>
+  <script src="js/storage.js?v=20260620k"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2497,7 +2508,7 @@
   <script src="js/admin-schedule.js"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-missions.js?v=20260620k"></script>
+  <script src="js/admin-missions.js?v=20260620l"></script>
   <script src="js/admin.js?v=20260620g"></script>
 </body>
 </html>
