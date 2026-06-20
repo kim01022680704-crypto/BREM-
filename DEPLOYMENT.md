@@ -34,8 +34,11 @@ SQL 순서: `schema.sql` → `rider_inquiries_migration.sql` → `missions_migra
 
 ```sql
 -- supabase/rider_inquiries_migration.sql 전체 실행
--- supabase/missions_migration.sql 전체 실행 (미션 관리 + 기사 selected_mission_id)
+-- supabase/missions_migration.sql 전체 실행 (필수 — 미션 관리 / public.missions 테이블)
 ```
+
+**미션 관리 오류** (`Could not find the table 'public.missions'`):
+Supabase Dashboard → SQL Editor → [`supabase/missions_migration.sql`](missions_migration.sql) **전체 복사 후 Run** → Table Editor에서 `missions` 테이블 확인
 
 필수 RLS:
 - `anon` → INSERT만 허용

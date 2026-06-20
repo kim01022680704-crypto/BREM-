@@ -381,6 +381,27 @@ create trigger trg_brem_missions_updated_at
 before update on public.missions
 for each row execute function public.brem_set_updated_at();
 
+-- 기본 미션 seed (테이블이 비어 있을 때만)
+insert into public.missions (id, title, description, type, conditions, is_active)
+select
+  'brem_mission_count_140',
+  '140건 1,500원 미션',
+  '주간 140건 이상 달성 시 건당 1,500원 리워드가 지급되는 미션입니다.',
+  'count_reward',
+  '주간 140건 이상 콜수 달성 · 쿠팡·배민 합산 기준',
+  true
+where not exists (select 1 from public.missions where id = 'brem_mission_count_140');
+
+insert into public.missions (id, title, description, type, conditions, is_active)
+select
+  'brem_mission_unit_guarantee_bike',
+  '단가보장 + 오토바이 미션',
+  '단가보장 프로그램과 오토바이 리스·렌탈 연계 혜택이 적용되는 미션입니다.',
+  'unit_guarantee_motorcycle',
+  '단가보장 조건 충족 · 오토바이 리스/렌탈 이용 기사',
+  true
+where not exists (select 1 from public.missions where id = 'brem_mission_unit_guarantee_bike');
+
 -- ---------------------------------------------------------------------------
 -- settings: 관리자 설정 + 나머지 localStorage 백업 데이터
 -- 예: 관리자 계정, 콜수, 리스, 수익관리, 프로모션 공통설정 등
@@ -595,11 +616,15 @@ on public.missions for select to authenticated
 using (
   public.brem_is_admin()
   or is_active = true
-  or id = (
-    select r.selected_mission_id
+  or exists (
+    select 1
     from public.riders r
     where r.auth_user_id = auth.uid()
-    limit 1
+      and (
+        r.selected_mission_id = missions.id
+        or r.selected_mission_id_baemin = missions.id
+        or r.selected_mission_id_coupang = missions.id
+      )
   )
 );
 

@@ -113,12 +113,20 @@
     }).join('');
   }
 
+  function formatMissionError(error) {
+    const message = String(error?.message || error || '');
+    if (/could not find the table.*missions|relation.*missions.*does not exist/i.test(message)) {
+      return 'public.missions 테이블이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 전체를 실행하세요.';
+    }
+    return message || '미션 데이터를 불러오지 못했습니다.';
+  }
+
   async function refresh() {
     try {
       await BremStorage.reloadDrivers?.(true);
       await BremStorage.ensureMissionsLoaded?.({ force: true });
     } catch (error) {
-      showToast(error?.message || '미션 데이터를 불러오지 못했습니다. Supabase missions 테이블을 확인하세요.');
+      showToast(formatMissionError(error));
     }
     renderMissionCards();
     renderDriverMissionAssignments();
@@ -176,7 +184,7 @@
           renderDriverMissionAssignments();
         })
         .catch(error => {
-          showToast(error?.message || '미션 저장에 실패했습니다. Supabase 연결과 missions 테이블을 확인하세요.');
+          showToast(formatMissionError(error) || '미션 저장에 실패했습니다.');
         })
         .finally(() => {
           if (submitBtn) {

@@ -1,6 +1,22 @@
--- BREM missions table + rider mission assignment
--- Supabase SQL Editor에서 실행하세요.
+-- =============================================================================
+-- BREM missions 테이블 생성 (운영 Supabase SQL Editor에서 1회 실행)
+-- 오류: "Could not find the table 'public.missions' in the schema cache"
+-- → 이 파일 전체를 복사해 SQL Editor에 붙여넣고 Run
+-- =============================================================================
 
+-- updated_at 트리거 함수 (schema.sql 미실행 환경 대비)
+create or replace function public.brem_set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+-- ---------------------------------------------------------------------------
+-- missions: 관리자 미션 관리 → Supabase 영구 저장
+-- riders.selected_mission_id(_baemin/_coupang) 로 기사별 연결
+-- ---------------------------------------------------------------------------
 create table if not exists public.missions (
   id text primary key,
   title text not null default '',
@@ -22,18 +38,25 @@ alter table public.missions add column if not exists raw_data jsonb not null def
 alter table public.missions add column if not exists created_at timestamptz not null default now();
 alter table public.missions add column if not exists updated_at timestamptz not null default now();
 
+-- riders 미션 연결 컬럼 (플랫폼별 + 레거시 단일)
 alter table public.riders add column if not exists selected_mission_id text not null default '';
+alter table public.riders add column if not exists selected_mission_id_baemin text not null default '';
+alter table public.riders add column if not exists selected_mission_id_coupang text not null default '';
 
 create index if not exists idx_brem_missions_active on public.missions (is_active);
 create index if not exists idx_brem_missions_created_at on public.missions (created_at desc);
 create index if not exists idx_brem_riders_selected_mission on public.riders (selected_mission_id);
+create index if not exists idx_brem_riders_mission_baemin on public.riders (selected_mission_id_baemin);
+create index if not exists idx_brem_riders_mission_coupang on public.riders (selected_mission_id_coupang);
 
 drop trigger if exists trg_brem_missions_updated_at on public.missions;
 create trigger trg_brem_missions_updated_at
 before update on public.missions
 for each row execute function public.brem_set_updated_at();
 
--- 기본 미션 2개 (없을 때만)
+-- ---------------------------------------------------------------------------
+-- 기본 미션 seed (DB가 비어 있을 때만 — 기존 수정값 덮어쓰지 않음)
+-- ---------------------------------------------------------------------------
 insert into public.missions (id, title, description, type, conditions, is_active)
 select
   'brem_mission_count_140',
@@ -54,11 +77,23 @@ select
   true
 where not exists (select 1 from public.missions where id = 'brem_mission_unit_guarantee_bike');
 
--- 기존 기사 기본 미션 연결
+-- 기존 단일 미션 값 → 플랫폼별 컬럼 복사 (1회, 빈 값만)
 update public.riders
-set selected_mission_id = 'brem_mission_count_140'
-where coalesce(selected_mission_id, '') = '';
+set
+  selected_mission_id_baemin = case
+    when coalesce(selected_mission_id_baemin, '') = '' then selected_mission_id
+    else selected_mission_id_baemin
+  end,
+  selected_mission_id_coupang = case
+    when coalesce(selected_mission_id_coupang, '') = '' then selected_mission_id
+    else selected_mission_id_coupang
+  end
+where coalesce(selected_mission_id, '') <> '';
 
+-- ---------------------------------------------------------------------------
+-- RLS (관리자 CRUD + 기사/라이더 read)
+-- brem_is_admin() 은 schema.sql 에서 생성되어 있어야 합니다.
+-- ---------------------------------------------------------------------------
 alter table public.missions enable row level security;
 
 drop policy if exists "brem_missions_admin_all" on public.missions;
@@ -73,12 +108,20 @@ on public.missions for select to authenticated
 using (
   public.brem_is_admin()
   or is_active = true
-  or id = (
-    select r.selected_mission_id
+  or exists (
+    select 1
     from public.riders r
     where r.auth_user_id = auth.uid()
-    limit 1
+      and (
+        r.selected_mission_id = missions.id
+        or r.selected_mission_id_baemin = missions.id
+        or r.selected_mission_id_coupang = missions.id
+      )
   )
 );
 
+-- PostgREST / Supabase API 스키마 캐시 새로고침 (필수)
 notify pgrst, 'reload schema';
+
+-- 확인용 (실행 후 Table Editor에서 missions 2행 이상 보이면 성공)
+-- select id, title, is_active from public.missions order by created_at;
