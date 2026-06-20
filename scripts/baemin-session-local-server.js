@@ -14,9 +14,15 @@ const { URL } = require('url');
 const PORT = Number(process.env.BAEMIN_SESSION_LOCAL_PORT || 3939);
 const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
-const DELIVERY_STATUS_PATH = '/delivery-status';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 3000;
+
+/** 로그인 완료로 인정하는 deliverycenter 경로 */
+const LOGGED_IN_PATH_HINTS = [
+  '/delivery-status',
+  '/delivery/history',
+  '/delivery/'
+];
 
 let activeJob = null;
 let activeContext = null;
@@ -98,47 +104,115 @@ function isLoginLikeUrl(url) {
   return /login|signin|sign-in|auth|oauth|member\.baemin|bizmember|passport/.test(value);
 }
 
-function isOnDeliveryStatusPage(url) {
+function isOnDeliveryHistoryPage(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.includes('deliverycenter.baemin.com')
+      && parsed.pathname.includes('/delivery/history');
+  } catch {
+    return false;
+  }
+}
+
+function isLoggedInDeliveryPage(url) {
   try {
     const parsed = new URL(url);
     if (!parsed.hostname.includes('deliverycenter.baemin.com')) return false;
     if (isLoginLikeUrl(url)) return false;
-    return parsed.pathname.includes('delivery-status')
-      || parsed.pathname === '/'
+
+    return LOGGED_IN_PATH_HINTS.some(hint => parsed.pathname.includes(hint))
       || parsed.pathname.startsWith('/delivery');
   } catch {
     return false;
   }
 }
 
-async function verifyCookieWorks(cookieHeader) {
-  try {
-    const response = await fetch(`${BAEMIN_ORIGIN}${DELIVERY_STATUS_PATH}?page=0&size=1`, {
-      headers: {
-        Accept: 'application/json',
-        Cookie: cookieHeader,
-        'User-Agent': 'BREM-Baemin-Session/1.0'
-      },
-      redirect: 'manual'
-    });
+function isValidBaeminApiJson(json) {
+  if (!json || typeof json !== 'object') return false;
+  if (Array.isArray(json.data)) return true;
+  if (Array.isArray(json.content)) return true;
+  if (Number.isFinite(json.totalPage)) return true;
+  if (Number.isFinite(json.totalElements)) return true;
+  if (Number.isFinite(json.total)) return true;
+  return false;
+}
 
-    if (response.status === 401 || response.status === 403) {
-      return { ok: false, reason: `HTTP ${response.status} (세션 없음 또는 만료)` };
-    }
+async function fetchBaeminApi(apiPath, cookieHeader) {
+  const response = await fetch(`${BAEMIN_ORIGIN}${apiPath}`, {
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      Cookie: cookieHeader,
+      'User-Agent': 'BREM-Baemin-Session/1.0',
+      Referer: `${BAEMIN_ORIGIN}/`
+    },
+    redirect: 'manual'
+  });
 
-    const text = await response.text();
-    try {
-      const json = JSON.parse(text);
-      const valid = Array.isArray(json.data) || Number.isFinite(json.totalPage);
-      return valid
-        ? { ok: true, reason: 'delivery-status API 응답 정상' }
-        : { ok: false, reason: 'delivery-status JSON 형식이 예상과 다릅니다' };
-    } catch {
-      return { ok: false, reason: `JSON 파싱 실패 (HTTP ${response.status})` };
-    }
-  } catch (error) {
-    return { ok: false, reason: error.message || 'delivery-status API 호출 실패' };
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false, reason: `HTTP ${response.status} (세션 없음 또는 만료)` };
   }
+
+  const text = await response.text();
+  if (text.trim().startsWith('<')) {
+    return { ok: false, reason: `HTML 응답 (HTTP ${response.status}) — 로그인 페이지로 리다이렉트된 것으로 보입니다` };
+  }
+
+  try {
+    const json = JSON.parse(text);
+    return isValidBaeminApiJson(json)
+      ? { ok: true, reason: `JSON 응답 정상 (HTTP ${response.status})` }
+      : { ok: false, reason: `JSON 형식이 예상과 다릅니다 (HTTP ${response.status})` };
+  } catch {
+    return { ok: false, reason: `JSON 파싱 실패 (HTTP ${response.status})` };
+  }
+}
+
+async function verifySessionCookie(cookieHeader, pageUrl) {
+  const attempts = [];
+
+  if (isOnDeliveryHistoryPage(pageUrl)) {
+    attempts.push({
+      label: 'delivery/history API',
+      path: '/delivery/history?page=0&size=1'
+    });
+  }
+
+  attempts.push({
+    label: 'delivery-status API',
+    path: '/delivery-status?page=0&size=1'
+  });
+
+  let lastReason = '';
+  for (const attempt of attempts) {
+    const result = await fetchBaeminApi(attempt.path, cookieHeader);
+    lastReason = `${attempt.label}: ${result.reason}`;
+    if (result.ok) {
+      return { ok: true, reason: lastReason, via: attempt.label };
+    }
+  }
+
+  if (isOnDeliveryHistoryPage(pageUrl) && cookieHeader) {
+    return {
+      ok: true,
+      reason: 'delivery/history 페이지 로그인 확인 (브라우저 페이지 진입)',
+      via: 'delivery/history page'
+    };
+  }
+
+  if (isLoggedInDeliveryPage(pageUrl) && cookieHeader) {
+    return {
+      ok: true,
+      reason: '배민Biz 배달 페이지 로그인 확인 (브라우저 페이지 진입)',
+      via: 'delivery page'
+    };
+  }
+
+  return { ok: false, reason: lastReason || '쿠키 검증 실패' };
+}
+
+async function extractBaeminCookies(context) {
+  const cookies = await context.cookies();
+  return cookiesToHeader(cookies);
 }
 
 async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
@@ -183,15 +257,24 @@ async function showBrowserError(context, message) {
       banner.textContent = `[BREM] ${text}`;
     }, message);
   } catch {
-    // 브라우저 탭이 로그인 페이지 등 evaluate 불가 페이지일 수 있음
+    // evaluate 불가 페이지
   }
 }
 
 function logJob(message, extra = {}) {
   const parts = [`[BREM] ${message}`];
-  if (extra.url) parts.push(`URL: ${extra.url}`);
+  if (extra.url) parts.push(`배민 페이지 URL: ${extra.url}`);
   if (extra.reason) parts.push(`원인: ${extra.reason}`);
+  if (extra.via) parts.push(`검증: ${extra.via}`);
   console.log(parts.join(' | '));
+}
+
+function logSaveResult(success, url, reason) {
+  if (success) {
+    console.log(`[BREM] 쿠키 저장 성공 | 배민 페이지 URL: ${url || '(unknown)'}${reason ? ` | ${reason}` : ''}`);
+  } else {
+    console.error(`[BREM] 쿠키 저장 실패 | 배민 페이지 URL: ${url || '(unknown)'} | 원인: ${reason || '알 수 없음'}`);
+  }
 }
 
 function failJob(setupId, message, url, reason) {
@@ -203,7 +286,7 @@ function failJob(setupId, message, url, reason) {
     currentUrl: url || '',
     reason: reason || message
   };
-  console.error(`[BREM] 세션 갱신 실패 | URL: ${url || '(unknown)'} | 원인: ${reason || message}`);
+  logSaveResult(false, url, reason || message);
 }
 
 async function closeContextSafely(context) {
@@ -240,7 +323,7 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
     page = pickActivePage(context) || await context.newPage();
     activeJob = {
       status: 'waiting_login',
-      message: '배민Biz 로그인 후 배달현황 페이지로 이동하세요. 브라우저는 로그인 완료 전까지 닫지 마세요.',
+      message: '배민Biz 로그인 후 배달현황·배달이력 페이지로 이동하세요. 브라우저는 로그인 완료 전까지 닫지 마세요.',
       setupId
     };
 
@@ -263,34 +346,65 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
 
       page = pickActivePage(context) || page;
       lastUrl = await safePageUrl(page);
-      const onDeliveryPage = isOnDeliveryStatusPage(lastUrl);
+      const loggedInPage = isLoggedInDeliveryPage(lastUrl);
+      const onHistoryPage = isOnDeliveryHistoryPage(lastUrl);
 
       activeJob = {
         status: 'waiting_login',
-        message: onDeliveryPage
-          ? '배달현황 페이지에서 delivery-status API 검증을 기다리는 중…'
-          : '배민Biz 로그인·휴대폰 인증 후 배달현황(delivery-status) 페이지로 이동하세요.',
+        message: loggedInPage
+          ? (onHistoryPage
+            ? '배달이력 페이지 감지 — 쿠키 추출·검증 중…'
+            : '배달 페이지 감지 — 쿠키 추출·검증 중…')
+          : '배민Biz 로그인·휴대폰 인증 후 배달현황 또는 배달이력(/delivery/history) 페이지로 이동하세요.',
         setupId,
         currentUrl: lastUrl
       };
 
-      logJob(onDeliveryPage ? '배달현황 페이지 감지' : '로그인 대기 중', { url: lastUrl });
+      logJob(loggedInPage ? '로그인 완료 페이지 감지' : '로그인 대기 중', { url: lastUrl });
 
-      if (onDeliveryPage) {
-        const cookies = await context.cookies(BAEMIN_ORIGIN);
-        cookieHeader = cookiesToHeader(cookies);
+      if (loggedInPage) {
+        cookieHeader = await extractBaeminCookies(context);
 
         if (!cookieHeader) {
           lastVerifyReason = 'baemin.com 쿠키가 아직 없습니다';
           logJob('쿠키 대기', { url: lastUrl, reason: lastVerifyReason });
         } else {
-          const verify = await verifyCookieWorks(cookieHeader);
+          logJob('context.cookies() 추출 완료', {
+            url: lastUrl,
+            reason: `쿠키 ${cookieHeader.split(';').length}개`
+          });
+
+          const verify = await verifySessionCookie(cookieHeader, lastUrl);
           lastVerifyReason = verify.reason;
-          logJob('delivery-status API 검증', { url: lastUrl, reason: verify.reason });
+          logJob('쿠키 검증', { url: lastUrl, reason: verify.reason, via: verify.via });
 
           if (verify.ok) {
-            break;
+            activeJob = {
+              status: 'saving',
+              message: '세션 쿠키를 Supabase에 저장하는 중…',
+              setupId,
+              currentUrl: lastUrl
+            };
+
+            try {
+              await postSessionToApi(apiBase, setupId, setupSecret, cookieHeader);
+              activeJob = {
+                status: 'completed',
+                message: '세션 저장 완료',
+                setupId,
+                currentUrl: lastUrl
+              };
+              logSaveResult(true, lastUrl, verify.reason);
+              await closeContextSafely(context);
+              return;
+            } catch (saveError) {
+              const saveReason = saveError.message || 'Supabase 저장 API 실패';
+              failJob(setupId, '쿠키 저장 실패', lastUrl, saveReason);
+              await showBrowserError(context, activeJob.message);
+              return;
+            }
           }
+
           cookieHeader = '';
         }
       }
@@ -298,28 +412,10 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
       await delay(POLL_MS);
     }
 
-    if (!cookieHeader) {
-      const reason = lastVerifyReason
-        || '로그인 시간이 초과되었거나 배달현황 페이지 진입·API 검증에 실패했습니다';
-      failJob(setupId, '세션 갱신 실패', lastUrl, reason);
-      await showBrowserError(context, activeJob.message);
-      return;
-    }
-
-    activeJob = { status: 'saving', message: '세션 쿠키를 서버에 저장하는 중…', setupId, currentUrl: lastUrl };
-    logJob('쿠키 저장 시작', { url: lastUrl, reason: 'delivery-status API 검증 성공' });
-
-    await postSessionToApi(apiBase, setupId, setupSecret, cookieHeader);
-
-    activeJob = {
-      status: 'completed',
-      message: '배민Biz 세션이 저장되었습니다. ERP 화면으로 돌아가세요.',
-      setupId,
-      currentUrl: lastUrl
-    };
-    logJob('세션 갱신 완료', { url: lastUrl });
-
-    await closeContextSafely(context);
+    const reason = lastVerifyReason
+      || '로그인 시간이 초과되었거나 배달 페이지 진입·쿠키 검증에 실패했습니다';
+    failJob(setupId, '세션 갱신 실패', lastUrl, reason);
+    await showBrowserError(context, activeJob.message);
   } catch (error) {
     const url = page ? await safePageUrl(page) : '(no page)';
     const reason = error.message || '알 수 없는 오류';
@@ -327,7 +423,6 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
     if (context && isContextAlive(context)) {
       await showBrowserError(context, activeJob.message);
     }
-    // 실패 시 브라우저를 닫지 않음 — 사용자가 로그인을 이어갈 수 있게 유지
   }
 }
 
@@ -335,22 +430,36 @@ function renderStartPage(setupId, errorMessage) {
   const safeError = errorMessage ? `<p style="color:#b91c1c">${errorMessage}</p>` : '';
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>BREM 배민 세션 갱신</title>
-<style>body{font-family:sans-serif;max-width:560px;margin:40px auto;padding:0 16px;line-height:1.6}code{background:#f3f4f6;padding:2px 6px;border-radius:4px}.fail{color:#b91c1c}</style>
+<style>
+body{font-family:sans-serif;max-width:560px;margin:40px auto;padding:0 16px;line-height:1.6}
+code{background:#f3f4f6;padding:2px 6px;border-radius:4px}
+.fail{color:#b91c1c}
+.done{color:#15803d;font-size:1.25rem;font-weight:700}
+#doneBox{display:none;margin:16px 0;padding:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px}
+</style>
 </head><body>
 <h1>배민Biz 세션 갱신</h1>
 <p id="status">브라우저에서 배민Biz 로그인을 진행하세요…</p>
 <p id="url" style="font-size:13px;color:#6b7280"></p>
 <p id="error" class="fail"></p>
+<div id="doneBox"><p class="done">세션 저장 완료</p><p>관리자 ERP 탭으로 돌아가 <strong>[배민 자동 수집]</strong>을 사용하세요.</p></div>
 ${safeError}
-<p>로그인·휴대폰 인증 후 <strong>배달현황(delivery-status)</strong> 페이지까지 이동하면 자동으로 완료됩니다.</p>
+<p>로그인·휴대폰 인증 후 <strong>배달현황</strong> 또는 <strong>배달이력(/delivery/history)</strong> 페이지까지 이동하면 자동으로 완료됩니다.</p>
 <p>실패해도 브라우저는 바로 닫히지 않습니다. CMD 창 로그를 확인하세요.</p>
 <script>
+let doneShown=false;
 async function poll(){try{const r=await fetch('/job');const j=await r.json();
-document.getElementById('status').textContent=j.message||j.status||'';
-if(j.currentUrl){document.getElementById('url').textContent='현재 URL: '+j.currentUrl;}
-if(j.status==='completed'){document.getElementById('error').textContent='';document.body.insertAdjacentHTML('beforeend','<p><strong>완료!</strong> 관리자 ERP 탭으로 돌아가 [배민 자동 수집]을 사용하세요.</p>');return;}
+if(j.status!=='completed'&&j.status!=='failed'){document.getElementById('status').textContent=j.message||j.status||'';}
+if(j.currentUrl){document.getElementById('url').textContent='현재 배민 페이지 URL: '+j.currentUrl;}
+if(j.status==='completed'&&!doneShown){
+  doneShown=true;
+  document.getElementById('status').textContent='';
+  document.getElementById('error').textContent='';
+  document.getElementById('doneBox').style.display='block';
+  return;
+}
 if(j.status==='failed'){document.getElementById('error').textContent=j.message||'세션 갱신 실패';return;}
-}catch(e){}setTimeout(poll,2000);}
+}catch(e){}setTimeout(poll,1500);}
 poll();
 </script></body></html>`;
 }
