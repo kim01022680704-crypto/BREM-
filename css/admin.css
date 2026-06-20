@@ -4242,6 +4242,42 @@ textarea {
   line-height: 1.5;
 }
 
+.mission-catalog-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.mission-catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.mission-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  color: #e2e8f0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mission-limit-note {
+  margin: 0 0 12px;
+  color: #fbbf24;
+}
+
+.mission-catalog-grid {
+  margin-top: 4px;
+}
+
 .badge--success {
   background: rgba(34, 197, 94, 0.15);
   color: #86efac;

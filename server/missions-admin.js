@@ -1,6 +1,8 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 
+const MAX_ADMIN_MISSIONS = 4;
+
 const MISSION_SELECT = [
   'id', 'title', 'description', 'type', 'conditions', 'is_active',
   'raw_data', 'created_at', 'updated_at'
@@ -70,6 +72,32 @@ async function upsertMission(accessToken, mission) {
   const supabase = getServiceClient();
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { data: existing } = await supabase
+    .from('missions')
+    .select('id')
+    .eq('id', row.id)
+    .maybeSingle();
+
+  if (!existing) {
+    const { count, error: countError } = await supabase
+      .from('missions')
+      .select('id', { count: 'exact', head: true });
+    if (countError) {
+      if (isMissingTableError(countError)) {
+        return {
+          ok: false,
+          status: 503,
+          error: 'TABLE_MISSING',
+          message: 'public.missions 테이블이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 을 실행하세요.'
+        };
+      }
+      return { ok: false, status: 500, error: countError.message || '미션 개수를 확인하지 못했습니다.' };
+    }
+    if ((count ?? 0) >= MAX_ADMIN_MISSIONS) {
+      return { ok: false, status: 400, error: `미션은 최대 ${MAX_ADMIN_MISSIONS}개까지 등록할 수 있습니다.` };
+    }
   }
 
   const { error } = await supabase.from('missions').upsert(row, { onConflict: 'id' });

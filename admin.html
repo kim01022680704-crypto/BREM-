@@ -1007,17 +1007,24 @@
           </div>
         </article>
         <article class="card">
-          <div class="card-header">
-            <h2>미션 관리</h2>
+          <div class="card-header mission-catalog-header">
+            <div>
+              <h2>미션 목록</h2>
+              <p class="hint">미션 제목·설명·적용 조건을 수정하면, 해당 미션을 선택한 기사앱 화면에 즉시 반영됩니다. 최대 4개까지 등록할 수 있습니다.</p>
+            </div>
+            <div class="mission-catalog-actions">
+              <span class="mission-count-badge" id="missionCatalogCount">0 / 4</span>
+              <button type="button" class="small-btn primary-btn" id="missionAddBtn">+ 새 미션 등록</button>
+            </div>
           </div>
-          <p class="hint">미션 제목·설명·적용 조건을 수정하면, 해당 미션을 선택한 기사앱 화면에 즉시 반영됩니다.</p>
-          <div id="missionCatalogList" class="grid two"></div>
+          <div id="missionCatalogList" class="grid two mission-catalog-grid"></div>
         </article>
 
-        <article class="card">
+        <article class="card" id="missionFormCard">
           <div class="card-header">
             <h2 id="missionFormTitle">미션 수정</h2>
           </div>
+          <p class="hint mission-limit-note" id="missionLimitNote" hidden></p>
           <form class="form-row" id="riderMissionMgmtForm">
             <input type="hidden" id="missionEditId">
             <label class="span-2">
@@ -2489,7 +2496,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js"></script>
-  <script src="js/storage.js?v=20260620m"></script>
+  <script src="js/storage.js?v=20260620n"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2508,7 +2515,7 @@
   <script src="js/admin-schedule.js"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-missions.js?v=20260620m"></script>
+  <script src="js/admin-missions.js?v=20260620n"></script>
   <script src="js/admin.js?v=20260620g"></script>
 </body>
 </html>

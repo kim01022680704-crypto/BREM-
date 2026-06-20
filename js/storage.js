@@ -2345,7 +2345,11 @@ const BremStorage = (function () {
     ];
   }
 
+  const MAX_ADMIN_MISSIONS = 4;
+
   const missions = {
+    maxCount: MAX_ADMIN_MISSIONS,
+
     getAll() {
       const raw = storageAdapter.readRaw(KEYS.missions);
       if (!raw.exists) return [];
@@ -2380,7 +2384,14 @@ const BremStorage = (function () {
       return saved;
     },
 
+    canCreate() {
+      return missions.getAll().length < MAX_ADMIN_MISSIONS;
+    },
+
     create(data) {
+      if (!missions.canCreate()) {
+        throw new Error(`미션은 최대 ${MAX_ADMIN_MISSIONS}개까지 등록할 수 있습니다.`);
+      }
       const next = {
         id: createId(),
         title: String(data.title || '').trim(),

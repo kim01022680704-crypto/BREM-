@@ -2,6 +2,7 @@
   const missionsApi = BremStorage.missions;
   if (!missionsApi) return;
 
+  const MISSION_MAX = missionsApi.maxCount || 4;
   const state = { editingId: '', tableReady: null };
 
   function $(id) {
@@ -71,6 +72,34 @@
     return mission?.isActive === false ? '숨김' : '노출';
   }
 
+  function updateMissionFormUi() {
+    const count = missionsApi.getAll().length;
+    const atLimit = count >= MISSION_MAX;
+    const isEditing = Boolean(state.editingId || $('missionEditId')?.value.trim());
+
+    const countEl = $('missionCatalogCount');
+    if (countEl) countEl.textContent = `${count} / ${MISSION_MAX}`;
+
+    const limitNote = $('missionLimitNote');
+    if (limitNote) {
+      limitNote.hidden = !atLimit || isEditing;
+      limitNote.textContent = `미션은 최대 ${MISSION_MAX}개까지 등록할 수 있습니다. 기존 미션을 수정하거나 삭제 후 추가하세요.`;
+    }
+
+    const addBtn = $('missionAddBtn');
+    if (addBtn) addBtn.hidden = atLimit;
+
+    const formCard = $('missionFormCard');
+    if (formCard) formCard.hidden = atLimit && !isEditing;
+
+    const submitBtn = $('missionFormSubmit');
+    if (submitBtn && !isEditing) {
+      submitBtn.disabled = atLimit;
+    } else if (submitBtn) {
+      submitBtn.disabled = false;
+    }
+  }
+
   function renderMissionCards() {
     const listEl = $('missionCatalogList');
     if (!listEl) return;
@@ -91,7 +120,8 @@
           <button type="button" class="small-btn" data-edit-mission="${escapeHtml(mission.id)}">수정</button>
         </div>
       </article>
-    `).join('') || '<p class="empty-state">등록된 미션이 없습니다. SQL 마이그레이션 후 기본 미션이 표시됩니다.</p>';
+    `).join('') || '<p class="empty-state">등록된 미션이 없습니다. 아래에서 새 미션을 등록하세요.</p>';
+    updateMissionFormUi();
   }
 
   function fillMissionForm(mission) {
@@ -104,6 +134,7 @@
     $('missionFormTitle').textContent = mission ? '미션 수정' : '미션 등록';
     $('missionFormSubmit').textContent = mission ? '미션 저장' : '미션 등록';
     state.editingId = mission?.id || '';
+    updateMissionFormUi();
   }
 
   function renderDriverMissionAssignments() {
@@ -183,13 +214,36 @@
     });
 
     $('missionFormReset')?.addEventListener('click', () => {
+      if (state.editingId) {
+        fillMissionForm(missionsApi.getById(state.editingId));
+        return;
+      }
+      if (missionsApi.getAll().length >= MISSION_MAX) {
+        showToast(`미션은 최대 ${MISSION_MAX}개까지 등록할 수 있습니다.`);
+        return;
+      }
       fillMissionForm(null);
+    });
+
+    $('missionAddBtn')?.addEventListener('click', () => {
+      if (missionsApi.getAll().length >= MISSION_MAX) {
+        showToast(`미션은 최대 ${MISSION_MAX}개까지 등록할 수 있습니다.`);
+        return;
+      }
+      fillMissionForm(null);
+      $('missionTitle')?.focus();
     });
 
     $('riderMissionMgmtForm')?.addEventListener('submit', event => {
       event.preventDefault();
       if (state.tableReady === false) {
         showToast('먼저 Supabase SQL Editor에서 missions_migration.sql 을 실행하세요.');
+        return;
+      }
+
+      const editId = $('missionEditId').value.trim();
+      if (!editId && missionsApi.getAll().length >= MISSION_MAX) {
+        showToast(`미션은 최대 ${MISSION_MAX}개까지 등록할 수 있습니다.`);
         return;
       }
 
@@ -206,7 +260,6 @@
         return;
       }
 
-      const editId = $('missionEditId').value.trim();
       const submitBtn = $('missionFormSubmit');
       if (submitBtn) {
         submitBtn.disabled = true;
