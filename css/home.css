@@ -24,20 +24,48 @@ body {
   display: flex;
   justify-content: flex-end;
   width: min(920px, 100%);
-  margin: 0 auto 4px;
+  margin: 0 auto 8px;
   flex-shrink: 0;
 }
 
-.brem-home-top a {
-  color: rgba(232, 197, 71, 0.55);
-  font-size: 0.78rem;
-  font-weight: 600;
+.brem-home-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px 0 14px;
+  color: #e8c547;
+  background: rgba(232, 197, 71, 0.08);
+  border: 2px solid #e8c547;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-decoration: none;
-  transition: color 0.15s ease;
+  box-shadow: 0 0 18px rgba(232, 197, 71, 0.12);
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.brem-home-top a:hover {
-  color: #e8c547;
+.brem-home-back-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.12em;
+}
+
+.brem-home-back:hover {
+  color: #fff6cc;
+  background: rgba(232, 197, 71, 0.16);
+  border-color: #f0d060;
+  box-shadow: 0 0 28px rgba(232, 197, 71, 0.28);
+  transform: translateY(-1px);
+}
+
+.brem-home-back:focus-visible {
+  outline: 2px solid #f0d060;
+  outline-offset: 3px;
 }
 
 .brem-home-stage {
@@ -119,6 +147,16 @@ body {
 @media (max-width: 420px) {
   .brem-home {
     padding: 10px 12px 18px;
+  }
+
+  .brem-home-back {
+    min-height: 40px;
+    padding: 0 14px 0 12px;
+    font-size: 0.86rem;
+  }
+
+  .brem-home-back-icon {
+    font-size: 1.2rem;
   }
 
   .brem-home-stage {
