@@ -45,11 +45,18 @@ button {
   padding: 28px 0 48px;
 }
 
+.app.index-app {
+  width: min(calc(100% - 16px), 100%);
+  max-width: none;
+  padding: 12px 0 16px;
+}
+
 .index-layout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  min-height: calc(100vh - 28px);
 }
 
 .index-sidebar {
@@ -68,9 +75,6 @@ button {
 
 .index-sidebar-head {
   flex-shrink: 0;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--border);
 }
 
 .index-sidebar-eyebrow {
@@ -82,11 +86,61 @@ button {
 }
 
 .index-sidebar-head strong {
-  font-size: 1rem;
+  display: block;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.index-program-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.index-program-link {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: #64748b;
+  background: transparent;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-decoration: none;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.index-program-link:hover {
+  color: #111827;
+  background: #f8fafc;
+}
+
+.index-program-link.active {
+  color: var(--black);
+  background: var(--yellow);
+  box-shadow: 0 2px 6px rgba(255, 212, 0, 0.3);
+}
+
+.index-sidebar-foot {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.index-sidebar-foot .index-nav-link {
+  margin: 0;
 }
 
 .index-content {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .index-menu-btn {
@@ -122,12 +176,13 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  margin-bottom: 16px;
-  padding: 26px;
+  margin-bottom: 12px;
+  padding: 18px 20px;
   color: #ffffff;
   background: linear-gradient(135deg, #111111, #252525);
-  border-radius: 24px;
+  border-radius: 20px;
   box-shadow: var(--shadow);
+  flex-shrink: 0;
 }
 
 .site-header__brand {
@@ -339,10 +394,70 @@ h2 {
 
 .layout.layout--page {
   grid-template-columns: 1fr;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .layout.layout--page .form-panel {
   max-width: none;
+}
+
+.list-panel--scrollable {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.list-panel--scrollable .list-header--compact {
+  flex-shrink: 0;
+}
+
+.list-panel--scrollable .list-selection-bar {
+  flex-shrink: 0;
+  margin: 0 14px 8px;
+  padding: 8px 12px;
+}
+
+.list-panel--scrollable .brem-data-loading {
+  flex-shrink: 0;
+}
+
+.list-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-top: 1px solid var(--border);
+}
+
+.list-header--compact {
+  padding: 14px 16px;
+}
+
+.list-header--compact h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.filters--compact {
+  min-width: min(100%, 540px);
+}
+
+.filters--compact input,
+.filters--compact select {
+  min-height: 38px;
+  font-size: 0.84rem;
+}
+
+.filters--compact .btn {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 0.82rem;
 }
 
 .summary-card {
@@ -390,6 +505,10 @@ h2 {
 
 .panel.list-panel {
   overflow: visible;
+}
+
+.panel.list-panel.list-panel--scrollable {
+  overflow: hidden;
 }
 
 .panel-header {
@@ -1123,6 +1242,133 @@ textarea:focus,
   background: #fffdf0;
 }
 
+.driver-table--compact th,
+.driver-table--compact td {
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.driver-table--compact th {
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.driver-table--compact .col-select {
+  width: 36px;
+  min-width: 36px;
+}
+
+.driver-table--compact .col-name {
+  min-width: 88px;
+}
+
+.driver-table--compact .col-phone {
+  min-width: 102px;
+}
+
+.driver-table--compact .col-baemin {
+  min-width: 72px;
+}
+
+.driver-table--compact .col-platform {
+  min-width: 72px;
+}
+
+.driver-table--compact .col-event {
+  min-width: 88px;
+  white-space: normal;
+}
+
+.driver-table--compact .col-date {
+  min-width: 76px;
+}
+
+.driver-table--compact .col-status {
+  min-width: 58px;
+}
+
+.driver-table--compact .col-memo {
+  max-width: 120px;
+  min-width: 72px;
+}
+
+.driver-table--compact .col-privacy {
+  min-width: 108px;
+  white-space: normal;
+}
+
+.driver-table--compact .col-actions {
+  min-width: 108px;
+}
+
+.driver-table--compact .cell-main {
+  display: block;
+}
+
+.driver-table--compact .cell-sub {
+  display: block;
+  margin-top: 1px;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.driver-table--compact .platform-tags--compact {
+  gap: 4px;
+}
+
+.driver-table--compact .platform-tag {
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 0.68rem;
+}
+
+.driver-table--compact .badge--compact {
+  min-width: 0;
+  padding: 3px 7px;
+  font-size: 0.68rem;
+}
+
+.driver-table--compact .privacy-controls {
+  margin-top: 4px;
+  gap: 3px;
+}
+
+.driver-table--compact .privacy-toggle {
+  padding: 3px 6px;
+  font-size: 0.66rem;
+}
+
+.driver-table--compact .privacy-badge {
+  padding: 2px 6px;
+  font-size: 0.64rem;
+}
+
+.driver-table--compact .actions--compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.driver-table--compact .actions--compact .btn.small {
+  padding: 4px 6px;
+  font-size: 0.68rem;
+  border-radius: 8px;
+}
+
+.list-panel--scrollable .driver-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.list-panel--scrollable .driver-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 var(--border);
+}
+
 .memo-cell {
   max-width: 180px;
   min-width: 100px;
@@ -1387,13 +1633,15 @@ textarea:focus,
     padding-top: 10px;
   }
 
-  .index-nav {
+  .index-nav,
+  .index-program-nav {
     display: flex;
     flex-direction: column;
     grid-template-columns: none;
   }
 
-  .index-nav-link {
+  .index-nav-link,
+  .index-program-link {
     width: 100%;
   }
 

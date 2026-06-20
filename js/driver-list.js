@@ -104,32 +104,41 @@
     const isMobileView = window.matchMedia('(max-width: 900px)').matches;
 
     if (!isMobileView) {
-      tableBody.innerHTML = drivers.map(driver => `
+      tableBody.innerHTML = drivers.map(driver => {
+        const loginId = escapeHtml(makeDriverLoginId(driver));
+        const eventName = escapeHtml(driver.longEventItem) || '-';
+        const eventStart = formatDate(driver.longEventStartDate);
+        const eventCell = driver.longEventItem
+          ? `<span class="cell-main">${eventName}</span><span class="cell-sub">${eventStart}</span>`
+          : `<span class="cell-main">-</span>`;
+        return `
       <tr class="${selectedIds.has(driver.id) ? 'row-selected' : ''}">
         <td class="col-select">${renderCheckbox(driver.id)}</td>
-        <td class="col-name"><strong>${escapeHtml(driver.name)}</strong></td>
+        <td class="col-name">
+          <strong class="cell-main">${escapeHtml(driver.name)}</strong>
+          <span class="cell-sub">${loginId}</span>
+        </td>
         <td class="col-phone">${escapeHtml(driver.phone)}</td>
-        <td class="col-login"><strong>${escapeHtml(makeDriverLoginId(driver))}</strong></td>
         <td class="col-baemin">${escapeHtml(driver.baeminId) || '-'}</td>
-        <td class="col-platform"><div class="platform-tags">${renderPlatformBadges(driver)}</div></td>
-        <td class="col-event">${escapeHtml(driver.longEventItem) || '-'}</td>
-        <td class="col-date">${formatDate(driver.longEventStartDate)}</td>
+        <td class="col-platform"><div class="platform-tags platform-tags--compact">${renderPlatformBadges(driver)}</div></td>
+        <td class="col-event">${eventCell}</td>
         <td class="col-date">${formatDate(driver.joinDate)}</td>
-        <td class="col-status"><span class="badge ${statusClass(driver.status)}">${driver.status}</span></td>
-        <td class="memo-cell" title="${escapeHtml(driver.memo)}">${escapeHtml(driver.memo) || '-'}</td>
+        <td class="col-status"><span class="badge badge--compact ${statusClass(driver.status)}">${driver.status}</span></td>
+        <td class="col-memo memo-cell" title="${escapeHtml(driver.memo)}">${escapeHtml(driver.memo) || '-'}</td>
         <td class="col-privacy">
           ${renderPrivacySummary(driver)}
           ${renderPrivacyControls(driver, true)}
         </td>
         <td class="col-actions">
-          <div class="actions">
+          <div class="actions actions--compact">
             <button type="button" class="btn small edit" data-action="edit" data-id="${driver.id}">수정</button>
-            <button type="button" class="btn small ghost" data-action="reset-password" data-id="${driver.id}">비밀번호 초기화</button>
+            <button type="button" class="btn small ghost" data-action="reset-password" data-id="${driver.id}">PW초기화</button>
             <button type="button" class="btn small delete" data-action="delete" data-id="${driver.id}">삭제</button>
           </div>
         </td>
       </tr>
-    `).join('');
+    `;
+      }).join('');
       mobileList.innerHTML = '';
     } else {
       tableBody.innerHTML = '';
