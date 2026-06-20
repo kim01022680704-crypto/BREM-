@@ -827,7 +827,7 @@ const BremStorage = (function () {
     }
 
     if (sectionKeys.includes(KEYS.missions)) {
-      if (!window.BremDataCache?.isValid?.(KEYS.missions)) {
+      if (!(missions.getAll().length > 0)) {
         return false;
       }
     }

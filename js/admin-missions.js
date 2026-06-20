@@ -537,7 +537,11 @@
     await updateSetupBanner(force);
     resetAssignmentDrafts();
 
-    if (!force && BremStorage.isSectionCacheReady?.('mission-management')) {
+    if (!force && missionsApi.getAll().length === 0) {
+      await BremStorage.reloadMissions?.(false);
+    }
+
+    if (!force && missionsApi.getAll().length > 0 && BremStorage.drivers?.getAll?.().length > 0) {
       renderMissionSection();
       return;
     }
