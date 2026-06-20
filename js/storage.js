@@ -890,11 +890,13 @@ const BremStorage = (function () {
       const menuStore = getAdminSessionStore();
       const menusRaw = menuStore.getItem(SESSION_KEYS.adminSessionMenus);
       if (menusRaw == null) return null;
-      const menus = JSON.parse(menusRaw);
+      const menus = normalizeAdminMenus(JSON.parse(menusRaw));
       if (!Array.isArray(menus)) return null;
 
       const editableRaw = menuStore.getItem(SESSION_KEYS.adminSessionEditableMenus);
-      const editableMenus = editableRaw ? JSON.parse(editableRaw) : menus;
+      const editableMenus = editableRaw
+        ? normalizeAdminEditableMenus(menus, JSON.parse(editableRaw))
+        : menus;
 
       return {
         id: profile.user_id,
@@ -4085,6 +4087,7 @@ const BremStorage = (function () {
     'admin-schedule',
     'mission-results',
     'missions',
+    'mission-management',
     'lease-management',
     'calls',
     'rejections',
@@ -4141,6 +4144,11 @@ const BremStorage = (function () {
       } else {
         normalized.unshift('mission-results');
       }
+    }
+
+    if (normalized.includes('missions') && !normalized.includes('mission-management')) {
+      const missionsIndex = normalized.indexOf('missions');
+      normalized.splice(missionsIndex + 1, 0, 'mission-management');
     }
 
     if (isExplicitList) {
@@ -4588,13 +4596,12 @@ const BremStorage = (function () {
     getAdminSessionMenus() {
       const account = this.getAdminSessionAccount();
       if (!account) return [];
-      return Array.isArray(account.menus) ? [...account.menus] : normalizeAdminMenus(account.menus);
+      return normalizeAdminMenus(account.menus);
     },
 
     getAdminSessionEditableMenus() {
       const account = this.getAdminSessionAccount();
       if (!account) return [];
-      if (Array.isArray(account.editableMenus)) return [...account.editableMenus];
       return normalizeAdminEditableMenus(account.menus, account.editableMenus);
     },
 
