@@ -5,28 +5,75 @@ window.BremLoadingUI = (function () {
   const DEFAULT_MESSAGE = '데이터 불러오는 중...';
   const activeTargets = new Map();
 
-  function resolveTarget(target) {
-    if (!target) return document.getElementById('bremDataLoading');
-    if (typeof target === 'string') return document.getElementById(target);
-    return target;
+  function isBannerElement(el) {
+    return Boolean(el?.classList?.contains('brem-data-loading'));
   }
 
-  function ensureBanner(target, message) {
-    let el = resolveTarget(target);
+  function resolveHost(target) {
+    if (!target) return null;
+    if (typeof target === 'string') {
+      const node = document.getElementById(target);
+      if (!node) return null;
+      return isBannerElement(node) ? node.parentElement : node;
+    }
+    return isBannerElement(target) ? target.parentElement : target;
+  }
+
+  function ensureBanner(target, message = DEFAULT_MESSAGE) {
+    if (!target) {
+      const fallback = document.getElementById('bremDataLoading');
+      if (fallback) return fallback;
+      return null;
+    }
+
+    if (typeof target === 'string') {
+      const node = document.getElementById(target);
+      if (!node) return null;
+      if (isBannerElement(node)) return node;
+      return ensureBanner(node, message);
+    }
+
+    if (isBannerElement(target)) return target;
+
+    const host = target;
+    let el = host.querySelector('#bremDataLoading') || host.querySelector(':scope > .brem-data-loading');
     if (el) return el;
 
-    const host = target && typeof target !== 'string' ? target : document.body;
     el = document.createElement('div');
     el.className = 'brem-data-loading';
-    el.id = 'bremDataLoading';
     el.setAttribute('role', 'status');
     el.setAttribute('aria-live', 'polite');
     el.innerHTML = `
       <span class="brem-data-loading__spinner" aria-hidden="true"></span>
       <span class="brem-data-loading__text">${message}</span>
     `;
-    host.appendChild(el);
+
+    const header = host.querySelector('.panel-header');
+    if (header?.parentElement === host) {
+      header.insertAdjacentElement('afterend', el);
+    } else {
+      host.insertBefore(el, host.firstChild);
+    }
     return el;
+  }
+
+  function resolveBanner(target) {
+    if (!target) return document.getElementById('bremDataLoading');
+    if (typeof target === 'string') {
+      const node = document.getElementById(target);
+      if (!node) return null;
+      if (isBannerElement(node)) return node;
+      return ensureBanner(node);
+    }
+    if (isBannerElement(target)) return target;
+    return ensureBanner(target);
+  }
+
+  function resolveSection(el) {
+    return el?.closest('.section')
+      || el?.closest('.list-panel')
+      || el?.closest('.admin-app')
+      || el?.closest('.main-content');
   }
 
   function show(target, message = DEFAULT_MESSAGE) {
@@ -40,12 +87,11 @@ window.BremLoadingUI = (function () {
     el.classList.add('is-visible');
     activeTargets.set(el, (activeTargets.get(el) || 0) + 1);
 
-    const section = el.closest('.section') || el.closest('.list-panel') || el.closest('.main-content');
-    section?.classList.add('is-data-loading');
+    resolveSection(el)?.classList.add('is-data-loading');
   }
 
   function hide(target) {
-    const el = resolveTarget(target);
+    const el = resolveBanner(target);
     if (!el) return;
 
     const count = Math.max(0, (activeTargets.get(el) || 1) - 1);
@@ -58,8 +104,7 @@ window.BremLoadingUI = (function () {
     el.classList.remove('is-visible');
     el.hidden = true;
 
-    const section = el.closest('.section') || el.closest('.list-panel') || el.closest('.main-content');
-    section?.classList.remove('is-data-loading');
+    resolveSection(el)?.classList.remove('is-data-loading');
   }
 
   function wrapAsync(target, promise, message = DEFAULT_MESSAGE) {

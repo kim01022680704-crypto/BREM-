@@ -35,7 +35,7 @@
     const status = statusFilter.value;
 
     return BremStorage.drivers.getAll().filter(driver => {
-      const matchesName = driver.name.toLowerCase().includes(keyword);
+      const matchesName = String(driver.name || '').toLowerCase().includes(keyword);
       const matchesStatus = status === '전체' || driver.status === status;
       return matchesName && matchesStatus;
     });
@@ -88,10 +88,11 @@
   }
 
   function render() {
-    window.BremPerf?.time?.('drivers.render');
-    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-    mobileList.classList.remove('is-loading');
-    const drivers = getFilteredDrivers();
+    try {
+      window.BremPerf?.time?.('drivers.render');
+      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+      mobileList?.classList.remove('is-loading');
+      const drivers = getFilteredDrivers();
     const allIds = new Set(BremStorage.drivers.getAll().map(driver => driver.id));
     selectedIds.forEach(id => {
       if (!allIds.has(id)) selectedIds.delete(id);
@@ -175,6 +176,10 @@
 
     updateSelectionUi();
     window.BremPerf?.timeEnd?.('drivers.render');
+    } catch (error) {
+      console.error('[BREM] Driver list render failed:', error);
+      showToast(toast, '기사 목록을 표시하지 못했습니다. 새로고침 후 다시 시도하세요.');
+    }
   }
 
   async function exportDriversToExcel() {
