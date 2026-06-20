@@ -100,6 +100,22 @@ else pass('Riders API pagination');
 if (fs.existsSync(path.join(ROOT, 'supabase/performance_indexes.sql'))) pass('DB indexes file');
 else warn('DB indexes file', 'missing performance_indexes.sql');
 
+// 11. Data cache layer
+if (fs.existsSync(path.join(ROOT, 'js/data-cache.js'))) pass('Data cache module');
+else fail('Data cache module', 'missing js/data-cache.js');
+
+const dataCacheJs = fs.existsSync(path.join(ROOT, 'js/data-cache.js'))
+  ? read('js/data-cache.js')
+  : '';
+if (/localStorage/.test(dataCacheJs)) fail('Data cache storage', 'uses localStorage');
+else if (dataCacheJs) pass('Data cache storage', 'sessionStorage only');
+
+if (/BremLoadingUI/.test(read('js/data-loading-ui.js'))) pass('Loading UI module');
+else fail('Loading UI module', 'missing BremLoadingUI');
+
+if (/isSectionCacheReady/.test(read('js/storage.js'))) pass('Section cache guard');
+else fail('Section cache guard', 'missing isSectionCacheReady');
+
 console.log('\n---');
 const failed = results.filter(r => !r.ok);
 if (failed.length) {

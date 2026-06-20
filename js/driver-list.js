@@ -333,20 +333,27 @@
   }
 
   const debouncedRender = window.BremPerf?.debounce
-    ? window.BremPerf.debounce(() => { void refreshDriverList(false); }, 180)
-    : () => { void refreshDriverList(false); };
+    ? window.BremPerf.debounce(() => render(), 180)
+    : () => render();
 
   async function refreshDriverList(force = false) {
-    tableBody.closest('.table-wrap')?.classList.add('is-loading');
-    mobileList.classList.add('is-loading');
+    const listPanel = document.querySelector('.list-panel');
+    const hasCachedDrivers = BremStorage.drivers.getAll().length > 0;
+    const showLoading = force || !hasCachedDrivers;
 
-    const syncResult = await BremStorage.reloadDrivers?.(force, {
-      search: searchInput.value.trim(),
-      status: statusFilter.value
-    });
+    if (showLoading) {
+      tableBody.closest('.table-wrap')?.classList.add('is-loading');
+      mobileList.classList.add('is-loading');
+      window.BremLoadingUI?.show(listPanel, '데이터 불러오는 중...');
+    }
 
-    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-    mobileList.classList.remove('is-loading');
+    const syncResult = await BremStorage.reloadDrivers?.(force);
+
+    if (showLoading) {
+      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+      mobileList.classList.remove('is-loading');
+      window.BremLoadingUI?.hide(listPanel);
+    }
 
     if (syncResult?.ok === false) {
       showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
@@ -356,9 +363,7 @@
 
   function init() {
     searchInput.addEventListener('input', debouncedRender);
-    statusFilter.addEventListener('change', () => {
-      void refreshDriverList(true);
-    });
+    statusFilter.addEventListener('change', () => render());
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
@@ -391,5 +396,5 @@
     showLoadingSkeleton();
   }
 
-  void refreshDriverList(true);
+  void refreshDriverList(false);
 })();

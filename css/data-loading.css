@@ -1,0 +1,73 @@
+.brem-data-loading {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.brem-data-loading.is-visible {
+  display: inline-flex;
+}
+
+.brem-data-loading--overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  margin: 0;
+  border-radius: inherit;
+  justify-content: center;
+  background: rgba(10, 10, 10, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.admin-app .main-content,
+.list-panel,
+.section.active {
+  position: relative;
+}
+
+.is-data-loading .table-wrap,
+.is-data-loading .mobile-driver-list {
+  opacity: 0.72;
+}
+
+.brem-data-loading__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(226, 232, 240, 0.25);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: brem-loading-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes brem-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+.table-wrap.is-loading::after,
+.mobile-driver-list.is-loading::after {
+  content: '데이터 불러오는 중...';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 10, 0.45);
+  color: #e2e8f0;
+  font-size: 0.92rem;
+  font-weight: 500;
+  z-index: 5;
+}
+
+.table-wrap,
+.mobile-driver-list {
+  position: relative;
+}

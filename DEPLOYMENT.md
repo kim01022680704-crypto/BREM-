@@ -26,7 +26,7 @@ npm run check-deploy
 
 **상세 가이드:** [`supabase/ADMIN_SETUP.md`](supabase/ADMIN_SETUP.md)
 
-SQL 순서: `schema.sql` → `rider_inquiries_migration.sql` → *(Auth User 생성)* → `bootstrap_initial_admin.sql` → `verify_admin_setup.sql`
+SQL 순서: `schema.sql` → `rider_inquiries_migration.sql` → `missions_migration.sql` → *(Auth User 생성)* → `bootstrap_initial_admin.sql` → `verify_admin_setup.sql`
 
 ## Supabase SQL (운영 DB)
 
@@ -34,6 +34,7 @@ SQL 순서: `schema.sql` → `rider_inquiries_migration.sql` → *(Auth User 생
 
 ```sql
 -- supabase/rider_inquiries_migration.sql 전체 실행
+-- supabase/missions_migration.sql 전체 실행 (미션 관리 + 기사 selected_mission_id)
 ```
 
 필수 RLS:
