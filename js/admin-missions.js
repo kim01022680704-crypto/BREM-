@@ -24,6 +24,13 @@
       .replace(/"/g, '&quot;');
   }
 
+  function formatDriverPhone(phone) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    return String(phone || '').trim() || '-';
+  }
+
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
@@ -481,8 +488,10 @@
       return `
         <tr class="${isDirty ? 'mission-row-dirty' : ''}" data-driver-id="${escapeHtml(driver.id)}">
           <td class="mission-driver-cell">
-            <strong>${escapeHtml(driver.name)}</strong>
-            <span class="hint">${escapeHtml(driver.phone)}</span>
+            <div class="mission-driver-line">
+              <strong class="mission-driver-name">${escapeHtml(driver.name)}</strong>
+              <span class="mission-driver-phone">${escapeHtml(formatDriverPhone(driver.phone))}</span>
+            </div>
           </td>
           <td class="mission-platform-cell">${platformBadgesHtml(driver)}</td>
           <td><code class="mission-id-code">${escapeHtml(baeminIdText)}</code></td>
