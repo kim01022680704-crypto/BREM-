@@ -26,20 +26,12 @@
     return BremPlatforms.normalize(platform);
   }
 
-  function normalizePhone(value) {
-    return String(value || '').replace(/[^0-9]/g, '');
-  }
-
   function normalizeLoginId(value) {
     return String(value || '').replace(/\s/g, '');
   }
 
   function normalizeHeader(value) {
     return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
-  }
-
-  function makeDriverLoginId(driver) {
-    return `${String(driver.name || '').replace(/\s/g, '')}${normalizePhone(driver.phone).slice(-4)}`;
   }
 
   function formatDate(value) {
@@ -85,22 +77,22 @@
       .replaceAll("'", '&#039;');
   }
 
-  function findDriverByCoupangId(coupangId) {
-    const normalized = normalizeLoginId(coupangId);
-    if (!normalized) return null;
-    return BremStorage.drivers.getAll().find(driver => makeDriverLoginId(driver) === normalized) || null;
+  function findDriverByPlatformId(platformId, platform, excelName) {
+    const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(
+      platformId,
+      platform,
+      excelName
+    );
+    return result?.driver || null;
   }
 
-  function findDriverByBaeminId(baeminId) {
-    const normalized = String(baeminId || '').trim();
-    if (!normalized) return null;
-    return BremStorage.drivers.getAll().find(driver => String(driver.baeminId || '').trim() === normalized) || null;
-  }
-
-  function findDriverByPlatformId(platformId, platform) {
-    return normalizePlatform(platform) === 'baemin'
-      ? findDriverByBaeminId(platformId)
-      : findDriverByCoupangId(platformId);
+  function getDriverMatchNote(platformId, platform, excelName) {
+    const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(
+      platformId,
+      platform,
+      excelName
+    );
+    return result?.matchNote || '';
   }
 
   function getSelectedWeekStart(config) {
@@ -141,7 +133,8 @@
     if (hasRate && Number.isNaN(rate)) errors.push(`${config.rateLabel} 숫자 아님`);
     else if (hasRate && (rate < 0 || rate > 100)) errors.push(`${config.rateLabel} 0~100 범위`);
 
-    const driver = hasId ? findDriverByPlatformId(platformId, platform) : null;
+    const driver = hasId ? findDriverByPlatformId(platformId, platform, raw.name) : null;
+    const matchNote = hasId ? getDriverMatchNote(platformId, platform, raw.name) : '';
     if (hasId && !driver) errors.push('등록된 기사 없음');
 
     return {
@@ -149,6 +142,7 @@
       rowNumber,
       valid: errors.length === 0,
       errors,
+      note: matchNote,
       data: {
         driverId: driver?.id || '',
         driverName: driver?.name || raw.name || platformId,

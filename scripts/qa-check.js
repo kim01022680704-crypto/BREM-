@@ -79,6 +79,39 @@ BremStorage.drivers.remove(driver.id);
 const gone = BremStorage.drivers.getAll().find(d => d.id === driver.id);
 assert('기사 삭제', !gone);
 
+function createDriverUtils(storageApi) {
+  const code = fs.readFileSync(path.join(__dirname, '..', 'js', 'driver-utils.js'), 'utf8');
+  const context = { window: {}, BremStorage: storageApi, console };
+  vm.runInNewContext(code, context);
+  return context.window.BremDriverUtils;
+}
+
+const driverUtils = createDriverUtils(BremStorage);
+const matchDriverA = BremStorage.drivers.create({
+  name: '홍길동',
+  phone: '010-1234-5678',
+  baeminId: 'bm_hong',
+  platformCoupang: true,
+  platformBaemin: true
+});
+const matchByCoupangIdOnly = driverUtils.matchDriverForPlatformImport('홍길동5678', 'coupang', '', [matchDriverA]);
+assert('거절율 매칭 — 아이디만으로 매칭', matchByCoupangIdOnly.driver?.id === matchDriverA.id);
+
+const matchByCoupangIdDespiteName = driverUtils.matchDriverForPlatformImport('홍길동5678', 'coupang', '김철수', [matchDriverA]);
+assert(
+  '거절율 매칭 — 이름 불일치해도 아이디 우선',
+  matchByCoupangIdDespiteName.driver?.id === matchDriverA.id,
+  matchByCoupangIdDespiteName.matchNote
+);
+
+const matchByBaeminId = driverUtils.matchDriverForPlatformImport('bm_hong', 'baemin', '홍길동', [matchDriverA]);
+assert('거절율 매칭 — 배민 아이디+이름', matchByBaeminId.driver?.id === matchDriverA.id);
+
+const noMatch = driverUtils.matchDriverForPlatformImport('없는아이디', 'coupang', '홍길동', [matchDriverA]);
+assert('거절율 매칭 — 아이디 없으면 미매칭', !noMatch.driver);
+
+BremStorage.drivers.remove(matchDriverA.id);
+
 // 3. Baemin income calculation
 const baemin = BremStorage.revenue.saveIncomeBaemin({
   weekStart,

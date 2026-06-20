@@ -116,6 +116,54 @@ window.BremDriverUtils = (function () {
     return `${String(driver.name || '').replace(/\s/g, '')}${normalizePhone(driver.phone).slice(-4)}`;
   }
 
+  function normalizeDriverName(value) {
+    return String(value || '').replace(/\s/g, '').toLowerCase();
+  }
+
+  function driverNamesMatch(driver, excelName) {
+    if (!String(excelName || '').trim()) return null;
+    return normalizeDriverName(driver?.name) === normalizeDriverName(excelName);
+  }
+
+  /**
+   * 엑셀 일괄등록 매칭: 아이디 우선, 이름은 보조 확인.
+   * 이름이 없거나 달라도 아이디가 일치하면 매칭합니다.
+   */
+  function matchDriverForPlatformImport(platformId, platform, excelName, drivers) {
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+    const p = String(platform || 'coupang').toLowerCase();
+    const hasName = Boolean(String(excelName || '').trim());
+
+    let matches = [];
+    if (p === 'baemin') {
+      const id = String(platformId || '').trim();
+      if (!id) return { driver: null, matchNote: '' };
+      matches = list.filter(driver => String(driver.baeminId || '').trim() === id);
+    } else {
+      const id = String(platformId || '').replace(/\s/g, '');
+      if (!id) return { driver: null, matchNote: '' };
+      matches = list.filter(driver => makeDriverLoginId(driver) === id);
+    }
+
+    if (!matches.length) return { driver: null, matchNote: '' };
+
+    if (hasName) {
+      const nameAndId = matches.find(driver => driverNamesMatch(driver, excelName));
+      if (nameAndId) return { driver: nameAndId, matchNote: '' };
+    }
+
+    const driver = matches[0];
+    let matchNote = '';
+    if (hasName && driverNamesMatch(driver, excelName) === false) {
+      matchNote = '이름 불일치(아이디 기준 매칭)';
+    } else if (matches.length > 1) {
+      matchNote = '동일 아이디 다중(아이디 기준 매칭)';
+    }
+    return { driver, matchNote };
+  }
+
   function buildDriverDuplicateLookup(excludeId) {
     const byLoginId = new Map();
     const byPhone = new Map();
@@ -232,6 +280,9 @@ window.BremDriverUtils = (function () {
     formatDriverPlatformLabel,
     formatAccountSummary,
     makeDriverLoginId,
+    normalizeDriverName,
+    driverNamesMatch,
+    matchDriverForPlatformImport,
     findDuplicateDriver,
     isDuplicateErrorMessage,
     formatDate,

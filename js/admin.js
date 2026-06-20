@@ -2559,8 +2559,8 @@
 
     bindAdminAccountForm();
 
-    window.addEventListener('storage', event => {
-      if (event.key === 'brem_rider_inquiries' && state.currentSection === 'rider-inquiries') {
+    document.addEventListener('brem-admin-data-ready', () => {
+      if (state.currentSection === 'rider-inquiries') {
         renderRiderInquiries();
       }
     });
