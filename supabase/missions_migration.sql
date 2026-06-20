@@ -38,16 +38,21 @@ alter table public.missions add column if not exists raw_data jsonb not null def
 alter table public.missions add column if not exists created_at timestamptz not null default now();
 alter table public.missions add column if not exists updated_at timestamptz not null default now();
 
--- riders 미션 연결 컬럼 (플랫폼별 + 레거시 단일)
-alter table public.riders add column if not exists selected_mission_id text not null default '';
-alter table public.riders add column if not exists selected_mission_id_baemin text not null default '';
-alter table public.riders add column if not exists selected_mission_id_coupang text not null default '';
+-- riders 미션 연결 컬럼 (플랫폼별 + 레거시 단일) — riders 테이블이 있을 때만
+do $$
+begin
+  if to_regclass('public.riders') is not null then
+    alter table public.riders add column if not exists selected_mission_id text not null default '';
+    alter table public.riders add column if not exists selected_mission_id_baemin text not null default '';
+    alter table public.riders add column if not exists selected_mission_id_coupang text not null default '';
+    create index if not exists idx_brem_riders_selected_mission on public.riders (selected_mission_id);
+    create index if not exists idx_brem_riders_mission_baemin on public.riders (selected_mission_id_baemin);
+    create index if not exists idx_brem_riders_mission_coupang on public.riders (selected_mission_id_coupang);
+  end if;
+end $$;
 
 create index if not exists idx_brem_missions_active on public.missions (is_active);
 create index if not exists idx_brem_missions_created_at on public.missions (created_at desc);
-create index if not exists idx_brem_riders_selected_mission on public.riders (selected_mission_id);
-create index if not exists idx_brem_riders_mission_baemin on public.riders (selected_mission_id_baemin);
-create index if not exists idx_brem_riders_mission_coupang on public.riders (selected_mission_id_coupang);
 
 drop trigger if exists trg_brem_missions_updated_at on public.missions;
 create trigger trg_brem_missions_updated_at
@@ -77,20 +82,32 @@ select
   true
 where not exists (select 1 from public.missions where id = 'brem_mission_unit_guarantee_bike');
 
--- 기존 단일 미션 값 → 플랫폼별 컬럼 복사 (1회, 빈 값만)
-update public.riders
-set
-  selected_mission_id_baemin = case
-    when coalesce(selected_mission_id_baemin, '') = '' then selected_mission_id
-    else selected_mission_id_baemin
-  end,
-  selected_mission_id_coupang = case
-    when coalesce(selected_mission_id_coupang, '') = '' then selected_mission_id
-    else selected_mission_id_coupang
-  end
-where coalesce(selected_mission_id, '') <> '';
+-- 기존 단일 미션 값 → 플랫폼별 컬럼 복사 (riders 테이블 있을 때만)
+do $$
+begin
+  if to_regclass('public.riders') is not null then
+    update public.riders
+    set
+      selected_mission_id_baemin = case
+        when coalesce(selected_mission_id_baemin, '') = '' then selected_mission_id
+        else selected_mission_id_baemin
+      end,
+      selected_mission_id_coupang = case
+        when coalesce(selected_mission_id_coupang, '') = '' then selected_mission_id
+        else selected_mission_id_coupang
+      end
+    where coalesce(selected_mission_id, '') <> '';
+  end if;
+end $$;
 
--- brem_is_admin() — RLS용 (profiles 테이블 필요)
+-- brem_is_admin() — RLS용 (profiles 테이블 필요, 없으면 함수만 생성)
+do $$
+begin
+  if to_regclass('public.profiles') is null then
+    raise notice 'public.profiles 가 없습니다. schema.sql 을 먼저 실행하거나 RLS 정책을 나중에 적용하세요.';
+  end if;
+end $$;
+
 create or replace function public.brem_current_role()
 returns text
 language sql

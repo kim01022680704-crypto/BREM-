@@ -620,14 +620,40 @@ const BremStorage = (function () {
       }
     }
 
-    if (isProductionMode()) {
-      return syncMissionsFromServer();
+    const loadViaAdapter = async () => {
+      if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.ensureKeysLoaded) {
+        return { ok: true };
+      }
+      try {
+        await activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force: true });
+        const count = missions.getAll().length;
+        return { ok: true, count };
+      } catch (error) {
+        return { ok: false, message: error.message || '미션 목록을 불러오지 못했습니다.' };
+      }
+    };
+
+    const isAdminSession = activeSupabaseProfile?.role === 'admin' && activeSupabaseProfile?.active !== false;
+
+    if (isProductionMode() && isAdminSession) {
+      const serverResult = await syncMissionsFromServer();
+      if (serverResult.ok && (serverResult.count ?? missions.getAll().length) > 0) {
+        return serverResult;
+      }
+      const adapterResult = await loadViaAdapter();
+      if (adapterResult.ok && missions.getAll().length > 0) {
+        return { ok: true, count: missions.getAll().length, fallback: 'supabase' };
+      }
+      return serverResult.ok === false ? serverResult : adapterResult;
     }
 
-    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.ensureKeysLoaded) {
-      return activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force });
-    }
-    return { ok: true };
+    return loadViaAdapter();
+  }
+
+  function isMissingMissionsTableError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('could not find the table')
+      || (message.includes('relation') && message.includes('missions') && message.includes('does not exist'));
   }
 
   async function getMissionsTableStatus() {
@@ -635,8 +661,19 @@ const BremStorage = (function () {
       return { ok: true, tableExists: true };
     }
     const result = await adminRidersApi('/api/admin/missions/status');
-    if (!result.ok) {
-      return { ok: false, message: result.message || result.error || '미션 테이블 상태를 확인하지 못했습니다.' };
+    if (result.ok) return result;
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { error } = await client.from('missions').select('id').limit(1);
+        if (!error) return { ok: true, tableExists: true };
+        if (isMissingMissionsTableError(error)) {
+          return { ok: true, tableExists: false, count: 0 };
+        }
+      } catch {
+        /* ignore probe errors */
+      }
     }
     return result;
   }
@@ -737,7 +774,7 @@ const BremStorage = (function () {
     }
 
     return sectionKeys
-      .filter(key => TABLE_STORAGE_KEYS.has(key))
+      .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions)
       .every(key => window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key));
   }
 
@@ -4304,6 +4341,15 @@ const BremStorage = (function () {
     if (normalized.includes('missions') && !normalized.includes('mission-management')) {
       const missionsIndex = normalized.indexOf('missions');
       normalized.splice(missionsIndex + 1, 0, 'mission-management');
+    }
+
+    if (!normalized.includes('mission-management')) {
+      const targetsIndex = normalized.indexOf('targets');
+      if (targetsIndex >= 0) {
+        normalized.splice(targetsIndex, 0, 'mission-management');
+      } else {
+        normalized.push('mission-management');
+      }
     }
 
     if (isExplicitList) {

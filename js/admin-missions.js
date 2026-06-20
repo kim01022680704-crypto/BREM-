@@ -34,10 +34,21 @@
 
     try {
       const status = await BremStorage.getMissionsTableStatus();
-      state.tableReady = status.tableExists === true;
-      banner.hidden = state.tableReady;
+      if (status.ok && status.tableExists === false) {
+        state.tableReady = false;
+        banner.hidden = false;
+        return;
+      }
+      if (status.ok && status.tableExists === true) {
+        state.tableReady = true;
+        banner.hidden = true;
+        return;
+      }
+      state.tableReady = null;
+      banner.hidden = true;
     } catch {
-      banner.hidden = false;
+      state.tableReady = null;
+      banner.hidden = true;
     }
   }
 
@@ -136,18 +147,21 @@
 
   async function refresh() {
     await updateSetupBanner();
-    if (state.tableReady === false) {
-      renderMissionCards();
-      renderDriverMissionAssignments();
-      return;
-    }
 
     try {
       await BremStorage.reloadDrivers?.(true);
-      await BremStorage.reloadMissions?.(true);
+      const loadResult = await BremStorage.reloadMissions?.(true);
+      if (missionsApi.getAll().length > 0) {
+        state.tableReady = true;
+        const banner = $('missionSetupBanner');
+        if (banner) banner.hidden = true;
+      } else if (loadResult?.ok === false) {
+        showToast(formatMissionError(loadResult.message || loadResult.error));
+      }
     } catch (error) {
       showToast(formatMissionError(error));
     }
+
     renderMissionCards();
     renderDriverMissionAssignments();
     if (!state.editingId) fillMissionForm(null);
