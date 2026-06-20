@@ -756,6 +756,7 @@ const BremStorage = (function () {
     'lease-management': [KEYS.drivers],
     'revenue-management': [],
     'admin-account': [],
+    'baemin-delivery-status': [],
     'data-backup': [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
   });
 
@@ -4425,6 +4426,7 @@ const BremStorage = (function () {
     'mission-management',
     'lease-management',
     'calls',
+    'baemin-delivery-status',
     'rejections',
     'targets',
     'promotions',
@@ -4531,6 +4533,15 @@ const BremStorage = (function () {
         normalized.splice(leaseIndex, 1);
         const nextCallsIndex = normalized.indexOf('calls');
         normalized.splice(nextCallsIndex, 0, 'lease-management');
+      }
+    }
+
+    if (!normalized.includes('baemin-delivery-status')) {
+      const callsIndex = normalized.indexOf('calls');
+      if (callsIndex >= 0) {
+        normalized.splice(callsIndex + 1, 0, 'baemin-delivery-status');
+      } else {
+        normalized.push('baemin-delivery-status');
       }
     }
 

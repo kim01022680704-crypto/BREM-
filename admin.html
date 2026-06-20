@@ -93,6 +93,7 @@
         <button class="nav-btn" data-section="mission-management">미션 관리</button>
         <button class="nav-btn" data-section="lease-management">리스 관리</button>
         <button class="nav-btn" data-section="calls">콜수 입력</button>
+        <button class="nav-btn" data-section="baemin-delivery-status">배민Biz 배달현황</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
@@ -424,38 +425,6 @@
         </article>
         </div>
         <div class="admin-platform-panel" id="calls-baemin" data-platform="baemin" hidden>
-        <article class="card" id="baeminDeliveryCollectCard">
-          <div class="card-header">
-            <h2>배민Biz 배달 현황 수집</h2>
-          </div>
-          <p class="form-help" id="baeminDeliveryConfigHint">배민Biz API는 서버에서만 호출합니다. 브라우저에서 직접 호출하지 않습니다.</p>
-          <div class="form-row baemin-collect-toolbar">
-            <label>
-              수집 날짜
-              <input type="date" id="baeminDeliveryCaptureDate" class="admin-period-input">
-            </label>
-            <button type="button" class="primary-btn" id="baeminDeliveryAutoCollectBtn">배민 자동 수집</button>
-            <button type="button" class="small-btn" id="baeminDeliveryJsonPasteBtn">배민 JSON 붙여넣기</button>
-          </div>
-          <label id="baeminDeliveryCookieField" hidden>
-            세션 쿠키 (환경변수 미설정 시, 저장되지 않음)
-            <textarea id="baeminDeliverySessionCookie" rows="2" placeholder="deliverycenter.baemin.com Cookie 헤더 값" spellcheck="false"></textarea>
-          </label>
-          <div id="baeminDeliveryCollectResult" class="baemin-collect-result" hidden></div>
-        </article>
-
-        <dialog class="baemin-json-dialog" id="baeminDeliveryJsonDialog">
-          <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
-            <h3>배민 JSON 붙여넣기</h3>
-            <p class="form-help">delivery-status API 응답 전체 또는 <code>data[]</code> 배열을 붙여넣으세요. Supabase에 저장됩니다.</p>
-            <textarea id="baeminDeliveryJsonInput" rows="12" placeholder='{"data":[...],"totalPage":1}' spellcheck="false"></textarea>
-            <div class="baemin-json-dialog__actions">
-              <button type="button" class="primary-btn" id="baeminDeliveryJsonSubmitBtn">저장</button>
-              <button type="button" class="small-btn" id="baeminDeliveryJsonCancelBtn">취소</button>
-            </div>
-          </form>
-        </dialog>
-
         <article class="card call-input-card">
           <div class="card-header">
             <h2>기사별 콜수 입력 (배민)</h2>
@@ -512,6 +481,40 @@
           </div>
         </article>
         </div>
+      </section>
+
+      <section class="section" id="baemin-delivery-status">
+        <article class="card" id="baeminDeliveryCollectCard">
+          <div class="card-header">
+            <h2>배민Biz 배달 현황 수집</h2>
+          </div>
+          <p class="form-help" id="baeminDeliveryConfigHint">배민Biz API는 서버에서만 호출합니다. 브라우저에서 직접 호출하지 않습니다.</p>
+          <div class="form-row baemin-collect-toolbar">
+            <label>
+              수집 날짜
+              <input type="date" id="baeminDeliveryCaptureDate" class="admin-period-input">
+            </label>
+            <button type="button" class="primary-btn" id="baeminDeliveryAutoCollectBtn">배민 자동 수집</button>
+            <button type="button" class="small-btn" id="baeminDeliveryJsonPasteBtn">배민 JSON 붙여넣기</button>
+          </div>
+          <label id="baeminDeliveryCookieField" hidden>
+            세션 쿠키 (환경변수 미설정 시, 저장되지 않음)
+            <textarea id="baeminDeliverySessionCookie" rows="2" placeholder="deliverycenter.baemin.com Cookie 헤더 값" spellcheck="false"></textarea>
+          </label>
+          <div id="baeminDeliveryCollectResult" class="baemin-collect-result" hidden></div>
+        </article>
+
+        <dialog class="baemin-json-dialog" id="baeminDeliveryJsonDialog">
+          <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
+            <h3>배민 JSON 붙여넣기</h3>
+            <p class="form-help">delivery-status API 응답 전체 또는 <code>data[]</code> 배열을 붙여넣으세요. Supabase에 저장됩니다.</p>
+            <textarea id="baeminDeliveryJsonInput" rows="12" placeholder='{"data":[...],"totalPage":1}' spellcheck="false"></textarea>
+            <div class="baemin-json-dialog__actions">
+              <button type="button" class="primary-btn" id="baeminDeliveryJsonSubmitBtn">저장</button>
+              <button type="button" class="small-btn" id="baeminDeliveryJsonCancelBtn">취소</button>
+            </div>
+          </form>
+        </dialog>
       </section>
 
             <section class="section" id="rejections">
@@ -2556,7 +2559,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260620r"></script>
-  <script src="js/storage.js?v=20260620r"></script>
+  <script src="js/storage.js?v=20260620s"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2569,7 +2572,7 @@
   <script src="js/weekly-settlement.js"></script>
   <script src="js/weekly-settlement-admin.js"></script>
   <script src="js/baemin-delivery-fee.js"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260620a"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260620b"></script>
   <script src="js/promotion-apply.js"></script>
   <script src="js/promotion-apply-admin.js"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
@@ -2577,6 +2580,6 @@
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260620v"></script>
-  <script src="js/admin.js?v=20260620j"></script>
+  <script src="js/admin.js?v=20260620k"></script>
 </body>
 </html>

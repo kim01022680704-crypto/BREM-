@@ -64,6 +64,7 @@
     { id: 'mission-management', label: '미션 관리' },
     { id: 'lease-management', label: '리스 관리' },
     { id: 'calls', label: '콜수 입력' },
+    { id: 'baemin-delivery-status', label: '배민Biz 배달현황' },
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
@@ -1825,9 +1826,6 @@
 
       updateCallSelectionUi(platform);
     });
-    if (state.unifiedPlatform?.calls === 'baemin') {
-      window.BremBaeminDeliveryStatusAdmin?.refresh?.();
-    }
   }
 
   function renderRejections() {
@@ -2391,6 +2389,9 @@
       case 'calls':
         renderCalls();
         break;
+      case 'baemin-delivery-status':
+        window.BremBaeminDeliveryStatusAdmin?.refresh?.();
+        break;
       case 'rejections':
         renderRejections();
         break;
@@ -2477,9 +2478,6 @@
     section.querySelectorAll(`[data-admin-platform-tab="${sectionId}"]`).forEach(button => {
       button.classList.toggle('active', button.dataset.platform === normalized);
     });
-    if (sectionId === 'calls' && normalized === 'baemin') {
-      window.BremBaeminDeliveryStatusAdmin?.refresh?.();
-    }
   }
 
   async function showSection(id, options = {}) {
@@ -2548,6 +2546,9 @@
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
       void window.BremAdminMissions.refresh({ renderOnly: true });
+    }
+    if (sectionId === 'baemin-delivery-status' && window.BremBaeminDeliveryStatusAdmin?.refresh) {
+      void window.BremBaeminDeliveryStatusAdmin.refresh();
     }
     renderActiveSection(sectionId);
   }
