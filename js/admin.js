@@ -2398,7 +2398,7 @@
         renderMissions();
         break;
       case 'mission-management':
-        window.BremAdminMissions?.refresh?.();
+        window.BremAdminMissions?.render?.();
         break;
       case 'settlements':
         renderSettlements();
@@ -2541,7 +2541,7 @@
       window.BremAdminRevenue.refresh();
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
-      window.BremAdminMissions.refresh();
+      void window.BremAdminMissions.refresh({ force: false });
     }
     renderActiveSection(sectionId);
   }

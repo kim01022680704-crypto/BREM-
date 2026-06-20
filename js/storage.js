@@ -826,8 +826,14 @@ const BremStorage = (function () {
       if (!driversReady) return false;
     }
 
+    if (sectionKeys.includes(KEYS.missions)) {
+      if (!window.BremDataCache?.isValid?.(KEYS.missions)) {
+        return false;
+      }
+    }
+
     return sectionKeys
-      .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions)
+      .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
       .every(key => window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key));
   }
 

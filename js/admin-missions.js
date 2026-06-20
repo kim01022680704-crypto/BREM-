@@ -43,9 +43,15 @@
     return message || '미션 데이터를 불러오지 못했습니다.';
   }
 
-  async function updateSetupBanner() {
+  async function updateSetupBanner(forceCheck = false) {
     const banner = $('missionSetupBanner');
     if (!banner || !BremStorage.getMissionsTableStatus) return;
+
+    if (!forceCheck && (state.tableReady === true || missionsApi.getAll().length > 0)) {
+      banner.hidden = true;
+      state.tableReady = true;
+      return;
+    }
 
     try {
       const status = await BremStorage.getMissionsTableStatus();
@@ -520,13 +526,27 @@
     if (scrollWrap) scrollWrap.scrollTop = scrollTop;
   }
 
-  async function refresh() {
-    await updateSetupBanner();
+  function renderMissionSection() {
+    renderMissionCards();
+    renderDriverMissionAssignments();
+    if (!state.editingId) fillMissionForm(null);
+  }
+
+  async function refresh(options = {}) {
+    const force = options.force === true;
+    await updateSetupBanner(force);
     resetAssignmentDrafts();
 
+    if (!force && BremStorage.isSectionCacheReady?.('mission-management')) {
+      renderMissionSection();
+      return;
+    }
+
     try {
-      await BremStorage.reloadDrivers?.(true);
-      const loadResult = await BremStorage.reloadMissions?.(true);
+      const [, loadResult] = await Promise.all([
+        BremStorage.reloadDrivers?.(force),
+        BremStorage.reloadMissions?.(force)
+      ]);
       if (missionsApi.getAll().length > 0) {
         state.tableReady = true;
         const banner = $('missionSetupBanner');
@@ -538,9 +558,7 @@
       showToast(formatMissionError(error));
     }
 
-    renderMissionCards();
-    renderDriverMissionAssignments();
-    if (!state.editingId) fillMissionForm(null);
+    renderMissionSection();
   }
 
   function bindEvents() {
@@ -548,7 +566,7 @@
     bindEvents.bound = true;
 
     $('missionSetupRecheckBtn')?.addEventListener('click', () => {
-      void refresh();
+      void refresh({ force: true });
     });
 
     $('missionCatalogList')?.addEventListener('click', event => {
@@ -716,5 +734,5 @@
   }
 
   bindEvents();
-  window.BremAdminMissions = { refresh };
+  window.BremAdminMissions = { refresh, render: renderMissionSection };
 })();
