@@ -12,6 +12,7 @@ const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
+const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const riderAuth = require('./rider-auth');
 const { getPublicConfig } = require('./public-config');
 const app = express();
@@ -311,6 +312,74 @@ app.delete('/api/admin/missions/:missionId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '미션 삭제에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/baemin-delivery/config', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getConfig(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 수집 설정을 확인하지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/baemin-delivery/latest', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getLatestSummary(
+      getBearerToken(req),
+      req.query.captureDate
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 수집 내역을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/collect', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.collectFromApi(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 자동 수집에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/import-json', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.importFromJson(
+      getBearerToken(req),
+      body.payload ?? body.json ?? body,
+      { captureDate: body.captureDate }
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민 JSON 저장에 실패했습니다.' });
   }
 });
 

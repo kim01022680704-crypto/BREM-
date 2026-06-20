@@ -2015,6 +2015,77 @@ textarea {
   font-size: 1.5rem;
 }
 
+.baemin-collect-toolbar {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.baemin-collect-result {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--black-2);
+}
+
+.baemin-collect-result--error {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+}
+
+.baemin-collect-result--success {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(20, 83, 45, 0.18);
+  color: #bbf7d0;
+}
+
+.baemin-collect-stats {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.baemin-collect-stats li {
+  margin: 4px 0;
+}
+
+.form-help--warn {
+  color: #fbbf24;
+}
+
+.baemin-json-dialog {
+  border: none;
+  border-radius: 12px;
+  padding: 0;
+  max-width: min(720px, 92vw);
+  background: var(--panel, #111);
+  color: inherit;
+}
+
+.baemin-json-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.baemin-json-dialog__inner {
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.baemin-json-dialog__inner textarea {
+  width: 100%;
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.baemin-json-dialog__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .settlement-result-block {
   padding: 0 18px 18px;
 }

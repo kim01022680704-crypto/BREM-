@@ -1825,6 +1825,9 @@
 
       updateCallSelectionUi(platform);
     });
+    if (state.unifiedPlatform?.calls === 'baemin') {
+      window.BremBaeminDeliveryStatusAdmin?.refresh?.();
+    }
   }
 
   function renderRejections() {
@@ -2474,6 +2477,9 @@
     section.querySelectorAll(`[data-admin-platform-tab="${sectionId}"]`).forEach(button => {
       button.classList.toggle('active', button.dataset.platform === normalized);
     });
+    if (sectionId === 'calls' && normalized === 'baemin') {
+      window.BremBaeminDeliveryStatusAdmin?.refresh?.();
+    }
   }
 
   async function showSection(id, options = {}) {
