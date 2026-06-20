@@ -66,6 +66,118 @@
     return mission?.title || '미선택';
   }
 
+  function missionLabel(missionId) {
+    const id = String(missionId || '').trim();
+    if (!id) return '미선택';
+    return missionTitle(id);
+  }
+
+  function buildMissionAssignmentRows() {
+    return BremStorage.drivers.getAll().map(driver => {
+      const baeminMissionId = driver.selectedMissionIdBaemin || driver.selectedMissionId || '';
+      const coupangMissionId = driver.selectedMissionIdCoupang || driver.selectedMissionId || '';
+      const platforms = [
+        driver.platformBaemin ? '배민' : '',
+        driver.platformCoupang !== false ? '쿠팡' : ''
+      ].filter(Boolean).join(' / ') || '-';
+
+      return [
+        driver.name || '',
+        driver.phone || '',
+        platforms,
+        missionLabel(baeminMissionId),
+        missionExposure(baeminMissionId),
+        missionLabel(coupangMissionId),
+        missionExposure(coupangMissionId),
+        baeminMissionId || '',
+        coupangMissionId || ''
+      ];
+    }).sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'ko'));
+  }
+
+  async function exportMissionAssignmentsToExcel() {
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+
+    showToast('미션 배정 엑셀 준비 중…');
+
+    try {
+      await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
+      await Promise.all([
+        BremStorage.reloadDrivers?.(true, { search: '', status: '전체' }),
+        BremStorage.reloadMissions?.(true)
+      ]);
+    } catch (error) {
+      showToast(formatMissionError(error) || '데이터를 불러오지 못했습니다.');
+      return;
+    }
+
+    const rows = buildMissionAssignmentRows();
+    if (!rows.length) {
+      showToast('다운로드할 기사가 없습니다.');
+      return;
+    }
+
+    const header = [
+      '기사명',
+      '전화번호',
+      '수행 플랫폼',
+      '배민 미션',
+      '배민 노출',
+      '쿠팡 미션',
+      '쿠팡 노출',
+      '배민 미션 ID',
+      '쿠팡 미션 ID'
+    ];
+
+    const sheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    sheet['!cols'] = [
+      { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 10 },
+      { wch: 28 }, { wch: 10 }, { wch: 24 }, { wch: 24 }
+    ];
+
+    const missionSummaryHeader = ['미션명', '유형', '배민 배정 기사 수', '쿠팡 배정 기사 수', '합계'];
+    const missionCounts = new Map();
+    BremStorage.drivers.getAll().forEach(driver => {
+      const baeminId = String(driver.selectedMissionIdBaemin || driver.selectedMissionId || '').trim();
+      const coupangId = String(driver.selectedMissionIdCoupang || driver.selectedMissionId || '').trim();
+      if (baeminId) {
+        const entry = missionCounts.get(baeminId) || { baemin: 0, coupang: 0 };
+        entry.baemin += 1;
+        missionCounts.set(baeminId, entry);
+      }
+      if (coupangId) {
+        const entry = missionCounts.get(coupangId) || { baemin: 0, coupang: 0 };
+        entry.coupang += 1;
+        missionCounts.set(coupangId, entry);
+      }
+    });
+
+    const summaryRows = missionsApi.getAll().map(mission => {
+      const counts = missionCounts.get(mission.id) || { baemin: 0, coupang: 0 };
+      return [
+        mission.title || '',
+        mission.type || '',
+        counts.baemin,
+        counts.coupang,
+        counts.baemin + counts.coupang
+      ];
+    });
+
+    const summarySheet = XLSX.utils.aoa_to_sheet([missionSummaryHeader, ...summaryRows]);
+    summarySheet['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 10 }];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, '기사별미션배정');
+    XLSX.utils.book_append_sheet(workbook, summarySheet, '미션별집계');
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `BREM_미션배정_${stamp}.xlsx`);
+    showToast(`${rows.length}명 미션 배정 엑셀 다운로드 완료`);
+  }
+
   function missionExposure(missionId) {
     const mission = missionsApi.getById(missionId);
     if (!missionId) return '-';
@@ -276,6 +388,10 @@
       const editId = $('missionEditId')?.value.trim();
       if (!editId) return;
       void deleteMission(editId);
+    });
+
+    $('missionAssignmentExportBtn')?.addEventListener('click', () => {
+      void exportMissionAssignmentsToExcel();
     });
 
     $('riderMissionMgmtForm')?.addEventListener('submit', event => {
