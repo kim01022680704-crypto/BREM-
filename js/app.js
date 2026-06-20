@@ -37,7 +37,6 @@
   const accountHolderInput = document.getElementById('driverAccountHolder');
   const accountNumberInput = document.getElementById('driverAccountNumber');
   const eventItemInput = document.getElementById('driverEventItem');
-  const missionSelectInput = document.getElementById('driverMissionSelect');
   const eventStartButton = document.getElementById('driverEventStartButton');
   const eventStartDateInput = document.getElementById('driverEventStartDate');
   const joinDateInput = document.getElementById('driverJoinDate');
@@ -256,25 +255,6 @@
     return BremStorage.events.getCatalog();
   }
 
-  function renderMissionOptions(selectedValue = '') {
-    if (!missionSelectInput) return;
-    const items = BremStorage.missions?.getAll?.() || [];
-    missionSelectInput.innerHTML = '<option value="">미션 관리에서 등록된 항목 선택</option>';
-    items.forEach(item => {
-      const option = document.createElement('option');
-      option.value = item.id;
-      option.textContent = item.title;
-      if (selectedValue && selectedValue === item.id) option.selected = true;
-      missionSelectInput.appendChild(option);
-    });
-    if (!selectedValue && items.length) {
-      const defaultId = BremStorage.missions?.getDefaultId?.() || items[0].id;
-      if (items.some(item => item.id === defaultId)) {
-        missionSelectInput.value = defaultId;
-      }
-    }
-  }
-
   function renderEventOptions(selectedValue) {
     const items = eventCatalog();
     eventItemInput.innerHTML = '<option value="">관리자에서 등록한 아이템 선택</option>';
@@ -307,7 +287,6 @@
     driverIdInput.value = '';
     platformAutoSync = true;
     renderEventOptions('');
-    renderMissionOptions('');
     joinDateInput.value = today();
     if (eventStartDatePicker) eventStartDatePicker.setDate('');
     else if (eventStartDateInput) eventStartDateInput.value = '';
@@ -355,7 +334,6 @@
       longEventItemId: eventItem.id,
       longEventItem: eventItem.name,
       longEventStartDate: eventStartDateInput.value,
-      selectedMissionId: missionSelectInput?.value || BremStorage.missions?.getDefaultId?.() || '',
       joinDate: joinDateInput.value,
       status: statusInput.value,
       memo: memoInput.value.trim()
@@ -464,7 +442,6 @@
     if (accountHolderInput) accountHolderInput.value = driver.accountHolder || '';
     applySensitiveFieldUi(driver);
     renderEventOptions(driver.longEventItemId || driver.longEventItem || '');
-    renderMissionOptions(driver.selectedMissionId || BremStorage.missions?.getDefaultId?.() || '');
     if (eventStartDatePicker) eventStartDatePicker.setDate(driver.longEventStartDate || '');
     else if (eventStartDateInput) eventStartDateInput.value = driver.longEventStartDate || '';
     joinDateInput.value = driver.joinDate;
@@ -567,12 +544,10 @@
 
   refreshHeader();
   loadEditFromQuery();
-  void BremStorage.ensureMissionsLoaded?.().catch(() => ({}));
-  void BremStorage.reloadDrivers?.(false).then(() => {
+  void BremStorage.reloadDrivers?.(true).then(() => {
     refreshHeader();
-    renderMissionOptions('');
     loadEditFromQuery();
-  }).catch(() => {
-    renderMissionOptions('');
+  }).catch(error => {
+    showToast(error?.message || '기사 목록을 불러오지 못했습니다.');
   });
 })();

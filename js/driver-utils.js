@@ -202,8 +202,8 @@ window.BremDriverUtils = (function () {
 
   function renderPlatformBadges(driver) {
     const tags = [];
-    if (driver.platformCoupang !== false) tags.push('<span class="platform-tag platform-tag--coupang">쿠팡</span>');
     if (driver.platformBaemin) tags.push('<span class="platform-tag platform-tag--baemin">배민</span>');
+    if (driver.platformCoupang !== false) tags.push('<span class="platform-tag platform-tag--coupang">쿠팡</span>');
     return tags.join('') || '-';
   }
 

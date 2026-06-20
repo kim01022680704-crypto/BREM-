@@ -548,34 +548,42 @@
     document.getElementById('noticeList').innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
   }
 
-  async function renderRiderMission(driver) {
-    const missionId = String(driver?.selectedMissionId || '').trim();
-    const condEl = document.getElementById('riderMissionConditions');
+  async function renderPlatformMission(driver, platform, missionId) {
+    const prefix = platform === 'baemin' ? 'Baemin' : 'Coupang';
+    const wrap = document.getElementById(`riderMission${prefix}Wrap`);
+    const titleEl = document.getElementById(`riderMission${prefix}Title`);
+    const descEl = document.getElementById(`riderMission${prefix}Description`);
+    const condEl = document.getElementById(`riderMission${prefix}Conditions`);
+    const active = platform === 'baemin' ? Boolean(driver?.platformBaemin) : driver?.platformCoupang !== false;
 
-    if (!missionId) {
-      setText('riderMissionTitle', '미설정');
-      setText('riderMissionDescription', '관리자가 미션을 배정하면 설명이 표시됩니다.');
+    if (wrap) wrap.hidden = !active;
+    if (!active) return;
+
+    const id = String(missionId || '').trim();
+    if (!id) {
+      if (titleEl) titleEl.textContent = '미설정';
+      if (descEl) descEl.textContent = '관리자가 미션을 배정하면 설명이 표시됩니다.';
       if (condEl) condEl.hidden = true;
       return;
     }
 
-    let mission = BremStorage.missions?.getById?.(missionId) || null;
+    let mission = BremStorage.missions?.getById?.(id) || null;
     try {
       await BremStorage.ensureMissionsLoaded?.();
-      mission = await BremStorage.missions?.fetchById?.(missionId) || mission;
+      mission = await BremStorage.missions?.fetchById?.(id) || mission;
     } catch (error) {
       console.warn('[BREM] Mission fetch failed:', error.message || error);
     }
 
     if (!mission) {
-      setText('riderMissionTitle', '미설정');
-      setText('riderMissionDescription', '배정된 미션 정보를 불러오지 못했습니다.');
+      if (titleEl) titleEl.textContent = '미설정';
+      if (descEl) descEl.textContent = '배정된 미션 정보를 불러오지 못했습니다.';
       if (condEl) condEl.hidden = true;
       return;
     }
 
-    setText('riderMissionTitle', mission.title || '미설정');
-    setText('riderMissionDescription', mission.description || '');
+    if (titleEl) titleEl.textContent = mission.title || '미설정';
+    if (descEl) descEl.textContent = mission.description || '';
     if (condEl) {
       if (mission.conditions) {
         condEl.textContent = `적용 조건: ${mission.conditions}`;
@@ -584,6 +592,13 @@
         condEl.hidden = true;
       }
     }
+  }
+
+  async function renderRiderMission(driver) {
+    const baeminMissionId = driver?.selectedMissionIdBaemin || driver?.selectedMissionId || '';
+    const coupangMissionId = driver?.selectedMissionIdCoupang || driver?.selectedMissionId || '';
+    await renderPlatformMission(driver, 'baemin', baeminMissionId);
+    await renderPlatformMission(driver, 'coupang', coupangMissionId);
   }
 
   function renderDriver(driver) {

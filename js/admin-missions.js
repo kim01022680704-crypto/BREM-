@@ -28,6 +28,17 @@
     }).join('');
   }
 
+  function missionTitle(missionId) {
+    const mission = missionsApi.getById(missionId);
+    return mission?.title || '미선택';
+  }
+
+  function missionExposure(missionId) {
+    const mission = missionsApi.getById(missionId);
+    if (!missionId) return '-';
+    return mission?.isActive === false ? '숨김' : '노출';
+  }
+
   function renderMissionCards() {
     const listEl = $('missionCatalogList');
     if (!listEl) return;
@@ -69,29 +80,42 @@
 
     const drivers = BremStorage.drivers.getAll();
     if (!drivers.length) {
-      rowsEl.innerHTML = '<tr><td colspan="4" class="empty">등록된 기사가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 기사가 없습니다. 기사 목록을 새로고침하거나 기사를 등록하세요.</td></tr>';
       return;
     }
 
     rowsEl.innerHTML = drivers.map(driver => {
-      const mission = missionsApi.getById(driver.selectedMissionId);
+      const baeminMissionId = driver.selectedMissionIdBaemin || driver.selectedMissionId || '';
+      const coupangMissionId = driver.selectedMissionIdCoupang || driver.selectedMissionId || '';
+      const baeminDisabled = !driver.platformBaemin ? ' disabled' : '';
+      const coupangDisabled = driver.platformCoupang === false ? ' disabled' : '';
+
       return `
         <tr>
           <td><strong>${escapeHtml(driver.name)}</strong><br><span class="hint">${escapeHtml(driver.phone)}</span></td>
           <td>
-            <select data-driver-mission="${escapeHtml(driver.id)}" class="inline-select">
-              <option value="">미션 미선택</option>
-              ${missionOptions(driver.selectedMissionId || '')}
+            <select data-driver-mission-baemin="${escapeHtml(driver.id)}" class="inline-select"${baeminDisabled}>
+              <option value="">배민 미션 미선택</option>
+              ${missionOptions(baeminMissionId)}
             </select>
+            <span class="hint">${escapeHtml(missionTitle(baeminMissionId))} · ${missionExposure(baeminMissionId)}</span>
           </td>
-          <td>${escapeHtml(mission?.title || '미선택')}</td>
-          <td>${mission?.isActive === false ? '숨김' : '노출'}</td>
+          <td>
+            <select data-driver-mission-coupang="${escapeHtml(driver.id)}" class="inline-select"${coupangDisabled}>
+              <option value="">쿠팡 미션 미선택</option>
+              ${missionOptions(coupangMissionId)}
+            </select>
+            <span class="hint">${escapeHtml(missionTitle(coupangMissionId))} · ${missionExposure(coupangMissionId)}</span>
+          </td>
+          <td>${driver.platformBaemin ? '배민' : '-'}${driver.platformCoupang !== false ? ' / 쿠팡' : ''}</td>
         </tr>
       `;
     }).join('');
   }
 
-  function refresh() {
+  async function refresh() {
+    await BremStorage.reloadDrivers?.(true).catch(() => ({}));
+    await BremStorage.ensureMissionsLoaded?.({ force: true }).catch(() => ({}));
     renderMissionCards();
     renderDriverMissionAssignments();
     if (!state.editingId) fillMissionForm(null);
@@ -137,24 +161,34 @@
           showToast('미션이 등록되었습니다.');
         }
         fillMissionForm(null);
-        refresh();
+        void refresh();
       } catch (error) {
         showToast(error.message || '미션 저장에 실패했습니다.');
       }
     });
 
     $('missionDriverRows')?.addEventListener('change', event => {
-      const select = event.target.closest('[data-driver-mission]');
+      const baeminSelect = event.target.closest('[data-driver-mission-baemin]');
+      const coupangSelect = event.target.closest('[data-driver-mission-coupang]');
+      const select = baeminSelect || coupangSelect;
       if (!select) return;
-      const driverId = select.dataset.driverMission;
-      const missionId = select.value;
-      try {
-        BremStorage.drivers.update(driverId, { selectedMissionId: missionId });
-        showToast('기사 미션이 저장되었습니다.');
-        renderDriverMissionAssignments();
-      } catch (error) {
-        showToast(error.message || '기사 미션 저장에 실패했습니다.');
-      }
+
+      const driverId = baeminSelect
+        ? baeminSelect.dataset.driverMissionBaemin
+        : coupangSelect.dataset.driverMissionCoupang;
+      const changes = baeminSelect
+        ? { selectedMissionIdBaemin: select.value }
+        : { selectedMissionIdCoupang: select.value };
+
+      void BremStorage.drivers.update(driverId, changes)
+        .then(async () => {
+          await BremStorage.flushStorage?.();
+          showToast(baeminSelect ? '배민 미션이 저장되었습니다.' : '쿠팡 미션이 저장되었습니다.');
+          renderDriverMissionAssignments();
+        })
+        .catch(error => {
+          showToast(error.message || '기사 미션 저장에 실패했습니다.');
+        });
     });
   }
 

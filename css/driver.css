@@ -933,6 +933,13 @@ h3 {
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) - 2px);
   background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 14px;
+}
+
+.mission-platform-block + .mission-platform-block {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .mission-summary-label {

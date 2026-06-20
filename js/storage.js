@@ -1093,7 +1093,7 @@ const BremStorage = (function () {
     if (!force && !append && !hasSearch && !hasStatusFilter) {
       if (window.BremDataCache?.isValid?.(KEYS.drivers)) {
         const cached = window.BremDataCache.getData(KEYS.drivers);
-        if (Array.isArray(cached)) {
+        if (Array.isArray(cached) && cached.length > 0) {
           if (!activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
             setDriversCache(cached);
           }
@@ -1702,6 +1702,12 @@ const BremStorage = (function () {
           next.promotionRuleIdBaemin || next.promotionSelectorBaemin || next.selectedPromotionType || ''
         ).trim(),
         selectedMissionId: String(next.selectedMissionId || '').trim(),
+        selectedMissionIdBaemin: String(
+          next.selectedMissionIdBaemin || next.selectedMissionId || ''
+        ).trim(),
+        selectedMissionIdCoupang: String(
+          next.selectedMissionIdCoupang || next.selectedMissionId || ''
+        ).trim(),
         hiddenFields: normalizeHiddenFields(next.hiddenFields)
       };
 
@@ -1812,7 +1818,9 @@ const BremStorage = (function () {
         joinDate: driver.joinDate,
         memo: driver.memo,
         status: driver.status,
-        selectedMissionId: String(driver.selectedMissionId || DEFAULT_MISSION_ID).trim() || DEFAULT_MISSION_ID,
+        selectedMissionId: '',
+        selectedMissionIdBaemin: '',
+        selectedMissionIdCoupang: '',
         hiddenFields: normalizeHiddenFields(driver.hiddenFields),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()

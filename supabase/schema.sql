@@ -367,10 +367,14 @@ alter table public.missions add column if not exists created_at timestamptz not 
 alter table public.missions add column if not exists updated_at timestamptz not null default now();
 
 alter table public.riders add column if not exists selected_mission_id text not null default '';
+alter table public.riders add column if not exists selected_mission_id_baemin text not null default '';
+alter table public.riders add column if not exists selected_mission_id_coupang text not null default '';
 
 create index if not exists idx_brem_missions_active on public.missions (is_active);
 create index if not exists idx_brem_missions_created_at on public.missions (created_at desc);
 create index if not exists idx_brem_riders_selected_mission on public.riders (selected_mission_id);
+create index if not exists idx_brem_riders_mission_baemin on public.riders (selected_mission_id_baemin);
+create index if not exists idx_brem_riders_mission_coupang on public.riders (selected_mission_id_coupang);
 
 drop trigger if exists trg_brem_missions_updated_at on public.missions;
 create trigger trg_brem_missions_updated_at

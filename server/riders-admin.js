@@ -7,8 +7,24 @@ const RIDER_SELECT = [
   'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
   'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-  'promotion_rule_id_coupang', 'promotion_rule_id_baemin', 'selected_mission_id', 'created_at', 'updated_at'
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
+  'created_at', 'updated_at'
 ].join(',');
+
+const RIDER_SELECT_LEGACY = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'created_at', 'updated_at'
+].join(',');
+
+function isMissingColumnError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('does not exist') || message.includes('column');
+}
 
 function toDate(value) {
   const text = String(value || '').slice(0, 10);
@@ -45,7 +61,9 @@ function riderToRow(driver) {
     promotion_selector_baemin: String(driver.promotionSelectorBaemin || ''),
     promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
     promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
-    selected_mission_id: String(driver.selectedMissionId || ''),
+    selected_mission_id: String(driver.selectedMissionId || driver.selectedMissionIdBaemin || driver.selectedMissionIdCoupang || ''),
+    selected_mission_id_baemin: String(driver.selectedMissionIdBaemin || driver.selectedMissionId || ''),
+    selected_mission_id_coupang: String(driver.selectedMissionIdCoupang || driver.selectedMissionId || ''),
     raw_data: driver || {},
     created_at: toIso(driver.createdAt),
     updated_at: toIso(driver.updatedAt)
@@ -62,20 +80,28 @@ async function listRiders(accessToken, options = {}) {
   const status = String(options.status || '').trim();
 
   const supabase = getServiceClient();
-  let query = supabase
-    .from('riders')
-    .select(RIDER_SELECT, { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
 
-  if (status && status !== '전체') {
-    query = query.eq('status', status);
-  }
-  if (search) {
-    query = query.ilike('name', `%${search}%`);
+  async function runQuery(selectColumns) {
+    let query = supabase
+      .from('riders')
+      .select(selectColumns, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status && status !== '전체') {
+      query = query.eq('status', status);
+    }
+    if (search) {
+      query = query.ilike('name', `%${search}%`);
+    }
+
+    return query;
   }
 
-  const { data, error, count } = await query;
+  let { data, error, count } = await runQuery(RIDER_SELECT);
+  if (error && isMissingColumnError(error)) {
+    ({ data, error, count } = await runQuery(RIDER_SELECT_LEGACY));
+  }
 
   if (error) {
     return { ok: false, status: 500, error: error.message || '기사 목록을 불러오지 못했습니다.' };
@@ -102,7 +128,13 @@ async function upsertRider(accessToken, rider) {
   }
 
   const supabase = getServiceClient();
-  const { error } = await supabase.from('riders').upsert(row, { onConflict: 'id' });
+  let { error } = await supabase.from('riders').upsert(row, { onConflict: 'id' });
+  if (error && isMissingColumnError(error)) {
+    delete row.selected_mission_id;
+    delete row.selected_mission_id_baemin;
+    delete row.selected_mission_id_coupang;
+    ({ error } = await supabase.from('riders').upsert(row, { onConflict: 'id' }));
+  }
   if (error) {
     return { ok: false, status: 400, error: error.message || '기사 저장에 실패했습니다.' };
   }
@@ -118,11 +150,22 @@ async function upsertRider(accessToken, rider) {
     .eq('id', row.id)
     .maybeSingle();
 
-  if (readError) {
+  let saved = data;
+  if (readError && isMissingColumnError(readError)) {
+    const legacyRead = await supabase
+      .from('riders')
+      .select(RIDER_SELECT_LEGACY)
+      .eq('id', row.id)
+      .maybeSingle();
+    if (legacyRead.error) {
+      return { ok: false, status: 500, error: legacyRead.error.message || '저장된 기사를 확인하지 못했습니다.' };
+    }
+    saved = legacyRead.data;
+  } else if (readError) {
     return { ok: false, status: 500, error: readError.message || '저장된 기사를 확인하지 못했습니다.' };
   }
 
-  return { ok: true, rider: data };
+  return { ok: true, rider: saved };
 }
 
 async function deleteRider(accessToken, riderId) {

@@ -396,5 +396,5 @@
     showLoadingSkeleton();
   }
 
-  void refreshDriverList(false);
+  void refreshDriverList(true);
 })();
