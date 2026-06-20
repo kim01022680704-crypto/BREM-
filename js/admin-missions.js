@@ -3,7 +3,14 @@
   if (!missionsApi) return;
 
   const MISSION_MAX = missionsApi.maxCount || 4;
-  const state = { editingId: '', tableReady: null };
+  const state = {
+    editingId: '',
+    tableReady: null,
+    assignmentSearch: '',
+    assignmentPlatform: 'all',
+    drafts: new Map(),
+    dirty: new Set()
+  };
 
   function $(id) {
     return document.getElementById(id);
@@ -66,6 +73,162 @@
     return mission?.title || '미선택';
   }
 
+  function getCoupangLoginId(driver) {
+    if (window.BremDriverUtils?.makeDriverLoginId) {
+      const id = window.BremDriverUtils.makeDriverLoginId(driver);
+      return id || '-';
+    }
+    const name = String(driver?.name || '').replace(/\s/g, '');
+    const phone = String(driver?.phone || '').replace(/\D/g, '').slice(-4);
+    return name && phone ? `${name}${phone}` : '-';
+  }
+
+  function getSavedAssignment(driver) {
+    return {
+      baemin: String(driver.selectedMissionIdBaemin || driver.selectedMissionId || '').trim(),
+      coupang: String(driver.selectedMissionIdCoupang || driver.selectedMissionId || '').trim()
+    };
+  }
+
+  function getDriverDraft(driver) {
+    return state.drafts.get(driver.id) || getSavedAssignment(driver);
+  }
+
+  function isDriverAssignmentDirty(driverId) {
+    const driver = BremStorage.drivers.getById(driverId);
+    if (!driver) return false;
+    const draft = getDriverDraft(driver);
+    const saved = getSavedAssignment(driver);
+    return draft.baemin !== saved.baemin || draft.coupang !== saved.coupang;
+  }
+
+  function syncDirtyState(driverId) {
+    if (isDriverAssignmentDirty(driverId)) state.dirty.add(driverId);
+    else state.dirty.delete(driverId);
+  }
+
+  function missionHintHtml(missionId) {
+    const id = String(missionId || '').trim();
+    if (!id) return '';
+    return `<span class="hint mission-selected-hint">${escapeHtml(missionTitle(id))} · ${missionExposure(id)}</span>`;
+  }
+
+  function platformBadgesHtml(driver) {
+    const badges = [];
+    if (driver.platformBaemin) {
+      badges.push('<span class="mission-platform-badge mission-platform-badge--baemin">배민</span>');
+    }
+    if (driver.platformCoupang !== false) {
+      badges.push('<span class="mission-platform-badge mission-platform-badge--coupang">쿠팡</span>');
+    }
+    return badges.length ? badges.join(' ') : '<span class="hint">-</span>';
+  }
+
+  function matchesAssignmentFilter(driver) {
+    const query = state.assignmentSearch.trim().toLowerCase();
+    if (query) {
+      const name = String(driver.name || '').toLowerCase();
+      const phone = String(driver.phone || '').replace(/\D/g, '');
+      const baeminId = String(driver.baeminId || '').toLowerCase();
+      const coupangId = getCoupangLoginId(driver).toLowerCase();
+      const phoneQuery = query.replace(/\D/g, '');
+      const matched = name.includes(query)
+        || (phoneQuery && phone.includes(phoneQuery))
+        || baeminId.includes(query)
+        || coupangId.includes(query);
+      if (!matched) return false;
+    }
+
+    if (state.assignmentPlatform === 'baemin') return Boolean(driver.platformBaemin);
+    if (state.assignmentPlatform === 'coupang') return driver.platformCoupang !== false;
+    if (state.assignmentPlatform === 'both') {
+      return Boolean(driver.platformBaemin) && driver.platformCoupang !== false;
+    }
+    return true;
+  }
+
+  function filteredAssignmentDrivers() {
+    return BremStorage.drivers.getAll()
+      .filter(matchesAssignmentFilter)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+  }
+
+  function updateAssignmentSearchStatus() {
+    const resultEl = $('missionAssignmentSearchResult');
+    const clearBtn = $('missionAssignmentSearchClear');
+    const drivers = filteredAssignmentDrivers();
+    const query = state.assignmentSearch.trim();
+
+    if (clearBtn) clearBtn.hidden = !query && state.assignmentPlatform === 'all';
+    if (resultEl) {
+      if (!query && state.assignmentPlatform === 'all') {
+        resultEl.textContent = `전체 기사 ${drivers.length}명 · 아래 목록 스크롤`;
+      } else {
+        resultEl.textContent = `검색 결과 ${drivers.length}명 · 아래 목록 스크롤`;
+      }
+    }
+
+    const saveAllBtn = $('missionAssignmentSaveAllBtn');
+    if (saveAllBtn) {
+      const dirtyCount = state.dirty.size;
+      saveAllBtn.hidden = dirtyCount === 0;
+      saveAllBtn.textContent = dirtyCount > 0 ? `변경사항 일괄 저장 (${dirtyCount}명)` : '변경사항 일괄 저장';
+    }
+  }
+
+  function resetAssignmentDrafts() {
+    state.drafts.clear();
+    state.dirty.clear();
+  }
+
+  async function saveDriverAssignment(driverId) {
+    const driver = BremStorage.drivers.getById(driverId);
+    if (!driver) throw new Error('기사를 찾을 수 없습니다.');
+
+    const draft = getDriverDraft(driver);
+    const saved = getSavedAssignment(driver);
+    const changes = {};
+    if (draft.baemin !== saved.baemin) changes.selectedMissionIdBaemin = draft.baemin;
+    if (draft.coupang !== saved.coupang) changes.selectedMissionIdCoupang = draft.coupang;
+
+    if (!Object.keys(changes).length) {
+      state.dirty.delete(driverId);
+      state.drafts.delete(driverId);
+      updateAssignmentSearchStatus();
+      return;
+    }
+
+    await BremStorage.drivers.update(driverId, changes);
+    await BremStorage.flushStorage?.();
+    state.drafts.delete(driverId);
+    state.dirty.delete(driverId);
+  }
+
+  async function saveAllDirtyAssignments() {
+    const ids = Array.from(state.dirty);
+    if (!ids.length) return;
+
+    const saveAllBtn = $('missionAssignmentSaveAllBtn');
+    if (saveAllBtn) {
+      saveAllBtn.disabled = true;
+      saveAllBtn.textContent = '저장 중…';
+    }
+
+    try {
+      for (const driverId of ids) {
+        await saveDriverAssignment(driverId);
+      }
+      showToast(`${ids.length}명 미션 배정을 저장했습니다.`);
+      renderDriverMissionAssignments();
+    } catch (error) {
+      showToast(error.message || '미션 배정 저장에 실패했습니다.');
+      renderDriverMissionAssignments();
+    } finally {
+      if (saveAllBtn) saveAllBtn.disabled = false;
+      updateAssignmentSearchStatus();
+    }
+  }
+
   function missionLabel(missionId) {
     const id = String(missionId || '').trim();
     if (!id) return '미선택';
@@ -85,6 +248,8 @@
         driver.name || '',
         driver.phone || '',
         platforms,
+        driver.baeminId || '-',
+        getCoupangLoginId(driver),
         missionLabel(baeminMissionId),
         missionExposure(baeminMissionId),
         missionLabel(coupangMissionId),
@@ -124,6 +289,8 @@
       '기사명',
       '전화번호',
       '수행 플랫폼',
+      '배민 아이디',
+      '쿠팡 아이디',
       '배민 미션',
       '배민 노출',
       '쿠팡 미션',
@@ -134,8 +301,8 @@
 
     const sheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
     sheet['!cols'] = [
-      { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 10 },
-      { wch: 28 }, { wch: 10 }, { wch: 24 }, { wch: 24 }
+      { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 16 },
+      { wch: 28 }, { wch: 10 }, { wch: 28 }, { wch: 10 }, { wch: 24 }, { wch: 24 }
     ];
 
     const missionSummaryHeader = ['미션명', '유형', '배민 배정 기사 수', '쿠팡 배정 기사 수', '합계'];
@@ -284,43 +451,69 @@
     const rowsEl = $('missionDriverRows');
     if (!rowsEl) return;
 
-    const drivers = BremStorage.drivers.getAll();
+    const scrollWrap = document.querySelector('.mission-assignment-table-wrap');
+    const scrollTop = scrollWrap?.scrollTop || 0;
+
+    if (!BremStorage.drivers.getAll().length) {
+      rowsEl.innerHTML = '<tr><td colspan="7" class="empty">등록된 기사가 없습니다. 기사 목록을 새로고침하거나 기사를 등록하세요.</td></tr>';
+      updateAssignmentSearchStatus();
+      return;
+    }
+
+    const drivers = filteredAssignmentDrivers();
+    updateAssignmentSearchStatus();
+
     if (!drivers.length) {
-      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 기사가 없습니다. 기사 목록을 새로고침하거나 기사를 등록하세요.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="7" class="empty">조건에 맞는 기사가 없습니다. 검색·필터를 확인하세요.</td></tr>';
       return;
     }
 
     rowsEl.innerHTML = drivers.map(driver => {
-      const baeminMissionId = driver.selectedMissionIdBaemin || driver.selectedMissionId || '';
-      const coupangMissionId = driver.selectedMissionIdCoupang || driver.selectedMissionId || '';
+      const draft = getDriverDraft(driver);
+      const baeminMissionId = draft.baemin;
+      const coupangMissionId = draft.coupang;
       const baeminDisabled = !driver.platformBaemin ? ' disabled' : '';
       const coupangDisabled = driver.platformCoupang === false ? ' disabled' : '';
+      const isDirty = isDriverAssignmentDirty(driver.id);
+      const baeminIdText = driver.platformBaemin ? (driver.baeminId || '-') : '-';
+      const coupangIdText = driver.platformCoupang !== false ? getCoupangLoginId(driver) : '-';
 
       return `
-        <tr>
-          <td><strong>${escapeHtml(driver.name)}</strong><br><span class="hint">${escapeHtml(driver.phone)}</span></td>
-          <td>
+        <tr class="${isDirty ? 'mission-row-dirty' : ''}" data-driver-id="${escapeHtml(driver.id)}">
+          <td class="mission-driver-cell">
+            <strong>${escapeHtml(driver.name)}</strong>
+            <span class="hint">${escapeHtml(driver.phone)}</span>
+          </td>
+          <td class="mission-platform-cell">${platformBadgesHtml(driver)}</td>
+          <td><code class="mission-id-code">${escapeHtml(baeminIdText)}</code></td>
+          <td><code class="mission-id-code">${escapeHtml(coupangIdText)}</code></td>
+          <td class="mission-select-cell">
             <select data-driver-mission-baemin="${escapeHtml(driver.id)}" class="inline-select"${baeminDisabled}>
               <option value="">배민 미션 미선택</option>
               ${missionOptions(baeminMissionId)}
             </select>
-            <span class="hint">${escapeHtml(missionTitle(baeminMissionId))} · ${missionExposure(baeminMissionId)}</span>
+            ${missionHintHtml(baeminMissionId)}
           </td>
-          <td>
+          <td class="mission-select-cell">
             <select data-driver-mission-coupang="${escapeHtml(driver.id)}" class="inline-select"${coupangDisabled}>
               <option value="">쿠팡 미션 미선택</option>
               ${missionOptions(coupangMissionId)}
             </select>
-            <span class="hint">${escapeHtml(missionTitle(coupangMissionId))} · ${missionExposure(coupangMissionId)}</span>
+            ${missionHintHtml(coupangMissionId)}
           </td>
-          <td>${driver.platformBaemin ? '배민' : '-'}${driver.platformCoupang !== false ? ' / 쿠팡' : ''}</td>
+          <td>
+            <button type="button" class="small-btn primary-btn" data-save-driver-mission="${escapeHtml(driver.id)}"${isDirty ? '' : ' disabled'}>저장</button>
+          </td>
         </tr>
       `;
     }).join('');
+
+    if (scrollWrap) scrollWrap.scrollTop = scrollTop;
   }
 
   async function refresh() {
     await updateSetupBanner();
+    resetAssignmentDrafts();
 
     try {
       await BremStorage.reloadDrivers?.(true);
@@ -394,6 +587,30 @@
       void exportMissionAssignmentsToExcel();
     });
 
+    $('missionAssignmentSaveAllBtn')?.addEventListener('click', () => {
+      void saveAllDirtyAssignments();
+    });
+
+    $('missionAssignmentSearch')?.addEventListener('input', event => {
+      state.assignmentSearch = event.target.value;
+      renderDriverMissionAssignments();
+    });
+
+    $('missionAssignmentPlatformFilter')?.addEventListener('change', event => {
+      state.assignmentPlatform = event.target.value || 'all';
+      renderDriverMissionAssignments();
+    });
+
+    $('missionAssignmentSearchClear')?.addEventListener('click', () => {
+      state.assignmentSearch = '';
+      state.assignmentPlatform = 'all';
+      const searchInput = $('missionAssignmentSearch');
+      const platformSelect = $('missionAssignmentPlatformFilter');
+      if (searchInput) searchInput.value = '';
+      if (platformSelect) platformSelect.value = 'all';
+      renderDriverMissionAssignments();
+    });
+
     $('riderMissionMgmtForm')?.addEventListener('submit', event => {
       event.preventDefault();
       if (state.tableReady === false) {
@@ -453,24 +670,38 @@
     $('missionDriverRows')?.addEventListener('change', event => {
       const baeminSelect = event.target.closest('[data-driver-mission-baemin]');
       const coupangSelect = event.target.closest('[data-driver-mission-coupang]');
-      const select = baeminSelect || coupangSelect;
-      if (!select) return;
+      if (!baeminSelect && !coupangSelect) return;
 
-      const driverId = baeminSelect
-        ? baeminSelect.dataset.driverMissionBaemin
-        : coupangSelect.dataset.driverMissionCoupang;
-      const changes = baeminSelect
-        ? { selectedMissionIdBaemin: select.value }
-        : { selectedMissionIdCoupang: select.value };
+      const driverId = baeminSelect?.dataset.driverMissionBaemin || coupangSelect?.dataset.driverMissionCoupang;
+      const driver = BremStorage.drivers.getById(driverId);
+      if (!driver) return;
 
-      void BremStorage.drivers.update(driverId, changes)
-        .then(async () => {
-          await BremStorage.flushStorage?.();
-          showToast(baeminSelect ? '배민 미션이 저장되었습니다.' : '쿠팡 미션이 저장되었습니다.');
+      const current = getDriverDraft(driver);
+      const next = {
+        baemin: baeminSelect ? baeminSelect.value : current.baemin,
+        coupang: coupangSelect ? coupangSelect.value : current.coupang
+      };
+      state.drafts.set(driverId, next);
+      syncDirtyState(driverId);
+      renderDriverMissionAssignments();
+    });
+
+    $('missionDriverRows')?.addEventListener('click', event => {
+      const saveBtn = event.target.closest('[data-save-driver-mission]');
+      if (!saveBtn) return;
+
+      const driverId = saveBtn.dataset.saveDriverMission;
+      saveBtn.disabled = true;
+      saveBtn.textContent = '저장 중…';
+
+      void saveDriverAssignment(driverId)
+        .then(() => {
+          showToast('미션 배정이 저장되었습니다.');
           renderDriverMissionAssignments();
         })
         .catch(error => {
-          showToast(error.message || '기사 미션 저장에 실패했습니다.');
+          showToast(error.message || '미션 배정 저장에 실패했습니다.');
+          renderDriverMissionAssignments();
         });
     });
   }

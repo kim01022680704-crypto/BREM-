@@ -1059,20 +1059,41 @@
           <div class="card-header mission-catalog-header">
             <div>
               <h2>기사별 미션 배정</h2>
-              <p class="hint">기사별 배민·쿠팡 미션을 선택하면 기사앱에 반영됩니다.</p>
+              <p class="hint">기사별 배민·쿠팡 미션을 선택한 뒤 저장하세요. 목록은 스크롤로 전체 기사를 확인할 수 있습니다.</p>
             </div>
             <div class="mission-catalog-actions">
               <button type="button" class="small-btn" id="missionAssignmentExportBtn">엑셀 다운로드</button>
+              <button type="button" class="small-btn primary-btn" id="missionAssignmentSaveAllBtn" hidden>변경사항 일괄 저장</button>
             </div>
           </div>
-          <div class="table-wrap">
-            <table class="dashboard-table">
+          <div class="mission-assignment-toolbar">
+            <label class="driver-search-field">
+              <span>기사 검색</span>
+              <input type="search" id="missionAssignmentSearch" placeholder="이름 · 전화 · 배민/쿠팡 아이디" autocomplete="off">
+            </label>
+            <label>
+              플랫폼
+              <select id="missionAssignmentPlatformFilter">
+                <option value="all">전체</option>
+                <option value="baemin">배민</option>
+                <option value="coupang">쿠팡</option>
+                <option value="both">배민+쿠팡</option>
+              </select>
+            </label>
+            <button type="button" class="small-btn" id="missionAssignmentSearchClear" hidden>검색 초기화</button>
+            <p class="driver-search-result" id="missionAssignmentSearchResult">전체 기사 표시 중 · 아래 목록 스크롤</p>
+          </div>
+          <div class="table-wrap mission-assignment-table-wrap">
+            <table class="dashboard-table mission-assignment-table">
               <thead>
                 <tr>
                   <th>기사</th>
+                  <th>플랫폼</th>
+                  <th>배민 아이디</th>
+                  <th>쿠팡 아이디</th>
                   <th>배민 미션</th>
                   <th>쿠팡 미션</th>
-                  <th>수행 플랫폼</th>
+                  <th>저장</th>
                 </tr>
               </thead>
               <tbody id="missionDriverRows"></tbody>
@@ -2522,7 +2543,7 @@
   <script src="js/admin-schedule.js"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-missions.js?v=20260620p"></script>
+  <script src="js/admin-missions.js?v=20260620r"></script>
   <script src="js/admin.js?v=20260620g"></script>
 </body>
 </html>
