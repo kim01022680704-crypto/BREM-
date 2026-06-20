@@ -49,9 +49,10 @@ window.BremSupabaseMapper = (function () {
       hidden_fields: driver.hiddenFields || {},
       promotion_selector_coupang: String(driver.promotionSelectorCoupang || ''),
       promotion_selector_baemin: String(driver.promotionSelectorBaemin || ''),
-      promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
-      promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
-      raw_data: driver || {},
+    promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
+    promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
+    selected_mission_id: String(driver.selectedMissionId || ''),
+    raw_data: driver || {},
       created_at: toIso(driver.createdAt),
       updated_at: toIso(driver.updatedAt)
     };
@@ -83,6 +84,7 @@ window.BremSupabaseMapper = (function () {
       promotionSelectorBaemin: row.promotion_selector_baemin || '',
       promotionRuleIdCoupang: row.promotion_rule_id_coupang || '',
       promotionRuleIdBaemin: row.promotion_rule_id_baemin || '',
+      selectedMissionId: row.selected_mission_id || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -271,6 +273,34 @@ window.BremSupabaseMapper = (function () {
     };
   }
 
+  function missionToRow(mission) {
+    return {
+      id: String(mission.id || ''),
+      title: String(mission.title || ''),
+      description: String(mission.description || ''),
+      type: String(mission.type || ''),
+      conditions: String(mission.conditions || ''),
+      is_active: mission.isActive !== false,
+      raw_data: mission || {},
+      created_at: toIso(mission.createdAt),
+      updated_at: toIso(mission.updatedAt || mission.createdAt)
+    };
+  }
+
+  function rowToMission(row) {
+    return {
+      ...(row.raw_data || {}),
+      id: row.id,
+      title: row.raw_data?.title ?? row.title ?? '',
+      description: row.raw_data?.description ?? row.description ?? '',
+      type: row.raw_data?.type ?? row.type ?? '',
+      conditions: row.raw_data?.conditions ?? row.conditions ?? '',
+      isActive: row.raw_data?.isActive ?? row.is_active !== false,
+      createdAt: row.raw_data?.createdAt ?? row.created_at,
+      updatedAt: row.raw_data?.updatedAt ?? row.updated_at
+    };
+  }
+
   return {
     slugifyRegion,
     makeRiderLoginId,
@@ -285,6 +315,8 @@ window.BremSupabaseMapper = (function () {
     noticeToRow,
     rowToNotice,
     inquiryToRow,
-    rowToInquiry
+    rowToInquiry,
+    missionToRow,
+    rowToMission
   };
 })();

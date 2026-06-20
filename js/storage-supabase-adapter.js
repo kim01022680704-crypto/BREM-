@@ -11,12 +11,13 @@ window.BremSupabaseStorageAdapter = (function () {
     'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
     'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
     'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-    'promotion_rule_id_coupang', 'promotion_rule_id_baemin', 'created_at', 'updated_at'
+    'promotion_rule_id_coupang', 'promotion_rule_id_baemin', 'selected_mission_id', 'created_at', 'updated_at'
   ].join(',');
 
   const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
   const PROMOTION_SELECT = 'id,name,platform,type,enabled,selector_key,start_date,end_date,priority,payload,created_at,updated_at';
   const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
+  const MISSION_SELECT = 'id,title,description,type,conditions,is_active,created_at,updated_at';
 
   const TABLE_KEYS = new Set();
 
@@ -38,7 +39,7 @@ window.BremSupabaseStorageAdapter = (function () {
     let ridersMeta = { total: 0, hasMore: false, pageSize: DEFAULT_RIDER_PAGE_SIZE, offset: 0 };
 
     TABLE_KEYS.clear();
-    [keys.drivers, keys.notices, keys.promotionRules, keys.riderInquiries].forEach(key => TABLE_KEYS.add(key));
+    [keys.drivers, keys.notices, keys.promotionRules, keys.riderInquiries, keys.missions].forEach(key => TABLE_KEYS.add(key));
 
     function setCache(key, value) {
       cache.set(key, value);
@@ -57,10 +58,24 @@ window.BremSupabaseStorageAdapter = (function () {
       const { data, error } = await client.from('settings').select('key,value').order('key');
       window.BremPerf?.timeEnd?.('settings.fetch');
       if (error) throw error;
-      (data || []).forEach(row => setCache(row.key, row.value));
+      (data || []).forEach(row => {
+        setCache(row.key, row.value);
+        if (!isTableKey(row.key)) {
+          window.BremDataCache?.set?.(row.key, row.value);
+        }
+      });
     }
 
     async function loadNotices(options = {}) {
+      if (!options.force && window.BremDataCache?.isValid(keys.notices)) {
+        const cached = window.BremDataCache.getData(keys.notices);
+        if (Array.isArray(cached)) {
+          setCache(keys.notices, cached);
+          loadedTableKeys.add(keys.notices);
+          return cached;
+        }
+      }
+
       window.BremPerf?.time?.('notices.fetch');
       const limit = Number(options.limit) > 0 ? Number(options.limit) : null;
       let query = client
@@ -81,10 +96,20 @@ window.BremSupabaseStorageAdapter = (function () {
         setCache(keys.notices, value);
       }
       loadedTableKeys.add(keys.notices);
+      window.BremDataCache?.set?.(keys.notices, getCache(keys.notices, value));
       return value;
     }
 
-    async function loadPromotions() {
+    async function loadPromotions(options = {}) {
+      if (!options.force && window.BremDataCache?.isValid(keys.promotionRules)) {
+        const cached = window.BremDataCache.getData(keys.promotionRules);
+        if (Array.isArray(cached)) {
+          setCache(keys.promotionRules, cached);
+          loadedTableKeys.add(keys.promotionRules);
+          return cached;
+        }
+      }
+
       window.BremPerf?.time?.('promotions.fetch');
       const { data, error } = await client
         .from('promotions')
@@ -95,10 +120,44 @@ window.BremSupabaseStorageAdapter = (function () {
       const value = (data || []).map(row => Mapper().rowToPromotion(row));
       setCache(keys.promotionRules, value);
       loadedTableKeys.add(keys.promotionRules);
+      window.BremDataCache?.set?.(keys.promotionRules, value);
       return value;
     }
 
-    async function loadRiderInquiries() {
+    async function loadMissions(options = {}) {
+      if (!options.force && window.BremDataCache?.isValid(keys.missions)) {
+        const cached = window.BremDataCache.getData(keys.missions);
+        if (Array.isArray(cached)) {
+          setCache(keys.missions, cached);
+          loadedTableKeys.add(keys.missions);
+          return cached;
+        }
+      }
+
+      window.BremPerf?.time?.('missions.fetch');
+      const { data, error } = await client
+        .from('missions')
+        .select(MISSION_SELECT)
+        .order('created_at', { ascending: true });
+      window.BremPerf?.timeEnd?.('missions.fetch');
+      if (error) throw error;
+      const value = (data || []).map(row => Mapper().rowToMission(row));
+      setCache(keys.missions, value);
+      loadedTableKeys.add(keys.missions);
+      window.BremDataCache?.set?.(keys.missions, value);
+      return value;
+    }
+
+    async function loadRiderInquiries(options = {}) {
+      if (!options.force && window.BremDataCache?.isValid(keys.riderInquiries)) {
+        const cached = window.BremDataCache.getData(keys.riderInquiries);
+        if (Array.isArray(cached)) {
+          setCache(keys.riderInquiries, cached);
+          loadedTableKeys.add(keys.riderInquiries);
+          return cached;
+        }
+      }
+
       window.BremPerf?.time?.('riderInquiries.fetch');
       const { data, error } = await client
         .from('rider_inquiries')
@@ -109,14 +168,34 @@ window.BremSupabaseStorageAdapter = (function () {
       const value = (data || []).map(row => Mapper().rowToInquiry(row));
       setCache(keys.riderInquiries, value);
       loadedTableKeys.add(keys.riderInquiries);
+      window.BremDataCache?.set?.(keys.riderInquiries, value);
       return value;
     }
 
     async function loadRiders(options = {}) {
+      const force = options.force === true;
+      const append = options.append === true;
+      const hasFilter = Boolean(String(options.search || '').trim())
+        || (options.status && options.status !== '전체');
+
+      if (!force && !append && !hasFilter && window.BremDataCache?.isValid(keys.drivers)) {
+        const cached = window.BremDataCache.getData(keys.drivers);
+        if (Array.isArray(cached)) {
+          setCache(keys.drivers, cached);
+          loadedTableKeys.add(keys.drivers);
+          ridersMeta = {
+            total: cached.length,
+            hasMore: false,
+            pageSize: DEFAULT_RIDER_PAGE_SIZE,
+            offset: 0
+          };
+          return { riders: cached, meta: ridersMeta, cached: true };
+        }
+      }
+
       window.BremPerf?.time?.('riders.fetch');
       const pageSize = Math.min(Math.max(Number(options.limit) || DEFAULT_RIDER_PAGE_SIZE, 1), 200);
       const offset = Math.max(Number(options.offset) || 0, 0);
-      const append = options.append === true;
 
       let query = client
         .from('riders')
@@ -143,32 +222,52 @@ window.BremSupabaseStorageAdapter = (function () {
         offset
       };
       loadedTableKeys.add(keys.drivers);
+      if (!append && !hasFilter) {
+        window.BremDataCache?.set?.(keys.drivers, merged);
+      }
       return { riders: merged, meta: ridersMeta };
     }
 
     async function loadKey(key, options = {}) {
       if (key === keys.drivers) return loadRiders(options);
       if (key === keys.notices) return loadNotices(options);
-      if (key === keys.promotionRules) return loadPromotions();
-      if (key === keys.riderInquiries) return loadRiderInquiries();
+      if (key === keys.promotionRules) return loadPromotions(options);
+      if (key === keys.riderInquiries) return loadRiderInquiries(options);
+      if (key === keys.missions) return loadMissions(options);
       return null;
     }
 
     async function ensureKeysLoaded(targetKeys = [], options = {}) {
       await hydrateCore();
       const unique = [...new Set((targetKeys || []).filter(isTableKey))];
-      const missing = unique.filter(key => !loadedTableKeys.has(key));
+      const force = options.force === true;
+      const missing = [];
+
+      unique.forEach(key => {
+        if (force) {
+          loadedTableKeys.delete(key);
+          missing.push(key);
+          return;
+        }
+        if (loadedTableKeys.has(key) && window.BremDataCache?.isValid(key)) return;
+
+        const cached = window.BremDataCache?.getData(key);
+        if (Array.isArray(cached)) {
+          setCache(key, cached);
+          loadedTableKeys.add(key);
+          return;
+        }
+
+        if (!loadedTableKeys.has(key)) missing.push(key);
+      });
+
       if (!missing.length) return { ok: true, cached: true };
 
       window.BremPerf?.time?.('storage.ensureKeysLoaded');
-      await Promise.all(missing.map(key => {
-        if (keyLoadPromises.has(key)) return keyLoadPromises.get(key);
-        const promise = loadKey(key, options[key] || options).finally(() => {
-          keyLoadPromises.delete(key);
-        });
-        keyLoadPromises.set(key, promise);
-        return promise;
-      }));
+      await Promise.all(missing.map(key => window.BremDataCache.runOnce(`load:${key}`, () => loadKey(key, {
+        ...(options[key] || options),
+        force
+      }))));
       window.BremPerf?.timeEnd?.('storage.ensureKeysLoaded');
       return { ok: true };
     }
@@ -178,15 +277,48 @@ window.BremSupabaseStorageAdapter = (function () {
         if (!isTableKey(key)) return;
         loadedTableKeys.delete(key);
         keyLoadPromises.delete(key);
+        window.BremDataCache?.invalidate?.(key);
       });
     }
 
     async function hydrateCore() {
       if (coreHydrated) return;
+
+      if (window.BremDataCache?.isCoreReady?.()) {
+        const snapshot = window.BremDataCache.getData('__settings_snapshot__');
+        if (Array.isArray(snapshot) && snapshot.length) {
+          let restored = 0;
+          snapshot.forEach(key => {
+            if (isTableKey(key)) return;
+            const cached = window.BremDataCache.getData(key);
+            if (cached !== null && cached !== undefined) {
+              setCache(key, cached);
+              restored += 1;
+            }
+          });
+          if (restored > 0) {
+            coreHydrated = true;
+            return;
+          }
+        }
+      }
+
       window.BremPerf?.time?.('storage.hydrateCore');
       await loadSettings();
       coreHydrated = true;
+      window.BremDataCache?.markCoreReady?.();
+      window.BremDataCache?.set?.('__settings_snapshot__', Array.from(cache.keys()).filter(key => !isTableKey(key)));
       window.BremPerf?.timeEnd?.('storage.hydrateCore');
+    }
+
+    async function reloadSettingKey(key) {
+      const { data, error } = await client.from('settings').select('key,value').eq('key', key).maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setCache(key, data.value);
+        window.BremDataCache?.set?.(key, data.value);
+      }
+      return data?.value ?? null;
     }
 
     async function hydrate(options = {}) {
@@ -234,6 +366,33 @@ window.BremSupabaseStorageAdapter = (function () {
       return loadRiders(options);
     }
 
+    async function persistMissions(value) {
+      const rows = (value || []).map(item => Mapper().missionToRow(item)).filter(row => row.id);
+      await replaceTable('missions', rows);
+      loadedTableKeys.add(keys.missions);
+    }
+
+    async function fetchMissionById(id) {
+      const missionId = String(id || '').trim();
+      if (!missionId) return null;
+      const { data, error } = await client
+        .from('missions')
+        .select(MISSION_SELECT)
+        .eq('id', missionId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const mission = Mapper().rowToMission(data);
+      const list = getCache(keys.missions, []);
+      const next = list.some(item => item.id === mission.id)
+        ? list.map(item => (item.id === mission.id ? mission : item))
+        : [...list, mission];
+      setCache(keys.missions, next);
+      window.BremDataCache?.set?.(keys.missions, next);
+      loadedTableKeys.add(keys.missions);
+      return mission;
+    }
+
     async function persistRiderInquiries(value) {
       const rows = (value || []).map(item => Mapper().inquiryToRow(item)).filter(row => row.id);
       await replaceTable('rider_inquiries', rows);
@@ -273,7 +432,8 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.drivers]: persistRiders,
       [keys.notices]: persistNotices,
       [keys.promotionRules]: persistPromotions,
-      [keys.riderInquiries]: persistRiderInquiries
+      [keys.riderInquiries]: persistRiderInquiries,
+      [keys.missions]: persistMissions
     };
 
     function queuePersist(key, value) {
@@ -297,7 +457,10 @@ window.BremSupabaseStorageAdapter = (function () {
 
     function stage(key, value) {
       setCache(key, value);
-      if (isTableKey(key)) loadedTableKeys.add(key);
+      if (isTableKey(key)) {
+        loadedTableKeys.add(key);
+        window.BremDataCache?.set?.(key, value);
+      }
     }
 
     return {
@@ -316,6 +479,8 @@ window.BremSupabaseStorageAdapter = (function () {
       ensureKeysLoaded,
       invalidateKeys,
       reloadRiders,
+      reloadSettingKey,
+      fetchMissionById,
       deleteRider,
       upsertRider,
       stage,
@@ -344,6 +509,7 @@ window.BremSupabaseStorageAdapter = (function () {
           else if (key === keys.notices) await replaceTable('notices', []);
           else if (key === keys.promotionRules) await replaceTable('promotions', []);
           else if (key === keys.riderInquiries) await replaceTable('rider_inquiries', []);
+          else if (key === keys.missions) await replaceTable('missions', []);
           else await client.from('settings').delete().eq('key', key);
         }).catch(error => {
           console.error('[BremSupabaseStorageAdapter] remove failed:', key, error);

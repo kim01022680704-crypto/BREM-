@@ -928,6 +928,30 @@ h3 {
   transform: translateX(-50%) translateY(0);
 }
 
+.mission-summary-box {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mission-summary-label {
+  margin: 0 0 6px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.mission-summary-box strong {
+  display: block;
+  font-size: 1.15rem;
+  margin-bottom: 8px;
+}
+
+.mission-conditions {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
 /* ── Calendars ── */
 
 .range-calendar {

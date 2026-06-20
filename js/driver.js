@@ -548,12 +548,51 @@
     document.getElementById('noticeList').innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
   }
 
+  async function renderRiderMission(driver) {
+    const missionId = String(driver?.selectedMissionId || '').trim();
+    const condEl = document.getElementById('riderMissionConditions');
+
+    if (!missionId) {
+      setText('riderMissionTitle', '미설정');
+      setText('riderMissionDescription', '관리자가 미션을 배정하면 설명이 표시됩니다.');
+      if (condEl) condEl.hidden = true;
+      return;
+    }
+
+    let mission = BremStorage.missions?.getById?.(missionId) || null;
+    try {
+      await BremStorage.ensureMissionsLoaded?.();
+      mission = await BremStorage.missions?.fetchById?.(missionId) || mission;
+    } catch (error) {
+      console.warn('[BREM] Mission fetch failed:', error.message || error);
+    }
+
+    if (!mission) {
+      setText('riderMissionTitle', '미설정');
+      setText('riderMissionDescription', '배정된 미션 정보를 불러오지 못했습니다.');
+      if (condEl) condEl.hidden = true;
+      return;
+    }
+
+    setText('riderMissionTitle', mission.title || '미설정');
+    setText('riderMissionDescription', mission.description || '');
+    if (condEl) {
+      if (mission.conditions) {
+        condEl.textContent = `적용 조건: ${mission.conditions}`;
+        condEl.hidden = false;
+      } else {
+        condEl.hidden = true;
+      }
+    }
+  }
+
   function renderDriver(driver) {
     if (driver?.id) {
       driver = BremStorage.drivers.getById(driver.id) || driver;
       state.currentDriver = driver;
     }
     applySensitiveFieldUi(driver);
+    void renderRiderMission(driver);
 
     const month = currentMonth();
     const monthStats = monthCallsByPlatform(driver.id, month);
@@ -756,6 +795,7 @@
 
       if (isProduction) {
         await BremStorage.ensureSupabaseHydrated?.({ skipDriversSync: true });
+        await BremStorage.ensureMissionsLoaded?.().catch(() => ({}));
       }
 
       let driver = loginResult.driver || null;

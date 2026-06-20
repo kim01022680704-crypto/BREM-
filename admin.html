@@ -13,6 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/data-loading.css">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -89,6 +90,7 @@
         <button class="nav-btn" data-section="admin-schedule">관리자 스케줄표</button>
         <button class="nav-btn" data-section="mission-results">장기근속이벤트 결과</button>
         <button class="nav-btn" data-section="missions">장기근속이벤트</button>
+        <button class="nav-btn" data-section="mission-management">미션 관리</button>
         <button class="nav-btn" data-section="lease-management">리스 관리</button>
         <button class="nav-btn" data-section="calls">콜수 입력</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
@@ -118,6 +120,11 @@
           <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
         </div>
       </header>
+
+      <div class="brem-data-loading" id="bremDataLoading" hidden role="status" aria-live="polite">
+        <span class="brem-data-loading__spinner" aria-hidden="true"></span>
+        <span class="brem-data-loading__text">데이터 불러오는 중...</span>
+      </div>
 
       <div class="driver-search-bar">
         <label class="driver-search-field">
@@ -985,6 +992,68 @@
             <div id="eventSettings" class="bike-settings"></div>
           </article>
         </div>
+      </section>
+
+      <section class="section" id="mission-management">
+        <article class="card">
+          <div class="card-header">
+            <h2>미션 관리</h2>
+          </div>
+          <p class="hint">미션 제목·설명·적용 조건을 수정하면, 해당 미션을 선택한 기사앱 화면에 즉시 반영됩니다.</p>
+          <div id="missionCatalogList" class="grid two"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2 id="missionFormTitle">미션 수정</h2>
+          </div>
+          <form class="form-row" id="riderMissionMgmtForm">
+            <input type="hidden" id="missionEditId">
+            <label class="span-2">
+              미션 제목
+              <input type="text" id="missionTitle" placeholder="예: 140건 1,500원 미션" required>
+            </label>
+            <label class="span-2">
+              미션 설명
+              <textarea id="missionDescription" rows="3" placeholder="기사앱에 표시할 설명"></textarea>
+            </label>
+            <label class="span-2">
+              적용 조건
+              <textarea id="missionConditions" rows="2" placeholder="예: 주간 140건 이상 콜수 달성"></textarea>
+            </label>
+            <label>
+              미션 유형
+              <input type="text" id="missionType" placeholder="count_reward">
+            </label>
+            <label class="checkbox-field">
+              <input type="checkbox" id="missionIsActive" checked>
+              기사앱 노출
+            </label>
+            <div class="form-actions span-2">
+              <button class="primary-btn" type="submit" id="missionFormSubmit">미션 저장</button>
+              <button class="ghost-btn" type="button" id="missionFormReset">입력 초기화</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>기사별 미션 배정</h2>
+          </div>
+          <div class="table-wrap">
+            <table class="dashboard-table">
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>미션 선택</th>
+                  <th>현재 미션 제목</th>
+                  <th>기사앱 노출</th>
+                </tr>
+              </thead>
+              <tbody id="missionDriverRows"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
 
       <section class="section" id="promotions">
@@ -2398,9 +2467,11 @@
   <script src="js/perf.js"></script>
   <script src="js/session-security.js?v=20260620c"></script>
   <script src="js/supabase-config.js?v=20260620c"></script>
+  <script src="js/data-cache.js"></script>
+  <script src="js/data-loading-ui.js"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-supabase-adapter.js"></script>
-  <script src="js/storage.js?v=20260620d"></script>
+  <script src="js/storage.js?v=20260620f"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2419,6 +2490,7 @@
   <script src="js/admin-schedule.js"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin.js?v=20260620d"></script>
+  <script src="js/admin-missions.js"></script>
+  <script src="js/admin.js?v=20260620f"></script>
 </body>
 </html>

@@ -61,6 +61,7 @@
     { id: 'admin-schedule', label: '관리자 스케줄표' },
     { id: 'mission-results', label: '장기근속이벤트 결과' },
     { id: 'missions', label: '장기근속이벤트' },
+    { id: 'mission-management', label: '미션 관리' },
     { id: 'lease-management', label: '리스 관리' },
     { id: 'calls', label: '콜수 입력' },
     { id: 'rejections', label: '거절율 입력' },
@@ -1328,7 +1329,13 @@
   }
 
   function showAdminDataLoading(loading) {
-    $('#adminApp')?.classList.toggle('is-data-loading', loading);
+    const app = $('#adminApp');
+    app?.classList.toggle('is-data-loading', loading);
+    if (loading) {
+      window.BremLoadingUI?.show(app, '데이터 불러오는 중...');
+    } else {
+      window.BremLoadingUI?.hide(app);
+    }
   }
 
   function showSectionLoadingSkeleton(sectionId) {
@@ -1433,7 +1440,8 @@
       : (allowedMenus[0] || 'dashboard');
 
     showSection(initialSection, { skipRender: true });
-    if (!options.shellReady) {
+    const initialCacheReady = BremStorage.isSectionCacheReady?.(initialSection);
+    if (!options.shellReady && !initialCacheReady) {
       showSectionLoadingSkeleton(initialSection);
       showAdminDataLoading(true);
     }
@@ -2389,6 +2397,9 @@
       case 'missions':
         renderMissions();
         break;
+      case 'mission-management':
+        window.BremAdminMissions?.refresh?.();
+        break;
       case 'settlements':
         renderSettlements();
         break;
@@ -2495,8 +2506,12 @@
       return;
     }
 
-    showSectionLoadingSkeleton(sectionId);
-    showAdminDataLoading(true);
+    const cacheReady = BremStorage.isSectionCacheReady?.(sectionId);
+    if (!cacheReady) {
+      showSectionLoadingSkeleton(sectionId);
+      showAdminDataLoading(true);
+    }
+
     try {
       const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
       if (result?.ok === false) {
@@ -2506,7 +2521,9 @@
       console.error('[BREM] Section load failed:', error);
       showToast(error.message || '데이터를 불러오지 못했습니다.');
     } finally {
-      showAdminDataLoading(false);
+      if (!cacheReady) {
+        showAdminDataLoading(false);
+      }
     }
 
     if (sectionId === 'data-backup' && window.BremDataBackupAdmin?.refresh) {
@@ -2522,6 +2539,9 @@
     }
     if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
       window.BremAdminRevenue.refresh();
+    }
+    if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
+      window.BremAdminMissions.refresh();
     }
     renderActiveSection(sectionId);
   }

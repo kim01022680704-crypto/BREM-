@@ -7,7 +7,7 @@ const RIDER_SELECT = [
   'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
   'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-  'promotion_rule_id_coupang', 'promotion_rule_id_baemin', 'created_at', 'updated_at'
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin', 'selected_mission_id', 'created_at', 'updated_at'
 ].join(',');
 
 function toDate(value) {
@@ -45,6 +45,7 @@ function riderToRow(driver) {
     promotion_selector_baemin: String(driver.promotionSelectorBaemin || ''),
     promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
     promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
+    selected_mission_id: String(driver.selectedMissionId || ''),
     raw_data: driver || {},
     created_at: toIso(driver.createdAt),
     updated_at: toIso(driver.updatedAt)

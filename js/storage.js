@@ -11,6 +11,7 @@ const BremStorage = (function () {
     targets: 'brem_admin_targets',
     weeklyTargets: 'brem_driver_weekly_targets',
     notices: 'brem_admin_notices',
+    missions: 'brem_admin_missions',
     riderInquiries: 'brem_rider_inquiries',
     adminSchedules: 'brem_admin_schedules',
     leases: 'brem_admin_leases',
@@ -175,14 +176,39 @@ const BremStorage = (function () {
   let supabaseAuthListenerBound = false;
   let syncAdminAccountsPromise = null;
   let driversSyncPromise = null;
-  let lastDriversSyncAt = 0;
   let dataMigrationsCompleted = false;
   let normalizedDriversCache = null;
   let normalizedDriversSourceRef = null;
 
   let adminDataHydratePromise = null;
+  const sectionLoadPromises = new Map();
 
-  const DRIVERS_SYNC_TTL_MS = 15000;
+  const MUTATION_TRACKED_KEYS = new Set([
+    KEYS.drivers,
+    KEYS.notices,
+    KEYS.missions,
+    KEYS.promotionRules,
+    KEYS.riderInquiries,
+    KEYS.leases,
+    KEYS.revenue,
+    KEYS.adminSchedules,
+    KEYS.calls,
+    KEYS.rejections,
+    KEYS.targets,
+    KEYS.weeklyTargets,
+    KEYS.settlements,
+    KEYS.settlementUnmatched,
+    KEYS.weeklySettlements,
+    KEYS.promotionSettings,
+    KEYS.promotionSelectorOptions,
+    KEYS.promotionApplyResults,
+    KEYS.manualNameMappings,
+    KEYS.eventCatalog,
+    KEYS.eventItems,
+    KEYS.eventConfig
+  ]);
+
+  const DEFAULT_MISSION_ID = 'brem_mission_count_140';
 
   function dispatchStorageReadyOnce(detail) {
     if (dispatchStorageReadyOnce.done) return;
@@ -218,6 +244,7 @@ const BremStorage = (function () {
     const persistKeys = [
       KEYS.drivers,
       KEYS.notices,
+      KEYS.missions,
       KEYS.promotionRules,
       KEYS.riderInquiries
     ];
@@ -245,12 +272,16 @@ const BremStorage = (function () {
           console.warn('[BREM] Storage persist deferred until Supabase session is ready:', key);
           return undefined;
         }
-        return activeStorageAdapter.enqueuePersist(key, value);
+        const persist = activeStorageAdapter.enqueuePersist(key, value);
+        scheduleDataRefetch(key);
+        return persist;
       }
       if (!isStoragePersistReady()) {
         return undefined;
       }
-      return activeStorageAdapter.write(key, value);
+      const result = activeStorageAdapter.write(key, value);
+      scheduleDataRefetch(key);
+      return result;
     },
     remove(key) {
       if (!isStoragePersistReady()) {
@@ -482,13 +513,14 @@ const BremStorage = (function () {
 
   function getHydrateOptions() {
     return {
-      skipKeys: [KEYS.drivers, KEYS.notices, KEYS.promotionRules, KEYS.riderInquiries]
+      skipKeys: [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
     };
   }
 
   const ADMIN_SECTION_KEYS = Object.freeze({
     dashboard: [KEYS.drivers, KEYS.notices],
     notices: [KEYS.notices],
+    'mission-management': [KEYS.missions, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers],
@@ -503,17 +535,78 @@ const BremStorage = (function () {
     'lease-management': [KEYS.drivers],
     'revenue-management': [],
     'admin-account': [],
-    'data-backup': [KEYS.drivers, KEYS.notices, KEYS.promotionRules, KEYS.riderInquiries]
+    'data-backup': [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
   });
 
   const TABLE_STORAGE_KEYS = new Set([
     KEYS.drivers,
     KEYS.notices,
+    KEYS.missions,
     KEYS.promotionRules,
     KEYS.riderInquiries
   ]);
 
-  async function ensureSectionLoaded(sectionId, options = {}) {
+  function scheduleDataRefetch(key) {
+    if (!MUTATION_TRACKED_KEYS.has(key)) return;
+    window.BremDataCache?.invalidate?.(key);
+    if (TABLE_STORAGE_KEYS.has(key)) {
+      activeStorageAdapter.invalidateKeys?.([key]);
+    }
+    const refetch = () => refetchDataKey(key);
+    if (activeStorageAdapter.flush) {
+      void activeStorageAdapter.flush().then(refetch).catch(refetch);
+    } else {
+      void refetch();
+    }
+  }
+
+  async function refetchDataKey(key) {
+    return window.BremDataCache.runOnce(`refetch:${key}`, async () => {
+      if (key === KEYS.drivers) {
+        return reloadDrivers(true);
+      }
+      if (key === KEYS.missions && activeStorageAdapter.ensureKeysLoaded) {
+        return activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force: true });
+      }
+      if (TABLE_STORAGE_KEYS.has(key) && activeStorageAdapter.ensureKeysLoaded) {
+        return activeStorageAdapter.ensureKeysLoaded([key], { force: true });
+      }
+      if (activeStorageAdapter.reloadSettingKey) {
+        await activeStorageAdapter.reloadSettingKey(key);
+      }
+      return { ok: true };
+    });
+  }
+
+  function isSectionCacheReady(sectionId) {
+    if (!activeStorageAdapter.isHydrated?.()) return false;
+
+    const sectionKeys = ADMIN_SECTION_KEYS[sectionId] || [];
+    const settingsOnlySections = new Set([
+      'admin-schedule',
+      'lease-management',
+      'revenue-management',
+      'admin-account'
+    ]);
+
+    if (!sectionKeys.length) {
+      return settingsOnlySections.has(sectionId)
+        ? window.BremDataCache?.isCoreReady?.()
+        : true;
+    }
+
+    if (sectionKeys.includes(KEYS.drivers)) {
+      const driversReady = window.BremDataCache?.isValid?.(KEYS.drivers)
+        && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers);
+      if (!driversReady) return false;
+    }
+
+    return sectionKeys
+      .filter(key => TABLE_STORAGE_KEYS.has(key))
+      .every(key => window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key));
+  }
+
+  async function ensureSectionLoadedInternal(sectionId, options = {}) {
     window.BremPerf?.time?.(`storage.ensureSection:${sectionId}`);
     const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
     if (!hydrated.ok) {
@@ -527,15 +620,14 @@ const BremStorage = (function () {
     const tasks = [];
 
     if (tableKeys.length && activeStorageAdapter.ensureKeysLoaded) {
-      const loadOptions = sectionId === 'dashboard'
-        ? { [KEYS.notices]: { limit: 10 } }
-        : {};
-      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, loadOptions));
+      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeys, {
+        force: Boolean(options.force)
+      }));
     }
 
     if (needsDrivers) {
       tasks.push(
-        reloadDrivers(Boolean(options.forceDrivers)).then(result => {
+        reloadDrivers(Boolean(options.forceDrivers || options.force)).then(result => {
           if (result?.hasMore) {
             void syncAllDriversPagesInBackground();
           }
@@ -550,6 +642,25 @@ const BremStorage = (function () {
 
     window.BremPerf?.timeEnd?.(`storage.ensureSection:${sectionId}`);
     return { ok: true };
+  }
+
+  async function ensureSectionLoaded(sectionId, options = {}) {
+    const force = options.force === true || options.forceDrivers === true;
+
+    if (!force && isSectionCacheReady(sectionId)) {
+      return { ok: true, cached: true };
+    }
+
+    const inflightKey = `${sectionId}:${force ? 'force' : 'normal'}`;
+    if (sectionLoadPromises.has(inflightKey)) {
+      return sectionLoadPromises.get(inflightKey);
+    }
+
+    const promise = ensureSectionLoadedInternal(sectionId, options).finally(() => {
+      sectionLoadPromises.delete(inflightKey);
+    });
+    sectionLoadPromises.set(inflightKey, promise);
+    return promise;
   }
 
   async function syncDriversFromServer(options = {}) {
@@ -594,7 +705,9 @@ const BremStorage = (function () {
     } else {
       setDriversCache(riderRows);
     }
-    lastDriversSyncAt = Date.now();
+    if (!options.append && !String(options.search || '').trim() && (!options.status || options.status === '전체')) {
+      window.BremDataCache?.set?.(KEYS.drivers, drivers.getAll());
+    }
     window.BremPerf?.timeEnd?.('storage.syncDriversFromServer');
     return {
       ok: true,
@@ -943,40 +1056,57 @@ const BremStorage = (function () {
   }
 
   async function reloadDrivers(force = false, options = {}) {
-    if (isProductionMode()) {
-      const hasCache = drivers.getAll().length > 0;
-      if (!force && hasCache) {
-        const now = Date.now();
-        if (now - lastDriversSyncAt < DRIVERS_SYNC_TTL_MS) {
-          return { ok: true, cached: true, ttl: true };
+    const hasSearch = Boolean(String(options.search || '').trim());
+    const hasStatusFilter = options.status && options.status !== '전체';
+    const append = options.append === true;
+
+    if (!force && !append && !hasSearch && !hasStatusFilter) {
+      if (window.BremDataCache?.isValid?.(KEYS.drivers)) {
+        const cached = window.BremDataCache.getData(KEYS.drivers);
+        if (Array.isArray(cached)) {
+          if (!activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
+            setDriversCache(cached);
+          }
+          return { ok: true, cached: true };
         }
       }
-      if (driversSyncPromise) return driversSyncPromise;
-      driversSyncPromise = syncDriversFromServer({
-        limit: options.limit || 100,
-        offset: options.offset || 0,
-        search: options.search || '',
-        status: options.status || '',
-        append: options.append === true
-      }).finally(() => {
-        driversSyncPromise = null;
-        document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready'));
-      });
-      return driversSyncPromise;
+      if (!isProductionMode()
+        && activeStorageAdapter.type === 'supabase'
+        && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
+        return { ok: true, cached: true };
+      }
     }
-    if (!force && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
-      return { ok: true, cached: true };
-    }
-    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
-      return activeStorageAdapter.reloadRiders({
-        limit: options.limit || 100,
-        offset: options.offset || 0,
-        search: options.search || '',
-        status: options.status || '',
-        append: options.append === true
-      });
-    }
-    return { ok: true };
+
+    if (driversSyncPromise) return driversSyncPromise;
+
+    const taskKey = `reload:drivers:${force ? '1' : '0'}:${hasSearch ? 's' : ''}:${hasStatusFilter ? 'f' : ''}:${append ? 'a' : ''}`;
+    driversSyncPromise = window.BremDataCache.runOnce(taskKey, async () => {
+      if (isProductionMode()) {
+        return syncDriversFromServer({
+          limit: options.limit || 100,
+          offset: options.offset || 0,
+          search: options.search || '',
+          status: options.status || '',
+          append
+        });
+      }
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
+        return activeStorageAdapter.reloadRiders({
+          limit: options.limit || 100,
+          offset: options.offset || 0,
+          search: options.search || '',
+          status: options.status || '',
+          append,
+          force
+        });
+      }
+      return { ok: true };
+    }).finally(() => {
+      driversSyncPromise = null;
+      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready'));
+    });
+
+    return driversSyncPromise;
   }
 
   async function waitForSupabaseReady(timeoutMs = 8000) {
@@ -1541,6 +1671,7 @@ const BremStorage = (function () {
         promotionRuleIdBaemin: String(
           next.promotionRuleIdBaemin || next.promotionSelectorBaemin || next.selectedPromotionType || ''
         ).trim(),
+        selectedMissionId: String(next.selectedMissionId || '').trim(),
         hiddenFields: normalizeHiddenFields(next.hiddenFields)
       };
 
@@ -1651,6 +1782,7 @@ const BremStorage = (function () {
         joinDate: driver.joinDate,
         memo: driver.memo,
         status: driver.status,
+        selectedMissionId: String(driver.selectedMissionId || DEFAULT_MISSION_ID).trim() || DEFAULT_MISSION_ID,
         hiddenFields: normalizeHiddenFields(driver.hiddenFields),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1660,7 +1792,10 @@ const BremStorage = (function () {
       if (isProductionMode()) {
         setDriversCache(list);
         return persistRiderViaServer(newDriver)
-          .then(() => newDriver)
+          .then(() => {
+            scheduleDataRefetch(KEYS.drivers);
+            return newDriver;
+          })
           .catch(error => {
             setDriversCache(prevList);
             throw error;
@@ -1699,7 +1834,10 @@ const BremStorage = (function () {
         if (!updated) throw new Error('기사를 찾을 수 없습니다.');
         setDriversCache(nextDrivers);
         return persistRiderViaServer(updated)
-          .then(() => updated)
+          .then(() => {
+            scheduleDataRefetch(KEYS.drivers);
+            return updated;
+          })
           .catch(error => {
             setDriversCache(prevList);
             throw error;
@@ -1713,10 +1851,14 @@ const BremStorage = (function () {
       const next = prevList.filter(driver => driver.id !== id);
       if (isProductionMode()) {
         setDriversCache(next);
-        return deleteRiderViaServer(id).catch(error => {
-          setDriversCache(prevList);
-          throw error;
-        });
+        return deleteRiderViaServer(id)
+          .then(() => {
+            scheduleDataRefetch(KEYS.drivers);
+          })
+          .catch(error => {
+            setDriversCache(prevList);
+            throw error;
+          });
       }
       const persist = drivers.saveAll(next);
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteRider) {
@@ -1980,6 +2122,108 @@ const BremStorage = (function () {
       storageAdapter.write(KEYS.notices, notices.getAll().filter(notice => notice.id !== id));
     }
   };
+
+  function buildDefaultMissions() {
+    return [
+      {
+        id: 'brem_mission_count_140',
+        title: '140건 1,500원 미션',
+        description: '주간 140건 이상 달성 시 건당 1,500원 리워드가 지급되는 미션입니다.',
+        type: 'count_reward',
+        conditions: '주간 140건 이상 콜수 달성 · 쿠팡·배민 합산 기준',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'brem_mission_unit_guarantee_bike',
+        title: '단가보장 + 오토바이 미션',
+        description: '단가보장 프로그램과 오토바이 리스·렌탈 연계 혜택이 적용되는 미션입니다.',
+        type: 'unit_guarantee_motorcycle',
+        conditions: '단가보장 조건 충족 · 오토바이 리스/렌탈 이용 기사',
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
+  }
+
+  const missions = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.missions, null);
+      if (raw === null) {
+        const seed = buildDefaultMissions();
+        if (isStoragePersistReady()) {
+          storageAdapter.write(KEYS.missions, seed);
+        }
+        return seed;
+      }
+      return Array.isArray(raw) ? raw : [];
+    },
+
+    getById(id) {
+      return missions.getAll().find(item => item.id === id) || null;
+    },
+
+    getDefaultId() {
+      return DEFAULT_MISSION_ID;
+    },
+
+    saveAll(list) {
+      storageAdapter.write(KEYS.missions, list);
+      return missions.getAll();
+    },
+
+    create(data) {
+      const next = {
+        id: createId(),
+        title: String(data.title || '').trim(),
+        description: String(data.description || '').trim(),
+        type: String(data.type || '').trim(),
+        conditions: String(data.conditions || '').trim(),
+        isActive: data.isActive !== false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      missions.saveAll([next, ...missions.getAll()]);
+      return next;
+    },
+
+    update(id, changes) {
+      const list = missions.getAll();
+      const index = list.findIndex(item => item.id === id);
+      if (index === -1) throw new Error('미션을 찾을 수 없습니다.');
+      list[index] = {
+        ...list[index],
+        ...changes,
+        id,
+        title: String(changes.title != null ? changes.title : list[index].title).trim(),
+        description: String(changes.description != null ? changes.description : list[index].description).trim(),
+        type: String(changes.type != null ? changes.type : list[index].type).trim(),
+        conditions: String(changes.conditions != null ? changes.conditions : list[index].conditions).trim(),
+        isActive: changes.isActive != null ? Boolean(changes.isActive) : list[index].isActive !== false,
+        updatedAt: new Date().toISOString()
+      };
+      missions.saveAll(list);
+      return list[index];
+    },
+
+    async fetchById(id) {
+      const missionId = String(id || '').trim();
+      if (!missionId) return null;
+      if (activeStorageAdapter.fetchMissionById) {
+        return activeStorageAdapter.fetchMissionById(missionId);
+      }
+      return missions.getById(missionId);
+    }
+  };
+
+  async function ensureMissionsLoaded(options = {}) {
+    if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.ensureKeysLoaded) {
+      return { ok: true, cached: true };
+    }
+    return activeStorageAdapter.ensureKeysLoaded([KEYS.missions], options);
+  }
 
   const INQUIRY_TYPES = Object.freeze([
     '라이더 지원',
@@ -5192,6 +5436,8 @@ const BremStorage = (function () {
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     ensureSectionLoaded,
+    isSectionCacheReady,
+    refetchDataKey,
     hydrateAdminDataInBackground,
     syncAdminDataInBackground,
     resumeSupabaseAfterAuth,
@@ -5204,6 +5450,8 @@ const BremStorage = (function () {
     targets,
     weeklyTargets,
     notices,
+    missions,
+    ensureMissionsLoaded,
     riderInquiries,
     adminSchedules,
     leases,

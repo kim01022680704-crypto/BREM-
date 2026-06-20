@@ -168,6 +168,17 @@
           </section>
 
           <section class="form-section">
+            <h3 class="form-section-title">미션 설정</h3>
+            <label class="field field--full">
+              <span class="field-label">적용 미션</span>
+              <select id="driverMissionSelect">
+                <option value="">미션 관리에서 등록된 항목 선택</option>
+              </select>
+            </label>
+            <p class="form-note form-note--subtle">관리자 ERP &gt; 미션 관리에 등록된 제목이 표시됩니다. 기사앱에도 동일한 제목·설명이 노출됩니다.</p>
+          </section>
+
+          <section class="form-section">
             <h3 class="form-section-title">장기근속 이벤트</h3>
             <div class="form-grid">
               <label class="field">
@@ -303,15 +314,17 @@
   <script src="js/perf.js"></script>
   <script src="js/session-security.js?v=20260620c"></script>
   <script src="js/supabase-config.js?v=20260620c"></script>
+  <script src="js/data-cache.js"></script>
+  <script src="js/data-loading-ui.js"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-supabase-adapter.js"></script>
-  <script src="js/storage.js?v=20260620c"></script>
+  <script src="js/storage.js?v=20260620f"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/driver-program-access.js?v=20260620c"></script>
   <script src="js/driver-utils.js"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/app.js?v=20260620c"></script>
+  <script src="js/app.js?v=20260620f"></script>
   <script src="js/driver-bulk.js"></script>
 </body>
 </html>
