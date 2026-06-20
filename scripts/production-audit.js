@@ -116,6 +116,24 @@ else fail('Loading UI module', 'missing BremLoadingUI');
 if (/isSectionCacheReady/.test(read('js/storage.js'))) pass('Section cache guard');
 else fail('Section cache guard', 'missing isSectionCacheReady');
 
+// 12. Data preservation guard
+if (fs.existsSync(path.join(ROOT, 'js/storage-guard.js'))) pass('Data preservation guard module');
+else fail('Data preservation guard', 'missing js/storage-guard.js');
+
+const adapterJs = read('js/storage-supabase-adapter.js');
+if (/delete\(\)\.neq\('id'/.test(adapterJs)) {
+  fail('Supabase mass delete', 'replaceTable wipe pattern still present');
+} else pass('Supabase mass delete', 'no table-wide delete in adapter');
+
+if (/assertPersistAllowed/.test(storageJs)) pass('Persist guard hook', 'present in storage.js');
+else fail('Persist guard hook', 'missing assertPersistAllowed');
+
+['admin.html', 'driver.html', 'drivers.html', 'rider-manage.html'].forEach(page => {
+  const html = read(page);
+  if (!/storage-guard\.js/.test(html)) fail(`Storage guard script ${page}`);
+  else pass(`Storage guard script ${page}`);
+});
+
 console.log('\n---');
 const failed = results.filter(r => !r.ok);
 if (failed.length) {

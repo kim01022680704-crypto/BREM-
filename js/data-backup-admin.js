@@ -249,6 +249,9 @@
     document.getElementById('supabaseMigrateBtn')?.addEventListener('click', migrateToSupabase);
     document.addEventListener('brem-storage-ready', renderStatus);
     document.addEventListener('brem-storage-error', renderStatus);
+    document.addEventListener('brem-storage-persist-blocked', (event) => {
+      showToast(event.detail?.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+    });
     document.addEventListener('brem-config-ready', renderStatus);
   }
 

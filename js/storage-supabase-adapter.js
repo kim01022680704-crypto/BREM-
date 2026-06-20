@@ -366,9 +366,40 @@ window.BremSupabaseStorageAdapter = (function () {
       return loadRiders(options);
     }
 
+    async function upsertTableRows(table, rows) {
+      if (!rows.length) return;
+      const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    async function deleteTableRow(table, id) {
+      const rowId = String(id || '').trim();
+      if (!rowId) return;
+      const { error } = await client.from(table).delete().eq('id', rowId);
+      if (error) throw error;
+    }
+
+    const TABLE_BY_KEY = {
+      [keys.notices]: 'notices',
+      [keys.promotionRules]: 'promotions',
+      [keys.riderInquiries]: 'rider_inquiries',
+      [keys.missions]: 'missions'
+    };
+
+    function validatePersistPayload(key, value, options = {}) {
+      const guard = window.BremStorageGuard;
+      if (!guard) return { ok: true };
+      return guard.validatePersist(key, value, options);
+    }
+
     async function persistMissions(value) {
       const rows = (value || []).map(item => Mapper().missionToRow(item)).filter(row => row.id);
-      await replaceTable('missions', rows);
+      const check = validatePersistPayload(keys.missions, value);
+      if (!check.ok) {
+        window.BremStorageGuard?.logBlocked?.(check);
+        throw new Error(check.message || '미션 저장이 차단되었습니다.');
+      }
+      await upsertTableRows('missions', rows);
       loadedTableKeys.add(keys.missions);
     }
 
@@ -395,28 +426,35 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistRiderInquiries(value) {
       const rows = (value || []).map(item => Mapper().inquiryToRow(item)).filter(row => row.id);
-      await replaceTable('rider_inquiries', rows);
+      const check = validatePersistPayload(keys.riderInquiries, value);
+      if (!check.ok) {
+        window.BremStorageGuard?.logBlocked?.(check);
+        throw new Error(check.message || '문의 저장이 차단되었습니다.');
+      }
+      await upsertTableRows('rider_inquiries', rows);
       loadedTableKeys.add(keys.riderInquiries);
     }
 
     async function persistNotices(value) {
       const rows = (value || []).map(item => Mapper().noticeToRow(item)).filter(row => row.id);
-      await replaceTable('notices', rows);
+      const check = validatePersistPayload(keys.notices, value);
+      if (!check.ok) {
+        window.BremStorageGuard?.logBlocked?.(check);
+        throw new Error(check.message || '공지 저장이 차단되었습니다.');
+      }
+      await upsertTableRows('notices', rows);
       loadedTableKeys.add(keys.notices);
     }
 
     async function persistPromotions(value) {
       const rows = (value || []).map(item => Mapper().promotionToRow(item)).filter(row => row.id);
-      await replaceTable('promotions', rows);
+      const check = validatePersistPayload(keys.promotionRules, value);
+      if (!check.ok) {
+        window.BremStorageGuard?.logBlocked?.(check);
+        throw new Error(check.message || '프로모션 저장이 차단되었습니다.');
+      }
+      await upsertTableRows('promotions', rows);
       loadedTableKeys.add(keys.promotionRules);
-    }
-
-    async function replaceTable(table, rows) {
-      const { error: deleteError } = await client.from(table).delete().neq('id', '__never__');
-      if (deleteError) throw deleteError;
-      if (!rows.length) return;
-      const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
     }
 
     async function persistSetting(key, value) {
@@ -436,8 +474,13 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.missions]: persistMissions
     };
 
-    function queuePersist(key, value) {
+    function queuePersist(key, value, options = {}) {
       persistQueue = persistQueue.then(async () => {
+        const check = validatePersistPayload(key, value, options);
+        if (!check.ok) {
+          window.BremStorageGuard?.logBlocked?.(check);
+          throw new Error(check.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+        }
         if (persistHandlers[key]) {
           await persistHandlers[key](value);
         } else {
@@ -482,6 +525,7 @@ window.BremSupabaseStorageAdapter = (function () {
       reloadSettingKey,
       fetchMissionById,
       deleteRider,
+      deleteTableRow,
       upsertRider,
       stage,
       enqueuePersist(key, value) {
@@ -502,15 +546,21 @@ window.BremSupabaseStorageAdapter = (function () {
         return queuePersist(key, value);
       },
       remove(key) {
+        if (isTableKey(key)) {
+          const guard = window.BremStorageGuard;
+          if (guard?.isProductionMode?.()) {
+            console.error('[BREM Data Guard] 운영 환경에서 테이블 전체 삭제(remove)는 차단됩니다:', key);
+            guard?.logBlocked?.({ message: `[데이터 보호] ${key} 전체 삭제가 차단되었습니다.` });
+            return;
+          }
+          cache.delete(key);
+          invalidateKeys([key]);
+          return;
+        }
         cache.delete(key);
         invalidateKeys([key]);
         persistQueue = persistQueue.then(async () => {
-          if (key === keys.drivers) await replaceTable('riders', []);
-          else if (key === keys.notices) await replaceTable('notices', []);
-          else if (key === keys.promotionRules) await replaceTable('promotions', []);
-          else if (key === keys.riderInquiries) await replaceTable('rider_inquiries', []);
-          else if (key === keys.missions) await replaceTable('missions', []);
-          else await client.from('settings').delete().eq('key', key);
+          await client.from('settings').delete().eq('key', key);
         }).catch(error => {
           console.error('[BremSupabaseStorageAdapter] remove failed:', key, error);
         });

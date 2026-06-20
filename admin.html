@@ -2305,6 +2305,12 @@
       </section>
 
       <section class="section" id="data-backup">
+        <article class="card backup-preservation-banner-card">
+          <p class="backup-preservation-banner" role="alert">
+            <strong>운영 데이터 보호:</strong> 패치·배포 전 <button class="link-btn" type="button" data-backup-export="all">전체 데이터 백업</button>을 권장합니다.
+            관리자가 등록한 데이터는 Supabase에 영구 저장되며, 코드 배포만으로 삭제·초기화되지 않습니다.
+          </p>
+        </article>
         <article class="card">
           <div class="card-header">
             <h2>저장 데이터 현황</h2>
@@ -2470,8 +2476,9 @@
   <script src="js/data-cache.js"></script>
   <script src="js/data-loading-ui.js"></script>
   <script src="js/storage-supabase-mapper.js"></script>
+  <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js"></script>
-  <script src="js/storage.js?v=20260620g"></script>
+  <script src="js/storage.js?v=20260620h"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2486,7 +2493,7 @@
   <script src="js/baemin-delivery-fee.js"></script>
   <script src="js/promotion-apply.js"></script>
   <script src="js/promotion-apply-admin.js"></script>
-  <script src="js/data-backup-admin.js?v=20260619j"></script>
+  <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>

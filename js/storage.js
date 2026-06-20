@@ -239,6 +239,17 @@ const BremStorage = (function () {
     return Boolean(activeSupabaseProfile?.active && activeSupabaseProfile.role === 'admin');
   }
 
+  function assertPersistAllowed(key, value, options = {}) {
+    const guard = window.BremStorageGuard;
+    if (!guard) return true;
+    const result = guard.validatePersist(key, value, options);
+    if (!result.ok) {
+      guard.logBlocked(result);
+      throw new Error(result.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+    }
+    return true;
+  }
+
   function flushStagedSupabaseWrites() {
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.enqueuePersist) return;
     const persistKeys = [
@@ -254,7 +265,14 @@ const BremStorage = (function () {
     persistKeys.forEach(key => {
       if (isProductionMode() && key === KEYS.drivers) return;
       if (!activeStorageAdapter.has(key)) return;
-      activeStorageAdapter.enqueuePersist(key, activeStorageAdapter.read(key));
+      if (activeStorageAdapter.isKeyLoaded && !activeStorageAdapter.isKeyLoaded(key)) return;
+      const value = activeStorageAdapter.read(key);
+      try {
+        assertPersistAllowed(key, value);
+      } catch {
+        return;
+      }
+      activeStorageAdapter.enqueuePersist(key, value);
     });
   }
 
@@ -272,12 +290,22 @@ const BremStorage = (function () {
           console.warn('[BREM] Storage persist deferred until Supabase session is ready:', key);
           return undefined;
         }
+        try {
+          assertPersistAllowed(key, value);
+        } catch (error) {
+          return Promise.reject(error);
+        }
         const persist = activeStorageAdapter.enqueuePersist(key, value);
         scheduleDataRefetch(key);
         return persist;
       }
       if (!isStoragePersistReady()) {
         return undefined;
+      }
+      try {
+        assertPersistAllowed(key, value);
+      } catch (error) {
+        return Promise.reject(error);
       }
       const result = activeStorageAdapter.write(key, value);
       scheduleDataRefetch(key);
@@ -2121,7 +2149,16 @@ const BremStorage = (function () {
     },
 
     removeById(id) {
-      storageAdapter.write(KEYS.notices, notices.getAll().filter(notice => notice.id !== id));
+      if (activeStorageAdapter.deleteTableRow) {
+        void activeStorageAdapter.deleteTableRow('notices', id);
+      }
+      const filtered = notices.getAll().filter(notice => notice.id !== id);
+      if (filtered.length) {
+        storageAdapter.write(KEYS.notices, filtered);
+      } else if (activeStorageAdapter.stage) {
+        activeStorageAdapter.stage(KEYS.notices, []);
+        window.BremDataCache?.set?.(KEYS.notices, []);
+      }
     }
   };
 
@@ -2152,15 +2189,9 @@ const BremStorage = (function () {
 
   const missions = {
     getAll() {
-      const raw = storageAdapter.read(KEYS.missions, null);
-      if (raw === null) {
-        const seed = buildDefaultMissions();
-        if (isStoragePersistReady()) {
-          storageAdapter.write(KEYS.missions, seed);
-        }
-        return seed;
-      }
-      return Array.isArray(raw) ? raw : [];
+      const raw = storageAdapter.readRaw(KEYS.missions);
+      if (!raw.exists) return [];
+      return Array.isArray(raw.value) ? raw.value : [];
     },
 
     getById(id) {
@@ -3576,7 +3607,7 @@ const BremStorage = (function () {
     ];
   }
 
-  function patchCombinedPromotionRules(list) {
+  function patchCombinedPromotionRules(list, options = {}) {
     if (!Array.isArray(list) || !list.length) return list;
     let changed = false;
     const next = list.map(item => {
@@ -3585,11 +3616,15 @@ const BremStorage = (function () {
       changed = true;
       return { ...item, applyGlobalAcceptBlock: false, updatedAt: new Date().toISOString() };
     });
-    if (changed) storageAdapter.write(KEYS.promotionRules, next);
-    return changed ? storageAdapter.read(KEYS.promotionRules, []) : list;
+    if (changed && options.persist === true && isStoragePersistReady()) {
+      storageAdapter.write(KEYS.promotionRules, next);
+      return storageAdapter.read(KEYS.promotionRules, next);
+    }
+    return changed ? next : list;
   }
 
   function ensureCombinedPromotionRule() {
+    if (isProductionMode()) return;
     const list = storageAdapter.read(KEYS.promotionRules, []);
     if (!Array.isArray(list)) return;
     const hasCombined = list.some(item => String(item.platform || '').trim() === 'combined');
@@ -3646,15 +3681,9 @@ const BremStorage = (function () {
 
   const promotionSettings = {
     get() {
-      const raw = storageAdapter.read(KEYS.promotionSettings, null);
-      if (raw === null) {
-        const defaults = buildDefaultPromotionSettings();
-        if (isStoragePersistReady()) {
-          storageAdapter.write(KEYS.promotionSettings, defaults);
-        }
-        return defaults;
-      }
-      return normalizePromotionSettings(raw);
+      const raw = storageAdapter.readRaw(KEYS.promotionSettings);
+      if (!raw.exists) return buildDefaultPromotionSettings();
+      return normalizePromotionSettings(raw.value);
     },
 
     save(settings) {
@@ -3673,15 +3702,9 @@ const BremStorage = (function () {
 
   const promotionSelectorOptions = {
     getAll() {
-      const raw = storageAdapter.read(KEYS.promotionSelectorOptions, null);
-      if (raw === null) {
-        const defaults = normalizeSelectorOptions(null);
-        if (isStoragePersistReady()) {
-          storageAdapter.write(KEYS.promotionSelectorOptions, defaults);
-        }
-        return defaults;
-      }
-      return normalizeSelectorOptions(raw);
+      const raw = storageAdapter.readRaw(KEYS.promotionSelectorOptions);
+      if (!raw.exists) return normalizeSelectorOptions(null);
+      return normalizeSelectorOptions(raw.value);
     },
 
     saveAll(list) {
@@ -3692,20 +3715,9 @@ const BremStorage = (function () {
 
   const promotionRules = {
     getAll() {
-      const raw = storageAdapter.read(KEYS.promotionRules, null);
-      if (raw === null) {
-        const seed = buildExamplePromotionRules();
-        if (isStoragePersistReady()) {
-          storageAdapter.write(KEYS.promotionRules, seed);
-        }
-        return seed.map(normalizePromotionRule);
-      }
-
-      if (isStoragePersistReady()) {
-        ensureCombinedPromotionRule();
-      }
-
-      let list = storageAdapter.read(KEYS.promotionRules, []);
+      const raw = storageAdapter.readRaw(KEYS.promotionRules);
+      if (!raw.exists) return [];
+      let list = Array.isArray(raw.value) ? raw.value : [];
       list = patchCombinedPromotionRules(list);
       return list.map(normalizePromotionRule);
     },
@@ -3745,7 +3757,16 @@ const BremStorage = (function () {
     },
 
     remove(id) {
-      promotionRules.saveAll(promotionRules.getAll().filter(rule => rule.id !== id));
+      if (activeStorageAdapter.deleteTableRow) {
+        void activeStorageAdapter.deleteTableRow('promotions', id);
+      }
+      const filtered = promotionRules.getAll().filter(rule => rule.id !== id);
+      if (filtered.length) {
+        promotionRules.saveAll(filtered);
+      } else if (activeStorageAdapter.stage) {
+        activeStorageAdapter.stage(KEYS.promotionRules, []);
+        window.BremDataCache?.set?.(KEYS.promotionRules, []);
+      }
     },
 
     duplicate(id) {
@@ -5360,6 +5381,7 @@ const BremStorage = (function () {
         : null;
       const importedKeys = [];
       const skippedKeys = [];
+      const guard = window.BremStorageGuard;
 
       Object.entries(parsed.data).forEach(([key, incomingValue]) => {
         if (!String(key).startsWith('brem_')) {
@@ -5371,7 +5393,18 @@ const BremStorage = (function () {
           return;
         }
 
+        if (guard?.isTablePersistKey?.(key) && guard.isEmptyCollection(incomingValue)) {
+          skippedKeys.push(key);
+          return;
+        }
+
         if (mode === 'replace') {
+          try {
+            assertPersistAllowed(key, incomingValue, { allowEmpty: false });
+          } catch (error) {
+            skippedKeys.push(key);
+            return;
+          }
           storageAdapter.write(key, incomingValue);
           importedKeys.push(key);
           return;
@@ -5381,6 +5414,12 @@ const BremStorage = (function () {
         const nextValue = raw.exists
           ? mergeImportedValue(key, raw.value, incomingValue)
           : incomingValue;
+        try {
+          assertPersistAllowed(key, nextValue, { allowEmpty: false });
+        } catch (error) {
+          skippedKeys.push(key);
+          return;
+        }
         storageAdapter.write(key, nextValue);
         importedKeys.push(key);
       });
