@@ -1,9 +1,6 @@
 /**
  * 로컬 배민Biz 세션 갱신 서버 (PC에서 실행)
  * Run: npm run baemin:session-server
- *
- * 관리자 ERP [배민 세션 갱신] 버튼 → http://127.0.0.1:3939/start?... 열림
- * Playwright 브라우저에서 직접 로그인/휴대폰 인증 후 쿠키를 brem.kr API로 전송
  */
 require('dotenv').config();
 
@@ -15,17 +12,12 @@ const PORT = Number(process.env.BAEMIN_SESSION_LOCAL_PORT || 3939);
 const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
-const POLL_MS = 3000;
-
-/** 로그인 완료로 인정하는 deliverycenter 경로 */
-const LOGGED_IN_PATH_HINTS = [
-  '/delivery-status',
-  '/delivery/history',
-  '/delivery/'
-];
+const POLL_MS = 2000;
+const SERVER_VERSION = '20260620d';
 
 let activeJob = null;
 let activeContext = null;
+let activeRunToken = 0;
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -73,7 +65,7 @@ function isContextAlive(context) {
   }
 }
 
-async function safePageUrl(page) {
+function safePageUrlSync(page) {
   try {
     if (!page || page.isClosed()) return '(page closed)';
     return page.url();
@@ -82,29 +74,22 @@ async function safePageUrl(page) {
   }
 }
 
-function pickActivePage(context) {
-  if (!isContextAlive(context)) return null;
-  try {
-    const pages = context.pages().filter(page => !page.isClosed());
-    const deliveryPage = pages.find(page => {
-      try {
-        return page.url().includes('deliverycenter.baemin.com');
-      } catch {
-        return false;
-      }
-    });
-    return deliveryPage || pages[0] || null;
-  } catch {
-    return null;
-  }
-}
-
 function isLoginLikeUrl(url) {
   const value = String(url || '').toLowerCase();
   return /login|signin|sign-in|auth|oauth|member\.baemin|bizmember|passport/.test(value);
 }
 
+/** 문자열 기반 — URL 파싱 실패·SPA 대비 */
+function urlIncludesDeliveryHistory(url) {
+  return String(url || '').toLowerCase().includes('delivery/history');
+}
+
+function urlIncludesDeliveryStatus(url) {
+  return String(url || '').toLowerCase().includes('delivery-status');
+}
+
 function isOnDeliveryHistoryPage(url) {
+  if (urlIncludesDeliveryHistory(url)) return true;
   try {
     const parsed = new URL(url);
     return parsed.hostname.includes('deliverycenter.baemin.com')
@@ -115,16 +100,63 @@ function isOnDeliveryHistoryPage(url) {
 }
 
 function isLoggedInDeliveryPage(url) {
+  if (urlIncludesDeliveryHistory(url) || urlIncludesDeliveryStatus(url)) return true;
+
+  const lower = String(url || '').toLowerCase();
+  if (!lower.includes('deliverycenter.baemin.com')) return false;
+  if (isLoginLikeUrl(url)) return false;
+  if (lower.includes('/delivery/')) return true;
+
   try {
     const parsed = new URL(url);
     if (!parsed.hostname.includes('deliverycenter.baemin.com')) return false;
     if (isLoginLikeUrl(url)) return false;
-
-    return LOGGED_IN_PATH_HINTS.some(hint => parsed.pathname.includes(hint))
-      || parsed.pathname.startsWith('/delivery');
+    return parsed.pathname.startsWith('/delivery')
+      || parsed.pathname.includes('delivery-status');
   } catch {
     return false;
   }
+}
+
+function scorePageUrl(url) {
+  if (!url || url.startsWith('(')) return -1;
+  if (isLoginLikeUrl(url)) return 0;
+  if (isOnDeliveryHistoryPage(url)) return 100;
+  if (urlIncludesDeliveryStatus(url)) return 90;
+  if (isLoggedInDeliveryPage(url)) return 80;
+  if (String(url).includes('deliverycenter.baemin.com')) return 10;
+  return 1;
+}
+
+function scanBrowserTabs(context) {
+  if (!isContextAlive(context)) {
+    return { page: null, url: '', allUrls: [], bestScore: -1, anyHistory: false, anyLoggedIn: false };
+  }
+
+  const pages = context.pages().filter(page => !page.isClosed());
+  const allUrls = pages.map(page => safePageUrlSync(page));
+
+  let best = { page: pages[0] || null, url: allUrls[0] || '', score: -1 };
+
+  pages.forEach((page, index) => {
+    const url = allUrls[index];
+    const score = scorePageUrl(url);
+    if (score > best.score) {
+      best = { page, url, score };
+    }
+  });
+
+  const anyHistory = allUrls.some(url => isOnDeliveryHistoryPage(url));
+  const anyLoggedIn = allUrls.some(url => isLoggedInDeliveryPage(url));
+
+  return {
+    page: best.page,
+    url: best.url,
+    allUrls,
+    bestScore: best.score,
+    anyHistory,
+    anyLoggedIn
+  };
 }
 
 function isValidBaeminApiJson(json) {
@@ -149,52 +181,43 @@ async function fetchBaeminApi(apiPath, cookieHeader) {
   });
 
   if (response.status === 401 || response.status === 403) {
-    return { ok: false, reason: `HTTP ${response.status} (세션 없음 또는 만료)` };
+    return { ok: false, reason: `HTTP ${response.status}` };
   }
 
   const text = await response.text();
   if (text.trim().startsWith('<')) {
-    return { ok: false, reason: `HTML 응답 (HTTP ${response.status}) — 로그인 페이지로 리다이렉트된 것으로 보입니다` };
+    return { ok: false, reason: `HTML 응답 HTTP ${response.status}` };
   }
 
   try {
     const json = JSON.parse(text);
     return isValidBaeminApiJson(json)
-      ? { ok: true, reason: `JSON 응답 정상 (HTTP ${response.status})` }
-      : { ok: false, reason: `JSON 형식이 예상과 다릅니다 (HTTP ${response.status})` };
+      ? { ok: true, reason: `JSON 정상 HTTP ${response.status}` }
+      : { ok: false, reason: `JSON 형식 불일치 HTTP ${response.status}` };
   } catch {
-    return { ok: false, reason: `JSON 파싱 실패 (HTTP ${response.status})` };
+    return { ok: false, reason: `JSON 파싱 실패 HTTP ${response.status}` };
   }
 }
 
-async function verifySessionCookie(cookieHeader, pageUrl) {
-  const attempts = [];
-
-  if (isOnDeliveryHistoryPage(pageUrl)) {
-    attempts.push({
-      label: 'delivery/history API',
-      path: '/delivery/history?page=0&size=1'
-    });
-  }
-
-  attempts.push({
-    label: 'delivery-status API',
-    path: '/delivery-status?page=0&size=1'
-  });
-
-  let lastReason = '';
-  for (const attempt of attempts) {
-    const result = await fetchBaeminApi(attempt.path, cookieHeader);
-    lastReason = `${attempt.label}: ${result.reason}`;
-    if (result.ok) {
-      return { ok: true, reason: lastReason, via: attempt.label };
+async function verifySessionCookie(cookieHeader, pageUrl, anyHistory) {
+  if (anyHistory || isOnDeliveryHistoryPage(pageUrl)) {
+    const historyApi = await fetchBaeminApi('/delivery/history?page=0&size=1', cookieHeader);
+    console.log(`[BREM] [검증] delivery/history API | ${historyApi.ok ? '성공' : '실패'} | ${historyApi.reason}`);
+    if (historyApi.ok) {
+      return { ok: true, reason: historyApi.reason, via: 'delivery/history API' };
     }
   }
 
-  if (isOnDeliveryHistoryPage(pageUrl) && cookieHeader) {
+  const statusApi = await fetchBaeminApi('/delivery-status?page=0&size=1', cookieHeader);
+  console.log(`[BREM] [검증] delivery-status API | ${statusApi.ok ? '성공' : '실패'} | ${statusApi.reason}`);
+  if (statusApi.ok) {
+    return { ok: true, reason: statusApi.reason, via: 'delivery-status API' };
+  }
+
+  if ((anyHistory || isOnDeliveryHistoryPage(pageUrl)) && cookieHeader) {
     return {
       ok: true,
-      reason: 'delivery/history 페이지 로그인 확인 (브라우저 페이지 진입)',
+      reason: '/delivery/history 페이지 진입 확인',
       via: 'delivery/history page'
     };
   }
@@ -202,21 +225,24 @@ async function verifySessionCookie(cookieHeader, pageUrl) {
   if (isLoggedInDeliveryPage(pageUrl) && cookieHeader) {
     return {
       ok: true,
-      reason: '배민Biz 배달 페이지 로그인 확인 (브라우저 페이지 진입)',
+      reason: '배달 페이지 진입 확인',
       via: 'delivery page'
     };
   }
 
-  return { ok: false, reason: lastReason || '쿠키 검증 실패' };
+  return { ok: false, reason: 'API·페이지 검증 모두 실패' };
 }
 
 async function extractBaeminCookies(context) {
   const cookies = await context.cookies();
-  return cookiesToHeader(cookies);
+  const header = cookiesToHeader(cookies);
+  console.log(`[BREM] [쿠키 추출] context.cookies() ${cookies.length}개 → baemin 헤더 ${header ? header.split(';').length : 0}개`);
+  return header;
 }
 
 async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
   const url = `${apiBase.replace(/\/$/, '')}/api/admin/baemin-delivery/session`;
+  console.log(`[BREM] [Supabase 저장] POST ${url} | setupId=${setupId}`);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -224,69 +250,47 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message || payload.error || `API 저장 실패 (${response.status})`);
+    throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
   }
+  console.log(`[BREM] [Supabase 저장] API 응답 성공 | ${payload.message || 'ok'}`);
   return payload;
 }
 
-async function showBrowserError(context, message) {
-  const page = pickActivePage(context);
+async function showBrowserBanner(context, message, isError) {
+  const { page } = scanBrowserTabs(context);
   if (!page) return;
   try {
-    await page.evaluate((text) => {
-      const id = 'brem-session-error-banner';
+    await page.evaluate(({ text, error }) => {
+      const id = 'brem-session-banner';
       let banner = document.getElementById(id);
       if (!banner) {
         banner = document.createElement('div');
         banner.id = id;
-        banner.style.cssText = [
-          'position:fixed',
-          'top:16px',
-          'left:16px',
-          'right:16px',
-          'z-index:2147483647',
-          'background:#7f1d1d',
-          'color:#fff',
-          'padding:14px 16px',
-          'border-radius:8px',
-          'font:14px/1.5 sans-serif',
-          'box-shadow:0 8px 24px rgba(0,0,0,.25)'
-        ].join(';');
         document.body.appendChild(banner);
       }
+      banner.style.cssText = [
+        'position:fixed', 'top:16px', 'left:16px', 'right:16px', 'z-index:2147483647',
+        `background:${error ? '#7f1d1d' : '#14532d'}`,
+        'color:#fff', 'padding:14px 16px', 'border-radius:8px',
+        'font:14px/1.5 sans-serif', 'box-shadow:0 8px 24px rgba(0,0,0,.25)'
+      ].join(';');
       banner.textContent = `[BREM] ${text}`;
-    }, message);
+    }, { text: message, error: isError });
   } catch {
-    // evaluate 불가 페이지
-  }
-}
-
-function logJob(message, extra = {}) {
-  const parts = [`[BREM] ${message}`];
-  if (extra.url) parts.push(`배민 페이지 URL: ${extra.url}`);
-  if (extra.reason) parts.push(`원인: ${extra.reason}`);
-  if (extra.via) parts.push(`검증: ${extra.via}`);
-  console.log(parts.join(' | '));
-}
-
-function logSaveResult(success, url, reason) {
-  if (success) {
-    console.log(`[BREM] 쿠키 저장 성공 | 배민 페이지 URL: ${url || '(unknown)'}${reason ? ` | ${reason}` : ''}`);
-  } else {
-    console.error(`[BREM] 쿠키 저장 실패 | 배민 페이지 URL: ${url || '(unknown)'} | 원인: ${reason || '알 수 없음'}`);
+    // ignore
   }
 }
 
 function failJob(setupId, message, url, reason) {
-  const fullMessage = reason ? `${message} (${reason})` : message;
   activeJob = {
     status: 'failed',
-    message: url ? `${fullMessage} — URL: ${url}` : fullMessage,
+    message: reason ? `${message}: ${reason}` : message,
     setupId,
     currentUrl: url || '',
-    reason: reason || message
+    reason: reason || message,
+    updatedAt: Date.now()
   };
-  logSaveResult(false, url, reason || message);
+  console.error(`[BREM] [실패] ${message} | URL: ${url || '-'} | 원인: ${reason || '-'}`);
 }
 
 async function closeContextSafely(context) {
@@ -301,17 +305,70 @@ async function closeContextSafely(context) {
   }
 }
 
+async function resetActiveSession() {
+  activeRunToken += 1;
+  if (activeContext) {
+    await closeContextSafely(activeContext);
+  }
+  if (isJobRunning()) {
+    console.log('[BREM] 이전 세션 갱신 작업을 종료하고 새로 시작합니다.');
+  }
+}
+
+async function saveSessionAndComplete({
+  setupId,
+  setupSecret,
+  apiBase,
+  context,
+  cookieHeader,
+  pageUrl,
+  verifyReason,
+  runToken
+}) {
+  if (runToken !== activeRunToken) return false;
+
+  activeJob = {
+    status: 'saving',
+    message: '세션 쿠키를 Supabase에 저장하는 중…',
+    setupId,
+    currentUrl: pageUrl,
+    updatedAt: Date.now()
+  };
+  console.log(`[BREM] [저장 시작] Supabase settings | URL: ${pageUrl}`);
+
+  await postSessionToApi(apiBase, setupId, setupSecret, cookieHeader);
+
+  if (runToken !== activeRunToken) return false;
+
+  activeJob = {
+    status: 'completed',
+    message: '세션 저장 완료',
+    setupId,
+    currentUrl: pageUrl,
+    updatedAt: Date.now()
+  };
+  console.log(`[BREM] [완료] 세션 저장 완료 | URL: ${pageUrl} | ${verifyReason || ''}`);
+  await showBrowserBanner(context, '세션 저장 완료 — ERP로 돌아가세요', false);
+  await closeContextSafely(context);
+  return true;
+}
+
 async function runSessionRefresh(setupId, setupSecret, apiBase) {
+  const runToken = activeRunToken;
   const playwright = await loadPlaywright();
   if (!playwright) {
     throw new Error('playwright 패키지가 없습니다. npm install playwright 후 다시 시도하세요.');
   }
 
-  activeJob = { status: 'opening_browser', message: '브라우저를 여는 중…', setupId };
-  logJob('브라우저 시작', { reason: `setupId=${setupId}` });
+  activeJob = {
+    status: 'opening_browser',
+    message: '브라우저를 여는 중…',
+    setupId,
+    updatedAt: Date.now()
+  };
+  console.log(`[BREM] [시작] 세션 갱신 | setupId=${setupId} | server=${SERVER_VERSION}`);
 
   let context = null;
-  let page = null;
 
   try {
     context = await playwright.chromium.launchPersistentContext(PROFILE_DIR, {
@@ -320,147 +377,169 @@ async function runSessionRefresh(setupId, setupSecret, apiBase) {
     });
     activeContext = context;
 
-    page = pickActivePage(context) || await context.newPage();
-    activeJob = {
-      status: 'waiting_login',
-      message: '배민Biz 로그인 후 배달현황·배달이력 페이지로 이동하세요. 브라우저는 로그인 완료 전까지 닫지 마세요.',
-      setupId
-    };
+    context.on('page', (newPage) => {
+      console.log(`[BREM] [탭 열림] ${safePageUrlSync(newPage)}`);
+      newPage.on('framenavigated', (frame) => {
+        if (frame === newPage.mainFrame()) {
+          console.log(`[BREM] [탭 이동] ${safePageUrlSync(newPage)}`);
+        }
+      });
+    });
 
-    try {
-      await page.goto(`${BAEMIN_ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
-    } catch (error) {
-      logJob('초기 페이지 이동 경고', { reason: error.message, url: await safePageUrl(page) });
+    let tabs = scanBrowserTabs(context);
+    if (!tabs.page) {
+      const page = await context.newPage();
+      tabs = { ...scanBrowserTabs(context), page, url: safePageUrlSync(page) };
     }
 
+    if (!tabs.allUrls.some(url => url.includes('deliverycenter.baemin.com'))) {
+      try {
+        await tabs.page.goto(`${BAEMIN_ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+        console.log(`[BREM] [초기 이동] ${safePageUrlSync(tabs.page)}`);
+      } catch (error) {
+        console.log(`[BREM] [초기 이동 경고] ${error.message}`);
+      }
+    }
+
+    activeJob = {
+      status: 'waiting_login',
+      message: '배민Biz 로그인 후 배달이력(/delivery/history) 페이지로 이동하세요.',
+      setupId,
+      updatedAt: Date.now()
+    };
+
     const started = Date.now();
-    let cookieHeader = '';
-    let lastUrl = await safePageUrl(page);
     let lastVerifyReason = '';
 
     while (Date.now() - started < LOGIN_WAIT_MS) {
+      if (runToken !== activeRunToken) return;
+
       if (!isContextAlive(context)) {
-        failJob(setupId, '브라우저가 닫혔습니다', lastUrl, '사용자가 창을 닫았거나 브라우저가 종료되었습니다');
+        failJob(setupId, '브라우저가 닫혔습니다', tabs.url, '창이 닫혔습니다');
         return;
       }
 
-      page = pickActivePage(context) || page;
-      lastUrl = await safePageUrl(page);
-      const loggedInPage = isLoggedInDeliveryPage(lastUrl);
-      const onHistoryPage = isOnDeliveryHistoryPage(lastUrl);
+      tabs = scanBrowserTabs(context);
+      const pageUrl = tabs.url;
+      const loggedIn = tabs.anyLoggedIn || tabs.anyHistory || isLoggedInDeliveryPage(pageUrl);
+      const onHistory = tabs.anyHistory || isOnDeliveryHistoryPage(pageUrl);
 
       activeJob = {
         status: 'waiting_login',
-        message: loggedInPage
-          ? (onHistoryPage
-            ? '배달이력 페이지 감지 — 쿠키 추출·검증 중…'
-            : '배달 페이지 감지 — 쿠키 추출·검증 중…')
-          : '배민Biz 로그인·휴대폰 인증 후 배달현황 또는 배달이력(/delivery/history) 페이지로 이동하세요.',
+        message: onHistory
+          ? '배달이력(/delivery/history) 감지 — 쿠키 추출 중…'
+          : loggedIn
+            ? '배달 페이지 감지 — 쿠키 추출 중…'
+            : '배민Biz 로그인 후 배달이력(/delivery/history) 페이지로 이동하세요.',
         setupId,
-        currentUrl: lastUrl
+        currentUrl: pageUrl,
+        allUrls: tabs.allUrls,
+        updatedAt: Date.now()
       };
 
-      logJob(loggedInPage ? '로그인 완료 페이지 감지' : '로그인 대기 중', { url: lastUrl });
+      console.log(
+        `[BREM] [heartbeat] 탭 ${tabs.allUrls.length}개`
+        + ` | history=${onHistory} loggedIn=${loggedIn}`
+        + ` | URLs: ${tabs.allUrls.join(' | ') || '(없음)'}`
+      );
 
-      if (loggedInPage) {
-        cookieHeader = await extractBaeminCookies(context);
+      if (loggedIn || onHistory) {
+        console.log(`[BREM] [로그인 감지] /delivery/history=${onHistory} | 대표 URL: ${pageUrl}`);
 
+        const cookieHeader = await extractBaeminCookies(context);
         if (!cookieHeader) {
-          lastVerifyReason = 'baemin.com 쿠키가 아직 없습니다';
-          logJob('쿠키 대기', { url: lastUrl, reason: lastVerifyReason });
+          lastVerifyReason = 'baemin.com 쿠키 없음';
+          console.log(`[BREM] [쿠키 추출] 실패 — baemin.com 쿠키 없음`);
         } else {
-          logJob('context.cookies() 추출 완료', {
-            url: lastUrl,
-            reason: `쿠키 ${cookieHeader.split(';').length}개`
-          });
-
-          const verify = await verifySessionCookie(cookieHeader, lastUrl);
+          const verify = await verifySessionCookie(cookieHeader, pageUrl, onHistory);
           lastVerifyReason = verify.reason;
-          logJob('쿠키 검증', { url: lastUrl, reason: verify.reason, via: verify.via });
+          console.log(`[BREM] [쿠키 검증] ${verify.ok ? '성공' : '실패'} | ${verify.reason} | via=${verify.via || '-'}`);
 
           if (verify.ok) {
-            activeJob = {
-              status: 'saving',
-              message: '세션 쿠키를 Supabase에 저장하는 중…',
+            const saved = await saveSessionAndComplete({
               setupId,
-              currentUrl: lastUrl
-            };
-
-            try {
-              await postSessionToApi(apiBase, setupId, setupSecret, cookieHeader);
-              activeJob = {
-                status: 'completed',
-                message: '세션 저장 완료',
-                setupId,
-                currentUrl: lastUrl
-              };
-              logSaveResult(true, lastUrl, verify.reason);
-              await closeContextSafely(context);
-              return;
-            } catch (saveError) {
-              const saveReason = saveError.message || 'Supabase 저장 API 실패';
-              failJob(setupId, '쿠키 저장 실패', lastUrl, saveReason);
-              await showBrowserError(context, activeJob.message);
-              return;
-            }
+              setupSecret,
+              apiBase,
+              context,
+              cookieHeader,
+              pageUrl,
+              verifyReason: verify.reason,
+              runToken
+            });
+            if (saved) return;
           }
-
-          cookieHeader = '';
         }
+      } else {
+        console.log(`[BREM] [로그인 대기] /delivery/history 미감지`);
       }
 
       await delay(POLL_MS);
     }
 
-    const reason = lastVerifyReason
-      || '로그인 시간이 초과되었거나 배달 페이지 진입·쿠키 검증에 실패했습니다';
-    failJob(setupId, '세션 갱신 실패', lastUrl, reason);
-    await showBrowserError(context, activeJob.message);
+    failJob(
+      setupId,
+      '세션 갱신 시간 초과',
+      tabs.url,
+      lastVerifyReason || '배달이력 페이지 진입 또는 쿠키 검증 실패'
+    );
+    await showBrowserBanner(context, activeJob.message, true);
   } catch (error) {
-    const url = page ? await safePageUrl(page) : '(no page)';
-    const reason = error.message || '알 수 없는 오류';
-    failJob(setupId, '세션 갱신 중 오류', url, reason);
+    const tabs = context ? scanBrowserTabs(context) : { url: '' };
+    failJob(setupId, '세션 갱신 오류', tabs.url, error.message);
     if (context && isContextAlive(context)) {
-      await showBrowserError(context, activeJob.message);
+      await showBrowserBanner(context, error.message, true);
     }
   }
 }
 
-function renderStartPage(setupId, errorMessage) {
-  const safeError = errorMessage ? `<p style="color:#b91c1c">${errorMessage}</p>` : '';
+function renderStartPage(setupId, notice) {
+  const safeNotice = notice ? `<p style="color:#b45309">${notice}</p>` : '';
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>BREM 배민 세션 갱신</title>
 <style>
-body{font-family:sans-serif;max-width:560px;margin:40px auto;padding:0 16px;line-height:1.6}
-code{background:#f3f4f6;padding:2px 6px;border-radius:4px}
-.fail{color:#b91c1c}
-.done{color:#15803d;font-size:1.25rem;font-weight:700}
-#doneBox{display:none;margin:16px 0;padding:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px}
-</style>
-</head><body>
+body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 16px;line-height:1.6}
+.fail{color:#b91c1c}.done{color:#15803d;font-size:1.35rem;font-weight:700;margin:0}
+#doneBox{display:none;margin:16px 0;padding:20px;background:#f0fdf4;border:2px solid #22c55e;border-radius:8px}
+#url{font-size:13px;color:#6b7280;word-break:break-all}
+</style></head><body>
 <h1>배민Biz 세션 갱신</h1>
 <p id="status">브라우저에서 배민Biz 로그인을 진행하세요…</p>
-<p id="url" style="font-size:13px;color:#6b7280"></p>
+<p id="url"></p>
 <p id="error" class="fail"></p>
 <div id="doneBox"><p class="done">세션 저장 완료</p><p>관리자 ERP 탭으로 돌아가 <strong>[배민 자동 수집]</strong>을 사용하세요.</p></div>
-${safeError}
-<p>로그인·휴대폰 인증 후 <strong>배달현황</strong> 또는 <strong>배달이력(/delivery/history)</strong> 페이지까지 이동하면 자동으로 완료됩니다.</p>
-<p>실패해도 브라우저는 바로 닫히지 않습니다. CMD 창 로그를 확인하세요.</p>
+${safeNotice}
+<p>로그인 후 <strong>/delivery/history</strong> 화면까지 이동하면 자동 완료됩니다.</p>
+<p style="font-size:12px;color:#9ca3af">server ${SERVER_VERSION}</p>
 <script>
-let doneShown=false;
-async function poll(){try{const r=await fetch('/job');const j=await r.json();
-if(j.status!=='completed'&&j.status!=='failed'){document.getElementById('status').textContent=j.message||j.status||'';}
-if(j.currentUrl){document.getElementById('url').textContent='현재 배민 페이지 URL: '+j.currentUrl;}
-if(j.status==='completed'&&!doneShown){
-  doneShown=true;
-  document.getElementById('status').textContent='';
-  document.getElementById('error').textContent='';
-  document.getElementById('doneBox').style.display='block';
-  return;
-}
-if(j.status==='failed'){document.getElementById('error').textContent=j.message||'세션 갱신 실패';return;}
-}catch(e){}setTimeout(poll,1500);}
-poll();
+(function(){
+  var done=false;
+  function showDone(){
+    if(done)return; done=true;
+    document.getElementById('status').textContent='';
+    document.getElementById('error').textContent='';
+    document.getElementById('doneBox').style.display='block';
+    document.title='세션 저장 완료 — BREM';
+  }
+  async function poll(){
+    try{
+      var r=await fetch('/job?t='+Date.now(),{cache:'no-store'});
+      var j=await r.json();
+      if(j.status==='completed'){ showDone(); return; }
+      if(j.status==='failed'){
+        document.getElementById('error').textContent=j.message||'세션 갱신 실패';
+        document.getElementById('status').textContent='';
+        return;
+      }
+      document.getElementById('status').textContent=j.message||j.status||'대기 중…';
+      if(j.currentUrl){ document.getElementById('url').textContent='감지 URL: '+j.currentUrl; }
+      else if(j.allUrls&&j.allUrls.length){ document.getElementById('url').textContent='탭: '+j.allUrls.join(' | '); }
+    }catch(e){
+      document.getElementById('error').textContent='로컬 서버 연결 실패 — npm run baemin:session-server 확인';
+    }
+    setTimeout(poll, 1000);
+  }
+  poll();
+})();
 </script></body></html>`;
 }
 
@@ -468,7 +547,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
 
   if (url.pathname === '/health') {
-    return sendJson(res, 200, { ok: true, port: PORT, jobRunning: isJobRunning() });
+    return sendJson(res, 200, { ok: true, port: PORT, version: SERVER_VERSION, jobRunning: isJobRunning() });
   }
 
   if (url.pathname === '/job') {
@@ -481,18 +560,24 @@ const server = http.createServer(async (req, res) => {
     const apiBase = url.searchParams.get('apiBase') || 'https://brem.kr';
 
     if (!setupId || !setupSecret) {
-      return sendHtml(res, renderStartPage('', 'setupId / setupSecret 가 필요합니다. ERP에서 [배민 세션 갱신]을 다시 눌러주세요.'));
+      return sendHtml(res, renderStartPage('', 'setupId/setupSecret 필요 — ERP에서 [배민 세션 갱신]을 다시 누르세요.'));
+    }
+
+    const sameJob = isJobRunning() && activeJob?.setupId === setupId;
+    if (sameJob) {
+      console.log(`[BREM] [start] 동일 setupId 폴링 재접속 | ${setupId}`);
+      return sendHtml(res, renderStartPage(setupId));
     }
 
     if (isJobRunning()) {
-      return sendHtml(res, renderStartPage(setupId, '이미 세션 갱신이 진행 중입니다. 열린 브라우저에서 로그인을 완료하세요.'));
+      await resetActiveSession();
     }
 
     sendHtml(res, renderStartPage(setupId));
+    console.log(`[BREM] [start] 세션 갱신 시작 요청 | setupId=${setupId}`);
 
     void runSessionRefresh(setupId, setupSecret, apiBase).catch(error => {
-      const message = error.message || '세션 갱신 실패';
-      failJob(setupId, '세션 갱신 실패', '', message);
+      failJob(setupId, '세션 갱신 실패', '', error.message);
     });
     return;
   }
@@ -501,12 +586,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', async () => {
-  console.log(`[BREM] Baemin session local server: http://127.0.0.1:${PORT}`);
-  console.log('ERP [배민 세션 갱신] 버튼을 사용하거나 /start URL을 열어주세요.');
+  console.log(`[BREM] Baemin session local server v${SERVER_VERSION}: http://127.0.0.1:${PORT}`);
+  console.log('[BREM] ERP [배민 세션 갱신] 또는 /start URL을 사용하세요.');
   const playwright = await loadPlaywright();
   if (!playwright) {
-    console.warn('[BREM] playwright 미설치 — 세션 갱신 전에 다음을 실행하세요:');
-    console.warn('  npm install playwright');
-    console.warn('  npx playwright install chromium');
+    console.warn('[BREM] playwright 미설치 — npm install playwright && npx playwright install chromium');
   }
 });
