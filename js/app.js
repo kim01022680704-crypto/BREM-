@@ -544,7 +544,7 @@
 
   refreshHeader();
   loadEditFromQuery();
-  void BremStorage.reloadDrivers?.(true).then(() => {
+  void BremStorage.reloadDrivers?.(false).then(() => {
     refreshHeader();
     loadEditFromQuery();
   }).catch(error => {

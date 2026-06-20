@@ -11,9 +11,7 @@ const MISSION_SELECT = [
 function isMissingTableError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return message.includes('could not find the table')
-    || message.includes('relation')
-    && message.includes('missions')
-    && message.includes('does not exist');
+    || (message.includes('relation') && message.includes('missions') && message.includes('does not exist'));
 }
 
 function missionToRow(mission) {

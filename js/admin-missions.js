@@ -534,8 +534,27 @@
 
   async function refresh(options = {}) {
     const force = options.force === true;
-    await updateSetupBanner(force);
+    const renderOnly = options.renderOnly === true;
     resetAssignmentDrafts();
+
+    if (renderOnly && !force) {
+      if (missionsApi.getAll().length === 0) {
+        await BremStorage.reloadMissions?.(false);
+      }
+      if (BremStorage.drivers?.getAll?.().length === 0) {
+        await BremStorage.reloadDrivers?.(false);
+      }
+      await updateSetupBanner(false);
+      renderMissionSection();
+      return;
+    }
+
+    await updateSetupBanner(force);
+
+    if (!force && BremStorage.isSectionCacheReady?.('mission-management')) {
+      renderMissionSection();
+      return;
+    }
 
     if (!force && missionsApi.getAll().length === 0) {
       await BremStorage.reloadMissions?.(false);

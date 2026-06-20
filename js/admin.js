@@ -2541,7 +2541,7 @@
       window.BremAdminRevenue.refresh();
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
-      void window.BremAdminMissions.refresh({ force: false });
+      void window.BremAdminMissions.refresh({ renderOnly: true });
     }
     renderActiveSection(sectionId);
   }

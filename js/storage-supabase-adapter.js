@@ -19,7 +19,7 @@ window.BremSupabaseStorageAdapter = (function () {
   const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
   const PROMOTION_SELECT = 'id,name,platform,type,enabled,selector_key,start_date,end_date,priority,payload,created_at,updated_at';
   const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
-  const MISSION_SELECT = 'id,title,description,type,conditions,is_active,created_at,updated_at';
+  const MISSION_SELECT = 'id,title,description,type,conditions,is_active,raw_data,created_at,updated_at';
 
   const TABLE_KEYS = new Set();
 
@@ -129,7 +129,7 @@ window.BremSupabaseStorageAdapter = (function () {
     async function loadMissions(options = {}) {
       if (!options.force && window.BremDataCache?.isValid(keys.missions)) {
         const cached = window.BremDataCache.getData(keys.missions);
-        if (Array.isArray(cached) && cached.length > 0) {
+        if (Array.isArray(cached)) {
           setCache(keys.missions, cached);
           loadedTableKeys.add(keys.missions);
           return cached;
@@ -146,11 +146,7 @@ window.BremSupabaseStorageAdapter = (function () {
       const value = (data || []).map(row => Mapper().rowToMission(row));
       setCache(keys.missions, value);
       loadedTableKeys.add(keys.missions);
-      if (value.length) {
-        window.BremDataCache?.set?.(keys.missions, value);
-      } else {
-        window.BremDataCache?.invalidate?.(keys.missions);
-      }
+      window.BremDataCache?.set?.(keys.missions, value, { tableLoaded: true });
       return value;
     }
 
@@ -255,7 +251,10 @@ window.BremSupabaseStorageAdapter = (function () {
           missing.push(key);
           return;
         }
-        if (loadedTableKeys.has(key) && window.BremDataCache?.isValid(key)) return;
+        if (loadedTableKeys.has(key)) {
+          if (window.BremDataCache?.isValid(key)) return;
+          loadedTableKeys.delete(key);
+        }
 
         const cached = window.BremDataCache?.getData(key);
         if (Array.isArray(cached)) {
@@ -264,7 +263,7 @@ window.BremSupabaseStorageAdapter = (function () {
           return;
         }
 
-        if (!loadedTableKeys.has(key)) missing.push(key);
+        missing.push(key);
       });
 
       if (!missing.length) return { ok: true, cached: true };
@@ -525,7 +524,7 @@ window.BremSupabaseStorageAdapter = (function () {
       setCache(key, value);
       if (isTableKey(key)) {
         loadedTableKeys.add(key);
-        window.BremDataCache?.set?.(key, value);
+        window.BremDataCache?.set?.(key, value, { tableLoaded: true });
       }
     }
 

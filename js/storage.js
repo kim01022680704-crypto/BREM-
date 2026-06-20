@@ -547,6 +547,23 @@ const BremStorage = (function () {
     storageAdapter.write(KEYS.missions, list);
   }
 
+  function markMissionsCache(list) {
+    const rows = Array.isArray(list) ? list : [];
+    setMissionsCache(rows);
+    window.BremDataCache?.set?.(KEYS.missions, rows, { tableLoaded: true });
+  }
+
+  function restoreTableCachesFromSession() {
+    if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.stage) return;
+    TABLE_STORAGE_KEYS.forEach(key => {
+      if (activeStorageAdapter.isKeyLoaded?.(key)) return;
+      if (!window.BremDataCache?.isValid?.(key)) return;
+      const cached = window.BremDataCache.getData(key);
+      if (!Array.isArray(cached)) return;
+      activeStorageAdapter.stage(key, cached);
+    });
+  }
+
   async function syncMissionsFromServer() {
     if (!isProductionMode()) {
       return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
@@ -567,12 +584,7 @@ const BremStorage = (function () {
     }
 
     const missionRows = (result.missions || []).map(row => mapper.rowToMission(row));
-    setMissionsCache(missionRows);
-    if (missionRows.length) {
-      window.BremDataCache?.set?.(KEYS.missions, missionRows);
-    } else {
-      window.BremDataCache?.invalidate?.(KEYS.missions);
-    }
+    markMissionsCache(missionRows);
     return { ok: true, count: missionRows.length };
   }
 
@@ -606,8 +618,7 @@ const BremStorage = (function () {
     const next = exists
       ? list.map(item => (item.id === saved.id ? saved : item))
       : [saved, ...list];
-    setMissionsCache(next);
-    window.BremDataCache?.set?.(KEYS.missions, next);
+    markMissionsCache(next);
     return saved;
   }
 
@@ -653,13 +664,7 @@ const BremStorage = (function () {
       throw new Error(result.message || result.error || '미션 삭제에 실패했습니다.');
     }
 
-    const list = missions.getAll().filter(item => item.id !== missionId);
-    setMissionsCache(list);
-    if (list.length) {
-      window.BremDataCache?.set?.(KEYS.missions, list);
-    } else {
-      window.BremDataCache?.invalidate?.(KEYS.missions);
-    }
+    markMissionsCache(missions.getAll().filter(item => item.id !== missionId));
     clearMissionFromDriverCache(missionId);
     return { ok: true, id: missionId };
   }
@@ -667,9 +672,9 @@ const BremStorage = (function () {
   async function reloadMissions(force = false) {
     if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
       const cached = window.BremDataCache.getData(KEYS.missions);
-      if (Array.isArray(cached) && cached.length > 0) {
+      if (Array.isArray(cached)) {
         setMissionsCache(cached);
-        return { ok: true, cached: true };
+        return { ok: true, cached: true, count: cached.length };
       }
     }
 
@@ -690,14 +695,10 @@ const BremStorage = (function () {
 
     if (isProductionMode() && isAdminSession) {
       const serverResult = await syncMissionsFromServer();
-      if (serverResult.ok && (serverResult.count ?? missions.getAll().length) > 0) {
+      if (serverResult.ok) {
         return serverResult;
       }
-      const adapterResult = await loadViaAdapter();
-      if (adapterResult.ok && missions.getAll().length > 0) {
-        return { ok: true, count: missions.getAll().length, fallback: 'supabase' };
-      }
-      return serverResult.ok === false ? serverResult : adapterResult;
+      return loadViaAdapter();
     }
 
     return loadViaAdapter();
@@ -827,9 +828,9 @@ const BremStorage = (function () {
     }
 
     if (sectionKeys.includes(KEYS.missions)) {
-      if (!(missions.getAll().length > 0)) {
-        return false;
-      }
+      const missionsReady = window.BremDataCache?.isValid?.(KEYS.missions)
+        && activeStorageAdapter.isKeyLoaded?.(KEYS.missions);
+      if (!missionsReady) return false;
     }
 
     return sectionKeys
@@ -1257,6 +1258,7 @@ const BremStorage = (function () {
     } else {
       await activeStorageAdapter.hydrate(getHydrateOptions());
     }
+    restoreTableCachesFromSession();
     lastSupabaseError = '';
     flushStagedSupabaseWrites();
     finalizeStorageReady();
@@ -1343,7 +1345,7 @@ const BremStorage = (function () {
     if (!force && !append && !hasSearch && !hasStatusFilter) {
       if (window.BremDataCache?.isValid?.(KEYS.drivers)) {
         const cached = window.BremDataCache.getData(KEYS.drivers);
-        if (Array.isArray(cached) && cached.length > 0) {
+        if (Array.isArray(cached)) {
           if (!activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
             setDriversCache(cached);
           }
@@ -1504,6 +1506,7 @@ const BremStorage = (function () {
           message: 'Supabase 로그인이 필요합니다. 관리자 화면에서 먼저 로그인하세요.'
         };
       }
+      restoreTableCachesFromSession();
       return { ok: true };
     }
 
@@ -2488,7 +2491,7 @@ const BremStorage = (function () {
         throw new Error('미션 저장 기능을 사용할 수 없습니다.');
       }
       const saved = await activeStorageAdapter.upsertMission(mission);
-      window.BremDataCache?.set?.(KEYS.missions, missions.getAll());
+      markMissionsCache(missions.getAll());
       return saved;
     },
 
@@ -2547,13 +2550,7 @@ const BremStorage = (function () {
         await activeStorageAdapter.deleteTableRow('missions', missionId);
       }
 
-      const list = missions.getAll().filter(item => item.id !== missionId);
-      setMissionsCache(list);
-      if (list.length) {
-        window.BremDataCache?.set?.(KEYS.missions, list);
-      } else {
-        window.BremDataCache?.invalidate?.(KEYS.missions);
-      }
+      markMissionsCache(missions.getAll().filter(item => item.id !== missionId));
       clearMissionFromDriverCache(missionId);
       return { ok: true, id: missionId };
     },
@@ -4808,7 +4805,7 @@ const BremStorage = (function () {
         await initStorage({ backend: 'supabase' });
         const needsHydrated = (config.mode === 'production' || options.requireHydrated) && !options.deferHydrate;
         if (needsHydrated) {
-          const hydrated = await ensureSupabaseHydrated();
+          const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
           if (!hydrated.ok) {
             return hydrated;
           }
