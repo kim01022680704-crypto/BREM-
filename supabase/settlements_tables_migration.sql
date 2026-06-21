@@ -170,6 +170,79 @@ create trigger settlement_unmatched_set_updated_at
   for each row execute function public.brem_set_updated_at();
 
 -- ---------------------------------------------------------------------------
+-- 레거시 uuid id → text (앱 ID 형식과 호환, 기존 행은 id::text 로 보존)
+-- ---------------------------------------------------------------------------
+create or replace function public.brem_settlement_drop_fks_to(p_parent text)
+returns void as $$
+declare
+  r record;
+begin
+  if to_regclass('public.' || p_parent) is null then
+    return;
+  end if;
+  for r in
+    select c.conrelid::regclass::text as child_table, c.conname as fk_name
+    from pg_constraint c
+    where c.confrelid = ('public.' || p_parent)::regclass
+      and c.contype = 'f'
+  loop
+    execute format('alter table %s drop constraint if exists %I', r.child_table, r.fk_name);
+  end loop;
+end;
+$$ language plpgsql;
+
+create or replace function public.brem_settlement_ensure_text_id(p_table text)
+returns void as $$
+declare
+  col_type text;
+begin
+  if to_regclass('public.' || p_table) is null then
+    return;
+  end if;
+  select c.data_type
+    into col_type
+  from information_schema.columns c
+  where c.table_schema = 'public'
+    and c.table_name = p_table
+    and c.column_name = 'id';
+  if col_type is distinct from 'uuid' then
+    return;
+  end if;
+  perform public.brem_settlement_drop_fks_to(p_table);
+  execute format('alter table public.%I alter column id drop default', p_table);
+  execute format('alter table public.%I alter column id type text using id::text', p_table);
+  raise notice 'Converted public.%.id uuid -> text', p_table;
+exception
+  when others then
+    raise notice 'brem_settlement_ensure_text_id(%) skipped: %', p_table, sqlerrm;
+end;
+$$ language plpgsql;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'weekly_settlement_riders'
+      and column_name = 'weekly_settlement_id'
+      and data_type = 'uuid'
+  ) then
+    alter table public.weekly_settlement_riders
+      alter column weekly_settlement_id type text using weekly_settlement_id::text;
+    raise notice 'Converted weekly_settlement_riders.weekly_settlement_id uuid -> text';
+  end if;
+exception
+  when others then
+    raise notice 'weekly_settlement_riders FK column convert skipped: %', sqlerrm;
+end $$;
+
+select public.brem_settlement_ensure_text_id('daily_settlements');
+select public.brem_settlement_ensure_text_id('weekly_settlements');
+select public.brem_settlement_ensure_text_id('settlement_upload_logs');
+select public.brem_settlement_ensure_text_id('settlement_unmatched');
+
+-- ---------------------------------------------------------------------------
 -- RLS (관리자 전용)
 -- ---------------------------------------------------------------------------
 alter table public.daily_settlements enable row level security;
