@@ -62,7 +62,14 @@
 
   function parseCount(value) {
     if (value === '' || value === null || value === undefined) return 0;
-    const n = Number(String(value).replace(/,/g, '').trim());
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+    let text = String(value).trim().replace(/,/g, '');
+    // ERP 엑셀: "36.6건", "4.4 건" 등 단위 제거
+    text = text.replace(/[\s]*건(?:수)?[\s]*$/u, '').replace(/[\s]*회[\s]*$/u, '').trim();
+    const match = text.match(/^[-+]?\d+(?:\.\d+)?/);
+    if (!match) return NaN;
+    const n = Number(match[0]);
     return Number.isFinite(n) ? n : NaN;
   }
 
