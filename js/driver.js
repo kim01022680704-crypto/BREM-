@@ -635,9 +635,36 @@
     document.getElementById('dailyRows').innerHTML = rows || '<tr><td colspan="4" class="empty-text">선택한 주간의 콜수 기록이 없습니다.</td></tr>';
   }
 
-  function renderNotices() {
-    const items = notices()
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt.localeCompare(a.createdAt))
+  function sortNotices(list) {
+    return list.slice().sort((a, b) => {
+      const pinDiff = Number(b.pinned) - Number(a.pinned);
+      if (pinDiff) return pinDiff;
+      const aDate = String(a.createdAt || a.updatedAt || '');
+      const bDate = String(b.createdAt || b.updatedAt || '');
+      return bDate.localeCompare(aDate);
+    });
+  }
+
+  async function renderNotices() {
+    const listEl = document.getElementById('noticeList');
+    if (!listEl) return;
+
+    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+    const cacheValid = window.BremDataCache?.isValid?.('brem_admin_notices');
+    const shouldFetch = isProduction && state.currentDriver && !cacheValid;
+
+    if (shouldFetch) {
+      listEl.innerHTML = '<div class="empty-text">공지사항 불러오는 중...</div>';
+      const result = await BremStorage.fetchRiderNoticesFromServer?.().catch(error => ({
+        ok: false,
+        message: error.message || String(error)
+      }));
+      if (!result?.ok) {
+        console.warn('[BREM] Rider notices render fetch failed:', result?.message || result?.error);
+      }
+    }
+
+    const items = sortNotices(notices())
       .map(notice => `
         <article class="notice-item">
           <h3>${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</h3>
@@ -646,7 +673,7 @@
       `)
       .join('');
 
-    document.getElementById('noticeList').innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
+    listEl.innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
   }
 
   async function renderPlatformMission(driver, platform, missionId, assignedMission = null) {
@@ -816,7 +843,7 @@
     setProgress('missionBar', missionRate);
 
     renderDailyCalls(driver.id);
-    renderNotices();
+    void renderNotices();
 
     result.hidden = false;
   }
@@ -1088,7 +1115,7 @@
 
   document.addEventListener('brem-cache-status-changed', () => {
     if (state.currentDriver) {
-      renderNotices();
+      void renderNotices();
     }
   });
 

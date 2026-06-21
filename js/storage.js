@@ -660,6 +660,7 @@ const BremStorage = (function () {
     restoreDriversCacheFromSession();
     TABLE_STORAGE_KEYS.forEach(key => {
       if (key === KEYS.drivers) return;
+      if (isRiderProductionSession() && key === KEYS.notices) return;
       if (activeStorageAdapter.isKeyLoaded?.(key)) return;
       if (!window.BremDataCache?.isValid?.(key)) return;
       const cached = window.BremDataCache.getData(key);
@@ -792,6 +793,7 @@ const BremStorage = (function () {
       mapper?.rowToNotice ? mapper.rowToNotice(row) : row
     ));
     stageRiderScopedCache(KEYS.notices, noticeRows, { tableLoaded: true });
+    document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
     return noticeRows;
   }
 
@@ -920,6 +922,10 @@ const BremStorage = (function () {
     const isAdminSession = activeSupabaseProfile?.role === 'admin' && activeSupabaseProfile?.active !== false;
     if (isProductionMode() && isAdminSession) {
       return syncNoticesFromServer();
+    }
+
+    if (isRiderProductionSession()) {
+      return fetchRiderNoticesFromServer();
     }
 
     if (activeStorageAdapter.ensureKeysLoaded) {
@@ -1659,6 +1665,19 @@ const BremStorage = (function () {
   function isRiderSelfUpdate(id) {
     if (!activeSupabaseProfile || activeSupabaseProfile.role !== 'rider') return false;
     return String(activeSupabaseProfile.rider_id || '') === String(id || '');
+  }
+
+  function isRiderProductionSession() {
+    return isProductionMode()
+      && activeSupabaseProfile?.role === 'rider'
+      && activeSupabaseProfile?.active !== false;
+  }
+
+  function invalidateNoticesCache() {
+    window.BremDataCache?.invalidate?.(KEYS.notices);
+    if (activeStorageAdapter.invalidateKeys) {
+      activeStorageAdapter.invalidateKeys([KEYS.notices]);
+    }
   }
 
   async function persistRiderSelfViaServer(id, changes = {}) {
@@ -2456,9 +2475,29 @@ const BremStorage = (function () {
         if (!hydrated.ok) return hydrated;
 
         if (production) {
-          const dashboard = await fetchRiderDashboardFromServer();
-          if (!dashboard.ok) return dashboard;
-          await fetchRiderNoticesFromServer().catch(() => ({}));
+          if (isRiderProductionSession()) {
+            invalidateNoticesCache();
+          }
+
+          const [dashboard, noticesResult] = await Promise.all([
+            fetchRiderDashboardFromServer(),
+            isRiderProductionSession()
+              ? fetchRiderNoticesFromServer()
+              : Promise.resolve({ ok: true, skipped: true })
+          ]);
+
+          if (!noticesResult.ok && !noticesResult.skipped) {
+            console.warn('[BREM] Rider notices fetch failed:', noticesResult.message || noticesResult.error);
+          }
+          if (!dashboard.ok) {
+            if (noticesResult.ok) {
+              document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
+                detail: { ok: true, partial: true, noticesOnly: true }
+              }));
+              return { ok: true, partial: true, notices: noticesResult.count || 0 };
+            }
+            return dashboard;
+          }
         } else if (activeStorageAdapter.ensureKeysLoaded) {
           if (activeStorageAdapter.hydrateCore) {
             await activeStorageAdapter.hydrateCore();
@@ -6794,6 +6833,7 @@ const BremStorage = (function () {
           if (payload.riderId) {
             sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
           }
+          invalidateNoticesCache();
           const mapper = window.BremSupabaseMapper;
           const mappedDriver = payload.rider && mapper?.rowToRider
             ? mapper.rowToRider(payload.rider)
