@@ -277,6 +277,7 @@ const BremStorage = (function () {
 
   function flushStagedSupabaseWrites() {
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.enqueuePersist) return;
+    const productionServerKeys = new Set([KEYS.drivers, KEYS.missions]);
     const persistKeys = [
       KEYS.drivers,
       KEYS.notices,
@@ -288,7 +289,7 @@ const BremStorage = (function () {
       persistKeys.push(KEYS.adminAccounts);
     }
     persistKeys.forEach(key => {
-      if (isProductionMode() && key === KEYS.drivers) return;
+      if (isProductionMode() && productionServerKeys.has(key)) return;
       if (!activeStorageAdapter.has(key)) return;
       if (activeStorageAdapter.isKeyLoaded && !activeStorageAdapter.isKeyLoaded(key)) return;
       const value = activeStorageAdapter.read(key);

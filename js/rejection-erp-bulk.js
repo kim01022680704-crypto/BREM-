@@ -543,6 +543,55 @@
     };
   }
 
+  function isUnmatchedErpRow(row) {
+    return !row.driverId;
+  }
+
+  function unmatchedReason(row) {
+    const reasons = [];
+    if (Array.isArray(row.errors) && row.errors.length) {
+      reasons.push(...row.errors.filter(Boolean));
+    }
+    if (row.coupangMatchStatus && row.coupangMatchStatus !== '-' && row.coupangMatchStatus !== '쿠팡 매칭') {
+      reasons.push(row.coupangMatchStatus);
+    }
+    if (row.baeminMatchStatus && row.baeminMatchStatus !== '-' && row.baeminMatchStatus !== '배민 매칭') {
+      reasons.push(row.baeminMatchStatus);
+    }
+    if (row.matchStatus && row.matchStatus !== '-') {
+      reasons.push(row.matchStatus);
+    }
+    const unique = [...new Set(reasons.map(text => String(text).trim()).filter(Boolean))];
+    return unique.join(' · ') || '미매칭';
+  }
+
+  function renderMatchedPreviewRow(row) {
+    const rowOk = row.coupangPayload?.canSave || row.baeminPayload?.canSave;
+    return `
+      <tr class="${rowOk ? 'row-ok' : 'row-error'}">
+        <td>${escapeHtml(row.name)}</td>
+        <td>${escapeHtml(row.coupangId || '-')}</td>
+        <td>${escapeHtml(formatRateDisplay(row.coupangRate, row.coupangUnmeasured))}</td>
+        <td>${escapeHtml(row.baeminId || '-')}</td>
+        <td>${escapeHtml(formatRateDisplay(row.baeminRate, row.baeminUnmeasured))}</td>
+        <td>${escapeHtml(row.matchStatus || '-')}</td>
+      </tr>
+    `;
+  }
+
+  function renderUnmatchedPreviewRow(row) {
+    return `
+      <tr class="row-error">
+        <td>${escapeHtml(row.name)}</td>
+        <td>${escapeHtml(row.coupangId && row.coupangId !== '-' ? row.coupangId : '-')}</td>
+        <td>${escapeHtml(formatRateDisplay(row.coupangRate, row.coupangUnmeasured))}</td>
+        <td>${escapeHtml(row.baeminId && row.baeminId !== '-' ? row.baeminId : '-')}</td>
+        <td>${escapeHtml(formatRateDisplay(row.baeminRate, row.baeminUnmeasured))}</td>
+        <td>${escapeHtml(unmatchedReason(row))}</td>
+      </tr>
+    `;
+  }
+
   function init(root) {
     let previewRows = [];
     let parsedBundle = null;
@@ -550,6 +599,9 @@
     const fileInput = root.querySelector('[data-rejection-erp-file]');
     const previewSection = root.querySelector('[data-rejection-erp-preview]');
     const previewBody = root.querySelector('[data-rejection-erp-preview-body]');
+    const unmatchedWrap = root.querySelector('[data-rejection-erp-unmatched-wrap]');
+    const unmatchedBody = root.querySelector('[data-rejection-erp-unmatched-body]');
+    const unmatchedCountEl = root.querySelector('[data-rejection-erp-unmatched-count]');
     const totalEl = root.querySelector('[data-rejection-erp-total]');
     const saveEl = root.querySelector('[data-rejection-erp-save]');
     const failEl = root.querySelector('[data-rejection-erp-fail]');
@@ -583,6 +635,9 @@
       if (fileInput) fileInput.value = '';
       if (previewSection) previewSection.hidden = true;
       if (previewBody) previewBody.innerHTML = '';
+      if (unmatchedBody) unmatchedBody.innerHTML = '';
+      if (unmatchedWrap) unmatchedWrap.hidden = true;
+      if (unmatchedCountEl) unmatchedCountEl.textContent = '0';
       if (totalEl) totalEl.textContent = '0';
       if (saveEl) saveEl.textContent = '0';
       if (failEl) failEl.textContent = '0';
@@ -613,21 +668,20 @@
       if (baeminFailEl) baeminFailEl.textContent = String(baeminStats.failed);
       if (applyBtn) applyBtn.disabled = saveCount === 0;
 
+      const matchedRows = previewRows.filter(row => row.driverId);
+      const unmatchedRows = previewRows.filter(isUnmatchedErpRow);
+
       if (previewBody) {
-        previewBody.innerHTML = previewRows.map(row => {
-          const rowOk = row.coupangPayload?.canSave || row.baeminPayload?.canSave;
-          return `
-          <tr class="${rowOk ? 'row-ok' : 'row-error'}">
-            <td>${escapeHtml(row.name)}</td>
-            <td>${escapeHtml(row.coupangId || '-')}</td>
-            <td>${escapeHtml(formatRateDisplay(row.coupangRate, row.coupangUnmeasured))}</td>
-            <td>${escapeHtml(row.baeminId || '-')}</td>
-            <td>${escapeHtml(formatRateDisplay(row.baeminRate, row.baeminUnmeasured))}</td>
-            <td>${escapeHtml(row.matchStatus || '-')}</td>
-          </tr>
-        `;
-        }).join('');
+        previewBody.innerHTML = matchedRows.length
+          ? matchedRows.map(renderMatchedPreviewRow).join('')
+          : '<tr><td colspan="6" class="empty">저장 가능한 매칭 기사가 없습니다.</td></tr>';
       }
+
+      if (unmatchedBody) {
+        unmatchedBody.innerHTML = unmatchedRows.map(renderUnmatchedPreviewRow).join('');
+      }
+      if (unmatchedWrap) unmatchedWrap.hidden = unmatchedRows.length === 0;
+      if (unmatchedCountEl) unmatchedCountEl.textContent = String(unmatchedRows.length);
 
       if (previewSection) previewSection.hidden = previewRows.length === 0;
       updateWeekNote();
@@ -744,6 +798,10 @@
           const message = String(error.message || '');
           if (message.includes('stats') || message.includes('column')) {
             notify('Supabase에 stats 컬럼이 없습니다. supabase/rejection_stats_migration.sql 을 실행하세요.');
+            return;
+          }
+          if (message.includes('missions') && message.includes('row-level security')) {
+            notify('거절율 저장 중 미션 테이블 RLS 오류가 발생했습니다. 페이지를 새로고침한 뒤 다시 시도하세요.');
             return;
           }
           notify(message || 'Supabase 저장에 실패했습니다.');
