@@ -645,29 +645,8 @@
     });
   }
 
-  async function renderNotices() {
-    const listEl = document.getElementById('noticeList');
-    if (!listEl) return;
-
-    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
-    const shouldFetch = isProduction && state.currentDriver;
-
-    if (shouldFetch) {
-      listEl.innerHTML = '<div class="empty-text">공지사항 불러오는 중...</div>';
-      const fetchTask = () => BremStorage.fetchRiderNoticesFromServer?.();
-      const result = await (window.BremDataCache?.runOnce
-        ? window.BremDataCache.runOnce('rider-notices-fetch', fetchTask)
-        : fetchTask()
-      ).catch(error => ({
-        ok: false,
-        message: error.message || String(error)
-      }));
-      if (!result?.ok) {
-        console.warn('[BREM] Rider notices render fetch failed:', result?.message || result?.error);
-      }
-    }
-
-    const items = sortNotices(notices())
+  function renderNoticesList(listEl, noticeList) {
+    const items = noticeList
       .map(notice => `
         <article class="notice-item">
           <h3>${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</h3>
@@ -677,6 +656,28 @@
       .join('');
 
     listEl.innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
+  }
+
+  async function renderNotices() {
+    const listEl = document.getElementById('noticeList');
+    if (!listEl) return;
+
+    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+
+    if (isProduction && state.currentDriver) {
+      listEl.innerHTML = '<div class="empty-text">공지사항 불러오는 중...</div>';
+      const result = await BremStorage.fetchRiderNoticesFromServer?.().catch(error => ({
+        ok: false,
+        message: error.message || String(error)
+      }));
+      if (!result?.ok) {
+        console.warn('[BREM] Rider notices render fetch failed:', result?.message || result?.error);
+        listEl.innerHTML = '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
+        return;
+      }
+    }
+
+    renderNoticesList(listEl, sortNotices(notices()));
   }
 
   async function renderPlatformMission(driver, platform, missionId, assignedMission = null) {
@@ -1117,8 +1118,9 @@
   });
 
   document.addEventListener('brem-cache-status-changed', () => {
-    if (state.currentDriver) {
-      void renderNotices();
+    const listEl = document.getElementById('noticeList');
+    if (state.currentDriver && listEl) {
+      renderNoticesList(listEl, sortNotices(notices()));
     }
   });
 
@@ -1133,6 +1135,7 @@
       try {
         await window.BremSupabaseConfig?.load?.();
         await BremStorage.waitForStorageBootstrap?.();
+        BremStorage.invalidateNoticesCache?.();
       } catch {
         showLoggedOut();
         return;

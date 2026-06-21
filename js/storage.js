@@ -887,22 +887,30 @@ const BremStorage = (function () {
     }
 
     try {
+      invalidateNoticesCache();
+
       const response = await fetch('/api/rider/notices', {
         credentials: 'same-origin',
         headers: { Authorization: `Bearer ${token}` }
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        markNoticesCache([], { source: 'server-error' });
         return { ok: false, message: payload.error || '공지사항을 불러오지 못했습니다.' };
       }
 
-      const noticeRows = mergeNoticesRowsInCache(payload.notices || []);
+      const mapper = window.BremSupabaseMapper;
+      const noticeRows = (payload.notices || []).map(row => (
+        mapper?.rowToNotice ? mapper.rowToNotice(row) : row
+      ));
+      markNoticesCache(noticeRows, { source: 'server' });
       return {
         ok: true,
         riderId: payload.riderId || null,
         count: noticeRows.length
       };
     } catch (error) {
+      markNoticesCache([], { source: 'server-error' });
       return { ok: false, message: error.message || '공지사항 요청에 실패했습니다.' };
     }
   }
@@ -1680,6 +1688,9 @@ const BremStorage = (function () {
     if (activeStorageAdapter.invalidateKeys) {
       activeStorageAdapter.invalidateKeys([KEYS.notices]);
     }
+    if (activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(KEYS.notices, []);
+    }
   }
 
   async function persistRiderSelfViaServer(id, changes = {}) {
@@ -2016,7 +2027,7 @@ const BremStorage = (function () {
       stageRiderScopedCache(KEYS.weeklyTargets, payload.weeklyTargets);
     }
 
-    if (Array.isArray(payload.notices)) {
+    if (Array.isArray(payload.notices) && !isRiderProductionSession()) {
       mergeNoticesRowsInCache(payload.notices);
     }
 
@@ -7545,6 +7556,7 @@ const BremStorage = (function () {
     reloadMissions,
     reloadNotices,
     fetchRiderNoticesFromServer,
+    invalidateNoticesCache,
     getMissionsTableStatus,
     syncAllDriversPagesInBackground,
     verifyRiderPersisted,
