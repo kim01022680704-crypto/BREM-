@@ -31,17 +31,62 @@
   if (!tableBody) return;
 
   const selectedIds = new Set();
+  let renderedSnapshot = '';
+  let renderedIsMobile = null;
+  let syncRenderTimer = null;
 
-  function driverMatchesKeyword(driver, keyword) {
-    if (!keyword) return true;
-    const haystack = [
+  function buildDriverSearchText(driver) {
+    return [
       driver.name,
       driver.phone,
       makeDriverLoginId(driver),
       driver.baeminId,
       driver.memo
-    ].map(value => String(value || '').toLowerCase());
-    return haystack.some(value => value.includes(keyword));
+    ].map(value => String(value || '').toLowerCase()).join(' ');
+  }
+
+  function getDriverSnapshot() {
+    return BremStorage.drivers.getAll().map(driver => (
+      `${driver.id}|${driver.name}|${driver.phone}|${driver.status}|${driver.baeminId || ''}|${driver.memo || ''}`
+    )).join('\n');
+  }
+
+  function isMobileView() {
+    return window.matchMedia('(max-width: 900px)').matches;
+  }
+
+  function canUseFastFilter() {
+    const listRoot = isMobileView() ? mobileList : tableBody;
+    if (!listRoot?.querySelector('[data-driver-id]')) return false;
+    return renderedSnapshot === getDriverSnapshot() && renderedIsMobile === isMobileView();
+  }
+
+  function rowMatchesFilter(element, keyword, status) {
+    const matchKeyword = !keyword || String(element.dataset.search || '').includes(keyword);
+    const matchStatus = status === '전체' || element.dataset.status === status;
+    return matchKeyword && matchStatus;
+  }
+
+  function applyListFilter() {
+    const keyword = searchInput.value.trim().toLowerCase();
+    const status = statusFilter.value;
+    const listRoot = isMobileView() ? mobileList : tableBody;
+    let visibleCount = 0;
+
+    listRoot.querySelectorAll('[data-driver-id]').forEach(element => {
+      const visible = rowMatchesFilter(element, keyword, status);
+      element.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+
+    const allDrivers = BremStorage.drivers.getAll();
+    emptyState.classList.toggle('show', visibleCount === 0);
+    renderListCount(visibleCount, allDrivers.length);
+    updateSelectionUi();
+  }
+  function driverMatchesKeyword(driver, keyword) {
+    if (!keyword) return true;
+    return buildDriverSearchText(driver).includes(keyword);
   }
 
   function getFilteredDrivers() {
@@ -128,8 +173,6 @@
       mobileList?.classList.remove('is-loading');
 
       const allDrivers = BremStorage.drivers.getAll();
-      const filteredDrivers = getFilteredDrivers();
-      const drivers = filteredDrivers;
 
       const allIds = new Set(allDrivers.map(driver => driver.id));
       selectedIds.forEach(id => {
@@ -137,13 +180,11 @@
       });
 
       updateDriverTotal(driverTotal);
-      emptyState.classList.toggle('show', drivers.length === 0);
-      renderListCount(drivers.length, allDrivers.length);
 
-      const isMobileView = window.matchMedia('(max-width: 900px)').matches;
+      const mobileView = isMobileView();
 
-      if (!isMobileView) {
-        tableBody.innerHTML = drivers.map(driver => {
+      if (!mobileView) {
+        tableBody.innerHTML = allDrivers.map(driver => {
           const loginId = escapeHtml(makeDriverLoginId(driver));
           const eventName = escapeHtml(driver.longEventItem) || '-';
           const eventStart = formatDate(driver.longEventStartDate);
@@ -151,7 +192,7 @@
             ? `<span class="cell-main">${eventName}</span><span class="cell-sub">${eventStart}</span>`
             : `<span class="cell-main">-</span>`;
           return `
-      <tr class="${selectedIds.has(driver.id) ? 'row-selected' : ''}">
+      <tr class="${selectedIds.has(driver.id) ? 'row-selected' : ''}" data-driver-id="${escapeHtml(driver.id)}" data-search="${escapeHtml(buildDriverSearchText(driver))}" data-status="${escapeHtml(driver.status)}">
         <td class="col-select">${renderCheckbox(driver.id)}</td>
         <td class="col-name">
           <strong class="cell-main">${escapeHtml(driver.name)}</strong>
@@ -181,8 +222,8 @@
         mobileList.innerHTML = '';
       } else {
         tableBody.innerHTML = '';
-        mobileList.innerHTML = drivers.map(driver => `
-      <article class="driver-card ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}">
+        mobileList.innerHTML = allDrivers.map(driver => `
+      <article class="driver-card ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}" data-driver-id="${escapeHtml(driver.id)}" data-search="${escapeHtml(buildDriverSearchText(driver))}" data-status="${escapeHtml(driver.status)}">
         <div class="driver-card-select">
           <label>
             <span class="sr-only">${escapeHtml(driver.name)} 선택</span>
@@ -222,7 +263,9 @@
     `).join('');
       }
 
-      updateSelectionUi();
+      renderedSnapshot = getDriverSnapshot();
+      renderedIsMobile = mobileView;
+      applyListFilter();
       window.BremPerf?.timeEnd?.('drivers.render');
     } catch (error) {
       console.error('[BREM] Driver list render failed:', error);
@@ -385,15 +428,34 @@
     if (action === 'delete') deleteDriver(id);
   }
 
-  const debouncedRender = window.BremPerf?.debounce
-    ? window.BremPerf.debounce(() => {
-      scrollListToTop();
+  const debouncedFullRender = window.BremPerf?.debounce
+    ? window.BremPerf.debounce(render, 180)
+    : render;
+
+  function handleSearchInput() {
+    if (canUseFastFilter()) {
+      applyListFilter();
+      return;
+    }
+    debouncedFullRender();
+  }
+
+  function handleStatusFilterChange() {
+    scrollListToTop();
+    if (canUseFastFilter()) {
+      applyListFilter();
+      return;
+    }
+    render();
+  }
+
+  function scheduleSyncRender() {
+    clearTimeout(syncRenderTimer);
+    syncRenderTimer = setTimeout(() => {
+      renderedSnapshot = '';
       render();
-    }, 180)
-    : () => {
-      scrollListToTop();
-      render();
-    };
+    }, 300);
+  }
 
   async function syncAllDriversForList() {
     await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
@@ -435,15 +497,15 @@
       showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
     }
     render();
-    void syncAllDriversForList().then(() => render());
+    void syncAllDriversForList().then(() => {
+      renderedSnapshot = '';
+      render();
+    });
   }
 
   function init() {
-    searchInput.addEventListener('input', debouncedRender);
-    statusFilter.addEventListener('change', () => {
-      scrollListToTop();
-      render();
-    });
+    searchInput.addEventListener('input', handleSearchInput);
+    statusFilter.addEventListener('change', handleStatusFilterChange);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
@@ -458,7 +520,7 @@
     document.addEventListener('brem-drivers-sync-ready', () => {
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList.classList.remove('is-loading');
-      render();
+      scheduleSyncRender();
     });
   }
 

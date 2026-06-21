@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260621m">
+  <link rel="stylesheet" href="css/admin.css?v=20260621n">
   <link rel="stylesheet" href="css/data-loading.css">
 </head>
 <body>
@@ -170,23 +170,26 @@
               <h2>기사별 현황</h2>
               <span class="dashboard-week-label" id="dashboardWeekLabel">-</span>
             </div>
-            <div class="table-wrap">
-              <table class="dashboard-table">
-                <thead>
-                  <tr>
-                    <th>기사</th>
-                    <th>연락처</th>
-                    <th>플랫폼</th>
-                    <th>주간 콜 (쿠팡)</th>
-                    <th>주간 콜 (배민)</th>
-                    <th>주간 합계</th>
-                    <th>월간 콜수</th>
-                    <th>장기근속이벤트</th>
-                  </tr>
-                </thead>
-                <tbody id="dashboardRows"></tbody>
-              </table>
+            <div class="dashboard-driver-scroll" id="dashboardDriverScroll">
+              <div class="table-wrap dashboard-driver-table-wrap">
+                <table class="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>기사</th>
+                      <th>연락처</th>
+                      <th>플랫폼</th>
+                      <th>주간 콜 (쿠팡)</th>
+                      <th>주간 콜 (배민)</th>
+                      <th>주간 합계</th>
+                      <th>월간 콜수</th>
+                      <th>장기근속이벤트</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardRows"></tbody>
+                </table>
+              </div>
             </div>
+            <p class="dashboard-scroll-note" id="dashboardDriverCount" hidden aria-live="polite"></p>
           </article>
 
           <article class="card">
@@ -2723,6 +2726,6 @@
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260620v"></script>
-  <script src="js/admin.js?v=20260620k"></script>
+  <script src="js/admin.js?v=20260621n"></script>
 </body>
 </html>

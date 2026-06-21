@@ -2539,6 +2539,39 @@ textarea {
 
 .dashboard-table {
   min-width: 860px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.dashboard-driver-scroll {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0d0d0d;
+}
+
+.dashboard-driver-table-wrap {
+  overflow: visible;
+  border: 0;
+}
+
+.dashboard-driver-table-wrap .dashboard-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #161616;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.dashboard-scroll-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
 }
 
 .empty {

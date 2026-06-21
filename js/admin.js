@@ -1743,6 +1743,23 @@
       ? '검색 결과에 해당하는 기사가 없습니다.'
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
     $('#dashboardRows').innerHTML = rows || emptyRow(8, emptyMessage);
+    const dashboardCountEl = $('#dashboardDriverCount');
+    if (dashboardCountEl) {
+      const totalDrivers = drivers().length;
+      if (!allDrivers.length) {
+        dashboardCountEl.hidden = true;
+        dashboardCountEl.textContent = '';
+      } else {
+        dashboardCountEl.hidden = false;
+        if (state.driverSearchQuery.trim()) {
+          dashboardCountEl.textContent = `검색 결과 ${allDrivers.length}명 표시 · 스크롤하여 확인`;
+        } else if (allDrivers.length === totalDrivers) {
+          dashboardCountEl.textContent = `등록 기사 ${totalDrivers}명 전체 표시 · 스크롤하여 확인`;
+        } else {
+          dashboardCountEl.textContent = `등록 기사 ${totalDrivers}명 중 ${allDrivers.length}명 표시 · 스크롤하여 확인`;
+        }
+      }
+    }
     $('#dashboardNotices').innerHTML = renderNoticeItems(notices().slice(0, 4), false);
     window.BremPerf?.timeEnd?.('admin.renderDashboard');
   }
