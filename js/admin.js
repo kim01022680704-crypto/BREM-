@@ -19,6 +19,12 @@
     unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
   };
 
+  let callStatsIndex = null;
+  let callStatsIndexKey = '';
+  const driverSelectOptionsCache = new Map();
+  const sectionRenderFingerprints = new Map();
+  let pendingSectionNavRaf = 0;
+
   const UNIFIED_SECTIONS = {
     calls: { title: '콜수 입력', defaultPlatform: 'coupang' },
     rejections: { title: '거절율 입력', defaultPlatform: 'coupang' },
@@ -1768,10 +1774,46 @@
       : '<span class="platform-tag platform-tag--empty">-</span>';
   }
 
+  function invalidateCallStatsIndex() {
+    callStatsIndex = null;
+    callStatsIndexKey = '';
+  }
+
+  function getCallStatsIndex() {
+    const list = calls();
+    const key = `${list.length}:${list[0]?.id || ''}:${list[list.length - 1]?.id || ''}`;
+    if (callStatsIndex && callStatsIndexKey === key) return callStatsIndex;
+
+    const driverWeekPlatform = new Map();
+    const driverMonth = new Map();
+    const weekPlatformTotal = new Map();
+
+    for (const call of list) {
+      const driverId = call.driverId;
+      const date = call.date;
+      if (!driverId || !date) continue;
+      const count = Number(call.count || 0);
+      const platform = normalizePlatform(call.platform);
+      const month = date.slice(0, 7);
+
+      const monthKey = `${driverId}|${month}`;
+      driverMonth.set(monthKey, (driverMonth.get(monthKey) || 0) + count);
+
+      const weekStart = weekStartKey(date);
+      const weekDriverKey = `${driverId}|${weekStart}|${platform}`;
+      driverWeekPlatform.set(weekDriverKey, (driverWeekPlatform.get(weekDriverKey) || 0) + count);
+
+      const weekTotalKey = `${weekStart}|${platform}`;
+      weekPlatformTotal.set(weekTotalKey, (weekPlatformTotal.get(weekTotalKey) || 0) + count);
+    }
+
+    callStatsIndex = { driverWeekPlatform, driverMonth, weekPlatformTotal };
+    callStatsIndexKey = key;
+    return callStatsIndex;
+  }
+
   function monthCalls(driverId, month) {
-    return calls()
-      .filter(call => call.driverId === driverId && call.date.startsWith(month))
-      .reduce((sum, call) => sum + Number(call.count || 0), 0);
+    return getCallStatsIndex().driverMonth.get(`${driverId}|${month}`) || 0;
   }
 
   function currentWeekCalls(driverId) {
@@ -1793,17 +1835,8 @@
   }
 
   function weekCalls(driverId, weekStart) {
-    const start = new Date(`${weekStart}T00:00:00`);
-    const end = new Date(`${weekEndKey(weekStart)}T00:00:00`);
-    end.setHours(23, 59, 59, 999);
-
-    return calls()
-      .filter(call => {
-        if (call.driverId !== driverId) return false;
-        const callDate = new Date(`${call.date}T00:00:00`);
-        return callDate >= start && callDate <= end;
-      })
-      .reduce((sum, call) => sum + Number(call.count || 0), 0);
+    return weekCallsForDriverByPlatform(driverId, weekStart, 'coupang')
+      + weekCallsForDriverByPlatform(driverId, weekStart, 'baemin');
   }
 
   function weeklyRateFor(driverId, weekStart) {
@@ -1845,14 +1878,41 @@
     return list;
   }
 
+  function invalidateDriverSelectCache() {
+    driverSelectOptionsCache.clear();
+    $$('.call-driver, .rejection-driver, #targetDriver, #weeklyTargetDriver').forEach(select => {
+      if (select) delete select.dataset.selectOptionsKey;
+    });
+  }
+
+  function getDriverSelectOptionsCacheKey(platform) {
+    return `${platform || 'all'}:${state.driverSearchQuery.trim()}:${drivers().length}`;
+  }
+
   function fillDriverSelect(select) {
     if (!select) return;
     const current = select.value;
-    const list = driversForSelect(select);
-    select.innerHTML = '<option value="">기사 선택</option>' + list
-      .map(driver => `<option value="${driver.id}">${escapeHtml(driver.name)} · ${escapeHtml(driver.phone)}</option>`)
-      .join('');
-    if (current && list.some(driver => driver.id === current)) {
+    const platform = getSelectPlatform(select);
+    const cacheKey = getDriverSelectOptionsCacheKey(platform);
+
+    let cached = driverSelectOptionsCache.get(cacheKey);
+    if (!cached) {
+      const list = driversForSelect(select);
+      cached = {
+        html: '<option value="">기사 선택</option>' + list
+          .map(driver => `<option value="${driver.id}">${escapeHtml(driver.name)} · ${escapeHtml(driver.phone)}</option>`)
+          .join(''),
+        ids: new Set(list.map(driver => driver.id))
+      };
+      driverSelectOptionsCache.set(cacheKey, cached);
+    }
+
+    if (select.dataset.selectOptionsKey !== cacheKey) {
+      select.innerHTML = cached.html;
+      select.dataset.selectOptionsKey = cacheKey;
+    }
+
+    if (current && cached.ids.has(current)) {
       select.value = current;
     } else {
       select.value = '';
@@ -1870,6 +1930,19 @@
     ['#targetDriver', '#weeklyTargetDriver'].forEach(selector => fillDriverSelect($(selector)));
   }
 
+  function refreshSelectsForSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) {
+      refreshSelects();
+      return;
+    }
+    section.querySelectorAll('.call-driver, .rejection-driver').forEach(fillDriverSelect);
+    if (sectionId === 'targets') {
+      fillDriverSelect($('#targetDriver'));
+      fillDriverSelect($('#weeklyTargetDriver'));
+    }
+  }
+
   function updateDriverSearchBarVisibility(sectionId) {
     const bar = $('#adminDriverSearchBar');
     if (!bar) return;
@@ -1880,33 +1953,12 @@
 
   function weekCallsForDriverByPlatform(driverId, weekStart, platform) {
     const p = normalizePlatform(platform);
-    const start = new Date(`${weekStart}T00:00:00`);
-    const end = new Date(`${weekEndKey(weekStart)}T00:00:00`);
-    end.setHours(23, 59, 59, 999);
-
-    return calls()
-      .filter(call => {
-        if (call.driverId !== driverId) return false;
-        if (normalizePlatform(call.platform) !== p) return false;
-        const callDate = new Date(`${call.date}T00:00:00`);
-        return callDate >= start && callDate <= end;
-      })
-      .reduce((sum, call) => sum + Number(call.count || 0), 0);
+    return getCallStatsIndex().driverWeekPlatform.get(`${driverId}|${weekStart}|${p}`) || 0;
   }
 
   function weekCallsByPlatform(platform, weekStart) {
     const p = normalizePlatform(platform);
-    const start = new Date(`${weekStart}T00:00:00`);
-    const end = new Date(`${weekEndKey(weekStart)}T00:00:00`);
-    end.setHours(23, 59, 59, 999);
-
-    return calls()
-      .filter(call => {
-        if (normalizePlatform(call.platform) !== p) return false;
-        const callDate = new Date(`${call.date}T00:00:00`);
-        return callDate >= start && callDate <= end;
-      })
-      .reduce((sum, call) => sum + Number(call.count || 0), 0);
+    return getCallStatsIndex().weekPlatformTotal.get(`${weekStart}|${p}`) || 0;
   }
 
   function renderDashboard() {
@@ -2035,7 +2087,6 @@
   }
 
   function renderCalls() {
-    refreshSelects();
     pruneSelectedCallIds();
     PLATFORMS.forEach(platform => {
       const filterDate = callFilterDate(platform);
@@ -2062,7 +2113,6 @@
   }
 
   function renderRejections() {
-    refreshSelects();
     PLATFORMS.forEach(platform => {
       updateRejectionWeekPreview(state.rejectionWeekByPlatform[platform] || weekStartKey(), platform);
       fillRejectionRateInput(platform);
@@ -2093,7 +2143,6 @@
   }
 
   function renderTargets() {
-    refreshSelects();
     updateAdminWeekTargetPreview(weekStartKey());
     updateTargetMonthLabel();
     const monthlyEmptyMessage = state.driverSearchQuery.trim()
@@ -2699,8 +2748,94 @@
     showToast(`${platformLabel(p)} ${preview.matched.length}명 반영 완료${preview.unmatched.length ? ` · 미반영 ${preview.unmatched.length}명은 아래 목록에 저장됨` : ''}`);
   }
 
-  function renderActiveSection(sectionId = state.currentSection) {
+  function invalidateSectionRenders(sectionId) {
+    if (sectionId) {
+      sectionRenderFingerprints.delete(sectionId);
+      return;
+    }
+    sectionRenderFingerprints.clear();
+  }
+
+  function getSectionRenderFingerprint(sectionId) {
+    const driverQuery = state.driverSearchQuery.trim();
+    const dashQuery = state.dashboardSearchQuery.trim();
+    switch (sectionId) {
+      case 'dashboard':
+        return [
+          'dashboard',
+          dashboardMonth(),
+          dashboardWeekStart(),
+          dashQuery,
+          drivers().length,
+          calls().length,
+          state.dashboardSort.key,
+          state.dashboardSort.dir
+        ].join('\0');
+      case 'calls':
+        return [
+          'calls',
+          driverQuery,
+          calls().length,
+          state.unifiedPlatform.calls,
+          ...PLATFORMS.map(platform => callFilterDate(platform))
+        ].join('\0');
+      case 'rejections':
+        return [
+          'rejections',
+          driverQuery,
+          rejections().length,
+          state.unifiedPlatform.rejections,
+          state.rejectionWeekByPlatform.coupang,
+          state.rejectionWeekByPlatform.baemin
+        ].join('\0');
+      case 'targets':
+        return [
+          'targets',
+          driverQuery,
+          targets().length,
+          weeklyTargets().length,
+          $('#targetMonth')?.value || ''
+        ].join('\0');
+      case 'notices':
+        return ['notices', notices().length, state.editingNoticeId].join('\0');
+      case 'mission-results':
+        return [
+          'mission-results',
+          drivers().length,
+          state.missionResultsSort.key,
+          state.missionResultsSort.dir
+        ].join('\0');
+      case 'missions':
+        return [
+          'missions',
+          drivers().length,
+          state.eventSettingsSearchQuery.trim(),
+          state.eventSettingsSort.key,
+          state.eventSettingsSort.dir
+        ].join('\0');
+      default:
+        return '';
+    }
+  }
+
+  function renderActiveSection(sectionId = state.currentSection, options = {}) {
     window.BremPerf?.time?.(`admin.renderSection:${sectionId}`);
+
+    const force = options.force === true;
+    if (!force) {
+      const fingerprint = getSectionRenderFingerprint(sectionId);
+      if (fingerprint && sectionRenderFingerprints.get(sectionId) === fingerprint) {
+        updateDriverSearchStatus();
+        applySectionEditPermissions();
+        window.BremPerf?.timeEnd?.(`admin.renderSection:${sectionId}:skipped`);
+        return;
+      }
+      if (fingerprint) {
+        sectionRenderFingerprints.set(sectionId, fingerprint);
+      }
+    } else {
+      sectionRenderFingerprints.delete(sectionId);
+    }
 
     switch (sectionId) {
       case 'dashboard':
@@ -2759,24 +2894,31 @@
 
   function renderAll() {
     window.BremPerf?.time?.('admin.renderAll');
-    renderActiveSection(state.currentSection);
+    invalidateCallStatsIndex();
+    invalidateSectionRenders(state.currentSection);
+    renderActiveSection(state.currentSection, { force: true });
     window.BremPerf?.timeEnd?.('admin.renderAll');
   }
 
   function handleDriverSearchChange() {
     updateDriverSearchStatus();
+    invalidateDriverSelectCache();
     if (!state.driverSearchQuery.trim()) {
       resetDriverFormSelects();
     }
-    refreshSelects();
+    if (DRIVER_SEARCH_SECTIONS.has(state.currentSection)) {
+      refreshSelectsForSection(state.currentSection);
+    }
     if (DRIVER_FILTERED_SECTIONS.has(state.currentSection)) {
-      renderActiveSection(state.currentSection);
+      invalidateSectionRenders(state.currentSection);
+      renderActiveSection(state.currentSection, { force: true });
     }
   }
 
   function handleDashboardSearchChange() {
     if (state.currentSection === 'dashboard') {
-      renderDashboard();
+      invalidateSectionRenders('dashboard');
+      renderActiveSection('dashboard', { force: true });
     }
   }
 
@@ -2817,6 +2959,47 @@
     });
   }
 
+  function runSectionModuleRefresh(sectionId) {
+    if (sectionId === 'data-backup' && window.BremDataBackupAdmin?.refresh) {
+      window.BremDataBackupAdmin.refresh();
+    }
+    if (sectionId === 'admin-schedule' && window.BremAdminSchedule?.refresh) {
+      window.BremAdminSchedule.refresh();
+    }
+    if (sectionId === 'lease-management' && window.BremAdminLease?.refresh) {
+      const filter = window.__leaseFilterOnOpen;
+      window.__leaseFilterOnOpen = null;
+      window.BremAdminLease.refresh(filter ? { filter } : {});
+    }
+    if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
+      window.BremAdminRevenue.refresh();
+    }
+    if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
+      void window.BremAdminMissions.refresh({ renderOnly: true });
+    }
+    if (sectionId === 'baemin-delivery-status' && window.BremBaeminDeliveryStatusAdmin?.refresh) {
+      void window.BremBaeminDeliveryStatusAdmin.refresh();
+    }
+  }
+
+  function finishSectionNavigation(sectionId) {
+    runSectionModuleRefresh(sectionId);
+    if (DRIVER_SEARCH_SECTIONS.has(sectionId)) {
+      refreshSelectsForSection(sectionId);
+    }
+    renderActiveSection(sectionId);
+  }
+
+  function scheduleSectionNavigationFinish(sectionId) {
+    if (pendingSectionNavRaf) {
+      cancelAnimationFrame(pendingSectionNavRaf);
+    }
+    pendingSectionNavRaf = requestAnimationFrame(() => {
+      pendingSectionNavRaf = 0;
+      finishSectionNavigation(sectionId);
+    });
+  }
+
   async function showSection(id, options = {}) {
     const nav = resolveSectionNavigation(id);
     const sectionId = nav.sectionId;
@@ -2849,10 +3032,13 @@
     }
 
     const cacheReady = BremStorage.isSectionCacheReady?.(sectionId);
-    if (!cacheReady) {
-      showSectionLoadingSkeleton(sectionId);
-      showAdminDataLoading(true);
+    if (cacheReady) {
+      scheduleSectionNavigationFinish(sectionId);
+      return;
     }
+
+    showSectionLoadingSkeleton(sectionId);
+    showAdminDataLoading(true);
 
     try {
       const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
@@ -2867,35 +3053,10 @@
         showToast(error.message || '데이터를 불러오지 못했습니다.');
       }
     } finally {
-      if (!cacheReady) {
-        showAdminDataLoading(false);
-      }
+      showAdminDataLoading(false);
     }
 
-    if (sectionId === 'data-backup' && window.BremDataBackupAdmin?.refresh) {
-      window.BremDataBackupAdmin.refresh();
-    }
-    if (sectionId === 'admin-schedule' && window.BremAdminSchedule?.refresh) {
-      window.BremAdminSchedule.refresh();
-    }
-    if (sectionId === 'lease-management' && window.BremAdminLease?.refresh) {
-      const filter = window.__leaseFilterOnOpen;
-      window.__leaseFilterOnOpen = null;
-      window.BremAdminLease.refresh(filter ? { filter } : {});
-    }
-    if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
-      window.BremAdminRevenue.refresh();
-    }
-    if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
-      void window.BremAdminMissions.refresh({ renderOnly: true });
-    }
-    if (sectionId === 'baemin-delivery-status' && window.BremBaeminDeliveryStatusAdmin?.refresh) {
-      void window.BremBaeminDeliveryStatusAdmin.refresh();
-    }
-    if (DRIVER_SEARCH_SECTIONS.has(sectionId)) {
-      refreshSelects();
-    }
-    renderActiveSection(sectionId);
+    finishSectionNavigation(sectionId);
   }
 
   function bindEvents() {
@@ -2908,6 +3069,12 @@
       if (state.currentSection === 'rider-inquiries') {
         renderRiderInquiries();
       }
+    });
+
+    document.addEventListener('brem-cache-status-changed', () => {
+      invalidateCallStatsIndex();
+      invalidateDriverSelectCache();
+      invalidateSectionRenders();
     });
 
     $$('.nav-btn').forEach(button => {
