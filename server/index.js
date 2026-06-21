@@ -247,6 +247,21 @@ app.post('/api/admin/riders', async (req, res) => {
   }
 });
 
+app.post('/api/admin/riders/bulk', async (req, res) => {
+  try {
+    const result = await ridersAdmin.bulkUpsertRiders(getBearerToken(req), req.body?.riders || [], {
+      skipAuthProvision: req.body?.skipAuthProvision !== false,
+      maxBatch: req.body?.maxBatch
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error, failed: result.failed || [] });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 일괄 저장에 실패했습니다.' });
+  }
+});
+
 app.delete('/api/admin/riders/:riderId', async (req, res) => {
   try {
     const result = await ridersAdmin.deleteRider(getBearerToken(req), req.params.riderId);

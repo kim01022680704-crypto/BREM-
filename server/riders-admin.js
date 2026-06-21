@@ -168,6 +168,65 @@ async function upsertRider(accessToken, rider) {
   return { ok: true, rider: saved };
 }
 
+async function bulkUpsertRiders(accessToken, riders, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const list = Array.isArray(riders) ? riders.filter(Boolean) : [];
+  if (!list.length) {
+    return { ok: true, succeeded: 0, failed: [], total: 0 };
+  }
+
+  const maxBatch = Math.min(Math.max(Number(options.maxBatch) || 300, 1), 500);
+  if (list.length > maxBatch) {
+    return {
+      ok: false,
+      status: 400,
+      error: `한 번에 최대 ${maxBatch}명까지 처리할 수 있습니다.`
+    };
+  }
+
+  const supabase = getServiceClient();
+  const rows = list.map(rider => riderToRow(rider));
+  let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
+  if (error && isMissingColumnError(error)) {
+    rows.forEach(row => {
+      delete row.selected_mission_id;
+      delete row.selected_mission_id_baemin;
+      delete row.selected_mission_id_coupang;
+    });
+    ({ error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' }));
+  }
+
+  if (error) {
+    return {
+      ok: false,
+      status: 400,
+      error: error.message || '기사 일괄 저장에 실패했습니다.',
+      failed: list.map(rider => ({
+        id: String(rider.id || ''),
+        error: error.message || '저장 실패'
+      }))
+    };
+  }
+
+  if (!options.skipAuthProvision) {
+    for (const row of rows) {
+      const provision = await provisionRiderAuthAccount(row);
+      if (!provision.ok) {
+        console.warn('[BREM] Rider auth provisioning failed:', row.id, provision.error);
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    succeeded: list.length,
+    failed: [],
+    total: list.length
+  };
+}
+
 async function deleteRider(accessToken, riderId) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -189,5 +248,6 @@ async function deleteRider(accessToken, riderId) {
 module.exports = {
   listRiders,
   upsertRider,
+  bulkUpsertRiders,
   deleteRider
 };

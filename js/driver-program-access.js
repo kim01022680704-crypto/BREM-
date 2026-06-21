@@ -8,6 +8,7 @@ window.BremDriverProgramAccess = (function () {
     if (!BremStorage.auth.isAdminLoggedIn?.()) return;
 
     window.BremSessionSecurity.start({
+      idleMs: window.BremSessionSecurity.ADMIN_IDLE_MS,
       isLoggedIn: () => {
         try {
           return Boolean(BremStorage.auth.isAdminLoggedIn?.());

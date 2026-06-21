@@ -132,6 +132,53 @@ window.BremDriverUtils = (function () {
     return `${normName}|${normPhone}`;
   }
 
+  function buildRiderMatchMap(drivers) {
+    const map = new Map();
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+
+    list.forEach(driver => {
+      const key = makeDriverMatchKey(driver.name, driver.phone);
+      if (key && !map.has(key)) map.set(key, driver);
+    });
+    return map;
+  }
+
+  function normalizeBulkName(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ');
+  }
+
+  function normalizeBulkPhone(value) {
+    return String(value || '').trim().replace(/[\s-]/g, '');
+  }
+
+  function normalizeBulkUploadRaw(raw) {
+    if (!raw || typeof raw !== 'object') return {};
+    return {
+      name: normalizeBulkName(raw.name),
+      phone: normalizeBulkPhone(raw.phone),
+      residentNumber: raw.residentNumber,
+      bankName: String(raw.bankName || '').trim(),
+      accountHolder: String(raw.accountHolder || '').trim(),
+      accountNumber: String(raw.accountNumber || '').trim(),
+      baeminId: String(raw.baeminId || '').trim(),
+      platformCoupangRaw: raw.platformCoupangRaw,
+      platformBaeminRaw: raw.platformBaeminRaw,
+      longEventItem: String(raw.longEventItem || '').trim(),
+      longEventStartDate: raw.longEventStartDate,
+      memo: String(raw.memo || '').trim()
+    };
+  }
+
+  function isBulkUploadRowEmpty(raw) {
+    const normalized = normalizeBulkUploadRaw(raw);
+    return !normalized.name && !normalized.phone
+      && !normalized.baeminId && !normalized.residentNumber
+      && !normalized.bankName && !normalized.accountHolder
+      && !normalized.accountNumber && !normalized.memo;
+  }
+
   function matchDriverByNameAndPhone(name, phone, drivers, excludeId) {
     const key = makeDriverMatchKey(name, phone);
     if (!key) return null;
@@ -192,6 +239,26 @@ window.BremDriverUtils = (function () {
     return changes;
   }
 
+  function prepareBulkRiderRecord(row, buildNewDriver) {
+    if (!row) return null;
+
+    if (row.action === 'update') {
+      const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
+      if (!Object.keys(changes).length) return row.matchedDriver;
+      return { ...row.matchedDriver, ...changes };
+    }
+
+    if (typeof buildNewDriver !== 'function') {
+      throw new Error('신규 기사 생성 함수가 없습니다.');
+    }
+
+    return buildNewDriver({
+      ...row.data,
+      platformCoupang: row.data.platformCoupang !== false,
+      platformBaemin: Boolean(row.data.platformBaemin)
+    });
+  }
+
   /**
    * 엑셀 일괄등록 매칭: 아이디 우선, 이름은 보조 확인.
    * 이름이 없거나 달라도 아이디가 일치하면 매칭합니다.
@@ -231,12 +298,16 @@ window.BremDriverUtils = (function () {
     return { driver, matchNote };
   }
 
-  function buildDriverDuplicateLookup(excludeId) {
+  function buildDriverDuplicateLookup(excludeId, drivers) {
     const byLoginId = new Map();
     const byPhone = new Map();
     const byBaeminId = new Map();
 
-    BremStorage.drivers.getAll().forEach(driver => {
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+
+    list.forEach(driver => {
       if (excludeId && driver.id === excludeId) return;
 
       const loginId = makeDriverLoginId(driver);
@@ -350,9 +421,15 @@ window.BremDriverUtils = (function () {
     normalizeDriverName,
     driverNamesMatch,
     makeDriverMatchKey,
+    buildRiderMatchMap,
+    normalizeBulkName,
+    normalizeBulkPhone,
+    normalizeBulkUploadRaw,
+    isBulkUploadRowEmpty,
     matchDriverByNameAndPhone,
     isBulkRawProvided,
     mergeBulkDriverData,
+    prepareBulkRiderRecord,
     matchDriverForPlatformImport,
     buildDriverDuplicateLookup,
     findDuplicateDriver,

@@ -2,9 +2,12 @@
   const {
     makeDriverLoginId,
     makeDriverMatchKey,
-    matchDriverByNameAndPhone,
     mergeBulkDriverData,
+    prepareBulkRiderRecord,
     buildDriverDuplicateLookup,
+    buildRiderMatchMap,
+    normalizeBulkUploadRaw,
+    isBulkUploadRowEmpty,
     isBulkRawProvided
   } = window.BremDriverUtils;
 
@@ -24,8 +27,11 @@
   ];
 
   const HEADER_MARKERS = ['이름', 'name'];
+  const BULK_BATCH_SIZE = 300;
+  const PREVIEW_LIMIT = 50;
 
   let parsedRows = [];
+  let previewRowNumbers = new Set();
 
   const layout = document.getElementById('mainLayout');
   const tabSingle = document.getElementById('tabSingle');
@@ -65,7 +71,24 @@
   }
 
   function normalizePhoneDisplay(value) {
-    return String(value || '').trim();
+    return window.BremDriverUtils.normalizeBulkPhone(value);
+  }
+
+  async function ensureAllDriversLoaded() {
+    await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
+
+    let pages = 0;
+    while (pages < 100) {
+      const before = BremStorage.drivers.getAll().length;
+      const result = await BremStorage.reloadDrivers?.(false, {
+        limit: 200,
+        offset: before,
+        append: true
+      }).catch(() => null);
+      if (!result?.ok || !result?.hasMore) break;
+      if (BremStorage.drivers.getAll().length <= before) break;
+      pages += 1;
+    }
   }
 
   function makeLoginId(name, phone) {
@@ -160,7 +183,7 @@
     return { baeminId, platformCoupang, platformBaemin };
   }
 
-  function validateRow(raw, rowNumber, batchMatchKeys, batchBaeminIds) {
+  function validateRow(raw, rowNumber, batchMatchKeys, batchBaeminIds, lookup, riderMatchMap) {
     const errors = [];
     const name = String(raw.name || '').trim();
     const phone = normalizePhoneDisplay(raw.phone);
@@ -173,7 +196,8 @@
     const bankName = String(raw.bankName || '').trim();
     const accountHolder = String(raw.accountHolder || '').trim();
     const longEventStartDate = parseExcelDate(raw.longEventStartDate);
-    const matchedDriver = matchDriverByNameAndPhone(name, phone);
+    const matchKey = makeDriverMatchKey(name, phone);
+    const matchedDriver = matchKey ? (riderMatchMap.get(matchKey) || null) : null;
     const isUpdate = Boolean(matchedDriver);
     const platforms = resolvePlatforms(raw, isUpdate);
     const baeminId = String(platforms.baeminId || '').trim();
@@ -206,21 +230,20 @@
       errors.push('이벤트 시작일 형식 오류');
     }
 
-    const matchKey = makeDriverMatchKey(name, phone);
     const loginId = name && phone ? makeLoginId(name, phone) : '';
 
     if (matchKey && batchMatchKeys.has(matchKey)) errors.push('파일 내 이름+연락처 중복');
     if (baeminId && batchBaeminIds.has(baeminId)) errors.push('파일 내 배민아이디 중복');
 
-    const lookup = buildDriverDuplicateLookup();
-    if (!isUpdate && loginId && lookup.byLoginId.has(loginId)) {
-      const conflict = lookup.byLoginId.get(loginId);
+    const lookupTable = lookup || buildDriverDuplicateLookup();
+    if (!isUpdate && loginId && lookupTable.byLoginId.has(loginId)) {
+      const conflict = lookupTable.byLoginId.get(loginId);
       if (makeDriverMatchKey(conflict.name, conflict.phone) !== matchKey) {
         errors.push('쿠팡아이디(이름+연락처 뒤4자리) 중복');
       }
     }
-    if (baeminId && lookup.byBaeminId.has(baeminId)) {
-      const conflict = lookup.byBaeminId.get(baeminId);
+    if (baeminId && lookupTable.byBaeminId.has(baeminId)) {
+      const conflict = lookupTable.byBaeminId.get(baeminId);
       if (!matchedDriver || conflict.id !== matchedDriver.id) {
         errors.push('다른 기사에 등록된 배민아이디');
       }
@@ -271,34 +294,41 @@
       if (!row || !row.some(cell => String(cell || '').trim())) return;
       if (isHeaderRow(row)) return;
 
+      const raw = normalizeBulkUploadRaw({
+        name: cellValue(row, 0),
+        phone: cellValue(row, 1),
+        residentNumber: cellValue(row, 2),
+        bankName: cellValue(row, 3),
+        accountHolder: cellValue(row, 4),
+        accountNumber: cellValue(row, 5),
+        baeminId: cellValue(row, 6),
+        platformCoupangRaw: cellValue(row, 7),
+        platformBaeminRaw: cellValue(row, 8),
+        longEventItem: cellValue(row, 9),
+        longEventStartDate: cellValue(row, 10),
+        memo: cellValue(row, 11)
+      });
+
+      if (isBulkUploadRowEmpty(raw)) return;
+
       dataRows.push({
         rowNumber: excelRowNumber,
-        raw: {
-          name: cellValue(row, 0),
-          phone: cellValue(row, 1),
-          residentNumber: cellValue(row, 2),
-          bankName: cellValue(row, 3),
-          accountHolder: cellValue(row, 4),
-          accountNumber: cellValue(row, 5),
-          baeminId: cellValue(row, 6),
-          platformCoupangRaw: cellValue(row, 7),
-          platformBaeminRaw: cellValue(row, 8),
-          longEventItem: cellValue(row, 9),
-          longEventStartDate: cellValue(row, 10),
-          memo: cellValue(row, 11)
-        }
+        raw
       });
     });
 
     return dataRows;
   }
 
-  function buildParsedRows(rows) {
+  function buildParsedRows(rows, existingDrivers) {
     const batchMatchKeys = new Set();
     const batchBaeminIds = new Set();
+    const drivers = Array.isArray(existingDrivers) ? existingDrivers : BremStorage.drivers.getAll();
+    const riderMatchMap = buildRiderMatchMap(drivers);
+    const lookup = buildDriverDuplicateLookup(undefined, drivers);
 
     return rows.map(({ rowNumber, raw }) => {
-      const result = validateRow(raw, rowNumber, batchMatchKeys, batchBaeminIds);
+      const result = validateRow(raw, rowNumber, batchMatchKeys, batchBaeminIds, lookup, riderMatchMap);
       if (result.valid) {
         const matchKey = makeDriverMatchKey(result.data.name, result.data.phone);
         if (matchKey) batchMatchKeys.add(matchKey);
@@ -386,28 +416,40 @@
     if (fileInput) fileInput.disabled = active;
   }
 
-  function updateApplyProgress(current, total, succeeded, failed) {
+  function updateApplyProgress(current, total, created, updated, failed) {
     const percent = total ? Math.round((current / total) * 100) : 0;
     if (applyProgressFillEl) applyProgressFillEl.style.width = `${percent}%`;
     if (applyProgressTextEl) {
-      applyProgressTextEl.textContent = `처리 중 ${current} / ${total} · 등록완료 ${succeeded}명 · 등록실패 ${failed}명`;
+      applyProgressTextEl.textContent = `${current}/${total} 저장 중 · 신규 ${created} · 업데이트 ${updated} · 실패 ${failed}`;
     }
   }
 
-  function showApplySummary(succeeded, failed, skipped) {
+  function showApplySummary(created, updated, failed, skipped) {
     if (applyProgressEl) applyProgressEl.hidden = true;
     if (!applySummaryEl || !applySummaryTextEl) return;
 
     applySummaryEl.hidden = false;
     applySummaryEl.classList.toggle('is-partial', failed > 0 || skipped > 0);
-    applySummaryTextEl.textContent = `등록완료 ${succeeded}명! · 등록실패 ${failed}명!${skipped ? ` · 사전 오류 ${skipped}건` : ''}`;
+    applySummaryTextEl.textContent = `신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 ${failed}명${skipped ? ` · 사전 오류 ${skipped}건` : ''}`;
   }
 
   function yieldToUi(index) {
-    if (index % 3 !== 0) return Promise.resolve();
+    if (index % 10 !== 0) return Promise.resolve();
     return new Promise(resolve => {
       window.requestAnimationFrame(() => resolve());
     });
+  }
+
+  function prepareRiderForBulk(row) {
+    return prepareBulkRiderRecord(row, data => BremStorage.drivers.buildNewDriver(data));
+  }
+
+  function buildBulkSavePlan(processableRows) {
+    return processableRows.map(row => ({
+      row,
+      rider: prepareRiderForBulk(row),
+      action: row.action
+    }));
   }
 
   function escapeHtml(value) {
@@ -431,7 +473,12 @@
     if (issueCountEl) issueCountEl.textContent = String(issueRows.length);
     applyBtn.disabled = processableCount === 0 || isApplying;
 
-    previewBody.innerHTML = parsedRows.map(row => `
+    const previewRows = parsedRows.slice(0, PREVIEW_LIMIT);
+    previewRowNumbers = new Set(previewRows.map(row => row.rowNumber));
+    const hiddenCount = Math.max(0, parsedRows.length - previewRows.length);
+
+    previewBody.innerHTML = [
+      ...previewRows.map(row => `
         <tr class="${getRowClass(row)}" data-bulk-row="${row.rowNumber}">
           <td>${row.rowNumber}</td>
           <td>${escapeHtml(row.data.name || '-')}</td>
@@ -440,7 +487,13 @@
           <td>${escapeHtml(platformLabel(row))}</td>
           <td class="bulk-row-result">${getRowResultHtml(row)}</td>
         </tr>
-      `).join('');
+      `),
+      hiddenCount > 0 ? `
+        <tr class="row-preview-more">
+          <td colspan="6">외 ${hiddenCount}건 — 저장 시 전체 ${parsedRows.length}건이 처리됩니다 (미리보기 ${PREVIEW_LIMIT}건만 표시)</td>
+        </tr>
+      ` : ''
+    ].join('');
 
     previewSection.hidden = parsedRows.length === 0;
   }
@@ -463,6 +516,7 @@
     fileInput.value = '';
     previewSection.hidden = true;
     previewBody.innerHTML = '';
+    previewRowNumbers = new Set();
     totalCountEl.textContent = '0';
     if (createCountEl) createCountEl.textContent = '0';
     if (updateCountEl) updateCountEl.textContent = '0';
@@ -546,7 +600,10 @@
         return;
       }
 
-      parsedRows = buildParsedRows(rows);
+      showToast('기존 기사 목록 불러오는 중…');
+      await ensureAllDriversLoaded();
+
+      parsedRows = buildParsedRows(rows, BremStorage.drivers.getAll());
       resetApplyUi();
       renderPreview();
 
@@ -583,68 +640,75 @@
     const previousLabel = applyBtn.textContent;
     applyBtn.textContent = '처리 중…';
 
-    let succeeded = 0;
+    let created = 0;
+    let updated = 0;
     let failed = 0;
     const total = processableRows.length;
     let current = 0;
+    const eventSyncQueue = [];
 
-    updateApplyProgress(0, total, 0, 0);
+    updateApplyProgress(0, total, 0, 0, 0);
 
     try {
       await ensureStorageReadyForSave();
+      await ensureAllDriversLoaded();
 
-      for (const row of processableRows) {
-        current += 1;
-        row.applyStatus = 'processing';
-        updatePreviewRowStatus(row);
+      const savePlan = buildBulkSavePlan(processableRows);
+
+      for (let offset = 0; offset < savePlan.length; offset += BULK_BATCH_SIZE) {
+        const batch = savePlan.slice(offset, offset + BULK_BATCH_SIZE);
+        const riders = batch.map(entry => entry.rider);
 
         try {
-          if (row.action === 'update') {
-            const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
-            if (Object.keys(changes).length) {
-              await Promise.resolve(BremStorage.drivers.update(row.matchedDriver.id, changes));
-              syncDriverEventSettings(
-                row.matchedDriver.id,
-                { ...row.matchedDriver, ...changes },
-                row.matchedDriver
-              );
-            }
-            row.applyAction = 'update';
-          } else {
-            const createPayload = {
-              ...row.data,
-              platformCoupang: row.data.platformCoupang !== false,
-              platformBaemin: Boolean(row.data.platformBaemin)
-            };
-            const driver = await Promise.resolve(BremStorage.drivers.create(createPayload));
-            syncDriverEventSettings(driver.id, row.data);
-            row.applyAction = 'create';
-          }
+          await BremStorage.drivers.bulkUpsert(riders, {
+            skipAuthProvision: true,
+            maxBatch: BULK_BATCH_SIZE
+          });
 
-          row.applyStatus = 'done';
-          succeeded += 1;
+          batch.forEach(entry => {
+            entry.row.applyStatus = 'done';
+            entry.row.applyAction = entry.action;
+            if (entry.action === 'create') created += 1;
+            else updated += 1;
+            if (previewRowNumbers.has(entry.row.rowNumber)) {
+              updatePreviewRowStatus(entry.row);
+            }
+            if (String(entry.row.data.longEventItemId || '').trim()) {
+              eventSyncQueue.push({ rider: entry.rider, data: entry.row.data });
+            }
+          });
         } catch (error) {
-          row.applyStatus = 'failed';
-          row.applyMessage = error.message || '등록실패';
-          failed += 1;
+          batch.forEach(entry => {
+            entry.row.applyStatus = 'failed';
+            entry.row.applyMessage = error.message || '등록실패';
+            failed += 1;
+            if (previewRowNumbers.has(entry.row.rowNumber)) {
+              updatePreviewRowStatus(entry.row);
+            }
+          });
         }
 
-        updatePreviewRowStatus(row);
-        updateApplyProgress(current, total, succeeded, failed);
+        current = offset + batch.length;
+        updateApplyProgress(current, total, created, updated, failed);
         await yieldToUi(current);
       }
 
-      await BremStorage.flushStorage?.();
+      eventSyncQueue.forEach(({ rider, data }) => {
+        syncDriverEventSettings(rider.id, { ...rider, ...data });
+      });
 
-      showApplySummary(succeeded, failed, issueRows.length);
-      showToast(`등록완료 ${succeeded}명! · 등록실패 ${failed}명!${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}`);
+      window.BremDataCache?.invalidate?.(BremStorage.STORAGE_KEYS?.drivers);
+      await BremStorage.reloadDrivers?.(true).catch(() => ({}));
+
+      showApplySummary(created, updated, failed, issueRows.length);
+      showToast(`신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 ${failed}명${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}`);
 
       if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {
         window.BremDriverIndex.refresh();
       }
     } catch (error) {
       console.error(error);
-      showApplySummary(succeeded, failed + (total - current), issueRows.length);
+      showApplySummary(created, updated, failed + (total - current), issueRows.length);
       showToast(error.message || '일괄 등록에 실패했습니다.');
     } finally {
       setApplyUiActive(false);

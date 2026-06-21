@@ -1,18 +1,28 @@
 /**
- * 세션 보안 — 30분 비활성 자동 로그아웃, 활동 감지
+ * 세션 보안 — 비활성 자동 로그아웃, 활동 감지
  * sessionStorage 기반 (탭/브라우저 종료 시 세션 소멸)
  */
 window.BremSessionSecurity = (function () {
-  const IDLE_MS = 30 * 60 * 1000;
+  const DEFAULT_IDLE_MS = 30 * 60 * 1000;
+  const ADMIN_IDLE_MS = 3 * 60 * 60 * 1000;
   const CHECK_MS = 60 * 1000;
   const ACTIVITY_KEY = 'brem_session_last_activity';
   const NOTICE_KEY = 'brem_logout_notice';
-  const IDLE_MESSAGE = '30분 동안 활동이 없어 자동 로그아웃되었습니다.';
 
   let timer = null;
   let config = null;
   let loggingOut = false;
   let boundActivity = null;
+  let activeIdleMs = DEFAULT_IDLE_MS;
+
+  function formatIdleMessage(idleMs) {
+    const ms = Number(idleMs) > 0 ? Number(idleMs) : DEFAULT_IDLE_MS;
+    if (ms >= 60 * 60 * 1000 && ms % (60 * 60 * 1000) === 0) {
+      return `${ms / (60 * 60 * 1000)}시간 동안 활동이 없어 자동 로그아웃되었습니다.`;
+    }
+    const minutes = Math.max(1, Math.round(ms / (60 * 1000)));
+    return `${minutes}분 동안 활동이 없어 자동 로그아웃되었습니다.`;
+  }
 
   function safeIsLoggedIn(isLoggedInFn) {
     if (typeof isLoggedInFn !== 'function') return false;
@@ -48,7 +58,7 @@ window.BremSessionSecurity = (function () {
   }
 
   function isIdleExpired() {
-    return Date.now() - getLastActivity() >= IDLE_MS;
+    return Date.now() - getLastActivity() >= activeIdleMs;
   }
 
   function onUserActivity() {
@@ -76,9 +86,10 @@ window.BremSessionSecurity = (function () {
     if (loggingOut || typeof activeConfig?.onIdleLogout !== 'function') return;
     loggingOut = true;
     const onIdleLogout = activeConfig.onIdleLogout;
+    const message = formatIdleMessage(activeIdleMs);
     stop();
     try {
-      await onIdleLogout(IDLE_MESSAGE);
+      await onIdleLogout(message);
     } finally {
       loggingOut = false;
     }
@@ -105,6 +116,8 @@ window.BremSessionSecurity = (function () {
       return false;
     }
 
+    activeIdleMs = Number(options.idleMs) > 0 ? Number(options.idleMs) : DEFAULT_IDLE_MS;
+
     config = {
       isLoggedIn: isLoggedInFn,
       onIdleLogout: onIdleLogoutFn
@@ -128,6 +141,7 @@ window.BremSessionSecurity = (function () {
     }
     unbindActivityListeners();
     config = null;
+    activeIdleMs = DEFAULT_IDLE_MS;
   }
 
   function clearActivityMarker() {
@@ -152,8 +166,13 @@ window.BremSessionSecurity = (function () {
   }
 
   return {
-    IDLE_MS,
-    IDLE_MESSAGE,
+    DEFAULT_IDLE_MS,
+    ADMIN_IDLE_MS,
+    IDLE_MS: DEFAULT_IDLE_MS,
+    get IDLE_MESSAGE() {
+      return formatIdleMessage(activeIdleMs);
+    },
+    formatIdleMessage,
     NOTICE_KEY,
     start,
     stop,

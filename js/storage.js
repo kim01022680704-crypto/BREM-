@@ -1,7 +1,7 @@
 /**
  * BREM 데이터 저장소 — Supabase 전용
  * 로그인 세션: sessionStorage only (탭/창 종료 시 소멸, 새로고침 시 유지)
- * 비활성 30분 자동 로그아웃: session-security.js
+ * 비활성 자동 로그아웃: session-security.js (관리자 3시간, 기사 30분)
  */
 const BremStorage = (function () {
   const KEYS = Object.freeze({
@@ -1068,6 +1068,31 @@ const BremStorage = (function () {
     return result;
   }
 
+  async function persistRidersBulkViaServer(riders, options = {}) {
+    const postBulk = () => adminRidersApi('/api/admin/riders/bulk', {
+      method: 'POST',
+      body: JSON.stringify({
+        riders,
+        skipAuthProvision: options.skipAuthProvision !== false,
+        maxBatch: options.maxBatch || 300
+      })
+    });
+
+    let result = await postBulk();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postBulk();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || 'Supabase에 기사를 일괄 저장하지 못했습니다.');
+    }
+    return result;
+  }
+
   async function deleteRiderViaServer(id) {
     const result = await adminRidersApi(`/api/admin/riders/${encodeURIComponent(id)}`, {
       method: 'DELETE'
@@ -2036,6 +2061,77 @@ const BremStorage = (function () {
         return Promise.reject(new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.'));
       }
       return flushActiveStorage();
+    },
+
+    buildNewDriver(driver) {
+      const baeminId = String(driver.baeminId || '').trim();
+      const platformBaemin = driver.platformBaemin !== undefined
+        ? Boolean(driver.platformBaemin)
+        : Boolean(baeminId);
+      const platformCoupang = driver.platformCoupang !== undefined
+        ? driver.platformCoupang !== false
+        : true;
+      const authFields = normalizeDriverPasswordFields({
+        residentNumber: driver.residentNumber,
+        password: driver.password || '1234'
+      });
+
+      return {
+        id: createId(),
+        name: driver.name,
+        phone: driver.phone,
+        residentNumber: authFields.residentNumber,
+        password: authFields.password || '1234',
+        accountNumber: String(driver.accountNumber || '').trim(),
+        bankName: String(driver.bankName || '').trim(),
+        accountHolder: String(driver.accountHolder || '').trim(),
+        baeminId,
+        platformCoupang,
+        platformBaemin,
+        longEventItemId: driver.longEventItemId || '',
+        longEventItem: driver.longEventItem || '',
+        longEventStartDate: driver.longEventStartDate || '',
+        joinDate: driver.joinDate,
+        memo: driver.memo,
+        status: driver.status,
+        selectedMissionId: '',
+        selectedMissionIdBaemin: '',
+        selectedMissionIdCoupang: '',
+        hiddenFields: normalizeHiddenFields(driver.hiddenFields),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    },
+
+    bulkUpsert(riderList, options = {}) {
+      const list = Array.isArray(riderList) ? riderList.filter(Boolean) : [];
+      if (!list.length) return Promise.resolve({ ok: true, succeeded: 0 });
+
+      const prevList = drivers.getAll();
+      const merged = new Map(prevList.map(item => [item.id, item]));
+      list.forEach(item => merged.set(item.id, item));
+      const nextList = Array.from(merged.values());
+      setDriversCache(nextList);
+
+      if (isProductionMode()) {
+        return persistRidersBulkViaServer(list, options)
+          .then(result => result)
+          .catch(error => {
+            setDriversCache(prevList);
+            throw error;
+          });
+      }
+
+      if (activeStorageAdapter.type === 'supabase') {
+        return activeStorageAdapter.write(KEYS.drivers, nextList)
+          .then(() => ({ ok: true, succeeded: list.length }))
+          .catch(error => {
+            setDriversCache(prevList);
+            throw error;
+          });
+      }
+
+      return drivers.saveAll(nextList).then(() => ({ ok: true, succeeded: list.length }));
     },
 
     create(driver) {
