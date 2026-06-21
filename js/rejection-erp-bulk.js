@@ -60,13 +60,24 @@
     return value;
   }
 
+  function isEmptyExcelCell(value) {
+    if (value === '' || value === null || value === undefined) return true;
+    const text = String(value).trim();
+    if (!text) return true;
+    // ERP 엑셀: "-" 표시 = 데이터 없음
+    if (/^[-–—−]+$/u.test(text)) return true;
+    if (/^(n\/a|null|none|없음|미집계)$/iu.test(text)) return true;
+    return false;
+  }
+
   function parseCount(value) {
-    if (value === '' || value === null || value === undefined) return 0;
+    if (isEmptyExcelCell(value)) return 0;
     if (typeof value === 'number' && Number.isFinite(value)) return value;
 
     let text = String(value).trim().replace(/,/g, '');
     // ERP 엑셀: "36.6건", "4.4 건" 등 단위 제거
     text = text.replace(/[\s]*건(?:수)?[\s]*$/u, '').replace(/[\s]*회[\s]*$/u, '').trim();
+    if (isEmptyExcelCell(text)) return 0;
     const match = text.match(/^[-+]?\d+(?:\.\d+)?/);
     if (!match) return NaN;
     const n = Number(match[0]);
@@ -180,6 +191,15 @@
   }
 
   function matchCoupangDriver(identityCell) {
+    if (isEmptyExcelCell(identityCell)) {
+      return {
+        driver: null,
+        coupangId: '',
+        error: 'A열 없음',
+        skip: true
+      };
+    }
+
     const parsed = window.BremDriverUtils?.buildCoupangErpIdFromCell?.(identityCell) || {
       coupangId: '',
       name: '',
@@ -245,14 +265,15 @@
       const cancelRaw = getSheetCell(sheet, rowNumber, COUPANG_COL.CANCEL);
       const completeRaw = getSheetCell(sheet, rowNumber, COUPANG_COL.COMPLETE);
 
-      if (!String(identityCell).trim()
-        && !String(rejectRaw).trim()
-        && !String(cancelRaw).trim()
-        && !String(completeRaw).trim()) {
+      if (isEmptyExcelCell(identityCell)
+        && isEmptyExcelCell(rejectRaw)
+        && isEmptyExcelCell(cancelRaw)
+        && isEmptyExcelCell(completeRaw)) {
         continue;
       }
 
       const match = matchCoupangDriver(identityCell);
+      if (match.skip) continue;
       const rateResult = calcCoupangRate(rejectRaw, cancelRaw, completeRaw);
       const errors = [];
       if (match.error) errors.push(match.error);
@@ -467,9 +488,9 @@
   function sheetHasCoupangData(sheet) {
     const rowCount = getSheetRowCount(sheet);
     for (let row = COUPANG_START_ROW; row <= Math.min(rowCount, COUPANG_START_ROW + 30); row += 1) {
-      if (String(getSheetCell(sheet, row, COUPANG_COL.IDENTITY)).trim()) return true;
-      if (String(getSheetCell(sheet, row, COUPANG_COL.REJECT)).trim()) return true;
-      if (String(getSheetCell(sheet, row, COUPANG_COL.COMPLETE)).trim()) return true;
+      if (!isEmptyExcelCell(getSheetCell(sheet, row, COUPANG_COL.IDENTITY))) return true;
+      if (!isEmptyExcelCell(getSheetCell(sheet, row, COUPANG_COL.REJECT))) return true;
+      if (!isEmptyExcelCell(getSheetCell(sheet, row, COUPANG_COL.COMPLETE))) return true;
     }
     return false;
   }
@@ -477,8 +498,8 @@
   function sheetHasBaeminData(sheet) {
     const rowCount = getSheetRowCount(sheet);
     for (let row = BAEMIN_START_ROW; row <= Math.min(rowCount, BAEMIN_START_ROW + 30); row += 1) {
-      if (String(getSheetCell(sheet, row, BAEMIN_COL.ID)).trim()) return true;
-      if (String(getSheetCell(sheet, row, BAEMIN_COL.COMPLETE)).trim()) return true;
+      if (!isEmptyExcelCell(getSheetCell(sheet, row, BAEMIN_COL.ID))) return true;
+      if (!isEmptyExcelCell(getSheetCell(sheet, row, BAEMIN_COL.COMPLETE))) return true;
     }
     return false;
   }
