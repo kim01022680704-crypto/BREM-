@@ -4,7 +4,6 @@ const { verifyAdminCaller } = require('./admin-users');
 const PUBLISH_META_KEY = 'brem_rider_view_publish';
 
 const SNAPSHOT_PAIRS = [
-  ['brem_driver_weekly_targets', 'brem_rider_published_weekly_targets'],
   ['brem_admin_long_event_catalog', 'brem_rider_published_long_event_catalog'],
   ['brem_admin_long_event_items', 'brem_rider_published_long_event_items'],
   ['brem_admin_long_event_config', 'brem_rider_published_long_event_config']
@@ -68,17 +67,16 @@ async function getRiderViewPublishStatus(accessToken) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const [calls, rejections, targets, metaRaw] = await Promise.all([
+  const [calls, rejections, metaRaw] = await Promise.all([
     countPendingRows(supabase, 'admin_calls'),
     countPendingRows(supabase, 'admin_rejection_rates'),
-    countPendingRows(supabase, 'admin_targets'),
     readSettingValue(supabase, PUBLISH_META_KEY, {})
   ]);
 
   const pendingCalls = calls.count;
   const pendingRejections = rejections.count;
-  const pendingTargets = targets.count;
-  const pendingTotal = pendingCalls + pendingRejections + pendingTargets;
+  const pendingTargets = 0;
+  const pendingTotal = pendingCalls + pendingRejections;
   const publishedAt = metaRaw?.publishedAt || null;
 
   return {
@@ -89,8 +87,7 @@ async function getRiderViewPublishStatus(accessToken) {
     pendingTargets,
     pendingTotal,
     columnWarnings: [
-      calls.columnMissing ? 'admin_calls.rider_published_at' : '',
-      targets.columnMissing ? 'admin_targets.rider_published_at' : ''
+      calls.columnMissing ? 'admin_calls.rider_published_at' : ''
     ].filter(Boolean)
   };
 }
@@ -107,10 +104,9 @@ async function publishRiderView(accessToken, options = {}) {
   const now = new Date().toISOString();
   const publishedBy = String(options.publishedBy || auth.displayName || auth.email || 'admin').trim();
 
-  const [callsPublished, rejectionsPublished, targetsPublished] = await Promise.all([
+  const [callsPublished, rejectionsPublished] = await Promise.all([
     publishTableRows(supabase, 'admin_calls', now),
-    publishTableRows(supabase, 'admin_rejection_rates', now),
-    publishTableRows(supabase, 'admin_targets', now)
+    publishTableRows(supabase, 'admin_rejection_rates', now)
   ]);
 
   const snapshots = {};
@@ -126,7 +122,7 @@ async function publishRiderView(accessToken, options = {}) {
     publishedBy,
     callsPublished,
     rejectionsPublished,
-    targetsPublished,
+    targetsPublished: 0,
     snapshots
   };
   await writeSettingValue(supabase, PUBLISH_META_KEY, meta);
@@ -134,7 +130,7 @@ async function publishRiderView(accessToken, options = {}) {
   return {
     ok: true,
     ...meta,
-    publishedCount: callsPublished + rejectionsPublished + targetsPublished
+    publishedCount: callsPublished + rejectionsPublished
   };
 }
 

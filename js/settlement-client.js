@@ -146,6 +146,7 @@ const BremSettlementParser = (function () {
 
       const name = format.cleanName(rawName) || riderId;
       const amount = parseNumber(readCell(row, amountCol));
+      if (amount === 0) continue;
 
       totalDeliveries += 1;
       totalDeliveryAmount += amount;

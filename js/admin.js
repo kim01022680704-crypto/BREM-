@@ -2479,8 +2479,8 @@
 
     publishBtns.forEach(btn => {
       btn.title = pending.pendingTotal > 0
-        ? `미반영 ${pending.pendingTotal}건 · 콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections} · 목표 ${pending.pendingTargets}`
-        : '주간목표·장기근속 설정 포함 전체 스냅샷 반영';
+        ? `미반영 ${pending.pendingTotal}건 · 콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections}`
+        : '장기근속 설정 포함 전체 스냅샷 반영 (월·주간 목표는 실시간 연동)';
     });
 
     if (!statusEl) return;
@@ -2488,7 +2488,6 @@
     const parts = [];
     if (pending.pendingCalls) parts.push(`콜수 ${number(pending.pendingCalls)}`);
     if (pending.pendingRejections) parts.push(`거절율 ${number(pending.pendingRejections)}`);
-    if (pending.pendingTargets) parts.push(`목표 ${number(pending.pendingTargets)}`);
     const pendingLabel = parts.length ? parts.join(' · ') : '';
 
     if (publishedLabel && pendingLabel) {
@@ -2505,9 +2504,9 @@
   function handleRiderAppPublish() {
     const pending = BremStorage.riderViewPublish?.countPending?.() || {};
     const pendingNote = pending.pendingTotal
-      ? `\n\n미반영 ${pending.pendingTotal}건 (콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections} · 목표 ${pending.pendingTargets})`
-      : '\n\n주간목표·장기근속 설정도 함께 최신 스냅샷으로 반영됩니다.';
-    if (!window.confirm(`콜수·거절율·월간목표·주간목표·장기근속 등 연동 데이터를 기사 전용 앱에 반영하시겠습니까?${pendingNote}`)) return;
+      ? `\n\n미반영 ${pending.pendingTotal}건 (콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections})`
+      : '\n\n월·주간 목표는 실시간 연동됩니다. 장기근속 설정도 함께 최신 스냅샷으로 반영됩니다.';
+    if (!window.confirm(`콜수·거절율·장기근속 등 연동 데이터를 기사 전용 앱에 반영하시겠습니까? (월·주간 목표는 실시간 연동)${pendingNote}`)) return;
 
     void (async () => {
       const publishBtns = document.querySelectorAll('[data-rider-app-publish]');

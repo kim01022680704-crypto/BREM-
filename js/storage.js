@@ -3925,12 +3925,11 @@ const BremStorage = (function () {
     countPending() {
       const pendingCalls = calls.getAll().filter(item => !item.riderPublishedAt).length;
       const pendingRejections = rejections.getAll().filter(item => !item.riderPublishedAt).length;
-      const pendingTargets = targets.getAll().filter(item => !item.riderPublishedAt).length;
       return {
         pendingCalls,
         pendingRejections,
-        pendingTargets,
-        pendingTotal: pendingCalls + pendingRejections + pendingTargets
+        pendingTargets: 0,
+        pendingTotal: pendingCalls + pendingRejections
       };
     },
 
@@ -4095,8 +4094,7 @@ const BremStorage = (function () {
         id: `${driverId}-${month}`,
         driverId,
         month,
-        count: Number(count),
-        riderPublishedAt: null
+        count: Number(count)
       });
       if (isProductionMode() && isRiderSelfUpdate(driverId)) {
         stageRiderScopedCache(KEYS.targets, list, { tableLoaded: true });
@@ -4111,7 +4109,8 @@ const BremStorage = (function () {
         return persistRiderTargetsViaServer({ monthly: { month, count } })
           .then(() => targets.upsertMonthlyLocal({ driverId, month, count }));
       }
-      return targets.upsertMonthlyLocal({ driverId, month, count });
+      return Promise.resolve(targets.upsertMonthlyLocal({ driverId, month, count }))
+        .then(() => storageAdapter.flush?.());
     },
 
     removeById(id) {
@@ -4148,9 +4147,11 @@ const BremStorage = (function () {
     upsert({ driverId, weekStart, count }) {
       if (isProductionMode() && isRiderSelfUpdate(driverId)) {
         return persistRiderTargetsViaServer({ weekly: { weekStart, count } })
-          .then(() => weeklyTargets.upsertLocal({ driverId, weekStart, count }));
+          .then(() => weeklyTargets.upsertLocal({ driverId, weekStart, count }))
+          .then(() => storageAdapter.flush?.());
       }
-      return weeklyTargets.upsertLocal({ driverId, weekStart, count });
+      return Promise.resolve(weeklyTargets.upsertLocal({ driverId, weekStart, count }))
+        .then(() => storageAdapter.flush?.());
     },
 
     removeById(id) {

@@ -397,7 +397,7 @@ async function getRiderAssignedMissions(accessToken) {
 }
 
 const RIDER_DASHBOARD_SETTING_KEYS = [
-  'brem_rider_published_weekly_targets',
+  'brem_driver_weekly_targets',
   'brem_rider_published_long_event_catalog',
   'brem_rider_published_long_event_items',
   'brem_rider_published_long_event_config',
@@ -528,9 +528,8 @@ async function getRiderDashboard(accessToken) {
       .order('week_start', { ascending: false }),
     supabase
       .from('admin_targets')
-      .select('id,driver_id,month,count,updated_at,rider_published_at')
+      .select('id,driver_id,month,count,updated_at')
       .eq('driver_id', riderId)
-      .not('rider_published_at', 'is', null)
       .order('month', { ascending: false }),
     supabase
       .from('notices')
@@ -559,7 +558,7 @@ async function getRiderDashboard(accessToken) {
   }
 
   const settingsRows = settingsResult.data || [];
-  const weeklyTargetsRaw = settingsRows.find(row => row.key === 'brem_rider_published_weekly_targets')?.value;
+  const weeklyTargetsRaw = settingsRows.find(row => row.key === 'brem_driver_weekly_targets')?.value;
   const weeklyTargets = Array.isArray(weeklyTargetsRaw)
     ? weeklyTargetsRaw.filter(item => String(item?.driverId || '') === String(riderId))
     : [];
@@ -578,7 +577,7 @@ async function getRiderDashboard(accessToken) {
     targets: targetsResult.data || [],
     weeklyTargets,
     notices: noticesResult.data || [],
-    settings: settingsRows.filter(row => row.key !== 'brem_rider_published_weekly_targets'),
+    settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets'),
     longEvent
   };
 }
