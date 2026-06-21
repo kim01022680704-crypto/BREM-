@@ -3112,6 +3112,19 @@ const BremStorage = (function () {
       storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => item.id !== id));
     },
 
+    removeByIds(ids) {
+      const drop = new Set((ids || []).filter(Boolean));
+      if (!drop.size) return rejections.getAll();
+      storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => !drop.has(item.id)));
+      return rejections.getAll();
+    },
+
+    removeAllForPlatform(platform) {
+      const p = normalizePlatform(platform);
+      storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => normalizePlatform(item.platform) !== p));
+      return rejections.getAll();
+    },
+
     getEntryForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
       const entry = rejections.getAll().find(item => item.driverId === driverId && item.weekStart === weekStart && normalizePlatform(item.platform) === p);

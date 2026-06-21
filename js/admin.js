@@ -1,5 +1,6 @@
 (function () {
   const selectedCallIds = new Set();
+  const selectedRejectionIds = new Set();
   let targetMonthPicker = null;
 
   const state = {
@@ -2112,7 +2113,88 @@
     });
   }
 
+  function platformRejections(platform) {
+    return rejections()
+      .filter(entry => normalizePlatform(entry.platform) === platform && driverMatchesSearch(entry.driverId))
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+  }
+
+  function pruneSelectedRejectionIds() {
+    const validIds = new Set(rejections().map(entry => entry.id));
+    selectedRejectionIds.forEach(id => {
+      if (!validIds.has(id)) selectedRejectionIds.delete(id);
+    });
+  }
+
+  function updateRejectionSelectionUi(platform) {
+    const visibleEntries = platformRejections(platform);
+    const visibleIds = visibleEntries.map(entry => entry.id);
+    const selectedVisible = visibleIds.filter(id => selectedRejectionIds.has(id));
+    const count = selectedVisible.length;
+    const bulkBtn = $(`#bulkDeleteRejections-${platform}`);
+    const selectAll = $(`#selectAllRejections-${platform}`);
+    const deleteAllBtn = $(`#deleteAllRejections-${platform}`);
+
+    if (bulkBtn) {
+      bulkBtn.disabled = count === 0;
+      bulkBtn.textContent = count > 0 ? `선택 삭제 (${count})` : '선택 삭제';
+    }
+
+    if (deleteAllBtn) {
+      deleteAllBtn.disabled = visibleEntries.length === 0;
+    }
+
+    if (selectAll) {
+      selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+      selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    }
+  }
+
+  function deleteSelectedRejections(platform) {
+    const ids = platformRejections(platform)
+      .filter(entry => selectedRejectionIds.has(entry.id))
+      .map(entry => entry.id);
+    if (!ids.length) {
+      showToast('삭제할 기록을 선택해주세요.');
+      return;
+    }
+    if (!window.confirm(`선택한 ${ids.length}건의 ${platformRateLabel(platform)} 기록을 삭제하시겠습니까?`)) return;
+
+    BremStorage.rejections.removeByIds(ids);
+    ids.forEach(id => selectedRejectionIds.delete(id));
+    void BremStorage.flushStorage?.().then(() => {
+      showToast(`${ids.length}건 삭제되었습니다.`);
+      renderAll();
+    }).catch(error => {
+      console.error('[BREM] rejection bulk delete failed:', error);
+      showToast(error.message || '삭제 저장에 실패했습니다.');
+      renderAll();
+    });
+  }
+
+  function deleteAllRejections(platform) {
+    const entries = platformRejections(platform);
+    if (!entries.length) {
+      showToast('삭제할 기록이 없습니다.');
+      return;
+    }
+    const label = `${platformLabel(platform)} ${platformRateLabel(platform)}`;
+    if (!window.confirm(`표시된 ${label} 기록 ${entries.length}건을 전체 삭제하시겠습니까?\n\n되돌릴 수 없습니다.`)) return;
+
+    entries.forEach(entry => selectedRejectionIds.delete(entry.id));
+    BremStorage.rejections.removeByIds(entries.map(entry => entry.id));
+    void BremStorage.flushStorage?.().then(() => {
+      showToast(`${entries.length}건 전체 삭제되었습니다.`);
+      renderAll();
+    }).catch(error => {
+      console.error('[BREM] rejection delete all failed:', error);
+      showToast(error.message || '삭제 저장에 실패했습니다.');
+      renderAll();
+    });
+  }
+
   function renderRejections() {
+    pruneSelectedRejectionIds();
     PLATFORMS.forEach(platform => {
       updateRejectionWeekPreview(state.rejectionWeekByPlatform[platform] || weekStartKey(), platform);
       fillRejectionRateInput(platform);
@@ -2122,17 +2204,20 @@
         : `${platformLabel(platform)} 주간 ${platformRateLabel(platform)} 기록이 없습니다.`;
       const rowsEl = $(`#rejectionRows-${platform}`);
       if (!rowsEl) return;
-      rowsEl.innerHTML = rejections()
-        .filter(entry => normalizePlatform(entry.platform) === platform && driverMatchesSearch(entry.driverId))
-        .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
-        .map(entry => `
-          <tr>
+      const platformList = platformRejections(platform);
+      rowsEl.innerHTML = platformList.map(entry => `
+          <tr${selectedRejectionIds.has(entry.id) ? ' class="row-selected"' : ''}>
+            <td class="col-select">
+              <input type="checkbox" class="rejection-select-check" data-select-rejection="${entry.id}" aria-label="선택"${selectedRejectionIds.has(entry.id) ? ' checked' : ''}>
+            </td>
             <td>${formatDate(entry.weekStart)} ~ ${formatDate(weekEndKey(entry.weekStart))}</td>
             <td>${escapeHtml(driverName(entry.driverId))}</td>
             <td>${formatPercent(entry.rate, entry)}</td>
-            <td><button class="small-btn danger-btn" data-delete-rejection="${entry.id}">삭제</button></td>
+            <td><button type="button" class="small-btn danger-btn" data-delete-rejection="${entry.id}">삭제</button></td>
           </tr>
-        `).join('') || emptyRow(4, emptyMessage);
+        `).join('') || emptyRow(5, emptyMessage);
+
+      updateRejectionSelectionUi(platform);
     });
   }
 
@@ -3380,6 +3465,27 @@
           else selectedCallIds.delete(call.id);
         });
         renderCalls();
+        return;
+      }
+
+      const rejectionCheck = event.target.closest('[data-select-rejection]');
+      if (rejectionCheck) {
+        if (rejectionCheck.checked) selectedRejectionIds.add(rejectionCheck.dataset.selectRejection);
+        else selectedRejectionIds.delete(rejectionCheck.dataset.selectRejection);
+        const platform = PLATFORMS.find(p => rejectionCheck.closest(`#rejectionRows-${p}`));
+        if (platform) updateRejectionSelectionUi(platform);
+        rejectionCheck.closest('tr')?.classList.toggle('row-selected', rejectionCheck.checked);
+        return;
+      }
+
+      const selectAllRejections = event.target.closest('.rejection-select-all');
+      if (selectAllRejections) {
+        const platform = selectAllRejections.id.replace('selectAllRejections-', '');
+        platformRejections(platform).forEach(entry => {
+          if (selectAllRejections.checked) selectedRejectionIds.add(entry.id);
+          else selectedRejectionIds.delete(entry.id);
+        });
+        renderRejections();
       }
     });
 
@@ -3387,6 +3493,18 @@
       const bulkDeleteCallsBtn = event.target.closest('[id^="bulkDeleteCalls-"]');
       if (bulkDeleteCallsBtn && !bulkDeleteCallsBtn.disabled) {
         deleteSelectedCalls(bulkDeleteCallsBtn.id.replace('bulkDeleteCalls-', ''));
+        return;
+      }
+
+      const bulkDeleteRejectionsBtn = event.target.closest('[id^="bulkDeleteRejections-"]');
+      if (bulkDeleteRejectionsBtn && !bulkDeleteRejectionsBtn.disabled) {
+        deleteSelectedRejections(bulkDeleteRejectionsBtn.id.replace('bulkDeleteRejections-', ''));
+        return;
+      }
+
+      const deleteAllRejectionsBtn = event.target.closest('[id^="deleteAllRejections-"]');
+      if (deleteAllRejectionsBtn && !deleteAllRejectionsBtn.disabled) {
+        deleteAllRejections(deleteAllRejectionsBtn.id.replace('deleteAllRejections-', ''));
         return;
       }
 
@@ -3402,8 +3520,16 @@
       const rejectionButton = event.target.closest('[data-delete-rejection]');
       if (rejectionButton) {
         BremStorage.rejections.removeById(rejectionButton.dataset.deleteRejection);
-        showToast('주간 기록이 삭제되었습니다.');
-        renderAll();
+        selectedRejectionIds.delete(rejectionButton.dataset.deleteRejection);
+        void BremStorage.flushStorage?.().then(() => {
+          showToast('주간 기록이 삭제되었습니다.');
+          renderAll();
+        }).catch(error => {
+          console.error('[BREM] rejection delete failed:', error);
+          showToast(error.message || '삭제 저장에 실패했습니다.');
+          renderAll();
+        });
+        return;
       }
 
       const targetButton = event.target.closest('[data-delete-target]');
