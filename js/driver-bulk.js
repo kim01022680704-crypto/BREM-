@@ -1,4 +1,13 @@
 (function () {
+  const {
+    makeDriverLoginId,
+    makeDriverMatchKey,
+    matchDriverByNameAndPhone,
+    mergeBulkDriverData,
+    buildDriverDuplicateLookup,
+    isBulkRawProvided
+  } = window.BremDriverUtils;
+
   const BULK_COLUMNS = [
     { key: 'name', label: '이름', required: true },
     { key: 'phone', label: '연락처', required: true },
@@ -29,9 +38,9 @@
   const previewSection = document.getElementById('bulkPreviewSection');
   const previewBody = document.getElementById('bulkPreviewBody');
   const totalCountEl = document.getElementById('bulkTotalCount');
-  const validCountEl = document.getElementById('bulkValidCount');
-  const errorCountEl = document.getElementById('bulkErrorCount');
-  const duplicateCountEl = document.getElementById('bulkDuplicateCount');
+  const createCountEl = document.getElementById('bulkCreateCount');
+  const updateCountEl = document.getElementById('bulkUpdateCount');
+  const issueCountEl = document.getElementById('bulkIssueCount');
   const applyBtn = document.getElementById('bulkApplyBtn');
   const clearBtn = document.getElementById('bulkClearBtn');
   const toast = document.getElementById('toast');
@@ -41,14 +50,14 @@
     toast.textContent = message;
     toast.classList.add('show');
     window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(() => toast.classList.remove('show'), 2400);
+    showToast.timer = window.setTimeout(() => toast.classList.remove('show'), 3200);
   }
 
   function normalizeDigits(value) {
     return String(value || '').replace(/[^0-9]/g, '');
   }
 
-  function normalizePhone(value) {
+  function normalizePhoneDisplay(value) {
     return String(value || '').trim();
   }
 
@@ -112,15 +121,31 @@
       || null;
   }
 
-  function resolvePlatforms(raw) {
+  function resolvePlatforms(raw, isUpdate) {
     const baeminId = String(raw.baeminId || '').trim();
+    const hasCoupangRaw = isBulkRawProvided(raw, 'platformCoupangRaw');
+    const hasBaeminRaw = isBulkRawProvided(raw, 'platformBaeminRaw');
+
+    if (isUpdate) {
+      const result = { baeminId };
+      if (hasCoupangRaw) {
+        result.platformCoupang = parseYesNo(raw.platformCoupangRaw, true);
+      }
+      if (hasBaeminRaw) {
+        result.platformBaemin = parseYesNo(raw.platformBaeminRaw, false);
+      } else if (baeminId) {
+        result.platformBaemin = true;
+      }
+      return result;
+    }
+
     let platformCoupang = parseYesNo(raw.platformCoupangRaw, true);
     let platformBaemin = parseYesNo(raw.platformBaeminRaw, Boolean(baeminId));
 
-    if (baeminId && raw.platformBaeminRaw === '' && raw.platformCoupangRaw === '') {
+    if (baeminId && !hasBaeminRaw && !hasCoupangRaw) {
       platformCoupang = true;
       platformBaemin = true;
-    } else if (!baeminId && raw.platformBaeminRaw === '' && raw.platformCoupangRaw === '') {
+    } else if (!baeminId && !hasBaeminRaw && !hasCoupangRaw) {
       platformCoupang = true;
       platformBaemin = false;
     }
@@ -128,10 +153,10 @@
     return { baeminId, platformCoupang, platformBaemin };
   }
 
-  function validateRow(raw, rowNumber, batchLoginIds, batchPhones, batchBaeminIds) {
+  function validateRow(raw, rowNumber, batchMatchKeys, batchBaeminIds) {
     const errors = [];
     const name = String(raw.name || '').trim();
-    const phone = normalizePhone(raw.phone);
+    const phone = normalizePhoneDisplay(raw.phone);
     const residentNumber = normalizeDigits(raw.residentNumber || raw.password);
     const password = '1234';
     const joinDate = today();
@@ -141,17 +166,27 @@
     const bankName = String(raw.bankName || '').trim();
     const accountHolder = String(raw.accountHolder || '').trim();
     const longEventStartDate = parseExcelDate(raw.longEventStartDate);
-    const platforms = resolvePlatforms(raw);
-    const baeminId = platforms.baeminId;
+    const matchedDriver = matchDriverByNameAndPhone(name, phone);
+    const isUpdate = Boolean(matchedDriver);
+    const platforms = resolvePlatforms(raw, isUpdate);
+    const baeminId = String(platforms.baeminId || '').trim();
 
     if (!name) errors.push('이름 누락');
     if (!phone) errors.push('연락처 누락');
     if (residentNumber && residentNumber.length !== 13) errors.push('주민등록번호 13자리 확인');
 
-    if (!platforms.platformCoupang && !platforms.platformBaemin) {
+    const effectivePlatformCoupang = isUpdate
+      ? (platforms.platformCoupang !== undefined ? platforms.platformCoupang : matchedDriver?.platformCoupang !== false)
+      : platforms.platformCoupang;
+    const effectivePlatformBaemin = isUpdate
+      ? (platforms.platformBaemin !== undefined ? platforms.platformBaemin : Boolean(matchedDriver?.platformBaemin))
+      : platforms.platformBaemin;
+    const effectiveBaeminId = baeminId || String(matchedDriver?.baeminId || '').trim();
+
+    if (!isUpdate && !effectivePlatformCoupang && !effectivePlatformBaemin) {
       errors.push('쿠팡·배민 중 하나 이상 선택');
     }
-    if (platforms.platformBaemin && !platforms.baeminId) {
+    if (effectivePlatformBaemin && !effectiveBaeminId) {
       errors.push('배민 수행 시 배민 아이디 필요');
     }
 
@@ -164,15 +199,24 @@
       errors.push('이벤트 시작일 형식 오류');
     }
 
+    const matchKey = makeDriverMatchKey(name, phone);
     const loginId = name && phone ? makeLoginId(name, phone) : '';
 
-    if (loginId && batchLoginIds.has(loginId)) errors.push('파일 내 쿠팡아이디 중복');
-    if (phone && batchPhones.has(phone)) errors.push('파일 내 연락처 중복');
+    if (matchKey && batchMatchKeys.has(matchKey)) errors.push('파일 내 이름+연락처 중복');
     if (baeminId && batchBaeminIds.has(baeminId)) errors.push('파일 내 배민아이디 중복');
 
-    if (!errors.length) {
-      const duplicate = window.BremDriverUtils.findDuplicateDriver({ name, phone, baeminId });
-      if (duplicate) errors.push(`이미 등록된 기사 (${duplicate.reason})`);
+    const lookup = buildDriverDuplicateLookup();
+    if (!isUpdate && loginId && lookup.byLoginId.has(loginId)) {
+      const conflict = lookup.byLoginId.get(loginId);
+      if (makeDriverMatchKey(conflict.name, conflict.phone) !== matchKey) {
+        errors.push('쿠팡아이디(이름+연락처 뒤4자리) 중복');
+      }
+    }
+    if (baeminId && lookup.byBaeminId.has(baeminId)) {
+      const conflict = lookup.byBaeminId.get(baeminId);
+      if (!matchedDriver || conflict.id !== matchedDriver.id) {
+        errors.push('다른 기사에 등록된 배민아이디');
+      }
     }
 
     const data = {
@@ -185,7 +229,7 @@
       accountNumber,
       joinDate,
       status,
-      baeminId: platforms.baeminId,
+      baeminId,
       platformCoupang: platforms.platformCoupang,
       platformBaemin: platforms.platformBaemin,
       longEventItemId: eventItem ? eventItem.id : '',
@@ -196,11 +240,14 @@
 
     return {
       rowNumber,
+      raw,
       data,
       loginId,
+      matchedDriver,
+      action: isUpdate ? 'update' : 'create',
       errors,
       valid: errors.length === 0,
-      isDuplicate: window.BremDriverUtils.isDuplicateErrorMessage(errors)
+      isIssue: errors.length > 0
     };
   }
 
@@ -240,15 +287,14 @@
   }
 
   function buildParsedRows(rows) {
-    const batchLoginIds = new Set();
-    const batchPhones = new Set();
+    const batchMatchKeys = new Set();
     const batchBaeminIds = new Set();
 
     return rows.map(({ rowNumber, raw }) => {
-      const result = validateRow(raw, rowNumber, batchLoginIds, batchPhones, batchBaeminIds);
+      const result = validateRow(raw, rowNumber, batchMatchKeys, batchBaeminIds);
       if (result.valid) {
-        if (result.loginId) batchLoginIds.add(result.loginId);
-        if (result.data.phone) batchPhones.add(result.data.phone);
+        const matchKey = makeDriverMatchKey(result.data.name, result.data.phone);
+        if (matchKey) batchMatchKeys.add(matchKey);
         if (result.data.baeminId) batchBaeminIds.add(result.data.baeminId);
       }
       return result;
@@ -256,9 +302,16 @@
   }
 
   function platformLabel(row) {
+    const existing = row.matchedDriver;
+    const coupang = row.data.platformCoupang !== undefined
+      ? row.data.platformCoupang !== false
+      : existing?.platformCoupang !== false;
+    const baemin = row.data.platformBaemin !== undefined
+      ? Boolean(row.data.platformBaemin)
+      : Boolean(existing?.platformBaemin);
     const tags = [];
-    if (row.data.platformCoupang) tags.push('쿠팡');
-    if (row.data.platformBaemin) tags.push('배민');
+    if (coupang) tags.push('쿠팡');
+    if (baemin) tags.push('배민');
     return tags.join('·') || '-';
   }
 
@@ -272,23 +325,26 @@
   }
 
   function renderPreview() {
-    const validRows = parsedRows.filter(row => row.valid);
-    const duplicateRows = parsedRows.filter(row => row.isDuplicate);
-    const errorRows = parsedRows.filter(row => !row.valid && !row.isDuplicate);
+    const createRows = parsedRows.filter(row => row.valid && row.action === 'create');
+    const updateRows = parsedRows.filter(row => row.valid && row.action === 'update');
+    const issueRows = parsedRows.filter(row => row.isIssue);
+    const processableCount = createRows.length + updateRows.length;
 
     totalCountEl.textContent = String(parsedRows.length);
-    validCountEl.textContent = String(validRows.length);
-    if (duplicateCountEl) duplicateCountEl.textContent = String(duplicateRows.length);
-    errorCountEl.textContent = String(errorRows.length);
-    applyBtn.disabled = validRows.length === 0;
+    if (createCountEl) createCountEl.textContent = String(createRows.length);
+    if (updateCountEl) updateCountEl.textContent = String(updateRows.length);
+    if (issueCountEl) issueCountEl.textContent = String(issueRows.length);
+    applyBtn.disabled = processableCount === 0;
 
     previewBody.innerHTML = parsedRows.map(row => {
-      const rowClass = row.valid ? 'row-ok' : row.isDuplicate ? 'row-duplicate' : 'row-error';
-      let resultHtml = '<span class="bulk-result-ok">등록 가능</span>';
+      const rowClass = row.valid
+        ? (row.action === 'update' ? 'row-update' : 'row-ok')
+        : 'row-error';
+      let resultHtml = row.action === 'update'
+        ? '<span class="bulk-result-update">기존 업데이트</span>'
+        : '<span class="bulk-result-ok">신규 등록</span>';
       if (!row.valid) {
-        resultHtml = row.isDuplicate
-          ? `<span class="bulk-result-dup">${escapeHtml(row.errors.join(', '))}</span>`
-          : `<span class="bulk-result-err">${escapeHtml(row.errors.join(', '))}</span>`;
+        resultHtml = `<span class="bulk-result-err">${escapeHtml(row.errors.join(', '))}</span>`;
       }
       return `
         <tr class="${rowClass}">
@@ -305,8 +361,11 @@
     previewSection.hidden = parsedRows.length === 0;
   }
 
-  function syncDriverEventSettings(driverId, data) {
-    const item = BremStorage.events.getCatalog().find(eventItem => eventItem.id === data.longEventItemId);
+  function syncDriverEventSettings(driverId, data, existingDriver) {
+    const itemId = String(data.longEventItemId || '').trim();
+    if (!itemId) return;
+
+    const item = BremStorage.events.getCatalog().find(eventItem => eventItem.id === itemId);
     if (item) {
       BremStorage.events.setDriverItem(driverId, item);
       if (data.longEventStartDate) {
@@ -321,9 +380,9 @@
     previewSection.hidden = true;
     previewBody.innerHTML = '';
     totalCountEl.textContent = '0';
-    validCountEl.textContent = '0';
-    errorCountEl.textContent = '0';
-    if (duplicateCountEl) duplicateCountEl.textContent = '0';
+    if (createCountEl) createCountEl.textContent = '0';
+    if (updateCountEl) updateCountEl.textContent = '0';
+    if (issueCountEl) issueCountEl.textContent = '0';
     applyBtn.disabled = true;
   }
 
@@ -337,7 +396,7 @@
     bulkPanel.hidden = !isBulk;
     layout.classList.toggle('layout--bulk', isBulk);
     formSubtitle.textContent = isBulk
-      ? '엑셀 파일로 여러 기사를 한 번에 등록합니다.'
+      ? '엑셀 파일로 여러 기사를 한 번에 등록합니다. 기존 기사(이름+연락처)는 병합 업데이트됩니다.'
       : '기사 기본 정보를 입력하고 저장하세요.';
   }
 
@@ -374,6 +433,13 @@
     XLSX.writeFile(workbook, 'BREM_기사등록_양식.xlsx');
   }
 
+  async function ensureStorageReadyForSave() {
+    const resume = await BremStorage.resumeSupabaseAfterAuth?.();
+    if (!resume?.ok) {
+      throw new Error(resume?.message || 'Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
+    }
+  }
+
   async function handleFileChange(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
@@ -396,7 +462,10 @@
 
       parsedRows = buildParsedRows(rows);
       renderPreview();
-      showToast(`미리보기 ${parsedRows.length}건 — 등록 가능 ${parsedRows.filter(row => row.valid).length}건`);
+
+      const createCount = parsedRows.filter(row => row.valid && row.action === 'create').length;
+      const updateCount = parsedRows.filter(row => row.valid && row.action === 'update').length;
+      showToast(`미리보기 ${parsedRows.length}건 — 신규 ${createCount}명 · 업데이트 ${updateCount}명`);
     } catch (error) {
       console.error(error);
       showToast('엑셀 파일을 읽지 못했습니다.');
@@ -404,36 +473,73 @@
     }
   }
 
-  function applyBulk() {
-    const validRows = parsedRows.filter(row => row.valid);
-    const duplicateRows = parsedRows.filter(row => row.isDuplicate);
-    if (!validRows.length) {
+  async function applyBulk() {
+    const processableRows = parsedRows.filter(row => row.valid);
+    const issueRows = parsedRows.filter(row => row.isIssue);
+    if (!processableRows.length) {
       showToast('등록 가능한 행이 없습니다.');
       return;
     }
 
-    let confirmMessage = `${validRows.length}명의 기사를 일괄 등록하시겠습니까?`;
-    if (duplicateRows.length) {
-      confirmMessage += `\n\n중복 ${duplicateRows.length}건은 자동으로 제외됩니다.`;
+    const createCount = processableRows.filter(row => row.action === 'create').length;
+    const updateCount = processableRows.filter(row => row.action === 'update').length;
+
+    let confirmMessage = `신규 ${createCount}명 · 업데이트 ${updateCount}명을 일괄 처리하시겠습니까?`;
+    if (issueRows.length) {
+      confirmMessage += `\n\n중복/오류 ${issueRows.length}건은 제외됩니다.`;
     }
 
     if (!window.confirm(confirmMessage)) return;
 
-    Promise.all(validRows.map(row =>
-      BremStorage.drivers.create(row.data).then(driver => {
-        syncDriverEventSettings(driver.id, row.data);
-        return driver;
-      })
-    )).then(createdDrivers => {
-      showToast(`${createdDrivers.length}명 등록 완료${duplicateRows.length ? ` · 중복 ${duplicateRows.length}건 제외` : ''}`);
+    applyBtn.disabled = true;
+    const previousLabel = applyBtn.textContent;
+    applyBtn.textContent = '처리 중…';
+
+    let created = 0;
+    let updated = 0;
+
+    try {
+      await ensureStorageReadyForSave();
+
+      for (const row of processableRows) {
+        if (row.action === 'update') {
+          const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
+          if (Object.keys(changes).length) {
+            await Promise.resolve(BremStorage.drivers.update(row.matchedDriver.id, changes));
+            syncDriverEventSettings(
+              row.matchedDriver.id,
+              { ...row.matchedDriver, ...changes },
+              row.matchedDriver
+            );
+          }
+          updated += 1;
+        } else {
+          const createPayload = {
+            ...row.data,
+            platformCoupang: row.data.platformCoupang !== false,
+            platformBaemin: Boolean(row.data.platformBaemin)
+          };
+          const driver = await Promise.resolve(BremStorage.drivers.create(createPayload));
+          syncDriverEventSettings(driver.id, row.data);
+          created += 1;
+        }
+      }
+
+      await BremStorage.flushStorage?.();
+
+      showToast(`신규등록 ${created}명 · 기존 업데이트 ${updated}명 · 중복/오류 ${issueRows.length}건`);
       clearPreview();
 
       if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {
         window.BremDriverIndex.refresh();
       }
-    }).catch(error => {
+    } catch (error) {
+      console.error(error);
       showToast(error.message || '일괄 등록에 실패했습니다.');
-    });
+    } finally {
+      applyBtn.disabled = false;
+      applyBtn.textContent = previousLabel;
+    }
   }
 
   function init() {

@@ -722,13 +722,26 @@ h2 {
   background: #fffbeb;
 }
 
+.bulk-preview-table tr.row-update {
+  background: #eff6ff;
+}
+
 .bulk-preview-stats .dup strong {
   color: #b45309;
+}
+
+.bulk-preview-stats .update strong {
+  color: #1d4ed8;
 }
 
 .bulk-result-dup {
   color: #b45309;
   font-weight: 700;
+}
+
+.bulk-result-update {
+  color: #1d4ed8;
+  font-weight: 800;
 }
 
 .bulk-result-ok {

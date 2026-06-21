@@ -125,6 +125,73 @@ window.BremDriverUtils = (function () {
     return normalizeDriverName(driver?.name) === normalizeDriverName(excelName);
   }
 
+  function makeDriverMatchKey(name, phone) {
+    const normName = normalizeDriverName(name);
+    const normPhone = normalizePhone(phone);
+    if (!normName || !normPhone) return '';
+    return `${normName}|${normPhone}`;
+  }
+
+  function matchDriverByNameAndPhone(name, phone, drivers, excludeId) {
+    const key = makeDriverMatchKey(name, phone);
+    if (!key) return null;
+
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+
+    return list.find(driver => {
+      if (excludeId && driver.id === excludeId) return false;
+      return makeDriverMatchKey(driver.name, driver.phone) === key;
+    }) || null;
+  }
+
+  function isBulkRawProvided(raw, key) {
+    if (!raw || !key) return false;
+    const value = raw[key];
+    if (value === undefined || value === null) return false;
+    return String(value).trim() !== '';
+  }
+
+  /**
+   * 일괄등록 병합: 업로드에 값이 있는 필드만 반영합니다. 빈 셀은 기존 값을 유지합니다.
+   */
+  function mergeBulkDriverData(existing, uploadData, raw) {
+    if (!existing) return { ...(uploadData || {}) };
+
+    const changes = {};
+    const assignString = (key) => {
+      const val = String(uploadData?.[key] ?? '').trim();
+      if (val) changes[key] = val;
+    };
+
+    ['name', 'phone', 'bankName', 'accountHolder', 'accountNumber', 'baeminId', 'memo'].forEach(assignString);
+
+    const residentDigits = normalizeSecretDigits(uploadData?.residentNumber);
+    if (residentDigits.length === 13) {
+      changes.residentNumber = formatResidentNumber(residentDigits);
+    }
+
+    if (isBulkRawProvided(raw, 'platformCoupangRaw')) {
+      changes.platformCoupang = uploadData.platformCoupang !== false;
+    }
+    if (isBulkRawProvided(raw, 'platformBaeminRaw')) {
+      changes.platformBaemin = Boolean(uploadData.platformBaemin);
+    } else if (String(uploadData?.baeminId || '').trim()) {
+      changes.platformBaemin = true;
+    }
+
+    if (String(uploadData?.longEventItemId || '').trim()) {
+      changes.longEventItemId = uploadData.longEventItemId;
+      changes.longEventItem = String(uploadData.longEventItem || '').trim();
+    }
+    if (String(uploadData?.longEventStartDate || '').trim()) {
+      changes.longEventStartDate = uploadData.longEventStartDate;
+    }
+
+    return changes;
+  }
+
   /**
    * 엑셀 일괄등록 매칭: 아이디 우선, 이름은 보조 확인.
    * 이름이 없거나 달라도 아이디가 일치하면 매칭합니다.
@@ -282,7 +349,12 @@ window.BremDriverUtils = (function () {
     makeDriverLoginId,
     normalizeDriverName,
     driverNamesMatch,
+    makeDriverMatchKey,
+    matchDriverByNameAndPhone,
+    isBulkRawProvided,
+    mergeBulkDriverData,
     matchDriverForPlatformImport,
+    buildDriverDuplicateLookup,
     findDuplicateDriver,
     isDuplicateErrorMessage,
     formatDate,

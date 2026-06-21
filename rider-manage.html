@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex,nofollow">
   <title>BREM 기사등록 관리 프로그램</title>
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=20260621m">
+  <link rel="stylesheet" href="css/style.css?v=20260621b">
 </head>
 <body>
   <div class="app index-app">
@@ -237,7 +237,7 @@
                 </tbody>
               </table>
             </div>
-            <p class="form-note form-note--subtle">가입일은 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 중복 기사(쿠팡아이디·연락처·배민아이디)는 미리보기에서 확인 후 자동으로 제외됩니다.</p>
+            <p class="form-note form-note--subtle">가입일은 <strong>신규 등록</strong> 시 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 이름+연락처가 일치하는 기존 기사는 신규 생성 없이 업로드된 값만 병합 업데이트됩니다. 빈 셀은 기존 값을 유지합니다.</p>
           </section>
 
           <section class="bulk-preview-section" id="bulkPreviewSection" hidden>
@@ -245,9 +245,9 @@
               <h3 class="form-section-title">미리보기</h3>
               <div class="bulk-preview-stats">
                 <span>전체 <strong id="bulkTotalCount">0</strong>건</span>
-                <span class="ok">등록 가능 <strong id="bulkValidCount">0</strong>건</span>
-                <span class="dup">중복 <strong id="bulkDuplicateCount">0</strong>건</span>
-                <span class="err">오류 <strong id="bulkErrorCount">0</strong>건</span>
+                <span class="ok">신규 <strong id="bulkCreateCount">0</strong>명</span>
+                <span class="update">업데이트 <strong id="bulkUpdateCount">0</strong>명</span>
+                <span class="err">중복/오류 <strong id="bulkIssueCount">0</strong>건</span>
               </div>
             </div>
             <div class="bulk-preview-wrap">
@@ -310,10 +310,10 @@
   <script src="js/storage.js?v=20260620r"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/driver-program-access.js?v=20260620c"></script>
-  <script src="js/driver-utils.js"></script>
+  <script src="js/driver-utils.js?v=20260621b"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
   <script src="js/app.js?v=20260620j"></script>
-  <script src="js/driver-bulk.js"></script>
+  <script src="js/driver-bulk.js?v=20260621b"></script>
 </body>
 </html>
