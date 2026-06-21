@@ -775,19 +775,21 @@
 
       if (!window.confirm(`쿠팡·배민 ${payloads.length}건을 저장하시겠습니까?`)) return;
 
-      payloads.forEach(entry => {
-        BremStorage.rejections.upsertWeekly({
-          driverId: entry.driverId,
-          weekStart: entry.weekStart,
-          rate: entry.unmeasured ? null : entry.rate,
-          platform: entry.platform,
-          stats: entry.stats,
-          source: 'erp-bulk'
-        });
-      });
-
       void (async () => {
+        if (applyBtn) {
+          applyBtn.disabled = true;
+          applyBtn.textContent = '저장 중…';
+        }
         try {
+          await BremStorage.ensureSectionLoaded?.('rejections');
+          BremStorage.rejections.upsertWeeklyBatch(payloads.map(entry => ({
+            driverId: entry.driverId,
+            weekStart: entry.weekStart,
+            rate: entry.unmeasured ? null : entry.rate,
+            platform: entry.platform,
+            stats: entry.stats,
+            source: 'erp-bulk'
+          })));
           await BremStorage.flushStorage?.();
           if (BremStorage.refreshDataFromServer) {
             await BremStorage.refreshDataFromServer(BremStorage.KEYS?.rejections || 'brem_admin_rejection_rates');
@@ -808,6 +810,11 @@
             return;
           }
           notify(message || 'Supabase 저장에 실패했습니다.');
+        } finally {
+          if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = '저장';
+          }
         }
       })();
     }

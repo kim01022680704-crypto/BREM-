@@ -881,26 +881,48 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.missions]: persistMissions
     };
 
-    function queuePersist(key, value, options = {}) {
-      persistQueue = persistQueue.then(async () => {
-        const check = validatePersistPayload(key, value, options);
-        if (!check.ok) {
+    let persistQueue = Promise.resolve();
+    const pendingPersist = new Map();
+
+    async function persistQueuedEntry(key, value, options = {}) {
+      const check = validatePersistPayload(key, value, options);
+      if (!check.ok) {
+        if (check.blocked) {
           window.BremStorageGuard?.logBlocked?.(check);
-          throw new Error(check.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+          return;
         }
-        if (persistHandlers[key]) {
-          await persistHandlers[key](value);
-        } else if (key === keys.adminSchedules) {
-          await persistAdminSchedules(value);
-        } else if (key === keys.calls) {
-          await persistCalls(value);
-        } else if (key === keys.rejections) {
-          await persistWeeklyRates(value);
-        } else if (key === keys.targets) {
-          await persistMonthlyTargets(value);
-        } else {
-          await persistSetting(key, value);
+        window.BremStorageGuard?.logBlocked?.(check);
+        throw new Error(check.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
+      }
+      if (persistHandlers[key]) {
+        await persistHandlers[key](value);
+      } else if (key === keys.adminSchedules) {
+        await persistAdminSchedules(value);
+      } else if (key === keys.calls) {
+        await persistCalls(value);
+      } else if (key === keys.rejections) {
+        await persistWeeklyRates(value);
+      } else if (key === keys.targets) {
+        await persistMonthlyTargets(value);
+      } else {
+        await persistSetting(key, value);
+      }
+    }
+
+    async function drainPersistQueue() {
+      while (pendingPersist.size) {
+        const batch = new Map(pendingPersist);
+        pendingPersist.clear();
+        for (const [key, payload] of batch) {
+          await persistQueuedEntry(key, payload.value, payload.options);
         }
+      }
+    }
+
+    function queuePersist(key, value, options = {}) {
+      pendingPersist.set(key, { value, options });
+      persistQueue = persistQueue.then(async () => {
+        await drainPersistQueue();
       });
 
       persistQueue = persistQueue.catch(error => {

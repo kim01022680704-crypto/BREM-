@@ -3845,6 +3845,38 @@ const BremStorage = (function () {
       return list;
     },
 
+    upsertWeeklyBatch(entries = []) {
+      const normalized = (Array.isArray(entries) ? entries : []).filter(entry => entry?.driverId && entry?.weekStart);
+      if (!normalized.length) return rejections.getAll();
+
+      let list = rejections.getAll();
+      normalized.forEach(entry => {
+        const p = normalizePlatform(entry.platform);
+        const statsObj = entry.stats && typeof entry.stats === 'object' ? { ...entry.stats } : {};
+        const unmeasured = statsObj.unmeasured === true || entry.rate == null;
+        if (unmeasured) statsObj.unmeasured = true;
+        list = list.filter(item => !(
+          item.driverId === entry.driverId
+          && item.weekStart === entry.weekStart
+          && normalizePlatform(item.platform) === p
+        ));
+        list.push({
+          id: `${entry.driverId}-${entry.weekStart}-${p}`,
+          driverId: entry.driverId,
+          weekStart: entry.weekStart,
+          platform: p,
+          rate: unmeasured ? 0 : Number(entry.rate),
+          stats: statsObj,
+          source: String(entry.source || 'manual'),
+          updatedAt: new Date().toISOString(),
+          riderPublishedAt: entry.riderPublishedAt || null
+        });
+      });
+
+      storageAdapter.write(KEYS.rejections, list);
+      return list;
+    },
+
     removeById(id) {
       storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => item.id !== id));
     },
