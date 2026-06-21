@@ -37,6 +37,69 @@ function toIso(value) {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
+function normalizeDriverName(value) {
+  return String(value || '').replace(/\s/g, '').toLowerCase();
+}
+
+function normalizePhone(value) {
+  return String(value || '').replace(/[^0-9]/g, '');
+}
+
+function makeDriverMatchKey(name, phone) {
+  const normName = normalizeDriverName(name);
+  const normPhone = normalizePhone(phone);
+  if (!normName || !normPhone) return '';
+  return `${normName}|${normPhone}`;
+}
+
+function riderCompletenessScore(row) {
+  let score = 0;
+  if (row.auth_user_id) score += 16;
+  if (String(row.long_event_item || '').trim()) score += 8;
+  if (String(row.baemin_id || '').trim()) score += 4;
+  if (String(row.bank_name || '').trim()) score += 2;
+  if (String(row.account_number || '').trim()) score += 1;
+  const updatedAt = Date.parse(row.updated_at || row.created_at || 0);
+  if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
+  return score;
+}
+
+function pickCanonicalRider(rows) {
+  return [...rows].sort((a, b) => {
+    const scoreDiff = riderCompletenessScore(b) - riderCompletenessScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return String(a.id).localeCompare(String(b.id));
+  })[0];
+}
+
+function mergeStringField(target, source, field) {
+  if (!String(target[field] || '').trim() && String(source[field] || '').trim()) {
+    target[field] = source[field];
+  }
+}
+
+function mergeRiderRows(keep, donor) {
+  const merged = { ...keep };
+  [
+    'name', 'phone', 'resident_number', 'bank_name', 'account_holder', 'account_number',
+    'baemin_id', 'memo', 'long_event_item_id', 'long_event_item',
+    'promotion_selector_coupang', 'promotion_selector_baemin',
+    'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+    'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang'
+  ].forEach(field => mergeStringField(merged, donor, field));
+
+  if (!merged.long_event_start_date && donor.long_event_start_date) merged.long_event_start_date = donor.long_event_start_date;
+  if (!merged.join_date && donor.join_date) merged.join_date = donor.join_date;
+  if (donor.platform_baemin) merged.platform_baemin = true;
+  if (donor.platform_coupang !== false) merged.platform_coupang = true;
+
+  const keepHidden = keep.hidden_fields && typeof keep.hidden_fields === 'object' ? keep.hidden_fields : {};
+  const donorHidden = donor.hidden_fields && typeof donor.hidden_fields === 'object' ? donor.hidden_fields : {};
+  merged.hidden_fields = { ...donorHidden, ...keepHidden };
+  merged.updated_at = new Date().toISOString();
+  return merged;
+}
+
 function riderToRow(driver) {
   return {
     id: String(driver.id || ''),
@@ -245,9 +308,103 @@ async function deleteRider(accessToken, riderId) {
   return { ok: true };
 }
 
+async function mergeSelectedRiders(accessToken, riderIds = []) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const ids = [...new Set((Array.isArray(riderIds) ? riderIds : [])
+    .map(id => String(id || '').trim())
+    .filter(Boolean))];
+  if (ids.length < 2) {
+    return { ok: false, status: 400, error: '병합할 기사를 2명 이상 선택하세요.' };
+  }
+
+  const supabase = getServiceClient();
+  let { data, error } = await supabase
+    .from('riders')
+    .select(RIDER_SELECT)
+    .in('id', ids);
+  if (error && isMissingColumnError(error)) {
+    ({ data, error } = await supabase
+      .from('riders')
+      .select(RIDER_SELECT_LEGACY)
+      .in('id', ids));
+  }
+  if (error) {
+    return { ok: false, status: 500, error: error.message || '선택한 기사 정보를 불러오지 못했습니다.' };
+  }
+
+  const rows = data || [];
+  if (rows.length !== ids.length) {
+    return { ok: false, status: 404, error: '선택한 기사 중 일부를 찾지 못했습니다.' };
+  }
+
+  const matchKeys = new Set(rows.map(row => makeDriverMatchKey(row.name, row.phone)));
+  if (matchKeys.size !== 1 || ![...matchKeys][0]) {
+    return { ok: false, status: 400, error: '이름과 연락처가 같은 기사만 병합할 수 있습니다.' };
+  }
+
+  const canonical = pickCanonicalRider(rows);
+  let merged = { ...canonical };
+  const removedIds = [];
+  const idRemap = {};
+
+  rows.forEach(row => {
+    if (row.id === canonical.id) return;
+    merged = mergeRiderRows(merged, row);
+    removedIds.push(row.id);
+    idRemap[row.id] = canonical.id;
+  });
+
+  for (const [fromId, toId] of Object.entries(idRemap)) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ rider_id: toId })
+      .eq('rider_id', fromId);
+    if (profileError) {
+      return { ok: false, status: 500, error: profileError.message || '기사 로그인 연결을 병합하지 못했습니다.' };
+    }
+  }
+
+  let upsertRow = { ...merged };
+  let { error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' });
+  if (upsertError && isMissingColumnError(upsertError)) {
+    delete upsertRow.selected_mission_id;
+    delete upsertRow.selected_mission_id_baemin;
+    delete upsertRow.selected_mission_id_coupang;
+    ({ error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' }));
+  }
+  if (upsertError) {
+    return { ok: false, status: 400, error: upsertError.message || '병합된 기사 저장에 실패했습니다.' };
+  }
+
+  for (const id of removedIds) {
+    const { error: deleteError } = await supabase.from('riders').delete().eq('id', id);
+    if (deleteError) {
+      return { ok: false, status: 400, error: deleteError.message || '중복 기사 삭제에 실패했습니다.' };
+    }
+  }
+
+  const provision = await provisionRiderAuthAccount(upsertRow);
+  if (!provision.ok) {
+    console.warn('[BREM] Rider auth provisioning failed after selected merge:', upsertRow.id, provision.error);
+  }
+
+  return {
+    ok: true,
+    keptId: canonical.id,
+    keptName: canonical.name,
+    keptPhone: canonical.phone,
+    removedIds,
+    idRemap,
+    mergedCount: rows.length
+  };
+}
+
 module.exports = {
   listRiders,
   upsertRider,
   bulkUpsertRiders,
-  deleteRider
+  deleteRider,
+  mergeSelectedRiders
 };

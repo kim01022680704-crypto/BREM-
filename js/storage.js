@@ -1103,6 +1103,73 @@ const BremStorage = (function () {
     return result;
   }
 
+  async function mergeSelectedRidersViaServer(riderIds) {
+    const postMerge = () => adminRidersApi('/api/admin/riders/merge-selected', {
+      method: 'POST',
+      body: JSON.stringify({ riderIds })
+    });
+
+    let result = await postMerge();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postMerge();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '선택 기사 병합에 실패했습니다.');
+    }
+    return result;
+  }
+
+  function remapDriverIdsInLocalData(idRemap) {
+    if (!idRemap || !Object.keys(idRemap).length) return 0;
+
+    let changed = 0;
+    const mapId = (id) => {
+      const next = idRemap[String(id || '')] || id;
+      if (next !== id) changed += 1;
+      return next;
+    };
+
+    const remapArrayByDriverId = (key, buildId) => {
+      if (!storageAdapter.has(key)) return;
+      const list = storageAdapter.read(key, []);
+      if (!Array.isArray(list) || !list.length) return;
+      const remapped = list.map(item => {
+        const driverId = mapId(item.driverId);
+        const next = { ...item, driverId };
+        if (typeof buildId === 'function') next.id = buildId(next);
+        return next;
+      });
+      const deduped = [...new Map(remapped.map(item => [item.id, item])).values()];
+      storageAdapter.write(key, deduped);
+    };
+
+    remapArrayByDriverId(KEYS.calls, item => `${item.driverId}-${item.date}-${normalizePlatform(item.platform)}`);
+    remapArrayByDriverId(KEYS.rejections, item => `${item.driverId}-${item.weekStart}-${normalizePlatform(item.platform)}`);
+    remapArrayByDriverId(KEYS.targets, item => `${item.driverId}-${item.month}`);
+    remapArrayByDriverId(KEYS.weeklyTargets, item => `${item.driverId}-${item.weekStart}`);
+    remapArrayByDriverId(KEYS.settlements, item => `${item.driverId}-${item.period}-${normalizePlatform(item.platform)}`);
+
+    if (storageAdapter.has(KEYS.eventItems)) {
+      const eventMap = storageAdapter.read(KEYS.eventItems, {});
+      if (eventMap && typeof eventMap === 'object') {
+        const nextMap = {};
+        Object.entries(eventMap).forEach(([driverId, itemId]) => {
+          const nextId = mapId(driverId);
+          if (!nextMap[nextId]) nextMap[nextId] = itemId;
+        });
+        storageAdapter.write(KEYS.eventItems, nextMap);
+      }
+    }
+
+    window.BremDataCache?.invalidate?.(KEYS.drivers);
+    return changed;
+  }
+
   async function adminUsersApi(path, options = {}) {
     const token = await resolveAdminAccessToken();
     if (!token) {
@@ -2261,6 +2328,26 @@ const BremStorage = (function () {
         return Promise.all([persist, activeStorageAdapter.deleteRider(id)]);
       }
       return persist;
+    },
+
+    async mergeSelected(riderIds) {
+      const ids = [...new Set((Array.isArray(riderIds) ? riderIds : [])
+        .map(id => String(id || '').trim())
+        .filter(Boolean))];
+      if (ids.length < 2) {
+        throw new Error('병합할 기사를 2명 이상 선택하세요.');
+      }
+      if (!isProductionMode()) {
+        throw new Error('운영 환경에서만 선택 병합을 실행할 수 있습니다.');
+      }
+
+      const result = await mergeSelectedRidersViaServer(ids);
+      if (result.ok) {
+        remapDriverIdsInLocalData(result.idRemap || {});
+        await flushActiveStorage().catch(() => ({}));
+        await reloadDrivers(true).catch(() => ({}));
+      }
+      return result;
     },
 
     resetPassword(id, defaultPassword = '1234') {

@@ -262,6 +262,18 @@ app.post('/api/admin/riders/bulk', async (req, res) => {
   }
 });
 
+app.post('/api/admin/riders/merge-selected', async (req, res) => {
+  try {
+    const result = await ridersAdmin.mergeSelectedRiders(getBearerToken(req), req.body?.riderIds || []);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '선택 기사 병합에 실패했습니다.' });
+  }
+});
+
 app.delete('/api/admin/riders/:riderId', async (req, res) => {
   try {
     const result = await ridersAdmin.deleteRider(getBearerToken(req), req.params.riderId);

@@ -1,6 +1,7 @@
 (async function () {
   const {
     makeDriverLoginId,
+    makeDriverMatchKey,
     formatDate,
     formatResidentNumber,
     escapeHtml,
@@ -15,6 +16,7 @@
   const searchInput = document.getElementById('searchInput');
   const statusFilter = document.getElementById('statusFilter');
   const exportExcelBtn = document.getElementById('exportExcelBtn');
+  const mergeSelectedBtn = document.getElementById('mergeSelectedBtn');
   const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   const bulkDeleteBtnBar = document.getElementById('bulkDeleteBtnBar');
   const selectAllInput = document.getElementById('selectAllDrivers');
@@ -129,6 +131,7 @@
 
     if (bulkDeleteBtn) bulkDeleteBtn.disabled = disabled;
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.disabled = disabled;
+    if (mergeSelectedBtn) mergeSelectedBtn.disabled = count < 2;
     if (selectionBar) selectionBar.hidden = disabled;
     if (selectedCountLabel) selectedCountLabel.textContent = `${count}명 선택`;
 
@@ -291,7 +294,7 @@
       return;
     }
 
-    const header = ['이름', '전화번호', '주민번호', '은행명', '예금주', '계좌번호', '배민아이디'];
+    const header = ['이름', '전화번호', '주민번호', '은행명', '예금주', '계좌번호', '배민아이디', '쿠팡ID'];
     const rows = drivers.map(driver => {
       const hidden = driver.hiddenFields || {};
       return [
@@ -301,13 +304,14 @@
         driver.bankName || '',
         driver.accountHolder || '',
         hidden.accountNumber ? '가려짐' : (driver.accountNumber || ''),
-        driver.baeminId || ''
+        driver.baeminId || '',
+        makeDriverLoginId(driver)
       ];
     });
 
     const sheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
     sheet['!cols'] = [
-      { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 14 }
+      { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 14 }
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -361,6 +365,41 @@
     }).catch(error => {
       showToast(toast, error.message || '기사 삭제에 실패했습니다.');
     });
+  }
+
+  async function mergeSelectedDrivers() {
+    const selectedDrivers = [...selectedIds]
+      .map(id => BremStorage.drivers.getById(id))
+      .filter(Boolean);
+
+    if (selectedDrivers.length < 2) {
+      showToast(toast, '병합할 기사를 2명 이상 선택해주세요.');
+      return;
+    }
+
+    const matchKeys = new Set(selectedDrivers.map(driver => makeDriverMatchKey(driver.name, driver.phone)));
+    if (matchKeys.size !== 1 || ![...matchKeys][0]) {
+      showToast(toast, '이름과 연락처가 같은 기사만 병합할 수 있습니다.');
+      return;
+    }
+
+    const names = selectedDrivers.map(driver => `${driver.name} (${driver.phone})`).join('\n');
+    if (!window.confirm(`선택한 ${selectedDrivers.length}명의 중복 기사를 1명으로 병합할까요?\n\n${names}`)) return;
+
+    if (mergeSelectedBtn) mergeSelectedBtn.disabled = true;
+    showToast(toast, '선택 기사 병합 중…');
+
+    try {
+      const result = await BremStorage.drivers.mergeSelected(selectedDrivers.map(driver => driver.id));
+      selectedIds.clear();
+      renderedSnapshot = '';
+      await refreshDriverList(true);
+      showToast(toast, `병합 완료 · ${result.keptName || '기사'} 1명으로 정리되었습니다.`);
+    } catch (error) {
+      console.error(error);
+      showToast(toast, error.message || '선택 기사 병합에 실패했습니다.');
+      updateSelectionUi();
+    }
   }
 
   function toggleDriverSelection(id, checked) {
@@ -510,6 +549,7 @@
     searchInput.addEventListener('input', handleSearchInput);
     statusFilter.addEventListener('change', handleStatusFilterChange);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
+    if (mergeSelectedBtn) mergeSelectedBtn.addEventListener('click', () => { void mergeSelectedDrivers(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
     if (selectAllInput) selectAllInput.addEventListener('change', handleSelectAll);
