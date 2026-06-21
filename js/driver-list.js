@@ -88,6 +88,7 @@
 
   function canUseFastFilter() {
     if (useVirtualDesktop()) return false;
+    if (tableBody?.dataset.virtual === '1') return false;
     const listRoot = isMobileView() ? mobileList : tableBody;
     if (!listRoot?.querySelector('[data-driver-id]')) return false;
     return renderedSnapshot === getDriverSnapshot() && renderedIsMobile === isMobileView();
@@ -106,6 +107,7 @@
       return;
     }
 
+    scrollListToTop();
     const keyword = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
     const listRoot = isMobileView() ? mobileList : tableBody;
@@ -303,10 +305,13 @@
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList?.classList.remove('is-loading');
 
+      const keyword = searchInput.value.trim().toLowerCase();
+      const status = statusFilter.value;
+      const hasActiveFilter = Boolean(keyword) || status !== '전체';
+      if (hasActiveFilter) scrollListToTop();
+
       const allDrivers = getSortedDrivers(BremStorage.drivers.getAll());
       const filteredDrivers = allDrivers.filter(driver => {
-        const keyword = searchInput.value.trim().toLowerCase();
-        const status = statusFilter.value;
         const matchesKeyword = driverMatchesKeyword(driver, keyword);
         const matchesStatus = status === '전체' || driver.status === status;
         return matchesKeyword && matchesStatus;
@@ -638,6 +643,7 @@
     : render;
 
   function handleSearchInput() {
+    scrollListToTop();
     if (canUseFastFilter()) {
       applyListFilter();
       return;
