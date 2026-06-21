@@ -23,6 +23,7 @@ const BremStorage = (function () {
     legacyMission: 'brem_admin_mission_config',
     settlements: 'brem_admin_settlements',
     settlementUnmatched: 'brem_admin_settlement_unmatched',
+    settlementUploadLogs: 'brem_admin_settlement_upload_logs',
     promotionRules: 'brem_admin_promotion_rules',
     promotionSettings: 'brem_admin_promotion_settings',
     promotionSelectorOptions: 'brem_admin_promotion_selector_options',
@@ -214,6 +215,7 @@ const BremStorage = (function () {
     KEYS.weeklyTargets,
     KEYS.settlements,
     KEYS.settlementUnmatched,
+    KEYS.settlementUploadLogs,
     KEYS.weeklySettlements,
     KEYS.promotionSettings,
     KEYS.promotionSelectorOptions,
@@ -1036,8 +1038,8 @@ const BremStorage = (function () {
     targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers],
     'mission-results': [KEYS.drivers],
-    settlements: [KEYS.drivers],
-    'weekly-settlement': [KEYS.drivers],
+    settlements: [KEYS.drivers, KEYS.settlementUploadLogs],
+    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs],
     'admin-schedule': [],
     'lease-management': [KEYS.drivers],
     'revenue-management': [],
@@ -3726,6 +3728,16 @@ const BremStorage = (function () {
     ].join('-');
   }
 
+  function weekEndKeyFromDate(weekStart) {
+    const end = new Date(`${weekStart}T00:00:00`);
+    end.setDate(end.getDate() + 6);
+    return [
+      end.getFullYear(),
+      String(end.getMonth() + 1).padStart(2, '0'),
+      String(end.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
   const adminPreferences = {
     getDashboardWeekBasis() {
       const raw = storageAdapter.read(KEYS.dashboardWeekBasis, null);
@@ -5871,6 +5883,115 @@ const BremStorage = (function () {
     }
   };
 
+  function normalizeSettlementUploadLog(entry = {}) {
+    const period = String(entry.period || entry.startDate || '').slice(0, 10);
+    const weekStart = String(entry.weekStart || (period ? weekStartKeyFromDate(period) : '')).slice(0, 10);
+    const kind = entry.kind === 'weekly' ? 'weekly' : 'daily';
+    return {
+      id: String(entry.id || createId()),
+      kind,
+      platform: normalizePlatform(entry.platform),
+      fileName: String(entry.fileName || '').trim(),
+      period,
+      weekStart,
+      weekEnd: String(entry.weekEnd || (weekStart ? weekEndKeyFromDate(weekStart) : '')).slice(0, 10),
+      region: String(entry.region || '').trim(),
+      startDate: String(entry.startDate || period).slice(0, 10),
+      endDate: String(entry.endDate || '').slice(0, 10),
+      status: String(entry.status || 'uploaded'),
+      matchedCount: Number(entry.matchedCount || 0),
+      linkedRecordId: String(entry.linkedRecordId || ''),
+      uploadedAt: entry.uploadedAt || new Date().toISOString(),
+      appliedAt: entry.appliedAt || '',
+      updatedAt: entry.updatedAt || entry.uploadedAt || new Date().toISOString()
+    };
+  }
+
+  const settlementUploadLogs = {
+    getAll() {
+      return storageAdapter.read(KEYS.settlementUploadLogs, [])
+        .map(normalizeSettlementUploadLog)
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    },
+
+    getById(id) {
+      return settlementUploadLogs.getAll().find(item => item.id === id) || null;
+    },
+
+    getFiltered(options = {}) {
+      const kind = options.kind ? String(options.kind) : '';
+      const platform = options.platform ? normalizePlatform(options.platform) : '';
+      const weekStart = String(options.weekStart || '').slice(0, 10);
+      return settlementUploadLogs.getAll().filter(item => {
+        if (kind && item.kind !== kind) return false;
+        if (platform && item.platform !== platform) return false;
+        if (weekStart && item.weekStart !== weekStart) return false;
+        return true;
+      });
+    },
+
+    persistList(list) {
+      const value = (Array.isArray(list) ? list : []).map(normalizeSettlementUploadLog);
+      storageAdapter.write(KEYS.settlementUploadLogs, value);
+      window.BremDataCache?.set?.(KEYS.settlementUploadLogs, value, { source: 'write' });
+      return value;
+    },
+
+    add(entry) {
+      const next = normalizeSettlementUploadLog(entry);
+      const list = [next, ...settlementUploadLogs.getAll().filter(item => item.id !== next.id)];
+      settlementUploadLogs.persistList(list);
+      return next;
+    },
+
+    update(id, patch = {}) {
+      const list = settlementUploadLogs.getAll().map(item => (
+        item.id === id
+          ? normalizeSettlementUploadLog({ ...item, ...patch, updatedAt: new Date().toISOString() })
+          : item
+      ));
+      settlementUploadLogs.persistList(list);
+      return list.find(item => item.id === id) || null;
+    },
+
+    remove(id) {
+      settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
+    },
+
+    removeByLinkedRecordId(linkedRecordId) {
+      const targetId = String(linkedRecordId || '').trim();
+      if (!targetId) return;
+      settlementUploadLogs.persistList(
+        settlementUploadLogs.getAll().filter(item => item.linkedRecordId !== targetId)
+      );
+    },
+
+    syncWeeklyFromSavedRecords() {
+      const existingLinks = new Set(
+        settlementUploadLogs.getAll()
+          .filter(item => item.kind === 'weekly' && item.linkedRecordId)
+          .map(item => item.linkedRecordId)
+      );
+      weeklySettlements.getAll().forEach(record => {
+        if (existingLinks.has(record.id)) return;
+        settlementUploadLogs.add({
+          kind: 'weekly',
+          platform: record.platform,
+          fileName: record.fileName,
+          period: record.startDate,
+          weekStart: weekStartKeyFromDate(record.startDate || record.baseSettlementDate || record.uploadedAt),
+          region: record.region,
+          startDate: record.startDate,
+          endDate: record.endDate,
+          status: 'saved',
+          matchedCount: Number(record.summary?.matchedRiders || record.riders?.length || 0),
+          linkedRecordId: record.id,
+          uploadedAt: record.uploadedAt
+        });
+      });
+    }
+  };
+
   function normalizePromotionApplyResultRow(row = {}) {
     return {
       riderName: String(row.riderName || ''),
@@ -7602,6 +7723,7 @@ const BremStorage = (function () {
     events,
     settlements,
     settlementUnmatched,
+    settlementUploadLogs,
     missionDefaults,
     promotionRules,
     promotionSettings,

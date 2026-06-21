@@ -1,7 +1,8 @@
 const BremWeeklySettlementAdmin = (function () {
   const state = {
     previewByPlatform: { coupang: null, baemin: null },
-    detailId: ''
+    detailId: '',
+    weeklyLogWeekByPlatform: { coupang: null, baemin: null }
   };
 
   const PLATFORMS = ['coupang', 'baemin'];
@@ -26,6 +27,62 @@ const BremWeeklySettlementAdmin = (function () {
 
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
+  }
+
+  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
+    if (window.BremDatePicker?.weekStartKey) return BremDatePicker.weekStartKey(dateValue);
+    const date = new Date(`${dateValue}T00:00:00`);
+    const day = date.getDay();
+    const diff = (day - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function weekEndKey(weekStart) {
+    const end = new Date(`${weekStart}T00:00:00`);
+    end.setDate(end.getDate() + 6);
+    return end.toISOString().slice(0, 10);
+  }
+
+  function formatDate(value) {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date(`${value}T00:00:00`));
+  }
+
+  function uploadLogStatusLabel(status) {
+    switch (String(status || '')) {
+      case 'saved':
+        return '저장완료';
+      case 'applied':
+        return '반영완료';
+      default:
+        return '업로드';
+    }
+  }
+
+  function ensureWeeklyLogWeek(platform) {
+    if (!state.weeklyLogWeekByPlatform[platform]) {
+      state.weeklyLogWeekByPlatform[platform] = weekStartKey();
+    }
+    const input = $(`#weeklySettlementLogWeek-${platform}`);
+    if (input && !input.value) {
+      input.value = state.weeklyLogWeekByPlatform[platform];
+    }
+    return state.weeklyLogWeekByPlatform[platform];
+  }
+
+  function updateWeeklyLogWeekRangeLabel(platform) {
+    const weekStart = ensureWeeklyLogWeek(platform);
+    const label = $(`#weeklySettlementLogWeekRange-${platform}`);
+    if (label) {
+      label.textContent = weekStart
+        ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
+        : '';
+    }
   }
 
   function fillCoupangDatesFromBase() {
@@ -121,8 +178,22 @@ const BremWeeklySettlementAdmin = (function () {
     }
     try {
       const record = await BremWeeklySettlement.processWeeklyUpload(payload);
+      const uploadLog = BremStorage.settlementUploadLogs.add({
+        kind: 'weekly',
+        platform,
+        fileName: payload.file.name,
+        period: record.startDate,
+        weekStart: weekStartKey(record.startDate || payload.startDate),
+        region: record.region,
+        startDate: record.startDate,
+        endDate: record.endDate,
+        status: 'uploaded',
+        matchedCount: Number(record.summary?.matchedRiders || record.riders?.length || 0)
+      });
+      record.uploadLogId = uploadLog.id;
       state.previewByPlatform[platform] = record;
       renderPreview(platform);
+      renderSavedList(platform);
       const mismatchCount = record.summary.callCountMismatches || 0;
       let toastMessage = `정산 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`;
       if (mismatchCount > 0) {
@@ -151,7 +222,31 @@ const BremWeeklySettlementAdmin = (function () {
       unmatchedRiders: 0,
       callCountMismatches: saveRecord.riders.filter(r => r.callCountMatched === false).length
     };
-    BremWeeklySettlement.saveWeeklySettlement(saveRecord);
+    const saved = BremWeeklySettlement.saveWeeklySettlement(saveRecord);
+    if (record.uploadLogId) {
+      BremStorage.settlementUploadLogs.update(record.uploadLogId, {
+        status: 'saved',
+        linkedRecordId: saved.id,
+        matchedCount: saveRecord.riders.length,
+        fileName: saveRecord.fileName || record.fileName || ''
+      });
+    } else {
+      BremStorage.settlementUploadLogs.add({
+        kind: 'weekly',
+        platform,
+        fileName: saveRecord.fileName || record.fileName || '',
+        period: saveRecord.startDate,
+        weekStart: weekStartKey(saveRecord.startDate),
+        region: saveRecord.region,
+        startDate: saveRecord.startDate,
+        endDate: saveRecord.endDate,
+        status: 'saved',
+        matchedCount: saveRecord.riders.length,
+        linkedRecordId: saved.id,
+        uploadedAt: saveRecord.uploadedAt
+      });
+    }
+    void BremStorage.flushStorage?.();
     state.previewByPlatform[platform] = null;
     $(`#weeklySettlementPreviewCard-${platform}`).hidden = true;
     renderSavedList(platform);
@@ -238,26 +333,48 @@ const BremWeeklySettlementAdmin = (function () {
     const rowsEl = $(`#weeklySettlementSavedRows-${platform}`);
     if (!rowsEl) return;
 
-    const list = BremWeeklySettlement.loadWeeklySettlements({ platform });
+    BremStorage.settlementUploadLogs.syncWeeklyFromSavedRecords();
+    const weekStart = ensureWeeklyLogWeek(platform);
+    updateWeeklyLogWeekRangeLabel(platform);
+
+    const list = BremStorage.settlementUploadLogs.getFiltered({
+      kind: 'weekly',
+      platform,
+      weekStart
+    });
+
     if (!list.length) {
-      rowsEl.innerHTML = '<tr><td colspan="7" class="empty">저장된 주간정산이 없습니다.</td></tr>';
+      rowsEl.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(weekStart)} 주에 업로드한 ${platformLabel(platform)} 주정산 기록이 없습니다.</td></tr>`;
       return;
     }
 
-    rowsEl.innerHTML = list.map(item => `
+    rowsEl.innerHTML = list.map(item => {
+      const periodLabel = item.startDate && item.endDate
+        ? `${escapeHtml(item.startDate)} ~ ${escapeHtml(item.endDate)}`
+        : '-';
+      const detailBtn = item.linkedRecordId
+        ? `<button type="button" class="small-btn" data-weekly-detail="${escapeHtml(item.linkedRecordId)}">상세</button>`
+        : '';
+      const settlementDeleteBtn = item.linkedRecordId
+        ? `<button type="button" class="small-btn danger-btn" data-weekly-delete="${escapeHtml(item.linkedRecordId)}">정산 삭제</button>`
+        : '';
+      return `
       <tr>
+        <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
-        <td>${escapeHtml(item.startDate)} ~ ${escapeHtml(item.endDate)}</td>
-        <td>${formatNumber(item.summary.matchedRiders)}명</td>
-        <td>${escapeHtml(item.matchedNamesLabel || '-')}</td>
+        <td>${periodLabel}</td>
         <td>${escapeHtml(item.fileName || '-')}</td>
-        <td>${escapeHtml(String(item.uploadedAt).slice(0, 10))}</td>
+        <td>${escapeHtml(uploadLogStatusLabel(item.status))}</td>
+        <td>${formatNumber(item.matchedCount)}명</td>
+        <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
         <td class="promotion-rule-actions">
-          <button type="button" class="small-btn" data-weekly-detail="${escapeHtml(item.id)}">상세</button>
-          <button type="button" class="small-btn danger-btn" data-weekly-delete="${escapeHtml(item.id)}">삭제</button>
+          ${detailBtn}
+          ${settlementDeleteBtn}
+          <button type="button" class="small-btn danger-btn" data-weekly-delete-log="${escapeHtml(item.id)}">기록 삭제</button>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function renderDetail(record) {
@@ -325,6 +442,12 @@ const BremWeeklySettlementAdmin = (function () {
     if (platform === 'coupang') {
       $('#weeklySettlementBaseDate-coupang')?.addEventListener('change', fillCoupangDatesFromBase);
     }
+    $(`#weeklySettlementLogWeek-${platform}`)?.addEventListener('change', event => {
+      const picked = weekStartKey(event.target.value || weekStartKey());
+      state.weeklyLogWeekByPlatform[platform] = picked;
+      event.target.value = picked;
+      renderSavedList(platform);
+    });
   }
 
   function bindEvents() {
@@ -344,12 +467,29 @@ const BremWeeklySettlementAdmin = (function () {
         if (!window.confirm('저장된 주간정산을 삭제할까요?')) return;
         const record = BremStorage.weeklySettlements.getById(deleteBtn.dataset.weeklyDelete);
         BremWeeklySettlement.deleteWeeklySettlement(deleteBtn.dataset.weeklyDelete);
+        BremStorage.settlementUploadLogs.removeByLinkedRecordId(deleteBtn.dataset.weeklyDelete);
+        void BremStorage.flushStorage?.();
         if (state.detailId === deleteBtn.dataset.weeklyDelete) hideDetail();
         if (record) renderSavedList(record.platform);
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
         showToast('주간정산이 삭제되었습니다.');
+        return;
+      }
+      const deleteLogBtn = event.target.closest('[data-weekly-delete-log]');
+      if (deleteLogBtn) {
+        const log = BremStorage.settlementUploadLogs.getById(deleteLogBtn.dataset.weeklyDeleteLog);
+        BremStorage.settlementUploadLogs.remove(deleteLogBtn.dataset.weeklyDeleteLog);
+        void BremStorage.flushStorage?.().then(() => {
+          renderSavedList(log?.platform || platformFromEvent(event));
+          showToast('업로드 기록이 삭제되었습니다.');
+        });
       }
     });
+  }
+
+  function platformFromEvent(event) {
+    const panel = event.target.closest('.admin-platform-panel[data-platform]');
+    return panel?.dataset?.platform || 'coupang';
   }
 
   function refresh() {

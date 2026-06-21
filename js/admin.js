@@ -18,6 +18,7 @@
     missionResultsSort: { key: 'rate', dir: 'desc' },
     eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
+    settlementLogWeekByPlatform: { coupang: null, baemin: null },
     unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
   };
 
@@ -2669,7 +2670,88 @@
 
   function getSettlementPeriodFilter(platform) {
     const value = $(`#settlementPeriod-${normalizePlatform(platform)}`)?.value?.trim() || '';
-    return value ? value.slice(0, 10) : '';
+    return value.slice(0, 10);
+  }
+
+  function ensureSettlementLogWeek(platform) {
+    const p = normalizePlatform(platform);
+    if (!state.settlementLogWeekByPlatform[p]) {
+      state.settlementLogWeekByPlatform[p] = weekStartKey();
+    }
+    const input = $(`#settlementLogWeek-${p}`);
+    if (input && !input.value) {
+      input.value = state.settlementLogWeekByPlatform[p];
+    }
+    return state.settlementLogWeekByPlatform[p];
+  }
+
+  function updateSettlementLogWeekRangeLabel(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = ensureSettlementLogWeek(p);
+    const label = $(`#settlementLogWeekRange-${p}`);
+    if (label) {
+      label.textContent = weekStart
+        ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
+        : '';
+    }
+  }
+
+  function settlementUploadLogStatusLabel(status) {
+    switch (String(status || '')) {
+      case 'applied':
+        return '반영완료';
+      case 'saved':
+        return '저장완료';
+      default:
+        return '업로드';
+    }
+  }
+
+  function recordDailySettlementUploadLog(platform, payload = {}) {
+    const p = normalizePlatform(platform);
+    const period = String(payload.period || '').slice(0, 10);
+    const weekStart = period ? weekStartKey(period) : weekStartKey();
+    return BremStorage.settlementUploadLogs.add({
+      kind: 'daily',
+      platform: p,
+      fileName: payload.fileName || '',
+      period,
+      weekStart,
+      status: payload.status || 'uploaded',
+      matchedCount: Number(payload.matchedCount || 0),
+      uploadedAt: payload.uploadedAt || new Date().toISOString(),
+      appliedAt: payload.appliedAt || ''
+    });
+  }
+
+  function renderSettlementUploadLogs(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = ensureSettlementLogWeek(p);
+    updateSettlementLogWeekRangeLabel(p);
+    const rowsEl = $(`#settlementUploadLogRows-${p}`);
+    if (!rowsEl) return;
+
+    const rows = BremStorage.settlementUploadLogs.getFiltered({
+      kind: 'daily',
+      platform: p,
+      weekStart
+    });
+
+    const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 ${platformLabel(p)} 일정산 기록이 없습니다.`;
+
+    rowsEl.innerHTML = rows.map(item => `
+      <tr>
+        <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
+        <td>${formatDate(item.period)}</td>
+        <td>${escapeHtml(item.fileName || '-')}</td>
+        <td>${escapeHtml(settlementUploadLogStatusLabel(item.status))}</td>
+        <td>${Number(item.matchedCount || 0).toLocaleString('ko-KR')}명</td>
+        <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
+        <td>
+          <button type="button" class="small-btn danger-btn" data-delete-settlement-upload-log="${escapeHtml(item.id)}">기록 삭제</button>
+        </td>
+      </tr>
+    `).join('') || `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
   }
 
   function matchesSettlementPeriod(record, periodKey) {
@@ -2827,6 +2909,7 @@
 
       renderSettlementPreview(p);
       renderSettlementUnmatched(p);
+      renderSettlementUploadLogs(p);
     });
   }
 
@@ -3025,6 +3108,15 @@
         unmatched: result.unmatched
       };
 
+      const uploadLog = recordDailySettlementUploadLog(p, {
+        fileName: file.name,
+        period,
+        status: 'uploaded',
+        matchedCount: result.matched.length
+      });
+      state.settlementPreviewByPlatform[p].uploadLogId = uploadLog.id;
+      void BremStorage.flushStorage?.();
+
       if (result.unmatched.length) {
         saveSettlementUnmatched({
           period,
@@ -3074,6 +3166,23 @@
         settlementAmount: settlementAmountValue(record)
       }))
     });
+
+    if (preview.uploadLogId) {
+      BremStorage.settlementUploadLogs.update(preview.uploadLogId, {
+        status: 'applied',
+        appliedAt: new Date().toISOString(),
+        matchedCount: preview.matched.length,
+        fileName: preview.sourceFileName || ''
+      });
+    } else {
+      recordDailySettlementUploadLog(p, {
+        fileName: preview.sourceFileName || '',
+        period: preview.period,
+        status: 'applied',
+        matchedCount: preview.matched.length,
+        appliedAt: new Date().toISOString()
+      });
+    }
 
     if (preview.unmatched.length) {
       saveSettlementUnmatched({
@@ -3668,6 +3777,12 @@
       $(`#settlementPeriod-${p}`)?.addEventListener('change', () => {
         handleSettlementPeriodChange(p);
       });
+      $(`#settlementLogWeek-${p}`)?.addEventListener('change', event => {
+        const picked = weekStartKey(event.target.value || weekStartKey());
+        state.settlementLogWeekByPlatform[p] = picked;
+        event.target.value = picked;
+        renderSettlementUploadLogs(p);
+      });
       $(`#settlementFile-${p}`)?.addEventListener('change', event => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -3983,6 +4098,20 @@
           console.error('[BREM] settlement delete failed:', error);
           showToast(error.message || '삭제 저장에 실패했습니다.');
           renderAll();
+        });
+        return;
+      }
+
+      const settlementUploadLogButton = event.target.closest('[data-delete-settlement-upload-log]');
+      if (settlementUploadLogButton) {
+        BremStorage.settlementUploadLogs.remove(settlementUploadLogButton.dataset.deleteSettlementUploadLog);
+        void BremStorage.flushStorage?.().then(() => {
+          showToast('업로드 기록이 삭제되었습니다.');
+          renderSettlements();
+        }).catch(error => {
+          console.error('[BREM] settlement upload log delete failed:', error);
+          showToast(error.message || '기록 삭제 저장에 실패했습니다.');
+          renderSettlements();
         });
         return;
       }

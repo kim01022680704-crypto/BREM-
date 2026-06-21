@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260622j">
+  <link rel="stylesheet" href="css/admin.css?v=20260624a">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -1669,6 +1669,36 @@
           <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
         </article>
 
+        <article class="card settlement-upload-log-card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>쿠팡 일정산 업로드 기록</h2>
+              <p class="form-help">수요일 기준 적용주별로 업로드한 정산표 파일명을 기록합니다.</p>
+            </div>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="settlementLogWeek-coupang" class="admin-period-input">
+            </label>
+          </div>
+          <p class="settlement-week-range-label" id="settlementLogWeekRange-coupang"></p>
+          <div class="table-wrap">
+            <table class="settlement-upload-log-table">
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>정산일</th>
+                  <th>파일명</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementUploadLogRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
         <article class="card settlement-preview-card" id="settlementPreviewCard-coupang" hidden>
           <div class="card-header">
             <h2>쿠팡 일정산서 미리보기</h2>
@@ -1788,6 +1818,36 @@
           </form>
           <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · K열 등장 횟수 = 콜수, AH열 합계 = 배달수행금액 · L열은 참고용</p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-baemin" hidden></p>
+        </article>
+
+        <article class="card settlement-upload-log-card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 일정산 업로드 기록</h2>
+              <p class="form-help">수요일 기준 적용주별로 업로드한 정산표 파일명을 기록합니다.</p>
+            </div>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="settlementLogWeek-baemin" class="admin-period-input">
+            </label>
+          </div>
+          <p class="settlement-week-range-label" id="settlementLogWeekRange-baemin"></p>
+          <div class="table-wrap">
+            <table class="settlement-upload-log-table">
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>정산일</th>
+                  <th>파일명</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="settlementUploadLogRows-baemin"></tbody>
+            </table>
+          </div>
         </article>
 
         <article class="card settlement-preview-card" id="settlementPreviewCard-baemin" hidden>
@@ -1986,17 +2046,28 @@
         </article>
 
         <article class="card">
-          <div class="card-header"><h2>저장된 쿠팡 정산 인수</h2></div>
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>쿠팡 주정산 업로드 기록</h2>
+              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서 파일명입니다.</p>
+            </div>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="weeklySettlementLogWeek-coupang" class="admin-period-input">
+            </label>
+          </div>
+          <p class="settlement-week-range-label" id="weeklySettlementLogWeekRange-coupang"></p>
           <div class="table-wrap">
             <table class="weekly-settlement-saved-table">
               <thead>
                 <tr>
+                  <th>적용주</th>
                   <th>지역</th>
                   <th>정산기간</th>
-                  <th>인수</th>
-                  <th>매칭 기사</th>
                   <th>파일명</th>
-                  <th>저장일</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
                   <th>관리</th>
                 </tr>
               </thead>
@@ -2091,17 +2162,28 @@
         </article>
 
         <article class="card">
-          <div class="card-header"><h2>저장된 배민 정산 인수</h2></div>
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 주정산 업로드 기록</h2>
+              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서 파일명입니다.</p>
+            </div>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="weeklySettlementLogWeek-baemin" class="admin-period-input">
+            </label>
+          </div>
+          <p class="settlement-week-range-label" id="weeklySettlementLogWeekRange-baemin"></p>
           <div class="table-wrap">
             <table class="weekly-settlement-saved-table">
               <thead>
                 <tr>
+                  <th>적용주</th>
                   <th>지역</th>
                   <th>정산기간</th>
-                  <th>인수</th>
-                  <th>매칭 기사</th>
                   <th>파일명</th>
-                  <th>저장일</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
                   <th>관리</th>
                 </tr>
               </thead>
@@ -2877,7 +2959,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622b"></script>
-  <script src="js/storage.js?v=20260623d"></script>
+  <script src="js/storage.js?v=20260624a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2890,7 +2972,7 @@
   <script src="js/promotion-engine.js"></script>
   <script src="js/promotion-admin.js"></script>
   <script src="js/weekly-settlement.js"></script>
-  <script src="js/weekly-settlement-admin.js"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260624a"></script>
   <script src="js/baemin-delivery-fee.js"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
   <script src="js/promotion-apply.js"></script>
@@ -2901,6 +2983,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622j"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260623c"></script>
+  <script src="js/admin.js?v=20260624a"></script>
 </body>
 </html>
