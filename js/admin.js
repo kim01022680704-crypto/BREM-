@@ -1821,10 +1821,34 @@
     return `<tr><td colspan="${colspan}" class="empty">${text}</td></tr>`;
   }
 
+  function driverEligibleForPlatform(driver, platform) {
+    const p = normalizePlatform(platform);
+    if (p === 'baemin') {
+      return Boolean(driver?.platformBaemin) || Boolean(String(driver?.baeminId || '').trim());
+    }
+    if (driver?.platformCoupang === false) return false;
+    return Boolean(String(driver?.name || '').trim()) && Boolean(normalizePhoneSearch(driver?.phone));
+  }
+
+  function getSelectPlatform(select) {
+    if (!select?.id) return null;
+    const match = select.id.match(/-(coupang|baemin)$/i);
+    return match ? normalizePlatform(match[1]) : null;
+  }
+
+  function driversForSelect(select) {
+    const platform = getSelectPlatform(select);
+    let list = filteredDrivers();
+    if (platform) {
+      list = list.filter(driver => driverEligibleForPlatform(driver, platform));
+    }
+    return list;
+  }
+
   function fillDriverSelect(select) {
     if (!select) return;
     const current = select.value;
-    const list = filteredDrivers();
+    const list = driversForSelect(select);
     select.innerHTML = '<option value="">기사 선택</option>' + list
       .map(driver => `<option value="${driver.id}">${escapeHtml(driver.name)} · ${escapeHtml(driver.phone)}</option>`)
       .join('');
