@@ -40,6 +40,22 @@
   let renderedIsMobile = null;
   let listLoadPromise = null;
   let lastSupabaseTotal = 0;
+  const listSort = { key: 'name', dir: 'asc' };
+  const driverListSortSchema = {
+    name: driver => driver.name,
+    phone: driver => driver.phone,
+    baeminId: driver => driver.baeminId,
+    coupangId: driver => makeDriverLoginId(driver),
+    platform: driver => `${driver.platformCoupang !== false ? 1 : 0}${driver.platformBaemin ? 1 : 0}`,
+    event: driver => driver.longEventItem || '',
+    joinDate: { get: driver => driver.joinDate, type: 'date' },
+    status: driver => driver.status,
+    memo: driver => driver.memo
+  };
+
+  function getSortedDrivers(list) {
+    return window.BremTableSort?.sortItems(list, listSort, driverListSortSchema) || list;
+  }
 
   function buildDriverSearchText(driver) {
     const phone = String(driver.phone || '').replace(/[^0-9]/g, '');
@@ -189,7 +205,7 @@
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList?.classList.remove('is-loading');
 
-      const allDrivers = BremStorage.drivers.getAll();
+      const allDrivers = getSortedDrivers(BremStorage.drivers.getAll());
 
       const allIds = new Set(allDrivers.map(driver => driver.id));
       selectedIds.forEach(id => {
@@ -662,6 +678,13 @@
   }
 
   function init() {
+    const driverTable = tableBody.closest('[data-sort-table="driver-list"]');
+    window.BremTableSort?.bind(driverTable, listSort, () => {
+      renderedSnapshot = '';
+      render();
+    });
+    window.BremTableSort?.markScope(driverTable, listSort);
+
     searchInput.addEventListener('input', handleSearchInput);
     statusFilter.addEventListener('change', handleStatusFilterChange);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });

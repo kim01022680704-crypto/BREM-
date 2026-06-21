@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex,nofollow">
   <title>BREM 기사 목록</title>
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=20260621h">
+  <link rel="stylesheet" href="css/style.css?v=20260622a">
   <link rel="stylesheet" href="css/data-loading.css">
 </head>
 <body class="drivers-page">
@@ -94,7 +94,7 @@
 
         <div class="driver-list-scroll" id="driverListScroll">
           <div class="table-wrap list-table-scroll">
-            <table class="driver-table driver-table--compact">
+            <table class="driver-table driver-table--compact" data-sort-table="driver-list">
               <thead>
                 <tr>
                   <th class="col-select">
@@ -103,15 +103,15 @@
                       <input type="checkbox" id="selectAllDrivers" aria-label="현재 목록 전체 선택">
                     </label>
                   </th>
-                  <th class="col-name">이름</th>
-                  <th class="col-phone">연락처</th>
-                  <th class="col-baemin">배민 ID</th>
-                  <th class="col-coupang">쿠팡 ID</th>
-                  <th class="col-platform">플랫폼</th>
-                  <th class="col-event">이벤트</th>
-                  <th class="col-date">가입일</th>
-                  <th class="col-status">상태</th>
-                  <th class="col-memo">메모</th>
+                  <th class="col-name"><button type="button" class="th-sort-btn" data-sort-key="name" aria-sort="ascending"><span class="th-sort-label">이름</span><span class="th-sort-indicator">↑</span></button></th>
+                  <th class="col-phone"><button type="button" class="th-sort-btn" data-sort-key="phone"><span class="th-sort-label">연락처</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-baemin"><button type="button" class="th-sort-btn" data-sort-key="baeminId"><span class="th-sort-label">배민 ID</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-coupang"><button type="button" class="th-sort-btn" data-sort-key="coupangId"><span class="th-sort-label">쿠팡 ID</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-platform"><button type="button" class="th-sort-btn" data-sort-key="platform"><span class="th-sort-label">플랫폼</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-event"><button type="button" class="th-sort-btn" data-sort-key="event"><span class="th-sort-label">이벤트</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-date"><button type="button" class="th-sort-btn" data-sort-key="joinDate"><span class="th-sort-label">가입일</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-status"><button type="button" class="th-sort-btn" data-sort-key="status"><span class="th-sort-label">상태</span><span class="th-sort-indicator">↕</span></button></th>
+                  <th class="col-memo"><button type="button" class="th-sort-btn" data-sort-key="memo"><span class="th-sort-label">메모</span><span class="th-sort-indicator">↕</span></button></th>
                   <th class="col-privacy">민감</th>
                   <th class="col-actions">관리</th>
                 </tr>
@@ -150,10 +150,11 @@
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260620r"></script>
   <script src="js/driver-utils.js"></script>
+  <script src="js/table-sort.js"></script>
   <script src="js/storage.js?v=20260621u"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/driver-program-access.js?v=20260620c"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/driver-list.js?v=20260621u"></script>
+  <script src="js/driver-list.js?v=20260622a"></script>
 </body>
 </html>

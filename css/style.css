@@ -1352,6 +1352,35 @@ textarea:focus,
   font-weight: 800;
 }
 
+.th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th-sort-btn:hover,
+.th-sort-btn.is-sort-active {
+  color: var(--accent, #2563eb);
+}
+
+.th-sort-indicator {
+  font-size: 0.72rem;
+  opacity: 0.72;
+  line-height: 1;
+}
+
+.th-sort-btn.is-sort-active .th-sort-indicator {
+  opacity: 1;
+}
+
 .driver-table td {
   font-size: 0.9rem;
 }

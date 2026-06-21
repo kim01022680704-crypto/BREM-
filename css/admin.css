@@ -2611,6 +2611,62 @@ textarea {
   box-shadow: 0 1px 0 var(--line);
 }
 
+.dashboard-table .th-sort-btn,
+.mission-results-table .th-sort-btn,
+.event-settings-sort-header .th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dashboard-table .th-sort-btn:hover,
+.dashboard-table .th-sort-btn.is-sort-active,
+.mission-results-table .th-sort-btn:hover,
+.mission-results-table .th-sort-btn.is-sort-active,
+.event-settings-sort-header .th-sort-btn:hover,
+.event-settings-sort-header .th-sort-btn.is-sort-active {
+  color: var(--gold, #d4af37);
+}
+
+.th-sort-indicator {
+  font-size: 0.72rem;
+  opacity: 0.72;
+  line-height: 1;
+}
+
+.th-sort-btn.is-sort-active .th-sort-indicator {
+  opacity: 1;
+}
+
+.event-settings-sort-header {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(140px, 1fr) minmax(110px, 0.75fr) minmax(150px, 0.85fr);
+  gap: 12px;
+  align-items: center;
+  padding: 0 0 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card, #111);
+}
+
+.event-settings-sort-header .th-sort-btn {
+  justify-content: flex-start;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
 .dashboard-scroll-note {
   margin: 8px 0 0;
   color: var(--muted);

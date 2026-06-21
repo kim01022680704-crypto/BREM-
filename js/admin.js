@@ -10,6 +10,9 @@
     rejectionWeekByPlatform: { coupang: null, baemin: null },
     driverSearchQuery: '',
     eventSettingsSearchQuery: '',
+    dashboardSort: { key: 'totalWeekCalls', dir: 'desc' },
+    missionResultsSort: { key: 'rate', dir: 'desc' },
+    eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
   };
@@ -41,6 +44,58 @@
   };
 
   const PLATFORMS = BremPlatforms.all().map(item => item.id);
+  const Sort = window.BremTableSort;
+
+  const dashboardSortSchema = {
+    name: entry => entry.driver.name,
+    phone: entry => entry.driver.phone,
+    platform: entry => `${entry.driver.platformCoupang !== false ? 1 : 0}${entry.driver.platformBaemin ? 1 : 0}`,
+    coupangWeekCalls: { get: entry => entry.coupangWeekCalls, type: 'number' },
+    baeminWeekCalls: { get: entry => entry.baeminWeekCalls, type: 'number' },
+    totalWeekCalls: { get: entry => entry.totalWeekCalls, type: 'number' },
+    monthlyCallCount: { get: entry => entry.monthlyCallCount, type: 'number' },
+    eventRate: { get: entry => eventDriverStats(entry.driver).rate, type: 'number' }
+  };
+
+  const missionResultsSortSchema = {
+    name: entry => entry.driver.name,
+    phone: entry => entry.driver.phone,
+    item: entry => entry.stats.item?.name || '',
+    platform: entry => longEventPlatformLabel(entry.stats.platform),
+    startDate: { get: entry => entry.stats.startDate, type: 'date' },
+    total: { get: entry => entry.stats.total, type: 'number' },
+    target: { get: entry => entry.stats.target, type: 'number' },
+    rate: { get: entry => entry.stats.rate, type: 'number' },
+    status: {
+      get: entry => ({ achieved: 0, 'in-progress': 1, 'no-start': 2, unset: 3 }[entry.stats.status] ?? 9),
+      type: 'number'
+    }
+  };
+
+  const eventSettingsSortSchema = {
+    name: driver => driver.name,
+    item: driver => (eventItemFor(driver)?.name || driver.longEventItem || ''),
+    platform: driver => BremStorage.events.getDriverEventPlatform(driver),
+    startDate: { get: driver => driver.longEventStartDate || '', type: 'date' }
+  };
+
+  function initTableSorting() {
+    if (!Sort) return;
+
+    Sort.bind(document.querySelector('[data-sort-table="dashboard"]'), state.dashboardSort, () => {
+      renderDashboard();
+    });
+    Sort.bind(document.querySelector('[data-sort-table="mission-results"]'), state.missionResultsSort, () => {
+      renderMissionResults();
+    });
+    Sort.bind(document.querySelector('[data-sort-table="event-settings"]'), state.eventSettingsSort, () => {
+      renderMissions();
+    });
+
+    Sort.markScope(document.querySelector('[data-sort-table="dashboard"]'), state.dashboardSort);
+    Sort.markScope(document.querySelector('[data-sort-table="mission-results"]'), state.missionResultsSort);
+    Sort.markScope(document.querySelector('[data-sort-table="event-settings"]'), state.eventSettingsSort);
+  }
 
   function platformLabel(platform) {
     return BremPlatforms.label(platform);
@@ -1297,15 +1352,15 @@
       ? '검색 결과에 해당하는 기사가 없습니다.'
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
 
-    $('#missionResultRows').innerHTML = missionResultsDrivers()
-      .map(driver => ({ driver, stats: eventDriverStats(driver) }))
-      .sort((a, b) => {
-        const order = { achieved: 0, 'in-progress': 1, 'no-start': 2, unset: 3 };
-        const diff = order[a.stats.status] - order[b.stats.status];
-        if (diff !== 0) return diff;
-        return b.stats.rate - a.stats.rate;
-      })
-      .map(({ driver, stats }) => `
+    const missionResultEntries = Sort
+      ? Sort.sortItems(
+        missionResultsDrivers().map(driver => ({ driver, stats: eventDriverStats(driver) })),
+        state.missionResultsSort,
+        missionResultsSortSchema
+      )
+      : missionResultsDrivers().map(driver => ({ driver, stats: eventDriverStats(driver) }));
+
+    $('#missionResultRows').innerHTML = missionResultEntries.map(({ driver, stats }) => `
         <tr>
           <td>${escapeHtml(driver.name)}</td>
           <td>${escapeHtml(driver.phone)}</td>
@@ -1318,6 +1373,7 @@
           <td>${missionStatusBadge(stats.status)}</td>
         </tr>
       `).join('') || emptyRow(9, emptyMessage);
+    Sort?.markScope(document.querySelector('[data-sort-table="mission-results"]'), state.missionResultsSort);
   }
 
   function money(value) {
@@ -1726,14 +1782,11 @@
       return { driver, coupangWeekCalls, baeminWeekCalls, totalWeekCalls, monthlyCallCount };
     });
 
-    driverStats.sort((a, b) => {
-      if (b.totalWeekCalls !== a.totalWeekCalls) return b.totalWeekCalls - a.totalWeekCalls;
-      if (b.baeminWeekCalls !== a.baeminWeekCalls) return b.baeminWeekCalls - a.baeminWeekCalls;
-      if (b.coupangWeekCalls !== a.coupangWeekCalls) return b.coupangWeekCalls - a.coupangWeekCalls;
-      return a.driver.name.localeCompare(b.driver.name, 'ko');
-    });
+    const sortedDriverStats = Sort
+      ? Sort.sortItems(driverStats, state.dashboardSort, dashboardSortSchema)
+      : driverStats;
 
-    const rows = driverStats.map(({ driver, coupangWeekCalls, baeminWeekCalls, totalWeekCalls, monthlyCallCount }) => `
+    const rows = sortedDriverStats.map(({ driver, coupangWeekCalls, baeminWeekCalls, totalWeekCalls, monthlyCallCount }) => `
         <tr>
           <td>${escapeHtml(driver.name)}</td>
           <td>${escapeHtml(driver.phone)}</td>
@@ -1781,6 +1834,7 @@
       }
     }
     $('#dashboardNotices').innerHTML = renderNoticeItems(notices().slice(0, 4), false);
+    Sort?.markScope(document.querySelector('[data-sort-table="dashboard"]'), state.dashboardSort);
     window.BremPerf?.timeEnd?.('admin.renderDashboard');
   }
 
@@ -2055,7 +2109,22 @@
       </div>
     `).join('') || '<div class="empty">등록된 장기근속이벤트 아이템이 없습니다.</div>';
 
-    $('#eventSettings').innerHTML = allDrivers.length ? allDrivers.map(driver => `
+    const sortedDrivers = Sort
+      ? Sort.sortItems(allDrivers, state.eventSettingsSort, eventSettingsSortSchema)
+      : allDrivers;
+
+    const sortHeader = Sort ? `
+      <div class="event-settings-sort-header">
+        ${Sort.header('기사', 'name', state.eventSettingsSort)}
+        ${Sort.header('이벤트 아이템', 'item', state.eventSettingsSort)}
+        ${Sort.header('집계 플랫폼', 'platform', state.eventSettingsSort)}
+        ${Sort.header('시작일', 'startDate', state.eventSettingsSort)}
+      </div>
+    ` : '';
+
+    $('#eventSettings').innerHTML = allDrivers.length ? [
+      sortHeader,
+      ...sortedDrivers.map(driver => `
       <div class="event-driver-row" data-driver-id="${escapeHtml(driver.id)}">
         <strong>${escapeHtml(driver.name)} · ${escapeHtml(driver.phone)}</strong>
         <label>
@@ -2078,9 +2147,11 @@
           <input type="hidden" data-event-start="${driver.id}" value="${driver.longEventStartDate || ''}">
         </label>
       </div>
-    `).join('') : `<div class="empty event-settings-empty">${emptyMessage}</div>`;
+    `)
+    ].join('') : `<div class="empty event-settings-empty">${emptyMessage}</div>`;
 
     applyEventSettingsFilter();
+    Sort?.markScope(document.querySelector('[data-sort-table="event-settings"]'), state.eventSettingsSort);
   }
 
   function renderNoticeItems(items, withActions) {
@@ -2705,6 +2776,7 @@
     setupTargetMonthPicker();
     setupAdminWeekPicker();
     setupCallDatePicker();
+    initTableSorting();
 
     document.addEventListener('brem-admin-toast', event => {
       showToast(event.detail?.message || '');
