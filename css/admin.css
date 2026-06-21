@@ -2516,6 +2516,19 @@ textarea {
   background: #fffbeb;
 }
 
+.call-input-notice {
+  margin-top: 0;
+  color: #334155;
+}
+
+.call-edit-log-row td {
+  font-size: 0.84rem;
+}
+
+.call-filter-month {
+  min-width: 10rem;
+}
+
 .badge {
   display: inline-flex;
   min-width: 54px;

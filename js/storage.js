@@ -24,6 +24,7 @@ const BremStorage = (function () {
     settlements: 'brem_admin_settlements',
     settlementUnmatched: 'brem_admin_settlement_unmatched',
     settlementUploadLogs: 'brem_admin_settlement_upload_logs',
+    callEditLogs: 'brem_admin_call_edit_logs',
     promotionRules: 'brem_admin_promotion_rules',
     promotionSettings: 'brem_admin_promotion_settings',
     promotionSelectorOptions: 'brem_admin_promotion_selector_options',
@@ -1033,7 +1034,7 @@ const BremStorage = (function () {
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers],
-    calls: [KEYS.drivers],
+    calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],
     targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers],
@@ -3624,13 +3625,41 @@ const BremStorage = (function () {
       return list;
     },
 
-    upsertDaily({ driverId, date, count, platform = DEFAULT_PLATFORM }) {
+    upsertDaily({ driverId, date, count, platform = DEFAULT_PLATFORM, logEdit = true }) {
       const p = normalizePlatform(platform);
       const callDate = String(date).slice(0, 10);
+      const nextCount = Number(count);
+      const recordId = `${driverId}-${callDate}-${p}`;
+      const existing = calls.getAll().find(call => call.id === recordId);
+
+      if (logEdit) {
+        if (existing && Number(existing.count) !== nextCount) {
+          callEditLogs.append({
+            callId: recordId,
+            driverId,
+            date: callDate,
+            platform: p,
+            action: 'update',
+            previousCount: Number(existing.count) || 0,
+            nextCount
+          });
+        } else if (!existing) {
+          callEditLogs.append({
+            callId: recordId,
+            driverId,
+            date: callDate,
+            platform: p,
+            action: 'create',
+            previousCount: null,
+            nextCount
+          });
+        }
+      }
+
       return calls.upsertBatchDaily({
         date: callDate,
         platform: p,
-        records: [{ driverId, count: Number(count) }]
+        records: [{ driverId, count: nextCount }]
       });
     },
 
@@ -3662,8 +3691,7 @@ const BremStorage = (function () {
         });
       });
 
-      storageAdapter.write(KEYS.calls, list);
-      return list;
+      return storageAdapter.write(KEYS.calls, list);
     },
 
     sumForDriverSince(driverId, startDate, platform) {
@@ -3678,8 +3706,42 @@ const BremStorage = (function () {
         .reduce((sum, call) => sum + Number(call.count || 0), 0);
     },
 
+    async removeByIdAsync(id) {
+      const targetId = String(id || '').trim();
+      if (!targetId) return calls.getAll();
+      if (!calls.getAll().some(call => call.id === targetId)) return calls.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminCallsByIds) {
+        await activeStorageAdapter.deleteAdminCallsByIds([targetId]);
+      } else {
+        const list = calls.getAll().filter(call => call.id !== targetId);
+        storageAdapter.write(KEYS.calls, list);
+        await storageAdapter.flush?.();
+      }
+
+      window.BremDataCache?.invalidate?.(KEYS.calls);
+      return calls.getAll();
+    },
+
     removeById(id) {
-      storageAdapter.write(KEYS.calls, calls.getAll().filter(call => call.id !== id));
+      void calls.removeByIdAsync(id);
+      return calls.getAll().filter(call => call.id !== id);
+    },
+
+    async removeByIdsAsync(ids = []) {
+      const idSet = new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean));
+      if (!idSet.size) return calls.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminCallsByIds) {
+        await activeStorageAdapter.deleteAdminCallsByIds([...idSet]);
+      } else {
+        const list = calls.getAll().filter(call => !idSet.has(call.id));
+        storageAdapter.write(KEYS.calls, list);
+        await storageAdapter.flush?.();
+      }
+
+      window.BremDataCache?.invalidate?.(KEYS.calls);
+      return calls.getAll();
     },
 
     removeByPeriod(period, platform = DEFAULT_PLATFORM) {
@@ -3692,6 +3754,52 @@ const BremStorage = (function () {
       });
       storageAdapter.write(KEYS.calls, list, list.length ? {} : { allowEmpty: true });
       return list;
+    }
+  };
+
+  function normalizeCallEditLog(entry) {
+    const platform = normalizePlatform(entry.platform);
+    const date = String(entry.date || '').slice(0, 10);
+    const driverId = String(entry.driverId || '');
+    return {
+      id: entry.id || createId(),
+      callId: String(entry.callId || `${driverId}-${date}-${platform}`),
+      driverId,
+      date,
+      platform,
+      action: entry.action === 'create' ? 'create' : 'update',
+      previousCount: entry.previousCount == null ? null : Number(entry.previousCount),
+      nextCount: Number(entry.nextCount ?? 0),
+      editedAt: entry.editedAt || new Date().toISOString(),
+      editedBy: String(entry.editedBy || '').trim()
+    };
+  }
+
+  const callEditLogs = {
+    getAll() {
+      const list = storageAdapter.read(KEYS.callEditLogs, []);
+      return (Array.isArray(list) ? list : []).map(normalizeCallEditLog);
+    },
+
+    append(entry) {
+      const next = normalizeCallEditLog({
+        ...entry,
+        editedBy: entry.editedBy || activeSupabaseProfile?.name || activeSupabaseProfile?.login_id || 'admin',
+        editedAt: new Date().toISOString()
+      });
+      const list = [next, ...callEditLogs.getAll()];
+      storageAdapter.write(KEYS.callEditLogs, list);
+      return next;
+    },
+
+    getForPlatformMonth(platform, monthKey) {
+      const p = normalizePlatform(platform);
+      const month = String(monthKey || '').slice(0, 7);
+      return callEditLogs.getAll().filter(entry => {
+        if (normalizePlatform(entry.platform) !== p) return false;
+        if (month && String(entry.date).slice(0, 7) !== month) return false;
+        return true;
+      });
     }
   };
 
@@ -7889,6 +7997,7 @@ const BremStorage = (function () {
     migrateLocalStorageToSupabase,
     drivers,
     calls,
+    callEditLogs,
     rejections,
     targets,
     weeklyTargets,

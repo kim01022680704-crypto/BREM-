@@ -838,10 +838,7 @@
 
   function callRecordsSearch(platform) {
     const p = normalizePlatform(platform);
-    if (p === 'coupang') {
-      return String(state.callRecordsSearchByPlatform.coupang || '').trim();
-    }
-    return state.driverSearchQuery.trim();
+    return String(state.callRecordsSearchByPlatform[p] || '').trim();
   }
 
   function driverMatchesCallRecordsSearch(driverId, platform) {
@@ -1270,12 +1267,38 @@
     PLATFORMS.forEach(platform => {
       const date = today();
       const callDate = $(`#callDate-${platform}`);
-      const filterDate = $(`#callFilterDate-${platform}`);
+      const filterMonth = $(`#callFilterMonth-${platform}`);
       if (callDate) callDate.value = date;
-      if (filterDate) filterDate.value = date;
+      if (filterMonth) filterMonth.value = currentMonth();
       refreshCallDateLabel(`callDate-${platform}`);
-      refreshCallDateLabel(`callFilterDate-${platform}`);
     });
+  }
+
+  function formatCallMonthLabel(monthKey) {
+    const value = String(monthKey || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(value)) return '월 선택';
+    const [year, month] = value.split('-');
+    return `${year}년 ${Number(month)}월`;
+  }
+
+  function formatCallEditChange(entry) {
+    if (entry.action === 'create') {
+      return `신규 ${number(entry.nextCount)}콜`;
+    }
+    return `${number(entry.previousCount)} → ${number(entry.nextCount)}콜`;
+  }
+
+  function callEditLogsForPlatform(platform) {
+    const month = callFilterMonth(platform);
+    let list = BremStorage.callEditLogs?.getForPlatformMonth?.(platform, month) || [];
+    const query = callRecordsSearch(platform);
+    if (query) {
+      list = list.filter(entry => {
+        const driver = drivers().find(item => item.id === entry.driverId);
+        return driver ? matchesDriverSearch(driver, query) : false;
+      });
+    }
+    return list;
   }
 
   function setupCallDatePicker() {
@@ -1300,10 +1323,7 @@
             refreshCallDateLabel(targetId);
           },
           onSelect() {
-            if (targetId.startsWith('callFilterDate-')) {
-              selectedCallIds.clear();
-              renderCalls();
-            }
+            /* call input date only */
           }
         };
       }
@@ -2206,17 +2226,17 @@
     window.BremPerf?.timeEnd?.('admin.renderDashboard');
   }
 
-  function callFilterDate(platform) {
-    return $(`#callFilterDate-${platform}`)?.value || today();
+  function callFilterMonth(platform) {
+    return $(`#callFilterMonth-${platform}`)?.value || currentMonth();
   }
 
   function platformCalls(platform) {
-    const filterDate = callFilterDate(platform);
+    const month = callFilterMonth(platform);
     return calls()
       .filter(call => normalizePlatform(call.platform) === platform
-        && call.date === filterDate
+        && String(call.date).slice(0, 7) === month
         && driverMatchesCallRecordsSearch(call.driverId, platform))
-      .sort((a, b) => driverName(a.driverId).localeCompare(driverName(b.driverId), 'ko'));
+      .sort((a, b) => b.date.localeCompare(a.date) || driverName(a.driverId).localeCompare(driverName(b.driverId), 'ko'));
   }
 
   function pruneSelectedCallIds() {
@@ -2253,30 +2273,73 @@
     }
     if (!window.confirm(`선택한 ${ids.length}건을 삭제하시겠습니까?`)) return;
 
-    ids.forEach(id => {
-      BremStorage.calls.removeById(id);
-      selectedCallIds.delete(id);
+    void (async () => {
+      try {
+        await BremStorage.ensureSectionLoaded('calls');
+        await BremStorage.calls.removeByIdsAsync(ids);
+        ids.forEach(id => selectedCallIds.delete(id));
+        showToast(`${ids.length}건 삭제되었습니다.`);
+        renderAll();
+      } catch (error) {
+        console.error('[BREM] call bulk delete failed:', error);
+        showToast(error.message || '콜수 삭제 저장에 실패했습니다.');
+        renderAll();
+      }
+    })();
+  }
+
+  function renderCallEditLogs() {
+    PLATFORMS.forEach(platform => {
+      const month = callFilterMonth(platform);
+      const monthLabel = formatCallMonthLabel(month);
+      const rowsEl = $(`#callEditLogRows-${platform}`);
+      const summaryEl = $(`#callEditLogSummary-${platform}`);
+      if (!rowsEl) return;
+
+      const logs = callEditLogsForPlatform(platform);
+      const displayLogs = logs.slice(0, CALL_RECORDS_VISIBLE_LIMIT);
+      const hiddenCount = Math.max(0, logs.length - displayLogs.length);
+      const emptyMessage = callRecordsSearch(platform)
+        ? '검색 결과에 해당하는 수정 기록이 없습니다.'
+        : `${monthLabel} 수정 기록이 없습니다.`;
+
+      rowsEl.innerHTML = displayLogs.map(entry => `
+        <tr class="call-edit-log-row">
+          <td>${escapeHtml(formatDateTime(entry.editedAt))}</td>
+          <td>${formatDate(entry.date)}</td>
+          <td>${escapeHtml(driverName(entry.driverId))}</td>
+          <td>${escapeHtml(formatCallEditChange(entry))}</td>
+          <td>${escapeHtml(entry.editedBy || '-')}</td>
+        </tr>
+      `).join('') || emptyRow(5, emptyMessage);
+
+      if (summaryEl) {
+        if (!logs.length) {
+          summaryEl.textContent = '';
+        } else {
+          summaryEl.textContent = hiddenCount > 0
+            ? `${monthLabel} · 총 ${number(logs.length)}건 · 표시 ${number(displayLogs.length)}건 (스크롤)`
+            : `${monthLabel} · 총 ${number(logs.length)}건`;
+        }
+      }
     });
-    showToast(`${ids.length}건 삭제되었습니다.`);
-    renderAll();
   }
 
   function renderCalls() {
     pruneSelectedCallIds();
     PLATFORMS.forEach(platform => {
-      const filterDate = callFilterDate(platform);
+      const month = callFilterMonth(platform);
       const p = normalizePlatform(platform);
-      const emptyMessage = state.driverSearchQuery.trim() && p !== 'coupang'
+      const monthLabel = formatCallMonthLabel(month);
+      const emptyMessage = callRecordsSearch(p)
         ? '검색 결과에 해당하는 콜수 기록이 없습니다.'
-        : callRecordsSearch(p)
-          ? '검색 결과에 해당하는 콜수 기록이 없습니다.'
-          : `${formatDate(filterDate)} ${platformLabel(platform)} 콜수 기록이 없습니다.`;
+        : `${monthLabel} ${platformLabel(platform)} 콜수 기록이 없습니다.`;
       const rowsEl = $(`#callRows-${platform}`);
       const summaryEl = $(`#callRowsSummary-${platform}`);
       if (!rowsEl) return;
 
       const platformCallList = platformCalls(platform);
-      const displayLimit = p === 'coupang' ? CALL_RECORDS_VISIBLE_LIMIT : platformCallList.length;
+      const displayLimit = CALL_RECORDS_VISIBLE_LIMIT;
       const displayCalls = platformCallList.slice(0, displayLimit);
       const hiddenCount = Math.max(0, platformCallList.length - displayCalls.length);
 
@@ -2285,26 +2348,26 @@
           <td class="col-select">
             <input type="checkbox" class="call-select-check" data-select-call="${call.id}" aria-label="선택"${selectedCallIds.has(call.id) ? ' checked' : ''}>
           </td>
+          <td>${formatDate(call.date)}</td>
           <td>${escapeHtml(driverName(call.driverId))}</td>
           <td>${number(call.count)}</td>
           <td><button type="button" class="small-btn danger-btn" data-delete-call="${call.id}">삭제</button></td>
         </tr>
-      `).join('') || emptyRow(4, emptyMessage);
+      `).join('') || emptyRow(5, emptyMessage);
 
       if (summaryEl) {
         if (!platformCallList.length) {
           summaryEl.textContent = '';
-        } else if (p === 'coupang' && hiddenCount > 0) {
-          summaryEl.textContent = `총 ${number(platformCallList.length)}명 · 표시 ${number(displayCalls.length)}명 (스크롤)`;
-        } else if (p === 'coupang') {
-          summaryEl.textContent = `총 ${number(platformCallList.length)}명`;
         } else {
-          summaryEl.textContent = '';
+          summaryEl.textContent = hiddenCount > 0
+            ? `${monthLabel} · 총 ${number(platformCallList.length)}건 · 표시 ${number(displayCalls.length)}건 (스크롤)`
+            : `${monthLabel} · 총 ${number(platformCallList.length)}건`;
         }
       }
 
       updateCallSelectionUi(platform);
     });
+    renderCallEditLogs();
   }
 
   function platformRejections(platform) {
@@ -3521,7 +3584,9 @@
           driverQuery,
           calls().length,
           state.unifiedPlatform.calls,
-          ...PLATFORMS.map(platform => callFilterDate(platform))
+          ...PLATFORMS.map(platform => callFilterMonth(platform)),
+          ...PLATFORMS.map(platform => callRecordsSearch(platform)),
+          BremStorage.callEditLogs?.getAll?.().length || 0
         ].join('\0');
       case 'rejections':
         return [
@@ -3939,6 +4004,16 @@
     });
 
     PLATFORMS.forEach(platform => {
+      $(`#callFilterMonth-${platform}`)?.addEventListener('change', () => {
+        selectedCallIds.clear();
+        renderCalls();
+      });
+
+      $(`#callRecordsSearch-${platform}`)?.addEventListener('input', event => {
+        state.callRecordsSearchByPlatform[platform] = event.target.value || '';
+        renderCalls();
+      });
+
       $(`#callForm-${platform}`)?.addEventListener('submit', event => {
         event.preventDefault();
         const driverId = $(`#callDriver-${platform}`).value;
@@ -3948,26 +4023,32 @@
           return;
         }
 
-        BremStorage.calls.upsertDaily({
-          driverId,
-          date,
-          count: Number($(`#callCount-${platform}`).value),
-          platform
-        });
-        void BremStorage.flushStorage?.().then(() => {
-          $(`#callCount-${platform}`).value = '';
-          const filterDate = $(`#callFilterDate-${platform}`);
-          if (filterDate) {
-            filterDate.value = date;
-            refreshCallDateLabel(`callFilterDate-${platform}`);
+        void (async () => {
+          try {
+            await BremStorage.ensureSectionLoaded('calls');
+            const writeResult = BremStorage.calls.upsertDaily({
+              driverId,
+              date,
+              count: Number($(`#callCount-${platform}`).value),
+              platform
+            });
+            if (writeResult && typeof writeResult.then === 'function') {
+              await writeResult;
+            }
+            await BremStorage.flushStorage?.();
+            $(`#callCount-${platform}`).value = '';
+            const filterMonth = $(`#callFilterMonth-${platform}`);
+            if (filterMonth) {
+              filterMonth.value = String(date).slice(0, 7);
+            }
+            showToast(`${platformLabel(platform)} 콜수가 저장되었습니다. 수정 기록이 남습니다.`);
+            renderAll();
+          } catch (error) {
+            console.error('[BREM] call persist failed:', error);
+            showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
+            renderAll();
           }
-          showToast(`${platformLabel(platform)} 콜수가 저장되었습니다.`);
-          renderAll();
-        }).catch(error => {
-          console.error('[BREM] call persist failed:', error);
-          showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
-          renderAll();
-        });
+        })();
       });
 
       $(`#rejectionForm-${platform}`)?.addEventListener('submit', event => {
@@ -4081,10 +4162,6 @@
         $(`#settlementHistorySearch-${p}`)?.addEventListener('input', event => {
           state.settlementHistorySearchByPlatform[p] = event.target.value || '';
           renderSettlements();
-        });
-        $(`#callRecordsSearch-${p}`)?.addEventListener('input', event => {
-          state.callRecordsSearchByPlatform[p] = event.target.value || '';
-          renderCalls();
         });
       }
       $(`#settlementFile-${p}`)?.addEventListener('change', event => {
@@ -4292,10 +4369,19 @@
 
       const callButton = event.target.closest('[data-delete-call]');
       if (callButton) {
-        BremStorage.calls.removeById(callButton.dataset.deleteCall);
-        selectedCallIds.delete(callButton.dataset.deleteCall);
-        showToast('콜수 기록이 삭제되었습니다.');
-        renderAll();
+        void (async () => {
+          try {
+            await BremStorage.ensureSectionLoaded('calls');
+            await BremStorage.calls.removeByIdAsync(callButton.dataset.deleteCall);
+            selectedCallIds.delete(callButton.dataset.deleteCall);
+            showToast('콜수 기록이 삭제되었습니다.');
+            renderAll();
+          } catch (error) {
+            console.error('[BREM] call delete failed:', error);
+            showToast(error.message || '콜수 삭제 저장에 실패했습니다.');
+            renderAll();
+          }
+        })();
         return;
       }
 

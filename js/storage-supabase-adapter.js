@@ -410,16 +410,18 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!p || !date) return;
       if (!(await probeTable('admin_calls'))) return;
 
-      const list = getCache(keys.calls, []).filter(call => {
-        const callPlatform = String(call.platform || '').trim();
-        const callDate = String(call.date || '').slice(0, 10);
-        return !(callPlatform === p && callDate === date);
-      });
-      stage(keys.calls, list);
-      window.BremDataCache?.set?.(keys.calls, list, { source: 'write', tableLoaded: true });
+      const list = getCache(keys.calls, []);
+      const idsToDelete = list
+        .filter(call => String(call.platform || '').trim() === p && String(call.date || '').slice(0, 10) === date)
+        .map(call => call.id);
 
-      const { error } = await client.from('admin_calls').delete().eq('platform', p).eq('date', date);
-      if (error) throw error;
+      const next = list.filter(call => !idsToDelete.includes(call.id));
+      stage(keys.calls, next);
+      window.BremDataCache?.set?.(keys.calls, next, { source: 'write', tableLoaded: true });
+
+      if (idsToDelete.length) {
+        await deleteAdminCallsByIds(idsToDelete);
+      }
     }
 
     async function persistCalls(value) {
