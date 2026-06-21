@@ -1841,6 +1841,26 @@ const BremStorage = (function () {
       stageRiderScopedCache(row.key, row.value);
     });
 
+    if (payload.longEvent && typeof payload.longEvent === 'object') {
+      riderLongEventProgress = { ...payload.longEvent };
+      const riderId = String(payload.riderId || activeSupabaseProfile?.rider_id || '').trim();
+      if (riderId) {
+        const list = drivers.getAll();
+        const index = list.findIndex(item => item.id === riderId);
+        if (index >= 0) {
+          const progress = payload.longEvent;
+          list[index] = {
+            ...list[index],
+            longEventItemId: progress.itemId || list[index].longEventItemId || '',
+            longEventItem: progress.itemName || list[index].longEventItem || '',
+            longEventStartDate: progress.startDate || list[index].longEventStartDate || '',
+            longEventPlatform: normalizeLongEventPlatform(progress.platform || list[index].longEventPlatform)
+          };
+          markDriversCache(list, { source: 'rider-dashboard' });
+        }
+      }
+    }
+
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
@@ -1864,6 +1884,7 @@ const BremStorage = (function () {
       return {
         ok: true,
         riderId: payload.riderId || null,
+        longEvent: payload.longEvent || null,
         counts: {
           calls: Array.isArray(payload.calls) ? payload.calls.length : 0,
           rejections: Array.isArray(payload.rejections) ? payload.rejections.length : 0,
@@ -2235,6 +2256,7 @@ const BremStorage = (function () {
   }
 
   let driverAppHydratePromise = null;
+  let riderLongEventProgress = null;
 
   function isDriverAppCacheReady() {
     if (!activeStorageAdapter.isHydrated?.()) return false;
@@ -4871,6 +4893,53 @@ const BremStorage = (function () {
       const startDate = events.getStartDateForDriver(driver);
       if (!startDate) return 0;
       return calls.sumForDriverSince(driver.id, startDate, events.getDriverEventPlatform(driver));
+    },
+
+    getProgressForDriver(driver) {
+      if (
+        isProductionMode()
+        && activeSupabaseProfile?.role === 'rider'
+        && riderLongEventProgress
+        && (!driver?.id || String(activeSupabaseProfile.rider_id || '') === String(driver.id))
+      ) {
+        const progress = riderLongEventProgress;
+        const item = progress.itemName
+          ? {
+            id: progress.itemId || '',
+            name: progress.itemName,
+            targetCount: Number(progress.target) || 0
+          }
+          : events.getItemForDriver(driver);
+        return {
+          ...progress,
+          item,
+          total: Number(progress.total) || 0,
+          target: Number(progress.target) || 0,
+          rate: Number(progress.rate) || 0
+        };
+      }
+
+      const item = events.getItemForDriver(driver);
+      const startDate = events.getStartDateForDriver(driver);
+      const platform = events.getDriverEventPlatform(driver);
+      const total = startDate ? calls.sumForDriverSince(driver.id, startDate, platform) : 0;
+      const target = item ? Number(item.targetCount) || 0 : 0;
+      const rate = target ? Math.round((total / target) * 100) : 0;
+      let status = 'unset';
+      if (item && !startDate) status = 'no-start';
+      else if (item && startDate) status = rate >= 100 ? 'achieved' : 'in-progress';
+
+      return {
+        itemId: item?.id || '',
+        itemName: item?.name || '',
+        platform,
+        startDate,
+        total,
+        target,
+        rate,
+        status,
+        item
+      };
     },
 
     removeCatalogItemReferences(itemId) {

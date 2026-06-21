@@ -224,7 +224,8 @@ app.get('/api/rider/dashboard', async (req, res) => {
       targets: result.targets,
       weeklyTargets: result.weeklyTargets,
       notices: result.notices,
-      settings: result.settings
+      settings: result.settings,
+      longEvent: result.longEvent
     });
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 대시보드 데이터를 불러오지 못했습니다.' });

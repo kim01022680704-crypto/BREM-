@@ -403,6 +403,70 @@ const RIDER_DASHBOARD_SETTING_KEYS = [
   'brem_admin_long_event_config'
 ];
 
+function normalizeCallPlatform(value) {
+  return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
+}
+
+function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
+  const rider = riderRow || {};
+  const riderId = String(rider.id || '');
+  const settings = Array.isArray(settingsRows) ? settingsRows : [];
+  const calls = Array.isArray(callRows) ? callRows : [];
+
+  const catalogRaw = settings.find(row => row.key === 'brem_admin_long_event_catalog')?.value;
+  const itemsMapRaw = settings.find(row => row.key === 'brem_admin_long_event_items')?.value;
+  const catalog = Array.isArray(catalogRaw) ? catalogRaw : [];
+  const itemsMap = itemsMapRaw && typeof itemsMapRaw === 'object' && !Array.isArray(itemsMapRaw)
+    ? itemsMapRaw
+    : {};
+
+  const raw = rider.raw_data && typeof rider.raw_data === 'object' ? rider.raw_data : {};
+  const mappedItemId = itemsMap[riderId] ? String(itemsMap[riderId]) : '';
+  const itemId = String(rider.long_event_item_id || mappedItemId || raw.longEventItemId || '').trim();
+  const item = catalog.find(entry => entry.id === itemId)
+    || catalog.find(entry => entry.name === rider.long_event_item)
+    || catalog.find(entry => entry.name === raw.longEventItem)
+    || null;
+
+  const startDate = String(rider.long_event_start_date || raw.longEventStartDate || '').slice(0, 10);
+  const platform = normalizeCallPlatform(
+    rider.long_event_platform || raw.longEventPlatform || 'coupang'
+  );
+  const target = item ? Math.max(0, Number(item.targetCount) || 0) : 0;
+
+  if (!item || !startDate) {
+    return {
+      itemId: item?.id || itemId,
+      itemName: item?.name || rider.long_event_item || raw.longEventItem || '',
+      platform,
+      startDate,
+      total: 0,
+      target,
+      rate: 0,
+      status: !item ? 'unset' : 'no-start'
+    };
+  }
+
+  const total = calls.reduce((sum, call) => {
+    const date = String(call.date || '').slice(0, 10);
+    if (!date || date < startDate) return sum;
+    if (normalizeCallPlatform(call.platform) !== platform) return sum;
+    return sum + Math.max(0, Number(call.count) || 0);
+  }, 0);
+  const rate = target ? Math.round((total / target) * 100) : 0;
+
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    platform,
+    startDate,
+    total,
+    target,
+    rate,
+    status: rate >= 100 ? 'achieved' : 'in-progress'
+  };
+}
+
 async function getRiderDashboard(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -467,6 +531,12 @@ async function getRiderDashboard(accessToken) {
     ? weeklyTargetsRaw.filter(item => String(item?.driverId || '') === String(riderId))
     : [];
 
+  const longEvent = computeLongEventProgress(
+    me.rider,
+    settingsRows,
+    callsResult.data || []
+  );
+
   return {
     ok: true,
     riderId,
@@ -475,7 +545,8 @@ async function getRiderDashboard(accessToken) {
     targets: targetsResult.data || [],
     weeklyTargets,
     notices: noticesResult.data || [],
-    settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets')
+    settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets'),
+    longEvent
   };
 }
 

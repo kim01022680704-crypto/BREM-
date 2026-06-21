@@ -511,8 +511,8 @@
     return callsByPlatform(list);
   }
 
-  function eventCallsFor(driver) {
-    return BremStorage.events.eventCallsForDriver(driver);
+  function longEventPlatformLabel(platform) {
+    return String(platform || '').toLowerCase() === 'baemin' ? '배민' : '쿠팡';
   }
 
   function targetFor(driverId, month) {
@@ -741,10 +741,15 @@
     const coupangRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'coupang');
     const baeminRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
     const item = eventItemFor(driver);
-    const eventStartDate = driver.longEventStartDate || '';
-    const total = eventStartDate ? eventCallsFor(driver) : 0;
-    const missionTarget = item ? Number(item.targetCount || 0) : 0;
-    const missionRate = missionTarget ? Math.round((total / missionTarget) * 100) : 0;
+    const eventProgress = BremStorage.events.getProgressForDriver(driver);
+    const eventItem = eventProgress.item || item;
+    const eventStartDate = eventProgress.startDate || driver.longEventStartDate || '';
+    const total = eventStartDate ? Number(eventProgress.total) || 0 : 0;
+    const missionTarget = Number(eventProgress.target) || (eventItem ? Number(eventItem.targetCount || 0) : 0);
+    const missionRate = missionTarget
+      ? Number(eventProgress.rate) || Math.round((total / missionTarget) * 100)
+      : 0;
+    const eventPlatformLabel = longEventPlatformLabel(eventProgress.platform || driver.longEventPlatform);
 
     setText('driverName', driver.name);
     setText('driverPhone', driver.phone);
@@ -791,10 +796,10 @@
     updateWeekTargetPreview(weekStart);
     document.getElementById('driverWeekTargetCount').value = weeklyTarget || '';
 
-    setText('eventItem', item ? item.name : '미설정');
+    setText('eventItem', eventItem ? eventItem.name : '미설정');
     setText(
       'missionDetail',
-      !item
+      !eventItem
         ? '장기근속이벤트 아이템이 설정되면 표시됩니다.'
         : !eventStartDate
           ? '관리자에서 시작일 설정 후 집계됩니다.'
@@ -802,10 +807,10 @@
     );
     setText(
       'missionRule',
-      item && eventStartDate
-        ? `${item.name} · ${formatDate(eventStartDate)}부터 누적 집계`
-        : item
-          ? `${item.name} · 시작일 설정 필요`
+      eventItem && eventStartDate
+        ? `${eventItem.name} · ${formatDate(eventStartDate)}부터 ${eventPlatformLabel} 집계 (합산 제외)`
+        : eventItem
+          ? `${eventItem.name} · 시작일 설정 필요`
           : '누적 콜수 기준으로 계산됩니다.'
     );
     setProgress('missionBar', missionRate);

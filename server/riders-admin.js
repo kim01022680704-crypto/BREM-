@@ -671,13 +671,38 @@ async function writeLongEventItemsMap(supabase, map) {
 
 async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
   const normalized = normalizeLongEventPatchFields(fields);
-  const updatePayload = {
-    ...normalized,
-    updated_at: new Date().toISOString()
-  };
   if (Object.keys(normalized).length === 0) {
     return { ok: false, status: 400, error: '저장할 장기근속 이벤트 정보가 없습니다.' };
   }
+
+  const { data: existing, error: readError } = await supabase
+    .from('riders')
+    .select('raw_data')
+    .eq('id', riderId)
+    .maybeSingle();
+  if (readError) {
+    return { ok: false, status: 400, error: readError.message || '기사 정보를 불러오지 못했습니다.' };
+  }
+
+  const raw = existing?.raw_data && typeof existing.raw_data === 'object'
+    ? { ...existing.raw_data }
+    : {};
+  if (normalized.long_event_item_id !== undefined) {
+    raw.longEventItemId = normalized.long_event_item_id;
+    raw.longEventItem = normalized.long_event_item || '';
+  }
+  if (normalized.long_event_start_date !== undefined) {
+    raw.longEventStartDate = normalized.long_event_start_date || '';
+  }
+  if (normalized.long_event_platform !== undefined) {
+    raw.longEventPlatform = normalized.long_event_platform;
+  }
+
+  const updatePayload = {
+    ...normalized,
+    raw_data: raw,
+    updated_at: new Date().toISOString()
+  };
 
   const { data, error } = await supabase
     .from('riders')
@@ -697,6 +722,19 @@ async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
         .maybeSingle();
       if (retry.error) {
         return { ok: false, status: 400, error: retry.error.message || '장기근속 이벤트 저장에 실패했습니다.' };
+      }
+      if (normalized.long_event_item_id !== undefined) {
+        const mapResult = await readLongEventItemsMap(supabase);
+        if (!mapResult.ok) {
+          return { ok: false, status: 500, error: mapResult.error };
+        }
+        const itemId = normalized.long_event_item_id;
+        if (itemId) mapResult.map[riderId] = itemId;
+        else delete mapResult.map[riderId];
+        const writeResult = await writeLongEventItemsMap(supabase, mapResult.map);
+        if (!writeResult.ok) {
+          return { ok: false, status: 500, error: writeResult.error };
+        }
       }
       return { ok: true, rider: retry.data };
     }

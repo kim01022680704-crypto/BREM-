@@ -104,9 +104,16 @@ async function main() {
   }
 
   if (rider.long_event_start_date) {
-    pass('long event', `start=${rider.long_event_start_date}, item=${rider.long_event_item_id || rider.long_event_item || '-'}`);
+    pass('long event', `start=${rider.long_event_start_date}, item=${rider.long_event_item_id || rider.long_event_item || '-'}, platform=${rider.long_event_platform || 'coupang'}`);
   } else {
     console.log('WARN long event not configured on rider row.');
+  }
+
+  if (dashboard.body.longEvent) {
+    const progress = dashboard.body.longEvent;
+    pass('long event progress', `${progress.platform || '-'} ${progress.total}/${progress.target} (${progress.rate}%)`);
+  } else {
+    console.log('WARN dashboard.longEvent missing — deploy latest server.');
   }
 
   const testMonth = new Date().toISOString().slice(0, 7);
