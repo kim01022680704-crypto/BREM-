@@ -16,6 +16,7 @@ const noticesAdmin = require('./notices-admin');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
 const riderAuth = require('./rider-auth');
+const riderPublishAdmin = require('./rider-publish-admin');
 const { getPublicConfig } = require('./public-config');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -670,6 +671,30 @@ app.post('/api/admin/baemin-delivery/import-json', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 JSON 저장에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/rider-view/status', async (req, res) => {
+  try {
+    const result = await riderPublishAdmin.getRiderViewPublishStatus(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '라이더 앱 반영 상태 조회에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/rider-view/publish', async (req, res) => {
+  try {
+    const result = await riderPublishAdmin.publishRiderView(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '라이더 앱 반영에 실패했습니다.' });
   }
 });
 

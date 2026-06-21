@@ -1994,7 +1994,8 @@ const BremStorage = (function () {
         driverId: row.driver_id || '',
         date: String(row.date || '').slice(0, 10),
         platform: row.platform || 'coupang',
-        count: Number(row.count) || 0
+        count: Number(row.count) || 0,
+        riderPublishedAt: row.rider_published_at || null
       }));
       stageRiderScopedCache(KEYS.calls, callRows, { tableLoaded: true });
     }
@@ -2023,7 +2024,8 @@ const BremStorage = (function () {
         id: row.id,
         driverId: row.driver_id || '',
         month: row.month || '',
-        count: Number(row.count) || 0
+        count: Number(row.count) || 0,
+        riderPublishedAt: row.rider_published_at || null
       }));
       stageRiderScopedCache(KEYS.targets, targetRows, { tableLoaded: true });
     }
@@ -3689,7 +3691,8 @@ const BremStorage = (function () {
           driverId: record.driverId,
           date: callDate,
           platform: p,
-          count: record.count
+          count: record.count,
+          riderPublishedAt: null
         });
       });
 
@@ -3919,10 +3922,24 @@ const BremStorage = (function () {
       return raw && typeof raw === 'object' ? raw : {};
     },
 
-    record({ publishedAt, rejectionsPublished = 0, publishedBy = '' } = {}) {
+    countPending() {
+      const pendingCalls = calls.getAll().filter(item => !item.riderPublishedAt).length;
+      const pendingRejections = rejections.getAll().filter(item => !item.riderPublishedAt).length;
+      const pendingTargets = targets.getAll().filter(item => !item.riderPublishedAt).length;
+      return {
+        pendingCalls,
+        pendingRejections,
+        pendingTargets,
+        pendingTotal: pendingCalls + pendingRejections + pendingTargets
+      };
+    },
+
+    record({ publishedAt, rejectionsPublished = 0, callsPublished = 0, targetsPublished = 0, publishedBy = '', snapshots = null } = {}) {
       const meta = {
         publishedAt: publishedAt || new Date().toISOString(),
         rejectionsPublished: Number(rejectionsPublished) || 0,
+        callsPublished: Number(callsPublished) || 0,
+        targetsPublished: Number(targetsPublished) || 0,
         publishedBy: String(
           publishedBy
           || activeSupabaseProfile?.name
@@ -3930,8 +3947,57 @@ const BremStorage = (function () {
           || 'admin'
         ).trim()
       };
+      if (snapshots && typeof snapshots === 'object') {
+        meta.snapshots = snapshots;
+      }
       storageAdapter.write(KEYS.riderViewPublish, meta);
       return meta;
+    },
+
+    async publishAllToRiderView() {
+      await storageAdapter.flush?.();
+
+      const apiResult = await adminRidersApi('/api/admin/rider-view/publish', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+
+      if (apiResult.ok) {
+        const meta = riderViewPublish.record({
+          publishedAt: apiResult.publishedAt,
+          publishedBy: apiResult.publishedBy,
+          callsPublished: apiResult.callsPublished,
+          rejectionsPublished: apiResult.rejectionsPublished,
+          targetsPublished: apiResult.targetsPublished,
+          snapshots: apiResult.snapshots
+        });
+
+        await Promise.all([
+          refreshDataFromServer(KEYS.calls),
+          refreshDataFromServer(KEYS.rejections),
+          refreshDataFromServer(KEYS.targets)
+        ]);
+
+        window.BremDataCache?.invalidate?.(KEYS.riderViewPublish);
+        return {
+          publishedCount: Number(apiResult.publishedCount) || 0,
+          callsPublished: apiResult.callsPublished || 0,
+          rejectionsPublished: apiResult.rejectionsPublished || 0,
+          targetsPublished: apiResult.targetsPublished || 0,
+          publishedAt: meta.publishedAt
+        };
+      }
+
+      const fallback = await rejections.publishPendingToRiderView();
+      return {
+        publishedCount: fallback.publishedCount || 0,
+        callsPublished: 0,
+        rejectionsPublished: fallback.publishedCount || 0,
+        targetsPublished: 0,
+        publishedAt: fallback.publishedAt,
+        fallback: true,
+        message: apiResult.message
+      };
     }
   };
 
@@ -4029,7 +4095,8 @@ const BremStorage = (function () {
         id: `${driverId}-${month}`,
         driverId,
         month,
-        count: Number(count)
+        count: Number(count),
+        riderPublishedAt: null
       });
       if (isProductionMode() && isRiderSelfUpdate(driverId)) {
         stageRiderScopedCache(KEYS.targets, list, { tableLoaded: true });

@@ -2516,19 +2516,30 @@ textarea {
   background: #fffbeb;
 }
 
-.rider-view-publish-btn {
+.rider-view-publish-btn,
+.rider-app-publish-btn {
   background: #16a34a;
   border-color: #16a34a;
 }
 
-.rider-view-publish-btn:hover:not(:disabled) {
+.rider-view-publish-btn:hover:not(:disabled),
+.rider-app-publish-btn:hover:not(:disabled) {
   background: #15803d;
   border-color: #15803d;
 }
 
-.rider-view-publish-btn:disabled {
+.rider-view-publish-btn:disabled,
+.rider-app-publish-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.rider-app-publish-status {
+  font-size: 0.78rem;
+  color: var(--muted);
+  max-width: 280px;
+  line-height: 1.35;
+  text-align: right;
 }
 
 .rejection-erp-publish-status {

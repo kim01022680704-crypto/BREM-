@@ -169,11 +169,11 @@ window.BremSupabaseStorageAdapter = (function () {
       }
       window.BremDataCache?.logDataSource?.(label, false);
       const selectColumns = table === 'admin_calls'
-        ? 'id,driver_id,date,platform,count'
+        ? 'id,driver_id,date,platform,count,updated_at,rider_published_at'
         : table === 'admin_rejection_rates'
           ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at'
           : table === 'admin_targets'
-            ? 'id,driver_id,month,count'
+            ? 'id,driver_id,month,count,updated_at,rider_published_at'
             : '*';
       let query = client.from(table).select(selectColumns);
       if (order?.column) {
@@ -278,7 +278,8 @@ window.BremSupabaseStorageAdapter = (function () {
         date: item.date,
         platform: item.platform || 'coupang',
         count: Number(item.count) || 0,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        rider_published_at: item.riderPublishedAt || null
       };
     }
 
@@ -288,7 +289,8 @@ window.BremSupabaseStorageAdapter = (function () {
         driverId: row.driver_id || '',
         date: row.date,
         platform: row.platform || 'coupang',
-        count: Number(row.count) || 0
+        count: Number(row.count) || 0,
+        riderPublishedAt: row.rider_published_at || null
       };
     }
 
@@ -328,7 +330,8 @@ window.BremSupabaseStorageAdapter = (function () {
         driver_id: item.driverId || '',
         month: item.month || '',
         count: Number(item.count) || 0,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        rider_published_at: item.riderPublishedAt || null
       };
     }
 
@@ -337,7 +340,8 @@ window.BremSupabaseStorageAdapter = (function () {
         id: row.id,
         driverId: row.driver_id || '',
         month: row.month || '',
-        count: Number(row.count) || 0
+        count: Number(row.count) || 0,
+        riderPublishedAt: row.rider_published_at || null
       };
     }
 

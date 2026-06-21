@@ -2470,54 +2470,69 @@
   }
 
   function renderRiderPublishStatus() {
-    const statusEl = $('#riderViewPublishStatus');
-    const publishBtns = document.querySelectorAll('[data-rider-view-publish]');
-    const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
+    const statusEl = $('#riderAppPublishStatus');
+    const publishBtns = document.querySelectorAll('[data-rider-app-publish]');
+    const pending = BremStorage.riderViewPublish?.countPending?.() || {};
     const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
     const publishedLabel = window.BremDriverUtils?.formatRiderPublishDateTime?.(meta.publishedAt)
       || (meta.publishedAt ? formatDateTime(meta.publishedAt) : '');
 
     publishBtns.forEach(btn => {
-      btn.disabled = pending === 0;
-      btn.title = pending > 0
-        ? `미반영 ${pending}건을 기사앱에 공개`
-        : '반영할 미공개 데이터가 없습니다';
+      btn.title = pending.pendingTotal > 0
+        ? `미반영 ${pending.pendingTotal}건 · 콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections} · 목표 ${pending.pendingTargets}`
+        : '주간목표·장기근속 설정 포함 전체 스냅샷 반영';
     });
 
     if (!statusEl) return;
 
-    if (publishedLabel) {
-      statusEl.textContent = pending > 0
-        ? `마지막 반영: ${publishedLabel} · 미반영 ${number(pending)}건 (아래 「라이더 조회 반영」 클릭)`
-        : `마지막 반영: ${publishedLabel} · 기사앱과 동기화됨`;
-    } else if (pending > 0) {
-      statusEl.textContent = `미반영 ${number(pending)}건 · ERP 저장 후 「라이더 조회 반영」 버튼을 누르세요.`;
+    const parts = [];
+    if (pending.pendingCalls) parts.push(`콜수 ${number(pending.pendingCalls)}`);
+    if (pending.pendingRejections) parts.push(`거절율 ${number(pending.pendingRejections)}`);
+    if (pending.pendingTargets) parts.push(`목표 ${number(pending.pendingTargets)}`);
+    const pendingLabel = parts.length ? parts.join(' · ') : '';
+
+    if (publishedLabel && pendingLabel) {
+      statusEl.textContent = `마지막 반영 ${publishedLabel} · 미반영 ${pendingLabel}`;
+    } else if (publishedLabel) {
+      statusEl.textContent = `마지막 반영 ${publishedLabel}`;
+    } else if (pendingLabel) {
+      statusEl.textContent = `미반영 ${pendingLabel} · 「라이더 앱 반영」 클릭`;
     } else {
-      statusEl.textContent = 'ERP 저장 후 검수가 끝나면 「라이더 조회 반영」으로 기사앱에 공개합니다.';
+      statusEl.textContent = '검수 후 「라이더 앱 반영」으로 기사앱에 공개';
     }
   }
 
-  function handleRiderViewPublish() {
-    const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
-    if (!pending) {
-      showToast('기사앱에 반영할 미공개 데이터가 없습니다.');
-      return;
-    }
-    if (!window.confirm(`미반영 ${pending}건의 거절율·수락율을 기사 전용 조회에 반영하시겠습니까?`)) return;
+  function handleRiderAppPublish() {
+    const pending = BremStorage.riderViewPublish?.countPending?.() || {};
+    const pendingNote = pending.pendingTotal
+      ? `\n\n미반영 ${pending.pendingTotal}건 (콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections} · 목표 ${pending.pendingTargets})`
+      : '\n\n주간목표·장기근속 설정도 함께 최신 스냅샷으로 반영됩니다.';
+    if (!window.confirm(`콜수·거절율·월간목표·주간목표·장기근속 등 연동 데이터를 기사 전용 앱에 반영하시겠습니까?${pendingNote}`)) return;
 
     void (async () => {
-      const publishBtns = document.querySelectorAll('[data-rider-view-publish]');
+      const publishBtns = document.querySelectorAll('[data-rider-app-publish]');
       publishBtns.forEach(btn => { btn.disabled = true; });
       try {
-        await BremStorage.ensureSectionLoaded('rejections');
-        const result = await BremStorage.rejections.publishPendingToRiderView();
+        await BremStorage.ensureSectionLoaded?.('rejections');
+        await BremStorage.ensureSectionLoaded?.('calls');
+        await BremStorage.ensureSectionLoaded?.('targets');
+        await BremStorage.flushStorage?.();
+        const result = await BremStorage.riderViewPublish.publishAllToRiderView();
         const label = window.BremDriverUtils?.formatRiderPublishDateTime?.(result.publishedAt) || formatDateTime(result.publishedAt);
-        showToast(`${result.publishedCount}건 기사앱 반영 완료 · ${label}`);
+        const detail = [
+          result.callsPublished ? `콜수 ${result.callsPublished}` : '',
+          result.rejectionsPublished ? `거절율 ${result.rejectionsPublished}` : '',
+          result.targetsPublished ? `목표 ${result.targetsPublished}` : ''
+        ].filter(Boolean).join(' · ');
+        showToast(detail
+          ? `기사앱 반영 완료 · ${detail} · ${label}`
+          : `기사앱 반영 완료 · ${label}`);
         renderAll();
       } catch (error) {
-        console.error('[BREM] rider publish failed:', error);
+        console.error('[BREM] rider app publish failed:', error);
         showToast(error.message || '기사앱 반영에 실패했습니다.');
       } finally {
+        publishBtns.forEach(btn => { btn.disabled = false; });
         renderRiderPublishStatus();
       }
     })();
@@ -3781,6 +3796,7 @@
     invalidateCallStatsIndex();
     invalidateSectionRenders(state.currentSection);
     renderActiveSection(state.currentSection, { force: true });
+    renderRiderPublishStatus();
     window.BremPerf?.timeEnd?.('admin.renderAll');
   }
 
@@ -4011,8 +4027,8 @@
     });
 
     document.addEventListener('click', event => {
-      if (event.target.closest('[data-rider-view-publish]')) {
-        handleRiderViewPublish();
+      if (event.target.closest('[data-rider-app-publish]')) {
+        handleRiderAppPublish();
       }
     });
 
