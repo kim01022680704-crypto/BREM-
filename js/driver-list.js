@@ -713,7 +713,7 @@
       };
     }
 
-    const task = async () => {
+    const runLoad = async () => {
       if (force && !hasCompleteCache) {
         clearListDom();
         selectedIds.clear();
@@ -733,14 +733,11 @@
       return result;
     };
 
-    if (!force) {
-      listLoadPromise = task.finally(() => {
-        listLoadPromise = null;
-      });
-      return listLoadPromise;
-    }
+    listLoadPromise = runLoad().finally(() => {
+      listLoadPromise = null;
+    });
 
-    return task;
+    return listLoadPromise;
   }
 
   function isDriverListCacheReady() {
