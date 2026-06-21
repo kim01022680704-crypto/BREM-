@@ -52,6 +52,24 @@ function makeDriverMatchKey(name, phone) {
   return `${normName}|${normPhone}`;
 }
 
+function makeCoupangLoginId(row) {
+  const normName = normalizeDriverName(row?.name);
+  const phoneSuffix = normalizePhone(row?.phone).slice(-4);
+  if (!normName || !phoneSuffix) return '';
+  return `${normName}${phoneSuffix}`;
+}
+
+function makeAutoMergeKeys(row) {
+  const keys = [];
+  const normName = normalizeDriverName(row?.name);
+  const coupangId = makeCoupangLoginId(row);
+  const baeminId = String(row?.baemin_id || '').trim().toLowerCase();
+
+  if (normName && coupangId) keys.push(`coupang:${normName}|${coupangId}`);
+  if (baeminId && baeminId !== '-') keys.push(`baemin:${baeminId}`);
+  return keys;
+}
+
 function riderCompletenessScore(row) {
   let score = 0;
   if (row.auth_user_id) score += 16;
@@ -98,6 +116,148 @@ function mergeRiderRows(keep, donor) {
   merged.hidden_fields = { ...donorHidden, ...keepHidden };
   merged.updated_at = new Date().toISOString();
   return merged;
+}
+
+async function fetchAllRiders(supabase, selectColumns) {
+  const allRows = [];
+  let offset = 0;
+  const limit = 200;
+
+  while (true) {
+    const { data, error, count } = await supabase
+      .from('riders')
+      .select(selectColumns, { count: 'exact' })
+      .order('created_at', { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    allRows.push(...(data || []));
+    const total = count ?? allRows.length;
+    if (!data?.length || allRows.length >= total) break;
+    offset += limit;
+  }
+
+  return allRows;
+}
+
+function buildAutoMergeGroups(rows) {
+  const parent = new Map();
+  const rowsById = new Map();
+  const keyOwners = new Map();
+  const keyMembers = new Map();
+
+  const find = (id) => {
+    if (!parent.has(id)) parent.set(id, id);
+    const current = parent.get(id);
+    if (current === id) return id;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+
+  const union = (a, b) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  (rows || []).forEach(row => {
+    const id = String(row.id || '');
+    if (!id) return;
+    parent.set(id, id);
+    rowsById.set(id, row);
+  });
+
+  rowsById.forEach(row => {
+    const id = String(row.id);
+    makeAutoMergeKeys(row).forEach(key => {
+      if (!keyMembers.has(key)) keyMembers.set(key, []);
+      keyMembers.get(key).push(id);
+      if (!keyOwners.has(key)) {
+        keyOwners.set(key, id);
+      } else {
+        union(keyOwners.get(key), id);
+      }
+    });
+  });
+
+  const grouped = new Map();
+  rowsById.forEach(row => {
+    const root = find(String(row.id));
+    if (!grouped.has(root)) grouped.set(root, []);
+    grouped.get(root).push(row);
+  });
+
+  return [...grouped.values()]
+    .filter(group => group.length > 1)
+    .map(group => {
+      const groupIds = new Set(group.map(row => String(row.id)));
+      const reasons = new Set();
+      keyMembers.forEach((ids, key) => {
+        const overlapCount = ids.filter(id => groupIds.has(id)).length;
+        if (overlapCount > 1) reasons.add(key);
+      });
+      return { rows: group, reasons: [...reasons] };
+    });
+}
+
+async function mergeRiderGroup(supabase, rows) {
+  const canonical = pickCanonicalRider(rows);
+  let merged = { ...canonical };
+  const removedIds = [];
+  const idRemap = {};
+
+  rows.forEach(row => {
+    if (row.id === canonical.id) return;
+    merged = mergeRiderRows(merged, row);
+    removedIds.push(row.id);
+    idRemap[row.id] = canonical.id;
+  });
+
+  for (const [fromId, toId] of Object.entries(idRemap)) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ rider_id: toId })
+      .eq('rider_id', fromId);
+    if (profileError) {
+      return { ok: false, status: 500, error: profileError.message || '기사 로그인 연결을 병합하지 못했습니다.' };
+    }
+  }
+
+  let upsertRow = { ...merged };
+  let { error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' });
+  if (upsertError && isMissingColumnError(upsertError)) {
+    delete upsertRow.selected_mission_id;
+    delete upsertRow.selected_mission_id_baemin;
+    delete upsertRow.selected_mission_id_coupang;
+    ({ error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' }));
+  }
+  if (upsertError) {
+    return { ok: false, status: 400, error: upsertError.message || '병합된 기사 저장에 실패했습니다.' };
+  }
+
+  for (const id of removedIds) {
+    const { error: deleteError } = await supabase.from('riders').delete().eq('id', id);
+    if (deleteError) {
+      return { ok: false, status: 400, error: deleteError.message || '중복 기사 삭제에 실패했습니다.' };
+    }
+  }
+
+  const provision = await provisionRiderAuthAccount(upsertRow);
+  if (!provision.ok) {
+    console.warn('[BREM] Rider auth provisioning failed after merge:', upsertRow.id, provision.error);
+  }
+
+  return {
+    ok: true,
+    keptId: canonical.id,
+    keptName: canonical.name,
+    keptPhone: canonical.phone,
+    removedIds,
+    idRemap,
+    mergedCount: rows.length
+  };
 }
 
 function riderToRow(driver) {
@@ -344,60 +504,62 @@ async function mergeSelectedRiders(accessToken, riderIds = []) {
     return { ok: false, status: 400, error: '이름과 연락처가 같은 기사만 병합할 수 있습니다.' };
   }
 
-  const canonical = pickCanonicalRider(rows);
-  let merged = { ...canonical };
-  const removedIds = [];
+  return mergeRiderGroup(supabase, rows);
+}
+
+async function mergeAutoRiders(accessToken) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const supabase = getServiceClient();
+  let rows;
+  try {
+    rows = await fetchAllRiders(supabase, RIDER_SELECT);
+  } catch (error) {
+    if (isMissingColumnError(error)) {
+      rows = await fetchAllRiders(supabase, RIDER_SELECT_LEGACY);
+    } else {
+      return { ok: false, status: 500, error: error.message || '기사 목록을 불러오지 못했습니다.' };
+    }
+  }
+
+  const groups = buildAutoMergeGroups(rows);
+  if (!groups.length) {
+    return {
+      ok: true,
+      groupsMerged: 0,
+      ridersRemoved: 0,
+      idRemap: {},
+      details: []
+    };
+  }
+
   const idRemap = {};
+  const details = [];
+  let ridersRemoved = 0;
 
-  rows.forEach(row => {
-    if (row.id === canonical.id) return;
-    merged = mergeRiderRows(merged, row);
-    removedIds.push(row.id);
-    idRemap[row.id] = canonical.id;
-  });
+  for (const group of groups) {
+    const result = await mergeRiderGroup(supabase, group.rows);
+    if (!result.ok) return result;
 
-  for (const [fromId, toId] of Object.entries(idRemap)) {
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ rider_id: toId })
-      .eq('rider_id', fromId);
-    if (profileError) {
-      return { ok: false, status: 500, error: profileError.message || '기사 로그인 연결을 병합하지 못했습니다.' };
-    }
-  }
-
-  let upsertRow = { ...merged };
-  let { error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' });
-  if (upsertError && isMissingColumnError(upsertError)) {
-    delete upsertRow.selected_mission_id;
-    delete upsertRow.selected_mission_id_baemin;
-    delete upsertRow.selected_mission_id_coupang;
-    ({ error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' }));
-  }
-  if (upsertError) {
-    return { ok: false, status: 400, error: upsertError.message || '병합된 기사 저장에 실패했습니다.' };
-  }
-
-  for (const id of removedIds) {
-    const { error: deleteError } = await supabase.from('riders').delete().eq('id', id);
-    if (deleteError) {
-      return { ok: false, status: 400, error: deleteError.message || '중복 기사 삭제에 실패했습니다.' };
-    }
-  }
-
-  const provision = await provisionRiderAuthAccount(upsertRow);
-  if (!provision.ok) {
-    console.warn('[BREM] Rider auth provisioning failed after selected merge:', upsertRow.id, provision.error);
+    Object.assign(idRemap, result.idRemap || {});
+    ridersRemoved += result.removedIds.length;
+    details.push({
+      keptId: result.keptId,
+      keptName: result.keptName,
+      keptPhone: result.keptPhone,
+      mergedCount: result.mergedCount,
+      removedIds: result.removedIds,
+      reasons: group.reasons
+    });
   }
 
   return {
     ok: true,
-    keptId: canonical.id,
-    keptName: canonical.name,
-    keptPhone: canonical.phone,
-    removedIds,
+    groupsMerged: details.length,
+    ridersRemoved,
     idRemap,
-    mergedCount: rows.length
+    details
   };
 }
 
@@ -406,5 +568,6 @@ module.exports = {
   upsertRider,
   bulkUpsertRiders,
   deleteRider,
-  mergeSelectedRiders
+  mergeSelectedRiders,
+  mergeAutoRiders
 };

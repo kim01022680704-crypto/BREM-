@@ -1124,6 +1124,27 @@ const BremStorage = (function () {
     return result;
   }
 
+  async function mergeAutoRidersViaServer() {
+    const postMerge = () => adminRidersApi('/api/admin/riders/merge-auto', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+
+    let result = await postMerge();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postMerge();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '전체 기사 자동병합에 실패했습니다.');
+    }
+    return result;
+  }
+
   function remapDriverIdsInLocalData(idRemap) {
     if (!idRemap || !Object.keys(idRemap).length) return 0;
 
@@ -2342,6 +2363,20 @@ const BremStorage = (function () {
       }
 
       const result = await mergeSelectedRidersViaServer(ids);
+      if (result.ok) {
+        remapDriverIdsInLocalData(result.idRemap || {});
+        await flushActiveStorage().catch(() => ({}));
+        await reloadDrivers(true).catch(() => ({}));
+      }
+      return result;
+    },
+
+    async mergeAuto() {
+      if (!isProductionMode()) {
+        throw new Error('운영 환경에서만 전체 자동병합을 실행할 수 있습니다.');
+      }
+
+      const result = await mergeAutoRidersViaServer();
       if (result.ok) {
         remapDriverIdsInLocalData(result.idRemap || {});
         await flushActiveStorage().catch(() => ({}));

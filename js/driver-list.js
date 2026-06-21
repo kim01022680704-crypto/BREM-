@@ -16,6 +16,7 @@
   const searchInput = document.getElementById('searchInput');
   const statusFilter = document.getElementById('statusFilter');
   const exportExcelBtn = document.getElementById('exportExcelBtn');
+  const mergeAutoBtn = document.getElementById('mergeAutoBtn');
   const mergeSelectedBtn = document.getElementById('mergeSelectedBtn');
   const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   const bulkDeleteBtnBar = document.getElementById('bulkDeleteBtnBar');
@@ -402,6 +403,61 @@
     }
   }
 
+  function formatAutoMergeReason(reason) {
+    if (String(reason || '').startsWith('baemin:')) return '배민 ID 동일';
+    if (String(reason || '').startsWith('coupang:')) return '이름+쿠팡 ID 동일';
+    return '중복 기준 일치';
+  }
+
+  function showAutoMergeResult(result) {
+    const groupCount = Number(result.groupsMerged || 0);
+    const removedCount = Number(result.ridersRemoved || 0);
+    const details = Array.isArray(result.details) ? result.details : [];
+
+    if (!groupCount) {
+      window.alert('자동병합 결과\n\n병합할 중복 기사가 없습니다.');
+      showToast(toast, '자동병합 대상이 없습니다.');
+      return;
+    }
+
+    const sampleLines = details.slice(0, 10).map(item => {
+      const reasons = [...new Set((item.reasons || []).map(formatAutoMergeReason))].join(', ');
+      return `- ${item.keptName || '기사'} (${item.keptPhone || '-'}) · ${item.mergedCount}건 → 1건 · ${reasons}`;
+    });
+    const moreLine = details.length > 10 ? `\n외 ${details.length - 10}개 그룹` : '';
+
+    window.alert([
+      '자동병합 결과',
+      '',
+      `병합 그룹: ${groupCount}개`,
+      `삭제된 중복 기사: ${removedCount}건`,
+      '',
+      ...sampleLines,
+      moreLine
+    ].filter(Boolean).join('\n'));
+    showToast(toast, `자동병합 완료 · ${groupCount}개 그룹 · ${removedCount}건 정리`);
+  }
+
+  async function mergeAutoDrivers() {
+    if (!window.confirm('전체 기사를 자동으로 검사해 병합합니다.\n\n조건:\n- 이름+쿠팡 ID가 같은 경우\n- 배민 ID가 같은 경우\n\n진행할까요?')) return;
+
+    if (mergeAutoBtn) mergeAutoBtn.disabled = true;
+    showToast(toast, '전체 기사 자동병합 중…');
+
+    try {
+      const result = await BremStorage.drivers.mergeAuto();
+      selectedIds.clear();
+      renderedSnapshot = '';
+      await refreshDriverList(true);
+      showAutoMergeResult(result);
+    } catch (error) {
+      console.error(error);
+      showToast(toast, error.message || '전체 자동병합에 실패했습니다.');
+    } finally {
+      if (mergeAutoBtn) mergeAutoBtn.disabled = false;
+    }
+  }
+
   function toggleDriverSelection(id, checked) {
     if (checked) selectedIds.add(id);
     else selectedIds.delete(id);
@@ -549,6 +605,7 @@
     searchInput.addEventListener('input', handleSearchInput);
     statusFilter.addEventListener('change', handleStatusFilterChange);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
+    if (mergeAutoBtn) mergeAutoBtn.addEventListener('click', () => { void mergeAutoDrivers(); });
     if (mergeSelectedBtn) mergeSelectedBtn.addEventListener('click', () => { void mergeSelectedDrivers(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
