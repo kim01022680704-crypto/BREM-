@@ -109,6 +109,50 @@ async function main() {
     console.log('WARN long event not configured on rider row.');
   }
 
+  const testMonth = new Date().toISOString().slice(0, 7);
+  const testWeek = (() => {
+    const date = new Date();
+    const day = date.getDay();
+    const diff = (day - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return date.toISOString().slice(0, 10);
+  })();
+  const monthlyCount = 123;
+  const weeklyCount = 45;
+
+  const saveTargets = await request('/api/rider/targets', {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      monthly: { month: testMonth, count: monthlyCount },
+      weekly: { weekStart: testWeek, count: weeklyCount }
+    })
+  });
+
+  if (!saveTargets.response.ok) {
+    fail(`POST /api/rider/targets (${saveTargets.response.status}): ${saveTargets.body.error}`);
+  } else {
+    pass('POST /api/rider/targets', `month=${testMonth} ${monthlyCount}콜, week=${testWeek} ${weeklyCount}콜`);
+  }
+
+  const dashboardAfter = await request('/api/rider/dashboard', { headers: auth });
+  if (!dashboardAfter.response.ok) {
+    fail(`dashboard after targets (${dashboardAfter.response.status}): ${dashboardAfter.body.error}`);
+  } else {
+    const monthRow = (dashboardAfter.body.targets || []).find(row => String(row.month || '').startsWith(testMonth));
+    const weekRow = (dashboardAfter.body.weeklyTargets || []).find(row => row.weekStart === testWeek);
+    if (monthRow && Number(monthRow.count) === monthlyCount) {
+      pass('monthly target persisted', `${testMonth} → ${monthRow.count}콜`);
+    } else {
+      fail(`monthly target not found after save (expected ${monthlyCount})`);
+    }
+    if (weekRow && Number(weekRow.count) === weeklyCount) {
+      pass('weekly target persisted', `${testWeek} → ${weekRow.count}콜`);
+    } else {
+      fail(`weekly target not found after save (expected ${weeklyCount})`);
+    }
+  }
+
   console.log('\nDone.\n');
 }
 

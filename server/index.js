@@ -231,6 +231,23 @@ app.get('/api/rider/dashboard', async (req, res) => {
   }
 });
 
+app.post('/api/rider/targets', async (req, res) => {
+  try {
+    const result = await riderAuth.saveRiderTargets(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      monthly: result.monthly,
+      weekly: result.weekly
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '목표를 저장하지 못했습니다.' });
+  }
+});
+
 app.post('/api/rider/profile', async (req, res) => {
   try {
     const result = await riderAuth.updateRiderProfile(getBearerToken(req), req.body || {});
@@ -296,6 +313,25 @@ app.post('/api/admin/riders/bulk', async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 일괄 저장에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/riders/long-events/bulk', async (req, res) => {
+  try {
+    const result = await ridersAdmin.bulkPatchRiderLongEvents(
+      getBearerToken(req),
+      req.body?.patches || [],
+      { maxBatch: req.body?.maxBatch }
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error,
+        failed: result.failed || []
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '장기근속 이벤트 일괄 저장에 실패했습니다.' });
   }
 });
 

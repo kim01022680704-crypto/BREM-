@@ -623,6 +623,159 @@ async function patchRiderMissionFields(supabase, riderId, fields = {}) {
   return { ok: true, rider: data };
 }
 
+function normalizeLongEventPatchFields(fields = {}) {
+  const next = {};
+  if (fields.longEventItemId !== undefined) {
+    next.long_event_item_id = String(fields.longEventItemId || '').trim();
+  }
+  if (fields.longEventItem !== undefined) {
+    next.long_event_item = String(fields.longEventItem || '').trim();
+  }
+  if (fields.longEventStartDate !== undefined) {
+    next.long_event_start_date = toDate(fields.longEventStartDate);
+  }
+  if (fields.longEventPlatform !== undefined) {
+    next.long_event_platform = normalizeLongEventPlatform(fields.longEventPlatform);
+  }
+  return next;
+}
+
+const LONG_EVENT_ITEMS_SETTINGS_KEY = 'brem_admin_long_event_items';
+
+async function readLongEventItemsMap(supabase) {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', LONG_EVENT_ITEMS_SETTINGS_KEY)
+    .maybeSingle();
+  if (error) {
+    return { ok: false, error: error.message || '장기근속 이벤트 매핑을 불러오지 못했습니다.' };
+  }
+  const map = data?.value && typeof data.value === 'object' && !Array.isArray(data.value)
+    ? { ...data.value }
+    : {};
+  return { ok: true, map };
+}
+
+async function writeLongEventItemsMap(supabase, map) {
+  const { error } = await supabase.from('settings').upsert({
+    key: LONG_EVENT_ITEMS_SETTINGS_KEY,
+    value: map,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'key' });
+  if (error) {
+    return { ok: false, error: error.message || '장기근속 이벤트 매핑을 저장하지 못했습니다.' };
+  }
+  return { ok: true };
+}
+
+async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
+  const normalized = normalizeLongEventPatchFields(fields);
+  const updatePayload = {
+    ...normalized,
+    updated_at: new Date().toISOString()
+  };
+  if (Object.keys(normalized).length === 0) {
+    return { ok: false, status: 400, error: '저장할 장기근속 이벤트 정보가 없습니다.' };
+  }
+
+  const { data, error } = await supabase
+    .from('riders')
+    .update(updatePayload)
+    .eq('id', riderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingColumnError(error)) {
+      stripOptionalRiderColumns(updatePayload);
+      const retry = await supabase
+        .from('riders')
+        .update(updatePayload)
+        .eq('id', riderId)
+        .select('*')
+        .maybeSingle();
+      if (retry.error) {
+        return { ok: false, status: 400, error: retry.error.message || '장기근속 이벤트 저장에 실패했습니다.' };
+      }
+      return { ok: true, rider: retry.data };
+    }
+    return { ok: false, status: 400, error: error.message || '장기근속 이벤트 저장에 실패했습니다.' };
+  }
+
+  if (normalized.long_event_item_id !== undefined) {
+    const mapResult = await readLongEventItemsMap(supabase);
+    if (!mapResult.ok) {
+      return { ok: false, status: 500, error: mapResult.error };
+    }
+    const itemId = normalized.long_event_item_id;
+    if (itemId) mapResult.map[riderId] = itemId;
+    else delete mapResult.map[riderId];
+    const writeResult = await writeLongEventItemsMap(supabase, mapResult.map);
+    if (!writeResult.ok) {
+      return { ok: false, status: 500, error: writeResult.error };
+    }
+  }
+
+  return { ok: true, rider: data };
+}
+
+async function bulkPatchRiderLongEvents(accessToken, patches = [], options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const list = Array.isArray(patches)
+    ? patches.filter(item => {
+      if (!item?.id) return false;
+      const normalized = normalizeLongEventPatchFields(item);
+      return Object.keys(normalized).length > 0;
+    })
+    : [];
+  if (!list.length) {
+    return { ok: true, updated: 0, failed: [] };
+  }
+
+  const maxBatch = Math.min(Math.max(Number(options.maxBatch) || 300, 1), 500);
+  if (list.length > maxBatch) {
+    return {
+      ok: false,
+      status: 400,
+      error: `한 번에 최대 ${maxBatch}명까지 장기근속 이벤트를 적용할 수 있습니다.`
+    };
+  }
+
+  const supabase = getServiceClient();
+  const failed = [];
+  let updated = 0;
+
+  for (const patch of list) {
+    const riderId = String(patch.id || '').trim();
+    const result = await patchRiderLongEventFields(supabase, riderId, patch);
+    if (!result.ok) {
+      failed.push({ id: riderId, error: result.error || '장기근속 이벤트 저장 실패' });
+      continue;
+    }
+    updated += 1;
+  }
+
+  if (failed.length && !updated) {
+    return {
+      ok: false,
+      status: 400,
+      error: failed[0].error || '장기근속 이벤트 일괄 저장에 실패했습니다.',
+      failed,
+      updated: 0
+    };
+  }
+
+  return {
+    ok: true,
+    updated,
+    failed,
+    total: list.length
+  };
+}
+
 async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -840,6 +993,7 @@ module.exports = {
   upsertRider,
   bulkUpsertRiders,
   bulkPatchRiderMissions,
+  bulkPatchRiderLongEvents,
   countRiders,
   deleteAllRiders,
   deleteRider,

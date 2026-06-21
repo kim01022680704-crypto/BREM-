@@ -1597,9 +1597,21 @@ const BremStorage = (function () {
     'selectedMissionIdCoupang'
   ]);
 
+  const LONG_EVENT_DRIVER_FIELDS = new Set([
+    'longEventItemId',
+    'longEventItem',
+    'longEventStartDate',
+    'longEventPlatform'
+  ]);
+
   function isMissionOnlyChanges(changes = {}) {
     const keys = Object.keys(changes || {}).filter(key => key !== 'updatedAt');
     return keys.length > 0 && keys.every(key => MISSION_DRIVER_FIELDS.has(key));
+  }
+
+  function isLongEventOnlyChanges(changes = {}) {
+    const keys = Object.keys(changes || {}).filter(key => key !== 'updatedAt');
+    return keys.length > 0 && keys.every(key => LONG_EVENT_DRIVER_FIELDS.has(key));
   }
 
   function flattenMissionPatch(item) {
@@ -1652,6 +1664,72 @@ const BremStorage = (function () {
       throw new Error(result.message || result.error || 'Supabase에 기사 미션을 저장하지 못했습니다.');
     }
     return result;
+  }
+
+  function flattenLongEventPatch(item) {
+    if (!item?.id) return null;
+    const patch = { id: item.id };
+    const source = item.changes && typeof item.changes === 'object' ? item.changes : item;
+    if (source.longEventItemId !== undefined) patch.longEventItemId = source.longEventItemId;
+    if (source.longEventItem !== undefined) patch.longEventItem = source.longEventItem;
+    if (source.longEventStartDate !== undefined) patch.longEventStartDate = source.longEventStartDate;
+    if (source.longEventPlatform !== undefined) patch.longEventPlatform = source.longEventPlatform;
+    const hasField = ['longEventItemId', 'longEventItem', 'longEventStartDate', 'longEventPlatform']
+      .some(key => patch[key] !== undefined);
+    return hasField ? patch : null;
+  }
+
+  async function persistRiderLongEventsBulkViaServer(patches, options = {}) {
+    const payload = (Array.isArray(patches) ? patches : [])
+      .map(flattenLongEventPatch)
+      .filter(Boolean);
+    if (!payload.length) {
+      return { ok: true, updated: 0 };
+    }
+
+    const postBulk = () => adminRidersApi('/api/admin/riders/long-events/bulk', {
+      method: 'POST',
+      body: JSON.stringify({
+        patches: payload,
+        maxBatch: options.maxBatch || 300
+      })
+    });
+
+    let result = await postBulk();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postBulk();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || 'Supabase에 장기근속 이벤트를 저장하지 못했습니다.');
+    }
+    return result;
+  }
+
+  async function persistRiderTargetsViaServer(body = {}) {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      throw new Error('로그인 세션이 없습니다. 다시 로그인하세요.');
+    }
+
+    const response = await fetch('/api/rider/targets', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || '목표를 저장하지 못했습니다.');
+    }
+    return payload;
   }
 
   async function fetchRiderAssignedMissionsFromServer() {
@@ -3177,7 +3255,9 @@ const BremStorage = (function () {
           ? persistRiderSelfViaServer(id, changes)
           : (isMissionOnlyChanges(changes)
             ? persistRiderMissionsBulkViaServer([{ id, changes }])
-            : persistRiderViaServer(updated));
+            : (isLongEventOnlyChanges(changes)
+              ? persistRiderLongEventsBulkViaServer([{ id, changes }])
+              : persistRiderViaServer(updated)));
         return persist
           .then(() => {
             markDriversCache(nextDrivers, { source: 'write' });
@@ -3473,7 +3553,7 @@ const BremStorage = (function () {
       return storageAdapter.read(KEYS.targets, []);
     },
 
-    upsertMonthly({ driverId, month, count }) {
+    upsertMonthlyLocal({ driverId, month, count }) {
       const list = targets.getAll().filter(item => !(item.driverId === driverId && item.month === month));
       list.push({
         id: `${driverId}-${month}`,
@@ -3481,8 +3561,20 @@ const BremStorage = (function () {
         month,
         count: Number(count)
       });
-      storageAdapter.write(KEYS.targets, list);
+      if (isProductionMode() && isRiderSelfUpdate(driverId)) {
+        stageRiderScopedCache(KEYS.targets, list, { tableLoaded: true });
+      } else {
+        storageAdapter.write(KEYS.targets, list);
+      }
       return list;
+    },
+
+    upsertMonthly({ driverId, month, count }) {
+      if (isProductionMode() && isRiderSelfUpdate(driverId)) {
+        return persistRiderTargetsViaServer({ monthly: { month, count } })
+          .then(() => targets.upsertMonthlyLocal({ driverId, month, count }));
+      }
+      return targets.upsertMonthlyLocal({ driverId, month, count });
     },
 
     removeById(id) {
@@ -3500,7 +3592,7 @@ const BremStorage = (function () {
       return storageAdapter.read(KEYS.weeklyTargets, []);
     },
 
-    upsert({ driverId, weekStart, count }) {
+    upsertLocal({ driverId, weekStart, count }) {
       const list = weeklyTargets.getAll().filter(item => !(item.driverId === driverId && item.weekStart === weekStart));
       list.push({
         id: `${driverId}-${weekStart}`,
@@ -3508,8 +3600,20 @@ const BremStorage = (function () {
         weekStart,
         count: Number(count)
       });
-      storageAdapter.write(KEYS.weeklyTargets, list);
+      if (isProductionMode() && isRiderSelfUpdate(driverId)) {
+        stageRiderScopedCache(KEYS.weeklyTargets, list);
+      } else {
+        storageAdapter.write(KEYS.weeklyTargets, list);
+      }
       return list;
+    },
+
+    upsert({ driverId, weekStart, count }) {
+      if (isProductionMode() && isRiderSelfUpdate(driverId)) {
+        return persistRiderTargetsViaServer({ weekly: { weekStart, count } })
+          .then(() => weeklyTargets.upsertLocal({ driverId, weekStart, count }));
+      }
+      return weeklyTargets.upsertLocal({ driverId, weekStart, count });
     },
 
     removeById(id) {
@@ -4790,6 +4894,24 @@ const BremStorage = (function () {
       const catalog = events.getCatalog();
       const selected = map[driver.id] || driver.longEventItemId || driver.longEventItem || '';
       return catalog.find(item => item.id === selected || item.name === selected) || null;
+    },
+
+    saveDriverSettings(driverId, { itemId, itemName, platform, startDate } = {}) {
+      const map = events.getDriverItemMap();
+      const normalizedItemId = String(itemId || '').trim();
+      if (normalizedItemId) {
+        map[driverId] = normalizedItemId;
+      } else {
+        delete map[driverId];
+      }
+      events.saveDriverItemMap(map);
+
+      return drivers.update(driverId, {
+        longEventItemId: normalizedItemId,
+        longEventItem: String(itemName || '').trim(),
+        longEventStartDate: String(startDate || '').slice(0, 10),
+        longEventPlatform: normalizeLongEventPlatform(platform)
+      });
     }
   };
 

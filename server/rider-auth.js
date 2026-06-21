@@ -479,6 +479,129 @@ async function getRiderDashboard(accessToken) {
   };
 }
 
+const WEEKLY_TARGETS_SETTINGS_KEY = 'brem_driver_weekly_targets';
+
+function normalizeMonthKey(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^(\d{4})-(\d{1,2})/);
+  if (!match) return '';
+  return `${match[1]}-${String(match[2]).padStart(2, '0')}`;
+}
+
+function normalizeWeekStart(value) {
+  const text = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
+}
+
+async function readWeeklyTargetsSetting(supabase) {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', WEEKLY_TARGETS_SETTINGS_KEY)
+    .maybeSingle();
+  if (error) {
+    return { ok: false, error: error.message || '주간 목표 설정을 불러오지 못했습니다.' };
+  }
+  const list = Array.isArray(data?.value) ? data.value : [];
+  return { ok: true, list };
+}
+
+async function writeWeeklyTargetsSetting(supabase, list) {
+  const { error } = await supabase.from('settings').upsert({
+    key: WEEKLY_TARGETS_SETTINGS_KEY,
+    value: list,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'key' });
+  if (error) {
+    return { ok: false, error: error.message || '주간 목표를 저장하지 못했습니다.' };
+  }
+  return { ok: true };
+}
+
+async function saveRiderTargets(accessToken, body = {}) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const riderId = me.riderId;
+  const monthly = body.monthly && typeof body.monthly === 'object' ? body.monthly : null;
+  const weekly = body.weekly && typeof body.weekly === 'object' ? body.weekly : null;
+
+  if (!monthly && !weekly) {
+    return { ok: false, status: 400, error: '저장할 목표 정보가 없습니다.' };
+  }
+
+  const result = { ok: true, riderId, monthly: null, weekly: null };
+
+  if (monthly) {
+    const month = normalizeMonthKey(monthly.month);
+    const count = Math.max(0, Number(monthly.count) || 0);
+    if (!month) {
+      return { ok: false, status: 400, error: '월간 목표 적용 월이 올바르지 않습니다.' };
+    }
+
+    const id = `${riderId}-${month}`;
+    const { error } = await supabase.from('admin_targets').upsert({
+      id,
+      driver_id: riderId,
+      month,
+      count,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (error) {
+      const message = error.message || '';
+      if (/does not exist|relation|schema cache/i.test(message)) {
+        return {
+          ok: false,
+          status: 400,
+          error: '운영 DB 테이블이 준비되지 않았습니다. supabase/operations_tables_migration.sql 을 실행하세요.'
+        };
+      }
+      return { ok: false, status: 500, error: message || '월간 목표를 저장하지 못했습니다.' };
+    }
+
+    result.monthly = { id, driverId: riderId, month, count };
+  }
+
+  if (weekly) {
+    const weekStart = normalizeWeekStart(weekly.weekStart);
+    const count = Math.max(0, Number(weekly.count) || 0);
+    if (!weekStart) {
+      return { ok: false, status: 400, error: '주간 목표 적용 주가 올바르지 않습니다.' };
+    }
+
+    const readResult = await readWeeklyTargetsSetting(supabase);
+    if (!readResult.ok) {
+      return { ok: false, status: 500, error: readResult.error };
+    }
+
+    const list = readResult.list.filter(item => !(
+      String(item?.driverId || '') === String(riderId)
+      && String(item?.weekStart || '').slice(0, 10) === weekStart
+    ));
+    list.push({
+      id: `${riderId}-${weekStart}`,
+      driverId: riderId,
+      weekStart,
+      count
+    });
+
+    const writeResult = await writeWeeklyTargetsSetting(supabase, list);
+    if (!writeResult.ok) {
+      return { ok: false, status: 500, error: writeResult.error };
+    }
+
+    result.weekly = { id: `${riderId}-${weekStart}`, driverId: riderId, weekStart, count };
+  }
+
+  return result;
+}
+
 async function signInRider(loginInput, password) {
   const supabase = getServiceClient();
   const authClient = getAnonAuthClient();
@@ -530,6 +653,7 @@ module.exports = {
   getRiderMe,
   getRiderAssignedMissions,
   getRiderDashboard,
+  saveRiderTargets,
   updateRiderProfile,
   provisionRiderAuthAccount,
   makeRiderLoginId

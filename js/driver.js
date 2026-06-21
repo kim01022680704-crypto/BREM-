@@ -524,11 +524,11 @@
   }
 
   function saveMonthlyTarget(driverId, month, count) {
-    BremStorage.targets.upsertMonthly({ driverId, month, count });
+    return BremStorage.targets.upsertMonthly({ driverId, month, count });
   }
 
   function saveWeeklyTarget(driverId, weekStart, count) {
-    BremStorage.weeklyTargets.upsert({ driverId, weekStart, count });
+    return BremStorage.weeklyTargets.upsert({ driverId, weekStart, count });
   }
 
   function setText(id, value) {
@@ -993,14 +993,32 @@
       showToast('적용 월을 선택하세요.');
       return;
     }
-    saveMonthlyTarget(
+    const submitBtn = event.submitter || event.target.querySelector('[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '저장 중…';
+    }
+
+    void saveMonthlyTarget(
       state.currentDriver.id,
       month,
       document.getElementById('driverMonthTargetCount').value
-    );
-    showToast('월 목표 콜수가 저장되었습니다.');
-    renderDriver(state.currentDriver);
-    closeTargetModal();
+    )
+      .then(() => BremStorage.fetchRiderDashboardFromServer?.())
+      .then(() => {
+        showToast('월 목표 콜수가 저장되었습니다.');
+        renderDriver(state.currentDriver);
+        closeTargetModal();
+      })
+      .catch(error => {
+        showToast(error.message || '월 목표 저장에 실패했습니다.');
+      })
+      .finally(() => {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = '저장';
+        }
+      });
   });
 
   document.getElementById('weekTargetForm').addEventListener('submit', event => {
@@ -1013,14 +1031,32 @@
     }
     const weekStart = weekStartKey(weekDate);
     state.selectedWeekStart = weekStart;
-    saveWeeklyTarget(
+    const submitBtn = event.submitter || event.target.querySelector('[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '저장 중…';
+    }
+
+    void saveWeeklyTarget(
       state.currentDriver.id,
       weekStart,
       document.getElementById('driverWeekTargetCount').value
-    );
-    showToast('주 목표 콜수가 저장되었습니다.');
-    renderDriver(state.currentDriver);
-    closeTargetModal();
+    )
+      .then(() => BremStorage.fetchRiderDashboardFromServer?.())
+      .then(() => {
+        showToast('주 목표 콜수가 저장되었습니다.');
+        renderDriver(state.currentDriver);
+        closeTargetModal();
+      })
+      .catch(error => {
+        showToast(error.message || '주 목표 저장에 실패했습니다.');
+      })
+      .finally(() => {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = '저장';
+        }
+      });
   });
 
   document.getElementById('monthTargetCard')?.addEventListener('click', () => openTargetModal('month'));

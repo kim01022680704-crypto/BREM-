@@ -20,6 +20,9 @@
     unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
   };
 
+  const eventSettingsDrafts = new Map();
+  const eventSettingsDirty = new Set();
+
   let callStatsIndex = null;
   let callStatsIndexKey = '';
   const driverSelectOptionsCache = new Map();
@@ -1109,6 +1112,111 @@
     return dateValue ? formatDate(dateValue) : '시작일 선택';
   }
 
+  function getSavedEventSettings(driver) {
+    const item = eventItemFor(driver);
+    return {
+      itemId: item?.id || driver.longEventItemId || '',
+      platform: BremStorage.events.getDriverEventPlatform(driver),
+      startDate: driver.longEventStartDate || ''
+    };
+  }
+
+  function getDriverEventDraft(driver) {
+    return eventSettingsDrafts.get(driver.id) || getSavedEventSettings(driver);
+  }
+
+  function readEventDraftFromDom(driverId) {
+    const itemSelect = document.querySelector(`[data-event-driver="${driverId}"]`);
+    const platformSelect = document.querySelector(`[data-event-platform="${driverId}"]`);
+    const startInput = document.querySelector(`[data-event-start="${driverId}"]`);
+    const itemId = String(itemSelect?.value || '').trim();
+    const selectedItem = eventCatalog().find(item => item.id === itemId);
+    return {
+      itemId,
+      itemName: selectedItem?.name || '',
+      platform: platformSelect?.value || 'coupang',
+      startDate: String(startInput?.value || '').slice(0, 10)
+    };
+  }
+
+  function isEventSettingsDirty(driverId) {
+    const driver = drivers().find(item => item.id === driverId);
+    if (!driver) return false;
+    const draft = getDriverEventDraft(driver);
+    const saved = getSavedEventSettings(driver);
+    return draft.itemId !== saved.itemId
+      || draft.platform !== saved.platform
+      || draft.startDate !== saved.startDate;
+  }
+
+  function syncEventDirtyState(driverId) {
+    if (isEventSettingsDirty(driverId)) eventSettingsDirty.add(driverId);
+    else eventSettingsDirty.delete(driverId);
+  }
+
+  function updateEventSettingsSaveAllUi() {
+    const saveAllBtn = $('#eventSettingsSaveAllBtn');
+    if (!saveAllBtn) return;
+    const dirtyCount = eventSettingsDirty.size;
+    saveAllBtn.hidden = dirtyCount === 0;
+    saveAllBtn.textContent = dirtyCount > 0
+      ? `변경사항 일괄 저장 (${dirtyCount}명)`
+      : '변경사항 일괄 저장';
+  }
+
+  function updateEventDriverRowUi(driverId) {
+    const row = document.querySelector(`.event-driver-row[data-driver-id="${CSS.escape(String(driverId))}"]`);
+    if (!row) {
+      renderMissions();
+      return;
+    }
+
+    const isDirty = isEventSettingsDirty(driverId);
+    row.classList.toggle('event-driver-row-dirty', isDirty);
+    const saveBtn = row.querySelector('[data-save-event-settings]');
+    if (saveBtn) saveBtn.disabled = !isDirty;
+    updateEventSettingsSaveAllUi();
+  }
+
+  function resetEventSettingsDrafts() {
+    eventSettingsDrafts.clear();
+    eventSettingsDirty.clear();
+    updateEventSettingsSaveAllUi();
+  }
+
+  async function saveDriverEventSettings(driverId) {
+    const driver = drivers().find(item => item.id === driverId);
+    if (!driver) throw new Error('기사를 찾을 수 없습니다.');
+
+    const draft = readEventDraftFromDom(driverId);
+    await BremStorage.events.saveDriverSettings(driverId, draft);
+    await BremStorage.flushStorage?.().catch(() => ({}));
+    eventSettingsDrafts.delete(driverId);
+    eventSettingsDirty.delete(driverId);
+  }
+
+  async function saveAllDirtyEventSettings() {
+    const ids = [...eventSettingsDirty];
+    if (!ids.length) return;
+
+    const failed = [];
+    for (const driverId of ids) {
+      try {
+        await saveDriverEventSettings(driverId);
+      } catch (error) {
+        failed.push({ id: driverId, error: error.message || '저장 실패' });
+      }
+    }
+
+    if (failed.length && failed.length === ids.length) {
+      throw new Error(failed[0].error || '장기근속이벤트 저장에 실패했습니다.');
+    }
+
+    if (failed.length) {
+      throw new Error(`${ids.length - failed.length}명 저장 · ${failed.length}명 실패`);
+    }
+  }
+
   function callDateLabelId(targetId) {
     const dash = targetId.lastIndexOf('-');
     if (dash === -1) return `${targetId}Label`;
@@ -1272,9 +1380,14 @@
             button.textContent = eventStartButtonLabel(hiddenInput.value);
           },
           onSelect(value) {
-            BremStorage.events.setDriverStartDate(driverId, value);
-            showToast('장기근속이벤트 시작일이 저장되었습니다.');
-            renderAll();
+            const driverId = button.dataset.eventStartButton;
+            const current = eventSettingsDrafts.get(driverId) || getSavedEventSettings(
+              drivers().find(item => item.id === driverId) || {}
+            );
+            eventSettingsDrafts.set(driverId, { ...current, startDate: value || '' });
+            syncEventDirtyState(driverId);
+            button.textContent = eventStartButtonLabel(value);
+            updateEventDriverRowUi(driverId);
           }
         };
       }
@@ -2396,39 +2509,51 @@
         ${Sort.header('이벤트 아이템', 'item', state.eventSettingsSort)}
         ${Sort.header('집계 플랫폼', 'platform', state.eventSettingsSort)}
         ${Sort.header('시작일', 'startDate', state.eventSettingsSort)}
+        <span class="event-settings-actions-col">저장</span>
       </div>
     ` : '';
 
     $('#eventSettings').innerHTML = allDrivers.length ? [
       sortHeader,
-      ...sortedDrivers.map(driver => `
-      <div class="event-driver-row" data-driver-id="${escapeHtml(driver.id)}">
+      ...sortedDrivers.map(driver => {
+        const draft = getDriverEventDraft(driver);
+        const isDirty = isEventSettingsDirty(driver.id);
+        const itemId = draft.itemId || (eventItemFor(driver) || {}).id || driver.longEventItemId || driver.longEventItem || '';
+        const platform = draft.platform || BremStorage.events.getDriverEventPlatform(driver);
+        const startDate = draft.startDate || driver.longEventStartDate || '';
+        return `
+      <div class="event-driver-row${isDirty ? ' event-driver-row-dirty' : ''}" data-driver-id="${escapeHtml(driver.id)}">
         <strong>${escapeHtml(driver.name)} · ${escapeHtml(driver.phone)}</strong>
         <label>
           이벤트 아이템
           <select data-event-driver="${driver.id}">
-            ${eventOptions((eventItemFor(driver) || {}).id || driver.longEventItemId || driver.longEventItem || '')}
+            ${eventOptions(itemId)}
           </select>
         </label>
         <label>
           집계 플랫폼
           <select data-event-platform="${driver.id}" title="쿠팡 또는 배민 중 하나만 집계됩니다. 합산은 사용하지 않습니다.">
-            ${eventPlatformOptions(driver.longEventPlatform)}
+            ${eventPlatformOptions(platform)}
           </select>
         </label>
         <label class="event-start-date-field">
           <span>시작일</span>
           <button type="button" class="date-range-button" data-event-start-button="${driver.id}">
-            ${eventStartButtonLabel(driver.longEventStartDate)}
+            ${eventStartButtonLabel(startDate)}
           </button>
-          <input type="hidden" data-event-start="${driver.id}" value="${driver.longEventStartDate || ''}">
+          <input type="hidden" data-event-start="${driver.id}" value="${startDate || ''}">
         </label>
+        <div class="event-driver-row-actions">
+          <button type="button" class="small-btn primary-btn" data-save-event-settings="${escapeHtml(driver.id)}"${isDirty ? '' : ' disabled'}>저장</button>
+        </div>
       </div>
-    `)
+    `;
+      })
     ].join('') : `<div class="empty event-settings-empty">${emptyMessage}</div>`;
 
     applyEventSettingsFilter();
     Sort?.markScope(document.querySelector('[data-sort-table="event-settings"]'), state.eventSettingsSort);
+    updateEventSettingsSaveAllUi();
   }
 
   function renderNoticeItems(items, withActions) {
@@ -3530,20 +3655,76 @@
     document.addEventListener('change', event => {
       const input = event.target.closest('[data-event-driver]');
       if (!input) return;
+      const driverId = input.dataset.eventDriver;
       const selectedItem = eventCatalog().find(item => item.id === input.value);
-      BremStorage.events.setDriverItem(
-        input.dataset.eventDriver,
-        selectedItem ? { id: selectedItem.id, name: selectedItem.name } : null
+      const current = eventSettingsDrafts.get(driverId) || getSavedEventSettings(
+        drivers().find(item => item.id === driverId) || {}
       );
-      renderAll();
+      eventSettingsDrafts.set(driverId, {
+        ...current,
+        itemId: selectedItem ? selectedItem.id : '',
+        itemName: selectedItem ? selectedItem.name : ''
+      });
+      syncEventDirtyState(driverId);
+      updateEventDriverRowUi(driverId);
     });
 
     document.addEventListener('change', event => {
       const input = event.target.closest('[data-event-platform]');
       if (!input) return;
-      BremStorage.events.setDriverEventPlatform(input.dataset.eventPlatform, input.value);
-      showToast(`집계 플랫폼이 ${longEventPlatformLabel(input.value)}(으)로 저장되었습니다.`);
-      renderAll();
+      const driverId = input.dataset.eventPlatform;
+      const current = eventSettingsDrafts.get(driverId) || getSavedEventSettings(
+        drivers().find(item => item.id === driverId) || {}
+      );
+      eventSettingsDrafts.set(driverId, {
+        ...current,
+        platform: input.value
+      });
+      syncEventDirtyState(driverId);
+      updateEventDriverRowUi(driverId);
+    });
+
+    $('#eventSettings')?.addEventListener('click', event => {
+      const saveBtn = event.target.closest('[data-save-event-settings]');
+      if (!saveBtn) return;
+
+      const driverId = saveBtn.dataset.saveEventSettings;
+      saveBtn.disabled = true;
+      saveBtn.textContent = '저장 중…';
+
+      void saveDriverEventSettings(driverId)
+        .then(() => {
+          showToast('장기근속이벤트 설정이 저장되었습니다. 기사앱에 반영됩니다.');
+          renderAll();
+        })
+        .catch(error => {
+          showToast(error.message || '장기근속이벤트 저장에 실패했습니다.');
+          renderMissions();
+        });
+    });
+
+    $('#eventSettingsSaveAllBtn')?.addEventListener('click', () => {
+      const btn = $('#eventSettingsSaveAllBtn');
+      if (!btn || eventSettingsDirty.size === 0) return;
+      const count = eventSettingsDirty.size;
+      btn.disabled = true;
+      const prevText = btn.textContent;
+      btn.textContent = '저장 중…';
+
+      void saveAllDirtyEventSettings()
+        .then(() => {
+          showToast(`${count}명 장기근속이벤트 설정을 저장했습니다. 기사앱에 반영됩니다.`);
+          resetEventSettingsDrafts();
+          renderAll();
+        })
+        .catch(error => {
+          showToast(error.message || '장기근속이벤트 일괄 저장에 실패했습니다.');
+          renderMissions();
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.textContent = prevText;
+        });
     });
 
     $('#noticeForm').addEventListener('submit', event => {
