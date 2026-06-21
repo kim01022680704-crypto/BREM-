@@ -253,3 +253,56 @@
     font-size: 16px;
   }
 }
+
+/* ── Mobile (768px 이하) — 기사앱·관리자 로그인 ── */
+@media (max-width: 768px) {
+  .login-page {
+    padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .login-shell {
+    width: min(var(--login-card-w), calc(100vw - 24px));
+  }
+
+  .login-card {
+    padding: 0 20px 22px;
+    border-radius: 20px;
+  }
+
+  .login-card__logo {
+    margin: 0 -20px;
+    padding: 20px 20px 10px;
+  }
+
+  .login-card__divider {
+    margin: 0 -20px 4px;
+  }
+
+  .login-field__control {
+    height: auto;
+    min-height: 44px;
+  }
+
+  .login-field__control input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .login-submit {
+    min-height: 48px;
+    height: 48px;
+    width: 100%;
+    font-size: 1.02rem;
+  }
+
+  .login-home-link {
+    min-height: 44px;
+    padding: 8px 0;
+  }
+
+  .login-card__help {
+    font-size: 0.82rem;
+    line-height: 1.55;
+    word-break: keep-all;
+  }
+}

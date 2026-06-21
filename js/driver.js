@@ -556,7 +556,10 @@
     const condEl = document.getElementById(`riderMission${prefix}Conditions`);
     const active = platform === 'baemin' ? Boolean(driver?.platformBaemin) : driver?.platformCoupang !== false;
 
-    if (wrap) wrap.hidden = !active;
+    if (wrap) {
+      wrap.hidden = !active;
+      wrap.classList.remove('is-mission-assigned');
+    }
     if (!active) return;
 
     const id = String(missionId || '').trim();
@@ -581,6 +584,8 @@
       if (condEl) condEl.hidden = true;
       return;
     }
+
+    if (wrap) wrap.classList.add('is-mission-assigned');
 
     if (titleEl) titleEl.textContent = mission.title || '미설정';
     if (descEl) descEl.textContent = mission.description || '';

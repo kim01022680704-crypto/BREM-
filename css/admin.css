@@ -4549,7 +4549,99 @@ textarea {
   color: rgba(255, 255, 255, 0.55);
 }
 
+@media (max-width: 900px) {
   .revenue-form-grid .span-2 {
     grid-column: span 1;
+  }
+}
+
+/* ── Mobile final (768px 이하) — 관리자 ── */
+@media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  .admin-app {
+    min-width: 0;
+  }
+
+  .main {
+    padding: max(10px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom));
+    min-width: 0;
+  }
+
+  .menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 12px 14px;
+  }
+
+  .topbar {
+    gap: 10px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stat-card {
+    min-width: 0;
+  }
+
+  .card,
+  .rejection-bulk-card {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .bulk-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bulk-file-field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .bulk-file-label,
+  .primary-btn,
+  .small-btn,
+  .lease-template-btn {
+    min-height: 48px;
+  }
+
+  .form-row input,
+  .form-row select,
+  .form-row textarea,
+  .rejection-input-form input,
+  .rejection-input-form select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .promotion-platform-tabs,
+  .admin-section-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .sidebar {
+    width: min(300px, 88vw);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }

@@ -1985,3 +1985,86 @@ textarea:focus,
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ── Mobile final (768px 이하) — 기사등록 프로그램 ── */
+@media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  .index-app,
+  .app {
+    width: calc(100% - 16px);
+    max-width: 100%;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+
+  .index-content,
+  .index-content--register {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .layout--register,
+  .form-panel--register {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .driver-form--register input,
+  .driver-form--register select,
+  .driver-form--register textarea,
+  .field input,
+  .field select,
+  .field textarea,
+  .filter-field input,
+  .filter-field select {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .btn,
+  .btn.primary,
+  .btn.ghost,
+  .form-mode-tab {
+    min-height: 48px;
+  }
+
+  .form-actions,
+  .actions {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .bulk-upload-zone,
+  .bulk-file-field,
+  .bulk-file-label {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .register-toolbar-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .index-menu-btn {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .panel,
+  .form-panel {
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .platform-check {
+    min-height: 44px;
+  }
+}

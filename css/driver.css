@@ -1315,3 +1315,155 @@ button.calendar-day:hover {
     font-size: 0.82rem;
   }
 }
+
+/* ── Mobile final (768px 이하) — Galaxy/iPhone 기준 ── */
+@media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  body {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .driver-app {
+    width: calc(100% - 20px);
+    max-width: 100%;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(56px, calc(24px + env(safe-area-inset-bottom)));
+  }
+
+  .hero {
+    padding: 20px 18px;
+    border-radius: 18px;
+  }
+
+  .hero h1 {
+    font-size: 1.45rem;
+  }
+
+  .hero-desc {
+    font-size: 0.88rem;
+  }
+
+  .logout-btn,
+  .profile-edit-toggle,
+  .ghost-btn,
+  .target-save-btn,
+  .week-nav button,
+  .summary-card--action {
+    min-height: 48px;
+  }
+
+  .profile-edit-form input,
+  .target-form input,
+  .month-target-form input,
+  .week-target-form input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .panel {
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 16px 18px;
+    gap: 12px;
+  }
+
+  .profile-card,
+  .summary-section,
+  .content-grid {
+    gap: 14px;
+  }
+
+  .summary-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .notice-list {
+    padding: 8px 16px 16px;
+  }
+
+  .notice-item {
+    padding: 14px 0;
+  }
+
+  .notice-item h3 {
+    font-size: 0.98rem;
+    line-height: 1.45;
+    word-break: keep-all;
+  }
+
+  .notice-item p {
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+  }
+
+  .mission-summary-box {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .mission-platform-block {
+    width: 100%;
+    padding: 14px 14px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: #fafbfc;
+  }
+
+  .mission-platform-block + .mission-platform-block {
+    padding-top: 14px;
+    border-top: 0;
+    margin-top: 4px;
+  }
+
+  .mission-platform-block.is-mission-assigned {
+    border-color: rgba(255, 212, 0, 0.65);
+    background: linear-gradient(180deg, #fffef5 0%, #fff9db 100%);
+    box-shadow: 0 0 0 1px rgba(255, 212, 0, 0.2);
+  }
+
+  .mission-platform-block.is-mission-assigned .mission-summary-label {
+    color: var(--black);
+    font-weight: 800;
+  }
+
+  .mission-platform-block.is-mission-assigned strong {
+    font-size: 1.08rem;
+    color: var(--black);
+  }
+
+  .mission-summary-box strong {
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }
+
+  .table-wrap {
+    margin: 0 -2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .progress-box {
+    padding: 18px 16px;
+  }
+
+  .toast {
+    bottom: max(18px, env(safe-area-inset-bottom));
+    width: calc(100% - 24px);
+    max-width: none;
+    border-radius: 14px;
+    padding: 14px 18px;
+  }
+
+  .driver-target-dialog {
+    width: calc(100% - 24px);
+    max-width: none;
+  }
+}
