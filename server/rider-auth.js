@@ -156,23 +156,54 @@ async function getRiderMe(accessToken) {
   };
 }
 
+async function findAuthUserIdByEmail(supabase, email) {
+  const target = String(email || '').trim().toLowerCase();
+  if (!target) return null;
+
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw error;
+    const match = (data?.users || []).find(user => String(user.email || '').trim().toLowerCase() === target);
+    if (match?.id) return match.id;
+    if ((data?.users || []).length < 200) break;
+  }
+  return null;
+}
+
+function isDuplicateAuthUserError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('already been registered')
+    || message.includes('already registered')
+    || message.includes('duplicate');
+}
+
+async function updateLinkedRiderAuthUser(supabase, userId, rider, email, authPassword) {
+  const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+    email,
+    password: authPassword,
+    email_confirm: true,
+    user_metadata: {
+      role: 'rider',
+      rider_id: rider.id,
+      display_name: rider.name || ''
+    }
+  });
+  if (updateError) {
+    return { ok: false, status: 400, error: updateError.message || '기사 Auth 비밀번호 갱신에 실패했습니다.' };
+  }
+  return { ok: true, userId };
+}
+
 async function ensureRiderAuthAccount(supabase, rider, plainPassword) {
   const email = riderAuthEmail(rider.id);
   const authPassword = toSupabaseAuthPassword(plainPassword);
   let userId = rider.auth_user_id || null;
 
   if (userId) {
-    const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
-      email,
-      password: authPassword,
-      email_confirm: true,
-      user_metadata: {
-        role: 'rider',
-        rider_id: rider.id,
-        display_name: rider.name || ''
-      }
-    });
-    if (updateError) {
+    const linked = await updateLinkedRiderAuthUser(supabase, userId, rider, email, authPassword);
+    if (linked.ok) {
+      userId = linked.userId;
+    } else {
       userId = null;
     }
   }
@@ -190,14 +221,20 @@ async function ensureRiderAuthAccount(supabase, rider, plainPassword) {
     });
 
     if (createError) {
-      const authClient = getAnonAuthClient();
-      const { data: signInData, error: signInError } = authClient
-        ? await authClient.auth.signInWithPassword({ email, password: authPassword })
-        : { data: null, error: createError };
-      if (signInError || !signInData?.user) {
+      if (isDuplicateAuthUserError(createError)) {
+        try {
+          userId = await findAuthUserIdByEmail(supabase, email);
+        } catch (lookupError) {
+          return { ok: false, status: 500, error: lookupError.message || '기사 Auth 계정 조회에 실패했습니다.' };
+        }
+        if (!userId) {
+          return { ok: false, status: 400, error: '이미 등록된 Auth 계정을 찾지 못했습니다. 관리자에게 문의하세요.' };
+        }
+        const linked = await updateLinkedRiderAuthUser(supabase, userId, rider, email, authPassword);
+        if (!linked.ok) return linked;
+      } else {
         return { ok: false, status: 400, error: createError.message || '기사 Auth 계정 생성에 실패했습니다.' };
       }
-      userId = signInData.user.id;
     } else {
       userId = created.user.id;
     }

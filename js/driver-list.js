@@ -618,12 +618,17 @@
     render();
   }
 
-  function resetDriverPassword(id) {
+  async function resetDriverPassword(id) {
     const driver = BremStorage.drivers.getById(id);
     if (!driver) return;
     if (!window.confirm(`${driver.name} 기사의 로그인 비밀번호를 1234로 초기화할까요?`)) return;
-    BremStorage.drivers.resetPassword(id);
-    showToast(toast, `${driver.name} 비밀번호를 1234로 초기화했습니다.`);
+    try {
+      await BremStorage.drivers.resetPassword(id);
+      showToast(toast, `${driver.name} 비밀번호를 1234로 초기화했습니다.`);
+      render();
+    } catch (error) {
+      showToast(error.message || '비밀번호 초기화에 실패했습니다.');
+    }
   }
 
   function handleListClick(event) {
@@ -634,7 +639,9 @@
     if (action === 'edit') {
       window.location.href = `rider-manage.html?edit=${encodeURIComponent(id)}`;
     }
-    if (action === 'reset-password') resetDriverPassword(id);
+    if (action === 'reset-password') {
+      void resetDriverPassword(id);
+    }
     if (action === 'toggle-field-hidden') toggleFieldHidden(id, button.dataset.field);
     if (action === 'delete') deleteDriver(id);
   }

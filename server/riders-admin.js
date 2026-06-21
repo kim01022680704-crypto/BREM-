@@ -448,6 +448,11 @@ async function upsertRider(accessToken, rider) {
   const provision = await provisionRiderAuthAccount(row);
   if (!provision.ok) {
     console.warn('[BREM] Rider auth provisioning failed:', provision.error);
+    return {
+      ok: false,
+      status: provision.status || 400,
+      error: provision.error || '기사 로그인 계정 갱신에 실패했습니다.'
+    };
   }
 
   const { data, error: readError } = await queryRidersWithSelectFallback(columns =>

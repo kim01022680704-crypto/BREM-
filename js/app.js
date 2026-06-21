@@ -482,7 +482,6 @@
       if (!window.confirm(`${driver.name} 기사의 로그인 비밀번호를 1234로 초기화할까요?`)) return;
       try {
         await BremStorage.drivers.resetPassword(id, DEFAULT_DRIVER_PASSWORD);
-        await BremStorage.flushStorage?.();
         passwordInput.value = DEFAULT_DRIVER_PASSWORD;
         showToast('비밀번호를 1234로 초기화했습니다.');
       } catch (error) {
