@@ -111,6 +111,13 @@ assert(
   matchByCoupangNamePhoneCombined.matchNote
 );
 
+const matchByCoupangNamePhoneHyphen = driverUtils.matchDriverForPlatformImport('홍길동010-1234-5678', 'coupang', '', [matchDriverA]);
+assert(
+  '거절율 매칭 — 이름+하이픈전화번호→쿠팡ID',
+  matchByCoupangNamePhoneHyphen.driver?.id === matchDriverA.id,
+  matchByCoupangNamePhoneHyphen.matchNote
+);
+
 const matchByCoupangPhoneColumn = driverUtils.matchDriverForPlatformImport('010-1234-5678', 'coupang', '홍길동', [matchDriverA]);
 assert(
   '거절율 매칭 — 이름열+전화번호열',

@@ -135,6 +135,17 @@ window.BremDriverUtils = (function () {
 
     if (idRaw) pushLoginId(idRaw);
 
+    // 이름+전화번호 한 셀 (예: 이기혁010-2114-8669 → 이기혁8669)
+    const phoneTail = idRaw.match(/(01[\d-]{9,14})$/);
+    if (phoneTail) {
+      const phone = normalizePhone(phoneTail[1]);
+      const name = idRaw.slice(0, idRaw.length - phoneTail[1].length);
+      if (phone.length >= 10 && phone.startsWith('01') && name) {
+        pushLoginId(`${name}${phone.slice(-4)}`);
+        return { loginIds, name, phone };
+      }
+    }
+
     const combined = idRaw.match(/^(.+?)(01\d{8,9})$/);
     if (combined) {
       const name = combined[1];
