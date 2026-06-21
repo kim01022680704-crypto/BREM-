@@ -746,7 +746,7 @@ const BremStorage = (function () {
     promotions: [KEYS.promotionRules],
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers],
     calls: [KEYS.drivers],
-    rejections: [KEYS.drivers],
+    rejections: [KEYS.drivers, KEYS.rejections],
     targets: [KEYS.drivers],
     missions: [KEYS.drivers],
     'mission-results': [KEYS.drivers],
@@ -5144,6 +5144,7 @@ const BremStorage = (function () {
       activeStorageAdapter = unavailableStorageAdapter;
       productionAdminSessionAccount = null;
       clearAllSessionAuthStorage();
+      window.BremDataCache?.clearAll?.();
       window.BremSessionSecurity?.stop?.();
     },
 

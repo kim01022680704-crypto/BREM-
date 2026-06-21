@@ -551,9 +551,17 @@
         });
       });
 
-      notify(`${finalRows.length}건 ${config.rateLabel} 일괄 저장 완료`);
-      clearPreview();
-      document.dispatchEvent(new CustomEvent('brem-rejection-bulk-applied', { detail: { platform } }));
+      void (async () => {
+        try {
+          await BremStorage.flushStorage?.();
+          notify(`${finalRows.length}건 ${config.rateLabel} Supabase 저장 완료`);
+          clearPreview();
+          document.dispatchEvent(new CustomEvent('brem-rejection-bulk-applied', { detail: { platform } }));
+        } catch (error) {
+          console.error('[BREM] rejection bulk persist failed:', error);
+          notify(error.message || 'Supabase 저장에 실패했습니다.');
+        }
+      })();
     }
 
     renderPreviewHead();
@@ -739,9 +747,17 @@
         });
       });
 
-      notify(`${finalEntries.length}건 거절율·수락율 일괄 저장 완료`);
-      clearPreview();
-      document.dispatchEvent(new CustomEvent('brem-rejection-bulk-applied', { detail: { platform: 'combined' } }));
+      void (async () => {
+        try {
+          await BremStorage.flushStorage?.();
+          notify(`${finalEntries.length}건 거절율·수락율 Supabase 저장 완료`);
+          clearPreview();
+          document.dispatchEvent(new CustomEvent('brem-rejection-bulk-applied', { detail: { platform: 'combined' } }));
+        } catch (error) {
+          console.error('[BREM] combined rejection bulk persist failed:', error);
+          notify(error.message || 'Supabase 저장에 실패했습니다.');
+        }
+      })();
     }
 
     renderPreviewHead();

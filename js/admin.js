@@ -2679,8 +2679,13 @@
         }
 
         BremStorage.rejections.upsertWeekly({ driverId, weekStart, rate, platform });
-        showToast(`${platformLabel(platform)} 주간 ${platformRateLabel(platform)}이 저장되었습니다.`);
-        renderAll();
+        void BremStorage.flushStorage?.().then(() => {
+          showToast(`${platformLabel(platform)} 주간 ${platformRateLabel(platform)} Supabase 저장 완료`);
+          renderAll();
+        }).catch(error => {
+          console.error('[BREM] rejection persist failed:', error);
+          showToast(error.message || 'Supabase 저장에 실패했습니다.');
+        });
       });
 
       $(`#rejectionWeekDate-${platform}`)?.addEventListener('change', event => {

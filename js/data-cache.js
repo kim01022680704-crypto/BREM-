@@ -85,6 +85,23 @@ window.BremDataCache = (function () {
     invalidate('__core__');
   }
 
+  /** 로그아웃·재로그인 시 Supabase에서 운영 데이터를 다시 불러오도록 탭 캐시 전체 삭제 */
+  function clearAll() {
+    coreReady = false;
+    memory.clear();
+    inflight.clear();
+    try {
+      for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key && key.startsWith(PREFIX)) {
+          sessionStorage.removeItem(key);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   function restoreToAdapter(key, adapter, keysConst) {
     const entry = readEntry(key);
     if (!entry || !adapter?.stage) return false;
@@ -126,6 +143,7 @@ window.BremDataCache = (function () {
     markCoreReady,
     isCoreReady,
     clearCoreReady,
+    clearAll,
     restoreToAdapter,
     persistFromAdapter,
     runOnce,

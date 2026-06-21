@@ -13,7 +13,7 @@
     "audit:production": "node scripts/production-audit.js",
     "test:data-cache": "node scripts/test-data-cache.js",
     "bootstrap:missions": "node scripts/apply-missions-bootstrap.js",
-    "test:baemin-feasibility": "node scripts/test-baemin-delivery-feasibility.js",
+    "test:rejection-storage": "node scripts/test-rejection-supabase-storage.js",
     "test:baemin-playwright": "node scripts/test-baemin-playwright-login.js",
     "collect:baemin-local": "node scripts/collect-baemin-delivery-local.js",
     "baemin:session-server": "node scripts/baemin-session-local-server.js",

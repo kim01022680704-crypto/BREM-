@@ -128,6 +128,12 @@ if (/delete\(\)\.neq\('id'/.test(adapterJs)) {
 if (/assertPersistAllowed/.test(storageJs)) pass('Persist guard hook', 'present in storage.js');
 else fail('Persist guard hook', 'missing assertPersistAllowed');
 
+if (guardJs.includes('brem_admin_rejection_rates')) pass('Rejection rates protected in storage-guard');
+else fail('Rejection rates protected', 'missing brem_admin_rejection_rates in guard');
+
+if (/BremDataCache\?\.clearAll/.test(storageJs)) pass('Logout clears session cache');
+else fail('Logout cache clear', 'signOut should call BremDataCache.clearAll');
+
 ['admin.html', 'driver.html', 'drivers.html', 'rider-manage.html'].forEach(page => {
   const html = read(page);
   if (!/storage-guard\.js/.test(html)) fail(`Storage guard script ${page}`);
