@@ -64,6 +64,14 @@ const BremStorage = (function () {
     return value === 'baemin' ? 'baemin' : 'coupang';
   }
 
+  function normalizeLongEventPlatform(value) {
+    return normalizePlatform(value) === 'baemin' ? 'baemin' : 'coupang';
+  }
+
+  function longEventPlatformLabel(platform) {
+    return normalizeLongEventPlatform(platform) === 'baemin' ? '배민' : '쿠팡';
+  }
+
   function normalizeCalls(list) {
     if (!Array.isArray(list) || !list.length) return [];
 
@@ -2258,6 +2266,7 @@ const BremStorage = (function () {
         selectedMissionIdCoupang: String(
           next.selectedMissionIdCoupang || next.selectedMissionId || ''
         ).trim(),
+        longEventPlatform: normalizeLongEventPlatform(next.longEventPlatform),
         hiddenFields: normalizeHiddenFields(next.hiddenFields)
       };
 
@@ -2267,6 +2276,7 @@ const BremStorage = (function () {
         || next.baeminId !== withPlatforms.baeminId
         || next.platformCoupang !== withPlatforms.platformCoupang
         || next.platformBaemin !== withPlatforms.platformBaemin
+        || next.longEventPlatform !== withPlatforms.longEventPlatform
         || next.promotionSelectorCoupang !== withPlatforms.promotionSelectorCoupang
         || next.promotionSelectorBaemin !== withPlatforms.promotionSelectorBaemin
         || next.promotionRuleIdCoupang !== withPlatforms.promotionRuleIdCoupang
@@ -2389,6 +2399,7 @@ const BremStorage = (function () {
         longEventItemId: driver.longEventItemId || '',
         longEventItem: driver.longEventItem || '',
         longEventStartDate: driver.longEventStartDate || '',
+        longEventPlatform: normalizeLongEventPlatform(driver.longEventPlatform),
         joinDate: driver.joinDate,
         memo: driver.memo,
         status: driver.status,
@@ -2463,6 +2474,7 @@ const BremStorage = (function () {
         longEventItemId: driver.longEventItemId || '',
         longEventItem: driver.longEventItem || '',
         longEventStartDate: driver.longEventStartDate || '',
+        longEventPlatform: normalizeLongEventPlatform(driver.longEventPlatform),
         joinDate: driver.joinDate,
         memo: driver.memo,
         status: driver.status,
@@ -2665,10 +2677,15 @@ const BremStorage = (function () {
       return list;
     },
 
-    sumForDriverSince(driverId, startDate) {
+    sumForDriverSince(driverId, startDate, platform) {
       if (!startDate) return 0;
+      const scopedPlatform = platform ? normalizeLongEventPlatform(platform) : null;
       return calls.getAll()
-        .filter(call => call.driverId === driverId && call.date >= startDate)
+        .filter(call => {
+          if (call.driverId !== driverId || call.date < startDate) return false;
+          if (!scopedPlatform) return true;
+          return normalizePlatform(call.platform) === scopedPlatform;
+        })
         .reduce((sum, call) => sum + Number(call.count || 0), 0);
     },
 
@@ -4027,6 +4044,14 @@ const BremStorage = (function () {
       drivers.update(driverId, { longEventStartDate: startDate || '' });
     },
 
+    getDriverEventPlatform(driver) {
+      return normalizeLongEventPlatform(driver?.longEventPlatform || 'coupang');
+    },
+
+    setDriverEventPlatform(driverId, platform) {
+      drivers.update(driverId, { longEventPlatform: normalizeLongEventPlatform(platform) });
+    },
+
     getStartDateForDriver(driver) {
       return driver.longEventStartDate || '';
     },
@@ -4034,7 +4059,7 @@ const BremStorage = (function () {
     eventCallsForDriver(driver) {
       const startDate = events.getStartDateForDriver(driver);
       if (!startDate) return 0;
-      return calls.sumForDriverSince(driver.id, startDate);
+      return calls.sumForDriverSince(driver.id, startDate, events.getDriverEventPlatform(driver));
     },
 
     removeCatalogItemReferences(itemId) {

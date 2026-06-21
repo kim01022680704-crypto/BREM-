@@ -5,7 +5,7 @@ const { provisionRiderAuthAccount } = require('./rider-auth');
 const RIDER_SELECT = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
   'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
-  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
   'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
   'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
@@ -15,7 +15,7 @@ const RIDER_SELECT = [
 const RIDER_SELECT_LEGACY = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
   'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
-  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
   'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
   'created_at', 'updated_at'
@@ -62,6 +62,10 @@ function normalizeRiderName(value) {
 
 function normalizePlatformId(value) {
   return String(value || '').trim().replace(/\s/g, '');
+}
+
+function normalizeLongEventPlatform(value) {
+  return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
 }
 
 function makeDriverMatchKey(name, phone) {
@@ -119,7 +123,7 @@ function mergeRiderRows(keep, donor) {
   const merged = { ...keep };
   [
     'name', 'phone', 'resident_number', 'bank_name', 'account_holder', 'account_number',
-    'baemin_id', 'memo', 'long_event_item_id', 'long_event_item',
+    'baemin_id', 'memo', 'long_event_item_id', 'long_event_item', 'long_event_platform',
     'promotion_selector_coupang', 'promotion_selector_baemin',
     'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
     'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang'
@@ -295,6 +299,7 @@ function riderToRow(driver) {
     long_event_item_id: String(driver.longEventItemId || ''),
     long_event_item: String(driver.longEventItem || ''),
     long_event_start_date: toDate(driver.longEventStartDate),
+    long_event_platform: normalizeLongEventPlatform(driver.longEventPlatform),
     join_date: toDate(driver.joinDate),
     status: String(driver.status || '근무중'),
     memo: String(driver.memo || ''),

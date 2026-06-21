@@ -2504,7 +2504,7 @@ textarea {
 
 .event-driver-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) minmax(150px, 1fr) minmax(170px, 0.95fr);
+  grid-template-columns: minmax(150px, 1.1fr) minmax(140px, 1fr) minmax(110px, 0.75fr) minmax(150px, 0.85fr);
   align-items: end;
   gap: 12px;
 }

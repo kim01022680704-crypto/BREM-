@@ -158,6 +158,7 @@ create table if not exists public.riders (
   long_event_item_id text not null default '',
   long_event_item text not null default '',
   long_event_start_date date,
+  long_event_platform text not null default 'coupang',
   join_date date,
   status text not null default '근무중',
   memo text not null default '',
@@ -185,6 +186,7 @@ alter table public.riders add column if not exists platform_baemin boolean not n
 alter table public.riders add column if not exists long_event_item_id text not null default '';
 alter table public.riders add column if not exists long_event_item text not null default '';
 alter table public.riders add column if not exists long_event_start_date date;
+alter table public.riders add column if not exists long_event_platform text not null default 'coupang';
 alter table public.riders add column if not exists join_date date;
 alter table public.riders add column if not exists status text not null default '근무중';
 alter table public.riders add column if not exists memo text not null default '';

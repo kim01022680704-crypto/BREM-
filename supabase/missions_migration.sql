@@ -160,5 +160,8 @@ using (
 -- PostgREST / Supabase API 스키마 캐시 새로고침 (필수)
 notify pgrst, 'reload schema';
 
+-- 장기근속 이벤트: 기사별 쿠팡/배민 집계 플랫폼 (합산 없음)
+alter table public.riders add column if not exists long_event_platform text not null default 'coupang';
+
 -- 확인용 (실행 후 Table Editor에서 missions 2행 이상 보이면 성공)
 -- select id, title, is_active from public.missions order by created_at;

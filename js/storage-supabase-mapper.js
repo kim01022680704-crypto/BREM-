@@ -43,6 +43,7 @@ window.BremSupabaseMapper = (function () {
       long_event_item_id: String(driver.longEventItemId || ''),
       long_event_item: String(driver.longEventItem || ''),
       long_event_start_date: toDate(driver.longEventStartDate),
+      long_event_platform: String(driver.longEventPlatform || 'coupang') === 'baemin' ? 'baemin' : 'coupang',
       join_date: toDate(driver.joinDate),
       status: String(driver.status || '근무중'),
       memo: String(driver.memo || ''),
@@ -78,6 +79,9 @@ window.BremSupabaseMapper = (function () {
       longEventItemId: row.long_event_item_id || '',
       longEventItem: row.long_event_item || '',
       longEventStartDate: row.long_event_start_date || '',
+      longEventPlatform: String(row.long_event_platform || raw.longEventPlatform || 'coupang') === 'baemin'
+        ? 'baemin'
+        : 'coupang',
       joinDate: row.join_date || '',
       status: row.status || '근무중',
       memo: row.memo || '',

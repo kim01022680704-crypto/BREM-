@@ -809,6 +809,18 @@
     return options.join('');
   }
 
+  function longEventPlatformLabel(platform) {
+    return BremStorage.events.getDriverEventPlatform({ longEventPlatform: platform }) === 'baemin' ? '배민' : '쿠팡';
+  }
+
+  function eventPlatformOptions(selectedValue) {
+    const value = BremStorage.events.getDriverEventPlatform({ longEventPlatform: selectedValue });
+    return `
+      <option value="coupang" ${value === 'coupang' ? 'selected' : ''}>쿠팡</option>
+      <option value="baemin" ${value === 'baemin' ? 'selected' : ''}>배민</option>
+    `;
+  }
+
   function currentMonth() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1112,10 +1124,11 @@
     if (!item) return '미설정';
     const startDate = driver.longEventStartDate || '';
     if (!startDate) return `${item.name} · 시작일 필요`;
+    const platform = BremStorage.events.getDriverEventPlatform(driver);
     const total = BremStorage.events.eventCallsForDriver(driver);
     const target = Number(item.targetCount || 0);
     const rate = target ? Math.round((total / target) * 100) : 0;
-    return `${number(total)} / ${number(target)}콜 · ${rate}%`;
+    return `${longEventPlatformLabel(platform)} ${number(total)} / ${number(target)}콜 · ${rate}%`;
   }
 
   function eventProgressDetail(driver) {
@@ -1123,10 +1136,12 @@
     if (!item) return '이벤트 아이템 미설정';
     const startDate = driver.longEventStartDate || '';
     if (!startDate) return '시작일을 설정하면 집계됩니다.';
+    const platform = BremStorage.events.getDriverEventPlatform(driver);
     const total = BremStorage.events.eventCallsForDriver(driver);
     const target = Number(item.targetCount || 0);
     const rate = target ? Math.round((total / target) * 100) : 0;
     return `
+      <p>집계: ${longEventPlatformLabel(platform)} (합산 제외)</p>
       <p>시작일: ${formatDate(startDate)}</p>
       <p>${number(total)} / ${number(target)}콜</p>
       ${progress(rate)}
@@ -1135,10 +1150,12 @@
 
   function eventDriverStats(driver) {
     const item = eventItemFor(driver);
+    const platform = BremStorage.events.getDriverEventPlatform(driver);
     if (!item) {
       return {
         status: 'unset',
         item: null,
+        platform,
         total: 0,
         target: 0,
         rate: 0,
@@ -1152,6 +1169,7 @@
       return {
         status: 'no-start',
         item,
+        platform,
         total: 0,
         target,
         rate: 0,
@@ -1164,6 +1182,7 @@
     return {
       status: rate >= 100 ? 'achieved' : 'in-progress',
       item,
+      platform,
       total,
       target,
       rate,
@@ -1291,13 +1310,14 @@
           <td>${escapeHtml(driver.name)}</td>
           <td>${escapeHtml(driver.phone)}</td>
           <td>${escapeHtml(stats.item ? stats.item.name : '미설정')}</td>
+          <td>${longEventPlatformLabel(stats.platform)}</td>
           <td>${stats.startDate ? formatDate(stats.startDate) : '-'}</td>
           <td><strong>${number(stats.total)}</strong></td>
           <td>${stats.target ? number(stats.target) : '-'}</td>
           <td>${stats.target ? progress(stats.rate) : '-'}</td>
           <td>${missionStatusBadge(stats.status)}</td>
         </tr>
-      `).join('') || emptyRow(8, emptyMessage);
+      `).join('') || emptyRow(9, emptyMessage);
   }
 
   function money(value) {
@@ -2042,6 +2062,12 @@
           이벤트 아이템
           <select data-event-driver="${driver.id}">
             ${eventOptions((eventItemFor(driver) || {}).id || driver.longEventItemId || driver.longEventItem || '')}
+          </select>
+        </label>
+        <label>
+          집계 플랫폼
+          <select data-event-platform="${driver.id}" title="쿠팡 또는 배민 중 하나만 집계됩니다. 합산은 사용하지 않습니다.">
+            ${eventPlatformOptions(driver.longEventPlatform)}
           </select>
         </label>
         <label class="event-start-date-field">
@@ -2890,6 +2916,14 @@
         input.dataset.eventDriver,
         selectedItem ? { id: selectedItem.id, name: selectedItem.name } : null
       );
+      renderAll();
+    });
+
+    document.addEventListener('change', event => {
+      const input = event.target.closest('[data-event-platform]');
+      if (!input) return;
+      BremStorage.events.setDriverEventPlatform(input.dataset.eventPlatform, input.value);
+      showToast(`집계 플랫폼이 ${longEventPlatformLabel(input.value)}(으)로 저장되었습니다.`);
       renderAll();
     });
 
