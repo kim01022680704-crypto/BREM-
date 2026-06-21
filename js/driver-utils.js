@@ -146,11 +146,22 @@ window.BremDriverUtils = (function () {
   }
 
   function normalizeBulkName(value) {
-    return String(value || '').trim().replace(/\s+/g, ' ');
+    return String(value || '').trim().replace(/\s+/g, '');
   }
 
   function normalizeBulkPhone(value) {
-    return String(value || '').trim().replace(/[\s-]/g, '');
+    return String(value || '').replace(/[^0-9]/g, '');
+  }
+
+  function formatPhoneDisplay(value) {
+    const digits = normalizeBulkPhone(value);
+    if (digits.length === 11 && digits.startsWith('010')) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    }
+    if (digits.length === 10 && digits.startsWith('01')) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    return digits || String(value || '').trim();
   }
 
   function normalizeBulkUploadRaw(raw) {
@@ -162,7 +173,7 @@ window.BremDriverUtils = (function () {
       bankName: String(raw.bankName || '').trim(),
       accountHolder: String(raw.accountHolder || '').trim(),
       accountNumber: String(raw.accountNumber || '').trim(),
-      baeminId: String(raw.baeminId || '').trim(),
+      baeminId: String(raw.baeminId || '').trim().replace(/\s/g, ''),
       platformCoupangRaw: raw.platformCoupangRaw,
       platformBaeminRaw: raw.platformBaeminRaw,
       longEventItem: String(raw.longEventItem || '').trim(),
@@ -425,6 +436,7 @@ window.BremDriverUtils = (function () {
     buildRiderMatchMap,
     normalizeBulkName,
     normalizeBulkPhone,
+    formatPhoneDisplay,
     normalizeBulkUploadRaw,
     isBulkUploadRowEmpty,
     matchDriverByNameAndPhone,

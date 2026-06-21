@@ -45,6 +45,25 @@ function normalizePhone(value) {
   return String(value || '').replace(/[^0-9]/g, '');
 }
 
+function formatPhoneForStorage(value) {
+  const digits = normalizePhone(value);
+  if (digits.length === 11 && digits.startsWith('010')) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10 && digits.startsWith('01')) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return digits || String(value || '').trim();
+}
+
+function normalizeRiderName(value) {
+  return String(value || '').trim().replace(/\s+/g, '');
+}
+
+function normalizePlatformId(value) {
+  return String(value || '').trim().replace(/\s/g, '');
+}
+
 function makeDriverMatchKey(name, phone) {
   const normName = normalizeDriverName(name);
   const normPhone = normalizePhone(phone);
@@ -264,13 +283,13 @@ function riderToRow(driver) {
   return {
     id: String(driver.id || ''),
     auth_user_id: driver.authUserId || null,
-    name: String(driver.name || ''),
-    phone: String(driver.phone || ''),
+    name: normalizeRiderName(driver.name),
+    phone: formatPhoneForStorage(driver.phone),
     resident_number: String(driver.residentNumber || ''),
-    bank_name: String(driver.bankName || ''),
-    account_holder: String(driver.accountHolder || ''),
-    account_number: String(driver.accountNumber || ''),
-    baemin_id: String(driver.baeminId || ''),
+    bank_name: String(driver.bankName || '').trim(),
+    account_holder: String(driver.accountHolder || '').trim(),
+    account_number: String(driver.accountNumber || '').trim(),
+    baemin_id: normalizePlatformId(driver.baeminId),
     platform_coupang: driver.platformCoupang !== false,
     platform_baemin: Boolean(driver.platformBaemin),
     long_event_item_id: String(driver.longEventItemId || ''),
@@ -391,16 +410,66 @@ async function upsertRider(accessToken, rider) {
   return { ok: true, rider: saved };
 }
 
+function buildExistingRiderMatchMap(rows) {
+  const map = new Map();
+  (rows || []).forEach(row => {
+    const key = makeDriverMatchKey(row.name, row.phone);
+    if (key && !map.has(key)) map.set(key, row);
+  });
+  return map;
+}
+
+function mergeIncomingRiderWithExisting(incoming, existingRow) {
+  const merged = { ...incoming };
+  merged.id = existingRow.id;
+  if (existingRow.auth_user_id) merged.authUserId = existingRow.auth_user_id;
+
+  const incomingBaemin = normalizePlatformId(incoming.baeminId);
+  const existingBaemin = normalizePlatformId(existingRow.baemin_id);
+  merged.baeminId = incomingBaemin || existingBaemin;
+
+  merged.platformBaemin = Boolean(incoming.platformBaemin || existingRow.platform_baemin || merged.baeminId);
+  merged.platformCoupang = incoming.platformCoupang !== false && existingRow.platform_coupang !== false;
+
+  return merged;
+}
+
+async function resolveBulkRidersForUpsert(supabase, riders) {
+  const existingRows = await fetchAllRiders(
+    supabase,
+    'id,name,phone,baemin_id,platform_coupang,platform_baemin,auth_user_id'
+  );
+  const matchMap = buildExistingRiderMatchMap(existingRows);
+
+  let updated = 0;
+  const resolved = riders.map(rider => {
+    const key = makeDriverMatchKey(rider.name, rider.phone);
+    const existing = key ? matchMap.get(key) : null;
+    if (!existing) return rider;
+    updated += 1;
+    const merged = mergeIncomingRiderWithExisting(rider, existing);
+    matchMap.set(key, {
+      ...existing,
+      baemin_id: merged.baeminId,
+      platform_baemin: merged.platformBaemin,
+      platform_coupang: merged.platformCoupang !== false
+    });
+    return merged;
+  });
+
+  return { resolved, updated };
+}
+
 async function bulkUpsertRiders(accessToken, riders, options = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
 
   const list = Array.isArray(riders) ? riders.filter(Boolean) : [];
   if (!list.length) {
-    return { ok: true, succeeded: 0, failed: [], total: 0 };
+    return { ok: true, succeeded: 0, failed: [], total: 0, updated: 0, created: 0 };
   }
 
-  const maxBatch = Math.min(Math.max(Number(options.maxBatch) || 300, 1), 500);
+  const maxBatch = Math.min(Math.max(Number(options.maxBatch) || 150, 1), 500);
   if (list.length > maxBatch) {
     return {
       ok: false,
@@ -410,7 +479,8 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   }
 
   const supabase = getServiceClient();
-  const rows = list.map(rider => riderToRow(rider));
+  const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, list);
+  const rows = resolved.map(rider => riderToRow(rider));
   let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
   if (error && isMissingColumnError(error)) {
     rows.forEach(row => {
@@ -446,7 +516,48 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
     ok: true,
     succeeded: list.length,
     failed: [],
-    total: list.length
+    total: list.length,
+    updated,
+    created: Math.max(0, list.length - updated)
+  };
+}
+
+async function countRiders(accessToken) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const supabase = getServiceClient();
+  const { count, error } = await supabase
+    .from('riders')
+    .select('id', { count: 'exact', head: true });
+
+  if (error) {
+    return { ok: false, status: 500, error: error.message || '기사 수를 확인하지 못했습니다.' };
+  }
+
+  return { ok: true, count: count ?? 0 };
+}
+
+async function deleteAllRiders(accessToken) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const supabase = getServiceClient();
+  const before = await countRiders(accessToken);
+  if (!before.ok) return before;
+
+  const { error } = await supabase.from('riders').delete().neq('id', '');
+  if (error) {
+    return { ok: false, status: 400, error: error.message || '기사 전체 삭제에 실패했습니다.' };
+  }
+
+  const after = await countRiders(accessToken);
+  if (!after.ok) return after;
+
+  return {
+    ok: true,
+    deletedCount: before.count ?? 0,
+    remainingCount: after.count ?? 0
   };
 }
 
@@ -567,6 +678,8 @@ module.exports = {
   listRiders,
   upsertRider,
   bulkUpsertRiders,
+  countRiders,
+  deleteAllRiders,
   deleteRider,
   mergeSelectedRiders,
   mergeAutoRiders

@@ -286,6 +286,30 @@ app.post('/api/admin/riders/merge-auto', async (req, res) => {
   }
 });
 
+app.get('/api/admin/riders/count', async (req, res) => {
+  try {
+    const result = await ridersAdmin.countRiders(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 수를 확인하지 못했습니다.' });
+  }
+});
+
+app.delete('/api/admin/riders/all', async (req, res) => {
+  try {
+    const result = await ridersAdmin.deleteAllRiders(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 전체 삭제에 실패했습니다.' });
+  }
+});
+
 app.delete('/api/admin/riders/:riderId', async (req, res) => {
   try {
     const result = await ridersAdmin.deleteRider(getBearerToken(req), req.params.riderId);

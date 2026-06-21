@@ -27,7 +27,7 @@
   ];
 
   const HEADER_MARKERS = ['이름', 'name'];
-  const BULK_BATCH_SIZE = 300;
+  const BULK_BATCH_SIZE = 150;
   const PREVIEW_LIMIT = 50;
 
   let parsedRows = [];
@@ -72,24 +72,16 @@
   }
 
   function normalizePhoneDisplay(value) {
-    return window.BremDriverUtils.normalizeBulkPhone(value);
+    return window.BremDriverUtils.formatPhoneDisplay(value);
   }
 
   async function ensureAllDriversLoaded() {
-    await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
-
-    let pages = 0;
-    while (pages < 100) {
-      const before = BremStorage.drivers.getAll().length;
-      const result = await BremStorage.reloadDrivers?.(false, {
-        limit: 200,
-        offset: before,
-        append: true
-      }).catch(() => null);
-      if (!result?.ok || !result?.hasMore) break;
-      if (BremStorage.drivers.getAll().length <= before) break;
-      pages += 1;
+    const result = await BremStorage.fetchAllDriversFromServer?.({ force: false })
+      || await BremStorage.reloadDrivers?.(true);
+    if (result?.ok === false) {
+      throw new Error(result.message || '기존 기사 목록을 불러오지 못했습니다.');
     }
+    return result;
   }
 
   function makeLoginId(name, phone) {
@@ -739,7 +731,7 @@
       });
 
       window.BremDataCache?.invalidate?.(BremStorage.STORAGE_KEYS?.drivers);
-      await BremStorage.reloadDrivers?.(true).catch(() => ({}));
+      await BremStorage.fetchAllDriversFromServer?.({ force: true }).catch(() => ({}));
 
       showApplySummary(created, updated, failedRows, issueRows.length);
       if (failedRows.length) {

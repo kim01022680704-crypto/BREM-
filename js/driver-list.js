@@ -18,6 +18,8 @@
   const exportExcelBtn = document.getElementById('exportExcelBtn');
   const mergeAutoBtn = document.getElementById('mergeAutoBtn');
   const mergeSelectedBtn = document.getElementById('mergeSelectedBtn');
+  const refreshListBtn = document.getElementById('refreshDriverListBtn');
+  const deleteAllBtn = document.getElementById('deleteAllDriversBtn');
   const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   const bulkDeleteBtnBar = document.getElementById('bulkDeleteBtnBar');
   const selectAllInput = document.getElementById('selectAllDrivers');
@@ -36,7 +38,8 @@
   const selectedIds = new Set();
   let renderedSnapshot = '';
   let renderedIsMobile = null;
-  let syncRenderTimer = null;
+  let listLoadPromise = null;
+  let lastSupabaseTotal = 0;
 
   function buildDriverSearchText(driver) {
     const phone = String(driver.phone || '').replace(/[^0-9]/g, '');
@@ -112,17 +115,24 @@
 
   function renderListCount(filteredCount, totalCount) {
     if (!listCountEl) return;
-    if (!totalCount) {
+    const supabaseTotal = BremStorage.drivers.getSupabaseTotal?.() || totalCount;
+    lastSupabaseTotal = supabaseTotal;
+
+    if (!totalCount && !supabaseTotal) {
       listCountEl.hidden = true;
       listCountEl.textContent = '';
       return;
     }
 
     listCountEl.hidden = false;
+    const countNote = supabaseTotal === totalCount
+      ? `Supabase ${supabaseTotal}명`
+      : `화면 ${totalCount}명 · Supabase ${supabaseTotal}명`;
+
     if (filteredCount === totalCount) {
-      listCountEl.textContent = `등록 기사 ${totalCount}명 전체 표시 · 스크롤하여 확인`;
+      listCountEl.textContent = `등록 기사 ${totalCount}명 전체 표시 (${countNote}) · 스크롤하여 확인`;
     } else {
-      listCountEl.textContent = `등록 기사 ${totalCount}명 중 ${filteredCount}명 표시 · 스크롤하여 확인`;
+      listCountEl.textContent = `등록 기사 ${totalCount}명 중 ${filteredCount}명 표시 (${countNote}) · 스크롤하여 확인`;
     }
   }
 
@@ -287,7 +297,7 @@
     }
 
     showToast(toast, '엑셀 백업 준비 중…');
-    await syncAllDriversForList();
+    await loadAllDriversForList(true);
 
     const drivers = BremStorage.drivers.getAll();
     if (!drivers.length) {
@@ -547,43 +557,67 @@
     render();
   }
 
-  function scheduleSyncRender() {
-    clearTimeout(syncRenderTimer);
-    syncRenderTimer = setTimeout(() => {
-      renderedSnapshot = '';
-      render();
-    }, 300);
+  function clearListDom() {
+    tableBody.innerHTML = '';
+    mobileList.innerHTML = '';
+    renderedSnapshot = '';
   }
 
-  async function syncAllDriversForList() {
-    await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
-
-    let pages = 0;
-    while (pages < 100) {
-      const before = BremStorage.drivers.getAll().length;
-      const result = await BremStorage.reloadDrivers?.(false, {
-        limit: 200,
-        offset: before,
-        append: true
-      }).catch(() => null);
-      if (!result?.ok || !result?.hasMore) break;
-      if (BremStorage.drivers.getAll().length <= before) break;
-      pages += 1;
+  function showListLoadError(message) {
+    clearListDom();
+    selectedIds.clear();
+    updateDriverTotal(driverTotal, 0);
+    emptyState.classList.add('show');
+    if (listCountEl) {
+      listCountEl.hidden = false;
+      listCountEl.textContent = message || '기사 목록을 불러오지 못했습니다.';
     }
   }
 
-  async function refreshDriverList(force = false) {
+  async function loadAllDriversForList(force = false) {
+    if (listLoadPromise && !force) return listLoadPromise;
+
+    const task = (async () => {
+      if (force) {
+        clearListDom();
+        selectedIds.clear();
+      }
+
+      const result = await BremStorage.fetchAllDriversFromServer?.({ force })
+        || await BremStorage.reloadDrivers?.(force);
+
+      if (result?.ok === false) {
+        showListLoadError(result.message || 'Supabase에서 기사 목록을 불러오지 못했습니다.');
+        showToast(toast, result.message || '기사 목록을 불러오지 못했습니다.');
+        return result;
+      }
+
+      renderedSnapshot = '';
+      render();
+      return result;
+    })();
+
+    if (!force) {
+      listLoadPromise = task.finally(() => {
+        listLoadPromise = null;
+      });
+      return listLoadPromise;
+    }
+
+    return task;
+  }
+
+  async function refreshDriverList(force = true) {
     const listPanel = document.querySelector('.list-panel');
-    const hasCachedDrivers = BremStorage.drivers.getAll().length > 0;
-    const showLoading = force || !hasCachedDrivers;
+    const showLoading = force || !BremStorage.drivers.getAll().length;
 
     if (showLoading) {
       tableBody.closest('.table-wrap')?.classList.add('is-loading');
       mobileList.classList.add('is-loading');
-      window.BremLoadingUI?.show(listPanel, '데이터 불러오는 중...');
+      window.BremLoadingUI?.show(listPanel, 'Supabase에서 기사 목록 불러오는 중...');
     }
 
-    const syncResult = await BremStorage.reloadDrivers?.(force);
+    const syncResult = await loadAllDriversForList(force);
 
     if (showLoading) {
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
@@ -591,20 +625,48 @@
       window.BremLoadingUI?.hide(listPanel);
     }
 
-    if (syncResult?.ok === false) {
-      showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
+    return syncResult;
+  }
+
+  async function deleteAllDrivers() {
+    const supabaseTotal = BremStorage.drivers.getSupabaseTotal?.() || BremStorage.drivers.getAll().length;
+    if (!supabaseTotal) {
+      showToast(toast, '삭제할 기사가 없습니다.');
+      return;
     }
-    render();
-    void syncAllDriversForList().then(() => {
-      renderedSnapshot = '';
+
+    if (!window.confirm(`등록된 기사 ${supabaseTotal}명을 Supabase에서 모두 삭제할까요?\n\n이 작업은 되돌릴 수 없습니다.`)) return;
+
+    if (deleteAllBtn) deleteAllBtn.disabled = true;
+    showToast(toast, 'Supabase에서 기사 전체 삭제 중…');
+
+    try {
+      const result = await BremStorage.drivers.deleteAll();
+      selectedIds.clear();
+      clearListDom();
       render();
-    });
+
+      const verify = await BremStorage.drivers.verifySupabaseCount(0);
+      if (!verify.matches) {
+        throw new Error(`삭제 후 Supabase에 ${verify.count}명이 남아 있습니다.`);
+      }
+
+      showToast(toast, `전체 삭제 완료 · Supabase ${result.remainingCount ?? 0}명`);
+    } catch (error) {
+      console.error(error);
+      await refreshDriverList(true);
+      showToast(toast, error.message || '기사 전체 삭제에 실패했습니다.');
+    } finally {
+      if (deleteAllBtn) deleteAllBtn.disabled = false;
+    }
   }
 
   function init() {
     searchInput.addEventListener('input', handleSearchInput);
     statusFilter.addEventListener('change', handleStatusFilterChange);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
+    if (refreshListBtn) refreshListBtn.addEventListener('click', () => { void refreshDriverList(true); });
+    if (deleteAllBtn) deleteAllBtn.addEventListener('click', () => { void deleteAllDrivers(); });
     if (mergeAutoBtn) mergeAutoBtn.addEventListener('click', () => { void mergeAutoDrivers(); });
     if (mergeSelectedBtn) mergeSelectedBtn.addEventListener('click', () => { void mergeSelectedDrivers(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
@@ -615,12 +677,14 @@
     tableBody.addEventListener('click', handleListClick);
     mobileList.addEventListener('click', handleListClick);
     document.addEventListener('brem-storage-ready', () => {
-      render();
+      void loadAllDriversForList(false);
     });
-    document.addEventListener('brem-drivers-sync-ready', () => {
+    document.addEventListener('brem-drivers-sync-ready', event => {
+      if (!event?.detail?.complete) return;
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList.classList.remove('is-loading');
-      scheduleSyncRender();
+      renderedSnapshot = '';
+      render();
     });
   }
 
@@ -632,7 +696,7 @@
 
   if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
 
-  if (BremStorage.drivers.getAll().length) {
+  if (BremStorage.drivers.getSupabaseTotal?.() && BremStorage.drivers.getAll().length) {
     render();
   } else {
     showLoadingSkeleton();

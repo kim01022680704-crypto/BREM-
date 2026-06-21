@@ -176,6 +176,8 @@ const BremStorage = (function () {
   let supabaseAuthListenerBound = false;
   let syncAdminAccountsPromise = null;
   let driversSyncPromise = null;
+  let driversFetchAllPromise = null;
+  let driversLoadMeta = { complete: false, supabaseTotal: 0 };
   let dataMigrationsCompleted = false;
   let normalizedDriversCache = null;
   let normalizedDriversSourceRef = null;
@@ -790,7 +792,7 @@ const BremStorage = (function () {
   async function refetchDataKey(key) {
     return window.BremDataCache.runOnce(`refetch:${key}`, async () => {
       if (key === KEYS.drivers) {
-        return reloadDrivers(true);
+        return fetchAllDriversFromServer({ force: true });
       }
       if (key === KEYS.missions) {
         return reloadMissions(true);
@@ -902,6 +904,172 @@ const BremStorage = (function () {
     return promise;
   }
 
+  function dedupeDriversList(list) {
+    const byId = new Map();
+    (list || []).forEach(driver => {
+      if (!driver?.id) return;
+      byId.set(driver.id, driver);
+    });
+
+    const scoreOf = (driver) => {
+      let score = 0;
+      if (String(driver?.baeminId || '').trim()) score += 4;
+      if (String(driver?.bankName || '').trim()) score += 2;
+      if (String(driver?.accountNumber || '').trim()) score += 1;
+      const updatedAt = Date.parse(driver?.updatedAt || driver?.createdAt || 0);
+      if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
+      return score;
+    };
+
+    const byMatchKey = new Map();
+    Array.from(byId.values()).forEach(driver => {
+      const key = window.BremDriverUtils?.makeDriverMatchKey?.(driver.name, driver.phone) || '';
+      const mapKey = key || `id:${driver.id}`;
+      const existing = byMatchKey.get(mapKey);
+      if (!existing || scoreOf(driver) > scoreOf(existing)) {
+        byMatchKey.set(mapKey, driver);
+      }
+    });
+
+    return Array.from(byMatchKey.values()).sort((a, b) => (
+      String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+    ));
+  }
+
+  function clearDriversCacheHard() {
+    invalidateDriversNormalizeCache();
+    setDriversCache([]);
+    driversLoadMeta = { complete: false, supabaseTotal: 0 };
+    window.BremDataCache?.invalidate?.(KEYS.drivers);
+    activeStorageAdapter.invalidateKeys?.([KEYS.drivers]);
+  }
+
+  function markDriversLoadComplete(count, supabaseTotal) {
+    driversLoadMeta = {
+      complete: true,
+      supabaseTotal: Number.isFinite(Number(supabaseTotal)) ? Number(supabaseTotal) : count
+    };
+  }
+
+  async function fetchAllDriversFromServer(options = {}) {
+    const force = options.force === true;
+    const hasFilter = Boolean(String(options.search || '').trim())
+      || (options.status && options.status !== '전체');
+
+    if (!isProductionMode()) {
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
+        const pageSize = 200;
+        let offset = 0;
+        let hasMore = true;
+        let supabaseTotal = null;
+
+        if (force) clearDriversCacheHard();
+
+        while (hasMore) {
+          const result = await activeStorageAdapter.reloadRiders({
+            limit: pageSize,
+            offset,
+            append: offset > 0,
+            force: force && offset === 0
+          });
+          const meta = activeStorageAdapter.getRidersMeta?.() || {};
+          supabaseTotal = meta.total ?? supabaseTotal;
+          hasMore = Boolean(meta.hasMore);
+          offset += pageSize;
+          if (!result?.riders?.length && !hasMore) break;
+        }
+
+        const deduped = dedupeDriversList(drivers.getAll());
+        setDriversCache(deduped);
+        window.BremDataCache?.set?.(KEYS.drivers, deduped);
+        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
+        return {
+          ok: true,
+          count: deduped.length,
+          supabaseTotal: supabaseTotal ?? deduped.length
+        };
+      }
+
+      const list = drivers.getAll();
+      markDriversLoadComplete(list.length, list.length);
+      return { ok: true, count: list.length, supabaseTotal: list.length };
+    }
+
+    if (hasFilter) {
+      return syncDriversFromServer({
+        limit: options.limit || 200,
+        offset: options.offset || 0,
+        search: options.search || '',
+        status: options.status || '',
+        append: options.append === true
+      });
+    }
+
+    if (!force && driversLoadMeta.complete && drivers.getAll().length > 0) {
+      return {
+        ok: true,
+        cached: true,
+        count: drivers.getAll().length,
+        supabaseTotal: driversLoadMeta.supabaseTotal
+      };
+    }
+
+    if (driversFetchAllPromise && !force) return driversFetchAllPromise;
+
+    const runFetch = async () => {
+      window.BremPerf?.time?.('storage.fetchAllDrivers');
+      const pageSize = 200;
+      let offset = 0;
+      let hasMore = true;
+      let supabaseTotal = null;
+      let pages = 0;
+
+      if (force) clearDriversCacheHard();
+
+      while (hasMore && pages < 200) {
+        const result = await syncDriversFromServer({
+          limit: pageSize,
+          offset,
+          append: offset > 0
+        });
+        if (!result.ok) {
+          if (!drivers.getAll().length) clearDriversCacheHard();
+          return {
+            ok: false,
+            message: result.message || result.error || '기사 목록을 Supabase에서 불러오지 못했습니다.'
+          };
+        }
+
+        if (supabaseTotal == null && result.total != null) supabaseTotal = result.total;
+        hasMore = Boolean(result.hasMore);
+        offset += result.count || pageSize;
+        pages += 1;
+        if (!result.count) break;
+      }
+
+      const deduped = dedupeDriversList(drivers.getAll());
+      setDriversCache(deduped);
+      window.BremDataCache?.set?.(KEYS.drivers, deduped);
+      markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
+      window.BremPerf?.timeEnd?.('storage.fetchAllDrivers');
+      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+        detail: { complete: true, count: deduped.length, supabaseTotal: supabaseTotal ?? deduped.length }
+      }));
+      return {
+        ok: true,
+        count: deduped.length,
+        supabaseTotal: supabaseTotal ?? deduped.length
+      };
+    };
+
+    if (force) return runFetch();
+
+    driversFetchAllPromise = runFetch().finally(() => {
+      driversFetchAllPromise = null;
+    });
+    return driversFetchAllPromise;
+  }
+
   async function syncDriversFromServer(options = {}) {
     if (!isProductionMode()) {
       return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
@@ -929,7 +1097,10 @@ const BremStorage = (function () {
       }
       result = await fetchRiders();
     }
-    if (!result.ok) return result;
+    if (!result.ok) {
+      if (!options.append) clearDriversCacheHard();
+      return result;
+    }
 
     const mapper = window.BremSupabaseMapper;
     if (!mapper?.rowToRider) {
@@ -947,6 +1118,9 @@ const BremStorage = (function () {
     if (!options.append && !String(options.search || '').trim() && (!options.status || options.status === '전체')) {
       window.BremDataCache?.set?.(KEYS.drivers, drivers.getAll());
     }
+    if (!options.append && !String(options.search || '').trim() && (!options.status || options.status === '전체')) {
+      driversLoadMeta = { complete: false, supabaseTotal: result.total ?? riderRows.length };
+    }
     window.BremPerf?.timeEnd?.('storage.syncDriversFromServer');
     return {
       ok: true,
@@ -956,40 +1130,50 @@ const BremStorage = (function () {
     };
   }
 
-  let driversBackgroundSyncPromise = null;
-
   async function syncAllDriversPagesInBackground() {
     if (!isProductionMode()) return { ok: true };
-    if (driversBackgroundSyncPromise) return driversBackgroundSyncPromise;
+    return fetchAllDriversFromServer({ force: false });
+  }
 
-    driversBackgroundSyncPromise = (async () => {
-      window.BremPerf?.time?.('storage.syncAllDriversBackground');
-      let offset = drivers.getAll().length;
-      let hasMore = true;
-      let pages = 0;
+  async function deleteAllRidersViaServer() {
+    const deleteAll = () => adminRidersApi('/api/admin/riders/all', { method: 'DELETE' });
 
-      while (hasMore && pages < 100) {
-        const result = await syncDriversFromServer({
-          limit: 100,
-          offset,
-          append: true
-        });
-        if (!result.ok) break;
-        hasMore = Boolean(result.hasMore);
-        offset += 100;
-        pages += 1;
+    let result = await deleteAll();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
       }
+      result = await deleteAll();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || 'Supabase에서 기사 전체 삭제에 실패했습니다.');
+    }
+    return result;
+  }
 
-      window.BremPerf?.timeEnd?.('storage.syncAllDriversBackground');
-      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
-        detail: { complete: true }
-      }));
-      return { ok: true };
-    })().finally(() => {
-      driversBackgroundSyncPromise = null;
-    });
+  async function countRidersViaServer() {
+    const fetchCount = () => adminRidersApi('/api/admin/riders/count');
+    let result = await fetchCount();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await fetchCount();
+    }
+    if (result.ok) return result;
 
-    return driversBackgroundSyncPromise;
+    const listFallback = await adminRidersApi('/api/admin/riders?limit=1&offset=0');
+    if (listFallback.ok) {
+      return {
+        ok: true,
+        count: listFallback.total ?? (listFallback.riders || []).length
+      };
+    }
+    return result;
   }
 
   function isRiderSelfUpdate(id) {
@@ -1074,7 +1258,7 @@ const BremStorage = (function () {
       body: JSON.stringify({
         riders,
         skipAuthProvision: options.skipAuthProvision !== false,
-        maxBatch: options.maxBatch || 300
+        maxBatch: options.maxBatch || 150
       })
     });
 
@@ -1456,21 +1640,20 @@ const BremStorage = (function () {
     const hasStatusFilter = options.status && options.status !== '전체';
     const append = options.append === true;
 
+    if (force && !append && !hasSearch && !hasStatusFilter) {
+      return fetchAllDriversFromServer({ force: true });
+    }
+
     if (!force && !append && !hasSearch && !hasStatusFilter) {
-      if (window.BremDataCache?.isValid?.(KEYS.drivers)) {
-        const cached = window.BremDataCache.getData(KEYS.drivers);
-        if (Array.isArray(cached)) {
-          if (!activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
-            setDriversCache(cached);
-          }
-          return { ok: true, cached: true };
-        }
+      if (driversLoadMeta.complete && drivers.getAll().length > 0) {
+        return {
+          ok: true,
+          cached: true,
+          count: drivers.getAll().length,
+          supabaseTotal: driversLoadMeta.supabaseTotal
+        };
       }
-      if (!isProductionMode()
-        && activeStorageAdapter.type === 'supabase'
-        && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)) {
-        return { ok: true, cached: true };
-      }
+      return fetchAllDriversFromServer({ force: false });
     }
 
     if (driversSyncPromise) return driversSyncPromise;
@@ -2139,6 +2322,33 @@ const BremStorage = (function () {
       return drivers.getAll().find(driver => driver.id === id) || null;
     },
 
+    getSupabaseTotal() {
+      return driversLoadMeta.supabaseTotal || drivers.getAll().length;
+    },
+
+    async deleteAll() {
+      if (!isProductionMode()) {
+        throw new Error('운영 환경에서만 기사 전체 삭제를 실행할 수 있습니다.');
+      }
+      const result = await deleteAllRidersViaServer();
+      clearDriversCacheHard();
+      markDriversLoadComplete(0, 0);
+      window.BremDataCache?.invalidate?.(KEYS.drivers);
+      return result;
+    },
+
+    async verifySupabaseCount(expected = 0) {
+      const result = await countRidersViaServer();
+      if (!result.ok) {
+        throw new Error(result.message || result.error || 'Supabase 기사 수를 확인하지 못했습니다.');
+      }
+      return {
+        ok: true,
+        count: Number(result.count || 0),
+        matches: Number(result.count || 0) === Number(expected)
+      };
+    },
+
     saveAll(nextDrivers) {
       if (isProductionMode()) {
         setDriversCache(nextDrivers);
@@ -2335,6 +2545,7 @@ const BremStorage = (function () {
       const next = prevList.filter(driver => driver.id !== id);
       if (isProductionMode()) {
         setDriversCache(next);
+        driversLoadMeta = { ...driversLoadMeta, complete: false };
         return deleteRiderViaServer(id)
           .then(() => {
             scheduleDataRefetch(KEYS.drivers);
@@ -6030,6 +6241,7 @@ const BremStorage = (function () {
     useLocalStorageAdapter,
     flushStorage: flushActiveStorage,
     reloadDrivers,
+    fetchAllDriversFromServer,
     reloadMissions,
     getMissionsTableStatus,
     syncAllDriversPagesInBackground,
