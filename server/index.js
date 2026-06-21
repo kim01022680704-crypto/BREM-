@@ -210,6 +210,27 @@ app.get('/api/rider/missions', async (req, res) => {
   }
 });
 
+app.get('/api/rider/dashboard', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderDashboard(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      calls: result.calls,
+      rejections: result.rejections,
+      targets: result.targets,
+      weeklyTargets: result.weeklyTargets,
+      notices: result.notices,
+      settings: result.settings
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 대시보드 데이터를 불러오지 못했습니다.' });
+  }
+});
+
 app.post('/api/rider/profile', async (req, res) => {
   try {
     const result = await riderAuth.updateRiderProfile(getBearerToken(req), req.body || {});

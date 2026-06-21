@@ -396,6 +396,89 @@ async function getRiderAssignedMissions(accessToken) {
   };
 }
 
+const RIDER_DASHBOARD_SETTING_KEYS = [
+  'brem_driver_weekly_targets',
+  'brem_admin_long_event_catalog',
+  'brem_admin_long_event_items',
+  'brem_admin_long_event_config'
+];
+
+async function getRiderDashboard(accessToken) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const riderId = me.riderId;
+  const [
+    callsResult,
+    rejectionsResult,
+    targetsResult,
+    noticesResult,
+    settingsResult
+  ] = await Promise.all([
+    supabase
+      .from('admin_calls')
+      .select('id,driver_id,date,platform,count,updated_at')
+      .eq('driver_id', riderId)
+      .order('date', { ascending: false }),
+    supabase
+      .from('admin_rejection_rates')
+      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at')
+      .eq('driver_id', riderId)
+      .order('week_start', { ascending: false }),
+    supabase
+      .from('admin_targets')
+      .select('id,driver_id,month,count,updated_at')
+      .eq('driver_id', riderId)
+      .order('month', { ascending: false }),
+    supabase
+      .from('notices')
+      .select('*')
+      .order('pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('settings')
+      .select('key,value')
+      .in('key', RIDER_DASHBOARD_SETTING_KEYS)
+  ]);
+
+  const firstError = [callsResult, rejectionsResult, targetsResult, noticesResult, settingsResult]
+    .find(result => result.error);
+  if (firstError?.error) {
+    const message = firstError.error.message || '';
+    if (/does not exist|relation|schema cache/i.test(message)) {
+      return {
+        ok: false,
+        status: 400,
+        error: '운영 DB 테이블이 준비되지 않았습니다. supabase/operations_tables_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 500, error: message || '기사 대시보드 데이터를 불러오지 못했습니다.' };
+  }
+
+  const settingsRows = settingsResult.data || [];
+  const weeklyTargetsRaw = settingsRows.find(row => row.key === 'brem_driver_weekly_targets')?.value;
+  const weeklyTargets = Array.isArray(weeklyTargetsRaw)
+    ? weeklyTargetsRaw.filter(item => String(item?.driverId || '') === String(riderId))
+    : [];
+
+  return {
+    ok: true,
+    riderId,
+    calls: callsResult.data || [],
+    rejections: rejectionsResult.data || [],
+    targets: targetsResult.data || [],
+    weeklyTargets,
+    notices: noticesResult.data || [],
+    settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets')
+  };
+}
+
 async function signInRider(loginInput, password) {
   const supabase = getServiceClient();
   const authClient = getAnonAuthClient();
@@ -446,6 +529,7 @@ module.exports = {
   signInRider,
   getRiderMe,
   getRiderAssignedMissions,
+  getRiderDashboard,
   updateRiderProfile,
   provisionRiderAuthAccount,
   makeRiderLoginId

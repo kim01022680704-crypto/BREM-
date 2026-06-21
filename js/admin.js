@@ -3385,14 +3385,20 @@
           count: Number($(`#callCount-${platform}`).value),
           platform
         });
-        $(`#callCount-${platform}`).value = '';
-        const filterDate = $(`#callFilterDate-${platform}`);
-        if (filterDate) {
-          filterDate.value = date;
-          refreshCallDateLabel(`callFilterDate-${platform}`);
-        }
-        showToast(`${platformLabel(platform)} 콜수가 저장되었습니다.`);
-        renderAll();
+        void BremStorage.flushStorage?.().then(() => {
+          $(`#callCount-${platform}`).value = '';
+          const filterDate = $(`#callFilterDate-${platform}`);
+          if (filterDate) {
+            filterDate.value = date;
+            refreshCallDateLabel(`callFilterDate-${platform}`);
+          }
+          showToast(`${platformLabel(platform)} 콜수가 저장되었습니다.`);
+          renderAll();
+        }).catch(error => {
+          console.error('[BREM] call persist failed:', error);
+          showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
+          renderAll();
+        });
       });
 
       $(`#rejectionForm-${platform}`)?.addEventListener('submit', event => {

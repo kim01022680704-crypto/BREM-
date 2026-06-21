@@ -1692,6 +1692,112 @@ const BremStorage = (function () {
     }
   }
 
+  function stageRiderScopedCache(key, value, meta = {}) {
+    if (activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(key, value);
+    } else {
+      try {
+        storageAdapter.write(key, value);
+      } catch {
+        /* ignore */
+      }
+    }
+    window.BremDataCache?.set?.(key, value, { source: 'rider-dashboard', ...meta });
+  }
+
+  function mergeRiderDashboardInCache(payload = {}) {
+    const mapper = window.BremSupabaseMapper;
+
+    if (Array.isArray(payload.calls)) {
+      const callRows = payload.calls.map(row => ({
+        id: row.id,
+        driverId: row.driver_id || '',
+        date: String(row.date || '').slice(0, 10),
+        platform: row.platform || 'coupang',
+        count: Number(row.count) || 0
+      }));
+      stageRiderScopedCache(KEYS.calls, callRows, { tableLoaded: true });
+    }
+
+    if (Array.isArray(payload.rejections)) {
+      const rejectionRows = payload.rejections.map(row => {
+        const stats = row.stats && typeof row.stats === 'object' ? row.stats : {};
+        const unmeasured = stats.unmeasured === true;
+        return {
+          id: row.id,
+          driverId: row.driver_id || '',
+          weekStart: row.week_start,
+          platform: row.platform || 'coupang',
+          rate: unmeasured ? null : Number(row.rate) || 0,
+          stats,
+          source: row.source || 'manual',
+          updatedAt: row.updated_at
+        };
+      });
+      stageRiderScopedCache(KEYS.rejections, rejectionRows, { tableLoaded: true });
+    }
+
+    if (Array.isArray(payload.targets)) {
+      const targetRows = payload.targets.map(row => ({
+        id: row.id,
+        driverId: row.driver_id || '',
+        month: row.month || '',
+        count: Number(row.count) || 0
+      }));
+      stageRiderScopedCache(KEYS.targets, targetRows, { tableLoaded: true });
+    }
+
+    if (Array.isArray(payload.weeklyTargets)) {
+      stageRiderScopedCache(KEYS.weeklyTargets, payload.weeklyTargets);
+    }
+
+    if (Array.isArray(payload.notices)) {
+      const noticeRows = payload.notices.map(row => (
+        mapper?.rowToNotice ? mapper.rowToNotice(row) : row
+      ));
+      stageRiderScopedCache(KEYS.notices, noticeRows, { tableLoaded: true });
+    }
+
+    (payload.settings || []).forEach(row => {
+      if (!row?.key) return;
+      stageRiderScopedCache(row.key, row.value);
+    });
+
+    document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+  }
+
+  async function fetchRiderDashboardFromServer() {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 없습니다.' };
+    }
+
+    try {
+      const response = await fetch('/api/rider/dashboard', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '기사 대시보드 데이터를 불러오지 못했습니다.' };
+      }
+
+      mergeRiderDashboardInCache(payload);
+      return {
+        ok: true,
+        riderId: payload.riderId || null,
+        counts: {
+          calls: Array.isArray(payload.calls) ? payload.calls.length : 0,
+          rejections: Array.isArray(payload.rejections) ? payload.rejections.length : 0,
+          targets: Array.isArray(payload.targets) ? payload.targets.length : 0,
+          notices: Array.isArray(payload.notices) ? payload.notices.length : 0
+        }
+      };
+    } catch (error) {
+      return { ok: false, message: error.message || '기사 대시보드 요청에 실패했습니다.' };
+    }
+  }
+
   async function deleteRiderViaServer(id) {
     const result = await adminRidersApi(`/api/admin/riders/${encodeURIComponent(id)}`, {
       method: 'DELETE'
@@ -2069,7 +2175,10 @@ const BremStorage = (function () {
           return { ok: true, cached: true };
         }
 
-        if (!options.force && isDriverAppCacheReady()) {
+        const force = options.force === true;
+        const production = isProductionMode();
+
+        if (!force && !production && isDriverAppCacheReady()) {
           await ensureSupabaseHydrated({ skipDriversSync: true });
           if (activeStorageAdapter.hydrateCore) {
             await activeStorageAdapter.hydrateCore();
@@ -2082,19 +2191,21 @@ const BremStorage = (function () {
         const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
         if (!hydrated.ok) return hydrated;
 
-        if (activeStorageAdapter.hydrateCore) {
-          await activeStorageAdapter.hydrateCore();
-        }
-
-        if (activeStorageAdapter.ensureKeysLoaded) {
+        if (production) {
+          const dashboard = await fetchRiderDashboardFromServer();
+          if (!dashboard.ok) return dashboard;
+        } else if (activeStorageAdapter.ensureKeysLoaded) {
+          if (activeStorageAdapter.hydrateCore) {
+            await activeStorageAdapter.hydrateCore();
+          }
           await activeStorageAdapter.ensureKeysLoaded([
             KEYS.calls,
             KEYS.rejections,
             KEYS.targets
-          ], { force: Boolean(options.force) });
+          ], { force });
         }
 
-        await ensureMissionsLoaded({ force: Boolean(options.force) }).catch(() => ({}));
+        await ensureMissionsLoaded({ force }).catch(() => ({}));
         document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true } }));
         return { ok: true };
       } finally {
@@ -7000,6 +7111,7 @@ const BremStorage = (function () {
     ensureDriverStorageReady,
     fetchCurrentRiderFromServer,
     fetchRiderAssignedMissionsFromServer,
+    fetchRiderDashboardFromServer,
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,

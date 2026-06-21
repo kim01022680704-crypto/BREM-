@@ -469,13 +469,9 @@
     const driverId = driver.id;
     const task = (async () => {
       const freshDriver = await refreshCurrentRiderFromServer(driver);
-      if (BremStorage.isDriverAppCacheReady?.()) {
-        await BremStorage.hydrateDriverAppData?.({ force: false });
-        refreshDriverDashboard(freshDriver);
-        return;
-      }
-
-      await BremStorage.hydrateDriverAppData?.({ force: false });
+      await BremStorage.hydrateDriverAppData?.({
+        force: BremStorage.getSupabaseConfig?.().mode === 'production'
+      });
       refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
     })();
 
