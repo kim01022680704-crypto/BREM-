@@ -3858,6 +3858,19 @@ textarea {
   white-space: normal;
 }
 
+.weekly-mismatch-detail {
+  max-width: 420px;
+  line-height: 1.45;
+}
+
+.weekly-mismatch-line {
+  display: block;
+}
+
+.weekly-mismatch-line + .weekly-mismatch-line {
+  margin-top: 4px;
+}
+
 .backup-status-panel {
   display: grid;
   gap: 16px;

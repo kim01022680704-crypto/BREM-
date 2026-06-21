@@ -254,6 +254,12 @@ const BremWeeklySettlementAdmin = (function () {
     showToast(`${record.region} · 매칭 ${record.riders.length}명 저장 완료`);
   }
 
+  function formatCallMismatchWarnings(rider) {
+    const lines = (rider.warnings || []).filter(Boolean);
+    if (!lines.length) return '-';
+    return lines.map(line => `<span class="weekly-mismatch-line">${escapeHtml(line)}</span>`).join('');
+  }
+
   function renderPreview(platform) {
     const record = state.previewByPlatform[platform];
     const card = $(`#weeklySettlementPreviewCard-${platform}`);
@@ -290,7 +296,7 @@ const BremWeeklySettlementAdmin = (function () {
       const callStatus = rider.callCountMatched === false
         ? '<span class="promotion-status-no">불일치</span>'
         : '<span class="promotion-status-ok">일치</span>';
-      const warningText = (rider.warnings || []).join(', ');
+      const warningText = formatCallMismatchWarnings(rider);
       const rowClass = rider.callCountMatched === false ? 'promotion-row-unpaid' : '';
       return `
       <tr class="${rowClass}">
@@ -301,7 +307,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${callStatus}</td>
         <td class="promotion-status-ok">매칭</td>
-        <td class="weekly-warning-cell">${escapeHtml(warningText)}</td>
+        <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
       </tr>
     `;
     }).join('');
@@ -382,14 +388,22 @@ const BremWeeklySettlementAdmin = (function () {
     if (!card || !record) return;
     state.detailId = record.id;
     card.hidden = false;
-    $('#weeklySettlementDetailTitle').textContent = `${platformLabel(record.platform)} · ${record.region}`;
-    const mismatchCount = (record.riders || []).filter(r => r.callCountMatched === false).length;
+    const period = BremWeeklySettlement.resolveWeeklyComparePeriod(record);
+    const refreshedRiders = (record.riders || []).map(rider => (
+      BremWeeklySettlement.refreshRiderCallMatch(rider, {
+        platform: record.platform,
+        startDate: period.startDate,
+        endDate: period.endDate
+      })
+    ));
+    const mismatchCount = refreshedRiders.filter(r => r.callCountMatched === false).length;
     const orderLabel = platformWeeklyOrderLabel(record.platform);
     const idLabel = platformMatchIdLabel(record.platform);
+    $('#weeklySettlementDetailTitle').textContent = `${platformLabel(record.platform)} · ${record.region}`;
     $('#weeklySettlementDetailMeta').innerHTML = `
-      <p>정산기간: <strong>${escapeHtml(record.startDate)} ~ ${escapeHtml(record.endDate)}</strong></p>
+      <p>정산기간: <strong>${escapeHtml(period.startDate)} ~ ${escapeHtml(period.endDate)}</strong> (수~화 7일)</p>
       <p>매칭 ${formatNumber(record.summary.matchedRiders)}명: <strong>${escapeHtml(record.matchedNamesLabel || '-')}</strong></p>
-      ${mismatchCount ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 불일치 ${formatNumber(mismatchCount)}명</p>` : ''}
+      ${mismatchCount ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 불일치 ${formatNumber(mismatchCount)}명 — 경고 열에서 누락 일·일별 콜수를 확인하세요.</p>` : ''}
     `;
     const headEl = $('#weeklySettlementDetailHead');
     if (headEl) {
@@ -403,8 +417,8 @@ const BremWeeklySettlementAdmin = (function () {
             <th>경고</th>
           </tr>`;
     }
-    $('#weeklySettlementDetailRows').innerHTML = (record.riders || []).map(rider => {
-      const warningText = (rider.warnings || []).join(', ');
+    $('#weeklySettlementDetailRows').innerHTML = refreshedRiders.map(rider => {
+      const warningText = formatCallMismatchWarnings(rider);
       return `
       <tr${rider.callCountMatched === false ? ' class="promotion-row-unpaid"' : ''}>
         <td><strong>${escapeHtml(rider.driverName || rider.riderName)}</strong></td>
@@ -413,7 +427,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${rider.callCountMatched === false ? '불일치' : '일치'}</td>
-        <td>${escapeHtml(warningText)}</td>
+        <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
       </tr>
     `;
     }).join('');

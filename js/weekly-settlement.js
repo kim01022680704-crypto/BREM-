@@ -37,9 +37,47 @@ const BremWeeklySettlement = (function () {
     return {
       baseSettlementDate: base,
       startDate: base,
-      endDate: addDays(base, 7),
+      endDate: addDays(base, 6),
       paymentDate: addDays(base, 9)
     };
+  }
+
+  function listDaysInclusive(startDate, endDate) {
+    const start = String(startDate || '').slice(0, 10);
+    const end = String(endDate || '').slice(0, 10);
+    if (!start || !end || start > end) return [];
+    const days = [];
+    let cursor = start;
+    while (cursor <= end) {
+      days.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+    return days;
+  }
+
+  function buildCallCountMismatchDetail(stats, startDate, endDate) {
+    const byDay = stats?.byDay || {};
+    const days = listDaysInclusive(startDate, endDate);
+    if (!days.length) return '';
+
+    const missingDays = [];
+    const dayParts = [];
+    days.forEach(day => {
+      const entry = byDay[day];
+      const label = day.slice(5);
+      if (!entry) {
+        missingDays.push(label);
+        dayParts.push(`${label}:0`);
+      } else {
+        dayParts.push(`${label}:${entry.callCount}`);
+      }
+    });
+
+    const parts = [`일별 ${dayParts.join(' · ')}`];
+    if (missingDays.length) {
+      parts.unshift(`누락 ${missingDays.length}일 (${missingDays.join(', ')})`);
+    }
+    return parts.join(' · ');
   }
 
   function parseCoupangFileName(fileName) {
@@ -403,22 +441,66 @@ const BremWeeklySettlement = (function () {
     return '쿠팡 ID(이름+연락처)/기사명 미매칭';
   }
 
-  function evaluateCallCountMatch(rider, stats) {
+  function evaluateCallCountMatch(rider, stats, startDate = '', endDate = '') {
     const weeklyOrderCount = Number(rider.weeklyOrderCount ?? 0);
     const systemCallCount = Number(stats.callCount || 0);
     const warnings = [];
 
     if (!stats.hasData) {
       warnings.push('시스템 콜수/정산표 데이터 없음');
-      return { weeklyOrderCount, systemCallCount, callCountMatched: false, warnings };
+      const detail = buildCallCountMismatchDetail(stats, startDate, endDate);
+      if (detail) warnings.push(detail);
+      return { weeklyOrderCount, systemCallCount, callCountMatched: false, warnings, callStatsByDay: stats.byDay || {} };
     }
 
     if (weeklyOrderCount > 0 && weeklyOrderCount !== systemCallCount) {
       warnings.push(`콜수 불일치 (주간서 ${weeklyOrderCount} / 시스템 ${systemCallCount})`);
-      return { weeklyOrderCount, systemCallCount, callCountMatched: false, warnings };
+      const detail = buildCallCountMismatchDetail(stats, startDate, endDate);
+      if (detail) warnings.push(detail);
+      return {
+        weeklyOrderCount,
+        systemCallCount,
+        callCountMatched: false,
+        warnings,
+        callStatsByDay: stats.byDay || {}
+      };
     }
 
-    return { weeklyOrderCount, systemCallCount, callCountMatched: true, warnings };
+    return {
+      weeklyOrderCount,
+      systemCallCount,
+      callCountMatched: true,
+      warnings,
+      callStatsByDay: stats.byDay || {}
+    };
+  }
+
+  function refreshRiderCallMatch(rider, { platform, startDate, endDate } = {}) {
+    const driverId = rider?.matchedRiderId || '';
+    if (!driverId) return rider;
+
+    const stats = buildDriverCallStatsForPeriod(driverId, startDate, endDate, platform);
+    const callMatch = evaluateCallCountMatch(rider, stats, startDate, endDate);
+    return {
+      ...rider,
+      systemCallCount: callMatch.systemCallCount,
+      callCountMatched: callMatch.callCountMatched,
+      callStatsByDay: callMatch.callStatsByDay,
+      warnings: callMatch.warnings
+    };
+  }
+
+  function resolveWeeklyComparePeriod(record = {}) {
+    const platform = normalizePlatform(record.platform);
+    const startDate = String(record.startDate || record.baseSettlementDate || '').slice(0, 10);
+    if (platform === 'coupang' && startDate) {
+      const dates = calculateCoupangSettlementDates(record.baseSettlementDate || startDate);
+      return { startDate: dates.startDate, endDate: dates.endDate };
+    }
+    return {
+      startDate,
+      endDate: String(record.endDate || '').slice(0, 10)
+    };
   }
 
   function matchSettlementRidersWithExistingData(riders, platform, options = {}) {
@@ -434,7 +516,7 @@ const BremWeeklySettlement = (function () {
         ? buildDriverCallStatsForPeriod(driver.id, startDate, endDate, p)
         : { callCount: 0, hasData: false };
 
-      const callMatch = evaluateCallCountMatch(rider, stats);
+      const callMatch = evaluateCallCountMatch(rider, stats, startDate, endDate);
       const matched = p === 'baemin'
         ? Boolean(driver && normalizeBaeminUserId(rider.baeminUserId))
         : hasSystemData && Boolean(driver);
@@ -455,6 +537,7 @@ const BremWeeklySettlement = (function () {
         weeklyOrderCount: callMatch.weeklyOrderCount,
         systemCallCount: callMatch.systemCallCount,
         callCountMatched: matched && hasSystemData ? callMatch.callCountMatched : false,
+        callStatsByDay: callMatch.callStatsByDay || {},
         warnings: matched ? warnings : [unmatchedReasonForRider(p, driver, hasSystemData, rider)]
       };
     });
@@ -578,6 +661,10 @@ const BremWeeklySettlement = (function () {
   return {
     BAEMIN_SHEET_KEYWORD,
     calculateCoupangSettlementDates,
+    listDaysInclusive,
+    buildCallCountMismatchDetail,
+    refreshRiderCallMatch,
+    resolveWeeklyComparePeriod,
     parseCoupangFileName,
     parseBaeminFileName,
     normalizeCoupangName,
