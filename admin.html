@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260624b">
+  <link rel="stylesheet" href="css/admin.css?v=20260624c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -419,8 +419,12 @@
         </article>
 
         <article class="card">
-          <div class="card-header">
+          <div class="card-header call-records-header">
             <h2>쿠팡 콜수 기록</h2>
+            <label class="inline-search-field">
+              <span>이름 검색</span>
+              <input type="search" id="callRecordsSearch-coupang" placeholder="기사명">
+            </label>
           </div>
           <div class="call-records-toolbar">
             <label class="call-filter-field">
@@ -432,7 +436,8 @@
             </label>
             <button type="button" class="small-btn danger-btn" id="bulkDeleteCalls-coupang" disabled>선택 삭제</button>
           </div>
-          <div class="table-wrap">
+          <p class="admin-table-summary" id="callRowsSummary-coupang"></p>
+          <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--call-records">
             <table class="call-records-table">
               <thead>
                 <tr>
@@ -1681,7 +1686,8 @@
             </label>
           </div>
           <p class="settlement-week-range-label" id="settlementLogWeekRange-coupang"></p>
-          <div class="table-wrap">
+          <p class="admin-table-summary" id="settlementUploadLogSummary-coupang"></p>
+          <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--upload-log">
             <table class="settlement-upload-log-table">
               <thead>
                 <tr>
@@ -1773,12 +1779,19 @@
         </article>
 
         <article class="card">
-          <div class="card-header">
+          <div class="card-header settlement-history-header">
             <h2>쿠팡 정산 반영 내역 <span class="settlement-period-filter-label" id="settlementHistoryPeriodLabel-coupang"></span></h2>
-            <button type="button" class="small-btn danger-btn" id="settlementHistoryClearBtn-coupang">선택일 전체 삭제</button>
+            <div class="settlement-history-toolbar">
+              <label class="inline-search-field">
+                <span>이름 검색</span>
+                <input type="search" id="settlementHistorySearch-coupang" placeholder="기사명">
+              </label>
+              <button type="button" class="small-btn danger-btn" id="settlementHistoryClearBtn-coupang">선택일 전체 삭제</button>
+            </div>
           </div>
           <p class="form-help">정산일을 변경하면 아래 목록도 해당 날짜 기준으로 갱신됩니다.</p>
-          <div class="table-wrap">
+          <p class="admin-table-summary" id="settlementHistorySummary-coupang"></p>
+          <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--settlement-history">
             <table>
               <thead>
                 <tr>
@@ -2991,8 +3004,8 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260622b"></script>
-  <script src="js/storage.js?v=20260624b"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260624c"></script>
+  <script src="js/storage.js?v=20260624c"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -3016,6 +3029,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622j"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260624b"></script>
+  <script src="js/admin.js?v=20260624c"></script>
 </body>
 </html>

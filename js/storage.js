@@ -3626,14 +3626,42 @@ const BremStorage = (function () {
 
     upsertDaily({ driverId, date, count, platform = DEFAULT_PLATFORM }) {
       const p = normalizePlatform(platform);
-      const list = calls.getAll().filter(call => !(call.driverId === driverId && call.date === date && normalizePlatform(call.platform) === p));
-      list.push({
-        id: `${driverId}-${date}-${p}`,
-        driverId,
-        date,
+      const callDate = String(date).slice(0, 10);
+      return calls.upsertBatchDaily({
+        date: callDate,
         platform: p,
-        count: Number(count)
+        records: [{ driverId, count: Number(count) }]
       });
+    },
+
+    upsertBatchDaily({ date, records = [], platform = DEFAULT_PLATFORM }) {
+      const p = normalizePlatform(platform);
+      const callDate = String(date).slice(0, 10);
+      const normalizedRecords = (Array.isArray(records) ? records : [])
+        .map(record => ({
+          driverId: String(record.driverId || ''),
+          count: Number(record.count ?? record.orderCount ?? 0)
+        }))
+        .filter(record => record.driverId);
+      if (!callDate || !normalizedRecords.length) return calls.getAll();
+
+      const targetDriverIds = new Set(normalizedRecords.map(record => record.driverId));
+      const list = calls.getAll().filter(call => {
+        if (normalizePlatform(call.platform) !== p) return true;
+        if (String(call.date).slice(0, 10) !== callDate) return true;
+        return !targetDriverIds.has(call.driverId);
+      });
+
+      normalizedRecords.forEach(record => {
+        list.push({
+          id: `${record.driverId}-${callDate}-${p}`,
+          driverId: record.driverId,
+          date: callDate,
+          platform: p,
+          count: record.count
+        });
+      });
+
       storageAdapter.write(KEYS.calls, list);
       return list;
     },
@@ -5277,13 +5305,13 @@ const BremStorage = (function () {
         appliedAt: new Date().toISOString()
       }));
 
-      nextRecords.forEach(record => {
-        calls.upsertDaily({
+      calls.upsertBatchDaily({
+        date: callDate,
+        platform: p,
+        records: nextRecords.map(record => ({
           driverId: record.driverId,
-          date: callDate,
-          count: record.orderCount,
-          platform: p
-        });
+          count: record.orderCount
+        }))
       });
 
       const keepIds = new Set(nextRecords.map(record => record.id));

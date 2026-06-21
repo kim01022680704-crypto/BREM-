@@ -2069,6 +2069,67 @@ textarea {
   font-size: 1rem;
 }
 
+.settlement-history-header,
+.call-records-header {
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.settlement-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.inline-search-field {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.inline-search-field input {
+  min-height: 36px;
+}
+
+.admin-table-summary {
+  margin: 0 18px 10px;
+  color: var(--muted, #666);
+  font-size: 0.92rem;
+}
+
+.admin-scroll-table-wrap {
+  margin: 0 18px 18px;
+  overflow: auto;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 12px;
+}
+
+.admin-scroll-table-wrap table {
+  margin: 0;
+}
+
+.admin-scroll-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface, #fff);
+}
+
+.admin-scroll-table-wrap--upload-log {
+  max-height: 420px;
+}
+
+.admin-scroll-table-wrap--settlement-history {
+  max-height: 480px;
+}
+
+.admin-scroll-table-wrap--call-records {
+  max-height: 960px;
+}
+
 .settlement-preview-card .card-header {
   flex-wrap: wrap;
 }

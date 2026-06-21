@@ -2,6 +2,8 @@
   const selectedCallIds = new Set();
   const selectedRejectionIds = new Set();
   let targetMonthPicker = null;
+  const SETTLEMENT_UPLOAD_LOG_VISIBLE_LIMIT = 10;
+  const CALL_RECORDS_VISIBLE_LIMIT = 30;
 
   const state = {
     currentSection: 'dashboard',
@@ -20,6 +22,8 @@
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     settlementLogWeekByPlatform: { coupang: null, baemin: null },
     settlementUploadLogDetailId: '',
+    settlementHistorySearchByPlatform: { coupang: '', baemin: '' },
+    callRecordsSearchByPlatform: { coupang: '', baemin: '' },
     unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
   };
 
@@ -818,6 +822,34 @@
     const driver = drivers().find(item => item.id === driverId);
     if (!driver) return false;
     return matchesDriverSearch(driver, state.driverSearchQuery);
+  }
+
+  function settlementHistorySearch(platform) {
+    return String(state.settlementHistorySearchByPlatform[normalizePlatform(platform)] || '').trim();
+  }
+
+  function driverMatchesSettlementHistorySearch(driverId, platform) {
+    const query = settlementHistorySearch(platform);
+    if (!query) return true;
+    const driver = drivers().find(item => item.id === driverId);
+    if (!driver) return false;
+    return matchesDriverSearch(driver, query);
+  }
+
+  function callRecordsSearch(platform) {
+    const p = normalizePlatform(platform);
+    if (p === 'coupang') {
+      return String(state.callRecordsSearchByPlatform.coupang || '').trim();
+    }
+    return state.driverSearchQuery.trim();
+  }
+
+  function driverMatchesCallRecordsSearch(driverId, platform) {
+    const query = callRecordsSearch(platform);
+    if (!query) return true;
+    const driver = drivers().find(item => item.id === driverId);
+    if (!driver) return false;
+    return matchesDriverSearch(driver, query);
   }
 
   function updateDriverSearchStatus() {
@@ -2183,7 +2215,7 @@
     return calls()
       .filter(call => normalizePlatform(call.platform) === platform
         && call.date === filterDate
-        && driverMatchesSearch(call.driverId))
+        && driverMatchesCallRecordsSearch(call.driverId, platform))
       .sort((a, b) => driverName(a.driverId).localeCompare(driverName(b.driverId), 'ko'));
   }
 
@@ -2233,14 +2265,22 @@
     pruneSelectedCallIds();
     PLATFORMS.forEach(platform => {
       const filterDate = callFilterDate(platform);
-      const emptyMessage = state.driverSearchQuery.trim()
+      const p = normalizePlatform(platform);
+      const emptyMessage = state.driverSearchQuery.trim() && p !== 'coupang'
         ? '검색 결과에 해당하는 콜수 기록이 없습니다.'
-        : `${formatDate(filterDate)} ${platformLabel(platform)} 콜수 기록이 없습니다.`;
+        : callRecordsSearch(p)
+          ? '검색 결과에 해당하는 콜수 기록이 없습니다.'
+          : `${formatDate(filterDate)} ${platformLabel(platform)} 콜수 기록이 없습니다.`;
       const rowsEl = $(`#callRows-${platform}`);
+      const summaryEl = $(`#callRowsSummary-${platform}`);
       if (!rowsEl) return;
 
       const platformCallList = platformCalls(platform);
-      rowsEl.innerHTML = platformCallList.map(call => `
+      const displayLimit = p === 'coupang' ? CALL_RECORDS_VISIBLE_LIMIT : platformCallList.length;
+      const displayCalls = platformCallList.slice(0, displayLimit);
+      const hiddenCount = Math.max(0, platformCallList.length - displayCalls.length);
+
+      rowsEl.innerHTML = displayCalls.map(call => `
         <tr${selectedCallIds.has(call.id) ? ' class="row-selected"' : ''}>
           <td class="col-select">
             <input type="checkbox" class="call-select-check" data-select-call="${call.id}" aria-label="선택"${selectedCallIds.has(call.id) ? ' checked' : ''}>
@@ -2250,6 +2290,18 @@
           <td><button type="button" class="small-btn danger-btn" data-delete-call="${call.id}">삭제</button></td>
         </tr>
       `).join('') || emptyRow(4, emptyMessage);
+
+      if (summaryEl) {
+        if (!platformCallList.length) {
+          summaryEl.textContent = '';
+        } else if (p === 'coupang' && hiddenCount > 0) {
+          summaryEl.textContent = `총 ${number(platformCallList.length)}명 · 표시 ${number(displayCalls.length)}명 (스크롤)`;
+        } else if (p === 'coupang') {
+          summaryEl.textContent = `총 ${number(platformCallList.length)}명`;
+        } else {
+          summaryEl.textContent = '';
+        }
+      }
 
       updateCallSelectionUi(platform);
     });
@@ -2859,6 +2911,7 @@
     const weekStart = ensureSettlementLogWeek(p);
     updateSettlementLogWeekRangeLabel(p);
     const rowsEl = $(`#settlementUploadLogRows-${p}`);
+    const summaryEl = $(`#settlementUploadLogSummary-${p}`);
     if (!rowsEl) return;
 
     const rows = BremStorage.settlementUploadLogs.getFiltered({
@@ -2868,8 +2921,12 @@
     });
 
     const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 ${platformLabel(p)} 일정산 기록이 없습니다.`;
+    const displayRows = p === 'coupang'
+      ? rows.slice(0, SETTLEMENT_UPLOAD_LOG_VISIBLE_LIMIT)
+      : rows;
+    const hiddenCount = Math.max(0, rows.length - displayRows.length);
 
-    rowsEl.innerHTML = rows.map(item => `
+    rowsEl.innerHTML = displayRows.map(item => `
       <tr>
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${formatDate(item.period)}</td>
@@ -2883,6 +2940,18 @@
         </td>
       </tr>
     `).join('') || `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
+
+    if (summaryEl) {
+      if (!rows.length) {
+        summaryEl.textContent = '';
+      } else if (p === 'coupang' && hiddenCount > 0) {
+        summaryEl.textContent = `총 ${number(rows.length)}건 · 최근 ${number(displayRows.length)}건 표시`;
+      } else if (p === 'coupang') {
+        summaryEl.textContent = `총 ${number(rows.length)}건`;
+      } else {
+        summaryEl.textContent = '';
+      }
+    }
   }
 
   function matchesSettlementPeriod(record, periodKey) {
@@ -3005,9 +3074,6 @@
   }
 
   function renderSettlements() {
-    const visibleDriverIds = new Set(filteredDrivers().map(driver => driver.id));
-    const query = state.driverSearchQuery.trim();
-
     PLATFORMS.forEach(platform => {
       const p = normalizePlatform(platform);
       const periodKey = getSettlementPeriodFilter(p);
@@ -3016,15 +3082,18 @@
       const rows = settlements()
         .filter(record => normalizePlatform(record.platform) === p)
         .filter(record => matchesSettlementPeriod(record, periodKey))
-        .filter(record => !query || visibleDriverIds.has(record.driverId))
+        .filter(record => driverMatchesSettlementHistorySearch(record.driverId, p))
         .sort((a, b) => b.period.localeCompare(a.period) || b.appliedAt.localeCompare(a.appliedAt));
 
       const historyEl = $(`#settlementHistoryRows-${p}`);
+      const summaryEl = $(`#settlementHistorySummary-${p}`);
       if (!historyEl) return;
 
-      const emptyMessage = periodKey
-        ? `${formatDate(periodKey)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
-        : `${platformLabel(p)} 반영된 정산 내역이 없습니다.`;
+      const emptyMessage = settlementHistorySearch(p)
+        ? '검색 결과에 해당하는 정산 반영 내역이 없습니다.'
+        : periodKey
+          ? `${formatDate(periodKey)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
+          : `${platformLabel(p)} 반영된 정산 내역이 없습니다.`;
 
       historyEl.innerHTML = rows.map(record => `
         <tr>
@@ -3037,6 +3106,12 @@
           </td>
         </tr>
       `).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 6}" class="empty">${emptyMessage}</td></tr>`;
+
+      if (summaryEl) {
+        summaryEl.textContent = rows.length
+          ? `총 ${number(rows.length)}명${settlementHistorySearch(p) ? ' · 이름 검색 적용' : ''}`
+          : '';
+      }
 
       renderSettlementPreview(p);
       renderSettlementUnmatched(p);
@@ -3209,12 +3284,26 @@
     uploadBtn.textContent = '처리 중...';
 
     try {
+      if (BremStorage.fetchAllDriversFromServer) {
+        const driverLoad = await BremStorage.fetchAllDriversFromServer({ force: false });
+        if (!driverLoad?.ok) {
+          showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
+          return;
+        }
+      }
+
+      const driverList = drivers();
+      const supabaseTotal = BremStorage.drivers.getSupabaseTotal?.() || driverList.length;
+      if (supabaseTotal > driverList.length) {
+        showToast(`기사 ${driverList.length}/${supabaseTotal}명만 로드됨 — 매칭 누락 가능. 잠시 후 다시 시도하세요.`);
+      }
+
       const result = await BremSettlementParser.parseSettlementFile({
         file,
         password: String(passwordInput?.value || '').trim(),
         period: periodInput?.value || BremSettlementParser.parseSettlementDateFromFilename(file.name) || '',
         formatId: BremPlatforms.settlementFormatId(p),
-        drivers: drivers().map(driver => ({
+        drivers: driverList.map(driver => ({
           id: driver.id,
           name: driver.name,
           baeminId: driver.baeminId || ''
@@ -3985,6 +4074,16 @@
         event.target.value = picked;
         renderSettlementUploadLogs(p);
       });
+      if (p === 'coupang') {
+        $(`#settlementHistorySearch-${p}`)?.addEventListener('input', event => {
+          state.settlementHistorySearchByPlatform[p] = event.target.value || '';
+          renderSettlements();
+        });
+        $(`#callRecordsSearch-${p}`)?.addEventListener('input', event => {
+          state.callRecordsSearchByPlatform[p] = event.target.value || '';
+          renderCalls();
+        });
+      }
       $(`#settlementFile-${p}`)?.addEventListener('change', event => {
         const file = event.target.files?.[0];
         if (!file) return;

@@ -119,20 +119,32 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
+    async function upsertRowsInChunks(tableName, rows, chunkSize = 200) {
+      if (!rows.length) return;
+      for (let index = 0; index < rows.length; index += chunkSize) {
+        const chunk = rows.slice(index, index + chunkSize);
+        const { error } = await client.from(tableName).upsert(chunk, { onConflict: 'id' });
+        if (error) throw error;
+      }
+    }
+
+    async function deleteRowsInChunks(tableName, ids, chunkSize = 200) {
+      if (!ids.length) return;
+      for (let index = 0; index < ids.length; index += chunkSize) {
+        const chunk = ids.slice(index, index + chunkSize);
+        const { error } = await client.from(tableName).delete().in('id', chunk);
+        if (error) throw error;
+      }
+    }
+
     async function syncTableRows(tableName, list, toRow) {
       const rows = (list || []).map(toRow).filter(row => row?.id);
       const { data: existing, error: readError } = await client.from(tableName).select('id');
       if (readError) throw readError;
       const keepIds = new Set(rows.map(row => row.id));
       const toDelete = (existing || []).map(row => row.id).filter(id => !keepIds.has(id));
-      if (rows.length) {
-        const { error } = await client.from(tableName).upsert(rows, { onConflict: 'id' });
-        if (error) throw error;
-      }
-      if (toDelete.length) {
-        const { error } = await client.from(tableName).delete().in('id', toDelete);
-        if (error) throw error;
-      }
+      await upsertRowsInChunks(tableName, rows);
+      await deleteRowsInChunks(tableName, toDelete);
     }
 
     async function loadTableCollection(config, options = {}) {
