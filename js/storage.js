@@ -3802,6 +3802,16 @@ const BremStorage = (function () {
         if (month && String(entry.date).slice(0, 7) !== month) return false;
         return true;
       });
+    },
+
+    getForPlatformDate(platform, dateKey) {
+      const p = normalizePlatform(platform);
+      const date = String(dateKey || '').slice(0, 10);
+      return callEditLogs.getAll().filter(entry => {
+        if (normalizePlatform(entry.platform) !== p) return false;
+        if (date && String(entry.date).slice(0, 10) !== date) return false;
+        return true;
+      });
     }
   };
 

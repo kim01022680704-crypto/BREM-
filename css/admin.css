@@ -2549,7 +2549,14 @@ textarea {
   font-size: 0.84rem;
 }
 
-.call-filter-month {
+.call-filter-nav {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.call-filter-date {
   min-width: 10rem;
 }
 

@@ -1267,18 +1267,33 @@
     PLATFORMS.forEach(platform => {
       const date = today();
       const callDate = $(`#callDate-${platform}`);
-      const filterMonth = $(`#callFilterMonth-${platform}`);
+      const filterDate = $(`#callFilterDate-${platform}`);
       if (callDate) callDate.value = date;
-      if (filterMonth) filterMonth.value = currentMonth();
+      if (filterDate) filterDate.value = date;
       refreshCallDateLabel(`callDate-${platform}`);
     });
   }
 
-  function formatCallMonthLabel(monthKey) {
-    const value = String(monthKey || '').slice(0, 7);
-    if (!/^\d{4}-\d{2}$/.test(value)) return '월 선택';
-    const [year, month] = value.split('-');
-    return `${year}년 ${Number(month)}월`;
+  function callFilterDate(platform) {
+    return String($(`#callFilterDate-${platform}`)?.value || today()).slice(0, 10);
+  }
+
+  function shiftCallFilterDate(platform, deltaDays) {
+    const input = $(`#callFilterDate-${platform}`);
+    if (!input) return;
+    const base = new Date(`${callFilterDate(platform)}T00:00:00`);
+    base.setDate(base.getDate() + Number(deltaDays || 0));
+    input.value = dateKey(base);
+    selectedCallIds.clear();
+    renderCalls();
+  }
+
+  function setCallFilterDate(platform, dateValue) {
+    const input = $(`#callFilterDate-${platform}`);
+    if (!input) return;
+    input.value = String(dateValue || today()).slice(0, 10);
+    selectedCallIds.clear();
+    renderCalls();
   }
 
   function formatCallEditChange(entry) {
@@ -1289,8 +1304,8 @@
   }
 
   function callEditLogsForPlatform(platform) {
-    const month = callFilterMonth(platform);
-    let list = BremStorage.callEditLogs?.getForPlatformMonth?.(platform, month) || [];
+    const date = callFilterDate(platform);
+    let list = BremStorage.callEditLogs?.getForPlatformDate?.(platform, date) || [];
     const query = callRecordsSearch(platform);
     if (query) {
       list = list.filter(entry => {
@@ -2226,17 +2241,13 @@
     window.BremPerf?.timeEnd?.('admin.renderDashboard');
   }
 
-  function callFilterMonth(platform) {
-    return $(`#callFilterMonth-${platform}`)?.value || currentMonth();
-  }
-
   function platformCalls(platform) {
-    const month = callFilterMonth(platform);
+    const date = callFilterDate(platform);
     return calls()
       .filter(call => normalizePlatform(call.platform) === platform
-        && String(call.date).slice(0, 7) === month
+        && String(call.date).slice(0, 10) === date
         && driverMatchesCallRecordsSearch(call.driverId, platform))
-      .sort((a, b) => b.date.localeCompare(a.date) || driverName(a.driverId).localeCompare(driverName(b.driverId), 'ko'));
+      .sort((a, b) => driverName(a.driverId).localeCompare(driverName(b.driverId), 'ko'));
   }
 
   function pruneSelectedCallIds() {
@@ -2290,8 +2301,8 @@
 
   function renderCallEditLogs() {
     PLATFORMS.forEach(platform => {
-      const month = callFilterMonth(platform);
-      const monthLabel = formatCallMonthLabel(month);
+      const date = callFilterDate(platform);
+      const dateLabel = formatDate(date);
       const rowsEl = $(`#callEditLogRows-${platform}`);
       const summaryEl = $(`#callEditLogSummary-${platform}`);
       if (!rowsEl) return;
@@ -2301,7 +2312,7 @@
       const hiddenCount = Math.max(0, logs.length - displayLogs.length);
       const emptyMessage = callRecordsSearch(platform)
         ? '검색 결과에 해당하는 수정 기록이 없습니다.'
-        : `${monthLabel} 수정 기록이 없습니다.`;
+        : `${dateLabel} 수정 기록이 없습니다.`;
 
       rowsEl.innerHTML = displayLogs.map(entry => `
         <tr class="call-edit-log-row">
@@ -2318,22 +2329,29 @@
           summaryEl.textContent = '';
         } else {
           summaryEl.textContent = hiddenCount > 0
-            ? `${monthLabel} · 총 ${number(logs.length)}건 · 표시 ${number(displayLogs.length)}건 (스크롤)`
-            : `${monthLabel} · 총 ${number(logs.length)}건`;
+            ? `${dateLabel} · 총 ${number(logs.length)}건 · 표시 ${number(displayLogs.length)}건 (스크롤)`
+            : `${dateLabel} · 총 ${number(logs.length)}건`;
         }
       }
     });
   }
 
+  function summarizeCallRecords(platformCallList, dateLabel) {
+    if (!platformCallList.length) return '';
+    const totalCalls = platformCallList.reduce((sum, call) => sum + Number(call.count || 0), 0);
+    const driverCount = new Set(platformCallList.map(call => call.driverId)).size;
+    return `${dateLabel} · ${number(driverCount)}명 · 총 ${number(totalCalls)}콜 · ${number(platformCallList.length)}건`;
+  }
+
   function renderCalls() {
     pruneSelectedCallIds();
     PLATFORMS.forEach(platform => {
-      const month = callFilterMonth(platform);
+      const date = callFilterDate(platform);
       const p = normalizePlatform(platform);
-      const monthLabel = formatCallMonthLabel(month);
+      const dateLabel = formatDate(date);
       const emptyMessage = callRecordsSearch(p)
         ? '검색 결과에 해당하는 콜수 기록이 없습니다.'
-        : `${monthLabel} ${platformLabel(platform)} 콜수 기록이 없습니다.`;
+        : `${dateLabel} ${platformLabel(platform)} 콜수 기록이 없습니다.`;
       const rowsEl = $(`#callRows-${platform}`);
       const summaryEl = $(`#callRowsSummary-${platform}`);
       if (!rowsEl) return;
@@ -2357,11 +2375,12 @@
 
       if (summaryEl) {
         if (!platformCallList.length) {
-          summaryEl.textContent = '';
+          summaryEl.textContent = `${dateLabel} · 기록 없음`;
         } else {
+          const baseSummary = summarizeCallRecords(platformCallList, dateLabel);
           summaryEl.textContent = hiddenCount > 0
-            ? `${monthLabel} · 총 ${number(platformCallList.length)}건 · 표시 ${number(displayCalls.length)}건 (스크롤)`
-            : `${monthLabel} · 총 ${number(platformCallList.length)}건`;
+            ? `${baseSummary} · 표시 ${number(displayCalls.length)}건 (스크롤)`
+            : baseSummary;
         }
       }
 
@@ -3639,7 +3658,7 @@
           driverQuery,
           calls().length,
           state.unifiedPlatform.calls,
-          ...PLATFORMS.map(platform => callFilterMonth(platform)),
+          ...PLATFORMS.map(platform => callFilterDate(platform)),
           ...PLATFORMS.map(platform => callRecordsSearch(platform)),
           BremStorage.callEditLogs?.getAll?.().length || 0
         ].join('\0');
@@ -4065,9 +4084,21 @@
     });
 
     PLATFORMS.forEach(platform => {
-      $(`#callFilterMonth-${platform}`)?.addEventListener('change', () => {
+      $(`#callFilterDate-${platform}`)?.addEventListener('change', () => {
         selectedCallIds.clear();
         renderCalls();
+      });
+
+      document.querySelectorAll(`[data-call-filter-shift][data-platform="${platform}"]`).forEach(button => {
+        button.addEventListener('click', () => {
+          shiftCallFilterDate(platform, Number(button.dataset.callFilterShift || 0));
+        });
+      });
+
+      document.querySelectorAll(`[data-call-filter-today][data-platform="${platform}"]`).forEach(button => {
+        button.addEventListener('click', () => {
+          setCallFilterDate(platform, today());
+        });
       });
 
       $(`#callRecordsSearch-${platform}`)?.addEventListener('input', event => {
@@ -4098,10 +4129,7 @@
             }
             await BremStorage.flushStorage?.();
             $(`#callCount-${platform}`).value = '';
-            const filterMonth = $(`#callFilterMonth-${platform}`);
-            if (filterMonth) {
-              filterMonth.value = String(date).slice(0, 7);
-            }
+            setCallFilterDate(platform, date);
             showToast(`${platformLabel(platform)} 콜수가 저장되었습니다. 수정 기록이 남습니다.`);
             renderAll();
           } catch (error) {
