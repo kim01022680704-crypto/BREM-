@@ -41,13 +41,15 @@ function rowToRecord(row) {
   };
 }
 
+const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
+
 async function readAll() {
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
 
   const { data, error } = await supabase
     .from('rider_inquiries')
-    .select('*')
+    .select(INQUIRY_SELECT)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -75,7 +77,7 @@ async function createInquiry(payload) {
   const { data, error } = await supabase
     .from('rider_inquiries')
     .insert(record)
-    .select('*')
+    .select(INQUIRY_SELECT)
     .single();
 
   if (error) throw error;

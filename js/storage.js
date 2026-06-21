@@ -217,6 +217,7 @@ const BremStorage = (function () {
   let normalizedDriversSourceRef = null;
 
   let adminDataHydratePromise = null;
+  let ensureHydratedPromise = null;
   let bootstrapLoadPromise = null;
   let bootstrapComplete = false;
   let heavyDataPreloadPromise = null;
@@ -408,7 +409,7 @@ const BremStorage = (function () {
       anonKey: String(config.anonKey || '').trim(),
       backend: 'supabase',
       mode,
-      allowLocalFallback: false,
+      allowLocalFallback: config.mode !== 'production' && config.allowLocalFallback === true,
       functionsUrl: String(config.functionsUrl || '').trim(),
       isConfigured: Boolean(String(config.url || '').trim() && String(config.anonKey || '').trim()),
       initialAdmin: {
@@ -1067,7 +1068,7 @@ const BremStorage = (function () {
     'mission-results': [KEYS.drivers],
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched],
-    'admin-schedule': [],
+    'admin-schedule': [KEYS.adminSchedules],
     'lease-management': [KEYS.drivers],
     'revenue-management': [],
     'admin-account': [],
@@ -1299,22 +1300,37 @@ const BremStorage = (function () {
     if (heavyDataPreloadPromise) return heavyDataPreloadPromise;
     if (!activeStorageAdapter.ensureKeysLoaded) return { ok: true };
 
-    window.BremPerf?.time?.('storage.preloadHeavyAdminTables');
-    heavyDataPreloadPromise = activeStorageAdapter.ensureKeysLoaded(HEAVY_ADMIN_TABLE_KEYS)
-      .then(() => {
-        document.dispatchEvent(new CustomEvent('brem-heavy-data-ready'));
-        return { ok: true };
-      })
-      .catch(error => {
-        console.warn('[BREM] Heavy admin table preload failed:', error.message || error);
-        return { ok: false };
-      })
-      .finally(() => {
-        heavyDataPreloadPromise = null;
-        window.BremPerf?.timeEnd?.('storage.preloadHeavyAdminTables');
-      });
+    const run = () => {
+      if (heavyDataPreloadPromise) return heavyDataPreloadPromise;
+      window.BremPerf?.time?.('storage.preloadHeavyAdminTables');
+      heavyDataPreloadPromise = activeStorageAdapter.ensureKeysLoaded([
+        KEYS.calls,
+        KEYS.rejections,
+        KEYS.targets
+      ])
+        .then(() => {
+          document.dispatchEvent(new CustomEvent('brem-heavy-data-ready'));
+          return { ok: true };
+        })
+        .catch(error => {
+          console.warn('[BREM] Dashboard table preload failed:', error.message || error);
+          return { ok: false };
+        })
+        .finally(() => {
+          heavyDataPreloadPromise = null;
+          window.BremPerf?.timeEnd?.('storage.preloadHeavyAdminTables');
+        });
+      return heavyDataPreloadPromise;
+    };
 
-    return heavyDataPreloadPromise;
+    if (typeof requestIdleCallback === 'function') {
+      return new Promise(resolve => {
+        requestIdleCallback(() => {
+          resolve(run());
+        }, { timeout: 4000 });
+      });
+    }
+    return run();
   }
 
   async function loadBootstrapData(options = {}) {
@@ -1638,9 +1654,9 @@ const BremStorage = (function () {
     if (options.append) {
       const merged = new Map(drivers.getAll().map(item => [item.id, item]));
       riderRows.forEach(item => merged.set(item.id, item));
-      setDriversCache(Array.from(merged.values()));
+      markDriversCache(Array.from(merged.values()), { source: 'network' });
     } else {
-      setDriversCache(riderRows);
+      markDriversCache(riderRows, { source: 'network' });
     }
     if (!options.append && !String(options.search || '').trim() && (!options.status || options.status === '전체')) {
       window.BremDataCache?.set?.(KEYS.drivers, drivers.getAll());
@@ -2716,7 +2732,7 @@ const BremStorage = (function () {
     if (options.deferHydrate) {
       return { ok: true, deferred: true };
     }
-    return ensureSupabaseHydrated();
+    return ensureSupabaseHydrated({ skipDriversSync: true });
   }
 
   async function ensureSupabaseHydrated(options = {}) {
@@ -2747,6 +2763,10 @@ const BremStorage = (function () {
       return { ok: true };
     }
 
+    if (ensureHydratedPromise) {
+      return ensureHydratedPromise;
+    }
+
     const { data: sessionData } = await client.auth.getSession();
     if (!sessionData?.session) {
       return {
@@ -2759,16 +2779,22 @@ const BremStorage = (function () {
       await loadSupabaseProfile();
     }
 
-    try {
-      window.BremPerf?.time?.('storage.ensureSupabaseHydrated');
-      const hydrated = await hydrateStorageData(getSupabaseConfig(), options);
-      window.BremPerf?.timeEnd?.('storage.ensureSupabaseHydrated');
-      return hydrated;
-    } catch (error) {
-      lastSupabaseError = error.message || 'Supabase 데이터 로드에 실패했습니다.';
-      console.error('[BREM] Supabase hydrate failed:', error);
-      return { ok: false, message: lastSupabaseError };
-    }
+    ensureHydratedPromise = (async () => {
+      try {
+        window.BremPerf?.time?.('storage.ensureSupabaseHydrated');
+        const hydrated = await hydrateStorageData(getSupabaseConfig(), options);
+        window.BremPerf?.timeEnd?.('storage.ensureSupabaseHydrated');
+        return hydrated;
+      } catch (error) {
+        lastSupabaseError = error.message || 'Supabase 데이터 로드에 실패했습니다.';
+        console.error('[BREM] Supabase hydrate failed:', error);
+        return { ok: false, message: lastSupabaseError };
+      } finally {
+        ensureHydratedPromise = null;
+      }
+    })();
+
+    return ensureHydratedPromise;
   }
 
   function createSupabaseClient(url, anonKey) {
@@ -7440,7 +7466,6 @@ const BremStorage = (function () {
         }
         this.setAdminSession(profile.user_id);
         void this.refreshProductionAdminSession().catch(() => ({}));
-        void reloadDrivers(false).catch(() => ({}));
         return { ok: true };
       }
 

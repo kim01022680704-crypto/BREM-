@@ -1,6 +1,27 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getServiceClient } = require('./admin-bootstrap');
 
+const RIDER_LOGIN_LOOKUP_SELECT = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'raw_data', 'created_at'
+].join(',');
+
+const RIDER_ME_SELECT = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
+  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
+  'raw_data', 'created_at', 'updated_at'
+].join(',');
+
+const MISSION_SELECT = [
+  'id', 'title', 'description', 'type', 'conditions', 'is_active',
+  'raw_data', 'created_at', 'updated_at'
+].join(',');
+
+const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
+
 function getAnonAuthClient() {
   const url = String(process.env.SUPABASE_URL || '').trim();
   const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
@@ -82,7 +103,7 @@ async function findRiderByLoginId(supabase, loginInput) {
   }
 
   const phoneSuffix = normalized.slice(-4);
-  let query = supabase.from('riders').select('*');
+  let query = supabase.from('riders').select(RIDER_LOGIN_LOOKUP_SELECT);
 
   if (/^\d{4}$/.test(phoneSuffix)) {
     query = query.ilike('phone', `%${phoneSuffix}`);
@@ -134,7 +155,7 @@ async function getRiderMe(accessToken) {
 
   const { data: rider, error: riderError } = await supabase
     .from('riders')
-    .select('*')
+    .select(RIDER_ME_SELECT)
     .eq('id', profile.rider_id)
     .maybeSingle();
 
@@ -335,7 +356,7 @@ async function updateRiderProfile(accessToken, body = {}) {
     .from('riders')
     .update(updatePayload)
     .eq('id', rider.id)
-    .select('*')
+    .select(RIDER_ME_SELECT)
     .single();
 
   if (error || !updated) {
@@ -378,8 +399,7 @@ async function getRiderAssignedMissions(accessToken) {
 
   const { data, error } = await supabase
     .from('missions')
-    .select('*')
-    .in('id', ids);
+    .select(MISSION_SELECT)
 
   if (error) {
     return { ok: false, status: 500, error: error.message || '미션 정보를 불러오지 못했습니다.' };
@@ -481,7 +501,7 @@ async function getRiderNotices(accessToken) {
 
   const { data, error } = await supabase
     .from('notices')
-    .select('*')
+    .select(NOTICE_SELECT)
     .order('pinned', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(100);
@@ -533,7 +553,7 @@ async function getRiderDashboard(accessToken) {
       .order('month', { ascending: false }),
     supabase
       .from('notices')
-      .select('*')
+      .select(NOTICE_SELECT)
       .order('pinned', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(100),

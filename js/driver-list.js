@@ -38,6 +38,17 @@
 
   const selectedIds = new Set();
   let renderedSnapshot = '';
+  let renderScheduled = false;
+
+  function scheduleRender() {
+    if (renderScheduled) return;
+    renderScheduled = true;
+    requestAnimationFrame(() => {
+      renderScheduled = false;
+      render();
+    });
+  }
+
   let renderedIsMobile = null;
   let listLoadPromise = null;
   let lastSupabaseTotal = 0;
@@ -866,13 +877,13 @@
     document.addEventListener('brem-storage-ready', () => {
       if (BremStorage.drivers.getAll().length) {
         renderedSnapshot = '';
-        render();
+        scheduleRender();
       }
     });
     document.addEventListener('brem-drivers-sync-ready', event => {
       if (!event?.detail?.complete) return;
       renderedSnapshot = '';
-      render();
+      scheduleRender();
       const count = event.detail.count || BremStorage.drivers.getAll().length;
       if (listLoadingBanner?.classList.contains('is-visible')
         && !listLoadingBanner.classList.contains('brem-data-loading--success')) {
@@ -883,7 +894,7 @@
     });
     document.addEventListener('brem-cache-status-changed', () => {
       if (BremStorage.drivers.getAll().length && !renderedSnapshot) {
-        render();
+        scheduleRender();
       }
     });
   }

@@ -65,6 +65,8 @@ window.BremSupabaseStorageAdapter = (function () {
   const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
   const MISSION_SELECT = 'id,title,description,type,conditions,is_active,raw_data,created_at,updated_at';
 
+  const ADMIN_SCHEDULE_SELECT = 'id,date,title,memo,created_by,created_by_id,raw_data,created_at,updated_at';
+
   const DAILY_SETTLEMENT_SELECT = 'id,driver_id,period,platform,rider_id,order_count,delivery_amount,settlement_amount,applied_at';
   const WEEKLY_SETTLEMENT_SELECT = 'id,platform,region,file_name,base_settlement_date,start_date,end_date,payment_date,settlement_week_label,matched_names_label,summary,riders,uploaded_at';
   const SETTLEMENT_UPLOAD_LOG_SELECT = 'id,kind,platform,file_name,period,week_start,week_end,region,start_date,end_date,status,matched_count,unmatched_count,total_delivery_amount,total_order_count,content_hash,matched_records,unmatched_records,applied_records,duplicate_of_log_id,skip_reason,linked_record_id,uploaded_at,applied_at';
@@ -214,7 +216,9 @@ window.BremSupabaseStorageAdapter = (function () {
           ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at'
           : table === 'admin_targets'
             ? 'id,driver_id,month,count,updated_at,rider_published_at'
-            : table === 'daily_settlements'
+            : table === 'admin_schedules'
+              ? ADMIN_SCHEDULE_SELECT
+              : table === 'daily_settlements'
               ? DAILY_SETTLEMENT_SELECT
               : table === 'weekly_settlements'
                 ? WEEKLY_SETTLEMENT_SELECT
