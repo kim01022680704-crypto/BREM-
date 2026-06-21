@@ -467,6 +467,33 @@ function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
   };
 }
 
+async function getRiderNotices(accessToken) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { data, error } = await supabase
+    .from('notices')
+    .select('*')
+    .order('pinned', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) {
+    return { ok: false, status: 500, error: error.message || '공지사항을 불러오지 못했습니다.' };
+  }
+
+  return {
+    ok: true,
+    riderId: me.riderId,
+    notices: data || []
+  };
+}
+
 async function getRiderDashboard(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -723,6 +750,7 @@ module.exports = {
   signInRider,
   getRiderMe,
   getRiderAssignedMissions,
+  getRiderNotices,
   getRiderDashboard,
   saveRiderTargets,
   updateRiderProfile,

@@ -86,7 +86,25 @@ async function main() {
   const rejections = dashboard.body.rejections || [];
   const targets = dashboard.body.targets || [];
   const weeklyTargets = dashboard.body.weeklyTargets || [];
-  pass('/api/rider/dashboard', `calls=${calls.length}, rejections=${rejections.length}, targets=${targets.length}, weeklyTargets=${weeklyTargets.length}`);
+  const dashboardNotices = dashboard.body.notices || [];
+  pass('/api/rider/dashboard', `calls=${calls.length}, rejections=${rejections.length}, targets=${targets.length}, weeklyTargets=${weeklyTargets.length}, notices=${dashboardNotices.length}`);
+
+  const riderNotices = await request('/api/rider/notices', { headers: auth });
+  if (!riderNotices.response.ok) {
+    fail(`/api/rider/notices (${riderNotices.response.status}): ${riderNotices.body.error}`);
+  } else {
+    const count = (riderNotices.body.notices || []).length;
+    pass('/api/rider/notices', `${count}건`);
+    if (count !== dashboardNotices.length) {
+      fail(`notice count mismatch dashboard=${dashboardNotices.length} rider=${count}`);
+    }
+    if (count > 0) {
+      const sample = riderNotices.body.notices[0];
+      pass('sample notice', sample.title || sample.id);
+    } else {
+      console.log('WARN notices=0 — ERP 공지사항 등록 후 다시 테스트하세요.');
+    }
+  }
 
   if (calls.length) {
     const sample = calls[0];

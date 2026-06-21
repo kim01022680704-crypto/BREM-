@@ -617,6 +617,18 @@ a {
   background: #111111;
 }
 
+.mission-results-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mission-results-toolbar .driver-search-result {
+  margin: 0;
+}
+
 .mission-results-chart {
   display: grid;
   gap: 12px;

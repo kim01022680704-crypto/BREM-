@@ -773,6 +773,163 @@ const BremStorage = (function () {
     return { ok: true, id: missionId };
   }
 
+  function markNoticesCache(list, meta = {}) {
+    const value = Array.isArray(list) ? list : [];
+    if (activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(KEYS.notices, value);
+    } else {
+      storageAdapter.write(KEYS.notices, value);
+    }
+    window.BremDataCache?.set?.(KEYS.notices, value, {
+      source: meta.source || 'write',
+      tableLoaded: true
+    });
+  }
+
+  function mergeNoticesRowsInCache(rows = []) {
+    const mapper = window.BremSupabaseMapper;
+    const noticeRows = (Array.isArray(rows) ? rows : []).map(row => (
+      mapper?.rowToNotice ? mapper.rowToNotice(row) : row
+    ));
+    stageRiderScopedCache(KEYS.notices, noticeRows, { tableLoaded: true });
+    return noticeRows;
+  }
+
+  async function syncNoticesFromServer() {
+    if (!isProductionMode()) {
+      return { ok: false, message: '운영 환경에서만 서버 동기화를 사용합니다.' };
+    }
+
+    const result = await adminRidersApi('/api/admin/notices');
+    if (!result.ok) {
+      return {
+        ok: false,
+        status: result.status,
+        message: result.message || result.error || '공지사항 목록을 불러오지 못했습니다.'
+      };
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToNotice) {
+      return { ok: false, message: '공지 데이터 변환 모듈이 없습니다.' };
+    }
+
+    const noticeRows = (result.notices || []).map(row => mapper.rowToNotice(row));
+    markNoticesCache(noticeRows, { source: 'server' });
+    return { ok: true, count: noticeRows.length };
+  }
+
+  async function persistNoticeViaServer(notice) {
+    const postNotice = () => adminRidersApi('/api/admin/notices', {
+      method: 'POST',
+      body: JSON.stringify({ notice })
+    });
+
+    let result = await postNotice();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postNotice();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '공지사항 저장에 실패했습니다.');
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (!mapper?.rowToNotice || !result.notice) {
+      throw new Error('저장된 공지를 확인하지 못했습니다.');
+    }
+
+    const saved = mapper.rowToNotice(result.notice);
+    const list = notices.getAll();
+    const exists = list.some(item => item.id === saved.id);
+    const next = exists
+      ? list.map(item => (item.id === saved.id ? saved : item))
+      : [saved, ...list];
+    markNoticesCache(next, { source: 'server' });
+    return saved;
+  }
+
+  async function deleteNoticeViaServer(id) {
+    const noticeId = String(id || '').trim();
+    if (!noticeId) throw new Error('공지 ID가 없습니다.');
+
+    const deleteRequest = () => adminRidersApi(`/api/admin/notices/${encodeURIComponent(noticeId)}`, {
+      method: 'DELETE'
+    });
+
+    let result = await deleteRequest();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await deleteRequest();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '공지사항 삭제에 실패했습니다.');
+    }
+
+    markNoticesCache(notices.getAll().filter(item => item.id !== noticeId), { source: 'server' });
+    return { ok: true, id: noticeId };
+  }
+
+  async function fetchRiderNoticesFromServer() {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 없습니다.' };
+    }
+
+    try {
+      const response = await fetch('/api/rider/notices', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '공지사항을 불러오지 못했습니다.' };
+      }
+
+      const noticeRows = mergeNoticesRowsInCache(payload.notices || []);
+      return {
+        ok: true,
+        riderId: payload.riderId || null,
+        count: noticeRows.length
+      };
+    } catch (error) {
+      return { ok: false, message: error.message || '공지사항 요청에 실패했습니다.' };
+    }
+  }
+
+  async function reloadNotices(force = false) {
+    if (!force && window.BremDataCache?.isValid?.(KEYS.notices)) {
+      const cached = window.BremDataCache.getData(KEYS.notices);
+      if (Array.isArray(cached)) {
+        logDataSource('notices', true);
+        markNoticesCache(cached, { source: 'cache' });
+        return { ok: true, cached: true, count: cached.length };
+      }
+    }
+
+    logDataSource('notices', false);
+
+    const isAdminSession = activeSupabaseProfile?.role === 'admin' && activeSupabaseProfile?.active !== false;
+    if (isProductionMode() && isAdminSession) {
+      return syncNoticesFromServer();
+    }
+
+    if (activeStorageAdapter.ensureKeysLoaded) {
+      await activeStorageAdapter.ensureKeysLoaded([KEYS.notices], { force });
+      return { ok: true, count: notices.getAll().length };
+    }
+
+    return { ok: true, count: 0 };
+  }
+
   async function reloadMissions(force = false) {
     if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
       const cached = window.BremDataCache.getData(KEYS.missions);
@@ -1020,20 +1177,29 @@ const BremStorage = (function () {
     const tableKeys = sectionKeys.filter(key => TABLE_STORAGE_KEYS.has(key));
     const needsDrivers = sectionKeys.includes(KEYS.drivers);
     const needsMissions = sectionKeys.includes(KEYS.missions);
+    const needsNotices = sectionKeys.includes(KEYS.notices);
     const tasks = [];
 
-    const tableKeysWithoutMissions = tableKeys.filter(key => key !== KEYS.missions);
-    if (tableKeysWithoutMissions.length && activeStorageAdapter.ensureKeysLoaded) {
-      const allTableCached = !force && tableKeysWithoutMissions.every(key => window.BremDataCache?.isValid?.(key));
+    const tableKeysWithoutManaged = tableKeys.filter(key => key !== KEYS.missions && key !== KEYS.notices);
+    if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
+      const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
-        tableKeysWithoutMissions.forEach(key => {
-          const label = key === KEYS.promotionRules ? 'promotions' : (key === KEYS.notices ? 'notices' : key);
+        tableKeysWithoutManaged.forEach(key => {
+          const label = key === KEYS.promotionRules ? 'promotions' : key;
           logDataSource(label, true, sectionId);
         });
       } else {
-        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutMissions, {
+        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutManaged, {
           force
         }));
+      }
+    }
+
+    if (needsNotices) {
+      if (!force && window.BremDataCache?.isValid?.(KEYS.notices)) {
+        logDataSource('notices', true, sectionId);
+      } else {
+        tasks.push(reloadNotices(force));
       }
     }
 
@@ -1131,9 +1297,9 @@ const BremStorage = (function () {
       await Promise.all([
         fetchAllDriversFromServer({ force }),
         reloadMissions(force),
+        reloadNotices(force),
         activeStorageAdapter.ensureKeysLoaded
           ? activeStorageAdapter.ensureKeysLoaded([
-            KEYS.notices,
             KEYS.promotionRules
           ], { force })
           : Promise.resolve()
@@ -1830,10 +1996,7 @@ const BremStorage = (function () {
     }
 
     if (Array.isArray(payload.notices)) {
-      const noticeRows = payload.notices.map(row => (
-        mapper?.rowToNotice ? mapper.rowToNotice(row) : row
-      ));
-      stageRiderScopedCache(KEYS.notices, noticeRows, { tableLoaded: true });
+      mergeNoticesRowsInCache(payload.notices);
     }
 
     (payload.settings || []).forEach(row => {
@@ -2262,7 +2425,8 @@ const BremStorage = (function () {
     if (!activeStorageAdapter.isHydrated?.()) return false;
     return window.BremDataCache?.isValid?.(KEYS.calls)
       && window.BremDataCache?.isValid?.(KEYS.rejections)
-      && window.BremDataCache?.isValid?.(KEYS.targets);
+      && window.BremDataCache?.isValid?.(KEYS.targets)
+      && window.BremDataCache?.isValid?.(KEYS.notices);
   }
 
   async function hydrateDriverAppData(options = {}) {
@@ -2294,6 +2458,7 @@ const BremStorage = (function () {
         if (production) {
           const dashboard = await fetchRiderDashboardFromServer();
           if (!dashboard.ok) return dashboard;
+          await fetchRiderNoticesFromServer().catch(() => ({}));
         } else if (activeStorageAdapter.ensureKeysLoaded) {
           if (activeStorageAdapter.hydrateCore) {
             await activeStorageAdapter.hydrateCore();
@@ -3653,38 +3818,79 @@ const BremStorage = (function () {
       return storageAdapter.read(KEYS.notices, []);
     },
 
-    create(data) {
+    async persistNotice(notice) {
+      if (!isStoragePersistReady()) {
+        throw new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
+      }
+
+      const isAdminSession = activeSupabaseProfile?.role === 'admin' && activeSupabaseProfile?.active !== false;
+      if (isProductionMode() && isAdminSession) {
+        return persistNoticeViaServer(notice);
+      }
+
       const list = notices.getAll();
-      list.unshift({
-        id: createId(),
-        title: data.title,
-        content: data.content,
-        pinned: Boolean(data.pinned),
-        createdAt: new Date().toISOString()
-      });
+      const index = list.findIndex(item => item.id === notice.id);
+      if (index >= 0) list[index] = notice;
+      else list.unshift(notice);
       storageAdapter.write(KEYS.notices, list);
-      return list;
+      markNoticesCache(list);
+      return notice;
+    },
+
+    create(data) {
+      const notice = {
+        id: createId(),
+        title: String(data.title || '').trim(),
+        content: String(data.content || '').trim(),
+        pinned: Boolean(data.pinned),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      return notices.persistNotice(notice);
     },
 
     update(id, data) {
-      const list = notices.getAll().map(notice => (
-        notice.id === id ? { ...notice, ...data } : notice
-      ));
-      storageAdapter.write(KEYS.notices, list);
-      return list;
+      const existing = notices.getAll().find(notice => notice.id === id);
+      if (!existing) throw new Error('공지사항을 찾을 수 없습니다.');
+      const notice = {
+        ...existing,
+        ...data,
+        id,
+        title: String(data.title != null ? data.title : existing.title).trim(),
+        content: String(data.content != null ? data.content : existing.content).trim(),
+        pinned: data.pinned != null ? Boolean(data.pinned) : Boolean(existing.pinned),
+        updatedAt: new Date().toISOString()
+      };
+      return notices.persistNotice(notice);
     },
 
     removeById(id) {
-      if (activeStorageAdapter.deleteTableRow) {
-        void activeStorageAdapter.deleteTableRow('notices', id);
+      const noticeId = String(id || '').trim();
+      if (!noticeId) throw new Error('공지 ID가 없습니다.');
+      if (!notices.getAll().some(notice => notice.id === noticeId)) {
+        throw new Error('공지사항을 찾을 수 없습니다.');
       }
-      const filtered = notices.getAll().filter(notice => notice.id !== id);
+      if (!isStoragePersistReady()) {
+        throw new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.');
+      }
+
+      const isAdminSession = activeSupabaseProfile?.role === 'admin' && activeSupabaseProfile?.active !== false;
+      if (isProductionMode() && isAdminSession) {
+        return deleteNoticeViaServer(noticeId);
+      }
+
+      if (activeStorageAdapter.deleteTableRow) {
+        void activeStorageAdapter.deleteTableRow('notices', noticeId);
+      }
+      const filtered = notices.getAll().filter(notice => notice.id !== noticeId);
       if (filtered.length) {
         storageAdapter.write(KEYS.notices, filtered);
       } else if (activeStorageAdapter.stage) {
         activeStorageAdapter.stage(KEYS.notices, []);
         window.BremDataCache?.set?.(KEYS.notices, []);
       }
+      markNoticesCache(filtered);
+      return { ok: true, id: noticeId };
     }
   };
 
@@ -7295,6 +7501,8 @@ const BremStorage = (function () {
     reloadDrivers,
     fetchAllDriversFromServer,
     reloadMissions,
+    reloadNotices,
+    fetchRiderNoticesFromServer,
     getMissionsTableStatus,
     syncAllDriversPagesInBackground,
     verifyRiderPersisted,

@@ -13,6 +13,7 @@
     dashboardSearchQuery: '',
     dashboardWeekStart: '',
     eventSettingsSearchQuery: '',
+    missionResultsSearchQuery: '',
     dashboardSort: { key: 'totalWeekCalls', dir: 'desc' },
     missionResultsSort: { key: 'rate', dir: 'desc' },
     eventSettingsSort: { key: 'name', dir: 'asc' },
@@ -1479,14 +1480,36 @@
     };
   }
 
-  function missionResultsDrivers() {
+  function missionResultsDrivers(options = {}) {
     const filters = missionResultsFilterState();
-    return filteredDrivers().filter(driver => {
+    const query = options.includeSearch === false ? '' : state.missionResultsSearchQuery.trim();
+    return drivers().filter(driver => {
+      if (query && !matchesDriverSearch(driver, query)) return false;
       const stats = eventDriverStats(driver);
       if (filters.itemId && stats.item?.id !== filters.itemId) return false;
       if (filters.status && stats.status !== filters.status) return false;
       return true;
     });
+  }
+
+  function updateMissionResultsSearchStatus(visibleCount, totalCount) {
+    const result = $('#missionResultsSearchResult');
+    const clearBtn = $('#missionResultsSearchClear');
+    const query = state.missionResultsSearchQuery.trim();
+
+    if (clearBtn) clearBtn.hidden = !query;
+    if (!result) return;
+
+    if (!query) {
+      result.textContent = totalCount
+        ? `전체 기사 ${totalCount}명 · 아래 표 스크롤`
+        : '등록된 기사가 없습니다.';
+      return;
+    }
+
+    result.textContent = visibleCount
+      ? `"${query}" 검색 결과 ${visibleCount}명`
+      : `"${query}" 검색 결과 없음`;
   }
 
   function renderMissionResultsChartRow(label, achieved, total, tone = '') {
@@ -1568,7 +1591,7 @@
       }
     }
 
-    const emptyMessage = state.driverSearchQuery.trim()
+    const emptyMessage = state.missionResultsSearchQuery.trim()
       ? '검색 결과에 해당하는 기사가 없습니다.'
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
 
@@ -1593,6 +1616,10 @@
           <td>${missionStatusBadge(stats.status)}</td>
         </tr>
       `).join('') || emptyRow(9, emptyMessage);
+    updateMissionResultsSearchStatus(
+      missionResultEntries.length,
+      missionResultsDrivers({ includeSearch: false }).length
+    );
     Sort?.markScope(document.querySelector('[data-sort-table="mission-results"]'), state.missionResultsSort);
   }
 
@@ -3118,6 +3145,7 @@
         return [
           'mission-results',
           drivers().length,
+          state.missionResultsSearchQuery.trim(),
           state.missionResultsSort.key,
           state.missionResultsSort.dir
         ].join('\0');
@@ -3480,6 +3508,21 @@
     $('#missionResultItemFilter')?.addEventListener('change', renderMissionResults);
     $('#missionResultStatusFilter')?.addEventListener('change', renderMissionResults);
 
+    const debouncedMissionResultsSearchChange = window.BremPerf?.debounce
+      ? window.BremPerf.debounce(() => renderMissionResults(), 120)
+      : () => renderMissionResults();
+
+    $('#missionResultsSearch')?.addEventListener('input', event => {
+      state.missionResultsSearchQuery = event.target.value;
+      debouncedMissionResultsSearchChange();
+    });
+
+    $('#missionResultsSearchClear')?.addEventListener('click', () => {
+      state.missionResultsSearchQuery = '';
+      if ($('#missionResultsSearch')) $('#missionResultsSearch').value = '';
+      renderMissionResults();
+    });
+
     $('#adminLogoutBtn').addEventListener('click', () => {
       logoutAdmin({ reload: true });
     });
@@ -3734,17 +3777,36 @@
         content: $('#noticeContent').value.trim(),
         pinned: $('#noticePinned').checked
       };
-      if (state.editingNoticeId) {
-        BremStorage.notices.update(state.editingNoticeId, data);
-        state.editingNoticeId = '';
-        $('#noticeSubmit').textContent = '공지 등록';
-        showToast('공지사항이 수정되었습니다.');
-      } else {
-        BremStorage.notices.create(data);
-        showToast('공지사항이 등록되었습니다.');
+      const submitBtn = $('#noticeSubmit');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '저장 중…';
       }
-      $('#noticeForm').reset();
-      renderAll();
+
+      void (async () => {
+        try {
+          if (state.editingNoticeId) {
+            await BremStorage.notices.update(state.editingNoticeId, data);
+            state.editingNoticeId = '';
+            if (submitBtn) submitBtn.textContent = '공지 등록';
+            showToast('공지사항이 수정되었습니다. 기사앱에 반영됩니다.');
+          } else {
+            await BremStorage.notices.create(data);
+            showToast('공지사항이 등록되었습니다. 기사앱에 반영됩니다.');
+          }
+          await BremStorage.flushStorage?.().catch(() => ({}));
+          $('#noticeForm').reset();
+          renderAll();
+        } catch (error) {
+          showToast(error.message || '공지사항 저장에 실패했습니다.');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            if (!state.editingNoticeId) submitBtn.textContent = '공지 등록';
+            else submitBtn.textContent = '수정 저장';
+          }
+        }
+      })();
     });
 
     document.addEventListener('change', event => {
@@ -3953,9 +4015,16 @@
 
       const deleteNoticeButton = event.target.closest('[data-delete-notice]');
       if (deleteNoticeButton) {
-        BremStorage.notices.removeById(deleteNoticeButton.dataset.deleteNotice);
-        showToast('공지사항이 삭제되었습니다.');
-        renderAll();
+        void (async () => {
+          try {
+            await BremStorage.notices.removeById(deleteNoticeButton.dataset.deleteNotice);
+            await BremStorage.flushStorage?.().catch(() => ({}));
+            showToast('공지사항이 삭제되었습니다. 기사앱에 반영됩니다.');
+            renderAll();
+          } catch (error) {
+            showToast(error.message || '공지사항 삭제에 실패했습니다.');
+          }
+        })();
       }
 
       const markInquiryButton = event.target.closest('[data-mark-inquiry]');

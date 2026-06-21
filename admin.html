@@ -339,6 +339,10 @@
           <div class="card-header mission-results-table-header">
             <h2>기사별 달성 현황</h2>
             <div class="mission-results-filters">
+              <label class="driver-search-field">
+                <span>이름 검색</span>
+                <input type="search" id="missionResultsSearch" placeholder="이름 · 전화번호" autocomplete="off">
+              </label>
               <label>
                 이벤트 아이템
                 <select id="missionResultItemFilter">
@@ -356,6 +360,10 @@
                 </select>
               </label>
             </div>
+          </div>
+          <div class="mission-results-toolbar">
+            <button type="button" class="small-btn" id="missionResultsSearchClear" hidden>검색 초기화</button>
+            <p class="driver-search-result" id="missionResultsSearchResult">전체 기사 표시 · 아래 표 스크롤</p>
           </div>
           <div class="table-wrap">
             <table class="dashboard-table mission-results-table" data-sort-table="mission-results">
@@ -2869,7 +2877,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622b"></script>
-  <script src="js/storage.js?v=20260622z"></script>
+  <script src="js/storage.js?v=20260623b"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2893,6 +2901,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622j"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622d"></script>
+  <script src="js/admin.js?v=20260623c"></script>
 </body>
 </html>

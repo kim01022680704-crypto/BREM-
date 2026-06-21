@@ -12,6 +12,7 @@ const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
+const noticesAdmin = require('./notices-admin');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
 const riderAuth = require('./rider-auth');
@@ -207,6 +208,22 @@ app.get('/api/rider/missions', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message || '미션 정보를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/notices', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderNotices(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      notices: result.notices
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '공지사항을 불러오지 못했습니다.' });
   }
 });
 
@@ -469,6 +486,42 @@ app.delete('/api/admin/missions/:missionId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '미션 삭제에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/notices', async (req, res) => {
+  try {
+    const result = await noticesAdmin.listNotices(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, notices: result.notices });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '공지사항 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/notices', async (req, res) => {
+  try {
+    const result = await noticesAdmin.upsertNotice(getBearerToken(req), req.body?.notice || req.body);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '공지사항 저장에 실패했습니다.' });
+  }
+});
+
+app.delete('/api/admin/notices/:noticeId', async (req, res) => {
+  try {
+    const result = await noticesAdmin.deleteNotice(getBearerToken(req), req.params.noticeId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '공지사항 삭제에 실패했습니다.' });
   }
 });
 

@@ -1086,6 +1086,12 @@
     }
   });
 
+  document.addEventListener('brem-cache-status-changed', () => {
+    if (state.currentDriver) {
+      renderNotices();
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', async () => {
     setupDriverTargetMonthPicker();
     setupDriverWeekPicker();
