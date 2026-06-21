@@ -158,6 +158,36 @@
     BremStorage.missionDefaults?.markCustom?.(platform, driverId);
   }
 
+  function buildDefaultMissionChanges(driver, platform, defaultId) {
+    const p = normalizePlatform(platform);
+    const field = p === 'baemin' ? 'selectedMissionIdBaemin' : 'selectedMissionIdCoupang';
+    const changes = { [field]: defaultId };
+
+    const usesBaemin = Boolean(driver.platformBaemin);
+    const usesCoupang = driver.platformCoupang !== false;
+    if (usesBaemin && !usesCoupang && p === 'baemin') {
+      changes.selectedMissionId = defaultId;
+    } else if (usesCoupang && !usesBaemin && p === 'coupang') {
+      changes.selectedMissionId = defaultId;
+    }
+
+    return changes;
+  }
+
+  function driverNeedsDefaultMissionPatch(driver, platform, defaultId) {
+    const p = normalizePlatform(platform);
+    const explicit = p === 'baemin'
+      ? String(driver.selectedMissionIdBaemin || '').trim()
+      : String(driver.selectedMissionIdCoupang || '').trim();
+    return explicit !== defaultId;
+  }
+
+  function refreshAssignmentTableAfterBulkApply() {
+    resetAssignmentDrafts();
+    renderDriverMissionAssignments();
+    renderDefaultMissionPanel();
+  }
+
   async function applyDefaultMissionToAll(platform) {
     const p = normalizePlatform(platform);
     const selectEl = p === 'baemin' ? $('missionDefaultBaemin') : $('missionDefaultCoupang');
@@ -177,27 +207,25 @@
 
     const meta = BremStorage.missionDefaults.getMeta();
     const customSet = new Set(p === 'baemin' ? meta.customBaemin : meta.customCoupang);
-    const field = p === 'baemin' ? 'selectedMissionIdBaemin' : 'selectedMissionIdCoupang';
     const patches = [];
 
     BremStorage.drivers.getAll().forEach(driver => {
       if (p === 'baemin' && !driver.platformBaemin) return;
       if (p === 'coupang' && driver.platformCoupang === false) return;
       if (customSet.has(driver.id)) return;
+      if (!driverNeedsDefaultMissionPatch(driver, p, defaultId)) return;
 
-      const current = p === 'baemin'
-        ? String(driver.selectedMissionIdBaemin || driver.selectedMissionId || '').trim()
-        : String(driver.selectedMissionIdCoupang || driver.selectedMissionId || '').trim();
-      if (current === defaultId) return;
-
-      patches.push({ id: driver.id, changes: { [field]: defaultId } });
+      patches.push({
+        id: driver.id,
+        changes: buildDefaultMissionChanges(driver, p, defaultId)
+      });
     });
 
     const label = platformLabel(p);
     if (!patches.length) {
       BremStorage.missionDefaults.setDefault(p, defaultId);
       await BremStorage.flushStorage?.().catch(() => ({}));
-      renderDefaultMissionPanel();
+      refreshAssignmentTableAfterBulkApply();
       showToast(`${label} 기본 미션이 저장되었습니다. (변경할 기사 없음 · 개별 설정 ${customSet.size}명 유지)`);
       return;
     }
@@ -215,12 +243,12 @@
       BremStorage.missionDefaults.setDefault(p, defaultId);
       await BremStorage.drivers.batchPatch(patches);
       await BremStorage.flushStorage?.().catch(() => ({}));
-      resetAssignmentDrafts();
-      showToast(`${label} 기본미션 ${patches.length}명 적용 · 개별 설정 ${customSet.size}명 유지`);
-      renderMissionSection();
+      document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+      refreshAssignmentTableAfterBulkApply();
+      showToast(`${label} 기본미션 ${patches.length}명 적용 · 기사별 배정·기사앱에 반영 · 개별 ${customSet.size}명 유지`);
     } catch (error) {
       showToast(error.message || `${label} 기본 미션 적용에 실패했습니다.`);
-      renderMissionSection();
+      refreshAssignmentTableAfterBulkApply();
     } finally {
       if (applyBtn) {
         applyBtn.disabled = false;
@@ -241,8 +269,8 @@
     const driver = BremStorage.drivers.getById(driverId);
     if (!driver) return;
 
-    const field = p === 'baemin' ? 'selectedMissionIdBaemin' : 'selectedMissionIdCoupang';
-    await BremStorage.drivers.update(driverId, { [field]: defaultId });
+    const changes = buildDefaultMissionChanges(driver, p, defaultId);
+    await BremStorage.drivers.update(driverId, changes);
     BremStorage.missionDefaults.clearCustom(p, driverId);
     await BremStorage.flushStorage?.().catch(() => ({}));
     state.drafts.delete(driverId);
@@ -679,6 +707,48 @@
     updateMissionFormUi();
   }
 
+  function syncAssignmentSelectValues() {
+    const rowsEl = $('missionDriverRows');
+    if (!rowsEl) return;
+
+    rowsEl.querySelectorAll('[data-driver-mission-baemin]').forEach(select => {
+      const driver = BremStorage.drivers.getById(select.dataset.driverMissionBaemin);
+      if (!driver) return;
+      const value = getDriverDraft(driver).baemin || '';
+      if (select.value !== value) select.value = value;
+    });
+
+    rowsEl.querySelectorAll('[data-driver-mission-coupang]').forEach(select => {
+      const driver = BremStorage.drivers.getById(select.dataset.driverMissionCoupang);
+      if (!driver) return;
+      const value = getDriverDraft(driver).coupang || '';
+      if (select.value !== value) select.value = value;
+    });
+  }
+
+  function syncAssignmentRowHints() {
+    const rowsEl = $('missionDriverRows');
+    if (!rowsEl) return;
+
+    rowsEl.querySelectorAll('tr[data-driver-id]').forEach(row => {
+      const driverId = row.dataset.driverId;
+      const driver = BremStorage.drivers.getById(driverId);
+      if (!driver) return;
+      const draft = getDriverDraft(driver);
+      const cells = row.querySelectorAll('.mission-select-cell');
+      if (cells[0]) {
+        cells[0].querySelector('.mission-selected-hint')?.remove();
+        const nextHint = missionHintHtml(draft.baemin);
+        if (nextHint) cells[0].insertAdjacentHTML('beforeend', nextHint);
+      }
+      if (cells[1]) {
+        cells[1].querySelector('.mission-selected-hint')?.remove();
+        const nextHint = missionHintHtml(draft.coupang);
+        if (nextHint) cells[1].insertAdjacentHTML('beforeend', nextHint);
+      }
+    });
+  }
+
   function renderDriverMissionAssignments() {
     const rowsEl = $('missionDriverRows');
     if (!rowsEl) return;
@@ -728,14 +798,14 @@
           <td class="mission-select-cell">
             <select data-driver-mission-baemin="${escapeHtml(driver.id)}" class="inline-select"${baeminDisabled}>
               <option value="">배민 미션 미선택</option>
-              ${missionOptions(baeminMissionId)}
+              ${getMissionOptionsTemplate()}
             </select>
             ${missionHintHtml(baeminMissionId)}
           </td>
           <td class="mission-select-cell">
             <select data-driver-mission-coupang="${escapeHtml(driver.id)}" class="inline-select"${coupangDisabled}>
               <option value="">쿠팡 미션 미선택</option>
-              ${missionOptions(coupangMissionId)}
+              ${getMissionOptionsTemplate()}
             </select>
             ${missionHintHtml(coupangMissionId)}
           </td>
@@ -749,6 +819,9 @@
         </tr>
       `;
     }).join('');
+
+    syncAssignmentSelectValues();
+    syncAssignmentRowHints();
 
     if (scrollWrap) scrollWrap.scrollTop = scrollTop;
   }
