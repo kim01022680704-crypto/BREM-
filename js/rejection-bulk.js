@@ -77,22 +77,20 @@
       .replaceAll("'", '&#039;');
   }
 
-  function findDriverByPlatformId(platformId, platform, excelName) {
-    const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(
+  function matchPlatformImport(platformId, platform, excelName) {
+    return window.BremDriverUtils?.matchDriverForPlatformImport?.(
       platformId,
       platform,
       excelName
-    );
-    return result?.driver || null;
+    ) || { driver: null, matchNote: '', resolvedPlatformId: '' };
+  }
+
+  function findDriverByPlatformId(platformId, platform, excelName) {
+    return matchPlatformImport(platformId, platform, excelName).driver || null;
   }
 
   function getDriverMatchNote(platformId, platform, excelName) {
-    const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(
-      platformId,
-      platform,
-      excelName
-    );
-    return result?.matchNote || '';
+    return matchPlatformImport(platformId, platform, excelName).matchNote || '';
   }
 
   function getSelectedWeekStart(config) {
@@ -121,7 +119,7 @@
       ? String(raw.platformId || '').trim()
       : normalizeLoginId(raw.platformId);
     const rate = parseRate(raw.rate);
-    const hasId = hasCellText(platformId);
+    const hasId = hasCellText(platformId) || hasCellText(raw.platformId);
     const hasRate = hasCellText(raw.rate);
 
     if (!hasId && !hasRate) {
@@ -133,8 +131,13 @@
     if (hasRate && Number.isNaN(rate)) errors.push(`${config.rateLabel} 숫자 아님`);
     else if (hasRate && (rate < 0 || rate > 100)) errors.push(`${config.rateLabel} 0~100 범위`);
 
-    const driver = hasId ? findDriverByPlatformId(platformId, platform, raw.name) : null;
-    const matchNote = hasId ? getDriverMatchNote(platformId, platform, raw.name) : '';
+    const match = hasId
+      ? matchPlatformImport(raw.platformId, platform, raw.name)
+      : { driver: null, matchNote: '', resolvedPlatformId: '' };
+    const driver = match.driver;
+    const matchNote = match.matchNote || '';
+    const resolvedPlatformId = match.resolvedPlatformId
+      || (normalizePlatform(platform) === 'baemin' ? platformId : normalizeLoginId(raw.platformId));
     if (hasId && !driver) errors.push('등록된 기사 없음');
 
     return {
@@ -145,9 +148,9 @@
       note: matchNote,
       data: {
         driverId: driver?.id || '',
-        driverName: driver?.name || raw.name || platformId,
+        driverName: driver?.name || raw.name || resolvedPlatformId,
         excelName: String(raw.name || '').trim(),
-        platformId,
+        platformId: resolvedPlatformId,
         weekStart,
         weekLabel: weekLabel(weekStart),
         rate,
@@ -487,7 +490,7 @@
       const header = ['이름', `${config.idLabel} *`, `${config.rateLabel}(%) *`];
       const sample = platform === 'baemin'
         ? ['홍길동', 'bm_sample', '90']
-        : ['홍길동', '홍길동5678', '10'];
+        : ['홍길동', '홍길동01012345678', '10'];
 
       const sheet = XLSX.utils.aoa_to_sheet([header, sample]);
       sheet['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 14 }];
@@ -678,7 +681,7 @@
         return;
       }
       const header = ['이름', '쿠팡아이디', '거절율(%)', '이름', '배민아이디', '수락율(%)'];
-      const sample = ['홍길동', '홍길동5678', '10', '홍길동', 'bm_sample', '90'];
+      const sample = ['홍길동', '홍길동01012345678', '10', '홍길동', 'bm_sample', '90'];
       const sheet = XLSX.utils.aoa_to_sheet([header, sample]);
       sheet['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }];
       const workbook = XLSX.utils.book_new();

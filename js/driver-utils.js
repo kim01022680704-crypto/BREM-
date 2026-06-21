@@ -116,6 +116,50 @@ window.BremDriverUtils = (function () {
     return `${String(driver.name || '').replace(/\s/g, '')}${normalizePhone(driver.phone).slice(-4)}`;
   }
 
+  function normalizeImportCellText(value) {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(Math.trunc(value));
+    }
+    return String(value).trim();
+  }
+
+  function parseCoupangImportIdentity(platformId, excelName) {
+    const idRaw = normalizeImportCellText(platformId).replace(/\s/g, '');
+    const nameFromExcel = normalizeImportCellText(excelName).replace(/\s/g, '');
+    const loginIds = [];
+    const pushLoginId = value => {
+      const next = String(value || '').replace(/\s/g, '');
+      if (next && !loginIds.includes(next)) loginIds.push(next);
+    };
+
+    if (idRaw) pushLoginId(idRaw);
+
+    const combined = idRaw.match(/^(.+?)(01\d{8,9})$/);
+    if (combined) {
+      const name = combined[1];
+      const phone = combined[2];
+      pushLoginId(`${name}${phone.slice(-4)}`);
+      return { loginIds, name, phone };
+    }
+
+    const phoneDigits = normalizePhone(idRaw);
+    if (phoneDigits.length >= 10 && phoneDigits.startsWith('01')) {
+      if (nameFromExcel) {
+        pushLoginId(`${nameFromExcel}${phoneDigits.slice(-4)}`);
+        return { loginIds, name: nameFromExcel, phone: phoneDigits };
+      }
+      return { loginIds, name: '', phone: phoneDigits };
+    }
+
+    return { loginIds, name: nameFromExcel, phone: '' };
+  }
+
+  function resolveCoupangImportLoginId(platformId, excelName) {
+    const identity = parseCoupangImportIdentity(platformId, excelName);
+    return identity.loginIds[0] || '';
+  }
+
   function normalizeDriverName(value) {
     return String(value || '').replace(/\s/g, '').toLowerCase();
   }
@@ -281,22 +325,65 @@ window.BremDriverUtils = (function () {
     const p = String(platform || 'coupang').toLowerCase();
     const hasName = Boolean(String(excelName || '').trim());
 
-    let matches = [];
     if (p === 'baemin') {
       const id = String(platformId || '').trim();
-      if (!id) return { driver: null, matchNote: '' };
-      matches = list.filter(driver => String(driver.baeminId || '').trim() === id);
-    } else {
-      const id = String(platformId || '').replace(/\s/g, '');
-      if (!id) return { driver: null, matchNote: '' };
-      matches = list.filter(driver => makeDriverLoginId(driver) === id);
+      if (!id) return { driver: null, matchNote: '', resolvedPlatformId: '' };
+      const matches = list.filter(driver => String(driver.baeminId || '').trim() === id);
+      if (!matches.length) return { driver: null, matchNote: '', resolvedPlatformId: id };
+
+      if (hasName) {
+        const nameAndId = matches.find(driver => driverNamesMatch(driver, excelName));
+        if (nameAndId) {
+          return { driver: nameAndId, matchNote: '', resolvedPlatformId: id };
+        }
+      }
+
+      const driver = matches[0];
+      let matchNote = '';
+      if (hasName && driverNamesMatch(driver, excelName) === false) {
+        matchNote = '이름 불일치(아이디 기준 매칭)';
+      } else if (matches.length > 1) {
+        matchNote = '동일 아이디 다중(아이디 기준 매칭)';
+      }
+      return { driver, matchNote, resolvedPlatformId: id };
     }
 
-    if (!matches.length) return { driver: null, matchNote: '' };
+    const identity = parseCoupangImportIdentity(platformId, excelName);
+    if (!identity.loginIds.length && !(identity.name && identity.phone)) {
+      return { driver: null, matchNote: '', resolvedPlatformId: '' };
+    }
+
+    let matches = [];
+    for (const loginId of identity.loginIds) {
+      matches = list.filter(driver => makeDriverLoginId(driver) === loginId);
+      if (matches.length) break;
+    }
+
+    if (!matches.length && identity.name && identity.phone) {
+      const byNamePhone = matchDriverByNameAndPhone(identity.name, identity.phone, list);
+      if (byNamePhone) {
+        const resolvedPlatformId = makeDriverLoginId(byNamePhone);
+        return {
+          driver: byNamePhone,
+          matchNote: '이름+연락처 기준 매칭',
+          resolvedPlatformId
+        };
+      }
+    }
+
+    if (!matches.length) {
+      return { driver: null, matchNote: '', resolvedPlatformId: identity.loginIds[0] || '' };
+    }
 
     if (hasName) {
       const nameAndId = matches.find(driver => driverNamesMatch(driver, excelName));
-      if (nameAndId) return { driver: nameAndId, matchNote: '' };
+      if (nameAndId) {
+        return {
+          driver: nameAndId,
+          matchNote: '',
+          resolvedPlatformId: makeDriverLoginId(nameAndId)
+        };
+      }
     }
 
     const driver = matches[0];
@@ -305,8 +392,15 @@ window.BremDriverUtils = (function () {
       matchNote = '이름 불일치(아이디 기준 매칭)';
     } else if (matches.length > 1) {
       matchNote = '동일 아이디 다중(아이디 기준 매칭)';
+    } else if (identity.phone && identity.loginIds[0] !== makeDriverLoginId(driver)) {
+      matchNote = '이름+연락처→쿠팡ID 변환 매칭';
     }
-    return { driver, matchNote };
+
+    return {
+      driver,
+      matchNote,
+      resolvedPlatformId: makeDriverLoginId(driver)
+    };
   }
 
   function buildDriverDuplicateLookup(excludeId, drivers) {
@@ -430,6 +524,8 @@ window.BremDriverUtils = (function () {
     formatDriverPlatformLabel,
     formatAccountSummary,
     makeDriverLoginId,
+    resolveCoupangImportLoginId,
+    parseCoupangImportIdentity,
     normalizeDriverName,
     driverNamesMatch,
     makeDriverMatchKey,

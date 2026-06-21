@@ -104,6 +104,20 @@ assert(
   matchByCoupangIdDespiteName.matchNote
 );
 
+const matchByCoupangNamePhoneCombined = driverUtils.matchDriverForPlatformImport('홍길동01012345678', 'coupang', '', [matchDriverA]);
+assert(
+  '거절율 매칭 — 이름+전화번호→쿠팡ID',
+  matchByCoupangNamePhoneCombined.driver?.id === matchDriverA.id,
+  matchByCoupangNamePhoneCombined.matchNote
+);
+
+const matchByCoupangPhoneColumn = driverUtils.matchDriverForPlatformImport('010-1234-5678', 'coupang', '홍길동', [matchDriverA]);
+assert(
+  '거절율 매칭 — 이름열+전화번호열',
+  matchByCoupangPhoneColumn.driver?.id === matchDriverA.id,
+  matchByCoupangPhoneColumn.matchNote
+);
+
 const matchByBaeminId = driverUtils.matchDriverForPlatformImport('bm_hong', 'baemin', '홍길동', [matchDriverA]);
 assert('거절율 매칭 — 배민 아이디+이름', matchByBaeminId.driver?.id === matchDriverA.id);
 
