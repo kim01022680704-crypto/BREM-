@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260621b">
+  <link rel="stylesheet" href="css/admin.css?v=20260622i">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -187,18 +187,30 @@
             <div class="dashboard-driver-scroll" id="dashboardDriverScroll">
               <div class="table-wrap dashboard-driver-table-wrap">
                 <table class="dashboard-table" data-sort-table="dashboard">
+                  <colgroup>
+                    <col class="col-driver">
+                    <col class="col-phone">
+                    <col class="col-platform">
+                    <col class="col-num">
+                    <col class="col-num">
+                    <col class="col-num">
+                    <col class="col-rate">
+                    <col class="col-rate">
+                    <col class="col-num">
+                    <col class="col-event">
+                  </colgroup>
                   <thead>
                     <tr>
                       <th><button type="button" class="th-sort-btn" data-sort-key="name"><span class="th-sort-label">기사</span><span class="th-sort-indicator">↕</span></button></th>
                       <th><button type="button" class="th-sort-btn" data-sort-key="phone"><span class="th-sort-label">연락처</span><span class="th-sort-indicator">↕</span></button></th>
                       <th><button type="button" class="th-sort-btn" data-sort-key="platform"><span class="th-sort-label">플랫폼</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="coupangWeekCalls"><span class="th-sort-label">주간 콜 (쿠팡)</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="baeminWeekCalls"><span class="th-sort-label">주간 콜 (배민)</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="totalWeekCalls"><span class="th-sort-label">주간 합계</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="coupangRejectionRate"><span class="th-sort-label">주간 거절율 (쿠팡)</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="baeminRejectionRate"><span class="th-sort-label">주간 수락율 (배민)</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="monthlyCallCount"><span class="th-sort-label">월간 콜수</span><span class="th-sort-indicator">↕</span></button></th>
-                      <th><button type="button" class="th-sort-btn" data-sort-key="eventRate"><span class="th-sort-label">장기근속이벤트</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="coupangWeekCalls"><span class="th-sort-label">쿠팡 콜</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="baeminWeekCalls"><span class="th-sort-label">배민 콜</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="totalWeekCalls"><span class="th-sort-label">합계</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="coupangRejectionRate"><span class="th-sort-label">쿠팡 거절</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="baeminRejectionRate"><span class="th-sort-label">배민 수락</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="monthlyCallCount"><span class="th-sort-label">월간</span><span class="th-sort-indicator">↕</span></button></th>
+                      <th><button type="button" class="th-sort-btn" data-sort-key="eventRate"><span class="th-sort-label">장기이벤트</span><span class="th-sort-indicator">↕</span></button></th>
                     </tr>
                   </thead>
                   <tbody id="dashboardRows"></tbody>
@@ -3161,6 +3173,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622j"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622d"></script>
+  <script src="js/admin.js?v=20260622i"></script>
 </body>
 </html>

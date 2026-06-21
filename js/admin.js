@@ -2226,20 +2226,23 @@
       baeminWeekCalls,
       totalWeekCalls,
       monthlyCallCount
-    }) => `
+    }) => {
+      const eventSummary = eventProgressSummary(driver);
+      return `
         <tr>
-          <td>${escapeHtml(driver.name)}</td>
-          <td>${escapeHtml(driver.phone)}</td>
-          <td>${platformBadges(driver)}</td>
-          <td><strong>${number(coupangWeekCalls)}</strong></td>
-          <td><strong>${number(baeminWeekCalls)}</strong></td>
-          <td><strong>${number(totalWeekCalls)}</strong></td>
-          <td>${dashboardRejectionCell(driver, weekStart, 'coupang')}</td>
-          <td>${dashboardRejectionCell(driver, weekStart, 'baemin')}</td>
-          <td><strong>${number(monthlyCallCount)}</strong></td>
-          <td>${eventProgressSummary(driver)}</td>
+          <td class="dashboard-cell-name" title="${escapeHtml(driver.name)}">${escapeHtml(driver.name)}</td>
+          <td class="dashboard-cell-phone">${escapeHtml(driver.phone)}</td>
+          <td class="dashboard-cell-platform">${platformBadges(driver)}</td>
+          <td class="dashboard-cell-num"><strong>${number(coupangWeekCalls)}</strong></td>
+          <td class="dashboard-cell-num"><strong>${number(baeminWeekCalls)}</strong></td>
+          <td class="dashboard-cell-num"><strong>${number(totalWeekCalls)}</strong></td>
+          <td class="dashboard-cell-rate">${dashboardRejectionCell(driver, weekStart, 'coupang')}</td>
+          <td class="dashboard-cell-rate">${dashboardRejectionCell(driver, weekStart, 'baemin')}</td>
+          <td class="dashboard-cell-num"><strong>${number(monthlyCallCount)}</strong></td>
+          <td class="dashboard-cell-event" title="${escapeHtml(eventSummary)}">${escapeHtml(eventSummary)}</td>
         </tr>
-      `).join('');
+      `;
+    }).join('');
 
     const totalWeekCallsCoupang = weekCallsByPlatform('coupang', weekStart);
     const totalWeekCallsBaemin = weekCallsByPlatform('baemin', weekStart);

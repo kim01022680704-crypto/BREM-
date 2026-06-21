@@ -2927,9 +2927,101 @@ textarea {
 }
 
 .dashboard-table {
-  min-width: 860px;
+  min-width: 640px;
+  width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
+}
+
+.dashboard-table col.col-driver { width: 4.5rem; }
+.dashboard-table col.col-phone { width: 6.75rem; }
+.dashboard-table col.col-platform { width: 4.75rem; }
+.dashboard-table col.col-num { width: 3.25rem; }
+.dashboard-table col.col-rate { width: 3.75rem; }
+.dashboard-table col.col-event { width: auto; }
+
+.dashboard-table th,
+.dashboard-table td {
+  padding: 6px 7px;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+
+.dashboard-table th {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-table .th-sort-btn {
+  gap: 2px;
+  max-width: 100%;
+}
+
+.dashboard-table .th-sort-label {
+  white-space: nowrap;
+}
+
+.dashboard-table .th-sort-indicator {
+  font-size: 0.65rem;
+}
+
+.dashboard-table .dashboard-cell-name {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.dashboard-table .dashboard-cell-phone {
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-table .dashboard-cell-platform {
+  padding-inline: 4px;
+}
+
+.dashboard-table .dashboard-cell-platform .platform-tags {
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+
+.dashboard-table .dashboard-cell-platform .platform-tag {
+  min-height: 20px;
+  padding: 0 5px;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.dashboard-table .dashboard-cell-num,
+.dashboard-table .dashboard-cell-rate {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-table .dashboard-cell-num strong {
+  font-weight: 800;
+  font-size: 0.82rem;
+}
+
+.dashboard-table .dashboard-cell-rate {
+  color: #d1d5db;
+  font-size: 0.78rem;
+}
+
+.dashboard-table .dashboard-cell-event {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .dashboard-driver-scroll {
