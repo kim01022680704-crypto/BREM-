@@ -65,6 +65,11 @@ window.BremSupabaseStorageAdapter = (function () {
   const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
   const MISSION_SELECT = 'id,title,description,type,conditions,is_active,raw_data,created_at,updated_at';
 
+  const DAILY_SETTLEMENT_SELECT = 'id,driver_id,period,platform,rider_id,order_count,delivery_amount,settlement_amount,applied_at';
+  const WEEKLY_SETTLEMENT_SELECT = 'id,platform,region,file_name,base_settlement_date,start_date,end_date,payment_date,settlement_week_label,matched_names_label,summary,riders,uploaded_at';
+  const SETTLEMENT_UPLOAD_LOG_SELECT = 'id,kind,platform,file_name,period,week_start,week_end,region,start_date,end_date,status,matched_count,unmatched_count,total_delivery_amount,total_order_count,content_hash,matched_records,unmatched_records,applied_records,duplicate_of_log_id,skip_reason,linked_record_id,uploaded_at,applied_at';
+  const SETTLEMENT_UNMATCHED_SELECT = 'id,kind,platform,week_start,period,end_date,region,raw_name,name,rider_id,order_count,delivery_amount,settlement_amount,coupang_login_key,baemin_user_id,match_payload,source_file_name,saved_at';
+
   const TABLE_KEYS = new Set();
 
   function mergeRidersById(existing, incoming) {
@@ -95,8 +100,42 @@ window.BremSupabaseStorageAdapter = (function () {
       keys.adminSchedules,
       keys.calls,
       keys.rejections,
-      keys.targets
+      keys.targets,
+      keys.settlements,
+      keys.weeklySettlements,
+      keys.settlementUploadLogs,
+      keys.settlementUnmatched
     ].forEach(key => TABLE_KEYS.add(key));
+
+    function buildSystemSettingsWhitelist() {
+      return [
+        keys.weeklyTargets,
+        keys.leases,
+        keys.revenue,
+        keys.eventCatalog,
+        keys.eventItems,
+        keys.eventConfig,
+        keys.legacyBikes,
+        keys.legacyMission,
+        keys.callEditLogs,
+        keys.riderViewPublish,
+        keys.promotionSettings,
+        keys.promotionSelectorOptions,
+        keys.manualNameMappings,
+        keys.promotionApplyResults,
+        keys.missionDefaults,
+        keys.dashboardWeekBasis,
+        keys.preservedUnknown,
+        keys.adminAccounts,
+        keys.adminCredentials,
+        'brem_data_schema_version',
+        'brem_rider_published_long_event_catalog',
+        'brem_rider_published_long_event_items',
+        'brem_rider_published_long_event_config'
+      ].filter(Boolean);
+    }
+
+    const SYSTEM_SETTINGS_KEYS = buildSystemSettingsWhitelist();
 
     const tableAvailability = new Map();
 
@@ -175,7 +214,15 @@ window.BremSupabaseStorageAdapter = (function () {
           ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at'
           : table === 'admin_targets'
             ? 'id,driver_id,month,count,updated_at,rider_published_at'
-            : '*';
+            : table === 'daily_settlements'
+              ? DAILY_SETTLEMENT_SELECT
+              : table === 'weekly_settlements'
+                ? WEEKLY_SETTLEMENT_SELECT
+                : table === 'settlement_upload_logs'
+                  ? SETTLEMENT_UPLOAD_LOG_SELECT
+                  : table === 'settlement_unmatched'
+                    ? SETTLEMENT_UNMATCHED_SELECT
+                    : '*';
       let query = client.from(table).select(selectColumns);
       if (order?.column) {
         query = query.order(order.column, { ascending: order.ascending !== false });
@@ -228,7 +275,10 @@ window.BremSupabaseStorageAdapter = (function () {
     async function loadSettings() {
       window.BremPerf?.time?.('settings.fetch');
       window.BremDataCache?.logDataSource?.('settings', false);
-      const { data, error } = await client.from('settings').select('key,value').order('key');
+      const { data, error } = await client
+        .from('settings')
+        .select('key,value')
+        .in('key', SYSTEM_SETTINGS_KEYS);
       window.BremPerf?.timeEnd?.('settings.fetch');
       if (error) throw error;
       (data || []).forEach(row => {
@@ -236,6 +286,23 @@ window.BremSupabaseStorageAdapter = (function () {
         setCache(row.key, row.value);
         window.BremDataCache?.set?.(row.key, row.value);
       });
+    }
+
+    async function migrateLegacySettingsToTable(config, legacyKey) {
+      if (!legacyKey) return false;
+      const { data, error } = await client.from('settings').select('value').eq('key', legacyKey).maybeSingle();
+      if (error || !data?.value || !Array.isArray(data.value) || !data.value.length) return false;
+      await persistTableCollection(config.table, config.key, data.value, config.toRow);
+      return true;
+    }
+
+    async function loadTableWithLegacyFallback(config, options = {}) {
+      const value = await loadTableCollection(config, options);
+      if (value.length || !(await probeTable(config.table))) return value;
+      const migrated = await migrateLegacySettingsToTable(config, config.legacyKey);
+      if (!migrated) return value;
+      loadedTableKeys.delete(config.key);
+      return loadTableCollection(config, { ...options, force: true });
     }
 
     function scheduleToRow(item) {
@@ -377,6 +444,42 @@ window.BremSupabaseStorageAdapter = (function () {
         fromRow: rowToTarget,
         toRow: targetToRow,
         order: { column: 'month', ascending: false }
+      },
+      {
+        table: 'daily_settlements',
+        key: keys.settlements,
+        label: 'daily-settlements',
+        legacyKey: keys.settlements,
+        fromRow: row => Mapper().rowToDailySettlement(row),
+        toRow: item => Mapper().dailySettlementToRow(item),
+        order: { column: 'period', ascending: false }
+      },
+      {
+        table: 'weekly_settlements',
+        key: keys.weeklySettlements,
+        label: 'weekly-settlements',
+        legacyKey: keys.weeklySettlements,
+        fromRow: row => Mapper().rowToWeeklySettlementRecord(row),
+        toRow: item => Mapper().weeklySettlementRecordToRow(item),
+        order: { column: 'uploaded_at', ascending: false }
+      },
+      {
+        table: 'settlement_upload_logs',
+        key: keys.settlementUploadLogs,
+        label: 'settlement-upload-logs',
+        legacyKey: keys.settlementUploadLogs,
+        fromRow: row => Mapper().rowToSettlementUploadLog(row),
+        toRow: item => Mapper().settlementUploadLogToRow(item),
+        order: { column: 'uploaded_at', ascending: false }
+      },
+      {
+        table: 'settlement_unmatched',
+        key: keys.settlementUnmatched,
+        label: 'settlement-unmatched',
+        legacyKey: keys.settlementUnmatched,
+        fromRow: row => Mapper().rowToSettlementUnmatched(row),
+        toRow: item => Mapper().settlementUnmatchedToRow(item),
+        order: { column: 'saved_at', ascending: false }
       }
     ];
 
@@ -464,6 +567,42 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistMonthlyTargets(value) {
       await persistTableCollection('admin_targets', keys.targets, value, targetToRow);
+    }
+
+    async function persistDailySettlements(value) {
+      await persistTableCollection('daily_settlements', keys.settlements, value, item => Mapper().dailySettlementToRow(item));
+      try {
+        await client.from('settings').delete().eq('key', keys.settlements);
+      } catch (error) {
+        console.warn('[BREM] Legacy daily settlement settings cleanup skipped:', error.message || error);
+      }
+    }
+
+    async function persistWeeklySettlements(value) {
+      await persistTableCollection('weekly_settlements', keys.weeklySettlements, value, item => Mapper().weeklySettlementRecordToRow(item));
+      try {
+        await client.from('settings').delete().eq('key', keys.weeklySettlements);
+      } catch (error) {
+        console.warn('[BREM] Legacy weekly settlement settings cleanup skipped:', error.message || error);
+      }
+    }
+
+    async function persistSettlementUploadLogs(value) {
+      await persistTableCollection('settlement_upload_logs', keys.settlementUploadLogs, value, item => Mapper().settlementUploadLogToRow(item));
+      try {
+        await client.from('settings').delete().eq('key', keys.settlementUploadLogs);
+      } catch (error) {
+        console.warn('[BREM] Legacy settlement upload log settings cleanup skipped:', error.message || error);
+      }
+    }
+
+    async function persistSettlementUnmatched(value) {
+      await persistTableCollection('settlement_unmatched', keys.settlementUnmatched, value, item => Mapper().settlementUnmatchedToRow(item));
+      try {
+        await client.from('settings').delete().eq('key', keys.settlementUnmatched);
+      } catch (error) {
+        console.warn('[BREM] Legacy settlement unmatched settings cleanup skipped:', error.message || error);
+      }
     }
 
     async function loadNotices(options = {}) {
@@ -642,7 +781,10 @@ window.BremSupabaseStorageAdapter = (function () {
       if (key === keys.riderInquiries) return loadRiderInquiries(options);
       if (key === keys.missions) return loadMissions(options);
       const backed = TABLE_BACKED_KEYS.find(config => config.key === key);
-      if (backed) return loadTableCollection(backed, options);
+      if (backed) {
+        if (backed.legacyKey) return loadTableWithLegacyFallback(backed, options);
+        return loadTableCollection(backed, options);
+      }
       return null;
     }
 
@@ -925,6 +1067,14 @@ window.BremSupabaseStorageAdapter = (function () {
         await persistWeeklyRates(value);
       } else if (key === keys.targets) {
         await persistMonthlyTargets(value);
+      } else if (key === keys.settlements) {
+        await persistDailySettlements(value);
+      } else if (key === keys.weeklySettlements) {
+        await persistWeeklySettlements(value);
+      } else if (key === keys.settlementUploadLogs) {
+        await persistSettlementUploadLogs(value);
+      } else if (key === keys.settlementUnmatched) {
+        await persistSettlementUnmatched(value);
       } else {
         await persistSetting(key, value);
       }

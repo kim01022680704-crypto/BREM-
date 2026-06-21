@@ -1046,11 +1046,15 @@ const BremStorage = (function () {
     KEYS.rejections,
     KEYS.targets,
     KEYS.adminSchedules,
-    KEYS.riderInquiries
+    KEYS.riderInquiries,
+    KEYS.settlements,
+    KEYS.weeklySettlements,
+    KEYS.settlementUploadLogs,
+    KEYS.settlementUnmatched
   ]);
 
   const ADMIN_SECTION_KEYS = Object.freeze({
-    dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls],
+    dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections],
     notices: [KEYS.notices],
     'mission-management': [KEYS.missions, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
@@ -1061,8 +1065,8 @@ const BremStorage = (function () {
     targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers],
     'mission-results': [KEYS.drivers],
-    settlements: [KEYS.drivers, KEYS.settlementUploadLogs],
-    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs],
+    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched],
+    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched],
     'admin-schedule': [],
     'lease-management': [KEYS.drivers],
     'revenue-management': [],
@@ -1080,7 +1084,11 @@ const BremStorage = (function () {
     KEYS.adminSchedules,
     KEYS.calls,
     KEYS.rejections,
-    KEYS.targets
+    KEYS.targets,
+    KEYS.settlements,
+    KEYS.weeklySettlements,
+    KEYS.settlementUploadLogs,
+    KEYS.settlementUnmatched
   ]);
 
   function scheduleCacheSyncAfterWrite(key) {

@@ -68,7 +68,11 @@ where key in (
   'brem_admin_schedules',
   'brem_admin_calls',
   'brem_admin_rejection_rates',
-  'brem_admin_targets'
+  'brem_admin_targets',
+  'brem_admin_settlements',
+  'brem_admin_weekly_settlements',
+  'brem_admin_settlement_upload_logs',
+  'brem_admin_settlement_unmatched'
 )
 order by key;
 
@@ -80,7 +84,11 @@ with legacy as (
     'brem_admin_schedules',
     'brem_admin_calls',
     'brem_admin_rejection_rates',
-    'brem_admin_targets'
+    'brem_admin_targets',
+    'brem_admin_settlements',
+    'brem_admin_weekly_settlements',
+    'brem_admin_settlement_upload_logs',
+    'brem_admin_settlement_unmatched'
   )
   and jsonb_typeof(value) = 'array'
 )
@@ -92,6 +100,10 @@ select
     when 'brem_admin_calls' then (select count(*) from public.admin_calls)
     when 'brem_admin_rejection_rates' then (select count(*) from public.admin_rejection_rates)
     when 'brem_admin_targets' then (select count(*) from public.admin_targets)
+    when 'brem_admin_settlements' then (select count(*) from public.daily_settlements)
+    when 'brem_admin_weekly_settlements' then (select count(*) from public.weekly_settlements)
+    when 'brem_admin_settlement_upload_logs' then (select count(*) from public.settlement_upload_logs)
+    when 'brem_admin_settlement_unmatched' then (select count(*) from public.settlement_unmatched)
   end as table_row_count,
   case
     when l.cnt <= case l.key
@@ -99,6 +111,10 @@ select
       when 'brem_admin_calls' then (select count(*)::int from public.admin_calls)
       when 'brem_admin_rejection_rates' then (select count(*)::int from public.admin_rejection_rates)
       when 'brem_admin_targets' then (select count(*)::int from public.admin_targets)
+      when 'brem_admin_settlements' then (select count(*)::int from public.daily_settlements)
+      when 'brem_admin_weekly_settlements' then (select count(*)::int from public.weekly_settlements)
+      when 'brem_admin_settlement_upload_logs' then (select count(*)::int from public.settlement_upload_logs)
+      when 'brem_admin_settlement_unmatched' then (select count(*)::int from public.settlement_unmatched)
     end then 'OK'
     else 'CHECK'
   end as status
@@ -110,3 +126,5 @@ select 'admin_calls' as src, id, driver_id, date::text, platform, count from pub
 select 'admin_rejection_rates' as src, id, driver_id, week_start::text, platform, rate from public.admin_rejection_rates limit 5;
 select 'admin_targets' as src, id, driver_id, month, count from public.admin_targets limit 5;
 select 'admin_schedules' as src, id, date::text, title from public.admin_schedules limit 5;
+select 'daily_settlements' as src, id, driver_id, period::text, platform from public.daily_settlements limit 5;
+select 'weekly_settlements' as src, id, platform, start_date::text, end_date::text from public.weekly_settlements limit 5;

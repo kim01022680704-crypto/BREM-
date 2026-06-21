@@ -12,23 +12,20 @@ window.BremStorageGuard = (function () {
     'brem_admin_schedules',
     'brem_admin_calls',
     'brem_admin_rejection_rates',
-    'brem_admin_targets'
+    'brem_admin_targets',
+    'brem_admin_settlements',
+    'brem_admin_weekly_settlements',
+    'brem_admin_settlement_upload_logs',
+    'brem_admin_settlement_unmatched'
   ]);
 
-  /** settings 테이블 JSON 키 — 빈 값으로 덮어쓰기 금지 */
+  /** settings 테이블 JSON 키 — 빈 값으로 덮어쓰기 금지 (정산·운영 테이블 데이터 제외) */
   const PROTECTED_SETTINGS_KEYS = new Set([
-    'brem_admin_settlements',
-    'brem_admin_settlement_unmatched',
-    'brem_admin_settlement_upload_logs',
     'brem_admin_call_edit_logs',
     'brem_rider_view_publish',
-    'brem_admin_weekly_settlements',
-    'brem_admin_calls',
-    'brem_admin_rejection_rates',
     'brem_admin_manual_name_mappings',
     'brem_admin_leases',
     'brem_admin_revenue',
-    'brem_admin_schedules',
     'brem_admin_promotion_settings',
     'brem_admin_promotion_selector_options',
     'brem_admin_promotion_apply_results',
@@ -36,8 +33,7 @@ window.BremStorageGuard = (function () {
     'brem_admin_long_event_catalog',
     'brem_admin_long_event_items',
     'brem_admin_long_event_config',
-    'brem_driver_weekly_targets',
-    'brem_admin_targets'
+    'brem_driver_weekly_targets'
   ]);
 
   const EMPTY_WRITE_ALLOW_KEYS = new Set([

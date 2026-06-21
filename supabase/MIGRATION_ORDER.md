@@ -13,7 +13,8 @@
 | 4 | `rider_inquiries_migration.sql` | 문의 사용 시 | rider_inquiries |
 | 5 | `admin_schedules_migration.sql` | **필수** | 관리자 스케줄표 |
 | 6 | `operations_tables_migration.sql` | **필수** | admin_calls · admin_rejection_rates · admin_targets + settings→table |
-| 7 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
+| 7 | `settlements_tables_migration.sql` | **필수** | daily_settlements · weekly_settlements · settlement_upload_logs · settlement_unmatched + settings→table |
+| 8 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)
 
@@ -27,8 +28,12 @@
 | 일별 콜수 | `admin_calls` | 이전만 |
 | 주간 거절/수락율 | `admin_rejection_rates` | 이전만 |
 | 월간 목표 | `admin_targets` | 이전만 |
+| 일정산 반영 | `daily_settlements` | 이전만 |
+| 주정산 저장 | `weekly_settlements` | 이전만 |
+| 정산 업로드 기록 | `settlement_upload_logs` | 이전만 |
+| 정산 미매칭 | `settlement_unmatched` | 이전만 |
 | 프로모션 UI 설정 | `settings.brem_admin_promotion_settings` | Supabase 영구 |
-| 주정산/리스/수익 등 | `settings` (jsonb) | Supabase 영구 |
+| 리스/수익/장기이벤트 등 | `settings` (jsonb) | Supabase 영구 |
 
 ## 실행 후 검증
 
@@ -44,12 +49,13 @@ from information_schema.tables
 where table_schema = 'public'
   and table_name in (
     'riders', 'notices', 'missions', 'promotions',
-    'admin_schedules', 'admin_calls', 'admin_rejection_rates', 'admin_targets'
+    'admin_schedules', 'admin_calls', 'admin_rejection_rates', 'admin_targets',
+    'daily_settlements', 'weekly_settlements', 'settlement_upload_logs', 'settlement_unmatched'
   )
 order by 1;
 ```
 
-8개 모두 조회되면 테이블 준비 완료.
+12개 모두 조회되면 테이블 준비 완료.
 
 ## 주의
 

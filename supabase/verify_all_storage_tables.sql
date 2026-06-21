@@ -13,9 +13,13 @@ from (
     ('missions'),
     ('promotions'),
     ('admin_schedules'),
-    ('admin_call_records'),
-    ('admin_weekly_rates'),
-    ('admin_monthly_targets'),
+    ('admin_calls'),
+    ('admin_rejection_rates'),
+    ('admin_targets'),
+    ('daily_settlements'),
+    ('weekly_settlements'),
+    ('settlement_upload_logs'),
+    ('settlement_unmatched'),
     ('settings'),
     ('rider_inquiries')
 ) as t(table_name)
@@ -27,9 +31,13 @@ union all select 'notices', count(*) from public.notices
 union all select 'missions', count(*) from public.missions
 union all select 'promotions', count(*) from public.promotions
 union all select 'admin_schedules', count(*) from public.admin_schedules
-union all select 'admin_call_records', count(*) from public.admin_call_records
-union all select 'admin_weekly_rates', count(*) from public.admin_weekly_rates
-union all select 'admin_monthly_targets', count(*) from public.admin_monthly_targets
+union all select 'admin_calls', count(*) from public.admin_calls
+union all select 'admin_rejection_rates', count(*) from public.admin_rejection_rates
+union all select 'admin_targets', count(*) from public.admin_targets
+union all select 'daily_settlements', count(*) from public.daily_settlements
+union all select 'weekly_settlements', count(*) from public.weekly_settlements
+union all select 'settlement_upload_logs', count(*) from public.settlement_upload_logs
+union all select 'settlement_unmatched', count(*) from public.settlement_unmatched
 order by 1;
 
 -- settings JSON 레거시 잔존 (삭제하지 않음 — 참고용)
@@ -40,6 +48,10 @@ where key in (
   'brem_admin_schedules',
   'brem_admin_calls',
   'brem_admin_rejection_rates',
-  'brem_admin_targets'
+  'brem_admin_targets',
+  'brem_admin_settlements',
+  'brem_admin_weekly_settlements',
+  'brem_admin_settlement_upload_logs',
+  'brem_admin_settlement_unmatched'
 )
 order by key;

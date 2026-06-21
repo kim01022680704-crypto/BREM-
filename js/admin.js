@@ -79,6 +79,8 @@
     coupangWeekCalls: { get: entry => entry.coupangWeekCalls, type: 'number' },
     baeminWeekCalls: { get: entry => entry.baeminWeekCalls, type: 'number' },
     totalWeekCalls: { get: entry => entry.totalWeekCalls, type: 'number' },
+    coupangRejectionRate: { get: entry => entry.coupangRejectionSort, type: 'number' },
+    baeminRejectionRate: { get: entry => entry.baeminRejectionSort, type: 'number' },
     monthlyCallCount: { get: entry => entry.monthlyCallCount, type: 'number' },
     eventRate: { get: entry => eventDriverStats(entry.driver).rate, type: 'number' }
   };
@@ -2172,6 +2174,22 @@
     return getCallStatsIndex().weekPlatformTotal.get(`${weekStart}|${p}`) || 0;
   }
 
+  function rejectionSortValue(entry) {
+    if (!entry) return -1;
+    if (entry.stats?.unmeasured) return -0.5;
+    const rate = Number(entry.rate);
+    return Number.isNaN(rate) ? -1 : rate;
+  }
+
+  function dashboardRejectionCell(driver, weekStart, platform) {
+    const p = normalizePlatform(platform);
+    if (p === 'coupang' && driver.platformCoupang === false) return '-';
+    if (p === 'baemin' && !driver.platformBaemin) return '-';
+    const entry = BremStorage.rejections.getEntryForWeek(driver.id, weekStart, p);
+    if (!entry) return '-';
+    return formatPercent(entry.rate, entry);
+  }
+
   function renderDashboard() {
     window.BremPerf?.time?.('admin.renderDashboard');
     const month = dashboardMonth();
@@ -2183,14 +2201,32 @@
       const baeminWeekCalls = weekCallsForDriverByPlatform(driver.id, weekStart, 'baemin');
       const totalWeekCalls = coupangWeekCalls + baeminWeekCalls;
       const monthlyCallCount = monthCalls(driver.id, month);
-      return { driver, coupangWeekCalls, baeminWeekCalls, totalWeekCalls, monthlyCallCount };
+      const coupangRejectionEntry = BremStorage.rejections.getEntryForWeek(driver.id, weekStart, 'coupang');
+      const baeminRejectionEntry = BremStorage.rejections.getEntryForWeek(driver.id, weekStart, 'baemin');
+      return {
+        driver,
+        coupangWeekCalls,
+        baeminWeekCalls,
+        totalWeekCalls,
+        monthlyCallCount,
+        coupangRejectionEntry,
+        baeminRejectionEntry,
+        coupangRejectionSort: rejectionSortValue(coupangRejectionEntry),
+        baeminRejectionSort: rejectionSortValue(baeminRejectionEntry)
+      };
     });
 
     const sortedDriverStats = Sort
       ? Sort.sortItems(driverStats, state.dashboardSort, dashboardSortSchema)
       : driverStats;
 
-    const rows = sortedDriverStats.map(({ driver, coupangWeekCalls, baeminWeekCalls, totalWeekCalls, monthlyCallCount }) => `
+    const rows = sortedDriverStats.map(({
+      driver,
+      coupangWeekCalls,
+      baeminWeekCalls,
+      totalWeekCalls,
+      monthlyCallCount
+    }) => `
         <tr>
           <td>${escapeHtml(driver.name)}</td>
           <td>${escapeHtml(driver.phone)}</td>
@@ -2198,6 +2234,8 @@
           <td><strong>${number(coupangWeekCalls)}</strong></td>
           <td><strong>${number(baeminWeekCalls)}</strong></td>
           <td><strong>${number(totalWeekCalls)}</strong></td>
+          <td>${dashboardRejectionCell(driver, weekStart, 'coupang')}</td>
+          <td>${dashboardRejectionCell(driver, weekStart, 'baemin')}</td>
           <td><strong>${number(monthlyCallCount)}</strong></td>
           <td>${eventProgressSummary(driver)}</td>
         </tr>
@@ -2219,7 +2257,7 @@
     const emptyMessage = state.dashboardSearchQuery.trim()
       ? '검색 결과에 해당하는 기사가 없습니다.'
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
-    $('#dashboardRows').innerHTML = rows || emptyRow(8, emptyMessage);
+    $('#dashboardRows').innerHTML = rows || emptyRow(10, emptyMessage);
     updateDashboardSearchStatus(totalDrivers, allDrivers.length);
     const dashboardCountEl = $('#dashboardDriverCount');
     if (dashboardCountEl) {
@@ -3734,6 +3772,7 @@
           dashQuery,
           drivers().length,
           calls().length,
+          rejections().length,
           state.dashboardSort.key,
           state.dashboardSort.dir
         ].join('\0');

@@ -204,6 +204,179 @@ window.BremSupabaseMapper = (function () {
     };
   }
 
+  function dailySettlementToRow(item) {
+    return {
+      id: String(item.id || ''),
+      driver_id: String(item.driverId || ''),
+      period: toDate(item.period),
+      platform: String(item.platform || 'coupang'),
+      rider_id: String(item.riderId || ''),
+      order_count: Number(item.orderCount ?? item.callCount ?? 0),
+      delivery_amount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
+      settlement_amount: Number(item.settlementAmount ?? item.deliveryAmount ?? 0),
+      applied_at: toIso(item.appliedAt),
+      updated_at: toIso(item.appliedAt)
+    };
+  }
+
+  function rowToDailySettlement(row) {
+    return {
+      id: row.id,
+      driverId: row.driver_id || '',
+      period: row.period || '',
+      platform: row.platform || 'coupang',
+      riderId: row.rider_id || '',
+      orderCount: Number(row.order_count || 0),
+      deliveryAmount: Number(row.delivery_amount ?? row.settlement_amount ?? 0),
+      settlementAmount: Number(row.settlement_amount ?? row.delivery_amount ?? 0),
+      appliedAt: row.applied_at
+    };
+  }
+
+  function weeklySettlementRecordToRow(record) {
+    return {
+      id: String(record.id || ''),
+      platform: String(record.platform || 'coupang'),
+      region: String(record.region || ''),
+      file_name: String(record.fileName || ''),
+      base_settlement_date: toDate(record.baseSettlementDate),
+      start_date: toDate(record.startDate),
+      end_date: toDate(record.endDate),
+      payment_date: toDate(record.paymentDate),
+      settlement_week_label: String(record.settlementWeekLabel || ''),
+      matched_names_label: String(record.matchedNamesLabel || ''),
+      summary: record.summary && typeof record.summary === 'object' ? record.summary : {},
+      riders: Array.isArray(record.riders) ? record.riders : [],
+      uploaded_at: toIso(record.uploadedAt),
+      updated_at: toIso(record.uploadedAt)
+    };
+  }
+
+  function rowToWeeklySettlementRecord(row) {
+    return {
+      id: row.id,
+      platform: row.platform || 'coupang',
+      region: row.region || '',
+      fileName: row.file_name || '',
+      baseSettlementDate: row.base_settlement_date || '',
+      startDate: row.start_date || '',
+      endDate: row.end_date || '',
+      paymentDate: row.payment_date || '',
+      settlementWeekLabel: row.settlement_week_label || '',
+      matchedNamesLabel: row.matched_names_label || '',
+      summary: row.summary && typeof row.summary === 'object' ? row.summary : {},
+      riders: Array.isArray(row.riders) ? row.riders : [],
+      uploadedAt: row.uploaded_at
+    };
+  }
+
+  function settlementUploadLogToRow(entry) {
+    return {
+      id: String(entry.id || ''),
+      kind: entry.kind === 'weekly' ? 'weekly' : 'daily',
+      platform: String(entry.platform || 'coupang'),
+      file_name: String(entry.fileName || ''),
+      period: toDate(entry.period || entry.startDate),
+      week_start: toDate(entry.weekStart),
+      week_end: toDate(entry.weekEnd),
+      region: String(entry.region || ''),
+      start_date: toDate(entry.startDate || entry.period),
+      end_date: toDate(entry.endDate),
+      status: String(entry.status || 'uploaded'),
+      matched_count: Number(entry.matchedCount || 0),
+      unmatched_count: Number(entry.unmatchedCount || 0),
+      total_delivery_amount: Number(entry.totalDeliveryAmount || 0),
+      total_order_count: Number(entry.totalOrderCount || 0),
+      content_hash: String(entry.contentHash || ''),
+      matched_records: Array.isArray(entry.matchedRecords) ? entry.matchedRecords : [],
+      unmatched_records: Array.isArray(entry.unmatchedRecords) ? entry.unmatchedRecords : [],
+      applied_records: Array.isArray(entry.appliedRecords) ? entry.appliedRecords : [],
+      duplicate_of_log_id: String(entry.duplicateOfLogId || ''),
+      skip_reason: String(entry.skipReason || ''),
+      linked_record_id: String(entry.linkedRecordId || ''),
+      uploaded_at: toIso(entry.uploadedAt),
+      applied_at: entry.appliedAt ? toIso(entry.appliedAt) : null,
+      updated_at: toIso(entry.updatedAt || entry.uploadedAt)
+    };
+  }
+
+  function rowToSettlementUploadLog(row) {
+    return {
+      id: row.id,
+      kind: row.kind === 'weekly' ? 'weekly' : 'daily',
+      platform: row.platform || 'coupang',
+      fileName: row.file_name || '',
+      period: row.period || row.start_date || '',
+      weekStart: row.week_start || '',
+      weekEnd: row.week_end || '',
+      region: row.region || '',
+      startDate: row.start_date || row.period || '',
+      endDate: row.end_date || '',
+      status: row.status || 'uploaded',
+      matchedCount: Number(row.matched_count || 0),
+      unmatchedCount: Number(row.unmatched_count || 0),
+      totalDeliveryAmount: Number(row.total_delivery_amount || 0),
+      totalOrderCount: Number(row.total_order_count || 0),
+      contentHash: row.content_hash || '',
+      matchedRecords: Array.isArray(row.matched_records) ? row.matched_records : [],
+      unmatchedRecords: Array.isArray(row.unmatched_records) ? row.unmatched_records : [],
+      appliedRecords: Array.isArray(row.applied_records) ? row.applied_records : [],
+      duplicateOfLogId: row.duplicate_of_log_id || '',
+      skipReason: row.skip_reason || '',
+      linkedRecordId: row.linked_record_id || '',
+      uploadedAt: row.uploaded_at,
+      appliedAt: row.applied_at || '',
+      updatedAt: row.updated_at || row.uploaded_at
+    };
+  }
+
+  function settlementUnmatchedToRow(item) {
+    return {
+      id: String(item.id || ''),
+      kind: item.kind === 'weekly' ? 'weekly' : 'daily',
+      platform: String(item.platform || 'coupang'),
+      week_start: toDate(item.weekStart || item.period),
+      period: toDate(item.period),
+      end_date: toDate(item.endDate),
+      region: String(item.region || ''),
+      raw_name: String(item.rawName || item.name || ''),
+      name: String(item.name || item.rawName || ''),
+      rider_id: String(item.riderId || ''),
+      order_count: Number(item.orderCount ?? item.weeklyOrderCount ?? 0),
+      delivery_amount: Number(item.deliveryAmount ?? 0),
+      settlement_amount: Number(item.settlementAmount ?? 0),
+      coupang_login_key: String(item.coupangLoginKey || ''),
+      baemin_user_id: String(item.baeminUserId || ''),
+      match_payload: item.matchPayload && typeof item.matchPayload === 'object' ? item.matchPayload : {},
+      source_file_name: String(item.sourceFileName || ''),
+      saved_at: toIso(item.savedAt),
+      updated_at: toIso(item.savedAt)
+    };
+  }
+
+  function rowToSettlementUnmatched(row) {
+    return {
+      id: row.id,
+      kind: row.kind === 'weekly' ? 'weekly' : 'daily',
+      platform: row.platform || 'coupang',
+      weekStart: row.week_start || row.period || '',
+      period: row.period || '',
+      endDate: row.end_date || '',
+      region: row.region || '',
+      rawName: row.raw_name || row.name || '',
+      name: row.name || row.raw_name || '',
+      riderId: row.rider_id || '',
+      orderCount: Number(row.order_count || 0),
+      deliveryAmount: Number(row.delivery_amount || 0),
+      settlementAmount: Number(row.settlement_amount || 0),
+      coupangLoginKey: row.coupang_login_key || '',
+      baeminUserId: row.baemin_user_id || '',
+      matchPayload: row.match_payload && typeof row.match_payload === 'object' ? row.match_payload : {},
+      sourceFileName: row.source_file_name || '',
+      savedAt: row.saved_at
+    };
+  }
+
   function mappingToRow(mapping) {
     return {
       id: mapping.id,
@@ -318,6 +491,14 @@ window.BremSupabaseMapper = (function () {
     rowToPromotion,
     weeklySettlementToRows,
     rowsToWeeklySettlement,
+    dailySettlementToRow,
+    rowToDailySettlement,
+    weeklySettlementRecordToRow,
+    rowToWeeklySettlementRecord,
+    settlementUploadLogToRow,
+    rowToSettlementUploadLog,
+    settlementUnmatchedToRow,
+    rowToSettlementUnmatched,
     mappingToRow,
     rowToMapping,
     noticeToRow,
