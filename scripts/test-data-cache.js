@@ -22,7 +22,7 @@ function assert(name, condition) {
 
 function loadCacheModule() {
   const code = fs.readFileSync(path.join(ROOT, 'js/data-cache.js'), 'utf8');
-  const sandbox = { window: {}, console };
+  const sandbox = { window: { sessionStorage: session }, sessionStorage: session, console };
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox);
   return sandbox.window.BremDataCache;
@@ -51,9 +51,12 @@ global.sessionStorage = session;
 const cache = loadCacheModule();
 assert('BremDataCache module loads', Boolean(cache));
 
-cache.set('test-key', [{ id: '1' }]);
-assert('cache set/get memory', cache.getData('test-key')[0].id === '1');
-assert('cache sessionStorage mirror', session.getItem('brem_dc_test-key') != null);
+cache.set('brem_driver_management_drivers', [{ id: '1' }], { complete: true });
+assert('cache set/get memory', cache.getData('brem_driver_management_drivers')[0].id === '1');
+assert('drivers sessionStorage mirror', session.getItem('brem_dc_brem_driver_management_drivers') != null);
+
+cache.set('test-key', [{ id: '2' }]);
+assert('non-mirror key skips sessionStorage', session.getItem('brem_dc_test-key') == null);
 
 cache.invalidate('test-key');
 assert('cache invalidate clears memory', cache.getData('test-key') == null);
@@ -82,7 +85,8 @@ Promise.all([p1, p2]).then(([a, b]) => {
   assert('storage.js removed drivers TTL refetch', !/DRIVERS_SYNC_TTL_MS/.test(storageJs));
   assert('adapter uses BremDataCache', /BremDataCache/.test(fs.readFileSync(path.join(ROOT, 'js/storage-supabase-adapter.js'), 'utf8')));
   assert('loading UI module exists', fs.existsSync(path.join(ROOT, 'js/data-loading-ui.js')));
-  assert('no localStorage writes in data-cache', !/localStorage/.test(fs.readFileSync(path.join(ROOT, 'js/data-cache.js'), 'utf8')));
+  assert('loading UI has showStatus', /showStatus/.test(fs.readFileSync(path.join(ROOT, 'js/data-loading-ui.js'), 'utf8')));
+  assert('no localStorage API in data-cache', !/localStorage\.(setItem|getItem)/.test(fs.readFileSync(path.join(ROOT, 'js/data-cache.js'), 'utf8')));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

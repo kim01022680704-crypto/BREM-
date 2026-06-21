@@ -674,10 +674,22 @@
   async function loadAllDriversForList(force = false) {
     if (listLoadPromise && !force) return listLoadPromise;
 
-    const hasCache = BremStorage.drivers.getAll().length > 0;
+    const cacheStatus = BremStorage.getCacheStatus?.() || {};
+    const hasCompleteCache = cacheStatus.driversComplete && BremStorage.drivers.getAll().length > 0;
+
+    if (!force && hasCompleteCache) {
+      renderedSnapshot = '';
+      render();
+      return {
+        ok: true,
+        cached: true,
+        count: BremStorage.drivers.getAll().length,
+        supabaseTotal: cacheStatus.driversSupabaseTotal || BremStorage.drivers.getAll().length
+      };
+    }
 
     const task = async () => {
-      if (force && !hasCache) {
+      if (force && !hasCompleteCache) {
         clearListDom();
         selectedIds.clear();
       }
@@ -706,25 +718,51 @@
     return task;
   }
 
+  function isDriverListCacheReady() {
+    const cacheStatus = BremStorage.getCacheStatus?.() || {};
+    return Boolean(cacheStatus.driversComplete && BremStorage.drivers.getAll().length);
+  }
+
   async function refreshDriverList(force = false) {
     const listPanel = document.querySelector('.list-panel');
-    const hasCache = BremStorage.drivers.getAll().length > 0;
-    const showLoading = force || !hasCache;
+    const cacheReady = isDriverListCacheReady();
+    const needsNetwork = force || !cacheReady;
 
-    if (showLoading) {
-      if (!hasCache) {
+    if (needsNetwork) {
+      if (!cacheReady) {
         tableBody.closest('.table-wrap')?.classList.add('is-loading');
         mobileList.classList.add('is-loading');
       }
-      window.BremLoadingUI?.show(listPanel, hasCache ? '기사 목록 새로고침 중...' : 'Supabase에서 기사 목록 불러오는 중...');
+      window.BremLoadingUI?.show(
+        listPanel,
+        cacheReady ? '기사 목록 새로고침 중...' : 'Supabase에서 기사 목록 불러오는 중...'
+      );
     }
 
     const syncResult = await loadAllDriversForList(force);
 
-    if (showLoading) {
-      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-      mobileList.classList.remove('is-loading');
-      window.BremLoadingUI?.hide(listPanel);
+    tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+    mobileList.classList.remove('is-loading');
+    window.BremLoadingUI?.hide(listPanel);
+
+    const count = syncResult?.count
+      || BremStorage.drivers.getSupabaseTotal?.()
+      || BremStorage.drivers.getAll().length;
+
+    if (syncResult?.ok === false) {
+      window.BremLoadingUI?.showStatus(listPanel, {
+        type: 'error',
+        message: syncResult.message || '불러오기 실패 · 다시 시도 필요'
+      });
+      return syncResult;
+    }
+
+    if (needsNetwork) {
+      window.BremLoadingUI?.showStatus(listPanel, {
+        type: 'success',
+        message: `기사 목록 불러오기 완료 · ${count}명 표시 중`,
+        autoHideMs: 2500
+      });
     }
 
     return syncResult;
@@ -813,7 +851,7 @@
 
   if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
 
-  if (BremStorage.drivers.getAll().length) {
+  if (isDriverListCacheReady()) {
     render();
   } else {
     showLoadingSkeleton();

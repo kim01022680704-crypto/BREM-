@@ -32,10 +32,16 @@ else pass('storage.js no localStorage setItem');
 if (/useLocalStorageAdapter[\s\S]*throw/.test(storageJs)) pass('localStorage adapter disabled');
 else fail('useLocalStorageAdapter must throw');
 
-if (/function shouldMirrorSession\(\)[\s\S]*return false/.test(cacheJs)) {
-  pass('data-cache operational mirror disabled');
+if (/SESSION_MIRROR_KEYS[\s\S]*brem_driver_management_drivers/.test(cacheJs)) {
+  pass('data-cache drivers tab-session mirror enabled');
 } else {
-  fail('data-cache shouldMirrorSession must return false');
+  fail('data-cache must mirror drivers to sessionStorage for tab navigation');
+}
+
+if (/localStorage\.(setItem|getItem)/.test(cacheJs)) {
+  fail('data-cache must not use localStorage');
+} else {
+  pass('data-cache no localStorage');
 }
 
 const tableKeys = [
@@ -52,7 +58,7 @@ tableKeys.forEach(token => {
   }
 });
 
-if (/admin_call_records/.test(adapterJs) && /admin_weekly_rates/.test(adapterJs)) {
+if (/admin_calls/.test(adapterJs) && /admin_rejection_rates/.test(adapterJs)) {
   pass('adapter uses dedicated operation tables');
 } else {
   fail('adapter missing operation table handlers');

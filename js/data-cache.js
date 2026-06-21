@@ -1,12 +1,15 @@
 /**
- * BREM session-scoped data cache (memory only for operational data).
- * 운영 데이터는 Supabase에만 저장 · localStorage/sessionStorage에 운영 데이터 미저장.
+ * BREM session-scoped data cache.
+ * 영구 저장은 Supabase만 · localStorage 미사용.
+ * SESSION_MIRROR_KEYS: 탭 내 페이지 이동용 sessionStorage (탭 종료 시 삭제).
  */
 window.BremDataCache = (function () {
   const VERSION = 2;
   const PREFIX = 'brem_dc_';
+  const SESSION_MIRROR_KEYS = new Set([
+    'brem_driver_management_drivers'
+  ]);
   const MEMORY_ONLY_KEYS = new Set([
-    'brem_driver_management_drivers',
     'brem_admin_missions'
   ]);
   const memory = new Map();
@@ -24,8 +27,8 @@ window.BremDataCache = (function () {
     return `${PREFIX}${key}`;
   }
 
-  function shouldMirrorSession() {
-    return false;
+  function shouldMirrorSession(key) {
+    return SESSION_MIRROR_KEYS.has(key);
   }
 
   function readEntry(key) {
@@ -55,7 +58,7 @@ window.BremDataCache = (function () {
       storedAt: Date.now()
     };
     memory.set(key, entry);
-    if (shouldMirrorSession(key, data)) {
+    if (shouldMirrorSession(key)) {
       try {
         sessionStorage.setItem(storageKey(key), JSON.stringify(entry));
       } catch (error) {

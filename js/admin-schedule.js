@@ -526,6 +526,39 @@
   bindEvents();
   state.viewDate = new Date(`${todayKey()}T00:00:00`);
   if (createdByEl) createdByEl.value = defaultCreatorName();
+
+  function renderMigrationWarning() {
+    const section = document.getElementById('admin-schedule');
+    if (!section) return;
+
+    const missing = BremStorage.getMissingOperationTables?.() || [];
+    const schedulesMissing = missing.includes('admin_schedules');
+    let banner = section.querySelector('.admin-migration-banner');
+
+    if (!schedulesMissing) {
+      banner?.remove();
+      return;
+    }
+
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.className = 'admin-migration-banner';
+      banner.setAttribute('role', 'alert');
+      section.querySelector('.admin-schedule-card')?.prepend(banner);
+    }
+
+    banner.innerHTML = [
+      '<strong>admin_schedules 테이블이 없습니다.</strong>',
+      ' Supabase SQL Editor에서 ',
+      '<code>supabase/admin_schedules_migration.sql</code>',
+      '을 실행하세요. settings JSON fallback은 사용하지 않습니다.'
+    ].join('');
+  }
+
+  document.addEventListener('brem-storage-ready', renderMigrationWarning);
+  document.addEventListener('brem-admin-data-ready', renderMigrationWarning);
+  renderMigrationWarning();
+
   renderCalendar();
 
   window.BremAdminSchedule = {

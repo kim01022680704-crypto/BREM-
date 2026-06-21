@@ -2582,6 +2582,69 @@ textarea {
   white-space: nowrap;
 }
 
+.dashboard-driver-card-header {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+}
+
+.dashboard-driver-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dashboard-period-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-week-trigger {
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.08);
+  cursor: pointer;
+}
+
+.dashboard-week-trigger:hover {
+  background: rgba(250, 204, 21, 0.14);
+}
+
+.dashboard-driver-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.dashboard-driver-search input {
+  width: 100%;
+}
+
+.dashboard-search-result {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.admin-migration-banner {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(69, 10, 10, 0.55);
+  color: #fecaca;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.admin-migration-banner code {
+  color: #fde68a;
+}
+
 .dashboard-table {
   min-width: 860px;
   border-collapse: separate;

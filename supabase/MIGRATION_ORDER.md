@@ -12,8 +12,8 @@
 | 3 | `riders_schema_sync_migration.sql` | 컬럼 누락 시 | riders 컬럼 동기화 |
 | 4 | `rider_inquiries_migration.sql` | 문의 사용 시 | rider_inquiries |
 | 5 | `admin_schedules_migration.sql` | **필수** | 관리자 스케줄표 |
-| 6 | `operations_tables_migration.sql` | **필수** | 콜수·거절/수락율·월간목표 + settings→table 이전 |
-| 7 | `baemin_delivery_status_migration.sql` | 배민 배달현황 시 | 선택 |
+| 6 | `operations_tables_migration.sql` | **필수** | admin_calls · admin_rejection_rates · admin_targets + settings→table |
+| 7 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)
 
@@ -24,9 +24,9 @@
 | 미션 설정 | `missions` | ❌ |
 | 프로모션 조건 | `promotions` | ❌ |
 | 관리자 스케줄 | `admin_schedules` | 이전만 (삭제 안 함) |
-| 일별 콜수 | `admin_call_records` | 이전만 |
-| 주간 거절/수락율 | `admin_weekly_rates` | 이전만 |
-| 월간 목표 | `admin_monthly_targets` | 이전만 |
+| 일별 콜수 | `admin_calls` | 이전만 |
+| 주간 거절/수락율 | `admin_rejection_rates` | 이전만 |
+| 월간 목표 | `admin_targets` | 이전만 |
 | 프로모션 UI 설정 | `settings.brem_admin_promotion_settings` | Supabase 영구 |
 | 주정산/리스/수익 등 | `settings` (jsonb) | Supabase 영구 |
 
@@ -44,7 +44,7 @@ from information_schema.tables
 where table_schema = 'public'
   and table_name in (
     'riders', 'notices', 'missions', 'promotions',
-    'admin_schedules', 'admin_call_records', 'admin_weekly_rates', 'admin_monthly_targets'
+    'admin_schedules', 'admin_calls', 'admin_rejection_rates', 'admin_targets'
   )
 order by 1;
 ```

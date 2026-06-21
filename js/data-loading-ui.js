@@ -4,6 +4,7 @@
 window.BremLoadingUI = (function () {
   const DEFAULT_MESSAGE = '데이터 불러오는 중...';
   const activeTargets = new Map();
+  const statusTimers = new WeakMap();
 
   function isBannerElement(el) {
     return Boolean(el?.classList?.contains('brem-data-loading'));
@@ -76,9 +77,36 @@ window.BremLoadingUI = (function () {
       || el?.closest('.main-content');
   }
 
+  function clearStatusTimer(el) {
+    const timer = statusTimers.get(el);
+    if (timer) {
+      clearTimeout(timer);
+      statusTimers.delete(el);
+    }
+  }
+
+  function applyBannerMode(el, mode = 'loading') {
+    el.classList.remove('brem-data-loading--success', 'brem-data-loading--error');
+    const spinner = el.querySelector('.brem-data-loading__spinner');
+    if (mode === 'success') {
+      el.classList.add('brem-data-loading--success');
+      if (spinner) spinner.hidden = true;
+      return;
+    }
+    if (mode === 'error') {
+      el.classList.add('brem-data-loading--error');
+      if (spinner) spinner.hidden = true;
+      return;
+    }
+    if (spinner) spinner.hidden = false;
+  }
+
   function show(target, message = DEFAULT_MESSAGE) {
     const el = ensureBanner(target, message);
     if (!el) return;
+
+    clearStatusTimer(el);
+    applyBannerMode(el, 'loading');
 
     const textEl = el.querySelector('.brem-data-loading__text');
     if (textEl) textEl.textContent = message;
@@ -94,6 +122,8 @@ window.BremLoadingUI = (function () {
     const el = resolveBanner(target);
     if (!el) return;
 
+    clearStatusTimer(el);
+
     const count = Math.max(0, (activeTargets.get(el) || 1) - 1);
     if (count > 0) {
       activeTargets.set(el, count);
@@ -101,10 +131,32 @@ window.BremLoadingUI = (function () {
     }
 
     activeTargets.delete(el);
-    el.classList.remove('is-visible');
+    el.classList.remove('is-visible', 'brem-data-loading--success', 'brem-data-loading--error');
     el.hidden = true;
+    applyBannerMode(el, 'loading');
 
     resolveSection(el)?.classList.remove('is-data-loading');
+  }
+
+  function showStatus(target, options = {}) {
+    const el = ensureBanner(target, options.message || DEFAULT_MESSAGE);
+    if (!el) return;
+
+    clearStatusTimer(el);
+    activeTargets.delete(el);
+    applyBannerMode(el, options.type || 'loading');
+
+    const textEl = el.querySelector('.brem-data-loading__text');
+    if (textEl) textEl.textContent = options.message || DEFAULT_MESSAGE;
+
+    el.hidden = false;
+    el.classList.add('is-visible');
+    resolveSection(el)?.classList.remove('is-data-loading');
+
+    const autoHideMs = Number(options.autoHideMs);
+    if (Number.isFinite(autoHideMs) && autoHideMs > 0) {
+      statusTimers.set(el, setTimeout(() => hide(el), autoHideMs));
+    }
   }
 
   function wrapAsync(target, promise, message = DEFAULT_MESSAGE) {
@@ -116,6 +168,7 @@ window.BremLoadingUI = (function () {
     DEFAULT_MESSAGE,
     show,
     hide,
+    showStatus,
     wrapAsync
   };
 })();

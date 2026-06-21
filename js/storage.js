@@ -29,6 +29,7 @@ const BremStorage = (function () {
     weeklySettlements: 'brem_admin_weekly_settlements',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
+    dashboardWeekBasis: 'brem_admin_dashboard_week_basis',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -565,6 +566,12 @@ const BremStorage = (function () {
 
   function markDriversCache(list, meta = {}) {
     const rows = dedupeDriversList(Array.isArray(list) ? list : []);
+    if (meta.complete === true || driversLoadMeta.complete) {
+      driversLoadMeta = {
+        complete: true,
+        supabaseTotal: Number(meta.supabaseTotal ?? driversLoadMeta.supabaseTotal ?? rows.length)
+      };
+    }
     setDriversCache(rows);
     window.BremDataCache?.set?.(KEYS.drivers, rows, {
       source: meta.source || 'sync',
@@ -588,9 +595,39 @@ const BremStorage = (function () {
     window.BremDataCache?.set?.(KEYS.missions, rows, { tableLoaded: true });
   }
 
+  function restoreDriversCacheFromSession() {
+    if (!window.BremDataCache?.isValid?.(KEYS.drivers)) return false;
+    const cached = window.BremDataCache.getData(KEYS.drivers);
+    if (!Array.isArray(cached) || !cached.length) return false;
+    const cacheMeta = window.BremDataCache.getMeta?.(KEYS.drivers);
+    if (!cacheMeta?.meta?.complete) return false;
+
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(KEYS.drivers, cached);
+    } else {
+      storageAdapter.write(KEYS.drivers, cached);
+    }
+    driversLoadMeta = {
+      complete: true,
+      supabaseTotal: Number(cacheMeta.meta.supabaseTotal) || cached.length
+    };
+    logDataSource('riders', true, 'tab session');
+    document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+      detail: {
+        complete: true,
+        cached: true,
+        count: cached.length,
+        supabaseTotal: driversLoadMeta.supabaseTotal
+      }
+    }));
+    return true;
+  }
+
   function restoreTableCachesFromSession() {
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.stage) return;
+    restoreDriversCacheFromSession();
     TABLE_STORAGE_KEYS.forEach(key => {
+      if (key === KEYS.drivers) return;
       if (activeStorageAdapter.isKeyLoaded?.(key)) return;
       if (!window.BremDataCache?.isValid?.(key)) return;
       const cached = window.BremDataCache.getData(key);
@@ -1790,7 +1827,8 @@ const BremStorage = (function () {
       await activeStorageAdapter.flush();
     }
     console.info('[BREM] Supabase storage hydrated');
-    if (!skipDriversSync && (settings.mode === 'production' || isProductionMode())) {
+    const driversSessionReady = driversLoadMeta.complete && drivers.getAll().length > 0;
+    if (!skipDriversSync && !driversSessionReady && (settings.mode === 'production' || isProductionMode())) {
       await syncDriversFromServer().catch(error => {
         console.warn('[BREM] Server rider sync after hydrate failed:', error.message);
       });
@@ -3007,6 +3045,21 @@ const BremStorage = (function () {
       String(date.getDate()).padStart(2, '0')
     ].join('-');
   }
+
+  const adminPreferences = {
+    getDashboardWeekBasis() {
+      const raw = storageAdapter.read(KEYS.dashboardWeekBasis, null);
+      if (raw && /^\d{4}-\d{2}-\d{2}$/.test(String(raw))) {
+        return weekStartKeyFromDate(raw);
+      }
+      return weekStartKeyFromDate(new Date().toISOString().slice(0, 10));
+    },
+    setDashboardWeekBasis(dateValue) {
+      const weekStart = weekStartKeyFromDate(dateValue);
+      storageAdapter.write(KEYS.dashboardWeekBasis, weekStart);
+      return weekStart;
+    }
+  };
 
   function normalizeRejections(list) {
     if (!Array.isArray(list) || !list.length) return [];
@@ -6586,6 +6639,10 @@ const BremStorage = (function () {
     getCacheStatus,
     refreshDataFromServer,
     refetchDataKey,
+    adminPreferences,
+    getMissingOperationTables() {
+      return activeStorageAdapter.getMissingOperationTables?.() || [];
+    },
     hydrateAdminDataInBackground,
     syncAdminDataInBackground,
     resumeSupabaseAfterAuth,

@@ -147,7 +147,8 @@ window.BremSupabaseStorageAdapter = (function () {
         }
       }
       if (!(await probeTable(table))) {
-        console.error(`[BREM] ${table} table missing — run supabase/MIGRATION_ORDER.md migrations`);
+        console.error(`[BREM] ${table} table missing — run supabase/MIGRATION_ORDER.md migrations (see supabase/admin_schedules_migration.sql)`);
+        tableAvailability.set(table, false);
         const empty = [];
         setCache(key, empty);
         loadedTableKeys.add(key);
@@ -323,7 +324,7 @@ window.BremSupabaseStorageAdapter = (function () {
         order: { column: 'date', ascending: true }
       },
       {
-        table: 'admin_call_records',
+        table: 'admin_calls',
         key: keys.calls,
         label: 'calls',
         fromRow: rowToCall,
@@ -331,7 +332,7 @@ window.BremSupabaseStorageAdapter = (function () {
         order: { column: 'date', ascending: true }
       },
       {
-        table: 'admin_weekly_rates',
+        table: 'admin_rejection_rates',
         key: keys.rejections,
         label: 'rejections',
         fromRow: rowToWeeklyRate,
@@ -339,7 +340,7 @@ window.BremSupabaseStorageAdapter = (function () {
         order: { column: 'week_start', ascending: false }
       },
       {
-        table: 'admin_monthly_targets',
+        table: 'admin_targets',
         key: keys.targets,
         label: 'targets',
         fromRow: rowToTarget,
@@ -366,15 +367,15 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function persistCalls(value) {
-      await persistTableCollection('admin_call_records', keys.calls, value, callToRow);
+      await persistTableCollection('admin_calls', keys.calls, value, callToRow);
     }
 
     async function persistWeeklyRates(value) {
-      await persistTableCollection('admin_weekly_rates', keys.rejections, value, weeklyRateToRow);
+      await persistTableCollection('admin_rejection_rates', keys.rejections, value, weeklyRateToRow);
     }
 
     async function persistMonthlyTargets(value) {
-      await persistTableCollection('admin_monthly_targets', keys.targets, value, targetToRow);
+      await persistTableCollection('admin_targets', keys.targets, value, targetToRow);
     }
 
     async function loadNotices(options = {}) {
@@ -922,6 +923,15 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       listBremKeys() {
         return Array.from(cache.keys()).filter(key => key.startsWith('brem_')).sort();
+      },
+      getMissingOperationTables() {
+        return TABLE_BACKED_KEYS
+          .map(config => config.table)
+          .filter(table => tableAvailability.has(table) && tableAvailability.get(table) === false);
+      },
+      isOperationTableAvailable(tableName) {
+        if (!tableAvailability.has(tableName)) return null;
+        return tableAvailability.get(tableName);
       }
     };
   }

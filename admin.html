@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260622a">
-  <link rel="stylesheet" href="css/data-loading.css">
+  <link rel="stylesheet" href="css/admin.css?v=20260622f">
+  <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -166,10 +166,22 @@
 
         <div class="grid two">
           <article class="card">
-            <div class="card-header">
-              <h2>기사별 현황</h2>
-              <span class="dashboard-week-label" id="dashboardWeekLabel">-</span>
+            <div class="card-header dashboard-driver-card-header">
+              <div class="dashboard-driver-card-head">
+                <h2>기사별 현황</h2>
+                <div class="dashboard-period-row">
+                  <input type="hidden" id="dashboardWeekBasisDate" value="">
+                  <button type="button" class="week-picker-trigger dashboard-week-trigger" data-week-picker-trigger="dashboard" id="dashboardWeekBasisBtn" aria-label="주간 기준일 선택">
+                    <span class="dashboard-week-label" id="dashboardWeekLabel">-</span>
+                  </button>
+                </div>
+              </div>
+              <label class="dashboard-driver-search">
+                <span class="sr-only">기사 검색</span>
+                <input type="search" id="dashboardDriverSearch" placeholder="이름·연락처·배민ID·쿠팡ID 검색" autocomplete="off">
+              </label>
             </div>
+            <p class="dashboard-search-result" id="dashboardDriverSearchResult" aria-live="polite">전체 기사 표시 중</p>
             <div class="dashboard-driver-scroll" id="dashboardDriverScroll">
               <div class="table-wrap dashboard-driver-table-wrap">
                 <table class="dashboard-table" data-sort-table="dashboard">
@@ -2711,13 +2723,13 @@
   <script src="js/perf.js"></script>
   <script src="js/session-security.js?v=20260621e"></script>
   <script src="js/supabase-config.js?v=20260620c"></script>
-  <script src="js/data-cache.js?v=20260622d"></script>
-  <script src="js/data-loading-ui.js"></script>
+  <script src="js/data-cache.js?v=20260622f"></script>
+  <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260622d"></script>
-  <script src="js/storage.js?v=20260622d"></script>
-  <script src="js/db-connection-status.js?v=20260622d"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260622f"></script>
+  <script src="js/storage.js?v=20260622f"></script>
+  <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/settlement-formats.js"></script>
@@ -2731,13 +2743,13 @@
   <script src="js/baemin-delivery-fee.js"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
   <script src="js/promotion-apply.js"></script>
-  <script src="js/promotion-apply-admin.js?v=20260622d"></script>
+  <script src="js/promotion-apply-admin.js?v=20260622f"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
-  <script src="js/admin-schedule.js?v=20260622d"></script>
+  <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-missions.js?v=20260622d"></script>
+  <script src="js/admin-missions.js?v=20260622f"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622d"></script>
+  <script src="js/admin.js?v=20260622f"></script>
 </body>
 </html>

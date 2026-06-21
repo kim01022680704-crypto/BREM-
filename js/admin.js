@@ -9,6 +9,8 @@
     adminAccountFormMode: '',
     rejectionWeekByPlatform: { coupang: null, baemin: null },
     driverSearchQuery: '',
+    dashboardSearchQuery: '',
+    dashboardWeekStart: '',
     eventSettingsSearchQuery: '',
     dashboardSort: { key: 'totalWeekCalls', dir: 'desc' },
     missionResultsSort: { key: 'rate', dir: 'desc' },
@@ -25,7 +27,6 @@
   };
 
   const DRIVER_FILTERED_SECTIONS = new Set([
-    'dashboard',
     'calls',
     'rejections',
     'targets',
@@ -754,10 +755,33 @@
     return false;
   }
 
+  function matchesDashboardDriverSearch(driver, query) {
+    const keyword = String(query || '').trim();
+    if (!keyword) return true;
+
+    if (matchesDriverSearch(driver, keyword)) return true;
+
+    const lowered = keyword.toLowerCase();
+    const baeminId = String(driver.baeminId || '').toLowerCase();
+    const coupangId = String(
+      driver.coupangId || driver.coupangLoginId || driver.loginId || ''
+    ).toLowerCase();
+
+    if (baeminId && baeminId.includes(lowered)) return true;
+    if (coupangId && coupangId.includes(lowered)) return true;
+    return false;
+  }
+
   function filteredDrivers() {
     const query = state.driverSearchQuery.trim();
     if (!query) return drivers();
     return drivers().filter(driver => matchesDriverSearch(driver, query));
+  }
+
+  function filteredDashboardDrivers() {
+    const query = state.dashboardSearchQuery.trim();
+    if (!query) return drivers();
+    return drivers().filter(driver => matchesDashboardDriverSearch(driver, query));
   }
 
   function driverMatchesSearch(driverId) {
@@ -784,6 +808,56 @@
     result.textContent = matched.length
       ? `"${query}" 검색 결과 ${matched.length}명`
       : `"${query}" 검색 결과 없음`;
+  }
+
+  function updateDashboardSearchStatus(totalCount, visibleCount) {
+    const result = $('#dashboardDriverSearchResult');
+    if (!result) return;
+
+    const query = state.dashboardSearchQuery.trim();
+    const total = Number.isFinite(totalCount) ? totalCount : drivers().length;
+    const visible = Number.isFinite(visibleCount) ? visibleCount : total;
+
+    if (!query) {
+      result.textContent = `전체 ${total}명 표시`;
+      return;
+    }
+
+    result.textContent = visible
+      ? `전체 ${total}명 중 ${visible}명 표시`
+      : `전체 ${total}명 중 검색 결과 없음`;
+  }
+
+  function dashboardWeekStart() {
+    return state.dashboardWeekStart || weekStartKey();
+  }
+
+  function dashboardMonth() {
+    return dashboardWeekStart().slice(0, 7);
+  }
+
+  function updateDashboardWeekLabel() {
+    const weekStart = dashboardWeekStart();
+    const label = `주간 ${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} · 월간 ${dashboardMonth()}`;
+    const labelEl = $('#dashboardWeekLabel');
+    if (labelEl) labelEl.textContent = label;
+    const hidden = $('#dashboardWeekBasisDate');
+    if (hidden) hidden.value = weekStart;
+  }
+
+  function loadDashboardWeekBasis() {
+    state.dashboardWeekStart = BremStorage.adminPreferences?.getDashboardWeekBasis?.() || weekStartKey();
+    updateDashboardWeekLabel();
+  }
+
+  async function saveDashboardWeekBasis(dateValue) {
+    const weekStart = weekStartKey(dateValue);
+    state.dashboardWeekStart = weekStart;
+    updateDashboardWeekLabel();
+    if (BremStorage.adminPreferences?.setDashboardWeekBasis) {
+      await Promise.resolve(BremStorage.adminPreferences.setDashboardWeekBasis(dateValue));
+    }
+    renderDashboard();
   }
 
   function calls() {
@@ -1125,6 +1199,16 @@
               if (window.BremAdminRevenue?.setWeekStart) {
                 window.BremAdminRevenue.setWeekStart(value);
               }
+            }
+          };
+        }
+
+        if (triggerId === 'dashboard') {
+          return {
+            hiddenInput: $('#dashboardWeekBasisDate'),
+            labelEl: $('#dashboardWeekLabel'),
+            onSelect(value) {
+              void saveDashboardWeekBasis(value);
             }
           };
         }
@@ -1772,9 +1856,10 @@
 
   function renderDashboard() {
     window.BremPerf?.time?.('admin.renderDashboard');
-    const month = currentMonth();
-    const weekStart = weekStartKey();
-    const allDrivers = filteredDrivers();
+    const month = dashboardMonth();
+    const weekStart = dashboardWeekStart();
+    const totalDrivers = drivers().length;
+    const allDrivers = filteredDashboardDrivers();
     const driverStats = allDrivers.map(driver => {
       const coupangWeekCalls = weekCallsForDriverByPlatform(driver.id, weekStart, 'coupang');
       const baeminWeekCalls = weekCallsForDriverByPlatform(driver.id, weekStart, 'baemin');
@@ -1813,20 +1898,20 @@
       $('#statEmptyLease').textContent = `${BremStorage.leases.getEmptyVehicles().length}대`;
     }
     $('#dashboardWeekLabel').textContent = `주간 ${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} · 월간 ${month}`;
-    const emptyMessage = state.driverSearchQuery.trim()
+    const emptyMessage = state.dashboardSearchQuery.trim()
       ? '검색 결과에 해당하는 기사가 없습니다.'
       : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
     $('#dashboardRows').innerHTML = rows || emptyRow(8, emptyMessage);
+    updateDashboardSearchStatus(totalDrivers, allDrivers.length);
     const dashboardCountEl = $('#dashboardDriverCount');
     if (dashboardCountEl) {
-      const totalDrivers = drivers().length;
       if (!allDrivers.length) {
         dashboardCountEl.hidden = true;
         dashboardCountEl.textContent = '';
       } else {
         dashboardCountEl.hidden = false;
-        if (state.driverSearchQuery.trim()) {
-          dashboardCountEl.textContent = `검색 결과 ${allDrivers.length}명 표시 · 스크롤하여 확인`;
+        if (state.dashboardSearchQuery.trim()) {
+          dashboardCountEl.textContent = `전체 ${totalDrivers}명 중 ${allDrivers.length}명 표시 · 스크롤하여 확인`;
         } else if (allDrivers.length === totalDrivers) {
           dashboardCountEl.textContent = `등록 기사 ${totalDrivers}명 전체 표시 · 스크롤하여 확인`;
         } else {
@@ -2630,9 +2715,19 @@
     }
   }
 
+  function handleDashboardSearchChange() {
+    if (state.currentSection === 'dashboard') {
+      renderDashboard();
+    }
+  }
+
   const debouncedDriverSearchChange = window.BremPerf?.debounce
     ? window.BremPerf.debounce(handleDriverSearchChange, 180)
     : handleDriverSearchChange;
+
+  const debouncedDashboardSearchChange = window.BremPerf?.debounce
+    ? window.BremPerf.debounce(handleDashboardSearchChange, 180)
+    : handleDashboardSearchChange;
 
   function resolveSectionNavigation(id) {
     const legacy = LEGACY_SECTION_MAP[id];
@@ -2802,6 +2897,11 @@
       state.driverSearchQuery = '';
       $('#adminDriverSearch').value = '';
       handleDriverSearchChange();
+    });
+
+    $('#dashboardDriverSearch')?.addEventListener('input', event => {
+      state.dashboardSearchQuery = event.target.value;
+      debouncedDashboardSearchChange();
     });
 
     $('#eventSettingsSearch')?.addEventListener('input', event => {
@@ -3225,7 +3325,10 @@
       state.rejectionWeekByPlatform[platform] = weekStartKey();
     });
     state.driverSearchQuery = '';
+    state.dashboardSearchQuery = '';
     if ($('#adminDriverSearch')) $('#adminDriverSearch').value = '';
+    if ($('#dashboardDriverSearch')) $('#dashboardDriverSearch').value = '';
+    loadDashboardWeekBasis();
     $('#targetMonth').value = currentMonth();
     targetMonthPicker?.setMonth(currentMonth());
     updateTargetMonthLabel();
