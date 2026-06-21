@@ -157,7 +157,7 @@ const BremWeeklySettlementAdmin = (function () {
           : '',
         orderCountColumn: $(`#weeklySettlementOrderCol-${platform}`)?.value
           || (platform === 'baemin' ? 'D' : 'F'),
-        startRow: Number($(`#weeklySettlementStartRow-${platform}`)?.value || (platform === 'coupang' ? 14 : 2))
+        startRow: Number($(`#weeklySettlementStartRow-${platform}`)?.value || (platform === 'coupang' ? 12 : 2))
       }
     };
   }
