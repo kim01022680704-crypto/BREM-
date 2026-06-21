@@ -513,15 +513,23 @@ const BremStorage = (function () {
     if (!mapper?.rowToRider || !riderRow?.id) return null;
 
     const driver = mapper.rowToRider(riderRow);
-    const list = storageAdapter.read(KEYS.drivers, []);
+    const list = [...drivers.getAll()];
     const index = list.findIndex(item => item.id === driver.id);
     if (index >= 0) {
       list[index] = { ...list[index], ...driver };
     } else {
       list.unshift(driver);
     }
-    setDriversCache(list);
-    return drivers.getById(driver.id);
+    markDriversCache(list, { source: 'rider-login' });
+    return drivers.getById(driver.id) || driver;
+  }
+
+  async function ensureDriverStorageReady() {
+    if (window.BremSupabaseConfig?.load) {
+      await window.BremSupabaseConfig.load();
+    }
+    await waitForStorageBootstrap();
+    return resumeSupabaseAfterAuth({ deferHydrate: true });
   }
 
   async function fetchCurrentRiderFromServer() {
@@ -561,7 +569,19 @@ const BremStorage = (function () {
       activeStorageAdapter.stage(KEYS.drivers, list);
       return;
     }
-    storageAdapter.write(KEYS.drivers, list);
+    if (activeStorageAdapter.type === 'supabase') {
+      try {
+        storageAdapter.write(KEYS.drivers, list);
+        return;
+      } catch (error) {
+        console.warn('[BREM] Driver cache write deferred until storage ready:', error.message || error);
+      }
+    }
+    window.BremDataCache?.set?.(KEYS.drivers, list, {
+      source: 'memory',
+      complete: driversLoadMeta.complete,
+      supabaseTotal: driversLoadMeta.supabaseTotal || list.length
+    });
   }
 
   function markDriversCache(list, meta = {}) {
@@ -605,7 +625,15 @@ const BremStorage = (function () {
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
       activeStorageAdapter.stage(KEYS.drivers, cached);
     } else {
-      storageAdapter.write(KEYS.drivers, cached);
+      try {
+        storageAdapter.write(KEYS.drivers, cached);
+      } catch {
+        window.BremDataCache?.set?.(KEYS.drivers, cached, {
+          source: 'memory',
+          complete: true,
+          supabaseTotal: Number(cacheMeta.meta.supabaseTotal) || cached.length
+        });
+      }
     }
     driversLoadMeta = {
       complete: true,
@@ -2615,7 +2643,11 @@ const BremStorage = (function () {
 
   const drivers = {
     getAll() {
-      const list = storageAdapter.read(KEYS.drivers, []);
+      let list = storageAdapter.read(KEYS.drivers, []);
+      if ((!Array.isArray(list) || !list.length) && window.BremDataCache?.isValid?.(KEYS.drivers)) {
+        const cached = window.BremDataCache.getData(KEYS.drivers);
+        if (Array.isArray(cached) && cached.length) list = cached;
+      }
       if (normalizedDriversCache && normalizedDriversSourceRef === list) {
         return normalizedDriversCache;
       }
@@ -5932,6 +5964,11 @@ const BremStorage = (function () {
     async signInDriver(loginInput, password) {
       if (getSupabaseConfig().mode === 'production') {
         try {
+          const storageReady = await ensureDriverStorageReady();
+          if (!storageReady.ok) {
+            return { ok: false, reason: storageReady.message || '저장소 연결에 실패했습니다.' };
+          }
+
           const response = await fetch('/api/rider/sign-in', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -5969,12 +6006,24 @@ const BremStorage = (function () {
           if (payload.riderId) {
             sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
           }
-          const driver = payload.rider ? mergeRiderInCache(payload.rider) : null;
+          const mapper = window.BremSupabaseMapper;
+          const mappedDriver = payload.rider && mapper?.rowToRider
+            ? mapper.rowToRider(payload.rider)
+            : null;
+          let driver = null;
+          if (payload.rider) {
+            try {
+              driver = mergeRiderInCache(payload.rider);
+            } catch (error) {
+              console.warn('[BREM] mergeRiderInCache failed:', error.message || error);
+              driver = mappedDriver;
+            }
+          }
           return {
             ok: true,
             riderId: payload.riderId,
             profile: activeSupabaseProfile,
-            driver
+            driver: driver || mappedDriver
           };
         } catch (error) {
           return { ok: false, reason: error.message || '로그인에 실패했습니다.' };
@@ -6668,6 +6717,7 @@ const BremStorage = (function () {
     syncAllDriversPagesInBackground,
     verifyRiderPersisted,
     mergeRiderInCache,
+    ensureDriverStorageReady,
     fetchCurrentRiderFromServer,
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,

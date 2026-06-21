@@ -870,6 +870,14 @@
 
     try {
       const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
+      if (isProduction) {
+        const storageReady = await BremStorage.ensureDriverStorageReady?.();
+        if (!storageReady?.ok) {
+          showToast(storageReady?.message || '연결 준비 중입니다. 잠시 후 다시 시도하세요.');
+          return;
+        }
+      }
+
       const loginResult = isProduction
         ? await BremStorage.auth.signInDriver(loginIdInput.value, loginPasswordInput.value)
         : findDriverByLogin(loginIdInput.value, loginPasswordInput.value);
@@ -997,6 +1005,7 @@
     if (driverSessionId || BremStorage.auth.isDriverLoggedIn?.()) {
       savedDriver = findDriverById(driverSessionId);
       if (!savedDriver && isProduction) {
+        await BremStorage.ensureDriverStorageReady?.();
         const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
         if (fetched?.ok && fetched.driver) {
           savedDriver = fetched.driver;
@@ -1008,6 +1017,9 @@
       showLoggedIn(savedDriver);
       void loadDriverAppDataThenRender(savedDriver);
     } else {
+      if (driverSessionId) {
+        BremStorage.auth.setDriverSessionId(null);
+      }
       showLoggedOut();
     }
   });
