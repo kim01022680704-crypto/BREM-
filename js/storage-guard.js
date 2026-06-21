@@ -8,7 +8,11 @@ window.BremStorageGuard = (function () {
     'brem_admin_notices',
     'brem_admin_missions',
     'brem_admin_promotion_rules',
-    'brem_rider_inquiries'
+    'brem_rider_inquiries',
+    'brem_admin_schedules',
+    'brem_admin_calls',
+    'brem_admin_rejection_rates',
+    'brem_admin_targets'
   ]);
 
   /** settings 테이블 JSON 키 — 빈 값으로 덮어쓰기 금지 */

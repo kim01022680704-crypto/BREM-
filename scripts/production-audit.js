@@ -62,9 +62,13 @@ const migrateJs = read('js/storage-migrate-supabase.js');
 if (!/isProductionMode|production.*throw/i.test(migrateJs)) warn('Migration guard', 'verify production block');
 else pass('Migration guard', 'production migration blocked');
 
-// 3. Session storage policy
-if (!/sessionStorage only|sessionStorage 기준/i.test(storageJs)) warn('Session docs', 'session policy comment');
-else pass('Session policy', 'documented in storage.js');
+// 3. Operational data cache — memory only (no sessionStorage mirror)
+const cacheJs = read('js/data-cache.js');
+if (/function shouldMirrorSession\(\)[\s\S]*return false/.test(cacheJs)) {
+  pass('Operational cache', 'memory-only, no sessionStorage mirror');
+} else {
+  fail('Operational cache', 'data-cache.js must disable sessionStorage mirror');
+}
 
 // 4. Production guard
 if (!/enforceProductionStorageGuard/.test(storageJs)) fail('Production guard', 'missing');
@@ -108,7 +112,9 @@ const dataCacheJs = fs.existsSync(path.join(ROOT, 'js/data-cache.js'))
   ? read('js/data-cache.js')
   : '';
 if (/localStorage/.test(dataCacheJs)) fail('Data cache storage', 'uses localStorage');
-else if (dataCacheJs) pass('Data cache storage', 'sessionStorage only');
+else if (/shouldMirrorSession\(\)[\s\S]*return false/.test(dataCacheJs)) {
+  pass('Data cache storage', 'memory-only operational cache');
+} else if (dataCacheJs) pass('Data cache storage', 'sessionStorage only');
 
 if (/BremLoadingUI/.test(read('js/data-loading-ui.js'))) pass('Loading UI module');
 else fail('Loading UI module', 'missing BremLoadingUI');
@@ -128,6 +134,7 @@ if (/delete\(\)\.neq\('id'/.test(adapterJs)) {
 if (/assertPersistAllowed/.test(storageJs)) pass('Persist guard hook', 'present in storage.js');
 else fail('Persist guard hook', 'missing assertPersistAllowed');
 
+const guardJs = read('js/storage-guard.js');
 if (guardJs.includes('brem_admin_rejection_rates')) pass('Rejection rates protected in storage-guard');
 else fail('Rejection rates protected', 'missing brem_admin_rejection_rates in guard');
 

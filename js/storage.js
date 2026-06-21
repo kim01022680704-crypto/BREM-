@@ -785,7 +785,7 @@ const BremStorage = (function () {
     'promotion-apply': [KEYS.promotionRules, KEYS.drivers],
     calls: [KEYS.drivers],
     rejections: [KEYS.drivers, KEYS.rejections],
-    targets: [KEYS.drivers],
+    targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers],
     'mission-results': [KEYS.drivers],
     settlements: [KEYS.drivers],
@@ -803,7 +803,11 @@ const BremStorage = (function () {
     KEYS.notices,
     KEYS.missions,
     KEYS.promotionRules,
-    KEYS.riderInquiries
+    KEYS.riderInquiries,
+    KEYS.adminSchedules,
+    KEYS.calls,
+    KEYS.rejections,
+    KEYS.targets
   ]);
 
   function scheduleCacheSyncAfterWrite(key) {
@@ -1030,7 +1034,14 @@ const BremStorage = (function () {
         fetchAllDriversFromServer({ force }),
         reloadMissions(force),
         activeStorageAdapter.ensureKeysLoaded
-          ? activeStorageAdapter.ensureKeysLoaded([KEYS.notices, KEYS.promotionRules], { force })
+          ? activeStorageAdapter.ensureKeysLoaded([
+            KEYS.notices,
+            KEYS.promotionRules,
+            KEYS.adminSchedules,
+            KEYS.calls,
+            KEYS.rejections,
+            KEYS.targets
+          ], { force })
           : Promise.resolve()
       ]);
 

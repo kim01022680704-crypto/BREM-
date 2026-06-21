@@ -1,6 +1,6 @@
 /**
- * BREM session-scoped data cache (memory + sessionStorage for small payloads).
- * 운영 데이터·로그인 세션은 localStorage에 저장하지 않습니다.
+ * BREM session-scoped data cache (memory only for operational data).
+ * 운영 데이터는 Supabase에만 저장 · localStorage/sessionStorage에 운영 데이터 미저장.
  */
 window.BremDataCache = (function () {
   const VERSION = 2;
@@ -24,14 +24,8 @@ window.BremDataCache = (function () {
     return `${PREFIX}${key}`;
   }
 
-  function shouldMirrorSession(key, data) {
-    if (MEMORY_ONLY_KEYS.has(key)) return false;
-    try {
-      const size = JSON.stringify(data).length;
-      return size <= 120000;
-    } catch {
-      return false;
-    }
+  function shouldMirrorSession() {
+    return false;
   }
 
   function readEntry(key) {

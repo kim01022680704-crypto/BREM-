@@ -1,0 +1,58 @@
+# BREM Supabase Migration 실행 순서
+
+운영 데이터는 **Supabase 전용 테이블**에 저장됩니다.  
+브라우저 `localStorage` / `sessionStorage`에는 **인증 세션·UI 캐시만** 사용하며, 운영 데이터는 저장하지 않습니다.
+
+## 실행 순서 (SQL Editor)
+
+| 순서 | 파일 | 필수 | 설명 |
+|------|------|------|------|
+| 1 | `schema.sql` | 최초 1회 | profiles, riders, notices, promotions, settings, RLS |
+| 2 | `missions_migration.sql` | 미션 사용 시 | missions 테이블 + `brem_is_admin()` |
+| 3 | `riders_schema_sync_migration.sql` | 컬럼 누락 시 | riders 컬럼 동기화 |
+| 4 | `rider_inquiries_migration.sql` | 문의 사용 시 | rider_inquiries |
+| 5 | `admin_schedules_migration.sql` | **필수** | 관리자 스케줄표 |
+| 6 | `operations_tables_migration.sql` | **필수** | 콜수·거절/수락율·월간목표 + settings→table 이전 |
+| 7 | `baemin_delivery_status_migration.sql` | 배민 배달현황 시 | 선택 |
+
+## 데이터별 저장 위치 (최종)
+
+| 데이터 | Supabase 테이블 | settings JSON (레거시) |
+|--------|-----------------|------------------------|
+| 기사 / 메모 / 상태 | `riders` | ❌ |
+| 공지사항 | `notices` | ❌ |
+| 미션 설정 | `missions` | ❌ |
+| 프로모션 조건 | `promotions` | ❌ |
+| 관리자 스케줄 | `admin_schedules` | 이전만 (삭제 안 함) |
+| 일별 콜수 | `admin_call_records` | 이전만 |
+| 주간 거절/수락율 | `admin_weekly_rates` | 이전만 |
+| 월간 목표 | `admin_monthly_targets` | 이전만 |
+| 프로모션 UI 설정 | `settings.brem_admin_promotion_settings` | Supabase 영구 |
+| 주정산/리스/수익 등 | `settings` (jsonb) | Supabase 영구 |
+
+## 실행 후 검증
+
+```sql
+-- supabase/verify_all_storage_tables.sql 실행
+```
+
+또는:
+
+```sql
+select table_name
+from information_schema.tables
+where table_schema = 'public'
+  and table_name in (
+    'riders', 'notices', 'missions', 'promotions',
+    'admin_schedules', 'admin_call_records', 'admin_weekly_rates', 'admin_monthly_targets'
+  )
+order by 1;
+```
+
+8개 모두 조회되면 테이블 준비 완료.
+
+## 주의
+
+- migration은 **기존 settings JSON 행을 삭제하지 않습니다** (백업 유지).
+- 앱은 전용 테이블을 **우선** 읽고 씁니다.
+- `NOTIFY pgrst, 'reload schema'` 후 1~2분 API 캐시 갱신 대기.
