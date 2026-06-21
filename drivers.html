@@ -8,10 +8,10 @@
   <meta name="robots" content="noindex,nofollow">
   <title>BREM 기사 목록</title>
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=20260621m">
+  <link rel="stylesheet" href="css/style.css?v=20260621c">
   <link rel="stylesheet" href="css/data-loading.css">
 </head>
-<body>
+<body class="drivers-page">
   <div class="app index-app">
     <div class="index-layout">
       <aside class="index-sidebar" id="indexSidebar" aria-label="기사 관리 메뉴">
@@ -62,7 +62,7 @@
           <div class="filters filters--compact">
             <label class="search-field">
               <span class="sr-only">이름 검색</span>
-              <input type="search" id="searchInput" placeholder="이름으로 검색">
+              <input type="search" id="searchInput" placeholder="이름·연락처·배민ID 검색">
             </label>
             <label class="filter-field">
               <span class="sr-only">상태 필터</span>
@@ -88,33 +88,45 @@
           <button type="button" class="btn small delete" id="bulkDeleteBtnBar">선택 삭제</button>
         </div>
 
-        <div class="table-wrap list-table-scroll">
-          <table class="driver-table driver-table--compact">
-            <thead>
-              <tr>
-                <th class="col-select">
-                  <label class="select-all-label">
-                    <span class="sr-only">전체 선택</span>
-                    <input type="checkbox" id="selectAllDrivers" aria-label="현재 목록 전체 선택">
-                  </label>
-                </th>
-                <th class="col-name">이름 / ID</th>
-                <th class="col-phone">연락처</th>
-                <th class="col-baemin">배민 ID</th>
-                <th class="col-platform">플랫폼</th>
-                <th class="col-event">이벤트</th>
-                <th class="col-date">가입일</th>
-                <th class="col-status">상태</th>
-                <th class="col-memo">메모</th>
-                <th class="col-privacy">민감</th>
-                <th class="col-actions">관리</th>
-              </tr>
-            </thead>
-            <tbody id="driverTableBody"></tbody>
-          </table>
+        <div class="driver-list-scroll" id="driverListScroll">
+          <div class="table-wrap list-table-scroll">
+            <table class="driver-table driver-table--compact">
+              <thead>
+                <tr>
+                  <th class="col-select">
+                    <label class="select-all-label">
+                      <span class="sr-only">전체 선택</span>
+                      <input type="checkbox" id="selectAllDrivers" aria-label="현재 목록 전체 선택">
+                    </label>
+                  </th>
+                  <th class="col-name">이름 / ID</th>
+                  <th class="col-phone">연락처</th>
+                  <th class="col-baemin">배민 ID</th>
+                  <th class="col-platform">플랫폼</th>
+                  <th class="col-event">이벤트</th>
+                  <th class="col-date">가입일</th>
+                  <th class="col-status">상태</th>
+                  <th class="col-memo">메모</th>
+                  <th class="col-privacy">민감</th>
+                  <th class="col-actions">관리</th>
+                </tr>
+              </thead>
+              <tbody id="driverTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="mobile-list" id="mobileDriverList"></div>
         </div>
 
-        <div class="mobile-list" id="mobileDriverList"></div>
+        <div class="list-pagination" id="driverListPagination" hidden>
+          <p class="list-pagination__summary" id="driverListRange"></p>
+          <div class="list-pagination__controls">
+            <button type="button" class="btn small ghost" id="driverListPrevBtn" disabled>이전</button>
+            <span class="list-pagination__page" id="driverListPageLabel" aria-live="polite">1 / 1</span>
+            <button type="button" class="btn small ghost" id="driverListNextBtn" disabled>다음</button>
+          </div>
+        </div>
+
         <div class="empty-state" id="emptyState">등록된 기사가 없습니다.</div>
       </section>
     </main>
@@ -144,6 +156,6 @@
   <script src="js/driver-program-access.js?v=20260620c"></script>
   <script src="js/driver-utils.js"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/driver-list.js?v=20260620p"></script>
+  <script src="js/driver-list.js?v=20260621c"></script>
 </body>
 </html>

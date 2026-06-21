@@ -964,7 +964,7 @@ const BremStorage = (function () {
 
     driversBackgroundSyncPromise = (async () => {
       window.BremPerf?.time?.('storage.syncAllDriversBackground');
-      let offset = drivers.getAll().length || 100;
+      let offset = drivers.getAll().length;
       let hasMore = true;
       let pages = 0;
 

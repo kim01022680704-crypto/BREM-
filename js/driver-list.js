@@ -22,23 +22,84 @@
   const selectedCountLabel = document.getElementById('selectedCountLabel');
   const tableBody = document.getElementById('driverTableBody');
   const mobileList = document.getElementById('mobileDriverList');
+  const listScroll = document.getElementById('driverListScroll');
+  const paginationEl = document.getElementById('driverListPagination');
+  const paginationRangeEl = document.getElementById('driverListRange');
+  const paginationPageEl = document.getElementById('driverListPageLabel');
+  const paginationPrevBtn = document.getElementById('driverListPrevBtn');
+  const paginationNextBtn = document.getElementById('driverListNextBtn');
   const emptyState = document.getElementById('emptyState');
   const driverTotal = document.getElementById('driverTotal');
   const toast = document.getElementById('toast');
 
   if (!tableBody) return;
 
+  const PAGE_SIZE = 50;
+  let currentPage = 1;
   const selectedIds = new Set();
+
+  function driverMatchesKeyword(driver, keyword) {
+    if (!keyword) return true;
+    const haystack = [
+      driver.name,
+      driver.phone,
+      makeDriverLoginId(driver),
+      driver.baeminId,
+      driver.memo
+    ].map(value => String(value || '').toLowerCase());
+    return haystack.some(value => value.includes(keyword));
+  }
 
   function getFilteredDrivers() {
     const keyword = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
 
     return BremStorage.drivers.getAll().filter(driver => {
-      const matchesName = String(driver.name || '').toLowerCase().includes(keyword);
+      const matchesName = driverMatchesKeyword(driver, keyword);
       const matchesStatus = status === '전체' || driver.status === status;
       return matchesName && matchesStatus;
     });
+  }
+
+  function getTotalPages(totalCount) {
+    return Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  }
+
+  function getPagedDrivers(drivers) {
+    const totalPages = getTotalPages(drivers.length);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return {
+      items: drivers.slice(start, start + PAGE_SIZE),
+      total: drivers.length,
+      totalPages,
+      start: drivers.length ? start + 1 : 0,
+      end: Math.min(start + PAGE_SIZE, drivers.length)
+    };
+  }
+
+  function scrollListToTop() {
+    if (listScroll) listScroll.scrollTop = 0;
+  }
+
+  function renderPagination(meta) {
+    if (!paginationEl) return;
+
+    const showPagination = meta.total > PAGE_SIZE;
+    paginationEl.hidden = !showPagination;
+
+    if (!showPagination) return;
+
+    if (paginationRangeEl) {
+      paginationRangeEl.textContent = `전체 ${meta.total}명 중 ${meta.start}-${meta.end}명 표시`;
+    }
+    if (paginationPageEl) {
+      paginationPageEl.textContent = `${currentPage} / ${meta.totalPages}`;
+    }
+    if (paginationPrevBtn) paginationPrevBtn.disabled = currentPage <= 1;
+    if (paginationNextBtn) paginationNextBtn.disabled = currentPage >= meta.totalPages;
   }
 
   function updateSelectionUi() {
@@ -92,14 +153,17 @@
       window.BremPerf?.time?.('drivers.render');
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList?.classList.remove('is-loading');
-      const drivers = getFilteredDrivers();
+      const filteredDrivers = getFilteredDrivers();
+      const pageMeta = getPagedDrivers(filteredDrivers);
+      const drivers = pageMeta.items;
     const allIds = new Set(BremStorage.drivers.getAll().map(driver => driver.id));
     selectedIds.forEach(id => {
       if (!allIds.has(id)) selectedIds.delete(id);
     });
 
     updateDriverTotal(driverTotal);
-    emptyState.classList.toggle('show', drivers.length === 0);
+    emptyState.classList.toggle('show', pageMeta.total === 0);
+    renderPagination(pageMeta);
 
     const isMobileView = window.matchMedia('(max-width: 900px)').matches;
 
@@ -240,6 +304,12 @@
     const skeletonRow = '<tr class="skeleton-row"><td colspan="13"><span class="skeleton-bar"></span></td></tr>';
     tableBody.innerHTML = skeletonRow.repeat(5);
     mobileList.innerHTML = '<article class="driver-card skeleton-card"><span class="skeleton-bar"></span></article>'.repeat(3);
+    if (paginationEl) paginationEl.hidden = true;
+  }
+
+  function resetFiltersAndPage() {
+    currentPage = 1;
+    scrollListToTop();
   }
 
   function deleteDriver(id) {
@@ -347,8 +417,40 @@
   }
 
   const debouncedRender = window.BremPerf?.debounce
-    ? window.BremPerf.debounce(() => render(), 180)
-    : () => render();
+    ? window.BremPerf.debounce(() => {
+      resetFiltersAndPage();
+      render();
+    }, 180)
+    : () => {
+      resetFiltersAndPage();
+      render();
+    };
+
+  function goToPage(nextPage) {
+    const totalPages = getTotalPages(getFilteredDrivers().length);
+    const target = Math.min(Math.max(nextPage, 1), totalPages);
+    if (target === currentPage) return;
+    currentPage = target;
+    scrollListToTop();
+    render();
+  }
+
+  async function syncAllDriversForList() {
+    await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
+
+    let pages = 0;
+    while (pages < 100) {
+      const before = BremStorage.drivers.getAll().length;
+      const result = await BremStorage.reloadDrivers?.(false, {
+        limit: 100,
+        offset: before,
+        append: true
+      }).catch(() => null);
+      if (!result?.ok || !result?.hasMore) break;
+      if (BremStorage.drivers.getAll().length <= before) break;
+      pages += 1;
+    }
+  }
 
   async function refreshDriverList(force = false) {
     const listPanel = document.querySelector('.list-panel');
@@ -373,11 +475,21 @@
       showToast(toast, syncResult.message || '기사 목록을 불러오지 못했습니다.');
     }
     render();
+    void syncAllDriversForList().then(() => render());
   }
 
   function init() {
     searchInput.addEventListener('input', debouncedRender);
-    statusFilter.addEventListener('change', () => render());
+    statusFilter.addEventListener('change', () => {
+      resetFiltersAndPage();
+      render();
+    });
+    if (paginationPrevBtn) {
+      paginationPrevBtn.addEventListener('click', () => goToPage(currentPage - 1));
+    }
+    if (paginationNextBtn) {
+      paginationNextBtn.addEventListener('click', () => goToPage(currentPage + 1));
+    }
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
