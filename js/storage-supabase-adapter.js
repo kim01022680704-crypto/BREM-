@@ -936,8 +936,8 @@ window.BremSupabaseStorageAdapter = (function () {
       upsertMission,
       upsertRider,
       stage,
-      enqueuePersist(key, value) {
-        return queuePersist(key, value);
+      enqueuePersist(key, value, options = {}) {
+        return queuePersist(key, value, options);
       },
       deleteAdminCallsByPeriod,
       deleteAdminCallsByIds,

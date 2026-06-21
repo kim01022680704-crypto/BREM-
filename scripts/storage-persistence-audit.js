@@ -76,6 +76,12 @@ if (/brem_admin_schedules/.test(guardJs) && /TABLE_PERSIST_KEYS/.test(guardJs)) 
   fail('storage-guard TABLE_PERSIST_KEYS incomplete');
 }
 
+if (/enqueuePersist\(key, value, options/.test(adapterJs)) {
+  pass('adapter enqueuePersist forwards persist options');
+} else {
+  fail('adapter enqueuePersist must forward options (allowEmpty)');
+}
+
 if (fs.existsSync(path.join(ROOT, 'supabase/operations_tables_migration.sql'))) {
   pass('operations_tables_migration.sql exists');
 } else {

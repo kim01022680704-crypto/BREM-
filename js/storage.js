@@ -6345,13 +6345,11 @@ const BremStorage = (function () {
     clearByPeriod(period, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
       const periodKey = String(period).slice(0, 10);
-      storageAdapter.write(
-        KEYS.settlementUnmatched,
-        settlementUnmatched.getAll().filter(item => {
-          const itemPeriod = String(item.period).slice(0, 10);
-          return !(itemPeriod === periodKey && normalizePlatform(item.platform) === p);
-        })
-      );
+      const next = settlementUnmatched.getAll().filter(item => {
+        const itemPeriod = String(item.period).slice(0, 10);
+        return !(itemPeriod === periodKey && normalizePlatform(item.platform) === p);
+      });
+      storageAdapter.write(KEYS.settlementUnmatched, next, { allowEmpty: true });
     },
 
     clearByPlatform(platform) {
