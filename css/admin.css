@@ -2050,6 +2050,25 @@ textarea {
   vertical-align: middle;
 }
 
+.settlement-upload-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settlement-upload-log-detail-card {
+  margin-top: 16px;
+}
+
+.settlement-upload-log-detail-block {
+  padding: 0 18px 18px;
+}
+
+.settlement-upload-log-detail-block h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
 .settlement-preview-card .card-header {
   flex-wrap: wrap;
 }

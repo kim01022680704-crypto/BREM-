@@ -5883,10 +5883,58 @@ const BremStorage = (function () {
     }
   };
 
+  function normalizeSettlementUploadApplyRecord(record = {}) {
+    return {
+      driverId: String(record.driverId || ''),
+      driverName: String(record.driverName || ''),
+      riderId: String(record.riderId || ''),
+      rawName: String(record.rawName || ''),
+      name: String(record.name || ''),
+      orderCount: Number(record.orderCount ?? record.callCount ?? 0),
+      deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
+      settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0)
+    };
+  }
+
+  function buildSettlementUploadContentHash(platform, period, records = []) {
+    const p = normalizePlatform(platform);
+    const periodKey = String(period || '').slice(0, 10);
+    const rows = (Array.isArray(records) ? records : [])
+      .map(normalizeSettlementUploadApplyRecord)
+      .map(row => ({
+        driverId: row.driverId,
+        riderId: row.riderId,
+        orderCount: row.orderCount,
+        settlementAmount: row.settlementAmount
+      }))
+      .sort((a, b) => a.driverId.localeCompare(b.driverId, 'ko'));
+    const payload = JSON.stringify({ platform: p, period: periodKey, rows });
+    let hash = 2166136261;
+    for (let i = 0; i < payload.length; i += 1) {
+      hash ^= payload.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `s${(hash >>> 0).toString(36)}`;
+  }
+
   function normalizeSettlementUploadLog(entry = {}) {
     const period = String(entry.period || entry.startDate || '').slice(0, 10);
     const weekStart = String(entry.weekStart || (period ? weekStartKeyFromDate(period) : '')).slice(0, 10);
     const kind = entry.kind === 'weekly' ? 'weekly' : 'daily';
+    const matchedRecords = Array.isArray(entry.matchedRecords)
+      ? entry.matchedRecords.map(normalizeSettlementUploadApplyRecord)
+      : [];
+    const unmatchedRecords = Array.isArray(entry.unmatchedRecords)
+      ? entry.unmatchedRecords.map(normalizeSettlementUploadApplyRecord)
+      : [];
+    const appliedRecords = Array.isArray(entry.appliedRecords)
+      ? entry.appliedRecords.map(normalizeSettlementUploadApplyRecord)
+      : [];
+    const totalOrderCount = Number(
+      entry.totalOrderCount
+      || appliedRecords.reduce((sum, row) => sum + row.orderCount, 0)
+      || matchedRecords.reduce((sum, row) => sum + row.orderCount, 0)
+    );
     return {
       id: String(entry.id || createId()),
       kind,
@@ -5899,7 +5947,16 @@ const BremStorage = (function () {
       startDate: String(entry.startDate || period).slice(0, 10),
       endDate: String(entry.endDate || '').slice(0, 10),
       status: String(entry.status || 'uploaded'),
-      matchedCount: Number(entry.matchedCount || 0),
+      matchedCount: Number(entry.matchedCount || matchedRecords.length || 0),
+      unmatchedCount: Number(entry.unmatchedCount ?? unmatchedRecords.length ?? 0),
+      totalDeliveryAmount: Number(entry.totalDeliveryAmount || 0),
+      totalOrderCount,
+      contentHash: String(entry.contentHash || ''),
+      matchedRecords,
+      unmatchedRecords,
+      appliedRecords,
+      duplicateOfLogId: String(entry.duplicateOfLogId || ''),
+      skipReason: String(entry.skipReason || ''),
       linkedRecordId: String(entry.linkedRecordId || ''),
       uploadedAt: entry.uploadedAt || new Date().toISOString(),
       appliedAt: entry.appliedAt || '',
@@ -5989,6 +6046,59 @@ const BremStorage = (function () {
           uploadedAt: record.uploadedAt
         });
       });
+    },
+
+    buildContentHash(platform, period, records = []) {
+      return buildSettlementUploadContentHash(platform, period, records);
+    },
+
+    findAppliedDuplicate({ platform, period, contentHash, excludeLogId = '' }) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      const hash = String(contentHash || '');
+      if (!periodKey || !hash) return null;
+      return settlementUploadLogs.getAll().find(item => (
+        item.kind === 'daily'
+        && item.platform === p
+        && item.period === periodKey
+        && item.contentHash === hash
+        && item.status === 'applied'
+        && item.id !== excludeLogId
+      )) || null;
+    },
+
+    settlementsMatchRecords(platform, period, records = []) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      const normalized = (Array.isArray(records) ? records : []).map(normalizeSettlementUploadApplyRecord);
+      const existing = settlements.getAll().filter(item => (
+        normalizePlatform(item.platform) === p
+        && String(item.period).slice(0, 10) === periodKey
+      ));
+      if (!normalized.length || existing.length !== normalized.length) return false;
+      const map = new Map(existing.map(item => [item.driverId, item]));
+      return normalized.every(row => {
+        const current = map.get(row.driverId);
+        if (!current) return false;
+        return Number(current.orderCount) === row.orderCount
+          && Number(current.settlementAmount ?? current.deliveryAmount ?? 0) === row.settlementAmount;
+      });
+    },
+
+    isDuplicateApply({ platform, period, contentHash, records = [], excludeLogId = '' }) {
+      const existingLog = settlementUploadLogs.findAppliedDuplicate({
+        platform,
+        period,
+        contentHash,
+        excludeLogId
+      });
+      if (existingLog) {
+        return { duplicate: true, reason: 'log', existingLog };
+      }
+      if (settlementUploadLogs.settlementsMatchRecords(platform, period, records)) {
+        return { duplicate: true, reason: 'settlements', existingLog: null };
+      }
+      return { duplicate: false, reason: '', existingLog: null };
     }
   };
 
