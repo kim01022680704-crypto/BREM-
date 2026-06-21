@@ -8,7 +8,7 @@ const SettlementFormats = (function () {
       platform: 'coupang',
       mode: 'driver-row',
       sheetIndex: 0,
-      startRow: 13,
+      startRow: 14,
       columns: {
         name: 'C',
         orderCount: 'F',
