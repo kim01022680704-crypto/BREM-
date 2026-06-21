@@ -5,6 +5,24 @@ const RIDER_LOGIN_LOOKUP_SELECT = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'raw_data', 'created_at'
 ].join(',');
 
+const RIDER_ME_SELECT_BASE = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'raw_data', 'created_at', 'updated_at'
+].join(',');
+
+const RIDER_ME_SELECT_WITH_PLATFORM = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
+  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'raw_data', 'created_at', 'updated_at'
+].join(',');
+
 const RIDER_ME_SELECT = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
   'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
@@ -14,6 +32,8 @@ const RIDER_ME_SELECT = [
   'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
   'raw_data', 'created_at', 'updated_at'
 ].join(',');
+
+const RIDER_ME_SELECT_VARIANTS = [RIDER_ME_SELECT, RIDER_ME_SELECT_WITH_PLATFORM, RIDER_ME_SELECT_BASE];
 
 const MISSION_SELECT = [
   'id', 'title', 'description', 'type', 'conditions', 'is_active',
@@ -42,6 +62,32 @@ function normalizeLoginText(value) {
 
 function normalizeDigits(value) {
   return String(value || '').replace(/[^0-9]/g, '');
+}
+
+function isMissingColumnError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('does not exist') || message.includes('column');
+}
+
+async function fetchRiderById(supabase, riderId) {
+  let lastError = null;
+  for (const selectColumns of RIDER_ME_SELECT_VARIANTS) {
+    const { data, error } = await supabase
+      .from('riders')
+      .select(selectColumns)
+      .eq('id', riderId)
+      .maybeSingle();
+    if (!error) {
+      return { ok: true, rider: data };
+    }
+    lastError = error;
+    if (!isMissingColumnError(error)) break;
+  }
+  return {
+    ok: false,
+    status: 500,
+    error: lastError?.message || '기사 정보를 불러오지 못했습니다.'
+  };
 }
 
 function makeRiderLoginId(rider) {
@@ -153,15 +199,11 @@ async function getRiderMe(accessToken) {
     return { ok: false, status: 403, error: '기사 세션이 아닙니다.' };
   }
 
-  const { data: rider, error: riderError } = await supabase
-    .from('riders')
-    .select(RIDER_ME_SELECT)
-    .eq('id', profile.rider_id)
-    .maybeSingle();
-
-  if (riderError || !rider) {
-    return { ok: false, status: 404, error: '기사 정보를 찾을 수 없습니다.' };
+  const fetched = await fetchRiderById(supabase, profile.rider_id);
+  if (!fetched.ok || !fetched.rider) {
+    return { ok: false, status: fetched.status || 404, error: fetched.error || '기사 정보를 찾을 수 없습니다.' };
   }
+  const rider = fetched.rider;
 
   return {
     ok: true,
@@ -757,21 +799,15 @@ async function signInRider(loginInput, password) {
     return { ok: false, status: 401, error: '로그인에 실패했습니다. 잠시 후 다시 시도하세요.' };
   }
 
-  const { data: fullRider, error: fullRiderError } = await supabase
-    .from('riders')
-    .select(RIDER_ME_SELECT)
-    .eq('id', found.rider.id)
-    .maybeSingle();
-  if (fullRiderError) {
-    return { ok: false, status: 500, error: fullRiderError.message || '기사 정보를 불러오지 못했습니다.' };
-  }
+  const fetched = await fetchRiderById(supabase, found.rider.id);
+  const rider = fetched.ok && fetched.rider ? fetched.rider : found.rider;
 
   return {
     ok: true,
     session: data.session,
     user: data.user,
     riderId: found.rider.id,
-    rider: fullRider || found.rider,
+    rider,
     profile: {
       user_id: account.userId,
       role: 'rider',
