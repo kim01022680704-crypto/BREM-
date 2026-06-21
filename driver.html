@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260625c">
+  <link rel="stylesheet" href="css/driver.css?v=20260625e">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -81,7 +81,8 @@
           <h1>기사 전용 조회</h1>
           <p class="hero-desc">본인 콜수와 장기근속이벤트 진행률을 확인합니다.</p>
           <p class="rider-publish-notice" id="riderPublishNotice" hidden>
-            데이터 최종 반영: <strong id="riderPublishAt">-</strong>
+            <span id="riderPublishLoading" hidden>데이터 불러오는 중입니다~~~</span>
+            <span id="riderPublishReady" hidden>데이터 최종 반영: <strong id="riderPublishAt">-</strong></span>
           </p>
         </div>
         <img
@@ -427,6 +428,6 @@
   <script src="js/storage.js?v=20260625d"></script>
   <script src="js/driver-utils.js?v=20260625c"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver.js?v=20260625d"></script>
+  <script src="js/driver.js?v=20260625e"></script>
 </body>
 </html>

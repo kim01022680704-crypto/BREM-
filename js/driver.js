@@ -11,6 +11,7 @@
     currentDriver: null,
     selectedWeekStart: null
   };
+  let driverDashboardLoading = false;
 
   function calls() {
     return BremStorage.calls.getAll();
@@ -146,10 +147,38 @@
     return BremStorage.rejections.getEntryForWeek(driverId, weekStart, platform, { riderOnly: true });
   }
 
+  function isDriverProductionMode() {
+    return BremStorage.getSupabaseConfig?.().mode === 'production';
+  }
+
+  function setRiderPublishNoticeLoading(show) {
+    const notice = document.getElementById('riderPublishNotice');
+    const loadingEl = document.getElementById('riderPublishLoading');
+    const readyEl = document.getElementById('riderPublishReady');
+    if (!notice || !loadingEl || !readyEl) return;
+
+    if (show) {
+      notice.hidden = false;
+      notice.classList.add('is-loading');
+      loadingEl.hidden = false;
+      readyEl.hidden = true;
+      return;
+    }
+
+    notice.classList.remove('is-loading');
+    loadingEl.hidden = true;
+  }
+
   function renderRiderPublishNotice() {
     const notice = document.getElementById('riderPublishNotice');
     const label = document.getElementById('riderPublishAt');
-    if (!notice || !label) return;
+    const readyEl = document.getElementById('riderPublishReady');
+    if (!notice || !label || !readyEl) return;
+
+    if (isDriverProductionMode() && (driverDashboardLoading || driverDataLoadPromise)) {
+      setRiderPublishNoticeLoading(true);
+      return;
+    }
 
     const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
     let publishedAt = meta.publishedAt || null;
@@ -163,11 +192,20 @@
 
     const text = window.BremDriverUtils?.formatRiderPublishDateTime?.(publishedAt) || '';
     if (!text) {
+      if (isDriverProductionMode() && (driverDashboardLoading || driverDataLoadPromise)) {
+        setRiderPublishNoticeLoading(true);
+        return;
+      }
       notice.hidden = true;
+      readyEl.hidden = true;
+      setRiderPublishNoticeLoading(false);
       label.textContent = '-';
       return;
     }
+
+    setRiderPublishNoticeLoading(false);
     notice.hidden = false;
+    readyEl.hidden = false;
     label.textContent = text;
   }
 
@@ -435,6 +473,9 @@
     loginCard.hidden = true;
     if (mainApp) mainApp.hidden = false;
     result.hidden = false;
+    if (isDriverProductionMode()) {
+      setRiderPublishNoticeLoading(true);
+    }
     renderDriver(driver);
     startDriverSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
@@ -492,6 +533,11 @@
     if (!driver?.id) return Promise.resolve();
 
     const driverId = driver.id;
+    if (isDriverProductionMode()) {
+      driverDashboardLoading = true;
+      setRiderPublishNoticeLoading(true);
+    }
+
     const task = (async () => {
       let freshDriver = driver;
       if (options.refreshProfile !== false) {
@@ -504,6 +550,7 @@
     })();
 
     driverDataLoadPromise = task.finally(() => {
+      driverDashboardLoading = false;
       driverDataLoadPromise = null;
     });
 
