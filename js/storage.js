@@ -314,7 +314,7 @@ const BremStorage = (function () {
     readRaw(key) {
       return activeStorageAdapter.readRaw(key);
     },
-    write(key, value) {
+    write(key, value, options = {}) {
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
         activeStorageAdapter.stage(key, value);
         if (!isStoragePersistReady()) {
@@ -322,11 +322,11 @@ const BremStorage = (function () {
           return undefined;
         }
         try {
-          assertPersistAllowed(key, value);
+          assertPersistAllowed(key, value, options);
         } catch (error) {
           return Promise.reject(error);
         }
-        const persist = activeStorageAdapter.enqueuePersist(key, value);
+        const persist = activeStorageAdapter.enqueuePersist(key, value, options);
         scheduleCacheSyncAfterWrite(key);
         return persist;
       }
@@ -334,7 +334,7 @@ const BremStorage = (function () {
         return undefined;
       }
       try {
-        assertPersistAllowed(key, value);
+        assertPersistAllowed(key, value, options);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -3680,6 +3680,18 @@ const BremStorage = (function () {
 
     removeById(id) {
       storageAdapter.write(KEYS.calls, calls.getAll().filter(call => call.id !== id));
+    },
+
+    removeByPeriod(period, platform = DEFAULT_PLATFORM) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      if (!periodKey) return calls.getAll();
+      const list = calls.getAll().filter(call => {
+        if (normalizePlatform(call.platform) !== p) return true;
+        return String(call.date).slice(0, 10) !== periodKey;
+      });
+      storageAdapter.write(KEYS.calls, list, list.length ? {} : { allowEmpty: true });
+      return list;
     }
   };
 
@@ -5329,33 +5341,54 @@ const BremStorage = (function () {
         const p = normalizePlatform(target.platform);
         const callId = `${target.driverId}-${periodKey}-${p}`;
         storageAdapter.write(KEYS.calls, calls.getAll().filter(call => call.id !== callId));
+        if (activeStorageAdapter.deleteAdminCallsByIds) {
+          void activeStorageAdapter.deleteAdminCallsByIds([callId]);
+        }
       }
     },
 
-    clearByPeriod(period, platform = DEFAULT_PLATFORM) {
+    async removeByIdAsync(id) {
+      settlements.removeById(id);
+      await storageAdapter.flush?.();
+      window.BremDataCache?.invalidate?.(KEYS.settlements);
+      window.BremDataCache?.invalidate?.(KEYS.calls);
+    },
+
+    async clearByPeriod(period, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
       const periodKey = String(period).slice(0, 10);
       if (!periodKey) return settlements.getAll();
 
-      const removing = settlements.getAll().filter(item => {
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.ensureKeysLoaded) {
+        await activeStorageAdapter.ensureKeysLoaded([KEYS.calls]);
+      }
+
+      const nextSettlements = settlements.getAll().filter(item => {
         const itemPeriod = String(item.period).slice(0, 10);
-        return normalizePlatform(item.platform) === p && itemPeriod === periodKey;
+        return !(normalizePlatform(item.platform) === p && itemPeriod === periodKey);
       });
-      const callIds = new Set(removing.map(item => `${item.driverId}-${periodKey}-${p}`));
 
       storageAdapter.write(
         KEYS.settlements,
-        settlements.getAll().filter(item => {
-          const itemPeriod = String(item.period).slice(0, 10);
-          return !(normalizePlatform(item.platform) === p && itemPeriod === periodKey);
-        })
+        nextSettlements,
+        nextSettlements.length ? {} : { allowEmpty: true }
       );
 
-      if (callIds.size) {
-        storageAdapter.write(KEYS.calls, calls.getAll().filter(call => !callIds.has(call.id)));
+      if (activeStorageAdapter.deleteAdminCallsByPeriod) {
+        await activeStorageAdapter.deleteAdminCallsByPeriod(p, periodKey);
+      } else {
+        calls.removeByPeriod(periodKey, p);
       }
 
-      return settlements.getAll();
+      settlementUploadLogs.removeDailyByPeriod(periodKey, p);
+
+      await storageAdapter.flush?.();
+
+      window.BremDataCache?.invalidate?.(KEYS.settlements);
+      window.BremDataCache?.invalidate?.(KEYS.calls);
+      window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
+
+      return nextSettlements;
     },
 
     getForDriver(driverId) {
@@ -6041,6 +6074,20 @@ const BremStorage = (function () {
 
     remove(id) {
       settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
+    },
+
+    removeDailyByPeriod(period, platform = DEFAULT_PLATFORM) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      if (!periodKey) return settlementUploadLogs.getAll();
+      settlementUploadLogs.persistList(
+        settlementUploadLogs.getAll().filter(item => {
+          if (item.kind !== 'daily') return true;
+          if (normalizePlatform(item.platform) !== p) return true;
+          return String(item.period).slice(0, 10) !== periodKey;
+        })
+      );
+      return settlementUploadLogs.getAll();
     },
 
     removeByLinkedRecordId(linkedRecordId) {

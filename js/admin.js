@@ -3196,17 +3196,20 @@
       showToast('선택한 정산일 반영 내역이 없습니다.');
       return;
     }
-    if (!window.confirm(`${formatDate(period)} ${platformLabel(p)} 정산 반영 ${count}건을 전체 삭제하시겠습니까?\n연결된 콜수도 함께 삭제됩니다.`)) return;
+    if (!window.confirm(`${formatDate(period)} ${platformLabel(p)} 정산 반영 ${count}건을 전체 삭제하시겠습니까?\n연결된 콜수·업로드 기록도 함께 삭제됩니다.`)) return;
 
-    BremStorage.settlements.clearByPeriod(period, p);
-    void BremStorage.flushStorage?.().then(() => {
-      showToast(`${formatDate(period)} 정산 반영 ${count}건 삭제되었습니다.`);
-      renderAll();
-    }).catch(error => {
-      console.error('[BREM] settlement clear failed:', error);
-      showToast(error.message || '삭제 저장에 실패했습니다.');
-      renderAll();
-    });
+    void (async () => {
+      try {
+        await BremStorage.ensureSectionLoaded('calls');
+        await BremStorage.settlements.clearByPeriod(period, p);
+        showToast(`${formatDate(period)} 정산 반영 ${count}건과 연결 콜수가 삭제되었습니다.`);
+        renderAll();
+      } catch (error) {
+        console.error('[BREM] settlement clear failed:', error);
+        showToast(error.message || '삭제 저장에 실패했습니다.');
+        renderAll();
+      }
+    })();
   }
 
   function clearSettlementUnmatchedForSelectedPeriod(platform) {
@@ -4391,15 +4394,17 @@
 
       const settlementButton = event.target.closest('[data-delete-settlement]');
       if (settlementButton) {
-        BremStorage.settlements.removeById(settlementButton.dataset.deleteSettlement);
-        void BremStorage.flushStorage?.().then(() => {
-          showToast('정산 내역이 삭제되었습니다.');
-          renderAll();
-        }).catch(error => {
-          console.error('[BREM] settlement delete failed:', error);
-          showToast(error.message || '삭제 저장에 실패했습니다.');
-          renderAll();
-        });
+        void (async () => {
+          try {
+            await BremStorage.settlements.removeByIdAsync(settlementButton.dataset.deleteSettlement);
+            showToast('정산 내역이 삭제되었습니다.');
+            renderAll();
+          } catch (error) {
+            console.error('[BREM] settlement delete failed:', error);
+            showToast(error.message || '삭제 저장에 실패했습니다.');
+            renderAll();
+          }
+        })();
         return;
       }
 

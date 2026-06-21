@@ -391,6 +391,37 @@ window.BremSupabaseStorageAdapter = (function () {
       await persistTableCollection('admin_schedules', keys.adminSchedules, list, scheduleToRow);
     }
 
+    async function deleteAdminCallsByIds(ids = []) {
+      const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+      if (!targetIds.length) return;
+      if (!(await probeTable('admin_calls'))) return;
+
+      const drop = new Set(targetIds);
+      const list = getCache(keys.calls, []).filter(call => !drop.has(call.id));
+      stage(keys.calls, list);
+      window.BremDataCache?.set?.(keys.calls, list, { source: 'write', tableLoaded: true });
+
+      await deleteRowsInChunks('admin_calls', targetIds);
+    }
+
+    async function deleteAdminCallsByPeriod(platform, periodKey) {
+      const p = String(platform || '').trim();
+      const date = String(periodKey || '').slice(0, 10);
+      if (!p || !date) return;
+      if (!(await probeTable('admin_calls'))) return;
+
+      const list = getCache(keys.calls, []).filter(call => {
+        const callPlatform = String(call.platform || '').trim();
+        const callDate = String(call.date || '').slice(0, 10);
+        return !(callPlatform === p && callDate === date);
+      });
+      stage(keys.calls, list);
+      window.BremDataCache?.set?.(keys.calls, list, { source: 'write', tableLoaded: true });
+
+      const { error } = await client.from('admin_calls').delete().eq('platform', p).eq('date', date);
+      if (error) throw error;
+    }
+
     async function persistCalls(value) {
       await persistTableCollection('admin_calls', keys.calls, value, callToRow);
     }
@@ -908,6 +939,8 @@ window.BremSupabaseStorageAdapter = (function () {
       enqueuePersist(key, value) {
         return queuePersist(key, value);
       },
+      deleteAdminCallsByPeriod,
+      deleteAdminCallsByIds,
       flush() {
         return persistQueue;
       },

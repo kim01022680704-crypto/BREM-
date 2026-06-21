@@ -2088,23 +2088,36 @@ textarea {
   display: grid;
   gap: 6px;
   min-width: 180px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .inline-search-field input {
   min-height: 36px;
+  background: #101010;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.inline-search-field input:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.15);
+  background: #141414;
 }
 
 .admin-table-summary {
   margin: 0 18px 10px;
-  color: var(--muted, #666);
+  color: var(--muted);
   font-size: 0.92rem;
 }
 
 .admin-scroll-table-wrap {
   margin: 0 18px 18px;
   overflow: auto;
-  border: 1px solid var(--line, #e5e7eb);
+  border: 1px solid var(--line);
   border-radius: 12px;
+  background: #0d0d0d;
 }
 
 .admin-scroll-table-wrap table {
@@ -2115,7 +2128,12 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface, #fff);
+  background: #101010;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.admin-scroll-table-wrap tbody td {
+  background: transparent;
 }
 
 .admin-scroll-table-wrap--upload-log {
