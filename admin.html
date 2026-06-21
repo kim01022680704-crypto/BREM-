@@ -1813,11 +1813,21 @@
         </article>
 
         <article class="card settlement-unmatched-card">
-          <div class="card-header">
-            <h2>쿠팡 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-coupang"></span></h2>
-            <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-coupang">선택일 전체 삭제</button>
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>쿠팡 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-coupang"></span></h2>
+              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 다시 연결할 수 있습니다.</p>
+            </div>
+            <div class="settlement-history-toolbar">
+              <label class="settlement-week-filter">
+                <span>적용주(수요일)</span>
+                <input type="date" id="settlementUnmatchedWeek-coupang" class="admin-period-input">
+              </label>
+              <button type="button" class="primary-btn small-btn" id="settlementUnmatchedRetryBtn-coupang">매칭 재시도</button>
+              <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-coupang">선택 주 전체 삭제</button>
+            </div>
           </div>
-          <p class="form-help">정산일을 선택하면 해당 날짜 미반영 기사만 표시됩니다.</p>
+          <p class="settlement-week-range-label" id="settlementUnmatchedWeekRange-coupang"></p>
           <div class="table-wrap">
             <table class="settlement-preview-table unmatched">
               <thead>
@@ -1974,11 +1984,21 @@
         </article>
 
         <article class="card settlement-unmatched-card">
-          <div class="card-header">
-            <h2>배민 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-baemin"></span></h2>
-            <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-baemin">선택일 전체 삭제</button>
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-baemin"></span></h2>
+              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 다시 연결할 수 있습니다.</p>
+            </div>
+            <div class="settlement-history-toolbar">
+              <label class="settlement-week-filter">
+                <span>적용주(수요일)</span>
+                <input type="date" id="settlementUnmatchedWeek-baemin" class="admin-period-input">
+              </label>
+              <button type="button" class="primary-btn small-btn" id="settlementUnmatchedRetryBtn-baemin">매칭 재시도</button>
+              <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-baemin">선택 주 전체 삭제</button>
+            </div>
           </div>
-          <p class="form-help">정산일을 선택하면 해당 날짜 미반영 기사만 표시됩니다.</p>
+          <p class="settlement-week-range-label" id="settlementUnmatchedWeekRange-baemin"></p>
           <div class="table-wrap">
             <table class="settlement-preview-table unmatched">
               <thead>
@@ -2146,6 +2166,32 @@
             </table>
           </div>
         </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>쿠팡 주정산 미매칭 기사 <span class="settlement-period-filter-label" id="weeklySettlementUnmatchedLabel-coupang"></span></h2>
+              <p class="form-help">주정산 업로드 시 미매칭 기사를 적용주 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 저장된 주정산에 합치거나 미리보기에서 저장하세요.</p>
+            </div>
+            <button type="button" class="primary-btn small-btn" id="weeklySettlementUnmatchedRetryBtn-coupang">매칭 재시도</button>
+          </div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>정산기간</th>
+                  <th>지역</th>
+                  <th>원본 이름</th>
+                  <th>쿠팡 ID</th>
+                  <th>주간 오더수</th>
+                  <th>파일명</th>
+                  <th>기록일</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementUnmatchedRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
         </div>
         <div class="admin-platform-panel" id="weekly-settlement-baemin" data-platform="baemin" hidden>
         <article class="card">
@@ -2259,6 +2305,32 @@
                 </tr>
               </thead>
               <tbody id="weeklySettlementSavedRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 주정산 미매칭 기사 <span class="settlement-period-filter-label" id="weeklySettlementUnmatchedLabel-baemin"></span></h2>
+              <p class="form-help">주정산 업로드 시 미매칭 기사를 적용주 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 저장된 주정산에 합치거나 미리보기에서 저장하세요.</p>
+            </div>
+            <button type="button" class="primary-btn small-btn" id="weeklySettlementUnmatchedRetryBtn-baemin">매칭 재시도</button>
+          </div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>정산기간</th>
+                  <th>지역</th>
+                  <th>원본 이름</th>
+                  <th>User ID</th>
+                  <th>주간 처리건수</th>
+                  <th>파일명</th>
+                  <th>기록일</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementUnmatchedRows-baemin"></tbody>
             </table>
           </div>
         </article>
@@ -3062,8 +3134,8 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260621h"></script>
-  <script src="js/storage.js?v=20260621h"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260622b"></script>
+  <script src="js/storage.js?v=20260622a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -3076,7 +3148,7 @@
   <script src="js/promotion-engine.js"></script>
   <script src="js/promotion-admin.js"></script>
   <script src="js/weekly-settlement.js?v=20260621d"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260622a"></script>
   <script src="js/baemin-delivery-fee.js"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
   <script src="js/promotion-apply.js"></script>
@@ -3087,6 +3159,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622j"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260621f"></script>
+  <script src="js/admin.js?v=20260622a"></script>
 </body>
 </html>

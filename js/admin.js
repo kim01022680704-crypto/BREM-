@@ -21,6 +21,7 @@
     eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     settlementLogWeekByPlatform: { coupang: null, baemin: null },
+    settlementUnmatchedWeekByPlatform: { coupang: null, baemin: null },
     settlementUploadLogDetailId: '',
     settlementHistorySearchByPlatform: { coupang: '', baemin: '' },
     callRecordsSearchByPlatform: { coupang: '', baemin: '' },
@@ -3114,14 +3115,46 @@
     const p = normalizePlatform(platform);
     const labelText = periodKey ? `· ${formatDate(periodKey)}` : '· 전체';
     const historyLabel = $(`#settlementHistoryPeriodLabel-${p}`);
-    const unmatchedLabel = $(`#settlementUnmatchedPeriodLabel-${p}`);
     if (historyLabel) historyLabel.textContent = labelText;
-    if (unmatchedLabel) unmatchedLabel.textContent = labelText;
 
     const historyClearBtn = $(`#settlementHistoryClearBtn-${p}`);
-    const unmatchedClearBtn = $(`#settlementUnmatchedClearBtn-${p}`);
     if (historyClearBtn) historyClearBtn.disabled = !periodKey;
-    if (unmatchedClearBtn) unmatchedClearBtn.disabled = !periodKey;
+    updateSettlementUnmatchedWeekLabel(p);
+  }
+
+  function ensureSettlementUnmatchedWeek(platform) {
+    const p = normalizePlatform(platform);
+    if (!state.settlementUnmatchedWeekByPlatform[p]) {
+      state.settlementUnmatchedWeekByPlatform[p] = weekStartKey();
+    }
+    const input = $(`#settlementUnmatchedWeek-${p}`);
+    if (input && !input.value) {
+      input.value = state.settlementUnmatchedWeekByPlatform[p];
+    }
+    return state.settlementUnmatchedWeekByPlatform[p];
+  }
+
+  function updateSettlementUnmatchedWeekLabel(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = ensureSettlementUnmatchedWeek(p);
+    const label = $(`#settlementUnmatchedWeekRange-${p}`);
+    const periodLabel = $(`#settlementUnmatchedPeriodLabel-${p}`);
+    if (label) {
+      label.textContent = weekStart
+        ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
+        : '';
+    }
+    if (periodLabel) {
+      periodLabel.textContent = weekStart ? `· ${formatDate(weekStart)} 주` : '';
+    }
+    const clearBtn = $(`#settlementUnmatchedClearBtn-${p}`);
+    const retryBtn = $(`#settlementUnmatchedRetryBtn-${p}`);
+    if (clearBtn) clearBtn.disabled = !weekStart;
+    if (retryBtn) retryBtn.disabled = !weekStart;
+  }
+
+  function getSettlementUnmatchedWeekFilter(platform) {
+    return ensureSettlementUnmatchedWeek(normalizePlatform(platform));
   }
 
   function settlementRowCells(record, platform) {
@@ -3276,17 +3309,19 @@
 
   function renderSettlementUnmatched(platform) {
     const p = normalizePlatform(platform);
-    const periodKey = getSettlementPeriodFilter(p);
+    const weekStart = getSettlementUnmatchedWeekFilter(p);
+    updateSettlementUnmatchedWeekLabel(p);
     const rows = settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
-      .filter(record => matchesSettlementPeriod(record, periodKey))
+      .filter(record => record.kind !== 'weekly')
+      .filter(record => record.weekStart === weekStart)
       .sort((a, b) => b.period.localeCompare(a.period) || b.savedAt.localeCompare(a.savedAt));
 
     const rowsEl = $(`#settlementUnmatchedHistoryRows-${p}`);
     if (!rowsEl) return;
 
-    const emptyMessage = periodKey
-      ? `${formatDate(periodKey)} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
+    const emptyMessage = weekStart
+      ? `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
       : `${platformLabel(p)} 미반영 기사 내역이 없습니다.`;
 
     rowsEl.innerHTML = rows.map(record => {
@@ -3363,32 +3398,70 @@
     })();
   }
 
-  function clearSettlementUnmatchedForSelectedPeriod(platform) {
+  function clearSettlementUnmatchedForSelectedWeek(platform) {
     const p = normalizePlatform(platform);
-    const period = getSettlementPeriodFilter(p);
-    if (!period) {
-      showToast('정산일을 먼저 선택하세요.');
+    const weekStart = getSettlementUnmatchedWeekFilter(p);
+    if (!weekStart) {
+      showToast('적용주를 먼저 선택하세요.');
       return;
     }
     const count = settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
-      .filter(record => matchesSettlementPeriod(record, period))
+      .filter(record => record.kind !== 'weekly')
+      .filter(record => record.weekStart === weekStart)
       .length;
     if (!count) {
-      showToast('선택한 정산일 미반영 내역이 없습니다.');
+      showToast('선택한 주 미반영 내역이 없습니다.');
       return;
     }
-    if (!window.confirm(`${formatDate(period)} ${platformLabel(p)} 미반영 ${count}건을 전체 삭제하시겠습니까?`)) return;
+    if (!window.confirm(`${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} ${platformLabel(p)} 미반영 ${count}건을 전체 삭제하시겠습니까?`)) return;
 
-    BremStorage.settlementUnmatched.clearByPeriod(period, p);
+    BremStorage.settlementUnmatched.clearByWeek({ weekStart, platform: p, kind: 'daily' });
     void BremStorage.flushStorage?.().then(() => {
-      showToast(`${formatDate(period)} 미반영 ${count}건 삭제되었습니다.`);
+      showToast(`${formatDate(weekStart)} 주 미반영 ${count}건 삭제되었습니다.`);
       renderSettlements();
     }).catch(error => {
       console.error('[BREM] settlement unmatched clear failed:', error);
       showToast(error.message || '삭제 저장에 실패했습니다.');
       renderSettlements();
     });
+  }
+
+  function retryDailySettlementUnmatched(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = getSettlementUnmatchedWeekFilter(p);
+    if (!weekStart) {
+      showToast('적용주를 먼저 선택하세요.');
+      return;
+    }
+    const pendingCount = settlementUnmatchedList()
+      .filter(record => normalizePlatform(record.platform) === p)
+      .filter(record => record.kind !== 'weekly')
+      .filter(record => record.weekStart === weekStart)
+      .length;
+    if (!pendingCount) {
+      showToast('선택한 주에 미반영 기사가 없습니다.');
+      return;
+    }
+
+    void (async () => {
+      try {
+        await BremStorage.ensureSectionLoaded('drivers');
+        await BremStorage.ensureSectionLoaded('settlements');
+        await BremStorage.ensureSectionLoaded('calls');
+        const result = BremStorage.settlementUnmatched.retryDailyMatching({ platform: p, weekStart });
+        await BremStorage.flushStorage?.();
+        let message = `매칭 재시도: ${result.matchedCount}명 반영`;
+        if (result.stillUnmatchedCount) {
+          message += ` · 미매칭 ${result.stillUnmatchedCount}명 유지`;
+        }
+        showToast(message);
+        renderSettlements();
+      } catch (error) {
+        console.error('[BREM] daily unmatched retry failed:', error);
+        showToast(error.message || '매칭 재시도에 실패했습니다.');
+      }
+    })();
   }
 
   function clearSettlementPreview(platform) {
@@ -4248,7 +4321,16 @@
         showToast(`${platformLabel(p)} 미리보기를 취소했습니다. 미반영 내역은 아래 목록에 유지됩니다.`);
       });
       $(`#settlementUnmatchedClearBtn-${p}`)?.addEventListener('click', () => {
-        clearSettlementUnmatchedForSelectedPeriod(p);
+        clearSettlementUnmatchedForSelectedWeek(p);
+      });
+      $(`#settlementUnmatchedRetryBtn-${p}`)?.addEventListener('click', () => {
+        retryDailySettlementUnmatched(p);
+      });
+      $(`#settlementUnmatchedWeek-${p}`)?.addEventListener('change', event => {
+        const picked = weekStartKey(event.target.value || weekStartKey());
+        state.settlementUnmatchedWeekByPlatform[p] = picked;
+        event.target.value = picked;
+        renderSettlementUnmatched(p);
       });
       $(`#settlementHistoryClearBtn-${p}`)?.addEventListener('click', () => {
         clearSettlementHistoryForSelectedPeriod(p);

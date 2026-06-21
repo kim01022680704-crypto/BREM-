@@ -123,14 +123,35 @@ const BremStorage = (function () {
     let migrated = false;
     const normalized = list.map(item => {
       const platform = normalizePlatform(item.platform);
-      const periodKey = String(item.period || '').slice(0, 10);
-      const nameKey = String(item.rawName || item.name || '').replace(/\s/g, '');
+      const periodKey = String(item.period || item.startDate || '').slice(0, 10);
+      const kind = item.kind === 'weekly' ? 'weekly' : 'daily';
+      const weekStart = String(
+        item.weekStart || (periodKey ? weekStartKeyFromDate(periodKey) : '')
+      ).slice(0, 10);
+      const nameKey = String(item.rawName || item.name || item.originalName || item.riderName || '').replace(/\s/g, '');
+      const idKey = kind === 'weekly'
+        ? String(item.coupangLoginKey || item.baeminUserId || nameKey)
+        : nameKey;
+      const defaultId = kind === 'weekly'
+        ? `${weekStart}-weekly-${platform}-${idKey}`
+        : `${periodKey}-${platform}-${nameKey}`;
       const next = {
         ...item,
         platform,
-        id: `${periodKey}-${platform}-${nameKey}`
+        kind,
+        weekStart,
+        endDate: String(item.endDate || '').slice(0, 10),
+        id: String(item.id || defaultId),
+        orderCount: Number(item.orderCount ?? item.weeklyOrderCount ?? item.callCount ?? 0),
+        coupangLoginKey: String(item.coupangLoginKey || item.matchPayload?.coupangLoginKey || '').trim(),
+        baeminUserId: String(item.baeminUserId || item.matchPayload?.baeminUserId || '').trim()
       };
-      if (item.platform !== platform || item.id !== next.id) migrated = true;
+      if (
+        item.platform !== platform
+        || item.kind !== kind
+        || item.weekStart !== weekStart
+        || item.id !== next.id
+      ) migrated = true;
       return next;
     });
 
@@ -6588,27 +6609,119 @@ const BremStorage = (function () {
       return normalizeSettlementUnmatched(storageAdapter.read(KEYS.settlementUnmatched, []));
     },
 
+    getByWeek({ weekStart, platform, kind }) {
+      const weekKey = String(weekStart || '').slice(0, 10);
+      const p = platform ? normalizePlatform(platform) : '';
+      const kindFilter = kind === 'weekly' || kind === 'daily' ? kind : '';
+      return settlementUnmatched.getAll().filter((item) => {
+        if (item.weekStart !== weekKey) return false;
+        if (p && normalizePlatform(item.platform) !== p) return false;
+        if (kindFilter && item.kind !== kindFilter) return false;
+        return true;
+      });
+    },
+
     saveBatch({ period, records, sourceFileName, platform = DEFAULT_PLATFORM }) {
       if (!period || !Array.isArray(records) || !records.length) return settlementUnmatched.getAll();
 
       const p = normalizePlatform(platform);
       const periodKey = String(period).slice(0, 10);
+      const weekStart = weekStartKeyFromDate(periodKey);
       const savedAt = new Date().toISOString();
-      const nextRecords = records.map(record => ({
-        id: `${periodKey}-${p}-${String(record.rawName || record.name || '').replace(/\s/g, '')}`,
-        period: periodKey,
-        platform: p,
-        riderId: record.riderId || '',
-        rawName: record.rawName || '',
-        name: record.name || '',
-        orderCount: Number(record.orderCount || 0),
-        settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
-        deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
-        sourceFileName: sourceFileName || '',
-        savedAt
-      }));
+      const nextRecords = records.map(record => {
+        const rawName = String(record.rawName || record.name || '').trim();
+        const name = String(record.name || rawName).trim();
+        const nameKey = rawName.replace(/\s/g, '');
+        return {
+          id: `${periodKey}-${p}-${nameKey}`,
+          kind: 'daily',
+          weekStart,
+          period: periodKey,
+          endDate: '',
+          platform: p,
+          riderId: record.riderId || '',
+          rawName,
+          name,
+          orderCount: Number(record.orderCount || 0),
+          settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
+          deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
+          matchPayload: {
+            rawName,
+            name,
+            riderId: String(record.riderId || '').trim(),
+            orderCount: Number(record.orderCount || 0),
+            deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
+            settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0)
+          },
+          sourceFileName: sourceFileName || '',
+          savedAt
+        };
+      });
 
-      const list = settlementUnmatched.getAll().filter(item => !(item.period === periodKey && normalizePlatform(item.platform) === p));
+      const list = settlementUnmatched.getAll().filter(item => !(
+        item.kind === 'daily'
+        && item.period === periodKey
+        && normalizePlatform(item.platform) === p
+      ));
+      list.unshift(...nextRecords);
+      storageAdapter.write(KEYS.settlementUnmatched, list);
+      return list;
+    },
+
+    saveWeeklyBatch({ weekStart, startDate, endDate, records, sourceFileName, platform = DEFAULT_PLATFORM, region = '' }) {
+      const weekKey = String(weekStart || weekStartKeyFromDate(startDate)).slice(0, 10);
+      const startKey = String(startDate || weekKey).slice(0, 10);
+      const endKey = String(endDate || weekEndKeyFromDate(weekKey)).slice(0, 10);
+      const p = normalizePlatform(platform);
+      if (!weekKey || !Array.isArray(records) || !records.length) {
+        return settlementUnmatched.getAll();
+      }
+
+      const savedAt = new Date().toISOString();
+      const regionKey = String(region || '').trim();
+      const nextRecords = records.map(record => {
+        const rawName = String(record.originalName || record.rawName || record.riderName || record.name || '').trim();
+        const name = String(record.riderName || record.name || rawName).trim();
+        const coupangLoginKey = String(record.coupangLoginKey || '').trim();
+        const baeminUserId = String(record.baeminUserId || '').trim();
+        const idKey = coupangLoginKey || baeminUserId || rawName.replace(/\s/g, '');
+        return {
+          id: `${weekKey}-weekly-${p}-${idKey}`,
+          kind: 'weekly',
+          weekStart: weekKey,
+          period: startKey,
+          endDate: endKey,
+          platform: p,
+          region: String(region || '').trim(),
+          rawName,
+          name,
+          orderCount: Number(record.weeklyOrderCount ?? record.orderCount ?? 0),
+          settlementAmount: 0,
+          deliveryAmount: 0,
+          riderId: '',
+          coupangLoginKey,
+          baeminUserId,
+          matchPayload: {
+            originalName: rawName,
+            riderName: name,
+            coupangLoginKey,
+            baeminUserId,
+            weeklyOrderCount: Number(record.weeklyOrderCount ?? record.orderCount ?? 0)
+          },
+          sourceFileName: sourceFileName || '',
+          savedAt
+        };
+      });
+
+      const incomingIds = new Set(nextRecords.map(record => record.id));
+      const list = settlementUnmatched.getAll().filter(item => {
+        if (item.kind !== 'weekly') return true;
+        if (normalizePlatform(item.platform) !== p) return true;
+        if (item.weekStart !== weekKey) return true;
+        if (regionKey && item.region === regionKey) return false;
+        if (incomingIds.has(item.id)) return false;
+        return true;
+      });
       list.unshift(...nextRecords);
       storageAdapter.write(KEYS.settlementUnmatched, list);
       return list;
@@ -6626,7 +6739,21 @@ const BremStorage = (function () {
       const periodKey = String(period).slice(0, 10);
       const next = settlementUnmatched.getAll().filter(item => {
         const itemPeriod = String(item.period).slice(0, 10);
-        return !(itemPeriod === periodKey && normalizePlatform(item.platform) === p);
+        return !(itemPeriod === periodKey && normalizePlatform(item.platform) === p && item.kind === 'daily');
+      });
+      storageAdapter.write(KEYS.settlementUnmatched, next, { allowEmpty: true });
+    },
+
+    clearByWeek({ weekStart, platform, kind }) {
+      const weekKey = String(weekStart || '').slice(0, 10);
+      const p = platform ? normalizePlatform(platform) : '';
+      const kindFilter = kind === 'weekly' || kind === 'daily' ? kind : '';
+      if (!weekKey) return;
+      const next = settlementUnmatched.getAll().filter(item => {
+        if (item.weekStart !== weekKey) return true;
+        if (p && normalizePlatform(item.platform) !== p) return true;
+        if (kindFilter && item.kind !== kindFilter) return true;
+        return false;
       });
       storageAdapter.write(KEYS.settlementUnmatched, next, { allowEmpty: true });
     },
@@ -6641,6 +6768,172 @@ const BremStorage = (function () {
 
     clearAll() {
       storageAdapter.write(KEYS.settlementUnmatched, []);
+    },
+
+    retryDailyMatching({ platform, weekStart }) {
+      const p = normalizePlatform(platform);
+      const weekKey = String(weekStart || '').slice(0, 10);
+      if (!weekKey || typeof BremSettlementParser === 'undefined') {
+        return { matchedCount: 0, stillUnmatchedCount: 0, applied: 0 };
+      }
+      const format = typeof SettlementFormats !== 'undefined'
+        ? SettlementFormats.getFormatForPlatform(p)
+        : null;
+      const drivers = BremStorage.drivers.getAll();
+      const pending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'daily' });
+      if (!pending.length) {
+        return { matchedCount: 0, stillUnmatchedCount: 0, applied: 0 };
+      }
+
+      const byPeriod = new Map();
+      const stillUnmatched = [];
+      let matchedCount = 0;
+
+      pending.forEach(item => {
+        const row = {
+          ...(item.matchPayload || item),
+          rawName: item.rawName,
+          name: item.name,
+          riderId: item.riderId || '',
+          orderCount: item.orderCount,
+          deliveryAmount: item.deliveryAmount,
+          settlementAmount: item.settlementAmount
+        };
+        const { matched } = BremSettlementParser.matchDrivers([row], drivers, format);
+        const hit = matched[0];
+        if (hit?.driverId) {
+          matchedCount += 1;
+          const periodKey = String(item.period || '').slice(0, 10);
+          if (!byPeriod.has(periodKey)) byPeriod.set(periodKey, []);
+          byPeriod.get(periodKey).push({
+            driverId: hit.driverId,
+            riderId: hit.riderId || '',
+            orderCount: Number(hit.orderCount || 0),
+            deliveryAmount: Number(hit.deliveryAmount ?? hit.settlementAmount ?? 0),
+            settlementAmount: Number(hit.settlementAmount ?? hit.deliveryAmount ?? 0)
+          });
+        } else {
+          stillUnmatched.push(item);
+        }
+      });
+
+      let applied = 0;
+      byPeriod.forEach((records, periodKey) => {
+        settlements.upsertBatch({ period: periodKey, platform: p, records });
+        applied += records.length;
+      });
+
+      const other = settlementUnmatched.getAll().filter(item => !(
+        item.kind === 'daily'
+        && item.weekStart === weekKey
+        && normalizePlatform(item.platform) === p
+      ));
+      storageAdapter.write(KEYS.settlementUnmatched, other.concat(stillUnmatched));
+      return {
+        matchedCount,
+        stillUnmatchedCount: stillUnmatched.length,
+        applied
+      };
+    },
+
+    retryWeeklyMatching({ platform, weekStart }) {
+      const p = normalizePlatform(platform);
+      const weekKey = String(weekStart || '').slice(0, 10);
+      if (!weekKey || typeof BremWeeklySettlement === 'undefined') {
+        return { matchedCount: 0, stillUnmatchedCount: 0, mergedToSaved: 0, needsManualSave: false };
+      }
+      const pending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'weekly' });
+      if (!pending.length) {
+        return { matchedCount: 0, stillUnmatchedCount: 0, mergedToSaved: 0, needsManualSave: false };
+      }
+
+      const startDate = pending[0].period;
+      const endDate = pending[0].endDate || weekEndKeyFromDate(weekKey);
+      const riders = pending.map(item => ({
+        ...(item.matchPayload || {}),
+        originalName: item.rawName || item.name,
+        riderName: item.name || item.rawName,
+        coupangLoginKey: item.coupangLoginKey || item.matchPayload?.coupangLoginKey || '',
+        baeminUserId: item.baeminUserId || item.matchPayload?.baeminUserId || '',
+        weeklyOrderCount: Number(item.orderCount ?? item.matchPayload?.weeklyOrderCount ?? 0),
+        _unmatchedId: item.id
+      }));
+      const rematched = BremWeeklySettlement.matchSettlementRidersWithExistingData(riders, p, { startDate, endDate });
+      const newlyMatched = rematched.filter(item => item.matched);
+      const stillUnmatchedRaw = rematched.filter(item => !item.matched);
+
+      let mergedToSaved = 0;
+      if (newlyMatched.length) {
+        const saved = weeklySettlements.getAll().find(record => (
+          normalizePlatform(record.platform) === p
+          && weekStartKeyFromDate(record.startDate || record.period) === weekKey
+        ));
+        if (saved) {
+          const existingIds = new Set((saved.riders || []).map(r => String(r.matchedRiderId || '')));
+          newlyMatched.forEach(rider => {
+            const riderId = String(rider.matchedRiderId || '');
+            if (!riderId || existingIds.has(riderId)) return;
+            saved.riders = saved.riders || [];
+            saved.riders.push(rider);
+            existingIds.add(riderId);
+            mergedToSaved += 1;
+          });
+          if (mergedToSaved) {
+            saved.matchedNamesLabel = BremWeeklySettlement.buildMatchedNamesLabel(saved.riders);
+            saved.summary = BremWeeklySettlement.buildWeeklySummary(saved.riders, []);
+            weeklySettlements.save(saved);
+          }
+        }
+      }
+
+      const nextPending = stillUnmatchedRaw.map(record => {
+        const rawName = String(record.originalName || record.riderName || '').trim();
+        const name = String(record.riderName || rawName).trim();
+        const coupangLoginKey = String(record.coupangLoginKey || '').trim();
+        const baeminUserId = String(record.baeminUserId || '').trim();
+        const idKey = coupangLoginKey || baeminUserId || rawName.replace(/\s/g, '');
+        const source = pending.find(item => item.id === record._unmatchedId);
+        return {
+          id: `${weekKey}-weekly-${p}-${idKey}`,
+          kind: 'weekly',
+          weekStart: weekKey,
+          period: startDate,
+          endDate,
+          platform: p,
+          region: source?.region || '',
+          rawName,
+          name,
+          orderCount: Number(record.weeklyOrderCount ?? 0),
+          coupangLoginKey,
+          baeminUserId,
+          matchPayload: {
+            originalName: rawName,
+            riderName: name,
+            coupangLoginKey,
+            baeminUserId,
+            weeklyOrderCount: Number(record.weeklyOrderCount ?? 0)
+          },
+          sourceFileName: source?.sourceFileName || '',
+          savedAt: new Date().toISOString()
+        };
+      });
+
+      const other = settlementUnmatched.getAll().filter(item => !(
+        item.kind === 'weekly'
+        && item.weekStart === weekKey
+        && normalizePlatform(item.platform) === p
+      ));
+      storageAdapter.write(KEYS.settlementUnmatched, other.concat(nextPending));
+      return {
+        matched: newlyMatched,
+        matchedCount: newlyMatched.length,
+        stillUnmatchedCount: nextPending.length,
+        mergedToSaved,
+        needsManualSave: newlyMatched.length > 0 && mergedToSaved === 0,
+        startDate,
+        endDate,
+        region: pending[0]?.region || ''
+      };
     }
   };
 

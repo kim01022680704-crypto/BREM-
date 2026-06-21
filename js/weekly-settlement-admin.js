@@ -192,8 +192,20 @@ const BremWeeklySettlementAdmin = (function () {
       });
       record.uploadLogId = uploadLog.id;
       state.previewByPlatform[platform] = record;
+      if (record.previewUnmatched?.length) {
+        BremStorage.settlementUnmatched.saveWeeklyBatch({
+          weekStart: weekStartKey(record.startDate || payload.startDate),
+          startDate: record.startDate,
+          endDate: record.endDate,
+          records: record.previewUnmatched,
+          sourceFileName: payload.file.name,
+          platform,
+          region: record.region
+        });
+      }
       renderPreview(platform);
       renderSavedList(platform);
+      renderWeeklyUnmatched(platform);
       const mismatchCount = record.summary.callCountMismatches || 0;
       let toastMessage = `정산 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`;
       if (mismatchCount > 0) {
@@ -250,6 +262,7 @@ const BremWeeklySettlementAdmin = (function () {
     state.previewByPlatform[platform] = null;
     $(`#weeklySettlementPreviewCard-${platform}`).hidden = true;
     renderSavedList(platform);
+    renderWeeklyUnmatched(platform);
     if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
     showToast(`${record.region} · 매칭 ${record.riders.length}명 저장 완료`);
   }
@@ -333,6 +346,99 @@ const BremWeeklySettlementAdmin = (function () {
 
   function unmatchedDefaultWarning(platform) {
     return platform === 'baemin' ? '배민 User ID 미매칭' : '쿠팡 ID(이름+연락처)/기사명 미매칭';
+  }
+
+  function renderWeeklyUnmatched(platform) {
+    const rowsEl = $(`#weeklySettlementUnmatchedRows-${platform}`);
+    if (!rowsEl) return;
+
+    const weekStart = ensureWeeklyLogWeek(platform);
+    updateWeeklyLogWeekRangeLabel(platform);
+    const label = $(`#weeklySettlementUnmatchedLabel-${platform}`);
+    if (label) {
+      label.textContent = weekStart ? `· ${formatDate(weekStart)} 주` : '';
+    }
+
+    const rows = BremStorage.settlementUnmatched.getByWeek({
+      weekStart,
+      platform,
+      kind: 'weekly'
+    }).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+
+    if (!rows.length) {
+      rowsEl.innerHTML = `<tr><td colspan="7" class="empty">${formatDate(weekStart)} 주 ${platformLabel(platform)} 주정산 미매칭 기사가 없습니다.</td></tr>`;
+      return;
+    }
+
+    rowsEl.innerHTML = rows.map(record => {
+      const periodLabel = record.period && record.endDate
+        ? `${escapeHtml(record.period)} ~ ${escapeHtml(record.endDate)}`
+        : '-';
+      const idValue = platform === 'baemin'
+        ? (record.baeminUserId || '-')
+        : (record.coupangLoginKey || '-');
+      return `
+      <tr>
+        <td>${periodLabel}</td>
+        <td>${escapeHtml(record.region || '-')}</td>
+        <td>${escapeHtml(record.rawName || record.name)}</td>
+        <td>${escapeHtml(idValue)}</td>
+        <td>${formatNumber(record.orderCount)}</td>
+        <td>${escapeHtml(record.sourceFileName || '-')}</td>
+        <td>${formatDate(String(record.savedAt || '').slice(0, 10))}</td>
+      </tr>
+    `;
+    }).join('');
+  }
+
+  function retryWeeklyUnmatched(platform) {
+    const weekStart = ensureWeeklyLogWeek(platform);
+    const pendingCount = BremStorage.settlementUnmatched.getByWeek({
+      weekStart,
+      platform,
+      kind: 'weekly'
+    }).length;
+    if (!pendingCount) {
+      showToast('선택한 주에 미매칭 기사가 없습니다.');
+      return;
+    }
+
+    void (async () => {
+      try {
+        await BremStorage.ensureSectionLoaded('drivers');
+        await BremStorage.ensureSectionLoaded('weeklySettlements');
+        const result = BremStorage.settlementUnmatched.retryWeeklyMatching({ platform, weekStart });
+        await BremStorage.flushStorage?.();
+
+        if (result.needsManualSave && result.matched?.length) {
+          state.previewByPlatform[platform] = {
+            platform,
+            region: result.region || '',
+            startDate: result.startDate,
+            endDate: result.endDate,
+            fileName: '',
+            riders: result.matched,
+            previewUnmatched: [],
+            summary: BremWeeklySettlement.buildWeeklySummary(result.matched, []),
+            uploadedAt: new Date().toISOString()
+          };
+          renderPreview(platform);
+          showToast(`매칭 ${result.matchedCount}명 — 저장된 주정산이 없어 미리보기를 열었습니다. 「매칭 기사만 저장」을 눌러주세요.`);
+        } else {
+          let message = `매칭 재시도: ${result.matchedCount}명`;
+          if (result.mergedToSaved) message += ` · 저장된 주정산에 ${result.mergedToSaved}명 반영`;
+          if (result.stillUnmatchedCount) message += ` · 미매칭 ${result.stillUnmatchedCount}명 유지`;
+          showToast(message);
+        }
+
+        renderWeeklyUnmatched(platform);
+        renderSavedList(platform);
+        if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+      } catch (error) {
+        console.error('[BREM] weekly unmatched retry failed:', error);
+        showToast(error.message || '매칭 재시도에 실패했습니다.');
+      }
+    })();
   }
 
   function renderSavedList(platform) {
@@ -461,6 +567,10 @@ const BremWeeklySettlementAdmin = (function () {
       state.weeklyLogWeekByPlatform[platform] = picked;
       event.target.value = picked;
       renderSavedList(platform);
+      renderWeeklyUnmatched(platform);
+    });
+    $(`#weeklySettlementUnmatchedRetryBtn-${platform}`)?.addEventListener('click', () => {
+      retryWeeklyUnmatched(platform);
     });
   }
 
@@ -510,6 +620,7 @@ const BremWeeklySettlementAdmin = (function () {
     PLATFORMS.forEach(platform => {
       renderPreview(platform);
       renderSavedList(platform);
+      renderWeeklyUnmatched(platform);
     });
   }
 

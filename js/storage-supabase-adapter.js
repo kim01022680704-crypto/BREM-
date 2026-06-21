@@ -82,6 +82,7 @@ window.BremSupabaseStorageAdapter = (function () {
     const loadedTableKeys = new Set();
     const keyLoadPromises = new Map();
     let persistQueue = Promise.resolve();
+    const pendingPersist = new Map();
     let ridersMeta = { total: 0, hasMore: false, pageSize: DEFAULT_RIDER_PAGE_SIZE, offset: 0 };
 
     TABLE_KEYS.clear();
@@ -880,9 +881,6 @@ window.BremSupabaseStorageAdapter = (function () {
       [keys.riderInquiries]: persistRiderInquiries,
       [keys.missions]: persistMissions
     };
-
-    let persistQueue = Promise.resolve();
-    const pendingPersist = new Map();
 
     async function persistQueuedEntry(key, value, options = {}) {
       const check = validatePersistPayload(key, value, options);
