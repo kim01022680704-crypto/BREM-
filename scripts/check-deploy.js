@@ -1,5 +1,5 @@
-# GitHub Push / 배포 전 자동 점검
-# Run: npm run check-deploy  (Node.js 필요)
+// GitHub Push / 배포 전 자동 점검
+// Run: npm run check-deploy  (Node.js 필요)
 
 const fs = require('fs');
 const path = require('path');
