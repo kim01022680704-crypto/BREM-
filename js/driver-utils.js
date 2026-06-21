@@ -132,6 +132,37 @@ window.BremDriverUtils = (function () {
     return `${normName}|${normPhone}`;
   }
 
+  function driverRecordCompletenessScore(driver) {
+    let score = 0;
+    if (String(driver?.longEventItem || '').trim()) score += 8;
+    if (String(driver?.baeminId || '').trim()) score += 4;
+    if (String(driver?.bankName || '').trim()) score += 2;
+    if (String(driver?.accountNumber || '').trim()) score += 1;
+    const updatedAt = Date.parse(driver?.updatedAt || driver?.createdAt || 0);
+    if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
+    return score;
+  }
+
+  function dedupeDriversByMatchKey(drivers) {
+    const byMatchKey = new Map();
+    const withoutMatchKey = [];
+
+    (Array.isArray(drivers) ? drivers : []).forEach(driver => {
+      const key = makeDriverMatchKey(driver?.name, driver?.phone);
+      if (!key) {
+        withoutMatchKey.push(driver);
+        return;
+      }
+
+      const prev = byMatchKey.get(key);
+      if (!prev || driverRecordCompletenessScore(driver) > driverRecordCompletenessScore(prev)) {
+        byMatchKey.set(key, driver);
+      }
+    });
+
+    return [...byMatchKey.values(), ...withoutMatchKey];
+  }
+
   function buildRiderMatchMap(drivers) {
     const map = new Map();
     const list = Array.isArray(drivers)
@@ -393,9 +424,10 @@ window.BremDriverUtils = (function () {
     return tags.join('') || '-';
   }
 
-  function updateDriverTotal(el) {
+  function updateDriverTotal(el, count) {
     if (!el) return;
-    el.textContent = `${BremStorage.drivers.getAll().length}명`;
+    const total = count != null ? count : BremStorage.drivers.getAll().length;
+    el.textContent = `${total}명`;
   }
 
   function showToast(toastEl, message) {
@@ -421,6 +453,7 @@ window.BremDriverUtils = (function () {
     normalizeDriverName,
     driverNamesMatch,
     makeDriverMatchKey,
+    dedupeDriversByMatchKey,
     buildRiderMatchMap,
     normalizeBulkName,
     normalizeBulkPhone,

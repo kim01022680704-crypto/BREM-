@@ -9,12 +9,14 @@
     updateDriverTotal,
     showToast,
     DRIVER_SENSITIVE_FIELDS,
-    isDriverFieldHidden
+    isDriverFieldHidden,
+    dedupeDriversByMatchKey
   } = window.BremDriverUtils;
 
   const searchInput = document.getElementById('searchInput');
   const statusFilter = document.getElementById('statusFilter');
   const exportExcelBtn = document.getElementById('exportExcelBtn');
+  const mergeDuplicateBtn = document.getElementById('mergeDuplicateBtn');
   const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   const bulkDeleteBtnBar = document.getElementById('bulkDeleteBtnBar');
   const selectAllInput = document.getElementById('selectAllDrivers');
@@ -36,17 +38,27 @@
   let syncRenderTimer = null;
 
   function buildDriverSearchText(driver) {
+    const phone = String(driver.phone || '').replace(/[^0-9]/g, '');
     return [
       driver.name,
-      driver.phone,
-      makeDriverLoginId(driver),
+      phone,
+      phone.slice(-4),
       driver.baeminId,
       driver.memo
     ].map(value => String(value || '').toLowerCase()).join(' ');
   }
 
+  function formatDriverLoginLabel(driver) {
+    const suffix = String(driver.phone || '').replace(/[^0-9]/g, '').slice(-4);
+    return suffix ? `ID ·${suffix}` : makeDriverLoginId(driver);
+  }
+
+  function getDisplayDrivers() {
+    return dedupeDriversByMatchKey(BremStorage.drivers.getAll());
+  }
+
   function getDriverSnapshot() {
-    return BremStorage.drivers.getAll().map(driver => (
+    return getDisplayDrivers().map(driver => (
       `${driver.id}|${driver.name}|${driver.phone}|${driver.status}|${driver.baeminId || ''}|${driver.memo || ''}`
     )).join('\n');
   }
@@ -79,7 +91,7 @@
       if (visible) visibleCount += 1;
     });
 
-    const allDrivers = BremStorage.drivers.getAll();
+    const allDrivers = getDisplayDrivers();
     emptyState.classList.toggle('show', visibleCount === 0);
     renderListCount(visibleCount, allDrivers.length);
     updateSelectionUi();
@@ -93,7 +105,7 @@
     const keyword = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
 
-    return BremStorage.drivers.getAll().filter(driver => {
+    return getDisplayDrivers().filter(driver => {
       const matchesKeyword = driverMatchesKeyword(driver, keyword);
       const matchesStatus = status === '전체' || driver.status === status;
       return matchesKeyword && matchesStatus;
@@ -172,20 +184,20 @@
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList?.classList.remove('is-loading');
 
-      const allDrivers = BremStorage.drivers.getAll();
+      const allDrivers = getDisplayDrivers();
 
       const allIds = new Set(allDrivers.map(driver => driver.id));
       selectedIds.forEach(id => {
         if (!allIds.has(id)) selectedIds.delete(id);
       });
 
-      updateDriverTotal(driverTotal);
+      updateDriverTotal(driverTotal, getDisplayDrivers().length);
 
       const mobileView = isMobileView();
 
       if (!mobileView) {
         tableBody.innerHTML = allDrivers.map(driver => {
-          const loginId = escapeHtml(makeDriverLoginId(driver));
+          const loginLabel = escapeHtml(formatDriverLoginLabel(driver));
           const eventName = escapeHtml(driver.longEventItem) || '-';
           const eventStart = formatDate(driver.longEventStartDate);
           const eventCell = driver.longEventItem
@@ -196,7 +208,7 @@
         <td class="col-select">${renderCheckbox(driver.id)}</td>
         <td class="col-name">
           <strong class="cell-main">${escapeHtml(driver.name)}</strong>
-          <span class="cell-sub">${loginId}</span>
+          <span class="cell-sub">${loginLabel}</span>
         </td>
         <td class="col-phone">${escapeHtml(driver.phone)}</td>
         <td class="col-baemin">${escapeHtml(driver.baeminId) || '-'}</td>
@@ -238,7 +250,7 @@
           <dt>연락처</dt>
           <dd>${escapeHtml(driver.phone)}</dd>
           <dt>로그인 아이디</dt>
-          <dd><strong>${escapeHtml(makeDriverLoginId(driver))}</strong></dd>
+          <dd><strong>${escapeHtml(formatDriverLoginLabel(driver))}</strong></dd>
           <dt>배민 아이디</dt>
           <dd>${escapeHtml(driver.baeminId) || '-'}</dd>
           <dt>플랫폼</dt>
@@ -270,6 +282,40 @@
     } catch (error) {
       console.error('[BREM] Driver list render failed:', error);
       showToast(toast, '기사 목록을 표시하지 못했습니다. 새로고침 후 다시 시도하세요.');
+    }
+  }
+
+  async function mergeDuplicateDrivers() {
+    if (!window.confirm('이름+연락처가 같은 중복 기사를 하나로 병합합니다.\n\n콜수·이벤트 등 데이터는 남는 기록으로 합쳐지고, 중복 레코드는 Supabase에서 삭제됩니다.\n\n진행할까요?')) {
+      return;
+    }
+
+    showToast(toast, '중복 기사 확인 중…');
+
+    try {
+      const preview = await BremStorage.drivers.mergeDuplicates({ dryRun: true });
+      const groupCount = Number(preview.duplicateGroups || 0);
+      const removeCount = Number(preview.ridersRemoved || 0);
+
+      if (!groupCount) {
+        showToast(toast, '병합할 중복 기사가 없습니다.');
+        return;
+      }
+
+      const sample = (preview.details || []).slice(0, 5).map(item => `${item.keptName} (${item.memberCount}건)`).join(', ');
+      const more = groupCount > 5 ? ` 외 ${groupCount - 5}명` : '';
+      if (!window.confirm(`중복 ${groupCount}명 · 삭제 ${removeCount}건\n\n${sample}${more}\n\n지금 병합하시겠습니까?`)) {
+        return;
+      }
+
+      showToast(toast, '중복 기사 병합 중…');
+      const result = await BremStorage.drivers.mergeDuplicates({ dryRun: false });
+      renderedSnapshot = '';
+      await refreshDriverList(true);
+      showToast(toast, `병합 완료 · ${result.ridersMerged || 0}명 유지 · ${result.ridersRemoved || 0}건 삭제`);
+    } catch (error) {
+      console.error(error);
+      showToast(toast, error.message || '중복 기사 병합에 실패했습니다.');
     }
   }
 
@@ -507,6 +553,7 @@
     searchInput.addEventListener('input', handleSearchInput);
     statusFilter.addEventListener('change', handleStatusFilterChange);
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
+    if (mergeDuplicateBtn) mergeDuplicateBtn.addEventListener('click', () => { void mergeDuplicateDrivers(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
     if (selectAllInput) selectAllInput.addEventListener('change', handleSelectAll);
