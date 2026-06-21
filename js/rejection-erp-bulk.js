@@ -202,6 +202,7 @@
 
     const parsed = window.BremDriverUtils?.buildCoupangErpIdFromCell?.(identityCell) || {
       coupangId: '',
+      loginIds: [],
       name: '',
       phone: '',
       error: '쿠팡ID 변환 실패'
@@ -215,7 +216,9 @@
       };
     }
 
-    const driver = window.BremDriverUtils?.matchDriverByCoupangErpId?.(parsed.coupangId);
+    const driver = window.BremDriverUtils?.matchDriverByCoupangErpId?.(
+      parsed.loginIds?.length ? parsed.loginIds : parsed.coupangId
+    );
     if (!driver) {
       return {
         driver: null,

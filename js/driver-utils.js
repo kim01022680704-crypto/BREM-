@@ -180,42 +180,82 @@ window.BremDriverUtils = (function () {
     return makeDriverLoginId(driver);
   }
 
-  /** 쿠팡 1번 시트 A열 → 이기혁8669 형식 (배민 로직 미사용) */
+  /** 쿠팡 1번 시트 A열 → 이기혁8669 (이름+전화뒤4) 또는 이름+전체전화번호 */
   function buildCoupangErpIdFromCell(identityCell) {
     const idRaw = normalizeImportCellText(identityCell).replace(/\s/g, '');
     if (!idRaw) {
-      return { coupangId: '', name: '', phone: '', error: 'A열 공백' };
+      return { coupangId: '', loginIds: [], name: '', phone: '', error: 'A열 공백' };
     }
+
+    const loginIds = [];
+    const pushId = value => {
+      const next = String(value || '').replace(/\s/g, '');
+      if (next && !loginIds.includes(next)) loginIds.push(next);
+    };
 
     const phoneTail = idRaw.match(/(01[\d-]{9,14})$/);
-    if (!phoneTail) {
-      return { coupangId: '', name: '', phone: '', error: '전화번호 추출 실패' };
+    if (phoneTail) {
+      const phone = normalizePhone(phoneTail[1]);
+      const name = idRaw.slice(0, idRaw.length - phoneTail[1].length);
+      if (!name) {
+        return { coupangId: '', loginIds: [], name: '', phone, error: '이름 추출 실패' };
+      }
+      if (phone.length < 10 || !phone.startsWith('01')) {
+        return { coupangId: '', loginIds: [], name, phone, error: '전화번호 형식 오류' };
+      }
+      pushId(`${name}${phone.slice(-4)}`);
+      pushId(idRaw);
+      return {
+        coupangId: loginIds[0],
+        loginIds,
+        name,
+        phone,
+        error: ''
+      };
     }
 
-    const phone = normalizePhone(phoneTail[1]);
-    const name = idRaw.slice(0, idRaw.length - phoneTail[1].length);
-    if (!name) {
-      return { coupangId: '', name: '', phone, error: '이름 추출 실패' };
-    }
-    if (phone.length < 10 || !phone.startsWith('01')) {
-      return { coupangId: '', name, phone, error: '전화번호 형식 오류' };
+    const shortTail = idRaw.match(/^(.+?)(\d{4})$/);
+    if (shortTail) {
+      const name = shortTail[1];
+      const tail = shortTail[2];
+      if (name && !/^\d+$/.test(name)) {
+        pushId(`${name}${tail}`);
+        pushId(idRaw);
+        return {
+          coupangId: loginIds[0],
+          loginIds,
+          name,
+          phone: '',
+          error: ''
+        };
+      }
     }
 
+    pushId(idRaw);
     return {
-      coupangId: `${name}${phone.slice(-4)}`,
-      name,
-      phone,
+      coupangId: loginIds[0] || idRaw,
+      loginIds,
+      name: '',
+      phone: '',
       error: ''
     };
   }
 
   function matchDriverByCoupangErpId(coupangKey, drivers) {
-    const key = String(coupangKey || '').replace(/\s/g, '');
-    if (!key) return null;
+    const keys = (Array.isArray(coupangKey) ? coupangKey : [coupangKey])
+      .map(key => String(key || '').replace(/\s/g, ''))
+      .filter(Boolean);
+    if (!keys.length) return null;
+
     const list = Array.isArray(drivers)
       ? drivers
       : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
-    return list.find(driver => getErpCoupangId(driver) === key) || null;
+
+    for (const key of keys) {
+      const found = list.find(driver => getErpCoupangId(driver) === key);
+      if (found) return found;
+    }
+    return null;
   }
 
   /** 배민 2번 시트 AK열 → baemin_id 만 비교 (쿠팡ID 미사용) */
