@@ -1103,87 +1103,6 @@ const BremStorage = (function () {
     return result;
   }
 
-  async function mergeDuplicateRidersViaServer(options = {}) {
-    const postMerge = () => adminRidersApi('/api/admin/riders/merge-duplicates', {
-      method: 'POST',
-      body: JSON.stringify({ dryRun: options.dryRun === true })
-    });
-
-    let result = await postMerge();
-    if (!result.ok && result.status === 401) {
-      const client = getSupabaseClient();
-      if (client) {
-        await client.auth.refreshSession();
-        rememberAdminAccessToken('');
-      }
-      result = await postMerge();
-    }
-    if (!result.ok) {
-      throw new Error(result.message || result.error || '중복 기사 병합에 실패했습니다.');
-    }
-    return result;
-  }
-
-  function remapDriverIdsInLocalData(idRemap) {
-    if (!idRemap || !Object.keys(idRemap).length) return 0;
-
-    let changed = 0;
-    const mapId = (id) => {
-      const next = idRemap[String(id || '')] || id;
-      if (next !== id) changed += 1;
-      return next;
-    };
-
-    const remapArrayByDriverId = (key, buildId) => {
-      if (!storageAdapter.has(key)) return;
-      const list = storageAdapter.read(key, []);
-      if (!Array.isArray(list) || !list.length) return;
-      const remapped = list.map(item => {
-        const driverId = mapId(item.driverId);
-        const next = { ...item, driverId };
-        if (typeof buildId === 'function') next.id = buildId(next);
-        return next;
-      });
-      const deduped = [...new Map(remapped.map(item => [item.id, item])).values()];
-      storageAdapter.write(key, deduped);
-    };
-
-    remapArrayByDriverId(KEYS.calls, item => `${item.driverId}-${item.date}-${normalizePlatform(item.platform)}`);
-    remapArrayByDriverId(KEYS.rejections, item => `${item.driverId}-${item.weekStart}-${normalizePlatform(item.platform)}`);
-    remapArrayByDriverId(KEYS.targets, item => `${item.driverId}-${item.month}`);
-    remapArrayByDriverId(KEYS.weeklyTargets, item => `${item.driverId}-${item.weekStart}`);
-    remapArrayByDriverId(KEYS.settlements, item => `${item.driverId}-${item.period}-${normalizePlatform(item.platform)}`);
-
-    if (storageAdapter.has(KEYS.eventItems)) {
-      const eventMap = storageAdapter.read(KEYS.eventItems, {});
-      if (eventMap && typeof eventMap === 'object') {
-        const nextMap = {};
-        Object.entries(eventMap).forEach(([driverId, itemId]) => {
-          const nextId = mapId(driverId);
-          if (!nextMap[nextId]) nextMap[nextId] = itemId;
-        });
-        storageAdapter.write(KEYS.eventItems, nextMap);
-      }
-    }
-
-    if (storageAdapter.has(KEYS.drivers)) {
-      const list = storageAdapter.readRaw(KEYS.drivers) || storageAdapter.read(KEYS.drivers, []);
-      if (Array.isArray(list)) {
-        const deduped = window.BremDriverUtils?.dedupeDriversByMatchKey
-          ? window.BremDriverUtils.dedupeDriversByMatchKey(list)
-          : list.filter((driver, index, arr) => {
-            const key = `${driver.name}|${driver.phone}`;
-            return arr.findIndex(item => `${item.name}|${item.phone}` === key) === index;
-          });
-        setDriversCache(deduped);
-      }
-    }
-
-    invalidateDriversNormalizeCache();
-    window.BremDataCache?.invalidate?.(KEYS.drivers);
-    return changed;
-  }
-
   async function adminUsersApi(path, options = {}) {
     const token = await resolveAdminAccessToken();
     if (!token) {
@@ -2092,58 +2011,7 @@ const BremStorage = (function () {
       invalidateDriversNormalizeCache();
       storageAdapter.write(KEYS.drivers, normalizedDrivers);
     }
-    return dedupeDriversByNamePhone(normalizedDrivers);
-  }
-
-  function normalizeDriverNameForDedupe(value) {
-    return String(value || '').replace(/\s/g, '').toLowerCase();
-  }
-
-  function normalizePhoneForDedupe(value) {
-    return String(value || '').replace(/[^0-9]/g, '');
-  }
-
-  function driverMatchKeyForDedupe(name, phone) {
-    const normName = normalizeDriverNameForDedupe(name);
-    const normPhone = normalizePhoneForDedupe(phone);
-    if (!normName || !normPhone) return '';
-    return `${normName}|${normPhone}`;
-  }
-
-  function driverCompletenessScoreForDedupe(driver) {
-    let score = 0;
-    if (String(driver?.longEventItem || '').trim()) score += 8;
-    if (String(driver?.baeminId || '').trim()) score += 4;
-    if (String(driver?.bankName || '').trim()) score += 2;
-    if (String(driver?.accountNumber || '').trim()) score += 1;
-    const updatedAt = Date.parse(driver?.updatedAt || driver?.createdAt || 0);
-    if (!Number.isNaN(updatedAt)) score += updatedAt / 1e12;
-    return score;
-  }
-
-  function dedupeDriversByNamePhone(drivers) {
-    const utils = window.BremDriverUtils;
-    if (utils?.dedupeDriversByMatchKey) {
-      return utils.dedupeDriversByMatchKey(drivers);
-    }
-
-    const byMatchKey = new Map();
-    const withoutMatchKey = [];
-
-    (Array.isArray(drivers) ? drivers : []).forEach(driver => {
-      const key = driverMatchKeyForDedupe(driver?.name, driver?.phone);
-      if (!key) {
-        withoutMatchKey.push(driver);
-        return;
-      }
-
-      const prev = byMatchKey.get(key);
-      if (!prev || driverCompletenessScoreForDedupe(driver) > driverCompletenessScoreForDedupe(prev)) {
-        byMatchKey.set(key, driver);
-      }
-    });
-
-    return [...byMatchKey.values(), ...withoutMatchKey];
+    return normalizedDrivers;
   }
 
   function readEventCatalogRaw() {
@@ -2393,25 +2261,6 @@ const BremStorage = (function () {
         return Promise.all([persist, activeStorageAdapter.deleteRider(id)]);
       }
       return persist;
-    },
-
-    async mergeDuplicates(options = {}) {
-      if (!isProductionMode()) {
-        throw new Error('운영 환경에서만 중복 기사 병합을 실행할 수 있습니다.');
-      }
-
-      const resume = await resumeSupabaseAfterAuth?.();
-      if (!resume?.ok) {
-        throw new Error(resume?.message || 'Supabase에 연결되지 않았습니다. 다시 로그인하세요.');
-      }
-
-      const result = await mergeDuplicateRidersViaServer(options);
-      if (result.ok && !result.dryRun) {
-        remapDriverIdsInLocalData(result.idRemap || {});
-        await flushActiveStorage().catch(() => ({}));
-        await reloadDrivers(true).catch(() => ({}));
-      }
-      return result;
     },
 
     resetPassword(id, defaultPassword = '1234') {

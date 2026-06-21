@@ -62,7 +62,7 @@
           <div class="filters filters--compact">
             <label class="search-field">
               <span class="sr-only">이름 검색</span>
-              <input type="search" id="searchInput" placeholder="이름·연락처·배민ID 검색">
+              <input type="search" id="searchInput" placeholder="이름·연락처·배민ID·쿠팡ID 검색">
             </label>
             <label class="filter-field">
               <span class="sr-only">상태 필터</span>
@@ -74,7 +74,6 @@
               </select>
             </label>
             <button type="button" class="btn ghost" id="exportExcelBtn">엑셀 백업</button>
-            <button type="button" class="btn ghost" id="mergeDuplicateBtn">중복 병합</button>
             <button type="button" class="btn ghost danger-outline" id="bulkDeleteBtn" disabled>선택 삭제</button>
           </div>
         </div>
@@ -100,9 +99,10 @@
                       <input type="checkbox" id="selectAllDrivers" aria-label="현재 목록 전체 선택">
                     </label>
                   </th>
-                  <th class="col-name">이름 / ID</th>
+                  <th class="col-name">이름</th>
                   <th class="col-phone">연락처</th>
                   <th class="col-baemin">배민 ID</th>
+                  <th class="col-coupang">쿠팡 ID</th>
                   <th class="col-platform">플랫폼</th>
                   <th class="col-event">이벤트</th>
                   <th class="col-date">가입일</th>
@@ -146,10 +146,10 @@
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260620r"></script>
   <script src="js/driver-utils.js"></script>
-  <script src="js/storage.js?v=20260621q"></script>
+  <script src="js/storage.js?v=20260621r"></script>
   <script src="js/db-connection-status.js"></script>
   <script src="js/driver-program-access.js?v=20260620c"></script>
   <script src="js/index-nav.js"></script>
-  <script src="js/driver-list.js?v=20260621q"></script>
+  <script src="js/driver-list.js?v=20260621r"></script>
 </body>
 </html>

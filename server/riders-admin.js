@@ -1,7 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 const { provisionRiderAuthAccount } = require('./rider-auth');
-const { mergeDuplicateRiders: runMergeDuplicateRiders } = require('./rider-merge');
 
 const RIDER_SELECT = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
@@ -246,20 +245,9 @@ async function deleteRider(accessToken, riderId) {
   return { ok: true };
 }
 
-async function mergeDuplicateRiders(accessToken, options = {}) {
-  return runMergeDuplicateRiders(accessToken, options, {
-    verifyAdminCaller,
-    getServiceClient,
-    riderToRow,
-    provisionRiderAuthAccount,
-    selectColumns: RIDER_SELECT
-  });
-}
-
 module.exports = {
   listRiders,
   upsertRider,
   bulkUpsertRiders,
-  deleteRider,
-  mergeDuplicateRiders
+  deleteRider
 };

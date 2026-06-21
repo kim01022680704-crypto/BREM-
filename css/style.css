@@ -1397,6 +1397,10 @@ textarea:focus,
   min-width: 96px;
 }
 
+.driver-table .col-coupang {
+  min-width: 108px;
+}
+
 .driver-table .col-platform {
   min-width: 88px;
 }
@@ -1485,6 +1489,10 @@ textarea:focus,
 
 .driver-table--compact .col-baemin {
   min-width: 72px;
+}
+
+.driver-table--compact .col-coupang {
+  min-width: 92px;
 }
 
 .driver-table--compact .col-platform {
