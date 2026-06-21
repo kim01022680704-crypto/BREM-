@@ -2536,10 +2536,19 @@ const BremStorage = (function () {
           return { ok: true, cached: true };
         }
 
-        const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
-        if (!hydrated.ok) return hydrated;
+        const token = await resolveAdminAccessToken();
 
-        if (production) {
+        if (production && token) {
+          if (!activeSupabaseProfile) {
+            await loadSupabaseProfile().catch(() => null);
+          }
+
+          if (activeStorageAdapter.hydrateCore && !activeStorageAdapter.isHydrated?.()) {
+            await activeStorageAdapter.hydrateCore().catch(error => {
+              console.warn('[BREM] Rider hydrateCore failed:', error.message || error);
+            });
+          }
+
           if (isRiderProductionSession()) {
             invalidateNoticesCache();
           }
@@ -2554,16 +2563,28 @@ const BremStorage = (function () {
           if (!noticesResult.ok && !noticesResult.skipped) {
             console.warn('[BREM] Rider notices fetch failed:', noticesResult.message || noticesResult.error);
           }
-          if (!dashboard.ok) {
-            if (noticesResult.ok) {
-              document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
-                detail: { ok: true, partial: true, noticesOnly: true }
-              }));
-              return { ok: true, partial: true, notices: noticesResult.count || 0 };
-            }
-            return dashboard;
+
+          await ensureMissionsLoaded({ force }).catch(() => ({}));
+
+          if (dashboard.ok) {
+            document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true } }));
+            return { ok: true, counts: dashboard.counts };
           }
-        } else if (activeStorageAdapter.ensureKeysLoaded) {
+
+          if (noticesResult.ok && !noticesResult.skipped) {
+            document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
+              detail: { ok: true, partial: true, noticesOnly: true }
+            }));
+            return { ok: true, partial: true, notices: noticesResult.count || 0 };
+          }
+
+          return dashboard;
+        }
+
+        const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
+        if (!hydrated.ok) return hydrated;
+
+        if (activeStorageAdapter.ensureKeysLoaded) {
           if (activeStorageAdapter.hydrateCore) {
             await activeStorageAdapter.hydrateCore();
           }
@@ -4059,6 +4080,29 @@ const BremStorage = (function () {
         pendingRejections,
         pendingTargets: 0,
         pendingTotal: pendingCalls + pendingRejections
+      };
+    },
+
+    async fetchStatusFromServer() {
+      const result = await adminRidersApi('/api/admin/rider-view/status');
+      if (!result.ok) return result;
+
+      const publishedAt = result.publishedAt || null;
+      if (publishedAt) {
+        const existing = riderViewPublish.getMeta();
+        storageAdapter.write(KEYS.riderViewPublish, {
+          ...existing,
+          publishedAt
+        });
+      }
+
+      return {
+        ok: true,
+        publishedAt: publishedAt || riderViewPublish.getMeta().publishedAt || null,
+        pendingCalls: Number(result.pendingCalls) || 0,
+        pendingRejections: Number(result.pendingRejections) || 0,
+        pendingTargets: Number(result.pendingTargets) || 0,
+        pendingTotal: Number(result.pendingTotal) || 0
       };
     },
 

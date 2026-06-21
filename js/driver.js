@@ -488,12 +488,15 @@
     return driver;
   }
 
-  function loadDriverAppDataThenRender(driver) {
+  function loadDriverAppDataThenRender(driver, options = {}) {
     if (!driver?.id) return Promise.resolve();
 
     const driverId = driver.id;
     const task = (async () => {
-      const freshDriver = await refreshCurrentRiderFromServer(driver);
+      let freshDriver = driver;
+      if (options.refreshProfile !== false) {
+        freshDriver = await refreshCurrentRiderFromServer(driver) || driver;
+      }
       await BremStorage.hydrateDriverAppData?.({
         force: BremStorage.getSupabaseConfig?.().mode === 'production'
       });
@@ -994,13 +997,6 @@
 
     try {
       const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
-      if (isProduction) {
-        const storageReady = await BremStorage.ensureDriverStorageReady?.();
-        if (!storageReady?.ok) {
-          showToast(storageReady?.message || '연결 준비 중입니다. 잠시 후 다시 시도하세요.');
-          return;
-        }
-      }
 
       const loginResult = isProduction
         ? await BremStorage.auth.signInDriver(loginIdInput.value, loginPasswordInput.value)
@@ -1020,9 +1016,6 @@
       if (!driver && isProduction) {
         driver = await resolveCurrentDriver(isProduction, loginResult);
       }
-      if (driver && isProduction) {
-        driver = await refreshCurrentRiderFromServer(driver);
-      }
 
       if (!driver) {
         showLoggedOut();
@@ -1034,7 +1027,7 @@
       loginForm.reset();
       showLoggedIn(driver);
       showToast(`${driver.name} 기사님 로그인 성공`);
-      void loadDriverAppDataThenRender(driver);
+      void loadDriverAppDataThenRender(driver, { refreshProfile: false });
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

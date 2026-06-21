@@ -1810,6 +1810,7 @@
     showSection('dashboard', { skipRender: true });
     showSectionLoadingSkeleton('dashboard');
     showAdminDataLoading(true);
+    renderRiderPublishStatus();
   }
 
   function showAdminApp(options = {}) {
@@ -1860,6 +1861,7 @@
       }
       renderDbConnectionStatus();
       renderActiveSection(initialSection);
+      renderRiderPublishStatus();
       applySectionEditPermissions();
     }).catch(error => {
       showAdminDataLoading(false);
@@ -2509,36 +2511,54 @@
     });
   }
 
+  let riderPublishStatusRequest = 0;
+
   function renderRiderPublishStatus() {
     const statusEl = $('#riderAppPublishStatus');
     const publishBtns = document.querySelectorAll('[data-rider-app-publish]');
-    const pending = BremStorage.riderViewPublish?.countPending?.() || {};
-    const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
-    const publishedLabel = window.BremDriverUtils?.formatRiderPublishDateTime?.(meta.publishedAt)
-      || (meta.publishedAt ? formatDateTime(meta.publishedAt) : '');
+    const requestId = ++riderPublishStatusRequest;
 
-    publishBtns.forEach(btn => {
-      btn.title = pending.pendingTotal > 0
-        ? `미반영 ${pending.pendingTotal}건 · 콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections}`
-        : '장기근속 설정 포함 전체 스냅샷 반영 (월·주간 목표는 실시간 연동)';
-    });
+    void (async () => {
+      const serverStatus = await BremStorage.riderViewPublish?.fetchStatusFromServer?.().catch(() => null);
+      if (requestId !== riderPublishStatusRequest) return;
 
-    if (!statusEl) return;
+      const pending = serverStatus?.ok
+        ? {
+          pendingCalls: serverStatus.pendingCalls || 0,
+          pendingRejections: serverStatus.pendingRejections || 0,
+          pendingTotal: serverStatus.pendingTotal || 0
+        }
+        : BremStorage.riderViewPublish?.countPending?.() || {};
+      const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
+      const publishedAt = (serverStatus?.ok && serverStatus.publishedAt)
+        ? serverStatus.publishedAt
+        : meta.publishedAt;
+      const publishedLabel = window.BremDriverUtils?.formatRiderPublishDateTime?.(publishedAt)
+        || (publishedAt ? formatDateTime(publishedAt) : '');
 
-    const parts = [];
-    if (pending.pendingCalls) parts.push(`콜수 ${number(pending.pendingCalls)}`);
-    if (pending.pendingRejections) parts.push(`거절율 ${number(pending.pendingRejections)}`);
-    const pendingLabel = parts.length ? parts.join(' · ') : '';
+      publishBtns.forEach(btn => {
+        btn.title = pending.pendingTotal > 0
+          ? `미반영 ${pending.pendingTotal}건 · 콜수 ${pending.pendingCalls} · 거절율 ${pending.pendingRejections}`
+          : '장기근속 설정 포함 전체 스냅샷 반영 (월·주간 목표는 실시간 연동)';
+      });
 
-    if (publishedLabel && pendingLabel) {
-      statusEl.textContent = `마지막 반영 ${publishedLabel} · 미반영 ${pendingLabel}`;
-    } else if (publishedLabel) {
-      statusEl.textContent = `마지막 반영 ${publishedLabel}`;
-    } else if (pendingLabel) {
-      statusEl.textContent = `미반영 ${pendingLabel} · 「라이더 앱 반영」 클릭`;
-    } else {
-      statusEl.textContent = '검수 후 「라이더 앱 반영」으로 기사앱에 공개';
-    }
+      if (!statusEl) return;
+
+      const parts = [];
+      if (pending.pendingCalls) parts.push(`콜수 ${number(pending.pendingCalls)}`);
+      if (pending.pendingRejections) parts.push(`거절율 ${number(pending.pendingRejections)}`);
+      const pendingLabel = parts.length ? parts.join(' · ') : '';
+
+      if (publishedLabel && pendingLabel) {
+        statusEl.textContent = `마지막 반영 ${publishedLabel} · 미반영 ${pendingLabel}`;
+      } else if (publishedLabel) {
+        statusEl.textContent = `마지막 반영 ${publishedLabel}`;
+      } else if (pendingLabel) {
+        statusEl.textContent = `미반영 ${pendingLabel} · 「라이더 앱 반영」 클릭`;
+      } else {
+        statusEl.textContent = '검수 후 「라이더 앱 반영」으로 기사앱에 공개';
+      }
+    })();
   }
 
   function handleRiderAppPublish() {
@@ -4093,6 +4113,7 @@
       invalidateCallStatsIndex();
       invalidateSectionRenders();
       renderActiveSection(state.currentSection, { force: true });
+      renderRiderPublishStatus();
     });
 
     $$('.nav-btn').forEach(button => {
@@ -4868,6 +4889,7 @@
       showAdminDataLoading(false);
       renderDbConnectionStatus();
       renderActiveSection(state.currentSection);
+      renderRiderPublishStatus();
       applySectionEditPermissions();
     });
 

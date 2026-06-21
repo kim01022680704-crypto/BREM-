@@ -82,7 +82,7 @@ window.BremSupabaseMapper = (function () {
       longEventPlatform: String(row.long_event_platform || raw.longEventPlatform || 'coupang') === 'baemin'
         ? 'baemin'
         : 'coupang',
-      joinDate: row.join_date || '',
+      joinDate: row.join_date || raw.joinDate || '',
       status: row.status || '근무중',
       memo: row.memo || '',
       hiddenFields: row.hidden_fields || {},

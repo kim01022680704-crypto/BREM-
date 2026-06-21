@@ -757,12 +757,21 @@ async function signInRider(loginInput, password) {
     return { ok: false, status: 401, error: '로그인에 실패했습니다. 잠시 후 다시 시도하세요.' };
   }
 
+  const { data: fullRider, error: fullRiderError } = await supabase
+    .from('riders')
+    .select(RIDER_ME_SELECT)
+    .eq('id', found.rider.id)
+    .maybeSingle();
+  if (fullRiderError) {
+    return { ok: false, status: 500, error: fullRiderError.message || '기사 정보를 불러오지 못했습니다.' };
+  }
+
   return {
     ok: true,
     session: data.session,
     user: data.user,
     riderId: found.rider.id,
-    rider: found.rider,
+    rider: fullRider || found.rider,
     profile: {
       user_id: account.userId,
       role: 'rider',
