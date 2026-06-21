@@ -232,10 +232,9 @@ window.BremSupabaseStorageAdapter = (function () {
       window.BremPerf?.timeEnd?.('settings.fetch');
       if (error) throw error;
       (data || []).forEach(row => {
+        if (isTableKey(row.key)) return;
         setCache(row.key, row.value);
-        if (!isTableKey(row.key)) {
-          window.BremDataCache?.set?.(row.key, row.value);
-        }
+        window.BremDataCache?.set?.(row.key, row.value);
       });
     }
 
@@ -398,6 +397,25 @@ window.BremSupabaseStorageAdapter = (function () {
       await persistTableCollection('admin_schedules', keys.adminSchedules, list, scheduleToRow);
     }
 
+    async function deleteAdminRejectionRatesByIds(ids = []) {
+      const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+      if (!targetIds.length) return;
+      if (!(await probeTable('admin_rejection_rates'))) return;
+
+      const drop = new Set(targetIds);
+      const list = getCache(keys.rejections, []).filter(item => !drop.has(item.id));
+      stage(keys.rejections, list);
+      window.BremDataCache?.set?.(keys.rejections, list, { source: 'write', tableLoaded: true });
+
+      await deleteRowsInChunks('admin_rejection_rates', targetIds);
+
+      try {
+        await client.from('settings').delete().eq('key', keys.rejections);
+      } catch (error) {
+        console.warn('[BREM] Legacy rejection settings cleanup skipped:', error.message || error);
+      }
+    }
+
     async function deleteAdminCallsByIds(ids = []) {
       const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
       if (!targetIds.length) return;
@@ -437,6 +455,11 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistWeeklyRates(value) {
       await persistTableCollection('admin_rejection_rates', keys.rejections, value, weeklyRateToRow);
+      try {
+        await client.from('settings').delete().eq('key', keys.rejections);
+      } catch (error) {
+        console.warn('[BREM] Legacy rejection settings cleanup skipped:', error.message || error);
+      }
     }
 
     async function persistMonthlyTargets(value) {
@@ -969,6 +992,7 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       deleteAdminCallsByPeriod,
       deleteAdminCallsByIds,
+      deleteAdminRejectionRatesByIds,
       flush() {
         return persistQueue;
       },

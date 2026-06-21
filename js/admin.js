@@ -2437,9 +2437,8 @@
     }
     if (!window.confirm(`선택한 ${ids.length}건의 ${platformRateLabel(platform)} 기록을 삭제하시겠습니까?`)) return;
 
-    BremStorage.rejections.removeByIds(ids);
     ids.forEach(id => selectedRejectionIds.delete(id));
-    void BremStorage.flushStorage?.().then(() => {
+    void BremStorage.rejections.removeByIdsAsync(ids).then(() => {
       showToast(`${ids.length}건 삭제되었습니다.`);
       renderAll();
     }).catch(error => {
@@ -2459,8 +2458,7 @@
     if (!window.confirm(`표시된 ${label} 기록 ${entries.length}건을 전체 삭제하시겠습니까?\n\n되돌릴 수 없습니다.`)) return;
 
     entries.forEach(entry => selectedRejectionIds.delete(entry.id));
-    BremStorage.rejections.removeByIds(entries.map(entry => entry.id));
-    void BremStorage.flushStorage?.().then(() => {
+    void BremStorage.rejections.removeByIdsAsync(entries.map(entry => entry.id)).then(() => {
       showToast(`${entries.length}건 전체 삭제되었습니다.`);
       renderAll();
     }).catch(error => {
@@ -4573,9 +4571,9 @@
 
       const rejectionButton = event.target.closest('[data-delete-rejection]');
       if (rejectionButton) {
-        BremStorage.rejections.removeById(rejectionButton.dataset.deleteRejection);
-        selectedRejectionIds.delete(rejectionButton.dataset.deleteRejection);
-        void BremStorage.flushStorage?.().then(() => {
+        const rejectionId = rejectionButton.dataset.deleteRejection;
+        selectedRejectionIds.delete(rejectionId);
+        void BremStorage.rejections.removeByIdAsync(rejectionId).then(() => {
           showToast('주간 기록이 삭제되었습니다.');
           renderAll();
         }).catch(error => {

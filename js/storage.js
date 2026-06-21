@@ -3899,20 +3899,62 @@ const BremStorage = (function () {
     },
 
     removeById(id) {
-      storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => item.id !== id));
+      void rejections.removeByIdAsync(id);
+      return rejections.getAll().filter(item => item.id !== id);
+    },
+
+    async removeByIdAsync(id) {
+      const targetId = String(id || '').trim();
+      if (!targetId) return rejections.getAll();
+      if (!rejections.getAll().some(item => item.id === targetId)) return rejections.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminRejectionRatesByIds) {
+        await activeStorageAdapter.deleteAdminRejectionRatesByIds([targetId]);
+      } else {
+        const list = rejections.getAll().filter(item => item.id !== targetId);
+        storageAdapter.write(KEYS.rejections, list);
+        await storageAdapter.flush?.();
+      }
+
+      window.BremDataCache?.invalidate?.(KEYS.rejections);
+      return rejections.getAll();
     },
 
     removeByIds(ids) {
+      void rejections.removeByIdsAsync(ids);
       const drop = new Set((ids || []).filter(Boolean));
-      if (!drop.size) return rejections.getAll();
-      storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => !drop.has(item.id)));
+      return rejections.getAll().filter(item => !drop.has(item.id));
+    },
+
+    async removeByIdsAsync(ids = []) {
+      const idSet = new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean));
+      if (!idSet.size) return rejections.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminRejectionRatesByIds) {
+        await activeStorageAdapter.deleteAdminRejectionRatesByIds([...idSet]);
+      } else {
+        const list = rejections.getAll().filter(item => !idSet.has(item.id));
+        storageAdapter.write(KEYS.rejections, list);
+        await storageAdapter.flush?.();
+      }
+
+      window.BremDataCache?.invalidate?.(KEYS.rejections);
       return rejections.getAll();
     },
 
-    removeAllForPlatform(platform) {
+    async removeAllForPlatformAsync(platform) {
       const p = normalizePlatform(platform);
-      storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => normalizePlatform(item.platform) !== p));
-      return rejections.getAll();
+      const ids = rejections.getAll()
+        .filter(item => normalizePlatform(item.platform) === p)
+        .map(item => item.id);
+      if (!ids.length) return rejections.getAll();
+      return rejections.removeByIdsAsync(ids);
+    },
+
+    removeAllForPlatform(platform) {
+      void rejections.removeAllForPlatformAsync(platform);
+      const p = normalizePlatform(platform);
+      return rejections.getAll().filter(item => normalizePlatform(item.platform) !== p);
     },
 
     getEntryForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM, options = {}) {
