@@ -1,6 +1,7 @@
 (function () {
-  const COUPANG_SHEET_INDEX = 0;
-  const BAEMIN_SHEET_INDEX = 1;
+  /** 엑셀 화면 기준: 1번 탭=쿠팡, 2번 탭=배민 (숨김 시트 제외) */
+  const COUPANG_SHEET_POSITION = 1;
+  const BAEMIN_SHEET_POSITION = 2;
   const COUPANG_START_ROW = 2;
   const BAEMIN_START_ROW = 4;
 
@@ -72,6 +73,96 @@
   function sheetToRows(sheet) {
     if (!sheet) return [];
     return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+  }
+
+  function isSheetHidden(workbook, sheetIndex) {
+    const hidden = workbook.Workbook?.Sheets?.[sheetIndex]?.Hidden;
+    return hidden === 1 || hidden === 2;
+  }
+
+  function listWorkbookSheetEntries(workbook) {
+    const names = workbook.SheetNames || [];
+    return names.map((name, index) => ({
+      index,
+      position: index + 1,
+      name,
+      sheet: workbook.Sheets?.[name] || null,
+      hidden: isSheetHidden(workbook, index)
+    }));
+  }
+
+  /** 1번·2번 탭 = 사용자가 보는 순서(숨김 시트 건너뜀) */
+  function resolveErpSheets(workbook) {
+    const entries = listWorkbookSheetEntries(workbook);
+    const visible = entries.filter(entry => !entry.hidden && entry.sheet);
+
+    if (visible.length < 2 && entries.length < 2) {
+      throw new Error('엑셀에 시트가 2개 이상 필요합니다. (1번 탭: 쿠팡, 2번 탭: 배민)');
+    }
+
+    const coupangEntry = visible[COUPANG_SHEET_POSITION - 1] || entries[COUPANG_SHEET_POSITION - 1];
+    const baeminEntry = visible[BAEMIN_SHEET_POSITION - 1] || entries[BAEMIN_SHEET_POSITION - 1];
+
+    if (!coupangEntry?.sheet || !baeminEntry?.sheet) {
+      throw new Error('엑셀 1번·2번 시트를 찾지 못했습니다. 1번 탭=쿠팡, 2번 탭=배민 순서로 배치해주세요.');
+    }
+
+    return {
+      coupangSheet: coupangEntry.sheet,
+      baeminSheet: baeminEntry.sheet,
+      coupangSheetName: coupangEntry.name,
+      baeminSheetName: baeminEntry.name,
+      coupangPosition: visible.indexOf(coupangEntry) >= 0
+        ? visible.indexOf(coupangEntry) + 1
+        : coupangEntry.position,
+      baeminPosition: visible.indexOf(baeminEntry) >= 0
+        ? visible.indexOf(baeminEntry) + 1
+        : baeminEntry.position
+    };
+  }
+
+  function sniffSheetPlatform(rows) {
+    let baeminHints = 0;
+    let coupangHints = 0;
+
+    rows.slice(0, 20).forEach((row, rowIndex) => {
+      const baeminId = String(cellValue(row, BAEMIN_COL.ID)).trim();
+      if (baeminId) baeminHints += 3;
+
+      const identity = String(cellValue(row, COUPANG_COL.IDENTITY)).trim();
+      if (identity && /01[\d-]{8,}/.test(identity)) coupangHints += 3;
+
+      if (rowIndex >= COUPANG_START_ROW - 1) {
+        const reject = parseCount(cellValue(row, COUPANG_COL.REJECT));
+        const complete = parseCount(cellValue(row, COUPANG_COL.COMPLETE));
+        if (!Number.isNaN(reject) && reject > 0) coupangHints += 1;
+        if (!Number.isNaN(complete) && complete > 0) coupangHints += 1;
+      }
+
+      if (rowIndex >= BAEMIN_START_ROW - 1) {
+        const total = parseCount(cellValue(row, BAEMIN_COL.COMPLETE));
+        if (!Number.isNaN(total) && total > 0) baeminHints += 1;
+      }
+    });
+
+    if (baeminHints > coupangHints + 2) return 'baemin';
+    if (coupangHints > baeminHints + 2) return 'coupang';
+    return '';
+  }
+
+  function validateErpSheetOrder(resolved) {
+    const coupangType = sniffSheetPlatform(sheetToRows(resolved.coupangSheet));
+    const baeminType = sniffSheetPlatform(sheetToRows(resolved.baeminSheet));
+
+    if (coupangType === 'baemin' && baeminType === 'coupang') {
+      throw new Error('시트 순서가 바뀌었습니다. 1번 탭=쿠팡, 2번 탭=배민 순서로 배치해주세요.');
+    }
+    if (coupangType === 'baemin') {
+      throw new Error(`1번 탭("${resolved.coupangSheetName}")이 쿠팡 데이터가 아닙니다. 쿠팡 시트를 첫 번째 탭에 두세요.`);
+    }
+    if (baeminType === 'coupang') {
+      throw new Error(`2번 탭("${resolved.baeminSheetName}")이 배민 데이터가 아닙니다. 배민 시트를 두 번째 탭에 두세요.`);
+    }
   }
 
   function getSelectedWeekStart(platform) {
@@ -394,32 +485,31 @@
   }
 
   function validateWorkbookStructure(workbook) {
-    const names = workbook.SheetNames || [];
-    if (names.length < 2) {
-      throw new Error('엑셀에 시트가 2개 이상 필요합니다. (1번: 쿠팡, 2번: 배민)');
-    }
+    const resolved = resolveErpSheets(workbook);
+    validateErpSheetOrder(resolved);
 
-    const baeminRows = sheetToRows(workbook.Sheets[names[BAEMIN_SHEET_INDEX]]);
+    const baeminRows = sheetToRows(resolved.baeminSheet);
     const baeminHeader = baeminRows[BAEMIN_START_ROW - 2] || [];
     if (baeminHeader.length < BAEMIN_COL.ID + 1) {
-      throw new Error('배민 시트 AK열(배민ID)을 찾을 수 없습니다. 2번 시트 4행부터 AK열 기준으로 업로드해주세요.');
+      throw new Error(`배민 시트(2번 탭「${resolved.baeminSheetName}」) AK열(배민ID)을 찾을 수 없습니다. 4행부터 AK열 기준으로 업로드해주세요.`);
     }
 
-    const coupangRows = sheetToRows(workbook.Sheets[names[COUPANG_SHEET_INDEX]]);
+    const coupangRows = sheetToRows(resolved.coupangSheet);
     const sampleCoupang = coupangRows[COUPANG_START_ROW - 1] || [];
     if (sampleCoupang.length < COUPANG_COL.COMPLETE + 1) {
-      throw new Error('쿠팡 시트 B/C/D열(거절·취소·완료)을 찾을 수 없습니다. 1번 시트 2행부터 A~D열 기준으로 업로드해주세요.');
+      throw new Error(`쿠팡 시트(1번 탭「${resolved.coupangSheetName}」) B/C/D열(거절·취소·완료)을 찾을 수 없습니다. 2행부터 A~D열 기준으로 업로드해주세요.`);
     }
+
+    return resolved;
   }
 
   function parseWorkbook(workbook) {
-    validateWorkbookStructure(workbook);
-    const names = workbook.SheetNames || [];
+    const resolved = validateWorkbookStructure(workbook);
 
     const coupangWeek = getSelectedWeekStart('coupang');
     const baeminWeek = getSelectedWeekStart('baemin');
-    const coupangRows = parseCoupangSheet(workbook.Sheets[names[COUPANG_SHEET_INDEX]], coupangWeek);
-    const baeminRows = parseBaeminSheet(workbook.Sheets[names[BAEMIN_SHEET_INDEX]], baeminWeek);
+    const coupangRows = parseCoupangSheet(resolved.coupangSheet, coupangWeek);
+    const baeminRows = parseBaeminSheet(resolved.baeminSheet, baeminWeek);
 
     if (!coupangRows.length && !baeminRows.length) {
       throw new Error('쿠팡·배민 시트에서 데이터 행을 찾지 못했습니다. (쿠팡 2행~, 배민 4행~, AK열 배민ID)');
@@ -428,7 +518,13 @@
     return {
       coupangRows,
       baeminRows,
-      previewRows: buildPreviewRows(coupangRows, baeminRows)
+      previewRows: buildPreviewRows(coupangRows, baeminRows),
+      sheetInfo: {
+        coupangSheetName: resolved.coupangSheetName,
+        baeminSheetName: resolved.baeminSheetName,
+        coupangPosition: resolved.coupangPosition,
+        baeminPosition: resolved.baeminPosition
+      }
     };
   }
 
@@ -450,11 +546,16 @@
       if (!weekNoteEl) return;
       const coupangWeek = getSelectedWeekStart('coupang');
       const baeminWeek = getSelectedWeekStart('baemin');
+      const sheetInfo = parsedBundle?.sheetInfo;
+      const sheetLabel = sheetInfo
+        ? ` · 1번탭(쿠팡)「${sheetInfo.coupangSheetName}」· 2번탭(배민)「${sheetInfo.baeminSheetName}」`
+        : '';
+
       if (!coupangWeek || !baeminWeek) {
-        weekNoteEl.textContent = '쿠팡·배민 탭 상단에서 적용주(수요일)를 먼저 선택하세요.';
+        weekNoteEl.textContent = `쿠팡·배민 탭 상단에서 적용주(수요일)를 먼저 선택하세요.${sheetLabel}`;
         return;
       }
-      weekNoteEl.textContent = `쿠팡: ${weekLabel(coupangWeek)} · 배민: ${weekLabel(baeminWeek)}`;
+      weekNoteEl.textContent = `쿠팡: ${weekLabel(coupangWeek)} · 배민: ${weekLabel(baeminWeek)}${sheetLabel}`;
     }
 
     function clearPreview() {
