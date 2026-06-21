@@ -7,11 +7,11 @@ window.BremDataCache = (function () {
   const VERSION = 2;
   const PREFIX = 'brem_dc_';
   const SESSION_MIRROR_KEYS = new Set([
-    'brem_driver_management_drivers'
+    'brem_driver_management_drivers',
+    'brem_admin_missions',
+    'brem_admin_notices'
   ]);
-  const MEMORY_ONLY_KEYS = new Set([
-    'brem_admin_missions'
-  ]);
+  const MEMORY_ONLY_KEYS = new Set([]);
   const memory = new Map();
   const inflight = new Map();
   let coreReady = false;

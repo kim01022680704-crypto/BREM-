@@ -3268,6 +3268,12 @@
       invalidateSectionRenders();
     });
 
+    document.addEventListener('brem-heavy-data-ready', () => {
+      invalidateCallStatsIndex();
+      invalidateSectionRenders();
+      renderActiveSection(state.currentSection, { force: true });
+    });
+
     $$('.nav-btn').forEach(button => {
       button.addEventListener('click', () => {
         void showSection(button.dataset.section);

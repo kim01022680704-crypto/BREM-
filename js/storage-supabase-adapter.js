@@ -156,7 +156,14 @@ window.BremSupabaseStorageAdapter = (function () {
         return empty;
       }
       window.BremDataCache?.logDataSource?.(label, false);
-      let query = client.from(table).select('*');
+      const selectColumns = table === 'admin_calls'
+        ? 'id,driver_id,date,platform,count'
+        : table === 'admin_rejection_rates'
+          ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at'
+          : table === 'admin_targets'
+            ? 'id,driver_id,month,count'
+            : '*';
+      let query = client.from(table).select(selectColumns);
       if (order?.column) {
         query = query.order(order.column, { ascending: order.ascending !== false });
       }
@@ -639,7 +646,6 @@ window.BremSupabaseStorageAdapter = (function () {
 
       window.BremPerf?.time?.('storage.hydrateCore');
       await loadSettings();
-      await loadTableBackedCollections();
       coreHydrated = true;
       window.BremDataCache?.markCoreReady?.();
       window.BremDataCache?.set?.('__settings_snapshot__', Array.from(cache.keys()).filter(key => !isTableKey(key)));

@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260622i">
+  <link rel="stylesheet" href="css/admin.css?v=20260622j">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -1367,11 +1367,38 @@
           </form>
         </article>
 
+        <article class="card mission-default-card">
+          <div class="card-header mission-catalog-header">
+            <div>
+              <h2>플랫폼별 기본 미션</h2>
+              <p class="hint">기본 미션을 선택한 뒤 전체 적용하세요. <strong>개별 저장</strong>한 기사는 자동으로 제외됩니다.</p>
+            </div>
+          </div>
+          <div class="mission-default-grid">
+            <div class="mission-default-block">
+              <h3>배민 기본 미션</h3>
+              <select id="missionDefaultBaemin" class="inline-select">
+                <option value="">배민 기본 미션 선택</option>
+              </select>
+              <button type="button" class="primary-btn" id="missionApplyDefaultBaemin">배민 전체 기사 적용</button>
+              <p class="hint" id="missionDefaultBaeminStatus"></p>
+            </div>
+            <div class="mission-default-block">
+              <h3>쿠팡 기본 미션</h3>
+              <select id="missionDefaultCoupang" class="inline-select">
+                <option value="">쿠팡 기본 미션 선택</option>
+              </select>
+              <button type="button" class="primary-btn" id="missionApplyDefaultCoupang">쿠팡 전체 기사 적용</button>
+              <p class="hint" id="missionDefaultCoupangStatus"></p>
+            </div>
+          </div>
+        </article>
+
         <article class="card">
           <div class="card-header mission-catalog-header">
             <div>
               <h2>기사별 미션 배정</h2>
-              <p class="hint">기사별 배민·쿠팡 미션을 선택한 뒤 저장하세요. 목록은 스크롤로 전체 기사를 확인할 수 있습니다.</p>
+              <p class="hint">기사별 배민·쿠팡 미션을 선택한 뒤 저장하면 <strong>개별 설정</strong>으로 표시됩니다. 기본 미션 전체 적용 시 제외됩니다.</p>
             </div>
             <div class="mission-catalog-actions">
               <button type="button" class="small-btn" id="missionAssignmentExportBtn">엑셀 다운로드</button>
@@ -2835,12 +2862,12 @@
   <script src="js/perf.js"></script>
   <script src="js/session-security.js?v=20260621e"></script>
   <script src="js/supabase-config.js?v=20260620c"></script>
-  <script src="js/data-cache.js?v=20260622f"></script>
+  <script src="js/data-cache.js?v=20260622g"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260622u"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260622b"></script>
+  <script src="js/storage.js?v=20260622w"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2862,8 +2889,8 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
-  <script src="js/admin-missions.js?v=20260622f"></script>
+  <script src="js/admin-missions.js?v=20260622h"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622r"></script>
+  <script src="js/admin.js?v=20260622b"></script>
 </body>
 </html>

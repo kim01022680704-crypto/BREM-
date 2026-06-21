@@ -29,6 +29,7 @@ const BremStorage = (function () {
     weeklySettlements: 'brem_admin_weekly_settlements',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
+    missionDefaults: 'brem_admin_mission_defaults',
     dashboardWeekBasis: 'brem_admin_dashboard_week_basis',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
@@ -194,6 +195,7 @@ const BremStorage = (function () {
   let adminDataHydratePromise = null;
   let bootstrapLoadPromise = null;
   let bootstrapComplete = false;
+  let heavyDataPreloadPromise = null;
   let driversFullFetchInProgress = false;
   const sectionLoadPromises = new Map();
 
@@ -216,6 +218,7 @@ const BremStorage = (function () {
     KEYS.promotionSettings,
     KEYS.promotionSelectorOptions,
     KEYS.promotionApplyResults,
+    KEYS.missionDefaults,
     KEYS.manualNameMappings,
     KEYS.eventCatalog,
     KEYS.eventItems,
@@ -842,8 +845,16 @@ const BremStorage = (function () {
     };
   }
 
+  const HEAVY_ADMIN_TABLE_KEYS = Object.freeze([
+    KEYS.calls,
+    KEYS.rejections,
+    KEYS.targets,
+    KEYS.adminSchedules,
+    KEYS.riderInquiries
+  ]);
+
   const ADMIN_SECTION_KEYS = Object.freeze({
-    dashboard: [KEYS.drivers, KEYS.notices],
+    dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls],
     notices: [KEYS.notices],
     'mission-management': [KEYS.missions, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
@@ -1069,6 +1080,28 @@ const BremStorage = (function () {
     return promise;
   }
 
+  async function preloadHeavyAdminTables() {
+    if (heavyDataPreloadPromise) return heavyDataPreloadPromise;
+    if (!activeStorageAdapter.ensureKeysLoaded) return { ok: true };
+
+    window.BremPerf?.time?.('storage.preloadHeavyAdminTables');
+    heavyDataPreloadPromise = activeStorageAdapter.ensureKeysLoaded(HEAVY_ADMIN_TABLE_KEYS)
+      .then(() => {
+        document.dispatchEvent(new CustomEvent('brem-heavy-data-ready'));
+        return { ok: true };
+      })
+      .catch(error => {
+        console.warn('[BREM] Heavy admin table preload failed:', error.message || error);
+        return { ok: false };
+      })
+      .finally(() => {
+        heavyDataPreloadPromise = null;
+        window.BremPerf?.timeEnd?.('storage.preloadHeavyAdminTables');
+      });
+
+    return heavyDataPreloadPromise;
+  }
+
   async function loadBootstrapData(options = {}) {
     const force = options.force === true;
     if (!force && bootstrapLoadPromise) return bootstrapLoadPromise;
@@ -1083,10 +1116,9 @@ const BremStorage = (function () {
     const missionsReady = !force && window.BremDataCache?.isValid?.(KEYS.missions);
     const promotionsReady = !force && window.BremDataCache?.isValid?.(KEYS.promotionRules);
     const noticesReady = !force && window.BremDataCache?.isValid?.(KEYS.notices);
-    const schedulesReady = !force && window.BremDataCache?.isValid?.(KEYS.adminSchedules);
     const settingsReady = !force && window.BremDataCache?.isCoreReady?.();
 
-    if (driversReady && missionsReady && promotionsReady && noticesReady && schedulesReady && settingsReady) {
+    if (driversReady && missionsReady && promotionsReady && noticesReady && settingsReady) {
       bootstrapComplete = true;
       logDataSource('bootstrap', true);
       return { ok: true, cached: true };
@@ -1102,28 +1134,18 @@ const BremStorage = (function () {
         activeStorageAdapter.ensureKeysLoaded
           ? activeStorageAdapter.ensureKeysLoaded([
             KEYS.notices,
-            KEYS.promotionRules,
-            KEYS.adminSchedules,
-            KEYS.calls,
-            KEYS.rejections,
-            KEYS.targets
+            KEYS.promotionRules
           ], { force })
           : Promise.resolve()
       ]);
 
-      if (activeStorageAdapter.read) {
-        const scheduleList = activeStorageAdapter.read(KEYS.adminSchedules, null);
-        if (Array.isArray(scheduleList)) {
-          window.BremDataCache?.set?.(KEYS.adminSchedules, scheduleList, { source: 'bootstrap' });
-          logDataSource('schedules', false);
-        }
-      }
       if (window.BremDataCache?.isCoreReady?.()) {
         logDataSource('settings', force ? false : settingsReady);
       }
 
       bootstrapComplete = true;
       document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+      void preloadHeavyAdminTables();
       return { ok: true };
     };
 
@@ -1906,10 +1928,13 @@ const BremStorage = (function () {
           : await ensureSupabaseHydrated({ skipDriversSync: true });
         if (!coreResult.ok) return coreResult;
 
-        const bootstrapResult = await loadBootstrapData({ force: false });
-        await auth.syncProductionAdminAccounts().catch(error => {
-          console.warn('[BREM] Background admin account sync failed:', error.message || error);
-        });
+        const [bootstrapResult] = await Promise.all([
+          loadBootstrapData({ force: false }),
+          auth.syncProductionAdminAccounts().catch(error => {
+            console.warn('[BREM] Background admin account sync failed:', error.message || error);
+            return { ok: false };
+          })
+        ]);
 
         document.dispatchEvent(new CustomEvent('brem-admin-data-ready', {
           detail: { ok: bootstrapResult?.ok !== false }
@@ -5365,6 +5390,71 @@ const BremStorage = (function () {
     }
   };
 
+  function normalizeMissionDefaults(meta = {}) {
+    const raw = meta && typeof meta === 'object' ? meta : {};
+    return {
+      defaultBaemin: String(raw.defaultBaemin || '').trim(),
+      defaultCoupang: String(raw.defaultCoupang || '').trim(),
+      customBaemin: Array.isArray(raw.customBaemin)
+        ? [...new Set(raw.customBaemin.map(id => String(id || '').trim()).filter(Boolean))]
+        : [],
+      customCoupang: Array.isArray(raw.customCoupang)
+        ? [...new Set(raw.customCoupang.map(id => String(id || '').trim()).filter(Boolean))]
+        : []
+    };
+  }
+
+  const missionDefaults = {
+    getMeta() {
+      return normalizeMissionDefaults(storageAdapter.read(KEYS.missionDefaults, {}));
+    },
+
+    saveMeta(meta) {
+      const next = normalizeMissionDefaults(meta);
+      storageAdapter.write(KEYS.missionDefaults, next);
+      return next;
+    },
+
+    setDefault(platform, missionId) {
+      const p = normalizePlatform(platform);
+      const meta = missionDefaults.getMeta();
+      if (p === 'baemin') meta.defaultBaemin = String(missionId || '').trim();
+      else meta.defaultCoupang = String(missionId || '').trim();
+      return missionDefaults.saveMeta(meta);
+    },
+
+    isCustom(platform, driverId) {
+      const p = normalizePlatform(platform);
+      const id = String(driverId || '').trim();
+      if (!id) return false;
+      const meta = missionDefaults.getMeta();
+      const list = p === 'baemin' ? meta.customBaemin : meta.customCoupang;
+      return list.includes(id);
+    },
+
+    markCustom(platform, driverId) {
+      const p = normalizePlatform(platform);
+      const id = String(driverId || '').trim();
+      if (!id) return missionDefaults.getMeta();
+      const meta = missionDefaults.getMeta();
+      const key = p === 'baemin' ? 'customBaemin' : 'customCoupang';
+      const set = new Set(meta[key]);
+      set.add(id);
+      meta[key] = Array.from(set);
+      return missionDefaults.saveMeta(meta);
+    },
+
+    clearCustom(platform, driverId) {
+      const p = normalizePlatform(platform);
+      const id = String(driverId || '').trim();
+      if (!id) return missionDefaults.getMeta();
+      const meta = missionDefaults.getMeta();
+      const key = p === 'baemin' ? 'customBaemin' : 'customCoupang';
+      meta[key] = meta[key].filter(item => item !== id);
+      return missionDefaults.saveMeta(meta);
+    }
+  };
+
   const DEFAULT_ADMIN_ACCOUNT = Object.freeze({
     name: '관리자',
     // Production guard: 운영 모드에서는 이 기본 계정 로그인이 차단되고 Supabase Auth만 사용된다.
@@ -6831,6 +6921,7 @@ const BremStorage = (function () {
     events,
     settlements,
     settlementUnmatched,
+    missionDefaults,
     promotionRules,
     promotionSettings,
     promotionSelectorOptions,

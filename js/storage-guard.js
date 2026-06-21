@@ -29,6 +29,7 @@ window.BremStorageGuard = (function () {
     'brem_admin_promotion_settings',
     'brem_admin_promotion_selector_options',
     'brem_admin_promotion_apply_results',
+    'brem_admin_mission_defaults',
     'brem_admin_long_event_catalog',
     'brem_admin_long_event_items',
     'brem_admin_long_event_config',
