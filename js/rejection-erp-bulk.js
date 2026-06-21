@@ -173,50 +173,34 @@
   }
 
   function matchCoupangDriver(identityCell) {
-    const identity = window.BremDriverUtils?.parseCoupangImportIdentity?.(identityCell, '') || {
-      loginIds: [],
+    const parsed = window.BremDriverUtils?.buildCoupangErpIdFromCell?.(identityCell) || {
+      coupangId: '',
       name: '',
-      phone: ''
+      phone: '',
+      error: '쿠팡ID 변환 실패'
     };
-    if (!identity.loginIds.length && !(identity.name && identity.phone)) {
+
+    if (parsed.error) {
       return {
         driver: null,
-        coupangId: '',
-        error: '이름+전화번호 형식 오류'
+        coupangId: parsed.coupangId || '',
+        error: parsed.error
       };
     }
 
-    for (const loginId of [...identity.loginIds].reverse()) {
-      const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(loginId, 'coupang', identity.name);
-      if (result?.driver) {
-        return {
-          driver: result.driver,
-          coupangId: result.resolvedPlatformId || loginId,
-          error: ''
-        };
-      }
-    }
-
-    if (identity.name && identity.phone) {
-      const byPhone = window.BremDriverUtils?.matchDriverByNameAndPhone?.(identity.name, identity.phone);
-      if (byPhone) {
-        return {
-          driver: byPhone,
-          coupangId: window.BremDriverUtils.makeDriverLoginId(byPhone),
-          error: ''
-        };
-      }
-    }
-
-    const fallbackId = identity.loginIds[identity.loginIds.length - 1] || '';
-    if (fallbackId.length >= 5 && !/\d{4}$/.test(fallbackId)) {
-      return { driver: null, coupangId: fallbackId, error: '전화번호 뒤 4자리 추출 실패' };
+    const driver = window.BremDriverUtils?.matchDriverByCoupangErpId?.(parsed.coupangId);
+    if (!driver) {
+      return {
+        driver: null,
+        coupangId: parsed.coupangId,
+        error: '쿠팡ID 미등록'
+      };
     }
 
     return {
-      driver: null,
-      coupangId: fallbackId,
-      error: '등록된 기사 없음'
+      driver,
+      coupangId: parsed.coupangId,
+      error: ''
     };
   }
 
@@ -225,11 +209,23 @@
     if (!id) {
       return { driver: null, baeminId: '', error: '배민ID 공백', skip: true };
     }
-    const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(id, 'baemin', '');
-    if (!result?.driver) {
-      return { driver: null, baeminId: id, error: '등록된 기사 없음' };
+
+    const driver = window.BremDriverUtils?.matchDriverByBaeminErpId?.(id);
+    if (!driver) {
+      return { driver: null, baeminId: id, error: '배민ID 미등록' };
     }
-    return { driver: result.driver, baeminId: id, error: '' };
+
+    return { driver, baeminId: id, error: '' };
+  }
+
+  function summarizePlatformRows(rows, { skipBlank = false } = {}) {
+    const active = skipBlank ? rows.filter(row => !row.skip) : rows.slice();
+    return {
+      total: active.length,
+      matched: active.filter(row => row.driver).length,
+      failed: active.filter(row => !row.driver).length,
+      saveable: active.filter(row => row.canSave).length
+    };
   }
 
   function parseCoupangSheet(sheet, weekStart) {
@@ -338,6 +334,7 @@
         unmeasured: rateResult.unmeasured,
         stats,
         weekStart,
+        skip: match.skip === true,
         valid: Boolean(match.driver && weekStart && !rateResult.error),
         errors,
         canSave: Boolean(match.driver && weekStart && !rateResult.error)
@@ -430,19 +427,31 @@
 
     const combined = [...merged.values(), ...orphanCoupang, ...orphanBaemin];
     combined.forEach(row => {
-      if (row.errors.length) {
-        row.matchStatus = row.errors[0];
-      } else if (row.coupangPayload && row.baeminPayload) {
+      const coupangStatus = row.coupangPayload
+        ? (row.coupangPayload.canSave ? '쿠팡 매칭' : (row.coupangPayload.errors[0] || '쿠팡 오류'))
+        : (row.coupangId && row.coupangId !== '-' ? (row.matchStatus || '쿠팡 미매칭') : '-');
+      const baeminStatus = row.baeminPayload
+        ? (row.baeminPayload.canSave ? '배민 매칭' : (row.baeminPayload.errors[0] || '배민 오류'))
+        : (row.baeminId && row.baeminId !== '-' ? (row.matchStatus || '배민 미매칭') : '-');
+
+      row.coupangMatchStatus = coupangStatus;
+      row.baeminMatchStatus = baeminStatus;
+
+      if (row.coupangPayload?.canSave && row.baeminPayload?.canSave) {
         row.matchStatus = '쿠팡·배민 매칭';
-      } else if (row.coupangPayload) {
-        row.matchStatus = '쿠팡만 매칭';
-      } else if (row.baeminPayload) {
-        row.matchStatus = '배민만 매칭';
+      } else if (row.coupangPayload?.canSave) {
+        row.matchStatus = '쿠팡 매칭';
+      } else if (row.baeminPayload?.canSave) {
+        row.matchStatus = '배민 매칭';
+      } else if (row.coupangPayload || (row.coupangId && row.coupangId !== '-')) {
+        row.matchStatus = coupangStatus;
+      } else if (row.baeminPayload || (row.baeminId && row.baeminId !== '-')) {
+        row.matchStatus = baeminStatus;
+      } else {
+        row.matchStatus = '-';
       }
-      row.canSave = Boolean(
-        (row.coupangPayload?.canSave)
-        || (row.baeminPayload?.canSave)
-      );
+
+      row.canSave = Boolean(row.coupangPayload?.canSave || row.baeminPayload?.canSave);
     });
 
     return combined;
@@ -470,12 +479,12 @@
   function validateWorkbookStructure(workbook) {
     const resolved = resolveErpSheets(workbook);
 
-    if (!sheetHasBaeminData(resolved.baeminSheet)) {
-      throw new Error(`배민 2번 시트「${resolved.baeminSheetName}」에서 AK열(배민ID)·E열 데이터를 찾지 못했습니다. 4행부터 확인하세요.`);
+    if (!sheetHasCoupangData(resolved.coupangSheet)) {
+      throw new Error(`쿠팡 1번 시트「${resolved.coupangSheetName}」에서 A~D열 데이터를 찾지 못했습니다. 2행부터 A열(이름+전화번호)을 확인하세요.`);
     }
 
-    if (!sheetHasCoupangData(resolved.coupangSheet)) {
-      throw new Error(`쿠팡 1번 시트「${resolved.coupangSheetName}」에서 A~D열 데이터를 찾지 못했습니다. 2행부터 확인하세요.`);
+    if (!sheetHasBaeminData(resolved.baeminSheet)) {
+      throw new Error(`배민 2번 시트「${resolved.baeminSheetName}」에서 AK열(배민ID)·E열 데이터를 찾지 못했습니다. 4행부터 확인하세요.`);
     }
 
     return resolved;
@@ -516,6 +525,10 @@
     const totalEl = root.querySelector('[data-rejection-erp-total]');
     const saveEl = root.querySelector('[data-rejection-erp-save]');
     const failEl = root.querySelector('[data-rejection-erp-fail]');
+    const coupangOkEl = root.querySelector('[data-rejection-erp-coupang-ok]');
+    const coupangFailEl = root.querySelector('[data-rejection-erp-coupang-fail]');
+    const baeminOkEl = root.querySelector('[data-rejection-erp-baemin-ok]');
+    const baeminFailEl = root.querySelector('[data-rejection-erp-baemin-fail]');
     const weekNoteEl = root.querySelector('[data-rejection-erp-week-note]');
     const applyBtn = root.querySelector('[data-rejection-erp-apply]');
     const clearBtn = root.querySelector('[data-rejection-erp-clear]');
@@ -545,38 +558,47 @@
       if (totalEl) totalEl.textContent = '0';
       if (saveEl) saveEl.textContent = '0';
       if (failEl) failEl.textContent = '0';
+      if (coupangOkEl) coupangOkEl.textContent = '0';
+      if (coupangFailEl) coupangFailEl.textContent = '0';
+      if (baeminOkEl) baeminOkEl.textContent = '0';
+      if (baeminFailEl) baeminFailEl.textContent = '0';
       if (applyBtn) applyBtn.disabled = true;
       updateWeekNote();
     }
 
     function renderPreview() {
-      const saveCount = previewRows.reduce((sum, row) => {
-        let n = 0;
-        if (row.coupangPayload?.canSave) n += 1;
-        if (row.baeminPayload?.canSave) n += 1;
-        return sum + n;
-      }, 0);
-      const failCount = previewRows.filter(row => !row.canSave).length;
+      const coupangStats = parsedBundle
+        ? summarizePlatformRows(parsedBundle.coupangRows)
+        : { total: 0, matched: 0, failed: 0, saveable: 0 };
+      const baeminStats = parsedBundle
+        ? summarizePlatformRows(parsedBundle.baeminRows, { skipBlank: true })
+        : { total: 0, matched: 0, failed: 0, saveable: 0 };
+      const saveCount = coupangStats.saveable + baeminStats.saveable;
+      const failCount = coupangStats.failed + baeminStats.failed;
 
       if (totalEl) totalEl.textContent = String(previewRows.length);
       if (saveEl) saveEl.textContent = String(saveCount);
       if (failEl) failEl.textContent = String(failCount);
+      if (coupangOkEl) coupangOkEl.textContent = String(coupangStats.matched);
+      if (coupangFailEl) coupangFailEl.textContent = String(coupangStats.failed);
+      if (baeminOkEl) baeminOkEl.textContent = String(baeminStats.matched);
+      if (baeminFailEl) baeminFailEl.textContent = String(baeminStats.failed);
       if (applyBtn) applyBtn.disabled = saveCount === 0;
 
       if (previewBody) {
-        previewBody.innerHTML = previewRows.map(row => `
-          <tr class="${row.canSave ? 'row-ok' : 'row-error'}">
+        previewBody.innerHTML = previewRows.map(row => {
+          const rowOk = row.coupangPayload?.canSave || row.baeminPayload?.canSave;
+          return `
+          <tr class="${rowOk ? 'row-ok' : 'row-error'}">
             <td>${escapeHtml(row.name)}</td>
             <td>${escapeHtml(row.coupangId || '-')}</td>
             <td>${escapeHtml(formatRateDisplay(row.coupangRate, row.coupangUnmeasured))}</td>
             <td>${escapeHtml(row.baeminId || '-')}</td>
             <td>${escapeHtml(formatRateDisplay(row.baeminRate, row.baeminUnmeasured))}</td>
-            <td>${row.canSave
-              ? '<span class="bulk-result-ok">등록 가능</span>'
-              : `<span class="bulk-result-err">${escapeHtml(row.matchStatus)}</span>`}
-            </td>
+            <td>${escapeHtml(row.matchStatus || '-')}</td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
       }
 
       if (previewSection) previewSection.hidden = previewRows.length === 0;
@@ -642,8 +664,10 @@
         parsedBundle = parseWorkbook(workbook);
         previewRows = parsedBundle.previewRows;
         renderPreview();
-        const saveCount = Number(saveEl?.textContent || 0);
-        notify(`미리보기 ${previewRows.length}행 · 등록 가능 ${saveCount}건`);
+        const coupangStats = summarizePlatformRows(parsedBundle.coupangRows);
+        const baeminStats = summarizePlatformRows(parsedBundle.baeminRows, { skipBlank: true });
+        const saveCount = coupangStats.saveable + baeminStats.saveable;
+        notify(`쿠팡 매칭 ${coupangStats.matched}/${coupangStats.total} · 배민 매칭 ${baeminStats.matched}/${baeminStats.total} · 저장 가능 ${saveCount}건`);
       } catch (error) {
         console.error('[BREM] ERP rejection parse failed:', error);
         notify(error.message || '엑셀 파일을 읽지 못했습니다.');

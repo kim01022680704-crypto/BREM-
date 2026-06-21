@@ -168,7 +168,64 @@ window.BremDriverUtils = (function () {
 
   function resolveCoupangImportLoginId(platformId, excelName) {
     const identity = parseCoupangImportIdentity(platformId, excelName);
-    return identity.loginIds[0] || '';
+    return identity.loginIds[identity.loginIds.length - 1] || identity.loginIds[0] || '';
+  }
+
+  /** ERP 쿠팡ID (이름+전화 뒤4자리). coupangLoginKey 우선 */
+  function getErpCoupangId(driver) {
+    const custom = String(driver?.coupangLoginKey || driver?.coupangId || driver?.coupangLoginId || '')
+      .trim()
+      .replace(/\s/g, '');
+    if (custom) return custom;
+    return makeDriverLoginId(driver);
+  }
+
+  /** 쿠팡 1번 시트 A열 → 이기혁8669 형식 (배민 로직 미사용) */
+  function buildCoupangErpIdFromCell(identityCell) {
+    const idRaw = normalizeImportCellText(identityCell).replace(/\s/g, '');
+    if (!idRaw) {
+      return { coupangId: '', name: '', phone: '', error: 'A열 공백' };
+    }
+
+    const phoneTail = idRaw.match(/(01[\d-]{9,14})$/);
+    if (!phoneTail) {
+      return { coupangId: '', name: '', phone: '', error: '전화번호 추출 실패' };
+    }
+
+    const phone = normalizePhone(phoneTail[1]);
+    const name = idRaw.slice(0, idRaw.length - phoneTail[1].length);
+    if (!name) {
+      return { coupangId: '', name: '', phone, error: '이름 추출 실패' };
+    }
+    if (phone.length < 10 || !phone.startsWith('01')) {
+      return { coupangId: '', name, phone, error: '전화번호 형식 오류' };
+    }
+
+    return {
+      coupangId: `${name}${phone.slice(-4)}`,
+      name,
+      phone,
+      error: ''
+    };
+  }
+
+  function matchDriverByCoupangErpId(coupangKey, drivers) {
+    const key = String(coupangKey || '').replace(/\s/g, '');
+    if (!key) return null;
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+    return list.find(driver => getErpCoupangId(driver) === key) || null;
+  }
+
+  /** 배민 2번 시트 AK열 → baemin_id 만 비교 (쿠팡ID 미사용) */
+  function matchDriverByBaeminErpId(baeminId, drivers) {
+    const id = String(baeminId || '').trim();
+    if (!id) return null;
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+    return list.find(driver => String(driver.baeminId || '').trim() === id) || null;
   }
 
   function normalizeDriverName(value) {
@@ -535,6 +592,10 @@ window.BremDriverUtils = (function () {
     formatDriverPlatformLabel,
     formatAccountSummary,
     makeDriverLoginId,
+    getErpCoupangId,
+    buildCoupangErpIdFromCell,
+    matchDriverByCoupangErpId,
+    matchDriverByBaeminErpId,
     resolveCoupangImportLoginId,
     parseCoupangImportIdentity,
     normalizeDriverName,

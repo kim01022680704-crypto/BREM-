@@ -164,19 +164,20 @@
     const stats = entry?.stats && typeof entry.stats === 'object' ? entry.stats : {};
     const unmeasured = stats.unmeasured === true || entry?.rate == null;
     const empty = '-';
+    const countLabel = value => (entry ? `${number(value)}건` : empty);
 
     if (platform === 'baemin') {
-      setText('baeminRateComplete', entry ? number(stats.completeTotal || 0) : empty);
-      setText('baeminRateReject', entry ? number(stats.rejectCount || 0) : empty);
-      setText('baeminRateDispatchCancel', entry ? number(stats.dispatchCancelCount || 0) : empty);
-      setText('baeminRateRiderCancel', entry ? number(stats.riderCancelCount || 0) : empty);
+      setText('baeminRateComplete', entry ? countLabel(stats.completeTotal || 0) : empty);
+      setText('baeminRateReject', entry ? countLabel(stats.rejectCount || 0) : empty);
+      setText('baeminRateDispatchCancel', entry ? countLabel(stats.dispatchCancelCount || 0) : empty);
+      setText('baeminRateRiderCancel', entry ? countLabel(stats.riderCancelCount || 0) : empty);
       setText('baeminRateCalculated', !entry ? empty : (unmeasured ? '미집계' : formatPercent(entry.rate)));
       return;
     }
 
-    setText('coupangRateComplete', entry ? number(stats.completeCount || 0) : empty);
-    setText('coupangRateReject', entry ? number(stats.rejectCount || 0) : empty);
-    setText('coupangRateCancel', entry ? number(stats.cancelCount || 0) : empty);
+    setText('coupangRateComplete', entry ? countLabel(stats.completeCount || 0) : empty);
+    setText('coupangRateReject', entry ? countLabel(stats.rejectCount || 0) : empty);
+    setText('coupangRateCancel', entry ? countLabel(stats.cancelCount || 0) : empty);
     setText('coupangRateCalculated', !entry ? empty : (unmeasured ? '미집계' : formatPercent(entry.rate)));
   }
 
