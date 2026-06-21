@@ -25,6 +25,7 @@ const BremStorage = (function () {
     settlementUnmatched: 'brem_admin_settlement_unmatched',
     settlementUploadLogs: 'brem_admin_settlement_upload_logs',
     callEditLogs: 'brem_admin_call_edit_logs',
+    riderViewPublish: 'brem_rider_view_publish',
     promotionRules: 'brem_admin_promotion_rules',
     promotionSettings: 'brem_admin_promotion_settings',
     promotionSelectorOptions: 'brem_admin_promotion_selector_options',
@@ -2010,7 +2011,8 @@ const BremStorage = (function () {
           rate: unmeasured ? null : Number(row.rate) || 0,
           stats,
           source: row.source || 'manual',
-          updatedAt: row.updated_at
+          updatedAt: row.updated_at,
+          riderPublishedAt: row.rider_published_at || null
         };
       });
       stageRiderScopedCache(KEYS.rejections, rejectionRows, { tableLoaded: true });
@@ -3809,7 +3811,7 @@ const BremStorage = (function () {
       return migrateRejectionsPlatform(normalizeRejections(list));
     },
 
-    upsertWeekly({ driverId, weekStart, rate, platform = DEFAULT_PLATFORM, stats = null, source = 'manual' }) {
+    upsertWeekly({ driverId, weekStart, rate, platform = DEFAULT_PLATFORM, stats = null, source = 'manual', riderPublishedAt = null }) {
       const p = normalizePlatform(platform);
       const list = rejections.getAll().filter(item => !(item.driverId === driverId && item.weekStart === weekStart && normalizePlatform(item.platform) === p));
       const statsObj = stats && typeof stats === 'object' ? { ...stats } : {};
@@ -3823,7 +3825,8 @@ const BremStorage = (function () {
         rate: unmeasured ? 0 : Number(rate),
         stats: statsObj,
         source: String(source || 'manual'),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        riderPublishedAt: riderPublishedAt || null
       });
       storageAdapter.write(KEYS.rejections, list);
       return list;
@@ -3846,9 +3849,16 @@ const BremStorage = (function () {
       return rejections.getAll();
     },
 
-    getEntryForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM) {
+    getEntryForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM, options = {}) {
       const p = normalizePlatform(platform);
-      const entry = rejections.getAll().find(item => item.driverId === driverId && item.weekStart === weekStart && normalizePlatform(item.platform) === p);
+      const riderOnly = options.riderOnly === true;
+      const entry = rejections.getAll().find(item => {
+        if (item.driverId !== driverId || item.weekStart !== weekStart || normalizePlatform(item.platform) !== p) {
+          return false;
+        }
+        if (riderOnly && !item.riderPublishedAt) return false;
+        return true;
+      });
       if (!entry) return null;
       const stats = entry.stats && typeof entry.stats === 'object' ? entry.stats : {};
       return {
@@ -3858,9 +3868,60 @@ const BremStorage = (function () {
       };
     },
 
-    getRateForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM) {
-      const entry = rejections.getEntryForWeek(driverId, weekStart, platform);
+    countPendingRiderPublish() {
+      return rejections.getAll().filter(item => !item.riderPublishedAt).length;
+    },
+
+    async publishPendingToRiderView() {
+      const now = new Date().toISOString();
+      let publishedCount = 0;
+      const list = rejections.getAll().map(item => {
+        if (item.riderPublishedAt) return item;
+        publishedCount += 1;
+        return { ...item, riderPublishedAt: now };
+      });
+
+      if (!publishedCount) {
+        return { publishedCount: 0, publishedAt: riderViewPublish.getMeta().publishedAt || null };
+      }
+
+      await storageAdapter.write(KEYS.rejections, list);
+      await storageAdapter.flush?.();
+
+      const meta = riderViewPublish.record({
+        publishedAt: now,
+        rejectionsPublished: publishedCount
+      });
+
+      window.BremDataCache?.invalidate?.(KEYS.rejections);
+      return { publishedCount, publishedAt: meta.publishedAt };
+    },
+
+    getRateForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM, options = {}) {
+      const entry = rejections.getEntryForWeek(driverId, weekStart, platform, options);
       return entry ? entry.rate : null;
+    }
+  };
+
+  const riderViewPublish = {
+    getMeta() {
+      const raw = storageAdapter.read(KEYS.riderViewPublish, {});
+      return raw && typeof raw === 'object' ? raw : {};
+    },
+
+    record({ publishedAt, rejectionsPublished = 0, publishedBy = '' } = {}) {
+      const meta = {
+        publishedAt: publishedAt || new Date().toISOString(),
+        rejectionsPublished: Number(rejectionsPublished) || 0,
+        publishedBy: String(
+          publishedBy
+          || activeSupabaseProfile?.name
+          || activeSupabaseProfile?.login_id
+          || 'admin'
+        ).trim()
+      };
+      storageAdapter.write(KEYS.riderViewPublish, meta);
+      return meta;
     }
   };
 
@@ -7999,6 +8060,7 @@ const BremStorage = (function () {
     calls,
     callEditLogs,
     rejections,
+    riderViewPublish,
     targets,
     weeklyTargets,
     notices,

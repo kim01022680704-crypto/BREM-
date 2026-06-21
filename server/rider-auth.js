@@ -400,7 +400,8 @@ const RIDER_DASHBOARD_SETTING_KEYS = [
   'brem_driver_weekly_targets',
   'brem_admin_long_event_catalog',
   'brem_admin_long_event_items',
-  'brem_admin_long_event_config'
+  'brem_admin_long_event_config',
+  'brem_rider_view_publish'
 ];
 
 function normalizeCallPlatform(value) {
@@ -518,8 +519,9 @@ async function getRiderDashboard(accessToken) {
       .order('date', { ascending: false }),
     supabase
       .from('admin_rejection_rates')
-      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at')
+      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
       .eq('driver_id', riderId)
+      .not('rider_published_at', 'is', null)
       .order('week_start', { ascending: false }),
     supabase
       .from('admin_targets')

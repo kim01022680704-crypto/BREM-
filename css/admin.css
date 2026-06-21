@@ -2516,6 +2516,14 @@ textarea {
   background: #fffbeb;
 }
 
+.rider-publish-card .card-header {
+  align-items: flex-start;
+}
+
+.rider-publish-card .primary-btn {
+  flex-shrink: 0;
+}
+
 .call-input-notice {
   margin-top: 0;
   color: #334155;

@@ -2450,7 +2450,28 @@
     });
   }
 
+  function renderRiderPublishStatus() {
+    const statusEl = $('#riderViewPublishStatus');
+    if (!statusEl) return;
+
+    const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
+    const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
+    const publishedLabel = window.BremDriverUtils?.formatRiderPublishDateTime?.(meta.publishedAt)
+      || (meta.publishedAt ? formatDateTime(meta.publishedAt) : '');
+
+    if (publishedLabel) {
+      statusEl.textContent = pending > 0
+        ? `마지막 반영: ${publishedLabel} · 미반영 ${number(pending)}건`
+        : `마지막 반영: ${publishedLabel} · 기사앱과 동기화됨`;
+    } else if (pending > 0) {
+      statusEl.textContent = `미반영 ${number(pending)}건 · 반영 버튼을 눌러 기사앱에 공개하세요.`;
+    } else {
+      statusEl.textContent = '반영 대기 중인 거절율·수락율 데이터가 없습니다.';
+    }
+  }
+
   function renderRejections() {
+    renderRiderPublishStatus();
     pruneSelectedRejectionIds();
     PLATFORMS.forEach(platform => {
       updateRejectionWeekPreview(state.rejectionWeekByPlatform[platform] || weekStartKey(), platform);
@@ -3934,6 +3955,32 @@
 
     document.addEventListener('brem-rejection-erp-applied', () => {
       renderAll();
+    });
+
+    $('#riderViewPublishBtn')?.addEventListener('click', () => {
+      const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
+      if (!pending) {
+        showToast('기사앱에 반영할 미공개 데이터가 없습니다.');
+        return;
+      }
+      if (!window.confirm(`미반영 ${pending}건의 거절율·수락율을 기사 전용 조회에 반영하시겠습니까?`)) return;
+
+      void (async () => {
+        const btn = $('#riderViewPublishBtn');
+        if (btn) btn.disabled = true;
+        try {
+          await BremStorage.ensureSectionLoaded('rejections');
+          const result = await BremStorage.rejections.publishPendingToRiderView();
+          const label = window.BremDriverUtils?.formatRiderPublishDateTime?.(result.publishedAt) || formatDateTime(result.publishedAt);
+          showToast(`${result.publishedCount}건 기사앱 반영 완료 · ${label}`);
+          renderAll();
+        } catch (error) {
+          console.error('[BREM] rider publish failed:', error);
+          showToast(error.message || '기사앱 반영에 실패했습니다.');
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      })();
     });
 
     initCallDateFields();

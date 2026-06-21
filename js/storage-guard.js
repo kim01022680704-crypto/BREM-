@@ -21,6 +21,7 @@ window.BremStorageGuard = (function () {
     'brem_admin_settlement_unmatched',
     'brem_admin_settlement_upload_logs',
     'brem_admin_call_edit_logs',
+    'brem_rider_view_publish',
     'brem_admin_weekly_settlements',
     'brem_admin_calls',
     'brem_admin_rejection_rates',

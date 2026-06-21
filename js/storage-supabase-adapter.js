@@ -171,7 +171,7 @@ window.BremSupabaseStorageAdapter = (function () {
       const selectColumns = table === 'admin_calls'
         ? 'id,driver_id,date,platform,count'
         : table === 'admin_rejection_rates'
-          ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at'
+          ? 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at'
           : table === 'admin_targets'
             ? 'id,driver_id,month,count'
             : '*';
@@ -301,7 +301,8 @@ window.BremSupabaseStorageAdapter = (function () {
         rate: item.rate == null ? 0 : Number(item.rate) || 0,
         stats: item.stats && typeof item.stats === 'object' ? item.stats : {},
         source: String(item.source || 'manual'),
-        updated_at: item.updatedAt || new Date().toISOString()
+        updated_at: item.updatedAt || new Date().toISOString(),
+        rider_published_at: item.riderPublishedAt || null
       };
     }
 
@@ -316,7 +317,8 @@ window.BremSupabaseStorageAdapter = (function () {
         rate: unmeasured ? null : Number(row.rate) || 0,
         stats,
         source: row.source || 'manual',
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
+        riderPublishedAt: row.rider_published_at || null
       };
     }
 

@@ -580,6 +580,21 @@ window.BremDriverUtils = (function () {
     showToast.timer = window.setTimeout(() => toastEl.classList.remove('show'), 2200);
   }
 
+  function formatRiderPublishDateTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).format(date);
+  }
+
   return {
     normalizePhone,
     formatResidentNumber,
@@ -616,6 +631,7 @@ window.BremDriverUtils = (function () {
     findDuplicateDriver,
     isDuplicateErrorMessage,
     formatDate,
+    formatRiderPublishDateTime,
     escapeHtml,
     statusClass,
     renderPlatformBadges,

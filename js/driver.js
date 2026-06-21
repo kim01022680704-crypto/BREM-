@@ -143,7 +143,32 @@
   }
 
   function weeklyEntryForPlatform(driverId, weekStart, platform) {
-    return BremStorage.rejections.getEntryForWeek(driverId, weekStart, platform);
+    return BremStorage.rejections.getEntryForWeek(driverId, weekStart, platform, { riderOnly: true });
+  }
+
+  function renderRiderPublishNotice() {
+    const notice = document.getElementById('riderPublishNotice');
+    const label = document.getElementById('riderPublishAt');
+    if (!notice || !label) return;
+
+    const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
+    let publishedAt = meta.publishedAt || null;
+    if (!publishedAt) {
+      publishedAt = BremStorage.rejections?.getAll?.()
+        .map(entry => entry.riderPublishedAt)
+        .filter(Boolean)
+        .sort()
+        .reverse()[0] || null;
+    }
+
+    const text = window.BremDriverUtils?.formatRiderPublishDateTime?.(publishedAt) || '';
+    if (!text) {
+      notice.hidden = true;
+      label.textContent = '-';
+      return;
+    }
+    notice.hidden = false;
+    label.textContent = text;
   }
 
   function weeklyRateForPlatform(driverId, weekStart, platform) {
@@ -755,6 +780,7 @@
       state.currentDriver = driver;
     }
     applySensitiveFieldUi(driver);
+    renderRiderPublishNotice();
     void renderRiderMission(driver);
 
     const month = currentMonth();

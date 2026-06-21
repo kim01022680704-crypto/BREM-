@@ -790,7 +790,7 @@
             await BremStorage.refreshDataFromServer(BremStorage.KEYS?.rejections || 'brem_admin_rejection_rates');
           }
           const failCount = Number(failEl?.textContent || 0);
-          notify(`총 ${payloads.length}건 저장 완료 / 매칭 실패 ${failCount}건`);
+          notify(`총 ${payloads.length}건 저장 완료 / 매칭 실패 ${failCount}건 · 「라이더 조회 반영」 버튼으로 기사앱에 공개하세요.`);
           clearPreview();
           document.dispatchEvent(new CustomEvent('brem-rejection-erp-applied'));
         } catch (error) {
