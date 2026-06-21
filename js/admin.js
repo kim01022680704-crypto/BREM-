@@ -33,6 +33,13 @@
     'settlements'
   ]);
 
+  const DRIVER_SEARCH_SECTIONS = new Set([
+    'calls',
+    'rejections',
+    'targets',
+    'settlements'
+  ]);
+
   const LEGACY_SECTION_MAP = {
     'calls-coupang': { section: 'calls', platform: 'coupang' },
     'calls-baemin': { section: 'calls', platform: 'baemin' },
@@ -752,6 +759,15 @@
 
     if (nameQuery && driverNameText.includes(nameQuery)) return true;
     if (phoneQuery && driverPhoneText.includes(phoneQuery)) return true;
+
+    const lowered = keyword.toLowerCase();
+    const baeminId = String(driver.baeminId || '').toLowerCase();
+    const coupangId = String(
+      driver.coupangId || driver.coupangLoginId || driver.loginId || ''
+    ).toLowerCase();
+
+    if (baeminId && baeminId.includes(lowered)) return true;
+    if (coupangId && coupangId.includes(lowered)) return true;
     return false;
   }
 
@@ -1806,6 +1822,7 @@
   }
 
   function fillDriverSelect(select) {
+    if (!select) return;
     const current = select.value;
     const list = filteredDrivers();
     select.innerHTML = '<option value="">기사 선택</option>' + list
@@ -1818,9 +1835,23 @@
     }
   }
 
+  function resetDriverFormSelects() {
+    $$('.call-driver, .rejection-driver, #targetDriver, #weeklyTargetDriver').forEach(select => {
+      if (select) select.value = '';
+    });
+  }
+
   function refreshSelects() {
     $$('.call-driver, .rejection-driver').forEach(fillDriverSelect);
     ['#targetDriver', '#weeklyTargetDriver'].forEach(selector => fillDriverSelect($(selector)));
+  }
+
+  function updateDriverSearchBarVisibility(sectionId) {
+    const bar = $('#adminDriverSearchBar');
+    if (!bar) return;
+    const visible = DRIVER_SEARCH_SECTIONS.has(sectionId);
+    bar.hidden = !visible;
+    if (visible) updateDriverSearchStatus();
   }
 
   function weekCallsForDriverByPlatform(driverId, weekStart, platform) {
@@ -2710,6 +2741,10 @@
 
   function handleDriverSearchChange() {
     updateDriverSearchStatus();
+    if (!state.driverSearchQuery.trim()) {
+      resetDriverFormSelects();
+    }
+    refreshSelects();
     if (DRIVER_FILTERED_SECTIONS.has(state.currentSection)) {
       renderActiveSection(state.currentSection);
     }
@@ -2768,6 +2803,7 @@
     }
 
     state.currentSection = sectionId;
+    updateDriverSearchBarVisibility(sectionId);
     $$('.section').forEach(section => section.classList.toggle('active', section.id === sectionId));
     $$('.nav-btn').forEach(button => button.classList.toggle('active', button.dataset.section === sectionId));
     const titleEl = $('#pageTitle');
@@ -2831,6 +2867,9 @@
     }
     if (sectionId === 'baemin-delivery-status' && window.BremBaeminDeliveryStatusAdmin?.refresh) {
       void window.BremBaeminDeliveryStatusAdmin.refresh();
+    }
+    if (DRIVER_SEARCH_SECTIONS.has(sectionId)) {
+      refreshSelects();
     }
     renderActiveSection(sectionId);
   }
@@ -2896,6 +2935,7 @@
     $('#adminDriverSearchClear').addEventListener('click', () => {
       state.driverSearchQuery = '';
       $('#adminDriverSearch').value = '';
+      resetDriverFormSelects();
       handleDriverSearchChange();
     });
 

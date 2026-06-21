@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260622f">
+  <link rel="stylesheet" href="css/admin.css?v=20260622i">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -127,10 +127,10 @@
         <span class="brem-data-loading__text">데이터 불러오는 중...</span>
       </div>
 
-      <div class="driver-search-bar">
+      <div class="driver-search-bar" id="adminDriverSearchBar" hidden>
         <label class="driver-search-field">
           <span>기사 검색</span>
-          <input type="search" id="adminDriverSearch" placeholder="이름 또는 전화번호 입력" autocomplete="off">
+          <input type="search" id="adminDriverSearch" placeholder="이름·연락처·배민ID·쿠팡ID" autocomplete="off">
         </label>
         <button class="small-btn" type="button" id="adminDriverSearchClear" hidden>초기화</button>
         <p class="driver-search-result" id="adminDriverSearchResult">전체 기사 표시 중</p>
@@ -406,6 +406,7 @@
             </label>
             <button class="primary-btn" type="submit">저장</button>
           </form>
+          <p class="form-help call-driver-search-hint">상단 「기사 검색」과 연동됩니다. 검색어를 지우면 기사 선택 목록이 전체로 돌아갑니다.</p>
           <p class="form-help">쿠팡 콜수를 하루 단위로 입력하면 주간·월간·장기근속이벤트 콜수가 자동으로 계산됩니다.</p>
         </article>
 
@@ -463,6 +464,7 @@
             </label>
             <button class="primary-btn" type="submit">저장</button>
           </form>
+          <p class="form-help call-driver-search-hint">상단 「기사 검색」과 연동됩니다. 검색어를 지우면 기사 선택 목록이 전체로 돌아갑니다.</p>
           <p class="form-help">배민 콜수를 하루 단위로 입력하면 주간·월간·장기근속이벤트 콜수가 자동으로 계산됩니다.</p>
         </article>
 
@@ -776,36 +778,68 @@
       </section>
 
       <section class="section" id="targets">
-        <article class="card">
+        <article class="card targets-combined-card">
           <div class="card-header">
-            <h2>월간 목표 콜수 입력</h2>
+            <div>
+              <h2>목표 콜수 입력</h2>
+              <p class="form-help targets-search-hint">상단 「기사 검색」과 연동됩니다. 검색어를 지우면 기사 선택 목록이 전체로 돌아갑니다.</p>
+            </div>
           </div>
-          <form class="form-row" id="targetForm">
-            <label>
-              기사
-              <select id="targetDriver" required></select>
-            </label>
-            <label class="period-label-block month-target-block">
-              <span class="label-row">적용 월</span>
-              <button type="button" class="month-range-label month-picker-trigger" id="targetMonthButton">
-                <span id="targetMonthLabel">월을 선택하세요</span>
-              </button>
-              <span class="period-picker-caption">클릭하여 적용월 선택</span>
-              <input type="hidden" id="targetMonth" required>
-            </label>
-            <label>
-              월간 목표 콜수
-              <input type="number" id="targetCount" min="1" placeholder="300" required>
-            </label>
-            <button class="primary-btn" type="submit">월간 목표 저장</button>
-          </form>
+          <div class="targets-input-row">
+            <section class="target-input-panel target-input-panel--monthly" aria-labelledby="monthlyTargetInputTitle">
+              <h3 class="target-input-panel__title" id="monthlyTargetInputTitle">월간 목표</h3>
+              <form class="target-input-form" id="targetForm">
+                <label>
+                  기사
+                  <select id="targetDriver" required></select>
+                </label>
+                <label class="period-label-block month-target-block">
+                  <span class="label-row">적용 월</span>
+                  <button type="button" class="month-range-label month-picker-trigger" id="targetMonthButton">
+                    <span id="targetMonthLabel">월을 선택하세요</span>
+                  </button>
+                  <span class="period-picker-caption">클릭하여 적용월 선택</span>
+                  <input type="hidden" id="targetMonth" required>
+                </label>
+                <label>
+                  월간 목표 콜수
+                  <input type="number" id="targetCount" min="1" placeholder="300" required>
+                </label>
+                <button class="primary-btn" type="submit">월간 목표 저장</button>
+              </form>
+            </section>
+            <section class="target-input-panel target-input-panel--weekly" aria-labelledby="weeklyTargetInputTitle">
+              <h3 class="target-input-panel__title" id="weeklyTargetInputTitle">주간 목표</h3>
+              <form class="target-input-form week-target-form" id="weeklyTargetForm">
+                <label>
+                  기사
+                  <select id="weeklyTargetDriver" required></select>
+                </label>
+                <label class="period-label-block week-target-block">
+                  <span class="label-row">적용주</span>
+                  <span class="field-preview week-range-label" id="adminTargetWeekRange">수요일~화요일 기준</span>
+                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="form" id="weeklyTargetWeekButton">
+                    <span id="weeklyTargetWeekLabel">수요일 선택</span>
+                  </button>
+                  <span class="period-picker-caption">클릭하여 수요일 선택</span>
+                  <input type="hidden" id="weeklyTargetWeekDate" required>
+                </label>
+                <label>
+                  주간 목표 콜수
+                  <input type="number" id="weeklyTargetCount" min="1" placeholder="70" required>
+                </label>
+                <button class="primary-btn" type="submit">주간 목표 저장</button>
+              </form>
+              <p class="form-help target-panel-help">적용주는 수요일~화요일 기준입니다.</p>
+            </section>
+          </div>
         </article>
 
         <article class="card">
           <div class="card-header">
             <h2>월간 목표 현황</h2>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap targets-status-scroll">
             <table>
               <thead>
                 <tr>
@@ -824,38 +858,9 @@
 
         <article class="card">
           <div class="card-header">
-            <h2>주간 목표 콜수 입력</h2>
-          </div>
-          <form class="form-row week-target-form" id="weeklyTargetForm">
-            <label>
-              기사
-              <select id="weeklyTargetDriver" required></select>
-            </label>
-            <label class="period-label-block week-target-block">
-              <span class="label-row">
-                적용주
-              </span>
-              <span class="field-preview week-range-label" id="adminTargetWeekRange">수요일~화요일 기준</span>
-              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="form" id="weeklyTargetWeekButton">
-                <span id="weeklyTargetWeekLabel">수요일 선택</span>
-              </button>
-              <span class="period-picker-caption">클릭하여 수요일 선택</span>
-              <input type="hidden" id="weeklyTargetWeekDate" required>
-            </label>
-            <label>
-              주간 목표 콜수
-              <input type="number" id="weeklyTargetCount" min="1" placeholder="70" required>
-            </label>
-            <button class="primary-btn" type="submit">주간 목표 저장</button>
-          </form>
-          <p class="form-help">적용주는 수요일~화요일 기준입니다. 수요일만 선택 가능합니다.</p>
-        </article>
-
-        <article class="card">
-          <div class="card-header">
             <h2>주간 목표 현황</h2>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap targets-status-scroll targets-weekly-status-scroll">
             <table>
               <thead>
                 <tr>
@@ -2750,6 +2755,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622f"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622f"></script>
+  <script src="js/admin.js?v=20260622i"></script>
 </body>
 </html>
