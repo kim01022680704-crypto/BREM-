@@ -192,6 +192,7 @@ const BremStorage = (function () {
 
   let adminDataHydratePromise = null;
   let bootstrapLoadPromise = null;
+  let bootstrapComplete = false;
   let driversFullFetchInProgress = false;
   const sectionLoadPromises = new Map();
 
@@ -220,7 +221,18 @@ const BremStorage = (function () {
     KEYS.eventConfig
   ]);
 
-  const DEFAULT_MISSION_ID = 'brem_mission_count_140';
+  function logDataSource(label, cached, detail = '') {
+    window.BremDataCache?.logDataSource?.(label, cached, detail);
+  }
+
+  function isBootstrapComplete() {
+    return bootstrapComplete;
+  }
+
+  function resetBootstrapState() {
+    bootstrapComplete = false;
+    bootstrapLoadPromise = null;
+  }
 
   function dispatchStorageReadyOnce(detail) {
     if (dispatchStorageReadyOnce.done) return;
@@ -696,20 +708,20 @@ const BremStorage = (function () {
     if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
       const cached = window.BremDataCache.getData(KEYS.missions);
       if (Array.isArray(cached)) {
-        window.BremDataCache?.logFetch?.('missions', KEYS.missions, true);
+        logDataSource('missions', true);
         setMissionsCache(cached);
         return { ok: true, cached: true, count: cached.length };
       }
     }
 
-    window.BremDataCache?.logFetch?.('missions', KEYS.missions, false);
+    logDataSource('missions', false);
 
     const loadViaAdapter = async () => {
       if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.ensureKeysLoaded) {
         return { ok: true };
       }
       try {
-        await activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force: true });
+        await activeStorageAdapter.ensureKeysLoaded([KEYS.missions], { force });
         const count = missions.getAll().length;
         return { ok: true, count };
       } catch (error) {
@@ -866,7 +878,27 @@ const BremStorage = (function () {
       'admin-account'
     ]);
 
+    if (bootstrapComplete) {
+      if (!sectionKeys.length) {
+        if (sectionId === 'admin-schedule') {
+          return window.BremDataCache?.isValid?.(KEYS.adminSchedules);
+        }
+        return settingsOnlySections.has(sectionId)
+          ? window.BremDataCache?.isCoreReady?.()
+          : true;
+      }
+      if (sectionKeys.includes(KEYS.drivers) && !driversLoadMeta.complete) return false;
+      if (sectionKeys.includes(KEYS.missions) && !window.BremDataCache?.isValid?.(KEYS.missions)) return false;
+      return sectionKeys
+        .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
+        .every(key => window.BremDataCache?.isValid?.(key));
+    }
+
     if (!sectionKeys.length) {
+      if (sectionId === 'admin-schedule') {
+        return window.BremDataCache?.isCoreReady?.()
+          && window.BremDataCache?.isValid?.(KEYS.adminSchedules);
+      }
       return settingsOnlySections.has(sectionId)
         ? window.BremDataCache?.isCoreReady?.()
         : true;
@@ -891,6 +923,11 @@ const BremStorage = (function () {
   }
 
   async function ensureSectionLoadedInternal(sectionId, options = {}) {
+    const force = Boolean(options.force || options.forceDrivers);
+    if (!force && bootstrapComplete && isSectionCacheReady(sectionId)) {
+      return { ok: true, cached: true };
+    }
+
     window.BremPerf?.time?.(`storage.ensureSection:${sectionId}`);
     const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
     if (!hydrated.ok) {
@@ -906,17 +943,33 @@ const BremStorage = (function () {
 
     const tableKeysWithoutMissions = tableKeys.filter(key => key !== KEYS.missions);
     if (tableKeysWithoutMissions.length && activeStorageAdapter.ensureKeysLoaded) {
-      tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutMissions, {
-        force: Boolean(options.force)
-      }));
+      const allTableCached = !force && tableKeysWithoutMissions.every(key => window.BremDataCache?.isValid?.(key));
+      if (allTableCached) {
+        tableKeysWithoutMissions.forEach(key => {
+          const label = key === KEYS.promotionRules ? 'promotions' : (key === KEYS.notices ? 'notices' : key);
+          logDataSource(label, true, sectionId);
+        });
+      } else {
+        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutMissions, {
+          force
+        }));
+      }
     }
 
     if (needsMissions) {
-      tasks.push(reloadMissions(Boolean(options.force)));
+      if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
+        logDataSource('missions', true, sectionId);
+      } else {
+        tasks.push(reloadMissions(force));
+      }
     }
 
     if (needsDrivers) {
-      tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
+      if (!force && driversLoadMeta.complete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
+        logDataSource('riders', true, sectionId);
+      } else {
+        tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
+      }
     }
 
     if (tasks.length) {
@@ -950,34 +1003,57 @@ const BremStorage = (function () {
     const force = options.force === true;
     if (!force && bootstrapLoadPromise) return bootstrapLoadPromise;
 
-    const driversReady = driversLoadMeta.complete
-      && window.BremDataCache?.isValid?.(KEYS.drivers)
-      && drivers.getAll().length > 0;
-    const missionsReady = window.BremDataCache?.isValid?.(KEYS.missions)
-      && missions.getAll().length > 0;
+    if (!force && bootstrapComplete) {
+      logDataSource('bootstrap', true);
+      return { ok: true, cached: true };
+    }
 
-    if (!force && driversReady && missionsReady) {
-      window.BremDataCache?.logFetch?.('bootstrap', 'all', true);
+    const driversReady = !force && driversLoadMeta.complete
+      && window.BremDataCache?.isValid?.(KEYS.drivers);
+    const missionsReady = !force && window.BremDataCache?.isValid?.(KEYS.missions);
+    const promotionsReady = !force && window.BremDataCache?.isValid?.(KEYS.promotionRules);
+    const noticesReady = !force && window.BremDataCache?.isValid?.(KEYS.notices);
+    const schedulesReady = !force && window.BremDataCache?.isValid?.(KEYS.adminSchedules);
+    const settingsReady = !force && window.BremDataCache?.isCoreReady?.();
+
+    if (driversReady && missionsReady && promotionsReady && noticesReady && schedulesReady && settingsReady) {
+      bootstrapComplete = true;
+      logDataSource('bootstrap', true);
       return { ok: true, cached: true };
     }
 
     const run = async () => {
-      window.BremDataCache?.logFetch?.('bootstrap', 'all', false);
       const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
       if (!hydrated.ok) return hydrated;
 
-      const tasks = [
+      await Promise.all([
         fetchAllDriversFromServer({ force }),
-        reloadMissions(force)
-      ];
-      if (activeStorageAdapter.ensureKeysLoaded) {
-        tasks.push(activeStorageAdapter.ensureKeysLoaded([KEYS.notices], { force }));
+        reloadMissions(force),
+        activeStorageAdapter.ensureKeysLoaded
+          ? activeStorageAdapter.ensureKeysLoaded([KEYS.notices, KEYS.promotionRules], { force })
+          : Promise.resolve()
+      ]);
+
+      if (activeStorageAdapter.read) {
+        const scheduleList = activeStorageAdapter.read(KEYS.adminSchedules, null);
+        if (Array.isArray(scheduleList)) {
+          window.BremDataCache?.set?.(KEYS.adminSchedules, scheduleList, { source: 'bootstrap' });
+          logDataSource('schedules', false);
+        }
       }
-      await Promise.all(tasks);
+      if (window.BremDataCache?.isCoreReady?.()) {
+        logDataSource('settings', force ? false : settingsReady);
+      }
+
+      bootstrapComplete = true;
+      document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
       return { ok: true };
     };
 
-    if (force) return run();
+    if (force) {
+      resetBootstrapState();
+      return run();
+    }
 
     bootstrapLoadPromise = run().finally(() => {
       bootstrapLoadPromise = null;
@@ -990,6 +1066,7 @@ const BremStorage = (function () {
     const missionsMeta = window.BremDataCache?.getMeta?.(KEYS.missions);
     return {
       ...(window.BremDataCache?.getStatus?.() || {}),
+      bootstrapComplete,
       driversComplete: driversLoadMeta.complete,
       driversCount: drivers.getAll().length,
       driversSupabaseTotal: driversLoadMeta.supabaseTotal,
@@ -1000,6 +1077,7 @@ const BremStorage = (function () {
   }
 
   async function refreshDataFromServer(key) {
+    resetBootstrapState();
     window.BremDataCache?.invalidate?.(key);
     if (TABLE_STORAGE_KEYS.has(key)) {
       activeStorageAdapter.invalidateKeys?.([key]);
@@ -1115,7 +1193,7 @@ const BremStorage = (function () {
     }
 
     if (!force && driversLoadMeta.complete && drivers.getAll().length > 0) {
-      window.BremDataCache?.logFetch?.('drivers', KEYS.drivers, true);
+      logDataSource('riders', true);
       return {
         ok: true,
         cached: true,
@@ -1127,7 +1205,7 @@ const BremStorage = (function () {
     if (driversFetchAllPromise && !force) return driversFetchAllPromise;
 
     const runFetch = async () => {
-      window.BremDataCache?.logFetch?.('drivers', KEYS.drivers, false);
+      logDataSource('riders', false);
       window.BremPerf?.time?.('storage.fetchAllDrivers');
       const pageSize = 200;
       let offset = 0;
@@ -1395,7 +1473,7 @@ const BremStorage = (function () {
       body: JSON.stringify({
         riders,
         skipAuthProvision: options.skipAuthProvision !== false,
-        maxBatch: options.maxBatch || 150
+        maxBatch: options.maxBatch || 300
       })
     });
 
@@ -1783,7 +1861,7 @@ const BremStorage = (function () {
 
     if (!force && !append && !hasSearch && !hasStatusFilter) {
       if (driversLoadMeta.complete && drivers.getAll().length > 0) {
-        window.BremDataCache?.logFetch?.('drivers', KEYS.drivers, true);
+        logDataSource('riders', true);
         return {
           ok: true,
           cached: true,
@@ -2576,6 +2654,53 @@ const BremStorage = (function () {
       return drivers.saveAll(nextList).then(() => ({ ok: true, succeeded: list.length }));
     },
 
+    batchPatch(patches, options = {}) {
+      const items = Array.isArray(patches)
+        ? patches.filter(item => item?.id && item?.changes && Object.keys(item.changes).length)
+        : [];
+      if (!items.length) return Promise.resolve({ ok: true, updated: 0 });
+
+      const prevList = drivers.getAll();
+      const patchMap = new Map(items.map(item => [item.id, item.changes]));
+      const nextDrivers = prevList.map(driver => {
+        const changes = patchMap.get(driver.id);
+        if (!changes) return driver;
+        return {
+          ...driver,
+          ...changes,
+          updatedAt: new Date().toISOString()
+        };
+      });
+      const updatedRiders = nextDrivers.filter(driver => patchMap.has(driver.id));
+      setDriversCache(nextDrivers);
+
+      if (isProductionMode()) {
+        return persistRidersBulkViaServer(updatedRiders, {
+          skipAuthProvision: true,
+          maxBatch: options.maxBatch || 300
+        })
+          .then(result => {
+            markDriversCache(drivers.getAll(), { source: 'write' });
+            return { ...result, updated: updatedRiders.length };
+          })
+          .catch(error => {
+            setDriversCache(prevList);
+            throw error;
+          });
+      }
+
+      if (activeStorageAdapter.type === 'supabase') {
+        return activeStorageAdapter.write(KEYS.drivers, nextDrivers)
+          .then(() => ({ ok: true, updated: updatedRiders.length }))
+          .catch(error => {
+            setDriversCache(prevList);
+            throw error;
+          });
+      }
+
+      return drivers.saveAll(nextDrivers).then(() => ({ ok: true, updated: updatedRiders.length }));
+    },
+
     create(driver) {
       const prevList = drivers.getAll();
       const list = [...prevList];
@@ -3230,7 +3355,13 @@ const BremStorage = (function () {
       return `${item.date || ''}T${item.createdAt || ''}`;
     },
 
-    create(data) {
+    async persistList(list) {
+      storageAdapter.write(KEYS.adminSchedules, list);
+      window.BremDataCache?.set?.(KEYS.adminSchedules, list, { source: 'write' });
+      await flushActiveStorage();
+    },
+
+    async create(data) {
       const list = adminSchedules.getAll();
       const next = {
         id: createId(),
@@ -3243,11 +3374,30 @@ const BremStorage = (function () {
         updatedAt: new Date().toISOString()
       };
       list.push(next);
-      storageAdapter.write(KEYS.adminSchedules, list);
+      await adminSchedules.persistList(list);
       return next;
     },
 
-    update(id, data) {
+    async createMany(items) {
+      const list = adminSchedules.getAll();
+      const now = new Date().toISOString();
+      const created = (Array.isArray(items) ? items : []).map(data => ({
+        id: createId(),
+        date: String(data.date || '').slice(0, 10),
+        title: String(data.title || '').trim(),
+        memo: String(data.memo || '').trim(),
+        createdBy: String(data.createdBy || '').trim(),
+        createdById: String(data.createdById || '').trim(),
+        createdAt: now,
+        updatedAt: now
+      }));
+      if (!created.length) return [];
+      list.push(...created);
+      await adminSchedules.persistList(list);
+      return created;
+    },
+
+    async update(id, data) {
       const list = adminSchedules.getAll().map(item => {
         if (item.id !== id) return item;
         return {
@@ -3258,21 +3408,19 @@ const BremStorage = (function () {
           updatedAt: new Date().toISOString()
         };
       });
-      storageAdapter.write(KEYS.adminSchedules, list);
+      await adminSchedules.persistList(list);
       return list.find(item => item.id === id) || null;
     },
 
-    removeById(id) {
-      adminSchedules.removeByIds([id]);
+    async removeById(id) {
+      await adminSchedules.removeByIds([id]);
     },
 
-    removeByIds(ids) {
+    async removeByIds(ids) {
       const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
       if (!idSet.size) return;
-      storageAdapter.write(
-        KEYS.adminSchedules,
-        adminSchedules.getAll().filter(item => !idSet.has(item.id))
-      );
+      const list = adminSchedules.getAll().filter(item => !idSet.has(item.id));
+      await adminSchedules.persistList(list);
     }
   };
 
@@ -4879,9 +5027,14 @@ const BremStorage = (function () {
   }
 
   const promotionApplyResults = {
+    readRaw() {
+      return storageAdapter.read(KEYS.promotionApplyResults, []);
+    },
+
     getAll() {
-      const list = storageAdapter.read(KEYS.promotionApplyResults, []);
-      return list.map(normalizePromotionApplyResult).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+      return promotionApplyResults.readRaw()
+        .map(normalizePromotionApplyResult)
+        .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
     },
 
     getById(id) {
@@ -4890,17 +5043,21 @@ const BremStorage = (function () {
 
     save(record) {
       const next = normalizePromotionApplyResult(record);
-      const list = promotionApplyResults.getAll().filter(item => item.id !== next.id);
+      const list = promotionApplyResults.readRaw().filter(item => item.id !== next.id);
       list.unshift(next);
       storageAdapter.write(KEYS.promotionApplyResults, list);
+      window.BremDataCache?.set?.(KEYS.promotionApplyResults, list, { source: 'write' });
       return next;
     },
 
     remove(id) {
-      storageAdapter.write(
-        KEYS.promotionApplyResults,
-        promotionApplyResults.getAll().filter(item => item.id !== id)
-      );
+      const list = promotionApplyResults.readRaw().filter(item => item.id !== id);
+      storageAdapter.write(KEYS.promotionApplyResults, list);
+      window.BremDataCache?.set?.(KEYS.promotionApplyResults, list, { source: 'write' });
+    },
+
+    async persist() {
+      await flushActiveStorage();
     }
   };
 
@@ -5732,6 +5889,7 @@ const BremStorage = (function () {
       activeStorageAdapter = unavailableStorageAdapter;
       productionAdminSessionAccount = null;
       clearAllSessionAuthStorage();
+      resetBootstrapState();
       window.BremDataCache?.clearAll?.();
       window.BremSessionSecurity?.stop?.();
     },
@@ -6412,6 +6570,7 @@ const BremStorage = (function () {
     ensureSupabaseHydrated,
     ensureSectionLoaded,
     isSectionCacheReady,
+    isBootstrapComplete,
     loadBootstrapData,
     getCacheStatus,
     refreshDataFromServer,

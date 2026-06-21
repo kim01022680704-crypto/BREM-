@@ -83,6 +83,14 @@ window.BremDataCache = (function () {
     );
   }
 
+  /** Console: riders|missions|…: cache hit / supabase fetch */
+  function logDataSource(label, cached, detail = '') {
+    const name = String(label || 'data').trim();
+    const suffix = detail ? ` (${detail})` : '';
+    console.info(`[BREM:data] ${name}: ${cached ? 'cache hit' : 'supabase fetch'}${suffix}`);
+    logFetch(name, name, cached);
+  }
+
   function isValid(key) {
     return Boolean(readEntry(key));
   }
@@ -240,6 +248,7 @@ window.BremDataCache = (function () {
     runOnce,
     isInflight,
     logFetch,
+    logDataSource,
     getStatus,
     formatLoadedAt
   };

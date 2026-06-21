@@ -455,17 +455,24 @@ const BremPromotionApplyAdmin = (function () {
     }
   }
 
-  function deleteSavedResult(id) {
+  async function deleteSavedResult(id) {
     const record = BremPromotionApply.getSavedResultById(id);
     if (!record) {
       renderSavedList();
       return;
     }
     if (!window.confirm('저장된 프로모션 계산 결과를 삭제할까요?')) return;
+
     BremPromotionApply.deleteSavedResult(id);
     if (state.savedResultId === id) state.savedResultId = '';
     renderSavedList();
     showToast('저장된 결과를 삭제했습니다.');
+
+    void BremStorage.promotionApplyResults.persist?.().catch(error => {
+      console.error('[BREM] promotion apply result delete persist failed:', error);
+      showToast('삭제 저장에 실패했습니다. 새로고침 후 다시 시도하세요.');
+      renderSavedList();
+    });
   }
 
   function setPlatform(platform, options = {}) {

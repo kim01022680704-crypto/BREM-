@@ -392,16 +392,20 @@
       renderDayList();
     });
 
-    bulkDeleteEl?.addEventListener('click', () => {
+    bulkDeleteEl?.addEventListener('click', async () => {
       const ids = [...state.selectedIds];
       if (!ids.length) return;
       if (!window.confirm(`선택한 일정 ${ids.length}건을 삭제할까요?`)) return;
       if (state.detailId && ids.includes(state.detailId)) closeDetail();
-      schedules.removeByIds(ids);
-      state.selectedIds.clear();
-      resetForm();
-      renderCalendar();
-      showToast(`일정 ${ids.length}건이 삭제되었습니다.`);
+      try {
+        await schedules.removeByIds(ids);
+        state.selectedIds.clear();
+        resetForm();
+        renderCalendar();
+        showToast(`일정 ${ids.length}건이 삭제되었습니다.`);
+      } catch (error) {
+        showToast(error.message || '일정 삭제에 실패했습니다.');
+      }
     });
 
     dayListEl?.addEventListener('change', event => {
@@ -455,7 +459,7 @@
       renderDayList();
     });
 
-    formEl?.addEventListener('submit', event => {
+    formEl?.addEventListener('submit', async event => {
       event.preventDefault();
       const editId = editIdEl?.value || '';
       const targetDates = editId
@@ -484,26 +488,38 @@
         return;
       }
 
-      if (editId) {
-        schedules.update(editId, payload);
-        showToast('일정이 수정되었습니다.');
-        if (state.detailId === editId) openDetail(editId);
-      } else {
+      if (submitEl) {
+        submitEl.disabled = true;
+        submitEl.textContent = '저장 중…';
+      }
+
+      try {
         const admin = currentAdmin();
-        targetDates.forEach(date => {
-          schedules.create({
+        if (editId) {
+          await schedules.update(editId, payload);
+          showToast('일정이 수정되었습니다.');
+          if (state.detailId === editId) openDetail(editId);
+        } else {
+          await schedules.createMany(targetDates.map(date => ({
             ...payload,
             date,
             createdById: admin?.id || ''
-          });
-        });
-        showToast(targetDates.length > 1
-          ? `선택한 ${targetDates.length}일에 일정이 등록되었습니다.`
-          : '일정이 등록되었습니다.');
-      }
+          })));
+          showToast(targetDates.length > 1
+            ? `선택한 ${targetDates.length}일에 일정이 등록되었습니다.`
+            : '일정이 등록되었습니다.');
+        }
 
-      resetForm();
-      renderCalendar();
+        resetForm();
+        renderCalendar();
+      } catch (error) {
+        showToast(error.message || '일정 저장에 실패했습니다.');
+      } finally {
+        if (submitEl) {
+          submitEl.disabled = false;
+          submitEl.textContent = editId ? '일정 수정' : '일정 등록';
+        }
+      }
     });
   }
 

@@ -27,7 +27,7 @@
   ];
 
   const HEADER_MARKERS = ['이름', 'name'];
-  const BULK_BATCH_SIZE = 150;
+  const BULK_BATCH_SIZE = 300;
   const PREVIEW_LIMIT = 50;
 
   let parsedRows = [];
@@ -76,12 +76,15 @@
   }
 
   async function ensureAllDriversLoaded() {
-    const result = await BremStorage.fetchAllDriversFromServer?.({ force: false })
-      || await BremStorage.reloadDrivers?.(true);
-    if (result?.ok === false) {
-      throw new Error(result.message || '기존 기사 목록을 불러오지 못했습니다.');
+    const status = BremStorage.getCacheStatus?.() || {};
+    if (status.driversComplete && BremStorage.drivers.getAll().length > 0) {
+      return { ok: true, cached: true };
     }
-    return result;
+    const result = await BremStorage.fetchAllDriversFromServer?.({ force: false });
+    if (!result?.ok && BremStorage.drivers.getAll().length > 0) {
+      return { ok: true, cached: true, stale: true };
+    }
+    return result || { ok: true, cached: true };
   }
 
   function makeLoginId(name, phone) {

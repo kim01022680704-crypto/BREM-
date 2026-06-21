@@ -212,7 +212,6 @@
     }
 
     await BremStorage.drivers.update(driverId, changes);
-    await BremStorage.flushStorage?.();
     state.drafts.delete(driverId);
     state.dirty.delete(driverId);
   }
@@ -228,10 +227,28 @@
     }
 
     try {
-      for (const driverId of ids) {
-        await saveDriverAssignment(driverId);
+      const patches = ids.map(driverId => {
+        const driver = BremStorage.drivers.getById(driverId);
+        if (!driver) return null;
+        const draft = getDriverDraft(driver);
+        const saved = getSavedAssignment(driver);
+        const changes = {};
+        if (draft.baemin !== saved.baemin) changes.selectedMissionIdBaemin = draft.baemin;
+        if (draft.coupang !== saved.coupang) changes.selectedMissionIdCoupang = draft.coupang;
+        if (!Object.keys(changes).length) return null;
+        return { id: driverId, changes };
+      }).filter(Boolean);
+
+      if (patches.length) {
+        await BremStorage.drivers.batchPatch(patches);
       }
-      showToast(`${ids.length}명 미션 배정을 저장했습니다.`);
+
+      ids.forEach(id => {
+        state.drafts.delete(id);
+        state.dirty.delete(id);
+      });
+
+      showToast(`${patches.length || ids.length}명 미션 배정을 저장했습니다.`);
       renderDriverMissionAssignments();
     } catch (error) {
       showToast(error.message || '미션 배정 저장에 실패했습니다.');
@@ -413,7 +430,6 @@
         state.editingId = '';
         fillMissionForm(null);
       }
-      await BremStorage.reloadDrivers?.(true);
       showToast('미션이 삭제되었습니다.');
       renderMissionCards();
       renderDriverMissionAssignments();

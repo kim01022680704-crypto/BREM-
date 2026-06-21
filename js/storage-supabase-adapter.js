@@ -116,6 +116,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function loadSettings() {
       window.BremPerf?.time?.('settings.fetch');
+      window.BremDataCache?.logDataSource?.('settings', false);
       const { data, error } = await client.from('settings').select('key,value').order('key');
       window.BremPerf?.timeEnd?.('settings.fetch');
       if (error) throw error;
@@ -127,17 +128,136 @@ window.BremSupabaseStorageAdapter = (function () {
       });
     }
 
+    let adminSchedulesTableAvailable = null;
+
+    function isMissingAdminSchedulesTableError(error) {
+      const message = String(error?.message || error || '').toLowerCase();
+      return message.includes('does not exist')
+        || message.includes('schema cache')
+        || (message.includes('relation') && message.includes('admin_schedules'));
+    }
+
+    async function probeAdminSchedulesTable() {
+      if (adminSchedulesTableAvailable !== null) return adminSchedulesTableAvailable;
+      try {
+        const { error } = await client.from('admin_schedules').select('id').limit(1);
+        adminSchedulesTableAvailable = !error || !isMissingAdminSchedulesTableError(error);
+      } catch {
+        adminSchedulesTableAvailable = false;
+      }
+      return adminSchedulesTableAvailable;
+    }
+
+    function scheduleToRow(item) {
+      const extra = { ...(item || {}) };
+      ['id', 'date', 'title', 'memo', 'createdBy', 'createdById', 'createdAt', 'updatedAt'].forEach(key => {
+        delete extra[key];
+      });
+      return {
+        id: item.id,
+        date: item.date,
+        title: item.title || '',
+        memo: item.memo || '',
+        created_by: item.createdBy || '',
+        created_by_id: item.createdById || '',
+        raw_data: extra,
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToSchedule(row) {
+      const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+      return {
+        ...raw,
+        id: row.id,
+        date: row.date,
+        title: row.title || '',
+        memo: row.memo || '',
+        createdBy: row.created_by || '',
+        createdById: row.created_by_id || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    async function loadAdminSchedulesFromTable(options = {}) {
+      window.BremDataCache?.logDataSource?.('schedules', false);
+      const { data, error } = await client
+        .from('admin_schedules')
+        .select('id,date,title,memo,created_by,created_by_id,raw_data,created_at,updated_at')
+        .order('date', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      const value = (data || []).map(rowToSchedule);
+      setCache(keys.adminSchedules, value);
+      window.BremDataCache?.set?.(keys.adminSchedules, value);
+      return value;
+    }
+
+    async function loadAdminSchedulesData(options = {}) {
+      if (!keys.adminSchedules) return [];
+      if (!options.force && window.BremDataCache?.isValid(keys.adminSchedules)) {
+        const cached = window.BremDataCache.getData(keys.adminSchedules);
+        if (Array.isArray(cached)) {
+          setCache(keys.adminSchedules, cached);
+          window.BremDataCache?.logDataSource?.('schedules', true);
+          return cached;
+        }
+      }
+      if (await probeAdminSchedulesTable()) {
+        try {
+          return await loadAdminSchedulesFromTable(options);
+        } catch (error) {
+          console.warn('[BREM] admin_schedules table load failed, using settings fallback', error);
+        }
+      }
+      const fromSettings = getCache(keys.adminSchedules, []);
+      window.BremDataCache?.set?.(keys.adminSchedules, fromSettings);
+      window.BremDataCache?.logDataSource?.('schedules', true, 'settings');
+      return fromSettings;
+    }
+
+    async function syncAdminSchedulesTable(list) {
+      const rows = (list || []).map(scheduleToRow);
+      const { data: existing, error: readError } = await client.from('admin_schedules').select('id');
+      if (readError) throw readError;
+      const keepIds = new Set(rows.map(row => row.id));
+      const toDelete = (existing || []).map(row => row.id).filter(id => !keepIds.has(id));
+      if (rows.length) {
+        const { error } = await client.from('admin_schedules').upsert(rows, { onConflict: 'id' });
+        if (error) throw error;
+      }
+      if (toDelete.length) {
+        const { error } = await client.from('admin_schedules').delete().in('id', toDelete);
+        if (error) throw error;
+      }
+    }
+
+    async function persistAdminSchedules(value) {
+      const list = Array.isArray(value) ? value : [];
+      if (await probeAdminSchedulesTable()) {
+        await syncAdminSchedulesTable(list);
+        setCache(keys.adminSchedules, list);
+        window.BremDataCache?.set?.(keys.adminSchedules, list, { source: 'write' });
+        return;
+      }
+      await persistSetting(keys.adminSchedules, list);
+    }
+
     async function loadNotices(options = {}) {
       if (!options.force && window.BremDataCache?.isValid(keys.notices)) {
         const cached = window.BremDataCache.getData(keys.notices);
         if (Array.isArray(cached)) {
           setCache(keys.notices, cached);
           loadedTableKeys.add(keys.notices);
+          window.BremDataCache?.logDataSource?.('notices', true);
           return cached;
         }
       }
 
       window.BremPerf?.time?.('notices.fetch');
+      window.BremDataCache?.logDataSource?.('notices', false);
       const limit = Number(options.limit) > 0 ? Number(options.limit) : null;
       let query = client
         .from('notices')
@@ -167,11 +287,13 @@ window.BremSupabaseStorageAdapter = (function () {
         if (Array.isArray(cached)) {
           setCache(keys.promotionRules, cached);
           loadedTableKeys.add(keys.promotionRules);
+          window.BremDataCache?.logDataSource?.('promotions', true);
           return cached;
         }
       }
 
       window.BremPerf?.time?.('promotions.fetch');
+      window.BremDataCache?.logDataSource?.('promotions', false);
       const { data, error } = await client
         .from('promotions')
         .select(PROMOTION_SELECT)
@@ -242,7 +364,7 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!force && !append && !hasFilter && window.BremDataCache?.isValid(keys.drivers)) {
         const cached = window.BremDataCache.getData(keys.drivers);
         if (Array.isArray(cached)) {
-          window.BremDataCache?.logFetch?.('riders', keys.drivers, true);
+          window.BremDataCache?.logDataSource?.('riders', true);
           setCache(keys.drivers, cached);
           loadedTableKeys.add(keys.drivers);
           ridersMeta = {
@@ -263,7 +385,7 @@ window.BremSupabaseStorageAdapter = (function () {
       const search = String(options.search || '').trim();
 
       const { data, error, count } = await queryRidersWithSelectFallback(selectColumns => {
-        window.BremDataCache?.logFetch?.('riders', keys.drivers, false);
+        window.BremDataCache?.logDataSource?.('riders', false);
         let nextQuery = client
           .from('riders')
           .select(selectColumns, { count: 'exact' })
@@ -365,6 +487,10 @@ window.BremSupabaseStorageAdapter = (function () {
           });
           if (restored > 0) {
             coreHydrated = true;
+            window.BremDataCache?.logDataSource?.('settings', true);
+            if (window.BremDataCache?.isValid?.(keys.adminSchedules)) {
+              window.BremDataCache?.logDataSource?.('schedules', true);
+            }
             return;
           }
         }
@@ -372,6 +498,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
       window.BremPerf?.time?.('storage.hydrateCore');
       await loadSettings();
+      await loadAdminSchedulesData();
       coreHydrated = true;
       window.BremDataCache?.markCoreReady?.();
       window.BremDataCache?.set?.('__settings_snapshot__', Array.from(cache.keys()).filter(key => !isTableKey(key)));
@@ -565,6 +692,8 @@ window.BremSupabaseStorageAdapter = (function () {
         }
         if (persistHandlers[key]) {
           await persistHandlers[key](value);
+        } else if (key === keys.adminSchedules) {
+          await persistAdminSchedules(value);
         } else {
           await persistSetting(key, value);
         }
