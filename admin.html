@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260621n">
+  <link rel="stylesheet" href="css/admin.css?v=20260621o">
   <link rel="stylesheet" href="css/data-loading.css">
 </head>
 <body>
@@ -1166,11 +1166,21 @@
             <div id="eventItemList" class="mission-list"></div>
           </article>
 
-          <article class="card">
-            <div class="card-header">
+          <article class="card event-settings-card">
+            <div class="card-header event-settings-header">
               <h2>기사별 이벤트 설정</h2>
+              <label class="driver-search-field event-settings-search-field">
+                <span class="sr-only">기사 이름 검색</span>
+                <input type="search" id="eventSettingsSearch" placeholder="이름 · 전화번호" autocomplete="off">
+              </label>
             </div>
-            <div id="eventSettings" class="bike-settings"></div>
+            <div class="event-settings-toolbar">
+              <button type="button" class="small-btn" id="eventSettingsSearchClear" hidden>검색 초기화</button>
+              <p class="driver-search-result" id="eventSettingsSearchResult">전체 기사 표시 · 아래 목록 스크롤</p>
+            </div>
+            <div class="event-settings-scroll" id="eventSettingsScroll">
+              <div id="eventSettings" class="bike-settings event-settings-list"></div>
+            </div>
           </article>
         </div>
       </section>
@@ -2726,6 +2736,6 @@
   <script src="js/admin-lease.js"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260620v"></script>
-  <script src="js/admin.js?v=20260621n"></script>
+  <script src="js/admin.js?v=20260621o"></script>
 </body>
 </html>

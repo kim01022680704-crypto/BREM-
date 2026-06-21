@@ -2525,6 +2525,51 @@ textarea {
   position: relative;
 }
 
+.event-settings-header {
+  flex-wrap: wrap;
+}
+
+.event-settings-search-field {
+  min-width: min(100%, 220px);
+  margin-left: auto;
+}
+
+.event-settings-search-field input[type="search"] {
+  min-width: 200px;
+}
+
+.event-settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-settings-scroll {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.event-settings-list {
+  padding: 12px 18px 18px;
+}
+
+.event-settings-list .event-driver-row {
+  padding: 12px 14px;
+  background: #111111;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.event-settings-list .event-driver-row[hidden] {
+  display: none;
+}
+
 .event-start-calendar {
   position: fixed;
   z-index: 1000;

@@ -9,6 +9,7 @@
     adminAccountFormMode: '',
     rejectionWeekByPlatform: { coupang: null, baemin: null },
     driverSearchQuery: '',
+    eventSettingsSearchQuery: '',
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
   };
@@ -25,7 +26,6 @@
     'calls',
     'rejections',
     'targets',
-    'missions',
     'settlements'
   ]);
 
@@ -1953,12 +1953,77 @@
       }).join('') || emptyRow(6, weeklyEmptyMessage);
   }
 
+  function updateEventSettingsSearchStatus(visibleCount, totalCount) {
+    const result = $('#eventSettingsSearchResult');
+    const clearBtn = $('#eventSettingsSearchClear');
+    const query = state.eventSettingsSearchQuery.trim();
+
+    if (clearBtn) clearBtn.hidden = !query;
+    if (!result) return;
+
+    if (!query) {
+      result.textContent = totalCount
+        ? `전체 기사 ${totalCount}명 · 아래 목록 스크롤`
+        : '등록된 기사가 없습니다.';
+      return;
+    }
+
+    result.textContent = visibleCount
+      ? `"${query}" 검색 결과 ${visibleCount}명`
+      : `"${query}" 검색 결과 없음`;
+  }
+
+  function applyEventSettingsFilter() {
+    const container = $('#eventSettings');
+    if (!container) return;
+
+    const query = state.eventSettingsSearchQuery.trim();
+    const allDrivers = drivers();
+    const driverMap = new Map(allDrivers.map(driver => [driver.id, driver]));
+    let visibleCount = 0;
+
+    container.querySelectorAll('.event-driver-row[data-driver-id]').forEach(row => {
+      const driver = driverMap.get(row.dataset.driverId);
+      const visible = Boolean(driver && matchesDriverSearch(driver, query));
+      row.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+
+    const emptyEl = container.querySelector('.event-settings-empty');
+    if (emptyEl) emptyEl.hidden = visibleCount > 0 || Boolean(query);
+
+    let noResultEl = container.querySelector('.event-settings-no-results');
+    if (query && allDrivers.length && visibleCount === 0) {
+      if (!noResultEl) {
+        noResultEl = document.createElement('div');
+        noResultEl.className = 'empty event-settings-no-results';
+        noResultEl.textContent = '검색 결과에 해당하는 기사가 없습니다.';
+        container.appendChild(noResultEl);
+      }
+      noResultEl.hidden = false;
+    } else if (noResultEl) {
+      noResultEl.hidden = true;
+    }
+
+    updateEventSettingsSearchStatus(visibleCount, allDrivers.length);
+  }
+
+  function handleEventSettingsSearchChange() {
+    if ($('#eventSettings')?.querySelector('.event-driver-row[data-driver-id]')) {
+      applyEventSettingsFilter();
+      return;
+    }
+    renderMissions();
+  }
+
+  const debouncedEventSettingsSearchChange = window.BremPerf?.debounce
+    ? window.BremPerf.debounce(handleEventSettingsSearchChange, 120)
+    : handleEventSettingsSearchChange;
+
   function renderMissions() {
     const catalog = eventCatalog();
-    const visibleDrivers = filteredDrivers();
-    const emptyMessage = state.driverSearchQuery.trim()
-      ? '검색 결과에 해당하는 기사가 없습니다.'
-      : '기사등록 프로그램에서 기사를 먼저 등록하세요.';
+    const allDrivers = drivers();
+    const emptyMessage = '기사등록 프로그램에서 기사를 먼저 등록하세요.';
 
     $('#eventItemList').innerHTML = catalog.map(item => `
       <div class="mission-item">
@@ -1970,8 +2035,8 @@
       </div>
     `).join('') || '<div class="empty">등록된 장기근속이벤트 아이템이 없습니다.</div>';
 
-    $('#eventSettings').innerHTML = visibleDrivers.map(driver => `
-      <div class="event-driver-row">
+    $('#eventSettings').innerHTML = allDrivers.length ? allDrivers.map(driver => `
+      <div class="event-driver-row" data-driver-id="${escapeHtml(driver.id)}">
         <strong>${escapeHtml(driver.name)} · ${escapeHtml(driver.phone)}</strong>
         <label>
           이벤트 아이템
@@ -1987,7 +2052,9 @@
           <input type="hidden" data-event-start="${driver.id}" value="${driver.longEventStartDate || ''}">
         </label>
       </div>
-    `).join('') || `<div class="empty">${emptyMessage}</div>`;
+    `).join('') : `<div class="empty event-settings-empty">${emptyMessage}</div>`;
+
+    applyEventSettingsFilter();
   }
 
   function renderNoticeItems(items, withActions) {
@@ -2632,6 +2699,17 @@
       state.driverSearchQuery = '';
       $('#adminDriverSearch').value = '';
       handleDriverSearchChange();
+    });
+
+    $('#eventSettingsSearch')?.addEventListener('input', event => {
+      state.eventSettingsSearchQuery = event.target.value;
+      debouncedEventSettingsSearchChange();
+    });
+
+    $('#eventSettingsSearchClear')?.addEventListener('click', () => {
+      state.eventSettingsSearchQuery = '';
+      if ($('#eventSettingsSearch')) $('#eventSettingsSearch').value = '';
+      handleEventSettingsSearchChange();
     });
 
     $('#dashboardEmptyLeaseBtn')?.addEventListener('click', () => {
