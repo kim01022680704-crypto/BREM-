@@ -1202,10 +1202,12 @@ const BremStorage = (function () {
     }
 
     if (needsNotices) {
-      if (!force && window.BremDataCache?.isValid?.(KEYS.notices)) {
+      const forceNoticesReload = force
+        || (isProductionMode() && (sectionId === 'notices' || sectionId === 'dashboard'));
+      if (!forceNoticesReload && window.BremDataCache?.isValid?.(KEYS.notices)) {
         logDataSource('notices', true, sectionId);
       } else {
-        tasks.push(reloadNotices(force));
+        tasks.push(reloadNotices(true));
       }
     }
 

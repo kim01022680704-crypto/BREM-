@@ -650,12 +650,15 @@
     if (!listEl) return;
 
     const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
-    const cacheValid = window.BremDataCache?.isValid?.('brem_admin_notices');
-    const shouldFetch = isProduction && state.currentDriver && !cacheValid;
+    const shouldFetch = isProduction && state.currentDriver;
 
     if (shouldFetch) {
       listEl.innerHTML = '<div class="empty-text">공지사항 불러오는 중...</div>';
-      const result = await BremStorage.fetchRiderNoticesFromServer?.().catch(error => ({
+      const fetchTask = () => BremStorage.fetchRiderNoticesFromServer?.();
+      const result = await (window.BremDataCache?.runOnce
+        ? window.BremDataCache.runOnce('rider-notices-fetch', fetchTask)
+        : fetchTask()
+      ).catch(error => ({
         ok: false,
         message: error.message || String(error)
       }));
