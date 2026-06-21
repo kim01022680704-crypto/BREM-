@@ -118,24 +118,32 @@ window.BremLoadingUI = (function () {
     resolveSection(el)?.classList.add('is-data-loading');
   }
 
-  function hide(target) {
+  function hide(target, options = {}) {
     const el = resolveBanner(target);
     if (!el) return;
 
     clearStatusTimer(el);
 
-    const count = Math.max(0, (activeTargets.get(el) || 1) - 1);
-    if (count > 0) {
-      activeTargets.set(el, count);
-      return;
+    if (options.force) {
+      activeTargets.delete(el);
+    } else {
+      const count = Math.max(0, (activeTargets.get(el) || 1) - 1);
+      if (count > 0) {
+        activeTargets.set(el, count);
+        return;
+      }
+      activeTargets.delete(el);
     }
 
-    activeTargets.delete(el);
     el.classList.remove('is-visible', 'brem-data-loading--success', 'brem-data-loading--error');
     el.hidden = true;
     applyBannerMode(el, 'loading');
 
     resolveSection(el)?.classList.remove('is-data-loading');
+  }
+
+  function forceHide(target) {
+    hide(target, { force: true });
   }
 
   function showStatus(target, options = {}) {
@@ -168,6 +176,7 @@ window.BremLoadingUI = (function () {
     DEFAULT_MESSAGE,
     show,
     hide,
+    forceHide,
     showStatus,
     wrapAsync
   };

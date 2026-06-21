@@ -29,6 +29,7 @@
   const mobileList = document.getElementById('mobileDriverList');
   const listScroll = document.getElementById('driverListScroll');
   const listCountEl = document.getElementById('driverListCount');
+  const listLoadingBanner = document.getElementById('bremDataLoading');
   const emptyState = document.getElementById('emptyState');
   const driverTotal = document.getElementById('driverTotal');
   const toast = document.getElementById('toast');
@@ -729,49 +730,75 @@
     return Boolean(cacheStatus.driversComplete && BremStorage.drivers.getAll().length);
   }
 
-  async function refreshDriverList(force = false) {
-    const listPanel = document.querySelector('.list-panel');
-    const cacheReady = isDriverListCacheReady();
-    const needsNetwork = force || !cacheReady;
-
-    if (needsNetwork) {
-      if (!cacheReady) {
-        tableBody.closest('.table-wrap')?.classList.add('is-loading');
-        mobileList.classList.add('is-loading');
-      }
-      window.BremLoadingUI?.show(
-        listPanel,
-        cacheReady ? '기사 목록 새로고침 중...' : 'Supabase에서 기사 목록 불러오는 중...'
-      );
-    }
-
-    const syncResult = await loadAllDriversForList(force);
-
+  function finishListLoading(options = {}) {
     tableBody.closest('.table-wrap')?.classList.remove('is-loading');
     mobileList.classList.remove('is-loading');
-    window.BremLoadingUI?.hide(listPanel);
+    window.BremLoadingUI?.forceHide?.(listLoadingBanner);
 
-    const count = syncResult?.count
-      || BremStorage.drivers.getSupabaseTotal?.()
-      || BremStorage.drivers.getAll().length;
+    if (!listLoadingBanner) return;
 
-    if (syncResult?.ok === false) {
-      window.BremLoadingUI?.showStatus(listPanel, {
+    if (options.error) {
+      window.BremLoadingUI?.showStatus(listLoadingBanner, {
         type: 'error',
-        message: syncResult.message || '불러오기 실패 · 다시 시도 필요'
+        message: options.error
       });
-      return syncResult;
+      return;
     }
 
-    if (needsNetwork) {
-      window.BremLoadingUI?.showStatus(listPanel, {
+    if (options.success) {
+      window.BremLoadingUI?.showStatus(listLoadingBanner, {
         type: 'success',
-        message: `기사 목록 불러오기 완료 · ${count}명 표시 중`,
+        message: options.success,
         autoHideMs: 2500
       });
     }
+  }
 
-    return syncResult;
+  async function refreshDriverList(force = false) {
+    const cacheReady = isDriverListCacheReady();
+    const needsNetwork = force || !cacheReady;
+    let syncResult;
+
+    try {
+      if (needsNetwork) {
+        if (!cacheReady) {
+          tableBody.closest('.table-wrap')?.classList.add('is-loading');
+          mobileList.classList.add('is-loading');
+        }
+        window.BremLoadingUI?.show(
+          listLoadingBanner,
+          cacheReady ? '기사 목록 새로고침 중...' : 'Supabase에서 기사 목록 불러오는 중...'
+        );
+      }
+
+      syncResult = await loadAllDriversForList(force);
+
+      const count = syncResult?.count
+        || BremStorage.drivers.getSupabaseTotal?.()
+        || BremStorage.drivers.getAll().length;
+
+      if (syncResult?.ok === false) {
+        finishListLoading({
+          error: syncResult.message || '불러오기 실패 · 다시 시도 필요'
+        });
+        return syncResult;
+      }
+
+      if (needsNetwork || syncResult?.cached) {
+        finishListLoading({
+          success: `기사 목록 불러오기 완료 · ${count}명 표시 중`
+        });
+      } else {
+        finishListLoading();
+      }
+
+      return syncResult;
+    } catch (error) {
+      finishListLoading({
+        error: error.message || '불러오기 실패 · 다시 시도 필요'
+      });
+      throw error;
+    }
   }
 
   async function deleteAllDrivers() {
@@ -837,10 +864,15 @@
     });
     document.addEventListener('brem-drivers-sync-ready', event => {
       if (!event?.detail?.complete) return;
-      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-      mobileList.classList.remove('is-loading');
       renderedSnapshot = '';
       render();
+      const count = event.detail.count || BremStorage.drivers.getAll().length;
+      if (listLoadingBanner?.classList.contains('is-visible')
+        && !listLoadingBanner.classList.contains('brem-data-loading--success')) {
+        finishListLoading({
+          success: `기사 목록 불러오기 완료 · ${count}명 표시 중`
+        });
+      }
     });
     document.addEventListener('brem-cache-status-changed', () => {
       if (BremStorage.drivers.getAll().length && !renderedSnapshot) {
