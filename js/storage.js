@@ -316,7 +316,6 @@ const BremStorage = (function () {
     },
     write(key, value, options = {}) {
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
-        activeStorageAdapter.stage(key, value);
         if (!isStoragePersistReady()) {
           console.warn('[BREM] Storage persist deferred until Supabase session is ready:', key);
           return undefined;
@@ -326,6 +325,7 @@ const BremStorage = (function () {
         } catch (error) {
           return Promise.reject(error);
         }
+        activeStorageAdapter.stage(key, value);
         const persist = activeStorageAdapter.enqueuePersist(key, value, options);
         scheduleCacheSyncAfterWrite(key);
         return persist;
@@ -5368,21 +5368,20 @@ const BremStorage = (function () {
         return !(normalizePlatform(item.platform) === p && itemPeriod === periodKey);
       });
 
-      storageAdapter.write(
+      await storageAdapter.write(
         KEYS.settlements,
         nextSettlements,
-        nextSettlements.length ? {} : { allowEmpty: true }
+        { allowEmpty: true }
       );
 
       if (activeStorageAdapter.deleteAdminCallsByPeriod) {
         await activeStorageAdapter.deleteAdminCallsByPeriod(p, periodKey);
       } else {
         calls.removeByPeriod(periodKey, p);
+        await storageAdapter.flush?.();
       }
 
-      settlementUploadLogs.removeDailyByPeriod(periodKey, p);
-
-      await storageAdapter.flush?.();
+      await settlementUploadLogs.removeDailyByPeriod(periodKey, p);
 
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
@@ -6048,11 +6047,9 @@ const BremStorage = (function () {
       });
     },
 
-    persistList(list) {
+    persistList(list, options = {}) {
       const value = (Array.isArray(list) ? list : []).map(normalizeSettlementUploadLog);
-      storageAdapter.write(KEYS.settlementUploadLogs, value);
-      window.BremDataCache?.set?.(KEYS.settlementUploadLogs, value, { source: 'write' });
-      return value;
+      return storageAdapter.write(KEYS.settlementUploadLogs, value, options);
     },
 
     add(entry) {
@@ -6076,18 +6073,17 @@ const BremStorage = (function () {
       settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
     },
 
-    removeDailyByPeriod(period, platform = DEFAULT_PLATFORM) {
+    async removeDailyByPeriod(period, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
       const periodKey = String(period || '').slice(0, 10);
       if (!periodKey) return settlementUploadLogs.getAll();
-      settlementUploadLogs.persistList(
-        settlementUploadLogs.getAll().filter(item => {
-          if (item.kind !== 'daily') return true;
-          if (normalizePlatform(item.platform) !== p) return true;
-          return String(item.period).slice(0, 10) !== periodKey;
-        })
-      );
-      return settlementUploadLogs.getAll();
+      const next = settlementUploadLogs.getAll().filter(item => {
+        if (item.kind !== 'daily') return true;
+        if (normalizePlatform(item.platform) !== p) return true;
+        return String(item.period).slice(0, 10) !== periodKey;
+      });
+      await settlementUploadLogs.persistList(next, { allowEmpty: true });
+      return next;
     },
 
     removeByLinkedRecordId(linkedRecordId) {

@@ -19,6 +19,7 @@ window.BremStorageGuard = (function () {
   const PROTECTED_SETTINGS_KEYS = new Set([
     'brem_admin_settlements',
     'brem_admin_settlement_unmatched',
+    'brem_admin_settlement_upload_logs',
     'brem_admin_weekly_settlements',
     'brem_admin_calls',
     'brem_admin_rejection_rates',
