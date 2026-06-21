@@ -136,9 +136,47 @@
   }
 
   function formatPercent(value) {
+    if (value == null) return '미집계';
     const rate = Number(value);
     if (Number.isNaN(rate)) return '-';
     return `${rate % 1 === 0 ? rate : rate.toFixed(1)}%`;
+  }
+
+  function weeklyEntryForPlatform(driverId, weekStart, platform) {
+    return BremStorage.rejections.getEntryForWeek(driverId, weekStart, platform);
+  }
+
+  function weeklyRateForPlatform(driverId, weekStart, platform) {
+    const entry = weeklyEntryForPlatform(driverId, weekStart, platform);
+    return entry ? entry.rate : null;
+  }
+
+  function toggleRateDetailPanel(panelId, cardId) {
+    const panel = document.getElementById(panelId);
+    const card = document.getElementById(cardId);
+    if (!panel || !card) return;
+    const expanded = card.getAttribute('aria-expanded') === 'true';
+    card.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    panel.hidden = expanded;
+  }
+
+  function renderRateDetail(platform, entry) {
+    const stats = entry?.stats && typeof entry.stats === 'object' ? entry.stats : {};
+    const unmeasured = stats.unmeasured === true || entry?.rate == null;
+
+    if (platform === 'baemin') {
+      setText('baeminRateComplete', number(stats.completeTotal || 0));
+      setText('baeminRateReject', number(stats.rejectCount || 0));
+      setText('baeminRateDispatchCancel', number(stats.dispatchCancelCount || 0));
+      setText('baeminRateRiderCancel', number(stats.riderCancelCount || 0));
+      setText('baeminRateCalculated', unmeasured ? '미집계' : formatPercent(entry.rate));
+      return;
+    }
+
+    setText('coupangRateComplete', number(stats.completeCount || 0));
+    setText('coupangRateReject', number(stats.rejectCount || 0));
+    setText('coupangRateCancel', number(stats.cancelCount || 0));
+    setText('coupangRateCalculated', unmeasured ? '미집계' : formatPercent(entry.rate));
   }
 
   function escapeHtml(value) {
@@ -433,10 +471,6 @@
     });
   }
 
-  function weeklyRateForPlatform(driverId, weekStart, platform) {
-    return BremStorage.rejections.getRateForWeek(driverId, weekStart, platform);
-  }
-
   function normalizePlatform(platform) {
     return BremPlatforms.normalize(platform);
   }
@@ -680,6 +714,8 @@
     const weeklyRate = weeklyTarget ? Math.round((currentWeekCalls / weeklyTarget) * 100) : 0;
     const weeklyRejectionCoupang = weeklyRateForPlatform(driver.id, weekStart, 'coupang');
     const weeklyAcceptanceBaemin = weeklyRateForPlatform(driver.id, weekStart, 'baemin');
+    const coupangRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'coupang');
+    const baeminRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
     const item = eventItemFor(driver);
     const eventStartDate = driver.longEventStartDate || '';
     const total = eventStartDate ? eventCallsFor(driver) : 0;
@@ -721,6 +757,8 @@
     setText('weeklyAchievementRate', weeklyTarget ? `${weeklyRate}%` : '-');
     setText('weeklyRejectionRateCoupang', weeklyRejectionCoupang === null ? '-' : formatPercent(weeklyRejectionCoupang));
     setText('weeklyAcceptanceRateBaemin', weeklyAcceptanceBaemin === null ? '-' : formatPercent(weeklyAcceptanceBaemin));
+    renderRateDetail('baemin', baeminRateEntry);
+    renderRateDetail('coupang', coupangRateEntry);
 
     document.getElementById('driverTargetMonth').value = month;
     driverTargetMonthPicker?.setMonth(month);
@@ -960,6 +998,12 @@
 
   document.getElementById('monthTargetCard')?.addEventListener('click', () => openTargetModal('month'));
   document.getElementById('weekTargetCard')?.addEventListener('click', () => openTargetModal('week'));
+  document.getElementById('weeklyAcceptanceRateBaeminCard')?.addEventListener('click', () => {
+    toggleRateDetailPanel('weeklyAcceptanceRateBaeminDetail', 'weeklyAcceptanceRateBaeminCard');
+  });
+  document.getElementById('weeklyRejectionRateCoupangCard')?.addEventListener('click', () => {
+    toggleRateDetailPanel('weeklyRejectionRateCoupangDetail', 'weeklyRejectionRateCoupangCard');
+  });
   document.querySelectorAll('[data-close-driver-target]').forEach(el => {
     el.addEventListener('click', closeTargetModal);
   });

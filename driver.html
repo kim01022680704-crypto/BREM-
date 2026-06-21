@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260621m">
+  <link rel="stylesheet" href="css/driver.css?v=20260622p">
 </head>
 <body>
   <section class="login-page" id="driverLoginCard">
@@ -225,14 +225,35 @@
             </div>
 
             <div class="summary-grid summary-grid--rates">
-              <article class="summary-card summary-card--baemin">
-                <span class="summary-card__label">주간 수락율 (배민)</span>
-                <strong class="summary-card__value" id="weeklyAcceptanceRateBaemin">-</strong>
-              </article>
-              <article class="summary-card summary-card--coupang">
-                <span class="summary-card__label">주간 거절율 (쿠팡)</span>
-                <strong class="summary-card__value" id="weeklyRejectionRateCoupang">-</strong>
-              </article>
+              <div class="rate-card-stack">
+                <button type="button" class="summary-card summary-card--baemin summary-card--action" id="weeklyAcceptanceRateBaeminCard" aria-expanded="false" aria-controls="weeklyAcceptanceRateBaeminDetail">
+                  <span class="summary-card__label">주간 수락율 (배민)</span>
+                  <strong class="summary-card__value" id="weeklyAcceptanceRateBaemin">-</strong>
+                </button>
+                <div class="rate-detail-panel" id="weeklyAcceptanceRateBaeminDetail" hidden>
+                  <dl class="rate-detail-list">
+                    <div><dt>완료/합계</dt><dd id="baeminRateComplete">-</dd></div>
+                    <div><dt>거절</dt><dd id="baeminRateReject">-</dd></div>
+                    <div><dt>배차취소</dt><dd id="baeminRateDispatchCancel">-</dd></div>
+                    <div><dt>배차취소(라이더귀책)</dt><dd id="baeminRateRiderCancel">-</dd></div>
+                    <div><dt>계산된 수락율</dt><dd id="baeminRateCalculated">-</dd></div>
+                  </dl>
+                </div>
+              </div>
+              <div class="rate-card-stack">
+                <button type="button" class="summary-card summary-card--coupang summary-card--action" id="weeklyRejectionRateCoupangCard" aria-expanded="false" aria-controls="weeklyRejectionRateCoupangDetail">
+                  <span class="summary-card__label">주간 거절율 (쿠팡)</span>
+                  <strong class="summary-card__value" id="weeklyRejectionRateCoupang">-</strong>
+                </button>
+                <div class="rate-detail-panel" id="weeklyRejectionRateCoupangDetail" hidden>
+                  <dl class="rate-detail-list">
+                    <div><dt>완료</dt><dd id="coupangRateComplete">-</dd></div>
+                    <div><dt>거절</dt><dd id="coupangRateReject">-</dd></div>
+                    <div><dt>취소</dt><dd id="coupangRateCancel">-</dd></div>
+                    <div><dt>계산된 거절율</dt><dd id="coupangRateCalculated">-</dd></div>
+                  </dl>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -399,10 +420,10 @@
   <script src="js/perf.js"></script>
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260620r"></script>
-  <script src="js/storage.js?v=20260622m"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
+  <script src="js/storage.js?v=20260622p"></script>
   <script src="js/driver-utils.js?v=20260621"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver.js?v=20260622m"></script>
+  <script src="js/driver.js?v=20260622p"></script>
 </body>
 </html>

@@ -2129,14 +2129,16 @@
           <tr>
             <td>${formatDate(entry.weekStart)} ~ ${formatDate(weekEndKey(entry.weekStart))}</td>
             <td>${escapeHtml(driverName(entry.driverId))}</td>
-            <td>${formatPercent(entry.rate)}</td>
+            <td>${formatPercent(entry.rate, entry)}</td>
             <td><button class="small-btn danger-btn" data-delete-rejection="${entry.id}">삭제</button></td>
           </tr>
         `).join('') || emptyRow(4, emptyMessage);
     });
   }
 
-  function formatPercent(value) {
+  function formatPercent(value, entry) {
+    const unmeasured = entry?.stats?.unmeasured === true;
+    if (unmeasured || value == null) return '미집계';
     const rate = Number(value);
     if (Number.isNaN(rate)) return '-';
     return `${rate % 1 === 0 ? rate : rate.toFixed(1)}%`;
@@ -3113,6 +3115,10 @@
     });
 
     document.addEventListener('brem-rejection-bulk-applied', () => {
+      renderAll();
+    });
+
+    document.addEventListener('brem-rejection-erp-applied', () => {
       renderAll();
     });
 

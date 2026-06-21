@@ -3080,15 +3080,20 @@ const BremStorage = (function () {
       return migrateRejectionsPlatform(normalizeRejections(list));
     },
 
-    upsertWeekly({ driverId, weekStart, rate, platform = DEFAULT_PLATFORM }) {
+    upsertWeekly({ driverId, weekStart, rate, platform = DEFAULT_PLATFORM, stats = null, source = 'manual' }) {
       const p = normalizePlatform(platform);
       const list = rejections.getAll().filter(item => !(item.driverId === driverId && item.weekStart === weekStart && normalizePlatform(item.platform) === p));
+      const statsObj = stats && typeof stats === 'object' ? { ...stats } : {};
+      const unmeasured = statsObj.unmeasured === true || rate == null;
+      if (unmeasured) statsObj.unmeasured = true;
       list.push({
         id: `${driverId}-${weekStart}-${p}`,
         driverId,
         weekStart,
         platform: p,
-        rate: Number(rate),
+        rate: unmeasured ? 0 : Number(rate),
+        stats: statsObj,
+        source: String(source || 'manual'),
         updatedAt: new Date().toISOString()
       });
       storageAdapter.write(KEYS.rejections, list);
@@ -3099,10 +3104,21 @@ const BremStorage = (function () {
       storageAdapter.write(KEYS.rejections, rejections.getAll().filter(item => item.id !== id));
     },
 
-    getRateForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM) {
+    getEntryForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
       const entry = rejections.getAll().find(item => item.driverId === driverId && item.weekStart === weekStart && normalizePlatform(item.platform) === p);
-      return entry ? Number(entry.rate) : null;
+      if (!entry) return null;
+      const stats = entry.stats && typeof entry.stats === 'object' ? entry.stats : {};
+      return {
+        ...entry,
+        stats,
+        rate: stats.unmeasured ? null : Number(entry.rate)
+      };
+    },
+
+    getRateForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM) {
+      const entry = rejections.getEntryForWeek(driverId, weekStart, platform);
+      return entry ? entry.rate : null;
     }
   };
 

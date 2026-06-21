@@ -484,6 +484,52 @@ h3 {
   color: var(--black);
 }
 
+.rate-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rate-detail-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 12px 14px;
+}
+
+.rate-detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.rate-detail-list div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rate-detail-list dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.rate-detail-list dd {
+  margin: 0;
+  color: var(--black);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.summary-card--action[aria-expanded="true"] {
+  border-color: var(--yellow);
+  box-shadow: 0 6px 18px rgba(255, 212, 0, 0.18);
+}
+
 .summary-card--action {
   cursor: pointer;
   text-align: left;

@@ -279,18 +279,24 @@ window.BremSupabaseStorageAdapter = (function () {
         driver_id: item.driverId || '',
         week_start: item.weekStart,
         platform: item.platform || 'coupang',
-        rate: Number(item.rate) || 0,
+        rate: item.rate == null ? 0 : Number(item.rate) || 0,
+        stats: item.stats && typeof item.stats === 'object' ? item.stats : {},
+        source: String(item.source || 'manual'),
         updated_at: item.updatedAt || new Date().toISOString()
       };
     }
 
     function rowToWeeklyRate(row) {
+      const stats = row.stats && typeof row.stats === 'object' ? row.stats : {};
+      const unmeasured = stats.unmeasured === true;
       return {
         id: row.id,
         driverId: row.driver_id || '',
         weekStart: row.week_start,
         platform: row.platform || 'coupang',
-        rate: Number(row.rate) || 0,
+        rate: unmeasured ? null : Number(row.rate) || 0,
+        stats,
+        source: row.source || 'manual',
         updatedAt: row.updated_at
       };
     }
