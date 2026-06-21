@@ -163,20 +163,21 @@
   function renderRateDetail(platform, entry) {
     const stats = entry?.stats && typeof entry.stats === 'object' ? entry.stats : {};
     const unmeasured = stats.unmeasured === true || entry?.rate == null;
+    const empty = '-';
 
     if (platform === 'baemin') {
-      setText('baeminRateComplete', number(stats.completeTotal || 0));
-      setText('baeminRateReject', number(stats.rejectCount || 0));
-      setText('baeminRateDispatchCancel', number(stats.dispatchCancelCount || 0));
-      setText('baeminRateRiderCancel', number(stats.riderCancelCount || 0));
-      setText('baeminRateCalculated', unmeasured ? '미집계' : formatPercent(entry.rate));
+      setText('baeminRateComplete', entry ? number(stats.completeTotal || 0) : empty);
+      setText('baeminRateReject', entry ? number(stats.rejectCount || 0) : empty);
+      setText('baeminRateDispatchCancel', entry ? number(stats.dispatchCancelCount || 0) : empty);
+      setText('baeminRateRiderCancel', entry ? number(stats.riderCancelCount || 0) : empty);
+      setText('baeminRateCalculated', !entry ? empty : (unmeasured ? '미집계' : formatPercent(entry.rate)));
       return;
     }
 
-    setText('coupangRateComplete', number(stats.completeCount || 0));
-    setText('coupangRateReject', number(stats.rejectCount || 0));
-    setText('coupangRateCancel', number(stats.cancelCount || 0));
-    setText('coupangRateCalculated', unmeasured ? '미집계' : formatPercent(entry.rate));
+    setText('coupangRateComplete', entry ? number(stats.completeCount || 0) : empty);
+    setText('coupangRateReject', entry ? number(stats.rejectCount || 0) : empty);
+    setText('coupangRateCancel', entry ? number(stats.cancelCount || 0) : empty);
+    setText('coupangRateCalculated', !entry ? empty : (unmeasured ? '미집계' : formatPercent(entry.rate)));
   }
 
   function escapeHtml(value) {

@@ -557,7 +557,17 @@
               <p class="form-help">쿠팡·배민 ERP 엑셀(2시트)을 업로드하면 거절율·수락율을 자동 계산해 미리보기 후 저장합니다. 저장 위치: <strong>Supabase</strong> (<code>admin_rejection_rates</code>).</p>
             </div>
           </div>
-          <p class="rejection-bulk-week-note" data-rejection-erp-week-note>쿠팡·배민 탭 상단에서 적용주(수요일)를 먼저 선택하세요.</p>
+          <p class="rejection-bulk-week-note" data-rejection-erp-week-note>적용주(수요일 기준)를 선택한 뒤 ERP 엑셀을 업로드하세요.</p>
+          <div class="form-row rejection-erp-week-row">
+            <label>
+              쿠팡 적용주
+              <input type="date" data-rejection-erp-week-coupang required>
+            </label>
+            <label>
+              배민 적용주
+              <input type="date" data-rejection-erp-week-baemin required>
+            </label>
+          </div>
           <div class="bulk-actions">
             <label class="bulk-file-field">
               <span class="bulk-file-label">ERP 엑셀 파일 선택 (.xlsx, 2시트)</span>
@@ -569,9 +579,8 @@
           <div class="bulk-guide-wrap">
             <h3>시트 구성</h3>
             <ul class="form-help">
-              <li><strong>1번 탭 (쿠팡)</strong>: 2행부터 · A열 이름+전화번호 · B/C/D 거절·취소·완료</li>
-              <li><strong>2번 탭 (배민)</strong>: 4행부터 · AK열 배민ID · E/F/G/H 합계·거절·배차취소·라이더귀책</li>
-              <li>엑셀에서 보이는 탭 순서 기준입니다. (숨김 시트는 제외)</li>
+              <li><strong>1번 시트 (쿠팡)</strong>: 2행부터 · A열 이름+전화번호 · B/C/D 거절·취소·완료</li>
+              <li><strong>2번 시트 (배민)</strong>: 4행부터 · AK열 배민ID · E/F/G/H 합계·거절·배차취소·라이더귀책</li>
             </ul>
           </div>
           <div class="bulk-preview-wrap" data-rejection-erp-preview hidden>
@@ -2783,7 +2792,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260622p"></script>
+  <script src="js/storage.js?v=20260622r"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2791,7 +2800,7 @@
   <script src="js/settlement-formats.js"></script>
   <script src="js/settlement-client.js"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
-  <script src="js/rejection-erp-bulk.js?v=20260622r"></script>
+  <script src="js/rejection-erp-bulk.js?v=20260622s"></script>
   <script src="js/promotion-conditions.js"></script>
   <script src="js/promotion-engine.js"></script>
   <script src="js/promotion-admin.js"></script>

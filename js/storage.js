@@ -1951,6 +1951,14 @@ const BremStorage = (function () {
         const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
         if (!hydrated.ok) return hydrated;
 
+        if (activeStorageAdapter.ensureKeysLoaded) {
+          await activeStorageAdapter.ensureKeysLoaded([
+            KEYS.calls,
+            KEYS.rejections,
+            KEYS.targets
+          ], { force: Boolean(options.force) });
+        }
+
         await ensureMissionsLoaded({ force: Boolean(options.force) }).catch(() => ({}));
         document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true } }));
         return { ok: true };

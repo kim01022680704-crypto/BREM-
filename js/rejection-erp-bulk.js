@@ -1,7 +1,7 @@
 (function () {
-  /** 엑셀 화면 기준: 1번 탭=쿠팡, 2번 탭=배민 (숨김 시트 제외) */
-  const COUPANG_SHEET_POSITION = 1;
-  const BAEMIN_SHEET_POSITION = 2;
+  /** 엑셀 SheetNames 기준: 1번 시트(인덱스0)=쿠팡, 2번 시트(인덱스1)=배민 */
+  const COUPANG_SHEET_INDEX = 0;
+  const BAEMIN_SHEET_INDEX = 1;
   const COUPANG_START_ROW = 2;
   const BAEMIN_START_ROW = 4;
 
@@ -75,101 +75,60 @@
     return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
   }
 
-  function isSheetHidden(workbook, sheetIndex) {
-    const hidden = workbook.Workbook?.Sheets?.[sheetIndex]?.Hidden;
-    return hidden === 1 || hidden === 2;
+  function getSheetRowCount(sheet) {
+    if (!sheet || !sheet['!ref']) return 0;
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    return range.e.r + 1;
   }
 
-  function listWorkbookSheetEntries(workbook) {
-    const names = workbook.SheetNames || [];
-    return names.map((name, index) => ({
-      index,
-      position: index + 1,
-      name,
-      sheet: workbook.Sheets?.[name] || null,
-      hidden: isSheetHidden(workbook, index)
-    }));
+  /** AK열 등 먼 열을 안정적으로 읽기 위해 시트 셀 직접 접근 */
+  function getSheetCell(sheet, row1Based, col0Based) {
+    if (!sheet) return '';
+    const addr = XLSX.utils.encode_cell({ r: row1Based - 1, c: col0Based });
+    const cell = sheet[addr];
+    if (!cell || cell.v === undefined || cell.v === null) return '';
+    return cell.v;
   }
 
-  /** 1번·2번 탭 = 사용자가 보는 순서(숨김 시트 건너뜀) */
   function resolveErpSheets(workbook) {
-    const entries = listWorkbookSheetEntries(workbook);
-    const visible = entries.filter(entry => !entry.hidden && entry.sheet);
-
-    if (visible.length < 2 && entries.length < 2) {
-      throw new Error('엑셀에 시트가 2개 이상 필요합니다. (1번 탭: 쿠팡, 2번 탭: 배민)');
+    const names = workbook.SheetNames || [];
+    if (names.length < 2) {
+      throw new Error('엑셀에 시트가 2개 이상 필요합니다. (1번 시트: 쿠팡, 2번 시트: 배민)');
     }
 
-    const coupangEntry = visible[COUPANG_SHEET_POSITION - 1] || entries[COUPANG_SHEET_POSITION - 1];
-    const baeminEntry = visible[BAEMIN_SHEET_POSITION - 1] || entries[BAEMIN_SHEET_POSITION - 1];
+    const coupangName = names[COUPANG_SHEET_INDEX];
+    const baeminName = names[BAEMIN_SHEET_INDEX];
+    const coupangSheet = workbook.Sheets?.[coupangName];
+    const baeminSheet = workbook.Sheets?.[baeminName];
 
-    if (!coupangEntry?.sheet || !baeminEntry?.sheet) {
-      throw new Error('엑셀 1번·2번 시트를 찾지 못했습니다. 1번 탭=쿠팡, 2번 탭=배민 순서로 배치해주세요.');
+    if (!coupangSheet || !baeminSheet) {
+      throw new Error('1번·2번 시트를 읽지 못했습니다. 1번=쿠팡, 2번=배민 순서를 확인하세요.');
     }
 
     return {
-      coupangSheet: coupangEntry.sheet,
-      baeminSheet: baeminEntry.sheet,
-      coupangSheetName: coupangEntry.name,
-      baeminSheetName: baeminEntry.name,
-      coupangPosition: visible.indexOf(coupangEntry) >= 0
-        ? visible.indexOf(coupangEntry) + 1
-        : coupangEntry.position,
-      baeminPosition: visible.indexOf(baeminEntry) >= 0
-        ? visible.indexOf(baeminEntry) + 1
-        : baeminEntry.position
+      coupangSheet,
+      baeminSheet,
+      coupangSheetName: coupangName,
+      baeminSheetName: baeminName,
+      coupangPosition: COUPANG_SHEET_INDEX + 1,
+      baeminPosition: BAEMIN_SHEET_INDEX + 1
     };
   }
 
-  function sniffSheetPlatform(rows) {
-    let baeminHints = 0;
-    let coupangHints = 0;
-
-    rows.slice(0, 20).forEach((row, rowIndex) => {
-      const baeminId = String(cellValue(row, BAEMIN_COL.ID)).trim();
-      if (baeminId) baeminHints += 3;
-
-      const identity = String(cellValue(row, COUPANG_COL.IDENTITY)).trim();
-      if (identity && /01[\d-]{8,}/.test(identity)) coupangHints += 3;
-
-      if (rowIndex >= COUPANG_START_ROW - 1) {
-        const reject = parseCount(cellValue(row, COUPANG_COL.REJECT));
-        const complete = parseCount(cellValue(row, COUPANG_COL.COMPLETE));
-        if (!Number.isNaN(reject) && reject > 0) coupangHints += 1;
-        if (!Number.isNaN(complete) && complete > 0) coupangHints += 1;
-      }
-
-      if (rowIndex >= BAEMIN_START_ROW - 1) {
-        const total = parseCount(cellValue(row, BAEMIN_COL.COMPLETE));
-        if (!Number.isNaN(total) && total > 0) baeminHints += 1;
-      }
-    });
-
-    if (baeminHints > coupangHints + 2) return 'baemin';
-    if (coupangHints > baeminHints + 2) return 'coupang';
-    return '';
-  }
-
-  function validateErpSheetOrder(resolved) {
-    const coupangType = sniffSheetPlatform(sheetToRows(resolved.coupangSheet));
-    const baeminType = sniffSheetPlatform(sheetToRows(resolved.baeminSheet));
-
-    if (coupangType === 'baemin' && baeminType === 'coupang') {
-      throw new Error('시트 순서가 바뀌었습니다. 1번 탭=쿠팡, 2번 탭=배민 순서로 배치해주세요.');
-    }
-    if (coupangType === 'baemin') {
-      throw new Error(`1번 탭("${resolved.coupangSheetName}")이 쿠팡 데이터가 아닙니다. 쿠팡 시트를 첫 번째 탭에 두세요.`);
-    }
-    if (baeminType === 'coupang') {
-      throw new Error(`2번 탭("${resolved.baeminSheetName}")이 배민 데이터가 아닙니다. 배민 시트를 두 번째 탭에 두세요.`);
-    }
-  }
-
   function getSelectedWeekStart(platform) {
-    const input = document.getElementById(`rejectionWeekDate-${platform}`);
-    const value = input?.value;
+    const erpInput = document.querySelector(`[data-rejection-erp-week-${platform}]`);
+    const panelInput = document.getElementById(`rejectionWeekDate-${platform}`);
+    const value = erpInput?.value || panelInput?.value;
     if (!value) return '';
     return weekStartKey(value);
+  }
+
+  function syncWeekInputs(platform, weekStart) {
+    const normalized = weekStart ? weekStartKey(weekStart) : '';
+    const erpInput = document.querySelector(`[data-rejection-erp-week-${platform}]`);
+    const panelInput = document.getElementById(`rejectionWeekDate-${platform}`);
+    if (erpInput) erpInput.value = normalized;
+    if (panelInput) panelInput.value = normalized;
   }
 
   function calcCoupangRate(rejectCount, cancelCount, completeCount) {
@@ -227,7 +186,7 @@
       };
     }
 
-    for (const loginId of identity.loginIds) {
+    for (const loginId of [...identity.loginIds].reverse()) {
       const result = window.BremDriverUtils?.matchDriverForPlatformImport?.(loginId, 'coupang', identity.name);
       if (result?.driver) {
         return {
@@ -274,21 +233,20 @@
   }
 
   function parseCoupangSheet(sheet, weekStart) {
-    const rows = sheetToRows(sheet);
     const parsed = [];
+    const rowCount = getSheetRowCount(sheet);
 
-    rows.slice(COUPANG_START_ROW - 1).forEach((row, offset) => {
-      const rowNumber = COUPANG_START_ROW + offset;
-      const identityCell = cellValue(row, COUPANG_COL.IDENTITY);
-      const rejectRaw = cellValue(row, COUPANG_COL.REJECT);
-      const cancelRaw = cellValue(row, COUPANG_COL.CANCEL);
-      const completeRaw = cellValue(row, COUPANG_COL.COMPLETE);
+    for (let rowNumber = COUPANG_START_ROW; rowNumber <= rowCount; rowNumber += 1) {
+      const identityCell = getSheetCell(sheet, rowNumber, COUPANG_COL.IDENTITY);
+      const rejectRaw = getSheetCell(sheet, rowNumber, COUPANG_COL.REJECT);
+      const cancelRaw = getSheetCell(sheet, rowNumber, COUPANG_COL.CANCEL);
+      const completeRaw = getSheetCell(sheet, rowNumber, COUPANG_COL.COMPLETE);
 
       if (!String(identityCell).trim()
         && !String(rejectRaw).trim()
         && !String(cancelRaw).trim()
         && !String(completeRaw).trim()) {
-        return;
+        continue;
       }
 
       const match = matchCoupangDriver(identityCell);
@@ -298,10 +256,13 @@
       if (rateResult.error) errors.push(rateResult.error);
       if (!weekStart) errors.push('쿠팡 적용주 미선택');
 
+      const rejectCount = parseCount(rejectRaw);
+      const cancelCount = parseCount(cancelRaw);
+      const completeCount = parseCount(completeRaw);
       const stats = {
-        rejectCount: parseCount(rejectRaw) || 0,
-        cancelCount: parseCount(cancelRaw) || 0,
-        completeCount: parseCount(completeRaw) || 0,
+        rejectCount: Number.isNaN(rejectCount) ? 0 : rejectCount,
+        cancelCount: Number.isNaN(cancelCount) ? 0 : cancelCount,
+        completeCount: Number.isNaN(completeCount) ? 0 : completeCount,
         unmeasured: rateResult.unmeasured
       };
 
@@ -317,37 +278,36 @@
         unmeasured: rateResult.unmeasured,
         stats,
         weekStart,
-        valid: Boolean(match.driver && weekStart && !rateResult.error && errors.length <= (match.error ? 1 : 0)),
+        valid: Boolean(match.driver && weekStart && !rateResult.error),
         errors,
         canSave: Boolean(match.driver && weekStart && !rateResult.error)
       });
-    });
+    }
 
     return parsed;
   }
 
   function parseBaeminSheet(sheet, weekStart) {
-    const rows = sheetToRows(sheet);
     const parsed = [];
+    const rowCount = getSheetRowCount(sheet);
 
-    rows.slice(BAEMIN_START_ROW - 1).forEach((row, offset) => {
-      const rowNumber = BAEMIN_START_ROW + offset;
-      const baeminIdRaw = cellValue(row, BAEMIN_COL.ID);
-      const completeRaw = cellValue(row, BAEMIN_COL.COMPLETE);
-      const rejectRaw = cellValue(row, BAEMIN_COL.REJECT);
-      const dispatchRaw = cellValue(row, BAEMIN_COL.DISPATCH_CANCEL);
-      const riderRaw = cellValue(row, BAEMIN_COL.RIDER_CANCEL);
+    for (let rowNumber = BAEMIN_START_ROW; rowNumber <= rowCount; rowNumber += 1) {
+      const baeminIdRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.ID);
+      const completeRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.COMPLETE);
+      const rejectRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.REJECT);
+      const dispatchRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.DISPATCH_CANCEL);
+      const riderRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.RIDER_CANCEL);
 
       if (!String(baeminIdRaw).trim()
         && !String(completeRaw).trim()
         && !String(rejectRaw).trim()
         && !String(dispatchRaw).trim()
         && !String(riderRaw).trim()) {
-        return;
+        continue;
       }
 
       const match = matchBaeminDriver(baeminIdRaw);
-      if (match.skip) return;
+      if (match.skip) continue;
 
       const rateResult = calcBaeminAcceptanceRate(completeRaw, rejectRaw, dispatchRaw, riderRaw);
       const errors = [];
@@ -355,11 +315,15 @@
       if (rateResult.error) errors.push(rateResult.error);
       if (!weekStart) errors.push('배민 적용주 미선택');
 
+      const completeTotal = parseCount(completeRaw);
+      const rejectCount = parseCount(rejectRaw);
+      const dispatchCancelCount = parseCount(dispatchRaw);
+      const riderCancelCount = parseCount(riderRaw);
       const stats = {
-        completeTotal: parseCount(completeRaw) || 0,
-        rejectCount: parseCount(rejectRaw) || 0,
-        dispatchCancelCount: parseCount(dispatchRaw) || 0,
-        riderCancelCount: parseCount(riderRaw) || 0,
+        completeTotal: Number.isNaN(completeTotal) ? 0 : completeTotal,
+        rejectCount: Number.isNaN(rejectCount) ? 0 : rejectCount,
+        dispatchCancelCount: Number.isNaN(dispatchCancelCount) ? 0 : dispatchCancelCount,
+        riderCancelCount: Number.isNaN(riderCancelCount) ? 0 : riderCancelCount,
         unmeasured: rateResult.unmeasured
       };
 
@@ -378,7 +342,7 @@
         errors,
         canSave: Boolean(match.driver && weekStart && !rateResult.error)
       });
-    });
+    }
 
     return parsed;
   }
@@ -484,20 +448,34 @@
     return combined;
   }
 
+  function sheetHasCoupangData(sheet) {
+    const rowCount = getSheetRowCount(sheet);
+    for (let row = COUPANG_START_ROW; row <= Math.min(rowCount, COUPANG_START_ROW + 30); row += 1) {
+      if (String(getSheetCell(sheet, row, COUPANG_COL.IDENTITY)).trim()) return true;
+      if (String(getSheetCell(sheet, row, COUPANG_COL.REJECT)).trim()) return true;
+      if (String(getSheetCell(sheet, row, COUPANG_COL.COMPLETE)).trim()) return true;
+    }
+    return false;
+  }
+
+  function sheetHasBaeminData(sheet) {
+    const rowCount = getSheetRowCount(sheet);
+    for (let row = BAEMIN_START_ROW; row <= Math.min(rowCount, BAEMIN_START_ROW + 30); row += 1) {
+      if (String(getSheetCell(sheet, row, BAEMIN_COL.ID)).trim()) return true;
+      if (String(getSheetCell(sheet, row, BAEMIN_COL.COMPLETE)).trim()) return true;
+    }
+    return false;
+  }
+
   function validateWorkbookStructure(workbook) {
     const resolved = resolveErpSheets(workbook);
-    validateErpSheetOrder(resolved);
 
-    const baeminRows = sheetToRows(resolved.baeminSheet);
-    const baeminHeader = baeminRows[BAEMIN_START_ROW - 2] || [];
-    if (baeminHeader.length < BAEMIN_COL.ID + 1) {
-      throw new Error(`배민 시트(2번 탭「${resolved.baeminSheetName}」) AK열(배민ID)을 찾을 수 없습니다. 4행부터 AK열 기준으로 업로드해주세요.`);
+    if (!sheetHasBaeminData(resolved.baeminSheet)) {
+      throw new Error(`배민 2번 시트「${resolved.baeminSheetName}」에서 AK열(배민ID)·E열 데이터를 찾지 못했습니다. 4행부터 확인하세요.`);
     }
 
-    const coupangRows = sheetToRows(resolved.coupangSheet);
-    const sampleCoupang = coupangRows[COUPANG_START_ROW - 1] || [];
-    if (sampleCoupang.length < COUPANG_COL.COMPLETE + 1) {
-      throw new Error(`쿠팡 시트(1번 탭「${resolved.coupangSheetName}」) B/C/D열(거절·취소·완료)을 찾을 수 없습니다. 2행부터 A~D열 기준으로 업로드해주세요.`);
+    if (!sheetHasCoupangData(resolved.coupangSheet)) {
+      throw new Error(`쿠팡 1번 시트「${resolved.coupangSheetName}」에서 A~D열 데이터를 찾지 못했습니다. 2행부터 확인하세요.`);
     }
 
     return resolved;
@@ -548,7 +526,7 @@
       const baeminWeek = getSelectedWeekStart('baemin');
       const sheetInfo = parsedBundle?.sheetInfo;
       const sheetLabel = sheetInfo
-        ? ` · 1번탭(쿠팡)「${sheetInfo.coupangSheetName}」· 2번탭(배민)「${sheetInfo.baeminSheetName}」`
+        ? ` · 1번시트(쿠팡)「${sheetInfo.coupangSheetName}」· 2번시트(배민)「${sheetInfo.baeminSheetName}」`
         : '';
 
       if (!coupangWeek || !baeminWeek) {
@@ -702,24 +680,50 @@
       void (async () => {
         try {
           await BremStorage.flushStorage?.();
+          if (BremStorage.refreshDataFromServer) {
+            await BremStorage.refreshDataFromServer(BremStorage.KEYS?.rejections || 'brem_admin_rejection_rates');
+          }
           const failCount = Number(failEl?.textContent || 0);
           notify(`총 ${payloads.length}건 저장 완료 / 매칭 실패 ${failCount}건`);
           clearPreview();
           document.dispatchEvent(new CustomEvent('brem-rejection-erp-applied'));
         } catch (error) {
           console.error('[BREM] ERP rejection persist failed:', error);
-          notify(error.message || 'Supabase 저장에 실패했습니다.');
+          const message = String(error.message || '');
+          if (message.includes('stats') || message.includes('column')) {
+            notify('Supabase에 stats 컬럼이 없습니다. supabase/rejection_stats_migration.sql 을 실행하세요.');
+            return;
+          }
+          notify(message || 'Supabase 저장에 실패했습니다.');
         }
       })();
     }
 
-    updateWeekNote();
-    ['rejectionWeekDate-coupang', 'rejectionWeekDate-baemin'].forEach(id => {
-      document.getElementById(id)?.addEventListener('change', () => {
+    function initWeekPickers() {
+      const defaultWeek = weekStartKey();
+      ['coupang', 'baemin'].forEach(platform => {
+        const panelValue = document.getElementById(`rejectionWeekDate-${platform}`)?.value;
+        syncWeekInputs(platform, panelValue || defaultWeek);
+      });
+    }
+
+    function bindWeekPicker(platform) {
+      const erpInput = root.querySelector(`[data-rejection-erp-week-${platform}]`);
+      const panelInput = document.getElementById(`rejectionWeekDate-${platform}`);
+      erpInput?.addEventListener('change', event => {
+        syncWeekInputs(platform, event.target.value);
         if (parsedBundle) revalidate();
         else updateWeekNote();
       });
-    });
+      panelInput?.addEventListener('change', event => {
+        syncWeekInputs(platform, event.target.value);
+        if (parsedBundle) revalidate();
+        else updateWeekNote();
+      });
+    }
+
+    initWeekPickers();
+    ['coupang', 'baemin'].forEach(bindWeekPicker);
     fileInput?.addEventListener('change', handleFileChange);
     applyBtn?.addEventListener('click', applyBulk);
     clearBtn?.addEventListener('click', clearPreview);
