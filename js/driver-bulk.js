@@ -43,7 +43,14 @@
   const issueCountEl = document.getElementById('bulkIssueCount');
   const applyBtn = document.getElementById('bulkApplyBtn');
   const clearBtn = document.getElementById('bulkClearBtn');
+  const applyProgressEl = document.getElementById('bulkApplyProgress');
+  const applyProgressFillEl = document.getElementById('bulkApplyProgressFill');
+  const applyProgressTextEl = document.getElementById('bulkApplyProgressText');
+  const applySummaryEl = document.getElementById('bulkApplySummary');
+  const applySummaryTextEl = document.getElementById('bulkApplySummaryText');
   const toast = document.getElementById('toast');
+
+  let isApplying = false;
 
   function showToast(message) {
     if (!toast) return;
@@ -315,6 +322,94 @@
     return tags.join('·') || '-';
   }
 
+  function getRowClass(row) {
+    if (row.applyStatus === 'processing') return 'row-processing';
+    if (row.applyStatus === 'done') return 'row-done';
+    if (row.applyStatus === 'failed' || row.isIssue) return 'row-failed';
+    if (row.valid) return row.action === 'update' ? 'row-update' : 'row-ok';
+    return 'row-error';
+  }
+
+  function getRowResultHtml(row) {
+    if (row.applyStatus === 'processing') {
+      return '<span class="bulk-result-processing">처리 중…</span>';
+    }
+    if (row.applyStatus === 'done') {
+      const label = row.applyAction === 'update' ? '업데이트 완료!' : '등록완료!';
+      return `<span class="bulk-result-done">${label}</span>`;
+    }
+    if (row.applyStatus === 'failed') {
+      return `<span class="bulk-result-err">${escapeHtml(row.applyMessage || '등록실패')}</span>`;
+    }
+    if (!row.valid) {
+      return `<span class="bulk-result-err">${escapeHtml(row.errors.join(', '))}</span>`;
+    }
+    if (row.action === 'update') {
+      return '<span class="bulk-result-update">기존 업데이트</span>';
+    }
+    return '<span class="bulk-result-ok">신규 등록</span>';
+  }
+
+  function findPreviewRow(rowNumber) {
+    return previewBody?.querySelector(`tr[data-bulk-row="${rowNumber}"]`) || null;
+  }
+
+  function updatePreviewRowStatus(row) {
+    const tr = findPreviewRow(row.rowNumber);
+    if (!tr) return;
+    tr.className = getRowClass(row);
+    const resultCell = tr.querySelector('.bulk-row-result');
+    if (resultCell) resultCell.innerHTML = getRowResultHtml(row);
+    if (row.applyStatus === 'processing' && row.rowNumber % 10 === 0) {
+      tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
+  function resetApplyUi() {
+    if (applyProgressEl) applyProgressEl.hidden = true;
+    if (applySummaryEl) {
+      applySummaryEl.hidden = true;
+      applySummaryEl.classList.remove('is-partial');
+    }
+    if (applyProgressFillEl) applyProgressFillEl.style.width = '0%';
+    if (applyProgressTextEl) applyProgressTextEl.textContent = '처리 중…';
+    if (applySummaryTextEl) applySummaryTextEl.textContent = '';
+  }
+
+  function setApplyUiActive(active) {
+    isApplying = active;
+    if (applyProgressEl) applyProgressEl.hidden = !active;
+    if (applySummaryEl) applySummaryEl.hidden = active;
+    if (applyBtn) applyBtn.disabled = active || parsedRows.filter(row => row.valid).length === 0;
+    if (clearBtn) clearBtn.disabled = active;
+    if (templateBtn) templateBtn.disabled = active;
+    if (fileInput) fileInput.disabled = active;
+  }
+
+  function updateApplyProgress(current, total, succeeded, failed) {
+    const percent = total ? Math.round((current / total) * 100) : 0;
+    if (applyProgressFillEl) applyProgressFillEl.style.width = `${percent}%`;
+    if (applyProgressTextEl) {
+      applyProgressTextEl.textContent = `처리 중 ${current} / ${total} · 등록완료 ${succeeded}명 · 등록실패 ${failed}명`;
+    }
+  }
+
+  function showApplySummary(succeeded, failed, skipped) {
+    if (applyProgressEl) applyProgressEl.hidden = true;
+    if (!applySummaryEl || !applySummaryTextEl) return;
+
+    applySummaryEl.hidden = false;
+    applySummaryEl.classList.toggle('is-partial', failed > 0 || skipped > 0);
+    applySummaryTextEl.textContent = `등록완료 ${succeeded}명! · 등록실패 ${failed}명!${skipped ? ` · 사전 오류 ${skipped}건` : ''}`;
+  }
+
+  function yieldToUi(index) {
+    if (index % 3 !== 0) return Promise.resolve();
+    return new Promise(resolve => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  }
+
   function escapeHtml(value) {
     return String(value || '')
       .replaceAll('&', '&amp;')
@@ -334,29 +429,18 @@
     if (createCountEl) createCountEl.textContent = String(createRows.length);
     if (updateCountEl) updateCountEl.textContent = String(updateRows.length);
     if (issueCountEl) issueCountEl.textContent = String(issueRows.length);
-    applyBtn.disabled = processableCount === 0;
+    applyBtn.disabled = processableCount === 0 || isApplying;
 
-    previewBody.innerHTML = parsedRows.map(row => {
-      const rowClass = row.valid
-        ? (row.action === 'update' ? 'row-update' : 'row-ok')
-        : 'row-error';
-      let resultHtml = row.action === 'update'
-        ? '<span class="bulk-result-update">기존 업데이트</span>'
-        : '<span class="bulk-result-ok">신규 등록</span>';
-      if (!row.valid) {
-        resultHtml = `<span class="bulk-result-err">${escapeHtml(row.errors.join(', '))}</span>`;
-      }
-      return `
-        <tr class="${rowClass}">
+    previewBody.innerHTML = parsedRows.map(row => `
+        <tr class="${getRowClass(row)}" data-bulk-row="${row.rowNumber}">
           <td>${row.rowNumber}</td>
           <td>${escapeHtml(row.data.name || '-')}</td>
           <td>${escapeHtml(row.data.phone || '-')}</td>
           <td>${escapeHtml(row.loginId || '-')}</td>
           <td>${escapeHtml(platformLabel(row))}</td>
-          <td>${resultHtml}</td>
+          <td class="bulk-row-result">${getRowResultHtml(row)}</td>
         </tr>
-      `;
-    }).join('');
+      `).join('');
 
     previewSection.hidden = parsedRows.length === 0;
   }
@@ -384,6 +468,8 @@
     if (updateCountEl) updateCountEl.textContent = '0';
     if (issueCountEl) issueCountEl.textContent = '0';
     applyBtn.disabled = true;
+    resetApplyUi();
+    setApplyUiActive(false);
   }
 
   function switchMode(mode) {
@@ -461,6 +547,7 @@
       }
 
       parsedRows = buildParsedRows(rows);
+      resetApplyUi();
       renderPreview();
 
       const createCount = parsedRows.filter(row => row.valid && row.action === 'create').length;
@@ -491,53 +578,77 @@
 
     if (!window.confirm(confirmMessage)) return;
 
-    applyBtn.disabled = true;
+    resetApplyUi();
+    setApplyUiActive(true);
     const previousLabel = applyBtn.textContent;
     applyBtn.textContent = '처리 중…';
 
-    let created = 0;
-    let updated = 0;
+    let succeeded = 0;
+    let failed = 0;
+    const total = processableRows.length;
+    let current = 0;
+
+    updateApplyProgress(0, total, 0, 0);
 
     try {
       await ensureStorageReadyForSave();
 
       for (const row of processableRows) {
-        if (row.action === 'update') {
-          const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
-          if (Object.keys(changes).length) {
-            await Promise.resolve(BremStorage.drivers.update(row.matchedDriver.id, changes));
-            syncDriverEventSettings(
-              row.matchedDriver.id,
-              { ...row.matchedDriver, ...changes },
-              row.matchedDriver
-            );
+        current += 1;
+        row.applyStatus = 'processing';
+        updatePreviewRowStatus(row);
+
+        try {
+          if (row.action === 'update') {
+            const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
+            if (Object.keys(changes).length) {
+              await Promise.resolve(BremStorage.drivers.update(row.matchedDriver.id, changes));
+              syncDriverEventSettings(
+                row.matchedDriver.id,
+                { ...row.matchedDriver, ...changes },
+                row.matchedDriver
+              );
+            }
+            row.applyAction = 'update';
+          } else {
+            const createPayload = {
+              ...row.data,
+              platformCoupang: row.data.platformCoupang !== false,
+              platformBaemin: Boolean(row.data.platformBaemin)
+            };
+            const driver = await Promise.resolve(BremStorage.drivers.create(createPayload));
+            syncDriverEventSettings(driver.id, row.data);
+            row.applyAction = 'create';
           }
-          updated += 1;
-        } else {
-          const createPayload = {
-            ...row.data,
-            platformCoupang: row.data.platformCoupang !== false,
-            platformBaemin: Boolean(row.data.platformBaemin)
-          };
-          const driver = await Promise.resolve(BremStorage.drivers.create(createPayload));
-          syncDriverEventSettings(driver.id, row.data);
-          created += 1;
+
+          row.applyStatus = 'done';
+          succeeded += 1;
+        } catch (error) {
+          row.applyStatus = 'failed';
+          row.applyMessage = error.message || '등록실패';
+          failed += 1;
         }
+
+        updatePreviewRowStatus(row);
+        updateApplyProgress(current, total, succeeded, failed);
+        await yieldToUi(current);
       }
 
       await BremStorage.flushStorage?.();
 
-      showToast(`신규등록 ${created}명 · 기존 업데이트 ${updated}명 · 중복/오류 ${issueRows.length}건`);
-      clearPreview();
+      showApplySummary(succeeded, failed, issueRows.length);
+      showToast(`등록완료 ${succeeded}명! · 등록실패 ${failed}명!${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}`);
 
       if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {
         window.BremDriverIndex.refresh();
       }
     } catch (error) {
       console.error(error);
+      showApplySummary(succeeded, failed + (total - current), issueRows.length);
       showToast(error.message || '일괄 등록에 실패했습니다.');
     } finally {
-      applyBtn.disabled = false;
+      setApplyUiActive(false);
+      applyBtn.disabled = true;
       applyBtn.textContent = previousLabel;
     }
   }

@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex,nofollow">
   <title>BREM 기사등록 관리 프로그램</title>
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=20260621b">
+  <link rel="stylesheet" href="css/style.css?v=20260621d">
 </head>
 <body>
   <div class="app index-app">
@@ -250,6 +250,15 @@
                 <span class="err">중복/오류 <strong id="bulkIssueCount">0</strong>건</span>
               </div>
             </div>
+            <div class="bulk-apply-progress" id="bulkApplyProgress" hidden>
+              <div class="bulk-apply-progress__bar" aria-hidden="true">
+                <span class="bulk-apply-progress__fill" id="bulkApplyProgressFill"></span>
+              </div>
+              <p class="bulk-apply-progress__text" id="bulkApplyProgressText">처리 중…</p>
+            </div>
+            <div class="bulk-apply-summary" id="bulkApplySummary" hidden>
+              <strong id="bulkApplySummaryText"></strong>
+            </div>
             <div class="bulk-preview-wrap">
               <table class="bulk-preview-table">
                 <thead>
@@ -314,6 +323,6 @@
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
   <script src="js/app.js?v=20260620j"></script>
-  <script src="js/driver-bulk.js?v=20260621b"></script>
+  <script src="js/driver-bulk.js?v=20260621d"></script>
 </body>
 </html>

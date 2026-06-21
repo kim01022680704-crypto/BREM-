@@ -811,6 +811,84 @@ h2 {
   font-weight: 700;
 }
 
+.bulk-result-done {
+  color: var(--success);
+  font-weight: 800;
+}
+
+.bulk-result-processing {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.bulk-preview-table tr.row-processing {
+  background: #eff6ff;
+}
+
+.bulk-preview-table tr.row-done {
+  background: #f0fdf4;
+}
+
+.bulk-preview-table tr.row-failed {
+  background: #fff5f5;
+}
+
+.bulk-apply-progress {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.bulk-apply-progress__bar {
+  height: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+}
+
+.bulk-apply-progress__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #1d4ed8);
+  transition: width 0.15s ease;
+}
+
+.bulk-apply-progress__text {
+  margin: 0;
+  color: #1e3a8a;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.bulk-apply-summary {
+  margin: 0 0 10px;
+  padding: 14px 16px;
+  border: 1px solid #86efac;
+  border-radius: 12px;
+  background: #f0fdf4;
+  text-align: center;
+}
+
+.bulk-apply-summary strong {
+  color: #166534;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.bulk-apply-summary.is-partial {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.bulk-apply-summary.is-partial strong {
+  color: #92400e;
+}
+
 .driver-form {
   display: grid;
   gap: 14px;
