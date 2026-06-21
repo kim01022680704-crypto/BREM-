@@ -538,12 +538,6 @@
     resetAssignmentDrafts();
 
     if (renderOnly && !force) {
-      if (missionsApi.getAll().length === 0) {
-        await BremStorage.reloadMissions?.(false);
-      }
-      if (BremStorage.drivers?.getAll?.().length === 0) {
-        await BremStorage.reloadDrivers?.(false);
-      }
       await updateSetupBanner(false);
       renderMissionSection();
       return;
@@ -556,29 +550,29 @@
       return;
     }
 
-    if (!force && missionsApi.getAll().length === 0) {
-      await BremStorage.reloadMissions?.(false);
-    }
-
     if (!force && missionsApi.getAll().length > 0 && BremStorage.drivers?.getAll?.().length > 0) {
       renderMissionSection();
       return;
     }
 
     try {
-      const [, loadResult] = await Promise.all([
-        BremStorage.reloadDrivers?.(force),
-        BremStorage.reloadMissions?.(force)
-      ]);
+      if (force) {
+        await Promise.all([
+          BremStorage.reloadDrivers?.(true),
+          BremStorage.reloadMissions?.(true)
+        ]);
+      } else {
+        await BremStorage.loadBootstrapData?.({ force: false });
+      }
       if (missionsApi.getAll().length > 0) {
         state.tableReady = true;
         const banner = $('missionSetupBanner');
         if (banner) banner.hidden = true;
-      } else if (loadResult?.ok === false) {
-        showToast(formatMissionError(loadResult.message || loadResult.error));
       }
     } catch (error) {
-      showToast(formatMissionError(error));
+      if (!missionsApi.getAll().length) {
+        showToast(formatMissionError(error));
+      }
     }
 
     renderMissionSection();

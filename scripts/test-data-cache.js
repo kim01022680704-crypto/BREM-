@@ -77,7 +77,8 @@ Promise.all([p1, p2]).then(([a, b]) => {
   const storageJs = loadStorageChecks();
   assert('storage.js has section cache ready helper', /function isSectionCacheReady/.test(storageJs));
   assert('storage.js dedupes section loads', /sectionLoadPromises/.test(storageJs));
-  assert('storage.js has refetch on mutation', /function scheduleDataRefetch/.test(storageJs));
+  assert('storage.js has cache sync on mutation', /function scheduleCacheSyncAfterWrite/.test(storageJs));
+  assert('storage.js has bootstrap loader', /function loadBootstrapData/.test(storageJs));
   assert('storage.js removed drivers TTL refetch', !/DRIVERS_SYNC_TTL_MS/.test(storageJs));
   assert('adapter uses BremDataCache', /BremDataCache/.test(fs.readFileSync(path.join(ROOT, 'js/storage-supabase-adapter.js'), 'utf8')));
   assert('loading UI module exists', fs.existsSync(path.join(ROOT, 'js/data-loading-ui.js')));

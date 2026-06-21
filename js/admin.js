@@ -1416,6 +1416,7 @@
   }
 
   function showSectionLoadingSkeleton(sectionId) {
+    if (BremStorage.isSectionCacheReady?.(sectionId)) return;
     if (sectionId === 'dashboard') {
       $('#statDrivers').textContent = '…';
       $('#statWeekCallsCoupang').textContent = '…';
@@ -1528,8 +1529,8 @@
     startAdminSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
 
-    const loadPromise = BremStorage.ensureSectionLoaded?.(initialSection)
-      || BremStorage.hydrateAdminDataInBackground?.();
+    const loadPromise = BremStorage.hydrateAdminDataInBackground?.()
+      || BremStorage.ensureSectionLoaded?.(initialSection);
 
     Promise.resolve(loadPromise).then(result => {
       showAdminDataLoading(false);
@@ -2700,12 +2701,16 @@
 
     try {
       const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
-      if (result?.ok === false) {
+      if (result?.ok === false && !BremStorage.drivers?.getAll?.().length && sectionId !== 'admin-account') {
         showToast(result.message || '데이터를 불러오지 못했습니다.');
+      } else if (result?.ok === false && result?.stale) {
+        console.warn('[BREM] Section load used stale cache:', sectionId, result.message);
       }
     } catch (error) {
       console.error('[BREM] Section load failed:', error);
-      showToast(error.message || '데이터를 불러오지 못했습니다.');
+      if (!BremStorage.drivers?.getAll?.().length) {
+        showToast(error.message || '데이터를 불러오지 못했습니다.');
+      }
     } finally {
       if (!cacheReady) {
         showAdminDataLoading(false);

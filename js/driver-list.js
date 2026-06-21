@@ -41,6 +41,12 @@
   let listLoadPromise = null;
   let lastSupabaseTotal = 0;
   const listSort = { key: 'name', dir: 'asc' };
+  const VIRTUAL_ROW_HEIGHT = 46;
+  const VIRTUAL_THRESHOLD = 150;
+  const VIRTUAL_OVERSCAN = 12;
+  let virtualRenderRaf = 0;
+  let virtualBound = false;
+  let lastRenderedDrivers = [];
   const driverListSortSchema = {
     name: driver => driver.name,
     phone: driver => driver.phone,
@@ -81,6 +87,7 @@
   }
 
   function canUseFastFilter() {
+    if (useVirtualDesktop()) return false;
     const listRoot = isMobileView() ? mobileList : tableBody;
     if (!listRoot?.querySelector('[data-driver-id]')) return false;
     return renderedSnapshot === getDriverSnapshot() && renderedIsMobile === isMobileView();
@@ -93,6 +100,12 @@
   }
 
   function applyListFilter() {
+    if (useVirtualDesktop() || !canUseFastFilter()) {
+      scrollListToTop();
+      render();
+      return;
+    }
+
     const keyword = searchInput.value.trim().toLowerCase();
     const status = statusFilter.value;
     const listRoot = isMobileView() ? mobileList : tableBody;
@@ -199,32 +212,18 @@
     return `<span class="privacy-summary">${hiddenLabels.map(label => `<span class="privacy-badge">${escapeHtml(label)} 가림</span>`).join('')}</span>`;
   }
 
-  function render() {
-    try {
-      window.BremPerf?.time?.('drivers.render');
-      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
-      mobileList?.classList.remove('is-loading');
+  function useVirtualDesktop() {
+    return !isMobileView() && getFilteredDrivers().length >= VIRTUAL_THRESHOLD;
+  }
 
-      const allDrivers = getSortedDrivers(BremStorage.drivers.getAll());
-
-      const allIds = new Set(allDrivers.map(driver => driver.id));
-      selectedIds.forEach(id => {
-        if (!allIds.has(id)) selectedIds.delete(id);
-      });
-
-      updateDriverTotal(driverTotal, allDrivers.length);
-
-      const mobileView = isMobileView();
-
-      if (!mobileView) {
-        tableBody.innerHTML = allDrivers.map(driver => {
-          const coupangId = escapeHtml(makeDriverLoginId(driver));
-          const eventName = escapeHtml(driver.longEventItem) || '-';
-          const eventStart = formatDate(driver.longEventStartDate);
-          const eventCell = driver.longEventItem
-            ? `<span class="cell-main">${eventName}</span><span class="cell-sub">${eventStart}</span>`
-            : `<span class="cell-main">-</span>`;
-          return `
+  function renderDesktopRow(driver) {
+    const coupangId = escapeHtml(makeDriverLoginId(driver));
+    const eventName = escapeHtml(driver.longEventItem) || '-';
+    const eventStart = formatDate(driver.longEventStartDate);
+    const eventCell = driver.longEventItem
+      ? `<span class="cell-main">${eventName}</span><span class="cell-sub">${eventStart}</span>`
+      : `<span class="cell-main">-</span>`;
+    return `
       <tr class="${selectedIds.has(driver.id) ? 'row-selected' : ''}" data-driver-id="${escapeHtml(driver.id)}" data-search="${escapeHtml(buildDriverSearchText(driver))}" data-status="${escapeHtml(driver.status)}">
         <td class="col-select">${renderCheckbox(driver.id)}</td>
         <td class="col-name">
@@ -251,11 +250,91 @@
         </td>
       </tr>
     `;
-        }).join('');
+  }
+
+  function getVirtualRange(total, scrollTop, viewportHeight) {
+    const start = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN);
+    const visibleCount = Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT) + (VIRTUAL_OVERSCAN * 2);
+    const end = Math.min(total, start + visibleCount);
+    return { start, end };
+  }
+
+  function renderDesktopVirtual(filteredDrivers) {
+    if (!listScroll) {
+      tableBody.innerHTML = filteredDrivers.map(renderDesktopRow).join('');
+      return;
+    }
+
+    const viewportHeight = listScroll.clientHeight || 640;
+    const scrollTop = listScroll.scrollTop || 0;
+    const { start, end } = getVirtualRange(filteredDrivers.length, scrollTop, viewportHeight);
+    const slice = filteredDrivers.slice(start, end);
+    const topPad = start * VIRTUAL_ROW_HEIGHT;
+    const bottomPad = Math.max(0, (filteredDrivers.length - end) * VIRTUAL_ROW_HEIGHT);
+    const colSpan = tableBody.closest('table')?.querySelectorAll('thead th').length || 12;
+
+    tableBody.innerHTML = [
+      `<tr class="virtual-spacer" aria-hidden="true"><td colspan="${colSpan}" style="height:${topPad}px;padding:0;border:0;line-height:0"></td></tr>`,
+      ...slice.map(renderDesktopRow),
+      `<tr class="virtual-spacer" aria-hidden="true"><td colspan="${colSpan}" style="height:${bottomPad}px;padding:0;border:0;line-height:0"></td></tr>`
+    ].join('');
+    tableBody.dataset.virtual = '1';
+  }
+
+  function scheduleVirtualRender() {
+    if (!useVirtualDesktop()) return;
+    if (virtualRenderRaf) cancelAnimationFrame(virtualRenderRaf);
+    virtualRenderRaf = requestAnimationFrame(() => {
+      virtualRenderRaf = 0;
+      renderDesktopVirtual(lastRenderedDrivers);
+    });
+  }
+
+  function bindVirtualScroll() {
+    if (virtualBound || !listScroll) return;
+    virtualBound = true;
+    listScroll.addEventListener('scroll', scheduleVirtualRender, { passive: true });
+    window.addEventListener('resize', scheduleVirtualRender, { passive: true });
+  }
+
+  function render() {
+    try {
+      window.BremPerf?.time?.('drivers.render');
+      tableBody.closest('.table-wrap')?.classList.remove('is-loading');
+      mobileList?.classList.remove('is-loading');
+
+      const allDrivers = getSortedDrivers(BremStorage.drivers.getAll());
+      const filteredDrivers = allDrivers.filter(driver => {
+        const keyword = searchInput.value.trim().toLowerCase();
+        const status = statusFilter.value;
+        const matchesKeyword = driverMatchesKeyword(driver, keyword);
+        const matchesStatus = status === '전체' || driver.status === status;
+        return matchesKeyword && matchesStatus;
+      });
+      lastRenderedDrivers = filteredDrivers;
+
+      const allIds = new Set(allDrivers.map(driver => driver.id));
+      selectedIds.forEach(id => {
+        if (!allIds.has(id)) selectedIds.delete(id);
+      });
+
+      updateDriverTotal(driverTotal, allDrivers.length);
+
+      const mobileView = isMobileView();
+
+      if (!mobileView) {
+        if (useVirtualDesktop()) {
+          bindVirtualScroll();
+          renderDesktopVirtual(filteredDrivers);
+        } else {
+          delete tableBody.dataset.virtual;
+          tableBody.innerHTML = filteredDrivers.map(renderDesktopRow).join('');
+        }
         mobileList.innerHTML = '';
       } else {
+        delete tableBody.dataset.virtual;
         tableBody.innerHTML = '';
-        mobileList.innerHTML = allDrivers.map(driver => `
+        mobileList.innerHTML = filteredDrivers.map(driver => `
       <article class="driver-card ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}" data-driver-id="${escapeHtml(driver.id)}" data-search="${escapeHtml(buildDriverSearchText(driver))}" data-status="${escapeHtml(driver.status)}">
         <div class="driver-card-select">
           <label>
@@ -298,7 +377,9 @@
 
       renderedSnapshot = getDriverSnapshot();
       renderedIsMobile = mobileView;
-      applyListFilter();
+      emptyState.classList.toggle('show', filteredDrivers.length === 0 && allDrivers.length > 0);
+      renderListCount(filteredDrivers.length, allDrivers.length);
+      updateSelectionUi();
       window.BremPerf?.timeEnd?.('drivers.render');
     } catch (error) {
       console.error('[BREM] Driver list render failed:', error);
@@ -593,8 +674,10 @@
   async function loadAllDriversForList(force = false) {
     if (listLoadPromise && !force) return listLoadPromise;
 
-    const task = (async () => {
-      if (force) {
+    const hasCache = BremStorage.drivers.getAll().length > 0;
+
+    const task = async () => {
+      if (force && !hasCache) {
         clearListDom();
         selectedIds.clear();
       }
@@ -602,7 +685,7 @@
       const result = await BremStorage.fetchAllDriversFromServer?.({ force })
         || await BremStorage.reloadDrivers?.(force);
 
-      if (result?.ok === false) {
+      if (result?.ok === false && !BremStorage.drivers.getAll().length) {
         showListLoadError(result.message || 'Supabase에서 기사 목록을 불러오지 못했습니다.');
         showToast(toast, result.message || '기사 목록을 불러오지 못했습니다.');
         return result;
@@ -611,7 +694,7 @@
       renderedSnapshot = '';
       render();
       return result;
-    })();
+    };
 
     if (!force) {
       listLoadPromise = task.finally(() => {
@@ -623,14 +706,17 @@
     return task;
   }
 
-  async function refreshDriverList(force = true) {
+  async function refreshDriverList(force = false) {
     const listPanel = document.querySelector('.list-panel');
-    const showLoading = force || !BremStorage.drivers.getAll().length;
+    const hasCache = BremStorage.drivers.getAll().length > 0;
+    const showLoading = force || !hasCache;
 
     if (showLoading) {
-      tableBody.closest('.table-wrap')?.classList.add('is-loading');
-      mobileList.classList.add('is-loading');
-      window.BremLoadingUI?.show(listPanel, 'Supabase에서 기사 목록 불러오는 중...');
+      if (!hasCache) {
+        tableBody.closest('.table-wrap')?.classList.add('is-loading');
+        mobileList.classList.add('is-loading');
+      }
+      window.BremLoadingUI?.show(listPanel, hasCache ? '기사 목록 새로고침 중...' : 'Supabase에서 기사 목록 불러오는 중...');
     }
 
     const syncResult = await loadAllDriversForList(force);
@@ -700,7 +786,10 @@
     tableBody.addEventListener('click', handleListClick);
     mobileList.addEventListener('click', handleListClick);
     document.addEventListener('brem-storage-ready', () => {
-      void loadAllDriversForList(false);
+      if (BremStorage.drivers.getAll().length) {
+        renderedSnapshot = '';
+        render();
+      }
     });
     document.addEventListener('brem-drivers-sync-ready', event => {
       if (!event?.detail?.complete) return;
@@ -708,6 +797,11 @@
       mobileList.classList.remove('is-loading');
       renderedSnapshot = '';
       render();
+    });
+    document.addEventListener('brem-cache-status-changed', () => {
+      if (BremStorage.drivers.getAll().length && !renderedSnapshot) {
+        render();
+      }
     });
   }
 
@@ -719,11 +813,11 @@
 
   if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
 
-  if (BremStorage.drivers.getSupabaseTotal?.() && BremStorage.drivers.getAll().length) {
+  if (BremStorage.drivers.getAll().length) {
     render();
   } else {
     showLoadingSkeleton();
   }
 
-  void refreshDriverList(true);
+  void refreshDriverList(false);
 })();

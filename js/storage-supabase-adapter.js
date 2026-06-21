@@ -242,6 +242,7 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!force && !append && !hasFilter && window.BremDataCache?.isValid(keys.drivers)) {
         const cached = window.BremDataCache.getData(keys.drivers);
         if (Array.isArray(cached)) {
+          window.BremDataCache?.logFetch?.('riders', keys.drivers, true);
           setCache(keys.drivers, cached);
           loadedTableKeys.add(keys.drivers);
           ridersMeta = {
@@ -262,6 +263,7 @@ window.BremSupabaseStorageAdapter = (function () {
       const search = String(options.search || '').trim();
 
       const { data, error, count } = await queryRidersWithSelectFallback(selectColumns => {
+        window.BremDataCache?.logFetch?.('riders', keys.drivers, false);
         let nextQuery = client
           .from('riders')
           .select(selectColumns, { count: 'exact' })

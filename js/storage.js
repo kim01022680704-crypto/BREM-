@@ -191,6 +191,8 @@ const BremStorage = (function () {
   let normalizedDriversSourceRef = null;
 
   let adminDataHydratePromise = null;
+  let bootstrapLoadPromise = null;
+  let driversFullFetchInProgress = false;
   const sectionLoadPromises = new Map();
 
   const MUTATION_TRACKED_KEYS = new Set([
@@ -306,7 +308,7 @@ const BremStorage = (function () {
           return Promise.reject(error);
         }
         const persist = activeStorageAdapter.enqueuePersist(key, value);
-        scheduleDataRefetch(key);
+        scheduleCacheSyncAfterWrite(key);
         return persist;
       }
       if (!isStoragePersistReady()) {
@@ -318,7 +320,7 @@ const BremStorage = (function () {
         return Promise.reject(error);
       }
       const result = activeStorageAdapter.write(key, value);
-      scheduleDataRefetch(key);
+      scheduleCacheSyncAfterWrite(key);
       return result;
     },
     remove(key) {
@@ -549,6 +551,17 @@ const BremStorage = (function () {
     storageAdapter.write(KEYS.drivers, list);
   }
 
+  function markDriversCache(list, meta = {}) {
+    const rows = dedupeDriversList(Array.isArray(list) ? list : []);
+    setDriversCache(rows);
+    window.BremDataCache?.set?.(KEYS.drivers, rows, {
+      source: meta.source || 'sync',
+      complete: driversLoadMeta.complete,
+      supabaseTotal: driversLoadMeta.supabaseTotal,
+      ...meta
+    });
+  }
+
   function setMissionsCache(list) {
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
       activeStorageAdapter.stage(KEYS.missions, list);
@@ -683,10 +696,13 @@ const BremStorage = (function () {
     if (!force && window.BremDataCache?.isValid?.(KEYS.missions)) {
       const cached = window.BremDataCache.getData(KEYS.missions);
       if (Array.isArray(cached)) {
+        window.BremDataCache?.logFetch?.('missions', KEYS.missions, true);
         setMissionsCache(cached);
         return { ok: true, cached: true, count: cached.length };
       }
     }
+
+    window.BremDataCache?.logFetch?.('missions', KEYS.missions, false);
 
     const loadViaAdapter = async () => {
       if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.ensureKeysLoaded) {
@@ -778,23 +794,47 @@ const BremStorage = (function () {
     KEYS.riderInquiries
   ]);
 
-  function scheduleDataRefetch(key) {
+  function scheduleCacheSyncAfterWrite(key) {
     if (!MUTATION_TRACKED_KEYS.has(key)) return;
-    window.BremDataCache?.invalidate?.(key);
-    if (TABLE_STORAGE_KEYS.has(key)) {
-      activeStorageAdapter.invalidateKeys?.([key]);
-    }
-    const refetch = () => refetchDataKey(key);
+
+    const syncCache = () => {
+      try {
+        if (TABLE_STORAGE_KEYS.has(key) && activeStorageAdapter.read) {
+          const value = activeStorageAdapter.read(key, null);
+          if (key === KEYS.drivers && Array.isArray(value)) {
+            markDriversCache(value, { source: 'write' });
+            return;
+          }
+          if (key === KEYS.missions && Array.isArray(value)) {
+            markMissionsCache(value);
+            return;
+          }
+          if (value != null) {
+            window.BremDataCache?.set?.(key, value, { source: 'write' });
+          }
+          return;
+        }
+        window.BremDataCache?.persistFromAdapter?.(key, activeStorageAdapter);
+      } catch (error) {
+        console.warn('[BREM] Cache sync after write failed:', key, error);
+      }
+    };
+
     if (activeStorageAdapter.flush) {
-      void activeStorageAdapter.flush().then(refetch).catch(error => {
-        console.error('[BREM] Persist failed — keeping local data, skip refetch:', key, error);
+      void activeStorageAdapter.flush().then(syncCache).catch(error => {
+        console.error('[BREM] Persist failed — keeping cache:', key, error);
         document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
           detail: { key, message: error?.message || String(error) }
         }));
       });
     } else {
-      void refetch();
+      syncCache();
     }
+  }
+
+  /** @deprecated use scheduleCacheSyncAfterWrite — kept for explicit server refresh */
+  function scheduleDataRefetch(key) {
+    scheduleCacheSyncAfterWrite(key);
   }
 
   async function refetchDataKey(key) {
@@ -834,7 +874,8 @@ const BremStorage = (function () {
 
     if (sectionKeys.includes(KEYS.drivers)) {
       const driversReady = window.BremDataCache?.isValid?.(KEYS.drivers)
-        && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers);
+        && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)
+        && driversLoadMeta.complete;
       if (!driversReady) return false;
     }
 
@@ -875,14 +916,7 @@ const BremStorage = (function () {
     }
 
     if (needsDrivers) {
-      tasks.push(
-        reloadDrivers(Boolean(options.forceDrivers || options.force)).then(result => {
-          if (result?.hasMore) {
-            void syncAllDriversPagesInBackground();
-          }
-          return result;
-        })
-      );
+      tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
     }
 
     if (tasks.length) {
@@ -910,6 +944,74 @@ const BremStorage = (function () {
     });
     sectionLoadPromises.set(inflightKey, promise);
     return promise;
+  }
+
+  async function loadBootstrapData(options = {}) {
+    const force = options.force === true;
+    if (!force && bootstrapLoadPromise) return bootstrapLoadPromise;
+
+    const driversReady = driversLoadMeta.complete
+      && window.BremDataCache?.isValid?.(KEYS.drivers)
+      && drivers.getAll().length > 0;
+    const missionsReady = window.BremDataCache?.isValid?.(KEYS.missions)
+      && missions.getAll().length > 0;
+
+    if (!force && driversReady && missionsReady) {
+      window.BremDataCache?.logFetch?.('bootstrap', 'all', true);
+      return { ok: true, cached: true };
+    }
+
+    const run = async () => {
+      window.BremDataCache?.logFetch?.('bootstrap', 'all', false);
+      const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
+      if (!hydrated.ok) return hydrated;
+
+      const tasks = [
+        fetchAllDriversFromServer({ force }),
+        reloadMissions(force)
+      ];
+      if (activeStorageAdapter.ensureKeysLoaded) {
+        tasks.push(activeStorageAdapter.ensureKeysLoaded([KEYS.notices], { force }));
+      }
+      await Promise.all(tasks);
+      return { ok: true };
+    };
+
+    if (force) return run();
+
+    bootstrapLoadPromise = run().finally(() => {
+      bootstrapLoadPromise = null;
+    });
+    return bootstrapLoadPromise;
+  }
+
+  function getCacheStatus() {
+    const driversMeta = window.BremDataCache?.getMeta?.(KEYS.drivers);
+    const missionsMeta = window.BremDataCache?.getMeta?.(KEYS.missions);
+    return {
+      ...(window.BremDataCache?.getStatus?.() || {}),
+      driversComplete: driversLoadMeta.complete,
+      driversCount: drivers.getAll().length,
+      driversSupabaseTotal: driversLoadMeta.supabaseTotal,
+      driversLoadedAt: driversMeta?.storedAt || null,
+      missionsCount: missions.getAll().length,
+      missionsLoadedAt: missionsMeta?.storedAt || null
+    };
+  }
+
+  async function refreshDataFromServer(key) {
+    window.BremDataCache?.invalidate?.(key);
+    if (TABLE_STORAGE_KEYS.has(key)) {
+      activeStorageAdapter.invalidateKeys?.([key]);
+    }
+    if (key === KEYS.drivers) {
+      clearDriversCacheHard();
+      return fetchAllDriversFromServer({ force: true });
+    }
+    if (key === KEYS.missions) {
+      return reloadMissions(true);
+    }
+    return refetchDataKey(key);
   }
 
   function dedupeDriversList(list) {
@@ -988,9 +1090,8 @@ const BremStorage = (function () {
         }
 
         const deduped = dedupeDriversList(drivers.getAll());
-        setDriversCache(deduped);
-        window.BremDataCache?.set?.(KEYS.drivers, deduped);
         markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
+        markDriversCache(deduped, { source: 'network', complete: true });
         return {
           ok: true,
           count: deduped.length,
@@ -1014,6 +1115,7 @@ const BremStorage = (function () {
     }
 
     if (!force && driversLoadMeta.complete && drivers.getAll().length > 0) {
+      window.BremDataCache?.logFetch?.('drivers', KEYS.drivers, true);
       return {
         ok: true,
         cached: true,
@@ -1025,6 +1127,7 @@ const BremStorage = (function () {
     if (driversFetchAllPromise && !force) return driversFetchAllPromise;
 
     const runFetch = async () => {
+      window.BremDataCache?.logFetch?.('drivers', KEYS.drivers, false);
       window.BremPerf?.time?.('storage.fetchAllDrivers');
       const pageSize = 200;
       let offset = 0;
@@ -1034,40 +1137,54 @@ const BremStorage = (function () {
 
       if (force) clearDriversCacheHard();
 
-      while (hasMore && pages < 200) {
-        const result = await syncDriversFromServer({
-          limit: pageSize,
-          offset,
-          append: offset > 0
-        });
-        if (!result.ok) {
-          if (!drivers.getAll().length) clearDriversCacheHard();
-          return {
-            ok: false,
-            message: result.message || result.error || '기사 목록을 Supabase에서 불러오지 못했습니다.'
-          };
+      driversFullFetchInProgress = true;
+      try {
+        while (hasMore && pages < 200) {
+          const result = await syncDriversFromServer({
+            limit: pageSize,
+            offset,
+            append: offset > 0
+          });
+          if (!result.ok) {
+            if (drivers.getAll().length > 0) {
+              return {
+                ok: true,
+                cached: true,
+                stale: true,
+                count: drivers.getAll().length,
+                supabaseTotal: driversLoadMeta.supabaseTotal
+              };
+            }
+            clearDriversCacheHard();
+            return {
+              ok: false,
+              message: result.message || result.error || '기사 목록을 Supabase에서 불러오지 못했습니다.'
+            };
+          }
+
+          if (supabaseTotal == null && result.total != null) supabaseTotal = result.total;
+          hasMore = Boolean(result.hasMore);
+          offset += result.count || pageSize;
+          pages += 1;
+          if (!result.count) break;
         }
 
-        if (supabaseTotal == null && result.total != null) supabaseTotal = result.total;
-        hasMore = Boolean(result.hasMore);
-        offset += result.count || pageSize;
-        pages += 1;
-        if (!result.count) break;
+        const deduped = dedupeDriversList(drivers.getAll());
+        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
+        markDriversCache(deduped, { source: 'network', complete: true });
+        document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+        window.BremPerf?.timeEnd?.('storage.fetchAllDrivers');
+        document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+          detail: { complete: true, count: deduped.length, supabaseTotal: supabaseTotal ?? deduped.length }
+        }));
+        return {
+          ok: true,
+          count: deduped.length,
+          supabaseTotal: supabaseTotal ?? deduped.length
+        };
+      } finally {
+        driversFullFetchInProgress = false;
       }
-
-      const deduped = dedupeDriversList(drivers.getAll());
-      setDriversCache(deduped);
-      window.BremDataCache?.set?.(KEYS.drivers, deduped);
-      markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
-      window.BremPerf?.timeEnd?.('storage.fetchAllDrivers');
-      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
-        detail: { complete: true, count: deduped.length, supabaseTotal: supabaseTotal ?? deduped.length }
-      }));
-      return {
-        ok: true,
-        count: deduped.length,
-        supabaseTotal: supabaseTotal ?? deduped.length
-      };
     };
 
     if (force) return runFetch();
@@ -1106,6 +1223,16 @@ const BremStorage = (function () {
       result = await fetchRiders();
     }
     if (!result.ok) {
+      if (!options.append && drivers.getAll().length > 0) {
+        return {
+          ok: true,
+          cached: true,
+          stale: true,
+          count: drivers.getAll().length,
+          total: driversLoadMeta.supabaseTotal || drivers.getAll().length,
+          hasMore: false
+        };
+      }
       if (!options.append) clearDriversCacheHard();
       return result;
     }
@@ -1127,7 +1254,9 @@ const BremStorage = (function () {
       window.BremDataCache?.set?.(KEYS.drivers, drivers.getAll());
     }
     if (!options.append && !String(options.search || '').trim() && (!options.status || options.status === '전체')) {
-      driversLoadMeta = { complete: false, supabaseTotal: result.total ?? riderRows.length };
+      if (!driversFullFetchInProgress) {
+        driversLoadMeta = { complete: false, supabaseTotal: result.total ?? riderRows.length };
+      }
     }
     window.BremPerf?.timeEnd?.('storage.syncDriversFromServer');
     return {
@@ -1616,21 +1745,21 @@ const BremStorage = (function () {
           await initStorage({ backend: 'supabase', deferHydrate: true });
         }
 
-        let coreResult = { ok: true };
-        if (!activeStorageAdapter.isHydrated?.()) {
-          coreResult = await ensureSupabaseHydrated({ skipDriversSync: true });
-        }
+        const coreResult = activeStorageAdapter.isHydrated?.()
+          ? { ok: true, cached: true }
+          : await ensureSupabaseHydrated({ skipDriversSync: true });
         if (!coreResult.ok) return coreResult;
 
-        await Promise.all([
-          ensureSectionLoaded('dashboard'),
-          auth.syncProductionAdminAccounts().catch(error => {
-            console.warn('[BREM] Background admin account sync failed:', error.message || error);
-          })
-        ]);
+        const bootstrapResult = await loadBootstrapData({ force: false });
+        await auth.syncProductionAdminAccounts().catch(error => {
+          console.warn('[BREM] Background admin account sync failed:', error.message || error);
+        });
 
-        document.dispatchEvent(new CustomEvent('brem-admin-data-ready', { detail: { ok: true } }));
-        return coreResult;
+        document.dispatchEvent(new CustomEvent('brem-admin-data-ready', {
+          detail: { ok: bootstrapResult?.ok !== false }
+        }));
+        document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+        return bootstrapResult;
       } finally {
         adminDataHydratePromise = null;
         window.BremPerf?.timeEnd?.('storage.hydrateAdminDataBackground');
@@ -1654,6 +1783,7 @@ const BremStorage = (function () {
 
     if (!force && !append && !hasSearch && !hasStatusFilter) {
       if (driversLoadMeta.complete && drivers.getAll().length > 0) {
+        window.BremDataCache?.logFetch?.('drivers', KEYS.drivers, true);
         return {
           ok: true,
           cached: true,
@@ -2424,7 +2554,10 @@ const BremStorage = (function () {
 
       if (isProductionMode()) {
         return persistRidersBulkViaServer(list, options)
-          .then(result => result)
+          .then(result => {
+            markDriversCache(drivers.getAll(), { source: 'write' });
+            return result;
+          })
           .catch(error => {
             setDriversCache(prevList);
             throw error;
@@ -2491,7 +2624,7 @@ const BremStorage = (function () {
         setDriversCache(list);
         return persistRiderViaServer(newDriver)
           .then(() => {
-            scheduleDataRefetch(KEYS.drivers);
+            markDriversCache(drivers.getAll(), { source: 'write' });
             return newDriver;
           })
           .catch(error => {
@@ -2541,7 +2674,7 @@ const BremStorage = (function () {
           : persistRiderViaServer(updated);
         return persist
           .then(() => {
-            scheduleDataRefetch(KEYS.drivers);
+            markDriversCache(nextDrivers, { source: 'write' });
             return updated;
           })
           .catch(error => {
@@ -2560,7 +2693,8 @@ const BremStorage = (function () {
         driversLoadMeta = { ...driversLoadMeta, complete: false };
         return deleteRiderViaServer(id)
           .then(() => {
-            scheduleDataRefetch(KEYS.drivers);
+            markDriversLoadComplete(next.length, next.length);
+            markDriversCache(next, { source: 'write' });
           })
           .catch(error => {
             setDriversCache(prevList);
@@ -6278,6 +6412,9 @@ const BremStorage = (function () {
     ensureSupabaseHydrated,
     ensureSectionLoaded,
     isSectionCacheReady,
+    loadBootstrapData,
+    getCacheStatus,
+    refreshDataFromServer,
     refetchDataKey,
     hydrateAdminDataInBackground,
     syncAdminDataInBackground,

@@ -730,8 +730,10 @@
         syncDriverEventSettings(rider.id, { ...rider, ...data });
       });
 
-      window.BremDataCache?.invalidate?.(BremStorage.STORAGE_KEYS?.drivers);
-      await BremStorage.fetchAllDriversFromServer?.({ force: true }).catch(() => ({}));
+      document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+        detail: { complete: true, count: BremStorage.drivers.getAll().length }
+      }));
 
       showApplySummary(created, updated, failedRows, issueRows.length);
       if (failedRows.length) {
