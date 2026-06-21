@@ -452,8 +452,20 @@ h2 {
   border-top: 1px solid var(--border);
 }
 
+.list-scroll-note {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 16px 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+  border-top: 1px solid var(--border);
+  background: #fafbfc;
+}
+
 .drivers-page .driver-list-scroll {
-  max-height: min(72vh, calc(100dvh - 220px));
+  max-height: min(78vh, calc(100dvh - 200px));
 }
 
 .list-panel--scrollable .list-table-scroll {
@@ -896,6 +908,53 @@ h2 {
 
 .bulk-apply-summary.is-partial strong {
   color: #92400e;
+}
+
+.bulk-apply-failed {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #fcd34d;
+  text-align: left;
+}
+
+.bulk-failed-title {
+  margin: 0 0 8px;
+  color: #b45309;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.bulk-failed-list {
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bulk-failed-list li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.bulk-failed-list li + li {
+  margin-top: 6px;
+}
+
+.bulk-failed-name {
+  color: #78350f;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.bulk-failed-meta {
+  color: #92400e;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .driver-form {

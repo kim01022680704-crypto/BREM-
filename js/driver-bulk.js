@@ -54,6 +54,7 @@
   const applyProgressTextEl = document.getElementById('bulkApplyProgressText');
   const applySummaryEl = document.getElementById('bulkApplySummary');
   const applySummaryTextEl = document.getElementById('bulkApplySummaryText');
+  const applySummaryFailedEl = document.getElementById('bulkApplyFailedList');
   const toast = document.getElementById('toast');
 
   let isApplying = false;
@@ -404,6 +405,10 @@
     if (applyProgressFillEl) applyProgressFillEl.style.width = '0%';
     if (applyProgressTextEl) applyProgressTextEl.textContent = '처리 중…';
     if (applySummaryTextEl) applySummaryTextEl.textContent = '';
+    if (applySummaryFailedEl) {
+      applySummaryFailedEl.hidden = true;
+      applySummaryFailedEl.innerHTML = '';
+    }
   }
 
   function setApplyUiActive(active) {
@@ -424,13 +429,43 @@
     }
   }
 
-  function showApplySummary(created, updated, failed, skipped) {
+  function formatFailedRiderLabel(row) {
+    const name = String(row.data?.name || '').trim() || '-';
+    const phone = String(row.data?.phone || '').trim() || '-';
+    return `${name} (${phone})`;
+  }
+
+  function renderFailedRidersList(failedRows) {
+    if (!applySummaryFailedEl) return;
+    if (!failedRows.length) {
+      applySummaryFailedEl.hidden = true;
+      applySummaryFailedEl.innerHTML = '';
+      return;
+    }
+
+    applySummaryFailedEl.hidden = false;
+    applySummaryFailedEl.innerHTML = `
+      <p class="bulk-failed-title">실패한 기사 (${failedRows.length}명)</p>
+      <ul class="bulk-failed-list">
+        ${failedRows.map(row => `
+          <li>
+            <span class="bulk-failed-name">${escapeHtml(formatFailedRiderLabel(row))}</span>
+            <span class="bulk-failed-meta">${row.rowNumber}행 · ${escapeHtml(row.applyMessage || '등록실패')}</span>
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  }
+
+  function showApplySummary(created, updated, failedRows, skipped) {
     if (applyProgressEl) applyProgressEl.hidden = true;
     if (!applySummaryEl || !applySummaryTextEl) return;
 
+    const failedCount = failedRows.length;
     applySummaryEl.hidden = false;
-    applySummaryEl.classList.toggle('is-partial', failed > 0 || skipped > 0);
-    applySummaryTextEl.textContent = `신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 ${failed}명${skipped ? ` · 사전 오류 ${skipped}건` : ''}`;
+    applySummaryEl.classList.toggle('is-partial', failedCount > 0 || skipped > 0);
+    applySummaryTextEl.textContent = `신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 ${failedCount}명${skipped ? ` · 사전 오류 ${skipped}건` : ''}`;
+    renderFailedRidersList(failedRows);
   }
 
   function yieldToUi(index) {
@@ -642,18 +677,30 @@
 
     let created = 0;
     let updated = 0;
-    let failed = 0;
+    const failedRows = [];
     const total = processableRows.length;
     let current = 0;
     const eventSyncQueue = [];
 
     updateApplyProgress(0, total, 0, 0, 0);
 
+    function markRowFailed(entry, message) {
+      if (entry.row.applyStatus === 'failed') return;
+      entry.row.applyStatus = 'failed';
+      entry.row.applyMessage = message || '등록실패';
+      failedRows.push(entry.row);
+      if (previewRowNumbers.has(entry.row.rowNumber)) {
+        updatePreviewRowStatus(entry.row);
+      }
+    }
+
+    let savePlan = [];
+
     try {
       await ensureStorageReadyForSave();
       await ensureAllDriversLoaded();
 
-      const savePlan = buildBulkSavePlan(processableRows);
+      savePlan = buildBulkSavePlan(processableRows);
 
       for (let offset = 0; offset < savePlan.length; offset += BULK_BATCH_SIZE) {
         const batch = savePlan.slice(offset, offset + BULK_BATCH_SIZE);
@@ -678,18 +725,12 @@
             }
           });
         } catch (error) {
-          batch.forEach(entry => {
-            entry.row.applyStatus = 'failed';
-            entry.row.applyMessage = error.message || '등록실패';
-            failed += 1;
-            if (previewRowNumbers.has(entry.row.rowNumber)) {
-              updatePreviewRowStatus(entry.row);
-            }
-          });
+          const message = error.message || '등록실패';
+          batch.forEach(entry => markRowFailed(entry, message));
         }
 
         current = offset + batch.length;
-        updateApplyProgress(current, total, created, updated, failed);
+        updateApplyProgress(current, total, created, updated, failedRows.length);
         await yieldToUi(current);
       }
 
@@ -700,16 +741,28 @@
       window.BremDataCache?.invalidate?.(BremStorage.STORAGE_KEYS?.drivers);
       await BremStorage.reloadDrivers?.(true).catch(() => ({}));
 
-      showApplySummary(created, updated, failed, issueRows.length);
-      showToast(`신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 ${failed}명${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}`);
+      showApplySummary(created, updated, failedRows, issueRows.length);
+      if (failedRows.length) {
+        const failedNames = failedRows.slice(0, 5).map(formatFailedRiderLabel).join(', ');
+        const moreCount = failedRows.length > 5 ? ` 외 ${failedRows.length - 5}명` : '';
+        showToast(`실패 ${failedRows.length}명: ${failedNames}${moreCount}`);
+      } else {
+        showToast(`신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 0명${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}`);
+      }
 
       if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {
         window.BremDriverIndex.refresh();
       }
     } catch (error) {
       console.error(error);
-      showApplySummary(created, updated, failed + (total - current), issueRows.length);
-      showToast(error.message || '일괄 등록에 실패했습니다.');
+      const message = error.message || '일괄 등록에 실패했습니다.';
+      savePlan.slice(current).forEach(entry => {
+        if (entry.row.applyStatus !== 'done') {
+          markRowFailed(entry, message);
+        }
+      });
+      showApplySummary(created, updated, failedRows, issueRows.length);
+      showToast(message);
     } finally {
       setApplyUiActive(false);
       applyBtn.disabled = true;

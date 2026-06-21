@@ -23,19 +23,13 @@
   const tableBody = document.getElementById('driverTableBody');
   const mobileList = document.getElementById('mobileDriverList');
   const listScroll = document.getElementById('driverListScroll');
-  const paginationEl = document.getElementById('driverListPagination');
-  const paginationRangeEl = document.getElementById('driverListRange');
-  const paginationPageEl = document.getElementById('driverListPageLabel');
-  const paginationPrevBtn = document.getElementById('driverListPrevBtn');
-  const paginationNextBtn = document.getElementById('driverListNextBtn');
+  const listCountEl = document.getElementById('driverListCount');
   const emptyState = document.getElementById('emptyState');
   const driverTotal = document.getElementById('driverTotal');
   const toast = document.getElementById('toast');
 
   if (!tableBody) return;
 
-  const PAGE_SIZE = 50;
-  let currentPage = 1;
   const selectedIds = new Set();
 
   function driverMatchesKeyword(driver, keyword) {
@@ -55,51 +49,30 @@
     const status = statusFilter.value;
 
     return BremStorage.drivers.getAll().filter(driver => {
-      const matchesName = driverMatchesKeyword(driver, keyword);
+      const matchesKeyword = driverMatchesKeyword(driver, keyword);
       const matchesStatus = status === '전체' || driver.status === status;
-      return matchesName && matchesStatus;
+      return matchesKeyword && matchesStatus;
     });
-  }
-
-  function getTotalPages(totalCount) {
-    return Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  }
-
-  function getPagedDrivers(drivers) {
-    const totalPages = getTotalPages(drivers.length);
-    if (currentPage > totalPages) currentPage = totalPages;
-    if (currentPage < 1) currentPage = 1;
-
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return {
-      items: drivers.slice(start, start + PAGE_SIZE),
-      total: drivers.length,
-      totalPages,
-      start: drivers.length ? start + 1 : 0,
-      end: Math.min(start + PAGE_SIZE, drivers.length)
-    };
   }
 
   function scrollListToTop() {
     if (listScroll) listScroll.scrollTop = 0;
   }
 
-  function renderPagination(meta) {
-    if (!paginationEl) return;
-
-    const showPagination = meta.total > PAGE_SIZE;
-    paginationEl.hidden = !showPagination;
-
-    if (!showPagination) return;
-
-    if (paginationRangeEl) {
-      paginationRangeEl.textContent = `전체 ${meta.total}명 중 ${meta.start}-${meta.end}명 표시`;
+  function renderListCount(filteredCount, totalCount) {
+    if (!listCountEl) return;
+    if (!totalCount) {
+      listCountEl.hidden = true;
+      listCountEl.textContent = '';
+      return;
     }
-    if (paginationPageEl) {
-      paginationPageEl.textContent = `${currentPage} / ${meta.totalPages}`;
+
+    listCountEl.hidden = false;
+    if (filteredCount === totalCount) {
+      listCountEl.textContent = `등록 기사 ${totalCount}명 전체 표시 · 스크롤하여 확인`;
+    } else {
+      listCountEl.textContent = `등록 기사 ${totalCount}명 중 ${filteredCount}명 표시 · 스크롤하여 확인`;
     }
-    if (paginationPrevBtn) paginationPrevBtn.disabled = currentPage <= 1;
-    if (paginationNextBtn) paginationNextBtn.disabled = currentPage >= meta.totalPages;
   }
 
   function updateSelectionUi() {
@@ -153,29 +126,31 @@
       window.BremPerf?.time?.('drivers.render');
       tableBody.closest('.table-wrap')?.classList.remove('is-loading');
       mobileList?.classList.remove('is-loading');
+
+      const allDrivers = BremStorage.drivers.getAll();
       const filteredDrivers = getFilteredDrivers();
-      const pageMeta = getPagedDrivers(filteredDrivers);
-      const drivers = pageMeta.items;
-    const allIds = new Set(BremStorage.drivers.getAll().map(driver => driver.id));
-    selectedIds.forEach(id => {
-      if (!allIds.has(id)) selectedIds.delete(id);
-    });
+      const drivers = filteredDrivers;
 
-    updateDriverTotal(driverTotal);
-    emptyState.classList.toggle('show', pageMeta.total === 0);
-    renderPagination(pageMeta);
+      const allIds = new Set(allDrivers.map(driver => driver.id));
+      selectedIds.forEach(id => {
+        if (!allIds.has(id)) selectedIds.delete(id);
+      });
 
-    const isMobileView = window.matchMedia('(max-width: 900px)').matches;
+      updateDriverTotal(driverTotal);
+      emptyState.classList.toggle('show', drivers.length === 0);
+      renderListCount(drivers.length, allDrivers.length);
 
-    if (!isMobileView) {
-      tableBody.innerHTML = drivers.map(driver => {
-        const loginId = escapeHtml(makeDriverLoginId(driver));
-        const eventName = escapeHtml(driver.longEventItem) || '-';
-        const eventStart = formatDate(driver.longEventStartDate);
-        const eventCell = driver.longEventItem
-          ? `<span class="cell-main">${eventName}</span><span class="cell-sub">${eventStart}</span>`
-          : `<span class="cell-main">-</span>`;
-        return `
+      const isMobileView = window.matchMedia('(max-width: 900px)').matches;
+
+      if (!isMobileView) {
+        tableBody.innerHTML = drivers.map(driver => {
+          const loginId = escapeHtml(makeDriverLoginId(driver));
+          const eventName = escapeHtml(driver.longEventItem) || '-';
+          const eventStart = formatDate(driver.longEventStartDate);
+          const eventCell = driver.longEventItem
+            ? `<span class="cell-main">${eventName}</span><span class="cell-sub">${eventStart}</span>`
+            : `<span class="cell-main">-</span>`;
+          return `
       <tr class="${selectedIds.has(driver.id) ? 'row-selected' : ''}">
         <td class="col-select">${renderCheckbox(driver.id)}</td>
         <td class="col-name">
@@ -202,11 +177,11 @@
         </td>
       </tr>
     `;
-      }).join('');
-      mobileList.innerHTML = '';
-    } else {
-      tableBody.innerHTML = '';
-      mobileList.innerHTML = drivers.map(driver => `
+        }).join('');
+        mobileList.innerHTML = '';
+      } else {
+        tableBody.innerHTML = '';
+        mobileList.innerHTML = drivers.map(driver => `
       <article class="driver-card ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}">
         <div class="driver-card-select">
           <label>
@@ -245,10 +220,10 @@
         </div>
       </article>
     `).join('');
-    }
+      }
 
-    updateSelectionUi();
-    window.BremPerf?.timeEnd?.('drivers.render');
+      updateSelectionUi();
+      window.BremPerf?.timeEnd?.('drivers.render');
     } catch (error) {
       console.error('[BREM] Driver list render failed:', error);
       showToast(toast, '기사 목록을 표시하지 못했습니다. 새로고침 후 다시 시도하세요.');
@@ -262,8 +237,7 @@
     }
 
     showToast(toast, '엑셀 백업 준비 중…');
-    await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
-    await BremStorage.reloadDrivers?.(true, { search: '', status: '전체' }).catch(() => ({}));
+    await syncAllDriversForList();
 
     const drivers = BremStorage.drivers.getAll();
     if (!drivers.length) {
@@ -304,12 +278,7 @@
     const skeletonRow = '<tr class="skeleton-row"><td colspan="13"><span class="skeleton-bar"></span></td></tr>';
     tableBody.innerHTML = skeletonRow.repeat(5);
     mobileList.innerHTML = '<article class="driver-card skeleton-card"><span class="skeleton-bar"></span></article>'.repeat(3);
-    if (paginationEl) paginationEl.hidden = true;
-  }
-
-  function resetFiltersAndPage() {
-    currentPage = 1;
-    scrollListToTop();
+    if (listCountEl) listCountEl.hidden = true;
   }
 
   function deleteDriver(id) {
@@ -418,22 +387,13 @@
 
   const debouncedRender = window.BremPerf?.debounce
     ? window.BremPerf.debounce(() => {
-      resetFiltersAndPage();
+      scrollListToTop();
       render();
     }, 180)
     : () => {
-      resetFiltersAndPage();
+      scrollListToTop();
       render();
     };
-
-  function goToPage(nextPage) {
-    const totalPages = getTotalPages(getFilteredDrivers().length);
-    const target = Math.min(Math.max(nextPage, 1), totalPages);
-    if (target === currentPage) return;
-    currentPage = target;
-    scrollListToTop();
-    render();
-  }
 
   async function syncAllDriversForList() {
     await BremStorage.syncAllDriversPagesInBackground?.().catch(() => ({}));
@@ -442,7 +402,7 @@
     while (pages < 100) {
       const before = BremStorage.drivers.getAll().length;
       const result = await BremStorage.reloadDrivers?.(false, {
-        limit: 100,
+        limit: 200,
         offset: before,
         append: true
       }).catch(() => null);
@@ -481,15 +441,9 @@
   function init() {
     searchInput.addEventListener('input', debouncedRender);
     statusFilter.addEventListener('change', () => {
-      resetFiltersAndPage();
+      scrollListToTop();
       render();
     });
-    if (paginationPrevBtn) {
-      paginationPrevBtn.addEventListener('click', () => goToPage(currentPage - 1));
-    }
-    if (paginationNextBtn) {
-      paginationNextBtn.addEventListener('click', () => goToPage(currentPage + 1));
-    }
     if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => { void exportDriversToExcel(); });
     if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', deleteSelected);
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
