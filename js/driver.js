@@ -375,8 +375,62 @@
     window.BremSessionSecurity?.touchActivity?.();
   }
 
+  let driverCallIndex = null;
+  let driverCallIndexKey = '';
+
+  function invalidateDriverCallIndex() {
+    driverCallIndex = null;
+    driverCallIndexKey = '';
+  }
+
+  function getDriverCallIndex() {
+    const list = calls();
+    const key = `${list.length}:${list[0]?.id || ''}:${list[list.length - 1]?.id || ''}`;
+    if (driverCallIndex && driverCallIndexKey === key) return driverCallIndex;
+
+    const byDriver = new Map();
+    for (const call of list) {
+      const id = call.driverId;
+      if (!id) continue;
+      if (!byDriver.has(id)) byDriver.set(id, []);
+      byDriver.get(id).push(call);
+    }
+    driverCallIndex = byDriver;
+    driverCallIndexKey = key;
+    return byDriver;
+  }
+
   function driverCalls(driverId) {
-    return calls().filter(call => call.driverId === driverId);
+    return getDriverCallIndex().get(driverId) || [];
+  }
+
+  let driverDataLoadPromise = null;
+
+  function refreshDriverDashboard(driver) {
+    if (!driver?.id || state.currentDriver?.id !== driver.id) return;
+    const fresh = BremStorage.drivers.getById(driver.id) || driver;
+    renderDriver(fresh);
+  }
+
+  function loadDriverAppDataThenRender(driver) {
+    if (!driver?.id) return Promise.resolve();
+
+    if (BremStorage.isDriverAppCacheReady?.()) {
+      refreshDriverDashboard(driver);
+      return Promise.resolve();
+    }
+
+    const driverId = driver.id;
+    const task = driverDataLoadPromise || BremStorage.hydrateDriverAppData?.();
+    driverDataLoadPromise = Promise.resolve(task).finally(() => {
+      driverDataLoadPromise = null;
+    });
+
+    return driverDataLoadPromise.then(() => {
+      refreshDriverDashboard(BremStorage.drivers.getById(driverId) || driver);
+    }).catch(error => {
+      console.warn('[BREM] Driver app data hydrate failed:', error.message || error);
+    });
   }
 
   function weeklyRateForPlatform(driverId, weekStart, platform) {
@@ -827,19 +881,12 @@
         return;
       }
 
-      if (isProduction) {
-        await BremStorage.ensureSupabaseHydrated?.({ skipDriversSync: true });
-        await BremStorage.ensureMissionsLoaded?.().catch(() => ({}));
-      }
-
       let driver = loginResult.driver || null;
       if (!driver && loginResult.riderId) {
         driver = BremStorage.drivers.getById(loginResult.riderId);
       }
       if (!driver && isProduction) {
         driver = await resolveCurrentDriver(isProduction, loginResult);
-      } else if (!driver && !isProduction) {
-        driver = loginResult.driver || null;
       }
 
       if (!driver) {
@@ -852,6 +899,7 @@
       loginForm.reset();
       showLoggedIn(driver);
       showToast(`${driver.name} 기사님 로그인 성공`);
+      void loadDriverAppDataThenRender(driver);
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -911,6 +959,13 @@
   document.getElementById('prevWeekBtn').addEventListener('click', () => shiftSelectedWeek(-7));
   document.getElementById('nextWeekBtn').addEventListener('click', () => shiftSelectedWeek(7));
 
+  document.addEventListener('brem-driver-data-ready', () => {
+    invalidateDriverCallIndex();
+    if (state.currentDriver) {
+      refreshDriverDashboard(state.currentDriver);
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', async () => {
     setupDriverTargetMonthPicker();
     setupDriverWeekPicker();
@@ -940,28 +995,18 @@
     let savedDriver = null;
 
     if (driverSessionId || BremStorage.auth.isDriverLoggedIn?.()) {
-      if (isProduction) {
-        const profile = await BremStorage.loadSupabaseProfile?.().catch(() => null);
-        const hasRiderSession = Boolean(driverSessionId)
-          || (profile?.active && profile.role === 'rider');
-
-        if (hasRiderSession) {
-          await BremStorage.ensureSupabaseHydrated?.({ skipDriversSync: true });
-          savedDriver = findDriverById(driverSessionId || profile?.rider_id);
-          if (!savedDriver) {
-            const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
-            if (fetched?.ok && fetched.driver) {
-              savedDriver = fetched.driver;
-            }
-          }
+      savedDriver = findDriverById(driverSessionId);
+      if (!savedDriver && isProduction) {
+        const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
+        if (fetched?.ok && fetched.driver) {
+          savedDriver = fetched.driver;
         }
-      } else {
-        savedDriver = findDriverById(driverSessionId);
       }
     }
 
     if (savedDriver) {
       showLoggedIn(savedDriver);
+      void loadDriverAppDataThenRender(savedDriver);
     } else {
       showLoggedOut();
     }

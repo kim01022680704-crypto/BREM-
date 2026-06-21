@@ -1895,6 +1895,46 @@ const BremStorage = (function () {
     return adminDataHydratePromise;
   }
 
+  let driverAppHydratePromise = null;
+
+  function isDriverAppCacheReady() {
+    if (!activeStorageAdapter.isHydrated?.()) return false;
+    return window.BremDataCache?.isValid?.(KEYS.calls)
+      && window.BremDataCache?.isValid?.(KEYS.rejections)
+      && window.BremDataCache?.isValid?.(KEYS.targets);
+  }
+
+  async function hydrateDriverAppData(options = {}) {
+    if (driverAppHydratePromise) return driverAppHydratePromise;
+
+    window.BremPerf?.time?.('storage.hydrateDriverAppData');
+    driverAppHydratePromise = (async () => {
+      try {
+        if (activeStorageAdapter.type !== 'supabase') {
+          return { ok: true, cached: true };
+        }
+
+        if (!options.force && isDriverAppCacheReady()) {
+          await ensureMissionsLoaded({ force: false }).catch(() => ({}));
+          document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true, cached: true } }));
+          return { ok: true, cached: true };
+        }
+
+        const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
+        if (!hydrated.ok) return hydrated;
+
+        await ensureMissionsLoaded({ force: Boolean(options.force) }).catch(() => ({}));
+        document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true } }));
+        return { ok: true };
+      } finally {
+        driverAppHydratePromise = null;
+        window.BremPerf?.timeEnd?.('storage.hydrateDriverAppData');
+      }
+    })();
+
+    return driverAppHydratePromise;
+  }
+
   async function flushActiveStorage() {
     await storageAdapter.flush();
   }
@@ -6644,6 +6684,8 @@ const BremStorage = (function () {
       return activeStorageAdapter.getMissingOperationTables?.() || [];
     },
     hydrateAdminDataInBackground,
+    hydrateDriverAppData,
+    isDriverAppCacheReady,
     syncAdminDataInBackground,
     resumeSupabaseAfterAuth,
     initStorage,
