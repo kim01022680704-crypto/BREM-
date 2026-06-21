@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260625c">
+  <link rel="stylesheet" href="css/admin.css?v=20260625d">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -608,21 +608,11 @@
       </section>
 
             <section class="section" id="rejections">
-        <article class="card rider-publish-card">
-          <div class="card-header rejection-card-header">
-            <div>
-              <h2>라이더 전용 조회 반영</h2>
-              <p class="form-help">ERP·수기 입력 후 검수가 끝나면 <strong>반영</strong> 버튼을 눌러 기사앱(기사 전용 조회)에 거절율·수락율을 공개합니다.</p>
-            </div>
-            <button type="button" class="primary-btn" id="riderViewPublishBtn">라이더 조회 반영</button>
-          </div>
-          <p class="admin-table-summary" id="riderViewPublishStatus">반영 상태 확인 중…</p>
-        </article>
         <article class="card rejection-bulk-card" data-rejection-erp-bulk>
           <div class="card-header rejection-card-header">
             <div>
               <h2>쿠팡/배민 통합 일괄등록</h2>
-              <p class="form-help">쿠팡·배민 ERP 엑셀(2시트)을 업로드하면 거절율·수락율을 자동 계산해 미리보기 후 저장합니다. 저장 위치: <strong>Supabase</strong> (<code>admin_rejection_rates</code>).</p>
+              <p class="form-help">쿠팡·배민 ERP 엑셀(2시트)을 업로드하면 거절율·수락율을 자동 계산해 미리보기 후 저장합니다. <strong>확인 · 저장</strong> 후 <strong>라이더 조회 반영</strong>을 눌러 기사앱에 공개하세요.</p>
             </div>
           </div>
           <p class="rejection-bulk-week-note" data-rejection-erp-week-note>적용주(수요일 기준)를 선택한 뒤 ERP 엑셀을 업로드하세요.</p>
@@ -642,8 +632,10 @@
               <input type="file" data-rejection-erp-file accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             </label>
             <button type="button" class="primary-btn" data-rejection-erp-apply disabled>확인 · 저장</button>
+            <button type="button" class="primary-btn rider-view-publish-btn" id="riderViewPublishBtn" data-rider-view-publish>라이더 조회 반영</button>
             <button type="button" class="small-btn" data-rejection-erp-clear>초기화</button>
           </div>
+          <p class="admin-table-summary rejection-erp-publish-status" id="riderViewPublishStatus">반영 상태 확인 중…</p>
           <div class="bulk-guide-wrap">
             <h3>시트 구성</h3>
             <ul class="form-help">
@@ -3084,6 +3076,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622j"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260625c"></script>
+  <script src="js/admin.js?v=20260625d"></script>
 </body>
 </html>

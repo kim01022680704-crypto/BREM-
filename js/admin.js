@@ -2452,22 +2452,56 @@
 
   function renderRiderPublishStatus() {
     const statusEl = $('#riderViewPublishStatus');
-    if (!statusEl) return;
-
+    const publishBtns = document.querySelectorAll('[data-rider-view-publish]');
     const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
     const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
     const publishedLabel = window.BremDriverUtils?.formatRiderPublishDateTime?.(meta.publishedAt)
       || (meta.publishedAt ? formatDateTime(meta.publishedAt) : '');
 
+    publishBtns.forEach(btn => {
+      btn.disabled = pending === 0;
+      btn.title = pending > 0
+        ? `미반영 ${pending}건을 기사앱에 공개`
+        : '반영할 미공개 데이터가 없습니다';
+    });
+
+    if (!statusEl) return;
+
     if (publishedLabel) {
       statusEl.textContent = pending > 0
-        ? `마지막 반영: ${publishedLabel} · 미반영 ${number(pending)}건`
+        ? `마지막 반영: ${publishedLabel} · 미반영 ${number(pending)}건 (아래 「라이더 조회 반영」 클릭)`
         : `마지막 반영: ${publishedLabel} · 기사앱과 동기화됨`;
     } else if (pending > 0) {
-      statusEl.textContent = `미반영 ${number(pending)}건 · 반영 버튼을 눌러 기사앱에 공개하세요.`;
+      statusEl.textContent = `미반영 ${number(pending)}건 · ERP 저장 후 「라이더 조회 반영」 버튼을 누르세요.`;
     } else {
-      statusEl.textContent = '반영 대기 중인 거절율·수락율 데이터가 없습니다.';
+      statusEl.textContent = 'ERP 저장 후 검수가 끝나면 「라이더 조회 반영」으로 기사앱에 공개합니다.';
     }
+  }
+
+  function handleRiderViewPublish() {
+    const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
+    if (!pending) {
+      showToast('기사앱에 반영할 미공개 데이터가 없습니다.');
+      return;
+    }
+    if (!window.confirm(`미반영 ${pending}건의 거절율·수락율을 기사 전용 조회에 반영하시겠습니까?`)) return;
+
+    void (async () => {
+      const publishBtns = document.querySelectorAll('[data-rider-view-publish]');
+      publishBtns.forEach(btn => { btn.disabled = true; });
+      try {
+        await BremStorage.ensureSectionLoaded('rejections');
+        const result = await BremStorage.rejections.publishPendingToRiderView();
+        const label = window.BremDriverUtils?.formatRiderPublishDateTime?.(result.publishedAt) || formatDateTime(result.publishedAt);
+        showToast(`${result.publishedCount}건 기사앱 반영 완료 · ${label}`);
+        renderAll();
+      } catch (error) {
+        console.error('[BREM] rider publish failed:', error);
+        showToast(error.message || '기사앱 반영에 실패했습니다.');
+      } finally {
+        renderRiderPublishStatus();
+      }
+    })();
   }
 
   function renderRejections() {
@@ -3957,30 +3991,10 @@
       renderAll();
     });
 
-    $('#riderViewPublishBtn')?.addEventListener('click', () => {
-      const pending = BremStorage.rejections?.countPendingRiderPublish?.() || 0;
-      if (!pending) {
-        showToast('기사앱에 반영할 미공개 데이터가 없습니다.');
-        return;
+    document.addEventListener('click', event => {
+      if (event.target.closest('[data-rider-view-publish]')) {
+        handleRiderViewPublish();
       }
-      if (!window.confirm(`미반영 ${pending}건의 거절율·수락율을 기사 전용 조회에 반영하시겠습니까?`)) return;
-
-      void (async () => {
-        const btn = $('#riderViewPublishBtn');
-        if (btn) btn.disabled = true;
-        try {
-          await BremStorage.ensureSectionLoaded('rejections');
-          const result = await BremStorage.rejections.publishPendingToRiderView();
-          const label = window.BremDriverUtils?.formatRiderPublishDateTime?.(result.publishedAt) || formatDateTime(result.publishedAt);
-          showToast(`${result.publishedCount}건 기사앱 반영 완료 · ${label}`);
-          renderAll();
-        } catch (error) {
-          console.error('[BREM] rider publish failed:', error);
-          showToast(error.message || '기사앱 반영에 실패했습니다.');
-        } finally {
-          if (btn) btn.disabled = false;
-        }
-      })();
     });
 
     initCallDateFields();
