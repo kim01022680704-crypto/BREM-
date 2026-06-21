@@ -6,6 +6,24 @@ window.BremSupabaseStorageAdapter = (function () {
 
   const DEFAULT_RIDER_PAGE_SIZE = 100;
 
+  const RIDER_SELECT_BASE = [
+    'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+    'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+    'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+    'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+    'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+    'created_at', 'updated_at'
+  ].join(',');
+
+  const RIDER_SELECT_WITH_PLATFORM = [
+    'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+    'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+    'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
+    'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+    'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+    'created_at', 'updated_at'
+  ].join(',');
+
   const RIDER_SELECT = [
     'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
     'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
@@ -15,6 +33,32 @@ window.BremSupabaseStorageAdapter = (function () {
     'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
     'created_at', 'updated_at'
   ].join(',');
+
+  const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
+
+  function isMissingRiderColumnError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('does not exist') || message.includes('column');
+  }
+
+  function stripOptionalRiderColumns(row) {
+    delete row.selected_mission_id;
+    delete row.selected_mission_id_baemin;
+    delete row.selected_mission_id_coupang;
+    delete row.long_event_platform;
+  }
+
+  async function queryRidersWithSelectFallback(runQuery) {
+    let lastResult = null;
+    for (const selectColumns of RIDER_SELECT_VARIANTS) {
+      lastResult = await runQuery(selectColumns);
+      if (!lastResult?.error) {
+        return { ...lastResult, selectColumns };
+      }
+      if (!isMissingRiderColumnError(lastResult.error)) break;
+    }
+    return lastResult || { error: new Error('기사 목록을 불러오지 못했습니다.') };
+  }
 
   const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
   const PROMOTION_SELECT = 'id,name,platform,type,enabled,selector_key,start_date,end_date,priority,payload,created_at,updated_at';
@@ -53,6 +97,21 @@ window.BremSupabaseStorageAdapter = (function () {
 
     function isTableKey(key) {
       return TABLE_KEYS.has(key);
+    }
+
+    async function upsertRiderRows(rows) {
+      if (!rows.length) return;
+      let payload = rows;
+      let { error } = await client.from('riders').upsert(payload, { onConflict: 'id' });
+      if (error && isMissingRiderColumnError(error)) {
+        payload = rows.map(row => {
+          const next = { ...row };
+          stripOptionalRiderColumns(next);
+          return next;
+        });
+        ({ error } = await client.from('riders').upsert(payload, { onConflict: 'id' }));
+      }
+      if (error) throw error;
     }
 
     async function loadSettings() {
@@ -199,18 +258,19 @@ window.BremSupabaseStorageAdapter = (function () {
       const pageSize = Math.min(Math.max(Number(options.limit) || DEFAULT_RIDER_PAGE_SIZE, 1), 200);
       const offset = Math.max(Number(options.offset) || 0, 0);
 
-      let query = client
-        .from('riders')
-        .select(RIDER_SELECT, { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(offset, offset + pageSize - 1);
-
       const status = String(options.status || '').trim();
       const search = String(options.search || '').trim();
-      if (status && status !== '전체') query = query.eq('status', status);
-      if (search) query = query.ilike('name', `%${search}%`);
 
-      const { data, error, count } = await query;
+      const { data, error, count } = await queryRidersWithSelectFallback(selectColumns => {
+        let nextQuery = client
+          .from('riders')
+          .select(selectColumns, { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .range(offset, offset + pageSize - 1);
+        if (status && status !== '전체') nextQuery = nextQuery.eq('status', status);
+        if (search) nextQuery = nextQuery.ilike('name', `%${search}%`);
+        return nextQuery;
+      });
       window.BremPerf?.timeEnd?.('riders.fetch');
       if (error) throw error;
 
@@ -348,15 +408,13 @@ window.BremSupabaseStorageAdapter = (function () {
     async function upsertRider(driver) {
       const row = Mapper().riderToRow(driver);
       if (!row.id) throw new Error('기사 ID가 없습니다.');
-      const { error } = await client.from('riders').upsert(row, { onConflict: 'id' });
-      if (error) throw error;
+      await upsertRiderRows([row]);
     }
 
     async function persistRiders(value) {
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
       if (!rows.length) return;
-      const { error } = await client.from('riders').upsert(rows, { onConflict: 'id' });
-      if (error) throw error;
+      await upsertRiderRows(rows);
     }
 
     async function deleteRider(id) {

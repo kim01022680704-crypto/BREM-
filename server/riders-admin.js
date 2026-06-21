@@ -2,6 +2,24 @@ const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 const { provisionRiderAuthAccount } = require('./rider-auth');
 
+const RIDER_SELECT_BASE = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
+  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'created_at', 'updated_at'
+].join(',');
+
+const RIDER_SELECT_WITH_PLATFORM = [
+  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
+  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
+  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
+  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
+  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
+  'created_at', 'updated_at'
+].join(',');
+
 const RIDER_SELECT = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
   'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
@@ -12,18 +30,43 @@ const RIDER_SELECT = [
   'created_at', 'updated_at'
 ].join(',');
 
-const RIDER_SELECT_LEGACY = [
-  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
-  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
-  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
-  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-  'created_at', 'updated_at'
-].join(',');
+const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
+
+/** @deprecated use RIDER_SELECT_WITH_PLATFORM */
+const RIDER_SELECT_LEGACY = RIDER_SELECT_WITH_PLATFORM;
 
 function isMissingColumnError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return message.includes('does not exist') || message.includes('column');
+}
+
+async function queryRidersWithSelectFallback(runQuery) {
+  let lastResult = null;
+  for (const selectColumns of RIDER_SELECT_VARIANTS) {
+    lastResult = await runQuery(selectColumns);
+    if (!lastResult?.error) {
+      return { ...lastResult, selectColumns };
+    }
+    if (!isMissingColumnError(lastResult.error)) break;
+  }
+  return lastResult || { error: new Error('기사 목록을 불러오지 못했습니다.') };
+}
+
+function stripOptionalRiderColumns(row) {
+  delete row.selected_mission_id;
+  delete row.selected_mission_id_baemin;
+  delete row.selected_mission_id_coupang;
+  delete row.long_event_platform;
+}
+
+async function upsertRiderRowWithFallback(supabase, row) {
+  let payload = { ...row };
+  let { error } = await supabase.from('riders').upsert(payload, { onConflict: 'id' });
+  if (error && isMissingColumnError(error)) {
+    stripOptionalRiderColumns(payload);
+    ({ error } = await supabase.from('riders').upsert(payload, { onConflict: 'id' }));
+  }
+  return { error, row: payload };
 }
 
 function toDate(value) {
@@ -142,16 +185,46 @@ function mergeRiderRows(keep, donor) {
 }
 
 async function fetchAllRiders(supabase, selectColumns) {
+  if (selectColumns) {
+    const allRows = [];
+    let offset = 0;
+    const limit = 200;
+
+    while (true) {
+      const { data, error, count } = await supabase
+        .from('riders')
+        .select(selectColumns, { count: 'exact' })
+        .order('created_at', { ascending: true })
+        .range(offset, offset + limit - 1);
+
+      if (error) throw error;
+
+      allRows.push(...(data || []));
+      const total = count ?? allRows.length;
+      if (!data?.length || allRows.length >= total) break;
+      offset += limit;
+    }
+
+    return allRows;
+  }
+
   const allRows = [];
   let offset = 0;
   const limit = 200;
+  let activeSelect = RIDER_SELECT;
 
   while (true) {
-    const { data, error, count } = await supabase
-      .from('riders')
-      .select(selectColumns, { count: 'exact' })
-      .order('created_at', { ascending: true })
-      .range(offset, offset + limit - 1);
+    let data;
+    let error;
+    let count;
+    ({ data, error, count, selectColumns: activeSelect } = await queryRidersWithSelectFallback(async columns => {
+      activeSelect = columns;
+      return supabase
+        .from('riders')
+        .select(columns, { count: 'exact' })
+        .order('created_at', { ascending: true })
+        .range(offset, offset + limit - 1);
+    }));
 
     if (error) throw error;
 
@@ -249,16 +322,11 @@ async function mergeRiderGroup(supabase, rows) {
   }
 
   let upsertRow = { ...merged };
-  let { error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' });
-  if (upsertError && isMissingColumnError(upsertError)) {
-    delete upsertRow.selected_mission_id;
-    delete upsertRow.selected_mission_id_baemin;
-    delete upsertRow.selected_mission_id_coupang;
-    ({ error: upsertError } = await supabase.from('riders').upsert(upsertRow, { onConflict: 'id' }));
+  const upsertResult = await upsertRiderRowWithFallback(supabase, upsertRow);
+  if (upsertResult.error) {
+    return { ok: false, status: 400, error: upsertResult.error.message || '병합된 기사 저장에 실패했습니다.' };
   }
-  if (upsertError) {
-    return { ok: false, status: 400, error: upsertError.message || '병합된 기사 저장에 실패했습니다.' };
-  }
+  upsertRow = upsertResult.row;
 
   for (const id of removedIds) {
     const { error: deleteError } = await supabase.from('riders').delete().eq('id', id);
@@ -345,10 +413,7 @@ async function listRiders(accessToken, options = {}) {
     return query;
   }
 
-  let { data, error, count } = await runQuery(RIDER_SELECT);
-  if (error && isMissingColumnError(error)) {
-    ({ data, error, count } = await runQuery(RIDER_SELECT_LEGACY));
-  }
+  const { data, error, count } = await queryRidersWithSelectFallback(columns => runQuery(columns));
 
   if (error) {
     return { ok: false, status: 500, error: error.message || '기사 목록을 불러오지 못했습니다.' };
@@ -375,13 +440,7 @@ async function upsertRider(accessToken, rider) {
   }
 
   const supabase = getServiceClient();
-  let { error } = await supabase.from('riders').upsert(row, { onConflict: 'id' });
-  if (error && isMissingColumnError(error)) {
-    delete row.selected_mission_id;
-    delete row.selected_mission_id_baemin;
-    delete row.selected_mission_id_coupang;
-    ({ error } = await supabase.from('riders').upsert(row, { onConflict: 'id' }));
-  }
+  const { error } = await upsertRiderRowWithFallback(supabase, row);
   if (error) {
     return { ok: false, status: 400, error: error.message || '기사 저장에 실패했습니다.' };
   }
@@ -391,28 +450,15 @@ async function upsertRider(accessToken, rider) {
     console.warn('[BREM] Rider auth provisioning failed:', provision.error);
   }
 
-  const { data, error: readError } = await supabase
-    .from('riders')
-    .select(RIDER_SELECT)
-    .eq('id', row.id)
-    .maybeSingle();
+  const { data, error: readError } = await queryRidersWithSelectFallback(columns =>
+    supabase.from('riders').select(columns).eq('id', row.id).maybeSingle()
+  );
 
-  let saved = data;
-  if (readError && isMissingColumnError(readError)) {
-    const legacyRead = await supabase
-      .from('riders')
-      .select(RIDER_SELECT_LEGACY)
-      .eq('id', row.id)
-      .maybeSingle();
-    if (legacyRead.error) {
-      return { ok: false, status: 500, error: legacyRead.error.message || '저장된 기사를 확인하지 못했습니다.' };
-    }
-    saved = legacyRead.data;
-  } else if (readError) {
+  if (readError) {
     return { ok: false, status: 500, error: readError.message || '저장된 기사를 확인하지 못했습니다.' };
   }
 
-  return { ok: true, rider: saved };
+  return { ok: true, rider: data };
 }
 
 function buildExistingRiderMatchMap(rows) {
@@ -486,14 +532,15 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   const supabase = getServiceClient();
   const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, list);
   const rows = resolved.map(rider => riderToRow(rider));
-  let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
+  let upsertPayload = rows;
+  let { error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' });
   if (error && isMissingColumnError(error)) {
-    rows.forEach(row => {
-      delete row.selected_mission_id;
-      delete row.selected_mission_id_baemin;
-      delete row.selected_mission_id_coupang;
+    upsertPayload = rows.map(item => {
+      const next = { ...item };
+      stripOptionalRiderColumns(next);
+      return next;
     });
-    ({ error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' }));
+    ({ error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' }));
   }
 
   if (error) {

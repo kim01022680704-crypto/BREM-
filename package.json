@@ -10,6 +10,7 @@
     "start": "node server/index.js",
     "qa": "node scripts/qa-check.js",
     "check-deploy": "node scripts/check-deploy.js",
+    "verify:riders-schema": "node scripts/verify-riders-schema.js",
     "audit:production": "node scripts/production-audit.js",
     "test:data-cache": "node scripts/test-data-cache.js",
     "bootstrap:missions": "node scripts/apply-missions-bootstrap.js",
