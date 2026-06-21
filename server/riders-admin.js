@@ -579,6 +579,110 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   };
 }
 
+function normalizeMissionPatchFields(fields = {}) {
+  const next = {};
+  if (fields.selectedMissionIdBaemin !== undefined) {
+    next.selected_mission_id_baemin = String(fields.selectedMissionIdBaemin || '').trim();
+  }
+  if (fields.selectedMissionIdCoupang !== undefined) {
+    next.selected_mission_id_coupang = String(fields.selectedMissionIdCoupang || '').trim();
+  }
+  if (fields.selectedMissionId !== undefined) {
+    next.selected_mission_id = String(fields.selectedMissionId || '').trim();
+  }
+  return next;
+}
+
+async function patchRiderMissionFields(supabase, riderId, fields = {}) {
+  const updatePayload = {
+    ...normalizeMissionPatchFields(fields),
+    updated_at: new Date().toISOString()
+  };
+  if (Object.keys(updatePayload).length <= 1) {
+    return { ok: false, status: 400, error: '저장할 미션 정보가 없습니다.' };
+  }
+
+  const { data, error } = await supabase
+    .from('riders')
+    .update(updatePayload)
+    .eq('id', riderId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingColumnError(error)) {
+      return {
+        ok: false,
+        status: 400,
+        error: '미션 컬럼이 없습니다. Supabase SQL Editor에서 supabase/missions_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 400, error: error.message || '미션 저장에 실패했습니다.' };
+  }
+
+  return { ok: true, rider: data };
+}
+
+async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const list = Array.isArray(patches)
+    ? patches.filter(item => {
+      if (!item?.id) return false;
+      const normalized = normalizeMissionPatchFields(item);
+      return Boolean(
+        normalized.selected_mission_id !== undefined
+        || normalized.selected_mission_id_baemin !== undefined
+        || normalized.selected_mission_id_coupang !== undefined
+      );
+    })
+    : [];
+  if (!list.length) {
+    return { ok: true, updated: 0, failed: [] };
+  }
+
+  const maxBatch = Math.min(Math.max(Number(options.maxBatch) || 300, 1), 500);
+  if (list.length > maxBatch) {
+    return {
+      ok: false,
+      status: 400,
+      error: `한 번에 최대 ${maxBatch}명까지 미션을 적용할 수 있습니다.`
+    };
+  }
+
+  const supabase = getServiceClient();
+  const failed = [];
+  let updated = 0;
+
+  for (const patch of list) {
+    const riderId = String(patch.id || '').trim();
+    const result = await patchRiderMissionFields(supabase, riderId, patch);
+    if (!result.ok) {
+      failed.push({ id: riderId, error: result.error || '미션 저장 실패' });
+      continue;
+    }
+    updated += 1;
+  }
+
+  if (failed.length && !updated) {
+    return {
+      ok: false,
+      status: 400,
+      error: failed[0].error || '미션 일괄 저장에 실패했습니다.',
+      failed,
+      updated: 0
+    };
+  }
+
+  return {
+    ok: true,
+    updated,
+    failed,
+    total: list.length
+  };
+}
+
 async function countRiders(accessToken) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -735,6 +839,7 @@ module.exports = {
   listRiders,
   upsertRider,
   bulkUpsertRiders,
+  bulkPatchRiderMissions,
   countRiders,
   deleteAllRiders,
   deleteRider,

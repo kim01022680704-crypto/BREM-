@@ -1591,6 +1591,107 @@ const BremStorage = (function () {
     return result;
   }
 
+  const MISSION_DRIVER_FIELDS = new Set([
+    'selectedMissionId',
+    'selectedMissionIdBaemin',
+    'selectedMissionIdCoupang'
+  ]);
+
+  function isMissionOnlyChanges(changes = {}) {
+    const keys = Object.keys(changes || {}).filter(key => key !== 'updatedAt');
+    return keys.length > 0 && keys.every(key => MISSION_DRIVER_FIELDS.has(key));
+  }
+
+  function flattenMissionPatch(item) {
+    if (!item?.id) return null;
+    const patch = { id: item.id };
+    if (item.changes && typeof item.changes === 'object') {
+      if (item.changes.selectedMissionIdBaemin !== undefined) {
+        patch.selectedMissionIdBaemin = item.changes.selectedMissionIdBaemin;
+      }
+      if (item.changes.selectedMissionIdCoupang !== undefined) {
+        patch.selectedMissionIdCoupang = item.changes.selectedMissionIdCoupang;
+      }
+      if (item.changes.selectedMissionId !== undefined) {
+        patch.selectedMissionId = item.changes.selectedMissionId;
+      }
+    } else {
+      if (item.selectedMissionIdBaemin !== undefined) patch.selectedMissionIdBaemin = item.selectedMissionIdBaemin;
+      if (item.selectedMissionIdCoupang !== undefined) patch.selectedMissionIdCoupang = item.selectedMissionIdCoupang;
+      if (item.selectedMissionId !== undefined) patch.selectedMissionId = item.selectedMissionId;
+    }
+    return patch;
+  }
+
+  async function persistRiderMissionsBulkViaServer(patches, options = {}) {
+    const payload = (Array.isArray(patches) ? patches : [])
+      .map(flattenMissionPatch)
+      .filter(Boolean);
+    if (!payload.length) {
+      return { ok: true, updated: 0 };
+    }
+
+    const postBulk = () => adminRidersApi('/api/admin/riders/missions/bulk', {
+      method: 'POST',
+      body: JSON.stringify({
+        patches: payload,
+        maxBatch: options.maxBatch || 300
+      })
+    });
+
+    let result = await postBulk();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postBulk();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || 'Supabase에 기사 미션을 저장하지 못했습니다.');
+    }
+    return result;
+  }
+
+  async function fetchRiderAssignedMissionsFromServer() {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 없습니다.' };
+    }
+
+    try {
+      const response = await fetch('/api/rider/missions', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '미션 정보를 불러오지 못했습니다.' };
+      }
+
+      const mapper = window.BremSupabaseMapper;
+      const missions = payload.missions || {};
+      const mapped = {
+        baemin: missions.baemin && mapper?.rowToMission ? mapper.rowToMission(missions.baemin) : null,
+        coupang: missions.coupang && mapper?.rowToMission ? mapper.rowToMission(missions.coupang) : null
+      };
+
+      const current = storageAdapter.read(KEYS.missions, []) || [];
+      const merged = new Map((Array.isArray(current) ? current : []).map(item => [item.id, item]));
+      Object.values(mapped).forEach(mission => {
+        if (mission?.id) merged.set(mission.id, mission);
+      });
+      if (merged.size) {
+        markMissionsCache(Array.from(merged.values()));
+      }
+
+      return { ok: true, missions: mapped, riderId: payload.riderId || null };
+    } catch (error) {
+      return { ok: false, message: error.message || '미션 정보 요청에 실패했습니다.' };
+    }
+  }
+
   async function deleteRiderViaServer(id) {
     const result = await adminRidersApi(`/api/admin/riders/${encodeURIComponent(id)}`, {
       method: 'DELETE'
@@ -1969,6 +2070,10 @@ const BremStorage = (function () {
         }
 
         if (!options.force && isDriverAppCacheReady()) {
+          await ensureSupabaseHydrated({ skipDriversSync: true });
+          if (activeStorageAdapter.hydrateCore) {
+            await activeStorageAdapter.hydrateCore();
+          }
           await ensureMissionsLoaded({ force: false }).catch(() => ({}));
           document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true, cached: true } }));
           return { ok: true, cached: true };
@@ -1976,6 +2081,10 @@ const BremStorage = (function () {
 
         const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
         if (!hydrated.ok) return hydrated;
+
+        if (activeStorageAdapter.hydrateCore) {
+          await activeStorageAdapter.hydrateCore();
+        }
 
         if (activeStorageAdapter.ensureKeysLoaded) {
           await activeStorageAdapter.ensureKeysLoaded([
@@ -2830,10 +2939,14 @@ const BremStorage = (function () {
       setDriversCache(nextDrivers);
 
       if (isProductionMode()) {
-        return persistRidersBulkViaServer(updatedRiders, {
-          skipAuthProvision: true,
-          maxBatch: options.maxBatch || 300
-        })
+        const missionOnly = items.every(item => isMissionOnlyChanges(item.changes));
+        const persist = missionOnly
+          ? persistRiderMissionsBulkViaServer(items, { maxBatch: options.maxBatch || 300 })
+          : persistRidersBulkViaServer(updatedRiders, {
+            skipAuthProvision: true,
+            maxBatch: options.maxBatch || 300
+          });
+        return persist
           .then(result => {
             markDriversCache(drivers.getAll(), { source: 'write' });
             return { ...result, updated: updatedRiders.length };
@@ -2946,12 +3059,14 @@ const BremStorage = (function () {
         };
       });
       const updated = nextDrivers.find(driver => driver.id === id);
+      if (!updated) throw new Error('기사를 찾을 수 없습니다.');
       if (isProductionMode()) {
-        if (!updated) throw new Error('기사를 찾을 수 없습니다.');
         setDriversCache(nextDrivers);
         const persist = isSelf
           ? persistRiderSelfViaServer(id, changes)
-          : persistRiderViaServer(updated);
+          : (isMissionOnlyChanges(changes)
+            ? persistRiderMissionsBulkViaServer([{ id, changes }])
+            : persistRiderViaServer(updated));
         return persist
           .then(() => {
             markDriversCache(nextDrivers, { source: 'write' });
@@ -6884,6 +6999,7 @@ const BremStorage = (function () {
     mergeRiderInCache,
     ensureDriverStorageReady,
     fetchCurrentRiderFromServer,
+    fetchRiderAssignedMissionsFromServer,
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,

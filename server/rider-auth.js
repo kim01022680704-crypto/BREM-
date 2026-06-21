@@ -354,6 +354,48 @@ async function updateRiderProfile(accessToken, body = {}) {
   };
 }
 
+async function getRiderAssignedMissions(accessToken) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const row = me.rider || {};
+  const baeminId = String(row.selected_mission_id_baemin || row.selected_mission_id || '').trim();
+  const coupangId = String(row.selected_mission_id_coupang || row.selected_mission_id || '').trim();
+  const ids = [...new Set([baeminId, coupangId].filter(Boolean))];
+
+  if (!ids.length) {
+    return {
+      ok: true,
+      riderId: me.riderId,
+      missions: { baemin: null, coupang: null }
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('missions')
+    .select('*')
+    .in('id', ids);
+
+  if (error) {
+    return { ok: false, status: 500, error: error.message || '미션 정보를 불러오지 못했습니다.' };
+  }
+
+  const byId = new Map((data || []).map(item => [item.id, item]));
+  return {
+    ok: true,
+    riderId: me.riderId,
+    missions: {
+      baemin: baeminId ? (byId.get(baeminId) || null) : null,
+      coupang: coupangId ? (byId.get(coupangId) || null) : null
+    }
+  };
+}
+
 async function signInRider(loginInput, password) {
   const supabase = getServiceClient();
   const authClient = getAnonAuthClient();
@@ -403,6 +445,7 @@ async function signInRider(loginInput, password) {
 module.exports = {
   signInRider,
   getRiderMe,
+  getRiderAssignedMissions,
   updateRiderProfile,
   provisionRiderAuthAccount,
   makeRiderLoginId

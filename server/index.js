@@ -194,6 +194,22 @@ app.get('/api/rider/me', async (req, res) => {
   }
 });
 
+app.get('/api/rider/missions', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderAssignedMissions(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      missions: result.missions
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 정보를 불러오지 못했습니다.' });
+  }
+});
+
 app.post('/api/rider/profile', async (req, res) => {
   try {
     const result = await riderAuth.updateRiderProfile(getBearerToken(req), req.body || {});
@@ -259,6 +275,25 @@ app.post('/api/admin/riders/bulk', async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 일괄 저장에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/riders/missions/bulk', async (req, res) => {
+  try {
+    const result = await ridersAdmin.bulkPatchRiderMissions(
+      getBearerToken(req),
+      req.body?.patches || [],
+      { maxBatch: req.body?.maxBatch }
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error,
+        failed: result.failed || []
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 미션 일괄 저장에 실패했습니다.' });
   }
 });
 
