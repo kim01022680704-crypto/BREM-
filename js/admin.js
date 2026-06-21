@@ -2515,6 +2515,30 @@
     return Number(record.deliveryAmount ?? record.settlementAmount ?? 0);
   }
 
+  function getSettlementPeriodFilter(platform) {
+    const value = $(`#settlementPeriod-${normalizePlatform(platform)}`)?.value?.trim() || '';
+    return value ? value.slice(0, 10) : '';
+  }
+
+  function matchesSettlementPeriod(record, periodKey) {
+    if (!periodKey) return true;
+    return String(record.period || '').slice(0, 10) === periodKey;
+  }
+
+  function updateSettlementPeriodLabels(platform, periodKey) {
+    const p = normalizePlatform(platform);
+    const labelText = periodKey ? `· ${formatDate(periodKey)}` : '· 전체';
+    const historyLabel = $(`#settlementHistoryPeriodLabel-${p}`);
+    const unmatchedLabel = $(`#settlementUnmatchedPeriodLabel-${p}`);
+    if (historyLabel) historyLabel.textContent = labelText;
+    if (unmatchedLabel) unmatchedLabel.textContent = labelText;
+
+    const historyClearBtn = $(`#settlementHistoryClearBtn-${p}`);
+    const unmatchedClearBtn = $(`#settlementUnmatchedClearBtn-${p}`);
+    if (historyClearBtn) historyClearBtn.disabled = !periodKey;
+    if (unmatchedClearBtn) unmatchedClearBtn.disabled = !periodKey;
+  }
+
   function settlementRowCells(record, platform) {
     const orderCount = Number(record.orderCount ?? record.callCount ?? 0);
     const amount = settlementAmountValue(record);
@@ -2621,13 +2645,21 @@
 
     PLATFORMS.forEach(platform => {
       const p = normalizePlatform(platform);
+      const periodKey = getSettlementPeriodFilter(p);
+      updateSettlementPeriodLabels(p, periodKey);
+
       const rows = settlements()
         .filter(record => normalizePlatform(record.platform) === p)
+        .filter(record => matchesSettlementPeriod(record, periodKey))
         .filter(record => !query || visibleDriverIds.has(record.driverId))
         .sort((a, b) => b.period.localeCompare(a.period) || b.appliedAt.localeCompare(a.appliedAt));
 
       const historyEl = $(`#settlementHistoryRows-${p}`);
       if (!historyEl) return;
+
+      const emptyMessage = periodKey
+        ? `${formatDate(periodKey)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
+        : `${platformLabel(p)} 반영된 정산 내역이 없습니다.`;
 
       historyEl.innerHTML = rows.map(record => `
         <tr>
@@ -2639,7 +2671,7 @@
             <button class="small-btn danger-btn" type="button" data-delete-settlement="${record.id}">삭제</button>
           </td>
         </tr>
-      `).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 6}" class="empty">${platformLabel(p)} 반영된 정산 내역이 없습니다.</td></tr>`;
+      `).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 6}" class="empty">${emptyMessage}</td></tr>`;
 
       renderSettlementPreview(p);
       renderSettlementUnmatched(p);
@@ -2652,12 +2684,18 @@
 
   function renderSettlementUnmatched(platform) {
     const p = normalizePlatform(platform);
+    const periodKey = getSettlementPeriodFilter(p);
     const rows = settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
+      .filter(record => matchesSettlementPeriod(record, periodKey))
       .sort((a, b) => b.period.localeCompare(a.period) || b.savedAt.localeCompare(a.savedAt));
 
     const rowsEl = $(`#settlementUnmatchedHistoryRows-${p}`);
     if (!rowsEl) return;
+
+    const emptyMessage = periodKey
+      ? `${formatDate(periodKey)} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
+      : `${platformLabel(p)} 미반영 기사 내역이 없습니다.`;
 
     rowsEl.innerHTML = rows.map(record => {
       if (isBaeminSettlementPlatform(p)) {
@@ -2689,7 +2727,73 @@
           </td>
         </tr>
       `;
-    }).join('') || `<tr><td colspan="7" class="empty">${platformLabel(p)} 미반영 기사 내역이 없습니다.</td></tr>`;
+    }).join('') || `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
+  }
+
+  function handleSettlementPeriodChange(platform) {
+    const p = normalizePlatform(platform);
+    const periodKey = getSettlementPeriodFilter(p);
+    const preview = state.settlementPreviewByPlatform[p];
+    if (preview && periodKey) {
+      preview.period = periodKey;
+    }
+    renderSettlements();
+  }
+
+  function clearSettlementHistoryForSelectedPeriod(platform) {
+    const p = normalizePlatform(platform);
+    const period = getSettlementPeriodFilter(p);
+    if (!period) {
+      showToast('정산일을 먼저 선택하세요.');
+      return;
+    }
+    const count = settlements()
+      .filter(record => normalizePlatform(record.platform) === p)
+      .filter(record => matchesSettlementPeriod(record, period))
+      .length;
+    if (!count) {
+      showToast('선택한 정산일 반영 내역이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`${formatDate(period)} ${platformLabel(p)} 정산 반영 ${count}건을 전체 삭제하시겠습니까?\n연결된 콜수도 함께 삭제됩니다.`)) return;
+
+    BremStorage.settlements.clearByPeriod(period, p);
+    void BremStorage.flushStorage?.().then(() => {
+      showToast(`${formatDate(period)} 정산 반영 ${count}건 삭제되었습니다.`);
+      renderAll();
+    }).catch(error => {
+      console.error('[BREM] settlement clear failed:', error);
+      showToast(error.message || '삭제 저장에 실패했습니다.');
+      renderAll();
+    });
+  }
+
+  function clearSettlementUnmatchedForSelectedPeriod(platform) {
+    const p = normalizePlatform(platform);
+    const period = getSettlementPeriodFilter(p);
+    if (!period) {
+      showToast('정산일을 먼저 선택하세요.');
+      return;
+    }
+    const count = settlementUnmatchedList()
+      .filter(record => normalizePlatform(record.platform) === p)
+      .filter(record => matchesSettlementPeriod(record, period))
+      .length;
+    if (!count) {
+      showToast('선택한 정산일 미반영 내역이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`${formatDate(period)} ${platformLabel(p)} 미반영 ${count}건을 전체 삭제하시겠습니까?`)) return;
+
+    BremStorage.settlementUnmatched.clearByPeriod(period, p);
+    void BremStorage.flushStorage?.().then(() => {
+      showToast(`${formatDate(period)} 미반영 ${count}건 삭제되었습니다.`);
+      renderSettlements();
+    }).catch(error => {
+      console.error('[BREM] settlement unmatched clear failed:', error);
+      showToast(error.message || '삭제 저장에 실패했습니다.');
+      renderSettlements();
+    });
   }
 
   function clearSettlementPreview(platform) {
@@ -3376,18 +3480,22 @@
         showToast(`${platformLabel(p)} 미리보기를 취소했습니다. 미반영 내역은 아래 목록에 유지됩니다.`);
       });
       $(`#settlementUnmatchedClearBtn-${p}`)?.addEventListener('click', () => {
-        const count = settlementUnmatchedList().filter(record => normalizePlatform(record.platform) === p).length;
-        if (!count) return;
-        if (!window.confirm(`${platformLabel(p)} 미반영 기사 내역을 모두 삭제하시겠습니까?`)) return;
-        BremStorage.settlementUnmatched.clearByPlatform(p);
-        renderSettlements();
-        showToast(`${platformLabel(p)} 미반영 기사 내역이 삭제되었습니다.`);
+        clearSettlementUnmatchedForSelectedPeriod(p);
+      });
+      $(`#settlementHistoryClearBtn-${p}`)?.addEventListener('click', () => {
+        clearSettlementHistoryForSelectedPeriod(p);
+      });
+      $(`#settlementPeriod-${p}`)?.addEventListener('change', () => {
+        handleSettlementPeriodChange(p);
       });
       $(`#settlementFile-${p}`)?.addEventListener('change', event => {
         const file = event.target.files?.[0];
         if (!file) return;
         const date = applySettlementDateFromFilename(file.name, p);
-        if (date) showToast(`${platformLabel(p)} 정산일 ${formatDate(date)} 자동 설정`);
+        if (date) {
+          showToast(`${platformLabel(p)} 정산일 ${formatDate(date)} 자동 설정`);
+          handleSettlementPeriodChange(p);
+        }
       });
     });
 
@@ -3613,15 +3721,29 @@
       const settlementButton = event.target.closest('[data-delete-settlement]');
       if (settlementButton) {
         BremStorage.settlements.removeById(settlementButton.dataset.deleteSettlement);
-        showToast('정산 내역이 삭제되었습니다.');
-        renderAll();
+        void BremStorage.flushStorage?.().then(() => {
+          showToast('정산 내역이 삭제되었습니다.');
+          renderAll();
+        }).catch(error => {
+          console.error('[BREM] settlement delete failed:', error);
+          showToast(error.message || '삭제 저장에 실패했습니다.');
+          renderAll();
+        });
+        return;
       }
 
       const unmatchedButton = event.target.closest('[data-delete-settlement-unmatched]');
       if (unmatchedButton) {
         BremStorage.settlementUnmatched.removeById(unmatchedButton.dataset.deleteSettlementUnmatched);
-        showToast('미반영 기사 내역이 삭제되었습니다.');
-        renderSettlements();
+        void BremStorage.flushStorage?.().then(() => {
+          showToast('미반영 기사 내역이 삭제되었습니다.');
+          renderSettlements();
+        }).catch(error => {
+          console.error('[BREM] settlement unmatched delete failed:', error);
+          showToast(error.message || '삭제 저장에 실패했습니다.');
+          renderSettlements();
+        });
+        return;
       }
 
       const editNoticeButton = event.target.closest('[data-edit-notice]');

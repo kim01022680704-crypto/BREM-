@@ -1683,10 +1683,10 @@
 
         <article class="card settlement-unmatched-card">
           <div class="card-header">
-            <h2>쿠팡 미반영 기사 내역</h2>
-            <button class="small-btn danger-btn" type="button" id="settlementUnmatchedClearBtn-coupang">전체 삭제</button>
+            <h2>쿠팡 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-coupang"></span></h2>
+            <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-coupang">선택일 전체 삭제</button>
           </div>
-          <p class="form-help">쿠팡 정산표 업로드·반영 후 매칭되지 않은 기사입니다.</p>
+          <p class="form-help">정산일을 선택하면 해당 날짜 미반영 기사만 표시됩니다.</p>
           <div class="table-wrap">
             <table class="settlement-preview-table unmatched">
               <thead>
@@ -1707,8 +1707,10 @@
 
         <article class="card">
           <div class="card-header">
-            <h2>쿠팡 정산 반영 내역</h2>
+            <h2>쿠팡 정산 반영 내역 <span class="settlement-period-filter-label" id="settlementHistoryPeriodLabel-coupang"></span></h2>
+            <button type="button" class="small-btn danger-btn" id="settlementHistoryClearBtn-coupang">선택일 전체 삭제</button>
           </div>
+          <p class="form-help">정산일을 변경하면 아래 목록도 해당 날짜 기준으로 갱신됩니다.</p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -1805,10 +1807,10 @@
 
         <article class="card settlement-unmatched-card">
           <div class="card-header">
-            <h2>배민 미반영 기사 내역</h2>
-            <button class="small-btn danger-btn" type="button" id="settlementUnmatchedClearBtn-baemin">전체 삭제</button>
+            <h2>배민 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-baemin"></span></h2>
+            <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-baemin">선택일 전체 삭제</button>
           </div>
-          <p class="form-help">배민 정산표 업로드·반영 후 매칭되지 않은 기사입니다.</p>
+          <p class="form-help">정산일을 선택하면 해당 날짜 미반영 기사만 표시됩니다.</p>
           <div class="table-wrap">
             <table class="settlement-preview-table unmatched">
               <thead>
@@ -1829,8 +1831,10 @@
 
         <article class="card">
           <div class="card-header">
-            <h2>배민 정산 반영 내역</h2>
+            <h2>배민 정산 반영 내역 <span class="settlement-period-filter-label" id="settlementHistoryPeriodLabel-baemin"></span></h2>
+            <button type="button" class="small-btn danger-btn" id="settlementHistoryClearBtn-baemin">선택일 전체 삭제</button>
           </div>
+          <p class="form-help">정산일을 변경하면 아래 목록도 해당 날짜 기준으로 갱신됩니다.</p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -2836,7 +2840,7 @@
   <script src="js/storage-supabase-mapper.js"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260622t"></script>
+  <script src="js/storage.js?v=20260622u"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -2860,6 +2864,6 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/admin-missions.js?v=20260622f"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622q"></script>
+  <script src="js/admin.js?v=20260622r"></script>
 </body>
 </html>

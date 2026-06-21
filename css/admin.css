@@ -3111,6 +3111,13 @@ textarea {
   color: #fecaca;
 }
 
+.settlement-period-filter-label {
+  margin-left: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .bulk-preview-header {
   display: flex;
   align-items: center;

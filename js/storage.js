@@ -4582,7 +4582,40 @@ const BremStorage = (function () {
     },
 
     removeById(id) {
+      const target = settlements.getAll().find(item => item.id === id);
       storageAdapter.write(KEYS.settlements, settlements.getAll().filter(item => item.id !== id));
+      if (target) {
+        const periodKey = String(target.period).slice(0, 10);
+        const p = normalizePlatform(target.platform);
+        const callId = `${target.driverId}-${periodKey}-${p}`;
+        storageAdapter.write(KEYS.calls, calls.getAll().filter(call => call.id !== callId));
+      }
+    },
+
+    clearByPeriod(period, platform = DEFAULT_PLATFORM) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period).slice(0, 10);
+      if (!periodKey) return settlements.getAll();
+
+      const removing = settlements.getAll().filter(item => {
+        const itemPeriod = String(item.period).slice(0, 10);
+        return normalizePlatform(item.platform) === p && itemPeriod === periodKey;
+      });
+      const callIds = new Set(removing.map(item => `${item.driverId}-${periodKey}-${p}`));
+
+      storageAdapter.write(
+        KEYS.settlements,
+        settlements.getAll().filter(item => {
+          const itemPeriod = String(item.period).slice(0, 10);
+          return !(normalizePlatform(item.platform) === p && itemPeriod === periodKey);
+        })
+      );
+
+      if (callIds.size) {
+        storageAdapter.write(KEYS.calls, calls.getAll().filter(call => !callIds.has(call.id)));
+      }
+
+      return settlements.getAll();
     },
 
     getForDriver(driverId) {
@@ -5309,9 +5342,13 @@ const BremStorage = (function () {
 
     clearByPeriod(period, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
+      const periodKey = String(period).slice(0, 10);
       storageAdapter.write(
         KEYS.settlementUnmatched,
-        settlementUnmatched.getAll().filter(item => !(item.period === period && normalizePlatform(item.platform) === p))
+        settlementUnmatched.getAll().filter(item => {
+          const itemPeriod = String(item.period).slice(0, 10);
+          return !(itemPeriod === periodKey && normalizePlatform(item.platform) === p);
+        })
       );
     },
 
