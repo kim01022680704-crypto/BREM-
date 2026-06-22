@@ -102,14 +102,16 @@ const BremStorage = (function () {
     let migrated = false;
     const normalized = list.map(item => {
       const platform = normalizePlatform(item.platform);
+      const period = String(item.period || '').slice(0, 10);
       const next = {
         ...item,
         platform,
+        period,
         riderId: item.riderId || '',
         deliveryAmount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
-        id: `${item.driverId}-${item.period}-${platform}`
+        id: `${item.driverId}-${period}-${platform}`
       };
-      if (item.platform !== platform || item.id !== next.id) migrated = true;
+      if (item.platform !== platform || item.id !== next.id || item.period !== period) migrated = true;
       return next;
     });
 
@@ -6128,17 +6130,18 @@ const BremStorage = (function () {
 
       const p = normalizePlatform(platform);
       const callDate = String(period).slice(0, 10);
+      const appliedAt = new Date().toISOString();
 
       const nextRecords = records.map(record => ({
-        id: `${record.driverId}-${period}-${p}`,
+        id: `${record.driverId}-${callDate}-${p}`,
         driverId: record.driverId,
-        period,
+        period: callDate,
         platform: p,
         riderId: record.riderId || '',
         orderCount: Number(record.orderCount ?? record.callCount ?? 0),
         settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
         deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
-        appliedAt: new Date().toISOString()
+        appliedAt
       }));
 
       calls.upsertBatchDaily({
@@ -6927,8 +6930,70 @@ const BremStorage = (function () {
       return list.find(item => item.id === id) || null;
     },
 
-    remove(id) {
+    remove(id, options = {}) {
+      const target = settlementUploadLogs.getById(id);
+      const rollback = options.rollback !== false;
+      if (rollback && target) {
+        settlementUploadLogs.rollbackAppliedDailyLog(target);
+      }
       settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
+      return target || null;
+    },
+
+    async removeAsync(id, options = {}) {
+      const removed = settlementUploadLogs.remove(id, options);
+      await storageAdapter.flush?.();
+      window.BremDataCache?.invalidate?.(KEYS.settlements);
+      window.BremDataCache?.invalidate?.(KEYS.calls);
+      window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
+      return removed;
+    },
+
+    rollbackAppliedDailyLog(log) {
+      if (!log || log.kind !== 'daily' || log.status !== 'applied') {
+        return { rolledBack: 0 };
+      }
+
+      const p = normalizePlatform(log.platform);
+      const periodKey = String(log.period || log.startDate || '').slice(0, 10);
+      if (!periodKey) return { rolledBack: 0 };
+
+      const logAppliedAt = String(log.appliedAt || log.uploadedAt || '');
+      const hasNewerAppliedLog = settlementUploadLogs.getAll().some(item => (
+        item.id !== log.id
+        && item.kind === 'daily'
+        && normalizePlatform(item.platform) === p
+        && String(item.period).slice(0, 10) === periodKey
+        && item.status === 'applied'
+        && String(item.appliedAt || item.uploadedAt || '') > logAppliedAt
+      ));
+      if (hasNewerAppliedLog) return { rolledBack: 0 };
+
+      const appliedRecords = (
+        Array.isArray(log.appliedRecords) && log.appliedRecords.length
+          ? log.appliedRecords
+          : log.matchedRecords
+      ) || [];
+
+      let rolledBack = 0;
+      appliedRecords.forEach(row => {
+        const driverId = String(row.driverId || '').trim();
+        if (!driverId) return;
+        settlements.getAll()
+          .filter(item => (
+            item.driverId === driverId
+            && normalizePlatform(item.platform) === p
+            && String(item.period).slice(0, 10) === periodKey
+          ))
+          .forEach(item => {
+            const settlementAppliedAt = String(item.appliedAt || '');
+            if (!settlementAppliedAt || !logAppliedAt || settlementAppliedAt <= logAppliedAt) {
+              settlements.removeById(item.id);
+              rolledBack += 1;
+            }
+          });
+      });
+      return { rolledBack };
     },
 
     async removeDailyByPeriod(period, platform = DEFAULT_PLATFORM) {
@@ -7023,9 +7088,6 @@ const BremStorage = (function () {
       });
       if (existingLog) {
         return { duplicate: true, reason: 'log', existingLog };
-      }
-      if (settlementUploadLogs.settlementsMatchRecords(platform, period, records)) {
-        return { duplicate: true, reason: 'settlements', existingLog: null };
       }
       return { duplicate: false, reason: '', existingLog: null };
     }

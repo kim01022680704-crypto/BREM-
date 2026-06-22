@@ -3771,9 +3771,7 @@
         fileName: preview.sourceFileName || '',
         appliedAt: new Date().toISOString(),
         duplicateOfLogId: duplicateCheck.existingLog?.id || '',
-        skipReason: duplicateCheck.reason === 'log'
-          ? '동일 데이터가 이미 반영된 업로드 기록이 있습니다.'
-          : '현재 정산 반영 내역과 동일한 데이터입니다.'
+        skipReason: '동일 파일이 이미 반영된 업로드 기록이 있습니다.'
       };
 
       if (preview.uploadLogId) {
@@ -3789,7 +3787,7 @@
       void BremStorage.flushStorage?.().then(() => {
         clearSettlementPreview(p);
         renderAll();
-        showToast('동일한 정산 데이터가 이미 반영되어 있어 중복 적용을 건너뛰었습니다.');
+        showToast('동일한 파일이 이미 반영되어 있어 중복 적용을 건너뛰었습니다.');
       }).catch(error => {
         console.error('[BREM] settlement duplicate skip save failed:', error);
         showToast(error.message || '중복 기록 저장에 실패했습니다.');
@@ -3850,7 +3848,7 @@
       if (preview.period) setSettlementHistoryDay(p, preview.period);
       clearSettlementPreview(p);
       renderAll();
-      showToast(`${platformLabel(p)} ${preview.matched.length}명 반영 완료${preview.unmatched?.length ? ` · 미반영 ${preview.unmatched.length}명은 아래 목록에 저장됨` : ''}`);
+      showToast(`${platformLabel(p)} ${preview.matched.length}명 반영 완료 (최신 업로드 기준 덮어씀)${preview.unmatched?.length ? ` · 미반영 ${preview.unmatched.length}명은 아래 목록에 저장됨` : ''}`);
     }).catch(error => {
       console.error('[BREM] settlement apply save failed:', error);
       showToast(error.message || '반영 저장에 실패했습니다.');
@@ -4843,16 +4841,30 @@
       const settlementUploadLogButton = event.target.closest('[data-delete-settlement-upload-log]');
       if (settlementUploadLogButton) {
         const logId = settlementUploadLogButton.dataset.deleteSettlementUploadLog;
-        BremStorage.settlementUploadLogs.remove(logId);
+        const log = BremStorage.settlementUploadLogs.getById(logId);
+        if (log?.kind === 'daily' && log.status === 'applied') {
+          const ok = window.confirm(
+            '이 업로드 기록을 삭제하면 반영된 정산·콜수도 함께 제거됩니다.\n'
+            + '(같은 날 더 최근 반영 기록이 있으면 그 데이터는 유지됩니다.)\n계속할까요?'
+          );
+          if (!ok) return;
+        }
         if (state.settlementUploadLogDetailId === logId) hideSettlementUploadLogDetail();
-        void BremStorage.flushStorage?.().then(() => {
-          showToast('업로드 기록이 삭제되었습니다.');
-          renderSettlements();
-        }).catch(error => {
-          console.error('[BREM] settlement upload log delete failed:', error);
-          showToast(error.message || '기록 삭제 저장에 실패했습니다.');
-          renderSettlements();
-        });
+        void (async () => {
+          try {
+            const removed = await BremStorage.settlementUploadLogs.removeAsync(logId);
+            showToast(
+              removed?.kind === 'daily' && removed?.status === 'applied'
+                ? '업로드 기록과 연결된 정산·콜수가 삭제되었습니다.'
+                : '업로드 기록이 삭제되었습니다.'
+            );
+            renderSettlements();
+          } catch (error) {
+            console.error('[BREM] settlement upload log delete failed:', error);
+            showToast(error.message || '기록 삭제 저장에 실패했습니다.');
+            renderSettlements();
+          }
+        })();
         return;
       }
 
