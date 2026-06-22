@@ -699,6 +699,8 @@
   async function loadAllDriversForList(force = false) {
     if (listLoadPromise && !force) return listLoadPromise;
 
+    await BremStorage.waitForDriversFetch?.();
+
     const cacheStatus = BremStorage.getCacheStatus?.() || {};
     const hasCompleteCache = cacheStatus.driversComplete && BremStorage.drivers.getAll().length > 0;
 
@@ -903,6 +905,24 @@
   }
 
   if (!(await window.BremDriverProgramAccess?.ensure?.())) return;
+
+  await new Promise(resolve => {
+    if (document.readyState !== 'loading') {
+      resolve();
+      return;
+    }
+    document.addEventListener('DOMContentLoaded', resolve, { once: true });
+  });
+
+  await new Promise(resolve => {
+    const finish = () => resolve();
+    if (BremStorage.getStorageStatus?.()?.supabaseHydrated) {
+      finish();
+      return;
+    }
+    document.addEventListener('brem-storage-ready', finish, { once: true });
+    setTimeout(finish, 12000);
+  });
 
   if (isDriverListCacheReady()) {
     render();

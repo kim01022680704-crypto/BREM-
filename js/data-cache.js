@@ -1,16 +1,10 @@
 /**
- * BREM session-scoped data cache.
- * 영구 저장은 Supabase만 · localStorage 미사용.
- * SESSION_MIRROR_KEYS: 탭 내 페이지 이동용 sessionStorage (탭 종료 시 삭제).
+ * BREM in-memory data cache (탭 세션 동안만 유지).
+ * 영구 저장은 Supabase만 · 브라우저 영구 저장소 미사용.
  */
 window.BremDataCache = (function () {
   const VERSION = 2;
   const PREFIX = 'brem_dc_';
-  const SESSION_MIRROR_KEYS = new Set([
-    'brem_driver_management_drivers',
-    'brem_admin_missions',
-    'brem_admin_notices'
-  ]);
   const MEMORY_ONLY_KEYS = new Set([]);
   const memory = new Map();
   const inflight = new Map();
@@ -27,23 +21,14 @@ window.BremDataCache = (function () {
     return `${PREFIX}${key}`;
   }
 
-  function shouldMirrorSession(key) {
-    return SESSION_MIRROR_KEYS.has(key);
+  function shouldMirrorSession() {
+    return false;
   }
 
   function readEntry(key) {
     if (memory.has(key)) return memory.get(key);
     if (MEMORY_ONLY_KEYS.has(key)) return null;
-    try {
-      const raw = sessionStorage.getItem(storageKey(key));
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!parsed || parsed.v !== VERSION || parsed.valid !== true) return null;
-      memory.set(key, parsed);
-      return parsed;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   function writeEntry(key, data, meta = {}) {
@@ -58,13 +43,6 @@ window.BremDataCache = (function () {
       storedAt: Date.now()
     };
     memory.set(key, entry);
-    if (shouldMirrorSession(key)) {
-      try {
-        sessionStorage.setItem(storageKey(key), JSON.stringify(entry));
-      } catch (error) {
-        console.warn('[BREM] sessionStorage cache write failed:', key, error.message || error);
-      }
-    }
     return entry;
   }
 

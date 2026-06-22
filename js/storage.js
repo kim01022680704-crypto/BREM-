@@ -1594,10 +1594,24 @@ const BremStorage = (function () {
 
     if (force) return runFetch();
 
+    if (driversFetchAllPromise) return driversFetchAllPromise;
+
     driversFetchAllPromise = runFetch().finally(() => {
       driversFetchAllPromise = null;
     });
     return driversFetchAllPromise;
+  }
+
+  async function waitForDriversFetch() {
+    if (driversFetchAllPromise) {
+      return driversFetchAllPromise;
+    }
+    return {
+      ok: true,
+      cached: driversLoadMeta.complete,
+      count: drivers.getAll().length,
+      supabaseTotal: driversLoadMeta.supabaseTotal
+    };
   }
 
   async function syncDriversFromServer(options = {}) {
@@ -3699,6 +3713,7 @@ const BremStorage = (function () {
         const cached = window.BremDataCache.getData(KEYS.drivers);
         if (Array.isArray(cached) && cached.length) list = cached;
       }
+      list = dedupeDriversList(Array.isArray(list) ? list : []);
       if (normalizedDriversCache && normalizedDriversSourceRef === list) {
         return normalizedDriversCache;
       }
@@ -9222,6 +9237,8 @@ const BremStorage = (function () {
     flushStorage: flushActiveStorage,
     reloadDrivers,
     fetchAllDriversFromServer,
+    waitForDriversFetch,
+    dedupeDriversList,
     refreshDriversForSettlementMatch,
     reloadMissions,
     reloadNotices,

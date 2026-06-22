@@ -53,7 +53,7 @@ assert('BremDataCache module loads', Boolean(cache));
 
 cache.set('brem_driver_management_drivers', [{ id: '1' }], { complete: true });
 assert('cache set/get memory', cache.getData('brem_driver_management_drivers')[0].id === '1');
-assert('drivers sessionStorage mirror', session.getItem('brem_dc_brem_driver_management_drivers') != null);
+assert('drivers memory-only (no sessionStorage mirror)', session.getItem('brem_dc_brem_driver_management_drivers') == null);
 
 cache.set('test-key', [{ id: '2' }]);
 assert('non-mirror key skips sessionStorage', session.getItem('brem_dc_test-key') == null);

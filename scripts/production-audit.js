@@ -48,9 +48,12 @@ function grepFiles(pattern, globs) {
   return hits;
 }
 
-// 1. No service_role in frontend
+// 1. No service_role in frontend (ignore comments)
 const configJs = read('js/supabase-config.js');
-if (/service_role|SERVICE_ROLE/i.test(configJs)) fail('Frontend secrets', 'service_role in supabase-config.js');
+const configJsNoComments = configJs
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\/\/[^\n]*/g, '');
+if (/service_role|SERVICE_ROLE/i.test(configJsNoComments)) fail('Frontend secrets', 'service_role in supabase-config.js');
 else pass('Frontend secrets', 'no service_role in supabase-config.js');
 
 // 2. localStorage write in production paths (exclude purge/migration)
@@ -111,7 +114,7 @@ else fail('Data cache module', 'missing js/data-cache.js');
 const dataCacheJs = fs.existsSync(path.join(ROOT, 'js/data-cache.js'))
   ? read('js/data-cache.js')
   : '';
-if (/localStorage/.test(dataCacheJs)) fail('Data cache storage', 'uses localStorage');
+if (/localStorage/.test(dataCacheJs.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''))) fail('Data cache storage', 'uses localStorage');
 else if (/shouldMirrorSession\(\)[\s\S]*return false/.test(dataCacheJs)) {
   pass('Data cache storage', 'memory-only operational cache');
 } else if (dataCacheJs) pass('Data cache storage', 'sessionStorage only');

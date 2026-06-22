@@ -835,7 +835,10 @@ window.BremSupabaseStorageAdapter = (function () {
       if (error) throw error;
 
       const page = (data || []).map(row => Mapper().rowToRider(row));
-      const merged = append ? mergeRidersById(getCache(keys.drivers, []), page) : page;
+      let merged = append ? mergeRidersById(getCache(keys.drivers, []), page) : page;
+      if (window.BremStorage?.dedupeDriversList) {
+        merged = window.BremStorage.dedupeDriversList(merged);
+      }
       setCache(keys.drivers, merged);
       ridersMeta = {
         total: count ?? merged.length,
