@@ -1038,6 +1038,10 @@
     toggleProfileEditPanel(true);
   });
 
+  document.getElementById('driverRealtimeStatusBtn')?.addEventListener('click', () => {
+    window.open('about:blank', '_blank', 'noopener,noreferrer');
+  });
+
   document.getElementById('driverProfileEditCancel')?.addEventListener('click', () => {
     toggleProfileEditPanel(false);
   });

@@ -346,6 +346,39 @@ h3 {
   background: var(--yellow-soft);
 }
 
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.profile-realtime-status-btn {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #94a3b8;
+  background: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.profile-realtime-status-btn:hover {
+  color: #64748b;
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.profile-realtime-status-btn:focus-visible {
+  outline: 2px solid #cbd5e1;
+  outline-offset: 2px;
+}
+
 /* ── Panels ── */
 
 .panel {
@@ -1494,6 +1527,7 @@ button.calendar-day:hover {
 
   .logout-btn,
   .profile-edit-toggle,
+  .profile-realtime-status-btn,
   .ghost-btn,
   .target-save-btn,
   .week-nav button,
