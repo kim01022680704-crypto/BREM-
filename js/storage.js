@@ -1862,7 +1862,11 @@ const BremStorage = (function () {
       if (item.selectedMissionIdCoupang !== undefined) patch.selectedMissionIdCoupang = item.selectedMissionIdCoupang;
       if (item.selectedMissionId !== undefined) patch.selectedMissionId = item.selectedMissionId;
     }
-    return patch;
+    return patch.selectedMissionId !== undefined
+      || patch.selectedMissionIdBaemin !== undefined
+      || patch.selectedMissionIdCoupang !== undefined
+      ? patch
+      : null;
   }
 
   async function persistRiderMissionsBulkViaServer(patches, options = {}) {
@@ -3728,12 +3732,15 @@ const BremStorage = (function () {
 
       if (isProductionMode()) {
         const missionOnly = items.every(item => isMissionOnlyChanges(item.changes));
+        const longEventOnly = items.every(item => isLongEventOnlyChanges(item.changes));
         const persist = missionOnly
           ? persistRiderMissionsBulkViaServer(items, { maxBatch: options.maxBatch || 300 })
-          : persistRidersBulkViaServer(updatedRiders, {
-            skipAuthProvision: true,
-            maxBatch: options.maxBatch || 300
-          });
+          : longEventOnly
+            ? persistRiderLongEventsBulkViaServer(items, { maxBatch: options.maxBatch || 300 })
+            : persistRidersBulkViaServer(updatedRiders, {
+              skipAuthProvision: true,
+              maxBatch: options.maxBatch || 300
+            });
         return persist
           .then(result => {
             markDriversCache(drivers.getAll(), { source: 'write' });

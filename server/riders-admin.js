@@ -19,8 +19,32 @@ function stripOptionalRiderColumns(row) {
   delete row.long_event_platform;
 }
 
+async function preserveRequiredRiderFieldsOnUpsert(supabase, row) {
+  const next = { ...row };
+  const hasName = String(next.name || '').trim();
+  const hasPhone = String(next.phone || '').trim();
+  if ((hasName && hasPhone) || !next.id) return next;
+
+  const { data: existing, error } = await supabase
+    .from('riders')
+    .select('name,phone')
+    .eq('id', next.id)
+    .maybeSingle();
+  if (error || !existing) return next;
+
+  if (!hasName && existing.name) next.name = existing.name;
+  if (!hasPhone && existing.phone) next.phone = formatPhoneForStorage(existing.phone);
+  return next;
+}
+
 async function upsertRiderRowWithFallback(supabase, row) {
-  let payload = { ...row };
+  let payload = await preserveRequiredRiderFieldsOnUpsert(supabase, row);
+  if (!String(payload.name || '').trim()) {
+    return {
+      error: { message: '기사 이름이 없어 저장할 수 없습니다.' },
+      row: payload
+    };
+  }
   let { error } = await supabase.from('riders').upsert(payload, { onConflict: 'id' });
   if (error && isMissingColumnError(error)) {
     stripOptionalRiderColumns(payload);
@@ -403,6 +427,9 @@ async function upsertRider(accessToken, rider) {
   if (!row.id) {
     return { ok: false, status: 400, error: '기사 ID가 없습니다.' };
   }
+  if (!normalizeRiderName(row.name)) {
+    return { ok: false, status: 400, error: '기사 이름은 필수입니다.' };
+  }
 
   const supabase = getServiceClient();
   const { error } = await upsertRiderRowWithFallback(supabase, row);
@@ -749,58 +776,33 @@ async function bulkPatchRiderLongEvents(accessToken, patches = [], options = {})
   }
 
   const supabase = getServiceClient();
-  const now = new Date().toISOString();
-  const rows = list.map(patch => ({
-    id: String(patch.id || '').trim(),
-    ...normalizeLongEventPatchFields(patch),
-    updated_at: now
-  }));
+  const failed = [];
+  let updated = 0;
 
-  let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
-  if (error && isMissingColumnError(error)) {
-    const stripped = rows.map(row => {
-      const next = { ...row };
-      stripOptionalRiderColumns(next);
-      return next;
-    });
-    ({ error } = await supabase.from('riders').upsert(stripped, { onConflict: 'id' }));
+  for (const patch of list) {
+    const riderId = String(patch.id || '').trim();
+    const result = await patchRiderLongEventFields(supabase, riderId, patch);
+    if (!result.ok) {
+      failed.push({ id: riderId, error: result.error || '저장 실패' });
+      continue;
+    }
+    updated += 1;
   }
 
-  if (error) {
+  if (failed.length && failed.length === list.length) {
     return {
       ok: false,
       status: 400,
-      error: error.message || '장기근속 이벤트 일괄 저장에 실패했습니다.',
-      failed: list.map(patch => ({
-        id: String(patch.id || ''),
-        error: error.message || '저장 실패'
-      })),
+      error: failed[0].error || '장기근속 이벤트 일괄 저장에 실패했습니다.',
+      failed,
       updated: 0
     };
   }
 
-  const mapPatches = list.filter(patch => normalizeLongEventPatchFields(patch).long_event_item_id !== undefined);
-  if (mapPatches.length) {
-    const mapResult = await readLongEventItemsMap(supabase);
-    if (!mapResult.ok) {
-      return { ok: false, status: 500, error: mapResult.error };
-    }
-    mapPatches.forEach(patch => {
-      const riderId = String(patch.id || '').trim();
-      const itemId = normalizeLongEventPatchFields(patch).long_event_item_id;
-      if (itemId) mapResult.map[riderId] = itemId;
-      else delete mapResult.map[riderId];
-    });
-    const writeResult = await writeLongEventItemsMap(supabase, mapResult.map);
-    if (!writeResult.ok) {
-      return { ok: false, status: 500, error: writeResult.error };
-    }
-  }
-
   return {
     ok: true,
-    updated: rows.length,
-    failed: [],
+    updated,
+    failed,
     total: list.length
   };
 }
@@ -834,40 +836,33 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   }
 
   const supabase = getServiceClient();
-  const now = new Date().toISOString();
-  const rows = list.map(patch => ({
-    id: String(patch.id || '').trim(),
-    ...normalizeMissionPatchFields(patch),
-    updated_at: now
-  }));
+  const failed = [];
+  let updated = 0;
 
-  let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
-  if (error && isMissingColumnError(error)) {
-    const stripped = rows.map(row => {
-      const next = { ...row };
-      stripOptionalRiderColumns(next);
-      return next;
-    });
-    ({ error } = await supabase.from('riders').upsert(stripped, { onConflict: 'id' }));
+  for (const patch of list) {
+    const riderId = String(patch.id || '').trim();
+    const result = await patchRiderMissionFields(supabase, riderId, patch);
+    if (!result.ok) {
+      failed.push({ id: riderId, error: result.error || '저장 실패' });
+      continue;
+    }
+    updated += 1;
   }
 
-  if (error) {
+  if (failed.length && failed.length === list.length) {
     return {
       ok: false,
       status: 400,
-      error: error.message || '미션 일괄 저장에 실패했습니다.',
-      failed: list.map(patch => ({
-        id: String(patch.id || ''),
-        error: error.message || '저장 실패'
-      })),
+      error: failed[0].error || '미션 일괄 저장에 실패했습니다.',
+      failed,
       updated: 0
     };
   }
 
   return {
     ok: true,
-    updated: rows.length,
-    failed: [],
+    updated,
+    failed,
     total: list.length
   };
 }

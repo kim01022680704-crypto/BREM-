@@ -31,8 +31,8 @@ window.BremSupabaseMapper = (function () {
     return {
       id: String(driver.id || ''),
       auth_user_id: driver.authUserId || null,
-      name: driver.name,
-      phone: driver.phone,
+      name: String(driver.name || '').trim(),
+      phone: String(driver.phone || '').trim(),
       resident_number: String(driver.residentNumber || ''),
       bank_name: String(driver.bankName || ''),
       account_holder: String(driver.accountHolder || ''),
