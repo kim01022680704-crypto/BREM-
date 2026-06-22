@@ -4736,7 +4736,27 @@ const BremStorage = (function () {
     },
 
     removeById(id) {
-      storageAdapter.write(KEYS.targets, targets.getAll().filter(item => item.id !== id));
+      const targetId = String(id || '').trim();
+      const list = targets.getAll().filter(item => item.id !== targetId);
+      if (activeStorageAdapter.stage) {
+        activeStorageAdapter.stage(KEYS.targets, list);
+        window.BremDataCache?.set?.(KEYS.targets, list, { source: 'write', tableLoaded: true });
+      }
+      return list;
+    },
+
+    async removeByIdAsync(id) {
+      const targetId = String(id || '').trim();
+      if (!targetId) return targets.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminTargetsByIds) {
+        await activeStorageAdapter.deleteAdminTargetsByIds([targetId]);
+      } else {
+        storageAdapter.write(KEYS.targets, targets.getAll());
+        await storageAdapter.flush?.();
+      }
+
+      return targets.getAll();
     },
 
     getMonthlyCount(driverId, month) {
@@ -4777,7 +4797,27 @@ const BremStorage = (function () {
     },
 
     removeById(id) {
-      storageAdapter.write(KEYS.weeklyTargets, weeklyTargets.getAll().filter(item => item.id !== id));
+      const targetId = String(id || '').trim();
+      const list = weeklyTargets.getAll().filter(item => item.id !== targetId);
+      if (activeStorageAdapter.stage) {
+        activeStorageAdapter.stage(KEYS.weeklyTargets, list);
+        window.BremDataCache?.set?.(KEYS.weeklyTargets, list, { source: 'write' });
+      }
+      return list;
+    },
+
+    async removeByIdAsync(id) {
+      const targetId = String(id || '').trim();
+      if (!targetId) return weeklyTargets.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteWeeklyTargetsByIds) {
+        await activeStorageAdapter.deleteWeeklyTargetsByIds([targetId]);
+      } else {
+        storageAdapter.write(KEYS.weeklyTargets, weeklyTargets.getAll());
+        await storageAdapter.flush?.();
+      }
+
+      return weeklyTargets.getAll();
     },
 
     getCount(driverId, weekStart) {

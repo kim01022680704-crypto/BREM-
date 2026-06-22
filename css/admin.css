@@ -1777,6 +1777,105 @@ input[type="month"].admin-period-input {
   min-width: 132px;
 }
 
+/* PC 목표 콜수 현황 — 컴팩트 테이블 */
+@media (min-width: 431px) {
+  #targets .targets-status-scroll {
+    max-height: min(42vh, 420px);
+  }
+
+  #targets .targets-weekly-status-scroll {
+    max-height: min(48vh, 480px);
+  }
+
+  #targets .targets-status-scroll table {
+    min-width: 640px;
+    table-layout: fixed;
+  }
+
+  #targets .targets-status-scroll th,
+  #targets .targets-status-scroll td {
+    padding: 7px 8px;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    vertical-align: middle;
+  }
+
+  #targets .targets-status-scroll th:nth-child(1),
+  #targets .targets-status-scroll td:nth-child(1) {
+    width: 12%;
+  }
+
+  #targets .targets-status-scroll th:nth-child(2),
+  #targets .targets-status-scroll td:nth-child(2) {
+    width: 18%;
+  }
+
+  #targets .targets-status-scroll th:nth-child(3),
+  #targets .targets-status-scroll td:nth-child(3),
+  #targets .targets-status-scroll th:nth-child(4),
+  #targets .targets-status-scroll td:nth-child(4),
+  #targets .targets-status-scroll th:nth-child(5),
+  #targets .targets-status-scroll td:nth-child(5) {
+    width: 11%;
+  }
+
+  #targets .targets-status-scroll th:nth-child(6),
+  #targets .targets-status-scroll td:nth-child(6) {
+    width: 15%;
+  }
+
+  #targets .target-count-cell {
+    min-width: 0;
+    width: auto;
+  }
+
+  #targets .target-week-cell {
+    min-width: 0;
+    width: auto;
+  }
+
+  #targets .inline-week-picker-trigger {
+    min-height: 30px;
+    padding: 4px 8px;
+    margin-bottom: 4px;
+    font-size: 0.78rem;
+  }
+
+  #targets .inline-week-range {
+    padding: 3px 6px;
+    font-size: 0.74rem;
+    line-height: 1.25;
+  }
+
+  #targets .inline-target-input {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 30px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+  }
+
+  #targets .target-action-cell {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    min-width: 0;
+    width: auto;
+  }
+
+  #targets .target-action-cell .small-btn {
+    min-width: 0;
+    padding: 5px 8px;
+    border-radius: 8px;
+    font-size: 0.74rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+}
+
 .week-nav-date-field,
 .period-label-block {
   display: grid;

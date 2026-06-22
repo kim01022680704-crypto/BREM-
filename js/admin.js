@@ -4786,6 +4786,11 @@
         BremStorage.targets.removeById(targetButton.dataset.deleteTarget);
         showToast('월간 목표가 삭제되었습니다.');
         renderAll();
+        void BremStorage.targets.removeByIdAsync(targetButton.dataset.deleteTarget).catch(error => {
+          console.error('[BREM] monthly target delete failed:', error);
+          showToast(error.message || '월간 목표 삭제 저장에 실패했습니다.');
+          renderAll();
+        });
         return;
       }
 
@@ -4832,16 +4837,24 @@
           return;
         }
 
-        if (newWeekStart !== target.weekStart) {
-          BremStorage.weeklyTargets.removeById(target.id);
-        }
-        BremStorage.weeklyTargets.upsert({
-          driverId: target.driverId,
-          weekStart: newWeekStart,
-          count
-        });
-        showToast('주간 목표가 수정되었습니다.');
-        renderAll();
+        void (async () => {
+          try {
+            if (newWeekStart !== target.weekStart) {
+              await BremStorage.weeklyTargets.removeByIdAsync(target.id);
+            }
+            await BremStorage.weeklyTargets.upsert({
+              driverId: target.driverId,
+              weekStart: newWeekStart,
+              count
+            });
+            showToast('주간 목표가 수정되었습니다.');
+            renderAll();
+          } catch (error) {
+            console.error('[BREM] weekly target save failed:', error);
+            showToast(error.message || '주간 목표 저장에 실패했습니다.');
+            renderAll();
+          }
+        })();
         return;
       }
 
@@ -4850,6 +4863,12 @@
         BremStorage.weeklyTargets.removeById(weeklyTargetButton.dataset.deleteWeeklyTarget);
         showToast('주간 목표가 삭제되었습니다.');
         renderAll();
+        void BremStorage.weeklyTargets.removeByIdAsync(weeklyTargetButton.dataset.deleteWeeklyTarget).catch(error => {
+          console.error('[BREM] weekly target delete failed:', error);
+          showToast(error.message || '주간 목표 삭제 저장에 실패했습니다.');
+          renderAll();
+        });
+        return;
       }
 
       const eventItemButton = event.target.closest('[data-delete-event-item]');

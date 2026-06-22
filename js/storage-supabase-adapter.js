@@ -554,6 +554,31 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
+    async function deleteAdminTargetsByIds(ids = []) {
+      const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+      if (!targetIds.length) return;
+      if (!(await probeTable('admin_targets'))) return;
+
+      const drop = new Set(targetIds);
+      const list = getCache(keys.targets, []).filter(item => !drop.has(item.id));
+      stage(keys.targets, list);
+      window.BremDataCache?.set?.(keys.targets, list, { source: 'write', tableLoaded: true });
+
+      await deleteRowsInChunks('admin_targets', targetIds);
+    }
+
+    async function deleteWeeklyTargetsByIds(ids = []) {
+      const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+      if (!targetIds.length) return;
+
+      const drop = new Set(targetIds);
+      const list = getCache(keys.weeklyTargets, []).filter(item => !drop.has(item.id));
+      stage(keys.weeklyTargets, list);
+      window.BremDataCache?.set?.(keys.weeklyTargets, list, { source: 'write' });
+
+      await persistSetting(keys.weeklyTargets, list);
+    }
+
     async function deleteAdminCallsByIds(ids = []) {
       const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
       if (!targetIds.length) return;
@@ -1229,6 +1254,8 @@ window.BremSupabaseStorageAdapter = (function () {
       deleteAdminCallsByIds,
       deleteDailySettlementsByIds,
       deleteAdminRejectionRatesByIds,
+      deleteAdminTargetsByIds,
+      deleteWeeklyTargetsByIds,
       flush() {
         return persistQueue;
       },
