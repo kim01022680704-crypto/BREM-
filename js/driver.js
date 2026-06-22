@@ -228,6 +228,66 @@
     notice.hidden = false;
     readyEl.hidden = false;
     label.textContent = text;
+    const refreshBtn = document.getElementById('riderPublishRefreshBtn');
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+
+  async function checkDriverPublishUpdateIfNeeded(options = {}) {
+    if (!isDriverProductionMode() || !state.currentDriver?.id) return null;
+    if (driverDashboardLoading || riderPublishCheckInFlight) return null;
+
+    riderPublishCheckInFlight = true;
+    const refreshBtn = document.getElementById('riderPublishRefreshBtn');
+    if (refreshBtn && options.force) refreshBtn.disabled = true;
+
+    try {
+      const result = await BremStorage.checkDriverAppPublishUpdate?.({
+        riderId: state.currentDriver.id,
+        force: Boolean(options.force)
+      });
+
+      if (result?.refreshed) {
+        refreshDriverDashboard(BremStorage.drivers.getById(state.currentDriver.id) || state.currentDriver);
+        renderRiderPublishNotice({ publishedAt: result.publishedAt || null });
+        if (options.toast) {
+          showToast('최신 반영 데이터를 불러왔습니다.');
+        }
+      } else if (options.force && result?.ok) {
+        renderRiderPublishNotice({ publishedAt: BremStorage.getDriverAppPublishedAt?.() || null });
+        if (options.toast) {
+          showToast('이미 최신 데이터입니다.');
+        }
+      }
+
+      return result;
+    } catch (error) {
+      if (options.force) {
+        showToast(error.message || '최신 반영을 불러오지 못했습니다.');
+      }
+      return null;
+    } finally {
+      riderPublishCheckInFlight = false;
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
+
+  function startRiderPublishPolling() {
+    stopRiderPublishPolling();
+    if (!isDriverProductionMode()) return;
+    riderPublishPollTimer = window.setInterval(() => {
+      void checkDriverPublishUpdateIfNeeded();
+    }, RIDER_PUBLISH_POLL_MS);
+  }
+
+  function stopRiderPublishPolling() {
+    if (riderPublishPollTimer) {
+      window.clearInterval(riderPublishPollTimer);
+      riderPublishPollTimer = null;
+    }
+    if (riderPublishVisibilityTimer) {
+      window.clearTimeout(riderPublishVisibilityTimer);
+      riderPublishVisibilityTimer = null;
+    }
   }
 
   function weeklyRateForPlatform(driverId, weekStart, platform) {
@@ -539,6 +599,10 @@
   }
 
   let driverDataLoadPromise = null;
+  const RIDER_PUBLISH_POLL_MS = 30 * 60 * 1000;
+  let riderPublishPollTimer = null;
+  let riderPublishVisibilityTimer = null;
+  let riderPublishCheckInFlight = false;
 
   function refreshDriverDashboard(driver) {
     if (!driver?.id || state.currentDriver?.id !== driver.id) return;
@@ -1114,6 +1178,7 @@
   });
 
   logoutBtn.addEventListener('click', () => {
+    stopRiderPublishPolling();
     logoutDriver();
   });
 
@@ -1206,6 +1271,18 @@
   document.getElementById('prevWeekBtn').addEventListener('click', () => shiftSelectedWeek(-7));
   document.getElementById('nextWeekBtn').addEventListener('click', () => shiftSelectedWeek(7));
 
+  document.getElementById('riderPublishRefreshBtn')?.addEventListener('click', () => {
+    void checkDriverPublishUpdateIfNeeded({ force: true, toast: true });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    window.clearTimeout(riderPublishVisibilityTimer);
+    riderPublishVisibilityTimer = window.setTimeout(() => {
+      void checkDriverPublishUpdateIfNeeded();
+    }, 800);
+  });
+
   document.addEventListener('brem-driver-data-ready', () => {
     invalidateDriverCallIndex();
     if (state.currentDriver) {
@@ -1258,9 +1335,11 @@
 
     if (savedDriver) {
       showLoggedIn(savedDriver);
+      startRiderPublishPolling();
       void loadDriverAppDataThenRender(savedDriver, { refreshProfile: false });
     } else if (isProduction && (driverSessionId || BremStorage.auth.isDriverLoggedIn?.())) {
       showLoggedIn({ id: driverSessionId, name: '기사', phone: '' });
+      startRiderPublishPolling();
       void loadDriverAppDataThenRender({ id: driverSessionId }, { refreshProfile: false })
         .then(result => {
           const rider = result?.rider || BremStorage.drivers.getById(driverSessionId);

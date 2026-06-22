@@ -152,6 +152,33 @@ h3 {
   color: #ffb4b4;
 }
 
+.rider-publish-hint {
+  display: inline-block;
+  margin-left: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.78rem;
+}
+
+.rider-publish-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 214, 0, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 214, 0, 0.14);
+  color: var(--yellow);
+  font-size: 0.78rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.rider-publish-refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .logout-btn {
   flex-shrink: 0;
   min-height: 42px;

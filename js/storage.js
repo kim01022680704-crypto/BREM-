@@ -2256,6 +2256,78 @@ const BremStorage = (function () {
       .reverse()[0] || null;
   }
 
+  function isPublishTimestampNewer(remoteAt, localAt) {
+    if (!remoteAt) return false;
+    if (!localAt) return true;
+    const remoteMs = Date.parse(remoteAt);
+    const localMs = Date.parse(localAt);
+    if (Number.isFinite(remoteMs) && Number.isFinite(localMs)) {
+      return remoteMs > localMs;
+    }
+    return String(remoteAt) > String(localAt);
+  }
+
+  async function fetchRiderPublishStatus() {
+    if (!isProductionMode() || !isRiderProductionSession()) {
+      const meta = riderViewPublish.getMeta?.() || {};
+      return { ok: true, publishedAt: meta.publishedAt || null };
+    }
+    return riderApiFetch('/api/rider/publish-status', 'publish-status');
+  }
+
+  async function checkDriverAppPublishUpdate(options = {}) {
+    const riderId = String(
+      options.riderId
+      || activeSupabaseProfile?.rider_id
+      || sessionAdapter.read(SESSION_KEYS.driverId, '')
+    ).trim();
+    if (!riderId) {
+      return { ok: false, refreshed: false, message: '기사 정보가 없습니다.' };
+    }
+
+    if (options.force) {
+      invalidateDriverAppCache(riderId);
+      const result = await loadDriverAppBundle({
+        force: true,
+        riderId,
+        skipPublishCheck: true
+      });
+      return {
+        ok: Boolean(result?.ok),
+        refreshed: true,
+        publishedAt: getDriverAppPublishedAt(),
+        result
+      };
+    }
+
+    const status = await fetchRiderPublishStatus();
+    if (!status.ok) {
+      return {
+        ok: false,
+        refreshed: false,
+        message: status.message || status.error || '반영 시각 확인에 실패했습니다.'
+      };
+    }
+
+    const localAt = getDriverAppPublishedAt();
+    if (!isPublishTimestampNewer(status.publishedAt, localAt)) {
+      return { ok: true, refreshed: false, publishedAt: localAt };
+    }
+
+    invalidateDriverAppCache(riderId);
+    const result = await loadDriverAppBundle({
+      force: true,
+      riderId,
+      skipPublishCheck: true
+    });
+    return {
+      ok: Boolean(result?.ok),
+      refreshed: true,
+      publishedAt: getDriverAppPublishedAt(),
+      result
+    };
+  }
+
   function invalidateDriverAppCache(riderId) {
     window.BremDriverDataCache?.invalidate?.(riderId);
     lastDriverAppPublishedAt = null;
@@ -2295,6 +2367,18 @@ const BremStorage = (function () {
       const noticesCached = !force && riderId ? cache?.read?.(riderId, 'notices') : null;
 
       if (snapshotCached && liveCached && noticesCached) {
+        if (!options.skipPublishCheck && !force) {
+          const status = await fetchRiderPublishStatus();
+          if (status.ok && isPublishTimestampNewer(status.publishedAt, getDriverAppPublishedAt())) {
+            invalidateDriverAppCache(riderId);
+            return loadDriverAppBundle({
+              ...options,
+              force: true,
+              skipPublishCheck: true
+            });
+          }
+        }
+
         console.info('[BREM:data] driver snapshot: cache hit');
         console.info('[BREM:data] driver live: cache hit');
         console.info('[BREM:data] driver notices: cache hit');
@@ -8950,6 +9034,8 @@ const BremStorage = (function () {
     fetchRiderDashboardFromServer,
     loadDriverAppBundle,
     getDriverAppPublishedAt,
+    fetchRiderPublishStatus,
+    checkDriverAppPublishUpdate,
     invalidateDriverAppCache,
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,

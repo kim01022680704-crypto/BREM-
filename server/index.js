@@ -267,6 +267,23 @@ app.get('/api/rider/snapshot', async (req, res) => {
   }
 });
 
+app.get('/api/rider/publish-status', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderPublishStatus(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      publishedAt: result.publishedAt,
+      updatedAt: result.updatedAt
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '반영 시각을 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/rider/live', async (req, res) => {
   try {
     const result = await riderAuth.getRiderLive(getBearerToken(req));
