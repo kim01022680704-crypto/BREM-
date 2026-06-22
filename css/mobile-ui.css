@@ -1138,6 +1138,205 @@
     text-align: left;
   }
 
+  .drivers-page .drivers-header__db {
+    display: block;
+  }
+
+  .drivers-page .drivers-header__db .db-status {
+    width: 100%;
+    min-height: 0;
+    padding: 7px 10px;
+    white-space: normal;
+    line-height: 1.35;
+    font-size: 0.68rem;
+    border-radius: 10px;
+  }
+
+  .drivers-page .drivers-header__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  .drivers-page .drivers-header__count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  .drivers-page .drivers-header__count strong {
+    margin-left: 4px;
+    font-size: 0.88rem;
+  }
+
+  .drivers-page .drivers-header__quick {
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 0.74rem;
+  }
+
+  .drivers-page .drivers-header__menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 52px;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 212, 0, 0.35);
+    border-radius: 10px;
+    color: var(--yellow);
+    background: rgba(255, 212, 0, 0.12);
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .drivers-page .drivers-header__status {
+    display: none;
+  }
+
+  .drivers-page .drivers-mobile-nav {
+    display: none !important;
+  }
+
+  .drivers-page .index-content {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .drivers-page .index-layout {
+    min-height: 0;
+  }
+
+  .drivers-page .layout.layout--page {
+    flex: none;
+    min-height: auto;
+  }
+
+  .drivers-page .list-panel.list-panel--scrollable {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .drivers-page .driver-list-scroll {
+    flex: none;
+    min-height: auto;
+    max-height: none !important;
+    overflow: visible;
+    padding: 0 8px 12px;
+  }
+
+  .drivers-page .list-scroll-note {
+    display: block !important;
+    padding: 8px 12px 10px;
+    text-align: left;
+    font-size: 0.72rem;
+  }
+
+  .drivers-page .list-header__tools {
+    display: grid;
+    grid-template-columns: 1fr 96px;
+    gap: 8px;
+  }
+
+  .drivers-page .filters--compact {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .drivers-page .filters--compact #mergeAutoBtn,
+  .drivers-page .filters--compact #exportExcelBtn,
+  .drivers-page .filters--compact #deleteAllDriversBtn,
+  .drivers-page .filters--compact #bulkDeleteBtn {
+    display: none;
+  }
+
+  .register-page .register-top--desktop {
+    display: none;
+  }
+
+  .register-page .register-form-subtitle,
+  .register-page .register-note--desktop,
+  .register-page .form-note--login .form-note-sub {
+    display: none;
+  }
+
+  .register-page .panel-header--register h2 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  .register-page .panel-header--register {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .register-page .form-section--optional {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0 12px 12px;
+    margin-bottom: 10px;
+    background: #fafbfc;
+  }
+
+  .register-page .form-section--optional > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 0;
+    font-size: 0.92rem;
+    font-weight: 800;
+  }
+
+  .register-page .form-section--optional > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .register-page .form-section--optional > summary::after {
+    content: '▼';
+    float: right;
+    font-size: 0.68rem;
+    color: #64748b;
+  }
+
+  .register-page .form-section--optional[open] > summary::after {
+    content: '▲';
+  }
+
+  .register-page .form-section-title {
+    font-size: 0.92rem;
+    margin-bottom: 8px;
+  }
+
+  .register-page .form-section {
+    margin-bottom: 10px;
+  }
+
+  .register-page .form-note {
+    font-size: 0.78rem;
+    margin-top: 6px;
+  }
+
+  .register-page .form-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    margin: 0 -12px -12px;
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid var(--border);
+    backdrop-filter: blur(6px);
+  }
+
+  .register-page .driver-form--register {
+    padding: 0 12px 12px;
+  }
+
   /* ── Drivers program (drivers.html / rider-manage) ── */
   .drivers-page .index-layout {
     grid-template-columns: 1fr;
@@ -1174,22 +1373,6 @@
     display: none !important;
   }
 
-  .drivers-page .drivers-header__menu {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    min-width: 52px;
-    min-height: 40px;
-    padding: 0 12px;
-    border: 1px solid rgba(255, 212, 0, 0.35);
-    border-radius: 10px;
-    color: var(--yellow);
-    background: rgba(255, 212, 0, 0.12);
-    font-size: 0.78rem;
-    font-weight: 800;
-  }
-
   .drivers-page .site-header.drivers-header {
     flex-direction: column;
     align-items: stretch;
@@ -1217,62 +1400,6 @@
     font-size: 1.02rem;
   }
 
-  .drivers-page .drivers-header__status {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-    align-items: stretch;
-  }
-
-  .drivers-page .drivers-header__status .db-status {
-    min-height: 0;
-    padding: 8px 10px;
-    white-space: normal;
-    line-height: 1.35;
-    font-size: 0.68rem;
-    border-radius: 10px;
-  }
-
-  .drivers-page .drivers-header__count {
-    justify-content: center;
-    padding: 8px 10px;
-    font-size: 0.72rem;
-    white-space: nowrap;
-  }
-
-  .drivers-page .drivers-mobile-nav {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .drivers-page .drivers-mobile-nav__link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 40px;
-    padding: 8px 6px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.82);
-    background: rgba(255, 255, 255, 0.05);
-    font-size: 0.74rem;
-    font-weight: 800;
-    text-decoration: none;
-    text-align: center;
-    line-height: 1.25;
-  }
-
-  .drivers-page .drivers-mobile-nav__link.active {
-    color: var(--black);
-    background: var(--yellow);
-    border-color: var(--yellow);
-  }
-
-  .drivers-page .drivers-mobile-nav__link--admin {
-    font-size: 0.72rem;
-  }
-
   .drivers-page .list-panel {
     border-radius: 14px;
   }
@@ -1282,12 +1409,6 @@
     align-items: stretch;
     gap: 8px;
     padding: 10px 12px;
-  }
-
-  .drivers-page .list-header__tools {
-    display: grid;
-    grid-template-columns: 1fr 108px;
-    gap: 8px;
   }
 
   .drivers-page .list-header__tools .search-field,
@@ -1300,12 +1421,6 @@
     width: 100%;
     min-height: 40px;
     font-size: 16px;
-  }
-
-  .drivers-page .filters--compact {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
   }
 
   .drivers-page .filters--compact .btn {
@@ -1329,11 +1444,6 @@
   .drivers-page #listSelectionBar .btn {
     width: 100%;
     min-height: 40px;
-  }
-
-  .drivers-page .driver-list-scroll {
-    max-height: none;
-    padding: 0 8px 8px;
   }
 
   .drivers-page .driver-card {

@@ -233,6 +233,30 @@ button {
   gap: 8px;
 }
 
+.drivers-header__db {
+  display: none;
+}
+
+.drivers-header__actions {
+  display: none;
+}
+
+.drivers-header__quick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 212, 0, 0.35);
+  color: var(--yellow);
+  background: rgba(255, 212, 0, 0.1);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .drivers-header__count {
   display: inline-flex;
   align-items: center;
@@ -300,6 +324,16 @@ button {
   color: #fca5a5;
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.1);
+}
+
+@media (min-width: 431px) and (max-width: 900px) {
+  .drivers-page .table-wrap.list-table-scroll {
+    display: block !important;
+  }
+
+  .drivers-page .mobile-list {
+    display: none !important;
+  }
 }
 
 .db-status {

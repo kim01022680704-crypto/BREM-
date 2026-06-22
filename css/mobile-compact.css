@@ -510,7 +510,7 @@
   }
 
   .drivers-page .driver-list-scroll {
-    max-height: min(68vh, calc(100dvh - 160px));
+    max-height: none !important;
   }
 
   .drivers-page .list-pagination {

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="css/style.css?v=20260622a">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
-  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623z">
+  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623aa">
 </head>
 <body class="register-page drivers-page">
   <div class="app index-app">
@@ -44,19 +44,17 @@
           <p class="eyebrow">BREM 기사등록</p>
           <h1>기사 등록</h1>
         </div>
+      </div>
+      <div class="drivers-header__db">
+        <span class="db-status db-status--sm db-status--pending" id="driverDbStatus" aria-live="polite">DB: 확인 중…</span>
+      </div>
+      <div class="drivers-header__actions">
+        <span class="drivers-header__count">등록 <strong id="driverTotal">0명</strong></span>
+        <a class="drivers-header__quick" href="drivers.html">기사 목록</a>
         <button type="button" class="drivers-header__menu" id="indexMenuBtn" aria-controls="indexSidebar">메뉴</button>
       </div>
-      <div class="drivers-header__status">
-        <span class="db-status db-status--sm db-status--pending" id="driverDbStatus" aria-live="polite">DB: 확인 중…</span>
-        <span class="drivers-header__count">등록 <strong id="driverTotal">0명</strong></span>
-      </div>
-      <nav class="drivers-mobile-nav" aria-label="기사 프로그램 메뉴">
-        <a class="drivers-mobile-nav__link" href="drivers.html">기사 목록</a>
-        <a class="drivers-mobile-nav__link active" href="rider-manage.html?register=1" aria-current="page">기사 등록</a>
-        <a class="drivers-mobile-nav__link drivers-mobile-nav__link--admin" href="admin.html">관리자</a>
-      </nav>
     </header>
-    <div class="register-top">
+    <div class="register-top register-top--desktop">
       <div class="register-toolbar">
         <a class="register-toolbar-link" href="admin.html">전체 관리자 화면</a>
         <div class="register-toolbar-actions">
@@ -72,7 +70,7 @@
         <div class="panel-header panel-header--register">
           <div>
             <h2 id="formTitle">기사 등록</h2>
-            <p id="formSubtitle">기사 기본 정보를 입력하고 저장하세요.</p>
+            <p id="formSubtitle" class="register-form-subtitle">기사 기본 정보를 입력하고 저장하세요.</p>
           </div>
           <div class="form-mode-tabs" role="tablist" aria-label="등록 방식">
             <button type="button" class="form-mode-tab active" role="tab" aria-selected="true" data-mode="single" id="tabSingle">개별 등록</button>
@@ -133,8 +131,8 @@
             </p>
           </section>
 
-          <section class="form-section">
-            <h3 class="form-section-title">계좌 정보</h3>
+          <details class="form-section form-section--optional">
+            <summary class="form-section-title">계좌 정보 (선택)</summary>
             <div class="form-grid form-grid--aligned">
               <label class="field">
                 <span class="field-label">은행명</span>
@@ -155,8 +153,8 @@
                 </div>
               </label>
             </div>
-            <p class="form-note form-note--subtle">은행명·예금주·계좌번호는 선택 입력입니다. 가리기는 기사 전용·기사 목록에만 적용되며, index에서는 항상 확인·수정할 수 있습니다.</p>
-          </section>
+            <p class="form-note form-note--subtle register-note--desktop">은행명·예금주·계좌번호는 선택 입력입니다. 가리기는 기사 전용·기사 목록에만 적용되며, index에서는 항상 확인·수정할 수 있습니다.</p>
+          </details>
 
           <section class="form-section">
             <h3 class="form-section-title">플랫폼 설정</h3>
@@ -178,11 +176,11 @@
                 </label>
               </div>
             </div>
-            <p class="form-note form-note--subtle">배민 아이디 입력 시 쿠팡·배민이 자동 선택됩니다. 필요하면 체크를 직접 변경할 수 있습니다. 미션은 관리자 ERP &gt; 미션 관리에서 배정합니다.</p>
+            <p class="form-note form-note--subtle register-note--desktop">배민 아이디 입력 시 쿠팡·배민이 자동 선택됩니다. 필요하면 체크를 직접 변경할 수 있습니다. 미션은 관리자 ERP &gt; 미션 관리에서 배정합니다.</p>
           </section>
 
-          <section class="form-section">
-            <h3 class="form-section-title">장기근속 이벤트</h3>
+          <details class="form-section form-section--optional">
+            <summary class="form-section-title">장기근속 이벤트 (선택)</summary>
             <div class="form-grid form-grid--aligned">
               <label class="field">
                 <span class="field-label">이벤트 아이템</span>
@@ -197,7 +195,7 @@
                 <input type="hidden" id="driverEventStartDate">
               </label>
             </div>
-          </section>
+          </details>
 
           <section class="form-section">
             <h3 class="form-section-title">메모</h3>

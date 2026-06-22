@@ -94,8 +94,10 @@
     )).join('\n');
   }
 
+  const MOBILE_LIST_MQ = window.matchMedia('(max-width: 430px)');
+
   function isMobileView() {
-    return window.matchMedia('(max-width: 720px)').matches;
+    return MOBILE_LIST_MQ.matches;
   }
 
   function canUseFastFilter() {
@@ -154,6 +156,9 @@
 
   function scrollListToTop() {
     if (listScroll) listScroll.scrollTop = 0;
+    if (isMobileView()) {
+      listScroll?.scrollIntoView?.({ block: 'start', behavior: 'instant' });
+    }
   }
 
   function renderListCount(filteredCount, totalCount) {
@@ -449,10 +454,12 @@
 
   function showLoadingSkeleton() {
     tableBody.closest('.table-wrap')?.classList.add('is-loading');
-    mobileList.classList.add('is-loading');
+    mobileList?.classList.add('is-loading');
     const skeletonRow = '<tr class="skeleton-row"><td colspan="12"><span class="skeleton-bar"></span></td></tr>';
     tableBody.innerHTML = skeletonRow.repeat(5);
-    mobileList.innerHTML = '<article class="driver-card skeleton-card"><span class="skeleton-bar"></span></article>'.repeat(3);
+    if (mobileList) {
+      mobileList.innerHTML = '<article class="driver-card skeleton-card"><span class="skeleton-bar"></span></article>'.repeat(3);
+    }
     if (listCountEl) listCountEl.hidden = true;
   }
 
@@ -870,9 +877,20 @@
     if (bulkDeleteBtnBar) bulkDeleteBtnBar.addEventListener('click', deleteSelected);
     if (selectAllInput) selectAllInput.addEventListener('change', handleSelectAll);
     tableBody.addEventListener('change', handleSelectionChange);
-    mobileList.addEventListener('change', handleSelectionChange);
     tableBody.addEventListener('click', handleListClick);
-    mobileList.addEventListener('click', handleListClick);
+    if (mobileList) {
+      mobileList.addEventListener('change', handleSelectionChange);
+      mobileList.addEventListener('click', handleListClick);
+    }
+    const handleMobileViewChange = () => {
+      renderedSnapshot = '';
+      scheduleRender();
+    };
+    if (MOBILE_LIST_MQ.addEventListener) {
+      MOBILE_LIST_MQ.addEventListener('change', handleMobileViewChange);
+    } else if (MOBILE_LIST_MQ.addListener) {
+      MOBILE_LIST_MQ.addListener(handleMobileViewChange);
+    }
     document.addEventListener('brem-storage-ready', () => {
       if (BremStorage.drivers.getAll().length) {
         renderedSnapshot = '';
