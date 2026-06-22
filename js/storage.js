@@ -6108,6 +6108,7 @@ const BremStorage = (function () {
       : { base: {}, blockConditions: [], bonusConditions: [], referenceConditions: [] };
     const platform = normalizePlatform(rule.platform);
     const base = migrated.base;
+    const source = String(rule.source || rule.payload?.source || '').trim();
 
     return {
       id: rule.id || createId(),
@@ -6134,9 +6135,37 @@ const BremStorage = (function () {
       allowDuplicate: Boolean(rule.allowDuplicate),
       duplicateStrategy: rule.duplicateStrategy || 'highest_priority',
       noPayConditions: String(rule.noPayConditions || '').trim(),
+      source,
+      isBuiltin: rule.isBuiltin === true || rule.payload?.isBuiltin === true,
       createdAt: rule.createdAt || new Date().toISOString(),
       updatedAt: rule.updatedAt || new Date().toISOString()
     };
+  }
+
+  const BUILTIN_PROMOTION_RULE_NAMES = new Set([
+    '합산 공통 프로모션',
+    '배민 141건 프로모션 (예시)',
+    '쿠팡 기본 프로모션 (예시)',
+    '단가보장제 (예시)'
+  ]);
+
+  function isBuiltinPromotionRule(rule) {
+    if (!rule) return false;
+    if (rule.source === 'user') return false;
+    if (rule.isBuiltin === true) return true;
+    if (rule.source === 'builtin' || rule.source === 'example' || rule.source === 'seed') return true;
+    const name = String(rule.name || '').trim();
+    if (BUILTIN_PROMOTION_RULE_NAMES.has(name)) return true;
+    if (/\(예시\)/i.test(name)) return true;
+    return false;
+  }
+
+  function getUserPromotionRules() {
+    const raw = storageAdapter.readRaw(KEYS.promotionRules);
+    if (!raw.exists) return [];
+    let list = Array.isArray(raw.value) ? raw.value : [];
+    list = patchCombinedPromotionRules(list);
+    return list.map(normalizePromotionRule).filter(rule => !isBuiltinPromotionRule(rule));
   }
 
   function normalizePromotionSettings(raw) {
@@ -6447,6 +6476,7 @@ const BremStorage = (function () {
       const next = normalizePromotionRule({
         ...rule,
         id: createId(),
+        source: 'user',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -8869,6 +8899,8 @@ const BremStorage = (function () {
     settlementUploadLogs,
     missionDefaults,
     promotionRules,
+    isBuiltinPromotionRule,
+    getUserPromotionRules,
     promotionSettings,
     promotionSelectorOptions,
     weeklySettlements,

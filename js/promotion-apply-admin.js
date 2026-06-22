@@ -157,7 +157,7 @@ const BremPromotionApplyAdmin = (function () {
     const container = $(`#promotionApplyRuleList-${platform}`);
     if (!container) return;
 
-    const allForPlatform = BremStorage.promotionRules.getAll()
+    const allForPlatform = (BremStorage.getUserPromotionRules?.() || BremStorage.promotionRules.getAll())
       .filter(rule => BremPlatforms.normalize(rule.platform) === platform);
     const rules = allForPlatform.filter(rule => rule.enabled);
 

@@ -55,7 +55,8 @@ const BremPromotionAdmin = (function () {
   }
 
   function getPromotionRulesForPlatform(platform, { includeDisabled = false } = {}) {
-    return BremStorage.promotionRules.getAll().filter(rule => {
+    const list = BremStorage.getUserPromotionRules?.() || BremStorage.promotionRules.getAll();
+    return list.filter(rule => {
       if (normalizePlatform(rule.platform) !== normalizePlatform(platform)) return false;
       if (!includeDisabled && !rule.enabled) return false;
       return true;
@@ -523,7 +524,7 @@ const BremPromotionAdmin = (function () {
     }
 
     container.hidden = false;
-    const rules = BremStorage.promotionRules.getAll();
+    const rules = BremStorage.getUserPromotionRules?.() || BremStorage.promotionRules.getAll();
     container.innerHTML = rules.map(rule => `
       <label class="promotion-checkbox-field">
         <input type="checkbox" value="${escapeHtml(rule.id)}" data-global-rule-id${state.globalSelectedRuleIds.includes(rule.id) ? ' checked' : ''}>

@@ -48,7 +48,7 @@ window.BremMissionPromotionCatalog = (function () {
   }
 
   function getPromotionRules() {
-    return BremStorage?.promotionRules?.getAll?.() || [];
+    return BremStorage?.getUserPromotionRules?.() || [];
   }
 
   function getAll() {
@@ -63,7 +63,7 @@ window.BremMissionPromotionCatalog = (function () {
     if (!key) return null;
     const rule = BremStorage?.promotionRules?.getById?.(key);
     if (rule) return promotionToMissionItem(rule);
-    return getAll().find(item => item.id === key) || null;
+    return null;
   }
 
   function getForPlatform(platform) {
