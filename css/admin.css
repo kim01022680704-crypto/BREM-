@@ -1788,7 +1788,7 @@ input[type="month"].admin-period-input {
   }
 
   #targets .targets-status-scroll table {
-    min-width: 640px;
+    min-width: 680px;
     table-layout: fixed;
   }
 
@@ -1816,12 +1816,13 @@ input[type="month"].admin-period-input {
   #targets .targets-status-scroll td:nth-child(4),
   #targets .targets-status-scroll th:nth-child(5),
   #targets .targets-status-scroll td:nth-child(5) {
-    width: 11%;
+    width: 10%;
   }
 
   #targets .targets-status-scroll th:nth-child(6),
   #targets .targets-status-scroll td:nth-child(6) {
-    width: 15%;
+    width: 20%;
+    min-width: 128px;
   }
 
   #targets .target-count-cell {
@@ -1861,18 +1862,25 @@ input[type="month"].admin-period-input {
     flex-wrap: nowrap;
     align-items: center;
     justify-content: flex-start;
-    gap: 4px;
-    min-width: 0;
+    gap: 6px;
+    min-width: 116px;
     width: auto;
   }
 
   #targets .target-action-cell .small-btn {
-    min-width: 0;
-    padding: 5px 8px;
-    border-radius: 8px;
-    font-size: 0.74rem;
-    line-height: 1.2;
+    flex: 1 1 0;
+    min-width: 52px;
+    padding: 7px 10px;
+    border-radius: 9px;
+    font-size: 0.82rem;
+    line-height: 1.25;
     white-space: nowrap;
+    text-align: center;
+  }
+
+  #targets .target-action-cell .danger-btn {
+    flex: 1 1 0;
+    min-width: 52px;
   }
 }
 
