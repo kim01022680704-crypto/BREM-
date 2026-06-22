@@ -368,16 +368,24 @@ async function updateRiderProfile(accessToken, body = {}) {
 
   updatePayload.raw_data = raw;
 
-  const { data: updated, error } = await supabase
+  const { error: updateError } = await supabase
     .from('riders')
     .update(updatePayload)
-    .eq('id', rider.id)
-    .select(RIDER_ME_SELECT)
-    .single();
+    .eq('id', rider.id);
 
-  if (error || !updated) {
-    return { ok: false, status: 500, error: error?.message || '기사 정보를 저장하지 못했습니다.' };
+  if (updateError) {
+    return { ok: false, status: 500, error: updateError.message || '기사 정보를 저장하지 못했습니다.' };
   }
+
+  const fetched = await fetchRiderById(supabase, rider.id);
+  if (!fetched.ok || !fetched.rider) {
+    return {
+      ok: false,
+      status: fetched.status || 500,
+      error: fetched.error || '기사 정보를 저장하지 못했습니다.'
+    };
+  }
+  const updated = fetched.rider;
 
   const plainPassword = readRiderSecrets(updated).password;
   const authResult = await ensureRiderAuthAccount(supabase, updated, plainPassword);
