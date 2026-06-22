@@ -75,6 +75,16 @@ const BremPromotionApply = (function () {
     return driver?.name || rider?.driverName || rider?.riderName || '';
   }
 
+  function getResultRowBaeminRiderId(row) {
+    const driver = row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
+    return getBaeminUserId(row, driver) || '-';
+  }
+
+  function getResultRowMatchedDriverName(row) {
+    const driver = row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
+    return String(driver?.name || row?.driverName || '').trim();
+  }
+
   function getResultRowDisplayName(row, platform) {
     const driver = row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
     const displayPlatform = normalizePlatform(platform) === 'combined'
@@ -189,7 +199,8 @@ const BremPromotionApply = (function () {
       statsPlatform
     );
 
-    if (statsPlatform !== 'baemin' || !deliveryFeeIndex) {
+    const useDeliveryFee = options.useDeliveryFee === true;
+    if (statsPlatform !== 'baemin' || !useDeliveryFee || !deliveryFeeIndex) {
       return { stats, feeData: null };
     }
 
@@ -289,8 +300,7 @@ const BremPromotionApply = (function () {
 
     const ruleMode = assignmentMode === 'selected_rules' ? 'selected_rules' : 'per_driver';
     const rule = pickPromotionRule(driver, ruleP, selectedRuleIds, { assignmentMode: ruleMode });
-    const needsDeliveryFee = statsPlatform === 'baemin'
-      && (requireDeliveryFee || ruleUsesGuarantee(rule));
+    const needsDeliveryFee = statsPlatform === 'baemin' && ruleUsesGuarantee(rule);
 
     if (!rule || !rule.enabled || normalizePlatform(rule.platform) !== ruleP) {
       const assignedId = statsPlatform === 'baemin'
@@ -321,7 +331,9 @@ const BremPromotionApply = (function () {
     }
 
     const { stats, feeData } = driver
-      ? resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex)
+      ? resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex, {
+        useDeliveryFee: needsDeliveryFee
+      })
       : { stats: { callCount: 0, deliveryAmount: 0, byDay: {}, uploadDays: 0 }, feeData: null };
 
     if (needsDeliveryFee && !hasValidDeliveryFeeData(feeData)) {
@@ -625,11 +637,13 @@ const BremPromotionApply = (function () {
     ];
     const driverLabel = isCombined
       ? '기사'
-      : (platform === 'coupang' ? '쿠팡 ID' : (platform === 'baemin' ? '배민 User ID' : '기사명'));
+      : (platform === 'coupang' ? '쿠팡 ID' : '기사명');
+    const baeminIdLabel = '배민 RIDER ID';
+    const baeminNameLabel = '매칭 기사명';
     const showDeliveryFee = platform === 'baemin'
       || (isCombined && (record.results || []).some(row => BremPlatforms.normalize(row.appliedPlatform) === 'baemin'));
     const header = [
-      driverLabel,
+      ...(platform === 'baemin' ? [baeminIdLabel, baeminNameLabel] : [driverLabel]),
       ...(isCombined ? ['적용 플랫폼', '구분'] : []),
       '주간 콜수',
       rateLabel,
@@ -649,8 +663,11 @@ const BremPromotionApply = (function () {
     ];
     const dataRows = (record.results || []).map(row => {
       const rowPlatform = isCombined ? normalizePlatform(row.appliedPlatform || 'coupang') : platform;
+      const identityCells = platform === 'baemin'
+        ? [getResultRowBaeminRiderId(row), getResultRowMatchedDriverName(row)]
+        : [getResultRowDisplayName(row, platform)];
       const base = [
-        getResultRowDisplayName(row, platform),
+        ...identityCells,
         ...(isCombined ? [
           BremPlatforms.label(rowPlatform),
           row.assignmentSource || '-'
@@ -759,6 +776,8 @@ const BremPromotionApply = (function () {
     getSettlementOptions,
     getWeekStatsForDriver,
     getResultRowDisplayName,
+    getResultRowBaeminRiderId,
+    getResultRowMatchedDriverName,
     buildSaveRecord,
     saveResult,
     getSavedResults,

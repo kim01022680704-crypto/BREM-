@@ -233,10 +233,6 @@ const BremPromotionConditions = (function () {
       } else if (type === 'accept_rate_under') {
         type = 'reject_rate_over';
         threshold = 100 - threshold;
-      } else if (type === 'reject_rate_under' && threshold > 50) {
-        threshold = 100 - threshold;
-      } else if (type === 'reject_rate_over' && threshold > 50) {
-        threshold = 100 - threshold;
       }
     } else if (p === 'baemin') {
       if (type === 'reject_rate_under') {
@@ -245,10 +241,6 @@ const BremPromotionConditions = (function () {
       } else if (type === 'reject_rate_over') {
         type = 'accept_rate_under';
         threshold = threshold > 50 ? 100 - threshold : threshold;
-      } else if (type === 'accept_rate_under' && threshold > 50) {
-        threshold = 100 - threshold;
-      } else if (type === 'accept_rate_over' && threshold > 50) {
-        threshold = 100 - threshold;
       }
     }
 

@@ -274,20 +274,21 @@ const BremPromotionApplyAdmin = (function () {
 
     const platform = result.platform;
     const isCombinedResult = BremPlatforms.normalize(platform) === 'combined';
+    const isBaeminTab = BremPlatforms.normalize(platform) === 'baemin';
     const showDeliveryFee = resultShowsDeliveryFeeColumns(result);
-    const driverColumnLabel = isCombinedResult
-      ? '기사'
-      : (platform === 'coupang'
-        ? '쿠팡 ID'
-        : (platform === 'baemin' ? '배민 User ID' : '기사'));
     const headEl = $('#promotionApplyResultHead');
     if (headEl) {
       headEl.innerHTML = `
         <tr>
-          <th>${escapeHtml(driverColumnLabel)}</th>
+          ${isBaeminTab ? `
+          <th>배민 RIDER ID</th>
+          <th>매칭 기사명</th>
+          ` : `
+          <th>${escapeHtml(isCombinedResult ? '기사' : (platform === 'coupang' ? '쿠팡 ID' : '기사'))}</th>
+          `}
           ${isCombinedResult ? '<th>적용 플랫폼</th><th>구분</th>' : ''}
           <th>주간 콜수</th>
-          <th>거절율/수락율</th>
+          <th>${escapeHtml(isBaeminTab ? '수락률' : '거절율/수락율')}</th>
           <th>적용 프로모션</th>
           ${showDeliveryFee ? `
           <th>배달처리비합계</th>
@@ -307,9 +308,15 @@ const BremPromotionApplyAdmin = (function () {
     rowsEl.innerHTML = result.results.map(row => {
       const rowPlatform = row.appliedPlatform || platform;
       const isBaeminRow = BremPlatforms.normalize(rowPlatform) === 'baemin';
+      const identityCells = isBaeminTab
+        ? `
+        <td><strong>${escapeHtml(BremPromotionApply.getResultRowBaeminRiderId(row))}</strong></td>
+        <td>${escapeHtml(BremPromotionApply.getResultRowMatchedDriverName(row) || '-')}</td>
+        `
+        : `<td><strong>${escapeHtml(BremPromotionApply.getResultRowDisplayName(row, platform))}</strong></td>`;
       return `
       <tr class="${row.totalPromotionAmount > 0 ? 'promotion-row-paid' : 'promotion-row-unpaid'}">
-        <td><strong>${escapeHtml(BremPromotionApply.getResultRowDisplayName(row, platform))}</strong></td>
+        ${identityCells}
         ${isCombinedResult ? `
           <td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>
           <td>${escapeHtml(row.assignmentSource || '-')}</td>
@@ -398,7 +405,9 @@ const BremPromotionApplyAdmin = (function () {
     }
 
     try {
-      await BremStorage.ensureSectionLoaded?.('drivers');
+      await BremStorage.ensureSectionLoaded?.('promotion-apply');
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('rejections');
       await BremStorage.refreshDriversForSettlementMatch?.();
 
       if (platform === 'combined') {
