@@ -812,7 +812,10 @@ const BremPromotionAdmin = (function () {
         <td>${row.basePay ? formatMoney(row.basePay) : (row.perCallBonus ? formatMoney(row.perCallBonus) : '-')}</td>
         <td>${row.bonusPay ? formatMoney(row.bonusPay) : '-'}</td>
         <td><strong>${row.eligible ? formatMoney(row.totalBonus) : '-'}</strong></td>
-        <td>${renderConditionChips((row.appliedBonusConditions || []).map(item => item.name))}</td>
+        <td>${renderConditionChips([
+          ...(row.appliedBlockConditions || []).map(item => item.name),
+          ...(row.appliedBonusConditions || []).map(item => item.name)
+        ])}</td>
         <td>${renderConditionChips((row.failedBonusConditions || []).map(item => item.name), true)}</td>
         <td class="promotion-failure-cell">${renderFailureCell(row)}</td>
       </tr>

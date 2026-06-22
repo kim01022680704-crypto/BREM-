@@ -541,6 +541,24 @@ const BremPromotionEngine = (function () {
     };
   }
 
+  function sumGuaranteeTopUp(guaranteedUnitPrice, riderData) {
+    const unit = Number(guaranteedUnitPrice || 0);
+    if (unit <= 0) return 0;
+
+    const fees = Array.isArray(riderData?.deliveryFees)
+      ? riderData.deliveryFees.map(fee => Number(fee || 0)).filter(fee => fee > 0)
+      : [];
+
+    if (fees.length) {
+      return fees.reduce((sum, fee) => sum + Math.max(0, unit - fee), 0);
+    }
+
+    const orders = Number(riderData?.totalOrders || 0);
+    const amount = Number(riderData?.deliveryAmount || 0);
+    if (orders <= 0) return 0;
+    return Math.max(0, unit * orders - amount);
+  }
+
   function calculateBonusForCondition(condition, context) {
     const { paidCallCount, basePay, riderData, rule } = context;
     const action = condition.actionType || 'add_pay_per_order';
@@ -553,8 +571,7 @@ const BremPromotionEngine = (function () {
       case 'guarantee_unit_add': {
         const unitAdd = Number(condition.guaranteeUnitAdd ?? 0);
         if (unitAdd <= 0 || riderData.totalOrders <= 0) return 0;
-        const guaranteedTotal = unitAdd * riderData.totalOrders;
-        return Math.max(0, guaranteedTotal - riderData.deliveryAmount);
+        return sumGuaranteeTopUp(unitAdd, riderData);
       }
       case 'percent_bonus':
         return Math.round(basePay * Number(condition.bonusPercent ?? 0) / 100);
@@ -577,8 +594,7 @@ const BremPromotionEngine = (function () {
       return { guaranteeBonus: 0, appliedTier: tier, appliedUnitPrice, failureReasons: ['단가보장 대상 아님'] };
     }
 
-    const guaranteedTotal = appliedUnitPrice * riderData.totalOrders;
-    const guaranteeBonus = Math.max(0, guaranteedTotal - riderData.deliveryAmount);
+    const guaranteeBonus = sumGuaranteeTopUp(appliedUnitPrice, riderData);
 
     if (guaranteeBonus <= 0) {
       return {
@@ -640,6 +656,41 @@ const BremPromotionEngine = (function () {
       appliedUnitPrice: guarantee.appliedUnitPrice,
       failureReasons: guarantee.guaranteeBonus > 0 ? [] : guarantee.failureReasons
     };
+  }
+
+  function collectAppliedBlockConditions(rule, riderData, settings) {
+    const settingsValue = settings || BremStorage.promotionSettings.get();
+    const block = evaluateBlockConditions(rule, riderData, settingsValue);
+    if (!block.passed) return [];
+
+    const isCombinedRule = normalizePlatform(rule.platform) === 'combined';
+    const applied = [];
+
+    (rule.blockConditions || []).forEach(condition => {
+      if (isCombinedRule && isRateConditionType(condition.conditionType)
+        && !shouldApplyRateCondition(condition.conditionType, riderData.platform)) {
+        return;
+      }
+      const result = evaluateStructuredCondition(condition, rule, riderData);
+      if (!result.passed) return;
+      const name = BremPromotionConditions?.formatSatisfiedConditionLabel
+        ? BremPromotionConditions.formatSatisfiedConditionLabel(condition, riderData.platform)
+        : (condition.conditionName || condition.conditionType);
+      applied.push({ name });
+    });
+
+    return applied;
+  }
+
+  function ruleHasPassedBlockRateCondition(rule, riderData) {
+    const isCombinedRule = normalizePlatform(rule.platform) === 'combined';
+    return (rule.blockConditions || []).some(condition => {
+      if (!isRateConditionType(condition.conditionType)) return false;
+      if (isCombinedRule && !shouldApplyRateCondition(condition.conditionType, riderData.platform)) {
+        return false;
+      }
+      return evaluateStructuredCondition(condition, rule, riderData).passed;
+    });
   }
 
   function calculatePromotionForRider(rule, riderData, settings) {
@@ -706,9 +757,11 @@ const BremPromotionEngine = (function () {
       basePay = baseResult.basePay || 0;
     }
 
+    const appliedBlockConditions = [];
     const appliedBonusConditions = [];
     const failedBonusConditions = [];
     let bonusPay = 0;
+    const skipBonusRateChip = ruleHasPassedBlockRateCondition(rule, riderData);
 
     (rule.bonusConditions || []).forEach(condition => {
       if (normalizePlatform(rule.platform) === 'combined'
@@ -737,11 +790,23 @@ const BremPromotionEngine = (function () {
 
       if (amount > 0) {
         bonusPay += amount;
-        appliedBonusConditions.push({ name, amount });
+        if (!(skipBonusRateChip && isRateConditionType(condition.conditionType))) {
+          appliedBonusConditions.push({ name, amount });
+        }
       } else {
         failedBonusConditions.push({ name, reason: '추가 지급액 0원' });
       }
     });
+
+    if (block.passed) {
+      appliedBlockConditions.push(...collectAppliedBlockConditions(rule, riderData, settingsValue));
+    }
+
+    if (guaranteeBonus > 0 && guaranteeResult.appliedUnitPrice > 0) {
+      appliedBlockConditions.push({
+        name: `단가보장 ${Number(guaranteeBonus).toLocaleString('ko-KR')}원`
+      });
+    }
 
     const guaranteeBonus = guaranteeResult.guaranteeBonus || 0;
     const totalBonus = basePay + bonusPay + guaranteeBonus;
@@ -787,6 +852,7 @@ const BremPromotionEngine = (function () {
       guaranteeBonus,
       totalBonus,
       paidCallCount: baseResult.paidCallCount || 0,
+      appliedBlockConditions,
       appliedBonusConditions,
       failedBonusConditions,
       referenceNotes,

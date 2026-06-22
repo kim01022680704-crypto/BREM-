@@ -61,6 +61,9 @@ const BremBaeminDeliveryFee = (function () {
         riderId,
         orderCount: Number(row.orderCount || 0),
         deliveryAmount: Number(row.deliveryAmount || 0),
+        deliveryFees: Array.isArray(row.deliveryFees)
+          ? row.deliveryFees.map(fee => Number(fee || 0)).filter(fee => fee > 0)
+          : [],
         avgUnitPrice: 0
       };
       entry.avgUnitPrice = entry.orderCount > 0

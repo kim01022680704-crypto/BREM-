@@ -169,7 +169,8 @@ const BremSettlementParser = (function () {
           riderId,
           orderCount: 0,
           deliveryAmount: 0,
-          settlementAmount: 0
+          settlementAmount: 0,
+          deliveryFees: []
         });
       }
 
@@ -177,6 +178,7 @@ const BremSettlementParser = (function () {
       entry.orderCount += 1;
       entry.deliveryAmount += amount;
       entry.settlementAmount += amount;
+      entry.deliveryFees.push(amount);
     }
 
     const parsedRows = Array.from(groups.values());

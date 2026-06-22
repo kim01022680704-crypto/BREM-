@@ -283,6 +283,44 @@ const BremPromotionConditions = (function () {
     return CONDITION_TYPES[type]?.label || type;
   }
 
+  function formatSatisfiedConditionLabel(condition, platform) {
+    const resolved = resolveRateCondition(condition, platform);
+    const type = resolved.conditionType;
+    const threshold = Number(resolved.rateThreshold ?? 0);
+
+    if (type === 'accept_rate_under' || type === 'accept_rate_over') {
+      return `수락률 ${threshold}% 이상`;
+    }
+    if (type === 'reject_rate_over' || type === 'reject_rate_under') {
+      return `거절율 ${threshold}% 이하`;
+    }
+    if (type === 'total_orders_under' || type === 'total_orders_over') {
+      const min = Number(condition.minTotalOrders ?? resolved.minTotalOrders ?? 0);
+      return `총 콜수 ${min}건 이상`;
+    }
+    if (type === 'working_days') {
+      const minWorkingDays = Number(condition.minWorkingDays ?? 6);
+      const dailyMin = Number(condition.dailyMinOrders ?? 0);
+      return dailyMin > 0
+        ? `주 ${minWorkingDays}일 이상 (일 ${dailyMin}건)`
+        : `주 ${minWorkingDays}일 이상`;
+    }
+    if (type === 'daily_min_days') {
+      const dailyMin = Number(condition.dailyMinOrders ?? 30);
+      const minDays = Number(condition.minDailyOrderDays ?? 6);
+      return `하루 ${dailyMin}건 이상 ${minDays}일`;
+    }
+
+    const custom = String(condition.conditionName || '').trim();
+    if (custom) {
+      return custom
+        .replace(/\s*미지급\s*$/u, '')
+        .replace(/미만\s*미지급/u, '이상')
+        .replace(/초과\s*미지급/u, '이하');
+    }
+    return formatConditionLabel(condition, platform);
+  }
+
   function syncRateConditionName(condition, platform) {
     const normalized = normalizeCondition(condition);
     if (!isRateConditionType(normalized.conditionType)) return normalized;
@@ -332,6 +370,7 @@ const BremPromotionConditions = (function () {
     defaultRateConditionType,
     resolveRateCondition,
     formatConditionLabel,
+    formatSatisfiedConditionLabel,
     syncRateConditionName
   };
 })();

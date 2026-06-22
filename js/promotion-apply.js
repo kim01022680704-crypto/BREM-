@@ -219,7 +219,8 @@ const BremPromotionApply = (function () {
       },
       feeData: {
         ...feeData,
-        callCount
+        callCount,
+        deliveryFees: Array.isArray(feeData.deliveryFees) ? feeData.deliveryFees : []
       }
     };
   }
@@ -260,6 +261,20 @@ const BremPromotionApply = (function () {
       }
     });
     return assignments;
+  }
+
+  function mergeAppliedConditionNames(result) {
+    const names = [
+      ...(result?.appliedBlockConditions || []).map(item => item.name),
+      ...(result?.appliedBonusConditions || []).map(item => item.name)
+    ];
+    const seen = new Set();
+    return names.filter(name => {
+      const key = String(name || '').trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   function calculateRiderPromotion({
@@ -374,6 +389,7 @@ const BremPromotionApply = (function () {
       rateLabel: BremPlatforms.rateLabel(statsPlatform),
       dailyOrders: stats.byDay,
       deliveryAmount: stats.deliveryAmount,
+      deliveryFees: Array.isArray(feeData?.deliveryFees) ? feeData.deliveryFees : [],
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
       uploadDays: stats.uploadDays,
@@ -406,7 +422,7 @@ const BremPromotionApply = (function () {
       basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
       extraPromotionAmount: Number(result.bonusPay || 0),
       totalPromotionAmount: Number(result.totalBonus || 0),
-      appliedConditions: (result.appliedBonusConditions || []).map(item => item.name),
+      appliedConditions: mergeAppliedConditionNames(result),
       failedConditions: (result.failedBonusConditions || []).map(item => item.name || item.reason),
       failureReasons: result.failureReasons || []
     };
