@@ -148,6 +148,10 @@ h3 {
   font-weight: 800;
 }
 
+#riderPublishError {
+  color: #ffb4b4;
+}
+
 .logout-btn {
   flex-shrink: 0;
   min-height: 42px;

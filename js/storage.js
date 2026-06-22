@@ -2093,6 +2093,303 @@ const BremStorage = (function () {
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
+  const DRIVER_FETCH_TIMEOUT_MS = 5000;
+  let driverAppBundlePromise = null;
+  let lastDriverAppPublishedAt = null;
+
+  function withDriverFetchTimeout(promise, label = 'request') {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`${label} 시간이 초과되었습니다.`)), DRIVER_FETCH_TIMEOUT_MS);
+      })
+    ]);
+  }
+
+  async function riderApiFetch(path, label = 'request') {
+    const token = await resolveAdminAccessToken();
+    if (!token) {
+      return { ok: false, message: '로그인 세션이 없습니다.' };
+    }
+
+    try {
+      const response = await withDriverFetchTimeout(
+        fetch(path, {
+          credentials: 'same-origin',
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        label
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '요청에 실패했습니다.' };
+      }
+      return { ok: true, ...payload };
+    } catch (error) {
+      return { ok: false, message: error.message || '요청에 실패했습니다.' };
+    }
+  }
+
+  function mergeRiderMissionsPayload(missions = {}) {
+    const mapper = window.BremSupabaseMapper;
+    const mapped = {
+      baemin: missions.baemin && mapper?.rowToMission ? mapper.rowToMission(missions.baemin) : null,
+      coupang: missions.coupang && mapper?.rowToMission ? mapper.rowToMission(missions.coupang) : null
+    };
+    const current = storageAdapter.read(KEYS.missions, []) || [];
+    const merged = new Map((Array.isArray(current) ? current : []).map(item => [item.id, item]));
+    Object.values(mapped).forEach(mission => {
+      if (mission?.id) merged.set(mission.id, mission);
+    });
+    if (merged.size) {
+      markMissionsCache(Array.from(merged.values()));
+    }
+    return mapped;
+  }
+
+  function mergeRiderSnapshotInCache(payload = {}) {
+    mergeRiderDashboardInCache({
+      riderId: payload.riderId,
+      calls: payload.calls,
+      rejections: payload.rejections,
+      settings: payload.settings
+    });
+
+    if (payload.missions) {
+      mergeRiderMissionsPayload(payload.missions);
+    }
+
+    if (payload.publishedAt) {
+      lastDriverAppPublishedAt = payload.publishedAt;
+      const existing = storageAdapter.read(KEYS.riderViewPublish, {}) || {};
+      stageRiderScopedCache(KEYS.riderViewPublish, {
+        ...existing,
+        publishedAt: payload.publishedAt
+      });
+    }
+
+    (payload.settings || []).forEach(row => {
+      if (row?.key === 'brem_rider_published_long_event_catalog') {
+        stageRiderScopedCache(KEYS.eventCatalog, row.value);
+      }
+      if (row?.key === 'brem_rider_published_long_event_items') {
+        stageRiderScopedCache(KEYS.eventItems, row.value);
+      }
+    });
+  }
+
+  function mergeRiderLiveInCache(payload = {}) {
+    if (payload.rider) {
+      mergeRiderInCache(payload.rider);
+    }
+
+    if (Array.isArray(payload.targets)) {
+      const targetRows = payload.targets.map(row => ({
+        id: row.id,
+        driverId: row.driver_id || '',
+        month: row.month || '',
+        count: Number(row.count) || 0,
+        updatedAt: row.updated_at || null
+      }));
+      stageRiderScopedCache(KEYS.targets, targetRows, { tableLoaded: true });
+    }
+
+    if (Array.isArray(payload.weeklyTargets)) {
+      stageRiderScopedCache(KEYS.weeklyTargets, payload.weeklyTargets);
+    }
+
+    (payload.settings || []).forEach(row => {
+      if (!row?.key) return;
+      stageRiderScopedCache(row.key, row.value);
+      if (row.key === 'brem_rider_published_long_event_catalog') {
+        stageRiderScopedCache(KEYS.eventCatalog, row.value);
+      }
+      if (row.key === 'brem_rider_published_long_event_items') {
+        stageRiderScopedCache(KEYS.eventItems, row.value);
+      }
+    });
+
+    if (payload.longEvent && typeof payload.longEvent === 'object') {
+      riderLongEventProgress = { ...payload.longEvent };
+      const riderId = String(payload.riderId || activeSupabaseProfile?.rider_id || '').trim();
+      if (riderId) {
+        const list = drivers.getAll();
+        const index = list.findIndex(item => item.id === riderId);
+        if (index >= 0) {
+          const progress = payload.longEvent;
+          list[index] = {
+            ...list[index],
+            longEventItemId: progress.itemId || list[index].longEventItemId || '',
+            longEventItem: progress.itemName || list[index].longEventItem || '',
+            longEventStartDate: progress.startDate || list[index].longEventStartDate || '',
+            longEventPlatform: normalizeLongEventPlatform(progress.platform || list[index].longEventPlatform)
+          };
+          markDriversCache(list, { source: 'rider-live' });
+        }
+      }
+    }
+
+    document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+  }
+
+  function mergeRiderNoticesInCache(payload = {}) {
+    const mapper = window.BremSupabaseMapper;
+    const noticeRows = (payload.notices || []).map(row => (
+      mapper?.rowToNotice ? mapper.rowToNotice(row) : row
+    ));
+    markNoticesCache(noticeRows, { source: 'server' });
+    return noticeRows;
+  }
+
+  function getDriverAppPublishedAt() {
+    if (lastDriverAppPublishedAt) return lastDriverAppPublishedAt;
+    const meta = riderViewPublish.getMeta?.() || {};
+    if (meta.publishedAt) return meta.publishedAt;
+    return rejections.getAll?.()
+      .map(entry => entry.riderPublishedAt)
+      .filter(Boolean)
+      .sort()
+      .reverse()[0] || null;
+  }
+
+  function invalidateDriverAppCache(riderId) {
+    window.BremDriverDataCache?.invalidate?.(riderId);
+    lastDriverAppPublishedAt = null;
+  }
+
+  async function loadDriverAppBundle(options = {}) {
+    if (driverAppBundlePromise && !options.force) return driverAppBundlePromise;
+
+    const run = async () => {
+      console.info('[BREM:data] driver load start');
+      const riderId = String(
+        options.riderId
+        || activeSupabaseProfile?.rider_id
+        || sessionAdapter.read(SESSION_KEYS.driverId, '')
+      ).trim();
+
+      if (!isProductionMode() || !isRiderProductionSession()) {
+        const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
+        if (!hydrated.ok) return hydrated;
+        if (activeStorageAdapter.ensureKeysLoaded) {
+          await activeStorageAdapter.ensureKeysLoaded([
+            KEYS.calls,
+            KEYS.rejections,
+            KEYS.targets
+          ], { force: Boolean(options.force) });
+        }
+        await reloadNotices(Boolean(options.force)).catch(() => ({}));
+        console.info('[BREM:data] driver load done');
+        return { ok: true, dev: true };
+      }
+
+      const force = options.force === true;
+      const cache = window.BremDriverDataCache;
+
+      const loadSnapshot = async () => {
+        if (!force && riderId && cache?.read?.(riderId, 'snapshot')) {
+          const cached = cache.read(riderId, 'snapshot');
+          console.info('[BREM:data] driver snapshot cache hit');
+          mergeRiderSnapshotInCache(cached);
+          return { ok: true, cached: true, publishedAt: cached.publishedAt || null };
+        }
+        console.info('[BREM:data] driver snapshot cache miss');
+        const result = await riderApiFetch('/api/rider/snapshot', 'snapshot');
+        if (!result.ok) return result;
+        if (riderId) cache?.write?.(riderId, 'snapshot', result);
+        mergeRiderSnapshotInCache(result);
+        return result;
+      };
+
+      const loadLive = async () => {
+        if (!force && riderId && cache?.read?.(riderId, 'live')) {
+          const cached = cache.read(riderId, 'live');
+          console.info('[BREM:data] driver live cache hit');
+          mergeRiderLiveInCache(cached);
+          return { ok: true, cached: true, rider: cached.rider || null };
+        }
+        console.info('[BREM:data] driver live cache miss');
+        const result = await riderApiFetch('/api/rider/live', 'live');
+        if (!result.ok) return result;
+        if (riderId) cache?.write?.(riderId, 'live', result);
+        mergeRiderLiveInCache(result);
+        return result;
+      };
+
+      const loadNotices = async () => {
+        if (!force && riderId && cache?.read?.(riderId, 'notices')) {
+          const cached = cache.read(riderId, 'notices');
+          console.info('[BREM:data] driver notices cache hit');
+          mergeRiderNoticesInCache(cached);
+          return { ok: true, cached: true, count: (cached.notices || []).length };
+        }
+        console.info('[BREM:data] driver notices cache miss');
+        const result = await riderApiFetch('/api/rider/notices', 'notices');
+        if (!result.ok) return result;
+        if (riderId) cache?.write?.(riderId, 'notices', result);
+        mergeRiderNoticesInCache(result);
+        return { ok: true, count: (result.notices || []).length };
+      };
+
+      const [snapshotResult, liveResult, noticesResult] = await Promise.allSettled([
+        loadSnapshot(),
+        loadLive(),
+        loadNotices()
+      ]);
+
+      const unwrap = settled => (
+        settled.status === 'fulfilled'
+          ? settled.value
+          : { ok: false, message: settled.reason?.message || '요청에 실패했습니다.' }
+      );
+
+      const snapshot = unwrap(snapshotResult);
+      const live = unwrap(liveResult);
+      const notices = unwrap(noticesResult);
+
+      const anyOk = [snapshot, live, notices].some(item => item?.ok);
+      const allFailed = !anyOk;
+
+      console.info('[BREM:data] driver load done');
+
+      document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
+        detail: {
+          ok: anyOk,
+          partial: anyOk && !(snapshot.ok && live.ok && notices.ok),
+          publishedAt: getDriverAppPublishedAt(),
+          errors: {
+            snapshot: snapshot.ok ? null : (snapshot.message || snapshot.error),
+            live: live.ok ? null : (live.message || live.error),
+            notices: notices.ok ? null : (notices.message || notices.error)
+          }
+        }
+      }));
+      document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+
+      return {
+        ok: anyOk,
+        partial: anyOk && !(snapshot.ok && live.ok && notices.ok),
+        allFailed,
+        publishedAt: getDriverAppPublishedAt(),
+        rider: live.rider || null,
+        snapshot,
+        live,
+        notices
+      };
+    };
+
+    if (options.force) {
+      return run().finally(() => {
+        driverAppBundlePromise = null;
+      });
+    }
+
+    driverAppBundlePromise = run().finally(() => {
+      driverAppBundlePromise = null;
+    });
+    return driverAppBundlePromise;
+  }
+
   async function fetchRiderDashboardFromServer() {
     const token = await resolveAdminAccessToken();
     if (!token) {
@@ -2496,6 +2793,10 @@ const BremStorage = (function () {
   }
 
   async function hydrateDriverAppData(options = {}) {
+    if (isProductionMode() && isRiderProductionSession()) {
+      return loadDriverAppBundle(options);
+    }
+
     if (driverAppHydratePromise) return driverAppHydratePromise;
 
     window.BremPerf?.time?.('storage.hydrateDriverAppData');
@@ -2506,61 +2807,14 @@ const BremStorage = (function () {
         }
 
         const force = options.force === true;
-        const production = isProductionMode();
 
-        if (!force && !production && isDriverAppCacheReady()) {
+        if (!force && !isProductionMode() && isDriverAppCacheReady()) {
           await ensureSupabaseHydrated({ skipDriversSync: true });
           if (activeStorageAdapter.hydrateCore) {
             await activeStorageAdapter.hydrateCore();
           }
-          await ensureMissionsLoaded({ force: false }).catch(() => ({}));
           document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true, cached: true } }));
           return { ok: true, cached: true };
-        }
-
-        const token = await resolveAdminAccessToken();
-
-        if (production && token) {
-          if (!activeSupabaseProfile) {
-            await loadSupabaseProfile().catch(() => null);
-          }
-
-          if (activeStorageAdapter.hydrateCore && !activeStorageAdapter.isHydrated?.()) {
-            await activeStorageAdapter.hydrateCore().catch(error => {
-              console.warn('[BREM] Rider hydrateCore failed:', error.message || error);
-            });
-          }
-
-          if (isRiderProductionSession()) {
-            invalidateNoticesCache();
-          }
-
-          const [dashboard, noticesResult] = await Promise.all([
-            fetchRiderDashboardFromServer(),
-            isRiderProductionSession()
-              ? fetchRiderNoticesFromServer()
-              : Promise.resolve({ ok: true, skipped: true })
-          ]);
-
-          if (!noticesResult.ok && !noticesResult.skipped) {
-            console.warn('[BREM] Rider notices fetch failed:', noticesResult.message || noticesResult.error);
-          }
-
-          await ensureMissionsLoaded({ force }).catch(() => ({}));
-
-          if (dashboard.ok) {
-            document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true } }));
-            return { ok: true, counts: dashboard.counts };
-          }
-
-          if (noticesResult.ok && !noticesResult.skipped) {
-            document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
-              detail: { ok: true, partial: true, noticesOnly: true }
-            }));
-            return { ok: true, partial: true, notices: noticesResult.count || 0 };
-          }
-
-          return dashboard;
         }
 
         const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
@@ -2577,7 +2831,7 @@ const BremStorage = (function () {
           ], { force });
         }
 
-        await ensureMissionsLoaded({ force }).catch(() => ({}));
+        await reloadNotices(force).catch(() => ({}));
         document.dispatchEvent(new CustomEvent('brem-driver-data-ready', { detail: { ok: true } }));
         return { ok: true };
       } finally {
@@ -8538,6 +8792,9 @@ const BremStorage = (function () {
     fetchCurrentRiderFromServer,
     fetchRiderAssignedMissionsFromServer,
     fetchRiderDashboardFromServer,
+    loadDriverAppBundle,
+    getDriverAppPublishedAt,
+    invalidateDriverAppCache,
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,

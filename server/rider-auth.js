@@ -431,6 +431,36 @@ const RIDER_DASHBOARD_SETTING_KEYS = [
   'brem_rider_view_publish'
 ];
 
+const RIDER_SNAPSHOT_SETTING_KEYS = [
+  'brem_rider_view_publish',
+  'brem_rider_published_long_event_catalog',
+  'brem_rider_published_long_event_items',
+  'brem_rider_published_long_event_config'
+];
+
+const RIDER_LIVE_SETTING_KEYS = [
+  'brem_driver_weekly_targets',
+  'brem_rider_published_long_event_catalog',
+  'brem_rider_published_long_event_items',
+  'brem_rider_published_long_event_config'
+];
+
+function maxPublishedTimestamp(values = []) {
+  const stamps = values.filter(Boolean).map(value => String(value));
+  if (!stamps.length) return null;
+  return stamps.sort().reverse()[0];
+}
+
+function resolveSnapshotPublishedAt(settingsRows = [], callRows = [], rejectionRows = []) {
+  const publishMeta = settingsRows.find(row => row.key === 'brem_rider_view_publish')?.value;
+  const metaAt = publishMeta?.publishedAt || null;
+  const rowAt = maxPublishedTimestamp([
+    ...callRows.map(row => row.rider_published_at || row.updated_at),
+    ...rejectionRows.map(row => row.rider_published_at || row.updated_at)
+  ]);
+  return metaAt || rowAt || null;
+}
+
 function normalizeCallPlatform(value) {
   return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
 }
@@ -521,6 +551,151 @@ async function getRiderNotices(accessToken) {
     ok: true,
     riderId: me.riderId,
     notices: data || []
+  };
+}
+
+async function getRiderSnapshot(accessToken) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const riderId = me.riderId;
+  const row = me.rider || {};
+  const baeminMissionId = String(row.selected_mission_id_baemin || row.selected_mission_id || '').trim();
+  const coupangMissionId = String(row.selected_mission_id_coupang || row.selected_mission_id || '').trim();
+  const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
+
+  const missionQuery = missionIds.length
+    ? supabase.from('missions').select(MISSION_SELECT).in('id', missionIds)
+    : Promise.resolve({ data: [], error: null });
+
+  const [
+    callsResult,
+    rejectionsResult,
+    settingsResult,
+    missionsResult
+  ] = await Promise.all([
+    supabase
+      .from('admin_calls')
+      .select('id,driver_id,date,platform,count,updated_at,rider_published_at')
+      .eq('driver_id', riderId)
+      .not('rider_published_at', 'is', null)
+      .order('date', { ascending: false }),
+    supabase
+      .from('admin_rejection_rates')
+      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
+      .eq('driver_id', riderId)
+      .not('rider_published_at', 'is', null)
+      .order('week_start', { ascending: false }),
+    supabase
+      .from('settings')
+      .select('key,value')
+      .in('key', RIDER_SNAPSHOT_SETTING_KEYS),
+    missionQuery
+  ]);
+
+  const firstError = [callsResult, rejectionsResult, settingsResult, missionsResult]
+    .find(result => result.error);
+  if (firstError?.error) {
+    const message = firstError.error.message || '';
+    if (/does not exist|relation|schema cache/i.test(message)) {
+      return {
+        ok: false,
+        status: 400,
+        error: '운영 DB 테이블이 준비되지 않았습니다. supabase/operations_tables_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 500, error: message || '기사 반영 데이터를 불러오지 못했습니다.' };
+  }
+
+  const settingsRows = settingsResult.data || [];
+  const calls = callsResult.data || [];
+  const rejections = rejectionsResult.data || [];
+  const missionRows = missionsResult.data || [];
+  const byId = new Map(missionRows.map(item => [item.id, item]));
+
+  return {
+    ok: true,
+    riderId,
+    publishedAt: resolveSnapshotPublishedAt(settingsRows, calls, rejections),
+    calls,
+    rejections,
+    settings: settingsRows,
+    missions: {
+      baemin: baeminMissionId ? (byId.get(baeminMissionId) || null) : null,
+      coupang: coupangMissionId ? (byId.get(coupangMissionId) || null) : null
+    }
+  };
+}
+
+async function getRiderLive(accessToken) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const riderId = me.riderId;
+  const [
+    targetsResult,
+    settingsResult,
+    callsResult
+  ] = await Promise.all([
+    supabase
+      .from('admin_targets')
+      .select('id,driver_id,month,count,updated_at')
+      .eq('driver_id', riderId)
+      .order('month', { ascending: false }),
+    supabase
+      .from('settings')
+      .select('key,value')
+      .in('key', RIDER_LIVE_SETTING_KEYS),
+    supabase
+      .from('admin_calls')
+      .select('id,driver_id,date,platform,count,updated_at')
+      .eq('driver_id', riderId)
+      .order('date', { ascending: false })
+  ]);
+
+  const firstError = [targetsResult, settingsResult, callsResult].find(result => result.error);
+  if (firstError?.error) {
+    const message = firstError.error.message || '';
+    if (/does not exist|relation|schema cache/i.test(message)) {
+      return {
+        ok: false,
+        status: 400,
+        error: '운영 DB 테이블이 준비되지 않았습니다. supabase/operations_tables_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 500, error: message || '실시간 기사 데이터를 불러오지 못했습니다.' };
+  }
+
+  const settingsRows = settingsResult.data || [];
+  const weeklyTargetsRaw = settingsRows.find(row => row.key === 'brem_driver_weekly_targets')?.value;
+  const weeklyTargets = Array.isArray(weeklyTargetsRaw)
+    ? weeklyTargetsRaw.filter(item => String(item?.driverId || '') === String(riderId))
+    : [];
+
+  const longEvent = computeLongEventProgress(
+    me.rider,
+    settingsRows,
+    callsResult.data || []
+  );
+
+  return {
+    ok: true,
+    riderId,
+    rider: me.rider,
+    targets: targetsResult.data || [],
+    weeklyTargets,
+    longEvent,
+    settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets')
   };
 }
 
@@ -788,6 +963,8 @@ module.exports = {
   getRiderMe,
   getRiderAssignedMissions,
   getRiderNotices,
+  getRiderSnapshot,
+  getRiderLive,
   getRiderDashboard,
   saveRiderTargets,
   updateRiderProfile,

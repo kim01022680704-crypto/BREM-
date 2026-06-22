@@ -12,6 +12,7 @@
     selectedWeekStart: null
   };
   let driverDashboardLoading = false;
+  let driverLoadFailed = false;
 
   function calls() {
     return BremStorage.calls.getAll();
@@ -155,13 +156,16 @@
     const notice = document.getElementById('riderPublishNotice');
     const loadingEl = document.getElementById('riderPublishLoading');
     const readyEl = document.getElementById('riderPublishReady');
+    const errorEl = document.getElementById('riderPublishError');
     if (!notice || !loadingEl || !readyEl) return;
 
     if (show) {
+      driverLoadFailed = false;
       notice.hidden = false;
       notice.classList.add('is-loading');
       loadingEl.hidden = false;
       readyEl.hidden = true;
+      if (errorEl) errorEl.hidden = true;
       return;
     }
 
@@ -169,33 +173,49 @@
     loadingEl.hidden = true;
   }
 
-  function renderRiderPublishNotice() {
+  function setRiderPublishNoticeError(show) {
+    const notice = document.getElementById('riderPublishNotice');
+    const loadingEl = document.getElementById('riderPublishLoading');
+    const readyEl = document.getElementById('riderPublishReady');
+    const errorEl = document.getElementById('riderPublishError');
+    if (!notice || !loadingEl || !readyEl || !errorEl) return;
+
+    notice.hidden = false;
+    notice.classList.remove('is-loading');
+    loadingEl.hidden = true;
+    readyEl.hidden = true;
+    errorEl.hidden = !show;
+    driverLoadFailed = show;
+  }
+
+  function renderRiderPublishNotice(options = {}) {
     const notice = document.getElementById('riderPublishNotice');
     const label = document.getElementById('riderPublishAt');
     const readyEl = document.getElementById('riderPublishReady');
     if (!notice || !label || !readyEl) return;
 
-    if (isDriverProductionMode() && (driverDashboardLoading || driverDataLoadPromise)) {
+    if (!isDriverProductionMode()) {
+      notice.hidden = true;
+      setRiderPublishNoticeLoading(false);
+      return;
+    }
+
+    if (driverDashboardLoading) {
       setRiderPublishNoticeLoading(true);
       return;
     }
 
-    const meta = BremStorage.riderViewPublish?.getMeta?.() || {};
-    let publishedAt = meta.publishedAt || null;
-    if (!publishedAt) {
-      publishedAt = BremStorage.rejections?.getAll?.()
-        .map(entry => entry.riderPublishedAt)
-        .filter(Boolean)
-        .sort()
-        .reverse()[0] || null;
+    if (options.failed || driverLoadFailed) {
+      setRiderPublishNoticeError(true);
+      return;
     }
 
+    const publishedAt = options.publishedAt
+      || BremStorage.getDriverAppPublishedAt?.()
+      || null;
     const text = window.BremDriverUtils?.formatRiderPublishDateTime?.(publishedAt) || '';
+
     if (!text) {
-      if (isDriverProductionMode() && (driverDashboardLoading || driverDataLoadPromise)) {
-        setRiderPublishNoticeLoading(true);
-        return;
-      }
       notice.hidden = true;
       readyEl.hidden = true;
       setRiderPublishNoticeLoading(false);
@@ -204,6 +224,7 @@
     }
 
     setRiderPublishNoticeLoading(false);
+    setRiderPublishNoticeError(false);
     notice.hidden = false;
     readyEl.hidden = false;
     label.textContent = text;
@@ -407,6 +428,7 @@
 
   async function logoutDriver(options = {}) {
     const { idle = false, message = '' } = options;
+    const riderId = state.currentDriver?.id || BremStorage.auth.getDriverSessionId?.();
     window.BremSessionSecurity?.stop();
 
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
@@ -416,8 +438,14 @@
       BremStorage.auth.clearSessionAuth?.();
     }
 
+    if (riderId) {
+      BremStorage.invalidateDriverAppCache?.(riderId);
+    }
+
     state.currentDriver = null;
     state.selectedWeekStart = weekStartKey();
+    driverDashboardLoading = false;
+    driverLoadFailed = false;
     showLoggedOut();
     if (idle) {
       showToast(message || window.BremSessionSecurity?.IDLE_MESSAGE || '로그아웃되었습니다.');
@@ -539,23 +567,44 @@
     }
 
     const task = (async () => {
-      let freshDriver = driver;
-      if (options.refreshProfile !== false) {
-        freshDriver = await refreshCurrentRiderFromServer(driver) || driver;
+      let loadResult = null;
+      try {
+        let freshDriver = driver;
+        if (options.refreshProfile !== false && !isDriverProductionMode()) {
+          freshDriver = await refreshCurrentRiderFromServer(driver) || driver;
+        }
+
+        loadResult = await BremStorage.loadDriverAppBundle?.({
+          force: Boolean(options.force),
+          riderId: driverId
+        }) || await BremStorage.hydrateDriverAppData?.({
+          force: Boolean(options.force),
+          riderId: driverId
+        });
+
+        if (loadResult?.rider?.id) {
+          freshDriver = BremStorage.drivers.getById(loadResult.rider.id) || freshDriver;
+        }
+
+        refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
+        return loadResult;
+      } finally {
+        driverDashboardLoading = false;
+        const failed = loadResult?.allFailed === true;
+        renderRiderPublishNotice({
+          failed,
+          publishedAt: loadResult?.publishedAt || null
+        });
       }
-      await BremStorage.hydrateDriverAppData?.({
-        force: BremStorage.getSupabaseConfig?.().mode === 'production'
-      });
-      refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
     })();
 
     driverDataLoadPromise = task.finally(() => {
-      driverDashboardLoading = false;
       driverDataLoadPromise = null;
     });
 
     return driverDataLoadPromise.catch(error => {
-      console.warn('[BREM] Driver app data hydrate failed:', error.message || error);
+      console.warn('[BREM] Driver app data load failed:', error.message || error);
+      renderRiderPublishNotice({ failed: true });
     });
   }
 
@@ -733,25 +782,9 @@
     listEl.innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
   }
 
-  async function renderNotices() {
+  function renderNotices() {
     const listEl = document.getElementById('noticeList');
     if (!listEl) return;
-
-    const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
-
-    if (isProduction && state.currentDriver) {
-      listEl.innerHTML = '<div class="empty-text">공지사항 불러오는 중...</div>';
-      const result = await BremStorage.fetchRiderNoticesFromServer?.().catch(error => ({
-        ok: false,
-        message: error.message || String(error)
-      }));
-      if (!result?.ok) {
-        console.warn('[BREM] Rider notices render fetch failed:', result?.message || result?.error);
-        listEl.innerHTML = '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
-        return;
-      }
-    }
-
     renderNoticesList(listEl, sortNotices(notices()));
   }
 
@@ -778,14 +811,6 @@
     }
 
     let mission = assignedMission || BremStorage.missions?.getById?.(id) || null;
-    if (!mission) {
-      try {
-        await BremStorage.ensureMissionsLoaded?.();
-        mission = await BremStorage.missions?.fetchById?.(id) || mission;
-      } catch (error) {
-        console.warn('[BREM] Mission fetch failed:', error.message || error);
-      }
-    }
 
     if (!mission) {
       if (titleEl) titleEl.textContent = '미설정';
@@ -1106,7 +1131,7 @@
       month,
       document.getElementById('driverMonthTargetCount').value
     )
-      .then(() => BremStorage.fetchRiderDashboardFromServer?.())
+      .then(() => BremStorage.loadDriverAppBundle?.({ force: true, riderId: state.currentDriver.id }))
       .then(() => {
         showToast('월 목표 콜수가 저장되었습니다.');
         renderDriver(state.currentDriver);
@@ -1144,7 +1169,7 @@
       weekStart,
       document.getElementById('driverWeekTargetCount').value
     )
-      .then(() => BremStorage.fetchRiderDashboardFromServer?.())
+      .then(() => BremStorage.loadDriverAppBundle?.({ force: true, riderId: state.currentDriver.id }))
       .then(() => {
         showToast('주 목표 콜수가 저장되었습니다.');
         renderDriver(state.currentDriver);
@@ -1201,7 +1226,6 @@
       try {
         await window.BremSupabaseConfig?.load?.();
         await BremStorage.waitForStorageBootstrap?.();
-        BremStorage.invalidateNoticesCache?.();
       } catch {
         showLoggedOut();
         return;
@@ -1222,19 +1246,27 @@
     if (driverSessionId || BremStorage.auth.isDriverLoggedIn?.()) {
       if (isProduction) {
         await BremStorage.ensureDriverStorageReady?.();
-        const fetched = await BremStorage.fetchCurrentRiderFromServer?.();
-        if (fetched?.ok && fetched.driver) {
-          savedDriver = fetched.driver;
-        }
-      }
-      if (!savedDriver) {
+        savedDriver = findDriverById(driverSessionId);
+      } else {
         savedDriver = findDriverById(driverSessionId);
       }
     }
 
     if (savedDriver) {
       showLoggedIn(savedDriver);
-      void loadDriverAppDataThenRender(savedDriver);
+      void loadDriverAppDataThenRender(savedDriver, { refreshProfile: false });
+    } else if (isProduction && (driverSessionId || BremStorage.auth.isDriverLoggedIn?.())) {
+      showLoggedIn({ id: driverSessionId, name: '기사', phone: '' });
+      void loadDriverAppDataThenRender({ id: driverSessionId }, { refreshProfile: false })
+        .then(result => {
+          const rider = result?.rider || BremStorage.drivers.getById(driverSessionId);
+          if (rider) {
+            BremStorage.auth.setDriverSessionId(rider.id);
+            showLoggedIn(rider);
+          } else if (result?.allFailed) {
+            showToast('데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.');
+          }
+        });
     } else {
       if (driverSessionId) {
         BremStorage.auth.setDriverSessionId(null);

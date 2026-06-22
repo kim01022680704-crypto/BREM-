@@ -228,6 +228,46 @@ app.get('/api/rider/notices', async (req, res) => {
   }
 });
 
+app.get('/api/rider/snapshot', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderSnapshot(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      publishedAt: result.publishedAt,
+      calls: result.calls,
+      rejections: result.rejections,
+      settings: result.settings,
+      missions: result.missions
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 반영 데이터를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/live', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderLive(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      rider: result.rider,
+      targets: result.targets,
+      weeklyTargets: result.weeklyTargets,
+      longEvent: result.longEvent,
+      settings: result.settings
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '실시간 기사 데이터를 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/rider/dashboard', async (req, res) => {
   try {
     const result = await riderAuth.getRiderDashboard(getBearerToken(req));
