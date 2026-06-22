@@ -327,6 +327,39 @@ body {
   color: #f0d060;
 }
 
+.brem-pwa-install-hint {
+  margin: 10px auto 0;
+  padding: 0 12px;
+  color: rgba(232, 197, 71, 0.78);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-align: center;
+  max-width: 320px;
+}
+
+.brem-pwa-help__common {
+  margin: 0 0 16px;
+  padding: 12px 12px 10px;
+  border-top: 1px solid rgba(232, 197, 71, 0.22);
+}
+
+.brem-pwa-help__note {
+  margin: 0;
+  color: rgba(245, 245, 245, 0.82);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.brem-pwa-help__note + .brem-pwa-help__note {
+  margin-top: 8px;
+}
+
+.brem-pwa-help__note::before {
+  content: "· ";
+  color: #e8c547;
+  font-weight: 800;
+}
+
 .brem-pwa-help__close {
   width: 100%;
   min-height: 44px;
