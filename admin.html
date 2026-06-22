@@ -1798,13 +1798,17 @@
             <h2>쿠팡 정산 반영 내역 <span class="settlement-period-filter-label" id="settlementHistoryPeriodLabel-coupang"></span></h2>
             <div class="settlement-history-toolbar">
               <label class="inline-search-field">
+                <span>정산일</span>
+                <input type="date" id="settlementHistoryDay-coupang" class="admin-period-input">
+              </label>
+              <label class="inline-search-field">
                 <span>이름 검색</span>
                 <input type="search" id="settlementHistorySearch-coupang" placeholder="기사명">
               </label>
               <button type="button" class="small-btn danger-btn" id="settlementHistoryClearBtn-coupang">선택일 전체 삭제</button>
             </div>
           </div>
-          <p class="form-help">정산일을 변경하면 아래 목록도 해당 날짜 기준으로 갱신됩니다. 적용주(수요일)도 정산일에 맞춰 함께 바뀝니다.</p>
+          <p class="form-help">정산일(일 단위)을 선택하면 해당 날짜의 반영 내역만 표시됩니다. 이름 검색과 함께 사용할 수 있습니다.</p>
           <p class="admin-table-summary" id="settlementHistorySummary-coupang"></p>
           <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--settlement-history">
             <table>
@@ -1970,13 +1974,17 @@
             <h2>배민 정산 반영 내역 <span class="settlement-period-filter-label" id="settlementHistoryPeriodLabel-baemin"></span></h2>
             <div class="settlement-history-toolbar">
               <label class="inline-search-field">
+                <span>정산일</span>
+                <input type="date" id="settlementHistoryDay-baemin" class="admin-period-input">
+              </label>
+              <label class="inline-search-field">
                 <span>이름 검색</span>
                 <input type="search" id="settlementHistorySearch-baemin" placeholder="기사명">
               </label>
               <button type="button" class="small-btn danger-btn" id="settlementHistoryClearBtn-baemin">선택일 전체 삭제</button>
             </div>
           </div>
-          <p class="form-help">정산일을 변경하면 아래 목록도 해당 날짜 기준으로 갱신됩니다. 적용주(수요일)도 정산일에 맞춰 함께 바뀝니다.</p>
+          <p class="form-help">정산일(일 단위)을 선택하면 해당 날짜의 반영 내역만 표시됩니다. 이름 검색과 함께 사용할 수 있습니다.</p>
           <p class="admin-table-summary" id="settlementHistorySummary-baemin"></p>
           <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--settlement-history">
             <table>
@@ -3137,6 +3145,6 @@
   <script src="js/mission-promotion-catalog.js?v=20260622m"></script>
   <script src="js/admin-missions.js?v=20260622m"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260625i"></script>
+  <script src="js/admin.js?v=20260625j"></script>
 </body>
 </html>

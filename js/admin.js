@@ -22,6 +22,7 @@
     settlementPreviewByPlatform: { coupang: null, baemin: null },
     settlementLogWeekByPlatform: { coupang: null, baemin: null },
     settlementUnmatchedWeekByPlatform: { coupang: null, baemin: null },
+    settlementHistoryDayByPlatform: { coupang: null, baemin: null },
     settlementUploadLogDetailId: '',
     settlementHistorySearchByPlatform: { coupang: '', baemin: '' },
     callRecordsSearchByPlatform: { coupang: '', baemin: '' },
@@ -2940,6 +2941,32 @@
     return value.slice(0, 10);
   }
 
+  function ensureSettlementHistoryDay(platform) {
+    const p = normalizePlatform(platform);
+    if (!state.settlementHistoryDayByPlatform[p]) {
+      const uploadPeriod = getSettlementPeriodFilter(p);
+      state.settlementHistoryDayByPlatform[p] = uploadPeriod || today();
+    }
+    const input = $(`#settlementHistoryDay-${p}`);
+    if (input && !input.value) {
+      input.value = state.settlementHistoryDayByPlatform[p];
+    }
+    return state.settlementHistoryDayByPlatform[p];
+  }
+
+  function getSettlementHistoryDayFilter(platform) {
+    return ensureSettlementHistoryDay(normalizePlatform(platform));
+  }
+
+  function setSettlementHistoryDay(platform, dayValue) {
+    const p = normalizePlatform(platform);
+    const dayKey = String(dayValue || '').slice(0, 10);
+    state.settlementHistoryDayByPlatform[p] = dayKey;
+    const input = $(`#settlementHistoryDay-${p}`);
+    if (input) input.value = dayKey;
+    return dayKey;
+  }
+
   function setSettlementWeekFilters(platform, weekStart) {
     const p = normalizePlatform(platform);
     const picked = weekStartKey(weekStart || weekStartKey());
@@ -3183,15 +3210,18 @@
     return String(record.period || '').slice(0, 10) === periodKey;
   }
 
-  function updateSettlementPeriodLabels(platform, periodKey) {
+  function updateSettlementPeriodLabels(platform) {
+    updateSettlementUnmatchedWeekLabel(normalizePlatform(platform));
+  }
+
+  function updateSettlementHistoryDayLabels(platform, dayKey) {
     const p = normalizePlatform(platform);
-    const labelText = periodKey ? `· ${formatDate(periodKey)}` : '· 전체';
+    const labelText = dayKey ? `· ${formatDate(dayKey)}` : '';
     const historyLabel = $(`#settlementHistoryPeriodLabel-${p}`);
     if (historyLabel) historyLabel.textContent = labelText;
 
     const historyClearBtn = $(`#settlementHistoryClearBtn-${p}`);
-    if (historyClearBtn) historyClearBtn.disabled = !periodKey;
-    updateSettlementUnmatchedWeekLabel(p);
+    if (historyClearBtn) historyClearBtn.disabled = !dayKey;
   }
 
   function ensureSettlementUnmatchedWeek(platform) {
@@ -3332,12 +3362,13 @@
   function renderSettlements() {
     PLATFORMS.forEach(platform => {
       const p = normalizePlatform(platform);
-      const periodKey = getSettlementPeriodFilter(p);
-      updateSettlementPeriodLabels(p, periodKey);
+      const historyDay = getSettlementHistoryDayFilter(p);
+      updateSettlementPeriodLabels(p);
+      updateSettlementHistoryDayLabels(p, historyDay);
 
       const rows = settlements()
         .filter(record => normalizePlatform(record.platform) === p)
-        .filter(record => matchesSettlementPeriod(record, periodKey))
+        .filter(record => matchesSettlementPeriod(record, historyDay))
         .filter(record => driverMatchesSettlementHistorySearch(record.driverId, p))
         .sort((a, b) => b.period.localeCompare(a.period) || b.appliedAt.localeCompare(a.appliedAt));
 
@@ -3347,9 +3378,9 @@
 
       const emptyMessage = settlementHistorySearch(p)
         ? '검색 결과에 해당하는 정산 반영 내역이 없습니다.'
-        : periodKey
-          ? `${formatDate(periodKey)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
-          : `${platformLabel(p)} 반영된 정산 내역이 없습니다.`;
+        : historyDay
+          ? `${formatDate(historyDay)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
+          : '정산일을 선택하세요.';
 
       historyEl.innerHTML = rows.map(record => `
         <tr>
@@ -3365,8 +3396,8 @@
 
       if (summaryEl) {
         summaryEl.textContent = rows.length
-          ? `총 ${number(rows.length)}명${settlementHistorySearch(p) ? ' · 이름 검색 적용' : ''}`
-          : '';
+          ? `총 ${number(rows.length)}명 · ${formatDate(historyDay)}${settlementHistorySearch(p) ? ' · 이름 검색 적용' : ''}`
+          : historyDay ? `${formatDate(historyDay)} 반영 내역 없음` : '';
       }
 
       renderSettlementPreview(p);
@@ -3443,6 +3474,7 @@
       preview.period = periodKey;
     }
     if (periodKey) {
+      setSettlementHistoryDay(p, periodKey);
       setSettlementWeekFilters(p, periodKey);
     }
     renderSettlements();
@@ -3450,7 +3482,7 @@
 
   function clearSettlementHistoryForSelectedPeriod(platform) {
     const p = normalizePlatform(platform);
-    const period = getSettlementPeriodFilter(p);
+    const period = getSettlementHistoryDayFilter(p);
     if (!period) {
       showToast('정산일을 먼저 선택하세요.');
       return;
@@ -3547,6 +3579,8 @@
         }
         if (!result.matchedCount) {
           message = '새로 등록한 기사와 매칭되지 않았습니다. 배민 ID·쿠팡 ID를 확인하세요.';
+        } else if (periodKey) {
+          setSettlementHistoryDay(p, periodKey);
         }
         showToast(message);
         renderSettlements();
@@ -3799,6 +3833,7 @@
     }
 
     void BremStorage.flushStorage?.().then(() => {
+      if (preview.period) setSettlementHistoryDay(p, preview.period);
       clearSettlementPreview(p);
       renderAll();
       showToast(`${platformLabel(p)} ${preview.matched.length}명 반영 완료${preview.unmatched?.length ? ` · 미반영 ${preview.unmatched.length}명은 아래 목록에 저장됨` : ''}`);
@@ -4429,6 +4464,16 @@
       });
       $(`#settlementHistoryClearBtn-${p}`)?.addEventListener('click', () => {
         clearSettlementHistoryForSelectedPeriod(p);
+      });
+      $(`#settlementHistoryDay-${p}`)?.addEventListener('change', event => {
+        const dayKey = String(event.target.value || '').slice(0, 10);
+        if (!dayKey) {
+          showToast('정산일을 선택하세요.');
+          ensureSettlementHistoryDay(p);
+          return;
+        }
+        setSettlementHistoryDay(p, dayKey);
+        renderSettlements();
       });
       $(`#settlementPeriod-${p}`)?.addEventListener('change', () => {
         handleSettlementPeriodChange(p);
