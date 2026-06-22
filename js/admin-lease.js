@@ -68,6 +68,17 @@
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
+  async function persistLeasesOrWarn() {
+    try {
+      await leases.persist();
+      return true;
+    } catch (error) {
+      console.error('[BREM] lease persist failed:', error);
+      showToast('저장에 실패했습니다. 새로고침 후 다시 시도하세요.');
+      return false;
+    }
+  }
+
   function number(value) {
     return Number(value || 0).toLocaleString('ko-KR');
   }
@@ -792,7 +803,7 @@
       syncWeeklyRentPreview('leaseRentalDailyRent', 'leaseRentalWeeklyRent');
     });
 
-    formEl?.addEventListener('submit', event => {
+    formEl?.addEventListener('submit', async event => {
       event.preventDefault();
       const data = readFormData();
       const formError = validateLeaseForm(data);
@@ -803,9 +814,11 @@
 
       if (state.editingId) {
         leases.update(state.editingId, data);
+        if (!(await persistLeasesOrWarn())) return;
         showToast('리스·렌탈 정보가 수정되었습니다.');
       } else {
         leases.create(data);
+        if (!(await persistLeasesOrWarn())) return;
         showToast('리스·렌탈 정보가 등록되었습니다.');
       }
       resetForm();
@@ -818,7 +831,7 @@
     $('leaseExportBtn')?.addEventListener('click', exportList);
     $('leaseLeaseExportBtn')?.addEventListener('click', exportLeaseVehicles);
 
-    $('leaseRentalForm')?.addEventListener('submit', event => {
+    $('leaseRentalForm')?.addEventListener('submit', async event => {
       event.preventDefault();
       const leaseId = $('leaseRentalParentId')?.value || '';
       const item = leases.getById(leaseId);
@@ -832,16 +845,18 @@
         return;
       }
       leases.assignRental(leaseId, data);
+      if (!(await persistLeasesOrWarn())) return;
       closeRentalModal();
       showToast('리스차 렌탈 정보가 저장되었습니다.');
       refresh();
     });
 
-    $('leaseRentalClearBtn')?.addEventListener('click', () => {
+    $('leaseRentalClearBtn')?.addEventListener('click', async () => {
       const leaseId = $('leaseRentalParentId')?.value || '';
       if (!leaseId) return;
       if (!window.confirm('이 리스차의 렌탈 배정을 해제할까요?')) return;
       leases.clearRentalAssignment(leaseId);
+      if (!(await persistLeasesOrWarn())) return;
       closeRentalModal();
       showToast('렌탈 배정이 해제되었습니다.');
       refresh();
@@ -873,10 +888,11 @@
       }
     });
 
-    bulkApplyBtn?.addEventListener('click', () => {
+    bulkApplyBtn?.addEventListener('click', async () => {
       const validRows = state.parsedRows.filter(row => row.valid);
       if (!validRows.length) return;
       leases.upsertMany(validRows.map(row => row.data));
+      if (!(await persistLeasesOrWarn())) return;
       state.parsedRows = [];
       renderBulkPreview();
       showToast(`${validRows.length}건 일괄 등록되었습니다.`);
@@ -893,11 +909,12 @@
       renderList();
     });
 
-    $('leaseBulkDelete')?.addEventListener('click', () => {
+    $('leaseBulkDelete')?.addEventListener('click', async () => {
       const ids = filteredItems().map(item => item.id).filter(id => state.selectedIds.has(id));
       if (!ids.length) return;
       if (!window.confirm(`선택한 ${ids.length}건을 삭제할까요?`)) return;
       leases.removeByIds(ids);
+      if (!(await persistLeasesOrWarn())) return;
       ids.forEach(id => state.selectedIds.delete(id));
       showToast('선택 항목이 삭제되었습니다.');
       refresh();
@@ -921,11 +938,17 @@
       const deleteBtn = event.target.closest('[data-delete-lease]');
       if (deleteBtn) {
         if (!window.confirm('이 항목을 삭제할까요?')) return;
-        leases.removeById(deleteBtn.dataset.deleteLease);
-        state.selectedIds.delete(deleteBtn.dataset.deleteLease);
-        if (state.editingId === deleteBtn.dataset.deleteLease) resetForm();
-        showToast('삭제되었습니다.');
-        refresh();
+        void (async () => {
+          leases.removeById(deleteBtn.dataset.deleteLease);
+          if (!(await persistLeasesOrWarn())) {
+            refresh();
+            return;
+          }
+          state.selectedIds.delete(deleteBtn.dataset.deleteLease);
+          if (state.editingId === deleteBtn.dataset.deleteLease) resetForm();
+          showToast('삭제되었습니다.');
+          refresh();
+        })();
         return;
       }
 

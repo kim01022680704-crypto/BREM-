@@ -5123,6 +5123,25 @@ const BremStorage = (function () {
       return leases.update(leaseId, { ...existing, rentalAssignment: null });
     },
 
+    syncLeaseCache(list) {
+      const value = Array.isArray(list) ? list : leases.getAll();
+      window.BremDataCache?.set?.(KEYS.leases, value, { source: 'write' });
+      return value;
+    },
+
+    writeList(list, options = {}) {
+      const next = Array.isArray(list) ? list : [];
+      leases.syncLeaseCache(next);
+      return storageAdapter.write(KEYS.leases, next, {
+        allowEmpty: next.length === 0,
+        ...options
+      });
+    },
+
+    async persist() {
+      await storageAdapter.flush?.();
+    },
+
     getAll() {
       return storageAdapter.read(KEYS.leases, []);
     },
@@ -5149,7 +5168,7 @@ const BremStorage = (function () {
       const list = leases.getAll();
       const next = leases.normalizeRecord(data);
       list.unshift(next);
-      storageAdapter.write(KEYS.leases, list);
+      leases.writeList(list);
       return next;
     },
 
@@ -5159,7 +5178,7 @@ const BremStorage = (function () {
       const list = leases.getAll().map(item => (
         item.id === id ? leases.normalizeRecord(data, existing) : item
       ));
-      storageAdapter.write(KEYS.leases, list);
+      leases.writeList(list);
       return list.find(item => item.id === id) || null;
     },
 
@@ -5180,16 +5199,14 @@ const BremStorage = (function () {
     },
 
     removeById(id) {
-      leases.removeByIds([id]);
+      return leases.removeByIds([id]);
     },
 
     removeByIds(ids) {
       const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
-      if (!idSet.size) return;
-      storageAdapter.write(
-        KEYS.leases,
-        leases.getAll().filter(item => !idSet.has(item.id))
-      );
+      if (!idSet.size) return Promise.resolve();
+      const next = leases.getAll().filter(item => !idSet.has(item.id));
+      return leases.writeList(next);
     }
   };
 
