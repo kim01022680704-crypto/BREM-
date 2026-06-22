@@ -450,20 +450,20 @@ const BremPromotionAdmin = (function () {
     };
     state.tierDraft = base.callTiers || draft.callTiers || [];
     state.editingRuleId = rule?.id || '';
-    state.conditionDrafts = {
-      block: normalizeConditionsForPlatform(draft.blockConditions, platformValue),
-      bonus: normalizeConditionsForPlatform(draft.bonusConditions, platformValue),
-      reference: normalizeConditionsForPlatform(draft.referenceConditions, platformValue)
-    };
-
-    $('#promotionRuleFormTitle').textContent = rule ? '프로모션 조건 수정' : '프로모션 조건 추가';
-    $('#promotionRuleName').value = draft.name;
-    $('#promotionRuleType').value = draft.type || 'count_per_order';
     const platformValue = setPromotionRulePlatformField(
       rule?.id
         ? (draft.platform || getActiveRulesPlatformTab())
         : getActiveRulesPlatformTab()
     );
+    state.conditionDrafts = {
+      block: normalizeConditionsForPlatform(draft.blockConditions || [], platformValue),
+      bonus: normalizeConditionsForPlatform(draft.bonusConditions || [], platformValue),
+      reference: normalizeConditionsForPlatform(draft.referenceConditions || [], platformValue)
+    };
+
+    $('#promotionRuleFormTitle').textContent = rule ? '프로모션 조건 수정' : '프로모션 조건 추가';
+    $('#promotionRuleName').value = draft.name;
+    $('#promotionRuleType').value = draft.type || 'count_per_order';
     $('#promotionRuleEnabled').checked = draft.enabled !== false;
     $('#promotionRuleStartDate').value = draft.startDate;
     $('#promotionRuleEndDate').value = draft.endDate;
