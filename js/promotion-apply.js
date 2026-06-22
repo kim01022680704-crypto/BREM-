@@ -89,9 +89,10 @@ const BremPromotionApply = (function () {
     return row?.displayName || row?.driverName || row?.riderName || '';
   }
 
-  function pickPromotionRule(driver, platform, selectedPromotionRuleIds = []) {
+  function pickPromotionRule(driver, platform, selectedPromotionRuleIds = [], options = {}) {
     const p = normalizePlatform(platform);
     const selected = (selectedPromotionRuleIds || []).filter(Boolean);
+    const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
 
     if (p === 'combined') {
       const combinedIds = selected.filter(id => {
@@ -103,20 +104,35 @@ const BremPromotionApply = (function () {
       return null;
     }
 
+    if (assignmentMode === 'selected_rules') {
+      const forPlatform = selected.filter(id => {
+        const rule = BremStorage.promotionRules.getById(id);
+        return rule && normalizePlatform(rule.platform) === p;
+      });
+      if (forPlatform.length === 1) return BremStorage.promotionRules.getById(forPlatform[0]);
+      if (forPlatform.length) return BremStorage.promotionRules.getById(forPlatform[0]);
+      return null;
+    }
+
     const driverRuleId = p === 'baemin'
       ? String(driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || driver?.selectedMissionIdBaemin || driver?.selectedMissionId || '').trim()
       : String(driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || driver?.selectedMissionIdCoupang || driver?.selectedMissionId || '').trim();
 
-    if (driverRuleId) {
-      const assigned = BremStorage.promotionRules.getById(driverRuleId);
-      if (assigned && assigned.enabled !== false) {
-        return assigned;
-      }
-    }
+    if (!driverRuleId) return null;
 
-    if (selected.length === 1) return BremStorage.promotionRules.getById(selected[0]);
-    if (selected.length) return BremStorage.promotionRules.getById(selected[0]);
-    return null;
+    const assigned = BremStorage.promotionRules.getById(driverRuleId);
+    if (!assigned || assigned.enabled === false) return null;
+    if (normalizePlatform(assigned.platform) !== p) return null;
+    return assigned;
+  }
+
+  function collectResultRuleSummary(results = []) {
+    const names = [...new Set(results.map(row => row.ruleName).filter(Boolean))];
+    const unassigned = results.filter(row => (row.failureReasons || []).includes('미션 미배정')).length;
+    const label = names.length
+      ? names.join(', ')
+      : (unassigned ? `미션 미배정 ${unassigned}명` : '기사별 미션 배정');
+    return { names, label, unassigned };
   }
 
   function ruleUsesGuarantee(rule) {
@@ -129,14 +145,17 @@ const BremPromotionApply = (function () {
     return (ruleIds || []).some(id => ruleUsesGuarantee(BremStorage.promotionRules.getById(id)));
   }
 
-  function settlementNeedsDeliveryFee(settlement, platform, selectedRuleIds = []) {
-    if (selectedRulesNeedDeliveryFee(selectedRuleIds)) return true;
+  function settlementNeedsDeliveryFee(settlement, platform, selectedRuleIds = [], options = {}) {
+    const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
+    if (assignmentMode === 'selected_rules' && selectedRulesNeedDeliveryFee(selectedRuleIds)) return true;
     if (!settlement) return false;
     const p = normalizePlatform(platform);
+    const pickOptions = { assignmentMode };
+    const ruleIds = assignmentMode === 'per_driver' ? [] : selectedRuleIds;
     return (settlement.riders || []).some(rider => {
       const driver = resolveDriverForWeeklyRider(rider, p);
       if (!driver) return false;
-      const rule = pickPromotionRule(driver, p, selectedRuleIds);
+      const rule = pickPromotionRule(driver, p, ruleIds, pickOptions);
       return ruleUsesGuarantee(rule);
     });
   }
@@ -241,6 +260,7 @@ const BremPromotionApply = (function () {
     selectedRuleIds,
     promotionSettings,
     assignmentSource = '',
+    assignmentMode = 'per_driver',
     deliveryFeeIndex = null,
     requireDeliveryFee = false
   }) {
@@ -267,7 +287,8 @@ const BremPromotionApply = (function () {
       };
     }
 
-    const rule = pickPromotionRule(driver, ruleP, selectedRuleIds);
+    const ruleMode = assignmentMode === 'selected_rules' ? 'selected_rules' : 'per_driver';
+    const rule = pickPromotionRule(driver, ruleP, selectedRuleIds, { assignmentMode: ruleMode });
     const needsDeliveryFee = statsPlatform === 'baemin'
       && (requireDeliveryFee || ruleUsesGuarantee(rule));
 
@@ -275,6 +296,11 @@ const BremPromotionApply = (function () {
       const assignedId = statsPlatform === 'baemin'
         ? String(driver.promotionRuleIdBaemin || driver.selectedMissionIdBaemin || '').trim()
         : String(driver.promotionRuleIdCoupang || driver.selectedMissionIdCoupang || '').trim();
+      const failureReasons = ruleMode === 'selected_rules'
+        ? ['선택한 프로모션 조건을 찾을 수 없거나 비활성화되었습니다']
+        : [assignedId
+          ? '배정된 미션이 비활성화되었거나 플랫폼이 맞지 않습니다'
+          : '미션 미배정 (미션 관리에서 기사별 배정)'];
       return {
         riderName: rider.riderName,
         driverName: driver.name,
@@ -290,7 +316,7 @@ const BremPromotionApply = (function () {
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: [assignedId ? '배정된 미션이 비활성화되었습니다' : '미션 미배정']
+        failureReasons
       };
     }
 
@@ -363,6 +389,7 @@ const BremPromotionApply = (function () {
       avgDeliveryUnitPrice: Number(feeData?.avgUnitPrice || 0),
       guaranteedUnitPrice: Number(result.appliedUnitPrice || 0),
       guaranteePromotionAmount,
+      ruleId: rule.id,
       ruleName: rule.name,
       basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
       extraPromotionAmount: Number(result.bonusPay || 0),
@@ -379,16 +406,23 @@ const BremPromotionApply = (function () {
     const platform = normalizePlatform(settlement.platform);
     const promotionSettings = settings || BremStorage.promotionSettings.get();
     const selected = (selectedPromotionRuleIds || []).filter(Boolean);
-    if (!selected.length) throw new Error('적용할 프로모션 조건을 선택하세요.');
+    const assignmentMode = options.assignmentMode === 'per_driver' ? 'per_driver' : 'selected_rules';
+    const pickOptions = { assignmentMode };
+
+    if (assignmentMode === 'selected_rules' && !selected.length) {
+      throw new Error('적용할 프로모션 조건을 선택하세요.');
+    }
 
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
+    const feeRuleIds = assignmentMode === 'per_driver' ? [] : selected;
     const requireDeliveryFee = options.requireDeliveryFee === true
-      || settlementNeedsDeliveryFee(settlement, platform, selected);
+      || settlementNeedsDeliveryFee(settlement, platform, feeRuleIds, pickOptions);
 
     if (requireDeliveryFee && !deliveryFeeIndex) {
       throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
     }
 
+    const calcRuleIds = assignmentMode === 'per_driver' ? [] : selected;
     const results = (settlement.riders || []).map(rider => {
       const driver = resolveDriverForWeeklyRider(rider, platform);
       const riderForCalc = platform === 'baemin' && driver
@@ -400,14 +434,19 @@ const BremPromotionApply = (function () {
         appliedPlatform: platform,
         rulePlatform: platform,
         settlement,
-        selectedRuleIds: selected,
+        selectedRuleIds: calcRuleIds,
         promotionSettings,
+        assignmentMode,
         deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
         requireDeliveryFee
       });
     });
 
     const totalPromotionAmount = results.reduce((sum, item) => sum + item.totalPromotionAmount, 0);
+    const ruleSummary = collectResultRuleSummary(results);
+    const selectedRuleNames = selected
+      .map(id => BremStorage.promotionRules.getById(id)?.name)
+      .filter(Boolean);
 
     return {
       settlementId: settlement.id,
@@ -416,8 +455,17 @@ const BremPromotionApply = (function () {
       region: settlement.region,
       startDate: settlement.startDate,
       endDate: settlement.endDate,
-      selectedPromotionRuleIds: selected,
-      selectedPromotionRuleNames: selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
+      assignmentMode,
+      selectedPromotionRuleIds: assignmentMode === 'selected_rules'
+        ? selected
+        : [...new Set(results.map(row => row.ruleId).filter(Boolean))],
+      selectedPromotionRuleNames: assignmentMode === 'selected_rules'
+        ? selectedRuleNames
+        : ruleSummary.names,
+      appliedRuleLabel: assignmentMode === 'selected_rules'
+        ? (selectedRuleNames.join(', ') || '-')
+        : ruleSummary.label,
+      unassignedRiderCount: assignmentMode === 'selected_rules' ? 0 : ruleSummary.unassigned,
       deliveryFeeFileName: options.deliveryFeeMeta?.fileName || '',
       deliveryFeeLabel: options.deliveryFeeMeta
         ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
@@ -513,6 +561,9 @@ const BremPromotionApply = (function () {
       endDate: calculationResult.endDate,
       selectedPromotionRuleIds: calculationResult.selectedPromotionRuleIds || [],
       selectedPromotionRuleNames: calculationResult.selectedPromotionRuleNames || [],
+      appliedRuleLabel: calculationResult.appliedRuleLabel || '',
+      assignmentMode: calculationResult.assignmentMode || '',
+      unassignedRiderCount: Number(calculationResult.unassignedRiderCount || 0),
       deliveryFeeFileName: String(calculationResult.deliveryFeeFileName || ''),
       deliveryFeeLabel: String(calculationResult.deliveryFeeLabel || ''),
       savedAt: new Date().toISOString(),
@@ -564,7 +615,7 @@ const BremPromotionApply = (function () {
         ['배민 적용', record.summary?.baeminAssigned ?? ''],
         ['겹침→쿠팡', record.summary?.overlapAssigned ?? '']
       ] : []),
-      ['적용 프로모션', (record.selectedPromotionRuleNames || []).join(', ')],
+      ['적용 프로모션', record.appliedRuleLabel || (record.selectedPromotionRuleNames || []).join(', ')],
       ...(record.deliveryFeeLabel ? [['배달처리비', record.deliveryFeeLabel]] : []),
       ...(record.deliveryFeeFileName ? [['배달처리비 파일', record.deliveryFeeFileName]] : []),
       ['저장일', String(record.savedAt || '').slice(0, 19).replace('T', ' ')],

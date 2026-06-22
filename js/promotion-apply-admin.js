@@ -87,10 +87,14 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   async function resolveDeliveryFeeForCalculation(platform, baeminSettlement, coupangSettlement = null) {
-    const ruleIds = readSelectedRuleIds(platform);
+    const assignmentMode = platform === 'combined' ? 'selected_rules' : readApplyMode(platform);
+    const ruleIds = platform === 'combined' || assignmentMode === 'selected_rules'
+      ? readSelectedRuleIds(platform)
+      : [];
+    const pickOptions = { assignmentMode };
     const needsFile = platform === 'combined'
       ? BremPromotionApply.combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, ruleIds)
-      : BremPromotionApply.settlementNeedsDeliveryFee(baeminSettlement, 'baemin', ruleIds);
+      : BremPromotionApply.settlementNeedsDeliveryFee(baeminSettlement, 'baemin', ruleIds, pickOptions);
     if (!needsFile) return null;
 
     const panelKey = deliveryFeePanelKey(platform);
@@ -156,10 +160,47 @@ const BremPromotionApplyAdmin = (function () {
     renderCombinedSettlementSelects();
   }
 
-  function renderPromotionRulePickersForPlatform(platform) {
-    const container = $(`#promotionApplyRuleList-${platform}`);
+  function readApplyMode(platform = getActivePlatform()) {
+    if (platform === 'combined') return 'selected_rules';
+    const checked = $(`input[name="promotionApplyMode-${platform}"]:checked`);
+    return checked?.value === 'selected_rules' ? 'selected_rules' : 'per_driver';
+  }
+
+  function syncApplyModeUI(platform) {
+    if (platform === 'combined') return;
+    const mode = readApplyMode(platform);
+    const selectedSection = $(`#promotionApplySelectedSection-${platform}`);
+    const missionSection = $(`#promotionApplyMissionSection-${platform}`);
+    if (selectedSection) selectedSection.hidden = mode !== 'selected_rules';
+    if (missionSection) missionSection.hidden = mode !== 'per_driver';
+  }
+
+  function renderMissionAssignmentSummary(platform) {
+    const container = $(`#promotionApplyMissionSummary-${platform}`);
     if (!container) return;
 
+    const catalog = window.BremMissionPromotionCatalog;
+    const drivers = BremStorage.drivers.getAll();
+    const field = platform === 'baemin' ? 'baemin' : 'coupang';
+    const assigned = drivers.filter(driver => {
+      const assignment = catalog?.getDriverAssignment?.(driver) || {};
+      return Boolean(assignment[field]);
+    }).length;
+    const missions = catalog?.getForPlatform?.(platform) || [];
+    const missionNames = missions.length
+      ? missions.slice(0, 5).map(item => escapeHtml(item.title)).join(', ')
+      : '등록된 프로모션 없음';
+
+    container.innerHTML = `
+      <p class="form-help promotion-apply-mission-summary">
+        <strong>미션 관리</strong>에서 기사별로 배정한 프로모션이 정산서 기사마다 자동 적용됩니다.
+      </p>
+      <p class="form-help">배정 현황: <strong>${assigned}</strong>명 / 전체 ${drivers.length}명</p>
+      <p class="form-help">사용 가능 미션: ${missionNames}${missions.length > 5 ? ` 외 ${missions.length - 5}개` : ''}</p>
+    `;
+  }
+
+  function renderPromotionRuleCheckboxList(platform, container) {
     const allForPlatform = (BremStorage.getUserPromotionRules?.() || BremStorage.promotionRules.getAll())
       .filter(rule => BremPlatforms.normalize(rule.platform) === platform);
     const rules = allForPlatform.filter(rule => rule.enabled);
@@ -182,6 +223,20 @@ const BremPromotionApplyAdmin = (function () {
         <span>${escapeHtml(rule.name)}</span>
       </label>
     `).join('');
+  }
+
+  function renderPromotionRulePickersForPlatform(platform) {
+    const container = $(`#promotionApplyRuleList-${platform}`);
+    if (!container) return;
+
+    if (platform === 'coupang' || platform === 'baemin') {
+      renderPromotionRuleCheckboxList(platform, container);
+      renderMissionAssignmentSummary(platform);
+      syncApplyModeUI(platform);
+      return;
+    }
+
+    renderPromotionRuleCheckboxList(platform, container);
   }
 
   function renderPromotionRulePickers() {
@@ -209,7 +264,8 @@ const BremPromotionApplyAdmin = (function () {
     summaryEl.innerHTML = `
       <p>대상: <strong>${escapeHtml(result.settlementLabel)}</strong></p>
       <p>정산기간: <strong>${escapeHtml(result.startDate)} ~ ${escapeHtml(result.endDate)}</strong></p>
-      <p>적용 조건: <strong>${escapeHtml((result.selectedPromotionRuleNames || []).join(', ') || '-')}</strong></p>
+      <p>적용 방식: <strong>${escapeHtml(result.assignmentMode === 'per_driver' ? '기사별 미션 배정' : '선택 조건 시뮬레이션')}</strong></p>
+      <p>적용 조건: <strong>${escapeHtml(result.appliedRuleLabel || (result.selectedPromotionRuleNames || []).join(', ') || '-')}</strong>${result.unassignedRiderCount ? ` · 미배정 <strong>${formatNumber(result.unassignedRiderCount)}</strong>명` : ''}</p>
       <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong></p>
       ${deliveryFeeSummary}
       ${combinedSummary}
@@ -327,14 +383,24 @@ const BremPromotionApplyAdmin = (function () {
 
   async function runCalculation() {
     const platform = getActivePlatform();
-    const ruleIds = readSelectedRuleIds(platform);
+    const assignmentMode = readApplyMode(platform);
+    const ruleIds = platform === 'combined' || assignmentMode === 'selected_rules'
+      ? readSelectedRuleIds(platform)
+      : [];
 
-    if (!ruleIds.length) {
-      showToast(platform === 'combined' ? '적용할 합산 프로모션 조건을 선택하세요.' : '적용할 프로모션 조건을 선택하세요.');
+    if (platform === 'combined' && !ruleIds.length) {
+      showToast('적용할 합산 프로모션 조건을 선택하세요.');
+      return;
+    }
+    if (platform !== 'combined' && assignmentMode === 'selected_rules' && !ruleIds.length) {
+      showToast('시뮬레이션용 프로모션 조건을 선택하세요.');
       return;
     }
 
     try {
+      await BremStorage.ensureSectionLoaded?.('drivers');
+      await BremStorage.refreshDriversForSettlementMatch?.();
+
       if (platform === 'combined') {
         const ids = readCombinedSettlementIds();
         if (!ids.coupang) {
@@ -388,11 +454,12 @@ const BremPromotionApplyAdmin = (function () {
           return;
         }
 
-        let applyOptions = {};
+        let applyOptions = { assignmentMode };
         if (platform === 'baemin') {
           const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('baemin', settlement);
           if (deliveryFeeParsed) {
             applyOptions = {
+              ...applyOptions,
               deliveryFeeIndex: deliveryFeeParsed.index,
               deliveryFeeMeta: deliveryFeeParsed
             };
@@ -540,6 +607,12 @@ const BremPromotionApplyAdmin = (function () {
 
     applyRoot()?.querySelectorAll('[data-promotion-apply-platform]').forEach(button => {
       button.addEventListener('click', () => setPlatform(button.dataset.promotionApplyPlatform));
+    });
+
+    ['coupang', 'baemin'].forEach(platform => {
+      $$(`input[name="promotionApplyMode-${platform}"]`).forEach(input => {
+        input.addEventListener('change', () => syncApplyModeUI(platform));
+      });
     });
 
     $('#promotionApplyForm')?.addEventListener('submit', event => {
