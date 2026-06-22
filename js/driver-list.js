@@ -95,7 +95,7 @@
   }
 
   function isMobileView() {
-    return window.matchMedia('(max-width: 900px)').matches;
+    return window.matchMedia('(max-width: 720px)').matches;
   }
 
   function canUseFastFilter() {

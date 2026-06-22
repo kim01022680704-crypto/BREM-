@@ -11,6 +11,7 @@
 
   var deferredPrompt = null;
   var labelEl = btn.querySelector('.brem-pwa-install-label');
+  var chromeHint = document.getElementById('bremPwaChromeHint');
 
   function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches ||
@@ -89,10 +90,25 @@
 
   btn.hidden = false;
 
+  function showChromeHint() {
+    if (!chromeHint) return;
+    if (!window.matchMedia('(max-width: 430px)').matches) {
+      chromeHint.hidden = true;
+      return;
+    }
+    var browser = detectBrowser();
+    chromeHint.hidden = !(browser === 'samsung' || browser === 'android' || browser === 'other');
+  }
+
+  showChromeHint();
+  window.addEventListener('resize', function () {
+    showChromeHint();
+  });
+
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
     deferredPrompt = e;
-    if (labelEl) labelEl.textContent = '앱 설치(모바일)CLICK';
+    if (labelEl) labelEl.textContent = '앱 설치 (모바일)';
   });
 
   btn.addEventListener('click', function () {
