@@ -6172,13 +6172,33 @@ const BremStorage = (function () {
           void activeStorageAdapter.deleteAdminCallsByIds([callId]);
         }
       }
+      return settlements.getAll();
     },
 
     async removeByIdAsync(id) {
-      settlements.removeById(id);
+      const target = settlements.getAll().find(item => item.id === id);
+      if (!target) return settlements.getAll();
+
+      const periodKey = String(target.period).slice(0, 10);
+      const p = normalizePlatform(target.platform);
+      const callId = `${target.driverId}-${periodKey}-${p}`;
+
+      storageAdapter.write(KEYS.settlements, settlements.getAll().filter(item => item.id !== id));
+
+      if (activeStorageAdapter.deleteAdminCallsByIds) {
+        await activeStorageAdapter.deleteAdminCallsByIds([callId]);
+      } else {
+        storageAdapter.write(
+          KEYS.calls,
+          calls.getAll().filter(call => call.id !== callId),
+          { allowEmpty: true }
+        );
+      }
+
       await storageAdapter.flush?.();
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
+      return settlements.getAll();
     },
 
     async clearByPeriod(period, platform = DEFAULT_PLATFORM) {
@@ -6934,29 +6954,35 @@ const BremStorage = (function () {
       const target = settlementUploadLogs.getById(id);
       const rollback = options.rollback !== false;
       if (rollback && target) {
-        settlementUploadLogs.rollbackAppliedDailyLog(target);
+        void settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
       }
       settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
       return target || null;
     },
 
     async removeAsync(id, options = {}) {
-      const removed = settlementUploadLogs.remove(id, options);
+      const target = settlementUploadLogs.getById(id);
+      const rollback = options.rollback !== false;
+      let rollbackResult = { rolledBackSettlements: 0, rolledBackCalls: 0 };
+      if (rollback && target) {
+        rollbackResult = await settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
+      }
+      settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
       await storageAdapter.flush?.();
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
       window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
-      return removed;
+      return { ...target, rollbackResult };
     },
 
-    rollbackAppliedDailyLog(log) {
+    async rollbackAppliedDailyLogAsync(log) {
       if (!log || log.kind !== 'daily' || log.status !== 'applied') {
-        return { rolledBack: 0 };
+        return { rolledBackSettlements: 0, rolledBackCalls: 0 };
       }
 
       const p = normalizePlatform(log.platform);
       const periodKey = String(log.period || log.startDate || '').slice(0, 10);
-      if (!periodKey) return { rolledBack: 0 };
+      if (!periodKey) return { rolledBackSettlements: 0, rolledBackCalls: 0 };
 
       const logAppliedAt = String(log.appliedAt || log.uploadedAt || '');
       const hasNewerAppliedLog = settlementUploadLogs.getAll().some(item => (
@@ -6967,7 +6993,9 @@ const BremStorage = (function () {
         && item.status === 'applied'
         && String(item.appliedAt || item.uploadedAt || '') > logAppliedAt
       ));
-      if (hasNewerAppliedLog) return { rolledBack: 0 };
+      if (hasNewerAppliedLog) {
+        return { rolledBackSettlements: 0, rolledBackCalls: 0 };
+      }
 
       const appliedRecords = (
         Array.isArray(log.appliedRecords) && log.appliedRecords.length
@@ -6975,25 +7003,33 @@ const BremStorage = (function () {
           : log.matchedRecords
       ) || [];
 
-      let rolledBack = 0;
-      appliedRecords.forEach(row => {
+      let rolledBackSettlements = 0;
+      let rolledBackCalls = 0;
+      for (const row of appliedRecords) {
         const driverId = String(row.driverId || '').trim();
-        if (!driverId) return;
-        settlements.getAll()
-          .filter(item => (
-            item.driverId === driverId
-            && normalizePlatform(item.platform) === p
-            && String(item.period).slice(0, 10) === periodKey
-          ))
-          .forEach(item => {
-            const settlementAppliedAt = String(item.appliedAt || '');
-            if (!settlementAppliedAt || !logAppliedAt || settlementAppliedAt <= logAppliedAt) {
-              settlements.removeById(item.id);
-              rolledBack += 1;
-            }
-          });
-      });
-      return { rolledBack };
+        if (!driverId) continue;
+        const matches = settlements.getAll().filter(item => (
+          item.driverId === driverId
+          && normalizePlatform(item.platform) === p
+          && String(item.period).slice(0, 10) === periodKey
+        ));
+        for (const item of matches) {
+          const settlementAppliedAt = String(item.appliedAt || '');
+          if (settlementAppliedAt && logAppliedAt && settlementAppliedAt > logAppliedAt) continue;
+          await settlements.removeByIdAsync(item.id);
+          rolledBackSettlements += 1;
+          rolledBackCalls += 1;
+        }
+      }
+      return { rolledBackSettlements, rolledBackCalls };
+    },
+
+    rollbackAppliedDailyLog(log) {
+      if (!log || log.kind !== 'daily' || log.status !== 'applied') {
+        return { rolledBack: 0 };
+      }
+      settlementUploadLogs.rollbackAppliedDailyLogAsync(log);
+      return { rolledBack: 0 };
     },
 
     async removeDailyByPeriod(period, platform = DEFAULT_PLATFORM) {

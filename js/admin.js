@@ -4857,7 +4857,10 @@
         const log = BremStorage.settlementUploadLogs.getById(logId);
         if (log?.kind === 'daily' && log.status === 'applied') {
           const ok = window.confirm(
-            '이 업로드 기록을 삭제하면 반영된 정산·콜수도 함께 제거됩니다.\n'
+            '이 업로드 기록을 삭제하면 이 파일로 반영된\n'
+            + '· 일정산 정산 데이터\n'
+            + '· 콜수입력(기사별 일별 콜수)\n'
+            + '도 함께 제거됩니다.\n'
             + '(같은 날 더 최근 반영 기록이 있으면 그 데이터는 유지됩니다.)\n계속할까요?'
           );
           if (!ok) return;
@@ -4866,16 +4869,17 @@
         void (async () => {
           try {
             const removed = await BremStorage.settlementUploadLogs.removeAsync(logId);
+            const rolledBack = removed?.rollbackResult?.rolledBackCalls || 0;
             showToast(
               removed?.kind === 'daily' && removed?.status === 'applied'
-                ? '업로드 기록과 연결된 정산·콜수가 삭제되었습니다.'
+                ? `업로드 기록 삭제 · 정산·콜수입력 ${rolledBack}명 연동 제거`
                 : '업로드 기록이 삭제되었습니다.'
             );
-            renderSettlements();
+            renderAll();
           } catch (error) {
             console.error('[BREM] settlement upload log delete failed:', error);
             showToast(error.message || '기록 삭제 저장에 실패했습니다.');
-            renderSettlements();
+            renderAll();
           }
         })();
         return;
