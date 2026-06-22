@@ -3691,6 +3691,11 @@ textarea {
   font-size: 0.86rem;
 }
 
+#promotionRulesList .table-wrap {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+
 .promotion-rule-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3804,6 +3809,9 @@ textarea {
 .promotion-tier-rows {
   display: grid;
   gap: 10px;
+  max-height: min(60vh, 560px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .promotion-tier-row {
@@ -3923,6 +3931,9 @@ textarea {
 .promotion-conditions-list {
   display: grid;
   gap: 12px;
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .promotion-condition-row {

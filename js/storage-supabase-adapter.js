@@ -1073,7 +1073,7 @@ window.BremSupabaseStorageAdapter = (function () {
         window.BremStorageGuard?.logBlocked?.(check);
         throw new Error(check.message || '프로모션 저장이 차단되었습니다.');
       }
-      await upsertTableRows('promotions', rows);
+      await upsertRowsInChunks('promotions', rows);
       loadedTableKeys.add(keys.promotionRules);
     }
 

@@ -2004,6 +2004,17 @@ const BremStorage = (function () {
     }
   }
 
+  function applyRiderLongEventProgressToDriver(driver, progress = {}) {
+    const unset = progress.status === 'unset' || (!progress.itemId && !progress.itemName);
+    return {
+      ...driver,
+      longEventItemId: unset ? '' : (progress.itemId || ''),
+      longEventItem: unset ? '' : (progress.itemName || ''),
+      longEventStartDate: unset ? '' : (progress.startDate || ''),
+      longEventPlatform: normalizeLongEventPlatform(progress.platform || driver.longEventPlatform)
+    };
+  }
+
   function stageRiderScopedCache(key, value, meta = {}) {
     if (activeStorageAdapter.stage) {
       activeStorageAdapter.stage(key, value);
@@ -2083,13 +2094,7 @@ const BremStorage = (function () {
         const index = list.findIndex(item => item.id === riderId);
         if (index >= 0) {
           const progress = payload.longEvent;
-          list[index] = {
-            ...list[index],
-            longEventItemId: progress.itemId || list[index].longEventItemId || '',
-            longEventItem: progress.itemName || list[index].longEventItem || '',
-            longEventStartDate: progress.startDate || list[index].longEventStartDate || '',
-            longEventPlatform: normalizeLongEventPlatform(progress.platform || list[index].longEventPlatform)
-          };
+          list[index] = applyRiderLongEventProgressToDriver(list[index], progress);
           markDriversCache(list, { source: 'rider-dashboard' });
         }
       }
@@ -2222,13 +2227,7 @@ const BremStorage = (function () {
         const index = list.findIndex(item => item.id === riderId);
         if (index >= 0) {
           const progress = payload.longEvent;
-          list[index] = {
-            ...list[index],
-            longEventItemId: progress.itemId || list[index].longEventItemId || '',
-            longEventItem: progress.itemName || list[index].longEventItem || '',
-            longEventStartDate: progress.startDate || list[index].longEventStartDate || '',
-            longEventPlatform: normalizeLongEventPlatform(progress.platform || list[index].longEventPlatform)
-          };
+          list[index] = applyRiderLongEventProgressToDriver(list[index], progress);
           markDriversCache(list, { source: 'rider-live' });
         }
       }
@@ -4728,6 +4727,7 @@ const BremStorage = (function () {
   }
 
   const MAX_ADMIN_MISSIONS = 9999;
+  const MAX_ADMIN_PROMOTION_RULES = 200;
 
   const missions = {
     maxCount: MAX_ADMIN_MISSIONS,
@@ -5934,19 +5934,25 @@ const BremStorage = (function () {
         && (!driver?.id || String(activeSupabaseProfile.rider_id || '') === String(driver.id))
       ) {
         const progress = riderLongEventProgress;
-        const item = progress.itemName
-          ? {
-            id: progress.itemId || '',
-            name: progress.itemName,
-            targetCount: Number(progress.target) || 0
-          }
-          : events.getItemForDriver(driver);
+        const unset = progress.status === 'unset' || (!progress.itemId && !progress.itemName);
+        const item = unset
+          ? null
+          : progress.itemName
+            ? {
+              id: progress.itemId || '',
+              name: progress.itemName,
+              targetCount: Number(progress.target) || 0
+            }
+            : events.getItemForDriver(driver);
         return {
           ...progress,
           item,
+          itemId: unset ? '' : (progress.itemId || ''),
+          itemName: unset ? '' : (progress.itemName || ''),
           total: Number(progress.total) || 0,
           target: Number(progress.target) || 0,
-          rate: Number(progress.rate) || 0
+          rate: Number(progress.rate) || 0,
+          status: unset ? 'unset' : (progress.status || 'unset')
         };
       }
 
@@ -5995,9 +6001,15 @@ const BremStorage = (function () {
       const driverItemId = String(driver?.longEventItemId || '').trim();
       const driverItemName = String(driver?.longEventItem || '').trim();
       if (!driverItemId && !driverItemName) {
+        if (!isRiderProductionSession()) {
+          const mappedId = String(map[driver?.id] || '').trim();
+          if (mappedId) {
+            return catalog.find(item => item.id === mappedId) || null;
+          }
+        }
         return null;
       }
-      const selected = driverItemId || map[driver.id] || driverItemName || '';
+      const selected = driverItemId || driverItemName || '';
       return catalog.find(item => item.id === selected || item.name === selected) || null;
     },
 
@@ -6519,6 +6531,10 @@ const BremStorage = (function () {
     },
 
     create(rule) {
+      const existing = promotionRules.getAll();
+      if (existing.length >= MAX_ADMIN_PROMOTION_RULES) {
+        throw new Error(`프로모션 조건은 최대 ${MAX_ADMIN_PROMOTION_RULES}개까지 등록할 수 있습니다.`);
+      }
       const next = normalizePromotionRule({
         ...rule,
         id: createId(),

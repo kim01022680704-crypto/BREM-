@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260625d">
+  <link rel="stylesheet" href="css/admin.css?v=20260621d">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -1604,7 +1604,7 @@
                 <h3>미지급 조건</h3>
                 <button type="button" class="small-btn" id="promotionAddBlockConditionBtn">조건 추가</button>
               </div>
-              <p class="form-help">하나라도 충족하지 못하면 프로모션 전액 미지급 (거절율 초과, 수락률 미만, 총 콜수 미달, 주 근무일 미달 등)</p>
+              <p class="form-help">하나라도 충족하지 못하면 프로모션 전액 미지급 (거절율 초과, 수락률 미만, 총 콜수 미달, 주 근무일 미달 등). 조건은 최소 10개 이상 추가 가능합니다.</p>
               <div id="promotionBlockConditionsList" class="promotion-conditions-list"></div>
             </div>
 
@@ -1628,7 +1628,7 @@
 
             <div class="promotion-form-section" id="promotionGuaranteeSection">
               <h3>단가보장 · 콜수 구간</h3>
-              <p class="form-help">구간별 보장 단가를 설정하세요. 지급액 = max(0, 총콜수×보장단가 − 실제 배달수행금액). 수락률·근무일 등은 미지급/추가 조건에서 설정하세요.</p>
+              <p class="form-help">구간별 보장 단가를 설정하세요. 구간은 10개 이상 추가할 수 있습니다. 지급액 = max(0, 총콜수×보장단가 − 실제 배달수행금액). 수락률·근무일 등은 미지급/추가 조건에서 설정하세요.</p>
               <div class="promotion-tier-toolbar">
                 <strong>콜수 구간</strong>
                 <button type="button" class="small-btn" id="promotionAddTierBtn">구간 추가</button>
@@ -3166,9 +3166,9 @@
   <script src="js/settlement-client.js?v=20260625b"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260621h"></script>
-  <script src="js/promotion-conditions.js?v=20260625a"></script>
+  <script src="js/promotion-conditions.js?v=20260621d"></script>
   <script src="js/promotion-engine.js?v=20260625a"></script>
-  <script src="js/promotion-admin.js?v=20260625e"></script>
+  <script src="js/promotion-admin.js?v=20260621d"></script>
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260625a"></script>
   <script src="js/baemin-delivery-fee.js"></script>

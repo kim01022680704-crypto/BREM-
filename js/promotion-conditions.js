@@ -1,4 +1,8 @@
 const BremPromotionConditions = (function () {
+  const MAX_CONDITIONS_PER_MODE = 50;
+  const MAX_CALL_TIERS = 50;
+  const MIN_SUPPORTED_COUNT = 10;
+
   const PROCESSING_MODES = {
     block: '미지급 조건',
     bonus: '추가 가산 조건',
@@ -314,10 +318,18 @@ const BremPromotionConditions = (function () {
     });
   }
 
+  function filterFilledConditions(conditions = []) {
+    return (conditions || []).filter(item => String(item?.conditionName || '').trim());
+  }
+
   return {
+    MAX_CONDITIONS_PER_MODE,
+    MAX_CALL_TIERS,
+    MIN_SUPPORTED_COUNT,
     PROCESSING_MODES,
     CONDITION_TYPES,
     BONUS_ACTION_TYPES,
+    filterFilledConditions,
     normalizeCondition,
     normalizeBase,
     migrateLegacyRule,

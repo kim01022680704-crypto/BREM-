@@ -543,23 +543,42 @@ function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
     : {};
 
   const raw = rider.raw_data && typeof rider.raw_data === 'object' ? rider.raw_data : {};
-  const mappedItemId = itemsMap[riderId] ? String(itemsMap[riderId]) : '';
-  const itemId = String(rider.long_event_item_id || mappedItemId || raw.longEventItemId || '').trim();
-  const item = catalog.find(entry => entry.id === itemId)
-    || catalog.find(entry => entry.name === rider.long_event_item)
-    || catalog.find(entry => entry.name === raw.longEventItem)
-    || null;
-
-  const startDate = String(rider.long_event_start_date || raw.longEventStartDate || '').slice(0, 10);
+  const columnItemId = String(rider.long_event_item_id || '').trim();
+  const columnItemName = String(rider.long_event_item || '').trim();
   const platform = normalizeCallPlatform(
     rider.long_event_platform || raw.longEventPlatform || 'coupang'
   );
+
+  const unsetProgress = {
+    itemId: '',
+    itemName: '',
+    platform,
+    startDate: '',
+    total: 0,
+    target: 0,
+    rate: 0,
+    status: 'unset'
+  };
+
+  if (!columnItemId && !columnItemName) {
+    return unsetProgress;
+  }
+
+  const mappedItemId = itemsMap[riderId] ? String(itemsMap[riderId]).trim() : '';
+  const rawItemId = String(raw.longEventItemId || '').trim();
+  const itemId = columnItemId || mappedItemId || rawItemId;
+  if (!itemId) {
+    return unsetProgress;
+  }
+
+  const item = catalog.find(entry => entry.id === itemId) || null;
+  const startDate = String(rider.long_event_start_date || raw.longEventStartDate || '').slice(0, 10);
   const target = item ? Math.max(0, Number(item.targetCount) || 0) : 0;
 
   if (!item || !startDate) {
     return {
       itemId: item?.id || itemId,
-      itemName: item?.name || rider.long_event_item || raw.longEventItem || '',
+      itemName: item?.name || '',
       platform,
       startDate,
       total: 0,

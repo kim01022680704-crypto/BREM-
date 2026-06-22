@@ -682,7 +682,14 @@ async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
     : {};
   if (normalized.long_event_item_id !== undefined) {
     raw.longEventItemId = normalized.long_event_item_id;
-    raw.longEventItem = normalized.long_event_item || '';
+    if (!normalized.long_event_item_id) {
+      normalized.long_event_item = '';
+      normalized.long_event_start_date = '';
+      raw.longEventItem = '';
+      raw.longEventStartDate = '';
+    } else {
+      raw.longEventItem = normalized.long_event_item || '';
+    }
   }
   if (normalized.long_event_start_date !== undefined) {
     raw.longEventStartDate = normalized.long_event_start_date || '';

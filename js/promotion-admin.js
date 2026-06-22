@@ -161,6 +161,20 @@ const BremPromotionAdmin = (function () {
     return fields;
   }
 
+  function maxConditionsPerMode() {
+    return Number(BremPromotionConditions.MAX_CONDITIONS_PER_MODE) || 50;
+  }
+
+  function maxCallTiers() {
+    return Number(BremPromotionConditions.MAX_CALL_TIERS) || 50;
+  }
+
+  function filterFilledConditions(conditions = []) {
+    return BremPromotionConditions.filterFilledConditions
+      ? BremPromotionConditions.filterFilledConditions(conditions)
+      : (conditions || []).filter(item => String(item?.conditionName || '').trim());
+  }
+
   function renderConditionRow(condition, processingMode, platform, index) {
     const types = BremPromotionConditions.conditionTypesForPlatform(platform, processingMode);
     const typeOptions = types.map(item => (
@@ -168,7 +182,7 @@ const BremPromotionAdmin = (function () {
     )).join('');
 
     return `
-      <div class="promotion-condition-row" data-condition-mode="${processingMode}" data-condition-index="${index}">
+      <div class="promotion-condition-row" data-condition-mode="${processingMode}" data-condition-index="${index}" data-condition-id="${escapeHtml(condition.id || '')}">
         <div class="promotion-condition-row-header">
           <strong>${processingMode === 'block' ? '미지급' : processingMode === 'bonus' ? '추가 가산' : '참고'} 조건 ${index + 1}</strong>
           <button type="button" class="small-btn danger-btn" data-remove-condition>삭제</button>
@@ -275,6 +289,11 @@ const BremPromotionAdmin = (function () {
 
   function addConditionDraft(mode) {
     syncConditionDraftsFromForm();
+    const current = state.conditionDrafts[mode] || [];
+    if (current.length >= maxConditionsPerMode()) {
+      showToast(`미지급/추가/참고 조건은 각각 최대 ${maxConditionsPerMode()}개까지 추가할 수 있습니다.`);
+      return;
+    }
     const platform = $('#promotionRulePlatform')?.value || getActiveRulesPlatformTab();
     state.conditionDrafts[mode].push(BremPromotionConditions.emptyCondition(mode, platform));
     renderConditionLists(platform);
@@ -383,13 +402,21 @@ const BremPromotionAdmin = (function () {
     };
   }
 
-  function readTierRowsFromForm() {
-    return $$('#promotionTierRows .promotion-tier-row').map((row, index) => ({
+  function readTierRowsFromForm({ includeEmpty = false } = {}) {
+    const rows = $$('#promotionTierRows .promotion-tier-row').map((row, index) => ({
       id: row.dataset.tierId || '',
-      minCalls: Number(row.querySelector('[data-tier-min-calls]')?.value || 0),
-      unitPrice: Number(row.querySelector('[data-tier-unit-price]')?.value || 0),
+      minCalls: row.querySelector('[data-tier-min-calls]')?.value ?? '',
+      unitPrice: row.querySelector('[data-tier-unit-price]')?.value ?? '',
       sortOrder: index
-    })).filter(tier => tier.minCalls > 0 || tier.unitPrice > 0);
+    }));
+    if (includeEmpty) return rows;
+    return rows
+      .filter(tier => Number(tier.minCalls) > 0 || Number(tier.unitPrice) > 0)
+      .map(tier => ({
+        ...tier,
+        minCalls: Number(tier.minCalls) || 0,
+        unitPrice: Number(tier.unitPrice) || 0
+      }));
   }
 
   function renderTierRows(tiers = []) {
@@ -487,9 +514,9 @@ const BremPromotionAdmin = (function () {
       startDate: $('#promotionRuleStartDate').value,
       endDate: $('#promotionRuleEndDate').value,
       base,
-      blockConditions: normalizeConditionsForPlatform(readConditionsFromForm('block'), platform),
-      bonusConditions: normalizeConditionsForPlatform(readConditionsFromForm('bonus'), platform),
-      referenceConditions: normalizeConditionsForPlatform(readConditionsFromForm('reference'), platform),
+      blockConditions: normalizeConditionsForPlatform(filterFilledConditions(readConditionsFromForm('block')), platform),
+      bonusConditions: normalizeConditionsForPlatform(filterFilledConditions(readConditionsFromForm('bonus')), platform),
+      referenceConditions: normalizeConditionsForPlatform(filterFilledConditions(readConditionsFromForm('reference')), platform),
       applyGlobalAcceptBlock: $('#promotionRuleApplyGlobalBlock').checked,
       allowDuplicate: $('#promotionRuleAllowDuplicate').checked,
       duplicateStrategy: $('#promotionRuleDuplicateStrategy').value,
@@ -513,7 +540,9 @@ const BremPromotionAdmin = (function () {
       }
     }
 
-    const tierMins = payload.base.callTiers.map(tier => tier.minCalls);
+    const tierMins = payload.base.callTiers
+      .filter(tier => tier.minCalls > 0 && tier.unitPrice > 0)
+      .map(tier => tier.minCalls);
     if (new Set(tierMins).size !== tierMins.length) {
       return '콜수 구간의 최소 콜수가 중복되면 안 됩니다.';
     }
@@ -524,7 +553,18 @@ const BremPromotionAdmin = (function () {
       ...payload.referenceConditions
     ];
     if (allConditions.some(item => !item.conditionName.trim())) {
-      return '모든 조건에 조건명을 입력하세요.';
+      return '입력한 조건에는 조건명을 모두 입력하세요.';
+    }
+
+    if (payload.blockConditions.length > maxConditionsPerMode()
+      || payload.bonusConditions.length > maxConditionsPerMode()
+      || payload.referenceConditions.length > maxConditionsPerMode()) {
+      return `미지급/추가/참고 조건은 각각 최대 ${maxConditionsPerMode()}개까지 저장할 수 있습니다.`;
+    }
+
+    const validTiersForCount = payload.base.callTiers.filter(tier => tier.minCalls > 0 || tier.unitPrice > 0);
+    if (validTiersForCount.length > maxCallTiers()) {
+      return `콜수 구간은 최대 ${maxCallTiers()}개까지 저장할 수 있습니다.`;
     }
 
     return '';
@@ -539,14 +579,19 @@ const BremPromotionAdmin = (function () {
       return;
     }
 
-    if (state.editingRuleId) {
-      BremStorage.promotionRules.update(state.editingRuleId, payload);
-      state.previewRuleId = state.editingRuleId;
-      showToast('프로모션 조건이 수정되었습니다. 미리보기에 적용되었습니다.');
-    } else {
-      const created = BremStorage.promotionRules.create(payload);
-      state.previewRuleId = created.id;
-      showToast('프로모션 조건이 추가되었습니다. 미리보기에 적용되었습니다.');
+    try {
+      if (state.editingRuleId) {
+        BremStorage.promotionRules.update(state.editingRuleId, payload);
+        state.previewRuleId = state.editingRuleId;
+        showToast('프로모션 조건이 수정되었습니다. 미리보기에 적용되었습니다.');
+      } else {
+        const created = BremStorage.promotionRules.create(payload);
+        state.previewRuleId = created.id;
+        showToast('프로모션 조건이 추가되었습니다. 미리보기에 적용되었습니다.');
+      }
+    } catch (error) {
+      showToast(error.message || '프로모션 조건 저장에 실패했습니다.');
+      return;
     }
 
     hideRuleForm();
@@ -910,7 +955,11 @@ const BremPromotionAdmin = (function () {
     });
 
     $('#promotionAddTierBtn')?.addEventListener('click', () => {
-      const tiers = readTierRowsFromForm();
+      const tiers = readTierRowsFromForm({ includeEmpty: true });
+      if (tiers.length >= maxCallTiers()) {
+        showToast(`콜수 구간은 최대 ${maxCallTiers()}개까지 추가할 수 있습니다.`);
+        return;
+      }
       tiers.push({ id: '', minCalls: '', unitPrice: '' });
       renderTierRows(tiers);
     });
@@ -919,7 +968,7 @@ const BremPromotionAdmin = (function () {
       const removeBtn = event.target.closest('[data-remove-tier]');
       if (!removeBtn) return;
       const row = removeBtn.closest('.promotion-tier-row');
-      const tiers = readTierRowsFromForm().filter((_, index) => {
+      const tiers = readTierRowsFromForm({ includeEmpty: true }).filter((_, index) => {
         const currentRow = $$('#promotionTierRows .promotion-tier-row')[index];
         return currentRow !== row;
       });

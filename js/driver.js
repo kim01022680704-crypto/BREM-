@@ -874,7 +874,12 @@
     const baeminRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
     const item = eventItemFor(driver);
     const eventProgress = BremStorage.events.getProgressForDriver(driver);
-    const eventItem = eventProgress.item || item;
+    const eventItem = eventProgress.status === 'unset' ? null : (eventProgress.item || item);
+    const longEventPanel = document.getElementById('riderLongEventPanel');
+    if (longEventPanel) {
+      longEventPanel.hidden = !eventItem;
+    }
+
     const eventStartDate = eventProgress.startDate || driver.longEventStartDate || '';
     const total = eventStartDate ? Number(eventProgress.total) || 0 : 0;
     const missionTarget = Number(eventProgress.target) || (eventItem ? Number(eventItem.targetCount || 0) : 0);
