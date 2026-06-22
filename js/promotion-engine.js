@@ -802,13 +802,14 @@ const BremPromotionEngine = (function () {
       appliedBlockConditions.push(...collectAppliedBlockConditions(rule, riderData, settingsValue));
     }
 
+    const guaranteeBonus = guaranteeResult.guaranteeBonus || 0;
+
     if (guaranteeBonus > 0 && guaranteeResult.appliedUnitPrice > 0) {
       appliedBlockConditions.push({
         name: `단가보장 ${Number(guaranteeBonus).toLocaleString('ko-KR')}원`
       });
     }
 
-    const guaranteeBonus = guaranteeResult.guaranteeBonus || 0;
     const totalBonus = basePay + bonusPay + guaranteeBonus;
     const baseFailureReasons = baseResult.failureReasons || [];
     const guaranteeFailureReasons = guaranteeResult.failureReasons || [];
