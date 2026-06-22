@@ -20,9 +20,109 @@ const BremPromotionApplyAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
-  function formatRate(value, platform) {
-    if (value === null || value === undefined || value === '') return '-';
-    return `${BremPlatforms.rateLabel(platform)} ${Number(value).toLocaleString('ko-KR')}%`;
+  function formatRate(value, platform, options = {}) {
+    const label = BremPlatforms.rateLabel(platform);
+    if (value === null || value === undefined || value === '') {
+      if (options.highlightMissing) {
+        return `<span class="promotion-rate-missing-badge">${escapeHtml(label)} 미등록</span>`;
+      }
+      return '-';
+    }
+    return `${label} ${Number(value).toLocaleString('ko-KR')}%`;
+  }
+
+  function rowHasWeeklyCalls(row) {
+    return Number(row?.callCount || 0) >= 1;
+  }
+
+  function isRateUnregistered(row, rowPlatform) {
+    if (!rowHasWeeklyCalls(row)) return false;
+    const rate = row.platformRate;
+    if (rate === null || rate === undefined || rate === '') return true;
+    const label = BremPlatforms.rateLabel(rowPlatform);
+    return (row.failureReasons || []).some(reason => {
+      const text = String(reason || '');
+      return text.includes(`${label} 미등록`)
+        || text.includes('수락률 미등록')
+        || text.includes('거절율 미등록');
+    });
+  }
+
+  function getRateMissingRows(result) {
+    const platform = result?.platform;
+    return (result?.results || []).filter(row => {
+      const rowPlatform = row.appliedPlatform || platform;
+      return isRateUnregistered(row, rowPlatform);
+    });
+  }
+
+  function getRateMissingRowLabel(row, result) {
+    const platform = BremPlatforms.normalize(result?.platform);
+    const rowPlatform = BremPlatforms.normalize(row.appliedPlatform || platform);
+    if (platform === 'baemin' || (platform === 'combined' && rowPlatform === 'baemin')) {
+      const riderId = BremPromotionApply.getResultRowBaeminRiderId(row);
+      const name = BremPromotionApply.getResultRowMatchedDriverName(row);
+      return name ? `${riderId} · ${name}` : riderId;
+    }
+    return BremPromotionApply.getResultRowDisplayName(row, platform);
+  }
+
+  function renderRateMissingPanel(result) {
+    const panel = $('#promotionApplyRateMissingPanel');
+    if (!panel) return;
+
+    const rows = getRateMissingRows(result);
+    if (!rows.length) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+
+    const platform = BremPlatforms.normalize(result.platform);
+    const isBaeminTab = platform === 'baemin';
+    const isCombined = platform === 'combined';
+    const rateHeader = isBaeminTab ? '수락률' : (isCombined ? '수락/거절율' : '거절율');
+
+    panel.hidden = false;
+    panel.innerHTML = `
+      <div class="promotion-rate-missing-header">
+        <strong>⚠ ${escapeHtml(rateHeader)} 미등록 · 정산 필수 ${formatNumber(rows.length)}명</strong>
+        <p>주간 콜수 1건 이상인데 ${escapeHtml(rateHeader)} 데이터가 없습니다. 거절율·수락률을 등록한 뒤 다시 계산하세요.</p>
+      </div>
+      <div class="table-wrap promotion-rate-missing-table-wrap">
+        <table class="weekly-settlement-detail-table promotion-rate-missing-table">
+          <thead>
+            <tr>
+              ${isBaeminTab ? '<th>배민 RIDER ID</th><th>매칭 기사명</th>' : '<th>기사</th>'}
+              ${isCombined ? '<th>플랫폼</th>' : ''}
+              <th>주간 콜수</th>
+              <th>${escapeHtml(rateHeader)}</th>
+              <th>미지급 사유</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => {
+              const rowPlatform = row.appliedPlatform || platform;
+              const identityCells = isBaeminTab
+                ? `
+                  <td><strong>${escapeHtml(BremPromotionApply.getResultRowBaeminRiderId(row))}</strong></td>
+                  <td>${escapeHtml(BremPromotionApply.getResultRowMatchedDriverName(row) || '-')}</td>
+                `
+                : `<td><strong>${escapeHtml(getRateMissingRowLabel(row, result))}</strong></td>`;
+              return `
+                <tr class="promotion-row-rate-missing">
+                  ${identityCells}
+                  ${isCombined ? `<td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>` : ''}
+                  <td>${formatNumber(row.callCount)}</td>
+                  <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: true })}</td>
+                  <td>${escapeHtml((row.failureReasons || []).join(', ') || `${BremPlatforms.rateLabel(rowPlatform)} 미등록`)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   function showToast(message) {
@@ -260,21 +360,26 @@ const BremPromotionApplyAdmin = (function () {
     const deliveryFeeSummary = result.deliveryFeeLabel
       ? `<p>배달처리비: <strong>${escapeHtml(result.deliveryFeeLabel)}</strong>${result.deliveryFeeFileName ? ` · ${escapeHtml(result.deliveryFeeFileName)}` : ''}</p>`
       : '';
+    const platform = result.platform;
+    const isCombinedResult = BremPlatforms.normalize(platform) === 'combined';
+    const isBaeminTab = BremPlatforms.normalize(platform) === 'baemin';
+    const rateMissingRows = getRateMissingRows(result);
+    const rateMissingLabel = isBaeminTab ? '수락률' : (isCombinedResult ? '수락/거절율' : '거절율');
+    const rateMissingSummary = rateMissingRows.length
+      ? ` · <span class="promotion-rate-missing-summary">⚠ ${escapeHtml(rateMissingLabel)} 미등록 <strong>${formatNumber(rateMissingRows.length)}</strong>명</span>`
+      : '';
 
     summaryEl.innerHTML = `
       <p>대상: <strong>${escapeHtml(result.settlementLabel)}</strong></p>
       <p>정산기간: <strong>${escapeHtml(result.startDate)} ~ ${escapeHtml(result.endDate)}</strong></p>
       <p>적용 방식: <strong>${escapeHtml(result.assignmentMode === 'per_driver' ? '기사별 미션 배정' : '선택 조건 시뮬레이션')}</strong></p>
       <p>적용 조건: <strong>${escapeHtml(result.appliedRuleLabel || (result.selectedPromotionRuleNames || []).join(', ') || '-')}</strong>${result.unassignedRiderCount ? ` · 미배정 <strong>${formatNumber(result.unassignedRiderCount)}</strong>명` : ''}</p>
-      <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong></p>
+      <p>기사 <strong>${formatNumber(result.summary.riderCount)}</strong>명 · 총 프로모션 <strong>${formatMoney(result.summary.totalPromotionAmount)}</strong>${rateMissingSummary}</p>
       ${deliveryFeeSummary}
       ${combinedSummary}
       ${savedBadge}
     `;
 
-    const platform = result.platform;
-    const isCombinedResult = BremPlatforms.normalize(platform) === 'combined';
-    const isBaeminTab = BremPlatforms.normalize(platform) === 'baemin';
     const showDeliveryFee = resultShowsDeliveryFeeColumns(result);
     const headEl = $('#promotionApplyResultHead');
     if (headEl) {
@@ -305,9 +410,12 @@ const BremPromotionApplyAdmin = (function () {
         </tr>
       `;
     }
+    renderRateMissingPanel(result);
+
     rowsEl.innerHTML = result.results.map(row => {
       const rowPlatform = row.appliedPlatform || platform;
       const isBaeminRow = BremPlatforms.normalize(rowPlatform) === 'baemin';
+      const rateMissing = isRateUnregistered(row, rowPlatform);
       const identityCells = isBaeminTab
         ? `
         <td><strong>${escapeHtml(BremPromotionApply.getResultRowBaeminRiderId(row))}</strong></td>
@@ -315,14 +423,14 @@ const BremPromotionApplyAdmin = (function () {
         `
         : `<td><strong>${escapeHtml(BremPromotionApply.getResultRowDisplayName(row, platform))}</strong></td>`;
       return `
-      <tr class="${row.totalPromotionAmount > 0 ? 'promotion-row-paid' : 'promotion-row-unpaid'}">
+      <tr class="${row.totalPromotionAmount > 0 ? 'promotion-row-paid' : 'promotion-row-unpaid'}${rateMissing ? ' promotion-row-rate-missing' : ''}">
         ${identityCells}
         ${isCombinedResult ? `
           <td>${escapeHtml(BremPlatforms.label(rowPlatform))}</td>
           <td>${escapeHtml(row.assignmentSource || '-')}</td>
         ` : ''}
         <td>${formatNumber(row.callCount)}</td>
-        <td>${formatRate(row.platformRate, rowPlatform)}</td>
+        <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: rateMissing })}</td>
         <td>${escapeHtml(row.ruleName || '-')}</td>
         ${showDeliveryFee ? `
         <td>${isBaeminRow ? formatMoney(row.deliveryAmountTotal) : '-'}</td>
@@ -584,6 +692,25 @@ const BremPromotionApplyAdmin = (function () {
     });
   }
 
+  function resetCurrentResult() {
+    state.lastResult = null;
+    state.savedResultId = '';
+    const card = $('#promotionApplyResultCard');
+    if (card) card.hidden = true;
+    const summaryEl = $('#promotionApplyResultSummary');
+    if (summaryEl) summaryEl.innerHTML = '';
+    const rowsEl = $('#promotionApplyResultRows');
+    if (rowsEl) rowsEl.innerHTML = '';
+    const headEl = $('#promotionApplyResultHead');
+    if (headEl) headEl.innerHTML = '';
+    const panel = $('#promotionApplyRateMissingPanel');
+    if (panel) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+    }
+    showToast('계산 결과를 초기화했습니다.');
+  }
+
   function setPlatform(platform, options = {}) {
     const p = BremPlatforms.normalize(platform);
     state.platform = p;
@@ -637,6 +764,7 @@ const BremPromotionApplyAdmin = (function () {
 
     $('#promotionApplySaveBtn')?.addEventListener('click', saveCurrentResult);
     $('#promotionApplyDownloadBtn')?.addEventListener('click', downloadCurrentResult);
+    $('#promotionApplyResetBtn')?.addEventListener('click', resetCurrentResult);
 
     ['promotionApplySavedPlatformFilter', 'promotionApplySavedRegionFilter', 'promotionApplySavedWeekFilter'].forEach(id => {
       const el = $(id);

@@ -806,7 +806,7 @@ const BremPromotionEngine = (function () {
 
     if (guaranteeBonus > 0 && guaranteeResult.appliedUnitPrice > 0) {
       appliedBlockConditions.push({
-        name: `단가보장 ${Number(guaranteeBonus).toLocaleString('ko-KR')}원`
+        name: `보장단가 ${Number(guaranteeResult.appliedUnitPrice).toLocaleString('ko-KR')}원`
       });
     }
 
