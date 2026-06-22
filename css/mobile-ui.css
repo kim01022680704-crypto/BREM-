@@ -1732,15 +1732,6 @@
     gap: 12px;
   }
 
-  .brem-pwa-install-hint {
-    margin: 0;
-    padding: 0 12px;
-    color: rgba(232, 197, 71, 0.72);
-    font-size: 0.72rem;
-    line-height: 1.45;
-    text-align: center;
-    max-width: 320px;
-  }
 
   /* ── Portal index (home) ── */
   .site--home .topbar {
