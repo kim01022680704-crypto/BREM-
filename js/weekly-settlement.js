@@ -339,8 +339,13 @@ const BremWeeklySettlement = (function () {
 
     if (platform === 'baemin') {
       insights.push(
-        '배민 일정산은 U열(가게도착) 있음 + AH열 금액>0인 배달 행만 1건씩 세어 합산합니다. 주간서 D열(처리건수)은 배민 주간 집계라 취소·조정·제외 건으로 1건 차이가 날 수 있습니다.'
+        '배민 일정산: U열(가게도착) 빈칸·AH열 0인 행은 콜 0건(무효)으로 제외합니다. 주간서 D열과 다르면 해당 날짜 일정산을 삭제→재업로드→반영하세요.'
       );
+      if (system > (weekly || 0)) {
+        insights.push(
+          '표시된 시스템 콜수는 DB에 저장된 업로드 결과입니다. U열 무효 규칙 적용 전에 반영된 96건이 남아 있을 수 있습니다.'
+        );
+      }
     }
 
     const duplicateDays = dayAudits.filter(day => (day.settlements || []).length > 1);

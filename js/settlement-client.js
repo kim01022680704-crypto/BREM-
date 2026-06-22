@@ -30,9 +30,20 @@ const BremSettlementParser = (function () {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  /** U열(가게도착) 빈칸 = 배달 미수행 행 */
+  /** U열(가게도착) 빈칸·대시·0 = 배달 미수행 */
+  function isBlankBaeminCell(value) {
+    const raw = cellText(value).trim();
+    if (!raw) return true;
+    const compact = raw.replace(/\s/g, '');
+    if (!compact) return true;
+    if (/^[-–—./\\|_…]+$/.test(compact)) return true;
+    if (/^(없음|미도착|null|n\/a|na|#n\/a|미입력|공란)$/i.test(compact)) return true;
+    if (/^0([.,]0*)?(원|%)?$/i.test(compact)) return true;
+    return false;
+  }
+
   function isValidBaeminStoreArrival(value) {
-    return Boolean(cellText(value).trim());
+    return !isBlankBaeminCell(value);
   }
 
   /** AH열 0·빈값·0으로 시작하는 문자열 = 배달 미수행 행 */
@@ -46,8 +57,17 @@ const BremSettlementParser = (function () {
   }
 
   /** U열 가게도착 있음 + AH열 금액>0 둘 다 만족해야 유효 1건 */
+  function classifyBaeminDeliveryRow(amountCell, storeArrivalCell) {
+    const storeArrivalValid = isValidBaeminStoreArrival(storeArrivalCell);
+    const amountValid = isValidBaeminDeliveryAmount(amountCell);
+    if (storeArrivalValid && amountValid) return 'valid';
+    if (!storeArrivalValid && !amountValid) return 'both_invalid';
+    if (!storeArrivalValid) return 'empty_store_arrival';
+    return 'invalid_amount';
+  }
+
   function isValidBaeminDeliveryRow(amountCell, storeArrivalCell) {
-    return isValidBaeminStoreArrival(storeArrivalCell) && isValidBaeminDeliveryAmount(amountCell);
+    return classifyBaeminDeliveryRow(amountCell, storeArrivalCell) === 'valid';
   }
 
   function cellText(value) {
@@ -158,6 +178,11 @@ const BremSettlementParser = (function () {
     const groups = new Map();
     let totalDeliveries = 0;
     let totalDeliveryAmount = 0;
+    const skippedRows = {
+      emptyStoreArrival: 0,
+      invalidAmount: 0,
+      bothInvalid: 0
+    };
 
     for (let i = startIndex; i < rows.length; i++) {
       const row = rows[i] || [];
@@ -168,7 +193,13 @@ const BremSettlementParser = (function () {
       const name = format.cleanName(rawName) || riderId;
       const amountCell = readCell(row, amountCol);
       const storeArrivalCell = readCell(row, storeArrivalCol);
-      if (!isValidBaeminDeliveryRow(amountCell, storeArrivalCell)) continue;
+      const rowKind = classifyBaeminDeliveryRow(amountCell, storeArrivalCell);
+      if (rowKind !== 'valid') {
+        if (rowKind === 'empty_store_arrival') skippedRows.emptyStoreArrival += 1;
+        else if (rowKind === 'invalid_amount') skippedRows.invalidAmount += 1;
+        else skippedRows.bothInvalid += 1;
+        continue;
+      }
       const amount = parseNumber(amountCell);
 
       totalDeliveries += 1;
@@ -201,7 +232,8 @@ const BremSettlementParser = (function () {
     return {
       parsedRows,
       totalDeliveries,
-      totalDeliveryAmount
+      totalDeliveryAmount,
+      skippedRows
     };
   }
 
@@ -497,7 +529,8 @@ const BremSettlementParser = (function () {
       totalRows: parsedRows.length,
       totalDeliveries: parsed.totalDeliveries || 0,
       totalDeliveryAmount,
-      totalRiders: parsedRows.length
+      totalRiders: parsedRows.length,
+      skippedBaeminRows: parsed.skippedRows || null
     };
   }
 
@@ -627,6 +660,7 @@ const BremSettlementParser = (function () {
     normalizePassword,
     isValidBaeminDeliveryRow,
     isValidBaeminDeliveryAmount,
-    isValidBaeminStoreArrival
+    isValidBaeminStoreArrival,
+    classifyBaeminDeliveryRow
   };
 })();
