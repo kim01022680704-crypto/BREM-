@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="BREM">
   <link rel="stylesheet" href="css/brand.css">
-  <link rel="stylesheet" href="css/home.css?v=20260623pwa">
+  <link rel="stylesheet" href="css/home.css?v=20260623pwa2">
 </head>
 <body>
   <main class="brem-home">
@@ -25,8 +25,15 @@
     </div>
 
     <div class="brem-home-stage">
-      <div class="brem-logo-wrap">
-        <img src="assets/brand/brem-logo-transparent.png" alt="BREM PLUS DELIVERY AGENCY" width="860" height="320" decoding="async" fetchpriority="high">
+      <div class="brem-logo-block">
+        <div class="brem-logo-wrap">
+          <img src="assets/brand/brem-logo-transparent.png" alt="BREM PLUS DELIVERY AGENCY" width="860" height="320" decoding="async" fetchpriority="high">
+        </div>
+
+        <button type="button" class="brem-pwa-install" id="bremPwaInstallBtn" hidden>
+          <span class="brem-pwa-install-icon" aria-hidden="true">↓</span>
+          <span class="brem-pwa-install-label">앱 설치</span>
+        </button>
       </div>
 
       <nav class="brem-portal-grid" aria-label="앱 선택">
@@ -58,11 +65,6 @@
           <span class="brem-btn-portal-label">관리자앱</span>
         </a>
       </nav>
-
-      <button type="button" class="brem-pwa-install" id="bremPwaInstallBtn" hidden>
-        <span class="brem-pwa-install-icon" aria-hidden="true">↓</span>
-        <span class="brem-pwa-install-label">홈 화면에 추가</span>
-      </button>
     </div>
   </main>
 

@@ -92,14 +92,25 @@ body {
   min-height: 0;
 }
 
+.brem-logo-block {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 760px);
+  gap: 14px;
+  min-height: 0;
+}
+
 .brem-logo-wrap {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(100%, 760px);
-  max-height: min(74vh, 640px);
-  padding: 8px 0 4px;
+  width: 100%;
+  max-height: min(62vh, 560px);
+  padding: 8px 0 0;
   overflow: hidden;
 }
 
@@ -181,11 +192,15 @@ body {
     gap: 16px;
   }
 
-  .brem-logo-wrap {
+  .brem-logo-block {
     width: min(100%, 96vw);
     max-width: 420px;
-    max-height: min(62vh, 460px);
-    padding: 12px 0 4px;
+    gap: 12px;
+  }
+
+  .brem-logo-wrap {
+    max-height: min(52vh, 400px);
+    padding-top: 12px;
   }
 
   .brem-portal-grid {
@@ -214,9 +229,12 @@ body {
 }
 
 @media (min-width: 421px) and (max-width: 720px) {
-  .brem-logo-wrap {
+  .brem-logo-block {
     width: min(100%, 640px);
-    max-height: min(68vh, 540px);
+  }
+
+  .brem-logo-wrap {
+    max-height: min(58vh, 480px);
   }
 }
 
@@ -226,10 +244,10 @@ body {
   justify-content: center;
   gap: 10px;
   width: 100%;
-  max-width: 420px;
-  min-height: 52px;
-  margin: 4px auto 0;
-  padding: 14px 20px;
+  max-width: 320px;
+  min-height: 48px;
+  margin: 0 auto;
+  padding: 12px 20px;
   color: #0a0a0a;
   background: linear-gradient(180deg, #f0d060 0%, #e8c547 100%);
   border: 2px solid #f0d060;
@@ -331,9 +349,12 @@ body.brem-pwa-help-open {
     padding-bottom: 20px;
   }
 
-  .brem-logo-wrap {
+  .brem-logo-block {
     width: min(100%, 860px);
-    max-height: min(78vh, 720px);
+  }
+
+  .brem-logo-wrap {
+    max-height: min(66vh, 620px);
   }
 
   .brem-portal-grid {
