@@ -255,6 +255,16 @@
     return getCurrentAdminEditableMenus().includes(sectionId);
   }
 
+  function isViewOnlyAllowedControl(element) {
+    if (!element) return false;
+    if (element.dataset.readonlyAllow === 'true') return true;
+    if (element.matches('input[type="search"]')) return true;
+    const id = String(element.id || '');
+    if (id && /SearchClear$/i.test(id)) return true;
+    if (element.dataset.readonlyAllowFilter === 'true') return true;
+    return false;
+  }
+
   function applySectionEditPermissions() {
     $$('.section').forEach(section => {
       const isActive = section.classList.contains('active');
@@ -269,7 +279,11 @@
         }
         if (element.id === 'menuBtn' || element.id === 'adminLogoutBtn') return;
         if (element.classList.contains('nav-btn')) return;
-        if (element.dataset.readonlyAllow === 'true') return;
+        if (isViewOnlyAllowedControl(element)) {
+          element.disabled = false;
+          element.classList.remove('admin-view-only-field');
+          return;
+        }
 
         if (!isActive) {
           element.disabled = false;
@@ -296,7 +310,7 @@
         if (!banner) {
           banner = document.createElement('p');
           banner.className = 'admin-view-only-banner';
-          banner.textContent = '이 메뉴는 노출만 가능합니다. 입력·저장하려면 수정 권한이 필요합니다.';
+          banner.textContent = '이 메뉴는 조회 전용입니다. 기사 검색은 가능하며, 입력·저장하려면 수정 권한이 필요합니다.';
           section.prepend(banner);
         }
       } else if (banner) {
