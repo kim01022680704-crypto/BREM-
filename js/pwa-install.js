@@ -92,7 +92,7 @@
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
     deferredPrompt = e;
-    if (labelEl) labelEl.textContent = '앱 설치';
+    if (labelEl) labelEl.textContent = '앱 설치(모바일)CLICK';
   });
 
   btn.addEventListener('click', function () {

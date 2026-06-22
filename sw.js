@@ -1,4 +1,4 @@
-const CACHE_NAME = 'brem-pwa-v1';
+const CACHE_NAME = 'brem-pwa-v2';
 const SHELL_URLS = [
   '/home.html',
   '/driver.html',
@@ -8,8 +8,9 @@ const SHELL_URLS = [
   '/css/login.css',
   '/css/driver.css',
   '/css/admin.css',
-  '/assets/brand/brem-logo-mark-transparent.png',
-  '/assets/brand/brem-logo-mark.png',
+  '/assets/brand/pwa-icon-192.png',
+  '/assets/brand/pwa-icon-512.png',
+  '/assets/brand/pwa-icon-maskable-512.png',
   '/assets/brand/favicon.svg',
   '/js/pwa-register.js'
 ];
