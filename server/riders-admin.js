@@ -58,6 +58,14 @@ function toDate(value) {
   return text || null;
 }
 
+function resolvePatchFields(patch = {}) {
+  if (patch?.changes && typeof patch.changes === 'object') {
+    return patch.changes;
+  }
+  const { id, ...rest } = patch;
+  return rest;
+}
+
 function toIso(value) {
   if (!value) return new Date().toISOString();
   const date = new Date(value);
@@ -582,6 +590,16 @@ function normalizeMissionPatchFields(fields = {}) {
   }
   if (fields.selectedMissionId !== undefined) {
     next.selected_mission_id = String(fields.selectedMissionId || '').trim();
+  } else if (
+    next.selected_mission_id_baemin !== undefined
+    || next.selected_mission_id_coupang !== undefined
+  ) {
+    const baemin = next.selected_mission_id_baemin ?? '';
+    const coupang = next.selected_mission_id_coupang ?? '';
+    if (baemin && coupang && baemin === coupang) next.selected_mission_id = baemin;
+    else if (baemin && !coupang) next.selected_mission_id = baemin;
+    else if (!baemin && coupang) next.selected_mission_id = coupang;
+    else if (!baemin && !coupang) next.selected_mission_id = '';
   }
   return next;
 }
@@ -684,7 +702,7 @@ async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
     raw.longEventItemId = normalized.long_event_item_id;
     if (!normalized.long_event_item_id) {
       normalized.long_event_item = '';
-      normalized.long_event_start_date = '';
+      normalized.long_event_start_date = null;
       raw.longEventItem = '';
       raw.longEventStartDate = '';
     } else {
@@ -765,7 +783,7 @@ async function bulkPatchRiderLongEvents(accessToken, patches = [], options = {})
   const list = Array.isArray(patches)
     ? patches.filter(item => {
       if (!item?.id) return false;
-      const normalized = normalizeLongEventPatchFields(item);
+      const normalized = normalizeLongEventPatchFields(resolvePatchFields(item));
       return Object.keys(normalized).length > 0;
     })
     : [];
@@ -788,7 +806,7 @@ async function bulkPatchRiderLongEvents(accessToken, patches = [], options = {})
 
   for (const patch of list) {
     const riderId = String(patch.id || '').trim();
-    const result = await patchRiderLongEventFields(supabase, riderId, patch);
+    const result = await patchRiderLongEventFields(supabase, riderId, resolvePatchFields(patch));
     if (!result.ok) {
       failed.push({ id: riderId, error: result.error || '저장 실패' });
       continue;
@@ -821,7 +839,7 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   const list = Array.isArray(patches)
     ? patches.filter(item => {
       if (!item?.id) return false;
-      const normalized = normalizeMissionPatchFields(item);
+      const normalized = normalizeMissionPatchFields(resolvePatchFields(item));
       return Boolean(
         normalized.selected_mission_id !== undefined
         || normalized.selected_mission_id_baemin !== undefined
@@ -848,7 +866,7 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
 
   for (const patch of list) {
     const riderId = String(patch.id || '').trim();
-    const result = await patchRiderMissionFields(supabase, riderId, patch);
+    const result = await patchRiderMissionFields(supabase, riderId, resolvePatchFields(patch));
     if (!result.ok) {
       failed.push({ id: riderId, error: result.error || '저장 실패' });
       continue;

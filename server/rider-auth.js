@@ -16,6 +16,46 @@ const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
 
 const PROMOTION_MISSION_SELECT = 'id,name,platform,type,enabled,payload,created_at,updated_at';
 
+const RIDER_CALLS_LOOKBACK_DAYS = Number(process.env.BREM_RIDER_CALLS_LOOKBACK_DAYS) || 540;
+const RIDER_CALLS_ROW_LIMIT = 2500;
+const RIDER_ME_CACHE_MS = 15000;
+const riderMeCache = new Map();
+
+function getRiderCallsSinceDate() {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - RIDER_CALLS_LOOKBACK_DAYS);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildRiderCallsQuery(supabase, riderId, options = {}) {
+  let query = supabase
+    .from('admin_calls')
+    .select(options.select || 'id,driver_id,date,platform,count,updated_at,rider_published_at')
+    .eq('driver_id', riderId)
+    .gte('date', getRiderCallsSinceDate())
+    .order('date', { ascending: false })
+    .limit(RIDER_CALLS_ROW_LIMIT);
+  if (options.publishedOnly) {
+    query = query.not('rider_published_at', 'is', null);
+  }
+  return query;
+}
+
+function readCachedRiderMe(token) {
+  const cached = riderMeCache.get(token);
+  if (!cached) return null;
+  if (Date.now() - cached.at > RIDER_ME_CACHE_MS) {
+    riderMeCache.delete(token);
+    return null;
+  }
+  return cached.value;
+}
+
+function writeCachedRiderMe(token, value) {
+  if (!token || !value?.ok) return;
+  riderMeCache.set(token, { at: Date.now(), value });
+}
+
 function promotionRowToMissionShape(row) {
   if (!row) return null;
   const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
@@ -71,6 +111,28 @@ function getAnonAuthClient() {
 function getRiderEmailDomain() {
   const fromEnv = String(process.env.BREM_RIDER_EMAIL_DOMAIN || process.env.BREM_ADMIN_EMAIL_DOMAIN || 'brem.kr').trim();
   return fromEnv.replace(/^@+/, '').toLowerCase() || 'brem.kr';
+}
+
+function resolveRiderPlatformMissionId(row, platform) {
+  const isBaemin = platform === 'baemin';
+  if (isBaemin) {
+    const direct = String(
+      row.selected_mission_id_baemin
+      || row.promotion_rule_id_baemin
+      || ''
+    ).trim();
+    if (direct) return direct;
+    const legacy = String(row.selected_mission_id || '').trim();
+    return row.platform_baemin !== false && legacy ? legacy : '';
+  }
+  const direct = String(
+    row.selected_mission_id_coupang
+    || row.promotion_rule_id_coupang
+    || ''
+  ).trim();
+  if (direct) return direct;
+  const legacy = String(row.selected_mission_id || '').trim();
+  return row.platform_coupang !== false && !row.platform_baemin && legacy ? legacy : '';
 }
 
 function normalizeLoginText(value) {
@@ -203,6 +265,9 @@ async function getRiderMe(accessToken) {
     return { ok: false, status: 401, error: '로그인이 필요합니다.' };
   }
 
+  const cached = readCachedRiderMe(token);
+  if (cached) return cached;
+
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData?.user) {
     return { ok: false, status: 401, error: '로그인 세션이 만료되었습니다.' };
@@ -224,7 +289,7 @@ async function getRiderMe(accessToken) {
   }
   const rider = fetched.rider;
 
-  return {
+  const result = {
     ok: true,
     riderId: rider.id,
     rider,
@@ -236,6 +301,8 @@ async function getRiderMe(accessToken) {
       active: true
     }
   };
+  writeCachedRiderMe(token, result);
+  return result;
 }
 
 async function findAuthUserIdByEmail(supabase, email) {
@@ -454,8 +521,8 @@ async function getRiderAssignedMissions(accessToken) {
   }
 
   const row = me.rider || {};
-  const baeminId = String(row.selected_mission_id_baemin || row.selected_mission_id || '').trim();
-  const coupangId = String(row.selected_mission_id_coupang || row.selected_mission_id || '').trim();
+  const baeminId = resolveRiderPlatformMissionId(row, 'baemin');
+  const coupangId = resolveRiderPlatformMissionId(row, 'coupang');
   const ids = [...new Set([baeminId, coupangId].filter(Boolean))];
 
   if (!ids.length) {
@@ -466,15 +533,12 @@ async function getRiderAssignedMissions(accessToken) {
     };
   }
 
-  const { data, error } = await supabase
-    .from('missions')
-    .select(MISSION_SELECT)
-
-  if (error) {
-    return { ok: false, status: 500, error: error.message || '미션 정보를 불러오지 못했습니다.' };
+  const missionsResult = await fetchAssignedMissionRows(supabase, ids);
+  if (missionsResult.error) {
+    return { ok: false, status: 500, error: missionsResult.error.message || '미션 정보를 불러오지 못했습니다.' };
   }
 
-  const byId = new Map((data || []).map(item => [item.id, item]));
+  const byId = new Map((missionsResult.rows || []).map(item => [item.id, item]));
   return {
     ok: true,
     riderId: me.riderId,
@@ -564,9 +628,8 @@ function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
     return unsetProgress;
   }
 
-  const mappedItemId = itemsMap[riderId] ? String(itemsMap[riderId]).trim() : '';
   const rawItemId = String(raw.longEventItemId || '').trim();
-  const itemId = columnItemId || mappedItemId || rawItemId;
+  const itemId = columnItemId || rawItemId;
   if (!itemId) {
     return unsetProgress;
   }
@@ -674,18 +737,8 @@ async function getRiderAppBundle(accessToken) {
 
   const riderId = me.riderId;
   const row = me.rider || {};
-  const baeminMissionId = String(
-    row.selected_mission_id_baemin
-    || row.promotion_rule_id_baemin
-    || row.selected_mission_id
-    || ''
-  ).trim();
-  const coupangMissionId = String(
-    row.selected_mission_id_coupang
-    || row.promotion_rule_id_coupang
-    || row.selected_mission_id
-    || ''
-  ).trim();
+  const baeminMissionId = resolveRiderPlatformMissionId(row, 'baemin');
+  const coupangMissionId = resolveRiderPlatformMissionId(row, 'coupang');
   const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
   const allSettingKeys = [...new Set([
     ...RIDER_SNAPSHOT_SETTING_KEYS,
@@ -702,11 +755,7 @@ async function getRiderAppBundle(accessToken) {
     noticesResult,
     missionsResult
   ] = await Promise.all([
-    supabase
-      .from('admin_calls')
-      .select('id,driver_id,date,platform,count,updated_at,rider_published_at')
-      .eq('driver_id', riderId)
-      .order('date', { ascending: false }),
+    buildRiderCallsQuery(supabase, riderId),
     supabase
       .from('admin_rejection_rates')
       .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
@@ -732,7 +781,7 @@ async function getRiderAppBundle(accessToken) {
   ]);
 
   if (missionsResult.error) {
-    return { ok: false, status: 500, error: missionsResult.error.message || '미션 정보를 불러오지 못했습니다.' };
+    console.warn('[BREM] Rider app-bundle mission load skipped:', missionsResult.error.message || missionsResult.error);
   }
 
   const firstError = [
@@ -763,7 +812,7 @@ async function getRiderAppBundle(accessToken) {
   const liveSettings = settingsRows.filter(item => (
     item.key !== 'brem_driver_weekly_targets' && RIDER_LIVE_SETTING_KEYS.includes(item.key)
   ));
-  const missionRows = missionsResult.rows || [];
+  const missionRows = missionsResult.error ? [] : (missionsResult.rows || []);
   const byId = new Map(missionRows.map(item => [item.id, item]));
   const weeklyTargetsRaw = settingsRows.find(item => item.key === 'brem_driver_weekly_targets')?.value;
   const weeklyTargets = Array.isArray(weeklyTargetsRaw)
@@ -810,18 +859,8 @@ async function getRiderSnapshot(accessToken) {
 
   const riderId = me.riderId;
   const row = me.rider || {};
-  const baeminMissionId = String(
-    row.selected_mission_id_baemin
-    || row.promotion_rule_id_baemin
-    || row.selected_mission_id
-    || ''
-  ).trim();
-  const coupangMissionId = String(
-    row.selected_mission_id_coupang
-    || row.promotion_rule_id_coupang
-    || row.selected_mission_id
-    || ''
-  ).trim();
+  const baeminMissionId = resolveRiderPlatformMissionId(row, 'baemin');
+  const coupangMissionId = resolveRiderPlatformMissionId(row, 'coupang');
   const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
 
   const missionQuery = fetchAssignedMissionRows(supabase, missionIds);
@@ -832,12 +871,7 @@ async function getRiderSnapshot(accessToken) {
     settingsResult,
     missionsResult
   ] = await Promise.all([
-    supabase
-      .from('admin_calls')
-      .select('id,driver_id,date,platform,count,updated_at,rider_published_at')
-      .eq('driver_id', riderId)
-      .not('rider_published_at', 'is', null)
-      .order('date', { ascending: false }),
+    buildRiderCallsQuery(supabase, riderId, { publishedOnly: true }),
     supabase
       .from('admin_rejection_rates')
       .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
@@ -851,7 +885,7 @@ async function getRiderSnapshot(accessToken) {
     missionQuery
   ]);
 
-  const firstError = [callsResult, rejectionsResult, settingsResult, missionsResult]
+  const firstError = [callsResult, rejectionsResult, settingsResult]
     .find(result => result.error);
   if (firstError?.error) {
     const message = firstError.error.message || '';
@@ -865,10 +899,14 @@ async function getRiderSnapshot(accessToken) {
     return { ok: false, status: 500, error: message || '기사 반영 데이터를 불러오지 못했습니다.' };
   }
 
+  if (missionsResult.error) {
+    console.warn('[BREM] Rider snapshot mission load skipped:', missionsResult.error.message || missionsResult.error);
+  }
+
   const settingsRows = settingsResult.data || [];
   const calls = callsResult.data || [];
   const rejections = rejectionsResult.data || [];
-  const missionRows = missionsResult.rows || [];
+  const missionRows = missionsResult.error ? [] : (missionsResult.rows || []);
   const byId = new Map(missionRows.map(item => [item.id, item]));
 
   return {
@@ -909,11 +947,9 @@ async function getRiderLive(accessToken) {
       .from('settings')
       .select('key,value')
       .in('key', RIDER_LIVE_SETTING_KEYS),
-    supabase
-      .from('admin_calls')
-      .select('id,driver_id,date,platform,count,updated_at')
-      .eq('driver_id', riderId)
-      .order('date', { ascending: false })
+    buildRiderCallsQuery(supabase, riderId, {
+      select: 'id,driver_id,date,platform,count,updated_at'
+    }),
   ]);
 
   const firstError = [targetsResult, settingsResult, callsResult].find(result => result.error);

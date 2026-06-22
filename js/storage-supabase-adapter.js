@@ -5,6 +5,13 @@ window.BremSupabaseStorageAdapter = (function () {
   const Mapper = () => window.BremSupabaseMapper;
 
   const DEFAULT_RIDER_PAGE_SIZE = 100;
+  const DEFAULT_CALLS_LOOKBACK_DAYS = 540;
+
+  function getDefaultCallsSinceDate() {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - DEFAULT_CALLS_LOOKBACK_DAYS);
+    return date.toISOString().slice(0, 10);
+  }
 
   const RIDER_SELECT_BASE = [
     'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
@@ -239,6 +246,10 @@ window.BremSupabaseStorageAdapter = (function () {
                       ? PROMOTION_APPLY_RESULT_SELECT
                       : '*';
       let query = client.from(table).select(selectColumns);
+      if (table === 'admin_calls' && !options.allHistory) {
+        const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
+        if (sinceDate) query = query.gte('date', sinceDate);
+      }
       if (order?.column) {
         query = query.order(order.column, { ascending: order.ascending !== false });
       }
@@ -562,18 +573,36 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!p || !date) return;
       if (!(await probeTable('admin_calls'))) return;
 
-      const list = getCache(keys.calls, []);
-      const idsToDelete = list
-        .filter(call => String(call.platform || '').trim() === p && String(call.date || '').slice(0, 10) === date)
-        .map(call => call.id);
+      const { data, error } = await client
+        .from('admin_calls')
+        .select('id')
+        .eq('platform', p)
+        .eq('date', date);
+      if (error) throw error;
 
-      const next = list.filter(call => !idsToDelete.includes(call.id));
+      const dbIds = (data || []).map(row => row.id).filter(Boolean);
+      const drop = new Set(dbIds);
+      const list = getCache(keys.calls, []);
+      const next = list.filter(call => !drop.has(call.id));
       stage(keys.calls, next);
       window.BremDataCache?.set?.(keys.calls, next, { source: 'write', tableLoaded: true });
 
-      if (idsToDelete.length) {
-        await deleteAdminCallsByIds(idsToDelete);
+      if (dbIds.length) {
+        await deleteRowsInChunks('admin_calls', dbIds);
       }
+    }
+
+    async function deleteDailySettlementsByIds(ids = []) {
+      const targetIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+      if (!targetIds.length) return;
+      if (!(await probeTable('daily_settlements'))) return;
+
+      const drop = new Set(targetIds);
+      const list = getCache(keys.settlements, []).filter(item => !drop.has(item.id));
+      stage(keys.settlements, list);
+      window.BremDataCache?.set?.(keys.settlements, list, { source: 'write', tableLoaded: true });
+
+      await deleteRowsInChunks('daily_settlements', targetIds);
     }
 
     async function persistCalls(value) {
@@ -829,8 +858,11 @@ window.BremSupabaseStorageAdapter = (function () {
       if (key === keys.missions) return loadMissions(options);
       const backed = TABLE_BACKED_KEYS.find(config => config.key === key);
       if (backed) {
-        if (backed.legacyKey) return loadTableWithLegacyFallback(backed, options);
-        return loadTableCollection(backed, options);
+        const tableOptions = key === keys.calls && !options.allHistory
+          ? { ...options, sinceDate: options.sinceDate || getDefaultCallsSinceDate() }
+          : options;
+        if (backed.legacyKey) return loadTableWithLegacyFallback(backed, tableOptions);
+        return loadTableCollection(backed, tableOptions);
       }
       return null;
     }
@@ -1192,6 +1224,7 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       deleteAdminCallsByPeriod,
       deleteAdminCallsByIds,
+      deleteDailySettlementsByIds,
       deleteAdminRejectionRatesByIds,
       flush() {
         return persistQueue;

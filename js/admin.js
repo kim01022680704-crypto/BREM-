@@ -1933,10 +1933,13 @@
         adminLoginTimerActive = true;
 
         if (window.BremSupabaseConfig?.load) {
-          await window.BremSupabaseConfig.load();
+          await Promise.all([
+            window.BremSupabaseConfig.load(),
+            BremStorage.waitForStorageBootstrap?.() || Promise.resolve()
+          ]);
+        } else {
+          await BremStorage.waitForStorageBootstrap?.();
         }
-
-        await BremStorage.waitForStorageBootstrap?.();
 
         window.BremPerf?.time?.('admin.signInApi');
         const config = BremStorage.getSupabaseConfig?.() || {};
@@ -4876,18 +4879,25 @@
           try {
             const removed = await BremStorage.settlementUploadLogs.removeAsync(logId);
             const rolledBack = removed?.rollbackResult?.rolledBackCalls || 0;
+            const rolledBackLabel = rolledBack < 0
+              ? '해당 일자 전체'
+              : `${rolledBack}명`;
             showToast(
               removed?.kind === 'daily' && removed?.status === 'applied'
-                ? `업로드 기록 삭제 · 정산·콜수입력 ${rolledBack}명 연동 제거`
+                ? `업로드 기록 삭제 · 정산·콜수입력 ${rolledBackLabel} 연동 제거`
                 : '업로드 기록이 삭제되었습니다.'
             );
+            invalidateCallStatsIndex();
             renderSettlements();
             renderCalls();
+            renderDashboard();
           } catch (error) {
             console.error('[BREM] settlement upload log delete failed:', error);
             showToast(error.message || '기록 삭제 저장에 실패했습니다.');
+            invalidateCallStatsIndex();
             renderSettlements();
             renderCalls();
+            renderDashboard();
           }
         })();
         return;

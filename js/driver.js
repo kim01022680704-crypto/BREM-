@@ -868,7 +868,7 @@
 
     const id = String(missionId || '').trim();
     if (!id) {
-      if (titleEl) titleEl.textContent = '미설정';
+      if (titleEl) titleEl.textContent = '미선택';
       if (descEl) descEl.textContent = '관리자가 미션을 배정하면 설명이 표시됩니다.';
       if (condEl) condEl.hidden = true;
       return;
@@ -898,8 +898,8 @@
   }
 
   async function renderRiderMission(driver) {
-    const baeminMissionId = driver?.selectedMissionIdBaemin || driver?.selectedMissionId || '';
-    const coupangMissionId = driver?.selectedMissionIdCoupang || driver?.selectedMissionId || '';
+    const baeminMissionId = String(driver?.selectedMissionIdBaemin || '').trim();
+    const coupangMissionId = String(driver?.selectedMissionIdCoupang || '').trim();
 
     let assigned = null;
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
@@ -938,10 +938,15 @@
     const baeminRateEntry = weeklyEntryForPlatform(driver.id, weekStart, 'baemin');
     const item = eventItemFor(driver);
     const eventProgress = BremStorage.events.getProgressForDriver(driver);
-    const eventItem = eventProgress.status === 'unset' ? null : (eventProgress.item || item);
+    const isEventUnset = eventProgress.status === 'unset'
+      || (!String(eventProgress.itemId || '').trim()
+        && !String(eventProgress.itemName || '').trim()
+        && !String(driver.longEventItemId || '').trim()
+        && !String(driver.longEventItem || '').trim());
+    const eventItem = isEventUnset ? null : (eventProgress.item || item);
     const longEventPanel = document.getElementById('riderLongEventPanel');
     if (longEventPanel) {
-      longEventPanel.hidden = !eventItem;
+      longEventPanel.hidden = false;
     }
 
     const eventStartDate = eventProgress.startDate || driver.longEventStartDate || '';
@@ -997,24 +1002,26 @@
     updateWeekTargetPreview(weekStart);
     document.getElementById('driverWeekTargetCount').value = weeklyTarget || '';
 
-    setText('eventItem', eventItem ? eventItem.name : '미설정');
+    setText('eventItem', eventItem ? eventItem.name : '미선택');
     setText(
       'missionDetail',
-      !eventItem
-        ? '장기근속이벤트 아이템이 설정되면 표시됩니다.'
+      isEventUnset
+        ? '미선택'
         : !eventStartDate
           ? '관리자에서 시작일 설정 후 집계됩니다.'
           : `${number(total)} / ${number(missionTarget)}콜 · ${missionRate}%`
     );
     setText(
       'missionRule',
-      eventItem && eventStartDate
-        ? `${eventItem.name} · ${formatDate(eventStartDate)}부터 ${eventPlatformLabel} 집계 (합산 제외)`
-        : eventItem
-          ? `${eventItem.name} · 시작일 설정 필요`
-          : '누적 콜수 기준으로 계산됩니다.'
+      isEventUnset
+        ? '장기근속이벤트가 배정되면 진행률이 표시됩니다.'
+        : eventItem && eventStartDate
+          ? `${eventItem.name} · ${formatDate(eventStartDate)}부터 ${eventPlatformLabel} 집계 (합산 제외)`
+          : eventItem
+            ? `${eventItem.name} · 시작일 설정 필요`
+            : '누적 콜수 기준으로 계산됩니다.'
     );
-    setProgress('missionBar', missionRate);
+    setProgress('missionBar', isEventUnset ? 0 : missionRate);
 
     renderDailyCalls(driver.id);
     void renderNotices();
@@ -1306,8 +1313,10 @@
     const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
     if (isProduction) {
       try {
-        await window.BremSupabaseConfig?.load?.();
-        await BremStorage.waitForStorageBootstrap?.();
+        await Promise.all([
+          window.BremSupabaseConfig?.load?.() || Promise.resolve(),
+          BremStorage.waitForStorageBootstrap?.() || Promise.resolve()
+        ]);
       } catch {
         showLoggedOut();
         return;

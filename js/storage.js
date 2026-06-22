@@ -69,6 +69,16 @@ const BremStorage = (function () {
     return value === 'baemin' ? 'baemin' : 'coupang';
   }
 
+  function parseDriverDayRecordId(id) {
+    const match = String(id || '').trim().match(/^(.+)-(\d{4}-\d{2}-\d{2})-([^-]+)$/);
+    if (!match) return null;
+    return {
+      driverId: match[1],
+      periodKey: match[2],
+      platform: normalizePlatform(match[3])
+    };
+  }
+
   function normalizeLongEventPlatform(value) {
     return normalizePlatform(value) === 'baemin' ? 'baemin' : 'coupang';
   }
@@ -1234,6 +1244,10 @@ const BremStorage = (function () {
     const tasks = [];
 
     const tableKeysWithoutManaged = tableKeys.filter(key => key !== KEYS.missions && key !== KEYS.notices);
+    const loadOptions = { force };
+    if (sectionId === 'promotion-apply') {
+      loadOptions[KEYS.calls] = { allHistory: true };
+    }
     if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
       const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
@@ -1242,9 +1256,7 @@ const BremStorage = (function () {
           logDataSource(label, true, sectionId);
         });
       } else {
-        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutManaged, {
-          force
-        }));
+        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutManaged, loadOptions));
       }
     }
 
@@ -1309,7 +1321,6 @@ const BremStorage = (function () {
       if (heavyDataPreloadPromise) return heavyDataPreloadPromise;
       window.BremPerf?.time?.('storage.preloadHeavyAdminTables');
       heavyDataPreloadPromise = activeStorageAdapter.ensureKeysLoaded([
-        KEYS.calls,
         KEYS.rejections,
         KEYS.targets
       ])
@@ -1840,6 +1851,20 @@ const BremStorage = (function () {
     return keys.length > 0 && keys.every(key => MISSION_DRIVER_FIELDS.has(key));
   }
 
+  function extractMissionChanges(changes = {}) {
+    const patch = {};
+    if (changes.selectedMissionIdBaemin !== undefined) {
+      patch.selectedMissionIdBaemin = changes.selectedMissionIdBaemin;
+    }
+    if (changes.selectedMissionIdCoupang !== undefined) {
+      patch.selectedMissionIdCoupang = changes.selectedMissionIdCoupang;
+    }
+    if (changes.selectedMissionId !== undefined) {
+      patch.selectedMissionId = changes.selectedMissionId;
+    }
+    return patch;
+  }
+
   function isLongEventOnlyChanges(changes = {}) {
     const keys = Object.keys(changes || {}).filter(key => key !== 'updatedAt');
     return keys.length > 0 && keys.every(key => LONG_EVENT_DRIVER_FIELDS.has(key));
@@ -2104,7 +2129,7 @@ const BremStorage = (function () {
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
-  const DRIVER_FETCH_TIMEOUT_MS = 5000;
+  const DRIVER_FETCH_TIMEOUT_MS = 18000;
   let driverAppBundlePromise = null;
   let lastDriverAppPublishedAt = null;
 
@@ -2399,7 +2424,11 @@ const BremStorage = (function () {
       }
 
       console.info('[BREM:data] driver snapshot: cache miss');
-      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
+      let bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
+      if (!bundle.ok && !options._retried) {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
+      }
 
       if (bundle.ok) {
         if (riderId && bundle.snapshot) cache?.write?.(riderId, 'snapshot', bundle.snapshot);
@@ -2436,6 +2465,13 @@ const BremStorage = (function () {
 
       const [snapshotResult, liveResult, noticesResult] = await Promise.allSettled([
         (async () => {
+          console.info('[BREM:data] driver snapshot: cache miss');
+          const result = await riderApiFetch('/api/rider/snapshot', 'snapshot');
+          if (result.ok && riderId) cache?.write?.(riderId, 'snapshot', result);
+          if (result.ok) mergeRiderSnapshotInCache(result);
+          return result;
+        })(),
+        (async () => {
           console.info('[BREM:data] driver live: cache miss');
           const result = await riderApiFetch('/api/rider/live', 'live');
           if (result.ok && riderId) cache?.write?.(riderId, 'live', result);
@@ -2457,11 +2493,11 @@ const BremStorage = (function () {
           : { ok: false, message: settled.reason?.message || '요청에 실패했습니다.' }
       );
 
-      const snapshot = { ok: false, message: bundle.message || bundle.error || '반영 데이터를 불러오지 못했습니다.' };
+      const snapshot = unwrap(snapshotResult);
       const live = unwrap(liveResult);
       const notices = unwrap(noticesResult);
 
-      const anyOk = [live, notices].some(item => item?.ok);
+      const anyOk = [snapshot, live, notices].some(item => item?.ok);
       const allFailed = !anyOk;
 
       console.info('[BREM:data] driver load done');
@@ -3604,12 +3640,8 @@ const BremStorage = (function () {
           next.promotionRuleIdBaemin || next.promotionSelectorBaemin || next.selectedPromotionType || ''
         ).trim(),
         selectedMissionId: String(next.selectedMissionId || '').trim(),
-        selectedMissionIdBaemin: String(
-          next.selectedMissionIdBaemin || next.selectedMissionId || ''
-        ).trim(),
-        selectedMissionIdCoupang: String(
-          next.selectedMissionIdCoupang || next.selectedMissionId || ''
-        ).trim(),
+        selectedMissionIdBaemin: String(next.selectedMissionIdBaemin || '').trim(),
+        selectedMissionIdCoupang: String(next.selectedMissionIdCoupang || '').trim(),
         longEventPlatform: normalizeLongEventPlatform(next.longEventPlatform),
         hiddenFields: normalizeHiddenFields(next.hiddenFields)
       };
@@ -3815,10 +3847,15 @@ const BremStorage = (function () {
       setDriversCache(nextDrivers);
 
       if (isProductionMode()) {
-        const missionOnly = items.every(item => isMissionOnlyChanges(item.changes));
+        const missionOnly = items.every(item => Object.keys(extractMissionChanges(item.changes)).length > 0)
+          && items.every(item => isMissionOnlyChanges(item.changes));
         const longEventOnly = items.every(item => isLongEventOnlyChanges(item.changes));
+        const missionPatches = items.map(item => ({
+          id: item.id,
+          changes: extractMissionChanges(item.changes)
+        }));
         const persist = missionOnly
-          ? persistRiderMissionsBulkViaServer(items, { maxBatch: options.maxBatch || 300 })
+          ? persistRiderMissionsBulkViaServer(missionPatches, { maxBatch: options.maxBatch || 300 })
           : longEventOnly
             ? persistRiderLongEventsBulkViaServer(items, { maxBatch: options.maxBatch || 300 })
             : persistRidersBulkViaServer(updatedRiders, {
@@ -3944,7 +3981,10 @@ const BremStorage = (function () {
         const persist = isSelf
           ? persistRiderSelfViaServer(id, changes)
           : (isMissionOnlyChanges(changes)
-            ? persistRiderMissionsBulkViaServer([{ id, changes }])
+            ? persistRiderMissionsBulkViaServer([{
+              id,
+              changes: extractMissionChanges(changes)
+            }])
             : (isLongEventOnlyChanges(changes)
               ? persistRiderLongEventsBulkViaServer([{ id, changes }])
               : persistRiderViaServer(updated)));
@@ -4158,14 +4198,17 @@ const BremStorage = (function () {
     async removeByIdAsync(id) {
       const targetId = String(id || '').trim();
       if (!targetId) return calls.getAll();
-      if (!calls.getAll().some(call => call.id === targetId)) return calls.getAll();
 
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminCallsByIds) {
         await activeStorageAdapter.deleteAdminCallsByIds([targetId]);
-      } else {
+        const list = calls.getAll().filter(call => call.id !== targetId);
+        storageAdapter.write(KEYS.calls, list, { allowEmpty: true });
+      } else if (calls.getAll().some(call => call.id === targetId)) {
         const list = calls.getAll().filter(call => call.id !== targetId);
         storageAdapter.write(KEYS.calls, list);
         await storageAdapter.flush?.();
+      } else {
+        return calls.getAll();
       }
 
       window.BremDataCache?.invalidate?.(KEYS.calls);
@@ -6081,19 +6124,20 @@ const BremStorage = (function () {
     },
 
     getItemForDriver(driver) {
-      const map = events.getDriverItemMap();
-      const catalog = events.getCatalog();
       const driverItemId = String(driver?.longEventItemId || '').trim();
       const driverItemName = String(driver?.longEventItem || '').trim();
       if (!driverItemId && !driverItemName) {
         if (!isRiderProductionSession()) {
+          const map = events.getDriverItemMap();
           const mappedId = String(map[driver?.id] || '').trim();
           if (mappedId) {
+            const catalog = events.getCatalog();
             return catalog.find(item => item.id === mappedId) || null;
           }
         }
         return null;
       }
+      const catalog = events.getCatalog();
       const selected = driverItemId || driverItemName || '';
       return catalog.find(item => item.id === selected || item.name === selected) || null;
     },
@@ -6183,14 +6227,24 @@ const BremStorage = (function () {
     },
 
     async removeByIdAsync(id) {
-      const target = settlements.getAll().find(item => item.id === id);
-      if (!target) return settlements.getAll();
+      const targetId = String(id || '').trim();
+      if (!targetId) return settlements.getAll();
 
-      const periodKey = String(target.period).slice(0, 10);
-      const p = normalizePlatform(target.platform);
-      const callId = `${target.driverId}-${periodKey}-${p}`;
+      const target = settlements.getAll().find(item => item.id === targetId);
+      const parsed = target
+        ? {
+          driverId: target.driverId,
+          periodKey: String(target.period).slice(0, 10),
+          platform: normalizePlatform(target.platform)
+        }
+        : parseDriverDayRecordId(targetId);
+      if (!parsed) return settlements.getAll();
 
-      const nextSettlements = settlements.getAll().filter(item => item.id !== target.id);
+      const { driverId, periodKey, platform: parsedPlatform } = parsed;
+      const p = normalizePlatform(parsedPlatform);
+      const callId = `${driverId}-${periodKey}-${p}`;
+
+      const nextSettlements = settlements.getAll().filter(item => item.id !== targetId);
       storageAdapter.write(KEYS.settlements, nextSettlements, { allowEmpty: true });
 
       if (activeStorageAdapter.deleteAdminCallsByIds) {
@@ -6203,13 +6257,17 @@ const BremStorage = (function () {
         );
       }
 
+      if (activeStorageAdapter.deleteDailySettlementsByIds) {
+        await activeStorageAdapter.deleteDailySettlementsByIds([targetId]);
+      }
+
       await storageAdapter.flush({ skipStagedCore: true });
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
       return settlements.getAll();
     },
 
-    async clearByPeriod(period, platform = DEFAULT_PLATFORM) {
+    async clearByPeriod(period, platform = DEFAULT_PLATFORM, options = {}) {
       const p = normalizePlatform(platform);
       const periodKey = String(period).slice(0, 10);
       if (!periodKey) return settlements.getAll();
@@ -6236,7 +6294,9 @@ const BremStorage = (function () {
         await storageAdapter.flush?.();
       }
 
-      await settlementUploadLogs.removeDailyByPeriod(periodKey, p);
+      if (options.keepUploadLogs !== true) {
+        await settlementUploadLogs.removeDailyByPeriod(periodKey, p);
+      }
 
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
@@ -6981,6 +7041,8 @@ const BremStorage = (function () {
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
       window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
+      await refetchDataKey(KEYS.settlements);
+      await refetchDataKey(KEYS.calls);
       return { ...target, rollbackResult };
     },
 
@@ -7006,26 +7068,60 @@ const BremStorage = (function () {
         return { rolledBackSettlements: 0, rolledBackCalls: 0 };
       }
 
+      if (activeStorageAdapter.ensureKeysLoaded) {
+        await activeStorageAdapter.ensureKeysLoaded([KEYS.settlements, KEYS.calls], { force: true });
+      }
+
       const appliedRecords = (
         Array.isArray(log.appliedRecords) && log.appliedRecords.length
           ? log.appliedRecords
           : log.matchedRecords
       ) || [];
 
-      let rolledBackSettlements = 0;
-      let rolledBackCalls = 0;
-      for (const row of appliedRecords) {
-        const driverId = String(row.driverId || '').trim();
-        if (!driverId) continue;
-        const matches = settlements.getAll().filter(item => (
-          item.driverId === driverId
+      const driverIds = [...new Set(
+        appliedRecords.map(row => String(row.driverId || '').trim()).filter(Boolean)
+      )];
+
+      if (!driverIds.length) {
+        const hasOtherAppliedLog = settlementUploadLogs.getAll().some(item => (
+          item.id !== log.id
+          && item.kind === 'daily'
           && normalizePlatform(item.platform) === p
           && String(item.period).slice(0, 10) === periodKey
+          && item.status === 'applied'
         ));
-        for (const item of matches) {
-          const settlementAppliedAt = String(item.appliedAt || '');
-          if (settlementAppliedAt && logAppliedAt && settlementAppliedAt > logAppliedAt) continue;
-          await settlements.removeByIdAsync(item.id);
+        if (!hasOtherAppliedLog) {
+          await settlements.clearByPeriod(periodKey, p, { keepUploadLogs: true });
+          return { rolledBackSettlements: -1, rolledBackCalls: -1 };
+        }
+        return { rolledBackSettlements: 0, rolledBackCalls: 0 };
+      }
+
+      let rolledBackSettlements = 0;
+      let rolledBackCalls = 0;
+      for (const driverId of driverIds) {
+        const settlementId = `${driverId}-${periodKey}-${p}`;
+        const matches = settlements.getAll().filter(item => item.id === settlementId);
+        let removed = false;
+
+        if (matches.length) {
+          for (const item of matches) {
+            const settlementAppliedAt = String(item.appliedAt || '');
+            if (settlementAppliedAt && logAppliedAt && settlementAppliedAt > logAppliedAt) continue;
+            await settlements.removeByIdAsync(item.id);
+            rolledBackSettlements += 1;
+            rolledBackCalls += 1;
+            removed = true;
+          }
+        }
+
+        if (!removed) {
+          const settlement = settlements.getAll().find(item => item.id === settlementId);
+          const settlementAppliedAt = String(settlement?.appliedAt || '');
+          if (settlementAppliedAt && logAppliedAt && settlementAppliedAt > logAppliedAt) {
+            continue;
+          }
+          await settlements.removeByIdAsync(settlementId);
           rolledBackSettlements += 1;
           rolledBackCalls += 1;
         }

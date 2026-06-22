@@ -78,14 +78,12 @@ window.BremMissionPromotionCatalog = (function () {
         driver.promotionRuleIdBaemin
         || driver.promotionSelectorBaemin
         || driver.selectedMissionIdBaemin
-        || driver.selectedMissionId
         || ''
       ).trim(),
       coupang: String(
         driver.promotionRuleIdCoupang
         || driver.promotionSelectorCoupang
         || driver.selectedMissionIdCoupang
-        || driver.selectedMissionId
         || ''
       ).trim()
     };
@@ -96,18 +94,17 @@ window.BremMissionPromotionCatalog = (function () {
     const coupang = String(draft?.coupang || '').trim();
     const changes = {};
     if (draft?.baemin !== undefined) {
-      changes.promotionRuleIdBaemin = baemin;
-      changes.promotionSelectorBaemin = baemin;
       changes.selectedMissionIdBaemin = baemin;
     }
     if (draft?.coupang !== undefined) {
-      changes.promotionRuleIdCoupang = coupang;
-      changes.promotionSelectorCoupang = coupang;
       changes.selectedMissionIdCoupang = coupang;
     }
-    if (baemin && !coupang) changes.selectedMissionId = baemin;
-    else if (coupang && !baemin) changes.selectedMissionId = coupang;
-    else if (baemin === coupang && baemin) changes.selectedMissionId = baemin;
+    if (draft?.baemin !== undefined || draft?.coupang !== undefined) {
+      if (baemin && coupang && baemin === coupang) changes.selectedMissionId = baemin;
+      else if (baemin && !coupang) changes.selectedMissionId = baemin;
+      else if (!baemin && coupang) changes.selectedMissionId = coupang;
+      else changes.selectedMissionId = '';
+    }
     return changes;
   }
 

@@ -52,13 +52,32 @@ window.BremSupabaseMapper = (function () {
       promotion_selector_baemin: String(driver.promotionSelectorBaemin || ''),
     promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
     promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
-    selected_mission_id: String(driver.selectedMissionId || driver.selectedMissionIdBaemin || driver.selectedMissionIdCoupang || ''),
-    selected_mission_id_baemin: String(driver.selectedMissionIdBaemin || driver.selectedMissionId || ''),
-    selected_mission_id_coupang: String(driver.selectedMissionIdCoupang || driver.selectedMissionId || ''),
+    selected_mission_id_baemin: String(driver.selectedMissionIdBaemin || '').trim(),
+    selected_mission_id_coupang: String(driver.selectedMissionIdCoupang || '').trim(),
+    selected_mission_id: String(
+      driver.selectedMissionId
+      || driver.selectedMissionIdBaemin
+      || driver.selectedMissionIdCoupang
+      || ''
+    ).trim(),
     raw_data: driver || {},
       created_at: toIso(driver.createdAt),
       updated_at: toIso(driver.updatedAt)
     };
+  }
+
+  function resolvePlatformMissionIdFromRow(row, platform) {
+    const isBaemin = platform === 'baemin';
+    if (isBaemin) {
+      const direct = String(row.selected_mission_id_baemin || row.promotion_rule_id_baemin || '').trim();
+      if (direct) return direct;
+      const legacy = String(row.selected_mission_id || '').trim();
+      return row.platform_baemin !== false && legacy ? legacy : '';
+    }
+    const direct = String(row.selected_mission_id_coupang || row.promotion_rule_id_coupang || '').trim();
+    if (direct) return direct;
+    const legacy = String(row.selected_mission_id || '').trim();
+    return row.platform_coupang !== false && !row.platform_baemin && legacy ? legacy : '';
   }
 
   function rowToRider(row) {
@@ -91,8 +110,8 @@ window.BremSupabaseMapper = (function () {
       promotionRuleIdCoupang: row.promotion_rule_id_coupang || '',
       promotionRuleIdBaemin: row.promotion_rule_id_baemin || '',
       selectedMissionId: row.selected_mission_id || row.selected_mission_id_baemin || row.selected_mission_id_coupang || '',
-      selectedMissionIdBaemin: row.selected_mission_id_baemin || row.selected_mission_id || '',
-      selectedMissionIdCoupang: row.selected_mission_id_coupang || row.selected_mission_id || '',
+      selectedMissionIdBaemin: resolvePlatformMissionIdFromRow(row, 'baemin'),
+      selectedMissionIdCoupang: resolvePlatformMissionIdFromRow(row, 'coupang'),
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
