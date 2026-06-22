@@ -2873,6 +2873,21 @@ const BremStorage = (function () {
     await storageAdapter.flush();
   }
 
+  async function refreshDriversForSettlementMatch() {
+    await ensureSectionLoaded('drivers');
+    if (typeof fetchAllDriversFromServer === 'function') {
+      const result = await fetchAllDriversFromServer({ force: true });
+      if (result?.ok === false) {
+        throw new Error(result.message || '기사 목록을 불러오지 못했습니다.');
+      }
+      return drivers.getAll();
+    }
+    if (typeof reloadDrivers === 'function') {
+      await reloadDrivers(true);
+    }
+    return drivers.getAll();
+  }
+
   async function reloadDrivers(force = false, options = {}) {
     const hasSearch = Boolean(String(options.search || '').trim());
     const hasStatusFilter = options.status && options.status !== '전체';
@@ -7065,15 +7080,25 @@ const BremStorage = (function () {
       const nextRecords = records.map(record => {
         const rawName = String(record.rawName || record.name || '').trim();
         const name = String(record.name || rawName).trim();
-        const nameKey = rawName.replace(/\s/g, '');
-        return {
-          id: `${periodKey}-${p}-${nameKey}`,
+      const nameKey = rawName.replace(/\s/g, '');
+      const riderId = String(record.riderId || '').trim();
+      const baeminUserId = p === 'baemin' && riderId
+        ? (typeof BremWeeklySettlement !== 'undefined'
+          ? BremWeeklySettlement.normalizeBaeminUserId(riderId)
+          : riderId)
+        : '';
+      const coupangLoginKey = p === 'coupang' ? nameKey : '';
+      const recordIdKey = baeminUserId || coupangLoginKey || nameKey || 'unknown';
+      return {
+          id: `${periodKey}-${p}-${recordIdKey}`,
           kind: 'daily',
           weekStart,
           period: periodKey,
           endDate: '',
           platform: p,
-          riderId: record.riderId || '',
+          riderId,
+          baeminUserId,
+          coupangLoginKey,
           rawName,
           name,
           orderCount: Number(record.orderCount || 0),
@@ -7204,9 +7229,11 @@ const BremStorage = (function () {
       storageAdapter.write(KEYS.settlementUnmatched, []);
     },
 
-    retryDailyMatching({ platform, weekStart }) {
+    retryDailyMatching({ platform, weekStart, period = '', recordIds = [] } = {}) {
       const p = normalizePlatform(platform);
       const weekKey = String(weekStart || '').slice(0, 10);
+      const periodKey = String(period || '').slice(0, 10);
+      const idFilter = new Set((Array.isArray(recordIds) ? recordIds : []).map(String).filter(Boolean));
       if (!weekKey || typeof BremSettlementParser === 'undefined') {
         return { matchedCount: 0, stillUnmatchedCount: 0, applied: 0 };
       }
@@ -7214,9 +7241,17 @@ const BremStorage = (function () {
         ? SettlementFormats.getFormatForPlatform(p)
         : null;
       const drivers = BremStorage.drivers.getAll();
-      const pending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'daily' });
+      const weekPending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'daily' });
+      let pending = weekPending;
+      if (periodKey) {
+        pending = pending.filter(item => String(item.period || '').slice(0, 10) === periodKey);
+      }
+      if (idFilter.size) {
+        pending = pending.filter(item => idFilter.has(String(item.id)));
+      }
+      const untouched = weekPending.filter(item => !pending.some(row => row.id === item.id));
       if (!pending.length) {
-        return { matchedCount: 0, stillUnmatchedCount: 0, applied: 0 };
+        return { matchedCount: 0, stillUnmatchedCount: untouched.length, applied: 0 };
       }
 
       const byPeriod = new Map();
@@ -7262,7 +7297,7 @@ const BremStorage = (function () {
         && item.weekStart === weekKey
         && normalizePlatform(item.platform) === p
       ));
-      storageAdapter.write(KEYS.settlementUnmatched, other.concat(stillUnmatched));
+      storageAdapter.write(KEYS.settlementUnmatched, other.concat(untouched).concat(stillUnmatched));
       return {
         matchedCount,
         stillUnmatchedCount: stillUnmatched.length,
@@ -7270,15 +7305,26 @@ const BremStorage = (function () {
       };
     },
 
-    retryWeeklyMatching({ platform, weekStart }) {
+    retryWeeklyMatching({ platform, weekStart, recordIds = [] } = {}) {
       const p = normalizePlatform(platform);
       const weekKey = String(weekStart || '').slice(0, 10);
+      const idFilter = new Set((Array.isArray(recordIds) ? recordIds : []).map(String).filter(Boolean));
       if (!weekKey || typeof BremWeeklySettlement === 'undefined') {
         return { matchedCount: 0, stillUnmatchedCount: 0, mergedToSaved: 0, needsManualSave: false };
       }
-      const pending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'weekly' });
+      const weekPending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'weekly' });
+      let pending = weekPending;
+      if (idFilter.size) {
+        pending = pending.filter(item => idFilter.has(String(item.id)));
+      }
+      const untouched = weekPending.filter(item => !pending.some(row => row.id === item.id));
       if (!pending.length) {
-        return { matchedCount: 0, stillUnmatchedCount: 0, mergedToSaved: 0, needsManualSave: false };
+        return {
+          matchedCount: 0,
+          stillUnmatchedCount: untouched.length,
+          mergedToSaved: 0,
+          needsManualSave: false
+        };
       }
 
       const startDate = pending[0].period;
@@ -7357,7 +7403,7 @@ const BremStorage = (function () {
         && item.weekStart === weekKey
         && normalizePlatform(item.platform) === p
       ));
-      storageAdapter.write(KEYS.settlementUnmatched, other.concat(nextPending));
+      storageAdapter.write(KEYS.settlementUnmatched, other.concat(untouched).concat(nextPending));
       return {
         matched: newlyMatched,
         matchedCount: newlyMatched.length,
@@ -8859,6 +8905,7 @@ const BremStorage = (function () {
     flushStorage: flushActiveStorage,
     reloadDrivers,
     fetchAllDriversFromServer,
+    refreshDriversForSettlementMatch,
     reloadMissions,
     reloadNotices,
     fetchRiderNoticesFromServer,

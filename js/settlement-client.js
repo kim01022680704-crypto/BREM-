@@ -396,6 +396,16 @@ const BremSettlementParser = (function () {
     return raw;
   }
 
+  function normalizeCoupangLoginKey(rawName) {
+    return String(rawName || '').trim().replace(/\s+/g, '');
+  }
+
+  function makeCoupangLoginKeyForDriver(driver) {
+    const name = String(driver?.name || '').replace(/\s/g, '');
+    const phone = String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
+    return `${name}${phone}`;
+  }
+
   function matchDrivers(parsedRows, driverList, format) {
     const matched = [];
     const unmatched = [];
@@ -404,13 +414,25 @@ const BremSettlementParser = (function () {
     parsedRows.forEach(row => {
       const normalizedRowName = normalizeDriverName(row.name, format);
       const normalizedRiderId = normalizeBaeminUserId(row.riderId);
-      const driver = driverList.find(item => {
-        if (isBaemin) {
-          return normalizedRiderId
-            && normalizeBaeminUserId(item.baeminId) === normalizedRiderId;
+      let driver = null;
+
+      if (isBaemin) {
+        if (normalizedRiderId) {
+          driver = driverList.find(item =>
+            normalizeBaeminUserId(item.baeminId) === normalizedRiderId
+          ) || null;
         }
-        return normalizeDriverName(item.name, format) === normalizedRowName;
-      });
+      } else {
+        driver = driverList.find(item =>
+          normalizeDriverName(item.name, format) === normalizedRowName
+        ) || null;
+        if (!driver) {
+          const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
+          if (loginKey) {
+            driver = driverList.find(item => makeCoupangLoginKeyForDriver(item) === loginKey) || null;
+          }
+        }
+      }
 
       const payload = {
         rawName: row.rawName,

@@ -3411,6 +3411,7 @@
             <td>${formatMoney(settlementAmountValue(record))}</td>
             <td>${formatDate(record.savedAt.slice(0, 10))}</td>
             <td>
+              <button class="small-btn" type="button" data-retry-settlement-unmatched="${record.id}">재시도</button>
               <button class="small-btn danger-btn" type="button" data-delete-settlement-unmatched="${record.id}">삭제</button>
             </td>
           </tr>
@@ -3426,6 +3427,7 @@
           <td>${formatMoney(settlementAmountValue(record))}</td>
           <td>${formatDate(record.savedAt.slice(0, 10))}</td>
           <td>
+            <button class="small-btn" type="button" data-retry-settlement-unmatched="${record.id}">재시도</button>
             <button class="small-btn danger-btn" type="button" data-delete-settlement-unmatched="${record.id}">삭제</button>
           </td>
         </tr>
@@ -3506,9 +3508,11 @@
     });
   }
 
-  function retryDailySettlementUnmatched(platform) {
+  function retryDailySettlementUnmatched(platform, options = {}) {
     const p = normalizePlatform(platform);
     const weekStart = getSettlementUnmatchedWeekFilter(p);
+    const periodKey = getSettlementPeriodFilter(p);
+    const recordIds = Array.isArray(options.recordIds) ? options.recordIds : [];
     if (!weekStart) {
       showToast('적용주를 먼저 선택하세요.');
       return;
@@ -3517,22 +3521,32 @@
       .filter(record => normalizePlatform(record.platform) === p)
       .filter(record => record.kind !== 'weekly')
       .filter(record => record.weekStart === weekStart)
+      .filter(record => matchesSettlementPeriod(record, periodKey))
+      .filter(record => !recordIds.length || recordIds.includes(record.id))
       .length;
     if (!pendingCount) {
-      showToast('선택한 주에 미반영 기사가 없습니다.');
+      showToast(recordIds.length ? '재시도할 미반영 기사가 없습니다.' : '선택한 주에 미반영 기사가 없습니다.');
       return;
     }
 
     void (async () => {
       try {
-        await BremStorage.ensureSectionLoaded('drivers');
+        await BremStorage.refreshDriversForSettlementMatch?.();
         await BremStorage.ensureSectionLoaded('settlements');
         await BremStorage.ensureSectionLoaded('calls');
-        const result = BremStorage.settlementUnmatched.retryDailyMatching({ platform: p, weekStart });
+        const result = BremStorage.settlementUnmatched.retryDailyMatching({
+          platform: p,
+          weekStart,
+          period: periodKey,
+          recordIds
+        });
         await BremStorage.flushStorage?.();
         let message = `매칭 재시도: ${result.matchedCount}명 반영`;
         if (result.stillUnmatchedCount) {
           message += ` · 미매칭 ${result.stillUnmatchedCount}명 유지`;
+        }
+        if (!result.matchedCount) {
+          message = '새로 등록한 기사와 매칭되지 않았습니다. 배민 ID·쿠팡 ID를 확인하세요.';
         }
         showToast(message);
         renderSettlements();
@@ -4778,6 +4792,15 @@
       const settlementUploadLogDetailButton = event.target.closest('[data-settlement-upload-log-detail]');
       if (settlementUploadLogDetailButton) {
         renderSettlementUploadLogDetail(settlementUploadLogDetailButton.dataset.settlementUploadLogDetail);
+        return;
+      }
+
+      const unmatchedRetryButton = event.target.closest('[data-retry-settlement-unmatched]');
+      if (unmatchedRetryButton) {
+        const row = unmatchedRetryButton.closest('tr');
+        const panel = unmatchedRetryButton.closest('.admin-platform-panel[data-platform]');
+        const p = panel?.dataset?.platform || 'coupang';
+        retryDailySettlementUnmatched(p, { recordIds: [unmatchedRetryButton.dataset.retrySettlementUnmatched] });
         return;
       }
 

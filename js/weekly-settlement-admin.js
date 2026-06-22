@@ -177,6 +177,7 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     try {
+      await BremStorage.refreshDriversForSettlementMatch?.();
       const record = await BremWeeklySettlement.processWeeklyUpload(payload);
       const uploadLog = BremStorage.settlementUploadLogs.add({
         kind: 'weekly',
@@ -366,7 +367,7 @@ const BremWeeklySettlementAdmin = (function () {
     }).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 
     if (!rows.length) {
-      rowsEl.innerHTML = `<tr><td colspan="7" class="empty">${formatDate(weekStart)} 주 ${platformLabel(platform)} 주정산 미매칭 기사가 없습니다.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(weekStart)} 주 ${platformLabel(platform)} 주정산 미매칭 기사가 없습니다.</td></tr>`;
       return;
     }
 
@@ -386,28 +387,36 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatNumber(record.orderCount)}</td>
         <td>${escapeHtml(record.sourceFileName || '-')}</td>
         <td>${formatDate(String(record.savedAt || '').slice(0, 10))}</td>
+        <td>
+          <button type="button" class="small-btn" data-weekly-retry-unmatched="${record.id}">재시도</button>
+        </td>
       </tr>
     `;
     }).join('');
   }
 
-  function retryWeeklyUnmatched(platform) {
+  function retryWeeklyUnmatched(platform, options = {}) {
     const weekStart = ensureWeeklyLogWeek(platform);
+    const recordIds = Array.isArray(options.recordIds) ? options.recordIds : [];
     const pendingCount = BremStorage.settlementUnmatched.getByWeek({
       weekStart,
       platform,
       kind: 'weekly'
-    }).length;
+    }).filter(record => !recordIds.length || recordIds.includes(record.id)).length;
     if (!pendingCount) {
-      showToast('선택한 주에 미매칭 기사가 없습니다.');
+      showToast(recordIds.length ? '재시도할 미매칭 기사가 없습니다.' : '선택한 주에 미매칭 기사가 없습니다.');
       return;
     }
 
     void (async () => {
       try {
-        await BremStorage.ensureSectionLoaded('drivers');
+        await BremStorage.refreshDriversForSettlementMatch?.();
         await BremStorage.ensureSectionLoaded('weeklySettlements');
-        const result = BremStorage.settlementUnmatched.retryWeeklyMatching({ platform, weekStart });
+        const result = BremStorage.settlementUnmatched.retryWeeklyMatching({
+          platform,
+          weekStart,
+          recordIds
+        });
         await BremStorage.flushStorage?.();
 
         if (result.needsManualSave && result.matched?.length) {
@@ -428,6 +437,9 @@ const BremWeeklySettlementAdmin = (function () {
           let message = `매칭 재시도: ${result.matchedCount}명`;
           if (result.mergedToSaved) message += ` · 저장된 주정산에 ${result.mergedToSaved}명 반영`;
           if (result.stillUnmatchedCount) message += ` · 미매칭 ${result.stillUnmatchedCount}명 유지`;
+          if (!result.matchedCount) {
+            message = '새로 등록한 기사와 매칭되지 않았습니다. 배민 User ID·쿠팡 ID를 확인하세요.';
+          }
           showToast(message);
         }
 
@@ -580,6 +592,13 @@ const BremWeeklySettlementAdmin = (function () {
     PLATFORMS.forEach(bindPlatformEvents);
     $('#weeklySettlementDetailClose')?.addEventListener('click', hideDetail);
     document.addEventListener('click', event => {
+      const weeklyRetryBtn = event.target.closest('[data-weekly-retry-unmatched]');
+      if (weeklyRetryBtn) {
+        const panel = weeklyRetryBtn.closest('.admin-platform-panel[data-platform]');
+        const platform = panel?.dataset?.platform || platformFromEvent(event);
+        retryWeeklyUnmatched(platform, { recordIds: [weeklyRetryBtn.dataset.weeklyRetryUnmatched] });
+        return;
+      }
       const detailBtn = event.target.closest('[data-weekly-detail]');
       if (detailBtn) {
         const record = BremStorage.weeklySettlements.getById(detailBtn.dataset.weeklyDetail);
