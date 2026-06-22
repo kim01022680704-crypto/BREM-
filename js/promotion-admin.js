@@ -73,6 +73,23 @@ const BremPromotionAdmin = (function () {
       button.classList.toggle('active', button.dataset.promotionRulesPlatform === state.rulesPlatformTab);
     });
     renderRulesList();
+    syncRuleFormPlatformWithTab();
+  }
+
+  function setPromotionRulePlatformField(platform) {
+    const p = normalizePlatform(platform);
+    const select = $('#promotionRulePlatform');
+    if (select) select.value = p;
+    return p;
+  }
+
+  function syncRuleFormPlatformWithTab() {
+    const formCard = $('#promotionRuleFormCard');
+    if (!formCard || formCard.hidden || state.editingRuleId) return;
+    const tabPlatform = getActiveRulesPlatformTab();
+    setPromotionRulePlatformField(tabPlatform);
+    renderConditionLists(tabPlatform);
+    updateRateFieldLabels(tabPlatform);
   }
 
   function normalizePlatform(platform) {
@@ -378,9 +395,11 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleFormTitle').textContent = rule ? '프로모션 조건 수정' : '프로모션 조건 추가';
     $('#promotionRuleName').value = draft.name;
     $('#promotionRuleType').value = draft.type || 'count_per_order';
-    const platformValue = normalizePlatform(draft.platform || getActiveRulesPlatformTab());
-    $('#promotionRulePlatform').value = platformValue;
-    $('#promotionRulePlatformDisplay').value = platformLabel(platformValue);
+    const platformValue = setPromotionRulePlatformField(
+      rule?.id
+        ? (draft.platform || getActiveRulesPlatformTab())
+        : getActiveRulesPlatformTab()
+    );
     $('#promotionRuleEnabled').checked = draft.enabled !== false;
     $('#promotionRuleStartDate').value = draft.startDate;
     $('#promotionRuleEndDate').value = draft.endDate;
@@ -426,7 +445,7 @@ const BremPromotionAdmin = (function () {
     return {
       name: $('#promotionRuleName').value.trim(),
       type: $('#promotionRuleType').value,
-      platform: state.editingRuleId ? platform : getActiveRulesPlatformTab(),
+      platform: normalizePlatform($('#promotionRulePlatform').value || getActiveRulesPlatformTab()),
       enabled: $('#promotionRuleEnabled').checked,
       startDate: $('#promotionRuleStartDate').value,
       endDate: $('#promotionRuleEndDate').value,
@@ -789,6 +808,11 @@ const BremPromotionAdmin = (function () {
     $('#promotionGlobalSettingsForm')?.addEventListener('submit', saveGlobalSettings);
     $('#promotionRuleType')?.addEventListener('change', () => {
       const platform = normalizePlatform($('#promotionRulePlatform')?.value || getActiveRulesPlatformTab());
+      updateRateFieldLabels(platform);
+    });
+    $('#promotionRulePlatform')?.addEventListener('change', event => {
+      const platform = normalizePlatform(event.target.value || getActiveRulesPlatformTab());
+      renderConditionLists(platform);
       updateRateFieldLabels(platform);
     });
 

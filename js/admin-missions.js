@@ -264,18 +264,16 @@
     if (countEl) countEl.textContent = `${items.length}개`;
 
     listEl.innerHTML = items.map(item => `
-      <article class="card mission-catalog-card" data-mission-id="${escapeHtml(item.id)}">
-        <div class="card-header">
-          <h3>${escapeHtml(item.title)}</h3>
+      <div class="mission-catalog-item" data-mission-id="${escapeHtml(item.id)}">
+        <div class="mission-catalog-item-head">
+          <strong>${escapeHtml(item.title)}</strong>
           <span class="badge ${item.isActive ? 'badge--success' : 'badge--muted'}">
             ${platformLabel(item.platform)} · ${item.isActive ? '사용' : '중지'}
           </span>
         </div>
-        <p class="mission-catalog-desc">${escapeHtml(item.description || '-')}</p>
-        <p class="hint"><strong>적용 조건:</strong> ${escapeHtml(item.conditions || '-')}</p>
-        <p class="hint"><strong>유형:</strong> ${escapeHtml(item.type || '-')}</p>
-      </article>
-    `).join('') || '<p class="empty-state">등록된 프로모션이 없습니다. 프로모션 관리에서 조건을 추가하세요.</p>';
+        <p class="mission-catalog-item-meta">${escapeHtml(item.conditions || item.description || '-')}</p>
+      </div>
+    `).join('') || '<p class="empty-state mission-catalog-empty">등록된 프로모션이 없습니다.</p>';
   }
 
   function missionHintHtml(missionId) {
