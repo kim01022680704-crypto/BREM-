@@ -1,56 +1,16 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 const { provisionRiderAuthAccount } = require('./rider-auth');
+const {
+  RIDER_SELECT_VARIANTS,
+  RIDER_LIST_SELECT_VARIANTS,
+  RIDER_PATCH_RETURN_SELECT,
+  isMissingColumnError,
+  queryRidersWithSelectFallback
+} = require('./rider-select-columns');
 
-const RIDER_SELECT_BASE = [
-  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
-  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
-  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
-  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-  'created_at', 'updated_at'
-].join(',');
-
-const RIDER_SELECT_WITH_PLATFORM = [
-  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
-  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
-  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
-  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-  'created_at', 'updated_at'
-].join(',');
-
-const RIDER_SELECT = [
-  'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'bank_name', 'account_holder',
-  'account_number', 'baemin_id', 'platform_coupang', 'platform_baemin',
-  'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
-  'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
-  'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-  'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
-  'created_at', 'updated_at'
-].join(',');
-
-const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
-
-/** @deprecated use RIDER_SELECT_WITH_PLATFORM */
-const RIDER_SELECT_LEGACY = RIDER_SELECT_WITH_PLATFORM;
-
-function isMissingColumnError(error) {
-  const message = String(error?.message || error || '').toLowerCase();
-  return message.includes('does not exist') || message.includes('column');
-}
-
-async function queryRidersWithSelectFallback(runQuery) {
-  let lastResult = null;
-  for (const selectColumns of RIDER_SELECT_VARIANTS) {
-    lastResult = await runQuery(selectColumns);
-    if (!lastResult?.error) {
-      return { ...lastResult, selectColumns };
-    }
-    if (!isMissingColumnError(lastResult.error)) break;
-  }
-  return lastResult || { error: new Error('기사 목록을 불러오지 못했습니다.') };
-}
+/** @deprecated use RIDER_SELECT_WITH_PLATFORM from rider-select-columns */
+const RIDER_SELECT_LEGACY = RIDER_SELECT_VARIANTS[1];
 
 function stripOptionalRiderColumns(row) {
   delete row.selected_mission_id;
@@ -217,7 +177,9 @@ async function fetchAllRiders(supabase, selectColumns) {
     let data;
     let error;
     let count;
-    ({ data, error, count, selectColumns: activeSelect } = await queryRidersWithSelectFallback(async columns => {
+    ({ data, error, count, selectColumns: activeSelect } = await queryRidersWithSelectFallback(
+      RIDER_SELECT_VARIANTS,
+      async columns => {
       activeSelect = columns;
       return supabase
         .from('riders')
@@ -413,7 +375,10 @@ async function listRiders(accessToken, options = {}) {
     return query;
   }
 
-  const { data, error, count } = await queryRidersWithSelectFallback(columns => runQuery(columns));
+  const { data, error, count } = await queryRidersWithSelectFallback(
+    options.view === 'list' ? RIDER_LIST_SELECT_VARIANTS : RIDER_SELECT_VARIANTS,
+    columns => runQuery(columns)
+  );
 
   if (error) {
     return { ok: false, status: 500, error: error.message || '기사 목록을 불러오지 못했습니다.' };
@@ -455,8 +420,9 @@ async function upsertRider(accessToken, rider) {
     };
   }
 
-  const { data, error: readError } = await queryRidersWithSelectFallback(columns =>
-    supabase.from('riders').select(columns).eq('id', row.id).maybeSingle()
+  const { data, error: readError } = await queryRidersWithSelectFallback(
+    RIDER_SELECT_VARIANTS,
+    columns => supabase.from('riders').select(columns).eq('id', row.id).maybeSingle()
   );
 
   if (readError) {
@@ -606,7 +572,7 @@ async function patchRiderMissionFields(supabase, riderId, fields = {}) {
     .from('riders')
     .update(updatePayload)
     .eq('id', riderId)
-    .select('*')
+    .select(RIDER_PATCH_RETURN_SELECT)
     .maybeSingle();
 
   if (error) {
@@ -708,7 +674,7 @@ async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
     .from('riders')
     .update(updatePayload)
     .eq('id', riderId)
-    .select('*')
+    .select(RIDER_PATCH_RETURN_SELECT)
     .maybeSingle();
 
   if (error) {
@@ -718,7 +684,7 @@ async function patchRiderLongEventFields(supabase, riderId, fields = {}) {
         .from('riders')
         .update(updatePayload)
         .eq('id', riderId)
-        .select('*')
+        .select(RIDER_PATCH_RETURN_SELECT)
         .maybeSingle();
       if (retry.error) {
         return { ok: false, status: 400, error: retry.error.message || '장기근속 이벤트 저장에 실패했습니다.' };
@@ -783,33 +749,40 @@ async function bulkPatchRiderLongEvents(accessToken, patches = [], options = {})
   }
 
   const supabase = getServiceClient();
-  const failed = [];
-  let updated = 0;
+  const now = new Date().toISOString();
+  const rows = list.map(patch => ({
+    id: String(patch.id || '').trim(),
+    ...normalizeLongEventPatchFields(patch),
+    updated_at: now
+  }));
 
-  for (const patch of list) {
-    const riderId = String(patch.id || '').trim();
-    const result = await patchRiderLongEventFields(supabase, riderId, patch);
-    if (!result.ok) {
-      failed.push({ id: riderId, error: result.error || '장기근속 이벤트 저장 실패' });
-      continue;
-    }
-    updated += 1;
+  let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
+  if (error && isMissingColumnError(error)) {
+    const stripped = rows.map(row => {
+      const next = { ...row };
+      stripOptionalRiderColumns(next);
+      return next;
+    });
+    ({ error } = await supabase.from('riders').upsert(stripped, { onConflict: 'id' }));
   }
 
-  if (failed.length && !updated) {
+  if (error) {
     return {
       ok: false,
       status: 400,
-      error: failed[0].error || '장기근속 이벤트 일괄 저장에 실패했습니다.',
-      failed,
+      error: error.message || '장기근속 이벤트 일괄 저장에 실패했습니다.',
+      failed: list.map(patch => ({
+        id: String(patch.id || ''),
+        error: error.message || '저장 실패'
+      })),
       updated: 0
     };
   }
 
   return {
     ok: true,
-    updated,
-    failed,
+    updated: rows.length,
+    failed: [],
     total: list.length
   };
 }
@@ -843,33 +816,40 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
   }
 
   const supabase = getServiceClient();
-  const failed = [];
-  let updated = 0;
+  const now = new Date().toISOString();
+  const rows = list.map(patch => ({
+    id: String(patch.id || '').trim(),
+    ...normalizeMissionPatchFields(patch),
+    updated_at: now
+  }));
 
-  for (const patch of list) {
-    const riderId = String(patch.id || '').trim();
-    const result = await patchRiderMissionFields(supabase, riderId, patch);
-    if (!result.ok) {
-      failed.push({ id: riderId, error: result.error || '미션 저장 실패' });
-      continue;
-    }
-    updated += 1;
+  let { error } = await supabase.from('riders').upsert(rows, { onConflict: 'id' });
+  if (error && isMissingColumnError(error)) {
+    const stripped = rows.map(row => {
+      const next = { ...row };
+      stripOptionalRiderColumns(next);
+      return next;
+    });
+    ({ error } = await supabase.from('riders').upsert(stripped, { onConflict: 'id' }));
   }
 
-  if (failed.length && !updated) {
+  if (error) {
     return {
       ok: false,
       status: 400,
-      error: failed[0].error || '미션 일괄 저장에 실패했습니다.',
-      failed,
+      error: error.message || '미션 일괄 저장에 실패했습니다.',
+      failed: list.map(patch => ({
+        id: String(patch.id || ''),
+        error: error.message || '저장 실패'
+      })),
       updated: 0
     };
   }
 
   return {
     ok: true,
-    updated,
-    failed,
+    updated: rows.length,
+    failed: [],
     total: list.length
   };
 }

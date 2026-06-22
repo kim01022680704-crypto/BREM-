@@ -34,6 +34,13 @@ window.BremSupabaseStorageAdapter = (function () {
     'created_at', 'updated_at'
   ].join(',');
 
+  const RIDER_LIST_SELECT = [
+    'id', 'name', 'phone', 'baemin_id', 'platform_coupang', 'platform_baemin',
+    'status', 'join_date', 'long_event_item', 'long_event_item_id', 'long_event_start_date',
+    'memo', 'raw_data', 'created_at', 'updated_at'
+  ].join(',');
+
+  const RIDER_LIST_SELECT_VARIANTS = [RIDER_LIST_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
   const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
 
   function isMissingRiderColumnError(error) {
@@ -48,9 +55,10 @@ window.BremSupabaseStorageAdapter = (function () {
     delete row.long_event_platform;
   }
 
-  async function queryRidersWithSelectFallback(runQuery) {
+  async function queryRidersWithSelectFallback(variants, runQuery) {
+    const columnVariants = Array.isArray(variants) ? variants : RIDER_SELECT_VARIANTS;
     let lastResult = null;
-    for (const selectColumns of RIDER_SELECT_VARIANTS) {
+    for (const selectColumns of columnVariants) {
       lastResult = await runQuery(selectColumns);
       if (!lastResult?.error) {
         return { ...lastResult, selectColumns };
@@ -748,7 +756,11 @@ window.BremSupabaseStorageAdapter = (function () {
       const status = String(options.status || '').trim();
       const search = String(options.search || '').trim();
 
-      const { data, error, count } = await queryRidersWithSelectFallback(selectColumns => {
+      const riderVariants = options.view === 'list'
+        ? RIDER_LIST_SELECT_VARIANTS
+        : RIDER_SELECT_VARIANTS;
+
+      const { data, error, count } = await queryRidersWithSelectFallback(riderVariants, selectColumns => {
         window.BremDataCache?.logDataSource?.('riders', false);
         let nextQuery = client
           .from('riders')

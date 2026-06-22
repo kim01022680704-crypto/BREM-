@@ -1342,14 +1342,8 @@ const BremStorage = (function () {
       return { ok: true, cached: true };
     }
 
-    const driversReady = !force && driversLoadMeta.complete
-      && window.BremDataCache?.isValid?.(KEYS.drivers);
-    const missionsReady = !force && window.BremDataCache?.isValid?.(KEYS.missions);
-    const promotionsReady = !force && window.BremDataCache?.isValid?.(KEYS.promotionRules);
-    const noticesReady = !force && window.BremDataCache?.isValid?.(KEYS.notices);
     const settingsReady = !force && window.BremDataCache?.isCoreReady?.();
-
-    if (driversReady && missionsReady && promotionsReady && noticesReady && settingsReady) {
+    if (settingsReady && !force) {
       bootstrapComplete = true;
       logDataSource('bootstrap', true);
       return { ok: true, cached: true };
@@ -1358,21 +1352,6 @@ const BremStorage = (function () {
     const run = async () => {
       const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
       if (!hydrated.ok) return hydrated;
-
-      await Promise.all([
-        fetchAllDriversFromServer({ force }),
-        reloadMissions(force),
-        reloadNotices(force),
-        activeStorageAdapter.ensureKeysLoaded
-          ? activeStorageAdapter.ensureKeysLoaded([
-            KEYS.promotionRules
-          ], { force })
-          : Promise.resolve()
-      ]);
-
-      if (window.BremDataCache?.isCoreReady?.()) {
-        logDataSource('settings', force ? false : settingsReady);
-      }
 
       bootstrapComplete = true;
       document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
@@ -1488,7 +1467,8 @@ const BremStorage = (function () {
             limit: pageSize,
             offset,
             append: offset > 0,
-            force: force && offset === 0
+            force: force && offset === 0,
+            ...(options.view ? { view: options.view } : {})
           });
           const meta = activeStorageAdapter.getRidersMeta?.() || {};
           supabaseTotal = meta.total ?? supabaseTotal;
@@ -1551,7 +1531,8 @@ const BremStorage = (function () {
           const result = await syncDriversFromServer({
             limit: pageSize,
             offset,
-            append: offset > 0
+            append: offset > 0,
+            ...(options.view ? { view: options.view } : {})
           });
           if (!result.ok) {
             if (drivers.getAll().length > 0) {
@@ -1615,6 +1596,7 @@ const BremStorage = (function () {
       limit: String(limit),
       offset: String(offset)
     });
+    if (options.view === 'list') params.set('view', 'list');
     const search = String(options.search || '').trim();
     const status = String(options.status || '').trim();
     if (search) params.set('search', search);

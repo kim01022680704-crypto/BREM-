@@ -290,7 +290,8 @@ app.get('/api/admin/riders', async (req, res) => {
       limit: req.query.limit,
       offset: req.query.offset,
       search: req.query.search,
-      status: req.query.status
+      status: req.query.status,
+      view: req.query.view
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });

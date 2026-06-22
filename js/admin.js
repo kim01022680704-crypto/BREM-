@@ -1849,8 +1849,11 @@
     startAdminSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
 
-    const loadPromise = BremStorage.hydrateAdminDataInBackground?.()
-      || BremStorage.ensureSectionLoaded?.(initialSection);
+    const loadPromise = (async () => {
+      const core = await (BremStorage.hydrateAdminDataInBackground?.() || Promise.resolve({ ok: true }));
+      if (core?.ok === false) return core;
+      return BremStorage.ensureSectionLoaded?.(initialSection) || { ok: true };
+    })();
 
     Promise.resolve(loadPromise).then(result => {
       showAdminDataLoading(false);

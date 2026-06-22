@@ -719,7 +719,7 @@
         selectedIds.clear();
       }
 
-      const result = await BremStorage.fetchAllDriversFromServer?.({ force })
+      const result = await BremStorage.fetchAllDriversFromServer?.({ force, view: 'list' })
         || await BremStorage.reloadDrivers?.(force);
 
       if (result?.ok === false && !BremStorage.drivers.getAll().length) {
