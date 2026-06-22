@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260622f">
+  <link rel="stylesheet" href="css/admin.css?v=20260623a">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
 </head>
 <body>
@@ -2095,6 +2095,7 @@
                   <th>콜수 일치</th>
                   <th>매칭</th>
                   <th>경고</th>
+                  <th>분석</th>
                 </tr>
               </thead>
               <tbody id="weeklySettlementPreviewRows-coupang"></tbody>
@@ -2238,6 +2239,7 @@
                   <th>콜수 일치</th>
                   <th>매칭</th>
                   <th>경고</th>
+                  <th>분석</th>
                 </tr>
               </thead>
               <tbody id="weeklySettlementPreviewRows-baemin"></tbody>
@@ -2537,6 +2539,30 @@
               </tr>
             </thead>
             <tbody id="weeklySettlementDetailRows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card weekly-call-audit-card" id="weeklySettlementCallAuditCard" hidden>
+        <div class="card-header">
+          <h2 id="weeklySettlementCallAuditTitle">콜수 상세 분석</h2>
+          <button type="button" class="small-btn" id="weeklySettlementCallAuditClose">닫기</button>
+        </div>
+        <div class="weekly-settlement-detail-meta" id="weeklySettlementCallAuditMeta"></div>
+        <div class="weekly-call-audit-insights" id="weeklySettlementCallAuditInsights"></div>
+        <div class="table-wrap">
+          <table class="weekly-settlement-detail-table weekly-call-audit-table">
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>반영 콜수</th>
+                <th>출처</th>
+                <th>일정산 레코드</th>
+                <th>콜입력</th>
+                <th>업로드/매칭 힌트</th>
+              </tr>
+            </thead>
+            <tbody id="weeklySettlementCallAuditRows"></tbody>
           </table>
         </div>
       </article>
@@ -3171,8 +3197,8 @@
   <script src="js/promotion-conditions.js?v=20260622c"></script>
   <script src="js/promotion-engine.js?v=20260622e"></script>
   <script src="js/promotion-admin.js?v=20260622c"></script>
-  <script src="js/weekly-settlement.js?v=20260621d"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260625a"></script>
+  <script src="js/weekly-settlement.js?v=20260623a"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260623a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260622c"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
   <script src="js/promotion-apply.js?v=20260622c"></script>

@@ -274,6 +274,123 @@ const BremWeeklySettlementAdmin = (function () {
     return lines.map(line => `<span class="weekly-mismatch-line">${escapeHtml(line)}</span>`).join('');
   }
 
+  function renderCallAuditButton(rider, context = {}) {
+    if (!rider?.matchedRiderId) return '-';
+    const label = rider.driverName || rider.riderName || '기사';
+    return `<button type="button" class="small-btn weekly-call-audit-btn"
+      data-weekly-call-audit="1"
+      data-driver-id="${escapeHtml(rider.matchedRiderId)}"
+      data-platform="${escapeHtml(context.platform || 'coupang')}"
+      data-start-date="${escapeHtml(context.startDate || '')}"
+      data-end-date="${escapeHtml(context.endDate || '')}"
+      data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
+      data-driver-label="${escapeHtml(label)}"
+    >상세분석</button>`;
+  }
+
+  function formatAuditSource(source) {
+    if (source === 'settlement') return '일정산';
+    if (source === 'call') return '콜입력';
+    return '없음';
+  }
+
+  function formatAuditStatusClass(day) {
+    if (day.status === 'missing') return 'weekly-call-audit-row-missing';
+    if (day.status === 'duplicate_settlement') return 'weekly-call-audit-row-duplicate';
+    if (day.usedCount > 0) return 'weekly-call-audit-row-ok';
+    return '';
+  }
+
+  function formatSettlementRecordsCell(day) {
+    if (!day.settlements?.length) return '-';
+    return day.settlements.map(row => (
+      `<span class="weekly-call-audit-record">${formatNumber(row.orderCount)}건${day.settlements.length > 1 ? ` · ${escapeHtml(String(row.id).slice(0, 8))}` : ''}</span>`
+    )).join('<br>');
+  }
+
+  function formatCallRecordsCell(day) {
+    if (!day.calls?.length) return '-';
+    return day.calls.map(row => `${formatNumber(row.count)}건`).join('<br>');
+  }
+
+  function hideCallAudit() {
+    const card = $('#weeklySettlementCallAuditCard');
+    if (card) card.hidden = true;
+  }
+
+  async function openCallAudit(params = {}) {
+    const driverId = String(params.driverId || '').trim();
+    if (!driverId) {
+      showToast('매칭된 기사가 없어 분석할 수 없습니다.');
+      return;
+    }
+
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('calls');
+      await BremStorage.ensureSectionLoaded?.('weekly-settlement');
+
+      const audit = BremWeeklySettlement.buildDriverCallAudit(
+        driverId,
+        params.startDate,
+        params.endDate,
+        params.platform,
+        params.weeklyOrderCount
+      );
+      renderCallAuditPanel(audit, params.driverLabel);
+    } catch (error) {
+      console.error('[BREM] call audit failed:', error);
+      showToast(error.message || '콜수 상세 분석 중 오류가 발생했습니다.');
+    }
+  }
+
+  function renderCallAuditPanel(audit, driverLabel = '') {
+    const card = $('#weeklySettlementCallAuditCard');
+    const titleEl = $('#weeklySettlementCallAuditTitle');
+    const metaEl = $('#weeklySettlementCallAuditMeta');
+    const insightsEl = $('#weeklySettlementCallAuditInsights');
+    const rowsEl = $('#weeklySettlementCallAuditRows');
+    if (!card || !metaEl || !rowsEl) return;
+
+    card.hidden = false;
+    const orderLabel = platformWeeklyOrderLabel(audit.platform);
+    if (titleEl) {
+      titleEl.textContent = `콜수 상세 분석 · ${driverLabel || audit.driverName || '기사'}`;
+    }
+
+    const deltaText = audit.delta === null
+      ? '-'
+      : (audit.delta === 0 ? '0건 (일치)' : `${audit.delta > 0 ? '+' : ''}${formatNumber(audit.delta)}건`);
+
+    metaEl.innerHTML = `
+      <p>기사: <strong>${escapeHtml(audit.driverName || driverLabel || '-')}</strong> · ${escapeHtml(platformLabel(audit.platform))}</p>
+      <p>정산기간: <strong>${escapeHtml(audit.startDate)} ~ ${escapeHtml(audit.endDate)}</strong></p>
+      <p>주간서 ${escapeHtml(orderLabel)}: <strong>${audit.weeklyOrderCount === null ? '-' : formatNumber(audit.weeklyOrderCount)}</strong>
+        · 시스템 합계: <strong>${formatNumber(audit.systemCallCount)}</strong>
+        · 차이: <strong class="${audit.delta ? 'weekly-call-audit-delta-warn' : ''}">${escapeHtml(deltaText)}</strong></p>
+      <p class="form-help">시스템 합계는 일정산 우선 · 없으면 콜입력 · 같은 날 일정산 중복 시 <strong>마지막 1건</strong>만 반영됩니다.</p>
+    `;
+
+    if (insightsEl) {
+      insightsEl.innerHTML = audit.insights?.length
+        ? `<ul class="weekly-call-audit-insight-list">${audit.insights.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+        : '';
+    }
+
+    rowsEl.innerHTML = (audit.dayAudits || []).map(day => `
+      <tr class="${formatAuditStatusClass(day)}">
+        <td><strong>${escapeHtml(day.label)}</strong><span class="weekly-call-audit-date">${escapeHtml(day.date)}</span></td>
+        <td><strong>${formatNumber(day.usedCount)}</strong></td>
+        <td>${escapeHtml(formatAuditSource(day.source))}${day.status === 'duplicate_settlement' ? ' <span class="weekly-call-audit-tag">중복</span>' : ''}</td>
+        <td class="weekly-call-audit-records">${formatSettlementRecordsCell(day)}</td>
+        <td>${formatCallRecordsCell(day)}</td>
+        <td class="weekly-call-audit-hints">${(day.uploadHints || []).map(hint => `<span class="weekly-call-audit-hint">${escapeHtml(hint)}</span>`).join('<br>') || '-'}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty">분석할 일별 데이터가 없습니다.</td></tr>';
+
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function renderPreview(platform) {
     const record = state.previewByPlatform[platform];
     const card = $(`#weeklySettlementPreviewCard-${platform}`);
@@ -306,6 +423,12 @@ const BremWeeklySettlementAdmin = (function () {
       ${summaryExtra}
     `;
 
+    const auditContext = {
+      platform,
+      startDate: record.startDate,
+      endDate: record.endDate
+    };
+
     const matchedRows = (record.riders || []).map(rider => {
       const callStatus = rider.callCountMatched === false
         ? '<span class="promotion-status-no">불일치</span>'
@@ -322,6 +445,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${callStatus}</td>
         <td class="promotion-status-ok">매칭</td>
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
+        <td>${renderCallAuditButton(rider, auditContext)}</td>
       </tr>
     `;
     }).join('');
@@ -338,11 +462,12 @@ const BremWeeklySettlementAdmin = (function () {
         <td class="promotion-status-no">-</td>
         <td class="promotion-status-no">미매칭</td>
         <td class="weekly-warning-cell">${escapeHtml(warningText)}</td>
+        <td>-</td>
       </tr>
     `;
     }).join('');
 
-    rowsEl.innerHTML = matchedRows + unmatchedRows || '<tr><td colspan="8" class="empty">데이터 없음</td></tr>';
+    rowsEl.innerHTML = matchedRows + unmatchedRows || '<tr><td colspan="9" class="empty">데이터 없음</td></tr>';
   }
 
   function unmatchedDefaultWarning(platform) {
@@ -533,8 +658,14 @@ const BremWeeklySettlementAdmin = (function () {
             <th>시스템 콜수</th>
             <th>콜수 일치</th>
             <th>경고</th>
+            <th>분석</th>
           </tr>`;
     }
+    const auditContext = {
+      platform: record.platform,
+      startDate: period.startDate,
+      endDate: period.endDate
+    };
     $('#weeklySettlementDetailRows').innerHTML = refreshedRiders.map(rider => {
       const warningText = formatCallMismatchWarnings(rider);
       return `
@@ -546,6 +677,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${rider.callCountMatched === false ? '불일치' : '일치'}</td>
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
+        <td>${renderCallAuditButton(rider, auditContext)}</td>
       </tr>
     `;
     }).join('');
@@ -591,7 +723,20 @@ const BremWeeklySettlementAdmin = (function () {
     bindEvents.bound = true;
     PLATFORMS.forEach(bindPlatformEvents);
     $('#weeklySettlementDetailClose')?.addEventListener('click', hideDetail);
+    $('#weeklySettlementCallAuditClose')?.addEventListener('click', hideCallAudit);
     document.addEventListener('click', event => {
+      const auditBtn = event.target.closest('[data-weekly-call-audit]');
+      if (auditBtn) {
+        openCallAudit({
+          driverId: auditBtn.dataset.driverId,
+          platform: auditBtn.dataset.platform,
+          startDate: auditBtn.dataset.startDate,
+          endDate: auditBtn.dataset.endDate,
+          weeklyOrderCount: Number(auditBtn.dataset.weeklyOrderCount || 0),
+          driverLabel: auditBtn.dataset.driverLabel || ''
+        });
+        return;
+      }
       const weeklyRetryBtn = event.target.closest('[data-weekly-retry-unmatched]');
       if (weeklyRetryBtn) {
         const panel = weeklyRetryBtn.closest('.admin-platform-panel[data-platform]');

@@ -257,6 +257,172 @@ const BremWeeklySettlement = (function () {
     };
   }
 
+  function nameMatchesDriverRecord(record, driver, platform) {
+    if (!driver) return false;
+    if (record?.driverId && record.driverId === driver.id) return true;
+    const driverName = normalizeName(driver.name, platform);
+    const candidates = [
+      record?.driverName,
+      record?.rawName,
+      record?.name,
+      record?.riderName,
+      record?.originalName
+    ]
+      .map(value => normalizeName(value, platform))
+      .filter(Boolean);
+    return candidates.some(name => name === driverName || name.includes(driverName) || driverName.includes(name));
+  }
+
+  function findDailyUploadHints(day, platform, driver) {
+    const p = normalizePlatform(platform);
+    const hints = [];
+    const logs = (BremStorage.settlementUploadLogs?.getAll?.() || []).filter(log => (
+      log.kind === 'daily'
+      && normalizePlatform(log.platform) === p
+      && String(log.period || log.startDate || '').slice(0, 10) === day
+    ));
+
+    if (!logs.length) {
+      hints.push('해당 날짜 일정산 업로드 기록 없음');
+      return hints;
+    }
+
+    logs.forEach(log => {
+      const fileLabel = log.fileName || '파일명 없음';
+      const inApplied = (log.appliedRecords || []).some(row => row.driverId === driver?.id);
+      const inMatched = (log.matchedRecords || []).some(row => row.driverId === driver?.id);
+      const unmatchedRow = (log.unmatchedRecords || []).find(row => nameMatchesDriverRecord(row, driver, p));
+
+      if (inApplied || inMatched) {
+        const row = [...(log.appliedRecords || []), ...(log.matchedRecords || [])]
+          .find(item => item.driverId === driver?.id);
+        hints.push(`업로드 반영 · ${fileLabel}${row ? ` · ${row.orderCount}건` : ''}`);
+      } else if (unmatchedRow) {
+        hints.push(`업로드 미매칭 · ${fileLabel} · 엑셀 ${unmatchedRow.orderCount}건`);
+      } else if (log.status === 'applied') {
+        hints.push(`업로드됐으나 이 기사 없음 · ${fileLabel}`);
+      } else {
+        hints.push(`업로드 기록 · ${fileLabel} (${log.status || '상태 미상'})`);
+      }
+    });
+
+    return [...new Set(hints)];
+  }
+
+  function buildDriverCallAudit(driverId, startDate, endDate, platform, weeklyOrderCount = null) {
+    const p = normalizePlatform(platform);
+    const start = String(startDate || '').slice(0, 10);
+    const end = String(endDate || '').slice(0, 10);
+    const driver = BremStorage.drivers.getById(driverId);
+    const stats = buildDriverCallStatsForPeriod(driverId, start, end, p);
+    const days = listDaysInclusive(start, end);
+
+    const settlementsByDay = {};
+    BremStorage.settlements.getAll().forEach(record => {
+      if (record.driverId !== driverId) return;
+      if (normalizePlatform(record.platform) !== p) return;
+      const day = String(record.period).slice(0, 10);
+      if (start && day < start) return;
+      if (end && day > end) return;
+      if (!settlementsByDay[day]) settlementsByDay[day] = [];
+      settlementsByDay[day].push({
+        id: record.id,
+        orderCount: Number(record.orderCount || 0),
+        settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
+        appliedAt: record.appliedAt || record.createdAt || ''
+      });
+    });
+
+    const callsByDay = {};
+    BremStorage.calls.getAll().forEach(call => {
+      if (call.driverId !== driverId) return;
+      if (normalizePlatform(call.platform) !== p) return;
+      const day = String(call.date).slice(0, 10);
+      if (start && day < start) return;
+      if (end && day > end) return;
+      if (!callsByDay[day]) callsByDay[day] = [];
+      callsByDay[day].push({
+        id: call.id,
+        count: Number(call.count || 0),
+        date: day
+      });
+    });
+
+    const dayAudits = days.map(day => {
+      const settlements = settlementsByDay[day] || [];
+      const calls = callsByDay[day] || [];
+      const usedEntry = stats.byDay[day] || null;
+      const uploadHints = findDailyUploadHints(day, p, driver);
+      let status = 'missing';
+      if (settlements.length > 1) status = 'duplicate_settlement';
+      else if (settlements.length === 1) status = 'settlement';
+      else if (calls.length > 0) status = 'call_only';
+      else if (usedEntry) status = usedEntry.source || 'unknown';
+
+      const settlementSum = settlements.reduce((sum, row) => sum + Number(row.orderCount || 0), 0);
+      const callSum = calls.reduce((sum, row) => sum + Number(row.count || 0), 0);
+
+      return {
+        date: day,
+        label: day.slice(5),
+        status,
+        usedCount: Number(usedEntry?.callCount || 0),
+        source: usedEntry?.source || 'none',
+        settlements,
+        calls,
+        settlementSum,
+        callSum,
+        uploadHints
+      };
+    });
+
+    const weekly = weeklyOrderCount === null || weeklyOrderCount === undefined
+      ? null
+      : Number(weeklyOrderCount || 0);
+    const systemCallCount = Number(stats.callCount || 0);
+    const delta = weekly === null ? null : systemCallCount - weekly;
+    const daysWithData = dayAudits.filter(day => day.usedCount > 0);
+    const sumWithData = daysWithData.reduce((sum, day) => sum + day.usedCount, 0);
+    const missingDays = dayAudits.filter(day => day.status === 'missing');
+    const duplicateDays = dayAudits.filter(day => day.settlements.length > 1);
+
+    const insights = [];
+    if (delta !== null && delta !== 0) {
+      insights.push(delta > 0
+        ? `시스템 합계가 주간서보다 ${delta}건 많습니다.`
+        : `시스템 합계가 주간서보다 ${Math.abs(delta)}건 적습니다.`);
+    }
+    if (missingDays.length) {
+      insights.push(`일정산/콜입력 없는 날 ${missingDays.length}일: ${missingDays.map(day => day.label).join(', ')}`);
+    }
+    if (duplicateDays.length) {
+      insights.push(`같은 날 일정산 중복 ${duplicateDays.length}일 (마지막 1건만 합산): ${duplicateDays.map(day => day.label).join(', ')}`);
+    }
+    if (weekly !== null && sumWithData > weekly) {
+      insights.push(`데이터 있는 ${daysWithData.length}일 합(${sumWithData})만으로도 주간서(${weekly})보다 ${sumWithData - weekly}건 많습니다.`);
+    }
+    duplicateDays.forEach(day => {
+      const used = day.usedCount;
+      if (day.settlementSum !== used) {
+        insights.push(`${day.label}: 일정산 ${day.settlements.length}건 합 ${day.settlementSum}건 · 반영 ${used}건`);
+      }
+    });
+
+    return {
+      driverId,
+      driverName: driver?.name || '',
+      platform: p,
+      startDate: start,
+      endDate: end,
+      weeklyOrderCount: weekly,
+      systemCallCount,
+      delta,
+      dayAudits,
+      insights,
+      stats
+    };
+  }
+
   async function extractCoupangWeeklyRiders(file, password, columnConfig = {}) {
     const nameColumn = columnConfig.nameColumn || 'C';
     const orderCountColumn = columnConfig.orderCountColumn || 'F';
@@ -677,6 +843,7 @@ const BremWeeklySettlement = (function () {
     extractBaeminWeeklyRiders,
     buildDriversInPeriod,
     buildDriverCallStatsForPeriod,
+    buildDriverCallAudit,
     matchSettlementRidersWithExistingData,
     buildWeeklySummary,
     buildMatchedNamesLabel,

@@ -4112,6 +4112,80 @@ textarea {
   margin-top: 4px;
 }
 
+.weekly-call-audit-card {
+  margin-top: 16px;
+  border: 1px solid rgba(255, 193, 7, 0.35);
+}
+
+.weekly-call-audit-btn {
+  white-space: nowrap;
+}
+
+.weekly-call-audit-insights {
+  margin: 0 0 12px;
+}
+
+.weekly-call-audit-insight-list {
+  margin: 0;
+  padding: 12px 16px 12px 28px;
+  border-radius: 10px;
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffe8b3;
+  line-height: 1.55;
+}
+
+.weekly-call-audit-delta-warn {
+  color: #ffc107;
+}
+
+.weekly-call-audit-date {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.weekly-call-audit-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 152, 0, 0.22);
+  color: #ffc107;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.weekly-call-audit-row-missing {
+  background: rgba(220, 53, 69, 0.08);
+  box-shadow: inset 3px 0 0 #dc3545;
+}
+
+.weekly-call-audit-row-duplicate {
+  background: rgba(255, 152, 0, 0.1);
+  box-shadow: inset 3px 0 0 #ff9800;
+}
+
+.weekly-call-audit-row-ok td:first-child strong {
+  color: #9be59b;
+}
+
+.weekly-call-audit-hints,
+.weekly-call-audit-records {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: normal;
+  max-width: 280px;
+}
+
+.weekly-call-audit-hint {
+  display: block;
+}
+
+.weekly-call-audit-record {
+  display: inline-block;
+}
+
 .backup-status-panel {
   display: grid;
   gap: 16px;
