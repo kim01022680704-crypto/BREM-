@@ -443,6 +443,10 @@
   padding-right: 8px;
 }
 
+.site--home .nav-cta__text--short {
+  display: none;
+}
+
 .site--home .nav-cta--staff .nav-cta__icon {
   color: #1d4ed8;
   background: rgba(255, 255, 255, 0.38);
@@ -1067,29 +1071,68 @@
 }
 
 @media (max-width: 768px) {
-  .site--home .hero--home {
-    padding: 116px 20px 28px;
+  .site--home .nav {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand cta"
+      "menu menu";
+    justify-items: stretch;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 0 12px;
   }
 
-  .site--light .hero {
-    padding: calc(64px + 48px) 20px 36px;
+  .site--home .brand {
+    order: unset;
+    grid-area: brand;
+    justify-self: start;
+  }
+
+  .site--home .nav-cta {
+    order: unset;
+    grid-area: cta;
+    justify-self: end;
+    align-self: center;
+    max-width: none;
+    width: auto;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .site--home .nav-cta--arrow span:first-child {
+    max-width: none;
+  }
+
+  .site--home .menu {
+    order: unset;
+    grid-area: menu;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .site--home .hero--home {
+    padding: 134px 16px 28px;
   }
 
   .site--home .hero-logo--home {
-    width: min(96vw, 460px);
-    margin-top: -8px;
-    margin-bottom: 0;
+    width: min(92vw, 400px);
+    margin-top: 0;
+    margin-bottom: 6px;
   }
 
   .site--home .hero-headline--partner {
-    margin-top: -46px;
-    font-size: clamp(1.12rem, 4.8vw, 1.38rem);
-    line-height: 1.35;
+    margin-top: 0;
+    font-size: clamp(1.08rem, 4.6vw, 1.32rem);
+    line-height: 1.38;
     padding: 0 4px;
   }
 
   .site--home .hero-logo--home img {
-    margin-bottom: -42px;
+    margin-bottom: 0;
+  }
+
+  .site--light .hero {
+    padding: calc(64px + 48px) 20px 36px;
   }
 
   .site--home .hero-partners__bar {
