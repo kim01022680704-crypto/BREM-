@@ -2940,6 +2940,18 @@
     return value.slice(0, 10);
   }
 
+  function setSettlementWeekFilters(platform, weekStart) {
+    const p = normalizePlatform(platform);
+    const picked = weekStartKey(weekStart || weekStartKey());
+    state.settlementLogWeekByPlatform[p] = picked;
+    state.settlementUnmatchedWeekByPlatform[p] = picked;
+    const logInput = $(`#settlementLogWeek-${p}`);
+    const unmatchedInput = $(`#settlementUnmatchedWeek-${p}`);
+    if (logInput) logInput.value = picked;
+    if (unmatchedInput) unmatchedInput.value = picked;
+    return picked;
+  }
+
   function ensureSettlementLogWeek(platform) {
     const p = normalizePlatform(platform);
     if (!state.settlementLogWeekByPlatform[p]) {
@@ -3158,12 +3170,10 @@
     if (summaryEl) {
       if (!rows.length) {
         summaryEl.textContent = '';
-      } else if (p === 'coupang' && hiddenCount > 0) {
+      } else if (hiddenCount > 0) {
         summaryEl.textContent = `총 ${number(rows.length)}건 · 최근 ${number(displayRows.length)}건 표시`;
-      } else if (p === 'coupang') {
-        summaryEl.textContent = `총 ${number(rows.length)}건`;
       } else {
-        summaryEl.textContent = '';
+        summaryEl.textContent = `총 ${number(rows.length)}건`;
       }
     }
   }
@@ -3372,19 +3382,23 @@
   function renderSettlementUnmatched(platform) {
     const p = normalizePlatform(platform);
     const weekStart = getSettlementUnmatchedWeekFilter(p);
+    const periodKey = getSettlementPeriodFilter(p);
     updateSettlementUnmatchedWeekLabel(p);
     const rows = settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
       .filter(record => record.kind !== 'weekly')
       .filter(record => record.weekStart === weekStart)
+      .filter(record => matchesSettlementPeriod(record, periodKey))
       .sort((a, b) => b.period.localeCompare(a.period) || b.savedAt.localeCompare(a.savedAt));
 
     const rowsEl = $(`#settlementUnmatchedHistoryRows-${p}`);
     if (!rowsEl) return;
 
-    const emptyMessage = weekStart
-      ? `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
-      : `${platformLabel(p)} 미반영 기사 내역이 없습니다.`;
+    const emptyMessage = periodKey
+      ? `${formatDate(periodKey)} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
+      : weekStart
+        ? `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
+        : `${platformLabel(p)} 미반영 기사 내역이 없습니다.`;
 
     rowsEl.innerHTML = rows.map(record => {
       if (isBaeminSettlementPlatform(p)) {
@@ -3425,6 +3439,9 @@
     const preview = state.settlementPreviewByPlatform[p];
     if (preview && periodKey) {
       preview.period = periodKey;
+    }
+    if (periodKey) {
+      setSettlementWeekFilters(p, periodKey);
     }
     renderSettlements();
   }
@@ -4391,9 +4408,9 @@
         retryDailySettlementUnmatched(p);
       });
       $(`#settlementUnmatchedWeek-${p}`)?.addEventListener('change', event => {
-        const picked = weekStartKey(event.target.value || weekStartKey());
-        state.settlementUnmatchedWeekByPlatform[p] = picked;
+        const picked = setSettlementWeekFilters(p, event.target.value);
         event.target.value = picked;
+        renderSettlementUploadLogs(p);
         renderSettlementUnmatched(p);
       });
       $(`#settlementHistoryClearBtn-${p}`)?.addEventListener('click', () => {
@@ -4403,17 +4420,15 @@
         handleSettlementPeriodChange(p);
       });
       $(`#settlementLogWeek-${p}`)?.addEventListener('change', event => {
-        const picked = weekStartKey(event.target.value || weekStartKey());
-        state.settlementLogWeekByPlatform[p] = picked;
+        const picked = setSettlementWeekFilters(p, event.target.value);
         event.target.value = picked;
         renderSettlementUploadLogs(p);
+        renderSettlementUnmatched(p);
       });
-      if (p === 'coupang') {
-        $(`#settlementHistorySearch-${p}`)?.addEventListener('input', event => {
-          state.settlementHistorySearchByPlatform[p] = event.target.value || '';
-          renderSettlements();
-        });
-      }
+      $(`#settlementHistorySearch-${p}`)?.addEventListener('input', event => {
+        state.settlementHistorySearchByPlatform[p] = event.target.value || '';
+        renderSettlements();
+      });
       $(`#settlementFile-${p}`)?.addEventListener('change', event => {
         const file = event.target.files?.[0];
         if (!file) return;
