@@ -23,7 +23,9 @@
     var wrap = table.closest('.table-wrap') || table.parentElement;
     var headers = [];
     table.querySelectorAll('thead th').forEach(function (th, i) {
-      headers[i] = (th.textContent || '').replace(/\s+/g, ' ').trim();
+      var labelEl = th.querySelector('.th-sort-label');
+      var label = labelEl ? labelEl.textContent : (th.textContent || '');
+      headers[i] = label.replace(/\s+/g, ' ').replace(/↕/g, '').trim();
     });
     if (!headers.length) return;
 

@@ -21,6 +21,36 @@
   align-items: center;
 }
 
+.topbar__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.topbar__title {
+  min-width: 0;
+}
+
+.topbar__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.topbar__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
 .db-status {
   display: inline-flex;
   align-items: center;
@@ -226,6 +256,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 22px;
   padding: 20px;
   background: linear-gradient(135deg, #202020, #101010);

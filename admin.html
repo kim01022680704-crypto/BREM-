@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="css/admin.css?v=20260623c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
-  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
+  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623x">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -115,18 +115,24 @@
 
     <main class="main">
       <header class="topbar">
-        <button class="menu-btn" id="menuBtn">메뉴</button>
-        <div>
-          <p>BREM ADMIN</p>
-          <h1 id="pageTitle">대시보드</h1>
+        <div class="topbar__head">
+          <button class="menu-btn" id="menuBtn">메뉴</button>
+          <div class="topbar__title">
+            <p>BREM ADMIN</p>
+            <h1 id="pageTitle">대시보드</h1>
+          </div>
         </div>
-        <div class="topbar-actions">
-          <span class="db-status db-status--pending" id="adminDbStatus" aria-live="polite">DB: 확인 중…</span>
-          <span class="rider-app-publish-status" id="riderAppPublishStatus" aria-live="polite">반영 상태 확인 중…</span>
-          <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
-          <a class="top-link" href="drivers.html">기사관리 프로그램</a>
-          <a class="top-link secondary" href="driver.html">기사 전용 페이지 열기</a>
-          <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
+        <div class="topbar__right">
+          <div class="topbar__meta">
+            <span class="db-status db-status--pending" id="adminDbStatus" aria-live="polite">DB: 확인 중…</span>
+            <span class="rider-app-publish-status" id="riderAppPublishStatus" aria-live="polite">반영 상태 확인 중…</span>
+          </div>
+          <div class="topbar-actions">
+            <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
+            <a class="top-link" href="drivers.html">기사관리 프로그램</a>
+            <a class="top-link secondary" href="driver.html">기사 전용 페이지 열기</a>
+            <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
+          </div>
         </div>
       </header>
 
@@ -3218,7 +3224,7 @@
   <script src="js/admin-missions.js?v=20260625a"></script>
   <script src="js/table-sort.js"></script>
   <script src="js/admin.js?v=20260623k"></script>
-  <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
+  <script src="js/mobile-table-cards.js?v=20260623x" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>
