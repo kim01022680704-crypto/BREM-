@@ -61,37 +61,67 @@
   }
 
   .hero {
-    gap: 10px 12px;
+    gap: 8px;
     margin-bottom: 10px;
-    padding: 14px 14px;
-    border-radius: 16px;
+    padding: 12px 12px 11px;
+    border-radius: 14px;
   }
 
-  .hero h1 {
-    font-size: 1.22rem;
+  .hero__top {
+    gap: 8px 10px;
+  }
+
+  .hero__logo {
+    width: 44px;
+  }
+
+  .hero__titles h1 {
+    font-size: 1.06rem;
     line-height: 1.15;
   }
 
   .hero-desc {
-    margin-top: 4px;
-    font-size: 0.8rem;
-    line-height: 1.4;
-  }
-
-  .hero__logo {
-    width: 72px;
+    display: none;
   }
 
   .eyebrow {
-    margin-bottom: 4px;
-    font-size: 0.7rem;
+    margin-bottom: 2px;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+  }
+
+  .logout-btn {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 0.74rem;
+    border-radius: 8px;
   }
 
   .rider-publish-notice {
-    margin-top: 6px;
-    padding: 7px 10px;
-    font-size: 0.8rem;
-    line-height: 1.4;
+    font-size: 0.74rem;
+  }
+
+  .rider-publish-ready {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 8px 9px;
+  }
+
+  .rider-publish-hint {
+    display: block;
+    width: 100%;
+    margin-left: 0;
+    font-size: 0.68rem;
+  }
+
+  .rider-publish-refresh-btn {
+    width: auto;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 0.72rem;
+    margin-left: auto;
   }
 
   .result {

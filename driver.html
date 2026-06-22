@@ -16,8 +16,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260621f">
-  <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
+  <link rel="stylesheet" href="css/driver.css?v=20260623h">
+  <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
 <body>
@@ -82,28 +82,32 @@
 
   <div class="driver-app" id="driverMainApp" hidden>
       <header class="hero">
-        <div class="hero__copy">
-          <p class="eyebrow">BREM RIDER</p>
-          <h1>기사 전용 조회</h1>
-          <p class="hero-desc">본인 콜수와 장기근속이벤트 진행률을 확인합니다.</p>
-          <p class="rider-publish-notice" id="riderPublishNotice" hidden>
-            <span id="riderPublishLoading" hidden>데이터 불러오는 중입니다...</span>
-            <span id="riderPublishReady" hidden>
-              최근 반영: <strong id="riderPublishAt">-</strong> 기준
-              <span class="rider-publish-hint">· 30분마다 자동 확인</span>
-              <button type="button" class="rider-publish-refresh-btn" id="riderPublishRefreshBtn">최신 반영</button>
-            </span>
-            <span id="riderPublishError" hidden>데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.</span>
-          </p>
+        <div class="hero__top">
+          <img
+            class="hero__logo"
+            src="assets/brand/brem-logo-mark.png"
+            width="120"
+            height="86"
+            alt="BREM PLUS DELIVERY AGENCY"
+          >
+          <div class="hero__titles">
+            <p class="eyebrow">BREM RIDER</p>
+            <h1>기사 전용 조회</h1>
+          </div>
+          <button class="logout-btn" type="button" id="driverLogoutBtn">로그아웃</button>
         </div>
-        <img
-          class="hero__logo"
-          src="assets/brand/brem-logo-mark.png"
-          width="120"
-          height="86"
-          alt="BREM PLUS DELIVERY AGENCY"
-        >
-        <button class="logout-btn" type="button" id="driverLogoutBtn">로그아웃</button>
+        <p class="hero-desc">본인 콜수와 장기근속이벤트 진행률을 확인합니다.</p>
+        <p class="rider-publish-notice" id="riderPublishNotice" hidden>
+          <span id="riderPublishLoading" hidden>데이터 불러오는 중입니다...</span>
+          <span id="riderPublishReady" hidden class="rider-publish-ready">
+            <span class="rider-publish-line">
+              최근 반영 <strong id="riderPublishAt">-</strong>
+              <span class="rider-publish-hint">· 30분마다 자동 확인</span>
+            </span>
+            <button type="button" class="rider-publish-refresh-btn" id="riderPublishRefreshBtn">새로고침</button>
+          </span>
+          <span id="riderPublishError" hidden>데이터를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.</span>
+        </p>
       </header>
 
       <main>
