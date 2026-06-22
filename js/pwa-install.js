@@ -2,8 +2,9 @@
  * BREM PWA — 홈 화면 설치 버튼
  */
 (function () {
+  var wrap = document.getElementById('bremPwaInstallWrap');
   var btn = document.getElementById('bremPwaInstallBtn');
-  if (!btn) return;
+  if (!wrap || !btn) return;
 
   var deferredPrompt = null;
   var labelEl = btn.querySelector('.brem-pwa-install-label');
@@ -14,11 +15,11 @@
   }
 
   if (isStandalone()) {
-    btn.hidden = true;
+    wrap.hidden = true;
     return;
   }
 
-  btn.hidden = false;
+  wrap.hidden = false;
 
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();

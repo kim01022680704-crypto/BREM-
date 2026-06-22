@@ -238,15 +238,28 @@ body {
   }
 }
 
+.brem-pwa-install-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.brem-pwa-install-wrap[hidden] {
+  display: none !important;
+}
+
 .brem-pwa-install {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   width: 100%;
-  max-width: 320px;
   min-height: 48px;
-  margin: 0 auto;
+  margin: 0;
   padding: 12px 20px;
   color: #0a0a0a;
   background: linear-gradient(180deg, #f0d060 0%, #e8c547 100%);
@@ -277,6 +290,21 @@ body {
   font-size: 1.2rem;
   font-weight: 900;
   line-height: 1;
+}
+
+.brem-pwa-install-hint {
+  margin: 0;
+  padding: 0 8px;
+  color: rgba(232, 197, 71, 0.78);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.brem-pwa-install-hint strong {
+  color: #f0d060;
+  font-weight: 800;
 }
 
 @media (min-width: 721px) {
