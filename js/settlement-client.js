@@ -30,7 +30,7 @@ const BremSettlementParser = (function () {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  /** U열(가게도착) 빈칸·대시·0 = 배달 미수행 */
+  /** U·V열 등 필수값 빈칸·대시·0 = 무효 */
   function isBlankBaeminCell(value) {
     const raw = cellText(value).trim();
     if (!raw) return true;
@@ -42,11 +42,19 @@ const BremSettlementParser = (function () {
     return false;
   }
 
-  function isValidBaeminStoreArrival(value) {
+  function isValidBaeminRequiredField(value) {
     return !isBlankBaeminCell(value);
   }
 
-  /** AH열 0·빈값·0으로 시작하는 문자열 = 배달 미수행 행 */
+  function isValidBaeminStoreArrival(value) {
+    return isValidBaeminRequiredField(value);
+  }
+
+  function isValidBaeminColumnV(value) {
+    return isValidBaeminRequiredField(value);
+  }
+
+  /** AH열 0·빈값·0으로 시작 = 배달 미수행 */
   function isValidBaeminDeliveryAmount(value) {
     const raw = cellText(value).trim();
     if (!raw) return false;
@@ -56,18 +64,20 @@ const BremSettlementParser = (function () {
     return numeric > 0;
   }
 
-  /** U열 가게도착 있음 + AH열 금액>0 둘 다 만족해야 유효 1건 */
-  function classifyBaeminDeliveryRow(amountCell, storeArrivalCell) {
-    const storeArrivalValid = isValidBaeminStoreArrival(storeArrivalCell);
+  /** U·V·AH 중 하나라도 무효면 해당 행 전체 제외 */
+  function classifyBaeminDeliveryRow(storeArrivalCell, columnVCell, amountCell) {
+    const uValid = isValidBaeminStoreArrival(storeArrivalCell);
+    const vValid = isValidBaeminColumnV(columnVCell);
     const amountValid = isValidBaeminDeliveryAmount(amountCell);
-    if (storeArrivalValid && amountValid) return 'valid';
-    if (!storeArrivalValid && !amountValid) return 'both_invalid';
-    if (!storeArrivalValid) return 'empty_store_arrival';
-    return 'invalid_amount';
+    if (uValid && vValid && amountValid) return 'valid';
+    if (!uValid) return 'empty_store_arrival';
+    if (!vValid) return 'empty_column_v';
+    if (!amountValid) return 'invalid_amount';
+    return 'invalid';
   }
 
-  function isValidBaeminDeliveryRow(amountCell, storeArrivalCell) {
-    return classifyBaeminDeliveryRow(amountCell, storeArrivalCell) === 'valid';
+  function isValidBaeminDeliveryRow(storeArrivalCell, columnVCell, amountCell) {
+    return classifyBaeminDeliveryRow(storeArrivalCell, columnVCell, amountCell) === 'valid';
   }
 
   function cellText(value) {
@@ -173,6 +183,7 @@ const BremSettlementParser = (function () {
     const riderIdCol = SettlementFormats.columnToIndex(format.columns.riderId);
     const nameCol = SettlementFormats.columnToIndex(format.columns.name);
     const storeArrivalCol = SettlementFormats.columnToIndex(format.columns.storeArrival || 'U');
+    const columnVCol = SettlementFormats.columnToIndex(format.columns.columnV || 'V');
     const amountCol = SettlementFormats.columnToIndex(format.columns.deliveryAmount);
     const startIndex = Math.max(0, Number(format.startRow || 1) - 1);
     const groups = new Map();
@@ -180,8 +191,9 @@ const BremSettlementParser = (function () {
     let totalDeliveryAmount = 0;
     const skippedRows = {
       emptyStoreArrival: 0,
+      emptyColumnV: 0,
       invalidAmount: 0,
-      bothInvalid: 0
+      otherInvalid: 0
     };
 
     for (let i = startIndex; i < rows.length; i++) {
@@ -191,13 +203,15 @@ const BremSettlementParser = (function () {
       if (!riderId) continue;
 
       const name = format.cleanName(rawName) || riderId;
-      const amountCell = readCell(row, amountCol);
       const storeArrivalCell = readCell(row, storeArrivalCol);
-      const rowKind = classifyBaeminDeliveryRow(amountCell, storeArrivalCell);
+      const columnVCell = readCell(row, columnVCol);
+      const amountCell = readCell(row, amountCol);
+      const rowKind = classifyBaeminDeliveryRow(storeArrivalCell, columnVCell, amountCell);
       if (rowKind !== 'valid') {
         if (rowKind === 'empty_store_arrival') skippedRows.emptyStoreArrival += 1;
+        else if (rowKind === 'empty_column_v') skippedRows.emptyColumnV += 1;
         else if (rowKind === 'invalid_amount') skippedRows.invalidAmount += 1;
-        else skippedRows.bothInvalid += 1;
+        else skippedRows.otherInvalid += 1;
         continue;
       }
       const amount = parseNumber(amountCell);
@@ -226,7 +240,7 @@ const BremSettlementParser = (function () {
 
     const parsedRows = Array.from(groups.values());
     if (!parsedRows.length) {
-      throw new Error('K열(User ID)·U열(가게도착)·AH열에서 배민 배달 데이터를 읽지 못했습니다.');
+      throw new Error('K열(User ID)·U열(가게도착)·V열·AH열에서 배민 배달 데이터를 읽지 못했습니다.');
     }
 
     return {
@@ -661,6 +675,8 @@ const BremSettlementParser = (function () {
     isValidBaeminDeliveryRow,
     isValidBaeminDeliveryAmount,
     isValidBaeminStoreArrival,
+    isValidBaeminColumnV,
+    isValidBaeminRequiredField,
     classifyBaeminDeliveryRow
   };
 })();

@@ -3724,11 +3724,16 @@
       if (isBaeminSettlementPlatform(p)) {
         const skip = result.skippedBaeminRows;
         const excluded = skip
-          ? Number(skip.emptyStoreArrival || 0) + Number(skip.bothInvalid || 0) + Number(skip.invalidAmount || 0)
+          ? Number(skip.emptyStoreArrival || 0)
+            + Number(skip.emptyColumnV || 0)
+            + Number(skip.invalidAmount || 0)
+            + Number(skip.otherInvalid || 0)
           : 0;
-        const uSkip = skip ? Number(skip.emptyStoreArrival || 0) + Number(skip.bothInvalid || 0) : 0;
+        const fieldSkip = skip
+          ? Number(skip.emptyStoreArrival || 0) + Number(skip.emptyColumnV || 0)
+          : 0;
         const skipLabel = excluded > 0
-          ? ` · 무효행 제외 ${excluded}건${uSkip > 0 ? `(U열 빈칸 등 ${uSkip}건)` : ''}`
+          ? ` · 무효행 제외 ${excluded}건${fieldSkip > 0 ? `(U·V 빈칸 등 ${fieldSkip}건)` : ''}`
           : '';
         showToast(`${platformLabel(p)} 미리보기 · 유효 배달 ${result.totalDeliveries || 0}건 · 라이더 ${result.totalRiders || result.totalRows}명 · 매칭 ${result.matched.length}명${skipLabel}`);
       } else {

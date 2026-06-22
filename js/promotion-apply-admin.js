@@ -173,7 +173,7 @@ const BremPromotionApplyAdmin = (function () {
     if (!file) {
       hintEl.innerHTML = platformKey === 'combined'
         ? '단가보장 조건이 있으면 배민 기사(배민 단독)에 배달처리비 정산서가 필요합니다. K열 User ID로 매칭하며, 파일명 기간은 배민 주정산서와 같아야 합니다.'
-        : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U열(가게도착) 빈칸·AH열 0·0으로 시작 = 배달 미수행(무효)</strong> · U·AH 모두 유효한 행만 집계';
+        : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U·V·AH 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 집계';
       return;
     }
 

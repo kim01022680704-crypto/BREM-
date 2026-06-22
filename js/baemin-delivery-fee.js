@@ -122,7 +122,7 @@ const BremBaeminDeliveryFee = (function () {
     );
     const parsed = BremSettlementParser.parseRowsWithFormat(rows, format);
     if (!parsed?.parsedRows?.length) {
-      throw new Error('배달처리비 파일에서 K열(User ID)·U열(가게도착)·AH열(배달처리비) 데이터를 읽지 못했습니다.');
+      throw new Error('배달처리비 파일에서 K열(User ID)·U열(가게도착)·V열·AH열(배달처리비) 데이터를 읽지 못했습니다.');
     }
 
     const index = buildIndex(parsed.parsedRows);

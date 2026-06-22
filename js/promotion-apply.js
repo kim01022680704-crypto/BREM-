@@ -373,7 +373,7 @@ const BremPromotionApply = (function () {
         appliedConditions: [],
         failedConditions: [],
         failureReasons: [feeData
-          ? '배달처리비 유효 건 없음 (U열 가게도착 빈칸·AH열 0·배달 미수행)'
+          ? '배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0·배달 미수행)'
           : '배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)']
       };
     }
