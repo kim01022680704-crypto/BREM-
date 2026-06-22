@@ -257,7 +257,7 @@
 
   function renderEventOptions(selectedValue) {
     const items = eventCatalog();
-    eventItemInput.innerHTML = '<option value="">관리자에서 등록한 아이템 선택</option>';
+    eventItemInput.innerHTML = '<option value="">미선택</option>';
     items.forEach(item => {
       const option = document.createElement('option');
       option.value = item.id;

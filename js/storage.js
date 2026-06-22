@@ -5985,7 +5985,12 @@ const BremStorage = (function () {
     getItemForDriver(driver) {
       const map = events.getDriverItemMap();
       const catalog = events.getCatalog();
-      const selected = map[driver.id] || driver.longEventItemId || driver.longEventItem || '';
+      const driverItemId = String(driver?.longEventItemId || '').trim();
+      const driverItemName = String(driver?.longEventItem || '').trim();
+      if (!driverItemId && !driverItemName) {
+        return null;
+      }
+      const selected = driverItemId || map[driver.id] || driverItemName || '';
       return catalog.find(item => item.id === selected || item.name === selected) || null;
     },
 
@@ -5999,10 +6004,12 @@ const BremStorage = (function () {
       }
       events.saveDriverItemMap(map);
 
+      const effectiveStartDate = normalizedItemId ? String(startDate || '').slice(0, 10) : '';
+
       return drivers.update(driverId, {
         longEventItemId: normalizedItemId,
-        longEventItem: String(itemName || '').trim(),
-        longEventStartDate: String(startDate || '').slice(0, 10),
+        longEventItem: normalizedItemId ? String(itemName || '').trim() : '',
+        longEventStartDate: effectiveStartDate,
         longEventPlatform: normalizeLongEventPlatform(platform)
       });
     }

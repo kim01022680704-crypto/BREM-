@@ -779,6 +779,24 @@ async function bulkPatchRiderLongEvents(accessToken, patches = [], options = {})
     };
   }
 
+  const mapPatches = list.filter(patch => normalizeLongEventPatchFields(patch).long_event_item_id !== undefined);
+  if (mapPatches.length) {
+    const mapResult = await readLongEventItemsMap(supabase);
+    if (!mapResult.ok) {
+      return { ok: false, status: 500, error: mapResult.error };
+    }
+    mapPatches.forEach(patch => {
+      const riderId = String(patch.id || '').trim();
+      const itemId = normalizeLongEventPatchFields(patch).long_event_item_id;
+      if (itemId) mapResult.map[riderId] = itemId;
+      else delete mapResult.map[riderId];
+    });
+    const writeResult = await writeLongEventItemsMap(supabase, mapResult.map);
+    if (!writeResult.ok) {
+      return { ok: false, status: 500, error: writeResult.error };
+    }
+  }
+
   return {
     ok: true,
     updated: rows.length,

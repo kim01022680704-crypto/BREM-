@@ -992,7 +992,7 @@
   }
 
   function eventOptions(selectedValue) {
-    const options = ['<option value="">이벤트 아이템 선택</option>'];
+    const options = ['<option value="">미선택</option>'];
     eventCatalog().forEach(item => {
       const selected = selectedValue && (selectedValue === item.id || selectedValue === item.name) ? 'selected' : '';
       options.push(`<option value="${item.id}" ${selected}>${escapeHtml(item.name)} (목표 ${number(item.targetCount)}개)</option>`);
@@ -4520,14 +4520,22 @@
       if (!input) return;
       const driverId = input.dataset.eventDriver;
       const selectedItem = eventCatalog().find(item => item.id === input.value);
+      const isClear = !input.value;
       const current = eventSettingsDrafts.get(driverId) || getSavedEventSettings(
         drivers().find(item => item.id === driverId) || {}
       );
       eventSettingsDrafts.set(driverId, {
         ...current,
         itemId: selectedItem ? selectedItem.id : '',
-        itemName: selectedItem ? selectedItem.name : ''
+        itemName: selectedItem ? selectedItem.name : '',
+        startDate: isClear ? '' : current.startDate
       });
+      if (isClear) {
+        const startInput = document.querySelector(`[data-event-start="${driverId}"]`);
+        const startButton = document.querySelector(`[data-event-start-button="${driverId}"]`);
+        if (startInput) startInput.value = '';
+        if (startButton) startButton.textContent = eventStartButtonLabel('');
+      }
       syncEventDirtyState(driverId);
       updateEventDriverRowUi(driverId);
     });
