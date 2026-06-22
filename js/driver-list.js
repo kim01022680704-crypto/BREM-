@@ -235,6 +235,34 @@
     return !isMobileView() && getFilteredDrivers().length >= VIRTUAL_THRESHOLD;
   }
 
+  function renderMobileCard(driver) {
+    const platformHtml = renderPlatformBadges(driver);
+
+    return `
+      <article class="driver-card driver-card--compact ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}" data-driver-id="${escapeHtml(driver.id)}" data-search="${escapeHtml(buildDriverSearchText(driver))}" data-status="${escapeHtml(driver.status)}">
+        <div class="driver-card-top">
+          <label class="driver-card-select">
+            <span class="sr-only">${escapeHtml(driver.name)} 선택</span>
+            ${renderCheckbox(driver.id)}
+          </label>
+          <div class="driver-card-main">
+            <div class="driver-card-name-row">
+              <h3>${escapeHtml(driver.name)}</h3>
+              <span class="badge badge--compact ${statusClass(driver.status)}">${driver.status}</span>
+            </div>
+            <p class="driver-card-phone">${escapeHtml(driver.phone)}</p>
+            ${platformHtml && platformHtml !== '-' ? `<p class="driver-card-meta"><span class="platform-tags platform-tags--compact">${platformHtml}</span></p>` : ''}
+          </div>
+          <button type="button" class="driver-card-edit" data-action="edit" data-id="${driver.id}">수정</button>
+        </div>
+        <div class="driver-card-actions">
+          <button type="button" class="btn tiny ghost" data-action="reset-password" data-id="${driver.id}">PW</button>
+          <button type="button" class="btn tiny delete" data-action="delete" data-id="${driver.id}">삭제</button>
+        </div>
+      </article>
+    `;
+  }
+
   function renderDesktopRow(driver) {
     const coupangId = escapeHtml(makeDriverLoginId(driver));
     const eventName = escapeHtml(driver.longEventItem) || '-';
@@ -356,45 +384,7 @@
       } else {
         delete tableBody.dataset.virtual;
         tableBody.innerHTML = '';
-        mobileList.innerHTML = filteredDrivers.map(driver => `
-      <article class="driver-card ${selectedIds.has(driver.id) ? 'driver-card--selected' : ''}" data-driver-id="${escapeHtml(driver.id)}" data-search="${escapeHtml(buildDriverSearchText(driver))}" data-status="${escapeHtml(driver.status)}">
-        <div class="driver-card-select">
-          <label>
-            <span class="sr-only">${escapeHtml(driver.name)} 선택</span>
-            ${renderCheckbox(driver.id)}
-          </label>
-        </div>
-        <div class="driver-card-header">
-          <h3>${escapeHtml(driver.name)}</h3>
-          <span class="badge ${statusClass(driver.status)}">${driver.status}</span>
-        </div>
-        <dl>
-          <dt>연락처</dt>
-          <dd>${escapeHtml(driver.phone)}</dd>
-          <dt>배민 아이디</dt>
-          <dd>${escapeHtml(driver.baeminId) || '-'}</dd>
-          <dt>쿠팡 ID</dt>
-          <dd><strong>${escapeHtml(makeDriverLoginId(driver))}</strong></dd>
-          <dt>플랫폼</dt>
-          <dd><div class="platform-tags">${renderPlatformBadges(driver)}</div></dd>
-          <dt>이벤트 아이템</dt>
-          <dd>${escapeHtml(driver.longEventItem) || '-'}</dd>
-          <dt>이벤트 시작일</dt>
-          <dd>${formatDate(driver.longEventStartDate)}</dd>
-          <dt>가입일</dt>
-          <dd>${formatDate(driver.joinDate)}</dd>
-          <dt>메모</dt>
-          <dd>${escapeHtml(driver.memo) || '-'}</dd>
-          <dt>민감정보</dt>
-          <dd>${renderPrivacySummary(driver)}${renderPrivacyControls(driver, true)}</dd>
-        </dl>
-        <div class="actions">
-          <button type="button" class="btn small edit" data-action="edit" data-id="${driver.id}">수정</button>
-          <button type="button" class="btn small ghost" data-action="reset-password" data-id="${driver.id}">비밀번호 초기화</button>
-          <button type="button" class="btn small delete" data-action="delete" data-id="${driver.id}">삭제</button>
-        </div>
-      </article>
-    `).join('');
+        mobileList.innerHTML = filteredDrivers.map(renderMobileCard).join('');
       }
 
       renderedSnapshot = getDriverSnapshot();

@@ -1263,8 +1263,110 @@
 
   .register-page .register-form-subtitle,
   .register-page .register-note--desktop,
-  .register-page .form-note--login .form-note-sub {
+  .register-page .form-note--login .form-note-sub,
+  .register-page .register-section-title,
+  .register-page .panel-header--register > div:first-child,
+  .register-page .form-mode-tab[data-mode="bulk"] {
     display: none;
+  }
+
+  .register-page .form-mode-tabs {
+    width: 100%;
+  }
+
+  .register-page .form-mode-tab[data-mode="single"] {
+    width: 100%;
+    pointer-events: none;
+  }
+
+  .register-page .form-grid--register-compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+  }
+
+  .register-page .form-grid--register-compact .field--status {
+    grid-column: 1 / -1;
+  }
+
+  .register-page .form-section--core {
+    margin-bottom: 8px;
+  }
+
+  .register-page .form-section--core .field-label,
+  .register-page .register-memo-field .field-label,
+  .register-page .form-section--platform .field-label {
+    font-size: 0.72rem;
+    margin-bottom: 4px;
+  }
+
+  .register-page .form-section--core input,
+  .register-page .form-section--core select,
+  .register-page .form-section--platform input,
+  .register-page .register-memo-field textarea,
+  .register-page .form-section--optional input,
+  .register-page .form-section--optional select {
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 16px;
+  }
+
+  .register-page .register-inline-btn {
+    min-width: 44px;
+    min-height: 38px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+  }
+
+  .register-page .form-note--login {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #f8fafc;
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
+  .register-page .form-section--platform {
+    margin-bottom: 8px;
+    padding-top: 4px;
+  }
+
+  .register-page .platform-panel--compact {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .register-page .platform-panel--compact .platform-panel-label {
+    display: none;
+  }
+
+  .register-page .platform-panel--compact .platform-checks {
+    width: auto;
+    flex-shrink: 0;
+  }
+
+  .register-page .platform-panel--compact .platform-check {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 0.78rem;
+  }
+
+  .register-page .register-memo-field {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .register-page .register-optional-grid {
+    margin-top: 8px;
+  }
+
+  .register-page .form-section--optional > summary {
+    padding: 10px 0;
+    font-size: 0.82rem;
   }
 
   .register-page .panel-header--register h2 {
@@ -1434,71 +1536,133 @@
     grid-column: span 1;
   }
 
-  .drivers-page #listSelectionBar {
+  .drivers-page #listSelectionBar:not([hidden]) {
     display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 8px 12px;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    padding: 6px 12px;
+  }
+
+  .drivers-page #listSelectionBar[hidden] {
+    display: none !important;
+  }
+
+  .drivers-page #listSelectionBar #selectedCountLabel {
+    grid-column: 1 / -1;
+    font-size: 0.72rem;
+    text-align: center;
   }
 
   .drivers-page #listSelectionBar .btn {
     width: 100%;
-    min-height: 40px;
+    min-height: 34px;
+    font-size: 0.72rem;
   }
 
-  .drivers-page .driver-card {
-    padding: 10px 10px 10px 40px;
-    margin-bottom: 8px;
+  .drivers-page .driver-card--compact {
+    padding: 8px 10px;
+    margin-bottom: 6px;
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: #fff;
-    box-shadow: 0 2px 8px rgba(17, 17, 17, 0.05);
+    box-shadow: none;
+  }
+
+  .drivers-page .driver-card--compact.driver-card--selected {
+    border-color: #fbbf24;
+    background: #fffbeb;
+  }
+
+  .drivers-page .driver-card-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: start;
   }
 
   .drivers-page .driver-card-select {
-    top: 12px;
-    left: 10px;
+    position: static;
+    display: flex;
+    align-items: center;
+    padding-top: 2px;
+    margin: 0;
   }
 
-  .drivers-page .driver-card-header {
-    margin-bottom: 8px;
+  .drivers-page .driver-card-main {
+    min-width: 0;
   }
 
-  .drivers-page .driver-card-header h3 {
-    font-size: 0.98rem;
-  }
-
-  .drivers-page .driver-card dl {
-    grid-template-columns: 56px 1fr;
-    gap: 4px 8px;
-    margin-bottom: 10px;
-    font-size: 0.82rem;
-  }
-
-  .drivers-page .driver-card dt {
-    font-size: 0.68rem;
-    color: #64748b;
-  }
-
-  .drivers-page .driver-card dt:nth-of-type(n+5),
-  .drivers-page .driver-card dt:nth-of-type(n+5) + dd {
-    display: none;
-  }
-
-  .drivers-page .driver-card dd {
-    word-break: break-all;
-  }
-
-  .drivers-page .driver-card .actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .drivers-page .driver-card-name-row {
+    display: flex;
+    align-items: center;
     gap: 6px;
+    margin-bottom: 2px;
   }
 
-  .drivers-page .driver-card .actions .btn {
-    min-height: 36px;
-    padding: 6px 4px;
+  .drivers-page .driver-card-name-row h3 {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .drivers-page .driver-card-name-row .badge {
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    padding: 2px 6px;
+  }
+
+  .drivers-page .driver-card-phone {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.3;
+  }
+
+  .drivers-page .driver-card-meta {
+    margin: 4px 0 0;
+    line-height: 1.2;
+  }
+
+  .drivers-page .driver-card-meta .platform-tag {
+    font-size: 0.62rem;
+    padding: 2px 6px;
+  }
+
+  .drivers-page .driver-card-edit {
+    flex-shrink: 0;
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--black);
+    background: var(--yellow);
     font-size: 0.72rem;
+    font-weight: 800;
+  }
+
+  .drivers-page .driver-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .drivers-page .driver-card-actions .btn.tiny {
+    min-height: 28px;
+    padding: 4px 10px;
+    font-size: 0.68rem;
+    width: auto;
+  }
+
+  .drivers-page .driver-card--compact .driver-card-header,
+  .drivers-page .driver-card--compact dl,
+  .drivers-page .driver-card--compact .actions {
+    display: none;
   }
 
   .register-page .register-top {

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="css/style.css?v=20260622a">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
-  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623aa">
+  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623ab">
 </head>
 <body class="register-page drivers-page">
   <div class="app index-app">
@@ -81,9 +81,9 @@
         <form id="driverForm" class="driver-form driver-form--register">
           <input type="hidden" id="driverId">
 
-          <section class="form-section">
-            <h3 class="form-section-title">기본 정보</h3>
-            <div class="form-grid form-grid--aligned">
+          <section class="form-section form-section--core">
+            <h3 class="form-section-title register-section-title">기본 정보</h3>
+            <div class="form-grid form-grid--aligned form-grid--register-compact">
               <label class="field">
                 <span class="field-label">이름 <em>*</em></span>
                 <input type="text" id="driverName" placeholder="홍길동" required>
@@ -95,19 +95,10 @@
               </label>
 
               <label class="field">
-                <span class="field-label">주민등록번호</span>
-                <div class="field-inline-actions field-inline-actions--stacked field-privacy-row">
-                  <input type="text" id="driverResidentNumber" placeholder="000000-0000000" inputmode="numeric" maxlength="14" autocomplete="off">
-                  <span class="field-privacy-status" id="residentNumberPrivacyStatus" hidden>가리기 OFF</span>
-                  <button type="button" class="btn ghost small field-hide-btn" id="hideResidentNumberBtn" hidden>주민번호 가리기</button>
-                </div>
-              </label>
-
-              <label class="field">
-                <span class="field-label">로그인 비밀번호 <em>*</em></span>
+                <span class="field-label">비밀번호 <em>*</em></span>
                 <div class="field-inline-actions field-inline-actions--stacked">
-                  <input type="text" id="driverPassword" placeholder="신규 등록 시 1234" autocomplete="off" spellcheck="false" required>
-                  <button type="button" class="btn ghost small" id="resetDriverPasswordBtn">1234로 초기화</button>
+                  <input type="text" id="driverPassword" placeholder="1234" autocomplete="off" spellcheck="false" required>
+                  <button type="button" class="btn ghost small register-inline-btn" id="resetDriverPasswordBtn">1234</button>
                 </div>
               </label>
 
@@ -116,7 +107,7 @@
                 <input type="date" id="driverJoinDate" required>
               </label>
 
-              <label class="field">
+              <label class="field field--status">
                 <span class="field-label">상태 <em>*</em></span>
                 <select id="driverStatus" required>
                   <option value="근무중">근무중</option>
@@ -126,13 +117,21 @@
               </label>
             </div>
             <p class="form-note form-note--login">
-              기사 로그인 아이디: <strong id="loginIdPreview">이름과 연락처 입력 후 자동 표시</strong>
+              로그인 ID · <strong id="loginIdPreview">이름·연락처 입력 후 표시</strong>
               <span class="form-note-sub">(이름 + 연락처 뒤 4자리) · 관리자가 기사별 로그인 비밀번호를 설정합니다. 초기화 시 <strong>1234</strong></span>
             </p>
           </section>
 
           <details class="form-section form-section--optional">
-            <summary class="form-section-title">계좌 정보 (선택)</summary>
+            <summary class="form-section-title">선택 입력 (주민·계좌·이벤트)</summary>
+            <label class="field field--full">
+              <span class="field-label">주민등록번호</span>
+              <div class="field-inline-actions field-inline-actions--stacked field-privacy-row">
+                <input type="text" id="driverResidentNumber" placeholder="000000-0000000" inputmode="numeric" maxlength="14" autocomplete="off">
+                <span class="field-privacy-status" id="residentNumberPrivacyStatus" hidden>가리기 OFF</span>
+                <button type="button" class="btn ghost small field-hide-btn" id="hideResidentNumberBtn" hidden>주민번호 가리기</button>
+              </div>
+            </label>
             <div class="form-grid form-grid--aligned">
               <label class="field">
                 <span class="field-label">은행명</span>
@@ -154,34 +153,7 @@
               </label>
             </div>
             <p class="form-note form-note--subtle register-note--desktop">은행명·예금주·계좌번호는 선택 입력입니다. 가리기는 기사 전용·기사 목록에만 적용되며, index에서는 항상 확인·수정할 수 있습니다.</p>
-          </details>
-
-          <section class="form-section">
-            <h3 class="form-section-title">플랫폼 설정</h3>
-            <label class="field field--full">
-              <span class="field-label">배민 아이디</span>
-              <input type="text" id="driverBaeminId" placeholder="배민 라이더 아이디 (정산표 K열)" autocomplete="off">
-            </label>
-            <p class="form-note">배민 정산표 K열과 동일한 아이디입니다. 미입력 시 쿠팡만 수행으로 등록됩니다.</p>
-            <div class="platform-panel">
-              <span class="platform-panel-label">수행 플랫폼</span>
-              <div class="platform-checks">
-                <label class="platform-check platform-check--baemin">
-                  <input type="checkbox" id="platformBaemin">
-                  <span>배민</span>
-                </label>
-                <label class="platform-check platform-check--coupang">
-                  <input type="checkbox" id="platformCoupang" checked>
-                  <span>쿠팡</span>
-                </label>
-              </div>
-            </div>
-            <p class="form-note form-note--subtle register-note--desktop">배민 아이디 입력 시 쿠팡·배민이 자동 선택됩니다. 필요하면 체크를 직접 변경할 수 있습니다. 미션은 관리자 ERP &gt; 미션 관리에서 배정합니다.</p>
-          </section>
-
-          <details class="form-section form-section--optional">
-            <summary class="form-section-title">장기근속 이벤트 (선택)</summary>
-            <div class="form-grid form-grid--aligned">
+            <div class="form-grid form-grid--aligned register-optional-grid">
               <label class="field">
                 <span class="field-label">이벤트 아이템</span>
                 <select id="driverEventItem">
@@ -197,13 +169,33 @@
             </div>
           </details>
 
-          <section class="form-section">
-            <h3 class="form-section-title">메모</h3>
+          <section class="form-section form-section--platform">
+            <h3 class="form-section-title register-section-title">플랫폼 설정</h3>
             <label class="field field--full">
-              <span class="sr-only">메모</span>
-              <textarea id="driverMemo" rows="3" placeholder="특이사항, 근무 가능 지역 등을 입력하세요."></textarea>
+              <span class="field-label">배민 아이디</span>
+              <input type="text" id="driverBaeminId" placeholder="배민 ID (선택)" autocomplete="off">
             </label>
+            <p class="form-note register-note--desktop">배민 정산표 K열과 동일한 아이디입니다. 미입력 시 쿠팡만 수행으로 등록됩니다.</p>
+            <div class="platform-panel platform-panel--compact">
+              <span class="platform-panel-label">수행 플랫폼</span>
+              <div class="platform-checks">
+                <label class="platform-check platform-check--baemin">
+                  <input type="checkbox" id="platformBaemin">
+                  <span>배민</span>
+                </label>
+                <label class="platform-check platform-check--coupang">
+                  <input type="checkbox" id="platformCoupang" checked>
+                  <span>쿠팡</span>
+                </label>
+              </div>
+            </div>
+            <p class="form-note form-note--subtle register-note--desktop">배민 아이디 입력 시 쿠팡·배민이 자동 선택됩니다. 필요하면 체크를 직접 변경할 수 있습니다. 미션은 관리자 ERP &gt; 미션 관리에서 배정합니다.</p>
           </section>
+
+          <label class="field field--full register-memo-field">
+            <span class="field-label">메모 (선택)</span>
+            <textarea id="driverMemo" rows="2" placeholder="특이사항"></textarea>
+          </label>
 
           <div class="form-actions">
             <button type="submit" class="btn primary" id="submitBtn">기사 등록</button>
