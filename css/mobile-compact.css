@@ -1,0 +1,500 @@
+/**
+ * BREM mobile compact layout — 360~430px only.
+ * PC (>430px) unchanged. Button min-heights preserved.
+ */
+@media (max-width: 430px) {
+  /* ── Shared login (driver.html / admin.html) ── */
+  .login-page {
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .login-shell {
+    gap: 10px;
+  }
+
+  .login-card {
+    gap: 10px;
+    padding: 0 16px 16px;
+    border-radius: 16px;
+  }
+
+  .login-card__logo {
+    margin: 0 -16px;
+    padding: 12px 16px 6px;
+  }
+
+  .login-card__logo img {
+    width: min(58%, 180px);
+  }
+
+  .login-card__divider {
+    margin: 0 -16px 2px;
+  }
+
+  .login-card__head {
+    gap: 4px;
+  }
+
+  .login-card__head h1 {
+    font-size: 1.18rem;
+  }
+
+  .login-card__subtitle {
+    font-size: 0.82rem;
+  }
+
+  .login-card__help {
+    font-size: 0.76rem;
+    line-height: 1.42;
+  }
+
+  .login-field {
+    gap: 4px;
+  }
+
+  /* ── Driver app (driver.html) ── */
+  .driver-app {
+    width: calc(100% - 16px);
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(24px, calc(12px + env(safe-area-inset-bottom)));
+  }
+
+  .hero {
+    gap: 10px 12px;
+    margin-bottom: 10px;
+    padding: 14px 14px;
+    border-radius: 16px;
+  }
+
+  .hero h1 {
+    font-size: 1.22rem;
+    line-height: 1.15;
+  }
+
+  .hero-desc {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
+  .hero__logo {
+    width: 72px;
+  }
+
+  .eyebrow {
+    margin-bottom: 4px;
+    font-size: 0.7rem;
+  }
+
+  .rider-publish-notice {
+    margin-top: 6px;
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
+  .result {
+    gap: 10px;
+  }
+
+  .profile-card-main {
+    padding: 14px 14px 12px;
+  }
+
+  .profile-card-main h2 {
+    margin-bottom: 10px;
+    font-size: 1.12rem;
+  }
+
+  .profile-list {
+    margin-bottom: 10px;
+  }
+
+  .profile-list > div {
+    padding: 8px 0;
+  }
+
+  .profile-list dt {
+    margin-bottom: 2px;
+    font-size: 0.72rem;
+  }
+
+  .profile-list dd {
+    font-size: 0.88rem;
+  }
+
+  .panel-header {
+    padding: 11px 12px;
+    gap: 8px;
+  }
+
+  .panel-header h2 {
+    font-size: 0.96rem;
+  }
+
+  .panel-header p {
+    margin-top: 2px;
+    font-size: 0.8rem;
+    line-height: 1.35;
+  }
+
+  .profile-edit-form {
+    padding: 12px 14px;
+  }
+
+  .profile-edit-section + .profile-edit-section {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+
+  .profile-edit-section-head {
+    margin-bottom: 8px;
+  }
+
+  .profile-edit-section-desc {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .profile-edit-grid {
+    gap: 8px;
+  }
+
+  .profile-edit-actions {
+    margin-top: 12px;
+    padding-top: 10px;
+    gap: 8px;
+  }
+
+  .summary-section {
+    gap: 8px;
+  }
+
+  .summary-grid {
+    gap: 8px;
+  }
+
+  .summary-card {
+    min-height: 58px;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .summary-card__label {
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .summary-card__value {
+    font-size: 1.05rem;
+    line-height: 1.1;
+  }
+
+  .rate-detail-panel {
+    padding: 8px 10px;
+  }
+
+  .rate-card-stack {
+    gap: 6px;
+  }
+
+  .mission-summary-box {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .mission-platform-block {
+    padding: 10px 10px 8px;
+    border-radius: 12px;
+  }
+
+  .mission-platform-block + .mission-platform-block {
+    padding-top: 10px;
+    margin-top: 2px;
+  }
+
+  .notice-list {
+    padding: 4px 12px 10px;
+  }
+
+  .notice-item {
+    padding: 10px 0;
+  }
+
+  .notice-item h3 {
+    font-size: 0.92rem;
+    line-height: 1.35;
+  }
+
+  .notice-item p {
+    font-size: 0.84rem;
+    line-height: 1.4;
+  }
+
+  .progress-box {
+    padding: 12px 14px;
+  }
+
+  .target-form,
+  .month-target-form,
+  .week-target-form {
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .content-grid {
+    gap: 10px;
+  }
+
+  .table-wrap thead th,
+  .table-wrap tbody td,
+  .content-grid thead th,
+  .content-grid tbody td {
+    padding: 8px 10px;
+    font-size: 0.84rem;
+  }
+
+  /* ── Admin app (admin.html) ── */
+  .admin-app .main {
+    padding: max(8px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .admin-app .topbar {
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .admin-app .topbar h1 {
+    margin-top: 2px;
+    font-size: 1.18rem;
+    line-height: 1.2;
+  }
+
+  .admin-app .topbar p {
+    font-size: 0.72rem;
+  }
+
+  .admin-app .stats-grid {
+    gap: 8px;
+  }
+
+  .admin-app .stat-card {
+    padding: 10px 12px;
+  }
+
+  .admin-app .stat-card span {
+    font-size: 0.78rem;
+  }
+
+  .admin-app .stat-card strong {
+    margin-top: 3px;
+    font-size: 1.28rem;
+  }
+
+  .admin-app .driver-search-bar {
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .admin-app .driver-search-field {
+    gap: 4px;
+    font-size: 0.8rem;
+  }
+
+  .admin-app .card-header {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .admin-app .card-header h2 {
+    font-size: 0.96rem;
+  }
+
+  .admin-app .form-row,
+  .admin-app .notice-form,
+  .admin-app .admin-bulk-panel,
+  .admin-app .rejection-input-form,
+  .admin-app .settlement-upload-form {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .admin-app .grid,
+  .admin-app .admin-section {
+    gap: 10px;
+  }
+
+  .admin-app .card {
+    border-radius: 14px;
+  }
+
+  .admin-app .admin-section-tabs,
+  .admin-app .promotion-toolbar {
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+
+  .admin-app .promotion-summary {
+    margin-top: 10px;
+    padding: 10px 12px;
+  }
+
+  .admin-app .admin-account-menu-panel {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .admin-app .admin-account-menu-item {
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+  }
+
+  .admin-app th,
+  .admin-app td {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+  }
+
+  .admin-app .bulk-preview-section--unmatched {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .admin-app .lease-toolbar,
+  .admin-app .revenue-toolbar {
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+  }
+
+  .admin-app .mission-catalog-compact-list {
+    max-height: min(140px, 22vh);
+    gap: 4px;
+  }
+
+  .admin-app .mission-catalog-item {
+    padding: 6px 10px;
+  }
+
+  .admin-app .dashboard-scroll-note {
+    margin-top: 4px;
+    font-size: 0.76rem;
+  }
+
+  /* ── Drivers list (drivers.html) ── */
+  .drivers-page .app,
+  .drivers-page.index-app {
+    width: calc(100% - 12px);
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .drivers-page .site-header {
+    gap: 10px;
+    margin-bottom: 8px;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .drivers-page .site-header__logo {
+    width: 56px;
+  }
+
+  .drivers-page .site-header h1,
+  .drivers-page .site-header--compact h1 {
+    font-size: 1.1rem;
+    line-height: 1.2;
+  }
+
+  .drivers-page .site-header p {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .drivers-page .layout,
+  .drivers-page .layout.layout--page {
+    gap: 10px;
+  }
+
+  .drivers-page .panel-header,
+  .drivers-page .list-header {
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .drivers-page .panel-header h2,
+  .drivers-page .list-header h2 {
+    font-size: 1rem;
+  }
+
+  .drivers-page .summary-card,
+  .drivers-page .summary-card--compact {
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .drivers-page .summary-card strong,
+  .drivers-page .summary-card--compact strong {
+    font-size: 1.22rem;
+  }
+
+  .drivers-page .summary-label {
+    font-size: 0.72rem;
+    margin-bottom: 0;
+  }
+
+  .drivers-page .filters,
+  .drivers-page .filters--compact {
+    gap: 8px;
+  }
+
+  .drivers-page .driver-card {
+    padding: 10px 12px 10px 40px;
+  }
+
+  .drivers-page .driver-card-select {
+    top: 12px;
+    left: 12px;
+  }
+
+  .drivers-page .driver-card-header {
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .drivers-page .driver-card h3 {
+    font-size: 0.96rem;
+  }
+
+  .drivers-page .driver-card dl {
+    gap: 4px 8px;
+    margin-bottom: 8px;
+    font-size: 0.84rem;
+  }
+
+  .drivers-page .driver-list-scroll {
+    max-height: min(68vh, calc(100dvh - 160px));
+  }
+
+  .drivers-page .list-pagination {
+    padding-top: 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .drivers-page .empty-state {
+    padding: 24px 14px;
+  }
+
+  .drivers-page .register-top {
+    margin-bottom: 8px;
+    border-radius: 14px;
+  }
+}
