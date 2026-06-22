@@ -53,6 +53,7 @@ const BremBaeminDeliveryFee = (function () {
     (parsedRows || []).forEach(row => {
       const riderId = normalizeId(row.riderId);
       if (!riderId) return;
+      if (Number(row.orderCount || 0) <= 0 || Number(row.deliveryAmount || 0) <= 0) return;
 
       const entry = {
         rawName: row.rawName,

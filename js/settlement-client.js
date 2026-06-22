@@ -30,6 +30,16 @@ const BremSettlementParser = (function () {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  /** AH열 0·빈값·0으로 시작하는 문자열 = 배달 미수행 행 */
+  function isValidBaeminDeliveryAmount(value) {
+    const raw = cellText(value).trim();
+    if (!raw) return false;
+    const compact = raw.replace(/\s/g, '');
+    if (/^0([.,]0*)?(원|%)?$/i.test(compact)) return false;
+    const numeric = parseNumber(value);
+    return numeric > 0;
+  }
+
   function cellText(value) {
     if (value === null || value === undefined) return '';
     if (typeof value === 'object') {
@@ -145,8 +155,9 @@ const BremSettlementParser = (function () {
       if (!riderId) continue;
 
       const name = format.cleanName(rawName) || riderId;
-      const amount = parseNumber(readCell(row, amountCol));
-      if (amount === 0) continue;
+      const amountCell = readCell(row, amountCol);
+      if (!isValidBaeminDeliveryAmount(amountCell)) continue;
+      const amount = parseNumber(amountCell);
 
       totalDeliveries += 1;
       totalDeliveryAmount += amount;

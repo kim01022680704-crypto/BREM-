@@ -2289,7 +2289,7 @@
           <div class="card-header">
             <h2>프로모션 적용</h2>
           </div>
-          <p class="form-help">저장된 주간정산 인수(예: 남구중앙 홍길동, 김철수…)에 프로모션 관리에서 만든 조건을 적용해 계산합니다. 콜수·수락률/거절율은 정산표 업로드·율 입력 데이터를 사용합니다.</p>
+          <p class="form-help">저장된 주간정산 인수에 <strong>미션 관리에서 기사별 배정한 프로모션</strong>을 자동 적용해 계산합니다. 배민 단가보장은 배달처리비 정산서(K열·AH열)가 필요합니다.</p>
           <div class="promotion-platform-tabs promotion-apply-tabs" role="tablist">
             <button type="button" class="promotion-tab active" data-promotion-apply-platform="coupang">쿠팡</button>
             <button type="button" class="promotion-tab" data-promotion-apply-platform="baemin">배민</button>
@@ -2323,7 +2323,7 @@
                   <input type="file" id="promotionApplyDeliveryFeeFile-baemin" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                 </label>
               </div>
-              <p class="form-help" id="promotionApplyDeliveryFeeHint-baemin">단가보장 프로모션 적용 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 형식 파일을 업로드하세요. <strong>K열 User ID</strong>로 기사 배민 ID와 매칭하고 AH열 배달처리비를 합산합니다. 주정산서와 정산기간이 일치해야 합니다.</p>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-baemin">단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong>로 매칭 · <strong>AH열이 0이거나 0으로 시작하면 배달 미수행(무효)</strong> · AH&gt;0인 행만 콜수·금액 집계</p>
               <div class="promotion-form-section">
                 <h3>적용할 프로모션 조건</h3>
                 <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-baemin"></div>
@@ -3118,8 +3118,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260622a"></script>
   <script src="js/baemin-delivery-fee.js"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
-  <script src="js/promotion-apply.js?v=20260622k"></script>
-  <script src="js/promotion-apply-admin.js?v=20260622m"></script>
+  <script src="js/promotion-apply.js?v=20260622n"></script>
+  <script src="js/promotion-apply-admin.js?v=20260622n"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-lease.js"></script>

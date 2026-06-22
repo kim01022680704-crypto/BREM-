@@ -129,7 +129,40 @@ const BremPromotionApply = (function () {
     return (ruleIds || []).some(id => ruleUsesGuarantee(BremStorage.promotionRules.getById(id)));
   }
 
-  function resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex) {
+  function settlementNeedsDeliveryFee(settlement, platform, selectedRuleIds = []) {
+    if (selectedRulesNeedDeliveryFee(selectedRuleIds)) return true;
+    if (!settlement) return false;
+    const p = normalizePlatform(platform);
+    return (settlement.riders || []).some(rider => {
+      const driver = resolveDriverForWeeklyRider(rider, p);
+      if (!driver) return false;
+      const rule = pickPromotionRule(driver, p, selectedRuleIds);
+      return ruleUsesGuarantee(rule);
+    });
+  }
+
+  function combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selectedRuleIds = []) {
+    if (selectedRulesNeedDeliveryFee(selectedRuleIds)) return true;
+    if (!baeminSettlement) return false;
+    const assignments = buildDriverAssignments(coupangSettlement, baeminSettlement);
+    return assignments.some(item => {
+      if (normalizePlatform(item.appliedPlatform) !== 'baemin') return false;
+      const driver = BremStorage.drivers.getById(item.driverId);
+      if (!driver) return false;
+      const rule = pickPromotionRule(driver, 'combined', selectedRuleIds);
+      return ruleUsesGuarantee(rule);
+    });
+  }
+
+  function hasValidDeliveryFeeData(feeData) {
+    return Boolean(
+      feeData
+      && Number(feeData.orderCount || 0) > 0
+      && Number(feeData.deliveryAmount || 0) > 0
+    );
+  }
+
+  function resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex, options = {}) {
     const stats = getWeekStatsForDriver(
       driver.id,
       settlement.startDate,
@@ -142,13 +175,11 @@ const BremPromotionApply = (function () {
     }
 
     const feeData = BremBaeminDeliveryFee.lookup(deliveryFeeIndex, rider, driver);
-    if (!feeData) {
+    if (!feeData || !hasValidDeliveryFeeData(feeData)) {
       return { stats, feeData: null };
     }
 
-    const callCount = feeData.orderCount > 0
-      ? feeData.orderCount
-      : Number(rider.weeklyOrderCount || stats.callCount || 0);
+    const callCount = feeData.orderCount;
 
     return {
       stats: {
@@ -267,7 +298,7 @@ const BremPromotionApply = (function () {
       ? resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex)
       : { stats: { callCount: 0, deliveryAmount: 0, byDay: {}, uploadDays: 0 }, feeData: null };
 
-    if (needsDeliveryFee && !feeData) {
+    if (needsDeliveryFee && !hasValidDeliveryFeeData(feeData)) {
       return {
         riderName: rider.riderName,
         driverName: driver.name,
@@ -278,7 +309,7 @@ const BremPromotionApply = (function () {
         matchedRiderId: driver.id,
         appliedPlatform: statsPlatform,
         assignmentSource,
-        callCount: Number(rider.weeklyOrderCount || stats.callCount || 0),
+        callCount: 0,
         deliveryAmountTotal: 0,
         avgDeliveryUnitPrice: 0,
         guaranteedUnitPrice: 0,
@@ -288,7 +319,9 @@ const BremPromotionApply = (function () {
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: ['배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)']
+        failureReasons: [feeData
+          ? '배달처리비 유효 건 없음 (AH열 0·배달 미수행)'
+          : '배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)']
       };
     }
 
@@ -350,7 +383,7 @@ const BremPromotionApply = (function () {
 
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
     const requireDeliveryFee = options.requireDeliveryFee === true
-      || (platform === 'baemin' && selectedRulesNeedDeliveryFee(selected));
+      || settlementNeedsDeliveryFee(settlement, platform, selected);
 
     if (requireDeliveryFee && !deliveryFeeIndex) {
       throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
@@ -416,7 +449,7 @@ const BremPromotionApply = (function () {
 
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
     const requireDeliveryFee = options.requireDeliveryFee === true
-      || selectedRulesNeedDeliveryFee(selected);
+      || combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selected);
 
     if (requireDeliveryFee && !deliveryFeeIndex) {
       throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
@@ -669,6 +702,8 @@ const BremPromotionApply = (function () {
     applyPromotionToSettlement,
     applyPromotionToCombinedSettlements,
     selectedRulesNeedDeliveryFee,
+    settlementNeedsDeliveryFee,
+    combinedSettlementsNeedDeliveryFee,
     ruleUsesGuarantee,
     getSettlementOptions,
     getWeekStatsForDriver,

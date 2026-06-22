@@ -73,7 +73,7 @@ const BremPromotionApplyAdmin = (function () {
     if (!file) {
       hintEl.innerHTML = platformKey === 'combined'
         ? '단가보장 조건이 있으면 배민 기사(배민 단독)에 배달처리비 정산서가 필요합니다. K열 User ID로 매칭하며, 파일명 기간은 배민 주정산서와 같아야 합니다.'
-        : '단가보장 프로모션 적용 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 형식 파일을 업로드하세요. <strong>K열 User ID</strong>로 기사 배민 ID와 매칭하고 AH열 배달처리비를 합산합니다. 주정산서와 정산기간이 일치해야 합니다.';
+        : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>AH열 0·0으로 시작 = 배달 미수행(무효)</strong> · AH&gt;0만 집계';
       return;
     }
 
@@ -86,8 +86,11 @@ const BremPromotionApplyAdmin = (function () {
     hintEl.innerHTML = `선택 파일: <strong>${escapeHtml(file.name)}</strong> · 팀 <strong>${escapeHtml(meta.teamName || '-')}</strong> · 기간 <strong>${escapeHtml(meta.startDate)} ~ ${escapeHtml(meta.endDate)}</strong>`;
   }
 
-  async function resolveDeliveryFeeForCalculation(platform, baeminSettlement) {
-    const needsFile = BremPromotionApply.selectedRulesNeedDeliveryFee(readSelectedRuleIds(platform));
+  async function resolveDeliveryFeeForCalculation(platform, baeminSettlement, coupangSettlement = null) {
+    const ruleIds = readSelectedRuleIds(platform);
+    const needsFile = platform === 'combined'
+      ? BremPromotionApply.combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, ruleIds)
+      : BremPromotionApply.settlementNeedsDeliveryFee(baeminSettlement, 'baemin', ruleIds);
     if (!needsFile) return null;
 
     const panelKey = deliveryFeePanelKey(platform);
@@ -355,7 +358,7 @@ const BremPromotionApplyAdmin = (function () {
           return;
         }
 
-        const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('combined', baeminSettlement);
+        const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('combined', baeminSettlement, coupangSettlement);
         const applyOptions = deliveryFeeParsed
           ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed }
           : {};
