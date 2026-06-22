@@ -1,0 +1,38 @@
+{
+  "name": "BREM · 라이더 · 관리자",
+  "short_name": "BREM",
+  "description": "BREM 기사·관리자 앱 선택",
+  "start_url": "/home.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/assets/brand/brem-logo-mark-transparent.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brand/brem-logo-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "기사앱",
+      "url": "/driver.html",
+      "icons": [{ "src": "/assets/brand/brem-logo-mark-transparent.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "관리자앱",
+      "url": "/admin.html",
+      "icons": [{ "src": "/assets/brand/brem-logo-mark-transparent.png", "sizes": "512x512", "type": "image/png" }]
+    }
+  ]
+}

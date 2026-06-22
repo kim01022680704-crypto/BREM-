@@ -1,0 +1,26 @@
+{
+  "name": "BREM 기사앱",
+  "short_name": "BREM 기사",
+  "description": "BREM 라이더 전용 조회",
+  "start_url": "/driver.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/assets/brand/brem-logo-mark-transparent.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brand/brem-logo-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
