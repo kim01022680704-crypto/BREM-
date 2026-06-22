@@ -602,6 +602,7 @@ const BremSettlementParser = (function () {
     parseSettlementFile,
     parseSettlementDateFromFilename,
     parseRowsWithFormat,
+    matchDrivers,
     openWorkbookRows,
     openWorkbookSheetRows,
     resolveWorkbookSheetName,
