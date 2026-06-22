@@ -237,10 +237,47 @@ const BremPromotionAdmin = (function () {
     state.conditionDrafts.reference = readConditionsFromForm('reference');
   }
 
+  function normalizeConditionsForPlatform(conditions, platform) {
+    const p = normalizePlatform(platform);
+    return (conditions || []).map(item => {
+      const synced = BremPromotionConditions.syncRateConditionName(item, p);
+      if (!BremPromotionConditions.isRateConditionType(item.conditionType)) {
+        return synced;
+      }
+      const resolved = BremPromotionConditions.resolveRateCondition(synced, p);
+      return {
+        ...synced,
+        conditionType: resolved.conditionType,
+        rateThreshold: resolved.rateThreshold,
+        conditionName: BremPromotionConditions.formatConditionLabel(resolved, p)
+      };
+    });
+  }
+
+  function syncConditionNameInRow(row, platform) {
+    const mode = row.dataset.conditionMode;
+    const condition = BremPromotionConditions.normalizeCondition({
+      conditionName: row.querySelector('[data-field="conditionName"]')?.value || '',
+      conditionType: row.querySelector('[data-field="conditionType"]')?.value,
+      processingMode: mode,
+      rateThreshold: Number(row.querySelector('[data-field="rateThreshold"]')?.value || 0),
+      minTotalOrders: Number(row.querySelector('[data-field="minTotalOrders"]')?.value || 0),
+      minWorkingDays: Number(row.querySelector('[data-field="minWorkingDays"]')?.value || 6),
+      dailyMinOrders: Number(row.querySelector('[data-field="dailyMinOrders"]')?.value || 30),
+      minDailyOrderDays: Number(row.querySelector('[data-field="minDailyOrderDays"]')?.value || 6),
+      actionType: row.querySelector('[data-field="actionType"]')?.value || 'add_pay_per_order'
+    });
+    if (!BremPromotionConditions.isRateConditionType(condition.conditionType)) return;
+    const nameInput = row.querySelector('[data-field="conditionName"]');
+    if (!nameInput) return;
+    nameInput.value = BremPromotionConditions.formatConditionLabel(condition, platform);
+  }
+
   function addConditionDraft(mode) {
     syncConditionDraftsFromForm();
-    state.conditionDrafts[mode].push(BremPromotionConditions.emptyCondition(mode));
-    renderConditionLists($('#promotionRulePlatform')?.value || 'baemin');
+    const platform = $('#promotionRulePlatform')?.value || getActiveRulesPlatformTab();
+    state.conditionDrafts[mode].push(BremPromotionConditions.emptyCondition(mode, platform));
+    renderConditionLists(platform);
   }
 
   function refreshConditionRowFields(row, platform) {
@@ -387,9 +424,9 @@ const BremPromotionAdmin = (function () {
     state.tierDraft = base.callTiers || draft.callTiers || [];
     state.editingRuleId = rule?.id || '';
     state.conditionDrafts = {
-      block: (draft.blockConditions || []).map(item => ({ ...item })),
-      bonus: (draft.bonusConditions || []).map(item => ({ ...item })),
-      reference: (draft.referenceConditions || []).map(item => ({ ...item }))
+      block: normalizeConditionsForPlatform(draft.blockConditions, platformValue),
+      bonus: normalizeConditionsForPlatform(draft.bonusConditions, platformValue),
+      reference: normalizeConditionsForPlatform(draft.referenceConditions, platformValue)
     };
 
     $('#promotionRuleFormTitle').textContent = rule ? '프로모션 조건 수정' : '프로모션 조건 추가';
@@ -445,14 +482,14 @@ const BremPromotionAdmin = (function () {
     return {
       name: $('#promotionRuleName').value.trim(),
       type: $('#promotionRuleType').value,
-      platform: normalizePlatform($('#promotionRulePlatform').value || getActiveRulesPlatformTab()),
+      platform,
       enabled: $('#promotionRuleEnabled').checked,
       startDate: $('#promotionRuleStartDate').value,
       endDate: $('#promotionRuleEndDate').value,
       base,
-      blockConditions: readConditionsFromForm('block'),
-      bonusConditions: readConditionsFromForm('bonus'),
-      referenceConditions: readConditionsFromForm('reference'),
+      blockConditions: normalizeConditionsForPlatform(readConditionsFromForm('block'), platform),
+      bonusConditions: normalizeConditionsForPlatform(readConditionsFromForm('bonus'), platform),
+      referenceConditions: normalizeConditionsForPlatform(readConditionsFromForm('reference'), platform),
       applyGlobalAcceptBlock: $('#promotionRuleApplyGlobalBlock').checked,
       allowDuplicate: $('#promotionRuleAllowDuplicate').checked,
       duplicateStrategy: $('#promotionRuleDuplicateStrategy').value,
@@ -853,6 +890,11 @@ const BremPromotionAdmin = (function () {
             actionType: row.querySelector('[data-field="actionType"]')?.value || 'add_pay_per_order'
           };
           refreshConditionRowFields(row, $('#promotionRulePlatform')?.value || 'baemin');
+          syncConditionNameInRow(row, $('#promotionRulePlatform')?.value || 'baemin');
+          return;
+        }
+        if (field.dataset.field === 'rateThreshold') {
+          syncConditionNameInRow(row, $('#promotionRulePlatform')?.value || getActiveRulesPlatformTab());
         }
       });
     });

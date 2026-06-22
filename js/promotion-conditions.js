@@ -200,10 +200,115 @@ const BremPromotionConditions = (function () {
       .map(([value, meta]) => ({ value, label: meta.label }));
   }
 
-  function emptyCondition(processingMode = 'block') {
+  function isRateConditionType(type) {
+    return ['reject_rate_over', 'reject_rate_under', 'accept_rate_under', 'accept_rate_over'].includes(type);
+  }
+
+  function defaultRateConditionType(processingMode, platform) {
+    const p = normalizePlatform(platform);
+    if (processingMode === 'bonus') {
+      return p === 'baemin' ? 'accept_rate_over' : 'reject_rate_under';
+    }
+    return p === 'baemin' ? 'accept_rate_under' : 'reject_rate_over';
+  }
+
+  function resolveRateCondition(condition, platform) {
+    const normalized = normalizeCondition(condition);
+    const p = normalizePlatform(platform);
+    let type = normalized.conditionType;
+    let threshold = Number(normalized.rateThreshold ?? 0);
+
+    if (!isRateConditionType(type)) {
+      return normalized;
+    }
+
+    if (p === 'coupang') {
+      if (type === 'accept_rate_over') {
+        type = 'reject_rate_under';
+        threshold = 100 - threshold;
+      } else if (type === 'accept_rate_under') {
+        type = 'reject_rate_over';
+        threshold = 100 - threshold;
+      } else if (type === 'reject_rate_under' && threshold > 50) {
+        threshold = 100 - threshold;
+      } else if (type === 'reject_rate_over' && threshold > 50) {
+        threshold = 100 - threshold;
+      }
+    } else if (p === 'baemin') {
+      if (type === 'reject_rate_under') {
+        type = 'accept_rate_over';
+        threshold = threshold > 50 ? threshold : 100 - threshold;
+      } else if (type === 'reject_rate_over') {
+        type = 'accept_rate_under';
+        threshold = threshold > 50 ? 100 - threshold : threshold;
+      } else if (type === 'accept_rate_under' && threshold > 50) {
+        threshold = 100 - threshold;
+      } else if (type === 'accept_rate_over' && threshold > 50) {
+        threshold = 100 - threshold;
+      }
+    }
+
+    return {
+      ...normalized,
+      conditionType: type,
+      rateThreshold: threshold
+    };
+  }
+
+  function formatConditionLabel(condition, platform) {
+    const resolved = resolveRateCondition(condition, platform);
+    const type = resolved.conditionType;
+    const threshold = Number(resolved.rateThreshold ?? 0);
+    const mode = resolved.processingMode || condition.processingMode || 'block';
+
+    if (type === 'reject_rate_over') {
+      return mode === 'block'
+        ? `거절율 ${threshold}% 초과 미지급`
+        : `거절율 ${threshold}% 초과`;
+    }
+    if (type === 'reject_rate_under') {
+      return mode === 'bonus'
+        ? `거절율 ${threshold}% 이하`
+        : `거절율 ${threshold}% 미만`;
+    }
+    if (type === 'accept_rate_under') {
+      return mode === 'block'
+        ? `수락률 ${threshold}% 미만 미지급`
+        : `수락률 ${threshold}% 미만`;
+    }
+    if (type === 'accept_rate_over') {
+      return mode === 'bonus'
+        ? `수락률 ${threshold}% 이상`
+        : `수락률 ${threshold}% 이상`;
+    }
+
+    const custom = String(resolved.conditionName || condition.conditionName || '').trim();
+    if (custom) return custom;
+    return CONDITION_TYPES[type]?.label || type;
+  }
+
+  function syncRateConditionName(condition, platform) {
+    const normalized = normalizeCondition(condition);
+    if (!isRateConditionType(normalized.conditionType)) return normalized;
+    return {
+      ...normalized,
+      conditionName: formatConditionLabel(normalized, platform)
+    };
+  }
+
+  function emptyCondition(processingMode = 'block', platform = 'coupang') {
+    const p = normalizePlatform(platform);
+    if (processingMode === 'bonus') {
+      return syncRateConditionName(normalizeCondition({
+        conditionName: '',
+        conditionType: 'working_days',
+        processingMode,
+        actionType: 'add_pay_per_order'
+      }), p);
+    }
     return normalizeCondition({
       conditionName: '',
-      conditionType: processingMode === 'bonus' ? 'working_days' : 'total_orders_under',
+      conditionType: 'total_orders_under',
       processingMode,
       actionType: 'add_pay_per_order'
     });
@@ -218,6 +323,11 @@ const BremPromotionConditions = (function () {
     migrateLegacyRule,
     conditionTypesForPlatform,
     emptyCondition,
-    createId
+    createId,
+    isRateConditionType,
+    defaultRateConditionType,
+    resolveRateCondition,
+    formatConditionLabel,
+    syncRateConditionName
   };
 })();

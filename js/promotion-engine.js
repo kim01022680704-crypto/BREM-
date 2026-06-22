@@ -362,12 +362,17 @@ const BremPromotionEngine = (function () {
   }
 
   function evaluateStructuredCondition(condition, rule, riderData) {
-    const type = condition.conditionType;
     const platform = normalizePlatform(riderData.platform);
+    const resolved = BremPromotionConditions?.resolveRateCondition
+      ? BremPromotionConditions.resolveRateCondition(condition, platform)
+      : condition;
+    const type = resolved.conditionType;
     const rate = riderData.platformRate;
     const totalOrders = riderData.totalOrders;
     const byDay = riderData.dailyOrders || {};
-    const label = condition.conditionName || BremPromotionConditions?.CONDITION_TYPES?.[type]?.label || type;
+    const label = BremPromotionConditions?.formatConditionLabel
+      ? BremPromotionConditions.formatConditionLabel(condition, platform)
+      : (condition.conditionName || BremPromotionConditions?.CONDITION_TYPES?.[type]?.label || type);
 
     if (isRateConditionType(type) && !shouldApplyRateCondition(type, platform)) {
       return { passed: true, reasons: [] };
@@ -376,26 +381,34 @@ const BremPromotionEngine = (function () {
     switch (type) {
       case 'reject_rate_over':
       case 'reject_rate_under': {
-        const threshold = Number(condition.rateThreshold ?? 0);
+        const threshold = Number(resolved.rateThreshold ?? 0);
         if (rate === null || rate === undefined) {
           return { passed: false, reasons: ['거절율 미등록'] };
         }
-        const passed = type === 'reject_rate_over' ? rate <= threshold : rate <= threshold;
+        const passed = type === 'reject_rate_over'
+          ? rate <= threshold
+          : rate <= threshold;
         return {
           passed,
-          reasons: passed ? [] : [`${label} (${rate}% > ${threshold}%)`]
+          reasons: passed ? [] : [type === 'reject_rate_over'
+            ? `${label} (현재 ${rate}% > ${threshold}%)`
+            : `${label} (현재 ${rate}% > ${threshold}%)`]
         };
       }
       case 'accept_rate_under':
       case 'accept_rate_over': {
-        const threshold = Number(condition.rateThreshold ?? 0);
+        const threshold = Number(resolved.rateThreshold ?? 0);
         if (rate === null || rate === undefined) {
           return { passed: false, reasons: ['수락률 미등록'] };
         }
-        const passed = rate >= threshold;
+        const passed = type === 'accept_rate_under'
+          ? rate >= threshold
+          : rate >= threshold;
         return {
           passed,
-          reasons: passed ? [] : [`${label} (${rate}% < ${threshold}%)`]
+          reasons: passed ? [] : [type === 'accept_rate_under'
+            ? `${label} (현재 ${rate}% < ${threshold}%)`
+            : `${label} (현재 ${rate}% < ${threshold}%)`]
         };
       }
       case 'total_orders_under': {
@@ -636,8 +649,11 @@ const BremPromotionEngine = (function () {
 
     (rule.referenceConditions || []).forEach(condition => {
       const result = evaluateStructuredCondition(condition, rule, riderData);
+      const name = BremPromotionConditions?.formatConditionLabel
+        ? BremPromotionConditions.formatConditionLabel(condition, riderData.platform)
+        : (condition.conditionName || condition.conditionType);
       referenceNotes.push({
-        name: condition.conditionName || condition.conditionType,
+        name,
         passed: result.passed,
         note: result.reasons[0] || '충족'
       });
@@ -665,7 +681,9 @@ const BremPromotionEngine = (function () {
         paidCallCount: 0,
         appliedBonusConditions: [],
         failedBonusConditions: (rule.bonusConditions || []).map(item => ({
-          name: item.conditionName || item.conditionType,
+          name: BremPromotionConditions?.formatConditionLabel
+            ? BremPromotionConditions.formatConditionLabel(item, riderData.platform)
+            : (item.conditionName || item.conditionType),
           reason: '미지급 조건으로 인해 미적용'
         })),
         referenceNotes,
@@ -699,7 +717,9 @@ const BremPromotionEngine = (function () {
         return;
       }
       const evalResult = evaluateStructuredCondition(condition, rule, riderData);
-      const name = condition.conditionName || condition.conditionType;
+      const name = BremPromotionConditions?.formatConditionLabel
+        ? BremPromotionConditions.formatConditionLabel(condition, riderData.platform)
+        : (condition.conditionName || condition.conditionType);
       if (!evalResult.passed) {
         failedBonusConditions.push({
           name,
