@@ -1245,7 +1245,6 @@
 
     if (driverSessionId || BremStorage.auth.isDriverLoggedIn?.()) {
       if (isProduction) {
-        await BremStorage.ensureDriverStorageReady?.();
         savedDriver = findDriverById(driverSessionId);
       } else {
         savedDriver = findDriverById(driverSessionId);

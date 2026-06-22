@@ -2286,55 +2286,80 @@ const BremStorage = (function () {
       const force = options.force === true;
       const cache = window.BremDriverDataCache;
 
-      const loadSnapshot = async () => {
-        if (!force && riderId && cache?.read?.(riderId, 'snapshot')) {
-          const cached = cache.read(riderId, 'snapshot');
-          console.info('[BREM:data] driver snapshot cache hit');
-          mergeRiderSnapshotInCache(cached);
-          return { ok: true, cached: true, publishedAt: cached.publishedAt || null };
-        }
-        console.info('[BREM:data] driver snapshot cache miss');
-        const result = await riderApiFetch('/api/rider/snapshot', 'snapshot');
-        if (!result.ok) return result;
-        if (riderId) cache?.write?.(riderId, 'snapshot', result);
-        mergeRiderSnapshotInCache(result);
-        return result;
-      };
+      const snapshotCached = !force && riderId ? cache?.read?.(riderId, 'snapshot') : null;
+      const liveCached = !force && riderId ? cache?.read?.(riderId, 'live') : null;
+      const noticesCached = !force && riderId ? cache?.read?.(riderId, 'notices') : null;
 
-      const loadLive = async () => {
-        if (!force && riderId && cache?.read?.(riderId, 'live')) {
-          const cached = cache.read(riderId, 'live');
-          console.info('[BREM:data] driver live cache hit');
-          mergeRiderLiveInCache(cached);
-          return { ok: true, cached: true, rider: cached.rider || null };
-        }
-        console.info('[BREM:data] driver live cache miss');
-        const result = await riderApiFetch('/api/rider/live', 'live');
-        if (!result.ok) return result;
-        if (riderId) cache?.write?.(riderId, 'live', result);
-        mergeRiderLiveInCache(result);
-        return result;
-      };
+      if (snapshotCached && liveCached && noticesCached) {
+        console.info('[BREM:data] driver snapshot: cache hit');
+        console.info('[BREM:data] driver live: cache hit');
+        console.info('[BREM:data] driver notices: cache hit');
+        mergeRiderSnapshotInCache(snapshotCached);
+        mergeRiderLiveInCache(liveCached);
+        mergeRiderNoticesInCache({ notices: noticesCached.notices || [] });
+        console.info('[BREM:data] driver load done');
+        document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
+          detail: { ok: true, cached: true, publishedAt: getDriverAppPublishedAt() }
+        }));
+        return {
+          ok: true,
+          cached: true,
+          publishedAt: getDriverAppPublishedAt(),
+          rider: liveCached.rider || null
+        };
+      }
 
-      const loadNotices = async () => {
-        if (!force && riderId && cache?.read?.(riderId, 'notices')) {
-          const cached = cache.read(riderId, 'notices');
-          console.info('[BREM:data] driver notices cache hit');
-          mergeRiderNoticesInCache(cached);
-          return { ok: true, cached: true, count: (cached.notices || []).length };
+      console.info('[BREM:data] driver snapshot: cache miss');
+      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
+
+      if (bundle.ok) {
+        if (riderId && bundle.snapshot) cache?.write?.(riderId, 'snapshot', bundle.snapshot);
+        if (riderId && bundle.live) cache?.write?.(riderId, 'live', bundle.live);
+        if (riderId) {
+          cache?.write?.(riderId, 'notices', { notices: bundle.notices || [] });
         }
-        console.info('[BREM:data] driver notices cache miss');
-        const result = await riderApiFetch('/api/rider/notices', 'notices');
-        if (!result.ok) return result;
-        if (riderId) cache?.write?.(riderId, 'notices', result);
-        mergeRiderNoticesInCache(result);
-        return { ok: true, count: (result.notices || []).length };
-      };
+        mergeRiderSnapshotInCache({
+          ...bundle.snapshot,
+          riderId: bundle.riderId,
+          publishedAt: bundle.publishedAt
+        });
+        mergeRiderLiveInCache(bundle.live || {});
+        mergeRiderNoticesInCache({ notices: bundle.notices || [] });
+
+        console.info('[BREM:data] driver load done');
+        document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
+          detail: {
+            ok: true,
+            publishedAt: getDriverAppPublishedAt(),
+            errors: { snapshot: null, live: null, notices: null }
+          }
+        }));
+        document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+        return {
+          ok: true,
+          publishedAt: getDriverAppPublishedAt(),
+          rider: bundle.live?.rider || null,
+          snapshot: { ok: true },
+          live: { ok: true },
+          notices: { ok: true, count: (bundle.notices || []).length }
+        };
+      }
 
       const [snapshotResult, liveResult, noticesResult] = await Promise.allSettled([
-        loadSnapshot(),
-        loadLive(),
-        loadNotices()
+        (async () => {
+          console.info('[BREM:data] driver live: cache miss');
+          const result = await riderApiFetch('/api/rider/live', 'live');
+          if (result.ok && riderId) cache?.write?.(riderId, 'live', result);
+          if (result.ok) mergeRiderLiveInCache(result);
+          return result;
+        })(),
+        (async () => {
+          console.info('[BREM:data] driver notices: cache miss');
+          const result = await riderApiFetch('/api/rider/notices', 'notices');
+          if (result.ok && riderId) cache?.write?.(riderId, 'notices', result);
+          if (result.ok) mergeRiderNoticesInCache(result);
+          return result;
+        })()
       ]);
 
       const unwrap = settled => (
@@ -2343,11 +2368,11 @@ const BremStorage = (function () {
           : { ok: false, message: settled.reason?.message || '요청에 실패했습니다.' }
       );
 
-      const snapshot = unwrap(snapshotResult);
+      const snapshot = { ok: false, message: bundle.message || bundle.error || '반영 데이터를 불러오지 못했습니다.' };
       const live = unwrap(liveResult);
       const notices = unwrap(noticesResult);
 
-      const anyOk = [snapshot, live, notices].some(item => item?.ok);
+      const anyOk = [live, notices].some(item => item?.ok);
       const allFailed = !anyOk;
 
       console.info('[BREM:data] driver load done');
@@ -2355,10 +2380,10 @@ const BremStorage = (function () {
       document.dispatchEvent(new CustomEvent('brem-driver-data-ready', {
         detail: {
           ok: anyOk,
-          partial: anyOk && !(snapshot.ok && live.ok && notices.ok),
+          partial: anyOk,
           publishedAt: getDriverAppPublishedAt(),
           errors: {
-            snapshot: snapshot.ok ? null : (snapshot.message || snapshot.error),
+            snapshot: snapshot.message || null,
             live: live.ok ? null : (live.message || live.error),
             notices: notices.ok ? null : (notices.message || notices.error)
           }
@@ -2368,7 +2393,7 @@ const BremStorage = (function () {
 
       return {
         ok: anyOk,
-        partial: anyOk && !(snapshot.ok && live.ok && notices.ok),
+        partial: anyOk,
         allFailed,
         publishedAt: getDriverAppPublishedAt(),
         rider: live.rider || null,
@@ -8031,9 +8056,8 @@ const BremStorage = (function () {
     async signInDriver(loginInput, password) {
       if (getSupabaseConfig().mode === 'production') {
         try {
-          const storageReady = await ensureDriverStorageReady();
-          if (!storageReady.ok) {
-            return { ok: false, reason: storageReady.message || '저장소 연결에 실패했습니다.' };
+          if (window.BremSupabaseConfig?.load) {
+            await window.BremSupabaseConfig.load();
           }
 
           const response = await fetch('/api/rider/sign-in', {
@@ -8073,7 +8097,9 @@ const BremStorage = (function () {
           if (payload.riderId) {
             sessionAdapter.write(SESSION_KEYS.driverId, payload.riderId);
           }
-          invalidateNoticesCache();
+          void resumeSupabaseAfterAuth({ deferHydrate: true }).catch(error => {
+            console.warn('[BREM] Rider storage resume deferred:', error.message || error);
+          });
           const mapper = window.BremSupabaseMapper;
           const mappedDriver = payload.rider && mapper?.rowToRider
             ? mapper.rowToRider(payload.rider)

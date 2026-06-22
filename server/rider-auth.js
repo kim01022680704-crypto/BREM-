@@ -114,10 +114,19 @@ async function findRiderByLoginId(supabase, loginInput) {
   }
 
   const phoneSuffix = normalized.slice(-4);
-  let query = supabase.from('riders').select(RIDER_LOGIN_LOOKUP_SELECT);
+  if (!/^\d{4}$/.test(phoneSuffix)) {
+    return { ok: false, status: 400, error: '아이디 형식이 올바르지 않습니다.' };
+  }
 
-  if (/^\d{4}$/.test(phoneSuffix)) {
-    query = query.ilike('phone', `%${phoneSuffix}`);
+  const namePart = normalized.slice(0, -4).replace(/\s/g, '');
+  let query = supabase
+    .from('riders')
+    .select(RIDER_LOGIN_LOOKUP_SELECT)
+    .ilike('phone', `%${phoneSuffix}`)
+    .limit(25);
+
+  if (namePart) {
+    query = query.ilike('name', `${namePart}%`);
   }
 
   const { data, error } = await query.order('created_at', { ascending: false });
@@ -554,6 +563,131 @@ async function getRiderNotices(accessToken) {
   };
 }
 
+async function getRiderAppBundle(accessToken) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const riderId = me.riderId;
+  const row = me.rider || {};
+  const baeminMissionId = String(row.selected_mission_id_baemin || row.selected_mission_id || '').trim();
+  const coupangMissionId = String(row.selected_mission_id_coupang || row.selected_mission_id || '').trim();
+  const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
+  const allSettingKeys = [...new Set([
+    ...RIDER_SNAPSHOT_SETTING_KEYS,
+    ...RIDER_LIVE_SETTING_KEYS
+  ])];
+
+  const missionQuery = missionIds.length
+    ? supabase.from('missions').select(MISSION_SELECT).in('id', missionIds)
+    : Promise.resolve({ data: [], error: null });
+
+  const [
+    callsResult,
+    rejectionsResult,
+    targetsResult,
+    settingsResult,
+    noticesResult,
+    missionsResult
+  ] = await Promise.all([
+    supabase
+      .from('admin_calls')
+      .select('id,driver_id,date,platform,count,updated_at,rider_published_at')
+      .eq('driver_id', riderId)
+      .order('date', { ascending: false }),
+    supabase
+      .from('admin_rejection_rates')
+      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
+      .eq('driver_id', riderId)
+      .not('rider_published_at', 'is', null)
+      .order('week_start', { ascending: false }),
+    supabase
+      .from('admin_targets')
+      .select('id,driver_id,month,count,updated_at')
+      .eq('driver_id', riderId)
+      .order('month', { ascending: false }),
+    supabase
+      .from('settings')
+      .select('key,value')
+      .in('key', allSettingKeys),
+    supabase
+      .from('notices')
+      .select(NOTICE_SELECT)
+      .order('pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(100),
+    missionQuery
+  ]);
+
+  const firstError = [
+    callsResult,
+    rejectionsResult,
+    targetsResult,
+    settingsResult,
+    noticesResult,
+    missionsResult
+  ].find(result => result.error);
+
+  if (firstError?.error) {
+    const message = firstError.error.message || '';
+    if (/does not exist|relation|schema cache/i.test(message)) {
+      return {
+        ok: false,
+        status: 400,
+        error: '운영 DB 테이블이 준비되지 않았습니다. supabase/operations_tables_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, status: 500, error: message || '기사 앱 데이터를 불러오지 못했습니다.' };
+  }
+
+  const allCalls = callsResult.data || [];
+  const publishedCalls = allCalls.filter(item => item.rider_published_at != null);
+  const rejections = rejectionsResult.data || [];
+  const settingsRows = settingsResult.data || [];
+  const snapshotSettings = settingsRows.filter(item => RIDER_SNAPSHOT_SETTING_KEYS.includes(item.key));
+  const liveSettings = settingsRows.filter(item => (
+    item.key !== 'brem_driver_weekly_targets' && RIDER_LIVE_SETTING_KEYS.includes(item.key)
+  ));
+  const missionRows = missionsResult.data || [];
+  const byId = new Map(missionRows.map(item => [item.id, item]));
+  const weeklyTargetsRaw = settingsRows.find(item => item.key === 'brem_driver_weekly_targets')?.value;
+  const weeklyTargets = Array.isArray(weeklyTargetsRaw)
+    ? weeklyTargetsRaw.filter(item => String(item?.driverId || '') === String(riderId))
+    : [];
+  const longEvent = computeLongEventProgress(me.rider, settingsRows, allCalls);
+  const publishedAt = resolveSnapshotPublishedAt(snapshotSettings, publishedCalls, rejections);
+
+  return {
+    ok: true,
+    riderId,
+    publishedAt,
+    snapshot: {
+      riderId,
+      publishedAt,
+      calls: publishedCalls,
+      rejections,
+      settings: snapshotSettings,
+      missions: {
+        baemin: baeminMissionId ? (byId.get(baeminMissionId) || null) : null,
+        coupang: coupangMissionId ? (byId.get(coupangMissionId) || null) : null
+      }
+    },
+    live: {
+      riderId,
+      rider: me.rider,
+      targets: targetsResult.data || [],
+      weeklyTargets,
+      longEvent,
+      settings: liveSettings
+    },
+    notices: noticesResult.data || []
+  };
+}
+
 async function getRiderSnapshot(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -939,8 +1073,7 @@ async function signInRider(loginInput, password) {
     return { ok: false, status: 401, error: '로그인에 실패했습니다. 잠시 후 다시 시도하세요.' };
   }
 
-  const fetched = await fetchRiderById(supabase, found.rider.id);
-  const rider = fetched.ok && fetched.rider ? fetched.rider : found.rider;
+  const rider = found.rider;
 
   return {
     ok: true,
@@ -965,6 +1098,7 @@ module.exports = {
   getRiderNotices,
   getRiderSnapshot,
   getRiderLive,
+  getRiderAppBundle,
   getRiderDashboard,
   saveRiderTargets,
   updateRiderProfile,

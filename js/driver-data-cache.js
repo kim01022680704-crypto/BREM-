@@ -2,7 +2,7 @@
  * Rider app session cache — sessionStorage only, TTL 4 minutes.
  */
 window.BremDriverDataCache = (function () {
-  const TTL_MS = 4 * 60 * 1000;
+  const TTL_MS = 5 * 60 * 1000;
   const PREFIX = 'brem:driver:';
 
   function storageKey(riderId, kind) {

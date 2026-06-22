@@ -228,6 +228,25 @@ app.get('/api/rider/notices', async (req, res) => {
   }
 });
 
+app.get('/api/rider/app-bundle', async (req, res) => {
+  try {
+    const result = await riderAuth.getRiderAppBundle(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      publishedAt: result.publishedAt,
+      snapshot: result.snapshot,
+      live: result.live,
+      notices: result.notices
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 앱 데이터를 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/rider/snapshot', async (req, res) => {
   try {
     const result = await riderAuth.getRiderSnapshot(getBearerToken(req));
