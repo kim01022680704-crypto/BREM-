@@ -308,6 +308,7 @@ const BremStorage = (function () {
 
   function flushStagedSupabaseWrites() {
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.enqueuePersist) return;
+    const guard = window.BremStorageGuard;
     const productionServerKeys = new Set([KEYS.drivers, KEYS.missions]);
     const persistKeys = [
       KEYS.drivers,
@@ -324,6 +325,7 @@ const BremStorage = (function () {
       if (!activeStorageAdapter.has(key)) return;
       if (activeStorageAdapter.isKeyLoaded && !activeStorageAdapter.isKeyLoaded(key)) return;
       const value = activeStorageAdapter.read(key);
+      if (guard?.isEmptyCollection?.(value)) return;
       try {
         assertPersistAllowed(key, value);
       } catch {
@@ -380,8 +382,8 @@ const BremStorage = (function () {
     listBremKeys() {
       return activeStorageAdapter.listBremKeys();
     },
-    async flush() {
-      if (isStoragePersistReady()) {
+    async flush(options = {}) {
+      if (isStoragePersistReady() && options.skipStagedCore !== true) {
         flushStagedSupabaseWrites();
       }
       if (activeStorageAdapter.flush) {
@@ -1721,9 +1723,6 @@ const BremStorage = (function () {
     window.BremDataCache?.invalidate?.(KEYS.notices);
     if (activeStorageAdapter.invalidateKeys) {
       activeStorageAdapter.invalidateKeys([KEYS.notices]);
-    }
-    if (activeStorageAdapter.stage) {
-      activeStorageAdapter.stage(KEYS.notices, []);
     }
   }
 
@@ -6162,12 +6161,20 @@ const BremStorage = (function () {
 
     removeById(id) {
       const target = settlements.getAll().find(item => item.id === id);
-      storageAdapter.write(KEYS.settlements, settlements.getAll().filter(item => item.id !== id));
+      storageAdapter.write(
+        KEYS.settlements,
+        settlements.getAll().filter(item => item.id !== id),
+        { allowEmpty: true }
+      );
       if (target) {
         const periodKey = String(target.period).slice(0, 10);
         const p = normalizePlatform(target.platform);
         const callId = `${target.driverId}-${periodKey}-${p}`;
-        storageAdapter.write(KEYS.calls, calls.getAll().filter(call => call.id !== callId));
+        storageAdapter.write(
+          KEYS.calls,
+          calls.getAll().filter(call => call.id !== callId),
+          { allowEmpty: true }
+        );
         if (activeStorageAdapter.deleteAdminCallsByIds) {
           void activeStorageAdapter.deleteAdminCallsByIds([callId]);
         }
@@ -6183,7 +6190,8 @@ const BremStorage = (function () {
       const p = normalizePlatform(target.platform);
       const callId = `${target.driverId}-${periodKey}-${p}`;
 
-      storageAdapter.write(KEYS.settlements, settlements.getAll().filter(item => item.id !== id));
+      const nextSettlements = settlements.getAll().filter(item => item.id !== target.id);
+      storageAdapter.write(KEYS.settlements, nextSettlements, { allowEmpty: true });
 
       if (activeStorageAdapter.deleteAdminCallsByIds) {
         await activeStorageAdapter.deleteAdminCallsByIds([callId]);
@@ -6195,7 +6203,7 @@ const BremStorage = (function () {
         );
       }
 
-      await storageAdapter.flush?.();
+      await storageAdapter.flush({ skipStagedCore: true });
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
       return settlements.getAll();
@@ -6967,8 +6975,9 @@ const BremStorage = (function () {
       if (rollback && target) {
         rollbackResult = await settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
       }
-      settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
-      await storageAdapter.flush?.();
+      const nextList = settlementUploadLogs.getAll().filter(item => item.id !== id);
+      await settlementUploadLogs.persistList(nextList, { allowEmpty: true });
+      await storageAdapter.flush({ skipStagedCore: true });
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
       window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);

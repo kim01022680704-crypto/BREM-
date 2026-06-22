@@ -4374,11 +4374,13 @@
             $(`#callCount-${platform}`).value = '';
             setCallFilterDate(platform, date);
             showToast(`${platformLabel(platform)} 콜수가 저장되었습니다. 수정 기록이 남습니다.`);
-            renderAll();
+            renderSettlements();
+            renderCalls();
           } catch (error) {
             console.error('[BREM] call persist failed:', error);
             showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
-            renderAll();
+            renderSettlements();
+            renderCalls();
           }
         })();
       });
@@ -4732,11 +4734,13 @@
             await BremStorage.calls.removeByIdAsync(callButton.dataset.deleteCall);
             selectedCallIds.delete(callButton.dataset.deleteCall);
             showToast('콜수 기록이 삭제되었습니다.');
-            renderAll();
+            renderSettlements();
+            renderCalls();
           } catch (error) {
             console.error('[BREM] call delete failed:', error);
             showToast(error.message || '콜수 삭제 저장에 실패했습니다.');
-            renderAll();
+            renderSettlements();
+            renderCalls();
           }
         })();
         return;
@@ -4841,11 +4845,13 @@
           try {
             await BremStorage.settlements.removeByIdAsync(settlementButton.dataset.deleteSettlement);
             showToast('정산 내역이 삭제되었습니다.');
-            renderAll();
+            renderSettlements();
+            renderCalls();
           } catch (error) {
             console.error('[BREM] settlement delete failed:', error);
             showToast(error.message || '삭제 저장에 실패했습니다.');
-            renderAll();
+            renderSettlements();
+            renderCalls();
           }
         })();
         return;
@@ -4875,11 +4881,13 @@
                 ? `업로드 기록 삭제 · 정산·콜수입력 ${rolledBack}명 연동 제거`
                 : '업로드 기록이 삭제되었습니다.'
             );
-            renderAll();
+            renderSettlements();
+            renderCalls();
           } catch (error) {
             console.error('[BREM] settlement upload log delete failed:', error);
             showToast(error.message || '기록 삭제 저장에 실패했습니다.');
-            renderAll();
+            renderSettlements();
+            renderCalls();
           }
         })();
         return;
