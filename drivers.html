@@ -10,8 +10,8 @@
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css?v=20260622a">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
-  <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
-  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623u">
+  <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
+  <link rel="stylesheet" href="css/mobile-ui.css?v=20260623z">
 </head>
 <body class="drivers-page">
   <div class="app index-app">
@@ -31,8 +31,8 @@
       </aside>
 
       <div class="index-content">
-    <header class="site-header">
-      <div class="site-header__brand">
+    <header class="site-header drivers-header">
+      <div class="drivers-header__row">
         <img
           class="site-header__logo"
           src="assets/brand/brem-logo-mark.png"
@@ -40,31 +40,31 @@
           height="86"
           alt="BREM PLUS DELIVERY AGENCY"
         >
-        <div>
-          <p class="eyebrow">BREM ADMIN</p>
-          <h1>BREM 기사등록 프로그램</h1>
+        <div class="drivers-header__title">
+          <p class="eyebrow">BREM 기사등록</p>
+          <h1 id="driversPageTitle">기사 목록</h1>
         </div>
+        <button type="button" class="drivers-header__menu" id="indexMenuBtn" aria-controls="indexSidebar">메뉴</button>
       </div>
-      <div class="header-actions">
+      <div class="drivers-header__status">
         <span class="db-status db-status--pending" id="driverDbStatus" aria-live="polite">DB: 확인 중…</span>
-        <a class="admin-link" href="admin.html">전체 관리자 화면 보기</a>
-        <div class="summary-card" aria-label="기사 현황">
-          <span class="summary-label">등록 기사</span>
-          <strong id="driverTotal">0명</strong>
-        </div>
+        <span class="drivers-header__count">등록 <strong id="driverTotal">0명</strong></span>
       </div>
+      <nav class="drivers-mobile-nav" aria-label="기사 프로그램 메뉴">
+        <a class="drivers-mobile-nav__link active" href="drivers.html" aria-current="page">기사 목록</a>
+        <a class="drivers-mobile-nav__link" href="rider-manage.html?register=1">기사 등록</a>
+        <a class="drivers-mobile-nav__link drivers-mobile-nav__link--admin" href="admin.html">관리자</a>
+      </nav>
     </header>
 
     <main class="layout layout--page">
       <section class="panel list-panel list-panel--scrollable" aria-labelledby="listTitle">
+        <h2 id="listTitle" class="sr-only">기사 목록</h2>
         <div class="panel-header list-header list-header--compact">
-          <div>
-            <h2 id="listTitle">기사 목록</h2>
-          </div>
-          <div class="filters filters--compact">
+          <div class="list-header__tools">
             <label class="search-field">
               <span class="sr-only">이름 검색</span>
-              <input type="search" id="searchInput" placeholder="이름·연락처·배민ID·쿠팡ID 검색">
+              <input type="search" id="searchInput" placeholder="이름·연락처·ID 검색">
             </label>
             <label class="filter-field">
               <span class="sr-only">상태 필터</span>
@@ -75,11 +75,13 @@
                 <option value="퇴사">퇴사</option>
               </select>
             </label>
-            <button type="button" class="btn ghost" id="refreshDriverListBtn">목록 새로고침</button>
-            <button type="button" class="btn ghost" id="exportExcelBtn">엑셀 백업</button>
-            <button type="button" class="btn ghost" id="mergeAutoBtn">전체 자동병합</button>
-            <button type="button" class="btn ghost danger-outline" id="deleteAllDriversBtn">전체 삭제</button>
-            <button type="button" class="btn ghost danger-outline" id="bulkDeleteBtn" disabled>선택 삭제</button>
+          </div>
+          <div class="filters filters--compact">
+            <button type="button" class="btn ghost" id="refreshDriverListBtn">새로고침</button>
+            <button type="button" class="btn ghost" id="exportExcelBtn">엑셀</button>
+            <button type="button" class="btn ghost" id="mergeAutoBtn">자동병합</button>
+            <button type="button" class="btn ghost danger-outline" id="deleteAllDriversBtn">전체삭제</button>
+            <button type="button" class="btn ghost danger-outline" id="bulkDeleteBtn" disabled>선택삭제</button>
           </div>
         </div>
 
@@ -133,10 +135,8 @@
       </div>
     </div>
 
-    <button type="button" class="index-menu-btn" id="indexMenuBtn" aria-controls="indexSidebar">메뉴</button>
+    <div class="index-overlay" id="indexOverlay" hidden></div>
   </div>
-
-  <div class="index-overlay" id="indexOverlay" hidden></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

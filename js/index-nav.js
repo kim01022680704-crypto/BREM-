@@ -30,7 +30,7 @@
 
     overlay.addEventListener('click', closeMenu);
 
-    sidebar.querySelectorAll('.index-nav-link, .index-program-link').forEach(link => {
+    sidebar.querySelectorAll('.index-nav-link, .index-program-link, .drivers-mobile-nav__link').forEach(link => {
       link.addEventListener('click', closeMenu);
     });
   });

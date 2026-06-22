@@ -1138,82 +1138,304 @@
     text-align: left;
   }
 
-  /* ── Drivers list ── */
-  .drivers-page .table-wrap.list-table-scroll {
+  /* ── Drivers program (drivers.html / rider-manage) ── */
+  .drivers-page .index-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .drivers-page .index-sidebar {
+    width: min(300px, 88vw);
+    padding: 18px 16px;
+    border-radius: 0 18px 18px 0;
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.18);
+  }
+
+  .drivers-page .index-sidebar-head strong {
+    font-size: 1.05rem;
+    margin-bottom: 4px;
+  }
+
+  .drivers-page .index-program-link {
+    min-height: 48px;
+    padding: 0 14px;
+    font-size: 0.92rem;
+    border-radius: 10px;
+  }
+
+  .drivers-page .index-sidebar-foot .index-nav-link {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.88rem;
+  }
+
+  .drivers-page .index-menu-btn {
     display: none !important;
   }
 
-  .drivers-page .mobile-list {
-    display: block !important;
+  .drivers-page .drivers-header__menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 52px;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 212, 0, 0.35);
+    border-radius: 10px;
+    color: var(--yellow);
+    background: rgba(255, 212, 0, 0.12);
+    font-size: 0.78rem;
+    font-weight: 800;
   }
 
-  .drivers-page .site-header {
+  .drivers-page .site-header.drivers-header {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 10px 12px 10px;
+    border-radius: 14px;
   }
 
-  .drivers-page .header-actions {
+  .drivers-page .drivers-header__row {
+    gap: 10px;
+  }
+
+  .drivers-page .site-header__logo {
+    width: 44px;
+  }
+
+  .drivers-page .drivers-header__title .eyebrow {
+    margin-bottom: 2px;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+  }
+
+  .drivers-page .drivers-header__title h1 {
+    font-size: 1.02rem;
+  }
+
+  .drivers-page .drivers-header__status {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr auto;
     gap: 8px;
     align-items: stretch;
   }
 
-  .drivers-page .header-actions .admin-link {
-    grid-column: 1 / -1;
-    text-align: center;
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  .drivers-page .drivers-header__status .db-status {
+    min-height: 0;
+    padding: 8px 10px;
+    white-space: normal;
+    line-height: 1.35;
+    font-size: 0.68rem;
+    border-radius: 10px;
   }
 
-  .drivers-page .header-actions .summary-card {
+  .drivers-page .drivers-header__count {
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  .drivers-page .drivers-mobile-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .drivers-page .drivers-mobile-nav__link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.82);
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-decoration: none;
     text-align: center;
+    line-height: 1.25;
+  }
+
+  .drivers-page .drivers-mobile-nav__link.active {
+    color: var(--black);
+    background: var(--yellow);
+    border-color: var(--yellow);
+  }
+
+  .drivers-page .drivers-mobile-nav__link--admin {
+    font-size: 0.72rem;
+  }
+
+  .drivers-page .list-panel {
+    border-radius: 14px;
   }
 
   .drivers-page .list-header--compact {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .drivers-page .list-header__tools {
+    display: grid;
+    grid-template-columns: 1fr 108px;
+    gap: 8px;
+  }
+
+  .drivers-page .list-header__tools .search-field,
+  .drivers-page .list-header__tools .filter-field {
+    min-width: 0;
+  }
+
+  .drivers-page .list-header__tools input,
+  .drivers-page .list-header__tools select {
+    width: 100%;
+    min-height: 40px;
+    font-size: 16px;
   }
 
   .drivers-page .filters--compact {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .drivers-page .filters--compact .btn {
     width: 100%;
-    min-height: 44px;
+    min-height: 38px;
+    padding: 8px 6px;
+    font-size: 0.72rem;
+  }
+
+  .drivers-page .filters--compact .danger-outline {
+    grid-column: span 1;
   }
 
   .drivers-page #listSelectionBar {
     display: grid !important;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+    padding: 8px 12px;
   }
 
   .drivers-page #listSelectionBar .btn {
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
+  }
+
+  .drivers-page .driver-list-scroll {
+    max-height: none;
+    padding: 0 8px 8px;
   }
 
   .drivers-page .driver-card {
-    border-radius: 12px;
-    border-bottom: 0;
+    padding: 10px 10px 10px 40px;
     margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
     background: #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(17, 17, 17, 0.05);
+  }
+
+  .drivers-page .driver-card-select {
+    top: 12px;
+    left: 10px;
+  }
+
+  .drivers-page .driver-card-header {
+    margin-bottom: 8px;
+  }
+
+  .drivers-page .driver-card-header h3 {
+    font-size: 0.98rem;
   }
 
   .drivers-page .driver-card dl {
-    grid-template-columns: 64px 1fr;
+    grid-template-columns: 56px 1fr;
+    gap: 4px 8px;
+    margin-bottom: 10px;
+    font-size: 0.82rem;
+  }
+
+  .drivers-page .driver-card dt {
+    font-size: 0.68rem;
+    color: #64748b;
+  }
+
+  .drivers-page .driver-card dt:nth-of-type(n+5),
+  .drivers-page .driver-card dt:nth-of-type(n+5) + dd {
+    display: none;
   }
 
   .drivers-page .driver-card dd {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: break-all;
+  }
+
+  .drivers-page .driver-card .actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .drivers-page .driver-card .actions .btn {
+    min-height: 36px;
+    padding: 6px 4px;
+    font-size: 0.72rem;
+  }
+
+  .register-page .register-top {
+    margin-bottom: 8px;
+  }
+
+  .register-page .site-header--compact {
+    display: none;
+  }
+
+  .register-page .register-toolbar {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .register-page .register-toolbar-link {
+    width: 100%;
+    text-align: center;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .register-page .form-panel--register {
+    border-radius: 14px;
+  }
+
+  .register-page .panel-header--register {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .register-page .form-mode-tabs {
+    width: 100%;
+  }
+
+  /* ── Drivers list (legacy selectors) ── */
+  .drivers-page .table-wrap.list-table-scroll {
+    display: none !important;
+  }
+
+  .drivers-page .mobile-list {
+    display: block !important;
   }
 
   /* ── Home / portal staff picker ── */
