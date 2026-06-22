@@ -208,6 +208,18 @@ const BremWeeklySettlement = (function () {
     return driverIds;
   }
 
+  function normalizePeriodDay(period) {
+    return String(period || '').slice(0, 10);
+  }
+
+  function pickLatestSettlementRecord(records = []) {
+    if (!records.length) return null;
+    return records.slice().sort((a, b) => (
+      String(b.appliedAt || '').localeCompare(String(a.appliedAt || ''))
+      || String(b.id || '').localeCompare(String(a.id || ''))
+    ))[0];
+  }
+
   function buildDriverCallStatsForPeriod(driverId, startDate, endDate, platform) {
     const p = normalizePlatform(platform);
     const start = String(startDate || '').slice(0, 10);
@@ -217,14 +229,20 @@ const BremWeeklySettlement = (function () {
     BremStorage.settlements.getAll().forEach(record => {
       if (record.driverId !== driverId) return;
       if (normalizePlatform(record.platform) !== p) return;
-      const day = String(record.period).slice(0, 10);
+      const day = normalizePeriodDay(record.period);
       if (start && day < start) return;
       if (end && day > end) return;
-      byDay[day] = {
+      const next = {
         callCount: Number(record.orderCount || 0),
         deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
-        source: 'settlement'
+        source: 'settlement',
+        appliedAt: String(record.appliedAt || ''),
+        recordId: String(record.id || '')
       };
+      const prev = byDay[day];
+      if (!prev || next.appliedAt >= String(prev.appliedAt || '')) {
+        byDay[day] = next;
+      }
     });
 
     BremStorage.calls.getAll().forEach(call => {
@@ -309,6 +327,58 @@ const BremWeeklySettlement = (function () {
     return [...new Set(hints)];
   }
 
+  function buildCallCountExcessInsights(audit = {}) {
+    const insights = [];
+    const delta = audit.delta;
+    if (delta === null || delta <= 0) return insights;
+
+    const platform = normalizePlatform(audit.platform);
+    const dayAudits = audit.dayAudits || [];
+    const weekly = audit.weeklyOrderCount;
+    const system = audit.systemCallCount;
+
+    if (platform === 'baemin') {
+      insights.push(
+        '배민 일정산은 U열(가게도착) 있음 + AH열 금액>0인 배달 행만 1건씩 세어 합산합니다. 주간서 D열(처리건수)은 배민 주간 집계라 취소·조정·제외 건으로 1건 차이가 날 수 있습니다.'
+      );
+    }
+
+    const duplicateDays = dayAudits.filter(day => (day.settlements || []).length > 1);
+    duplicateDays.forEach(day => {
+      const used = (day.settlements || []).find(row => row.id === day.usedSettlementId);
+      const skipped = (day.settlements || []).filter(row => row.id !== day.usedSettlementId);
+      const skippedCounts = skipped.map(row => Number(row.orderCount || 0));
+      if (used && skippedCounts.some(count => count !== Number(used.orderCount || 0))) {
+        insights.push(
+          `${day.label}: 같은 날 일정산 ${day.settlements.length}건 — 반영 ${used.orderCount}건(최신), 미반영 ${skippedCounts.join('/')}건`
+        );
+      }
+    });
+
+    const daysWithData = dayAudits.filter(day => day.usedCount > 0);
+    const missingDays = dayAudits.filter(day => day.status === 'missing');
+    if (missingDays.length && weekly !== null && system > weekly) {
+      insights.push(
+        `누락 ${missingDays.length}일(${missingDays.map(day => day.label).join(', ')})이 있어도 업로드된 날만 합쳐 ${system}건 → 주간서(${weekly})보다 ${delta}건 많음. 누락 때문이 아닙니다.`
+      );
+    }
+
+    if (delta === 1) {
+      insights.push(
+        '검수: ① 아래 일별 반영 콜수 합 확인 ② 콜수 많은 날 일정산 엑셀에서 U열·AH 모두 유효한 행 수 직접 세기 ③ 중복 업로드·조정/환불 행 1건 있는지 확인'
+      );
+      const topDays = daysWithData
+        .slice()
+        .sort((a, b) => Number(b.usedCount || 0) - Number(a.usedCount || 0))
+        .slice(0, 3);
+      if (topDays.length) {
+        insights.push(`우선 확인: ${topDays.map(day => `${day.label} ${day.usedCount}건`).join(', ')}`);
+      }
+    }
+
+    return insights;
+  }
+
   function buildDriverCallAudit(driverId, startDate, endDate, platform, weeklyOrderCount = null) {
     const p = normalizePlatform(platform);
     const start = String(startDate || '').slice(0, 10);
@@ -321,7 +391,7 @@ const BremWeeklySettlement = (function () {
     BremStorage.settlements.getAll().forEach(record => {
       if (record.driverId !== driverId) return;
       if (normalizePlatform(record.platform) !== p) return;
-      const day = String(record.period).slice(0, 10);
+      const day = normalizePeriodDay(record.period);
       if (start && day < start) return;
       if (end && day > end) return;
       if (!settlementsByDay[day]) settlementsByDay[day] = [];
@@ -348,9 +418,11 @@ const BremWeeklySettlement = (function () {
       });
     });
 
+    let runningSum = 0;
     const dayAudits = days.map(day => {
       const settlements = settlementsByDay[day] || [];
       const calls = callsByDay[day] || [];
+      const usedSettlement = pickLatestSettlementRecord(settlements);
       const usedEntry = stats.byDay[day] || null;
       const uploadHints = findDailyUploadHints(day, p, driver);
       let status = 'missing';
@@ -361,13 +433,17 @@ const BremWeeklySettlement = (function () {
 
       const settlementSum = settlements.reduce((sum, row) => sum + Number(row.orderCount || 0), 0);
       const callSum = calls.reduce((sum, row) => sum + Number(row.count || 0), 0);
+      const usedCount = Number(usedEntry?.callCount || 0);
+      runningSum += usedCount;
 
       return {
         date: day,
         label: day.slice(5),
         status,
-        usedCount: Number(usedEntry?.callCount || 0),
+        usedCount,
+        cumulativeSum: runningSum,
         source: usedEntry?.source || 'none',
+        usedSettlementId: usedSettlement?.id || '',
         settlements,
         calls,
         settlementSum,
@@ -387,6 +463,11 @@ const BremWeeklySettlement = (function () {
     const duplicateDays = dayAudits.filter(day => day.settlements.length > 1);
 
     const insights = [];
+    if (weekly !== null && weekly === systemCallCount && weekly > 0) {
+      insights.push('주간서 콜수와 시스템 합계가 같습니다. (일정산 합이 주간서와 일치)');
+    } else if (weekly !== null && weekly !== systemCallCount) {
+      insights.push(`주간정산서 ${weekly}건 vs 일정산 합계 ${systemCallCount}건 — ${systemCallCount > weekly ? '일정산이 1건 이상 많음' : '주간서가 1건 이상 많음'}`);
+    }
     if (delta !== null && delta !== 0) {
       insights.push(delta > 0
         ? `시스템 합계가 주간서보다 ${delta}건 많습니다.`
@@ -407,6 +488,13 @@ const BremWeeklySettlement = (function () {
         insights.push(`${day.label}: 일정산 ${day.settlements.length}건 합 ${day.settlementSum}건 · 반영 ${used}건`);
       }
     });
+    insights.push(...buildCallCountExcessInsights({
+      platform: p,
+      delta,
+      weeklyOrderCount: weekly,
+      systemCallCount,
+      dayAudits
+    }));
 
     return {
       driverId,
@@ -774,8 +862,36 @@ const BremWeeklySettlement = (function () {
     };
   }
 
+  function refreshWeeklySettlementRiders(record) {
+    if (!record) return record;
+    const platform = normalizePlatform(record.platform);
+    const period = resolveWeeklyComparePeriod(record);
+    const riders = (record.riders || []).map(rider => (
+      rider?.matchedRiderId
+        ? refreshRiderCallMatch(rider, {
+          platform,
+          startDate: period.startDate,
+          endDate: period.endDate
+        })
+        : rider
+    ));
+    const matchedRiders = riders.filter(rider => rider.matched !== false && rider.matchedRiderId);
+    return {
+      ...record,
+      riders,
+      summary: {
+        ...(record.summary || {}),
+        totalExtracted: riders.length,
+        matchedRiders: matchedRiders.length,
+        unmatchedRiders: riders.length - matchedRiders.length,
+        callCountMismatches: matchedRiders.filter(rider => rider.callCountMatched === false).length
+      }
+    };
+  }
+
   function saveWeeklySettlement(record) {
-    return BremStorage.weeklySettlements.save(record);
+    const refreshed = refreshWeeklySettlementRiders(record);
+    return BremStorage.weeklySettlements.save(refreshed);
   }
 
   function loadWeeklySettlements(filter = {}) {
@@ -848,6 +964,7 @@ const BremWeeklySettlement = (function () {
     buildWeeklySummary,
     buildMatchedNamesLabel,
     buildWeeklySettlementRecord,
+    refreshWeeklySettlementRiders,
     saveWeeklySettlement,
     loadWeeklySettlements,
     deleteWeeklySettlement,

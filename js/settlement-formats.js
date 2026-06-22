@@ -28,6 +28,7 @@ const SettlementFormats = (function () {
       columns: {
         riderId: 'K',
         name: 'L',
+        storeArrival: 'U',
         deliveryAmount: 'AH'
       },
       cleanName(rawName) {

@@ -30,6 +30,11 @@ const BremSettlementParser = (function () {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  /** U열(가게도착) 빈칸 = 배달 미수행 행 */
+  function isValidBaeminStoreArrival(value) {
+    return Boolean(cellText(value).trim());
+  }
+
   /** AH열 0·빈값·0으로 시작하는 문자열 = 배달 미수행 행 */
   function isValidBaeminDeliveryAmount(value) {
     const raw = cellText(value).trim();
@@ -38,6 +43,11 @@ const BremSettlementParser = (function () {
     if (/^0([.,]0*)?(원|%)?$/i.test(compact)) return false;
     const numeric = parseNumber(value);
     return numeric > 0;
+  }
+
+  /** U열 가게도착 있음 + AH열 금액>0 둘 다 만족해야 유효 1건 */
+  function isValidBaeminDeliveryRow(amountCell, storeArrivalCell) {
+    return isValidBaeminStoreArrival(storeArrivalCell) && isValidBaeminDeliveryAmount(amountCell);
   }
 
   function cellText(value) {
@@ -142,6 +152,7 @@ const BremSettlementParser = (function () {
 
     const riderIdCol = SettlementFormats.columnToIndex(format.columns.riderId);
     const nameCol = SettlementFormats.columnToIndex(format.columns.name);
+    const storeArrivalCol = SettlementFormats.columnToIndex(format.columns.storeArrival || 'U');
     const amountCol = SettlementFormats.columnToIndex(format.columns.deliveryAmount);
     const startIndex = Math.max(0, Number(format.startRow || 1) - 1);
     const groups = new Map();
@@ -156,7 +167,8 @@ const BremSettlementParser = (function () {
 
       const name = format.cleanName(rawName) || riderId;
       const amountCell = readCell(row, amountCol);
-      if (!isValidBaeminDeliveryAmount(amountCell)) continue;
+      const storeArrivalCell = readCell(row, storeArrivalCol);
+      if (!isValidBaeminDeliveryRow(amountCell, storeArrivalCell)) continue;
       const amount = parseNumber(amountCell);
 
       totalDeliveries += 1;
@@ -183,7 +195,7 @@ const BremSettlementParser = (function () {
 
     const parsedRows = Array.from(groups.values());
     if (!parsedRows.length) {
-      throw new Error('K열(User ID)/AH열에서 배민 배달 데이터를 읽지 못했습니다.');
+      throw new Error('K열(User ID)·U열(가게도착)·AH열에서 배민 배달 데이터를 읽지 못했습니다.');
     }
 
     return {
@@ -612,6 +624,9 @@ const BremSettlementParser = (function () {
     readWorkbookMeta,
     cellText,
     parseNumber,
-    normalizePassword
+    normalizePassword,
+    isValidBaeminDeliveryRow,
+    isValidBaeminDeliveryAmount,
+    isValidBaeminStoreArrival
   };
 })();

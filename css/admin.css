@@ -4112,6 +4112,25 @@ textarea {
   margin-top: 4px;
 }
 
+.weekly-call-audit-record-used {
+  color: #81c784;
+  font-weight: 600;
+}
+
+.weekly-call-audit-record-skipped {
+  color: #9e9e9e;
+  text-decoration: line-through;
+}
+
+.weekly-call-audit-stale {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 152, 0, 0.12);
+  color: #ffc107;
+  font-size: 0.85rem;
+}
+
 .weekly-call-audit-card {
   margin-top: 16px;
   border: 1px solid rgba(255, 193, 7, 0.35);

@@ -229,13 +229,14 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     const { previewUnmatched, ...saveRecord } = record;
-    saveRecord.summary = {
-      totalExtracted: saveRecord.riders.length,
-      matchedRiders: saveRecord.riders.length,
+    const refreshedRecord = BremWeeklySettlement.refreshWeeklySettlementRiders(saveRecord);
+    refreshedRecord.summary = {
+      totalExtracted: refreshedRecord.riders.length,
+      matchedRiders: refreshedRecord.riders.length,
       unmatchedRiders: 0,
-      callCountMismatches: saveRecord.riders.filter(r => r.callCountMatched === false).length
+      callCountMismatches: refreshedRecord.riders.filter(r => r.callCountMatched === false).length
     };
-    const saved = BremWeeklySettlement.saveWeeklySettlement(saveRecord);
+    const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord);
     if (record.uploadLogId) {
       BremStorage.settlementUploadLogs.update(record.uploadLogId, {
         status: 'saved',
@@ -284,6 +285,7 @@ const BremWeeklySettlementAdmin = (function () {
       data-start-date="${escapeHtml(context.startDate || '')}"
       data-end-date="${escapeHtml(context.endDate || '')}"
       data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
+      data-stored-system-call-count="${Number(rider.systemCallCount || 0)}"
       data-driver-label="${escapeHtml(label)}"
     >상세분석</button>`;
   }
@@ -303,9 +305,14 @@ const BremWeeklySettlementAdmin = (function () {
 
   function formatSettlementRecordsCell(day) {
     if (!day.settlements?.length) return '-';
-    return day.settlements.map(row => (
-      `<span class="weekly-call-audit-record">${formatNumber(row.orderCount)}건${day.settlements.length > 1 ? ` · ${escapeHtml(String(row.id).slice(0, 8))}` : ''}</span>`
-    )).join('<br>');
+    return day.settlements.map(row => {
+      const used = day.usedSettlementId && row.id === day.usedSettlementId;
+      const tag = used ? ' ✓반영' : ' (미반영)';
+      const className = used ? 'weekly-call-audit-record-used' : 'weekly-call-audit-record-skipped';
+      return (
+        `<span class="weekly-call-audit-record ${className}">${formatNumber(row.orderCount)}건${tag}${day.settlements.length > 1 ? ` · ${escapeHtml(String(row.id).slice(0, 8))}` : ''}</span>`
+      );
+    }).join('<br>');
   }
 
   function formatCallRecordsCell(day) {
@@ -337,14 +344,16 @@ const BremWeeklySettlementAdmin = (function () {
         params.platform,
         params.weeklyOrderCount
       );
-      renderCallAuditPanel(audit, params.driverLabel);
+      renderCallAuditPanel(audit, params.driverLabel, {
+        storedSystemCallCount: params.storedSystemCallCount
+      });
     } catch (error) {
       console.error('[BREM] call audit failed:', error);
       showToast(error.message || '콜수 상세 분석 중 오류가 발생했습니다.');
     }
   }
 
-  function renderCallAuditPanel(audit, driverLabel = '') {
+  function renderCallAuditPanel(audit, driverLabel = '', options = {}) {
     const card = $('#weeklySettlementCallAuditCard');
     const titleEl = $('#weeklySettlementCallAuditTitle');
     const metaEl = $('#weeklySettlementCallAuditMeta');
@@ -354,6 +363,10 @@ const BremWeeklySettlementAdmin = (function () {
 
     card.hidden = false;
     const orderLabel = platformWeeklyOrderLabel(audit.platform);
+    const storedSystemCallCount = options.storedSystemCallCount;
+    const storedDiffers = storedSystemCallCount !== null
+      && storedSystemCallCount !== undefined
+      && Number(storedSystemCallCount) !== Number(audit.systemCallCount);
     if (titleEl) {
       titleEl.textContent = `콜수 상세 분석 · ${driverLabel || audit.driverName || '기사'}`;
     }
@@ -366,8 +379,10 @@ const BremWeeklySettlementAdmin = (function () {
       <p>기사: <strong>${escapeHtml(audit.driverName || driverLabel || '-')}</strong> · ${escapeHtml(platformLabel(audit.platform))}</p>
       <p>정산기간: <strong>${escapeHtml(audit.startDate)} ~ ${escapeHtml(audit.endDate)}</strong></p>
       <p>주간서 ${escapeHtml(orderLabel)}: <strong>${audit.weeklyOrderCount === null ? '-' : formatNumber(audit.weeklyOrderCount)}</strong>
-        · 시스템 합계: <strong>${formatNumber(audit.systemCallCount)}</strong>
+        · 시스템 합계(일정산): <strong>${formatNumber(audit.systemCallCount)}</strong>
         · 차이: <strong class="${audit.delta ? 'weekly-call-audit-delta-warn' : ''}">${escapeHtml(deltaText)}</strong></p>
+      ${storedDiffers ? `<p class="weekly-call-audit-stale">저장된 시스템 콜수 <strong>${formatNumber(storedSystemCallCount)}</strong> → 현재 재계산 <strong>${formatNumber(audit.systemCallCount)}</strong> (일정산 다시 불러옴)</p>` : ''}
+      <p class="form-help">주간서 ${escapeHtml(orderLabel)}는 <strong>주간정산서 엑셀</strong> 값, 시스템 합계는 <strong>일정산 업로드 합</strong>입니다. 숫자가 다르면 둘 중 어느 쪽이 맞는지 확인하세요.</p>
       <p class="form-help">시스템 합계는 일정산 우선 · 없으면 콜입력 · 같은 날 일정산 중복 시 <strong>마지막 1건</strong>만 반영됩니다.</p>
     `;
 
@@ -381,18 +396,19 @@ const BremWeeklySettlementAdmin = (function () {
       <tr class="${formatAuditStatusClass(day)}">
         <td><strong>${escapeHtml(day.label)}</strong><span class="weekly-call-audit-date">${escapeHtml(day.date)}</span></td>
         <td><strong>${formatNumber(day.usedCount)}</strong></td>
+        <td><strong>${formatNumber(day.cumulativeSum || 0)}</strong></td>
         <td>${escapeHtml(formatAuditSource(day.source))}${day.status === 'duplicate_settlement' ? ' <span class="weekly-call-audit-tag">중복</span>' : ''}</td>
         <td class="weekly-call-audit-records">${formatSettlementRecordsCell(day)}</td>
         <td>${formatCallRecordsCell(day)}</td>
         <td class="weekly-call-audit-hints">${(day.uploadHints || []).map(hint => `<span class="weekly-call-audit-hint">${escapeHtml(hint)}</span>`).join('<br>') || '-'}</td>
       </tr>
-    `).join('') || '<tr><td colspan="6" class="empty">분석할 일별 데이터가 없습니다.</td></tr>';
+    `).join('') || '<tr><td colspan="7" class="empty">분석할 일별 데이터가 없습니다.</td></tr>';
 
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function renderPreview(platform) {
-    const record = state.previewByPlatform[platform];
+    let record = state.previewByPlatform[platform];
     const card = $(`#weeklySettlementPreviewCard-${platform}`);
     const rowsEl = $(`#weeklySettlementPreviewRows-${platform}`);
     if (!card || !rowsEl) return;
@@ -402,6 +418,9 @@ const BremWeeklySettlementAdmin = (function () {
       rowsEl.innerHTML = '';
       return;
     }
+
+    record = BremWeeklySettlement.refreshWeeklySettlementRiders(record);
+    state.previewByPlatform[platform] = record;
 
     card.hidden = false;
     const unmatched = record.previewUnmatched || [];
@@ -733,6 +752,7 @@ const BremWeeklySettlementAdmin = (function () {
           startDate: auditBtn.dataset.startDate,
           endDate: auditBtn.dataset.endDate,
           weeklyOrderCount: Number(auditBtn.dataset.weeklyOrderCount || 0),
+          storedSystemCallCount: Number(auditBtn.dataset.storedSystemCallCount || 0),
           driverLabel: auditBtn.dataset.driverLabel || ''
         });
         return;
