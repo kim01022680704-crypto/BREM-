@@ -3238,7 +3238,8 @@ const BremStorage = (function () {
     if (!window.BremSupabaseConfig?.createClient) {
       throw new Error('supabase-config.js 가 로드되지 않았습니다.');
     }
-    const client = window.BremSupabaseConfig.createClient(url, anonKey);
+    const scope = window.BREM_AUTH_SCOPE === 'rider' ? 'rider' : 'admin';
+    const client = window.BremSupabaseConfig.createClient(url, anonKey, { scope });
     bindSupabaseAuthListener(client);
     return client;
   }
@@ -3520,29 +3521,36 @@ const BremStorage = (function () {
     return { ok: true, user: data.user, profile };
   }
 
-  function clearAllSessionAuthStorage() {
-    Object.values(SESSION_KEYS).forEach(key => {
+  function clearScopeSessionAuth(scope) {
+    const normalized = scope === 'rider' ? 'rider' : 'admin';
+    window.BremLoginPrefs?.clearPersistedSessionOnLogout?.(normalized);
+
+    const keysToClear = normalized === 'rider'
+      ? [SESSION_KEYS.driverId]
+      : [
+        SESSION_KEYS.adminLoggedIn,
+        SESSION_KEYS.adminAccountId,
+        SESSION_KEYS.adminSessionMenus,
+        SESSION_KEYS.adminSessionEditableMenus,
+        SESSION_KEYS.adminSessionRole,
+        SESSION_KEYS.adminSessionName
+      ];
+
+    keysToClear.forEach(key => {
       try { sessionStorage.removeItem(key); } catch { /* ignore */ }
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     });
-    clearPersistedProductionSessionAccount();
 
-    const authPrefixes = ['brem-auth-', 'brem_sb_'];
-    [sessionStorage, localStorage].forEach(store => {
-      try {
-        for (let index = store.length - 1; index >= 0; index -= 1) {
-          const key = store.key(index);
-          if (!key) continue;
-          if (authPrefixes.some(prefix => key.startsWith(prefix))) {
-            store.removeItem(key);
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    });
+    if (normalized === 'admin') {
+      clearPersistedProductionSessionAccount();
+    }
 
     window.BremSessionSecurity?.clearActivityMarker?.();
+  }
+
+  function clearAllSessionAuthStorage() {
+    clearScopeSessionAuth('admin');
+    clearScopeSessionAuth('rider');
   }
 
   function purgeLegacyAuthFromLocalStorage() {
@@ -3565,22 +3573,37 @@ const BremStorage = (function () {
   }
 
   function getAdminSessionStore() {
-    return sessionStorage;
+    return window.BremLoginPrefs?.getSessionStore?.('admin') || sessionStorage;
+  }
+
+  function getRiderSessionStore() {
+    return window.BremLoginPrefs?.getSessionStore?.('rider') || sessionStorage;
+  }
+
+  function getSessionStoreForKey(key) {
+    if (key === SESSION_KEYS.driverId) return getRiderSessionStore();
+    return getAdminSessionStore();
   }
 
   const sessionAdapter = {
     read(key) {
       try {
-        return getAdminSessionStore().getItem(key);
+        const primary = getSessionStoreForKey(key);
+        const value = primary.getItem(key);
+        if (value != null) return value;
+
+        const fallback = primary === localStorage ? sessionStorage : localStorage;
+        return fallback.getItem(key);
       } catch {
         return null;
       }
     },
     write(key, value) {
-      getAdminSessionStore().setItem(key, value);
+      getSessionStoreForKey(key).setItem(key, value);
     },
     remove(key) {
-      getAdminSessionStore().removeItem(key);
+      try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
     }
   };
 
@@ -8284,11 +8307,21 @@ const BremStorage = (function () {
       clearPersistedProductionSessionAccount();
     },
 
-    clearSessionAuth() {
-      clearAllSessionAuthStorage();
+    clearSessionAuth(scope) {
+      if (scope === 'rider') {
+        clearScopeSessionAuth('rider');
+      } else if (scope === 'admin') {
+        clearScopeSessionAuth('admin');
+      } else {
+        clearAllSessionAuthStorage();
+      }
       rememberAdminAccessToken('');
-      productionAdminSessionAccount = null;
+      if (scope !== 'rider') {
+        productionAdminSessionAccount = null;
+      }
     },
+
+    clearScopeSessionAuth,
 
     isDriverLoggedIn() {
       if (getSupabaseConfig().mode === 'production') {
@@ -8558,15 +8591,17 @@ const BremStorage = (function () {
       return signInWithSupabase(String(loginInput || '').trim(), password, 'rider');
     },
 
-    async signOutSupabase() {
+    async signOutSupabase(scope = window.BREM_AUTH_SCOPE === 'rider' ? 'rider' : 'admin') {
       const client = getSupabaseClient();
       if (client) await client.auth.signOut();
       rememberAdminAccessToken('');
       activeSupabaseProfile = null;
       supabaseInitPromise = null;
       activeStorageAdapter = unavailableStorageAdapter;
-      productionAdminSessionAccount = null;
-      clearAllSessionAuthStorage();
+      if (scope !== 'rider') {
+        productionAdminSessionAccount = null;
+      }
+      this.clearSessionAuth(scope);
       resetBootstrapState();
       window.BremDataCache?.clearAll?.();
       window.BremSessionSecurity?.stop?.();

@@ -169,6 +169,32 @@
   box-shadow: 0 0 0 2px rgba(201, 169, 98, 0.12);
 }
 
+.login-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 2px 0 0;
+}
+
+.login-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: rgba(242, 239, 230, 0.82);
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.login-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--login-gold);
+  flex-shrink: 0;
+}
+
 .login-submit {
   box-sizing: border-box;
   width: 100%;

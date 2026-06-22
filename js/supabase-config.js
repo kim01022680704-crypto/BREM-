@@ -30,10 +30,16 @@
 
   function purgeLegacyLocalAuthStorage() {
     try {
+      const prefixes = [
+        AUTH_STORAGE_PREFIX,
+        LEGACY_SESSION_PREFIX,
+        'brem-auth-admin-',
+        'brem-auth-rider-'
+      ];
       for (let index = localStorage.length - 1; index >= 0; index -= 1) {
         const key = localStorage.key(index);
         if (!key) continue;
-        if (key.startsWith(AUTH_STORAGE_PREFIX) || key.startsWith(LEGACY_SESSION_PREFIX)) {
+        if (prefixes.some(prefix => key.startsWith(prefix))) {
           localStorage.removeItem(key);
         }
       }
@@ -76,49 +82,83 @@
       return this._promise;
     },
 
-    /** Supabase Auth JWT — sessionStorage only (탭/창 종료 시 세션 소멸, 새로고침 시 유지) */
-    createClient(url, anonKey) {
+    /** Supabase Auth JWT — sessionStorage (default) or localStorage when "로그인 유지" */
+    createClient(url, anonKey, options = {}) {
       if (!window.supabase?.createClient) {
         throw new Error('@supabase/supabase-js 가 로드되지 않았습니다.');
       }
-      const authStorage = {
-        getItem(key) {
-          try {
-            const sessionValue = sessionStorage.getItem(AUTH_STORAGE_PREFIX + key);
-            if (sessionValue != null) return sessionValue;
 
-            const legacySession = sessionStorage.getItem(LEGACY_SESSION_PREFIX + key);
+      const scope = options.scope === 'rider' ? 'rider' : 'admin';
+      const scopedPrefix = scope === 'rider' ? 'brem-auth-rider-' : 'brem-auth-admin-';
+
+      function readAuthValue(key) {
+        const stores = [];
+        if (window.BremLoginPrefs?.isKeepLoggedIn?.(scope)) {
+          stores.push(localStorage);
+        }
+        stores.push(sessionStorage);
+
+        for (const store of stores) {
+          try {
+            const scoped = store.getItem(scopedPrefix + key);
+            if (scoped != null) return scoped;
+
+            const legacySession = store.getItem(LEGACY_SESSION_PREFIX + key);
             if (legacySession != null) {
-              sessionStorage.setItem(AUTH_STORAGE_PREFIX + key, legacySession);
-              sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
+              store.setItem(scopedPrefix + key, legacySession);
+              store.removeItem(LEGACY_SESSION_PREFIX + key);
               return legacySession;
             }
 
-            try { localStorage.removeItem(LEGACY_LOCAL_PREFIX + key); } catch { /* ignore */ }
-            return null;
+            const legacyAuth = store.getItem(AUTH_STORAGE_PREFIX + key);
+            if (legacyAuth != null) {
+              store.setItem(scopedPrefix + key, legacyAuth);
+              store.removeItem(AUTH_STORAGE_PREFIX + key);
+              return legacyAuth;
+            }
           } catch {
-            return null;
+            /* ignore */
           }
+        }
+
+        return null;
+      }
+
+      function resolveWriteStore() {
+        return window.BremLoginPrefs?.getSessionStore?.(scope) || sessionStorage;
+      }
+
+      const authStorage = {
+        getItem(key) {
+          return readAuthValue(key);
         },
         setItem(key, value) {
-          sessionStorage.setItem(AUTH_STORAGE_PREFIX + key, value);
+          const store = resolveWriteStore();
+          store.setItem(scopedPrefix + key, value);
           try {
-            localStorage.removeItem(LEGACY_LOCAL_PREFIX + key);
+            sessionStorage.removeItem(AUTH_STORAGE_PREFIX + key);
             sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
+            localStorage.removeItem(AUTH_STORAGE_PREFIX + key);
+            localStorage.removeItem(LEGACY_LOCAL_PREFIX + key);
+            localStorage.removeItem(LEGACY_SESSION_PREFIX + key);
           } catch {
             /* ignore */
           }
         },
         removeItem(key) {
-          try {
-            sessionStorage.removeItem(AUTH_STORAGE_PREFIX + key);
-            localStorage.removeItem(LEGACY_LOCAL_PREFIX + key);
-            sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
-          } catch {
-            /* ignore */
-          }
+          [sessionStorage, localStorage].forEach(store => {
+            try {
+              store.removeItem(scopedPrefix + key);
+              store.removeItem(AUTH_STORAGE_PREFIX + key);
+              store.removeItem(LEGACY_LOCAL_PREFIX + key);
+              store.removeItem(LEGACY_SESSION_PREFIX + key);
+            } catch {
+              /* ignore */
+            }
+          });
         }
       };
+
       return window.supabase.createClient(url, anonKey, {
         auth: {
           storage: authStorage,

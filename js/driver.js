@@ -492,10 +492,10 @@
     window.BremSessionSecurity?.stop();
 
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-      await BremStorage.auth.signOutSupabase();
+      await BremStorage.auth.signOutSupabase('rider');
     } else {
       BremStorage.auth.setDriverSessionId(null);
-      BremStorage.auth.clearSessionAuth?.();
+      BremStorage.auth.clearSessionAuth?.('rider');
     }
 
     if (riderId) {
@@ -507,6 +507,11 @@
     driverDashboardLoading = false;
     driverLoadFailed = false;
     showLoggedOut();
+    window.BremLoginPrefs?.restoreIdAfterLogout?.('rider', {
+      idInput: loginIdInput,
+      rememberCheckbox: document.getElementById('driverRememberId'),
+      passwordInput: loginPasswordInput
+    });
     if (idle) {
       showToast(message || window.BremSessionSecurity?.IDLE_MESSAGE || '로그아웃되었습니다.');
     } else {
@@ -1172,7 +1177,15 @@
       }
 
       BremStorage.auth.setDriverSessionId(driver.id);
-      loginForm.reset();
+      window.BremLoginPrefs?.captureLoginPrefs?.('rider', {
+        idInput: loginIdInput,
+        rememberCheckbox: document.getElementById('driverRememberId'),
+        keepCheckbox: document.getElementById('driverKeepLoggedIn')
+      });
+      loginPasswordInput.value = '';
+      if (window.BremLoginPrefs?.getRememberedId?.('rider')) {
+        loginIdInput.value = window.BremLoginPrefs.getRememberedId('rider');
+      }
       showLoggedIn(driver);
       showToast(`${driver.name} 기사님 로그인 성공`);
       void loadDriverAppDataThenRender(driver, { refreshProfile: false });
@@ -1309,6 +1322,12 @@
     setupDriverWeekPicker();
     state.selectedWeekStart = weekStartKey();
     consumeLogoutNotice();
+
+    window.BremLoginPrefs?.applyLoginForm?.('rider', {
+      idInput: loginIdInput,
+      rememberCheckbox: document.getElementById('driverRememberId'),
+      keepCheckbox: document.getElementById('driverKeepLoggedIn')
+    });
 
     const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
     if (isProduction) {

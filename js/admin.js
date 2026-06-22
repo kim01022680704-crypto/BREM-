@@ -1778,10 +1778,10 @@
     window.BremSessionSecurity?.stop();
 
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
-      await BremStorage.auth.signOutSupabase();
+      await BremStorage.auth.signOutSupabase('admin');
     } else {
       BremStorage.auth.clearAdminSession();
-      BremStorage.auth.clearSessionAuth?.();
+      BremStorage.auth.clearSessionAuth?.('admin');
     }
 
     if (reload) {
@@ -1790,6 +1790,11 @@
     }
 
     showAdminLoginPageOnly();
+    window.BremLoginPrefs?.restoreIdAfterLogout?.('admin', {
+      idInput: $('#adminName'),
+      rememberCheckbox: $('#adminRememberId'),
+      passwordInput: $('#adminPassword')
+    });
     if (idle) {
       showToast(message || window.BremSessionSecurity?.IDLE_MESSAGE || '로그아웃되었습니다.');
     }
@@ -1898,6 +1903,12 @@
   }
 
   function bindAuthEvents() {
+    window.BremLoginPrefs?.applyLoginForm?.('admin', {
+      idInput: $('#adminName'),
+      rememberCheckbox: $('#adminRememberId'),
+      keepCheckbox: $('#adminKeepLoggedIn')
+    });
+
     const pwToggle = $('#adminPasswordToggle');
     const pwInput = $('#adminPassword');
     if (pwToggle && pwInput) {
@@ -1958,6 +1969,12 @@
         } else {
           void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
         }
+
+        window.BremLoginPrefs?.captureLoginPrefs?.('admin', {
+          idInput: $('#adminName'),
+          rememberCheckbox: $('#adminRememberId'),
+          keepCheckbox: $('#adminKeepLoggedIn')
+        });
 
         showAdminAppShell();
         showAdminApp({ shellReady: true });
