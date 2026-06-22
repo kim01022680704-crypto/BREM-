@@ -220,6 +220,112 @@ body {
   }
 }
 
+.brem-pwa-install {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  min-height: 52px;
+  margin: 4px auto 0;
+  padding: 14px 20px;
+  color: #0a0a0a;
+  background: linear-gradient(180deg, #f0d060 0%, #e8c547 100%);
+  border: 2px solid #f0d060;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 0 24px rgba(232, 197, 71, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.brem-pwa-install:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 32px rgba(232, 197, 71, 0.38);
+}
+
+.brem-pwa-install:focus-visible {
+  outline: 2px solid #fff6cc;
+  outline-offset: 3px;
+}
+
+.brem-pwa-install-icon {
+  display: inline-flex;
+  font-size: 1.2rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.brem-pwa-help {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.brem-pwa-help[hidden] {
+  display: none !important;
+}
+
+.brem-pwa-help__panel {
+  width: min(100%, 400px);
+  padding: 22px 20px 18px;
+  color: #f5f5f5;
+  background: #141414;
+  border: 2px solid #e8c547;
+  border-radius: 20px;
+  box-shadow: 0 0 40px rgba(232, 197, 71, 0.18);
+}
+
+.brem-pwa-help__title {
+  margin: 0 0 14px;
+  color: #e8c547;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.brem-pwa-help__steps {
+  margin: 0 0 18px;
+  padding-left: 1.2rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.brem-pwa-help__steps li + li {
+  margin-top: 10px;
+}
+
+.brem-pwa-help__steps strong {
+  color: #f0d060;
+}
+
+.brem-pwa-help__close {
+  width: 100%;
+  min-height: 44px;
+  color: #0a0a0a;
+  background: #e8c547;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+body.brem-pwa-help-open {
+  overflow: hidden;
+}
+
 @media (min-width: 721px) {
   .brem-home-stage {
     padding-bottom: 20px;

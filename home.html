@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="BREM">
   <link rel="stylesheet" href="css/brand.css">
-  <link rel="stylesheet" href="css/home.css?v=20260620s">
+  <link rel="stylesheet" href="css/home.css?v=20260623pwa">
 </head>
 <body>
   <main class="brem-home">
@@ -58,8 +58,23 @@
           <span class="brem-btn-portal-label">관리자앱</span>
         </a>
       </nav>
+
+      <button type="button" class="brem-pwa-install" id="bremPwaInstallBtn" hidden>
+        <span class="brem-pwa-install-icon" aria-hidden="true">↓</span>
+        <span class="brem-pwa-install-label">홈 화면에 추가</span>
+      </button>
     </div>
   </main>
+
+  <div class="brem-pwa-help" id="bremPwaInstallHelp" hidden role="dialog" aria-modal="true" aria-labelledby="bremPwaInstallHelpTitle">
+    <div class="brem-pwa-help__panel">
+      <h2 class="brem-pwa-help__title" id="bremPwaInstallHelpTitle">홈 화면에 추가</h2>
+      <ol class="brem-pwa-help__steps" id="bremPwaInstallHelpBody"></ol>
+      <button type="button" class="brem-pwa-help__close" id="bremPwaInstallHelpClose">닫기</button>
+    </div>
+  </div>
+
   <script src="js/pwa-register.js" defer></script>
+  <script src="js/pwa-install.js" defer></script>
 </body>
 </html>
