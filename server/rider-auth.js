@@ -14,6 +14,51 @@ const MISSION_SELECT = [
 
 const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
 
+const PROMOTION_MISSION_SELECT = 'id,name,platform,type,enabled,payload,created_at,updated_at';
+
+function promotionRowToMissionShape(row) {
+  if (!row) return null;
+  const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+  return {
+    id: row.id,
+    title: row.name || '',
+    description: payload.description || '',
+    type: row.type || '',
+    conditions: payload.conditions || '',
+    is_active: row.enabled !== false,
+    raw_data: payload,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+async function fetchAssignedMissionRows(supabase, missionIds = []) {
+  const ids = [...new Set((missionIds || []).filter(Boolean))];
+  if (!ids.length) {
+    return { rows: [], error: null };
+  }
+
+  const [missionsResult, promotionsResult] = await Promise.all([
+    supabase.from('missions').select(MISSION_SELECT).in('id', ids),
+    supabase.from('promotions').select(PROMOTION_MISSION_SELECT).in('id', ids)
+  ]);
+
+  if (missionsResult.error && !isMissingColumnError(missionsResult.error)) {
+    return { rows: [], error: missionsResult.error };
+  }
+  if (promotionsResult.error && !isMissingColumnError(promotionsResult.error)) {
+    return { rows: [], error: promotionsResult.error };
+  }
+
+  const map = new Map();
+  (missionsResult.data || []).forEach(row => map.set(row.id, row));
+  (promotionsResult.data || []).forEach(row => {
+    if (!map.has(row.id)) map.set(row.id, promotionRowToMissionShape(row));
+  });
+
+  return { rows: ids.map(id => map.get(id)).filter(Boolean), error: null };
+}
+
 function getAnonAuthClient() {
   const url = String(process.env.SUPABASE_URL || '').trim();
   const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
@@ -582,17 +627,25 @@ async function getRiderAppBundle(accessToken) {
 
   const riderId = me.riderId;
   const row = me.rider || {};
-  const baeminMissionId = String(row.selected_mission_id_baemin || row.selected_mission_id || '').trim();
-  const coupangMissionId = String(row.selected_mission_id_coupang || row.selected_mission_id || '').trim();
+  const baeminMissionId = String(
+    row.selected_mission_id_baemin
+    || row.promotion_rule_id_baemin
+    || row.selected_mission_id
+    || ''
+  ).trim();
+  const coupangMissionId = String(
+    row.selected_mission_id_coupang
+    || row.promotion_rule_id_coupang
+    || row.selected_mission_id
+    || ''
+  ).trim();
   const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
   const allSettingKeys = [...new Set([
     ...RIDER_SNAPSHOT_SETTING_KEYS,
     ...RIDER_LIVE_SETTING_KEYS
   ])];
 
-  const missionQuery = missionIds.length
-    ? supabase.from('missions').select(MISSION_SELECT).in('id', missionIds)
-    : Promise.resolve({ data: [], error: null });
+  const missionQuery = fetchAssignedMissionRows(supabase, missionIds);
 
   const [
     callsResult,
@@ -631,13 +684,16 @@ async function getRiderAppBundle(accessToken) {
     missionQuery
   ]);
 
+  if (missionsResult.error) {
+    return { ok: false, status: 500, error: missionsResult.error.message || '미션 정보를 불러오지 못했습니다.' };
+  }
+
   const firstError = [
     callsResult,
     rejectionsResult,
     targetsResult,
     settingsResult,
-    noticesResult,
-    missionsResult
+    noticesResult
   ].find(result => result.error);
 
   if (firstError?.error) {
@@ -660,7 +716,7 @@ async function getRiderAppBundle(accessToken) {
   const liveSettings = settingsRows.filter(item => (
     item.key !== 'brem_driver_weekly_targets' && RIDER_LIVE_SETTING_KEYS.includes(item.key)
   ));
-  const missionRows = missionsResult.data || [];
+  const missionRows = missionsResult.rows || [];
   const byId = new Map(missionRows.map(item => [item.id, item]));
   const weeklyTargetsRaw = settingsRows.find(item => item.key === 'brem_driver_weekly_targets')?.value;
   const weeklyTargets = Array.isArray(weeklyTargetsRaw)
@@ -707,13 +763,21 @@ async function getRiderSnapshot(accessToken) {
 
   const riderId = me.riderId;
   const row = me.rider || {};
-  const baeminMissionId = String(row.selected_mission_id_baemin || row.selected_mission_id || '').trim();
-  const coupangMissionId = String(row.selected_mission_id_coupang || row.selected_mission_id || '').trim();
+  const baeminMissionId = String(
+    row.selected_mission_id_baemin
+    || row.promotion_rule_id_baemin
+    || row.selected_mission_id
+    || ''
+  ).trim();
+  const coupangMissionId = String(
+    row.selected_mission_id_coupang
+    || row.promotion_rule_id_coupang
+    || row.selected_mission_id
+    || ''
+  ).trim();
   const missionIds = [...new Set([baeminMissionId, coupangMissionId].filter(Boolean))];
 
-  const missionQuery = missionIds.length
-    ? supabase.from('missions').select(MISSION_SELECT).in('id', missionIds)
-    : Promise.resolve({ data: [], error: null });
+  const missionQuery = fetchAssignedMissionRows(supabase, missionIds);
 
   const [
     callsResult,
@@ -757,7 +821,7 @@ async function getRiderSnapshot(accessToken) {
   const settingsRows = settingsResult.data || [];
   const calls = callsResult.data || [];
   const rejections = rejectionsResult.data || [];
-  const missionRows = missionsResult.data || [];
+  const missionRows = missionsResult.rows || [];
   const byId = new Map(missionRows.map(item => [item.id, item]));
 
   return {

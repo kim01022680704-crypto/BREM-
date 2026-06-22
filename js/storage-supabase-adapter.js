@@ -79,6 +79,7 @@ window.BremSupabaseStorageAdapter = (function () {
   const WEEKLY_SETTLEMENT_SELECT = 'id,platform,region,file_name,base_settlement_date,start_date,end_date,payment_date,settlement_week_label,matched_names_label,summary,riders,uploaded_at';
   const SETTLEMENT_UPLOAD_LOG_SELECT = 'id,kind,platform,file_name,period,week_start,week_end,region,start_date,end_date,status,matched_count,unmatched_count,total_delivery_amount,total_order_count,content_hash,matched_records,unmatched_records,applied_records,duplicate_of_log_id,skip_reason,linked_record_id,uploaded_at,applied_at';
   const SETTLEMENT_UNMATCHED_SELECT = 'id,kind,platform,week_start,period,end_date,region,raw_name,name,rider_id,order_count,delivery_amount,settlement_amount,coupang_login_key,baemin_user_id,match_payload,source_file_name,saved_at';
+  const PROMOTION_APPLY_RESULT_SELECT = 'id,platform,region,settlement_kind,week_start,week_end,settlement_label,settlement_id,coupang_settlement_id,baemin_settlement_id,selected_rule_ids,selected_rule_names,summary,rows,meta,published,created_at,updated_at';
 
   const TABLE_KEYS = new Set();
 
@@ -114,7 +115,8 @@ window.BremSupabaseStorageAdapter = (function () {
       keys.settlements,
       keys.weeklySettlements,
       keys.settlementUploadLogs,
-      keys.settlementUnmatched
+      keys.settlementUnmatched,
+      keys.promotionApplyResults
     ].forEach(key => TABLE_KEYS.add(key));
 
     function buildSystemSettingsWhitelist() {
@@ -132,7 +134,6 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.promotionSettings,
         keys.promotionSelectorOptions,
         keys.manualNameMappings,
-        keys.promotionApplyResults,
         keys.missionDefaults,
         keys.dashboardWeekBasis,
         keys.preservedUnknown,
@@ -234,7 +235,9 @@ window.BremSupabaseStorageAdapter = (function () {
                   ? SETTLEMENT_UPLOAD_LOG_SELECT
                   : table === 'settlement_unmatched'
                     ? SETTLEMENT_UNMATCHED_SELECT
-                    : '*';
+                    : table === 'promotion_apply_results'
+                      ? PROMOTION_APPLY_RESULT_SELECT
+                      : '*';
       let query = client.from(table).select(selectColumns);
       if (order?.column) {
         query = query.order(order.column, { ascending: order.ascending !== false });
@@ -492,6 +495,15 @@ window.BremSupabaseStorageAdapter = (function () {
         fromRow: row => Mapper().rowToSettlementUnmatched(row),
         toRow: item => Mapper().settlementUnmatchedToRow(item),
         order: { column: 'saved_at', ascending: false }
+      },
+      {
+        table: 'promotion_apply_results',
+        key: keys.promotionApplyResults,
+        label: 'promotion-apply-results',
+        legacyKey: keys.promotionApplyResults,
+        fromRow: row => Mapper().rowToPromotionApplyResult(row),
+        toRow: item => Mapper().promotionApplyResultToRow(item),
+        order: { column: 'created_at', ascending: false }
       }
     ];
 
@@ -615,6 +627,25 @@ window.BremSupabaseStorageAdapter = (function () {
       } catch (error) {
         console.warn('[BREM] Legacy settlement unmatched settings cleanup skipped:', error.message || error);
       }
+    }
+
+    async function persistPromotionApplyResults(value) {
+      if (!(await probeTable('promotion_apply_results'))) {
+        await persistSetting(keys.promotionApplyResults, value);
+        return;
+      }
+      const rows = (value || []).map(item => Mapper().promotionApplyResultToRow(item)).filter(row => row.id);
+      await upsertRowsInChunks('promotion_apply_results', rows);
+      setCache(keys.promotionApplyResults, value);
+      loadedTableKeys.add(keys.promotionApplyResults);
+      window.BremDataCache?.set?.(keys.promotionApplyResults, value, { source: 'write', tableLoaded: true });
+    }
+
+    async function deletePromotionApplyResultById(id) {
+      const targetId = String(id || '').trim();
+      if (!targetId) return;
+      if (!(await probeTable('promotion_apply_results'))) return;
+      await deleteRowsInChunks('promotion_apply_results', [targetId]);
     }
 
     async function loadNotices(options = {}) {
@@ -1091,6 +1122,8 @@ window.BremSupabaseStorageAdapter = (function () {
         await persistSettlementUploadLogs(value);
       } else if (key === keys.settlementUnmatched) {
         await persistSettlementUnmatched(value);
+      } else if (key === keys.promotionApplyResults) {
+        await persistPromotionApplyResults(value);
       } else {
         await persistSetting(key, value);
       }
@@ -1150,6 +1183,7 @@ window.BremSupabaseStorageAdapter = (function () {
       fetchMissionById,
       deleteRider,
       deleteTableRow,
+      deletePromotionApplyResultById,
       upsertMission,
       upsertRider,
       stage,

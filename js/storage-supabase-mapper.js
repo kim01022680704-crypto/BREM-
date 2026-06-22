@@ -377,6 +377,56 @@ window.BremSupabaseMapper = (function () {
     };
   }
 
+  function promotionApplyResultToRow(item) {
+    const savedAt = toIso(item.savedAt);
+    return {
+      id: String(item.id || ''),
+      platform: String(item.platform || ''),
+      region: String(item.region || ''),
+      settlement_kind: 'weekly',
+      week_start: toDate(item.startDate),
+      week_end: toDate(item.endDate),
+      settlement_label: String(item.settlementLabel || ''),
+      settlement_id: String(item.settlementId || ''),
+      coupang_settlement_id: String(item.coupangSettlementId || ''),
+      baemin_settlement_id: String(item.baeminSettlementId || ''),
+      selected_rule_ids: Array.isArray(item.selectedPromotionRuleIds) ? item.selectedPromotionRuleIds : [],
+      selected_rule_names: Array.isArray(item.selectedPromotionRuleNames) ? item.selectedPromotionRuleNames : [],
+      summary: item.summary && typeof item.summary === 'object' ? item.summary : {},
+      rows: Array.isArray(item.results) ? item.results : [],
+      meta: {
+        deliveryFeeFileName: String(item.deliveryFeeFileName || ''),
+        deliveryFeeLabel: String(item.deliveryFeeLabel || ''),
+        savedAt
+      },
+      published: false,
+      created_at: savedAt,
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  function rowToPromotionApplyResult(row) {
+    const meta = row.meta && typeof row.meta === 'object' ? row.meta : {};
+    return {
+      id: row.id,
+      platform: row.platform || '',
+      region: row.region || '',
+      startDate: row.week_start || '',
+      endDate: row.week_end || '',
+      settlementLabel: row.settlement_label || '',
+      settlementId: row.settlement_id || '',
+      coupangSettlementId: row.coupang_settlement_id || '',
+      baeminSettlementId: row.baemin_settlement_id || '',
+      selectedPromotionRuleIds: Array.isArray(row.selected_rule_ids) ? row.selected_rule_ids : [],
+      selectedPromotionRuleNames: Array.isArray(row.selected_rule_names) ? row.selected_rule_names : [],
+      deliveryFeeFileName: meta.deliveryFeeFileName || '',
+      deliveryFeeLabel: meta.deliveryFeeLabel || '',
+      savedAt: meta.savedAt || row.created_at || row.updated_at,
+      results: Array.isArray(row.rows) ? row.rows : [],
+      summary: row.summary && typeof row.summary === 'object' ? row.summary : {}
+    };
+  }
+
   function mappingToRow(mapping) {
     return {
       id: mapping.id,
@@ -499,6 +549,8 @@ window.BremSupabaseMapper = (function () {
     rowToSettlementUploadLog,
     settlementUnmatchedToRow,
     rowToSettlementUnmatched,
+    promotionApplyResultToRow,
+    rowToPromotionApplyResult,
     mappingToRow,
     rowToMapping,
     noticeToRow,

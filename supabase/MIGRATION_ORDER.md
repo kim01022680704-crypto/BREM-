@@ -14,7 +14,8 @@
 | 5 | `admin_schedules_migration.sql` | **필수** | 관리자 스케줄표 |
 | 6 | `operations_tables_migration.sql` | **필수** | admin_calls · admin_rejection_rates · admin_targets + settings→table |
 | 7 | `settlements_tables_migration.sql` | **필수** | daily_settlements · weekly_settlements · settlement_upload_logs · settlement_unmatched + settings→table |
-| 8 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
+| 8 | `promotion_apply_results_migration.sql` | 프로모션 적용 저장 시 | promotion_apply_results (settings JSON 폴백 유지) |
+| 9 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)
 
@@ -32,6 +33,7 @@
 | 주정산 저장 | `weekly_settlements` | 이전만 |
 | 정산 업로드 기록 | `settlement_upload_logs` | 이전만 |
 | 정산 미매칭 | `settlement_unmatched` | 이전만 |
+| 프로모션 적용 계산 결과 | `promotion_apply_results` | 이전만 (`brem_admin_promotion_apply_results`) |
 | 프로모션 UI 설정 | `settings.brem_admin_promotion_settings` | Supabase 영구 |
 | 리스/수익/장기이벤트 등 | `settings` (jsonb) | Supabase 영구 |
 
@@ -50,7 +52,8 @@ where table_schema = 'public'
   and table_name in (
     'riders', 'notices', 'missions', 'promotions',
     'admin_schedules', 'admin_calls', 'admin_rejection_rates', 'admin_targets',
-    'daily_settlements', 'weekly_settlements', 'settlement_upload_logs', 'settlement_unmatched'
+    'daily_settlements', 'weekly_settlements', 'settlement_upload_logs', 'settlement_unmatched',
+    'promotion_apply_results'
   )
 order by 1;
 ```

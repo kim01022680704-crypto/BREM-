@@ -1,7 +1,7 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 
-const MAX_ADMIN_MISSIONS = 4;
+const MAX_ADMIN_MISSIONS = 9999;
 
 const MISSION_SELECT = [
   'id', 'title', 'description', 'type', 'conditions', 'is_active',

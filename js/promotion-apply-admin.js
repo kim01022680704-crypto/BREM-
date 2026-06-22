@@ -275,19 +275,38 @@ const BremPromotionApplyAdmin = (function () {
     }).join('');
   }
 
+  function getFilteredSavedResults() {
+    const platformFilter = $('#promotionApplySavedPlatformFilter')?.value || 'all';
+    const regionFilter = String($('#promotionApplySavedRegionFilter')?.value || '').trim().toLowerCase();
+    const weekFilter = String($('#promotionApplySavedWeekFilter')?.value || '').trim();
+
+    let list = BremPromotionApply.getSavedResults(platformFilter === 'all' ? null : platformFilter);
+    if (regionFilter) {
+      list = list.filter(item => String(item.region || '').toLowerCase().includes(regionFilter));
+    }
+    if (weekFilter) {
+      list = list.filter(item => {
+        const start = String(item.startDate || '');
+        const end = String(item.endDate || '');
+        return start.includes(weekFilter) || end.includes(weekFilter);
+      });
+    }
+    return list;
+  }
+
   function renderSavedList() {
     const rowsEl = $('#promotionApplySavedRows');
     if (!rowsEl) return;
 
-    const platform = getActivePlatform();
-    const list = BremPromotionApply.getSavedResults(platform);
+    const list = getFilteredSavedResults();
     if (!list.length) {
-      rowsEl.innerHTML = '<tr><td colspan="7" class="empty">저장된 프로모션 계산 결과가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">저장된 프로모션 계산 결과가 없습니다.</td></tr>';
       return;
     }
 
     rowsEl.innerHTML = list.map(item => `
       <tr>
+        <td>${escapeHtml(BremPlatforms.label(item.platform))}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${escapeHtml(item.startDate)} ~ ${escapeHtml(item.endDate)}</td>
         <td>${formatNumber(item.summary?.riderCount)}명</td>
@@ -404,6 +423,10 @@ const BremPromotionApplyAdmin = (function () {
       renderResult(saved, { savedAt: saved.savedAt });
       renderSavedList();
       showToast('프로모션 계산 결과를 저장했습니다.');
+      void BremStorage.promotionApplyResults.persist?.().catch(error => {
+        console.error('[BREM] promotion apply result save persist failed:', error);
+        showToast('저장 동기화에 실패했습니다. 새로고침 후 다시 시도하세요.');
+      });
     } catch (error) {
       showToast(error.message || '저장 중 오류가 발생했습니다.');
     }
@@ -461,7 +484,14 @@ const BremPromotionApplyAdmin = (function () {
       renderSavedList();
       return;
     }
-    if (!window.confirm('저장된 프로모션 계산 결과를 삭제할까요?')) return;
+    const label = [
+      BremPlatforms.label(record.platform),
+      record.region || '-',
+      `${record.startDate} ~ ${record.endDate}`,
+      `저장일 ${String(record.savedAt).slice(0, 10)}`
+    ].join(' · ');
+    const detail = `기사 ${formatNumber(record.summary?.riderCount)}명 · 총 ${formatMoney(record.summary?.totalPromotionAmount)}`;
+    if (!window.confirm(`다음 프로모션 계산 결과를 삭제할까요?\n\n${label}\n${detail}`)) return;
 
     BremPromotionApply.deleteSavedResult(id);
     if (state.savedResultId === id) state.savedResultId = '';
@@ -522,6 +552,13 @@ const BremPromotionApplyAdmin = (function () {
 
     $('#promotionApplySaveBtn')?.addEventListener('click', saveCurrentResult);
     $('#promotionApplyDownloadBtn')?.addEventListener('click', downloadCurrentResult);
+
+    ['promotionApplySavedPlatformFilter', 'promotionApplySavedRegionFilter', 'promotionApplySavedWeekFilter'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(eventName, () => renderSavedList());
+    });
 
     $('#promotionApplySavedRows')?.addEventListener('click', event => {
       const viewBtn = event.target.closest('[data-promotion-apply-view]');

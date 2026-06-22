@@ -104,14 +104,17 @@ const BremPromotionApply = (function () {
     }
 
     const driverRuleId = p === 'baemin'
-      ? String(driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || '').trim()
-      : String(driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || '').trim();
+      ? String(driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || driver?.selectedMissionIdBaemin || driver?.selectedMissionId || '').trim()
+      : String(driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || driver?.selectedMissionIdCoupang || driver?.selectedMissionId || '').trim();
 
-    if (driverRuleId && selected.includes(driverRuleId)) {
-      return BremStorage.promotionRules.getById(driverRuleId);
+    if (driverRuleId) {
+      const assigned = BremStorage.promotionRules.getById(driverRuleId);
+      if (assigned && assigned.enabled !== false) {
+        return assigned;
+      }
     }
+
     if (selected.length === 1) return BremStorage.promotionRules.getById(selected[0]);
-    if (driverRuleId) return BremStorage.promotionRules.getById(driverRuleId);
     if (selected.length) return BremStorage.promotionRules.getById(selected[0]);
     return null;
   }
@@ -238,11 +241,14 @@ const BremPromotionApply = (function () {
       && (requireDeliveryFee || ruleUsesGuarantee(rule));
 
     if (!rule || !rule.enabled || normalizePlatform(rule.platform) !== ruleP) {
+      const assignedId = statsPlatform === 'baemin'
+        ? String(driver.promotionRuleIdBaemin || driver.selectedMissionIdBaemin || '').trim()
+        : String(driver.promotionRuleIdCoupang || driver.selectedMissionIdCoupang || '').trim();
       return {
         riderName: rider.riderName,
         driverName: driver.name,
         displayName: formatDriverDisplayName(statsPlatform, driver, rider),
-        coupangLoginKey: rider.coupangLoginKey || '',
+        coupangLoginKey: rider.coupangLoginKey || makeCoupangLoginIdFromDriver(driver),
         originalName: rider.originalName || '',
         baeminUserId: rider.baeminUserId || driver.baeminId || '',
         matchedRiderId: driver.id,
@@ -253,7 +259,7 @@ const BremPromotionApply = (function () {
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: ['적용할 프로모션 조건 없음']
+        failureReasons: [assignedId ? '배정된 미션이 비활성화되었습니다' : '미션 미배정']
       };
     }
 
@@ -587,33 +593,65 @@ const BremPromotionApply = (function () {
   }
 
   function buildExportFileName(record) {
-    const platform = normalizePlatform(record.platform);
-    const platformSlug = platform === 'baemin' ? '배민' : (platform === 'combined' ? '합산' : '쿠팡');
-    const region = String(record.region || '지역').replace(/[\\/:*?"<>|]/g, '_');
-    const date = String(record.startDate || record.savedAt || '').slice(0, 10);
-    return `BREM_프로모션적용_${platformSlug}_${region}_${date}.xlsx`;
+    const region = String(record.region || '지역')
+      .split('/')[0]
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, '_');
+    const date = String(record.savedAt || record.startDate || new Date().toISOString()).slice(0, 10);
+    return `${region}_프로모션계산결과_${date}.xlsx`;
+  }
+
+  function buildSimpleExportRows(record) {
+    const rows = (record.results || []).map(row => {
+      const driver = row.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
+      const platform = normalizePlatform(row.appliedPlatform || record.platform);
+      const baeminId = BremWeeklySettlement.normalizeBaeminUserId(
+        row.baeminUserId || driver?.baeminId || ''
+      );
+      const coupangId = makeCoupangLoginIdFromDriver(driver) || row.coupangLoginKey || '';
+      const name = driver?.name || row.driverName || row.riderName || '';
+      return {
+        baeminId: baeminId || '-',
+        coupangId: coupangId || '-',
+        name,
+        amount: Number(row.totalPromotionAmount) || 0,
+        platform: BremPlatforms.label(platform),
+        region: record.region || '',
+        missionName: row.ruleName || '',
+        weekLabel: `${record.startDate || ''} ~ ${record.endDate || ''}`,
+        basis: (row.appliedConditions || []).join(', ') || (row.failureReasons || []).join(', ') || '-'
+      };
+    });
+    return rows;
   }
 
   function exportResultToExcel(record) {
     if (!window.XLSX) throw new Error('엑셀 라이브러리를 불러오지 못했습니다.');
     if (!record) throw new Error('다운로드할 결과가 없습니다.');
 
-    const rows = buildExportRows(record);
-    const sheet = XLSX.utils.aoa_to_sheet(rows);
-    sheet['!cols'] = [
-      { wch: 14 },
-      { wch: 10 },
-      { wch: 12 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 24 },
-      { wch: 24 },
-      { wch: 24 }
-    ];
+    const simpleRows = buildSimpleExportRows(record);
+    const simpleHeader = ['배민ID', '쿠팡ID', '이름', '금액', '플랫폼', '지역', '미션명', '정산주차', '계산기준'];
+    const simpleSheet = XLSX.utils.aoa_to_sheet([
+      simpleHeader,
+      ...simpleRows.map(row => [
+        row.baeminId,
+        row.coupangId,
+        row.name,
+        row.amount,
+        row.platform,
+        row.region,
+        row.missionName,
+        row.weekLabel,
+        row.basis
+      ])
+    ]);
+
+    const detailRows = buildExportRows(record);
+    const detailSheet = XLSX.utils.aoa_to_sheet(detailRows);
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, '프로모션적용');
+    XLSX.utils.book_append_sheet(workbook, simpleSheet, '요약');
+    XLSX.utils.book_append_sheet(workbook, detailSheet, '상세');
     XLSX.writeFile(workbook, buildExportFileName(record));
   }
 

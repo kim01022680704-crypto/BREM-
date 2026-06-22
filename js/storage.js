@@ -1057,10 +1057,10 @@ const BremStorage = (function () {
   const ADMIN_SECTION_KEYS = Object.freeze({
     dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections],
     notices: [KEYS.notices],
-    'mission-management': [KEYS.missions, KEYS.drivers],
+    'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
-    'promotion-apply': [KEYS.promotionRules, KEYS.drivers],
+    'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.promotionApplyResults],
     calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],
     targets: [KEYS.drivers, KEYS.targets],
@@ -1089,7 +1089,8 @@ const BremStorage = (function () {
     KEYS.settlements,
     KEYS.weeklySettlements,
     KEYS.settlementUploadLogs,
-    KEYS.settlementUnmatched
+    KEYS.settlementUnmatched,
+    KEYS.promotionApplyResults
   ]);
 
   function scheduleCacheSyncAfterWrite(key) {
@@ -4704,7 +4705,7 @@ const BremStorage = (function () {
     ];
   }
 
-  const MAX_ADMIN_MISSIONS = 4;
+  const MAX_ADMIN_MISSIONS = 9999;
 
   const missions = {
     maxCount: MAX_ADMIN_MISSIONS,
@@ -4744,7 +4745,7 @@ const BremStorage = (function () {
     },
 
     canCreate() {
-      return missions.getAll().length < MAX_ADMIN_MISSIONS;
+      return true;
     },
 
     create(data) {
@@ -6944,6 +6945,11 @@ const BremStorage = (function () {
       const list = promotionApplyResults.readRaw().filter(item => item.id !== id);
       storageAdapter.write(KEYS.promotionApplyResults, list);
       window.BremDataCache?.set?.(KEYS.promotionApplyResults, list, { source: 'write' });
+      if (activeStorageAdapter.deletePromotionApplyResultById) {
+        void activeStorageAdapter.deletePromotionApplyResultById(id).catch(error => {
+          console.error('[BREM] promotion apply result delete failed:', error);
+        });
+      }
     },
 
     async persist() {
