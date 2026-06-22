@@ -746,6 +746,11 @@ a {
   flex-wrap: wrap;
 }
 
+.admin-schedule-nav__month,
+.admin-schedule-nav__actions {
+  display: contents;
+}
+
 .admin-schedule-nav-btn {
   width: 36px;
   height: 36px;

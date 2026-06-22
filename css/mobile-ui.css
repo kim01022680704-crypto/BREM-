@@ -657,23 +657,298 @@
     max-width: 100%;
   }
 
+  .admin-app .brem-mobile-cards table,
+  .admin-app .brem-mobile-cards tbody {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .admin-app .brem-mobile-cards colgroup {
+    display: none !important;
+  }
+
+  .admin-app .brem-mobile-cards tbody tr {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .admin-app .dashboard-driver-scroll {
+    overflow: visible;
+    max-height: none;
+    border: 0;
+    background: transparent;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards {
+    padding: 0 4px 8px !important;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody tr {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    width: 100% !important;
+    padding: 12px 12px 10px;
+    margin-bottom: 8px;
+    border: 1px solid #333;
+    border-radius: 14px;
+    background: #141414;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0;
+    padding: 0 !important;
+    border-bottom: 0 !important;
+    overflow: visible;
+    word-break: keep-all;
+    white-space: normal !important;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(1) {
+    grid-column: 1 / -1;
+    font-size: 1.02rem;
+    font-weight: 800;
+    line-height: 1.25;
+    padding-bottom: 4px !important;
+    border-bottom: 1px solid rgba(255, 212, 0, 0.22);
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(1)::before {
+    display: none;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(2) {
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    letter-spacing: 0.01em;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(2)::before {
+    display: none;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(3) {
+    grid-column: 1 / -1;
+    margin-bottom: 2px;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(3)::before {
+    display: none;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards .platform-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(n+4):nth-child(-n+9) {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 8px 6px 7px !important;
+    text-align: center;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(n+4):nth-child(-n+9)::before {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.64rem;
+    line-height: 1.2;
+    text-align: center;
+    color: #94a3b8;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(n+4):nth-child(-n+9) strong {
+    font-size: 0.95rem;
+  }
+
+  .admin-app .dashboard-driver-table-wrap.brem-mobile-cards tbody td:nth-child(10) {
+    grid-column: 1 / -1;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    padding-top: 4px !important;
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+  }
+
+  /* ── Admin schedule nav ── */
+  .admin-app .admin-schedule-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .admin-app .admin-schedule-nav__month,
+  .admin-app .admin-schedule-nav__actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .admin-app .admin-schedule-nav__month {
+    grid-template-columns: 40px 1fr 40px;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .admin-app .admin-schedule-nav__month strong {
+    min-width: 0;
+    text-align: center;
+    font-size: 0.95rem;
+    line-height: 1.25;
+  }
+
+  .admin-app .admin-schedule-nav__actions {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .admin-app .admin-schedule-nav__actions .small-btn {
+    width: 100%;
+    min-height: 40px;
+    font-size: 0.78rem;
+    padding: 8px 10px;
+  }
+
+  .admin-app .admin-schedule-nav__actions #adminScheduleMultiClear {
+    grid-column: 1 / -1;
+  }
+
+  .admin-app .admin-schedule-header .form-help {
+    font-size: 0.76rem;
+    line-height: 1.4;
+    margin-top: 4px;
+  }
+
+  /* ── Targets (목표 콜수) ── */
+  .admin-app #targets .targets-input-row {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+    padding: 0 10px 12px;
+  }
+
+  .admin-app .target-input-panel {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .admin-app .target-input-panel__title {
+    font-size: 0.92rem;
+  }
+
+  .admin-app .targets-status-scroll,
+  .admin-app .targets-weekly-status-scroll {
+    overflow: visible;
+    max-height: none;
+    border: 0;
+    background: transparent;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards {
+    padding: 0 4px 8px !important;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody tr {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100% !important;
+    padding: 12px;
+    margin-bottom: 8px;
+    border: 1px solid #333;
+    border-radius: 14px;
+    background: #141414;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td {
+    display: block !important;
+    width: auto !important;
+    padding: 0 !important;
+    border-bottom: 0 !important;
+    word-break: keep-all;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(1) {
+    grid-column: 1 / -1;
+    font-size: 0.98rem;
+    font-weight: 800;
+    padding-bottom: 4px !important;
+    border-bottom: 1px solid rgba(255, 212, 0, 0.22);
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(1)::before {
+    display: none;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(2) {
+    grid-column: 1 / -1;
+    font-size: 0.76rem;
+    color: #94a3b8;
+    margin-bottom: 2px;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(2)::before {
+    display: none;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(3),
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(4),
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(5) {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 8px 6px !important;
+    text-align: center;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(3)::before,
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(4)::before,
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(5)::before {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.64rem;
+    text-align: center;
+    color: #94a3b8;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(4) .inline-target-input {
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+    min-height: 36px;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(6) {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    padding-top: 4px !important;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(6)::before {
+    display: none;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards tbody td:nth-child(6) .small-btn {
+    flex: 1;
+    min-height: 40px;
+  }
+
+  .admin-app .targets-status-scroll.brem-mobile-cards .progress {
+    justify-content: center;
+  }
+
   /* ── Admin schedule compact calendar ── */
   .admin-app .admin-schedule-header {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
-  }
-
-  .admin-app .admin-schedule-nav {
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: center;
-  }
-
-  .admin-app .admin-schedule-nav strong {
-    min-width: 0;
-    flex: 1 1 100%;
-    font-size: 0.92rem;
   }
 
   .admin-app .admin-schedule-layout {
@@ -857,10 +1132,6 @@
   .admin-app .mission-assignment-table-wrap.brem-mobile-cards tbody td:nth-child(7) .small-btn {
     width: 100%;
     min-height: 40px;
-  }
-
-  .admin-app .dashboard-driver-scroll {
-    max-height: none;
   }
 
   .admin-app .dashboard-scroll-note {
