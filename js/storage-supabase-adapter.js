@@ -276,10 +276,19 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!(await probeTable(table))) {
         throw new Error(`${table} 테이블이 없습니다. Supabase migration을 실행하세요.`);
       }
+      const UPSERT_ONLY_TABLES = new Set([
+        'daily_settlements',
+        'settlement_upload_logs',
+        'settlement_unmatched',
+        'weekly_settlements'
+      ]);
       const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
       if (incremental?.length) {
         const rows = incremental.map(toRow).filter(row => row?.id);
         await persistTableRowsIncremental(table, rows);
+      } else if (UPSERT_ONLY_TABLES.has(table) && options.fullSync !== true) {
+        const rows = (list || []).map(toRow).filter(row => row?.id);
+        await upsertRowsInChunks(table, rows);
       } else {
         await syncTableRows(table, list, toRow);
       }
@@ -665,12 +674,14 @@ window.BremSupabaseStorageAdapter = (function () {
       await persistTableCollection('admin_targets', keys.targets, value, targetToRow, options);
     }
 
-    async function persistDailySettlements(value) {
-      await persistTableCollection('daily_settlements', keys.settlements, value, item => Mapper().dailySettlementToRow(item));
-      try {
-        await client.from('settings').delete().eq('key', keys.settlements);
-      } catch (error) {
-        console.warn('[BREM] Legacy daily settlement settings cleanup skipped:', error.message || error);
+    async function persistDailySettlements(value, options = {}) {
+      await persistTableCollection('daily_settlements', keys.settlements, value, item => Mapper().dailySettlementToRow(item), options);
+      if (!options.incrementalRows?.length) {
+        try {
+          await client.from('settings').delete().eq('key', keys.settlements);
+        } catch (error) {
+          console.warn('[BREM] Legacy daily settlement settings cleanup skipped:', error.message || error);
+        }
       }
     }
 
@@ -683,21 +694,25 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
-    async function persistSettlementUploadLogs(value) {
-      await persistTableCollection('settlement_upload_logs', keys.settlementUploadLogs, value, item => Mapper().settlementUploadLogToRow(item));
-      try {
-        await client.from('settings').delete().eq('key', keys.settlementUploadLogs);
-      } catch (error) {
-        console.warn('[BREM] Legacy settlement upload log settings cleanup skipped:', error.message || error);
+    async function persistSettlementUploadLogs(value, options = {}) {
+      await persistTableCollection('settlement_upload_logs', keys.settlementUploadLogs, value, item => Mapper().settlementUploadLogToRow(item), options);
+      if (!options.incrementalRows?.length) {
+        try {
+          await client.from('settings').delete().eq('key', keys.settlementUploadLogs);
+        } catch (error) {
+          console.warn('[BREM] Legacy settlement upload log settings cleanup skipped:', error.message || error);
+        }
       }
     }
 
-    async function persistSettlementUnmatched(value) {
-      await persistTableCollection('settlement_unmatched', keys.settlementUnmatched, value, item => Mapper().settlementUnmatchedToRow(item));
-      try {
-        await client.from('settings').delete().eq('key', keys.settlementUnmatched);
-      } catch (error) {
-        console.warn('[BREM] Legacy settlement unmatched settings cleanup skipped:', error.message || error);
+    async function persistSettlementUnmatched(value, options = {}) {
+      await persistTableCollection('settlement_unmatched', keys.settlementUnmatched, value, item => Mapper().settlementUnmatchedToRow(item), options);
+      if (!options.incrementalRows?.length) {
+        try {
+          await client.from('settings').delete().eq('key', keys.settlementUnmatched);
+        } catch (error) {
+          console.warn('[BREM] Legacy settlement unmatched settings cleanup skipped:', error.message || error);
+        }
       }
     }
 
@@ -1193,13 +1208,13 @@ window.BremSupabaseStorageAdapter = (function () {
       } else if (key === keys.targets) {
         await persistMonthlyTargets(value, options);
       } else if (key === keys.settlements) {
-        await persistDailySettlements(value);
+        await persistDailySettlements(value, options);
       } else if (key === keys.weeklySettlements) {
         await persistWeeklySettlements(value);
       } else if (key === keys.settlementUploadLogs) {
-        await persistSettlementUploadLogs(value);
+        await persistSettlementUploadLogs(value, options);
       } else if (key === keys.settlementUnmatched) {
-        await persistSettlementUnmatched(value);
+        await persistSettlementUnmatched(value, options);
       } else if (key === keys.promotionApplyResults) {
         await persistPromotionApplyResults(value);
       } else {

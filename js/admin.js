@@ -3743,7 +3743,7 @@
         unmatchedRecords: result.unmatched
       });
       state.settlementPreviewByPlatform[p].uploadLogId = uploadLog.id;
-      void BremStorage.flushStorage?.();
+      await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
 
       if (result.unmatched.length) {
         saveSettlementUnmatched({
@@ -3783,7 +3783,7 @@
     }
   }
 
-  function applySettlementPreview(platform) {
+  async function applySettlementPreview(platform) {
     const p = normalizePlatform(platform);
     const preview = state.settlementPreviewByPlatform[p];
     if (!preview?.matched?.length) {
@@ -3833,76 +3833,103 @@
         });
       }
 
-      void BremStorage.flushStorage?.().then(() => {
+      try {
+        await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
         clearSettlementPreview(p);
-        renderAll();
+        renderSettlements();
+        renderSettlementUploadLogs(p);
+        renderCalls();
         showToast('동일한 파일이 이미 반영되어 있어 중복 적용을 건너뛰었습니다.');
-      }).catch(error => {
+      } catch (error) {
         console.error('[BREM] settlement duplicate skip save failed:', error);
         showToast(error.message || '중복 기록 저장에 실패했습니다.');
-      });
+      }
       return;
     }
 
-    BremStorage.settlements.upsertBatch({
-      period: preview.period,
-      platform: p,
-      records: preview.matched.map(record => ({
-        driverId: record.driverId,
-        riderId: record.riderId || '',
-        orderCount: record.orderCount,
-        deliveryAmount: settlementAmountValue(record),
-        settlementAmount: settlementAmountValue(record)
-      }))
-    });
-
-    const applyPatch = {
-      status: 'applied',
-      appliedAt: new Date().toISOString(),
-      matchedCount: preview.matched.length,
-      unmatchedCount: preview.unmatched?.length || 0,
-      fileName: preview.sourceFileName || '',
-      contentHash,
-      matchedRecords: appliedRecords,
-      appliedRecords,
-      unmatchedRecords: serializeSettlementLogRecords(preview.unmatched || []),
-      totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0),
-      totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
-      duplicateOfLogId: '',
-      skipReason: ''
-    };
-
-    if (preview.uploadLogId) {
-      BremStorage.settlementUploadLogs.update(preview.uploadLogId, applyPatch);
-    } else {
-      recordDailySettlementUploadLog(p, {
-        fileName: preview.sourceFileName || '',
-        period: preview.period,
-        ...applyPatch
-      });
+    const applyBtn = $(`#settlementApplyBtn-${p}`);
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = '반영 중…';
     }
 
-    if (preview.unmatched?.length) {
-      saveSettlementUnmatched({
-        period: preview.period,
-        records: preview.unmatched,
-        sourceFileName: preview.sourceFileName || '',
-        platform: p
-      });
-    } else {
-      BremStorage.settlementUnmatched.clearByPeriod(preview.period, p);
-    }
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
 
-    void BremStorage.flushStorage?.().then(() => {
-      if (preview.period) setSettlementHistoryDay(p, preview.period);
-      clearSettlementPreview(p);
-      renderAll();
-      showToast(`${platformLabel(p)} ${preview.matched.length}명 반영 완료 (최신 업로드 기준 덮어씀)${preview.unmatched?.length ? ` · 미반영 ${preview.unmatched.length}명은 아래 목록에 저장됨` : ''}`);
-    }).catch(error => {
-      console.error('[BREM] settlement apply save failed:', error);
-      showToast(error.message || '반영 저장에 실패했습니다.');
-      renderAll();
-    });
+      await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
+        write: async () => {
+          const writeResult = BremStorage.settlements.upsertBatch({
+            period: preview.period,
+            platform: p,
+            records: preview.matched.map(record => ({
+              driverId: record.driverId,
+              riderId: record.riderId || '',
+              orderCount: record.orderCount,
+              deliveryAmount: settlementAmountValue(record),
+              settlementAmount: settlementAmountValue(record)
+            }))
+          });
+          await BremStorage.awaitPersist?.(writeResult);
+
+          const applyPatch = {
+            status: 'applied',
+            appliedAt: new Date().toISOString(),
+            matchedCount: preview.matched.length,
+            unmatchedCount: preview.unmatched?.length || 0,
+            fileName: preview.sourceFileName || '',
+            contentHash,
+            matchedRecords: appliedRecords,
+            appliedRecords,
+            unmatchedRecords: serializeSettlementLogRecords(preview.unmatched || []),
+            totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0),
+            totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
+            duplicateOfLogId: '',
+            skipReason: ''
+          };
+
+          if (preview.uploadLogId) {
+            BremStorage.settlementUploadLogs.update(preview.uploadLogId, applyPatch);
+          } else {
+            recordDailySettlementUploadLog(p, {
+              fileName: preview.sourceFileName || '',
+              period: preview.period,
+              ...applyPatch
+            });
+          }
+
+          if (preview.unmatched?.length) {
+            saveSettlementUnmatched({
+              period: preview.period,
+              records: preview.unmatched,
+              sourceFileName: preview.sourceFileName || '',
+              platform: p
+            });
+          } else {
+            BremStorage.settlementUnmatched.clearByPeriod(preview.period, p);
+          }
+
+          await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+        },
+        render: () => {
+          if (preview.period) setSettlementHistoryDay(p, preview.period);
+          clearSettlementPreview(p);
+          renderSettlements();
+          renderSettlementUploadLogs(p);
+          renderCalls();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }
+      });
+
+      showToast(`${platformLabel(p)} 일정산 ${preview.matched.length}건이 Supabase에 반영되었습니다.`);
+    } catch (error) {
+      console.error('[BREM] settlement apply failed:', error);
+      showToast(error.message || '일정산 반영 저장에 실패했습니다. 다시 시도하세요.');
+    } finally {
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.textContent = '반영하기';
+      }
+    }
   }
 
   function invalidateSectionRenders(sectionId) {

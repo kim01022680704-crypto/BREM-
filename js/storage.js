@@ -6304,8 +6304,8 @@ const BremStorage = (function () {
       const keepIds = new Set(nextRecords.map(record => record.id));
       const list = settlements.getAll().filter(item => !keepIds.has(item.id));
       list.unshift(...nextRecords);
-      storageAdapter.write(KEYS.settlements, list);
-      return list;
+      const persist = storageAdapter.write(KEYS.settlements, list, { incrementalRows: nextRecords });
+      return persist || list;
     },
 
     removeById(id) {
@@ -6381,16 +6381,24 @@ const BremStorage = (function () {
         await activeStorageAdapter.ensureKeysLoaded([KEYS.calls]);
       }
 
+      const removed = settlements.getAll().filter(item => {
+        const itemPeriod = String(item.period).slice(0, 10);
+        return normalizePlatform(item.platform) === p && itemPeriod === periodKey;
+      });
       const nextSettlements = settlements.getAll().filter(item => {
         const itemPeriod = String(item.period).slice(0, 10);
         return !(normalizePlatform(item.platform) === p && itemPeriod === periodKey);
       });
 
-      await storageAdapter.write(
-        KEYS.settlements,
-        nextSettlements,
-        { allowEmpty: true }
-      );
+      if (removed.length && activeStorageAdapter.deleteDailySettlementsByIds) {
+        await activeStorageAdapter.deleteDailySettlementsByIds(removed.map(item => item.id));
+      } else {
+        await storageAdapter.write(
+          KEYS.settlements,
+          nextSettlements,
+          { allowEmpty: true }
+        );
+      }
 
       if (activeStorageAdapter.deleteAdminCallsByPeriod) {
         await activeStorageAdapter.deleteAdminCallsByPeriod(p, periodKey);
@@ -7109,7 +7117,7 @@ const BremStorage = (function () {
     add(entry) {
       const next = normalizeSettlementUploadLog(entry);
       const list = [next, ...settlementUploadLogs.getAll().filter(item => item.id !== next.id)];
-      settlementUploadLogs.persistList(list);
+      settlementUploadLogs.persistList(list, { incrementalRows: [next] });
       return next;
     },
 
@@ -7119,8 +7127,9 @@ const BremStorage = (function () {
           ? normalizeSettlementUploadLog({ ...item, ...patch, updatedAt: new Date().toISOString() })
           : item
       ));
-      settlementUploadLogs.persistList(list);
-      return list.find(item => item.id === id) || null;
+      const updated = list.find(item => item.id === id) || null;
+      settlementUploadLogs.persistList(list, updated ? { incrementalRows: [updated] } : {});
+      return updated;
     },
 
     remove(id, options = {}) {
@@ -7545,7 +7554,7 @@ const BremStorage = (function () {
         && normalizePlatform(item.platform) === p
       ));
       list.unshift(...nextRecords);
-      storageAdapter.write(KEYS.settlementUnmatched, list);
+      storageAdapter.write(KEYS.settlementUnmatched, list, { incrementalRows: nextRecords });
       return list;
     },
 
@@ -7604,7 +7613,7 @@ const BremStorage = (function () {
         return true;
       });
       list.unshift(...nextRecords);
-      storageAdapter.write(KEYS.settlementUnmatched, list);
+      storageAdapter.write(KEYS.settlementUnmatched, list, { incrementalRows: nextRecords });
       return list;
     },
 
