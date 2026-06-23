@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260621v">
+  <link rel="stylesheet" href="css/admin.css?v=20260621w">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -2525,10 +2525,14 @@
       </section>
 
       <article class="card settlement-upload-log-detail-card" id="settlementUploadLogDetailCard" hidden>
-        <div class="card-header">
+        <div class="card-header settlement-upload-log-detail-header">
           <h2 id="settlementUploadLogDetailTitle">일정산 업로드 상세</h2>
-          <button type="button" class="small-btn" id="settlementUploadLogDetailClose">닫기</button>
+          <div class="settlement-upload-log-detail-actions">
+            <button type="button" class="primary-btn" id="settlementUploadLogDetailReapply" hidden>재반영</button>
+            <button type="button" class="small-btn" id="settlementUploadLogDetailClose">닫기</button>
+          </div>
         </div>
+        <p class="form-help settlement-upload-log-detail-help">엑셀 원본은 저장하지 않습니다. 업로드 시 파싱한 기사별 콜수·정산금액만 저장되며, 재반영은 이 데이터를 사용합니다.</p>
         <div class="weekly-settlement-detail-meta" id="settlementUploadLogDetailMeta"></div>
         <div class="settlement-upload-log-detail-block">
           <h3>적용/매칭 내역</h3>
@@ -3246,7 +3250,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260621v"></script>
+  <script src="js/admin.js?v=20260621w"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

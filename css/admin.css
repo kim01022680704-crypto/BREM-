@@ -2200,6 +2200,24 @@ textarea {
   vertical-align: middle;
 }
 
+.settlement-upload-log-detail-header {
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settlement-upload-log-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.settlement-upload-log-detail-help {
+  margin: 0 18px 12px;
+}
+
 .settlement-upload-log-actions {
   display: flex;
   flex-wrap: wrap;

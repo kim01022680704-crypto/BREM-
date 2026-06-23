@@ -3211,6 +3211,14 @@
     }
 
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const reapplyBtn = $('#settlementUploadLogDetailReapply');
+    if (reapplyBtn) {
+      const canReapply = canReapplySettlementUploadLog(log);
+      reapplyBtn.hidden = !canReapply;
+      reapplyBtn.disabled = !canReapply;
+      reapplyBtn.dataset.reapplySettlementUploadLog = log.id;
+    }
   }
 
   function renderSettlementUploadLogs(platform) {
@@ -3239,6 +3247,9 @@
         <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
         <td class="settlement-upload-log-actions">
           <button type="button" class="small-btn" data-settlement-upload-log-detail="${escapeHtml(item.id)}">상세</button>
+          ${canReapplySettlementUploadLog(item)
+            ? `<button type="button" class="small-btn primary-btn" data-reapply-settlement-upload-log="${escapeHtml(item.id)}">재반영</button>`
+            : ''}
           <button type="button" class="small-btn danger-btn" data-delete-settlement-upload-log="${escapeHtml(item.id)}">기록 삭제</button>
         </td>
       </tr>
@@ -3837,6 +3848,216 @@
     }
   }
 
+  function settlementUploadLogApplicableRecords(log) {
+    const source = (log?.matchedRecords?.length ? log.matchedRecords : log?.appliedRecords) || [];
+    return source.filter(record => String(record.driverId || '').trim());
+  }
+
+  function canReapplySettlementUploadLog(log) {
+    if (!log || log.kind !== 'daily') return false;
+    return settlementUploadLogApplicableRecords(log).length > 0;
+  }
+
+  async function applyDailySettlementFromLogData(platform, options = {}) {
+    const p = normalizePlatform(platform);
+    const period = String(options.period || '').slice(0, 10);
+    const matched = Array.isArray(options.matched) ? options.matched : [];
+    const unmatched = Array.isArray(options.unmatched) ? options.unmatched : [];
+    const sourceFileName = options.sourceFileName || '';
+    const uploadLogId = options.uploadLogId || '';
+    const forceReapply = options.forceReapply === true;
+    const clearPreview = options.clearPreview === true;
+    const totalDeliveryAmount = Number(
+      options.totalDeliveryAmount
+      ?? matched.reduce((sum, row) => sum + settlementAmountValue(row), 0)
+    );
+
+    if (!matched.length) {
+      showToast('반영할 매칭 데이터가 없습니다.');
+      return { ok: false };
+    }
+    if (!period) {
+      showToast('정산일이 없어 반영할 수 없습니다.');
+      return { ok: false };
+    }
+
+    const appliedRecords = serializeSettlementLogRecords(matched);
+    const contentHash = BremStorage.settlementUploadLogs.buildContentHash(p, period, appliedRecords);
+
+    if (!forceReapply) {
+      const duplicateCheck = BremStorage.settlementUploadLogs.isDuplicateApply({
+        platform: p,
+        period,
+        contentHash,
+        records: appliedRecords,
+        excludeLogId: uploadLogId
+      });
+
+      if (duplicateCheck.duplicate) {
+        const duplicatePatch = {
+          status: 'duplicate_skipped',
+          contentHash,
+          matchedRecords: appliedRecords,
+          appliedRecords,
+          unmatchedRecords: serializeSettlementLogRecords(unmatched),
+          unmatchedCount: unmatched.length,
+          totalDeliveryAmount,
+          totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
+          matchedCount: appliedRecords.length,
+          fileName: sourceFileName,
+          appliedAt: new Date().toISOString(),
+          duplicateOfLogId: duplicateCheck.existingLog?.id || '',
+          skipReason: '동일 파일이 이미 반영된 업로드 기록이 있습니다.'
+        };
+
+        if (uploadLogId) {
+          BremStorage.settlementUploadLogs.update(uploadLogId, duplicatePatch);
+        } else {
+          recordDailySettlementUploadLog(p, {
+            fileName: sourceFileName,
+            period,
+            ...duplicatePatch
+          });
+        }
+
+        try {
+          await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+          setSettlementWeekFilters(p, period);
+          if (clearPreview) clearSettlementPreview(p);
+          renderSettlements();
+          renderSettlementUploadLogs(p);
+          renderCalls();
+          showToast('동일한 파일이 이미 반영되어 있어 중복 적용을 건너뛰었습니다.');
+        } catch (error) {
+          console.error('[BREM] settlement duplicate skip save failed:', error);
+          showToast(error.message || '중복 기록 저장에 실패했습니다.');
+        }
+        return { ok: false, duplicate: true };
+      }
+    }
+
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+
+      await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
+        write: async () => {
+          const writeResult = BremStorage.settlements.upsertBatch({
+            period,
+            platform: p,
+            records: matched.map(record => ({
+              driverId: record.driverId,
+              riderId: record.riderId || '',
+              orderCount: record.orderCount,
+              deliveryAmount: settlementAmountValue(record),
+              settlementAmount: settlementAmountValue(record)
+            }))
+          });
+          await BremStorage.awaitPersist?.(writeResult);
+
+          const applyPatch = {
+            status: 'applied',
+            appliedAt: new Date().toISOString(),
+            matchedCount: matched.length,
+            unmatchedCount: unmatched.length,
+            fileName: sourceFileName,
+            contentHash,
+            matchedRecords: appliedRecords,
+            appliedRecords,
+            unmatchedRecords: serializeSettlementLogRecords(unmatched),
+            totalDeliveryAmount,
+            totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
+            duplicateOfLogId: '',
+            skipReason: ''
+          };
+
+          if (uploadLogId) {
+            BremStorage.settlementUploadLogs.update(uploadLogId, applyPatch);
+          } else {
+            recordDailySettlementUploadLog(p, {
+              fileName: sourceFileName,
+              period,
+              ...applyPatch
+            });
+          }
+
+          if (unmatched.length) {
+            saveSettlementUnmatched({
+              period,
+              records: unmatched,
+              sourceFileName,
+              platform: p
+            });
+          } else {
+            BremStorage.settlementUnmatched.clearByPeriod(period, p);
+          }
+
+          await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+        },
+        render: () => {
+          setSettlementWeekFilters(p, period);
+          setSettlementHistoryDay(p, period);
+          if (clearPreview) clearSettlementPreview(p);
+          renderSettlements();
+          renderSettlementUploadLogs(p);
+          renderCalls();
+          if (state.currentSection === 'dashboard') renderDashboard();
+          if (uploadLogId && state.settlementUploadLogDetailId === uploadLogId) {
+            renderSettlementUploadLogDetail(uploadLogId);
+          }
+        }
+      });
+
+      return { ok: true, count: matched.length };
+    } catch (error) {
+      console.error('[BREM] settlement apply failed:', error);
+      showToast(error.message || '일정산 반영 저장에 실패했습니다. 다시 시도하세요.');
+      return { ok: false, error };
+    }
+  }
+
+  async function reapplySettlementUploadLog(logId) {
+    const log = BremStorage.settlementUploadLogs.getById(logId);
+    if (!log || log.kind !== 'daily') {
+      showToast('업로드 기록을 찾지 못했습니다.');
+      return;
+    }
+
+    const applicable = settlementUploadLogApplicableRecords(log);
+    if (!applicable.length) {
+      showToast('저장된 매칭 데이터가 없어 재반영할 수 없습니다.');
+      return;
+    }
+
+    const p = normalizePlatform(log.platform);
+    const period = String(log.period || '').slice(0, 10);
+    const rangeLabel = formatDate(period);
+    const confirmMessage = log.status === 'applied'
+      ? `${rangeLabel} ${platformLabel(p)} 저장 데이터 ${applicable.length}명을 다시 반영하시겠습니까?\n기존 콜수·일정산이 덮어씌워집니다.\n(엑셀 파일 없이 저장된 매칭 데이터만 사용합니다.)`
+      : `${rangeLabel} ${platformLabel(p)} 저장 데이터 ${applicable.length}명을 반영하시겠습니까?\n(엑셀 파일 없이 저장된 매칭 데이터만 사용합니다.)`;
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('calls');
+      const result = await applyDailySettlementFromLogData(p, {
+        period,
+        matched: applicable,
+        unmatched: log.unmatchedRecords || [],
+        sourceFileName: log.fileName || '',
+        uploadLogId: log.id,
+        forceReapply: true,
+        totalDeliveryAmount: Number(log.totalDeliveryAmount || 0)
+      });
+      if (result.ok) {
+        invalidateCallStatsIndex();
+        showToast(`${platformLabel(p)} 일정산 ${result.count}건을 저장 데이터로 재반영했습니다.`);
+      }
+    } catch (error) {
+      console.error('[BREM] settlement reapply failed:', error);
+      showToast(error.message || '재반영 저장에 실패했습니다.');
+    }
+  }
+
   async function applySettlementPreview(platform) {
     const p = normalizePlatform(platform);
     const preview = state.settlementPreviewByPlatform[p];
@@ -3850,58 +4071,6 @@
       return;
     }
 
-    const appliedRecords = serializeSettlementLogRecords(preview.matched);
-    const contentHash = BremStorage.settlementUploadLogs.buildContentHash(p, preview.period, appliedRecords);
-    const duplicateCheck = BremStorage.settlementUploadLogs.isDuplicateApply({
-      platform: p,
-      period: preview.period,
-      contentHash,
-      records: appliedRecords,
-      excludeLogId: preview.uploadLogId || ''
-    });
-
-    if (duplicateCheck.duplicate) {
-      const duplicatePatch = {
-        status: 'duplicate_skipped',
-        contentHash,
-        matchedRecords: appliedRecords,
-        appliedRecords,
-        unmatchedRecords: serializeSettlementLogRecords(preview.unmatched || []),
-        unmatchedCount: preview.unmatched?.length || 0,
-        totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0),
-        totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
-        matchedCount: appliedRecords.length,
-        fileName: preview.sourceFileName || '',
-        appliedAt: new Date().toISOString(),
-        duplicateOfLogId: duplicateCheck.existingLog?.id || '',
-        skipReason: '동일 파일이 이미 반영된 업로드 기록이 있습니다.'
-      };
-
-      if (preview.uploadLogId) {
-        BremStorage.settlementUploadLogs.update(preview.uploadLogId, duplicatePatch);
-      } else {
-        recordDailySettlementUploadLog(p, {
-          fileName: preview.sourceFileName || '',
-          period: preview.period,
-          ...duplicatePatch
-        });
-      }
-
-      try {
-        await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
-        if (preview.period) setSettlementWeekFilters(p, preview.period);
-        clearSettlementPreview(p);
-        renderSettlements();
-        renderSettlementUploadLogs(p);
-        renderCalls();
-        showToast('동일한 파일이 이미 반영되어 있어 중복 적용을 건너뛰었습니다.');
-      } catch (error) {
-        console.error('[BREM] settlement duplicate skip save failed:', error);
-        showToast(error.message || '중복 기록 저장에 실패했습니다.');
-      }
-      return;
-    }
-
     const applyBtn = $(`#settlementApplyBtn-${p}`);
     if (applyBtn) {
       applyBtn.disabled = true;
@@ -3909,79 +4078,19 @@
     }
 
     try {
-      await BremStorage.ensureSectionLoaded?.('settlements');
-
-      await window.BremPerf?.runSave?.(`settlements.apply.${p}`, {
-        write: async () => {
-          const writeResult = BremStorage.settlements.upsertBatch({
-            period: preview.period,
-            platform: p,
-            records: preview.matched.map(record => ({
-              driverId: record.driverId,
-              riderId: record.riderId || '',
-              orderCount: record.orderCount,
-              deliveryAmount: settlementAmountValue(record),
-              settlementAmount: settlementAmountValue(record)
-            }))
-          });
-          await BremStorage.awaitPersist?.(writeResult);
-
-          const applyPatch = {
-            status: 'applied',
-            appliedAt: new Date().toISOString(),
-            matchedCount: preview.matched.length,
-            unmatchedCount: preview.unmatched?.length || 0,
-            fileName: preview.sourceFileName || '',
-            contentHash,
-            matchedRecords: appliedRecords,
-            appliedRecords,
-            unmatchedRecords: serializeSettlementLogRecords(preview.unmatched || []),
-            totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0),
-            totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
-            duplicateOfLogId: '',
-            skipReason: ''
-          };
-
-          if (preview.uploadLogId) {
-            BremStorage.settlementUploadLogs.update(preview.uploadLogId, applyPatch);
-          } else {
-            recordDailySettlementUploadLog(p, {
-              fileName: preview.sourceFileName || '',
-              period: preview.period,
-              ...applyPatch
-            });
-          }
-
-          if (preview.unmatched?.length) {
-            saveSettlementUnmatched({
-              period: preview.period,
-              records: preview.unmatched,
-              sourceFileName: preview.sourceFileName || '',
-              platform: p
-            });
-          } else {
-            BremStorage.settlementUnmatched.clearByPeriod(preview.period, p);
-          }
-
-          await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
-        },
-        render: () => {
-          if (preview.period) {
-            setSettlementWeekFilters(p, preview.period);
-            setSettlementHistoryDay(p, preview.period);
-          }
-          clearSettlementPreview(p);
-          renderSettlements();
-          renderSettlementUploadLogs(p);
-          renderCalls();
-          if (state.currentSection === 'dashboard') renderDashboard();
-        }
+      const result = await applyDailySettlementFromLogData(p, {
+        period: preview.period,
+        matched: preview.matched,
+        unmatched: preview.unmatched || [],
+        sourceFileName: preview.sourceFileName || '',
+        uploadLogId: preview.uploadLogId || '',
+        forceReapply: false,
+        clearPreview: true,
+        totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0)
       });
-
-      showToast(`${platformLabel(p)} 일정산 ${preview.matched.length}건이 Supabase에 반영되었습니다.`);
-    } catch (error) {
-      console.error('[BREM] settlement apply failed:', error);
-      showToast(error.message || '일정산 반영 저장에 실패했습니다. 다시 시도하세요.');
+      if (result.ok) {
+        showToast(`${platformLabel(p)} 일정산 ${preview.matched.length}건이 Supabase에 반영되었습니다.`);
+      }
     } finally {
       if (applyBtn) {
         applyBtn.disabled = false;
@@ -4610,6 +4719,11 @@
     });
 
     $('#settlementUploadLogDetailClose')?.addEventListener('click', hideSettlementUploadLogDetail);
+    $('#settlementUploadLogDetailReapply')?.addEventListener('click', event => {
+      const logId = event.currentTarget?.dataset?.reapplySettlementUploadLog || state.settlementUploadLogDetailId;
+      if (!logId) return;
+      void reapplySettlementUploadLog(logId);
+    });
 
     PLATFORMS.forEach(platform => {
       const p = normalizePlatform(platform);
@@ -5091,6 +5205,12 @@
       const settlementUploadLogDetailButton = event.target.closest('[data-settlement-upload-log-detail]');
       if (settlementUploadLogDetailButton) {
         renderSettlementUploadLogDetail(settlementUploadLogDetailButton.dataset.settlementUploadLogDetail);
+        return;
+      }
+
+      const settlementUploadLogReapplyButton = event.target.closest('[data-reapply-settlement-upload-log]');
+      if (settlementUploadLogReapplyButton) {
+        void reapplySettlementUploadLog(settlementUploadLogReapplyButton.dataset.reapplySettlementUploadLog);
         return;
       }
 
