@@ -292,6 +292,12 @@ window.BremSupabaseStorageAdapter = (function () {
       } else {
         await syncTableRows(table, list, toRow);
       }
+      const deletedRowIds = Array.isArray(options.deletedRowIds)
+        ? options.deletedRowIds.map(id => String(id || '').trim()).filter(Boolean)
+        : [];
+      if (deletedRowIds.length) {
+        await deleteRowsInChunks(table, deletedRowIds);
+      }
       setCache(key, list);
       window.BremDataCache?.set?.(key, list, { source: 'write' });
     }

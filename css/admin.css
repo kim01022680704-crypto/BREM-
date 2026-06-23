@@ -2176,6 +2176,13 @@ textarea {
   justify-content: space-between;
 }
 
+.settlement-week-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
 .settlement-week-filter {
   display: grid;
   gap: 6px;

@@ -3247,6 +3247,9 @@
     if (summaryEl) {
       summaryEl.textContent = rows.length ? `총 ${number(rows.length)}건` : '';
     }
+
+    const clearWeekBtn = $(`#settlementUploadLogClearWeek-${p}`);
+    if (clearWeekBtn) clearWeekBtn.disabled = !rows.length;
   }
 
   function matchesSettlementPeriod(record, periodKey) {
@@ -3551,6 +3554,57 @@
         console.error('[BREM] settlement clear failed:', error);
         showToast(error.message || '삭제 저장에 실패했습니다.');
         renderAll();
+      }
+    })();
+  }
+
+  function clearSettlementUploadLogsForSelectedWeek(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = ensureSettlementLogWeek(p);
+    if (!weekStart) {
+      showToast('적용주를 먼저 선택하세요.');
+      return;
+    }
+    const rows = BremStorage.settlementUploadLogs.getFiltered({
+      kind: 'daily',
+      platform: p,
+      weekStart
+    });
+    if (!rows.length) {
+      showToast('선택한 주 업로드 기록이 없습니다.');
+      return;
+    }
+    const appliedCount = rows.filter(item => item.status === 'applied').length;
+    const rangeLabel = `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`;
+    const confirmMessage = appliedCount > 0
+      ? `${rangeLabel} ${platformLabel(p)} 업로드 기록 ${rows.length}건을 전체 삭제하시겠습니까?\n반영된 기록 ${appliedCount}건은 연결된 일정산·콜수입력도 함께 제거됩니다.`
+      : `${rangeLabel} ${platformLabel(p)} 업로드 기록 ${rows.length}건을 전체 삭제하시겠습니까?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    void (async () => {
+      try {
+        await BremStorage.ensureSectionLoaded('settlements');
+        await BremStorage.ensureSectionLoaded('calls');
+        const result = await BremStorage.settlementUploadLogs.removeDailyByWeekAsync(weekStart, p);
+        if (state.settlementUploadLogDetailId && rows.some(item => item.id === state.settlementUploadLogDetailId)) {
+          hideSettlementUploadLogDetail();
+        }
+        invalidateCallStatsIndex();
+        showToast(
+          result.appliedCount > 0
+            ? `업로드 기록 ${result.removed}건 삭제 · 반영 ${result.appliedCount}건 연동 정산·콜수 제거`
+            : `업로드 기록 ${result.removed}건 삭제`
+        );
+        renderSettlements();
+        renderCalls();
+        renderDashboard();
+      } catch (error) {
+        console.error('[BREM] settlement upload log week clear failed:', error);
+        showToast(error.message || '삭제 저장에 실패했습니다.');
+        invalidateCallStatsIndex();
+        renderSettlements();
+        renderCalls();
+        renderDashboard();
       }
     })();
   }
@@ -4601,6 +4655,9 @@
         event.target.value = picked;
         renderSettlementUploadLogs(p);
         renderSettlementUnmatched(p);
+      });
+      $(`#settlementUploadLogClearWeek-${p}`)?.addEventListener('click', () => {
+        clearSettlementUploadLogsForSelectedWeek(p);
       });
       $(`#settlementHistorySearch-${p}`)?.addEventListener('input', event => {
         state.settlementHistorySearchByPlatform[p] = event.target.value || '';

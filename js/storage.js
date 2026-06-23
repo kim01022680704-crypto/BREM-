@@ -7155,7 +7155,7 @@ const BremStorage = (function () {
         rollbackResult = await settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
       }
       const nextList = settlementUploadLogs.getAll().filter(item => item.id !== id);
-      await settlementUploadLogs.persistList(nextList, { allowEmpty: true });
+      await settlementUploadLogs.persistList(nextList, { allowEmpty: true, deletedRowIds: [id] });
       await storageAdapter.flush({ skipStagedCore: true });
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
@@ -7163,6 +7163,55 @@ const BremStorage = (function () {
       await refetchDataKey(KEYS.settlements);
       await refetchDataKey(KEYS.calls);
       return { ...target, rollbackResult };
+    },
+
+    async removeDailyByWeekAsync(weekStart, platform = DEFAULT_PLATFORM, options = {}) {
+      const p = normalizePlatform(platform);
+      const weekKey = String(weekStart || '').slice(0, 10);
+      if (!weekKey) return { removed: 0, appliedCount: 0, rolledBackCalls: 0 };
+
+      const targets = settlementUploadLogs.getFiltered({
+        kind: 'daily',
+        platform: p,
+        weekStart: weekKey
+      });
+      if (!targets.length) return { removed: 0, appliedCount: 0, rolledBackCalls: 0 };
+
+      const rollback = options.rollback !== false;
+      const sorted = [...targets].sort((a, b) => {
+        const periodCmp = String(a.period).localeCompare(String(b.period));
+        if (periodCmp !== 0) return periodCmp;
+        return String(b.appliedAt || b.uploadedAt || '').localeCompare(String(a.appliedAt || a.uploadedAt || ''));
+      });
+
+      if (rollback && activeStorageAdapter.ensureKeysLoaded) {
+        await activeStorageAdapter.ensureKeysLoaded([KEYS.settlements, KEYS.calls], { force: true });
+      }
+
+      let appliedCount = 0;
+      let rolledBackCalls = 0;
+      const deletedIds = [];
+
+      for (const log of sorted) {
+        if (rollback && log.status === 'applied') {
+          appliedCount += 1;
+          const result = await settlementUploadLogs.rollbackAppliedDailyLogAsync(log);
+          const rolledBack = result.rolledBackCalls || 0;
+          rolledBackCalls += rolledBack < 0 ? 1 : rolledBack;
+        }
+        deletedIds.push(log.id);
+      }
+
+      const deletedIdSet = new Set(deletedIds);
+      const nextList = settlementUploadLogs.getAll().filter(item => !deletedIdSet.has(item.id));
+      await settlementUploadLogs.persistList(nextList, { allowEmpty: true, deletedRowIds: deletedIds });
+      await storageAdapter.flush({ skipStagedCore: true });
+      window.BremDataCache?.invalidate?.(KEYS.settlements);
+      window.BremDataCache?.invalidate?.(KEYS.calls);
+      window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
+      await refetchDataKey(KEYS.settlements);
+      await refetchDataKey(KEYS.calls);
+      return { removed: deletedIds.length, appliedCount, rolledBackCalls };
     },
 
     async rollbackAppliedDailyLogAsync(log) {
