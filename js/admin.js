@@ -2990,11 +2990,35 @@
     return value.slice(0, 10);
   }
 
+  function latestSettlementActivityForPlatform(platform) {
+    const p = normalizePlatform(platform);
+    const latestLog = BremStorage.settlementUploadLogs.getFiltered({ kind: 'daily', platform: p })[0];
+    const latestLogPeriod = String(latestLog?.period || '').slice(0, 10);
+    if (latestLogPeriod) {
+      return {
+        period: latestLogPeriod,
+        weekStart: String(latestLog.weekStart || weekStartKey(latestLogPeriod)).slice(0, 10)
+      };
+    }
+
+    const latestSettlement = settlements()
+      .filter(record => normalizePlatform(record.platform) === p)
+      .map(record => String(record.period || '').slice(0, 10))
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))[0] || '';
+
+    return {
+      period: latestSettlement,
+      weekStart: latestSettlement ? weekStartKey(latestSettlement) : ''
+    };
+  }
+
   function ensureSettlementHistoryDay(platform) {
     const p = normalizePlatform(platform);
     if (!state.settlementHistoryDayByPlatform[p]) {
       const uploadPeriod = getSettlementPeriodFilter(p);
-      state.settlementHistoryDayByPlatform[p] = uploadPeriod || today();
+      const latest = latestSettlementActivityForPlatform(p);
+      state.settlementHistoryDayByPlatform[p] = uploadPeriod || latest.period || today();
     }
     const input = $(`#settlementHistoryDay-${p}`);
     if (input && !input.value) {
@@ -3031,12 +3055,8 @@
   function ensureSettlementLogWeek(platform) {
     const p = normalizePlatform(platform);
     if (!state.settlementLogWeekByPlatform[p]) {
-      const latestLog = BremStorage.settlementUploadLogs.getFiltered({
-        kind: 'daily',
-        platform: p
-      })[0];
-      state.settlementLogWeekByPlatform[p] = latestLog?.weekStart
-        || (latestLog?.period ? weekStartKey(latestLog.period) : weekStartKey());
+      const latest = latestSettlementActivityForPlatform(p);
+      state.settlementLogWeekByPlatform[p] = latest.weekStart || weekStartKey();
     }
     const input = $(`#settlementLogWeek-${p}`);
     if (input && !input.value) {
@@ -3429,6 +3449,12 @@
       updateSettlementPeriodLabels(p);
       updateSettlementHistoryDayLabels(p, historyDay);
 
+      const periodInput = $(`#settlementPeriod-${p}`);
+      if (periodInput && !periodInput.value) {
+        const latest = latestSettlementActivityForPlatform(p);
+        if (latest.period) periodInput.value = latest.period;
+      }
+
       const rows = settlements()
         .filter(record => normalizePlatform(record.platform) === p)
         .filter(record => matchesSettlementPeriod(record, historyDay))
@@ -3442,7 +3468,9 @@
       const emptyMessage = settlementHistorySearch(p)
         ? '검색 결과에 해당하는 정산 반영 내역이 없습니다.'
         : historyDay
-          ? `${formatDate(historyDay)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
+          ? settlements().some(record => normalizePlatform(record.platform) === p)
+            ? `${formatDate(historyDay)} ${platformLabel(p)} 반영 내역이 없습니다. 정산일을 변경해 보세요.`
+            : `${formatDate(historyDay)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
           : '정산일을 선택하세요.';
 
       historyEl.innerHTML = rows.map(record => `
