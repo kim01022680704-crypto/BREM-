@@ -7104,7 +7104,12 @@ const BremStorage = (function () {
       return settlementUploadLogs.getAll().filter(item => {
         if (kind && item.kind !== kind) return false;
         if (platform && item.platform !== platform) return false;
-        if (weekStart && item.weekStart !== weekStart) return false;
+        if (weekStart) {
+          const itemWeekStart = String(
+            item.weekStart || (item.period ? weekStartKeyFromDate(item.period) : '')
+          ).slice(0, 10);
+          if (itemWeekStart !== weekStart) return false;
+        }
         return true;
       });
     },

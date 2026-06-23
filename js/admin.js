@@ -2,7 +2,6 @@
   const selectedCallIds = new Set();
   const selectedRejectionIds = new Set();
   let targetMonthPicker = null;
-  const SETTLEMENT_UPLOAD_LOG_VISIBLE_LIMIT = 10;
   const CALL_RECORDS_VISIBLE_LIMIT = 30;
 
   const state = {
@@ -3032,7 +3031,12 @@
   function ensureSettlementLogWeek(platform) {
     const p = normalizePlatform(platform);
     if (!state.settlementLogWeekByPlatform[p]) {
-      state.settlementLogWeekByPlatform[p] = weekStartKey();
+      const latestLog = BremStorage.settlementUploadLogs.getFiltered({
+        kind: 'daily',
+        platform: p
+      })[0];
+      state.settlementLogWeekByPlatform[p] = latestLog?.weekStart
+        || (latestLog?.period ? weekStartKey(latestLog.period) : weekStartKey());
     }
     const input = $(`#settlementLogWeek-${p}`);
     if (input && !input.value) {
@@ -3223,13 +3227,9 @@
       weekStart
     });
 
-    const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 ${platformLabel(p)} 일정산 기록이 없습니다.`;
-    const displayRows = p === 'coupang'
-      ? rows.slice(0, SETTLEMENT_UPLOAD_LOG_VISIBLE_LIMIT)
-      : rows;
-    const hiddenCount = Math.max(0, rows.length - displayRows.length);
+    const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 ${platformLabel(p)} 일정산 기록이 없습니다. 다른 주 기록은 상단 적용주(수요일)를 변경하세요.`;
 
-    rowsEl.innerHTML = displayRows.map(item => `
+    rowsEl.innerHTML = rows.map(item => `
       <tr>
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${formatDate(item.period)}</td>
@@ -3245,13 +3245,7 @@
     `).join('') || `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
 
     if (summaryEl) {
-      if (!rows.length) {
-        summaryEl.textContent = '';
-      } else if (hiddenCount > 0) {
-        summaryEl.textContent = `총 ${number(rows.length)}건 · 최근 ${number(displayRows.length)}건 표시`;
-      } else {
-        summaryEl.textContent = `총 ${number(rows.length)}건`;
-      }
+      summaryEl.textContent = rows.length ? `총 ${number(rows.length)}건` : '';
     }
   }
 
@@ -3688,6 +3682,8 @@
     uploadBtn.textContent = '처리 중...';
 
     try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+
       if (BremStorage.fetchAllDriversFromServer) {
         const driverLoad = await BremStorage.fetchAllDriversFromServer({ force: false });
         if (!driverLoad?.ok) {
@@ -3719,6 +3715,10 @@
         showToast('정산일을 찾지 못했습니다. 파일명 끝에 YYYYMMDD 형식(예: _20260610)을 사용해주세요.');
         return;
       }
+
+      if (periodInput) periodInput.value = period;
+      setSettlementWeekFilters(p, period);
+      setSettlementHistoryDay(p, period);
 
       state.settlementPreviewByPlatform[p] = {
         period,
@@ -3835,6 +3835,7 @@
 
       try {
         await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+        if (preview.period) setSettlementWeekFilters(p, preview.period);
         clearSettlementPreview(p);
         renderSettlements();
         renderSettlementUploadLogs(p);
@@ -3911,7 +3912,10 @@
           await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
         },
         render: () => {
-          if (preview.period) setSettlementHistoryDay(p, preview.period);
+          if (preview.period) {
+            setSettlementWeekFilters(p, preview.period);
+            setSettlementHistoryDay(p, preview.period);
+          }
           clearSettlementPreview(p);
           renderSettlements();
           renderSettlementUploadLogs(p);
