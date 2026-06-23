@@ -32,6 +32,23 @@
   const eventSettingsDrafts = new Map();
   const eventSettingsDirty = new Set();
 
+  async function persistAndRender(label, writeFn, renderFn) {
+    if (window.BremPerf?.runSave) {
+      return window.BremPerf.runSave(label, {
+        write: async () => {
+          const result = writeFn();
+          await (BremStorage.awaitPersist?.(result) || BremStorage.flushStorage?.() || Promise.resolve());
+        },
+        render: () => {
+          if (typeof renderFn === 'function') renderFn();
+        }
+      });
+    }
+    const result = writeFn();
+    await (BremStorage.awaitPersist?.(result) || BremStorage.flushStorage?.() || Promise.resolve());
+    if (typeof renderFn === 'function') renderFn();
+  }
+
   let callStatsIndex = null;
   let callStatsIndexKey = '';
   const driverSelectOptionsCache = new Map();
@@ -1240,7 +1257,6 @@
 
     const draft = readEventDraftFromDom(driverId);
     await BremStorage.events.saveDriverSettings(driverId, draft);
-    await BremStorage.flushStorage?.().catch(() => ({}));
     eventSettingsDrafts.delete(driverId);
     eventSettingsDirty.delete(driverId);
   }
@@ -4378,31 +4394,30 @@
           return;
         }
 
-        void (async () => {
-          try {
-            await BremStorage.ensureSectionLoaded('calls');
+        void BremPerf.runSave(`calls.save.${platform}`, {
+          write: async () => {
             const writeResult = BremStorage.calls.upsertDaily({
               driverId,
               date,
               count: Number($(`#callCount-${platform}`).value),
               platform
             });
-            if (writeResult && typeof writeResult.then === 'function') {
-              await writeResult;
-            }
-            await BremStorage.flushStorage?.();
+            await BremStorage.awaitPersist?.(writeResult);
             $(`#callCount-${platform}`).value = '';
             setCallFilterDate(platform, date);
-            showToast(`${platformLabel(platform)} 콜수가 저장되었습니다. 수정 기록이 남습니다.`);
-            renderSettlements();
-            renderCalls();
-          } catch (error) {
-            console.error('[BREM] call persist failed:', error);
-            showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
+          },
+          render: () => {
             renderSettlements();
             renderCalls();
           }
-        })();
+        }).then(() => {
+          showToast(`${platformLabel(platform)} 콜수가 저장되었습니다. 수정 기록이 남습니다.`);
+        }).catch(error => {
+          console.error('[BREM] call persist failed:', error);
+          showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
+          renderSettlements();
+          renderCalls();
+        });
       });
 
       $(`#rejectionForm-${platform}`)?.addEventListener('submit', event => {
@@ -4419,10 +4434,17 @@
           return;
         }
 
-        BremStorage.rejections.upsertWeekly({ driverId, weekStart, rate, platform });
-        void BremStorage.flushStorage?.().then(() => {
+        void BremPerf.runSave(`rejections.save.${platform}`, {
+          write: async () => {
+            const writeResult = BremStorage.rejections.upsertWeekly({ driverId, weekStart, rate, platform });
+            await BremStorage.awaitPersist?.(writeResult);
+          },
+          render: () => {
+            renderRejections();
+            if (state.currentSection === 'dashboard') renderDashboard();
+          }
+        }).then(() => {
           showToast(`${platformLabel(platform)} 주간 ${platformRateLabel(platform)} Supabase 저장 완료`);
-          renderAll();
         }).catch(error => {
           console.error('[BREM] rejection persist failed:', error);
           showToast(error.message || 'Supabase 저장에 실패했습니다.');
@@ -4455,14 +4477,23 @@
         showToast('적용 월을 선택하세요.');
         return;
       }
-      BremStorage.targets.upsertMonthly({
-        driverId,
-        month,
-        count: Number($('#targetCount').value)
+      void BremPerf.runSave('targets.monthly', {
+        write: async () => {
+          const writeResult = BremStorage.targets.upsertMonthly({
+            driverId,
+            month,
+            count: Number($('#targetCount').value)
+          });
+          await BremStorage.awaitPersist?.(writeResult);
+          $('#targetCount').value = '';
+        },
+        render: () => {
+          renderTargets();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }
+      }).then(() => {
+        showToast('월간 목표 콜수가 저장되었습니다.');
       });
-      $('#targetCount').value = '';
-      showToast('월간 목표 콜수가 저장되었습니다.');
-      renderAll();
     });
 
     $('#weeklyTargetForm').addEventListener('submit', event => {
@@ -4473,15 +4504,24 @@
         showToast('적용주 수요일을 선택하세요.');
         return;
       }
-      BremStorage.weeklyTargets.upsert({
-        driverId,
-        weekStart,
-        count: Number($('#weeklyTargetCount').value)
+      void BremPerf.runSave('targets.weekly', {
+        write: async () => {
+          const writeResult = BremStorage.weeklyTargets.upsert({
+            driverId,
+            weekStart,
+            count: Number($('#weeklyTargetCount').value)
+          });
+          await BremStorage.awaitPersist?.(writeResult);
+          $('#weeklyTargetCount').value = '';
+          updateAdminWeekTargetPreview(weekStart);
+        },
+        render: () => {
+          renderTargets();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }
+      }).then(() => {
+        showToast('주간 목표 콜수가 저장되었습니다.');
       });
-      $('#weeklyTargetCount').value = '';
-      updateAdminWeekTargetPreview(weekStart);
-      showToast('주간 목표 콜수가 저장되었습니다.');
-      renderAll();
     });
 
     $('#settlementUploadLogDetailClose')?.addEventListener('click', hideSettlementUploadLogDetail);
@@ -4610,14 +4650,23 @@
       saveBtn.disabled = true;
       saveBtn.textContent = '저장 중…';
 
-      void saveDriverEventSettings(driverId)
+      void BremPerf.runSave('events.driverSettings', {
+        write: () => saveDriverEventSettings(driverId),
+        render: () => {
+          renderMissions();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }
+      })
         .then(() => {
           showToast('장기근속이벤트 설정이 저장되었습니다. 기사앱에 반영됩니다.');
-          renderAll();
         })
         .catch(error => {
           showToast(error.message || '장기근속이벤트 저장에 실패했습니다.');
           renderMissions();
+        })
+        .finally(() => {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '저장';
         });
     });
 
@@ -4629,11 +4678,16 @@
       const prevText = btn.textContent;
       btn.textContent = '저장 중…';
 
-      void saveAllDirtyEventSettings()
+      void BremPerf.runSave('events.driverSettings.bulk', {
+        write: () => saveAllDirtyEventSettings(),
+        render: () => {
+          resetEventSettingsDrafts();
+          renderMissions();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }
+      })
         .then(() => {
           showToast(`${count}명 장기근속이벤트 설정을 저장했습니다. 기사앱에 반영됩니다.`);
-          resetEventSettingsDrafts();
-          renderAll();
         })
         .catch(error => {
           showToast(error.message || '장기근속이벤트 일괄 저장에 실패했습니다.');
@@ -4772,11 +4826,11 @@
         selectedRejectionIds.delete(rejectionId);
         void BremStorage.rejections.removeByIdAsync(rejectionId).then(() => {
           showToast('주간 기록이 삭제되었습니다.');
-          renderAll();
+          renderRejections();
         }).catch(error => {
           console.error('[BREM] rejection delete failed:', error);
           showToast(error.message || '삭제 저장에 실패했습니다.');
-          renderAll();
+          renderRejections();
         });
         return;
       }
@@ -4804,13 +4858,16 @@
           showToast('목표 콜수를 입력하세요.');
           return;
         }
-        BremStorage.targets.upsertMonthly({
+        void persistAndRender('targets.monthly.inline', () => BremStorage.targets.upsertMonthly({
           driverId: target.driverId,
           month: target.month,
           count
+        }), () => {
+          renderTargets();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }).then(() => {
+          showToast('월간 목표 콜수가 수정되었습니다.');
         });
-        showToast('월간 목표 콜수가 수정되었습니다.');
-        renderAll();
         return;
       }
 
@@ -4837,24 +4894,28 @@
           return;
         }
 
-        void (async () => {
-          try {
-            if (newWeekStart !== target.weekStart) {
+        void persistAndRender('targets.weekly.inline', async () => {
+          if (newWeekStart !== target.weekStart) {
+            if (BremStorage.weeklyTargets.removeByIdAsync) {
               await BremStorage.weeklyTargets.removeByIdAsync(target.id);
+            } else {
+              BremStorage.weeklyTargets.removeById(target.id);
             }
-            await BremStorage.weeklyTargets.upsert({
-              driverId: target.driverId,
-              weekStart: newWeekStart,
-              count
-            });
-            showToast('주간 목표가 수정되었습니다.');
-            renderAll();
-          } catch (error) {
-            console.error('[BREM] weekly target save failed:', error);
-            showToast(error.message || '주간 목표 저장에 실패했습니다.');
-            renderAll();
           }
-        })();
+          return BremStorage.weeklyTargets.upsert({
+            driverId: target.driverId,
+            weekStart: newWeekStart,
+            count
+          });
+        }, () => {
+          renderTargets();
+          if (state.currentSection === 'dashboard') renderDashboard();
+        }).then(() => {
+          showToast('주간 목표가 수정되었습니다.');
+        }).catch(error => {
+          console.error('[BREM] weekly target save failed:', error);
+          showToast(error.message || '주간 목표 저장에 실패했습니다.');
+        });
         return;
       }
 

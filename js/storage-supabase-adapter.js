@@ -179,6 +179,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function upsertRowsInChunks(tableName, rows, chunkSize = 200) {
       if (!rows.length) return;
+      window.BremPerf?.countSupabase?.(rows.length);
       for (let index = 0; index < rows.length; index += chunkSize) {
         const chunk = rows.slice(index, index + chunkSize);
         const { error } = await client.from(tableName).upsert(chunk, { onConflict: 'id' });
@@ -197,12 +198,16 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function syncTableRows(tableName, list, toRow) {
       const rows = (list || []).map(toRow).filter(row => row?.id);
+      window.BremPerf?.countSupabase?.(1);
       const { data: existing, error: readError } = await client.from(tableName).select('id');
       if (readError) throw readError;
       const keepIds = new Set(rows.map(row => row.id));
       const toDelete = (existing || []).map(row => row.id).filter(id => !keepIds.has(id));
       await upsertRowsInChunks(tableName, rows);
-      await deleteRowsInChunks(tableName, toDelete);
+      if (toDelete.length) {
+        window.BremPerf?.countSupabase?.(toDelete.length);
+        await deleteRowsInChunks(tableName, toDelete);
+      }
     }
 
     async function loadTableCollection(config, options = {}) {
@@ -262,11 +267,22 @@ window.BremSupabaseStorageAdapter = (function () {
       return value;
     }
 
-    async function persistTableCollection(table, key, list, toRow) {
+    async function persistTableRowsIncremental(tableName, rows) {
+      if (!rows.length) return;
+      await upsertRowsInChunks(tableName, rows);
+    }
+
+    async function persistTableCollection(table, key, list, toRow, options = {}) {
       if (!(await probeTable(table))) {
         throw new Error(`${table} 테이블이 없습니다. Supabase migration을 실행하세요.`);
       }
-      await syncTableRows(table, list, toRow);
+      const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
+      if (incremental?.length) {
+        const rows = incremental.map(toRow).filter(row => row?.id);
+        await persistTableRowsIncremental(table, rows);
+      } else {
+        await syncTableRows(table, list, toRow);
+      }
       setCache(key, list);
       window.BremDataCache?.set?.(key, list, { source: 'write' });
     }
@@ -530,9 +546,9 @@ window.BremSupabaseStorageAdapter = (function () {
       }));
     }
 
-    async function persistAdminSchedules(value) {
+    async function persistAdminSchedules(value, options = {}) {
       const list = Array.isArray(value) ? value : [];
-      await persistTableCollection('admin_schedules', keys.adminSchedules, list, scheduleToRow);
+      await persistTableCollection('admin_schedules', keys.adminSchedules, list, scheduleToRow, options);
     }
 
     async function deleteAdminRejectionRatesByIds(ids = []) {
@@ -630,21 +646,23 @@ window.BremSupabaseStorageAdapter = (function () {
       await deleteRowsInChunks('daily_settlements', targetIds);
     }
 
-    async function persistCalls(value) {
-      await persistTableCollection('admin_calls', keys.calls, value, callToRow);
+    async function persistCalls(value, options = {}) {
+      await persistTableCollection('admin_calls', keys.calls, value, callToRow, options);
     }
 
-    async function persistWeeklyRates(value) {
-      await persistTableCollection('admin_rejection_rates', keys.rejections, value, weeklyRateToRow);
-      try {
-        await client.from('settings').delete().eq('key', keys.rejections);
-      } catch (error) {
-        console.warn('[BREM] Legacy rejection settings cleanup skipped:', error.message || error);
+    async function persistWeeklyRates(value, options = {}) {
+      await persistTableCollection('admin_rejection_rates', keys.rejections, value, weeklyRateToRow, options);
+      if (!options.incrementalRows?.length) {
+        try {
+          await client.from('settings').delete().eq('key', keys.rejections);
+        } catch (error) {
+          console.warn('[BREM] Legacy rejection settings cleanup skipped:', error.message || error);
+        }
       }
     }
 
-    async function persistMonthlyTargets(value) {
-      await persistTableCollection('admin_targets', keys.targets, value, targetToRow);
+    async function persistMonthlyTargets(value, options = {}) {
+      await persistTableCollection('admin_targets', keys.targets, value, targetToRow, options);
     }
 
     async function persistDailySettlements(value) {
@@ -1165,15 +1183,15 @@ window.BremSupabaseStorageAdapter = (function () {
         throw new Error(check.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.');
       }
       if (persistHandlers[key]) {
-        await persistHandlers[key](value);
+        await persistHandlers[key](value, options);
       } else if (key === keys.adminSchedules) {
-        await persistAdminSchedules(value);
+        await persistAdminSchedules(value, options);
       } else if (key === keys.calls) {
-        await persistCalls(value);
+        await persistCalls(value, options);
       } else if (key === keys.rejections) {
-        await persistWeeklyRates(value);
+        await persistWeeklyRates(value, options);
       } else if (key === keys.targets) {
-        await persistMonthlyTargets(value);
+        await persistMonthlyTargets(value, options);
       } else if (key === keys.settlements) {
         await persistDailySettlements(value);
       } else if (key === keys.weeklySettlements) {

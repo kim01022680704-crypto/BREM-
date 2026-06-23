@@ -365,7 +365,7 @@ const BremStorage = (function () {
         }
         activeStorageAdapter.stage(key, value);
         const persist = activeStorageAdapter.enqueuePersist(key, value, options);
-        scheduleCacheSyncAfterWrite(key);
+        scheduleCacheSyncAfterWrite(key, persist);
         return persist;
       }
       if (!isStoragePersistReady()) {
@@ -377,7 +377,7 @@ const BremStorage = (function () {
         return Promise.reject(error);
       }
       const result = activeStorageAdapter.write(key, value);
-      scheduleCacheSyncAfterWrite(key);
+      scheduleCacheSyncAfterWrite(key, result);
       return result;
     },
     remove(key) {
@@ -520,6 +520,7 @@ const BremStorage = (function () {
     }
 
     try {
+      window.BremPerf?.countApi?.(1);
       const response = await fetch(path, {
         credentials: 'same-origin',
         ...options,
@@ -1107,7 +1108,7 @@ const BremStorage = (function () {
     KEYS.promotionApplyResults
   ]);
 
-  function scheduleCacheSyncAfterWrite(key) {
+  function scheduleCacheSyncAfterWrite(key, persistPromise) {
     if (!MUTATION_TRACKED_KEYS.has(key)) return;
 
     const syncCache = () => {
@@ -1133,15 +1134,32 @@ const BremStorage = (function () {
       }
     };
 
+    const onError = error => {
+      console.error('[BREM] Persist failed — keeping cache:', key, error);
+      document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
+        detail: { key, message: error?.message || String(error) }
+      }));
+    };
+
+    if (persistPromise && typeof persistPromise.then === 'function') {
+      void persistPromise.then(syncCache).catch(onError);
+      return;
+    }
+
     if (activeStorageAdapter.flush) {
-      void activeStorageAdapter.flush().then(syncCache).catch(error => {
-        console.error('[BREM] Persist failed — keeping cache:', key, error);
-        document.dispatchEvent(new CustomEvent('brem-storage-persist-error', {
-          detail: { key, message: error?.message || String(error) }
-        }));
-      });
+      void activeStorageAdapter.flush().then(syncCache).catch(onError);
     } else {
       syncCache();
+    }
+  }
+
+  async function awaitPersist(result) {
+    if (result && typeof result.then === 'function') {
+      await result;
+      return;
+    }
+    if (activeStorageAdapter.flush) {
+      await activeStorageAdapter.flush();
     }
   }
 
@@ -4218,7 +4236,16 @@ const BremStorage = (function () {
         });
       });
 
-      return storageAdapter.write(KEYS.calls, list);
+      const incrementalRows = normalizedRecords.map(record => ({
+        id: `${record.driverId}-${callDate}-${p}`,
+        driverId: record.driverId,
+        date: callDate,
+        platform: p,
+        count: record.count,
+        riderPublishedAt: null
+      }));
+
+      return storageAdapter.write(KEYS.calls, list, { incrementalRows });
     },
 
     sumForDriverSince(driverId, startDate, platform) {
@@ -4239,17 +4266,15 @@ const BremStorage = (function () {
 
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminCallsByIds) {
         await activeStorageAdapter.deleteAdminCallsByIds([targetId]);
-        const list = calls.getAll().filter(call => call.id !== targetId);
-        storageAdapter.write(KEYS.calls, list, { allowEmpty: true });
-      } else if (calls.getAll().some(call => call.id === targetId)) {
-        const list = calls.getAll().filter(call => call.id !== targetId);
-        storageAdapter.write(KEYS.calls, list);
-        await storageAdapter.flush?.();
-      } else {
         return calls.getAll();
       }
 
-      window.BremDataCache?.invalidate?.(KEYS.calls);
+      if (!calls.getAll().some(call => call.id === targetId)) {
+        return calls.getAll();
+      }
+
+      const list = calls.getAll().filter(call => call.id !== targetId);
+      await awaitPersist(storageAdapter.write(KEYS.calls, list, { allowEmpty: true }));
       return calls.getAll();
     },
 
@@ -4264,13 +4289,11 @@ const BremStorage = (function () {
 
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminCallsByIds) {
         await activeStorageAdapter.deleteAdminCallsByIds([...idSet]);
-      } else {
-        const list = calls.getAll().filter(call => !idSet.has(call.id));
-        storageAdapter.write(KEYS.calls, list);
-        await storageAdapter.flush?.();
+        return calls.getAll();
       }
 
-      window.BremDataCache?.invalidate?.(KEYS.calls);
+      const list = calls.getAll().filter(call => !idSet.has(call.id));
+      await awaitPersist(storageAdapter.write(KEYS.calls, list, list.length ? {} : { allowEmpty: true }));
       return calls.getAll();
     },
 
@@ -4355,7 +4378,7 @@ const BremStorage = (function () {
       const statsObj = stats && typeof stats === 'object' ? { ...stats } : {};
       const unmeasured = statsObj.unmeasured === true || rate == null;
       if (unmeasured) statsObj.unmeasured = true;
-      list.push({
+      const newRow = {
         id: `${driverId}-${weekStart}-${p}`,
         driverId,
         weekStart,
@@ -4365,8 +4388,9 @@ const BremStorage = (function () {
         source: String(source || 'manual'),
         updatedAt: new Date().toISOString(),
         riderPublishedAt: riderPublishedAt || null
-      });
-      storageAdapter.write(KEYS.rejections, list);
+      };
+      list.push(newRow);
+      storageAdapter.write(KEYS.rejections, list, { incrementalRows: [newRow] });
       return list;
     },
 
@@ -4375,6 +4399,7 @@ const BremStorage = (function () {
       if (!normalized.length) return rejections.getAll();
 
       let list = rejections.getAll();
+      const incrementalRows = [];
       normalized.forEach(entry => {
         const p = normalizePlatform(entry.platform);
         const statsObj = entry.stats && typeof entry.stats === 'object' ? { ...entry.stats } : {};
@@ -4385,7 +4410,7 @@ const BremStorage = (function () {
           && item.weekStart === entry.weekStart
           && normalizePlatform(item.platform) === p
         ));
-        list.push({
+        const newRow = {
           id: `${entry.driverId}-${entry.weekStart}-${p}`,
           driverId: entry.driverId,
           weekStart: entry.weekStart,
@@ -4395,10 +4420,12 @@ const BremStorage = (function () {
           source: String(entry.source || 'manual'),
           updatedAt: new Date().toISOString(),
           riderPublishedAt: entry.riderPublishedAt || null
-        });
+        };
+        list.push(newRow);
+        incrementalRows.push(newRow);
       });
 
-      storageAdapter.write(KEYS.rejections, list);
+      storageAdapter.write(KEYS.rejections, list, { incrementalRows });
       return list;
     },
 
@@ -4414,13 +4441,11 @@ const BremStorage = (function () {
 
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteAdminRejectionRatesByIds) {
         await activeStorageAdapter.deleteAdminRejectionRatesByIds([targetId]);
-      } else {
-        const list = rejections.getAll().filter(item => item.id !== targetId);
-        storageAdapter.write(KEYS.rejections, list);
-        await storageAdapter.flush?.();
+        return rejections.getAll();
       }
 
-      window.BremDataCache?.invalidate?.(KEYS.rejections);
+      const list = rejections.getAll().filter(item => item.id !== targetId);
+      await awaitPersist(storageAdapter.write(KEYS.rejections, list));
       return rejections.getAll();
     },
 
@@ -4712,18 +4737,20 @@ const BremStorage = (function () {
 
     upsertMonthlyLocal({ driverId, month, count }) {
       const list = targets.getAll().filter(item => !(item.driverId === driverId && item.month === month));
-      list.push({
+      const newRow = {
         id: `${driverId}-${month}`,
         driverId,
         month,
         count: Number(count)
-      });
+      };
+      list.push(newRow);
+      const writeOptions = { incrementalRows: [newRow] };
       if (isProductionMode() && isRiderSelfUpdate(driverId)) {
         stageRiderScopedCache(KEYS.targets, list, { tableLoaded: true });
-      } else {
-        storageAdapter.write(KEYS.targets, list);
+        return list;
       }
-      return list;
+      const persist = storageAdapter.write(KEYS.targets, list, writeOptions);
+      return persist || list;
     },
 
     upsertMonthly({ driverId, month, count }) {
@@ -4731,8 +4758,7 @@ const BremStorage = (function () {
         return persistRiderTargetsViaServer({ monthly: { month, count } })
           .then(() => targets.upsertMonthlyLocal({ driverId, month, count }));
       }
-      return Promise.resolve(targets.upsertMonthlyLocal({ driverId, month, count }))
-        .then(() => storageAdapter.flush?.());
+      return awaitPersist(targets.upsertMonthlyLocal({ driverId, month, count }));
     },
 
     removeById(id) {
@@ -4772,28 +4798,27 @@ const BremStorage = (function () {
 
     upsertLocal({ driverId, weekStart, count }) {
       const list = weeklyTargets.getAll().filter(item => !(item.driverId === driverId && item.weekStart === weekStart));
-      list.push({
+      const newRow = {
         id: `${driverId}-${weekStart}`,
         driverId,
         weekStart,
         count: Number(count)
-      });
+      };
+      list.push(newRow);
       if (isProductionMode() && isRiderSelfUpdate(driverId)) {
         stageRiderScopedCache(KEYS.weeklyTargets, list);
-      } else {
-        storageAdapter.write(KEYS.weeklyTargets, list);
+        return list;
       }
-      return list;
+      const persist = storageAdapter.write(KEYS.weeklyTargets, list);
+      return persist || list;
     },
 
     upsert({ driverId, weekStart, count }) {
       if (isProductionMode() && isRiderSelfUpdate(driverId)) {
         return persistRiderTargetsViaServer({ weekly: { weekStart, count } })
-          .then(() => weeklyTargets.upsertLocal({ driverId, weekStart, count }))
-          .then(() => storageAdapter.flush?.());
+          .then(() => weeklyTargets.upsertLocal({ driverId, weekStart, count }));
       }
-      return Promise.resolve(weeklyTargets.upsertLocal({ driverId, weekStart, count }))
-        .then(() => storageAdapter.flush?.());
+      return awaitPersist(weeklyTargets.upsertLocal({ driverId, weekStart, count }));
     },
 
     removeById(id) {
@@ -5126,10 +5151,10 @@ const BremStorage = (function () {
       return `${item.date || ''}T${item.createdAt || ''}`;
     },
 
-    async persistList(list) {
-      storageAdapter.write(KEYS.adminSchedules, list);
+    async persistList(list, options = {}) {
+      const persist = storageAdapter.write(KEYS.adminSchedules, list, options);
       window.BremDataCache?.set?.(KEYS.adminSchedules, list, { source: 'write' });
-      await flushActiveStorage();
+      await awaitPersist(persist);
     },
 
     async create(data) {
@@ -5145,7 +5170,7 @@ const BremStorage = (function () {
         updatedAt: new Date().toISOString()
       };
       list.push(next);
-      await adminSchedules.persistList(list);
+      await adminSchedules.persistList(list, { incrementalRows: [next] });
       return next;
     },
 
@@ -5164,23 +5189,25 @@ const BremStorage = (function () {
       }));
       if (!created.length) return [];
       list.push(...created);
-      await adminSchedules.persistList(list);
+      await adminSchedules.persistList(list, { incrementalRows: created });
       return created;
     },
 
     async update(id, data) {
+      let updatedRow = null;
       const list = adminSchedules.getAll().map(item => {
         if (item.id !== id) return item;
-        return {
+        updatedRow = {
           ...item,
           title: data.title != null ? String(data.title).trim() : item.title,
           memo: data.memo != null ? String(data.memo).trim() : item.memo,
           createdBy: data.createdBy != null ? String(data.createdBy).trim() : item.createdBy,
           updatedAt: new Date().toISOString()
         };
+        return updatedRow;
       });
-      await adminSchedules.persistList(list);
-      return list.find(item => item.id === id) || null;
+      await adminSchedules.persistList(list, updatedRow ? { incrementalRows: [updatedRow] } : {});
+      return updatedRow;
     },
 
     async removeById(id) {
@@ -9310,6 +9337,7 @@ const BremStorage = (function () {
     enforceProductionStorageGuard,
     useLocalStorageAdapter,
     flushStorage: flushActiveStorage,
+    awaitPersist,
     reloadDrivers,
     fetchAllDriversFromServer,
     waitForDriversFetch,

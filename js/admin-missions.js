@@ -236,16 +236,24 @@
       }).filter(Boolean);
 
       if (patches.length) {
-        await BremStorage.drivers.batchPatch(patches);
+        await window.BremPerf.runSave('missions.assignments.bulk', {
+          write: () => BremStorage.drivers.batchPatch(patches),
+          render: () => {
+            ids.forEach(id => {
+              state.drafts.delete(id);
+              state.dirty.delete(id);
+            });
+            renderDriverMissionAssignments();
+          }
+        });
+        showToast(`${patches.length || ids.length}명 미션 배정을 저장했습니다.`);
+      } else {
+        ids.forEach(id => {
+          state.drafts.delete(id);
+          state.dirty.delete(id);
+        });
+        renderDriverMissionAssignments();
       }
-
-      ids.forEach(id => {
-        state.drafts.delete(id);
-        state.dirty.delete(id);
-      });
-
-      showToast(`${patches.length || ids.length}명 미션 배정을 저장했습니다.`);
-      renderDriverMissionAssignments();
     } catch (error) {
       showToast(error.message || '미션 배정 저장에 실패했습니다.');
       renderDriverMissionAssignments();
@@ -466,14 +474,20 @@
       saveBtn.disabled = true;
       saveBtn.textContent = '저장 중…';
 
-      void saveDriverAssignment(driverId)
+      void window.BremPerf.runSave(`missions.assignment.${driverId}`, {
+        write: () => saveDriverAssignment(driverId),
+        render: () => renderDriverMissionAssignments()
+      })
         .then(() => {
           showToast('미션 배정이 저장되었습니다.');
-          renderDriverMissionAssignments();
         })
         .catch(error => {
           showToast(error.message || '미션 배정 저장에 실패했습니다.');
           renderDriverMissionAssignments();
+        })
+        .finally(() => {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '저장';
         });
     });
 

@@ -405,7 +405,7 @@
       if (!savedDriver) return;
 
       syncDriverEventSettings(savedDriver.id, data);
-      await BremStorage.flushStorage?.();
+      await (BremStorage.awaitPersist?.(persist) || BremStorage.flushStorage?.());
 
       refreshHeader();
       window.BremDbConnectionStatus?.render('driverDbStatus');

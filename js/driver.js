@@ -1220,16 +1220,19 @@
       submitBtn.textContent = '저장 중…';
     }
 
-    void saveMonthlyTarget(
-      state.currentDriver.id,
-      month,
-      document.getElementById('driverMonthTargetCount').value
-    )
-      .then(() => BremStorage.loadDriverAppBundle?.({ force: true, riderId: state.currentDriver.id }))
-      .then(() => {
-        showToast('월 목표 콜수가 저장되었습니다.');
+    void window.BremPerf.runSave('driver.monthTarget', {
+      write: () => saveMonthlyTarget(
+        state.currentDriver.id,
+        month,
+        document.getElementById('driverMonthTargetCount').value
+      ),
+      render: () => {
         renderDriver(state.currentDriver);
         closeTargetModal();
+      }
+    })
+      .then(() => {
+        showToast('월 목표 콜수가 저장되었습니다.');
       })
       .catch(error => {
         showToast(error.message || '월 목표 저장에 실패했습니다.');
@@ -1258,16 +1261,19 @@
       submitBtn.textContent = '저장 중…';
     }
 
-    void saveWeeklyTarget(
-      state.currentDriver.id,
-      weekStart,
-      document.getElementById('driverWeekTargetCount').value
-    )
-      .then(() => BremStorage.loadDriverAppBundle?.({ force: true, riderId: state.currentDriver.id }))
-      .then(() => {
-        showToast('주 목표 콜수가 저장되었습니다.');
+    void window.BremPerf.runSave('driver.weekTarget', {
+      write: () => saveWeeklyTarget(
+        state.currentDriver.id,
+        weekStart,
+        document.getElementById('driverWeekTargetCount').value
+      ),
+      render: () => {
         renderDriver(state.currentDriver);
         closeTargetModal();
+      }
+    })
+      .then(() => {
+        showToast('주 목표 콜수가 저장되었습니다.');
       })
       .catch(error => {
         showToast(error.message || '주 목표 저장에 실패했습니다.');
