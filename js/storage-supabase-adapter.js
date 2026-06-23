@@ -6,6 +6,14 @@ window.BremSupabaseStorageAdapter = (function () {
 
   const DEFAULT_RIDER_PAGE_SIZE = 100;
   const DEFAULT_CALLS_LOOKBACK_DAYS = 540;
+  const TABLE_FETCH_PAGE_SIZE = 1000;
+  const PAGINATED_TABLES = new Set([
+    'admin_calls',
+    'daily_settlements',
+    'settlement_upload_logs',
+    'settlement_unmatched',
+    'admin_rejection_rates'
+  ]);
 
   function getDefaultCallsSinceDate() {
     const date = new Date();
@@ -196,6 +204,20 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
+    async function fetchAllTableRows(buildQuery, fromRow, pageSize = TABLE_FETCH_PAGE_SIZE) {
+      const rows = [];
+      let offset = 0;
+      while (true) {
+        const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        const page = (data || []).map(fromRow);
+        rows.push(...page);
+        if (page.length < pageSize) break;
+        offset += pageSize;
+      }
+      return rows;
+    }
+
     async function syncTableRows(tableName, list, toRow) {
       const rows = (list || []).map(toRow).filter(row => row?.id);
       window.BremPerf?.countSupabase?.(1);
@@ -258,9 +280,23 @@ window.BremSupabaseStorageAdapter = (function () {
       if (order?.column) {
         query = query.order(order.column, { ascending: order.ascending !== false });
       }
-      const { data, error } = await query;
-      if (error) throw error;
-      const value = (data || []).map(fromRow);
+      const value = PAGINATED_TABLES.has(table)
+        ? await fetchAllTableRows(() => {
+          let pageQuery = client.from(table).select(selectColumns);
+          if (table === 'admin_calls' && !options.allHistory) {
+            const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
+            if (sinceDate) pageQuery = pageQuery.gte('date', sinceDate);
+          }
+          if (order?.column) {
+            pageQuery = pageQuery.order(order.column, { ascending: order.ascending !== false });
+          }
+          return pageQuery;
+        }, fromRow)
+        : await (async () => {
+          const { data, error } = await query;
+          if (error) throw error;
+          return (data || []).map(fromRow);
+        })();
       setCache(key, value);
       loadedTableKeys.add(key);
       window.BremDataCache?.set?.(key, value);
@@ -277,6 +313,7 @@ window.BremSupabaseStorageAdapter = (function () {
         throw new Error(`${table} 테이블이 없습니다. Supabase migration을 실행하세요.`);
       }
       const UPSERT_ONLY_TABLES = new Set([
+        'admin_calls',
         'daily_settlements',
         'settlement_upload_logs',
         'settlement_unmatched',

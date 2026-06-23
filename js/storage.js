@@ -1081,8 +1081,8 @@ const BremStorage = (function () {
     targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers],
     'mission-results': [KEYS.drivers],
-    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched],
-    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched],
+    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
+    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
     'lease-management': [KEYS.drivers],
     'revenue-management': [],
@@ -4165,7 +4165,14 @@ const BremStorage = (function () {
           count: Number(count)
         });
       });
-      storageAdapter.write(KEYS.calls, list);
+      const incrementalRows = dates.map(date => ({
+        id: `${driverId}-${date}-${p}`,
+        driverId,
+        date,
+        platform: p,
+        count: Number(count)
+      }));
+      storageAdapter.write(KEYS.calls, list, { incrementalRows });
       return list;
     },
 
@@ -4218,21 +4225,17 @@ const BremStorage = (function () {
         .filter(record => record.driverId);
       if (!callDate || !normalizedRecords.length) return calls.getAll();
 
-      const targetDriverIds = new Set(normalizedRecords.map(record => record.driverId));
-      const list = calls.getAll().filter(call => {
-        if (normalizePlatform(call.platform) !== p) return true;
-        if (String(call.date).slice(0, 10) !== callDate) return true;
-        return !targetDriverIds.has(call.driverId);
-      });
-
+      const byId = new Map(calls.getAll().map(call => [call.id, call]));
       normalizedRecords.forEach(record => {
-        list.push({
-          id: `${record.driverId}-${callDate}-${p}`,
+        const id = `${record.driverId}-${callDate}-${p}`;
+        const existing = byId.get(id);
+        byId.set(id, {
+          id,
           driverId: record.driverId,
           date: callDate,
           platform: p,
           count: record.count,
-          riderPublishedAt: null
+          riderPublishedAt: existing?.riderPublishedAt ?? null
         });
       });
 
@@ -4242,10 +4245,10 @@ const BremStorage = (function () {
         date: callDate,
         platform: p,
         count: record.count,
-        riderPublishedAt: null
+        riderPublishedAt: byId.get(`${record.driverId}-${callDate}-${p}`)?.riderPublishedAt ?? null
       }));
 
-      return storageAdapter.write(KEYS.calls, list, { incrementalRows });
+      return storageAdapter.write(KEYS.calls, [...byId.values()], { incrementalRows });
     },
 
     sumForDriverSince(driverId, startDate, platform) {
@@ -4274,7 +4277,10 @@ const BremStorage = (function () {
       }
 
       const list = calls.getAll().filter(call => call.id !== targetId);
-      await awaitPersist(storageAdapter.write(KEYS.calls, list, { allowEmpty: true }));
+      await awaitPersist(storageAdapter.write(KEYS.calls, list, {
+        allowEmpty: true,
+        deletedRowIds: [targetId]
+      }));
       return calls.getAll();
     },
 
@@ -4293,7 +4299,9 @@ const BremStorage = (function () {
       }
 
       const list = calls.getAll().filter(call => !idSet.has(call.id));
-      await awaitPersist(storageAdapter.write(KEYS.calls, list, list.length ? {} : { allowEmpty: true }));
+      await awaitPersist(storageAdapter.write(KEYS.calls, list, {
+        deletedRowIds: [...idSet]
+      }));
       return calls.getAll();
     },
 
@@ -4301,11 +4309,15 @@ const BremStorage = (function () {
       const p = normalizePlatform(platform);
       const periodKey = String(period || '').slice(0, 10);
       if (!periodKey) return calls.getAll();
-      const list = calls.getAll().filter(call => {
-        if (normalizePlatform(call.platform) !== p) return true;
-        return String(call.date).slice(0, 10) !== periodKey;
-      });
-      storageAdapter.write(KEYS.calls, list, list.length ? {} : { allowEmpty: true });
+      const removedIds = calls.getAll()
+        .filter(call => normalizePlatform(call.platform) === p && String(call.date).slice(0, 10) === periodKey)
+        .map(call => call.id);
+      const list = calls.getAll().filter(call => !removedIds.includes(call.id));
+      if (activeStorageAdapter.deleteAdminCallsByPeriod) {
+        void activeStorageAdapter.deleteAdminCallsByPeriod(p, periodKey);
+      } else if (removedIds.length) {
+        storageAdapter.write(KEYS.calls, list, { deletedRowIds: removedIds });
+      }
       return list;
     }
   };
