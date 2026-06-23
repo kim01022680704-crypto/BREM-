@@ -3261,6 +3261,11 @@
 
     const clearWeekBtn = $(`#settlementUploadLogClearWeek-${p}`);
     if (clearWeekBtn) clearWeekBtn.disabled = !rows.length;
+
+    const reapplyWeekBtn = $(`#settlementUploadLogReapplyWeek-${p}`);
+    if (reapplyWeekBtn) {
+      reapplyWeekBtn.disabled = !rows.some(canReapplySettlementUploadLog);
+    }
   }
 
   function matchesSettlementPeriod(record, periodKey) {
@@ -3620,6 +3625,100 @@
     })();
   }
 
+  function reapplySettlementUploadLogsForSelectedWeek(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = ensureSettlementLogWeek(p);
+    if (!weekStart) {
+      showToast('적용주를 먼저 선택하세요.');
+      return;
+    }
+    const rows = BremStorage.settlementUploadLogs.getFiltered({
+      kind: 'daily',
+      platform: p,
+      weekStart
+    });
+    const logs = rows.filter(canReapplySettlementUploadLog);
+    if (!logs.length) {
+      showToast('선택한 주에 재반영할 저장 데이터가 없습니다.');
+      return;
+    }
+
+    const rangeLabel = `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`;
+    const riderTotal = logs.reduce(
+      (sum, log) => sum + settlementUploadLogApplicableRecords(log).length,
+      0
+    );
+    const confirmMessage = `${rangeLabel} ${platformLabel(p)} 업로드 기록 ${logs.length}건을 저장 데이터로 전체 재반영하시겠습니까?\n총 ${riderTotal}명 · 기존 콜수·일정산이 덮어씌워집니다.\n(엑셀 파일 없이 저장된 매칭 데이터만 사용합니다.)`;
+    if (!window.confirm(confirmMessage)) return;
+
+    const reapplyWeekBtn = $(`#settlementUploadLogReapplyWeek-${p}`);
+    if (reapplyWeekBtn) {
+      reapplyWeekBtn.disabled = true;
+      reapplyWeekBtn.textContent = '재반영 중…';
+    }
+
+    void (async () => {
+      try {
+        await BremStorage.ensureSectionLoaded('settlements');
+        await BremStorage.ensureSectionLoaded('calls');
+
+        const sorted = [...logs].sort((a, b) => {
+          const periodCmp = String(a.period).localeCompare(String(b.period));
+          if (periodCmp !== 0) return periodCmp;
+          return String(a.uploadedAt || '').localeCompare(String(b.uploadedAt || ''));
+        });
+
+        let successCount = 0;
+        let appliedRiders = 0;
+        for (const log of sorted) {
+          const applicable = settlementUploadLogApplicableRecords(log);
+          const result = await applyDailySettlementFromLogData(p, {
+            period: String(log.period || '').slice(0, 10),
+            matched: applicable,
+            unmatched: log.unmatchedRecords || [],
+            sourceFileName: log.fileName || '',
+            uploadLogId: log.id,
+            forceReapply: true,
+            totalDeliveryAmount: Number(log.totalDeliveryAmount || 0),
+            skipRender: true,
+            silent: true
+          });
+          if (result.ok) {
+            successCount += 1;
+            appliedRiders += applicable.length;
+          }
+        }
+
+        await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+        invalidateCallStatsIndex();
+        setSettlementWeekFilters(p, weekStart);
+        renderSettlements();
+        renderCalls();
+        renderDashboard();
+        if (state.settlementUploadLogDetailId) {
+          renderSettlementUploadLogDetail(state.settlementUploadLogDetailId);
+        }
+        showToast(
+          successCount > 0
+            ? `${platformLabel(p)} ${rangeLabel} 업로드 ${successCount}건 · ${appliedRiders}명 재반영 완료`
+            : '재반영에 성공한 기록이 없습니다.'
+        );
+      } catch (error) {
+        console.error('[BREM] settlement upload log week reapply failed:', error);
+        showToast(error.message || '전체 재반영 저장에 실패했습니다.');
+        invalidateCallStatsIndex();
+        renderSettlements();
+        renderCalls();
+        renderDashboard();
+      } finally {
+        if (reapplyWeekBtn) {
+          reapplyWeekBtn.textContent = '해당주 전체 재반영';
+          reapplyWeekBtn.disabled = !rows.some(canReapplySettlementUploadLog);
+        }
+      }
+    })();
+  }
+
   function clearSettlementUnmatchedForSelectedWeek(platform) {
     const p = normalizePlatform(platform);
     const weekStart = getSettlementUnmatchedWeekFilter(p);
@@ -3867,17 +3966,19 @@
     const uploadLogId = options.uploadLogId || '';
     const forceReapply = options.forceReapply === true;
     const clearPreview = options.clearPreview === true;
+    const skipRender = options.skipRender === true;
+    const silent = options.silent === true;
     const totalDeliveryAmount = Number(
       options.totalDeliveryAmount
       ?? matched.reduce((sum, row) => sum + settlementAmountValue(row), 0)
     );
 
     if (!matched.length) {
-      showToast('반영할 매칭 데이터가 없습니다.');
+      if (!silent) showToast('반영할 매칭 데이터가 없습니다.');
       return { ok: false };
     }
     if (!period) {
-      showToast('정산일이 없어 반영할 수 없습니다.');
+      if (!silent) showToast('정산일이 없어 반영할 수 없습니다.');
       return { ok: false };
     }
 
@@ -3994,6 +4095,7 @@
           await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
         },
         render: () => {
+          if (skipRender) return;
           setSettlementWeekFilters(p, period);
           setSettlementHistoryDay(p, period);
           if (clearPreview) clearSettlementPreview(p);
@@ -4769,6 +4871,9 @@
         event.target.value = picked;
         renderSettlementUploadLogs(p);
         renderSettlementUnmatched(p);
+      });
+      $(`#settlementUploadLogReapplyWeek-${p}`)?.addEventListener('click', () => {
+        reapplySettlementUploadLogsForSelectedWeek(p);
       });
       $(`#settlementUploadLogClearWeek-${p}`)?.addEventListener('click', () => {
         clearSettlementUploadLogsForSelectedWeek(p);
