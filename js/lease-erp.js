@@ -156,6 +156,28 @@ const BremLeaseErp = (function () {
     const dailyOtherCost = normalizeMoney(
       raw.dailyOtherCost != null ? raw.dailyOtherCost : existing?.dailyOtherCost
     );
+    const unpaidDays = Math.max(0, Math.round(normalizeMoney(
+      raw.unpaidDays != null ? raw.unpaidDays : existing?.unpaidDays
+    )));
+    const acquisitionTaxRate = normalizeMoney(
+      raw.acquisitionTaxRate != null ? raw.acquisitionTaxRate : existing?.acquisitionTaxRate
+    );
+    const purchasePrice = normalizeMoney(raw.purchasePrice != null ? raw.purchasePrice : existing?.purchasePrice);
+    const otherAcquisitionCost = normalizeMoney(
+      raw.otherAcquisitionCost != null ? raw.otherAcquisitionCost : existing?.otherAcquisitionCost
+    );
+    let acquisitionTaxAmount = normalizeMoney(
+      raw.acquisitionTaxAmount != null ? raw.acquisitionTaxAmount : existing?.acquisitionTaxAmount
+    );
+    if (!acquisitionTaxAmount && purchasePrice && acquisitionTaxRate) {
+      acquisitionTaxAmount = purchasePrice * (acquisitionTaxRate / 100);
+    }
+    let totalAcquisitionCost = normalizeMoney(
+      raw.totalAcquisitionCost != null ? raw.totalAcquisitionCost : existing?.totalAcquisitionCost
+    );
+    if (!totalAcquisitionCost && (purchasePrice || acquisitionTaxAmount || otherAcquisitionCost)) {
+      totalAcquisitionCost = purchasePrice + acquisitionTaxAmount + otherAcquisitionCost;
+    }
 
     const record = {
       id: existing?.id || raw.id || createId(),
@@ -184,13 +206,22 @@ const BremLeaseErp = (function () {
       dailyRent: dailyChargeAmount,
       weeklyRent: dailyChargeAmount > 0 ? dailyChargeAmount * 7 : normalizeMoney(raw.weeklyRent ?? existing?.weeklyRent),
       unpaidAmount: normalizeMoney(raw.unpaidAmount != null ? raw.unpaidAmount : existing?.unpaidAmount),
+      unpaidDays,
+      paymentCheck: String(raw.paymentCheck != null ? raw.paymentCheck : existing?.paymentCheck || '').trim(),
+      unpaidCollectionMethod: String(
+        raw.unpaidCollectionMethod != null ? raw.unpaidCollectionMethod : existing?.unpaidCollectionMethod || ''
+      ).trim(),
       balanceDiff: normalizeMoney(raw.balanceDiff != null ? raw.balanceDiff : existing?.balanceDiff),
       memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
       vehicleStatus: inferVehicleStatus(raw, existing),
       emptyStartDate: normalizeDate(raw.emptyStartDate != null ? raw.emptyStartDate : existing?.emptyStartDate),
       expectedDailyRent: normalizeMoney(raw.expectedDailyRent != null ? raw.expectedDailyRent : existing?.expectedDailyRent),
       dailyOtherCost,
-      purchasePrice: normalizeMoney(raw.purchasePrice != null ? raw.purchasePrice : existing?.purchasePrice),
+      purchasePrice,
+      acquisitionTaxRate,
+      acquisitionTaxAmount,
+      otherAcquisitionCost,
+      totalAcquisitionCost,
       acquisitionDate: normalizeDate(raw.acquisitionDate != null ? raw.acquisitionDate : existing?.acquisitionDate),
       rentalAssignment: normalizeRentalAssignment(
         raw.rentalAssignment !== undefined ? raw.rentalAssignment : existing?.rentalAssignment
@@ -199,8 +230,12 @@ const BremLeaseErp = (function () {
       updatedAt: new Date().toISOString()
     };
 
-    if (!record.balanceDiff && record.dailyChargeAmount && record.dailyLeaseCost) {
-      record.balanceDiff = record.dailyChargeAmount - record.dailyLeaseCost;
+    if (!record.balanceDiff && record.dailyChargeAmount) {
+      const metrics = BremLeaseProfit?.computeErpMetrics?.(record);
+      record.balanceDiff = metrics?.marginDaily ?? (record.dailyChargeAmount - record.dailyLeaseCost);
+    }
+    if (unpaidDays > 0 && record.dailyChargeAmount && !raw.unpaidAmount && !existing?.unpaidAmount) {
+      record.unpaidAmount = unpaidDays * record.dailyChargeAmount;
     }
     if (record.vehicleStatus === BremLeaseProfit.VEHICLE_STATUSES.EMPTY && !record.emptyStartDate) {
       record.emptyStartDate = record.returnDate || record.emptyStartDate;
@@ -507,12 +542,18 @@ const BremLeaseErp = (function () {
 
   function applyVehicleFilters(list, filters = {}) {
     let result = [...list];
+    const erpMode = String(filters.erpMode || '').trim();
     const category = String(filters.vehicleCategory || '').trim();
     const status = String(filters.vehicleStatus || '').trim();
     const renter = String(filters.renter || '').trim().toLowerCase();
     const leaseCompany = String(filters.leaseCompany || '').trim().toLowerCase();
     const search = String(filters.search || '').trim().toLowerCase();
 
+    if (erpMode === BremLeaseProfit.ERP_MODES.COMPANY_OWNED) {
+      result = result.filter(item => BremLeaseProfit.getErpMode(item) === BremLeaseProfit.ERP_MODES.COMPANY_OWNED);
+    } else if (erpMode === BremLeaseProfit.ERP_MODES.COMPANY_LEASE_RENTAL) {
+      result = result.filter(item => BremLeaseProfit.getErpMode(item) === BremLeaseProfit.ERP_MODES.COMPANY_LEASE_RENTAL);
+    }
     if (category) result = result.filter(item => item.vehicleCategory === category);
     if (status === 'empty') result = result.filter(item => isEmptyVehicle(item));
     else if (status) result = result.filter(item => String(item.vehicleStatus) === status);

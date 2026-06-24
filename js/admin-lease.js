@@ -3,6 +3,17 @@
   const leases = erp ? erp.vehicles() : BremStorage.leases;
   if (!leases) return;
 
+  const LEASE_RENTAL_EXPORT_HEADERS = [
+    '종류', '리스회사', '리스비(하루)', '주간리스비', '번호판', '리스시작일', '리스종료일', '렌탈/리스자',
+    '리스나간금액(하루)', '주간청구금액', '차액수익금(일)', '주간수익금', '미납일', '미납금', '완납/미납체크', '미납금액회수방법', '실제수익', '공차일', '공차손실', '상태'
+  ];
+
+  const COMPANY_OWNED_EXPORT_HEADERS = [
+    '종류', '리스/렌탈', '차량가액', '취득세%', '취득세금액', '기타비용', '합계', '하루원가', '주간원가', '번호판',
+    '리스시작일', '리스종료일', '렌탈/리스자', '리스나간금액(일)', '차액수익금(일)', '주간수익금', '미납일', '미납금',
+    '완납/미납체크', '미납금액회수방법', '실제수익', '공차일', '공차손실', '상태'
+  ];
+
   const BULK_COLUMNS = [
     { key: 'contractType', label: '구분', aliases: ['구분', '유형', '타입'] },
     { key: 'model', label: '리스 기종', aliases: ['리스 기종', '리스기종', '기종'] },
@@ -36,6 +47,7 @@
   const HEADER_MARKERS = ['구분', '리스 기종', '리스기종', '차대번호'];
 
   const state = {
+    erpMode: 'all',
     filterType: 'all',
     searchQuery: '',
     editingId: '',
@@ -96,6 +108,83 @@
     return `${number(num)}원`;
   }
 
+  function readErpMode() {
+    const checked = document.querySelector('input[name="leaseErpMode"]:checked');
+    return checked?.value === 'company_owned' ? 'company_owned' : 'company_lease_rental';
+  }
+
+  function setErpModeForm(mode) {
+    const erpMode = mode === 'company_owned' ? 'company_owned' : 'company_lease_rental';
+    document.querySelectorAll('input[name="leaseErpMode"]').forEach(input => {
+      input.checked = input.value === erpMode;
+    });
+    if ($('leaseErpModeInput')) $('leaseErpModeInput').value = erpMode;
+    updateFormFieldVisibility(erpMode);
+    syncFormCalculations();
+  }
+
+  function updateFormFieldVisibility(erpMode) {
+    const owned = erpMode === 'company_owned';
+    document.querySelectorAll('[data-lease-field="lease-company"], [data-lease-field="daily-lease-cost"], [data-lease-field="weekly-lease-cost"]').forEach(el => {
+      el.hidden = owned;
+    });
+    document.querySelectorAll('[data-lease-field="vehicle-price"], [data-lease-field="acquisition-tax-rate"], [data-lease-field="acquisition-tax-amount"], [data-lease-field="other-acquisition-cost"], [data-lease-field="total-acquisition-cost"], [data-lease-field="daily-owned-cost"], [data-lease-field="weekly-owned-cost"]').forEach(el => {
+      el.hidden = !owned;
+    });
+  }
+
+  function buildDraftFromForm() {
+    const erpMode = readErpMode();
+    const contractType = readFormContractType();
+    const vehicleCategory = erpMode === 'company_owned'
+      ? 'company_owned'
+      : (contractType === leases.CONTRACT_TYPES.RENTAL ? 'external_rental' : 'external_lease');
+    return leases.normalizeRecord({
+      vehicleCategory,
+      contractType,
+      operationType: contractType,
+      model: $('leaseModel')?.value || '',
+      chassisNumber: $('leaseChassisNumber')?.value || '',
+      vehicleNumber: $('leaseVehicleNumber')?.value || '',
+      leaseCompany: $('leaseCompany')?.value || '',
+      dailyLeaseCost: $('leaseDailyLeaseCost')?.value || '',
+      contractStartDate: $('leaseContractStartDate')?.value || '',
+      contractEndDate: $('leaseContractEndDate')?.value || '',
+      renter: $('leaseRenter')?.value || '',
+      dailyChargeAmount: $('leaseDailyCharge')?.value || '',
+      purchasePrice: $('leasePurchasePrice')?.value || '',
+      acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
+      otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
+      unpaidDays: $('leaseUnpaidDays')?.value || '',
+      paymentCheck: $('leasePaymentCheck')?.value || '',
+      unpaidCollectionMethod: $('leaseUnpaidCollectionMethod')?.value || '',
+      vehicleStatus: $('leaseVehicleStatus')?.value || '',
+      emptyStartDate: $('leaseEmptyStartDate')?.value || '',
+      memo: $('leaseMemo')?.value || ''
+    });
+  }
+
+  function syncFormCalculations() {
+    const draft = buildDraftFromForm();
+    const metrics = window.BremLeaseProfit?.computeErpMetrics?.(draft) || {};
+    const setVal = (id, value) => {
+      const el = $(id);
+      if (el) el.value = value || value === 0 ? number(value) : '';
+    };
+    setVal('leaseWeeklyLeaseCost', metrics.weeklyLeaseCost);
+    setVal('leaseWeeklyCharge', metrics.weeklyCharge);
+    setVal('leaseMarginDaily', metrics.marginDaily);
+    setVal('leaseWeeklyProfit', metrics.weeklyProfit);
+    setVal('leaseAcquisitionTaxAmount', metrics.acquisitionTaxAmount);
+    setVal('leaseTotalAcquisitionCost', metrics.totalAcquisitionCost);
+    setVal('leaseDailyOwnedCost', metrics.dailyCost);
+    setVal('leaseWeeklyOwnedCost', metrics.weeklyCost);
+    setVal('leaseUnpaidAmountPreview', metrics.unpaidAmount);
+    if ($('leaseUnpaidAmount')) $('leaseUnpaidAmount').value = metrics.unpaidAmount || '';
+    setVal('leaseEmptyLossPreview', metrics.emptyLoss);
+    setVal('leaseActualProfitPreview', metrics.actualProfit);
+  }
+
   function contractTypeLabel(type) {
     return type === leases.CONTRACT_TYPES.RENTAL ? '렌탈' : '리스';
   }
@@ -112,11 +201,9 @@
     [
       'leaseContractStartDate',
       'leaseContractEndDate',
-      'leaseReturnDate',
-      'leaseRentalStartDate',
-      'leaseRentalReturnDate',
       'leaseEmptyStartDate',
-      'leaseAcquisitionDate'
+      'leaseRentalStartDate',
+      'leaseRentalReturnDate'
     ].forEach(refreshLeaseDateLabel);
   }
 
@@ -174,6 +261,11 @@
   }
 
   function updateFilterTabUi() {
+    document.querySelectorAll('[data-lease-erp-mode]').forEach(button => {
+      const active = button.dataset.leaseErpMode === state.erpMode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
     document.querySelectorAll('[data-lease-filter]').forEach(button => {
       const active = button.dataset.leaseFilter === state.filterType;
       button.classList.toggle('active', active);
@@ -183,15 +275,15 @@
     const statusEl = $('leaseFilterStatus');
     if (!statusEl) return;
 
-    if (state.filterType === 'lease') {
-      statusEl.textContent = '리스만 표시 중';
-      statusEl.className = 'lease-filter-status lease-filter-status--lease';
-    } else if (state.filterType === 'rental') {
-      statusEl.textContent = '렌탈만 표시 중';
-      statusEl.className = 'lease-filter-status lease-filter-status--rental';
-    } else if (state.filterType === 'empty') {
-      statusEl.textContent = '공차(계약기간 남음·미배정)만 표시 중';
+    if (state.filterType === 'empty') {
+      statusEl.textContent = '공차만 표시 중';
       statusEl.className = 'lease-filter-status lease-filter-status--empty';
+    } else if (state.erpMode === 'company_owned') {
+      statusEl.textContent = '회사소유리스만 표시 중';
+      statusEl.className = 'lease-filter-status lease-filter-status--rental';
+    } else if (state.erpMode === 'company_lease_rental') {
+      statusEl.textContent = '회사리스/렌탈만 표시 중';
+      statusEl.className = 'lease-filter-status lease-filter-status--lease';
     } else {
       statusEl.textContent = '전체 목록 표시 중';
       statusEl.className = 'lease-filter-status';
@@ -280,16 +372,18 @@
   }
 
   function validateLeaseForm(data) {
-    if (data.contractType === leases.CONTRACT_TYPES.RENTAL) {
-      if (!String(data.model || '').trim()) return '리스 기종을 입력하세요.';
-      if (!String(data.chassisNumber || '').trim() && !String(data.vehicleNumber || '').trim()) {
-        return '차대번호 또는 차량번호를 입력하세요.';
+    if (!String(data.vehicleNumber || '').trim() && !String(data.chassisNumber || '').trim()) {
+      return '번호판 또는 차대번호를 입력하세요.';
+    }
+    if (data.vehicleCategory === 'company_owned') {
+      if (!Number(data.purchasePrice || 0) && !Number(data.dailyChargeAmount || data.dailyRent || 0)) {
+        return '회사소유리스는 차량가액 또는 리스나간금액을 입력하세요.';
       }
-      if (!String(data.renter || '').trim()) return '렌탈은 렌탈자를 입력하세요.';
       return '';
     }
-
-    if (!hasRecordContent(data)) return '리스는 한 칸 이상 입력해 주세요.';
+    if (!Number(data.dailyLeaseCost || 0) && !Number(data.dailyChargeAmount || data.dailyRent || 0)) {
+      return '리스비 또는 리스나간금액을 입력하세요.';
+    }
     return '';
   }
 
@@ -358,36 +452,35 @@
   }
 
   function readFormData() {
+    const erpMode = readErpMode();
     const contractType = readFormContractType();
-    const vehicleCategory = $('leaseVehicleCategory')?.value || '';
+    const vehicleCategory = erpMode === 'company_owned'
+      ? 'company_owned'
+      : (contractType === leases.CONTRACT_TYPES.RENTAL ? 'external_rental' : 'external_lease');
     return {
       contractType,
-      vehicleCategory: vehicleCategory || undefined,
+      vehicleCategory,
       operationType: contractType,
       model: $('leaseModel')?.value || '',
       chassisNumber: $('leaseChassisNumber')?.value || '',
       vehicleNumber: $('leaseVehicleNumber')?.value || '',
-      leaseCompany: $('leaseCompany')?.value || $('leaseLessor')?.value || '',
+      leaseCompany: $('leaseCompany')?.value || '',
       dailyLeaseCost: $('leaseDailyLeaseCost')?.value || '',
-      insuranceCompany: $('leaseInsuranceCompany')?.value || '',
-      insuranceAge: $('leaseInsuranceAge')?.value || '',
-      insuranceType: $('leaseInsuranceType')?.value || '',
-      dailyInsuranceCost: $('leaseDailyInsuranceCost')?.value || '',
-      dailyOtherCost: $('leaseDailyOtherCost')?.value || '',
       contractStartDate: $('leaseContractStartDate')?.value || '',
       contractEndDate: $('leaseContractEndDate')?.value || '',
-      dailyRent: $('leaseDailyCharge')?.value || $('leaseDailyRent')?.value || '',
-      dailyChargeAmount: $('leaseDailyCharge')?.value || $('leaseDailyRent')?.value || '',
-      memo: $('leaseMemo')?.value || '',
       renter: $('leaseRenter')?.value || '',
-      lessor: $('leaseLessor')?.value || '',
-      returnDate: $('leaseReturnDate')?.value || '',
+      dailyRent: $('leaseDailyCharge')?.value || '',
+      dailyChargeAmount: $('leaseDailyCharge')?.value || '',
+      purchasePrice: $('leasePurchasePrice')?.value || '',
+      acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
+      otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
+      unpaidDays: $('leaseUnpaidDays')?.value || '',
+      unpaidAmount: $('leaseUnpaidAmount')?.value || '',
+      paymentCheck: $('leasePaymentCheck')?.value || '',
+      unpaidCollectionMethod: $('leaseUnpaidCollectionMethod')?.value || '',
       vehicleStatus: $('leaseVehicleStatus')?.value || '',
       emptyStartDate: $('leaseEmptyStartDate')?.value || '',
-      expectedDailyRent: $('leaseExpectedDailyRent')?.value || '',
-      purchasePrice: $('leasePurchasePrice')?.value || '',
-      acquisitionDate: $('leaseAcquisitionDate')?.value || '',
-      unpaidAmount: $('leaseUnpaidAmount')?.value || ''
+      memo: $('leaseMemo')?.value || ''
     };
   }
 
@@ -396,45 +489,43 @@
     if (editIdEl) editIdEl.value = '';
     formEl?.reset();
     setFormContractType(leases.CONTRACT_TYPES.LEASE);
+    setErpModeForm(state.erpMode === 'company_owned' ? 'company_owned' : 'company_lease_rental');
     refreshLeaseDateLabels();
-    syncWeeklyRentPreview('leaseDailyRent', 'leaseWeeklyRent');
     $('leaseFormSubmit').textContent = '등록';
     $('leaseFormCancel')?.setAttribute('hidden', '');
+    syncFormCalculations();
   }
 
   function fillForm(item) {
     state.editingId = item.id;
     if (editIdEl) editIdEl.value = item.id;
+    const erpMode = window.BremLeaseProfit?.getErpMode?.(item) === 'company_owned'
+      ? 'company_owned'
+      : 'company_lease_rental';
+    setErpModeForm(erpMode);
     setFormContractType(item.contractType);
     $('leaseModel').value = item.model || '';
     $('leaseChassisNumber').value = item.chassisNumber || '';
     $('leaseVehicleNumber').value = item.vehicleNumber || '';
-    if ($('leaseVehicleCategory')) $('leaseVehicleCategory').value = item.vehicleCategory || '';
     if ($('leaseCompany')) $('leaseCompany').value = item.leaseCompany || item.lessor || '';
     if ($('leaseDailyLeaseCost')) $('leaseDailyLeaseCost').value = item.dailyLeaseCost || '';
-    $('leaseInsuranceCompany').value = item.insuranceCompany || '';
-    $('leaseInsuranceAge').value = item.insuranceAge || '';
-    $('leaseInsuranceType').value = item.insuranceType || '';
-    if ($('leaseDailyInsuranceCost')) $('leaseDailyInsuranceCost').value = item.dailyInsuranceCost || '';
-    if ($('leaseDailyOtherCost')) $('leaseDailyOtherCost').value = item.dailyOtherCost || '';
     $('leaseContractStartDate').value = item.contractStartDate || '';
     $('leaseContractEndDate').value = item.contractEndDate || '';
     const charge = item.dailyChargeAmount || item.dailyRent || '';
     if ($('leaseDailyCharge')) $('leaseDailyCharge').value = charge;
-    $('leaseDailyRent').value = charge;
-    syncWeeklyRentPreview('leaseDailyRent', 'leaseWeeklyRent');
-    if ($('leaseDailyCharge')) syncWeeklyRentPreview('leaseDailyCharge', 'leaseWeeklyCharge');
-    $('leaseMemo').value = item.memo || '';
     $('leaseRenter').value = item.renter || '';
-    $('leaseLessor').value = item.lessor || '';
-    $('leaseReturnDate').value = item.returnDate || '';
+    if ($('leasePurchasePrice')) $('leasePurchasePrice').value = item.purchasePrice || '';
+    if ($('leaseAcquisitionTaxRate')) $('leaseAcquisitionTaxRate').value = item.acquisitionTaxRate || '';
+    if ($('leaseOtherAcquisitionCost')) $('leaseOtherAcquisitionCost').value = item.otherAcquisitionCost || '';
+    if ($('leaseUnpaidDays')) $('leaseUnpaidDays').value = item.unpaidDays || '';
+    if ($('leaseUnpaidAmount')) $('leaseUnpaidAmount').value = item.unpaidAmount || '';
+    if ($('leasePaymentCheck')) $('leasePaymentCheck').value = item.paymentCheck || '';
+    if ($('leaseUnpaidCollectionMethod')) $('leaseUnpaidCollectionMethod').value = item.unpaidCollectionMethod || '';
     if ($('leaseVehicleStatus')) $('leaseVehicleStatus').value = item.vehicleStatus || '';
     if ($('leaseEmptyStartDate')) $('leaseEmptyStartDate').value = item.emptyStartDate || '';
-    if ($('leaseExpectedDailyRent')) $('leaseExpectedDailyRent').value = item.expectedDailyRent || '';
-    if ($('leasePurchasePrice')) $('leasePurchasePrice').value = item.purchasePrice || '';
-    if ($('leaseAcquisitionDate')) $('leaseAcquisitionDate').value = item.acquisitionDate || '';
-    if ($('leaseUnpaidAmount')) $('leaseUnpaidAmount').value = item.unpaidAmount || '';
+    $('leaseMemo').value = item.memo || '';
     refreshLeaseDateLabels();
+    syncFormCalculations();
     $('leaseFormSubmit').textContent = '수정 저장';
     $('leaseFormCancel')?.removeAttribute('hidden');
     formEl?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -442,31 +533,31 @@
 
   function filteredItems() {
     const query = state.searchQuery.trim().toLowerCase();
-    return leases.getAll()
+    let items = leases.getAll();
+    if (state.filterType === 'empty') {
+      items = items.filter(item => leases.isEmptyVehicle(item));
+    } else if (state.erpMode === 'company_owned') {
+      items = items.filter(item => window.BremLeaseProfit?.getErpMode?.(item) === 'company_owned');
+    } else if (state.erpMode === 'company_lease_rental') {
+      items = items.filter(item => window.BremLeaseProfit?.getErpMode?.(item) !== 'company_owned');
+    }
+    if (!query) {
+      return items.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    }
+    return items
       .filter(item => {
-        if (state.filterType === 'empty') {
-          if (!leases.isEmptyVehicle(item)) return false;
-        } else if (state.filterType !== 'all' && item.contractType !== state.filterType) {
-          return false;
-        }
-        if (!query) return true;
         const haystack = [
           item.model,
           item.chassisNumber,
           item.vehicleNumber,
-          item.insuranceCompany,
+          item.leaseCompany,
           item.renter,
           item.lessor,
           item.memo
         ].join(' ').toLowerCase();
         return haystack.includes(query);
       })
-      .sort((a, b) => {
-        const totalA = effectiveWeeklyRent(a) + Number(a.dailyRent || 0);
-        const totalB = effectiveWeeklyRent(b) + Number(b.dailyRent || 0);
-        if (totalB !== totalA) return totalB - totalA;
-        return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
-      });
+      .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
   }
 
   function renderKpis() {
@@ -474,6 +565,7 @@
     if (!erp || !window.BremLeaseProfit) return;
     const kpis = erp.buildDashboardKpis({
       search: state.searchQuery,
+      erpMode: state.filterType === 'empty' ? '' : state.erpMode,
       vehicleStatus: state.filterType === 'empty' ? 'empty' : ''
     });
     const setText = (id, value) => {
@@ -485,10 +577,10 @@
     setText('leaseKpiAccident', `${kpis.counts.accident}대`);
     setText('leaseKpiWeekRevenue', formatMoney(kpis.weekly.rentalRevenue));
     setText('leaseKpiWeekCost', formatMoney(kpis.weekly.leaseCost + kpis.weekly.insuranceCost + kpis.weekly.otherCost));
-    setText('leaseKpiWeekProfit', formatMoney(kpis.weekly.netProfit));
+    setText('leaseKpiWeekProfit', formatMoney(kpis.weekly.actualProfit ?? kpis.weekly.netProfit));
     setText('leaseKpiMonthRevenue', formatMoney(kpis.monthly.rentalRevenue));
     setText('leaseKpiMonthCost', formatMoney(kpis.monthly.leaseCost + kpis.monthly.insuranceCost + kpis.monthly.otherCost));
-    setText('leaseKpiMonthProfit', formatMoney(kpis.monthly.netProfit));
+    setText('leaseKpiMonthProfit', formatMoney(kpis.monthly.actualProfit ?? kpis.monthly.netProfit));
     setText('leaseKpiWeekEmptyLoss', formatMoney(kpis.weekly.emptyLossTotal));
     setText('leaseKpiMonthEmptyLoss', formatMoney(kpis.monthly.emptyLossTotal));
     setText('leaseKpiUnpaid', formatMoney(kpis.totalUnpaid));
@@ -514,25 +606,19 @@
 
   function renderList() {
     const items = filteredItems();
-    const showReturnCol = state.filterType !== 'lease';
-
-    document.querySelectorAll('[data-lease-return-col]').forEach(el => {
-      el.hidden = state.filterType === 'lease';
-    });
-
     if (!rowsEl) return;
 
     if (!items.length) {
       const emptyText = state.searchQuery.trim()
         ? '검색 결과가 없습니다.'
-        : state.filterType === 'lease'
-          ? '등록된 리스가 없습니다.'
-          : state.filterType === 'rental'
-            ? '등록된 렌탈이 없습니다.'
-            : state.filterType === 'empty'
-              ? '공차(계약기간 남음·리스자·렌탈자 미배정) 차량이 없습니다.'
-              : '등록된 리스·렌탈이 없습니다.';
-      rowsEl.innerHTML = `<tr><td colspan="25" class="empty">${emptyText}</td></tr>`;
+        : state.filterType === 'empty'
+          ? '공차 차량이 없습니다.'
+          : state.erpMode === 'company_owned'
+            ? '등록된 회사소유리스가 없습니다.'
+            : state.erpMode === 'company_lease_rental'
+              ? '등록된 회사리스/렌탈이 없습니다.'
+              : '등록된 차량이 없습니다.';
+      rowsEl.innerHTML = `<tr><td colspan="26" class="empty">${emptyText}</td></tr>`;
       renderKpis();
       updateBulkSelectionUi();
       updateFilterTabUi();
@@ -540,54 +626,38 @@
     }
 
     rowsEl.innerHTML = items.map(item => {
-      const enriched = erp?.enrichVehicleRow?.(item) || { profit: BremLeaseProfit?.computeDailyProfit?.(item), empty: {}, finalProfit: {} };
-      const profit = enriched.profit || {};
-      const empty = enriched.empty || {};
-      const isRental = item.contractType === leases.CONTRACT_TYPES.RENTAL;
-      const isLease = item.contractType === leases.CONTRACT_TYPES.LEASE;
-      const statusLabel = window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus)
-        || (leases.isEmptyVehicle(item) ? '공차' : '운행중');
-      const categoryLabel = window.BremLeaseProfit?.vehicleCategoryLabel?.(item.vehicleCategory) || contractTypeLabel(item.contractType);
-      const returnCell = isRental
-        ? (item.returnDate
-          ? `<span class="lease-return-date">${formatDate(item.returnDate)}</span>`
-          : '<span class="lease-return-pending">미반납</span>')
-        : (rentalAssignmentSummary(item)
-          ? (item.rentalAssignment.returnDate
-            ? `<span class="lease-return-date">${formatDate(item.rentalAssignment.returnDate)}</span>`
-            : '<span class="lease-sub-rental-pending">렌탈 중</span>')
-          : '-');
-      const rentalBtn = isLease
-        ? `<button type="button" class="small-btn lease-rental-btn" data-lease-rental="${item.id}">${rentalAssignmentSummary(item) ? '렌탈 수정' : '렌탈 등록'}</button>`
-        : '';
+      const metrics = window.BremLeaseProfit?.computeErpMetrics?.(item) || {};
+      const erpLabel = window.BremLeaseProfit?.erpModeLabel?.(metrics.mode) || '-';
+      const statusLabel = window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-';
+      const paymentLabel = window.BremLeaseProfit?.paymentCheckLabel?.(item.paymentCheck) || '-';
       return `
         <tr>
           <td><input type="checkbox" class="lease-row-check" data-lease-select="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}></td>
-          <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
-          <td>${escapeHtml(item.model || '-')}</td>
-          <td>${escapeHtml(categoryLabel)}</td>
-          <td>${escapeHtml(statusLabel)}</td>
-          <td>${displayRenter(item)}</td>
-          <td>${escapeHtml(item.leaseCompany || item.lessor || '-')}</td>
-          <td>${formatMoney(item.dailyChargeAmount || item.dailyRent)}</td>
-          <td>${formatMoney(item.dailyLeaseCost)}</td>
-          <td>${formatMoney(item.dailyInsuranceCost)}</td>
-          <td>${formatMoney(profit.dailyNet)}</td>
-          <td>${formatMoney(profit.weeklyNet)}</td>
-          <td>${formatMoney(profit.monthlyNet)}</td>
-          <td>${formatMoney(item.unpaidAmount)}</td>
-          <td>${empty.emptyDays ? `${empty.emptyDays}일` : '-'}</td>
-          <td>${formatMoney(empty.totalEmptyLoss)}</td>
-          <td>${formatMoney(enriched.finalProfit?.netProfit ?? profit.dailyNet)}</td>
+          <td>${escapeHtml(erpLabel)}</td>
           <td>${contractTypeBadge(item.contractType, item)}</td>
-          <td>${escapeHtml(item.chassisNumber || '-')}</td>
-          <td>${escapeHtml(item.insuranceCompany || '-')}</td>
+          <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
+          <td>${escapeHtml(item.leaseCompany || item.lessor || '-')}</td>
+          <td>${formatMoney(metrics.dailyLeaseCost)}</td>
+          <td>${formatMoney(metrics.weeklyLeaseCost)}</td>
+          <td>${formatMoney(metrics.dailyCharge)}</td>
+          <td>${formatMoney(metrics.weeklyCharge)}</td>
+          <td>${formatMoney(metrics.marginDaily)}</td>
+          <td>${formatMoney(metrics.weeklyProfit)}</td>
+          <td>${formatMoney(metrics.vehiclePrice || item.purchasePrice)}</td>
+          <td>${formatMoney(metrics.dailyCost)}</td>
+          <td>${formatMoney(metrics.weeklyCost)}</td>
+          <td>${metrics.unpaidDays ? `${metrics.unpaidDays}일` : '-'}</td>
+          <td>${formatMoney(metrics.unpaidAmount)}</td>
+          <td>${escapeHtml(paymentLabel)}</td>
+          <td>${metrics.emptyDays ? `${metrics.emptyDays}일` : '-'}</td>
+          <td>${formatMoney(metrics.emptyLoss)}</td>
+          <td><strong>${formatMoney(metrics.actualProfit)}</strong></td>
+          <td>${escapeHtml(statusLabel)}</td>
           <td>${formatDate(item.contractStartDate)}</td>
           <td>${formatDate(item.contractEndDate)}</td>
-          <td class="lease-memo-cell">${escapeHtml(item.memo || '-')}</td>
-          <td data-lease-return-col ${showReturnCol ? '' : 'hidden'}>${returnCell}</td>
+          <td>${escapeHtml(item.renter || '-')}</td>
+          <td>${escapeHtml(item.unpaidCollectionMethod || '-')}</td>
           <td class="lease-actions">
-            ${rentalBtn}
             <button type="button" class="small-btn" data-edit-lease="${item.id}">수정</button>
             <button type="button" class="small-btn danger-btn" data-delete-lease="${item.id}">삭제</button>
           </td>
@@ -719,77 +789,91 @@
     XLSX.writeFile(workbook, 'BREM_리스관리_양식.xlsx');
   }
 
-  function exportList() {
-    const items = filteredItems();
-    const rows = items.map(item => [
-      contractTypeLabel(item.contractType),
-      item.model,
-      item.chassisNumber,
-      item.vehicleNumber,
-      item.insuranceCompany,
-      item.insuranceAge,
-      item.insuranceType,
-      item.contractStartDate,
-      item.contractEndDate,
-      item.dailyRent || '',
-      effectiveWeeklyRent(item) || '',
-      item.memo,
-      item.renter,
-      item.lessor,
-      item.returnDate
-    ]);
-    const sheet = XLSX.utils.aoa_to_sheet([EXCEL_HEADERS, ...rows]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, '리스관리');
-    const stamp = new Date().toISOString().slice(0, 10);
-    const suffix = state.filterType === 'empty' ? '_공차' : '';
-    XLSX.writeFile(workbook, `BREM_리스관리${suffix}_${stamp}.xlsx`);
-  }
-
   function buildExportRow(item) {
-    const assignment = item.rentalAssignment || {};
+    const metrics = window.BremLeaseProfit?.computeErpMetrics?.(item) || {};
+    const paymentLabel = window.BremLeaseProfit?.paymentCheckLabel?.(item.paymentCheck) || '-';
+    const statusLabel = window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-';
+    if (metrics.mode === 'company_owned') {
+      return [
+        contractTypeLabel(item.contractType),
+        contractTypeLabel(item.contractType),
+        metrics.vehiclePrice || item.purchasePrice || '',
+        metrics.acquisitionTaxRate || item.acquisitionTaxRate || '',
+        metrics.acquisitionTaxAmount || '',
+        metrics.otherAcquisitionCost || item.otherAcquisitionCost || '',
+        metrics.totalAcquisitionCost || '',
+        metrics.dailyCost || '',
+        metrics.weeklyCost || '',
+        item.vehicleNumber || '',
+        item.contractStartDate || '',
+        item.contractEndDate || '',
+        item.renter || '',
+        metrics.dailyCharge || '',
+        metrics.marginDaily || '',
+        metrics.weeklyProfit || '',
+        metrics.unpaidDays || '',
+        metrics.unpaidAmount || '',
+        paymentLabel,
+        item.unpaidCollectionMethod || '',
+        metrics.actualProfit || '',
+        metrics.emptyDays || '',
+        metrics.emptyLoss || '',
+        statusLabel
+      ];
+    }
     return [
       contractTypeLabel(item.contractType),
-      item.model,
-      item.chassisNumber,
-      item.vehicleNumber,
-      item.insuranceCompany,
-      item.insuranceAge,
-      item.insuranceType,
-      item.contractStartDate,
-      item.contractEndDate,
-      item.dailyRent || '',
-      effectiveWeeklyRent(item) || '',
-      item.memo,
-      item.renter,
-      item.lessor,
-      item.returnDate,
-      assignment.renter || '',
-      assignment.startDate || '',
-      assignment.dailyRent || '',
-      effectiveWeeklyRent(assignment) || '',
-      assignment.returnDate || '',
-      assignment.memo || '',
-      leases.isEmptyVehicle(item) ? '공차' : ''
+      item.leaseCompany || item.lessor || '',
+      metrics.dailyLeaseCost || '',
+      metrics.weeklyLeaseCost || '',
+      item.vehicleNumber || '',
+      item.contractStartDate || '',
+      item.contractEndDate || '',
+      item.renter || '',
+      metrics.dailyCharge || '',
+      metrics.weeklyCharge || '',
+      metrics.marginDaily || '',
+      metrics.weeklyProfit || '',
+      metrics.unpaidDays || '',
+      metrics.unpaidAmount || '',
+      paymentLabel,
+      item.unpaidCollectionMethod || '',
+      metrics.actualProfit || '',
+      metrics.emptyDays || '',
+      metrics.emptyLoss || '',
+      statusLabel
     ];
   }
 
-  function exportLeaseVehicles() {
-    const items = leases.getAll()
-      .filter(item => item.contractType === leases.CONTRACT_TYPES.LEASE)
-      .sort((a, b) => String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || ''), 'ko'));
-    if (!items.length) {
-      showToast('다운로드할 리스차가 없습니다.');
+  function exportList() {
+    const items = filteredItems();
+    const owned = items.filter(item => window.BremLeaseProfit?.getErpMode?.(item) === 'company_owned');
+    const leaseRental = items.filter(item => window.BremLeaseProfit?.getErpMode?.(item) !== 'company_owned');
+    const workbook = XLSX.utils.book_new();
+    if (leaseRental.length) {
+      const sheet = XLSX.utils.aoa_to_sheet([
+        LEASE_RENTAL_EXPORT_HEADERS,
+        ...leaseRental.map(buildExportRow)
+      ]);
+      XLSX.utils.book_append_sheet(workbook, sheet, '회사리스렌탈');
+    }
+    if (owned.length) {
+      const sheet = XLSX.utils.aoa_to_sheet([
+        COMPANY_OWNED_EXPORT_HEADERS,
+        ...owned.map(buildExportRow)
+      ]);
+      XLSX.utils.book_append_sheet(workbook, sheet, '회사소유리스');
+    }
+    if (!leaseRental.length && !owned.length) {
+      showToast('다운로드할 차량이 없습니다.');
       return;
     }
-    const rows = items.map(item => buildExportRow(item));
-    const sheet = XLSX.utils.aoa_to_sheet([LEASE_EXPORT_HEADERS, ...rows]);
-    sheet['!cols'] = LEASE_EXPORT_HEADERS.map(label => ({ wch: Math.max(12, label.length + 2) }));
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, '리스차');
     const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(workbook, `BREM_리스차_${stamp}.xlsx`);
-    showToast(`리스차 ${items.length}대 엑셀 다운로드`);
+    XLSX.writeFile(workbook, `BREM_리스ERP_${stamp}.xlsx`);
+  }
+
+  function exportLeaseVehicles() {
+    exportList();
   }
 
   function openRentalModal(item) {
@@ -846,6 +930,16 @@
     if (bindEvents.bound) return;
     bindEvents.bound = true;
 
+    document.querySelectorAll('[data-lease-erp-mode]').forEach(button => {
+      button.addEventListener('click', () => {
+        state.erpMode = button.dataset.leaseErpMode;
+        state.filterType = 'all';
+        state.selectedIds.clear();
+        setErpModeForm(state.erpMode === 'company_owned' ? 'company_owned' : 'company_lease_rental');
+        renderList();
+      });
+    });
+
     document.querySelectorAll('[data-lease-filter]').forEach(button => {
       button.addEventListener('click', () => {
         state.filterType = button.dataset.leaseFilter;
@@ -865,21 +959,22 @@
       renderList();
     });
 
-    document.querySelectorAll('input[name="leaseContractType"]').forEach(input => {
-      input.addEventListener('change', () => updateReturnDateVisibility(readFormContractType()));
+    document.querySelectorAll('input[name="leaseContractType"], input[name="leaseErpMode"]').forEach(input => {
+      input.addEventListener('change', () => {
+        if (input.name === 'leaseErpMode') setErpModeForm(readErpMode());
+        syncFormCalculations();
+      });
     });
 
-    $('leaseDailyRent')?.addEventListener('input', () => {
-      syncWeeklyRentPreview('leaseDailyRent', 'leaseWeeklyRent');
-      const charge = $('leaseDailyCharge');
-      if (charge) charge.value = $('leaseDailyRent')?.value || '';
+    [
+      'leaseDailyLeaseCost', 'leaseDailyCharge', 'leasePurchasePrice', 'leaseAcquisitionTaxRate',
+      'leaseOtherAcquisitionCost', 'leaseUnpaidDays', 'leaseVehicleStatus', 'leaseEmptyStartDate'
+    ].forEach(id => {
+      $(id)?.addEventListener('input', syncFormCalculations);
+      $(id)?.addEventListener('change', syncFormCalculations);
     });
 
-    $('leaseDailyCharge')?.addEventListener('input', () => {
-      const rent = $('leaseDailyRent');
-      if (rent) rent.value = $('leaseDailyCharge')?.value || '';
-      syncWeeklyRentPreview('leaseDailyRent', 'leaseWeeklyRent');
-    });
+    $('leaseDailyCharge')?.addEventListener('input', syncFormCalculations);
 
     $('leaseRentalDailyRent')?.addEventListener('input', () => {
       syncWeeklyRentPreview('leaseRentalDailyRent', 'leaseRentalWeeklyRent');
@@ -1048,7 +1143,8 @@
   renderBulkGuideTable();
   renderBulkPreviewHead();
   renderBulkPreview();
+  setErpModeForm('company_lease_rental');
   refreshLeaseDateLabels();
-  syncWeeklyRentPreview('leaseDailyRent', 'leaseWeeklyRent');
+  syncFormCalculations();
   window.BremAdminLease = { refresh };
 })();

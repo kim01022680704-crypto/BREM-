@@ -1119,13 +1119,13 @@
           <div class="card-header lease-card-header">
             <div>
               <h2>리스 · 렌탈 수익관리 ERP</h2>
-              <p class="form-help">Supabase 저장 · 일/주/월 순수익 · 공차손실 · 미납·사고·정비 반영</p>
+              <p class="form-help">Supabase 저장 · 회사리스/렌탈 · 회사소유리스 엑셀 기준 주간 수익 · 공차손실 · 미납 반영</p>
             </div>
             <div class="lease-filter-panel">
-              <div class="lease-filter-tabs" role="tablist" aria-label="리스 렌탈 필터">
-                <button type="button" class="lease-filter-btn active" data-lease-filter="all" role="tab" aria-selected="true">전체</button>
-                <button type="button" class="lease-filter-btn lease-filter-btn--lease" data-lease-filter="lease" role="tab" aria-selected="false"><span class="lease-filter-btn__mark">✓</span> 리스</button>
-                <button type="button" class="lease-filter-btn lease-filter-btn--rental" data-lease-filter="rental" role="tab" aria-selected="false"><span class="lease-filter-btn__mark">✓</span> 렌탈</button>
+              <div class="lease-filter-tabs" role="tablist" aria-label="리스 ERP 구분">
+                <button type="button" class="lease-filter-btn active" data-lease-erp-mode="all" role="tab" aria-selected="true">전체</button>
+                <button type="button" class="lease-filter-btn lease-filter-btn--lease" data-lease-erp-mode="company_lease_rental" role="tab" aria-selected="false">회사리스/렌탈</button>
+                <button type="button" class="lease-filter-btn lease-filter-btn--rental" data-lease-erp-mode="company_owned" role="tab" aria-selected="false">회사소유리스</button>
                 <button type="button" class="lease-filter-btn lease-filter-btn--empty" data-lease-filter="empty" role="tab" aria-selected="false"><span class="lease-filter-btn__mark">✓</span> 공차</button>
               </div>
               <p class="lease-filter-status" id="leaseFilterStatus">전체 목록 표시 중</p>
@@ -1153,31 +1153,146 @@
           <div class="lease-erp-panel" data-lease-erp-panel="vehicles">
           <form class="lease-form" id="leaseForm">
             <input type="hidden" id="leaseEditId">
+            <input type="hidden" id="leaseErpModeInput" value="company_lease_rental">
             <fieldset class="lease-type-fieldset">
-              <legend>구분</legend>
+              <legend>ERP 구분</legend>
               <label class="lease-type-option">
-                <input type="radio" name="leaseContractType" value="lease" checked>
+                <input type="radio" name="leaseErpMode" value="company_lease_rental" checked>
                 <span class="lease-type-chip lease-type-chip--lease">
                   <span class="lease-type-chip__mark">✓</span>
-                  <span class="lease-type-chip__label">리스</span>
+                  <span class="lease-type-chip__label">회사리스/렌탈</span>
                 </span>
               </label>
               <label class="lease-type-option">
-                <input type="radio" name="leaseContractType" value="rental">
+                <input type="radio" name="leaseErpMode" value="company_owned">
                 <span class="lease-type-chip lease-type-chip--rental">
                   <span class="lease-type-chip__mark">✓</span>
-                  <span class="lease-type-chip__label">렌탈</span>
+                  <span class="lease-type-chip__label">회사소유리스</span>
                 </span>
               </label>
             </fieldset>
+            <fieldset class="lease-type-fieldset" data-lease-form-section="kind">
+              <legend>종류</legend>
+              <label class="lease-type-option">
+                <input type="radio" name="leaseContractType" value="lease" checked>
+                <span class="lease-type-chip lease-type-chip--lease"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">리스</span></span>
+              </label>
+              <label class="lease-type-option">
+                <input type="radio" name="leaseContractType" value="rental">
+                <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">렌탈</span></span>
+              </label>
+            </fieldset>
             <div class="lease-form-grid">
+              <label data-lease-field="lease-company">
+                리스회사
+                <input type="text" id="leaseCompany" placeholder="리스회사">
+              </label>
+              <label data-lease-field="daily-lease-cost">
+                리스비(하루기준)
+                <input type="number" id="leaseDailyLeaseCost" min="0" placeholder="0">
+              </label>
+              <label data-lease-field="weekly-lease-cost">
+                주간리스비
+                <input type="text" id="leaseWeeklyLeaseCost" readonly tabindex="-1" placeholder="자동계산">
+              </label>
               <label>
-                차량구분
-                <select id="leaseVehicleCategory">
-                  <option value="external_lease">외부리스</option>
-                  <option value="external_rental">외부렌탈</option>
-                  <option value="company_owned">회사보유차량</option>
+                번호판
+                <input type="text" id="leaseVehicleNumber" placeholder="12가3456">
+              </label>
+              <label data-lease-field="model">
+                기종
+                <input type="text" id="leaseModel" placeholder="예: PCX125">
+              </label>
+              <label data-lease-field="chassis">
+                차대번호
+                <input type="text" id="leaseChassisNumber" placeholder="차대번호">
+              </label>
+              <label class="call-date-field">
+                <span>리스시작일</span>
+                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseContractStartDate">
+                  <span id="leaseContractStartDateLabel">날짜 선택</span>
+                </button>
+                <input type="hidden" id="leaseContractStartDate">
+              </label>
+              <label class="call-date-field">
+                <span>리스종료일</span>
+                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseContractEndDate">
+                  <span id="leaseContractEndDateLabel">날짜 선택</span>
+                </button>
+                <input type="hidden" id="leaseContractEndDate">
+              </label>
+              <label>
+                렌탈/리스자
+                <input type="text" id="leaseRenter" placeholder="기사명 또는 리스자">
+              </label>
+              <label>
+                리스나간금액(하루기준)
+                <input type="number" id="leaseDailyCharge" min="0" placeholder="0">
+              </label>
+              <label>
+                주간청구금액
+                <input type="text" id="leaseWeeklyCharge" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label>
+                차액수익금(일)
+                <input type="text" id="leaseMarginDaily" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label>
+                주간수익금
+                <input type="text" id="leaseWeeklyProfit" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label data-lease-field="vehicle-price">
+                차량가액
+                <input type="number" id="leasePurchasePrice" min="0" placeholder="0">
+              </label>
+              <label data-lease-field="acquisition-tax-rate">
+                취득세(%)
+                <input type="number" id="leaseAcquisitionTaxRate" min="0" step="0.01" placeholder="0">
+              </label>
+              <label data-lease-field="acquisition-tax-amount">
+                취득세금액
+                <input type="text" id="leaseAcquisitionTaxAmount" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label data-lease-field="other-acquisition-cost">
+                기타비용
+                <input type="number" id="leaseOtherAcquisitionCost" min="0" placeholder="0">
+              </label>
+              <label data-lease-field="total-acquisition-cost">
+                합계
+                <input type="text" id="leaseTotalAcquisitionCost" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label data-lease-field="daily-owned-cost">
+                하루원가
+                <input type="text" id="leaseDailyOwnedCost" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label data-lease-field="weekly-owned-cost">
+                주간원가
+                <input type="text" id="leaseWeeklyOwnedCost" readonly tabindex="-1" placeholder="자동계산">
+              </label>
+              <label>
+                미납일
+                <input type="number" id="leaseUnpaidDays" min="0" step="1" placeholder="0">
+              </label>
+              <label>
+                미납금
+                <input type="text" id="leaseUnpaidAmountPreview" readonly tabindex="-1" placeholder="자동계산">
+                <input type="hidden" id="leaseUnpaidAmount">
+              </label>
+              <label>
+                완납/미납체크
+                <select id="leasePaymentCheck">
+                  <option value="">-</option>
+                  <option value="paid">완납</option>
+                  <option value="unpaid">미납</option>
                 </select>
+              </label>
+              <label>
+                미납금액회수방법
+                <input type="text" id="leaseUnpaidCollectionMethod" placeholder="예: 급여공제, 별도입금">
+              </label>
+              <label>
+                실제수익(주)
+                <input type="text" id="leaseActualProfitPreview" readonly tabindex="-1" placeholder="자동계산">
               </label>
               <label>
                 차량상태
@@ -1189,112 +1304,16 @@
                   <option value="terminated">계약종료</option>
                 </select>
               </label>
-              <label>
-                리스 기종
-                <input type="text" id="leaseModel" placeholder="예: PCX125">
-              </label>
-              <label>
-                차대번호
-                <input type="text" id="leaseChassisNumber" placeholder="차대번호">
-              </label>
-              <label>
-                차량번호
-                <input type="text" id="leaseVehicleNumber" placeholder="12가3456">
-              </label>
-              <label>
-                리스회사
-                <input type="text" id="leaseCompany" placeholder="리스회사">
-              </label>
-              <label>
-                리스회사 하루원가
-                <input type="number" id="leaseDailyLeaseCost" min="0" placeholder="0">
-              </label>
-              <label>
-                하루 보험비
-                <input type="number" id="leaseDailyInsuranceCost" min="0" placeholder="0">
-              </label>
-              <label>
-                기타 하루비용
-                <input type="number" id="leaseDailyOtherCost" min="0" placeholder="0">
-              </label>
-              <label>
-                렌탈/리스 청구금액(일)
-                <input type="number" id="leaseDailyCharge" min="0" placeholder="0">
-              </label>
-              <label>
-                일렌트료(호환)
-                <input type="number" id="leaseDailyRent" min="0" placeholder="0">
-              </label>
-              <label>
-                주렌트료
-                <input type="text" id="leaseWeeklyRent" readonly tabindex="-1" placeholder="일렌트료 × 7">
-              </label>
-              <label>
-                미납금액
-                <input type="number" id="leaseUnpaidAmount" min="0" placeholder="0">
-              </label>
               <label class="call-date-field">
-                <span>공차 시작일</span>
+                <span>공차시작일</span>
                 <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseEmptyStartDate">
                   <span id="leaseEmptyStartDateLabel">날짜 선택</span>
                 </button>
                 <input type="hidden" id="leaseEmptyStartDate">
               </label>
               <label>
-                예상 하루 렌탈료
-                <input type="number" id="leaseExpectedDailyRent" min="0" placeholder="0">
-              </label>
-              <label>
-                구매가(참고)
-                <input type="number" id="leasePurchasePrice" min="0" placeholder="0">
-              </label>
-              <label class="call-date-field">
-                <span>취득일</span>
-                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseAcquisitionDate">
-                  <span id="leaseAcquisitionDateLabel">날짜 선택</span>
-                </button>
-                <input type="hidden" id="leaseAcquisitionDate">
-              </label>
-              <label>
-                보험사
-                <input type="text" id="leaseInsuranceCompany" placeholder="보험사">
-              </label>
-              <label>
-                보험연령
-                <input type="text" id="leaseInsuranceAge" placeholder="예: 만26세">
-              </label>
-              <label>
-                보험종류
-                <input type="text" id="leaseInsuranceType" placeholder="예: 종합">
-              </label>
-              <label class="call-date-field">
-                <span>계약시작일</span>
-                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseContractStartDate">
-                  <span id="leaseContractStartDateLabel">날짜 선택</span>
-                </button>
-                <input type="hidden" id="leaseContractStartDate">
-              </label>
-              <label class="call-date-field">
-                <span>최종만료일</span>
-                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseContractEndDate">
-                  <span id="leaseContractEndDateLabel">날짜 선택</span>
-                </button>
-                <input type="hidden" id="leaseContractEndDate">
-              </label>
-              <label>
-                렌탈자
-                <input type="text" id="leaseRenter" placeholder="렌탈 시 기사명">
-              </label>
-              <label>
-                리스자
-                <input type="text" id="leaseLessor" placeholder="리스/렌탈 업체">
-              </label>
-              <label id="leaseReturnDateWrap" class="call-date-field" hidden>
-                <span>오토바이 반납일</span>
-                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseReturnDate">
-                  <span id="leaseReturnDateLabel">날짜 선택</span>
-                </button>
-                <input type="hidden" id="leaseReturnDate">
+                공차손실
+                <input type="text" id="leaseEmptyLossPreview" readonly tabindex="-1" placeholder="자동계산">
               </label>
               <label class="lease-form-memo">
                 메모
@@ -1491,29 +1510,30 @@
               <thead>
                 <tr>
                   <th></th>
-                  <th>차량번호</th>
-                  <th>기종</th>
-                  <th>차량구분</th>
-                  <th>상태</th>
-                  <th>렌탈자</th>
+                  <th>ERP구분</th>
+                  <th>종류</th>
+                  <th>번호판</th>
                   <th>리스회사</th>
-                  <th>하루청구</th>
+                  <th>리스비(일)</th>
+                  <th>주간리스비</th>
+                  <th>리스나간금(일)</th>
+                  <th>주간청구</th>
+                  <th>차액수익(일)</th>
+                  <th>주간수익</th>
+                  <th>차량가액</th>
                   <th>하루원가</th>
-                  <th>하루보험</th>
-                  <th>일 순수익</th>
-                  <th>주 순수익</th>
-                  <th>월 순수익</th>
+                  <th>주간원가</th>
+                  <th>미납일</th>
                   <th>미납금</th>
-                  <th>공차일수</th>
+                  <th>완납/미납</th>
+                  <th>공차일</th>
                   <th>공차손실</th>
-                  <th>최종손익</th>
-                  <th>구분</th>
-                  <th>차대번호</th>
-                  <th>보험사</th>
-                  <th>계약시작</th>
-                  <th>만료일</th>
-                  <th>메모</th>
-                  <th data-lease-return-col>반납일</th>
+                  <th>실제수익</th>
+                  <th>상태</th>
+                  <th>리스시작</th>
+                  <th>리스종료</th>
+                  <th>렌탈/리스자</th>
+                  <th>회수방법</th>
                   <th>관리</th>
                 </tr>
               </thead>
@@ -3457,10 +3477,10 @@
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/lease-profit.js?v=20260625a"></script>
-  <script src="js/lease-erp.js?v=20260625a"></script>
-  <script src="js/admin-lease.js?v=20260625a"></script>
-  <script src="js/admin-lease-erp-panels.js?v=20260625a"></script>
+  <script src="js/lease-profit.js?v=20260627a"></script>
+  <script src="js/lease-erp.js?v=20260627a"></script>
+  <script src="js/admin-lease.js?v=20260627a"></script>
+  <script src="js/admin-lease-erp-panels.js?v=20260627a"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>

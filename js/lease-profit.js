@@ -1,10 +1,17 @@
 /**
- * BREM 리스/렌탈 수익 계산 (감가상각 제외)
+ * BREM 리스/렌탈 ERP 수익 계산 (엑셀 기준)
+ * 1) 회사리스/렌탈 — 외부리스·외부렌탈
+ * 2) 회사소유리스 — 회사보유차량
  */
 const BremLeaseProfit = (function () {
   const VEHICLE_CATEGORIES = Object.freeze({
     EXTERNAL_LEASE: 'external_lease',
     EXTERNAL_RENTAL: 'external_rental',
+    COMPANY_OWNED: 'company_owned'
+  });
+
+  const ERP_MODES = Object.freeze({
+    COMPANY_LEASE_RENTAL: 'company_lease_rental',
     COMPANY_OWNED: 'company_owned'
   });
 
@@ -23,13 +30,23 @@ const BremLeaseProfit = (function () {
     COLLECTING: 'collecting'
   });
 
+  const PAYMENT_CHECK = Object.freeze({
+    PAID: 'paid',
+    UNPAID: 'unpaid'
+  });
+
   function money(value) {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
   }
 
   function todayKey() {
-    return new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    return [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0')
+    ].join('-');
   }
 
   function daysBetween(startDate, endDate = todayKey()) {
@@ -64,6 +81,10 @@ const BremLeaseProfit = (function () {
     return String(vehicle?.vehicleCategory || '') === VEHICLE_CATEGORIES.COMPANY_OWNED;
   }
 
+  function getErpMode(vehicle) {
+    return isCompanyOwned(vehicle) ? ERP_MODES.COMPANY_OWNED : ERP_MODES.COMPANY_LEASE_RENTAL;
+  }
+
   function effectiveDailyCharge(vehicle) {
     const assignment = vehicle?.rentalAssignment;
     if (assignment && money(assignment.dailyRent) > 0) return money(assignment.dailyRent);
@@ -88,55 +109,153 @@ const BremLeaseProfit = (function () {
     return money(vehicle?.dailyOtherCost);
   }
 
-  function computeDailyProfit(vehicle) {
-    const dailyCharge = effectiveDailyCharge(vehicle);
-    const dailyLeaseCost = effectiveDailyLeaseCost(vehicle);
-    const dailyInsurance = effectiveDailyInsurance(vehicle);
-    const dailyOther = effectiveDailyOther(vehicle);
-    const dailyRevenue = dailyCharge;
-    const dailyCost = dailyLeaseCost + dailyInsurance + dailyOther;
-    const dailyNet = dailyRevenue - dailyCost;
+  function computeOwnedCostBase(vehicle) {
+    const vehiclePrice = money(vehicle?.purchasePrice);
+    const taxRate = money(vehicle?.acquisitionTaxRate) / 100;
+    const taxAmount = money(vehicle?.acquisitionTaxAmount) > 0
+      ? money(vehicle.acquisitionTaxAmount)
+      : vehiclePrice * taxRate;
+    const otherCost = money(vehicle?.otherAcquisitionCost);
+    const totalCost = money(vehicle?.totalAcquisitionCost) > 0
+      ? money(vehicle.totalAcquisitionCost)
+      : vehiclePrice + taxAmount + otherCost;
+    const dailyCost = totalCost > 0 ? totalCost / 365 : 0;
     return {
-      dailyRevenue,
-      dailyLeaseCost,
-      dailyInsurance,
-      dailyOther,
+      vehiclePrice,
+      taxRate: money(vehicle?.acquisitionTaxRate),
+      taxAmount,
+      otherCost,
+      totalCost,
       dailyCost,
-      dailyNet,
-      weeklyNet: dailyNet * 7,
-      monthlyNet: dailyNet * 30,
-      balanceDiff: dailyCharge - dailyLeaseCost
+      weeklyCost: dailyCost * 7
+    };
+  }
+
+  function resolveUnpaidAmount(vehicle, dailyCharge, unpaidDays) {
+    if (unpaidDays > 0 && dailyCharge > 0) return unpaidDays * dailyCharge;
+    return money(vehicle?.unpaidAmount);
+  }
+
+  function isEmptyVehicle(vehicle) {
+    const status = String(vehicle?.vehicleStatus || '');
+    if (status === VEHICLE_STATUSES.EMPTY) return true;
+    return Boolean(window.BremLeaseErp?.isEmptyVehicle?.(vehicle));
+  }
+
+  function computeEmptyLoss(vehicle, dailyBase, asOfDate = todayKey()) {
+    if (!isEmptyVehicle(vehicle)) {
+      return { emptyDays: 0, dailyBase: money(dailyBase), emptyLoss: 0 };
+    }
+    const emptyStart = String(vehicle?.emptyStartDate || vehicle?.returnDate || '').slice(0, 10);
+    const emptyDays = daysBetween(emptyStart, asOfDate);
+    const base = money(dailyBase);
+    return {
+      emptyDays,
+      dailyBase: base,
+      emptyLoss: base * emptyDays
+    };
+  }
+
+  /** 엑셀 기준 ERP 계산 */
+  function computeErpMetrics(vehicle, options = {}) {
+    const asOfDate = options.asOfDate || todayKey();
+    const mode = getErpMode(vehicle);
+    const dailyCharge = effectiveDailyCharge(vehicle);
+    const unpaidDays = Math.max(0, Math.round(money(vehicle?.unpaidDays)));
+    const paymentCheck = String(vehicle?.paymentCheck || '').trim();
+
+    if (mode === ERP_MODES.COMPANY_OWNED) {
+      const owned = computeOwnedCostBase(vehicle);
+      const marginDaily = dailyCharge - owned.dailyCost;
+      const weeklyProfit = marginDaily * 7;
+      const unpaidAmount = resolveUnpaidAmount(vehicle, dailyCharge, unpaidDays);
+      const empty = computeEmptyLoss(vehicle, owned.dailyCost, asOfDate);
+      const actualProfit = weeklyProfit - unpaidAmount - empty.emptyLoss;
+
+      return {
+        mode,
+        kindLabel: '회사소유리스',
+        dailyCharge,
+        dailyLeaseCost: 0,
+        dailyCost: owned.dailyCost,
+        weeklyLeaseCost: 0,
+        weeklyCharge: dailyCharge * 7,
+        weeklyCost: owned.weeklyCost,
+        marginDaily,
+        weeklyProfit,
+        unpaidDays,
+        unpaidAmount,
+        paymentCheck,
+        unpaidCollectionMethod: String(vehicle?.unpaidCollectionMethod || '').trim(),
+        emptyDays: empty.emptyDays,
+        emptyLoss: empty.emptyLoss,
+        actualProfit,
+        vehiclePrice: owned.vehiclePrice,
+        acquisitionTaxRate: owned.taxRate,
+        acquisitionTaxAmount: owned.taxAmount,
+        otherAcquisitionCost: owned.otherCost,
+        totalAcquisitionCost: owned.totalCost
+      };
+    }
+
+    const dailyLeaseCost = effectiveDailyLeaseCost(vehicle);
+    const marginDaily = dailyCharge - dailyLeaseCost;
+    const weeklyLeaseCost = dailyLeaseCost * 7;
+    const weeklyCharge = dailyCharge * 7;
+    const weeklyProfit = marginDaily * 7;
+    const unpaidAmount = resolveUnpaidAmount(vehicle, dailyCharge, unpaidDays);
+    const empty = computeEmptyLoss(vehicle, dailyLeaseCost, asOfDate);
+    const actualProfit = weeklyProfit - unpaidAmount - empty.emptyLoss;
+
+    return {
+      mode,
+      kindLabel: '회사리스/렌탈',
+      dailyCharge,
+      dailyLeaseCost,
+      dailyCost: dailyLeaseCost,
+      weeklyLeaseCost,
+      weeklyCharge,
+      weeklyCost: weeklyLeaseCost,
+      marginDaily,
+      weeklyProfit,
+      unpaidDays,
+      unpaidAmount,
+      paymentCheck,
+      unpaidCollectionMethod: String(vehicle?.unpaidCollectionMethod || '').trim(),
+      emptyDays: empty.emptyDays,
+      emptyLoss: empty.emptyLoss,
+      actualProfit,
+      vehiclePrice: 0,
+      acquisitionTaxRate: 0,
+      acquisitionTaxAmount: 0,
+      otherAcquisitionCost: 0,
+      totalAcquisitionCost: 0
+    };
+  }
+
+  function computeDailyProfit(vehicle) {
+    const metrics = computeErpMetrics(vehicle);
+    return {
+      dailyRevenue: metrics.dailyCharge,
+      dailyLeaseCost: metrics.dailyLeaseCost || metrics.dailyCost,
+      dailyInsurance: effectiveDailyInsurance(vehicle),
+      dailyOther: effectiveDailyOther(vehicle),
+      dailyCost: metrics.dailyCost + effectiveDailyInsurance(vehicle) + effectiveDailyOther(vehicle),
+      dailyNet: metrics.marginDaily,
+      weeklyNet: metrics.weeklyProfit,
+      monthlyNet: metrics.weeklyProfit * (30 / 7),
+      balanceDiff: metrics.marginDaily
     };
   }
 
   function computeEmptyMetrics(vehicle, asOfDate = todayKey()) {
-    const status = String(vehicle?.vehicleStatus || '');
-    const isEmptyStatus = status === VEHICLE_STATUSES.EMPTY || BremLeaseErp?.isEmptyVehicle?.(vehicle);
-    if (!isEmptyStatus) {
-      return {
-        emptyDays: 0,
-        dailyEmptyLoss: 0,
-        dailyEmptyOpportunity: 0,
-        totalEmptyLoss: 0,
-        totalEmptyOpportunity: 0
-      };
-    }
-
-    const emptyStart = String(vehicle?.emptyStartDate || vehicle?.returnDate || '').slice(0, 10);
-    const emptyDays = daysBetween(emptyStart, asOfDate);
-    const dailyLeaseCost = effectiveDailyLeaseCost(vehicle);
-    const dailyInsurance = effectiveDailyInsurance(vehicle);
-    const dailyOther = effectiveDailyOther(vehicle);
-    const expectedDailyRent = money(vehicle?.expectedDailyRent) || effectiveDailyCharge(vehicle);
-    const dailyEmptyLoss = dailyLeaseCost + dailyInsurance + dailyOther;
-    const dailyEmptyOpportunity = expectedDailyRent - dailyLeaseCost - dailyInsurance - dailyOther;
-
+    const metrics = computeErpMetrics(vehicle, { asOfDate });
     return {
-      emptyDays,
-      dailyEmptyLoss,
-      dailyEmptyOpportunity,
-      totalEmptyLoss: dailyEmptyLoss * emptyDays,
-      totalEmptyOpportunity: dailyEmptyOpportunity * emptyDays
+      emptyDays: metrics.emptyDays,
+      dailyEmptyLoss: metrics.emptyDays > 0 ? metrics.emptyLoss / Math.max(metrics.emptyDays, 1) : 0,
+      dailyEmptyOpportunity: 0,
+      totalEmptyLoss: metrics.emptyLoss,
+      totalEmptyOpportunity: 0
     };
   }
 
@@ -153,39 +272,26 @@ const BremLeaseProfit = (function () {
   }
 
   function computeVehicleFinalProfit(vehicle, context = {}) {
-    const daily = computeDailyProfit(vehicle);
-    const empty = computeEmptyMetrics(vehicle, context.asOfDate);
-    const unpaid = money(vehicle?.unpaidAmount) + sumPaymentsUnpaid(context.payments || []);
+    const metrics = computeErpMetrics(vehicle, { asOfDate: context.asOfDate });
     const accidentLoss = sumAccidentLoss(context.accidents || []);
     const maintenanceCost = sumMaintenanceCost(context.maintenance || []);
-    const periodDays = Number(context.periodDays || 1);
+    const extraUnpaid = sumPaymentsUnpaid(context.payments || []);
 
-    const rentalRevenue = daily.dailyRevenue * periodDays;
-    const leaseCost = daily.dailyLeaseCost * periodDays;
-    const insuranceCost = daily.dailyInsurance * periodDays;
-    const otherCost = daily.dailyOther * periodDays;
-
-    const netProfit = rentalRevenue
-      - leaseCost
-      - insuranceCost
-      - otherCost
-      - maintenanceCost
-      - accidentLoss
-      - unpaid
-      - empty.totalEmptyLoss;
+    const netProfit = metrics.actualProfit - accidentLoss - maintenanceCost - extraUnpaid;
 
     return {
-      ...daily,
-      ...empty,
-      unpaid,
+      ...computeDailyProfit(vehicle),
+      ...computeEmptyMetrics(vehicle, context.asOfDate),
+      ...metrics,
+      unpaid: metrics.unpaidAmount + extraUnpaid,
       accidentLoss,
       maintenanceCost,
-      rentalRevenue,
-      leaseCost,
-      insuranceCost,
-      otherCost,
+      rentalRevenue: metrics.weeklyCharge,
+      leaseCost: metrics.weeklyCost,
+      insuranceCost: effectiveDailyInsurance(vehicle) * 7,
+      otherCost: effectiveDailyOther(vehicle) * 7,
       netProfit,
-      periodDays
+      periodDays: 7
     };
   }
 
@@ -196,12 +302,16 @@ const BremLeaseProfit = (function () {
       empty: 0,
       maintenance: 0,
       accident: 0,
-      terminated: 0
+      terminated: 0,
+      companyLeaseRental: 0,
+      companyOwned: 0
     };
     vehicles.forEach(vehicle => {
       const status = String(vehicle.vehicleStatus || '');
+      if (getErpMode(vehicle) === ERP_MODES.COMPANY_OWNED) counts.companyOwned += 1;
+      else counts.companyLeaseRental += 1;
       if (status === VEHICLE_STATUSES.OPERATING) counts.operating += 1;
-      else if (status === VEHICLE_STATUSES.EMPTY || BremLeaseErp?.isEmptyVehicle?.(vehicle)) counts.empty += 1;
+      else if (status === VEHICLE_STATUSES.EMPTY || isEmptyVehicle(vehicle)) counts.empty += 1;
       else if (status === VEHICLE_STATUSES.MAINTENANCE) counts.maintenance += 1;
       else if (status === VEHICLE_STATUSES.ACCIDENT) counts.accident += 1;
       else if (status === VEHICLE_STATUSES.TERMINATED) counts.terminated += 1;
@@ -214,6 +324,7 @@ const BremLeaseProfit = (function () {
     const asOfDate = context.asOfDate || todayKey();
     const periodType = context.periodType || 'weekly';
     const periodDays = periodType === 'monthly' ? 30 : periodType === 'weekly' ? 7 : 1;
+    const periodFactor = periodType === 'monthly' ? (30 / 7) : 1;
 
     const paymentsByVehicle = context.paymentsByVehicle || {};
     const accidentsByVehicle = context.accidentsByVehicle || {};
@@ -234,7 +345,9 @@ const BremLeaseProfit = (function () {
       emptyOpportunityTotal: 0,
       maintenanceCost: 0,
       accidentLoss: 0,
-      netProfit: 0
+      netProfit: 0,
+      actualProfit: 0,
+      weeklyProfit: 0
     };
 
     const statusCounts = countByStatus(vehicles);
@@ -252,16 +365,17 @@ const BremLeaseProfit = (function () {
         maintenance: maintenanceByVehicle[vehicle.id] || []
       };
       const profit = computeVehicleFinalProfit(vehicle, vehicleContext);
-      totals.rentalRevenue += profit.rentalRevenue;
-      totals.leaseCost += profit.leaseCost;
-      totals.insuranceCost += profit.insuranceCost;
-      totals.otherCost += profit.otherCost;
+      totals.rentalRevenue += profit.weeklyCharge * periodFactor;
+      totals.leaseCost += profit.weeklyCost * periodFactor;
+      totals.insuranceCost += profit.insuranceCost * periodFactor;
+      totals.otherCost += profit.otherCost * periodFactor;
       totals.unpaidTotal += profit.unpaid;
-      totals.emptyLossTotal += profit.totalEmptyLoss;
-      totals.emptyOpportunityTotal += profit.totalEmptyOpportunity;
+      totals.emptyLossTotal += profit.emptyLoss * periodFactor;
       totals.maintenanceCost += profit.maintenanceCost;
       totals.accidentLoss += profit.accidentLoss;
-      totals.netProfit += profit.netProfit;
+      totals.weeklyProfit += profit.weeklyProfit * periodFactor;
+      totals.actualProfit += profit.actualProfit * periodFactor;
+      totals.netProfit += profit.netProfit * periodFactor;
     });
 
     return totals;
@@ -273,6 +387,14 @@ const BremLeaseProfit = (function () {
       case PAYMENT_STATUSES.UNPAID: return '미납';
       case PAYMENT_STATUSES.COLLECTING: return '회수중';
       default: return '정상';
+    }
+  }
+
+  function paymentCheckLabel(value) {
+    switch (String(value || '')) {
+      case PAYMENT_CHECK.PAID: return '완납';
+      case PAYMENT_CHECK.UNPAID: return '미납';
+      default: return '-';
     }
   }
 
@@ -288,31 +410,43 @@ const BremLeaseProfit = (function () {
 
   function vehicleCategoryLabel(category) {
     switch (String(category || '')) {
-      case VEHICLE_CATEGORIES.EXTERNAL_RENTAL: return '외부렌탈';
-      case VEHICLE_CATEGORIES.COMPANY_OWNED: return '회사보유차량';
-      default: return '외부리스';
+      case VEHICLE_CATEGORIES.EXTERNAL_RENTAL: return '회사리스/렌탈';
+      case VEHICLE_CATEGORIES.COMPANY_OWNED: return '회사소유리스';
+      default: return '회사리스/렌탈';
     }
+  }
+
+  function erpModeLabel(mode) {
+    return mode === ERP_MODES.COMPANY_OWNED ? '회사소유리스' : '회사리스/렌탈';
   }
 
   return {
     VEHICLE_CATEGORIES,
+    ERP_MODES,
     VEHICLE_STATUSES,
     PAYMENT_STATUSES,
+    PAYMENT_CHECK,
     money,
     todayKey,
     daysBetween,
     weekStartKey,
     weekEndKey,
     monthKey,
+    getErpMode,
+    isCompanyOwned,
     effectiveDailyCharge,
     effectiveDailyLeaseCost,
+    computeOwnedCostBase,
+    computeErpMetrics,
     computeDailyProfit,
     computeEmptyMetrics,
     computeVehicleFinalProfit,
     aggregateKpis,
     countByStatus,
     paymentStatusLabel,
+    paymentCheckLabel,
     vehicleStatusLabel,
-    vehicleCategoryLabel
+    vehicleCategoryLabel,
+    erpModeLabel
   };
 })();

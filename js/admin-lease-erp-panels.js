@@ -136,30 +136,54 @@ const BremLeaseErpPanels = (function () {
   }
 
   function exportAll() {
-    if (!erp()) return;
+    if (!erp() || !window.XLSX) {
+      showToast('엑셀을보낼 수 없습니다.');
+      return;
+    }
     const vehicles = erp().vehicles().getAll();
-    exportSheet(
-      `BREM_차량현황_${BremLeaseProfit.todayKey()}.xlsx`,
-      ['차량번호', '기종', '구분', '상태', '렌탈자', '리스회사', '하루청구', '하루원가', '하루보험', '일순수익', '주순수익', '월순수익', '미납금'],
-      vehicles.map(item => {
-        const profit = BremLeaseProfit.computeDailyProfit(item);
+    const leaseRental = vehicles.filter(item => BremLeaseProfit.getErpMode(item) !== 'company_owned');
+    const owned = vehicles.filter(item => BremLeaseProfit.getErpMode(item) === 'company_owned');
+    const workbook = XLSX.utils.book_new();
+    const buildRow = item => {
+      const m = BremLeaseProfit.computeErpMetrics(item);
+      const paymentLabel = BremLeaseProfit.paymentCheckLabel(item.paymentCheck);
+      const statusLabel = BremLeaseProfit.vehicleStatusLabel(item.vehicleStatus);
+      if (m.mode === 'company_owned') {
         return [
-          item.vehicleNumber,
-          item.model,
-          BremLeaseProfit.vehicleCategoryLabel(item.vehicleCategory),
-          BremLeaseProfit.vehicleStatusLabel(item.vehicleStatus),
-          item.renter || item.rentalAssignment?.renter || '',
-          item.leaseCompany || item.lessor || '',
-          item.dailyChargeAmount || item.dailyRent || 0,
-          item.dailyLeaseCost || 0,
-          item.dailyInsuranceCost || 0,
-          profit.dailyNet,
-          profit.weeklyNet,
-          profit.monthlyNet,
-          item.unpaidAmount || 0
+          item.contractType === 'rental' ? '렌탈' : '리스',
+          item.contractType === 'rental' ? '렌탈' : '리스',
+          m.vehiclePrice, m.acquisitionTaxRate, m.acquisitionTaxAmount, m.otherAcquisitionCost, m.totalAcquisitionCost,
+          m.dailyCost, m.weeklyCost, item.vehicleNumber, item.contractStartDate, item.contractEndDate, item.renter,
+          m.dailyCharge, m.marginDaily, m.weeklyProfit, m.unpaidDays, m.unpaidAmount, paymentLabel,
+          item.unpaidCollectionMethod, m.actualProfit, m.emptyDays, m.emptyLoss, statusLabel
         ];
-      })
-    );
+      }
+      return [
+        item.contractType === 'rental' ? '렌탈' : '리스',
+        item.leaseCompany || item.lessor || '',
+        m.dailyLeaseCost, m.weeklyLeaseCost, item.vehicleNumber, item.contractStartDate, item.contractEndDate,
+        item.renter, m.dailyCharge, m.weeklyCharge, m.marginDaily, m.weeklyProfit, m.unpaidDays, m.unpaidAmount,
+        paymentLabel, item.unpaidCollectionMethod, m.actualProfit, m.emptyDays, m.emptyLoss, statusLabel
+      ];
+    };
+    if (leaseRental.length) {
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+        ['종류', '리스회사', '리스비(하루)', '주간리스비', '번호판', '리스시작일', '리스종료일', '렌탈/리스자', '리스나간금액(하루)', '주간청구금액', '차액수익금(일)', '주간수익금', '미납일', '미납금', '완납/미납체크', '미납금액회수방법', '실제수익', '공차일', '공차손실', '상태'],
+        ...leaseRental.map(buildRow)
+      ]), '회사리스렌탈');
+    }
+    if (owned.length) {
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+        ['종류', '리스/렌탈', '차량가액', '취득세%', '취득세금액', '기타비용', '합계', '하루원가', '주간원가', '번호판', '리스시작일', '리스종료일', '렌탈/리스자', '리스나간금액(일)', '차액수익금(일)', '주간수익금', '미납일', '미납금', '완납/미납체크', '미납금액회수방법', '실제수익', '공차일', '공차손실', '상태'],
+        ...owned.map(buildRow)
+      ]), '회사소유리스');
+    }
+    if (!leaseRental.length && !owned.length) {
+      showToast('다운로드할 차량이 없습니다.');
+      return;
+    }
+    XLSX.writeFile(workbook, `BREM_리스ERP_${BremLeaseProfit.todayKey()}.xlsx`);
+    showToast(`차량 ${vehicles.length}대 엑셀 다운로드`);
   }
 
   function bindEvents() {

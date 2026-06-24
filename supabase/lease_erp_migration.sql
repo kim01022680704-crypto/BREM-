@@ -323,4 +323,12 @@ drop policy if exists "lease_profit_logs admin all" on public.lease_profit_logs;
 create policy "lease_profit_logs admin all" on public.lease_profit_logs
   for all using (public.brem_is_admin()) with check (public.brem_is_admin());
 
+alter table public.lease_vehicles add column if not exists unpaid_days integer not null default 0;
+alter table public.lease_vehicles add column if not exists payment_check text not null default '';
+alter table public.lease_vehicles add column if not exists unpaid_collection_method text not null default '';
+alter table public.lease_vehicles add column if not exists acquisition_tax_rate numeric not null default 0;
+alter table public.lease_vehicles add column if not exists acquisition_tax_amount numeric not null default 0;
+alter table public.lease_vehicles add column if not exists other_acquisition_cost numeric not null default 0;
+alter table public.lease_vehicles add column if not exists total_acquisition_cost numeric not null default 0;
+
 notify pgrst, 'reload schema';
