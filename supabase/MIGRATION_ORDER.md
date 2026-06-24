@@ -17,6 +17,7 @@
 | 8 | `promotion_apply_results_migration.sql` | 프로모션 적용 저장 시 | promotion_apply_results (settings JSON 폴백 유지) |
 | 9 | `lease_erp_migration.sql` | **리스 ERP 사용 시** | lease_vehicles · … · lease_profit_logs (brem_admin_leases 이관 지원) |
 | 9b | `lease_erp_v2_columns.sql` | **리스 ERP v2** (9번 이후) | 미납일·취득세·회사소유리스 계산 필드 |
+| 9c | `lease_erp_v3_patch.sql` | **리스 ERP v3** (9b 이후) | lease_arrears · 계약 raw_data 확장 |
 | 10 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)

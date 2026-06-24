@@ -4884,6 +4884,150 @@ textarea {
   line-height: 1.45;
 }
 
+.lease-submenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #101010;
+}
+
+.lease-submenu-btn {
+  border: 1px solid var(--line);
+  background: #171717;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lease-submenu-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.lease-menu-panel[hidden] {
+  display: none !important;
+}
+
+.lease-form-grid--2col {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.lease-checkbox-group {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.lease-calc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 0 18px 18px;
+}
+
+.lease-calc-item {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #141414;
+}
+
+.lease-calc-item--highlight {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.lease-calc-item span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.lease-calc-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.lease-calc-status {
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.lease-calc-status--deficit {
+  color: #f87171;
+}
+
+.lease-calc-status--profit {
+  color: #6ee7b7;
+}
+
+.lease-money--deficit,
+.lease-money--deficit strong {
+  color: #f87171 !important;
+}
+
+.lease-money--profit,
+.lease-money--profit strong {
+  color: #6ee7b7 !important;
+}
+
+.lease-money--warning {
+  color: #fde047 !important;
+}
+
+.lease-status--done {
+  color: #6ee7b7;
+  font-weight: 800;
+}
+
+.lease-status--collecting {
+  color: #fdba74;
+  font-weight: 800;
+}
+
+.lease-status--unpaid {
+  color: #f87171;
+  font-weight: 800;
+}
+
+.lease-month-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 0 18px 16px;
+}
+
+.lease-month-summary article {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #141414;
+}
+
+.lease-month-summary span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.lease-month-summary strong {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
 .lease-kpi-grid {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }

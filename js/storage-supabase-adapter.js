@@ -137,7 +137,8 @@ window.BremSupabaseStorageAdapter = (function () {
       keys.leasePayments,
       keys.leaseAccidents,
       keys.leaseMaintenance,
-      keys.leaseProfitLogs
+      keys.leaseProfitLogs,
+      keys.leaseArrears
     ].forEach(key => TABLE_KEYS.add(key));
 
     function buildSystemSettingsWhitelist() {
@@ -708,23 +709,55 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     function leaseContractToRow(item) {
+      const raw = {
+        vehicleNumber: item.vehicleNumber || '',
+        vehicleName: item.vehicleName || '',
+        modelType: item.modelType || '',
+        driverName: item.driverName || '',
+        driverPhone: item.driverPhone || '',
+        weeklyRent: Number(item.weeklyRent || 0),
+        dailyRent: Number(item.dailyRent || 0),
+        rentalDays: Number(item.rentalDays || 0),
+        emptyDays: Number(item.emptyDays || 0),
+        unpaidDays: Number(item.unpaidDays || 0),
+        paidAmount: Number(item.paidAmount || 0),
+        unpaidAmount: Number(item.unpaidAmount || 0),
+        recoveredAmount: Number(item.recoveredAmount || 0),
+        vehicleCost: Number(item.vehicleCost || 0),
+        insuranceCost: Number(item.insuranceCost || 0),
+        leaseCost: Number(item.leaseCost || 0),
+        maintenanceCost: Number(item.maintenanceCost || 0),
+        accidentCost: Number(item.accidentCost || 0),
+        otherCost: Number(item.otherCost || 0),
+        penaltyFee: Number(item.penaltyFee || 0),
+        collectionStatus: item.collectionStatus || '',
+        collectionMethods: item.collectionMethods || [],
+        collectionMethod: item.collectionMethod || '',
+        processedDate: item.processedDate || '',
+        rentalRevenue: Number(item.rentalRevenue || 0),
+        emptyLoss: Number(item.emptyLoss || 0),
+        totalCost: Number(item.totalCost || 0),
+        netProfit: Number(item.netProfit || 0),
+        ...(item.rawData || {})
+      };
       return {
         id: item.id,
-        vehicle_id: item.vehicleId,
+        vehicle_id: item.vehicleId || null,
         contract_type: item.contractType || 'lease',
         start_date: item.startDate || null,
         end_date: item.endDate || null,
-        daily_charge: Number(item.dailyCharge || 0),
+        daily_charge: Number(item.dailyCharge || item.dailyRent || 0),
         daily_cost: Number(item.dailyCost || 0),
         status: item.status || 'active',
         memo: item.memo || '',
-        raw_data: {},
+        raw_data: raw,
         created_at: item.createdAt || new Date().toISOString(),
         updated_at: item.updatedAt || new Date().toISOString()
       };
     }
 
     function rowToLeaseContract(row) {
+      const raw = row.raw_data || {};
       return {
         id: row.id,
         vehicleId: row.vehicle_id || '',
@@ -735,6 +768,73 @@ window.BremSupabaseStorageAdapter = (function () {
         dailyCost: Number(row.daily_cost || 0),
         status: row.status || 'active',
         memo: row.memo || '',
+        vehicleNumber: raw.vehicleNumber || '',
+        vehicleName: raw.vehicleName || '',
+        modelType: raw.modelType || '',
+        driverName: raw.driverName || '',
+        driverPhone: raw.driverPhone || '',
+        weeklyRent: Number(raw.weeklyRent || 0),
+        dailyRent: Number(raw.dailyRent || row.daily_charge || 0),
+        rentalDays: Number(raw.rentalDays || 0),
+        emptyDays: Number(raw.emptyDays || 0),
+        unpaidDays: Number(raw.unpaidDays || 0),
+        paidAmount: Number(raw.paidAmount || 0),
+        unpaidAmount: Number(raw.unpaidAmount || 0),
+        recoveredAmount: Number(raw.recoveredAmount || 0),
+        vehicleCost: Number(raw.vehicleCost || 0),
+        insuranceCost: Number(raw.insuranceCost || 0),
+        leaseCost: Number(raw.leaseCost || 0),
+        maintenanceCost: Number(raw.maintenanceCost || 0),
+        accidentCost: Number(raw.accidentCost || 0),
+        otherCost: Number(raw.otherCost || 0),
+        penaltyFee: Number(raw.penaltyFee || 0),
+        collectionStatus: raw.collectionStatus || '',
+        collectionMethods: Array.isArray(raw.collectionMethods) ? raw.collectionMethods : [],
+        collectionMethod: raw.collectionMethod || '',
+        processedDate: raw.processedDate || '',
+        rentalRevenue: Number(raw.rentalRevenue || 0),
+        emptyLoss: Number(raw.emptyLoss || 0),
+        totalCost: Number(raw.totalCost || 0),
+        netProfit: Number(raw.netProfit || 0),
+        rawData: raw,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function leaseArrearToRow(item) {
+      return {
+        id: item.id,
+        vehicle_id: item.vehicleId || null,
+        contract_id: item.contractId || null,
+        unpaid_days: Number(item.unpaidDays || 0),
+        unpaid_amount: Number(item.unpaidAmount || 0),
+        paid_amount: Number(item.paidAmount || 0),
+        recovered_amount: Number(item.recoveredAmount || 0),
+        collection_methods: item.collectionMethods || [],
+        collection_status: item.collectionStatus || 'unpaid',
+        processed_date: item.processedDate || null,
+        memo: item.memo || '',
+        raw_data: item.rawData || {},
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeaseArrear(row) {
+      return {
+        id: row.id,
+        vehicleId: row.vehicle_id || '',
+        contractId: row.contract_id || '',
+        unpaidDays: Number(row.unpaid_days || 0),
+        unpaidAmount: Number(row.unpaid_amount || 0),
+        paidAmount: Number(row.paid_amount || 0),
+        recoveredAmount: Number(row.recovered_amount || 0),
+        collectionMethods: Array.isArray(row.collection_methods) ? row.collection_methods : [],
+        collectionStatus: row.collection_status || 'unpaid',
+        processedDate: row.processed_date || '',
+        memo: row.memo || '',
+        rawData: row.raw_data || {},
         createdAt: row.created_at,
         updatedAt: row.updated_at
       };
@@ -912,6 +1012,14 @@ window.BremSupabaseStorageAdapter = (function () {
         fromRow: rowToLeaseProfitLog,
         toRow: leaseProfitLogToRow,
         order: { column: 'period_start', ascending: false }
+      },
+      {
+        table: 'lease_arrears',
+        key: keys.leaseArrears,
+        label: 'lease-arrears',
+        fromRow: rowToLeaseArrear,
+        toRow: leaseArrearToRow,
+        order: { column: 'updated_at', ascending: false }
       }
     ];
 

@@ -1001,6 +1001,7 @@
     if (erp) await erp.ensureLoaded();
     if (options.filter) state.filterType = options.filter;
     if (window.BremLeaseErpPanels?.refresh) window.BremLeaseErpPanels.refresh();
+    if (window.BremAdminLeaseMenus?.refresh) window.BremAdminLeaseMenus.refresh();
     renderList();
   }
 
@@ -1070,15 +1071,56 @@
         return;
       }
 
+      let saved;
       if (state.editingId) {
-        leases.update(state.editingId, data);
+        saved = leases.update(state.editingId, data);
         if (!(await persistLeasesOrWarn())) return;
         showToast('리스·렌탈 정보가 수정되었습니다.');
       } else {
-        leases.create(data);
+        saved = leases.create(data);
         if (!(await persistLeasesOrWarn())) return;
         showToast('리스·렌탈 정보가 등록되었습니다.');
       }
+
+      if (erp && saved && window.BremLeaseProfit) {
+        const metrics = BremLeaseProfit.computeErpMetrics(saved);
+        const weekStart = BremLeaseProfit.weekStartKey();
+        const weekEnd = BremLeaseProfit.weekEndKey(weekStart);
+        const month = BremLeaseProfit.monthKey();
+        erp.saveProfitSnapshot({
+          vehicleId: saved.id,
+          periodType: 'snapshot',
+          periodStart: saved.contractStartDate || weekStart,
+          periodEnd: saved.contractEndDate || weekEnd,
+          metrics: {
+            rentalRevenue: metrics.weeklyCharge,
+            leaseCost: metrics.weeklyCost,
+            insuranceCost: 0,
+            otherCost: 0,
+            maintenanceCost: 0,
+            accidentCost: 0,
+            unpaidAmount: metrics.unpaidAmount,
+            emptyLoss: metrics.emptyLoss,
+            netProfit: metrics.actualProfit,
+            weeklyRent: metrics.weeklyCharge,
+            dailyRent: metrics.dailyCharge,
+            rentalDays: 7,
+            emptyDays: metrics.emptyDays,
+            unpaidDays: metrics.unpaidDays,
+            paidAmount: 0,
+            recoveredAmount: 0,
+            penaltyFee: 0,
+            totalCost: metrics.weeklyCost + metrics.emptyLoss,
+            expectedProfit: metrics.weeklyProfit,
+            actualProfit: metrics.actualProfit,
+            isDeficit: metrics.actualProfit < 0,
+            statusLabel: metrics.actualProfit < 0 ? '적자' : '순이익'
+          },
+          vehicle: saved
+        });
+        await erp.persistAll();
+      }
+
       resetForm();
       refresh();
     });

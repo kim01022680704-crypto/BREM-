@@ -21,6 +21,7 @@ const BremStorage = (function () {
     leaseAccidents: 'brem_lease_accidents',
     leaseMaintenance: 'brem_lease_maintenance',
     leaseProfitLogs: 'brem_lease_profit_logs',
+    leaseArrears: 'brem_lease_arrears',
     revenue: 'brem_admin_revenue',
     eventCatalog: 'brem_admin_long_event_catalog',
     eventItems: 'brem_admin_long_event_items',
@@ -255,6 +256,7 @@ const BremStorage = (function () {
     KEYS.leaseAccidents,
     KEYS.leaseMaintenance,
     KEYS.leaseProfitLogs,
+    KEYS.leaseArrears,
     KEYS.revenue,
     KEYS.adminSchedules,
     KEYS.calls,
@@ -1102,7 +1104,8 @@ const BremStorage = (function () {
       KEYS.leaseAccidents,
       KEYS.leaseMaintenance,
       KEYS.leaseContracts,
-      KEYS.leaseProfitLogs
+      KEYS.leaseProfitLogs,
+      KEYS.leaseArrears
     ],
     'revenue-management': [],
     'admin-account': [],
@@ -1130,7 +1133,8 @@ const BremStorage = (function () {
     KEYS.leasePayments,
     KEYS.leaseAccidents,
     KEYS.leaseMaintenance,
-    KEYS.leaseProfitLogs
+    KEYS.leaseProfitLogs,
+    KEYS.leaseArrears
   ]);
 
   function scheduleCacheSyncAfterWrite(key, persistPromise) {
@@ -9461,7 +9465,8 @@ const BremStorage = (function () {
       KEYS.leaseAccidents,
       KEYS.leaseMaintenance,
       KEYS.leaseContracts,
-      KEYS.leaseProfitLogs
+      KEYS.leaseProfitLogs,
+      KEYS.leaseArrears
     ];
     if (!activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
     await activeStorageAdapter.ensureKeysLoaded(targetKeys);
