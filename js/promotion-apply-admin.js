@@ -149,45 +149,6 @@ const BremPromotionApplyAdmin = (function () {
     return selectKey;
   }
 
-  function setupPromotionApplyWeekPicker() {
-    if (setupPromotionApplyWeekPicker.bound) return;
-    if (!window.BremDatePicker?.setupWednesdayWeekDelegated) return;
-    setupPromotionApplyWeekPicker.bound = true;
-
-    BremDatePicker.setupWednesdayWeekDelegated({
-      popup: $('#promotionApplyWeekPickerCalendar'),
-      daysContainer: $('#promotionApplyWeekPickerDays'),
-      titleEl: $('#promotionApplyWeekPickerTitle'),
-      prevBtn: $('#promotionApplyWeekPickerPrev'),
-      nextBtn: $('#promotionApplyWeekPickerNext'),
-      todayBtn: $('#promotionApplyWeekPickerThisWeek'),
-      openSelector: '[data-promotion-apply-week]',
-      getContext(button) {
-        const selectKey = button.dataset.promotionApplyWeek;
-        if (!selectKey) return null;
-        if (selectKey === 'saved') {
-          return {
-            hiddenInput: $('#promotionApplySavedWeekFilter'),
-            labelEl: $('[data-promotion-apply-week-label="saved"]'),
-            onSelect(value) {
-              handleSavedWeekSelect(value);
-            }
-          };
-        }
-        const hiddenInput = $(`#promotionApplySettlementWeek-${selectKey}`);
-        const labelEl = $(`[data-promotion-apply-week-label="${selectKey}"]`);
-        if (!hiddenInput) return null;
-        return {
-          hiddenInput,
-          labelEl,
-          onSelect(value) {
-            handleWeekSelect(selectKey, value);
-          }
-        };
-      }
-    });
-  }
-
   function formatWeekPickerLabel(weekStart) {
     if (!weekStart) return '수요일 선택';
     const normalized = applyWeekWednesday(weekStart);
@@ -1107,7 +1068,6 @@ const BremPromotionApplyAdmin = (function () {
 
   function init() {
     if (!applyRoot()) return;
-    setupPromotionApplyWeekPicker();
     bindEvents();
     bindLegacyWeekInputs();
     initializeAllSettlementWeeks();

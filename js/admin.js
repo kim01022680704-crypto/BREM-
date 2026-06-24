@@ -1447,6 +1447,32 @@
           };
         }
 
+        if (triggerId === 'promotion-apply-saved') {
+          return {
+            hiddenInput: $('#promotionApplySavedWeekFilter'),
+            labelEl: $('#promotionApplySavedWeekFilterLabel'),
+            onSelect(value) {
+              window.BremPromotionApplyAdmin?.handleSavedWeekSelect?.(value);
+            }
+          };
+        }
+
+        const promotionApplyMatch = triggerId?.match(/^promotion-apply-(.+)$/);
+        if (promotionApplyMatch) {
+          const selectKey = promotionApplyMatch[1];
+          const hiddenInput = $(`#promotionApplySettlementWeek-${selectKey}`);
+          const labelEl = $(`#promotionApplySettlementWeekLabel-${selectKey}`)
+            || $(`[data-promotion-apply-week-label="${selectKey}"]`);
+          if (!hiddenInput) return null;
+          return {
+            hiddenInput,
+            labelEl,
+            onSelect(value) {
+              window.BremPromotionApplyAdmin?.handleWeekSelect?.(selectKey, value);
+            }
+          };
+        }
+
         const hiddenInput = document.querySelector(`[data-edit-weekly-week="${triggerId}"]`);
         const labelEl = document.querySelector(`[data-week-picker-label="${triggerId}"]`);
         if (!hiddenInput) return null;
