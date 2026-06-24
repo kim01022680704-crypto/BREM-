@@ -4467,7 +4467,7 @@
     if (sectionId === 'lease-management' && window.BremAdminLease?.refresh) {
       const filter = window.__leaseFilterOnOpen;
       window.__leaseFilterOnOpen = null;
-      window.BremAdminLease.refresh(filter ? { filter } : {});
+      void window.BremAdminLease.refresh(filter ? { filter } : {});
     }
     if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
       window.BremAdminRevenue.refresh();

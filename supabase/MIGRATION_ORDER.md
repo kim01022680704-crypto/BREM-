@@ -15,7 +15,8 @@
 | 6 | `operations_tables_migration.sql` | **필수** | admin_calls · admin_rejection_rates · admin_targets + settings→table |
 | 7 | `settlements_tables_migration.sql` | **필수** | daily_settlements · weekly_settlements · settlement_upload_logs · settlement_unmatched + settings→table |
 | 8 | `promotion_apply_results_migration.sql` | 프로모션 적용 저장 시 | promotion_apply_results (settings JSON 폴백 유지) |
-| 9 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
+| 9 | `lease_erp_migration.sql` | **리스 ERP 사용 시** | lease_vehicles · lease_payments · lease_accidents · lease_maintenance · lease_contracts · lease_profit_logs (brem_admin_leases 이관 지원) |
+| 10 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)
 

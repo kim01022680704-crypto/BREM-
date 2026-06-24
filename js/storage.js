@@ -15,6 +15,12 @@ const BremStorage = (function () {
     riderInquiries: 'brem_rider_inquiries',
     adminSchedules: 'brem_admin_schedules',
     leases: 'brem_admin_leases',
+    leaseVehicles: 'brem_lease_vehicles',
+    leaseContracts: 'brem_lease_contracts',
+    leasePayments: 'brem_lease_payments',
+    leaseAccidents: 'brem_lease_accidents',
+    leaseMaintenance: 'brem_lease_maintenance',
+    leaseProfitLogs: 'brem_lease_profit_logs',
     revenue: 'brem_admin_revenue',
     eventCatalog: 'brem_admin_long_event_catalog',
     eventItems: 'brem_admin_long_event_items',
@@ -243,6 +249,12 @@ const BremStorage = (function () {
     KEYS.promotionRules,
     KEYS.riderInquiries,
     KEYS.leases,
+    KEYS.leaseVehicles,
+    KEYS.leaseContracts,
+    KEYS.leasePayments,
+    KEYS.leaseAccidents,
+    KEYS.leaseMaintenance,
+    KEYS.leaseProfitLogs,
     KEYS.revenue,
     KEYS.adminSchedules,
     KEYS.calls,
@@ -1084,7 +1096,14 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
-    'lease-management': [KEYS.drivers],
+    'lease-management': [
+      KEYS.leaseVehicles,
+      KEYS.leasePayments,
+      KEYS.leaseAccidents,
+      KEYS.leaseMaintenance,
+      KEYS.leaseContracts,
+      KEYS.leaseProfitLogs
+    ],
     'revenue-management': [],
     'admin-account': [],
     'baemin-delivery-status': [],
@@ -1105,7 +1124,13 @@ const BremStorage = (function () {
     KEYS.weeklySettlements,
     KEYS.settlementUploadLogs,
     KEYS.settlementUnmatched,
-    KEYS.promotionApplyResults
+    KEYS.promotionApplyResults,
+    KEYS.leaseVehicles,
+    KEYS.leaseContracts,
+    KEYS.leasePayments,
+    KEYS.leaseAccidents,
+    KEYS.leaseMaintenance,
+    KEYS.leaseProfitLogs
   ]);
 
   function scheduleCacheSyncAfterWrite(key, persistPromise) {
@@ -5432,7 +5457,9 @@ const BremStorage = (function () {
     writeList(list, options = {}) {
       const next = Array.isArray(list) ? list : [];
       leases.syncLeaseCache(next);
-      return storageAdapter.write(KEYS.leases, next, {
+      const erpLoaded = activeStorageAdapter.isKeyLoaded?.(KEYS.leaseVehicles);
+      const targetKey = erpLoaded ? KEYS.leaseVehicles : KEYS.leases;
+      return storageAdapter.write(targetKey, next, {
         allowEmpty: next.length === 0,
         ...options
       });
@@ -5443,6 +5470,8 @@ const BremStorage = (function () {
     },
 
     getAll() {
+      const erpLoaded = activeStorageAdapter.isKeyLoaded?.(KEYS.leaseVehicles);
+      if (erpLoaded) return storageAdapter.read(KEYS.leaseVehicles, []);
       return storageAdapter.read(KEYS.leases, []);
     },
 
@@ -9425,6 +9454,30 @@ const BremStorage = (function () {
     }
   };
 
+  async function ensureLeaseErpKeysLoaded() {
+    const targetKeys = [
+      KEYS.leaseVehicles,
+      KEYS.leasePayments,
+      KEYS.leaseAccidents,
+      KEYS.leaseMaintenance,
+      KEYS.leaseContracts,
+      KEYS.leaseProfitLogs
+    ];
+    if (!activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
+    await activeStorageAdapter.ensureKeysLoaded(targetKeys);
+    return { ok: true };
+  }
+
+  function readTableKey(key) {
+    return storageAdapter.read(key, []) || [];
+  }
+
+  function writeTableKey(key, list, options = {}) {
+    const next = Array.isArray(list) ? list : [];
+    window.BremDataCache?.set?.(key, next, { source: 'write' });
+    return storageAdapter.write(key, next, options);
+  }
+
   return {
     createId,
     STORAGE_KEYS: KEYS,
@@ -9471,6 +9524,9 @@ const BremStorage = (function () {
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
+    ensureLeaseErpKeysLoaded,
+    readTableKey,
+    writeTableKey,
     ensureSectionLoaded,
     ensureCallsSinceDate,
     ensurePromotionCalculationCalls,

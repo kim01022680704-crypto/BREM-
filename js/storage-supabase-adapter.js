@@ -131,7 +131,13 @@ window.BremSupabaseStorageAdapter = (function () {
       keys.weeklySettlements,
       keys.settlementUploadLogs,
       keys.settlementUnmatched,
-      keys.promotionApplyResults
+      keys.promotionApplyResults,
+      keys.leaseVehicles,
+      keys.leaseContracts,
+      keys.leasePayments,
+      keys.leaseAccidents,
+      keys.leaseMaintenance,
+      keys.leaseProfitLogs
     ].forEach(key => TABLE_KEYS.add(key));
 
     function buildSystemSettingsWhitelist() {
@@ -506,6 +512,266 @@ window.BremSupabaseStorageAdapter = (function () {
       };
     }
 
+    function leaseVehicleToRow(item) {
+      const raw = {
+        contractType: item.contractType,
+        weeklyRent: item.weeklyRent,
+        operationType: item.operationType
+      };
+      return {
+        id: item.id,
+        vehicle_category: item.vehicleCategory || 'external_lease',
+        operation_type: item.operationType || item.contractType || 'lease',
+        model: item.model || '',
+        chassis_number: item.chassisNumber || '',
+        vehicle_number: item.vehicleNumber || '',
+        lease_company: item.leaseCompany || item.lessor || '',
+        daily_lease_cost: Number(item.dailyLeaseCost || 0),
+        insurance_company: item.insuranceCompany || '',
+        insurance_age: item.insuranceAge || '',
+        insurance_type: item.insuranceType || '',
+        daily_insurance_cost: Number(item.dailyInsuranceCost || 0),
+        contract_start_date: item.contractStartDate || null,
+        contract_end_date: item.contractEndDate || null,
+        return_date: item.returnDate || null,
+        renter: item.renter || '',
+        lessor: item.lessor || '',
+        daily_charge_amount: Number(item.dailyChargeAmount ?? item.dailyRent ?? 0),
+        unpaid_amount: Number(item.unpaidAmount || 0),
+        balance_diff: Number(item.balanceDiff || 0),
+        memo: item.memo || '',
+        vehicle_status: item.vehicleStatus || 'operating',
+        empty_start_date: item.emptyStartDate || null,
+        expected_daily_rent: Number(item.expectedDailyRent || 0),
+        daily_other_cost: Number(item.dailyOtherCost || 0),
+        purchase_price: Number(item.purchasePrice || 0),
+        acquisition_date: item.acquisitionDate || null,
+        rental_assignment: item.rentalAssignment || null,
+        raw_data: raw,
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeaseVehicle(row) {
+      const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+      return {
+        id: row.id,
+        vehicleCategory: row.vehicle_category || 'external_lease',
+        operationType: row.operation_type || raw.operationType || 'lease',
+        contractType: raw.contractType || (row.operation_type === 'rental' ? 'rental' : 'lease'),
+        model: row.model || '',
+        chassisNumber: row.chassis_number || '',
+        vehicleNumber: row.vehicle_number || '',
+        leaseCompany: row.lease_company || '',
+        dailyLeaseCost: Number(row.daily_lease_cost || 0),
+        insuranceCompany: row.insurance_company || '',
+        insuranceAge: row.insurance_age || '',
+        insuranceType: row.insurance_type || '',
+        dailyInsuranceCost: Number(row.daily_insurance_cost || 0),
+        contractStartDate: row.contract_start_date || '',
+        contractEndDate: row.contract_end_date || '',
+        returnDate: row.return_date || '',
+        renter: row.renter || '',
+        lessor: row.lessor || '',
+        dailyChargeAmount: Number(row.daily_charge_amount || 0),
+        dailyRent: Number(row.daily_charge_amount || 0),
+        weeklyRent: Number(raw.weeklyRent || 0) || Number(row.daily_charge_amount || 0) * 7,
+        unpaidAmount: Number(row.unpaid_amount || 0),
+        balanceDiff: Number(row.balance_diff || 0),
+        memo: row.memo || '',
+        vehicleStatus: row.vehicle_status || 'operating',
+        emptyStartDate: row.empty_start_date || '',
+        expectedDailyRent: Number(row.expected_daily_rent || 0),
+        dailyOtherCost: Number(row.daily_other_cost || 0),
+        purchasePrice: Number(row.purchase_price || 0),
+        acquisitionDate: row.acquisition_date || '',
+        rentalAssignment: row.rental_assignment || null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function leasePaymentToRow(item) {
+      return {
+        id: item.id,
+        vehicle_id: item.vehicleId,
+        due_date: item.dueDate || null,
+        paid_date: item.paidDate || null,
+        charge_amount: Number(item.chargeAmount || 0),
+        paid_amount: Number(item.paidAmount || 0),
+        unpaid_amount: Number(item.unpaidAmount || 0),
+        overdue_days: Number(item.overdueDays || 0),
+        payment_status: item.paymentStatus || 'normal',
+        memo: item.memo || '',
+        raw_data: {},
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeasePayment(row) {
+      return {
+        id: row.id,
+        vehicleId: row.vehicle_id || '',
+        dueDate: row.due_date || '',
+        paidDate: row.paid_date || '',
+        chargeAmount: Number(row.charge_amount || 0),
+        paidAmount: Number(row.paid_amount || 0),
+        unpaidAmount: Number(row.unpaid_amount || 0),
+        overdueDays: Number(row.overdue_days || 0),
+        paymentStatus: row.payment_status || 'normal',
+        memo: row.memo || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function leaseAccidentToRow(item) {
+      return {
+        id: item.id,
+        vehicle_id: item.vehicleId,
+        accident_date: item.accidentDate || null,
+        driver_name: item.driverName || '',
+        vehicle_number: item.vehicleNumber || '',
+        repair_cost: Number(item.repairCost || 0),
+        insurance_payout: Number(item.insurancePayout || 0),
+        self_pay: Number(item.selfPay || 0),
+        actual_loss: Number(item.actualLoss || 0),
+        memo: item.memo || '',
+        raw_data: {},
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeaseAccident(row) {
+      return {
+        id: row.id,
+        vehicleId: row.vehicle_id || '',
+        accidentDate: row.accident_date || '',
+        driverName: row.driver_name || '',
+        vehicleNumber: row.vehicle_number || '',
+        repairCost: Number(row.repair_cost || 0),
+        insurancePayout: Number(row.insurance_payout || 0),
+        selfPay: Number(row.self_pay || 0),
+        actualLoss: Number(row.actual_loss || 0),
+        memo: row.memo || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function leaseMaintenanceToRow(item) {
+      return {
+        id: item.id,
+        vehicle_id: item.vehicleId,
+        maintenance_date: item.maintenanceDate || null,
+        vehicle_number: item.vehicleNumber || '',
+        description: item.description || '',
+        maintenance_cost: Number(item.maintenanceCost || 0),
+        parts_cost: Number(item.partsCost || 0),
+        memo: item.memo || '',
+        raw_data: {},
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeaseMaintenance(row) {
+      return {
+        id: row.id,
+        vehicleId: row.vehicle_id || '',
+        maintenanceDate: row.maintenance_date || '',
+        vehicleNumber: row.vehicle_number || '',
+        description: row.description || '',
+        maintenanceCost: Number(row.maintenance_cost || 0),
+        partsCost: Number(row.parts_cost || 0),
+        memo: row.memo || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function leaseContractToRow(item) {
+      return {
+        id: item.id,
+        vehicle_id: item.vehicleId,
+        contract_type: item.contractType || 'lease',
+        start_date: item.startDate || null,
+        end_date: item.endDate || null,
+        daily_charge: Number(item.dailyCharge || 0),
+        daily_cost: Number(item.dailyCost || 0),
+        status: item.status || 'active',
+        memo: item.memo || '',
+        raw_data: {},
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeaseContract(row) {
+      return {
+        id: row.id,
+        vehicleId: row.vehicle_id || '',
+        contractType: row.contract_type || 'lease',
+        startDate: row.start_date || '',
+        endDate: row.end_date || '',
+        dailyCharge: Number(row.daily_charge || 0),
+        dailyCost: Number(row.daily_cost || 0),
+        status: row.status || 'active',
+        memo: row.memo || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function leaseProfitLogToRow(item) {
+      return {
+        id: item.id,
+        vehicle_id: item.vehicleId || null,
+        period_type: item.periodType || 'daily',
+        period_start: item.periodStart || null,
+        period_end: item.periodEnd || null,
+        rental_revenue: Number(item.rentalRevenue || 0),
+        lease_cost: Number(item.leaseCost || 0),
+        insurance_cost: Number(item.insuranceCost || 0),
+        other_cost: Number(item.otherCost || 0),
+        maintenance_cost: Number(item.maintenanceCost || 0),
+        accident_loss: Number(item.accidentLoss || 0),
+        unpaid_amount: Number(item.unpaidAmount || 0),
+        empty_loss: Number(item.emptyLoss || 0),
+        empty_opportunity: Number(item.emptyOpportunity || 0),
+        net_profit: Number(item.netProfit || 0),
+        raw_data: item.rawData || {},
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToLeaseProfitLog(row) {
+      return {
+        id: row.id,
+        vehicleId: row.vehicle_id || '',
+        periodType: row.period_type || 'daily',
+        periodStart: row.period_start || '',
+        periodEnd: row.period_end || '',
+        rentalRevenue: Number(row.rental_revenue || 0),
+        leaseCost: Number(row.lease_cost || 0),
+        insuranceCost: Number(row.insurance_cost || 0),
+        otherCost: Number(row.other_cost || 0),
+        maintenanceCost: Number(row.maintenance_cost || 0),
+        accidentLoss: Number(row.accident_loss || 0),
+        unpaidAmount: Number(row.unpaid_amount || 0),
+        emptyLoss: Number(row.empty_loss || 0),
+        emptyOpportunity: Number(row.empty_opportunity || 0),
+        netProfit: Number(row.net_profit || 0),
+        rawData: row.raw_data || {},
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
     const TABLE_BACKED_KEYS = [
       {
         table: 'admin_schedules',
@@ -583,6 +849,55 @@ window.BremSupabaseStorageAdapter = (function () {
         fromRow: row => Mapper().rowToPromotionApplyResult(row),
         toRow: item => Mapper().promotionApplyResultToRow(item),
         order: { column: 'created_at', ascending: false }
+      },
+      {
+        table: 'lease_vehicles',
+        key: keys.leaseVehicles,
+        label: 'lease-vehicles',
+        legacyKey: keys.leases,
+        fromRow: rowToLeaseVehicle,
+        toRow: leaseVehicleToRow,
+        order: { column: 'updated_at', ascending: false }
+      },
+      {
+        table: 'lease_contracts',
+        key: keys.leaseContracts,
+        label: 'lease-contracts',
+        fromRow: rowToLeaseContract,
+        toRow: leaseContractToRow,
+        order: { column: 'start_date', ascending: false }
+      },
+      {
+        table: 'lease_payments',
+        key: keys.leasePayments,
+        label: 'lease-payments',
+        fromRow: rowToLeasePayment,
+        toRow: leasePaymentToRow,
+        order: { column: 'due_date', ascending: false }
+      },
+      {
+        table: 'lease_accidents',
+        key: keys.leaseAccidents,
+        label: 'lease-accidents',
+        fromRow: rowToLeaseAccident,
+        toRow: leaseAccidentToRow,
+        order: { column: 'accident_date', ascending: false }
+      },
+      {
+        table: 'lease_maintenance',
+        key: keys.leaseMaintenance,
+        label: 'lease-maintenance',
+        fromRow: rowToLeaseMaintenance,
+        toRow: leaseMaintenanceToRow,
+        order: { column: 'maintenance_date', ascending: false }
+      },
+      {
+        table: 'lease_profit_logs',
+        key: keys.leaseProfitLogs,
+        label: 'lease-profit-logs',
+        fromRow: rowToLeaseProfitLog,
+        toRow: leaseProfitLogToRow,
+        order: { column: 'period_start', ascending: false }
       }
     ];
 

@@ -4567,6 +4567,39 @@ textarea {
 
 /* ── Lease management ── */
 
+.lease-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.lease-erp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 18px 12px;
+}
+
+.lease-erp-tab {
+  border: 1px solid var(--line);
+  background: #101010;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.lease-erp-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.lease-erp-panel {
+  padding: 0 18px 18px;
+}
+
+.lease-erp-panel .lease-form {
+  margin-bottom: 14px;
+}
+
 .lease-stats-grid {
   margin-bottom: 18px;
 }

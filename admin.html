@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260624b">
+  <link rel="stylesheet" href="css/admin.css?v=20260625a">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1094,34 +1094,31 @@
       </section>
 
       <section class="section" id="lease-management">
-        <div class="stats-grid lease-stats-grid">
-          <article class="stat-card">
-            <span>전체</span>
-            <strong id="leaseStatTotal">0건</strong>
-          </article>
-          <article class="stat-card">
-            <span>리스</span>
-            <strong id="leaseStatLease">0건</strong>
-          </article>
-          <article class="stat-card stat-card--warning">
-            <span>렌탈</span>
-            <strong id="leaseStatRental">0건</strong>
-          </article>
-          <article class="stat-card stat-card--warning">
-            <span>공차</span>
-            <strong id="leaseStatEmpty">0대</strong>
-          </article>
-          <article class="stat-card stat-card--success">
-            <span>렌탈 중 (미반납)</span>
-            <strong id="leaseStatActiveRental">0건</strong>
-          </article>
+        <div class="stats-grid lease-stats-grid lease-kpi-grid">
+          <article class="stat-card"><span>총 차량</span><strong id="leaseStatTotal">0건</strong></article>
+          <article class="stat-card stat-card--success"><span>운행중</span><strong id="leaseKpiOperating">0대</strong></article>
+          <article class="stat-card stat-card--warning"><span>공차</span><strong id="leaseStatEmpty">0대</strong></article>
+          <article class="stat-card"><span>정비중</span><strong id="leaseKpiMaintenance">0대</strong></article>
+          <article class="stat-card stat-card--warning"><span>사고</span><strong id="leaseKpiAccident">0대</strong></article>
+          <article class="stat-card"><span>리스</span><strong id="leaseStatLease">0건</strong></article>
+          <article class="stat-card"><span>렌탈</span><strong id="leaseStatRental">0건</strong></article>
+          <article class="stat-card stat-card--success"><span>렌탈 중</span><strong id="leaseStatActiveRental">0건</strong></article>
+          <article class="stat-card"><span>이번주 매출</span><strong id="leaseKpiWeekRevenue">0원</strong></article>
+          <article class="stat-card"><span>이번주 원가</span><strong id="leaseKpiWeekCost">0원</strong></article>
+          <article class="stat-card stat-card--success"><span>이번주 순수익</span><strong id="leaseKpiWeekProfit">0원</strong></article>
+          <article class="stat-card"><span>이번달 매출</span><strong id="leaseKpiMonthRevenue">0원</strong></article>
+          <article class="stat-card"><span>이번달 원가</span><strong id="leaseKpiMonthCost">0원</strong></article>
+          <article class="stat-card stat-card--success"><span>이번달 순수익</span><strong id="leaseKpiMonthProfit">0원</strong></article>
+          <article class="stat-card stat-card--warning"><span>이번주 공차손실</span><strong id="leaseKpiWeekEmptyLoss">0원</strong></article>
+          <article class="stat-card stat-card--warning"><span>이번달 공차손실</span><strong id="leaseKpiMonthEmptyLoss">0원</strong></article>
+          <article class="stat-card stat-card--warning"><span>총 미납금</span><strong id="leaseKpiUnpaid">0원</strong></article>
         </div>
 
         <article class="card lease-card">
           <div class="card-header lease-card-header">
             <div>
-              <h2>리스 · 렌탈 관리</h2>
-              <p class="form-help">리스와 렌탈을 구분해 관리합니다. 렌탈은 반납일을 입력하세요.</p>
+              <h2>리스 · 렌탈 수익관리 ERP</h2>
+              <p class="form-help">Supabase 저장 · 일/주/월 순수익 · 공차손실 · 미납·사고·정비 반영</p>
             </div>
             <div class="lease-filter-panel">
               <div class="lease-filter-tabs" role="tablist" aria-label="리스 렌탈 필터">
@@ -1141,9 +1138,18 @@
             </label>
             <button type="button" class="small-btn" id="leaseSearchClear">초기화</button>
             <button type="button" class="small-btn" id="leaseExportBtn">목록 다운로드</button>
+            <button type="button" class="primary-btn" id="leaseErpExportAllBtn">전체 차량 엑셀</button>
             <button type="button" class="primary-btn" id="leaseLeaseExportBtn">리스차 엑셀 다운로드</button>
           </div>
 
+          <div class="lease-erp-tabs" role="tablist">
+            <button type="button" class="lease-erp-tab active" data-lease-erp-tab="vehicles">차량</button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="payments">미납</button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="accidents">사고</button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="maintenance">정비</button>
+          </div>
+
+          <div class="lease-erp-panel" data-lease-erp-panel="vehicles">
           <form class="lease-form" id="leaseForm">
             <input type="hidden" id="leaseEditId">
             <fieldset class="lease-type-fieldset">
@@ -1165,6 +1171,24 @@
             </fieldset>
             <div class="lease-form-grid">
               <label>
+                차량구분
+                <select id="leaseVehicleCategory">
+                  <option value="external_lease">외부리스</option>
+                  <option value="external_rental">외부렌탈</option>
+                  <option value="company_owned">회사보유차량</option>
+                </select>
+              </label>
+              <label>
+                차량상태
+                <select id="leaseVehicleStatus">
+                  <option value="operating">운행중</option>
+                  <option value="empty">공차</option>
+                  <option value="maintenance">정비중</option>
+                  <option value="accident">사고</option>
+                  <option value="terminated">계약종료</option>
+                </select>
+              </label>
+              <label>
                 리스 기종
                 <input type="text" id="leaseModel" placeholder="예: PCX125">
               </label>
@@ -1175,6 +1199,60 @@
               <label>
                 차량번호
                 <input type="text" id="leaseVehicleNumber" placeholder="12가3456">
+              </label>
+              <label>
+                리스회사
+                <input type="text" id="leaseCompany" placeholder="리스회사">
+              </label>
+              <label>
+                리스회사 하루원가
+                <input type="number" id="leaseDailyLeaseCost" min="0" placeholder="0">
+              </label>
+              <label>
+                하루 보험비
+                <input type="number" id="leaseDailyInsuranceCost" min="0" placeholder="0">
+              </label>
+              <label>
+                기타 하루비용
+                <input type="number" id="leaseDailyOtherCost" min="0" placeholder="0">
+              </label>
+              <label>
+                렌탈/리스 청구금액(일)
+                <input type="number" id="leaseDailyCharge" min="0" placeholder="0">
+              </label>
+              <label>
+                일렌트료(호환)
+                <input type="number" id="leaseDailyRent" min="0" placeholder="0">
+              </label>
+              <label>
+                주렌트료
+                <input type="text" id="leaseWeeklyRent" readonly tabindex="-1" placeholder="일렌트료 × 7">
+              </label>
+              <label>
+                미납금액
+                <input type="number" id="leaseUnpaidAmount" min="0" placeholder="0">
+              </label>
+              <label class="call-date-field">
+                <span>공차 시작일</span>
+                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseEmptyStartDate">
+                  <span id="leaseEmptyStartDateLabel">날짜 선택</span>
+                </button>
+                <input type="hidden" id="leaseEmptyStartDate">
+              </label>
+              <label>
+                예상 하루 렌탈료
+                <input type="number" id="leaseExpectedDailyRent" min="0" placeholder="0">
+              </label>
+              <label>
+                구매가(참고)
+                <input type="number" id="leasePurchasePrice" min="0" placeholder="0">
+              </label>
+              <label class="call-date-field">
+                <span>취득일</span>
+                <button type="button" class="call-date-picker-btn" data-call-date-trigger data-call-date-target="leaseAcquisitionDate">
+                  <span id="leaseAcquisitionDateLabel">날짜 선택</span>
+                </button>
+                <input type="hidden" id="leaseAcquisitionDate">
               </label>
               <label>
                 보험사
@@ -1203,14 +1281,6 @@
                 <input type="hidden" id="leaseContractEndDate">
               </label>
               <label>
-                일렌트료
-                <input type="number" id="leaseDailyRent" min="0" placeholder="0">
-              </label>
-              <label>
-                주렌트료
-                <input type="text" id="leaseWeeklyRent" readonly tabindex="-1" placeholder="일렌트료 × 7">
-              </label>
-              <label>
                 렌탈자
                 <input type="text" id="leaseRenter" placeholder="렌탈 시 기사명">
               </label>
@@ -1235,6 +1305,78 @@
               <button type="button" class="small-btn" id="leaseFormCancel" hidden>취소</button>
             </div>
           </form>
+          </div>
+
+          <div class="lease-erp-panel" data-lease-erp-panel="payments" hidden>
+            <form id="leasePaymentForm" class="lease-form">
+              <div class="lease-form-grid">
+                <label>차량<select id="leasePaymentVehicle"></select></label>
+                <label>납부예정일<input type="date" id="leasePaymentDueDate" class="admin-period-input"></label>
+                <label>실제납부일<input type="date" id="leasePaymentPaidDate" class="admin-period-input"></label>
+                <label>청구금액<input type="number" id="leasePaymentCharge" min="0"></label>
+                <label>입금금액<input type="number" id="leasePaymentPaid" min="0"></label>
+                <label>납부상태
+                  <select id="leasePaymentStatus">
+                    <option value="normal">정상</option>
+                    <option value="overdue">연체</option>
+                    <option value="unpaid">미납</option>
+                    <option value="collecting">회수중</option>
+                  </select>
+                </label>
+                <label class="lease-form-memo">메모<textarea id="leasePaymentMemo" rows="2"></textarea></label>
+              </div>
+              <button type="submit" class="primary-btn">납부 기록 저장</button>
+            </form>
+            <div class="table-wrap lease-table-wrap">
+              <table class="lease-table">
+                <thead><tr><th>차량</th><th>예정일</th><th>납부일</th><th>청구</th><th>입금</th><th>미납</th><th>연체</th><th>상태</th><th>관리</th></tr></thead>
+                <tbody id="leasePaymentRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lease-erp-panel" data-lease-erp-panel="accidents" hidden>
+            <form id="leaseAccidentForm" class="lease-form">
+              <div class="lease-form-grid">
+                <label>차량<select id="leaseAccidentVehicle"></select></label>
+                <label>사고일<input type="date" id="leaseAccidentDate" class="admin-period-input"></label>
+                <label>기사명<input type="text" id="leaseAccidentDriver"></label>
+                <label>차량번호<input type="text" id="leaseAccidentVehicleNo"></label>
+                <label>수리비<input type="number" id="leaseAccidentRepair" min="0"></label>
+                <label>보험처리금<input type="number" id="leaseAccidentInsurance" min="0"></label>
+                <label>자기부담금<input type="number" id="leaseAccidentSelfPay" min="0"></label>
+                <label class="lease-form-memo">메모<textarea id="leaseAccidentMemo" rows="2"></textarea></label>
+              </div>
+              <button type="submit" class="primary-btn">사고 기록 저장</button>
+            </form>
+            <div class="table-wrap lease-table-wrap">
+              <table class="lease-table">
+                <thead><tr><th>사고일</th><th>기사</th><th>차량번호</th><th>수리비</th><th>보험</th><th>자기부담</th><th>실제손실</th><th>관리</th></tr></thead>
+                <tbody id="leaseAccidentRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lease-erp-panel" data-lease-erp-panel="maintenance" hidden>
+            <form id="leaseMaintenanceForm" class="lease-form">
+              <div class="lease-form-grid">
+                <label>차량<select id="leaseMaintenanceVehicle"></select></label>
+                <label>정비일<input type="date" id="leaseMaintenanceDate" class="admin-period-input"></label>
+                <label>차량번호<input type="text" id="leaseMaintenanceVehicleNo"></label>
+                <label>정비내용<input type="text" id="leaseMaintenanceDesc"></label>
+                <label>정비비<input type="number" id="leaseMaintenanceCost" min="0"></label>
+                <label>소모품비<input type="number" id="leaseMaintenanceParts" min="0"></label>
+                <label class="lease-form-memo">메모<textarea id="leaseMaintenanceMemo" rows="2"></textarea></label>
+              </div>
+              <button type="submit" class="primary-btn">정비 기록 저장</button>
+            </form>
+            <div class="table-wrap lease-table-wrap">
+              <table class="lease-table">
+                <thead><tr><th>정비일</th><th>차량번호</th><th>내용</th><th>정비비</th><th>소모품</th><th>메모</th><th>관리</th></tr></thead>
+                <tbody id="leaseMaintenanceRows"></tbody>
+              </table>
+            </div>
+          </div>
         </article>
 
         <div class="lease-rental-modal" id="leaseRentalModal" hidden>
@@ -1348,20 +1490,28 @@
               <thead>
                 <tr>
                   <th></th>
-                  <th>구분</th>
-                  <th>리스 기종</th>
-                  <th>차대번호</th>
                   <th>차량번호</th>
-                  <th>보험사</th>
-                  <th>보험연령</th>
-                  <th>보험종류</th>
-                  <th>계약시작일</th>
-                  <th>최종만료일</th>
-                  <th>일렌트료</th>
-                  <th>주렌트료</th>
-                  <th>메모</th>
+                  <th>기종</th>
+                  <th>차량구분</th>
+                  <th>상태</th>
                   <th>렌탈자</th>
-                  <th>리스자</th>
+                  <th>리스회사</th>
+                  <th>하루청구</th>
+                  <th>하루원가</th>
+                  <th>하루보험</th>
+                  <th>일 순수익</th>
+                  <th>주 순수익</th>
+                  <th>월 순수익</th>
+                  <th>미납금</th>
+                  <th>공차일수</th>
+                  <th>공차손실</th>
+                  <th>최종손익</th>
+                  <th>구분</th>
+                  <th>차대번호</th>
+                  <th>보험사</th>
+                  <th>계약시작</th>
+                  <th>만료일</th>
+                  <th>메모</th>
                   <th data-lease-return-col>반납일</th>
                   <th>관리</th>
                 </tr>
@@ -3266,7 +3416,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js?v=20260622h"></script>
   <script src="js/storage-supabase-adapter.js?v=20260621z"></script>
-  <script src="js/storage.js?v=20260624b"></script>
+  <script src="js/storage.js?v=20260625a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -3286,7 +3436,10 @@
   <script src="js/promotion-apply-admin.js?v=20260624b"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/admin-lease.js?v=20260622o"></script>
+  <script src="js/lease-profit.js?v=20260625a"></script>
+  <script src="js/lease-erp.js?v=20260625a"></script>
+  <script src="js/admin-lease.js?v=20260625a"></script>
+  <script src="js/admin-lease-erp-panels.js?v=20260625a"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>

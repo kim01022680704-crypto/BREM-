@@ -1,0 +1,593 @@
+/**
+ * BREM 리스/렌탈 ERP — Supabase 테이블 저장소
+ */
+const BremLeaseErp = (function () {
+  const CONTRACT_TYPES = Object.freeze({ LEASE: 'lease', RENTAL: 'rental' });
+  const KEYS = {
+    vehicles: 'brem_lease_vehicles',
+    contracts: 'brem_lease_contracts',
+    payments: 'brem_lease_payments',
+    accidents: 'brem_lease_accidents',
+    maintenance: 'brem_lease_maintenance',
+    profitLogs: 'brem_lease_profit_logs',
+    legacy: 'brem_admin_leases'
+  };
+
+  let migrationDone = false;
+
+  function createId() {
+    return BremStorage?.createId?.() || `lease_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  function normalizeMoney(value) {
+    const num = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function normalizeDate(value) {
+    if (!value && value !== 0) return '';
+    if (typeof value === 'number' && window.XLSX?.SSF) {
+      const parsed = window.XLSX.SSF.parse_date_code(value);
+      if (parsed) {
+        return [parsed.y, String(parsed.m).padStart(2, '0'), String(parsed.d).padStart(2, '0')].join('-');
+      }
+    }
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const digits = text.replace(/[^\d]/g, '');
+    if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+    const parsedDate = new Date(text);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return [
+        parsedDate.getFullYear(),
+        String(parsedDate.getMonth() + 1).padStart(2, '0'),
+        String(parsedDate.getDate()).padStart(2, '0')
+      ].join('-');
+    }
+    return '';
+  }
+
+  function normalizeContractType(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (['rental', '렌탈', '렌트', 'rent', 'r', 'external_rental'].includes(text)) return CONTRACT_TYPES.RENTAL;
+    return CONTRACT_TYPES.LEASE;
+  }
+
+  function normalizeVehicleCategory(value, contractType) {
+    const text = String(value || '').trim().toLowerCase();
+    if (['company_owned', '회사보유', '회사보유차량', '자사'].includes(text)) {
+      return BremLeaseProfit.VEHICLE_CATEGORIES.COMPANY_OWNED;
+    }
+    if (['external_rental', '외부렌탈'].includes(text)) {
+      return BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_RENTAL;
+    }
+    if (['external_lease', '외부리스'].includes(text)) return BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_LEASE;
+    return contractType === CONTRACT_TYPES.RENTAL
+      ? BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_RENTAL
+      : BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_LEASE;
+  }
+
+  function normalizeRentalAssignment(raw) {
+    if (raw === null || raw === false) return null;
+    if (!raw || typeof raw !== 'object') return null;
+    const renter = String(raw.renter || '').trim();
+    const startDate = normalizeDate(raw.startDate);
+    const returnDate = normalizeDate(raw.returnDate);
+    const dailyRent = normalizeMoney(raw.dailyRent);
+    const weeklyRent = dailyRent > 0 ? dailyRent * 7 : normalizeMoney(raw.weeklyRent ?? raw.monthlyRent);
+    const memo = String(raw.memo || '').trim();
+    if (!renter && !startDate && !dailyRent && !weeklyRent && !returnDate && !memo) return null;
+    return { renter, startDate, returnDate, dailyRent, weeklyRent, memo };
+  }
+
+  function todayKey() {
+    return BremLeaseProfit.todayKey();
+  }
+
+  function hasActiveContract(item) {
+    const end = String(item?.contractEndDate || '').trim();
+    if (!end) return true;
+    return end >= todayKey();
+  }
+
+  function hasActiveRentalAssignment(item) {
+    const assignment = item?.rentalAssignment;
+    if (!assignment) return false;
+    if (!String(assignment.renter || '').trim()) return false;
+    const returnDate = String(assignment.returnDate || '').trim();
+    if (!returnDate) return true;
+    return returnDate >= todayKey();
+  }
+
+  function isEmptyVehicle(item) {
+    if (!item) return false;
+    if (String(item.vehicleStatus) === BremLeaseProfit.VEHICLE_STATUSES.EMPTY) return true;
+    const category = String(item.vehicleCategory || '');
+    const isLeaseLike = category === BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_LEASE
+      || String(item.contractType) === CONTRACT_TYPES.LEASE;
+    if (!isLeaseLike) return false;
+    if (!hasActiveContract(item)) return false;
+    if (hasActiveRentalAssignment(item)) return false;
+    if (String(item.renter || '').trim()) return false;
+    return true;
+  }
+
+  function inferVehicleStatus(record, existing = null) {
+    if (record.vehicleStatus) return String(record.vehicleStatus);
+    if (existing?.vehicleStatus) return existing.vehicleStatus;
+    const end = normalizeDate(record.contractEndDate ?? existing?.contractEndDate);
+    if (end && end < todayKey()) return BremLeaseProfit.VEHICLE_STATUSES.TERMINATED;
+    const contractType = normalizeContractType(record.contractType ?? existing?.contractType);
+    const draft = {
+      contractType,
+      vehicleCategory: normalizeVehicleCategory(record.vehicleCategory ?? existing?.vehicleCategory, contractType),
+      contractEndDate: end,
+      renter: record.renter ?? existing?.renter,
+      rentalAssignment: normalizeRentalAssignment(
+        record.rentalAssignment !== undefined ? record.rentalAssignment : existing?.rentalAssignment
+      )
+    };
+    if (isEmptyVehicle(draft)) return BremLeaseProfit.VEHICLE_STATUSES.EMPTY;
+    return BremLeaseProfit.VEHICLE_STATUSES.OPERATING;
+  }
+
+  function normalizeRecord(raw = {}, existing = null) {
+    const contractType = normalizeContractType(
+      raw.contractType != null ? raw.contractType : existing?.contractType
+    );
+    const vehicleCategory = normalizeVehicleCategory(
+      raw.vehicleCategory != null ? raw.vehicleCategory : existing?.vehicleCategory,
+      contractType
+    );
+    const operationType = String(
+      raw.operationType != null ? raw.operationType : existing?.operationType || contractType
+    ).trim() || contractType;
+
+    const dailyChargeAmount = normalizeMoney(
+      raw.dailyChargeAmount != null ? raw.dailyChargeAmount
+        : (raw.dailyRent != null ? raw.dailyRent : existing?.dailyChargeAmount ?? existing?.dailyRent)
+    );
+    const dailyLeaseCost = normalizeMoney(
+      raw.dailyLeaseCost != null ? raw.dailyLeaseCost : existing?.dailyLeaseCost
+    );
+    const dailyInsuranceCost = normalizeMoney(
+      raw.dailyInsuranceCost != null ? raw.dailyInsuranceCost : existing?.dailyInsuranceCost
+    );
+    const dailyOtherCost = normalizeMoney(
+      raw.dailyOtherCost != null ? raw.dailyOtherCost : existing?.dailyOtherCost
+    );
+
+    const record = {
+      id: existing?.id || raw.id || createId(),
+      vehicleCategory,
+      operationType,
+      contractType,
+      model: String(raw.model != null ? raw.model : existing?.model || '').trim(),
+      chassisNumber: String(raw.chassisNumber != null ? raw.chassisNumber : existing?.chassisNumber || '').trim(),
+      vehicleNumber: String(raw.vehicleNumber != null ? raw.vehicleNumber : existing?.vehicleNumber || '').trim(),
+      leaseCompany: String(
+        raw.leaseCompany != null ? raw.leaseCompany : (raw.lessor != null ? raw.lessor : existing?.leaseCompany ?? existing?.lessor)
+      ).trim(),
+      dailyLeaseCost: vehicleCategory === BremLeaseProfit.VEHICLE_CATEGORIES.COMPANY_OWNED
+        ? 0
+        : (dailyLeaseCost || (contractType === CONTRACT_TYPES.LEASE ? normalizeMoney(existing?.dailyRent) : 0)),
+      insuranceCompany: String(raw.insuranceCompany != null ? raw.insuranceCompany : existing?.insuranceCompany || '').trim(),
+      insuranceAge: String(raw.insuranceAge != null ? raw.insuranceAge : existing?.insuranceAge || '').trim(),
+      insuranceType: String(raw.insuranceType != null ? raw.insuranceType : existing?.insuranceType || '').trim(),
+      dailyInsuranceCost,
+      contractStartDate: normalizeDate(raw.contractStartDate != null ? raw.contractStartDate : existing?.contractStartDate),
+      contractEndDate: normalizeDate(raw.contractEndDate != null ? raw.contractEndDate : existing?.contractEndDate),
+      returnDate: normalizeDate(raw.returnDate != null ? raw.returnDate : existing?.returnDate),
+      renter: String(raw.renter != null ? raw.renter : existing?.renter || '').trim(),
+      lessor: String(raw.lessor != null ? raw.lessor : existing?.lessor || '').trim(),
+      dailyChargeAmount,
+      dailyRent: dailyChargeAmount,
+      weeklyRent: dailyChargeAmount > 0 ? dailyChargeAmount * 7 : normalizeMoney(raw.weeklyRent ?? existing?.weeklyRent),
+      unpaidAmount: normalizeMoney(raw.unpaidAmount != null ? raw.unpaidAmount : existing?.unpaidAmount),
+      balanceDiff: normalizeMoney(raw.balanceDiff != null ? raw.balanceDiff : existing?.balanceDiff),
+      memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
+      vehicleStatus: inferVehicleStatus(raw, existing),
+      emptyStartDate: normalizeDate(raw.emptyStartDate != null ? raw.emptyStartDate : existing?.emptyStartDate),
+      expectedDailyRent: normalizeMoney(raw.expectedDailyRent != null ? raw.expectedDailyRent : existing?.expectedDailyRent),
+      dailyOtherCost,
+      purchasePrice: normalizeMoney(raw.purchasePrice != null ? raw.purchasePrice : existing?.purchasePrice),
+      acquisitionDate: normalizeDate(raw.acquisitionDate != null ? raw.acquisitionDate : existing?.acquisitionDate),
+      rentalAssignment: normalizeRentalAssignment(
+        raw.rentalAssignment !== undefined ? raw.rentalAssignment : existing?.rentalAssignment
+      ),
+      createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (!record.balanceDiff && record.dailyChargeAmount && record.dailyLeaseCost) {
+      record.balanceDiff = record.dailyChargeAmount - record.dailyLeaseCost;
+    }
+    if (record.vehicleStatus === BremLeaseProfit.VEHICLE_STATUSES.EMPTY && !record.emptyStartDate) {
+      record.emptyStartDate = record.returnDate || record.emptyStartDate;
+    }
+    return record;
+  }
+
+  function normalizePayment(raw = {}, existing = null) {
+    const chargeAmount = normalizeMoney(raw.chargeAmount != null ? raw.chargeAmount : existing?.chargeAmount);
+    const paidAmount = normalizeMoney(raw.paidAmount != null ? raw.paidAmount : existing?.paidAmount);
+    const unpaidAmount = raw.unpaidAmount != null
+      ? normalizeMoney(raw.unpaidAmount)
+      : Math.max(0, chargeAmount - paidAmount);
+    const dueDate = normalizeDate(raw.dueDate != null ? raw.dueDate : existing?.dueDate);
+    const paidDate = normalizeDate(raw.paidDate != null ? raw.paidDate : existing?.paidDate);
+    let overdueDays = Number(raw.overdueDays != null ? raw.overdueDays : existing?.overdueDays || 0);
+    if (!overdueDays && dueDate && !paidDate && dueDate < todayKey()) {
+      overdueDays = BremLeaseProfit.daysBetween(dueDate, todayKey()) - 1;
+    }
+    let paymentStatus = String(raw.paymentStatus || existing?.paymentStatus || '').trim();
+    if (!paymentStatus) {
+      if (unpaidAmount <= 0) paymentStatus = BremLeaseProfit.PAYMENT_STATUSES.NORMAL;
+      else if (overdueDays > 0) paymentStatus = BremLeaseProfit.PAYMENT_STATUSES.OVERDUE;
+      else paymentStatus = BremLeaseProfit.PAYMENT_STATUSES.UNPAID;
+    }
+    return {
+      id: existing?.id || raw.id || createId(),
+      vehicleId: String(raw.vehicleId != null ? raw.vehicleId : existing?.vehicleId || '').trim(),
+      dueDate,
+      paidDate,
+      chargeAmount,
+      paidAmount,
+      unpaidAmount,
+      overdueDays: Math.max(0, overdueDays),
+      paymentStatus,
+      memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
+      createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  function normalizeAccident(raw = {}, existing = null) {
+    const repairCost = normalizeMoney(raw.repairCost != null ? raw.repairCost : existing?.repairCost);
+    const insurancePayout = normalizeMoney(raw.insurancePayout != null ? raw.insurancePayout : existing?.insurancePayout);
+    const selfPay = normalizeMoney(raw.selfPay != null ? raw.selfPay : existing?.selfPay);
+    const actualLoss = raw.actualLoss != null
+      ? normalizeMoney(raw.actualLoss)
+      : repairCost - insurancePayout + selfPay;
+    return {
+      id: existing?.id || raw.id || createId(),
+      vehicleId: String(raw.vehicleId != null ? raw.vehicleId : existing?.vehicleId || '').trim(),
+      accidentDate: normalizeDate(raw.accidentDate != null ? raw.accidentDate : existing?.accidentDate),
+      driverName: String(raw.driverName != null ? raw.driverName : existing?.driverName || '').trim(),
+      vehicleNumber: String(raw.vehicleNumber != null ? raw.vehicleNumber : existing?.vehicleNumber || '').trim(),
+      repairCost,
+      insurancePayout,
+      selfPay,
+      actualLoss,
+      memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
+      createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  function normalizeMaintenance(raw = {}, existing = null) {
+    return {
+      id: existing?.id || raw.id || createId(),
+      vehicleId: String(raw.vehicleId != null ? raw.vehicleId : existing?.vehicleId || '').trim(),
+      maintenanceDate: normalizeDate(raw.maintenanceDate != null ? raw.maintenanceDate : existing?.maintenanceDate),
+      vehicleNumber: String(raw.vehicleNumber != null ? raw.vehicleNumber : existing?.vehicleNumber || '').trim(),
+      description: String(raw.description != null ? raw.description : existing?.description || '').trim(),
+      maintenanceCost: normalizeMoney(raw.maintenanceCost != null ? raw.maintenanceCost : existing?.maintenanceCost),
+      partsCost: normalizeMoney(raw.partsCost != null ? raw.partsCost : existing?.partsCost),
+      memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
+      createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  function readList(key) {
+    if (BremStorage?.readTableKey) return BremStorage.readTableKey(key) || [];
+    return window.BremDataCache?.getData?.(key) || [];
+  }
+
+  function writeList(key, list, options = {}) {
+    if (BremStorage?.writeTableKey) return BremStorage.writeTableKey(key, list, options);
+    window.BremDataCache?.set?.(key, list, { source: 'write' });
+    return list;
+  }
+
+  async function persistKey(key) {
+    if (BremStorage?.flushStorage) await BremStorage.flushStorage();
+  }
+
+  function vehicles() {
+    return {
+      CONTRACT_TYPES,
+      normalizeRecord,
+      normalizeContractType,
+      normalizeDate,
+      normalizeMoney,
+      normalizeRentalAssignment,
+      todayKey,
+      hasActiveContract,
+      hasActiveRentalAssignment,
+      isEmptyVehicle,
+      getEmptyVehicles() {
+        return vehicles().getAll().filter(item => isEmptyVehicle(item));
+      },
+      getAll() {
+        return readList(KEYS.vehicles);
+      },
+      getById(id) {
+        return vehicles().getAll().find(item => item.id === id) || null;
+      },
+      findByVehicleKey({ chassisNumber, vehicleNumber } = {}) {
+        const chassis = String(chassisNumber || '').trim();
+        const vehicle = String(vehicleNumber || '').trim();
+        return vehicles().getAll().find(item => {
+          if (chassis && item.chassisNumber === chassis) return true;
+          if (vehicle && item.vehicleNumber === vehicle) return true;
+          return false;
+        }) || null;
+      },
+      create(raw) {
+        const record = normalizeRecord(raw);
+        const list = vehicles().getAll();
+        list.unshift(record);
+        writeList(KEYS.vehicles, list);
+        return record;
+      },
+      update(id, raw) {
+        const existing = vehicles().getById(id);
+        if (!existing) return null;
+        const record = normalizeRecord({ ...existing, ...raw }, existing);
+        const list = vehicles().getAll().map(item => item.id === id ? record : item);
+        writeList(KEYS.vehicles, list);
+        return record;
+      },
+      upsert(raw) {
+        const chassis = String(raw.chassisNumber || '').trim();
+        const vehicleNo = String(raw.vehicleNumber || '').trim();
+        const existing = raw.id
+          ? vehicles().getById(raw.id)
+          : vehicles().findByVehicleKey({ chassisNumber: chassis, vehicleNumber: vehicleNo });
+        if (existing) return vehicles().update(existing.id, { ...existing, ...raw });
+        return vehicles().create(raw);
+      },
+      upsertMany(records = []) {
+        return records.map(record => vehicles().upsert(record));
+      },
+      removeById(id) {
+        const list = vehicles().getAll().filter(item => item.id !== id);
+        writeList(KEYS.vehicles, list);
+      },
+      removeByIds(ids = []) {
+        const idSet = new Set(ids);
+        const list = vehicles().getAll().filter(item => !idSet.has(item.id));
+        writeList(KEYS.vehicles, list);
+      },
+      assignRental(vehicleId, assignment) {
+        const existing = vehicles().getById(vehicleId);
+        if (!existing) return null;
+        return vehicles().update(vehicleId, {
+          rentalAssignment: normalizeRentalAssignment(assignment),
+          vehicleStatus: BremLeaseProfit.VEHICLE_STATUSES.OPERATING
+        });
+      },
+      clearRentalAssignment(vehicleId) {
+        const existing = vehicles().getById(vehicleId);
+        if (!existing) return null;
+        return vehicles().update(vehicleId, {
+          rentalAssignment: null,
+          vehicleStatus: isEmptyVehicle({ ...existing, rentalAssignment: null })
+            ? BremLeaseProfit.VEHICLE_STATUSES.EMPTY
+            : existing.vehicleStatus
+        });
+      },
+      async persist() {
+        await persistKey(KEYS.vehicles);
+      }
+    };
+  }
+
+  function makeChildStore(key, normalizeFn) {
+    const store = {
+      getAll() { return readList(key); },
+      getById(id) { return store.getAll().find(item => item.id === id) || null; },
+      getByVehicleId(vehicleId) {
+        return store.getAll().filter(item => item.vehicleId === vehicleId);
+      },
+      create(raw) {
+        const record = normalizeFn(raw);
+        const list = store.getAll();
+        list.unshift(record);
+        writeList(key, list);
+        return record;
+      },
+      update(id, raw) {
+        const existing = store.getById(id);
+        if (!existing) return null;
+        const record = normalizeFn({ ...existing, ...raw }, existing);
+        const list = store.getAll().map(item => item.id === id ? record : item);
+        writeList(key, list);
+        return record;
+      },
+      removeById(id) {
+        const list = store.getAll().filter(item => item.id !== id);
+        writeList(key, list);
+      },
+      async persist() {
+        await persistKey(key);
+      }
+    };
+    return store;
+  }
+
+  function groupByVehicleId(items = []) {
+    return items.reduce((map, item) => {
+      const id = item.vehicleId;
+      if (!id) return map;
+      if (!map[id]) map[id] = [];
+      map[id].push(item);
+      return map;
+    }, {});
+  }
+
+  function legacyRecordToVehicle(legacy) {
+    const contractType = normalizeContractType(legacy.contractType);
+    const assignment = normalizeRentalAssignment(legacy.rentalAssignment);
+    return normalizeRecord({
+      id: legacy.id,
+      contractType,
+      model: legacy.model,
+      chassisNumber: legacy.chassisNumber,
+      vehicleNumber: legacy.vehicleNumber,
+      insuranceCompany: legacy.insuranceCompany,
+      insuranceAge: legacy.insuranceAge,
+      insuranceType: legacy.insuranceType,
+      contractStartDate: legacy.contractStartDate,
+      contractEndDate: legacy.contractEndDate,
+      returnDate: legacy.returnDate,
+      memo: legacy.memo,
+      renter: legacy.renter,
+      lessor: legacy.lessor,
+      dailyLeaseCost: contractType === CONTRACT_TYPES.LEASE ? legacy.dailyRent : 0,
+      dailyChargeAmount: contractType === CONTRACT_TYPES.RENTAL
+        ? legacy.dailyRent
+        : (assignment?.dailyRent || 0),
+      rentalAssignment: assignment,
+      createdAt: legacy.createdAt,
+      updatedAt: legacy.updatedAt
+    });
+  }
+
+  async function migrateLegacySettingsIfNeeded() {
+    if (migrationDone) return { migrated: 0, skipped: true };
+    const current = vehicles().getAll();
+    if (current.length) {
+      migrationDone = true;
+      return { migrated: 0, skipped: true };
+    }
+    const legacy = BremStorage?.leases?.getAll?.() || readList(KEYS.legacy) || [];
+    if (!legacy.length) {
+      migrationDone = true;
+      return { migrated: 0, skipped: true };
+    }
+    const mapped = legacy.map(legacyRecordToVehicle);
+    writeList(KEYS.vehicles, mapped, { allowEmpty: false });
+    await vehicles().persist();
+    migrationDone = true;
+    return { migrated: mapped.length, skipped: false };
+  }
+
+  async function ensureLoaded() {
+    await BremStorage?.ensureSectionLoaded?.('lease-management');
+    if (BremStorage?.ensureLeaseErpKeysLoaded) {
+      await BremStorage.ensureLeaseErpKeysLoaded();
+    }
+    await migrateLegacySettingsIfNeeded();
+    return { ok: true };
+  }
+
+  async function persistAll() {
+    await Promise.all([
+      vehicles().persist(),
+      payments().persist(),
+      accidents().persist(),
+      maintenance().persist()
+    ]);
+  }
+
+  function payments() {
+    return makeChildStore(KEYS.payments, normalizePayment);
+  }
+
+  function accidents() {
+    return makeChildStore(KEYS.accidents, normalizeAccident);
+  }
+
+  function maintenance() {
+    return makeChildStore(KEYS.maintenance, normalizeMaintenance);
+  }
+
+  function applyVehicleFilters(list, filters = {}) {
+    let result = [...list];
+    const category = String(filters.vehicleCategory || '').trim();
+    const status = String(filters.vehicleStatus || '').trim();
+    const renter = String(filters.renter || '').trim().toLowerCase();
+    const leaseCompany = String(filters.leaseCompany || '').trim().toLowerCase();
+    const search = String(filters.search || '').trim().toLowerCase();
+
+    if (category) result = result.filter(item => item.vehicleCategory === category);
+    if (status === 'empty') result = result.filter(item => isEmptyVehicle(item));
+    else if (status) result = result.filter(item => String(item.vehicleStatus) === status);
+    if (renter) {
+      result = result.filter(item => {
+        const renterName = String(item.renter || item.rentalAssignment?.renter || '').toLowerCase();
+        return renterName.includes(renter);
+      });
+    }
+    if (leaseCompany) {
+      result = result.filter(item => String(item.leaseCompany || item.lessor || '').toLowerCase().includes(leaseCompany));
+    }
+    if (search) {
+      result = result.filter(item => [
+        item.model, item.vehicleNumber, item.chassisNumber, item.renter, item.lessor, item.leaseCompany, item.rentalAssignment?.renter
+      ].some(value => String(value || '').toLowerCase().includes(search)));
+    }
+    return result;
+  }
+
+  function buildDashboardKpis(filters = {}) {
+    const filtered = applyVehicleFilters(vehicles().getAll(), filters);
+    const paymentsByVehicle = groupByVehicleId(payments().getAll());
+    const accidentsByVehicle = groupByVehicleId(accidents().getAll());
+    const maintenanceByVehicle = groupByVehicleId(maintenance().getAll());
+    const weekly = BremLeaseProfit.aggregateKpis(filtered, {
+      periodType: 'weekly',
+      paymentsByVehicle,
+      accidentsByVehicle,
+      maintenanceByVehicle
+    });
+    const monthly = BremLeaseProfit.aggregateKpis(filtered, {
+      periodType: 'monthly',
+      paymentsByVehicle,
+      accidentsByVehicle,
+      maintenanceByVehicle
+    });
+    return {
+      counts: BremLeaseProfit.countByStatus(filtered),
+      weekly,
+      monthly,
+      totalUnpaid: payments().getAll().reduce((sum, item) => sum + BremLeaseProfit.money(item.unpaidAmount), 0)
+    };
+  }
+
+  function enrichVehicleRow(vehicle, context = {}) {
+    const profit = BremLeaseProfit.computeDailyProfit(vehicle);
+    const empty = BremLeaseProfit.computeEmptyMetrics(vehicle);
+    const finalProfit = BremLeaseProfit.computeVehicleFinalProfit(vehicle, {
+      payments: context.payments || payments().getByVehicleId(vehicle.id),
+      accidents: context.accidents || accidents().getByVehicleId(vehicle.id),
+      maintenance: context.maintenance || maintenance().getByVehicleId(vehicle.id),
+      periodDays: context.periodDays || 1
+    });
+    return { vehicle, profit, empty, finalProfit };
+  }
+
+  return {
+    KEYS,
+    CONTRACT_TYPES,
+    vehicles,
+    payments,
+    accidents,
+    maintenance,
+    ensureLoaded,
+    migrateLegacySettingsIfNeeded,
+    persistAll,
+    buildDashboardKpis,
+    applyVehicleFilters,
+    enrichVehicleRow,
+    groupByVehicleId,
+    isEmptyVehicle,
+    normalizeRecord,
+    normalizePayment,
+    normalizeAccident,
+    normalizeMaintenance
+  };
+})();
