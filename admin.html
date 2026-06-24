@@ -2356,6 +2356,13 @@
           <form id="promotionApplyForm" class="weekly-settlement-form">
             <div class="promotion-apply-panel" data-promotion-apply-panel="coupang">
               <div class="promotion-form-grid">
+                <div class="promotion-settlement-week-block">
+                  <label class="settlement-week-filter">
+                    <span>적용주(수요일)</span>
+                    <input type="date" id="promotionApplySettlementWeek-coupang" class="admin-period-input">
+                  </label>
+                  <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-coupang"></p>
+                </div>
                 <label>
                   저장된 쿠팡 주정산
                   <select id="promotionApplySettlementSelect-coupang"></select>
@@ -2385,6 +2392,13 @@
             </div>
             <div class="promotion-apply-panel" data-promotion-apply-panel="baemin" hidden>
               <div class="promotion-form-grid">
+                <div class="promotion-settlement-week-block">
+                  <label class="settlement-week-filter">
+                    <span>적용주(수요일)</span>
+                    <input type="date" id="promotionApplySettlementWeek-baemin" class="admin-period-input">
+                  </label>
+                  <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-baemin"></p>
+                </div>
                 <label>
                   저장된 배민 주정산
                   <select id="promotionApplySettlementSelect-baemin"></select>
@@ -2424,14 +2438,28 @@
             <div class="promotion-apply-panel" data-promotion-apply-panel="combined" hidden>
               <p class="form-help">쿠팡·배민 주정산서를 각각 선택하세요. 쿠팡에만 있으면 <strong>거절율</strong>, 배민에만 있으면 <strong>수락률</strong> 기준으로 계산하고, 양쪽 모두 있으면 <strong>쿠팡(거절율)</strong> 기준으로 적용합니다.</p>
               <div class="promotion-form-grid">
-                <label>
-                  저장된 쿠팡 주정산
-                  <select id="promotionApplySettlementSelect-combined-coupang"></select>
-                </label>
-                <label>
-                  저장된 배민 주정산
-                  <select id="promotionApplySettlementSelect-combined-baemin"></select>
-                </label>
+                <div class="promotion-settlement-week-block">
+                  <label class="settlement-week-filter">
+                    <span>쿠팡 적용주(수요일)</span>
+                    <input type="date" id="promotionApplySettlementWeek-combined-coupang" class="admin-period-input">
+                  </label>
+                  <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-coupang"></p>
+                  <label>
+                    저장된 쿠팡 주정산
+                    <select id="promotionApplySettlementSelect-combined-coupang"></select>
+                  </label>
+                </div>
+                <div class="promotion-settlement-week-block">
+                  <label class="settlement-week-filter">
+                    <span>배민 적용주(수요일)</span>
+                    <input type="date" id="promotionApplySettlementWeek-combined-baemin" class="admin-period-input">
+                  </label>
+                  <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-baemin"></p>
+                  <label>
+                    저장된 배민 주정산
+                    <select id="promotionApplySettlementSelect-combined-baemin"></select>
+                  </label>
+                </div>
                 <label>
                   배달처리비 엑셀 비밀번호
                   <input type="text" id="promotionApplyDeliveryFeePassword-combined" placeholder="엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
@@ -2497,20 +2525,23 @@
                 <option value="combined">합산</option>
               </select>
             </label>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="promotionApplySavedWeekFilter" class="admin-period-input">
+            </label>
             <label>
               지역
               <input type="search" id="promotionApplySavedRegionFilter" placeholder="지역 검색" autocomplete="off">
             </label>
-            <label>
-              정산주차
-              <input type="search" id="promotionApplySavedWeekFilter" placeholder="YYYY-MM-DD" autocomplete="off">
-            </label>
+            <button type="button" class="small-btn" id="promotionApplySavedWeekExportBtn">적용주 엑셀 일괄</button>
           </div>
+          <p class="settlement-week-range-label" id="promotionApplySavedWeekRange"></p>
           <div class="table-wrap">
             <table class="weekly-settlement-saved-table">
               <thead>
                 <tr>
                   <th>플랫폼</th>
+                  <th>적용주</th>
                   <th>지역</th>
                   <th>정산기간</th>
                   <th>기사</th>
@@ -3243,8 +3274,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260623d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
-  <script src="js/promotion-apply.js?v=20260623g"></script>
-  <script src="js/promotion-apply-admin.js?v=20260623g"></script>
+  <script src="js/promotion-apply.js?v=20260624a"></script>
+  <script src="js/promotion-apply-admin.js?v=20260624a"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-lease.js?v=20260622o"></script>

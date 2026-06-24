@@ -3890,6 +3890,21 @@ textarea {
   gap: 12px;
 }
 
+.promotion-settlement-week-block {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.promotion-settlement-week-block .settlement-week-filter {
+  margin: 0;
+}
+
+.promotion-settlement-week-block > label:not(.settlement-week-filter) {
+  display: grid;
+  gap: 6px;
+}
+
 .promotion-form-section {
   display: grid;
   gap: 10px;

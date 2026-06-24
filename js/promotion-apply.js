@@ -577,14 +577,39 @@ const BremPromotionApply = (function () {
     };
   }
 
+  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
+    if (window.BremDatePicker?.weekStartKey) return BremDatePicker.weekStartKey(dateValue);
+    const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
+    const day = date.getDay();
+    const diff = (day - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function weekEndKey(weekStart) {
+    const end = new Date(`${weekStart}T00:00:00`);
+    end.setDate(end.getDate() + 6);
+    return end.toISOString().slice(0, 10);
+  }
+
+  function getWeeklySettlementWeekStart(record) {
+    const raw = String(record?.weekStart || record?.startDate || record?.baseSettlementDate || '').slice(0, 10);
+    return raw ? weekStartKey(raw) : '';
+  }
+
   function buildSaveRecord(calculationResult) {
     if (!calculationResult) throw new Error('저장할 계산 결과가 없습니다.');
+    const weekStart = getWeeklySettlementWeekStart({
+      weekStart: calculationResult.weekStart,
+      startDate: calculationResult.startDate
+    });
     return {
       id: BremStorage.createId(),
       platform: calculationResult.platform,
       settlementId: calculationResult.settlementId,
       settlementLabel: calculationResult.settlementLabel,
       region: calculationResult.region,
+      weekStart,
       startDate: calculationResult.startDate,
       endDate: calculationResult.endDate,
       selectedPromotionRuleIds: calculationResult.selectedPromotionRuleIds || [],
@@ -772,14 +797,85 @@ const BremPromotionApply = (function () {
     XLSX.writeFile(workbook, buildExportFileName(record));
   }
 
-  function getSettlementOptions(platform) {
+  function getSettlementOptions(platform, options = {}) {
     const p = normalizePlatform(platform);
-    return BremStorage.weeklySettlements.getAll()
+    const weekStart = String(options.weekStart || '').slice(0, 10);
+    let items = BremStorage.weeklySettlements.getAll()
       .filter(item => BremStorage.resolveWeeklySettlementPlatform(item) === p)
-      .map(item => ({
-        id: item.id,
-        label: `${item.region} · ${item.matchedNamesLabel || `${item.summary?.matchedRiders || item.riders?.length || 0}명`} (${item.startDate}~${item.endDate})`
-      }));
+      .map(item => {
+        const itemWeekStart = getWeeklySettlementWeekStart(item);
+        return {
+          id: item.id,
+          weekStart: itemWeekStart,
+          region: item.region,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          label: `${item.region} · ${item.matchedNamesLabel || `${item.summary?.matchedRiders || item.riders?.length || 0}명`} (${item.startDate}~${item.endDate})`
+        };
+      });
+    if (weekStart) {
+      items = items.filter(item => item.weekStart === weekStart);
+    }
+    return items.sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko'));
+  }
+
+  function getSavedResultWeekStart(item) {
+    if (!item) return '';
+    if (item.weekStart) return String(item.weekStart).slice(0, 10);
+    return getWeeklySettlementWeekStart({ startDate: item.startDate });
+  }
+
+  function exportWeekResultsToExcel(records, weekStart) {
+    if (!window.XLSX) throw new Error('엑셀 라이브러리를 불러오지 못했습니다.');
+    if (!records?.length) throw new Error('보낼 결과가 없습니다.');
+
+    const simpleHeader = ['적용주', '배민ID', '쿠팡ID', '이름', '금액', '플랫폼', '지역', '미션명', '정산기간', '계산기준'];
+    const simpleRows = [];
+    records.forEach(record => {
+      const itemWeekStart = getSavedResultWeekStart(record);
+      const weekLabel = itemWeekStart
+        ? `${itemWeekStart} ~ ${weekEndKey(itemWeekStart)}`
+        : `${record.startDate || ''} ~ ${record.endDate || ''}`;
+      buildSimpleExportRows(record).forEach(row => {
+        simpleRows.push([
+          weekLabel,
+          row.baeminId,
+          row.coupangId,
+          row.name,
+          row.amount,
+          row.platform,
+          row.region,
+          row.missionName,
+          row.weekLabel,
+          row.basis
+        ]);
+      });
+    });
+
+    const simpleSheet = XLSX.utils.aoa_to_sheet([simpleHeader, ...simpleRows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, simpleSheet, '요약');
+
+    const usedSheetNames = new Set(['요약']);
+    records.forEach((record, index) => {
+      let sheetName = String(record.region || `결과${index + 1}`)
+        .split('/')[0]
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .slice(0, 28) || `결과${index + 1}`;
+      let suffix = 2;
+      while (usedSheetNames.has(sheetName)) {
+        const base = sheetName.slice(0, 24);
+        sheetName = `${base}_${suffix}`;
+        suffix += 1;
+      }
+      usedSheetNames.add(sheetName);
+      const detailSheet = XLSX.utils.aoa_to_sheet(buildExportRows(record));
+      XLSX.utils.book_append_sheet(workbook, detailSheet, sheetName);
+    });
+
+    const weekKey = String(weekStart || '전체').slice(0, 10);
+    XLSX.writeFile(workbook, `프로모션적용_${weekKey}.xlsx`);
   }
 
   return {
@@ -790,6 +886,11 @@ const BremPromotionApply = (function () {
     combinedSettlementsNeedDeliveryFee,
     ruleUsesGuarantee,
     getSettlementOptions,
+    getWeeklySettlementWeekStart,
+    getSavedResultWeekStart,
+    weekStartKey,
+    weekEndKey,
+    exportWeekResultsToExcel,
     getWeekStatsForDriver,
     getResultRowDisplayName,
     getResultRowBaeminRiderId,
