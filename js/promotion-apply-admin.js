@@ -136,8 +136,100 @@ const BremPromotionApplyAdmin = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
-    return BremPromotionApply.weekStartKey(dateValue);
+  function weekStartKey(dateValue) {
+    const fallback = window.BremDatePicker?.today?.() || new Date().toISOString().slice(0, 10);
+    return BremPromotionApply.weekStartKey(dateValue || fallback);
+  }
+
+  function applyWeekWednesday(dateValue) {
+    return BremPromotionApply.applyWeekWednesday(dateValue || weekStartKey());
+  }
+
+  function weekTriggerId(selectKey) {
+    return selectKey;
+  }
+
+  function setupPromotionApplyWeekPicker() {
+    if (setupPromotionApplyWeekPicker.bound) return;
+    if (!window.BremDatePicker?.setupWednesdayWeekDelegated) return;
+    setupPromotionApplyWeekPicker.bound = true;
+
+    BremDatePicker.setupWednesdayWeekDelegated({
+      popup: $('#promotionApplyWeekPickerCalendar'),
+      daysContainer: $('#promotionApplyWeekPickerDays'),
+      titleEl: $('#promotionApplyWeekPickerTitle'),
+      prevBtn: $('#promotionApplyWeekPickerPrev'),
+      nextBtn: $('#promotionApplyWeekPickerNext'),
+      todayBtn: $('#promotionApplyWeekPickerThisWeek'),
+      openSelector: '[data-promotion-apply-week]',
+      getContext(button) {
+        const selectKey = button.dataset.promotionApplyWeek;
+        if (!selectKey) return null;
+        if (selectKey === 'saved') {
+          return {
+            hiddenInput: $('#promotionApplySavedWeekFilter'),
+            labelEl: $('[data-promotion-apply-week-label="saved"]'),
+            onSelect(value) {
+              handleSavedWeekSelect(value);
+            }
+          };
+        }
+        const hiddenInput = $(`#promotionApplySettlementWeek-${selectKey}`);
+        const labelEl = $(`[data-promotion-apply-week-label="${selectKey}"]`);
+        if (!hiddenInput) return null;
+        return {
+          hiddenInput,
+          labelEl,
+          onSelect(value) {
+            handleWeekSelect(selectKey, value);
+          }
+        };
+      }
+    });
+  }
+
+  function formatWeekPickerLabel(weekStart) {
+    if (!weekStart) return '수요일 선택';
+    const normalized = applyWeekWednesday(weekStart);
+    const dateText = window.BremDatePicker?.formatDate?.(normalized) || formatDate(normalized);
+    const weekday = window.BremDatePicker?.formatWeekdayKo?.(normalized) || '';
+    return weekday ? `${dateText}(${weekday})` : dateText;
+  }
+
+  function syncWeekPickerDisplay(selectKey, weekStart) {
+    const normalized = applyWeekWednesday(weekStart);
+    const input = $(`#promotionApplySettlementWeek-${selectKey}`);
+    if (input) input.value = normalized;
+    const label = $(`[data-promotion-apply-week-label="${weekTriggerId(selectKey)}"]`);
+    if (label) label.textContent = formatWeekPickerLabel(normalized);
+    return normalized;
+  }
+
+  function syncSavedWeekPickerDisplay(weekStart) {
+    const normalized = applyWeekWednesday(weekStart);
+    const input = $('#promotionApplySavedWeekFilter');
+    if (input) input.value = normalized;
+    const label = $('[data-promotion-apply-week-label="saved"]');
+    if (label) label.textContent = formatWeekPickerLabel(normalized);
+    return normalized;
+  }
+
+  function handleWeekSelect(selectKey, value) {
+    const normalized = syncWeekPickerDisplay(selectKey, value);
+    state.settlementWeekByKey[selectKey] = normalized;
+    updateSettlementWeekRangeLabel(selectKey);
+    if (selectKey.startsWith('combined-')) {
+      renderCombinedSettlementSelects();
+    } else {
+      renderSettlementSelectForPlatform(selectKey);
+    }
+  }
+
+  function handleSavedWeekSelect(value) {
+    const normalized = syncSavedWeekPickerDisplay(value);
+    state.savedWeekFilter = normalized;
+    updateSavedWeekRangeLabel();
+    renderSavedList();
   }
 
   function weekEndKey(weekStart) {
@@ -155,7 +247,16 @@ const BremPromotionApplyAdmin = (function () {
 
   function formatWeekRangeLabel(weekStart) {
     if (!weekStart) return '';
-    return `${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`;
+    if (window.BremDatePicker?.formatWednesdayWeekRange) {
+      return BremDatePicker.formatWednesdayWeekRange(applyWeekWednesday(weekStart));
+    }
+    const normalized = applyWeekWednesday(weekStart);
+    const end = weekEndKey(normalized);
+    const weekday = value => {
+      const day = new Date(`${value}T00:00:00`).getDay();
+      return ['일', '월', '화', '수', '목', '금', '토'][day] || '';
+    };
+    return `${formatDate(normalized)}(${weekday(normalized)}) ~ ${formatDate(end)}(${weekday(end)})`;
   }
 
   function settlementPlatformFromKey(selectKey) {
@@ -164,50 +265,92 @@ const BremPromotionApplyAdmin = (function () {
 
   function defaultSettlementWeek(platform) {
     const items = (BremPromotionApply.getWeeklySettlementIndex?.() || [])
-      .filter(item => item.platform === platform);
+      .filter(item => item.platform === platform)
+      .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
     if (!items.length) return weekStartKey();
-    return items[0].weekStart || weekStartKey();
+    const latest = items[0];
+    return applyWeekWednesday(latest.startDate || latest.weekStart || '');
+  }
+
+  function bindLegacyWeekInputs() {
+    SETTLEMENT_WEEK_KEYS.forEach(selectKey => {
+      const input = $(`#promotionApplySettlementWeek-${selectKey}`);
+      if (!input || input.type === 'hidden' || input.dataset.weekBound) return;
+      input.dataset.weekBound = '1';
+      input.addEventListener('change', () => {
+        handleWeekSelect(selectKey, input.value);
+      });
+      if (input.value) {
+        handleWeekSelect(selectKey, input.value);
+      }
+    });
+
+    const savedInput = $('#promotionApplySavedWeekFilter');
+    if (savedInput && savedInput.type === 'date' && !savedInput.dataset.weekBound) {
+      savedInput.dataset.weekBound = '1';
+      savedInput.addEventListener('change', () => {
+        handleSavedWeekSelect(savedInput.value);
+      });
+      if (savedInput.value) {
+        handleSavedWeekSelect(savedInput.value);
+      }
+    }
+  }
+
+  function initializeAllSettlementWeeks() {
+    SETTLEMENT_WEEK_KEYS.forEach(selectKey => {
+      const platform = settlementPlatformFromKey(selectKey);
+      const input = $(`#promotionApplySettlementWeek-${selectKey}`);
+      const raw = state.settlementWeekByKey[selectKey] || input?.value || defaultSettlementWeek(platform);
+      const week = applyWeekWednesday(raw);
+      state.settlementWeekByKey[selectKey] = week;
+      if (input) input.value = week;
+      const label = $(`[data-promotion-apply-week-label="${selectKey}"]`);
+      if (label) label.textContent = formatWeekPickerLabel(week);
+      updateSettlementWeekRangeLabel(selectKey);
+    });
   }
 
   function syncSettlementWeekDefaults(selectKey) {
     const platform = settlementPlatformFromKey(selectKey);
-    const currentWeek = state.settlementWeekByKey[selectKey];
-    const hasData = currentWeek
-      && BremPromotionApply.getSettlementOptions(platform, { weekStart: currentWeek }).length;
-    if (!hasData) {
-      const latestWeek = defaultSettlementWeek(platform);
-      state.settlementWeekByKey[selectKey] = latestWeek;
-      const input = $(`#promotionApplySettlementWeek-${selectKey}`);
-      if (input) input.value = latestWeek;
+    if (!state.settlementWeekByKey[selectKey]) {
+      state.settlementWeekByKey[selectKey] = applyWeekWednesday(defaultSettlementWeek(platform));
     }
+    const normalized = syncWeekPickerDisplay(selectKey, state.settlementWeekByKey[selectKey]);
+    state.settlementWeekByKey[selectKey] = normalized;
     updateSettlementWeekRangeLabel(selectKey);
   }
 
   function renderActivePlatformSettlement() {
     const platform = getActivePlatform();
     if (platform === 'combined') {
-      ['combined-coupang', 'combined-baemin'].forEach(syncSettlementWeekDefaults);
+      ['combined-coupang', 'combined-baemin'].forEach(selectKey => {
+        ensureSettlementWeek(selectKey);
+        updateSettlementWeekRangeLabel(selectKey);
+      });
       renderCombinedSettlementSelects();
       return;
     }
-    syncSettlementWeekDefaults(platform);
+    ensureSettlementWeek(platform);
+    updateSettlementWeekRangeLabel(platform);
     renderSettlementSelectForPlatform(platform);
   }
 
   function ensureSettlementWeek(selectKey) {
     const platform = settlementPlatformFromKey(selectKey);
     if (!state.settlementWeekByKey[selectKey]) {
-      state.settlementWeekByKey[selectKey] = defaultSettlementWeek(platform);
+      state.settlementWeekByKey[selectKey] = applyWeekWednesday(defaultSettlementWeek(platform));
     }
-    const input = $(`#promotionApplySettlementWeek-${selectKey}`);
-    if (input && !input.value) {
-      input.value = state.settlementWeekByKey[selectKey];
-    }
-    return state.settlementWeekByKey[selectKey];
+    const normalized = syncWeekPickerDisplay(selectKey, state.settlementWeekByKey[selectKey]);
+    state.settlementWeekByKey[selectKey] = normalized;
+    return normalized;
   }
 
   function updateSettlementWeekRangeLabel(selectKey) {
-    const weekStart = ensureSettlementWeek(selectKey);
+    const weekStart = applyWeekWednesday(
+      state.settlementWeekByKey[selectKey] || ensureSettlementWeek(selectKey)
+    );
+    state.settlementWeekByKey[selectKey] = weekStart;
     const label = $(`#promotionApplySettlementWeekRange-${selectKey}`);
     if (label) {
       label.textContent = weekStart ? `표시 범위: ${formatWeekRangeLabel(weekStart)}` : '';
@@ -222,12 +365,11 @@ const BremPromotionApplyAdmin = (function () {
       const latestWeek = all
         .map(item => BremPromotionApply.getSavedResultWeekStart(item))
         .find(Boolean);
-      state.savedWeekFilter = latestWeek || weekStartKey();
+      state.savedWeekFilter = applyWeekWednesday(latestWeek || weekStartKey());
     }
-    if (!input.value) {
-      input.value = state.savedWeekFilter;
-    }
-    return input.value || state.savedWeekFilter;
+    const normalized = syncSavedWeekPickerDisplay(state.savedWeekFilter);
+    state.savedWeekFilter = normalized;
+    return normalized;
   }
 
   function updateSavedWeekRangeLabel() {
@@ -324,8 +466,8 @@ const BremPromotionApplyAdmin = (function () {
     const select = $(`#promotionApplySettlementSelect-${platform}`);
     if (!select) return;
 
-    const weekStart = ensureSettlementWeek(platform);
-    updateSettlementWeekRangeLabel(platform);
+    const weekStart = applyWeekWednesday(state.settlementWeekByKey[platform] || ensureSettlementWeek(platform));
+    state.settlementWeekByKey[platform] = weekStart;
 
     const previous = select.value;
     const options = BremPromotionApply.getSettlementOptions(platform, { weekStart });
@@ -350,8 +492,8 @@ const BremPromotionApplyAdmin = (function () {
       const select = $(`#promotionApplySettlementSelect-${selectKey}`);
       if (!select) return;
 
-      const weekStart = ensureSettlementWeek(selectKey);
-      updateSettlementWeekRangeLabel(selectKey);
+      const weekStart = applyWeekWednesday(state.settlementWeekByKey[selectKey] || ensureSettlementWeek(selectKey));
+      state.settlementWeekByKey[selectKey] = weekStart;
 
       const previous = select.value;
       const options = BremPromotionApply.getSettlementOptions(platform, { weekStart });
@@ -575,7 +717,7 @@ const BremPromotionApplyAdmin = (function () {
       list = list.filter(item => String(item.region || '').toLowerCase().includes(regionFilter));
     }
     if (weekFilter) {
-      const normalizedWeek = weekStartKey(weekFilter);
+      const normalizedWeek = applyWeekWednesday(weekFilter);
       list = list.filter(item => BremPromotionApply.getSavedResultWeekStart(item) === normalizedWeek);
     }
     return list.sort((a, b) => {
@@ -628,7 +770,7 @@ const BremPromotionApplyAdmin = (function () {
       return;
     }
     try {
-      const weekStart = weekStartKey(ensureSavedWeekFilter());
+      const weekStart = applyWeekWednesday(ensureSavedWeekFilter());
       BremPromotionApply.exportWeekResultsToExcel(list, weekStart);
       showToast(`${formatDate(weekStart)} 주 프로모션 결과 ${list.length}건을 엑셀로 내려받았습니다.`);
     } catch (error) {
@@ -923,29 +1065,7 @@ const BremPromotionApplyAdmin = (function () {
       el.addEventListener(eventName, () => renderSavedList());
     });
 
-    $('#promotionApplySavedWeekFilter')?.addEventListener('change', event => {
-      const normalized = weekStartKey(event.target.value);
-      state.savedWeekFilter = normalized;
-      event.target.value = normalized;
-      renderSavedList();
-    });
-
     $('#promotionApplySavedWeekExportBtn')?.addEventListener('click', downloadFilteredWeekResults);
-
-    SETTLEMENT_WEEK_KEYS.forEach(selectKey => {
-      const input = $(`#promotionApplySettlementWeek-${selectKey}`);
-      if (!input) return;
-      input.addEventListener('change', event => {
-        const normalized = weekStartKey(event.target.value);
-        state.settlementWeekByKey[selectKey] = normalized;
-        event.target.value = normalized;
-        if (selectKey.startsWith('combined-')) {
-          renderCombinedSettlementSelects();
-        } else {
-          renderSettlementSelectForPlatform(selectKey);
-        }
-      });
-    });
 
     $('#promotionApplySavedRows')?.addEventListener('click', event => {
       const viewBtn = event.target.closest('[data-promotion-apply-view]');
@@ -968,29 +1088,37 @@ const BremPromotionApplyAdmin = (function () {
   function refresh() {
     if (!applyRoot()) return;
     BremPromotionApply.invalidateSettlementOptionsCache?.();
-    SETTLEMENT_WEEK_KEYS.forEach(selectKey => {
-      if (!state.settlementWeekByKey[selectKey]) {
-        syncSettlementWeekDefaults(selectKey);
-      }
-    });
-    renderActivePlatformSettlement();
+    bindLegacyWeekInputs();
+    initializeAllSettlementWeeks();
     const platform = getActivePlatform();
+    if (platform === 'combined') {
+      renderCombinedSettlementSelects();
+    } else {
+      renderSettlementSelectForPlatform(platform);
+    }
     renderPromotionRulePickersForPlatform(platform);
     if (platform === 'combined') {
       renderPromotionRulePickersForPlatform('combined');
     }
+    ensureSavedWeekFilter();
+    updateSavedWeekRangeLabel();
     renderSavedList();
   }
 
   function init() {
     if (!applyRoot()) return;
+    setupPromotionApplyWeekPicker();
     bindEvents();
+    bindLegacyWeekInputs();
+    initializeAllSettlementWeeks();
     setPlatform('coupang');
     ensureSavedWeekFilter();
+    updateSavedWeekRangeLabel();
     renderSavedList();
   }
 
-  return { init, refresh };
+  window.BremPromotionApplyAdmin = { init, refresh, handleWeekSelect, handleSavedWeekSelect };
+  return window.BremPromotionApplyAdmin;
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

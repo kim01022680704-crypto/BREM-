@@ -862,6 +862,14 @@ app.post('/api/settlement/preview', upload.single('file'), async (req, res) => {
   }
 });
 
+app.use((req, res, next) => {
+  const path = req.path || '';
+  if (path === '/admin.html' || path.startsWith('/js/') || path === '/sw.js') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  }
+  next();
+});
+
 app.use(express.static(ROOT_DIR));
 
 app.use((error, req, res, next) => {

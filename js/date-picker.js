@@ -16,13 +16,33 @@ const BremDatePicker = (function () {
     ].join('-');
   }
 
+  const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+  function parseLocalDate(value) {
+    const raw = String(value || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    const date = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
   function formatDate(value) {
-    if (!value) return '';
+    const date = parseLocalDate(value);
+    if (!date) return '';
     return new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).format(new Date(`${value}T00:00:00`));
+    }).format(date);
+  }
+
+  function formatWeekdayKo(value) {
+    const date = parseLocalDate(value);
+    return date ? WEEKDAY_KO[date.getDay()] : '';
+  }
+
+  function isWednesday(value) {
+    const date = parseLocalDate(value);
+    return Boolean(date && date.getDay() === 3);
   }
 
   function monthKeyFromDate(date) {
@@ -108,11 +128,39 @@ const BremDatePicker = (function () {
   }
 
   function weekStartKey(dateValue = today()) {
-    const date = new Date(`${dateValue}T00:00:00`);
+    const date = parseLocalDate(dateValue) || parseLocalDate(today());
+    if (!date) return today();
     const day = date.getDay();
     const diff = (day - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
     return dateKey(date);
+  }
+
+  /** 주정산 시작일이 화요일로 하루 밀린 경우 다음날 수요일로 보정 */
+  function applyWeekWednesday(dateValue) {
+    const date = parseLocalDate(dateValue);
+    if (!date) return weekStartKey(dateValue);
+    const day = date.getDay();
+    if (day === 3) return dateKey(date);
+    if (day === 2) {
+      date.setDate(date.getDate() + 1);
+      return dateKey(date);
+    }
+    return weekStartKey(dateValue);
+  }
+
+  function weekEndKey(weekStart) {
+    const date = parseLocalDate(applyWeekWednesday(weekStart));
+    if (!date) return '';
+    date.setDate(date.getDate() + 6);
+    return dateKey(date);
+  }
+
+  function formatWednesdayWeekRange(weekStart) {
+    const normalized = applyWeekWednesday(weekStart);
+    if (!normalized) return '';
+    const end = weekEndKey(normalized);
+    return `${formatDate(normalized)}(${formatWeekdayKo(normalized)}) ~ ${formatDate(end)}(${formatWeekdayKo(end)})`;
   }
 
   function setupSingle(options) {
@@ -407,8 +455,16 @@ const BremDatePicker = (function () {
 
     function refreshContextLabels(context) {
       const value = context.hiddenInput.value;
-      const text = value ? formatDate(value) : '수요일 선택';
-      if (context.labelEl) context.labelEl.textContent = text;
+      if (!context.labelEl) return;
+      if (!value) {
+        context.labelEl.textContent = '수요일 선택';
+        return;
+      }
+      const normalized = applyWeekWednesday(value);
+      const weekday = formatWeekdayKo(normalized);
+      context.labelEl.textContent = weekday
+        ? `${formatDate(normalized)}(${weekday})`
+        : formatDate(normalized);
     }
 
     function render() {
@@ -429,7 +485,7 @@ const BremDatePicker = (function () {
     }
 
     function selectDate(context, value) {
-      const normalized = weekStartKey(value);
+      const normalized = applyWeekWednesday(value);
       context.hiddenInput.value = normalized;
       refreshContextLabels(context);
       context.onSelect?.(normalized);
@@ -485,7 +541,12 @@ const BremDatePicker = (function () {
     today,
     currentMonth,
     weekStartKey,
+    applyWeekWednesday,
+    weekEndKey,
+    isWednesday,
     formatDate,
+    formatWeekdayKo,
+    formatWednesdayWeekRange,
     formatMonthLabel,
     setupSingle,
     setupDelegated,

@@ -1,8 +1,7 @@
-const CACHE_NAME = 'brem-pwa-v2';
+const CACHE_NAME = 'brem-pwa-v5';
 const SHELL_URLS = [
   '/home.html',
   '/driver.html',
-  '/admin.html',
   '/css/brand.css',
   '/css/home.css',
   '/css/login.css',
@@ -14,6 +13,12 @@ const SHELL_URLS = [
   '/assets/brand/favicon.svg',
   '/js/pwa-register.js'
 ];
+
+function isAdminOrScript(pathname) {
+  return pathname === '/admin.html'
+    || pathname.endsWith('.js')
+    || pathname.startsWith('/js/');
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -38,6 +43,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
+
+  if (isAdminOrScript(url.pathname)) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
 
   event.respondWith(
     fetch(request)

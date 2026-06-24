@@ -96,7 +96,8 @@ const BremWeeklySettlement = (function () {
         result.week = weekMatch[2];
       }
       result.branch = parts[0] || '';
-      result.region = parts.slice(1, -2).join(' ').trim();
+      // 브램_울산_중구중앙_2026_06-4 → 중구중앙 (연도 바로 앞 위치명)
+      result.region = parts.length >= 4 ? String(parts[parts.length - 3] || '').trim() : '';
       if (result.year && result.month && result.week) {
         result.settlementWeekLabel = `${result.year}년 ${Number(result.month)}월 ${result.week}주차`;
       }

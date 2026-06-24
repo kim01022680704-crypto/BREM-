@@ -577,24 +577,62 @@ const BremPromotionApply = (function () {
     };
   }
 
-  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
+  function dateKeyLocal(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function todayLocal() {
+    return dateKeyLocal(new Date());
+  }
+
+  function parseLocalDate(value) {
+    const raw = String(value || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    const date = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function weekStartKey(dateValue = todayLocal()) {
     if (window.BremDatePicker?.weekStartKey) return BremDatePicker.weekStartKey(dateValue);
-    const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
+    const date = parseLocalDate(dateValue) || parseLocalDate(todayLocal());
+    if (!date) return todayLocal();
     const day = date.getDay();
     const diff = (day - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
-    return date.toISOString().slice(0, 10);
+    return dateKeyLocal(date);
+  }
+
+  function applyWeekWednesday(dateValue) {
+    if (window.BremDatePicker?.applyWeekWednesday) return BremDatePicker.applyWeekWednesday(dateValue);
+    const date = parseLocalDate(dateValue);
+    if (!date) return weekStartKey(dateValue);
+    if (date.getDay() === 3) return dateKeyLocal(date);
+    if (date.getDay() === 2) {
+      date.setDate(date.getDate() + 1);
+      return dateKeyLocal(date);
+    }
+    return weekStartKey(dateValue);
   }
 
   function weekEndKey(weekStart) {
-    const end = new Date(`${weekStart}T00:00:00`);
-    end.setDate(end.getDate() + 6);
-    return end.toISOString().slice(0, 10);
+    if (window.BremDatePicker?.weekEndKey) return BremDatePicker.weekEndKey(weekStart);
+    const date = parseLocalDate(applyWeekWednesday(weekStart));
+    if (!date) return '';
+    date.setDate(date.getDate() + 6);
+    return dateKeyLocal(date);
   }
 
   function getWeeklySettlementWeekStart(record) {
-    const raw = String(record?.weekStart || record?.startDate || record?.baseSettlementDate || '').slice(0, 10);
-    return raw ? weekStartKey(raw) : '';
+    const start = String(record?.startDate || record?.baseSettlementDate || '').slice(0, 10);
+    const end = String(record?.endDate || '').slice(0, 10);
+    if (start) return applyWeekWednesday(start);
+    if (end) return weekStartKey(end);
+    const legacy = String(record?.weekStart || '').slice(0, 10);
+    return legacy ? applyWeekWednesday(legacy) : '';
   }
 
   function buildSaveRecord(calculationResult) {
@@ -797,13 +835,17 @@ const BremPromotionApply = (function () {
     XLSX.writeFile(workbook, buildExportFileName(record));
   }
 
+  function settlementWeekKey(item) {
+    return applyWeekWednesday(item?.weekStart || item?.startDate || item?.endDate || '');
+  }
+
   function getSettlementOptions(platform, options = {}) {
     const p = normalizePlatform(platform);
-    const weekStart = String(options.weekStart || '').slice(0, 10);
+    const weekStart = options.weekStart ? applyWeekWednesday(options.weekStart) : '';
     let items = getWeeklySettlementIndex()
       .filter(item => item.platform === p);
     if (weekStart) {
-      items = items.filter(item => item.weekStart === weekStart);
+      items = items.filter(item => settlementWeekKey(item) === weekStart);
     }
     return items
       .map(item => ({
@@ -845,8 +887,8 @@ const BremPromotionApply = (function () {
 
   function getSavedResultWeekStart(item) {
     if (!item) return '';
-    if (item.weekStart) return String(item.weekStart).slice(0, 10);
-    return getWeeklySettlementWeekStart({ startDate: item.startDate });
+    const raw = String(item.weekStart || item.startDate || '').slice(0, 10);
+    return raw ? applyWeekWednesday(raw) : '';
   }
 
   function exportWeekResultsToExcel(records, weekStart) {
@@ -915,6 +957,7 @@ const BremPromotionApply = (function () {
     getWeeklySettlementIndex,
     getSavedResultWeekStart,
     weekStartKey,
+    applyWeekWednesday,
     weekEndKey,
     exportWeekResultsToExcel,
     getWeekStatsForDriver,
@@ -928,4 +971,53 @@ const BremPromotionApply = (function () {
     deleteSavedResult,
     exportResultToExcel
   };
+})();
+
+(function normalizePromotionApplyWeekFields() {
+  const KEYS = ['coupang', 'baemin', 'combined-coupang', 'combined-baemin'];
+
+  function formatRange(weekStart) {
+    if (!weekStart) return '';
+    if (window.BremDatePicker?.formatWednesdayWeekRange) {
+      return `표시 범위: ${BremDatePicker.formatWednesdayWeekRange(weekStart)}`;
+    }
+    const end = BremPromotionApply.weekEndKey(weekStart);
+    const weekday = value => {
+      const day = new Date(`${value}T00:00:00`).getDay();
+      return ['일', '월', '화', '수', '목', '금', '토'][day] || '';
+    };
+    const fmt = value => new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date(`${value}T00:00:00`));
+    return `표시 범위: ${fmt(weekStart)}(${weekday(weekStart)}) ~ ${fmt(end)}(${weekday(end)})`;
+  }
+
+  function syncField(selectKey) {
+    const input = document.getElementById(`promotionApplySettlementWeek-${selectKey}`);
+    if (!input?.value) return;
+    const week = BremPromotionApply.applyWeekWednesday(input.value);
+    if (week !== input.value) input.value = week;
+    const label = document.querySelector(`[data-promotion-apply-week-label="${selectKey}"]`);
+    if (label && window.BremDatePicker) {
+      const weekday = BremDatePicker.formatWeekdayKo(week);
+      label.textContent = weekday
+        ? `${BremDatePicker.formatDate(week)}(${weekday})`
+        : BremDatePicker.formatDate(week);
+    }
+    const range = document.getElementById(`promotionApplySettlementWeekRange-${selectKey}`);
+    if (range) range.textContent = formatRange(week);
+  }
+
+  function run() {
+    if (!document.getElementById('promotion-apply')) return;
+    KEYS.forEach(syncField);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
 })();

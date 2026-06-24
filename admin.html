@@ -6,6 +6,7 @@
   <meta name="description" content="BREM 전체 관리자 화면">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>BREM 관리자 대시보드</title>
   <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest-admin.webmanifest">
@@ -2214,7 +2215,7 @@
               </label>
               <label>
                 지역
-                <input type="text" id="weeklySettlementRegion-coupang" placeholder="예: 울산 남구중앙" required>
+                <input type="text" id="weeklySettlementRegion-coupang" placeholder="예: 중구중앙 (파일명에서 자동 입력)" required>
               </label>
               <label>
                 기준 정산일 (수요일)
@@ -2509,7 +2510,10 @@
                 <div class="promotion-settlement-picker-week">
                   <label class="settlement-week-filter">
                     <span>적용주(수요일)</span>
-                    <input type="date" id="promotionApplySettlementWeek-coupang" class="admin-period-input">
+                    <button type="button" class="week-picker-trigger admin-period-input" data-promotion-apply-week="coupang" id="promotionApplySettlementWeekBtn-coupang">
+                      <span data-promotion-apply-week-label="coupang" id="promotionApplySettlementWeekLabel-coupang">수요일 선택</span>
+                    </button>
+                    <input type="hidden" id="promotionApplySettlementWeek-coupang">
                   </label>
                   <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-coupang"></p>
                 </div>
@@ -2545,7 +2549,10 @@
                 <div class="promotion-settlement-picker-week">
                   <label class="settlement-week-filter">
                     <span>적용주(수요일)</span>
-                    <input type="date" id="promotionApplySettlementWeek-baemin" class="admin-period-input">
+                    <button type="button" class="week-picker-trigger admin-period-input" data-promotion-apply-week="baemin" id="promotionApplySettlementWeekBtn-baemin">
+                      <span data-promotion-apply-week-label="baemin" id="promotionApplySettlementWeekLabel-baemin">수요일 선택</span>
+                    </button>
+                    <input type="hidden" id="promotionApplySettlementWeek-baemin">
                   </label>
                   <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-baemin"></p>
                 </div>
@@ -2594,7 +2601,10 @@
                   <div class="promotion-settlement-picker-week">
                     <label class="settlement-week-filter">
                       <span>쿠팡 적용주(수요일)</span>
-                      <input type="date" id="promotionApplySettlementWeek-combined-coupang" class="admin-period-input">
+                      <button type="button" class="week-picker-trigger admin-period-input" data-promotion-apply-week="combined-coupang" id="promotionApplySettlementWeekBtn-combined-coupang">
+                        <span data-promotion-apply-week-label="combined-coupang" id="promotionApplySettlementWeekLabel-combined-coupang">수요일 선택</span>
+                      </button>
+                      <input type="hidden" id="promotionApplySettlementWeek-combined-coupang">
                     </label>
                     <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-coupang"></p>
                   </div>
@@ -2607,7 +2617,10 @@
                   <div class="promotion-settlement-picker-week">
                     <label class="settlement-week-filter">
                       <span>배민 적용주(수요일)</span>
-                      <input type="date" id="promotionApplySettlementWeek-combined-baemin" class="admin-period-input">
+                      <button type="button" class="week-picker-trigger admin-period-input" data-promotion-apply-week="combined-baemin" id="promotionApplySettlementWeekBtn-combined-baemin">
+                        <span data-promotion-apply-week-label="combined-baemin" id="promotionApplySettlementWeekLabel-combined-baemin">수요일 선택</span>
+                      </button>
+                      <input type="hidden" id="promotionApplySettlementWeek-combined-baemin">
                     </label>
                     <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-baemin"></p>
                   </div>
@@ -2685,7 +2698,10 @@
             </label>
             <label class="settlement-week-filter promotion-saved-week-filter">
               <span>적용주(수요일)</span>
-              <input type="date" id="promotionApplySavedWeekFilter" class="admin-period-input">
+              <button type="button" class="week-picker-trigger admin-period-input" data-promotion-apply-week="saved" id="promotionApplySavedWeekFilterBtn">
+                <span data-promotion-apply-week-label="saved" id="promotionApplySavedWeekFilterLabel">수요일 선택</span>
+              </button>
+              <input type="hidden" id="promotionApplySavedWeekFilter">
             </label>
             <label>
               지역
@@ -3364,6 +3380,28 @@
     <p class="calendar-help">수요일만 선택할 수 있습니다. (수요일~화요일 기준)</p>
   </div>
 
+  <div class="range-calendar wednesday-week-calendar" id="promotionApplyWeekPickerCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="promotionApplyWeekPickerPrev" aria-label="이전 달">&lt;</button>
+      <strong id="promotionApplyWeekPickerTitle">-</strong>
+      <button type="button" id="promotionApplyWeekPickerNext" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>일</span>
+      <span>월</span>
+      <span>화</span>
+      <span>수</span>
+      <span>목</span>
+      <span>금</span>
+      <span>토</span>
+    </div>
+    <div class="calendar-days" id="promotionApplyWeekPickerDays"></div>
+    <div class="month-calendar-footer">
+      <button type="button" class="month-today-btn" id="promotionApplyWeekPickerThisWeek">이번 주</button>
+    </div>
+    <p class="calendar-help">수요일만 선택할 수 있습니다. (수요일~화요일 기준)</p>
+  </div>
+
   <div class="range-calendar event-start-calendar" id="eventStartCalendar" hidden>
     <div class="calendar-header">
       <button type="button" id="eventStartCalendarPrev" aria-label="이전 달">&lt;</button>
@@ -3419,7 +3457,7 @@
   <script src="js/storage.js?v=20260625a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
-  <script src="js/date-picker.js"></script>
+  <script src="js/date-picker.js?v=20260626c"></script>
   <script src="js/driver-utils.js?v=20260621g"></script>
   <script src="js/settlement-formats.js?v=20260623g"></script>
   <script src="js/settlement-client.js?v=20260623g"></script>
@@ -3428,12 +3466,12 @@
   <script src="js/promotion-conditions.js?v=20260622c"></script>
   <script src="js/promotion-engine.js?v=20260622e"></script>
   <script src="js/promotion-admin.js?v=20260622c"></script>
-  <script src="js/weekly-settlement.js?v=20260623g"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260623d"></script>
+  <script src="js/weekly-settlement.js?v=20260621d"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
-  <script src="js/promotion-apply.js?v=20260624b"></script>
-  <script src="js/promotion-apply-admin.js?v=20260624b"></script>
+  <script src="js/promotion-apply.js?v=20260626c"></script>
+  <script src="js/promotion-apply-admin.js?v=20260626c"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260625a"></script>

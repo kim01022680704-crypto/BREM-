@@ -88,6 +88,12 @@ const BremWeeklySettlementAdmin = (function () {
   function fillCoupangDatesFromBase() {
     const baseInput = $('#weeklySettlementBaseDate-coupang');
     if (!baseInput?.value) return;
+    if (window.BremDatePicker?.applyWeekWednesday) {
+      const normalized = BremDatePicker.applyWeekWednesday(baseInput.value);
+      if (normalized && normalized !== baseInput.value) {
+        baseInput.value = normalized;
+      }
+    }
     const dates = BremWeeklySettlement.calculateCoupangSettlementDates(baseInput.value);
     const startInput = $('#weeklySettlementStartDate-coupang');
     const endInput = $('#weeklySettlementEndDate-coupang');
@@ -103,7 +109,7 @@ const BremWeeklySettlementAdmin = (function () {
       const parsed = BremWeeklySettlement.parseCoupangFileName(fileName);
       const regionInput = $('#weeklySettlementRegion-coupang');
       const weekLabelInput = $('#weeklySettlementWeekLabel-coupang');
-      if (regionInput && parsed.region && !regionInput.value) regionInput.value = parsed.region;
+      if (regionInput && parsed.region) regionInput.value = parsed.region;
       if (weekLabelInput && parsed.settlementWeekLabel) weekLabelInput.value = parsed.settlementWeekLabel;
       return;
     }
@@ -113,7 +119,7 @@ const BremWeeklySettlementAdmin = (function () {
     const endInput = $('#weeklySettlementEndDate-baemin');
     const paymentInput = $('#weeklySettlementPaymentDate-baemin');
     const weekLabelInput = $('#weeklySettlementWeekLabel-baemin');
-    if (regionInput && parsed.teamName && !regionInput.value) regionInput.value = parsed.teamName;
+    if (regionInput && parsed.teamName) regionInput.value = parsed.teamName;
     if (startInput && parsed.startDate) startInput.value = parsed.startDate;
     if (endInput && parsed.endDate) endInput.value = parsed.endDate;
     if (paymentInput && parsed.startDate) {
