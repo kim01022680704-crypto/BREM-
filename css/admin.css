@@ -4884,6 +4884,145 @@ textarea {
   line-height: 1.45;
 }
 
+.lease-erp-shell {
+  display: grid;
+  grid-template-columns: minmax(168px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.lease-erp-nav {
+  position: sticky;
+  top: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #101010;
+}
+
+.lease-erp-nav__title {
+  margin: 0 0 12px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.lease-erp-nav__list {
+  display: grid;
+  gap: 6px;
+}
+
+.lease-erp-nav__btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lease-erp-nav__btn:hover {
+  background: #1a1a1a;
+  color: var(--text);
+}
+
+.lease-erp-nav__btn.active {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+}
+
+.lease-erp-main {
+  min-width: 0;
+}
+
+.lease-screen-card {
+  margin-bottom: 0;
+}
+
+.lease-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 16px 18px 20px;
+}
+
+.lease-dash-tile {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #141414;
+}
+
+.lease-dash-tile span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.lease-dash-tile strong {
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.lease-dash-tile em {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.lease-dash-tile--profit strong { color: #6ee7b7; }
+.lease-dash-tile--warning strong { color: #fde047; }
+.lease-dash-tile--deficit strong { color: #f87171; }
+.lease-dash-tile--success strong { color: #93c5fd; }
+
+.lease-calc-screen {
+  display: grid;
+  gap: 16px;
+  padding: 0 18px 20px;
+}
+
+.lease-calc-vehicle-pick {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.lease-table--compact {
+  font-size: 0.84rem;
+}
+
+@media (max-width: 960px) {
+  .lease-erp-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .lease-erp-nav {
+    position: static;
+  }
+
+  .lease-erp-nav__list {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .lease-erp-nav__btn {
+    text-align: center;
+    padding: 9px 8px;
+    font-size: 0.8rem;
+  }
+
+  .lease-list-card .lease-table-wrap {
+    overflow-x: auto;
+  }
+}
+
 .lease-submenu {
   display: flex;
   flex-wrap: wrap;

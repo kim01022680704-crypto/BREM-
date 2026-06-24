@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260629a">
+  <link rel="stylesheet" href="css/admin.css?v=20260629b">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1095,150 +1095,83 @@
       </section>
 
       <section class="section" id="lease-management">
-        <div class="lease-erp-dashboard">
-          <div class="lease-erp-hero">
-            <article class="lease-hero-card lease-hero-card--profit">
-              <span class="lease-hero-card__label">주간 실제수익</span>
-              <strong class="lease-hero-card__value" id="leaseHeroWeekProfit">0원</strong>
-              <p class="lease-hero-card__hint">주간수익 − 미납금 − 공차손실</p>
-            </article>
-            <article class="lease-hero-card">
-              <span class="lease-hero-card__label">주간 청구</span>
-              <strong class="lease-hero-card__value" id="leaseHeroWeekCharge">0원</strong>
-              <p class="lease-hero-card__hint">리스나간금액 × 7 합계</p>
-            </article>
-            <article class="lease-hero-card lease-hero-card--warning">
-              <span class="lease-hero-card__label">총 미납금</span>
-              <strong class="lease-hero-card__value" id="leaseHeroUnpaid">0원</strong>
-              <p class="lease-hero-card__hint">미납일 × 일청구 합계</p>
-            </article>
-            <article class="lease-hero-card lease-hero-card--warning">
-              <span class="lease-hero-card__label">공차 손실</span>
-              <strong class="lease-hero-card__value" id="leaseHeroEmptyLoss">0원</strong>
-              <p class="lease-hero-card__hint">하루원가/리스비 × 공차일수</p>
-            </article>
-          </div>
-          <div class="lease-erp-counts">
-            <span>총 <strong id="leaseStatTotal">0</strong>대</span>
-            <span>운행 <strong id="leaseKpiOperating">0</strong></span>
-            <span>공차 <strong id="leaseStatEmpty">0</strong></span>
-            <span>정비 <strong id="leaseKpiMaintenance">0</strong></span>
-            <span>사고 <strong id="leaseKpiAccident">0</strong></span>
-            <span>리스 <strong id="leaseStatLease">0</strong></span>
-            <span>렌탈 <strong id="leaseStatRental">0</strong></span>
-            <span>렌탈중 <strong id="leaseStatActiveRental">0</strong></span>
-          </div>
-          <div class="lease-erp-period-grid">
-            <article class="lease-period-card">
-              <h3>이번주</h3>
-              <dl>
-                <div><dt>청구</dt><dd id="leaseKpiWeekRevenue">0원</dd></div>
-                <div><dt>원가</dt><dd id="leaseKpiWeekCost">0원</dd></div>
-                <div><dt>실제수익</dt><dd id="leaseKpiWeekProfit" class="lease-period-card__profit">0원</dd></div>
-                <div><dt>공차손실</dt><dd id="leaseKpiWeekEmptyLoss">0원</dd></div>
-              </dl>
-            </article>
-            <article class="lease-period-card">
-              <h3>이번달</h3>
-              <dl>
-                <div><dt>청구</dt><dd id="leaseKpiMonthRevenue">0원</dd></div>
-                <div><dt>원가</dt><dd id="leaseKpiMonthCost">0원</dd></div>
-                <div><dt>실제수익</dt><dd id="leaseKpiMonthProfit" class="lease-period-card__profit">0원</dd></div>
-                <div><dt>공차손실</dt><dd id="leaseKpiMonthEmptyLoss">0원</dd></div>
-              </dl>
-            </article>
-            <article class="lease-period-card lease-period-card--mode">
-              <h3>구분별 주간 실제수익</h3>
-              <dl>
-                <div><dt>회사리스/렌탈</dt><dd id="leaseModeProfitLeaseRental">0원</dd></div>
-                <div><dt>회사소유리스</dt><dd id="leaseModeProfitOwned">0원</dd></div>
-                <div><dt>총 미납금</dt><dd id="leaseKpiUnpaid">0원</dd></div>
-              </dl>
-            </article>
-          </div>
-        </div>
+        <div class="lease-erp-shell">
+          <aside class="lease-erp-nav" aria-label="리스 ERP 메뉴">
+            <p class="lease-erp-nav__title">리스 ERP</p>
+            <nav class="lease-erp-nav__list">
+              <button type="button" class="lease-erp-nav__btn active" data-lease-menu="dashboard"><span>대시보드</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="vehicle"><span>차량관리</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="contract"><span>계약/렌탈</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="calc"><span>자동계산</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="arrears"><span>미납/회수</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="empty"><span>공차관리</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="weekly"><span>주간수익</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="monthly"><span>월간수익</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="bulk"><span>일괄등록</span></button>
+            </nav>
+          </aside>
 
-        <nav class="lease-submenu" role="tablist" aria-label="리스 ERP 메뉴">
-          <button type="button" class="lease-submenu-btn active" data-lease-menu="vehicle">① 차량등록</button>
-          <button type="button" class="lease-submenu-btn" data-lease-menu="contract">② 계약/렌탈</button>
-          <button type="button" class="lease-submenu-btn" data-lease-menu="calc">③ 자동계산</button>
-          <button type="button" class="lease-submenu-btn" data-lease-menu="weekly">④ 주간수익</button>
-          <button type="button" class="lease-submenu-btn" data-lease-menu="monthly">⑤ 월간수익</button>
-          <button type="button" class="lease-submenu-btn" data-lease-menu="arrears">⑥ 미납/회수</button>
-          <button type="button" class="lease-submenu-btn" data-lease-menu="bulk">⑦ 일괄등록</button>
-        </nav>
+          <div class="lease-erp-main">
+            <div class="lease-menu-panel" data-lease-menu-panel="dashboard">
+              <article class="card lease-dash-card">
+                <div class="card-header">
+                  <h2>리스 관리 대시보드</h2>
+                  <p class="form-help">요약만 표시 · 세부 기능은 좌측 메뉴에서 이동</p>
+                </div>
+                <div class="lease-dash-grid">
+                  <article class="lease-dash-tile"><span>전체 차량</span><strong id="leaseStatTotal">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile lease-dash-tile--success"><span>운행중</span><strong id="leaseKpiOperating">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning"><span>공차</span><strong id="leaseStatEmpty">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning"><span>총 미납금</span><strong id="leaseHeroUnpaid">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>이번주 순이익</span><strong id="leaseHeroWeekProfit">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>이번달 순이익</span><strong id="leaseKpiMonthProfit">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning"><span>공차 손실</span><strong id="leaseHeroEmptyLoss">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--deficit"><span>적자 차량</span><strong id="leaseDashDeficitCount">0</strong><em>대</em></article>
+                </div>
+                <div class="lease-dash-hidden-metrics" hidden aria-hidden="true">
+                  <span id="leaseKpiWeekRevenue"></span><span id="leaseKpiWeekCost"></span><span id="leaseKpiWeekProfit"></span>
+                  <span id="leaseKpiWeekEmptyLoss"></span><span id="leaseKpiMonthRevenue"></span><span id="leaseKpiMonthCost"></span>
+                  <span id="leaseKpiMonthEmptyLoss"></span><span id="leaseKpiUnpaid"></span><span id="leaseHeroWeekCharge"></span>
+                  <span id="leaseKpiMaintenance"></span><span id="leaseKpiAccident"></span><span id="leaseStatLease"></span>
+                  <span id="leaseStatRental"></span><span id="leaseStatActiveRental"></span>
+                  <span id="leaseModeProfitLeaseRental"></span><span id="leaseModeProfitOwned"></span>
+                </div>
+              </article>
+            </div>
 
-        <div class="lease-menu-panel" data-lease-menu-panel="vehicle">
-        <article class="card lease-card">
+        <div class="lease-menu-panel" data-lease-menu-panel="vehicle" hidden>
+        <article class="card lease-card lease-screen-card">
           <div class="card-header lease-card-header">
             <div>
-              <h2>리스 · 렌탈 수익관리 ERP</h2>
-              <p class="form-help">차량 등록 · 미납/사고/정비 기록 · 엑셀 기준 주간 수익 자동계산 (Supabase 저장)</p>
+              <h2>차량관리</h2>
+              <p class="form-help">차량 등록 · 수정 · 삭제 · 상태 관리 (Supabase)</p>
             </div>
             <div class="lease-filter-panel">
               <div class="lease-filter-tabs" role="tablist" aria-label="리스 ERP 구분">
                 <button type="button" class="lease-filter-btn active" data-lease-erp-mode="all" role="tab" aria-selected="true">전체</button>
                 <button type="button" class="lease-filter-btn lease-filter-btn--lease" data-lease-erp-mode="company_lease_rental" role="tab" aria-selected="false">회사리스/렌탈</button>
                 <button type="button" class="lease-filter-btn lease-filter-btn--rental" data-lease-erp-mode="company_owned" role="tab" aria-selected="false">회사소유리스</button>
-                <button type="button" class="lease-filter-btn lease-filter-btn--empty" data-lease-filter="empty" role="tab" aria-selected="false"><span class="lease-filter-btn__mark">✓</span> 공차</button>
               </div>
               <p class="lease-filter-status" id="leaseFilterStatus">전체 목록 표시 중</p>
             </div>
           </div>
 
-          <div class="lease-erp-summary" id="leaseErpSummary" aria-live="polite">
-            <div class="lease-erp-summary__item">
-              <span>표시 차량</span>
-              <strong id="leaseSummaryCount">0대</strong>
-            </div>
-            <div class="lease-erp-summary__item">
-              <span>주간 청구</span>
-              <strong id="leaseSummaryCharge">0원</strong>
-            </div>
-            <div class="lease-erp-summary__item">
-              <span>주간 원가</span>
-              <strong id="leaseSummaryCost">0원</strong>
-            </div>
-            <div class="lease-erp-summary__item">
-              <span>주간 수익</span>
-              <strong id="leaseSummaryProfit">0원</strong>
-            </div>
-            <div class="lease-erp-summary__item lease-erp-summary__item--warning">
-              <span>미납금</span>
-              <strong id="leaseSummaryUnpaid">0원</strong>
-            </div>
-            <div class="lease-erp-summary__item lease-erp-summary__item--warning">
-              <span>공차손실</span>
-              <strong id="leaseSummaryEmpty">0원</strong>
-            </div>
-            <div class="lease-erp-summary__item lease-erp-summary__item--profit">
-              <span>실제수익</span>
-              <strong id="leaseSummaryActual">0원</strong>
-            </div>
-          </div>
-
           <div class="lease-toolbar lease-toolbar--erp">
-            <button type="button" class="small-btn" id="leaseExportBtn">필터 목록 엑셀</button>
-            <button type="button" class="primary-btn" id="leaseErpExportAllBtn">전체 차량 엑셀</button>
+            <button type="button" class="small-btn" id="leaseExportBtn">목록 엑셀</button>
+            <button type="button" class="primary-btn" id="leaseErpExportAllBtn">전체 엑셀</button>
           </div>
 
+          <div class="lease-erp-legacy-hidden" hidden aria-hidden="true">
+          <div class="lease-erp-summary" id="leaseErpSummary">
+            <strong id="leaseSummaryCount">0</strong><strong id="leaseSummaryCharge">0</strong><strong id="leaseSummaryCost">0</strong>
+            <strong id="leaseSummaryProfit">0</strong><strong id="leaseSummaryUnpaid">0</strong><strong id="leaseSummaryEmpty">0</strong><strong id="leaseSummaryActual">0</strong>
+          </div>
           <div class="lease-erp-tabs" role="tablist">
-            <button type="button" class="lease-erp-tab active" data-lease-erp-tab="vehicles">
-              <span class="lease-erp-tab__title">차량 등록</span>
-              <span class="lease-erp-tab__desc">신규·수정 · 수익 자동계산</span>
-            </button>
-            <button type="button" class="lease-erp-tab" data-lease-erp-tab="payments">
-              <span class="lease-erp-tab__title">미납 기록</span>
-              <span class="lease-erp-tab__desc">납부·연체 이력</span>
-            </button>
-            <button type="button" class="lease-erp-tab" data-lease-erp-tab="accidents">
-              <span class="lease-erp-tab__title">사고</span>
-              <span class="lease-erp-tab__desc">수리비·보험</span>
-            </button>
-            <button type="button" class="lease-erp-tab" data-lease-erp-tab="maintenance">
-              <span class="lease-erp-tab__title">정비</span>
-              <span class="lease-erp-tab__desc">정비·소모품</span>
-            </button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="vehicles">차량</button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="payments">미납</button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="accidents">사고</button>
+            <button type="button" class="lease-erp-tab" data-lease-erp-tab="maintenance">정비</button>
+          </div>
           </div>
 
           <div class="lease-erp-panel" data-lease-erp-panel="vehicles">
@@ -1634,10 +1567,10 @@
           </div>
         </div>
 
-        <article class="card">
+        <article class="card lease-list-card">
           <div class="card-header lease-list-header">
             <div>
-              <h2>리스 · 렌탈 목록</h2>
+              <h2>차량 목록</h2>
               <p class="form-help" id="leaseFilterStatusList">전체 목록 · 엑셀 기준 컬럼 표시</p>
             </div>
             <div class="lease-list-toolbar">
@@ -1738,29 +1671,60 @@
         </div>
 
         <div class="lease-menu-panel" data-lease-menu-panel="calc" hidden>
-        <article class="card lease-calc-card">
-          <div class="card-header"><h2>자동계산</h2><p class="form-help">② 계약/렌탈 등록과 연동 · 입력 즉시 반영 (저장 전 예상 손익 확인)</p></div>
-          <div class="lease-calc-grid">
-            <div class="lease-calc-item"><span>일 렌탈료</span><strong class="lease-calc-value" id="leaseCalcDailyRent">0원</strong></div>
-            <div class="lease-calc-item"><span>주 렌탈료</span><strong class="lease-calc-value" id="leaseCalcWeeklyRent">0원</strong></div>
-            <div class="lease-calc-item"><span>렌탈 매출</span><strong class="lease-calc-value" id="leaseCalcRentalRevenue">0원</strong></div>
-            <div class="lease-calc-item"><span>미납금</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcUnpaid">0원</strong></div>
-            <div class="lease-calc-item"><span>공차손실</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcEmptyLoss">0원</strong></div>
-            <div class="lease-calc-item"><span>총비용</span><strong class="lease-calc-value" id="leaseCalcTotalCost">0원</strong></div>
-            <div class="lease-calc-item"><span>예상 수익</span><strong class="lease-calc-value" id="leaseCalcExpected">0원</strong></div>
-            <div class="lease-calc-item"><span>실제 수익</span><strong class="lease-calc-value" id="leaseCalcActual">0원</strong></div>
-            <div class="lease-calc-item lease-calc-item--highlight"><span>순이익</span><strong class="lease-calc-value" id="leaseCalcNet">0원</strong><em class="lease-calc-status" id="leaseCalcStatus">-</em></div>
+        <article class="card lease-calc-card lease-screen-card">
+          <div class="card-header"><h2>자동계산</h2><p class="form-help">차량 선택 후 손익 미리계산 · 입력 즉시 반영</p></div>
+          <div class="lease-calc-screen">
+            <label class="lease-calc-vehicle-pick">차량 선택<select id="leaseCalcVehicleId"></select></label>
+            <div class="lease-form-grid lease-form-grid--2col">
+              <label>주 렌탈료<input type="number" id="leaseCalcWeeklyRent" min="0" placeholder="0"></label>
+              <label>실제 운행일수<input type="number" id="leaseCalcRentalDays" min="0" value="7"></label>
+              <label>미납일수<input type="number" id="leaseCalcUnpaidDays" min="0" value="0"></label>
+              <label>공차일수<input type="number" id="leaseCalcEmptyDays" min="0" value="0"></label>
+              <label>입금액<input type="number" id="leaseCalcPaidAmount" min="0" value="0"></label>
+              <label>보험료<input type="number" id="leaseCalcInsurance" min="0" value="0"></label>
+              <label>리스비<input type="number" id="leaseCalcLeaseCost" min="0" value="0"></label>
+              <label>정비비<input type="number" id="leaseCalcMaintenance" min="0" value="0"></label>
+              <label>사고비<input type="number" id="leaseCalcAccident" min="0" value="0"></label>
+              <label>기타비용<input type="number" id="leaseCalcOtherCost" min="0" value="0"></label>
+              <label>위약금<input type="number" id="leaseCalcPenalty" min="0" value="0"></label>
+            </div>
+            <div class="lease-calc-grid">
+              <div class="lease-calc-item"><span>일 렌탈료</span><strong class="lease-calc-value" id="leaseCalcDailyRent">0원</strong></div>
+              <div class="lease-calc-item"><span>주 렌탈료</span><strong class="lease-calc-value" id="leaseCalcWeeklyRentOut">0원</strong></div>
+              <div class="lease-calc-item"><span>렌탈 매출</span><strong class="lease-calc-value" id="leaseCalcRentalRevenue">0원</strong></div>
+              <div class="lease-calc-item"><span>미납금</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcUnpaid">0원</strong></div>
+              <div class="lease-calc-item"><span>공차손실</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcEmptyLoss">0원</strong></div>
+              <div class="lease-calc-item"><span>총비용</span><strong class="lease-calc-value" id="leaseCalcTotalCost">0원</strong></div>
+              <div class="lease-calc-item"><span>예상 수익</span><strong class="lease-calc-value" id="leaseCalcExpected">0원</strong></div>
+              <div class="lease-calc-item"><span>실제 수익</span><strong class="lease-calc-value" id="leaseCalcActual">0원</strong></div>
+              <div class="lease-calc-item lease-calc-item--highlight"><span>순이익</span><strong class="lease-calc-value" id="leaseCalcNet">0원</strong><em class="lease-calc-status" id="leaseCalcStatus">-</em></div>
+            </div>
+            <div class="lease-form-actions">
+              <button type="button" class="primary-btn" id="leaseCalcSaveBtn">저장 · 손익 기록</button>
+            </div>
           </div>
-          <p class="form-help">계산식: 일렌탈료=주렌탈료÷7 · 렌탈매출=일렌탈료×운행일수 · 미납금=일렌탈료×미납일−입금액 · 공차손실=일렌탈료×공차일수 · 순이익=렌탈매출+위약금−총비용−미납금</p>
+        </article>
+        </div>
+
+        <div class="lease-menu-panel" data-lease-menu-panel="empty" hidden>
+        <article class="card lease-screen-card">
+          <div class="card-header"><h2>공차 관리</h2><p class="form-help">공차 차량 · 시작/종료일 · 공차일수 · 공차손실 자동계산</p></div>
+          <div class="table-wrap lease-table-wrap">
+            <table class="lease-table lease-table--compact">
+              <thead><tr><th>차량번호</th><th>차량명</th><th>공차시작일</th><th>공차종료일</th><th>공차일수</th><th>일비용</th><th>공차손실</th><th>상태</th><th>관리</th></tr></thead>
+              <tbody id="leaseEmptyRows"></tbody>
+            </table>
+          </div>
         </article>
         </div>
 
         <div class="lease-menu-panel" data-lease-menu-panel="weekly" hidden>
-        <article class="card">
+        <article class="card lease-screen-card">
           <div class="card-header"><h2>주간수익</h2><p class="form-help" id="leaseWeekRangeLabel">수요일~화요일 기준</p></div>
           <div class="lease-toolbar">
             <label>적용주(수요일)<input type="date" id="leaseWeekStart" class="admin-period-input"></label>
             <button type="button" class="small-btn" id="leaseWeekRefreshBtn">조회</button>
+            <button type="button" class="small-btn" id="leaseWeekExportBtn">엑셀 다운로드</button>
           </div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
@@ -1772,7 +1736,7 @@
         </div>
 
         <div class="lease-menu-panel" data-lease-menu-panel="monthly" hidden>
-        <article class="card">
+        <article class="card lease-screen-card">
           <div class="card-header"><h2>월간수익</h2>
             <div class="lease-toolbar">
               <label>월<input type="month" id="leaseMonthKey" class="admin-period-input"></label>
@@ -1801,8 +1765,8 @@
         </div>
 
         <div class="lease-menu-panel" data-lease-menu-panel="arrears" hidden>
-        <article class="card">
-          <div class="card-header"><h2>미납 / 회수관리</h2><p class="form-help">급여공제 · 별도입금 · 처리완료 시 월간수익 반영</p></div>
+        <article class="card lease-screen-card">
+          <div class="card-header"><h2>미납 / 회수관리</h2><p class="form-help">급여공제 · 별도입금 · 미납/회수중/처리완료</p></div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
               <thead><tr><th>차량번호</th><th>차량명</th><th>미납일</th><th>미납금</th><th>입금액</th><th>회수방법</th><th>상태</th><th>처리일</th><th>관리</th></tr></thead>
@@ -1813,7 +1777,7 @@
         </div>
 
         <div class="lease-menu-panel" data-lease-menu-panel="bulk" hidden>
-        <article class="card lease-bulk-card">
+        <article class="card lease-bulk-card lease-screen-card">
           <div class="card-header lease-bulk-card-header">
             <div>
               <h2>엑셀 일괄 등록 (A~T)</h2>
@@ -1852,6 +1816,8 @@
           <table hidden><thead><tr id="leaseBulkGuideHead"></tr></thead><tbody id="leaseBulkGuideBody"></tbody></table>
           <table hidden><thead><tr id="leaseBulkPreviewHead"></tr></thead></table>
         </article>
+        </div>
+          </div>
         </div>
       </section>
 
@@ -3789,12 +3755,12 @@
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/lease-profit.js?v=20260629a"></script>
-  <script src="js/lease-rental-calc.js?v=20260629a"></script>
-  <script src="js/lease-erp.js?v=20260629a"></script>
-  <script src="js/admin-lease.js?v=20260629a"></script>
-  <script src="js/admin-lease-erp-panels.js?v=20260629a"></script>
-  <script src="js/admin-lease-menus.js?v=20260629a"></script>
+  <script src="js/lease-profit.js?v=20260629b"></script>
+  <script src="js/lease-rental-calc.js?v=20260629b"></script>
+  <script src="js/lease-erp.js?v=20260629b"></script>
+  <script src="js/admin-lease.js?v=20260629b"></script>
+  <script src="js/admin-lease-erp-panels.js?v=20260629b"></script>
+  <script src="js/admin-lease-menus.js?v=20260629b"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
