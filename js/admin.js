@@ -4490,6 +4490,9 @@
     if (sectionId === 'admin-schedule' && window.BremAdminSchedule?.refresh) {
       window.BremAdminSchedule.refresh();
     }
+    if (sectionId === 'lease-management' && window.BremAdminLeaseMenus?.init) {
+      void window.BremAdminLeaseMenus.init();
+    }
     if (sectionId === 'lease-management' && window.BremAdminLease?.refresh) {
       const filter = window.__leaseFilterOnOpen;
       window.__leaseFilterOnOpen = null;

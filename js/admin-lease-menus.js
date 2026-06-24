@@ -904,6 +904,14 @@ const BremAdminLeaseMenus = (function () {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
 
+    const nav = document.querySelector('.lease-erp-nav');
+    nav?.addEventListener('click', event => {
+      const btn = event.target.closest('[data-lease-menu]');
+      if (!btn) return;
+      event.preventDefault();
+      setMenu(btn.dataset.leaseMenu);
+    });
+
     document.querySelectorAll('[data-lease-menu]').forEach(btn => {
       btn.addEventListener('click', () => setMenu(btn.dataset.leaseMenu));
     });
@@ -953,14 +961,15 @@ const BremAdminLeaseMenus = (function () {
   }
 
   async function init() {
-    if (!$('lease-management') || !erp()) return;
+    if (!$('lease-management')) return;
     bindEvents();
+    if (!erp()) return;
     fillVehicleSelect($('leaseContractVehicleId'));
     fillVehicleSelect($('leaseCalcVehicleId'));
     if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = currentWeekStart();
     if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
     syncContractCalc();
-    setMenu('dashboard');
+    setMenu(state.menu || 'dashboard');
   }
 
   function refresh() {
@@ -977,6 +986,12 @@ const BremAdminLeaseMenus = (function () {
   return { init, refresh, setMenu, syncContractCalc, syncStandaloneCalc, renderWeekly, renderMonthly, renderArrears, renderEmpty, renderDashboard };
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
-  BremAdminLeaseMenus.init();
-});
+function bootLeaseMenus() {
+  void BremAdminLeaseMenus.init();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootLeaseMenus, { once: true });
+} else {
+  bootLeaseMenus();
+}

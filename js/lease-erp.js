@@ -818,3 +818,5 @@ const BremLeaseErp = (function () {
     normalizeProfitLog
   };
 })();
+
+window.BremLeaseErp = BremLeaseErp;

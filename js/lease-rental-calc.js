@@ -244,3 +244,5 @@ const BremLeaseRentalCalc = (function () {
     collectionMethodLabel
   };
 })();
+
+window.BremLeaseRentalCalc = BremLeaseRentalCalc;
