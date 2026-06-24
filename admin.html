@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260621w">
+  <link rel="stylesheet" href="css/admin.css?v=20260624b">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -2355,16 +2355,16 @@
           </div>
           <form id="promotionApplyForm" class="weekly-settlement-form">
             <div class="promotion-apply-panel" data-promotion-apply-panel="coupang">
-              <div class="promotion-form-grid">
-                <div class="promotion-settlement-week-block">
+              <div class="promotion-settlement-picker">
+                <div class="promotion-settlement-picker-week">
                   <label class="settlement-week-filter">
                     <span>적용주(수요일)</span>
                     <input type="date" id="promotionApplySettlementWeek-coupang" class="admin-period-input">
                   </label>
                   <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-coupang"></p>
                 </div>
-                <label>
-                  저장된 쿠팡 주정산
+                <label class="promotion-settlement-picker-select">
+                  <span>저장된 쿠팡 주정산</span>
                   <select id="promotionApplySettlementSelect-coupang"></select>
                 </label>
               </div>
@@ -2391,18 +2391,20 @@
               </div>
             </div>
             <div class="promotion-apply-panel" data-promotion-apply-panel="baemin" hidden>
-              <div class="promotion-form-grid">
-                <div class="promotion-settlement-week-block">
+              <div class="promotion-settlement-picker">
+                <div class="promotion-settlement-picker-week">
                   <label class="settlement-week-filter">
                     <span>적용주(수요일)</span>
                     <input type="date" id="promotionApplySettlementWeek-baemin" class="admin-period-input">
                   </label>
                   <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-baemin"></p>
                 </div>
-                <label>
-                  저장된 배민 주정산
+                <label class="promotion-settlement-picker-select">
+                  <span>저장된 배민 주정산</span>
                   <select id="promotionApplySettlementSelect-baemin"></select>
                 </label>
+              </div>
+              <div class="promotion-form-grid promotion-delivery-fee-grid">
                 <label>
                   배달처리비 엑셀 비밀번호
                   <input type="text" id="promotionApplyDeliveryFeePassword-baemin" placeholder="엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
@@ -2437,29 +2439,35 @@
             </div>
             <div class="promotion-apply-panel" data-promotion-apply-panel="combined" hidden>
               <p class="form-help">쿠팡·배민 주정산서를 각각 선택하세요. 쿠팡에만 있으면 <strong>거절율</strong>, 배민에만 있으면 <strong>수락률</strong> 기준으로 계산하고, 양쪽 모두 있으면 <strong>쿠팡(거절율)</strong> 기준으로 적용합니다.</p>
-              <div class="promotion-form-grid">
-                <div class="promotion-settlement-week-block">
-                  <label class="settlement-week-filter">
-                    <span>쿠팡 적용주(수요일)</span>
-                    <input type="date" id="promotionApplySettlementWeek-combined-coupang" class="admin-period-input">
-                  </label>
-                  <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-coupang"></p>
-                  <label>
-                    저장된 쿠팡 주정산
+              <div class="promotion-settlement-picker-grid">
+                <div class="promotion-settlement-picker">
+                  <div class="promotion-settlement-picker-week">
+                    <label class="settlement-week-filter">
+                      <span>쿠팡 적용주(수요일)</span>
+                      <input type="date" id="promotionApplySettlementWeek-combined-coupang" class="admin-period-input">
+                    </label>
+                    <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-coupang"></p>
+                  </div>
+                  <label class="promotion-settlement-picker-select">
+                    <span>저장된 쿠팡 주정산</span>
                     <select id="promotionApplySettlementSelect-combined-coupang"></select>
                   </label>
                 </div>
-                <div class="promotion-settlement-week-block">
-                  <label class="settlement-week-filter">
-                    <span>배민 적용주(수요일)</span>
-                    <input type="date" id="promotionApplySettlementWeek-combined-baemin" class="admin-period-input">
-                  </label>
-                  <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-baemin"></p>
-                  <label>
-                    저장된 배민 주정산
+                <div class="promotion-settlement-picker">
+                  <div class="promotion-settlement-picker-week">
+                    <label class="settlement-week-filter">
+                      <span>배민 적용주(수요일)</span>
+                      <input type="date" id="promotionApplySettlementWeek-combined-baemin" class="admin-period-input">
+                    </label>
+                    <p class="settlement-week-range-label" id="promotionApplySettlementWeekRange-combined-baemin"></p>
+                  </div>
+                  <label class="promotion-settlement-picker-select">
+                    <span>저장된 배민 주정산</span>
                     <select id="promotionApplySettlementSelect-combined-baemin"></select>
                   </label>
                 </div>
+              </div>
+              <div class="promotion-form-grid promotion-delivery-fee-grid">
                 <label>
                   배달처리비 엑셀 비밀번호
                   <input type="text" id="promotionApplyDeliveryFeePassword-combined" placeholder="엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
@@ -2525,7 +2533,7 @@
                 <option value="combined">합산</option>
               </select>
             </label>
-            <label class="settlement-week-filter">
+            <label class="settlement-week-filter promotion-saved-week-filter">
               <span>적용주(수요일)</span>
               <input type="date" id="promotionApplySavedWeekFilter" class="admin-period-input">
             </label>
@@ -2533,9 +2541,9 @@
               지역
               <input type="search" id="promotionApplySavedRegionFilter" placeholder="지역 검색" autocomplete="off">
             </label>
-            <button type="button" class="small-btn" id="promotionApplySavedWeekExportBtn">적용주 엑셀 일괄</button>
+            <button type="button" class="small-btn promotion-saved-export-btn" id="promotionApplySavedWeekExportBtn">적용주 엑셀 일괄</button>
           </div>
-          <p class="settlement-week-range-label" id="promotionApplySavedWeekRange"></p>
+          <p class="settlement-week-range-label promotion-saved-week-range" id="promotionApplySavedWeekRange"></p>
           <div class="table-wrap">
             <table class="weekly-settlement-saved-table">
               <thead>
@@ -3258,7 +3266,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js?v=20260622h"></script>
   <script src="js/storage-supabase-adapter.js?v=20260621z"></script>
-  <script src="js/storage.js?v=20260621z"></script>
+  <script src="js/storage.js?v=20260624b"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js"></script>
@@ -3274,8 +3282,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260623d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
   <script src="js/baemin-delivery-status-admin.js?v=20260620c"></script>
-  <script src="js/promotion-apply.js?v=20260624a"></script>
-  <script src="js/promotion-apply-admin.js?v=20260624a"></script>
+  <script src="js/promotion-apply.js?v=20260624b"></script>
+  <script src="js/promotion-apply-admin.js?v=20260624b"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-lease.js?v=20260622o"></script>
@@ -3283,7 +3291,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260622a"></script>
+  <script src="js/admin.js?v=20260624b"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

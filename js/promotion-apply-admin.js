@@ -163,11 +163,35 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   function defaultSettlementWeek(platform) {
-    const settlements = BremStorage.weeklySettlements.getAll()
-      .filter(item => BremStorage.resolveWeeklySettlementPlatform(item) === platform);
-    if (!settlements.length) return weekStartKey();
-    const itemWeekStart = BremPromotionApply.getWeeklySettlementWeekStart(settlements[0]);
-    return itemWeekStart || weekStartKey();
+    const items = (BremPromotionApply.getWeeklySettlementIndex?.() || [])
+      .filter(item => item.platform === platform);
+    if (!items.length) return weekStartKey();
+    return items[0].weekStart || weekStartKey();
+  }
+
+  function syncSettlementWeekDefaults(selectKey) {
+    const platform = settlementPlatformFromKey(selectKey);
+    const currentWeek = state.settlementWeekByKey[selectKey];
+    const hasData = currentWeek
+      && BremPromotionApply.getSettlementOptions(platform, { weekStart: currentWeek }).length;
+    if (!hasData) {
+      const latestWeek = defaultSettlementWeek(platform);
+      state.settlementWeekByKey[selectKey] = latestWeek;
+      const input = $(`#promotionApplySettlementWeek-${selectKey}`);
+      if (input) input.value = latestWeek;
+    }
+    updateSettlementWeekRangeLabel(selectKey);
+  }
+
+  function renderActivePlatformSettlement() {
+    const platform = getActivePlatform();
+    if (platform === 'combined') {
+      ['combined-coupang', 'combined-baemin'].forEach(syncSettlementWeekDefaults);
+      renderCombinedSettlementSelects();
+      return;
+    }
+    syncSettlementWeekDefaults(platform);
+    renderSettlementSelectForPlatform(platform);
   }
 
   function ensureSettlementWeek(selectKey) {
@@ -657,6 +681,12 @@ const BremPromotionApplyAdmin = (function () {
           return;
         }
 
+        const calcStartDate = [coupangSettlement.startDate, baeminSettlement.startDate]
+          .map(value => String(value || '').slice(0, 10))
+          .filter(Boolean)
+          .sort()[0];
+        await BremStorage.ensurePromotionCalculationCalls?.(calcStartDate);
+
         const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('combined', baeminSettlement, coupangSettlement);
         const applyOptions = deliveryFeeParsed
           ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed }
@@ -686,6 +716,8 @@ const BremPromotionApplyAdmin = (function () {
           renderSettlementSelectForPlatform(platform);
           return;
         }
+
+        await BremStorage.ensurePromotionCalculationCalls?.(settlement.startDate, settlement.endDate);
 
         let applyOptions = { assignmentMode };
         if (platform === 'baemin') {
@@ -841,9 +873,11 @@ const BremPromotionApplyAdmin = (function () {
       panel.hidden = panel.dataset.promotionApplyPanel !== p;
     });
 
-    renderSettlementSelect();
-    renderPromotionRulePickers();
-    renderSavedList();
+    renderActivePlatformSettlement();
+    renderPromotionRulePickersForPlatform(p);
+    if (p === 'combined') {
+      renderPromotionRulePickersForPlatform('combined');
+    }
 
     if (!options.keepResult) {
       const card = $('#promotionApplyResultCard');
@@ -933,21 +967,18 @@ const BremPromotionApplyAdmin = (function () {
 
   function refresh() {
     if (!applyRoot()) return;
+    BremPromotionApply.invalidateSettlementOptionsCache?.();
     SETTLEMENT_WEEK_KEYS.forEach(selectKey => {
-      const platform = settlementPlatformFromKey(selectKey);
-      const currentWeek = state.settlementWeekByKey[selectKey];
-      const hasData = currentWeek
-        && BremPromotionApply.getSettlementOptions(platform, { weekStart: currentWeek }).length;
-      if (!hasData) {
-        const latestWeek = defaultSettlementWeek(platform);
-        state.settlementWeekByKey[selectKey] = latestWeek;
-        const input = $(`#promotionApplySettlementWeek-${selectKey}`);
-        if (input) input.value = latestWeek;
+      if (!state.settlementWeekByKey[selectKey]) {
+        syncSettlementWeekDefaults(selectKey);
       }
-      updateSettlementWeekRangeLabel(selectKey);
     });
-    renderSettlementSelect();
-    renderPromotionRulePickers();
+    renderActivePlatformSettlement();
+    const platform = getActivePlatform();
+    renderPromotionRulePickersForPlatform(platform);
+    if (platform === 'combined') {
+      renderPromotionRulePickersForPlatform('combined');
+    }
     renderSavedList();
   }
 
@@ -955,6 +986,8 @@ const BremPromotionApplyAdmin = (function () {
     if (!applyRoot()) return;
     bindEvents();
     setPlatform('coupang');
+    ensureSavedWeekFilter();
+    renderSavedList();
   }
 
   return { init, refresh };

@@ -800,23 +800,47 @@ const BremPromotionApply = (function () {
   function getSettlementOptions(platform, options = {}) {
     const p = normalizePlatform(platform);
     const weekStart = String(options.weekStart || '').slice(0, 10);
-    let items = BremStorage.weeklySettlements.getAll()
-      .filter(item => BremStorage.resolveWeeklySettlementPlatform(item) === p)
-      .map(item => {
-        const itemWeekStart = getWeeklySettlementWeekStart(item);
-        return {
-          id: item.id,
-          weekStart: itemWeekStart,
-          region: item.region,
-          startDate: item.startDate,
-          endDate: item.endDate,
-          label: `${item.region} · ${item.matchedNamesLabel || `${item.summary?.matchedRiders || item.riders?.length || 0}명`} (${item.startDate}~${item.endDate})`
-        };
-      });
+    let items = getWeeklySettlementIndex()
+      .filter(item => item.platform === p);
     if (weekStart) {
       items = items.filter(item => item.weekStart === weekStart);
     }
-    return items.sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko'));
+    return items
+      .map(item => ({
+        id: item.id,
+        weekStart: item.weekStart,
+        region: item.region,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        label: `${item.region} · ${item.matchedNamesLabel} (${item.startDate}~${item.endDate})`
+      }))
+      .sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko'));
+  }
+
+  let weeklySettlementIndexCache = null;
+
+  function getWeeklySettlementIndex() {
+    const all = BremStorage.weeklySettlements.getAll();
+    const fingerprint = all.map(item => `${item.id}:${item.uploadedAt || ''}`).join('|');
+    if (weeklySettlementIndexCache?.fingerprint === fingerprint) {
+      return weeklySettlementIndexCache.items;
+    }
+
+    const items = all.map(item => ({
+      id: item.id,
+      platform: BremStorage.resolveWeeklySettlementPlatform(item),
+      weekStart: getWeeklySettlementWeekStart(item),
+      region: item.region,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      matchedNamesLabel: item.matchedNamesLabel || `${item.summary?.matchedRiders || item.riders?.length || 0}명`
+    }));
+    weeklySettlementIndexCache = { fingerprint, items };
+    return items;
+  }
+
+  function invalidateSettlementOptionsCache() {
+    weeklySettlementIndexCache = null;
   }
 
   function getSavedResultWeekStart(item) {
@@ -886,7 +910,9 @@ const BremPromotionApply = (function () {
     combinedSettlementsNeedDeliveryFee,
     ruleUsesGuarantee,
     getSettlementOptions,
+    invalidateSettlementOptionsCache,
     getWeeklySettlementWeekStart,
+    getWeeklySettlementIndex,
     getSavedResultWeekStart,
     weekStartKey,
     weekEndKey,

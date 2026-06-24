@@ -3890,19 +3890,81 @@ textarea {
   gap: 12px;
 }
 
-.promotion-settlement-week-block {
+.promotion-settlement-picker {
   display: grid;
-  gap: 6px;
-  align-content: start;
+  grid-template-columns: minmax(200px, 260px) minmax(280px, 1fr);
+  gap: 12px 20px;
+  align-items: end;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #101010;
 }
 
-.promotion-settlement-week-block .settlement-week-filter {
+.promotion-settlement-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.promotion-settlement-picker-week {
+  display: grid;
+  gap: 4px;
+  align-content: end;
+}
+
+.promotion-settlement-picker-week .settlement-week-filter {
   margin: 0;
 }
 
-.promotion-settlement-week-block > label:not(.settlement-week-filter) {
+.promotion-settlement-picker-week .settlement-week-range-label {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.promotion-settlement-picker-select {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.promotion-settlement-picker-select > span {
+  font-size: 0.875rem;
+}
+
+.promotion-settlement-picker-select select {
+  width: 100%;
+  min-width: 0;
+}
+
+.promotion-delivery-fee-grid {
+  margin-top: 4px;
+}
+
+.promotion-saved-toolbar {
+  margin: 0 18px 8px;
+}
+
+.promotion-saved-week-filter {
+  min-width: 180px;
+}
+
+.promotion-saved-week-range {
+  margin: 0 18px 12px;
+}
+
+.promotion-saved-export-btn {
+  align-self: flex-end;
+}
+
+@media (max-width: 720px) {
+  .promotion-settlement-picker {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
 }
 
 .promotion-form-section {

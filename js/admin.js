@@ -4302,6 +4302,14 @@
           state.eventSettingsSort.key,
           state.eventSettingsSort.dir
         ].join('\0');
+      case 'promotion-apply':
+        return [
+          'promotion-apply',
+          BremStorage.weeklySettlements?.getAll?.().length || 0,
+          BremStorage.promotionApplyResults?.getAll?.().length || 0,
+          BremStorage.promotionRules?.getAll?.().length || 0,
+          BremStorage.drivers?.getAll?.().length || 0
+        ].join('\0');
       default:
         return '';
     }

@@ -1075,7 +1075,7 @@ const BremStorage = (function () {
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
-    'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.promotionApplyResults, KEYS.settlements, KEYS.calls, KEYS.rejections],
+    'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
     calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],
     targets: [KEYS.drivers, KEYS.targets],
@@ -1263,9 +1263,6 @@ const BremStorage = (function () {
 
     const tableKeysWithoutManaged = tableKeys.filter(key => key !== KEYS.missions && key !== KEYS.notices);
     const loadOptions = { force };
-    if (sectionId === 'promotion-apply') {
-      loadOptions[KEYS.calls] = { allHistory: true };
-    }
     if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
       const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
@@ -1310,6 +1307,42 @@ const BremStorage = (function () {
 
     window.BremPerf?.timeEnd?.(`storage.ensureSection:${sectionId}`);
     return { ok: true };
+  }
+
+  function callsSinceDateWithBuffer(startDate, bufferDays = 7) {
+    const start = String(startDate || '').slice(0, 10);
+    if (!start) return '';
+    const date = new Date(`${start}T00:00:00`);
+    date.setDate(date.getDate() - Math.max(0, Number(bufferDays) || 0));
+    return date.toISOString().slice(0, 10);
+  }
+
+  async function ensureCallsSinceDate(sinceDate, options = {}) {
+    const since = String(sinceDate || '').slice(0, 10);
+    if (!since || !activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
+
+    const existing = calls.getAll();
+    if (!options.force && existing.length) {
+      const earliest = existing.reduce((min, call) => {
+        const day = String(call?.date || '').slice(0, 10);
+        return !day || (min && day >= min) ? min : day;
+      }, '');
+      if (!earliest || earliest <= since) {
+        return { ok: true, cached: true };
+      }
+    }
+
+    await activeStorageAdapter.ensureKeysLoaded([KEYS.calls], {
+      force: Boolean(options.force),
+      [KEYS.calls]: { sinceDate: since }
+    });
+    return { ok: true };
+  }
+
+  async function ensurePromotionCalculationCalls(startDate, endDate) {
+    const sinceDate = callsSinceDateWithBuffer(startDate || endDate, 7);
+    if (!sinceDate) return { ok: true };
+    return ensureCallsSinceDate(sinceDate);
   }
 
   async function ensureSectionLoaded(sectionId, options = {}) {
@@ -9439,6 +9472,8 @@ const BremStorage = (function () {
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     ensureSectionLoaded,
+    ensureCallsSinceDate,
+    ensurePromotionCalculationCalls,
     isSectionCacheReady,
     isBootstrapComplete,
     loadBootstrapData,
