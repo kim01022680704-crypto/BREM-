@@ -4567,6 +4567,323 @@ textarea {
 
 /* ── Lease management ── */
 
+.lease-erp-dashboard {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.lease-erp-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.lease-hero-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #141414;
+}
+
+.lease-hero-card--profit {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.lease-hero-card--warning {
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(234, 179, 8, 0.08);
+}
+
+.lease-hero-card__label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.lease-hero-card__value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.lease-hero-card--profit .lease-hero-card__value {
+  color: #6ee7b7;
+}
+
+.lease-hero-card--warning .lease-hero-card__value {
+  color: #fde047;
+}
+
+.lease-hero-card__hint {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.lease-erp-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #121212;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.lease-erp-counts strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.lease-erp-period-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.lease-period-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #141414;
+}
+
+.lease-period-card h3 {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.lease-period-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.lease-period-card dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.lease-period-card dt {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.lease-period-card dd {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.lease-period-card__profit {
+  color: #6ee7b7;
+}
+
+.lease-period-card--mode {
+  border-color: rgba(147, 197, 253, 0.25);
+}
+
+.lease-erp-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 18px 16px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #101010;
+}
+
+.lease-erp-summary__item {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+}
+
+.lease-erp-summary__item span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.lease-erp-summary__item strong {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.lease-erp-summary__item--warning strong {
+  color: #fde047;
+}
+
+.lease-erp-summary__item--profit strong {
+  color: #6ee7b7;
+  font-size: 1.1rem;
+}
+
+.lease-toolbar--erp {
+  padding-top: 0;
+}
+
+.lease-erp-tab {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  min-width: 120px;
+}
+
+.lease-erp-tab__title {
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.lease-erp-tab__desc {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.lease-erp-tab.active .lease-erp-tab__desc {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.lease-form-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.lease-form-section {
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #101010;
+}
+
+.lease-form-section[hidden] {
+  display: none;
+}
+
+.lease-form-section__head {
+  margin-bottom: 14px;
+}
+
+.lease-form-section__head h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.lease-form-section__head p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.lease-profit-result {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 2px solid rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.lease-profit-result__main {
+  display: grid;
+  gap: 4px;
+}
+
+.lease-profit-result__label {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #a7f3d0;
+}
+
+.lease-profit-result__value {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: #6ee7b7;
+  line-height: 1.15;
+}
+
+.lease-profit-result__formula {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.lease-profit-result__breakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.lease-profit-result__breakdown > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.lease-profit-result__breakdown dt {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.lease-profit-result__breakdown dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.lease-list-header {
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lease-list-header .lease-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.lease-erp-panel__intro {
+  margin: 0 0 14px;
+  padding: 0 2px;
+}
+
+.lease-erp-panel__intro h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.lease-erp-panel__intro p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .lease-kpi-grid {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }

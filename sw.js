@@ -1,4 +1,4 @@
-const CACHE_NAME = 'brem-pwa-v7';
+const CACHE_NAME = 'brem-pwa-v8';
 const SHELL_URLS = [
   '/home.html',
   '/driver.html',
