@@ -3718,8 +3718,8 @@
         }
 
         await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
-        await BremStorage.refetchDataKey?.(BremStorage.KEYS.calls);
-        await BremStorage.refetchDataKey?.(BremStorage.KEYS.settlements);
+        await BremStorage.refetchDataKey?.(BremStorage.STORAGE_KEYS.calls);
+        await BremStorage.refetchDataKey?.(BremStorage.STORAGE_KEYS.settlements);
         invalidateCallStatsIndex();
         setSettlementWeekFilters(p, weekStart);
         renderSettlements();
@@ -4123,8 +4123,8 @@
           }
 
           await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
-          await BremStorage.refetchDataKey?.(BremStorage.KEYS.calls);
-          await BremStorage.refetchDataKey?.(BremStorage.KEYS.settlements);
+          await BremStorage.refetchDataKey?.(BremStorage.STORAGE_KEYS.calls);
+          await BremStorage.refetchDataKey?.(BremStorage.STORAGE_KEYS.settlements);
         },
         render: () => {
           if (skipRender) return;
