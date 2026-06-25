@@ -4995,6 +4995,21 @@ textarea {
   max-width: 360px;
 }
 
+.lease-lessee-panel {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.lease-lessee-panel__title {
+  margin: 0 0 10px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #6ee7b7;
+}
+
 .lease-table--compact {
   font-size: 0.84rem;
 }

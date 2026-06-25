@@ -517,7 +517,8 @@ window.BremSupabaseStorageAdapter = (function () {
       const raw = {
         contractType: item.contractType,
         weeklyRent: item.weeklyRent,
-        operationType: item.operationType
+        operationType: item.operationType,
+        lesseePhone: item.lesseePhone || ''
       };
       return {
         id: item.id,
@@ -581,6 +582,7 @@ window.BremSupabaseStorageAdapter = (function () {
         contractEndDate: row.contract_end_date || '',
         returnDate: row.return_date || '',
         renter: row.renter || '',
+        lesseePhone: raw.lesseePhone || '',
         lessor: row.lessor || '',
         dailyChargeAmount: Number(row.daily_charge_amount || 0),
         dailyRent: Number(row.daily_charge_amount || 0),

@@ -362,6 +362,7 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseContractVehicleNumber')) $('leaseContractVehicleNumber').value = vehicle.vehicleNumber || '';
     if ($('leaseContractVehicleName')) $('leaseContractVehicleName').value = vehicle.model || '';
     if ($('leaseContractDriverName')) $('leaseContractDriverName').value = vehicle.renter || '';
+    if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = vehicle.lesseePhone || '';
     if ($('leaseContractWeeklyRent')) {
       $('leaseContractWeeklyRent').value = vehicle.dailyChargeAmount
         ? vehicle.dailyChargeAmount * 7

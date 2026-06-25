@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260629d">
+  <link rel="stylesheet" href="css/admin.css?v=20260629e">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1218,7 +1218,7 @@
               <section class="lease-form-section">
                 <header class="lease-form-section__head">
                   <h3>② 차량 · 계약</h3>
-                  <p>번호판·기간·렌탈/리스자를 입력하세요.</p>
+                  <p>번호판·기간·리스하사람을 입력하세요.</p>
                 </header>
                 <div class="lease-form-grid">
                   <label>
@@ -1247,10 +1247,19 @@
                     </button>
                     <input type="hidden" id="leaseContractEndDate">
                   </label>
-                  <label>
-                    렌탈/리스자
-                    <input type="text" id="leaseRenter" placeholder="기사명 또는 리스자">
-                  </label>
+                </div>
+                <div class="lease-lessee-panel">
+                  <p class="lease-lessee-panel__title">리스하사람</p>
+                  <div class="lease-form-grid">
+                    <label>
+                      이름
+                      <input type="text" id="leaseRenter" placeholder="리스 이용 기사명">
+                    </label>
+                    <label>
+                      연락처
+                      <input type="tel" id="leaseLesseePhone" placeholder="010-0000-0000" autocomplete="tel">
+                    </label>
+                  </div>
                 </div>
               </section>
 
@@ -1576,7 +1585,7 @@
             <div class="lease-list-toolbar">
               <label class="driver-search-field lease-search-field">
                 <span class="sr-only">검색</span>
-                <input type="search" id="leaseSearch" placeholder="기종, 번호판, 렌탈/리스자…" autocomplete="off">
+                <input type="search" id="leaseSearch" placeholder="기종, 번호판, 리스하사람…" autocomplete="off">
               </label>
               <button type="button" class="small-btn" id="leaseSearchClear">초기화</button>
               <label class="check-label">
@@ -1613,7 +1622,8 @@
                   <th>상태</th>
                   <th>리스시작</th>
                   <th>리스종료</th>
-                  <th>렌탈/리스자</th>
+                  <th>리스하사람</th>
+                  <th>연락처</th>
                   <th>회수방법</th>
                   <th>관리</th>
                 </tr>
@@ -3755,17 +3765,17 @@
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/lease-profit.js?v=20260629d"></script>
-  <script src="js/lease-rental-calc.js?v=20260629d"></script>
-  <script src="js/lease-erp.js?v=20260629d"></script>
-  <script src="js/admin-lease.js?v=20260629d"></script>
-  <script src="js/admin-lease-erp-panels.js?v=20260629d"></script>
-  <script src="js/admin-lease-menus.js?v=20260629d"></script>
+  <script src="js/lease-profit.js?v=20260629e"></script>
+  <script src="js/lease-rental-calc.js?v=20260629e"></script>
+  <script src="js/lease-erp.js?v=20260629e"></script>
+  <script src="js/admin-lease.js?v=20260629e"></script>
+  <script src="js/admin-lease-erp-panels.js?v=20260629e"></script>
+  <script src="js/admin-lease-menus.js?v=20260629e"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260629d"></script>
+  <script src="js/admin.js?v=20260629e"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

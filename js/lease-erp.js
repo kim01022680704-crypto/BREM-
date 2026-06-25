@@ -209,6 +209,7 @@ const BremLeaseErp = (function () {
       contractEndDate: normalizeDate(raw.contractEndDate != null ? raw.contractEndDate : existing?.contractEndDate),
       returnDate: normalizeDate(raw.returnDate != null ? raw.returnDate : existing?.returnDate),
       renter: String(raw.renter != null ? raw.renter : existing?.renter || '').trim(),
+      lesseePhone: String(raw.lesseePhone != null ? raw.lesseePhone : existing?.lesseePhone || '').trim(),
       lessor: String(raw.lessor != null ? raw.lessor : existing?.lessor || '').trim(),
       dailyChargeAmount,
       dailyRent: dailyChargeAmount,
@@ -745,7 +746,7 @@ const BremLeaseErp = (function () {
     }
     if (search) {
       result = result.filter(item => [
-        item.model, item.vehicleNumber, item.chassisNumber, item.renter, item.lessor, item.leaseCompany, item.rentalAssignment?.renter
+        item.model, item.vehicleNumber, item.chassisNumber, item.renter, item.lesseePhone, item.lessor, item.leaseCompany, item.rentalAssignment?.renter
       ].some(value => String(value || '').toLowerCase().includes(search)));
     }
     return result;

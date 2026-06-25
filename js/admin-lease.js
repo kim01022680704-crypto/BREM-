@@ -165,6 +165,7 @@
       contractStartDate: $('leaseContractStartDate')?.value || '',
       contractEndDate: $('leaseContractEndDate')?.value || '',
       renter: $('leaseRenter')?.value || '',
+      lesseePhone: $('leaseLesseePhone')?.value || '',
       dailyChargeAmount: $('leaseDailyCharge')?.value || '',
       purchasePrice: $('leasePurchasePrice')?.value || '',
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
@@ -546,6 +547,7 @@
       contractStartDate: $('leaseContractStartDate')?.value || '',
       contractEndDate: $('leaseContractEndDate')?.value || '',
       renter: $('leaseRenter')?.value || '',
+      lesseePhone: $('leaseLesseePhone')?.value || '',
       dailyRent: $('leaseDailyCharge')?.value || '',
       dailyChargeAmount: $('leaseDailyCharge')?.value || '',
       purchasePrice: $('leasePurchasePrice')?.value || '',
@@ -591,6 +593,7 @@
     const charge = item.dailyChargeAmount || item.dailyRent || '';
     if ($('leaseDailyCharge')) $('leaseDailyCharge').value = charge;
     $('leaseRenter').value = item.renter || '';
+    if ($('leaseLesseePhone')) $('leaseLesseePhone').value = item.lesseePhone || '';
     if ($('leasePurchasePrice')) $('leasePurchasePrice').value = item.purchasePrice || '';
     if ($('leaseAcquisitionTaxRate')) $('leaseAcquisitionTaxRate').value = item.acquisitionTaxRate || '';
     if ($('leaseOtherAcquisitionCost')) $('leaseOtherAcquisitionCost').value = item.otherAcquisitionCost || '';
@@ -629,6 +632,7 @@
           item.vehicleNumber,
           item.leaseCompany,
           item.renter,
+          item.lesseePhone,
           item.lessor,
           item.memo
         ].join(' ').toLowerCase();
@@ -697,7 +701,7 @@
             : state.erpMode === 'company_lease_rental'
               ? '등록된 회사리스/렌탈이 없습니다.'
               : '등록된 차량이 없습니다.';
-      rowsEl.innerHTML = `<tr><td colspan="26" class="empty">${emptyText}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="27" class="empty">${emptyText}</td></tr>`;
       renderKpis();
       updateBulkSelectionUi();
       updateFilterTabUi();
@@ -735,6 +739,7 @@
           <td>${formatDate(item.contractStartDate)}</td>
           <td>${formatDate(item.contractEndDate)}</td>
           <td>${escapeHtml(item.renter || '-')}</td>
+          <td>${escapeHtml(item.lesseePhone || '-')}</td>
           <td>${escapeHtml(item.unpaidCollectionMethod || '-')}</td>
           <td class="lease-actions">
             <button type="button" class="small-btn" data-edit-lease="${item.id}">수정</button>
