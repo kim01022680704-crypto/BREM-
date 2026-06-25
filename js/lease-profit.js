@@ -450,3 +450,5 @@ const BremLeaseProfit = (function () {
     erpModeLabel
   };
 })();
+
+window.BremLeaseProfit = BremLeaseProfit;

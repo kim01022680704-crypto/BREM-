@@ -179,8 +179,9 @@
   }
 
   function syncFormCalculations() {
+    const profitApi = window.BremLeaseProfit;
     const draft = buildDraftFromForm();
-    const metrics = window.BremLeaseProfit?.computeErpMetrics?.(draft) || {};
+    const metrics = profitApi?.computeErpMetrics?.(draft) || {};
     const setVal = (id, value) => {
       const el = $(id);
       if (el) el.value = value || value === 0 ? number(value) : '';
