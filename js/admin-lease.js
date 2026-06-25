@@ -978,7 +978,7 @@
   }
 
   async function refresh(options = {}) {
-    if (erp) await erp.ensureLoaded();
+    if (options.loadRemote !== false && erp) await erp.ensureLoaded();
     if (options.filter) state.filterType = options.filter;
     if (window.BremLeaseErpPanels?.refresh) window.BremLeaseErpPanels.refresh();
     if (window.BremAdminLeaseMenus?.refresh) window.BremAdminLeaseMenus.refresh();
@@ -1058,7 +1058,10 @@
         }
 
         resetForm();
-        await refresh();
+        renderList();
+        renderStats();
+        window.BremAdminLeaseMenus?.renderDashboard?.();
+        void refresh({ loadRemote: false });
       } catch (error) {
         console.error('[BREM] lease vehicle save failed:', error);
         showToast('저장 중 오류가 발생했습니다. 새로고침 후 다시 시도하세요.');

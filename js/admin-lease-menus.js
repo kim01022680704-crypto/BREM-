@@ -68,7 +68,53 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function currentWeekStart() {
-    return BremLeaseProfit?.weekStartKey?.() || calc()?.weekRange?.('')?.start || '';
+    return BremStorage?.adminPreferences?.getLeaseDashboardWeekBasis?.()
+      || BremLeaseProfit?.weekStartKey?.()
+      || calc()?.weekRange?.('')?.start
+      || '';
+  }
+
+  function formatLeaseWeekRangeLabel(weekStart) {
+    const start = String(weekStart || '').slice(0, 10);
+    if (!start) return '수요일~화요일 기준';
+    if (BremDatePicker?.formatWednesdayWeekRange) {
+      return `${BremDatePicker.formatWednesdayWeekRange(start)} (수~화)`;
+    }
+    const week = calc()?.weekRange(start) || {};
+    return week.start && week.end
+      ? `${formatDate(week.start)} ~ ${formatDate(week.end)} (수~화)`
+      : '수요일~화요일 기준';
+  }
+
+  function updateLeaseDashWeekUi() {
+    const weekStart = currentWeekStart();
+    if ($('leaseDashWeekBasis')) $('leaseDashWeekBasis').value = weekStart;
+    if ($('leaseDashWeekLabel')) {
+      $('leaseDashWeekLabel').textContent = `주간 순이익 · ${formatLeaseWeekRangeLabel(weekStart)}`;
+    }
+    if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = weekStart;
+  }
+
+  function sumProfitLogsForWeek(weekStart) {
+    if (!erp() || !calc()) return null;
+    const week = calc().weekRange(weekStart);
+    if (!week.start) return null;
+    const logs = erp().profitLogs().getAll().filter(item =>
+      item.periodType === 'weekly' && item.periodStart === week.start
+    );
+    if (!logs.length) return null;
+    return logs.reduce((sum, log) => sum + Number(log.netProfit || 0), 0);
+  }
+
+  function sumProfitLogsForMonth(monthKey) {
+    if (!erp()) return null;
+    const key = String(monthKey || '').slice(0, 7);
+    if (!key) return null;
+    const logs = erp().profitLogs().getAll().filter(item =>
+      item.periodType === 'monthly' && String(item.periodStart || '').startsWith(key)
+    );
+    if (!logs.length) return null;
+    return logs.reduce((sum, log) => sum + Number(log.netProfit || 0), 0);
   }
 
   function currentMonthKey() {
@@ -102,6 +148,9 @@ const BremAdminLeaseMenus = (function () {
 
   function renderDashboard() {
     if (!erp() || !profit()) return;
+    updateLeaseDashWeekUi();
+    const weekStart = currentWeekStart();
+    const monthKey = currentMonthKey();
     const vehicles = erp().vehicles().getAll();
     const kpis = erp.buildDashboardKpis({});
     const setText = (id, value) => {
@@ -109,15 +158,18 @@ const BremAdminLeaseMenus = (function () {
       if (el) el.textContent = value;
     };
     let deficitCount = 0;
-    let weekProfit = 0;
-    let monthProfit = 0;
+    const weekProfitFromLogs = sumProfitLogsForWeek(weekStart);
+    const monthProfitFromLogs = sumProfitLogsForMonth(monthKey);
+    let weekProfitFallback = 0;
+    let monthProfitFallback = 0;
     let unpaidTotal = 0;
     let emptyLossTotal = 0;
     vehicles.forEach(item => {
       const m = profit().computeErpMetrics(item);
       if (m.actualProfit < 0) deficitCount += 1;
-      weekProfit += m.actualProfit;
-      monthProfit += m.actualProfit * (30 / 7);
+      const weeklyNet = m.weeklyProfit - m.unpaidAmount - m.emptyLoss;
+      weekProfitFallback += weeklyNet;
+      monthProfitFallback += weeklyNet * (30 / 7);
       unpaidTotal += m.unpaidAmount;
       emptyLossTotal += m.emptyLoss;
     });
@@ -126,8 +178,8 @@ const BremAdminLeaseMenus = (function () {
     setText('leaseKpiOperating', String(kpis.counts.operating || 0));
     setText('leaseStatEmpty', String(emptyCount));
     setText('leaseHeroUnpaid', formatMoney(unpaidTotal || kpis.totalUnpaid));
-    setText('leaseHeroWeekProfit', formatMoney(kpis.weekly?.actualProfit ?? weekProfit));
-    setText('leaseKpiMonthProfit', formatMoney(kpis.monthly?.actualProfit ?? monthProfit));
+    setText('leaseHeroWeekProfit', formatMoney(weekProfitFromLogs ?? weekProfitFallback ?? kpis.weekly?.actualProfit ?? 0));
+    setText('leaseKpiMonthProfit', formatMoney(monthProfitFromLogs ?? monthProfitFallback ?? kpis.monthly?.actualProfit ?? 0));
     setText('leaseHeroEmptyLoss', formatMoney(kpis.weekly?.emptyLossTotal ?? emptyLossTotal));
     setText('leaseDashDeficitCount', String(deficitCount));
   }
@@ -663,9 +715,7 @@ const BremAdminLeaseMenus = (function () {
     state.weekStart = weekStart;
     const week = calc().weekRange(weekStart);
     if ($('leaseWeekRangeLabel')) {
-      $('leaseWeekRangeLabel').textContent = week.start && week.end
-        ? `${formatDate(week.start)} ~ ${formatDate(week.end)} (수~화)`
-        : '-';
+      $('leaseWeekRangeLabel').textContent = formatLeaseWeekRangeLabel(weekStart);
     }
 
     const logs = erp().profitLogs().getAll().filter(item =>
@@ -1090,6 +1140,27 @@ const BremAdminLeaseMenus = (function () {
       $(id)?.addEventListener('input', syncContractCalc);
     });
     $('leaseWeekStart')?.addEventListener('change', renderWeekly);
+    $('leaseDashSettingsBtn')?.addEventListener('click', () => {
+      const panel = $('leaseDashSettings');
+      if (!panel) return;
+      const hidden = panel.hasAttribute('hidden');
+      if (hidden) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    });
+    $('leaseDashWeekBasis')?.addEventListener('change', event => {
+      const picked = String(event.target.value || '').slice(0, 10);
+      if (!picked) return;
+      const weekStart = BremStorage?.adminPreferences?.setLeaseDashboardWeekBasis?.(picked)
+        || BremDatePicker?.weekStartKey?.(picked)
+        || picked;
+      if ($('leaseDashWeekBasis')) $('leaseDashWeekBasis').value = weekStart;
+      if ($('leaseWeekStart')) $('leaseWeekStart').value = weekStart;
+      state.weekStart = weekStart;
+      updateLeaseDashWeekUi();
+      renderDashboard();
+      renderWeekly();
+      showToast('주간 기준이 저장되었습니다. (수요일~화요일)');
+    });
     $('leaseWeekRefreshBtn')?.addEventListener('click', renderWeekly);
     $('leaseWeekExportBtn')?.addEventListener('click', exportWeeklyExcel);
     $('leaseMonthKey')?.addEventListener('change', renderMonthly);
@@ -1150,6 +1221,7 @@ const BremAdminLeaseMenus = (function () {
     fillVehicleSelect($('leaseCalcVehicleId'));
     if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = currentWeekStart();
     if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
+    updateLeaseDashWeekUi();
     setMenu(state.menu || 'dashboard');
   }
 
@@ -1180,6 +1252,8 @@ const BremAdminLeaseMenus = (function () {
     renderArrears,
     renderEmpty,
     renderDashboard,
+    updateLeaseDashWeekUi,
+    currentWeekStart,
     renderContractList
   };
 })();

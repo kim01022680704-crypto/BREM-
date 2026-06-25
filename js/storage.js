@@ -41,6 +41,7 @@ const BremStorage = (function () {
     promotionApplyResults: 'brem_admin_promotion_apply_results',
     missionDefaults: 'brem_admin_mission_defaults',
     dashboardWeekBasis: 'brem_admin_dashboard_week_basis',
+    leaseDashboardWeekBasis: 'brem_lease_dashboard_week_basis',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -4754,6 +4755,18 @@ const BremStorage = (function () {
     setDashboardWeekBasis(dateValue) {
       const weekStart = weekStartKeyFromDate(dateValue);
       storageAdapter.write(KEYS.dashboardWeekBasis, weekStart);
+      return weekStart;
+    },
+    getLeaseDashboardWeekBasis() {
+      const raw = storageAdapter.read(KEYS.leaseDashboardWeekBasis, null);
+      if (raw && /^\d{4}-\d{2}-\d{2}$/.test(String(raw))) {
+        return weekStartKeyFromDate(raw);
+      }
+      return weekStartKeyFromDate(new Date().toISOString().slice(0, 10));
+    },
+    setLeaseDashboardWeekBasis(dateValue) {
+      const weekStart = weekStartKeyFromDate(dateValue);
+      storageAdapter.write(KEYS.leaseDashboardWeekBasis, weekStart);
       return weekStart;
     }
   };

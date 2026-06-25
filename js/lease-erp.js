@@ -536,7 +536,7 @@ const BremLeaseErp = (function () {
         const record = normalizeRecord(raw);
         const list = vehicles().getAll();
         list.unshift(record);
-        writeList(KEYS.vehicles, list);
+        writeList(KEYS.vehicles, list, { incrementalRows: [record] });
         return record;
       },
       update(id, raw) {
@@ -544,7 +544,7 @@ const BremLeaseErp = (function () {
         if (!existing) return null;
         const record = normalizeRecord({ ...existing, ...raw }, existing);
         const list = vehicles().getAll().map(item => item.id === id ? record : item);
-        writeList(KEYS.vehicles, list);
+        writeList(KEYS.vehicles, list, { incrementalRows: [record] });
         return record;
       },
       upsert(raw) {

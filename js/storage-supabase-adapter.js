@@ -324,7 +324,14 @@ window.BremSupabaseStorageAdapter = (function () {
         'daily_settlements',
         'settlement_upload_logs',
         'settlement_unmatched',
-        'weekly_settlements'
+        'weekly_settlements',
+        'lease_vehicles',
+        'lease_contracts',
+        'lease_payments',
+        'lease_accidents',
+        'lease_maintenance',
+        'lease_profit_logs',
+        'lease_arrears'
       ]);
       const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
       if (incremental?.length) {
@@ -1700,6 +1707,12 @@ window.BremSupabaseStorageAdapter = (function () {
       } else if (key === keys.promotionApplyResults) {
         await persistPromotionApplyResults(value);
       } else {
+        const backed = TABLE_BACKED_KEYS.find(config => config.key === key);
+        if (backed) {
+          await persistTableCollection(backed.table, backed.key, value, backed.toRow, options);
+          loadedTableKeys.add(backed.key);
+          return;
+        }
         await persistSetting(key, value);
       }
     }
@@ -1781,9 +1794,9 @@ window.BremSupabaseStorageAdapter = (function () {
         if (!cache.has(key)) return { exists: false, value: null };
         return { exists: true, value: cache.get(key) };
       },
-      write(key, value) {
+      write(key, value, options = {}) {
         stage(key, value);
-        return queuePersist(key, value);
+        return queuePersist(key, value, options);
       },
       remove(key) {
         if (isTableKey(key)) {

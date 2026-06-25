@@ -4944,6 +4944,28 @@ textarea {
   margin-bottom: 0;
 }
 
+.lease-dash-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lease-dash-settings {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.lease-dash-settings__grid {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+}
+
 .lease-dash-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

@@ -16,7 +16,14 @@ window.BremStorageGuard = (function () {
     'brem_admin_settlements',
     'brem_admin_weekly_settlements',
     'brem_admin_settlement_upload_logs',
-    'brem_admin_settlement_unmatched'
+    'brem_admin_settlement_unmatched',
+    'brem_lease_vehicles',
+    'brem_lease_contracts',
+    'brem_lease_payments',
+    'brem_lease_accidents',
+    'brem_lease_maintenance',
+    'brem_lease_profit_logs',
+    'brem_lease_arrears'
   ]);
 
   /** settings 테이블 JSON 키 — 빈 값으로 덮어쓰기 금지 (정산·운영 테이블 데이터 제외) */
