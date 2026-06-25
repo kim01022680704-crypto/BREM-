@@ -492,14 +492,30 @@ const BremLeaseErp = (function () {
     return window.BremDataCache?.getData?.(key) || [];
   }
 
+  const pendingWritePromises = [];
+
   function writeList(key, list, options = {}) {
-    if (BremStorage?.writeTableKey) return BremStorage.writeTableKey(key, list, options);
+    if (BremStorage?.writeTableKey) {
+      const persistPromise = BremStorage.writeTableKey(key, list, options);
+      pendingWritePromises.push(persistPromise);
+      return list;
+    }
     window.BremDataCache?.set?.(key, list, { source: 'write' });
     return list;
   }
 
-  async function persistKey(key) {
+  async function flushPendingWrites() {
+    const batch = pendingWritePromises.splice(0);
+    for (const promise of batch) {
+      if (promise && BremStorage?.awaitPersist) {
+        await BremStorage.awaitPersist(promise);
+      }
+    }
     if (BremStorage?.flushStorage) await BremStorage.flushStorage();
+  }
+
+  async function persistKey() {
+    await flushPendingWrites();
   }
 
   function vehicles() {
@@ -692,15 +708,7 @@ const BremLeaseErp = (function () {
   }
 
   async function persistAll() {
-    await Promise.all([
-      vehicles().persist(),
-      contracts().persist(),
-      payments().persist(),
-      accidents().persist(),
-      maintenance().persist(),
-      arrears().persist(),
-      profitLogs().persist()
-    ]);
+    await flushPendingWrites();
   }
 
   function payments() {

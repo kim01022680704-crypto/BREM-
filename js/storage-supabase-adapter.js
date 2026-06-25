@@ -406,11 +406,18 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function loadTableWithLegacyFallback(config, options = {}) {
       const value = await loadTableCollection(config, options);
-      if (value.length || !(await probeTable(config.table))) return value;
-      const migrated = await migrateLegacySettingsToTable(config, config.legacyKey);
-      if (!migrated) return value;
-      loadedTableKeys.delete(config.key);
-      return loadTableCollection(config, { ...options, force: true });
+      if (value.length) return value;
+      if (!(await probeTable(config.table))) return value;
+
+      const legacyKeys = [...new Set([config.legacyKey, config.key].filter(Boolean))];
+      for (const legacyKey of legacyKeys) {
+        const migrated = await migrateLegacySettingsToTable(config, legacyKey);
+        if (!migrated) continue;
+        loadedTableKeys.delete(config.key);
+        return loadTableCollection(config, { ...options, force: true });
+      }
+
+      return value;
     }
 
     function scheduleToRow(item) {
@@ -520,6 +527,11 @@ window.BremSupabaseStorageAdapter = (function () {
       };
     }
 
+    function dbDate(value) {
+      const text = String(value || '').trim().slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+    }
+
     function leaseVehicleToRow(item) {
       const raw = {
         contractType: item.contractType,
@@ -540,9 +552,9 @@ window.BremSupabaseStorageAdapter = (function () {
         insurance_age: item.insuranceAge || '',
         insurance_type: item.insuranceType || '',
         daily_insurance_cost: Number(item.dailyInsuranceCost || 0),
-        contract_start_date: item.contractStartDate || null,
-        contract_end_date: item.contractEndDate || null,
-        return_date: item.returnDate || null,
+        contract_start_date: dbDate(item.contractStartDate),
+        contract_end_date: dbDate(item.contractEndDate),
+        return_date: dbDate(item.returnDate),
         renter: item.renter || '',
         lessor: item.lessor || '',
         daily_charge_amount: Number(item.dailyChargeAmount ?? item.dailyRent ?? 0),
@@ -553,7 +565,7 @@ window.BremSupabaseStorageAdapter = (function () {
         balance_diff: Number(item.balanceDiff || 0),
         memo: item.memo || '',
         vehicle_status: item.vehicleStatus || 'operating',
-        empty_start_date: item.emptyStartDate || null,
+        empty_start_date: dbDate(item.emptyStartDate),
         expected_daily_rent: Number(item.expectedDailyRent || 0),
         daily_other_cost: Number(item.dailyOtherCost || 0),
         purchase_price: Number(item.purchasePrice || 0),
@@ -561,7 +573,7 @@ window.BremSupabaseStorageAdapter = (function () {
         acquisition_tax_amount: Number(item.acquisitionTaxAmount || 0),
         other_acquisition_cost: Number(item.otherAcquisitionCost || 0),
         total_acquisition_cost: Number(item.totalAcquisitionCost || 0),
-        acquisition_date: item.acquisitionDate || null,
+        acquisition_date: dbDate(item.acquisitionDate),
         rental_assignment: item.rentalAssignment || null,
         raw_data: raw,
         created_at: item.createdAt || new Date().toISOString(),

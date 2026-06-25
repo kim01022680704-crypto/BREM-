@@ -340,7 +340,14 @@ const BremStorage = (function () {
       KEYS.notices,
       KEYS.missions,
       KEYS.promotionRules,
-      KEYS.riderInquiries
+      KEYS.riderInquiries,
+      KEYS.leaseVehicles,
+      KEYS.leaseContracts,
+      KEYS.leasePayments,
+      KEYS.leaseAccidents,
+      KEYS.leaseMaintenance,
+      KEYS.leaseProfitLogs,
+      KEYS.leaseArrears
     ];
     if (!isProductionMode()) {
       persistKeys.push(KEYS.adminAccounts);
@@ -9493,7 +9500,11 @@ const BremStorage = (function () {
   function writeTableKey(key, list, options = {}) {
     const next = Array.isArray(list) ? list : [];
     window.BremDataCache?.set?.(key, next, { source: 'write' });
-    return storageAdapter.write(key, next, options);
+    const result = storageAdapter.write(key, next, options);
+    if (result === undefined) {
+      throw new Error('Supabase 저장 준비가 되지 않았습니다. 로그인 상태를 확인한 뒤 다시 시도하세요.');
+    }
+    return result;
   }
 
   return {

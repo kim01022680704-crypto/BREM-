@@ -83,12 +83,15 @@
 
   async function persistLeasesOrWarn() {
     try {
-      if (erp) await erp.persistAll();
-      else await leases.persist();
+      if (erp) {
+        await erp.persistAll();
+      } else {
+        await leases.persist();
+      }
       return true;
     } catch (error) {
       console.error('[BREM] lease persist failed:', error);
-      showToast('저장에 실패했습니다. 새로고침 후 다시 시도하세요.');
+      showToast(error?.message || '저장에 실패했습니다. 새로고침 후 다시 시도하세요.');
       return false;
     }
   }
