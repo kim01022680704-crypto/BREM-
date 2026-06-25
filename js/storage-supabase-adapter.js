@@ -70,6 +70,34 @@ window.BremSupabaseStorageAdapter = (function () {
     delete row.long_event_platform;
   }
 
+  const LEASE_VEHICLE_OPTIONAL_COLUMNS = [
+    'unpaid_days',
+    'payment_check',
+    'unpaid_collection_method',
+    'acquisition_tax_rate',
+    'acquisition_tax_amount',
+    'other_acquisition_cost',
+    'total_acquisition_cost'
+  ];
+
+  function isMissingLeaseVehicleColumnError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('lease_vehicles')
+      && (
+        message.includes('schema cache')
+        || message.includes('could not find')
+        || message.includes('does not exist')
+      );
+  }
+
+  function stripOptionalLeaseVehicleColumns(row) {
+    const next = { ...row };
+    LEASE_VEHICLE_OPTIONAL_COLUMNS.forEach(key => {
+      delete next[key];
+    });
+    return next;
+  }
+
   async function queryRidersWithSelectFallback(variants, runQuery) {
     const columnVariants = Array.isArray(variants) ? variants : RIDER_SELECT_VARIANTS;
     let lastResult = null;
@@ -197,7 +225,12 @@ window.BremSupabaseStorageAdapter = (function () {
       window.BremPerf?.countSupabase?.(rows.length);
       for (let index = 0; index < rows.length; index += chunkSize) {
         const chunk = rows.slice(index, index + chunkSize);
-        const { error } = await client.from(tableName).upsert(chunk, { onConflict: 'id' });
+        let payload = chunk;
+        let { error } = await client.from(tableName).upsert(payload, { onConflict: 'id' });
+        if (error && tableName === 'lease_vehicles' && isMissingLeaseVehicleColumnError(error)) {
+          payload = chunk.map(stripOptionalLeaseVehicleColumns);
+          ({ error } = await client.from(tableName).upsert(payload, { onConflict: 'id' }));
+        }
         if (error) throw error;
       }
     }
@@ -537,7 +570,14 @@ window.BremSupabaseStorageAdapter = (function () {
         contractType: item.contractType,
         weeklyRent: item.weeklyRent,
         operationType: item.operationType,
-        lesseePhone: item.lesseePhone || ''
+        lesseePhone: item.lesseePhone || '',
+        unpaidDays: Number(item.unpaidDays || 0),
+        paymentCheck: item.paymentCheck || '',
+        unpaidCollectionMethod: item.unpaidCollectionMethod || '',
+        acquisitionTaxRate: Number(item.acquisitionTaxRate || 0),
+        acquisitionTaxAmount: Number(item.acquisitionTaxAmount || 0),
+        otherAcquisitionCost: Number(item.otherAcquisitionCost || 0),
+        totalAcquisitionCost: Number(item.totalAcquisitionCost || 0)
       };
       return {
         id: item.id,
@@ -607,9 +647,9 @@ window.BremSupabaseStorageAdapter = (function () {
         dailyRent: Number(row.daily_charge_amount || 0),
         weeklyRent: Number(raw.weeklyRent || 0) || Number(row.daily_charge_amount || 0) * 7,
         unpaidAmount: Number(row.unpaid_amount || 0),
-        unpaidDays: Number(row.unpaid_days || 0),
-        paymentCheck: row.payment_check || '',
-        unpaidCollectionMethod: row.unpaid_collection_method || '',
+        unpaidDays: Number(row.unpaid_days ?? raw.unpaidDays ?? 0),
+        paymentCheck: row.payment_check || raw.paymentCheck || '',
+        unpaidCollectionMethod: row.unpaid_collection_method || raw.unpaidCollectionMethod || '',
         balanceDiff: Number(row.balance_diff || 0),
         memo: row.memo || '',
         vehicleStatus: row.vehicle_status || 'operating',
@@ -617,10 +657,10 @@ window.BremSupabaseStorageAdapter = (function () {
         expectedDailyRent: Number(row.expected_daily_rent || 0),
         dailyOtherCost: Number(row.daily_other_cost || 0),
         purchasePrice: Number(row.purchase_price || 0),
-        acquisitionTaxRate: Number(row.acquisition_tax_rate || 0),
-        acquisitionTaxAmount: Number(row.acquisition_tax_amount || 0),
-        otherAcquisitionCost: Number(row.other_acquisition_cost || 0),
-        totalAcquisitionCost: Number(row.total_acquisition_cost || 0),
+        acquisitionTaxRate: Number(row.acquisition_tax_rate ?? raw.acquisitionTaxRate ?? 0),
+        acquisitionTaxAmount: Number(row.acquisition_tax_amount ?? raw.acquisitionTaxAmount ?? 0),
+        otherAcquisitionCost: Number(row.other_acquisition_cost ?? raw.otherAcquisitionCost ?? 0),
+        totalAcquisitionCost: Number(row.total_acquisition_cost ?? raw.totalAcquisitionCost ?? 0),
         acquisitionDate: row.acquisition_date || '',
         rentalAssignment: row.rental_assignment || null,
         createdAt: row.created_at,

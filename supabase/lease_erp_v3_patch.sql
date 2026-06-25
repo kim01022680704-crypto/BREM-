@@ -1,8 +1,16 @@
--- BREM 리스 ERP v3 — 계약 확장 · 미납(lease_arrears) · 손익 스냅샷
--- SQL Editor에서 1회 실행
+-- BREM 리스 ERP v3 — v2 컬럼 · 계약 확장 · 미납(lease_arrears) · 손익 스냅샷
+-- SQL Editor에서 1회 실행 (lease_erp_migration.sql 실행 후)
 
-create table if not exists public.lease_arrears (
-  id text primary key,
+-- v2: 미납일 · 취득세 · 회사소유리스 계산 필드 (없으면 차량 저장 오류)
+alter table public.lease_vehicles add column if not exists unpaid_days integer not null default 0;
+alter table public.lease_vehicles add column if not exists payment_check text not null default '';
+alter table public.lease_vehicles add column if not exists unpaid_collection_method text not null default '';
+alter table public.lease_vehicles add column if not exists acquisition_tax_rate numeric not null default 0;
+alter table public.lease_vehicles add column if not exists acquisition_tax_amount numeric not null default 0;
+alter table public.lease_vehicles add column if not exists other_acquisition_cost numeric not null default 0;
+alter table public.lease_vehicles add column if not exists total_acquisition_cost numeric not null default 0;
+
+create table if not exists public.lease_arrears (  id text primary key,
   vehicle_id text references public.lease_vehicles(id) on delete set null,
   contract_id text,
   unpaid_days integer not null default 0,
