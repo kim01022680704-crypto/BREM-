@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260630a">
+  <link rel="stylesheet" href="css/admin.css?v=20260630c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1562,7 +1562,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>계약 / 렌탈 등록</h2>
-            <p class="form-help">차량관리에 등록된 차량에 렌탈자·리스자를 배정하고 요금·미납을 관리합니다.</p>
+            <p class="form-help">차량관리에 등록된 차량에 렌탈자·리스자를 배정하고 요금·보증금을 설정합니다.</p>
           </div>
           <form class="lease-form" id="leaseContractForm">
             <input type="hidden" id="leaseContractEditId">
@@ -1604,45 +1604,23 @@
               </section>
               <section class="lease-form-section">
                 <header class="lease-form-section__head">
-                  <h3>③ 요금 · 운행</h3>
-                  <p>리스나간금액(렌탈료)·리스비·미납을 입력하면 손익이 자동 계산됩니다.</p>
+                  <h3>③ 요금</h3>
+                  <p>주단위 후정산 기준 · 미납·회수는 미납/회수 메뉴에서 처리합니다.</p>
                 </header>
                 <div class="lease-form-grid lease-form-grid--2col">
-                  <label>주 렌탈료 / 리스나간금<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="27000"></label>
+                  <label>주 렌탈료 / 리스나간금<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="28000"></label>
                   <label>일 요금<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동계산"></label>
-                  <label>실제 운행일수<input type="number" id="leaseContractRentalDays" min="0" value="7"></label>
-                  <label>미납일수<input type="number" id="leaseContractUnpaidDays" min="0" value="0"></label>
-                  <label>공차일수<input type="number" id="leaseContractEmptyDays" min="0" value="0"></label>
-                  <label>입금액<input type="number" id="leaseContractPaidAmount" min="0" value="0"></label>
-                  <label>차량 원가(월)<input type="number" id="leaseContractVehicleCost" min="0" value="0" readonly tabindex="-1"></label>
-                  <label>보험료<input type="number" id="leaseContractInsurance" min="0" value="0"></label>
-                  <label>리스비(월)<input type="number" id="leaseContractLeaseCost" min="0" value="0" readonly tabindex="-1"></label>
-                  <label>정비비<input type="number" id="leaseContractMaintenance" min="0" value="0"></label>
-                  <label>사고비<input type="number" id="leaseContractAccident" min="0" value="0"></label>
-                  <label>기타비용<input type="number" id="leaseContractOtherCost" min="0" value="0"></label>
-                  <label>위약금<input type="number" id="leaseContractPenalty" min="0" value="0"></label>
-                </div>
-              </section>
-              <section class="lease-form-section">
-                <header class="lease-form-section__head">
-                  <h3>④ 손익 · 회수</h3>
-                </header>
-                <div class="lease-form-grid lease-form-grid--2col">
-                  <label>미납금(자동)<input type="text" id="leaseContractUnpaidPreview" readonly tabindex="-1"></label>
-                  <label>공차손실(자동)<input type="text" id="leaseContractEmptyPreview" readonly tabindex="-1"></label>
-                  <label>순이익(자동)<input type="text" id="leaseContractNetPreview" readonly tabindex="-1"></label>
-                  <label>회수상태<select id="leaseContractCollectionStatus"><option value="unpaid">미납</option><option value="collecting">회수중</option><option value="completed">처리완료</option></select></label>
-                  <div class="lease-checkbox-group">
-                    <span>회수방법</span>
-                    <label class="check-label"><input type="checkbox" id="leaseContractCollectSalary" value="salary_deduction"> 급여공제</label>
-                    <label class="check-label"><input type="checkbox" id="leaseContractCollectDeposit" value="separate_deposit"> 별도입금</label>
-                  </div>
+                  <label>보험료(참고)<input type="text" id="leaseContractInsurance" readonly tabindex="-1" placeholder="차량 기준"></label>
+                  <label>리스비(주, 참고)<input type="text" id="leaseContractLeaseCost" readonly tabindex="-1" placeholder="차량 기준"></label>
+                  <label>보증금<input type="number" id="leaseContractDeposit" min="0" value="0" placeholder="0"></label>
+                  <label>계약 상태<input type="text" id="leaseContractStatusPreview" readonly tabindex="-1" placeholder="자동판별"></label>
                   <label class="lease-form-memo">메모<textarea id="leaseContractMemo" rows="2"></textarea></label>
                 </div>
               </section>
             </div>
             <div class="lease-form-actions">
-              <button type="submit" class="primary-btn">계약 저장 · 손익 기록</button>
+              <button type="submit" class="primary-btn">계약 저장</button>
+              <button type="button" class="small-btn" id="leaseContractEndBtn">반납 · 공차 전환</button>
               <button type="button" class="small-btn" id="leaseContractResetBtn">초기화</button>
             </div>
           </form>
@@ -1661,8 +1639,8 @@
                     <th>연락처</th>
                     <th>계약기간</th>
                     <th>주요금</th>
-                    <th>순이익</th>
-                    <th>미납</th>
+                    <th>보증금</th>
+                    <th>상태</th>
                     <th>관리</th>
                   </tr>
                 </thead>
@@ -3758,17 +3736,17 @@
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/lease-profit.js?v=20260630a"></script>
-  <script src="js/lease-rental-calc.js?v=20260630a"></script>
-  <script src="js/lease-erp.js?v=20260630a"></script>
-  <script src="js/admin-lease.js?v=20260630a"></script>
-  <script src="js/admin-lease-erp-panels.js?v=20260630a"></script>
-  <script src="js/admin-lease-menus.js?v=20260630a"></script>
+  <script src="js/lease-profit.js?v=20260630c"></script>
+  <script src="js/lease-rental-calc.js?v=20260630c"></script>
+  <script src="js/lease-erp.js?v=20260630c"></script>
+  <script src="js/admin-lease.js?v=20260630c"></script>
+  <script src="js/admin-lease-erp-panels.js?v=20260630c"></script>
+  <script src="js/admin-lease-menus.js?v=20260630c"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260630a"></script>
+  <script src="js/admin.js?v=20260630c"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

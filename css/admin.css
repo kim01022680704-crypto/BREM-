@@ -5037,6 +5037,30 @@ textarea {
   color: #6ee7b7;
 }
 
+.lease-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.lease-status-badge--operating {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+}
+
+.lease-status-badge--empty {
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde047;
+}
+
+.lease-status-badge--unpaid {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+}
+
 .lease-contract-list-wrap {
   margin-top: 20px;
   padding-top: 8px;

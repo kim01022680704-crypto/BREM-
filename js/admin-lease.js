@@ -199,10 +199,14 @@
   }
 
   function getLatestContractForVehicle(vehicleId) {
-    if (!erp || !vehicleId) return null;
-    const contracts = erp.contracts().getAll().filter(item => item.vehicleId === vehicleId);
-    if (!contracts.length) return null;
-    return contracts.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0];
+    return window.BremAdminLeaseMenus?.getLatestContractForVehicle?.(vehicleId) || null;
+  }
+
+  function displayVehicleStatus(item) {
+    const contract = getLatestContractForVehicle(item.id);
+    const status = window.BremAdminLeaseMenus?.resolveContractStatus?.(contract, item.id)
+      || { label: profit()?.vehicleStatusLabel?.(item.vehicleStatus) || '-', code: item.vehicleStatus || '' };
+    return `<span class="lease-status-badge lease-status-badge--${escapeHtml(status.code || 'empty')}">${escapeHtml(status.label)}</span>`;
   }
 
   function displayCurrentDriver(item) {
@@ -699,7 +703,6 @@
     rowsEl.innerHTML = items.map(item => {
       const metrics = window.BremLeaseProfit?.computeErpMetrics?.(item) || {};
       const erpLabel = window.BremLeaseProfit?.erpModeLabel?.(metrics.mode) || '-';
-      const statusLabel = window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-';
       return `
         <tr>
           <td><input type="checkbox" class="lease-row-check" data-lease-select="${item.id}" ${state.selectedIds.has(item.id) ? 'checked' : ''}></td>
@@ -713,7 +716,7 @@
           <td>${formatMoney(metrics.vehiclePrice || item.purchasePrice)}</td>
           <td>${formatMoney(metrics.dailyCost)}</td>
           <td>${formatMoney(metrics.weeklyCost)}</td>
-          <td>${escapeHtml(statusLabel)}</td>
+          <td>${displayVehicleStatus(item)}</td>
           <td>${formatDate(item.contractStartDate)}</td>
           <td>${formatDate(item.contractEndDate)}</td>
           <td>${displayCurrentDriver(item)}</td>

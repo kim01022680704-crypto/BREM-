@@ -294,6 +294,59 @@ const BremAdminLeaseMenus = (function () {
     XLSX.writeFile(wb, `BREM_주간수익_${state.weekStart || currentWeekStart()}.xlsx`);
   }
 
+  function contractTodayKey() {
+    return profit()?.todayKey?.() || new Date().toISOString().slice(0, 10);
+  }
+
+  function getLatestContractForVehicle(vehicleId) {
+    if (!erp() || !vehicleId) return null;
+    const contracts = erp().contracts().getAll().filter(item => item.vehicleId === vehicleId);
+    if (!contracts.length) return null;
+    return contracts.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0];
+  }
+
+  function hasOpenArrear(vehicleId) {
+    if (!erp() || !vehicleId) return false;
+    return erp().arrears().getAll().some(item =>
+      item.vehicleId === vehicleId && String(item.collectionStatus) !== calc()?.ARREAR_STATUS?.COMPLETED
+    );
+  }
+
+  function isContractActive(contract) {
+    if (!contract || !String(contract.driverName || '').trim()) return false;
+    const today = contractTodayKey();
+    if (contract.startDate && contract.startDate > today) return false;
+    if (contract.endDate && contract.endDate < today) return false;
+    return true;
+  }
+
+  function resolveContractStatus(contract, vehicleId) {
+    const vid = vehicleId || contract?.vehicleId;
+    if (hasOpenArrear(vid)) return { label: '미납중', code: 'unpaid' };
+    if (isContractActive(contract)) return { label: '운행중', code: 'operating' };
+    return { label: '공차', code: 'empty' };
+  }
+
+  function applyVehicleStatusFromContract(vehicle, contract) {
+    if (!erp() || !vehicle) return;
+    const status = resolveContractStatus(contract, vehicle.id);
+    const patch = {
+      dailyChargeAmount: contract?.dailyRent || 0
+    };
+    if (status.code === 'operating' || status.code === 'unpaid') {
+      patch.renter = contract?.driverName || '';
+      patch.lesseePhone = contract?.driverPhone || '';
+      patch.vehicleStatus = 'operating';
+      patch.emptyStartDate = '';
+    } else {
+      patch.renter = '';
+      patch.lesseePhone = '';
+      patch.vehicleStatus = 'empty';
+      patch.emptyStartDate = contract?.endDate || contractTodayKey();
+    }
+    erp().vehicles().update(vehicle.id, patch);
+  }
+
   function readContractDealType() {
     const checked = document.querySelector('input[name="leaseContractDealType"]:checked');
     return checked?.value || 'lease';
@@ -303,9 +356,10 @@ const BremAdminLeaseMenus = (function () {
     const engine = calc();
     if (!engine) return {};
     const weeklyRent = engine.money($('leaseContractWeeklyRent')?.value);
-    const methods = [];
-    if ($('leaseContractCollectSalary')?.checked) methods.push(engine.COLLECTION_METHODS.SALARY);
-    if ($('leaseContractCollectDeposit')?.checked) methods.push(engine.COLLECTION_METHODS.DEPOSIT);
+    const depositAmount = engine.money($('leaseContractDeposit')?.value);
+    const vehicle = erp()?.vehicles().getById($('leaseContractVehicleId')?.value || '');
+    const leaseCostWeekly = vehicle?.dailyLeaseCost ? Math.round(vehicle.dailyLeaseCost * 7) : 0;
+    const insuranceMonthly = vehicle?.dailyInsuranceCost ? Math.round(vehicle.dailyInsuranceCost * 30) : 0;
     return {
       id: $('leaseContractEditId')?.value || '',
       vehicleId: $('leaseContractVehicleId')?.value || '',
@@ -319,19 +373,20 @@ const BremAdminLeaseMenus = (function () {
       endDate: $('leaseRentalDealEndDate')?.value || '',
       weeklyRent,
       dailyRent: engine.dailyFromWeekly(weeklyRent),
-      rentalDays: $('leaseContractRentalDays')?.value || 0,
-      emptyDays: $('leaseContractEmptyDays')?.value || 0,
-      unpaidDays: $('leaseContractUnpaidDays')?.value || 0,
-      paidAmount: $('leaseContractPaidAmount')?.value || 0,
-      vehicleCost: $('leaseContractVehicleCost')?.value || 0,
-      insuranceCost: $('leaseContractInsurance')?.value || 0,
-      leaseCost: $('leaseContractLeaseCost')?.value || 0,
-      maintenanceCost: $('leaseContractMaintenance')?.value || 0,
-      accidentCost: $('leaseContractAccident')?.value || 0,
-      otherCost: $('leaseContractOtherCost')?.value || 0,
-      penaltyFee: $('leaseContractPenalty')?.value || 0,
-      collectionMethods: methods,
-      collectionStatus: $('leaseContractCollectionStatus')?.value || engine.ARREAR_STATUS.UNPAID,
+      rentalDays: 7,
+      emptyDays: 0,
+      unpaidDays: 0,
+      paidAmount: 0,
+      vehicleCost: 0,
+      insuranceCost: insuranceMonthly,
+      leaseCost: leaseCostWeekly,
+      maintenanceCost: 0,
+      accidentCost: 0,
+      otherCost: 0,
+      depositAmount,
+      penaltyFee: depositAmount,
+      collectionMethods: [],
+      collectionStatus: engine.ARREAR_STATUS.COMPLETED,
       memo: $('leaseContractMemo')?.value || ''
     };
   }
@@ -340,18 +395,25 @@ const BremAdminLeaseMenus = (function () {
     const engine = calc();
     if (!engine) return;
     const draft = readContractDraft();
-    const metrics = engine.compute(draft);
     const setVal = (id, value, readonly = true) => {
       const el = $(id);
       if (!el) return;
       if (readonly) el.value = value || value === 0 ? Number(value).toLocaleString('ko-KR') : '';
       else el.value = value || '';
     };
-
-    setVal('leaseContractDailyRent', Math.round(metrics.dailyRent));
-    setVal('leaseContractUnpaidPreview', Math.round(metrics.unpaidAmount));
-    setVal('leaseContractEmptyPreview', Math.round(metrics.emptyLoss));
-    setVal('leaseContractNetPreview', Math.round(metrics.netProfit));
+    setVal('leaseContractDailyRent', Math.round(engine.dailyFromWeekly(draft.weeklyRent)));
+    if ($('leaseContractInsurance')) {
+      $('leaseContractInsurance').value = draft.insuranceCost
+        ? Number(draft.insuranceCost).toLocaleString('ko-KR')
+        : '';
+    }
+    if ($('leaseContractLeaseCost')) {
+      $('leaseContractLeaseCost').value = draft.leaseCost
+        ? Number(draft.leaseCost).toLocaleString('ko-KR')
+        : '';
+    }
+    const status = resolveContractStatus(draft, draft.vehicleId);
+    if ($('leaseContractStatusPreview')) $('leaseContractStatusPreview').value = status.label;
   }
 
   function fillVehicleSelect(selectEl, includeBlank = true) {
@@ -381,18 +443,19 @@ const BremAdminLeaseMenus = (function () {
       if ($('leaseContractDriverName')) $('leaseContractDriverName').value = '';
       if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = '';
       if ($('leaseContractWeeklyRent')) $('leaseContractWeeklyRent').value = '';
+      if ($('leaseContractDeposit')) $('leaseContractDeposit').value = '';
+      if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = '';
+      if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = '';
     }
     if ($('leaseContractLeaseCost')) {
-      $('leaseContractLeaseCost').value = vehicle.dailyLeaseCost ? Math.round(vehicle.dailyLeaseCost * 30) : '';
-    }
-    if ($('leaseContractVehicleCost')) {
-      const owned = profit()?.getErpMode?.(vehicle) === 'company_owned';
-      $('leaseContractVehicleCost').value = owned
-        ? Math.round((vehicle.totalAcquisitionCost || vehicle.purchasePrice || 0) / 12)
-        : 0;
+      $('leaseContractLeaseCost').value = vehicle.dailyLeaseCost
+        ? Math.round(vehicle.dailyLeaseCost * 7).toLocaleString('ko-KR')
+        : '';
     }
     if ($('leaseContractInsurance')) {
-      $('leaseContractInsurance').value = vehicle.dailyInsuranceCost ? Math.round(vehicle.dailyInsuranceCost * 30) : '';
+      $('leaseContractInsurance').value = vehicle.dailyInsuranceCost
+        ? Math.round(vehicle.dailyInsuranceCost * 30).toLocaleString('ko-KR')
+        : '';
     }
     syncContractCalc();
   }
@@ -412,22 +475,10 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = contract.startDate || '';
     if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = contract.endDate || '';
     if ($('leaseContractWeeklyRent')) $('leaseContractWeeklyRent').value = contract.weeklyRent || '';
-    if ($('leaseContractRentalDays')) $('leaseContractRentalDays').value = contract.rentalDays ?? 7;
-    if ($('leaseContractUnpaidDays')) $('leaseContractUnpaidDays').value = contract.unpaidDays || 0;
-    if ($('leaseContractEmptyDays')) $('leaseContractEmptyDays').value = contract.emptyDays || 0;
-    if ($('leaseContractPaidAmount')) $('leaseContractPaidAmount').value = contract.paidAmount || 0;
-    if ($('leaseContractVehicleCost')) $('leaseContractVehicleCost').value = contract.vehicleCost || 0;
-    if ($('leaseContractInsurance')) $('leaseContractInsurance').value = contract.insuranceCost || 0;
-    if ($('leaseContractLeaseCost')) $('leaseContractLeaseCost').value = contract.leaseCost || 0;
-    if ($('leaseContractMaintenance')) $('leaseContractMaintenance').value = contract.maintenanceCost || 0;
-    if ($('leaseContractAccident')) $('leaseContractAccident').value = contract.accidentCost || 0;
-    if ($('leaseContractOtherCost')) $('leaseContractOtherCost').value = contract.otherCost || 0;
-    if ($('leaseContractPenalty')) $('leaseContractPenalty').value = contract.penaltyFee || 0;
-    if ($('leaseContractCollectionStatus')) $('leaseContractCollectionStatus').value = contract.collectionStatus || calc()?.ARREAR_STATUS?.UNPAID || 'unpaid';
+    if ($('leaseContractDeposit')) {
+      $('leaseContractDeposit').value = contract.depositAmount ?? contract.penaltyFee ?? '';
+    }
     if ($('leaseContractMemo')) $('leaseContractMemo').value = contract.memo || '';
-    const methods = contract.collectionMethods || [];
-    if ($('leaseContractCollectSalary')) $('leaseContractCollectSalary').checked = methods.includes(calc()?.COLLECTION_METHODS?.SALARY);
-    if ($('leaseContractCollectDeposit')) $('leaseContractCollectDeposit').checked = methods.includes(calc()?.COLLECTION_METHODS?.DEPOSIT);
     syncContractCalc();
     $('leaseContractForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -451,9 +502,10 @@ const BremAdminLeaseMenus = (function () {
     }
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = erp().vehicles().getById(contract.vehicleId);
-      const metrics = calc()?.computeFromContract?.(contract, vehicle) || {};
       const typeLabel = contract.contractType === 'rental' ? '렌탈' : '리스';
       const period = [formatDate(contract.startDate), formatDate(contract.endDate)].filter(v => v !== '-').join(' ~ ') || '-';
+      const status = resolveContractStatus(contract, contract.vehicleId);
+      const deposit = contract.depositAmount ?? contract.penaltyFee ?? 0;
       return `
         <tr>
           <td><strong>${escapeHtml(contract.vehicleNumber || vehicle?.vehicleNumber || '-')}</strong></td>
@@ -461,9 +513,9 @@ const BremAdminLeaseMenus = (function () {
           <td>${escapeHtml(contract.driverName || '-')}</td>
           <td>${escapeHtml(contract.driverPhone || '-')}</td>
           <td>${escapeHtml(period)}</td>
-          <td>${formatMoney(contract.weeklyRent || metrics.weeklyRent)}</td>
-          <td class="${moneyClass(metrics.netProfit)}">${formatMoney(metrics.netProfit)}</td>
-          <td class="lease-money--warning">${formatMoney(metrics.unpaidAmount)}</td>
+          <td>${formatMoney(contract.weeklyRent)}</td>
+          <td>${formatMoney(deposit)}</td>
+          <td><span class="lease-status-badge lease-status-badge--${status.code}">${escapeHtml(status.label)}</span></td>
           <td><button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}">수정</button></td>
         </tr>
       `;
@@ -493,16 +545,23 @@ const BremAdminLeaseMenus = (function () {
       renter: draft.driverName,
       lesseePhone: draft.driverPhone,
       dailyChargeAmount: draft.dailyRent,
-      unpaidDays: draft.unpaidDays,
-      unpaidAmount: calc().compute(draft).unpaidAmount,
-      vehicleStatus: vehicle.vehicleStatus === 'empty' ? 'operating' : vehicle.vehicleStatus
+      unpaidDays: 0,
+      unpaidAmount: 0
     });
 
     const contract = draft.id
       ? erp().contracts().update(draft.id, { ...draft, vehicleId: vehicle.id })
       : erp().contracts().create({ ...draft, vehicleId: vehicle.id });
 
-    const metrics = calc().compute(contract);
+    applyVehicleStatusFromContract(vehicle, contract);
+
+    const metrics = calc().compute({
+      ...contract,
+      rentalDays: 7,
+      unpaidDays: 0,
+      emptyDays: isContractActive(contract) ? 0 : 7,
+      paidAmount: 0
+    });
     const week = calc().weekRange(currentWeekStart());
     const month = currentMonthKey();
 
@@ -537,27 +596,26 @@ const BremAdminLeaseMenus = (function () {
       contract
     });
 
-    if (draft.unpaidDays > 0 && draft.collectionStatus !== calc().ARREAR_STATUS.COMPLETED) {
-      erp().arrears().create({
-        vehicleId: vehicle.id,
-        contractId: contract.id,
-        unpaidDays: draft.unpaidDays,
-        unpaidAmount: metrics.unpaidAmount,
-        paidAmount: draft.paidAmount,
-        collectionMethods: draft.collectionMethods,
-        collectionStatus: draft.collectionStatus,
-        memo: draft.memo
-      });
-    }
-
     await erp().persistAll();
     $('leaseContractEditId').value = contract.id;
-    showToast('계약이 저장되었고 손익 스냅샷이 기록되었습니다.');
+    showToast('계약이 저장되었습니다.');
     window.BremAdminLease?.refresh?.();
     renderContractList();
     renderWeekly();
     renderMonthly();
     renderArrears();
+  }
+
+  function endContractAsEmpty() {
+    const draft = readContractDraft();
+    if (!draft.vehicleId) {
+      showToast('차량을 선택하세요.');
+      return;
+    }
+    const today = contractTodayKey();
+    if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = today;
+    syncContractCalc();
+    showToast('반납일을 오늘로 설정했습니다. 저장하면 공차로 전환됩니다.');
   }
 
   function resetContractForm() {
@@ -566,9 +624,7 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === 'lease';
     });
-    if ($('leaseContractCollectSalary')) $('leaseContractCollectSalary').checked = false;
-    if ($('leaseContractCollectDeposit')) $('leaseContractCollectDeposit').checked = false;
-    if ($('leaseContractRentalDays')) $('leaseContractRentalDays').value = 7;
+    if ($('leaseContractDeposit')) $('leaseContractDeposit').value = '';
     syncContractCalc();
   }
 
@@ -986,9 +1042,7 @@ const BremAdminLeaseMenus = (function () {
     bindCalcInputs.bound = true;
 
     const contractIds = [
-      'leaseContractWeeklyRent', 'leaseContractRentalDays', 'leaseContractEmptyDays', 'leaseContractUnpaidDays',
-      'leaseContractPaidAmount', 'leaseContractVehicleCost', 'leaseContractInsurance', 'leaseContractLeaseCost',
-      'leaseContractMaintenance', 'leaseContractAccident', 'leaseContractOtherCost', 'leaseContractPenalty'
+      'leaseContractWeeklyRent', 'leaseContractDeposit'
     ];
     contractIds.forEach(id => {
       $(id)?.addEventListener('input', syncContractCalc);
@@ -1030,6 +1084,11 @@ const BremAdminLeaseMenus = (function () {
 
     $('leaseContractForm')?.addEventListener('submit', saveContract);
     $('leaseContractResetBtn')?.addEventListener('click', resetContractForm);
+    $('leaseContractEndBtn')?.addEventListener('click', endContractAsEmpty);
+    ['leaseRentalDealStartDate', 'leaseRentalDealEndDate', 'leaseContractDriverName'].forEach(id => {
+      $(id)?.addEventListener('change', syncContractCalc);
+      $(id)?.addEventListener('input', syncContractCalc);
+    });
     $('leaseWeekStart')?.addEventListener('change', renderWeekly);
     $('leaseWeekRefreshBtn')?.addEventListener('click', renderWeekly);
     $('leaseWeekExportBtn')?.addEventListener('click', exportWeeklyExcel);
@@ -1106,7 +1165,23 @@ const BremAdminLeaseMenus = (function () {
     if (state.menu === 'calc') syncStandaloneCalc();
   }
 
-  return { init, refresh, setMenu, openContractForVehicle, syncContractCalc, syncStandaloneCalc, renderWeekly, renderMonthly, renderArrears, renderEmpty, renderDashboard, renderContractList };
+  return {
+    init,
+    refresh,
+    setMenu,
+    openContractForVehicle,
+    getLatestContractForVehicle,
+    resolveContractStatus,
+    hasOpenArrear,
+    syncContractCalc,
+    syncStandaloneCalc,
+    renderWeekly,
+    renderMonthly,
+    renderArrears,
+    renderEmpty,
+    renderDashboard,
+    renderContractList
+  };
 })();
 
 function bootLeaseMenus() {

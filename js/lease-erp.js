@@ -365,10 +365,18 @@ const BremLeaseErp = (function () {
       maintenanceCost: normalizeMoney(raw.maintenanceCost != null ? raw.maintenanceCost : existing?.maintenanceCost),
       accidentCost: normalizeMoney(raw.accidentCost != null ? raw.accidentCost : existing?.accidentCost),
       otherCost: normalizeMoney(raw.otherCost != null ? raw.otherCost : existing?.otherCost),
-      penaltyFee: normalizeMoney(raw.penaltyFee != null ? raw.penaltyFee : existing?.penaltyFee),
+      penaltyFee: normalizeMoney(
+        raw.depositAmount != null ? raw.depositAmount
+          : (raw.penaltyFee != null ? raw.penaltyFee : (existing?.depositAmount ?? existing?.penaltyFee))
+      ),
       paidAmount,
       recoveredAmount: normalizeMoney(raw.recoveredAmount != null ? raw.recoveredAmount : existing?.recoveredAmount)
     }) || {};
+
+    const depositAmount = normalizeMoney(
+      raw.depositAmount != null ? raw.depositAmount
+        : (raw.penaltyFee != null ? raw.penaltyFee : (existing?.depositAmount ?? existing?.penaltyFee))
+    );
 
     return {
       id: existing?.id || raw.id || createId(),
@@ -397,7 +405,8 @@ const BremLeaseErp = (function () {
       maintenanceCost: normalizeMoney(raw.maintenanceCost != null ? raw.maintenanceCost : existing?.maintenanceCost),
       accidentCost: normalizeMoney(raw.accidentCost != null ? raw.accidentCost : existing?.accidentCost),
       otherCost: normalizeMoney(raw.otherCost != null ? raw.otherCost : existing?.otherCost),
-      penaltyFee: normalizeMoney(raw.penaltyFee != null ? raw.penaltyFee : existing?.penaltyFee),
+      depositAmount,
+      penaltyFee: depositAmount,
       collectionStatus: String(
         raw.collectionStatus != null ? raw.collectionStatus : existing?.collectionStatus || ARREAR_STATUS.UNPAID
       ).trim(),
