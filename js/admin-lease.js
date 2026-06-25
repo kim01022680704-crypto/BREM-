@@ -205,7 +205,10 @@
   function displayVehicleStatus(item) {
     const contract = getLatestContractForVehicle(item.id);
     const status = window.BremAdminLeaseMenus?.resolveContractStatus?.(contract, item.id)
-      || { label: profit()?.vehicleStatusLabel?.(item.vehicleStatus) || '-', code: item.vehicleStatus || '' };
+      || {
+        label: window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-',
+        code: item.vehicleStatus || 'empty'
+      };
     return `<span class="lease-status-badge lease-status-badge--${escapeHtml(status.code || 'empty')}">${escapeHtml(status.label)}</span>`;
   }
 
@@ -456,15 +459,6 @@
   function validateLeaseForm(data) {
     if (!String(data.vehicleNumber || '').trim() && !String(data.chassisNumber || '').trim()) {
       return '번호판 또는 차대번호를 입력하세요.';
-    }
-    if (data.vehicleCategory === 'company_owned') {
-      if (!Number(data.purchasePrice || 0) && !Number(data.dailyChargeAmount || data.dailyRent || 0)) {
-        return '회사소유리스는 차량가액 또는 리스나간금액을 입력하세요.';
-      }
-      return '';
-    }
-    if (!Number(data.dailyLeaseCost || 0) && !Number(data.dailyChargeAmount || data.dailyRent || 0)) {
-      return '리스비 또는 리스나간금액을 입력하세요.';
     }
     return '';
   }
@@ -1044,26 +1038,31 @@
 
     formEl?.addEventListener('submit', async event => {
       event.preventDefault();
-      const data = readFormData();
-      const formError = validateLeaseForm(data);
-      if (formError) {
-        showToast(formError);
-        return;
-      }
+      try {
+        if (erp) await erp.ensureLoaded();
+        const data = leases.normalizeRecord(readFormData());
+        const formError = validateLeaseForm(data);
+        if (formError) {
+          showToast(formError);
+          return;
+        }
 
-      let saved;
-      if (state.editingId) {
-        saved = leases.update(state.editingId, data);
-        if (!(await persistLeasesOrWarn())) return;
-        showToast('차량 정보가 수정되었습니다.');
-      } else {
-        saved = leases.create(data);
-        if (!(await persistLeasesOrWarn())) return;
-        showToast('차량이 등록되었습니다.');
-      }
+        if (state.editingId) {
+          leases.update(state.editingId, data);
+          if (!(await persistLeasesOrWarn())) return;
+          showToast('차량 정보가 수정되었습니다.');
+        } else {
+          leases.create(data);
+          if (!(await persistLeasesOrWarn())) return;
+          showToast('차량이 등록되었습니다.');
+        }
 
-      resetForm();
-      refresh();
+        resetForm();
+        await refresh();
+      } catch (error) {
+        console.error('[BREM] lease vehicle save failed:', error);
+        showToast('저장 중 오류가 발생했습니다. 새로고침 후 다시 시도하세요.');
+      }
     });
 
     $('leaseFormCancel')?.addEventListener('click', resetForm);

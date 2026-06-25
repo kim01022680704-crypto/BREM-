@@ -364,9 +364,9 @@ const BremAdminLeaseMenus = (function () {
       id: $('leaseContractEditId')?.value || '',
       vehicleId: $('leaseContractVehicleId')?.value || '',
       contractType: readContractDealType(),
-      vehicleNumber: $('leaseContractVehicleNumber')?.value || '',
-      vehicleName: $('leaseContractVehicleName')?.value || '',
-      modelType: $('leaseContractModelType')?.value || '',
+      vehicleNumber: $('leaseContractVehicleNumber')?.value || vehicle?.vehicleNumber || '',
+      vehicleName: $('leaseContractVehicleName')?.value || vehicle?.model || '',
+      modelType: $('leaseContractModelType')?.value || vehicle?.model || '',
       driverName: $('leaseContractDriverName')?.value || '',
       driverPhone: $('leaseContractDriverPhone')?.value || '',
       startDate: $('leaseRentalDealStartDate')?.value || '',
@@ -433,10 +433,7 @@ const BremAdminLeaseMenus = (function () {
     if (!vehicle) return;
     if ($('leaseContractVehicleNumber')) $('leaseContractVehicleNumber').value = vehicle.vehicleNumber || '';
     if ($('leaseContractVehicleName')) $('leaseContractVehicleName').value = vehicle.model || '';
-    if ($('leaseContractModelType') && vehicle.model) {
-      const options = [...$('leaseContractModelType').options].map(o => o.value);
-      $('leaseContractModelType').value = options.includes(vehicle.model) ? vehicle.model : '기타';
-    }
+    if ($('leaseContractModelType')) $('leaseContractModelType').value = vehicle.model || '';
     const editingId = $('leaseContractEditId')?.value || '';
     const editing = editingId ? erp().contracts().getById(editingId) : null;
     if (!editing || editing.vehicleId !== vehicle.id) {
@@ -466,7 +463,10 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseContractVehicleId')) $('leaseContractVehicleId').value = contract.vehicleId || '';
     if ($('leaseContractVehicleNumber')) $('leaseContractVehicleNumber').value = contract.vehicleNumber || '';
     if ($('leaseContractVehicleName')) $('leaseContractVehicleName').value = contract.vehicleName || '';
-    if ($('leaseContractModelType')) $('leaseContractModelType').value = contract.modelType || '';
+    if ($('leaseContractModelType')) {
+      const vehicle = erp()?.vehicles().getById(contract.vehicleId);
+      $('leaseContractModelType').value = contract.modelType || vehicle?.model || '';
+    }
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === (contract.contractType || 'lease');
     });
