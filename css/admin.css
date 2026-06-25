@@ -5010,6 +5010,43 @@ textarea {
   color: #6ee7b7;
 }
 
+.lease-vehicle-cost-preview {
+  margin: 0 18px 18px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px dashed rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.lease-cost-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 10px 0 0;
+}
+
+.lease-cost-preview-grid dt {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.lease-cost-preview-grid dd {
+  margin: 4px 0 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #6ee7b7;
+}
+
+.lease-contract-list-wrap {
+  margin-top: 20px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.lease-contract-list-head {
+  padding: 16px 18px 8px;
+}
+
 .lease-table--compact {
   font-size: 0.84rem;
 }
