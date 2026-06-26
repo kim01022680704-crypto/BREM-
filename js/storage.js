@@ -42,6 +42,7 @@ const BremStorage = (function () {
     missionDefaults: 'brem_admin_mission_defaults',
     dashboardWeekBasis: 'brem_admin_dashboard_week_basis',
     leaseDashboardWeekBasis: 'brem_lease_dashboard_week_basis',
+    leaseVehicleModelTypes: 'brem_lease_vehicle_model_types',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -4775,6 +4776,43 @@ const BremStorage = (function () {
       const weekStart = weekStartKeyFromDate(dateValue);
       storageAdapter.write(KEYS.leaseDashboardWeekBasis, weekStart);
       return weekStart;
+    },
+    normalizeLeaseVehicleModelTypes(list) {
+      if (!Array.isArray(list)) return [];
+      const seen = new Set();
+      return list
+        .map(item => String(item || '').trim())
+        .filter(text => {
+          if (!text || seen.has(text)) return false;
+          seen.add(text);
+          return true;
+        })
+        .sort((a, b) => a.localeCompare(b, 'ko'));
+    },
+    getLeaseVehicleModelTypes() {
+      const raw = storageAdapter.read(KEYS.leaseVehicleModelTypes, null);
+      const normalized = adminPreferences.normalizeLeaseVehicleModelTypes(raw);
+      if (normalized.length) return normalized;
+      return ['PCX', 'NMAX', 'FORZA', '기타'];
+    },
+    setLeaseVehicleModelTypes(list) {
+      const normalized = adminPreferences.normalizeLeaseVehicleModelTypes(list);
+      storageAdapter.write(KEYS.leaseVehicleModelTypes, normalized);
+      return normalized;
+    },
+    addLeaseVehicleModelType(name) {
+      const text = String(name || '').trim();
+      if (!text) return adminPreferences.getLeaseVehicleModelTypes();
+      const list = adminPreferences.getLeaseVehicleModelTypes();
+      if (!list.includes(text)) list.push(text);
+      return adminPreferences.setLeaseVehicleModelTypes(list);
+    },
+    removeLeaseVehicleModelType(name) {
+      const text = String(name || '').trim();
+      if (!text) return adminPreferences.getLeaseVehicleModelTypes();
+      return adminPreferences.setLeaseVehicleModelTypes(
+        adminPreferences.getLeaseVehicleModelTypes().filter(item => item !== text)
+      );
     }
   };
 

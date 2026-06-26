@@ -111,6 +111,63 @@
     return `${number(num)}원`;
   }
 
+  function getModelTypes() {
+    return BremStorage?.adminPreferences?.getLeaseVehicleModelTypes?.() || ['PCX', 'NMAX', 'FORZA', '기타'];
+  }
+
+  function refreshModelSelect(selectedValue = '') {
+    const selectEl = $('leaseModel');
+    if (!selectEl) return;
+    const prev = selectedValue || selectEl.value || '';
+    const types = getModelTypes();
+    const options = ['<option value="">기종 선택</option>'].concat(
+      types.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
+    );
+    if (prev && !types.includes(prev)) {
+      options.push(`<option value="${escapeHtml(prev)}">${escapeHtml(prev)}</option>`);
+    }
+    selectEl.innerHTML = options.join('');
+    if (prev) selectEl.value = prev;
+  }
+
+  function renderModelTypeList() {
+    const listEl = $('leaseModelTypeList');
+    if (!listEl) return;
+    const types = getModelTypes();
+    if (!types.length) {
+      listEl.innerHTML = '<p class="form-help">등록된 차량종류가 없습니다.</p>';
+      return;
+    }
+    listEl.innerHTML = types.map(type => `
+      <span class="lease-model-type-chip">
+        <span>${escapeHtml(type)}</span>
+        <button type="button" class="lease-model-type-chip__remove" data-remove-model-type="${escapeHtml(type)}" aria-label="${escapeHtml(type)} 삭제">×</button>
+      </span>
+    `).join('');
+  }
+
+  function addModelType(name) {
+    const text = String(name || '').trim();
+    if (!text) {
+      showToast('차량종류 이름을 입력하세요.');
+      return;
+    }
+    BremStorage?.adminPreferences?.addLeaseVehicleModelType?.(text);
+    if ($('leaseModelTypeNew')) $('leaseModelTypeNew').value = '';
+    renderModelTypeList();
+    refreshModelSelect(text);
+    showToast(`차량종류 "${text}" 등록됨`);
+  }
+
+  function removeModelType(name) {
+    const text = String(name || '').trim();
+    if (!text) return;
+    BremStorage?.adminPreferences?.removeLeaseVehicleModelType?.(text);
+    renderModelTypeList();
+    refreshModelSelect($('leaseModel')?.value || '');
+    showToast(`차량종류 "${text}" 삭제됨`);
+  }
+
   function readErpMode() {
     const checked = document.querySelector('input[name="leaseErpMode"]:checked');
     return checked?.value === 'company_owned' ? 'company_owned' : 'company_lease_rental';
@@ -471,6 +528,9 @@
   }
 
   function validateLeaseForm(data) {
+    if (!String(data.model || '').trim()) {
+      return '기종을 선택하세요. 차량종류 등록 후 선택할 수 있습니다.';
+    }
     if (!String(data.vehicleNumber || '').trim() && !String(data.chassisNumber || '').trim()) {
       return '번호판 또는 차대번호를 입력하세요.';
     }
@@ -576,6 +636,7 @@
     setFormContractType(leases.CONTRACT_TYPES.LEASE);
     setErpModeForm(state.erpMode === 'company_owned' ? 'company_owned' : 'company_lease_rental');
     refreshLeaseDateLabels();
+    refreshModelSelect('');
     $('leaseFormSubmit').textContent = '등록';
     $('leaseFormCancel')?.setAttribute('hidden', '');
     syncFormCalculations();
@@ -590,6 +651,7 @@
     setErpModeForm(erpMode);
     setFormContractType(item.contractType);
     $('leaseModel').value = item.model || '';
+    refreshModelSelect(item.model || '');
     $('leaseChassisNumber').value = item.chassisNumber || '';
     $('leaseVehicleNumber').value = item.vehicleNumber || '';
     if ($('leaseCompany')) $('leaseCompany').value = item.leaseCompany || item.lessor || '';
@@ -996,6 +1058,8 @@
   async function refresh(options = {}) {
     if (options.loadRemote !== false && erp) await erp.ensureLoaded();
     if (options.filter) state.filterType = options.filter;
+    renderModelTypeList();
+    refreshModelSelect($('leaseModel')?.value || '');
     if (window.BremLeaseErpPanels?.refresh) window.BremLeaseErpPanels.refresh();
     if (window.BremAdminLeaseMenus?.refresh) window.BremAdminLeaseMenus.refresh();
     renderList();
@@ -1032,6 +1096,21 @@
       state.searchQuery = '';
       if ($('leaseSearch')) $('leaseSearch').value = '';
       renderList();
+    });
+
+    $('leaseModelTypeAddBtn')?.addEventListener('click', () => {
+      addModelType($('leaseModelTypeNew')?.value || '');
+    });
+    $('leaseModelTypeNew')?.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addModelType($('leaseModelTypeNew')?.value || '');
+      }
+    });
+    $('leaseModelTypeList')?.addEventListener('click', event => {
+      const btn = event.target.closest('[data-remove-model-type]');
+      if (!btn) return;
+      removeModelType(btn.dataset.removeModelType);
     });
 
     document.querySelectorAll('input[name="leaseContractType"], input[name="leaseErpMode"]').forEach(input => {
@@ -1235,8 +1314,10 @@
   renderBulkGuideTable();
   renderBulkPreviewHead();
   renderBulkPreview();
+  renderModelTypeList();
+  refreshModelSelect();
   setErpModeForm('company_lease_rental');
   refreshLeaseDateLabels();
   syncFormCalculations();
-  window.BremAdminLease = { refresh, fillForm };
+  window.BremAdminLease = { refresh, fillForm, refreshModelSelect, renderModelTypeList, getModelTypes };
 })();

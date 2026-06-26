@@ -182,6 +182,55 @@ const BremAdminLeaseMenus = (function () {
     setText('leaseKpiMonthProfit', formatMoney(monthProfitFromLogs ?? monthProfitFallback ?? kpis.monthly?.actualProfit ?? 0));
     setText('leaseHeroEmptyLoss', formatMoney(kpis.weekly?.emptyLossTotal ?? emptyLossTotal));
     setText('leaseDashDeficitCount', String(deficitCount));
+    renderDashboardVehicleOverview();
+  }
+
+  function renderDashboardVehicleOverview() {
+    const rowsEl = $('leaseDashVehicleRows');
+    if (!rowsEl || !erp() || !profit()) return;
+    const vehicles = erp().vehicles().getAll().map(item => {
+      const contract = getLatestContractForVehicle(item.id);
+      const status = resolveContractStatus(contract, item.id);
+      const metrics = profit().computeErpMetrics(item);
+      return { item, contract, status, metrics };
+    }).sort((a, b) => {
+      const order = { unpaid: 0, empty: 1, operating: 2 };
+      const diff = (order[a.status.code] ?? 9) - (order[b.status.code] ?? 9);
+      if (diff !== 0) return diff;
+      return String(a.item.vehicleNumber || '').localeCompare(String(b.item.vehicleNumber || ''), 'ko');
+    });
+
+    if (!vehicles.length) {
+      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">등록된 차량이 없습니다.</td></tr>';
+      return;
+    }
+
+    rowsEl.innerHTML = vehicles.map(({ item, contract, status, metrics }) => {
+      const driver = contract?.driverName || item.renter || '-';
+      const source = profit().vehicleSourceLabel(item);
+      const unpaidText = metrics.unpaidAmount > 0 ? formatMoney(metrics.unpaidAmount) : '-';
+      const emptyText = status.code === 'empty'
+        ? `${metrics.emptyDays || 0}일`
+        : (metrics.emptyDays > 0 ? `${metrics.emptyDays}일` : '-');
+      let actionBtn = `<button type="button" class="small-btn" data-dash-edit-vehicle="${escapeHtml(item.id)}">수정</button>`;
+      if (status.code === 'unpaid') {
+        actionBtn = `<button type="button" class="small-btn" data-dash-go-menu="arrears">미납</button>`;
+      } else if (status.code === 'empty') {
+        actionBtn = `<button type="button" class="small-btn" data-dash-go-menu="empty">공차</button>`;
+      }
+      return `
+        <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(status.code)}">
+          <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
+          <td>${escapeHtml(item.model || '-')}</td>
+          <td>${escapeHtml(source)}</td>
+          <td>${escapeHtml(driver)}</td>
+          <td><span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(status.label)}</span></td>
+          <td class="lease-money--warning">${unpaidText}</td>
+          <td class="lease-money--warning">${escapeHtml(emptyText)}</td>
+          <td>${actionBtn}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function readCalcDraft() {
@@ -1214,6 +1263,18 @@ const BremAdminLeaseMenus = (function () {
         if (item) window.BremAdminLease?.fillForm?.(item) || document.querySelector(`[data-edit-lease="${item.id}"]`)?.click();
         return;
       }
+      const dashMenuBtn = event.target.closest('[data-dash-go-menu]');
+      if (dashMenuBtn) {
+        setMenu(dashMenuBtn.dataset.dashGoMenu || 'dashboard');
+        return;
+      }
+      const dashEditBtn = event.target.closest('[data-dash-edit-vehicle]');
+      if (dashEditBtn) {
+        setMenu('vehicle');
+        const item = erp()?.vehicles().getById(dashEditBtn.dataset.dashEditVehicle);
+        if (item) window.BremAdminLease?.fillForm?.(item);
+        return;
+      }
       const completeBtn = event.target.closest('[data-complete-arrear]');
       if (completeBtn) {
         void completeArrear(completeBtn.dataset.completeArrear);
@@ -1274,6 +1335,7 @@ const BremAdminLeaseMenus = (function () {
     renderArrears,
     renderEmpty,
     renderDashboard,
+    renderDashboardVehicleOverview,
     updateLeaseDashWeekUi,
     currentWeekStart,
     renderContractList

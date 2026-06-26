@@ -5005,6 +5005,94 @@ textarea {
 .lease-dash-tile--deficit strong { color: #f87171; }
 .lease-dash-tile--success strong { color: #93c5fd; }
 
+.lease-dash-vehicle-overview {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.lease-dash-vehicle-overview__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.lease-dash-vehicle-overview__head h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.lease-dash-vehicle-table td,
+.lease-dash-vehicle-table th {
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.lease-dash-vehicle-row--unpaid td:first-child strong {
+  color: #fde047;
+}
+
+.lease-dash-vehicle-row--empty td:first-child strong {
+  color: #fdba74;
+}
+
+.lease-model-types-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.lease-model-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lease-model-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #141414;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.lease-model-type-chip__remove {
+  border: 0;
+  background: transparent;
+  color: #f87171;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.lease-form-grid select {
+  min-height: 46px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: #101010;
+  font: inherit;
+  font-weight: 800;
+}
+
+.lease-form-grid select:focus {
+  outline: none;
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.15);
+  background: #141414;
+}
+
 .lease-calc-screen {
   display: grid;
   gap: 16px;
