@@ -201,10 +201,29 @@
   }
 
   function updateEmptyFieldVisibility() {
-    const isEmpty = $('leaseVehicleStatus')?.value === 'empty';
+    const vehicleId = state.editingId || '';
+    const vehicle = vehicleId ? leases.getById(vehicleId) : buildDraftFromForm();
+    const contract = erp?.getLatestContractForVehicle?.(vehicleId);
+    const runtime = erp?.resolveRuntimeStatus?.(vehicle, contract) || { code: 'empty' };
+    const isEmpty = runtime.code === 'empty';
     document.querySelectorAll('[data-lease-field="empty"]').forEach(el => {
       el.hidden = !isEmpty;
     });
+  }
+
+  function refreshVehicleAutoStatusPreview() {
+    const vehicleId = state.editingId || '';
+    const draft = buildDraftFromForm();
+    const vehicle = vehicleId ? { ...leases.getById(vehicleId), ...draft } : draft;
+    const contract = erp?.getLatestContractForVehicle?.(vehicleId);
+    const runtime = erp?.resolveRuntimeStatus?.(vehicle, contract) || { label: '공차(로스)', code: 'empty' };
+    if ($('leaseVehicleStatusAuto')) $('leaseVehicleStatusAuto').value = runtime.label;
+    if ($('leaseEmptyStartDatePreview')) {
+      $('leaseEmptyStartDatePreview').value = runtime.code === 'empty'
+        ? (vehicle?.emptyStartDate ? formatDate(vehicle.emptyStartDate) : '자동')
+        : '-';
+    }
+    updateEmptyFieldVisibility();
   }
 
   function buildDraftFromForm() {
@@ -227,8 +246,6 @@
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
       otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
       annualInsuranceCost: $('leaseAnnualInsurance')?.value || '',
-      vehicleStatus: $('leaseVehicleStatus')?.value || '',
-      emptyStartDate: $('leaseEmptyStartDate')?.value || '',
       emptyDailyLoss: $('leaseEmptyDailyLoss')?.value || '',
       memo: $('leaseMemo')?.value || ''
     });
@@ -237,11 +254,16 @@
   function syncFormCalculations() {
     const profitApi = window.BremLeaseProfit;
     const draft = buildDraftFromForm();
-    const metrics = profitApi?.computeErpMetrics?.(draft) || {};
+    const vehicleId = state.editingId || '';
+    const vehicle = vehicleId ? { ...leases.getById(vehicleId), ...draft } : draft;
+    const contract = erp?.getLatestContractForVehicle?.(vehicleId);
+    const metrics = profitApi?.computeErpMetrics?.(vehicle) || {};
     const hintDraft = leases.normalizeRecord({ ...draft, emptyDailyLoss: 0 });
-    const hintMetrics = draft.vehicleStatus === 'empty'
-      ? (profitApi?.computeErpMetrics?.(hintDraft) || {})
-      : {};
+    const hintVehicle = vehicleId ? { ...leases.getById(vehicleId), ...hintDraft } : hintDraft;
+    const hintMetrics = (() => {
+      const runtime = erp?.resolveRuntimeStatus?.(vehicle, contract);
+      return runtime?.code === 'empty' ? (profitApi?.computeErpMetrics?.(hintVehicle) || {}) : {};
+    })();
     const setVal = (id, value) => {
       const el = $(id);
       if (el) el.value = value || value === 0 ? number(value) : '';
@@ -266,7 +288,7 @@
     };
     setText('leaseWeeklyLeaseCostPreview', metrics.weeklyLeaseCost);
     setText('leaseWeeklyOwnedCostPreview', metrics.weeklyCost);
-    updateEmptyFieldVisibility();
+    refreshVehicleAutoStatusPreview();
   }
 
   function getLatestContractForVehicle(vehicleId) {
@@ -275,12 +297,10 @@
 
   function displayVehicleStatus(item) {
     const contract = getLatestContractForVehicle(item.id);
-    const status = window.BremAdminLeaseMenus?.resolveContractStatus?.(contract, item.id)
-      || {
-        label: window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-',
-        code: item.vehicleStatus || 'empty'
-      };
-    return `<span class="lease-status-badge lease-status-badge--${escapeHtml(status.code || 'empty')}">${escapeHtml(status.label)}</span>`;
+    const runtime = erp?.resolveRuntimeStatus?.(item, contract)
+      || window.BremAdminLeaseMenus?.resolveContractStatus?.(contract, item.id)
+      || { label: window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-', code: item.vehicleStatus || 'empty' };
+    return `<span class="lease-status-badge lease-status-badge--${escapeHtml(runtime.code || 'empty')}">${escapeHtml(runtime.label)}</span>`;
   }
 
   function displayCurrentDriver(item) {
@@ -622,10 +642,10 @@
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
       otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
       annualInsuranceCost: $('leaseAnnualInsurance')?.value || '',
-      vehicleStatus: $('leaseVehicleStatus')?.value || '',
-      emptyStartDate: $('leaseEmptyStartDate')?.value || '',
       emptyDailyLoss: $('leaseEmptyDailyLoss')?.value || '',
-      memo: $('leaseMemo')?.value || ''
+      memo: $('leaseMemo')?.value || '',
+      vehicleStatus: 'empty',
+      emptyStartDate: $('leaseContractStartDate')?.value || leases.todayKey?.() || ''
     };
   }
 
@@ -664,8 +684,6 @@
     if ($('leaseAcquisitionTaxRate')) $('leaseAcquisitionTaxRate').value = item.acquisitionTaxRate || '';
     if ($('leaseOtherAcquisitionCost')) $('leaseOtherAcquisitionCost').value = item.otherAcquisitionCost || '';
     if ($('leaseAnnualInsurance')) $('leaseAnnualInsurance').value = item.annualInsuranceCost || '';
-    if ($('leaseVehicleStatus')) $('leaseVehicleStatus').value = item.vehicleStatus || 'operating';
-    if ($('leaseEmptyStartDate')) $('leaseEmptyStartDate').value = item.emptyStartDate || '';
     if ($('leaseEmptyDailyLoss')) $('leaseEmptyDailyLoss').value = item.emptyDailyLoss || '';
     $('leaseMemo').value = item.memo || '';
     refreshLeaseDateLabels();
@@ -1057,6 +1075,7 @@
 
   async function refresh(options = {}) {
     if (options.loadRemote !== false && erp) await erp.ensureLoaded();
+    else erp?.syncAllVehicleStatusesFromContracts?.();
     if (options.filter) state.filterType = options.filter;
     renderModelTypeList();
     refreshModelSelect($('leaseModel')?.value || '');
@@ -1122,14 +1141,10 @@
 
     [
       'leaseDailyLeaseCost', 'leasePurchasePrice', 'leaseAcquisitionTaxRate',
-      'leaseOtherAcquisitionCost', 'leaseAnnualInsurance', 'leaseVehicleStatus',
-      'leaseEmptyStartDate', 'leaseEmptyDailyLoss'
+      'leaseOtherAcquisitionCost', 'leaseAnnualInsurance', 'leaseEmptyDailyLoss'
     ].forEach(id => {
       $(id)?.addEventListener('input', syncFormCalculations);
-      $(id)?.addEventListener('change', () => {
-        syncFormCalculations();
-        if (id === 'leaseVehicleStatus') updateEmptyFieldVisibility();
-      });
+      $(id)?.addEventListener('change', syncFormCalculations);
     });
 
     formEl?.addEventListener('submit', async event => {
@@ -1145,13 +1160,12 @@
 
         if (state.editingId) {
           leases.update(state.editingId, data);
-          if (!(await persistLeasesOrWarn())) return;
-          showToast('차량 정보가 수정되었습니다.');
         } else {
           leases.create(data);
-          if (!(await persistLeasesOrWarn())) return;
-          showToast('차량이 등록되었습니다.');
         }
+        erp?.syncAllVehicleStatusesFromContracts?.();
+        if (!(await persistLeasesOrWarn())) return;
+        showToast(state.editingId ? '차량 정보가 수정되었습니다.' : '차량이 등록되었습니다.');
 
         resetForm();
         renderList();

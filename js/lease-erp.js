@@ -128,19 +128,10 @@ const BremLeaseErp = (function () {
   function inferVehicleStatus(record, existing = null) {
     if (record.vehicleStatus) return String(record.vehicleStatus);
     if (existing?.vehicleStatus) return existing.vehicleStatus;
+    const renter = String(record.renter ?? existing?.renter ?? '').trim();
+    if (!renter) return BremLeaseProfit.VEHICLE_STATUSES.EMPTY;
     const end = normalizeDate(record.contractEndDate ?? existing?.contractEndDate);
     if (end && end < todayKey()) return BremLeaseProfit.VEHICLE_STATUSES.TERMINATED;
-    const contractType = normalizeContractType(record.contractType ?? existing?.contractType);
-    const draft = {
-      contractType,
-      vehicleCategory: normalizeVehicleCategory(record.vehicleCategory ?? existing?.vehicleCategory, contractType),
-      contractEndDate: end,
-      renter: record.renter ?? existing?.renter,
-      rentalAssignment: normalizeRentalAssignment(
-        record.rentalAssignment !== undefined ? record.rentalAssignment : existing?.rentalAssignment
-      )
-    };
-    if (isEmptyVehicle(draft)) return BremLeaseProfit.VEHICLE_STATUSES.EMPTY;
     return BremLeaseProfit.VEHICLE_STATUSES.OPERATING;
   }
 
@@ -264,7 +255,7 @@ const BremLeaseErp = (function () {
       record.unpaidAmount = unpaidDays * record.dailyChargeAmount;
     }
     if (record.vehicleStatus === BremLeaseProfit.VEHICLE_STATUSES.EMPTY && !record.emptyStartDate) {
-      record.emptyStartDate = record.returnDate || record.emptyStartDate;
+      record.emptyStartDate = record.returnDate || record.contractStartDate || todayKey();
     }
     return record;
   }
@@ -721,7 +712,106 @@ const BremLeaseErp = (function () {
       await BremStorage.ensureLeaseErpKeysLoaded();
     }
     await migrateLegacySettingsIfNeeded();
+    syncAllVehicleStatusesFromContracts();
     return { ok: true };
+  }
+
+  function isContractOperating(contract) {
+    if (!contract || !String(contract.driverName || '').trim()) return false;
+    const today = todayKey();
+    const start = normalizeDate(contract.startDate);
+    const end = normalizeDate(contract.endDate);
+    if (start && start > today) return false;
+    if (end && end < today) return false;
+    return true;
+  }
+
+  function getLatestContractForVehicle(vehicleId) {
+    if (!vehicleId) return null;
+    const list = contracts().getAll().filter(item => item.vehicleId === vehicleId);
+    if (!list.length) return null;
+    const active = list.find(item => isContractOperating(item));
+    if (active) return active;
+    return list.sort((a, b) => {
+      const byStart = String(b.startDate || '').localeCompare(String(a.startDate || ''));
+      if (byStart !== 0) return byStart;
+      return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+    })[0];
+  }
+
+  function hasOpenArrearForVehicle(vehicleId) {
+    if (!vehicleId) return false;
+    return arrears().getAll().some(item =>
+      item.vehicleId === vehicleId
+      && String(item.collectionStatus || '') !== ARREAR_STATUS.COMPLETED
+    );
+  }
+
+  function resolveRuntimeStatus(vehicle, contract) {
+    if (!vehicle) {
+      return { code: 'empty', label: '공차(로스)', operating: false };
+    }
+    if (hasOpenArrearForVehicle(vehicle.id)) {
+      return { code: 'unpaid', label: '미납중', operating: false };
+    }
+    if (isContractOperating(contract)) {
+      return { code: 'operating', label: '운행중', operating: true };
+    }
+    return { code: 'empty', label: '공차(로스)', operating: false };
+  }
+
+  function resolveEmptyStartOnTransition(vehicle, contract, runtime) {
+    const today = todayKey();
+    if (runtime.operating) return '';
+    const end = normalizeDate(contract?.endDate);
+    const start = normalizeDate(contract?.startDate);
+    const fallback = vehicle?.emptyStartDate
+      || normalizeDate(vehicle?.contractStartDate)
+      || String(vehicle?.createdAt || '').slice(0, 10)
+      || today;
+    if (end && end <= today) return end;
+    if (start && start > today) return fallback;
+    if (!contract || !String(contract.driverName || '').trim()) return fallback;
+    if (String(vehicle?.vehicleStatus || '') === BremLeaseProfit.VEHICLE_STATUSES.OPERATING) {
+      return today;
+    }
+    return fallback;
+  }
+
+  function syncVehicleFromContract(vehicle, contract = null) {
+    if (!vehicle) return null;
+    const resolvedContract = contract ?? getLatestContractForVehicle(vehicle.id);
+    const runtime = resolveRuntimeStatus(vehicle, resolvedContract);
+    const patch = {};
+    if (runtime.operating) {
+      patch.vehicleStatus = BremLeaseProfit.VEHICLE_STATUSES.OPERATING;
+      patch.renter = resolvedContract?.driverName || '';
+      patch.lesseePhone = resolvedContract?.driverPhone || '';
+      patch.dailyChargeAmount = normalizeMoney(resolvedContract?.dailyRent);
+      patch.dailyRent = patch.dailyChargeAmount;
+      patch.weeklyRent = normalizeMoney(resolvedContract?.weeklyRent) || patch.dailyChargeAmount * 7;
+      patch.emptyStartDate = '';
+    } else {
+      patch.vehicleStatus = BremLeaseProfit.VEHICLE_STATUSES.EMPTY;
+      patch.renter = '';
+      patch.lesseePhone = '';
+      patch.dailyChargeAmount = 0;
+      patch.dailyRent = 0;
+      patch.weeklyRent = 0;
+      patch.emptyStartDate = resolveEmptyStartOnTransition(vehicle, resolvedContract, runtime);
+    }
+    return vehicles().update(vehicle.id, patch);
+  }
+
+  function syncAllVehicleStatusesFromContracts() {
+    let changed = 0;
+    vehicles().getAll().forEach(vehicle => {
+      const before = `${vehicle.vehicleStatus}|${vehicle.emptyStartDate}|${vehicle.renter}|${vehicle.dailyChargeAmount}`;
+      const updated = syncVehicleFromContract(vehicle);
+      const after = `${updated?.vehicleStatus}|${updated?.emptyStartDate}|${updated?.renter}|${updated?.dailyChargeAmount}`;
+      if (before !== after) changed += 1;
+    });
+    return { changed };
   }
 
   async function persistAll() {
@@ -837,6 +927,13 @@ const BremLeaseErp = (function () {
     profitLogs,
     ensureLoaded,
     migrateLegacySettingsIfNeeded,
+    inferVehicleStatus,
+    isContractOperating,
+    getLatestContractForVehicle,
+    hasOpenArrearForVehicle,
+    resolveRuntimeStatus,
+    syncVehicleFromContract,
+    syncAllVehicleStatusesFromContracts,
     persistAll,
     saveProfitSnapshot,
     buildDashboardKpis,
