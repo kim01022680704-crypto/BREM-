@@ -187,14 +187,33 @@ const BremAdminLeaseMenus = (function () {
     renderDashboardVehicleOverview();
   }
 
+  function resolveVehicleUnpaidAmount(vehicleId, metrics) {
+    let amount = Number(metrics?.unpaidAmount || 0);
+    if (!erp() || !vehicleId) return amount;
+    const completed = calc()?.ARREAR_STATUS?.COMPLETED || 'completed';
+    const fromArrears = erp().arrears().getAll()
+      .filter(item => item.vehicleId === vehicleId && String(item.collectionStatus) !== completed)
+      .reduce((sum, item) => sum + Number(item.unpaidAmount || 0), 0);
+    return Math.max(amount, fromArrears);
+  }
+
+  function formatDashVehicleStatus(status, metrics, vehicleId) {
+    if (status.code === 'unpaid') {
+      const amount = resolveVehicleUnpaidAmount(vehicleId, metrics);
+      return amount > 0 ? `미납 ${formatMoney(amount)}` : '미납';
+    }
+    if (status.code === 'empty') return '공차';
+    return '운행';
+  }
+
   function renderDashboardVehicleOverview() {
     const rowsEl = $('leaseDashVehicleRows');
     if (!rowsEl || !erp() || !profit()) return;
     erp().syncAllVehicleStatusesFromContracts?.();
     const vehicles = erp().vehicles().getAll().map(item => {
       const contract = getLatestContractForVehicle(item.id);
-      const status = resolveContractStatus(contract, item.id);
       const synced = erp().vehicles().getById(item.id) || item;
+      const status = resolveContractStatus(contract, synced.id);
       const metrics = profit().computeErpMetrics(synced);
       return { item: synced, contract, status, metrics };
     }).sort((a, b) => {
@@ -205,35 +224,23 @@ const BremAdminLeaseMenus = (function () {
     });
 
     if (!vehicles.length) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 차량이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 차량이 없습니다.</td></tr>';
       return;
     }
 
     rowsEl.innerHTML = vehicles.map(({ item, contract, status, metrics }) => {
       const driver = contract?.driverName || item.renter || '-';
       const source = profit().vehicleSourceLabel(item);
-      const unpaidText = metrics.unpaidAmount > 0 ? formatMoney(metrics.unpaidAmount) : '-';
-      const emptyDaysText = status.code === 'empty' || metrics.emptyDays > 0
-        ? `${metrics.emptyDays || 0}일`
-        : '-';
-      const lossText = metrics.emptyLoss > 0 ? formatMoney(metrics.emptyLoss) : '-';
-      let actionBtn = `<button type="button" class="small-btn" data-dash-edit-vehicle="${escapeHtml(item.id)}">수정</button>`;
-      if (status.code === 'unpaid') {
-        actionBtn = `<button type="button" class="small-btn" data-dash-go-menu="arrears">미납</button>`;
-      } else if (status.code === 'empty') {
-        actionBtn = `<button type="button" class="small-btn" data-dash-go-menu="empty">공차</button>`;
-      }
+      const statusText = formatDashVehicleStatus(status, metrics, item.id);
       return `
         <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(status.code)}">
           <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
           <td>${escapeHtml(item.model || '-')}</td>
           <td>${escapeHtml(source)}</td>
           <td>${escapeHtml(driver)}</td>
-          <td><span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(status.label)}</span></td>
-          <td class="lease-money--warning">${unpaidText}</td>
-          <td class="lease-money--warning">${escapeHtml(emptyDaysText)}</td>
-          <td class="lease-money--warning">${lossText}</td>
-          <td>${actionBtn}</td>
+          <td class="lease-dash-vehicle-table__status">
+            <span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(statusText)}</span>
+          </td>
         </tr>
       `;
     }).join('');

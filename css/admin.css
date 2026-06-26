@@ -5031,6 +5031,17 @@ textarea {
   white-space: nowrap;
 }
 
+.lease-dash-vehicle-table__status {
+  text-align: right;
+  width: 1%;
+}
+
+.lease-dash-vehicle-table__status .lease-status-badge {
+  display: inline-block;
+  min-width: 4.5rem;
+  text-align: center;
+}
+
 .lease-dash-vehicle-row--unpaid td:first-child strong {
   color: #fde047;
 }
