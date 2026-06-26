@@ -148,6 +148,7 @@ const BremAdminLeaseMenus = (function () {
 
   function renderDashboard() {
     renderDashboardKpis();
+    paintDashboardVehicleOverview();
     void renderDashboardVehicleOverview();
   }
 
@@ -233,7 +234,7 @@ const BremAdminLeaseMenus = (function () {
     const seen = new Set();
     const result = [];
     const pushAll = (list = []) => {
-      list.forEach(item => {
+      (Array.isArray(list) ? list : []).forEach(item => {
         const id = String(item?.id || '').trim();
         if (!id || seen.has(id)) return;
         seen.add(id);
@@ -241,20 +242,18 @@ const BremAdminLeaseMenus = (function () {
       });
     };
 
-    if (erp()?.vehicles) pushAll(erp().vehicles().getAll());
-    if (!result.length && window.BremStorage?.readTableKey) {
+    pushAll(erp()?.vehicles?.().getAll?.());
+    if (window.BremStorage?.readTableKey) {
       pushAll(window.BremStorage.readTableKey('brem_lease_vehicles'));
     }
-    if (!result.length && window.BremStorage?.readTableKey) {
+    if (window.BremStorage?.readTableKey) {
       const legacy = window.BremStorage.readTableKey('brem_admin_leases') || [];
       legacy.forEach(item => {
         const normalized = erp()?.normalizeRecord?.(item) || item;
         if (normalized?.id) pushAll([normalized]);
       });
     }
-    if (!result.length && window.BremStorage?.leases?.getAll) {
-      pushAll(window.BremStorage.leases.getAll());
-    }
+    pushAll(window.BremStorage?.leases?.getAll?.());
 
     return result.sort((a, b) =>
       String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || ''), 'ko')
@@ -266,64 +265,47 @@ const BremAdminLeaseMenus = (function () {
     return String(vehicle?.vehicleCategory || '') === owned ? '브램리스' : '회사리스';
   }
 
-  function dashStatusFromVehicle(vehicle) {
-    if (!vehicle) return { code: 'empty', text: '공차' };
-    if (hasOpenArrear(vehicle.id)) {
-      const amount = Number(vehicle.unpaidAmount || 0);
-      return { code: 'unpaid', text: amount > 0 ? `미납 ${formatMoney(amount)}` : '미납' };
-    }
-    const unpaidDays = Math.max(0, Number(vehicle.unpaidDays || 0));
-    const unpaidAmount = Number(vehicle.unpaidAmount || 0);
-    if (unpaidDays > 0 || unpaidAmount > 0) {
-      return { code: 'unpaid', text: unpaidAmount > 0 ? `미납 ${formatMoney(unpaidAmount)}` : '미납' };
-    }
-    if (String(vehicle.vehicleStatus) === 'operating') {
-      return { code: 'operating', text: '운행' };
-    }
-    return { code: 'empty', text: '공차' };
-  }
-
   function paintDashboardVehicleOverview() {
     const rowsEl = $('leaseDashVehicleRows');
     if (!rowsEl) return;
-    const vehicles = getAllDashboardVehicles();
+    try {
+      const vehicles = getAllDashboardVehicles();
+      if (!vehicles.length) {
+        rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 차량이 없습니다.</td></tr>';
+        return;
+      }
 
-    if (!vehicles.length) {
-      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 차량이 없습니다.</td></tr>';
-      return;
-    }
-
-    rowsEl.innerHTML = vehicles.map(item => {
-      const status = dashStatusFromVehicle(item);
-      const driver = String(item.renter || '').trim() || '-';
-      const source = dashVehicleSourceLabel(item);
-      return `
+      rowsEl.innerHTML = vehicles.map(item => {
+        const contract = getLatestContractForVehicle(item.id);
+        const status = resolveDashboardVehicleStatus(item, contract);
+        const driver = String(contract?.driverName || item.renter || '').trim() || '-';
+        const source = dashVehicleSourceLabel(item);
+        return `
         <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(status.code)}">
           <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
           <td>${escapeHtml(item.model || '-')}</td>
           <td>${escapeHtml(source)}</td>
           <td>${escapeHtml(driver)}</td>
           <td class="lease-dash-vehicle-table__status">
-            <span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(status.text)}</span>
+            <span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(status.label)}</span>
           </td>
         </tr>
       `;
-    }).join('');
+      }).join('');
+    } catch (error) {
+      console.error('[BremAdminLeaseMenus] paintDashboardVehicleOverview failed', error);
+      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">차량 목록을 불러오지 못했습니다.</td></tr>';
+    }
   }
 
   async function renderDashboardVehicleOverview() {
-    const rowsEl = $('leaseDashVehicleRows');
-    if (!rowsEl) return;
+    if (!$('leaseDashVehicleRows')) return;
     try {
       if (erp()?.ensureLoaded) await erp().ensureLoaded();
-      if (window.BremStorage?.ensureLeaseErpKeysLoaded) {
-        await window.BremStorage.ensureLeaseErpKeysLoaded();
-      }
-      paintDashboardVehicleOverview();
     } catch (error) {
       console.error('[BremAdminLeaseMenus] renderDashboardVehicleOverview failed', error);
-      paintDashboardVehicleOverview();
     }
+    paintDashboardVehicleOverview();
   }
 
   function readCalcDraft() {
@@ -1428,11 +1410,15 @@ const BremAdminLeaseMenus = (function () {
     } catch (error) {
       console.error('[BremAdminLeaseMenus] ensureLoaded failed', error);
     }
-    fillVehicleSelect($('leaseContractVehicleId'));
-    fillVehicleSelect($('leaseCalcVehicleId'));
-    if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = currentWeekStart();
-    if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
-    updateLeaseDashWeekUi();
+    if (!init.bootstrapped) {
+      init.bootstrapped = true;
+      fillVehicleSelect($('leaseContractVehicleId'));
+      fillVehicleSelect($('leaseCalcVehicleId'));
+      if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = currentWeekStart();
+      if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
+      updateLeaseDashWeekUi();
+    }
+    await refresh();
     setMenu(state.menu || 'dashboard');
   }
 
@@ -1447,6 +1433,7 @@ const BremAdminLeaseMenus = (function () {
     fillVehicleSelect($('leaseContractVehicleId'));
     fillVehicleSelect($('leaseCalcVehicleId'));
     renderDashboardKpis();
+    paintDashboardVehicleOverview();
     await renderDashboardVehicleOverview();
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
