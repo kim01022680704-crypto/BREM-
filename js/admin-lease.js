@@ -1080,9 +1080,12 @@
     renderModelTypeList();
     refreshModelSelect($('leaseModel')?.value || '');
     if (window.BremLeaseErpPanels?.refresh) window.BremLeaseErpPanels.refresh();
-    if (window.BremAdminLeaseMenus?.refresh) window.BremAdminLeaseMenus.refresh();
-    else window.BremAdminLeaseMenus?.renderDashboardVehicleOverview?.();
     renderList();
+    if (window.BremAdminLeaseMenus?.refresh) {
+      await window.BremAdminLeaseMenus.refresh();
+    } else {
+      await window.BremAdminLeaseMenus?.renderDashboardVehicleOverview?.();
+    }
   }
 
   function bindEvents() {

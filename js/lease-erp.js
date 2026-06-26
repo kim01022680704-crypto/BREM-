@@ -348,9 +348,13 @@ const BremLeaseErp = (function () {
   }
 
   function normalizeContract(raw = {}, existing = null) {
-    const weeklyRent = normalizeMoney(raw.weeklyRent != null ? raw.weeklyRent : existing?.weeklyRent);
     let dailyRent = normalizeMoney(raw.dailyRent != null ? raw.dailyRent : existing?.dailyRent);
-    if (!dailyRent && weeklyRent) dailyRent = weeklyRent / 7;
+    let weeklyRent = normalizeMoney(raw.weeklyRent != null ? raw.weeklyRent : existing?.weeklyRent);
+    if (!dailyRent && weeklyRent) dailyRent = weeklyRent;
+    if (!weeklyRent && dailyRent) weeklyRent = dailyRent * 7;
+    if (dailyRent && weeklyRent && Math.abs(weeklyRent - dailyRent * 7) > 1) {
+      weeklyRent = dailyRent * 7;
+    }
     const rentalDays = Math.max(0, Math.round(normalizeMoney(
       raw.rentalDays != null ? raw.rentalDays : existing?.rentalDays
     )));
@@ -640,7 +644,7 @@ const BremLeaseErp = (function () {
       },
       removeById(id) {
         const list = store.getAll().filter(item => item.id !== id);
-        writeList(key, list);
+        writeList(key, list, { deletedRowIds: [id] });
       },
       async persist() {
         await persistKey(key);
@@ -694,7 +698,7 @@ const BremLeaseErp = (function () {
       migrationDone = true;
       return { migrated: 0, skipped: true };
     }
-    const legacy = BremStorage?.leases?.getAll?.() || readList(KEYS.legacy) || [];
+    const legacy = readList(KEYS.legacy) || [];
     if (!legacy.length) {
       migrationDone = true;
       return { migrated: 0, skipped: true };

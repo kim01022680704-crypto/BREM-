@@ -1647,11 +1647,11 @@
               <section class="lease-form-section">
                 <header class="lease-form-section__head">
                   <h3>③ 요금</h3>
-                  <p>주단위 후정산 기준 · 미납·회수는 미납/회수 메뉴에서 처리합니다.</p>
+                  <p>라이더부담 리스렌탈료는 1일 기준 · 주단위 후정산 · 미납·회수는 미납/회수 메뉴에서 처리합니다.</p>
                 </header>
                 <div class="lease-form-grid lease-form-grid--2col">
-                  <label>라이더부담 리스렌탈료<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="28000"></label>
-                  <label>일 요금<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동계산"></label>
+                  <label>라이더부담 리스렌탈료 (1일)<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="4000"></label>
+                  <label>주간 환산 (참고)<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동계산"></label>
                   <label>보험료(참고)<input type="text" id="leaseContractInsurance" readonly tabindex="-1" placeholder="차량 기준"></label>
                   <label>리스비(주, 참고)<input type="text" id="leaseContractLeaseCost" readonly tabindex="-1" placeholder="차량 기준"></label>
                   <label>보증금<input type="number" id="leaseContractDeposit" min="0" value="0" placeholder="0"></label>
@@ -1680,7 +1680,7 @@
                     <th>렌탈/리스자</th>
                     <th>연락처</th>
                     <th>계약기간</th>
-                    <th>라이더부담 리스렌탈료</th>
+                    <th>일 렌탈료</th>
                     <th>보증금</th>
                     <th>상태</th>
                     <th>관리</th>
@@ -1699,7 +1699,7 @@
           <div class="lease-calc-screen">
             <label class="lease-calc-vehicle-pick">차량 선택<select id="leaseCalcVehicleId"></select></label>
             <div class="lease-form-grid lease-form-grid--2col">
-              <label>라이더부담 리스렌탈료<input type="number" id="leaseCalcWeeklyRent" min="0" placeholder="0"></label>
+              <label>라이더부담 리스렌탈료 (1일)<input type="number" id="leaseCalcWeeklyRent" min="0" placeholder="0"></label>
               <label>실제 운행일수<input type="number" id="leaseCalcRentalDays" min="0" value="7"></label>
               <label>미납일수<input type="number" id="leaseCalcUnpaidDays" min="0" value="0"></label>
               <label>공차일수<input type="number" id="leaseCalcEmptyDays" min="0" value="0"></label>
@@ -1713,7 +1713,7 @@
             </div>
             <div class="lease-calc-grid">
               <div class="lease-calc-item"><span>일 렌탈료</span><strong class="lease-calc-value" id="leaseCalcDailyRent">0원</strong></div>
-              <div class="lease-calc-item"><span>라이더부담 리스렌탈료</span><strong class="lease-calc-value" id="leaseCalcWeeklyRentOut">0원</strong></div>
+              <div class="lease-calc-item"><span>주간 환산 (참고)</span><strong class="lease-calc-value" id="leaseCalcWeeklyRentOut">0원</strong></div>
               <div class="lease-calc-item"><span>렌탈 매출</span><strong class="lease-calc-value" id="leaseCalcRentalRevenue">0원</strong></div>
               <div class="lease-calc-item"><span>미납금</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcUnpaid">0원</strong></div>
               <div class="lease-calc-item"><span>공차손실</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcEmptyLoss">0원</strong></div>
@@ -3780,10 +3780,10 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>
   <script src="js/lease-rental-calc.js?v=20260630l"></script>
-  <script src="js/lease-erp.js?v=20260630l"></script>
-  <script src="js/admin-lease.js?v=20260630m"></script>
+  <script src="js/lease-erp.js?v=20260630q"></script>
+  <script src="js/admin-lease.js?v=20260630q"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260630o"></script>
+  <script src="js/admin-lease-menus.js?v=20260630r"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
