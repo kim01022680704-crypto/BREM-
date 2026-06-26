@@ -13,6 +13,7 @@ const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
 const noticesAdmin = require('./notices-admin');
+const leaseErpAdmin = require('./lease-erp-admin');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
 const riderAuth = require('./rider-auth');
@@ -600,6 +601,18 @@ app.delete('/api/admin/notices/:noticeId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '공지사항 삭제에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/lease-erp/upsert', async (req, res) => {
+  try {
+    const result = await leaseErpAdmin.upsertLeaseErpRows(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, upserted: result.upserted, deleted: result.deleted });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '리스 ERP 저장에 실패했습니다.' });
   }
 });
 

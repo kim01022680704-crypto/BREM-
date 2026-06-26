@@ -944,6 +944,31 @@ const BremStorage = (function () {
     return { ok: true, id: noticeId };
   }
 
+  async function persistLeaseErpTableViaServer(table, rows, options = {}) {
+    const postRows = () => adminRidersApi('/api/admin/lease-erp/upsert', {
+      method: 'POST',
+      body: JSON.stringify({
+        table,
+        rows: rows || [],
+        deletedIds: Array.isArray(options.deletedRowIds) ? options.deletedRowIds : []
+      })
+    });
+
+    let result = await postRows();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postRows();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '리스 ERP 저장에 실패했습니다.');
+    }
+    return result;
+  }
+
   async function fetchRiderNoticesFromServer() {
     const token = await resolveAdminAccessToken();
     if (!token) {
@@ -9594,6 +9619,7 @@ const BremStorage = (function () {
     ensureLeaseErpKeysLoaded,
     readTableKey,
     writeTableKey,
+    persistLeaseErpTableViaServer,
     ensureSectionLoaded,
     ensureCallsSinceDate,
     ensurePromotionCalculationCalls,

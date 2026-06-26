@@ -352,6 +352,29 @@ window.BremSupabaseStorageAdapter = (function () {
       if (!(await probeTable(table))) {
         throw new Error(`${table} 테이블이 없습니다. Supabase migration을 실행하세요.`);
       }
+      const LEASE_ERP_SERVER_TABLES = new Set([
+        'lease_vehicles',
+        'lease_contracts',
+        'lease_payments',
+        'lease_accidents',
+        'lease_maintenance',
+        'lease_profit_logs',
+        'lease_arrears'
+      ]);
+      const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
+      const rows = incremental?.length
+        ? incremental.map(toRow).filter(row => row?.id)
+        : (list || []).map(toRow).filter(row => row?.id);
+      if (LEASE_ERP_SERVER_TABLES.has(table) && window.BremStorageGuard?.isProductionMode?.()) {
+        const persistLease = window.BremStorage?.persistLeaseErpTableViaServer;
+        if (typeof persistLease === 'function') {
+          await persistLease(table, rows, options);
+          setCache(key, list);
+          window.BremDataCache?.set?.(key, list, { source: 'write' });
+          loadedTableKeys.add(key);
+          return;
+        }
+      }
       const UPSERT_ONLY_TABLES = new Set([
         'admin_calls',
         'daily_settlements',
@@ -366,12 +389,9 @@ window.BremSupabaseStorageAdapter = (function () {
         'lease_profit_logs',
         'lease_arrears'
       ]);
-      const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
       if (incremental?.length) {
-        const rows = incremental.map(toRow).filter(row => row?.id);
         await persistTableRowsIncremental(table, rows);
       } else if (UPSERT_ONLY_TABLES.has(table) && options.fullSync !== true) {
-        const rows = (list || []).map(toRow).filter(row => row?.id);
         await upsertRowsInChunks(table, rows);
       } else {
         await syncTableRows(table, list, toRow);
