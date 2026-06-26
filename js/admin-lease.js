@@ -1081,6 +1081,7 @@
     refreshModelSelect($('leaseModel')?.value || '');
     if (window.BremLeaseErpPanels?.refresh) window.BremLeaseErpPanels.refresh();
     if (window.BremAdminLeaseMenus?.refresh) window.BremAdminLeaseMenus.refresh();
+    else window.BremAdminLeaseMenus?.renderDashboardVehicleOverview?.();
     renderList();
   }
 
