@@ -229,56 +229,78 @@ const BremAdminLeaseMenus = (function () {
     }, { operating: 0, empty: 0, unpaid: 0 });
   }
 
-  function formatDashVehicleStatus(status, metrics, vehicleId) {
-    if (status.code === 'unpaid') {
-      const amount = resolveVehicleUnpaidAmount(vehicleId, metrics);
-      return amount > 0 ? `미납 ${formatMoney(amount)}` : '미납';
+  function dashVehicleSourceLabel(vehicle) {
+    const owned = profit()?.VEHICLE_CATEGORIES?.COMPANY_OWNED || 'company_owned';
+    return String(vehicle?.vehicleCategory || '') === owned ? '브램리스' : '회사리스';
+  }
+
+  function dashStatusFromVehicle(vehicle) {
+    if (!vehicle) return { code: 'empty', text: '공차' };
+    if (hasOpenArrear(vehicle.id)) {
+      const amount = Number(vehicle.unpaidAmount || 0);
+      return { code: 'unpaid', text: amount > 0 ? `미납 ${formatMoney(amount)}` : '미납' };
     }
-    if (status.code === 'empty') return '공차';
-    return '운행';
+    const unpaidDays = Math.max(0, Number(vehicle.unpaidDays || 0));
+    const unpaidAmount = Number(vehicle.unpaidAmount || 0);
+    if (unpaidDays > 0 || unpaidAmount > 0) {
+      return { code: 'unpaid', text: unpaidAmount > 0 ? `미납 ${formatMoney(unpaidAmount)}` : '미납' };
+    }
+    if (String(vehicle.vehicleStatus) === 'operating') {
+      return { code: 'operating', text: '운행' };
+    }
+    return { code: 'empty', text: '공차' };
+  }
+
+  function paintDashboardVehicleOverview() {
+    const rowsEl = $('leaseDashVehicleRows');
+    if (!rowsEl || !erp()) return;
+    const vehicles = erp().vehicles().getAll().slice().sort((a, b) =>
+      String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || ''), 'ko')
+    );
+
+    if (!vehicles.length) {
+      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 차량이 없습니다.</td></tr>';
+      return;
+    }
+
+    rowsEl.innerHTML = vehicles.map(item => {
+      const status = dashStatusFromVehicle(item);
+      const driver = String(item.renter || '').trim() || '-';
+      const source = dashVehicleSourceLabel(item);
+      return `
+        <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(status.code)}">
+          <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
+          <td>${escapeHtml(item.model || '-')}</td>
+          <td>${escapeHtml(source)}</td>
+          <td>${escapeHtml(driver)}</td>
+          <td class="lease-dash-vehicle-table__status">
+            <span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(status.text)}</span>
+          </td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function renderDashboardVehicleOverview() {
     const rowsEl = $('leaseDashVehicleRows');
-    if (!rowsEl || !erp() || !profit()) return;
-    try {
-      const vehicles = erp().vehicles().getAll().map(item => {
-        const contract = getLatestContractForVehicle(item.id);
-        const status = resolveDashboardVehicleStatus(item, contract);
-        const metrics = profit().computeErpMetrics(item);
-        return { item, contract, status, metrics };
-      }).sort((a, b) => {
-        const order = { unpaid: 0, empty: 1, operating: 2 };
-        const diff = (order[a.status.code] ?? 9) - (order[b.status.code] ?? 9);
-        if (diff !== 0) return diff;
-        return String(a.item.vehicleNumber || '').localeCompare(String(b.item.vehicleNumber || ''), 'ko');
-      });
-
-      if (!vehicles.length) {
-        rowsEl.innerHTML = '<tr><td colspan="5" class="empty">등록된 차량이 없습니다.</td></tr>';
-        return;
+    if (!rowsEl || !erp()) return;
+    const run = () => {
+      try {
+        paintDashboardVehicleOverview();
+      } catch (error) {
+        console.error('[BremAdminLeaseMenus] renderDashboardVehicleOverview failed', error);
+        rowsEl.innerHTML = '<tr><td colspan="5" class="empty">차량 현황을 불러오지 못했습니다.</td></tr>';
       }
-
-      rowsEl.innerHTML = vehicles.map(({ item, contract, status, metrics }) => {
-        const driver = contract?.driverName || item.renter || '-';
-        const source = profit().vehicleSourceLabel(item);
-        const statusText = formatDashVehicleStatus(status, metrics, item.id);
-        return `
-          <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(status.code)}">
-            <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
-            <td>${escapeHtml(item.model || '-')}</td>
-            <td>${escapeHtml(source)}</td>
-            <td>${escapeHtml(driver)}</td>
-            <td class="lease-dash-vehicle-table__status">
-              <span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(statusText)}</span>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    } catch (error) {
-      console.error('[BremAdminLeaseMenus] renderDashboardVehicleOverview failed', error);
-      rowsEl.innerHTML = '<tr><td colspan="5" class="empty">차량 현황을 불러오지 못했습니다.</td></tr>';
+    };
+    const loadPromise = erp().ensureLoaded?.();
+    if (loadPromise && typeof loadPromise.then === 'function') {
+      void loadPromise.then(run).catch(error => {
+        console.error('[BremAdminLeaseMenus] ensureLoaded failed', error);
+        run();
+      });
+      return;
     }
+    run();
   }
 
   function readCalcDraft() {
