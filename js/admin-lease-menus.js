@@ -147,6 +147,11 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function renderDashboard() {
+    renderDashboardKpis();
+    renderDashboardVehicleOverview();
+  }
+
+  function renderDashboardKpis() {
     if (!erp() || !profit()) return;
     erp().syncAllVehicleStatusesFromContracts?.();
     updateLeaseDashWeekUi();
@@ -174,17 +179,15 @@ const BremAdminLeaseMenus = (function () {
       unpaidTotal += m.unpaidAmount;
       emptyLossTotal += m.emptyLoss;
     });
-    const emptyCount = vehicles.filter(item => String(item.vehicleStatus) === 'empty').length;
-    const operatingCount = vehicles.filter(item => String(item.vehicleStatus) === 'operating').length;
+    const statusCounts = countDashboardVehicleStatuses(vehicles);
     setText('leaseStatTotal', String(vehicles.length));
-    setText('leaseKpiOperating', String(operatingCount || kpis.counts.operating || 0));
-    setText('leaseStatEmpty', String(emptyCount));
+    setText('leaseKpiOperating', String(statusCounts.operating || kpis.counts.operating || 0));
+    setText('leaseStatEmpty', String(statusCounts.empty));
     setText('leaseHeroUnpaid', formatMoney(unpaidTotal || kpis.totalUnpaid));
     setText('leaseHeroWeekProfit', formatMoney(weekProfitFromLogs ?? weekProfitFallback ?? kpis.weekly?.actualProfit ?? 0));
     setText('leaseKpiMonthProfit', formatMoney(monthProfitFromLogs ?? monthProfitFallback ?? kpis.monthly?.actualProfit ?? 0));
     setText('leaseHeroEmptyLoss', formatMoney(kpis.weekly?.emptyLossTotal ?? emptyLossTotal));
     setText('leaseDashDeficitCount', String(deficitCount));
-    renderDashboardVehicleOverview();
   }
 
   function resolveVehicleUnpaidAmount(vehicleId, metrics) {
@@ -195,6 +198,35 @@ const BremAdminLeaseMenus = (function () {
       .filter(item => item.vehicleId === vehicleId && String(item.collectionStatus) !== completed)
       .reduce((sum, item) => sum + Number(item.unpaidAmount || 0), 0);
     return Math.max(amount, fromArrears);
+  }
+
+  function resolveDashboardVehicleStatus(vehicle, contract) {
+    if (!vehicle) return { code: 'empty', label: '공차' };
+    if (hasOpenArrear(vehicle.id)) {
+      return { code: 'unpaid', label: '미납' };
+    }
+    const unpaidDays = Math.max(0, Number(vehicle.unpaidDays || 0));
+    const unpaidAmount = Number(vehicle.unpaidAmount || 0);
+    if (unpaidDays > 0 || unpaidAmount > 0) {
+      return { code: 'unpaid', label: '미납' };
+    }
+    const driver = String(contract?.driverName || vehicle.renter || '').trim();
+    const ended = String(contract?.status || '') === (erp()?.CONTRACT_STATUS?.ENDED || 'ended');
+    if (driver && !ended) {
+      return { code: 'operating', label: '운행' };
+    }
+    return { code: 'empty', label: '공차' };
+  }
+
+  function countDashboardVehicleStatuses(vehicles = []) {
+    return vehicles.reduce((counts, item) => {
+      const contract = getLatestContractForVehicle(item.id);
+      const code = resolveDashboardVehicleStatus(item, contract).code;
+      if (code === 'operating') counts.operating += 1;
+      else if (code === 'unpaid') counts.unpaid += 1;
+      else counts.empty += 1;
+      return counts;
+    }, { operating: 0, empty: 0, unpaid: 0 });
   }
 
   function formatDashVehicleStatus(status, metrics, vehicleId) {
@@ -210,13 +242,11 @@ const BremAdminLeaseMenus = (function () {
     const rowsEl = $('leaseDashVehicleRows');
     if (!rowsEl || !erp() || !profit()) return;
     try {
-      erp().syncAllVehicleStatusesFromContracts?.();
       const vehicles = erp().vehicles().getAll().map(item => {
         const contract = getLatestContractForVehicle(item.id);
-        const synced = erp().vehicles().getById(item.id) || item;
-        const status = resolveContractStatus(contract, synced.id);
-        const metrics = profit().computeErpMetrics(synced);
-        return { item: synced, contract, status, metrics };
+        const status = resolveDashboardVehicleStatus(item, contract);
+        const metrics = profit().computeErpMetrics(item);
+        return { item, contract, status, metrics };
       }).sort((a, b) => {
         const order = { unpaid: 0, empty: 1, operating: 2 };
         const diff = (order[a.status.code] ?? 9) - (order[b.status.code] ?? 9);
@@ -1220,7 +1250,7 @@ const BremAdminLeaseMenus = (function () {
       if ($('leaseWeekStart')) $('leaseWeekStart').value = weekStart;
       state.weekStart = weekStart;
       updateLeaseDashWeekUi();
-      renderDashboard();
+      renderDashboardKpis();
       renderWeekly();
       showToast('주간 기준이 저장되었습니다. (수요일~화요일)');
     });
@@ -1333,6 +1363,7 @@ const BremAdminLeaseMenus = (function () {
     renderArrears,
     renderEmpty,
     renderDashboard,
+    renderDashboardKpis,
     renderDashboardVehicleOverview,
     updateLeaseDashWeekUi,
     currentWeekStart,
