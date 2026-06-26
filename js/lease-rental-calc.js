@@ -15,7 +15,7 @@ const BremLeaseRentalCalc = (function () {
 
   function money(value) {
     const num = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
-    return Number.isFinite(num) ? num : 0;
+    return Number.isFinite(num) ? Math.round(num) : 0;
   }
 
   function roundDays(value) {
@@ -24,12 +24,12 @@ const BremLeaseRentalCalc = (function () {
 
   function dailyFromWeekly(weeklyRent) {
     const weekly = money(weeklyRent);
-    return weekly > 0 ? weekly / 7 : 0;
+    return weekly > 0 ? Math.round(weekly / 7) : 0;
   }
 
   function weeklyFromDaily(dailyRent) {
     const daily = money(dailyRent);
-    return daily > 0 ? daily * 7 : 0;
+    return daily > 0 ? Math.round(daily * 7) : 0;
   }
 
   function daysInclusive(startDate, endDate) {

@@ -37,7 +37,7 @@ const BremLeaseProfit = (function () {
 
   function money(value) {
     const num = Number(value);
-    return Number.isFinite(num) ? num : 0;
+    return Number.isFinite(num) ? Math.round(num) : 0;
   }
 
   function todayKey() {

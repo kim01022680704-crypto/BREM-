@@ -50,7 +50,7 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function formatMoney(value) {
-    const num = Number(value || 0);
+    const num = Math.round(Number(value || 0));
     if (!num && num !== 0) return '-';
     return `${num.toLocaleString('ko-KR')}원`;
   }

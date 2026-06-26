@@ -1296,6 +1296,61 @@
     }
   }
 
+  function enhanceAdminPeriodDateInputs() {
+    const root = document.getElementById('adminApp');
+    if (!root) return;
+    root.querySelectorAll('input[type="date"]:not([data-admin-date-enhanced])').forEach(input => {
+      input.dataset.adminDateEnhanced = 'true';
+      const parentLabel = input.closest('label');
+      const currentValue = input.value;
+      const inputId = input.id || `adminDate_${Math.random().toString(36).slice(2, 9)}`;
+      if (!input.id) input.id = inputId;
+
+      input.type = 'hidden';
+      input.classList.remove('admin-period-input');
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'call-date-picker-btn';
+      button.dataset.callDateTrigger = '';
+      button.dataset.callDateTarget = inputId;
+
+      const labelSpan = document.createElement('span');
+      labelSpan.id = callDateLabelId(inputId);
+      labelSpan.textContent = currentValue ? formatDate(currentValue) : '날짜 선택';
+      button.appendChild(labelSpan);
+
+      if (parentLabel) {
+        parentLabel.classList.add('call-date-field');
+        const existingSpan = parentLabel.querySelector(':scope > span');
+        if (!existingSpan) {
+          const inlineText = Array.from(parentLabel.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent.trim())
+            .join('')
+            .trim();
+          Array.from(parentLabel.childNodes).forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) node.remove();
+          });
+          if (inlineText) {
+            const span = document.createElement('span');
+            span.textContent = inlineText;
+            parentLabel.insertBefore(span, input);
+          }
+        }
+        parentLabel.insertBefore(button, input);
+      } else {
+        const wrap = document.createElement('label');
+        wrap.className = 'call-date-field';
+        input.parentNode?.insertBefore(wrap, input);
+        wrap.appendChild(button);
+        wrap.appendChild(input);
+      }
+
+      refreshCallDateLabel(inputId);
+    });
+  }
+
   function initCallDateFields() {
     PLATFORMS.forEach(platform => {
       const date = today();
@@ -4640,6 +4695,7 @@
     setupTargetMonthPicker();
     setupAdminWeekPicker();
     setupCallDatePicker();
+    enhanceAdminPeriodDateInputs();
     initTableSorting();
 
     document.addEventListener('brem-admin-toast', event => {

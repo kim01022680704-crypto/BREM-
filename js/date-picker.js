@@ -305,6 +305,8 @@ const BremDatePicker = (function () {
         state.active.hiddenInput.value = value;
         state.active.refreshButtonLabel?.();
         state.active.onSelect?.(value);
+        state.active.hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+        state.active.hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
         close();
         return;
       }

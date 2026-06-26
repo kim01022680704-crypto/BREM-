@@ -29,6 +29,11 @@ const BremLeaseErp = (function () {
 
   function normalizeMoney(value) {
     const num = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
+    return Number.isFinite(num) ? Math.round(num) : 0;
+  }
+
+  function normalizeRate(value) {
+    const num = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
     return Number.isFinite(num) ? num : 0;
   }
 
@@ -167,7 +172,7 @@ const BremLeaseErp = (function () {
     const unpaidDays = Math.max(0, Math.round(normalizeMoney(
       raw.unpaidDays != null ? raw.unpaidDays : existing?.unpaidDays
     )));
-    const acquisitionTaxRate = normalizeMoney(
+    const acquisitionTaxRate = normalizeRate(
       raw.acquisitionTaxRate != null ? raw.acquisitionTaxRate : existing?.acquisitionTaxRate
     );
     const purchasePrice = normalizeMoney(raw.purchasePrice != null ? raw.purchasePrice : existing?.purchasePrice);

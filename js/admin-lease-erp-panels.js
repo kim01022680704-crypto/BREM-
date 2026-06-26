@@ -14,7 +14,7 @@ const BremLeaseErpPanels = (function () {
   }
 
   function formatMoney(value) {
-    const num = Number(value || 0);
+    const num = Math.round(Number(value || 0));
     if (!num) return '-';
     return `${num.toLocaleString('ko-KR')}원`;
   }

@@ -97,7 +97,7 @@
   }
 
   function number(value) {
-    return Number(value || 0).toLocaleString('ko-KR');
+    return Math.round(Number(value || 0)).toLocaleString('ko-KR');
   }
 
   function formatDate(value) {
@@ -106,7 +106,7 @@
   }
 
   function formatMoney(value) {
-    const num = Number(value || 0);
+    const num = Math.round(Number(value || 0));
     if (!num) return '-';
     return `${number(num)}원`;
   }
