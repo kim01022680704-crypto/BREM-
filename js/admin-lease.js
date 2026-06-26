@@ -137,7 +137,7 @@
     document.querySelectorAll('[data-lease-field="lease-company"], [data-lease-field="daily-lease-cost"], [data-lease-field="weekly-lease-cost"]').forEach(el => {
       el.hidden = owned;
     });
-    document.querySelectorAll('[data-lease-field="vehicle-price"], [data-lease-field="acquisition-tax-rate"], [data-lease-field="acquisition-tax-amount"], [data-lease-field="other-acquisition-cost"], [data-lease-field="total-acquisition-cost"], [data-lease-field="daily-owned-cost"], [data-lease-field="weekly-owned-cost"]').forEach(el => {
+    document.querySelectorAll('[data-lease-field="vehicle-price"], [data-lease-field="acquisition-tax-rate"], [data-lease-field="acquisition-tax-amount"], [data-lease-field="other-acquisition-cost"], [data-lease-field="annual-insurance"], [data-lease-field="total-acquisition-cost"], [data-lease-field="daily-owned-cost"], [data-lease-field="weekly-owned-cost"]').forEach(el => {
       el.hidden = !owned;
     });
     updateEmptyFieldVisibility();
@@ -153,9 +153,7 @@
   function buildDraftFromForm() {
     const erpMode = readErpMode();
     const contractType = readFormContractType();
-    const vehicleCategory = erpMode === 'company_owned'
-      ? 'company_owned'
-      : (contractType === leases.CONTRACT_TYPES.RENTAL ? 'external_rental' : 'external_lease');
+    const vehicleCategory = erpMode === 'company_owned' ? 'company_owned' : 'external_lease';
     return leases.normalizeRecord({
       vehicleCategory,
       contractType,
@@ -171,8 +169,10 @@
       purchasePrice: $('leasePurchasePrice')?.value || '',
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
       otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
+      annualInsuranceCost: $('leaseAnnualInsurance')?.value || '',
       vehicleStatus: $('leaseVehicleStatus')?.value || '',
       emptyStartDate: $('leaseEmptyStartDate')?.value || '',
+      emptyDailyLoss: $('leaseEmptyDailyLoss')?.value || '',
       memo: $('leaseMemo')?.value || ''
     });
   }
@@ -181,6 +181,10 @@
     const profitApi = window.BremLeaseProfit;
     const draft = buildDraftFromForm();
     const metrics = profitApi?.computeErpMetrics?.(draft) || {};
+    const hintDraft = leases.normalizeRecord({ ...draft, emptyDailyLoss: 0 });
+    const hintMetrics = draft.vehicleStatus === 'empty'
+      ? (profitApi?.computeErpMetrics?.(hintDraft) || {})
+      : {};
     const setVal = (id, value) => {
       const el = $(id);
       if (el) el.value = value || value === 0 ? number(value) : '';
@@ -191,6 +195,13 @@
     setVal('leaseDailyOwnedCost', metrics.dailyCost);
     setVal('leaseWeeklyOwnedCost', metrics.weeklyCost);
     setVal('leaseEmptyLossPreview', metrics.emptyLoss);
+
+    const emptyDailyEl = $('leaseEmptyDailyLoss');
+    if (emptyDailyEl && !emptyDailyEl.value && hintMetrics.emptyDailyLoss) {
+      emptyDailyEl.placeholder = `자동: ${number(hintMetrics.emptyDailyLoss)}원/일`;
+    } else if (emptyDailyEl && !emptyDailyEl.value) {
+      emptyDailyEl.placeholder = '자동(원가/보험)';
+    }
 
     const setText = (id, value) => {
       const el = $(id);
@@ -320,7 +331,7 @@
       statusText = '회사소유리스만 표시 중';
       statusClass = 'lease-filter-status lease-filter-status--rental';
     } else if (state.erpMode === 'company_lease_rental') {
-      statusText = '회사리스/렌탈만 표시 중';
+      statusText = '회사리스만 표시 중';
       statusClass = 'lease-filter-status lease-filter-status--lease';
     }
 
@@ -533,9 +544,7 @@
   function readFormData() {
     const erpMode = readErpMode();
     const contractType = readFormContractType();
-    const vehicleCategory = erpMode === 'company_owned'
-      ? 'company_owned'
-      : (contractType === leases.CONTRACT_TYPES.RENTAL ? 'external_rental' : 'external_lease');
+    const vehicleCategory = erpMode === 'company_owned' ? 'company_owned' : 'external_lease';
     return {
       contractType,
       vehicleCategory,
@@ -552,8 +561,10 @@
       purchasePrice: $('leasePurchasePrice')?.value || '',
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
       otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
+      annualInsuranceCost: $('leaseAnnualInsurance')?.value || '',
       vehicleStatus: $('leaseVehicleStatus')?.value || '',
       emptyStartDate: $('leaseEmptyStartDate')?.value || '',
+      emptyDailyLoss: $('leaseEmptyDailyLoss')?.value || '',
       memo: $('leaseMemo')?.value || ''
     };
   }
@@ -590,8 +601,10 @@
     if ($('leasePurchasePrice')) $('leasePurchasePrice').value = item.purchasePrice || '';
     if ($('leaseAcquisitionTaxRate')) $('leaseAcquisitionTaxRate').value = item.acquisitionTaxRate || '';
     if ($('leaseOtherAcquisitionCost')) $('leaseOtherAcquisitionCost').value = item.otherAcquisitionCost || '';
+    if ($('leaseAnnualInsurance')) $('leaseAnnualInsurance').value = item.annualInsuranceCost || '';
     if ($('leaseVehicleStatus')) $('leaseVehicleStatus').value = item.vehicleStatus || 'operating';
     if ($('leaseEmptyStartDate')) $('leaseEmptyStartDate').value = item.emptyStartDate || '';
+    if ($('leaseEmptyDailyLoss')) $('leaseEmptyDailyLoss').value = item.emptyDailyLoss || '';
     $('leaseMemo').value = item.memo || '';
     refreshLeaseDateLabels();
     syncFormCalculations();
@@ -688,7 +701,7 @@
           : state.erpMode === 'company_owned'
             ? '등록된 회사소유리스가 없습니다.'
             : state.erpMode === 'company_lease_rental'
-              ? '등록된 회사리스/렌탈이 없습니다.'
+              ? '등록된 회사리스가 없습니다.'
               : '등록된 차량이 없습니다.';
       rowsEl.innerHTML = `<tr><td colspan="16" class="empty">${emptyText}</td></tr>`;
       renderKpis();
@@ -916,7 +929,7 @@
         LEASE_RENTAL_EXPORT_HEADERS,
         ...leaseRental.map(buildExportRow)
       ]);
-      XLSX.utils.book_append_sheet(workbook, sheet, '회사리스렌탈');
+      XLSX.utils.book_append_sheet(workbook, sheet, '회사리스');
     }
     if (owned.length) {
       const sheet = XLSX.utils.aoa_to_sheet([
@@ -1030,7 +1043,8 @@
 
     [
       'leaseDailyLeaseCost', 'leasePurchasePrice', 'leaseAcquisitionTaxRate',
-      'leaseOtherAcquisitionCost', 'leaseVehicleStatus', 'leaseEmptyStartDate'
+      'leaseOtherAcquisitionCost', 'leaseAnnualInsurance', 'leaseVehicleStatus',
+      'leaseEmptyStartDate', 'leaseEmptyDailyLoss'
     ].forEach(id => {
       $(id)?.addEventListener('input', syncFormCalculations);
       $(id)?.addEventListener('change', () => {

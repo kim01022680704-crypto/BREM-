@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260630g">
+  <link rel="stylesheet" href="css/admin.css?v=20260630h">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1158,7 +1158,7 @@
             <div class="lease-filter-panel">
               <div class="lease-filter-tabs" role="tablist" aria-label="리스 ERP 구분">
                 <button type="button" class="lease-filter-btn active" data-lease-erp-mode="all" role="tab" aria-selected="true">전체</button>
-                <button type="button" class="lease-filter-btn lease-filter-btn--lease" data-lease-erp-mode="company_lease_rental" role="tab" aria-selected="false">회사리스/렌탈</button>
+                <button type="button" class="lease-filter-btn lease-filter-btn--lease" data-lease-erp-mode="company_lease_rental" role="tab" aria-selected="false">회사리스</button>
                 <button type="button" class="lease-filter-btn lease-filter-btn--rental" data-lease-erp-mode="company_owned" role="tab" aria-selected="false">회사소유리스</button>
               </div>
               <p class="lease-filter-status" id="leaseFilterStatus">전체 목록 표시 중</p>
@@ -1192,15 +1192,15 @@
               <section class="lease-form-section">
                 <header class="lease-form-section__head">
                   <h3>① 구분 선택</h3>
-                  <p>회사리스/렌탈과 회사소유리스는 입력 항목·계산식이 다릅니다.</p>
+                  <p>회사리스와 회사소유리스는 입력 항목·계산식이 다릅니다.</p>
                 </header>
                 <fieldset class="lease-type-fieldset">
-                  <legend>ERP 구분</legend>
+                  <legend>구분</legend>
                   <label class="lease-type-option">
                     <input type="radio" name="leaseErpMode" value="company_lease_rental" checked>
                     <span class="lease-type-chip lease-type-chip--lease">
                       <span class="lease-type-chip__mark">✓</span>
-                      <span class="lease-type-chip__label">회사리스/렌탈</span>
+                      <span class="lease-type-chip__label">회사리스</span>
                     </span>
                   </label>
                   <label class="lease-type-option">
@@ -1211,7 +1211,7 @@
                     </span>
                   </label>
                 </fieldset>
-                <fieldset class="lease-type-fieldset" data-lease-form-section="kind">
+                <fieldset class="lease-type-fieldset" data-lease-form-section="kind" hidden aria-hidden="true">
                   <legend>종류</legend>
                   <label class="lease-type-option">
                     <input type="radio" name="leaseContractType" value="lease" checked>
@@ -1283,7 +1283,7 @@
               <section class="lease-form-section" data-erp-only="company_owned" hidden>
                 <header class="lease-form-section__head">
                   <h3>③ 취득 · 원가</h3>
-                  <p>합계 ÷ 365 = 하루원가 · 주간원가 = 하루원가 × 7</p>
+                  <p>취득원가에 연간 보험비 포함 · 합계 ÷ 365 = 하루원가</p>
                 </header>
                 <div class="lease-form-grid">
                   <label data-lease-field="vehicle-price">
@@ -1301,6 +1301,10 @@
                   <label data-lease-field="other-acquisition-cost">
                     기타비용
                     <input type="number" id="leaseOtherAcquisitionCost" min="0" placeholder="0">
+                  </label>
+                  <label data-lease-field="annual-insurance">
+                    보험비(연간)
+                    <input type="number" id="leaseAnnualInsurance" min="0" placeholder="0">
                   </label>
                   <label data-lease-field="total-acquisition-cost">
                     합계
@@ -1341,7 +1345,11 @@
                     <input type="hidden" id="leaseEmptyStartDate">
                   </label>
                   <label data-lease-field="empty">
-                    공차손실
+                    공차손실(일)
+                    <input type="number" id="leaseEmptyDailyLoss" min="0" placeholder="자동(원가/보험)">
+                  </label>
+                  <label data-lease-field="empty">
+                    공차손실 합계
                     <input type="text" id="leaseEmptyLossPreview" readonly tabindex="-1" placeholder="자동계산">
                   </label>
                   <label class="lease-form-memo">
@@ -1617,7 +1625,7 @@
                   <p>주단위 후정산 기준 · 미납·회수는 미납/회수 메뉴에서 처리합니다.</p>
                 </header>
                 <div class="lease-form-grid lease-form-grid--2col">
-                  <label>주 렌탈료 / 리스나간금<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="28000"></label>
+                  <label>라이더부담 리스렌탈료<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="28000"></label>
                   <label>일 요금<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동계산"></label>
                   <label>보험료(참고)<input type="text" id="leaseContractInsurance" readonly tabindex="-1" placeholder="차량 기준"></label>
                   <label>리스비(주, 참고)<input type="text" id="leaseContractLeaseCost" readonly tabindex="-1" placeholder="차량 기준"></label>
@@ -1647,7 +1655,7 @@
                     <th>렌탈/리스자</th>
                     <th>연락처</th>
                     <th>계약기간</th>
-                    <th>주요금</th>
+                    <th>라이더부담 리스렌탈료</th>
                     <th>보증금</th>
                     <th>상태</th>
                     <th>관리</th>
@@ -1666,7 +1674,7 @@
           <div class="lease-calc-screen">
             <label class="lease-calc-vehicle-pick">차량 선택<select id="leaseCalcVehicleId"></select></label>
             <div class="lease-form-grid lease-form-grid--2col">
-              <label>주 렌탈료<input type="number" id="leaseCalcWeeklyRent" min="0" placeholder="0"></label>
+              <label>라이더부담 리스렌탈료<input type="number" id="leaseCalcWeeklyRent" min="0" placeholder="0"></label>
               <label>실제 운행일수<input type="number" id="leaseCalcRentalDays" min="0" value="7"></label>
               <label>미납일수<input type="number" id="leaseCalcUnpaidDays" min="0" value="0"></label>
               <label>공차일수<input type="number" id="leaseCalcEmptyDays" min="0" value="0"></label>
@@ -1680,7 +1688,7 @@
             </div>
             <div class="lease-calc-grid">
               <div class="lease-calc-item"><span>일 렌탈료</span><strong class="lease-calc-value" id="leaseCalcDailyRent">0원</strong></div>
-              <div class="lease-calc-item"><span>주 렌탈료</span><strong class="lease-calc-value" id="leaseCalcWeeklyRentOut">0원</strong></div>
+              <div class="lease-calc-item"><span>라이더부담 리스렌탈료</span><strong class="lease-calc-value" id="leaseCalcWeeklyRentOut">0원</strong></div>
               <div class="lease-calc-item"><span>렌탈 매출</span><strong class="lease-calc-value" id="leaseCalcRentalRevenue">0원</strong></div>
               <div class="lease-calc-item"><span>미납금</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcUnpaid">0원</strong></div>
               <div class="lease-calc-item"><span>공차손실</span><strong class="lease-calc-value lease-money--warning" id="leaseCalcEmptyLoss">0원</strong></div>
@@ -1787,7 +1795,7 @@
           </div>
           <div class="bulk-preview-wrap">
             <p class="bulk-preview-summary">전체 <strong id="leaseBulkV3Total">0</strong>건 · 등록 가능 <strong id="leaseBulkV3Valid">0</strong>건 · 오류 <strong id="leaseBulkV3Error">0</strong>건</p>
-            <div class="table-wrap"><table class="bulk-preview-table"><thead><tr><th>행</th><th>차량번호</th><th>기사명</th><th>주렌탈료</th><th>예상순이익</th><th>결과</th></tr></thead><tbody id="leaseBulkV3PreviewBody"></tbody></table></div>
+            <div class="table-wrap"><table class="bulk-preview-table"><thead><tr><th>행</th><th>차량번호</th><th>기사명</th><th>라이더부담 리스렌탈료</th><th>예상순이익</th><th>결과</th></tr></thead><tbody id="leaseBulkV3PreviewBody"></tbody></table></div>
           </div>
         </article>
         <article class="card lease-bulk-card" hidden>
@@ -3745,17 +3753,17 @@
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
-  <script src="js/lease-profit.js?v=20260630g"></script>
-  <script src="js/lease-rental-calc.js?v=20260630g"></script>
-  <script src="js/lease-erp.js?v=20260630g"></script>
-  <script src="js/admin-lease.js?v=20260630g"></script>
-  <script src="js/admin-lease-erp-panels.js?v=20260630g"></script>
-  <script src="js/admin-lease-menus.js?v=20260630g"></script>
+  <script src="js/lease-profit.js?v=20260630h"></script>
+  <script src="js/lease-rental-calc.js?v=20260630h"></script>
+  <script src="js/lease-erp.js?v=20260630h"></script>
+  <script src="js/admin-lease.js?v=20260630h"></script>
+  <script src="js/admin-lease-erp-panels.js?v=20260630h"></script>
+  <script src="js/admin-lease-menus.js?v=20260630h"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260630g"></script>
+  <script src="js/admin.js?v=20260630h"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

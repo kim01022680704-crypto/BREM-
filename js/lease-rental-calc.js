@@ -90,7 +90,10 @@ const BremLeaseRentalCalc = (function () {
     const rentalRevenue = dailyRent * rentalDays;
     const unpaidGross = dailyRent * unpaidDays;
     const unpaidAmount = Math.max(0, unpaidGross - paidAmount);
-    const emptyLoss = dailyRent * emptyDays;
+    const emptyDailyLoss = money(input.emptyDailyLoss);
+    const emptyLoss = emptyDailyLoss > 0
+      ? emptyDailyLoss * emptyDays
+      : dailyRent * emptyDays;
     const totalCost = insuranceCost + leaseCost + maintenanceCost + accidentCost + otherCost + emptyLoss;
     const expectedProfit = rentalRevenue + penaltyFee - totalCost - unpaidGross;
     const actualProfit = rentalRevenue + penaltyFee + recoveredAmount - totalCost - unpaidAmount;
@@ -115,6 +118,7 @@ const BremLeaseRentalCalc = (function () {
       rentalRevenue,
       unpaidGross,
       unpaidAmount,
+      emptyDailyLoss,
       emptyLoss,
       totalCost,
       expectedProfit,
@@ -127,6 +131,14 @@ const BremLeaseRentalCalc = (function () {
 
   function computeFromContract(contract = {}, vehicle = {}) {
     const weeklyRent = money(contract.weeklyRent) || weeklyFromDaily(contract.dailyRent || vehicle.dailyChargeAmount);
+    const metrics = window.BremLeaseProfit?.computeErpMetrics?.(vehicle) || {};
+    const emptyDaily = money(vehicle.emptyDailyLoss)
+      || metrics.emptyDailyLoss
+      || metrics.dailyCost
+      || metrics.dailyLeaseCost
+      || 0;
+    const annualInsurance = money(vehicle.annualInsuranceCost)
+      || money(vehicle.dailyInsuranceCost) * 365;
     return compute({
       weeklyRent,
       dailyRent: contract.dailyRent || vehicle.dailyChargeAmount,
@@ -134,14 +146,15 @@ const BremLeaseRentalCalc = (function () {
       emptyDays: contract.emptyDays ?? vehicle.emptyDays,
       unpaidDays: contract.unpaidDays ?? vehicle.unpaidDays,
       vehicleCost: contract.vehicleCost || vehicle.purchasePrice,
-      insuranceCost: contract.insuranceCost || vehicle.dailyInsuranceCost * 30,
-      leaseCost: contract.leaseCost || vehicle.dailyLeaseCost * 30,
+      insuranceCost: contract.insuranceCost || (annualInsurance ? annualInsurance / 12 : money(vehicle.dailyInsuranceCost) * 30),
+      leaseCost: contract.leaseCost || money(vehicle.dailyLeaseCost) * 30,
       maintenanceCost: contract.maintenanceCost,
       accidentCost: contract.accidentCost,
-      otherCost: contract.otherCost || vehicle.dailyOtherCost * 30,
+      otherCost: contract.otherCost || money(vehicle.dailyOtherCost) * 30,
       penaltyFee: contract.penaltyFee,
       paidAmount: contract.paidAmount,
-      recoveredAmount: contract.recoveredAmount
+      recoveredAmount: contract.recoveredAmount,
+      emptyDailyLoss: emptyDaily
     });
   }
 

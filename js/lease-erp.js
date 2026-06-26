@@ -174,6 +174,12 @@ const BremLeaseErp = (function () {
     const otherAcquisitionCost = normalizeMoney(
       raw.otherAcquisitionCost != null ? raw.otherAcquisitionCost : existing?.otherAcquisitionCost
     );
+    const annualInsuranceCost = normalizeMoney(
+      raw.annualInsuranceCost != null ? raw.annualInsuranceCost : existing?.annualInsuranceCost
+    );
+    const emptyDailyLoss = normalizeMoney(
+      raw.emptyDailyLoss != null ? raw.emptyDailyLoss : existing?.emptyDailyLoss
+    );
     let acquisitionTaxAmount = normalizeMoney(
       raw.acquisitionTaxAmount != null ? raw.acquisitionTaxAmount : existing?.acquisitionTaxAmount
     );
@@ -183,8 +189,12 @@ const BremLeaseErp = (function () {
     let totalAcquisitionCost = normalizeMoney(
       raw.totalAcquisitionCost != null ? raw.totalAcquisitionCost : existing?.totalAcquisitionCost
     );
-    if (!totalAcquisitionCost && (purchasePrice || acquisitionTaxAmount || otherAcquisitionCost)) {
-      totalAcquisitionCost = purchasePrice + acquisitionTaxAmount + otherAcquisitionCost;
+    if (!totalAcquisitionCost && (purchasePrice || acquisitionTaxAmount || otherAcquisitionCost || annualInsuranceCost)) {
+      totalAcquisitionCost = purchasePrice + acquisitionTaxAmount + otherAcquisitionCost + annualInsuranceCost;
+    }
+    let resolvedDailyInsurance = dailyInsuranceCost;
+    if (!resolvedDailyInsurance && annualInsuranceCost > 0) {
+      resolvedDailyInsurance = annualInsuranceCost / 365;
     }
 
     const record = {
@@ -204,7 +214,7 @@ const BremLeaseErp = (function () {
       insuranceCompany: String(raw.insuranceCompany != null ? raw.insuranceCompany : existing?.insuranceCompany || '').trim(),
       insuranceAge: String(raw.insuranceAge != null ? raw.insuranceAge : existing?.insuranceAge || '').trim(),
       insuranceType: String(raw.insuranceType != null ? raw.insuranceType : existing?.insuranceType || '').trim(),
-      dailyInsuranceCost,
+      dailyInsuranceCost: resolvedDailyInsurance,
       contractStartDate: normalizeDate(raw.contractStartDate != null ? raw.contractStartDate : existing?.contractStartDate),
       contractEndDate: normalizeDate(raw.contractEndDate != null ? raw.contractEndDate : existing?.contractEndDate),
       returnDate: normalizeDate(raw.returnDate != null ? raw.returnDate : existing?.returnDate),
@@ -231,6 +241,8 @@ const BremLeaseErp = (function () {
       acquisitionTaxAmount,
       otherAcquisitionCost,
       totalAcquisitionCost,
+      annualInsuranceCost,
+      emptyDailyLoss,
       acquisitionDate: normalizeDate(raw.acquisitionDate != null ? raw.acquisitionDate : existing?.acquisitionDate),
       rentalAssignment: normalizeRentalAssignment(
         raw.rentalAssignment !== undefined ? raw.rentalAssignment : existing?.rentalAssignment

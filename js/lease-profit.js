@@ -116,15 +116,20 @@ const BremLeaseProfit = (function () {
       ? money(vehicle.acquisitionTaxAmount)
       : vehiclePrice * taxRate;
     const otherCost = money(vehicle?.otherAcquisitionCost);
+    const annualInsurance = money(vehicle?.annualInsuranceCost);
     const totalCost = money(vehicle?.totalAcquisitionCost) > 0
       ? money(vehicle.totalAcquisitionCost)
-      : vehiclePrice + taxAmount + otherCost;
-    const dailyCost = totalCost > 0 ? totalCost / 365 : 0;
+      : vehiclePrice + taxAmount + otherCost + annualInsurance;
+    const dailyCost = totalCost > 0
+      ? totalCost / 365
+      : (annualInsurance > 0 ? annualInsurance / 365 : 0);
     return {
       vehiclePrice,
       taxRate: money(vehicle?.acquisitionTaxRate),
       taxAmount,
       otherCost,
+      annualInsurance,
+      insuranceDaily: annualInsurance > 0 ? annualInsurance / 365 : money(vehicle?.dailyInsuranceCost),
       totalCost,
       dailyCost,
       weeklyCost: dailyCost * 7
@@ -142,13 +147,25 @@ const BremLeaseProfit = (function () {
     return Boolean(window.BremLeaseErp?.isEmptyVehicle?.(vehicle));
   }
 
+  function resolveEmptyDailyBase(vehicle, defaultDailyBase) {
+    const override = money(vehicle?.emptyDailyLoss);
+    if (override > 0) return override;
+    const base = money(defaultDailyBase);
+    if (base > 0) return base;
+    if (isCompanyOwned(vehicle)) {
+      const annualInsurance = money(vehicle?.annualInsuranceCost);
+      if (annualInsurance > 0) return annualInsurance / 365;
+    }
+    return 0;
+  }
+
   function computeEmptyLoss(vehicle, dailyBase, asOfDate = todayKey()) {
     if (!isEmptyVehicle(vehicle)) {
       return { emptyDays: 0, dailyBase: money(dailyBase), emptyLoss: 0 };
     }
     const emptyStart = String(vehicle?.emptyStartDate || vehicle?.returnDate || '').slice(0, 10);
     const emptyDays = daysBetween(emptyStart, asOfDate);
-    const base = money(dailyBase);
+    const base = resolveEmptyDailyBase(vehicle, dailyBase);
     return {
       emptyDays,
       dailyBase: base,
@@ -189,12 +206,15 @@ const BremLeaseProfit = (function () {
         unpaidCollectionMethod: String(vehicle?.unpaidCollectionMethod || '').trim(),
         emptyDays: empty.emptyDays,
         emptyLoss: empty.emptyLoss,
+        emptyDailyLoss: empty.dailyBase,
         actualProfit,
         vehiclePrice: owned.vehiclePrice,
         acquisitionTaxRate: owned.taxRate,
         acquisitionTaxAmount: owned.taxAmount,
         otherAcquisitionCost: owned.otherCost,
-        totalAcquisitionCost: owned.totalCost
+        totalAcquisitionCost: owned.totalCost,
+        annualInsuranceCost: owned.annualInsurance,
+        insuranceDaily: owned.insuranceDaily
       };
     }
 
@@ -209,7 +229,7 @@ const BremLeaseProfit = (function () {
 
     return {
       mode,
-      kindLabel: '회사리스/렌탈',
+      kindLabel: '회사리스',
       dailyCharge,
       dailyLeaseCost,
       dailyCost: dailyLeaseCost,
@@ -224,6 +244,7 @@ const BremLeaseProfit = (function () {
       unpaidCollectionMethod: String(vehicle?.unpaidCollectionMethod || '').trim(),
       emptyDays: empty.emptyDays,
       emptyLoss: empty.emptyLoss,
+      emptyDailyLoss: empty.dailyBase,
       actualProfit,
       vehiclePrice: 0,
       acquisitionTaxRate: 0,
@@ -410,15 +431,20 @@ const BremLeaseProfit = (function () {
 
   function vehicleCategoryLabel(category) {
     switch (String(category || '')) {
-      case VEHICLE_CATEGORIES.EXTERNAL_RENTAL: return '회사리스/렌탈';
       case VEHICLE_CATEGORIES.COMPANY_OWNED: return '회사소유리스';
-      default: return '회사리스/렌탈';
+      default: return '회사리스';
     }
   }
 
-  function erpModeLabel(mode) {
-    return mode === ERP_MODES.COMPANY_OWNED ? '회사소유리스' : '회사리스/렌탈';
+  function vehicleSourceLabel(vehicle) {
+    return isCompanyOwned(vehicle) ? '브램리스' : '회사리스';
   }
+
+  function erpModeLabel(mode) {
+    return mode === ERP_MODES.COMPANY_OWNED ? '회사소유리스' : '회사리스';
+  }
+
+  const RIDER_WEEKLY_RENT_LABEL = '라이더부담 리스렌탈료';
 
   return {
     VEHICLE_CATEGORIES,
@@ -447,7 +473,9 @@ const BremLeaseProfit = (function () {
     paymentCheckLabel,
     vehicleStatusLabel,
     vehicleCategoryLabel,
-    erpModeLabel
+    vehicleSourceLabel,
+    erpModeLabel,
+    RIDER_WEEKLY_RENT_LABEL
   };
 })();
 

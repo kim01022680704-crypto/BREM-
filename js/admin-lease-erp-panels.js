@@ -29,10 +29,12 @@ const BremLeaseErpPanels = (function () {
   }
 
   function vehicleOptions() {
-    return erp()?.vehicles().getAll().map(item => ({
-      id: item.id,
-      label: `${item.vehicleNumber || item.model || item.id} · ${item.renter || item.rentalAssignment?.renter || '-'}`
-    })) || [];
+    return erp()?.vehicles().getAll().map(item => {
+      const model = item.model || '-';
+      const plate = item.vehicleNumber || '-';
+      const source = BremLeaseProfit?.vehicleSourceLabel?.(item) || '회사리스';
+      return { id: item.id, label: `${model} · ${plate} · ${source}` };
+    }) || [];
   }
 
   function fillVehicleSelect(selectEl) {

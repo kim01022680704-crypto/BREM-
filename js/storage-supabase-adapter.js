@@ -577,7 +577,9 @@ window.BremSupabaseStorageAdapter = (function () {
         acquisitionTaxRate: Number(item.acquisitionTaxRate || 0),
         acquisitionTaxAmount: Number(item.acquisitionTaxAmount || 0),
         otherAcquisitionCost: Number(item.otherAcquisitionCost || 0),
-        totalAcquisitionCost: Number(item.totalAcquisitionCost || 0)
+        totalAcquisitionCost: Number(item.totalAcquisitionCost || 0),
+        annualInsuranceCost: Number(item.annualInsuranceCost || 0),
+        emptyDailyLoss: Number(item.emptyDailyLoss || 0)
       };
       return {
         id: item.id,
@@ -661,6 +663,8 @@ window.BremSupabaseStorageAdapter = (function () {
         acquisitionTaxAmount: Number(row.acquisition_tax_amount ?? raw.acquisitionTaxAmount ?? 0),
         otherAcquisitionCost: Number(row.other_acquisition_cost ?? raw.otherAcquisitionCost ?? 0),
         totalAcquisitionCost: Number(row.total_acquisition_cost ?? raw.totalAcquisitionCost ?? 0),
+        annualInsuranceCost: Number(raw.annualInsuranceCost || 0),
+        emptyDailyLoss: Number(raw.emptyDailyLoss || 0),
         acquisitionDate: row.acquisition_date || '',
         rentalAssignment: row.rental_assignment || null,
         createdAt: row.created_at,

@@ -15,7 +15,7 @@ const BremAdminLeaseMenus = (function () {
     { key: 'driverPhone', label: '연락처', col: 'E' },
     { key: 'startDate', label: '계약시작일', col: 'F' },
     { key: 'endDate', label: '계약종료일', col: 'G' },
-    { key: 'weeklyRent', label: '주렌탈료', col: 'H' },
+    { key: 'weeklyRent', label: '라이더부담 리스렌탈료', col: 'H' },
     { key: 'paidAmount', label: '입금액', col: 'I' },
     { key: 'unpaidDays', label: '미납일수', col: 'J' },
     { key: 'emptyDays', label: '공차일수', col: 'K' },
@@ -188,6 +188,12 @@ const BremAdminLeaseMenus = (function () {
     const engine = calc();
     if (!engine) return {};
     const weeklyRent = engine.money($('leaseCalcWeeklyRent')?.value);
+    const vehicle = erp()?.vehicles().getById($('leaseCalcVehicleId')?.value || '');
+    let emptyDailyLoss = 0;
+    if (vehicle) {
+      const m = profit()?.computeErpMetrics?.(vehicle) || {};
+      emptyDailyLoss = m.emptyDailyLoss || m.dailyCost || m.dailyLeaseCost || 0;
+    }
     return {
       vehicleId: $('leaseCalcVehicleId')?.value || '',
       weeklyRent,
@@ -201,7 +207,8 @@ const BremAdminLeaseMenus = (function () {
       maintenanceCost: $('leaseCalcMaintenance')?.value || 0,
       accidentCost: $('leaseCalcAccident')?.value || 0,
       otherCost: $('leaseCalcOtherCost')?.value || 0,
-      penaltyFee: $('leaseCalcPenalty')?.value || 0
+      penaltyFee: $('leaseCalcPenalty')?.value || 0,
+      emptyDailyLoss
     };
   }
 
@@ -245,7 +252,11 @@ const BremAdminLeaseMenus = (function () {
     }
     if ($('leaseCalcUnpaidDays')) $('leaseCalcUnpaidDays').value = vehicle.unpaidDays || '';
     if ($('leaseCalcLeaseCost')) $('leaseCalcLeaseCost').value = vehicle.dailyLeaseCost ? vehicle.dailyLeaseCost * 30 : '';
-    if ($('leaseCalcInsurance')) $('leaseCalcInsurance').value = vehicle.dailyInsuranceCost ? vehicle.dailyInsuranceCost * 30 : '';
+    const annualInsurance = Number(vehicle.annualInsuranceCost || 0)
+      || (Number(vehicle.dailyInsuranceCost || 0) * 365);
+    if ($('leaseCalcInsurance')) {
+      $('leaseCalcInsurance').value = annualInsurance ? Math.round(annualInsurance / 12) : '';
+    }
     if (vehicle.vehicleStatus === 'empty' && vehicle.emptyStartDate) {
       if ($('leaseCalcEmptyDays')) $('leaseCalcEmptyDays').value = profit()?.daysBetween?.(vehicle.emptyStartDate) || '';
     }
@@ -310,7 +321,7 @@ const BremAdminLeaseMenus = (function () {
     }
     rowsEl.innerHTML = vehicles.map(item => {
       const m = profit()?.computeErpMetrics?.(item) || {};
-      const dailyBase = m.dailyLeaseCost || m.dailyCost || 0;
+      const dailyBase = m.emptyDailyLoss || m.dailyLeaseCost || m.dailyCost || 0;
       const emptyStart = item.emptyStartDate || item.returnDate || '';
       const emptyEnd = item.returnDate && item.vehicleStatus !== 'empty' ? item.returnDate : '-';
       const statusLabel = profit()?.vehicleStatusLabel?.(item.vehicleStatus) || '-';
@@ -468,12 +479,19 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseContractStatusPreview')) $('leaseContractStatusPreview').value = status.label;
   }
 
+  function formatVehicleSelectLabel(item) {
+    const model = item.model || '-';
+    const plate = item.vehicleNumber || '-';
+    const source = profit()?.vehicleSourceLabel?.(item) || '회사리스';
+    return `${model} · ${plate} · ${source}`;
+  }
+
   function fillVehicleSelect(selectEl, includeBlank = true) {
     if (!selectEl || !erp()) return;
     const prev = selectEl.value;
     const options = (includeBlank ? ['<option value="">차량 선택</option>'] : []).concat(
       erp().vehicles().getAll().map(item =>
-        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.vehicleNumber || item.model || item.id)} · ${escapeHtml(item.renter || '-')}</option>`
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(formatVehicleSelectLabel(item))}</option>`
       )
     );
     selectEl.innerHTML = options.join('');
@@ -502,8 +520,10 @@ const BremAdminLeaseMenus = (function () {
         : '';
     }
     if ($('leaseContractInsurance')) {
-      $('leaseContractInsurance').value = vehicle.dailyInsuranceCost
-        ? Math.round(vehicle.dailyInsuranceCost * 30).toLocaleString('ko-KR')
+      const annual = Number(vehicle.annualInsuranceCost || 0)
+        || (Number(vehicle.dailyInsuranceCost || 0) * 365);
+      $('leaseContractInsurance').value = annual
+        ? Math.round(annual / 12).toLocaleString('ko-KR')
         : '';
     }
     syncContractCalc();
@@ -554,7 +574,8 @@ const BremAdminLeaseMenus = (function () {
     }
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = erp().vehicles().getById(contract.vehicleId);
-      const typeLabel = contract.contractType === 'rental' ? '렌탈' : '리스';
+      const typeLabel = profit()?.vehicleSourceLabel?.(vehicle)
+        || (contract.contractType === 'rental' ? '렌탈' : '리스');
       const period = [formatDate(contract.startDate), formatDate(contract.endDate)].filter(v => v !== '-').join(' ~ ') || '-';
       const status = resolveContractStatus(contract, contract.vehicleId);
       const deposit = contract.depositAmount ?? contract.penaltyFee ?? 0;
@@ -1238,6 +1259,7 @@ const BremAdminLeaseMenus = (function () {
   }
 
   return {
+    formatVehicleSelectLabel,
     init,
     refresh,
     setMenu,
