@@ -1769,7 +1769,7 @@
           </div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
-              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>렌탈일수</th><th>공차일수</th><th>미납일수</th><th>렌탈매출</th><th>공차손실</th><th>미납금</th><th>비용합계</th><th>순이익</th><th>상태</th></tr></thead>
+              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>렌탈일수</th><th>공차일수</th><th>미납일수</th><th>렌탈매출</th><th>공차손실</th><th>미납금</th><th>비용합계</th><th>순이익</th><th>상태</th><th>관리</th></tr></thead>
               <tbody id="leaseWeeklyRows"></tbody>
             </table>
           </div>
@@ -1798,7 +1798,7 @@
           </div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
-              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>월 렌탈일수</th><th>월 공차일수</th><th>월 미납일수</th><th>월 렌탈매출</th><th>월 미납금</th><th>월 회수금액</th><th>월 공차손실</th><th>월 비용</th><th>월 순이익</th><th>비고</th></tr></thead>
+              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>월 렌탈일수</th><th>월 공차일수</th><th>월 미납일수</th><th>월 렌탈매출</th><th>월 미납금</th><th>월 회수금액</th><th>월 공차손실</th><th>월 비용</th><th>월 순이익</th><th>비고</th><th>관리</th></tr></thead>
               <tbody id="leaseMonthlyRows"></tbody>
             </table>
           </div>
@@ -1807,12 +1807,60 @@
 
         <div class="lease-menu-panel" data-lease-menu-panel="arrears" hidden>
         <article class="card lease-screen-card">
-          <div class="card-header"><h2>미납 / 회수관리</h2><p class="form-help">급여공제 · 별도입금 · 미납/회수중/처리완료</p></div>
+          <div class="card-header"><h2>미납 / 회수관리</h2><p class="form-help">계약 기사 미납 등록 · 회수방법 선택 · 처리완료 시 이력 기록</p></div>
+          <form id="leaseArrearRegisterForm" class="lease-arrear-form">
+            <div class="lease-arrear-form-grid">
+              <label>계약 기사
+                <select id="leaseArrearContractId" required>
+                  <option value="">기사 선택</option>
+                </select>
+              </label>
+              <label>미납일(일)
+                <input type="number" id="leaseArrearUnpaidDays" min="0" step="1" placeholder="0" required>
+              </label>
+              <label>미납금(원)
+                <input type="number" id="leaseArrearUnpaidAmount" min="0" step="1" placeholder="0" required>
+              </label>
+              <fieldset class="lease-arrear-methods">
+                <legend>회수방법</legend>
+                <label class="check-label"><input type="checkbox" name="leaseArrearMethod" value="salary_deduction"> 급여공제</label>
+                <label class="check-label"><input type="checkbox" name="leaseArrearMethod" value="separate_deposit"> 별도입금</label>
+              </fieldset>
+            </div>
+            <div class="lease-arrear-form-actions">
+              <button type="submit" class="primary-btn">미납 등록</button>
+            </div>
+          </form>
+          <article class="card lease-arrear-complete-card" id="leaseArrearCompleteCard" hidden>
+            <div class="card-header"><h3>미납 처리 완료</h3></div>
+            <input type="hidden" id="leaseArrearCompleteId">
+            <div class="lease-arrear-form-grid">
+              <label>회수금액(원)
+                <input type="number" id="leaseArrearRecoveredAmount" min="0" step="1" placeholder="0">
+              </label>
+              <label>처리 메모
+                <input type="text" id="leaseArrearCompleteMemo" placeholder="처리 방식·비고">
+              </label>
+            </div>
+            <div class="lease-arrear-form-actions">
+              <button type="button" class="primary-btn" id="leaseArrearCompleteConfirmBtn">처리 완료</button>
+              <button type="button" class="small-btn" id="leaseArrearCompleteCancelBtn">취소</button>
+            </div>
+          </article>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
-              <thead><tr><th>차량번호</th><th>차량명</th><th>미납일</th><th>미납금</th><th>입금액</th><th>회수방법</th><th>상태</th><th>처리일</th><th>관리</th></tr></thead>
+              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>미납일</th><th>미납금</th><th>입금액</th><th>회수방법</th><th>상태</th><th>관리</th></tr></thead>
               <tbody id="leaseArrearRows"></tbody>
             </table>
+          </div>
+          <div class="lease-arrear-history">
+            <h3>처리 이력</h3>
+            <div class="table-wrap lease-table-wrap">
+              <table class="lease-table">
+                <thead><tr><th>차량번호</th><th>기사명</th><th>미납일</th><th>미납금</th><th>회수금액</th><th>회수방법</th><th>처리일</th><th>처리 메모</th></tr></thead>
+                <tbody id="leaseArrearHistoryRows"></tbody>
+              </table>
+            </div>
           </div>
         </article>
         </div>
@@ -3157,6 +3205,12 @@
       </article>
 
       <section class="section" id="notices">
+        <div class="notice-menu-tabs">
+          <button type="button" class="notice-menu-tab is-active" data-notice-menu-tab="general">일반 공지</button>
+          <button type="button" class="notice-menu-tab" data-notice-menu-tab="payroll">정산 관련 공지</button>
+        </div>
+
+        <div id="noticeGeneralPanel">
         <article class="card">
           <div class="card-header">
             <h2>공지사항 작성</h2>
@@ -3185,6 +3239,66 @@
           </div>
           <div class="notice-list" id="noticeRows"></div>
         </article>
+        </div>
+
+        <div id="noticePayrollPanel" hidden>
+        <article class="card payroll-notices-card">
+          <div class="card-header">
+            <div>
+              <h2>정산 관련 공지 작성</h2>
+              <p class="card-header-desc">상시 공지는 계속 노출되고, 주간 공지는 해당 정산주에만 표시됩니다. 작성 후 「급여명세서 반영하기」를 눌러 라이더에 공개하세요.</p>
+            </div>
+          </div>
+          <form id="menuPayrollNoticeForm" class="payroll-notice-form" data-payroll-notice-form="menu">
+            <input type="hidden" id="menuPayrollNoticeEditId">
+            <div class="payroll-notice-form-grid">
+              <label>구분
+                <select id="menuPayrollNoticeLabel">
+                  <option value="urgent">긴급</option>
+                  <option value="notice" selected>안내</option>
+                  <option value="announcement">공지</option>
+                </select>
+              </label>
+              <fieldset class="payroll-notice-scope-field">
+                <legend>노출 범위</legend>
+                <label class="check-label"><input type="radio" name="menuPayrollNoticeScope" value="always" checked> 상시 (쭉 노출)</label>
+                <label class="check-label"><input type="radio" name="menuPayrollNoticeScope" value="weekly"> 특정 정산주만</label>
+              </fieldset>
+              <label class="payroll-notice-week-field" id="menuPayrollNoticeWeekField" hidden>
+                <span>정산주</span>
+                <div class="payroll-week-controls">
+                  <input type="hidden" id="menuPayrollNoticeWeekStart">
+                  <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="menu-payroll-notice" id="menuPayrollNoticeWeekBtn">정산주 선택</button>
+                  <span class="payroll-week-label" id="menuPayrollNoticeWeekLabel">정산주 미선택</span>
+                </div>
+              </label>
+              <label class="payroll-notice-title-field">제목<input type="text" id="menuPayrollNoticeTitle" placeholder="공지 제목" required maxlength="120"></label>
+              <label class="payroll-notice-body-field">내용<textarea id="menuPayrollNoticeBody" rows="4" placeholder="라이더에게 보여줄 내용" required maxlength="2000"></textarea></label>
+            </div>
+            <div class="payroll-notice-form-actions">
+              <button type="submit" class="primary-btn" id="menuPayrollNoticeSaveBtn">공지 저장</button>
+              <button type="button" class="small-btn" id="menuPayrollNoticeResetBtn">입력 초기화</button>
+            </div>
+          </form>
+          <div class="table-wrap payroll-notices-table-wrap">
+            <table class="data-table payroll-notices-table">
+              <thead>
+                <tr>
+                  <th>구분</th>
+                  <th>제목</th>
+                  <th>노출</th>
+                  <th>반영</th>
+                  <th>수정일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="menuPayrollNoticeListBody">
+                <tr><td colspan="6" class="empty">등록된 정산 공지가 없습니다.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+        </div>
       </section>
 
       <section class="section" id="rider-inquiries">
@@ -4057,14 +4171,19 @@
                     <option value="announcement">공지</option>
                   </select>
                 </label>
-                <label class="payroll-notice-week-field">
-                  <span>특정 정산주만</span>
+                <label class="payroll-notice-week-field" id="payrollNoticeWeekField" hidden>
+                  <span>정산주 (주간 공지만)</span>
                   <div class="payroll-week-controls">
                     <input type="hidden" id="payrollNoticeWeekStart">
-                    <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="payroll-notice" id="payrollNoticeWeekBtn">전체 (정산주 미지정)</button>
-                    <span class="payroll-week-label" id="payrollNoticeWeekLabel">전체 정산주</span>
+                    <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="payroll-notice" id="payrollNoticeWeekBtn">정산주 선택</button>
+                    <span class="payroll-week-label" id="payrollNoticeWeekLabel">정산주 미선택</span>
                   </div>
                 </label>
+                <fieldset class="payroll-notice-scope-field payroll-notice-scope-field--inline">
+                  <legend>노출 범위</legend>
+                  <label class="check-label"><input type="radio" name="payrollNoticeScope" value="always" checked> 상시 (쭉 노출)</label>
+                  <label class="check-label"><input type="radio" name="payrollNoticeScope" value="weekly"> 특정 정산주만</label>
+                </fieldset>
                 <label class="payroll-notice-title-field">제목<input type="text" id="payrollNoticeTitle" placeholder="공지 제목" required maxlength="120"></label>
                 <label class="payroll-notice-body-field">내용<textarea id="payrollNoticeBody" rows="4" placeholder="라이더에게 보여줄 내용" required maxlength="2000"></textarea></label>
               </div>
@@ -4079,7 +4198,7 @@
                   <tr>
                     <th>구분</th>
                     <th>제목</th>
-                    <th>정산주</th>
+                    <th>노출</th>
                     <th>반영</th>
                     <th>수정일</th>
                     <th>관리</th>
@@ -4382,7 +4501,7 @@
   <script src="js/lease-erp.js?v=20260630w"></script>
   <script src="js/admin-lease.js?v=20260630w"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260630w"></script>
+  <script src="js/admin-lease-menus.js?v=20260701a"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -4391,12 +4510,12 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260630c"></script>
   <script src="js/admin-payroll-slips.js?v=20260701e"></script>
-  <script src="js/admin-payroll-notices.js?v=20260701a"></script>
+  <script src="js/admin-payroll-notices.js?v=20260701b"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260630c"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260630a"></script>
+  <script src="js/admin.js?v=20260701a"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

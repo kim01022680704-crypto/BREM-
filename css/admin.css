@@ -7004,6 +7004,81 @@ textarea {
   font-weight: 800;
 }
 
+.notice-menu-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.notice-menu-tab {
+  border: 1px solid var(--line);
+  background: #101010;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notice-menu-tab.is-active {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.payroll-notice-scope-field {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.payroll-notice-scope-field legend {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.payroll-notice-scope-field--inline {
+  grid-column: 1 / -1;
+}
+
+.lease-arrear-form,
+.lease-arrear-complete-card {
+  margin-bottom: 16px;
+}
+
+.lease-arrear-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.lease-arrear-methods {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lease-arrear-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lease-arrear-history {
+  margin-top: 20px;
+}
+
+.lease-arrear-history h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
 .payroll-bulk-panel {
   margin-bottom: 4px;
   padding: 16px;

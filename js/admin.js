@@ -1581,6 +1581,16 @@
           };
         }
 
+        if (triggerId === 'menu-payroll-notice') {
+          return {
+            hiddenInput: $('#menuPayrollNoticeWeekStart'),
+            labelEl: $('#menuPayrollNoticeWeekLabel'),
+            onSelect(value) {
+              window.BremAdminPayrollNotices?.handleMenuNoticeWeekChange?.(value);
+            }
+          };
+        }
+
         const hiddenInput = document.querySelector(`[data-edit-weekly-week="${triggerId}"]`);
         const labelEl = document.querySelector(`[data-week-picker-label="${triggerId}"]`);
         if (!hiddenInput) return null;
@@ -4519,6 +4529,7 @@
         break;
       case 'notices':
         renderNotices();
+        window.BremAdminPayrollNotices?.refresh?.();
         break;
       case 'rider-inquiries':
         renderRiderInquiries();

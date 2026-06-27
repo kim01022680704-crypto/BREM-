@@ -538,7 +538,19 @@ const BremLeaseErp = (function () {
     }
   }
 
-  function afterVehiclesRemoved() {
+  function purgeVehicleDependencies(vehicleIds = []) {
+    const idSet = new Set((vehicleIds || []).map(value => String(value || '').trim()).filter(Boolean));
+    if (!idSet.size) return;
+    const profitIds = profitLogs().getAll().filter(item => idSet.has(item.vehicleId)).map(item => item.id);
+    if (profitIds.length) profitLogs().removeByIds(profitIds);
+    const arrearIds = arrears().getAll().filter(item => idSet.has(item.vehicleId)).map(item => item.id);
+    if (arrearIds.length) arrears().removeByIds(arrearIds);
+    const contractIds = contracts().getAll().filter(item => idSet.has(item.vehicleId)).map(item => item.id);
+    if (contractIds.length) contracts().removeByIds(contractIds);
+  }
+
+  function afterVehiclesRemoved(removedIds = []) {
+    purgeVehicleDependencies(removedIds);
     syncLegacyLeaseSettings(vehicles().getAll());
   }
 
@@ -606,7 +618,7 @@ const BremLeaseErp = (function () {
       removeById(id) {
         const list = vehicles().getAll().filter(item => item.id !== id);
         writeList(KEYS.vehicles, list, { deletedRowIds: [id], deleteOnly: true, allowEmpty: true });
-        afterVehiclesRemoved();
+        afterVehiclesRemoved([id]);
       },
       removeByIds(ids = []) {
         const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
@@ -614,7 +626,7 @@ const BremLeaseErp = (function () {
         const deletedRowIds = [...idSet];
         const list = vehicles().getAll().filter(item => !idSet.has(item.id));
         writeList(KEYS.vehicles, list, { deletedRowIds, deleteOnly: true, allowEmpty: true });
-        afterVehiclesRemoved();
+        afterVehiclesRemoved(deletedRowIds);
       },
       assignRental(vehicleId, assignment) {
         const existing = vehicles().getById(vehicleId);

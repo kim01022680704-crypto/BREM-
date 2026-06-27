@@ -482,14 +482,21 @@ window.BremSupabaseMapper = (function () {
   }
 
   function rowToNotice(row) {
+    const payrollLabel = row.payrollLabel || row.label || '';
     return {
       ...(row.raw_data || {}),
       id: row.id,
       title: row.raw_data?.title ?? row.title,
-      content: row.raw_data?.content ?? row.content,
+      content: row.raw_data?.content ?? row.content ?? row.body,
       pinned: row.raw_data?.pinned ?? Boolean(row.pinned),
       createdAt: row.raw_data?.createdAt ?? row.created_at,
-      updatedAt: row.raw_data?.updatedAt ?? row.updated_at
+      updatedAt: row.raw_data?.updatedAt ?? row.updated_at,
+      noticeKind: row.noticeKind,
+      payrollLabel,
+      payrollLabelText: row.payrollLabelText || (row.noticeKind === 'payroll'
+        ? (payrollLabel === 'urgent' ? '긴급' : payrollLabel === 'announcement' ? '정산공지' : '정산안내')
+        : undefined),
+      settlementWeekStart: row.settlementWeekStart || row.settlement_week_start || ''
     };
   }
 

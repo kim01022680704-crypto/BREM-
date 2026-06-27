@@ -1120,6 +1120,25 @@ h3 {
   white-space: pre-wrap;
 }
 
+.notice-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.notice-badge--payroll {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+}
+
+.notice-item--payroll {
+  border-left: 3px solid #facc15;
+}
+
 .notice-item.is-pinned h3::before {
   content: "📌 ";
 }

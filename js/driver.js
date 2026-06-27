@@ -22,6 +22,39 @@
     return BremStorage.notices.getAll();
   }
 
+  const PAYROLL_NOTICE_LABELS = {
+    urgent: '긴급',
+    notice: '정산안내',
+    announcement: '정산공지'
+  };
+
+  function payrollNoticeAppliesToWeek(notice, weekStart) {
+    const scoped = String(notice?.settlementWeekStart || '').slice(0, 10);
+    return !scoped || scoped === weekStart;
+  }
+
+  function mergedNoticesForDriver() {
+    const general = notices();
+    if (general.some(item => item.noticeKind === 'payroll')) {
+      return sortNotices(general);
+    }
+    const week = state.selectedWeekStart || weekStartKey();
+    const payroll = (BremStorage.payrollNotices?.getAll?.() || [])
+      .filter(notice => notice.riderPublishedAt && payrollNoticeAppliesToWeek(notice, week))
+      .map(notice => ({
+        id: `payroll-${notice.id}`,
+        title: notice.title || '',
+        content: notice.body || '',
+        pinned: notice.label === 'urgent' || Number(notice.sortOrder || 0) > 0,
+        createdAt: notice.riderPublishedAt || notice.updatedAt,
+        updatedAt: notice.updatedAt,
+        noticeKind: 'payroll',
+        payrollLabel: notice.label,
+        payrollLabelText: PAYROLL_NOTICE_LABELS[notice.label] || '정산'
+      }));
+    return sortNotices([...general, ...payroll]);
+  }
+
   function eventCatalog() {
     return BremStorage.events.getCatalog();
   }
@@ -840,12 +873,17 @@
 
   function renderNoticesList(listEl, noticeList) {
     const items = noticeList
-      .map(notice => `
-        <article class="notice-item">
-          <h3>${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</h3>
-          <p>${escapeHtml(notice.content)}</p>
+      .map(notice => {
+        const badge = notice.noticeKind === 'payroll'
+          ? `<span class="notice-badge notice-badge--payroll">${escapeHtml(notice.payrollLabelText || '정산')}</span> `
+          : '';
+        return `
+        <article class="notice-item${notice.noticeKind === 'payroll' ? ' notice-item--payroll' : ''}">
+          <h3>${notice.pinned ? '📌 ' : ''}${badge}${escapeHtml(notice.title)}</h3>
+          <p>${escapeHtml(notice.content || notice.body || '')}</p>
         </article>
-      `)
+      `;
+      })
       .join('');
 
     listEl.innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
@@ -854,7 +892,7 @@
   function renderNotices() {
     const listEl = document.getElementById('noticeList');
     if (!listEl) return;
-    renderNoticesList(listEl, sortNotices(notices()));
+    renderNoticesList(listEl, mergedNoticesForDriver());
   }
 
   async function renderPlatformMission(driver, platform, missionId, assignedMission = null) {
@@ -1331,7 +1369,7 @@
   document.addEventListener('brem-cache-status-changed', () => {
     const listEl = document.getElementById('noticeList');
     if (state.currentDriver && listEl) {
-      renderNoticesList(listEl, sortNotices(notices()));
+      renderNoticesList(listEl, mergedNoticesForDriver());
     }
   });
 

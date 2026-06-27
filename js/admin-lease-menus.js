@@ -1045,10 +1045,13 @@ const BremAdminLeaseMenus = (function () {
       $('leaseWeekRangeLabel').textContent = formatLeaseWeekRangeLabel(weekStart);
     }
 
+    const liveVehicleIds = new Set(erp().vehicles().getAll().map(item => item.id));
     const logs = erp().profitLogs().getAll().filter(item =>
-      item.periodType === 'weekly' && item.periodStart === week.start
+      item.periodType === 'weekly'
+      && item.periodStart === week.start
+      && liveVehicleIds.has(item.vehicleId)
     );
-    const contracts = erp().contracts().getAll();
+    const contracts = erp().contracts().getAll().filter(item => liveVehicleIds.has(item.vehicleId));
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
 
     const rows = logs.length
@@ -1056,6 +1059,7 @@ const BremAdminLeaseMenus = (function () {
           const vehicle = vehicles.get(log.vehicleId);
           const raw = log.rawData || {};
           return {
+            logId: log.id,
             vehicleNumber: raw.vehicleNumber || vehicle?.vehicleNumber || '-',
             vehicleName: raw.vehicleName || vehicle?.model || '-',
             driverName: raw.driverName || vehicle?.renter || '-',
@@ -1077,10 +1081,10 @@ const BremAdminLeaseMenus = (function () {
             contractId: raw.contractId || ''
           };
         })
-      : contracts.map(contract => buildPeriodRow(contract, vehicles.get(contract.vehicleId), 7));
+      : contracts.map(contract => ({ ...buildPeriodRow(contract, vehicles.get(contract.vehicleId), 7), logId: '' }));
 
     if (!rows.length) {
-      rowsEl.innerHTML = '<tr><td colspan="14" class="empty">해당 주간 데이터가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="13" class="empty">해당 주간 데이터가 없습니다.</td></tr>';
       return;
     }
 
@@ -1098,6 +1102,7 @@ const BremAdminLeaseMenus = (function () {
         <td>${formatMoney((row.insuranceCost || 0) + (row.leaseCost || 0) + (row.maintenanceCost || 0) + (row.accidentCost || 0) + (row.otherCost || 0))}</td>
         <td class="${moneyClass(row.netProfit)}"><strong>${formatMoney(row.netProfit)}</strong></td>
         <td>${escapeHtml(row.statusLabel)}</td>
+        <td>${row.logId ? `<button type="button" class="small-btn danger-btn" data-delete-profit-log="${escapeHtml(row.logId)}">삭제</button>` : '-'}</td>
       </tr>
     `).join('');
   }
@@ -1109,10 +1114,13 @@ const BremAdminLeaseMenus = (function () {
     state.monthKey = monthKey;
     const days = calc().daysInMonth(monthKey);
 
+    const liveVehicleIds = new Set(erp().vehicles().getAll().map(item => item.id));
     const logs = erp().profitLogs().getAll().filter(item =>
-      item.periodType === 'monthly' && String(item.periodStart || '').startsWith(monthKey)
+      item.periodType === 'monthly'
+      && String(item.periodStart || '').startsWith(monthKey)
+      && liveVehicleIds.has(item.vehicleId)
     );
-    const contracts = erp().contracts().getAll();
+    const contracts = erp().contracts().getAll().filter(item => liveVehicleIds.has(item.vehicleId));
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
 
     const rows = logs.length
@@ -1120,6 +1128,7 @@ const BremAdminLeaseMenus = (function () {
           const vehicle = vehicles.get(log.vehicleId);
           const raw = log.rawData || {};
           return {
+            logId: log.id,
             vehicleNumber: raw.vehicleNumber || vehicle?.vehicleNumber || '-',
             vehicleName: raw.vehicleName || vehicle?.model || '-',
             driverName: raw.driverName || vehicle?.renter || '-',
@@ -1138,7 +1147,7 @@ const BremAdminLeaseMenus = (function () {
         })
       : contracts.map(contract => {
           const row = buildPeriodRow(contract, vehicles.get(contract.vehicleId), days);
-          return { ...row, recoveredAmount: contract.recoveredAmount || 0, memo: contract.memo || '' };
+          return { ...row, recoveredAmount: contract.recoveredAmount || 0, memo: contract.memo || '', logId: '' };
         });
 
     const totals = calc().aggregateRows(rows);
@@ -1174,40 +1183,159 @@ const BremAdminLeaseMenus = (function () {
         <td>${formatMoney(row.totalCost)}</td>
         <td class="${moneyClass(row.netProfit)}"><strong>${formatMoney(row.netProfit)}</strong></td>
         <td>${escapeHtml(row.memo || '-')}</td>
+        <td>${row.logId ? `<button type="button" class="small-btn danger-btn" data-delete-profit-log="${escapeHtml(row.logId)}">삭제</button>` : '-'}</td>
       </tr>
     `).join('');
+  }
+
+  function fillArrearContractSelect() {
+    const select = $('leaseArrearContractId');
+    if (!select || !erp()) return;
+    const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
+    const contracts = erp().contracts().getAll()
+      .filter(item => item.vehicleId && vehicles.has(item.vehicleId))
+      .sort((a, b) => String(a.driverName || '').localeCompare(String(b.driverName || ''), 'ko'));
+    const current = select.value;
+    select.innerHTML = '<option value="">기사 선택</option>' + contracts.map(contract => {
+      const vehicle = vehicles.get(contract.vehicleId);
+      const label = [
+        contract.driverName || vehicle?.renter || '기사',
+        vehicle?.vehicleNumber || '',
+        vehicle?.model || ''
+      ].filter(Boolean).join(' · ');
+      return `<option value="${escapeHtml(contract.id)}">${escapeHtml(label)}</option>`;
+    }).join('');
+    if (current && contracts.some(item => item.id === current)) select.value = current;
+  }
+
+  function readArrearCollectionMethods() {
+    return [...document.querySelectorAll('input[name="leaseArrearMethod"]:checked')]
+      .map(input => input.value)
+      .filter(Boolean);
+  }
+
+  function hideArrearCompletePanel() {
+    const card = $('leaseArrearCompleteCard');
+    if (card) card.hidden = true;
+    if ($('leaseArrearCompleteId')) $('leaseArrearCompleteId').value = '';
+    if ($('leaseArrearRecoveredAmount')) $('leaseArrearRecoveredAmount').value = '';
+    if ($('leaseArrearCompleteMemo')) $('leaseArrearCompleteMemo').value = '';
+  }
+
+  function showArrearCompletePanel(item) {
+    if (!item) return;
+    const card = $('leaseArrearCompleteCard');
+    if (card) card.hidden = false;
+    if ($('leaseArrearCompleteId')) $('leaseArrearCompleteId').value = item.id;
+    if ($('leaseArrearRecoveredAmount')) {
+      $('leaseArrearRecoveredAmount').value = String(item.unpaidAmount || 0);
+    }
+    if ($('leaseArrearCompleteMemo')) $('leaseArrearCompleteMemo').value = '';
+    card?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function registerArrear(event) {
+    event?.preventDefault?.();
+    if (!erp()) return;
+    const contractId = String($('leaseArrearContractId')?.value || '').trim();
+    const unpaidDays = Math.max(0, Math.round(Number($('leaseArrearUnpaidDays')?.value || 0)));
+    const unpaidAmount = Math.max(0, Math.round(Number($('leaseArrearUnpaidAmount')?.value || 0)));
+    const collectionMethods = readArrearCollectionMethods();
+    if (!contractId) {
+      showToast('계약 기사를 선택하세요.');
+      return;
+    }
+    if (!unpaidDays && !unpaidAmount) {
+      showToast('미납일 또는 미납금을 입력하세요.');
+      return;
+    }
+    if (!collectionMethods.length) {
+      showToast('회수방법을 선택하세요.');
+      return;
+    }
+    const contract = erp().contracts().getById(contractId);
+    if (!contract) {
+      showToast('계약 정보를 찾을 수 없습니다.');
+      return;
+    }
+    erp().arrears().create({
+      vehicleId: contract.vehicleId,
+      contractId: contract.id,
+      unpaidDays,
+      unpaidAmount,
+      collectionMethods,
+      collectionStatus: calc().ARREAR_STATUS.COLLECTING
+    });
+    await erp().persistAll();
+    $('leaseArrearRegisterForm')?.reset();
+    showToast('미납을 등록했습니다.');
+    renderArrears();
+  }
+
+  function renderArrearHistory(list, vehicles) {
+    const rowsEl = $('leaseArrearHistoryRows');
+    if (!rowsEl) return;
+    const completed = list
+      .filter(item => item.collectionStatus === calc().ARREAR_STATUS.COMPLETED)
+      .sort((a, b) => String(b.processedDate || b.updatedAt || '').localeCompare(String(a.processedDate || a.updatedAt || '')));
+    if (!completed.length) {
+      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">처리 이력이 없습니다.</td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = completed.map(item => {
+      const vehicle = vehicles.get(item.vehicleId);
+      const contract = item.contractId ? erp().contracts().getById(item.contractId) : null;
+      const methods = (item.collectionMethods || []).map(calc().collectionMethodLabel).join(', ') || '-';
+      const history = Array.isArray(item.rawData?.processingHistory) ? item.rawData.processingHistory : [];
+      const latest = history[0] || {};
+      const memo = latest.memo || item.memo || '-';
+      return `
+        <tr>
+          <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
+          <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}</td>
+          <td>${item.unpaidDays}일</td>
+          <td class="lease-money--warning">${formatMoney(item.unpaidAmount + (item.recoveredAmount || item.paidAmount || 0))}</td>
+          <td>${formatMoney(item.recoveredAmount || item.paidAmount || 0)}</td>
+          <td>${escapeHtml(methods)}</td>
+          <td>${formatDate(item.processedDate)}</td>
+          <td>${escapeHtml(memo)}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
   function renderArrears() {
     const rowsEl = $('leaseArrearRows');
     if (!rowsEl || !erp()) return;
+    fillArrearContractSelect();
     const list = erp().arrears().getAll();
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
-    if (!list.length) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">미납 기록이 없습니다.</td></tr>';
+    const active = list.filter(item => item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED);
+    renderArrearHistory(list, vehicles);
+    if (!active.length) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">진행 중인 미납 기록이 없습니다.</td></tr>';
       return;
     }
-    rowsEl.innerHTML = list.map(item => {
+    rowsEl.innerHTML = active.map(item => {
       const vehicle = vehicles.get(item.vehicleId);
+      const contract = item.contractId ? erp().contracts().getById(item.contractId) : null;
       const methods = (item.collectionMethods || []).map(calc().collectionMethodLabel).join(', ') || '-';
       const status = calc().arrearsStatusLabel(item.collectionStatus);
-      const statusCls = item.collectionStatus === calc().ARREAR_STATUS.COMPLETED
-        ? 'lease-status--done'
-        : (item.collectionStatus === calc().ARREAR_STATUS.COLLECTING ? 'lease-status--collecting' : 'lease-status--unpaid');
+      const statusCls = item.collectionStatus === calc().ARREAR_STATUS.COLLECTING
+        ? 'lease-status--collecting'
+        : 'lease-status--unpaid';
       return `
         <tr>
           <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
           <td>${escapeHtml(vehicle?.model || '-')}</td>
+          <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}</td>
           <td>${item.unpaidDays}일</td>
           <td class="lease-money--warning">${formatMoney(item.unpaidAmount)}</td>
           <td>${formatMoney(item.paidAmount)}</td>
           <td>${escapeHtml(methods)}</td>
           <td><span class="${statusCls}">${escapeHtml(status)}</span></td>
-          <td>${formatDate(item.processedDate)}</td>
           <td>
-            ${item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED
-              ? `<button type="button" class="small-btn primary-btn" data-complete-arrear="${escapeHtml(item.id)}">처리완료</button>`
-              : '-'}
+            <button type="button" class="small-btn primary-btn" data-complete-arrear="${escapeHtml(item.id)}">처리완료</button>
             <button type="button" class="small-btn danger-btn" data-delete-arrear="${escapeHtml(item.id)}">삭제</button>
           </td>
         </tr>
@@ -1215,17 +1343,47 @@ const BremAdminLeaseMenus = (function () {
     }).join('');
   }
 
+  async function deleteProfitLog(id) {
+    if (!erp() || !id) return;
+    if (!window.confirm('이 수익 기록을 삭제할까요?')) return;
+    erp().profitLogs().removeById(id);
+    await erp().persistAll();
+    showToast('수익 기록을 삭제했습니다.');
+    if (state.menu === 'weekly') renderWeekly();
+    if (state.menu === 'monthly') renderMonthly();
+    renderDashboardKpis();
+  }
+
   async function completeArrear(id) {
     if (!erp()) return;
     const item = erp().arrears().getById(id);
     if (!item) return;
-    const recovered = Number(prompt('회수금액을 입력하세요.', String(item.unpaidAmount || 0)) || 0);
+    showArrearCompletePanel(item);
+  }
+
+  async function confirmCompleteArrear() {
+    if (!erp()) return;
+    const id = String($('leaseArrearCompleteId')?.value || '').trim();
+    const item = erp().arrears().getById(id);
+    if (!item) return;
+    const recovered = Math.max(0, Math.round(Number($('leaseArrearRecoveredAmount')?.value || 0)));
+    const memo = String($('leaseArrearCompleteMemo')?.value || '').trim();
+    const history = Array.isArray(item.rawData?.processingHistory) ? [...item.rawData.processingHistory] : [];
+    history.unshift({
+      at: new Date().toISOString(),
+      recoveredAmount: recovered,
+      collectionMethods: [...(item.collectionMethods || [])],
+      memo,
+      processedDate: BremLeaseProfit.todayKey()
+    });
     erp().arrears().update(id, {
       collectionStatus: calc().ARREAR_STATUS.COMPLETED,
       processedDate: BremLeaseProfit.todayKey(),
       recoveredAmount: recovered,
       unpaidAmount: Math.max(0, item.unpaidAmount - recovered),
-      paidAmount: item.paidAmount + recovered
+      paidAmount: item.paidAmount + recovered,
+      memo,
+      rawData: { ...(item.rawData || {}), processingHistory: history }
     });
     if (item.contractId) {
       erp().contracts().update(item.contractId, {
@@ -1237,6 +1395,7 @@ const BremAdminLeaseMenus = (function () {
       });
     }
     await erp().persistAll();
+    hideArrearCompletePanel();
     showToast('미납 처리가 완료되었습니다.');
     renderArrears();
     renderMonthly();
@@ -1564,6 +1723,11 @@ const BremAdminLeaseMenus = (function () {
         void completeArrear(completeBtn.dataset.completeArrear);
         return;
       }
+      const deleteProfitBtn = event.target.closest('[data-delete-profit-log]');
+      if (deleteProfitBtn) {
+        void deleteProfitLog(deleteProfitBtn.dataset.deleteProfitLog);
+        return;
+      }
       const deleteBtn = event.target.closest('[data-delete-arrear]');
       if (deleteBtn && erp()) {
         erp().arrears().removeById(deleteBtn.dataset.deleteArrear);
@@ -1572,6 +1736,9 @@ const BremAdminLeaseMenus = (function () {
     });
 
     bindCalcInputs();
+    $('leaseArrearRegisterForm')?.addEventListener('submit', event => { void registerArrear(event); });
+    $('leaseArrearCompleteConfirmBtn')?.addEventListener('click', () => { void confirmCompleteArrear(); });
+    $('leaseArrearCompleteCancelBtn')?.addEventListener('click', hideArrearCompletePanel);
   }
 
   async function init() {
