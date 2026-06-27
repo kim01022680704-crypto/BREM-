@@ -1083,7 +1083,7 @@
     if (window.BremLeaseErpPanels?.refresh) window.BremLeaseErpPanels.refresh();
     renderList();
     if (window.BremAdminLeaseMenus?.refresh) {
-      await window.BremAdminLeaseMenus.refresh();
+      await window.BremAdminLeaseMenus.refresh({ loadRemote: options.loadRemote });
     } else {
       await window.BremAdminLeaseMenus?.renderDashboardVehicleOverview?.();
     }

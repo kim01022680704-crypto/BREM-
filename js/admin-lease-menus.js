@@ -34,7 +34,8 @@ const BremAdminLeaseMenus = (function () {
     menu: 'dashboard',
     weekStart: '',
     monthKey: '',
-    bulkRows: []
+    bulkRows: [],
+    contractDeleting: ''
   };
 
   function escapeHtml(value) {
@@ -667,8 +668,14 @@ const BremAdminLeaseMenus = (function () {
     if (!rowsEl || !erp()) return;
     const contracts = erp().contracts().getAll()
       .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    const deleting = state.contractDeleting;
     if (!contracts.length) {
       rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.</td></tr>';
+      const deleteAllBtn = $('leaseContractDeleteAllBtn');
+      if (deleteAllBtn) {
+        deleteAllBtn.disabled = Boolean(deleting);
+        deleteAllBtn.textContent = deleting === 'all' ? '삭제 중…' : '전체 삭제';
+      }
       return;
     }
     rowsEl.innerHTML = contracts.map(contract => {
@@ -678,6 +685,7 @@ const BremAdminLeaseMenus = (function () {
       const period = [formatDate(contract.startDate), formatDate(contract.endDate)].filter(v => v !== '-').join(' ~ ') || '-';
       const status = resolveContractStatus(contract, contract.vehicleId);
       const deposit = contract.depositAmount ?? contract.penaltyFee ?? 0;
+      const isDeleting = deleting && (deleting === contract.id || deleting === 'all');
       return `
         <tr>
           <td><strong>${escapeHtml(contract.vehicleNumber || vehicle?.vehicleNumber || '-')}</strong></td>
@@ -689,12 +697,101 @@ const BremAdminLeaseMenus = (function () {
           <td>${formatMoney(deposit)}</td>
           <td><span class="lease-status-badge lease-status-badge--${status.code}">${escapeHtml(status.label)}</span></td>
           <td class="lease-actions">
-            <button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}">수정</button>
-            <button type="button" class="small-btn danger-btn" data-delete-contract="${escapeHtml(contract.id)}">삭제</button>
+            <button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>수정</button>
+            <button type="button" class="small-btn danger-btn" data-delete-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>${isDeleting && deleting === contract.id ? '삭제 중…' : '삭제'}</button>
           </td>
         </tr>
       `;
     }).join('');
+    const deleteAllBtn = $('leaseContractDeleteAllBtn');
+    if (deleteAllBtn) {
+      deleteAllBtn.disabled = Boolean(deleting);
+      deleteAllBtn.textContent = deleting === 'all' ? '삭제 중…' : '전체 삭제';
+    }
+  }
+
+  function refreshContractViews() {
+    renderContractList();
+    paintDashboardVehicleOverview();
+    renderDashboardKpis();
+    window.BremAdminLease?.refresh?.({ loadRemote: false });
+  }
+
+  function syncVehiclesAfterContractRemoval(vehicleIds = []) {
+    const ids = [...new Set((vehicleIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+    ids.forEach(vehicleId => {
+      const vehicle = erp()?.vehicles().getById(vehicleId);
+      if (vehicle) erp()?.syncVehicleFromContract?.(vehicle);
+    });
+  }
+
+  async function removeContracts(contractIds = []) {
+    if (!erp()) return false;
+    const ids = [...new Set(contractIds.map(id => String(id || '').trim()).filter(Boolean))];
+    if (!ids.length) return false;
+
+    const vehicleIds = ids
+      .map(id => erp().contracts().getById(id))
+      .filter(Boolean)
+      .map(contract => contract.vehicleId);
+
+    const deletingKey = ids.length === 1 ? ids[0] : 'all';
+    state.contractDeleting = deletingKey;
+    renderContractList();
+
+    try {
+      if (ids.length === 1) {
+        erp().contracts().removeById(ids[0]);
+      } else {
+        erp().contracts().removeByIds(ids);
+      }
+
+      syncVehiclesAfterContractRemoval(vehicleIds);
+      if ($('leaseContractEditId')?.value && ids.includes($('leaseContractEditId').value)) {
+        resetContractForm();
+      }
+
+      refreshContractViews();
+      await erp().persistPending({ skipFlushStorage: true });
+
+      showToast(ids.length === 1 ? '계약이 삭제되었습니다.' : `계약 ${ids.length}건이 삭제되었습니다.`);
+      return true;
+    } catch (error) {
+      console.error('[removeContracts]', error);
+      showToast(error?.message || '계약 삭제에 실패했습니다. 잠시 후 다시 시도하세요.');
+      try {
+        await erp().ensureLoaded?.();
+        refreshContractViews();
+      } catch (reloadError) {
+        console.error('[removeContracts] reload failed', reloadError);
+      }
+      return false;
+    } finally {
+      state.contractDeleting = '';
+      renderContractList();
+    }
+  }
+
+  async function deleteContract(contractId) {
+    if (!erp() || !contractId) return;
+    const contract = erp().contracts().getById(contractId);
+    if (!contract) return;
+    const vehicle = erp().vehicles().getById(contract.vehicleId);
+    const plate = contract.vehicleNumber || vehicle?.vehicleNumber || '-';
+    const name = contract.driverName || '-';
+    if (!window.confirm(`계약을 삭제하시겠습니까?\n${plate} · ${name}`)) return;
+    await removeContracts([contractId]);
+  }
+
+  async function deleteAllContracts() {
+    if (!erp()) return;
+    const contracts = erp().contracts().getAll();
+    if (!contracts.length) {
+      showToast('삭제할 계약이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`등록된 계약 ${contracts.length}건을 모두 삭제하시겠습니까?\n되돌릴 수 없습니다.`)) return;
+    await removeContracts(contracts.map(contract => contract.id));
   }
 
   async function saveContract(event) {
@@ -785,34 +882,6 @@ const BremAdminLeaseMenus = (function () {
     } catch (error) {
       console.error('[saveContract]', error);
       showToast(error?.message || '계약 저장에 실패했습니다. 잠시 후 다시 시도하세요.');
-    }
-  }
-
-  async function deleteContract(contractId) {
-    if (!erp() || !contractId) return;
-    const contract = erp().contracts().getById(contractId);
-    if (!contract) return;
-    const vehicle = erp().vehicles().getById(contract.vehicleId);
-    const plate = contract.vehicleNumber || vehicle?.vehicleNumber || '-';
-    const name = contract.driverName || '-';
-    if (!window.confirm(`계약을 삭제하시겠습니까?\n${plate} · ${name}`)) return;
-
-    try {
-      erp().contracts().removeById(contractId);
-      if (vehicle) erp().syncVehicleFromContract?.(vehicle);
-      erp().syncAllVehicleStatusesFromContracts?.();
-      await erp().persistAll();
-      if ($('leaseContractEditId')?.value === contractId) resetContractForm();
-      showToast('계약이 삭제되었습니다.');
-      window.BremAdminLease?.refresh?.();
-      renderContractList();
-      renderWeekly();
-      renderMonthly();
-      renderArrears();
-      void renderDashboardVehicleOverview();
-    } catch (error) {
-      console.error('[deleteContract]', error);
-      showToast(error?.message || '계약 삭제에 실패했습니다. 잠시 후 다시 시도하세요.');
     }
   }
 
@@ -1292,6 +1361,7 @@ const BremAdminLeaseMenus = (function () {
 
     $('leaseContractForm')?.addEventListener('submit', saveContract);
     $('leaseContractResetBtn')?.addEventListener('click', resetContractForm);
+    $('leaseContractDeleteAllBtn')?.addEventListener('click', () => { void deleteAllContracts(); });
     $('leaseContractEndBtn')?.addEventListener('click', endContractAsEmpty);
     ['leaseRentalDealStartDate', 'leaseRentalDealEndDate', 'leaseContractDriverName'].forEach(id => {
       $(id)?.addEventListener('change', syncContractCalc);
@@ -1410,8 +1480,8 @@ const BremAdminLeaseMenus = (function () {
     setMenu(state.menu || 'dashboard');
   }
 
-  async function refresh() {
-    if (erp()?.ensureLoaded) {
+  async function refresh(options = {}) {
+    if (options.loadRemote !== false && erp()?.ensureLoaded) {
       try {
         await erp().ensureLoaded();
       } catch (error) {
@@ -1422,7 +1492,9 @@ const BremAdminLeaseMenus = (function () {
     fillVehicleSelect($('leaseCalcVehicleId'));
     renderDashboardKpis();
     paintDashboardVehicleOverview();
-    await renderDashboardVehicleOverview();
+    if (options.loadRemote !== false) {
+      await renderDashboardVehicleOverview();
+    }
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
     if (state.menu === 'arrears') renderArrears();

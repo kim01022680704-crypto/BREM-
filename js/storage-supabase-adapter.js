@@ -362,9 +362,15 @@ window.BremSupabaseStorageAdapter = (function () {
         'lease_arrears'
       ]);
       const incremental = Array.isArray(options.incrementalRows) ? options.incrementalRows : null;
-      const rows = incremental?.length
-        ? incremental.map(toRow).filter(row => row?.id)
-        : (list || []).map(toRow).filter(row => row?.id);
+      const deletedRowIds = Array.isArray(options.deletedRowIds)
+        ? options.deletedRowIds.map(id => String(id || '').trim()).filter(Boolean)
+        : [];
+      const deleteOnly = options.deleteOnly === true && deletedRowIds.length > 0;
+      const rows = deleteOnly
+        ? []
+        : (incremental?.length
+          ? incremental.map(toRow).filter(row => row?.id)
+          : (list || []).map(toRow).filter(row => row?.id));
       if (LEASE_ERP_SERVER_TABLES.has(table) && window.BremStorageGuard?.isProductionMode?.()) {
         const persistLease = window.BremStorage?.persistLeaseErpTableViaServer;
         if (typeof persistLease === 'function') {
@@ -389,17 +395,16 @@ window.BremSupabaseStorageAdapter = (function () {
         'lease_profit_logs',
         'lease_arrears'
       ]);
-      if (incremental?.length) {
+      if (deleteOnly) {
+        await deleteRowsInChunks(table, deletedRowIds);
+      } else if (incremental?.length) {
         await persistTableRowsIncremental(table, rows);
       } else if (UPSERT_ONLY_TABLES.has(table) && options.fullSync !== true) {
         await upsertRowsInChunks(table, rows);
       } else {
         await syncTableRows(table, list, toRow);
       }
-      const deletedRowIds = Array.isArray(options.deletedRowIds)
-        ? options.deletedRowIds.map(id => String(id || '').trim()).filter(Boolean)
-        : [];
-      if (deletedRowIds.length) {
+      if (!deleteOnly && deletedRowIds.length) {
         await deleteRowsInChunks(table, deletedRowIds);
       }
       setCache(key, list);

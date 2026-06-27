@@ -5194,6 +5194,11 @@ textarea {
 }
 
 .lease-contract-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
   padding: 16px 18px 8px;
 }
 

@@ -516,14 +516,18 @@ const BremLeaseErp = (function () {
     return list;
   }
 
-  async function flushPendingWrites() {
+  async function flushPendingWrites(options = {}) {
     const batch = pendingWritePromises.splice(0);
-    for (const promise of batch) {
-      if (promise && BremStorage?.awaitPersist) {
-        await BremStorage.awaitPersist(promise);
-      }
+    await Promise.all(batch.map(promise =>
+      promise && BremStorage?.awaitPersist ? BremStorage.awaitPersist(promise) : Promise.resolve()
+    ));
+    if (!options.skipFlushStorage && BremStorage?.flushStorage) {
+      await BremStorage.flushStorage();
     }
-    if (BremStorage?.flushStorage) await BremStorage.flushStorage();
+  }
+
+  async function persistPending(options = {}) {
+    await flushPendingWrites(options);
   }
 
   async function persistKey() {
@@ -644,7 +648,14 @@ const BremLeaseErp = (function () {
       },
       removeById(id) {
         const list = store.getAll().filter(item => item.id !== id);
-        writeList(key, list, { deletedRowIds: [id] });
+        writeList(key, list, { deletedRowIds: [id], deleteOnly: true });
+      },
+      removeByIds(ids = []) {
+        const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
+        if (!idSet.size) return;
+        const deletedRowIds = [...idSet];
+        const list = store.getAll().filter(item => !idSet.has(item.id));
+        writeList(key, list, { deletedRowIds, deleteOnly: true });
       },
       async persist() {
         await persistKey(key);
@@ -818,8 +829,8 @@ const BremLeaseErp = (function () {
     return { changed };
   }
 
-  async function persistAll() {
-    await flushPendingWrites();
+  async function persistAll(options = {}) {
+    await flushPendingWrites(options);
   }
 
   function payments() {
@@ -939,6 +950,7 @@ const BremLeaseErp = (function () {
     syncVehicleFromContract,
     syncAllVehicleStatusesFromContracts,
     persistAll,
+    persistPending,
     saveProfitSnapshot,
     buildDashboardKpis,
     applyVehicleFilters,
