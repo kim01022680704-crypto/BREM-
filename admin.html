@@ -1766,10 +1766,15 @@
             <label>적용주(수요일)<input type="date" id="leaseWeekStart" class="admin-period-input"></label>
             <button type="button" class="small-btn" id="leaseWeekRefreshBtn">조회</button>
             <button type="button" class="small-btn" id="leaseWeekExportBtn">엑셀 다운로드</button>
+            <label class="check-label lease-weekly-select-all">
+              <input type="checkbox" id="leaseWeeklySelectAll">
+              <span>전체 선택</span>
+            </label>
+            <button type="button" class="small-btn danger-btn" id="leaseWeeklyBulkDelete" disabled>선택 삭제</button>
           </div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
-              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>렌탈일수</th><th>공차일수</th><th>미납일수</th><th>렌탈매출</th><th>공차손실</th><th>미납금</th><th>비용합계</th><th>순이익</th><th>상태</th><th>관리</th></tr></thead>
+              <thead><tr><th></th><th>차량번호</th><th>차량명</th><th>기사명</th><th>렌탈일수</th><th>공차일수</th><th>미납일수</th><th>렌탈매출</th><th>공차손실</th><th>미납금</th><th>비용합계</th><th>순이익</th><th>상태</th><th>관리</th></tr></thead>
               <tbody id="leaseWeeklyRows"></tbody>
             </table>
           </div>
@@ -4501,7 +4506,7 @@
   <script src="js/lease-erp.js?v=20260630w"></script>
   <script src="js/admin-lease.js?v=20260630w"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260701a"></script>
+  <script src="js/admin-lease-menus.js?v=20260701b"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

@@ -36,7 +36,9 @@ const BremAdminLeaseMenus = (function () {
     monthKey: '',
     bulkRows: [],
     contractDeleting: '',
-    contractDriverSearch: ''
+    contractDriverSearch: '',
+    weeklySelectedLogIds: new Set(),
+    weeklyVisibleLogIds: []
   };
 
   function getContractDrivers() {
@@ -1035,6 +1037,28 @@ const BremAdminLeaseMenus = (function () {
     };
   }
 
+  function getWeeklyDeletableLogIds() {
+    return (state.weeklyVisibleLogIds || []).filter(Boolean);
+  }
+
+  function updateWeeklySelectionUi() {
+    const visible = getWeeklyDeletableLogIds();
+    const selectedVisible = visible.filter(id => state.weeklySelectedLogIds.has(id));
+    const selectAll = $('leaseWeeklySelectAll');
+    const bulkDelete = $('leaseWeeklyBulkDelete');
+    if (selectAll) {
+      selectAll.checked = visible.length > 0 && selectedVisible.length === visible.length;
+      selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
+      selectAll.disabled = visible.length === 0;
+    }
+    if (bulkDelete) {
+      bulkDelete.disabled = selectedVisible.length === 0;
+      bulkDelete.textContent = selectedVisible.length
+        ? `선택 삭제 (${selectedVisible.length})`
+        : '선택 삭제';
+    }
+  }
+
   function renderWeekly() {
     const rowsEl = $('leaseWeeklyRows');
     if (!rowsEl || !erp()) return;
@@ -1083,13 +1107,22 @@ const BremAdminLeaseMenus = (function () {
         })
       : contracts.map(contract => ({ ...buildPeriodRow(contract, vehicles.get(contract.vehicleId), 7), logId: '' }));
 
+    state.weeklyVisibleLogIds = rows.map(row => row.logId).filter(Boolean);
+    state.weeklySelectedLogIds = new Set(
+      [...state.weeklySelectedLogIds].filter(id => state.weeklyVisibleLogIds.includes(id))
+    );
+
     if (!rows.length) {
-      rowsEl.innerHTML = '<tr><td colspan="13" class="empty">해당 주간 데이터가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="14" class="empty">해당 주간 데이터가 없습니다.</td></tr>';
+      updateWeeklySelectionUi();
       return;
     }
 
     rowsEl.innerHTML = rows.map(row => `
-      <tr>
+      <tr${row.logId && state.weeklySelectedLogIds.has(row.logId) ? ' class="row-selected"' : ''}>
+        <td>${row.logId
+          ? `<input type="checkbox" data-select-weekly-profit-log="${escapeHtml(row.logId)}" ${state.weeklySelectedLogIds.has(row.logId) ? 'checked' : ''}>`
+          : ''}</td>
         <td>${escapeHtml(row.vehicleNumber)}</td>
         <td>${escapeHtml(row.vehicleName)}</td>
         <td>${escapeHtml(row.driverName)}</td>
@@ -1105,6 +1138,7 @@ const BremAdminLeaseMenus = (function () {
         <td>${row.logId ? `<button type="button" class="small-btn danger-btn" data-delete-profit-log="${escapeHtml(row.logId)}">삭제</button>` : '-'}</td>
       </tr>
     `).join('');
+    updateWeeklySelectionUi();
   }
 
   function renderMonthly() {
@@ -1343,15 +1377,26 @@ const BremAdminLeaseMenus = (function () {
     }).join('');
   }
 
-  async function deleteProfitLog(id) {
-    if (!erp() || !id) return;
-    if (!window.confirm('이 수익 기록을 삭제할까요?')) return;
-    erp().profitLogs().removeById(id);
+  async function deleteProfitLogs(ids = []) {
+    if (!erp()) return;
+    const idList = [...new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean))];
+    if (!idList.length) return;
+    const message = idList.length === 1
+      ? '이 수익 기록을 삭제할까요?'
+      : `선택한 ${idList.length}건의 수익 기록을 삭제할까요?`;
+    if (!window.confirm(message)) return;
+    if (idList.length === 1) erp().profitLogs().removeById(idList[0]);
+    else erp().profitLogs().removeByIds(idList);
     await erp().persistAll();
-    showToast('수익 기록을 삭제했습니다.');
+    idList.forEach(id => state.weeklySelectedLogIds.delete(id));
+    showToast(idList.length === 1 ? '수익 기록을 삭제했습니다.' : `${idList.length}건의 수익 기록을 삭제했습니다.`);
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
     renderDashboardKpis();
+  }
+
+  async function deleteProfitLog(id) {
+    await deleteProfitLogs([id]);
   }
 
   async function completeArrear(id) {
@@ -1671,6 +1716,16 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseWeekRefreshBtn')?.addEventListener('click', renderWeekly);
     $('leaseWeekExportBtn')?.addEventListener('click', exportWeeklyExcel);
+    $('leaseWeeklySelectAll')?.addEventListener('change', event => {
+      const visible = getWeeklyDeletableLogIds();
+      if (event.target.checked) visible.forEach(id => state.weeklySelectedLogIds.add(id));
+      else visible.forEach(id => state.weeklySelectedLogIds.delete(id));
+      renderWeekly();
+    });
+    $('leaseWeeklyBulkDelete')?.addEventListener('click', () => {
+      const ids = getWeeklyDeletableLogIds().filter(id => state.weeklySelectedLogIds.has(id));
+      void deleteProfitLogs(ids);
+    });
     $('leaseMonthKey')?.addEventListener('change', renderMonthly);
     $('leaseMonthExportBtn')?.addEventListener('click', exportMonthlyExcel);
     $('leaseBulkV3TemplateBtn')?.addEventListener('click', downloadBulkTemplate);
@@ -1739,6 +1794,17 @@ const BremAdminLeaseMenus = (function () {
     $('leaseArrearRegisterForm')?.addEventListener('submit', event => { void registerArrear(event); });
     $('leaseArrearCompleteConfirmBtn')?.addEventListener('click', () => { void confirmCompleteArrear(); });
     $('leaseArrearCompleteCancelBtn')?.addEventListener('click', hideArrearCompletePanel);
+
+    document.addEventListener('change', event => {
+      const weeklyCheck = event.target.closest('[data-select-weekly-profit-log]');
+      if (!weeklyCheck) return;
+      const id = weeklyCheck.dataset.selectWeeklyProfitLog;
+      if (!id) return;
+      if (weeklyCheck.checked) state.weeklySelectedLogIds.add(id);
+      else state.weeklySelectedLogIds.delete(id);
+      updateWeeklySelectionUi();
+      weeklyCheck.closest('tr')?.classList.toggle('row-selected', weeklyCheck.checked);
+    });
   }
 
   async function init() {
