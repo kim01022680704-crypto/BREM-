@@ -1123,15 +1123,19 @@
                 <div class="card-header lease-dash-card-header">
                   <div>
                     <h2>리스 관리 대시보드</h2>
-                    <p class="form-help" id="leaseDashWeekLabel">주간 순이익 · 수요일~화요일 기준</p>
+                    <p class="form-help">주간 순이익 · 차량별 현황</p>
                   </div>
-                  <button type="button" class="small-btn" id="leaseDashSettingsBtn">대시보드 설정</button>
                 </div>
-                <div class="lease-dash-settings" id="leaseDashSettings" hidden>
-                  <div class="lease-dash-settings__grid">
-                    <label>적용주 (수요일)<input type="date" id="leaseDashWeekBasis" class="admin-period-input"></label>
-                    <p class="form-help">주간 순이익·주간수익 메뉴는 선택한 수요일~다음 화요일 구간 기준입니다.</p>
-                  </div>
+                <div class="lease-dash-week-period">
+                  <label class="period-label-block week-target-block">
+                    <span class="label-row">적용주 (수요일 시작 · 수~화 7일)</span>
+                    <span class="field-preview week-range-label" id="leaseDashWeekRangePreview">수요일~화요일 기준</span>
+                    <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-dash-week" id="leaseDashWeekBtn">
+                      <span id="leaseDashWeekLabel">수요일 선택</span>
+                    </button>
+                    <span class="period-picker-caption">달력에서 수요일만 선택 · 주간 순이익·주간수익 기준</span>
+                    <input type="hidden" id="leaseDashWeekStart">
+                  </label>
                 </div>
                 <div class="lease-dash-grid">
                   <article class="lease-dash-tile"><span>전체 차량</span><strong id="leaseStatTotal">0</strong><em>대</em></article>
@@ -4533,7 +4537,7 @@
   <script src="js/lease-erp.js?v=20260701e"></script>
   <script src="js/admin-lease.js?v=20260701d"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260701e"></script>
+  <script src="js/admin-lease-menus.js?v=20260701f"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -4547,7 +4551,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260701c"></script>
+  <script src="js/admin.js?v=20260701d"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

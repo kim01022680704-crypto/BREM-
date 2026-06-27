@@ -5006,18 +5006,17 @@ textarea {
   flex-wrap: wrap;
 }
 
-.lease-dash-settings {
-  margin: 0 0 16px;
-  padding: 14px 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.35);
+.lease-dash-week-period {
+  margin: 0 18px 16px;
+  padding: 0 4px;
 }
 
-.lease-dash-settings__grid {
-  display: grid;
-  gap: 8px;
-  max-width: 360px;
+.lease-dash-week-period .week-range-label {
+  display: block;
+  margin: 6px 0 10px;
+  color: var(--yellow);
+  font-size: 0.95rem;
+  font-weight: 800;
 }
 
 .lease-dash-grid {

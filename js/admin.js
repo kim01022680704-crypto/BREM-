@@ -1601,6 +1601,16 @@
           };
         }
 
+        if (triggerId === 'lease-dash-week') {
+          return {
+            hiddenInput: $('#leaseDashWeekStart'),
+            labelEl: $('#leaseDashWeekLabel'),
+            onSelect(value) {
+              window.BremAdminLeaseMenus?.handleDashboardWeekChange?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'lease-arrear-week') {
           return {
             hiddenInput: $('#leaseArrearWeekStart'),

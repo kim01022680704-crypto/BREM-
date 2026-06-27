@@ -209,14 +209,48 @@ const BremAdminLeaseMenus = (function () {
     renderWeekly();
   }
 
+  function syncLeaseDashWeekUi(weekStart) {
+    const normalized = String(
+      BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || weekStart
+      || currentWeekStart()
+      || ''
+    ).slice(0, 10);
+    if ($('leaseDashWeekStart')) $('leaseDashWeekStart').value = normalized;
+    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
+    if ($('leaseDashWeekRangePreview')) $('leaseDashWeekRangePreview').textContent = rangeLabel;
+    if ($('leaseDashWeekLabel')) {
+      if (!normalized) {
+        $('leaseDashWeekLabel').textContent = '수요일 선택';
+      } else if (BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
+        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
+        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
+        $('leaseDashWeekLabel').textContent = weekday
+          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
+          : BremDatePicker.formatDate(wednesday);
+      } else {
+        $('leaseDashWeekLabel').textContent = normalized;
+      }
+    }
+    return normalized;
+  }
+
   function updateLeaseDashWeekUi() {
     const weekStart = currentWeekStart();
-    if ($('leaseDashWeekBasis')) $('leaseDashWeekBasis').value = weekStart;
-    if ($('leaseDashWeekLabel')) {
-      $('leaseDashWeekLabel').textContent = `주간 순이익 · ${formatLeaseWeekRangeLabel(weekStart)}`;
-    }
+    syncLeaseDashWeekUi(weekStart);
     if ($('leaseWeekStart') && !$('leaseWeekStart').value) syncLeaseWeeklyWeekUi(weekStart);
     else syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value || weekStart);
+  }
+
+  function handleDashboardWeekChange(weekStart) {
+    const normalized = syncLeaseDashWeekUi(weekStart);
+    if (normalized) {
+      BremStorage?.adminPreferences?.setLeaseDashboardWeekBasis?.(normalized);
+    }
+    syncLeaseWeeklyWeekUi(normalized);
+    renderDashboardKpis();
+    void renderDashboardVehicleOverview();
+    if (state.menu === 'weekly') renderWeekly();
   }
 
   function sumProfitLogsForWeek(weekStart) {
@@ -328,7 +362,10 @@ const BremAdminLeaseMenus = (function () {
       renderArrears();
       return;
     }
-    if (menu === 'dashboard') renderDashboard();
+    if (menu === 'dashboard') {
+      syncLeaseDashWeekUi(currentWeekStart());
+      renderDashboard();
+    }
     if (menu === 'weekly') renderWeekly();
     if (menu === 'monthly') renderMonthly();
     if (menu === 'empty') renderEmpty();
@@ -1888,27 +1925,6 @@ const BremAdminLeaseMenus = (function () {
       syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value);
       renderWeekly();
     });
-    $('leaseDashSettingsBtn')?.addEventListener('click', () => {
-      const panel = $('leaseDashSettings');
-      if (!panel) return;
-      const hidden = panel.hasAttribute('hidden');
-      if (hidden) panel.removeAttribute('hidden');
-      else panel.setAttribute('hidden', '');
-    });
-    $('leaseDashWeekBasis')?.addEventListener('change', event => {
-      const picked = String(event.target.value || '').slice(0, 10);
-      if (!picked) return;
-      const weekStart = BremStorage?.adminPreferences?.setLeaseDashboardWeekBasis?.(picked)
-        || BremDatePicker?.weekStartKey?.(picked)
-        || picked;
-      if ($('leaseDashWeekBasis')) $('leaseDashWeekBasis').value = weekStart;
-      syncLeaseWeeklyWeekUi(weekStart);
-      updateLeaseDashWeekUi();
-      renderDashboardKpis();
-      void renderDashboardVehicleOverview();
-      renderWeekly();
-      showToast('주간 기준이 저장되었습니다. (수요일~화요일)');
-    });
     $('leaseWeekRefreshBtn')?.addEventListener('click', () => {
       syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value || state.weekStart || currentWeekStart());
       renderWeekly();
@@ -2097,6 +2113,8 @@ const BremAdminLeaseMenus = (function () {
     paintDashboardVehicleOverview,
     renderDashboardVehicleOverview,
     updateLeaseDashWeekUi,
+    syncLeaseDashWeekUi,
+    handleDashboardWeekChange,
     handleWeeklyWeekChange,
     handleArrearWeekChange,
     syncLeaseWeeklyWeekUi,
