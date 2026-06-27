@@ -208,18 +208,22 @@ button {
 }
 
 .duplicate-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: block;
   overflow: auto;
   min-height: 0;
+  flex: 1;
 }
 
 .duplicate-group-card {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: #fff;
-  overflow: hidden;
+  overflow: visible;
+  margin-bottom: 14px;
+}
+
+.duplicate-group-card:last-child {
+  margin-bottom: 0;
 }
 
 .duplicate-group-card__head {
@@ -311,16 +315,32 @@ button {
 
 .duplicate-group-card__table {
   display: block !important;
-  overflow: auto;
+  width: 100%;
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-.drivers-duplicates-page .duplicate-group-card__table table {
+.drivers-duplicates-page .duplicate-group-card__table .driver-table {
+  display: table !important;
+  width: 100%;
   min-width: 680px;
 }
 
+.drivers-duplicates-page .duplicate-group-card__table thead,
+.drivers-duplicates-page .duplicate-group-card__table tbody {
+  display: table-row-group !important;
+}
+
+.drivers-duplicates-page .duplicate-group-card__table tr {
+  display: table-row !important;
+}
+
+.drivers-duplicates-page .duplicate-group-card__table th,
+.drivers-duplicates-page .duplicate-group-card__table td {
+  display: table-cell !important;
+}
+
 .drivers-duplicates-page .duplicate-groups {
-  flex: 1;
   max-height: calc(100vh - 280px);
 }
 

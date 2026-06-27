@@ -160,7 +160,7 @@
           </div>
           <span class="duplicate-group-card__count">${memberCount}명</span>
         </header>
-        <div class="table-wrap duplicate-group-card__table" role="region" aria-label="${escapeHtml(group.label)} 기사 목록">
+        <div class="duplicate-group-card__table" role="region" aria-label="${escapeHtml(group.label)} 기사 목록">
           <table class="driver-table driver-table--compact">
             <thead>
               <tr>
