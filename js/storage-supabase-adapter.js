@@ -178,7 +178,9 @@ window.BremSupabaseStorageAdapter = (function () {
       keys.leaseAccidents,
       keys.leaseMaintenance,
       keys.leaseProfitLogs,
-      keys.leaseArrears
+      keys.leaseArrears,
+      keys.payrollSlipUploads,
+      keys.payrollSlipLines
     ].forEach(key => TABLE_KEYS.add(key));
 
     function buildSystemSettingsWhitelist() {
@@ -214,22 +216,41 @@ window.BremSupabaseStorageAdapter = (function () {
 
     function isMissingTableError(error) {
       const message = String(error?.message || error || '').toLowerCase();
-      return message.includes('does not exist')
+      const code = String(error?.code || '').toUpperCase();
+      return code === 'PGRST204'
+        || code === 'PGRST205'
+        || message.includes('does not exist')
         || message.includes('schema cache')
+        || message.includes('could not find the table')
         || (message.includes('relation') && message.includes('does not exist'));
     }
 
-    async function probeTable(tableName) {
-      if (tableAvailability.has(tableName)) return tableAvailability.get(tableName);
+    async function probeTable(tableName, options = {}) {
+      const force = options.force === true;
+      if (!force && tableAvailability.has(tableName)) return tableAvailability.get(tableName);
       try {
         const { error } = await client.from(tableName).select('id').limit(1);
-        const available = !error || !isMissingTableError(error);
+        if (!error) {
+          tableAvailability.set(tableName, true);
+          return true;
+        }
+        const available = !isMissingTableError(error);
         tableAvailability.set(tableName, available);
         return available;
       } catch {
         tableAvailability.set(tableName, false);
         return false;
       }
+    }
+
+    async function probeOperationTables(tableNames = [], options = {}) {
+      const names = [...new Set((tableNames || []).map(name => String(name || '').trim()).filter(Boolean))];
+      if (!names.length) return {};
+      const results = {};
+      await Promise.all(names.map(async name => {
+        results[name] = await probeTable(name, options);
+      }));
+      return results;
     }
 
     async function upsertRowsInChunks(tableName, rows, chunkSize = 200) {
@@ -2081,7 +2102,8 @@ window.BremSupabaseStorageAdapter = (function () {
       isOperationTableAvailable(tableName) {
         if (!tableAvailability.has(tableName)) return null;
         return tableAvailability.get(tableName);
-      }
+      },
+      probeOperationTables
     };
   }
 

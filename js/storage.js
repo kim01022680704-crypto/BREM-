@@ -550,10 +550,10 @@ const BremStorage = (function () {
   function isPayrollLocalStorageMode() {
     const config = window.BREM_SUPABASE_CONFIG || {};
     if (config.mode === 'production') return false;
-    const payrollMode = config.payrollStorage?.mode;
-    if (payrollMode === 'local') return true;
+    const payrollMode = String(config.payrollStorage?.mode || '').trim().toLowerCase();
     if (payrollMode === 'supabase') return false;
-    return config.backend === 'local';
+    if (payrollMode === 'local') return true;
+    return false;
   }
 
   function readPayrollLocalCollection(key, fallback = []) {
@@ -597,12 +597,21 @@ const BremStorage = (function () {
 
     const uploadsTable = 'payroll_slip_uploads';
     const linesTable = 'payroll_slip_lines';
+
+    if (activeStorageAdapter.probeOperationTables) {
+      try {
+        await activeStorageAdapter.probeOperationTables([uploadsTable, linesTable], { force: true });
+      } catch {
+        /* ignore probe errors */
+      }
+    }
+
     let uploadsAvailable = activeStorageAdapter.isOperationTableAvailable?.(uploadsTable);
     let linesAvailable = activeStorageAdapter.isOperationTableAvailable?.(linesTable);
 
     if (uploadsAvailable == null || linesAvailable == null) {
       try {
-        await ensureSectionLoadedInternal('payroll-slips');
+        await ensureSectionLoadedInternal('payroll-slips', { force: true });
       } catch {
         /* ignore probe errors */
       }
