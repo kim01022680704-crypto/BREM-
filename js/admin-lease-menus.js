@@ -237,18 +237,26 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const btn = $('leaseErpCommitBtn');
+    const commitBtns = document.querySelectorAll('[data-lease-commit-btn]');
     if (btn) {
       btn.disabled = true;
       btn.textContent = '저장 중…';
     }
+    commitBtns.forEach(el => { el.disabled = true; });
     try {
-      await erp().commitDeferredWrites();
+      await erp().commitDeferredWrites({ skipFlushStorage: true });
       showToast('Supabase에 저장했습니다.');
       updateLeaseErpUnsavedBanner();
-      refreshAfterLeaseMutation();
+      renderContractList();
+      renderDashboardKpis();
+      paintDashboardVehicleOverview();
+      window.BremAdminLease?.renderList?.();
     } catch (error) {
       console.error('[commitLeaseErpSave]', error);
       showToast(error?.message || '저장에 실패했습니다.');
+      updateLeaseErpUnsavedBanner();
+    } finally {
+      if (btn) btn.textContent = 'Supabase 저장';
       updateLeaseErpUnsavedBanner();
     }
   }
@@ -1009,6 +1017,10 @@ const BremAdminLeaseMenus = (function () {
     if (!rowsEl || !erp()) return;
     const contracts = erp().contracts().getAll()
       .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    const countEl = $('leaseContractListCount');
+    if (countEl) {
+      countEl.textContent = `전체 ${contracts.length}건 · 스크롤하여 전체 확인`;
+    }
     const deleting = state.contractDeleting;
     if (!contracts.length) {
       rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.</td></tr>';
@@ -1094,9 +1106,9 @@ const BremAdminLeaseMenus = (function () {
       }
 
       refreshContractViews();
-      await erp().persistPending({ skipFlushStorage: true });
+      await erp().flushImmediateWrites();
 
-      showToast(ids.length === 1 ? '계약이 삭제되었습니다.' : `계약 ${ids.length}건이 삭제되었습니다.`);
+      showToast(ids.length === 1 ? 'Supabase에서 계약을 삭제했습니다.' : `Supabase에서 계약 ${ids.length}건을 삭제했습니다.`);
       return true;
     } catch (error) {
       console.error('[removeContracts]', error);
@@ -1674,11 +1686,20 @@ const BremAdminLeaseMenus = (function () {
     const isHistory = String(item.collectionStatus || '') === calc().ARREAR_STATUS.COMPLETED;
     const label = isHistory ? '처리 이력' : '미납 기록';
     if (!window.confirm(`${label}을 삭제할까요?\n${plate} · ${driver}`)) return;
-    erp().arrears().removeById(id);
-    updateLeaseErpUnsavedBanner();
-    renderArrears();
-    refreshAfterLeaseMutation({ contract: false });
-    showToast(`${label}을 삭제했습니다.`);
+    void (async () => {
+      try {
+        erp().arrears().removeById(id);
+        await erp().flushImmediateWrites();
+        updateLeaseErpUnsavedBanner();
+        renderArrears();
+        renderDashboardKpis();
+        paintDashboardVehicleOverview();
+        showToast(`Supabase에서 ${label}을 삭제했습니다.`);
+      } catch (error) {
+        console.error('[deleteArrearRecord]', error);
+        showToast(error?.message || '삭제에 실패했습니다.');
+      }
+    })();
   }
 
   function renderArrears() {

@@ -775,6 +775,13 @@
     if (!rowsEl) return;
 
     renderErpSummary(items);
+    const totalAll = leases.getAll().length;
+    const countEl = $('leaseVehicleListCount');
+    if (countEl) {
+      countEl.textContent = items.length === totalAll
+        ? `전체 ${totalAll}대 · 스크롤하여 전체 확인`
+        : `표시 ${items.length}대 / 전체 ${totalAll}대 · 스크롤하여 확인`;
+    }
 
     if (!items.length) {
       const emptyText = state.searchQuery.trim()
@@ -1077,8 +1084,15 @@
   }
 
   async function reloadVehiclesAfterDelete() {
+    try {
+      await erp?.flushImmediateWrites?.();
+    } catch (error) {
+      console.error('[lease delete persist]', error);
+      showToast(error?.message || 'Supabase 삭제에 실패했습니다.');
+      throw error;
+    }
     erp?.syncAllVehicleStatusesFromContracts?.();
-    window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
+    updateLeaseErpUnsavedBanner();
     renderList();
     renderStats();
     if (window.BremAdminLeaseMenus?.refresh) {
@@ -1086,6 +1100,10 @@
     } else {
       window.BremAdminLeaseMenus?.paintDashboardVehicleOverview?.();
     }
+  }
+
+  function updateLeaseErpUnsavedBanner() {
+    window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
   }
 
   async function refresh(options = {}) {
@@ -1295,7 +1313,7 @@
         leases.removeByIds(ids);
         await reloadVehiclesAfterDelete();
         ids.forEach(id => state.selectedIds.delete(id));
-        showToast('선택 항목을 목록에서 삭제했습니다. Supabase 저장 버튼을 눌러 주세요.');
+        showToast('선택 항목을 Supabase에서 삭제했습니다.');
       } catch (error) {
         console.error('[lease bulk delete]', error);
         showToast(error?.message || '삭제에 실패했습니다.');
@@ -1344,7 +1362,7 @@
             await reloadVehiclesAfterDelete();
             state.selectedIds.delete(id);
             if (state.editingId === id) resetForm();
-            showToast('목록에서 삭제했습니다. Supabase 저장 버튼을 눌러 주세요.');
+            showToast('Supabase에서 삭제했습니다.');
           } catch (error) {
             console.error('[lease delete]', error);
             showToast(error?.message || '삭제에 실패했습니다.');

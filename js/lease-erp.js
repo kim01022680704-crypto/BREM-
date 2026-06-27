@@ -543,6 +543,12 @@ const BremLeaseErp = (function () {
     return deferredDirtyKeys.size > 0;
   }
 
+  function shouldDeferWrite(options = {}) {
+    if (options.immediate === true || options.deferRemote === false) return false;
+    if (options.deferRemote === true) return true;
+    return deferRemotePersist;
+  }
+
   function mergeDeferredWriteOptions(key, options = {}) {
     const prev = deferredWriteOptions.get(key) || {};
     const deletedRowIds = [...new Set([
@@ -563,7 +569,7 @@ const BremLeaseErp = (function () {
   function writeList(key, list, options = {}) {
     const next = Array.isArray(list) ? list : [];
     window.BremDataCache?.set?.(key, next, { source: 'write' });
-    if (options.deferRemote || deferRemotePersist) {
+    if (shouldDeferWrite(options)) {
       deferredDirtyKeys.add(key);
       mergeDeferredWriteOptions(key, options);
       document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
@@ -599,8 +605,12 @@ const BremLeaseErp = (function () {
     });
     deferredDirtyKeys.clear();
     deferredWriteOptions.clear();
-    await flushPendingWrites(options);
+    await flushPendingWrites({ skipFlushStorage: true, ...options });
     document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
+  }
+
+  async function flushImmediateWrites(options = {}) {
+    await flushPendingWrites({ skipFlushStorage: true, ...options });
   }
 
   async function flushPendingWrites(options = {}) {
@@ -625,15 +635,16 @@ const BremLeaseErp = (function () {
     }
   }
 
-  function purgeVehicleDependencies(vehicleIds = []) {
+  function purgeVehicleDependencies(vehicleIds = [], options = {}) {
     const idSet = new Set((vehicleIds || []).map(value => String(value || '').trim()).filter(Boolean));
     if (!idSet.size) return;
+    const deleteOpts = { immediate: true, allowEmpty: true, deleteOnly: true };
     const profitIds = profitLogs().getAll().filter(item => idSet.has(item.vehicleId)).map(item => item.id);
-    if (profitIds.length) profitLogs().removeByIds(profitIds);
+    if (profitIds.length) profitLogs().removeByIds(profitIds, deleteOpts);
     const arrearIds = arrears().getAll().filter(item => idSet.has(item.vehicleId)).map(item => item.id);
-    if (arrearIds.length) arrears().removeByIds(arrearIds);
+    if (arrearIds.length) arrears().removeByIds(arrearIds, deleteOpts);
     const contractIds = contracts().getAll().filter(item => idSet.has(item.vehicleId)).map(item => item.id);
-    if (contractIds.length) contracts().removeByIds(contractIds);
+    if (contractIds.length) contracts().removeByIds(contractIds, deleteOpts);
   }
 
   function afterVehiclesRemoved(removedIds = []) {
@@ -702,17 +713,28 @@ const BremLeaseErp = (function () {
       upsertMany(records = []) {
         return records.map(record => vehicles().upsert(record));
       },
-      removeById(id) {
+      removeById(id, options = {}) {
         const list = vehicles().getAll().filter(item => item.id !== id);
-        writeList(KEYS.vehicles, list, { deletedRowIds: [id], deleteOnly: true, allowEmpty: true });
+        const writeOpts = {
+          deletedRowIds: [id],
+          deleteOnly: true,
+          allowEmpty: true,
+          immediate: options.immediate !== false
+        };
+        writeList(KEYS.vehicles, list, writeOpts);
         afterVehiclesRemoved([id]);
       },
-      removeByIds(ids = []) {
+      removeByIds(ids = [], options = {}) {
         const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
         if (!idSet.size) return;
         const deletedRowIds = [...idSet];
         const list = vehicles().getAll().filter(item => !idSet.has(item.id));
-        writeList(KEYS.vehicles, list, { deletedRowIds, deleteOnly: true, allowEmpty: true });
+        writeList(KEYS.vehicles, list, {
+          deletedRowIds,
+          deleteOnly: true,
+          allowEmpty: true,
+          immediate: options.immediate !== false
+        });
         afterVehiclesRemoved(deletedRowIds);
       },
       assignRental(vehicleId, assignment) {
@@ -761,16 +783,26 @@ const BremLeaseErp = (function () {
         writeList(key, list, { incrementalRows: [record] });
         return record;
       },
-      removeById(id) {
+      removeById(id, options = {}) {
         const list = store.getAll().filter(item => item.id !== id);
-        writeList(key, list, { deletedRowIds: [id], deleteOnly: true, allowEmpty: true });
+        writeList(key, list, {
+          deletedRowIds: [id],
+          deleteOnly: true,
+          allowEmpty: true,
+          immediate: options.immediate !== false
+        });
       },
-      removeByIds(ids = []) {
+      removeByIds(ids = [], options = {}) {
         const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
         if (!idSet.size) return;
         const deletedRowIds = [...idSet];
         const list = store.getAll().filter(item => !idSet.has(item.id));
-        writeList(key, list, { deletedRowIds, deleteOnly: true, allowEmpty: true });
+        writeList(key, list, {
+          deletedRowIds,
+          deleteOnly: true,
+          allowEmpty: true,
+          immediate: options.immediate !== false
+        });
       },
       async persist() {
         await persistKey(key);
@@ -1099,6 +1131,7 @@ const BremLeaseErp = (function () {
     setDeferRemotePersist,
     hasDeferredChanges,
     commitDeferredWrites,
+    flushImmediateWrites,
     resolveVehicleStatusTags,
     saveProfitSnapshot,
     buildDashboardKpis,

@@ -6082,6 +6082,29 @@ textarea {
   overflow: auto;
 }
 
+.lease-list-scroll {
+  max-height: min(920px, calc(100vh - 280px));
+  min-height: 640px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.lease-list-scroll .lease-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1a1f2e;
+  box-shadow: 0 1px 0 rgba(148, 163, 184, 0.2);
+}
+
+.lease-list-count {
+  margin-top: 4px;
+  color: var(--yellow);
+  font-weight: 700;
+}
+
 .lease-table {
   min-width: 1400px;
 }

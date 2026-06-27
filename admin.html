@@ -1583,7 +1583,8 @@
           <div class="card-header lease-list-header">
             <div>
               <h2>차량 목록</h2>
-              <p class="form-help" id="leaseFilterStatusList">전체 목록 · 엑셀 기준 컬럼 표시</p>
+              <p class="form-help" id="leaseFilterStatusList">전체 목록 · 스크롤하여 전체 차량 확인</p>
+              <p class="form-help lease-list-count" id="leaseVehicleListCount">전체 0대</p>
             </div>
             <div class="lease-list-toolbar">
               <label class="driver-search-field lease-search-field">
@@ -1599,7 +1600,7 @@
               <button type="button" class="small-btn danger-btn" id="leaseBulkDelete" disabled>선택 삭제</button>
             </div>
           </div>
-          <div class="table-wrap lease-table-wrap">
+          <div class="table-wrap lease-table-wrap lease-list-scroll">
             <table class="lease-table">
               <thead>
                 <tr>
@@ -1708,13 +1709,14 @@
               <div>
                 <h3>계약 목록</h3>
                 <p class="form-help">저장된 렌탈/리스 계약 · 수정하려면 목록에서 선택</p>
+                <p class="form-help lease-list-count" id="leaseContractListCount">전체 0건</p>
               </div>
               <div class="lease-list-toolbar">
                 <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
                 <button type="button" class="small-btn danger-btn" id="leaseContractDeleteAllBtn">전체 삭제</button>
               </div>
             </div>
-            <div class="table-wrap lease-table-wrap">
+            <div class="table-wrap lease-table-wrap lease-list-scroll">
               <table class="lease-table lease-table--compact">
                 <thead>
                   <tr>
@@ -4558,10 +4560,10 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>
   <script src="js/lease-rental-calc.js?v=20260702a"></script>
-  <script src="js/lease-erp.js?v=20260702b"></script>
-  <script src="js/admin-lease.js?v=20260702b"></script>
+  <script src="js/lease-erp.js?v=20260702c"></script>
+  <script src="js/admin-lease.js?v=20260702c"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260702b"></script>
+  <script src="js/admin-lease-menus.js?v=20260702c"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
