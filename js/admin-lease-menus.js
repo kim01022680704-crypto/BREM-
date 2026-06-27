@@ -164,12 +164,44 @@ const BremAdminLeaseMenus = (function () {
     const start = String(weekStart || '').slice(0, 10);
     if (!start) return '수요일~화요일 기준';
     if (BremDatePicker?.formatWednesdayWeekRange) {
-      return `${BremDatePicker.formatWednesdayWeekRange(start)} (수~화)`;
+      return `${BremDatePicker.formatWednesdayWeekRange(start)} · 수~화 7일`;
     }
     const week = calc()?.weekRange(start) || {};
     return week.start && week.end
-      ? `${formatDate(week.start)} ~ ${formatDate(week.end)} (수~화)`
+      ? `${formatDate(week.start)} ~ ${formatDate(week.end)} · 수~화 7일`
       : '수요일~화요일 기준';
+  }
+
+  function syncLeaseWeeklyWeekUi(weekStart) {
+    const normalized = String(
+      BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || weekStart
+      || currentWeekStart()
+      || ''
+    ).slice(0, 10);
+    if ($('leaseWeekStart')) $('leaseWeekStart').value = normalized;
+    state.weekStart = normalized;
+    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
+    if ($('leaseWeekRangePreview')) $('leaseWeekRangePreview').textContent = rangeLabel;
+    if ($('leaseWeekStartLabel')) {
+      if (!normalized) {
+        $('leaseWeekStartLabel').textContent = '수요일 선택';
+      } else if (BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
+        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
+        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
+        $('leaseWeekStartLabel').textContent = weekday
+          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
+          : BremDatePicker.formatDate(wednesday);
+      } else {
+        $('leaseWeekStartLabel').textContent = normalized;
+      }
+    }
+    return normalized;
+  }
+
+  function handleWeeklyWeekChange(weekStart) {
+    syncLeaseWeeklyWeekUi(weekStart);
+    renderWeekly();
   }
 
   function updateLeaseDashWeekUi() {
@@ -178,7 +210,8 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseDashWeekLabel')) {
       $('leaseDashWeekLabel').textContent = `주간 순이익 · ${formatLeaseWeekRangeLabel(weekStart)}`;
     }
-    if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = weekStart;
+    if ($('leaseWeekStart') && !$('leaseWeekStart').value) syncLeaseWeeklyWeekUi(weekStart);
+    else syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value || weekStart);
   }
 
   function sumProfitLogsForWeek(weekStart) {
@@ -1065,9 +1098,7 @@ const BremAdminLeaseMenus = (function () {
     const weekStart = $('leaseWeekStart')?.value || state.weekStart || currentWeekStart();
     state.weekStart = weekStart;
     const week = calc().weekRange(weekStart);
-    if ($('leaseWeekRangeLabel')) {
-      $('leaseWeekRangeLabel').textContent = formatLeaseWeekRangeLabel(weekStart);
-    }
+    syncLeaseWeeklyWeekUi(weekStart);
 
     const liveVehicleIds = new Set(erp().vehicles().getAll().map(item => item.id));
     const logs = erp().profitLogs().getAll().filter(item =>
@@ -1691,7 +1722,10 @@ const BremAdminLeaseMenus = (function () {
       $(id)?.addEventListener('change', syncContractCalc);
       $(id)?.addEventListener('input', syncContractCalc);
     });
-    $('leaseWeekStart')?.addEventListener('change', renderWeekly);
+    $('leaseWeekStart')?.addEventListener('change', () => {
+      syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value);
+      renderWeekly();
+    });
     $('leaseDashSettingsBtn')?.addEventListener('click', () => {
       const panel = $('leaseDashSettings');
       if (!panel) return;
@@ -1706,15 +1740,17 @@ const BremAdminLeaseMenus = (function () {
         || BremDatePicker?.weekStartKey?.(picked)
         || picked;
       if ($('leaseDashWeekBasis')) $('leaseDashWeekBasis').value = weekStart;
-      if ($('leaseWeekStart')) $('leaseWeekStart').value = weekStart;
-      state.weekStart = weekStart;
+      syncLeaseWeeklyWeekUi(weekStart);
       updateLeaseDashWeekUi();
       renderDashboardKpis();
       void renderDashboardVehicleOverview();
       renderWeekly();
       showToast('주간 기준이 저장되었습니다. (수요일~화요일)');
     });
-    $('leaseWeekRefreshBtn')?.addEventListener('click', renderWeekly);
+    $('leaseWeekRefreshBtn')?.addEventListener('click', () => {
+      syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value || state.weekStart || currentWeekStart());
+      renderWeekly();
+    });
     $('leaseWeekExportBtn')?.addEventListener('click', exportWeeklyExcel);
     $('leaseWeeklySelectAll')?.addEventListener('change', event => {
       const visible = getWeeklyDeletableLogIds();
@@ -1825,7 +1861,7 @@ const BremAdminLeaseMenus = (function () {
       init.bootstrapped = true;
       fillVehicleSelect($('leaseContractVehicleId'));
       fillVehicleSelect($('leaseCalcVehicleId'));
-      if ($('leaseWeekStart') && !$('leaseWeekStart').value) $('leaseWeekStart').value = currentWeekStart();
+      if ($('leaseWeekStart')) syncLeaseWeeklyWeekUi(currentWeekStart());
       if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
       updateLeaseDashWeekUi();
     }
@@ -1877,6 +1913,8 @@ const BremAdminLeaseMenus = (function () {
     paintDashboardVehicleOverview,
     renderDashboardVehicleOverview,
     updateLeaseDashWeekUi,
+    handleWeeklyWeekChange,
+    syncLeaseWeeklyWeekUi,
     currentWeekStart,
     renderContractList
   };

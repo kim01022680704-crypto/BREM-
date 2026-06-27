@@ -1761,9 +1761,19 @@
 
         <div class="lease-menu-panel" data-lease-menu-panel="weekly" hidden>
         <article class="card lease-screen-card">
-          <div class="card-header"><h2>주간수익</h2><p class="form-help" id="leaseWeekRangeLabel">수요일~화요일 기준</p></div>
+          <div class="card-header"><h2>주간수익</h2></div>
+          <div class="lease-weekly-period">
+            <label class="period-label-block week-target-block">
+              <span class="label-row">적용주 (수요일 시작 · 수~화 7일)</span>
+              <span class="field-preview week-range-label" id="leaseWeekRangePreview">수요일~화요일 기준</span>
+              <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-week" id="leaseWeekStartBtn">
+                <span id="leaseWeekStartLabel">수요일 선택</span>
+              </button>
+              <span class="period-picker-caption">달력에서 수요일만 선택할 수 있습니다.</span>
+              <input type="hidden" id="leaseWeekStart">
+            </label>
+          </div>
           <div class="lease-toolbar">
-            <label>적용주(수요일)<input type="date" id="leaseWeekStart" class="admin-period-input"></label>
             <button type="button" class="small-btn" id="leaseWeekRefreshBtn">조회</button>
             <button type="button" class="small-btn" id="leaseWeekExportBtn">엑셀 다운로드</button>
             <label class="check-label lease-weekly-select-all">
@@ -4506,7 +4516,7 @@
   <script src="js/lease-erp.js?v=20260630w"></script>
   <script src="js/admin-lease.js?v=20260630w"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260701b"></script>
+  <script src="js/admin-lease-menus.js?v=20260701c"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -4520,7 +4530,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260701a"></script>
+  <script src="js/admin.js?v=20260701b"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

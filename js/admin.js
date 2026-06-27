@@ -1591,6 +1591,16 @@
           };
         }
 
+        if (triggerId === 'lease-week') {
+          return {
+            hiddenInput: $('#leaseWeekStart'),
+            labelEl: $('#leaseWeekStartLabel'),
+            onSelect(value) {
+              window.BremAdminLeaseMenus?.handleWeeklyWeekChange?.(value);
+            }
+          };
+        }
+
         const hiddenInput = document.querySelector(`[data-edit-weekly-week="${triggerId}"]`);
         const labelEl = document.querySelector(`[data-week-picker-label="${triggerId}"]`);
         if (!hiddenInput) return null;
