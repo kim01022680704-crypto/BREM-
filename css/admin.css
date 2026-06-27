@@ -5025,7 +5025,7 @@ textarea {
   font-size: 1.02rem;
 }
 
-.lease-dash-vehicle-table {
+.lease-dash-vehicle-table.lease-table {
   min-width: 0;
   width: 100%;
 }

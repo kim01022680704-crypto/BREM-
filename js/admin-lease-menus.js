@@ -221,8 +221,11 @@ const BremAdminLeaseMenus = (function () {
 
   function countDashboardVehicleStatuses(vehicles = []) {
     return vehicles.reduce((counts, item) => {
-      const contract = getLatestContractForVehicle(item.id);
-      const code = resolveDashboardVehicleStatus(item, contract).code;
+      const contract = erp()?.getLatestContractForVehicle?.(item.id) || null;
+      const runtime = erp()?.resolveRuntimeStatus?.(item, contract)
+        || { code: 'empty', label: '공차' };
+      const code = runtime.code === 'unpaid' ? 'unpaid'
+        : runtime.code === 'operating' ? 'operating' : 'empty';
       if (code === 'operating') counts.operating += 1;
       else if (code === 'unpaid') counts.unpaid += 1;
       else counts.empty += 1;
@@ -231,31 +234,11 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function getAllDashboardVehicles() {
-    const seen = new Set();
-    const result = [];
-    const pushAll = (list = []) => {
-      (Array.isArray(list) ? list : []).forEach(item => {
-        const id = String(item?.id || '').trim();
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        result.push(item);
-      });
-    };
-
-    pushAll(erp()?.vehicles?.().getAll?.());
-    if (window.BremStorage?.readTableKey) {
-      pushAll(window.BremStorage.readTableKey('brem_lease_vehicles'));
-    }
-    if (window.BremStorage?.readTableKey) {
-      const legacy = window.BremStorage.readTableKey('brem_admin_leases') || [];
-      legacy.forEach(item => {
-        const normalized = erp()?.normalizeRecord?.(item) || item;
-        if (normalized?.id) pushAll([normalized]);
-      });
-    }
-    pushAll(window.BremStorage?.leases?.getAll?.());
-
-    return result.sort((a, b) =>
+    const list = erp()?.vehicles?.().getAll?.()
+      || window.BremStorage?.readTableKey?.('brem_lease_vehicles')
+      || window.BremStorage?.leases?.getAll?.()
+      || [];
+    return (Array.isArray(list) ? list : []).slice().sort((a, b) =>
       String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || ''), 'ko')
     );
   }
@@ -266,7 +249,7 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function paintDashboardVehicleOverview() {
-    const rowsEl = $('leaseDashVehicleRows');
+    const rowsEl = document.querySelector('#lease-management #leaseDashVehicleRows');
     if (!rowsEl) return;
     try {
       const vehicles = getAllDashboardVehicles();
@@ -275,19 +258,24 @@ const BremAdminLeaseMenus = (function () {
         return;
       }
 
-      rowsEl.innerHTML = vehicles.map(item => {
-        const contract = getLatestContractForVehicle(item.id);
-        const status = resolveDashboardVehicleStatus(item, contract);
+      rowsEl.innerHTML = vehicles.map((item, index) => {
+        const contract = erp()?.getLatestContractForVehicle?.(item.id) || null;
+        const runtime = erp()?.resolveRuntimeStatus?.(item, contract)
+          || { code: 'empty', label: '공차' };
+        const statusCode = runtime.code === 'unpaid' ? 'unpaid'
+          : runtime.code === 'operating' ? 'operating' : 'empty';
+        const statusLabel = runtime.code === 'unpaid' ? '미납'
+          : runtime.code === 'operating' ? '운행' : '공차';
         const driver = String(contract?.driverName || item.renter || '').trim() || '-';
         const source = dashVehicleSourceLabel(item);
         return `
-        <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(status.code)}">
+        <tr class="lease-dash-vehicle-row lease-dash-vehicle-row--${escapeHtml(statusCode)}">
           <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
           <td>${escapeHtml(item.model || '-')}</td>
           <td>${escapeHtml(source)}</td>
           <td>${escapeHtml(driver)}</td>
           <td class="lease-dash-vehicle-table__status">
-            <span class="lease-status-badge lease-status-badge--${escapeHtml(status.code)}">${escapeHtml(status.label)}</span>
+            <span class="lease-status-badge lease-status-badge--${escapeHtml(statusCode)}">${escapeHtml(statusLabel)}</span>
           </td>
         </tr>
       `;
@@ -1447,6 +1435,7 @@ const BremAdminLeaseMenus = (function () {
     formatVehicleSelectLabel,
     init,
     refresh,
+    bindEvents,
     setMenu,
     openContractForVehicle,
     getLatestContractForVehicle,
@@ -1460,6 +1449,7 @@ const BremAdminLeaseMenus = (function () {
     renderEmpty,
     renderDashboard,
     renderDashboardKpis,
+    paintDashboardVehicleOverview,
     renderDashboardVehicleOverview,
     updateLeaseDashWeekUi,
     currentWeekStart,
@@ -1470,7 +1460,8 @@ const BremAdminLeaseMenus = (function () {
 window.BremAdminLeaseMenus = BremAdminLeaseMenus;
 
 function bootLeaseMenus() {
-  void BremAdminLeaseMenus.init();
+  if (!document.getElementById('lease-management')) return;
+  BremAdminLeaseMenus.bindEvents?.();
 }
 
 if (document.readyState === 'loading') {

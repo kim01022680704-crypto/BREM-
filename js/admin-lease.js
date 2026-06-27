@@ -765,6 +765,7 @@
     $('leaseStatActiveRental').textContent = `${activeRental}`;
     if ($('leaseStatEmpty')) $('leaseStatEmpty').textContent = `${emptyCount}`;
     if ($('statEmptyLease')) $('statEmptyLease').textContent = `${emptyCount}대`;
+    window.BremAdminLeaseMenus?.paintDashboardVehicleOverview?.();
   }
 
   function renderList() {
