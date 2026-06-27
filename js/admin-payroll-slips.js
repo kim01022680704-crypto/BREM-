@@ -1110,7 +1110,7 @@
 
     if (field.money) {
       const value = field.key === 'withholdingTax'
-        ? (utils.resolveWithholdingTax?.(line) ?? line[field.key])
+        ? Number(line.withholdingTax ?? utils.resolveWithholdingTax?.(line) ?? 0)
         : line[field.key];
       const diffHighlight = (field.diff || field.key === 'netPayDiff') && Math.abs(value || 0) > 1
         ? ' payroll-payslip-diff'
@@ -2141,7 +2141,7 @@
     const emphasisCls = field.emphasis ? ' payroll-payslip-emphasis' : '';
     if (field.money) {
       const value = field.key === 'withholdingTax'
-        ? (utils.resolveWithholdingTax?.(payslip) ?? payslip[field.key])
+        ? Number(payslip.withholdingTax ?? utils.resolveWithholdingTax?.(payslip) ?? 0)
         : Number(payslip[field.key] || 0);
       const bulkCls = field.bulkOnly && value > 0 ? ' payroll-payslip-bulk' : '';
       const dailyCls = field.dailyOnly && value > 0 ? ' payroll-payslip-daily' : '';
