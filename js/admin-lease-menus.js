@@ -1632,7 +1632,7 @@ const BremAdminLeaseMenus = (function () {
       .filter(item => item.collectionStatus === calc().ARREAR_STATUS.COMPLETED)
       .sort((a, b) => String(b.processedDate || b.updatedAt || '').localeCompare(String(a.processedDate || a.updatedAt || '')));
     if (!completed.length) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">처리 이력이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">처리 이력이 없습니다.</td></tr>';
       return;
     }
     rowsEl.innerHTML = completed.map(item => {
@@ -1642,20 +1642,43 @@ const BremAdminLeaseMenus = (function () {
       const history = Array.isArray(item.rawData?.processingHistory) ? item.rawData.processingHistory : [];
       const latest = history[0] || {};
       const memo = latest.memo || item.memo || '-';
+      const driver = contract?.driverName || vehicle?.renter || '-';
+      const plate = vehicle?.vehicleNumber || '-';
       return `
         <tr>
-          <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
-          <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}</td>
-          <td>${escapeHtml(formatArrearWeekLabel(arrearWeekStartValue(item)))}</td>
+          <td>${escapeHtml(plate)}</td>
+          <td>${escapeHtml(driver)}</td>
+          <td>${escapeHtml(formatArrearWeeksSummary(item))}</td>
           <td>${item.unpaidDays}일</td>
           <td class="lease-money--warning">${formatMoney(item.unpaidAmount + (item.recoveredAmount || item.paidAmount || 0))}</td>
           <td>${formatMoney(item.recoveredAmount || item.paidAmount || 0)}</td>
           <td>${escapeHtml(methods)}</td>
           <td>${formatDate(item.processedDate)}</td>
           <td>${escapeHtml(memo)}</td>
+          <td>
+            <button type="button" class="small-btn danger-btn" data-delete-arrear-history="${escapeHtml(item.id)}" data-arrear-plate="${escapeHtml(plate)}" data-arrear-driver="${escapeHtml(driver)}">삭제</button>
+          </td>
         </tr>
       `;
     }).join('');
+  }
+
+  function deleteArrearRecord(id, options = {}) {
+    if (!erp() || !id) return;
+    const item = erp().arrears().getById(id);
+    if (!item) return;
+    const vehicle = erp().vehicles().getById(item.vehicleId);
+    const contract = item.contractId ? erp().contracts().getById(item.contractId) : null;
+    const plate = vehicle?.vehicleNumber || options.plate || '-';
+    const driver = contract?.driverName || vehicle?.renter || options.driver || '-';
+    const isHistory = String(item.collectionStatus || '') === calc().ARREAR_STATUS.COMPLETED;
+    const label = isHistory ? '처리 이력' : '미납 기록';
+    if (!window.confirm(`${label}을 삭제할까요?\n${plate} · ${driver}`)) return;
+    erp().arrears().removeById(id);
+    updateLeaseErpUnsavedBanner();
+    renderArrears();
+    refreshAfterLeaseMutation({ contract: false });
+    showToast(`${label}을 삭제했습니다.`);
   }
 
   function renderArrears() {
@@ -2119,12 +2142,17 @@ const BremAdminLeaseMenus = (function () {
         void deleteProfitLog(deleteProfitBtn.dataset.deleteProfitLog);
         return;
       }
+      const deleteHistoryBtn = event.target.closest('[data-delete-arrear-history]');
+      if (deleteHistoryBtn) {
+        deleteArrearRecord(deleteHistoryBtn.dataset.deleteArrearHistory, {
+          plate: deleteHistoryBtn.dataset.arrearPlate,
+          driver: deleteHistoryBtn.dataset.arrearDriver
+        });
+        return;
+      }
       const deleteBtn = event.target.closest('[data-delete-arrear]');
-      if (deleteBtn && erp()) {
-        erp().arrears().removeById(deleteBtn.dataset.deleteArrear);
-        updateLeaseErpUnsavedBanner();
-        renderArrears();
-        refreshAfterLeaseMutation({ contract: false });
+      if (deleteBtn) {
+        deleteArrearRecord(deleteBtn.dataset.deleteArrear);
       }
     });
 

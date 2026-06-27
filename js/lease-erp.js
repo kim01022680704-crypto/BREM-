@@ -532,6 +532,7 @@ const BremLeaseErp = (function () {
 
   const pendingWritePromises = [];
   const deferredDirtyKeys = new Set();
+  const deferredWriteOptions = new Map();
   let deferRemotePersist = false;
 
   function setDeferRemotePersist(enabled) {
@@ -542,11 +543,29 @@ const BremLeaseErp = (function () {
     return deferredDirtyKeys.size > 0;
   }
 
+  function mergeDeferredWriteOptions(key, options = {}) {
+    const prev = deferredWriteOptions.get(key) || {};
+    const deletedRowIds = [...new Set([
+      ...(Array.isArray(prev.deletedRowIds) ? prev.deletedRowIds : []),
+      ...(Array.isArray(options.deletedRowIds) ? options.deletedRowIds : [])
+    ])];
+    const incrementalRows = options.incrementalRows || prev.incrementalRows || null;
+    deferredWriteOptions.set(key, {
+      allowEmpty: prev.allowEmpty || options.allowEmpty || false,
+      deleteOnly: options.deleteOnly === true && !incrementalRows?.length && deletedRowIds.length > 0
+        ? true
+        : (prev.deleteOnly && deletedRowIds.length > 0 && !readList(key).length),
+      deletedRowIds,
+      incrementalRows
+    });
+  }
+
   function writeList(key, list, options = {}) {
     const next = Array.isArray(list) ? list : [];
     window.BremDataCache?.set?.(key, next, { source: 'write' });
     if (options.deferRemote || deferRemotePersist) {
       deferredDirtyKeys.add(key);
+      mergeDeferredWriteOptions(key, options);
       document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
       return next;
     }
@@ -561,11 +580,25 @@ const BremLeaseErp = (function () {
     const keys = [...deferredDirtyKeys];
     keys.forEach(key => {
       const list = readList(key);
+      const pending = deferredWriteOptions.get(key) || {};
+      const deletedRowIds = Array.isArray(pending.deletedRowIds)
+        ? pending.deletedRowIds.map(id => String(id || '').trim()).filter(Boolean)
+        : [];
+      const writeOptions = {
+        allowEmpty: true,
+        ...pending,
+        deletedRowIds,
+        deleteOnly: pending.deleteOnly === true && deletedRowIds.length > 0 && !list.length
+      };
+      if (writeOptions.deleteOnly && list.length) {
+        writeOptions.deleteOnly = false;
+      }
       if (BremStorage?.writeTableKey) {
-        pendingWritePromises.push(BremStorage.writeTableKey(key, list, { allowEmpty: true }));
+        pendingWritePromises.push(BremStorage.writeTableKey(key, list, writeOptions));
       }
     });
     deferredDirtyKeys.clear();
+    deferredWriteOptions.clear();
     await flushPendingWrites(options);
     document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
   }

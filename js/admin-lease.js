@@ -1077,11 +1077,15 @@
   }
 
   async function reloadVehiclesAfterDelete() {
-    if (erp) await erp.persistPending({ skipFlushStorage: true });
-    else await leases.persist();
-    window.BremStorage?.invalidateLeaseVehicleCaches?.();
-    await window.BremStorage?.ensureLeaseErpKeysLoaded?.({ force: true });
-    await refresh({ loadRemote: true });
+    erp?.syncAllVehicleStatusesFromContracts?.();
+    window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
+    renderList();
+    renderStats();
+    if (window.BremAdminLeaseMenus?.refresh) {
+      await window.BremAdminLeaseMenus.refresh({ loadRemote: false });
+    } else {
+      window.BremAdminLeaseMenus?.paintDashboardVehicleOverview?.();
+    }
   }
 
   async function refresh(options = {}) {
@@ -1291,7 +1295,7 @@
         leases.removeByIds(ids);
         await reloadVehiclesAfterDelete();
         ids.forEach(id => state.selectedIds.delete(id));
-        showToast('선택 항목이 삭제되었습니다.');
+        showToast('선택 항목을 목록에서 삭제했습니다. Supabase 저장 버튼을 눌러 주세요.');
       } catch (error) {
         console.error('[lease bulk delete]', error);
         showToast(error?.message || '삭제에 실패했습니다.');
@@ -1340,7 +1344,7 @@
             await reloadVehiclesAfterDelete();
             state.selectedIds.delete(id);
             if (state.editingId === id) resetForm();
-            showToast('삭제되었습니다.');
+            showToast('목록에서 삭제했습니다. Supabase 저장 버튼을 눌러 주세요.');
           } catch (error) {
             console.error('[lease delete]', error);
             showToast(error?.message || '삭제에 실패했습니다.');
