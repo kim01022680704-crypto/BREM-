@@ -1704,7 +1704,7 @@
   }
 
   /* ── Drivers list (legacy selectors) ── */
-  .drivers-page .table-wrap.list-table-scroll {
+  .drivers-page:not(.drivers-duplicates-page) .table-wrap.list-table-scroll {
     display: none !important;
   }
 

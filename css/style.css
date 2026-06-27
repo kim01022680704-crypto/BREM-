@@ -310,7 +310,13 @@ button {
 }
 
 .duplicate-group-card__table {
+  display: block !important;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.drivers-duplicates-page .duplicate-group-card__table table {
+  min-width: 680px;
 }
 
 .drivers-duplicates-page .duplicate-groups {
@@ -318,24 +324,8 @@ button {
   max-height: calc(100vh - 280px);
 }
 
-@media (max-width: 720px) {
-  .drivers-duplicates-page .duplicate-group-card__table {
-    display: none !important;
-  }
-
-  .drivers-duplicates-page .duplicate-member-cards {
-    display: flex;
-  }
-}
-
-@media (min-width: 721px) {
-  .drivers-duplicates-page .duplicate-group-card__table {
-    display: block !important;
-  }
-
-  .drivers-duplicates-page .duplicate-member-cards {
-    display: none !important;
-  }
+.drivers-duplicates-page .duplicate-member-cards {
+  display: none !important;
 }
 
 .index-menu-btn {
@@ -2499,6 +2489,10 @@ textarea:focus,
 
   .table-wrap {
     display: none;
+  }
+
+  .drivers-duplicates-page .duplicate-group-card__table {
+    display: block !important;
   }
 
   .driver-list-scroll {

@@ -149,26 +149,6 @@
     `;
   }
 
-  function renderMemberCard(driver) {
-    const coupangId = escapeHtml(makeDriverLoginId(driver) || '-');
-    const baeminId = escapeHtml(driver.baeminId || '-');
-    return `
-      <article class="duplicate-member-card">
-        <div class="duplicate-member-card__main">
-          <strong>${escapeHtml(driver.name)}</strong>
-          <span class="badge badge--compact ${statusClass(driver.status)}">${escapeHtml(driver.status || '-')}</span>
-        </div>
-        <dl class="duplicate-member-card__meta">
-          <div><dt>연락처</dt><dd>${escapeHtml(driver.phone || '-')}</dd></div>
-          <div><dt>쿠팡 ID</dt><dd>${coupangId}</dd></div>
-          <div><dt>배민 ID</dt><dd>${baeminId}</dd></div>
-          <div><dt>가입일</dt><dd>${formatDate(driver.joinDate)}</dd></div>
-        </dl>
-        <a class="btn small edit" href="rider-manage.html?edit=${encodeURIComponent(driver.id)}">수정</a>
-      </article>
-    `;
-  }
-
   function renderGroupCard(group) {
     const memberCount = group.members.length;
     return `
@@ -180,10 +160,7 @@
           </div>
           <span class="duplicate-group-card__count">${memberCount}명</span>
         </header>
-        <div class="duplicate-member-cards" aria-label="${escapeHtml(group.label)} 기사 목록">
-          ${group.members.map(renderMemberCard).join('')}
-        </div>
-        <div class="table-wrap duplicate-group-card__table">
+        <div class="table-wrap duplicate-group-card__table" role="region" aria-label="${escapeHtml(group.label)} 기사 목록">
           <table class="driver-table driver-table--compact">
             <thead>
               <tr>
