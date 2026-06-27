@@ -56,6 +56,11 @@ function writeCachedRiderMe(token, value) {
   riderMeCache.set(token, { at: Date.now(), value });
 }
 
+function invalidateCachedRiderMe(token) {
+  const key = String(token || '').trim();
+  if (key) riderMeCache.delete(key);
+}
+
 function promotionRowToMissionShape(row) {
   if (!row) return null;
   const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
@@ -502,6 +507,8 @@ async function updateRiderProfile(accessToken, body = {}) {
   const plainPassword = readRiderSecrets(updated).password;
   const authResult = await ensureRiderAuthAccount(supabase, updated, plainPassword);
   if (!authResult.ok) return authResult;
+
+  invalidateCachedRiderMe(accessToken);
 
   return {
     ok: true,
@@ -1259,5 +1266,7 @@ module.exports = {
   saveRiderTargets,
   updateRiderProfile,
   provisionRiderAuthAccount,
+  readRiderSecrets,
+  invalidateCachedRiderMe,
   makeRiderLoginId
 };

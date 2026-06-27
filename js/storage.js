@@ -4111,8 +4111,13 @@ const BremStorage = (function () {
         const merged = { ...driver, ...changes };
         delete merged.currentPassword;
         delete merged.newPassword;
+        delete merged.passwordExplicit;
         if (changes.newPassword) {
           merged.password = String(changes.newPassword).trim();
+        } else if (changes.password && changes.passwordExplicit) {
+          merged.password = String(changes.password).trim();
+        } else if ('password' in changes && !changes.passwordExplicit) {
+          merged.password = driver.password;
         } else if ('password' in changes || 'residentNumber' in changes) {
           const authFields = normalizeDriverPasswordFields(merged);
           merged.residentNumber = authFields.residentNumber;
@@ -4130,6 +4135,7 @@ const BremStorage = (function () {
       if (!updated) throw new Error('기사를 찾을 수 없습니다.');
       if (isProductionMode()) {
         setDriversCache(nextDrivers);
+        const riderPayload = changes.passwordExplicit ? { ...updated, passwordExplicit: true } : updated;
         const persist = isSelf
           ? persistRiderSelfViaServer(id, changes)
           : (isMissionOnlyChanges(changes)
@@ -4139,11 +4145,11 @@ const BremStorage = (function () {
             }])
             : (isLongEventOnlyChanges(changes)
               ? persistRiderLongEventsBulkViaServer([{ id, changes }])
-              : persistRiderViaServer(updated)));
+              : persistRiderViaServer(riderPayload)));
         return persist
           .then(() => {
-            markDriversCache(nextDrivers, { source: 'write' });
-            return updated;
+            markDriversCache(drivers.getAll(), { source: 'write' });
+            return drivers.getById(id) || updated;
           })
           .catch(error => {
             setDriversCache(prevList);
@@ -4214,7 +4220,7 @@ const BremStorage = (function () {
       const driver = drivers.getById(id);
       if (!driver) throw new Error('기사를 찾을 수 없습니다.');
       const password = String(defaultPassword || '1234').trim() || '1234';
-      return drivers.update(id, { password });
+      return drivers.update(id, { password, passwordExplicit: true });
     },
 
     setFieldHidden(id, fieldKey, hidden) {

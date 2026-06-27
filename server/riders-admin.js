@@ -1,6 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
-const { provisionRiderAuthAccount } = require('./rider-auth');
+const { provisionRiderAuthAccount, readRiderSecrets } = require('./rider-auth');
 const {
   RIDER_SELECT_VARIANTS,
   RIDER_LIST_SELECT_VARIANTS,
@@ -17,6 +17,22 @@ function stripOptionalRiderColumns(row) {
   delete row.selected_mission_id_baemin;
   delete row.selected_mission_id_coupang;
   delete row.long_event_platform;
+}
+
+async function preserveRiderPasswordOnUpsert(supabase, row, passwordExplicit = false) {
+  if (!row?.id || passwordExplicit) return row;
+
+  const { data: existing, error } = await supabase
+    .from('riders')
+    .select('raw_data,resident_number')
+    .eq('id', row.id)
+    .maybeSingle();
+  if (error || !existing) return row;
+
+  const existingPassword = readRiderSecrets(existing).password;
+  const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
+  raw.password = existingPassword;
+  return { ...row, raw_data: raw };
 }
 
 async function preserveRequiredRiderFieldsOnUpsert(supabase, row) {
@@ -431,7 +447,8 @@ async function upsertRider(accessToken, rider) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
 
-  const row = riderToRow(rider);
+  const supabase = getServiceClient();
+  let row = riderToRow(rider);
   if (!row.id) {
     return { ok: false, status: 400, error: '기사 ID가 없습니다.' };
   }
@@ -439,7 +456,7 @@ async function upsertRider(accessToken, rider) {
     return { ok: false, status: 400, error: '기사 이름은 필수입니다.' };
   }
 
-  const supabase = getServiceClient();
+  row = await preserveRiderPasswordOnUpsert(supabase, row, Boolean(rider.passwordExplicit));
   const { error } = await upsertRiderRowWithFallback(supabase, row);
   if (error) {
     return { ok: false, status: 400, error: error.message || '기사 저장에 실패했습니다.' };
@@ -537,7 +554,10 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
 
   const supabase = getServiceClient();
   const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, list);
-  const rows = resolved.map(rider => riderToRow(rider));
+  const rows = await Promise.all(resolved.map(async rider => {
+    const row = riderToRow(rider);
+    return preserveRiderPasswordOnUpsert(supabase, row, Boolean(rider.passwordExplicit));
+  }));
   let upsertPayload = rows;
   let { error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' });
   if (error && isMissingColumnError(error)) {
