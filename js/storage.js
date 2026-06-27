@@ -16,6 +16,8 @@ const BremStorage = (function () {
     adminSchedules: 'brem_admin_schedules',
     payrollSlipUploads: 'brem_payroll_slip_uploads',
     payrollSlipLines: 'brem_payroll_slip_lines',
+    payrollNotices: 'brem_payroll_notices',
+    payrollRiderPublish: 'brem_payroll_rider_publish',
     leases: 'brem_admin_leases',
     leaseVehicles: 'brem_lease_vehicles',
     leaseContracts: 'brem_lease_contracts',
@@ -329,6 +331,7 @@ const BremStorage = (function () {
     KEYS.adminSchedules,
     KEYS.payrollSlipUploads,
     KEYS.payrollSlipLines,
+    KEYS.payrollNotices,
     KEYS.calls,
     KEYS.rejections,
     KEYS.targets,
@@ -535,7 +538,9 @@ const BremStorage = (function () {
 
   const PAYROLL_STORAGE_KEYS = new Set([
     KEYS.payrollSlipUploads,
-    KEYS.payrollSlipLines
+    KEYS.payrollSlipLines,
+    KEYS.payrollNotices,
+    KEYS.payrollRiderPublish
   ]);
 
   function isPayrollStorageKey(key) {
@@ -1371,7 +1376,7 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
-    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.drivers, KEYS.calls],
+    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.drivers, KEYS.calls],
     'lease-management': [
       KEYS.leaseVehicles,
       KEYS.leasePayments,
@@ -1396,6 +1401,7 @@ const BremStorage = (function () {
     KEYS.adminSchedules,
     KEYS.payrollSlipUploads,
     KEYS.payrollSlipLines,
+    KEYS.payrollNotices,
     KEYS.calls,
     KEYS.rejections,
     KEYS.targets,
@@ -2547,6 +2553,11 @@ const BremStorage = (function () {
     } catch (error) {
       return { ok: false, message: error.message || '요청에 실패했습니다.' };
     }
+  }
+
+  async function fetchRiderWeeklyPayslipFromServer(weekStart) {
+    const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
+    return riderApiFetch(`/api/rider/weekly-payslip${qs}`, 'weekly-payslip');
   }
 
   function mergeRiderMissionsPayload(missions = {}) {
@@ -5876,6 +5887,238 @@ const BremStorage = (function () {
       if (!idSet.size) return;
       const list = payrollSlipLines.getAll().filter(item => !idSet.has(item.id));
       await payrollSlipLines.persistList(list);
+    }
+  };
+
+  function payrollLineWeekStart(line) {
+    const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+    return String(raw.settlementWeekStart || raw.settlementWeekPayKey || line?.settlementWeekStart || '').slice(0, 10);
+  }
+
+  function payrollNoticeAppliesToWeek(notice, weekStart) {
+    const scoped = String(notice?.settlementWeekStart || '').slice(0, 10);
+    return !scoped || scoped === weekStart;
+  }
+
+  const payrollNotices = {
+    getAll() {
+      if (isPayrollLocalStorageMode()) {
+        return readPayrollLocalCollection(KEYS.payrollNotices, []);
+      }
+      return storageAdapter.read(KEYS.payrollNotices, []);
+    },
+
+    async persistList(list, options = {}) {
+      if (isPayrollLocalStorageMode()) {
+        await writePayrollLocalCollection(KEYS.payrollNotices, list);
+        return;
+      }
+      const persist = storageAdapter.write(KEYS.payrollNotices, list, options);
+      window.BremDataCache?.set?.(KEYS.payrollNotices, list, { source: 'write' });
+      await awaitPersist(persist);
+    },
+
+    async persistNotice(notice) {
+      const list = payrollNotices.getAll();
+      const index = list.findIndex(item => item.id === notice.id);
+      if (index >= 0) list[index] = notice;
+      else list.unshift(notice);
+      await payrollNotices.persistList(list, { incrementalRows: [notice] });
+      return notice;
+    },
+
+    create(data) {
+      const now = new Date().toISOString();
+      const notice = {
+        id: createId(),
+        title: String(data.title || '').trim(),
+        body: String(data.body || '').trim(),
+        label: String(data.label || 'notice').trim() || 'notice',
+        settlementWeekStart: String(data.settlementWeekStart || '').slice(0, 10),
+        sortOrder: Number(data.sortOrder || 0),
+        riderPublishedAt: null,
+        createdAt: now,
+        updatedAt: now
+      };
+      return payrollNotices.persistNotice(notice);
+    },
+
+    async update(id, data) {
+      const existing = payrollNotices.getAll().find(item => item.id === id);
+      if (!existing) throw new Error('급여 공지를 찾을 수 없습니다.');
+      const notice = {
+        ...existing,
+        ...data,
+        id,
+        title: String(data.title != null ? data.title : existing.title).trim(),
+        body: String(data.body != null ? data.body : existing.body).trim(),
+        label: String(data.label != null ? data.label : existing.label).trim() || 'notice',
+        settlementWeekStart: String(
+          data.settlementWeekStart != null ? data.settlementWeekStart : existing.settlementWeekStart
+        ).slice(0, 10),
+        sortOrder: Number(data.sortOrder != null ? data.sortOrder : existing.sortOrder || 0),
+        riderPublishedAt: null,
+        updatedAt: new Date().toISOString()
+      };
+      return payrollNotices.persistNotice(notice);
+    },
+
+    async removeById(id) {
+      const noticeId = String(id || '').trim();
+      if (!noticeId) return;
+      const list = payrollNotices.getAll().filter(item => item.id !== noticeId);
+      await payrollNotices.persistList(list);
+    }
+  };
+
+  const payrollPublish = {
+    getMeta() {
+      const raw = isPayrollLocalStorageMode()
+        ? readPayrollLocalCollection(KEYS.payrollRiderPublish, {})
+        : storageAdapter.read(KEYS.payrollRiderPublish, {});
+      return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    },
+
+    countPendingForWeek(weekStart) {
+      const week = String(weekStart || '').slice(0, 10);
+      const weekLines = payrollSlipLines.getAll().filter(line => payrollLineWeekStart(line) === week);
+      const pendingLines = weekLines.filter(line => !line.riderPublishedAt).length;
+      const applicableNotices = payrollNotices.getAll().filter(notice => payrollNoticeAppliesToWeek(notice, week));
+      const pendingNotices = applicableNotices.filter(notice => !notice.riderPublishedAt).length;
+      return {
+        settlementWeekStart: week,
+        totalLines: weekLines.length,
+        pendingLines,
+        publishedLines: weekLines.length - pendingLines,
+        totalNotices: applicableNotices.length,
+        pendingNotices,
+        publishedNotices: applicableNotices.length - pendingNotices,
+        pendingTotal: pendingLines + pendingNotices
+      };
+    },
+
+    async fetchStatusFromServer(weekStart) {
+      const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
+      const result = await adminRidersApi(`/api/admin/payroll/publish-status${qs}`);
+      if (!result.ok) return result;
+      return {
+        ok: true,
+        settlementWeekStart: result.settlementWeekStart || weekStart,
+        totalLines: Number(result.totalLines) || 0,
+        pendingLines: Number(result.pendingLines) || 0,
+        publishedLines: Number(result.publishedLines) || 0,
+        totalNotices: Number(result.totalNotices) || 0,
+        pendingNotices: Number(result.pendingNotices) || 0,
+        publishedNotices: Number(result.publishedNotices) || 0,
+        pendingTotal: Number(result.pendingTotal) || 0,
+        lastPublishedAt: result.lastPublishedAt || null,
+        lastPublishedBy: result.lastPublishedBy || '',
+        columnMissing: Boolean(result.columnMissing),
+        noticesTableMissing: Boolean(result.noticesTableMissing)
+      };
+    },
+
+    recordWeekPublish({ weekStart, publishedAt, publishedBy, linesPublished = 0, noticesPublished = 0 } = {}) {
+      const settlementWeekStart = String(weekStart || '').slice(0, 10);
+      const existing = payrollPublish.getMeta();
+      const weeks = existing.weeks && typeof existing.weeks === 'object' ? { ...existing.weeks } : {};
+      weeks[settlementWeekStart] = {
+        publishedAt: publishedAt || new Date().toISOString(),
+        publishedBy: String(publishedBy || 'admin').trim(),
+        linesPublished: Number(linesPublished) || 0,
+        noticesPublished: Number(noticesPublished) || 0
+      };
+      const meta = {
+        ...existing,
+        publishedAt: publishedAt || new Date().toISOString(),
+        publishedBy: String(publishedBy || 'admin').trim(),
+        settlementWeekStart,
+        linesPublished: Number(linesPublished) || 0,
+        noticesPublished: Number(noticesPublished) || 0,
+        weeks
+      };
+      if (isPayrollLocalStorageMode()) {
+        localStorage.setItem(KEYS.payrollRiderPublish, JSON.stringify(meta));
+      } else {
+        storageAdapter.write(KEYS.payrollRiderPublish, meta);
+      }
+      return meta;
+    },
+
+    async publishWeekToRiders(weekStart) {
+      const settlementWeekStart = String(weekStart || '').slice(0, 10);
+      if (!settlementWeekStart) {
+        throw new Error('정산주(수요일 시작)를 선택하세요.');
+      }
+
+      await storageAdapter.flush?.();
+
+      const apiResult = await adminRidersApi('/api/admin/payroll/publish', {
+        method: 'POST',
+        body: JSON.stringify({ weekStart: settlementWeekStart })
+      });
+
+      if (apiResult.ok) {
+        payrollPublish.recordWeekPublish({
+          weekStart: settlementWeekStart,
+          publishedAt: apiResult.publishedAt,
+          publishedBy: apiResult.publishedBy,
+          linesPublished: apiResult.linesPublished,
+          noticesPublished: apiResult.noticesPublished
+        });
+        await Promise.all([
+          refreshDataFromServer(KEYS.payrollSlipLines),
+          refreshDataFromServer(KEYS.payrollNotices)
+        ]);
+        return {
+          ok: true,
+          settlementWeekStart,
+          linesPublished: Number(apiResult.linesPublished) || 0,
+          noticesPublished: Number(apiResult.noticesPublished) || 0,
+          publishedCount: Number(apiResult.publishedCount) || 0,
+          publishedAt: apiResult.publishedAt
+        };
+      }
+
+      if (!isPayrollLocalStorageMode()) {
+        return {
+          ok: false,
+          message: apiResult.message || apiResult.error || '급여명세서 반영에 실패했습니다.'
+        };
+      }
+
+      const now = new Date().toISOString();
+      const lines = payrollSlipLines.getAll().map(line => {
+        if (payrollLineWeekStart(line) !== settlementWeekStart) return line;
+        return { ...line, riderPublishedAt: now, updatedAt: now };
+      });
+      const notices = payrollNotices.getAll().map(notice => {
+        if (!payrollNoticeAppliesToWeek(notice, settlementWeekStart)) return notice;
+        return { ...notice, riderPublishedAt: now, updatedAt: now };
+      });
+      await payrollSlipLines.persistList(lines);
+      await payrollNotices.persistList(notices);
+      const linesPublished = lines.filter(
+        line => payrollLineWeekStart(line) === settlementWeekStart && line.riderPublishedAt === now
+      ).length;
+      const noticesPublished = notices.filter(
+        notice => payrollNoticeAppliesToWeek(notice, settlementWeekStart) && notice.riderPublishedAt === now
+      ).length;
+      const meta = payrollPublish.recordWeekPublish({
+        weekStart: settlementWeekStart,
+        publishedAt: now,
+        linesPublished,
+        noticesPublished
+      });
+      return {
+        ok: true,
+        settlementWeekStart,
+        linesPublished,
+        noticesPublished,
+        publishedCount: linesPublished + noticesPublished,
+        publishedAt: meta.publishedAt,
+        fallback: true
+      };
     }
   };
 
@@ -10191,6 +10434,7 @@ const BremStorage = (function () {
     fetchCurrentRiderFromServer,
     fetchRiderAssignedMissionsFromServer,
     fetchRiderDashboardFromServer,
+    fetchRiderWeeklyPayslipFromServer,
     loadDriverAppBundle,
     getDriverAppPublishedAt,
     fetchRiderPublishStatus,
@@ -10239,6 +10483,8 @@ const BremStorage = (function () {
     adminSchedules,
     payrollSlipUploads,
     payrollSlipLines,
+    payrollNotices,
+    payrollPublish,
     leases,
     revenue,
     events,

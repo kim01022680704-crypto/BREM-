@@ -27,7 +27,8 @@ window.BremStorageGuard = (function () {
     'brem_lease_profit_logs',
     'brem_lease_arrears',
     'brem_payroll_slip_uploads',
-    'brem_payroll_slip_lines'
+    'brem_payroll_slip_lines',
+    'brem_payroll_notices'
   ]);
 
   /** settings 테이블 JSON 키 — 빈 값으로 덮어쓰기 금지 (정산·운영 테이블 데이터 제외) */

@@ -33,7 +33,8 @@
     hourlyInsurancePendingFileName: '',
     hourlyInsuranceAppliedBatches: [],
     showPayrollDetailColumns: false,
-    defaultDailySettlementApply: true
+    defaultDailySettlementApply: true,
+    publishWeekStart: ''
   };
 
   function getPromotionAggregatedRows() {
@@ -693,6 +694,112 @@
     renderLineList();
     if (normalized) {
       showToast(`조회 정산주: ${utils.formatSettlementWeekLabel(normalized)}`);
+    }
+  }
+
+  function syncPublishWeekUI(weekStart) {
+    const normalized = weekStart
+      ? utils.normalizeSettlementWeekStart(weekStart)
+      : '';
+    state.publishWeekStart = normalized;
+    const hidden = $('payrollPublishWeekStart');
+    if (hidden) hidden.value = normalized;
+    const labelEl = $('payrollPublishWeekLabel');
+    const picker = window.BremDatePicker;
+    if (!normalized) {
+      if (labelEl) labelEl.textContent = '정산주 미선택';
+      return '';
+    }
+    if (labelEl && picker?.formatDate) {
+      labelEl.textContent = `${picker.formatDate(normalized)}(${picker.formatWeekdayKo?.(normalized) || '수'})`;
+    } else if (labelEl) {
+      labelEl.textContent = normalized;
+    }
+    return normalized;
+  }
+
+  async function refreshPublishStatus() {
+    const statusEl = $('payrollPublishStatus');
+    const publishBtn = $('payrollPublishToRidersBtn');
+    const weekStart = syncPublishWeekUI(state.publishWeekStart || activeSettlementWeekStart() || activeListSearchWeekStart());
+    if (!weekStart) {
+      if (statusEl) statusEl.textContent = '반영할 정산주를 선택하세요.';
+      if (publishBtn) publishBtn.disabled = true;
+      return;
+    }
+
+    let status = BremStorage.payrollPublish?.countPendingForWeek?.(weekStart) || {
+      pendingLines: 0,
+      pendingNotices: 0,
+      pendingTotal: 0,
+      totalLines: 0,
+      totalNotices: 0
+    };
+
+    if (!BremStorage.isPayrollLocalStorageMode?.()) {
+      const remote = await BremStorage.payrollPublish.fetchStatusFromServer(weekStart);
+      if (remote.ok) status = remote;
+    }
+
+    if (statusEl) {
+      if (status.columnMissing) {
+        statusEl.textContent = 'DB 마이그레이션 필요: supabase/payroll_rider_publish_migration.sql';
+      } else if (!status.totalLines && !status.totalNotices) {
+        statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 저장된 급여명세서·공지가 없습니다.`;
+      } else if (status.pendingTotal > 0) {
+        statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 미반영 ${status.pendingTotal}건 (명세 ${status.pendingLines} · 공지 ${status.pendingNotices})`;
+      } else if (status.lastPublishedAt) {
+        statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 반영 완료 (${new Date(status.lastPublishedAt).toLocaleString('ko-KR')})`;
+      } else {
+        statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 반영 완료`;
+      }
+    }
+    if (publishBtn) {
+      publishBtn.disabled = !weekStart || (!status.totalLines && !status.totalNotices);
+    }
+  }
+
+  function handlePublishWeekChange(weekStart) {
+    syncPublishWeekUI(weekStart);
+    void refreshPublishStatus();
+  }
+
+  async function publishToRiders() {
+    const weekStart = syncPublishWeekUI(state.publishWeekStart);
+    if (!weekStart) {
+      showToast('반영할 정산주를 선택하세요.');
+      return;
+    }
+    const status = BremStorage.payrollPublish?.countPendingForWeek?.(weekStart);
+    if (!status?.totalLines && !status?.totalNotices) {
+      showToast('해당 정산주에 저장된 급여명세서·공지가 없습니다.');
+      return;
+    }
+    const ok = window.confirm(
+      `${utils.formatSettlementWeekLabel(weekStart)} 급여명세서·급여관련공지를 라이더 주급명세서에 반영할까요?\n(상단 「라이더 앱 반영」과 별도)`
+    );
+    if (!ok) return;
+
+    const publishBtn = $('payrollPublishToRidersBtn');
+    if (publishBtn) {
+      publishBtn.disabled = true;
+      publishBtn.textContent = '반영 중…';
+    }
+    try {
+      const result = await BremStorage.payrollPublish.publishWeekToRiders(weekStart);
+      if (!result.ok) {
+        throw new Error(result.message || result.error || '급여명세서 반영에 실패했습니다.');
+      }
+      showToast(`반영 완료 · 명세 ${result.linesPublished || 0}건 · 공지 ${result.noticesPublished || 0}건`);
+      window.BremAdminPayrollNotices?.refresh?.();
+      await refresh({ loadRemote: true });
+      await refreshPublishStatus();
+    } catch (error) {
+      console.error('[payroll publish]', error);
+      showToast(error?.message || '급여명세서 반영에 실패했습니다.');
+    } finally {
+      if (publishBtn) publishBtn.textContent = '급여명세서 반영하기';
+      void refreshPublishStatus();
     }
   }
 
@@ -1926,6 +2033,7 @@
       state.selectedUploadId = upload.id;
       syncPayrollListSearchWeekUI(settlementWeekStart);
       await refresh({ loadRemote: true });
+      void refreshPublishStatus();
       showToast(`${summary.count}건 저장 · ${utils.formatSettlementWeekLabel(settlementWeekStart)}`);
     } catch (error) {
       console.error('[payroll apply]', error);
@@ -2139,6 +2247,7 @@
     $('payrollFileInput')?.addEventListener('change', event => { void handleFileChange(event); });
     $('payrollClearBtn')?.addEventListener('click', resetPreview);
     $('payrollApplyBtn')?.addEventListener('click', () => { void applyUpload(); });
+    $('payrollPublishToRidersBtn')?.addEventListener('click', () => { void publishToRiders(); });
     $('payrollPromotionBulkTemplateBtn')?.addEventListener('click', downloadPromotionBulkTemplate);
     $('payrollPromotionBulkFile')?.addEventListener('change', event => { void handlePromotionBulkFileChange(event); });
     $('payrollPromotionBulkApplyBtn')?.addEventListener('click', applyPromotionPending);
@@ -2282,6 +2391,7 @@
     renderLineList();
     renderPromotionBulkPreview();
     renderHourlyInsuranceBulkPreview();
+    void refreshPublishStatus();
   }
 
   bindEvents();
@@ -2291,7 +2401,9 @@
     refresh,
     refreshParsedMatches: refreshParsedLineMatches,
     handleSettlementWeekChange,
-    handlePayrollListWeekChange
+    handlePayrollListWeekChange,
+    handlePublishWeekChange,
+    refreshPublishStatus
   };
 })();
 

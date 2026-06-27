@@ -354,6 +354,13 @@ h3 {
   margin-top: 4px;
 }
 
+.profile-actions__secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .profile-realtime-status-btn {
   min-height: 40px;
   padding: 0 12px;
@@ -366,6 +373,35 @@ h3 {
   letter-spacing: -0.02em;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.profile-realtime-status-btn--compact {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 0.74rem;
+}
+
+.profile-payslip-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #111827;
+  border-radius: 12px;
+  color: #111827;
+  background: var(--yellow);
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.profile-payslip-btn:hover,
+.profile-payslip-btn[aria-expanded="true"] {
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.12);
+}
+
+.profile-payslip-btn[aria-expanded="true"] {
+  outline: 2px solid #111827;
+  outline-offset: 2px;
 }
 
 .profile-realtime-status-btn:hover {
@@ -1643,5 +1679,322 @@ button.calendar-day:hover {
   .driver-target-dialog {
     width: calc(100% - 24px);
     max-width: none;
+  }
+}
+
+.driver-weekly-payslip-panel {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+}
+
+.driver-weekly-payslip-panel.is-loading {
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.driver-payslip-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.driver-payslip-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.driver-payslip-header__brand h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.driver-payslip-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.driver-payslip-meta__item {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.driver-payslip-meta__label {
+  display: block;
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.driver-payslip-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.driver-payslip-week-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.driver-payslip-week-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.driver-payslip-rider-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.driver-payslip-rider-bar div {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.driver-payslip-rider-bar span {
+  display: block;
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.driver-payslip-rider-bar strong {
+  font-size: 0.88rem;
+}
+
+.driver-payslip-empty {
+  padding: 28px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #64748b;
+  text-align: center;
+  background: #f8fafc;
+}
+
+.driver-payslip-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.driver-payslip-summary-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.driver-payslip-summary-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.driver-payslip-summary-card strong {
+  font-size: 1.2rem;
+}
+
+.driver-payslip-summary-card--net {
+  color: #fff;
+  border-color: #111827;
+  background: #111827;
+}
+
+.driver-payslip-summary-card--net span {
+  color: #cbd5e1;
+}
+
+.driver-payslip-summary-card--net strong {
+  color: var(--yellow);
+}
+
+.driver-payslip-tables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.driver-payslip-table-block h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+.driver-payslip-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.driver-payslip-table th,
+.driver-payslip-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 0.82rem;
+}
+
+.driver-payslip-table th {
+  width: 28%;
+  color: #475569;
+  background: #fafafa;
+  font-weight: 800;
+}
+
+.payslip-money {
+  text-align: right !important;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.driver-payslip-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #111827;
+  color: #fff;
+  font-size: 0.92rem;
+}
+
+.driver-payslip-formula strong {
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--yellow);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.driver-payslip-formula__op {
+  color: #94a3b8;
+  font-weight: 900;
+}
+
+.driver-payslip-empty-hint {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.driver-payslip-notices {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.driver-payslip-notices__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.driver-payslip-notices__head h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.driver-payslip-notice-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-payslip-notice-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.driver-payslip-notice-badge {
+  align-self: start;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 24px;
+}
+
+.driver-payslip-notice-badge--urgent {
+  color: #fff;
+  background: #dc2626;
+}
+
+.driver-payslip-notice-badge--notice {
+  color: #111827;
+  background: var(--yellow);
+}
+
+.driver-payslip-notice-badge--announcement {
+  color: #e2e8f0;
+  background: #475569;
+}
+
+.driver-payslip-notice-copy strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.86rem;
+}
+
+.driver-payslip-notice-copy p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.driver-payslip-notice-copy time {
+  display: block;
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 720px) {
+  .profile-actions__secondary {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .driver-payslip-meta,
+  .driver-payslip-summary,
+  .driver-payslip-tables,
+  .driver-payslip-rider-bar {
+    grid-template-columns: 1fr;
   }
 }

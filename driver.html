@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260623h">
+  <link rel="stylesheet" href="css/driver.css?v=20260701a">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -151,10 +151,114 @@
               </dl>
               <div class="profile-actions">
                 <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle">정보 수정</button>
-                <button type="button" class="profile-realtime-status-btn" id="driverRealtimeStatusBtn" title="본사 정책으로 실시간 현황 조회가 일시 중지되었습니다.">!실시간현황(이용중지)</button>
+                <div class="profile-actions__secondary">
+                  <button type="button" class="profile-realtime-status-btn profile-realtime-status-btn--compact" id="driverRealtimeStatusBtn" title="본사 정책으로 실시간 현황 조회가 일시 중지되었습니다.">!실시간</button>
+                  <button type="button" class="profile-payslip-btn" id="driverWeeklyPayslipBtn" aria-expanded="false" aria-controls="driverWeeklyPayslipPanel">주급명세서</button>
+                </div>
               </div>
             </div>
           </div>
+
+          <article class="panel driver-weekly-payslip-panel" id="driverWeeklyPayslipPanel" hidden>
+            <div class="driver-payslip-header">
+              <div class="driver-payslip-header__brand">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM">
+                <div>
+                  <p class="eyebrow">BREM RIDER</p>
+                  <h2>주급명세서</h2>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn driver-payslip-close" id="driverWeeklyPayslipCloseBtn">닫기</button>
+            </div>
+
+            <div class="driver-payslip-meta">
+              <div class="driver-payslip-meta__item">
+                <span class="driver-payslip-meta__label">정산기간</span>
+                <div class="driver-payslip-week-nav">
+                  <button type="button" class="driver-payslip-week-btn" id="driverPayslipPrevWeekBtn" aria-label="이전 주">&lt;</button>
+                  <strong id="driverPayslipPeriod">-</strong>
+                  <button type="button" class="driver-payslip-week-btn" id="driverPayslipNextWeekBtn" aria-label="다음 주">&gt;</button>
+                </div>
+              </div>
+              <div class="driver-payslip-meta__item">
+                <span class="driver-payslip-meta__label">지급일</span>
+                <strong id="driverPayslipPaymentDate">-</strong>
+              </div>
+            </div>
+
+            <div class="driver-payslip-rider-bar">
+              <div><span>성명</span><strong id="driverPayslipRiderName">-</strong></div>
+              <div><span>쿠팡ID</span><strong id="driverPayslipCoupangId">-</strong></div>
+              <div><span>배민ID</span><strong id="driverPayslipBaeminId">-</strong></div>
+              <div><span>리스여부</span><strong id="driverPayslipLeaseStatus">-</strong></div>
+              <div><span>리스비</span><strong id="driverPayslipLeaseFee">-</strong></div>
+              <div><span>미납</span><strong id="driverPayslipLeaseUnpaid">-</strong></div>
+            </div>
+
+            <div class="driver-payslip-empty" id="driverPayslipEmpty" hidden>
+              <p>선택한 정산주의 주급명세서가 아직 반영되지 않았거나 등록되지 않았습니다.</p>
+              <p class="driver-payslip-empty-hint">관리자가 급여명세서 메뉴에서 「급여명세서 반영하기」를 실행하면 확인할 수 있습니다.</p>
+            </div>
+
+            <div id="driverPayslipContent">
+              <div class="driver-payslip-summary">
+                <article class="driver-payslip-summary-card">
+                  <span>지급 합계</span>
+                  <strong id="driverPayslipGrossTotal">0원</strong>
+                </article>
+                <article class="driver-payslip-summary-card">
+                  <span>공제 합계</span>
+                  <strong id="driverPayslipDeductTotal">0원</strong>
+                </article>
+                <article class="driver-payslip-summary-card driver-payslip-summary-card--net">
+                  <span>실지급액</span>
+                  <strong id="driverPayslipNetTotal">0원</strong>
+                </article>
+              </div>
+
+              <div class="driver-payslip-tables">
+                <section class="driver-payslip-table-block">
+                  <h3>지급 내역</h3>
+                  <div class="table-wrap">
+                    <table class="driver-payslip-table">
+                      <thead>
+                        <tr><th>항목</th><th>설명</th><th>금액</th></tr>
+                      </thead>
+                      <tbody id="driverPayslipPayRows"></tbody>
+                    </table>
+                  </div>
+                </section>
+                <section class="driver-payslip-table-block">
+                  <h3>공제 내역</h3>
+                  <div class="table-wrap">
+                    <table class="driver-payslip-table">
+                      <thead>
+                        <tr><th>항목</th><th>설명</th><th>금액</th></tr>
+                      </thead>
+                      <tbody id="driverPayslipDeductRows"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+
+              <div class="driver-payslip-formula">
+                <span id="driverPayslipFormulaGross">0원</span>
+                <span class="driver-payslip-formula__op">-</span>
+                <span id="driverPayslipFormulaDeduct">0원</span>
+                <span class="driver-payslip-formula__op">-</span>
+                <span id="driverPayslipFormulaWithholding">0원</span>
+                <span class="driver-payslip-formula__op">=</span>
+                <strong id="driverPayslipFormulaNet">0원</strong>
+              </div>
+            </div>
+
+            <section class="driver-payslip-notices" id="driverPayslipNoticesSection" hidden>
+              <div class="driver-payslip-notices__head">
+                <h3>정산 관련 공지</h3>
+              </div>
+              <ul class="driver-payslip-notice-list" id="driverPayslipNoticeList"></ul>
+            </section>
+          </article>
 
           <article class="panel profile-edit-panel" id="driverProfileEditPanel" hidden>
             <div class="panel-header">
@@ -457,9 +561,10 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260622q"></script>
+  <script src="js/storage.js?v=20260630a"></script>
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260701a"></script>
   <script src="js/driver.js?v=20260622q"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

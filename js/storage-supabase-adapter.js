@@ -180,7 +180,8 @@ window.BremSupabaseStorageAdapter = (function () {
       keys.leaseProfitLogs,
       keys.leaseArrears,
       keys.payrollSlipUploads,
-      keys.payrollSlipLines
+      keys.payrollSlipLines,
+      keys.payrollNotices
     ].forEach(key => TABLE_KEYS.add(key));
 
     function buildSystemSettingsWhitelist() {
@@ -630,6 +631,7 @@ window.BremSupabaseStorageAdapter = (function () {
         net_pay: Number(item.netPay || 0),
         memo: item.memo || '',
         raw_data: item.rawData && typeof item.rawData === 'object' ? item.rawData : extra,
+        rider_published_at: item.riderPublishedAt || null,
         created_at: item.createdAt || new Date().toISOString(),
         updated_at: item.updatedAt || new Date().toISOString()
       };
@@ -657,6 +659,35 @@ window.BremSupabaseStorageAdapter = (function () {
         netPay: Number(row.net_pay || 0),
         memo: row.memo || '',
         rawData: row.raw_data || {},
+        riderPublishedAt: row.rider_published_at || null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function payrollNoticeToRow(item) {
+      return {
+        id: item.id,
+        title: item.title || '',
+        body: item.body || '',
+        label: item.label || 'notice',
+        settlement_week_start: item.settlementWeekStart || '',
+        sort_order: Number(item.sortOrder || 0),
+        rider_published_at: item.riderPublishedAt || null,
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToPayrollNotice(row) {
+      return {
+        id: row.id,
+        title: row.title || '',
+        body: row.body || '',
+        label: row.label || 'notice',
+        settlementWeekStart: row.settlement_week_start || '',
+        sortOrder: Number(row.sort_order || 0),
+        riderPublishedAt: row.rider_published_at || null,
         createdAt: row.created_at,
         updatedAt: row.updated_at
       };
@@ -956,6 +987,7 @@ window.BremSupabaseStorageAdapter = (function () {
         modelType: item.modelType || '',
         driverName: item.driverName || '',
         driverPhone: item.driverPhone || '',
+        driverId: item.driverId || '',
         weeklyRent: Number(item.weeklyRent || 0),
         dailyRent: Number(item.dailyRent || 0),
         rentalDays: Number(item.rentalDays || 0),
@@ -1014,6 +1046,7 @@ window.BremSupabaseStorageAdapter = (function () {
         modelType: raw.modelType || '',
         driverName: raw.driverName || '',
         driverPhone: raw.driverPhone || '',
+        driverId: raw.driverId || '',
         weeklyRent: Number(raw.weeklyRent || 0),
         dailyRent: Number(raw.dailyRent || row.daily_charge || 0),
         rentalDays: Number(raw.rentalDays || 0),
@@ -1151,6 +1184,14 @@ window.BremSupabaseStorageAdapter = (function () {
         fromRow: rowToPayrollSlipLine,
         toRow: payrollSlipLineToRow,
         order: { column: 'pay_month', ascending: false }
+      },
+      {
+        table: 'payroll_notices',
+        key: keys.payrollNotices,
+        label: 'payroll-notices',
+        fromRow: rowToPayrollNotice,
+        toRow: payrollNoticeToRow,
+        order: { column: 'updated_at', ascending: false }
       },
       {
         table: 'admin_calls',

@@ -35,8 +35,91 @@ const BremAdminLeaseMenus = (function () {
     weekStart: '',
     monthKey: '',
     bulkRows: [],
-    contractDeleting: ''
+    contractDeleting: '',
+    contractDriverSearch: ''
   };
+
+  function getContractDrivers() {
+    return BremStorage?.drivers?.getAll?.() || [];
+  }
+
+  function makeDriverLoginId(driver) {
+    if (window.BremDriverUtils?.makeDriverLoginId) {
+      return window.BremDriverUtils.makeDriverLoginId(driver);
+    }
+    const phone = String(driver?.phone || '').replace(/[^0-9]/g, '');
+    return `${String(driver?.name || '').replace(/\s/g, '')}${phone.slice(-4)}`;
+  }
+
+  function filterContractDrivers(list) {
+    const keyword = String(state.contractDriverSearch || '').trim().toLowerCase();
+    if (!keyword) return list;
+    return list.filter(driver => {
+      const haystack = [
+        driver.name,
+        driver.phone,
+        driver.baeminId,
+        driver.coupangId,
+        driver.coupangLoginKey,
+        makeDriverLoginId(driver)
+      ].join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }
+
+  function updateLeaseContractDriverSelectedLabel(driver) {
+    const label = $('leaseContractDriverSelected');
+    if (!label) return;
+    if (!driver) {
+      label.textContent = '선택된 기사: 없음';
+      return;
+    }
+    label.textContent = `선택된 기사: ${driver.name || '-'} · ${driver.phone || '-'} · 쿠팡 ${makeDriverLoginId(driver) || '-'}`;
+  }
+
+  function selectLeaseContractDriver(driver) {
+    if (!driver) return;
+    if ($('leaseContractDriverId')) $('leaseContractDriverId').value = driver.id || '';
+    if ($('leaseContractDriverName')) $('leaseContractDriverName').value = driver.name || '';
+    if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = driver.phone || '';
+    updateLeaseContractDriverSelectedLabel(driver);
+    if ($('leaseContractDriverResults')) $('leaseContractDriverResults').hidden = true;
+    if ($('leaseContractDriverSearch')) $('leaseContractDriverSearch').value = driver.name || '';
+    syncContractCalc();
+  }
+
+  function clearLeaseContractDriverSelection() {
+    if ($('leaseContractDriverId')) $('leaseContractDriverId').value = '';
+    if ($('leaseContractDriverName')) $('leaseContractDriverName').value = '';
+    if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = '';
+    updateLeaseContractDriverSelectedLabel(null);
+  }
+
+  function renderLeaseContractDriverResults() {
+    const box = $('leaseContractDriverResults');
+    if (!box) return;
+    const keyword = String(state.contractDriverSearch || '').trim();
+    if (!keyword) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    const drivers = filterContractDrivers(getContractDrivers()).slice(0, 30);
+    if (!drivers.length) {
+      box.hidden = false;
+      box.innerHTML = '<p class="lease-driver-picker__empty">검색된 등록 기사가 없습니다.</p>';
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = drivers.map(driver => `
+      <button type="button" class="lease-driver-picker__item" data-lease-pick-driver="${escapeHtml(driver.id)}">
+        <strong>${escapeHtml(driver.name || '-')}</strong>
+        <span>${escapeHtml(driver.phone || '-')}</span>
+        <span>쿠팡 ${escapeHtml(makeDriverLoginId(driver) || '-')}</span>
+        <span>배민 ${escapeHtml(driver.baeminId || '-')}</span>
+      </button>
+    `).join('');
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -530,6 +613,7 @@ const BremAdminLeaseMenus = (function () {
       modelType: $('leaseContractModelType')?.value || vehicle?.model || '',
       driverName: $('leaseContractDriverName')?.value || '',
       driverPhone: $('leaseContractDriverPhone')?.value || '',
+      driverId: $('leaseContractDriverId')?.value || '',
       startDate: $('leaseRentalDealStartDate')?.value || '',
       endDate: $('leaseRentalDealEndDate')?.value || '',
       dailyRent,
@@ -605,8 +689,8 @@ const BremAdminLeaseMenus = (function () {
     const editingId = $('leaseContractEditId')?.value || '';
     const editing = editingId ? erp().contracts().getById(editingId) : null;
     if (!editing || editing.vehicleId !== vehicle.id) {
-      if ($('leaseContractDriverName')) $('leaseContractDriverName').value = '';
-      if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = '';
+      clearLeaseContractDriverSelection();
+      if ($('leaseContractDriverSearch')) $('leaseContractDriverSearch').value = '';
       if ($('leaseContractWeeklyRent')) $('leaseContractWeeklyRent').value = '';
       if ($('leaseContractDeposit')) $('leaseContractDeposit').value = '';
       if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = '';
@@ -640,8 +724,17 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === (contract.contractType || 'lease');
     });
+    if ($('leaseContractDriverId')) $('leaseContractDriverId').value = contract.driverId || contract.rawData?.driverId || '';
     if ($('leaseContractDriverName')) $('leaseContractDriverName').value = contract.driverName || '';
     if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = contract.driverPhone || '';
+    const linkedDriver = contract.driverId
+      ? getContractDrivers().find(item => item.id === contract.driverId)
+      : null;
+    updateLeaseContractDriverSelectedLabel(linkedDriver || (contract.driverName ? {
+      id: contract.driverId || '',
+      name: contract.driverName,
+      phone: contract.driverPhone
+    } : null));
     if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = contract.startDate || '';
     if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = contract.endDate || '';
     if ($('leaseContractWeeklyRent')) {
@@ -802,8 +895,8 @@ const BremAdminLeaseMenus = (function () {
       showToast('차량관리에 등록된 차량을 선택하세요.');
       return;
     }
-    if (!String(draft.driverName || '').trim()) {
-      showToast('렌탈/리스자 이름을 입력하세요.');
+    if (!String(draft.driverId || '').trim() && !String(draft.driverName || '').trim()) {
+      showToast('등록 기사를 검색해서 선택하세요.');
       return;
     }
 
@@ -900,6 +993,13 @@ const BremAdminLeaseMenus = (function () {
   function resetContractForm() {
     $('leaseContractForm')?.reset();
     $('leaseContractEditId').value = '';
+    state.contractDriverSearch = '';
+    clearLeaseContractDriverSelection();
+    if ($('leaseContractDriverSearch')) $('leaseContractDriverSearch').value = '';
+    if ($('leaseContractDriverResults')) {
+      $('leaseContractDriverResults').hidden = true;
+      $('leaseContractDriverResults').innerHTML = '';
+    }
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === 'lease';
     });
@@ -1363,7 +1463,27 @@ const BremAdminLeaseMenus = (function () {
     $('leaseContractResetBtn')?.addEventListener('click', resetContractForm);
     $('leaseContractDeleteAllBtn')?.addEventListener('click', () => { void deleteAllContracts(); });
     $('leaseContractEndBtn')?.addEventListener('click', endContractAsEmpty);
-    ['leaseRentalDealStartDate', 'leaseRentalDealEndDate', 'leaseContractDriverName'].forEach(id => {
+    $('leaseContractDriverSearch')?.addEventListener('input', event => {
+      state.contractDriverSearch = String(event.target.value || '');
+      renderLeaseContractDriverResults();
+    });
+    $('leaseContractDriverSearch')?.addEventListener('focus', () => {
+      renderLeaseContractDriverResults();
+    });
+    $('leaseContractDriverResults')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-lease-pick-driver]');
+      if (!button) return;
+      const driver = getContractDrivers().find(item => item.id === button.dataset.leasePickDriver);
+      if (driver) selectLeaseContractDriver(driver);
+    });
+    document.addEventListener('click', event => {
+      const box = $('leaseContractDriverResults');
+      const input = $('leaseContractDriverSearch');
+      if (!box || !input) return;
+      if (box.contains(event.target) || input.contains(event.target)) return;
+      box.hidden = true;
+    });
+    ['leaseRentalDealStartDate', 'leaseRentalDealEndDate'].forEach(id => {
       $(id)?.addEventListener('change', syncContractCalc);
       $(id)?.addEventListener('input', syncContractCalc);
     });

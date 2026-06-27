@@ -5903,6 +5903,94 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.lease-form-field--full {
+  grid-column: 1 / -1;
+}
+
+.lease-driver-picker {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.lease-driver-picker__search-label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.lease-driver-picker__search-label input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.lease-driver-picker__results {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: #111827;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.lease-driver-picker__item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid #1f2937;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lease-driver-picker__item:last-child {
+  border-bottom: 0;
+}
+
+.lease-driver-picker__item:hover,
+.lease-driver-picker__item:focus-visible {
+  background: #1f2937;
+  outline: none;
+}
+
+.lease-driver-picker__item strong {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.lease-driver-picker__item span {
+  color: #94a3b8;
+  font-size: 0.76rem;
+}
+
+.lease-driver-picker__empty {
+  margin: 0;
+  padding: 12px;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.lease-driver-picker__selected {
+  margin: 0;
+  color: var(--yellow);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .lease-form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6782,6 +6870,134 @@ textarea {
 
 .payroll-upload-body {
   padding: 18px;
+}
+
+.payroll-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.payroll-subnav-btn {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #101010;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.payroll-subnav-btn.is-active {
+  border-color: var(--yellow);
+  color: #111827;
+  background: var(--yellow);
+}
+
+.payroll-publish-card {
+  margin-bottom: 14px;
+  border: 1px solid #334155;
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+}
+
+.payroll-publish-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 18px 18px;
+}
+
+.payroll-publish-status {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.payroll-publish-btn {
+  justify-self: start;
+}
+
+.payroll-notice-form {
+  padding: 0 18px 18px;
+}
+
+.payroll-notice-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.payroll-notice-title-field,
+.payroll-notice-body-field,
+.payroll-notice-week-field {
+  grid-column: 1 / -1;
+}
+
+.payroll-notice-form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.payroll-notice-form-grid input,
+.payroll-notice-form-grid textarea,
+.payroll-notice-form-grid select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101010;
+  color: #f8fafc;
+}
+
+.payroll-notice-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.payroll-notices-table-wrap {
+  padding: 0 18px 18px;
+}
+
+.payroll-notice-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.payroll-notice-badge--urgent {
+  color: #fff;
+  background: #dc2626;
+}
+
+.payroll-notice-badge--notice {
+  color: #111827;
+  background: var(--yellow);
+}
+
+.payroll-notice-badge--announcement {
+  color: #e2e8f0;
+  background: #334155;
+}
+
+.payroll-notice-published {
+  color: #86efac;
+  font-weight: 800;
+}
+
+.payroll-notice-pending {
+  color: #fbbf24;
+  font-weight: 800;
 }
 
 .payroll-bulk-panel {

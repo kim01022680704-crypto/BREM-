@@ -1561,6 +1561,26 @@
           };
         }
 
+        if (triggerId === 'payroll-publish') {
+          return {
+            hiddenInput: $('#payrollPublishWeekStart'),
+            labelEl: $('#payrollPublishWeekLabel'),
+            onSelect(value) {
+              window.BremAdminPayrollSlips?.handlePublishWeekChange?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'payroll-notice') {
+          return {
+            hiddenInput: $('#payrollNoticeWeekStart'),
+            labelEl: $('#payrollNoticeWeekLabel'),
+            onSelect(value) {
+              window.BremAdminPayrollNotices?.handleNoticeWeekChange?.(value);
+            }
+          };
+        }
+
         const hiddenInput = document.querySelector(`[data-edit-weekly-week="${triggerId}"]`);
         const labelEl = document.querySelector(`[data-week-picker-label="${triggerId}"]`);
         if (!hiddenInput) return null;

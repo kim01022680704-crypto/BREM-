@@ -19,6 +19,8 @@ const payrollProductionBaseData = require('./payroll-production-base-data');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
 const riderAuth = require('./rider-auth');
+const riderWeeklyPayslip = require('./rider-weekly-payslip');
+const payrollPublishAdmin = require('./payroll-publish-admin');
 const riderPublishAdmin = require('./rider-publish-admin');
 const { getPublicConfig } = require('./public-config');
 const {
@@ -386,6 +388,51 @@ app.post('/api/rider/profile', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 정보 저장에 실패했습니다.' });
+  }
+});
+
+app.get('/api/rider/weekly-payslip', async (req, res) => {
+  try {
+    const result = await riderWeeklyPayslip.getRiderWeeklyPayslip(
+      getBearerToken(req),
+      req.query.weekStart
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '주급명세서를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/payroll/publish-status', async (req, res) => {
+  try {
+    const result = await payrollPublishAdmin.getPayrollPublishStatus(
+      getBearerToken(req),
+      req.query.weekStart
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '급여 반영 상태를 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/payroll/publish', async (req, res) => {
+  try {
+    const result = await payrollPublishAdmin.publishPayrollToRiders(
+      getBearerToken(req),
+      req.body || {}
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '급여명세서 반영에 실패했습니다.' });
   }
 });
 
