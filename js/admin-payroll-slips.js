@@ -1346,12 +1346,17 @@
     const bulkUtils = window.BremPayrollPromotionBulk;
     if (!bulkUtils) return;
 
-    const filtered = bulkUtils.filterRowsForApply(state.promotionPendingRows);
+    const appliedDriverIds = bulkUtils.collectAppliedDriverIds(state.promotionAppliedBatches);
+    const filtered = bulkUtils.filterRowsForApply(state.promotionPendingRows, appliedDriverIds);
     const toApply = filtered.toApply;
 
     if (!toApply.length) {
-      showToast(filtered.skippedNoAmount
-        ? '적용할 BREM프로모션 금액이 있는 매칭 행이 없습니다.'
+      const parts = [];
+      if (filtered.skippedAlreadyApplied) parts.push(`이미 적용 ${filtered.skippedAlreadyApplied}명`);
+      if (filtered.skippedDuplicateInSheet) parts.push(`시트 중복 ${filtered.skippedDuplicateInSheet}명`);
+      if (filtered.skippedNoAmount) parts.push(`금액 없음 ${filtered.skippedNoAmount}건`);
+      showToast(parts.length
+        ? `새로 적용할 기사가 없습니다. (${parts.join(' · ')})`
         : '적용할 매칭된 BREM프로모션 데이터가 없습니다.');
       return;
     }
@@ -1363,7 +1368,9 @@
       appliedAt: new Date().toISOString(),
       rows: toApply.map(row => ({ ...row })),
       matchedCount: summary.matched,
-      totalAmount: summary.bremPromotionTotal
+      totalAmount: summary.bremPromotionTotal,
+      skippedAlreadyApplied: filtered.skippedAlreadyApplied,
+      skippedDuplicateInSheet: filtered.skippedDuplicateInSheet
     };
 
     state.promotionAppliedBatches.push(batch);
@@ -1377,8 +1384,12 @@
       renderPreview();
     }
 
+    const skipParts = [];
+    if (filtered.skippedAlreadyApplied) skipParts.push(`이미적용 제외 ${filtered.skippedAlreadyApplied}명`);
+    if (filtered.skippedDuplicateInSheet) skipParts.push(`중복 제외 ${filtered.skippedDuplicateInSheet}명`);
+    const skipText = skipParts.length ? ` · ${skipParts.join(' · ')}` : '';
     showToast(
-      `BREM프로모션 적용 ${summary.matched}건 ${summary.bremPromotionTotal.toLocaleString('ko-KR')}원 (누적 ${applied.matchedDrivers}명 · ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원)`
+      `BREM프로모션 적용 ${summary.matched}명 ${summary.bremPromotionTotal.toLocaleString('ko-KR')}원${skipText} (전체 ${applied.matchedDrivers}명)`
     );
   }
 
@@ -1527,7 +1538,9 @@
     const bulkUtils = window.BremPayrollPromotionBulk;
     if (!pendingBody || !bulkUtils) return;
 
-    const pendingFiltered = bulkUtils.filterRowsForApply(state.promotionPendingRows);
+    const appliedDriverIds = bulkUtils.collectAppliedDriverIds(state.promotionAppliedBatches);
+    const pendingFiltered = bulkUtils.filterRowsForApply(state.promotionPendingRows, appliedDriverIds);
+    const pendingSeen = new Set();
 
     if (pendingSection) {
       pendingSection.hidden = !state.promotionPendingRows.length;
@@ -1540,12 +1553,26 @@
       pendingBody.innerHTML = '';
     } else {
       if (summaryEl) {
-        summaryEl.textContent = `${state.promotionPendingFileName || '미리보기'} · 적용 ${pendingFiltered.toApply.length}건 · ${pendingFiltered.toApply.reduce((s, r) => s + Number(r.bremPromotion || 0), 0).toLocaleString('ko-KR')}원`;
+        const applyCount = pendingFiltered.toApply.length;
+        summaryEl.textContent = `${state.promotionPendingFileName || '미리보기'} · 신규 적용 ${applyCount}명 · ${pendingFiltered.toApply.reduce((s, r) => s + Number(r.bremPromotion || 0), 0).toLocaleString('ko-KR')}원`;
       }
       pendingBody.innerHTML = state.promotionPendingRows.map(row => {
-        const statusCls = row.matchStatus === 'matched' || row.matchStatus === 'manual'
+        let applyLabel = row.matchStatusLabel || '-';
+        let statusCls = row.matchStatus === 'matched' || row.matchStatus === 'manual'
           ? 'text-success'
           : (row.matchStatus === 'duplicate' ? 'text-warning' : 'text-danger');
+        const driverId = String(row.driverId || '').trim();
+        if ((row.matchStatus === 'matched' || row.matchStatus === 'manual') && driverId) {
+          if (appliedDriverIds.has(driverId)) {
+            applyLabel = '이미 적용';
+            statusCls = 'text-warning';
+          } else if (pendingSeen.has(driverId)) {
+            applyLabel = '시트 중복';
+            statusCls = 'text-warning';
+          } else {
+            pendingSeen.add(driverId);
+          }
+        }
         return `
           <tr>
             <td>${row.rowNumber}</td>
@@ -1555,7 +1582,7 @@
             <td>${escapeHtml(row.driverName || '-')}</td>
             <td class="${statusCls}">${escapeHtml(row.matchPlatformLabel || '-')}</td>
             <td class="${statusCls}">${escapeHtml(row.matchedPlatformId || '-')}</td>
-            <td class="${statusCls}">${escapeHtml(row.matchStatusLabel || '-')}</td>
+            <td class="${statusCls}">${escapeHtml(applyLabel)}</td>
           </tr>
         `;
       }).join('');
@@ -1581,7 +1608,7 @@
     }
     if (appliedSummaryEl) {
       appliedSummaryEl.textContent = state.promotionAppliedBatches.length
-        ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 · 누적 ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원`
+        ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 (기사당 1회) · 합계 ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원`
         : '아직 적용된 프로모션 정산서가 없습니다';
     }
     if (appliedBody) {
@@ -1600,7 +1627,7 @@
     }
 
     if (!state.promotionPendingRows.length && !state.promotionAppliedBatches.length && summaryEl) {
-      summaryEl.textContent = '프로모션 엑셀 업로드 → 미리보기 → 적용하기 (정산서 여러 장 누적)';
+      summaryEl.textContent = '프로모션 엑셀 업로드 → 미리보기 → 적용하기 (기사당 1회)';
     }
   }
 

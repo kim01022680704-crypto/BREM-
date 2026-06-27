@@ -233,17 +233,12 @@
       if (!row.driverId) return;
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
       const id = String(row.driverId).trim();
-      const amount = parseMoney(row.bremPromotion);
-      const prev = map.get(id);
-      if (prev) {
-        prev.bremPromotion += amount;
-      } else {
-        map.set(id, {
-          bremPromotion: amount,
-          baeminId: row.baeminId || '',
-          coupangId: row.coupangId || ''
-        });
-      }
+      if (map.has(id)) return;
+      map.set(id, {
+        bremPromotion: parseMoney(row.bremPromotion),
+        baeminId: row.baeminId || '',
+        coupangId: row.coupangId || ''
+      });
     });
     return map;
   }

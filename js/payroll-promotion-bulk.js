@@ -251,9 +251,15 @@
     );
   }
 
-  /** 정산서 여러 장 — 기사별 금액 누적 */
-  function filterRowsForApply(rows) {
+  /** 기사당 1회만 — 시트 내 중복·이미 적용된 기사 제외 */
+  function filterRowsForApply(rows, appliedDriverIds) {
+    const applied = appliedDriverIds instanceof Set
+      ? appliedDriverIds
+      : collectAppliedDriverIds(appliedDriverIds);
+    const seenInBatch = new Set();
     const toApply = [];
+    let skippedAlreadyApplied = 0;
+    let skippedDuplicateInSheet = 0;
     let skippedNoAmount = 0;
 
     (Array.isArray(rows) ? rows : []).forEach(row => {
@@ -263,30 +269,48 @@
         skippedNoAmount += 1;
         return;
       }
+      const driverId = String(row.driverId).trim();
+      if (applied.has(driverId)) {
+        skippedAlreadyApplied += 1;
+        return;
+      }
+      if (seenInBatch.has(driverId)) {
+        skippedDuplicateInSheet += 1;
+        return;
+      }
+      seenInBatch.add(driverId);
       toApply.push(row);
     });
 
-    return { toApply, skippedNoAmount, skippedDuplicateInSheet: 0 };
+    return { toApply, skippedAlreadyApplied, skippedDuplicateInSheet, skippedNoAmount };
+  }
+
+  function collectAppliedDriverIds(batches) {
+    const ids = new Set();
+    (Array.isArray(batches) ? batches : []).forEach(batch => {
+      (Array.isArray(batch.rows) ? batch.rows : []).forEach(row => {
+        const id = String(row.driverId || '').trim();
+        if (id) ids.add(id);
+      });
+    });
+    return ids;
   }
 
   function aggregateAppliedBatches(batches) {
     const list = Array.isArray(batches) ? batches : [];
-    const summed = new Map();
+    const rows = [];
+    const seen = new Set();
     list.forEach(batch => {
       (Array.isArray(batch.rows) ? batch.rows : []).forEach(row => {
-        if (!row.driverId) return;
         if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
+        if (!row.driverId) return;
         const id = String(row.driverId).trim();
-        const amount = parseMoney(row.bremPromotion);
-        const prev = summed.get(id);
-        if (prev) {
-          prev.bremPromotion += amount;
-        } else {
-          summed.set(id, { ...row, bremPromotion: amount });
-        }
+        if (seen.has(id)) return;
+        seen.add(id);
+        rows.push(row);
       });
     });
-    return Array.from(summed.values());
+    return rows;
   }
 
   function buildPromotionBulkMap(bulkRows) {
@@ -295,19 +319,14 @@
       if (!row.driverId) return;
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
       const id = String(row.driverId).trim();
-      const amount = parseMoney(row.bremPromotion);
-      const prev = map.get(id);
-      if (prev) {
-        prev.bremPromotion += amount;
-      } else {
-        map.set(id, {
-          bremPromotion: amount,
-          baeminId: row.baeminId || '',
-          coupangId: row.coupangId || '',
-          matchPlatformLabel: row.matchPlatformLabel || '-',
-          matchedPlatformId: row.matchedPlatformId || '-'
-        });
-      }
+      if (map.has(id)) return;
+      map.set(id, {
+        bremPromotion: parseMoney(row.bremPromotion),
+        baeminId: row.baeminId || '',
+        coupangId: row.coupangId || '',
+        matchPlatformLabel: row.matchPlatformLabel || '-',
+        matchedPlatformId: row.matchedPlatformId || '-'
+      });
     });
     return map;
   }
@@ -356,6 +375,7 @@
     parseSheetRows,
     summarizeRows,
     buildPromotionBulkMap,
+    collectAppliedDriverIds,
     aggregateAppliedBatches,
     summarizeAppliedBatches,
     filterRowsForApply,
