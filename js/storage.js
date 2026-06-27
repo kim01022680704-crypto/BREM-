@@ -5621,8 +5621,9 @@ const BremStorage = (function () {
     removeByIds(ids) {
       const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
       if (!idSet.size) return Promise.resolve();
+      const deletedRowIds = [...idSet];
       const next = leases.getAll().filter(item => !idSet.has(item.id));
-      return leases.writeList(next);
+      return leases.writeList(next, { deletedRowIds, deleteOnly: true, allowEmpty: true });
     }
   };
 
@@ -9541,7 +9542,13 @@ const BremStorage = (function () {
     }
   };
 
-  async function ensureLeaseErpKeysLoaded() {
+  function invalidateLeaseVehicleCaches() {
+    window.BremDataCache?.invalidate?.(KEYS.leaseVehicles);
+    window.BremDataCache?.invalidate?.(KEYS.leases);
+    activeStorageAdapter.invalidateKeys?.([KEYS.leaseVehicles, KEYS.leases]);
+  }
+
+  async function ensureLeaseErpKeysLoaded(options = {}) {
     const targetKeys = [
       KEYS.leaseVehicles,
       KEYS.leasePayments,
@@ -9552,7 +9559,7 @@ const BremStorage = (function () {
       KEYS.leaseArrears
     ];
     if (!activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
-    await activeStorageAdapter.ensureKeysLoaded(targetKeys);
+    await activeStorageAdapter.ensureKeysLoaded(targetKeys, options);
     return { ok: true };
   }
 
@@ -9617,6 +9624,7 @@ const BremStorage = (function () {
     waitForSupabaseReady,
     ensureSupabaseHydrated,
     ensureLeaseErpKeysLoaded,
+    invalidateLeaseVehicleCaches,
     readTableKey,
     writeTableKey,
     persistLeaseErpTableViaServer,

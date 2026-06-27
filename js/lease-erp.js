@@ -530,6 +530,18 @@ const BremLeaseErp = (function () {
     await flushPendingWrites(options);
   }
 
+  function syncLegacyLeaseSettings(list) {
+    const next = Array.isArray(list) ? list : vehicles().getAll();
+    window.BremDataCache?.set?.(KEYS.legacy, next, { source: 'write' });
+    if (BremStorage?.writeTableKey) {
+      BremStorage.writeTableKey(KEYS.legacy, next, { allowEmpty: true });
+    }
+  }
+
+  function afterVehiclesRemoved() {
+    syncLegacyLeaseSettings(vehicles().getAll());
+  }
+
   async function persistKey() {
     await flushPendingWrites();
   }
@@ -594,6 +606,7 @@ const BremLeaseErp = (function () {
       removeById(id) {
         const list = vehicles().getAll().filter(item => item.id !== id);
         writeList(KEYS.vehicles, list, { deletedRowIds: [id], deleteOnly: true, allowEmpty: true });
+        afterVehiclesRemoved();
       },
       removeByIds(ids = []) {
         const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
@@ -601,6 +614,7 @@ const BremLeaseErp = (function () {
         const deletedRowIds = [...idSet];
         const list = vehicles().getAll().filter(item => !idSet.has(item.id));
         writeList(KEYS.vehicles, list, { deletedRowIds, deleteOnly: true, allowEmpty: true });
+        afterVehiclesRemoved();
       },
       assignRental(vehicleId, assignment) {
         const existing = vehicles().getById(vehicleId);
@@ -718,6 +732,7 @@ const BremLeaseErp = (function () {
     }
     const mapped = legacy.map(legacyRecordToVehicle);
     writeList(KEYS.vehicles, mapped, { allowEmpty: false });
+    syncLegacyLeaseSettings(mapped);
     await vehicles().persist();
     migrationDone = true;
     return { migrated: mapped.length, skipped: false };

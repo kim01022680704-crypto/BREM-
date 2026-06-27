@@ -1074,6 +1074,14 @@
     };
   }
 
+  async function reloadVehiclesAfterDelete() {
+    if (erp) await erp.persistPending({ skipFlushStorage: true });
+    else await leases.persist();
+    window.BremStorage?.invalidateLeaseVehicleCaches?.();
+    await window.BremStorage?.ensureLeaseErpKeysLoaded?.({ force: true });
+    await refresh({ loadRemote: true });
+  }
+
   async function refresh(options = {}) {
     if (options.loadRemote !== false && erp) await erp.ensureLoaded();
     else erp?.syncAllVehicleStatusesFromContracts?.();
@@ -1278,15 +1286,18 @@
       }
       try {
         leases.removeByIds(ids);
-        if (erp) await erp.persistPending({ skipFlushStorage: true });
-        else await leases.persist();
+        await reloadVehiclesAfterDelete();
         ids.forEach(id => state.selectedIds.delete(id));
         showToast('선택 항목이 삭제되었습니다.');
-        await refresh({ loadRemote: false });
       } catch (error) {
         console.error('[lease bulk delete]', error);
         showToast(error?.message || '삭제에 실패했습니다.');
         await refresh({ loadRemote: true });
+      } finally {
+        if (bulkBtn) {
+          bulkBtn.disabled = false;
+          updateBulkSelectionUi();
+        }
       }
     });
 
@@ -1323,12 +1334,10 @@
           deleteBtn.textContent = '삭제 중…';
           try {
             leases.removeById(id);
-            if (erp) await erp.persistPending({ skipFlushStorage: true });
-            else if (!(await persistLeasesOrWarn())) return;
+            await reloadVehiclesAfterDelete();
             state.selectedIds.delete(id);
             if (state.editingId === id) resetForm();
             showToast('삭제되었습니다.');
-            await refresh({ loadRemote: false });
           } catch (error) {
             console.error('[lease delete]', error);
             showToast(error?.message || '삭제에 실패했습니다.');

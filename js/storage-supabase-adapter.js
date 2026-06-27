@@ -465,6 +465,9 @@ window.BremSupabaseStorageAdapter = (function () {
     async function loadTableWithLegacyFallback(config, options = {}) {
       const value = await loadTableCollection(config, options);
       if (value.length) return value;
+      if (config.table === 'lease_vehicles') {
+        return value;
+      }
       if (!(await probeTable(config.table))) return value;
 
       const legacyKeys = [...new Set([config.legacyKey, config.key].filter(Boolean))];
