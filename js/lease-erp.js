@@ -593,12 +593,14 @@ const BremLeaseErp = (function () {
       },
       removeById(id) {
         const list = vehicles().getAll().filter(item => item.id !== id);
-        writeList(KEYS.vehicles, list);
+        writeList(KEYS.vehicles, list, { deletedRowIds: [id], deleteOnly: true, allowEmpty: true });
       },
       removeByIds(ids = []) {
-        const idSet = new Set(ids);
+        const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
+        if (!idSet.size) return;
+        const deletedRowIds = [...idSet];
         const list = vehicles().getAll().filter(item => !idSet.has(item.id));
-        writeList(KEYS.vehicles, list);
+        writeList(KEYS.vehicles, list, { deletedRowIds, deleteOnly: true, allowEmpty: true });
       },
       assignRental(vehicleId, assignment) {
         const existing = vehicles().getById(vehicleId);
@@ -648,14 +650,14 @@ const BremLeaseErp = (function () {
       },
       removeById(id) {
         const list = store.getAll().filter(item => item.id !== id);
-        writeList(key, list, { deletedRowIds: [id], deleteOnly: true });
+        writeList(key, list, { deletedRowIds: [id], deleteOnly: true, allowEmpty: true });
       },
       removeByIds(ids = []) {
         const idSet = new Set((ids || []).map(value => String(value || '').trim()).filter(Boolean));
         if (!idSet.size) return;
         const deletedRowIds = [...idSet];
         const list = store.getAll().filter(item => !idSet.has(item.id));
-        writeList(key, list, { deletedRowIds, deleteOnly: true });
+        writeList(key, list, { deletedRowIds, deleteOnly: true, allowEmpty: true });
       },
       async persist() {
         await persistKey(key);

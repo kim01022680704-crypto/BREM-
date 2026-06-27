@@ -4853,17 +4853,55 @@ textarea {
 }
 
 .lease-list-header {
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: nowrap;
   gap: 12px;
-  flex-wrap: wrap;
+}
+
+.lease-list-header > div:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .lease-list-header .lease-list-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
   margin-left: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.lease-list-toolbar .lease-search-field {
+  display: block;
+  flex: 0 1 260px;
+  min-width: 180px;
+  max-width: 280px;
+  margin: 0;
+}
+
+.lease-list-toolbar .lease-search-field input {
+  width: 100%;
+}
+
+.lease-list-toolbar .check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.lease-list-toolbar .small-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .lease-erp-panel__intro {
@@ -5944,10 +5982,15 @@ textarea {
   }
 
   .lease-toolbar,
-  .lease-form-actions,
-  .lease-list-toolbar {
+  .lease-form-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .lease-list-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
   }
 }
 

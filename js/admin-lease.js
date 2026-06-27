@@ -1271,11 +1271,23 @@
       const ids = filteredItems().map(item => item.id).filter(id => state.selectedIds.has(id));
       if (!ids.length) return;
       if (!window.confirm(`선택한 ${ids.length}건을 삭제할까요?`)) return;
-      leases.removeByIds(ids);
-      if (!(await persistLeasesOrWarn())) return;
-      ids.forEach(id => state.selectedIds.delete(id));
-      showToast('선택 항목이 삭제되었습니다.');
-      refresh();
+      const bulkBtn = $('leaseBulkDelete');
+      if (bulkBtn) {
+        bulkBtn.disabled = true;
+        bulkBtn.textContent = '삭제 중…';
+      }
+      try {
+        leases.removeByIds(ids);
+        if (erp) await erp.persistPending({ skipFlushStorage: true });
+        else await leases.persist();
+        ids.forEach(id => state.selectedIds.delete(id));
+        showToast('선택 항목이 삭제되었습니다.');
+        await refresh({ loadRemote: false });
+      } catch (error) {
+        console.error('[lease bulk delete]', error);
+        showToast(error?.message || '삭제에 실패했습니다.');
+        await refresh({ loadRemote: true });
+      }
     });
 
     document.addEventListener('click', event => {
@@ -1306,15 +1318,22 @@
       if (deleteBtn) {
         if (!window.confirm('이 항목을 삭제할까요?')) return;
         void (async () => {
-          leases.removeById(deleteBtn.dataset.deleteLease);
-          if (!(await persistLeasesOrWarn())) {
-            refresh();
-            return;
+          const id = deleteBtn.dataset.deleteLease;
+          deleteBtn.disabled = true;
+          deleteBtn.textContent = '삭제 중…';
+          try {
+            leases.removeById(id);
+            if (erp) await erp.persistPending({ skipFlushStorage: true });
+            else if (!(await persistLeasesOrWarn())) return;
+            state.selectedIds.delete(id);
+            if (state.editingId === id) resetForm();
+            showToast('삭제되었습니다.');
+            await refresh({ loadRemote: false });
+          } catch (error) {
+            console.error('[lease delete]', error);
+            showToast(error?.message || '삭제에 실패했습니다.');
+            await refresh({ loadRemote: true });
           }
-          state.selectedIds.delete(deleteBtn.dataset.deleteLease);
-          if (state.editingId === deleteBtn.dataset.deleteLease) resetForm();
-          showToast('삭제되었습니다.');
-          refresh();
         })();
         return;
       }

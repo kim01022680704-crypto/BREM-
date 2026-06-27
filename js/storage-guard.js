@@ -72,12 +72,14 @@ window.BremStorageGuard = (function () {
   function validatePersist(key, value, options = {}) {
     const allowEmpty = options.allowEmpty === true;
     const allowBulkWipe = options.allowBulkWipe === true;
+    const deletedRowIds = Array.isArray(options.deletedRowIds) ? options.deletedRowIds : [];
+    const intentionalDelete = deletedRowIds.length > 0 || options.deleteOnly === true;
 
     if (!key) {
       return { ok: false, message: '저장 키가 없습니다.' };
     }
 
-    if (!allowEmpty && isProtectedPersistKey(key) && isEmptyCollection(value)) {
+    if (!allowEmpty && !intentionalDelete && isProtectedPersistKey(key) && isEmptyCollection(value)) {
       return {
         ok: false,
         blocked: true,
