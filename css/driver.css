@@ -347,18 +347,19 @@ h3 {
 }
 
 .profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 1fr);
+  align-items: stretch;
   gap: 8px;
   margin-top: 4px;
 }
 
-.profile-actions__secondary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+.profile-actions > .profile-edit-toggle,
+.profile-actions > .profile-realtime-status-btn,
+.profile-actions > .profile-payslip-btn {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .profile-realtime-status-btn {
@@ -1986,9 +1987,17 @@ button.calendar-day:hover {
 }
 
 @media (max-width: 720px) {
-  .profile-actions__secondary {
-    width: 100%;
-    margin-left: 0;
+  .profile-actions {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.65fr) minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .profile-edit-toggle,
+  .profile-realtime-status-btn--compact,
+  .profile-payslip-btn {
+    min-height: 40px;
+    padding-inline: 8px;
+    font-size: 0.74rem;
   }
 
   .driver-payslip-meta,
