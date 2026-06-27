@@ -496,7 +496,18 @@ const BremLeaseErp = (function () {
     const payload = BremLeaseRentalCalc?.buildProfitLogSnapshot?.({
       vehicleId, contractId, periodType, periodStart, periodEnd, metrics, vehicle, contract
     }) || {};
-    return profitLogs().create(normalizeProfitLog(payload));
+    const normalized = normalizeProfitLog(payload);
+    const scopedStart = String(normalized.periodStart || periodStart || '').slice(0, 10);
+    const scopedType = String(normalized.periodType || periodType || '').trim();
+    const existing = profitLogs().getAll().find(item =>
+      item.vehicleId === vehicleId
+      && item.periodType === scopedType
+      && String(item.periodStart || '').slice(0, 10) === scopedStart
+    ) || null;
+    if (existing) {
+      return profitLogs().update(existing.id, { ...normalized, id: existing.id });
+    }
+    return profitLogs().create(normalized);
   }
 
   function readList(key) {
@@ -663,7 +674,7 @@ const BremLeaseErp = (function () {
         const record = normalizeFn(raw);
         const list = store.getAll();
         list.unshift(record);
-        writeList(key, list);
+        writeList(key, list, { incrementalRows: [record] });
         return record;
       },
       update(id, raw) {
@@ -671,7 +682,7 @@ const BremLeaseErp = (function () {
         if (!existing) return null;
         const record = normalizeFn({ ...existing, ...raw }, existing);
         const list = store.getAll().map(item => item.id === id ? record : item);
-        writeList(key, list);
+        writeList(key, list, { incrementalRows: [record] });
         return record;
       },
       removeById(id) {
@@ -750,13 +761,15 @@ const BremLeaseErp = (function () {
     return { migrated: mapped.length, skipped: false };
   }
 
-  async function ensureLoaded() {
+  async function ensureLoaded(options = {}) {
     await BremStorage?.ensureSectionLoaded?.('lease-management');
     if (BremStorage?.ensureLeaseErpKeysLoaded) {
-      await BremStorage.ensureLeaseErpKeysLoaded();
+      await BremStorage.ensureLeaseErpKeysLoaded(options);
     }
     await migrateLegacySettingsIfNeeded();
-    syncAllVehicleStatusesFromContracts();
+    if (options.syncStatuses !== false) {
+      syncAllVehicleStatusesFromContracts();
+    }
     return { ok: true };
   }
 

@@ -38,7 +38,11 @@ const BremAdminLeaseMenus = (function () {
     contractDeleting: '',
     contractDriverSearch: '',
     weeklySelectedLogIds: new Set(),
-    weeklyVisibleLogIds: []
+    weeklyVisibleLogIds: [],
+    monthlySelectedLogIds: new Set(),
+    monthlyVisibleLogIds: [],
+    arrearContractOptionsDirty: true,
+    contractSaving: false
   };
 
   function getContractDrivers() {
@@ -240,6 +244,30 @@ const BremAdminLeaseMenus = (function () {
     return BremLeaseProfit?.monthKey?.() || new Date().toISOString().slice(0, 7);
   }
 
+  async function persistLeaseFast() {
+    if (!erp()) return;
+    await erp().persistPending({ skipFlushStorage: true });
+  }
+
+  function markArrearContractOptionsDirty() {
+    state.arrearContractOptionsDirty = true;
+  }
+
+  function refreshAfterLeaseMutation(options = {}) {
+    const refreshContract = options.contract !== false;
+    const refreshDashboard = options.dashboard !== false;
+    const refreshVehicleList = options.vehicleList !== false;
+    if (refreshContract) renderContractList();
+    if (refreshDashboard) {
+      paintDashboardVehicleOverview();
+      renderDashboardKpis();
+    }
+    if (refreshVehicleList) window.BremAdminLease?.renderList?.();
+    if (state.menu === 'weekly') renderWeekly();
+    if (state.menu === 'monthly') renderMonthly();
+    if (state.menu === 'arrears') renderArrears();
+  }
+
   function setMenu(menu) {
     state.menu = menu;
     document.querySelectorAll('[data-lease-menu]').forEach(btn => {
@@ -248,10 +276,14 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('[data-lease-menu-panel]').forEach(panel => {
       panel.hidden = panel.dataset.leaseMenuPanel !== menu;
     });
+    if (menu === 'arrears') {
+      markArrearContractOptionsDirty();
+      renderArrears();
+      return;
+    }
     if (menu === 'dashboard') renderDashboard();
     if (menu === 'weekly') renderWeekly();
     if (menu === 'monthly') renderMonthly();
-    if (menu === 'arrears') renderArrears();
     if (menu === 'empty') renderEmpty();
     if (menu === 'bulk') renderBulkGuide();
     if (menu === 'contract') {
@@ -273,7 +305,6 @@ const BremAdminLeaseMenus = (function () {
 
   function renderDashboardKpis() {
     if (!erp() || !profit()) return;
-    erp().syncAllVehicleStatusesFromContracts?.();
     updateLeaseDashWeekUi();
     const weekStart = currentWeekStart();
     const monthKey = currentMonthKey();
@@ -405,12 +436,14 @@ const BremAdminLeaseMenus = (function () {
     }
   }
 
-  async function renderDashboardVehicleOverview() {
+  async function renderDashboardVehicleOverview(options = {}) {
     if (!$('leaseDashVehicleRows')) return;
-    try {
-      if (erp()?.ensureLoaded) await erp().ensureLoaded();
-    } catch (error) {
-      console.error('[BremAdminLeaseMenus] renderDashboardVehicleOverview failed', error);
+    if (options.loadRemote !== false && erp()?.ensureLoaded) {
+      try {
+        await erp().ensureLoaded({ syncStatuses: false });
+      } catch (error) {
+        console.error('[BremAdminLeaseMenus] renderDashboardVehicleOverview failed', error);
+      }
     }
     paintDashboardVehicleOverview();
   }
@@ -534,10 +567,9 @@ const BremAdminLeaseMenus = (function () {
       vehicle,
       contract
     });
-    await erp().persistAll();
+    await persistLeaseFast();
     showToast('손익 계산 결과가 저장되었습니다.');
-    renderDashboard();
-    window.BremAdminLease?.refresh?.();
+    refreshAfterLeaseMutation({ contract: false, vehicleList: true });
   }
 
   function renderEmpty() {
@@ -842,7 +874,7 @@ const BremAdminLeaseMenus = (function () {
     renderContractList();
     paintDashboardVehicleOverview();
     renderDashboardKpis();
-    window.BremAdminLease?.refresh?.({ loadRemote: false });
+    window.BremAdminLease?.renderList?.();
   }
 
   function syncVehiclesAfterContractRemoval(vehicleIds = []) {
@@ -875,6 +907,7 @@ const BremAdminLeaseMenus = (function () {
       }
 
       syncVehiclesAfterContractRemoval(vehicleIds);
+      markArrearContractOptionsDirty();
       if ($('leaseContractEditId')?.value && ids.includes($('leaseContractEditId').value)) {
         resetContractForm();
       }
@@ -941,6 +974,14 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
 
+    const saveBtn = $('leaseContractSaveBtn');
+    if (state.contractSaving) return;
+    state.contractSaving = true;
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '저장 중…';
+    }
+
     try {
       erp().vehicles().update(vehicle.id, {
         renter: draft.driverName,
@@ -955,7 +996,6 @@ const BremAdminLeaseMenus = (function () {
         : erp().contracts().create({ ...draft, vehicleId: vehicle.id });
 
       applyVehicleStatusFromContract(vehicle, contract);
-      erp().syncAllVehicleStatusesFromContracts?.();
 
       const metrics = calc().compute({
         ...contract,
@@ -967,16 +1007,6 @@ const BremAdminLeaseMenus = (function () {
       const week = calc().weekRange(currentWeekStart());
       const month = currentMonthKey();
 
-      erp().saveProfitSnapshot({
-        vehicleId: vehicle.id,
-        contractId: contract.id,
-        periodType: 'snapshot',
-        periodStart: draft.startDate || week.start,
-        periodEnd: draft.endDate || week.end,
-        metrics,
-        vehicle,
-        contract
-      });
       erp().saveProfitSnapshot({
         vehicleId: vehicle.id,
         contractId: contract.id,
@@ -998,18 +1028,22 @@ const BremAdminLeaseMenus = (function () {
         contract
       });
 
-      await erp().persistAll();
+      await persistLeaseFast();
+      markArrearContractOptionsDirty();
+
       $('leaseContractEditId').value = contract.id;
       showToast('계약이 저장되었습니다.');
-      window.BremAdminLease?.refresh?.();
-      renderContractList();
-      renderWeekly();
-      renderMonthly();
-      renderArrears();
-      void renderDashboardVehicleOverview();
+      refreshAfterLeaseMutation();
     } catch (error) {
       console.error('[saveContract]', error);
       showToast(error?.message || '계약 저장에 실패했습니다. 잠시 후 다시 시도하세요.');
+    } finally {
+      state.contractSaving = false;
+      const saveBtn = $('leaseContractSaveBtn');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '계약 저장';
+      }
     }
   }
 
@@ -1089,6 +1123,35 @@ const BremAdminLeaseMenus = (function () {
       bulkDelete.textContent = selectedVisible.length
         ? `선택 삭제 (${selectedVisible.length})`
         : '선택 삭제';
+    }
+  }
+
+  function getMonthlyDeletableLogIds() {
+    return (state.monthlyVisibleLogIds || []).filter(Boolean);
+  }
+
+  function updateMonthlySelectionUi() {
+    const visible = getMonthlyDeletableLogIds();
+    const selectedVisible = visible.filter(id => state.monthlySelectedLogIds.has(id));
+    const selectAll = $('leaseMonthlySelectAll');
+    const bulkDelete = $('leaseMonthlyBulkDelete');
+    const deleteAllBtn = $('leaseMonthlyDeleteAllBtn');
+    if (selectAll) {
+      selectAll.checked = visible.length > 0 && selectedVisible.length === visible.length;
+      selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
+      selectAll.disabled = visible.length === 0;
+    }
+    if (bulkDelete) {
+      bulkDelete.disabled = selectedVisible.length === 0;
+      bulkDelete.textContent = selectedVisible.length
+        ? `선택 삭제 (${selectedVisible.length})`
+        : '선택 삭제';
+    }
+    if (deleteAllBtn) {
+      deleteAllBtn.disabled = visible.length === 0;
+      deleteAllBtn.textContent = visible.length
+        ? `해당 월 전체 삭제 (${visible.length})`
+        : '해당 월 전체 삭제';
     }
   }
 
@@ -1215,6 +1278,11 @@ const BremAdminLeaseMenus = (function () {
           return { ...row, recoveredAmount: contract.recoveredAmount || 0, memo: contract.memo || '', logId: '' };
         });
 
+    state.monthlyVisibleLogIds = rows.map(row => row.logId).filter(Boolean);
+    state.monthlySelectedLogIds = new Set(
+      [...state.monthlySelectedLogIds].filter(id => state.monthlyVisibleLogIds.includes(id))
+    );
+
     const totals = calc().aggregateRows(rows);
     const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
     setText('leaseMonthTotalVehicles', `${totals.count}대`);
@@ -1229,12 +1297,16 @@ const BremAdminLeaseMenus = (function () {
     setText('leaseMonthDeficit', `${totals.deficitCount}대`);
 
     if (!rows.length) {
-      rowsEl.innerHTML = '<tr><td colspan="14" class="empty">해당 월 데이터가 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="15" class="empty">해당 월 데이터가 없습니다.</td></tr>';
+      updateMonthlySelectionUi();
       return;
     }
 
     rowsEl.innerHTML = rows.map(row => `
-      <tr>
+      <tr${row.logId && state.monthlySelectedLogIds.has(row.logId) ? ' class="row-selected"' : ''}>
+        <td>${row.logId
+          ? `<input type="checkbox" data-select-monthly-profit-log="${escapeHtml(row.logId)}" ${state.monthlySelectedLogIds.has(row.logId) ? 'checked' : ''}>`
+          : ''}</td>
         <td>${escapeHtml(row.vehicleNumber)}</td>
         <td>${escapeHtml(row.vehicleName)}</td>
         <td>${escapeHtml(row.driverName)}</td>
@@ -1251,11 +1323,13 @@ const BremAdminLeaseMenus = (function () {
         <td>${row.logId ? `<button type="button" class="small-btn danger-btn" data-delete-profit-log="${escapeHtml(row.logId)}">삭제</button>` : '-'}</td>
       </tr>
     `).join('');
+    updateMonthlySelectionUi();
   }
 
-  function fillArrearContractSelect() {
+  function fillArrearContractSelect(force = false) {
     const select = $('leaseArrearContractId');
     if (!select || !erp()) return;
+    if (!force && !state.arrearContractOptionsDirty && select.options.length > 1) return;
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
     const contracts = erp().contracts().getAll()
       .filter(item => item.vehicleId && vehicles.has(item.vehicleId))
@@ -1271,6 +1345,7 @@ const BremAdminLeaseMenus = (function () {
       return `<option value="${escapeHtml(contract.id)}">${escapeHtml(label)}</option>`;
     }).join('');
     if (current && contracts.some(item => item.id === current)) select.value = current;
+    state.arrearContractOptionsDirty = false;
   }
 
   function readArrearCollectionMethods() {
@@ -1331,10 +1406,22 @@ const BremAdminLeaseMenus = (function () {
       collectionMethods,
       collectionStatus: calc().ARREAR_STATUS.COLLECTING
     });
-    await erp().persistAll();
-    $('leaseArrearRegisterForm')?.reset();
-    showToast('미납을 등록했습니다.');
-    renderArrears();
+    const registerBtn = $('leaseArrearRegisterBtn');
+    if (registerBtn) {
+      registerBtn.disabled = true;
+      registerBtn.textContent = '등록 중…';
+    }
+    try {
+      await persistLeaseFast();
+      $('leaseArrearRegisterForm')?.reset();
+      showToast('미납을 등록했습니다.');
+      renderArrears();
+    } finally {
+      if (registerBtn) {
+        registerBtn.disabled = false;
+        registerBtn.textContent = '미납 등록';
+      }
+    }
   }
 
   function renderArrearHistory(list, vehicles) {
@@ -1372,7 +1459,7 @@ const BremAdminLeaseMenus = (function () {
   function renderArrears() {
     const rowsEl = $('leaseArrearRows');
     if (!rowsEl || !erp()) return;
-    fillArrearContractSelect();
+    fillArrearContractSelect(state.arrearContractOptionsDirty);
     const list = erp().arrears().getAll();
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
     const active = list.filter(item => item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED);
@@ -1418,12 +1505,26 @@ const BremAdminLeaseMenus = (function () {
     if (!window.confirm(message)) return;
     if (idList.length === 1) erp().profitLogs().removeById(idList[0]);
     else erp().profitLogs().removeByIds(idList);
-    await erp().persistAll();
-    idList.forEach(id => state.weeklySelectedLogIds.delete(id));
+    await persistLeaseFast();
+    idList.forEach(id => {
+      state.weeklySelectedLogIds.delete(id);
+      state.monthlySelectedLogIds.delete(id);
+    });
     showToast(idList.length === 1 ? '수익 기록을 삭제했습니다.' : `${idList.length}건의 수익 기록을 삭제했습니다.`);
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
     renderDashboardKpis();
+  }
+
+  async function deleteAllMonthlyProfitLogs() {
+    const ids = getMonthlyDeletableLogIds();
+    if (!ids.length) {
+      showToast('삭제할 월간 수익 기록이 없습니다.');
+      return;
+    }
+    const monthKey = $('leaseMonthKey')?.value || state.monthKey || currentMonthKey();
+    if (!window.confirm(`${monthKey} 월간 수익 기록 ${ids.length}건을 모두 삭제할까요?`)) return;
+    await deleteProfitLogs(ids);
   }
 
   async function deleteProfitLog(id) {
@@ -1470,12 +1571,11 @@ const BremAdminLeaseMenus = (function () {
         processedDate: BremLeaseProfit.todayKey()
       });
     }
-    await erp().persistAll();
+    await persistLeaseFast();
     hideArrearCompletePanel();
     showToast('미납 처리가 완료되었습니다.');
     renderArrears();
-    renderMonthly();
-    window.BremAdminLease?.refresh?.();
+    if (state.menu === 'monthly') renderMonthly();
   }
 
   function normalizeBulkStatus(value) {
@@ -1764,6 +1864,17 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseMonthKey')?.addEventListener('change', renderMonthly);
     $('leaseMonthExportBtn')?.addEventListener('click', exportMonthlyExcel);
+    $('leaseMonthlySelectAll')?.addEventListener('change', event => {
+      const visible = getMonthlyDeletableLogIds();
+      if (event.target.checked) visible.forEach(id => state.monthlySelectedLogIds.add(id));
+      else visible.forEach(id => state.monthlySelectedLogIds.delete(id));
+      renderMonthly();
+    });
+    $('leaseMonthlyBulkDelete')?.addEventListener('click', () => {
+      const ids = getMonthlyDeletableLogIds().filter(id => state.monthlySelectedLogIds.has(id));
+      void deleteProfitLogs(ids);
+    });
+    $('leaseMonthlyDeleteAllBtn')?.addEventListener('click', () => { void deleteAllMonthlyProfitLogs(); });
     $('leaseBulkV3TemplateBtn')?.addEventListener('click', downloadBulkTemplate);
     $('leaseBulkV3ApplyBtn')?.addEventListener('click', () => { void applyBulkV3(); });
     $('leaseBulkV3File')?.addEventListener('change', event => {
@@ -1822,7 +1933,7 @@ const BremAdminLeaseMenus = (function () {
       const deleteBtn = event.target.closest('[data-delete-arrear]');
       if (deleteBtn && erp()) {
         erp().arrears().removeById(deleteBtn.dataset.deleteArrear);
-        void erp().persistAll().then(renderArrears);
+        void persistLeaseFast().then(renderArrears);
       }
     });
 
@@ -1833,13 +1944,23 @@ const BremAdminLeaseMenus = (function () {
 
     document.addEventListener('change', event => {
       const weeklyCheck = event.target.closest('[data-select-weekly-profit-log]');
-      if (!weeklyCheck) return;
-      const id = weeklyCheck.dataset.selectWeeklyProfitLog;
-      if (!id) return;
-      if (weeklyCheck.checked) state.weeklySelectedLogIds.add(id);
-      else state.weeklySelectedLogIds.delete(id);
-      updateWeeklySelectionUi();
-      weeklyCheck.closest('tr')?.classList.toggle('row-selected', weeklyCheck.checked);
+      if (weeklyCheck) {
+        const id = weeklyCheck.dataset.selectWeeklyProfitLog;
+        if (!id) return;
+        if (weeklyCheck.checked) state.weeklySelectedLogIds.add(id);
+        else state.weeklySelectedLogIds.delete(id);
+        updateWeeklySelectionUi();
+        weeklyCheck.closest('tr')?.classList.toggle('row-selected', weeklyCheck.checked);
+        return;
+      }
+      const monthlyCheck = event.target.closest('[data-select-monthly-profit-log]');
+      if (!monthlyCheck) return;
+      const monthlyId = monthlyCheck.dataset.selectMonthlyProfitLog;
+      if (!monthlyId) return;
+      if (monthlyCheck.checked) state.monthlySelectedLogIds.add(monthlyId);
+      else state.monthlySelectedLogIds.delete(monthlyId);
+      updateMonthlySelectionUi();
+      monthlyCheck.closest('tr')?.classList.toggle('row-selected', monthlyCheck.checked);
     });
   }
 

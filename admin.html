@@ -1676,7 +1676,7 @@
               </section>
             </div>
             <div class="lease-form-actions">
-              <button type="submit" class="primary-btn">계약 저장</button>
+              <button type="submit" class="primary-btn" id="leaseContractSaveBtn">계약 저장</button>
               <button type="button" class="small-btn" id="leaseContractEndBtn">반납 · 공차 전환</button>
               <button type="button" class="small-btn" id="leaseContractResetBtn">초기화</button>
             </div>
@@ -1794,9 +1794,15 @@
         <div class="lease-menu-panel" data-lease-menu-panel="monthly" hidden>
         <article class="card lease-screen-card">
           <div class="card-header"><h2>월간수익</h2>
-            <div class="lease-toolbar">
+            <div class="lease-toolbar lease-month-toolbar">
               <label>월<input type="month" id="leaseMonthKey" class="admin-period-input"></label>
               <button type="button" class="small-btn" id="leaseMonthExportBtn">엑셀 다운로드</button>
+              <label class="check-label lease-monthly-select-all">
+                <input type="checkbox" id="leaseMonthlySelectAll">
+                <span>전체 선택</span>
+              </label>
+              <button type="button" class="small-btn danger-btn" id="leaseMonthlyBulkDelete" disabled>선택 삭제</button>
+              <button type="button" class="small-btn danger-btn" id="leaseMonthlyDeleteAllBtn" disabled>해당 월 전체 삭제</button>
             </div>
           </div>
           <div class="lease-month-summary">
@@ -1813,7 +1819,7 @@
           </div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
-              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>월 렌탈일수</th><th>월 공차일수</th><th>월 미납일수</th><th>월 렌탈매출</th><th>월 미납금</th><th>월 회수금액</th><th>월 공차손실</th><th>월 비용</th><th>월 순이익</th><th>비고</th><th>관리</th></tr></thead>
+              <thead><tr><th></th><th>차량번호</th><th>차량명</th><th>기사명</th><th>월 렌탈일수</th><th>월 공차일수</th><th>월 미납일수</th><th>월 렌탈매출</th><th>월 미납금</th><th>월 회수금액</th><th>월 공차손실</th><th>월 비용</th><th>월 순이익</th><th>비고</th><th>관리</th></tr></thead>
               <tbody id="leaseMonthlyRows"></tbody>
             </table>
           </div>
@@ -1843,7 +1849,7 @@
               </fieldset>
             </div>
             <div class="lease-arrear-form-actions">
-              <button type="submit" class="primary-btn">미납 등록</button>
+              <button type="submit" class="primary-btn" id="leaseArrearRegisterBtn">미납 등록</button>
             </div>
           </form>
           <article class="card lease-arrear-complete-card" id="leaseArrearCompleteCard" hidden>
@@ -4513,10 +4519,10 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>
   <script src="js/lease-rental-calc.js?v=20260630l"></script>
-  <script src="js/lease-erp.js?v=20260630w"></script>
-  <script src="js/admin-lease.js?v=20260630w"></script>
+  <script src="js/lease-erp.js?v=20260701d"></script>
+  <script src="js/admin-lease.js?v=20260701d"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260701c"></script>
+  <script src="js/admin-lease-menus.js?v=20260701d"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

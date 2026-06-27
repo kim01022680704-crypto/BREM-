@@ -7043,6 +7043,15 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.lease-month-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lease-month-toolbar .lease-monthly-select-all {
+  margin-left: 4px;
+}
+
 .lease-weekly-period {
   margin-bottom: 12px;
   padding: 0 4px;

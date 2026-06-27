@@ -1366,5 +1366,5 @@
   setErpModeForm('company_lease_rental');
   refreshLeaseDateLabels();
   syncFormCalculations();
-  window.BremAdminLease = { refresh, fillForm, refreshModelSelect, renderModelTypeList, getModelTypes };
+  window.BremAdminLease = { refresh, fillForm, refreshModelSelect, renderModelTypeList, getModelTypes, renderList };
 })();
