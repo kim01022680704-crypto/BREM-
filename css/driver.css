@@ -456,6 +456,37 @@ h3 {
   margin-top: -4px;
 }
 
+.profile-edit-header {
+  flex-wrap: nowrap;
+}
+
+.profile-edit-header h2 {
+  min-width: 0;
+}
+
+.profile-edit-header-actions {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.profile-edit-panel .panel-header .profile-edit-header-close {
+  min-height: 36px;
+  padding: 0 12px;
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+}
+
+.profile-edit-panel .panel-header .profile-edit-header-save {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+  box-shadow: none;
+}
+
 .profile-edit-form {
   padding: 22px;
 }
@@ -1445,8 +1476,17 @@ button.calendar-day:hover {
     grid-template-columns: 1fr;
   }
 
+  .profile-edit-header {
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+
+  .profile-edit-header-actions {
+    display: flex;
+  }
+
   .profile-edit-actions {
-    flex-direction: column-reverse;
+    display: none;
   }
 
   .profile-edit-actions .ghost-btn,

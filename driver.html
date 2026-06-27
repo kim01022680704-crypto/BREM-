@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260701c">
+  <link rel="stylesheet" href="css/driver.css?v=20260701d">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -245,8 +245,12 @@
           </article>
 
           <article class="panel profile-edit-panel" id="driverProfileEditPanel" hidden>
-            <div class="panel-header">
+            <div class="panel-header profile-edit-header">
               <h2>기사 정보 수정</h2>
+              <div class="profile-edit-header-actions">
+                <button type="button" class="ghost-btn profile-edit-header-close" id="driverProfileEditHeaderClose">닫기</button>
+                <button type="submit" form="driverProfileEditForm" class="target-save-btn profile-edit-header-save" id="driverProfileEditHeaderSave">저장</button>
+              </div>
             </div>
             <form id="driverProfileEditForm" class="profile-edit-form">
               <section class="profile-edit-section">
@@ -549,7 +553,7 @@
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260701c"></script>
-  <script src="js/driver.js?v=20260622q"></script>
+  <script src="js/driver.js?v=20260701a"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

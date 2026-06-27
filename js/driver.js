@@ -1046,6 +1046,10 @@
     toggleProfileEditPanel(false);
   });
 
+  document.getElementById('driverProfileEditHeaderClose')?.addEventListener('click', () => {
+    toggleProfileEditPanel(false);
+  });
+
   document.getElementById('driverProfileEditForm')?.addEventListener('submit', async event => {
     event.preventDefault();
     const driver = refreshCurrentDriver();
@@ -1101,8 +1105,12 @@
       changes.newPassword = newPassword;
     }
 
-    const submitBtn = event.submitter || event.target.querySelector('[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
+    const submitBtns = [
+      event.submitter,
+      document.getElementById('driverProfileEditHeaderSave'),
+      document.querySelector('#driverProfileEditForm [type="submit"]')
+    ].filter(Boolean);
+    submitBtns.forEach(btn => { btn.disabled = true; });
     try {
       await BremStorage.drivers.update(driver.id, changes);
       state.currentDriver = BremStorage.drivers.getById(driver.id);
@@ -1112,7 +1120,7 @@
     } catch (error) {
       showToast(error.message || '기사 정보 저장에 실패했습니다.');
     } finally {
-      if (submitBtn) submitBtn.disabled = false;
+      submitBtns.forEach(btn => { btn.disabled = false; });
     }
   });
 
