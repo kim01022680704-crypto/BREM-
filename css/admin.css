@@ -6920,6 +6920,10 @@ textarea {
   justify-self: start;
 }
 
+.payroll-publish-payment-field input[type="date"] {
+  max-width: 220px;
+}
+
 .payroll-notice-form {
   padding: 0 18px 18px;
 }

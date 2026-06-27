@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260701b">
+  <link rel="stylesheet" href="css/driver.css?v=20260701c">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -160,9 +160,9 @@
           <article class="panel driver-weekly-payslip-panel" id="driverWeeklyPayslipPanel" hidden>
             <div class="driver-payslip-header">
               <div class="driver-payslip-header__brand">
-                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
                 <div>
-                  <p class="eyebrow">BREM RIDER</p>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER</p>
                   <h2>주급명세서</h2>
                 </div>
               </div>
@@ -170,17 +170,17 @@
             </div>
 
             <div class="driver-payslip-meta">
-              <div class="driver-payslip-meta__item">
+              <div class="driver-payslip-meta__item driver-payslip-meta__item--period">
                 <span class="driver-payslip-meta__label">정산기간</span>
                 <div class="driver-payslip-week-nav">
                   <button type="button" class="driver-payslip-week-btn" id="driverPayslipPrevWeekBtn" aria-label="이전 주">&lt;</button>
-                  <strong id="driverPayslipPeriod">-</strong>
+                  <strong id="driverPayslipPeriod" class="driver-payslip-period-text">-</strong>
                   <button type="button" class="driver-payslip-week-btn" id="driverPayslipNextWeekBtn" aria-label="다음 주">&gt;</button>
                 </div>
               </div>
-              <div class="driver-payslip-meta__item">
+              <div class="driver-payslip-meta__item driver-payslip-meta__item--pay">
                 <span class="driver-payslip-meta__label">지급일</span>
-                <strong id="driverPayslipPaymentDate">-</strong>
+                <strong id="driverPayslipPaymentDate" class="driver-payslip-payment-text">-</strong>
               </div>
             </div>
 
@@ -559,10 +559,10 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260630a"></script>
+  <script src="js/storage.js?v=20260701b"></script>
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver-weekly-payslip.js?v=20260701a"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260701c"></script>
   <script src="js/driver.js?v=20260622q"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

@@ -6013,12 +6013,13 @@ const BremStorage = (function () {
         pendingTotal: Number(result.pendingTotal) || 0,
         lastPublishedAt: result.lastPublishedAt || null,
         lastPublishedBy: result.lastPublishedBy || '',
+        paymentDate: result.paymentDate || '',
         columnMissing: Boolean(result.columnMissing),
         noticesTableMissing: Boolean(result.noticesTableMissing)
       };
     },
 
-    recordWeekPublish({ weekStart, publishedAt, publishedBy, linesPublished = 0, noticesPublished = 0 } = {}) {
+    recordWeekPublish({ weekStart, publishedAt, publishedBy, linesPublished = 0, noticesPublished = 0, paymentDate = '' } = {}) {
       const settlementWeekStart = String(weekStart || '').slice(0, 10);
       const existing = payrollPublish.getMeta();
       const weeks = existing.weeks && typeof existing.weeks === 'object' ? { ...existing.weeks } : {};
@@ -6026,7 +6027,8 @@ const BremStorage = (function () {
         publishedAt: publishedAt || new Date().toISOString(),
         publishedBy: String(publishedBy || 'admin').trim(),
         linesPublished: Number(linesPublished) || 0,
-        noticesPublished: Number(noticesPublished) || 0
+        noticesPublished: Number(noticesPublished) || 0,
+        paymentDate: String(paymentDate || weeks[settlementWeekStart]?.paymentDate || '').slice(0, 10)
       };
       const meta = {
         ...existing,
@@ -6035,6 +6037,7 @@ const BremStorage = (function () {
         settlementWeekStart,
         linesPublished: Number(linesPublished) || 0,
         noticesPublished: Number(noticesPublished) || 0,
+        paymentDate: String(paymentDate || '').slice(0, 10),
         weeks
       };
       if (isPayrollLocalStorageMode()) {
@@ -6045,17 +6048,18 @@ const BremStorage = (function () {
       return meta;
     },
 
-    async publishWeekToRiders(weekStart) {
+    async publishWeekToRiders(weekStart, options = {}) {
       const settlementWeekStart = String(weekStart || '').slice(0, 10);
       if (!settlementWeekStart) {
         throw new Error('정산주(수요일 시작)를 선택하세요.');
       }
+      const paymentDate = String(options.paymentDate || '').slice(0, 10);
 
       await storageAdapter.flush?.();
 
       const apiResult = await adminRidersApi('/api/admin/payroll/publish', {
         method: 'POST',
-        body: JSON.stringify({ weekStart: settlementWeekStart })
+        body: JSON.stringify({ weekStart: settlementWeekStart, paymentDate })
       });
 
       if (apiResult.ok) {
@@ -6064,7 +6068,8 @@ const BremStorage = (function () {
           publishedAt: apiResult.publishedAt,
           publishedBy: apiResult.publishedBy,
           linesPublished: apiResult.linesPublished,
-          noticesPublished: apiResult.noticesPublished
+          noticesPublished: apiResult.noticesPublished,
+          paymentDate: apiResult.paymentDate || paymentDate
         });
         await Promise.all([
           refreshDataFromServer(KEYS.payrollSlipLines),
@@ -6108,7 +6113,8 @@ const BremStorage = (function () {
         weekStart: settlementWeekStart,
         publishedAt: now,
         linesPublished,
-        noticesPublished
+        noticesPublished,
+        paymentDate
       });
       return {
         ok: true,

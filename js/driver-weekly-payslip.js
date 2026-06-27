@@ -9,13 +9,19 @@
   const emptyEl = document.getElementById('driverPayslipEmpty');
   const contentEl = document.getElementById('driverPayslipContent');
   const toast = document.getElementById('toast');
+  const utils = window.BremPayrollSlipUtils;
 
   if (!panel || !openBtn) return;
+
+  const CACHE_TTL_MS = 90 * 1000;
+  const cache = new Map();
+  let prefetchToken = 0;
 
   const state = {
     weekStart: null,
     loading: false,
-    visible: false
+    visible: false,
+    requestSeq: 0
   };
 
   function showToast(message) {
@@ -30,12 +36,31 @@
     return `${Number(value || 0).toLocaleString('ko-KR')}원`;
   }
 
+  function formatLocalDateKey(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
   function formatDate(value) {
     if (!value) return '-';
     const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
     if (Number.isNaN(date.getTime())) return '-';
     return new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short'
+    }).format(date);
+  }
+
+  function formatDateCompact(value) {
+    if (!value) return '-';
+    const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '-';
+    return new Intl.DateTimeFormat('ko-KR', {
       month: '2-digit',
       day: '2-digit',
       weekday: 'short'
@@ -55,25 +80,39 @@
     if (Number.isNaN(date.getTime())) return '';
     const diff = (date.getDay() - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
-    return [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, '0'),
-      String(date.getDate()).padStart(2, '0')
-    ].join('-');
+    return formatLocalDateKey(date);
   }
 
   function weekEndKey(weekStart) {
+    if (utils?.settlementWeekEnd) return utils.settlementWeekEnd(weekStart);
     const date = new Date(`${weekStart}T00:00:00`);
     date.setDate(date.getDate() + 6);
-    return [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, '0'),
-      String(date.getDate()).padStart(2, '0')
-    ].join('-');
+    return formatLocalDateKey(date);
+  }
+
+  function addDaysKey(dateKey, days) {
+    const date = new Date(`${dateKey}T00:00:00`);
+    date.setDate(date.getDate() + days);
+    return formatLocalDateKey(date);
   }
 
   function currentWeekStart() {
-    return weekStartKey(new Date().toISOString().slice(0, 10));
+    return weekStartKey(formatLocalDateKey(new Date()));
+  }
+
+  function defaultPaymentDate(weekStart) {
+    if (utils?.defaultPaymentDateForWeek) return utils.defaultPaymentDateForWeek(weekStart);
+    const end = weekEndKey(weekStart);
+    return end ? addDaysKey(end, 3) : '';
+  }
+
+  function formatPeriodLabel(weekStart, weekEnd, fallbackLabel) {
+    if (fallbackLabel) return fallbackLabel;
+    const compact = window.matchMedia('(max-width: 720px)').matches;
+    if (compact) {
+      return `${formatDateCompact(weekStart)} ~ ${formatDateCompact(weekEnd)}`;
+    }
+    return `${formatDate(weekStart)} ~ ${formatDate(weekEnd)}`;
   }
 
   function setText(id, value) {
@@ -111,7 +150,7 @@
     listEl.innerHTML = items.map(item => {
       const label = NOTICE_LABELS[item.label] || '안내';
       const dateText = item.publishedAt
-        ? formatDate(String(item.publishedAt).slice(0, 10))
+        ? formatDateCompact(String(item.publishedAt).slice(0, 10))
         : '';
       return `
         <li class="driver-payslip-notice-item">
@@ -126,16 +165,51 @@
     }).join('');
   }
 
+  function renderWeekShell(weekStart, options = {}) {
+    const weekEnd = options.settlementWeekEnd || weekEndKey(weekStart);
+    const paymentDate = options.paymentDate || defaultPaymentDate(weekStart);
+    if (periodEl) {
+      periodEl.textContent = formatPeriodLabel(
+        weekStart,
+        weekEnd,
+        options.settlementWeekLabel
+      );
+    }
+    if (paymentDateEl) paymentDateEl.textContent = formatDateCompact(paymentDate);
+    updateWeekNavButtons(weekStart);
+  }
+
+  function applyPayslipResult(result) {
+    if (!result) return;
+    state.weekStart = result.settlementWeekStart || state.weekStart;
+    renderWeekShell(state.weekStart, {
+      settlementWeekEnd: result.settlementWeekEnd,
+      settlementWeekLabel: result.settlementWeekLabel,
+      paymentDate: result.paymentDate
+    });
+
+    if (!result.hasPayslip) {
+      if (emptyEl) emptyEl.hidden = false;
+      if (contentEl) contentEl.hidden = true;
+      setText('driverPayslipRiderName', result.rider?.name || '-');
+      setText('driverPayslipCoupangId', result.rider?.coupangId || '-');
+      setText('driverPayslipBaeminId', result.rider?.baeminId || '-');
+      setText('driverPayslipLeaseStatus', result.lease?.leaseLabel || '없음');
+      setText('driverPayslipLeaseFee', result.lease?.leaseFee ? formatMoney(result.lease.leaseFee) : '-');
+      setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount ? formatMoney(result.lease.unpaidAmount) : '-');
+      renderNotices(result.notices);
+      return;
+    }
+
+    if (emptyEl) emptyEl.hidden = true;
+    if (contentEl) contentEl.hidden = false;
+    renderPayslip(result);
+  }
+
   function renderPayslip(data) {
     const payslip = data.payslip || {};
     const lease = data.lease || {};
     const rider = data.rider || {};
-
-    if (periodEl) {
-      periodEl.textContent = data.settlementWeekLabel
-        || `${formatDate(data.settlementWeekStart)} ~ ${formatDate(data.settlementWeekEnd)}`;
-    }
-    if (paymentDateEl) paymentDateEl.textContent = formatDate(data.paymentDate);
 
     setText('driverPayslipRiderName', rider.name || payslip.riderName || '-');
     setText('driverPayslipCoupangId', rider.coupangId || payslip.coupangId || '-');
@@ -158,11 +232,11 @@
     const deductBody = document.getElementById('driverPayslipDeductRows');
     if (payBody) {
       payBody.innerHTML = [
-        renderPayRow('배달비', payslip.totalDeliveryFee, '배달료 합계'),
+        renderPayRow('배달비', payslip.totalDeliveryFee, '배달료'),
         renderPayRow('배민미션', payslip.baeminMission),
         renderPayRow('기타지급', payslip.otherPayment),
         renderPayRow('BREM프로모션', payslip.bremPromotion),
-        renderPayRow('지급합계', gross, '지급 총액')
+        renderPayRow('지급합계', gross, '합계')
       ].join('');
     }
     if (deductBody) {
@@ -179,9 +253,9 @@
         rows.push(renderPayRow('리스비', lease.leaseFee, lease.vehicleNumber || '리스/렌탈'));
       }
       if (lease.unpaidAmount) {
-        rows.push(renderPayRow('미납', lease.unpaidAmount, '리스관리 미납'));
+        rows.push(renderPayRow('미납', lease.unpaidAmount, '리스관리'));
       }
-      rows.push(renderPayRow('공제합계', totalDeduct, '공제 총액'));
+      rows.push(renderPayRow('공제합계', totalDeduct, '합계'));
       deductBody.innerHTML = rows.join('');
     }
 
@@ -192,61 +266,90 @@
     renderNotices(data.notices);
   }
 
-  async function loadPayslip() {
+  async function fetchPayslip(weekStart) {
+    const cached = cache.get(weekStart);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const result = await BremStorage.fetchRiderWeeklyPayslipFromServer(weekStart);
+    if (result?.ok) {
+      cache.set(weekStart, { at: Date.now(), data: result });
+    }
+    return result;
+  }
+
+  function prefetchAdjacentWeeks(weekStart) {
+    const token = ++prefetchToken;
+    [addDaysKey(weekStart, -7), addDaysKey(weekStart, 7)].forEach(key => {
+      const normalized = weekStartKey(key);
+      if (!normalized || cache.has(normalized)) return;
+      void fetchPayslip(normalized).then(result => {
+        if (token !== prefetchToken) return;
+        return result;
+      }).catch(() => {});
+    });
+  }
+
+  async function loadPayslip(options = {}) {
+    const weekStart = state.weekStart || currentWeekStart();
+    state.weekStart = weekStartKey(weekStart);
+
+    if (!options.silent) {
+      renderWeekShell(state.weekStart);
+    }
+
+    const cached = cache.get(state.weekStart);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      applyPayslipResult(cached.data);
+      if (!state.loading) prefetchAdjacentWeeks(state.weekStart);
+      return;
+    }
+
     if (state.loading) return;
     state.loading = true;
+    const requestSeq = ++state.requestSeq;
     panel.classList.add('is-loading');
 
     try {
-      const result = await BremStorage.fetchRiderWeeklyPayslipFromServer(state.weekStart);
+      const result = await fetchPayslip(state.weekStart);
+      if (requestSeq !== state.requestSeq) return;
       if (!result.ok) {
         throw new Error(result.message || result.error || '주급명세서를 불러오지 못했습니다.');
       }
-
-      state.weekStart = result.settlementWeekStart || state.weekStart;
-
-      if (!result.hasPayslip) {
-        if (emptyEl) emptyEl.hidden = false;
-        if (contentEl) contentEl.hidden = true;
-        renderNotices(result.notices);
-        if (periodEl) {
-          periodEl.textContent = result.settlementWeekLabel
-            || `${formatDate(result.settlementWeekStart)} ~ ${formatDate(result.settlementWeekEnd)}`;
-        }
-        if (paymentDateEl) paymentDateEl.textContent = formatDate(result.paymentDate);
-        setText('driverPayslipRiderName', result.rider?.name || '-');
-        setText('driverPayslipCoupangId', result.rider?.coupangId || '-');
-        setText('driverPayslipBaeminId', result.rider?.baeminId || '-');
-        setText('driverPayslipLeaseStatus', result.lease?.leaseLabel || '없음');
-        setText('driverPayslipLeaseFee', result.lease?.leaseFee ? formatMoney(result.lease.leaseFee) : '-');
-        setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount ? formatMoney(result.lease.unpaidAmount) : '-');
-        renderNotices(result.notices);
-        return;
-      }
-
-      if (emptyEl) emptyEl.hidden = true;
-      if (contentEl) contentEl.hidden = false;
-      renderPayslip(result);
+      applyPayslipResult(result);
+      prefetchAdjacentWeeks(state.weekStart);
     } catch (error) {
+      if (requestSeq !== state.requestSeq) return;
       console.error('[driver weekly payslip]', error);
       showToast(error.message || '주급명세서를 불러오지 못했습니다.');
     } finally {
-      state.loading = false;
-      panel.classList.remove('is-loading');
-      updateWeekNavButtons();
+      if (requestSeq === state.requestSeq) {
+        state.loading = false;
+        panel.classList.remove('is-loading');
+        updateWeekNavButtons(state.weekStart);
+      }
     }
   }
 
-  function updateWeekNavButtons() {
+  function updateWeekNavButtons(weekStart = state.weekStart) {
     const latestWeek = currentWeekStart();
-    if (nextBtn) nextBtn.disabled = state.weekStart >= latestWeek;
+    const normalized = weekStartKey(weekStart || latestWeek);
+    if (nextBtn) nextBtn.disabled = normalized >= latestWeek;
+    if (prevBtn) prevBtn.disabled = false;
   }
 
   function shiftWeek(delta) {
-    const date = new Date(`${state.weekStart || currentWeekStart()}T00:00:00`);
+    const base = state.weekStart || currentWeekStart();
+    const date = new Date(`${base}T00:00:00`);
     date.setDate(date.getDate() + (delta * 7));
-    state.weekStart = weekStartKey(date.toISOString().slice(0, 10));
-    void loadPayslip();
+    const nextWeek = weekStartKey(formatLocalDateKey(date));
+    if (delta > 0 && nextWeek > currentWeekStart()) {
+      state.weekStart = currentWeekStart();
+    } else {
+      state.weekStart = nextWeek;
+    }
+    renderWeekShell(state.weekStart);
+    void loadPayslip({ silent: true });
   }
 
   function openPanel() {
@@ -277,6 +380,9 @@
 
   window.BremDriverWeeklyPayslip = {
     open: openPanel,
-    reload: loadPayslip
+    reload: loadPayslip,
+    invalidateCache() {
+      cache.clear();
+    }
   };
 })();

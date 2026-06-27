@@ -1,6 +1,8 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { getRiderMe } = require('./rider-auth');
 
+const PUBLISH_META_KEY = 'brem_payroll_rider_publish';
+
 function normalizePhone(value) {
   return String(value || '').replace(/[^0-9]/g, '');
 }
@@ -38,6 +40,32 @@ function addDays(dateKey, days) {
   const date = new Date(`${dateKey}T00:00:00`);
   date.setDate(date.getDate() + days);
   return formatLocalDateKey(date);
+}
+
+function defaultPaymentDateForWeekEnd(weekEnd) {
+  return weekEnd ? addDays(weekEnd, 3) : '';
+}
+
+async function readSettingValue(supabase, key, fallback) {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle();
+  if (error) throw error;
+  if (data?.value !== undefined && data?.value !== null) return data.value;
+  return fallback;
+}
+
+async function resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate) {
+  try {
+    const meta = await readSettingValue(supabase, PUBLISH_META_KEY, {});
+    const fromMeta = meta?.weeks?.[settlementWeekStart]?.paymentDate;
+    if (fromMeta) return String(fromMeta).slice(0, 10);
+  } catch (_error) {
+    /* ignore */
+  }
+  return defaultPaymentDateForWeekEnd(settlementWeekEndDate);
 }
 
 function parseMoney(value) {
@@ -177,14 +205,27 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
 
   const settlementWeekStart = normalizeSettlementWeekStart(weekStartInput);
   const settlementWeekEndDate = settlementWeekEnd(settlementWeekStart);
-  const paymentDate = addDays(settlementWeekEndDate, 1);
 
-  const { data: lines, error } = await supabase
-    .from('payroll_slip_lines')
-    .select('*')
-    .eq('driver_id', me.riderId)
-    .order('updated_at', { ascending: false })
-    .limit(300);
+  const [linesResult, noticesResult, paymentDate, leaseInfo] = await Promise.all([
+    supabase
+      .from('payroll_slip_lines')
+      .select('*')
+      .eq('driver_id', me.riderId)
+      .not('rider_published_at', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(80),
+    supabase
+      .from('payroll_notices')
+      .select('id,title,body,label,settlement_week_start,sort_order,rider_published_at,updated_at')
+      .not('rider_published_at', 'is', null)
+      .order('sort_order', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(30),
+    resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate),
+    findRiderLeaseInfo(supabase, me.rider)
+  ]);
+
+  const { data: lines, error } = linesResult;
 
   if (error) {
     if (/does not exist|relation|schema cache/i.test(error.message || '')) {
@@ -196,19 +237,12 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
   const matchedLine = (lines || []).find(row => {
     const raw = row.raw_data || {};
     const week = String(raw.settlementWeekStart || raw.settlementWeekPayKey || '').slice(0, 10);
-    return week === settlementWeekStart && row.rider_published_at != null;
+    return week === settlementWeekStart;
   }) || null;
 
   let notices = [];
-  try {
-    const { data: noticeRows } = await supabase
-      .from('payroll_notices')
-      .select('id,title,body,label,settlement_week_start,sort_order,rider_published_at,updated_at')
-      .not('rider_published_at', 'is', null)
-      .order('sort_order', { ascending: false })
-      .order('updated_at', { ascending: false })
-      .limit(50);
-    notices = (noticeRows || [])
+  if (!noticesResult.error) {
+    notices = (noticesResult.data || [])
       .filter(row => {
         const scoped = String(row.settlement_week_start || '').slice(0, 10);
         return !scoped || scoped === settlementWeekStart;
@@ -221,11 +255,8 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
         settlementWeekStart: String(row.settlement_week_start || '').slice(0, 10),
         publishedAt: row.rider_published_at || row.updated_at || null
       }));
-  } catch (_noticeError) {
-    notices = [];
   }
 
-  const leaseInfo = await findRiderLeaseInfo(supabase, me.rider);
   if (!leaseInfo.ok) {
     return { ok: false, status: 500, error: leaseInfo.error };
   }
@@ -265,5 +296,6 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
 module.exports = {
   getRiderWeeklyPayslip,
   normalizeSettlementWeekStart,
-  settlementWeekEnd
+  settlementWeekEnd,
+  defaultPaymentDateForWeekEnd
 };

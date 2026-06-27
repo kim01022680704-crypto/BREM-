@@ -1,6 +1,10 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
-const { normalizeSettlementWeekStart } = require('./rider-weekly-payslip');
+const {
+  normalizeSettlementWeekStart,
+  settlementWeekEnd,
+  defaultPaymentDateForWeekEnd
+} = require('./rider-weekly-payslip');
 
 const PUBLISH_META_KEY = 'brem_payroll_rider_publish';
 
@@ -94,6 +98,8 @@ async function getPayrollPublishStatus(accessToken, weekStartInput) {
   const publishedNotices = applicableNotices.filter(notice => notice.rider_published_at).length;
 
   const lastWeekMeta = metaRaw?.weeks?.[settlementWeekStart] || null;
+  const paymentDate = lastWeekMeta?.paymentDate
+    || defaultPaymentDateForWeekEnd(settlementWeekEnd(settlementWeekStart));
 
   return {
     ok: true,
@@ -107,6 +113,7 @@ async function getPayrollPublishStatus(accessToken, weekStartInput) {
     pendingTotal: pendingLines + pendingNotices,
     lastPublishedAt: lastWeekMeta?.publishedAt || null,
     lastPublishedBy: lastWeekMeta?.publishedBy || '',
+    paymentDate,
     columnMissing: linesResult.columnMissing === true,
     noticesTableMissing: noticesResult.tableMissing === true
   };
@@ -125,6 +132,9 @@ async function publishPayrollToRiders(accessToken, options = {}) {
   if (!settlementWeekStart) {
     return { ok: false, status: 400, error: '정산주(수요일 시작)를 선택하세요.' };
   }
+
+  const paymentDateInput = String(options.paymentDate || '').trim().slice(0, 10);
+  const paymentDate = paymentDateInput || defaultPaymentDateForWeekEnd(settlementWeekEnd(settlementWeekStart));
 
   const now = new Date().toISOString();
   const publishedBy = String(options.publishedBy || auth.displayName || auth.email || 'admin').trim();
@@ -182,7 +192,8 @@ async function publishPayrollToRiders(accessToken, options = {}) {
     publishedAt: now,
     publishedBy,
     linesPublished,
-    noticesPublished
+    noticesPublished,
+    paymentDate
   };
   const meta = {
     ...existingMeta,
@@ -191,6 +202,7 @@ async function publishPayrollToRiders(accessToken, options = {}) {
     settlementWeekStart,
     linesPublished,
     noticesPublished,
+    paymentDate,
     weeks
   };
   await writeSettingValue(supabase, PUBLISH_META_KEY, meta);
@@ -202,6 +214,7 @@ async function publishPayrollToRiders(accessToken, options = {}) {
     publishedBy,
     linesPublished,
     noticesPublished,
+    paymentDate,
     publishedCount: linesPublished + noticesPublished
   };
 }

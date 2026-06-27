@@ -1692,8 +1692,20 @@ button.calendar-day:hover {
 }
 
 .driver-weekly-payslip-panel.is-loading {
-  opacity: 0.72;
+  opacity: 0.92;
+}
+
+.driver-weekly-payslip-panel.is-loading .driver-payslip-week-btn {
+  opacity: 0.5;
   pointer-events: none;
+}
+
+.driver-payslip-period-text,
+.driver-payslip-payment-text {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: keep-all;
 }
 
 .driver-payslip-header {
@@ -2000,10 +2012,159 @@ button.calendar-day:hover {
     font-size: 0.74rem;
   }
 
-  .driver-payslip-meta,
-  .driver-payslip-summary,
-  .driver-payslip-tables,
+  .driver-weekly-payslip-panel {
+    margin-top: 8px;
+    padding: 10px 10px 12px;
+    border-radius: 14px;
+  }
+
+  .driver-payslip-header {
+    margin-bottom: 8px;
+    align-items: center;
+  }
+
+  .driver-payslip-logo {
+    display: none;
+  }
+
+  .driver-payslip-eyebrow {
+    display: none;
+  }
+
+  .driver-payslip-header__brand h2 {
+    font-size: 1rem;
+  }
+
+  .driver-payslip-close {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+  }
+
+  .driver-payslip-meta {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.75fr);
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .driver-payslip-meta__item {
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+
+  .driver-payslip-meta__label {
+    margin-bottom: 4px;
+    font-size: 0.68rem;
+  }
+
+  .driver-payslip-period-text,
+  .driver-payslip-payment-text {
+    font-size: 0.72rem;
+  }
+
+  .driver-payslip-week-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 0.82rem;
+  }
+
+  .driver-payslip-week-nav {
+    gap: 4px;
+  }
+
   .driver-payslip-rider-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  .driver-payslip-rider-bar div {
+    padding: 6px 7px;
+    border-radius: 8px;
+  }
+
+  .driver-payslip-rider-bar span {
+    margin-bottom: 2px;
+    font-size: 0.62rem;
+  }
+
+  .driver-payslip-rider-bar strong {
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  .driver-payslip-empty {
+    padding: 14px 10px;
+    font-size: 0.78rem;
+  }
+
+  .driver-payslip-empty-hint {
+    font-size: 0.72rem;
+  }
+
+  .driver-payslip-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  .driver-payslip-summary-card {
+    padding: 8px 6px;
+    border-radius: 10px;
+  }
+
+  .driver-payslip-summary-card span {
+    margin-bottom: 4px;
+    font-size: 0.64rem;
+  }
+
+  .driver-payslip-summary-card strong {
+    font-size: 0.82rem;
+  }
+
+  .driver-payslip-tables {
     grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .driver-payslip-table-block h3 {
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+  }
+
+  .driver-payslip-table-block .table-wrap {
+    max-height: 180px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+
+  .driver-payslip-table th,
+  .driver-payslip-table td {
+    padding: 7px 8px;
+    font-size: 0.72rem;
+  }
+
+  .driver-payslip-formula {
+    gap: 6px;
+    padding: 10px 8px;
+    font-size: 0.72rem;
+    border-radius: 10px;
+  }
+
+  .driver-payslip-formula strong {
+    padding: 6px 8px;
+    font-size: 0.78rem;
+  }
+
+  .driver-payslip-notices {
+    margin-top: 8px;
+    padding: 10px;
+  }
+
+  .driver-payslip-notice-item {
+    padding: 8px 10px;
+    gap: 8px;
   }
 }

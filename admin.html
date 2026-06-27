@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260701a">
+  <link rel="stylesheet" href="css/admin.css?v=20260701b">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -3626,6 +3626,11 @@
                 <span class="payroll-week-label" id="payrollPublishWeekLabel">정산주 미선택</span>
               </div>
             </label>
+            <label class="payroll-field payroll-publish-payment-field">
+              <span class="payroll-field-label">지급일</span>
+              <input type="date" id="payrollPublishPaymentDate" class="admin-period-input">
+              <span class="form-help">정산주(화요일 종료) 기준 · 기본 금요일 · 반영 시 라이더에게 표시</span>
+            </label>
             <p class="payroll-publish-status" id="payrollPublishStatus" aria-live="polite">정산주를 선택하면 반영 대기 건수를 확인할 수 있습니다.</p>
             <button type="button" class="primary-btn payroll-publish-btn" id="payrollPublishToRidersBtn" disabled>급여명세서 반영하기</button>
           </div>
@@ -4352,7 +4357,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
   <script src="js/storage-supabase-adapter.js?v=20260628a"></script>
-  <script src="js/storage.js?v=20260628a"></script>
+  <script src="js/storage.js?v=20260701b"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260630n"></script>
@@ -4381,11 +4386,11 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
-  <script src="js/payroll-slip-utils.js?v=20260630f"></script>
+  <script src="js/payroll-slip-utils.js?v=20260701b"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260622k"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260630c"></script>
-  <script src="js/admin-payroll-slips.js?v=20260701a"></script>
+  <script src="js/admin-payroll-slips.js?v=20260701b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701a"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260630c"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
