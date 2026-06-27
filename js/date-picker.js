@@ -498,6 +498,7 @@ const BremDatePicker = (function () {
       const openButton = event.target.closest(openSelector);
       if (openButton) {
         event.preventDefault();
+        event.stopPropagation();
         state.active = getContext(openButton);
         if (!state.active?.hiddenInput) return;
         state.viewDate = new Date(`${state.active.hiddenInput.value || weekStartKey()}T00:00:00`);

@@ -4,6 +4,18 @@
 window.BremSupabaseStorageAdapter = (function () {
   const Mapper = () => window.BremSupabaseMapper;
 
+  function isLocalReadOnlySupabase() {
+    const config = window.BREM_SUPABASE_CONFIG || {};
+    return config.productionSupabaseForbidden === true
+      || config.writeBlocked === true
+      || config.supabaseReadOnly === true
+      || (config.mode !== 'production' && config.backend === 'local');
+  }
+
+  function noopLocalPersist() {
+    return Promise.resolve({ ok: true, localOnly: true, readOnly: true });
+  }
+
   const DEFAULT_RIDER_PAGE_SIZE = 100;
   const DEFAULT_CALLS_LOOKBACK_DAYS = 540;
   const TABLE_FETCH_PAGE_SIZE = 1000;
@@ -221,6 +233,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function upsertRowsInChunks(tableName, rows, chunkSize = 200) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       if (!rows.length) return;
       window.BremPerf?.countSupabase?.(rows.length);
       for (let index = 0; index < rows.length; index += chunkSize) {
@@ -236,6 +249,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function deleteRowsInChunks(tableName, ids, chunkSize = 200) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       if (!ids.length) return;
       for (let index = 0; index < ids.length; index += chunkSize) {
         const chunk = ids.slice(index, index + chunkSize);
@@ -259,6 +273,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function syncTableRows(tableName, list, toRow) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const rows = (list || []).map(toRow).filter(row => row?.id);
       window.BremPerf?.countSupabase?.(1);
       const { data: existing, error: readError } = await client.from(tableName).select('id');
@@ -349,6 +364,12 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function persistTableCollection(table, key, list, toRow, options = {}) {
+      if (isLocalReadOnlySupabase()) {
+        setCache(key, list);
+        window.BremDataCache?.set?.(key, list, { source: 'local-session' });
+        loadedTableKeys.add(key);
+        return noopLocalPersist();
+      }
       if (!(await probeTable(table))) {
         throw new Error(`${table} 테이블이 없습니다. Supabase migration을 실행하세요.`);
       }
@@ -424,6 +445,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function upsertRiderRows(rows) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       if (!rows.length) return;
       let payload = rows;
       let { error } = await client.from('riders').upsert(payload, { onConflict: 'id' });
@@ -455,6 +477,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function migrateLegacySettingsToTable(config, legacyKey) {
+      if (isLocalReadOnlySupabase()) return false;
       if (!legacyKey) return false;
       const { data, error } = await client.from('settings').select('value').eq('key', legacyKey).maybeSingle();
       if (error || !data?.value || !Array.isArray(data.value) || !data.value.length) return false;
@@ -509,6 +532,110 @@ window.BremSupabaseStorageAdapter = (function () {
         memo: row.memo || '',
         createdBy: row.created_by || '',
         createdById: row.created_by_id || '',
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function payrollSlipUploadToRow(item) {
+      const extra = { ...(item || {}) };
+      [
+        'id', 'payMonth', 'fileName', 'uploadedBy', 'uploadedById', 'status',
+        'contentHash', 'rowCount', 'totalGross', 'totalDeduction', 'totalNet',
+        'rawSummary', 'uploadedAt', 'updatedAt'
+      ].forEach(field => { delete extra[field]; });
+      return {
+        id: item.id,
+        pay_month: item.payMonth || '',
+        file_name: item.fileName || '',
+        uploaded_by: item.uploadedBy || '',
+        uploaded_by_id: item.uploadedById || '',
+        status: item.status || 'applied',
+        content_hash: item.contentHash || '',
+        row_count: Number(item.rowCount || 0),
+        total_gross: Number(item.totalGross || 0),
+        total_deduction: Number(item.totalDeduction || 0),
+        total_net: Number(item.totalNet || 0),
+        raw_summary: item.rawSummary && typeof item.rawSummary === 'object' ? item.rawSummary : {},
+        uploaded_at: item.uploadedAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToPayrollSlipUpload(row) {
+      const raw = row.raw_summary && typeof row.raw_summary === 'object' ? row.raw_summary : {};
+      return {
+        ...raw,
+        id: row.id,
+        payMonth: row.pay_month || '',
+        fileName: row.file_name || '',
+        uploadedBy: row.uploaded_by || '',
+        uploadedById: row.uploaded_by_id || '',
+        status: row.status || 'applied',
+        contentHash: row.content_hash || '',
+        rowCount: Number(row.row_count || 0),
+        totalGross: Number(row.total_gross || 0),
+        totalDeduction: Number(row.total_deduction || 0),
+        totalNet: Number(row.total_net || 0),
+        rawSummary: row.raw_summary || {},
+        uploadedAt: row.uploaded_at,
+        updatedAt: row.updated_at
+      };
+    }
+
+    function payrollSlipLineToRow(item) {
+      const extra = { ...(item || {}) };
+      [
+        'id', 'uploadId', 'payMonth', 'driverId', 'riderName', 'employeeNo', 'department',
+        'basePay', 'allowance', 'grossPay', 'incomeTax', 'localTax', 'insurance',
+        'otherDeduction', 'totalDeduction', 'netPay', 'memo', 'rawData', 'createdAt', 'updatedAt'
+      ].forEach(field => { delete extra[field]; });
+      return {
+        id: item.id,
+        upload_id: item.uploadId || '',
+        pay_month: item.payMonth || '',
+        driver_id: item.driverId || '',
+        rider_name: item.riderName || '',
+        employee_no: item.employeeNo || '',
+        department: item.department || '',
+        base_pay: Number(item.basePay || 0),
+        allowance: Number(item.allowance || 0),
+        gross_pay: Number(item.grossPay || 0),
+        income_tax: Number(item.incomeTax || 0),
+        local_tax: Number(item.localTax || 0),
+        insurance: Number(item.insurance || 0),
+        other_deduction: Number(item.otherDeduction || 0),
+        total_deduction: Number(item.totalDeduction || 0),
+        net_pay: Number(item.netPay || 0),
+        memo: item.memo || '',
+        raw_data: item.rawData && typeof item.rawData === 'object' ? item.rawData : extra,
+        created_at: item.createdAt || new Date().toISOString(),
+        updated_at: item.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function rowToPayrollSlipLine(row) {
+      const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+      return {
+        ...raw,
+        id: row.id,
+        uploadId: row.upload_id || '',
+        payMonth: row.pay_month || '',
+        driverId: row.driver_id || '',
+        riderName: row.rider_name || '',
+        employeeNo: row.employee_no || '',
+        department: row.department || '',
+        basePay: Number(row.base_pay || 0),
+        allowance: Number(row.allowance || 0),
+        grossPay: Number(row.gross_pay || 0),
+        incomeTax: Number(row.income_tax || 0),
+        localTax: Number(row.local_tax || 0),
+        insurance: Number(row.insurance || 0),
+        otherDeduction: Number(row.other_deduction || 0),
+        totalDeduction: Number(row.total_deduction || 0),
+        netPay: Number(row.net_pay || 0),
+        memo: row.memo || '',
+        rawData: row.raw_data || {},
         createdAt: row.created_at,
         updatedAt: row.updated_at
       };
@@ -989,6 +1116,22 @@ window.BremSupabaseStorageAdapter = (function () {
         order: { column: 'date', ascending: true }
       },
       {
+        table: 'payroll_slip_uploads',
+        key: keys.payrollSlipUploads,
+        label: 'payroll-slip-uploads',
+        fromRow: rowToPayrollSlipUpload,
+        toRow: payrollSlipUploadToRow,
+        order: { column: 'uploaded_at', ascending: false }
+      },
+      {
+        table: 'payroll_slip_lines',
+        key: keys.payrollSlipLines,
+        label: 'payroll-slip-lines',
+        fromRow: rowToPayrollSlipLine,
+        toRow: payrollSlipLineToRow,
+        order: { column: 'pay_month', ascending: false }
+      },
+      {
         table: 'admin_calls',
         key: keys.calls,
         label: 'calls',
@@ -1145,10 +1288,12 @@ window.BremSupabaseStorageAdapter = (function () {
 
       await deleteRowsInChunks('admin_rejection_rates', targetIds);
 
-      try {
-        await client.from('settings').delete().eq('key', keys.rejections);
-      } catch (error) {
-        console.warn('[BREM] Legacy rejection settings cleanup skipped:', error.message || error);
+      if (!isLocalReadOnlySupabase()) {
+        try {
+          await client.from('settings').delete().eq('key', keys.rejections);
+        } catch (error) {
+          console.warn('[BREM] Legacy rejection settings cleanup skipped:', error.message || error);
+        }
       }
     }
 
@@ -1234,7 +1379,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistWeeklyRates(value, options = {}) {
       await persistTableCollection('admin_rejection_rates', keys.rejections, value, weeklyRateToRow, options);
-      if (!options.incrementalRows?.length) {
+      if (!isLocalReadOnlySupabase() && !options.incrementalRows?.length) {
         try {
           await client.from('settings').delete().eq('key', keys.rejections);
         } catch (error) {
@@ -1249,7 +1394,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistDailySettlements(value, options = {}) {
       await persistTableCollection('daily_settlements', keys.settlements, value, item => Mapper().dailySettlementToRow(item), options);
-      if (!options.incrementalRows?.length) {
+      if (!isLocalReadOnlySupabase() && !options.incrementalRows?.length) {
         try {
           await client.from('settings').delete().eq('key', keys.settlements);
         } catch (error) {
@@ -1260,16 +1405,18 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistWeeklySettlements(value) {
       await persistTableCollection('weekly_settlements', keys.weeklySettlements, value, item => Mapper().weeklySettlementRecordToRow(item));
-      try {
-        await client.from('settings').delete().eq('key', keys.weeklySettlements);
-      } catch (error) {
-        console.warn('[BREM] Legacy weekly settlement settings cleanup skipped:', error.message || error);
+      if (!isLocalReadOnlySupabase()) {
+        try {
+          await client.from('settings').delete().eq('key', keys.weeklySettlements);
+        } catch (error) {
+          console.warn('[BREM] Legacy weekly settlement settings cleanup skipped:', error.message || error);
+        }
       }
     }
 
     async function persistSettlementUploadLogs(value, options = {}) {
       await persistTableCollection('settlement_upload_logs', keys.settlementUploadLogs, value, item => Mapper().settlementUploadLogToRow(item), options);
-      if (!options.incrementalRows?.length) {
+      if (!isLocalReadOnlySupabase() && !options.incrementalRows?.length) {
         try {
           await client.from('settings').delete().eq('key', keys.settlementUploadLogs);
         } catch (error) {
@@ -1280,7 +1427,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
     async function persistSettlementUnmatched(value, options = {}) {
       await persistTableCollection('settlement_unmatched', keys.settlementUnmatched, value, item => Mapper().settlementUnmatchedToRow(item), options);
-      if (!options.incrementalRows?.length) {
+      if (!isLocalReadOnlySupabase() && !options.incrementalRows?.length) {
         try {
           await client.from('settings').delete().eq('key', keys.settlementUnmatched);
         } catch (error) {
@@ -1612,6 +1759,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function upsertRider(driver) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const row = Mapper().riderToRow(driver);
       if (!row.id) throw new Error('기사 ID가 없습니다.');
       await upsertRiderRows([row]);
@@ -1624,6 +1772,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function deleteRider(id) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const riderId = String(id || '').trim();
       if (!riderId) return;
       const { error } = await client.from('riders').delete().eq('id', riderId);
@@ -1636,12 +1785,14 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function upsertTableRows(table, rows) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       if (!rows.length) return;
       const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
       if (error) throw error;
     }
 
     async function deleteTableRow(table, id) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const rowId = String(id || '').trim();
       if (!rowId) return;
       const { error } = await client.from(table).delete().eq('id', rowId);
@@ -1673,6 +1824,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function upsertMission(mission) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const row = Mapper().missionToRow(mission);
       if (!row.id) throw new Error('미션 ID가 없습니다.');
       const { error } = await client.from('missions').upsert(row, { onConflict: 'id' });
@@ -1744,6 +1896,7 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function persistSetting(key, value) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const { error } = await client.from('settings').upsert({
         key,
         value,
@@ -1761,6 +1914,7 @@ window.BremSupabaseStorageAdapter = (function () {
     };
 
     async function persistQueuedEntry(key, value, options = {}) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
       const check = validatePersistPayload(key, value, options);
       if (!check.ok) {
         if (check.blocked) {
@@ -1812,6 +1966,10 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     function queuePersist(key, value, options = {}) {
+      if (isLocalReadOnlySupabase()) return noopLocalPersist();
+      if (key === keys.adminAccounts || key === keys.adminCredentials) {
+        return noopLocalPersist();
+      }
       pendingPersist.set(key, { value, options });
       persistQueue = persistQueue.then(async () => {
         await drainPersistQueue();
@@ -1880,9 +2038,15 @@ window.BremSupabaseStorageAdapter = (function () {
       },
       write(key, value, options = {}) {
         stage(key, value);
+        if (isLocalReadOnlySupabase()) return noopLocalPersist();
         return queuePersist(key, value, options);
       },
       remove(key) {
+        if (isLocalReadOnlySupabase()) {
+          cache.delete(key);
+          invalidateKeys([key]);
+          return noopLocalPersist();
+        }
         if (isTableKey(key)) {
           const guard = window.BremStorageGuard;
           if (guard?.isProductionMode?.()) {
@@ -1897,6 +2061,7 @@ window.BremSupabaseStorageAdapter = (function () {
         cache.delete(key);
         invalidateKeys([key]);
         persistQueue = persistQueue.then(async () => {
+          if (isLocalReadOnlySupabase()) return;
           await client.from('settings').delete().eq('key', key);
         }).catch(error => {
           console.error('[BremSupabaseStorageAdapter] remove failed:', key, error);

@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260630v">
+  <link rel="stylesheet" href="css/admin.css?v=20260630c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -120,6 +120,8 @@
         <button class="nav-btn" data-section="weekly-settlement">주정산서 업로드</button>
         <button class="nav-btn" data-section="admin-account">관리자 계정</button>
         <button class="nav-btn" data-section="revenue-management">수익 관리</button>
+        <button class="nav-btn" data-section="payroll-slips">급여명세서</button>
+        <button class="nav-btn" data-section="payroll-daily-settlement">급여 일정산</button>
         <button class="nav-btn" data-section="data-backup">데이터 백업</button>
       </nav>
       <a class="driver-link" href="drivers.html">기사 관리 프로그램</a>
@@ -147,6 +149,10 @@
           </div>
         </div>
       </header>
+
+      <div class="admin-local-readonly-banner app-hidden" id="adminLocalReadOnlyBanner" role="status">
+        로컬 개발 — <strong>Supabase 미연결</strong> · 운영 DB 접근 없음 · 데이터는 이 브라우저에만 저장
+      </div>
 
       <div class="brem-data-loading" id="bremDataLoading" hidden role="status" aria-live="polite">
         <span class="brem-data-loading__spinner" aria-hidden="true"></span>
@@ -3585,6 +3591,499 @@
         </div>
       </section>
 
+      <section class="section" id="payroll-slips">
+        <div class="payroll-storage-banner" id="payrollStorageBadge" hidden></div>
+        <div class="payroll-local-base-banner" id="payrollLocalBaseBadge" hidden></div>
+        <div class="payroll-production-banner" id="payrollProductionBadge" hidden></div>
+        <article class="card payroll-upload-card">
+          <div class="card-header">
+            <div>
+              <h2>급여명세서 업로드</h2>
+              <p class="card-header-desc">정산주 선택 → 일괄등록 → 급여 엑셀 업로드 순서로 진행합니다.</p>
+            </div>
+            <div class="payroll-action-group">
+              <button type="button" class="small-btn" id="payrollImportBaseDataBtn">운영 데이터 로컬로 가져오기</button>
+              <button type="button" class="small-btn" id="payrollSyncProductionRidersBtn" hidden>운영 기사목록 동기화</button>
+              <button type="button" class="small-btn" id="payrollTemplateBtn">엑셀 양식 다운로드</button>
+              <button type="button" class="small-btn" id="payrollExportBtn">목록 엑셀 다운로드</button>
+            </div>
+          </div>
+
+          <div class="payroll-upload-body">
+          <div class="payroll-bulk-panel" id="payrollBulkPanel">
+            <div class="payroll-bulk-panel-head">
+              <h3 class="payroll-bulk-panel-title">① 일괄등록</h3>
+              <p class="payroll-bulk-panel-help">급여 엑셀 업로드 전 등록 · 매칭 기사에 자동 반영</p>
+            </div>
+
+            <div class="payroll-bulk-grid">
+              <article class="payroll-bulk-item">
+                <div class="payroll-bulk-item-top">
+                  <h4 class="payroll-bulk-item-title">BREM프로모션</h4>
+                  <button type="button" class="small-btn" id="payrollPromotionBulkTemplateBtn">양식</button>
+                </div>
+                <div class="payroll-bulk-tags">
+                  <span>A 배민ID</span>
+                  <span>B 쿠팡ID</span>
+                  <span>D BREM금액</span>
+                </div>
+                <p class="payroll-bulk-note">급여 엑셀 J열은 읽지 않습니다 · 정산서마다 업로드 → 적용하기 · 같은 기사 금액 누적</p>
+                <div class="payroll-bulk-actions">
+                  <label class="bulk-file-field payroll-bulk-file">
+                    <span class="bulk-file-label">프로모션 엑셀 선택</span>
+                    <input type="file" id="payrollPromotionBulkFile" accept=".xlsx,.xls">
+                  </label>
+                  <button type="button" class="primary-btn" id="payrollPromotionBulkApplyBtn" disabled>적용하기</button>
+                  <button type="button" class="small-btn" id="payrollPromotionBulkClearPendingBtn">미리보기 취소</button>
+                  <button type="button" class="small-btn" id="payrollPromotionBulkClearBtn">전체 초기화</button>
+                </div>
+                <p class="payroll-bulk-status" id="payrollPromotionBulkSummary">프로모션 엑셀 업로드 → 미리보기 → 적용하기</p>
+                <div class="bulk-preview-wrap payroll-bulk-preview" id="payrollPromotionBulkPreview" hidden>
+                  <p class="payroll-bulk-preview-title">업로드 미리보기 (적용 전)</p>
+                  <table class="bulk-preview-table">
+                    <thead>
+                      <tr>
+                        <th>행</th>
+                        <th>배민ID</th>
+                        <th>쿠팡ID</th>
+                        <th>BREM(D)</th>
+                        <th>기사명</th>
+                        <th>플랫폼</th>
+                        <th>매칭ID</th>
+                        <th>상태</th>
+                      </tr>
+                    </thead>
+                    <tbody id="payrollPromotionBulkBody"></tbody>
+                  </table>
+                </div>
+                <div class="payroll-bulk-match-issues" id="payrollPromotionMatchIssuesBox" hidden>
+                  <div class="payroll-bulk-match-issues-head">
+                    <span class="payroll-bulk-match-issues-label">프로모션 매칭 확인</span>
+                    <button type="button" class="small-btn" id="payrollPromotionRetryMatchBtn">매칭 재시도</button>
+                  </div>
+                  <div class="payroll-bulk-match-issue-card" id="payrollPromotionUnmatchedBox" hidden>
+                    <div class="payroll-bulk-match-issue-card-head">
+                      <strong>미매칭</strong>
+                      <span class="payroll-match-issue-count" id="payrollPromotionUnmatchedCount">0명</span>
+                    </div>
+                    <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                      <table class="bulk-preview-table">
+                        <thead><tr><th>행</th><th>ID / 금액</th><th>상태</th><th>기사 선택</th></tr></thead>
+                        <tbody id="payrollPromotionUnmatchedBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="payroll-bulk-match-issue-card payroll-bulk-match-issue-card--warn" id="payrollPromotionDuplicateBox" hidden>
+                    <div class="payroll-bulk-match-issue-card-head">
+                      <strong>중복 매칭</strong>
+                      <span class="payroll-match-issue-count payroll-match-issue-count--warn" id="payrollPromotionDuplicateCount">0명</span>
+                    </div>
+                    <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                      <table class="bulk-preview-table">
+                        <thead><tr><th>행</th><th>ID / 금액</th><th>후보 기사</th><th>기사 선택</th></tr></thead>
+                        <tbody id="payrollPromotionDuplicateBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div class="payroll-hourly-insurance-applied" id="payrollPromotionAppliedSection" hidden>
+                  <p class="payroll-bulk-preview-title">적용 내역 (누적)</p>
+                  <p class="payroll-bulk-status" id="payrollPromotionAppliedSummary">아직 적용된 프로모션 정산서가 없습니다</p>
+                  <div class="bulk-preview-wrap payroll-bulk-preview">
+                    <table class="bulk-preview-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>파일명</th>
+                          <th>적용일시</th>
+                          <th>매칭</th>
+                          <th>금액</th>
+                          <th>관리</th>
+                        </tr>
+                      </thead>
+                      <tbody id="payrollPromotionAppliedBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </article>
+
+              <article class="payroll-bulk-item">
+                <div class="payroll-bulk-item-top">
+                  <h4 class="payroll-bulk-item-title">시간제보험</h4>
+                </div>
+                <div class="payroll-bulk-tags">
+                  <span>주정산서 2번 시트</span>
+                  <span>B ID</span>
+                  <span>H 시간제보험</span>
+                </div>
+                <div class="payroll-bulk-actions">
+                  <label class="bulk-file-field payroll-bulk-file">
+                    <span class="bulk-file-label">주정산서 엑셀 선택</span>
+                    <input type="file" id="payrollHourlyInsuranceBulkFile" accept=".xlsx,.xls">
+                  </label>
+                  <button type="button" class="primary-btn" id="payrollHourlyInsuranceBulkApplyBtn" disabled>적용하기</button>
+                  <button type="button" class="small-btn" id="payrollHourlyInsuranceBulkClearPendingBtn">미리보기 취소</button>
+                  <button type="button" class="small-btn" id="payrollHourlyInsuranceBulkClearBtn">전체 초기화</button>
+                </div>
+                <p class="payroll-bulk-note">기사당 1회만 적용 · 이미 적용된 기사는 다음 정산서에서 자동 제외</p>
+                <p class="payroll-bulk-status" id="payrollHourlyInsuranceBulkSummary">주정산서 업로드 → 미리보기 → 적용하기</p>
+                <div class="bulk-preview-wrap payroll-bulk-preview" id="payrollHourlyInsuranceBulkPreview" hidden>
+                  <p class="payroll-bulk-preview-title">업로드 미리보기 (적용 전)</p>
+                  <table class="bulk-preview-table">
+                    <thead>
+                      <tr>
+                        <th>행</th>
+                        <th>ID(B)</th>
+                        <th>시간제(H)</th>
+                        <th>기사명</th>
+                        <th>플랫폼</th>
+                        <th>매칭ID</th>
+                        <th>상태</th>
+                      </tr>
+                    </thead>
+                    <tbody id="payrollHourlyInsuranceBulkBody"></tbody>
+                  </table>
+                </div>
+                <div class="payroll-bulk-match-issues" id="payrollHourlyInsuranceMatchIssuesBox" hidden>
+                  <div class="payroll-bulk-match-issues-head">
+                    <span class="payroll-bulk-match-issues-label">시간제보험 매칭 확인</span>
+                    <button type="button" class="small-btn" id="payrollHourlyInsuranceRetryMatchBtn">매칭 재시도</button>
+                  </div>
+                  <div class="payroll-bulk-match-issue-card" id="payrollHourlyInsuranceUnmatchedBox" hidden>
+                    <div class="payroll-bulk-match-issue-card-head">
+                      <strong>미매칭</strong>
+                      <span class="payroll-match-issue-count" id="payrollHourlyInsuranceUnmatchedCount">0명</span>
+                    </div>
+                    <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                      <table class="bulk-preview-table">
+                        <thead><tr><th>행</th><th>ID / 금액</th><th>상태</th><th>기사 선택</th></tr></thead>
+                        <tbody id="payrollHourlyInsuranceUnmatchedBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="payroll-bulk-match-issue-card payroll-bulk-match-issue-card--warn" id="payrollHourlyInsuranceDuplicateBox" hidden>
+                    <div class="payroll-bulk-match-issue-card-head">
+                      <strong>중복 매칭</strong>
+                      <span class="payroll-match-issue-count payroll-match-issue-count--warn" id="payrollHourlyInsuranceDuplicateCount">0명</span>
+                    </div>
+                    <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                      <table class="bulk-preview-table">
+                        <thead><tr><th>행</th><th>ID / 금액</th><th>후보 기사</th><th>기사 선택</th></tr></thead>
+                        <tbody id="payrollHourlyInsuranceDuplicateBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <div class="payroll-hourly-insurance-applied" id="payrollHourlyInsuranceAppliedSection" hidden>
+                  <p class="payroll-bulk-preview-title">적용 내역</p>
+                  <p class="payroll-bulk-status" id="payrollHourlyInsuranceAppliedSummary">아직 적용된 정산서가 없습니다</p>
+                  <div class="bulk-preview-wrap payroll-bulk-preview">
+                    <table class="bulk-preview-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>파일명</th>
+                          <th>적용일시</th>
+                          <th>매칭</th>
+                          <th>금액</th>
+                          <th>관리</th>
+                        </tr>
+                      </thead>
+                      <tbody id="payrollHourlyInsuranceAppliedBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="payroll-upload-divider">
+            <span>② 급여 엑셀 업로드</span>
+          </div>
+          <p class="payroll-formula-hint">2행부터 · 공제=고용+산재+시간제+원천세+프로모션원천세+콜수수료+일정산수수료(배달료2%) · 일정산 등록 기사는 미리보기에서 적용 여부 선택</p>
+
+          <div class="payroll-toolbar payroll-upload-toolbar">
+            <div class="payroll-field payroll-week-field">
+              <span class="payroll-field-label">정산주 (수~화) — 직접 선택</span>
+              <div class="payroll-week-controls">
+                <input type="hidden" id="payrollSettlementWeekStart">
+                <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="payroll-upload" id="payrollSettlementWeekBtn">정산주 선택 (수요일)</button>
+                <span class="payroll-week-label" id="payrollSettlementWeekLabel">정산주 미선택</span>
+              </div>
+            </div>
+            <p class="payroll-week-range" id="payrollSettlementWeekRange">수요일~화요일(7일) 기준 · 「정산주 선택」에서 수요일만 고르세요</p>
+            <label class="bulk-file-field payroll-bulk-file payroll-main-file">
+              <span class="bulk-file-label">급여 엑셀 선택</span>
+              <input type="file" id="payrollFileInput" accept=".xlsx,.xls">
+            </label>
+            <div class="bulk-actions">
+              <button type="button" class="small-btn" id="payrollClearBtn">초기화</button>
+              <button type="button" class="primary-btn" id="payrollApplyBtn" disabled>저장하기</button>
+            </div>
+          </div>
+
+          <div class="stats-grid payroll-preview-stats">
+            <article class="stat-card">
+              <span>미리보기 건수</span>
+              <strong id="payrollPreviewCount">0건</strong>
+            </article>
+            <article class="stat-card">
+              <span>지급총액</span>
+              <strong id="payrollPreviewGross">0원</strong>
+            </article>
+            <article class="stat-card stat-card--warning">
+              <span>공제합계</span>
+              <strong id="payrollPreviewDeduction">0원</strong>
+            </article>
+            <article class="stat-card stat-card--success">
+              <span>최종지급액</span>
+              <strong id="payrollPreviewNet">0원</strong>
+            </article>
+          </div>
+          <p class="payroll-preview-hint" id="payrollPreviewIssues">엑셀 파일을 업로드하면 미리보기가 표시됩니다.</p>
+
+          <div class="payroll-match-issues" id="payrollMatchIssuesBox" hidden>
+            <div class="payroll-match-issues-head">
+              <div>
+                <h3 class="payroll-match-issues-title">매칭 확인</h3>
+                <p class="form-help">미매칭·동명이인은 아래에서 기사를 선택하거나 「매칭 재시도」를 누르세요.</p>
+              </div>
+              <button type="button" class="primary-btn" id="payrollRetryMatchBtn">매칭 재시도</button>
+            </div>
+
+            <div class="card payroll-match-issue-card payroll-unmatched-card" id="payrollUnmatchedBox" hidden>
+              <div class="card-header payroll-match-issue-card-head">
+                <div>
+                  <h4>미매칭 기사</h4>
+                  <p class="form-help" id="payrollUnmatchedSummary">2~3글자 기준 자동매칭되지 않은 기사입니다.</p>
+                </div>
+                <span class="payroll-match-issue-count" id="payrollUnmatchedCount">0명</span>
+              </div>
+              <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                <table class="data-table bulk-preview-table">
+                  <thead>
+                    <tr>
+                      <th>행</th>
+                      <th>대리점명</th>
+                      <th>기사명</th>
+                      <th>상태</th>
+                      <th>매칭키</th>
+                      <th>기사 선택</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payrollUnmatchedBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card payroll-match-issue-card payroll-duplicate-card" id="payrollDuplicateBox" hidden>
+              <div class="card-header payroll-match-issue-card-head">
+                <div>
+                  <h4>동명이인 · 중복 매칭</h4>
+                  <p class="form-help" id="payrollDuplicateSummary">같은 이름(2~3자)으로 여러 기사가 매칭된 경우입니다.</p>
+                </div>
+                <span class="payroll-match-issue-count payroll-match-issue-count--warn" id="payrollDuplicateCount">0명</span>
+              </div>
+              <div class="table-wrap bulk-preview-wrap payroll-match-issue-table">
+                <table class="data-table bulk-preview-table">
+                  <thead>
+                    <tr>
+                      <th>행</th>
+                      <th>대리점명</th>
+                      <th>기사명</th>
+                      <th>매칭키</th>
+                      <th>후보 기사</th>
+                      <th>기사 선택</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payrollDuplicateBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="payroll-preview-toolbar" id="payrollPreviewToolbar" hidden>
+            <div class="payroll-preview-toolbar-left">
+              <span class="payroll-preview-toolbar-label">급여명세서 미리보기</span>
+              <label class="payroll-daily-settle-global" id="payrollDailySettlementApplyWrap" hidden>
+                <input type="checkbox" id="payrollDailySettlementApplyAll" checked>
+                일정산 수수료 적용
+              </label>
+              <span class="form-help payroll-daily-settle-hint" id="payrollDailySettlementApplyHint"></span>
+            </div>
+            <button type="button" class="small-btn" id="payrollPreviewDetailBtn">상세 보기</button>
+          </div>
+          <div class="table-wrap payroll-payslip-wrap" id="payrollPreviewSection" hidden>
+            <table class="data-table payroll-payslip-table">
+              <thead id="payrollPreviewHead"></thead>
+              <tbody id="payrollPreviewBody"></tbody>
+            </table>
+          </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>업로드 기록</h2>
+              <p class="form-help" id="payrollUploadCount">0건</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table payroll-scroll-table">
+              <thead>
+                <tr>
+                  <th>정산주 (수~화)</th>
+                  <th>파일명</th>
+                  <th>인원</th>
+                  <th>총지급액</th>
+                  <th>총공제액</th>
+                  <th>실지급액</th>
+                  <th>업로더</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="payrollUploadBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>급여명세서 목록</h2>
+              <p class="form-help" id="payrollLineCount">0건</p>
+            </div>
+          </div>
+
+          <div class="payroll-toolbar payroll-search-toolbar">
+            <label class="payroll-field payroll-week-field">
+              <span class="payroll-field-label">조회 정산주 (수~화)</span>
+              <div class="payroll-week-controls">
+                <input type="hidden" id="payrollSearchSettlementWeekStart">
+                <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="payroll-list" id="payrollSearchSettlementWeekBtn">정산주 선택</button>
+                <span class="payroll-week-label" id="payrollSearchSettlementWeekLabel">정산주 전체</span>
+              </div>
+              <span class="form-help" id="payrollSearchSettlementWeekRange">정산주를 선택하면 해당 주 급여명세서만 표시됩니다</span>
+            </label>
+            <label class="payroll-field payroll-search-field">
+              <span>검색</span>
+              <input type="search" id="payrollSearchKeyword" placeholder="이름, 사번, 부서, 비고">
+            </label>
+            <button type="button" class="small-btn" id="payrollSearchResetBtn">초기화</button>
+          </div>
+
+          <div class="stats-grid payroll-list-stats">
+            <article class="stat-card">
+              <span>조회 지급합계</span>
+              <strong id="payrollListGross">0원</strong>
+            </article>
+            <article class="stat-card stat-card--warning">
+              <span>조회 공제합계</span>
+              <strong id="payrollListDeduction">0원</strong>
+            </article>
+            <article class="stat-card stat-card--success">
+              <span>조회 최종지급액</span>
+              <strong id="payrollListNet">0원</strong>
+            </article>
+          </div>
+
+          <div class="table-wrap payroll-payslip-wrap payroll-list-wrap">
+            <table class="data-table payroll-payslip-table payroll-list-table">
+              <thead id="payrollLineHead"></thead>
+              <tbody id="payrollLineBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="section" id="payroll-daily-settlement">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>급여 일정산 관리</h2>
+              <p class="form-help">일정산 등록 기사는 급여명세서에서만 표시됩니다. 총배달료 2% 일정산 수수료 · 콜수수료(O+P)에서 2% 차감 표기.</p>
+            </div>
+            <div class="payroll-action-group">
+              <button type="button" class="small-btn" id="payrollDailySettlementBulkTemplateBtn">일괄등록 양식</button>
+              <button type="button" class="small-btn" id="payrollDailySettlementDeleteSelectedBtn">선택 삭제</button>
+            </div>
+          </div>
+          <div class="payroll-toolbar">
+            <label class="payroll-field payroll-file-field">
+              <span>일정산 일괄등록</span>
+              <input type="file" id="payrollDailySettlementBulkFile" accept=".xlsx,.xls">
+            </label>
+            <button type="button" class="primary-btn" id="payrollDailySettlementBulkApplyBtn">일괄등록 적용</button>
+          </div>
+          <p class="form-help">A=배민ID · B=쿠팡ID (둘 중 하나 필수) · C=전화(참고) · D=지역(참고·수정 가능)</p>
+          <div class="table-wrap" id="payrollDailySettlementBulkPreview" hidden>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>행</th><th>배민ID</th><th>쿠팡ID</th><th>전화</th><th>지역</th><th>기사명</th><th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="payrollDailySettlementBulkBody"></tbody>
+            </table>
+          </div>
+        </article>
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>기사 일정산 등록</h2>
+              <p class="form-help">기사 목록에서 일정산 등록/해제 · 검색 후 선택</p>
+            </div>
+          </div>
+          <div class="payroll-toolbar">
+            <label class="payroll-field payroll-search-field">
+              <span>기사 검색</span>
+              <input type="search" id="payrollDailySettlementDriverSearch" placeholder="이름, 배민ID, 쿠팡ID, 전화">
+            </label>
+          </div>
+          <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-driver-list">
+            <table class="data-table bulk-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>배민ID</th>
+                  <th>쿠팡ID</th>
+                  <th>전화</th>
+                  <th>상태</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="payrollDailySettlementDriverBody"></tbody>
+            </table>
+          </div>
+        </article>
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>일정산 등록 기사</h2>
+              <p class="form-help" id="payrollDailySettlementCount">0명 등록</p>
+            </div>
+          </div>
+          <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-roster-list">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="payrollDailySettlementSelectAll" title="전체 선택"></th>
+                  <th>기사명</th>
+                  <th>배민ID</th>
+                  <th>쿠팡ID</th>
+                  <th>전화</th>
+                  <th>지역</th>
+                  <th>수정일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="payrollDailySettlementBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
       <section class="section" id="data-backup">
         <article class="card backup-preservation-banner-card">
           <p class="backup-preservation-banner" role="alert">
@@ -3760,11 +4259,11 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260630w"></script>
-  <script src="js/storage.js?v=20260630w"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260627e"></script>
+  <script src="js/storage.js?v=20260630b"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
-  <script src="js/date-picker.js?v=20260630l"></script>
+  <script src="js/date-picker.js?v=20260630n"></script>
   <script src="js/driver-utils.js?v=20260621g"></script>
   <script src="js/settlement-formats.js?v=20260623g"></script>
   <script src="js/settlement-client.js?v=20260623g"></script>
@@ -3788,10 +4287,18 @@
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
   <script src="js/admin-lease-menus.js?v=20260630v"></script>
   <script src="js/admin-revenue.js"></script>
+  <script src="js/payroll-production-riders.js?v=20260621e"></script>
+  <script src="js/payroll-local-base-data.js?v=20260621h"></script>
+  <script src="js/payroll-slip-utils.js?v=20260630e"></script>
+  <script src="js/payroll-promotion-bulk.js?v=20260622k"></script>
+  <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
+  <script src="js/payroll-daily-settlement-admin.js?v=20260630c"></script>
+  <script src="js/admin-payroll-slips.js?v=20260630e"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260630c"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260630l"></script>
+  <script src="js/admin.js?v=20260630a"></script>
   <script src="js/mobile-table-cards.js?v=20260623y" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

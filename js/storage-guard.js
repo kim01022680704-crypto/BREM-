@@ -3,6 +3,8 @@
  * 패치/배포/연결 오류 시 빈 데이터로 Supabase를 덮어쓰지 않습니다.
  */
 window.BremStorageGuard = (function () {
+  const LOCAL_WRITE_BLOCK_MESSAGE = '로컬 개발환경에서는 운영 DB 저장이 차단됩니다';
+
   const TABLE_PERSIST_KEYS = new Set([
     'brem_driver_management_drivers',
     'brem_admin_notices',
@@ -23,7 +25,9 @@ window.BremStorageGuard = (function () {
     'brem_lease_accidents',
     'brem_lease_maintenance',
     'brem_lease_profit_logs',
-    'brem_lease_arrears'
+    'brem_lease_arrears',
+    'brem_payroll_slip_uploads',
+    'brem_payroll_slip_lines'
   ]);
 
   /** settings 테이블 JSON 키 — 빈 값으로 덮어쓰기 금지 (정산·운영 테이블 데이터 제외) */
@@ -40,6 +44,7 @@ window.BremStorageGuard = (function () {
     'brem_admin_long_event_catalog',
     'brem_admin_long_event_items',
     'brem_admin_long_event_config',
+    'brem_admin_accounts',
     'brem_driver_weekly_targets'
   ]);
 
@@ -49,6 +54,14 @@ window.BremStorageGuard = (function () {
 
   function isProductionMode() {
     return window.BREM_SUPABASE_CONFIG?.mode === 'production';
+  }
+
+  function isLocalReadOnlySupabase() {
+    const config = window.BREM_SUPABASE_CONFIG || {};
+    return config.productionSupabaseForbidden === true
+      || config.writeBlocked === true
+      || config.supabaseReadOnly === true
+      || (config.mode !== 'production' && config.backend === 'local');
   }
 
   function isEmptyCollection(value) {
@@ -79,6 +92,14 @@ window.BremStorageGuard = (function () {
       return { ok: false, message: '저장 키가 없습니다.' };
     }
 
+    if (isLocalReadOnlySupabase() && isProtectedPersistKey(key)) {
+      return {
+        ok: false,
+        blocked: true,
+        message: LOCAL_WRITE_BLOCK_MESSAGE
+      };
+    }
+
     if (!allowEmpty && !intentionalDelete && isProtectedPersistKey(key) && isEmptyCollection(value)) {
       return {
         ok: false,
@@ -105,7 +126,9 @@ window.BremStorageGuard = (function () {
 
   return {
     TABLE_PERSIST_KEYS,
+    LOCAL_WRITE_BLOCK_MESSAGE,
     isProductionMode,
+    isLocalReadOnlySupabase,
     isEmptyCollection,
     isTablePersistKey,
     isProtectedPersistKey,

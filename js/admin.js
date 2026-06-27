@@ -173,6 +173,8 @@
     { id: 'weekly-settlement', label: '주정산서 업로드' },
     { id: 'admin-account', label: '관리자 계정' },
     { id: 'revenue-management', label: '수익 관리' },
+    { id: 'payroll-slips', label: '급여명세서' },
+    { id: 'payroll-daily-settlement', label: '급여 일정산' },
     { id: 'data-backup', label: '데이터 백업' }
   ];
 
@@ -750,6 +752,12 @@
     });
   }
 
+  function isProductionAdminLogin(config = {}) {
+    const host = String(window.location?.hostname || '').toLowerCase();
+    return config.mode === 'production'
+      || window.BremEnv?.isProductionHost?.(host) === true;
+  }
+
   function updateAdminLoginHelp() {
     const help = $('#adminLoginHelp');
     if (!help) return;
@@ -763,12 +771,17 @@
       if (!config.isConfigured) {
         help.textContent = isProduction
           ? 'Supabase 연결 설정을 불러오는 중… (운영 환경)'
-          : 'Supabase 설정을 불러오는 중…';
+          : '로컬 개발 로그인 — 아이디: 관리자 / 비밀번호: 1234 (Supabase 미연결 시)';
         return;
       }
 
       if (isProduction) {
         help.textContent = '운영 로그인: 계정 생성 시 입력한 관리자 이름(아이디) + 비밀번호 (이메일로도 로그인 가능)';
+        return;
+      }
+
+      if (config.backend === 'local') {
+        help.textContent = '로컬 개발 — Supabase 미사용 · 관리자/1234 · 저장은 브라우저(localStorage)만';
         return;
       }
 
@@ -1299,7 +1312,7 @@
   function enhanceAdminPeriodDateInputs() {
     const root = document.getElementById('adminApp');
     if (!root) return;
-    root.querySelectorAll('input[type="date"]:not([data-admin-date-enhanced])').forEach(input => {
+    root.querySelectorAll('input[type="date"]:not([data-admin-date-enhanced]):not([data-settlement-week-only])').forEach(input => {
       input.dataset.adminDateEnhanced = 'true';
       const parentLabel = input.closest('label');
       const currentValue = input.value;
@@ -1524,6 +1537,26 @@
             labelEl,
             onSelect(value) {
               window.BremPromotionApplyAdmin?.handleWeekSelect?.(selectKey, value);
+            }
+          };
+        }
+
+        if (triggerId === 'payroll-list') {
+          return {
+            hiddenInput: $('#payrollSearchSettlementWeekStart'),
+            labelEl: $('#payrollSearchSettlementWeekLabel'),
+            onSelect(value) {
+              window.BremAdminPayrollSlips?.handlePayrollListWeekChange?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'payroll-upload') {
+          return {
+            hiddenInput: $('#payrollSettlementWeekStart'),
+            labelEl: $('#payrollSettlementWeekLabel'),
+            onSelect(value) {
+              void window.BremAdminPayrollSlips?.handleSettlementWeekChange?.(value);
             }
           };
         }
@@ -1929,6 +1962,15 @@
     renderRiderPublishStatus();
   }
 
+  function applyLocalReadOnlyBanner() {
+    const banner = $('#adminLocalReadOnlyBanner');
+    if (!banner) return;
+    const config = BremStorage.getSupabaseConfig?.() || {};
+    const show = config.mode === 'development'
+      && (config.devSupabase === true || config.writeBlocked === true || config.backend === 'local');
+    banner.classList.toggle('app-hidden', !show);
+  }
+
   function showAdminApp(options = {}) {
     if (!options.shellReady && !enforceAdminRouteAccess()) return;
     if (options.shellReady && !enforceAdminRouteAccess()) {
@@ -1946,6 +1988,7 @@
     }
 
     renderDbConnectionStatus();
+    applyLocalReadOnlyBanner();
     initDefaults();
     bindEvents();
     applyAdminMenuPermissions();
@@ -2050,9 +2093,11 @@
 
         window.BremPerf?.time?.('admin.signInApi');
         const config = BremStorage.getSupabaseConfig?.() || {};
-        const result = config.isConfigured
-          ? await BremStorage.auth.signInAdmin(name, password)
-          : BremStorage.auth.verifyAdminLogin(name, password);
+        const useLocalAdminLogin = !isProductionAdminLogin(config)
+          && (config.backend === 'local' || !config.isConfigured);
+        const result = useLocalAdminLogin
+          ? BremStorage.auth.verifyAdminLogin(name, password)
+          : await BremStorage.auth.signInAdmin(name, password);
         window.BremPerf?.timeEnd?.('admin.signInApi');
 
         if (!result?.ok) {
@@ -2060,7 +2105,7 @@
           return;
         }
 
-        if (!config.isConfigured) {
+        if (useLocalAdminLogin) {
           BremStorage.auth.setAdminSession(result.account.id);
         } else {
           void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
@@ -4556,6 +4601,12 @@
     if (sectionId === 'revenue-management' && window.BremAdminRevenue?.refresh) {
       window.BremAdminRevenue.refresh();
     }
+    if (sectionId === 'payroll-slips' && window.BremAdminPayrollSlips?.refresh) {
+      void window.BremAdminPayrollSlips.refresh();
+    }
+    if (sectionId === 'payroll-daily-settlement' && window.BremAdminPayrollDailySettlement?.refresh) {
+      window.BremAdminPayrollDailySettlement.refresh();
+    }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
       void window.BremAdminMissions.refresh({ renderOnly: true });
     }
@@ -5567,6 +5618,10 @@
       const message = event.detail?.message || '데이터 저장에 실패했습니다.';
       showToast(message);
       renderDbConnectionStatus();
+    });
+    document.addEventListener('brem-storage-persist-blocked', event => {
+      const message = event.detail?.message || '로컬 개발환경에서는 운영 DB 저장이 차단됩니다';
+      showToast(message);
     });
     document.addEventListener('brem-admin-session-ready', () => {
       if (!$('#adminApp').classList.contains('app-hidden')) {

@@ -14,6 +14,8 @@ const BremStorage = (function () {
     missions: 'brem_admin_missions',
     riderInquiries: 'brem_rider_inquiries',
     adminSchedules: 'brem_admin_schedules',
+    payrollSlipUploads: 'brem_payroll_slip_uploads',
+    payrollSlipLines: 'brem_payroll_slip_lines',
     leases: 'brem_admin_leases',
     leaseVehicles: 'brem_lease_vehicles',
     leaseContracts: 'brem_lease_contracts',
@@ -221,6 +223,70 @@ const BremStorage = (function () {
     }
   };
 
+  function readLocalDevJson(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null) return fallback;
+      return JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function writeLocalDevJson(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+    window.BremDataCache?.set?.(key, value, { source: 'local' });
+  }
+
+  const localDevStorageAdapter = {
+    type: 'local',
+    isHydrated() {
+      return true;
+    },
+    isKeyLoaded(key) {
+      return localStorage.getItem(key) != null;
+    },
+    read(key, fallback) {
+      return readLocalDevJson(key, fallback);
+    },
+    readRaw(key) {
+      const raw = localStorage.getItem(key);
+      if (raw == null) return { exists: false, value: null };
+      try {
+        return { exists: true, value: JSON.parse(raw) };
+      } catch {
+        return { exists: true, value: null };
+      }
+    },
+    write(key, value) {
+      writeLocalDevJson(key, value);
+      return Promise.resolve({ ok: true, localOnly: true });
+    },
+    remove(key) {
+      localStorage.removeItem(key);
+      window.BremDataCache?.invalidate?.(key);
+      return Promise.resolve({ ok: true, localOnly: true });
+    },
+    has(key) {
+      return localStorage.getItem(key) != null;
+    },
+    listBremKeys() {
+      const keys = [];
+      try {
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index);
+          if (key && key.startsWith('brem_')) keys.push(key);
+        }
+      } catch {
+        /* ignore */
+      }
+      return keys;
+    },
+    stage(key, value) {
+      writeLocalDevJson(key, value);
+    }
+  };
+
   let activeStorageAdapter = unavailableStorageAdapter;
 
   let productionAdminAccountsCache = null;
@@ -261,6 +327,8 @@ const BremStorage = (function () {
     KEYS.leaseArrears,
     KEYS.revenue,
     KEYS.adminSchedules,
+    KEYS.payrollSlipUploads,
+    KEYS.payrollSlipLines,
     KEYS.calls,
     KEYS.rejections,
     KEYS.targets,
@@ -303,9 +371,7 @@ const BremStorage = (function () {
   }
 
   function enforceProductionStorageGuard() {
-    if (getStorageBackend() !== 'supabase') {
-      activeStorageAdapter = unavailableStorageAdapter;
-    }
+    /* Supabase adapter는 운영·로컬 모두 유지. 로컬 DB 쓰기 차단은 storage-guard / read-only persist에서 처리 */
   }
 
   document.addEventListener('brem-config-ready', enforceProductionStorageGuard);
@@ -333,6 +399,7 @@ const BremStorage = (function () {
   }
 
   function flushStagedSupabaseWrites() {
+    if (isLocalDevBackend()) return;
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.enqueuePersist) return;
     const guard = window.BremStorageGuard;
     const productionServerKeys = new Set([KEYS.drivers, KEYS.missions]);
@@ -351,7 +418,7 @@ const BremStorage = (function () {
       KEYS.leaseArrears
     ];
     if (!isProductionMode()) {
-      persistKeys.push(KEYS.adminAccounts);
+      /* 관리자 레지스트리는 서버 API만 저장 — 브라우저에서 Supabase settings 덮어쓰기 금지 */
     }
     persistKeys.forEach(key => {
       if (isProductionMode() && productionServerKeys.has(key)) return;
@@ -368,6 +435,14 @@ const BremStorage = (function () {
     });
   }
 
+  function writeLocalSessionCache(key, value) {
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+      activeStorageAdapter.stage(key, value);
+    }
+    window.BremDataCache?.set?.(key, value, { source: 'local-session' });
+    return Promise.resolve({ ok: true, localOnly: true });
+  }
+
   const storageAdapter = {
     read(key, fallback) {
       return activeStorageAdapter.read(key, fallback);
@@ -376,6 +451,29 @@ const BremStorage = (function () {
       return activeStorageAdapter.readRaw(key);
     },
     write(key, value, options = {}) {
+      if (isLocalDevBackend()) {
+        if (activeStorageAdapter.type === 'local') {
+          return activeStorageAdapter.write(key, value);
+        }
+        if (isPayrollStorageKey(key) && isPayrollLocalStorageMode()) {
+          return writePayrollLocalCollection(key, Array.isArray(value) ? value : []);
+        }
+        if (key === KEYS.adminAccounts) {
+          const accounts = Array.isArray(value?.accounts)
+            ? value.accounts
+            : (Array.isArray(value) ? value : []);
+          const normalized = accounts.map((account, index) => normalizeAdminAccount(account, index));
+          productionAdminAccountsCache = normalized;
+          writeLocalAdminAccounts(normalized);
+          window.BremDataCache?.set?.(key, { accounts: normalized }, { source: 'local' });
+          return Promise.resolve({ ok: true, localOnly: true });
+        }
+        return writeLocalSessionCache(key, value);
+      }
+
+      if (isPayrollStorageKey(key) && isPayrollLocalStorageMode()) {
+        return Promise.reject(new Error('개발 모드에서는 급여명세서를 Supabase에 저장할 수 없습니다.'));
+      }
       if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
         if (!isStoragePersistReady()) {
           console.warn('[BREM] Storage persist deferred until Supabase session is ready:', key);
@@ -404,6 +502,13 @@ const BremStorage = (function () {
       return result;
     },
     remove(key) {
+      if (isLocalDevBackend()) {
+        if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
+          activeStorageAdapter.stage(key, null);
+        }
+        window.BremDataCache?.invalidate?.(key);
+        return Promise.resolve({ ok: true, localOnly: true });
+      }
       if (!isStoragePersistReady()) {
         return undefined;
       }
@@ -416,6 +521,9 @@ const BremStorage = (function () {
       return activeStorageAdapter.listBremKeys();
     },
     async flush(options = {}) {
+      if (isLocalDevBackend()) {
+        return;
+      }
       if (isStoragePersistReady() && options.skipStagedCore !== true) {
         flushStagedSupabaseWrites();
       }
@@ -425,12 +533,110 @@ const BremStorage = (function () {
     }
   };
 
+  const PAYROLL_STORAGE_KEYS = new Set([
+    KEYS.payrollSlipUploads,
+    KEYS.payrollSlipLines
+  ]);
+
+  function isPayrollStorageKey(key) {
+    return PAYROLL_STORAGE_KEYS.has(key);
+  }
+
+  function isLocalDevBackend() {
+    const config = getSupabaseConfig();
+    return config.mode === 'development' && config.backend === 'local';
+  }
+
+  function isPayrollLocalStorageMode() {
+    const config = window.BREM_SUPABASE_CONFIG || {};
+    if (config.mode === 'production') return false;
+    const payrollMode = config.payrollStorage?.mode;
+    if (payrollMode === 'local') return true;
+    if (payrollMode === 'supabase') return false;
+    return config.backend === 'local';
+  }
+
+  function readPayrollLocalCollection(key, fallback = []) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return Array.isArray(fallback) ? [] : fallback;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async function writePayrollLocalCollection(key, list) {
+    const next = Array.isArray(list) ? list : [];
+    localStorage.setItem(key, JSON.stringify(next));
+    window.BremDataCache?.set?.(key, next, { source: 'write' });
+  }
+
+  function hydratePayrollLocalCache() {
+    if (!isPayrollLocalStorageMode()) return;
+    PAYROLL_STORAGE_KEYS.forEach(key => {
+      const data = readPayrollLocalCollection(key, []);
+      window.BremDataCache?.set?.(key, data, { source: 'local' });
+    });
+  }
+
+  async function getPayrollStorageStatus() {
+    if (isPayrollLocalStorageMode()) {
+      return {
+        mode: 'local',
+        label: '로컬',
+        canSave: true,
+        canDelete: true,
+        tablesAvailable: false,
+        sessionReady: true,
+        message: '급여명세서 저장 위치: 로컬',
+        hint: '운영 payroll 테이블에는 저장되지 않습니다.'
+      };
+    }
+
+    const uploadsTable = 'payroll_slip_uploads';
+    const linesTable = 'payroll_slip_lines';
+    let uploadsAvailable = activeStorageAdapter.isOperationTableAvailable?.(uploadsTable);
+    let linesAvailable = activeStorageAdapter.isOperationTableAvailable?.(linesTable);
+
+    if (uploadsAvailable == null || linesAvailable == null) {
+      try {
+        await ensureSectionLoadedInternal('payroll-slips');
+      } catch {
+        /* ignore probe errors */
+      }
+      uploadsAvailable = activeStorageAdapter.isOperationTableAvailable?.(uploadsTable);
+      linesAvailable = activeStorageAdapter.isOperationTableAvailable?.(linesTable);
+    }
+
+    const tablesAvailable = uploadsAvailable === true && linesAvailable === true;
+    const sessionReady = isStoragePersistReady();
+
+    return {
+      mode: 'supabase',
+      label: 'Supabase',
+      canSave: tablesAvailable && sessionReady,
+      canDelete: tablesAvailable && sessionReady,
+      tablesAvailable,
+      sessionReady,
+      message: tablesAvailable
+        ? '급여명세서 저장 위치: Supabase'
+        : '급여명세서 저장 위치: Supabase (테이블 미설치)',
+      hint: tablesAvailable
+        ? '운영 DB에 저장·조회·삭제됩니다.'
+        : 'supabase/payroll_slips_migration.sql 을 실행한 뒤 저장할 수 있습니다.'
+    };
+  }
+
   function getStorageBackend() {
+    if (activeStorageAdapter.type === 'local') return 'local';
     return activeStorageAdapter.type === 'supabase' ? 'supabase' : 'unavailable';
   }
 
   function getStorageBackendPreference() {
-    return 'supabase';
+    const config = window.BREM_SUPABASE_CONFIG || {};
+    return config.backend === 'local' ? 'local' : 'supabase';
   }
 
   function setStorageBackendPreference() {
@@ -444,10 +650,18 @@ const BremStorage = (function () {
     return {
       url: String(config.url || '').trim(),
       anonKey: String(config.anonKey || '').trim(),
-      backend: 'supabase',
+      backend: config.backend === 'local' ? 'local' : 'supabase',
       mode,
       allowLocalFallback: config.mode !== 'production' && config.allowLocalFallback === true,
       functionsUrl: String(config.functionsUrl || '').trim(),
+      supabaseReadOnly: config.writeBlocked === true
+        || config.supabaseReadOnly === true
+        || (mode === 'development' && config.backend === 'local'),
+      writeBlocked: config.writeBlocked === true
+        || (mode === 'development' && config.backend === 'local'),
+      writeBlockMessage: String(config.writeBlockMessage || '').trim(),
+      devSupabase: config.devSupabase === true,
+      productionSupabaseForbidden: config.productionSupabaseForbidden === true,
       isConfigured: Boolean(String(config.url || '').trim() && String(config.anonKey || '').trim()),
       initialAdmin: {
         loginName: String(initialAdmin.loginName || '관리자').trim() || '관리자',
@@ -633,8 +847,24 @@ const BremStorage = (function () {
 
   function setDriversCache(list) {
     invalidateDriversNormalizeCache();
+    if (activeStorageAdapter.type === 'local') {
+      writeLocalDevJson(KEYS.drivers, list);
+      window.BremDataCache?.set?.(KEYS.drivers, list, {
+        source: 'local',
+        complete: driversLoadMeta.complete,
+        supabaseTotal: driversLoadMeta.supabaseTotal || list.length
+      });
+      return;
+    }
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
       activeStorageAdapter.stage(KEYS.drivers, list);
+      if (isLocalDevBackend()) {
+        window.BremDataCache?.set?.(KEYS.drivers, list, {
+          source: 'local-session',
+          complete: driversLoadMeta.complete,
+          supabaseTotal: driversLoadMeta.supabaseTotal || list.length
+        });
+      }
       return;
     }
     if (activeStorageAdapter.type === 'supabase') {
@@ -1132,6 +1362,7 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
+    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.drivers, KEYS.calls],
     'lease-management': [
       KEYS.leaseVehicles,
       KEYS.leasePayments,
@@ -1154,6 +1385,8 @@ const BremStorage = (function () {
     KEYS.promotionRules,
     KEYS.riderInquiries,
     KEYS.adminSchedules,
+    KEYS.payrollSlipUploads,
+    KEYS.payrollSlipLines,
     KEYS.calls,
     KEYS.rejections,
     KEYS.targets,
@@ -1301,7 +1534,12 @@ const BremStorage = (function () {
 
     return sectionKeys
       .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
-      .every(key => window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key));
+      .every(key => {
+        if (isPayrollStorageKey(key) && isPayrollLocalStorageMode()) {
+          return window.BremDataCache?.isValid?.(key);
+        }
+        return window.BremDataCache?.isValid?.(key) && activeStorageAdapter.isKeyLoaded?.(key);
+      });
   }
 
   async function ensureSectionLoadedInternal(sectionId, options = {}) {
@@ -1318,7 +1556,15 @@ const BremStorage = (function () {
     }
 
     const sectionKeys = ADMIN_SECTION_KEYS[sectionId] || [];
-    const tableKeys = sectionKeys.filter(key => TABLE_STORAGE_KEYS.has(key));
+    const payrollLocal = isPayrollLocalStorageMode();
+    const tableKeys = sectionKeys.filter(key => {
+      if (!TABLE_STORAGE_KEYS.has(key)) return false;
+      if (payrollLocal && isPayrollStorageKey(key)) return false;
+      return true;
+    });
+    if (payrollLocal && sectionId === 'payroll-slips') {
+      hydratePayrollLocalCache();
+    }
     const needsDrivers = sectionKeys.includes(KEYS.drivers);
     const needsMissions = sectionKeys.includes(KEYS.missions);
     const needsNotices = sectionKeys.includes(KEYS.notices);
@@ -2925,7 +3171,8 @@ const BremStorage = (function () {
   function getStorageStatus() {
     const config = getSupabaseConfig();
     const backend = getStorageBackend();
-    const connected = backend === 'supabase' && activeStorageAdapter.isHydrated?.() === true;
+    const connected = backend === 'local'
+      || (backend === 'supabase' && activeStorageAdapter.isHydrated?.() === true);
     return {
       backend,
       preference: getStorageBackendPreference(),
@@ -2933,11 +3180,38 @@ const BremStorage = (function () {
       allowLocalFallback: config.allowLocalFallback,
       supabaseConfigured: config.isConfigured,
       supabaseHydrated: connected,
-      supabaseError: lastSupabaseError,
+      supabaseError: backend === 'local' ? '' : lastSupabaseError,
       dbConnectionLabel: connected
-        ? 'Supabase Connected'
+        ? (backend === 'local' ? 'Local Storage' : 'Supabase Connected')
         : (config.mode === 'production' ? 'Disconnected' : backend)
     };
+  }
+
+  async function initLocalDevStorage() {
+    if (activeStorageAdapter.type === 'local') {
+      return { backend: 'local', adapter: activeStorageAdapter };
+    }
+
+    activeStorageAdapter = localDevStorageAdapter;
+    ensureDefaultAdminAccounts();
+    hydratePayrollLocalCache();
+
+    const driverRows = readLocalDevJson(KEYS.drivers, []);
+    const driversList = Array.isArray(driverRows) ? driverRows : [];
+    markDriversCache(driversList, { source: 'local', complete: true });
+
+    lastSupabaseError = '';
+    bootstrapComplete = true;
+    dispatchStorageReadyOnce({ backend: 'local', hydrated: true });
+    document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+      detail: {
+        complete: true,
+        cached: true,
+        count: driversList.length,
+        supabaseTotal: driversList.length
+      }
+    }));
+    return { backend: 'local', adapter: activeStorageAdapter };
   }
 
   function useLocalStorageAdapter() {
@@ -2949,6 +3223,10 @@ const BremStorage = (function () {
       ...getSupabaseConfig(),
       ...(options.config || {})
     };
+
+    if (isLocalDevBackend() && (options.backend === 'local' || !config.url || !config.anonKey)) {
+      return initLocalDevStorage();
+    }
 
     if (!config.url || !config.anonKey) {
       lastSupabaseError = 'Supabase url / anonKey 설정이 필요합니다.';
@@ -3268,6 +3546,13 @@ const BremStorage = (function () {
   }
 
   async function resumeSupabaseAfterAuth(options = {}) {
+    if (isLocalDevBackend()) {
+      if (activeStorageAdapter.type !== 'local') {
+        await initLocalDevStorage();
+      }
+      return { ok: true };
+    }
+
     const config = getSupabaseConfig();
     if (!config.url || !config.anonKey) {
       return { ok: false, message: 'Supabase 설정이 없습니다.' };
@@ -3362,6 +3647,9 @@ const BremStorage = (function () {
     const config = getSupabaseConfig() || {};
     if (config.mode === 'production') {
       return { backend: 'supabase', deferHydrate: true };
+    }
+    if (isLocalDevBackend()) {
+      return { backend: 'local' };
     }
     return { backend: 'supabase' };
   }
@@ -3526,6 +3814,25 @@ const BremStorage = (function () {
 
       const config = getSupabaseConfig() || {};
       enforceProductionStorageGuard?.();
+
+      if (isLocalDevBackend()) {
+        try {
+          window.BremPerf?.time?.('storage.bootstrap');
+          const result = await initLocalDevStorage();
+          console.info('[BREM] Local dev storage bootstrap complete:', result?.backend || 'local');
+          window.BremPerf?.timeEnd?.('storage.bootstrap');
+          dispatchStorageReadyOnce(result);
+        } catch (error) {
+          const message = error.message || '로컬 저장소 초기화에 실패했습니다.';
+          console.error('[BREM] Local dev storage bootstrap failed:', error);
+          document.dispatchEvent(new CustomEvent('brem-storage-error', { detail: { error: message } }));
+          dispatchStorageReadyOnce({
+            backend: 'unavailable',
+            error: message
+          });
+        }
+        return;
+      }
 
       if (!config.url || !config.anonKey) {
         const message = 'Supabase URL/anonKey가 서버 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)에 설정되지 않았습니다.';
@@ -3896,6 +4203,13 @@ const BremStorage = (function () {
         setDriversCache(nextDrivers);
         return Promise.resolve(nextDrivers);
       }
+      if (isLocalDevBackend()) {
+        setDriversCache(nextDrivers);
+        if (activeStorageAdapter.type === 'local') {
+          return activeStorageAdapter.write(KEYS.drivers, nextDrivers).then(() => nextDrivers);
+        }
+        return Promise.resolve(nextDrivers);
+      }
       storageAdapter.write(KEYS.drivers, nextDrivers);
       if (!isStoragePersistReady()) {
         return Promise.reject(new Error('Supabase에 연결되지 않았습니다. 관리자 화면에서 다시 로그인하세요.'));
@@ -4025,6 +4339,10 @@ const BremStorage = (function () {
           });
       }
 
+      if (isLocalDevBackend()) {
+        return drivers.saveAll(nextDrivers).then(() => ({ ok: true, updated: updatedRiders.length }));
+      }
+
       if (activeStorageAdapter.type === 'supabase') {
         return activeStorageAdapter.write(KEYS.drivers, nextDrivers)
           .then(() => ({ ok: true, updated: updatedRiders.length }))
@@ -4094,7 +4412,7 @@ const BremStorage = (function () {
           });
       }
       const persist = drivers.saveAll(list);
-      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.upsertRider) {
+      if (!isLocalDevBackend() && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.upsertRider) {
         return persist.then(async () => {
           await activeStorageAdapter.upsertRider(newDriver);
           return newDriver;
@@ -4176,7 +4494,7 @@ const BremStorage = (function () {
           });
       }
       const persist = drivers.saveAll(next);
-      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteRider) {
+      if (!isLocalDevBackend() && activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteRider) {
         return Promise.all([persist, activeStorageAdapter.deleteRider(id)]);
       }
       return persist;
@@ -5382,6 +5700,173 @@ const BremStorage = (function () {
       if (!idSet.size) return;
       const list = adminSchedules.getAll().filter(item => !idSet.has(item.id));
       await adminSchedules.persistList(list);
+    }
+  };
+
+  function normalizePayrollPayMonth(value) {
+    const raw = String(value || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+    return raw.slice(0, 10) || raw.slice(0, 7);
+  }
+
+  const payrollSlipUploads = {
+    getAll() {
+      if (isPayrollLocalStorageMode()) {
+        return readPayrollLocalCollection(KEYS.payrollSlipUploads, []);
+      }
+      return storageAdapter.read(KEYS.payrollSlipUploads, []);
+    },
+
+    getByMonth(payMonth) {
+      const month = String(payMonth || '').trim();
+      return payrollSlipUploads.getAll()
+        .filter(item => item.payMonth === month)
+        .sort((a, b) => String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
+    },
+
+    async persistList(list, options = {}) {
+      if (isPayrollLocalStorageMode()) {
+        await writePayrollLocalCollection(KEYS.payrollSlipUploads, list);
+        return;
+      }
+      const persist = storageAdapter.write(KEYS.payrollSlipUploads, list, options);
+      window.BremDataCache?.set?.(KEYS.payrollSlipUploads, list, { source: 'write' });
+      await awaitPersist(persist);
+    },
+
+    async create(data) {
+      const list = payrollSlipUploads.getAll();
+      const next = {
+        id: createId(),
+        payMonth: normalizePayrollPayMonth(data.payMonth),
+        fileName: String(data.fileName || '').trim(),
+        uploadedBy: String(data.uploadedBy || '').trim(),
+        uploadedById: String(data.uploadedById || '').trim(),
+        status: String(data.status || 'applied').trim(),
+        contentHash: String(data.contentHash || '').trim(),
+        rowCount: Number(data.rowCount || 0),
+        totalGross: Number(data.totalGross || 0),
+        totalDeduction: Number(data.totalDeduction || 0),
+        totalNet: Number(data.totalNet || 0),
+        rawSummary: data.rawSummary && typeof data.rawSummary === 'object' ? data.rawSummary : {},
+        uploadedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      list.unshift(next);
+      await payrollSlipUploads.persistList(list, { incrementalRows: [next] });
+      return next;
+    },
+
+    async removeById(id) {
+      await payrollSlipUploads.removeByIds([id]);
+    },
+
+    async removeByIds(ids) {
+      const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
+      if (!idSet.size) return;
+      const list = payrollSlipUploads.getAll().filter(item => !idSet.has(item.id));
+      await payrollSlipUploads.persistList(list);
+    }
+  };
+
+  const payrollSlipLines = {
+    getAll() {
+      if (isPayrollLocalStorageMode()) {
+        return readPayrollLocalCollection(KEYS.payrollSlipLines, []);
+      }
+      return storageAdapter.read(KEYS.payrollSlipLines, []);
+    },
+
+    getByUploadId(uploadId) {
+      const id = String(uploadId || '').trim();
+      return payrollSlipLines.getAll()
+        .filter(item => item.uploadId === id)
+        .sort((a, b) => String(a.riderName || '').localeCompare(String(b.riderName || ''), 'ko'));
+    },
+
+    getByMonth(payMonth) {
+      const month = String(payMonth || '').trim();
+      return payrollSlipLines.getAll()
+        .filter(item => item.payMonth === month)
+        .sort((a, b) => String(a.riderName || '').localeCompare(String(b.riderName || ''), 'ko'));
+    },
+
+    search(filters = {}) {
+      const month = String(filters.payMonth || '').trim();
+      const keyword = String(filters.keyword || '').trim().toLowerCase();
+      return payrollSlipLines.getAll()
+        .filter(item => {
+          if (month && item.payMonth !== month) return false;
+          if (!keyword) return true;
+          const haystack = [
+            item.riderName,
+            item.employeeNo,
+            item.department,
+            item.memo
+          ].join(' ').toLowerCase();
+          return haystack.includes(keyword);
+        })
+        .sort((a, b) => {
+          const monthCompare = String(b.payMonth || '').localeCompare(String(a.payMonth || ''));
+          if (monthCompare) return monthCompare;
+          return String(a.riderName || '').localeCompare(String(b.riderName || ''), 'ko');
+        });
+    },
+
+    async persistList(list, options = {}) {
+      if (isPayrollLocalStorageMode()) {
+        await writePayrollLocalCollection(KEYS.payrollSlipLines, list);
+        return;
+      }
+      const persist = storageAdapter.write(KEYS.payrollSlipLines, list, options);
+      window.BremDataCache?.set?.(KEYS.payrollSlipLines, list, { source: 'write' });
+      await awaitPersist(persist);
+    },
+
+    async createMany(items) {
+      const list = payrollSlipLines.getAll();
+      const now = new Date().toISOString();
+      const created = (Array.isArray(items) ? items : []).map(data => ({
+        id: createId(),
+        uploadId: String(data.uploadId || '').trim(),
+        payMonth: normalizePayrollPayMonth(data.payMonth),
+        driverId: String(data.driverId || '').trim(),
+        riderName: String(data.riderName || '').trim(),
+        employeeNo: String(data.employeeNo || '').trim(),
+        department: String(data.department || '').trim(),
+        basePay: Number(data.basePay || 0),
+        allowance: Number(data.allowance || 0),
+        grossPay: Number(data.grossPay || 0),
+        incomeTax: Number(data.incomeTax || 0),
+        localTax: Number(data.localTax || 0),
+        insurance: Number(data.insurance || 0),
+        otherDeduction: Number(data.otherDeduction || 0),
+        totalDeduction: Number(data.totalDeduction || 0),
+        netPay: Number(data.netPay || 0),
+        memo: String(data.memo || '').trim(),
+        rawData: data.rawData && typeof data.rawData === 'object' ? data.rawData : {},
+        createdAt: now,
+        updatedAt: now
+      }));
+      if (!created.length) return [];
+      list.push(...created);
+      await payrollSlipLines.persistList(list, { incrementalRows: created });
+      return created;
+    },
+
+    async removeByUploadId(uploadId) {
+      const id = String(uploadId || '').trim();
+      if (!id) return;
+      const list = payrollSlipLines.getAll().filter(item => item.uploadId !== id);
+      await payrollSlipLines.persistList(list);
+    },
+
+    async removeByIds(ids) {
+      const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
+      if (!idSet.size) return;
+      const list = payrollSlipLines.getAll().filter(item => !idSet.has(item.id));
+      await payrollSlipLines.persistList(list);
     }
   };
 
@@ -8161,6 +8646,8 @@ const BremStorage = (function () {
     'weekly-settlement',
     'admin-account',
     'revenue-management',
+    'payroll-slips',
+    'payroll-daily-settlement',
     'data-backup'
   ]);
 
@@ -8229,6 +8716,28 @@ const BremStorage = (function () {
         normalized.splice(callsIndex + 1, 0, 'baemin-delivery-status');
       } else {
         normalized.push('baemin-delivery-status');
+      }
+    }
+
+    if (!normalized.includes('payroll-slips')) {
+      const backupIndex = normalized.indexOf('data-backup');
+      if (backupIndex >= 0) {
+        normalized.splice(backupIndex, 0, 'payroll-slips');
+      } else {
+        const revenueIndex = normalized.indexOf('revenue-management');
+        if (revenueIndex >= 0) {
+          normalized.splice(revenueIndex + 1, 0, 'payroll-slips');
+        } else {
+          normalized.push('payroll-slips');
+        }
+      }
+    } else {
+      const payrollIndex = normalized.indexOf('payroll-slips');
+      const backupIndex = normalized.indexOf('data-backup');
+      if (backupIndex >= 0 && payrollIndex !== backupIndex - 1) {
+        normalized.splice(payrollIndex, 1);
+        const nextBackupIndex = normalized.indexOf('data-backup');
+        normalized.splice(nextBackupIndex, 0, 'payroll-slips');
       }
     }
 
@@ -8331,6 +8840,12 @@ const BremStorage = (function () {
     if (nextMenus.includes('baemin-delivery-status') && !nextEditable.includes('baemin-delivery-status')) {
       nextEditable = [...nextEditable, 'baemin-delivery-status'];
     }
+    if (nextMenus.includes('payroll-slips') && !nextEditable.includes('payroll-slips')) {
+      nextEditable = [...nextEditable, 'payroll-slips'];
+    }
+    if (nextMenus.includes('payroll-daily-settlement') && !nextEditable.includes('payroll-daily-settlement')) {
+      nextEditable = [...nextEditable, 'payroll-daily-settlement'];
+    }
 
     return { ...account, menus: nextMenus, editableMenus: nextEditable };
   }
@@ -8342,11 +8857,28 @@ const BremStorage = (function () {
     return null;
   }
 
+  function readLocalAdminAccountsRaw() {
+    try {
+      const raw = localStorage.getItem(KEYS.adminAccounts);
+      if (!raw) return null;
+      return parseAdminAccountsValue(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+
+  function writeLocalAdminAccounts(accounts) {
+    localStorage.setItem(KEYS.adminAccounts, JSON.stringify({ accounts }));
+  }
+
   function readAdminAccountsRaw() {
-    if (productionAdminAccountsCache?.length) {
+    if (isProductionMode()) {
       return productionAdminAccountsCache;
     }
-    if (isProductionMode()) {
+    if (isLocalDevBackend()) {
+      return readLocalAdminAccountsRaw();
+    }
+    if (productionAdminAccountsCache?.length) {
       return productionAdminAccountsCache;
     }
     if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.isHydrated?.()) {
@@ -8359,12 +8891,10 @@ const BremStorage = (function () {
   function writeAdminAccounts(accounts) {
     const normalized = accounts.map((account, index) => normalizeAdminAccount(account, index));
     productionAdminAccountsCache = normalized;
-    if (isProductionMode()) {
-      return;
+    if (isLocalDevBackend()) {
+      writeLocalAdminAccounts(normalized);
     }
-    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.isHydrated?.()) {
-      storageAdapter.write(KEYS.adminAccounts, { accounts: normalized });
-    }
+    /* 운영/개발 공통: brem_admin_accounts 는 server/admin-users.js 만 Supabase에 기록 */
   }
 
   function migrateLegacyAdminCredentials() {
@@ -8381,6 +8911,11 @@ const BremStorage = (function () {
     if (defaultIndex >= 0) {
       list[defaultIndex].password = DEFAULT_ADMIN_ACCOUNT.password;
       list[defaultIndex].active = true;
+      list[defaultIndex].menus = normalizeAdminMenus(list[defaultIndex].menus);
+      list[defaultIndex].editableMenus = normalizeAdminEditableMenus(
+        list[defaultIndex].menus,
+        list[defaultIndex].editableMenus
+      );
       return list;
     }
 
@@ -8493,6 +9028,18 @@ const BremStorage = (function () {
     async ensureDriverProgramAccess() {
       if (window.BremSupabaseConfig?.load) {
         await window.BremSupabaseConfig.load();
+      }
+
+      if (isLocalDevBackend()) {
+        try {
+          await initLocalDevStorage();
+        } catch (error) {
+          return { ok: false, message: error.message || '로컬 저장소 초기화에 실패했습니다.' };
+        }
+        if (!this.isAdminLoggedIn()) {
+          return { ok: false, message: '관리자 로그인이 필요합니다.' };
+        }
+        return { ok: true };
       }
 
       const config = getSupabaseConfig();
@@ -8641,6 +9188,16 @@ const BremStorage = (function () {
     getAdminSessionAccount() {
       syncAdminSessionMirrors();
       if (getSupabaseConfig().mode === 'production') {
+        if (
+          productionAdminSessionAccount?.id
+          && sessionAdapter.read(SESSION_KEYS.adminLoggedIn) === 'true'
+        ) {
+          const profile = activeSupabaseProfile;
+          if (!profile || profile.user_id === productionAdminSessionAccount.id) {
+            return { ...productionAdminSessionAccount, password: '' };
+          }
+        }
+
         const profile = activeSupabaseProfile;
         if (!profile?.active || profile.role !== 'admin') {
           return null;
@@ -9594,6 +10151,10 @@ const BremStorage = (function () {
     setStorageBackendPreference,
     getSupabaseConfig,
     getStorageStatus,
+    getPayrollStorageStatus,
+    isPayrollLocalStorageMode,
+    isLocalDevBackend,
+    hydratePayrollLocalCache,
     getSupabaseClient,
     ensureSupabaseClient,
     waitForStorageBootstrap,
@@ -9667,6 +10228,8 @@ const BremStorage = (function () {
     ensureMissionsLoaded,
     riderInquiries,
     adminSchedules,
+    payrollSlipUploads,
+    payrollSlipLines,
     leases,
     revenue,
     events,

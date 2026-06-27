@@ -14,11 +14,30 @@ const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
 const noticesAdmin = require('./notices-admin');
 const leaseErpAdmin = require('./lease-erp-admin');
+const payrollProductionRiders = require('./payroll-production-riders');
+const payrollProductionBaseData = require('./payroll-production-base-data');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
 const riderAuth = require('./rider-auth');
 const riderPublishAdmin = require('./rider-publish-admin');
 const { getPublicConfig } = require('./public-config');
+const {
+  isWriteBlocked,
+  WRITE_BLOCK_MESSAGE,
+  isLocalMutatingRequestBlocked,
+  createWriteBlockedResponse
+} = require('./local-dev');
+const {
+  applyWriteBlockedEnvFlag,
+  warnLocalServiceRoleKey,
+  assertLocalSupabaseSafeOnBoot,
+  isDevSupabaseConfigured,
+  validateLocalSupabaseConfig
+} = require('./write-guard');
+
+assertLocalSupabaseSafeOnBoot();
+applyWriteBlockedEnvFlag();
+warnLocalServiceRoleKey();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ROOT_DIR = path.join(__dirname, '..');
@@ -41,6 +60,15 @@ app.disable('x-powered-by');
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+app.use((req, res, next) => {
+  if (!isLocalMutatingRequestBlocked(req)) return next();
+  const blocked = createWriteBlockedResponse();
+  return res.status(blocked.status).json({
+    error: blocked.error,
+    writeBlocked: true
+  });
+});
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -885,6 +913,72 @@ app.use((req, res, next) => {
 
 app.use(express.static(ROOT_DIR));
 
+app.get('/api/admin/payroll/production-riders/status', (req, res) => {
+  res.json(payrollProductionRiders.getStatus());
+});
+
+app.post('/api/admin/payroll/production-riders/sign-in', async (req, res) => {
+  try {
+    const { login, email, password } = req.body || {};
+    const result = await payrollProductionRiders.signInProductionAdmin(
+      login || email,
+      password
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '운영 Supabase 로그인에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/payroll/production-riders', async (req, res) => {
+  try {
+    const result = await payrollProductionRiders.fetchReadOnlyRiders(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '운영 기사목록 조회에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/payroll/production-base-data/status', (req, res) => {
+  res.json(payrollProductionBaseData.getStatus());
+});
+
+app.get('/api/admin/payroll/production-base-data', async (req, res) => {
+  try {
+    const result = await payrollProductionBaseData.fetchReadOnlyBaseData(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '운영 데이터 가져오기에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/payroll/production-base-data/calls', async (req, res) => {
+  try {
+    const startDate = String(req.query.start || req.query.since || '').trim();
+    const endDate = String(req.query.end || req.query.until || '').trim();
+    const result = await payrollProductionBaseData.fetchReadOnlyCallsForRange(
+      getBearerToken(req),
+      startDate,
+      endDate
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '운영 콜수 조회에 실패했습니다.' });
+  }
+});
+
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     return res.status(400).json({ error: '파일 업로드에 실패했습니다.' });
@@ -907,6 +1001,18 @@ if (require.main === module) {
     }
     if (!isProduction) {
       console.log('Development mode — serve pages through this server for /api routes.');
+      const localConfig = validateLocalSupabaseConfig();
+      if (localConfig.environment === 'dev-supabase') {
+        console.log('[BREM] brem-dev Supabase — read/write to development DB only.');
+      } else if (localConfig.environment === 'local-storage') {
+        console.log('[BREM] BREM_BACKEND=local — browser localStorage mode (no Supabase).');
+      }
+    }
+    if (isWriteBlocked()) {
+      console.log(`[write-guard] WRITE_BLOCKED=true — ${WRITE_BLOCK_MESSAGE}`);
+      console.log('[write-guard] POST/PUT/PATCH/DELETE API blocked.');
+    } else if (!isProduction && isDevSupabaseConfigured()) {
+      console.log('[write-guard] dev Supabase — API writes allowed (brem-dev only).');
     }
   });
 }
