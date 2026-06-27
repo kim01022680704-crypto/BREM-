@@ -340,6 +340,19 @@ button {
   display: table-cell !important;
 }
 
+.duplicate-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.duplicate-row-actions .btn.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 0.76rem;
+}
+
 .drivers-duplicates-page .duplicate-groups {
   max-height: calc(100vh - 280px);
 }

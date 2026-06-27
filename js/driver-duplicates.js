@@ -143,10 +143,35 @@
         <td class="col-status"><span class="badge badge--compact ${statusClass(driver.status)}">${escapeHtml(driver.status || '-')}</span></td>
         <td class="col-date">${formatDate(driver.joinDate)}</td>
         <td class="col-actions">
-          <a class="btn small edit" href="rider-manage.html?edit=${encodeURIComponent(driver.id)}">수정</a>
+          <div class="duplicate-row-actions">
+            <a class="btn small edit" href="rider-manage.html?edit=${encodeURIComponent(driver.id)}">수정</a>
+            <button type="button" class="btn small delete" data-action="delete" data-id="${escapeHtml(driver.id)}">삭제</button>
+          </div>
         </td>
       </tr>
     `;
+  }
+
+  function deleteDriver(id) {
+    const driver = BremStorage.drivers.getById(id);
+    if (!driver) return;
+    if (!window.confirm(`${driver.name} 기사를 삭제하시겠습니까?\n\n동일 리스트에서 해당 기사가 제거됩니다.`)) return;
+
+    showToast(toast, '기사를 삭제하는 중…');
+    BremStorage.drivers.remove(id)
+      .then(() => {
+        renderAll();
+        showToast(toast, '기사가 삭제되었습니다.');
+      })
+      .catch(error => {
+        showToast(toast, error.message || '기사 삭제에 실패했습니다.');
+      });
+  }
+
+  function handleGroupAction(event) {
+    const deleteBtn = event.target.closest('[data-action="delete"]');
+    if (!deleteBtn) return;
+    deleteDriver(deleteBtn.dataset.id);
   }
 
   function renderGroupCard(group) {
@@ -244,6 +269,7 @@
 
   function init() {
     duplicateTabs.addEventListener('click', handleTabClick);
+    duplicateGroups.addEventListener('click', handleGroupAction);
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => { void refreshDriverList(true); });
     }
