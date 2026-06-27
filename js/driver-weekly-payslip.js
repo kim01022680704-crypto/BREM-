@@ -121,12 +121,18 @@
   }
 
   function renderPayRow(label, amount, description = '') {
+    const totalCls = String(label).includes('합계') ? ' driver-payslip-line--total' : '';
+    const descHtml = description
+      ? `<span class="driver-payslip-line__desc">${escapeHtml(description)}</span>`
+      : '';
     return `
-      <tr>
-        <th scope="row">${label}</th>
-        <td>${description || '-'}</td>
-        <td class="payslip-money">${formatMoney(amount)}</td>
-      </tr>
+      <li class="driver-payslip-line${totalCls}">
+        <div class="driver-payslip-line__label">
+          <strong>${escapeHtml(label)}</strong>
+          ${descHtml}
+        </div>
+        <span class="driver-payslip-line__amount">${formatMoney(amount)}</span>
+      </li>
     `;
   }
 

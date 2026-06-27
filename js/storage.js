@@ -5785,8 +5785,10 @@ const BremStorage = (function () {
     async removeByIds(ids) {
       const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
       if (!idSet.size) return;
-      const list = payrollSlipUploads.getAll().filter(item => !idSet.has(item.id));
-      await payrollSlipUploads.persistList(list);
+      const current = payrollSlipUploads.getAll();
+      const removedIds = current.filter(item => idSet.has(item.id)).map(item => item.id);
+      const list = current.filter(item => !idSet.has(item.id));
+      await payrollSlipUploads.persistList(list, { deletedRowIds: removedIds });
     }
   };
 
@@ -5878,15 +5880,19 @@ const BremStorage = (function () {
     async removeByUploadId(uploadId) {
       const id = String(uploadId || '').trim();
       if (!id) return;
-      const list = payrollSlipLines.getAll().filter(item => item.uploadId !== id);
-      await payrollSlipLines.persistList(list);
+      const current = payrollSlipLines.getAll();
+      const removedIds = current.filter(item => item.uploadId === id).map(item => item.id);
+      const list = current.filter(item => item.uploadId !== id);
+      await payrollSlipLines.persistList(list, { deletedRowIds: removedIds });
     },
 
     async removeByIds(ids) {
       const idSet = new Set((Array.isArray(ids) ? ids : []).map(value => String(value || '').trim()).filter(Boolean));
       if (!idSet.size) return;
-      const list = payrollSlipLines.getAll().filter(item => !idSet.has(item.id));
-      await payrollSlipLines.persistList(list);
+      const current = payrollSlipLines.getAll();
+      const removedIds = current.filter(item => idSet.has(item.id)).map(item => item.id);
+      const list = current.filter(item => !idSet.has(item.id));
+      await payrollSlipLines.persistList(list, { deletedRowIds: removedIds });
     }
   };
 

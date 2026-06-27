@@ -15,6 +15,7 @@
 
   function shouldSkip(table) {
     if (table.closest('.drivers-page')) return true;
+    if (table.closest('.driver-payslip-table-block')) return true;
     return table.matches(SKIP);
   }
 

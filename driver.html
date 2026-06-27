@@ -209,7 +209,7 @@
                   <strong id="driverPayslipDeductTotal">0원</strong>
                 </article>
                 <article class="driver-payslip-summary-card driver-payslip-summary-card--net">
-                  <span>실지급액</span>
+                  <span>총지급액</span>
                   <strong id="driverPayslipNetTotal">0원</strong>
                 </article>
               </div>
@@ -217,25 +217,11 @@
               <div class="driver-payslip-tables">
                 <section class="driver-payslip-table-block">
                   <h3>지급 내역</h3>
-                  <div class="table-wrap">
-                    <table class="driver-payslip-table">
-                      <thead>
-                        <tr><th>항목</th><th>설명</th><th>금액</th></tr>
-                      </thead>
-                      <tbody id="driverPayslipPayRows"></tbody>
-                    </table>
-                  </div>
+                  <ul class="driver-payslip-lines" id="driverPayslipPayRows"></ul>
                 </section>
                 <section class="driver-payslip-table-block">
                   <h3>공제 내역</h3>
-                  <div class="table-wrap">
-                    <table class="driver-payslip-table">
-                      <thead>
-                        <tr><th>항목</th><th>설명</th><th>금액</th></tr>
-                      </thead>
-                      <tbody id="driverPayslipDeductRows"></tbody>
-                    </table>
-                  </div>
+                  <ul class="driver-payslip-lines" id="driverPayslipDeductRows"></ul>
                 </section>
               </div>
 

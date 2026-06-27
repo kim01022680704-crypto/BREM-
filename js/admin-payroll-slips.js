@@ -1109,7 +1109,9 @@
     const adminCls = field.adminOnly ? ' payroll-admin-only-col' : '';
 
     if (field.money) {
-      const value = line[field.key];
+      const value = field.key === 'withholdingTax'
+        ? (utils.resolveWithholdingTax?.(line) ?? line[field.key])
+        : line[field.key];
       const diffHighlight = (field.diff || field.key === 'netPayDiff') && Math.abs(value || 0) > 1
         ? ' payroll-payslip-diff'
         : '';
@@ -2106,11 +2108,12 @@
 
   function lineDisplay(item) {
     const raw = item.rawData && typeof item.rawData === 'object' ? item.rawData : {};
-    const payslip = utils.buildPayslipRecord({
-      ...raw,
+    const merged = {
       ...(raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {}),
+      ...raw,
       riderName: raw.payslip?.riderName || raw.riderName || item.riderName
-    });
+    };
+    const payslip = utils.buildPayslipRecord(merged);
     return {
       ...payslip,
       riderName: payslip.riderName || item.riderName || '-',
@@ -2137,7 +2140,9 @@
 
     const emphasisCls = field.emphasis ? ' payroll-payslip-emphasis' : '';
     if (field.money) {
-      const value = Number(payslip[field.key] || 0);
+      const value = field.key === 'withholdingTax'
+        ? (utils.resolveWithholdingTax?.(payslip) ?? payslip[field.key])
+        : Number(payslip[field.key] || 0);
       const bulkCls = field.bulkOnly && value > 0 ? ' payroll-payslip-bulk' : '';
       const dailyCls = field.dailyOnly && value > 0 ? ' payroll-payslip-daily' : '';
       return `<td class="payroll-payslip-col payroll-payslip-col--${groupId}${emphasisCls}${bulkCls}${dailyCls}">${formatMoney(value)}</td>`;

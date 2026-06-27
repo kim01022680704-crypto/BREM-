@@ -1857,6 +1857,64 @@ button.calendar-day:hover {
   font-size: 0.92rem;
 }
 
+.driver-payslip-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.driver-payslip-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.driver-payslip-line:last-child {
+  border-bottom: 0;
+}
+
+.driver-payslip-line__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.driver-payslip-line__label strong {
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.driver-payslip-line__desc {
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.driver-payslip-line__amount {
+  flex-shrink: 0;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.driver-payslip-line--total {
+  background: #f8fafc;
+}
+
+.driver-payslip-line--total .driver-payslip-line__label strong,
+.driver-payslip-line--total .driver-payslip-line__amount {
+  color: #0f172a;
+  font-weight: 900;
+}
+
 .driver-payslip-table {
   width: 100%;
   border-collapse: collapse;
@@ -2133,17 +2191,21 @@ button.calendar-day:hover {
     font-size: 0.8rem;
   }
 
-  .driver-payslip-table-block .table-wrap {
-    max-height: 180px;
-    overflow: auto;
-    border: 1px solid var(--line);
-    border-radius: 10px;
+  .driver-payslip-line {
+    padding: 7px 10px;
+    gap: 8px;
   }
 
-  .driver-payslip-table th,
-  .driver-payslip-table td {
-    padding: 7px 8px;
-    font-size: 0.72rem;
+  .driver-payslip-line__label strong {
+    font-size: 0.76rem;
+  }
+
+  .driver-payslip-line__desc {
+    font-size: 0.66rem;
+  }
+
+  .driver-payslip-line__amount {
+    font-size: 0.78rem;
   }
 
   .driver-payslip-formula {

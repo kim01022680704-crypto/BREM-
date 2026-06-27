@@ -54,7 +54,7 @@
         { key: 'employmentInsurance', label: '고용', money: true },
         { key: 'industrialAccidentInsurance', label: '산재', money: true },
         { key: 'hourlyInsurance', label: '시간제보험', money: true },
-        { key: 'withholdingTax', label: '원천세', money: true },
+        { key: 'withholdingTax', label: 'Q열', money: true },
         { key: 'promotionWithholdingTax', label: '프로모션원천세', money: true, bulkOnly: true },
         { key: 'callFee', label: '콜수수료', money: true },
         { key: 'dailySettlementFee', label: '일정산수수료', money: true, dailyOnly: true },
@@ -101,7 +101,7 @@
         { key: 'employmentInsurance', label: '고용', money: true },
         { key: 'industrialAccidentInsurance', label: '산재', money: true },
         { key: 'hourlyInsurance', label: '시간제보험', money: true },
-        { key: 'withholdingTax', label: '원천세', money: true },
+        { key: 'withholdingTax', label: 'Q열', money: true },
         { key: 'promotionWithholdingTax', label: '프로모션원천세', money: true, bulkOnly: true },
         { key: 'callFee', label: '콜수수료', money: true },
         { key: 'dailySettlementFee', label: '일정산수수료', money: true, dailyOnly: true },
@@ -130,7 +130,7 @@
     { key: 'employmentInsurance', label: '고용', money: true },
     { key: 'industrialAccidentInsurance', label: '산재', money: true },
     { key: 'hourlyInsurance', label: '시간제보험', money: true },
-    { key: 'withholdingTax', label: '원천세', money: true },
+    { key: 'withholdingTax', label: 'Q열', money: true },
     { key: 'promotionWithholdingTax', label: '프로모션원천세', money: true },
     { key: 'callFee', label: '콜수수료', money: true },
     { key: 'dailySettlementFee', label: '일정산수수료', money: true },
@@ -815,8 +815,23 @@
     return text && text !== '-' ? text : '';
   }
 
+  function resolveWithholdingTax(source) {
+    const raw = source && typeof source === 'object' ? source : {};
+    const hasExcelQ = raw.excelWithholdingTax !== undefined
+      && raw.excelWithholdingTax !== null
+      && String(raw.excelWithholdingTax).trim() !== '';
+    if (hasExcelQ || parseMoney(raw.jColumnAmount)) {
+      return Math.max(
+        0,
+        parseMoney(raw.excelWithholdingTax) - calcJWithholdingDeduction(raw.jColumnAmount)
+      );
+    }
+    return parseMoney(raw.withholdingTax);
+  }
+
   function buildPayslipRecord(line) {
     const source = line && typeof line === 'object' ? line : {};
+    const withholdingTax = resolveWithholdingTax(source);
     return {
       riderName: String(source.riderName || source.selectedDriverName || '').trim(),
       coupangId: normalizePayslipId(source.coupangId ?? source.matchedCoupangId),
@@ -829,12 +844,14 @@
       employmentInsurance: parseMoney(source.employmentInsurance),
       industrialAccidentInsurance: parseMoney(source.industrialAccidentInsurance),
       hourlyInsurance: parseMoney(source.hourlyInsurance),
-      withholdingTax: parseMoney(source.withholdingTax),
+      excelWithholdingTax: parseMoney(source.excelWithholdingTax),
+      jColumnAmount: parseMoney(source.jColumnAmount),
+      withholdingTax,
       promotionWithholdingTax: parseMoney(source.promotionWithholdingTax),
       callFee: parseMoney(source.callFee),
       dailySettlementFee: parseMoney(source.dailySettlementFee),
       deductionTotal: parseMoney(source.deductionTotal ?? source.totalDeduction),
-      finalNetPay: parseMoney(source.calculatedNetPay ?? source.netPay)
+      finalNetPay: parseMoney(source.calculatedNetPay ?? source.finalNetPay ?? source.netPay)
     };
   }
 
@@ -860,6 +877,7 @@
     calcJWithholdingDeduction,
     calcPromotionWithholdingTax,
     calcOtherPaymentWithholdingDeduction,
+    resolveWithholdingTax,
     detectBranchPlatform,
     platformLabel,
     buildPromotionBulkMap,
