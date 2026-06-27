@@ -149,17 +149,40 @@
     `;
   }
 
-  function renderGroupCard(group, sectionTitle) {
+  function renderMemberCard(driver) {
+    const coupangId = escapeHtml(makeDriverLoginId(driver) || '-');
+    const baeminId = escapeHtml(driver.baeminId || '-');
+    return `
+      <article class="duplicate-member-card">
+        <div class="duplicate-member-card__main">
+          <strong>${escapeHtml(driver.name)}</strong>
+          <span class="badge badge--compact ${statusClass(driver.status)}">${escapeHtml(driver.status || '-')}</span>
+        </div>
+        <dl class="duplicate-member-card__meta">
+          <div><dt>연락처</dt><dd>${escapeHtml(driver.phone || '-')}</dd></div>
+          <div><dt>쿠팡 ID</dt><dd>${coupangId}</dd></div>
+          <div><dt>배민 ID</dt><dd>${baeminId}</dd></div>
+          <div><dt>가입일</dt><dd>${formatDate(driver.joinDate)}</dd></div>
+        </dl>
+        <a class="btn small edit" href="rider-manage.html?edit=${encodeURIComponent(driver.id)}">수정</a>
+      </article>
+    `;
+  }
+
+  function renderGroupCard(group) {
     const memberCount = group.members.length;
     return `
-      <article class="duplicate-group-card" aria-label="${escapeHtml(sectionTitle)} ${escapeHtml(group.label)}">
+      <article class="duplicate-group-card" aria-label="${escapeHtml(group.label)}">
         <header class="duplicate-group-card__head">
           <div>
-            <p class="duplicate-group-card__eyebrow">${escapeHtml(sectionTitle)}</p>
             <h3 class="duplicate-group-card__title">${escapeHtml(group.label)}</h3>
+            <p class="duplicate-group-card__meta">${memberCount}명 중복</p>
           </div>
           <span class="duplicate-group-card__count">${memberCount}명</span>
         </header>
+        <div class="duplicate-member-cards" aria-label="${escapeHtml(group.label)} 기사 목록">
+          ${group.members.map(renderMemberCard).join('')}
+        </div>
         <div class="table-wrap duplicate-group-card__table">
           <table class="driver-table driver-table--compact">
             <thead>
@@ -222,7 +245,7 @@
     }
 
     duplicateEmptyState.hidden = true;
-    duplicateGroups.innerHTML = section.groups.map(group => renderGroupCard(group, section.title)).join('');
+    duplicateGroups.innerHTML = section.groups.map(group => renderGroupCard(group)).join('');
   }
 
   function renderAll() {

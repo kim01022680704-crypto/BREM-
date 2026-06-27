@@ -241,7 +241,14 @@ button {
 
 .duplicate-group-card__title {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: 1.02rem;
+}
+
+.duplicate-group-card__meta {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .duplicate-group-card__count {
@@ -254,6 +261,54 @@ button {
   font-weight: 900;
 }
 
+.duplicate-member-cards {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.duplicate-member-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.duplicate-member-card__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.duplicate-member-card__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.duplicate-member-card__meta div {
+  min-width: 0;
+}
+
+.duplicate-member-card__meta dt {
+  margin: 0 0 2px;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.duplicate-member-card__meta dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  word-break: break-all;
+}
+
 .duplicate-group-card__table {
   overflow: auto;
 }
@@ -261,6 +316,26 @@ button {
 .drivers-duplicates-page .duplicate-groups {
   flex: 1;
   max-height: calc(100vh - 280px);
+}
+
+@media (max-width: 720px) {
+  .drivers-duplicates-page .duplicate-group-card__table {
+    display: none !important;
+  }
+
+  .drivers-duplicates-page .duplicate-member-cards {
+    display: flex;
+  }
+}
+
+@media (min-width: 721px) {
+  .drivers-duplicates-page .duplicate-group-card__table {
+    display: block !important;
+  }
+
+  .drivers-duplicates-page .duplicate-member-cards {
+    display: none !important;
+  }
 }
 
 .index-menu-btn {

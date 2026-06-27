@@ -650,13 +650,16 @@ window.BremDriverUtils = (function () {
       {
         id: 'coupangId',
         title: '쿠팡 ID 동일',
-        describeValue: value => value,
+        describeValue: (key, members) => makeDriverLoginId(members?.[0] || {}) || key,
         getKey: driver => makeDriverLoginId(driver) || ''
       },
       {
         id: 'name',
         title: '이름 동일',
-        describeValue: value => value,
+        describeValue: (key, members) => {
+          const sample = String(members?.[0]?.name || '').trim().replace(/\s+/g, '');
+          return sample || key;
+        },
         getKey: driver => normalizeDuplicateName(driver.name) || ''
       },
       {
@@ -686,7 +689,7 @@ window.BremDriverUtils = (function () {
         .filter(([, members]) => members.length > 1)
         .map(([key, members]) => ({
           key,
-          label: spec.describeValue(key),
+          label: spec.describeValue(key, members),
           members: [...members].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'))
         }))
         .sort((a, b) => (
