@@ -394,8 +394,14 @@
     try {
       await ensureStorageReadyForSave();
 
+      const updateData = editingId ? { ...data } : data;
+      if (editingId) {
+        // 기사 수정 시 비밀번호는 PW초기화/기사앱 변경만 반영. 폼의 1234 표시값이 덮어쓰지 않게 omit.
+        delete updateData.password;
+      }
+
       const persist = editingId
-        ? BremStorage.drivers.update(editingId, data)
+        ? BremStorage.drivers.update(editingId, updateData)
         : BremStorage.drivers.create(data);
 
       const driver = await Promise.resolve(persist);
