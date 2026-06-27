@@ -635,6 +635,75 @@ window.BremDriverUtils = (function () {
     }).format(date);
   }
 
+  function normalizeDuplicateName(value) {
+    return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+  }
+
+  function normalizeDuplicateBaeminId(value) {
+    const id = String(value || '').trim().toLowerCase();
+    return id && id !== '-' ? id : '';
+  }
+
+  function buildDriverDuplicateSections(drivers) {
+    const list = Array.isArray(drivers) ? drivers : [];
+    const specs = [
+      {
+        id: 'coupangId',
+        title: '쿠팡 ID 동일',
+        describeValue: value => value,
+        getKey: driver => makeDriverLoginId(driver) || ''
+      },
+      {
+        id: 'name',
+        title: '이름 동일',
+        describeValue: value => value,
+        getKey: driver => normalizeDuplicateName(driver.name) || ''
+      },
+      {
+        id: 'phone',
+        title: '전화번호 동일',
+        describeValue: value => formatPhoneDisplay(value),
+        getKey: driver => normalizePhone(driver.phone) || ''
+      },
+      {
+        id: 'baeminId',
+        title: '배민 ID 동일',
+        describeValue: value => value,
+        getKey: driver => normalizeDuplicateBaeminId(driver.baeminId) || ''
+      }
+    ];
+
+    return specs.map(spec => {
+      const buckets = new Map();
+      list.forEach(driver => {
+        const key = spec.getKey(driver);
+        if (!key) return;
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(driver);
+      });
+
+      const groups = [...buckets.entries()]
+        .filter(([, members]) => members.length > 1)
+        .map(([key, members]) => ({
+          key,
+          label: spec.describeValue(key),
+          members: [...members].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'))
+        }))
+        .sort((a, b) => (
+          b.members.length - a.members.length
+          || String(a.label).localeCompare(String(b.label), 'ko')
+        ));
+
+      return {
+        id: spec.id,
+        title: spec.title,
+        groups,
+        groupCount: groups.length,
+        riderCount: groups.reduce((sum, group) => sum + group.members.length, 0)
+      };
+    });
+  }
+
   return {
     normalizePhone,
     formatResidentNumber,
@@ -657,6 +726,7 @@ window.BremDriverUtils = (function () {
     driverNamesMatch,
     makeDriverMatchKey,
     buildRiderMatchMap,
+    buildDriverDuplicateSections,
     normalizeBulkName,
     normalizeBulkPhone,
     formatPhoneDisplay,

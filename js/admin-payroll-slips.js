@@ -1975,9 +1975,11 @@
 
   function lineDisplay(item) {
     const raw = item.rawData && typeof item.rawData === 'object' ? item.rawData : {};
-    const payslip = raw.payslip && typeof raw.payslip === 'object'
-      ? raw.payslip
-      : utils.buildPayslipRecord({ ...raw, riderName: item.riderName });
+    const payslip = utils.buildPayslipRecord({
+      ...raw,
+      ...(raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {}),
+      riderName: raw.payslip?.riderName || raw.riderName || item.riderName
+    });
     return {
       ...payslip,
       riderName: payslip.riderName || item.riderName || '-',

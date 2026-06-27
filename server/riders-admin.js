@@ -126,29 +126,22 @@ function makeDriverMatchKey(name, phone) {
   return `${normName}|${normPhone}`;
 }
 
-function makeCoupangLoginId(row) {
-  const normName = normalizeDriverName(row?.name);
-  const phoneSuffix = normalizePhone(row?.phone).slice(-4);
-  if (!normName || !phoneSuffix) return '';
-  return `${normName}${phoneSuffix}`;
+function hasBaeminId(row) {
+  const baeminId = String(row?.baemin_id || '').trim().toLowerCase();
+  return Boolean(baeminId && baeminId !== '-');
 }
 
-function makeAutoMergeKeys(row) {
-  const keys = [];
-  const normName = normalizeDriverName(row?.name);
-  const coupangId = makeCoupangLoginId(row);
-  const baeminId = String(row?.baemin_id || '').trim().toLowerCase();
-
-  if (normName && coupangId) keys.push(`coupang:${normName}|${coupangId}`);
-  if (baeminId && baeminId !== '-') keys.push(`baemin:${baeminId}`);
-  return keys;
+function makeAutoMergePhoneKey(row) {
+  const phone = normalizePhone(row?.phone);
+  if (!phone || phone.length < 10) return '';
+  return `phone:${phone}`;
 }
 
 function riderCompletenessScore(row) {
   let score = 0;
   if (row.auth_user_id) score += 16;
   if (String(row.long_event_item || '').trim()) score += 8;
-  if (String(row.baemin_id || '').trim()) score += 4;
+  if (hasBaeminId(row)) score += 4;
   if (String(row.bank_name || '').trim()) score += 2;
   if (String(row.account_number || '').trim()) score += 1;
   const updatedAt = Date.parse(row.updated_at || row.created_at || 0);
@@ -158,6 +151,8 @@ function riderCompletenessScore(row) {
 
 function pickCanonicalRider(rows) {
   return [...rows].sort((a, b) => {
+    const baeminDiff = Number(hasBaeminId(b)) - Number(hasBaeminId(a));
+    if (baeminDiff !== 0) return baeminDiff;
     const scoreDiff = riderCompletenessScore(b) - riderCompletenessScore(a);
     if (scoreDiff !== 0) return scoreDiff;
     return String(a.id).localeCompare(String(b.id));
@@ -277,15 +272,15 @@ function buildAutoMergeGroups(rows) {
 
   rowsById.forEach(row => {
     const id = String(row.id);
-    makeAutoMergeKeys(row).forEach(key => {
-      if (!keyMembers.has(key)) keyMembers.set(key, []);
-      keyMembers.get(key).push(id);
-      if (!keyOwners.has(key)) {
-        keyOwners.set(key, id);
-      } else {
-        union(keyOwners.get(key), id);
-      }
-    });
+    const key = makeAutoMergePhoneKey(row);
+    if (!key) return;
+    if (!keyMembers.has(key)) keyMembers.set(key, []);
+    keyMembers.get(key).push(id);
+    if (!keyOwners.has(key)) {
+      keyOwners.set(key, id);
+    } else {
+      union(keyOwners.get(key), id);
+    }
   });
 
   const grouped = new Map();

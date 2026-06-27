@@ -525,6 +525,7 @@
   }
 
   function formatAutoMergeReason(reason) {
+    if (String(reason || '').startsWith('phone:')) return '전화번호 동일';
     if (String(reason || '').startsWith('baemin:')) return '배민 ID 동일';
     if (String(reason || '').startsWith('coupang:')) return '이름+쿠팡 ID 동일';
     return '중복 기준 일치';
@@ -560,7 +561,7 @@
   }
 
   async function mergeAutoDrivers() {
-    if (!window.confirm('전체 기사를 자동으로 검사해 병합합니다.\n\n조건:\n- 이름+쿠팡 ID가 같은 경우\n- 배민 ID가 같은 경우\n\n진행할까요?')) return;
+    if (!window.confirm('전체 기사를 자동으로 검사해 병합합니다.\n\n조건:\n- 같은 휴대폰번호\n\n병합 시 배민 ID가 있는 기록을 우선 유지합니다.\n\n진행할까요?')) return;
 
     if (mergeAutoBtn) mergeAutoBtn.disabled = true;
     showToast(toast, '전체 기사 자동병합 중…');
