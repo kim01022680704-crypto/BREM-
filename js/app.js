@@ -282,6 +282,20 @@
     updatePrivacyStatusUi(driverIdInput.value ? BremStorage.drivers.getById(driverIdInput.value) : null);
   }
 
+  function configurePasswordFieldForMode(editing) {
+    if (editing) {
+      passwordInput.readOnly = true;
+      passwordInput.value = '';
+      passwordInput.placeholder = '기사앱에서 변경 · PW초기화 버튼 사용';
+      passwordInput.autocomplete = 'off';
+      return;
+    }
+    passwordInput.readOnly = false;
+    passwordInput.placeholder = '1234 또는 주민번호 뒷7자리';
+    passwordInput.autocomplete = 'new-password';
+    if (!passwordInput.value) passwordInput.value = DEFAULT_DRIVER_PASSWORD;
+  }
+
   function resetForm() {
     form.reset();
     driverIdInput.value = '';
@@ -296,6 +310,7 @@
     if (accountHolderInput) accountHolderInput.value = '';
     if (accountNumberInput) accountNumberInput.value = '';
     passwordInput.value = DEFAULT_DRIVER_PASSWORD;
+    configurePasswordFieldForMode(false);
     resetSensitiveFieldUi();
     platformCoupangInput.checked = true;
     platformBaeminInput.checked = false;
@@ -443,7 +458,7 @@
     platformAutoSync = false;
     platformCoupangInput.checked = driver.platformCoupang !== false;
     platformBaeminInput.checked = Boolean(driver.platformBaemin);
-    passwordInput.value = driver.password || DEFAULT_DRIVER_PASSWORD;
+    configurePasswordFieldForMode(true);
     if (bankNameInput) bankNameInput.value = driver.bankName || '';
     if (accountHolderInput) accountHolderInput.value = driver.accountHolder || '';
     applySensitiveFieldUi(driver);
@@ -461,9 +476,35 @@
     nameInput.focus();
   }
 
-  function loadEditFromQuery() {
+  async function loadEditFromQuery() {
     const id = new URLSearchParams(window.location.search).get('edit');
-    if (id) editDriver(id);
+    if (!id) return;
+
+    form.classList.add('is-loading-driver');
+    submitBtn.disabled = true;
+    const previousLabel = submitBtn.textContent;
+    submitBtn.textContent = '불러오는 중…';
+
+    try {
+      let driver = BremStorage.drivers.getById(id);
+      if (!driver) {
+        await BremStorage.waitForDriversFetch?.();
+        driver = BremStorage.drivers.getById(id);
+      }
+      if (!driver) {
+        await BremStorage.reloadDrivers?.(false);
+        driver = BremStorage.drivers.getById(id);
+      }
+      if (!driver) {
+        showToast('기사 정보를 불러오지 못했습니다. 목록에서 다시 시도하세요.');
+        return;
+      }
+      editDriver(id);
+    } finally {
+      form.classList.remove('is-loading-driver');
+      submitBtn.disabled = false;
+      submitBtn.textContent = driverIdInput.value ? '수정 저장' : previousLabel;
+    }
   }
 
   function setupEventStartDatePicker() {
@@ -488,7 +529,7 @@
       if (!window.confirm(`${driver.name} 기사의 로그인 비밀번호를 1234로 초기화할까요?`)) return;
       try {
         await BremStorage.drivers.resetPassword(id, DEFAULT_DRIVER_PASSWORD);
-        passwordInput.value = DEFAULT_DRIVER_PASSWORD;
+        configurePasswordFieldForMode(true);
         showToast('비밀번호를 1234로 초기화했습니다.');
       } catch (error) {
         showToast(error.message || '비밀번호 초기화에 실패했습니다.');
@@ -535,7 +576,6 @@
     form.addEventListener('submit', handleSubmit);
     resetBtn.addEventListener('click', resetForm);
     refreshHeader();
-    loadEditFromQuery();
     window.BremDriverIndex = { refresh: refreshHeader };
   }
 
@@ -548,10 +588,10 @@
   if (!(await ensureAdminAccess())) return;
 
   refreshHeader();
-  loadEditFromQuery();
+  await loadEditFromQuery();
   void BremStorage.reloadDrivers?.(false).then(() => {
     refreshHeader();
-    loadEditFromQuery();
+    void loadEditFromQuery();
   }).catch(error => {
     showToast(error?.message || '기사 목록을 불러오지 못했습니다.');
   });
