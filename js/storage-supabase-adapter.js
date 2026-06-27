@@ -1107,6 +1107,7 @@ window.BremSupabaseStorageAdapter = (function () {
         collectionMethods: Array.isArray(row.collection_methods) ? row.collection_methods : [],
         collectionStatus: row.collection_status || 'unpaid',
         processedDate: row.processed_date || '',
+        unpaidWeekStart: String(row.raw_data?.unpaidWeekStart || row.unpaid_week_start || '').slice(0, 10),
         memo: row.memo || '',
         rawData: row.raw_data || {},
         createdAt: row.created_at,

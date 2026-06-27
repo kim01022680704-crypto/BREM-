@@ -461,8 +461,19 @@ const BremLeaseErp = (function () {
         raw.collectionStatus != null ? raw.collectionStatus : existing?.collectionStatus || ARREAR_STATUS.UNPAID
       ).trim(),
       processedDate: normalizeDate(raw.processedDate != null ? raw.processedDate : existing?.processedDate),
+      unpaidWeekStart: normalizeDate(
+        raw.unpaidWeekStart != null
+          ? raw.unpaidWeekStart
+          : (existing?.unpaidWeekStart || raw.rawData?.unpaidWeekStart)
+      ),
       memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
-      rawData: raw.rawData || existing?.rawData || {},
+      rawData: {
+        ...(existing?.rawData || {}),
+        ...(raw.rawData || {}),
+        ...(normalizeDate(raw.unpaidWeekStart != null ? raw.unpaidWeekStart : (existing?.unpaidWeekStart || raw.rawData?.unpaidWeekStart))
+          ? { unpaidWeekStart: normalizeDate(raw.unpaidWeekStart != null ? raw.unpaidWeekStart : (existing?.unpaidWeekStart || raw.rawData?.unpaidWeekStart)) }
+          : {})
+      },
       createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

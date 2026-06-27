@@ -7043,6 +7043,19 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.lease-arrear-week-period {
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.lease-arrear-week-period .week-range-label {
+  display: block;
+  margin: 6px 0 10px;
+  color: var(--yellow);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
 .lease-month-toolbar {
   flex-wrap: wrap;
   gap: 8px;

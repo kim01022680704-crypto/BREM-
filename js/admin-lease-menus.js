@@ -42,7 +42,8 @@ const BremAdminLeaseMenus = (function () {
     monthlySelectedLogIds: new Set(),
     monthlyVisibleLogIds: [],
     arrearContractOptionsDirty: true,
-    contractSaving: false
+    contractSaving: false,
+    arrearWeekStart: ''
   };
 
   function getContractDrivers() {
@@ -244,6 +245,51 @@ const BremAdminLeaseMenus = (function () {
     return BremLeaseProfit?.monthKey?.() || new Date().toISOString().slice(0, 7);
   }
 
+  function arrearWeekStartValue(item) {
+    return String(item?.unpaidWeekStart || item?.rawData?.unpaidWeekStart || '').slice(0, 10);
+  }
+
+  function formatArrearWeekLabel(weekStart) {
+    const start = String(weekStart || '').slice(0, 10);
+    if (!start) return '-';
+    if (BremDatePicker?.formatWednesdayWeekRange) {
+      return BremDatePicker.formatWednesdayWeekRange(start);
+    }
+    return formatLeaseWeekRangeLabel(start);
+  }
+
+  function syncArrearWeekUi(weekStart) {
+    const normalized = String(
+      BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || weekStart
+      || currentWeekStart()
+      || ''
+    ).slice(0, 10);
+    state.arrearWeekStart = normalized;
+    if ($('leaseArrearWeekStart')) $('leaseArrearWeekStart').value = normalized;
+    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
+    if ($('leaseArrearWeekRangePreview')) $('leaseArrearWeekRangePreview').textContent = rangeLabel;
+    if ($('leaseArrearWeekLabel')) {
+      if (!normalized) {
+        $('leaseArrearWeekLabel').textContent = '미납주 선택';
+      } else if (BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
+        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
+        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
+        $('leaseArrearWeekLabel').textContent = weekday
+          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
+          : BremDatePicker.formatDate(wednesday);
+      } else {
+        $('leaseArrearWeekLabel').textContent = normalized;
+      }
+    }
+    return normalized;
+  }
+
+  function handleArrearWeekChange(weekStart) {
+    syncArrearWeekUi(weekStart);
+    renderArrears();
+  }
+
   async function persistLeaseFast() {
     if (!erp()) return;
     await erp().persistPending({ skipFlushStorage: true });
@@ -278,6 +324,7 @@ const BremAdminLeaseMenus = (function () {
     });
     if (menu === 'arrears') {
       markArrearContractOptionsDirty();
+      syncArrearWeekUi(state.arrearWeekStart || currentWeekStart());
       renderArrears();
       return;
     }
@@ -1393,6 +1440,11 @@ const BremAdminLeaseMenus = (function () {
       showToast('회수방법을 선택하세요.');
       return;
     }
+    const unpaidWeekStart = syncArrearWeekUi($('leaseArrearWeekStart')?.value || state.arrearWeekStart);
+    if (!unpaidWeekStart) {
+      showToast('미납주를 선택하세요.');
+      return;
+    }
     const contract = erp().contracts().getById(contractId);
     if (!contract) {
       showToast('계약 정보를 찾을 수 없습니다.');
@@ -1403,8 +1455,10 @@ const BremAdminLeaseMenus = (function () {
       contractId: contract.id,
       unpaidDays,
       unpaidAmount,
+      unpaidWeekStart,
       collectionMethods,
-      collectionStatus: calc().ARREAR_STATUS.COLLECTING
+      collectionStatus: calc().ARREAR_STATUS.COLLECTING,
+      rawData: { unpaidWeekStart }
     });
     const registerBtn = $('leaseArrearRegisterBtn');
     if (registerBtn) {
@@ -1413,7 +1467,9 @@ const BremAdminLeaseMenus = (function () {
     }
     try {
       await persistLeaseFast();
+      const savedWeek = state.arrearWeekStart;
       $('leaseArrearRegisterForm')?.reset();
+      syncArrearWeekUi(savedWeek);
       showToast('미납을 등록했습니다.');
       renderArrears();
     } finally {
@@ -1431,7 +1487,7 @@ const BremAdminLeaseMenus = (function () {
       .filter(item => item.collectionStatus === calc().ARREAR_STATUS.COMPLETED)
       .sort((a, b) => String(b.processedDate || b.updatedAt || '').localeCompare(String(a.processedDate || a.updatedAt || '')));
     if (!completed.length) {
-      rowsEl.innerHTML = '<tr><td colspan="8" class="empty">처리 이력이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">처리 이력이 없습니다.</td></tr>';
       return;
     }
     rowsEl.innerHTML = completed.map(item => {
@@ -1445,6 +1501,7 @@ const BremAdminLeaseMenus = (function () {
         <tr>
           <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
           <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}</td>
+          <td>${escapeHtml(formatArrearWeekLabel(arrearWeekStartValue(item)))}</td>
           <td>${item.unpaidDays}일</td>
           <td class="lease-money--warning">${formatMoney(item.unpaidAmount + (item.recoveredAmount || item.paidAmount || 0))}</td>
           <td>${formatMoney(item.recoveredAmount || item.paidAmount || 0)}</td>
@@ -1460,12 +1517,16 @@ const BremAdminLeaseMenus = (function () {
     const rowsEl = $('leaseArrearRows');
     if (!rowsEl || !erp()) return;
     fillArrearContractSelect(state.arrearContractOptionsDirty);
+    syncArrearWeekUi(state.arrearWeekStart || $('leaseArrearWeekStart')?.value || currentWeekStart());
     const list = erp().arrears().getAll();
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
-    const active = list.filter(item => item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED);
+    const weekFilter = state.arrearWeekStart;
+    const active = list
+      .filter(item => item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED)
+      .filter(item => !weekFilter || arrearWeekStartValue(item) === weekFilter);
     renderArrearHistory(list, vehicles);
     if (!active.length) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">진행 중인 미납 기록이 없습니다.</td></tr>';
+      rowsEl.innerHTML = `<tr><td colspan="10" class="empty">${weekFilter ? '선택한 미납주에 진행 중인 미납 기록이 없습니다.' : '진행 중인 미납 기록이 없습니다.'}</td></tr>`;
       return;
     }
     rowsEl.innerHTML = active.map(item => {
@@ -1481,6 +1542,7 @@ const BremAdminLeaseMenus = (function () {
           <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
           <td>${escapeHtml(vehicle?.model || '-')}</td>
           <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}</td>
+          <td>${escapeHtml(formatArrearWeekLabel(arrearWeekStartValue(item)))}</td>
           <td>${item.unpaidDays}일</td>
           <td class="lease-money--warning">${formatMoney(item.unpaidAmount)}</td>
           <td>${formatMoney(item.paidAmount)}</td>
@@ -1983,6 +2045,7 @@ const BremAdminLeaseMenus = (function () {
       fillVehicleSelect($('leaseContractVehicleId'));
       fillVehicleSelect($('leaseCalcVehicleId'));
       if ($('leaseWeekStart')) syncLeaseWeeklyWeekUi(currentWeekStart());
+      syncArrearWeekUi(currentWeekStart());
       if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
       updateLeaseDashWeekUi();
     }
@@ -2035,7 +2098,9 @@ const BremAdminLeaseMenus = (function () {
     renderDashboardVehicleOverview,
     updateLeaseDashWeekUi,
     handleWeeklyWeekChange,
+    handleArrearWeekChange,
     syncLeaseWeeklyWeekUi,
+    syncArrearWeekUi,
     currentWeekStart,
     renderContractList
   };
