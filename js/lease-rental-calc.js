@@ -238,6 +238,149 @@ const BremLeaseRentalCalc = (function () {
     return method || '-';
   }
 
+  function isDateInRange(date, start, end) {
+    const d = String(date || '').slice(0, 10);
+    if (!d || !start) return false;
+    if (end && d > end) return false;
+    return d >= start;
+  }
+
+  /** 차량 기준 기간 손익 — 계약·원가·미납·공차 대조 */
+  function computeVehiclePeriodMetrics(input = {}) {
+    const {
+      vehicle = {},
+      contract = null,
+      periodStart = '',
+      periodEnd = '',
+      arrears = [],
+      accidents = [],
+      maintenance = []
+    } = input;
+
+    const vm = window.BremLeaseProfit?.computeErpMetrics?.(vehicle) || {};
+    const start = String(periodStart || '').slice(0, 10);
+    const end = String(periodEnd || start).slice(0, 10);
+    const periodDays = start && end ? daysInclusive(start, end) : 7;
+    const vehicleId = vehicle.id || '';
+
+    const contractStart = String(contract?.startDate || '').slice(0, 10);
+    const contractEnd = String(contract?.endDate || '').slice(0, 10);
+    const hasDriver = Boolean(String(contract?.driverName || vehicle.renter || '').trim());
+    const rentalDays = hasDriver && contract
+      ? overlapDays(start, end, contractStart || start, contractEnd || end)
+      : 0;
+
+    const dailyRent = money(contract?.dailyRent) || money(vehicle.dailyChargeAmount) || money(vm.dailyCharge) || 0;
+    const dailyLeaseCost = money(vm.dailyLeaseCost) || money(vehicle.dailyLeaseCost) || 0;
+    const dailyOwnedCost = money(vm.dailyCost) || 0;
+    const emptyDaily = money(vehicle.emptyDailyLoss)
+      || money(vm.emptyDailyLoss)
+      || dailyOwnedCost
+      || dailyLeaseCost
+      || 0;
+
+    let emptyDays = Math.max(0, periodDays - rentalDays);
+    if (vehicle.emptyStartDate) {
+      const emptyOverlap = overlapDays(start, end, vehicle.emptyStartDate, end);
+      if (rentalDays === 0) emptyDays = emptyOverlap;
+      else emptyDays = Math.max(emptyDays, emptyOverlap);
+    }
+
+    const completed = ARREAR_STATUS.COMPLETED;
+    const openArrears = (arrears || []).filter(item =>
+      item.vehicleId === vehicleId && String(item.collectionStatus || '') !== completed
+    );
+    const unpaidAmount = openArrears.reduce((sum, item) => sum + money(item.unpaidAmount), 0);
+    const unpaidDays = openArrears.reduce((sum, item) => sum + roundDays(item.unpaidDays), 0);
+
+    const recoveredAmount = (arrears || [])
+      .filter(item => item.vehicleId === vehicleId && String(item.collectionStatus || '') === completed)
+      .filter(item => isDateInRange(item.processedDate, start, end))
+      .reduce((sum, item) => sum + money(item.recoveredAmount || item.paidAmount), 0);
+
+    const maintenanceCost = (maintenance || [])
+      .filter(row => row.vehicleId === vehicleId && isDateInRange(row.maintenanceDate || row.date, start, end))
+      .reduce((sum, row) => sum + money(row.cost || row.amount), 0);
+
+    const accidentCost = (accidents || [])
+      .filter(row => row.vehicleId === vehicleId && isDateInRange(row.accidentDate || row.date, start, end))
+      .reduce((sum, row) => sum + money(row.cost || row.amount || row.lossAmount), 0);
+
+    const insuranceDaily = money(vehicle.dailyInsuranceCost)
+      || (money(vehicle.annualInsuranceCost) / 365)
+      || 0;
+    const insuranceCost = Math.round(insuranceDaily * periodDays);
+    const leaseCost = Math.round(dailyLeaseCost * periodDays);
+    const vehicleCost = Math.round(dailyOwnedCost * periodDays);
+    const owned = String(vehicle.vehicleCategory || vm.mode || '') === 'company_owned';
+    const resolvedVehicleCost = owned ? vehicleCost : leaseCost;
+
+    const rentalRevenue = dailyRent * rentalDays;
+    const emptyLoss = emptyDaily * emptyDays;
+    const totalCost = resolvedVehicleCost + insuranceCost + maintenanceCost + accidentCost + emptyLoss;
+    const expectedProfit = rentalRevenue - totalCost;
+    const actualProfit = rentalRevenue + recoveredAmount - totalCost - unpaidAmount;
+    const netProfit = actualProfit;
+
+    return {
+      periodDays,
+      rentalDays,
+      emptyDays,
+      unpaidDays,
+      dailyRent,
+      rentalRevenue,
+      recoveredAmount,
+      unpaidAmount,
+      emptyLoss,
+      insuranceCost,
+      leaseCost: resolvedVehicleCost,
+      vehicleCost: resolvedVehicleCost,
+      maintenanceCost,
+      accidentCost,
+      totalCost,
+      expectedProfit,
+      actualProfit,
+      netProfit,
+      isDeficit: netProfit < 0,
+      isOperating: rentalDays > 0,
+      isEmpty: rentalDays === 0 && emptyDays > 0,
+      hasUnpaid: unpaidAmount > 0 || unpaidDays > 0
+    };
+  }
+
+  function aggregateFleetPeriodMetrics(rows = []) {
+    return rows.reduce((totals, row) => {
+      totals.count += 1;
+      if (row.isOperating) totals.operatingCount += 1;
+      if (row.isEmpty) totals.emptyCount += 1;
+      if (row.hasUnpaid) totals.unpaidCount += 1;
+      totals.rentalRevenue += money(row.rentalRevenue);
+      totals.recoveredAmount += money(row.recoveredAmount);
+      totals.unpaidAmount += money(row.unpaidAmount);
+      totals.emptyLoss += money(row.emptyLoss);
+      totals.totalCost += money(row.totalCost);
+      totals.expectedProfit += money(row.expectedProfit);
+      totals.actualProfit += money(row.actualProfit);
+      totals.netProfit += money(row.netProfit);
+      if (row.isDeficit) totals.deficitCount += 1;
+      return totals;
+    }, {
+      count: 0,
+      operatingCount: 0,
+      emptyCount: 0,
+      unpaidCount: 0,
+      deficitCount: 0,
+      rentalRevenue: 0,
+      recoveredAmount: 0,
+      unpaidAmount: 0,
+      emptyLoss: 0,
+      totalCost: 0,
+      expectedProfit: 0,
+      actualProfit: 0,
+      netProfit: 0
+    });
+  }
+
   return {
     MODEL_TYPES,
     COLLECTION_METHODS,
@@ -254,7 +397,10 @@ const BremLeaseRentalCalc = (function () {
     aggregateRows,
     buildProfitLogSnapshot,
     arrearsStatusLabel,
-    collectionMethodLabel
+    collectionMethodLabel,
+    isDateInRange,
+    computeVehiclePeriodMetrics,
+    aggregateFleetPeriodMetrics
   };
 })();
 

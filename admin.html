@@ -1118,6 +1118,13 @@
           </aside>
 
           <div class="lease-erp-main">
+            <div class="lease-erp-unsaved-banner" id="leaseErpUnsavedBanner" hidden role="alert">
+              <div class="lease-erp-unsaved-banner__text">
+                <strong>저장되지 않은 변경사항이 있습니다!</strong>
+                <span>목록·폼에 반영만 된 상태입니다. <em>Supabase 저장</em> 버튼을 누르지 않으면 새로고침 시 데이터가 사라집니다.</span>
+              </div>
+              <button type="button" class="primary-btn lease-erp-commit-btn" id="leaseErpCommitBtn">Supabase 저장</button>
+            </div>
             <div class="lease-menu-panel" data-lease-menu-panel="dashboard">
               <article class="card lease-dash-card">
                 <div class="card-header lease-dash-card-header">
@@ -1138,19 +1145,24 @@
                   </label>
                 </div>
                 <div class="lease-dash-grid">
-                  <article class="lease-dash-tile"><span>전체 차량</span><strong id="leaseStatTotal">0</strong><em>대</em></article>
-                  <article class="lease-dash-tile lease-dash-tile--success"><span>운행중</span><strong id="leaseKpiOperating">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile"><span>총 차량</span><strong id="leaseStatTotal">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile lease-dash-tile--success"><span>계약중</span><strong id="leaseKpiOperating">0</strong><em>대</em></article>
                   <article class="lease-dash-tile lease-dash-tile--warning"><span>공차</span><strong id="leaseStatEmpty">0</strong><em>대</em></article>
-                  <article class="lease-dash-tile lease-dash-tile--warning"><span>총 미납금</span><strong id="leaseHeroUnpaid">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--profit"><span>이번주 순이익</span><strong id="leaseHeroWeekProfit">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--profit"><span>이번달 순이익</span><strong id="leaseKpiMonthProfit">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--warning"><span>공차 손실</span><strong id="leaseHeroEmptyLoss">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning"><span>미납 차량</span><strong id="leaseKpiUnpaidCount">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>주간 예상수익</span><strong id="leaseHeroWeekExpected">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>주간 실제수익</span><strong id="leaseHeroWeekActual">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>주간 순이익</span><strong id="leaseHeroWeekProfit">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>월간 예상수익</span><strong id="leaseKpiMonthExpected">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--profit"><span>월간 실제수익</span><strong id="leaseKpiMonthProfit">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning"><span>현재 미납 총액</span><strong id="leaseHeroUnpaid">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--success"><span>처리완료 수납</span><strong id="leaseHeroRecovered">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning"><span>공차손실</span><strong id="leaseHeroEmptyLoss">0원</strong></article>
                   <article class="lease-dash-tile lease-dash-tile--deficit"><span>적자 차량</span><strong id="leaseDashDeficitCount">0</strong><em>대</em></article>
                 </div>
                 <div class="lease-dash-vehicle-overview">
                   <div class="lease-dash-vehicle-overview__head">
                     <h3>차량별 현황</h3>
-                    <p class="form-help">등록된 전체 차량 · 주간 기준과 무관하게 운행/공차/미납 표시</p>
+                    <p class="form-help">차량 기준 · 리스/렌탈 태그 · 계약기간 · 운행/미납/공차 복합 표시</p>
                   </div>
                   <div class="table-wrap lease-table-wrap">
                     <table class="lease-table lease-table--compact lease-dash-vehicle-table">
@@ -1158,8 +1170,11 @@
                         <tr>
                           <th>번호판</th>
                           <th>기종</th>
-                          <th>구분</th>
-                          <th>기사</th>
+                          <th>ERP구분</th>
+                          <th>리스/렌탈</th>
+                          <th>계약자</th>
+                          <th>리스기간</th>
+                          <th>렌탈기간</th>
                           <th class="lease-dash-vehicle-table__status">현황</th>
                         </tr>
                       </thead>
@@ -1422,7 +1437,8 @@
             </div>
 
             <div class="lease-form-actions">
-              <button type="submit" class="primary-btn" id="leaseFormSubmit">등록</button>
+              <p class="lease-unsaved-hint">※ 목록 반영 후 반드시 상단 또는 목록 옆 <strong>Supabase 저장</strong> 버튼을 눌러주세요.</p>
+              <button type="submit" class="primary-btn" id="leaseFormSubmit">목록에 반영</button>
               <button type="button" class="small-btn" id="leaseFormCancel" hidden>취소</button>
             </div>
           </form>
@@ -1575,6 +1591,7 @@
                 <input type="search" id="leaseSearch" placeholder="기종, 번호판, 리스회사…" autocomplete="off">
               </label>
               <button type="button" class="small-btn" id="leaseSearchClear">초기화</button>
+              <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
               <label class="check-label">
                 <input type="checkbox" id="leaseSelectAll">
                 <span>전체 선택</span>
@@ -1680,7 +1697,8 @@
               </section>
             </div>
             <div class="lease-form-actions">
-              <button type="submit" class="primary-btn" id="leaseContractSaveBtn">계약 저장</button>
+              <p class="lease-unsaved-hint">※ 목록 반영 후 반드시 <strong>Supabase 저장</strong> 버튼을 눌러야 DB에 저장됩니다.</p>
+              <button type="submit" class="primary-btn" id="leaseContractSaveBtn">목록에 반영</button>
               <button type="button" class="small-btn" id="leaseContractEndBtn">반납 · 공차 전환</button>
               <button type="button" class="small-btn" id="leaseContractResetBtn">초기화</button>
             </div>
@@ -1691,7 +1709,10 @@
                 <h3>계약 목록</h3>
                 <p class="form-help">저장된 렌탈/리스 계약 · 수정하려면 목록에서 선택</p>
               </div>
-              <button type="button" class="small-btn danger-btn" id="leaseContractDeleteAllBtn">전체 삭제</button>
+              <div class="lease-list-toolbar">
+                <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
+                <button type="button" class="small-btn danger-btn" id="leaseContractDeleteAllBtn">전체 삭제</button>
+              </div>
             </div>
             <div class="table-wrap lease-table-wrap">
               <table class="lease-table lease-table--compact">
@@ -1846,6 +1867,9 @@
           </div>
           <form id="leaseArrearRegisterForm" class="lease-arrear-form">
             <div class="lease-arrear-form-grid">
+              <label class="lease-form-field--full">계약 기사 검색
+                <input type="search" id="leaseArrearDriverSearch" placeholder="이름 · 연락처 · 차량번호 · 기종" autocomplete="off">
+              </label>
               <label>계약 기사
                 <select id="leaseArrearContractId" required>
                   <option value="">기사 선택</option>
@@ -4533,11 +4557,11 @@
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>
-  <script src="js/lease-rental-calc.js?v=20260630l"></script>
-  <script src="js/lease-erp.js?v=20260701e"></script>
-  <script src="js/admin-lease.js?v=20260701d"></script>
+  <script src="js/lease-rental-calc.js?v=20260702a"></script>
+  <script src="js/lease-erp.js?v=20260702a"></script>
+  <script src="js/admin-lease.js?v=20260702a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260701f"></script>
+  <script src="js/admin-lease-menus.js?v=20260702a"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

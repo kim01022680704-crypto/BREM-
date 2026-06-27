@@ -297,8 +297,10 @@
 
   function displayVehicleStatus(item) {
     const contract = getLatestContractForVehicle(item.id);
+    if (window.BremAdminLeaseMenus?.renderStatusTagsHtml) {
+      return `<span class="lease-status-tags">${window.BremAdminLeaseMenus.renderStatusTagsHtml(item, contract)}</span>`;
+    }
     const runtime = erp?.resolveRuntimeStatus?.(item, contract)
-      || window.BremAdminLeaseMenus?.resolveContractStatus?.(contract, item.id)
       || { label: window.BremLeaseProfit?.vehicleStatusLabel?.(item.vehicleStatus) || '-', code: item.vehicleStatus || 'empty' };
     return `<span class="lease-status-badge lease-status-badge--${escapeHtml(runtime.code || 'empty')}">${escapeHtml(runtime.label)}</span>`;
   }
@@ -1177,14 +1179,15 @@
           leases.create(data);
         }
         erp?.syncAllVehicleStatusesFromContracts?.();
-        if (!(await persistLeasesOrWarn())) return;
-        showToast(state.editingId ? '차량 정보가 수정되었습니다.' : '차량이 등록되었습니다.');
+        showToast(state.editingId ? '차량이 목록에 반영되었습니다.' : '차량이 목록에 반영되었습니다.');
+        window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
 
         resetForm();
         renderList();
         renderStats();
         window.BremAdminLeaseMenus?.renderDashboard?.();
         void refresh({ loadRemote: false });
+        document.querySelector('.lease-list-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
       } catch (error) {
         console.error('[BREM] lease vehicle save failed:', error);
         showToast('저장 중 오류가 발생했습니다. 새로고침 후 다시 시도하세요.');

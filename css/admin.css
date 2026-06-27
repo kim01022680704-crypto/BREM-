@@ -5019,6 +5019,80 @@ textarea {
   font-weight: 800;
 }
 
+.lease-erp-unsaved-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 14px 18px;
+  border: 2px solid rgba(251, 191, 36, 0.85);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.55), rgba(69, 26, 3, 0.75));
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.25), 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.lease-erp-unsaved-banner__text {
+  display: grid;
+  gap: 4px;
+  max-width: 720px;
+}
+
+.lease-erp-unsaved-banner__text strong {
+  color: #fde68a;
+  font-size: 1.05rem;
+}
+
+.lease-erp-unsaved-banner__text span {
+  color: #fef3c7;
+  font-size: 0.92rem;
+}
+
+.lease-erp-unsaved-banner__text em {
+  color: #fff;
+  font-style: normal;
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.lease-erp-commit-btn--pulse {
+  animation: lease-commit-pulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.45);
+}
+
+@keyframes lease-commit-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.lease-unsaved-hint {
+  flex: 1 1 100%;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed rgba(251, 191, 36, 0.65);
+  background: rgba(120, 53, 15, 0.35);
+  color: #fde68a;
+  font-size: 0.9rem;
+}
+
+.lease-status-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.lease-status-tags .lease-status-badge {
+  margin: 0;
+}
+
+.lease-arrear-week-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: normal;
+}
+
 .lease-dash-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

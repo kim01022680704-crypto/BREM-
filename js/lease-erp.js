@@ -522,20 +522,52 @@ const BremLeaseErp = (function () {
   }
 
   function readList(key) {
+    if (window.BremDataCache?.isValid?.(key)) {
+      const cached = window.BremDataCache.getData(key);
+      if (Array.isArray(cached)) return cached;
+    }
     if (BremStorage?.readTableKey) return BremStorage.readTableKey(key) || [];
     return window.BremDataCache?.getData?.(key) || [];
   }
 
   const pendingWritePromises = [];
+  const deferredDirtyKeys = new Set();
+  let deferRemotePersist = false;
+
+  function setDeferRemotePersist(enabled) {
+    deferRemotePersist = Boolean(enabled);
+  }
+
+  function hasDeferredChanges() {
+    return deferredDirtyKeys.size > 0;
+  }
 
   function writeList(key, list, options = {}) {
-    if (BremStorage?.writeTableKey) {
-      const persistPromise = BremStorage.writeTableKey(key, list, options);
-      pendingWritePromises.push(persistPromise);
-      return list;
+    const next = Array.isArray(list) ? list : [];
+    window.BremDataCache?.set?.(key, next, { source: 'write' });
+    if (options.deferRemote || deferRemotePersist) {
+      deferredDirtyKeys.add(key);
+      document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
+      return next;
     }
-    window.BremDataCache?.set?.(key, list, { source: 'write' });
-    return list;
+    if (BremStorage?.writeTableKey) {
+      const persistPromise = BremStorage.writeTableKey(key, next, options);
+      pendingWritePromises.push(persistPromise);
+    }
+    return next;
+  }
+
+  async function commitDeferredWrites(options = {}) {
+    const keys = [...deferredDirtyKeys];
+    keys.forEach(key => {
+      const list = readList(key);
+      if (BremStorage?.writeTableKey) {
+        pendingWritePromises.push(BremStorage.writeTableKey(key, list, { allowEmpty: true }));
+      }
+    });
+    deferredDirtyKeys.clear();
+    await flushPendingWrites(options);
+    document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
   }
 
   async function flushPendingWrites(options = {}) {
@@ -817,15 +849,42 @@ const BremLeaseErp = (function () {
 
   function resolveRuntimeStatus(vehicle, contract) {
     if (!vehicle) {
-      return { code: 'empty', label: '공차(로스)', operating: false };
+      return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
     }
-    if (hasOpenArrearForVehicle(vehicle.id)) {
-      return { code: 'unpaid', label: '미납중', operating: false };
+    const operating = isContractOperating(contract);
+    const unpaid = hasOpenArrearForVehicle(vehicle.id);
+    if (operating && unpaid) {
+      return { code: 'operating', label: '운행중·미납', operating: true, unpaid: true };
     }
-    if (isContractOperating(contract)) {
-      return { code: 'operating', label: '운행중', operating: true };
+    if (unpaid) {
+      return { code: 'unpaid', label: '미납중', operating: false, unpaid: true };
     }
-    return { code: 'empty', label: '공차(로스)', operating: false };
+    if (operating) {
+      return { code: 'operating', label: '운행중', operating: true, unpaid: false };
+    }
+    return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
+  }
+
+  function resolveVehicleStatusTags(vehicle, contract) {
+    if (!vehicle) return [{ code: 'empty', label: '공차(로스)' }];
+    const tags = [];
+    const operating = isContractOperating(contract);
+    const openArrears = arrears().getAll().filter(item =>
+      item.vehicleId === vehicle.id && String(item.collectionStatus || '') !== ARREAR_STATUS.COMPLETED
+    );
+    const unpaidDays = openArrears.reduce((sum, item) => sum + Number(item.unpaidDays || 0), 0);
+    const unpaidAmount = openArrears.reduce((sum, item) => sum + Number(item.unpaidAmount || 0), 0);
+    const hasUnpaid = openArrears.length > 0 || unpaidDays > 0 || unpaidAmount > 0;
+
+    if (operating) tags.push({ code: 'operating', label: '운행중' });
+    if (hasUnpaid) {
+      tags.push({
+        code: 'unpaid',
+        label: unpaidDays > 0 ? `미납 ${unpaidDays}일` : '미납'
+      });
+    }
+    if (!operating && !hasUnpaid) tags.push({ code: 'empty', label: '공차(로스)' });
+    return tags;
   }
 
   function resolveEmptyStartOnTransition(vehicle, contract, runtime) {
@@ -1004,6 +1063,10 @@ const BremLeaseErp = (function () {
     syncAllVehicleStatusesFromContracts,
     persistAll,
     persistPending,
+    setDeferRemotePersist,
+    hasDeferredChanges,
+    commitDeferredWrites,
+    resolveVehicleStatusTags,
     saveProfitSnapshot,
     buildDashboardKpis,
     applyVehicleFilters,
