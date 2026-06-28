@@ -18,7 +18,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260628b';
+const SERVER_VERSION = '20260628c';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -32,6 +32,11 @@ const CORS_ALLOWED_ORIGIN_PATTERNS = [
 ];
 
 const baeminAutoCollect = require('../server/baemin-auto-collect');
+const {
+  formatApiPayloadError,
+  formatError,
+  migrationHintForError
+} = require('../server/baemin-error-format');
 
 let activeJob = null;
 let activeContext = null;
@@ -97,9 +102,41 @@ async function loadPlaywright() {
 
 function cookiesToHeader(cookies) {
   return cookies
-    .filter(cookie => String(cookie.domain || '').includes('baemin.com'))
+    .filter(isBaeminRelatedCookie)
     .map(cookie => `${cookie.name}=${cookie.value}`)
     .join('; ');
+}
+
+function isBaeminRelatedCookie(cookie) {
+  const domain = String(cookie?.domain || '').toLowerCase();
+  const name = String(cookie?.name || '').toLowerCase();
+  return domain.includes('baemin.com')
+    || domain.includes('woowahan.com')
+    || domain.includes('deliverycenter')
+    || name.includes('session')
+    || name.includes('bm_');
+}
+
+function dedupeCookies(cookies) {
+  const seen = new Set();
+  const unique = [];
+  (cookies || []).forEach(cookie => {
+    const key = `${cookie.name}@${cookie.domain || ''}@${cookie.path || '/'}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(cookie);
+  });
+  return unique;
+}
+
+function summarizeCookies(cookies) {
+  return (cookies || []).map(cookie => ({
+    name: cookie.name,
+    domain: cookie.domain || '',
+    path: cookie.path || '/',
+    secure: Boolean(cookie.secure),
+    httpOnly: Boolean(cookie.httpOnly)
+  }));
 }
 
 function isJobRunning() {
@@ -288,32 +325,90 @@ async function verifySessionCookie(cookieHeader, pageUrl, anyHistory) {
 }
 
 async function extractBaeminCookies(context) {
-  const cookies = await context.cookies();
-  const header = cookiesToHeader(cookies);
-  console.log(`[BREM] [쿠키 추출] context.cookies() ${cookies.length}개 → baemin 헤더 ${header ? header.split(';').length : 0}개`);
+  const cookieUrls = [
+    `${BAEMIN_ORIGIN}/`,
+    'https://bizmember.baemin.com/',
+    'https://member.baemin.com/'
+  ];
+  let cookies = [];
+
+  for (const url of cookieUrls) {
+    try {
+      const scoped = await context.cookies(url);
+      cookies = cookies.concat(scoped);
+      console.log(`[BREM] [쿠키 추출] context.cookies(${url}) → ${scoped.length}개`);
+    } catch (error) {
+      console.warn(`[BREM] [쿠키 추출] ${url} 실패 | ${formatError(error)}`);
+    }
+  }
+
+  if (!cookies.length) {
+    cookies = await context.cookies();
+    console.log(`[BREM] [쿠키 추출] context.cookies() 전체 → ${cookies.length}개`);
+  }
+
+  cookies = dedupeCookies(cookies);
+  const summary = summarizeCookies(cookies);
+  const baeminCookies = cookies.filter(isBaeminRelatedCookie);
+  console.log(`[BREM] [쿠키 추출] 전체 ${cookies.length}개 · 배민 관련 ${baeminCookies.length}개`);
+  console.log(`[BREM] [쿠키 추출] 이름/도메인: ${JSON.stringify(summary.slice(0, 20))}${summary.length > 20 ? ' …' : ''}`);
+
+  const header = cookiesToHeader(baeminCookies.length ? baeminCookies : cookies);
+  console.log(`[BREM] [쿠키 추출] 헤더 길이 ${header.length} · 항목 ${header ? header.split(';').length : 0}개`);
   return header;
 }
 
 async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
   const url = `${apiBase.replace(/\/$/, '')}/api/admin/baemin-delivery/session`;
-  console.log(`[BREM] [Supabase 저장] POST ${url} | setupId=${setupId}`);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ setupId, setupSecret, cookie: cookieHeader })
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+  const cookieLength = String(cookieHeader || '').length;
+  console.log(`[BREM] [Supabase 저장] POST ${url}`);
+  console.log(`[BREM] [Supabase 저장] setupId=${setupId} · cookieLength=${cookieLength}`);
+
+  if (!cookieHeader || cookieLength < 8) {
+    throw new Error('배민 쿠키 헤더가 비어 있습니다. 로그인 후 /delivery/history 화면에서 다시 시도하세요.');
   }
-  console.log(`[BREM] [Supabase 저장] API 응답 성공 | ${payload.message || 'ok'}`);
+
+  let response;
+  let responseText = '';
   try {
-    await baeminAutoCollect.clearSessionPause();
-    sessionPaused = false;
-    console.log('[BREM] [자동수집] 세션 갱신 완료 — 자동 수집 재개');
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setupId, setupSecret, cookie: cookieHeader })
+    });
+    responseText = await response.text();
   } catch (error) {
-    console.warn('[BREM] [자동수집] 세션 pause 해제 실패:', error.message);
+    console.error('[BREM] [Supabase 저장] 네트워크 오류');
+    console.error('[BREM] [Supabase 저장] error.message:', formatError(error));
+    console.error('[BREM] [Supabase 저장] error.stack:', error?.stack || '-');
+    throw new Error(`Supabase 저장 API 네트워크 오류: ${formatError(error)}`);
   }
+
+  let payload = {};
+  try {
+    payload = responseText ? JSON.parse(responseText) : {};
+  } catch (error) {
+    console.error('[BREM] [Supabase 저장] JSON 파싱 실패');
+    console.error('[BREM] [Supabase 저장] status:', response.status);
+    console.error('[BREM] [Supabase 저장] response.text():', responseText.slice(0, 800));
+    console.error('[BREM] [Supabase 저장] parse error:', formatError(error));
+    throw new Error(`Supabase 저장 API 응답 파싱 실패 (HTTP ${response.status})`);
+  }
+
+  console.log('[BREM] [Supabase 저장] status:', response.status);
+  console.log('[BREM] [Supabase 저장] payload:', JSON.stringify(payload).slice(0, 1000));
+
+  if (!response.ok) {
+    const message = formatApiPayloadError(payload, response.status, responseText);
+    const hint = migrationHintForError(message);
+    console.error('[BREM] [Supabase 저장] 실패 |', message);
+    if (message.includes('SETUP_NOT_FOUND') || message.includes('세션 갱신 요청을 찾을 수 없습니다')) {
+      console.error('[BREM] [Supabase 저장] ERP에서 [배민 세션 갱신]을 다시 눌러 새 setupId/setupSecret을 받으세요.');
+    }
+    throw new Error(`${message}${hint}`);
+  }
+
+  console.log(`[BREM] [Supabase 저장] API 응답 성공 | ${payload.message || 'ok'}`);
   return payload;
 }
 
@@ -343,15 +438,16 @@ async function showBrowserBanner(context, message, isError) {
 }
 
 function failJob(setupId, message, url, reason) {
+  const reasonText = formatError(reason, String(reason || message || 'unknown'));
   activeJob = {
     status: 'failed',
-    message: reason ? `${message}: ${reason}` : message,
+    message: reasonText ? `${message}: ${reasonText}` : message,
     setupId,
     currentUrl: url || '',
-    reason: reason || message,
+    reason: reasonText || message,
     updatedAt: Date.now()
   };
-  console.error(`[BREM] [실패] ${message} | URL: ${url || '-'} | 원인: ${reason || '-'}`);
+  console.error(`[BREM] [실패] ${message} | URL: ${url || '-'} | 원인: ${reasonText || '-'}`);
 }
 
 async function closeContextSafely(context) {
@@ -663,9 +759,13 @@ async function runSessionRefresh() {
     refreshLoopRunning = false;
   } catch (error) {
     const tabs = context ? scanBrowserTabs(context) : { url: '' };
-    failJob(activeSetup.setupId, '세션 갱신 오류', tabs.url, error.message);
+    const reason = formatError(error);
+    console.error('[BREM] [세션 갱신 오류] error.message:', error?.message || '-');
+    console.error('[BREM] [세션 갱신 오류] error.stack:', error?.stack || '-');
+    console.error('[BREM] [세션 갱신 오류] formatted:', reason);
+    failJob(activeSetup.setupId, '세션 갱신 오류', tabs.url, reason);
     if (context && isContextAlive(context)) {
-      await showBrowserBanner(context, error.message, true);
+      await showBrowserBanner(context, reason, true);
     }
     refreshLoopRunning = false;
   }
@@ -789,8 +889,9 @@ const server = http.createServer(async (req, res) => {
 
     void runSessionRefresh().catch(error => {
       refreshLoopRunning = false;
-      failJob(setupId, '세션 갱신 실패', '', error.message);
-      console.error(`[BREM] [오류] ${error.stack || error.message}`);
+      const reason = formatError(error);
+      failJob(setupId, '세션 갱신 실패', '', reason);
+      console.error('[BREM] [오류]', error?.stack || reason);
     });
     return;
   }

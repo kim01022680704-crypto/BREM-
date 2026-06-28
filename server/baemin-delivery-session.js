@@ -6,6 +6,7 @@ const {
   getErpLocalSessionConfig,
   buildStartUrl
 } = require('./baemin-session-local-config');
+const { formatError, stringifyErrorValue } = require('./baemin-error-format');
 
 const SESSION_SETTINGS_KEY = 'brem_baemin_biz_session';
 const SETUP_SETTINGS_KEY = 'brem_baemin_session_setup';
@@ -217,28 +218,70 @@ async function getSessionSetupStatus(accessToken, setupId) {
 }
 
 async function completeSessionSetup(setupId, setupSecret, cookie, meta = {}) {
-  const setup = await readSettingsValue(SETUP_SETTINGS_KEY);
-  if (!setup || setup.setupId !== setupId) {
-    return { ok: false, status: 404, error: 'SETUP_NOT_FOUND', message: '세션 갱신 요청을 찾을 수 없습니다.' };
+  const normalizedSetupId = String(setupId || '').trim();
+  const normalizedSecret = String(setupSecret || '').trim();
+  const cookieText = String(cookie || '').trim();
+
+  console.log('[BREM][session-setup] complete start', {
+    setupId: normalizedSetupId,
+    cookieLength: cookieText.length,
+    source: meta.source || 'playwright_local'
+  });
+
+  if (!cookieText) {
+    console.warn('[BREM][session-setup] empty cookie');
+    return { ok: false, status: 400, error: 'EMPTY_COOKIE', message: '배민 세션 쿠키가 비어 있습니다.' };
   }
-  if (setup.setupSecret !== setupSecret) {
+
+  const setup = await readSettingsValue(SETUP_SETTINGS_KEY);
+  if (!setup || setup.setupId !== normalizedSetupId) {
+    console.warn('[BREM][session-setup] setup not found', {
+      requestedSetupId: normalizedSetupId,
+      storedSetupId: setup?.setupId || null,
+      storedStatus: setup?.status || null
+    });
+    return {
+      ok: false,
+      status: 404,
+      error: 'SETUP_NOT_FOUND',
+      message: '세션 갱신 요청을 찾을 수 없습니다. ERP에서 [배민 세션 갱신]을 다시 눌러주세요.'
+    };
+  }
+  if (setup.setupSecret !== normalizedSecret) {
+    console.warn('[BREM][session-setup] invalid setup secret', { setupId: normalizedSetupId });
     return { ok: false, status: 403, error: 'SETUP_SECRET_INVALID', message: '세션 갱신 토큰이 올바르지 않습니다.' };
   }
   if (setup.status !== 'pending') {
-    return { ok: false, status: 409, error: 'SETUP_NOT_PENDING', message: '이미 처리된 세션 갱신 요청입니다.' };
+    console.warn('[BREM][session-setup] setup not pending', { setupId: normalizedSetupId, status: setup.status });
+    return { ok: false, status: 409, error: 'SETUP_NOT_PENDING', message: '이미 처리된 세션 갱신 요청입니다. ERP에서 [배민 세션 갱신]을 다시 눌러주세요.' };
   }
   if (setup.expiresAt && Date.parse(setup.expiresAt) < Date.now()) {
-    return { ok: false, status: 410, error: 'SETUP_EXPIRED', message: '세션 갱신 시간이 만료되었습니다.' };
+    console.warn('[BREM][session-setup] setup expired', { setupId: normalizedSetupId, expiresAt: setup.expiresAt });
+    return { ok: false, status: 410, error: 'SETUP_EXPIRED', message: '세션 갱신 시간이 만료되었습니다. ERP에서 [배민 세션 갱신]을 다시 눌러주세요.' };
   }
 
-  const saved = await saveStoredSession(cookie, {
+  const saved = await saveStoredSession(cookieText, {
     updatedBy: meta.updatedBy || setup.adminEmail || setup.adminUserId || 'local_playwright',
     source: meta.source || 'playwright_local',
     lastValidatedAt: new Date().toISOString()
   });
-  if (!saved.ok) return saved;
+  if (!saved.ok) {
+    console.error('[BREM][session-setup] saveStoredSession failed', saved);
+    return {
+      ...saved,
+      error: stringifyErrorValue(saved.error || saved.message || 'SESSION_SAVE_FAILED'),
+      message: stringifyErrorValue(saved.message || saved.error || '배민 세션 저장에 실패했습니다.')
+    };
+  }
 
-  await baeminAutoCollect.clearSessionPause().catch(() => {});
+  console.log('[BREM][session-setup] cookie saved to settings', {
+    setupId: normalizedSetupId,
+    cookieLength: cookieText.length
+  });
+
+  await baeminAutoCollect.clearSessionPause().catch(error => {
+    console.warn('[BREM][session-setup] clearSessionPause failed:', formatError(error));
+  });
 
   await writeSettingsValue(SETUP_SETTINGS_KEY, {
     ...setup,
@@ -247,6 +290,7 @@ async function completeSessionSetup(setupId, setupSecret, cookie, meta = {}) {
     message: '배민Biz 세션이 저장되었습니다.'
   }, 'Temporary Baemin session setup token');
 
+  console.log('[BREM][session-setup] complete success', { setupId: normalizedSetupId });
   return { ok: true, message: '배민Biz 세션이 저장되었습니다.' };
 }
 

@@ -23,6 +23,7 @@ const riderWeeklyPayslip = require('./rider-weekly-payslip');
 const payrollPublishAdmin = require('./payroll-publish-admin');
 const riderPublishAdmin = require('./rider-publish-admin');
 const { getPublicConfig } = require('./public-config');
+const { stringifyErrorValue } = require('./baemin-error-format');
 const {
   isWriteBlocked,
   WRITE_BLOCK_MESSAGE,
@@ -800,6 +801,12 @@ app.post('/api/admin/baemin-delivery/session', async (req, res) => {
     const setupSecret = String(body.setupSecret || '').trim();
     const cookie = String(body.cookie || '').trim();
 
+    console.log('[BREM][session-api] POST /session', {
+      hasSetupId: Boolean(setupId),
+      hasSetupSecret: Boolean(setupSecret),
+      cookieLength: cookie.length
+    });
+
     let result;
     if (setupId && setupSecret) {
       result = await baeminDeliverySession.completeSessionSetup(setupId, setupSecret, cookie, {
@@ -814,14 +821,26 @@ app.post('/api/admin/baemin-delivery/session', async (req, res) => {
     }
 
     if (!result.ok) {
+      const errorText = stringifyErrorValue(result.error || result.message || '배민 세션 저장에 실패했습니다.');
+      const messageText = stringifyErrorValue(result.message || result.error || errorText);
+      console.warn('[BREM][session-api] save failed', {
+        status: result.status || 400,
+        error: errorText,
+        message: messageText
+      });
       return res.status(result.status || 400).json({
-        error: result.error || result.message,
-        message: result.message || result.error
+        error: errorText,
+        message: messageText
       });
     }
+    console.log('[BREM][session-api] save success', { setupId: setupId || 'manual_admin' });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message || '배민 세션 저장에 실패했습니다.' });
+    console.error('[BREM][session-api] unexpected error', error?.stack || error);
+    res.status(500).json({
+      error: stringifyErrorValue(error, '배민 세션 저장에 실패했습니다.'),
+      message: stringifyErrorValue(error, '배민 세션 저장에 실패했습니다.')
+    });
   }
 });
 
