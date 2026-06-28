@@ -1233,9 +1233,9 @@ const BremStorage = (function () {
       }
 
       const mapper = window.BremSupabaseMapper;
-      const noticeRows = (payload.notices || []).map(row => (
-        mapper?.rowToNotice ? mapper.rowToNotice(row) : row
-      ));
+      const noticeRows = (payload.notices || [])
+        .map(row => (mapper?.rowToNotice ? mapper.rowToNotice(row) : row))
+        .filter(notice => notice.noticeKind !== 'payroll' && !String(notice.id || '').startsWith('payroll-'));
       markNoticesCache(noticeRows, { source: 'server' });
       return {
         ok: true,
@@ -2658,9 +2658,9 @@ const BremStorage = (function () {
 
   function mergeRiderNoticesInCache(payload = {}) {
     const mapper = window.BremSupabaseMapper;
-    const noticeRows = (payload.notices || []).map(row => (
-      mapper?.rowToNotice ? mapper.rowToNotice(row) : row
-    ));
+    const noticeRows = (payload.notices || [])
+      .map(row => (mapper?.rowToNotice ? mapper.rowToNotice(row) : row))
+      .filter(notice => notice.noticeKind !== 'payroll' && !String(notice.id || '').startsWith('payroll-'));
     markNoticesCache(noticeRows, { source: 'server' });
     return noticeRows;
   }

@@ -13,70 +13,6 @@ const MISSION_SELECT = [
 ].join(',');
 
 const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
-const PAYROLL_NOTICE_SELECT = 'id,title,body,label,settlement_week_start,sort_order,rider_published_at,updated_at';
-
-function normalizeSettlementWeekStartForNotices(dateValue) {
-  const seed = String(dateValue || '').trim().slice(0, 10);
-  const base = seed || new Date().toISOString().slice(0, 10);
-  const date = new Date(`${base}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return '';
-  const diff = (date.getDay() - 3 + 7) % 7;
-  date.setDate(date.getDate() - diff);
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')
-  ].join('-');
-}
-
-function payrollNoticeAppliesToWeek(notice, weekStart) {
-  const scoped = String(notice?.settlement_week_start || notice?.settlementWeekStart || '').slice(0, 10);
-  return !scoped || scoped === weekStart;
-}
-
-function mapPayrollNoticeRowToRiderNotice(row, weekStart) {
-  if (!payrollNoticeAppliesToWeek(row, weekStart)) return null;
-  const label = String(row.label || 'notice').trim();
-  return {
-    id: `payroll-${row.id}`,
-    title: String(row.title || '').trim(),
-    content: String(row.body || '').trim(),
-    pinned: label === 'urgent' || Number(row.sort_order || 0) > 0,
-    created_at: row.rider_published_at || row.updated_at,
-    updated_at: row.updated_at,
-    noticeKind: 'payroll',
-    payrollLabel: label,
-    settlementWeekStart: String(row.settlement_week_start || '').slice(0, 10)
-  };
-}
-
-async function fetchPublishedPayrollNotices(supabase, weekStart) {
-  const { data, error } = await supabase
-    .from('payroll_notices')
-    .select(PAYROLL_NOTICE_SELECT)
-    .not('rider_published_at', 'is', null)
-    .order('sort_order', { ascending: false })
-    .order('updated_at', { ascending: false })
-    .limit(50);
-  if (error) {
-    if (/does not exist|relation|schema cache/i.test(error.message || '')) return [];
-    throw error;
-  }
-  return (data || [])
-    .map(row => mapPayrollNoticeRowToRiderNotice(row, weekStart))
-    .filter(Boolean);
-}
-
-function mergeRiderNoticeFeed(generalNotices = [], payrollNotices = []) {
-  const merged = [...(generalNotices || []), ...(payrollNotices || [])];
-  return merged.sort((a, b) => {
-    const pinDiff = Number(b.pinned) - Number(a.pinned);
-    if (pinDiff) return pinDiff;
-    const aDate = String(a.created_at || a.updated_at || '');
-    const bDate = String(b.created_at || b.updated_at || '');
-    return bDate.localeCompare(aDate);
-  });
-}
 
 const PROMOTION_MISSION_SELECT = 'id,name,platform,type,enabled,payload,created_at,updated_at';
 
@@ -790,18 +726,10 @@ async function getRiderNotices(accessToken) {
     return { ok: false, status: 500, error: error.message || '공지사항을 불러오지 못했습니다.' };
   }
 
-  const weekStart = normalizeSettlementWeekStartForNotices();
-  let payrollNoticeRows = [];
-  try {
-    payrollNoticeRows = await fetchPublishedPayrollNotices(supabase, weekStart);
-  } catch (payrollError) {
-    console.warn('[BREM] Rider payroll notices load skipped:', payrollError.message || payrollError);
-  }
-
   return {
     ok: true,
     riderId: me.riderId,
-    notices: mergeRiderNoticeFeed(data || [], payrollNoticeRows)
+    notices: data || []
   };
 }
 
@@ -832,8 +760,7 @@ async function getRiderAppBundle(accessToken) {
     targetsResult,
     settingsResult,
     noticesResult,
-    missionsResult,
-    payrollNoticesResult
+    missionsResult
   ] = await Promise.all([
     buildRiderCallsQuery(supabase, riderId),
     supabase
@@ -857,14 +784,7 @@ async function getRiderAppBundle(accessToken) {
       .order('pinned', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(100),
-    missionQuery,
-    supabase
-      .from('payroll_notices')
-      .select(PAYROLL_NOTICE_SELECT)
-      .not('rider_published_at', 'is', null)
-      .order('sort_order', { ascending: false })
-      .order('updated_at', { ascending: false })
-      .limit(50)
+    missionQuery
   ]);
 
   if (missionsResult.error) {
@@ -907,13 +827,6 @@ async function getRiderAppBundle(accessToken) {
     : [];
   const longEvent = computeLongEventProgress(me.rider, settingsRows, allCalls);
   const publishedAt = resolveSnapshotPublishedAt(snapshotSettings, publishedCalls, rejections);
-  const weekStart = normalizeSettlementWeekStartForNotices();
-  const payrollNoticeRows = payrollNoticesResult.error
-    ? []
-    : (payrollNoticesResult.data || [])
-      .map(row => mapPayrollNoticeRowToRiderNotice(row, weekStart))
-      .filter(Boolean);
-
   return {
     ok: true,
     riderId,
@@ -937,7 +850,7 @@ async function getRiderAppBundle(accessToken) {
       longEvent,
       settings: liveSettings
     },
-    notices: mergeRiderNoticeFeed(noticesResult.data || [], payrollNoticeRows)
+    notices: noticesResult.data || []
   };
 }
 
