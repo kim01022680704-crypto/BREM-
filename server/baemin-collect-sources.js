@@ -1,4 +1,5 @@
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
+const BAEMIN_API_ORIGIN = 'https://api-deliverycenter.baemin.com';
 const API_REGISTRY_KEY = 'brem_baemin_api_registry';
 
 /** URL/API 패턴 기준 — 메뉴명 문자열 의존 없음 */
@@ -6,7 +7,16 @@ const COLLECT_SOURCES = {
   delivery_status: {
     id: 'delivery_status',
     label: '배달현황',
-    apiPath: '/delivery-status',
+    apiOrigin: BAEMIN_API_ORIGIN,
+    apiPath: '/v4/management/delivery-status',
+    defaultQuery: {
+      orderName: 'name',
+      orderBy: 'asc',
+      name: '',
+      userId: '',
+      phoneNumber: '',
+      riderStatus: ''
+    },
     pagePathPatterns: [
       /\/delivery-status/i,
       /\/delivery\/delivery-history/i,
@@ -21,12 +31,14 @@ const COLLECT_SOURCES = {
   daily_history: {
     id: 'daily_history',
     label: '일별 배달내역',
-    apiPath: '/delivery/history',
+    apiOrigin: BAEMIN_API_ORIGIN,
+    apiPath: '/v4/management/delivery-history',
     pagePathPatterns: [
       /\/delivery\/delivery-history/i,
       /\/delivery\/history/i
     ],
     apiUrlPatterns: [
+      /\/delivery-history(?:\?|$)/i,
       /\/delivery\/history(?:\?|$)/i,
       /\/delivery\/delivery-history(?:\?|$)/i
     ],
@@ -37,7 +49,8 @@ const COLLECT_SOURCES = {
   rider_history: {
     id: 'rider_history',
     label: '라이더별 배달내역',
-    apiPath: '/delivery/history',
+    apiOrigin: BAEMIN_API_ORIGIN,
+    apiPath: '/v4/management/delivery-history',
     pagePathPatterns: [
       /\/delivery\/rider/i,
       /\/rider\//i,
@@ -65,12 +78,14 @@ function getCollectSource(id) {
 
 function classifyApiUrl(url) {
   const text = String(url || '');
-  if (!text.includes('deliverycenter.baemin.com')) return null;
+  if (!text.includes('baemin.com')) return null;
   for (const source of listCollectSources()) {
     if (source.apiUrlPatterns.some(pattern => pattern.test(text))) {
       return source.id;
     }
   }
+  if (/\/v4\/management\/delivery-status/i.test(text)) return 'delivery_status';
+  if (/\/v4\/management\/delivery-history/i.test(text)) return 'daily_history';
   if (/\/delivery-status/i.test(text)) return 'delivery_status';
   if (/\/delivery\/history/i.test(text)) return 'daily_history';
   return null;
@@ -102,12 +117,38 @@ function buildApiUrl(sourceId, query = {}) {
 function buildDefaultQuery(sourceId, collectDate) {
   const source = getCollectSource(sourceId);
   if (!source) return {};
-  const query = {};
+  const query = { ...(source.defaultQuery || {}) };
   if (source.dateQueryKeys?.length) {
     query.fromDate = collectDate;
     query.toDate = collectDate;
   }
   return query;
+}
+
+function resolveApiEndpoint(sourceId, registry = {}) {
+  const source = getCollectSource(sourceId);
+  const discovered = registry?.endpoints?.[sourceId];
+
+  if (discovered?.sampleUrl) {
+    try {
+      const parsed = new URL(discovered.sampleUrl);
+      return {
+        apiOrigin: parsed.origin,
+        apiPath: parsed.pathname
+      };
+    } catch {
+      // fall through
+    }
+  }
+
+  const apiPath = discovered?.apiPath || source?.apiPath || null;
+  if (!apiPath) return null;
+
+  const apiOrigin = discovered?.apiOrigin
+    || source?.apiOrigin
+    || (String(apiPath).startsWith('/v4/') ? BAEMIN_API_ORIGIN : BAEMIN_ORIGIN);
+
+  return { apiOrigin, apiPath };
 }
 
 function buildDedupeKey(sourceId, item, index = 0) {
@@ -160,6 +201,7 @@ function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt
 
 module.exports = {
   BAEMIN_ORIGIN,
+  BAEMIN_API_ORIGIN,
   API_REGISTRY_KEY,
   COLLECT_SOURCES,
   listCollectSources,
@@ -168,6 +210,7 @@ module.exports = {
   classifyPageUrl,
   buildApiUrl,
   buildDefaultQuery,
+  resolveApiEndpoint,
   buildDedupeKey,
   mapItemToCollectRow
 };

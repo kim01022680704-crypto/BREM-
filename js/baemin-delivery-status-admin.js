@@ -106,6 +106,8 @@
   }
 
   function isSessionExpired(config) {
+    if (state.localSession?.state === 'ok' && !state.localSession?.paused) return false;
+    if (state.localBrowser?.browserOpen && state.localBrowser?.sessionLoggedIn) return false;
     return Boolean(config?.sessionLastError || config?.autoCollect?.sessionExpired || config?.autoCollect?.sessionPaused);
   }
 
@@ -572,6 +574,7 @@
     });
     showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장`);
     await loadConfig();
+    await loadAllSubtabData();
   }
 
   async function shutdownLocalServer() {
@@ -702,6 +705,108 @@
     }
   }
 
+  async function loadSubtabData(sourceMenu) {
+    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const result = await adminApi(
+      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}`
+    );
+
+    const summaryMap = {
+      delivery_status: 'baeminDeliveryStatusSummary',
+      daily_history: 'baeminDailyHistorySummary',
+      rider_history: 'baeminRiderHistorySummary'
+    };
+    const rowsMap = {
+      delivery_status: 'baeminDeliveryStatusRows',
+      daily_history: 'baeminDailyHistoryRows',
+      rider_history: 'baeminRiderHistoryRows'
+    };
+
+    const summaryEl = $(summaryMap[sourceMenu]);
+    const rowsEl = $(rowsMap[sourceMenu]);
+    if (!rowsEl) return;
+
+    if (!result.ok) {
+      if (summaryEl) summaryEl.textContent = result.message || '데이터를 불러오지 못했습니다.';
+      rowsEl.innerHTML = '';
+      return;
+    }
+
+    const items = result.items || [];
+    if (summaryEl) {
+      summaryEl.textContent = `${captureDate} · ${formatNumber(items.length)}건`;
+    }
+
+    if (!items.length) {
+      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>';
+      return;
+    }
+
+    if (sourceMenu === 'delivery_status') {
+      rowsEl.innerHTML = items.map(row => {
+        const p = row.parsed_json || {};
+        return `<tr>
+          <td>${row.rider_name || '-'}</td>
+          <td>${row.rider_user_id || '-'}</td>
+          <td>${row.phone_number || '-'}</td>
+          <td>${formatNumber(p.totalComplete || 0)}</td>
+          <td>${formatNumber(p.foodReject || 0)}</td>
+          <td>${formatDateTime(row.collected_at)}</td>
+        </tr>`;
+      }).join('');
+      return;
+    }
+
+    if (sourceMenu === 'daily_history') {
+      rowsEl.innerHTML = items.map(row => {
+        const p = row.parsed_json || {};
+        return `<tr>
+          <td>${p.deliveryDate || row.collect_date || '-'}</td>
+          <td>${row.rider_name || '-'}</td>
+          <td>${row.rider_user_id || '-'}</td>
+          <td>${formatNumber(p.totalComplete || 1)}</td>
+          <td>${formatDateTime(row.collected_at)}</td>
+        </tr>`;
+      }).join('');
+      return;
+    }
+
+    rowsEl.innerHTML = items.map(row => {
+      const p = row.parsed_json || {};
+      const deliveryCount = Number(row.raw_json?.deliveryCount || p.totalComplete || 0);
+      return `<tr>
+        <td>${row.rider_name || '-'}</td>
+        <td>${row.rider_user_id || '-'}</td>
+        <td>${row.phone_number || '-'}</td>
+        <td>${formatNumber(p.totalComplete || deliveryCount || 0)}</td>
+        <td>${formatNumber(deliveryCount || 0)}</td>
+        <td>${formatDateTime(row.collected_at)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function switchBaeminSubtab(tabId) {
+    state.activeSubtab = tabId;
+    document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.baeminSubtab === tabId);
+    });
+    document.querySelectorAll('[data-baemin-panel]').forEach(panel => {
+      const active = panel.dataset.baeminPanel === tabId;
+      panel.hidden = !active;
+    });
+    if (tabId !== 'collect') {
+      void loadSubtabData(tabId);
+    }
+  }
+
+  async function loadAllSubtabData() {
+    await Promise.all([
+      loadSubtabData('delivery_status'),
+      loadSubtabData('daily_history'),
+      loadSubtabData('rider_history')
+    ]);
+  }
+
   async function runAutoCollect() {
     return runFullCollect();
   }
@@ -799,6 +904,15 @@
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
       void loadLatestSummary();
+      if (state.activeSubtab && state.activeSubtab !== 'collect') {
+        void loadSubtabData(state.activeSubtab);
+      }
+    });
+
+    document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        switchBaeminSubtab(btn.dataset.baeminSubtab || 'collect');
+      });
     });
   }
 
@@ -812,6 +926,7 @@
     }
     await loadConfig();
     await loadLatestSummary();
+    await loadAllSubtabData();
 
     state.statusPollTimer = setInterval(async () => {
       await loadConfig();

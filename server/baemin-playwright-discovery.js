@@ -19,7 +19,7 @@ function attachApiDiscovery(context, state) {
   const onRequest = request => {
     try {
       const url = request.url();
-      if (!url.includes('deliverycenter.baemin.com')) return;
+      if (!url.includes('baemin.com')) return;
       state.requests.push({
         method: request.method(),
         url,
@@ -34,7 +34,7 @@ function attachApiDiscovery(context, state) {
   const onResponse = async response => {
     try {
       const url = response.url();
-      if (!url.includes('deliverycenter.baemin.com')) return;
+      if (!url.includes('baemin.com')) return;
       const contentType = String(response.headers()['content-type'] || '').toLowerCase();
       const sourceId = classifyApiUrl(url);
       const entry = {
@@ -58,6 +58,9 @@ function attachApiDiscovery(context, state) {
 
       state.endpoints[sourceId] = {
         apiPath: pathname,
+        apiOrigin: (() => {
+          try { return new URL(url).origin; } catch { return ''; }
+        })(),
         sampleUrl: url,
         discoveredAt: new Date().toISOString(),
         status: response.status()

@@ -2591,6 +2591,21 @@ textarea {
   color: rgba(203, 213, 225, 0.7);
 }
 
+.baemin-subtab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.baemin-subpanel[hidden] {
+  display: none !important;
+}
+
+.baemin-data-table {
+  min-width: 720px;
+}
+
 .baemin-advanced-panel {
   margin-top: 12px;
   padding: 12px 14px;

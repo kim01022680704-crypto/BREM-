@@ -4,6 +4,7 @@ const {
   getCollectSource,
   mapItemToCollectRow,
   buildDefaultQuery,
+  resolveApiEndpoint,
   API_REGISTRY_KEY
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
@@ -65,10 +66,7 @@ async function saveApiRegistry(registry) {
 }
 
 function resolveApiPath(sourceId, registry) {
-  const source = getCollectSource(sourceId);
-  const discovered = registry?.endpoints?.[sourceId];
-  if (discovered?.apiPath) return discovered.apiPath;
-  return source?.apiPath || null;
+  return resolveApiEndpoint(sourceId, registry)?.apiPath || null;
 }
 
 function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceUrl) {
@@ -165,16 +163,17 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
-  const apiPath = resolveApiPath(sourceId, registry);
-  if (!apiPath) {
+  const endpoint = resolveApiEndpoint(sourceId, registry);
+  if (!endpoint?.apiPath) {
     return { ok: false, sourceMenu: sourceId, label: source.label, message: `${source.label} API 경로 없음` };
   }
 
-  console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} apiPath=${apiPath}`);
+  console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} api=${endpoint.apiOrigin}${endpoint.apiPath}`);
 
   const baseQuery = buildDefaultQuery(sourceId, collectDate);
   const fetched = await fetchPaginatedApi({
-    apiPath,
+    apiOrigin: endpoint.apiOrigin,
+    apiPath: endpoint.apiPath,
     sessionCookie,
     baseQuery,
     pagination: source.pagination,
@@ -384,6 +383,41 @@ async function getLatestMenuCollectStatus(collectDate) {
   });
 }
 
+async function getCollectItemsForAdmin(collectDate, sourceMenu) {
+  const supabase = getServiceClient();
+  const date = String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const menu = String(sourceMenu || '').trim();
+
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  let query = supabase
+    .from('baemin_biz_collect_items')
+    .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json')
+    .eq('collect_date', date)
+    .order('rider_name', { ascending: true })
+    .limit(5000);
+
+  if (menu) query = query.eq('source_menu', menu);
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingBizCollectTableError(error)) {
+      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+    }
+    return { ok: false, error: error.message || '조회 실패' };
+  }
+
+  return {
+    ok: true,
+    collectDate: date,
+    sourceMenu: menu,
+    items: data || [],
+    count: (data || []).length
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -391,5 +425,6 @@ module.exports = {
   collectSource,
   runFullCollectPipeline,
   saveCollectRun,
-  getLatestMenuCollectStatus
+  getLatestMenuCollectStatus,
+  getCollectItemsForAdmin
 };

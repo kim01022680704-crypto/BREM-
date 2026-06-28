@@ -512,6 +512,14 @@ async function getConfig(accessToken) {
   };
 }
 
+async function getCollectItems(accessToken, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
+  return getCollectItemsForAdmin(options.collectDate, options.sourceMenu);
+}
+
 module.exports = {
   fetchAllDeliveryStatus,
   collectFromApi,
@@ -519,6 +527,7 @@ module.exports = {
   getConfig,
   getTableStatus,
   getLatestSummary,
+  getCollectItems,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,

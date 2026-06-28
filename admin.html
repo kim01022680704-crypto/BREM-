@@ -622,6 +622,14 @@
       </section>
 
       <section class="section" id="baemin-delivery-status">
+        <div class="baemin-subtab-bar">
+          <button type="button" class="promotion-tab is-active" data-baemin-subtab="collect">수집/설정</button>
+          <button type="button" class="promotion-tab" data-baemin-subtab="delivery_status">배달현황</button>
+          <button type="button" class="promotion-tab" data-baemin-subtab="daily_history">일별 배달내역</button>
+          <button type="button" class="promotion-tab" data-baemin-subtab="rider_history">라이더별 배달내역</button>
+        </div>
+
+        <div class="baemin-subpanel" data-baemin-panel="collect">
         <article class="card" id="baeminDeliveryCollectCard">
           <div class="card-header">
             <h2>배민Biz 배달 현황 수집</h2>
@@ -649,6 +657,81 @@
           </details>
           <div id="baeminDeliveryCollectResult" class="baemin-collect-result" hidden></div>
         </article>
+        </div>
+
+        <div class="baemin-subpanel" data-baemin-panel="delivery_status" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>배달현황</h2>
+              <p class="form-help">수집된 라이더별 배달현황 (완료·거절·시간대)</p>
+            </div>
+            <p class="admin-table-summary" id="baeminDeliveryStatusSummary">데이터 없음</p>
+            <div class="table-scroll">
+              <table class="admin-table baemin-data-table">
+                <thead>
+                  <tr>
+                    <th>라이더</th>
+                    <th>배민ID</th>
+                    <th>연락처</th>
+                    <th>완료</th>
+                    <th>거절</th>
+                    <th>수집 시각</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminDeliveryStatusRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel" data-baemin-panel="daily_history" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>일별 배달내역</h2>
+              <p class="form-help">선택한 날짜의 배달 건별 내역</p>
+            </div>
+            <p class="admin-table-summary" id="baeminDailyHistorySummary">데이터 없음</p>
+            <div class="table-scroll">
+              <table class="admin-table baemin-data-table">
+                <thead>
+                  <tr>
+                    <th>배달일</th>
+                    <th>라이더</th>
+                    <th>배민ID</th>
+                    <th>완료</th>
+                    <th>수집 시각</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminDailyHistoryRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel" data-baemin-panel="rider_history" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>라이더별 배달내역</h2>
+              <p class="form-help">선택한 날짜 기준 라이더별 집계</p>
+            </div>
+            <p class="admin-table-summary" id="baeminRiderHistorySummary">데이터 없음</p>
+            <div class="table-scroll">
+              <table class="admin-table baemin-data-table">
+                <thead>
+                  <tr>
+                    <th>라이더</th>
+                    <th>배민ID</th>
+                    <th>연락처</th>
+                    <th>완료</th>
+                    <th>배달건수</th>
+                    <th>수집 시각</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminRiderHistoryRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
 
         <dialog class="baemin-json-dialog" id="baeminDeliverySessionDialog">
           <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
@@ -4650,7 +4733,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260629a"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260629c"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

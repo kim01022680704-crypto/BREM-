@@ -123,6 +123,7 @@ async function fetchBaeminJson(url, sessionCookie, logContext = null) {
 }
 
 async function fetchPaginatedApi({
+  apiOrigin,
   apiPath,
   sessionCookie,
   baseQuery = {},
@@ -131,6 +132,8 @@ async function fetchPaginatedApi({
   logContext = null,
   playwrightContext = null
 }) {
+  const { BAEMIN_API_ORIGIN, BAEMIN_ORIGIN } = require('./baemin-collect-sources');
+  const origin = String(apiOrigin || BAEMIN_API_ORIGIN || BAEMIN_ORIGIN).replace(/\/$/, '');
   const cookie = String(sessionCookie || '').trim();
   if (!cookie && !playwrightContext) {
     return {
@@ -158,7 +161,7 @@ async function fetchPaginatedApi({
     });
     params.set('page', String(page));
     params.set('size', String(size));
-    lastUrl = `${BAEMIN_ORIGIN}${apiPath}?${params.toString()}`;
+    lastUrl = `${origin}${apiPath}?${params.toString()}`;
 
     console.log(`${logPrefix} GET ${lastUrl}${playwrightContext ? ' (playwright)' : ''}`);
     const result = playwrightContext
