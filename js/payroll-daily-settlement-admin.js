@@ -244,6 +244,50 @@
     return item?.region || '';
   }
 
+  function readRegions() {
+    if (window.BremStorage?.payrollDailySettlement?.getRegions) {
+      return window.BremStorage.payrollDailySettlement.getRegions();
+    }
+    const seen = new Set();
+    readAll().forEach(item => {
+      const region = String(item.region || '').trim();
+      if (region) seen.add(region);
+    });
+    return [...seen].sort((a, b) => a.localeCompare(b, 'ko'));
+  }
+
+  function readRegionOptions() {
+    if (window.BremStorage?.payrollDailySettlement?.getRegionOptions) {
+      return window.BremStorage.payrollDailySettlement.getRegionOptions();
+    }
+    return readRegions();
+  }
+
+  async function addRegion(name) {
+    if (window.BremStorage?.payrollDailySettlement?.addRegion) {
+      return window.BremStorage.payrollDailySettlement.addRegion(name);
+    }
+    return readRegions();
+  }
+
+  async function removeRegion(name) {
+    if (window.BremStorage?.payrollDailySettlement?.removeRegion) {
+      return window.BremStorage.payrollDailySettlement.removeRegion(name);
+    }
+    return readRegions();
+  }
+
+  function getByRegion(regionName) {
+    if (window.BremStorage?.payrollDailySettlement?.getByRegion) {
+      return window.BremStorage.payrollDailySettlement.getByRegion(regionName);
+    }
+    const region = String(regionName || '').trim();
+    const list = readAll();
+    if (!region || region === '__all__') return list;
+    if (region === '__unset__') return list.filter(item => !String(item.region || '').trim());
+    return list.filter(item => String(item.region || '').trim() === region);
+  }
+
   function templateRows() {
     return [
       ['A 배민아이디', 'B 쿠팡아이디', 'C 전화번호(참고)', 'D 지역(참고)'],
@@ -270,6 +314,11 @@
     commitSaveAll,
     getEnrolledDriverIdSet,
     getRegionByDriverId,
+    readRegions,
+    readRegionOptions,
+    addRegion,
+    removeRegion,
+    getByRegion,
     templateRows,
     resolveDriverPlatformId
   });

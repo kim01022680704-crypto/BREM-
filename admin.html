@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260703c">
+  <link rel="stylesheet" href="css/admin.css?v=20260704b">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4278,6 +4278,63 @@
       </section>
 
       <section class="section" id="payroll-daily-settlement">
+        <article class="card payroll-daily-region-card">
+          <div class="card-header">
+            <div>
+              <h2>지역 관리</h2>
+              <p class="form-help">정산 시 선택할 지역 목록입니다. 등록 기사 지역은 아래 선택식으로 변경합니다.</p>
+            </div>
+          </div>
+          <div class="payroll-toolbar payroll-daily-region-toolbar">
+            <label class="payroll-field">
+              <span>새 지역</span>
+              <input type="text" id="payrollDailySettlementRegionNew" placeholder="예: 강남, 서초, 송파">
+            </label>
+            <button type="button" class="primary-btn" id="payrollDailySettlementRegionAddBtn">지역 추가</button>
+          </div>
+          <div class="payroll-daily-region-tags" id="payrollDailySettlementRegionTags"></div>
+        </article>
+
+        <article class="card payroll-daily-region-settle-card">
+          <div class="card-header">
+            <div>
+              <h2>지역별 정산 보기</h2>
+              <p class="form-help" id="payrollDailySettlementRegionSummary">지역을 선택하면 해당 기사 목록을 확인할 수 있습니다.</p>
+            </div>
+            <button type="button" class="small-btn" id="payrollDailySettlementRegionDetailBtn" hidden>상세보기</button>
+          </div>
+          <div class="payroll-toolbar">
+            <label class="payroll-field">
+              <span>정산 지역</span>
+              <select id="payrollDailySettlementRegionPicker">
+                <option value="">지역 선택</option>
+              </select>
+            </label>
+          </div>
+          <div class="payroll-daily-region-chips" id="payrollDailySettlementRegionQuickPick"></div>
+          <div class="payroll-daily-region-detail" id="payrollDailySettlementRegionDetail" hidden>
+            <div class="payroll-daily-region-detail-head">
+              <strong id="payrollDailySettlementRegionDetailTitle">지역 상세</strong>
+              <span class="form-help" id="payrollDailySettlementRegionDetailCount"></span>
+            </div>
+            <div class="table-wrap payroll-daily-region-detail-table">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>번호</th>
+                    <th>기사명</th>
+                    <th>배민ID</th>
+                    <th>쿠팡ID</th>
+                    <th>전화</th>
+                    <th>지역</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailySettlementRegionDetailBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
         <article class="card">
           <div class="card-header">
             <div>
@@ -4286,7 +4343,6 @@
             </div>
             <div class="payroll-action-group">
               <button type="button" class="small-btn" id="payrollDailySettlementBulkTemplateBtn">일괄등록 양식</button>
-              <button type="button" class="small-btn" id="payrollDailySettlementDeleteSelectedBtn">선택 삭제</button>
             </div>
           </div>
           <div class="payroll-toolbar">
@@ -4296,7 +4352,7 @@
             </label>
             <button type="button" class="primary-btn" id="payrollDailySettlementBulkApplyBtn">일괄등록 적용</button>
           </div>
-          <p class="form-help">A=배민ID · B=쿠팡ID (둘 중 하나 필수) · C=전화(참고) · D=지역(참고·수정 가능)</p>
+          <p class="form-help">A=배민ID · B=쿠팡ID (둘 중 하나 필수) · C=전화(참고) · D=지역(참고·선택 목록과 매칭)</p>
           <div class="table-wrap" id="payrollDailySettlementBulkPreview" hidden>
             <table class="data-table">
               <thead>
@@ -4308,17 +4364,24 @@
             </table>
           </div>
         </article>
+
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>기사 일정산 등록</h2>
-              <p class="form-help">기사 목록에서 일정산 등록/해제 · 검색 후 선택</p>
+              <h2>라이더 검색 · 등록</h2>
+              <p class="form-help">이름·ID·전화 검색 후 일정산 등록 · 등록 시 지역 선택 가능</p>
             </div>
           </div>
           <div class="payroll-toolbar">
             <label class="payroll-field payroll-search-field">
-              <span>기사 검색</span>
+              <span>라이더 검색</span>
               <input type="search" id="payrollDailySettlementDriverSearch" placeholder="이름, 배민ID, 쿠팡ID, 전화">
+            </label>
+            <label class="payroll-field">
+              <span>등록 지역</span>
+              <select id="payrollDailySettlementEnrollRegion">
+                <option value="">미지정</option>
+              </select>
             </label>
           </div>
           <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-driver-list">
@@ -4337,12 +4400,29 @@
             </table>
           </div>
         </article>
+
         <article class="card">
           <div class="card-header">
             <div>
               <h2>일정산 등록 기사</h2>
               <p class="form-help" id="payrollDailySettlementCount">0명 등록</p>
             </div>
+            <div class="payroll-action-group">
+              <button type="button" class="small-btn danger-btn" id="payrollDailySettlementDeleteSelectedBtn">선택 삭제</button>
+            </div>
+          </div>
+          <div class="payroll-toolbar payroll-daily-roster-toolbar">
+            <label class="payroll-field payroll-search-field">
+              <span>등록 기사 검색</span>
+              <input type="search" id="payrollDailySettlementRosterSearch" placeholder="이름, ID, 전화, 지역">
+            </label>
+            <label class="payroll-field">
+              <span>선택 지역 변경</span>
+              <select id="payrollDailySettlementBulkRegion">
+                <option value="">지역 선택</option>
+              </select>
+            </label>
+            <button type="button" class="small-btn" id="payrollDailySettlementApplyBulkRegionBtn">선택 적용</button>
           </div>
           <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-roster-list">
             <table class="data-table">
@@ -4361,6 +4441,7 @@
               <tbody id="payrollDailySettlementBody"></tbody>
             </table>
           </div>
+          <p class="form-help payroll-daily-selected-hint" id="payrollDailySettlementSelectedHint">선택 0명</p>
         </article>
       </section>
 
@@ -4539,8 +4620,8 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260704a"></script>
-  <script src="js/storage.js?v=20260704a"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260704b"></script>
+  <script src="js/storage.js?v=20260704b"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260630n"></script>
@@ -4572,10 +4653,10 @@
   <script src="js/payroll-slip-utils.js?v=20260701d"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
-  <script src="js/payroll-daily-settlement-admin.js?v=20260704a"></script>
+  <script src="js/payroll-daily-settlement-admin.js?v=20260704b"></script>
   <script src="js/admin-payroll-slips.js?v=20260703c"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260704a"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260704b"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>

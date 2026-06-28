@@ -48,6 +48,7 @@ const BremStorage = (function () {
     leaseDashboardWeekBasis: 'brem_lease_dashboard_week_basis',
     leaseVehicleModelTypes: 'brem_lease_vehicle_model_types',
     payrollDailySettlementRoster: 'brem_payroll_daily_settlement_roster_v1',
+    payrollDailySettlementRegions: 'brem_payroll_daily_settlement_regions_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -1381,8 +1382,8 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
-    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.drivers, KEYS.calls],
-    'payroll-daily-settlement': [KEYS.payrollDailySettlementRoster, KEYS.drivers],
+    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
+    'payroll-daily-settlement': [KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers],
     'lease-management': [
       KEYS.leaseVehicles,
       KEYS.leasePayments,
@@ -1643,6 +1644,8 @@ const BremStorage = (function () {
       && !isPayrollLocalStorageMode()
     ) {
       tasks.push(payrollDailySettlement.reloadFromServer());
+    } else if (sectionKeys.includes(KEYS.payrollDailySettlementRegions)) {
+      tasks.push(Promise.resolve(payrollDailySettlement.getRegions()));
     }
 
     if (tasks.length) {
@@ -6285,14 +6288,110 @@ const BremStorage = (function () {
         return payrollDailySettlement.getAll();
       }
       try {
-        const value = await activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster);
-        const normalized = payrollDailySettlement.normalizeList(value || []);
+        const [rosterValue, regionsValue] = await Promise.all([
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster),
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRegions)
+        ]);
+        const normalized = payrollDailySettlement.normalizeList(rosterValue || []);
+        const regions = payrollDailySettlement.normalizeRegions(regionsValue || []);
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'server' });
+        window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, regions, { source: 'server' });
         return normalized;
       } catch (error) {
-        console.warn('[BREM] payroll daily settlement roster reload failed:', error);
+        console.warn('[BREM] payroll daily settlement reload failed:', error);
         return payrollDailySettlement.getAll();
       }
+    },
+
+    normalizeRegions(list) {
+      if (!Array.isArray(list)) return [];
+      const seen = new Set();
+      return list
+        .map(item => String(item || '').trim())
+        .filter(text => {
+          if (!text || seen.has(text)) return false;
+          seen.add(text);
+          return true;
+        })
+        .sort((a, b) => a.localeCompare(b, 'ko'));
+    },
+
+    getRegions() {
+      const raw = storageAdapter.read(KEYS.payrollDailySettlementRegions, []);
+      return payrollDailySettlement.normalizeRegions(raw);
+    },
+
+    getRegionOptions() {
+      const catalog = payrollDailySettlement.getRegions();
+      const catalogSet = new Set(catalog);
+      const extras = new Set();
+      payrollDailySettlement.getAll().forEach(item => {
+        const region = String(item.region || '').trim();
+        if (region && !catalogSet.has(region)) extras.add(region);
+      });
+      return [...catalog, ...[...extras].sort((a, b) => a.localeCompare(b, 'ko'))];
+    },
+
+    saveRegions(list) {
+      const normalized = payrollDailySettlement.normalizeRegions(list);
+      storageAdapter.write(KEYS.payrollDailySettlementRegions, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, normalized, { source: 'write' });
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        flushActiveStorage().catch(error => {
+          console.warn('[BREM] payroll daily settlement regions persist failed:', error);
+        });
+      }
+      return normalized;
+    },
+
+    async persistRegions(list) {
+      const normalized = payrollDailySettlement.normalizeRegions(list);
+      storageAdapter.write(KEYS.payrollDailySettlementRegions, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, normalized, { source: 'write' });
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return normalized;
+    },
+
+    async addRegion(name) {
+      const text = String(name || '').trim();
+      if (!text) return payrollDailySettlement.getRegions();
+      const list = payrollDailySettlement.getRegions();
+      if (!list.includes(text)) list.push(text);
+      list.sort((a, b) => a.localeCompare(b, 'ko'));
+      return payrollDailySettlement.persistRegions(list);
+    },
+
+    async removeRegion(name) {
+      const text = String(name || '').trim();
+      if (!text) return payrollDailySettlement.getRegions();
+      const list = payrollDailySettlement.getRegions().filter(item => item !== text);
+      await payrollDailySettlement.persistRegions(list);
+      const roster = payrollDailySettlement.getAll().map(item => (
+        item.region === text ? { ...item, region: '', updatedAt: new Date().toISOString() } : item
+      ));
+      await payrollDailySettlement.persistAll(roster);
+      return list;
+    },
+
+    getByRegion(regionName) {
+      const region = String(regionName || '').trim();
+      const list = payrollDailySettlement.getAll();
+      if (!region || region === '__all__') return list;
+      if (region === '__unset__') {
+        return list.filter(item => !String(item.region || '').trim());
+      }
+      return list.filter(item => String(item.region || '').trim() === region);
+    },
+
+    countByRegion() {
+      const counts = new Map();
+      payrollDailySettlement.getAll().forEach(item => {
+        const key = String(item.region || '').trim() || '__unset__';
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      return counts;
     },
 
     async persistAll(list) {
@@ -10426,7 +10525,8 @@ const BremStorage = (function () {
         KEYS.manualNameMappings,
         KEYS.settlementUnmatched,
         KEYS.settlements,
-        KEYS.payrollDailySettlementRoster
+        KEYS.payrollDailySettlementRoster,
+        KEYS.payrollDailySettlementRegions
       ])
     })
   });

@@ -220,6 +220,7 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.leaseDashboardWeekBasis,
         keys.leaseVehicleModelTypes,
         keys.payrollDailySettlementRoster,
+        keys.payrollDailySettlementRegions,
         keys.preservedUnknown,
         keys.adminAccounts,
         keys.adminCredentials,

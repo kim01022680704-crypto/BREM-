@@ -7562,6 +7562,113 @@ textarea {
   background: rgba(34, 197, 94, 0.06);
 }
 
+.payroll-daily-settlement-roster-list tr.is-selected {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.payroll-daily-region-toolbar {
+  margin-bottom: 12px;
+}
+
+.payroll-daily-region-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.payroll-daily-region-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  font-size: 0.84rem;
+}
+
+.payroll-daily-region-tag em {
+  font-style: normal;
+  opacity: 0.75;
+  font-size: 0.78rem;
+}
+
+.payroll-daily-region-tag-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.payroll-daily-region-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.payroll-daily-region-chip {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.84rem;
+}
+
+.payroll-daily-region-chip span {
+  margin-left: 6px;
+  font-weight: 700;
+  color: #93c5fd;
+}
+
+.payroll-daily-region-chip.is-active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.payroll-daily-region-detail {
+  margin-top: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.payroll-daily-region-detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.payroll-daily-region-detail-table {
+  max-height: min(70vh, 640px);
+  overflow: auto;
+}
+
+.payroll-daily-region-detail-table .data-table td strong {
+  font-size: 0.95rem;
+}
+
+.payroll-region-select,
+.payroll-daily-roster-toolbar select,
+#payrollDailySettlementRegionPicker,
+#payrollDailySettlementEnrollRegion,
+#payrollDailySettlementBulkRegion {
+  min-width: 140px;
+}
+
+.payroll-daily-selected-hint {
+  margin-top: 8px;
+}
+
 .payroll-preview-toolbar-label {
   color: var(--yellow);
   font-size: 0.88rem;
