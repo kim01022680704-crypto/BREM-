@@ -7,6 +7,7 @@
     bulkPreview: [],
     driverSearchKeyword: '',
     rosterSearchKeyword: '',
+    rosterRegionFilter: '',
     settleRegion: '',
     regionDetailOpen: false
   };
@@ -86,9 +87,24 @@
     }
 
     if (bulkSelect) {
-      const prev = bulkSelect.value;
-      bulkSelect.innerHTML = `<option value="">지역 선택</option>${regions.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('')}`;
-      if (prev && [...bulkSelect.options].some(opt => opt.value === prev)) bulkSelect.value = prev;
+      const prev = bulkSelect.value || state.rosterRegionFilter;
+      const counts = countRidersByRegion();
+      const allCount = roster.readAll().length;
+      const regionRows = getRegions().map(region => {
+        const count = counts.get(region) || 0;
+        return `<option value="${escapeHtml(region)}">${escapeHtml(region)} (${count}명)</option>`;
+      }).join('');
+      const unsetCount = counts.get('__unset__') || 0;
+      bulkSelect.innerHTML = [
+        `<option value="">전체 (${allCount}명)</option>`,
+        `<option value="__unset__">미지정 (${unsetCount}명)</option>`,
+        regionRows
+      ].join('');
+      if (prev !== undefined && [...bulkSelect.options].some(opt => opt.value === prev)) {
+        bulkSelect.value = prev;
+      } else {
+        bulkSelect.value = state.rosterRegionFilter || '';
+      }
     }
 
     if (picker) {
@@ -136,9 +152,17 @@
   }
 
   function filterRoster(list) {
+    let filtered = list;
+    const regionFilter = String(state.rosterRegionFilter || '').trim();
+    if (regionFilter === '__unset__') {
+      filtered = filtered.filter(item => !String(item.region || '').trim());
+    } else if (regionFilter) {
+      filtered = filtered.filter(item => String(item.region || '').trim() === regionFilter);
+    }
+
     const keyword = String(state.rosterSearchKeyword || '').trim().toLowerCase();
-    if (!keyword) return list;
-    return list.filter(item => {
+    if (!keyword) return filtered;
+    return filtered.filter(item => {
       const haystack = [
         item.driverName,
         item.baeminId,
@@ -243,14 +267,6 @@
     return { ok: true, platformBaemin: baemin, platformCoupang: coupang };
   }
 
-  function readBulkPlatforms() {
-    const baemin = $('payrollDailySettlementBulkBaemin')?.checked !== false;
-    const coupang = $('payrollDailySettlementBulkCoupang')?.checked !== false;
-    if (!baemin && !coupang) {
-      return { ok: false, error: '배민 또는 쿠팡 중 하나는 선택해야 합니다.' };
-    }
-    return { ok: true, platformBaemin: baemin, platformCoupang: coupang };
-  }
 
   function stampExportFilename(prefix) {
     const date = new Date().toISOString().slice(0, 10);
@@ -365,7 +381,18 @@
     if (countEl) countEl.textContent = `${all.length}명 등록 · 표시 ${list.length}명`;
 
     if (!list.length) {
-      body.innerHTML = `<tr><td colspan="9" class="empty">${all.length ? '검색 결과가 없습니다.' : '일정산 등록 기사가 없습니다. 라이더 검색에서 등록하거나 일괄등록을 사용하세요.'}</td></tr>`;
+      let emptyMessage = '일정산 등록 기사가 없습니다. 라이더 검색에서 등록하거나 일괄등록을 사용하세요.';
+      if (all.length) {
+        const regionFilter = String(state.rosterRegionFilter || '').trim();
+        if (regionFilter) {
+          emptyMessage = `${regionLabel(regionFilter)} 지역에 등록된 기사가 없습니다.`;
+        } else if (state.rosterSearchKeyword) {
+          emptyMessage = '검색 결과가 없습니다.';
+        } else {
+          emptyMessage = '표시할 기사가 없습니다.';
+        }
+      }
+      body.innerHTML = `<tr><td colspan="9" class="empty">${emptyMessage}</td></tr>`;
       updateSelectedHint();
       renderDriverPicker();
       renderRegionSettleView();
@@ -585,15 +612,16 @@
   }
 
   function applyBulkRegionChange() {
-    const region = String($('payrollDailySettlementBulkRegion')?.value || '').trim();
+    const rawRegion = String($('payrollDailySettlementBulkRegion')?.value || '').trim();
     if (!state.selectedIds.size) {
       showToast('지역을 변경할 기사를 선택하세요.');
       return;
     }
-    if (!region) {
+    if (!rawRegion) {
       showToast('적용할 지역을 선택하세요.');
       return;
     }
+    const region = rawRegion === '__unset__' ? '' : rawRegion;
     void (async () => {
       try {
         const selected = new Set(state.selectedIds);
@@ -607,7 +635,7 @@
         });
         await roster.commitSaveAll(list);
         refreshAll();
-        showToast(`선택 ${selected.size}명 → ${region} 지역 적용`);
+        showToast(`선택 ${selected.size}명 → ${regionLabel(rawRegion)} 적용`);
       } catch (error) {
         console.error('[daily settlement bulk region]', error);
         showToast(error.message || '지역 일괄 변경에 실패했습니다.');
@@ -663,38 +691,6 @@
     renderRegionSettleView();
   }
 
-  function applyBulkPlatformChange() {
-    const platforms = readBulkPlatforms();
-    if (!platforms.ok) {
-      showToast(platforms.error);
-      return;
-    }
-    if (!state.selectedIds.size) {
-      showToast('플랫폼을 변경할 기사를 선택하세요.');
-      return;
-    }
-    void (async () => {
-      try {
-        const selected = new Set(state.selectedIds);
-        const list = roster.readAll().map(item => {
-          if (!selected.has(item.id)) return item;
-          return {
-            ...item,
-            platformBaemin: platforms.platformBaemin,
-            platformCoupang: platforms.platformCoupang,
-            updatedAt: new Date().toISOString()
-          };
-        });
-        await roster.commitSaveAll(list);
-        refreshAll();
-        showToast(`선택 ${selected.size}명 · ${platformLabel(platforms)} 적용`);
-      } catch (error) {
-        console.error('[daily settlement bulk platform]', error);
-        showToast(error.message || '플랫폼 일괄 변경에 실패했습니다.');
-      }
-    })();
-  }
-
   function exportAllRoster() {
     exportRows(roster.readAll(), stampExportFilename('전체'), '전체');
   }
@@ -741,7 +737,6 @@
     $('payrollDailySettlementBulkTemplateBtn')?.addEventListener('click', downloadTemplate);
     $('payrollDailySettlementDeleteSelectedBtn')?.addEventListener('click', deleteSelected);
     $('payrollDailySettlementApplyBulkRegionBtn')?.addEventListener('click', applyBulkRegionChange);
-    $('payrollDailySettlementApplyBulkPlatformBtn')?.addEventListener('click', applyBulkPlatformChange);
     $('payrollDailySettlementExportAllBtn')?.addEventListener('click', exportAllRoster);
     $('payrollDailySettlementExportSelectedBtn')?.addEventListener('click', exportSelectedRoster);
     $('payrollDailySettlementExportRegionBtn')?.addEventListener('click', exportCurrentRegion);
@@ -760,6 +755,11 @@
 
     $('payrollDailySettlementRosterSearch')?.addEventListener('input', event => {
       state.rosterSearchKeyword = String(event.target.value || '').trim();
+      renderRoster();
+    });
+
+    $('payrollDailySettlementBulkRegion')?.addEventListener('change', event => {
+      state.rosterRegionFilter = String(event.target.value || '').trim();
       renderRoster();
     });
 

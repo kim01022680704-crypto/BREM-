@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260704d">
+  <link rel="stylesheet" href="css/admin.css?v=20260704e">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4374,12 +4374,12 @@
               <p class="form-help">이름·ID·전화 검색 후 일정산 등록 · 등록 시 지역 선택 가능</p>
             </div>
           </div>
-          <div class="payroll-toolbar">
-            <label class="payroll-field payroll-search-field">
+          <div class="payroll-toolbar payroll-daily-enroll-toolbar">
+            <label class="payroll-daily-inline-field">
               <span>라이더 검색</span>
               <input type="search" id="payrollDailySettlementDriverSearch" placeholder="이름, 배민ID, 쿠팡ID, 전화">
             </label>
-            <label class="payroll-field">
+            <label class="payroll-daily-inline-field">
               <span>등록 지역</span>
               <select id="payrollDailySettlementEnrollRegion">
                 <option value="">미지정</option>
@@ -4421,27 +4421,17 @@
             </div>
           </div>
           <div class="payroll-daily-roster-filters">
-            <label class="payroll-field payroll-search-field">
-              <span>등록 기사 검색</span>
+            <label class="payroll-daily-inline-field payroll-daily-roster-search">
+              <span>검색</span>
               <input type="search" id="payrollDailySettlementRosterSearch" placeholder="이름, ID, 전화, 지역">
             </label>
-            <div class="payroll-daily-bulk-bar">
-              <div class="payroll-daily-bulk-group">
-                <span class="payroll-daily-bulk-label">선택 기사 · 지역</span>
-                <select id="payrollDailySettlementBulkRegion">
-                  <option value="">지역 선택</option>
-                </select>
-                <button type="button" class="small-btn" id="payrollDailySettlementApplyBulkRegionBtn">지역 적용</button>
-              </div>
-              <div class="payroll-daily-bulk-group">
-                <span class="payroll-daily-bulk-label">선택 기사 · 플랫폼</span>
-                <div class="payroll-daily-platform-checks">
-                  <label class="payroll-daily-platform-check"><input type="checkbox" id="payrollDailySettlementBulkBaemin" checked> 배민</label>
-                  <label class="payroll-daily-platform-check"><input type="checkbox" id="payrollDailySettlementBulkCoupang" checked> 쿠팡</label>
-                </div>
-                <button type="button" class="small-btn" id="payrollDailySettlementApplyBulkPlatformBtn">플랫폼 적용</button>
-              </div>
-            </div>
+            <label class="payroll-daily-inline-field">
+              <span>지역</span>
+              <select id="payrollDailySettlementBulkRegion">
+                <option value="">전체</option>
+              </select>
+            </label>
+            <button type="button" class="small-btn" id="payrollDailySettlementApplyBulkRegionBtn">적용</button>
           </div>
           <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-roster-list">
             <table class="data-table">
@@ -4676,7 +4666,7 @@
   <script src="js/payroll-daily-settlement-admin.js?v=20260704c"></script>
   <script src="js/admin-payroll-slips.js?v=20260703c"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260704d"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260704e"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>
   <script src="js/admin-missions.js?v=20260622p"></script>
   <script src="js/table-sort.js"></script>
