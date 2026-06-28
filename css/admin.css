@@ -7658,7 +7658,7 @@ textarea {
 }
 
 .payroll-region-select,
-.payroll-daily-roster-toolbar select,
+.payroll-daily-bulk-group select,
 #payrollDailySettlementRegionPicker,
 #payrollDailySettlementEnrollRegion,
 #payrollDailySettlementBulkRegion {
@@ -7669,37 +7669,111 @@ textarea {
   margin-top: 8px;
 }
 
+.payroll-daily-roster-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.payroll-daily-roster-filters .payroll-search-field {
+  width: 100%;
+  max-width: none;
+}
+
+.payroll-daily-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.payroll-daily-bulk-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.payroll-daily-bulk-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--yellow, #facc15);
+  white-space: nowrap;
+}
+
+.payroll-daily-bulk-group select {
+  min-width: 132px;
+}
+
 .payroll-daily-platform-checks {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-wrap: nowrap;
+  gap: 12px;
 }
 
 .payroll-daily-platform-label {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
 }
 
 .payroll-daily-platform-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 0.84rem;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
 }
 
 .payroll-daily-platform-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 92px;
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 128px;
+  white-space: nowrap;
 }
 
-.payroll-daily-bulk-platform {
-  margin-left: auto;
+.payroll-daily-platform-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.payroll-daily-platform-pill:has(input:checked) {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.16);
+  color: #bfdbfe;
+}
+
+.payroll-daily-platform-pill input {
+  margin: 0;
+}
+
+.payroll-daily-settlement-roster-list .data-table th:nth-child(6),
+.payroll-daily-settlement-roster-list .data-table td:nth-child(6) {
+  min-width: 132px;
+  white-space: nowrap;
 }
 
 .payroll-preview-toolbar-label {
@@ -8043,6 +8117,15 @@ tr.is-selected {
   .payroll-action-group,
   .payroll-toolbar .bulk-actions {
     margin-left: 0;
+    width: 100%;
+  }
+
+  .payroll-daily-bulk-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .payroll-daily-bulk-group {
     width: 100%;
   }
 }

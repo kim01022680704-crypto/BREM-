@@ -222,11 +222,13 @@
     const id = escapeHtml(idAttr);
     return `
       <div class="payroll-daily-platform-cell">
-        <label class="payroll-daily-platform-check">
-          <input type="checkbox" data-pds-platform-baemin="${id}" ${platforms.platformBaemin ? 'checked' : ''}> 배민
+        <label class="payroll-daily-platform-pill">
+          <input type="checkbox" data-pds-platform-baemin="${id}" ${platforms.platformBaemin ? 'checked' : ''}>
+          <span>배민</span>
         </label>
-        <label class="payroll-daily-platform-check">
-          <input type="checkbox" data-pds-platform-coupang="${id}" ${platforms.platformCoupang ? 'checked' : ''}> 쿠팡
+        <label class="payroll-daily-platform-pill">
+          <input type="checkbox" data-pds-platform-coupang="${id}" ${platforms.platformCoupang ? 'checked' : ''}>
+          <span>쿠팡</span>
         </label>
       </div>
     `;
