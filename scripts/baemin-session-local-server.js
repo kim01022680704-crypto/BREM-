@@ -13,8 +13,12 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260620e';
+const SERVER_VERSION = '20260628a';
 const SCRIPT_PATH = __filename;
+const SCHEDULER_TICK_MS = 30 * 1000;
+const HEARTBEAT_MS = 30 * 1000;
+
+const baeminAutoCollect = require('../server/baemin-auto-collect');
 
 let activeJob = null;
 let activeContext = null;
@@ -22,6 +26,17 @@ let activeRunToken = 0;
 let refreshLoopRunning = false;
 /** ERP 재요청 시 최신 setup 토큰으로 저장 (브라우저는 닫지 않음) */
 let activeSetup = { setupId: '', setupSecret: '', apiBase: 'https://brem.kr' };
+
+let sessionPaused = false;
+let lastRunSlotKey = null;
+let collectRunning = false;
+let autoCollectRuntime = {
+  lastRunAt: null,
+  lastStatus: null,
+  lastError: null,
+  nextScheduledAt: null,
+  schedule: baeminAutoCollect.DEFAULT_SCHEDULE
+};
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -257,6 +272,13 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
     throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
   }
   console.log(`[BREM] [Supabase 저장] API 응답 성공 | ${payload.message || 'ok'}`);
+  try {
+    await baeminAutoCollect.clearSessionPause();
+    sessionPaused = false;
+    console.log('[BREM] [자동수집] 세션 갱신 완료 — 자동 수집 재개');
+  } catch (error) {
+    console.warn('[BREM] [자동수집] 세션 pause 해제 실패:', error.message);
+  }
   return payload;
 }
 
@@ -357,6 +379,106 @@ async function saveSessionAndComplete({
   await closeContextSafely(context);
   refreshLoopRunning = false;
   return true;
+}
+
+function getAutoCollectHealthPayload() {
+  return {
+    enabled: true,
+    sessionPaused,
+    collectRunning,
+    schedule: autoCollectRuntime.schedule,
+    lastRunAt: autoCollectRuntime.lastRunAt,
+    lastStatus: autoCollectRuntime.lastStatus,
+    lastError: autoCollectRuntime.lastError,
+    nextScheduledAt: autoCollectRuntime.nextScheduledAt,
+    lastRunSlotKey
+  };
+}
+
+async function runScheduledCollect(trigger = 'schedule') {
+  if (collectRunning || isJobRunning()) return null;
+  collectRunning = true;
+  console.log(`[BREM] [자동수집] 시작 (${trigger})`);
+
+  try {
+    const result = await baeminAutoCollect.runAutoCollectJob({ source: 'local_scheduler' });
+    autoCollectRuntime = {
+      ...autoCollectRuntime,
+      lastRunAt: result.record?.lastRunAt || new Date().toISOString(),
+      lastStatus: result.ok ? 'success' : 'failed',
+      lastError: result.ok ? '' : (result.message || result.record?.lastError || '자동 수집 실패'),
+      nextScheduledAt: result.record?.nextScheduledAt || baeminAutoCollect.computeNextScheduledAt(autoCollectRuntime.schedule)
+    };
+
+    if (result.sessionExpired) {
+      sessionPaused = true;
+      console.warn('[BREM] [자동수집] 세션 만료 — 배민 세션 갱신 필요 (재시도 중단)');
+    } else if (result.ok) {
+      sessionPaused = false;
+      console.log(`[BREM] [자동수집] 완료 | ${result.savedCount}명 | 완료건 ${result.totalCompleteSum}`);
+    } else {
+      console.warn(`[BREM] [자동수집] 실패 | ${autoCollectRuntime.lastError}`);
+    }
+
+    return result;
+  } catch (error) {
+    autoCollectRuntime = {
+      ...autoCollectRuntime,
+      lastRunAt: new Date().toISOString(),
+      lastStatus: 'failed',
+      lastError: error.message || '자동 수집 오류'
+    };
+    console.error('[BREM] [자동수집] 오류', error);
+    return null;
+  } finally {
+    collectRunning = false;
+  }
+}
+
+async function tickScheduler() {
+  if (sessionPaused || collectRunning || isJobRunning()) return;
+
+  const slotKey = baeminAutoCollect.getCurrentKSTSlot(autoCollectRuntime.schedule);
+  if (!slotKey || slotKey === lastRunSlotKey) return;
+
+  lastRunSlotKey = slotKey;
+  await runScheduledCollect('schedule');
+}
+
+async function heartbeat() {
+  try {
+    const nextScheduledAt = baeminAutoCollect.computeNextScheduledAt(autoCollectRuntime.schedule);
+    autoCollectRuntime.nextScheduledAt = nextScheduledAt;
+    await baeminAutoCollect.touchLocalServerHeartbeat({
+      schedule: autoCollectRuntime.schedule,
+      nextScheduledAt
+    });
+
+    if (sessionPaused) {
+      const session = await baeminAutoCollect.getAutoCollectRecord();
+      if (!session.sessionPaused && !session.lastError) {
+        sessionPaused = false;
+        console.log('[BREM] [자동수집] 세션 pause 해제됨');
+      }
+    }
+  } catch (error) {
+    console.warn('[BREM] [heartbeat] 실패:', error.message);
+  }
+}
+
+function startAutoCollectScheduler() {
+  const scheduleText = autoCollectRuntime.schedule.join(', ');
+  console.log(`[BREM] [자동수집] 스케줄 활성 | KST ${scheduleText}`);
+  console.log('[BREM] [자동수집] PC에서 npm run baemin:session-server 실행 중일 때만 동작합니다.');
+
+  autoCollectRuntime.nextScheduledAt = baeminAutoCollect.computeNextScheduledAt(autoCollectRuntime.schedule);
+  void heartbeat();
+  setInterval(() => {
+    void heartbeat();
+  }, HEARTBEAT_MS);
+  setInterval(() => {
+    void tickScheduler();
+  }, SCHEDULER_TICK_MS);
 }
 
 async function runSessionRefresh() {
@@ -567,7 +689,35 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
 
   if (url.pathname === '/health') {
-    return sendJson(res, 200, { ok: true, port: PORT, version: SERVER_VERSION, jobRunning: isJobRunning() });
+    return sendJson(res, 200, {
+      ok: true,
+      port: PORT,
+      version: SERVER_VERSION,
+      jobRunning: isJobRunning(),
+      autoCollect: getAutoCollectHealthPayload()
+    });
+  }
+
+  if (url.pathname === '/auto-collect/run' && req.method === 'POST') {
+    if (sessionPaused) {
+      return sendJson(res, 409, {
+        ok: false,
+        message: '세션 만료 — 배민 세션 갱신 필요',
+        autoCollect: getAutoCollectHealthPayload()
+      });
+    }
+    void runScheduledCollect('manual').then(result => {
+      if (!result) return;
+    });
+    return sendJson(res, 202, {
+      ok: true,
+      message: '자동 수집을 시작했습니다.',
+      autoCollect: getAutoCollectHealthPayload()
+    });
+  }
+
+  if (url.pathname === '/auto-collect/status') {
+    return sendJson(res, 200, { ok: true, autoCollect: getAutoCollectHealthPayload() });
   }
 
   if (url.pathname === '/job') {
@@ -615,4 +765,21 @@ server.listen(PORT, '127.0.0.1', async () => {
   if (!playwright) {
     console.warn('[BREM] playwright 미설치 — npm install playwright && npx playwright install chromium');
   }
+
+  try {
+    const record = await baeminAutoCollect.getAutoCollectRecord();
+    autoCollectRuntime.schedule = record.schedule;
+    sessionPaused = Boolean(record.sessionPaused);
+    autoCollectRuntime.lastRunAt = record.lastRunAt;
+    autoCollectRuntime.lastStatus = record.lastStatus;
+    autoCollectRuntime.lastError = record.lastError;
+    autoCollectRuntime.nextScheduledAt = record.nextScheduledAt;
+    if (sessionPaused) {
+      console.warn('[BREM] [자동수집] 세션 pause 상태 — [배민 세션 갱신] 후 재개됩니다.');
+    }
+  } catch (error) {
+    console.warn('[BREM] [자동수집] 상태 로드 실패:', error.message);
+  }
+
+  startAutoCollectScheduler();
 });

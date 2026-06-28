@@ -2509,6 +2509,46 @@ textarea {
   color: #fecaca;
 }
 
+.baemin-auto-collect-panel {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(30, 58, 138, 0.12);
+  color: #dbeafe;
+  font-size: 0.88rem;
+}
+
+.baemin-auto-collect-panel--paused {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.14);
+  color: #fecaca;
+}
+
+.baemin-auto-collect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+
+.baemin-auto-collect-grid dt {
+  font-size: 0.76rem;
+  color: rgba(219, 234, 254, 0.72);
+  margin: 0 0 2px;
+}
+
+.baemin-auto-collect-grid dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.baemin-auto-collect-schedule {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: rgba(219, 234, 254, 0.85);
+}
+
 .baemin-advanced-panel {
   margin-top: 12px;
   padding: 12px 14px;

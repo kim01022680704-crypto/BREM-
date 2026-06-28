@@ -234,7 +234,10 @@ async function getTableStatus() {
 async function saveRows(accessToken, rows, captureDate) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
+  return saveRowsDirect(rows, captureDate);
+}
 
+async function saveRowsDirect(rows, captureDate) {
   const supabase = getServiceClient();
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
@@ -250,8 +253,9 @@ async function saveRows(accessToken, rows, captureDate) {
     };
   }
 
+  const date = String(captureDate || todayDateString()).slice(0, 10);
   const mapped = (rows || [])
-    .map(item => mapItemToRow(item, captureDate))
+    .map(item => mapItemToRow(item, date))
     .filter(row => row.dedupe_key);
 
   if (!mapped.length) {
@@ -285,7 +289,7 @@ async function saveRows(accessToken, rows, captureDate) {
 
   return {
     ok: true,
-    captureDate,
+    captureDate: date,
     totalRiders: mapped.length,
     totalCompleteSum,
     savedCount,
@@ -392,6 +396,8 @@ async function getLatestSummary(accessToken, captureDate) {
   };
 }
 
+const baeminAutoCollect = require('./baemin-auto-collect');
+
 async function getConfig(accessToken) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -399,6 +405,7 @@ async function getConfig(accessToken) {
   const tableStatus = await getTableStatus();
   const sessionStatus = await baeminSession.getSessionStatus(accessToken);
   const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
+  const autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin();
 
   return {
     ok: true,
@@ -414,7 +421,8 @@ async function getConfig(accessToken) {
     localSessionUrl: sessionStatus.localSessionUrl,
     localHealthUrl: sessionStatus.localSessionUrl ? `${sessionStatus.localSessionUrl}/health` : '',
     playwright: isPlaywrightFeasibleOnVercel(),
-    collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none')
+    collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none'),
+    autoCollect
   };
 }
 
@@ -428,6 +436,7 @@ module.exports = {
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,
+  saveRowsDirect,
   resolveSessionCookie,
   resolveSessionCookieAsync,
   isPlaywrightFeasibleOnVercel

@@ -1,18 +1,13 @@
 /**
  * 로컬 Node 배민Biz 수집 → Supabase 저장
- * Run: node scripts/collect-baemin-delivery-local.js
+ * Run: npm run collect:baemin-local
  *
- * 환경변수: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, BAEMIN_BIZ_SESSION_COOKIE
+ * 환경변수: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL
  * (관리자 JWT 없이 service role로 직접 저장 — 로컬 운영용)
  */
 require('dotenv').config();
 
-const { createClient } = require('@supabase/supabase-js');
-const {
-  fetchAllDeliveryStatus,
-  resolveSessionCookieAsync,
-  mapItemToRow
-} = require('../server/baemin-delivery-collect');
+const baeminAutoCollect = require('../server/baemin-auto-collect');
 
 async function main() {
   const url = String(process.env.SUPABASE_URL || '').trim();
@@ -22,35 +17,21 @@ async function main() {
     process.exit(1);
   }
 
-  const cookie = await resolveSessionCookieAsync({});
-  if (!cookie) {
-    console.error('배민 세션이 없습니다. ERP [배민 세션 갱신] 또는 BAEMIN_BIZ_SESSION_COOKIE 를 설정하세요.');
+  const captureDate = String(process.env.BAEMIN_CAPTURE_DATE || baeminAutoCollect.todayDateStringKST());
+  const result = await baeminAutoCollect.runAutoCollectJob({
+    captureDate,
+    source: 'local_cli'
+  });
+
+  if (!result.ok) {
+    console.error('Collect FAIL:', result.message || result.record?.lastError || 'unknown');
     process.exit(1);
   }
 
-  const captureDate = String(process.env.BAEMIN_CAPTURE_DATE || new Date().toISOString().slice(0, 10));
-  const fetched = await fetchAllDeliveryStatus(cookie);
-  if (!fetched.ok) {
-    console.error('Fetch FAIL:', fetched.message || fetched.error);
-    process.exit(1);
-  }
-
-  const rows = fetched.items.map(item => mapItemToRow(item, captureDate)).filter(row => row.dedupe_key);
-  const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { error } = await supabase
-    .from('baemin_delivery_status')
-    .upsert(rows, { onConflict: 'capture_date,dedupe_key' });
-
-  if (error) {
-    console.error('Supabase FAIL:', error.message);
-    process.exit(1);
-  }
-
-  const totalComplete = rows.reduce((sum, row) => sum + Number(row.total_complete || 0), 0);
   console.log('Saved OK');
-  console.log('  captureDate:', captureDate);
-  console.log('  saved riders:', rows.length);
-  console.log('  totalComplete:', totalComplete);
+  console.log('  captureDate:', result.captureDate);
+  console.log('  saved riders:', result.savedCount);
+  console.log('  totalComplete:', result.totalCompleteSum);
 }
 
 main().catch(error => {

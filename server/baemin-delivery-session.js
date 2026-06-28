@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
+const baeminAutoCollect = require('./baemin-auto-collect');
 
 const SESSION_SETTINGS_KEY = 'brem_baemin_biz_session';
 const SETUP_SETTINGS_KEY = 'brem_baemin_session_setup';
@@ -222,6 +223,8 @@ async function completeSessionSetup(setupId, setupSecret, cookie, meta = {}) {
   });
   if (!saved.ok) return saved;
 
+  await baeminAutoCollect.clearSessionPause().catch(() => {});
+
   await writeSettingsValue(SETUP_SETTINGS_KEY, {
     ...setup,
     status: 'completed',
@@ -241,6 +244,7 @@ async function saveSessionViaAdmin(accessToken, cookie, source = 'manual_admin')
     lastValidatedAt: new Date().toISOString()
   });
   if (!saved.ok) return saved;
+  await baeminAutoCollect.clearSessionPause().catch(() => {});
   return { ok: true, message: '배민Biz 세션이 저장되었습니다.' };
 }
 
