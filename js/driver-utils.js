@@ -258,7 +258,7 @@ window.BremDriverUtils = (function () {
     return null;
   }
 
-  /** 배민 2번 시트 AK열 → baemin_id 만 비교 (쿠팡ID 미사용) */
+  /** 배민 2번 시트 AT열 → baemin_id, AU열 → phone 보조 매칭 */
   function matchDriverByBaeminErpId(baeminId, drivers) {
     const id = String(baeminId || '').trim();
     if (!id) return null;
@@ -266,6 +266,43 @@ window.BremDriverUtils = (function () {
       ? drivers
       : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
     return list.find(driver => String(driver.baeminId || '').trim() === id) || null;
+  }
+
+  function matchDriverByPhone(phone, drivers) {
+    const digits = normalizePhone(phone);
+    if (!digits) return null;
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+    return list.find(driver => normalizePhone(driver.phone) === digits) || null;
+  }
+
+  function matchDriverByBaeminErpRow(baeminIdRaw, phoneRaw, drivers) {
+    const id = String(baeminIdRaw || '').trim();
+    const phone = String(phoneRaw || '').trim();
+    if (!id && !phone) {
+      return { driver: null, baeminId: '', error: 'AT·AU 공백', skip: true };
+    }
+
+    const byId = id ? matchDriverByBaeminErpId(id, drivers) : null;
+    if (byId) {
+      return { driver: byId, baeminId: id, error: '', matchVia: 'id' };
+    }
+
+    const byPhone = phone ? matchDriverByPhone(phone, drivers) : null;
+    if (byPhone) {
+      return {
+        driver: byPhone,
+        baeminId: String(byPhone.baeminId || id || '').trim(),
+        error: '',
+        matchVia: 'phone'
+      };
+    }
+
+    if (id) {
+      return { driver: null, baeminId: id, error: '배민ID 미등록' };
+    }
+    return { driver: null, baeminId: normalizePhone(phone), error: '전화번호 미등록' };
   }
 
   function normalizeDriverName(value) {
@@ -723,6 +760,8 @@ window.BremDriverUtils = (function () {
     buildCoupangErpIdFromCell,
     matchDriverByCoupangErpId,
     matchDriverByBaeminErpId,
+    matchDriverByPhone,
+    matchDriverByBaeminErpRow,
     resolveCoupangImportLoginId,
     parseCoupangImportIdentity,
     normalizeDriverName,

@@ -124,6 +124,8 @@ const matchByCoupangErpId = driverUtils.matchDriverByCoupangErpId('홍길동5678
 assert('쿠팡 ERP ID 매칭', matchByCoupangErpId?.id === matchDriverA.id);
 const matchByBaeminErpId = driverUtils.matchDriverByBaeminErpId('bm_hong', [matchDriverA]);
 assert('배민 ERP ID 매칭', matchByBaeminErpId?.id === matchDriverA.id);
+const matchByBaeminErpPhone = driverUtils.matchDriverByBaeminErpRow('', '01012345678', [matchDriverA]);
+assert('배민 ERP AU열 전화 매칭', matchByBaeminErpPhone.driver?.id === matchDriverA.id, matchByBaeminErpPhone.matchVia);
 
 const matchByCoupangPhoneColumn = driverUtils.matchDriverForPlatformImport('010-1234-5678', 'coupang', '홍길동', [matchDriverA]);
 assert(

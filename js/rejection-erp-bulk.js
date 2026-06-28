@@ -6,7 +6,15 @@
   const BAEMIN_START_ROW = 4;
 
   const COUPANG_COL = { IDENTITY: 0, REJECT: 1, CANCEL: 2, COMPLETE: 3 };
-  const BAEMIN_COL = { COMPLETE: 4, REJECT: 5, DISPATCH_CANCEL: 6, RIDER_CANCEL: 7, ID: 36 };
+  /** E=합계, I=거절, M=배차취소, Q=라이더귀책, AT=배민ID, AU=휴대폰 (0-based) */
+  const BAEMIN_COL = {
+    COMPLETE: 4,
+    REJECT: 8,
+    DISPATCH_CANCEL: 12,
+    RIDER_FAULT: 16,
+    ID: 45,
+    PHONE: 46
+  };
 
   function normalizePlatform(platform) {
     return BremPlatforms.normalize(platform);
@@ -99,7 +107,7 @@
     return range.e.r + 1;
   }
 
-  /** AK열 등 먼 열을 안정적으로 읽기 위해 시트 셀 직접 접근 */
+  /** AT·AU열 등 먼 열을 안정적으로 읽기 위해 시트 셀 직접 접근 */
   function getSheetCell(sheet, row1Based, col0Based) {
     if (!sheet) return '';
     const addr = XLSX.utils.encode_cell({ r: row1Based - 1, c: col0Based });
@@ -166,19 +174,19 @@
     };
   }
 
-  function calcBaeminAcceptanceRate(completeTotal, rejectCount, dispatchCancel, riderCancel) {
+  function calcBaeminAcceptanceRate(completeTotal, rejectCount, dispatchCancel, riderFault) {
     const e = parseCount(completeTotal);
-    const f = parseCount(rejectCount);
-    const g = parseCount(dispatchCancel);
-    const h = parseCount(riderCancel);
-    if ([e, f, g, h].some(Number.isNaN)) {
+    const i = parseCount(rejectCount);
+    const m = parseCount(dispatchCancel);
+    const q = parseCount(riderFault);
+    if ([e, i, m, q].some(Number.isNaN)) {
       return { rate: null, unmeasured: true, error: '배민 건수가 숫자가 아닙니다.' };
     }
-    const denominator = e + f + g + h;
+    const denominator = e + i + m + q;
     if (denominator <= 0) {
       return { rate: null, unmeasured: true };
     }
-    const rejectShare = ((f + g + h) / denominator) * 100;
+    const rejectShare = ((i + m + q) / denominator) * 100;
     return {
       rate: roundRate1(100 - rejectShare),
       unmeasured: false
@@ -234,18 +242,16 @@
     };
   }
 
-  function matchBaeminDriver(baeminId) {
-    const id = String(baeminId || '').trim();
-    if (!id) {
-      return { driver: null, baeminId: '', error: '배민ID 공백', skip: true };
-    }
+  function matchBaeminDriver(baeminIdRaw, phoneRaw) {
+    const match = window.BremDriverUtils?.matchDriverByBaeminErpRow?.(baeminIdRaw, phoneRaw);
+    if (match) return match;
 
-    const driver = window.BremDriverUtils?.matchDriverByBaeminErpId?.(id);
-    if (!driver) {
-      return { driver: null, baeminId: id, error: '배민ID 미등록' };
+    const id = String(baeminIdRaw || '').trim();
+    const phone = String(phoneRaw || '').trim();
+    if (!id && !phone) {
+      return { driver: null, baeminId: '', error: 'AT·AU 공백', skip: true };
     }
-
-    return { driver, baeminId: id, error: '' };
+    return { driver: null, baeminId: id || phone, error: id ? '배민ID 미등록' : '전화번호 미등록' };
   }
 
   function summarizePlatformRows(rows, { skipBlank = false } = {}) {
@@ -320,23 +326,25 @@
 
     for (let rowNumber = BAEMIN_START_ROW; rowNumber <= rowCount; rowNumber += 1) {
       const baeminIdRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.ID);
+      const phoneRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.PHONE);
       const completeRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.COMPLETE);
       const rejectRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.REJECT);
       const dispatchRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.DISPATCH_CANCEL);
-      const riderRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.RIDER_CANCEL);
+      const riderFaultRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.RIDER_FAULT);
 
       if (!String(baeminIdRaw).trim()
+        && !String(phoneRaw).trim()
         && !String(completeRaw).trim()
         && !String(rejectRaw).trim()
         && !String(dispatchRaw).trim()
-        && !String(riderRaw).trim()) {
+        && !String(riderFaultRaw).trim()) {
         continue;
       }
 
-      const match = matchBaeminDriver(baeminIdRaw);
+      const match = matchBaeminDriver(baeminIdRaw, phoneRaw);
       if (match.skip) continue;
 
-      const rateResult = calcBaeminAcceptanceRate(completeRaw, rejectRaw, dispatchRaw, riderRaw);
+      const rateResult = calcBaeminAcceptanceRate(completeRaw, rejectRaw, dispatchRaw, riderFaultRaw);
       const errors = [];
       if (match.error) errors.push(match.error);
       if (rateResult.error) errors.push(rateResult.error);
@@ -345,12 +353,12 @@
       const completeTotal = parseCount(completeRaw);
       const rejectCount = parseCount(rejectRaw);
       const dispatchCancelCount = parseCount(dispatchRaw);
-      const riderCancelCount = parseCount(riderRaw);
+      const riderFaultCount = parseCount(riderFaultRaw);
       const stats = {
         completeTotal: Number.isNaN(completeTotal) ? 0 : completeTotal,
         rejectCount: Number.isNaN(rejectCount) ? 0 : rejectCount,
         dispatchCancelCount: Number.isNaN(dispatchCancelCount) ? 0 : dispatchCancelCount,
-        riderCancelCount: Number.isNaN(riderCancelCount) ? 0 : riderCancelCount,
+        riderCancelCount: Number.isNaN(riderFaultCount) ? 0 : riderFaultCount,
         unmeasured: rateResult.unmeasured
       };
 
@@ -502,6 +510,7 @@
     const rowCount = getSheetRowCount(sheet);
     for (let row = BAEMIN_START_ROW; row <= Math.min(rowCount, BAEMIN_START_ROW + 30); row += 1) {
       if (!isEmptyExcelCell(getSheetCell(sheet, row, BAEMIN_COL.ID))) return true;
+      if (!isEmptyExcelCell(getSheetCell(sheet, row, BAEMIN_COL.PHONE))) return true;
       if (!isEmptyExcelCell(getSheetCell(sheet, row, BAEMIN_COL.COMPLETE))) return true;
     }
     return false;
@@ -515,7 +524,7 @@
     }
 
     if (!sheetHasBaeminData(resolved.baeminSheet)) {
-      throw new Error(`배민 2번 시트「${resolved.baeminSheetName}」에서 AK열(배민ID)·E열 데이터를 찾지 못했습니다. 4행부터 확인하세요.`);
+      throw new Error(`배민 2번 시트「${resolved.baeminSheetName}」에서 AT열(배민ID)·AU열(휴대폰)·E열 데이터를 찾지 못했습니다. 4행부터 확인하세요.`);
     }
 
     return resolved;
@@ -530,7 +539,7 @@
     const baeminRows = parseBaeminSheet(resolved.baeminSheet, baeminWeek);
 
     if (!coupangRows.length && !baeminRows.length) {
-      throw new Error('쿠팡·배민 시트에서 데이터 행을 찾지 못했습니다. (쿠팡 2행~, 배민 4행~, AK열 배민ID)');
+      throw new Error('쿠팡·배민 시트에서 데이터 행을 찾지 못했습니다. (쿠팡 2행~, 배민 4행~, AT/AU열 매칭)');
     }
 
     return {
