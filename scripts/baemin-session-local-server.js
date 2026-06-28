@@ -18,7 +18,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260628c';
+const SERVER_VERSION = '20260628d';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -170,9 +170,12 @@ function isLoginLikeUrl(url) {
   return /login|signin|sign-in|auth|oauth|member\.baemin|bizmember|passport/.test(value);
 }
 
-/** 문자열 기반 — URL 파싱 실패·SPA 대비 */
+/** 문자열 기반 — URL 파싱 실패·SPA 대비 (구/신 배민Biz 경로 모두) */
 function urlIncludesDeliveryHistory(url) {
-  return String(url || '').toLowerCase().includes('delivery/history');
+  const lower = String(url || '').toLowerCase();
+  return lower.includes('delivery/delivery-history')
+    || lower.includes('delivery-history')
+    || lower.includes('delivery/history');
 }
 
 function urlIncludesDeliveryStatus(url) {
@@ -183,8 +186,9 @@ function isOnDeliveryHistoryPage(url) {
   if (urlIncludesDeliveryHistory(url)) return true;
   try {
     const parsed = new URL(url);
-    return parsed.hostname.includes('deliverycenter.baemin.com')
-      && parsed.pathname.includes('/delivery/history');
+    if (!parsed.hostname.includes('deliverycenter.baemin.com')) return false;
+    const path = parsed.pathname.toLowerCase();
+    return path.includes('delivery-history') || path.includes('/delivery/history');
   } catch {
     return false;
   }
@@ -365,7 +369,7 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
   console.log(`[BREM] [Supabase 저장] setupId=${setupId} · cookieLength=${cookieLength}`);
 
   if (!cookieHeader || cookieLength < 8) {
-    throw new Error('배민 쿠키 헤더가 비어 있습니다. 로그인 후 /delivery/history 화면에서 다시 시도하세요.');
+    throw new Error('배민 쿠키 헤더가 비어 있습니다. 로그인 후 배달현황(/delivery/history) 화면에서 다시 시도하세요.');
   }
 
   let response;
@@ -413,10 +417,11 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
 }
 
 async function showBrowserBanner(context, message, isError) {
+  const text = formatError(message, '알 수 없는 오류');
   const { page } = scanBrowserTabs(context);
   if (!page) return;
   try {
-    await page.evaluate(({ text, error }) => {
+    await page.evaluate(({ bannerText, error }) => {
       const id = 'brem-session-banner';
       let banner = document.getElementById(id);
       if (!banner) {
@@ -430,8 +435,8 @@ async function showBrowserBanner(context, message, isError) {
         'color:#fff', 'padding:14px 16px', 'border-radius:8px',
         'font:14px/1.5 sans-serif', 'box-shadow:0 8px 24px rgba(0,0,0,.25)'
       ].join(';');
-      banner.textContent = `[BREM] ${text}`;
-    }, { text: message, error: isError });
+      banner.textContent = `[BREM] ${bannerText}`;
+    }, { bannerText: text, error: isError });
   } catch {
     // ignore
   }
@@ -732,14 +737,25 @@ async function runSessionRefresh() {
           console.log(`[BREM] [쿠키 검증] ${verify.ok ? '성공' : '실패'} | ${verify.reason} | via=${verify.via || '-'}`);
 
           if (verify.ok) {
-            const saved = await saveSessionAndComplete({
-              context,
-              cookieHeader,
-              pageUrl,
-              verifyReason: verify.reason,
-              runToken
-            });
-            if (saved) return;
+            try {
+              const saved = await saveSessionAndComplete({
+                context,
+                cookieHeader,
+                pageUrl,
+                verifyReason: verify.reason,
+                runToken
+              });
+              if (saved) return;
+            } catch (saveError) {
+              const reason = formatError(saveError);
+              console.error('[BREM] [저장 단계 실패] error.message:', saveError?.message || '-');
+              console.error('[BREM] [저장 단계 실패] error.stack:', saveError?.stack || '-');
+              console.error('[BREM] [저장 단계 실패] formatted:', reason);
+              failJob(setupId, '세션 저장 실패', pageUrl, reason);
+              await showBrowserBanner(context, reason, true);
+              refreshLoopRunning = false;
+              return;
+            }
           }
         }
       } else {
