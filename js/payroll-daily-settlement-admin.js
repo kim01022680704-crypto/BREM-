@@ -22,7 +22,7 @@
     return '';
   }
 
-  function readAll() {
+  function readLegacyLocalStorage() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const list = raw ? JSON.parse(raw) : [];
@@ -32,8 +32,41 @@
     }
   }
 
-  function writeAll(list) {
+  function writeLegacyLocalStorage(list) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+  }
+
+  function isSupabaseStorage() {
+    const config = window.BREM_SUPABASE_CONFIG || {};
+    return config.mode === 'production'
+      || config.backend === 'supabase'
+      || Boolean(window.BremStorage?.payrollDailySettlement?.persistAll);
+  }
+
+  function readAll() {
+    if (window.BremStorage?.payrollDailySettlement?.getAll) {
+      return window.BremStorage.payrollDailySettlement.getAll();
+    }
+    if (isSupabaseStorage()) return [];
+    return readLegacyLocalStorage();
+  }
+
+  function writeAll(list) {
+    if (window.BremStorage?.payrollDailySettlement?.saveAll) {
+      return window.BremStorage.payrollDailySettlement.saveAll(list);
+    }
+    if (isSupabaseStorage()) {
+      throw new Error('Supabase 저장소가 준비되지 않았습니다. 새로고침 후 다시 시도하세요.');
+    }
+    writeLegacyLocalStorage(list);
+    return Array.isArray(list) ? list : [];
+  }
+
+  async function persistAll(list) {
+    if (window.BremStorage?.payrollDailySettlement?.persistAll) {
+      return window.BremStorage.payrollDailySettlement.persistAll(list);
+    }
+    return writeAll(list);
   }
 
   function makeId() {
@@ -125,12 +158,16 @@
         added += 1;
       }
     });
-    writeAll(list);
-    return { list, added };
+    return { list, added, persist: () => persistAll(list) };
+  }
+
+  async function applyBulkPersist(result) {
+    await result.persist();
+    return { list: readAll(), added: result.added };
   }
 
   function enrollDriver(driver, extra = {}) {
-    if (!driver?.id) return readAll();
+    if (!driver?.id) return { list: readAll(), persist: async () => readAll() };
     const list = readAll();
     const existing = list.find(item => item.driverId === driver.id);
     if (existing) {
@@ -140,8 +177,7 @@
       if (extra.phone !== undefined) existing.phone = String(extra.phone || '').trim();
       existing.driverName = driver.name || existing.driverName;
       existing.updatedAt = new Date().toISOString();
-      writeAll(list);
-      return list;
+      return { list, persist: () => persistAll(list) };
     }
     list.push({
       id: makeId(),
@@ -154,30 +190,56 @@
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
-    writeAll(list);
-    return list;
+    return { list, persist: () => persistAll(list) };
+  }
+
+  async function commitEnrollDriver(driver, extra = {}) {
+    const result = enrollDriver(driver, extra);
+    await result.persist();
+    return readAll();
   }
 
   function unenrollByDriverId(driverId) {
     const id = String(driverId || '').trim();
-    if (!id) return readAll();
+    if (!id) return { list: readAll(), persist: async () => readAll() };
     const list = readAll().filter(item => item.driverId !== id);
-    writeAll(list);
-    return list;
+    return { list, persist: () => persistAll(list) };
+  }
+
+  async function commitUnenrollByDriverId(driverId) {
+    const result = unenrollByDriverId(driverId);
+    await result.persist();
+    return readAll();
   }
 
   function removeByIds(ids) {
     const idSet = new Set(Array.isArray(ids) ? ids : []);
     const list = readAll().filter(item => !idSet.has(item.id));
-    writeAll(list);
-    return list;
+    return { list, persist: () => persistAll(list) };
+  }
+
+  async function commitRemoveByIds(ids) {
+    const result = removeByIds(ids);
+    await result.persist();
+    return readAll();
+  }
+
+  async function commitSaveAll(list) {
+    await persistAll(list);
+    return readAll();
   }
 
   function getEnrolledDriverIdSet() {
+    if (window.BremStorage?.payrollDailySettlement?.getEnrolledDriverIdSet) {
+      return window.BremStorage.payrollDailySettlement.getEnrolledDriverIdSet();
+    }
     return new Set(readAll().map(item => item.driverId).filter(Boolean));
   }
 
   function getRegionByDriverId(driverId) {
+    if (window.BremStorage?.payrollDailySettlement?.getRegionByDriverId) {
+      return window.BremStorage.payrollDailySettlement.getRegionByDriverId(driverId);
+    }
     const item = readAll().find(row => row.driverId === driverId);
     return item?.region || '';
   }
@@ -194,12 +256,18 @@
     STORAGE_KEY,
     readAll,
     writeAll,
+    persistAll,
     matchDriver,
     parseBulkRows,
     upsertFromBulk,
+    applyBulkPersist,
     enrollDriver,
+    commitEnrollDriver,
     unenrollByDriverId,
+    commitUnenrollByDriverId,
     removeByIds,
+    commitRemoveByIds,
+    commitSaveAll,
     getEnrolledDriverIdSet,
     getRegionByDriverId,
     templateRows,

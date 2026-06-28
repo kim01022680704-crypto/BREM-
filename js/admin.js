@@ -4674,7 +4674,7 @@
       void window.BremAdminPayrollSlips.refresh();
     }
     if (sectionId === 'payroll-daily-settlement' && window.BremAdminPayrollDailySettlement?.refresh) {
-      window.BremAdminPayrollDailySettlement.refresh();
+      void window.BremAdminPayrollDailySettlement.refresh();
     }
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
       void window.BremAdminMissions.refresh({ renderOnly: true });

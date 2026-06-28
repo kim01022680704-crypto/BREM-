@@ -178,21 +178,40 @@
       showToast('적용할 일괄등록 데이터가 없습니다.');
       return;
     }
-    const result = roster.upsertFromBulk(state.bulkPreview);
-    state.bulkPreview = [];
-    renderBulkPreview([]);
-    renderRoster();
-    refreshPayrollMatches();
-    showToast(`일정산 ${result.added}명 추가 · 총 ${result.list.length}명`);
+    void (async () => {
+      try {
+        const result = roster.upsertFromBulk(state.bulkPreview);
+        await roster.applyBulkPersist(result);
+        state.bulkPreview = [];
+        renderBulkPreview([]);
+        renderRoster();
+        refreshPayrollMatches();
+        showToast(`일정산 ${result.added}명 추가 · Supabase 저장 · 총 ${readAll().length}명`);
+      } catch (error) {
+        console.error('[daily settlement bulk apply]', error);
+        showToast(error.message || '일정산 일괄등록 저장에 실패했습니다.');
+      }
+    })();
+  }
+
+  function readAll() {
+    return roster.readAll();
   }
 
   function saveRegion(id, value) {
-    const list = roster.readAll();
-    const item = list.find(row => row.id === id);
-    if (!item) return;
-    item.region = String(value || '').trim();
-    item.updatedAt = new Date().toISOString();
-    roster.writeAll(list);
+    void (async () => {
+      try {
+        const list = roster.readAll();
+        const item = list.find(row => row.id === id);
+        if (!item) return;
+        item.region = String(value || '').trim();
+        item.updatedAt = new Date().toISOString();
+        await roster.commitSaveAll(list);
+      } catch (error) {
+        console.error('[daily settlement region save]', error);
+        showToast(error.message || '지역 저장에 실패했습니다.');
+      }
+    })();
   }
 
   function enrollDriverById(driverId) {
@@ -201,19 +220,33 @@
       showToast('기사를 찾을 수 없습니다.');
       return;
     }
-    roster.enrollDriver(driver);
-    renderRoster();
-    refreshPayrollMatches();
-    showToast(`${driver.name || '기사'} 일정산 등록`);
+    void (async () => {
+      try {
+        await roster.commitEnrollDriver(driver);
+        renderRoster();
+        refreshPayrollMatches();
+        showToast(`${driver.name || '기사'} 일정산 등록 · Supabase 저장`);
+      } catch (error) {
+        console.error('[daily settlement enroll]', error);
+        showToast(error.message || '일정산 등록 저장에 실패했습니다.');
+      }
+    })();
   }
 
   function unenrollDriverById(driverId) {
     const id = String(driverId || '').trim();
     if (!id) return;
-    roster.unenrollByDriverId(id);
-    renderRoster();
-    refreshPayrollMatches();
-    showToast('일정산 등록을 해제했습니다.');
+    void (async () => {
+      try {
+        await roster.commitUnenrollByDriverId(id);
+        renderRoster();
+        refreshPayrollMatches();
+        showToast('일정산 등록 해제 · Supabase 저장');
+      } catch (error) {
+        console.error('[daily settlement unenroll]', error);
+        showToast(error.message || '일정산 해제 저장에 실패했습니다.');
+      }
+    })();
   }
 
   function deleteSelected() {
@@ -222,11 +255,18 @@
       return;
     }
     if (!window.confirm(`선택한 ${state.selectedIds.size}명을 일정산 목록에서 삭제할까요?`)) return;
-    roster.removeByIds([...state.selectedIds]);
-    state.selectedIds.clear();
-    renderRoster();
-    refreshPayrollMatches();
-    showToast('선택 항목을 삭제했습니다.');
+    void (async () => {
+      try {
+        await roster.commitRemoveByIds([...state.selectedIds]);
+        state.selectedIds.clear();
+        renderRoster();
+        refreshPayrollMatches();
+        showToast('선택 항목 삭제 · Supabase 저장');
+      } catch (error) {
+        console.error('[daily settlement delete selected]', error);
+        showToast(error.message || '삭제 저장에 실패했습니다.');
+      }
+    })();
   }
 
   function downloadTemplate() {
@@ -295,19 +335,40 @@
       const deleteBtn = event.target.closest('[data-pds-delete]');
       if (!deleteBtn) return;
       const id = deleteBtn.dataset.pdsDelete;
-      roster.removeByIds([id]);
-      state.selectedIds.delete(id);
-      renderRoster();
-      refreshPayrollMatches();
-      showToast('삭제했습니다.');
+      void (async () => {
+        try {
+          await roster.commitRemoveByIds([id]);
+          state.selectedIds.delete(id);
+          renderRoster();
+          refreshPayrollMatches();
+          showToast('삭제 · Supabase 저장');
+        } catch (error) {
+          console.error('[daily settlement delete]', error);
+          showToast(error.message || '삭제 저장에 실패했습니다.');
+        }
+      })();
     });
   }
 
+  function refresh() {
+    renderRoster();
+  }
+
+  async function refreshAfterLoad() {
+    try {
+      await BremStorage?.ensureSectionLoaded?.('payroll-daily-settlement');
+      await BremStorage?.payrollDailySettlement?.reloadFromServer?.();
+    } catch (error) {
+      console.warn('[payroll daily settlement]', error);
+    }
+    refresh();
+  }
+
   bindEvents();
-  renderRoster();
+  void refreshAfterLoad();
 
   window.BremAdminPayrollDailySettlement = {
-    refresh: renderRoster,
+    refresh: refreshAfterLoad,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),
     getRegionByDriverId: driverId => roster.getRegionByDriverId(driverId)
   };

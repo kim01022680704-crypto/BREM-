@@ -47,6 +47,7 @@ const BremStorage = (function () {
     dashboardWeekBasis: 'brem_admin_dashboard_week_basis',
     leaseDashboardWeekBasis: 'brem_lease_dashboard_week_basis',
     leaseVehicleModelTypes: 'brem_lease_vehicle_model_types',
+    payrollDailySettlementRoster: 'brem_payroll_daily_settlement_roster_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -1380,7 +1381,8 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
-    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.drivers, KEYS.calls],
+    'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.drivers, KEYS.calls],
+    'payroll-daily-settlement': [KEYS.payrollDailySettlementRoster, KEYS.drivers],
     'lease-management': [
       KEYS.leaseVehicles,
       KEYS.leasePayments,
@@ -1632,6 +1634,15 @@ const BremStorage = (function () {
       } else {
         tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
       }
+    }
+
+    if (
+      sectionKeys.includes(KEYS.payrollDailySettlementRoster)
+      && activeStorageAdapter.type === 'supabase'
+      && activeStorageAdapter.reloadSettingKey
+      && !isPayrollLocalStorageMode()
+    ) {
+      tasks.push(payrollDailySettlement.reloadFromServer());
     }
 
     if (tasks.length) {
@@ -6195,6 +6206,117 @@ const BremStorage = (function () {
     }
   };
 
+  let payrollDailySettlementLegacyMigrated = false;
+
+  function normalizePayrollDailySettlementItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    const driverId = String(item.driverId || '').trim();
+    if (!driverId) return null;
+    const id = String(item.id || '').trim() || `pds_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return {
+      id,
+      driverId,
+      driverName: String(item.driverName || '').trim(),
+      baeminId: String(item.baeminId || '').trim(),
+      coupangId: String(item.coupangId || '').trim().replace(/\s/g, ''),
+      phone: String(item.phone || '').trim(),
+      region: String(item.region || '').trim(),
+      createdAt: item.createdAt || new Date().toISOString(),
+      updatedAt: item.updatedAt || new Date().toISOString()
+    };
+  }
+
+  function migrateLegacyPayrollDailySettlementRoster() {
+    if (payrollDailySettlementLegacyMigrated) return;
+    payrollDailySettlementLegacyMigrated = true;
+
+    const key = KEYS.payrollDailySettlementRoster;
+    const cached = storageAdapter.read(key, null);
+    if (Array.isArray(cached) && cached.length) return;
+
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || !parsed.length) return;
+      const normalized = parsed.map(normalizePayrollDailySettlementItem).filter(Boolean);
+      if (!normalized.length) return;
+      storageAdapter.write(key, normalized);
+      window.BremDataCache?.set?.(key, normalized, { source: 'migrate' });
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        flushActiveStorage().catch(error => {
+          console.warn('[BREM] payroll daily settlement roster migration persist failed:', error);
+        });
+      }
+    } catch (error) {
+      console.warn('[BREM] payroll daily settlement roster migration skipped:', error);
+    }
+  }
+
+  const payrollDailySettlement = {
+    getAll() {
+      migrateLegacyPayrollDailySettlementRoster();
+      const raw = storageAdapter.read(KEYS.payrollDailySettlementRoster, []);
+      if (!Array.isArray(raw)) return [];
+      return raw.map(normalizePayrollDailySettlementItem).filter(Boolean);
+    },
+
+    saveAll(list) {
+      const normalized = payrollDailySettlement.normalizeList(list);
+      storageAdapter.write(KEYS.payrollDailySettlementRoster, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'write' });
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        flushActiveStorage().catch(error => {
+          console.warn('[BREM] payroll daily settlement roster persist failed:', error);
+        });
+      }
+      return normalized;
+    },
+
+    normalizeList(list) {
+      return (Array.isArray(list) ? list : [])
+        .map(normalizePayrollDailySettlementItem)
+        .filter(Boolean);
+    },
+
+    async reloadFromServer() {
+      migrateLegacyPayrollDailySettlementRoster();
+      if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.reloadSettingKey) {
+        return payrollDailySettlement.getAll();
+      }
+      try {
+        const value = await activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster);
+        const normalized = payrollDailySettlement.normalizeList(value || []);
+        window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'server' });
+        return normalized;
+      } catch (error) {
+        console.warn('[BREM] payroll daily settlement roster reload failed:', error);
+        return payrollDailySettlement.getAll();
+      }
+    },
+
+    async persistAll(list) {
+      const normalized = payrollDailySettlement.normalizeList(list);
+      storageAdapter.write(KEYS.payrollDailySettlementRoster, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'write' });
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return normalized;
+    },
+
+    getEnrolledDriverIdSet() {
+      return new Set(payrollDailySettlement.getAll().map(item => item.driverId).filter(Boolean));
+    },
+
+    getRegionByDriverId(driverId) {
+      const id = String(driverId || '').trim();
+      if (!id) return '';
+      const item = payrollDailySettlement.getAll().find(row => row.driverId === id);
+      return item?.region || '';
+    }
+  };
+
   const payrollPublish = {
     getMeta() {
       const raw = isPayrollLocalStorageMode()
@@ -10303,7 +10425,8 @@ const BremStorage = (function () {
       keys: Object.freeze([
         KEYS.manualNameMappings,
         KEYS.settlementUnmatched,
-        KEYS.settlements
+        KEYS.settlements,
+        KEYS.payrollDailySettlementRoster
       ])
     })
   });
@@ -10715,6 +10838,7 @@ const BremStorage = (function () {
     payrollSlipUploads,
     payrollSlipLines,
     payrollNotices,
+    payrollDailySettlement,
     payrollPublish,
     leases,
     revenue,
