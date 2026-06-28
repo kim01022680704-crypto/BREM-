@@ -13,10 +13,12 @@ function readArg(name) {
   return hit ? hit.slice(prefix.length) : '';
 }
 
+const { getListenLocalSessionConfig } = require('../server/baemin-session-local-config');
+
 const setupId = readArg('setup-id');
 const setupSecret = readArg('setup-secret');
 const apiBase = readArg('api-base') || 'https://brem.kr';
-const port = process.env.BAEMIN_SESSION_LOCAL_PORT || '3939';
+const port = getListenLocalSessionConfig().port;
 
 if (!setupId || !setupSecret) {
   console.error('Usage: npm run baemin:session-refresh -- --setup-id=UUID --setup-secret=TOKEN');

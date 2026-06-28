@@ -5,7 +5,14 @@
     setupPollTimer: null,
     statusPollTimer: null,
     localServerRunning: false,
-    localAutoCollect: null
+    localAutoCollect: null,
+    localSession: {
+      port: 3939,
+      localHealthUrls: [
+        'http://127.0.0.1:3939/health',
+        'http://localhost:3939/health'
+      ]
+    }
   };
 
   function $(id) {
@@ -226,24 +233,72 @@
     if (dialog?.close) dialog.close();
   }
 
-  async function fetchLocalHealth(healthUrl) {
-    if (!healthUrl) return { running: false, autoCollect: null };
+  function collectLocalHealthUrls(config, setup) {
+    const urls = [];
+    const push = value => {
+      const text = String(value || '').trim();
+      if (text && !urls.includes(text)) urls.push(text);
+    };
+
+    (setup?.localHealthUrls || []).forEach(push);
+    push(setup?.localHealthUrl);
+    (config?.localHealthUrls || []).forEach(push);
+    push(config?.localHealthUrl);
+    (state.localSession?.localHealthUrls || []).forEach(push);
+
+    const port = setup?.localSessionPort
+      || config?.localSessionPort
+      || state.localSession?.port
+      || 3939;
+    push(`http://127.0.0.1:${port}/health`);
+    push(`http://localhost:${port}/health`);
+
+    return urls;
+  }
+
+  async function loadPublicLocalSessionConfig() {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 1500);
-      const response = await fetch(healthUrl, { signal: controller.signal, cache: 'no-store' });
-      clearTimeout(timer);
-      if (!response.ok) return { running: false, autoCollect: null };
+      const response = await fetch('/api/public-config', { cache: 'no-store' });
+      if (!response.ok) return;
       const payload = await response.json().catch(() => ({}));
-      return { running: true, autoCollect: payload.autoCollect || null };
+      if (payload?.baeminSessionLocal) {
+        state.localSession = payload.baeminSessionLocal;
+      }
     } catch {
-      return { running: false, autoCollect: null };
+      // ignore — defaults remain
     }
   }
 
+  async function fetchLocalHealth(config, setup) {
+    const healthUrls = collectLocalHealthUrls(config, setup);
+    for (const healthUrl of healthUrls) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const response = await fetch(healthUrl, {
+          signal: controller.signal,
+          cache: 'no-store',
+          mode: 'cors'
+        });
+        clearTimeout(timer);
+        if (!response.ok) continue;
+        const payload = await response.json().catch(() => ({}));
+        if (payload?.port) {
+          state.localSession = {
+            ...state.localSession,
+            port: payload.port
+          };
+        }
+        return { running: true, autoCollect: payload.autoCollect || null, healthUrl };
+      } catch {
+        // try next host/port candidate
+      }
+    }
+    return { running: false, autoCollect: null, healthUrl: healthUrls[0] || '' };
+  }
+
   async function refreshLocalServerStatus() {
-    const healthUrl = state.config?.localHealthUrl;
-    const local = await fetchLocalHealth(healthUrl);
+    const local = await fetchLocalHealth(state.config, null);
     state.localServerRunning = local.running;
     state.localAutoCollect = local.autoCollect;
     if (state.config) renderAutoCollectStatus(state.config);
@@ -282,19 +337,21 @@
       return;
     }
 
-    const localRunning = await fetchLocalHealth(setup.localHealthUrl);
+    const localRunning = await fetchLocalHealth(state.config, setup);
     state.localServerRunning = localRunning.running;
+    const portLabel = setup.localSessionPort || state.localSession?.port || 3939;
     const instructions = localRunning.running
-      ? '<p>로컬 세션 서버가 실행 중입니다. 브라우저 창에서 배민Biz 로그인·휴대폰 인증을 완료하세요.</p>'
-      : `<p><strong>로컬 세션 서버가 실행되지 않았습니다.</strong></p>
+      ? `<p>로컬 세션 서버가 실행 중입니다. (포트 ${portLabel})</p><p>브라우저 창에서 배민Biz 로그인·휴대폰 인증을 완료하세요.</p>`
+      : `<p><strong>로컬 세션 서버에 연결하지 못했습니다.</strong></p>
          <p>PC 터미널에서 프로젝트 폴더로 이동 후 아래 명령을 실행하세요:</p>
          <pre class="baemin-cli-block">npm run baemin:session-server</pre>
+         <p>기본 포트: <strong>${portLabel}</strong> · 확인 URL: <code>${localRunning.healthUrl || setup.localHealthUrl || `http://127.0.0.1:${portLabel}/health`}</code></p>
          <p>서버 실행 후 ERP에서 [배민 세션 갱신]을 다시 누르거나 아래 URL을 브라우저에서 엽니다:</p>
          <pre class="baemin-cli-block">${setup.startUrl}</pre>`;
 
     renderSetupDialog(`${instructions}<p class="hint">완료되면 이 창이 자동으로 갱신됩니다.</p>`);
 
-    if (localRunning.running && setup.startUrl) {
+    if (setup.startUrl) {
       window.open(setup.startUrl, '_blank', 'noopener,noreferrer,width=520,height=720');
     }
 
@@ -463,6 +520,7 @@
   async function refresh() {
     bindEvents();
     stopStatusPoll();
+    await loadPublicLocalSessionConfig();
     const dateInput = $('baeminDeliveryCaptureDate');
     if (dateInput && !dateInput.value) {
       dateInput.value = new Date().toISOString().slice(0, 10);

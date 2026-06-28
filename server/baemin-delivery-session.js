@@ -2,11 +2,14 @@ const crypto = require('crypto');
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 const baeminAutoCollect = require('./baemin-auto-collect');
+const {
+  getErpLocalSessionConfig,
+  buildStartUrl
+} = require('./baemin-session-local-config');
 
 const SESSION_SETTINGS_KEY = 'brem_baemin_biz_session';
 const SETUP_SETTINGS_KEY = 'brem_baemin_session_setup';
 const SETUP_TTL_MS = 15 * 60 * 1000;
-const LOCAL_SESSION_PORT = Number(process.env.BAEMIN_SESSION_LOCAL_PORT || 3939);
 
 function randomToken(bytes = 24) {
   return crypto.randomBytes(bytes).toString('hex');
@@ -113,6 +116,8 @@ async function getSessionStatus(accessToken) {
   const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
   const pendingSetup = await readSettingsValue(SETUP_SETTINGS_KEY);
 
+  const localSession = getErpLocalSessionConfig();
+
   return {
     ok: true,
     sessionConfigured: Boolean(stored?.cookie),
@@ -124,7 +129,10 @@ async function getSessionStatus(accessToken) {
     envCookieConfigured: envCookie,
     setupPending: pendingSetup?.status === 'pending',
     setupStatus: pendingSetup?.status || null,
-    localSessionUrl: `http://127.0.0.1:${LOCAL_SESSION_PORT}`,
+    localSessionPort: localSession.port,
+    localSessionUrl: localSession.localSessionUrl,
+    localHealthUrl: localSession.localHealthUrl,
+    localHealthUrls: localSession.localHealthUrls,
     collectMode: stored?.cookie ? 'supabase_session' : (envCookie ? 'env_cookie' : 'none')
   };
 }
@@ -160,16 +168,23 @@ async function createSessionSetup(accessToken) {
     || 'https://brem.kr'
   ).trim();
 
-  const localPort = LOCAL_SESSION_PORT;
-  const startUrl = `http://127.0.0.1:${localPort}/start?setupId=${encodeURIComponent(setupId)}&setupSecret=${encodeURIComponent(setupSecret)}&apiBase=${encodeURIComponent(apiBase)}`;
+  const localSession = getErpLocalSessionConfig();
+  const startUrl = buildStartUrl({
+    setupId,
+    setupSecret,
+    apiBase,
+    port: localSession.port
+  });
 
   return {
     ok: true,
     setupId,
     setupSecret,
     expiresAt: setup.expiresAt,
-    localSessionPort: localPort,
-    localHealthUrl: `http://127.0.0.1:${localPort}/health`,
+    localSessionPort: localSession.port,
+    localSessionUrl: localSession.localSessionUrl,
+    localHealthUrl: localSession.localHealthUrl,
+    localHealthUrls: localSession.localHealthUrls,
     startUrl,
     cliCommand: `npm run baemin:session-refresh -- --setup-id=${setupId} --setup-secret=${setupSecret}`
   };
@@ -250,7 +265,6 @@ async function saveSessionViaAdmin(accessToken, cookie, source = 'manual_admin')
 
 module.exports = {
   SESSION_SETTINGS_KEY,
-  LOCAL_SESSION_PORT,
   getStoredSessionRecord,
   resolveStoredSessionCookie,
   getSessionStatus,

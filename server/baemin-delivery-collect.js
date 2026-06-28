@@ -418,8 +418,10 @@ async function getConfig(accessToken) {
     sessionLastValidatedAt: sessionStatus.lastValidatedAt || null,
     envCookieConfigured: envCookie,
     cookieConfigured: sessionStatus.sessionConfigured || envCookie,
+    localSessionPort: sessionStatus.localSessionPort,
     localSessionUrl: sessionStatus.localSessionUrl,
-    localHealthUrl: sessionStatus.localSessionUrl ? `${sessionStatus.localSessionUrl}/health` : '',
+    localHealthUrl: sessionStatus.localHealthUrl,
+    localHealthUrls: sessionStatus.localHealthUrls,
     playwright: isPlaywrightFeasibleOnVercel(),
     collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none'),
     autoCollect

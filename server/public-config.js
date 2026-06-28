@@ -7,6 +7,7 @@ function resolvePayrollStorageMode() {
 }
 
 const { isWriteBlocked, WRITE_BLOCK_MESSAGE, isDevSupabaseConfigured, isProductionSupabaseUrl } = require('./write-guard');
+const { getErpLocalSessionConfig } = require('./baemin-session-local-config');
 
 function getPublicConfig() {
   const url = String(process.env.SUPABASE_URL || '').trim();
@@ -47,7 +48,8 @@ function getPublicConfig() {
     writeBlockMessage: writeBlocked ? WRITE_BLOCK_MESSAGE : '',
     devSupabase,
     productionSupabaseForbidden: !isProduction && isProductionSupabaseUrl(url),
-    inquiryStorage: writeBlocked ? 'file' : (process.env.SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'file')
+    inquiryStorage: writeBlocked ? 'file' : (process.env.SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'file'),
+    baeminSessionLocal: getErpLocalSessionConfig()
   };
 }
 

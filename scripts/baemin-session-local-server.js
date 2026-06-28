@@ -7,16 +7,29 @@ require('dotenv').config();
 const http = require('http');
 const path = require('path');
 const { URL } = require('url');
+const {
+  getListenLocalSessionConfig,
+  DEFAULT_BAEMIN_SESSION_LOCAL_PORT
+} = require('../server/baemin-session-local-config');
 
-const PORT = Number(process.env.BAEMIN_SESSION_LOCAL_PORT || 3939);
+const listenConfig = getListenLocalSessionConfig();
+const PORT = listenConfig.port;
 const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260628a';
+const SERVER_VERSION = '20260628b';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
+
+const CORS_ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/brem\.kr$/i,
+  /^https:\/\/www\.brem\.kr$/i,
+  /^https:\/\/[a-z0-9-]+\.vercel\.app$/i,
+  /^http:\/\/localhost(?::\d+)?$/i,
+  /^http:\/\/127\.0\.0\.1(?::\d+)?$/i
+];
 
 const baeminAutoCollect = require('../server/baemin-auto-collect');
 
@@ -41,6 +54,28 @@ let autoCollectRuntime = {
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(body));
+}
+
+function isAllowedCorsOrigin(origin) {
+  const value = String(origin || '').trim();
+  if (!value) return false;
+  return CORS_ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(value));
+}
+
+function applyCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (origin && isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+}
+
+function sendJsonWithCors(req, res, status, body) {
+  applyCorsHeaders(req, res);
+  sendJson(res, status, body);
 }
 
 function sendHtml(res, html) {
@@ -391,7 +426,9 @@ function getAutoCollectHealthPayload() {
     lastStatus: autoCollectRuntime.lastStatus,
     lastError: autoCollectRuntime.lastError,
     nextScheduledAt: autoCollectRuntime.nextScheduledAt,
-    lastRunSlotKey
+    lastRunSlotKey,
+    port: PORT,
+    defaultPort: DEFAULT_BAEMIN_SESSION_LOCAL_PORT
   };
 }
 
@@ -686,10 +723,17 @@ ${safeNotice}
 }
 
 const server = http.createServer(async (req, res) => {
+  applyCorsHeaders(req, res);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
 
   if (url.pathname === '/health') {
-    return sendJson(res, 200, {
+    return sendJsonWithCors(req, res, 200, {
       ok: true,
       port: PORT,
       version: SERVER_VERSION,
@@ -700,7 +744,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/auto-collect/run' && req.method === 'POST') {
     if (sessionPaused) {
-      return sendJson(res, 409, {
+      return sendJsonWithCors(req, res, 409, {
         ok: false,
         message: '세션 만료 — 배민 세션 갱신 필요',
         autoCollect: getAutoCollectHealthPayload()
@@ -709,7 +753,7 @@ const server = http.createServer(async (req, res) => {
     void runScheduledCollect('manual').then(result => {
       if (!result) return;
     });
-    return sendJson(res, 202, {
+    return sendJsonWithCors(req, res, 202, {
       ok: true,
       message: '자동 수집을 시작했습니다.',
       autoCollect: getAutoCollectHealthPayload()
@@ -717,7 +761,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/auto-collect/status') {
-    return sendJson(res, 200, { ok: true, autoCollect: getAutoCollectHealthPayload() });
+    return sendJsonWithCors(req, res, 200, { ok: true, autoCollect: getAutoCollectHealthPayload() });
   }
 
   if (url.pathname === '/job') {
@@ -751,13 +795,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  sendJson(res, 404, { ok: false, message: 'Not found' });
+  sendJsonWithCors(req, res, 404, { ok: false, message: 'Not found' });
 });
 
 server.listen(PORT, '127.0.0.1', async () => {
   console.log('========================================');
   console.log(`[BREM] Baemin session server v${SERVER_VERSION}`);
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
+  console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
   console.log('[BREM] 구버전이면 git pull 후 서버를 재시작하세요.');
   console.log('========================================');
