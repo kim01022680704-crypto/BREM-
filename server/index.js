@@ -63,6 +63,16 @@ app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
+const API_READ_TIMEOUT_MS = 90000;
+const API_WRITE_TIMEOUT_MS = 120000;
+
+app.use('/api', (req, res, next) => {
+  const timeoutMs = req.method === 'GET' ? API_READ_TIMEOUT_MS : API_WRITE_TIMEOUT_MS;
+  req.setTimeout(timeoutMs);
+  res.setTimeout(timeoutMs);
+  next();
+});
+
 app.use((req, res, next) => {
   if (!isLocalMutatingRequestBlocked(req)) return next();
   const blocked = createWriteBlockedResponse();
@@ -583,6 +593,23 @@ app.delete('/api/admin/riders/:riderId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '기사 삭제에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/riders/:riderId/reset-password', async (req, res) => {
+  try {
+    const password = req.body?.password;
+    const result = await ridersAdmin.resetRiderPassword(
+      getBearerToken(req),
+      req.params.riderId,
+      password
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '비밀번호 초기화에 실패했습니다.' });
   }
 });
 

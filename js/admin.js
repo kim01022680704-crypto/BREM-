@@ -2811,9 +2811,11 @@
       const publishBtns = document.querySelectorAll('[data-rider-app-publish]');
       publishBtns.forEach(btn => { btn.disabled = true; });
       try {
-        await BremStorage.ensureSectionLoaded?.('rejections');
-        await BremStorage.ensureSectionLoaded?.('calls');
-        await BremStorage.ensureSectionLoaded?.('targets');
+        await Promise.all([
+          BremStorage.ensureSectionLoaded?.('rejections'),
+          BremStorage.ensureSectionLoaded?.('calls'),
+          BremStorage.ensureSectionLoaded?.('targets')
+        ]);
         await BremStorage.flushStorage?.();
         const result = await BremStorage.riderViewPublish.publishAllToRiderView();
         const label = window.BremDriverUtils?.formatRiderPublishDateTime?.(result.publishedAt) || formatDateTime(result.publishedAt);
@@ -3813,8 +3815,10 @@
 
     void (async () => {
       try {
-        await BremStorage.ensureSectionLoaded('settlements');
-        await BremStorage.ensureSectionLoaded('calls');
+        await Promise.all([
+          BremStorage.ensureSectionLoaded('settlements'),
+          BremStorage.ensureSectionLoaded('calls')
+        ]);
         const result = await BremStorage.settlementUploadLogs.removeDailyByWeekAsync(weekStart, p);
         if (state.settlementUploadLogDetailId && rows.some(item => item.id === state.settlementUploadLogDetailId)) {
           hideSettlementUploadLogDetail();
@@ -3873,8 +3877,10 @@
 
     void (async () => {
       try {
-        await BremStorage.ensureSectionLoaded('settlements');
-        await BremStorage.ensureSectionLoaded('calls');
+        await Promise.all([
+          BremStorage.ensureSectionLoaded('settlements'),
+          BremStorage.ensureSectionLoaded('calls')
+        ]);
 
         const sorted = [...logs].sort((a, b) => {
           const periodCmp = String(a.period).localeCompare(String(b.period));
@@ -3988,8 +3994,10 @@
     void (async () => {
       try {
         await BremStorage.refreshDriversForSettlementMatch?.();
-        await BremStorage.ensureSectionLoaded('settlements');
-        await BremStorage.ensureSectionLoaded('calls');
+        await Promise.all([
+          BremStorage.ensureSectionLoaded('settlements'),
+          BremStorage.ensureSectionLoaded('calls')
+        ]);
         const result = BremStorage.settlementUnmatched.retryDailyMatching({
           platform: p,
           weekStart,

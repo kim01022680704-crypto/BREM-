@@ -39,6 +39,35 @@ function generateAdminEmail(name) {
   return `${localPart}@${getAdminEmailDomain()}`;
 }
 
+const ADMIN_CALLER_CACHE_MS = 60000;
+const ADMIN_CALLER_CACHE_MAX = 200;
+const adminCallerCache = new Map();
+
+function adminCallerCacheKey(token) {
+  if (token.length <= 64) return token;
+  return `${token.slice(0, 32)}:${token.slice(-24)}`;
+}
+
+function readCachedAdminCaller(token) {
+  const cached = adminCallerCache.get(adminCallerCacheKey(token));
+  if (!cached) return null;
+  if (Date.now() - cached.at > ADMIN_CALLER_CACHE_MS) {
+    adminCallerCache.delete(adminCallerCacheKey(token));
+    return null;
+  }
+  return cached.value;
+}
+
+function writeCachedAdminCaller(token, value) {
+  if (!value?.ok) return;
+  const key = adminCallerCacheKey(token);
+  if (adminCallerCache.size >= ADMIN_CALLER_CACHE_MAX) {
+    const oldest = adminCallerCache.keys().next().value;
+    if (oldest) adminCallerCache.delete(oldest);
+  }
+  adminCallerCache.set(key, { at: Date.now(), value });
+}
+
 async function verifyAdminCaller(accessToken) {
   const supabase = getServiceClient();
   if (!supabase) {
@@ -50,8 +79,12 @@ async function verifyAdminCaller(accessToken) {
     return { ok: false, status: 401, error: 'Authorization Bearer 토큰이 필요합니다.' };
   }
 
+  const cached = readCachedAdminCaller(token);
+  if (cached) return cached;
+
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData?.user) {
+    adminCallerCache.delete(adminCallerCacheKey(token));
     return { ok: false, status: 401, error: '유효하지 않은 로그인 세션입니다.' };
   }
 
@@ -62,15 +95,18 @@ async function verifyAdminCaller(accessToken) {
     .maybeSingle();
 
   if (profileError || profile?.role !== 'admin' || profile.active !== true) {
+    adminCallerCache.delete(adminCallerCacheKey(token));
     return { ok: false, status: 403, error: '관리자 권한이 필요합니다.' };
   }
 
-  return {
+  const result = {
     ok: true,
     userId: userData.user.id,
     email: normalizeEmail(userData.user.email),
     profile
   };
+  writeCachedAdminCaller(token, result);
+  return result;
 }
 
 function getCallerRegistryAccount(accounts, userId) {

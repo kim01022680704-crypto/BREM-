@@ -311,7 +311,11 @@ const BremStorage = (function () {
   let bootstrapComplete = false;
   let heavyDataPreloadPromise = null;
   let driversFullFetchInProgress = false;
+  let driversBackgroundFetchPromise = null;
   const sectionLoadPromises = new Map();
+  const RIDER_PUBLISH_STATUS_CACHE_MS = 90000;
+  let lastRiderPublishStatusAt = 0;
+  let lastRiderPublishStatusResult = null;
 
   const MUTATION_TRACKED_KEYS = new Set([
     KEYS.drivers,
@@ -1535,10 +1539,11 @@ const BremStorage = (function () {
     }
 
     if (sectionKeys.includes(KEYS.drivers)) {
-      const driversReady = window.BremDataCache?.isValid?.(KEYS.drivers)
-        && activeStorageAdapter.isKeyLoaded?.(KEYS.drivers)
-        && driversLoadMeta.complete;
-      if (!driversReady) return false;
+      const hasDrivers = window.BremDataCache?.isValid?.(KEYS.drivers) && drivers.getAll().length > 0;
+      if (!hasDrivers) return false;
+      if (!driversLoadMeta.complete && !driversBackgroundFetchPromise && !driversFetchAllPromise) {
+        return false;
+      }
     }
 
     if (sectionKeys.includes(KEYS.missions)) {
@@ -1618,7 +1623,11 @@ const BremStorage = (function () {
     }
 
     if (needsDrivers) {
-      if (!force && driversLoadMeta.complete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
+      const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
+      const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
+      if (!force && hasDrivers && (driversLoadMeta.complete || fetchInFlight)) {
+        logDataSource('riders', true, sectionId);
+      } else if (!force && driversLoadMeta.complete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
         logDataSource('riders', true, sectionId);
       } else {
         tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
@@ -1839,6 +1848,46 @@ const BremStorage = (function () {
     };
   }
 
+  async function continueDriverPagesInBackground(startOffset, pageSize, supabaseTotal) {
+    if (driversBackgroundFetchPromise) return driversBackgroundFetchPromise;
+
+    driversBackgroundFetchPromise = (async () => {
+      let offset = startOffset;
+      let hasMore = true;
+      let pages = 0;
+      try {
+        while (hasMore && pages < 200) {
+          const result = await syncDriversFromServer({
+            limit: pageSize,
+            offset,
+            append: true
+          });
+          if (!result.ok) break;
+          if (supabaseTotal == null && result.total != null) supabaseTotal = result.total;
+          hasMore = Boolean(result.hasMore);
+          offset += result.count || pageSize;
+          pages += 1;
+          if (!result.count) break;
+          document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+        }
+
+        const deduped = dedupeDriversList(drivers.getAll());
+        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
+        markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: supabaseTotal ?? deduped.length });
+        document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+          detail: { complete: true, count: deduped.length, supabaseTotal: supabaseTotal ?? deduped.length }
+        }));
+      } catch (error) {
+        console.warn('[BREM] Background rider sync failed:', error.message || error);
+      } finally {
+        driversBackgroundFetchPromise = null;
+        driversFullFetchInProgress = false;
+      }
+    })();
+
+    return driversBackgroundFetchPromise;
+  }
+
   async function fetchAllDriversFromServer(options = {}) {
     const force = options.force === true;
     const hasFilter = Boolean(String(options.search || '').trim())
@@ -1931,6 +1980,7 @@ const BremStorage = (function () {
                 ok: true,
                 cached: true,
                 stale: true,
+                partial: !driversLoadMeta.complete,
                 count: drivers.getAll().length,
                 supabaseTotal: driversLoadMeta.supabaseTotal
               };
@@ -1947,6 +1997,33 @@ const BremStorage = (function () {
           offset += result.count || pageSize;
           pages += 1;
           if (!result.count) break;
+
+          const dedupedAfterPage = dedupeDriversList(drivers.getAll());
+          markDriversCache(dedupedAfterPage, {
+            source: 'network',
+            complete: !hasMore,
+            supabaseTotal: supabaseTotal ?? dedupedAfterPage.length
+          });
+          document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
+
+          if (!force && pages === 1 && hasMore) {
+            void continueDriverPagesInBackground(offset, pageSize, supabaseTotal);
+            window.BremPerf?.timeEnd?.('storage.fetchAllDrivers');
+            document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+              detail: {
+                complete: false,
+                partial: true,
+                count: dedupedAfterPage.length,
+                supabaseTotal: supabaseTotal ?? dedupedAfterPage.length
+              }
+            }));
+            return {
+              ok: true,
+              partial: true,
+              count: dedupedAfterPage.length,
+              supabaseTotal: supabaseTotal ?? dedupedAfterPage.length
+            };
+          }
         }
 
         const deduped = dedupeDriversList(drivers.getAll());
@@ -1963,7 +2040,9 @@ const BremStorage = (function () {
           supabaseTotal: supabaseTotal ?? deduped.length
         };
       } finally {
-        driversFullFetchInProgress = false;
+        if (!driversBackgroundFetchPromise) {
+          driversFullFetchInProgress = false;
+        }
       }
     };
 
@@ -2192,6 +2271,45 @@ const BremStorage = (function () {
         list.unshift(saved);
       }
       setDriversCache(list);
+    }
+
+    return result;
+  }
+
+  async function resetRiderPasswordViaServer(id, defaultPassword = '1234') {
+    const riderId = String(id || '').trim();
+    if (!riderId) throw new Error('기사 ID가 없습니다.');
+
+    const postReset = () => adminRidersApi(
+      `/api/admin/riders/${encodeURIComponent(riderId)}/reset-password`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ password: String(defaultPassword || '1234').trim() || '1234' })
+      }
+    );
+
+    let result = await postReset();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await postReset();
+    }
+    if (!result.ok) {
+      throw new Error(result.message || result.error || '비밀번호 초기화에 실패했습니다.');
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (result.rider && mapper?.rowToRider) {
+      const saved = mapper.rowToRider(result.rider);
+      const list = drivers.getAll();
+      const index = list.findIndex(item => item.id === saved.id);
+      if (index >= 0) {
+        list[index] = { ...list[index], ...saved, password: String(defaultPassword || '1234').trim() || '1234' };
+      }
+      markDriversCache(list, { source: 'write' });
     }
 
     return result;
@@ -2687,12 +2805,24 @@ const BremStorage = (function () {
     return String(remoteAt) > String(localAt);
   }
 
-  async function fetchRiderPublishStatus() {
+  async function fetchRiderPublishStatus(options = {}) {
     if (!isProductionMode() || !isRiderProductionSession()) {
       const meta = riderViewPublish.getMeta?.() || {};
       return { ok: true, publishedAt: meta.publishedAt || null };
     }
-    return riderApiFetch('/api/rider/publish-status', 'publish-status');
+    if (
+      !options.force
+      && lastRiderPublishStatusResult
+      && Date.now() - lastRiderPublishStatusAt < RIDER_PUBLISH_STATUS_CACHE_MS
+    ) {
+      return lastRiderPublishStatusResult;
+    }
+    const result = await riderApiFetch('/api/rider/publish-status', 'publish-status');
+    if (result.ok) {
+      lastRiderPublishStatusAt = Date.now();
+      lastRiderPublishStatusResult = result;
+    }
+    return result;
   }
 
   async function checkDriverAppPublishUpdate(options = {}) {
@@ -4142,7 +4272,7 @@ const BremStorage = (function () {
 
       return withPlatforms;
     });
-    if (migrated) {
+    if (migrated && !isProductionMode()) {
       invalidateDriversNormalizeCache();
       storageAdapter.write(KEYS.drivers, normalizedDrivers);
     }
@@ -4558,6 +4688,9 @@ const BremStorage = (function () {
       const driver = drivers.getById(id);
       if (!driver) throw new Error('기사를 찾을 수 없습니다.');
       const password = String(defaultPassword || '1234').trim() || '1234';
+      if (isProductionMode()) {
+        return resetRiderPasswordViaServer(id, password);
+      }
       return drivers.update(id, { password, passwordExplicit: true });
     },
 
@@ -5077,6 +5210,8 @@ const BremStorage = (function () {
         ]);
 
         window.BremDataCache?.invalidate?.(KEYS.riderViewPublish);
+        lastRiderPublishStatusAt = 0;
+        lastRiderPublishStatusResult = null;
         return {
           publishedCount: Number(apiResult.publishedCount) || 0,
           callsPublished: apiResult.callsPublished || 0,

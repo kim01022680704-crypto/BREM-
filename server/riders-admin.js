@@ -20,7 +20,13 @@ function stripOptionalRiderColumns(row) {
 }
 
 async function preserveRiderPasswordOnUpsert(supabase, row, passwordExplicit = false) {
-  if (!row?.id || passwordExplicit) return row;
+  if (!row?.id) return row;
+
+  if (passwordExplicit) {
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
+    raw.password = String(raw.password || '1234').trim() || '1234';
+    return { ...row, raw_data: raw };
+  }
 
   const { data: existing, error } = await supabase
     .from('riders')
@@ -477,6 +483,71 @@ async function upsertRider(accessToken, rider) {
   }
 
   return { ok: true, rider: data };
+}
+
+async function resetRiderPassword(accessToken, riderId, defaultPassword = '1234') {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const id = String(riderId || '').trim();
+  if (!id) {
+    return { ok: false, status: 400, error: '기사 ID가 필요합니다.' };
+  }
+
+  const supabase = getServiceClient();
+  const { data: existing, error: readError } = await queryRidersWithSelectFallback(
+    RIDER_SELECT_VARIANTS,
+    columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
+  );
+
+  if (readError) {
+    return { ok: false, status: 500, error: readError.message || '기사 정보를 불러오지 못했습니다.' };
+  }
+  if (!existing) {
+    return { ok: false, status: 404, error: '기사를 찾을 수 없습니다.' };
+  }
+
+  const password = String(defaultPassword || '1234').trim() || '1234';
+  const raw = existing.raw_data && typeof existing.raw_data === 'object'
+    ? { ...existing.raw_data }
+    : {};
+  raw.password = password;
+
+  let row = {
+    ...existing,
+    raw_data: raw,
+    updated_at: new Date().toISOString()
+  };
+
+  const upsertResult = await upsertRiderRowWithFallback(supabase, row);
+  if (upsertResult.error) {
+    return {
+      ok: false,
+      status: 400,
+      error: upsertResult.error.message || '비밀번호 초기화에 실패했습니다.'
+    };
+  }
+  row = upsertResult.row;
+
+  const provision = await provisionRiderAuthAccount(row);
+  if (!provision.ok) {
+    return {
+      ok: false,
+      status: provision.status || 400,
+      error: provision.error || '기사 Auth 비밀번호 갱신에 실패했습니다.'
+    };
+  }
+
+  const { data, error: reloadError } = await queryRidersWithSelectFallback(
+    RIDER_SELECT_VARIANTS,
+    columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
+  );
+
+  if (reloadError) {
+    return { ok: false, status: 500, error: reloadError.message || '저장된 기사를 확인하지 못했습니다.' };
+  }
+
+  return { ok: true, rider: data, riderId: id, password };
 }
 
 function buildExistingRiderMatchMap(rows) {
@@ -1069,5 +1140,6 @@ module.exports = {
   deleteAllRiders,
   deleteRider,
   mergeSelectedRiders,
-  mergeAutoRiders
+  mergeAutoRiders,
+  resetRiderPassword
 };

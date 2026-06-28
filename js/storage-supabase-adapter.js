@@ -18,14 +18,30 @@ window.BremSupabaseStorageAdapter = (function () {
 
   const DEFAULT_RIDER_PAGE_SIZE = 100;
   const DEFAULT_CALLS_LOOKBACK_DAYS = 540;
+  const DEFAULT_REJECTION_LOOKBACK_WEEKS = 104;
   const TABLE_FETCH_PAGE_SIZE = 1000;
   const PAGINATED_TABLES = new Set([
     'admin_calls',
+    'admin_rejection_rates',
+    'admin_targets',
     'daily_settlements',
     'settlement_upload_logs',
     'settlement_unmatched',
-    'admin_rejection_rates'
+    'payroll_slip_lines',
+    'lease_vehicles',
+    'lease_contracts',
+    'lease_payments',
+    'lease_accidents',
+    'lease_maintenance',
+    'lease_profit_logs',
+    'lease_arrears'
   ]);
+
+  function getDefaultRejectionSinceWeek() {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - DEFAULT_REJECTION_LOOKBACK_WEEKS * 7);
+    return date.toISOString().slice(0, 10);
+  }
 
   function getDefaultCallsSinceDate() {
     const date = new Date();
@@ -354,6 +370,10 @@ window.BremSupabaseStorageAdapter = (function () {
         const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
         if (sinceDate) query = query.gte('date', sinceDate);
       }
+      if (table === 'admin_rejection_rates' && !options.allHistory) {
+        const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
+        if (sinceWeek) query = query.gte('week_start', sinceWeek);
+      }
       if (order?.column) {
         query = query.order(order.column, { ascending: order.ascending !== false });
       }
@@ -363,6 +383,10 @@ window.BremSupabaseStorageAdapter = (function () {
           if (table === 'admin_calls' && !options.allHistory) {
             const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
             if (sinceDate) pageQuery = pageQuery.gte('date', sinceDate);
+          }
+          if (table === 'admin_rejection_rates' && !options.allHistory) {
+            const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
+            if (sinceWeek) pageQuery = pageQuery.gte('week_start', sinceWeek);
           }
           if (order?.column) {
             pageQuery = pageQuery.order(order.column, { ascending: order.ascending !== false });
@@ -1829,6 +1853,10 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function persistRiders(value) {
+      if (window.BremStorageGuard?.isProductionMode?.()) {
+        console.warn('[BREM] Client-side bulk rider persist is blocked in production.');
+        return;
+      }
       const rows = (value || []).map(item => Mapper().riderToRow(item)).filter(row => row.id);
       if (!rows.length) return;
       await upsertRiderRows(rows);

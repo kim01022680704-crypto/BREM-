@@ -22,6 +22,7 @@ const BremLeaseErp = (function () {
   });
 
   let migrationDone = false;
+  let leaseStatusesSynced = false;
 
   function createId() {
     return BremStorage?.createId?.() || `lease_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -875,8 +876,9 @@ const BremLeaseErp = (function () {
       await BremStorage.ensureLeaseErpKeysLoaded(options);
     }
     await migrateLegacySettingsIfNeeded();
-    if (options.syncStatuses !== false) {
+    if (options.syncStatuses !== false && !leaseStatusesSynced) {
       syncAllVehicleStatusesFromContracts();
+      leaseStatusesSynced = true;
     }
     return { ok: true };
   }
