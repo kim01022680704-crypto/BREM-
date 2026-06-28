@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260630a';
+const SERVER_VERSION = '20260630b';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -73,7 +73,6 @@ function readJsonBody(req) {
 
 const PROBE_PAGE_PATHS = [
   '/delivery-status',
-  '/delivery/history',
   '/delivery/delivery-history',
   '/delivery/rider-history'
 ];
@@ -1120,6 +1119,22 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   detachDiscovery();
 }
 
+async function navigateToSafeLandingPage(context) {
+  if (!isContextAlive(context)) return;
+  const tabs = scanBrowserTabs(context);
+  const page = tabs.page;
+  if (!page || page.isClosed()) return;
+  try {
+    await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+    console.log(`[BREM] [세션 완료] 배달현황 화면으로 이동 ${safePageUrlSync(page)}`);
+  } catch (error) {
+    console.warn(`[BREM] [세션 완료] 배달현황 이동 실패 | ${formatError(error)}`);
+  }
+}
+
 async function probeCollectPages(context, collectDate) {
   const pages = context.pages().filter(page => !page.isClosed());
   const page = pages[0] || await context.newPage();
@@ -1300,11 +1315,11 @@ async function runSessionRefresh() {
               });
               if (saved) {
                 try {
-                  await probeCollectPages(context);
                   await persistDiscoveredApis(discoveryState);
                 } catch (probeError) {
-                  console.warn('[BREM] [API 탐색] 저장 후 탐색 실패 (세션은 저장됨):', formatError(probeError));
+                  console.warn('[BREM] [API 탐색] 저장 후 registry 저장 실패 (세션은 저장됨):', formatError(probeError));
                 }
+                await navigateToSafeLandingPage(context);
                 detachDiscovery();
                 activeJob = {
                   status: 'completed',
@@ -1609,7 +1624,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260630a 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260630b 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');
