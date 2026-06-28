@@ -50,6 +50,12 @@ const RIDER_LOGIN_LOOKUP_SELECT = [
 
 const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
 const RIDER_LIST_SELECT_VARIANTS = [RIDER_LIST_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
+const RIDER_DETAIL_SELECT_VARIANTS = [
+  RIDER_PATCH_RETURN_SELECT,
+  `${RIDER_SELECT_WITH_PLATFORM},raw_data`,
+  `${RIDER_SELECT_BASE},raw_data`,
+  RIDER_LIST_SELECT
+];
 
 function isMissingColumnError(error) {
   const message = String(error?.message || error || '').toLowerCase();
@@ -79,6 +85,7 @@ module.exports = {
   RIDER_LOGIN_LOOKUP_SELECT,
   RIDER_SELECT_VARIANTS,
   RIDER_LIST_SELECT_VARIANTS,
+  RIDER_DETAIL_SELECT_VARIANTS,
   isMissingColumnError,
   queryRidersWithSelectFallback
 };

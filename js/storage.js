@@ -2266,7 +2266,14 @@ const BremStorage = (function () {
       const list = drivers.getAll();
       const index = list.findIndex(item => item.id === saved.id);
       if (index >= 0) {
-        list[index] = { ...list[index], ...saved };
+        const prevPassword = list[index].password;
+        list[index] = {
+          ...list[index],
+          ...saved,
+          password: rider.passwordExplicit && rider.password
+            ? String(rider.password).trim()
+            : (saved.password && saved.password !== '1234' ? saved.password : (prevPassword || saved.password))
+        };
       } else {
         list.unshift(saved);
       }
@@ -3105,6 +3112,46 @@ const BremStorage = (function () {
       throw new Error(result.message || 'Supabase에서 기사를 삭제하지 못했습니다.');
     }
     return result;
+  }
+
+  async function fetchRiderViaServer(id) {
+    const riderId = String(id || '').trim();
+    if (!riderId) {
+      return { ok: false, message: '기사 ID가 없습니다.' };
+    }
+
+    const fetchOne = () => adminRidersApi(`/api/admin/riders/${encodeURIComponent(riderId)}`);
+    let result = await fetchOne();
+    if (!result.ok && result.status === 401) {
+      const client = getSupabaseClient();
+      if (client) {
+        await client.auth.refreshSession();
+        rememberAdminAccessToken('');
+      }
+      result = await fetchOne();
+    }
+    if (!result.ok) {
+      return {
+        ok: false,
+        message: result.message || result.error || '기사 정보를 불러오지 못했습니다.'
+      };
+    }
+
+    const mapper = window.BremSupabaseMapper;
+    if (!result.rider || !mapper?.rowToRider) {
+      return { ok: false, message: '기사 데이터를 해석하지 못했습니다.' };
+    }
+
+    const rider = mapper.rowToRider(result.rider);
+    const list = drivers.getAll();
+    const index = list.findIndex(item => item.id === rider.id);
+    if (index >= 0) {
+      list[index] = { ...list[index], ...rider };
+    } else {
+      list.push(rider);
+    }
+    markDriversCache(list, { source: 'network' });
+    return { ok: true, rider };
   }
 
   async function mergeSelectedRidersViaServer(riderIds) {
@@ -4319,6 +4366,20 @@ const BremStorage = (function () {
 
     getById(id) {
       return drivers.getAll().find(driver => driver.id === id) || null;
+    },
+
+    async fetchById(id, options = {}) {
+      const riderId = String(id || '').trim();
+      if (!riderId) return null;
+      const cached = drivers.getById(riderId);
+      if (!isProductionMode()) return cached || null;
+      if (cached && options.force !== true) return cached;
+
+      const result = await fetchRiderViaServer(riderId);
+      if (!result.ok) {
+        throw new Error(result.message || '기사 정보를 불러오지 못했습니다.');
+      }
+      return result.rider || drivers.getById(riderId);
     },
 
     getSupabaseTotal() {
@@ -10567,6 +10628,7 @@ const BremStorage = (function () {
     reloadDrivers,
     fetchAllDriversFromServer,
     waitForDriversFetch,
+    fetchRiderViaServer,
     dedupeDriversList,
     refreshDriversForSettlementMatch,
     reloadMissions,

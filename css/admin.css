@@ -7693,9 +7693,32 @@ textarea {
   text-align: center;
 }
 
+.payroll-driver-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  max-width: 260px;
+}
+
+.payroll-driver-picker-search {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  color: inherit;
+}
+
+.payroll-driver-picker-search:focus {
+  outline: none;
+  border-color: var(--yellow);
+}
+
 .payroll-payslip-table .payroll-driver-select {
   min-width: 120px;
-  max-width: 160px;
+  max-width: 100%;
   font-size: 0.78rem;
 }
 
@@ -7721,7 +7744,7 @@ textarea {
 .payroll-fee-input {
   width: 100%;
   min-width: 120px;
-  max-width: 180px;
+  max-width: 100%;
   font-size: 0.85rem;
 }
 

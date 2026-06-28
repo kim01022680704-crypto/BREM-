@@ -35,7 +35,8 @@
     showPayrollDetailColumns: false,
     defaultDailySettlementApply: true,
     publishWeekStart: '',
-    publishPaymentDateTouched: false
+    publishPaymentDateTouched: false,
+    driverPickerSearch: {}
   };
 
   function getPromotionAggregatedRows() {
@@ -156,6 +157,134 @@
 
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
+  }
+
+  function filterDriversByKeyword(list, keyword) {
+    const q = String(keyword || '').trim().toLowerCase();
+    if (!q) return list;
+    const digits = q.replace(/\D/g, '');
+    return list.filter(driver => {
+      const haystack = [
+        driver.name,
+        driver.phone,
+        driver.baeminId,
+        driver.coupangId,
+        driver.coupangLoginKey,
+        driver.employeeNo,
+        driver.id
+      ].join(' ').toLowerCase();
+      if (haystack.includes(q)) return true;
+      if (digits.length >= 4) {
+        const phoneDigits = String(driver.phone || '').replace(/\D/g, '');
+        return phoneDigits.includes(digits);
+      }
+      return false;
+    });
+  }
+
+  function buildDriverOptionLabel(driver) {
+    const phone = driver.phone ? ` · ${driver.phone}` : '';
+    const employeeNo = driver.employeeNo ? ` · ${driver.employeeNo}` : '';
+    const baeminId = driver.baeminId ? ` · 배민:${driver.baeminId}` : '';
+    const coupangId = driver.coupangId ? ` · 쿠팡:${driver.coupangId}` : '';
+    return `${driver.name || '-'}${phone}${employeeNo}${baeminId}${coupangId}`;
+  }
+
+  function buildDriverSelectOptionsHtml(drivers, selectedId, selectedName) {
+    const options = ['<option value="">기사 선택</option>']
+      .concat(drivers.map(driver => {
+        const selected = selectedId === driver.id ? ' selected' : '';
+        return `<option value="${escapeHtml(driver.id)}"${selected}>${escapeHtml(buildDriverOptionLabel(driver))}</option>`;
+      }));
+    if (selectedId && !drivers.some(driver => driver.id === selectedId)) {
+      options.push(`<option value="${escapeHtml(selectedId)}" selected>${escapeHtml(selectedName || selectedId)}</option>`);
+    }
+    return options.join('');
+  }
+
+  function resolveDriverSelectCandidates(row) {
+    let candidates = Array.isArray(row.matchCandidates) ? [...row.matchCandidates] : [];
+    const needsFullList = !candidates.length
+      || row.matchStatus === 'unmatched'
+      || row.matchStatus === 'short_name'
+      || row.matchStatus === 'empty_id';
+    if (needsFullList) {
+      candidates = getMatchingDrivers();
+    }
+    return candidates;
+  }
+
+  function getDriverSelectDisplayList(candidates, keyword) {
+    const filtered = filterDriversByKeyword(candidates, keyword);
+    if (String(keyword || '').trim()) {
+      return filtered.slice(0, 200);
+    }
+    return filtered.slice(0, 300);
+  }
+
+  function findPayrollRowByKey(rowKey) {
+    const key = String(rowKey || '').trim();
+    if (!key) return null;
+    return state.parsedLines.find(line => line.rowKey === key)
+      || state.promotionPendingRows.find(row => row.rowKey === key)
+      || state.hourlyInsurancePendingRows.find(row => row.rowKey === key)
+      || null;
+  }
+
+  function getRowSelectedDriverId(row) {
+    return row?.selectedDriverId || row?.driverId || '';
+  }
+
+  function getRowSelectedDriverName(row) {
+    return row?.selectedDriverName || row?.driverName || '';
+  }
+
+  function refreshDriverPickerSelect(picker, rowKey) {
+    const row = findPayrollRowByKey(rowKey);
+    if (!row || !picker) return;
+    const select = picker.querySelector('select');
+    if (!select) return;
+    const selectedId = select.value || getRowSelectedDriverId(row);
+    const keyword = state.driverPickerSearch[rowKey] || '';
+    const displayList = getDriverSelectDisplayList(resolveDriverSelectCandidates(row), keyword);
+    select.innerHTML = buildDriverSelectOptionsHtml(
+      displayList,
+      selectedId,
+      getRowSelectedDriverName(row)
+    );
+  }
+
+  function handleDriverPickerSearchInput(event) {
+    const input = event.target.closest('.payroll-driver-picker-search');
+    if (!input) return;
+    const rowKey = input.dataset.payrollDriverSearch;
+    if (!rowKey) return;
+    state.driverPickerSearch[rowKey] = input.value;
+    refreshDriverPickerSelect(input.closest('.payroll-driver-picker'), rowKey);
+  }
+
+  function renderSearchableDriverSelect(row, dataAttr) {
+    const attr = dataAttr || 'payroll-driver-select';
+    const rowKey = row.rowKey;
+    const keyword = state.driverPickerSearch[rowKey] || '';
+    const selectedId = getRowSelectedDriverId(row);
+    const selectedName = getRowSelectedDriverName(row);
+    const displayList = getDriverSelectDisplayList(resolveDriverSelectCandidates(row), keyword);
+    const selectHtml = buildDriverSelectOptionsHtml(displayList, selectedId, selectedName);
+    return `
+      <div class="payroll-driver-picker" data-payroll-driver-picker="${escapeHtml(rowKey)}">
+        <input
+          type="search"
+          class="payroll-driver-picker-search"
+          data-payroll-driver-search="${escapeHtml(rowKey)}"
+          value="${escapeHtml(keyword)}"
+          placeholder="이름·전화·ID 검색"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <select class="payroll-driver-select" data-${attr}="${escapeHtml(rowKey)}">${selectHtml}</select>
+      </div>
+    `;
   }
 
   function formatMoney(value) {
@@ -1037,23 +1166,7 @@
   }
 
   function renderDriverSelect(line) {
-    let candidates = Array.isArray(line.matchCandidates) ? [...line.matchCandidates] : [];
-    if (!candidates.length || line.matchStatus === 'unmatched' || line.matchStatus === 'short_name') {
-      candidates = getMatchingDrivers().slice(0, 300);
-    }
-    const options = ['<option value="">기사 선택</option>']
-      .concat(candidates.map(driver => {
-        const phone = driver.phone ? ` · ${driver.phone}` : '';
-        const employeeNo = driver.employeeNo ? ` · ${driver.employeeNo}` : '';
-        const baeminId = driver.baeminId ? ` · 배민:${driver.baeminId}` : '';
-        const coupangId = driver.coupangId ? ` · 쿠팡:${driver.coupangId}` : '';
-        const selected = line.selectedDriverId === driver.id ? ' selected' : '';
-        return `<option value="${escapeHtml(driver.id)}"${selected}>${escapeHtml(driver.name)}${escapeHtml(phone)}${escapeHtml(employeeNo)}${escapeHtml(baeminId)}${escapeHtml(coupangId)}</option>`;
-      }));
-    if (line.selectedDriverId && !candidates.some(driver => driver.id === line.selectedDriverId)) {
-      options.push(`<option value="${escapeHtml(line.selectedDriverId)}" selected>${escapeHtml(line.selectedDriverName || line.selectedDriverId)}</option>`);
-    }
-    return `<select class="payroll-driver-select" data-payroll-driver-select="${escapeHtml(line.rowKey)}">${options.join('')}</select>`;
+    return renderSearchableDriverSelect(line, 'payroll-driver-select');
   }
 
   function renderPreviewCell(line, field) {
@@ -1241,25 +1354,7 @@
   }
 
   function renderBulkDriverSelect(row, dataAttr) {
-    const attr = dataAttr || 'payroll-bulk-driver-select';
-    let candidates = Array.isArray(row.matchCandidates) && row.matchCandidates.length
-      ? [...row.matchCandidates]
-      : [];
-    if (!candidates.length || row.matchStatus === 'unmatched' || row.matchStatus === 'empty_id') {
-      candidates = getMatchingDrivers().slice(0, 300);
-    }
-    const options = ['<option value="">기사 선택</option>']
-      .concat(candidates.map(driver => {
-        const phone = driver.phone ? ` · ${driver.phone}` : '';
-        const baeminId = driver.baeminId ? ` · 배민:${driver.baeminId}` : '';
-        const coupangId = driver.coupangId ? ` · 쿠팡:${driver.coupangId}` : '';
-        const selected = row.driverId === driver.id ? ' selected' : '';
-        return `<option value="${escapeHtml(driver.id)}"${selected}>${escapeHtml(driver.name)}${escapeHtml(phone)}${escapeHtml(baeminId)}${escapeHtml(coupangId)}</option>`;
-      }));
-    if (row.driverId && !candidates.some(driver => driver.id === row.driverId)) {
-      options.push(`<option value="${escapeHtml(row.driverId)}" selected>${escapeHtml(row.driverName || row.driverId)}</option>`);
-    }
-    return `<select class="payroll-driver-select" data-${attr}="${escapeHtml(row.rowKey)}">${options.join('')}</select>`;
+    return renderSearchableDriverSelect(row, dataAttr || 'payroll-bulk-driver-select');
   }
 
   function renderBulkMatchIssuePanels(config) {
@@ -2326,6 +2421,9 @@
       if (btn) removeHourlyInsuranceBatch(btn.dataset.hourlyInsuranceRemoveBatch);
     });
     $('payrollRetryMatchBtn')?.addEventListener('click', retryDriverMatching);
+    $('payrollMatchIssuesBox')?.addEventListener('input', event => {
+      handleDriverPickerSearchInput(event);
+    });
     $('payrollMatchIssuesBox')?.addEventListener('change', event => {
       const driverSelect = event.target.closest('[data-payroll-driver-select]');
       if (driverSelect) {
@@ -2336,6 +2434,9 @@
       }
     });
 
+    $('payrollBulkPanel')?.addEventListener('input', event => {
+      handleDriverPickerSearchInput(event);
+    });
     $('payrollBulkPanel')?.addEventListener('change', event => {
       const promoSelect = event.target.closest('[data-promotion-bulk-driver-select]');
       if (promoSelect) {

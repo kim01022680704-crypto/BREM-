@@ -584,6 +584,18 @@ app.delete('/api/admin/riders/all', async (req, res) => {
   }
 });
 
+app.get('/api/admin/riders/:riderId', async (req, res) => {
+  try {
+    const result = await ridersAdmin.getRider(getBearerToken(req), req.params.riderId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, rider: result.rider });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사 정보를 불러오지 못했습니다.' });
+  }
+});
+
 app.delete('/api/admin/riders/:riderId', async (req, res) => {
   try {
     const result = await ridersAdmin.deleteRider(getBearerToken(req), req.params.riderId);

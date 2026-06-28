@@ -4,6 +4,7 @@ const { provisionRiderAuthAccount, readRiderSecrets } = require('./rider-auth');
 const {
   RIDER_SELECT_VARIANTS,
   RIDER_LIST_SELECT_VARIANTS,
+  RIDER_DETAIL_SELECT_VARIANTS,
   RIDER_PATCH_RETURN_SELECT,
   isMissingColumnError,
   queryRidersWithSelectFallback
@@ -444,6 +445,31 @@ async function listRiders(accessToken, options = {}) {
   };
 }
 
+async function getRider(accessToken, riderId) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const id = String(riderId || '').trim();
+  if (!id) {
+    return { ok: false, status: 400, error: '기사 ID가 필요합니다.' };
+  }
+
+  const supabase = getServiceClient();
+  const { data, error } = await queryRidersWithSelectFallback(
+    RIDER_DETAIL_SELECT_VARIANTS,
+    columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
+  );
+
+  if (error) {
+    return { ok: false, status: 500, error: error.message || '기사 정보를 불러오지 못했습니다.' };
+  }
+  if (!data) {
+    return { ok: false, status: 404, error: '기사를 찾을 수 없습니다.' };
+  }
+
+  return { ok: true, rider: data };
+}
+
 async function upsertRider(accessToken, rider) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -474,7 +500,7 @@ async function upsertRider(accessToken, rider) {
   }
 
   const { data, error: readError } = await queryRidersWithSelectFallback(
-    RIDER_SELECT_VARIANTS,
+    RIDER_DETAIL_SELECT_VARIANTS,
     columns => supabase.from('riders').select(columns).eq('id', row.id).maybeSingle()
   );
 
@@ -496,7 +522,7 @@ async function resetRiderPassword(accessToken, riderId, defaultPassword = '1234'
 
   const supabase = getServiceClient();
   const { data: existing, error: readError } = await queryRidersWithSelectFallback(
-    RIDER_SELECT_VARIANTS,
+    RIDER_DETAIL_SELECT_VARIANTS,
     columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
   );
 
@@ -539,7 +565,7 @@ async function resetRiderPassword(accessToken, riderId, defaultPassword = '1234'
   }
 
   const { data, error: reloadError } = await queryRidersWithSelectFallback(
-    RIDER_SELECT_VARIANTS,
+    RIDER_DETAIL_SELECT_VARIANTS,
     columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
   );
 
@@ -1132,6 +1158,7 @@ async function mergeAutoRiders(accessToken) {
 
 module.exports = {
   listRiders,
+  getRider,
   upsertRider,
   bulkUpsertRiders,
   bulkPatchRiderMissions,

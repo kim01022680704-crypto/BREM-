@@ -53,6 +53,7 @@
   const hideAllResidentNumbersBtn = document.getElementById('hideAllResidentNumbersBtn');
   const unhideAllResidentNumbersBtn = document.getElementById('unhideAllResidentNumbersBtn');
   const residentNumberBulkStatus = document.getElementById('residentNumberBulkStatus');
+  let loadedEditPassword = '';
   const residentNumberPrivacyStatus = document.getElementById('residentNumberPrivacyStatus');
   const accountNumberPrivacyStatus = document.getElementById('accountNumberPrivacyStatus');
   const loginIdPreview = document.getElementById('loginIdPreview');
@@ -282,14 +283,15 @@
     updatePrivacyStatusUi(driverIdInput.value ? BremStorage.drivers.getById(driverIdInput.value) : null);
   }
 
-  function configurePasswordFieldForMode(editing) {
+  function configurePasswordFieldForMode(editing, passwordValue = '') {
     if (editing) {
-      passwordInput.readOnly = true;
-      passwordInput.value = '';
-      passwordInput.placeholder = '기사앱에서 변경 · PW초기화 버튼 사용';
+      passwordInput.readOnly = false;
+      passwordInput.value = passwordValue || '';
+      passwordInput.placeholder = '기사 로그인 비밀번호 (변경 시에만 저장됨)';
       passwordInput.autocomplete = 'off';
       return;
     }
+    loadedEditPassword = '';
     passwordInput.readOnly = false;
     passwordInput.placeholder = '1234 또는 주민번호 뒷7자리';
     passwordInput.autocomplete = 'new-password';
@@ -411,8 +413,13 @@
 
       const updateData = editingId ? { ...data } : data;
       if (editingId) {
-        // 기사 수정 시 비밀번호는 PW초기화/기사앱 변경만 반영. 폼의 1234 표시값이 덮어쓰지 않게 omit.
-        delete updateData.password;
+        const nextPassword = normalizeLoginPassword(passwordInput.value) || '';
+        if (nextPassword && nextPassword !== loadedEditPassword) {
+          updateData.password = nextPassword;
+          updateData.passwordExplicit = true;
+        } else {
+          delete updateData.password;
+        }
       }
 
       const persist = editingId
@@ -458,7 +465,9 @@
     platformAutoSync = false;
     platformCoupangInput.checked = driver.platformCoupang !== false;
     platformBaeminInput.checked = Boolean(driver.platformBaemin);
-    configurePasswordFieldForMode(true);
+    const currentPassword = driver.password || DEFAULT_DRIVER_PASSWORD;
+    loadedEditPassword = currentPassword;
+    configurePasswordFieldForMode(true, currentPassword);
     if (bankNameInput) bankNameInput.value = driver.bankName || '';
     if (accountHolderInput) accountHolderInput.value = driver.accountHolder || '';
     applySensitiveFieldUi(driver);
@@ -486,13 +495,17 @@
     submitBtn.textContent = '불러오는 중…';
 
     try {
-      let driver = BremStorage.drivers.getById(id);
-      if (!driver) {
-        await BremStorage.waitForDriversFetch?.();
-        driver = BremStorage.drivers.getById(id);
+      let driver = null;
+      if (BremStorage.drivers.fetchById) {
+        try {
+          driver = await BremStorage.drivers.fetchById(id, { force: true });
+        } catch (error) {
+          showToast(error.message || '기사 정보를 불러오지 못했습니다. 목록에서 다시 시도하세요.');
+          return;
+        }
       }
       if (!driver) {
-        await BremStorage.reloadDrivers?.(false);
+        await BremStorage.waitForDriversFetch?.();
         driver = BremStorage.drivers.getById(id);
       }
       if (!driver) {
@@ -529,7 +542,8 @@
       if (!window.confirm(`${driver.name} 기사의 로그인 비밀번호를 1234로 초기화할까요?`)) return;
       try {
         await BremStorage.drivers.resetPassword(id, DEFAULT_DRIVER_PASSWORD);
-        configurePasswordFieldForMode(true);
+        loadedEditPassword = DEFAULT_DRIVER_PASSWORD;
+        configurePasswordFieldForMode(true, DEFAULT_DRIVER_PASSWORD);
         showToast('비밀번호를 1234로 초기화했습니다.');
       } catch (error) {
         showToast(error.message || '비밀번호 초기화에 실패했습니다.');
