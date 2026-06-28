@@ -29,19 +29,7 @@ function readTotalPages(payload) {
   return null;
 }
 
-async function fetchBaeminJson(url, sessionCookie, logContext = null) {
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json, text/plain, */*',
-      Cookie: sessionCookie,
-      'User-Agent': 'BREM-Baemin-Collector/2.0',
-      Referer: `${BAEMIN_ORIGIN}/`
-    },
-    redirect: 'manual'
-  });
-
-  const bodyText = await response.text();
+async function parseBaeminFetchResponse({ url, status, bodyText, logContext = null, via = 'fetch' }) {
   let payload = null;
   try {
     payload = bodyText ? JSON.parse(bodyText) : null;
@@ -49,48 +37,52 @@ async function fetchBaeminJson(url, sessionCookie, logContext = null) {
     payload = null;
   }
 
-  if (response.status >= 300 && response.status < 400) {
+  if (status >= 300 && status < 400) {
     return {
       ok: false,
-      status: response.status,
+      status,
       bodyText,
       error: '배민 로그인 만료',
-      message: '배민 로그인 만료'
+      message: '배민 로그인 만료',
+      via
     };
   }
 
-  if (!response.ok || !payload) {
+  if (status < 200 || status >= 300 || !payload) {
     const htmlPayload = extractJsonFromHtml(bodyText);
     if (htmlPayload) {
-      return { ok: true, status: response.status, bodyText, payload: htmlPayload, fallback: 'html_json' };
+      return { ok: true, status, bodyText, payload: htmlPayload, fallback: 'html_json', via };
     }
 
     const tableRows = extractTableRowsFromHtml(bodyText);
     if (tableRows?.length) {
       return {
         ok: true,
-        status: response.status,
+        status,
         bodyText,
         payload: { data: tableRows, totalPage: 1, last: true, number: 0 },
-        fallback: 'html_table'
+        fallback: 'html_table',
+        via
       };
     }
 
-    const message = classifyFetchError(response.status, bodyText);
+    const message = classifyFetchError(status, bodyText);
     return {
       ok: false,
-      status: response.status,
+      status,
       bodyText,
       error: message,
-      message
+      message,
+      via
     };
   }
 
   const baseResult = {
     ok: true,
-    status: response.status,
+    status,
     bodyText,
-    payload
+    payload,
+    via
   };
 
   if (logContext) {
@@ -98,7 +90,7 @@ async function fetchBaeminJson(url, sessionCookie, logContext = null) {
       collectDate: logContext.collectDate,
       sourceMenu: logContext.sourceMenu,
       sourceUrl: url,
-      httpStatus: response.status,
+      httpStatus: status,
       runId: logContext.runId,
       pageIndex: logContext.pageIndex,
       rawJson: payload || { bodyPreview: String(bodyText || '').slice(0, 50000) }
@@ -108,16 +100,39 @@ async function fetchBaeminJson(url, sessionCookie, logContext = null) {
   return baseResult;
 }
 
+async function fetchBaeminJson(url, sessionCookie, logContext = null) {
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      Cookie: sessionCookie,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Referer: `${BAEMIN_ORIGIN}/delivery/history`
+    },
+    redirect: 'manual'
+  });
+
+  const bodyText = await response.text();
+  return parseBaeminFetchResponse({
+    url,
+    status: response.status,
+    bodyText,
+    logContext,
+    via: 'fetch'
+  });
+}
+
 async function fetchPaginatedApi({
   apiPath,
   sessionCookie,
   baseQuery = {},
   pagination = {},
   logPrefix = '[BREM][api-fetch]',
-  logContext = null
+  logContext = null,
+  playwrightContext = null
 }) {
   const cookie = String(sessionCookie || '').trim();
-  if (!cookie) {
+  if (!cookie && !playwrightContext) {
     return {
       ok: false,
       status: 400,
@@ -125,6 +140,8 @@ async function fetchPaginatedApi({
       message: '배민 세션 쿠키가 없습니다.'
     };
   }
+
+  const { fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
 
   const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
   const dataKey = pagination.dataKey || 'data';
@@ -143,8 +160,14 @@ async function fetchPaginatedApi({
     params.set('size', String(size));
     lastUrl = `${BAEMIN_ORIGIN}${apiPath}?${params.toString()}`;
 
-    console.log(`${logPrefix} GET ${lastUrl}`);
-    const result = await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
+    console.log(`${logPrefix} GET ${lastUrl}${playwrightContext ? ' (playwright)' : ''}`);
+    const result = playwrightContext
+      ? await fetchBaeminJsonViaPlaywright(
+        playwrightContext,
+        lastUrl,
+        logContext ? { ...logContext, pageIndex: page } : null
+      )
+      : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
     if (!result.ok) {
       console.error(`${logPrefix} FAIL status=${result.status} message=${result.message}`);
       console.error(`${logPrefix} response.text():`, String(result.bodyText || '').slice(0, 800));
@@ -192,6 +215,7 @@ async function fetchPaginatedApi({
 module.exports = {
   fetchBaeminJson,
   fetchPaginatedApi,
+  parseBaeminFetchResponse,
   extractDataArray,
   readTotalPages
 };

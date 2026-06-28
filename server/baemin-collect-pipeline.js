@@ -183,7 +183,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       collectDate,
       sourceMenu: sourceId,
       runId: context.runId
-    } : null
+    } : null,
+    playwrightContext: context.playwrightContext || null
   });
 
   if (!fetched.ok) {
@@ -235,6 +236,7 @@ async function runFullCollectPipeline(options = {}) {
   const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
   const source = String(options.source || 'local_scheduler').trim();
   const runId = options.runId || createCollectRunId();
+  const playwrightContext = options.playwrightContext || null;
   const results = {};
   const collectedAt = new Date().toISOString();
 
@@ -246,7 +248,7 @@ async function runFullCollectPipeline(options = {}) {
 
   const cookie = String(options.sessionCookie || '').trim()
     || await getBaeminSession().resolveStoredSessionCookie({});
-  if (!cookie) {
+  if (!cookie && !playwrightContext) {
     return {
       ok: false,
       message: '배민 세션 쿠키가 없습니다. [배민 세션 갱신]으로 로그인하세요.',
@@ -263,9 +265,17 @@ async function runFullCollectPipeline(options = {}) {
 
   let anySuccess = false;
   let sessionExpired = false;
-  const pipelineContext = { runId };
+  let authFailureCount = 0;
+  const pipelineContext = { runId, playwrightContext };
+  const sourceDefs = listCollectSources();
 
-  for (const sourceDef of listCollectSources()) {
+  function isAuthFailure(result) {
+    return result.status === 401
+      || result.status === 403
+      || result.message === '배민 로그인 만료';
+  }
+
+  for (const sourceDef of sourceDefs) {
     const result = await collectSource(sourceDef.id, cookie, collectDate, registry, pipelineContext);
     results[sourceDef.id] = result;
 
@@ -286,11 +296,22 @@ async function runFullCollectPipeline(options = {}) {
     });
 
     if (result.ok) anySuccess = true;
-    if (result.status === 401 || result.status === 403 || result.message === '배민 로그인 만료') {
-      sessionExpired = true;
-      await getBaeminSession().markSessionError(result.message || '배민 로그인 만료');
-      break;
+
+    if (isAuthFailure(result)) {
+      authFailureCount += 1;
+      if (!playwrightContext) {
+        sessionExpired = true;
+        await getBaeminSession().markSessionError(result.message || '배민 로그인 만료');
+        break;
+      }
+      console.warn(`[BREM][collect] ${sourceDef.id} auth failure — continue (playwright browser active)`);
+      continue;
     }
+  }
+
+  if (playwrightContext && authFailureCount === sourceDefs.length && !anySuccess) {
+    sessionExpired = true;
+    await getBaeminSession().markSessionError('배민 로그인 만료');
   }
 
   if (anySuccess && !sessionExpired) {
