@@ -73,6 +73,57 @@
     return `pds_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  function normalizePlatforms(item = {}) {
+    if (window.BremStorage?.payrollDailySettlement?.normalizePlatform) {
+      return window.BremStorage.payrollDailySettlement.normalizePlatform(item);
+    }
+    const baeminId = String(item.baeminId || '').trim();
+    const coupangId = String(item.coupangId || '').trim();
+    let platformBaemin = item.platformBaemin;
+    let platformCoupang = item.platformCoupang;
+    if (platformBaemin === undefined && platformCoupang === undefined) {
+      if (baeminId && !coupangId) {
+        platformBaemin = true;
+        platformCoupang = false;
+      } else if (coupangId && !baeminId) {
+        platformBaemin = false;
+        platformCoupang = true;
+      } else {
+        platformBaemin = true;
+        platformCoupang = true;
+      }
+    } else {
+      platformBaemin = platformBaemin !== false;
+      platformCoupang = platformCoupang !== false;
+    }
+    if (!platformBaemin && !platformCoupang) {
+      if (baeminId) platformBaemin = true;
+      else if (coupangId) platformCoupang = true;
+      else {
+        platformBaemin = true;
+        platformCoupang = true;
+      }
+    }
+    return { platformBaemin, platformCoupang };
+  }
+
+  function platformLabel(item = {}) {
+    const { platformBaemin, platformCoupang } = normalizePlatforms(item);
+    if (platformBaemin && platformCoupang) return '배민+쿠팡';
+    if (platformBaemin) return '배민';
+    if (platformCoupang) return '쿠팡';
+    return '-';
+  }
+
+  function buildPlatformFields(baeminId, coupangId, extra = {}) {
+    return normalizePlatforms({
+      baeminId,
+      coupangId,
+      platformBaemin: extra.platformBaemin,
+      platformCoupang: extra.platformCoupang
+    });
+  }
+
   /** 배민ID 또는 쿠팡ID 중 하나 필수 · 입력값 그대로 저장 */
   function matchDriver(baeminId, coupangId, phone, drivers) {
     const baemin = String(baeminId || '').trim();
@@ -142,8 +193,12 @@
         existing.coupangId = row.coupangId || existing.coupangId;
         existing.phone = row.phone || existing.phone;
         existing.driverName = row.driverName || existing.driverName;
+        const platforms = buildPlatformFields(existing.baeminId, existing.coupangId);
+        existing.platformBaemin = platforms.platformBaemin;
+        existing.platformCoupang = platforms.platformCoupang;
         existing.updatedAt = new Date().toISOString();
       } else {
+        const platforms = buildPlatformFields(row.baeminId, row.coupangId);
         list.push({
           id: makeId(),
           driverId: row.driverId,
@@ -152,6 +207,8 @@
           coupangId: row.coupangId || '',
           phone: row.phone || '',
           region: row.region || '',
+          platformBaemin: platforms.platformBaemin,
+          platformCoupang: platforms.platformCoupang,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
@@ -175,18 +232,33 @@
       if (extra.baeminId !== undefined) existing.baeminId = String(extra.baeminId || '').trim();
       if (extra.coupangId !== undefined) existing.coupangId = String(extra.coupangId || '').trim();
       if (extra.phone !== undefined) existing.phone = String(extra.phone || '').trim();
+      if (extra.platformBaemin !== undefined || extra.platformCoupang !== undefined) {
+        const platforms = normalizePlatforms({
+          baeminId: existing.baeminId,
+          coupangId: existing.coupangId,
+          platformBaemin: extra.platformBaemin ?? existing.platformBaemin,
+          platformCoupang: extra.platformCoupang ?? existing.platformCoupang
+        });
+        existing.platformBaemin = platforms.platformBaemin;
+        existing.platformCoupang = platforms.platformCoupang;
+      }
       existing.driverName = driver.name || existing.driverName;
       existing.updatedAt = new Date().toISOString();
       return { list, persist: () => persistAll(list) };
     }
+    const baeminId = extra.baeminId ?? resolveDriverPlatformId(driver, 'baemin');
+    const coupangId = extra.coupangId ?? resolveDriverPlatformId(driver, 'coupang');
+    const platforms = buildPlatformFields(baeminId, coupangId, extra);
     list.push({
       id: makeId(),
       driverId: driver.id,
       driverName: driver.name || '',
-      baeminId: extra.baeminId ?? resolveDriverPlatformId(driver, 'baemin'),
-      coupangId: extra.coupangId ?? resolveDriverPlatformId(driver, 'coupang'),
+      baeminId,
+      coupangId,
       phone: extra.phone ?? (driver.phone || ''),
       region: String(extra.region || '').trim(),
+      platformBaemin: platforms.platformBaemin,
+      platformCoupang: platforms.platformCoupang,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
@@ -296,6 +368,34 @@
     ];
   }
 
+  function exportRowsToExcel(rows, filename, sheetName = '일정산') {
+    if (!window.XLSX) {
+      throw new Error('엑셀 라이브러리를 불러오지 못했습니다.');
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    const data = [
+      ['번호', '기사명', '배민ID', '쿠팡ID', '전화', '지역', '배민', '쿠팡', '플랫폼'],
+      ...list.map((item, index) => {
+        const platforms = normalizePlatforms(item);
+        return [
+          index + 1,
+          item.driverName || '',
+          item.baeminId || '',
+          item.coupangId || '',
+          item.phone || '',
+          item.region || '',
+          platforms.platformBaemin ? 'Y' : '',
+          platforms.platformCoupang ? 'Y' : '',
+          platformLabel(item)
+        ];
+      })
+    ];
+    const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    window.XLSX.writeFile(workbook, filename);
+  }
+
   window.BremPayrollDailySettlementAdmin = Object.freeze({
     STORAGE_KEY,
     readAll,
@@ -319,6 +419,9 @@
     addRegion,
     removeRegion,
     getByRegion,
+    normalizePlatforms,
+    platformLabel,
+    exportRowsToExcel,
     templateRows,
     resolveDriverPlatformId
   });

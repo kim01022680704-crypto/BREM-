@@ -209,6 +209,62 @@
     return String(value || '').trim() || '미지정';
   }
 
+  function normalizePlatforms(item) {
+    return roster.normalizePlatforms?.(item) || { platformBaemin: true, platformCoupang: true };
+  }
+
+  function platformLabel(item) {
+    return roster.platformLabel?.(item) || '-';
+  }
+
+  function renderPlatformChecks(item, idAttr) {
+    const platforms = normalizePlatforms(item);
+    const id = escapeHtml(idAttr);
+    return `
+      <div class="payroll-daily-platform-cell">
+        <label class="payroll-daily-platform-check">
+          <input type="checkbox" data-pds-platform-baemin="${id}" ${platforms.platformBaemin ? 'checked' : ''}> 배민
+        </label>
+        <label class="payroll-daily-platform-check">
+          <input type="checkbox" data-pds-platform-coupang="${id}" ${platforms.platformCoupang ? 'checked' : ''}> 쿠팡
+        </label>
+      </div>
+    `;
+  }
+
+  function readEnrollPlatforms() {
+    const baemin = $('payrollDailySettlementEnrollBaemin')?.checked !== false;
+    const coupang = $('payrollDailySettlementEnrollCoupang')?.checked !== false;
+    if (!baemin && !coupang) {
+      return { ok: false, error: '배민 또는 쿠팡 중 하나는 선택해야 합니다.' };
+    }
+    return { ok: true, platformBaemin: baemin, platformCoupang: coupang };
+  }
+
+  function readBulkPlatforms() {
+    const baemin = $('payrollDailySettlementBulkBaemin')?.checked !== false;
+    const coupang = $('payrollDailySettlementBulkCoupang')?.checked !== false;
+    if (!baemin && !coupang) {
+      return { ok: false, error: '배민 또는 쿠팡 중 하나는 선택해야 합니다.' };
+    }
+    return { ok: true, platformBaemin: baemin, platformCoupang: coupang };
+  }
+
+  function stampExportFilename(prefix) {
+    const date = new Date().toISOString().slice(0, 10);
+    return `BREM_급여일정산_${prefix}_${date}.xlsx`;
+  }
+
+  function exportRows(rows, filename, sheetName) {
+    try {
+      roster.exportRowsToExcel(rows, filename, sheetName);
+      showToast(`엑셀 저장: ${filename}`);
+    } catch (error) {
+      console.error('[daily settlement export]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
+  }
+
   function renderRegionSettleView() {
     syncRegionSelects();
     renderRegionQuickPick();
@@ -217,6 +273,7 @@
     const region = state.settleRegion;
     const summary = $('payrollDailySettlementRegionSummary');
     const detailBtn = $('payrollDailySettlementRegionDetailBtn');
+    const exportBtn = $('payrollDailySettlementExportRegionBtn');
     const detailWrap = $('payrollDailySettlementRegionDetail');
     const detailTitle = $('payrollDailySettlementRegionDetailTitle');
     const detailCount = $('payrollDailySettlementRegionDetailCount');
@@ -225,6 +282,7 @@
     if (!region) {
       if (summary) summary.textContent = '지역을 선택하면 해당 기사 목록을 확인할 수 있습니다.';
       if (detailBtn) detailBtn.hidden = true;
+      if (exportBtn) exportBtn.hidden = true;
       if (detailWrap) detailWrap.hidden = true;
       return;
     }
@@ -236,13 +294,14 @@
       detailBtn.hidden = false;
       detailBtn.textContent = state.regionDetailOpen ? '상세 접기' : '상세보기';
     }
+    if (exportBtn) exportBtn.hidden = false;
 
     if (detailTitle) detailTitle.textContent = `${label} 일정산 기사`;
     if (detailCount) detailCount.textContent = `총 ${riders.length}명`;
 
     if (detailBody) {
       if (!riders.length) {
-        detailBody.innerHTML = '<tr><td colspan="6" class="empty">해당 지역에 등록된 기사가 없습니다.</td></tr>';
+        detailBody.innerHTML = '<tr><td colspan="7" class="empty">해당 지역에 등록된 기사가 없습니다.</td></tr>';
       } else {
         detailBody.innerHTML = riders.map((item, index) => `
           <tr>
@@ -251,6 +310,7 @@
             <td>${escapeHtml(item.baeminId || '-')}</td>
             <td>${escapeHtml(item.coupangId || '-')}</td>
             <td>${escapeHtml(item.phone || '-')}</td>
+            <td>${escapeHtml(platformLabel(item))}</td>
             <td>${escapeHtml(item.region || '미지정')}</td>
           </tr>
         `).join('');
@@ -303,7 +363,7 @@
     if (countEl) countEl.textContent = `${all.length}명 등록 · 표시 ${list.length}명`;
 
     if (!list.length) {
-      body.innerHTML = `<tr><td colspan="8" class="empty">${all.length ? '검색 결과가 없습니다.' : '일정산 등록 기사가 없습니다. 라이더 검색에서 등록하거나 일괄등록을 사용하세요.'}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="empty">${all.length ? '검색 결과가 없습니다.' : '일정산 등록 기사가 없습니다. 라이더 검색에서 등록하거나 일괄등록을 사용하세요.'}</td></tr>`;
       updateSelectedHint();
       renderDriverPicker();
       renderRegionSettleView();
@@ -317,6 +377,7 @@
         <td>${escapeHtml(item.baeminId || '-')}</td>
         <td>${escapeHtml(item.coupangId || '-')}</td>
         <td>${escapeHtml(item.phone || '-')}</td>
+        <td>${renderPlatformChecks(item, item.id)}</td>
         <td>
           <select class="payroll-region-select" data-pds-region-select="${escapeHtml(item.id)}">
             ${regionSelectOptions(item.region, { includeEmptyOption: true })}
@@ -429,6 +490,29 @@
     })();
   }
 
+  function savePlatform(id, platformBaemin, platformCoupang) {
+    if (!platformBaemin && !platformCoupang) {
+      showToast('배민 또는 쿠팡 중 하나는 선택해야 합니다.');
+      refreshAll();
+      return;
+    }
+    void (async () => {
+      try {
+        const list = roster.readAll();
+        const item = list.find(row => row.id === id);
+        if (!item) return;
+        item.platformBaemin = platformBaemin;
+        item.platformCoupang = platformCoupang;
+        item.updatedAt = new Date().toISOString();
+        await roster.commitSaveAll(list);
+        refreshAll();
+      } catch (error) {
+        console.error('[daily settlement platform save]', error);
+        showToast(error.message || '플랫폼 저장에 실패했습니다.');
+      }
+    })();
+  }
+
   function enrollDriverById(driverId) {
     const driver = getDrivers().find(item => item.id === driverId);
     if (!driver) {
@@ -436,12 +520,21 @@
       return;
     }
     const region = String($('payrollDailySettlementEnrollRegion')?.value || '').trim();
+    const platforms = readEnrollPlatforms();
+    if (!platforms.ok) {
+      showToast(platforms.error);
+      return;
+    }
     void (async () => {
       try {
-        await roster.commitEnrollDriver(driver, { region });
+        await roster.commitEnrollDriver(driver, {
+          region,
+          platformBaemin: platforms.platformBaemin,
+          platformCoupang: platforms.platformCoupang
+        });
         refreshAll();
         refreshPayrollMatches();
-        showToast(`${driver.name || '기사'} 일정산 등록${region ? ` · ${region}` : ''}`);
+        showToast(`${driver.name || '기사'} 일정산 등록 · ${platformLabel(platforms)}${region ? ` · ${region}` : ''}`);
       } catch (error) {
         console.error('[daily settlement enroll]', error);
         showToast(error.message || '등록 저장에 실패했습니다.');
@@ -568,6 +661,66 @@
     renderRegionSettleView();
   }
 
+  function applyBulkPlatformChange() {
+    const platforms = readBulkPlatforms();
+    if (!platforms.ok) {
+      showToast(platforms.error);
+      return;
+    }
+    if (!state.selectedIds.size) {
+      showToast('플랫폼을 변경할 기사를 선택하세요.');
+      return;
+    }
+    void (async () => {
+      try {
+        const selected = new Set(state.selectedIds);
+        const list = roster.readAll().map(item => {
+          if (!selected.has(item.id)) return item;
+          return {
+            ...item,
+            platformBaemin: platforms.platformBaemin,
+            platformCoupang: platforms.platformCoupang,
+            updatedAt: new Date().toISOString()
+          };
+        });
+        await roster.commitSaveAll(list);
+        refreshAll();
+        showToast(`선택 ${selected.size}명 · ${platformLabel(platforms)} 적용`);
+      } catch (error) {
+        console.error('[daily settlement bulk platform]', error);
+        showToast(error.message || '플랫폼 일괄 변경에 실패했습니다.');
+      }
+    })();
+  }
+
+  function exportAllRoster() {
+    exportRows(roster.readAll(), stampExportFilename('전체'), '전체');
+  }
+
+  function exportSelectedRoster() {
+    if (!state.selectedIds.size) {
+      showToast('내보낼 기사를 선택하세요.');
+      return;
+    }
+    const selected = new Set(state.selectedIds);
+    const rows = roster.readAll().filter(item => selected.has(item.id));
+    exportRows(rows, stampExportFilename(`선택${rows.length}명`), '선택');
+  }
+
+  function exportCurrentRegion() {
+    if (!state.settleRegion) {
+      showToast('지역을 먼저 선택하세요.');
+      return;
+    }
+    const rows = roster.getByRegion?.(state.settleRegion) || [];
+    if (!rows.length) {
+      showToast('내보낼 기사가 없습니다.');
+      return;
+    }
+    const label = regionLabel(state.settleRegion).replace(/[\\/:*?"<>|]/g, '_');
+    exportRows(rows, stampExportFilename(label), label);
+  }
+
   function downloadTemplate() {
     if (!window.XLSX) {
       showToast('엑셀 라이브러리를 불러오지 못했습니다.');
@@ -586,6 +739,10 @@
     $('payrollDailySettlementBulkTemplateBtn')?.addEventListener('click', downloadTemplate);
     $('payrollDailySettlementDeleteSelectedBtn')?.addEventListener('click', deleteSelected);
     $('payrollDailySettlementApplyBulkRegionBtn')?.addEventListener('click', applyBulkRegionChange);
+    $('payrollDailySettlementApplyBulkPlatformBtn')?.addEventListener('click', applyBulkPlatformChange);
+    $('payrollDailySettlementExportAllBtn')?.addEventListener('click', exportAllRoster);
+    $('payrollDailySettlementExportSelectedBtn')?.addEventListener('click', exportSelectedRoster);
+    $('payrollDailySettlementExportRegionBtn')?.addEventListener('click', exportCurrentRegion);
     $('payrollDailySettlementRegionAddBtn')?.addEventListener('click', addRegionFromInput);
     $('payrollDailySettlementRegionNew')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
@@ -658,6 +815,14 @@
       const regionSelect = event.target.closest('[data-pds-region-select]');
       if (regionSelect) {
         saveRegion(regionSelect.dataset.pdsRegionSelect, regionSelect.value);
+        return;
+      }
+      if (event.target.matches('[data-pds-platform-baemin], [data-pds-platform-coupang]')) {
+        const row = event.target.closest('tr');
+        const id = event.target.dataset.pdsPlatformBaemin || event.target.dataset.pdsPlatformCoupang;
+        const platformBaemin = row?.querySelector('[data-pds-platform-baemin]')?.checked === true;
+        const platformCoupang = row?.querySelector('[data-pds-platform-coupang]')?.checked === true;
+        savePlatform(id, platformBaemin, platformCoupang);
       }
     });
 

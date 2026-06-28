@@ -7669,6 +7669,39 @@ textarea {
   margin-top: 8px;
 }
 
+.payroll-daily-platform-checks {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.payroll-daily-platform-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted, #94a3b8);
+}
+
+.payroll-daily-platform-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.84rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.payroll-daily-platform-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 92px;
+}
+
+.payroll-daily-bulk-platform {
+  margin-left: auto;
+}
+
 .payroll-preview-toolbar-label {
   color: var(--yellow);
   font-size: 0.88rem;

@@ -6216,17 +6216,61 @@ const BremStorage = (function () {
     const driverId = String(item.driverId || '').trim();
     if (!driverId) return null;
     const id = String(item.id || '').trim() || `pds_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const baeminId = String(item.baeminId || '').trim();
+    const coupangId = String(item.coupangId || '').trim().replace(/\s/g, '');
+    const platforms = normalizePayrollDailyPlatform({
+      baeminId,
+      coupangId,
+      platformBaemin: item.platformBaemin,
+      platformCoupang: item.platformCoupang
+    });
     return {
       id,
       driverId,
       driverName: String(item.driverName || '').trim(),
-      baeminId: String(item.baeminId || '').trim(),
-      coupangId: String(item.coupangId || '').trim().replace(/\s/g, ''),
+      baeminId,
+      coupangId,
       phone: String(item.phone || '').trim(),
       region: String(item.region || '').trim(),
+      platformBaemin: platforms.platformBaemin,
+      platformCoupang: platforms.platformCoupang,
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: item.updatedAt || new Date().toISOString()
     };
+  }
+
+  function normalizePayrollDailyPlatform(item = {}) {
+    const baeminId = String(item.baeminId || '').trim();
+    const coupangId = String(item.coupangId || '').trim();
+    let platformBaemin = item.platformBaemin;
+    let platformCoupang = item.platformCoupang;
+
+    if (platformBaemin === undefined && platformCoupang === undefined) {
+      if (baeminId && !coupangId) {
+        platformBaemin = true;
+        platformCoupang = false;
+      } else if (coupangId && !baeminId) {
+        platformBaemin = false;
+        platformCoupang = true;
+      } else {
+        platformBaemin = true;
+        platformCoupang = true;
+      }
+    } else {
+      platformBaemin = platformBaemin !== false;
+      platformCoupang = platformCoupang !== false;
+    }
+
+    if (!platformBaemin && !platformCoupang) {
+      if (baeminId) platformBaemin = true;
+      else if (coupangId) platformCoupang = true;
+      else {
+        platformBaemin = true;
+        platformCoupang = true;
+      }
+    }
+
+    return { platformBaemin, platformCoupang };
   }
 
   function migrateLegacyPayrollDailySettlementRoster() {
@@ -6413,6 +6457,10 @@ const BremStorage = (function () {
       if (!id) return '';
       const item = payrollDailySettlement.getAll().find(row => row.driverId === id);
       return item?.region || '';
+    },
+
+    normalizePlatform(item = {}) {
+      return normalizePayrollDailyPlatform(item);
     }
   };
 
