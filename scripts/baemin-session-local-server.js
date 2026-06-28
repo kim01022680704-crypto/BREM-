@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260629c';
+const SERVER_VERSION = '20260629d';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -813,7 +813,11 @@ async function runLocalFullCollect(options = {}) {
       captureDate: collectDate,
       source: 'local_manual',
       sessionCookie,
-      playwrightContext: isContextAlive(activeContext) ? activeContext : null
+      playwrightContext: isContextAlive(activeContext) ? activeContext : null,
+      playwrightPage: (() => {
+        if (!isContextAlive(activeContext)) return null;
+        return scanBrowserTabs(activeContext).page || null;
+      })()
     });
 
     autoCollectRuntime = {
@@ -831,12 +835,12 @@ async function runLocalFullCollect(options = {}) {
         return Boolean(tabs.anyLoggedIn || tabs.anyHistory);
       })();
 
-    if (result.sessionExpired && browserStillLoggedIn) {
-      console.warn('[BREM] [전체수집] API 인증 실패지만 브라우저 로그인 유지 — 세션 pause 하지 않음');
+    if (browserStillLoggedIn) {
       sessionPaused = false;
       await baeminAutoCollect.clearSessionPause().catch(() => {});
-      if (result.ok || Number(result.savedCount || 0) > 0) {
-        await require('../server/baemin-delivery-session').markSessionValidated().catch(() => {});
+      await require('../server/baemin-delivery-session').markSessionValidated().catch(() => {});
+      if (result.sessionExpired) {
+        console.warn('[BREM] [전체수집] API 실패 — 브라우저 로그인 유지, 세션 만료 표시 안 함');
       }
     } else if (result.sessionExpired) {
       sessionPaused = true;
@@ -926,10 +930,12 @@ async function runScheduledCollect(trigger = 'schedule') {
       sessionCookie = await extractBaeminCookies(activeContext) || '';
     }
 
+    const tabs = isContextAlive(activeContext) ? scanBrowserTabs(activeContext) : null;
     const result = await baeminAutoCollect.runAutoCollectJob({
       source: trigger === 'manual' ? 'local_manual' : 'local_scheduler',
       sessionCookie: sessionCookie || undefined,
-      playwrightContext: isContextAlive(activeContext) ? activeContext : null
+      playwrightContext: isContextAlive(activeContext) ? activeContext : null,
+      playwrightPage: tabs?.page || null
     });
     autoCollectRuntime = {
       ...autoCollectRuntime,
@@ -1031,8 +1037,18 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   for (const url of probeUrls) {
     try {
       console.log(`[BREM] [수집 전 탐색] ${url}`);
+      const waitApi = page.waitForResponse(
+        resp => resp.url().includes('api-deliverycenter.baemin.com')
+          && resp.status() === 200
+          && String(resp.headers()['content-type'] || '').includes('json'),
+        { timeout: 15000 }
+      ).catch(() => null);
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
-      await delay(2500);
+      const apiResponse = await waitApi;
+      if (apiResponse) {
+        console.log(`[BREM] [수집 전 탐색] API 감지 ${apiResponse.url()}`);
+      }
+      await delay(1500);
     } catch (error) {
       console.warn(`[BREM] [수집 전 탐색] 실패 | ${formatError(error)}`);
     }
@@ -1506,7 +1522,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260629c 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260629d 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');

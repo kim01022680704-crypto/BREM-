@@ -130,12 +130,13 @@ async function fetchPaginatedApi({
   pagination = {},
   logPrefix = '[BREM][api-fetch]',
   logContext = null,
+  playwrightPage = null,
   playwrightContext = null
 }) {
   const { BAEMIN_API_ORIGIN, BAEMIN_ORIGIN } = require('./baemin-collect-sources');
   const origin = String(apiOrigin || BAEMIN_API_ORIGIN || BAEMIN_ORIGIN).replace(/\/$/, '');
   const cookie = String(sessionCookie || '').trim();
-  if (!cookie && !playwrightContext) {
+  if (!cookie && !playwrightContext && !playwrightPage) {
     return {
       ok: false,
       status: 400,
@@ -144,7 +145,7 @@ async function fetchPaginatedApi({
     };
   }
 
-  const { fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
+  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
 
   const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
   const dataKey = pagination.dataKey || 'data';
@@ -163,14 +164,20 @@ async function fetchPaginatedApi({
     params.set('size', String(size));
     lastUrl = `${origin}${apiPath}?${params.toString()}`;
 
-    console.log(`${logPrefix} GET ${lastUrl}${playwrightContext ? ' (playwright)' : ''}`);
-    const result = playwrightContext
-      ? await fetchBaeminJsonViaPlaywright(
-        playwrightContext,
+    console.log(`${logPrefix} GET ${lastUrl}${playwrightPage ? ' (browser-tab)' : (playwrightContext ? ' (playwright)' : '')}`);
+    const result = playwrightPage
+      ? await fetchBaeminJsonViaPage(
+        playwrightPage,
         lastUrl,
         logContext ? { ...logContext, pageIndex: page } : null
       )
-      : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
+      : playwrightContext
+        ? await fetchBaeminJsonViaPlaywright(
+          playwrightContext,
+          lastUrl,
+          logContext ? { ...logContext, pageIndex: page } : null
+        )
+        : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
     if (!result.ok) {
       console.error(`${logPrefix} FAIL status=${result.status} message=${result.message}`);
       console.error(`${logPrefix} response.text():`, String(result.bodyText || '').slice(0, 800));

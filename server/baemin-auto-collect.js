@@ -203,12 +203,14 @@ async function runAutoCollectJob(options = {}) {
   const source = String(options.source || 'local_scheduler').trim();
   const sessionCookie = String(options.sessionCookie || '').trim();
   const playwrightContext = options.playwrightContext || null;
+  const playwrightPage = options.playwrightPage || null;
 
   const pipelineResult = await runFullCollectPipeline({
     collectDate: captureDate,
     source,
     sessionCookie: sessionCookie || undefined,
-    playwrightContext
+    playwrightContext,
+    playwrightPage
   });
   const deliveryResult = pipelineResult.results?.delivery_status;
 

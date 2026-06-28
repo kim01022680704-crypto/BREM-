@@ -183,7 +183,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       sourceMenu: sourceId,
       runId: context.runId
     } : null,
-    playwrightContext: context.playwrightContext || null
+    playwrightContext: context.playwrightContext || null,
+    playwrightPage: context.playwrightPage || null
   });
 
   if (!fetched.ok) {
@@ -236,6 +237,7 @@ async function runFullCollectPipeline(options = {}) {
   const source = String(options.source || 'local_scheduler').trim();
   const runId = options.runId || createCollectRunId();
   const playwrightContext = options.playwrightContext || null;
+  const playwrightPage = options.playwrightPage || null;
   const results = {};
   const collectedAt = new Date().toISOString();
 
@@ -247,7 +249,7 @@ async function runFullCollectPipeline(options = {}) {
 
   const cookie = String(options.sessionCookie || '').trim()
     || await getBaeminSession().resolveStoredSessionCookie({});
-  if (!cookie && !playwrightContext) {
+  if (!cookie && !playwrightContext && !playwrightPage) {
     return {
       ok: false,
       message: '배민 세션 쿠키가 없습니다. [배민 세션 갱신]으로 로그인하세요.',
@@ -265,7 +267,7 @@ async function runFullCollectPipeline(options = {}) {
   let anySuccess = false;
   let sessionExpired = false;
   let authFailureCount = 0;
-  const pipelineContext = { runId, playwrightContext };
+  const pipelineContext = { runId, playwrightContext, playwrightPage };
   const sourceDefs = listCollectSources();
 
   function isAuthFailure(result) {
@@ -309,8 +311,12 @@ async function runFullCollectPipeline(options = {}) {
   }
 
   if (playwrightContext && authFailureCount === sourceDefs.length && !anySuccess) {
-    sessionExpired = true;
-    await getBaeminSession().markSessionError('배민 로그인 만료');
+    if (!playwrightPage) {
+      sessionExpired = true;
+      await getBaeminSession().markSessionError('배민 로그인 만료');
+    } else {
+      console.warn('[BREM][collect] all API calls failed but browser tab is active — session not marked expired');
+    }
   }
 
   if (anySuccess && !sessionExpired) {
@@ -327,7 +333,9 @@ async function runFullCollectPipeline(options = {}) {
     sessionExpired,
     message: sessionExpired
       ? '세션 만료 — 배민 세션 갱신 필요'
-      : (anySuccess ? '수집 완료' : '수집 실패')
+      : (anySuccess
+        ? '수집 완료'
+        : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'))
   };
 }
 

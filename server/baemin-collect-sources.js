@@ -86,6 +86,7 @@ function classifyApiUrl(url) {
   }
   if (/\/v4\/management\/delivery-status/i.test(text)) return 'delivery_status';
   if (/\/v4\/management\/delivery-history/i.test(text)) return 'daily_history';
+  if (/\/v4\/management\/delivery\/delivery-history/i.test(text)) return 'daily_history';
   if (/\/delivery-status/i.test(text)) return 'delivery_status';
   if (/\/delivery\/history/i.test(text)) return 'daily_history';
   return null;
