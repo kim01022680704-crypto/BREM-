@@ -502,46 +502,6 @@
     })();
   }
 
-  function saveRegion(id, value) {
-    void (async () => {
-      try {
-        const list = roster.readAll();
-        const item = list.find(row => row.id === id);
-        if (!item) return;
-        item.region = String(value || '').trim();
-        item.updatedAt = new Date().toISOString();
-        await roster.commitSaveAll(list);
-        refreshAll();
-      } catch (error) {
-        console.error('[daily settlement region save]', error);
-        showToast(error.message || '지역 저장에 실패했습니다.');
-      }
-    })();
-  }
-
-  function savePlatform(id, platformBaemin, platformCoupang) {
-    if (!platformBaemin && !platformCoupang) {
-      showToast('배민 또는 쿠팡 중 하나는 선택해야 합니다.');
-      refreshAll();
-      return;
-    }
-    void (async () => {
-      try {
-        const list = roster.readAll();
-        const item = list.find(row => row.id === id);
-        if (!item) return;
-        item.platformBaemin = platformBaemin;
-        item.platformCoupang = platformCoupang;
-        item.updatedAt = new Date().toISOString();
-        await roster.commitSaveAll(list);
-        refreshAll();
-      } catch (error) {
-        console.error('[daily settlement platform save]', error);
-        showToast(error.message || '플랫폼 저장에 실패했습니다.');
-      }
-    })();
-  }
-
   function enrollDriverById(driverId) {
     const driver = getDrivers().find(item => item.id === driverId);
     if (!driver) {
@@ -611,34 +571,98 @@
     })();
   }
 
-  function applyBulkRegionChange() {
+  function readRosterRowEdits() {
+    const body = $('payrollDailySettlementBody');
+    if (!body) return [];
+    const edits = [];
+    body.querySelectorAll('tr').forEach(row => {
+      const id = row.querySelector('[data-pds-platform-baemin]')?.dataset.pdsPlatformBaemin
+        || row.querySelector('[data-pds-region-select]')?.dataset.pdsRegionSelect
+        || row.querySelector('[data-pds-select]')?.dataset.pdsSelect;
+      if (!id) return;
+      edits.push({
+        id,
+        platformBaemin: row.querySelector('[data-pds-platform-baemin]')?.checked === true,
+        platformCoupang: row.querySelector('[data-pds-platform-coupang]')?.checked === true,
+        region: String(row.querySelector('[data-pds-region-select]')?.value || '').trim()
+      });
+    });
+    return edits;
+  }
+
+  function applyRosterChanges() {
     const rawRegion = String($('payrollDailySettlementBulkRegion')?.value || '').trim();
-    if (!state.selectedIds.size) {
-      showToast('지역을 변경할 기사를 선택하세요.');
+    const rowEdits = readRosterRowEdits();
+    const selected = new Set(state.selectedIds);
+    const wantsBulkRegion = selected.size > 0 && Boolean(rawRegion);
+
+    if (!rowEdits.length && !wantsBulkRegion) {
+      showToast('변경할 내용이 없습니다.');
       return;
     }
-    if (!rawRegion) {
-      showToast('적용할 지역을 선택하세요.');
-      return;
+
+    for (const edit of rowEdits) {
+      if (!edit.platformBaemin && !edit.platformCoupang) {
+        showToast('배민 또는 쿠팡 중 하나는 선택해야 합니다.');
+        return;
+      }
     }
-    const region = rawRegion === '__unset__' ? '' : rawRegion;
+
+    const bulkRegion = rawRegion === '__unset__' ? '' : rawRegion;
+
     void (async () => {
       try {
-        const selected = new Set(state.selectedIds);
+        const editMap = new Map(rowEdits.map(edit => [edit.id, edit]));
+        let platformCount = 0;
+        let rowRegionCount = 0;
+        let bulkRegionCount = 0;
+
         const list = roster.readAll().map(item => {
-          if (!selected.has(item.id)) return item;
-          return {
-            ...item,
-            region,
-            updatedAt: new Date().toISOString()
-          };
+          let next = item;
+          const edit = editMap.get(item.id);
+          const currentRegion = String(item.region || '').trim();
+          const currentPlatforms = normalizePlatforms(item);
+
+          if (edit) {
+            const platformChanged = edit.platformBaemin !== currentPlatforms.platformBaemin
+              || edit.platformCoupang !== currentPlatforms.platformCoupang;
+            const regionChanged = edit.region !== currentRegion;
+            if (platformChanged || regionChanged) {
+              next = {
+                ...next,
+                platformBaemin: edit.platformBaemin,
+                platformCoupang: edit.platformCoupang,
+                region: edit.region,
+                updatedAt: new Date().toISOString()
+              };
+              if (platformChanged) platformCount += 1;
+              if (regionChanged) rowRegionCount += 1;
+            }
+          }
+
+          if (wantsBulkRegion && selected.has(item.id) && String(next.region || '').trim() !== bulkRegion) {
+            next = {
+              ...next,
+              region: bulkRegion,
+              updatedAt: new Date().toISOString()
+            };
+            bulkRegionCount += 1;
+          }
+
+          return next;
         });
+
         await roster.commitSaveAll(list);
         refreshAll();
-        showToast(`선택 ${selected.size}명 → ${regionLabel(rawRegion)} 적용`);
+
+        const parts = [];
+        if (platformCount) parts.push(`플랫폼 ${platformCount}명`);
+        if (bulkRegionCount) parts.push(`선택 ${bulkRegionCount}명 → ${regionLabel(rawRegion)}`);
+        else if (rowRegionCount) parts.push(`지역 ${rowRegionCount}명`);
+        showToast(parts.length ? `${parts.join(' · ')} 저장 · Supabase` : '변경된 내용이 없습니다.');
       } catch (error) {
-        console.error('[daily settlement bulk region]', error);
-        showToast(error.message || '지역 일괄 변경에 실패했습니다.');
+        console.error('[daily settlement apply roster]', error);
+        showToast(error.message || '저장에 실패했습니다.');
       }
     })();
   }
@@ -736,7 +760,7 @@
     $('payrollDailySettlementBulkApplyBtn')?.addEventListener('click', applyBulkPreview);
     $('payrollDailySettlementBulkTemplateBtn')?.addEventListener('click', downloadTemplate);
     $('payrollDailySettlementDeleteSelectedBtn')?.addEventListener('click', deleteSelected);
-    $('payrollDailySettlementApplyBulkRegionBtn')?.addEventListener('click', applyBulkRegionChange);
+    $('payrollDailySettlementApplyBulkRegionBtn')?.addEventListener('click', applyRosterChanges);
     $('payrollDailySettlementExportAllBtn')?.addEventListener('click', exportAllRoster);
     $('payrollDailySettlementExportSelectedBtn')?.addEventListener('click', exportSelectedRoster);
     $('payrollDailySettlementExportRegionBtn')?.addEventListener('click', exportCurrentRegion);
@@ -815,17 +839,8 @@
         return;
       }
       const regionSelect = event.target.closest('[data-pds-region-select]');
-      if (regionSelect) {
-        saveRegion(regionSelect.dataset.pdsRegionSelect, regionSelect.value);
-        return;
-      }
-      if (event.target.matches('[data-pds-platform-baemin], [data-pds-platform-coupang]')) {
-        const row = event.target.closest('tr');
-        const id = event.target.dataset.pdsPlatformBaemin || event.target.dataset.pdsPlatformCoupang;
-        const platformBaemin = row?.querySelector('[data-pds-platform-baemin]')?.checked === true;
-        const platformCoupang = row?.querySelector('[data-pds-platform-coupang]')?.checked === true;
-        savePlatform(id, platformBaemin, platformCoupang);
-      }
+      if (regionSelect) return;
+      if (event.target.matches('[data-pds-platform-baemin], [data-pds-platform-coupang]')) return;
     });
 
     $('payrollDailySettlementBody')?.addEventListener('click', event => {
