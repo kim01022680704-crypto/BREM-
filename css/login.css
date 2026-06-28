@@ -283,11 +283,15 @@
 /* ── Mobile (768px 이하) — 기사앱·관리자 로그인 ── */
 @media (max-width: 768px) {
   .login-page {
+    width: 100%;
     padding: max(20px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    justify-items: center;
   }
 
   .login-shell {
     width: min(var(--login-card-w), calc(100vw - 24px));
+    max-width: 100%;
+    margin: 0 auto;
   }
 
   .login-card {

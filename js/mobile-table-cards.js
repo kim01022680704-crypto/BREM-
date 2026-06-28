@@ -2,7 +2,8 @@
  * BREM mobile UI — labels table cells for card layout (layout only).
  */
 (function () {
-  var MQ = window.matchMedia('(max-width: 430px)');
+  var DRIVER_MQ = window.matchMedia('(max-width: 430px)');
+  var ADMIN_MQ = window.matchMedia('(max-width: 768px)');
   var SKIP = '.bulk-guide-table, .bulk-preview-table, .lease-bulk-guide-table';
 
   function debounce(fn, ms) {
@@ -40,13 +41,30 @@
     if (wrap) wrap.classList.add('brem-mobile-cards');
   }
 
+  function clearTable(table) {
+    if (!table) return;
+    table.classList.remove('brem-mobile-cards-ready');
+    var wrap = table.closest('.table-wrap') || table.parentElement;
+    if (wrap) wrap.classList.remove('brem-mobile-cards');
+    table.querySelectorAll('tbody td[data-label]').forEach(function (td) {
+      td.removeAttribute('data-label');
+    });
+  }
+
+  function processScope(selector, enabled) {
+    document.querySelectorAll(selector).forEach(function (table) {
+      if (enabled) labelTable(table);
+      else clearTable(table);
+    });
+  }
+
   function processAll() {
-    if (!MQ.matches) return;
-    document.querySelectorAll('.driver-app .table-wrap table, .admin-app .table-wrap table').forEach(labelTable);
+    processScope('.admin-app .table-wrap table', ADMIN_MQ.matches);
+    processScope('.driver-app .table-wrap table', DRIVER_MQ.matches);
   }
 
   function onResize() {
-    if (MQ.matches) processAll();
+    processAll();
   }
 
   if (document.readyState === 'loading') {
@@ -60,7 +78,7 @@
 
   if (typeof MutationObserver !== 'undefined') {
     var observer = new MutationObserver(debounce(function () {
-      if (MQ.matches) processAll();
+      processAll();
     }, 250));
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }

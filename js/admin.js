@@ -4885,15 +4885,19 @@
       logoutAdmin({ reload: true });
     });
 
+    function closeAdminSidebar() {
+      $('#sidebar').classList.remove('open');
+      $('#overlay').classList.remove('active');
+    }
+
     $('#menuBtn').addEventListener('click', () => {
       $('#sidebar').classList.add('open');
       $('#overlay').classList.add('active');
     });
 
-    $('#overlay').addEventListener('click', () => {
-      $('#sidebar').classList.remove('open');
-      $('#overlay').classList.remove('active');
-    });
+    $('#sidebarCloseBtn')?.addEventListener('click', closeAdminSidebar);
+
+    $('#overlay').addEventListener('click', closeAdminSidebar);
 
     PLATFORMS.forEach(platform => {
       $(`#callFilterDate-${platform}`)?.addEventListener('change', () => {

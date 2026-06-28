@@ -311,12 +311,17 @@ a {
 }
 
 .menu-btn {
+  display: none;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
   color: var(--yellow);
   background: var(--black);
   font-weight: 900;
+}
+
+.sidebar-close-btn {
+  display: none;
 }
 
 .app-hidden {
@@ -6853,9 +6858,9 @@ textarea {
     gap: 10px;
   }
 
-  .stats-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+  .admin-app .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .stat-card {
@@ -6900,11 +6905,10 @@ textarea {
     font-size: 16px;
   }
 
-  .promotion-platform-tabs,
-  .admin-section-tabs {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    -webkit-overflow-scrolling: touch;
+  .admin-app .promotion-platform-tabs,
+  .admin-app .admin-section-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
     max-width: 100%;
   }
 
