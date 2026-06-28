@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260629d';
+const SERVER_VERSION = '20260630a';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -52,12 +52,30 @@ const {
   safeJsonStringify,
   stringifyErrorValue
 } = require('../server/baemin-error-format');
+const { probeBaeminNetwork } = require('../server/baemin-network-probe');
+const { computeCollectDateRange } = require('../server/baemin-settlement-week');
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      try {
+        const text = Buffer.concat(chunks).toString('utf8').trim();
+        resolve(text ? JSON.parse(text) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
 
 const PROBE_PAGE_PATHS = [
   '/delivery-status',
   '/delivery/history',
   '/delivery/delivery-history',
-  '/delivery/history'
+  '/delivery/rider-history'
 ];
 
 let activeJob = null;
@@ -189,11 +207,41 @@ function isJobRunning() {
 function isContextAlive(context) {
   if (!context) return false;
   try {
-    context.pages();
+    const pages = context.pages();
+    if (!pages.length) {
+      const browser = context.browser();
+      if (browser && typeof browser.isConnected === 'function' && !browser.isConnected()) {
+        return false;
+      }
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+function isPlaywrightClosedError(error) {
+  const text = String(error?.message || error || '').toLowerCase();
+  return text.includes('has been closed') || text.includes('target page, context or browser');
+}
+
+function clearActiveContextIfDead() {
+  if (!isContextAlive(activeContext)) {
+    activeContext = null;
+    return true;
+  }
+  return false;
+}
+
+function resolveCollectPlaywrightPage() {
+  clearActiveContextIfDead();
+  if (!activeContext) return null;
+  const tabs = scanBrowserTabs(activeContext);
+  if (!tabs.page || tabs.page.isClosed()) {
+    clearActiveContextIfDead();
+    return null;
+  }
+  return tabs.page;
 }
 
 function shouldReuseRefreshLoop() {
@@ -641,6 +689,7 @@ function getBrowserHealth() {
 }
 
 async function ensurePlaywrightBrowser() {
+  clearActiveContextIfDead();
   if (isContextAlive(activeContext)) {
     console.log('[BREM] [browser/open] 기존 Playwright 창 재사용');
     return { ok: true, reused: true };
@@ -802,22 +851,30 @@ async function runLocalFullCollect(options = {}) {
     if (isContextAlive(activeContext)) {
       await refreshApiDiscoveryBeforeCollect(activeContext, collectDate).catch(error => {
         console.warn('[BREM] [전체수집] API 탐색 실패:', formatError(error));
+        if (isPlaywrightClosedError(error)) {
+          clearActiveContextIfDead();
+        }
       });
+    }
+
+    const collectPage = resolveCollectPlaywrightPage();
+    if (!collectPage) {
+      const message = 'Playwright 브라우저가 닫혀 있습니다. [브라우저 열기/세션 유지]를 누른 뒤 배민에 로그인하고 다시 수집하세요.';
+      lastCollectResult = { at: new Date().toISOString(), ok: false, message, savedTotal: 0, collectDate, browserClosed: true };
+      return { ok: false, message, browserClosed: true };
     }
 
     await syncBrowserCookiesToSupabase().catch(error => {
       console.warn('[BREM] [전체수집] 쿠키 동기화 실패:', formatError(error));
+      if (isPlaywrightClosedError(error)) clearActiveContextIfDead();
     });
 
     const result = await baeminAutoCollect.runAutoCollectJob({
       captureDate: collectDate,
       source: 'local_manual',
       sessionCookie,
-      playwrightContext: isContextAlive(activeContext) ? activeContext : null,
-      playwrightPage: (() => {
-        if (!isContextAlive(activeContext)) return null;
-        return scanBrowserTabs(activeContext).page || null;
-      })()
+      playwrightContext: null,
+      playwrightPage: collectPage
     });
 
     autoCollectRuntime = {
@@ -1022,16 +1079,19 @@ function startAutoCollectScheduler() {
 async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   if (!isContextAlive(context)) return;
 
+  const dateRange = computeCollectDateRange(collectDate);
   const discoveryState = createApiDiscoveryState();
   const detachDiscovery = attachApiDiscovery(context, discoveryState);
   const tabs = scanBrowserTabs(context);
   const page = tabs.page || await context.newPage();
   attachPageDiscovery(page, discoveryState);
 
+  const rangeQs = `page=0&size=20&fromDate=${dateRange.fromDate}&toDate=${dateRange.toDate}`;
   const probeUrls = [
     `${BAEMIN_ORIGIN}/delivery-status`,
-    `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20`,
-    `${BAEMIN_ORIGIN}/delivery/delivery-history?page=0&size=20&fromDate=${collectDate}&toDate=${collectDate}`
+    `${BAEMIN_ORIGIN}/delivery/delivery-history?${rangeQs}`,
+    `${BAEMIN_ORIGIN}/delivery/rider-history?${rangeQs}`,
+    `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20&orderName=name&orderBy=asc&name=&userId=&phoneNumber=&riderStatus=`
   ];
 
   for (const url of probeUrls) {
@@ -1041,14 +1101,16 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
         resp => resp.url().includes('api-deliverycenter.baemin.com')
           && resp.status() === 200
           && String(resp.headers()['content-type'] || '').includes('json'),
-        { timeout: 15000 }
+        { timeout: 20000 }
       ).catch(() => null);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
+        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+      });
       const apiResponse = await waitApi;
       if (apiResponse) {
         console.log(`[BREM] [수집 전 탐색] API 감지 ${apiResponse.url()}`);
       }
-      await delay(1500);
+      await delay(3000);
     } catch (error) {
       console.warn(`[BREM] [수집 전 탐색] 실패 | ${formatError(error)}`);
     }
@@ -1063,10 +1125,12 @@ async function probeCollectPages(context, collectDate) {
   const page = pages[0] || await context.newPage();
 
   for (const pathSuffix of PROBE_PAGE_PATHS) {
+    const range = computeCollectDateRange(collectDate);
+    const rangeQs = `page=0&size=20&fromDate=${range.fromDate}&toDate=${range.toDate}`;
     const url = pathSuffix.includes('fromDate=')
       ? `${BAEMIN_COLLECT_ORIGIN}${pathSuffix}`
-      : collectDate && pathSuffix.includes('delivery-history')
-        ? `${BAEMIN_COLLECT_ORIGIN}${pathSuffix}?page=0&size=20&fromDate=${collectDate}&toDate=${collectDate}`
+      : (pathSuffix.includes('delivery-history') || pathSuffix.includes('rider-history'))
+        ? `${BAEMIN_COLLECT_ORIGIN}${pathSuffix}?${rangeQs}`
         : `${BAEMIN_COLLECT_ORIGIN}${pathSuffix}`;
     try {
       console.log(`[BREM] [API 탐색] 페이지 이동 ${url}`);
@@ -1125,10 +1189,12 @@ async function runSessionRefresh() {
   let context = null;
 
   try {
+    clearActiveContextIfDead();
     if (isContextAlive(activeContext)) {
       context = activeContext;
       console.log('[BREM] [브라우저] 기존 Playwright 창 재사용');
     } else {
+      activeContext = null;
       context = await playwright.chromium.launchPersistentContext(PROFILE_DIR, {
         headless: false,
         viewport: { width: 1280, height: 900 }
@@ -1410,6 +1476,27 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/probe/network' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: 'Playwright 브라우저가 없습니다. [브라우저 열기/세션 유지] 후 다시 시도하세요.'
+      });
+    }
+    try {
+      const body = await readJsonBody(req);
+      const result = await probeBaeminNetwork(activeContext, {
+        referenceDate: body?.referenceDate
+      });
+      return sendJsonWithCors(req, res, 200, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatError(error)
+      });
+    }
+  }
+
   if (url.pathname === '/collect/full' && req.method === 'POST') {
     if (collectRunning) {
       return sendJsonWithCors(req, res, 409, {
@@ -1522,7 +1609,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260629d 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260630a 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');

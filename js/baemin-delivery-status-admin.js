@@ -321,12 +321,19 @@
 
     box.hidden = false;
     box.className = 'baemin-collect-result baemin-collect-result--success';
+    const range = result.dateRange;
+    const totals = result.summaryTotals || {};
     box.innerHTML = `
       <strong>수집 완료</strong>
       <ul class="baemin-collect-stats">
-        <li>수집 날짜: <strong>${result.captureDate || '-'}</strong></li>
+        <li>수집 기준일: <strong>${result.captureDate || '-'}</strong></li>
+        <li>정산주 범위: <strong>${range ? `${range.fromDate} ~ ${range.toDate}` : '-'}</strong></li>
+        <li>수집일수: <strong>${formatNumber(totals.dayCount || range?.dayCount || 0)}</strong></li>
+        <li>라이더수: <strong>${formatNumber(totals.riderCount || 0)}</strong></li>
         <li>총 저장 건수: <strong>${formatNumber(result.savedCount)}</strong></li>
-        <li>배달현황 완료건: <strong>${formatNumber(result.totalCompleteSum)}</strong></li>
+        <li>완료합계: <strong>${formatNumber(totals.completeTotal || result.totalCompleteSum || 0)}</strong></li>
+        <li>거절합계: <strong>${formatNumber(totals.rejectTotal || 0)}</strong></li>
+        <li>취소합계: <strong>${formatNumber(totals.cancelTotal || 0)}</strong></li>
       </ul>
       ${renderMenuResultsList(result.menuResults)}
     `;
@@ -569,7 +576,9 @@
     renderSummary({
       captureDate: result.collectDate || captureDate,
       savedCount,
-      totalCompleteSum: result.totalCompleteSum,
+      totalCompleteSum: result.summaryTotals?.completeTotal || result.totalCompleteSum,
+      summaryTotals: result.summaryTotals,
+      dateRange: result.dateRange,
       menuResults
     });
     showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장`);
@@ -751,6 +760,11 @@
           <td>${row.phone_number || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
           <td>${formatNumber(p.foodReject || 0)}</td>
+          <td>${formatNumber(p.cancelCount || 0)}</td>
+          <td>${formatNumber(p.morningCount || 0)}</td>
+          <td>${formatNumber(p.afternoonCount || 0)}</td>
+          <td>${formatNumber(p.eveningCount || 0)}</td>
+          <td>${formatNumber(p.midnightCount || 0)}</td>
           <td>${formatDateTime(row.collected_at)}</td>
         </tr>`;
       }).join('');
@@ -762,9 +776,13 @@
         const p = row.parsed_json || {};
         return `<tr>
           <td>${p.deliveryDate || row.collect_date || '-'}</td>
-          <td>${row.rider_name || '-'}</td>
-          <td>${row.rider_user_id || '-'}</td>
-          <td>${formatNumber(p.totalComplete || 1)}</td>
+          <td>${formatNumber(p.totalComplete || 0)}</td>
+          <td>${formatNumber(p.foodReject || 0)}</td>
+          <td>${formatNumber(p.cancelCount || 0)}</td>
+          <td>${formatNumber(p.morningCount || 0)}</td>
+          <td>${formatNumber(p.afternoonCount || 0)}</td>
+          <td>${formatNumber(p.eveningCount || 0)}</td>
+          <td>${formatNumber(p.midnightCount || 0)}</td>
           <td>${formatDateTime(row.collected_at)}</td>
         </tr>`;
       }).join('');
@@ -779,7 +797,12 @@
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
         <td>${formatNumber(p.totalComplete || deliveryCount || 0)}</td>
-        <td>${formatNumber(deliveryCount || 0)}</td>
+        <td>${formatNumber(p.foodReject || 0)}</td>
+        <td>${formatNumber(p.cancelCount || 0)}</td>
+        <td>${formatNumber(p.morningCount || 0)}</td>
+        <td>${formatNumber(p.afternoonCount || 0)}</td>
+        <td>${formatNumber(p.eveningCount || 0)}</td>
+        <td>${formatNumber(p.midnightCount || 0)}</td>
         <td>${formatDateTime(row.collected_at)}</td>
       </tr>`;
     }).join('');

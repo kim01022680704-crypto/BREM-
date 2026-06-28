@@ -66,7 +66,11 @@ async function parseBaeminFetchResponse({ url, status, bodyText, logContext = nu
       };
     }
 
-    const message = classifyFetchError(status, bodyText);
+    let apiMessage = '';
+    if (payload && typeof payload === 'object') {
+      apiMessage = String(payload.message || payload.error || '').trim();
+    }
+    const message = apiMessage || classifyFetchError(status, bodyText);
     return {
       ok: false,
       status,
@@ -131,7 +135,9 @@ async function fetchPaginatedApi({
   logPrefix = '[BREM][api-fetch]',
   logContext = null,
   playwrightPage = null,
-  playwrightContext = null
+  playwrightContext = null,
+  sampleUrl = null,
+  sampleHeaders = null
 }) {
   const { BAEMIN_API_ORIGIN, BAEMIN_ORIGIN } = require('./baemin-collect-sources');
   const origin = String(apiOrigin || BAEMIN_API_ORIGIN || BAEMIN_ORIGIN).replace(/\/$/, '');
@@ -155,29 +161,48 @@ async function fetchPaginatedApi({
   let totalPage = 1;
 
   for (let page = 0; page < totalPage; page += 1) {
-    const params = new URLSearchParams();
-    Object.entries(baseQuery).forEach(([key, value]) => {
-      if (value == null || value === '') return;
-      params.set(key, String(value));
-    });
-    params.set('page', String(page));
-    params.set('size', String(size));
-    lastUrl = `${origin}${apiPath}?${params.toString()}`;
+    if (sampleUrl) {
+      try {
+        const parsed = new URL(sampleUrl);
+        parsed.searchParams.set('page', String(page));
+        parsed.searchParams.set('size', String(size));
+        Object.entries(baseQuery).forEach(([key, value]) => {
+          if (value == null) return;
+          parsed.searchParams.set(key, String(value));
+        });
+        lastUrl = parsed.toString();
+      } catch {
+        lastUrl = sampleUrl;
+      }
+    } else {
+      const params = new URLSearchParams();
+      Object.entries(baseQuery).forEach(([key, value]) => {
+        if (value == null) return;
+        params.set(key, String(value));
+      });
+      params.set('page', String(page));
+      params.set('size', String(size));
+      lastUrl = `${origin}${apiPath}?${params.toString()}`;
+    }
 
-    console.log(`${logPrefix} GET ${lastUrl}${playwrightPage ? ' (browser-tab)' : (playwrightContext ? ' (playwright)' : '')}`);
-    const result = playwrightPage
+    console.log(`${logPrefix} GET ${lastUrl}${playwrightPage ? ' (browser-tab)' : ''}`);
+    let activePage = playwrightPage;
+    if (!activePage && playwrightContext) {
+      try {
+        const pages = playwrightContext.pages().filter(page => !page.isClosed());
+        activePage = pages[0] || null;
+      } catch {
+        activePage = null;
+      }
+    }
+
+    const result = activePage
       ? await fetchBaeminJsonViaPage(
-        playwrightPage,
+        activePage,
         lastUrl,
         logContext ? { ...logContext, pageIndex: page } : null
       )
-      : playwrightContext
-        ? await fetchBaeminJsonViaPlaywright(
-          playwrightContext,
-          lastUrl,
-          logContext ? { ...logContext, pageIndex: page } : null
-        )
-        : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
+      : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
     if (!result.ok) {
       console.error(`${logPrefix} FAIL status=${result.status} message=${result.message}`);
       console.error(`${logPrefix} response.text():`, String(result.bodyText || '').slice(0, 800));

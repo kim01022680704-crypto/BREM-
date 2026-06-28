@@ -227,13 +227,17 @@ async function runAutoCollectJob(options = {}) {
       message: pipelineResult.message,
       sessionExpired,
       results: pipelineResult.results,
+      dateRange: pipelineResult.dateRange,
+      summaryTotals: pipelineResult.summaryTotals,
+      collectDate: captureDate,
       record: result.record
     };
   }
 
   const savedCount = Number(pipelineResult.savedTotal || deliveryResult?.savedCount || 0);
   const totalCompleteSum = Number(
-    deliveryResult?.rawItems?.reduce((sum, item) => {
+    pipelineResult.summaryTotals?.completeTotal
+    || deliveryResult?.rawItems?.reduce((sum, item) => {
       const acceptance = item?.deliveryAcceptanceCount || {};
       return sum + Number(acceptance.totalComplete || 0);
     }, 0) || 0
@@ -249,9 +253,12 @@ async function runAutoCollectJob(options = {}) {
   return {
     ok: true,
     captureDate,
+    collectDate: captureDate,
     savedCount,
     totalCompleteSum,
     results: pipelineResult.results,
+    dateRange: pipelineResult.dateRange,
+    summaryTotals: pipelineResult.summaryTotals,
     sessionExpired: false,
     record: result.record
   };

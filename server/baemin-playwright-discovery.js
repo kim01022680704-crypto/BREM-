@@ -26,6 +26,41 @@ function attachApiDiscovery(context, state) {
         resourceType: request.resourceType(),
         at: Date.now()
       });
+
+      if (!url.includes('api-deliverycenter.baemin.com')) return;
+      const sourceId = classifyApiUrl(url);
+      if (!sourceId) return;
+
+      const headers = request.headers();
+      const sampleHeaders = {};
+      const skipHeaderKeys = new Set([
+        'accept',
+        'accept-language',
+        'accept-encoding',
+        'cookie',
+        'referer',
+        'user-agent',
+        'connection',
+        'cache-control',
+        'pragma',
+        'host',
+        'origin',
+        'content-length',
+        'content-type'
+      ]);
+      Object.entries(headers).forEach(([key, value]) => {
+        const lower = key.toLowerCase();
+        if (skipHeaderKeys.has(lower)) return;
+        if (lower.startsWith('sec-')) return;
+        if (!String(value || '').trim()) return;
+        sampleHeaders[key] = value;
+      });
+
+      state.endpoints[sourceId] = state.endpoints[sourceId] || {};
+      if (Object.keys(sampleHeaders).length) {
+        state.endpoints[sourceId].sampleHeaders = sampleHeaders;
+      }
+      state.endpoints[sourceId].sampleRequestUrl = url;
     } catch {
       // ignore
     }
@@ -57,6 +92,7 @@ function attachApiDiscovery(context, state) {
       }
 
       state.endpoints[sourceId] = {
+        ...(state.endpoints[sourceId] || {}),
         apiPath: pathname,
         apiOrigin: (() => {
           try { return new URL(url).origin; } catch { return ''; }

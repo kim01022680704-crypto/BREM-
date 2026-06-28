@@ -10,15 +10,17 @@ async function fetchBaeminJsonViaPage(page, url, logContext = null) {
     };
   }
 
+  const headers = {
+    Accept: 'application/json, text/plain, */*'
+  };
+
   try {
-    const result = await page.evaluate(async (fetchUrl) => {
+    const result = await page.evaluate(async ({ fetchUrl, headers: fetchHeaders }) => {
       try {
         const response = await fetch(fetchUrl, {
           method: 'GET',
           credentials: 'include',
-          headers: {
-            Accept: 'application/json, text/plain, */*'
-          }
+          headers: fetchHeaders
         });
         return {
           status: response.status,
@@ -31,14 +33,17 @@ async function fetchBaeminJsonViaPage(page, url, logContext = null) {
           error: error.message || 'page fetch failed'
         };
       }
-    }, url);
+    }, { fetchUrl: url, headers });
 
     if (result.error) {
+      const corsBlocked = /failed to fetch/i.test(String(result.error));
       return {
         ok: false,
         status: 0,
         error: result.error,
-        message: result.error
+        message: corsBlocked
+          ? '배민 API 네트워크 호출 실패 (CORS/네트워크). 브라우저를 새로고침 후 다시 시도하세요.'
+          : result.error
       };
     }
 
@@ -51,16 +56,19 @@ async function fetchBaeminJsonViaPage(page, url, logContext = null) {
       via: 'page-fetch'
     });
   } catch (error) {
+    const closed = /has been closed|target page, context or browser/i.test(String(error?.message || error || ''));
     return {
       ok: false,
       status: 0,
       error: error.message || 'PLAYWRIGHT_PAGE_FETCH_FAILED',
-      message: error.message || '브라우저 탭 API 호출 실패'
+      message: closed
+        ? 'Playwright 브라우저가 닫혔습니다. [브라우저 열기/세션 유지] 후 다시 시도하세요.'
+        : (error.message || '브라우저 탭 API 호출 실패')
     };
   }
 }
 
-async function fetchBaeminJsonViaPlaywright(context, url, logContext = null) {
+async function fetchBaeminJsonViaPlaywright(context, url, logContext = null, extraHeaders = null) {
   if (!context?.request) {
     return {
       ok: false,
@@ -74,7 +82,8 @@ async function fetchBaeminJsonViaPlaywright(context, url, logContext = null) {
     const response = await context.request.get(url, {
       headers: {
         Accept: 'application/json, text/plain, */*',
-        Referer: `${BAEMIN_ORIGIN}/delivery/history`
+        Referer: `${BAEMIN_ORIGIN}/delivery/history`,
+        ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {})
       }
     });
     const { parseBaeminFetchResponse } = require('./baemin-api-fetch');
@@ -86,11 +95,14 @@ async function fetchBaeminJsonViaPlaywright(context, url, logContext = null) {
       via: 'playwright'
     });
   } catch (error) {
+    const closed = /has been closed|target page, context or browser/i.test(String(error?.message || error || ''));
     return {
       ok: false,
       status: 0,
       error: error.message || 'PLAYWRIGHT_FETCH_FAILED',
-      message: error.message || 'Playwright API 호출 실패'
+      message: closed
+        ? 'Playwright 브라우저가 닫혔습니다. [브라우저 열기/세션 유지] 후 다시 시도하세요.'
+        : (error.message || 'Playwright API 호출 실패')
     };
   }
 }

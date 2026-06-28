@@ -18,9 +18,7 @@ const COLLECT_SOURCES = {
       riderStatus: ''
     },
     pagePathPatterns: [
-      /\/delivery-status/i,
-      /\/delivery\/delivery-history/i,
-      /\/delivery\/history/i
+      /\/delivery-status/i
     ],
     apiUrlPatterns: [
       /\/delivery-status(?:\?|$)/i
@@ -33,6 +31,11 @@ const COLLECT_SOURCES = {
     label: '일별 배달내역',
     apiOrigin: BAEMIN_API_ORIGIN,
     apiPath: '/v4/management/delivery-history',
+    fallbackApiPaths: [
+      '/v4/management/delivery/history',
+      '/v4/management/delivery/delivery-history',
+      '/v2/delivery/history'
+    ],
     pagePathPatterns: [
       /\/delivery\/delivery-history/i,
       /\/delivery\/history/i
@@ -50,16 +53,20 @@ const COLLECT_SOURCES = {
     id: 'rider_history',
     label: '라이더별 배달내역',
     apiOrigin: BAEMIN_API_ORIGIN,
-    apiPath: '/v4/management/delivery-history',
+    apiPath: '/v4/management/rider-history',
+    fallbackApiPaths: [
+      '/v4/management/delivery/rider-history',
+      '/v4/management/delivery-history',
+      '/v2/delivery/rider-history'
+    ],
     pagePathPatterns: [
-      /\/delivery\/rider/i,
-      /\/rider\//i,
-      /\/delivery\/delivery-history/i
+      /\/delivery\/rider-history/i,
+      /\/delivery\/rider/i
     ],
     apiUrlPatterns: [
+      /\/rider-history(?:\?|$)/i,
       /\/delivery\/rider/i,
-      /\/rider\/.*\/history/i,
-      /\/delivery\/history.*userId=/i
+      /\/rider\/.*\/history/i
     ],
     pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20 },
     dateQueryKeys: ['fromDate', 'toDate'],
@@ -79,6 +86,11 @@ function getCollectSource(id) {
 function classifyApiUrl(url) {
   const text = String(url || '');
   if (!text.includes('baemin.com')) return null;
+  if (/\/rider-history/i.test(text)) return 'rider_history';
+  if (text.includes('api-deliverycenter') && /fromDate=/i.test(text) && !/delivery-status/i.test(text)) {
+    if (/rider/i.test(text)) return 'rider_history';
+    return 'daily_history';
+  }
   for (const source of listCollectSources()) {
     if (source.apiUrlPatterns.some(pattern => pattern.test(text))) {
       return source.id;
@@ -95,6 +107,10 @@ function classifyApiUrl(url) {
 function classifyPageUrl(url) {
   const text = String(url || '');
   if (!text.includes('deliverycenter.baemin.com')) return null;
+  if (/\/delivery\/rider-history/i.test(text)) return 'rider_history';
+  if (/\/delivery\/delivery-history/i.test(text) || /fromDate=/i.test(text)) {
+    return 'daily_history';
+  }
   for (const source of listCollectSources()) {
     if (source.pagePathPatterns.some(pattern => pattern.test(text))) {
       return source.id;
@@ -115,13 +131,18 @@ function buildApiUrl(sourceId, query = {}) {
   return `${BAEMIN_ORIGIN}${source.apiPath}${qs ? `?${qs}` : ''}`;
 }
 
-function buildDefaultQuery(sourceId, collectDate) {
+function buildDefaultQuery(sourceId, collectDate, dateRange = null) {
   const source = getCollectSource(sourceId);
   if (!source) return {};
   const query = { ...(source.defaultQuery || {}) };
   if (source.dateQueryKeys?.length) {
-    query.fromDate = collectDate;
-    query.toDate = collectDate;
+    if (dateRange?.fromDate && dateRange?.toDate) {
+      query.fromDate = dateRange.fromDate;
+      query.toDate = dateRange.toDate;
+    } else {
+      query.fromDate = collectDate;
+      query.toDate = collectDate;
+    }
   }
   return query;
 }
@@ -135,7 +156,9 @@ function resolveApiEndpoint(sourceId, registry = {}) {
       const parsed = new URL(discovered.sampleUrl);
       return {
         apiOrigin: parsed.origin,
-        apiPath: parsed.pathname
+        apiPath: parsed.pathname,
+        sampleUrl: discovered.sampleUrl,
+        sampleHeaders: discovered.sampleHeaders || null
       };
     } catch {
       // fall through
@@ -149,7 +172,12 @@ function resolveApiEndpoint(sourceId, registry = {}) {
     || source?.apiOrigin
     || (String(apiPath).startsWith('/v4/') ? BAEMIN_API_ORIGIN : BAEMIN_ORIGIN);
 
-  return { apiOrigin, apiPath };
+  return {
+    apiOrigin,
+    apiPath,
+    sampleUrl: discovered?.sampleUrl || null,
+    sampleHeaders: discovered?.sampleHeaders || null
+  };
 }
 
 function buildDedupeKey(sourceId, item, index = 0) {

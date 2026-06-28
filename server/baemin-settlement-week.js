@@ -1,0 +1,98 @@
+/** 정산주(수요일~화요일) + 배민 조회 가능 최신일 계산 (KST) */
+
+function parseDateKey(value) {
+  const raw = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const date = new Date(`${raw}T00:00:00+09:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateKey(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const y = parts.find(p => p.type === 'year')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const d = parts.find(p => p.type === 'day')?.value;
+  return `${y}-${m}-${d}`;
+}
+
+function todayKST() {
+  return formatDateKey(new Date());
+}
+
+function addDays(dateKey, days) {
+  const date = parseDateKey(dateKey);
+  if (!date) return dateKey;
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatDateKey(date);
+}
+
+function weekdayKST(dateKey) {
+  const date = parseDateKey(dateKey);
+  if (!date) return -1;
+  return date.getUTCDay();
+}
+
+/** 수요일 시작 정산주 */
+function settlementWeekStart(dateKey = todayKST()) {
+  const date = parseDateKey(dateKey);
+  if (!date) return dateKey;
+  const day = date.getUTCDay();
+  const diff = (day - 3 + 7) % 7;
+  date.setUTCDate(date.getUTCDate() - diff);
+  return formatDateKey(date);
+}
+
+function settlementWeekEnd(weekStart) {
+  return addDays(settlementWeekStart(weekStart), 6);
+}
+
+/**
+ * 배민은 보통 하루 전까지 조회 가능.
+ * 정산주 내에서 수~최신조회일까지 반환.
+ */
+function latestQueryableDate(dateKey = todayKST()) {
+  return addDays(dateKey, -1);
+}
+
+function computeCollectDateRange(dateKey = todayKST()) {
+  const weekStart = settlementWeekStart(dateKey);
+  const weekEnd = settlementWeekEnd(weekStart);
+  const latest = latestQueryableDate(dateKey);
+  const toDate = latest < weekEnd ? latest : weekEnd;
+  const fromDate = weekStart <= toDate ? weekStart : toDate;
+
+  const dates = [];
+  let cursor = fromDate;
+  while (cursor <= toDate) {
+    dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+
+  return {
+    referenceDate: dateKey,
+    weekStart,
+    weekEnd,
+    latestQueryableDate: latest,
+    fromDate,
+    toDate,
+    dates,
+    dayCount: dates.length
+  };
+}
+
+module.exports = {
+  parseDateKey,
+  formatDateKey,
+  todayKST,
+  addDays,
+  weekdayKST,
+  settlementWeekStart,
+  settlementWeekEnd,
+  latestQueryableDate,
+  computeCollectDateRange
+};
