@@ -2,11 +2,15 @@
   const state = {
     config: null,
     loading: false,
+    collecting: false,
     setupPollTimer: null,
     statusPollTimer: null,
+    localHealthPollTimer: null,
     localServerRunning: false,
+    localBrowser: null,
+    localSession: null,
     localAutoCollect: null,
-    localSession: {
+    localSessionConfig: {
       port: 3939,
       localHealthUrls: [
         'http://127.0.0.1:3939/health',
@@ -71,15 +75,34 @@
 
   function setLoading(loading) {
     state.loading = loading;
-    const autoBtn = $('baeminDeliveryAutoCollectBtn');
+    updateActionButtons();
+  }
+
+  function setCollecting(collecting) {
+    state.collecting = collecting;
+    updateActionButtons();
+  }
+
+  function updateActionButtons() {
+    const fullBtn = $('baeminFullCollectBtn');
+    const browserBtn = $('baeminBrowserOpenBtn');
+    const shutdownBtn = $('baeminServerShutdownBtn');
     const jsonBtn = $('baeminDeliveryJsonPasteBtn');
     const sessionBtn = $('baeminDeliverySessionRefreshBtn');
-    if (autoBtn) {
-      autoBtn.disabled = loading;
-      autoBtn.textContent = loading ? '수집 중…' : '배민 자동 수집';
+    const localCollecting = Boolean(state.localAutoCollect?.collectRunning || state.collecting);
+
+    if (fullBtn) {
+      fullBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
+      fullBtn.textContent = localCollecting ? '이미 수집 중…' : '배민 전체 데이터 수집';
     }
-    if (jsonBtn) jsonBtn.disabled = loading;
-    if (sessionBtn) sessionBtn.disabled = loading;
+    if (browserBtn) {
+      browserBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
+    }
+    if (shutdownBtn) {
+      shutdownBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
+    }
+    if (jsonBtn) jsonBtn.disabled = state.loading || localCollecting;
+    if (sessionBtn) sessionBtn.disabled = state.loading || localCollecting;
   }
 
   function isSessionExpired(config) {
@@ -117,43 +140,120 @@
     if (!el) return;
 
     const auto = config?.autoCollect || {};
+    const local = state.localAutoCollect || {};
+    const browser = state.localBrowser || {};
+    const session = state.localSession || {};
     const localRunning = state.localServerRunning || auto.localServerRecentlyActive;
-    const sessionExpired = isSessionExpired(config);
-    const scheduleText = (auto.schedule || ['10:00', '14:00', '17:00', '20:00', '23:30']).join(', ');
+    const sessionExpired = isSessionExpired(config)
+      || session.state === 'expired'
+      || Boolean(local.sessionPaused);
+    const localCollecting = Boolean(local.collectRunning || state.collecting);
+    const scheduleText = (auto.schedule || local.schedule || ['10:00', '14:00', '17:00', '20:00', '23:30']).join(', ');
+    const lastCollect = local.lastCollectResult || {};
 
     el.className = sessionExpired
       ? 'baemin-auto-collect-panel baemin-auto-collect-panel--paused'
       : 'baemin-auto-collect-panel';
 
-    const lastRunSummary = auto.lastStatus === 'success'
-      ? `${formatStatusLabel(auto.lastStatus)} · ${formatNumber(auto.lastSavedCount)}명 · 완료 ${formatNumber(auto.lastTotalCompleteSum)}건`
-      : formatStatusLabel(auto.lastStatus);
+    const lastRunAt = local.lastRunAt || auto.lastRunAt;
+    const lastStatus = local.lastStatus || auto.lastStatus;
+    const lastError = local.lastError || auto.lastError;
+
+    const lastRunSummary = lastStatus === 'success'
+      ? `${formatStatusLabel(lastStatus)} · ${formatNumber(local.lastSavedCount || auto.lastSavedCount || lastCollect.savedTotal || 0)}건`
+      : (lastStatus === 'failed'
+        ? `${formatStatusLabel(lastStatus)}${lastError ? ` — ${lastError}` : ''}`
+        : (lastCollect.message || '-'));
+
+    const sessionStateLabel = sessionExpired
+      ? '만료 — 갱신 필요'
+      : (session.state === 'ok' || config?.sessionConfigured ? '정상' : '없음');
 
     el.innerHTML = `
-      <strong>자동 수집 (PC 로컬 서버)</strong>
+      <strong>로컬 자동수집 서버</strong>
       <dl class="baemin-auto-collect-grid">
-        <div>
-          <dt>마지막 수집</dt>
-          <dd>${formatDateTime(auto.lastRunAt)}</dd>
-        </div>
-        <div>
-          <dt>마지막 결과</dt>
-          <dd>${lastRunSummary}${auto.lastError && auto.lastStatus === 'failed' ? `<br><span style="font-weight:600;font-size:0.82rem">${auto.lastError}</span>` : ''}</dd>
-        </div>
-        <div>
-          <dt>세션 상태</dt>
-          <dd>${sessionExpired ? '만료 — 갱신 필요' : (config?.sessionConfigured ? '정상' : '없음')}</dd>
-        </div>
         <div>
           <dt>로컬 서버</dt>
           <dd>${localRunning ? '실행 중' : '중지됨'}</dd>
         </div>
         <div>
+          <dt>Playwright 브라우저</dt>
+          <dd>${browser.browserOpen ? '유지 중' : '닫힘/미실행'}</dd>
+        </div>
+        <div>
+          <dt>세션 상태</dt>
+          <dd>${sessionStateLabel}</dd>
+        </div>
+        <div>
+          <dt>현재 수집 중</dt>
+          <dd>${localCollecting ? '예 — 이미 수집 중입니다' : '아니오'}</dd>
+        </div>
+        <div>
+          <dt>마지막 수집</dt>
+          <dd>${formatDateTime(lastRunAt || lastCollect.at)}</dd>
+        </div>
+        <div>
+          <dt>마지막 결과</dt>
+          <dd>${lastRunSummary}</dd>
+        </div>
+        <div>
           <dt>다음 자동 수집</dt>
-          <dd>${localRunning && !sessionExpired ? formatDateTime(auto.nextScheduledAt) : '-'}</dd>
+          <dd>${localRunning && !sessionExpired ? formatDateTime(local.nextScheduledAt || auto.nextScheduledAt) : '-'}</dd>
+        </div>
+        <div>
+          <dt>브라우저 URL</dt>
+          <dd style="word-break:break-all;font-size:0.82rem">${browser.currentUrl || '-'}</dd>
         </div>
       </dl>
-      <p class="baemin-auto-collect-schedule">스케줄(KST): ${scheduleText} · PC에서 <code>npm run baemin:session-server</code> 실행 시 자동 수집</p>
+      <p class="baemin-auto-collect-schedule">스케줄(KST): ${scheduleText} · PC에서 <code>npm run baemin:session-server</code> 실행 · 수집 후에도 브라우저 유지</p>
+    `;
+
+    updateActionButtons();
+  }
+
+  function renderMenuCollectStatus(config) {
+    const el = $('baeminDeliveryMenuCollectStatus');
+    if (!el) return;
+
+    const menus = config?.menuStatus || config?.autoCollect?.menuStatus || [];
+    if (!menus.length) {
+      el.innerHTML = '<strong>메뉴별 수집</strong><p class="form-help">아직 수집 기록이 없습니다.</p>';
+      return;
+    }
+
+    const rows = menus.map(menu => {
+      const statusClass = menu.lastStatus === 'success'
+        ? 'baemin-menu-collect-status--success'
+        : (menu.lastStatus === 'failed' ? 'baemin-menu-collect-status--failed' : 'baemin-menu-collect-status--idle');
+      const statusLabel = menu.lastStatus === 'success'
+        ? '성공'
+        : (menu.lastStatus === 'failed' ? '실패' : '-');
+      const errorText = menu.lastStatus === 'failed' && menu.lastError
+        ? `<br><span style="font-size:0.8rem">${menu.lastError}</span>`
+        : '';
+      return `
+        <tr>
+          <td>${menu.label || menu.id}</td>
+          <td>${formatDateTime(menu.lastCollectedAt)}</td>
+          <td class="${statusClass}">${statusLabel}${errorText}</td>
+          <td>${formatNumber(menu.rowCount || 0)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    el.innerHTML = `
+      <strong>메뉴별 수집 상태</strong>
+      <table class="baemin-menu-collect-table">
+        <thead>
+          <tr>
+            <th>수집 대상</th>
+            <th>마지막 수집</th>
+            <th>결과</th>
+            <th>저장 건수</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
     `;
   }
 
@@ -164,15 +264,23 @@
 
     renderSessionStatus(config);
     renderAutoCollectStatus(config);
+    renderMenuCollectStatus(config);
 
-    if (!config?.tableExists) {
-      hint.textContent = 'Supabase 테이블이 없습니다. supabase/baemin_delivery_status_migration.sql 을 SQL Editor에서 실행하세요.';
+    const missingLegacy = !config?.tableExists;
+    const missingBiz = config?.bizCollectTableExists === false;
+
+      if (missingLegacy || missingBiz) {
+      hint.textContent = 'Supabase 테이블이 없습니다. supabase/baemin_all_migrations.sql 내용 전체를 SQL Editor에 붙여넣고 Run 하세요.';
       hint.className = 'form-help form-help--warn';
       return;
     }
 
     hint.textContent = '자동 수집은 PC 로컬 세션 서버가 켜져 있을 때만 동작합니다. 세션은 Supabase settings에 저장됩니다.';
     hint.className = 'form-help';
+  }
+
+  function todayKstDate() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
   }
 
   function renderSummary(result, errorMessage) {
@@ -192,18 +300,48 @@
       return;
     }
 
+    const savedCount = Number(result.savedCount || 0);
+    if (savedCount <= 0) {
+      box.hidden = false;
+      box.className = 'baemin-collect-result baemin-collect-result--error';
+      box.innerHTML = `
+        <strong>저장된 데이터 없음</strong>
+        <p>수집 API는 호출됐지만 Supabase에 저장된 건수가 0입니다.</p>
+        <ul class="baemin-collect-stats">
+          <li>1) Supabase SQL Editor에서 <code>baemin_all_migrations.sql</code> 실행</li>
+          <li>2) [배민 세션 갱신] 후 세션 연결됨 확인</li>
+          <li>3) 수집 날짜를 <strong>오늘(KST)</strong>로 맞추기</li>
+        </ul>
+        ${renderMenuResultsList(result.menuResults || result.results)}
+      `;
+      return;
+    }
+
     box.hidden = false;
     box.className = 'baemin-collect-result baemin-collect-result--success';
     box.innerHTML = `
       <strong>수집 완료</strong>
       <ul class="baemin-collect-stats">
         <li>수집 날짜: <strong>${result.captureDate || '-'}</strong></li>
-        <li>총 라이더 수: <strong>${formatNumber(result.totalRiders ?? result.uniqueRiders)}</strong></li>
-        <li>총 완료건수: <strong>${formatNumber(result.totalCompleteSum)}</strong></li>
-        <li>저장된 라이더 수: <strong>${formatNumber(result.savedCount)}</strong></li>
-        <li>중복/키 없음 제외: <strong>${formatNumber((result.duplicateExcluded || 0) + (result.skippedNoKey || 0))}</strong></li>
+        <li>총 저장 건수: <strong>${formatNumber(result.savedCount)}</strong></li>
+        <li>배달현황 완료건: <strong>${formatNumber(result.totalCompleteSum)}</strong></li>
       </ul>
+      ${renderMenuResultsList(result.menuResults)}
     `;
+  }
+
+  function renderMenuResultsList(menuResults) {
+    if (!menuResults || typeof menuResults !== 'object') return '';
+    const items = Object.entries(menuResults).map(([id, row]) => {
+      const label = row.label || id;
+      const status = row.ok ? '성공' : '실패';
+      const detail = row.ok
+        ? `${formatNumber(row.savedCount || 0)}건`
+        : (row.message || row.error || '실패');
+      return `<li>${label}: <strong>${status}</strong> (${detail})</li>`;
+    });
+    if (!items.length) return '';
+    return `<ul class="baemin-collect-stats">${items.join('')}</ul>`;
   }
 
   function stopSetupPoll() {
@@ -244,11 +382,11 @@
     push(setup?.localHealthUrl);
     (config?.localHealthUrls || []).forEach(push);
     push(config?.localHealthUrl);
-    (state.localSession?.localHealthUrls || []).forEach(push);
+    (state.localSessionConfig?.localHealthUrls || []).forEach(push);
 
     const port = setup?.localSessionPort
       || config?.localSessionPort
-      || state.localSession?.port
+      || state.localSessionConfig?.port
       || 3939;
     push(`http://127.0.0.1:${port}/health`);
     push(`http://localhost:${port}/health`);
@@ -262,7 +400,10 @@
       if (!response.ok) return;
       const payload = await response.json().catch(() => ({}));
       if (payload?.baeminSessionLocal) {
-        state.localSession = payload.baeminSessionLocal;
+        state.localSessionConfig = {
+          ...state.localSessionConfig,
+          ...payload.baeminSessionLocal
+        };
       }
     } catch {
       // ignore — defaults remain
@@ -284,12 +425,19 @@
         if (!response.ok) continue;
         const payload = await response.json().catch(() => ({}));
         if (payload?.port) {
-          state.localSession = {
-            ...state.localSession,
+          state.localSessionConfig = {
+            ...state.localSessionConfig,
             port: payload.port
           };
         }
-        return { running: true, autoCollect: payload.autoCollect || null, healthUrl };
+        return {
+          running: true,
+          autoCollect: payload.autoCollect || null,
+          browser: payload.browser || null,
+          session: payload.session || null,
+          version: payload.version || '',
+          healthUrl
+        };
       } catch {
         // try next host/port candidate
       }
@@ -301,7 +449,154 @@
     const local = await fetchLocalHealth(state.config, null);
     state.localServerRunning = local.running;
     state.localAutoCollect = local.autoCollect;
+    state.localBrowser = local.browser;
+    state.localSession = local.session;
     if (state.config) renderAutoCollectStatus(state.config);
+    updateActionButtons();
+  }
+
+  function getLocalServerBaseUrl() {
+    const port = state.localSessionConfig?.port || 3939;
+    return `http://127.0.0.1:${port}`;
+  }
+
+  async function callLocalServer(path, options = {}) {
+    const base = getLocalServerBaseUrl();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs || 120000);
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        body: options.body != null ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+        cache: 'no-store',
+        mode: 'cors'
+      });
+      clearTimeout(timer);
+      const payload = await response.json().catch(() => ({}));
+      return { ok: response.ok, status: response.status, ...payload };
+    } catch (error) {
+      clearTimeout(timer);
+      return { ok: false, message: error.message || '로컬 서버 연결 실패' };
+    }
+  }
+
+  async function openLocalBrowser() {
+    if (state.loading || state.collecting) return;
+
+    const local = await fetchLocalHealth(state.config, null);
+    state.localServerRunning = local.running;
+    if (!local.running) {
+      showToast('로컬 세션 서버가 실행 중이 아닙니다. npm run baemin:session-server 를 실행하세요.');
+      return;
+    }
+
+    setLoading(true);
+    const result = await callLocalServer('/browser/open', { method: 'POST', timeoutMs: 60000 });
+    setLoading(false);
+    await refreshLocalServerStatus();
+
+    if (!result.ok) {
+      showToast(result.message || '브라우저 열기에 실패했습니다.');
+      return;
+    }
+    showToast(result.message || 'Playwright 브라우저를 열었습니다.');
+  }
+
+  async function runFullCollect() {
+    if (state.loading || state.collecting) return;
+
+    const local = await fetchLocalHealth(state.config, null);
+    state.localServerRunning = local.running;
+    if (!local.running) {
+      showToast('로컬 세션 서버가 실행 중이 아닙니다. npm run baemin:session-server 를 실행하세요.');
+      return;
+    }
+
+    if (local.autoCollect?.collectRunning) {
+      showToast('이미 수집 중입니다.');
+      return;
+    }
+
+    setCollecting(true);
+    renderSummary(null);
+
+    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const result = await callLocalServer('/collect/full', {
+      method: 'POST',
+      body: { collectDate: captureDate },
+      timeoutMs: 300000
+    });
+
+    await refreshLocalServerStatus();
+    setCollecting(false);
+
+    if (result.status === 409 && result.message?.includes('이미 수집')) {
+      showToast('이미 수집 중입니다.');
+      return;
+    }
+
+    if (!result.ok) {
+      renderSummary(null, result.message || '배민 전체 데이터 수집에 실패했습니다.');
+      await loadConfig();
+      return;
+    }
+
+    const savedCount = Number(result.savedCount || 0);
+    const menuResults = result.results
+      ? Object.fromEntries(Object.entries(result.results).map(([id, row]) => [id, {
+        label: row.label || id,
+        ok: row.ok,
+        savedCount: row.savedCount,
+        message: row.message
+      }]))
+      : null;
+
+    if (savedCount <= 0) {
+      renderSummary({
+        captureDate: result.collectDate || captureDate,
+        savedCount,
+        totalCompleteSum: result.totalCompleteSum,
+        menuResults
+      }, result.message || '저장된 데이터가 0건입니다.');
+      await loadConfig();
+      return;
+    }
+
+    renderSummary({
+      captureDate: result.collectDate || captureDate,
+      savedCount,
+      totalCompleteSum: result.totalCompleteSum,
+      menuResults
+    });
+    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장`);
+    await loadConfig();
+  }
+
+  async function shutdownLocalServer() {
+    if (state.loading || state.collecting) return;
+
+    const local = await fetchLocalHealth(state.config, null);
+    if (!local.running) {
+      showToast('로컬 세션 서버가 이미 중지되어 있습니다.');
+      return;
+    }
+
+    if (!window.confirm('자동수집 서버를 종료합니다. Playwright 브라우저도 함께 닫힙니다. 계속할까요?')) {
+      return;
+    }
+
+    setLoading(true);
+    const result = await callLocalServer('/shutdown', { method: 'POST', timeoutMs: 10000 });
+    setLoading(false);
+
+    state.localServerRunning = false;
+    state.localBrowser = null;
+    state.localAutoCollect = null;
+    if (state.config) renderAutoCollectStatus(state.config);
+
+    showToast(result.message || '자동수집 서버 종료를 요청했습니다.');
   }
 
   function pollSessionSetup(setupId) {
@@ -339,7 +634,7 @@
 
     const localRunning = await fetchLocalHealth(state.config, setup);
     state.localServerRunning = localRunning.running;
-    const portLabel = setup.localSessionPort || state.localSession?.port || 3939;
+    const portLabel = setup.localSessionPort || state.localSessionConfig?.port || 3939;
     const instructions = localRunning.running
       ? `<p>로컬 세션 서버가 실행 중입니다. (포트 ${portLabel})</p><p>브라우저 창에서 배민Biz 로그인·휴대폰 인증을 완료하세요.</p>`
       : `<p><strong>로컬 세션 서버에 연결하지 못했습니다.</strong></p>
@@ -389,48 +684,26 @@
 
   async function loadLatestSummary() {
     const dateInput = $('baeminDeliveryCaptureDate');
-    const captureDate = dateInput?.value || new Date().toISOString().slice(0, 10);
+    const captureDate = dateInput?.value || todayKstDate();
     const result = await adminApi(`/api/admin/baemin-delivery/latest?captureDate=${encodeURIComponent(captureDate)}`);
     if (result.ok && result.savedCount > 0) {
       renderSummary({
         captureDate: result.captureDate,
-        totalRiders: result.savedCount,
-        uniqueRiders: result.savedCount,
-        totalCompleteSum: result.totalCompleteSum,
         savedCount: result.savedCount,
-        duplicateExcluded: 0,
-        skippedNoKey: 0
+        totalCompleteSum: result.totalCompleteSum,
+        menuResults: result.byMenu
+          ? Object.fromEntries(Object.entries(result.byMenu).map(([id, count]) => [id, {
+            label: id,
+            ok: true,
+            savedCount: count
+          }]))
+          : null
       });
     }
   }
 
   async function runAutoCollect() {
-    if (state.loading) return;
-    setLoading(true);
-    renderSummary(null);
-
-    const captureDate = $('baeminDeliveryCaptureDate')?.value || new Date().toISOString().slice(0, 10);
-    const advancedOpen = $('baeminDeliveryAdvancedPanel')?.open;
-    const sessionCookie = advancedOpen
-      ? String($('baeminDeliverySessionCookie')?.value || '').trim()
-      : '';
-    const body = { captureDate };
-    if (sessionCookie) body.sessionCookie = sessionCookie;
-
-    const result = await adminApi('/api/admin/baemin-delivery/collect', {
-      method: 'POST',
-      body: JSON.stringify(body)
-    });
-
-    setLoading(false);
-    if (!result.ok) {
-      renderSummary(null, result.message || '배민 자동 수집에 실패했습니다.');
-      await loadConfig();
-      return;
-    }
-    renderSummary(result);
-    showToast('배민 자동 수집이 완료되었습니다.');
-    await loadConfig();
+    return runFullCollect();
   }
 
   function openJsonDialog() {
@@ -488,8 +761,20 @@
       void startSessionRefresh();
     });
 
+    $('baeminBrowserOpenBtn')?.addEventListener('click', () => {
+      void openLocalBrowser();
+    });
+
+    $('baeminFullCollectBtn')?.addEventListener('click', () => {
+      void runFullCollect();
+    });
+
+    $('baeminServerShutdownBtn')?.addEventListener('click', () => {
+      void shutdownLocalServer();
+    });
+
     $('baeminDeliveryAutoCollectBtn')?.addEventListener('click', () => {
-      void runAutoCollect();
+      void runFullCollect();
     });
 
     $('baeminDeliveryJsonPasteBtn')?.addEventListener('click', () => {
@@ -523,7 +808,7 @@
     await loadPublicLocalSessionConfig();
     const dateInput = $('baeminDeliveryCaptureDate');
     if (dateInput && !dateInput.value) {
-      dateInput.value = new Date().toISOString().slice(0, 10);
+      dateInput.value = todayKstDate();
     }
     await loadConfig();
     await loadLatestSummary();
@@ -531,10 +816,23 @@
     state.statusPollTimer = setInterval(async () => {
       await loadConfig();
     }, 15000);
+
+    stopLocalHealthPoll();
+    state.localHealthPollTimer = setInterval(async () => {
+      await refreshLocalServerStatus();
+    }, 4000);
+  }
+
+  function stopLocalHealthPoll() {
+    if (state.localHealthPollTimer) {
+      clearInterval(state.localHealthPollTimer);
+      state.localHealthPollTimer = null;
+    }
   }
 
   function stopPolling() {
     stopStatusPoll();
+    stopLocalHealthPoll();
     stopSetupPoll();
   }
 

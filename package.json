@@ -18,6 +18,7 @@
     "test:baemin-playwright": "node scripts/test-baemin-playwright-login.js",
     "collect:baemin-local": "node scripts/collect-baemin-delivery-local.js",
     "baemin:session-server": "node scripts/baemin-session-local-server.js",
+    "baemin:playwright-install": "node node_modules/playwright/cli.js install chromium",
     "baemin:session-refresh": "node scripts/baemin-session-refresh-cli.js"
   },
   "dependencies": {

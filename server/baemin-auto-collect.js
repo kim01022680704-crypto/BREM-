@@ -1,11 +1,5 @@
 const { getServiceClient } = require('./admin-bootstrap');
-const baeminSession = require('./baemin-delivery-session');
-const {
-  fetchAllDeliveryStatus,
-  mapItemToRow,
-  getTableStatus,
-  saveRowsDirect
-} = require('./baemin-delivery-collect');
+const { runFullCollectPipeline, getLatestMenuCollectStatus, getBizCollectTableStatus } = require('./baemin-collect-pipeline');
 
 const AUTO_COLLECT_SETTINGS_KEY = 'brem_baemin_auto_collect_status';
 const DEFAULT_SCHEDULE = ['10:00', '14:00', '17:00', '20:00', '23:30'];
@@ -207,85 +201,69 @@ async function clearSessionPause() {
 async function runAutoCollectJob(options = {}) {
   const captureDate = String(options.captureDate || todayDateStringKST()).slice(0, 10);
   const source = String(options.source || 'local_scheduler').trim();
+  const sessionCookie = String(options.sessionCookie || '').trim();
 
-  const tableStatus = await getTableStatus();
-  if (!tableStatus.tableExists) {
-    const result = await recordFailedRun({
-      error: 'public.baemin_delivery_status 테이블이 없습니다.',
-      sessionExpired: false,
-      captureDate,
-      source
-    });
-    return { ok: false, message: '테이블 없음', sessionExpired: false, record: result.record };
-  }
+  const pipelineResult = await runFullCollectPipeline({
+    collectDate: captureDate,
+    source,
+    sessionCookie: sessionCookie || undefined
+  });
+  const deliveryResult = pipelineResult.results?.delivery_status;
 
-  const cookie = await baeminSession.resolveStoredSessionCookie({});
-  if (!cookie) {
+  if (!pipelineResult.ok) {
+    const sessionExpired = Boolean(pipelineResult.sessionExpired);
     const result = await recordFailedRun({
-      error: '배민 세션이 없습니다. [배민 세션 갱신]이 필요합니다.',
-      sessionExpired: false,
-      captureDate,
-      source
-    });
-    return { ok: false, message: result.record?.lastError, sessionExpired: false, record: result.record };
-  }
-
-  const fetched = await fetchAllDeliveryStatus(cookie, options);
-  if (!fetched.ok) {
-    const sessionExpired = fetched.status === 401
-      || fetched.status === 403
-      || fetched.error === '배민 로그인 만료';
-    if (sessionExpired) {
-      await baeminSession.markSessionError(fetched.message || '배민 로그인 만료');
-    }
-    const message = sessionExpired
-      ? '세션 만료 — 배민 세션 갱신 필요'
-      : (fetched.message || fetched.error || '자동 수집 실패');
-    const result = await recordFailedRun({
-      error: message,
+      error: pipelineResult.message || '자동 수집 실패',
       sessionExpired,
       captureDate,
       source
     });
-    return { ok: false, message, sessionExpired, record: result.record };
+    return {
+      ok: false,
+      message: pipelineResult.message,
+      sessionExpired,
+      results: pipelineResult.results,
+      record: result.record
+    };
   }
 
-  await baeminSession.markSessionValidated();
-  const saveResult = await saveRowsDirect(fetched.items, captureDate);
-  if (!saveResult.ok) {
-    const result = await recordFailedRun({
-      error: saveResult.message || saveResult.error || 'Supabase 저장 실패',
-      sessionExpired: false,
-      captureDate,
-      source
-    });
-    return { ok: false, message: result.record?.lastError, sessionExpired: false, record: result.record };
-  }
+  const savedCount = Number(pipelineResult.savedTotal || deliveryResult?.savedCount || 0);
+  const totalCompleteSum = Number(
+    deliveryResult?.rawItems?.reduce((sum, item) => {
+      const acceptance = item?.deliveryAcceptanceCount || {};
+      return sum + Number(acceptance.totalComplete || 0);
+    }, 0) || 0
+  );
 
   const result = await recordSuccessfulRun({
     captureDate,
-    savedCount: saveResult.savedCount,
-    totalCompleteSum: saveResult.totalCompleteSum,
+    savedCount,
+    totalCompleteSum,
     source
   });
 
   return {
     ok: true,
     captureDate,
-    savedCount: saveResult.savedCount,
-    totalCompleteSum: saveResult.totalCompleteSum,
-    duplicateExcluded: fetched.meta?.duplicateCount ?? 0,
+    savedCount,
+    totalCompleteSum,
+    results: pipelineResult.results,
     sessionExpired: false,
     record: result.record
   };
 }
 
+function getBaeminSessionModule() {
+  return require('./baemin-delivery-session');
+}
+
 async function getAutoCollectStatusForAdmin() {
   const record = await getAutoCollectRecord();
-  const session = await baeminSession.getStoredSessionRecord();
+  const session = await getBaeminSessionModule().getStoredSessionRecord();
   const nextScheduledAt = record.nextScheduledAt || computeNextScheduledAt(record.schedule);
   const localSeenAt = record.localServerLastSeenAt ? Date.parse(record.localServerLastSeenAt) : 0;
   const localServerRecentlyActive = localSeenAt > 0 && (Date.now() - localSeenAt) < 2 * 60 * 1000;
+  const menuStatus = await getLatestMenuCollectStatus(record.lastCaptureDate || todayDateStringKST());
 
   return {
     schedule: record.schedule,
@@ -302,7 +280,8 @@ async function getAutoCollectStatusForAdmin() {
     sessionPaused: record.sessionPaused || Boolean(session?.lastError),
     sessionExpired: Boolean(session?.lastError) || record.sessionPaused,
     sessionUpdatedAt: session?.updatedAt || null,
-    sessionLastValidatedAt: session?.lastValidatedAt || null
+    sessionLastValidatedAt: session?.lastValidatedAt || null,
+    menuStatus
   };
 }
 

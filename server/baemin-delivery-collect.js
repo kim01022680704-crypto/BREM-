@@ -1,6 +1,9 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
-const baeminSession = require('./baemin-delivery-session');
+
+function getBaeminSession() {
+  return require('./baemin-delivery-session');
+}
 
 const API_BASE = 'https://deliverycenter.baemin.com/delivery-status';
 const DEFAULT_PAGE_SIZE = 20;
@@ -16,7 +19,7 @@ function resolveSessionCookie(options = {}) {
 }
 
 async function resolveSessionCookieAsync(options = {}) {
-  return baeminSession.resolveStoredSessionCookie(options);
+  return getBaeminSession().resolveStoredSessionCookie(options);
 }
 
 function isPlaywrightFeasibleOnVercel() {
@@ -314,24 +317,62 @@ function buildCollectSummary(fetchResult, saveResult) {
 }
 
 async function collectFromApi(accessToken, options = {}) {
-  const resolvedCookie = await resolveSessionCookieAsync(options);
-  const cookie = resolveSessionCookie({ ...options, resolvedCookie });
-  const captureDate = String(options.captureDate || todayDateString()).slice(0, 10);
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
 
-  const fetched = await fetchAllDeliveryStatus(cookie, options);
-  if (!fetched.ok) {
-    if (fetched.status === 401 || fetched.status === 403 || fetched.error === '배민 로그인 만료') {
-      await baeminSession.markSessionError(fetched.message || '배민 로그인 만료');
-    }
-    return fetched;
+  const captureDate = String(options.captureDate || todayDateString()).slice(0, 10);
+  const { runFullCollectPipeline } = require('./baemin-collect-pipeline');
+  const pipelineResult = await runFullCollectPipeline({
+    collectDate: captureDate,
+    source: 'admin_manual'
+  });
+
+  if (!pipelineResult.ok) {
+    return {
+      ok: false,
+      status: pipelineResult.sessionExpired ? 401 : 502,
+      error: pipelineResult.sessionExpired ? 'SESSION_EXPIRED' : 'COLLECT_FAILED',
+      message: pipelineResult.message || '배민 자동 수집에 실패했습니다.',
+      sessionExpired: Boolean(pipelineResult.sessionExpired),
+      results: pipelineResult.results || {}
+    };
   }
 
-  await baeminSession.markSessionValidated();
+  const deliveryResult = pipelineResult.results?.delivery_status || {};
+  const savedCount = Number(pipelineResult.savedTotal || deliveryResult.savedCount || 0);
+  const rawItems = deliveryResult.rawItems || [];
+  const totalCompleteSum = rawItems.reduce((sum, item) => {
+    const acceptance = item?.deliveryAcceptanceCount || {};
+    return sum + Number(acceptance.totalComplete || 0);
+  }, 0);
 
-  const saveResult = await saveRows(accessToken, fetched.items, captureDate);
-  if (!saveResult.ok) return saveResult;
+  if (savedCount <= 0) {
+    const details = Object.entries(pipelineResult.results || {})
+      .map(([id, row]) => `${row.label || id}: ${row.ok ? '0건' : (row.message || row.error || '실패')}`)
+      .join(' · ');
+    return {
+      ok: false,
+      status: 502,
+      error: 'NO_ROWS_SAVED',
+      message: `저장된 데이터가 0건입니다. Supabase 마이그레이션·세션·수집 날짜(오늘 KST)를 확인하세요.${details ? ` (${details})` : ''}`,
+      captureDate,
+      savedCount: 0,
+      results: pipelineResult.results || {}
+    };
+  }
 
-  return buildCollectSummary(fetched, saveResult);
+  return {
+    ok: true,
+    captureDate,
+    totalRiders: rawItems.length,
+    uniqueRiders: Number(deliveryResult.savedCount || rawItems.length),
+    totalCompleteSum,
+    savedCount,
+    duplicateExcluded: 0,
+    skippedNoKey: 0,
+    totalPage: deliveryResult.meta?.totalPage ?? null,
+    menuResults: pipelineResult.results
+  };
 }
 
 async function importFromJson(accessToken, payload, options = {}) {
@@ -373,6 +414,39 @@ async function getLatestSummary(accessToken, captureDate) {
   }
 
   const date = String(captureDate || todayDateString()).slice(0, 10);
+
+  const { data: bizRows, error: bizError } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('source_menu, parsed_json')
+    .eq('collect_date', date);
+
+  if (!bizError && (bizRows || []).length) {
+    const byMenu = {};
+    (bizRows || []).forEach(row => {
+      const key = row.source_menu || 'unknown';
+      byMenu[key] = (byMenu[key] || 0) + 1;
+    });
+    const deliveryRows = (bizRows || []).filter(row => row.source_menu === 'delivery_status');
+    const totalCompleteSum = deliveryRows.reduce(
+      (sum, row) => sum + Number(row.parsed_json?.totalComplete || 0),
+      0
+    );
+    return {
+      ok: true,
+      tableExists: true,
+      bizCollectTableExists: true,
+      captureDate: date,
+      savedCount: bizRows.length,
+      deliveryStatusCount: deliveryRows.length,
+      totalCompleteSum,
+      byMenu
+    };
+  }
+
+  if (bizError && !isMissingTableError(bizError)) {
+    return { ok: false, status: 500, error: bizError.message || '조회 실패' };
+  }
+
   const { data, error } = await supabase
     .from('baemin_delivery_status')
     .select('total_complete')
@@ -380,7 +454,14 @@ async function getLatestSummary(accessToken, captureDate) {
 
   if (error) {
     if (isMissingTableError(error)) {
-      return { ok: true, tableExists: false, captureDate: date, savedCount: 0, totalCompleteSum: 0 };
+      return {
+        ok: true,
+        tableExists: false,
+        bizCollectTableExists: false,
+        captureDate: date,
+        savedCount: 0,
+        totalCompleteSum: 0
+      };
     }
     return { ok: false, status: 500, error: error.message || '조회 실패' };
   }
@@ -396,20 +477,22 @@ async function getLatestSummary(accessToken, captureDate) {
   };
 }
 
-const baeminAutoCollect = require('./baemin-auto-collect');
-
 async function getConfig(accessToken) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
 
   const tableStatus = await getTableStatus();
-  const sessionStatus = await baeminSession.getSessionStatus(accessToken);
+  const { getBizCollectTableStatus } = require('./baemin-collect-pipeline');
+  const bizTableStatus = await getBizCollectTableStatus();
+  const sessionStatus = await getBaeminSession().getSessionStatus(accessToken);
   const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
+  const baeminAutoCollect = require('./baemin-auto-collect');
   const autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin();
 
   return {
     ok: true,
     tableExists: tableStatus.tableExists === true,
+    bizCollectTableExists: bizTableStatus.tableExists === true,
     sessionConfigured: sessionStatus.sessionConfigured || envCookie,
     sessionUpdatedAt: sessionStatus.updatedAt || null,
     sessionUpdatedBy: sessionStatus.updatedBy || '',
@@ -424,7 +507,8 @@ async function getConfig(accessToken) {
     localHealthUrls: sessionStatus.localHealthUrls,
     playwright: isPlaywrightFeasibleOnVercel(),
     collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none'),
-    autoCollect
+    autoCollect,
+    menuStatus: autoCollect.menuStatus || []
   };
 }
 

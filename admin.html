@@ -629,13 +629,16 @@
           <p class="form-help" id="baeminDeliveryConfigHint">배민Biz API는 서버에서만 호출합니다.</p>
           <div id="baeminDeliverySessionStatus" class="baemin-session-status baemin-session-status--warn">세션 상태 확인 중…</div>
           <div id="baeminDeliveryAutoCollectStatus" class="baemin-auto-collect-panel">자동 수집 상태 확인 중…</div>
+          <div id="baeminDeliveryMenuCollectStatus" class="baemin-menu-collect-panel">메뉴별 수집 상태 확인 중…</div>
           <div class="form-row baemin-collect-toolbar">
             <label>
               수집 날짜
               <input type="date" id="baeminDeliveryCaptureDate" class="admin-period-input">
             </label>
             <button type="button" class="primary-btn" id="baeminDeliverySessionRefreshBtn">배민 세션 갱신</button>
-            <button type="button" class="primary-btn" id="baeminDeliveryAutoCollectBtn">배민 자동 수집</button>
+            <button type="button" class="primary-btn" id="baeminBrowserOpenBtn">브라우저 열기/세션 유지</button>
+            <button type="button" class="primary-btn" id="baeminFullCollectBtn">배민 전체 데이터 수집</button>
+            <button type="button" class="small-btn" id="baeminServerShutdownBtn">자동수집 서버 종료</button>
             <button type="button" class="small-btn" id="baeminDeliveryJsonPasteBtn">배민 JSON 붙여넣기</button>
           </div>
           <details class="baemin-advanced-panel" id="baeminDeliveryAdvancedPanel">
@@ -4647,7 +4650,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260628b"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260629a"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

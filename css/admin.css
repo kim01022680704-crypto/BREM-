@@ -2549,6 +2549,48 @@ textarea {
   color: rgba(219, 234, 254, 0.85);
 }
 
+.baemin-menu-collect-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.baemin-menu-collect-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.baemin-menu-collect-table th,
+.baemin-menu-collect-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  text-align: left;
+  vertical-align: top;
+}
+
+.baemin-menu-collect-table th {
+  font-size: 0.78rem;
+  color: rgba(203, 213, 225, 0.85);
+  font-weight: 600;
+}
+
+.baemin-menu-collect-status--success {
+  color: #86efac;
+  font-weight: 700;
+}
+
+.baemin-menu-collect-status--failed {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
+.baemin-menu-collect-status--idle {
+  color: rgba(203, 213, 225, 0.7);
+}
+
 .baemin-advanced-panel {
   margin-top: 12px;
   padding: 12px 14px;

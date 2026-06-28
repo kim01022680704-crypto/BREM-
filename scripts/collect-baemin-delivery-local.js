@@ -25,13 +25,23 @@ async function main() {
 
   if (!result.ok) {
     console.error('Collect FAIL:', result.message || result.record?.lastError || 'unknown');
+    if (result.results) {
+      Object.entries(result.results).forEach(([id, row]) => {
+        console.error(`  ${id}:`, row.ok ? `ok (${row.savedCount || 0})` : (row.message || row.error || 'fail'));
+      });
+    }
     process.exit(1);
   }
 
   console.log('Saved OK');
   console.log('  captureDate:', result.captureDate);
-  console.log('  saved riders:', result.savedCount);
+  console.log('  saved total:', result.savedCount);
   console.log('  totalComplete:', result.totalCompleteSum);
+  if (result.results) {
+    Object.entries(result.results).forEach(([id, row]) => {
+      console.log(`  ${id}:`, row.ok ? `ok (${row.savedCount || 0})` : (row.message || 'fail'));
+    });
+  }
 }
 
 main().catch(error => {

@@ -4,8 +4,14 @@
  */
 require('dotenv').config();
 
-const http = require('http');
 const path = require('path');
+
+const PLAYWRIGHT_BROWSERS_DIR = path.join(__dirname, '..', '.playwright-browsers');
+if (!String(process.env.PLAYWRIGHT_BROWSERS_PATH || '').trim()) {
+  process.env.PLAYWRIGHT_BROWSERS_PATH = PLAYWRIGHT_BROWSERS_DIR;
+}
+
+const http = require('http');
 const { URL } = require('url');
 const {
   getListenLocalSessionConfig,
@@ -18,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260628d';
+const SERVER_VERSION = '20260629a';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -33,10 +39,25 @@ const CORS_ALLOWED_ORIGIN_PATTERNS = [
 
 const baeminAutoCollect = require('../server/baemin-auto-collect');
 const {
+  createApiDiscoveryState,
+  attachApiDiscovery,
+  attachPageDiscovery,
+  buildRegistryFromDiscovery
+} = require('../server/baemin-playwright-discovery');
+const { BAEMIN_ORIGIN: BAEMIN_COLLECT_ORIGIN } = require('../server/baemin-collect-sources');
+const {
   formatApiPayloadError,
   formatError,
-  migrationHintForError
+  migrationHintForError,
+  safeJsonStringify,
+  stringifyErrorValue
 } = require('../server/baemin-error-format');
+
+const PROBE_PAGE_PATHS = [
+  '/delivery-status',
+  '/delivery/delivery-history',
+  '/delivery/history'
+];
 
 let activeJob = null;
 let activeContext = null;
@@ -48,10 +69,19 @@ let activeSetup = { setupId: '', setupSecret: '', apiBase: 'https://brem.kr' };
 let sessionPaused = false;
 let lastRunSlotKey = null;
 let collectRunning = false;
+let shutdownRequested = false;
+let lastCollectResult = {
+  at: null,
+  ok: null,
+  message: '',
+  savedTotal: 0,
+  collectDate: null
+};
 let autoCollectRuntime = {
   lastRunAt: null,
   lastStatus: null,
   lastError: null,
+  lastSavedCount: 0,
   nextScheduledAt: null,
   schedule: baeminAutoCollect.DEFAULT_SCHEDULE
 };
@@ -90,6 +120,15 @@ function sendHtml(res, html) {
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function formatPlaywrightLaunchError(error) {
+  const text = formatError(error, 'Playwright browser launch failed');
+  if (/executable doesn't exist|playwright install/i.test(text)) {
+    return 'Playwright Chromium이 설치되지 않았습니다. 터미널에서 아래 명령을 1회 실행하세요:\n'
+      + 'node node_modules/playwright/cli.js install chromium';
+  }
+  return text;
 }
 
 async function loadPlaywright() {
@@ -154,6 +193,17 @@ function isContextAlive(context) {
   } catch {
     return false;
   }
+}
+
+function shouldReuseRefreshLoop() {
+  return (isJobRunning() || refreshLoopRunning) && isContextAlive(activeContext);
+}
+
+function resetRefreshLoopState(reason) {
+  console.log(`[BREM] [start] 갱신 루프 초기화 | ${reason || 'unknown'}`);
+  refreshLoopRunning = false;
+  activeRunToken += 1;
+  activeJob = { status: 'idle', message: '대기 중', updatedAt: Date.now() };
 }
 
 function safePageUrlSync(page) {
@@ -362,14 +412,87 @@ async function extractBaeminCookies(context) {
   return header;
 }
 
+function isProtectedDeploymentResponse(status, responseText) {
+  const text = String(responseText || '').toLowerCase();
+  return status === 401
+    || status === 403
+    || text.includes('protected deployment')
+    || text.includes('authentication required')
+    || text.includes('vercel authentication');
+}
+
+function hasLocalSupabaseCredentials() {
+  return Boolean(
+    String(process.env.SUPABASE_URL || '').trim()
+    && String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+  );
+}
+
+async function saveSessionDirectToSupabase(setupId, setupSecret, cookieHeader) {
+  if (!hasLocalSupabaseCredentials()) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'SUPABASE_SERVICE_ROLE_KEY 없음'
+    };
+  }
+
+  console.log('[BREM] [Supabase 저장] service role 직접 저장 시도');
+  const baeminDeliverySession = require('../server/baemin-delivery-session');
+  const result = await baeminDeliverySession.completeSessionSetup(
+    setupId,
+    setupSecret,
+    cookieHeader,
+    { source: 'playwright_local' }
+  );
+
+  if (result.ok) {
+    console.log('[BREM] [Supabase 저장] 직접 저장 성공');
+    return result;
+  }
+
+  console.error('[BREM] [Supabase 저장] 직접 저장 실패', {
+    status: result.status,
+    error: result.error,
+    message: result.message
+  });
+  return result;
+}
+
 async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
-  const url = `${apiBase.replace(/\/$/, '')}/api/admin/baemin-delivery/session`;
   const cookieLength = String(cookieHeader || '').length;
-  console.log(`[BREM] [Supabase 저장] POST ${url}`);
   console.log(`[BREM] [Supabase 저장] setupId=${setupId} · cookieLength=${cookieLength}`);
 
   if (!cookieHeader || cookieLength < 8) {
     throw new Error('배민 쿠키 헤더가 비어 있습니다. 로그인 후 배달현황(/delivery/history) 화면에서 다시 시도하세요.');
+  }
+
+  const direct = await saveSessionDirectToSupabase(setupId, setupSecret, cookieHeader);
+  if (direct.ok) return direct;
+
+  if (hasLocalSupabaseCredentials()) {
+    const detail = stringifyErrorValue(direct.message || direct.error || direct.reason || '알 수 없는 오류');
+    console.error('[BREM] [Supabase 저장] 직접 저장만 사용 (HTTP fallback 생략)');
+    if (detail.includes('SETUP_NOT_FOUND') || detail.includes('세션 갱신 요청')) {
+      throw new Error(`${detail} ERP에서 [배민 세션 갱신]을 다시 눌러 새 setupId를 받으세요.`);
+    }
+    if (detail.includes('SETUP_EXPIRED') || detail.includes('만료')) {
+      throw new Error(`${detail} ERP에서 [배민 세션 갱신]을 다시 눌러주세요.`);
+    }
+    if (detail.includes('SETUP_NOT_PENDING') || detail.includes('이미 처리')) {
+      throw new Error(`${detail} ERP에서 [배민 세션 갱신]을 다시 눌러주세요.`);
+    }
+    throw new Error(`Supabase 직접 저장 실패: ${detail}`);
+  }
+
+  const url = `${String(apiBase || 'https://brem.kr').replace(/\/$/, '')}/api/admin/baemin-delivery/session`;
+  console.log(`[BREM] [Supabase 저장] HTTP POST ${url}`);
+
+  const headers = { 'Content-Type': 'application/json' };
+  const bypassSecret = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+  if (bypassSecret) {
+    headers['x-vercel-protection-bypass'] = bypassSecret;
+    console.log('[BREM] [Supabase 저장] Vercel bypass 헤더 사용');
   }
 
   let response;
@@ -377,7 +500,7 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
   try {
     response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ setupId, setupSecret, cookie: cookieHeader })
     });
     responseText = await response.text();
@@ -396,13 +519,20 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
     console.error('[BREM] [Supabase 저장] status:', response.status);
     console.error('[BREM] [Supabase 저장] response.text():', responseText.slice(0, 800));
     console.error('[BREM] [Supabase 저장] parse error:', formatError(error));
+    if (isProtectedDeploymentResponse(response.status, responseText)) {
+      throw new Error(buildProtectedDeploymentHelp(direct));
+    }
     throw new Error(`Supabase 저장 API 응답 파싱 실패 (HTTP ${response.status})`);
   }
 
   console.log('[BREM] [Supabase 저장] status:', response.status);
+  console.log('[BREM] [Supabase 저장] response.text():', responseText.slice(0, 800));
   console.log('[BREM] [Supabase 저장] payload:', JSON.stringify(payload).slice(0, 1000));
 
   if (!response.ok) {
+    if (isProtectedDeploymentResponse(response.status, responseText)) {
+      throw new Error(buildProtectedDeploymentHelp(direct));
+    }
     const message = formatApiPayloadError(payload, response.status, responseText);
     const hint = migrationHintForError(message);
     console.error('[BREM] [Supabase 저장] 실패 |', message);
@@ -412,8 +542,21 @@ async function postSessionToApi(apiBase, setupId, setupSecret, cookieHeader) {
     throw new Error(`${message}${hint}`);
   }
 
-  console.log(`[BREM] [Supabase 저장] API 응답 성공 | ${payload.message || 'ok'}`);
+  console.log(`[BREM] [Supabase 저장] HTTP 저장 성공 | message=${payload.message || 'ok'}`);
   return payload;
+}
+
+function buildProtectedDeploymentHelp(directResult) {
+  if (!hasLocalSupabaseCredentials()) {
+    return 'Vercel 배포 보호(Protected deployment)로 brem.kr API 호출이 차단되었습니다. '
+      + 'PC 프로젝트 .env 에 SUPABASE_URL 과 SUPABASE_SERVICE_ROLE_KEY 를 넣고 세션 서버를 재시작하세요. '
+      + '(Supabase Dashboard → Project Settings → API → service_role key)';
+  }
+  const detail = stringifyErrorValue(directResult?.message || directResult?.error || '');
+  if (detail) {
+    return `Supabase 직접 저장 실패: ${detail}. ERP에서 [배민 세션 갱신]을 다시 누른 뒤 재시도하세요.`;
+  }
+  return 'Supabase 직접 저장과 brem.kr API 호출 모두 실패했습니다. ERP에서 [배민 세션 갱신]을 다시 시도하세요.';
 }
 
 async function showBrowserBanner(context, message, isError) {
@@ -467,6 +610,75 @@ async function closeContextSafely(context) {
   }
 }
 
+function getBrowserHealth() {
+  const alive = isContextAlive(activeContext);
+  const tabs = alive ? scanBrowserTabs(activeContext) : null;
+  return {
+    browserOpen: alive,
+    browserAlive: alive,
+    tabCount: tabs?.allUrls?.length || 0,
+    currentUrl: tabs?.url || '',
+    sessionLoggedIn: Boolean(tabs?.anyLoggedIn || tabs?.anyHistory),
+    refreshLoopRunning,
+    jobRunning: isJobRunning(),
+    jobStatus: activeJob?.status || 'idle'
+  };
+}
+
+async function ensurePlaywrightBrowser() {
+  if (isContextAlive(activeContext)) {
+    console.log('[BREM] [browser/open] 기존 Playwright 창 재사용');
+    return { ok: true, reused: true };
+  }
+
+  const playwright = await loadPlaywright();
+  if (!playwright) {
+    throw new Error('playwright 패키지가 없습니다. npm install playwright 후 다시 시도하세요.');
+  }
+
+  const context = await playwright.chromium.launchPersistentContext(PROFILE_DIR, {
+    headless: false,
+    viewport: { width: 1280, height: 900 }
+  });
+  activeContext = context;
+  console.log('[BREM] [browser/open] 새 Playwright 창 실행');
+
+  let tabs = scanBrowserTabs(context);
+  if (!tabs.page) {
+    const page = await context.newPage();
+    tabs = { ...scanBrowserTabs(context), page, url: safePageUrlSync(page) };
+  }
+
+  if (!tabs.allUrls.some(url => url.includes('deliverycenter.baemin.com'))) {
+    try {
+      await tabs.page.goto(`${BAEMIN_ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+      console.log(`[BREM] [browser/open] 초기 이동 ${safePageUrlSync(tabs.page)}`);
+    } catch (error) {
+      console.warn(`[BREM] [browser/open] 초기 이동 경고 | ${formatError(error)}`);
+    }
+  }
+
+  return { ok: true, reused: false };
+}
+
+async function syncBrowserCookiesToSupabase() {
+  if (!hasLocalSupabaseCredentials() || !isContextAlive(activeContext)) {
+    return { ok: false, skipped: true };
+  }
+
+  const cookieHeader = await extractBaeminCookies(activeContext);
+  if (!cookieHeader) {
+    return { ok: false, message: '배민 쿠키 없음' };
+  }
+
+  const baeminDeliverySession = require('../server/baemin-delivery-session');
+  return baeminDeliverySession.saveStoredSession(cookieHeader, {
+    updatedBy: 'local_browser',
+    source: 'playwright_local',
+    lastValidatedAt: new Date().toISOString()
+  });
+}
+
 function updateActiveSetup(setupId, setupSecret, apiBase) {
   activeSetup = {
     setupId: String(setupId || '').trim(),
@@ -480,7 +692,8 @@ async function saveSessionAndComplete({
   cookieHeader,
   pageUrl,
   verifyReason,
-  runToken
+  runToken,
+  closeOnComplete = false
 }) {
   if (runToken !== activeRunToken) return false;
 
@@ -510,10 +723,12 @@ async function saveSessionAndComplete({
     updatedAt: Date.now()
   };
   console.log(`[BREM] [완료] 세션 저장 완료 | URL: ${pageUrl} | ${verifyReason || ''}`);
-  await showBrowserBanner(context, '세션 저장 완료 — ERP로 돌아가세요', false);
+  await showBrowserBanner(context, '세션 저장 완료 — 브라우저를 유지합니다. ERP에서 [배민 전체 데이터 수집]을 사용하세요.', false);
   await delay(2000);
-  await closeContextSafely(context);
-  refreshLoopRunning = false;
+  if (closeOnComplete) {
+    await closeContextSafely(context);
+    refreshLoopRunning = false;
+  }
   return true;
 }
 
@@ -526,11 +741,143 @@ function getAutoCollectHealthPayload() {
     lastRunAt: autoCollectRuntime.lastRunAt,
     lastStatus: autoCollectRuntime.lastStatus,
     lastError: autoCollectRuntime.lastError,
+    lastSavedCount: autoCollectRuntime.lastSavedCount || 0,
     nextScheduledAt: autoCollectRuntime.nextScheduledAt,
     lastRunSlotKey,
+    lastCollectResult,
     port: PORT,
     defaultPort: DEFAULT_BAEMIN_SESSION_LOCAL_PORT
   };
+}
+
+async function runLocalFullCollect(options = {}) {
+  if (collectRunning) {
+    return { ok: false, conflict: true, message: '이미 수집 중입니다.' };
+  }
+  if (sessionPaused) {
+    return { ok: false, message: '세션 만료 — 배민 세션 갱신 필요', sessionExpired: true };
+  }
+
+  collectRunning = true;
+  const collectDate = String(
+    options.collectDate || baeminAutoCollect.todayDateStringKST()
+  ).slice(0, 10);
+  console.log(`[BREM] [전체수집] 시작 | date=${collectDate}`);
+
+  try {
+    if (!isContextAlive(activeContext)) {
+      await ensurePlaywrightBrowser();
+    }
+
+    let sessionCookie = isContextAlive(activeContext)
+      ? await extractBaeminCookies(activeContext)
+      : '';
+
+    if (!sessionCookie) {
+      const baeminDeliverySession = require('../server/baemin-delivery-session');
+      sessionCookie = await baeminDeliverySession.resolveStoredSessionCookie({});
+    }
+
+    if (!sessionCookie) {
+      const message = '배민 세션 쿠키가 없습니다. [브라우저 열기/세션 유지] 후 로그인하세요.';
+      lastCollectResult = { at: new Date().toISOString(), ok: false, message, savedTotal: 0, collectDate };
+      return { ok: false, message };
+    }
+
+    await syncBrowserCookiesToSupabase().catch(error => {
+      console.warn('[BREM] [전체수집] 쿠키 동기화 실패:', formatError(error));
+    });
+
+    const result = await baeminAutoCollect.runAutoCollectJob({
+      captureDate: collectDate,
+      source: 'local_manual',
+      sessionCookie
+    });
+
+    autoCollectRuntime = {
+      ...autoCollectRuntime,
+      lastRunAt: result.record?.lastRunAt || new Date().toISOString(),
+      lastStatus: result.ok ? 'success' : 'failed',
+      lastError: result.ok ? '' : (result.message || result.record?.lastError || '수집 실패'),
+      lastSavedCount: Number(result.savedCount || 0),
+      nextScheduledAt: result.record?.nextScheduledAt || autoCollectRuntime.nextScheduledAt
+    };
+
+    if (result.sessionExpired) {
+      sessionPaused = true;
+    } else if (result.ok) {
+      sessionPaused = false;
+    }
+
+    lastCollectResult = {
+      at: autoCollectRuntime.lastRunAt,
+      ok: result.ok,
+      message: result.ok
+        ? `저장 ${Number(result.savedCount || 0)}건`
+        : (result.message || autoCollectRuntime.lastError || '수집 실패'),
+      savedTotal: Number(result.savedCount || 0),
+      collectDate
+    };
+
+    if (result.ok) {
+      const menuSummary = result.results
+        ? Object.entries(result.results).map(([id, row]) => `${id}:${row.ok ? row.savedCount || 0 : 'fail'}`).join(' ')
+        : '';
+      console.log(`[BREM] [전체수집] 완료 | ${result.savedCount}건 | ${menuSummary}`);
+    } else {
+      console.warn(`[BREM] [전체수집] 실패 | ${lastCollectResult.message}`);
+    }
+
+    return {
+      ok: result.ok,
+      message: result.ok ? '수집 완료' : (result.message || '수집 실패'),
+      collectDate,
+      savedCount: result.savedCount,
+      totalCompleteSum: result.totalCompleteSum,
+      results: result.results,
+      sessionExpired: Boolean(result.sessionExpired)
+    };
+  } catch (error) {
+    const message = formatError(error, '전체 수집 오류');
+    autoCollectRuntime = {
+      ...autoCollectRuntime,
+      lastRunAt: new Date().toISOString(),
+      lastStatus: 'failed',
+      lastError: message
+    };
+    lastCollectResult = {
+      at: autoCollectRuntime.lastRunAt,
+      ok: false,
+      message,
+      savedTotal: 0,
+      collectDate
+    };
+    console.error('[BREM] [전체수집] 오류', error);
+    return { ok: false, message };
+  } finally {
+    collectRunning = false;
+  }
+}
+
+async function shutdownSessionServer() {
+  if (shutdownRequested) {
+    return { ok: true, message: '이미 종료 중입니다.' };
+  }
+  shutdownRequested = true;
+  console.log('[BREM] [shutdown] 자동수집 서버 종료 요청');
+
+  resetRefreshLoopState('서버 종료');
+  if (isContextAlive(activeContext)) {
+    await closeContextSafely(activeContext);
+  }
+
+  return new Promise(resolve => {
+    server.close(() => {
+      console.log('[BREM] [shutdown] HTTP 서버 종료');
+      resolve({ ok: true, message: '자동수집 서버가 종료되었습니다.' });
+      setTimeout(() => process.exit(0), 250);
+    });
+  });
 }
 
 async function runScheduledCollect(trigger = 'schedule') {
@@ -539,7 +886,15 @@ async function runScheduledCollect(trigger = 'schedule') {
   console.log(`[BREM] [자동수집] 시작 (${trigger})`);
 
   try {
-    const result = await baeminAutoCollect.runAutoCollectJob({ source: 'local_scheduler' });
+    let sessionCookie = '';
+    if (isContextAlive(activeContext)) {
+      sessionCookie = await extractBaeminCookies(activeContext) || '';
+    }
+
+    const result = await baeminAutoCollect.runAutoCollectJob({
+      source: trigger === 'manual' ? 'local_manual' : 'local_scheduler',
+      sessionCookie: sessionCookie || undefined
+    });
     autoCollectRuntime = {
       ...autoCollectRuntime,
       lastRunAt: result.record?.lastRunAt || new Date().toISOString(),
@@ -553,7 +908,10 @@ async function runScheduledCollect(trigger = 'schedule') {
       console.warn('[BREM] [자동수집] 세션 만료 — 배민 세션 갱신 필요 (재시도 중단)');
     } else if (result.ok) {
       sessionPaused = false;
-      console.log(`[BREM] [자동수집] 완료 | ${result.savedCount}명 | 완료건 ${result.totalCompleteSum}`);
+      const menuSummary = result.results
+        ? Object.entries(result.results).map(([id, row]) => `${id}:${row.ok ? row.savedCount || 0 : 'fail'}`).join(' ')
+        : '';
+      console.log(`[BREM] [자동수집] 완료 | ${result.savedCount}건 | ${menuSummary}`);
     } else {
       console.warn(`[BREM] [자동수집] 실패 | ${autoCollectRuntime.lastError}`);
     }
@@ -619,10 +977,46 @@ function startAutoCollectScheduler() {
   }, SCHEDULER_TICK_MS);
 }
 
+async function probeCollectPages(context) {
+  const pages = context.pages().filter(page => !page.isClosed());
+  const page = pages[0] || await context.newPage();
+
+  for (const pathSuffix of PROBE_PAGE_PATHS) {
+    const url = `${BAEMIN_COLLECT_ORIGIN}${pathSuffix}`;
+    try {
+      console.log(`[BREM] [API 탐색] 페이지 이동 ${url}`);
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+      await delay(3000);
+    } catch (error) {
+      console.warn(`[BREM] [API 탐색] ${url} 실패 | ${formatError(error)}`);
+    }
+  }
+
+  return page;
+}
+
+async function persistDiscoveredApis(discoveryState) {
+  const registry = buildRegistryFromDiscovery(discoveryState);
+  try {
+    const pipeline = require('../server/baemin-collect-pipeline');
+    const saved = await pipeline.saveApiRegistry(registry);
+    if (!saved.ok) {
+      console.warn('[BREM] [API 탐색] registry 저장 실패:', saved.error || saved.message || 'unknown');
+      return;
+    }
+    console.log(`[BREM] [API 탐색] registry 저장 완료 | endpoints=${Object.keys(registry.endpoints || {}).join(', ') || '(없음)'}`);
+  } catch (error) {
+    console.warn('[BREM] [API 탐색] registry 저장 오류:', formatError(error));
+  }
+}
+
 async function runSessionRefresh() {
-  if (refreshLoopRunning) {
+  if (refreshLoopRunning && isContextAlive(activeContext)) {
     console.log('[BREM] [시작] 이미 갱신 루프 실행 중 — 브라우저 유지');
     return;
+  }
+  if (refreshLoopRunning && !isContextAlive(activeContext)) {
+    resetRefreshLoopState('브라우저 닫힘 — 갱신 재시작');
   }
   refreshLoopRunning = true;
 
@@ -658,7 +1052,11 @@ async function runSessionRefresh() {
       console.log('[BREM] [브라우저] 새 Playwright 창 실행');
     }
 
+    const discoveryState = createApiDiscoveryState();
+    const detachDiscovery = attachApiDiscovery(context, discoveryState);
+
     context.on('page', (newPage) => {
+      attachPageDiscovery(newPage, discoveryState);
       console.log(`[BREM] [탭 열림] ${safePageUrlSync(newPage)}`);
       newPage.on('framenavigated', (frame) => {
         if (frame === newPage.mainFrame()) {
@@ -670,7 +1068,10 @@ async function runSessionRefresh() {
     let tabs = scanBrowserTabs(context);
     if (!tabs.page) {
       const page = await context.newPage();
+      attachPageDiscovery(page, discoveryState);
       tabs = { ...scanBrowserTabs(context), page, url: safePageUrlSync(page) };
+    } else {
+      attachPageDiscovery(tabs.page, discoveryState);
     }
 
     if (!tabs.allUrls.some(url => url.includes('deliverycenter.baemin.com'))) {
@@ -743,14 +1144,38 @@ async function runSessionRefresh() {
                 cookieHeader,
                 pageUrl,
                 verifyReason: verify.reason,
-                runToken
+                runToken,
+                closeOnComplete: false
               });
-              if (saved) return;
+              if (saved) {
+                try {
+                  await probeCollectPages(context);
+                  await persistDiscoveredApis(discoveryState);
+                } catch (probeError) {
+                  console.warn('[BREM] [API 탐색] 저장 후 탐색 실패 (세션은 저장됨):', formatError(probeError));
+                }
+                detachDiscovery();
+                activeJob = {
+                  status: 'completed',
+                  message: '세션 저장 완료 — 브라우저 유지 중',
+                  setupId,
+                  currentUrl: pageUrl,
+                  updatedAt: Date.now()
+                };
+                await showBrowserBanner(
+                  context,
+                  '세션 저장 완료 — 브라우저를 유지합니다. ERP에서 [배민 전체 데이터 수집]을 사용하세요.',
+                  false
+                );
+                refreshLoopRunning = false;
+                return;
+              }
             } catch (saveError) {
-              const reason = formatError(saveError);
+              const reason = formatError(saveError, saveError?.message || '세션 저장 실패');
               console.error('[BREM] [저장 단계 실패] error.message:', saveError?.message || '-');
               console.error('[BREM] [저장 단계 실패] error.stack:', saveError?.stack || '-');
               console.error('[BREM] [저장 단계 실패] formatted:', reason);
+              console.error('[BREM] [저장 단계 실패] raw:', safeJsonStringify(saveError));
               failJob(setupId, '세션 저장 실패', pageUrl, reason);
               await showBrowserBanner(context, reason, true);
               refreshLoopRunning = false;
@@ -775,7 +1200,7 @@ async function runSessionRefresh() {
     refreshLoopRunning = false;
   } catch (error) {
     const tabs = context ? scanBrowserTabs(context) : { url: '' };
-    const reason = formatError(error);
+    const reason = formatPlaywrightLaunchError(error);
     console.error('[BREM] [세션 갱신 오류] error.message:', error?.message || '-');
     console.error('[BREM] [세션 갱신 오류] error.stack:', error?.stack || '-');
     console.error('[BREM] [세션 갱신 오류] formatted:', reason);
@@ -801,7 +1226,7 @@ body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 16px;line
 <p id="status">브라우저에서 배민Biz 로그인을 진행하세요…</p>
 <p id="url"></p>
 <p id="error" class="fail"></p>
-<div id="doneBox"><p class="done">세션 저장 완료</p><p>관리자 ERP 탭으로 돌아가 <strong>[배민 자동 수집]</strong>을 사용하세요.</p></div>
+<div id="doneBox"><p class="done">세션 저장 완료</p><p>브라우저는 유지됩니다. ERP에서 <strong>[배민 전체 데이터 수집]</strong>을 사용하세요.</p></div>
 ${safeNotice}
 <p>로그인 후 <strong>/delivery/history</strong> 화면까지 이동하면 자동 완료됩니다.</p>
 <p style="font-size:12px;color:#9ca3af">server ${SERVER_VERSION}</p>
@@ -849,16 +1274,103 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
 
   if (url.pathname === '/health') {
+    let sessionStatus = { configured: false, lastError: '', lastValidatedAt: null };
+    if (hasLocalSupabaseCredentials()) {
+      try {
+        const baeminDeliverySession = require('../server/baemin-delivery-session');
+        const stored = await baeminDeliverySession.getStoredSessionRecord();
+        sessionStatus = {
+          configured: Boolean(stored?.cookie),
+          lastError: stored?.lastError || '',
+          lastValidatedAt: stored?.lastValidatedAt || null,
+          updatedAt: stored?.updatedAt || null
+        };
+      } catch {
+        // ignore
+      }
+    }
+
     return sendJsonWithCors(req, res, 200, {
       ok: true,
       port: PORT,
       version: SERVER_VERSION,
+      supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
+      browser: getBrowserHealth(),
+      session: {
+        ...sessionStatus,
+        paused: sessionPaused,
+        state: sessionPaused || sessionStatus.lastError
+          ? 'expired'
+          : (sessionStatus.configured ? 'ok' : 'missing')
+      },
       autoCollect: getAutoCollectHealthPayload()
     });
   }
 
+  if (url.pathname === '/browser/open' && req.method === 'POST') {
+    try {
+      const opened = await ensurePlaywrightBrowser();
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        message: opened.reused ? '기존 Playwright 브라우저를 재사용합니다.' : 'Playwright 브라우저를 열었습니다.',
+        browser: getBrowserHealth()
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatPlaywrightLaunchError(error),
+        browser: getBrowserHealth()
+      });
+    }
+  }
+
+  if (url.pathname === '/collect/full' && req.method === 'POST') {
+    if (collectRunning) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: '이미 수집 중입니다.',
+        autoCollect: getAutoCollectHealthPayload(),
+        browser: getBrowserHealth()
+      });
+    }
+
+    let body = {};
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8').trim();
+      if (text) body = JSON.parse(text);
+    } catch {
+      body = {};
+    }
+
+    const result = await runLocalFullCollect({ collectDate: body.collectDate });
+    const status = result.conflict ? 409 : (result.ok ? 200 : (result.sessionExpired ? 409 : 502));
+    return sendJsonWithCors(req, res, status, {
+      ...result,
+      autoCollect: getAutoCollectHealthPayload(),
+      browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/shutdown' && req.method === 'POST') {
+    void shutdownSessionServer();
+    return sendJsonWithCors(req, res, 202, {
+      ok: true,
+      message: '자동수집 서버 종료 중…'
+    });
+  }
+
   if (url.pathname === '/auto-collect/run' && req.method === 'POST') {
+    if (collectRunning) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: '이미 수집 중입니다.',
+        autoCollect: getAutoCollectHealthPayload(),
+        browser: getBrowserHealth()
+      });
+    }
     if (sessionPaused) {
       return sendJsonWithCors(req, res, 409, {
         ok: false,
@@ -895,9 +1407,13 @@ const server = http.createServer(async (req, res) => {
 
     updateActiveSetup(setupId, setupSecret, apiBase);
 
-    if (isJobRunning() || refreshLoopRunning) {
+    if (shouldReuseRefreshLoop()) {
       console.log(`[BREM] [start] 브라우저 유지 — setupId만 갱신 | ${setupId}`);
       return sendHtml(res, renderStartPage(setupId));
+    }
+
+    if (refreshLoopRunning || isJobRunning()) {
+      resetRefreshLoopState('브라우저 없음 — 새 갱신 시작');
     }
 
     sendHtml(res, renderStartPage(setupId));
@@ -905,7 +1421,7 @@ const server = http.createServer(async (req, res) => {
 
     void runSessionRefresh().catch(error => {
       refreshLoopRunning = false;
-      const reason = formatError(error);
+      const reason = formatPlaywrightLaunchError(error);
       failJob(setupId, '세션 갱신 실패', '', reason);
       console.error('[BREM] [오류]', error?.stack || reason);
     });
@@ -921,11 +1437,21 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 구버전이면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260629a 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
+  if (!hasLocalSupabaseCredentials()) {
+    console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');
+    console.warn('[BREM]   → Vercel 배포 보호 때문에 brem.kr API 저장이 차단될 수 있습니다.');
+    console.warn('[BREM]   → PC .env 에 Supabase service_role 키를 넣으면 직접 저장됩니다.');
+  } else {
+    console.log('[BREM] Supabase service role 설정됨 — 세션은 brem.kr API 없이 직접 저장합니다.');
+  }
   console.log('========================================');
   const playwright = await loadPlaywright();
   if (!playwright) {
-    console.warn('[BREM] playwright 미설치 — npm install playwright && npx playwright install chromium');
+    console.warn('[BREM] playwright 미설치 — npm install playwright');
+  } else {
+    console.log('[BREM] Chromium 미설치 시: node node_modules/playwright/cli.js install chromium');
   }
 
   try {

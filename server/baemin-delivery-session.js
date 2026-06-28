@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
-const baeminAutoCollect = require('./baemin-auto-collect');
 const {
   getErpLocalSessionConfig,
   buildStartUrl
@@ -279,7 +278,7 @@ async function completeSessionSetup(setupId, setupSecret, cookie, meta = {}) {
     cookieLength: cookieText.length
   });
 
-  await baeminAutoCollect.clearSessionPause().catch(error => {
+  await require('./baemin-auto-collect').clearSessionPause().catch(error => {
     console.warn('[BREM][session-setup] clearSessionPause failed:', formatError(error));
   });
 
@@ -303,13 +302,14 @@ async function saveSessionViaAdmin(accessToken, cookie, source = 'manual_admin')
     lastValidatedAt: new Date().toISOString()
   });
   if (!saved.ok) return saved;
-  await baeminAutoCollect.clearSessionPause().catch(() => {});
+  await require('./baemin-auto-collect').clearSessionPause().catch(() => {});
   return { ok: true, message: '배민Biz 세션이 저장되었습니다.' };
 }
 
 module.exports = {
   SESSION_SETTINGS_KEY,
   getStoredSessionRecord,
+  saveStoredSession,
   resolveStoredSessionCookie,
   getSessionStatus,
   createSessionSetup,
