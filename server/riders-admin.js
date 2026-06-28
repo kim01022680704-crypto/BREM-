@@ -20,12 +20,12 @@ function stripOptionalRiderColumns(row) {
   delete row.long_event_platform;
 }
 
-async function preserveRiderPasswordOnUpsert(supabase, row, passwordExplicit = false) {
+async function preserveRiderPasswordOnUpsert(supabase, row, passwordExplicit = false, explicitPassword = '') {
   if (!row?.id) return row;
 
   if (passwordExplicit) {
     const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
-    raw.password = String(raw.password || '1234').trim() || '1234';
+    raw.password = String(explicitPassword || raw.password || '1234').trim() || '1234';
     return { ...row, raw_data: raw };
   }
 
@@ -364,36 +364,45 @@ async function mergeRiderGroup(supabase, rows) {
 }
 
 function riderToRow(driver) {
+  const source = driver && typeof driver === 'object' ? { ...driver } : {};
+  const passwordExplicit = Boolean(source.passwordExplicit);
+  delete source.passwordExplicit;
+  if (!passwordExplicit) {
+    delete source.password;
+  } else if (source.password !== undefined) {
+    source.password = String(source.password).trim() || '1234';
+  }
+
   return {
-    id: String(driver.id || ''),
-    auth_user_id: driver.authUserId || null,
-    name: normalizeRiderName(driver.name),
-    phone: formatPhoneForStorage(driver.phone),
-    resident_number: String(driver.residentNumber || ''),
-    bank_name: String(driver.bankName || '').trim(),
-    account_holder: String(driver.accountHolder || '').trim(),
-    account_number: String(driver.accountNumber || '').trim(),
-    baemin_id: normalizePlatformId(driver.baeminId),
-    platform_coupang: driver.platformCoupang !== false,
-    platform_baemin: Boolean(driver.platformBaemin),
-    long_event_item_id: String(driver.longEventItemId || ''),
-    long_event_item: String(driver.longEventItem || ''),
-    long_event_start_date: toDate(driver.longEventStartDate),
-    long_event_platform: normalizeLongEventPlatform(driver.longEventPlatform),
-    join_date: toDate(driver.joinDate),
-    status: String(driver.status || '근무중'),
-    memo: String(driver.memo || ''),
-    hidden_fields: driver.hiddenFields || {},
-    promotion_selector_coupang: String(driver.promotionSelectorCoupang || ''),
-    promotion_selector_baemin: String(driver.promotionSelectorBaemin || ''),
-    promotion_rule_id_coupang: String(driver.promotionRuleIdCoupang || ''),
-    promotion_rule_id_baemin: String(driver.promotionRuleIdBaemin || ''),
-    selected_mission_id: String(driver.selectedMissionId || driver.selectedMissionIdBaemin || driver.selectedMissionIdCoupang || ''),
-    selected_mission_id_baemin: String(driver.selectedMissionIdBaemin || driver.selectedMissionId || ''),
-    selected_mission_id_coupang: String(driver.selectedMissionIdCoupang || driver.selectedMissionId || ''),
-    raw_data: driver || {},
-    created_at: toIso(driver.createdAt),
-    updated_at: toIso(driver.updatedAt)
+    id: String(source.id || ''),
+    auth_user_id: source.authUserId || null,
+    name: normalizeRiderName(source.name),
+    phone: formatPhoneForStorage(source.phone),
+    resident_number: String(source.residentNumber || ''),
+    bank_name: String(source.bankName || '').trim(),
+    account_holder: String(source.accountHolder || '').trim(),
+    account_number: String(source.accountNumber || '').trim(),
+    baemin_id: normalizePlatformId(source.baeminId),
+    platform_coupang: source.platformCoupang !== false,
+    platform_baemin: Boolean(source.platformBaemin),
+    long_event_item_id: String(source.longEventItemId || ''),
+    long_event_item: String(source.longEventItem || ''),
+    long_event_start_date: toDate(source.longEventStartDate),
+    long_event_platform: normalizeLongEventPlatform(source.longEventPlatform),
+    join_date: toDate(source.joinDate),
+    status: String(source.status || '근무중'),
+    memo: String(source.memo || ''),
+    hidden_fields: source.hiddenFields || {},
+    promotion_selector_coupang: String(source.promotionSelectorCoupang || ''),
+    promotion_selector_baemin: String(source.promotionSelectorBaemin || ''),
+    promotion_rule_id_coupang: String(source.promotionRuleIdCoupang || ''),
+    promotion_rule_id_baemin: String(source.promotionRuleIdBaemin || ''),
+    selected_mission_id: String(source.selectedMissionId || source.selectedMissionIdBaemin || source.selectedMissionIdCoupang || ''),
+    selected_mission_id_baemin: String(source.selectedMissionIdBaemin || source.selectedMissionId || ''),
+    selected_mission_id_coupang: String(source.selectedMissionIdCoupang || source.selectedMissionId || ''),
+    raw_data: source,
+    created_at: toIso(source.createdAt),
+    updated_at: toIso(source.updatedAt)
   };
 }
 
@@ -483,20 +492,28 @@ async function upsertRider(accessToken, rider) {
     return { ok: false, status: 400, error: '기사 이름은 필수입니다.' };
   }
 
-  row = await preserveRiderPasswordOnUpsert(supabase, row, Boolean(rider.passwordExplicit));
+  row = await preserveRiderPasswordOnUpsert(
+    supabase,
+    row,
+    Boolean(rider.passwordExplicit),
+    rider.password
+  );
   const { error } = await upsertRiderRowWithFallback(supabase, row);
   if (error) {
     return { ok: false, status: 400, error: error.message || '기사 저장에 실패했습니다.' };
   }
 
-  const provision = await provisionRiderAuthAccount(row);
-  if (!provision.ok) {
-    console.warn('[BREM] Rider auth provisioning failed:', provision.error);
-    return {
-      ok: false,
-      status: provision.status || 400,
-      error: provision.error || '기사 로그인 계정 갱신에 실패했습니다.'
-    };
+  const shouldProvisionAuth = Boolean(rider.passwordExplicit) || !row.auth_user_id;
+  if (shouldProvisionAuth) {
+    const provision = await provisionRiderAuthAccount(row);
+    if (!provision.ok) {
+      console.warn('[BREM] Rider auth provisioning failed:', provision.error);
+      return {
+        ok: false,
+        status: provision.status || 400,
+        error: provision.error || '기사 로그인 계정 갱신에 실패했습니다.'
+      };
+    }
   }
 
   const { data, error: readError } = await queryRidersWithSelectFallback(
@@ -539,21 +556,27 @@ async function resetRiderPassword(accessToken, riderId, defaultPassword = '1234'
     : {};
   raw.password = password;
 
-  let row = {
+  const { error: updateError } = await supabase
+    .from('riders')
+    .update({
+      raw_data: raw,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', id);
+
+  if (updateError) {
+    return {
+      ok: false,
+      status: 400,
+      error: updateError.message || '비밀번호 초기화에 실패했습니다.'
+    };
+  }
+
+  const row = {
     ...existing,
     raw_data: raw,
     updated_at: new Date().toISOString()
   };
-
-  const upsertResult = await upsertRiderRowWithFallback(supabase, row);
-  if (upsertResult.error) {
-    return {
-      ok: false,
-      status: 400,
-      error: upsertResult.error.message || '비밀번호 초기화에 실패했습니다.'
-    };
-  }
-  row = upsertResult.row;
 
   const provision = await provisionRiderAuthAccount(row);
   if (!provision.ok) {
@@ -648,7 +671,12 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, list);
   const rows = await Promise.all(resolved.map(async rider => {
     const row = riderToRow(rider);
-    return preserveRiderPasswordOnUpsert(supabase, row, Boolean(rider.passwordExplicit));
+    return preserveRiderPasswordOnUpsert(
+      supabase,
+      row,
+      Boolean(rider.passwordExplicit),
+      rider.password
+    );
   }));
   let upsertPayload = rows;
   let { error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' });
@@ -674,7 +702,10 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   }
 
   if (!options.skipAuthProvision) {
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const rider = resolved[index];
+      if (!rider?.passwordExplicit) continue;
       const provision = await provisionRiderAuthAccount(row);
       if (!provision.ok) {
         console.warn('[BREM] Rider auth provisioning failed:', row.id, provision.error);

@@ -217,6 +217,8 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.manualNameMappings,
         keys.missionDefaults,
         keys.dashboardWeekBasis,
+        keys.leaseDashboardWeekBasis,
+        keys.leaseVehicleModelTypes,
         keys.preservedUnknown,
         keys.adminAccounts,
         keys.adminCredentials,

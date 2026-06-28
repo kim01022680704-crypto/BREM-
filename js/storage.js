@@ -2242,9 +2242,18 @@ const BremStorage = (function () {
   }
 
   async function persistRiderViaServer(rider) {
+    const riderPayload = rider?.passwordExplicit
+      ? rider
+      : (() => {
+        const payload = { ...(rider || {}) };
+        delete payload.password;
+        delete payload.passwordExplicit;
+        return payload;
+      })();
+
     const postRider = () => adminRidersApi('/api/admin/riders', {
       method: 'POST',
-      body: JSON.stringify({ rider })
+      body: JSON.stringify({ rider: riderPayload })
     });
 
     let result = await postRider();
@@ -2323,10 +2332,18 @@ const BremStorage = (function () {
   }
 
   async function persistRidersBulkViaServer(riders, options = {}) {
+    const sanitized = (Array.isArray(riders) ? riders : []).map(item => {
+      if (!item || item.passwordExplicit) return item;
+      const payload = { ...item };
+      delete payload.password;
+      delete payload.passwordExplicit;
+      return payload;
+    });
+
     const postBulk = () => adminRidersApi('/api/admin/riders/bulk', {
       method: 'POST',
       body: JSON.stringify({
-        riders,
+        riders: sanitized,
         skipAuthProvision: options.skipAuthProvision !== false,
         maxBatch: options.maxBatch || 300
       })
@@ -5363,6 +5380,11 @@ const BremStorage = (function () {
     setLeaseVehicleModelTypes(list) {
       const normalized = adminPreferences.normalizeLeaseVehicleModelTypes(list);
       storageAdapter.write(KEYS.leaseVehicleModelTypes, normalized);
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        flushActiveStorage().catch(error => {
+          console.warn('[BREM] lease vehicle model types persist failed:', error);
+        });
+      }
       return normalized;
     },
     addLeaseVehicleModelType(name) {
