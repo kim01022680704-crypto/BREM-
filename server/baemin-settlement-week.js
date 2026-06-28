@@ -51,12 +51,26 @@ function settlementWeekEnd(weekStart) {
   return addDays(settlementWeekStart(weekStart), 6);
 }
 
+function getKSTHour(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    hour: 'numeric',
+    hour12: false
+  }).formatToParts(date);
+  return Number(parts.find(p => p.type === 'hour')?.value || 0);
+}
+
 /**
- * 배민은 보통 하루 전까지 조회 가능.
- * 정산주 내에서 수~최신조회일까지 반환.
+ * 배민 영업일: 당일 06:00 ~ 익일 05:59 (KST).
+ * 06:00 이전에는 전일 영업일이 아직 마감되지 않아 조회 불가.
  */
-function latestQueryableDate(dateKey = todayKST()) {
-  return addDays(dateKey, -1);
+function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
+  const refKey = dateKey || todayKST(now);
+  const hour = getKSTHour(now);
+  if (hour < 6) {
+    return addDays(refKey, -2);
+  }
+  return addDays(refKey, -1);
 }
 
 function computeCollectDateRange(dateKey = todayKST()) {
@@ -89,6 +103,7 @@ module.exports = {
   parseDateKey,
   formatDateKey,
   todayKST,
+  getKSTHour,
   addDays,
   weekdayKST,
   settlementWeekStart,

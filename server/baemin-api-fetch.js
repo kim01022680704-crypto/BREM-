@@ -212,18 +212,25 @@ async function fetchPaginatedApi({
     if (page === 0) {
       firstPayload = result.payload;
       const detected = readTotalPages(result.payload);
+      const rows = extractDataArray(result.payload, dataKey) || [];
       if (!detected) {
-        console.error(`${logPrefix} totalPage missing payload keys=${Object.keys(result.payload || {}).join(',')}`);
-        return {
-          ok: false,
-          status: 502,
-          error: 'TOTAL_PAGE_FAILED',
-          message: 'totalPage 확인 실패',
-          bodyText: result.bodyText
-        };
+        if (rows.length > 0) {
+          totalPage = 1;
+          console.log(`${logPrefix} totalPage inferred=1 (data without totalPage)`);
+        } else {
+          console.error(`${logPrefix} totalPage missing payload keys=${Object.keys(result.payload || {}).join(',')}`);
+          return {
+            ok: false,
+            status: 502,
+            error: 'TOTAL_PAGE_FAILED',
+            message: 'totalPage 확인 실패',
+            bodyText: result.bodyText
+          };
+        }
+      } else {
+        totalPage = detected;
+        console.log(`${logPrefix} totalPage=${totalPage}`);
       }
-      totalPage = detected;
-      console.log(`${logPrefix} totalPage=${totalPage}`);
     }
 
     const rows = extractDataArray(result.payload, dataKey) || [];

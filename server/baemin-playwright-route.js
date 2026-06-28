@@ -1,5 +1,9 @@
+const { buildCenterFetchHeaders } = require('./baemin-center-context');
+
 function pickCenterRouteHeaders(discoveredHeaders = {}, centerContext = {}) {
-  const headers = {};
+  const headers = {
+    ...buildCenterFetchHeaders(centerContext)
+  };
   if (discoveredHeaders && typeof discoveredHeaders === 'object') {
     Object.entries(discoveredHeaders).forEach(([key, value]) => {
       const text = String(value || '').trim();

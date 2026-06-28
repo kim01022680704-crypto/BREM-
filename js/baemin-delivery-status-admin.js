@@ -327,7 +327,7 @@
       <strong>수집 완료</strong>
       <ul class="baemin-collect-stats">
         <li>수집 기준일: <strong>${result.captureDate || '-'}</strong></li>
-        <li>정산주 범위: <strong>${range ? `${range.fromDate} ~ ${range.toDate}` : '-'}</strong></li>
+        <li>정산주 범위: <strong>${range ? `${range.fromDate} ~ ${range.toDate}` : '-'}</strong> <span class="muted">(영업일 06:00~익일 05:59, 06시 이전에는 전일 미마감)</span></li>
         <li>수집일수: <strong>${formatNumber(totals.dayCount || range?.dayCount || 0)}</strong></li>
         <li>라이더수: <strong>${formatNumber(totals.riderCount || 0)}</strong></li>
         <li>총 저장 건수: <strong>${formatNumber(result.savedCount)}</strong></li>

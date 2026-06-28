@@ -24,7 +24,7 @@ function urlMatchesSource(sourceId, url) {
   if (sourceId === 'delivery_status') return /\/delivery-status/i.test(text);
   if (sourceId === 'rider_history') return /\/rider-history/i.test(text);
   if (sourceId === 'daily_history') {
-    return /fromDate=/i.test(text) && !/delivery-status/i.test(text) && !/rider-history/i.test(text);
+    return /\/delivery-history/i.test(text) && !/rider-history/i.test(text);
   }
   return false;
 }

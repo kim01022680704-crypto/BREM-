@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260630b';
+const SERVER_VERSION = '20260630c';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -951,6 +951,9 @@ async function runLocalFullCollect(options = {}) {
     return { ok: false, message };
   } finally {
     collectRunning = false;
+    if (isContextAlive(activeContext)) {
+      await navigateToSafeLandingPage(activeContext).catch(() => {});
+    }
   }
 }
 
@@ -1079,44 +1082,34 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   if (!isContextAlive(context)) return;
 
   const dateRange = computeCollectDateRange(collectDate);
-  const discoveryState = createApiDiscoveryState();
-  const detachDiscovery = attachApiDiscovery(context, discoveryState);
   const tabs = scanBrowserTabs(context);
   const page = tabs.page || await context.newPage();
-  attachPageDiscovery(page, discoveryState);
 
-  const rangeQs = `page=0&size=20&fromDate=${dateRange.fromDate}&toDate=${dateRange.toDate}`;
-  const probeUrls = [
-    `${BAEMIN_ORIGIN}/delivery-status`,
-    `${BAEMIN_ORIGIN}/delivery/delivery-history?${rangeQs}`,
-    `${BAEMIN_ORIGIN}/delivery/rider-history?${rangeQs}`,
-    `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20&orderName=name&orderBy=asc&name=&userId=&phoneNumber=&riderStatus=`
-  ];
-
-  for (const url of probeUrls) {
-    try {
-      console.log(`[BREM] [수집 전 탐색] ${url}`);
-      const waitApi = page.waitForResponse(
-        resp => resp.url().includes('api-deliverycenter.baemin.com')
-          && resp.status() === 200
-          && String(resp.headers()['content-type'] || '').includes('json'),
-        { timeout: 20000 }
-      ).catch(() => null);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
-        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
-      });
-      const apiResponse = await waitApi;
-      if (apiResponse) {
-        console.log(`[BREM] [수집 전 탐색] API 감지 ${apiResponse.url()}`);
-      }
-      await delay(3000);
-    } catch (error) {
-      console.warn(`[BREM] [수집 전 탐색] 실패 | ${formatError(error)}`);
+  let detachRoute = () => {};
+  try {
+    const { resolveCenterContextViaPage } = require('../server/baemin-center-context');
+    const { attachCenterApiRoute } = require('../server/baemin-playwright-route');
+    const center = await resolveCenterContextViaPage(page);
+    if (center?.centerId || center?.managementId || center?.partnerId) {
+      detachRoute = attachCenterApiRoute(context, { centerContext: center });
+      console.log(`[BREM] [수집 준비] centerId=${center.centerId} partnerId=${center.partnerId}`);
     }
+  } catch (error) {
+    console.warn('[BREM] [수집 준비] center context 실패:', formatError(error));
   }
 
-  await persistDiscoveredApis(discoveryState);
-  detachDiscovery();
+  try {
+    console.log(`[BREM] [수집 준비] 배달현황 확인 (영업일 조회범위 ${dateRange.fromDate}~${dateRange.toDate})`);
+    await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+    await delay(1500);
+  } catch (error) {
+    console.warn('[BREM] [수집 준비] 배달현황 이동 실패:', formatError(error));
+  } finally {
+    detachRoute();
+  }
 }
 
 async function navigateToSafeLandingPage(context) {
@@ -1624,7 +1617,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260630b 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260630c 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');

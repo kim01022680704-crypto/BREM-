@@ -87,6 +87,7 @@ function classifyApiUrl(url) {
   const text = String(url || '');
   if (!text.includes('baemin.com')) return null;
   if (/\/rider-history/i.test(text)) return 'rider_history';
+  if (/\/delivery-history/i.test(text) || /\/delivery\/delivery-history/i.test(text)) return 'daily_history';
   if (text.includes('api-deliverycenter') && /fromDate=/i.test(text) && !/delivery-status/i.test(text)) {
     if (/rider/i.test(text)) return 'rider_history';
     return 'daily_history';

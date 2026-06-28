@@ -9,10 +9,11 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange } = require('./baemin-settlement-week');
+const { computeCollectDateRange, addDays } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
+const { buildCenterQueryParams } = require('./baemin-center-context');
 
 function getBaeminSession() {
   return require('./baemin-delivery-session');
@@ -124,6 +125,44 @@ async function saveCollectRun(runRow) {
   return { ok: true };
 }
 
+function mergeCenterQuery(baseQuery, registry = {}) {
+  const centerQuery = buildCenterQueryParams(registry.centerContext || {});
+  return { ...baseQuery, ...centerQuery };
+}
+
+function shrinkDateRangeEnd(dateRange) {
+  if (!dateRange?.fromDate || !dateRange?.toDate) return null;
+  if (dateRange.toDate <= dateRange.fromDate) return null;
+  const toDate = addDays(dateRange.toDate, -1);
+  const dates = [];
+  let cursor = dateRange.fromDate;
+  while (cursor <= toDate) {
+    dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return {
+    ...dateRange,
+    toDate,
+    dates,
+    dayCount: dates.length
+  };
+}
+
+async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange) {
+  const discovered = await discoverApiUrlViaPage(playwrightPage, sourceId, dateRange);
+  if (!discovered.ok) return null;
+  registry.endpoints = registry.endpoints || {};
+  registry.endpoints[sourceId] = {
+    ...(registry.endpoints[sourceId] || {}),
+    sampleUrl: discovered.sampleUrl,
+    apiPath: discovered.apiPath,
+    apiOrigin: discovered.apiOrigin,
+    discoveredAt: new Date().toISOString()
+  };
+  console.log(`[BREM][collect] ${sourceId} page-capture api=${discovered.sampleUrl}`);
+  return resolveApiEndpoint(sourceId, registry);
+}
+
 function shouldAggregateRiderFromDaily(sourceId, registry) {
   if (sourceId !== 'rider_history') return false;
   const riderEndpoint = registry?.endpoints?.rider_history;
@@ -170,32 +209,28 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
+  let activeDateRange = context.dateRange || null;
   let endpoint = resolveApiEndpoint(sourceId, registry);
-  if (!endpoint?.apiPath && context.playwrightPage && context.dateRange) {
-    const discovered = await discoverApiUrlViaPage(context.playwrightPage, sourceId, context.dateRange);
-    if (discovered.ok) {
-      registry.endpoints = registry.endpoints || {};
-      registry.endpoints[sourceId] = {
-        ...(registry.endpoints[sourceId] || {}),
-        sampleUrl: discovered.sampleUrl,
-        apiPath: discovered.apiPath,
-        apiOrigin: discovered.apiOrigin,
-        discoveredAt: new Date().toISOString()
-      };
-      endpoint = resolveApiEndpoint(sourceId, registry);
-      console.log(`[BREM][collect] ${sourceId} page-capture api=${discovered.sampleUrl}`);
-    }
+
+  if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+      || endpoint;
+  } else if (!endpoint?.apiPath && context.playwrightPage && activeDateRange) {
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+      || endpoint;
   }
 
   if (!endpoint?.apiPath) {
     return { ok: false, sourceMenu: sourceId, label: source.label, message: `${source.label} API 경로 없음` };
   }
 
-  console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} range=${context.dateRange?.fromDate || collectDate}~${context.dateRange?.toDate || collectDate} api=${endpoint.apiOrigin}${endpoint.apiPath}${endpoint.sampleUrl ? ' (sampleUrl)' : ''}`);
+  console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} range=${activeDateRange?.fromDate || collectDate}~${activeDateRange?.toDate || collectDate} api=${endpoint.apiOrigin}${endpoint.apiPath}${endpoint.sampleUrl ? ' (sampleUrl)' : ''}`);
 
-  const baseQuery = buildDefaultQuery(sourceId, collectDate, context.dateRange);
-
-  async function tryFetch(endpointInfo) {
+  async function tryFetch(endpointInfo, dateRange = activeDateRange) {
+    const baseQuery = mergeCenterQuery(
+      buildDefaultQuery(sourceId, collectDate, dateRange),
+      registry
+    );
     return fetchPaginatedApi({
       apiOrigin: endpointInfo.apiOrigin,
       apiPath: endpointInfo.apiPath,
@@ -216,20 +251,23 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   let fetched = await tryFetch(endpoint);
-  if (!fetched.ok && fetched.status === 404 && context.playwrightPage && context.dateRange) {
-    const discovered = await discoverApiUrlViaPage(context.playwrightPage, sourceId, context.dateRange);
-    if (discovered.ok) {
-      registry.endpoints = registry.endpoints || {};
-      registry.endpoints[sourceId] = {
-        ...(registry.endpoints[sourceId] || {}),
-        sampleUrl: discovered.sampleUrl,
-        apiPath: discovered.apiPath,
-        apiOrigin: discovered.apiOrigin,
-        discoveredAt: new Date().toISOString()
-      };
-      endpoint = resolveApiEndpoint(sourceId, registry);
-      console.log(`[BREM][collect] ${sourceId} retry via page-capture ${discovered.sampleUrl}`);
-      fetched = await tryFetch(endpoint);
+  if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && context.playwrightPage && activeDateRange) {
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+      || endpoint;
+    fetched = await tryFetch(endpoint);
+  }
+  if (!fetched.ok && fetched.status === 400 && activeDateRange) {
+    let shrunk = shrinkDateRangeEnd(activeDateRange);
+    while (!fetched.ok && fetched.status === 400 && shrunk) {
+      console.warn(`[BREM][collect] ${sourceId} 400 — 영업일 미마감 가능, toDate=${shrunk.toDate} 로 재시도`);
+      activeDateRange = shrunk;
+      context.dateRange = shrunk;
+      if (context.playwrightPage) {
+        endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+          || endpoint;
+      }
+      fetched = await tryFetch(endpoint, activeDateRange);
+      shrunk = fetched.ok ? null : shrinkDateRangeEnd(activeDateRange);
     }
   }
   if (!fetched.ok && fetched.status === 404 && source.fallbackApiPaths?.length) {
@@ -339,9 +377,8 @@ async function runFullCollectPipeline(options = {}) {
   }
 
   const registry = await getApiRegistry();
-  if (!registry.endpoints?.rider_history) {
-    registry.endpoints = registry.endpoints || {};
-    registry.endpoints.rider_history = { fallbackFromDaily: true };
+  if (!registry.endpoints?.rider_history?.sampleUrl && registry.endpoints?.rider_history?.fallbackFromDaily) {
+    delete registry.endpoints.rider_history.fallbackFromDaily;
   }
 
   const pipelineContext = {
@@ -403,6 +440,18 @@ async function runFullCollectPipeline(options = {}) {
       if (sourceDef.id === 'daily_history' && result.ok) {
         pipelineContext.dailyItems = result.rawItems || [];
         pipelineContext.dailySourceUrl = result.sourceUrl || '';
+        const riderEp = registry.endpoints?.rider_history;
+        const dailyEp = registry.endpoints?.daily_history;
+        const riderHasOwnApi = riderEp?.sampleUrl
+          && riderEp.sampleUrl !== dailyEp?.sampleUrl
+          && /rider-history/i.test(`${riderEp.sampleUrl || ''}${riderEp.apiPath || ''}`);
+        if (!riderHasOwnApi) {
+          registry.endpoints.rider_history = {
+            ...(riderEp || {}),
+            fallbackFromDaily: true
+          };
+          console.log('[BREM][collect] rider_history → daily_history 집계 fallback 활성');
+        }
       }
 
       await saveCollectRun({
@@ -442,6 +491,10 @@ async function runFullCollectPipeline(options = {}) {
     if (anySuccess && !sessionExpired) {
       await getBaeminSession().markSessionValidated();
     }
+
+    await saveApiRegistry(registry).catch(error => {
+      console.warn('[BREM][collect] registry 저장 실패:', error.message);
+    });
 
     const savedTotal = Object.values(results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0);
     const summaryTotals = {
