@@ -6,29 +6,19 @@ const {
 
 const SAFE_LANDING_URL = `${BAEMIN_ORIGIN}/delivery-status`;
 
+const INIT_SCRIPT = () => {
+  try {
+    const path = window.location.pathname || '';
+    if (/\/delivery\/(delivery-history|rider-history)/i.test(path)) {
+      window.location.replace('/delivery-status');
+    }
+  } catch {
+    // ignore
+  }
+};
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function buildPagePath(sourceId) {
-  if (sourceId === 'daily_history') return `${BAEMIN_ORIGIN}/delivery/delivery-history`;
-  if (sourceId === 'rider_history') return `${BAEMIN_ORIGIN}/delivery/rider-history`;
-  if (sourceId === 'delivery_status') return `${BAEMIN_ORIGIN}/delivery-status`;
-  return `${BAEMIN_ORIGIN}/delivery/history`;
-}
-
-function buildSpaDateQuery(dateRange) {
-  if (!dateRange?.fromDate || !dateRange?.toDate) return '';
-  const day = dateRange.toDate || dateRange.fromDate;
-  return `fromDate=${day}&toDate=${day}`;
-}
-
-function buildPageUrl(sourceId, dateRange) {
-  const base = buildPagePath(sourceId);
-  if (!dateRange?.fromDate || !dateRange?.toDate) return base;
-  if (sourceId === 'delivery_status') return base;
-  const qs = buildSpaDateQuery(dateRange);
-  return qs ? `${base}?${qs}` : base;
 }
 
 function isUnsafeHistorySpaUrl(url) {
@@ -41,27 +31,26 @@ function isUnsafeHistorySpaUrl(url) {
 
 function isApiProbePath(apiPath) {
   const path = String(apiPath || '');
-  if (path.startsWith('/v2/') || path.startsWith('/v4/')) return true;
-  if (path === '/delivery-status' || path.startsWith('/delivery-status?')) return true;
-  return false;
+  return path.startsWith('/v2/') || path.startsWith('/v4/') || path === '/delivery-status';
 }
 
-function attachSafeSpaGuard(context) {
+async function attachSafeSpaGuard(context) {
   if (!context || context.__bremSpaGuardAttached) return () => {};
   context.__bremSpaGuardAttached = true;
+
+  await context.addInitScript(INIT_SCRIPT);
 
   const routePattern = '**/deliverycenter.baemin.com/**';
   const routeHandler = async route => {
     try {
       const request = route.request();
       const url = request.url();
-      const resourceType = request.resourceType();
-      if (resourceType === 'document' && isUnsafeHistorySpaUrl(url)) {
-        console.log(`[BREM][spa-guard] route block document | ${url}`);
+      if (request.resourceType() === 'document' && isUnsafeHistorySpaUrl(url)) {
+        console.log(`[BREM][spa-guard] block document | ${url}`);
         const page = request.frame()?.page();
         await route.abort('blockedbyclient');
         if (page && !page.isClosed()) {
-          void page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+          void recoverBrowserTab(page);
         }
         return;
       }
@@ -71,16 +60,13 @@ function attachSafeSpaGuard(context) {
     await route.continue();
   };
 
-  context.route(routePattern, routeHandler).catch(error => {
-    console.warn('[BREM][spa-guard] route 등록 실패:', error.message || error);
-  });
+  await context.route(routePattern, routeHandler);
 
   const onFrameNavigated = page => async frame => {
     try {
       if (frame !== page.mainFrame() || page.isClosed()) return;
-      const url = frame.url();
-      if (!isUnsafeHistorySpaUrl(url)) return;
-      console.log(`[BREM][spa-guard] framenavigated block | ${url}`);
+      if (!isUnsafeHistorySpaUrl(frame.url())) return;
+      console.log(`[BREM][spa-guard] framenavigated recover | ${frame.url()}`);
       await recoverBrowserTab(page);
     } catch {
       // ignore
@@ -104,11 +90,11 @@ function attachSafeSpaGuard(context) {
 async function recoverBrowserTab(page) {
   if (!page || page.isClosed()) return;
   try {
-    await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(SAFE_LANDING_URL, { waitUntil: 'commit', timeout: 30000 });
   } catch {
     try {
       await page.evaluate(target => { window.location.replace(target); }, SAFE_LANDING_URL);
-      await delay(800);
+      await delay(500);
     } catch {
       // ignore
     }
@@ -117,10 +103,9 @@ async function recoverBrowserTab(page) {
 
 async function recoverAllBrowserTabs(context) {
   if (!context) return;
-  const pages = context.pages().filter(page => !page.isClosed());
-  for (const page of pages) {
+  for (const page of context.pages().filter(p => !p.isClosed())) {
     if (isUnsafeHistorySpaUrl(page.url())) {
-      await recoverBrowserTab(page).catch(() => {});
+      await recoverBrowserTab(page);
     }
   }
 }
@@ -168,41 +153,58 @@ function buildProbeUrls(sourceId, dateRange) {
 async function ensureSafeBrowserTab(page) {
   if (!page || page.isClosed()) return;
   if (!isUnsafeHistorySpaUrl(page.url())) return;
-  console.log(`[BREM][page-capture] unsafe SPA url — recover | was=${page.url()}`);
+  console.log(`[BREM][spa-guard] recover unsafe tab | was=${page.url()}`);
   await recoverBrowserTab(page);
-  await delay(500);
 }
 
-async function probeApiFromBrowserTab(page, sourceId, dateRange) {
+async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext = null) {
   await ensureSafeBrowserTab(page);
 
   const urls = buildProbeUrls(sourceId, dateRange);
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
+  const { fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
 
   for (const url of urls) {
     if (!url.includes('api-deliverycenter.baemin.com') && sourceId !== 'delivery_status') continue;
-    console.log(`[BREM][api-probe] GET ${url} (no SPA navigate)`);
-    const result = await page.evaluate(async (fetchUrl) => {
-      try {
-        const response = await fetch(fetchUrl, {
-          method: 'GET',
-          credentials: 'include',
-          headers: { Accept: 'application/json, text/plain, */*' }
-        });
-        return {
-          status: response.status,
-          bodyText: await response.text()
-        };
-      } catch (error) {
-        return {
-          status: 0,
-          bodyText: '',
-          error: error.message || 'fetch failed'
-        };
-      }
-    }, url);
+    console.log(`[BREM][api-probe] GET ${url} (${playwrightContext ? 'playwright-request' : 'isolated-fetch'})`);
 
-    if (result.status < 200 || result.status >= 300) continue;
+    let result;
+    if (playwrightContext?.request) {
+      const fetched = await fetchBaeminJsonViaPlaywright(playwrightContext, url);
+      if (!fetched.ok) continue;
+      const payload = fetched.payload;
+      const rows = extractDataArray(payload) || [];
+      const totalPage = readTotalPages(payload);
+      if (!rows.length && !totalPage) continue;
+      let pathname = url;
+      try { pathname = new URL(url).pathname; } catch { /* ignore */ }
+      console.log(`[BREM][api-probe] hit ${sourceId} ← ${url} rows=${rows.length}`);
+      return {
+        ok: true,
+        sampleUrl: url,
+        apiPath: pathname,
+        apiOrigin: new URL(url).origin,
+        status: fetched.status || 200
+      };
+    }
+
+    if (page && !page.isClosed()) {
+      result = await page.evaluate(async (fetchUrl) => {
+        try {
+          const response = await fetch(fetchUrl, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { Accept: 'application/json, text/plain, */*' }
+          });
+          return { status: response.status, bodyText: await response.text() };
+        } catch (error) {
+          return { status: 0, bodyText: '', error: error.message || 'fetch failed' };
+        }
+      }, url);
+      if (result.status < 200 || result.status >= 300) continue;
+    } else {
+      continue;
+    }
 
     let payload = null;
     try {
@@ -224,27 +226,27 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange) {
       sampleUrl: url,
       apiPath: pathname,
       apiOrigin: new URL(url).origin,
-      status: result.status
+      status: result.status || 200
     };
   }
 
   return { ok: false, message: `${sourceId} API probe 실패` };
 }
 
-async function discoverApiUrlViaPage(page, sourceId, dateRange) {
-  if (!page || page.isClosed()) {
-    return { ok: false, message: 'Playwright page 없음' };
+async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContext = null) {
+  if ((!page || page.isClosed()) && !playwrightContext) {
+    return { ok: false, message: 'Playwright page/context 없음' };
   }
 
-  await ensureSafeBrowserTab(page);
-  return probeApiFromBrowserTab(page, sourceId, dateRange);
+  if (page && !page.isClosed()) {
+    await ensureSafeBrowserTab(page);
+  }
+
+  return probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext);
 }
 
 module.exports = {
   SAFE_LANDING_URL,
-  buildPagePath,
-  buildPageUrl,
-  buildSpaDateQuery,
   buildProbeUrls,
   isUnsafeHistorySpaUrl,
   attachSafeSpaGuard,

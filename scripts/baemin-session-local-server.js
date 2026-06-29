@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260630h';
+const SERVER_VERSION = '20260701a';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -692,8 +692,8 @@ async function ensurePlaywrightBrowser() {
   if (isContextAlive(activeContext)) {
     console.log('[BREM] [browser/open] 기존 Playwright 창 재사용');
     const { attachSafeSpaGuard, recoverAllBrowserTabs } = require('../server/baemin-page-capture');
-    detachSpaGuard = attachSafeSpaGuard(activeContext);
-    await recoverAllBrowserTabs(activeContext).catch(() => {});
+    detachSpaGuard = await attachSafeSpaGuard(activeContext);
+    await recoverAllBrowserTabs(activeContext);
     return { ok: true, reused: true };
   }
 
@@ -708,8 +708,8 @@ async function ensurePlaywrightBrowser() {
   });
   activeContext = context;
   const { attachSafeSpaGuard, recoverAllBrowserTabs } = require('../server/baemin-page-capture');
-  detachSpaGuard = attachSafeSpaGuard(context);
-  await recoverAllBrowserTabs(context).catch(() => {});
+  detachSpaGuard = await attachSafeSpaGuard(context);
+  await recoverAllBrowserTabs(context);
   console.log('[BREM] [browser/open] 새 Playwright 창 실행');
 
   let tabs = scanBrowserTabs(context);
@@ -883,7 +883,7 @@ async function runLocalFullCollect(options = {}) {
       captureDate: collectDate,
       source: 'local_manual',
       sessionCookie,
-      playwrightContext: null,
+      playwrightContext: isContextAlive(activeContext) ? activeContext : null,
       playwrightPage: collectPage
     });
 
@@ -1062,6 +1062,11 @@ async function heartbeat() {
       nextScheduledAt
     });
 
+    if (isContextAlive(activeContext)) {
+      const { recoverAllBrowserTabs } = require('../server/baemin-page-capture');
+      await recoverAllBrowserTabs(activeContext).catch(() => {});
+    }
+
     if (sessionPaused) {
       const session = await baeminAutoCollect.getAutoCollectRecord();
       if (!session.sessionPaused && !session.lastError) {
@@ -1201,10 +1206,11 @@ async function runSessionRefresh() {
 
   try {
     clearActiveContextIfDead();
+    const { attachSafeSpaGuard, recoverAllBrowserTabs } = require('../server/baemin-page-capture');
     if (isContextAlive(activeContext)) {
       context = activeContext;
-      const { attachSafeSpaGuard } = require('../server/baemin-page-capture');
-      detachSpaGuard = attachSafeSpaGuard(context);
+      detachSpaGuard = await attachSafeSpaGuard(context);
+      await recoverAllBrowserTabs(context).catch(() => {});
       console.log('[BREM] [브라우저] 기존 Playwright 창 재사용');
     } else {
       activeContext = null;
@@ -1213,15 +1219,13 @@ async function runSessionRefresh() {
         viewport: { width: 1280, height: 900 }
       });
       activeContext = context;
-      const { attachSafeSpaGuard, ensureSafeBrowserTab } = require('../server/baemin-page-capture');
-      detachSpaGuard = attachSafeSpaGuard(context);
+      detachSpaGuard = await attachSafeSpaGuard(context);
+      await recoverAllBrowserTabs(context).catch(() => {});
       console.log('[BREM] [브라우저] 새 Playwright 창 실행');
     }
 
     const discoveryState = createApiDiscoveryState();
     const detachDiscovery = attachApiDiscovery(context, discoveryState);
-    const { attachSafeSpaGuard } = require('../server/baemin-page-capture');
-    detachSpaGuard = attachSafeSpaGuard(context);
 
     context.on('page', (newPage) => {
       attachPageDiscovery(newPage, discoveryState);
@@ -1498,6 +1502,30 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/browser/recover' && req.method === 'POST') {
+    try {
+      if (!isContextAlive(activeContext)) {
+        return sendJsonWithCors(req, res, 409, {
+          ok: false,
+          message: 'Playwright 브라우저가 없습니다.'
+        });
+      }
+      const { attachSafeSpaGuard, recoverAllBrowserTabs } = require('../server/baemin-page-capture');
+      detachSpaGuard = await attachSafeSpaGuard(activeContext);
+      await recoverAllBrowserTabs(activeContext);
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        message: '배달현황 화면으로 복구했습니다.',
+        browser: getBrowserHealth()
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatError(error)
+      });
+    }
+  }
+
   if (url.pathname === '/probe/network' && req.method === 'POST') {
     if (!isContextAlive(activeContext)) {
       return sendJsonWithCors(req, res, 409, {
@@ -1631,7 +1659,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260630h 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260701a 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');

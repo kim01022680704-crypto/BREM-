@@ -36,9 +36,7 @@ const COLLECT_SOURCES = {
       '/v4/management/delivery/delivery-history',
       '/v4/management/delivery-histories',
       '/v4/management/daily-delivery-history',
-      '/v2/delivery/history',
-      '/delivery/history',
-      '/delivery/delivery-history'
+      '/v2/delivery/history'
     ],
     pagePathPatterns: [
       /\/delivery\/delivery-history/i,
@@ -62,9 +60,7 @@ const COLLECT_SOURCES = {
       '/v4/management/rider-history',
       '/v4/management/delivery-history',
       '/v4/management/rider-histories',
-      '/v2/delivery/rider-history',
-      '/delivery/rider-history',
-      '/delivery/history'
+      '/v2/delivery/rider-history'
     ],
     pagePathPatterns: [
       /\/delivery\/rider-history/i,
@@ -155,11 +151,42 @@ function buildDefaultQuery(sourceId, collectDate, dateRange = null) {
   return query;
 }
 
+function isValidApiSampleUrl(url) {
+  const text = String(url || '');
+  if (!text.includes('baemin.com')) return false;
+  if (/\/delivery\/(?:delivery-history|rider-history)/i.test(text)) return false;
+  if (text.includes('api-deliverycenter.baemin.com')) return true;
+  try {
+    const path = new URL(text).pathname;
+    return path === '/delivery-status' || path.startsWith('/v2/') || path.startsWith('/v4/');
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeApiRegistry(registry = {}) {
+  const endpoints = registry.endpoints || {};
+  Object.keys(endpoints).forEach(sourceId => {
+    const ep = endpoints[sourceId];
+    if (!ep) return;
+    if (ep.sampleUrl && !isValidApiSampleUrl(ep.sampleUrl)) {
+      console.warn(`[BREM][registry] drop invalid sampleUrl (${sourceId}): ${ep.sampleUrl}`);
+      ep.sampleUrl = null;
+    }
+    if (ep.apiPath && String(ep.apiPath).includes('/delivery/') && !String(ep.apiPath).startsWith('/v4/')) {
+      const source = getCollectSource(sourceId);
+      ep.apiPath = source?.apiPath || ep.apiPath;
+      ep.apiOrigin = BAEMIN_API_ORIGIN;
+    }
+  });
+  return registry;
+}
+
 function resolveApiEndpoint(sourceId, registry = {}) {
   const source = getCollectSource(sourceId);
   const discovered = registry?.endpoints?.[sourceId];
 
-  if (discovered?.sampleUrl) {
+  if (discovered?.sampleUrl && isValidApiSampleUrl(discovered.sampleUrl)) {
     try {
       const parsed = new URL(discovered.sampleUrl);
       return {
@@ -176,14 +203,18 @@ function resolveApiEndpoint(sourceId, registry = {}) {
   const apiPath = discovered?.apiPath || source?.apiPath || null;
   if (!apiPath) return null;
 
+  const safePath = String(apiPath).includes('/delivery/') && !String(apiPath).startsWith('/v4/')
+    ? (source?.apiPath || apiPath)
+    : apiPath;
+
   const apiOrigin = discovered?.apiOrigin
     || source?.apiOrigin
-    || (String(apiPath).startsWith('/v4/') ? BAEMIN_API_ORIGIN : BAEMIN_ORIGIN);
+    || (String(safePath).startsWith('/v4/') ? BAEMIN_API_ORIGIN : BAEMIN_ORIGIN);
 
   return {
-    apiOrigin,
-    apiPath,
-    sampleUrl: discovered?.sampleUrl || null,
+    apiOrigin: String(safePath).startsWith('/v4/') ? BAEMIN_API_ORIGIN : apiOrigin,
+    apiPath: safePath,
+    sampleUrl: null,
     sampleHeaders: discovered?.sampleHeaders || null
   };
 }
@@ -248,6 +279,8 @@ module.exports = {
   buildApiUrl,
   buildDefaultQuery,
   resolveApiEndpoint,
+  isValidApiSampleUrl,
+  sanitizeApiRegistry,
   buildDedupeKey,
   mapItemToCollectRow
 };

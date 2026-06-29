@@ -187,7 +187,7 @@ async function fetchPaginatedApi({
       lastUrl = `${origin}${apiPath}?${params.toString()}`;
     }
 
-    console.log(`${logPrefix} GET ${lastUrl}${playwrightPage ? ' (browser-tab)' : ''}`);
+    console.log(`${logPrefix} GET ${lastUrl}${playwrightContext ? ' (playwright-request)' : (playwrightPage ? ' (browser-tab)' : '')}`);
     let activePage = playwrightPage;
     if (!activePage && playwrightContext) {
       try {
@@ -198,13 +198,21 @@ async function fetchPaginatedApi({
       }
     }
 
-    const result = activePage
-      ? await fetchBaeminJsonViaPage(
-        activePage,
+    const centerHeaders = sampleHeaders && typeof sampleHeaders === 'object' ? sampleHeaders : null;
+    const result = playwrightContext
+      ? await fetchBaeminJsonViaPlaywright(
+        playwrightContext,
         lastUrl,
-        logContext ? { ...logContext, pageIndex: page } : null
+        logContext ? { ...logContext, pageIndex: page } : null,
+        centerHeaders
       )
-      : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
+      : activePage
+        ? await fetchBaeminJsonViaPage(
+          activePage,
+          lastUrl,
+          logContext ? { ...logContext, pageIndex: page } : null
+        )
+        : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
     if (!result.ok) {
       console.error(`${logPrefix} FAIL status=${result.status} message=${result.message}`);
       console.error(`${logPrefix} response.text():`, String(result.bodyText || '').slice(0, 800));

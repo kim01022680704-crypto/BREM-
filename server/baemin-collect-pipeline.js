@@ -7,7 +7,8 @@ const {
   resolveApiEndpoint,
   API_REGISTRY_KEY,
   BAEMIN_API_ORIGIN,
-  BAEMIN_ORIGIN
+  BAEMIN_ORIGIN,
+  sanitizeApiRegistry
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
@@ -150,8 +151,8 @@ function shrinkDateRangeEnd(dateRange) {
   };
 }
 
-async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange) {
-  const discovered = await discoverApiUrlViaPage(playwrightPage, sourceId, dateRange);
+async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange, playwrightContext = null) {
+  const discovered = await discoverApiUrlViaPage(playwrightPage, sourceId, dateRange, playwrightContext);
   if (!discovered.ok) return null;
   registry.endpoints = registry.endpoints || {};
   registry.endpoints[sourceId] = {
@@ -311,10 +312,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   let endpoint = resolveApiEndpoint(sourceId, registry);
 
   if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
       || endpoint;
   } else if (!endpoint?.apiPath && context.playwrightPage && activeDateRange) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
       || endpoint;
   }
 
@@ -357,7 +358,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     }
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && context.playwrightPage && activeDateRange) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
       || endpoint;
     fetched = await tryFetch(endpoint);
   }
@@ -368,7 +369,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       activeDateRange = shrunk;
       context.dateRange = shrunk;
       if (context.playwrightPage) {
-        endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
+        endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
           || endpoint;
       }
       fetched = await tryFetch(endpoint, activeDateRange);
@@ -495,7 +496,7 @@ async function runFullCollectPipeline(options = {}) {
     };
   }
 
-  const registry = await getApiRegistry();
+  const registry = sanitizeApiRegistry(await getApiRegistry());
   if (!registry.endpoints?.rider_history?.sampleUrl && registry.endpoints?.rider_history?.fallbackFromDaily) {
     delete registry.endpoints.rider_history.fallbackFromDaily;
   }
