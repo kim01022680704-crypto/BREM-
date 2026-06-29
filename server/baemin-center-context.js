@@ -1,5 +1,7 @@
 const BAEMIN_CENTER_API = 'https://api-deliverycenter.baemin.com/v2/center';
 const BAEMIN_CENTER_CHANGE_URL = 'https://deliverycenter.baemin.com/center/change';
+const PARTNER_ID_PATTERN = /\(([A-Z]{2}\d+)\)/;
+const PARTNER_LINE_PATTERN = /^(.+?)\s*\(([A-Z]{2}\d+)\)\s*$/;
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -11,6 +13,28 @@ function pickField(row, ...keys) {
     if (value) return value;
   }
   return '';
+}
+
+function parsePartnerLine(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  const match = normalized.match(PARTNER_LINE_PATTERN);
+  if (!match) return null;
+  return {
+    partnerName: match[1].trim(),
+    partnerId: match[2]
+  };
+}
+
+function normalizePartnerEntry(partnerId, partnerName) {
+  const id = String(partnerId || '').trim();
+  if (!id) return null;
+  const name = String(partnerName || id).trim();
+  return {
+    partnerId: id,
+    centerId: id,
+    managementId: id,
+    partnerName: name
+  };
 }
 
 function extractCenterContext(payload) {
@@ -30,18 +54,8 @@ function extractCenterContext(payload) {
     return '';
   };
 
-  const centerId = pick(
-    root.centerId,
-    root.id,
-    payload.centerId,
-    payload.id
-  );
-  const managementId = pick(
-    root.managementId,
-    root.management_id,
-    root.centerManagementId,
-    centerId
-  );
+  const centerId = pick(root.centerId, root.id, payload.centerId, payload.id);
+  const managementId = pick(root.managementId, root.management_id, root.centerManagementId, centerId);
   const partnerId = pick(
     root.partnerId,
     root.partner_id,
@@ -81,14 +95,7 @@ function mapCenterRow(row) {
     'displayName',
     'managementName'
   ) || ctx.partnerName;
-  const key = ctx.partnerId || ctx.centerId;
-  if (!key) return null;
-  return {
-    centerId: ctx.centerId || key,
-    managementId: ctx.managementId || key,
-    partnerId: ctx.partnerId || key,
-    partnerName: partnerName || key
-  };
+  return normalizePartnerEntry(ctx.partnerId || ctx.centerId, partnerName);
 }
 
 function extractCenterListFromPayload(payload) {
@@ -98,6 +105,16 @@ function extractCenterListFromPayload(payload) {
     ? data
     : (Array.isArray(data?.centers) ? data.centers : (data && typeof data === 'object' ? [data] : []));
   return rows.map(mapCenterRow).filter(Boolean);
+}
+
+function dedupePartners(partners) {
+  const seen = new Map();
+  (partners || []).forEach(partner => {
+    const key = partner?.partnerId || partner?.centerId;
+    if (!key) return;
+    if (!seen.has(key)) seen.set(key, partner);
+  });
+  return Array.from(seen.values());
 }
 
 async function fetchCenterPayloadViaPage(page) {
@@ -125,40 +142,69 @@ async function fetchCenterPayloadViaPage(page) {
   }
 }
 
-async function scrapePartnersFromChangeDom(page) {
-  return page.evaluate(() => {
-    const partners = [];
-    const seen = new Set();
+async function openPartnerDropdown(page) {
+  const combo = page.locator('[role="combobox"]').first();
+  if (await combo.count()) {
+    await combo.click({ timeout: 5000 });
+    await delay(600);
+    return true;
+  }
 
-    const push = (partnerId, centerId, partnerName) => {
-      const key = String(partnerId || centerId || '').trim();
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      partners.push({
-        partnerId: partnerId || centerId || key,
-        centerId: centerId || partnerId || key,
-        managementId: centerId || partnerId || key,
-        partnerName: String(partnerName || key).replace(/\s+/g, ' ').trim().slice(0, 120)
+  const listboxTrigger = page.locator('[aria-haspopup="listbox"]').first();
+  if (await listboxTrigger.count()) {
+    await listboxTrigger.click({ timeout: 5000 });
+    await delay(600);
+    return true;
+  }
+
+  const currentPartner = page.locator('text=/\\([A-Z]{2}\\d+\\)/').first();
+  if (await currentPartner.count()) {
+    await currentPartner.click({ timeout: 5000 });
+    await delay(600);
+    return true;
+  }
+
+  const selectEl = page.locator('select').first();
+  if (await selectEl.count()) {
+    await selectEl.click({ timeout: 5000 });
+    await delay(400);
+    return true;
+  }
+
+  return false;
+}
+
+async function scrapePartnersFromChangePage(page) {
+  await openPartnerDropdown(page);
+  await delay(800);
+
+  const partners = await page.evaluate(() => {
+    const linePattern = /^(.+?)\s*\(([A-Z]{2}\d+)\)\s*$/;
+    const seen = new Set();
+    const results = [];
+
+    const push = (name, id) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      results.push({
+        partnerId: id,
+        centerId: id,
+        managementId: id,
+        partnerName: String(name || id).trim()
       });
     };
 
-    document.querySelectorAll('[data-partner-id], [data-center-id], [data-management-id]').forEach(el => {
-      push(
-        el.getAttribute('data-partner-id'),
-        el.getAttribute('data-center-id') || el.getAttribute('data-management-id'),
-        el.textContent
-      );
-    });
-
-    document.querySelectorAll('button, a, li, div, span, p').forEach(el => {
+    document.querySelectorAll('[role="option"], option, li, button, div, span, p').forEach(el => {
       const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
       if (!text || text.length > 120) return;
-      const idMatch = text.match(/\b([A-Z]{2}\d{6,})\b/) || el.outerHTML.match(/([A-Z]{2}\d{6,})/);
-      if (idMatch) push(idMatch[1], idMatch[1], text);
+      const match = text.match(linePattern);
+      if (match) push(match[1], match[2]);
     });
 
-    return partners;
-  }).catch(() => []);
+    return results;
+  });
+
+  return dedupePartners(partners);
 }
 
 async function listPartnerCentersViaPage(page) {
@@ -185,26 +231,45 @@ async function listPartnerCentersViaPage(page) {
     page.off('response', handler);
   }
 
-  let partners = extractCenterListFromPayload(capturedPayload);
+  let partners = dedupePartners([
+    ...extractCenterListFromPayload(capturedPayload),
+    ...await scrapePartnersFromChangePage(page)
+  ]);
+
   if (partners.length <= 1) {
     const fetched = await fetchCenterPayloadViaPage(page);
-    partners = extractCenterListFromPayload(fetched);
-  }
-  if (partners.length <= 1) {
-    const domPartners = await scrapePartnersFromChangeDom(page);
-    if (domPartners.length) partners = domPartners;
+    partners = dedupePartners([
+      ...partners,
+      ...extractCenterListFromPayload(fetched)
+    ]);
   }
 
-  const seen = new Map();
-  partners.forEach(partner => {
-    const key = partner.partnerId || partner.centerId;
-    if (!key) return;
-    if (!seen.has(key)) seen.set(key, partner);
-  });
+  if (!partners.length) {
+    const active = await resolveCenterContextViaPage(page);
+    if (active?.partnerId || active?.centerId) {
+      partners = [normalizePartnerEntry(
+        active.partnerId || active.centerId,
+        active.partnerName || active.partnerId || active.centerId
+      )];
+    }
+  }
 
-  const list = Array.from(seen.values());
-  console.log(`[BREM][center] 협력사 ${list.length}곳: ${list.map(p => `${p.partnerName || p.partnerId}`).join(', ')}`);
-  return list;
+  console.log(`[BREM][center] 협력사 ${partners.length}곳: ${partners.map(p => `${p.partnerName}(${p.partnerId})`).join(', ')}`);
+  return partners.filter(Boolean);
+}
+
+async function clickPartnerConfirmButton(page) {
+  const confirm = page.getByRole('button', { name: /선택\s*완료/ });
+  if (await confirm.count()) {
+    await confirm.click({ timeout: 8000 });
+    return true;
+  }
+  const fallback = page.locator('button:has-text("선택 완료"), button:has-text("선택완료")').first();
+  if (await fallback.count()) {
+    await fallback.click({ timeout: 8000 });
+    return true;
+  }
+  return false;
 }
 
 async function selectPartnerCenter(page, target = {}) {
@@ -216,80 +281,65 @@ async function selectPartnerCenter(page, target = {}) {
   const targetName = String(target.partnerName || '').trim();
   if (!targetId) throw new Error('협력사 ID가 없습니다.');
 
+  const current = await resolveCenterContextViaPage(page);
+  const currentId = String(current?.partnerId || current?.centerId || '').trim();
+  if (currentId === targetId) {
+    return {
+      centerId: current.centerId || targetId,
+      managementId: current.managementId || targetId,
+      partnerId: targetId,
+      partnerName: targetName || current.partnerName || targetId
+    };
+  }
+
   await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
     if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
   });
-  await delay(1500);
+  await delay(2000);
 
-  const clicked = await page.evaluate(({ id, name }) => {
-    const candidates = [
-      ...document.querySelectorAll('[data-partner-id], [data-center-id], [data-management-id], button, a, li, div, span')
-    ];
-    for (const el of candidates) {
-      const attrs = [
-        el.getAttribute('data-partner-id'),
-        el.getAttribute('data-center-id'),
-        el.getAttribute('data-management-id')
-      ].filter(Boolean);
-      if (attrs.some(value => value === id)) {
-        el.click();
-        return 'attr';
-      }
-      const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
-      if (text.includes(id)) {
-        el.click();
-        return 'id-text';
-      }
-      if (name && text.includes(name)) {
-        el.click();
-        return 'name-text';
-      }
-    }
-    return '';
-  }, { id: targetId, name: targetName });
+  const selectEl = page.locator('select').first();
+  if (await selectEl.count()) {
+    await selectEl.selectOption({ label: new RegExp(targetId) }).catch(async () => {
+      await selectEl.selectOption(targetId).catch(() => {});
+    });
+  } else {
+    await openPartnerDropdown(page);
+    await delay(600);
 
-  if (!clicked) {
-    const switched = await page.evaluate(async ({ id, centerApi }) => {
-      const urls = [
-        `${centerApi}/select`,
-        `${centerApi}/change`,
-        'https://api-deliverycenter.baemin.com/v2/center/select'
-      ];
-      for (const url of urls) {
-        try {
-          const response = await fetch(url, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              Accept: 'application/json, text/plain, */*',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              centerId: id,
-              partnerId: id,
-              managementId: id,
-              cooperationId: id
-            })
-          });
-          if (response.ok) return url;
-        } catch {
-          // try next
-        }
+    const optionById = page.locator(`text=${targetId}`).first();
+    if (await optionById.count()) {
+      await optionById.click({ timeout: 8000 });
+    } else if (targetName) {
+      const optionByName = page.getByText(targetName, { exact: false }).first();
+      if (await optionByName.count()) {
+        await optionByName.click({ timeout: 8000 });
+      } else {
+        throw new Error(`협력사 옵션을 찾지 못했습니다: ${targetName} (${targetId})`);
       }
-      return '';
-    }, { id: targetId, centerApi: BAEMIN_CENTER_API });
-    if (!switched) {
-      throw new Error(`협력사 UI/API 전환 실패: ${targetName || targetId}`);
+    } else {
+      throw new Error(`협력사 옵션을 찾지 못했습니다: ${targetId}`);
     }
   }
 
-  await delay(2500);
+  await delay(500);
+  const confirmed = await clickPartnerConfirmButton(page);
+  if (!confirmed) {
+    throw new Error('협력사 [선택 완료] 버튼을 찾지 못했습니다.');
+  }
+
+  await Promise.race([
+    page.waitForURL(url => !String(url).includes('/center/change'), { timeout: 20000 }).catch(() => null),
+    delay(3500)
+  ]);
+  await delay(1500);
+
   const active = await resolveCenterContextViaPage(page);
   const activeId = String(active?.partnerId || active?.centerId || '').trim();
   if (activeId && activeId !== targetId) {
     throw new Error(`협력사 전환 확인 실패 (요청 ${targetId}, 현재 ${activeId})`);
   }
 
+  console.log(`[BREM][center] 협력사 전환 완료: ${targetName || targetId} (${targetId})`);
   return {
     centerId: active?.centerId || target.centerId || targetId,
     managementId: active?.managementId || target.managementId || targetId,
@@ -335,7 +385,10 @@ async function resolveCenterContextViaPage(page) {
       if (!center.partnerId && nested.partnerId) center.partnerId = nested.partnerId;
       if (!center.partnerName && nested.partnerName) center.partnerName = nested.partnerName;
     } catch {
-      if (!center.partnerId && /^\d+$/.test(text)) center.partnerId = text;
+      if (!center.partnerId && PARTNER_ID_PATTERN.test(text)) {
+        const match = text.match(PARTNER_ID_PATTERN);
+        if (match) center.partnerId = match[1];
+      }
     }
   });
 

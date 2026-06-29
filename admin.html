@@ -624,10 +624,13 @@
       <section class="section" id="baemin-delivery-status">
         <div class="baemin-subtab-bar">
           <button type="button" class="promotion-tab is-active" data-baemin-subtab="collect">수집/설정</button>
-          <button type="button" class="promotion-tab" data-baemin-subtab="delivery_status">배달현황</button>
-          <button type="button" class="promotion-tab" data-baemin-subtab="daily_history">일별 배달내역</button>
-          <button type="button" class="promotion-tab" data-baemin-subtab="rider_history">라이더별 배달내역</button>
         </div>
+        <nav id="baeminPartnerSubtabBar" class="baemin-partner-tab-bar" hidden aria-label="협력사"></nav>
+        <nav id="baeminMenuSubtabBar" class="baemin-subtab-bar" hidden aria-label="배달 메뉴">
+          <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
+          <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
+          <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
+        </nav>
 
         <div class="baemin-subpanel" data-baemin-panel="collect">
         <article class="card" id="baeminDeliveryCollectCard">
@@ -642,12 +645,6 @@
             <label>
               수집 날짜
               <input type="date" id="baeminDeliveryCaptureDate" class="admin-period-input">
-            </label>
-            <label>
-              협력사
-              <select id="baeminDeliveryPartnerFilter" class="admin-period-input">
-                <option value="">전체 협력사</option>
-              </select>
             </label>
             <button type="button" class="primary-btn" id="baeminDeliverySessionRefreshBtn">배민 세션 갱신</button>
             <button type="button" class="primary-btn" id="baeminBrowserOpenBtn">브라우저 열기/세션 유지</button>
@@ -4760,7 +4757,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260702a"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260702b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

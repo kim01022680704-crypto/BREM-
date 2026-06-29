@@ -945,7 +945,7 @@ async function runFullCollectPipeline(options = {}) {
       return loopResult;
     }
 
-    if (playwrightPage && partnersToCollect.length > 1) {
+    if (playwrightPage && partnersToCollect.length > 0) {
       console.log(`[BREM][collect] 협력사 ${partnersToCollect.length}곳 순차 수집`);
       const { selectPartnerCenter } = require('./baemin-center-context');
       for (let index = 0; index < partnersToCollect.length; index += 1) {

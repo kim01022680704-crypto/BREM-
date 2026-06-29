@@ -10,6 +10,10 @@
     localBrowser: null,
     localSession: null,
     localAutoCollect: null,
+    activeSubtab: 'collect',
+    activePartnerId: '',
+    activeMenu: 'delivery_status',
+    partners: [],
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -61,21 +65,93 @@
   }
 
   function selectedPartnerId() {
-    return String($('baeminDeliveryPartnerFilter')?.value || '').trim();
+    return String(state.activePartnerId || '').trim();
   }
 
-  async function loadPartnerFilter() {
-    const select = $('baeminDeliveryPartnerFilter');
-    if (!select) return;
+  function renderPartnerTabs(partners = []) {
+    const bar = $('baeminPartnerSubtabBar');
+    if (!bar) return;
+    state.partners = Array.isArray(partners) ? partners : [];
+    if (!state.partners.length) {
+      bar.hidden = true;
+      bar.innerHTML = '';
+      return;
+    }
+
+    bar.hidden = state.activeSubtab === 'collect';
+    bar.innerHTML = state.partners.map(partner => {
+      const id = partner.partnerId;
+      const label = partner.partnerName || id;
+      const active = state.activePartnerId === id ? ' is-active' : '';
+      return `<button type="button" class="promotion-tab${active}" data-baemin-partner="${id}" title="${label} (${id})">${label}</button>`;
+    }).join('');
+
+    bar.querySelectorAll('[data-baemin-partner]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        switchBaeminPartner(btn.dataset.baeminPartner || '');
+      });
+    });
+  }
+
+  async function loadPartnerTabs() {
     const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
-    const current = select.value;
     const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}`);
     const partners = result.ok ? (result.partners || []) : [];
-    select.innerHTML = '<option value="">전체 협력사</option>'
-      + partners.map(partner => `<option value="${partner.partnerId}">${partner.partnerName || partner.partnerId}</option>`).join('');
-    if (current && partners.some(partner => partner.partnerId === current)) {
-      select.value = current;
+    renderPartnerTabs(partners);
+    if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
+      state.activePartnerId = '';
     }
+    if (state.activeSubtab === 'partner' && !state.activePartnerId && partners.length) {
+      switchBaeminPartner(partners[0].partnerId);
+    }
+  }
+
+  function updateMenuTabBar() {
+    const menuBar = $('baeminMenuSubtabBar');
+    if (!menuBar) return;
+    const show = state.activeSubtab === 'partner' && Boolean(state.activePartnerId);
+    menuBar.hidden = !show;
+    menuBar.querySelectorAll('[data-baemin-menu]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.baeminMenu === state.activeMenu);
+    });
+  }
+
+  function updatePanelVisibility() {
+    document.querySelectorAll('[data-baemin-panel]').forEach(panel => {
+      if (panel.dataset.baeminPanel === 'collect') {
+        panel.hidden = state.activeSubtab !== 'collect';
+        return;
+      }
+      const menu = panel.dataset.baeminPanel;
+      panel.hidden = !(state.activeSubtab === 'partner' && state.activeMenu === menu);
+    });
+    const partnerBar = $('baeminPartnerSubtabBar');
+    if (partnerBar) partnerBar.hidden = state.activeSubtab === 'collect' || !state.partners.length;
+    updateMenuTabBar();
+  }
+
+  function switchBaeminPartner(partnerId) {
+    const id = String(partnerId || '').trim();
+    if (!id) return;
+    state.activeSubtab = 'partner';
+    state.activePartnerId = id;
+    if (!state.activeMenu) state.activeMenu = 'delivery_status';
+    document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.baeminSubtab === 'collect' && false);
+    });
+    $('baeminPartnerSubtabBar')?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.baeminPartner === id);
+    });
+    updatePanelVisibility();
+    void loadSubtabData(state.activeMenu, id);
+  }
+
+  function switchBaeminMenu(menuId) {
+    const menu = String(menuId || '').trim();
+    if (!menu || !state.activePartnerId) return;
+    state.activeMenu = menu;
+    updatePanelVisibility();
+    void loadSubtabData(menu, state.activePartnerId);
   }
 
   function formatNumber(value) {
@@ -631,9 +707,11 @@
       menuResults
     });
     showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''}`);
-    await loadPartnerFilter();
+    await loadPartnerTabs();
+    if (state.partners.length) {
+      switchBaeminPartner(state.partners[0].partnerId);
+    }
     await loadConfig();
-    await loadAllSubtabData();
   }
 
   async function shutdownLocalServer() {
@@ -764,10 +842,11 @@
     }
   }
 
-  async function loadSubtabData(sourceMenu) {
+  async function loadSubtabData(sourceMenu, partnerIdOverride = '') {
     const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
-    const partnerId = selectedPartnerId();
-    const partnerQuery = partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : '';
+    const partnerId = String(partnerIdOverride || selectedPartnerId() || '').trim();
+    if (!partnerId) return;
+    const partnerQuery = `&partnerId=${encodeURIComponent(partnerId)}`;
     const result = await adminApi(
       `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}`
     );
@@ -796,9 +875,7 @@
     const items = result.items || [];
     const menuDatePlan = state.config?.autoCollect?.menuDatePlan || state.config?.menuDatePlan || null;
     const rangeLabel = menuDatePlan?.[sourceMenu]?.label;
-    const partnerLabel = partnerId
-      ? (result.items?.[0]?.parsed_json?.partnerName || partnerId)
-      : '전체 협력사';
+    const partnerLabel = state.partners.find(partner => partner.partnerId === partnerId)?.partnerName || partnerId;
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
         summaryEl.textContent = `${partnerLabel} · 오늘 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
@@ -810,8 +887,13 @@
       }
     }
 
+    const showPartnerColumn = false;
+    const partnerCell = showPartnerColumn
+      ? (p) => `<td>${formatPartnerCell(p)}</td>`
+      : () => '';
+
     if (!items.length) {
-      rowsEl.innerHTML = '<tr><td colspan="14" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>';
+      rowsEl.innerHTML = `<tr><td colspan="${showPartnerColumn ? 14 : 13}" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>`;
       return;
     }
 
@@ -819,7 +901,7 @@
       rowsEl.innerHTML = items.map(row => {
         const p = row.parsed_json || {};
         return `<tr>
-          <td>${formatPartnerCell(p)}</td>
+          ${partnerCell(p)}
           <td>${row.rider_name || '-'}</td>
           <td>${p.statusDesc || '-'}</td>
           <td>${row.rider_user_id || '-'}</td>
@@ -842,7 +924,7 @@
       rowsEl.innerHTML = items.map(row => {
         const p = row.parsed_json || {};
         return `<tr>
-          <td>${formatPartnerCell(p)}</td>
+          ${partnerCell(p)}
           <td>${p.deliveryDate || row.collect_date || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
           <td>${formatNumber(p.totalReject ?? p.foodReject ?? 0)}</td>
@@ -862,7 +944,7 @@
       const p = row.parsed_json || {};
       const deliveryCount = Number(row.raw_json?.deliveryCount || p.totalComplete || 0);
       return `<tr>
-        <td>${formatPartnerCell(p)}</td>
+        ${partnerCell(p)}
         <td>${row.rider_name || '-'}</td>
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
@@ -880,25 +962,32 @@
   }
 
   function switchBaeminSubtab(tabId) {
-    state.activeSubtab = tabId;
-    document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
-      btn.classList.toggle('is-active', btn.dataset.baeminSubtab === tabId);
-    });
-    document.querySelectorAll('[data-baemin-panel]').forEach(panel => {
-      const active = panel.dataset.baeminPanel === tabId;
-      panel.hidden = !active;
-    });
-    if (tabId !== 'collect') {
-      void loadSubtabData(tabId);
+    const tab = String(tabId || 'collect').trim();
+    if (tab === 'collect') {
+      state.activeSubtab = 'collect';
+      document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
+        btn.classList.toggle('is-active', btn.dataset.baeminSubtab === 'collect');
+      });
+      updatePanelVisibility();
+      return;
+    }
+    if (!state.activePartnerId && state.partners.length) {
+      switchBaeminPartner(state.partners[0].partnerId);
+      return;
+    }
+    state.activeSubtab = 'partner';
+    updatePanelVisibility();
+    if (state.activePartnerId && state.activeMenu) {
+      void loadSubtabData(state.activeMenu, state.activePartnerId);
     }
   }
 
   async function loadAllSubtabData() {
-    await Promise.all([
-      loadSubtabData('delivery_status'),
-      loadSubtabData('daily_history'),
-      loadSubtabData('rider_history')
-    ]);
+    if (state.activeSubtab === 'partner' && state.activePartnerId && state.activeMenu) {
+      await loadSubtabData(state.activeMenu, state.activePartnerId);
+      return;
+    }
+    await loadPartnerTabs();
   }
 
   async function runAutoCollect() {
@@ -997,19 +1086,17 @@
     });
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
-      void loadPartnerFilter();
+      void loadPartnerTabs();
       void loadLatestSummary();
-      if (state.activeSubtab && state.activeSubtab !== 'collect') {
-        void loadSubtabData(state.activeSubtab);
+      if (state.activeSubtab === 'partner' && state.activePartnerId && state.activeMenu) {
+        void loadSubtabData(state.activeMenu, state.activePartnerId);
       }
     });
 
-    $('baeminDeliveryPartnerFilter')?.addEventListener('change', () => {
-      if (state.activeSubtab && state.activeSubtab !== 'collect') {
-        void loadSubtabData(state.activeSubtab);
-      } else {
-        void loadAllSubtabData();
-      }
+    $('baeminMenuSubtabBar')?.querySelectorAll('[data-baemin-menu]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        switchBaeminMenu(btn.dataset.baeminMenu || 'delivery_status');
+      });
     });
 
     document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
@@ -1027,8 +1114,8 @@
     if (dateInput && !dateInput.value) {
       dateInput.value = todayKstDate();
     }
+    await loadPartnerTabs();
     await loadConfig();
-    await loadPartnerFilter();
     await loadLatestSummary();
     await loadAllSubtabData();
 

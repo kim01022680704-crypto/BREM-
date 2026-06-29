@@ -2591,6 +2591,20 @@ textarea {
   color: rgba(203, 213, 225, 0.7);
 }
 
+.baemin-partner-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.baemin-partner-tab-bar .promotion-tab {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .baemin-subtab-bar {
   display: flex;
   flex-wrap: wrap;
