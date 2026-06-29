@@ -505,6 +505,8 @@ async function runFullCollectPipeline(options = {}) {
 
   if (playwrightPage) {
     try {
+      const { ensureSafeBrowserTab } = require('./baemin-page-capture');
+      await ensureSafeBrowserTab(playwrightPage);
       const { resolveCenterContextViaPage } = require('./baemin-center-context');
       const { attachCenterApiRoute } = require('./baemin-playwright-route');
       const center = await resolveCenterContextViaPage(playwrightPage);

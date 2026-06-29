@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260630d';
+const SERVER_VERSION = '20260630f';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -1084,6 +1084,7 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   const dateRange = computeCollectDateRange(collectDate);
   const tabs = scanBrowserTabs(context);
   const page = tabs.page || await context.newPage();
+  const { ensureSafeBrowserTab } = require('../server/baemin-page-capture');
 
   let detachRoute = () => {};
   try {
@@ -1099,11 +1100,14 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   }
 
   try {
-    console.log(`[BREM] [수집 준비] 배달현황 확인 (영업일 조회범위 ${dateRange.fromDate}~${dateRange.toDate})`);
-    await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    });
+    await ensureSafeBrowserTab(page);
+    console.log(`[BREM] [수집 준비] 배달현황 유지 (영업일 ${dateRange.fromDate}~${dateRange.toDate})`);
+    if (!String(page.url() || '').includes('/delivery-status')) {
+      await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+    }
     await delay(1500);
   } catch (error) {
     console.warn('[BREM] [수집 준비] 배달현황 이동 실패:', formatError(error));
@@ -1118,11 +1122,15 @@ async function navigateToSafeLandingPage(context) {
   const page = tabs.page;
   if (!page || page.isClosed()) return;
   try {
-    await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    });
-    console.log(`[BREM] [세션 완료] 배달현황 화면으로 이동 ${safePageUrlSync(page)}`);
+    const { ensureSafeBrowserTab } = require('../server/baemin-page-capture');
+    await ensureSafeBrowserTab(page);
+    if (!String(page.url() || '').includes('/delivery-status')) {
+      await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+    }
+    console.log(`[BREM] [세션 완료] 배달현황 화면 ${safePageUrlSync(page)}`);
   } catch (error) {
     console.warn(`[BREM] [세션 완료] 배달현황 이동 실패 | ${formatError(error)}`);
   }
@@ -1618,7 +1626,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260630d 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260630f 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');

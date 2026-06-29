@@ -7,12 +7,12 @@ function delay(ms) {
 }
 
 function buildProbePages(range) {
-  const qs = `fromDate=${range.fromDate}&toDate=${range.toDate}`;
+  const day = range.toDate || range.fromDate;
+  const qs = day ? `fromDate=${day}&toDate=${day}` : '';
   return [
     { id: 'delivery_status', label: '배달현황', url: `${BAEMIN_ORIGIN}/delivery-status` },
-    { id: 'delivery_status_alt', label: '배달현황(히스토리)', url: `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20&orderName=name&orderBy=asc&name=&userId=&phoneNumber=&riderStatus=` },
-    { id: 'daily_history', label: '일별 배달내역', url: `${BAEMIN_ORIGIN}/delivery/delivery-history?${qs}` },
-    { id: 'rider_history', label: '라이더별 배달내역', url: `${BAEMIN_ORIGIN}/delivery/rider-history?${qs}` }
+    { id: 'daily_history', label: '일별 배달내역', url: `${BAEMIN_ORIGIN}/delivery-status`, probeOnly: true },
+    { id: 'rider_history', label: '라이더별 배달내역', url: `${BAEMIN_ORIGIN}/delivery-status`, probeOnly: true }
   ];
 }
 
@@ -72,6 +72,19 @@ async function probeBaeminNetwork(context, options = {}) {
   for (const probe of probePages) {
     const before = captured.length;
     try {
+      if (probe.probeOnly) {
+        const { probeApiFromBrowserTab } = require('./baemin-page-capture');
+        console.log(`[BREM][network-probe] api-probe ${probe.id}`);
+        const result = await probeApiFromBrowserTab(page, probe.id, range);
+        navigations.push({
+          ...probe,
+          ok: result.ok,
+          sampleUrl: result.sampleUrl || '',
+          error: result.ok ? '' : (result.message || 'probe failed'),
+          newResponses: captured.length - before
+        });
+        continue;
+      }
       console.log(`[BREM][network-probe] goto ${probe.url}`);
       await page.goto(probe.url, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
         if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
