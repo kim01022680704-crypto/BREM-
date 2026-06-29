@@ -262,6 +262,8 @@ async function runAutoCollectJob(options = {}) {
     dateRange: pipelineResult.dateRange,
     menuDateRanges: pipelineResult.menuDateRanges,
     summaryTotals: pipelineResult.summaryTotals,
+    partnerSummaries: pipelineResult.partnerSummaries || [],
+    partnerCount: Number(pipelineResult.partnerCount || 0),
     sessionExpired: false,
     record: result.record
   };

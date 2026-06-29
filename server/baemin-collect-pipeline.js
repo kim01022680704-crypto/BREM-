@@ -115,6 +115,7 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     collectedAt,
     {
       partnerId: options?.partnerId,
+      partnerName: options?.partnerName,
       index,
       collectDate,
       dateRange: options?.dateRange || null,
@@ -167,8 +168,11 @@ async function saveCollectItems(rows) {
     const partnerId = menuRows[0]?.partner_id
       || menuRows[0]?.parsed_json?.partnerId
       || 'unknown';
+    const partnerName = menuRows[0]?.parsed_json?.partnerName
+      || menuRows[0]?.partner_name
+      || '';
     const sampleKeys = menuRows.slice(0, 3).map(row => row.dedupe_key).join(', ');
-    console.log(`[BREM][save] menu_type=${menuType} partner_id=${partnerId} rows=${menuRows.length} dedupe_sample=${sampleKeys}`);
+    console.log(`[BREM][save] menu_type=${menuType} partner_id=${partnerId} partner_name=${partnerName || '-'} rows=${menuRows.length} dedupe_sample=${sampleKeys}`);
 
     const payload = menuRows.map(row => {
       const { record_type, partner_id, ...rest } = row;
@@ -178,7 +182,8 @@ async function saveCollectItems(rows) {
           ...(rest.parsed_json || {}),
           recordType: menuType,
           menuType,
-          partnerId: partner_id || rest.parsed_json?.partnerId || partnerId
+          partnerId: partner_id || rest.parsed_json?.partnerId || partnerId,
+          partnerName: rest.parsed_json?.partnerName || partnerName || ''
         }
       };
     });
@@ -222,6 +227,11 @@ async function pruneStaleRiderDuplicates(menuType, savedRows) {
   if (!collectDate) return;
 
   const keepKeys = new Set(savedRows.map(row => row.dedupe_key).filter(Boolean));
+  const partnerPrefix = String(
+    savedRows[0]?.parsed_json?.partnerId
+    || String(savedRows[0]?.dedupe_key || '').split(':')[0]
+    || ''
+  ).trim();
   const riderIds = [...new Set(savedRows.map(row => String(row.rider_user_id || '').trim()).filter(Boolean))];
   if (!riderIds.length) return;
 
@@ -235,7 +245,11 @@ async function pruneStaleRiderDuplicates(menuType, savedRows) {
   if (error || !existing?.length) return;
 
   const staleIds = existing
-    .filter(row => row.rider_user_id && !keepKeys.has(row.dedupe_key))
+    .filter(row => {
+      if (!row.rider_user_id || keepKeys.has(row.dedupe_key)) return false;
+      if (partnerPrefix && !String(row.dedupe_key || '').startsWith(`${partnerPrefix}:`)) return false;
+      return true;
+    })
     .map(row => row.id)
     .filter(Boolean);
 
@@ -445,8 +459,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       sourceUrl = daily.sourceUrl || '';
     }
     const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+    const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
     const rows = aggregateRiderHistoryFromDaily(dailyItems, collectDate, collectedAt, sourceUrl, {
       partnerId,
+      partnerName,
       collectDate,
       dateRange: activeDateRange || context.dateRange || null,
       historyQueryDates: activeDateRange || null
@@ -599,6 +615,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+  const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
   const rows = items.map((item, index) => mapItemToCollectRow(
     sourceId,
     item,
@@ -607,6 +624,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     collectedAt,
     {
       partnerId,
+      partnerName,
       index,
       collectDate,
       dateRange: activeDateRange || context.dateRange || null,
@@ -654,6 +672,131 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   };
 }
 
+function readPartnerContext(registry, context = {}) {
+  return {
+    partnerId: String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim(),
+    partnerName: String(registry.centerContext?.partnerName || context.partnerName || '').trim()
+  };
+}
+
+function attachCollectCenterRoute(playwrightPage, registry, detachRef = { current: null }) {
+  const { buildCenterFetchHeaders } = require('./baemin-center-context');
+  const { attachCenterApiRoute } = require('./baemin-playwright-route');
+  if (typeof detachRef.current === 'function') {
+    detachRef.current();
+  }
+  const center = registry.centerContext || {};
+  if (!center?.centerId && !center?.managementId && !center?.partnerId) {
+    detachRef.current = () => {};
+    return;
+  }
+  const discoveredHeaders = {
+    ...buildCenterFetchHeaders(center),
+    ...(registry.endpoints?.delivery_status?.sampleHeaders || {}),
+    ...(registry.endpoints?.daily_history?.sampleHeaders || {})
+  };
+  detachRef.current = attachCenterApiRoute(playwrightPage.context(), {
+    centerContext: center,
+    discoveredHeaders
+  });
+}
+
+async function runPartnerSourceCollectLoop({
+  cookie,
+  collectDate,
+  registry,
+  pipelineContext,
+  menuDateRanges,
+  historyDateRange,
+  source,
+  collectedAt,
+  sourceDefs,
+  playwrightContext,
+  playwrightPage
+}) {
+  const results = {};
+  let anySuccess = false;
+  let sessionExpired = false;
+  let authFailureCount = 0;
+  const partner = readPartnerContext(registry, pipelineContext);
+
+  function isAuthFailure(result) {
+    return result.status === 401
+      || result.status === 403
+      || result.message === '배민 로그인 만료';
+  }
+
+  for (const sourceDef of sourceDefs) {
+    const result = await collectSource(sourceDef.id, cookie, collectDate, registry, pipelineContext);
+    results[sourceDef.id] = {
+      ...result,
+      dateRangeLabel: menuDateRanges[sourceDef.id]?.label
+        || (sourceDef.dateQueryKeys?.length ? menuDateRanges.daily_history.label : '오늘 기준')
+    };
+
+    if (sourceDef.id === 'daily_history' && result.ok) {
+      pipelineContext.dailyItems = result.rawItems || [];
+      pipelineContext.dailySourceUrl = result.sourceUrl || '';
+      const riderEp = mergeEndpointWithDefault('rider_history', registry.endpoints?.rider_history || {});
+      const dailyEp = mergeEndpointWithDefault('daily_history', registry.endpoints?.daily_history || {});
+      const riderHasOwnApi = isDistinctRiderHistoryEndpoint(riderEp, dailyEp);
+      if (riderHasOwnApi && registry.endpoints?.rider_history?.fallbackFromDaily) {
+        delete registry.endpoints.rider_history.fallbackFromDaily;
+      }
+      if (!riderHasOwnApi) {
+        registry.endpoints.rider_history = {
+          ...(registry.endpoints?.rider_history || {}),
+          ...riderEp,
+          fallbackFromDaily: true
+        };
+        console.log('[BREM][collect] rider_history → daily_history 집계 fallback 활성');
+      } else {
+        console.log(`[BREM][collect] rider_history 전용 API 사용: ${riderEp.apiPath}`);
+      }
+    }
+
+    await saveCollectRun({
+      collect_date: collectDate,
+      collected_at: collectedAt,
+      source_menu: sourceDef.id,
+      source_url: result.sourceUrl || '',
+      status: result.ok ? 'success' : 'failed',
+      error_message: result.ok ? '' : String(result.message || result.error || '수집 실패'),
+      row_count: Number(result.savedCount || 0),
+      meta_json: {
+        source,
+        fallback: result.fallback || null,
+        partnerId: partner.partnerId,
+        partnerName: partner.partnerName
+      }
+    });
+
+    if (result.ok) anySuccess = true;
+
+    if (isAuthFailure(result)) {
+      authFailureCount += 1;
+      if (!playwrightContext) {
+        sessionExpired = true;
+        await getBaeminSession().markSessionError(result.message || '배민 로그인 만료');
+        break;
+      }
+      console.warn(`[BREM][collect] ${sourceDef.id} auth failure — continue (playwright browser active)`);
+      continue;
+    }
+  }
+
+  if (playwrightContext && authFailureCount === sourceDefs.length && !anySuccess) {
+    if (!playwrightPage) {
+      sessionExpired = true;
+      await getBaeminSession().markSessionError('배민 로그인 만료');
+    } else {
+      console.warn('[BREM][collect] all API calls failed but browser tab is active — session not marked expired');
+    }
+  }
+
+  return { results, anySuccess, sessionExpired, authFailureCount };
+}
+
 async function runFullCollectPipeline(options = {}) {
   const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
   const historyDateRange = options.dateRange || computeHistoryCollectRange(collectDate);
@@ -664,7 +807,13 @@ async function runFullCollectPipeline(options = {}) {
   const playwrightContext = options.playwrightContext || null;
   const playwrightPage = options.playwrightPage || null;
   const results = {};
+  const partnerSummaries = [];
   const collectedAt = new Date().toISOString();
+  const sourceDefs = listCollectSources();
+  const detachRef = { current: null };
+  let detachCenterRoute = () => {
+    if (typeof detachRef.current === 'function') detachRef.current();
+  };
 
   const tableStatus = await getBizCollectTableStatus();
   if (!tableStatus.tableExists) {
@@ -700,7 +849,7 @@ async function runFullCollectPipeline(options = {}) {
     weekStart: historyDateRange.weekStart,
     shrunkHistoryToDate: null
   };
-  let detachCenterRoute = () => {};
+  let partnersToCollect = [];
 
   console.log(`[BREM][collect] 배달현황: 오늘 기준 (${collectDate})`);
   console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
@@ -713,36 +862,26 @@ async function runFullCollectPipeline(options = {}) {
   if (playwrightPage) {
     try {
       const { ensureSafeBrowserTab, preparePageForCollect } = require('./baemin-page-capture');
-      const { resolveCenterContextViaPage, buildCenterFetchHeaders } = require('./baemin-center-context');
-      const { attachCenterApiRoute } = require('./baemin-playwright-route');
+      const {
+        resolveCenterContextViaPage,
+        listPartnerCentersViaPage,
+        selectPartnerCenter
+      } = require('./baemin-center-context');
       await ensureSafeBrowserTab(playwrightPage);
-      await preparePageForCollect(playwrightPage, 'delivery_status', {});
-      if (!registry.centerContext?.partnerId) {
+      partnersToCollect = await listPartnerCentersViaPage(playwrightPage).catch(error => {
+        console.warn('[BREM][collect] 협력사 목록 조회 실패:', error.message);
+        return [];
+      });
+      if (!partnersToCollect.length) {
         const center = await resolveCenterContextViaPage(playwrightPage);
-        if (center?.centerId || center?.managementId || center?.partnerId) {
-          registry.centerContext = {
+        if (center?.partnerId || center?.centerId) {
+          partnersToCollect = [{
             centerId: center.centerId,
             managementId: center.managementId,
-            partnerId: center.partnerId,
-            resolvedAt: new Date().toISOString()
-          };
+            partnerId: center.partnerId || center.centerId,
+            partnerName: center.partnerName || center.partnerId || center.centerId
+          }];
         }
-      }
-      const center = registry.centerContext || {};
-      if (center?.centerId || center?.managementId || center?.partnerId) {
-        console.log(`[BREM][collect] center context centerId=${center.centerId} managementId=${center.managementId} partnerId=${center.partnerId}`);
-
-        const discoveredHeaders = {
-          ...buildCenterFetchHeaders(center),
-          ...(registry.endpoints?.delivery_status?.sampleHeaders || {}),
-          ...(registry.endpoints?.daily_history?.sampleHeaders || {})
-        };
-        detachCenterRoute = attachCenterApiRoute(playwrightPage.context(), {
-          centerContext: center,
-          discoveredHeaders
-        });
-      } else {
-        console.warn('[BREM][collect] center context empty — /v2/center 응답 확인 필요');
       }
     } catch (error) {
       console.warn('[BREM][collect] center context resolve failed:', error.message);
@@ -752,76 +891,112 @@ async function runFullCollectPipeline(options = {}) {
   try {
     let anySuccess = false;
     let sessionExpired = false;
-    let authFailureCount = 0;
-    const sourceDefs = listCollectSources();
 
-    function isAuthFailure(result) {
-      return result.status === 401
-        || result.status === 403
-        || result.message === '배민 로그인 만료';
-    }
-
-    for (const sourceDef of sourceDefs) {
-      const result = await collectSource(sourceDef.id, cookie, collectDate, registry, pipelineContext);
-      results[sourceDef.id] = {
-        ...result,
-        dateRangeLabel: menuDateRanges[sourceDef.id]?.label
-          || (sourceDef.dateQueryKeys?.length ? menuDateRanges.daily_history.label : '오늘 기준')
+    async function runForPartner(partnerContext) {
+      registry.centerContext = {
+        centerId: partnerContext.centerId,
+        managementId: partnerContext.managementId,
+        partnerId: partnerContext.partnerId,
+        partnerName: partnerContext.partnerName || partnerContext.partnerId,
+        resolvedAt: new Date().toISOString()
       };
+      pipelineContext.partnerName = registry.centerContext.partnerName;
+      pipelineContext.dailyItems = null;
+      pipelineContext.dailySourceUrl = '';
+      pipelineContext.shrunkHistoryToDate = null;
 
-      if (sourceDef.id === 'daily_history' && result.ok) {
-        pipelineContext.dailyItems = result.rawItems || [];
-        pipelineContext.dailySourceUrl = result.sourceUrl || '';
-        const riderEp = mergeEndpointWithDefault('rider_history', registry.endpoints?.rider_history || {});
-        const dailyEp = mergeEndpointWithDefault('daily_history', registry.endpoints?.daily_history || {});
-        const riderHasOwnApi = isDistinctRiderHistoryEndpoint(riderEp, dailyEp);
-        if (riderHasOwnApi && registry.endpoints?.rider_history?.fallbackFromDaily) {
-          delete registry.endpoints.rider_history.fallbackFromDaily;
-        }
-        if (!riderHasOwnApi) {
-          registry.endpoints.rider_history = {
-            ...(registry.endpoints?.rider_history || {}),
-            ...riderEp,
-            fallbackFromDaily: true
-          };
-          console.log('[BREM][collect] rider_history → daily_history 집계 fallback 활성');
-        } else {
-          console.log(`[BREM][collect] rider_history 전용 API 사용: ${riderEp.apiPath}`);
-        }
+      console.log(`[BREM][collect] 협력사 수집 시작: ${registry.centerContext.partnerName} (${registry.centerContext.partnerId})`);
+
+      if (playwrightPage) {
+        attachCollectCenterRoute(playwrightPage, registry, detachRef);
+        await require('./baemin-page-capture').preparePageForCollect(playwrightPage, 'delivery_status', {}, collectDate);
       }
 
-      await saveCollectRun({
-        collect_date: collectDate,
-        collected_at: collectedAt,
-        source_menu: sourceDef.id,
-        source_url: result.sourceUrl || '',
-        status: result.ok ? 'success' : 'failed',
-        error_message: result.ok ? '' : String(result.message || result.error || '수집 실패'),
-        row_count: Number(result.savedCount || 0),
-        meta_json: { source, fallback: result.fallback || null }
+      const loopResult = await runPartnerSourceCollectLoop({
+        cookie,
+        collectDate,
+        registry,
+        pipelineContext,
+        menuDateRanges,
+        historyDateRange,
+        source,
+        collectedAt,
+        sourceDefs,
+        playwrightContext,
+        playwrightPage
       });
 
-      if (result.ok) anySuccess = true;
+      Object.entries(loopResult.results).forEach(([menuId, row]) => {
+        results[`${registry.centerContext.partnerId}:${menuId}`] = {
+          ...row,
+          partnerId: registry.centerContext.partnerId,
+          partnerName: registry.centerContext.partnerName
+        };
+      });
 
-      if (isAuthFailure(result)) {
-        authFailureCount += 1;
-        if (!playwrightContext) {
-          sessionExpired = true;
-          await getBaeminSession().markSessionError(result.message || '배민 로그인 만료');
-          break;
-        }
-        console.warn(`[BREM][collect] ${sourceDef.id} auth failure — continue (playwright browser active)`);
-        continue;
-      }
+      partnerSummaries.push({
+        partnerId: registry.centerContext.partnerId,
+        partnerName: registry.centerContext.partnerName,
+        ok: loopResult.anySuccess,
+        savedCount: Object.values(loopResult.results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0),
+        results: loopResult.results
+      });
+
+      return loopResult;
     }
 
-    if (playwrightContext && authFailureCount === sourceDefs.length && !anySuccess) {
-      if (!playwrightPage) {
-        sessionExpired = true;
-        await getBaeminSession().markSessionError('배민 로그인 만료');
-      } else {
-        console.warn('[BREM][collect] all API calls failed but browser tab is active — session not marked expired');
+    if (playwrightPage && partnersToCollect.length > 1) {
+      console.log(`[BREM][collect] 협력사 ${partnersToCollect.length}곳 순차 수집`);
+      const { selectPartnerCenter } = require('./baemin-center-context');
+      for (let index = 0; index < partnersToCollect.length; index += 1) {
+        const partner = partnersToCollect[index];
+        try {
+          const active = await selectPartnerCenter(playwrightPage, partner);
+          const loopResult = await runForPartner({
+            ...partner,
+            ...active,
+            partnerName: partner.partnerName || active.partnerName
+          });
+          anySuccess = anySuccess || loopResult.anySuccess;
+          sessionExpired = sessionExpired || loopResult.sessionExpired;
+        } catch (error) {
+          console.warn(`[BREM][collect] 협력사 수집 실패 (${partner.partnerName || partner.partnerId}):`, error.message);
+          partnerSummaries.push({
+            partnerId: partner.partnerId,
+            partnerName: partner.partnerName || partner.partnerId,
+            ok: false,
+            message: error.message,
+            savedCount: 0
+          });
+        }
       }
+    } else {
+      const partner = partnersToCollect[0] || registry.centerContext || {};
+      if (partner.partnerId || partner.centerId) {
+        registry.centerContext = {
+          centerId: partner.centerId,
+          managementId: partner.managementId,
+          partnerId: partner.partnerId || partner.centerId,
+          partnerName: partner.partnerName || partner.partnerId || partner.centerId,
+          resolvedAt: new Date().toISOString()
+        };
+      } else if (playwrightPage) {
+        const { resolveCenterContextViaPage } = require('./baemin-center-context');
+        const center = await resolveCenterContextViaPage(playwrightPage);
+        if (center?.partnerId || center?.centerId) {
+          registry.centerContext = {
+            centerId: center.centerId,
+            managementId: center.managementId,
+            partnerId: center.partnerId || center.centerId,
+            partnerName: center.partnerName || center.partnerId || center.centerId,
+            resolvedAt: new Date().toISOString()
+          };
+        }
+      }
+      if (playwrightPage) attachCollectCenterRoute(playwrightPage, registry, detachRef);
+      const loopResult = await runForPartner(registry.centerContext || {});
+      anySuccess = loopResult.anySuccess;
+      sessionExpired = loopResult.sessionExpired;
     }
 
     if (anySuccess && !sessionExpired) {
@@ -832,7 +1007,8 @@ async function runFullCollectPipeline(options = {}) {
       console.warn('[BREM][collect] registry 저장 실패:', error.message);
     });
 
-    const savedTotal = Object.values(results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0);
+    const savedTotal = partnerSummaries.reduce((sum, row) => sum + Number(row.savedCount || 0), 0)
+      || Object.values(results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0);
     const summaryTotals = {
       dayCount: historyDateRange.dayCount,
       riderCount: 0,
@@ -857,11 +1033,13 @@ async function runFullCollectPipeline(options = {}) {
       savedTotal,
       summaryTotals,
       results,
+      partnerSummaries,
+      partnerCount: partnerSummaries.length || (registry.centerContext?.partnerId ? 1 : 0),
       sessionExpired,
       message: sessionExpired
         ? '배민 재로그인 필요'
         : (anySuccess
-          ? `수집 완료 — 배달현황: 오늘 기준 · 일별/라이더: ${historyDateRange.fromDate}~${historyDateRange.toDate} · 저장 ${savedTotal}건`
+          ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · 배달현황: 오늘 · 일별/라이더: ${historyDateRange.fromDate}~${historyDateRange.toDate} · 저장 ${savedTotal}건`
           : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'))
     };
   } finally {
@@ -930,10 +1108,53 @@ async function getLatestMenuCollectStatus(collectDate) {
   });
 }
 
-async function getCollectItemsForAdmin(collectDate, sourceMenu) {
+async function getPartnerListForAdmin(collectDate) {
+  const supabase = getServiceClient();
+  const date = String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { data, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('parsed_json, dedupe_key')
+    .eq('collect_date', date)
+    .limit(5000);
+
+  if (error) {
+    if (isMissingBizCollectTableError(error)) {
+      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+    }
+    return { ok: false, error: error.message || '조회 실패' };
+  }
+
+  const partners = new Map();
+  (data || []).forEach(row => {
+    const parsed = row.parsed_json || {};
+    let partnerId = String(parsed.partnerId || '').trim();
+    if (!partnerId) {
+      const prefix = String(row.dedupe_key || '').split(':')[0];
+      if (prefix && prefix !== 'unknown') partnerId = prefix;
+    }
+    if (!partnerId) return;
+    const partnerName = String(parsed.partnerName || partnerId).trim();
+    if (!partners.has(partnerId)) {
+      partners.set(partnerId, partnerName || partnerId);
+    }
+  });
+
+  const items = Array.from(partners.entries())
+    .map(([partnerId, partnerName]) => ({ partnerId, partnerName }))
+    .sort((a, b) => String(a.partnerName).localeCompare(String(b.partnerName), 'ko'));
+
+  return { ok: true, collectDate: date, partners: items, count: items.length };
+}
+
+async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   const supabase = getServiceClient();
   const date = String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
   const menu = String(sourceMenu || '').trim();
+  const partnerId = String(options.partnerId || '').trim();
 
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
@@ -956,18 +1177,19 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu) {
     return { ok: false, error: error.message || '조회 실패' };
   }
 
-  const items = normalizeCollectItemsForAdmin(data || [], menu);
+  const items = normalizeCollectItemsForAdmin(data || [], menu, partnerId);
 
   return {
     ok: true,
     collectDate: date,
     sourceMenu: menu,
+    partnerId: partnerId || null,
     items,
     count: items.length
   };
 }
 
-function normalizeCollectItemsForAdmin(rows, sourceMenu) {
+function normalizeCollectItemsForAdmin(rows, sourceMenu, partnerId = '') {
   const byKey = new Map();
   (rows || []).forEach(row => {
     const key = `${row.source_menu || ''}|${row.dedupe_key || row.id}`;
@@ -978,6 +1200,14 @@ function normalizeCollectItemsForAdmin(rows, sourceMenu) {
   });
 
   let items = Array.from(byKey.values());
+
+  if (partnerId) {
+    items = items.filter(row => {
+      const parsedId = String(row.parsed_json?.partnerId || '').trim();
+      if (parsedId === partnerId) return true;
+      return String(row.dedupe_key || '').startsWith(`${partnerId}:`);
+    });
+  }
 
   if (sourceMenu === 'rider_history' || sourceMenu === 'delivery_status') {
     const byRider = new Map();
@@ -1022,5 +1252,6 @@ module.exports = {
   runFullCollectPipeline,
   saveCollectRun,
   getLatestMenuCollectStatus,
-  getCollectItemsForAdmin
+  getCollectItemsForAdmin,
+  getPartnerListForAdmin
 };

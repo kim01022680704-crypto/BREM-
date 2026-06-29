@@ -56,6 +56,28 @@
     }
   }
 
+  function formatPartnerCell(parsed) {
+    return parsed?.partnerName || parsed?.partnerId || '-';
+  }
+
+  function selectedPartnerId() {
+    return String($('baeminDeliveryPartnerFilter')?.value || '').trim();
+  }
+
+  async function loadPartnerFilter() {
+    const select = $('baeminDeliveryPartnerFilter');
+    if (!select) return;
+    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const current = select.value;
+    const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}`);
+    const partners = result.ok ? (result.partners || []) : [];
+    select.innerHTML = '<option value="">전체 협력사</option>'
+      + partners.map(partner => `<option value="${partner.partnerId}">${partner.partnerName || partner.partnerId}</option>`).join('');
+    if (current && partners.some(partner => partner.partnerId === current)) {
+      select.value = current;
+    }
+  }
+
   function formatNumber(value) {
     return Number(value || 0).toLocaleString('ko-KR');
   }
@@ -608,7 +630,8 @@
       menuDateRanges: result.menuDateRanges,
       menuResults
     });
-    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장`);
+    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''}`);
+    await loadPartnerFilter();
     await loadConfig();
     await loadAllSubtabData();
   }
@@ -743,8 +766,10 @@
 
   async function loadSubtabData(sourceMenu) {
     const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const partnerId = selectedPartnerId();
+    const partnerQuery = partnerId ? `&partnerId=${encodeURIComponent(partnerId)}` : '';
     const result = await adminApi(
-      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}`
+      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}`
     );
 
     const summaryMap = {
@@ -771,19 +796,22 @@
     const items = result.items || [];
     const menuDatePlan = state.config?.autoCollect?.menuDatePlan || state.config?.menuDatePlan || null;
     const rangeLabel = menuDatePlan?.[sourceMenu]?.label;
+    const partnerLabel = partnerId
+      ? (result.items?.[0]?.parsed_json?.partnerName || partnerId)
+      : '전체 협력사';
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
-        summaryEl.textContent = `오늘 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
+        summaryEl.textContent = `${partnerLabel} · 오늘 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
       } else if (rangeLabel) {
         const periodHint = sourceMenu === 'rider_history' ? ' · 완료=기간 합계' : '';
-        summaryEl.textContent = `${rangeLabel} · ${formatNumber(items.length)}건${periodHint}`;
+        summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${formatNumber(items.length)}건${periodHint}`;
       } else {
-        summaryEl.textContent = `${captureDate} · ${formatNumber(items.length)}건`;
+        summaryEl.textContent = `${partnerLabel} · ${captureDate} · ${formatNumber(items.length)}건`;
       }
     }
 
     if (!items.length) {
-      rowsEl.innerHTML = '<tr><td colspan="13" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="14" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>';
       return;
     }
 
@@ -791,6 +819,7 @@
       rowsEl.innerHTML = items.map(row => {
         const p = row.parsed_json || {};
         return `<tr>
+          <td>${formatPartnerCell(p)}</td>
           <td>${row.rider_name || '-'}</td>
           <td>${p.statusDesc || '-'}</td>
           <td>${row.rider_user_id || '-'}</td>
@@ -813,6 +842,7 @@
       rowsEl.innerHTML = items.map(row => {
         const p = row.parsed_json || {};
         return `<tr>
+          <td>${formatPartnerCell(p)}</td>
           <td>${p.deliveryDate || row.collect_date || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
           <td>${formatNumber(p.totalReject ?? p.foodReject ?? 0)}</td>
@@ -832,6 +862,7 @@
       const p = row.parsed_json || {};
       const deliveryCount = Number(row.raw_json?.deliveryCount || p.totalComplete || 0);
       return `<tr>
+        <td>${formatPartnerCell(p)}</td>
         <td>${row.rider_name || '-'}</td>
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
@@ -966,9 +997,18 @@
     });
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
+      void loadPartnerFilter();
       void loadLatestSummary();
       if (state.activeSubtab && state.activeSubtab !== 'collect') {
         void loadSubtabData(state.activeSubtab);
+      }
+    });
+
+    $('baeminDeliveryPartnerFilter')?.addEventListener('change', () => {
+      if (state.activeSubtab && state.activeSubtab !== 'collect') {
+        void loadSubtabData(state.activeSubtab);
+      } else {
+        void loadAllSubtabData();
       }
     });
 
@@ -988,6 +1028,7 @@
       dateInput.value = todayKstDate();
     }
     await loadConfig();
+    await loadPartnerFilter();
     await loadLatestSummary();
     await loadAllSubtabData();
 

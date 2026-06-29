@@ -528,7 +528,17 @@ async function getCollectItems(accessToken, options = {}) {
   if (!caller.ok) return caller;
 
   const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
-  return getCollectItemsForAdmin(options.collectDate, options.sourceMenu);
+  return getCollectItemsForAdmin(options.collectDate, options.sourceMenu, {
+    partnerId: options.partnerId
+  });
+}
+
+async function getPartnerList(accessToken, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { getPartnerListForAdmin } = require('./baemin-collect-pipeline');
+  return getPartnerListForAdmin(options.collectDate);
 }
 
 module.exports = {
@@ -539,6 +549,7 @@ module.exports = {
   getTableStatus,
   getLatestSummary,
   getCollectItems,
+  getPartnerList,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,
