@@ -775,7 +775,8 @@
       if (sourceMenu === 'delivery_status') {
         summaryEl.textContent = `오늘 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
       } else if (rangeLabel) {
-        summaryEl.textContent = `${rangeLabel} · ${formatNumber(items.length)}건`;
+        const periodHint = sourceMenu === 'rider_history' ? ' · 완료=기간 합계' : '';
+        summaryEl.textContent = `${rangeLabel} · ${formatNumber(items.length)}건${periodHint}`;
       } else {
         summaryEl.textContent = `${captureDate} · ${formatNumber(items.length)}건`;
       }
