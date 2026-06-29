@@ -9,6 +9,7 @@ const {
   BAEMIN_API_ORIGIN,
   BAEMIN_ORIGIN,
   sanitizeApiRegistry,
+  isDistinctRiderHistoryEndpoint,
   mergeEndpointWithDefault
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
@@ -197,9 +198,59 @@ async function saveCollectItems(rows) {
       }
       savedCount += chunk.length;
     }
+
+    await pruneStaleRiderDuplicates(menuType, payload);
   }
 
   return { ok: true, savedCount };
+}
+
+function riderIdentityKey(row) {
+  const id = String(row?.rider_user_id || '').trim();
+  if (id) return `id:${id}`;
+  const phone = String(row?.phone_number || '').trim();
+  if (phone) return `phone:${phone}`;
+  return '';
+}
+
+async function pruneStaleRiderDuplicates(menuType, savedRows) {
+  if (!['delivery_status', 'rider_history'].includes(menuType)) return;
+  const supabase = getServiceClient();
+  if (!supabase || !savedRows?.length) return;
+
+  const collectDate = String(savedRows[0]?.collect_date || '').slice(0, 10);
+  if (!collectDate) return;
+
+  const keepKeys = new Set(savedRows.map(row => row.dedupe_key).filter(Boolean));
+  const riderIds = [...new Set(savedRows.map(row => String(row.rider_user_id || '').trim()).filter(Boolean))];
+  if (!riderIds.length) return;
+
+  const { data: existing, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('id, dedupe_key, rider_user_id')
+    .eq('collect_date', collectDate)
+    .eq('source_menu', menuType)
+    .in('rider_user_id', riderIds);
+
+  if (error || !existing?.length) return;
+
+  const staleIds = existing
+    .filter(row => row.rider_user_id && !keepKeys.has(row.dedupe_key))
+    .map(row => row.id)
+    .filter(Boolean);
+
+  if (!staleIds.length) return;
+
+  const { error: deleteError } = await supabase
+    .from('baemin_biz_collect_items')
+    .delete()
+    .in('id', staleIds);
+
+  if (deleteError) {
+    console.warn(`[BREM][save] prune stale ${menuType} rows failed:`, deleteError.message);
+    return;
+  }
+  console.log(`[BREM][save] pruned ${staleIds.length} stale ${menuType} row(s) for ${collectDate}`);
 }
 
 async function saveCollectRun(runRow) {
@@ -927,6 +978,19 @@ function normalizeCollectItemsForAdmin(rows, sourceMenu) {
   });
 
   let items = Array.from(byKey.values());
+
+  if (sourceMenu === 'rider_history' || sourceMenu === 'delivery_status') {
+    const byRider = new Map();
+    items.forEach(row => {
+      const identity = riderIdentityKey(row);
+      if (!identity) return;
+      const prev = byRider.get(identity);
+      if (!prev || String(row.collected_at || '') >= String(prev.collected_at || '')) {
+        byRider.set(identity, row);
+      }
+    });
+    items = Array.from(byRider.values());
+  }
 
   if (sourceMenu === 'rider_history') {
     items = items.filter(row => {
