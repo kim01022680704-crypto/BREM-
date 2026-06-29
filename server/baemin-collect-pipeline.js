@@ -12,7 +12,7 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange, addDays } = require('./baemin-settlement-week');
+const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, addDays } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
@@ -73,7 +73,7 @@ function resolveApiPath(sourceId, registry) {
   return resolveApiEndpoint(sourceId, registry)?.apiPath || null;
 }
 
-function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceUrl) {
+function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceUrl, options = {}) {
   const map = new Map();
   items.forEach((item, index) => {
     const userId = String(item?.userId || item?.riderId || '').trim();
@@ -97,7 +97,33 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     row.deliveryAcceptanceCount.bmartComplete += Number(acceptance.bmartComplete || 0);
     row.deliveryAcceptanceCount.storeComplete += Number(acceptance.storeComplete || 0);
   });
-  return Array.from(map.values()).map(item => mapItemToCollectRow('rider_history', item, collectDate, sourceUrl, collectedAt));
+  return Array.from(map.values()).map((item, index) => mapItemToCollectRow(
+    'rider_history',
+    item,
+    collectDate,
+    sourceUrl,
+    collectedAt,
+    { partnerId: options?.partnerId, index, collectDate }
+  ));
+}
+
+function dedupeCollectRows(rows) {
+  const map = new Map();
+  let collapsed = 0;
+  (rows || []).forEach(row => {
+    const key = `${row.collect_date}|${row.source_menu}|${row.dedupe_key}`;
+    if (map.has(key)) {
+      collapsed += 1;
+      const prev = map.get(key);
+      map.set(key, String(row.collected_at || '') >= String(prev.collected_at || '') ? row : prev);
+      return;
+    }
+    map.set(key, row);
+  });
+  if (collapsed > 0) {
+    console.warn(`[BREM][save] collapsed ${collapsed} duplicate row(s) before upsert`);
+  }
+  return Array.from(map.values());
 }
 
 async function saveCollectItems(rows) {
@@ -105,18 +131,54 @@ async function saveCollectItems(rows) {
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   if (!rows.length) return { ok: false, status: 400, error: 'NO_ROWS', message: '저장할 데이터가 없습니다.' };
 
-  const chunkSize = 100;
+  const deduped = dedupeCollectRows(rows);
+  const byMenu = new Map();
+  deduped.forEach(row => {
+    const menuType = row.source_menu || row.record_type || 'unknown';
+    if (!byMenu.has(menuType)) byMenu.set(menuType, []);
+    byMenu.get(menuType).push(row);
+  });
+
   let savedCount = 0;
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
-    const { error } = await supabase
-      .from('baemin_biz_collect_items')
-      .upsert(chunk, { onConflict: 'collect_date,source_menu,dedupe_key' });
-    if (error) {
-      return { ok: false, status: 500, error: 'SUPABASE_SAVE_FAILED', message: error.message || String(error) };
+  const chunkSize = 100;
+
+  for (const [menuType, menuRows] of byMenu.entries()) {
+    const partnerId = menuRows[0]?.partner_id
+      || menuRows[0]?.parsed_json?.partnerId
+      || 'unknown';
+    const sampleKeys = menuRows.slice(0, 3).map(row => row.dedupe_key).join(', ');
+    console.log(`[BREM][save] menu_type=${menuType} partner_id=${partnerId} rows=${menuRows.length} dedupe_sample=${sampleKeys}`);
+
+    const payload = menuRows.map(row => {
+      const { record_type, partner_id, ...rest } = row;
+      return {
+        ...rest,
+        parsed_json: {
+          ...(rest.parsed_json || {}),
+          recordType: menuType,
+          menuType,
+          partnerId: partner_id || rest.parsed_json?.partnerId || partnerId
+        }
+      };
+    });
+
+    for (let i = 0; i < payload.length; i += chunkSize) {
+      const chunk = payload.slice(i, i + chunkSize);
+      const { error } = await supabase
+        .from('baemin_biz_collect_items')
+        .upsert(chunk, { onConflict: 'collect_date,source_menu,dedupe_key' });
+      if (error) {
+        return {
+          ok: false,
+          status: 500,
+          error: 'SUPABASE_SAVE_FAILED',
+          message: `${menuType}: ${error.message || String(error)}`
+        };
+      }
+      savedCount += chunk.length;
     }
-    savedCount += chunk.length;
   }
+
   return { ok: true, savedCount };
 }
 
@@ -285,6 +347,13 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     return { ok: false, sourceMenu: sourceId, message: '알 수 없는 수집 소스' };
   }
 
+  const menuDateRanges = context.menuDateRanges || {};
+  const dateRangeLabel = menuDateRanges[sourceId]?.label
+    || (source.dateQueryKeys?.length && context.historyDateRange
+      ? `${context.historyDateRange.fromDate} ~ ${context.historyDateRange.toDate}`
+      : '오늘 기준');
+  console.log(`[BREM][collect] ${source.label}(${sourceId}): ${dateRangeLabel}`);
+
   if (shouldAggregateRiderFromDaily(sourceId, registry)) {
     let dailyItems = context.dailyItems;
     let sourceUrl = context.dailySourceUrl || '';
@@ -294,7 +363,12 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       dailyItems = daily.rawItems || [];
       sourceUrl = daily.sourceUrl || '';
     }
-    const rows = aggregateRiderHistoryFromDaily(dailyItems, collectDate, collectedAt, sourceUrl);
+    const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+    const rows = aggregateRiderHistoryFromDaily(dailyItems, collectDate, collectedAt, sourceUrl, {
+      partnerId,
+      collectDate,
+      dateRange: context.dateRange || null
+    });
     const saveResult = await saveCollectItems(rows);
     if (!saveResult.ok) return { ...saveResult, sourceMenu: sourceId, label: source.label };
     return {
@@ -308,8 +382,22 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
-  let activeDateRange = context.dateRange || null;
+  let activeDateRange = source.dateQueryKeys?.length
+    ? (context.historyDateRange || context.dateRange || null)
+    : null;
   let endpoint = resolveApiEndpoint(sourceId, registry);
+
+  if (context.playwrightPage) {
+    const { preparePageForCollect } = require('./baemin-page-capture');
+    const prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
+    await preparePageForCollect(
+      context.playwrightPage,
+      sourceId,
+      prepRange || {}
+    ).catch(error => {
+      console.warn(`[BREM][collect] ${sourceId} page prep failed:`, error.message);
+    });
+  }
 
   if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
     endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
@@ -326,6 +414,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} range=${activeDateRange?.fromDate || collectDate}~${activeDateRange?.toDate || collectDate} api=${endpoint.apiOrigin}${endpoint.apiPath}${endpoint.sampleUrl ? ' (sampleUrl)' : ''}`);
 
   async function tryFetch(endpointInfo, dateRange = activeDateRange) {
+    const { buildCenterFetchHeaders } = require('./baemin-center-context');
     const baseQuery = mergeCenterQuery(
       buildDefaultQuery(sourceId, collectDate, dateRange),
       registry
@@ -334,7 +423,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       apiOrigin: endpointInfo.apiOrigin,
       apiPath: endpointInfo.apiPath,
       sampleUrl: endpointInfo.sampleUrl,
-      sampleHeaders: null,
+      sampleHeaders: buildCenterFetchHeaders(registry.centerContext || {}),
       sessionCookie,
       baseQuery,
       pagination: source.pagination,
@@ -429,11 +518,21 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
-  const rows = items.map((item, index) => {
-    const row = mapItemToCollectRow(sourceId, item, collectDate, fetched.meta?.sourceUrl || '', collectedAt);
-    if (!row.dedupe_key) row.dedupe_key = `${sourceId}:row-${index}`;
-    return row;
-  });
+  const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+  const rows = items.map((item, index) => mapItemToCollectRow(
+    sourceId,
+    item,
+    collectDate,
+    fetched.meta?.sourceUrl || '',
+    collectedAt,
+    {
+      partnerId,
+      index,
+      collectDate,
+      dateRange: activeDateRange || context.dateRange || null,
+      dayDate: activeDateRange?.dates?.[index]
+    }
+  ));
 
   const saveResult = await saveCollectItems(rows);
   if (!saveResult.ok) {
@@ -446,7 +545,11 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     items,
     weekStart,
     collectedAt,
-    fetched.meta?.sourceUrl || ''
+    fetched.meta?.sourceUrl || '',
+    {
+      partnerId,
+      dateRange: activeDateRange || context.dateRange || null
+    }
   );
   if (!statsSave.ok) {
     console.warn(`[BREM][collect] stats save failed (${sourceId}):`, statsSave.message || statsSave.error);
@@ -459,6 +562,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     ok: true,
     sourceMenu: sourceId,
     label: source.label,
+    dateRangeLabel,
     savedCount: saveResult.savedCount,
     statsSavedCount: statsSave.savedCount || 0,
     sourceUrl: fetched.meta?.sourceUrl || '',
@@ -471,7 +575,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 
 async function runFullCollectPipeline(options = {}) {
   const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  const dateRange = options.dateRange || computeCollectDateRange(collectDate);
+  const historyDateRange = options.dateRange || computeHistoryCollectRange(collectDate);
+  const menuDateRanges = options.menuDateRanges || buildMenuDateRanges(collectDate);
+  const dateRange = historyDateRange;
   const source = String(options.source || 'local_scheduler').trim();
   const runId = options.runId || createCollectRunId();
   const playwrightContext = options.playwrightContext || null;
@@ -505,34 +611,51 @@ async function runFullCollectPipeline(options = {}) {
     runId,
     playwrightContext,
     playwrightPage,
-    dateRange,
-    weekStart: dateRange.weekStart
+    dateRange: historyDateRange,
+    historyDateRange,
+    menuDateRanges,
+    deliveryStatusContext: menuDateRanges.delivery_status,
+    weekStart: historyDateRange.weekStart
   };
   let detachCenterRoute = () => {};
 
+  console.log(`[BREM][collect] 배달현황: 오늘 기준 (${collectDate})`);
+  console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
+  console.log(`[BREM][collect] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
+
+  if (playwrightContext) {
+    playwrightContext.__bremCollecting = true;
+  }
+
   if (playwrightPage) {
     try {
-      const { ensureSafeBrowserTab } = require('./baemin-page-capture');
-      await ensureSafeBrowserTab(playwrightPage);
-      const { resolveCenterContextViaPage } = require('./baemin-center-context');
+      const { ensureSafeBrowserTab, preparePageForCollect } = require('./baemin-page-capture');
+      const { resolveCenterContextViaPage, buildCenterFetchHeaders } = require('./baemin-center-context');
       const { attachCenterApiRoute } = require('./baemin-playwright-route');
-      const center = await resolveCenterContextViaPage(playwrightPage);
+      await ensureSafeBrowserTab(playwrightPage);
+      await preparePageForCollect(playwrightPage, 'delivery_status', {});
+      if (!registry.centerContext?.partnerId) {
+        const center = await resolveCenterContextViaPage(playwrightPage);
+        if (center?.centerId || center?.managementId || center?.partnerId) {
+          registry.centerContext = {
+            centerId: center.centerId,
+            managementId: center.managementId,
+            partnerId: center.partnerId,
+            resolvedAt: new Date().toISOString()
+          };
+        }
+      }
+      const center = registry.centerContext || {};
       if (center?.centerId || center?.managementId || center?.partnerId) {
-        registry.endpoints = registry.endpoints || {};
-        registry.centerContext = {
-          centerId: center.centerId,
-          managementId: center.managementId,
-          partnerId: center.partnerId,
-          resolvedAt: new Date().toISOString()
-        };
         console.log(`[BREM][collect] center context centerId=${center.centerId} managementId=${center.managementId} partnerId=${center.partnerId}`);
 
         const discoveredHeaders = {
+          ...buildCenterFetchHeaders(center),
           ...(registry.endpoints?.delivery_status?.sampleHeaders || {}),
           ...(registry.endpoints?.daily_history?.sampleHeaders || {})
         };
         detachCenterRoute = attachCenterApiRoute(playwrightPage.context(), {
-          centerContext: registry.centerContext,
+          centerContext: center,
           discoveredHeaders
         });
       } else {
@@ -557,7 +680,11 @@ async function runFullCollectPipeline(options = {}) {
 
     for (const sourceDef of sourceDefs) {
       const result = await collectSource(sourceDef.id, cookie, collectDate, registry, pipelineContext);
-      results[sourceDef.id] = result;
+      results[sourceDef.id] = {
+        ...result,
+        dateRangeLabel: menuDateRanges[sourceDef.id]?.label
+          || (sourceDef.dateQueryKeys?.length ? menuDateRanges.daily_history.label : '오늘 기준')
+      };
 
       if (sourceDef.id === 'daily_history' && result.ok) {
         pipelineContext.dailyItems = result.rawItems || [];
@@ -620,7 +747,7 @@ async function runFullCollectPipeline(options = {}) {
 
     const savedTotal = Object.values(results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0);
     const summaryTotals = {
-      dayCount: dateRange.dayCount,
+      dayCount: historyDateRange.dayCount,
       riderCount: 0,
       completeTotal: 0,
       rejectTotal: 0,
@@ -637,7 +764,8 @@ async function runFullCollectPipeline(options = {}) {
     return {
       ok: anySuccess && !sessionExpired,
       collectDate,
-      dateRange,
+      dateRange: historyDateRange,
+      menuDateRanges,
       runId,
       savedTotal,
       summaryTotals,
@@ -646,23 +774,28 @@ async function runFullCollectPipeline(options = {}) {
       message: sessionExpired
         ? '배민 재로그인 필요'
         : (anySuccess
-          ? `수집 완료 — ${dateRange.fromDate}~${dateRange.toDate} · ${summaryTotals.dayCount}일 · 라이더 ${summaryTotals.riderCount}명 · 완료 ${summaryTotals.completeTotal} / 거절 ${summaryTotals.rejectTotal} / 취소 ${summaryTotals.cancelTotal}`
+          ? `수집 완료 — 배달현황: 오늘 기준 · 일별/라이더: ${historyDateRange.fromDate}~${historyDateRange.toDate} · 저장 ${savedTotal}건`
           : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'))
     };
   } finally {
     detachCenterRoute();
+    if (playwrightContext) {
+      playwrightContext.__bremCollecting = false;
+    }
     if (playwrightPage && !playwrightPage.isClosed()) {
-      const { ensureSafeBrowserTab } = require('./baemin-page-capture');
-      await ensureSafeBrowserTab(playwrightPage).catch(() => {});
+      const { SAFE_LANDING_URL } = require('./baemin-page-capture');
+      await playwrightPage.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     }
   }
 }
 
 async function getLatestMenuCollectStatus(collectDate) {
   const supabase = getServiceClient();
+  const menuDateRanges = buildMenuDateRanges(collectDate || new Date().toISOString().slice(0, 10));
   const menus = listCollectSources().map(source => ({
     id: source.id,
     label: source.label,
+    dateRangeLabel: menuDateRanges[source.id]?.label || '-',
     lastCollectedAt: null,
     lastStatus: null,
     lastError: '',

@@ -213,13 +213,39 @@
     updateActionButtons();
   }
 
+  function formatRiderFaultCell(parsed) {
+    const p = parsed || {};
+    const total = Number(p.riderFault ?? p.totalRiderFault ?? 0);
+    const parts = [];
+    if (Number(p.foodRiderFault || 0)) parts.push(`푸드 ${p.foodRiderFault}`);
+    if (Number(p.bmartRiderFault || 0)) parts.push(`비마트 ${p.bmartRiderFault}`);
+    if (Number(p.storeRiderFault || 0)) parts.push(`스토어 ${p.storeRiderFault}`);
+    if (!parts.length) return formatNumber(total);
+    return `<span title="${parts.join(' · ')}">${formatNumber(total)}</span>`;
+  }
+
+  function renderMenuDatePlan(menuDatePlan) {
+    if (!menuDatePlan) return '';
+    const rows = [
+      ['배달현황', menuDatePlan.delivery_status?.label || '오늘 기준'],
+      ['일별 배달내역', menuDatePlan.daily_history?.label || '-'],
+      ['라이더별 배달내역', menuDatePlan.rider_history?.label || '-']
+    ];
+    return `
+      <ul class="baemin-collect-stats baemin-collect-date-plan">
+        ${rows.map(([label, range]) => `<li>${label}: <strong>${range}</strong></li>`).join('')}
+      </ul>
+    `;
+  }
+
   function renderMenuCollectStatus(config) {
     const el = $('baeminDeliveryMenuCollectStatus');
     if (!el) return;
 
     const menus = config?.menuStatus || config?.autoCollect?.menuStatus || [];
+    const menuDatePlan = config?.autoCollect?.menuDatePlan || config?.menuDatePlan || null;
     if (!menus.length) {
-      el.innerHTML = '<strong>메뉴별 수집</strong><p class="form-help">아직 수집 기록이 없습니다.</p>';
+      el.innerHTML = `<strong>메뉴별 수집</strong>${renderMenuDatePlan(menuDatePlan)}<p class="form-help">아직 수집 기록이 없습니다.</p>`;
       return;
     }
 
@@ -236,6 +262,7 @@
       return `
         <tr>
           <td>${menu.label || menu.id}</td>
+          <td>${menu.dateRangeLabel || '-'}</td>
           <td>${formatDateTime(menu.lastCollectedAt)}</td>
           <td class="${statusClass}">${statusLabel}${errorText}</td>
           <td>${formatNumber(menu.rowCount || 0)}</td>
@@ -245,10 +272,13 @@
 
     el.innerHTML = `
       <strong>메뉴별 수집 상태</strong>
+      ${renderMenuDatePlan(menuDatePlan)}
+      <p class="form-help">배달현황=오늘 기준 · 일별/라이더=정산주 수요일~어제 (오늘 데이터 미제공)</p>
       <table class="baemin-menu-collect-table">
         <thead>
           <tr>
             <th>수집 대상</th>
+            <th>수집 기간</th>
             <th>마지막 수집</th>
             <th>결과</th>
             <th>저장 건수</th>
@@ -321,19 +351,18 @@
 
     box.hidden = false;
     box.className = 'baemin-collect-result baemin-collect-result--success';
-    const range = result.dateRange;
     const totals = result.summaryTotals || {};
     box.innerHTML = `
       <strong>수집 완료</strong>
+      ${renderMenuDatePlan(result.menuDateRanges || result.menuDatePlan)}
       <ul class="baemin-collect-stats">
         <li>수집 기준일: <strong>${result.captureDate || '-'}</strong></li>
-        <li>정산주 범위: <strong>${range ? `${range.fromDate} ~ ${range.toDate}` : '-'}</strong> <span class="muted">(영업일 06:00~익일 05:59, 06시 이전에는 전일 미마감)</span></li>
-        <li>수집일수: <strong>${formatNumber(totals.dayCount || range?.dayCount || 0)}</strong></li>
+        <li>수집일수(일별/라이더): <strong>${formatNumber(totals.dayCount || result.dateRange?.dayCount || 0)}</strong></li>
         <li>라이더수: <strong>${formatNumber(totals.riderCount || 0)}</strong></li>
         <li>총 저장 건수: <strong>${formatNumber(result.savedCount)}</strong></li>
         <li>완료합계: <strong>${formatNumber(totals.completeTotal || result.totalCompleteSum || 0)}</strong></li>
         <li>거절합계: <strong>${formatNumber(totals.rejectTotal || 0)}</strong></li>
-        <li>취소합계: <strong>${formatNumber(totals.cancelTotal || 0)}</strong></li>
+        <li>배차취소합계: <strong>${formatNumber(totals.cancelTotal || 0)}</strong></li>
       </ul>
       ${renderMenuResultsList(result.menuResults)}
     `;
@@ -343,11 +372,12 @@
     if (!menuResults || typeof menuResults !== 'object') return '';
     const items = Object.entries(menuResults).map(([id, row]) => {
       const label = row.label || id;
+      const range = row.dateRangeLabel ? ` · ${row.dateRangeLabel}` : '';
       const status = row.ok ? '성공' : '실패';
       const detail = row.ok
         ? `${formatNumber(row.savedCount || 0)}건`
         : (row.message || row.error || '실패');
-      return `<li>${label}: <strong>${status}</strong> (${detail})</li>`;
+      return `<li>${label}${range}: <strong>${status}</strong> (${detail})</li>`;
     });
     if (!items.length) return '';
     return `<ul class="baemin-collect-stats">${items.join('')}</ul>`;
@@ -558,7 +588,8 @@
         label: row.label || id,
         ok: row.ok,
         savedCount: row.savedCount,
-        message: row.message
+        message: row.message,
+        dateRangeLabel: row.dateRangeLabel
       }]))
       : null;
 
@@ -567,6 +598,7 @@
         captureDate: result.collectDate || captureDate,
         savedCount,
         totalCompleteSum: result.totalCompleteSum,
+        menuDateRanges: result.menuDateRanges,
         menuResults
       }, result.message || '저장된 데이터가 0건입니다.');
       await loadConfig();
@@ -579,6 +611,7 @@
       totalCompleteSum: result.summaryTotals?.completeTotal || result.totalCompleteSum,
       summaryTotals: result.summaryTotals,
       dateRange: result.dateRange,
+      menuDateRanges: result.menuDateRanges,
       menuResults
     });
     showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장`);
@@ -742,12 +775,20 @@
     }
 
     const items = result.items || [];
+    const menuDatePlan = state.config?.autoCollect?.menuDatePlan || state.config?.menuDatePlan || null;
+    const rangeLabel = menuDatePlan?.[sourceMenu]?.label;
     if (summaryEl) {
-      summaryEl.textContent = `${captureDate} · ${formatNumber(items.length)}건`;
+      if (sourceMenu === 'delivery_status') {
+        summaryEl.textContent = `오늘 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
+      } else if (rangeLabel) {
+        summaryEl.textContent = `${rangeLabel} · ${formatNumber(items.length)}건`;
+      } else {
+        summaryEl.textContent = `${captureDate} · ${formatNumber(items.length)}건`;
+      }
     }
 
     if (!items.length) {
-      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="13" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>';
       return;
     }
 
@@ -756,11 +797,13 @@
         const p = row.parsed_json || {};
         return `<tr>
           <td>${row.rider_name || '-'}</td>
+          <td>${p.statusDesc || '-'}</td>
           <td>${row.rider_user_id || '-'}</td>
           <td>${row.phone_number || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
-          <td>${formatNumber(p.foodReject || 0)}</td>
+          <td>${formatNumber(p.totalReject || p.foodReject || 0)}</td>
           <td>${formatNumber(p.cancelCount || 0)}</td>
+          <td>${formatRiderFaultCell(p)}</td>
           <td>${formatNumber(p.morningCount || 0)}</td>
           <td>${formatNumber(p.afternoonCount || 0)}</td>
           <td>${formatNumber(p.eveningCount || 0)}</td>
@@ -779,6 +822,7 @@
           <td>${formatNumber(p.totalComplete || 0)}</td>
           <td>${formatNumber(p.foodReject || 0)}</td>
           <td>${formatNumber(p.cancelCount || 0)}</td>
+          <td>${formatRiderFaultCell(p)}</td>
           <td>${formatNumber(p.morningCount || 0)}</td>
           <td>${formatNumber(p.afternoonCount || 0)}</td>
           <td>${formatNumber(p.eveningCount || 0)}</td>
@@ -799,6 +843,7 @@
         <td>${formatNumber(p.totalComplete || deliveryCount || 0)}</td>
         <td>${formatNumber(p.foodReject || 0)}</td>
         <td>${formatNumber(p.cancelCount || 0)}</td>
+        <td>${formatRiderFaultCell(p)}</td>
         <td>${formatNumber(p.morningCount || 0)}</td>
         <td>${formatNumber(p.afternoonCount || 0)}</td>
         <td>${formatNumber(p.eveningCount || 0)}</td>

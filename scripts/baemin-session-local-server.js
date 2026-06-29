@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260701a';
+const SERVER_VERSION = '20260701f';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -53,7 +53,7 @@ const {
   stringifyErrorValue
 } = require('../server/baemin-error-format');
 const { probeBaeminNetwork } = require('../server/baemin-network-probe');
-const { computeCollectDateRange } = require('../server/baemin-settlement-week');
+const { computeCollectDateRange, buildMenuDateRanges } = require('../server/baemin-settlement-week');
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -836,7 +836,11 @@ async function runLocalFullCollect(options = {}) {
   const collectDate = String(
     options.collectDate || baeminAutoCollect.todayDateStringKST()
   ).slice(0, 10);
+  const menuDateRanges = buildMenuDateRanges(collectDate);
   console.log(`[BREM] [전체수집] 시작 | date=${collectDate}`);
+  console.log(`[BREM] [전체수집] 배달현황: 오늘 기준`);
+  console.log(`[BREM] [전체수집] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
+  console.log(`[BREM] [전체수집] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
 
   try {
     if (!isContextAlive(activeContext)) {
@@ -941,6 +945,9 @@ async function runLocalFullCollect(options = {}) {
       savedCount: result.savedCount,
       totalCompleteSum: result.totalCompleteSum,
       results: result.results,
+      dateRange: result.dateRange,
+      menuDateRanges: result.menuDateRanges,
+      summaryTotals: result.summaryTotals,
       sessionExpired: Boolean(result.sessionExpired && !browserStillLoggedIn)
     };
   } catch (error) {
@@ -1097,10 +1104,10 @@ function startAutoCollectScheduler() {
 async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   if (!isContextAlive(context)) return;
 
-  const dateRange = computeCollectDateRange(collectDate);
+  const menuDateRanges = buildMenuDateRanges(collectDate);
   const tabs = scanBrowserTabs(context);
   const page = tabs.page || await context.newPage();
-  const { ensureSafeBrowserTab } = require('../server/baemin-page-capture');
+  const { SAFE_LANDING_URL, isDeliveryStatusSpaUrl } = require('../server/baemin-page-capture');
 
   let detachRoute = () => {};
   try {
@@ -1116,10 +1123,11 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   }
 
   try {
-    await ensureSafeBrowserTab(page);
-    console.log(`[BREM] [수집 준비] 배달현황 유지 (영업일 ${dateRange.fromDate}~${dateRange.toDate})`);
-    if (!String(page.url() || '').includes('/delivery-status')) {
-      await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+    console.log('[BREM] [수집 준비] 배달현황: 오늘 기준');
+    console.log(`[BREM] [수집 준비] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
+    console.log(`[BREM] [수집 준비] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
+    if (!isDeliveryStatusSpaUrl(page.url())) {
+      await page.goto(SAFE_LANDING_URL, {
         waitUntil: 'domcontentloaded',
         timeout: 60000
       });
@@ -1138,14 +1146,11 @@ async function navigateToSafeLandingPage(context) {
   const page = tabs.page;
   if (!page || page.isClosed()) return;
   try {
-    const { ensureSafeBrowserTab } = require('../server/baemin-page-capture');
-    await ensureSafeBrowserTab(page);
-    if (!String(page.url() || '').includes('/delivery-status')) {
-      await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000
-      });
-    }
+    const { SAFE_LANDING_URL } = require('../server/baemin-page-capture');
+    await page.goto(SAFE_LANDING_URL, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
     console.log(`[BREM] [세션 완료] 배달현황 화면 ${safePageUrlSync(page)}`);
   } catch (error) {
     console.warn(`[BREM] [세션 완료] 배달현황 이동 실패 | ${formatError(error)}`);

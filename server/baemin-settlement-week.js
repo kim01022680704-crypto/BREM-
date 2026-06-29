@@ -73,10 +73,11 @@ function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
   return addDays(refKey, -1);
 }
 
-function computeCollectDateRange(dateKey = todayKST()) {
-  const weekStart = settlementWeekStart(dateKey);
+function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
+  const referenceDate = String(dateKey || todayKST(now)).slice(0, 10);
+  const weekStart = settlementWeekStart(referenceDate);
   const weekEnd = settlementWeekEnd(weekStart);
-  const latest = latestQueryableDate(dateKey);
+  const latest = latestQueryableDate(referenceDate, now);
   const toDate = latest < weekEnd ? latest : weekEnd;
   const fromDate = weekStart <= toDate ? weekStart : toDate;
 
@@ -88,15 +89,51 @@ function computeCollectDateRange(dateKey = todayKST()) {
   }
 
   return {
-    referenceDate: dateKey,
+    referenceDate,
     weekStart,
     weekEnd,
     latestQueryableDate: latest,
     fromDate,
     toDate,
     dates,
-    dayCount: dates.length
+    dayCount: dates.length,
+    mode: 'history'
   };
+}
+
+function computeDeliveryStatusCollectContext(dateKey = todayKST()) {
+  const collectDate = String(dateKey || todayKST()).slice(0, 10);
+  return {
+    referenceDate: collectDate,
+    collectDate,
+    mode: 'today',
+    label: '오늘 기준'
+  };
+}
+
+function buildMenuDateRanges(dateKey = todayKST(), now = new Date()) {
+  const history = computeHistoryCollectRange(dateKey, now);
+  const delivery = computeDeliveryStatusCollectContext(dateKey);
+  const historyLabel = `${history.fromDate} ~ ${history.toDate}`;
+  return {
+    delivery_status: {
+      ...delivery,
+      fromDate: delivery.collectDate,
+      toDate: delivery.collectDate
+    },
+    daily_history: {
+      ...history,
+      label: historyLabel
+    },
+    rider_history: {
+      ...history,
+      label: historyLabel
+    }
+  };
+}
+
+function computeCollectDateRange(dateKey = todayKST(), now = new Date()) {
+  return computeHistoryCollectRange(dateKey, now);
 }
 
 module.exports = {
@@ -109,5 +146,8 @@ module.exports = {
   settlementWeekStart,
   settlementWeekEnd,
   latestQueryableDate,
+  computeHistoryCollectRange,
+  computeDeliveryStatusCollectContext,
+  buildMenuDateRanges,
   computeCollectDateRange
 };

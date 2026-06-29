@@ -19,12 +19,18 @@ function pickAcceptance(item) {
   const acc = item?.deliveryAcceptanceCount || {};
   return {
     completeTotal: num(acc.totalComplete),
-    rejectTotal: num(acc.foodReject),
-    cancelTotal: num(acc.cancel),
+    rejectTotal: num(acc.totalReject ?? acc.foodReject),
+    cancelTotal: num(acc.totalCancel ?? acc.cancel),
     foodComplete: num(acc.foodComplete),
     bmartComplete: num(acc.bmartComplete),
     storeComplete: num(acc.storeComplete),
-    riderFault: num(acc.riderFault)
+    foodReject: num(acc.foodReject),
+    bmartReject: num(acc.bmartReject),
+    storeReject: num(acc.storeReject),
+    foodCancel: num(acc.foodCancel),
+    bmartCancel: num(acc.bmartCancel),
+    storeCancel: num(acc.storeCancel),
+    riderFault: num(acc.totalRiderFault ?? acc.riderFault)
   };
 }
 
@@ -38,6 +44,8 @@ function extractStatsFromItem(item, collectDate = '') {
     riderName: String(item?.name || item?.riderName || '').trim(),
     riderUserId: String(item?.userId || item?.riderId || '').trim(),
     phoneNumber: String(item?.phoneNumber || item?.phone || '').trim(),
+    statusCode: String(item?.status?.code ?? item?.statusCode ?? '').trim(),
+    statusDesc: String(item?.status?.desc ?? item?.statusDesc ?? '').trim(),
     deliveryDate: String(item?.deliveryDate || item?.date || collectDate).slice(0, 10),
     ...acceptance,
     completeMorning: completePeak.morning,

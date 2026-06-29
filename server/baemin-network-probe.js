@@ -7,12 +7,25 @@ function delay(ms) {
 }
 
 function buildProbePages(range) {
-  const day = range.toDate || range.fromDate;
-  const qs = day ? `fromDate=${day}&toDate=${day}` : '';
+  const fromDate = range.fromDate || range.toDate;
+  const toDate = range.toDate || range.fromDate;
+  const historyQs = fromDate && toDate
+    ? `page=1&size=20&fromDate=${fromDate}&toDate=${toDate}`
+    : '';
   return [
     { id: 'delivery_status', label: '배달현황', url: `${BAEMIN_ORIGIN}/delivery-status` },
-    { id: 'daily_history', label: '일별 배달내역', url: `${BAEMIN_ORIGIN}/delivery-status`, probeOnly: true },
-    { id: 'rider_history', label: '라이더별 배달내역', url: `${BAEMIN_ORIGIN}/delivery-status`, probeOnly: true }
+    {
+      id: 'daily_history',
+      label: '일별 배달내역',
+      url: `${BAEMIN_ORIGIN}/delivery/delivery-history?${historyQs}`,
+      probeOnly: false
+    },
+    {
+      id: 'rider_history',
+      label: '라이더별 배달내역',
+      url: `${BAEMIN_ORIGIN}/delivery/rider-history?${historyQs}`,
+      probeOnly: false
+    }
   ];
 }
 

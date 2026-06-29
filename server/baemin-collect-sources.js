@@ -30,51 +30,47 @@ const COLLECT_SOURCES = {
     id: 'daily_history',
     label: '일별 배달내역',
     apiOrigin: BAEMIN_API_ORIGIN,
-    apiPath: '/v4/management/delivery/history',
+    apiPath: '/v4/management/daily-delivery-status',
     fallbackApiPaths: [
+      '/v4/management/delivery/history',
       '/v4/management/delivery-history',
       '/v4/management/delivery/delivery-history',
-      '/v4/management/delivery-histories',
-      '/v4/management/daily-delivery-history',
       '/v2/delivery/history'
     ],
     pagePathPatterns: [
-      /\/delivery\/delivery-history/i,
-      /\/delivery\/history/i
+      /\/delivery\/delivery-history/i
     ],
     apiUrlPatterns: [
+      /\/daily-delivery-status(?:\?|$)/i,
       /\/delivery-history(?:\?|$)/i,
-      /\/delivery\/history(?:\?|$)/i,
       /\/delivery\/delivery-history(?:\?|$)/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 1 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 0 },
     dateQueryKeys: ['fromDate', 'toDate'],
-    dedupeFields: ['deliveryId', 'orderId', 'id', 'userId']
+    dedupeFields: ['deliveryDate', 'date', 'deliveryId', 'orderId', 'id']
   },
   rider_history: {
     id: 'rider_history',
     label: '라이더별 배달내역',
     apiOrigin: BAEMIN_API_ORIGIN,
-    apiPath: '/v4/management/delivery/rider-history',
+    apiPath: '/v4/management/rider-delivery-status',
     fallbackApiPaths: [
+      '/v4/management/delivery/rider-history',
       '/v4/management/rider-history',
-      '/v4/management/delivery-history',
-      '/v4/management/rider-histories',
       '/v2/delivery/rider-history'
     ],
     pagePathPatterns: [
-      /\/delivery\/rider-history/i,
-      /\/delivery\/rider/i
+      /\/delivery\/rider-history/i
     ],
     apiUrlPatterns: [
+      /\/rider-delivery-status(?:\?|$)/i,
       /\/rider-history(?:\?|$)/i,
-      /\/delivery\/rider/i,
-      /\/rider\/.*\/history/i
+      /\/delivery\/rider-history(?:\?|$)/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 1 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 0 },
     dateQueryKeys: ['fromDate', 'toDate'],
     riderQueryKeys: ['userId', 'riderId'],
-    dedupeFields: ['deliveryId', 'orderId', 'id', 'userId']
+    dedupeFields: ['userId', 'riderId', 'deliveryId', 'orderId', 'id']
   }
 };
 
@@ -89,6 +85,8 @@ function getCollectSource(id) {
 function classifyApiUrl(url) {
   const text = String(url || '');
   if (!text.includes('baemin.com')) return null;
+  if (/\/daily-delivery-status/i.test(text)) return 'daily_history';
+  if (/\/rider-delivery-status/i.test(text)) return 'rider_history';
   if (/\/rider-history/i.test(text)) return 'rider_history';
   if (/\/delivery-history/i.test(text) || /\/delivery\/delivery-history/i.test(text)) return 'daily_history';
   if (text.includes('api-deliverycenter') && /fromDate=/i.test(text) && !/delivery-status/i.test(text)) {
@@ -112,9 +110,9 @@ function classifyPageUrl(url) {
   const text = String(url || '');
   if (!text.includes('deliverycenter.baemin.com')) return null;
   if (/\/delivery\/rider-history/i.test(text)) return 'rider_history';
-  if (/\/delivery\/delivery-history/i.test(text) || /fromDate=/i.test(text)) {
-    return 'daily_history';
-  }
+  if (/\/delivery\/delivery-history/i.test(text)) return 'daily_history';
+  if (/\/delivery\/history/i.test(text) && /orderName=/i.test(text)) return 'delivery_status';
+  if (/\/delivery\/history(?:\?|$)/i.test(text) && !/fromDate=/i.test(text)) return 'delivery_status';
   for (const source of listCollectSources()) {
     if (source.pagePathPatterns.some(pattern => pattern.test(text))) {
       return source.id;
@@ -219,34 +217,82 @@ function resolveApiEndpoint(sourceId, registry = {}) {
   };
 }
 
-function buildDedupeKey(sourceId, item, index = 0) {
+function extractBusinessDate(item, options = {}) {
+  const fields = ['deliveryDate', 'date', 'targetDate', 'businessDate', 'statisticsDate', 'workDate', 'deliveryDay'];
+  for (const field of fields) {
+    const value = String(item?.[field] ?? '').trim().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  }
+  if (options.dayDate && /^\d{4}-\d{2}-\d{2}$/.test(String(options.dayDate).slice(0, 10))) {
+    return String(options.dayDate).slice(0, 10);
+  }
+  const dates = options.dateRange?.dates;
+  if (Array.isArray(dates) && Number.isFinite(options.index) && dates[options.index]) {
+    return dates[options.index];
+  }
+  return String(options.collectDate || '').slice(0, 10);
+}
+
+function buildDedupeKey(sourceId, item, index = 0, options = {}) {
+  const partnerId = String(options.partnerId || options.partner_id || 'unknown').trim() || 'unknown';
+  const collectDate = String(options.collectDate || '').slice(0, 10);
+
+  if (sourceId === 'delivery_status') {
+    const riderId = String(item?.userId || item?.riderId || '').trim();
+    const statusCode = String(item?.status?.code ?? item?.statusCode ?? '').trim();
+    if (riderId) return `${partnerId}:${collectDate}:${riderId}`;
+    const phone = String(item?.phoneNumber || item?.phone || '').trim();
+    if (phone) return `${partnerId}:${collectDate}:${phone}`;
+    return `${partnerId}:${collectDate}:row-${index}`;
+  }
+
+  if (sourceId === 'daily_history') {
+    const businessDate = extractBusinessDate(item, options);
+    return `${partnerId}:${businessDate}:daily`;
+  }
+
+  if (sourceId === 'rider_history') {
+    const businessDate = extractBusinessDate(item, options);
+    const riderId = String(item?.userId || item?.riderId || '').trim();
+    if (riderId) return `${partnerId}:${businessDate}:${riderId}:rider`;
+    const phone = String(item?.phoneNumber || item?.phone || '').trim();
+    if (phone) return `${partnerId}:${businessDate}:${phone}:rider`;
+    return `${partnerId}:${businessDate}:rider-${index}`;
+  }
+
   const source = getCollectSource(sourceId);
   const fields = source?.dedupeFields || ['id'];
   for (const field of fields) {
     const value = String(item?.[field] ?? '').trim();
-    if (value) return `${sourceId}:${value}`;
+    if (value) return `${partnerId}:${sourceId}:${value}`;
   }
-  const userId = String(item?.userId || '').trim();
-  const phone = String(item?.phoneNumber || item?.phone || '').trim();
-  const name = String(item?.name || item?.riderName || '').trim();
-  const composite = [userId, phone, name].filter(Boolean).join('|');
-  if (composite) return `${sourceId}:${composite}`;
-  return `${sourceId}:row-${index}`;
+  return `${partnerId}:${sourceId}:row-${index}`;
 }
 
-function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt) {
+function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt, options = {}) {
   const acceptance = item?.deliveryAcceptanceCount || {};
   const peak = item?.deliveryPeakTimeCount || {};
+  const partnerId = String(options.partnerId || options.partner_id || '').trim();
+  const index = Number.isFinite(options.index) ? options.index : 0;
+  const businessDate = extractBusinessDate(item, { ...options, collectDate });
+  const recordType = sourceId;
+
   return {
     collect_date: collectDate,
     collected_at: collectedAt,
     source_menu: sourceId,
+    record_type: recordType,
+    partner_id: partnerId,
     source_url: sourceUrl,
-    dedupe_key: buildDedupeKey(sourceId, item),
+    dedupe_key: buildDedupeKey(sourceId, item, index, { ...options, collectDate, partnerId }),
     rider_name: String(item?.name || item?.riderName || '').trim(),
     rider_user_id: String(item?.userId || item?.riderId || '').trim(),
     phone_number: String(item?.phoneNumber || item?.phone || '').trim(),
     parsed_json: {
+      recordType,
+      menuType: recordType,
+      partnerId,
+      businessDate,
       statusCode: String(item?.status?.code ?? item?.statusCode ?? '').trim(),
       statusDesc: String(item?.status?.desc ?? item?.statusDesc ?? '').trim(),
       foodComplete: Number(acceptance.foodComplete || 0),
@@ -254,14 +300,23 @@ function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt
       storeComplete: Number(acceptance.storeComplete || 0),
       totalComplete: Number(acceptance.totalComplete || 0),
       foodReject: Number(acceptance.foodReject || 0),
-      cancelCount: Number(acceptance.cancel || 0),
-      riderFault: Number(acceptance.riderFault || 0),
+      bmartReject: Number(acceptance.bmartReject || 0),
+      storeReject: Number(acceptance.storeReject || 0),
+      totalReject: Number(acceptance.totalReject || 0),
+      foodCancel: Number(acceptance.foodCancel || 0),
+      bmartCancel: Number(acceptance.bmartCancel || 0),
+      storeCancel: Number(acceptance.storeCancel || 0),
+      cancelCount: Number(acceptance.totalCancel || 0),
+      foodRiderFault: Number(acceptance.foodRiderFault || 0),
+      bmartRiderFault: Number(acceptance.bmartRiderFault || 0),
+      storeRiderFault: Number(acceptance.storeRiderFault || 0),
+      riderFault: Number(acceptance.totalRiderFault || 0),
       morningCount: Number(peak.morning || 0),
       afternoonCount: Number(peak.afternoon || 0),
       eveningCount: Number(peak.evening || 0),
       midnightCount: Number(peak.midnight || 0),
       hourlyCompleted: Array.isArray(item?.hourlyCompleted) ? item.hourlyCompleted : [],
-      deliveryDate: String(item?.deliveryDate || item?.date || collectDate).slice(0, 10)
+      deliveryDate: businessDate
     },
     raw_json: item || {}
   };
@@ -281,6 +336,7 @@ module.exports = {
   resolveApiEndpoint,
   isValidApiSampleUrl,
   sanitizeApiRegistry,
+  extractBusinessDate,
   buildDedupeKey,
   mapItemToCollectRow
 };

@@ -4,29 +4,50 @@ const {
   getCollectSource
 } = require('./baemin-collect-sources');
 
-const SAFE_LANDING_URL = `${BAEMIN_ORIGIN}/delivery-status`;
+const SAFE_LANDING_URL = `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20&orderName=name&orderBy=asc&name=&userId=&phoneNumber=&riderStatus=`;
 
 const INIT_SCRIPT = () => {
-  try {
-    const path = window.location.pathname || '';
-    if (/\/delivery\/(delivery-history|rider-history)/i.test(path)) {
-      window.location.replace('/delivery-status');
-    }
-  } catch {
-    // ignore
-  }
+  // 배달현황 /delivery/history?page=0 는 정상 화면 — 리다이렉트하지 않음
 };
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isDeliveryStatusSpaUrl(url) {
+  const text = String(url || '');
+  if (!text.includes('deliverycenter.baemin.com')) return false;
+  if (/\/delivery-status(?:\?|$|\/)/i.test(text)) return true;
+  if (/\/delivery\/history/i.test(text) && /orderName=/i.test(text)) return true;
+  if (/\/delivery\/history/i.test(text) && /riderStatus=/i.test(text)) return true;
+  return false;
+}
+
 function isUnsafeHistorySpaUrl(url) {
   const text = String(url || '');
   if (!text.includes('deliverycenter.baemin.com')) return false;
-  if (/\/delivery\/(?:delivery-history|rider-history)/i.test(text)) return true;
-  if ((/delivery-history|rider-history/i.test(text)) && /[?&]page=0\b/i.test(text)) return true;
+  if (isDeliveryStatusSpaUrl(text)) return false;
+  if (/[?&]page=0\b/i.test(text) && /\/delivery\/(?:delivery-history|rider-history)/i.test(text)) return true;
   return false;
+}
+
+function buildSpaPageUrl(sourceId, dateRange) {
+  const fromDate = dateRange?.fromDate || dateRange?.toDate;
+  const toDate = dateRange?.toDate || fromDate;
+  if (!fromDate || !toDate) return null;
+  const params = new URLSearchParams({
+    page: '1',
+    size: '20',
+    fromDate,
+    toDate
+  });
+  if (sourceId === 'daily_history') {
+    return `${BAEMIN_ORIGIN}/delivery/delivery-history?${params.toString()}`;
+  }
+  if (sourceId === 'rider_history') {
+    return `${BAEMIN_ORIGIN}/delivery/rider-history?${params.toString()}`;
+  }
+  return null;
 }
 
 function isApiProbePath(apiPath) {
@@ -64,6 +85,7 @@ async function attachSafeSpaGuard(context) {
 
   const onFrameNavigated = page => async frame => {
     try {
+      if (context.__bremCollecting) return;
       if (frame !== page.mainFrame() || page.isClosed()) return;
       if (!isUnsafeHistorySpaUrl(frame.url())) return;
       console.log(`[BREM][spa-guard] framenavigated recover | ${frame.url()}`);
@@ -123,14 +145,17 @@ function buildProbeUrls(sourceId, dateRange) {
   const origins = sourceId === 'delivery_status'
     ? [...new Set([BAEMIN_API_ORIGIN, BAEMIN_ORIGIN])]
     : [BAEMIN_API_ORIGIN];
-  const pageNumbers = sourceId === 'delivery_status' ? [0] : [1, 0];
+  const pageNumbers = sourceId === 'delivery_status' ? [0] : [0, 1];
   const urls = [];
 
   paths.forEach(apiPath => {
     origins.forEach(origin => {
       pageNumbers.forEach(pageNum => {
         const params = new URLSearchParams();
-        if (day && source.dateQueryKeys?.length) {
+        if (source.dateQueryKeys?.length && dateRange?.fromDate && dateRange?.toDate) {
+          params.set('fromDate', dateRange.fromDate);
+          params.set('toDate', dateRange.toDate);
+        } else if (day && source.dateQueryKeys?.length) {
           params.set('fromDate', day);
           params.set('toDate', day);
         }
@@ -152,6 +177,7 @@ function buildProbeUrls(sourceId, dateRange) {
 
 async function ensureSafeBrowserTab(page) {
   if (!page || page.isClosed()) return;
+  if (isDeliveryStatusSpaUrl(page.url())) return;
   if (!isUnsafeHistorySpaUrl(page.url())) return;
   console.log(`[BREM][spa-guard] recover unsafe tab | was=${page.url()}`);
   await recoverBrowserTab(page);
@@ -162,14 +188,36 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightConte
 
   const urls = buildProbeUrls(sourceId, dateRange);
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
-  const { fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
+  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
 
   for (const url of urls) {
     if (!url.includes('api-deliverycenter.baemin.com') && sourceId !== 'delivery_status') continue;
-    console.log(`[BREM][api-probe] GET ${url} (${playwrightContext ? 'playwright-request' : 'isolated-fetch'})`);
 
     let result;
+    if (page && !page.isClosed()) {
+      console.log(`[BREM][api-probe] GET ${url} (browser-tab)`);
+      const fetched = await fetchBaeminJsonViaPage(page, url);
+      if (fetched.ok) {
+        const payload = fetched.payload;
+        const rows = extractDataArray(payload) || [];
+        const totalPage = readTotalPages(payload);
+        if (rows.length || totalPage) {
+          let pathname = url;
+          try { pathname = new URL(url).pathname; } catch { /* ignore */ }
+          console.log(`[BREM][api-probe] hit ${sourceId} ← ${url} rows=${rows.length}`);
+          return {
+            ok: true,
+            sampleUrl: url,
+            apiPath: pathname,
+            apiOrigin: new URL(url).origin,
+            status: fetched.status || 200
+          };
+        }
+      }
+    }
+
     if (playwrightContext?.request) {
+      console.log(`[BREM][api-probe] GET ${url} (playwright-request)`);
       const fetched = await fetchBaeminJsonViaPlaywright(playwrightContext, url);
       if (!fetched.ok) continue;
       const payload = fetched.payload;
@@ -189,6 +237,7 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightConte
     }
 
     if (page && !page.isClosed()) {
+      console.log(`[BREM][api-probe] GET ${url} (page-evaluate)`);
       result = await page.evaluate(async (fetchUrl) => {
         try {
           const response = await fetch(fetchUrl, {
@@ -233,12 +282,97 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightConte
   return { ok: false, message: `${sourceId} API probe 실패` };
 }
 
+async function preparePageForCollect(page, sourceId, dateRange) {
+  if (!page || page.isClosed()) return;
+
+  if (sourceId === 'delivery_status') {
+    if (isDeliveryStatusSpaUrl(page.url())) {
+      await delay(800);
+      return;
+    }
+    console.log(`[BREM][collect-prep] delivery_status goto ${SAFE_LANDING_URL}`);
+    await page.goto(SAFE_LANDING_URL, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
+      if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+    });
+    await delay(1200);
+    return;
+  }
+
+  const spaUrl = buildSpaPageUrl(sourceId, dateRange);
+  if (!spaUrl) return;
+  console.log(`[BREM][collect-prep] ${sourceId} goto ${spaUrl}`);
+  await page.goto(spaUrl, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
+    if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+  });
+  await delay(2000);
+}
+
+async function navigateAndCaptureApi(page, spaUrl, sourceId) {
+  if (!page || page.isClosed()) {
+    return { ok: false, message: 'Playwright page 없음' };
+  }
+
+  const captured = [];
+  const handler = async response => {
+    try {
+      const url = response.url();
+      if (!url.includes('api-deliverycenter.baemin.com')) return;
+      const contentType = String(response.headers()['content-type'] || '').toLowerCase();
+      if (!contentType.includes('json')) return;
+      if (response.status() < 200 || response.status() >= 300) return;
+      captured.push(url);
+    } catch {
+      // ignore
+    }
+  };
+
+  page.on('response', handler);
+  try {
+    console.log(`[BREM][spa-probe] goto ${spaUrl}`);
+    await page.goto(spaUrl, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
+      if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+    });
+    await delay(3000);
+  } catch (error) {
+    console.warn(`[BREM][spa-probe] goto failed: ${error.message || error}`);
+  } finally {
+    page.off('response', handler);
+  }
+
+  const hit = captured.find(url => {
+    if (!/fromDate=/i.test(url)) return false;
+    const classified = require('./baemin-collect-sources').classifyApiUrl(url);
+    return classified === sourceId || classified === 'daily_history' || classified === 'rider_history';
+  }) || captured.find(url => /fromDate=/i.test(url));
+
+  if (!hit) {
+    return { ok: false, message: `${sourceId} SPA API 미감지`, captured };
+  }
+
+  let pathname = hit;
+  try { pathname = new URL(hit).pathname; } catch { /* ignore */ }
+  console.log(`[BREM][spa-probe] hit ${sourceId} ← ${hit}`);
+  return {
+    ok: true,
+    sampleUrl: hit,
+    apiPath: pathname,
+    apiOrigin: new URL(hit).origin,
+    status: 200
+  };
+}
+
 async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContext = null) {
   if ((!page || page.isClosed()) && !playwrightContext) {
     return { ok: false, message: 'Playwright page/context 없음' };
   }
 
-  if (page && !page.isClosed()) {
+  const spaUrl = buildSpaPageUrl(sourceId, dateRange);
+  if (spaUrl && page && !page.isClosed()) {
+    const fromSpa = await navigateAndCaptureApi(page, spaUrl, sourceId);
+    if (fromSpa.ok) return fromSpa;
+    console.warn(`[BREM][spa-probe] ${sourceId} SPA 탐색 실패 — quiet probe 재시도`);
+    await recoverBrowserTab(page).catch(() => {});
+  } else if (page && !page.isClosed()) {
     await ensureSafeBrowserTab(page);
   }
 
@@ -248,11 +382,15 @@ async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContex
 module.exports = {
   SAFE_LANDING_URL,
   buildProbeUrls,
+  buildSpaPageUrl,
+  isDeliveryStatusSpaUrl,
   isUnsafeHistorySpaUrl,
   attachSafeSpaGuard,
   recoverBrowserTab,
   recoverAllBrowserTabs,
   ensureSafeBrowserTab,
+  preparePageForCollect,
+  navigateAndCaptureApi,
   probeApiFromBrowserTab,
   discoverApiUrlViaPage
 };

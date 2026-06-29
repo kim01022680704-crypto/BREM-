@@ -187,7 +187,6 @@ async function fetchPaginatedApi({
       lastUrl = `${origin}${apiPath}?${params.toString()}`;
     }
 
-    console.log(`${logPrefix} GET ${lastUrl}${playwrightContext ? ' (playwright-request)' : (playwrightPage ? ' (browser-tab)' : '')}`);
     let activePage = playwrightPage;
     if (!activePage && playwrightContext) {
       try {
@@ -199,20 +198,35 @@ async function fetchPaginatedApi({
     }
 
     const centerHeaders = sampleHeaders && typeof sampleHeaders === 'object' ? sampleHeaders : null;
-    const result = playwrightContext
-      ? await fetchBaeminJsonViaPlaywright(
+    const pageLogContext = logContext ? { ...logContext, pageIndex: page } : null;
+    let result = null;
+
+    if (activePage && !activePage.isClosed()) {
+      console.log(`${logPrefix} GET ${lastUrl} (browser-tab)`);
+      result = await fetchBaeminJsonViaPage(activePage, lastUrl, pageLogContext, centerHeaders);
+      if (!result.ok && playwrightContext?.request) {
+        console.warn(`${logPrefix} browser-tab failed status=${result.status}, retry playwright-request`);
+        console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
+        const retry = await fetchBaeminJsonViaPlaywright(
+          playwrightContext,
+          lastUrl,
+          pageLogContext,
+          centerHeaders
+        );
+        if (retry.ok) result = retry;
+      }
+    } else if (playwrightContext?.request) {
+      console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
+      result = await fetchBaeminJsonViaPlaywright(
         playwrightContext,
         lastUrl,
-        logContext ? { ...logContext, pageIndex: page } : null,
+        pageLogContext,
         centerHeaders
-      )
-      : activePage
-        ? await fetchBaeminJsonViaPage(
-          activePage,
-          lastUrl,
-          logContext ? { ...logContext, pageIndex: page } : null
-        )
-        : await fetchBaeminJson(lastUrl, cookie, logContext ? { ...logContext, pageIndex: page } : null);
+      );
+    } else {
+      console.log(`${logPrefix} GET ${lastUrl} (fetch)`);
+      result = await fetchBaeminJson(lastUrl, cookie, pageLogContext);
+    }
     if (!result.ok) {
       console.error(`${logPrefix} FAIL status=${result.status} message=${result.message}`);
       console.error(`${logPrefix} response.text():`, String(result.bodyText || '').slice(0, 800));
