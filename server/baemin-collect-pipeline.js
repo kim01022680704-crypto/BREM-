@@ -12,7 +12,7 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, addDays } = require('./baemin-settlement-week');
+const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
@@ -213,8 +213,8 @@ function shrinkDateRangeEnd(dateRange) {
   };
 }
 
-async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange, playwrightContext = null) {
-  const discovered = await discoverApiUrlViaPage(playwrightPage, sourceId, dateRange, playwrightContext);
+async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange, playwrightContext = null, collectDate = null) {
+  const discovered = await discoverApiUrlViaPage(playwrightPage, sourceId, dateRange, playwrightContext, collectDate);
   if (!discovered.ok) return null;
   registry.endpoints = registry.endpoints || {};
   registry.endpoints[sourceId] = {
@@ -383,7 +383,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   let activeDateRange = source.dateQueryKeys?.length
-    ? (context.historyDateRange || context.dateRange || null)
+    ? resolveHistoryMenuQueryDates(collectDate, context.shrunkHistoryToDate
+      ? { toDate: context.shrunkHistoryToDate }
+      : null)
     : null;
   let endpoint = resolveApiEndpoint(sourceId, registry);
 
@@ -393,17 +395,18 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     await preparePageForCollect(
       context.playwrightPage,
       sourceId,
-      prepRange || {}
+      prepRange || {},
+      collectDate
     ).catch(error => {
       console.warn(`[BREM][collect] ${sourceId} page prep failed:`, error.message);
     });
   }
 
   if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
       || endpoint;
   } else if (!endpoint?.apiPath && context.playwrightPage && activeDateRange) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
       || endpoint;
   }
 
@@ -447,7 +450,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     }
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && context.playwrightPage && activeDateRange) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
+    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
       || endpoint;
     fetched = await tryFetch(endpoint);
   }
@@ -456,9 +459,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     while (!fetched.ok && fetched.status === 400 && shrunk) {
       console.warn(`[BREM][collect] ${sourceId} 400 — 영업일 미마감 가능, toDate=${shrunk.toDate} 로 재시도`);
       activeDateRange = shrunk;
-      context.dateRange = shrunk;
+      context.shrunkHistoryToDate = shrunk.toDate;
       if (context.playwrightPage) {
-        endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext)
+        endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
           || endpoint;
       }
       fetched = await tryFetch(endpoint, activeDateRange);
@@ -611,11 +614,13 @@ async function runFullCollectPipeline(options = {}) {
     runId,
     playwrightContext,
     playwrightPage,
+    collectDate,
     dateRange: historyDateRange,
     historyDateRange,
     menuDateRanges,
     deliveryStatusContext: menuDateRanges.delivery_status,
-    weekStart: historyDateRange.weekStart
+    weekStart: historyDateRange.weekStart,
+    shrunkHistoryToDate: null
   };
   let detachCenterRoute = () => {};
 

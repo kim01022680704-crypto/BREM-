@@ -31,10 +31,18 @@ function isUnsafeHistorySpaUrl(url) {
   return false;
 }
 
-function buildSpaPageUrl(sourceId, dateRange) {
-  const fromDate = dateRange?.fromDate || dateRange?.toDate;
-  const toDate = dateRange?.toDate || fromDate;
+function buildSpaPageUrl(sourceId, dateRange, collectDate = null) {
+  if (sourceId !== 'daily_history' && sourceId !== 'rider_history') return null;
+
+  const { resolveHistoryMenuQueryDates } = require('./baemin-settlement-week');
+  const history = resolveHistoryMenuQueryDates(
+    collectDate || dateRange?.referenceDate,
+    dateRange
+  );
+  const fromDate = history.fromDate;
+  const toDate = history.toDate;
   if (!fromDate || !toDate) return null;
+
   const params = new URLSearchParams({
     page: '1',
     size: '20',
@@ -44,10 +52,7 @@ function buildSpaPageUrl(sourceId, dateRange) {
   if (sourceId === 'daily_history') {
     return `${BAEMIN_ORIGIN}/delivery/delivery-history?${params.toString()}`;
   }
-  if (sourceId === 'rider_history') {
-    return `${BAEMIN_ORIGIN}/delivery/rider-history?${params.toString()}`;
-  }
-  return null;
+  return `${BAEMIN_ORIGIN}/delivery/rider-history?${params.toString()}`;
 }
 
 function isApiProbePath(apiPath) {
@@ -132,11 +137,15 @@ async function recoverAllBrowserTabs(context) {
   }
 }
 
-function buildProbeUrls(sourceId, dateRange) {
+function buildProbeUrls(sourceId, dateRange, collectDate = null) {
   const source = getCollectSource(sourceId);
   if (!source) return [];
 
-  const day = dateRange?.toDate || dateRange?.fromDate;
+  const { resolveHistoryMenuQueryDates } = require('./baemin-settlement-week');
+  const history = source.dateQueryKeys?.length
+    ? resolveHistoryMenuQueryDates(collectDate || dateRange?.referenceDate, dateRange)
+    : null;
+  const day = history?.toDate || dateRange?.toDate || dateRange?.fromDate;
   const paths = [...new Set([
     source.apiPath,
     ...(source.fallbackApiPaths || [])
@@ -152,9 +161,9 @@ function buildProbeUrls(sourceId, dateRange) {
     origins.forEach(origin => {
       pageNumbers.forEach(pageNum => {
         const params = new URLSearchParams();
-        if (source.dateQueryKeys?.length && dateRange?.fromDate && dateRange?.toDate) {
-          params.set('fromDate', dateRange.fromDate);
-          params.set('toDate', dateRange.toDate);
+        if (source.dateQueryKeys?.length && history?.fromDate && history?.toDate) {
+          params.set('fromDate', history.fromDate);
+          params.set('toDate', history.toDate);
         } else if (day && source.dateQueryKeys?.length) {
           params.set('fromDate', day);
           params.set('toDate', day);
@@ -183,10 +192,10 @@ async function ensureSafeBrowserTab(page) {
   await recoverBrowserTab(page);
 }
 
-async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext = null) {
+async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext = null, collectDate = null) {
   await ensureSafeBrowserTab(page);
 
-  const urls = buildProbeUrls(sourceId, dateRange);
+  const urls = buildProbeUrls(sourceId, dateRange, collectDate);
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
   const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
 
@@ -282,7 +291,7 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightConte
   return { ok: false, message: `${sourceId} API probe 실패` };
 }
 
-async function preparePageForCollect(page, sourceId, dateRange) {
+async function preparePageForCollect(page, sourceId, dateRange, collectDate = null) {
   if (!page || page.isClosed()) return;
 
   if (sourceId === 'delivery_status') {
@@ -298,7 +307,7 @@ async function preparePageForCollect(page, sourceId, dateRange) {
     return;
   }
 
-  const spaUrl = buildSpaPageUrl(sourceId, dateRange);
+  const spaUrl = buildSpaPageUrl(sourceId, dateRange, collectDate);
   if (!spaUrl) return;
   console.log(`[BREM][collect-prep] ${sourceId} goto ${spaUrl}`);
   await page.goto(spaUrl, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
@@ -361,12 +370,12 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
   };
 }
 
-async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContext = null) {
+async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContext = null, collectDate = null) {
   if ((!page || page.isClosed()) && !playwrightContext) {
     return { ok: false, message: 'Playwright page/context 없음' };
   }
 
-  const spaUrl = buildSpaPageUrl(sourceId, dateRange);
+  const spaUrl = buildSpaPageUrl(sourceId, dateRange, collectDate);
   if (spaUrl && page && !page.isClosed()) {
     const fromSpa = await navigateAndCaptureApi(page, spaUrl, sourceId);
     if (fromSpa.ok) return fromSpa;
@@ -376,7 +385,7 @@ async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContex
     await ensureSafeBrowserTab(page);
   }
 
-  return probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext);
+  return probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext, collectDate);
 }
 
 module.exports = {

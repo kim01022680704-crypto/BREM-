@@ -25,8 +25,9 @@ function todayKST() {
 }
 
 function addDays(dateKey, days) {
-  const date = parseDateKey(dateKey);
-  if (!date) return dateKey;
+  const raw = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const date = new Date(`${raw}T12:00:00+09:00`);
   date.setUTCDate(date.getUTCDate() + days);
   return formatDateKey(date);
 }
@@ -34,12 +35,19 @@ function addDays(dateKey, days) {
 function weekdayKST(dateKey) {
   const raw = String(dateKey || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return -1;
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const dayName = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Seoul',
-    weekday: 'short'
-  }).formatToParts(new Date(`${raw}T12:00:00+09:00`));
-  const dayName = parts.find(p => p.type === 'weekday')?.value;
-  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    weekday: 'long'
+  }).format(new Date(`${raw}T12:00:00+09:00`));
+  const map = {
+    Sunday: 0,
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6
+  };
   return map[dayName] ?? -1;
 }
 
@@ -142,6 +150,31 @@ function computeCollectDateRange(dateKey = todayKST(), now = new Date()) {
   return computeHistoryCollectRange(dateKey, now);
 }
 
+/** 일별/라이더 내역 API·SPA URL용 fromDate/toDate (수요일~어제, KST) */
+function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new Date()) {
+  const referenceDate = String(collectDate || todayKST(now)).slice(0, 10);
+  const fresh = computeHistoryCollectRange(referenceDate, now);
+  const cappedToDate = dateRange?.toDate && dateRange.toDate < fresh.toDate
+    ? dateRange.toDate
+    : fresh.toDate;
+  const fromDate = fresh.fromDate;
+  const toDate = cappedToDate;
+  const dates = [];
+  let cursor = fromDate;
+  while (cursor <= toDate) {
+    dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return {
+    ...fresh,
+    referenceDate,
+    fromDate,
+    toDate,
+    dates,
+    dayCount: dates.length
+  };
+}
+
 module.exports = {
   parseDateKey,
   formatDateKey,
@@ -155,5 +188,6 @@ module.exports = {
   computeHistoryCollectRange,
   computeDeliveryStatusCollectContext,
   buildMenuDateRanges,
-  computeCollectDateRange
+  computeCollectDateRange,
+  resolveHistoryMenuQueryDates
 };

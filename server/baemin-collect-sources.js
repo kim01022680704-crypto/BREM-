@@ -139,13 +139,10 @@ function buildDefaultQuery(sourceId, collectDate, dateRange = null) {
   if (!source) return {};
   const query = { ...(source.defaultQuery || {}) };
   if (source.dateQueryKeys?.length) {
-    if (dateRange?.fromDate && dateRange?.toDate) {
-      query.fromDate = dateRange.fromDate;
-      query.toDate = dateRange.toDate;
-    } else {
-      query.fromDate = collectDate;
-      query.toDate = collectDate;
-    }
+    const { resolveHistoryMenuQueryDates } = require('./baemin-settlement-week');
+    const history = resolveHistoryMenuQueryDates(collectDate, dateRange);
+    query.fromDate = history.fromDate;
+    query.toDate = history.toDate;
   }
   return query;
 }
