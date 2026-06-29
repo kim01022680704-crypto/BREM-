@@ -1501,7 +1501,7 @@
               <section class="lease-form-section" data-erp-only="company_owned" hidden>
                 <header class="lease-form-section__head">
                   <h3>④ 보험 · 상품</h3>
-                  <p>취득원가 합계에 포함 · 보험 항목은 별도 관리합니다.</p>
+                  <p>취득원가 합계에 포함 · 연간 금액은 그대로 반영 · 하루만 입력 시 ×365</p>
                 </header>
                 <div class="lease-form-grid">
                   <label data-lease-field="insurance-product">
@@ -1512,13 +1512,13 @@
                     처리보험회사
                     <input type="text" id="leaseInsuranceProcessingCompany" placeholder="처리보험회사">
                   </label>
-                  <label data-lease-field="insurance-product-company">
-                    보험상품회사
-                    <input type="text" id="leaseInsuranceProductCompany" placeholder="보험상품회사">
-                  </label>
-                  <label data-lease-field="insurance-amount">
+                  <label data-lease-field="insurance-amount-annual">
                     금액 (연간)
-                    <input type="number" id="leaseInsuranceAmount" min="0" placeholder="0">
+                    <input type="number" id="leaseInsuranceAmountAnnual" min="0" step="1" placeholder="0">
+                  </label>
+                  <label data-lease-field="insurance-amount-daily">
+                    금액 (하루)
+                    <input type="number" id="leaseInsuranceAmountDaily" min="0" step="1" placeholder="0">
                   </label>
                 </div>
               </section>
@@ -1761,8 +1761,8 @@
                   <th>보험연령</th>
                   <th>처리보험회사</th>
                   <th>보험상품</th>
-                  <th>보험상품회사</th>
-                  <th>보험금액</th>
+                  <th>보험(연간)</th>
+                  <th>보험(하루)</th>
                   <th>상태</th>
                   <th>리스시작</th>
                   <th>리스종료</th>

@@ -102,7 +102,10 @@ const BremLeaseProfit = (function () {
   }
 
   function effectiveDailyInsurance(vehicle) {
-    return money(vehicle?.dailyInsuranceCost);
+    const daily = money(vehicle?.dailyInsuranceCost);
+    if (daily > 0) return daily;
+    const annual = money(vehicle?.annualInsuranceCost);
+    return annual > 0 ? annual / 365 : 0;
   }
 
   function effectiveDailyOther(vehicle) {
@@ -116,20 +119,21 @@ const BremLeaseProfit = (function () {
       ? money(vehicle.acquisitionTaxAmount)
       : vehiclePrice * taxRate;
     const otherCost = money(vehicle?.otherAcquisitionCost);
-    const annualInsurance = money(vehicle?.annualInsuranceCost);
-    const totalCost = money(vehicle?.totalAcquisitionCost) > 0
-      ? money(vehicle.totalAcquisitionCost)
-      : vehiclePrice + taxAmount + otherCost + annualInsurance;
+    const annualInsurance = money(vehicle?.annualInsuranceCost)
+      || money(vehicle?.dailyInsuranceCost) * 365;
+    const totalCost = vehiclePrice + taxAmount + otherCost + annualInsurance;
+    const insuranceDaily = money(vehicle?.dailyInsuranceCost)
+      || (annualInsurance > 0 ? annualInsurance / 365 : 0);
     const dailyCost = totalCost > 0
       ? totalCost / 365
-      : (annualInsurance > 0 ? annualInsurance / 365 : 0);
+      : insuranceDaily;
     return {
       vehiclePrice,
       taxRate: money(vehicle?.acquisitionTaxRate),
       taxAmount,
       otherCost,
       annualInsurance,
-      insuranceDaily: annualInsurance > 0 ? annualInsurance / 365 : money(vehicle?.dailyInsuranceCost),
+      insuranceDaily,
       totalCost,
       dailyCost,
       weeklyCost: dailyCost * 7

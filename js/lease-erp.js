@@ -155,7 +155,7 @@ const BremLeaseErp = (function () {
     const dailyLeaseCost = normalizeMoney(
       raw.dailyLeaseCost != null ? raw.dailyLeaseCost : existing?.dailyLeaseCost
     );
-    const dailyInsuranceCost = normalizeMoney(
+    let dailyInsuranceCost = normalizeMoney(
       raw.dailyInsuranceCost != null ? raw.dailyInsuranceCost : existing?.dailyInsuranceCost
     );
     const dailyOtherCost = normalizeMoney(
@@ -171,9 +171,20 @@ const BremLeaseErp = (function () {
     const otherAcquisitionCost = normalizeMoney(
       raw.otherAcquisitionCost != null ? raw.otherAcquisitionCost : existing?.otherAcquisitionCost
     );
-    const annualInsuranceCost = normalizeMoney(
+    let annualInsuranceCost = normalizeMoney(
       raw.annualInsuranceCost != null ? raw.annualInsuranceCost : existing?.annualInsuranceCost
     );
+    const rawAnnualProvided = raw.annualInsuranceCost != null && String(raw.annualInsuranceCost).trim() !== '';
+    const rawDailyProvided = raw.dailyInsuranceCost != null && String(raw.dailyInsuranceCost).trim() !== '';
+    if (rawAnnualProvided && !rawDailyProvided) {
+      dailyInsuranceCost = annualInsuranceCost > 0 ? annualInsuranceCost / 365 : 0;
+    } else if (rawDailyProvided && !rawAnnualProvided) {
+      annualInsuranceCost = dailyInsuranceCost > 0 ? dailyInsuranceCost * 365 : 0;
+    } else if (!annualInsuranceCost && dailyInsuranceCost > 0) {
+      annualInsuranceCost = dailyInsuranceCost * 365;
+    } else if (!dailyInsuranceCost && annualInsuranceCost > 0) {
+      dailyInsuranceCost = annualInsuranceCost / 365;
+    }
     const emptyDailyLoss = normalizeMoney(
       raw.emptyDailyLoss != null ? raw.emptyDailyLoss : existing?.emptyDailyLoss
     );
@@ -186,13 +197,10 @@ const BremLeaseErp = (function () {
     let totalAcquisitionCost = normalizeMoney(
       raw.totalAcquisitionCost != null ? raw.totalAcquisitionCost : existing?.totalAcquisitionCost
     );
-    if (!totalAcquisitionCost && (purchasePrice || acquisitionTaxAmount || otherAcquisitionCost || annualInsuranceCost)) {
+    if (purchasePrice || acquisitionTaxAmount || otherAcquisitionCost || annualInsuranceCost) {
       totalAcquisitionCost = purchasePrice + acquisitionTaxAmount + otherAcquisitionCost + annualInsuranceCost;
     }
-    let resolvedDailyInsurance = dailyInsuranceCost;
-    if (!resolvedDailyInsurance && annualInsuranceCost > 0) {
-      resolvedDailyInsurance = annualInsuranceCost / 365;
-    }
+    const resolvedDailyInsurance = dailyInsuranceCost;
 
     const record = {
       id: existing?.id || raw.id || createId(),
@@ -211,9 +219,6 @@ const BremLeaseErp = (function () {
       insuranceCompany: String(raw.insuranceCompany != null ? raw.insuranceCompany : existing?.insuranceCompany || '').trim(),
       insuranceAge: String(raw.insuranceAge != null ? raw.insuranceAge : existing?.insuranceAge || '').trim(),
       insuranceType: String(raw.insuranceType != null ? raw.insuranceType : existing?.insuranceType || '').trim(),
-      insuranceProductCompany: String(
-        raw.insuranceProductCompany != null ? raw.insuranceProductCompany : existing?.insuranceProductCompany || ''
-      ).trim(),
       dailyInsuranceCost: resolvedDailyInsurance,
       contractStartDate: normalizeDate(raw.contractStartDate != null ? raw.contractStartDate : existing?.contractStartDate),
       contractEndDate: normalizeDate(raw.contractEndDate != null ? raw.contractEndDate : existing?.contractEndDate),
