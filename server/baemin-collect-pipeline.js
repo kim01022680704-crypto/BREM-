@@ -170,17 +170,23 @@ function endpointOriginForPath(apiPath, preferredOrigin) {
   return String(apiPath || '').startsWith('/v4/') ? BAEMIN_API_ORIGIN : BAEMIN_ORIGIN;
 }
 
+function isApiOnlyPath(apiPath) {
+  const path = String(apiPath || '');
+  return path.startsWith('/v2/') || path.startsWith('/v4/') || path === '/delivery-status';
+}
+
 function buildEndpointCandidates(sourceId, source, endpoint) {
   const paths = [
     endpoint?.apiPath,
     ...(source?.fallbackApiPaths || [])
-  ].filter(Boolean);
+  ].filter(Boolean).filter(isApiOnlyPath);
   const uniquePaths = [...new Set(paths)];
-  const origins = [...new Set([
-    endpoint?.apiOrigin,
-    BAEMIN_API_ORIGIN,
-    BAEMIN_ORIGIN
-  ].filter(Boolean))];
+  const origins = [...new Set(
+    (sourceId === 'delivery_status'
+      ? [endpoint?.apiOrigin, BAEMIN_API_ORIGIN, BAEMIN_ORIGIN]
+      : [endpoint?.apiOrigin, BAEMIN_API_ORIGIN]
+    ).filter(Boolean)
+  )];
 
   const candidates = [];
   uniquePaths.forEach(apiPath => {
@@ -644,6 +650,10 @@ async function runFullCollectPipeline(options = {}) {
     };
   } finally {
     detachCenterRoute();
+    if (playwrightPage && !playwrightPage.isClosed()) {
+      const { recoverBrowserTab } = require('./baemin-page-capture');
+      await recoverBrowserTab(playwrightPage).catch(() => {});
+    }
   }
 }
 

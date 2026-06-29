@@ -4,6 +4,8 @@ const {
   getCollectSource
 } = require('./baemin-collect-sources');
 
+const SAFE_LANDING_URL = `${BAEMIN_ORIGIN}/delivery-status`;
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -37,20 +39,49 @@ function isUnsafeHistorySpaUrl(url) {
   return false;
 }
 
+function isApiProbePath(apiPath) {
+  const path = String(apiPath || '');
+  if (path.startsWith('/v2/') || path.startsWith('/v4/')) return true;
+  if (path === '/delivery-status' || path.startsWith('/delivery-status?')) return true;
+  return false;
+}
+
 function attachSafeSpaGuard(context) {
   if (!context || context.__bremSpaGuardAttached) return () => {};
   context.__bremSpaGuardAttached = true;
+
+  const routePattern = '**/deliverycenter.baemin.com/**';
+  const routeHandler = async route => {
+    try {
+      const request = route.request();
+      const url = request.url();
+      const resourceType = request.resourceType();
+      if (resourceType === 'document' && isUnsafeHistorySpaUrl(url)) {
+        console.log(`[BREM][spa-guard] route block document | ${url}`);
+        const page = request.frame()?.page();
+        await route.abort('blockedbyclient');
+        if (page && !page.isClosed()) {
+          void page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+        }
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    await route.continue();
+  };
+
+  context.route(routePattern, routeHandler).catch(error => {
+    console.warn('[BREM][spa-guard] route 등록 실패:', error.message || error);
+  });
 
   const onFrameNavigated = page => async frame => {
     try {
       if (frame !== page.mainFrame() || page.isClosed()) return;
       const url = frame.url();
       if (!isUnsafeHistorySpaUrl(url)) return;
-      console.log(`[BREM][spa-guard] 차단 → 배달현황 복귀 | was=${url}`);
-      await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000
-      }).catch(() => {});
+      console.log(`[BREM][spa-guard] framenavigated block | ${url}`);
+      await recoverBrowserTab(page);
     } catch {
       // ignore
     }
@@ -59,17 +90,39 @@ function attachSafeSpaGuard(context) {
   const bindPage = page => {
     if (!page || page.isClosed() || page.__bremSpaGuardBound) return;
     page.__bremSpaGuardBound = true;
-    const handler = onFrameNavigated(page);
-    page.on('framenavigated', handler);
+    page.on('framenavigated', onFrameNavigated(page));
   };
 
   context.pages().filter(page => !page.isClosed()).forEach(bindPage);
-  const onPage = page => bindPage(page);
-  context.on('page', onPage);
+  context.on('page', bindPage);
 
   return () => {
-    try { context.off('page', onPage); } catch { /* ignore */ }
+    context.unroute(routePattern, routeHandler).catch(() => {});
   };
+}
+
+async function recoverBrowserTab(page) {
+  if (!page || page.isClosed()) return;
+  try {
+    await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } catch {
+    try {
+      await page.evaluate(target => { window.location.replace(target); }, SAFE_LANDING_URL);
+      await delay(800);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function recoverAllBrowserTabs(context) {
+  if (!context) return;
+  const pages = context.pages().filter(page => !page.isClosed());
+  for (const page of pages) {
+    if (isUnsafeHistorySpaUrl(page.url())) {
+      await recoverBrowserTab(page).catch(() => {});
+    }
+  }
 }
 
 function buildProbeUrls(sourceId, dateRange) {
@@ -80,8 +133,11 @@ function buildProbeUrls(sourceId, dateRange) {
   const paths = [...new Set([
     source.apiPath,
     ...(source.fallbackApiPaths || [])
-  ].filter(Boolean))];
-  const origins = [...new Set([BAEMIN_API_ORIGIN, BAEMIN_ORIGIN])];
+  ].filter(Boolean))].filter(isApiProbePath);
+
+  const origins = sourceId === 'delivery_status'
+    ? [...new Set([BAEMIN_API_ORIGIN, BAEMIN_ORIGIN])]
+    : [BAEMIN_API_ORIGIN];
   const pageNumbers = sourceId === 'delivery_status' ? [0] : [1, 0];
   const urls = [];
 
@@ -111,21 +167,20 @@ function buildProbeUrls(sourceId, dateRange) {
 
 async function ensureSafeBrowserTab(page) {
   if (!page || page.isClosed()) return;
-  const currentUrl = page.url();
-  if (!isUnsafeHistorySpaUrl(currentUrl)) return;
-  console.log(`[BREM][page-capture] unsafe SPA url — return to delivery-status | was=${currentUrl}`);
-  await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  }).catch(() => {});
-  await delay(1200);
+  if (!isUnsafeHistorySpaUrl(page.url())) return;
+  console.log(`[BREM][page-capture] unsafe SPA url — recover | was=${page.url()}`);
+  await recoverBrowserTab(page);
+  await delay(500);
 }
 
 async function probeApiFromBrowserTab(page, sourceId, dateRange) {
+  await ensureSafeBrowserTab(page);
+
   const urls = buildProbeUrls(sourceId, dateRange);
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
 
   for (const url of urls) {
+    if (!url.includes('api-deliverycenter.baemin.com') && sourceId !== 'delivery_status') continue;
     console.log(`[BREM][api-probe] GET ${url} (no SPA navigate)`);
     const result = await page.evaluate(async (fetchUrl) => {
       try {
@@ -182,18 +237,19 @@ async function discoverApiUrlViaPage(page, sourceId, dateRange) {
   }
 
   await ensureSafeBrowserTab(page);
-
-  // 일별/라이더 SPA 라우트로 goto 하면 page=0 400 오류 — API만 조용히 탐색
   return probeApiFromBrowserTab(page, sourceId, dateRange);
 }
 
 module.exports = {
+  SAFE_LANDING_URL,
   buildPagePath,
   buildPageUrl,
   buildSpaDateQuery,
   buildProbeUrls,
   isUnsafeHistorySpaUrl,
   attachSafeSpaGuard,
+  recoverBrowserTab,
+  recoverAllBrowserTabs,
   ensureSafeBrowserTab,
   probeApiFromBrowserTab,
   discoverApiUrlViaPage

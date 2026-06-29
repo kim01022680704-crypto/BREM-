@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260630g';
+const SERVER_VERSION = '20260630h';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -691,10 +691,9 @@ async function ensurePlaywrightBrowser() {
   clearActiveContextIfDead();
   if (isContextAlive(activeContext)) {
     console.log('[BREM] [browser/open] 기존 Playwright 창 재사용');
-    const { attachSafeSpaGuard, ensureSafeBrowserTab } = require('../server/baemin-page-capture');
+    const { attachSafeSpaGuard, recoverAllBrowserTabs } = require('../server/baemin-page-capture');
     detachSpaGuard = attachSafeSpaGuard(activeContext);
-    const tabs = scanBrowserTabs(activeContext);
-    if (tabs.page) await ensureSafeBrowserTab(tabs.page).catch(() => {});
+    await recoverAllBrowserTabs(activeContext).catch(() => {});
     return { ok: true, reused: true };
   }
 
@@ -708,8 +707,9 @@ async function ensurePlaywrightBrowser() {
     viewport: { width: 1280, height: 900 }
   });
   activeContext = context;
-  const { attachSafeSpaGuard, ensureSafeBrowserTab } = require('../server/baemin-page-capture');
+  const { attachSafeSpaGuard, recoverAllBrowserTabs } = require('../server/baemin-page-capture');
   detachSpaGuard = attachSafeSpaGuard(context);
+  await recoverAllBrowserTabs(context).catch(() => {});
   console.log('[BREM] [browser/open] 새 Playwright 창 실행');
 
   let tabs = scanBrowserTabs(context);
@@ -728,7 +728,8 @@ async function ensurePlaywrightBrowser() {
   }
 
   if (tabs.page) {
-    await ensureSafeBrowserTab(tabs.page).catch(() => {});
+    const { recoverAllBrowserTabs } = require('../server/baemin-page-capture');
+    await recoverAllBrowserTabs(context).catch(() => {});
   }
 
   return { ok: true, reused: false };
@@ -1630,7 +1631,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260630g 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log('[BREM] 버전이 20260630h 가 아니면 git pull 후 서버를 재시작하세요.');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');
