@@ -651,8 +651,8 @@ async function runFullCollectPipeline(options = {}) {
   } finally {
     detachCenterRoute();
     if (playwrightPage && !playwrightPage.isClosed()) {
-      const { recoverBrowserTab } = require('./baemin-page-capture');
-      await recoverBrowserTab(playwrightPage).catch(() => {});
+      const { ensureSafeBrowserTab } = require('./baemin-page-capture');
+      await ensureSafeBrowserTab(playwrightPage).catch(() => {});
     }
   }
 }
