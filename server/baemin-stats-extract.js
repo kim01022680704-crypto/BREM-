@@ -16,21 +16,68 @@ function pickPeakCounts(item, prefix = 'deliveryPeakTimeCount') {
 }
 
 function pickAcceptance(item) {
-  const acc = item?.deliveryAcceptanceCount || {};
+  const acc = item?.deliveryAcceptanceCount || item?.acceptanceCount || {};
+  const riderFaultBlock = item?.deliveryRiderFaultCount
+    || item?.deliveryCancelRiderFaultCount
+    || item?.riderFaultCount
+    || item?.deliveryAcceptanceRiderFaultCount
+    || {};
+
+  const foodRiderFault = num(
+    acc.foodRiderFault
+    ?? acc.foodRiderCancel
+    ?? riderFaultBlock.food
+    ?? riderFaultBlock.foodRiderFault
+  );
+  const bmartRiderFault = num(
+    acc.bmartRiderFault
+    ?? acc.bmartRiderCancel
+    ?? riderFaultBlock.bmart
+    ?? riderFaultBlock.bmartRiderFault
+  );
+  const storeRiderFault = num(
+    acc.storeRiderFault
+    ?? acc.storeRiderCancel
+    ?? riderFaultBlock.store
+    ?? riderFaultBlock.storeRiderFault
+    ?? riderFaultBlock.baeminStore
+  );
+
+  let riderFault = num(
+    acc.totalRiderFault
+    ?? acc.riderFault
+    ?? acc.totalDeliveryCancelRiderFault
+    ?? acc.deliveryCancelRiderFault
+    ?? riderFaultBlock.total
+    ?? riderFaultBlock.totalRiderFault
+    ?? riderFaultBlock.sum
+  );
+  if (!riderFault) {
+    riderFault = foodRiderFault + bmartRiderFault + storeRiderFault;
+  }
+
+  const foodReject = num(acc.foodReject);
+  const bmartReject = num(acc.bmartReject);
+  const storeReject = num(acc.storeReject);
+  const totalReject = num(acc.totalReject) || (foodReject + bmartReject + storeReject);
+
   return {
     completeTotal: num(acc.totalComplete),
-    rejectTotal: num(acc.totalReject ?? acc.foodReject),
-    cancelTotal: num(acc.totalCancel ?? acc.cancel),
+    rejectTotal: totalReject,
+    cancelTotal: num(acc.totalCancel ?? acc.cancel ?? acc.totalDispatchCancel),
     foodComplete: num(acc.foodComplete),
     bmartComplete: num(acc.bmartComplete),
     storeComplete: num(acc.storeComplete),
-    foodReject: num(acc.foodReject),
-    bmartReject: num(acc.bmartReject),
-    storeReject: num(acc.storeReject),
+    foodReject,
+    bmartReject,
+    storeReject,
     foodCancel: num(acc.foodCancel),
     bmartCancel: num(acc.bmartCancel),
     storeCancel: num(acc.storeCancel),
-    riderFault: num(acc.totalRiderFault ?? acc.riderFault)
+    foodRiderFault,
+    bmartRiderFault,
+    storeRiderFault,
+    riderFault
   };
 }
 
@@ -196,6 +243,7 @@ function mapToRiderStatsRow(stats, weekStart, collectedAt, sourceUrl, dedupeKey)
 }
 
 module.exports = {
+  pickAcceptance,
   extractStatsFromItem,
   sumStats,
   mapToDeliveryStatusRow,

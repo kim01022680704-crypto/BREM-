@@ -215,13 +215,7 @@
 
   function formatRiderFaultCell(parsed) {
     const p = parsed || {};
-    const total = Number(p.riderFault ?? p.totalRiderFault ?? 0);
-    const parts = [];
-    if (Number(p.foodRiderFault || 0)) parts.push(`푸드 ${p.foodRiderFault}`);
-    if (Number(p.bmartRiderFault || 0)) parts.push(`비마트 ${p.bmartRiderFault}`);
-    if (Number(p.storeRiderFault || 0)) parts.push(`스토어 ${p.storeRiderFault}`);
-    if (!parts.length) return formatNumber(total);
-    return `<span title="${parts.join(' · ')}">${formatNumber(total)}</span>`;
+    return formatNumber(Number(p.riderFault ?? p.totalRiderFault ?? 0));
   }
 
   function renderMenuDatePlan(menuDatePlan) {

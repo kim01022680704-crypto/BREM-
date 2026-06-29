@@ -1,5 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
+const { pickAcceptance } = require('./baemin-stats-extract');
 
 function getBaeminSession() {
   return require('./baemin-delivery-session');
@@ -44,6 +45,7 @@ function extractDataArray(payload) {
   return null;
 }
 
+
 function dedupeKeyForItem(item) {
   const userId = String(item?.userId || '').trim();
   if (userId) return userId;
@@ -73,7 +75,7 @@ function mergeDataArrays(items) {
 }
 
 function mapItemToRow(item, captureDate) {
-  const acceptance = item?.deliveryAcceptanceCount || {};
+  const acceptance = pickAcceptance(item);
   const peak = item?.deliveryPeakTimeCount || {};
   const userId = String(item?.userId || '').trim();
   const phoneNumber = String(item?.phoneNumber || '').trim();
@@ -86,22 +88,22 @@ function mapItemToRow(item, captureDate) {
     user_id: userId,
     status_code: String(item?.status?.code ?? item?.statusCode ?? '').trim(),
     status_desc: String(item?.status?.desc ?? item?.statusDesc ?? '').trim(),
-    food_complete: Number(acceptance.foodComplete || 0),
-    bmart_complete: Number(acceptance.bmartComplete || 0),
-    store_complete: Number(acceptance.storeComplete || 0),
-    total_complete: Number(acceptance.totalComplete || 0),
-    food_reject: Number(acceptance.foodReject || 0),
-    bmart_reject: Number(acceptance.bmartReject || 0),
-    store_reject: Number(acceptance.storeReject || 0),
-    total_reject: Number(acceptance.totalReject || 0),
-    food_cancel: Number(acceptance.foodCancel || 0),
-    bmart_cancel: Number(acceptance.bmartCancel || 0),
-    store_cancel: Number(acceptance.storeCancel || 0),
-    cancel_count: Number(acceptance.totalCancel || 0),
-    food_rider_fault: Number(acceptance.foodRiderFault || 0),
-    bmart_rider_fault: Number(acceptance.bmartRiderFault || 0),
-    store_rider_fault: Number(acceptance.storeRiderFault || 0),
-    rider_fault: Number(acceptance.totalRiderFault || 0),
+    food_complete: acceptance.foodComplete,
+    bmart_complete: acceptance.bmartComplete,
+    store_complete: acceptance.storeComplete,
+    total_complete: acceptance.completeTotal,
+    food_reject: acceptance.foodReject,
+    bmart_reject: acceptance.bmartReject,
+    store_reject: acceptance.storeReject,
+    total_reject: acceptance.rejectTotal,
+    food_cancel: acceptance.foodCancel,
+    bmart_cancel: acceptance.bmartCancel,
+    store_cancel: acceptance.storeCancel,
+    cancel_count: acceptance.cancelTotal,
+    food_rider_fault: acceptance.foodRiderFault,
+    bmart_rider_fault: acceptance.bmartRiderFault,
+    store_rider_fault: acceptance.storeRiderFault,
+    rider_fault: acceptance.riderFault,
     morning_count: Number(peak.morning || 0),
     afternoon_count: Number(peak.afternoon || 0),
     evening_count: Number(peak.evening || 0),

@@ -32,23 +32,29 @@ function addDays(dateKey, days) {
 }
 
 function weekdayKST(dateKey) {
-  const date = parseDateKey(dateKey);
-  if (!date) return -1;
-  return date.getUTCDay();
+  const raw = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return -1;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    weekday: 'short'
+  }).formatToParts(new Date(`${raw}T12:00:00+09:00`));
+  const dayName = parts.find(p => p.type === 'weekday')?.value;
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[dayName] ?? -1;
 }
 
-/** 수요일 시작 정산주 */
+/** 수요일 시작 정산주 (KST 요일 기준) */
 function settlementWeekStart(dateKey = todayKST()) {
-  const date = parseDateKey(dateKey);
-  if (!date) return dateKey;
-  const day = date.getUTCDay();
+  const ref = String(dateKey || todayKST()).slice(0, 10);
+  const day = weekdayKST(ref);
+  if (day < 0) return ref;
   const diff = (day - 3 + 7) % 7;
-  date.setUTCDate(date.getUTCDate() - diff);
-  return formatDateKey(date);
+  return addDays(ref, -diff);
 }
 
 function settlementWeekEnd(weekStart) {
-  return addDays(settlementWeekStart(weekStart), 6);
+  const start = settlementWeekStart(weekStart);
+  return addDays(start, 6);
 }
 
 function getKSTHour(date = new Date()) {
