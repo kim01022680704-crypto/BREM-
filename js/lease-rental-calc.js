@@ -245,7 +245,47 @@ const BremLeaseRentalCalc = (function () {
     return d >= start;
   }
 
-  /** 차량 기준 기간 손익 — 계약·원가·미납·공차 대조 */
+  /** 계약이 기간 내 실제 운행한 날짜 구간 (반납일·종료 반영) */
+  function resolveContractActiveWindow(contract, periodStart, periodEnd) {
+    if (!contract) return null;
+    const driverName = String(contract.driverName || '').trim();
+    if (!driverName) return null;
+
+    const pStart = String(periodStart || '').slice(0, 10);
+    const pEnd = String(periodEnd || periodStart || '').slice(0, 10);
+    if (!pStart || !pEnd) return null;
+
+    const cStart = String(contract.startDate || '').slice(0, 10);
+    if (!cStart) return null;
+
+    let cEnd = String(contract.endDate || '').slice(0, 10);
+    const returned = String(contract.returnDate || '').slice(0, 10);
+    const ended = String(contract.status || '') === 'ended';
+
+    if (returned) {
+      cEnd = cEnd && cEnd < returned ? cEnd : returned;
+    } else if (ended && cEnd) {
+      // 종료 상태 — endDate까지
+    } else if (!cEnd) {
+      cEnd = pEnd;
+    }
+
+    if (ended && returned && returned < pStart) return null;
+    if (cEnd && cEnd < pStart) return null;
+    if (cStart > pEnd) return null;
+
+    const winStart = [cStart, pStart].filter(Boolean).sort().pop();
+    const winEnd = [cEnd || pEnd, pEnd].filter(Boolean).sort()[0];
+    if (!winStart || !winEnd || winEnd < winStart) return null;
+
+    return {
+      start: winStart,
+      end: winEnd,
+      rentalDays: daysInclusive(winStart, winEnd)
+    };
+  }
+
+  /** 차량 기준 기간 손익 — 계약·원가·미납·공차 대조 (해당 주/월만 집계) */
   function computeVehiclePeriodMetrics(input = {}) {
     const {
       vehicle = {},
@@ -263,28 +303,20 @@ const BremLeaseRentalCalc = (function () {
     const periodDays = start && end ? daysInclusive(start, end) : 7;
     const vehicleId = vehicle.id || '';
 
-    const contractStart = String(contract?.startDate || '').slice(0, 10);
-    const contractEnd = String(contract?.endDate || '').slice(0, 10);
-    const hasDriver = Boolean(String(contract?.driverName || vehicle.renter || '').trim());
-    const rentalDays = hasDriver && contract
-      ? overlapDays(start, end, contractStart || start, contractEnd || end)
-      : 0;
+    const activeWindow = resolveContractActiveWindow(contract, start, end);
+    const rentalDays = activeWindow?.rentalDays || 0;
 
     const dailyRent = money(contract?.dailyRent) || money(vehicle.dailyChargeAmount) || money(vm.dailyCharge) || 0;
     const dailyLeaseCost = money(vm.dailyLeaseCost) || money(vehicle.dailyLeaseCost) || 0;
     const dailyOwnedCost = money(vm.dailyCost) || 0;
-    const emptyDaily = money(vehicle.emptyDailyLoss)
-      || money(vm.emptyDailyLoss)
-      || dailyOwnedCost
-      || dailyLeaseCost
-      || 0;
+    const emptyDailyOverride = money(vehicle.emptyDailyLoss) || money(vm.emptyDailyLoss) || 0;
 
     let emptyDays = Math.max(0, periodDays - rentalDays);
-    if (vehicle.emptyStartDate) {
+    if (rentalDays > 0 && rentalDays < periodDays && vehicle.emptyStartDate) {
       const emptyOverlap = overlapDays(start, end, vehicle.emptyStartDate, end);
-      if (rentalDays === 0) emptyDays = emptyOverlap;
-      else emptyDays = Math.max(emptyDays, emptyOverlap);
+      emptyDays = Math.max(emptyDays, emptyOverlap);
     }
+    emptyDays = Math.min(emptyDays, periodDays);
 
     const completed = ARREAR_STATUS.COMPLETED;
     const openArrears = (arrears || []).filter(item =>
@@ -315,9 +347,16 @@ const BremLeaseRentalCalc = (function () {
     const owned = String(vehicle.vehicleCategory || vm.mode || '') === 'company_owned';
     const resolvedVehicleCost = owned ? vehicleCost : leaseCost;
 
+    // 해당 기간 렌탈매출 = 일 렌탈료 × 그 주(월) 실제 운행일수만
     const rentalRevenue = dailyRent * rentalDays;
-    const emptyLoss = emptyDaily * emptyDays;
-    const totalCost = resolvedVehicleCost + insuranceCost + maintenanceCost + accidentCost + emptyLoss;
+    // 공차손실 = 미운행일 기회손실(일 렌탈료) + 추가 공차부담(설정 시)
+    const emptyOpportunity = dailyRent * emptyDays;
+    const extraEmptyCarrying = emptyDailyOverride > dailyLeaseCost && dailyLeaseCost >= 0
+      ? (emptyDailyOverride - (owned ? dailyOwnedCost : dailyLeaseCost)) * emptyDays
+      : 0;
+    const emptyLoss = emptyOpportunity + Math.max(0, extraEmptyCarrying);
+    // 리스/원가·보험·정비·사고만 비용 — 공차손실은 매출 누락으로 이미 반영
+    const totalCost = resolvedVehicleCost + insuranceCost + maintenanceCost + accidentCost;
     const expectedProfit = rentalRevenue - totalCost;
     const actualProfit = rentalRevenue + recoveredAmount - totalCost - unpaidAmount;
     const netProfit = actualProfit;
@@ -399,6 +438,7 @@ const BremLeaseRentalCalc = (function () {
     arrearsStatusLabel,
     collectionMethodLabel,
     isDateInRange,
+    resolveContractActiveWindow,
     computeVehiclePeriodMetrics,
     aggregateFleetPeriodMetrics
   };

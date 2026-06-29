@@ -1927,7 +1927,12 @@
 
         <div class="lease-menu-panel" data-lease-menu-panel="weekly" hidden>
         <article class="card lease-screen-card">
-          <div class="card-header"><h2>주간수익</h2></div>
+          <div class="card-header">
+            <div>
+              <h2>주간수익</h2>
+              <p class="form-help">선택한 주(수~화 7일)의 렌탈매출·공차손실·순이익만 집계합니다. 렌탈일수는 해당 주와 계약기간·반납일이 겹치는 날만 반영됩니다.</p>
+            </div>
+          </div>
           <div class="lease-weekly-period">
             <label class="period-label-block week-target-block">
               <span class="label-row">적용주 (수요일 시작 · 수~화 7일)</span>
@@ -1947,6 +1952,17 @@
               <span>전체 선택</span>
             </label>
             <button type="button" class="small-btn danger-btn" id="leaseWeeklyBulkDelete" disabled>선택 삭제</button>
+          </div>
+          <div class="lease-week-summary">
+            <article><span>총 차량</span><strong id="leaseWeekTotalVehicles">0대</strong></article>
+            <article class="lease-week-summary__operating"><span>운행</span><strong id="leaseWeekOperating">0대</strong></article>
+            <article class="lease-week-summary__empty"><span>공차</span><strong id="leaseWeekEmpty">0대</strong></article>
+            <article><span>주간 렌탈매출</span><strong id="leaseWeekRevenue">0원</strong></article>
+            <article class="lease-money--warning"><span>공차손실</span><strong id="leaseWeekEmptyLoss">0원</strong></article>
+            <article class="lease-money--warning"><span>미납금</span><strong id="leaseWeekUnpaid">0원</strong></article>
+            <article><span>비용합계</span><strong id="leaseWeekCost">0원</strong></article>
+            <article class="lease-money--profit"><span>주간 순이익</span><strong id="leaseWeekNet">0원</strong></article>
+            <article class="lease-money--deficit"><span>적자 차량</span><strong id="leaseWeekDeficit">0대</strong></article>
           </div>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
@@ -2070,24 +2086,24 @@
         <article class="card lease-bulk-card lease-screen-card">
           <div class="card-header lease-bulk-card-header">
             <div>
-              <h2>엑셀 일괄 등록</h2>
-              <p class="form-help">양식 다운로드 → 2행부터 입력 · <strong>차량관리에 등록된 차량번호</strong>만 매칭 · 미등록 차량은 오류</p>
+              <h2>차량관리 엑셀 일괄등록</h2>
+              <p class="form-help">양식 다운로드 → <strong>회사구분</strong>부터 입력 · 차량번호/차대번호로 <strong>차량관리</strong>에 신규 등록 또는 갱신 · 렌탈/리스자·일렌탈료 입력 시 계약도 함께 등록</p>
             </div>
             <button type="button" class="primary-btn" id="leaseBulkV3TemplateBtn">양식 다운로드</button>
           </div>
           <div class="bulk-actions">
             <label class="bulk-file-field">
-              <span class="bulk-file-label">엑셀 파일 (.xlsx)</span>
+              <span class="bulk-file-label">엑셀 파일 (.xlsx) — 「차량일괄등록」 시트</span>
               <input type="file" id="leaseBulkV3File" accept=".xlsx,.xls">
             </label>
-            <button type="button" class="primary-btn" id="leaseBulkV3ApplyBtn" disabled>일괄 등록</button>
+            <button type="button" class="primary-btn" id="leaseBulkV3ApplyBtn" disabled>차량관리에 일괄 등록</button>
           </div>
           <div class="bulk-guide-wrap">
             <div class="table-wrap"><table class="bulk-guide-table"><thead><tr id="leaseBulkV3GuideHead"></tr></thead><tbody id="leaseBulkV3GuideBody"></tbody></table></div>
           </div>
           <div class="bulk-preview-wrap">
-            <p class="bulk-preview-summary">전체 <strong id="leaseBulkV3Total">0</strong>건 · 등록 가능 <strong id="leaseBulkV3Valid">0</strong>건 · 오류 <strong id="leaseBulkV3Error">0</strong>건 · 차량매칭 <strong id="leaseBulkV3Matched">0</strong>건</p>
-            <div class="table-wrap"><table class="bulk-preview-table"><thead><tr><th>행</th><th>차량번호</th><th>차량매칭</th><th>기사명</th><th>일 렌탈료</th><th>예상순이익</th><th>결과</th></tr></thead><tbody id="leaseBulkV3PreviewBody"></tbody></table></div>
+            <p class="bulk-preview-summary">전체 <strong id="leaseBulkV3Total">0</strong>건 · 등록 가능 <strong id="leaseBulkV3Valid">0</strong>건 · 오류 <strong id="leaseBulkV3Error">0</strong>건 · <strong id="leaseBulkV3Matched">신규 0 · 갱신 0</strong></p>
+            <div class="table-wrap"><table class="bulk-preview-table"><thead><tr><th>행</th><th>회사구분</th><th>차량번호</th><th>기종</th><th>리스회사</th><th>처리</th><th>렌탈/리스자</th><th>결과</th></tr></thead><tbody id="leaseBulkV3PreviewBody"></tbody></table></div>
           </div>
         </article>
         <article class="card lease-bulk-card" hidden>

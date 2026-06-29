@@ -7,27 +7,29 @@ const BremAdminLeaseMenus = (function () {
   const profit = () => window.BremLeaseProfit;
   const $ = id => document.getElementById(id);
 
-  const BULK_V3_COLUMNS = [
-    { key: 'vehicleNumber', label: '차량번호', col: 'A' },
-    { key: 'vehicleName', label: '차량명', col: 'B' },
-    { key: 'modelType', label: '기종', col: 'C' },
-    { key: 'driverName', label: '기사명', col: 'D' },
-    { key: 'driverPhone', label: '연락처', col: 'E' },
-    { key: 'startDate', label: '계약시작일', col: 'F' },
-    { key: 'endDate', label: '계약종료일', col: 'G' },
-    { key: 'weeklyRent', label: '라이더부담 리스렌탈료', col: 'H' },
-    { key: 'paidAmount', label: '입금액', col: 'I' },
-    { key: 'unpaidDays', label: '미납일수', col: 'J' },
-    { key: 'emptyDays', label: '공차일수', col: 'K' },
-    { key: 'insuranceCost', label: '보험료', col: 'L' },
-    { key: 'leaseCost', label: '리스비', col: 'M' },
-    { key: 'maintenanceCost', label: '정비비', col: 'N' },
-    { key: 'accidentCost', label: '사고비', col: 'O' },
-    { key: 'otherCost', label: '기타비용', col: 'P' },
-    { key: 'penaltyFee', label: '위약금', col: 'Q' },
-    { key: 'collectionMethod', label: '회수방법', col: 'R' },
-    { key: 'collectionStatus', label: '처리상태', col: 'S' },
-    { key: 'memo', label: '메모', col: 'T' }
+  const BULK_VEHICLE_COLUMNS = [
+    { key: 'erpMode', label: '회사구분', col: 'A', aliases: ['회사구분', 'ERP구분', 'erp구분'] },
+    { key: 'contractType', label: '종류', col: 'B', aliases: ['종류', '리스/렌탈', '리스렌탈'] },
+    { key: 'model', label: '기종', col: 'C', aliases: ['기종', '리스기종', '차량명', '리스 기종'] },
+    { key: 'chassisNumber', label: '차대번호', col: 'D', aliases: ['차대번호', '차대'] },
+    { key: 'vehicleNumber', label: '차량번호', col: 'E', aliases: ['차량번호', '번호판'] },
+    { key: 'leaseCompany', label: '리스회사', col: 'F', aliases: ['리스회사', '리스사', '리스회사명'] },
+    { key: 'dailyLeaseCost', label: '리스비(일)', col: 'G', aliases: ['리스비(일)', '리스비', '일리스비', '리스비하루'] },
+    { key: 'contractStartDate', label: '리스시작일', col: 'H', aliases: ['리스시작일', '계약시작일', '시작일'] },
+    { key: 'contractEndDate', label: '리스종료일', col: 'I', aliases: ['리스종료일', '최종만료일', '만료일', '계약종료일'] },
+    { key: 'insuranceAge', label: '보험연령', col: 'J', aliases: ['보험연령', '만N세'] },
+    { key: 'insuranceCompany', label: '처리보험회사', col: 'K', aliases: ['처리보험회사', '보험사'] },
+    { key: 'insuranceType', label: '보험상품', col: 'L', aliases: ['보험상품', '보험종류'] },
+    { key: 'annualInsuranceCost', label: '보험료(연)', col: 'M', aliases: ['보험료(연)', '연간보험료', '보험료'] },
+    { key: 'purchasePrice', label: '차량가액', col: 'N', aliases: ['차량가액', '취득가'] },
+    { key: 'acquisitionTaxRate', label: '취득세%', col: 'O', aliases: ['취득세%', '취득세'] },
+    { key: 'otherAcquisitionCost', label: '기타비용', col: 'P', aliases: ['기타비용', '기타'] },
+    { key: 'memo', label: '메모', col: 'Q' },
+    { key: 'driverName', label: '렌탈/리스자', col: 'R', aliases: ['렌탈/리스자', '기사명', '렌탈자', '리스자'] },
+    { key: 'driverPhone', label: '연락처', col: 'S', aliases: ['연락처', '전화번호', '휴대폰'] },
+    { key: 'dealStartDate', label: '계약시작일', col: 'T', aliases: ['계약시작일', '렌탈시작일', '운행시작일'] },
+    { key: 'dealEndDate', label: '계약종료일', col: 'U', aliases: ['계약종료일', '렌탈종료일', '운행종료일'] },
+    { key: 'dailyRent', label: '일렌탈료', col: 'V', aliases: ['일렌탈료', '일 렌탈료', '라이더부담리스렌탈료'] }
   ];
 
   const state = {
@@ -1084,7 +1086,7 @@ const BremAdminLeaseMenus = (function () {
           <td>${escapeHtml(period)}</td>
           <td>${returnDate !== '-' ? escapeHtml(returnDate) : '-'}</td>
           <td>${formatMoney(contractRiderDailyRent(contract))}</td>
-          <td class="lease-status-tags">${statusHtml}${ended ? ' <span class="lease-status--ended">종료</span>' : ''}</td>
+          <td class="lease-status-tags lease-status-tags--table">${statusHtml}${ended ? ' <span class="lease-status-badge lease-status-badge--ended">종료</span>' : ''}</td>
           <td class="lease-actions">
             <button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>수정</button>
             <button type="button" class="small-btn danger-btn" data-delete-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>${isDeleting && deleting === contract.id ? '삭제 중…' : '삭제'}</button>
@@ -1458,6 +1460,18 @@ const BremAdminLeaseMenus = (function () {
       logId: ''
     }));
 
+    const totals = calc().aggregateFleetPeriodMetrics(rows);
+    const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+    setText('leaseWeekTotalVehicles', `${totals.count}대`);
+    setText('leaseWeekOperating', `${totals.operatingCount}대`);
+    setText('leaseWeekEmpty', `${totals.emptyCount}대`);
+    setText('leaseWeekRevenue', formatMoney(totals.rentalRevenue));
+    setText('leaseWeekEmptyLoss', formatMoney(totals.emptyLoss));
+    setText('leaseWeekUnpaid', formatMoney(totals.unpaidAmount));
+    setText('leaseWeekCost', formatMoney(totals.totalCost));
+    setText('leaseWeekNet', formatMoney(totals.netProfit));
+    setText('leaseWeekDeficit', `${totals.deficitCount}대`);
+
     state.weeklyVisibleLogIds = rows.map(row => row.logId).filter(Boolean);
     state.weeklySelectedLogIds = new Set(
       [...state.weeklySelectedLogIds].filter(id => state.weeklyVisibleLogIds.includes(id))
@@ -1469,26 +1483,31 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
 
-    rowsEl.innerHTML = rows.map(row => `
+    rowsEl.innerHTML = rows.map(row => {
+      const vehicle = erp().vehicles().getById(row.vehicleId);
+      const contract = erp()?.getLatestContractForVehicle?.(row.vehicleId) || null;
+      const statusHtml = renderStatusTagsHtml(vehicle, contract);
+      return `
       <tr${row.logId && state.weeklySelectedLogIds.has(row.logId) ? ' class="row-selected"' : ''}>
         <td>${row.logId
           ? `<input type="checkbox" data-select-weekly-profit-log="${escapeHtml(row.logId)}" ${state.weeklySelectedLogIds.has(row.logId) ? 'checked' : ''}>`
           : ''}</td>
-        <td>${escapeHtml(row.vehicleNumber)}</td>
+        <td><strong>${escapeHtml(row.vehicleNumber)}</strong></td>
         <td>${escapeHtml(row.vehicleName)}</td>
         <td>${escapeHtml(row.driverName)}</td>
-        <td>${row.rentalDays || 0}일</td>
-        <td class="lease-money--warning">${row.emptyDays || 0}일</td>
-        <td class="lease-money--warning">${row.unpaidDays || 0}일</td>
+        <td class="lease-weekly-days lease-weekly-days--rental">${row.rentalDays || 0}일</td>
+        <td class="lease-weekly-days lease-weekly-days--empty">${row.emptyDays || 0}일</td>
+        <td class="lease-weekly-days lease-weekly-days--unpaid">${row.unpaidDays || 0}일</td>
         <td>${formatMoney(row.rentalRevenue)}</td>
         <td class="lease-money--warning">${formatMoney(row.emptyLoss)}</td>
         <td class="lease-money--warning">${formatMoney(row.unpaidAmount)}</td>
-        <td>${formatMoney((row.insuranceCost || 0) + (row.leaseCost || 0) + (row.maintenanceCost || 0) + (row.accidentCost || 0) + (row.otherCost || 0))}</td>
+        <td>${formatMoney((row.insuranceCost || 0) + (row.leaseCost || 0) + (row.maintenanceCost || 0) + (row.accidentCost || 0))}</td>
         <td class="${moneyClass(row.netProfit)}"><strong>${formatMoney(row.netProfit)}</strong></td>
-        <td>${escapeHtml(row.statusLabel)}</td>
+        <td class="lease-status-tags lease-status-tags--table">${statusHtml}</td>
         <td>${row.logId ? `<button type="button" class="small-btn danger-btn" data-delete-profit-log="${escapeHtml(row.logId)}">삭제</button>` : '-'}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
     updateWeeklySelectionUi();
   }
 
@@ -1974,195 +1993,295 @@ const BremAdminLeaseMenus = (function () {
     refreshAfterLeaseMutation({ contract: false });
   }
 
-  function normalizeBulkStatus(value) {
-    const text = String(value || '').trim();
-    if (['회수중', 'collecting'].includes(text)) return calc().ARREAR_STATUS.COLLECTING;
-    if (['처리완료', 'completed', '완료'].includes(text)) return calc().ARREAR_STATUS.COMPLETED;
-    return calc().ARREAR_STATUS.UNPAID;
+  function normalizeBulkHeaderCell(value) {
+    return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
   }
 
-  function normalizeBulkMethod(value) {
-    const text = String(value || '').trim();
-    const methods = [];
-    if (text.includes('급여')) methods.push(calc().COLLECTION_METHODS.SALARY);
-    if (text.includes('별도') || text.includes('입금')) methods.push(calc().COLLECTION_METHODS.DEPOSIT);
-    return methods;
+  function normalizeBulkErpMode(value) {
+    const text = normalizeBulkHeaderCell(value);
+    if (!text) return 'company_lease_rental';
+    if (/회사소유|브램|companyowned|owned/.test(text)) return 'company_owned';
+    return 'company_lease_rental';
   }
 
-  function parseBulkV3Workbook(workbook) {
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
-    if (!rows.length) return [];
-    const header = rows[0].map(cell => String(cell || '').trim());
+  function normalizeBulkContractType(value) {
+    const text = String(value || '').trim();
+    if (/렌탈|rental/i.test(text)) return 'rental';
+    return 'lease';
+  }
+
+  function erpModeLabel(value) {
+    return value === 'company_owned' ? '회사소유리스' : '회사리스';
+  }
+
+  function findBulkVehicleHeaderRow(rows) {
+    for (let index = 0; index < Math.min(rows.length, 25); index += 1) {
+      const headers = (rows[index] || []).map(normalizeBulkHeaderCell);
+      const hasCompany = headers.some(h => h.includes('회사구분') || h.includes('erp구분'));
+      const hasVehicleKey = headers.some(h =>
+        h.includes('차량번호') || h.includes('번호판') || h.includes('차대번호') || h.includes('기종')
+      );
+      if (hasCompany && hasVehicleKey) return index;
+    }
+    return rows.some(row => row?.some(cell => String(cell || '').trim())) ? 0 : -1;
+  }
+
+  function buildBulkVehicleColumnMap(headerRow) {
     const map = {};
-    BULK_V3_COLUMNS.forEach(col => {
-      const idx = header.findIndex(h => h === col.label || h.replace(/\s/g, '') === col.label.replace(/\s/g, ''));
-      map[col.key] = idx >= 0 ? idx : BULK_V3_COLUMNS.indexOf(col);
+    const normalizedHeaders = (headerRow || []).map(normalizeBulkHeaderCell);
+    BULK_VEHICLE_COLUMNS.forEach(column => {
+      const aliases = [column.label, ...(column.aliases || [])].map(normalizeBulkHeaderCell);
+      const index = normalizedHeaders.findIndex(header => aliases.includes(header));
+      if (index >= 0) map[column.key] = index;
     });
-    return rows.slice(1).filter(row => row?.some(cell => String(cell || '').trim())).map((row, index) => {
-      const raw = {};
-      BULK_V3_COLUMNS.forEach(col => {
-        const val = row[map[col.key]];
-        if (['weeklyRent', 'paidAmount', 'unpaidDays', 'emptyDays', 'insuranceCost', 'leaseCost', 'maintenanceCost', 'accidentCost', 'otherCost', 'penaltyFee'].includes(col.key)) {
-          raw[col.key] = erp().vehicles().normalizeMoney(val);
-        } else if (col.key === 'startDate' || col.key === 'endDate') {
-          raw[col.key] = erp().vehicles().normalizeDate(val);
-        } else {
-          raw[col.key] = String(val || '').trim();
-        }
+    if (Object.keys(map).length < 4) {
+      BULK_VEHICLE_COLUMNS.forEach((column, index) => {
+        if (map[column.key] == null) map[column.key] = index;
       });
-      raw.collectionMethods = normalizeBulkMethod(raw.collectionMethod);
-      raw.collectionStatus = normalizeBulkStatus(raw.collectionStatus);
-      const metrics = calc().compute({
-        weeklyRent: raw.weeklyRent,
-        rentalDays: calc().daysInMonth(currentMonthKey()),
-        emptyDays: raw.emptyDays,
-        unpaidDays: raw.unpaidDays,
-        insuranceCost: raw.insuranceCost,
-        leaseCost: raw.leaseCost,
-        maintenanceCost: raw.maintenanceCost,
-        accidentCost: raw.accidentCost,
-        otherCost: raw.otherCost,
-        penaltyFee: raw.penaltyFee,
-        paidAmount: raw.paidAmount
-      });
-      const errors = [];
-      if (!raw.vehicleNumber) errors.push('차량번호 필요');
-      const matchedVehicle = raw.vehicleNumber
-        ? erp()?.vehicles()?.findByVehicleKey?.({ vehicleNumber: raw.vehicleNumber })
-        : null;
-      if (raw.vehicleNumber && !matchedVehicle) errors.push('차량관리 미등록');
-      return {
-        rowNumber: index + 2,
-        raw,
-        metrics,
-        valid: !errors.length,
-        errors,
-        matchedVehicle
-      };
+    }
+    return map;
+  }
+
+  function readBulkVehicleCell(row, columnMap, key) {
+    const index = columnMap[key];
+    return index != null ? row[index] : '';
+  }
+
+  function parseBulkVehicleRow(row, columnMap, rowNumber) {
+    const store = erp()?.vehicles?.();
+    const readMoney = (value) => {
+      if (store?.normalizeMoney) return store.normalizeMoney(value);
+      const num = Number(String(value || '').replace(/[^\d.-]/g, ''));
+      return Number.isFinite(num) ? Math.round(num) : 0;
+    };
+    const readDate = value => store?.normalizeDate?.(value) || String(value || '').trim().slice(0, 10);
+    const readText = value => String(value ?? '').trim();
+
+    const erpMode = normalizeBulkErpMode(readBulkVehicleCell(row, columnMap, 'erpMode'));
+    const contractType = normalizeBulkContractType(readBulkVehicleCell(row, columnMap, 'contractType'));
+    const vehicleCategory = erpMode === 'company_owned' ? 'company_owned' : 'external_lease';
+    const data = {
+      vehicleCategory,
+      contractType,
+      operationType: contractType,
+      model: readText(readBulkVehicleCell(row, columnMap, 'model')),
+      chassisNumber: readText(readBulkVehicleCell(row, columnMap, 'chassisNumber')),
+      vehicleNumber: readText(readBulkVehicleCell(row, columnMap, 'vehicleNumber')),
+      leaseCompany: readText(readBulkVehicleCell(row, columnMap, 'leaseCompany')),
+      dailyLeaseCost: readMoney(readBulkVehicleCell(row, columnMap, 'dailyLeaseCost')),
+      contractStartDate: readDate(readBulkVehicleCell(row, columnMap, 'contractStartDate')),
+      contractEndDate: readDate(readBulkVehicleCell(row, columnMap, 'contractEndDate')),
+      insuranceAge: readText(readBulkVehicleCell(row, columnMap, 'insuranceAge')),
+      insuranceCompany: readText(readBulkVehicleCell(row, columnMap, 'insuranceCompany')),
+      insuranceType: readText(readBulkVehicleCell(row, columnMap, 'insuranceType')),
+      annualInsuranceCost: readMoney(readBulkVehicleCell(row, columnMap, 'annualInsuranceCost')),
+      purchasePrice: readMoney(readBulkVehicleCell(row, columnMap, 'purchasePrice')),
+      acquisitionTaxRate: readMoney(readBulkVehicleCell(row, columnMap, 'acquisitionTaxRate')),
+      otherAcquisitionCost: readMoney(readBulkVehicleCell(row, columnMap, 'otherAcquisitionCost')),
+      memo: readText(readBulkVehicleCell(row, columnMap, 'memo'))
+    };
+
+    const driverName = readText(readBulkVehicleCell(row, columnMap, 'driverName'));
+    const driverPhone = readText(readBulkVehicleCell(row, columnMap, 'driverPhone'));
+    const dealStartDate = readDate(readBulkVehicleCell(row, columnMap, 'dealStartDate'));
+    const dealEndDate = readDate(readBulkVehicleCell(row, columnMap, 'dealEndDate'));
+    const dailyRent = readMoney(readBulkVehicleCell(row, columnMap, 'dailyRent'));
+    const contractDraft = driverName ? {
+      driverName,
+      driverPhone,
+      startDate: dealStartDate || data.contractStartDate,
+      endDate: dealEndDate || data.contractEndDate,
+      dailyRent,
+      weeklyRent: dailyRent > 0 ? dailyRent * 7 : 0,
+      contractType
+    } : null;
+
+    const errors = [];
+    if (!data.model) errors.push('기종 필요');
+    if (!data.vehicleNumber && !data.chassisNumber) errors.push('차량번호 또는 차대번호 필요');
+    if (erpMode === 'company_lease_rental' && !data.leaseCompany && !data.dailyLeaseCost) {
+      errors.push('회사리스: 리스회사 또는 리스비(일) 입력');
+    }
+    if (driverName && !dealStartDate && !data.contractStartDate) {
+      errors.push('렌탈/리스자 입력 시 계약시작일 필요');
+    }
+
+    const existingVehicle = (data.vehicleNumber || data.chassisNumber)
+      ? erp()?.vehicles()?.findByVehicleKey?.({
+        vehicleNumber: data.vehicleNumber,
+        chassisNumber: data.chassisNumber
+      })
+      : null;
+
+    return {
+      rowNumber,
+      data,
+      contractDraft,
+      erpMode,
+      existingVehicle,
+      action: existingVehicle ? 'update' : 'create',
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  function parseBulkVehicleWorkbook(workbook) {
+    const sheetName = workbook.SheetNames.find(name => /일괄|차량|리스/i.test(name)) || workbook.SheetNames[0];
+    if (!sheetName) return [];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    const headerRowIndex = findBulkVehicleHeaderRow(rows);
+    if (headerRowIndex < 0) return [];
+
+    const columnMap = buildBulkVehicleColumnMap(rows[headerRowIndex]);
+    const parsed = [];
+    rows.forEach((row, index) => {
+      if (index <= headerRowIndex) return;
+      if (!row || !row.some(cell => String(cell || '').trim())) return;
+      const rowNumber = index + 1;
+      parsed.push(parseBulkVehicleRow(row, columnMap, rowNumber));
     });
+    return parsed;
   }
 
   function renderBulkGuide() {
     const head = $('leaseBulkV3GuideHead');
     const body = $('leaseBulkV3GuideBody');
     if (!head || !body) return;
-    head.innerHTML = BULK_V3_COLUMNS.map(col => `<th>${escapeHtml(col.col)} ${escapeHtml(col.label)}</th>`).join('');
-    body.innerHTML = `<tr>${BULK_V3_COLUMNS.map(col => `<td>${col.key === 'modelType' ? 'PCX/NMAX/FORZA/기타' : ''}</td>`).join('')}</tr>`;
+    head.innerHTML = BULK_VEHICLE_COLUMNS.map(col =>
+      `<th title="${escapeHtml(col.col)}">${escapeHtml(col.label)}</th>`
+    ).join('');
+    body.innerHTML = `<tr>${BULK_VEHICLE_COLUMNS.map(col => {
+      if (col.key === 'erpMode') return '<td>회사리스 / 회사소유리스</td>';
+      if (col.key === 'contractType') return '<td>리스 / 렌탈</td>';
+      if (col.key === 'model') return '<td>PCX · NMAX · FORZA · 기타</td>';
+      if (col.key === 'vehicleNumber' || col.key === 'chassisNumber') return '<td>둘 중 하나 필수</td>';
+      return '<td></td>';
+    }).join('')}</tr>`;
   }
 
   function renderBulkPreview() {
     const body = $('leaseBulkV3PreviewBody');
     if (!body) return;
     const valid = state.bulkRows.filter(row => row.valid).length;
-    const matched = state.bulkRows.filter(row => row.matchedVehicle).length;
+    const creates = state.bulkRows.filter(row => row.valid && row.action === 'create').length;
+    const updates = state.bulkRows.filter(row => row.valid && row.action === 'update').length;
     const errors = state.bulkRows.length - valid;
     if ($('leaseBulkV3Total')) $('leaseBulkV3Total').textContent = String(state.bulkRows.length);
     if ($('leaseBulkV3Valid')) $('leaseBulkV3Valid').textContent = String(valid);
     if ($('leaseBulkV3Error')) $('leaseBulkV3Error').textContent = String(errors);
-    if ($('leaseBulkV3Matched')) $('leaseBulkV3Matched').textContent = String(matched);
+    if ($('leaseBulkV3Matched')) {
+      $('leaseBulkV3Matched').textContent = valid ? `신규 ${creates} · 갱신 ${updates}` : '0';
+    }
     if ($('leaseBulkV3ApplyBtn')) $('leaseBulkV3ApplyBtn').disabled = valid === 0;
-    body.innerHTML = state.bulkRows.map(row => `
+    body.innerHTML = state.bulkRows.map(row => {
+      const actionLabel = row.action === 'update'
+        ? '<span class="bulk-match-ok">갱신</span>'
+        : '<span class="bulk-match-ok bulk-match-ok--new">신규</span>';
+      return `
       <tr class="${row.valid ? 'row-ok' : 'row-error'}">
         <td>${row.rowNumber}</td>
-        <td>${escapeHtml(row.raw.vehicleNumber)}</td>
-        <td>${row.matchedVehicle
-          ? `<span class="bulk-match-ok">${escapeHtml(row.matchedVehicle.model || row.matchedVehicle.vehicleNumber)}</span>`
-          : '<span class="bulk-match-miss">미매칭</span>'}</td>
-        <td>${escapeHtml(row.raw.driverName)}</td>
-        <td>${formatMoney(row.raw.weeklyRent)}</td>
-        <td class="${moneyClass(row.metrics.netProfit)}">${formatMoney(row.metrics.netProfit)}</td>
+        <td>${escapeHtml(erpModeLabel(row.erpMode))}</td>
+        <td><strong>${escapeHtml(row.data.vehicleNumber || row.data.chassisNumber || '-')}</strong></td>
+        <td>${escapeHtml(row.data.model || '-')}</td>
+        <td>${escapeHtml(row.data.leaseCompany || '-')}</td>
+        <td>${row.valid ? actionLabel : '-'}</td>
+        <td>${escapeHtml(row.contractDraft?.driverName || '-')}</td>
         <td>${row.valid ? '등록 가능' : escapeHtml(row.errors.join(', '))}</td>
       </tr>
-    `).join('') || '<tr><td colspan="7" class="empty">업로드할 데이터가 없습니다.</td></tr>';
+    `;
+    }).join('') || '<tr><td colspan="8" class="empty">업로드할 데이터가 없습니다.</td></tr>';
   }
 
-  async function applyBulkV3() {
+  async function applyBulkVehicle() {
     if (!erp()) return;
-    const validRows = state.bulkRows.filter(row => row.valid && row.matchedVehicle);
+    const validRows = state.bulkRows.filter(row => row.valid);
+    if (!validRows.length) return;
+
+    let created = 0;
+    let updated = 0;
+    let contracts = 0;
+
     for (const row of validRows) {
-      const raw = row.raw;
-      const vehicle = row.matchedVehicle || erp().vehicles().findByVehicleKey({ vehicleNumber: raw.vehicleNumber });
-      if (!vehicle) continue;
+      const vehicle = erp().vehicles().upsert(row.data);
+      if (row.action === 'update') updated += 1;
+      else created += 1;
 
-      erp().vehicles().update(vehicle.id, {
-        renter: raw.driverName || vehicle.renter,
-        lesseePhone: raw.driverPhone || vehicle.lesseePhone,
-        dailyChargeAmount: calc().dailyFromWeekly(raw.weeklyRent) || vehicle.dailyChargeAmount
-      });
-
-      const existingContract = erp().contracts().getAll().find(item =>
-        item.vehicleId === vehicle.id && erp().isContractOperating?.(item)
-      );
-      const contractPayload = {
-        vehicleId: vehicle.id,
-        vehicleNumber: vehicle.vehicleNumber || raw.vehicleNumber,
-        vehicleName: raw.vehicleName || vehicle.model,
-        modelType: raw.modelType || vehicle.model,
-        driverName: raw.driverName,
-        driverPhone: raw.driverPhone,
-        startDate: raw.startDate,
-        endDate: raw.endDate,
-        weeklyRent: raw.weeklyRent,
-        paidAmount: raw.paidAmount,
-        unpaidDays: raw.unpaidDays,
-        emptyDays: raw.emptyDays,
-        insuranceCost: raw.insuranceCost,
-        leaseCost: raw.leaseCost,
-        maintenanceCost: raw.maintenanceCost,
-        accidentCost: raw.accidentCost,
-        otherCost: raw.otherCost,
-        penaltyFee: raw.penaltyFee,
-        collectionMethods: raw.collectionMethods,
-        collectionStatus: raw.collectionStatus,
-        memo: raw.memo,
-        contractType: vehicle.contractType || 'rental'
-      };
-      const contract = existingContract
-        ? erp().contracts().update(existingContract.id, contractPayload)
-        : erp().contracts().create(contractPayload);
-      applyVehicleStatusFromContract(vehicle, contract);
-      const metrics = calc().compute(contract);
-      const month = currentMonthKey();
-      erp().saveProfitSnapshot({
-        vehicleId: vehicle.id,
-        contractId: contract.id,
-        periodType: 'monthly',
-        periodStart: `${month}-01`,
-        periodEnd: `${month}-${String(calc().daysInMonth(month)).padStart(2, '0')}`,
-        metrics,
-        vehicle,
-        contract
-      });
+      if (row.contractDraft?.driverName && vehicle) {
+        const draft = row.contractDraft;
+        const existingContract = erp().contracts().getAll().find(item =>
+          item.vehicleId === vehicle.id && erp().isContractOperating?.(item)
+        );
+        const contractPayload = {
+          vehicleId: vehicle.id,
+          vehicleNumber: vehicle.vehicleNumber || row.data.vehicleNumber,
+          vehicleName: vehicle.model || row.data.model,
+          modelType: vehicle.model || row.data.model,
+          driverName: draft.driverName,
+          driverPhone: draft.driverPhone,
+          startDate: draft.startDate,
+          endDate: draft.endDate,
+          dailyRent: draft.dailyRent,
+          weeklyRent: draft.weeklyRent,
+          contractType: draft.contractType || vehicle.contractType || 'lease',
+          status: erp().CONTRACT_STATUS?.ACTIVE || 'active'
+        };
+        const contract = existingContract
+          ? erp().contracts().update(existingContract.id, contractPayload)
+          : erp().contracts().create(contractPayload);
+        applyVehicleStatusFromContract(vehicle, contract);
+        contracts += 1;
+      } else if (vehicle) {
+        erp()?.syncVehicleFromContract?.(vehicle);
+      }
     }
+
     await erp().persistAll();
-    showToast(`${validRows.length}건 일괄 등록 완료`);
+    updateLeaseErpUnsavedBanner();
+    showToast(`차량 ${validRows.length}건 등록 (신규 ${created} · 갱신 ${updated}${contracts ? ` · 계약 ${contracts}` : ''})`);
     state.bulkRows = [];
     renderBulkPreview();
-    window.BremAdminLease?.refresh?.();
-    renderMonthly();
+    window.BremAdminLease?.refresh?.({ loadRemote: false });
+    renderContractList();
+    renderDashboardKpis();
+    paintDashboardVehicleOverview();
   }
 
   function downloadBulkTemplate() {
     if (!window.XLSX) return;
-    const headers = BULK_V3_COLUMNS.map(col => col.label);
-    const sheet = XLSX.utils.aoa_to_sheet([headers]);
+    const headers = BULK_VEHICLE_COLUMNS.map(col => col.label);
+    const exampleRow = BULK_VEHICLE_COLUMNS.map(col => {
+      if (col.key === 'erpMode') return '회사리스';
+      if (col.key === 'contractType') return '리스';
+      if (col.key === 'model') return '존테스125';
+      if (col.key === 'vehicleNumber') return '12가3456';
+      if (col.key === 'leaseCompany') return '스윙';
+      if (col.key === 'dailyLeaseCost') return '27000';
+      return '';
+    });
+    const sheet = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+    sheet['!cols'] = BULK_VEHICLE_COLUMNS.map(col => ({
+      wch: Math.max(12, col.label.length + 2)
+    }));
     const vehicles = erp()?.vehicles()?.getAll?.() || [];
     const vehicleSheet = XLSX.utils.aoa_to_sheet([
-      ['차량번호', '차대번호', '차량명(기종)', '리스회사', '구분', '리스비(일)'],
+      ['차량번호', '차대번호', '기종', '회사구분', '종류', '리스회사', '리스비(일)', '리스시작일', '리스종료일'],
       ...vehicles.map(item => [
         item.vehicleNumber || '',
         item.chassisNumber || '',
         item.model || '',
-        item.leaseCompany || '',
         item.vehicleCategory === 'company_owned' ? '회사소유리스' : '회사리스',
-        item.dailyLeaseCost || ''
+        item.contractType === 'rental' ? '렌탈' : '리스',
+        item.leaseCompany || '',
+        item.dailyLeaseCost || '',
+        item.contractStartDate || '',
+        item.contractEndDate || ''
       ])
     ]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet, '일괄등록');
+    XLSX.utils.book_append_sheet(wb, sheet, '차량일괄등록');
     XLSX.utils.book_append_sheet(wb, vehicleSheet, '차량관리목록');
-    XLSX.writeFile(wb, 'BREM_리스ERP_일괄등록양식.xlsx');
+    XLSX.writeFile(wb, 'BREM_리스ERP_차량일괄등록양식.xlsx');
   }
 
   function exportMonthlyExcel() {
@@ -2291,14 +2410,14 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseMonthlyDeleteAllBtn')?.addEventListener('click', () => { void deleteAllMonthlyProfitLogs(); });
     $('leaseBulkV3TemplateBtn')?.addEventListener('click', downloadBulkTemplate);
-    $('leaseBulkV3ApplyBtn')?.addEventListener('click', () => { void applyBulkV3(); });
+    $('leaseBulkV3ApplyBtn')?.addEventListener('click', () => { void applyBulkVehicle(); });
     $('leaseBulkV3File')?.addEventListener('change', event => {
       const file = event.target.files?.[0];
       if (!file || !window.XLSX) return;
       const reader = new FileReader();
       reader.onload = () => {
         const wb = XLSX.read(reader.result, { type: 'array' });
-        state.bulkRows = parseBulkV3Workbook(wb);
+        state.bulkRows = parseBulkVehicleWorkbook(wb);
         renderBulkPreview();
       };
       reader.readAsArrayBuffer(file);

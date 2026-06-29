@@ -411,9 +411,13 @@
   function contractTypeBadge(type, item) {
     const isRental = type === leases.CONTRACT_TYPES.RENTAL;
     const cls = isRental ? 'lease-list-badge lease-list-badge--rental' : 'lease-list-badge lease-list-badge--lease';
-    const emptyBadge = item && leases.isEmptyVehicle(item)
+    const contract = getLatestContractForVehicle(item?.id);
+    const runtime = erp?.resolveRuntimeStatus?.(item, contract) || { code: 'empty' };
+    const emptyBadge = runtime.code === 'empty'
       ? ' <span class="lease-list-badge lease-list-badge--empty">공차</span>'
-      : '';
+      : runtime.code === 'operating'
+        ? ' <span class="lease-list-badge lease-list-badge--operating">운행</span>'
+        : '';
     return `<span class="${cls}"><span class="lease-list-badge__mark">✓</span>${contractTypeLabel(type)}</span>${emptyBadge}`;
   }
 
@@ -899,7 +903,7 @@
           <td>${escapeHtml(item.insuranceType || '-')}</td>
           <td>${formatMoney(item.annualInsuranceCost)}</td>
           <td>${formatMoney(item.dailyInsuranceCost)}</td>
-          <td>${displayVehicleStatus(item)}</td>
+          <td class="lease-status-tags lease-status-tags--table">${displayVehicleStatus(item)}</td>
           <td>${formatDate(item.contractStartDate)}</td>
           <td>${formatDate(item.contractEndDate)}</td>
           <td>${displayCurrentDriver(item)}</td>

@@ -5024,6 +5024,15 @@ textarea {
   font: inherit;
 }
 
+.bulk-match-ok--new {
+  background: rgba(110, 231, 183, 0.12);
+  color: #6ee7b7;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .bulk-match-ok {
   color: #6ee7b7;
   font-weight: 700;
@@ -5540,6 +5549,78 @@ textarea {
   color: #f87171;
 }
 
+.lease-status-badge--ended {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+}
+
+.lease-status-tags--table {
+  min-width: 120px;
+}
+
+.lease-status-tags--table .lease-status-badge {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  margin: 2px 3px 2px 0;
+  white-space: nowrap;
+}
+
+.lease-week-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 0 18px 16px;
+}
+
+.lease-week-summary article {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #141414;
+}
+
+.lease-week-summary span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.lease-week-summary strong {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.lease-week-summary__operating strong {
+  color: #93c5fd;
+}
+
+.lease-week-summary__empty strong {
+  color: #fde047;
+}
+
+.lease-weekly-days {
+  font-weight: 800;
+  text-align: center;
+}
+
+.lease-weekly-days--rental {
+  color: #93c5fd;
+}
+
+.lease-weekly-days--empty {
+  color: #fde047;
+}
+
+.lease-weekly-days--unpaid {
+  color: #f87171;
+}
+
+.lease-contract-row--ended {
+  opacity: 0.72;
+}
+
 .lease-contract-list-wrap {
   margin-top: 20px;
   padding-top: 8px;
@@ -5902,6 +5983,17 @@ textarea {
 }
 
 .lease-list-badge--empty .lease-list-badge__mark {
+  display: none;
+}
+
+.lease-list-badge--operating {
+  margin-left: 6px;
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+}
+
+.lease-list-badge--operating .lease-list-badge__mark {
   display: none;
 }
 

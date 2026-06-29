@@ -930,8 +930,15 @@ const BremLeaseErp = (function () {
     if (!vehicle) {
       return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
     }
+    const ended = String(contract?.status || '') === CONTRACT_STATUS.ENDED;
     const operating = isContractOperating(contract);
     const unpaid = hasOpenArrearForVehicle(vehicle.id);
+    if (ended && !operating) {
+      if (unpaid) {
+        return { code: 'unpaid', label: '계약종료·미납', operating: false, unpaid: true };
+      }
+      return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
+    }
     if (operating && unpaid) {
       return { code: 'operating', label: '운행중·미납', operating: true, unpaid: true };
     }
@@ -947,6 +954,7 @@ const BremLeaseErp = (function () {
   function resolveVehicleStatusTags(vehicle, contract) {
     if (!vehicle) return [{ code: 'empty', label: '공차(로스)' }];
     const tags = [];
+    const ended = String(contract?.status || '') === CONTRACT_STATUS.ENDED;
     const operating = isContractOperating(contract);
     const openArrears = arrears().getAll().filter(item =>
       item.vehicleId === vehicle.id && String(item.collectionStatus || '') !== ARREAR_STATUS.COMPLETED
@@ -955,6 +963,7 @@ const BremLeaseErp = (function () {
     const unpaidAmount = openArrears.reduce((sum, item) => sum + Number(item.unpaidAmount || 0), 0);
     const hasUnpaid = openArrears.length > 0 || unpaidDays > 0 || unpaidAmount > 0;
 
+    if (ended) tags.push({ code: 'ended', label: '계약종료' });
     if (operating) tags.push({ code: 'operating', label: '운행중' });
     if (hasUnpaid) {
       tags.push({
