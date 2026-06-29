@@ -1782,73 +1782,64 @@
             <h2>계약 / 렌탈 등록</h2>
             <p class="form-help">차량관리에 등록된 차량에 렌탈자·리스자를 배정하고 요금·보증금을 설정합니다.</p>
           </div>
-          <form class="lease-form" id="leaseContractForm">
+          <form class="lease-form lease-contract-form--compact" id="leaseContractForm">
             <input type="hidden" id="leaseContractEditId">
-            <div class="lease-form-sections">
+            <div class="lease-form-sections lease-form-sections--compact">
               <section class="lease-form-section">
                 <header class="lease-form-section__head">
-                  <h3>① 차량 선택</h3>
-                  <p>차량관리에 먼저 등록된 차량만 선택할 수 있습니다.</p>
+                  <h3>① 차량 · 렌탈자</h3>
                 </header>
-                <div class="lease-form-grid lease-form-grid--2col">
+                <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense">
                   <label>차량<select id="leaseContractVehicleId" required></select></label>
                   <label>차량번호<input type="text" id="leaseContractVehicleNumber" readonly tabindex="-1" placeholder="자동"></label>
                   <label>차량명<input type="text" id="leaseContractVehicleName" readonly tabindex="-1" placeholder="자동"></label>
                   <label>기종<input type="text" id="leaseContractModelType" readonly tabindex="-1" placeholder="자동"></label>
-                </div>
-              </section>
-              <section class="lease-form-section">
-                <header class="lease-form-section__head">
-                  <h3>② 렌탈자 / 리스자</h3>
-                  <p>실제 차량을 빌려간 기사 정보를 입력하세요.</p>
-                </header>
-                <fieldset class="lease-type-fieldset">
-                  <legend>계약 구분</legend>
-                  <label class="lease-type-option">
-                    <input type="radio" name="leaseContractDealType" value="lease" checked>
-                    <span class="lease-type-chip lease-type-chip--lease"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">리스</span></span>
-                  </label>
-                  <label class="lease-type-option">
-                    <input type="radio" name="leaseContractDealType" value="rental">
-                    <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">렌탈</span></span>
-                  </label>
-                </fieldset>
-                <div class="lease-form-grid lease-form-grid--2col">
+                  <fieldset class="lease-type-fieldset lease-type-fieldset--inline">
+                    <legend>구분</legend>
+                    <label class="lease-type-option">
+                      <input type="radio" name="leaseContractDealType" value="lease" checked>
+                      <span class="lease-type-chip lease-type-chip--lease"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">리스</span></span>
+                    </label>
+                    <label class="lease-type-option">
+                      <input type="radio" name="leaseContractDealType" value="rental">
+                      <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">렌탈</span></span>
+                    </label>
+                  </fieldset>
                   <div class="lease-driver-picker lease-form-field--full">
                     <input type="hidden" id="leaseContractDriverId">
                     <label class="lease-driver-picker__search-label">
-                      등록 기사 검색
-                      <input type="search" id="leaseContractDriverSearch" placeholder="이름 · 연락처 · 쿠팡ID · 배민ID 검색" autocomplete="off">
+                      렌탈/리스자 검색
+                      <input type="search" id="leaseContractDriverSearch" placeholder="이름 · 연락처 · 쿠팡ID · 배민ID" autocomplete="off">
                     </label>
                     <div class="lease-driver-picker__results" id="leaseContractDriverResults" hidden></div>
-                    <p class="lease-driver-picker__selected" id="leaseContractDriverSelected">선택된 기사: 없음</p>
+                    <p class="lease-driver-picker__selected" id="leaseContractDriverSelected">선택: 없음</p>
                   </div>
                   <label>이름<input type="text" id="leaseContractDriverName" placeholder="기사명" required readonly></label>
                   <label>연락처<input type="tel" id="leaseContractDriverPhone" placeholder="010-0000-0000" readonly></label>
-                  <label>계약 시작일<input type="date" id="leaseRentalDealStartDate" class="admin-period-input"></label>
-                  <label>계약 종료일<input type="date" id="leaseRentalDealEndDate" class="admin-period-input"></label>
+                  <label>계약 시작<input type="date" id="leaseRentalDealStartDate" class="admin-period-input"></label>
+                  <label>계약 종료<input type="date" id="leaseRentalDealEndDate" class="admin-period-input"></label>
+                  <label>반납일 (중도반납)<input type="date" id="leaseContractReturnDate" class="admin-period-input" placeholder="중도반납 시"></label>
                 </div>
               </section>
               <section class="lease-form-section">
                 <header class="lease-form-section__head">
-                  <h3>③ 요금</h3>
-                  <p>라이더부담 리스렌탈료는 1일 기준 · 주단위 후정산 · 미납·회수는 미납/회수 메뉴에서 처리합니다.</p>
+                  <h3>② 요금</h3>
                 </header>
-                <div class="lease-form-grid lease-form-grid--2col">
-                  <label>라이더부담 리스렌탈료 (1일)<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="4000"></label>
-                  <label>주간 환산 (참고)<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동계산"></label>
-                  <label>보험료(참고)<input type="text" id="leaseContractInsurance" readonly tabindex="-1" placeholder="차량 기준"></label>
-                  <label>리스비(주, 참고)<input type="text" id="leaseContractLeaseCost" readonly tabindex="-1" placeholder="차량 기준"></label>
-                  <label>보증금<input type="number" id="leaseContractDeposit" min="0" value="0" placeholder="0"></label>
-                  <label>계약 상태<input type="text" id="leaseContractStatusPreview" readonly tabindex="-1" placeholder="자동판별"></label>
+                <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense">
+                  <label>일 렌탈료<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="4000"></label>
+                  <label>주간 환산<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동"></label>
+                  <label>보험료(참고)<input type="text" id="leaseContractInsurance" readonly tabindex="-1"></label>
+                  <label>리스비(주)<input type="text" id="leaseContractLeaseCost" readonly tabindex="-1"></label>
+                  <label>보증금<input type="number" id="leaseContractDeposit" min="0" value="0"></label>
+                  <label>상태<input type="text" id="leaseContractStatusPreview" readonly tabindex="-1"></label>
                   <label class="lease-form-memo">메모<textarea id="leaseContractMemo" rows="2"></textarea></label>
                 </div>
               </section>
             </div>
-            <div class="lease-form-actions">
-              <p class="lease-unsaved-hint">※ 목록 반영 후 반드시 <strong>Supabase 저장</strong> 버튼을 눌러야 DB에 저장됩니다.</p>
+            <div class="lease-form-actions lease-form-actions--compact">
+              <p class="lease-unsaved-hint">※ 목록 반영 후 <strong>Supabase 저장</strong> 필수</p>
               <button type="submit" class="primary-btn" id="leaseContractSaveBtn">목록에 반영</button>
-              <button type="button" class="small-btn" id="leaseContractEndBtn">반납 · 공차 전환</button>
+              <button type="button" class="small-btn" id="leaseContractEndBtn">중도반납 · 계약종료</button>
               <button type="button" class="small-btn" id="leaseContractResetBtn">초기화</button>
             </div>
           </form>
@@ -1856,10 +1847,10 @@
             <div class="card-header lease-contract-list-head">
               <div>
                 <h3>계약 목록</h3>
-                <p class="form-help">저장된 렌탈/리스 계약 · 수정하려면 목록에서 선택</p>
                 <p class="form-help lease-list-count" id="leaseContractListCount">전체 0건</p>
               </div>
               <div class="lease-list-toolbar">
+                <input type="search" id="leaseContractListSearch" class="lease-contract-list-search" placeholder="렌탈/리스자 이름 검색" autocomplete="off">
                 <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
                 <button type="button" class="small-btn danger-btn" id="leaseContractDeleteAllBtn">전체 삭제</button>
               </div>
@@ -1873,8 +1864,8 @@
                     <th>렌탈/리스자</th>
                     <th>연락처</th>
                     <th>계약기간</th>
+                    <th>반납일</th>
                     <th>일 렌탈료</th>
-                    <th>보증금</th>
                     <th>상태</th>
                     <th>관리</th>
                   </tr>
@@ -2059,7 +2050,7 @@
           </article>
           <div class="table-wrap lease-table-wrap">
             <table class="lease-table">
-              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>미납주</th><th>미납일</th><th>미납금</th><th>입금액</th><th>회수방법</th><th>상태</th><th>관리</th></tr></thead>
+              <thead><tr><th>차량번호</th><th>차량명</th><th>기사명</th><th>미납주</th><th>미납일</th><th>미납금</th><th>입금액</th><th>일부회수</th><th>회수방법</th><th>상태</th><th>관리</th></tr></thead>
               <tbody id="leaseArrearRows"></tbody>
             </table>
           </div>
@@ -2079,8 +2070,8 @@
         <article class="card lease-bulk-card lease-screen-card">
           <div class="card-header lease-bulk-card-header">
             <div>
-              <h2>엑셀 일괄 등록 (A~T)</h2>
-              <p class="form-help">양식 다운로드 → 2행부터 입력 → 미리보기 확인 후 업로드 · 차량번호 기준 매칭</p>
+              <h2>엑셀 일괄 등록</h2>
+              <p class="form-help">양식 다운로드 → 2행부터 입력 · <strong>차량관리에 등록된 차량번호</strong>만 매칭 · 미등록 차량은 오류</p>
             </div>
             <button type="button" class="primary-btn" id="leaseBulkV3TemplateBtn">양식 다운로드</button>
           </div>
@@ -2095,8 +2086,8 @@
             <div class="table-wrap"><table class="bulk-guide-table"><thead><tr id="leaseBulkV3GuideHead"></tr></thead><tbody id="leaseBulkV3GuideBody"></tbody></table></div>
           </div>
           <div class="bulk-preview-wrap">
-            <p class="bulk-preview-summary">전체 <strong id="leaseBulkV3Total">0</strong>건 · 등록 가능 <strong id="leaseBulkV3Valid">0</strong>건 · 오류 <strong id="leaseBulkV3Error">0</strong>건</p>
-            <div class="table-wrap"><table class="bulk-preview-table"><thead><tr><th>행</th><th>차량번호</th><th>기사명</th><th>라이더부담 리스렌탈료</th><th>예상순이익</th><th>결과</th></tr></thead><tbody id="leaseBulkV3PreviewBody"></tbody></table></div>
+            <p class="bulk-preview-summary">전체 <strong id="leaseBulkV3Total">0</strong>건 · 등록 가능 <strong id="leaseBulkV3Valid">0</strong>건 · 오류 <strong id="leaseBulkV3Error">0</strong>건 · 차량매칭 <strong id="leaseBulkV3Matched">0</strong>건</p>
+            <div class="table-wrap"><table class="bulk-preview-table"><thead><tr><th>행</th><th>차량번호</th><th>차량매칭</th><th>기사명</th><th>일 렌탈료</th><th>예상순이익</th><th>결과</th></tr></thead><tbody id="leaseBulkV3PreviewBody"></tbody></table></div>
           </div>
         </article>
         <article class="card lease-bulk-card" hidden>

@@ -410,6 +410,7 @@ const BremLeaseErp = (function () {
       driverPhone: String(raw.driverPhone != null ? raw.driverPhone : existing?.driverPhone || '').trim(),
       startDate: normalizeDate(raw.startDate != null ? raw.startDate : existing?.startDate),
       endDate: normalizeDate(raw.endDate != null ? raw.endDate : existing?.endDate),
+      returnDate: normalizeDate(raw.returnDate != null ? raw.returnDate : existing?.returnDate),
       weeklyRent: metrics.weeklyRent || weeklyRent,
       dailyRent: metrics.dailyRent || dailyRent,
       dailyCharge: metrics.dailyRent || dailyRent,
@@ -893,10 +894,13 @@ const BremLeaseErp = (function () {
 
   function isContractOperating(contract) {
     if (!contract || !String(contract.driverName || '').trim()) return false;
+    if (String(contract.status || '') === CONTRACT_STATUS.ENDED) return false;
     const today = todayKey();
     const start = normalizeDate(contract.startDate);
     const end = normalizeDate(contract.endDate);
+    const returned = normalizeDate(contract.returnDate);
     if (start && start > today) return false;
+    if (returned && returned <= today) return false;
     if (end && end < today) return false;
     return true;
   }
@@ -1000,6 +1004,8 @@ const BremLeaseErp = (function () {
       patch.dailyChargeAmount = 0;
       patch.dailyRent = 0;
       patch.weeklyRent = 0;
+      const returnDate = normalizeDate(resolvedContract?.returnDate || resolvedContract?.endDate);
+      if (returnDate) patch.returnDate = returnDate;
       patch.emptyStartDate = resolveEmptyStartOnTransition(vehicle, resolvedContract, runtime);
     }
     return vehicles().update(vehicle.id, patch);

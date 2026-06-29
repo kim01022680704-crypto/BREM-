@@ -37,6 +37,7 @@ const BremAdminLeaseMenus = (function () {
     bulkRows: [],
     contractDeleting: '',
     contractDriverSearch: '',
+    contractListSearch: '',
     weeklySelectedLogIds: new Set(),
     weeklyVisibleLogIds: [],
     monthlySelectedLogIds: new Set(),
@@ -881,6 +882,10 @@ const BremAdminLeaseMenus = (function () {
       driverId: $('leaseContractDriverId')?.value || '',
       startDate: $('leaseRentalDealStartDate')?.value || '',
       endDate: $('leaseRentalDealEndDate')?.value || '',
+      returnDate: $('leaseContractReturnDate')?.value || '',
+      status: $('leaseContractEditId')?.value
+        ? (erp()?.contracts().getById($('leaseContractEditId').value)?.status || erp()?.CONTRACT_STATUS?.ACTIVE || 'active')
+        : (erp()?.CONTRACT_STATUS?.ACTIVE || 'active'),
       dailyRent,
       weeklyRent,
       rentalDays: 7,
@@ -1002,6 +1007,9 @@ const BremAdminLeaseMenus = (function () {
     } : null));
     if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = contract.startDate || '';
     if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = contract.endDate || '';
+    if ($('leaseContractReturnDate')) {
+      $('leaseContractReturnDate').value = contract.returnDate || contract.endDate || '';
+    }
     if ($('leaseContractWeeklyRent')) {
       $('leaseContractWeeklyRent').value = contractRiderDailyRent(contract) || '';
     }
@@ -1021,18 +1029,36 @@ const BremAdminLeaseMenus = (function () {
     onContractVehicleChange();
   }
 
+  function filterContractList(contracts) {
+    const keyword = String(state.contractListSearch || '').trim().toLowerCase();
+    if (!keyword) return contracts;
+    return contracts.filter(contract => {
+      const haystack = [
+        contract.driverName,
+        contract.driverPhone,
+        contract.vehicleNumber,
+        contract.vehicleName
+      ].join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }
+
   function renderContractList() {
     const rowsEl = $('leaseContractRows');
     if (!rowsEl || !erp()) return;
-    const contracts = erp().contracts().getAll()
+    const allContracts = erp().contracts().getAll()
       .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    const contracts = filterContractList(allContracts);
     const countEl = $('leaseContractListCount');
     if (countEl) {
-      countEl.textContent = `전체 ${contracts.length}건 · 스크롤하여 전체 확인`;
+      const filtered = contracts.length !== allContracts.length;
+      countEl.textContent = filtered
+        ? `전체 ${allContracts.length}건 · 검색 ${contracts.length}건`
+        : `전체 ${allContracts.length}건`;
     }
     const deleting = state.contractDeleting;
     if (!contracts.length) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.</td></tr>';
+      rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${allContracts.length ? '검색 결과가 없습니다.' : '등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.'}</td></tr>`;
       const deleteAllBtn = $('leaseContractDeleteAllBtn');
       if (deleteAllBtn) {
         deleteAllBtn.disabled = Boolean(deleting);
@@ -1045,19 +1071,20 @@ const BremAdminLeaseMenus = (function () {
       const typeLabel = profit()?.vehicleSourceLabel?.(vehicle)
         || (contract.contractType === 'rental' ? '렌탈' : '리스');
       const period = [formatDate(contract.startDate), formatDate(contract.endDate)].filter(v => v !== '-').join(' ~ ') || '-';
+      const returnDate = formatDate(contract.returnDate || (String(contract.status || '') === 'ended' ? contract.endDate : ''));
       const statusHtml = renderStatusTagsHtml(vehicle, contract);
-      const deposit = contract.depositAmount ?? contract.penaltyFee ?? 0;
+      const ended = String(contract.status || '') === (erp()?.CONTRACT_STATUS?.ENDED || 'ended');
       const isDeleting = deleting && (deleting === contract.id || deleting === 'all');
       return `
-        <tr>
+        <tr class="${ended ? 'lease-contract-row--ended' : ''}">
           <td><strong>${escapeHtml(contract.vehicleNumber || vehicle?.vehicleNumber || '-')}</strong></td>
           <td>${contractDealTypeBadge(contract)} ${escapeHtml(typeLabel)}</td>
           <td>${escapeHtml(contract.driverName || '-')}</td>
           <td>${escapeHtml(contract.driverPhone || '-')}</td>
           <td>${escapeHtml(period)}</td>
+          <td>${returnDate !== '-' ? escapeHtml(returnDate) : '-'}</td>
           <td>${formatMoney(contractRiderDailyRent(contract))}</td>
-          <td>${formatMoney(deposit)}</td>
-          <td class="lease-status-tags">${statusHtml}</td>
+          <td class="lease-status-tags">${statusHtml}${ended ? ' <span class="lease-status--ended">종료</span>' : ''}</td>
           <td class="lease-actions">
             <button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>수정</button>
             <button type="button" class="small-btn danger-btn" data-delete-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>${isDeleting && deleting === contract.id ? '삭제 중…' : '삭제'}</button>
@@ -1251,16 +1278,69 @@ const BremAdminLeaseMenus = (function () {
     }
   }
 
-  function endContractAsEmpty() {
+  async function processEarlyReturn() {
+    if (!erp()) return;
     const draft = readContractDraft();
     if (!draft.vehicleId) {
       showToast('차량을 선택하세요.');
       return;
     }
-    const today = contractTodayKey();
-    if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = today;
-    syncContractCalc();
-    showToast('반납일을 오늘로 설정했습니다. 저장하면 공차로 전환됩니다.');
+    if (!String(draft.driverName || '').trim()) {
+      showToast('렌탈/리스자를 선택하세요.');
+      return;
+    }
+    const returnDate = normalizeContractDate($('leaseContractReturnDate')?.value || contractTodayKey());
+    if (!returnDate) {
+      showToast('반납일을 입력하세요.');
+      return;
+    }
+    const vehicle = erp().vehicles().getById(draft.vehicleId);
+    if (!vehicle) {
+      showToast('선택한 차량을 찾을 수 없습니다.');
+      return;
+    }
+    const plate = draft.vehicleNumber || vehicle.vehicleNumber || '-';
+    const name = draft.driverName || '-';
+    if (!window.confirm(`중도반납 · 계약종료 처리하시겠습니까?\n${plate} · ${name}\n반납일: ${returnDate}`)) return;
+
+    const endedStatus = erp().CONTRACT_STATUS?.ENDED || 'ended';
+    const payload = {
+      ...draft,
+      endDate: returnDate,
+      returnDate,
+      status: endedStatus
+    };
+
+    try {
+      const contract = draft.id
+        ? erp().contracts().update(draft.id, { ...payload, vehicleId: vehicle.id })
+        : erp().contracts().create({ ...payload, vehicleId: vehicle.id });
+
+      erp().vehicles().update(vehicle.id, { returnDate });
+      applyVehicleStatusFromContract(vehicle, contract);
+
+      $('leaseContractEditId').value = contract.id;
+      if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = returnDate;
+      if ($('leaseContractReturnDate')) $('leaseContractReturnDate').value = returnDate;
+
+      markArrearContractOptionsDirty();
+      updateLeaseErpUnsavedBanner();
+      renderContractList();
+      refreshAfterLeaseMutation({ contract: false });
+      showToast(`중도반납 처리 · 반납일 ${returnDate} · 계약 종료 (Supabase 저장 필요)`);
+      syncContractCalc();
+    } catch (error) {
+      console.error('[processEarlyReturn]', error);
+      showToast(error?.message || '중도반납 처리에 실패했습니다.');
+    }
+  }
+
+  function normalizeContractDate(value) {
+    return erp()?.vehicles()?.normalizeDate?.(value) || String(value || '').trim().slice(0, 10);
+  }
+
+  function endContractAsEmpty() {
+    void processEarlyReturn();
   }
 
   function resetContractForm() {
@@ -1277,6 +1357,7 @@ const BremAdminLeaseMenus = (function () {
       input.checked = input.value === 'lease';
     });
     if ($('leaseContractDeposit')) $('leaseContractDeposit').value = '';
+    if ($('leaseContractReturnDate')) $('leaseContractReturnDate').value = '';
     syncContractCalc();
   }
 
@@ -1721,7 +1802,7 @@ const BremAdminLeaseMenus = (function () {
     const active = list.filter(item => item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED);
     renderArrearHistory(list, vehicles);
     if (!active.length) {
-      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">진행 중인 미납 기록이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">진행 중인 미납 기록이 없습니다.</td></tr>';
       return;
     }
     rowsEl.innerHTML = active.map(item => {
@@ -1733,6 +1814,7 @@ const BremAdminLeaseMenus = (function () {
         ? 'lease-status--collecting'
         : 'lease-status--unpaid';
       const weekCount = Array.isArray(item.rawData?.weekEntries) ? item.rawData.weekEntries.length : 1;
+      const remaining = Math.max(0, Number(item.unpaidAmount || 0));
       return `
         <tr>
           <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
@@ -1740,17 +1822,73 @@ const BremAdminLeaseMenus = (function () {
           <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}</td>
           <td>${escapeHtml(formatArrearWeeksSummary(item))}${weekCount > 1 ? ` <em class="lease-arrear-week-count">(${weekCount}주)</em>` : ''}</td>
           <td>${item.unpaidDays}일</td>
-          <td class="lease-money--warning">${formatMoney(item.unpaidAmount)}</td>
+          <td class="lease-money--warning">${formatMoney(remaining)}</td>
           <td>${formatMoney(item.paidAmount)}</td>
+          <td class="lease-arrear-partial-cell">
+            <input type="number" class="lease-arrear-partial-input" data-arrear-partial-input="${escapeHtml(item.id)}" min="0" step="1" placeholder="금액" value="">
+            <button type="button" class="small-btn" data-partial-arrear="${escapeHtml(item.id)}">회수</button>
+          </td>
           <td>${escapeHtml(methods)}</td>
           <td><span class="${statusCls}">${escapeHtml(status)}</span></td>
           <td>
-            <button type="button" class="small-btn primary-btn" data-complete-arrear="${escapeHtml(item.id)}">처리완료</button>
+            <button type="button" class="small-btn primary-btn" data-complete-arrear="${escapeHtml(item.id)}">전액완료</button>
             <button type="button" class="small-btn danger-btn" data-delete-arrear="${escapeHtml(item.id)}">삭제</button>
           </td>
         </tr>
       `;
     }).join('');
+  }
+
+  async function recordPartialArrearRecovery(id) {
+    if (!erp() || !id) return;
+    const item = erp().arrears().getById(id);
+    if (!item) return;
+    const input = document.querySelector(`[data-arrear-partial-input="${CSS.escape(id)}"]`);
+    const amount = Math.max(0, Math.round(Number(input?.value || 0)));
+    if (!amount) {
+      showToast('회수 금액을 입력하세요.');
+      input?.focus();
+      return;
+    }
+    const remainingBefore = Math.max(0, Number(item.unpaidAmount || 0));
+    if (amount > remainingBefore) {
+      showToast(`회수 금액이 미납 잔액(${formatMoney(remainingBefore)})을 초과합니다.`);
+      return;
+    }
+    const remaining = remainingBefore - amount;
+    const history = Array.isArray(item.rawData?.processingHistory) ? [...item.rawData.processingHistory] : [];
+    history.unshift({
+      at: new Date().toISOString(),
+      type: 'partial',
+      recoveredAmount: amount,
+      remainingAmount: remaining,
+      processedDate: BremLeaseProfit.todayKey()
+    });
+    const completed = calc().ARREAR_STATUS.COMPLETED;
+    const collecting = calc().ARREAR_STATUS.COLLECTING;
+    erp().arrears().update(id, {
+      paidAmount: Number(item.paidAmount || 0) + amount,
+      recoveredAmount: Number(item.recoveredAmount || 0) + amount,
+      unpaidAmount: remaining,
+      collectionStatus: remaining > 0 ? collecting : completed,
+      processedDate: remaining > 0 ? item.processedDate : BremLeaseProfit.todayKey(),
+      rawData: { ...(item.rawData || {}), processingHistory: history }
+    });
+    if (item.contractId && remaining === 0) {
+      erp().contracts().update(item.contractId, {
+        collectionStatus: completed,
+        recoveredAmount: Number(item.recoveredAmount || 0) + amount,
+        unpaidDays: 0,
+        unpaidAmount: 0,
+        processedDate: BremLeaseProfit.todayKey()
+      });
+    }
+    updateLeaseErpUnsavedBanner();
+    showToast(remaining > 0
+      ? `일부 회수 ${formatMoney(amount)} · 잔액 ${formatMoney(remaining)}`
+      : `전액 회수 완료 (${formatMoney(amount)})`);
+    renderArrears();
+    refreshAfterLeaseMutation({ contract: false });
   }
 
   async function deleteProfitLogs(ids = []) {
@@ -1890,7 +2028,18 @@ const BremAdminLeaseMenus = (function () {
       });
       const errors = [];
       if (!raw.vehicleNumber) errors.push('차량번호 필요');
-      return { rowNumber: index + 2, raw, metrics, valid: !errors.length, errors };
+      const matchedVehicle = raw.vehicleNumber
+        ? erp()?.vehicles()?.findByVehicleKey?.({ vehicleNumber: raw.vehicleNumber })
+        : null;
+      if (raw.vehicleNumber && !matchedVehicle) errors.push('차량관리 미등록');
+      return {
+        rowNumber: index + 2,
+        raw,
+        metrics,
+        valid: !errors.length,
+        errors,
+        matchedVehicle
+      };
     });
   }
 
@@ -1906,43 +2055,50 @@ const BremAdminLeaseMenus = (function () {
     const body = $('leaseBulkV3PreviewBody');
     if (!body) return;
     const valid = state.bulkRows.filter(row => row.valid).length;
+    const matched = state.bulkRows.filter(row => row.matchedVehicle).length;
     const errors = state.bulkRows.length - valid;
     if ($('leaseBulkV3Total')) $('leaseBulkV3Total').textContent = String(state.bulkRows.length);
     if ($('leaseBulkV3Valid')) $('leaseBulkV3Valid').textContent = String(valid);
     if ($('leaseBulkV3Error')) $('leaseBulkV3Error').textContent = String(errors);
+    if ($('leaseBulkV3Matched')) $('leaseBulkV3Matched').textContent = String(matched);
     if ($('leaseBulkV3ApplyBtn')) $('leaseBulkV3ApplyBtn').disabled = valid === 0;
     body.innerHTML = state.bulkRows.map(row => `
       <tr class="${row.valid ? 'row-ok' : 'row-error'}">
         <td>${row.rowNumber}</td>
         <td>${escapeHtml(row.raw.vehicleNumber)}</td>
+        <td>${row.matchedVehicle
+          ? `<span class="bulk-match-ok">${escapeHtml(row.matchedVehicle.model || row.matchedVehicle.vehicleNumber)}</span>`
+          : '<span class="bulk-match-miss">미매칭</span>'}</td>
         <td>${escapeHtml(row.raw.driverName)}</td>
         <td>${formatMoney(row.raw.weeklyRent)}</td>
         <td class="${moneyClass(row.metrics.netProfit)}">${formatMoney(row.metrics.netProfit)}</td>
         <td>${row.valid ? '등록 가능' : escapeHtml(row.errors.join(', '))}</td>
       </tr>
-    `).join('') || '<tr><td colspan="6" class="empty">업로드할 데이터가 없습니다.</td></tr>';
+    `).join('') || '<tr><td colspan="7" class="empty">업로드할 데이터가 없습니다.</td></tr>';
   }
 
   async function applyBulkV3() {
     if (!erp()) return;
-    const validRows = state.bulkRows.filter(row => row.valid);
+    const validRows = state.bulkRows.filter(row => row.valid && row.matchedVehicle);
     for (const row of validRows) {
       const raw = row.raw;
-      let vehicle = erp().vehicles().findByVehicleKey({ vehicleNumber: raw.vehicleNumber });
-      if (!vehicle) {
-        vehicle = erp().vehicles().create({
-          vehicleNumber: raw.vehicleNumber,
-          model: raw.vehicleName || raw.modelType,
-          renter: raw.driverName,
-          contractType: 'rental',
-          dailyChargeAmount: calc().dailyFromWeekly(raw.weeklyRent)
-        });
-      }
-      const contract = erp().contracts().create({
+      const vehicle = row.matchedVehicle || erp().vehicles().findByVehicleKey({ vehicleNumber: raw.vehicleNumber });
+      if (!vehicle) continue;
+
+      erp().vehicles().update(vehicle.id, {
+        renter: raw.driverName || vehicle.renter,
+        lesseePhone: raw.driverPhone || vehicle.lesseePhone,
+        dailyChargeAmount: calc().dailyFromWeekly(raw.weeklyRent) || vehicle.dailyChargeAmount
+      });
+
+      const existingContract = erp().contracts().getAll().find(item =>
+        item.vehicleId === vehicle.id && erp().isContractOperating?.(item)
+      );
+      const contractPayload = {
         vehicleId: vehicle.id,
-        vehicleNumber: raw.vehicleNumber,
-        vehicleName: raw.vehicleName,
-        modelType: raw.modelType,
+        vehicleNumber: vehicle.vehicleNumber || raw.vehicleNumber,
+        vehicleName: raw.vehicleName || vehicle.model,
+        modelType: raw.modelType || vehicle.model,
         driverName: raw.driverName,
         driverPhone: raw.driverPhone,
         startDate: raw.startDate,
@@ -1959,8 +2115,13 @@ const BremAdminLeaseMenus = (function () {
         penaltyFee: raw.penaltyFee,
         collectionMethods: raw.collectionMethods,
         collectionStatus: raw.collectionStatus,
-        memo: raw.memo
-      });
+        memo: raw.memo,
+        contractType: vehicle.contractType || 'rental'
+      };
+      const contract = existingContract
+        ? erp().contracts().update(existingContract.id, contractPayload)
+        : erp().contracts().create(contractPayload);
+      applyVehicleStatusFromContract(vehicle, contract);
       const metrics = calc().compute(contract);
       const month = currentMonthKey();
       erp().saveProfitSnapshot({
@@ -1986,8 +2147,21 @@ const BremAdminLeaseMenus = (function () {
     if (!window.XLSX) return;
     const headers = BULK_V3_COLUMNS.map(col => col.label);
     const sheet = XLSX.utils.aoa_to_sheet([headers]);
+    const vehicles = erp()?.vehicles()?.getAll?.() || [];
+    const vehicleSheet = XLSX.utils.aoa_to_sheet([
+      ['차량번호', '차대번호', '차량명(기종)', '리스회사', '구분', '리스비(일)'],
+      ...vehicles.map(item => [
+        item.vehicleNumber || '',
+        item.chassisNumber || '',
+        item.model || '',
+        item.leaseCompany || '',
+        item.vehicleCategory === 'company_owned' ? '회사소유리스' : '회사리스',
+        item.dailyLeaseCost || ''
+      ])
+    ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, '일괄등록');
+    XLSX.utils.book_append_sheet(wb, vehicleSheet, '차량관리목록');
     XLSX.writeFile(wb, 'BREM_리스ERP_일괄등록양식.xlsx');
   }
 
@@ -2056,6 +2230,10 @@ const BremAdminLeaseMenus = (function () {
     $('leaseContractResetBtn')?.addEventListener('click', resetContractForm);
     $('leaseContractDeleteAllBtn')?.addEventListener('click', () => { void deleteAllContracts(); });
     $('leaseContractEndBtn')?.addEventListener('click', endContractAsEmpty);
+    $('leaseContractListSearch')?.addEventListener('input', event => {
+      state.contractListSearch = String(event.target.value || '');
+      renderContractList();
+    });
     $('leaseContractDriverSearch')?.addEventListener('input', event => {
       state.contractDriverSearch = String(event.target.value || '');
       renderLeaseContractDriverResults();
@@ -2165,6 +2343,11 @@ const BremAdminLeaseMenus = (function () {
       const completeBtn = event.target.closest('[data-complete-arrear]');
       if (completeBtn) {
         void completeArrear(completeBtn.dataset.completeArrear);
+        return;
+      }
+      const partialBtn = event.target.closest('[data-partial-arrear]');
+      if (partialBtn) {
+        void recordPartialArrearRecovery(partialBtn.dataset.partialArrear);
         return;
       }
       const deleteProfitBtn = event.target.closest('[data-delete-profit-log]');

@@ -4924,6 +4924,116 @@ textarea {
   line-height: 1.45;
 }
 
+.lease-contract-form--compact .lease-form-sections--compact {
+  gap: 10px;
+}
+
+.lease-contract-form--compact .lease-form-section {
+  padding: 10px 12px;
+}
+
+.lease-contract-form--compact .lease-form-section__head {
+  margin-bottom: 8px;
+}
+
+.lease-contract-form--compact .lease-form-section__head h3 {
+  font-size: 0.92rem;
+}
+
+.lease-contract-form--compact .lease-form-grid--dense {
+  gap: 8px;
+}
+
+.lease-contract-form--compact .lease-form-grid input,
+.lease-contract-form--compact .lease-form-grid textarea,
+.lease-contract-form--compact .lease-form-grid select {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.lease-contract-form--compact .lease-form-grid textarea {
+  min-height: 56px;
+  padding: 8px 10px;
+}
+
+.lease-contract-form--compact .lease-driver-picker__selected {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.lease-type-fieldset--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  grid-column: 1 / -1;
+}
+
+.lease-form-actions--compact {
+  margin-top: 10px;
+  gap: 8px;
+}
+
+.lease-form-actions--compact .lease-unsaved-hint {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.lease-contract-list-search {
+  min-width: 200px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #171717;
+  color: var(--text);
+  font: inherit;
+}
+
+.lease-contract-row--ended {
+  opacity: 0.72;
+}
+
+.lease-status--ended {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.lease-arrear-partial-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.lease-arrear-partial-input {
+  width: 88px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #171717;
+  color: var(--text);
+  font: inherit;
+}
+
+.bulk-match-ok {
+  color: #6ee7b7;
+  font-weight: 700;
+}
+
+.bulk-match-miss {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
 .lease-profit-result {
   display: grid;
   gap: 14px;
