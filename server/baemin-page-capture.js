@@ -31,7 +31,45 @@ function buildPageUrl(sourceId, dateRange) {
 
 function isUnsafeHistorySpaUrl(url) {
   const text = String(url || '');
-  return /\/delivery\/(?:delivery-history|rider-history)/i.test(text);
+  if (!text.includes('deliverycenter.baemin.com')) return false;
+  if (/\/delivery\/(?:delivery-history|rider-history)/i.test(text)) return true;
+  if ((/delivery-history|rider-history/i.test(text)) && /[?&]page=0\b/i.test(text)) return true;
+  return false;
+}
+
+function attachSafeSpaGuard(context) {
+  if (!context || context.__bremSpaGuardAttached) return () => {};
+  context.__bremSpaGuardAttached = true;
+
+  const onFrameNavigated = page => async frame => {
+    try {
+      if (frame !== page.mainFrame() || page.isClosed()) return;
+      const url = frame.url();
+      if (!isUnsafeHistorySpaUrl(url)) return;
+      console.log(`[BREM][spa-guard] 차단 → 배달현황 복귀 | was=${url}`);
+      await page.goto(`${BAEMIN_ORIGIN}/delivery-status`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
+
+  const bindPage = page => {
+    if (!page || page.isClosed() || page.__bremSpaGuardBound) return;
+    page.__bremSpaGuardBound = true;
+    const handler = onFrameNavigated(page);
+    page.on('framenavigated', handler);
+  };
+
+  context.pages().filter(page => !page.isClosed()).forEach(bindPage);
+  const onPage = page => bindPage(page);
+  context.on('page', onPage);
+
+  return () => {
+    try { context.off('page', onPage); } catch { /* ignore */ }
+  };
 }
 
 function buildProbeUrls(sourceId, dateRange) {
@@ -155,6 +193,7 @@ module.exports = {
   buildSpaDateQuery,
   buildProbeUrls,
   isUnsafeHistorySpaUrl,
+  attachSafeSpaGuard,
   ensureSafeBrowserTab,
   probeApiFromBrowserTab,
   discoverApiUrlViaPage
