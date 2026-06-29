@@ -583,6 +583,14 @@ const BremAdminLeaseMenus = (function () {
     );
   }
 
+  function formatInsuranceAge(value) {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    if (/^만/.test(text) || /세$/.test(text)) return text;
+    const num = text.replace(/[^\d]/g, '');
+    return num ? `만${num}세` : text;
+  }
+
   function dashVehicleSourceLabel(vehicle) {
     const owned = profit()?.VEHICLE_CATEGORIES?.COMPANY_OWNED || 'company_owned';
     return String(vehicle?.vehicleCategory || '') === owned ? '브램리스' : '회사리스';
@@ -594,7 +602,7 @@ const BremAdminLeaseMenus = (function () {
     try {
       const vehicles = getAllDashboardVehicles();
       if (!vehicles.length) {
-        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 차량이 없습니다.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">등록된 차량이 없습니다.</td></tr>';
         return;
       }
 
@@ -607,6 +615,7 @@ const BremAdminLeaseMenus = (function () {
         <tr class="lease-dash-vehicle-row">
           <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
           <td>${escapeHtml(item.model || '-')}</td>
+          <td>${escapeHtml(formatInsuranceAge(item.insuranceAge))}</td>
           <td>${escapeHtml(source)}</td>
           <td>${contractDealTypeBadge(contract)}</td>
           <td>${escapeHtml(driver)}</td>
@@ -618,7 +627,7 @@ const BremAdminLeaseMenus = (function () {
       }).join('');
     } catch (error) {
       console.error('[BremAdminLeaseMenus] paintDashboardVehicleOverview failed', error);
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">차량 목록을 불러오지 못했습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">차량 목록을 불러오지 못했습니다.</td></tr>';
     }
   }
 

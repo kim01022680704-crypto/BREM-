@@ -1283,6 +1283,7 @@
                         <tr>
                           <th>번호판</th>
                           <th>기종</th>
+                          <th>보험연령</th>
                           <th>ERP구분</th>
                           <th>리스/렌탈</th>
                           <th>계약자</th>
@@ -1449,13 +1450,21 @@
                     주간리스비
                     <input type="text" id="leaseWeeklyLeaseCost" readonly tabindex="-1" placeholder="자동계산">
                   </label>
+                  <label data-lease-field="insurance-age">
+                    보험연령 (만 N세)
+                    <input type="text" id="leaseInsuranceAge" placeholder="예: 26">
+                  </label>
+                  <label data-lease-field="insurance-company">
+                    처리보험회사
+                    <input type="text" id="leaseInsuranceCompany" placeholder="처리보험회사">
+                  </label>
                 </div>
               </section>
 
               <section class="lease-form-section" data-erp-only="company_owned" hidden>
                 <header class="lease-form-section__head">
                   <h3>④ 취득 · 원가</h3>
-                  <p>취득원가에 연간 보험비 포함 · 합계 ÷ 365 = 하루원가</p>
+                  <p>차량가액·취득세·기타비용 합계 · 보험은 아래 「보험·상품」에서 별도 입력 후 합계에 포함</p>
                 </header>
                 <div class="lease-form-grid">
                   <label data-lease-field="vehicle-price">
@@ -1474,10 +1483,6 @@
                     기타비용
                     <input type="number" id="leaseOtherAcquisitionCost" min="0" placeholder="0">
                   </label>
-                  <label data-lease-field="annual-insurance">
-                    보험비(연간)
-                    <input type="number" id="leaseAnnualInsurance" min="0" placeholder="0">
-                  </label>
                   <label data-lease-field="total-acquisition-cost">
                     합계
                     <input type="text" id="leaseTotalAcquisitionCost" readonly tabindex="-1" placeholder="자동계산">
@@ -1489,6 +1494,31 @@
                   <label data-lease-field="weekly-owned-cost">
                     주간원가
                     <input type="text" id="leaseWeeklyOwnedCost" readonly tabindex="-1" placeholder="자동계산">
+                  </label>
+                </div>
+              </section>
+
+              <section class="lease-form-section" data-erp-only="company_owned" hidden>
+                <header class="lease-form-section__head">
+                  <h3>④ 보험 · 상품</h3>
+                  <p>취득원가 합계에 포함 · 보험 항목은 별도 관리합니다.</p>
+                </header>
+                <div class="lease-form-grid">
+                  <label data-lease-field="insurance-product">
+                    보험상품
+                    <input type="text" id="leaseInsuranceProduct" placeholder="보험상품명">
+                  </label>
+                  <label data-lease-field="insurance-processing-company">
+                    처리보험회사
+                    <input type="text" id="leaseInsuranceProcessingCompany" placeholder="처리보험회사">
+                  </label>
+                  <label data-lease-field="insurance-product-company">
+                    보험상품회사
+                    <input type="text" id="leaseInsuranceProductCompany" placeholder="보험상품회사">
+                  </label>
+                  <label data-lease-field="insurance-amount">
+                    금액 (연간)
+                    <input type="number" id="leaseInsuranceAmount" min="0" placeholder="0">
                   </label>
                 </div>
               </section>
@@ -1728,6 +1758,11 @@
                   <th>차량가액</th>
                   <th>하루원가</th>
                   <th>주간원가</th>
+                  <th>보험연령</th>
+                  <th>처리보험회사</th>
+                  <th>보험상품</th>
+                  <th>보험상품회사</th>
+                  <th>보험금액</th>
                   <th>상태</th>
                   <th>리스시작</th>
                   <th>리스종료</th>

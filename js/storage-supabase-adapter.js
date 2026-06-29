@@ -814,7 +814,8 @@ window.BremSupabaseStorageAdapter = (function () {
         otherAcquisitionCost: Number(item.otherAcquisitionCost || 0),
         totalAcquisitionCost: Number(item.totalAcquisitionCost || 0),
         annualInsuranceCost: Number(item.annualInsuranceCost || 0),
-        emptyDailyLoss: Number(item.emptyDailyLoss || 0)
+        emptyDailyLoss: Number(item.emptyDailyLoss || 0),
+        insuranceProductCompany: item.insuranceProductCompany || ''
       };
       return {
         id: item.id,
@@ -900,6 +901,7 @@ window.BremSupabaseStorageAdapter = (function () {
         totalAcquisitionCost: Number(row.total_acquisition_cost ?? raw.totalAcquisitionCost ?? 0),
         annualInsuranceCost: Number(raw.annualInsuranceCost || 0),
         emptyDailyLoss: Number(raw.emptyDailyLoss || 0),
+        insuranceProductCompany: raw.insuranceProductCompany || '',
         acquisitionDate: row.acquisition_date || '',
         rentalAssignment: row.rental_assignment || null,
         createdAt: row.created_at,

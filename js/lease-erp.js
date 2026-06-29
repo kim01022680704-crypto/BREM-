@@ -211,6 +211,9 @@ const BremLeaseErp = (function () {
       insuranceCompany: String(raw.insuranceCompany != null ? raw.insuranceCompany : existing?.insuranceCompany || '').trim(),
       insuranceAge: String(raw.insuranceAge != null ? raw.insuranceAge : existing?.insuranceAge || '').trim(),
       insuranceType: String(raw.insuranceType != null ? raw.insuranceType : existing?.insuranceType || '').trim(),
+      insuranceProductCompany: String(
+        raw.insuranceProductCompany != null ? raw.insuranceProductCompany : existing?.insuranceProductCompany || ''
+      ).trim(),
       dailyInsuranceCost: resolvedDailyInsurance,
       contractStartDate: normalizeDate(raw.contractStartDate != null ? raw.contractStartDate : existing?.contractStartDate),
       contractEndDate: normalizeDate(raw.contractEndDate != null ? raw.contractEndDate : existing?.contractEndDate),

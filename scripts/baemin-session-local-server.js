@@ -24,7 +24,7 @@ const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
 const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260702b';
+const SERVER_VERSION = '20260702k';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -1549,6 +1549,149 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         message: formatError(error)
       });
+    }
+  }
+
+  if (url.pathname === '/debug/partner-probe' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: 'Playwright 브라우저가 없습니다.'
+      });
+    }
+    try {
+      const pages = activeContext.pages().filter(page => !page.isClosed());
+      const page = pages[0];
+      const {
+        listPartnerCentersViaPage,
+        resolveCenterContextViaPage
+      } = require('../server/baemin-center-context');
+      const active = await resolveCenterContextViaPage(page);
+      const partners = await listPartnerCentersViaPage(page);
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        version: SERVER_VERSION,
+        active,
+        partners,
+        pageUrl: page.url()
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatError(error)
+      });
+    }
+  }
+
+  if (url.pathname === '/debug/partner-api-compare' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, { ok: false, message: 'Playwright 브라우저가 없습니다.' });
+    }
+    try {
+      const body = await readJsonBody(req);
+      const ids = Array.isArray(body?.partnerIds) && body.partnerIds.length
+        ? body.partnerIds
+        : ['DP2603096926', 'DP2605040667', 'DP2604132767'];
+      const page = activeContext.pages().filter(p => !p.isClosed())[0];
+      const active = await require('../server/baemin-center-context').resolveCenterContextViaPage(page);
+      const rows = await page.evaluate(async ({ partnerIds, fromDate, toDate }) => {
+        const results = [];
+        for (const id of partnerIds) {
+          const qs = new URLSearchParams({
+            page: '0',
+            size: '5',
+            fromDate,
+            toDate,
+            partnerId: id,
+            cooperationId: id,
+            managementId: id,
+            centerId: id
+          });
+          const url = `https://api-deliverycenter.baemin.com/v4/management/daily-delivery-status?${qs}`;
+          const res = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
+          const json = await res.json().catch(() => ({}));
+          const data = Array.isArray(json?.data) ? json.data : [];
+          results.push({
+            partnerId: id,
+            status: res.status,
+            sample: data.slice(0, 3).map(row => ({
+              date: row.deliveryDate || row.date,
+              complete: row.totalComplete ?? row.completeCount
+            }))
+          });
+        }
+        return results;
+      }, { partnerIds: ids, fromDate: '2026-06-24', toDate: '2026-06-28' });
+      const first = JSON.stringify(rows[0]?.sample || []);
+      const allSame = rows.every(row => JSON.stringify(row.sample || []) === first);
+      return sendJsonWithCors(req, res, 200, { ok: true, active, rows, allSame });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
+  if (url.pathname === '/debug/partner-dom' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, { ok: false, message: 'Playwright 브라우저가 없습니다.' });
+    }
+    try {
+      const pages = activeContext.pages().filter(page => !page.isClosed());
+      const page = pages[0];
+      const { BAEMIN_CENTER_CHANGE_URL } = require('../server/baemin-center-context');
+      await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const dom = await page.evaluate(() => ({
+        url: location.href,
+        buttons: [...document.querySelectorAll('button')].map(btn => btn.textContent?.trim()).filter(Boolean).slice(0, 30),
+        options: [...document.querySelectorAll('[role="option"], li')].map(el => el.textContent?.trim()).filter(Boolean).slice(0, 30),
+        combobox: [...document.querySelectorAll('[role="combobox"]')].map(el => el.textContent?.trim()).filter(Boolean)
+      }));
+      return sendJsonWithCors(req, res, 200, { ok: true, dom });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
+  if (url.pathname === '/debug/partner-switch' && req.method === 'POST') {
+    if (!isContextAlive(activeContext)) {
+      return sendJsonWithCors(req, res, 409, { ok: false, message: 'Playwright 브라우저가 없습니다.' });
+    }
+    try {
+      const body = await readJsonBody(req);
+      const pages = activeContext.pages().filter(page => !page.isClosed());
+      const page = pages[0];
+      const { selectPartnerCenter, resolveCenterContextViaPage } = require('../server/baemin-center-context');
+      const captured = [];
+      const onRequest = request => {
+        const url = request.url();
+        if (!url.includes('api-deliverycenter')) return;
+        if (!/\/center/i.test(url)) return;
+        captured.push({
+          method: request.method(),
+          url,
+          postData: request.postData() || ''
+        });
+      };
+      page.on('request', onRequest);
+      let result;
+      try {
+        result = await selectPartnerCenter(page, {
+          partnerId: body?.partnerId,
+          partnerName: body?.partnerName || ''
+        });
+      } finally {
+        page.off('request', onRequest);
+      }
+      const active = await resolveCenterContextViaPage(page);
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        result,
+        active,
+        requests: captured,
+        pageUrl: page.url()
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
     }
   }
 

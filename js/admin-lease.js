@@ -19,9 +19,10 @@
     { key: 'model', label: '리스 기종', aliases: ['리스 기종', '리스기종', '기종'] },
     { key: 'chassisNumber', label: '차대번호' },
     { key: 'vehicleNumber', label: '차량번호' },
-    { key: 'insuranceCompany', label: '보험사' },
-    { key: 'insuranceAge', label: '보험연령' },
-    { key: 'insuranceType', label: '보험종류' },
+    { key: 'insuranceCompany', label: '처리보험회사', aliases: ['처리보험회사', '보험사'] },
+    { key: 'insuranceAge', label: '보험연령', aliases: ['보험연령', '만N세'] },
+    { key: 'insuranceType', label: '보험상품', aliases: ['보험상품', '보험종류'] },
+    { key: 'insuranceProductCompany', label: '보험상품회사' },
     { key: 'contractStartDate', label: '계약시작일', aliases: ['계약시작일', '시작일'] },
     { key: 'contractEndDate', label: '최종만료일', aliases: ['최종만료일', '만료일'] },
     { key: 'dailyRent', label: '일렌트료' },
@@ -168,6 +169,44 @@
     showToast(`차량종류 "${text}" 삭제됨`);
   }
 
+  function formatInsuranceAge(value) {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    if (/^만/.test(text) || /세$/.test(text)) return text;
+    const num = text.replace(/[^\d]/g, '');
+    return num ? `만${num}세` : text;
+  }
+
+  function readInsuranceFieldsFromForm() {
+    const erpMode = readErpMode();
+    if (erpMode === 'company_owned') {
+      return {
+        insuranceCompany: $('leaseInsuranceProcessingCompany')?.value || '',
+        insuranceType: $('leaseInsuranceProduct')?.value || '',
+        insuranceProductCompany: $('leaseInsuranceProductCompany')?.value || '',
+        annualInsuranceCost: $('leaseInsuranceAmount')?.value || ''
+      };
+    }
+    return {
+      insuranceAge: $('leaseInsuranceAge')?.value || '',
+      insuranceCompany: $('leaseInsuranceCompany')?.value || ''
+    };
+  }
+
+  function fillInsuranceFields(item) {
+    const erpMode = window.BremLeaseProfit?.getErpMode?.(item) === 'company_owned'
+      ? 'company_owned'
+      : 'company_lease_rental';
+    if ($('leaseInsuranceAge')) $('leaseInsuranceAge').value = item.insuranceAge || '';
+    if ($('leaseInsuranceCompany')) $('leaseInsuranceCompany').value = item.insuranceCompany || '';
+    if ($('leaseInsuranceProduct')) $('leaseInsuranceProduct').value = item.insuranceType || '';
+    if ($('leaseInsuranceProcessingCompany')) {
+      $('leaseInsuranceProcessingCompany').value = erpMode === 'company_owned' ? (item.insuranceCompany || '') : '';
+    }
+    if ($('leaseInsuranceProductCompany')) $('leaseInsuranceProductCompany').value = item.insuranceProductCompany || '';
+    if ($('leaseInsuranceAmount')) $('leaseInsuranceAmount').value = item.annualInsuranceCost || '';
+  }
+
   function readErpMode() {
     const checked = document.querySelector('input[name="leaseErpMode"]:checked');
     return checked?.value === 'company_owned' ? 'company_owned' : 'company_lease_rental';
@@ -191,10 +230,10 @@
     document.querySelectorAll('[data-erp-only="company_owned"]').forEach(el => {
       el.hidden = !owned;
     });
-    document.querySelectorAll('[data-lease-field="lease-company"], [data-lease-field="daily-lease-cost"], [data-lease-field="weekly-lease-cost"]').forEach(el => {
+    document.querySelectorAll('[data-lease-field="lease-company"], [data-lease-field="daily-lease-cost"], [data-lease-field="weekly-lease-cost"], [data-lease-field="insurance-age"], [data-lease-field="insurance-company"]').forEach(el => {
       el.hidden = owned;
     });
-    document.querySelectorAll('[data-lease-field="vehicle-price"], [data-lease-field="acquisition-tax-rate"], [data-lease-field="acquisition-tax-amount"], [data-lease-field="other-acquisition-cost"], [data-lease-field="annual-insurance"], [data-lease-field="total-acquisition-cost"], [data-lease-field="daily-owned-cost"], [data-lease-field="weekly-owned-cost"]').forEach(el => {
+    document.querySelectorAll('[data-lease-field="vehicle-price"], [data-lease-field="acquisition-tax-rate"], [data-lease-field="acquisition-tax-amount"], [data-lease-field="other-acquisition-cost"], [data-lease-field="total-acquisition-cost"], [data-lease-field="daily-owned-cost"], [data-lease-field="weekly-owned-cost"], [data-lease-field="insurance-product"], [data-lease-field="insurance-processing-company"], [data-lease-field="insurance-product-company"], [data-lease-field="insurance-amount"]').forEach(el => {
       el.hidden = !owned;
     });
     updateEmptyFieldVisibility();
@@ -245,9 +284,9 @@
       purchasePrice: $('leasePurchasePrice')?.value || '',
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
       otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
-      annualInsuranceCost: $('leaseAnnualInsurance')?.value || '',
       emptyDailyLoss: $('leaseEmptyDailyLoss')?.value || '',
-      memo: $('leaseMemo')?.value || ''
+      memo: $('leaseMemo')?.value || '',
+      ...readInsuranceFieldsFromForm()
     });
   }
 
@@ -537,6 +576,7 @@
       raw.insuranceCompany,
       raw.insuranceAge,
       raw.insuranceType,
+      raw.insuranceProductCompany,
       raw.contractStartDate,
       raw.contractEndDate,
       raw.dailyRent,
@@ -643,11 +683,11 @@
       purchasePrice: $('leasePurchasePrice')?.value || '',
       acquisitionTaxRate: $('leaseAcquisitionTaxRate')?.value || '',
       otherAcquisitionCost: $('leaseOtherAcquisitionCost')?.value || '',
-      annualInsuranceCost: $('leaseAnnualInsurance')?.value || '',
       emptyDailyLoss: $('leaseEmptyDailyLoss')?.value || '',
       memo: $('leaseMemo')?.value || '',
       vehicleStatus: 'empty',
-      emptyStartDate: $('leaseContractStartDate')?.value || leases.todayKey?.() || ''
+      emptyStartDate: $('leaseContractStartDate')?.value || leases.todayKey?.() || '',
+      ...readInsuranceFieldsFromForm()
     };
   }
 
@@ -685,7 +725,7 @@
     if ($('leasePurchasePrice')) $('leasePurchasePrice').value = item.purchasePrice || '';
     if ($('leaseAcquisitionTaxRate')) $('leaseAcquisitionTaxRate').value = item.acquisitionTaxRate || '';
     if ($('leaseOtherAcquisitionCost')) $('leaseOtherAcquisitionCost').value = item.otherAcquisitionCost || '';
-    if ($('leaseAnnualInsurance')) $('leaseAnnualInsurance').value = item.annualInsuranceCost || '';
+    fillInsuranceFields(item);
     if ($('leaseEmptyDailyLoss')) $('leaseEmptyDailyLoss').value = item.emptyDailyLoss || '';
     $('leaseMemo').value = item.memo || '';
     refreshLeaseDateLabels();
@@ -718,7 +758,11 @@
           item.renter,
           item.lesseePhone,
           item.lessor,
-          item.memo
+          item.memo,
+          item.insuranceAge,
+          item.insuranceCompany,
+          item.insuranceType,
+          item.insuranceProductCompany
         ].join(' ').toLowerCase();
         return haystack.includes(query);
       })
@@ -793,7 +837,7 @@
             : state.erpMode === 'company_lease_rental'
               ? '등록된 회사리스가 없습니다.'
               : '등록된 차량이 없습니다.';
-      rowsEl.innerHTML = `<tr><td colspan="16" class="empty">${emptyText}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="21" class="empty">${emptyText}</td></tr>`;
       renderKpis();
       updateBulkSelectionUi();
       updateFilterTabUi();
@@ -816,6 +860,11 @@
           <td>${formatMoney(metrics.vehiclePrice || item.purchasePrice)}</td>
           <td>${formatMoney(metrics.dailyCost)}</td>
           <td>${formatMoney(metrics.weeklyCost)}</td>
+          <td>${escapeHtml(formatInsuranceAge(item.insuranceAge))}</td>
+          <td>${escapeHtml(item.insuranceCompany || '-')}</td>
+          <td>${escapeHtml(item.insuranceType || '-')}</td>
+          <td>${escapeHtml(item.insuranceProductCompany || '-')}</td>
+          <td>${formatMoney(item.annualInsuranceCost)}</td>
           <td>${displayVehicleStatus(item)}</td>
           <td>${formatDate(item.contractStartDate)}</td>
           <td>${formatDate(item.contractEndDate)}</td>
@@ -868,6 +917,7 @@
       insuranceCompany: raw.insuranceCompany,
       insuranceAge: raw.insuranceAge,
       insuranceType: raw.insuranceType,
+      insuranceProductCompany: raw.insuranceProductCompany,
       contractStartDate: raw.contractStartDate,
       contractEndDate: raw.contractEndDate,
       dailyRent: raw.dailyRent,
@@ -1178,7 +1228,9 @@
 
     [
       'leaseDailyLeaseCost', 'leasePurchasePrice', 'leaseAcquisitionTaxRate',
-      'leaseOtherAcquisitionCost', 'leaseAnnualInsurance', 'leaseEmptyDailyLoss'
+      'leaseOtherAcquisitionCost', 'leaseInsuranceAmount', 'leaseEmptyDailyLoss',
+      'leaseInsuranceAge', 'leaseInsuranceCompany', 'leaseInsuranceProduct',
+      'leaseInsuranceProcessingCompany', 'leaseInsuranceProductCompany'
     ].forEach(id => {
       $(id)?.addEventListener('input', syncFormCalculations);
       $(id)?.addEventListener('change', syncFormCalculations);

@@ -946,12 +946,64 @@ async function runFullCollectPipeline(options = {}) {
     }
 
     if (playwrightPage && partnersToCollect.length > 0) {
-      console.log(`[BREM][collect] 협력사 ${partnersToCollect.length}곳 순차 수집`);
-      const { selectPartnerCenter } = require('./baemin-center-context');
-      for (let index = 0; index < partnersToCollect.length; index += 1) {
-        const partner = partnersToCollect[index];
+      const { selectPartnerCenter, resolveCenterContextViaPage, isValidPartnerId } = require('./baemin-center-context');
+      partnersToCollect = partnersToCollect.filter(partner => isValidPartnerId(partner?.partnerId));
+
+      const activeCenter = await resolveCenterContextViaPage(playwrightPage).catch(() => ({}));
+      const activeId = String(activeCenter?.partnerId || activeCenter?.centerId || '').trim();
+      const currentPartner = partnersToCollect.find(partner => partner.partnerId === activeId);
+      const otherPartners = partnersToCollect.filter(partner => partner.partnerId !== activeId);
+      const orderedPartners = currentPartner
+        ? [currentPartner, ...otherPartners]
+        : (activeId
+          ? [{
+            centerId: activeCenter.centerId || activeId,
+            managementId: activeCenter.managementId || activeId,
+            partnerId: activeId,
+            partnerName: activeCenter.partnerName || activeId
+          }, ...partnersToCollect]
+          : partnersToCollect);
+
+      let baselineDailyFingerprint = '';
+      if (activeId) {
+        const { verifyPartnerApiContext } = require('./baemin-center-context');
+        const baseline = await verifyPartnerApiContext(playwrightPage, activeId, '', historyDateRange).catch(() => null);
+        baselineDailyFingerprint = baseline?.sample?.fingerprint || '';
+      }
+
+      console.log(`[BREM][collect] 협력사 ${orderedPartners.length}곳 순차 수집 (현재: ${activeId || 'unknown'})`);
+
+      for (let index = 0; index < orderedPartners.length; index += 1) {
+        const partner = orderedPartners[index];
+        const isCurrentPartner = partner.partnerId === activeId && index === 0;
         try {
-          const active = await selectPartnerCenter(playwrightPage, partner);
+          let active = partner;
+          if (!isCurrentPartner) {
+            if (typeof detachRef.current === 'function') {
+              detachRef.current();
+              detachRef.current = () => {};
+            }
+            console.log(`[BREM][collect] 협력사 전환 시도: ${partner.partnerName || partner.partnerId} (${partner.partnerId})`);
+            active = await selectPartnerCenter(playwrightPage, partner);
+            registry.centerContext = {
+              centerId: active.centerId || partner.partnerId,
+              managementId: active.managementId || partner.partnerId,
+              partnerId: partner.partnerId,
+              partnerName: partner.partnerName || active.partnerName || partner.partnerId,
+              resolvedAt: new Date().toISOString()
+            };
+            const { verifyPartnerApiContext } = require('./baemin-center-context');
+            const verified = await verifyPartnerApiContext(
+              playwrightPage,
+              partner.partnerId,
+              baselineDailyFingerprint,
+              historyDateRange
+            );
+            if (!verified.ok) {
+              throw new Error(`협력사 전환 후 데이터 검증 실패 (${verified.reason || 'unknown'})`);
+            }
+            console.log(`[BREM][collect] 협력사 전환·검증 완료: ${partner.partnerName || partner.partnerId}`);
+          }
           const loopResult = await runForPartner({
             ...partner,
             ...active,
@@ -1132,14 +1184,15 @@ async function getPartnerListForAdmin(collectDate) {
   (data || []).forEach(row => {
     const parsed = row.parsed_json || {};
     let partnerId = String(parsed.partnerId || '').trim();
+    const partnerName = String(parsed.partnerName || '').trim();
     if (!partnerId) {
       const prefix = String(row.dedupe_key || '').split(':')[0];
       if (prefix && prefix !== 'unknown') partnerId = prefix;
     }
-    if (!partnerId) return;
-    const partnerName = String(parsed.partnerName || partnerId).trim();
+    if (!/^DP\d{6,}$/i.test(partnerId)) return;
+    if (!partnerName || partnerName === partnerId) return;
     if (!partners.has(partnerId)) {
-      partners.set(partnerId, partnerName || partnerId);
+      partners.set(partnerId, partnerName);
     }
   });
 

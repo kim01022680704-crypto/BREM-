@@ -60,6 +60,19 @@
     }
   }
 
+  function syncPartnerColumnVisibility(show) {
+    document.querySelectorAll('.baemin-data-table').forEach(table => {
+      const headerCell = table.querySelector('thead tr th:first-child');
+      if (headerCell && headerCell.textContent.trim() === '협력사') {
+        headerCell.hidden = !show;
+      }
+      table.querySelectorAll('tbody tr').forEach(row => {
+        const firstCell = row.querySelector('td:first-child');
+        if (firstCell) firstCell.hidden = !show;
+      });
+    });
+  }
+
   function formatPartnerCell(parsed) {
     return parsed?.partnerName || parsed?.partnerId || '-';
   }
@@ -888,6 +901,7 @@
     }
 
     const showPartnerColumn = false;
+    syncPartnerColumnVisibility(showPartnerColumn);
     const partnerCell = showPartnerColumn
       ? (p) => `<td>${formatPartnerCell(p)}</td>`
       : () => '';
