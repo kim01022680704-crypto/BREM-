@@ -8,13 +8,14 @@ const {
   API_REGISTRY_KEY,
   BAEMIN_API_ORIGIN,
   BAEMIN_ORIGIN,
-  sanitizeApiRegistry
+  sanitizeApiRegistry,
+  isDistinctRiderHistoryEndpoint
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
 const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
-const { sumStats, extractStatsFromItem } = require('./baemin-stats-extract');
+const { sumStats, extractStatsFromItem, pickAcceptance } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams } = require('./baemin-center-context');
 
@@ -83,7 +84,7 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
         userId,
         name: item?.name || item?.riderName || '',
         phoneNumber: item?.phoneNumber || item?.phone || '',
-        deliveryAcceptanceCount: { totalComplete: 0, foodComplete: 0, bmartComplete: 0, storeComplete: 0 },
+        deliveryAcceptanceCount: {},
         deliveryPeakTimeCount: { morning: 0, afternoon: 0, evening: 0, midnight: 0 },
         deliveryCount: 0,
         sourceUrl
@@ -91,11 +92,19 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     }
     const row = map.get(key);
     row.deliveryCount += 1;
-    const acceptance = item?.deliveryAcceptanceCount || {};
-    row.deliveryAcceptanceCount.totalComplete += Number(acceptance.totalComplete || item?.totalComplete || 1);
-    row.deliveryAcceptanceCount.foodComplete += Number(acceptance.foodComplete || 0);
-    row.deliveryAcceptanceCount.bmartComplete += Number(acceptance.bmartComplete || 0);
-    row.deliveryAcceptanceCount.storeComplete += Number(acceptance.storeComplete || 0);
+    const acceptance = pickAcceptance(item);
+    const peak = item?.deliveryPeakTimeCount || {};
+    row.deliveryAcceptanceCount.totalComplete = num(row.deliveryAcceptanceCount.totalComplete) + acceptance.completeTotal;
+    row.deliveryAcceptanceCount.foodComplete = num(row.deliveryAcceptanceCount.foodComplete) + acceptance.foodComplete;
+    row.deliveryAcceptanceCount.bmartComplete = num(row.deliveryAcceptanceCount.bmartComplete) + acceptance.bmartComplete;
+    row.deliveryAcceptanceCount.storeComplete = num(row.deliveryAcceptanceCount.storeComplete) + acceptance.storeComplete;
+    row.deliveryAcceptanceCount.totalReject = num(row.deliveryAcceptanceCount.totalReject) + acceptance.rejectTotal;
+    row.deliveryAcceptanceCount.totalCancel = num(row.deliveryAcceptanceCount.totalCancel) + acceptance.cancelTotal;
+    row.deliveryAcceptanceCount.totalRiderFault = num(row.deliveryAcceptanceCount.totalRiderFault) + acceptance.riderFault;
+    row.deliveryPeakTimeCount.morning += num(peak.morning);
+    row.deliveryPeakTimeCount.afternoon += num(peak.afternoon);
+    row.deliveryPeakTimeCount.evening += num(peak.evening);
+    row.deliveryPeakTimeCount.midnight += num(peak.midnight);
   });
   return Array.from(map.values()).map((item, index) => mapItemToCollectRow(
     'rider_history',
@@ -103,8 +112,19 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     collectDate,
     sourceUrl,
     collectedAt,
-    { partnerId: options?.partnerId, index, collectDate }
+    {
+      partnerId: options?.partnerId,
+      index,
+      collectDate,
+      dateRange: options?.dateRange || null,
+      historyQueryDates: options?.historyQueryDates || options?.dateRange || null
+    }
   ));
+}
+
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function dedupeCollectRows(rows) {
@@ -328,6 +348,9 @@ function shouldAggregateRiderFromDaily(sourceId, registry) {
   if (sourceId !== 'rider_history') return false;
   const riderEndpoint = registry?.endpoints?.rider_history;
   if (riderEndpoint?.fallbackFromDaily) return true;
+  if (isDistinctRiderHistoryEndpoint(riderEndpoint, registry?.endpoints?.daily_history)) {
+    return false;
+  }
   const dailyPath = registry?.endpoints?.daily_history?.apiPath || '/delivery/history';
   const riderPath = riderEndpoint?.apiPath || '/delivery/history';
   return riderPath === dailyPath && !riderEndpoint?.sampleUrl?.includes('userId=');
@@ -354,6 +377,12 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       : '오늘 기준');
   console.log(`[BREM][collect] ${source.label}(${sourceId}): ${dateRangeLabel}`);
 
+  let activeDateRange = source.dateQueryKeys?.length
+    ? resolveHistoryMenuQueryDates(collectDate, context.shrunkHistoryToDate
+      ? { toDate: context.shrunkHistoryToDate }
+      : null)
+    : null;
+
   if (shouldAggregateRiderFromDaily(sourceId, registry)) {
     let dailyItems = context.dailyItems;
     let sourceUrl = context.dailySourceUrl || '';
@@ -367,7 +396,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     const rows = aggregateRiderHistoryFromDaily(dailyItems, collectDate, collectedAt, sourceUrl, {
       partnerId,
       collectDate,
-      dateRange: context.dateRange || null
+      dateRange: activeDateRange || context.dateRange || null,
+      historyQueryDates: activeDateRange || null
     });
     const saveResult = await saveCollectItems(rows);
     if (!saveResult.ok) return { ...saveResult, sourceMenu: sourceId, label: source.label };
@@ -382,11 +412,6 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
-  let activeDateRange = source.dateQueryKeys?.length
-    ? resolveHistoryMenuQueryDates(collectDate, context.shrunkHistoryToDate
-      ? { toDate: context.shrunkHistoryToDate }
-      : null)
-    : null;
   let endpoint = resolveApiEndpoint(sourceId, registry);
 
   if (context.playwrightPage) {
@@ -533,6 +558,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       index,
       collectDate,
       dateRange: activeDateRange || context.dateRange || null,
+      historyQueryDates: activeDateRange || null,
       dayDate: activeDateRange?.dates?.[index]
     }
   ));
@@ -696,9 +722,7 @@ async function runFullCollectPipeline(options = {}) {
         pipelineContext.dailySourceUrl = result.sourceUrl || '';
         const riderEp = registry.endpoints?.rider_history;
         const dailyEp = registry.endpoints?.daily_history;
-        const riderHasOwnApi = riderEp?.sampleUrl
-          && riderEp.sampleUrl !== dailyEp?.sampleUrl
-          && /rider-history/i.test(`${riderEp.sampleUrl || ''}${riderEp.apiPath || ''}`);
+        const riderHasOwnApi = isDistinctRiderHistoryEndpoint(riderEp, dailyEp);
         if (!riderHasOwnApi) {
           registry.endpoints.rider_history = {
             ...(riderEp || {}),

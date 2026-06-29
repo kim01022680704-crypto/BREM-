@@ -160,6 +160,13 @@ function isValidApiSampleUrl(url) {
   }
 }
 
+function isDistinctRiderHistoryEndpoint(riderEndpoint = {}, dailyEndpoint = {}) {
+  const riderKey = `${riderEndpoint.sampleUrl || ''}${riderEndpoint.apiPath || ''}`;
+  const dailyKey = `${dailyEndpoint.sampleUrl || ''}${dailyEndpoint.apiPath || ''}`;
+  if (!riderKey || riderKey === dailyKey) return false;
+  return /rider-delivery-status|rider-history|rider_delivery/i.test(riderKey);
+}
+
 function sanitizeApiRegistry(registry = {}) {
   const endpoints = registry.endpoints || {};
   Object.keys(endpoints).forEach(sourceId => {
@@ -175,6 +182,11 @@ function sanitizeApiRegistry(registry = {}) {
       ep.apiOrigin = BAEMIN_API_ORIGIN;
     }
   });
+  const riderEp = endpoints.rider_history;
+  const dailyEp = endpoints.daily_history;
+  if (riderEp && isDistinctRiderHistoryEndpoint(riderEp, dailyEp)) {
+    delete riderEp.fallbackFromDaily;
+  }
   return registry;
 }
 
@@ -250,8 +262,13 @@ function buildDedupeKey(sourceId, item, index = 0, options = {}) {
   }
 
   if (sourceId === 'rider_history') {
-    const businessDate = extractBusinessDate(item, options);
     const riderId = String(item?.userId || item?.riderId || '').trim();
+    const rangeFrom = options.historyQueryDates?.fromDate || options.dateRange?.fromDate || '';
+    const rangeTo = options.historyQueryDates?.toDate || options.dateRange?.toDate || '';
+    if (riderId && rangeFrom && rangeTo) {
+      return `${partnerId}:${rangeFrom}:${rangeTo}:${riderId}`;
+    }
+    const businessDate = extractBusinessDate(item, options);
     if (riderId) return `${partnerId}:${businessDate}:${riderId}:rider`;
     const phone = String(item?.phoneNumber || item?.phone || '').trim();
     if (phone) return `${partnerId}:${businessDate}:${phone}:rider`;
@@ -334,6 +351,7 @@ module.exports = {
   resolveApiEndpoint,
   isValidApiSampleUrl,
   sanitizeApiRegistry,
+  isDistinctRiderHistoryEndpoint,
   extractBusinessDate,
   buildDedupeKey,
   mapItemToCollectRow

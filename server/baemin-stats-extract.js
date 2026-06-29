@@ -5,6 +5,27 @@ function num(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function readMetricBlock(block) {
+  if (!block || typeof block !== 'object') {
+    return { food: 0, bmart: 0, store: 0, total: 0 };
+  }
+  const food = num(block.food ?? block.foodComplete ?? block.foodCount);
+  const bmart = num(block.bmart ?? block.bmartComplete ?? block.bmartCount);
+  const store = num(block.store ?? block.storeComplete ?? block.baeminStore ?? block.storeCount);
+  const total = num(
+    block.total
+    ?? block.totalComplete
+    ?? block.sum
+    ?? block.totalCount
+  );
+  return {
+    food,
+    bmart,
+    store,
+    total: total || (food + bmart + store)
+  };
+}
+
 function pickPeakCounts(item, prefix = 'deliveryPeakTimeCount') {
   const peak = item?.[prefix] || item?.deliveryPeakTimeCount || {};
   return {
@@ -17,44 +38,55 @@ function pickPeakCounts(item, prefix = 'deliveryPeakTimeCount') {
 
 function pickAcceptance(item) {
   const acc = item?.deliveryAcceptanceCount || item?.acceptanceCount || {};
-  const riderFaultBlock = item?.deliveryRiderFaultCount
-    || item?.deliveryCancelRiderFaultCount
-    || item?.riderFaultCount
+  const riderFaultBlock = item?.deliveryCancelRiderFaultCount
+    || item?.deliveryRiderFaultCount
     || item?.deliveryAcceptanceRiderFaultCount
+    || item?.deliveryCancelByRiderFaultCount
+    || item?.riderFaultCount
+    || item?.deliveryRiderCancelCount
+    || acc?.deliveryCancelRiderFaultCount
+    || acc?.deliveryRiderFaultCount
     || {};
 
-  const foodRiderFault = num(
-    acc.foodRiderFault
-    ?? acc.foodRiderCancel
-    ?? riderFaultBlock.food
-    ?? riderFaultBlock.foodRiderFault
-  );
-  const bmartRiderFault = num(
-    acc.bmartRiderFault
-    ?? acc.bmartRiderCancel
-    ?? riderFaultBlock.bmart
-    ?? riderFaultBlock.bmartRiderFault
-  );
-  const storeRiderFault = num(
-    acc.storeRiderFault
-    ?? acc.storeRiderCancel
-    ?? riderFaultBlock.store
-    ?? riderFaultBlock.storeRiderFault
-    ?? riderFaultBlock.baeminStore
-  );
+  const cancelBlock = item?.deliveryCancelCount
+    || item?.deliveryDispatchCancelCount
+    || item?.deliveryAcceptanceCancelCount
+    || {};
 
-  let riderFault = num(
-    acc.totalRiderFault
-    ?? acc.riderFault
-    ?? acc.totalDeliveryCancelRiderFault
-    ?? acc.deliveryCancelRiderFault
-    ?? riderFaultBlock.total
-    ?? riderFaultBlock.totalRiderFault
-    ?? riderFaultBlock.sum
-  );
-  if (!riderFault) {
-    riderFault = foodRiderFault + bmartRiderFault + storeRiderFault;
-  }
+  const riderFaultParts = readMetricBlock({
+    food: acc.foodRiderFault
+      ?? acc.foodCancelRiderFault
+      ?? acc.foodDeliveryCancelRiderFault
+      ?? riderFaultBlock.food
+      ?? riderFaultBlock.foodRiderFault,
+    bmart: acc.bmartRiderFault
+      ?? acc.bmartCancelRiderFault
+      ?? acc.bmartDeliveryCancelRiderFault
+      ?? riderFaultBlock.bmart
+      ?? riderFaultBlock.bmartRiderFault,
+    store: acc.storeRiderFault
+      ?? acc.storeCancelRiderFault
+      ?? acc.storeDeliveryCancelRiderFault
+      ?? riderFaultBlock.store
+      ?? riderFaultBlock.storeRiderFault
+      ?? riderFaultBlock.baeminStore,
+    total: acc.totalRiderFault
+      ?? acc.riderFault
+      ?? acc.totalDeliveryCancelRiderFault
+      ?? acc.deliveryCancelRiderFault
+      ?? riderFaultBlock.total
+      ?? riderFaultBlock.totalRiderFault
+      ?? riderFaultBlock.sum
+      ?? item?.totalRiderFault
+      ?? item?.riderFault
+  });
+
+  const cancelParts = readMetricBlock({
+    food: acc.foodCancel ?? cancelBlock.food ?? cancelBlock.foodCancel,
+    bmart: acc.bmartCancel ?? cancelBlock.bmart ?? cancelBlock.bmartCancel,
+    store: acc.storeCancel ?? cancelBlock.store ?? cancelBlock.storeCancel ?? cancelBlock.baeminStore,
+    total: acc.totalCancel ?? acc.cancel ?? acc.totalDispatchCancel ?? cancelBlock.total ?? cancelBlock.totalCancel
+  });
 
   const foodReject = num(acc.foodReject);
   const bmartReject = num(acc.bmartReject);
@@ -64,20 +96,20 @@ function pickAcceptance(item) {
   return {
     completeTotal: num(acc.totalComplete),
     rejectTotal: totalReject,
-    cancelTotal: num(acc.totalCancel ?? acc.cancel ?? acc.totalDispatchCancel),
+    cancelTotal: cancelParts.total,
     foodComplete: num(acc.foodComplete),
     bmartComplete: num(acc.bmartComplete),
     storeComplete: num(acc.storeComplete),
     foodReject,
     bmartReject,
     storeReject,
-    foodCancel: num(acc.foodCancel),
-    bmartCancel: num(acc.bmartCancel),
-    storeCancel: num(acc.storeCancel),
-    foodRiderFault,
-    bmartRiderFault,
-    storeRiderFault,
-    riderFault
+    foodCancel: cancelParts.food,
+    bmartCancel: cancelParts.bmart,
+    storeCancel: cancelParts.store,
+    foodRiderFault: riderFaultParts.food,
+    bmartRiderFault: riderFaultParts.bmart,
+    storeRiderFault: riderFaultParts.store,
+    riderFault: riderFaultParts.total
   };
 }
 
@@ -116,6 +148,7 @@ function sumStats(rows) {
     completeTotal: 0,
     rejectTotal: 0,
     cancelTotal: 0,
+    riderFaultTotal: 0,
     completeMorning: 0,
     completeAfternoon: 0,
     completeEvening: 0,
@@ -139,6 +172,7 @@ function sumStats(rows) {
     totals.completeTotal += num(row.completeTotal);
     totals.rejectTotal += num(row.rejectTotal);
     totals.cancelTotal += num(row.cancelTotal);
+    totals.riderFaultTotal += num(row.riderFault);
     totals.completeMorning += num(row.completeMorning);
     totals.completeAfternoon += num(row.completeAfternoon);
     totals.completeEvening += num(row.completeEvening);
