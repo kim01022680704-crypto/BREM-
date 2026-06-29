@@ -5,7 +5,9 @@ const {
   mapItemToCollectRow,
   buildDefaultQuery,
   resolveApiEndpoint,
-  API_REGISTRY_KEY
+  API_REGISTRY_KEY,
+  BAEMIN_API_ORIGIN,
+  BAEMIN_ORIGIN
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
@@ -163,6 +165,96 @@ async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, date
   return resolveApiEndpoint(sourceId, registry);
 }
 
+function endpointOriginForPath(apiPath, preferredOrigin) {
+  if (preferredOrigin) return preferredOrigin;
+  return String(apiPath || '').startsWith('/v4/') ? BAEMIN_API_ORIGIN : BAEMIN_ORIGIN;
+}
+
+function buildEndpointCandidates(sourceId, source, endpoint) {
+  const paths = [
+    endpoint?.apiPath,
+    ...(source?.fallbackApiPaths || [])
+  ].filter(Boolean);
+  const uniquePaths = [...new Set(paths)];
+  const origins = [...new Set([
+    endpoint?.apiOrigin,
+    BAEMIN_API_ORIGIN,
+    BAEMIN_ORIGIN
+  ].filter(Boolean))];
+
+  const candidates = [];
+  uniquePaths.forEach(apiPath => {
+    origins.forEach(apiOrigin => {
+      candidates.push({
+        apiOrigin: endpointOriginForPath(apiPath, apiOrigin),
+        apiPath,
+        sampleUrl: null,
+        sampleHeaders: endpoint?.sampleHeaders || null
+      });
+    });
+  });
+  return candidates;
+}
+
+async function fetchHistoryByDays({
+  sourceId,
+  source,
+  endpoint,
+  sessionCookie,
+  registry,
+  context,
+  activeDateRange,
+  collectDate,
+  tryFetch
+}) {
+  const dates = activeDateRange?.dates?.length
+    ? activeDateRange.dates
+    : [activeDateRange?.toDate || collectDate];
+  const merged = [];
+  let lastUrl = '';
+
+  for (const day of dates) {
+    const dayRange = {
+      ...(activeDateRange || {}),
+      fromDate: day,
+      toDate: day,
+      dates: [day],
+      dayCount: 1
+    };
+    let dayResult = await tryFetch({ ...endpoint, sampleUrl: null }, dayRange);
+    if (!dayResult.ok && (dayResult.status === 404 || dayResult.status === 400)) {
+      const candidates = buildEndpointCandidates(sourceId, source, endpoint);
+      for (const candidate of candidates) {
+        dayResult = await tryFetch(candidate, dayRange);
+        if (dayResult.ok) {
+          endpoint = candidate;
+          break;
+        }
+      }
+    }
+    if (!dayResult.ok) {
+      console.warn(`[BREM][collect] ${sourceId} day=${day} failed status=${dayResult.status} msg=${dayResult.message}`);
+      continue;
+    }
+    merged.push(...(dayResult.items || []));
+    lastUrl = dayResult.meta?.sourceUrl || lastUrl;
+    console.log(`[BREM][collect] ${sourceId} day=${day} rows=${(dayResult.items || []).length}`);
+  }
+
+  if (!merged.length) return null;
+  return {
+    ok: true,
+    items: merged,
+    meta: {
+      totalPage: 1,
+      rawCount: merged.length,
+      sourceUrl: lastUrl,
+      apiPath: endpoint.apiPath,
+      perDay: true
+    }
+  };
+}
+
 function shouldAggregateRiderFromDaily(sourceId, registry) {
   if (sourceId !== 'rider_history') return false;
   const riderEndpoint = registry?.endpoints?.rider_history;
@@ -251,12 +343,19 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   let fetched = await tryFetch(endpoint);
+  if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
+    console.warn(`[BREM][collect] ${sourceId} stored sampleUrl failed — rediscover`);
+    endpoint = { ...endpoint, sampleUrl: null };
+    if (registry.endpoints?.[sourceId]) {
+      registry.endpoints[sourceId].sampleUrl = null;
+    }
+  }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && context.playwrightPage && activeDateRange) {
     endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange)
       || endpoint;
     fetched = await tryFetch(endpoint);
   }
-  if (!fetched.ok && fetched.status === 400 && activeDateRange) {
+  if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && activeDateRange) {
     let shrunk = shrinkDateRangeEnd(activeDateRange);
     while (!fetched.ok && fetched.status === 400 && shrunk) {
       console.warn(`[BREM][collect] ${sourceId} 400 — 영업일 미마감 가능, toDate=${shrunk.toDate} 로 재시도`);
@@ -270,16 +369,30 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       shrunk = fetched.ok ? null : shrinkDateRangeEnd(activeDateRange);
     }
   }
+  if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && source.dateQueryKeys?.length) {
+    const byDay = await fetchHistoryByDays({
+      sourceId,
+      source,
+      endpoint,
+      sessionCookie,
+      registry,
+      context,
+      activeDateRange,
+      collectDate,
+      tryFetch
+    });
+    if (byDay) fetched = byDay;
+  }
   if (!fetched.ok && fetched.status === 404 && source.fallbackApiPaths?.length) {
-    for (const fallbackPath of source.fallbackApiPaths) {
-      if (fallbackPath === endpoint.apiPath) continue;
-      console.log(`[BREM][collect] ${sourceId} retry apiPath=${fallbackPath}`);
-      fetched = await tryFetch({
-        ...endpoint,
-        apiPath: fallbackPath,
-        sampleUrl: null
-      });
-      if (fetched.ok) break;
+    const candidates = buildEndpointCandidates(sourceId, source, endpoint);
+    for (const candidate of candidates) {
+      if (candidate.apiPath === endpoint.apiPath && candidate.apiOrigin === endpoint.apiOrigin) continue;
+      console.log(`[BREM][collect] ${sourceId} retry api=${candidate.apiOrigin}${candidate.apiPath}`);
+      fetched = await tryFetch(candidate);
+      if (fetched.ok) {
+        endpoint = candidate;
+        break;
+      }
     }
   }
 

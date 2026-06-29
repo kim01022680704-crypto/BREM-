@@ -30,11 +30,15 @@ const COLLECT_SOURCES = {
     id: 'daily_history',
     label: '일별 배달내역',
     apiOrigin: BAEMIN_API_ORIGIN,
-    apiPath: '/v4/management/delivery-history',
+    apiPath: '/v4/management/delivery/history',
     fallbackApiPaths: [
-      '/v4/management/delivery/history',
+      '/v4/management/delivery-history',
       '/v4/management/delivery/delivery-history',
-      '/v2/delivery/history'
+      '/v4/management/delivery-histories',
+      '/v4/management/daily-delivery-history',
+      '/v2/delivery/history',
+      '/delivery/history',
+      '/delivery/delivery-history'
     ],
     pagePathPatterns: [
       /\/delivery\/delivery-history/i,
@@ -53,11 +57,14 @@ const COLLECT_SOURCES = {
     id: 'rider_history',
     label: '라이더별 배달내역',
     apiOrigin: BAEMIN_API_ORIGIN,
-    apiPath: '/v4/management/rider-history',
+    apiPath: '/v4/management/delivery/rider-history',
     fallbackApiPaths: [
-      '/v4/management/delivery/rider-history',
+      '/v4/management/rider-history',
       '/v4/management/delivery-history',
-      '/v2/delivery/rider-history'
+      '/v4/management/rider-histories',
+      '/v2/delivery/rider-history',
+      '/delivery/rider-history',
+      '/delivery/history'
     ],
     pagePathPatterns: [
       /\/delivery\/rider-history/i,
