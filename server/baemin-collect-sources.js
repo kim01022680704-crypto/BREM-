@@ -49,7 +49,7 @@ const COLLECT_SOURCES = {
       /\/delivery\/history(?:\?|$)/i,
       /\/delivery\/delivery-history(?:\?|$)/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 1 },
     dateQueryKeys: ['fromDate', 'toDate'],
     dedupeFields: ['deliveryId', 'orderId', 'id', 'userId']
   },
@@ -75,7 +75,7 @@ const COLLECT_SOURCES = {
       /\/delivery\/rider/i,
       /\/rider\/.*\/history/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 1 },
     dateQueryKeys: ['fromDate', 'toDate'],
     riderQueryKeys: ['userId', 'riderId'],
     dedupeFields: ['deliveryId', 'orderId', 'id', 'userId']

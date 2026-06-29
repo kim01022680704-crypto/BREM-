@@ -154,13 +154,15 @@ async function fetchPaginatedApi({
   const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
 
   const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
+  const pageStart = Number.isFinite(pagination.pageStart) ? pagination.pageStart : 0;
   const dataKey = pagination.dataKey || 'data';
   const merged = [];
   let firstPayload = null;
   let lastUrl = '';
   let totalPage = 1;
 
-  for (let page = 0; page < totalPage; page += 1) {
+  for (let pageIndex = 0; pageIndex < totalPage; pageIndex += 1) {
+    const page = pageStart + pageIndex;
     if (sampleUrl) {
       try {
         const parsed = new URL(sampleUrl);
@@ -209,7 +211,7 @@ async function fetchPaginatedApi({
       return result;
     }
 
-    if (page === 0) {
+    if (pageIndex === 0) {
       firstPayload = result.payload;
       const detected = readTotalPages(result.payload);
       const rows = extractDataArray(result.payload, dataKey) || [];

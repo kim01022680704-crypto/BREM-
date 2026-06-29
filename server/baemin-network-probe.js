@@ -7,7 +7,7 @@ function delay(ms) {
 }
 
 function buildProbePages(range) {
-  const qs = `page=0&size=20&fromDate=${range.fromDate}&toDate=${range.toDate}`;
+  const qs = `fromDate=${range.fromDate}&toDate=${range.toDate}`;
   return [
     { id: 'delivery_status', label: '배달현황', url: `${BAEMIN_ORIGIN}/delivery-status` },
     { id: 'delivery_status_alt', label: '배달현황(히스토리)', url: `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20&orderName=name&orderBy=asc&name=&userId=&phoneNumber=&riderStatus=` },

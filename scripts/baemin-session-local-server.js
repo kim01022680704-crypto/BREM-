@@ -1134,7 +1134,8 @@ async function probeCollectPages(context, collectDate) {
 
   for (const pathSuffix of PROBE_PAGE_PATHS) {
     const range = computeCollectDateRange(collectDate);
-    const rangeQs = `page=0&size=20&fromDate=${range.fromDate}&toDate=${range.toDate}`;
+    const day = range.toDate || range.fromDate;
+    const rangeQs = `fromDate=${day}&toDate=${day}`;
     const url = pathSuffix.includes('fromDate=')
       ? `${BAEMIN_COLLECT_ORIGIN}${pathSuffix}`
       : (pathSuffix.includes('delivery-history') || pathSuffix.includes('rider-history'))

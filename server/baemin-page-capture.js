@@ -11,12 +11,18 @@ function buildPagePath(sourceId) {
   return `${BAEMIN_ORIGIN}/delivery/history`;
 }
 
+function buildSpaDateQuery(dateRange) {
+  if (!dateRange?.fromDate || !dateRange?.toDate) return '';
+  const day = dateRange.toDate || dateRange.fromDate;
+  return `fromDate=${day}&toDate=${day}`;
+}
+
 function buildPageUrl(sourceId, dateRange) {
   const base = buildPagePath(sourceId);
   if (!dateRange?.fromDate || !dateRange?.toDate) return base;
   if (sourceId === 'delivery_status') return base;
-  const day = dateRange.toDate || dateRange.fromDate;
-  return `${base}?page=0&size=20&fromDate=${day}&toDate=${day}`;
+  const qs = buildSpaDateQuery(dateRange);
+  return qs ? `${base}?${qs}` : base;
 }
 
 function responseMatchesSource(sourceId, url, status, contentType) {
@@ -117,6 +123,7 @@ async function discoverApiUrlViaPage(page, sourceId, dateRange, timeoutMs = 4500
 module.exports = {
   buildPagePath,
   buildPageUrl,
+  buildSpaDateQuery,
   discoverApiUrlViaPage,
   responseMatchesSource
 };
