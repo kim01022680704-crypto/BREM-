@@ -814,7 +814,7 @@
         return `<tr>
           <td>${p.deliveryDate || row.collect_date || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
-          <td>${formatNumber(p.foodReject || 0)}</td>
+          <td>${formatNumber(p.totalReject ?? p.foodReject ?? 0)}</td>
           <td>${formatNumber(p.cancelCount || 0)}</td>
           <td>${formatRiderFaultCell(p)}</td>
           <td>${formatNumber(p.morningCount || 0)}</td>
@@ -835,7 +835,7 @@
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
         <td>${formatNumber(p.totalComplete || deliveryCount || 0)}</td>
-        <td>${formatNumber(p.foodReject || 0)}</td>
+        <td>${formatNumber(p.totalReject ?? p.foodReject ?? 0)}</td>
         <td>${formatNumber(p.cancelCount || 0)}</td>
         <td>${formatRiderFaultCell(p)}</td>
         <td>${formatNumber(p.morningCount || 0)}</td>

@@ -9,7 +9,7 @@ const {
   BAEMIN_API_ORIGIN,
   BAEMIN_ORIGIN,
   sanitizeApiRegistry,
-  isDistinctRiderHistoryEndpoint
+  mergeEndpointWithDefault
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
@@ -346,13 +346,14 @@ async function fetchHistoryByDays({
 
 function shouldAggregateRiderFromDaily(sourceId, registry) {
   if (sourceId !== 'rider_history') return false;
-  const riderEndpoint = registry?.endpoints?.rider_history;
+  const riderEndpoint = mergeEndpointWithDefault('rider_history', registry?.endpoints?.rider_history || {});
+  const dailyEndpoint = mergeEndpointWithDefault('daily_history', registry?.endpoints?.daily_history || {});
   if (riderEndpoint?.fallbackFromDaily) return true;
-  if (isDistinctRiderHistoryEndpoint(riderEndpoint, registry?.endpoints?.daily_history)) {
+  if (isDistinctRiderHistoryEndpoint(riderEndpoint, dailyEndpoint)) {
     return false;
   }
-  const dailyPath = registry?.endpoints?.daily_history?.apiPath || '/delivery/history';
-  const riderPath = riderEndpoint?.apiPath || '/delivery/history';
+  const dailyPath = dailyEndpoint.apiPath || '/delivery/history';
+  const riderPath = riderEndpoint.apiPath || '/delivery/history';
   return riderPath === dailyPath && !riderEndpoint?.sampleUrl?.includes('userId=');
 }
 
@@ -720,15 +721,21 @@ async function runFullCollectPipeline(options = {}) {
       if (sourceDef.id === 'daily_history' && result.ok) {
         pipelineContext.dailyItems = result.rawItems || [];
         pipelineContext.dailySourceUrl = result.sourceUrl || '';
-        const riderEp = registry.endpoints?.rider_history;
-        const dailyEp = registry.endpoints?.daily_history;
+        const riderEp = mergeEndpointWithDefault('rider_history', registry.endpoints?.rider_history || {});
+        const dailyEp = mergeEndpointWithDefault('daily_history', registry.endpoints?.daily_history || {});
         const riderHasOwnApi = isDistinctRiderHistoryEndpoint(riderEp, dailyEp);
+        if (riderHasOwnApi && registry.endpoints?.rider_history?.fallbackFromDaily) {
+          delete registry.endpoints.rider_history.fallbackFromDaily;
+        }
         if (!riderHasOwnApi) {
           registry.endpoints.rider_history = {
-            ...(riderEp || {}),
+            ...(registry.endpoints?.rider_history || {}),
+            ...riderEp,
             fallbackFromDaily: true
           };
           console.log('[BREM][collect] rider_history → daily_history 집계 fallback 활성');
+        } else {
+          console.log(`[BREM][collect] rider_history 전용 API 사용: ${riderEp.apiPath}`);
         }
       }
 
@@ -883,9 +890,9 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu) {
 
   let query = supabase
     .from('baemin_biz_collect_items')
-    .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json')
+    .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
     .eq('collect_date', date)
-    .order('rider_name', { ascending: true })
+    .order('collected_at', { ascending: false })
     .limit(5000);
 
   if (menu) query = query.eq('source_menu', menu);
@@ -898,13 +905,49 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu) {
     return { ok: false, error: error.message || '조회 실패' };
   }
 
+  const items = normalizeCollectItemsForAdmin(data || [], menu);
+
   return {
     ok: true,
     collectDate: date,
     sourceMenu: menu,
-    items: data || [],
-    count: (data || []).length
+    items,
+    count: items.length
   };
+}
+
+function normalizeCollectItemsForAdmin(rows, sourceMenu) {
+  const byKey = new Map();
+  (rows || []).forEach(row => {
+    const key = `${row.source_menu || ''}|${row.dedupe_key || row.id}`;
+    const prev = byKey.get(key);
+    if (!prev || String(row.collected_at || '') >= String(prev.collected_at || '')) {
+      byKey.set(key, row);
+    }
+  });
+
+  let items = Array.from(byKey.values());
+
+  if (sourceMenu === 'rider_history') {
+    items = items.filter(row => {
+      const riderId = String(row.rider_user_id || '').trim();
+      const riderName = String(row.rider_name || '').trim();
+      const dedupe = String(row.dedupe_key || '');
+      if (/:(rider-\d+)$/.test(dedupe) && !riderId && !riderName) return false;
+      return Boolean(riderId || riderName);
+    });
+    items.sort((a, b) => String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko'));
+  } else if (sourceMenu === 'daily_history') {
+    items.sort((a, b) => {
+      const da = String(a.parsed_json?.deliveryDate || a.collect_date || '');
+      const db = String(b.parsed_json?.deliveryDate || b.collect_date || '');
+      return da.localeCompare(db);
+    });
+  } else if (sourceMenu === 'delivery_status') {
+    items.sort((a, b) => String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko'));
+  }
+
+  return items;
 }
 
 module.exports = {

@@ -160,10 +160,23 @@ function isValidApiSampleUrl(url) {
   }
 }
 
+function mergeEndpointWithDefault(sourceId, endpoint = {}) {
+  const source = getCollectSource(sourceId);
+  if (!source) return { ...endpoint };
+  return {
+    ...endpoint,
+    apiPath: endpoint.apiPath || source.apiPath || '',
+    apiOrigin: endpoint.apiOrigin || source.apiOrigin || ''
+  };
+}
+
 function isDistinctRiderHistoryEndpoint(riderEndpoint = {}, dailyEndpoint = {}) {
-  const riderKey = `${riderEndpoint.sampleUrl || ''}${riderEndpoint.apiPath || ''}`;
-  const dailyKey = `${dailyEndpoint.sampleUrl || ''}${dailyEndpoint.apiPath || ''}`;
-  if (!riderKey || riderKey === dailyKey) return false;
+  const riderMerged = mergeEndpointWithDefault('rider_history', riderEndpoint);
+  const dailyMerged = mergeEndpointWithDefault('daily_history', dailyEndpoint);
+  const riderKey = `${riderMerged.sampleUrl || ''}${riderMerged.apiPath || ''}`;
+  const dailyKey = `${dailyMerged.sampleUrl || ''}${dailyMerged.apiPath || ''}`;
+  if (!riderKey) return false;
+  if (riderKey === dailyKey) return false;
   return /rider-delivery-status|rider-history|rider_delivery/i.test(riderKey);
 }
 
@@ -352,6 +365,7 @@ module.exports = {
   isValidApiSampleUrl,
   sanitizeApiRegistry,
   isDistinctRiderHistoryEndpoint,
+  mergeEndpointWithDefault,
   extractBusinessDate,
   buildDedupeKey,
   mapItemToCollectRow
