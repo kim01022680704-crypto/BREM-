@@ -574,6 +574,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && activeDateRange) {
     let shrunk = shrinkDateRangeEnd(activeDateRange);
     while (!fetched.ok && fetched.status === 400 && shrunk) {
+      const partnerRequired = /협력사 아이디는 필수/i.test(String(fetched.message || fetched.bodyText || ''));
+      if (partnerRequired) break;
       console.warn(`[BREM][collect] ${sourceId} 400 — 영업일 미마감 가능, toDate=${shrunk.toDate} 로 재시도`);
       activeDateRange = shrunk;
       context.shrunkHistoryToDate = shrunk.toDate;
@@ -1060,7 +1062,28 @@ async function runFullCollectPipeline(options = {}) {
               baselineDailyFingerprint = verified.sample.fingerprint;
             }
           } else {
-            console.log(`[BREM][collect] ${progressLabel} — 현재 협력사 그대로 수집`);
+            console.log(`[BREM][collect] ${progressLabel} — 현재 협력사 API 세션 확인`);
+            const {
+              ensurePartnerSessionReady,
+              readActivePartnerDisplayFromPage,
+              trySwitchCenterViaApi
+            } = require('./baemin-center-context');
+            await trySwitchCenterViaApi(playwrightPage, partner.partnerId);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const verified = await ensurePartnerSessionReady(
+              playwrightPage,
+              partner.partnerId,
+              { baselineFingerprint: '', dateRange: historyDateRange }
+            );
+            const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
+            if (verified.ok) {
+              console.log(`[BREM][collect] ${progressLabel} — API 세션 확인 완료 (rows fingerprint=${verified.sample?.fingerprint ? 'ok' : 'empty'})`);
+            } else if (uiNow.partnerId === partner.partnerId) {
+              console.warn(`[BREM][collect] ${progressLabel} — API 검증 미통과, UI 확인으로 수집 진행 (${verified.reason || '-'})`);
+            }
+            if (verified.sample?.fingerprint) {
+              baselineDailyFingerprint = verified.sample.fingerprint;
+            }
           }
           const loopResult = await runForPartner({
             ...partner,

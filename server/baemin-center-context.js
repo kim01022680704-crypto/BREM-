@@ -720,28 +720,30 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
     const params = new URLSearchParams({
       page: '0',
       size: '5',
-      fromDate,
-      toDate,
-      partnerId,
-      cooperationId: partnerId,
-      managementId: partnerId,
-      centerId: partnerId,
       ...extra
     });
+    if (fromDate && toDate) {
+      params.set('fromDate', fromDate);
+      params.set('toDate', toDate);
+    }
     return `https://api-deliverycenter.baemin.com${path}?${params}`;
   };
 
   const extractDailyFingerprint = payload => {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
     return rows
-      .map(row => `${row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`)
+      .map(row => `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`)
       .join('|');
   };
 
   const extractStatusFingerprint = payload => {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
     return rows
-      .map(row => `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${row.totalComplete ?? row.completeCount ?? 0}`)
+      .map(row => {
+        const acceptance = row?.deliveryAcceptanceCount || {};
+        const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+        return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
+      })
       .join('|');
   };
 
@@ -857,6 +859,8 @@ async function selectPartnerCenterInner(page, target = {}) {
   ).trim();
   const current = await resolveCenterContextViaPage(page);
   if (currentId === targetId) {
+    await trySwitchCenterViaApi(page, targetId);
+    await delay(1500);
     const display = await readActivePartnerDisplayFromPage(page);
     return {
       centerId: current.centerId || targetId,
@@ -1112,5 +1116,6 @@ module.exports = {
   readCenterSessionCookie,
   inferRegionFromPartnerName,
   verifyPartnerApiContext,
-  ensurePartnerSessionReady
+  ensurePartnerSessionReady,
+  trySwitchCenterViaApi
 };
