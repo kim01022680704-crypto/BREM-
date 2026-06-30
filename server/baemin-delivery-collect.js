@@ -9,6 +9,26 @@ function getBaeminSession() {
 const API_BASE = 'https://deliverycenter.baemin.com/delivery-status';
 const DEFAULT_PAGE_SIZE = 20;
 
+/** Columns present in public.baemin_delivery_status (see supabase/baemin_delivery_status_migration.sql) */
+const DELIVERY_STATUS_DB_COLUMNS = new Set([
+  'capture_date', 'dedupe_key', 'rider_name', 'phone_number', 'user_id',
+  'status_code', 'status_desc',
+  'food_complete', 'bmart_complete', 'store_complete', 'total_complete',
+  'food_reject', 'bmart_reject', 'store_reject', 'total_reject',
+  'food_cancel', 'bmart_cancel', 'store_cancel', 'cancel_count',
+  'food_rider_fault', 'bmart_rider_fault', 'store_rider_fault', 'rider_fault',
+  'morning_count', 'afternoon_count', 'evening_count', 'midnight_count',
+  'hourly_completed', 'raw_json'
+]);
+
+function pickDeliveryStatusDbRow(row) {
+  const picked = {};
+  Object.keys(row || {}).forEach(key => {
+    if (DELIVERY_STATUS_DB_COLUMNS.has(key)) picked[key] = row[key];
+  });
+  return picked;
+}
+
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -270,7 +290,8 @@ async function saveRowsDirect(rows, captureDate) {
   const date = String(captureDate || todayDateString()).slice(0, 10);
   const mapped = (rows || [])
     .map(item => mapItemToRow(item, date))
-    .filter(row => row.dedupe_key);
+    .filter(row => row.dedupe_key)
+    .map(pickDeliveryStatusDbRow);
 
   if (!mapped.length) {
     return {

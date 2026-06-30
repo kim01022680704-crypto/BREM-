@@ -18,7 +18,7 @@ const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem, pickAcceptance } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
-const { buildCenterQueryParams } = require('./baemin-center-context');
+const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 
 function getBaeminSession() {
   return require('./baemin-delivery-session');
@@ -116,6 +116,7 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     {
       partnerId: options?.partnerId,
       partnerName: options?.partnerName,
+      regionName: options?.regionName,
       index,
       collectDate,
       dateRange: options?.dateRange || null,
@@ -460,9 +461,11 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     }
     const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
     const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
+    const regionName = String(registry.centerContext?.regionName || context.regionName || '').trim();
     const rows = aggregateRiderHistoryFromDaily(dailyItems, collectDate, collectedAt, sourceUrl, {
       partnerId,
       partnerName,
+      regionName,
       collectDate,
       dateRange: activeDateRange || context.dateRange || null,
       historyQueryDates: activeDateRange || null
@@ -510,16 +513,26 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} range=${activeDateRange?.fromDate || collectDate}~${activeDateRange?.toDate || collectDate} api=${endpoint.apiOrigin}${endpoint.apiPath}${endpoint.sampleUrl ? ' (sampleUrl)' : ''}`);
 
   async function tryFetch(endpointInfo, dateRange = activeDateRange) {
-    const { buildCenterFetchHeaders } = require('./baemin-center-context');
     const baseQuery = mergeCenterQuery(
       buildDefaultQuery(sourceId, collectDate, dateRange),
       registry
     );
+    const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+    if (!partnerId) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'PARTNER_ID_REQUIRED',
+        message: '협력사 아이디는 필수입니다. 배민 브라우저에서 협력사를 선택한 뒤 다시 시도하세요.'
+      };
+    }
+    const centerHeaders = null;
+    console.log(`[BREM][collect:${sourceId}] partnerId=${partnerId}`);
     return fetchPaginatedApi({
       apiOrigin: endpointInfo.apiOrigin,
       apiPath: endpointInfo.apiPath,
       sampleUrl: endpointInfo.sampleUrl,
-      sampleHeaders: buildCenterFetchHeaders(registry.centerContext || {}),
+      sampleHeaders: centerHeaders,
       sessionCookie,
       baseQuery,
       pagination: source.pagination,
@@ -616,6 +629,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 
   const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
   const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
+  const regionName = String(registry.centerContext?.regionName || context.regionName || '').trim();
   const rows = items.map((item, index) => mapItemToCollectRow(
     sourceId,
     item,
@@ -625,6 +639,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     {
       partnerId,
       partnerName,
+      regionName,
       index,
       collectDate,
       dateRange: activeDateRange || context.dateRange || null,
@@ -675,30 +690,27 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 function readPartnerContext(registry, context = {}) {
   return {
     partnerId: String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim(),
-    partnerName: String(registry.centerContext?.partnerName || context.partnerName || '').trim()
+    partnerName: String(registry.centerContext?.partnerName || context.partnerName || '').trim(),
+    regionName: String(registry.centerContext?.regionName || context.regionName || '').trim()
   };
 }
 
+function resetPartnerEndpointCache(registry) {
+  if (!registry?.endpoints) return;
+  Object.keys(registry.endpoints).forEach(key => {
+    if (!registry.endpoints[key] || typeof registry.endpoints[key] !== 'object') return;
+    registry.endpoints[key].sampleUrl = null;
+    registry.endpoints[key].discoveredAt = null;
+  });
+}
+
 function attachCollectCenterRoute(playwrightPage, registry, detachRef = { current: null }) {
-  const { buildCenterFetchHeaders } = require('./baemin-center-context');
-  const { attachCenterApiRoute } = require('./baemin-playwright-route');
   if (typeof detachRef.current === 'function') {
     detachRef.current();
   }
-  const center = registry.centerContext || {};
-  if (!center?.centerId && !center?.managementId && !center?.partnerId) {
-    detachRef.current = () => {};
-    return;
-  }
-  const discoveredHeaders = {
-    ...buildCenterFetchHeaders(center),
-    ...(registry.endpoints?.delivery_status?.sampleHeaders || {}),
-    ...(registry.endpoints?.daily_history?.sampleHeaders || {})
-  };
-  detachRef.current = attachCenterApiRoute(playwrightPage.context(), {
-    centerContext: center,
-    discoveredHeaders
-  });
+  // 브라우저 탭 fetch(credentials:include)는 CENTER_SESSION 쿠키를 따릅니다.
+  // partner-id 헤더 주입은 세션과 충돌해 동일 데이터가 반복 저장될 수 있어 비활성화합니다.
+  detachRef.current = () => {};
 }
 
 async function runPartnerSourceCollectLoop({
@@ -892,20 +904,27 @@ async function runFullCollectPipeline(options = {}) {
     let anySuccess = false;
     let sessionExpired = false;
 
-    async function runForPartner(partnerContext) {
+    async function runForPartner(partnerContext, partnerIndex = 0, partnerTotal = 0) {
       registry.centerContext = {
         centerId: partnerContext.centerId,
         managementId: partnerContext.managementId,
         partnerId: partnerContext.partnerId,
         partnerName: partnerContext.partnerName || partnerContext.partnerId,
+        regionName: partnerContext.regionName || '',
         resolvedAt: new Date().toISOString()
       };
       pipelineContext.partnerName = registry.centerContext.partnerName;
+      pipelineContext.regionName = registry.centerContext.regionName;
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
       pipelineContext.shrunkHistoryToDate = null;
+      resetPartnerEndpointCache(registry);
 
-      console.log(`[BREM][collect] 협력사 수집 시작: ${registry.centerContext.partnerName} (${registry.centerContext.partnerId})`);
+      const label = partnerTotal > 0
+        ? `[${partnerIndex + 1}/${partnerTotal}] ${registry.centerContext.partnerName}`
+        : registry.centerContext.partnerName;
+      console.log(`[BREM][collect] ${label} (${registry.centerContext.partnerId}) — 현재 협력사 확인 완료`);
+      console.log(`[BREM][collect] ${label} — 배달현황 수집 시작`);
 
       if (playwrightPage) {
         attachCollectCenterRoute(playwrightPage, registry, detachRef);
@@ -937,10 +956,13 @@ async function runFullCollectPipeline(options = {}) {
       partnerSummaries.push({
         partnerId: registry.centerContext.partnerId,
         partnerName: registry.centerContext.partnerName,
+        regionName: registry.centerContext.regionName,
         ok: loopResult.anySuccess,
         savedCount: Object.values(loopResult.results).reduce((sum, row) => sum + Number(row.savedCount || 0), 0),
         results: loopResult.results
       });
+
+      console.log(`[BREM][collect] ${label} — 저장 완료 (partner_id=${registry.centerContext.partnerId}, rows=${partnerSummaries[partnerSummaries.length - 1].savedCount})`);
 
       return loopResult;
     }
@@ -976,6 +998,7 @@ async function runFullCollectPipeline(options = {}) {
       for (let index = 0; index < orderedPartners.length; index += 1) {
         const partner = orderedPartners[index];
         const isCurrentPartner = partner.partnerId === activeId && index === 0;
+        const progressLabel = `[${index + 1}/${orderedPartners.length}] ${partner.partnerName || partner.partnerId}`;
         try {
           let active = partner;
           if (!isCurrentPartner) {
@@ -983,32 +1006,54 @@ async function runFullCollectPipeline(options = {}) {
               detachRef.current();
               detachRef.current = () => {};
             }
-            console.log(`[BREM][collect] 협력사 전환 시도: ${partner.partnerName || partner.partnerId} (${partner.partnerId})`);
+            console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시도 (${partner.partnerId})`);
             active = await selectPartnerCenter(playwrightPage, partner);
             registry.centerContext = {
               centerId: active.centerId || partner.partnerId,
               managementId: active.managementId || partner.partnerId,
               partnerId: partner.partnerId,
               partnerName: partner.partnerName || active.partnerName || partner.partnerId,
+              regionName: partner.regionName || active.regionName || '',
               resolvedAt: new Date().toISOString()
             };
-            const { verifyPartnerApiContext } = require('./baemin-center-context');
-            const verified = await verifyPartnerApiContext(
+            const { ensurePartnerSessionReady, readActivePartnerDisplayFromPage } = require('./baemin-center-context');
+            const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
+            console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · 화면=${uiNow.partnerName || '-'} (${uiNow.partnerId || 'unknown'})`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const verified = await ensurePartnerSessionReady(
               playwrightPage,
               partner.partnerId,
-              baselineDailyFingerprint,
-              historyDateRange
+              {
+                baselineFingerprint: baselineDailyFingerprint,
+                dateRange: historyDateRange
+              }
             );
             if (!verified.ok) {
-              throw new Error(`협력사 전환 후 데이터 검증 실패 (${verified.reason || 'unknown'})`);
+              if (verified.reason === 'same_as_baseline') {
+                throw new Error(`협력사 전환 후 데이터 검증 실패 (${verified.reason || 'unknown'})`);
+              }
+              if (uiNow.partnerId === partner.partnerId) {
+                console.warn(`[BREM][collect] ${progressLabel} — API 검증 생략, UI 확인으로 수집 진행`);
+              } else {
+                throw new Error(`협력사 전환 후 데이터 검증 실패 (${verified.reason || 'unknown'})`);
+              }
+            } else if (verified.softVerify) {
+              console.log(`[BREM][collect] ${progressLabel} — API soft-verify (UI=${uiNow.partnerId})`);
+            } else {
+              console.log(`[BREM][collect] ${progressLabel} — API fingerprint=${verified.sample?.fingerprint || '-'}`);
             }
-            console.log(`[BREM][collect] 협력사 전환·검증 완료: ${partner.partnerName || partner.partnerId}`);
+            if (verified.sample?.fingerprint) {
+              baselineDailyFingerprint = verified.sample.fingerprint;
+            }
+          } else {
+            console.log(`[BREM][collect] ${progressLabel} — 현재 협력사 그대로 수집`);
           }
           const loopResult = await runForPartner({
             ...partner,
             ...active,
-            partnerName: partner.partnerName || active.partnerName
-          });
+            partnerName: partner.partnerName || active.partnerName,
+            regionName: partner.regionName || active.regionName
+          }, index, orderedPartners.length);
           anySuccess = anySuccess || loopResult.anySuccess;
           sessionExpired = sessionExpired || loopResult.sessionExpired;
         } catch (error) {

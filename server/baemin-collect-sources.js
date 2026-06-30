@@ -302,6 +302,7 @@ function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt
   const peak = item?.deliveryPeakTimeCount || {};
   const partnerId = String(options.partnerId || options.partner_id || '').trim();
   const partnerName = String(options.partnerName || options.partner_name || '').trim();
+  const regionName = String(options.regionName || options.region_name || '').trim();
   const index = Number.isFinite(options.index) ? options.index : 0;
   const businessDate = extractBusinessDate(item, { ...options, collectDate });
   const recordType = sourceId;
@@ -322,6 +323,7 @@ function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt
       menuType: recordType,
       partnerId,
       partnerName,
+      regionName,
       businessDate,
       statusCode: String(item?.status?.code ?? item?.statusCode ?? '').trim(),
       statusDesc: String(item?.status?.desc ?? item?.statusDesc ?? '').trim(),

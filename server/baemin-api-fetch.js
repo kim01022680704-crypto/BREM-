@@ -23,6 +23,9 @@ function readTotalPages(payload) {
   if (Number.isFinite(totalPage) && totalPage >= 1) return totalPage;
   const totalPages = Number(payload?.totalPages);
   if (Number.isFinite(totalPages) && totalPages >= 1) return totalPages;
+  const total = Number(payload?.total ?? payload?.totalElements);
+  if (Number.isFinite(total) && total === 0) return 1;
+  if (Number.isFinite(totalPage) && totalPage === 0) return 1;
   const last = Boolean(payload?.last);
   const number = Number(payload?.number ?? payload?.page ?? 0);
   if (last) return number + 1;
@@ -241,6 +244,9 @@ async function fetchPaginatedApi({
         if (rows.length > 0) {
           totalPage = 1;
           console.log(`${logPrefix} totalPage inferred=1 (data without totalPage)`);
+        } else if (Array.isArray(result.payload?.data)) {
+          totalPage = 1;
+          console.log(`${logPrefix} totalPage inferred=1 (empty data array)`);
         } else {
           console.error(`${logPrefix} totalPage missing payload keys=${Object.keys(result.payload || {}).join(',')}`);
           return {

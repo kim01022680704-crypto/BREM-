@@ -66,9 +66,8 @@
       if (headerCell && headerCell.textContent.trim() === '협력사') {
         headerCell.hidden = !show;
       }
-      table.querySelectorAll('tbody tr').forEach(row => {
-        const firstCell = row.querySelector('td:first-child');
-        if (firstCell) firstCell.hidden = !show;
+      table.querySelectorAll('tbody tr td[data-partner-col]').forEach(cell => {
+        cell.hidden = !show;
       });
     });
   }
@@ -903,7 +902,7 @@
     const showPartnerColumn = false;
     syncPartnerColumnVisibility(showPartnerColumn);
     const partnerCell = showPartnerColumn
-      ? (p) => `<td>${formatPartnerCell(p)}</td>`
+      ? (p) => `<td data-partner-col>${formatPartnerCell(p)}</td>`
       : () => '';
 
     if (!items.length) {
