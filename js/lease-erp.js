@@ -943,17 +943,35 @@ const BremLeaseErp = (function () {
     tags.push(tag);
   }
 
+  function resolveEffectiveContractEnd(endDate, returnDate, today = todayKey()) {
+    const end = normalizeDate(endDate);
+    const returned = normalizeDate(returnDate);
+    if (!returned) return end;
+    if (!end) return returned;
+    if (returned > today) return returned;
+    if (end > returned && end >= today) return end;
+    return returned;
+  }
+
   function resolveContractStatusOnSave(fields = {}, vehicle = null, today = todayKey()) {
     const driver = String(fields.driverName || '').trim() || resolveContractDriverName(fields, vehicle);
     const start = normalizeDate(fields.startDate);
     const end = normalizeDate(fields.endDate);
-    const returnDate = normalizeDate(fields.returnDate);
+    let returnDate = normalizeDate(fields.returnDate);
 
     if (!driver) {
       return { status: CONTRACT_STATUS.ACTIVE, returnDate: returnDate || '' };
     }
 
-    if (returnDate && returnDate <= today) {
+    if (end && end >= today && returnDate && returnDate <= today && end > returnDate) {
+      returnDate = '';
+    }
+
+    if (returnDate && returnDate > today) {
+      return { status: CONTRACT_STATUS.ACTIVE, returnDate };
+    }
+
+    if (returnDate && returnDate <= today && (!end || end <= returnDate || end < today)) {
       return {
         status: CONTRACT_STATUS.ENDED,
         returnDate,
@@ -968,8 +986,8 @@ const BremLeaseErp = (function () {
       };
     }
 
-    if (returnDate && returnDate > today) {
-      return { status: CONTRACT_STATUS.ACTIVE, returnDate };
+    if (start && start > today) {
+      return { status: CONTRACT_STATUS.ACTIVE, returnDate: returnDate || '' };
     }
 
     return { status: CONTRACT_STATUS.ACTIVE, returnDate: returnDate || '' };
@@ -979,17 +997,15 @@ const BremLeaseErp = (function () {
     if (!contract || !resolveContractDriverName(contract, vehicle)) return false;
     const today = todayKey();
     const start = normalizeDate(contract.startDate);
-    const end = normalizeDate(contract.endDate);
-    const returned = normalizeDate(contract.returnDate);
+    const effectiveEnd = resolveEffectiveContractEnd(contract.endDate, contract.returnDate, today);
 
     if (start && start > today) return false;
-    if (returned && returned <= today) return false;
-    if (end && end < today) return false;
+    if (effectiveEnd && effectiveEnd < today) return false;
 
     if (String(contract.status || '') === CONTRACT_STATUS.ENDED) {
-      // 중도반납 예약 또는 종료 처리 후에도 반납일·계약종료일 전까지는 운행 중
+      if (effectiveEnd && effectiveEnd >= today) return true;
+      const returned = normalizeDate(contract.returnDate);
       if (returned && returned > today) return true;
-      if (end && end >= today) return true;
       return false;
     }
     return true;
@@ -998,7 +1014,7 @@ const BremLeaseErp = (function () {
   function resolveContractExpiry(contract, vehicle = null, today = todayKey()) {
     if (!contract || !resolveContractDriverName(contract, vehicle)) return null;
     const prefix = resolveDealTypePrefix(contract, vehicle);
-    const end = normalizeDate(contract.endDate) || normalizeDate(contract.returnDate);
+    const end = resolveEffectiveContractEnd(contract.endDate, contract.returnDate, today);
     const operating = isContractOperating(contract, vehicle);
 
     if (!operating) {
@@ -1286,6 +1302,7 @@ const BremLeaseErp = (function () {
     migrateLegacySettingsIfNeeded,
     inferVehicleStatus,
     isContractOperating,
+    resolveEffectiveContractEnd,
     resolveContractStatusOnSave,
     resolveContractExpiry,
     resolveVehicleLeaseExpiry,

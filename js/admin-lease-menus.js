@@ -912,11 +912,12 @@ const BremAdminLeaseMenus = (function () {
     const returnEl = $('leaseContractReturnDate');
     const endEl = $('leaseRentalDealEndDate');
     if (!returnEl || !endEl) return;
-    const snap = state.contractFormSnapshot || {};
     const newEnd = endEl.value || '';
     if (!newEnd) return;
-    if (!returnEl.value || returnEl.value === snap.endDate || returnEl.value === snap.returnDate) {
-      if (snap.returnDate || snap.ended) returnEl.value = newEnd;
+    const today = contractTodayKey();
+    const returnVal = returnEl.value || '';
+    if (returnVal && returnVal <= today && newEnd > returnVal) {
+      returnEl.value = '';
     }
   }
 
@@ -1022,7 +1023,12 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = contract.startDate || '';
     if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = contract.endDate || '';
     if ($('leaseContractReturnDate')) {
-      $('leaseContractReturnDate').value = contract.returnDate || '';
+      const today = contractTodayKey();
+      const shouldClearStaleReturn = contract.endDate && contract.returnDate
+        && contract.returnDate <= today
+        && contract.endDate > contract.returnDate
+        && contract.endDate >= today;
+      $('leaseContractReturnDate').value = shouldClearStaleReturn ? '' : (contract.returnDate || '');
     }
     if ($('leaseContractWeeklyRent')) {
       $('leaseContractWeeklyRent').value = contractRiderDailyRent(contract) || '';

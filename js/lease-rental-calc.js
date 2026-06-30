@@ -261,9 +261,14 @@ const BremLeaseRentalCalc = (function () {
     let cEnd = String(contract.endDate || '').slice(0, 10);
     const returned = String(contract.returnDate || '').slice(0, 10);
     const ended = String(contract.status || '') === 'ended';
+    const today = String(new Date().toISOString().slice(0, 10));
+    const effectiveEnd = window.BremLeaseErp?.resolveEffectiveContractEnd?.(cEnd, returned, today)
+      || (returned && returned > today ? returned : (cEnd && returned && cEnd > returned && cEnd >= today ? cEnd : (returned || cEnd)));
 
-    if (returned) {
-      cEnd = cEnd && cEnd < returned ? cEnd : returned;
+    if (effectiveEnd) {
+      cEnd = effectiveEnd;
+    } else if (returned && (!cEnd || cEnd >= returned)) {
+      cEnd = returned;
     } else if (ended && cEnd) {
       // 종료 상태 — endDate까지
     } else if (!cEnd) {
