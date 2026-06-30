@@ -314,10 +314,34 @@ async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, date
     sampleUrl: discovered.sampleUrl,
     apiPath: discovered.apiPath,
     apiOrigin: discovered.apiOrigin,
+    sampleHeaders: discovered.requestHeaders || registry.endpoints[sourceId]?.sampleHeaders || null,
+    spaPayload: discovered.spaPayload || null,
+    spaItems: discovered.spaItems || null,
+    spaTotalPage: discovered.spaTotalPage || null,
     discoveredAt: new Date().toISOString()
   };
   console.log(`[BREM][collect] ${sourceId} page-capture api=${discovered.sampleUrl}`);
   return resolveApiEndpoint(sourceId, registry);
+}
+
+function buildFetchedFromSpaCapture(capture, endpointInfo = {}) {
+  if (!capture?.spaPayload || typeof capture.spaPayload !== 'object') return null;
+  const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
+  const items = capture.spaItems || extractDataArray(capture.spaPayload) || [];
+  const totalPage = capture.spaTotalPage || readTotalPages(capture.spaPayload) || 1;
+  const sourceUrl = capture.sampleUrl || endpointInfo.sampleUrl || '';
+  console.log(`[BREM][collect] spa-capture 사용 rows=${items.length} url=${sourceUrl}`);
+  return {
+    ok: true,
+    items,
+    meta: {
+      totalPage: Math.max(totalPage, 1),
+      rawCount: items.length,
+      sourceUrl,
+      apiPath: endpointInfo.apiPath,
+      via: 'spa-capture'
+    }
+  };
 }
 
 function endpointOriginForPath(apiPath, preferredOrigin) {
@@ -494,14 +518,19 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   if (context.playwrightPage) {
     const { preparePageForCollect } = require('./baemin-page-capture');
     const prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
-    await preparePageForCollect(
+    const prepCapture = await preparePageForCollect(
       context.playwrightPage,
       sourceId,
       prepRange || {},
       collectDate
     ).catch(error => {
       console.warn(`[BREM][collect] ${sourceId} page prep failed:`, error.message);
+      return null;
     });
+    if (prepCapture?.spaPayload) {
+      context.spaCapture = context.spaCapture || {};
+      context.spaCapture[sourceId] = prepCapture;
+    }
   }
 
   if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
@@ -534,7 +563,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
         message: '협력사 아이디는 필수입니다. 배민 브라우저 상단에서 협력사(예: OO센터(DP123456))를 선택한 뒤 다시 시도하세요. betabaemin.com 이 아닌 deliverycenter.baemin.com 에 로그인되어 있는지 확인하세요.'
       };
     }
-    const centerHeaders = null;
+    const centerHeaders = endpointInfo.sampleHeaders && typeof endpointInfo.sampleHeaders === 'object'
+      ? endpointInfo.sampleHeaders
+      : null;
     if (useBrowserSession) {
       console.log(`[BREM][collect:${sourceId}] browser-session — API URL에 partnerId 생략 (쿠키 세션 사용)`);
     }
@@ -558,7 +589,11 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     });
   }
 
-  let fetched = await tryFetch(endpoint);
+  let fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
+    || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
+  if (!fetched?.ok) {
+    fetched = await tryFetch(endpoint);
+  }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
     console.warn(`[BREM][collect] ${sourceId} stored sampleUrl failed — rediscover`);
     endpoint = { ...endpoint, sampleUrl: null };
@@ -934,6 +969,7 @@ async function runFullCollectPipeline(options = {}) {
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
       pipelineContext.shrunkHistoryToDate = null;
+      pipelineContext.spaCapture = {};
       resetPartnerEndpointCache(registry);
 
       const label = partnerTotal > 0

@@ -312,28 +312,61 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightConte
 }
 
 async function preparePageForCollect(page, sourceId, dateRange, collectDate = null) {
-  if (!page || page.isClosed()) return;
+  if (!page || page.isClosed()) return null;
 
   if (sourceId === 'delivery_status') {
     if (isDeliveryStatusSpaUrl(page.url())) {
       await delay(800);
-      return;
+      return null;
     }
+    const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
+    let capture = null;
+    const handler = async response => {
+      try {
+        const url = response.url();
+        if (!url.includes('/management/delivery-status') && !url.includes('/delivery-status')) return;
+        if (response.status() < 200 || response.status() >= 300) return;
+        const bodyText = await response.text().catch(() => '');
+        const payload = bodyText ? JSON.parse(bodyText) : null;
+        const rows = extractDataArray(payload) || [];
+        if (!rows.length && !readTotalPages(payload)) return;
+        capture = {
+          sampleUrl: url,
+          spaPayload: payload,
+          spaItems: rows,
+          spaTotalPage: readTotalPages(payload),
+          requestHeaders: response.request().headers()
+        };
+      } catch {
+        // ignore
+      }
+    };
+    page.on('response', handler);
     console.log(`[BREM][collect-prep] delivery_status goto ${SAFE_LANDING_URL}`);
-    await page.goto(SAFE_LANDING_URL, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
-      if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
-    });
-    await delay(1200);
-    return;
+    try {
+      await page.goto(SAFE_LANDING_URL, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
+        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+      });
+      await delay(1200);
+    } finally {
+      page.off('response', handler);
+    }
+    if (capture) {
+      console.log(`[BREM][collect-prep] delivery_status spa-capture rows=${capture.spaItems?.length || 0}`);
+    }
+    return capture;
   }
 
   const spaUrl = buildSpaPageUrl(sourceId, dateRange, collectDate);
-  if (!spaUrl) return;
+  if (!spaUrl) return null;
   console.log(`[BREM][collect-prep] ${sourceId} goto ${spaUrl}`);
+  const captured = await navigateAndCaptureApi(page, spaUrl, sourceId);
+  if (captured.ok) return captured;
   await page.goto(spaUrl, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
     if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
   });
   await delay(2000);
+  return null;
 }
 
 async function navigateAndCaptureApi(page, spaUrl, sourceId) {
@@ -341,7 +374,10 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
     return { ok: false, message: 'Playwright page 없음' };
   }
 
+  const { classifyApiUrl } = require('./baemin-collect-sources');
+  const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
   const captured = [];
+
   const handler = async response => {
     try {
       const url = response.url();
@@ -349,7 +385,20 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
       const contentType = String(response.headers()['content-type'] || '').toLowerCase();
       if (!contentType.includes('json')) return;
       if (response.status() < 200 || response.status() >= 300) return;
-      captured.push(url);
+      const bodyText = await response.text().catch(() => '');
+      let payload = null;
+      try {
+        payload = bodyText ? JSON.parse(bodyText) : null;
+      } catch {
+        payload = null;
+      }
+      captured.push({
+        url,
+        status: response.status(),
+        bodyText,
+        payload,
+        requestHeaders: response.request().headers()
+      });
     } catch {
       // ignore
     }
@@ -368,25 +417,36 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
     page.off('response', handler);
   }
 
-  const hit = captured.find(url => {
-    if (!/fromDate=/i.test(url)) return false;
-    const classified = require('./baemin-collect-sources').classifyApiUrl(url);
-    return classified === sourceId || classified === 'daily_history' || classified === 'rider_history';
-  }) || captured.find(url => /fromDate=/i.test(url));
+  const hitEntry = captured.find(entry => classifyApiUrl(entry.url) === sourceId)
+    || captured.find(entry => {
+      if (sourceId === 'daily_history' || sourceId === 'rider_history') {
+        return /fromDate=/i.test(entry.url) && classifyApiUrl(entry.url) === sourceId;
+      }
+      return false;
+    })
+    || captured.find(entry => /fromDate=/i.test(entry.url))
+    || captured.find(entry => /delivery-status/i.test(entry.url));
 
-  if (!hit) {
-    return { ok: false, message: `${sourceId} SPA API 미감지`, captured };
+  if (!hitEntry) {
+    return { ok: false, message: `${sourceId} SPA API 미감지`, captured: captured.map(row => row.url) };
   }
 
+  const hit = hitEntry.url;
   let pathname = hit;
   try { pathname = new URL(hit).pathname; } catch { /* ignore */ }
-  console.log(`[BREM][spa-probe] hit ${sourceId} ← ${hit}`);
+  const rows = extractDataArray(hitEntry.payload) || [];
+  const totalPage = readTotalPages(hitEntry.payload);
+  console.log(`[BREM][spa-probe] hit ${sourceId} ← ${hit} rows=${rows.length}`);
   return {
     ok: true,
     sampleUrl: hit,
     apiPath: pathname,
     apiOrigin: new URL(hit).origin,
-    status: 200
+    status: hitEntry.status || 200,
+    spaPayload: hitEntry.payload,
+    spaItems: rows,
+    spaTotalPage: totalPage,
+    requestHeaders: hitEntry.requestHeaders || null
   };
 }
 
