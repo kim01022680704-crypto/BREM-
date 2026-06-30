@@ -1595,6 +1595,9 @@ const BremStorage = (function () {
 
     const tableKeysWithoutManaged = tableKeys.filter(key => key !== KEYS.missions && key !== KEYS.notices);
     const loadOptions = { force };
+    if (sectionId === 'rejections' && tableKeysWithoutManaged.includes(KEYS.rejections)) {
+      loadOptions.allHistory = true;
+    }
     if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
       const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
@@ -5188,27 +5191,28 @@ const BremStorage = (function () {
 
     async publishPendingToRiderView() {
       const now = new Date().toISOString();
-      let publishedCount = 0;
+      const incrementalRows = [];
       const list = rejections.getAll().map(item => {
         if (item.riderPublishedAt) return item;
-        publishedCount += 1;
-        return { ...item, riderPublishedAt: now };
+        const updated = { ...item, riderPublishedAt: now };
+        incrementalRows.push(updated);
+        return updated;
       });
 
-      if (!publishedCount) {
+      if (!incrementalRows.length) {
         return { publishedCount: 0, publishedAt: riderViewPublish.getMeta().publishedAt || null };
       }
 
-      await storageAdapter.write(KEYS.rejections, list);
+      await storageAdapter.write(KEYS.rejections, list, { incrementalRows });
       await storageAdapter.flush?.();
 
       const meta = riderViewPublish.record({
         publishedAt: now,
-        rejectionsPublished: publishedCount
+        rejectionsPublished: incrementalRows.length
       });
 
       window.BremDataCache?.invalidate?.(KEYS.rejections);
-      return { publishedCount, publishedAt: meta.publishedAt };
+      return { publishedCount: incrementalRows.length, publishedAt: meta.publishedAt };
     },
 
     getRateForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM, options = {}) {

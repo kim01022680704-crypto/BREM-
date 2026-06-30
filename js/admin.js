@@ -2,6 +2,7 @@
   const selectedCallIds = new Set();
   const selectedRejectionIds = new Set();
   let targetMonthPicker = null;
+  let rejectionHistoryReloaded = false;
   const CALL_RECORDS_VISIBLE_LIMIT = 30;
 
   const state = {
@@ -10,6 +11,8 @@
     editingAdminAccountId: '',
     adminAccountFormMode: '',
     rejectionWeekByPlatform: { coupang: null, baemin: null },
+    rejectionHistoryWeekByPlatform: { coupang: null, baemin: null },
+    rejectionHistorySearchByPlatform: { coupang: '', baemin: '' },
     driverSearchQuery: '',
     dashboardSearchQuery: '',
     dashboardWeekStart: '',
@@ -869,6 +872,42 @@
     const driver = drivers().find(item => item.id === driverId);
     if (!driver) return false;
     return matchesDriverSearch(driver, state.driverSearchQuery);
+  }
+
+  function rejectionHistorySearch(platform) {
+    const p = normalizePlatform(platform);
+    return String(state.rejectionHistorySearchByPlatform[p] || '').trim();
+  }
+
+  function driverMatchesRejectionHistorySearch(driverId, platform) {
+    const query = rejectionHistorySearch(platform) || state.driverSearchQuery.trim();
+    if (!query) return true;
+    const driver = drivers().find(item => item.id === driverId);
+    if (!driver) return false;
+    return matchesDriverSearch(driver, query);
+  }
+
+  function updateRejectionHistoryWeekPreview(platform) {
+    const p = normalizePlatform(platform);
+    const weekStart = state.rejectionHistoryWeekByPlatform[p];
+    const preview = document.querySelector(`[data-rejection-history-preview="${p}"]`);
+    const input = document.querySelector(`[data-rejection-history-week="${p}"]`);
+    if (input) input.value = weekStart || '';
+    if (preview) {
+      preview.textContent = weekStart
+        ? `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))}`
+        : '전체 주간';
+    }
+  }
+
+  function shiftRejectionHistoryWeek(days, platform) {
+    const p = normalizePlatform(platform);
+    const current = state.rejectionHistoryWeekByPlatform[p] || state.rejectionWeekByPlatform[p] || weekStartKey();
+    const base = new Date(`${current}T00:00:00`);
+    base.setDate(base.getDate() + days);
+    state.rejectionHistoryWeekByPlatform[p] = weekStartKey(dateKey(base));
+    updateRejectionHistoryWeekPreview(p);
+    renderRejections();
   }
 
   function settlementHistorySearch(platform) {
@@ -2673,8 +2712,14 @@
   }
 
   function platformRejections(platform) {
+    const p = normalizePlatform(platform);
+    const weekFilter = state.rejectionHistoryWeekByPlatform[p];
     return rejections()
-      .filter(entry => normalizePlatform(entry.platform) === platform && driverMatchesSearch(entry.driverId))
+      .filter(entry => {
+        if (normalizePlatform(entry.platform) !== p) return false;
+        if (weekFilter && entry.weekStart !== weekFilter) return false;
+        return driverMatchesRejectionHistorySearch(entry.driverId, p);
+      })
       .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   }
 
@@ -2843,11 +2888,14 @@
     pruneSelectedRejectionIds();
     PLATFORMS.forEach(platform => {
       updateRejectionWeekPreview(state.rejectionWeekByPlatform[platform] || weekStartKey(), platform);
+      updateRejectionHistoryWeekPreview(platform);
       fillRejectionRateInput(platform);
 
-      const emptyMessage = state.driverSearchQuery.trim()
+      const emptyMessage = (rejectionHistorySearch(platform) || state.driverSearchQuery.trim())
         ? `검색 결과에 해당하는 ${platformRateLabel(platform)} 기록이 없습니다.`
-        : `${platformLabel(platform)} 주간 ${platformRateLabel(platform)} 기록이 없습니다.`;
+        : state.rejectionHistoryWeekByPlatform[normalizePlatform(platform)]
+          ? `${platformLabel(platform)} 선택 주간 ${platformRateLabel(platform)} 기록이 없습니다.`
+          : `${platformLabel(platform)} 주간 ${platformRateLabel(platform)} 기록이 없습니다.`;
       const rowsEl = $(`#rejectionRows-${platform}`);
       if (!rowsEl) return;
       const platformList = platformRejections(platform);
@@ -4468,7 +4516,11 @@
           rejections().length,
           state.unifiedPlatform.rejections,
           state.rejectionWeekByPlatform.coupang,
-          state.rejectionWeekByPlatform.baemin
+          state.rejectionWeekByPlatform.baemin,
+          state.rejectionHistoryWeekByPlatform.coupang,
+          state.rejectionHistoryWeekByPlatform.baemin,
+          state.rejectionHistorySearchByPlatform.coupang,
+          state.rejectionHistorySearchByPlatform.baemin
         ].join('\0');
       case 'targets':
         return [
@@ -4744,6 +4796,10 @@
 
     try {
       const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
+      if (sectionId === 'rejections' && !rejectionHistoryReloaded && BremStorage.refreshDataFromServer) {
+        rejectionHistoryReloaded = true;
+        await BremStorage.refreshDataFromServer(BremStorage.STORAGE_KEYS.rejections);
+      }
       if (result?.ok === false && !BremStorage.drivers?.getAll?.().length && sectionId !== 'admin-account') {
         showToast(result.message || '데이터를 불러오지 못했습니다.');
       } else if (result?.ok === false && result?.stale) {
@@ -5004,14 +5060,63 @@
         }
         updateRejectionWeekPreview(weekStart, platform);
         fillRejectionRateInput(platform);
+        renderRejections();
       });
 
       $(`#rejectionDriver-${platform}`)?.addEventListener('change', () => {
         fillRejectionRateInput(platform);
       });
 
-      $(`#rejectionPrevWeekBtn-${platform}`)?.addEventListener('click', () => shiftRejectionWeek(-7, platform));
-      $(`#rejectionNextWeekBtn-${platform}`)?.addEventListener('click', () => shiftRejectionWeek(7, platform));
+      $(`#rejectionPrevWeekBtn-${platform}`)?.addEventListener('click', () => {
+        shiftRejectionWeek(-7, platform);
+        renderRejections();
+      });
+      $(`#rejectionNextWeekBtn-${platform}`)?.addEventListener('click', () => {
+        shiftRejectionWeek(7, platform);
+        renderRejections();
+      });
+
+      document.querySelector(`[data-rejection-history-week="${platform}"]`)?.addEventListener('change', event => {
+        const pickedDate = event.target.value;
+        if (!pickedDate) {
+          state.rejectionHistoryWeekByPlatform[platform] = null;
+        } else {
+          const weekStart = weekStartKey(pickedDate);
+          if (!isWednesday(pickedDate)) {
+            showToast('적용주는 수요일만 선택됩니다. 해당 주 수요일로 변경했습니다.');
+          }
+          state.rejectionHistoryWeekByPlatform[platform] = weekStart;
+        }
+        updateRejectionHistoryWeekPreview(platform);
+        renderRejections();
+      });
+
+      document.querySelector(`[data-rejection-history-prev="${platform}"]`)?.addEventListener('click', () => {
+        if (!state.rejectionHistoryWeekByPlatform[platform]) {
+          state.rejectionHistoryWeekByPlatform[platform] = state.rejectionWeekByPlatform[platform] || weekStartKey();
+        }
+        shiftRejectionHistoryWeek(-7, platform);
+      });
+
+      document.querySelector(`[data-rejection-history-next="${platform}"]`)?.addEventListener('click', () => {
+        if (!state.rejectionHistoryWeekByPlatform[platform]) {
+          state.rejectionHistoryWeekByPlatform[platform] = state.rejectionWeekByPlatform[platform] || weekStartKey();
+        }
+        shiftRejectionHistoryWeek(7, platform);
+      });
+
+      document.querySelector(`[data-rejection-history-all="${platform}"]`)?.addEventListener('click', () => {
+        state.rejectionHistoryWeekByPlatform[platform] = null;
+        const input = document.querySelector(`[data-rejection-history-week="${platform}"]`);
+        if (input) input.value = '';
+        updateRejectionHistoryWeekPreview(platform);
+        renderRejections();
+      });
+
+      document.querySelector(`[data-rejection-history-search="${platform}"]`)?.addEventListener('input', event => {
+        state.rejectionHistorySearchByPlatform[platform] = event.target.value || '';
+        renderRejections();
+      });
     });
 
     $('#targetForm').addEventListener('submit', event => {

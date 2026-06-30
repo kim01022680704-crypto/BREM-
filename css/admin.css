@@ -2789,6 +2789,33 @@ textarea {
   padding: 0 18px 16px;
 }
 
+.rejection-history-toolbar {
+  align-items: center;
+}
+
+.rejection-history-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rejection-history-search {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.rejection-history-search input {
+  width: 100%;
+}
+
+.rejection-history-toolbar + .form-help {
+  margin: -4px 18px 12px;
+}
+
 .call-filter-field {
   display: grid;
   gap: 6px;

@@ -1000,10 +1000,24 @@
           <div class="card-header">
             <h2>쿠팡 주간 거절율 기록</h2>
           </div>
-          <div class="call-records-toolbar">
+          <div class="call-records-toolbar rejection-history-toolbar">
+            <div class="week-nav week-nav--compact rejection-history-week-nav">
+              <button type="button" class="small-btn" data-rejection-history-prev="coupang">&lt;&lt;</button>
+              <label class="week-nav-date-field">
+                <span class="field-preview" data-rejection-history-preview="coupang">전체 주간</span>
+                <input type="date" data-rejection-history-week="coupang" aria-label="기록 조회 주간(수요일)">
+              </label>
+              <button type="button" class="small-btn" data-rejection-history-next="coupang">&gt;&gt;</button>
+              <button type="button" class="small-btn" data-rejection-history-all="coupang">전체</button>
+            </div>
+            <label class="rejection-history-search">
+              <span class="sr-only">기사 검색</span>
+              <input type="search" data-rejection-history-search="coupang" placeholder="기사 이름·연락처·쿠팡ID 검색" autocomplete="off">
+            </label>
             <button type="button" class="small-btn danger-btn" id="bulkDeleteRejections-coupang" disabled>선택 삭제</button>
             <button type="button" class="small-btn danger-btn" id="deleteAllRejections-coupang">전체 삭제</button>
           </div>
+          <p class="form-help">수~화 기준 주간입니다. 「전체」는 모든 주 기록을 보여줍니다. 상단 기사 검색과 함께 사용할 수 있습니다.</p>
           <div class="table-wrap">
             <table class="call-records-table">
               <thead>
@@ -1088,10 +1102,24 @@
           <div class="card-header">
             <h2>배민 주간 수락율 기록</h2>
           </div>
-          <div class="call-records-toolbar">
+          <div class="call-records-toolbar rejection-history-toolbar">
+            <div class="week-nav week-nav--compact rejection-history-week-nav">
+              <button type="button" class="small-btn" data-rejection-history-prev="baemin">&lt;&lt;</button>
+              <label class="week-nav-date-field">
+                <span class="field-preview" data-rejection-history-preview="baemin">전체 주간</span>
+                <input type="date" data-rejection-history-week="baemin" aria-label="기록 조회 주간(수요일)">
+              </label>
+              <button type="button" class="small-btn" data-rejection-history-next="baemin">&gt;&gt;</button>
+              <button type="button" class="small-btn" data-rejection-history-all="baemin">전체</button>
+            </div>
+            <label class="rejection-history-search">
+              <span class="sr-only">기사 검색</span>
+              <input type="search" data-rejection-history-search="baemin" placeholder="기사 이름·연락처·배민ID 검색" autocomplete="off">
+            </label>
             <button type="button" class="small-btn danger-btn" id="bulkDeleteRejections-baemin" disabled>선택 삭제</button>
             <button type="button" class="small-btn danger-btn" id="deleteAllRejections-baemin">전체 삭제</button>
           </div>
+          <p class="form-help">수~화 기준 주간입니다. 「전체」는 모든 주 기록을 보여줍니다. 상단 기사 검색과 함께 사용할 수 있습니다.</p>
           <div class="table-wrap">
             <table class="call-records-table">
               <thead>

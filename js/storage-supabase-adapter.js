@@ -454,6 +454,7 @@ window.BremSupabaseStorageAdapter = (function () {
       }
       const UPSERT_ONLY_TABLES = new Set([
         'admin_calls',
+        'admin_rejection_rates',
         'daily_settlements',
         'settlement_upload_logs',
         'settlement_unmatched',
@@ -1736,9 +1737,12 @@ window.BremSupabaseStorageAdapter = (function () {
       if (key === keys.missions) return loadMissions(options);
       const backed = TABLE_BACKED_KEYS.find(config => config.key === key);
       if (backed) {
-        const tableOptions = key === keys.calls && !options.allHistory
-          ? { ...options, sinceDate: options.sinceDate || getDefaultCallsSinceDate() }
-          : options;
+        let tableOptions = options;
+        if (key === keys.calls && !options.allHistory) {
+          tableOptions = { ...options, sinceDate: options.sinceDate || getDefaultCallsSinceDate() };
+        } else if (key === keys.rejections) {
+          tableOptions = { ...options, allHistory: options.allHistory !== false };
+        }
         if (backed.legacyKey) return loadTableWithLegacyFallback(backed, tableOptions);
         return loadTableCollection(backed, tableOptions);
       }
