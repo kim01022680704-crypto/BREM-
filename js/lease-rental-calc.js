@@ -246,9 +246,9 @@ const BremLeaseRentalCalc = (function () {
   }
 
   /** 계약이 기간 내 실제 운행한 날짜 구간 (반납일·종료 반영) */
-  function resolveContractActiveWindow(contract, periodStart, periodEnd) {
+  function resolveContractActiveWindow(contract, periodStart, periodEnd, vehicle = null) {
     if (!contract) return null;
-    const driverName = String(contract.driverName || '').trim();
+    const driverName = String(contract.driverName || vehicle?.renter || '').trim();
     if (!driverName) return null;
 
     const pStart = String(periodStart || '').slice(0, 10);
@@ -303,7 +303,7 @@ const BremLeaseRentalCalc = (function () {
     const periodDays = start && end ? daysInclusive(start, end) : 7;
     const vehicleId = vehicle.id || '';
 
-    const activeWindow = resolveContractActiveWindow(contract, start, end);
+    const activeWindow = resolveContractActiveWindow(contract, start, end, vehicle);
     const rentalDays = activeWindow?.rentalDays || 0;
 
     const dailyRent = money(contract?.dailyRent) || money(vehicle.dailyChargeAmount) || money(vm.dailyCharge) || 0;

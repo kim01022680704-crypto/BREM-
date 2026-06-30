@@ -22,7 +22,6 @@ const BremLeaseErp = (function () {
   });
 
   let migrationDone = false;
-  let leaseStatusesSynced = false;
 
   function createId() {
     return BremStorage?.createId?.() || `lease_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -885,31 +884,141 @@ const BremLeaseErp = (function () {
       await BremStorage.ensureLeaseErpKeysLoaded(options);
     }
     await migrateLegacySettingsIfNeeded();
-    if (options.syncStatuses !== false && !leaseStatusesSynced) {
+    if (options.syncStatuses !== false) {
       syncAllVehicleStatusesFromContracts();
-      leaseStatusesSynced = true;
     }
     return { ok: true };
   }
 
-  function isContractOperating(contract) {
-    if (!contract || !String(contract.driverName || '').trim()) return false;
-    if (String(contract.status || '') === CONTRACT_STATUS.ENDED) return false;
+  function daysUntilDate(dateValue, fromDate = todayKey()) {
+    const target = normalizeDate(dateValue);
+    const from = normalizeDate(fromDate);
+    if (!target || !from) return null;
+    const ms = new Date(`${target}T00:00:00`) - new Date(`${from}T00:00:00`);
+    return Math.floor(ms / 86400000);
+  }
+
+  function resolveContractDriverName(contract, vehicle = null) {
+    return String(contract?.driverName || vehicle?.renter || '').trim();
+  }
+
+  function resolveDealTypePrefix(contract, vehicle = null) {
+    const type = normalizeContractType(contract?.contractType || vehicle?.contractType);
+    return type === CONTRACT_TYPES.RENTAL ? '렌탈' : '리스';
+  }
+
+  function isVehicleLeaseAgreement(vehicle) {
+    if (!vehicle) return false;
+    if (normalizeContractType(vehicle.contractType) === CONTRACT_TYPES.LEASE) return true;
+    if (String(vehicle.leaseCompany || vehicle.lessor || '').trim()) return true;
+    return Number(vehicle.dailyLeaseCost || 0) > 0;
+  }
+
+  function resolveVehicleLeaseExpiry(vehicle, today = todayKey()) {
+    if (!isVehicleLeaseAgreement(vehicle)) return null;
+    const start = normalizeDate(vehicle.contractStartDate);
+    const end = normalizeDate(vehicle.contractEndDate);
+    if (!end) return null;
+    if (start && start > today) return null;
+
+    const daysLeft = daysUntilDate(end, today);
+    if (daysLeft != null && daysLeft < 0) {
+      return { code: 'ended', label: '리스계약종료', scope: 'vehicleLease' };
+    }
+    if (daysLeft != null && daysLeft <= 30) {
+      return { code: 'expiring', label: '리스계약종료임박', scope: 'vehicleLease', daysLeft };
+    }
+    return null;
+  }
+
+  function resolveVehicleExpiries(contract, vehicle = null, today = todayKey()) {
+    return [
+      resolveContractExpiry(contract, vehicle, today),
+      resolveVehicleLeaseExpiry(vehicle, today)
+    ].filter(Boolean);
+  }
+
+  function pushUniqueExpiryTag(tags, tag) {
+    if (!tag || tags.some(item => item.label === tag.label)) return;
+    tags.push(tag);
+  }
+
+  function resolveContractStatusOnSave(fields = {}, vehicle = null, today = todayKey()) {
+    const driver = String(fields.driverName || '').trim() || resolveContractDriverName(fields, vehicle);
+    const start = normalizeDate(fields.startDate);
+    const end = normalizeDate(fields.endDate);
+    const returnDate = normalizeDate(fields.returnDate);
+
+    if (!driver) {
+      return { status: CONTRACT_STATUS.ACTIVE, returnDate: returnDate || '' };
+    }
+
+    if (returnDate && returnDate <= today) {
+      return {
+        status: CONTRACT_STATUS.ENDED,
+        returnDate,
+        endDate: end && end < returnDate ? returnDate : (end || returnDate)
+      };
+    }
+
+    if (end && end < today) {
+      return {
+        status: CONTRACT_STATUS.ENDED,
+        returnDate: returnDate || end
+      };
+    }
+
+    if (returnDate && returnDate > today) {
+      return { status: CONTRACT_STATUS.ACTIVE, returnDate };
+    }
+
+    return { status: CONTRACT_STATUS.ACTIVE, returnDate: returnDate || '' };
+  }
+
+  function isContractOperating(contract, vehicle = null) {
+    if (!contract || !resolveContractDriverName(contract, vehicle)) return false;
     const today = todayKey();
     const start = normalizeDate(contract.startDate);
     const end = normalizeDate(contract.endDate);
     const returned = normalizeDate(contract.returnDate);
+
     if (start && start > today) return false;
     if (returned && returned <= today) return false;
     if (end && end < today) return false;
+
+    if (String(contract.status || '') === CONTRACT_STATUS.ENDED) {
+      // 중도반납 예약 또는 종료 처리 후에도 반납일·계약종료일 전까지는 운행 중
+      if (returned && returned > today) return true;
+      if (end && end >= today) return true;
+      return false;
+    }
     return true;
+  }
+
+  function resolveContractExpiry(contract, vehicle = null, today = todayKey()) {
+    if (!contract || !resolveContractDriverName(contract, vehicle)) return null;
+    const prefix = resolveDealTypePrefix(contract, vehicle);
+    const end = normalizeDate(contract.endDate) || normalizeDate(contract.returnDate);
+    const operating = isContractOperating(contract, vehicle);
+
+    if (!operating) {
+      return { code: 'ended', label: `${prefix}계약종료`, scope: 'driver' };
+    }
+    if (!end) return null;
+
+    const daysLeft = daysUntilDate(end, today);
+    if (daysLeft != null && daysLeft <= 30) {
+      return { code: 'expiring', label: `${prefix}계약종료임박`, scope: 'driver', daysLeft };
+    }
+    return null;
   }
 
   function getLatestContractForVehicle(vehicleId) {
     if (!vehicleId) return null;
+    const vehicle = vehicles().getById(vehicleId);
     const list = contracts().getAll().filter(item => item.vehicleId === vehicleId);
     if (!list.length) return null;
-    const active = list.find(item => isContractOperating(item));
+    const active = list.find(item => isContractOperating(item, vehicle));
     if (active) return active;
     return list.sort((a, b) => {
       const byStart = String(b.startDate || '').localeCompare(String(a.startDate || ''));
@@ -930,23 +1039,46 @@ const BremLeaseErp = (function () {
     if (!vehicle) {
       return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
     }
-    const ended = String(contract?.status || '') === CONTRACT_STATUS.ENDED;
-    const operating = isContractOperating(contract);
+    const operating = isContractOperating(contract, vehicle);
+    const expiries = resolveVehicleExpiries(contract, vehicle);
+    const expiringSoon = expiries.filter(item => item.code === 'expiring');
     const unpaid = hasOpenArrearForVehicle(vehicle.id);
-    if (ended && !operating) {
-      if (unpaid) {
-        return { code: 'unpaid', label: '계약종료·미납', operating: false, unpaid: true };
-      }
-      return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
-    }
     if (operating && unpaid) {
-      return { code: 'operating', label: '운행중·미납', operating: true, unpaid: true };
+      return {
+        code: 'operating',
+        label: '운행중·미납',
+        operating: true,
+        unpaid: true,
+        expiring: expiringSoon.length > 0
+      };
     }
     if (unpaid) {
       return { code: 'unpaid', label: '미납중', operating: false, unpaid: true };
     }
     if (operating) {
-      return { code: 'operating', label: '운행중', operating: true, unpaid: false };
+      let label = '운행중';
+      if (expiringSoon.length === 1) {
+        label = `운행중·${expiringSoon[0].label.replace('계약종료임박', '종료임박')}`;
+      } else if (expiringSoon.length > 1) {
+        label = '운행중·종료임박';
+      }
+      return {
+        code: 'operating',
+        label,
+        operating: true,
+        unpaid: false,
+        expiring: expiringSoon.length > 0
+      };
+    }
+    const driverEnded = expiries.find(item => item.scope === 'driver' && item.code === 'ended');
+    if (driverEnded && resolveContractDriverName(contract, vehicle)) {
+      return {
+        code: 'empty',
+        label: `${driverEnded.label}·공차`,
+        operating: false,
+        unpaid: false,
+        ended: true
+      };
     }
     return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
   }
@@ -954,8 +1086,8 @@ const BremLeaseErp = (function () {
   function resolveVehicleStatusTags(vehicle, contract) {
     if (!vehicle) return [{ code: 'empty', label: '공차(로스)' }];
     const tags = [];
-    const ended = String(contract?.status || '') === CONTRACT_STATUS.ENDED;
-    const operating = isContractOperating(contract);
+    const operating = isContractOperating(contract, vehicle);
+    const expiries = resolveVehicleExpiries(contract, vehicle);
     const openArrears = arrears().getAll().filter(item =>
       item.vehicleId === vehicle.id && String(item.collectionStatus || '') !== ARREAR_STATUS.COMPLETED
     );
@@ -963,8 +1095,14 @@ const BremLeaseErp = (function () {
     const unpaidAmount = openArrears.reduce((sum, item) => sum + Number(item.unpaidAmount || 0), 0);
     const hasUnpaid = openArrears.length > 0 || unpaidDays > 0 || unpaidAmount > 0;
 
-    if (ended) tags.push({ code: 'ended', label: '계약종료' });
     if (operating) tags.push({ code: 'operating', label: '운행중' });
+    expiries.forEach(exp => {
+      if (exp.code === 'expiring') {
+        pushUniqueExpiryTag(tags, { code: 'expiring', label: exp.label });
+      } else if (exp.code === 'ended') {
+        pushUniqueExpiryTag(tags, { code: 'ended', label: exp.label });
+      }
+    });
     if (hasUnpaid) {
       tags.push({
         code: 'unpaid',
@@ -986,7 +1124,7 @@ const BremLeaseErp = (function () {
       || today;
     if (end && end <= today) return end;
     if (start && start > today) return fallback;
-    if (!contract || !String(contract.driverName || '').trim()) return fallback;
+    if (!contract || !resolveContractDriverName(contract, vehicle)) return fallback;
     if (String(vehicle?.vehicleStatus || '') === BremLeaseProfit.VEHICLE_STATUSES.OPERATING) {
       return today;
     }
@@ -995,17 +1133,19 @@ const BremLeaseErp = (function () {
 
   function syncVehicleFromContract(vehicle, contract = null) {
     if (!vehicle) return null;
+    const current = vehicles().getById(vehicle.id) || vehicle;
     const resolvedContract = contract ?? getLatestContractForVehicle(vehicle.id);
-    const runtime = resolveRuntimeStatus(vehicle, resolvedContract);
+    const runtime = resolveRuntimeStatus(current, resolvedContract);
     const patch = {};
     if (runtime.operating) {
       patch.vehicleStatus = BremLeaseProfit.VEHICLE_STATUSES.OPERATING;
-      patch.renter = resolvedContract?.driverName || '';
-      patch.lesseePhone = resolvedContract?.driverPhone || '';
+      patch.renter = resolveContractDriverName(resolvedContract, current) || '';
+      patch.lesseePhone = resolvedContract?.driverPhone || current.lesseePhone || '';
       patch.dailyChargeAmount = normalizeMoney(resolvedContract?.dailyRent);
       patch.dailyRent = patch.dailyChargeAmount;
       patch.weeklyRent = normalizeMoney(resolvedContract?.weeklyRent) || patch.dailyChargeAmount * 7;
       patch.emptyStartDate = '';
+      patch.returnDate = '';
     } else {
       patch.vehicleStatus = BremLeaseProfit.VEHICLE_STATUSES.EMPTY;
       patch.renter = '';
@@ -1014,8 +1154,8 @@ const BremLeaseErp = (function () {
       patch.dailyRent = 0;
       patch.weeklyRent = 0;
       const returnDate = normalizeDate(resolvedContract?.returnDate || resolvedContract?.endDate);
-      if (returnDate) patch.returnDate = returnDate;
-      patch.emptyStartDate = resolveEmptyStartOnTransition(vehicle, resolvedContract, runtime);
+      patch.returnDate = returnDate || '';
+      patch.emptyStartDate = resolveEmptyStartOnTransition(current, resolvedContract, runtime);
     }
     return vehicles().update(vehicle.id, patch);
   }
@@ -1146,6 +1286,10 @@ const BremLeaseErp = (function () {
     migrateLegacySettingsIfNeeded,
     inferVehicleStatus,
     isContractOperating,
+    resolveContractStatusOnSave,
+    resolveContractExpiry,
+    resolveVehicleLeaseExpiry,
+    resolveVehicleExpiries,
     getLatestContractForVehicle,
     hasOpenArrearForVehicle,
     resolveRuntimeStatus,

@@ -5554,6 +5554,11 @@ textarea {
   color: #cbd5e1;
 }
 
+.lease-status-badge--expiring {
+  background: rgba(251, 146, 60, 0.16);
+  color: #fdba74;
+}
+
 .lease-status-tags--table {
   min-width: 120px;
 }

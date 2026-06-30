@@ -448,6 +448,7 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function refreshAfterLeaseMutation(options = {}) {
+    erp()?.syncAllVehicleStatusesFromContracts?.();
     const refreshContract = options.contract !== false;
     const refreshDashboard = options.dashboard !== false;
     const refreshVehicleList = options.vehicleList !== false;
@@ -460,6 +461,7 @@ const BremAdminLeaseMenus = (function () {
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
     if (state.menu === 'arrears') renderArrears();
+    if (state.menu === 'empty') renderEmpty();
   }
 
   function setMenu(menu) {
@@ -643,6 +645,7 @@ const BremAdminLeaseMenus = (function () {
         console.error('[BremAdminLeaseMenus] renderDashboardVehicleOverview failed', error);
       }
     }
+    erp()?.syncAllVehicleStatusesFromContracts?.();
     paintDashboardVehicleOverview();
   }
 
@@ -885,9 +888,6 @@ const BremAdminLeaseMenus = (function () {
       startDate: $('leaseRentalDealStartDate')?.value || '',
       endDate: $('leaseRentalDealEndDate')?.value || '',
       returnDate: $('leaseContractReturnDate')?.value || '',
-      status: $('leaseContractEditId')?.value
-        ? (erp()?.contracts().getById($('leaseContractEditId').value)?.status || erp()?.CONTRACT_STATUS?.ACTIVE || 'active')
-        : (erp()?.CONTRACT_STATUS?.ACTIVE || 'active'),
       dailyRent,
       weeklyRent,
       rentalDays: 7,
@@ -906,6 +906,18 @@ const BremAdminLeaseMenus = (function () {
       collectionStatus: engine.ARREAR_STATUS.COMPLETED,
       memo: $('leaseContractMemo')?.value || ''
     };
+  }
+
+  function syncContractReturnDateWithEndDate() {
+    const returnEl = $('leaseContractReturnDate');
+    const endEl = $('leaseRentalDealEndDate');
+    if (!returnEl || !endEl) return;
+    const snap = state.contractFormSnapshot || {};
+    const newEnd = endEl.value || '';
+    if (!newEnd) return;
+    if (!returnEl.value || returnEl.value === snap.endDate || returnEl.value === snap.returnDate) {
+      if (snap.returnDate || snap.ended) returnEl.value = newEnd;
+    }
   }
 
   function syncContractCalc() {
@@ -1010,7 +1022,7 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseRentalDealStartDate')) $('leaseRentalDealStartDate').value = contract.startDate || '';
     if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = contract.endDate || '';
     if ($('leaseContractReturnDate')) {
-      $('leaseContractReturnDate').value = contract.returnDate || contract.endDate || '';
+      $('leaseContractReturnDate').value = contract.returnDate || '';
     }
     if ($('leaseContractWeeklyRent')) {
       $('leaseContractWeeklyRent').value = contractRiderDailyRent(contract) || '';
@@ -1019,6 +1031,11 @@ const BremAdminLeaseMenus = (function () {
       $('leaseContractDeposit').value = contract.depositAmount ?? contract.penaltyFee ?? '';
     }
     if ($('leaseContractMemo')) $('leaseContractMemo').value = contract.memo || '';
+    state.contractFormSnapshot = {
+      endDate: contract.endDate || '',
+      returnDate: contract.returnDate || '',
+      ended: String(contract.status || '') === (erp()?.CONTRACT_STATUS?.ENDED || 'ended')
+    };
     syncContractCalc();
     $('leaseContractForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1214,6 +1231,13 @@ const BremAdminLeaseMenus = (function () {
     }
 
     try {
+      const statusPatch = erp().resolveContractStatusOnSave?.(draft, vehicle) || {};
+      const contractPayload = {
+        ...draft,
+        ...statusPatch,
+        vehicleId: vehicle.id
+      };
+
       erp().vehicles().update(vehicle.id, {
         renter: draft.driverName,
         lesseePhone: draft.driverPhone,
@@ -1223,10 +1247,18 @@ const BremAdminLeaseMenus = (function () {
       });
 
       const contract = draft.id
-        ? erp().contracts().update(draft.id, { ...draft, vehicleId: vehicle.id })
-        : erp().contracts().create({ ...draft, vehicleId: vehicle.id });
+        ? erp().contracts().update(draft.id, contractPayload)
+        : erp().contracts().create(contractPayload);
 
-      applyVehicleStatusFromContract(vehicle, contract);
+      const freshVehicle = erp().vehicles().getById(vehicle.id);
+      erp().syncVehicleFromContract?.(freshVehicle, contract);
+
+      if ($('leaseContractReturnDate')) {
+        $('leaseContractReturnDate').value = contract.returnDate || '';
+      }
+      if ($('leaseRentalDealEndDate') && contract.endDate) {
+        $('leaseRentalDealEndDate').value = contract.endDate;
+      }
 
       const metrics = calc().compute({
         ...contract,
@@ -1262,6 +1294,7 @@ const BremAdminLeaseMenus = (function () {
       markArrearContractOptionsDirty();
 
       $('leaseContractEditId').value = contract.id;
+      fillContractForm(contract);
       showToast('계약이 목록에 반영되었습니다. Supabase 저장 버튼을 눌러 주세요.');
       updateLeaseErpUnsavedBanner();
       renderContractList();
@@ -1306,11 +1339,22 @@ const BremAdminLeaseMenus = (function () {
     if (!window.confirm(`중도반납 · 계약종료 처리하시겠습니까?\n${plate} · ${name}\n반납일: ${returnDate}`)) return;
 
     const endedStatus = erp().CONTRACT_STATUS?.ENDED || 'ended';
-    const payload = {
+    const activeStatus = erp().CONTRACT_STATUS?.ACTIVE || 'active';
+    const today = contractTodayKey();
+    const statusPatch = erp().resolveContractStatusOnSave?.({
       ...draft,
+      returnDate,
+      endDate: returnDate
+    }, vehicle) || {
       endDate: returnDate,
       returnDate,
-      status: endedStatus
+      status: returnDate <= today ? endedStatus : activeStatus
+    };
+    const payload = {
+      ...draft,
+      ...statusPatch,
+      endDate: statusPatch.endDate || returnDate,
+      returnDate: statusPatch.returnDate || returnDate
     };
 
     try {
@@ -1318,8 +1362,8 @@ const BremAdminLeaseMenus = (function () {
         ? erp().contracts().update(draft.id, { ...payload, vehicleId: vehicle.id })
         : erp().contracts().create({ ...payload, vehicleId: vehicle.id });
 
-      erp().vehicles().update(vehicle.id, { returnDate });
-      applyVehicleStatusFromContract(vehicle, contract);
+      const freshVehicle = erp().vehicles().getById(vehicle.id);
+      erp().syncVehicleFromContract?.(freshVehicle, contract);
 
       $('leaseContractEditId').value = contract.id;
       if ($('leaseRentalDealEndDate')) $('leaseRentalDealEndDate').value = returnDate;
@@ -1329,7 +1373,9 @@ const BremAdminLeaseMenus = (function () {
       updateLeaseErpUnsavedBanner();
       renderContractList();
       refreshAfterLeaseMutation({ contract: false });
-      showToast(`중도반납 처리 · 반납일 ${returnDate} · 계약 종료 (Supabase 저장 필요)`);
+      showToast(returnDate <= today
+        ? `중도반납 처리 · 반납일 ${returnDate} · 계약 종료 (Supabase 저장 필요)`
+        : `반납 예약 · ${returnDate}까지 운행 중 (Supabase 저장 필요)`);
       syncContractCalc();
     } catch (error) {
       console.error('[processEarlyReturn]', error);
@@ -2210,7 +2256,7 @@ const BremAdminLeaseMenus = (function () {
       if (row.contractDraft?.driverName && vehicle) {
         const draft = row.contractDraft;
         const existingContract = erp().contracts().getAll().find(item =>
-          item.vehicleId === vehicle.id && erp().isContractOperating?.(item)
+          item.vehicleId === vehicle.id && erp().isContractOperating?.(item, vehicle)
         );
         const contractPayload = {
           vehicleId: vehicle.id,
@@ -2374,9 +2420,14 @@ const BremAdminLeaseMenus = (function () {
       box.hidden = true;
     });
     ['leaseRentalDealStartDate', 'leaseRentalDealEndDate'].forEach(id => {
-      $(id)?.addEventListener('change', syncContractCalc);
+      $(id)?.addEventListener('change', () => {
+        if (id === 'leaseRentalDealEndDate') syncContractReturnDateWithEndDate();
+        syncContractCalc();
+      });
       $(id)?.addEventListener('input', syncContractCalc);
     });
+    $('leaseContractReturnDate')?.addEventListener('change', syncContractCalc);
+    $('leaseContractReturnDate')?.addEventListener('input', syncContractCalc);
     $('leaseWeekStart')?.addEventListener('change', () => {
       syncLeaseWeeklyWeekUi($('leaseWeekStart')?.value);
       renderWeekly();
