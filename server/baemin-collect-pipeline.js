@@ -519,10 +519,11 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   console.log(`[BREM][collect] ${sourceId} start collectDate=${collectDate} range=${activeDateRange?.fromDate || collectDate}~${activeDateRange?.toDate || collectDate} api=${endpoint.apiOrigin}${endpoint.apiPath}${endpoint.sampleUrl ? ' (sampleUrl)' : ''}`);
 
   async function tryFetch(endpointInfo, dateRange = activeDateRange) {
+    const useBrowserSession = shouldUseBrowserSessionForCollect(context);
     const baseQuery = mergeCenterQuery(
       buildDefaultQuery(sourceId, collectDate, dateRange),
       registry,
-      { skipCenterQuery: shouldUseBrowserSessionForCollect(context) }
+      { skipCenterQuery: useBrowserSession }
     );
     const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
     if (!partnerId) {
@@ -534,6 +535,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       };
     }
     const centerHeaders = null;
+    if (useBrowserSession) {
+      console.log(`[BREM][collect:${sourceId}] browser-session — API URL에 partnerId 생략 (쿠키 세션 사용)`);
+    }
     console.log(`[BREM][collect:${sourceId}] partnerId=${partnerId}`);
     return fetchPaginatedApi({
       apiOrigin: endpointInfo.apiOrigin,
