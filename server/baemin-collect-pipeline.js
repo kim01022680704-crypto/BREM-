@@ -523,7 +523,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
         ok: false,
         status: 400,
         error: 'PARTNER_ID_REQUIRED',
-        message: '협력사 아이디는 필수입니다. 배민 브라우저에서 협력사를 선택한 뒤 다시 시도하세요.'
+        message: '협력사 아이디는 필수입니다. 배민 브라우저 상단에서 협력사(예: OO센터(DP123456))를 선택한 뒤 다시 시도하세요. betabaemin.com 이 아닌 deliverycenter.baemin.com 에 로그인되어 있는지 확인하세요.'
       };
     }
     const centerHeaders = null;
@@ -873,13 +873,16 @@ async function runFullCollectPipeline(options = {}) {
 
   if (playwrightPage) {
     try {
-      const { ensureSafeBrowserTab, preparePageForCollect } = require('./baemin-page-capture');
+      const { ensureSafeBrowserTab, preparePageForCollect, ensureProductionDeliveryPage } = require('./baemin-page-capture');
       const {
         resolveCenterContextViaPage,
         listPartnerCentersViaPage,
         selectPartnerCenter
       } = require('./baemin-center-context');
       await ensureSafeBrowserTab(playwrightPage);
+      await ensureProductionDeliveryPage(playwrightPage).catch(error => {
+        console.warn('[BREM][collect] 운영 도메인 전환 실패:', error.message);
+      });
       partnersToCollect = await listPartnerCentersViaPage(playwrightPage).catch(error => {
         console.warn('[BREM][collect] 협력사 목록 조회 실패:', error.message);
         return [];

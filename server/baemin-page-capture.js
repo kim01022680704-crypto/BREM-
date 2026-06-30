@@ -3,6 +3,11 @@ const {
   BAEMIN_API_ORIGIN,
   getCollectSource
 } = require('./baemin-collect-sources');
+const {
+  isDeliveryCenterHost,
+  isBetaDeliveryCenterHost,
+  normalizeToProductionDeliveryUrl
+} = require('./baemin-delivery-hosts');
 
 const SAFE_LANDING_URL = `${BAEMIN_ORIGIN}/delivery/history?page=0&size=20&orderName=name&orderBy=asc&name=&userId=&phoneNumber=&riderStatus=`;
 
@@ -16,7 +21,7 @@ function delay(ms) {
 
 function isDeliveryStatusSpaUrl(url) {
   const text = String(url || '');
-  if (!text.includes('deliverycenter.baemin.com')) return false;
+  if (!isDeliveryCenterHost(text)) return false;
   if (/\/delivery-status(?:\?|$|\/)/i.test(text)) return true;
   if (/\/delivery\/history/i.test(text) && /orderName=/i.test(text)) return true;
   if (/\/delivery\/history/i.test(text) && /riderStatus=/i.test(text)) return true;
@@ -25,7 +30,7 @@ function isDeliveryStatusSpaUrl(url) {
 
 function isUnsafeHistorySpaUrl(url) {
   const text = String(url || '');
-  if (!text.includes('deliverycenter.baemin.com')) return false;
+  if (!isDeliveryCenterHost(text)) return false;
   if (isDeliveryStatusSpaUrl(text)) return false;
   if (/[?&]page=0\b/i.test(text) && /\/delivery\/(?:delivery-history|rider-history)/i.test(text)) return true;
   return false;
@@ -58,6 +63,21 @@ function buildSpaPageUrl(sourceId, dateRange, collectDate = null) {
 function isApiProbePath(apiPath) {
   const path = String(apiPath || '');
   return path.startsWith('/v2/') || path.startsWith('/v4/') || path === '/delivery-status';
+}
+
+async function ensureProductionDeliveryPage(page) {
+  if (!page || page.isClosed()) return { ok: false, message: '브라우저가 닫혀 있습니다.' };
+  const currentUrl = page.url();
+  if (!isBetaDeliveryCenterHost(currentUrl)) {
+    return { ok: true, url: currentUrl, redirected: false };
+  }
+  console.warn(`[BREM][page] betabaemin 감지 — 운영 도메인으로 이동: ${currentUrl}`);
+  await page.goto(SAFE_LANDING_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 90000
+  });
+  await delay(2500);
+  return { ok: true, url: page.url(), redirected: true, from: currentUrl };
 }
 
 async function attachSafeSpaGuard(context) {
@@ -394,6 +414,7 @@ module.exports = {
   buildSpaPageUrl,
   isDeliveryStatusSpaUrl,
   isUnsafeHistorySpaUrl,
+  ensureProductionDeliveryPage,
   attachSafeSpaGuard,
   recoverBrowserTab,
   recoverAllBrowserTabs,

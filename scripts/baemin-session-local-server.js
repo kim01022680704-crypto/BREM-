@@ -21,10 +21,14 @@ const {
 const listenConfig = getListenLocalSessionConfig();
 const PORT = listenConfig.port;
 const PROFILE_DIR = path.join(__dirname, '..', '.baemin-playwright-profile');
-const BAEMIN_ORIGIN = 'https://deliverycenter.baemin.com';
+const {
+  BAEMIN_ORIGIN,
+  isDeliveryCenterHost,
+  isBetaDeliveryCenterHost
+} = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260702r';
+const SERVER_VERSION = '20260702s';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -282,7 +286,7 @@ function isOnDeliveryHistoryPage(url) {
   if (urlIncludesDeliveryHistory(url)) return true;
   try {
     const parsed = new URL(url);
-    if (!parsed.hostname.includes('deliverycenter.baemin.com')) return false;
+    if (!isDeliveryCenterHost(parsed.hostname)) return false;
     const path = parsed.pathname.toLowerCase();
     return path.includes('delivery-history') || path.includes('/delivery/history');
   } catch {
@@ -294,13 +298,13 @@ function isLoggedInDeliveryPage(url) {
   if (urlIncludesDeliveryHistory(url) || urlIncludesDeliveryStatus(url)) return true;
 
   const lower = String(url || '').toLowerCase();
-  if (!lower.includes('deliverycenter.baemin.com')) return false;
+  if (!isDeliveryCenterHost(lower)) return false;
   if (isLoginLikeUrl(url)) return false;
   if (lower.includes('/delivery/')) return true;
 
   try {
     const parsed = new URL(url);
-    if (!parsed.hostname.includes('deliverycenter.baemin.com')) return false;
+    if (!isDeliveryCenterHost(parsed.hostname)) return false;
     if (isLoginLikeUrl(url)) return false;
     return parsed.pathname.startsWith('/delivery')
       || parsed.pathname.includes('delivery-status');
@@ -315,7 +319,8 @@ function scorePageUrl(url) {
   if (isOnDeliveryHistoryPage(url)) return 100;
   if (urlIncludesDeliveryStatus(url)) return 90;
   if (isLoggedInDeliveryPage(url)) return 80;
-  if (String(url).includes('deliverycenter.baemin.com')) return 10;
+  if (isDeliveryCenterHost(url)) return 10;
+  if (isBetaDeliveryCenterHost(url)) return 5;
   return 1;
 }
 
@@ -1107,7 +1112,15 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   const menuDateRanges = buildMenuDateRanges(collectDate);
   const tabs = scanBrowserTabs(context);
   const page = tabs.page || await context.newPage();
-  const { SAFE_LANDING_URL, isDeliveryStatusSpaUrl } = require('../server/baemin-page-capture');
+  const {
+    SAFE_LANDING_URL,
+    isDeliveryStatusSpaUrl,
+    ensureProductionDeliveryPage
+  } = require('../server/baemin-page-capture');
+
+  await ensureProductionDeliveryPage(page).catch(error => {
+    console.warn('[BREM] [수집 준비] 운영 도메인 전환 실패:', formatError(error));
+  });
 
   let detachRoute = () => {};
   try {
@@ -1256,7 +1269,7 @@ async function runSessionRefresh() {
       await ensureSafeBrowserTab(tabs.page).catch(() => {});
     }
 
-    if (!tabs.allUrls.some(url => url.includes('deliverycenter.baemin.com'))) {
+    if (!tabs.allUrls.some(url => isDeliveryCenterHost(url))) {
       try {
         await tabs.page.goto(`${BAEMIN_ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
         console.log(`[BREM] [초기 이동] ${safePageUrlSync(tabs.page)}`);
