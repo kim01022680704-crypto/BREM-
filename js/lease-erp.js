@@ -601,7 +601,6 @@ const BremLeaseErp = (function () {
         : [];
       const writeOptions = {
         allowEmpty: true,
-        ...pending,
         deletedRowIds,
         deleteOnly: pending.deleteOnly === true && deletedRowIds.length > 0 && !list.length
       };
@@ -865,7 +864,15 @@ const BremLeaseErp = (function () {
       migrationDone = true;
       return { migrated: 0, skipped: true };
     }
-    const legacy = readList(KEYS.legacy) || [];
+    let legacy = readList(KEYS.legacy) || [];
+    if (!legacy.length && BremStorage?.refetchDataKey) {
+      try {
+        await BremStorage.refetchDataKey(KEYS.legacy);
+        legacy = readList(KEYS.legacy) || [];
+      } catch (error) {
+        console.warn('[BremLeaseErp] legacy lease settings reload failed:', error);
+      }
+    }
     if (!legacy.length) {
       migrationDone = true;
       return { migrated: 0, skipped: true };
@@ -1188,6 +1195,10 @@ const BremLeaseErp = (function () {
   }
 
   async function persistAll(options = {}) {
+    if (hasDeferredChanges()) {
+      await commitDeferredWrites(options);
+      return;
+    }
     await flushPendingWrites(options);
   }
 

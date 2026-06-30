@@ -1308,7 +1308,8 @@
           leases.create(data);
         }
         erp?.syncAllVehicleStatusesFromContracts?.();
-        showToast(state.editingId ? '차량이 목록에 반영되었습니다.' : '차량이 목록에 반영되었습니다.');
+        if (!(await persistLeasesOrWarn())) return;
+        showToast(state.editingId ? '차량을 Supabase에 저장했습니다.' : '차량을 Supabase에 저장했습니다.');
         window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
 
         resetForm();

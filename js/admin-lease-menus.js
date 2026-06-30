@@ -1368,9 +1368,11 @@ const BremAdminLeaseMenus = (function () {
 
       markArrearContractOptionsDirty();
 
+      await erp().persistAll({ skipFlushStorage: true });
+
       $('leaseContractEditId').value = contract.id;
       fillContractForm(contract);
-      showToast('계약이 목록에 반영되었습니다. Supabase 저장 버튼을 눌러 주세요.');
+      showToast('계약을 Supabase에 저장했습니다.');
       updateLeaseErpUnsavedBanner();
       refreshAfterLeaseMutation({ contract: true });
       document.querySelector('.lease-contract-list-wrap')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
@@ -1382,7 +1384,7 @@ const BremAdminLeaseMenus = (function () {
       const saveBtn = $('leaseContractSaveBtn');
       if (saveBtn) {
         saveBtn.disabled = false;
-        saveBtn.textContent = '목록에 반영';
+        saveBtn.textContent = '저장';
       }
     }
   }
