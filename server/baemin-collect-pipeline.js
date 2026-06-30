@@ -1280,12 +1280,20 @@ async function getLatestMenuCollectStatus(collectDate) {
 
 const BAEMIN_APPLIED_SETTINGS_KEY = 'brem_baemin_delivery_applied';
 
+function isMissingAppliedTableError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('baemin_delivery_applied')
+    || (message.includes('relation') && message.includes('does not exist'));
+}
+
 async function readAppliedBaeminDelivery() {
   const raw = await readSettingsValue(BAEMIN_APPLIED_SETTINGS_KEY);
   if (!raw || typeof raw !== 'object') return null;
   const collectDate = String(raw.collectDate || '').slice(0, 10);
-  if (!collectDate) return null;
+  const batchId = String(raw.batchId || '').trim();
+  if (!batchId && !collectDate) return null;
   return {
+    batchId,
     collectDate,
     appliedAt: raw.appliedAt || null,
     savedCount: Number(raw.savedCount || 0),
@@ -1304,41 +1312,113 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const { count, error } = await supabase
+  const { data: sourceRows, error: sourceError } = await supabase
     .from('baemin_biz_collect_items')
-    .select('id', { count: 'exact', head: true })
+    .select('collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json, raw_json')
     .eq('collect_date', date);
 
-  if (error) {
-    if (isMissingBizCollectTableError(error)) {
+  if (sourceError) {
+    if (isMissingBizCollectTableError(sourceError)) {
       return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
     }
-    return { ok: false, error: error.message || '조회 실패' };
+    return { ok: false, error: sourceError.message || '조회 실패' };
   }
 
-  if (!count) {
+  const rows = sourceRows || [];
+  if (!rows.length) {
     return {
       ok: false,
       status: 400,
       error: 'NO_COLLECT_DATA',
-      message: `${date} 수집 데이터가 없습니다. [배민 전체 데이터 수집] 후 다시 적용하세요.`
+      message: `${date} 수집 데이터가 없습니다. [배민 전체 데이터 수집] 후 미리보기를 확인하고 다시 적용하세요.`
     };
   }
 
+  const appliedAt = new Date().toISOString();
+  const appliedBy = String(options.appliedBy || '').trim();
+
+  const { data: batchRow, error: batchError } = await supabase
+    .from('baemin_delivery_applied_batches')
+    .insert({
+      collect_date: date,
+      applied_at: appliedAt,
+      applied_by: appliedBy,
+      item_count: rows.length
+    })
+    .select('id')
+    .single();
+
+  if (batchError) {
+    if (isMissingAppliedTableError(batchError)) {
+      return {
+        ok: false,
+        tableMissing: true,
+        message: 'baemin_delivery_applied_* 테이블이 없습니다. supabase/baemin_delivery_applied_migration.sql 을 실행하세요.'
+      };
+    }
+    return { ok: false, error: batchError.message || '적용 배치 생성 실패' };
+  }
+
+  const batchId = batchRow.id;
+  const mapped = rows.map(row => ({
+    batch_id: batchId,
+    collect_date: row.collect_date,
+    collected_at: row.collected_at,
+    source_menu: row.source_menu,
+    source_url: row.source_url || '',
+    dedupe_key: row.dedupe_key || '',
+    rider_name: row.rider_name || '',
+    rider_user_id: row.rider_user_id || '',
+    phone_number: row.phone_number || '',
+    parsed_json: row.parsed_json || {},
+    raw_json: row.raw_json || {}
+  }));
+
+  const chunkSize = 100;
+  for (let i = 0; i < mapped.length; i += chunkSize) {
+    const chunk = mapped.slice(i, i + chunkSize);
+    const { error: insertError } = await supabase
+      .from('baemin_delivery_applied_items')
+      .insert(chunk);
+    if (insertError) {
+      await supabase.from('baemin_delivery_applied_batches').delete().eq('id', batchId);
+      if (isMissingAppliedTableError(insertError)) {
+        return {
+          ok: false,
+          tableMissing: true,
+          message: 'baemin_delivery_applied_items 테이블이 없습니다. supabase/baemin_delivery_applied_migration.sql 을 실행하세요.'
+        };
+      }
+      return { ok: false, error: insertError.message || '스냅샷 저장 실패' };
+    }
+  }
+
+  const previous = await readAppliedBaeminDelivery();
+  if (previous?.batchId && previous.batchId !== batchId) {
+    await supabase.from('baemin_delivery_applied_batches').delete().eq('id', previous.batchId);
+  }
+
   const payload = {
+    batchId,
     collectDate: date,
-    appliedAt: new Date().toISOString(),
-    savedCount: count,
-    appliedBy: String(options.appliedBy || '').trim()
+    appliedAt,
+    savedCount: rows.length,
+    appliedBy
   };
   const saved = await writeSettingsValue(
     BAEMIN_APPLIED_SETTINGS_KEY,
     payload,
-    '배민현황 ERP 적용 기준일'
+    '배민현황 ERP 적용 스냅샷'
   );
   if (!saved.ok) return saved;
 
-  return { ok: true, ...payload, itemCount: count };
+  return { ok: true, ...payload, itemCount: rows.length };
+}
+
+async function resolveAppliedBatchId(appliedOnly = false) {
+  if (!appliedOnly) return '';
+  const applied = await readAppliedBaeminDelivery();
+  return applied?.batchId || '';
 }
 
 async function resolveCollectDateForAdmin(collectDate, appliedOnly = false) {
@@ -1351,23 +1431,39 @@ async function resolveCollectDateForAdmin(collectDate, appliedOnly = false) {
 
 async function getPartnerListForAdmin(collectDate, options = {}) {
   const supabase = getServiceClient();
-  const date = await resolveCollectDateForAdmin(collectDate, options.appliedOnly);
-  if (!date) {
+  const appliedOnly = Boolean(options.appliedOnly);
+  const batchId = await resolveAppliedBatchId(appliedOnly);
+  const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
+
+  if (appliedOnly && !batchId) {
     return { ok: true, collectDate: '', partners: [], count: 0, appliedOnly: true, notApplied: true };
   }
+
+  if (!appliedOnly && !date) {
+    return { ok: true, collectDate: '', partners: [], count: 0 };
+  }
+
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const { data, error } = await supabase
-    .from('baemin_biz_collect_items')
+  const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
+  let query = supabase
+    .from(tableName)
     .select('parsed_json, dedupe_key')
-    .eq('collect_date', date)
     .limit(5000);
 
+  if (appliedOnly) {
+    query = query.eq('batch_id', batchId);
+  } else {
+    query = query.eq('collect_date', date);
+  }
+
+  const { data, error } = await query;
+
   if (error) {
-    if (isMissingBizCollectTableError(error)) {
-      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+    if (isMissingBizCollectTableError(error) || isMissingAppliedTableError(error)) {
+      return { ok: false, tableMissing: true, message: `${tableName} 테이블이 없습니다.` };
     }
     return { ok: false, error: error.message || '조회 실패' };
   }
@@ -1392,12 +1488,14 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
     .map(([partnerId, partnerName]) => ({ partnerId, partnerName }))
     .sort((a, b) => String(a.partnerName).localeCompare(String(b.partnerName), 'ko'));
 
-  return { ok: true, collectDate: date, partners: items, count: items.length };
+  return { ok: true, collectDate: date, partners: items, count: items.length, appliedOnly };
 }
 
 async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   const supabase = getServiceClient();
-  const date = await resolveCollectDateForAdmin(collectDate, options.appliedOnly);
+  const appliedOnly = Boolean(options.appliedOnly);
+  const batchId = await resolveAppliedBatchId(appliedOnly);
+  const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
   const menu = String(sourceMenu || '').trim();
   const partnerId = String(options.partnerId || '').trim();
 
@@ -1405,7 +1503,7 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  if (options.appliedOnly && !date) {
+  if (appliedOnly && !batchId) {
     return {
       ok: true,
       collectDate: '',
@@ -1418,19 +1516,25 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     };
   }
 
+  const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
   let query = supabase
-    .from('baemin_biz_collect_items')
+    .from(tableName)
     .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
-    .eq('collect_date', date)
     .order('collected_at', { ascending: false })
     .limit(5000);
+
+  if (appliedOnly) {
+    query = query.eq('batch_id', batchId);
+  } else {
+    query = query.eq('collect_date', date);
+  }
 
   if (menu) query = query.eq('source_menu', menu);
 
   const { data, error } = await query;
   if (error) {
-    if (isMissingBizCollectTableError(error)) {
-      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+    if (isMissingBizCollectTableError(error) || isMissingAppliedTableError(error)) {
+      return { ok: false, tableMissing: true, message: `${tableName} 테이블이 없습니다.` };
     }
     return { ok: false, error: error.message || '조회 실패' };
   }
@@ -1443,7 +1547,8 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     sourceMenu: menu,
     partnerId: partnerId || null,
     items,
-    count: items.length
+    count: items.length,
+    appliedOnly
   };
 }
 

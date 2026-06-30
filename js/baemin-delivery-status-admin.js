@@ -66,8 +66,50 @@
     return state.activeSection === 'baemin-status';
   }
 
+  function tableUiConfig() {
+    if (isViewSection()) {
+      return {
+        partnerBarId: 'baeminStatusPartnerSubtabBar',
+        menuBarId: 'baeminStatusMenuSubtabBar',
+        sectionRootId: 'baemin-status',
+        panelAttr: 'data-baemin-panel',
+        appliedQuery: '&appliedOnly=1',
+        emptyMessage: '「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.',
+        summaryMap: {
+          delivery_status: 'baeminStatusDeliveryStatusSummary',
+          daily_history: 'baeminStatusDailyHistorySummary',
+          rider_history: 'baeminStatusRiderHistorySummary'
+        },
+        rowsMap: {
+          delivery_status: 'baeminStatusDeliveryStatusRows',
+          daily_history: 'baeminStatusDailyHistoryRows',
+          rider_history: 'baeminStatusRiderHistoryRows'
+        }
+      };
+    }
+    return {
+      partnerBarId: 'baeminBizPartnerSubtabBar',
+      menuBarId: 'baeminBizMenuSubtabBar',
+      sectionRootId: 'baemin-biz-status',
+      panelAttr: 'data-baemin-biz-panel',
+      appliedQuery: '',
+      emptyMessage: '수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.',
+      summaryMap: {
+        delivery_status: 'baeminBizDeliveryStatusSummary',
+        daily_history: 'baeminBizDailyHistorySummary',
+        rider_history: 'baeminBizRiderHistorySummary'
+      },
+      rowsMap: {
+        delivery_status: 'baeminBizDeliveryStatusRows',
+        daily_history: 'baeminBizDailyHistoryRows',
+        rider_history: 'baeminBizRiderHistoryRows'
+      }
+    };
+  }
+
   function syncPartnerColumnVisibility(show) {
-    document.querySelectorAll('#baemin-status .baemin-data-table').forEach(table => {
+    const root = isViewSection() ? '#baemin-status' : '#baemin-biz-status';
+    document.querySelectorAll(`${root} .baemin-data-table`).forEach(table => {
       const headerCell = table.querySelector('thead tr th:first-child');
       if (headerCell && headerCell.textContent.trim() === '협력사') {
         headerCell.hidden = !show;
@@ -87,7 +129,8 @@
   }
 
   function renderPartnerTabs(partners = []) {
-    const bar = $('baeminStatusPartnerSubtabBar');
+    const ui = tableUiConfig();
+    const bar = $(ui.partnerBarId);
     if (!bar) return;
     state.partners = Array.isArray(partners) ? partners : [];
     if (!state.partners.length) {
@@ -112,25 +155,23 @@
   }
 
   function clearViewTablesNotApplied() {
-    const message = '「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.';
-    [
-      ['baeminStatusDeliveryStatusSummary', 'baeminStatusDeliveryStatusRows', 14],
-      ['baeminStatusDailyHistorySummary', 'baeminStatusDailyHistoryRows', 11],
-      ['baeminStatusRiderHistorySummary', 'baeminStatusRiderHistoryRows', 13]
-    ].forEach(([summaryId, rowsId, colspan]) => {
+    const ui = tableUiConfig();
+    const message = ui.emptyMessage;
+    Object.entries(ui.rowsMap).forEach(([menu, rowsId]) => {
+      const summaryId = ui.summaryMap[menu];
       const summaryEl = $(summaryId);
       const rowsEl = $(rowsId);
+      const colspan = menu === 'daily_history' ? 11 : (menu === 'rider_history' ? 13 : 14);
       if (summaryEl) summaryEl.textContent = '적용된 데이터 없음';
       if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${message}</td></tr>`;
     });
   }
 
   async function loadPartnerTabs() {
-    if (!isViewSection()) return;
+    const ui = tableUiConfig();
     const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
-    const appliedQuery = '&appliedOnly=1';
-    const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}${appliedQuery}`);
-    if (result.notApplied) {
+    const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}${ui.appliedQuery}`);
+    if (isViewSection() && result.notApplied) {
       state.appliedCollectDate = '';
       state.activePartnerId = '';
       state.partners = [];
@@ -140,7 +181,7 @@
       updatePanelVisibility();
       return;
     }
-    state.appliedCollectDate = result.collectDate || '';
+    state.appliedCollectDate = isViewSection() ? (result.collectDate || '') : captureDate;
     const partners = result.ok ? (result.partners || []) : [];
     renderPartnerTabs(partners);
     if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
@@ -148,11 +189,14 @@
     }
     if (!state.activePartnerId && partners.length) {
       switchBaeminPartner(partners[0].partnerId);
+    } else if (!partners.length) {
+      updatePanelVisibility();
     }
   }
 
   function updateMenuTabBar() {
-    const menuBar = $('baeminStatusMenuSubtabBar');
+    const ui = tableUiConfig();
+    const menuBar = $(ui.menuBarId);
     if (!menuBar) return;
     const show = Boolean(state.activePartnerId) && state.partners.length > 0;
     menuBar.hidden = !show;
@@ -162,23 +206,25 @@
   }
 
   function updatePanelVisibility() {
-    const section = document.getElementById('baemin-status');
+    const ui = tableUiConfig();
+    const section = document.getElementById(ui.sectionRootId);
     if (!section) return;
-    section.querySelectorAll('[data-baemin-panel]').forEach(panel => {
-      const menu = panel.dataset.baeminPanel;
-      panel.hidden = state.activeMenu !== menu;
+    section.querySelectorAll(`[${ui.panelAttr}]`).forEach(panel => {
+      const menu = panel.getAttribute(ui.panelAttr);
+      panel.hidden = !(state.activePartnerId && state.activeMenu === menu);
     });
-    const partnerBar = $('baeminStatusPartnerSubtabBar');
+    const partnerBar = $(ui.partnerBarId);
     if (partnerBar) partnerBar.hidden = !state.partners.length;
     updateMenuTabBar();
   }
 
   function switchBaeminPartner(partnerId) {
+    const ui = tableUiConfig();
     const id = String(partnerId || '').trim();
     if (!id) return;
     state.activePartnerId = id;
     if (!state.activeMenu) state.activeMenu = 'delivery_status';
-    $('baeminStatusPartnerSubtabBar')?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
+    $(ui.partnerBarId)?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.baeminPartner === id);
     });
     updatePanelVisibility();
@@ -428,14 +474,14 @@
     const applied = config?.applied;
     if (!applied?.collectDate) {
       el.className = 'baemin-applied-status baemin-applied-status--warn';
-      el.innerHTML = '<strong>아직 적용된 데이터 없음</strong> — 수집 후 [적용하기]를 누르면 배민현황 메뉴에 반영됩니다.';
+      el.innerHTML = '<strong>아직 적용된 데이터 없음</strong> — 수집 미리보기 확인 후 [적용하기]를 누르면 Supabase에 저장되고 배민현황에 반영됩니다.';
       if (applyBtn) applyBtn.disabled = state.loading || state.applying;
       return;
     }
 
     el.className = 'baemin-applied-status baemin-applied-status--ok';
     el.innerHTML = `
-      <strong>배민현황 적용됨</strong>
+      <strong>배민현황 적용됨 (Supabase 저장)</strong>
       · 기준일 ${applied.collectDate}
       · ${formatNumber(applied.savedCount || applied.itemCount || 0)}건
       · 적용 ${formatDateTime(applied.appliedAt)}
@@ -793,8 +839,12 @@
       menuDateRanges: result.menuDateRanges,
       menuResults
     });
-    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''} · [적용하기]로 배민현황에 반영하세요.`);
+    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''} · 아래 미리보기 확인 후 [적용하기]`);
     await loadConfig();
+    if (!isViewSection()) {
+      state.activePartnerId = '';
+      await loadAllSubtabData();
+    }
   }
 
   async function shutdownLocalServer() {
@@ -926,33 +976,24 @@
   }
 
   async function loadSubtabData(sourceMenu, partnerIdOverride = '') {
-    if (!isViewSection()) return;
-    const captureDate = state.appliedCollectDate || $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const ui = tableUiConfig();
+    const captureDate = isViewSection()
+      ? (state.appliedCollectDate || $('baeminDeliveryCaptureDate')?.value || todayKstDate())
+      : ($('baeminDeliveryCaptureDate')?.value || todayKstDate());
     const partnerId = String(partnerIdOverride || selectedPartnerId() || '').trim();
     if (!partnerId) return;
     const partnerQuery = `&partnerId=${encodeURIComponent(partnerId)}`;
     const result = await adminApi(
-      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}&appliedOnly=1`
+      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}${ui.appliedQuery}`
     );
 
-    const summaryMap = {
-      delivery_status: 'baeminStatusDeliveryStatusSummary',
-      daily_history: 'baeminStatusDailyHistorySummary',
-      rider_history: 'baeminStatusRiderHistorySummary'
-    };
-    const rowsMap = {
-      delivery_status: 'baeminStatusDeliveryStatusRows',
-      daily_history: 'baeminStatusDailyHistoryRows',
-      rider_history: 'baeminStatusRiderHistoryRows'
-    };
-
-    const summaryEl = $(summaryMap[sourceMenu]);
-    const rowsEl = $(rowsMap[sourceMenu]);
+    const summaryEl = $(ui.summaryMap[sourceMenu]);
+    const rowsEl = $(ui.rowsMap[sourceMenu]);
     if (!rowsEl) return;
 
-    if (result.notApplied) {
+    if (isViewSection() && result.notApplied) {
       if (summaryEl) summaryEl.textContent = '적용된 데이터가 없습니다.';
-      rowsEl.innerHTML = `<tr><td colspan="14" class="form-help">「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="14" class="form-help">${ui.emptyMessage}</td></tr>`;
       renderViewAppliedBanner(null);
       return;
     }
@@ -985,7 +1026,7 @@
       : () => '';
 
     if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="${showPartnerColumn ? 14 : 13}" class="form-help">적용된 데이터가 없습니다.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${showPartnerColumn ? 14 : 13}" class="form-help">${ui.emptyMessage}</td></tr>`;
       return;
     }
 
@@ -1068,12 +1109,11 @@
       renderAppliedStatus(state.config);
       return;
     }
-    showToast(`배민현황에 ${result.collectDate} 데이터가 적용되었습니다.`);
+    showToast(`배민현황에 ${result.collectDate} 데이터 ${formatNumber(result.itemCount || result.savedCount || 0)}건이 저장·적용되었습니다.`);
     await loadConfig();
   }
 
   async function loadAllSubtabData() {
-    if (!isViewSection()) return;
     await loadPartnerTabs();
     if (state.activePartnerId && state.activeMenu) {
       await loadSubtabData(state.activeMenu, state.activePartnerId);
@@ -1129,6 +1169,10 @@
     }
     renderSummary(result);
     showToast('배민 JSON 데이터가 저장되었습니다.');
+    if (!isViewSection()) {
+      state.activePartnerId = '';
+      await loadAllSubtabData();
+    }
   }
 
   function bindEvents() {
@@ -1181,11 +1225,17 @@
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
       void loadLatestSummary();
+      if (!isViewSection()) {
+        state.activePartnerId = '';
+        void loadAllSubtabData();
+      }
     });
 
-    $('baeminStatusMenuSubtabBar')?.querySelectorAll('[data-baemin-menu]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        switchBaeminMenu(btn.dataset.baeminMenu || 'delivery_status');
+    ['baeminStatusMenuSubtabBar', 'baeminBizMenuSubtabBar'].forEach(barId => {
+      $(barId)?.querySelectorAll('[data-baemin-menu]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          switchBaeminMenu(btn.dataset.baeminMenu || 'delivery_status');
+        });
       });
     });
   }
@@ -1194,6 +1244,8 @@
     const nextSection = String(sectionId || state.activeSection || 'baemin-biz-status').trim();
     if (state.activeSection !== nextSection) {
       stopPolling();
+      state.activePartnerId = '';
+      state.partners = [];
     }
     state.activeSection = nextSection;
     bindEvents();
@@ -1213,6 +1265,7 @@
     await loadPublicLocalSessionConfig();
     await loadConfig();
     await loadLatestSummary();
+    await loadAllSubtabData();
 
     state.statusPollTimer = setInterval(async () => {
       await loadConfig();
