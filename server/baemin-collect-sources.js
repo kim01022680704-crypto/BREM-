@@ -24,7 +24,7 @@ const COLLECT_SOURCES = {
     apiUrlPatterns: [
       /\/delivery-status(?:\?|$)/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 100 },
     dedupeFields: ['userId', 'phoneNumber']
   },
   daily_history: {
@@ -46,7 +46,7 @@ const COLLECT_SOURCES = {
       /\/delivery-history(?:\?|$)/i,
       /\/delivery\/delivery-history(?:\?|$)/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 0 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 100, pageStart: 0 },
     dateQueryKeys: ['fromDate', 'toDate'],
     dedupeFields: ['deliveryDate', 'date', 'deliveryId', 'orderId', 'id']
   },
@@ -68,7 +68,7 @@ const COLLECT_SOURCES = {
       /\/rider-history(?:\?|$)/i,
       /\/delivery\/rider-history(?:\?|$)/i
     ],
-    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 20, pageStart: 0 },
+    pagination: { style: 'totalPage', dataKey: 'data', defaultSize: 100, pageStart: 0 },
     dateQueryKeys: ['fromDate', 'toDate'],
     riderQueryKeys: ['userId', 'riderId'],
     dedupeFields: ['userId', 'riderId', 'deliveryId', 'orderId', 'id']

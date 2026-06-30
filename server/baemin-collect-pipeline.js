@@ -329,6 +329,8 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}) {
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
   const items = capture.spaItems || extractDataArray(capture.spaPayload) || [];
   const totalPage = capture.spaTotalPage || readTotalPages(capture.spaPayload) || 1;
+  if (!items.length) return null;
+  if (totalPage > 1) return null;
   const sourceUrl = capture.sampleUrl || endpointInfo.sampleUrl || '';
   console.log(`[BREM][collect] spa-capture 사용 rows=${items.length} url=${sourceUrl}`);
   return {
@@ -589,10 +591,22 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     });
   }
 
-  let fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
-    || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
+  let fetched = null;
+  if (sourceId !== 'delivery_status') {
+    fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
+      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
+  }
   if (!fetched?.ok) {
     fetched = await tryFetch(endpoint);
+  }
+  if ((!fetched?.ok || !(fetched.items || []).length) && context.playwrightPage && sourceId === 'delivery_status') {
+    const { preparePageForCollect } = require('./baemin-page-capture');
+    const retryCapture = await preparePageForCollect(context.playwrightPage, sourceId, {}, collectDate).catch(() => null);
+    if (retryCapture?.spaPayload) {
+      context.spaCapture = context.spaCapture || {};
+      context.spaCapture[sourceId] = retryCapture;
+    }
+    fetched = buildFetchedFromSpaCapture(retryCapture, endpoint) || await tryFetch(endpoint);
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
     console.warn(`[BREM][collect] ${sourceId} stored sampleUrl failed — rediscover`);
@@ -980,7 +994,6 @@ async function runFullCollectPipeline(options = {}) {
 
       if (playwrightPage) {
         attachCollectCenterRoute(playwrightPage, registry, detachRef);
-        await require('./baemin-page-capture').preparePageForCollect(playwrightPage, 'delivery_status', {}, collectDate);
       }
 
       const loopResult = await runPartnerSourceCollectLoop({
@@ -1071,7 +1084,7 @@ async function runFullCollectPipeline(options = {}) {
             const { ensurePartnerSessionReady, readActivePartnerDisplayFromPage } = require('./baemin-center-context');
             const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
             console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · 화면=${uiNow.partnerName || '-'} (${uiNow.partnerId || 'unknown'})`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 1000));
             const verified = await ensurePartnerSessionReady(
               playwrightPage,
               partner.partnerId,
@@ -1105,7 +1118,7 @@ async function runFullCollectPipeline(options = {}) {
               trySwitchCenterViaApi
             } = require('./baemin-center-context');
             await trySwitchCenterViaApi(playwrightPage, partner.partnerId);
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 700));
             const verified = await ensurePartnerSessionReady(
               playwrightPage,
               partner.partnerId,

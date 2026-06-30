@@ -315,10 +315,6 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
   if (!page || page.isClosed()) return null;
 
   if (sourceId === 'delivery_status') {
-    if (isDeliveryStatusSpaUrl(page.url())) {
-      await delay(800);
-      return null;
-    }
     const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
     let capture = null;
     const handler = async response => {
@@ -329,12 +325,14 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
         const bodyText = await response.text().catch(() => '');
         const payload = bodyText ? JSON.parse(bodyText) : null;
         const rows = extractDataArray(payload) || [];
-        if (!rows.length && !readTotalPages(payload)) return;
+        const totalPage = readTotalPages(payload) || 1;
+        if (!rows.length && totalPage <= 1) return;
+        if (totalPage > 1) return;
         capture = {
           sampleUrl: url,
           spaPayload: payload,
           spaItems: rows,
-          spaTotalPage: readTotalPages(payload),
+          spaTotalPage: totalPage,
           requestHeaders: response.request().headers()
         };
       } catch {
@@ -342,12 +340,19 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
       }
     };
     page.on('response', handler);
-    console.log(`[BREM][collect-prep] delivery_status goto ${SAFE_LANDING_URL}`);
+    const onDeliveryStatusSpa = isDeliveryStatusSpaUrl(page.url());
+    console.log(`[BREM][collect-prep] delivery_status ${onDeliveryStatusSpa ? 'reload' : 'goto'} ${SAFE_LANDING_URL}`);
     try {
-      await page.goto(SAFE_LANDING_URL, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
-        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
-      });
-      await delay(1200);
+      if (onDeliveryStatusSpa) {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(error => {
+          if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+        });
+      } else {
+        await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(error => {
+          if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+        });
+      }
+      await delay(600);
     } finally {
       page.off('response', handler);
     }
@@ -362,10 +367,10 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
   console.log(`[BREM][collect-prep] ${sourceId} goto ${spaUrl}`);
   const captured = await navigateAndCaptureApi(page, spaUrl, sourceId);
   if (captured.ok) return captured;
-  await page.goto(spaUrl, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
+  await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(error => {
     if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
   });
-  await delay(2000);
+  await delay(1000);
   return null;
 }
 
@@ -407,10 +412,10 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
   page.on('response', handler);
   try {
     console.log(`[BREM][spa-probe] goto ${spaUrl}`);
-    await page.goto(spaUrl, { waitUntil: 'networkidle', timeout: 90000 }).catch(error => {
+    await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(error => {
       if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
     });
-    await delay(3000);
+    await delay(1500);
   } catch (error) {
     console.warn(`[BREM][spa-probe] goto failed: ${error.message || error}`);
   } finally {
@@ -436,6 +441,9 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
   try { pathname = new URL(hit).pathname; } catch { /* ignore */ }
   const rows = extractDataArray(hitEntry.payload) || [];
   const totalPage = readTotalPages(hitEntry.payload);
+  if (!rows.length && !(totalPage && totalPage > 0)) {
+    return { ok: false, message: `${sourceId} SPA API empty`, captured: captured.map(row => row.url) };
+  }
   console.log(`[BREM][spa-probe] hit ${sourceId} ← ${hit} rows=${rows.length}`);
   return {
     ok: true,
