@@ -276,9 +276,15 @@ async function saveCollectRun(runRow) {
   return { ok: true };
 }
 
-function mergeCenterQuery(baseQuery, registry = {}) {
+function mergeCenterQuery(baseQuery, registry = {}, options = {}) {
+  if (options.skipCenterQuery) return { ...baseQuery };
   const centerQuery = buildCenterQueryParams(registry.centerContext || {});
   return { ...baseQuery, ...centerQuery };
+}
+
+function shouldUseBrowserSessionForCollect(context = {}) {
+  if (context.playwrightPage && !context.playwrightPage.isClosed?.()) return true;
+  return Boolean(context.playwrightContext?.request);
 }
 
 function shrinkDateRangeEnd(dateRange) {
@@ -515,7 +521,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   async function tryFetch(endpointInfo, dateRange = activeDateRange) {
     const baseQuery = mergeCenterQuery(
       buildDefaultQuery(sourceId, collectDate, dateRange),
-      registry
+      registry,
+      { skipCenterQuery: shouldUseBrowserSessionForCollect(context) }
     );
     const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
     if (!partnerId) {
