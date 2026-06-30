@@ -3,6 +3,7 @@
     config: null,
     loading: false,
     collecting: false,
+    applying: false,
     setupPollTimer: null,
     statusPollTimer: null,
     localHealthPollTimer: null,
@@ -10,10 +11,11 @@
     localBrowser: null,
     localSession: null,
     localAutoCollect: null,
-    activeSubtab: 'collect',
+    activeSection: 'baemin-biz-status',
     activePartnerId: '',
     activeMenu: 'delivery_status',
     partners: [],
+    appliedCollectDate: '',
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -60,8 +62,12 @@
     }
   }
 
+  function isViewSection() {
+    return state.activeSection === 'baemin-status';
+  }
+
   function syncPartnerColumnVisibility(show) {
-    document.querySelectorAll('.baemin-data-table').forEach(table => {
+    document.querySelectorAll('#baemin-status .baemin-data-table').forEach(table => {
       const headerCell = table.querySelector('thead tr th:first-child');
       if (headerCell && headerCell.textContent.trim() === '협력사') {
         headerCell.hidden = !show;
@@ -81,7 +87,7 @@
   }
 
   function renderPartnerTabs(partners = []) {
-    const bar = $('baeminPartnerSubtabBar');
+    const bar = $('baeminStatusPartnerSubtabBar');
     if (!bar) return;
     state.partners = Array.isArray(partners) ? partners : [];
     if (!state.partners.length) {
@@ -90,7 +96,7 @@
       return;
     }
 
-    bar.hidden = state.activeSubtab === 'collect';
+    bar.hidden = false;
     bar.innerHTML = state.partners.map(partner => {
       const id = partner.partnerId;
       const label = partner.partnerName || id;
@@ -105,23 +111,50 @@
     });
   }
 
+  function clearViewTablesNotApplied() {
+    const message = '「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.';
+    [
+      ['baeminStatusDeliveryStatusSummary', 'baeminStatusDeliveryStatusRows', 14],
+      ['baeminStatusDailyHistorySummary', 'baeminStatusDailyHistoryRows', 11],
+      ['baeminStatusRiderHistorySummary', 'baeminStatusRiderHistoryRows', 13]
+    ].forEach(([summaryId, rowsId, colspan]) => {
+      const summaryEl = $(summaryId);
+      const rowsEl = $(rowsId);
+      if (summaryEl) summaryEl.textContent = '적용된 데이터 없음';
+      if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${message}</td></tr>`;
+    });
+  }
+
   async function loadPartnerTabs() {
+    if (!isViewSection()) return;
     const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
-    const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}`);
+    const appliedQuery = '&appliedOnly=1';
+    const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}${appliedQuery}`);
+    if (result.notApplied) {
+      state.appliedCollectDate = '';
+      state.activePartnerId = '';
+      state.partners = [];
+      renderPartnerTabs([]);
+      renderViewAppliedBanner(null);
+      clearViewTablesNotApplied();
+      updatePanelVisibility();
+      return;
+    }
+    state.appliedCollectDate = result.collectDate || '';
     const partners = result.ok ? (result.partners || []) : [];
     renderPartnerTabs(partners);
     if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
       state.activePartnerId = '';
     }
-    if (state.activeSubtab === 'partner' && !state.activePartnerId && partners.length) {
+    if (!state.activePartnerId && partners.length) {
       switchBaeminPartner(partners[0].partnerId);
     }
   }
 
   function updateMenuTabBar() {
-    const menuBar = $('baeminMenuSubtabBar');
+    const menuBar = $('baeminStatusMenuSubtabBar');
     if (!menuBar) return;
-    const show = state.activeSubtab === 'partner' && Boolean(state.activePartnerId);
+    const show = Boolean(state.activePartnerId) && state.partners.length > 0;
     menuBar.hidden = !show;
     menuBar.querySelectorAll('[data-baemin-menu]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.baeminMenu === state.activeMenu);
@@ -129,29 +162,23 @@
   }
 
   function updatePanelVisibility() {
-    document.querySelectorAll('[data-baemin-panel]').forEach(panel => {
-      if (panel.dataset.baeminPanel === 'collect') {
-        panel.hidden = state.activeSubtab !== 'collect';
-        return;
-      }
+    const section = document.getElementById('baemin-status');
+    if (!section) return;
+    section.querySelectorAll('[data-baemin-panel]').forEach(panel => {
       const menu = panel.dataset.baeminPanel;
-      panel.hidden = !(state.activeSubtab === 'partner' && state.activeMenu === menu);
+      panel.hidden = state.activeMenu !== menu;
     });
-    const partnerBar = $('baeminPartnerSubtabBar');
-    if (partnerBar) partnerBar.hidden = state.activeSubtab === 'collect' || !state.partners.length;
+    const partnerBar = $('baeminStatusPartnerSubtabBar');
+    if (partnerBar) partnerBar.hidden = !state.partners.length;
     updateMenuTabBar();
   }
 
   function switchBaeminPartner(partnerId) {
     const id = String(partnerId || '').trim();
     if (!id) return;
-    state.activeSubtab = 'partner';
     state.activePartnerId = id;
     if (!state.activeMenu) state.activeMenu = 'delivery_status';
-    document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
-      btn.classList.toggle('is-active', btn.dataset.baeminSubtab === 'collect' && false);
-    });
-    $('baeminPartnerSubtabBar')?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
+    $('baeminStatusPartnerSubtabBar')?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.baeminPartner === id);
     });
     updatePanelVisibility();
@@ -393,26 +420,74 @@
     `;
   }
 
-  function renderConfig(config) {
-    state.config = config;
-    const hint = $('baeminDeliveryConfigHint');
-    if (!hint) return;
+  function renderAppliedStatus(config) {
+    const el = $('baeminDeliveryAppliedStatus');
+    const applyBtn = $('baeminDeliveryApplyBtn');
+    if (!el) return;
 
-    renderSessionStatus(config);
-    renderAutoCollectStatus(config);
-    renderMenuCollectStatus(config);
-
-    const missingLegacy = !config?.tableExists;
-    const missingBiz = config?.bizCollectTableExists === false;
-
-      if (missingLegacy || missingBiz) {
-      hint.textContent = 'Supabase 테이블이 없습니다. supabase/baemin_all_migrations.sql 내용 전체를 SQL Editor에 붙여넣고 Run 하세요.';
-      hint.className = 'form-help form-help--warn';
+    const applied = config?.applied;
+    if (!applied?.collectDate) {
+      el.className = 'baemin-applied-status baemin-applied-status--warn';
+      el.innerHTML = '<strong>아직 적용된 데이터 없음</strong> — 수집 후 [적용하기]를 누르면 배민현황 메뉴에 반영됩니다.';
+      if (applyBtn) applyBtn.disabled = state.loading || state.applying;
       return;
     }
 
-    hint.textContent = '자동 수집은 PC 로컬 세션 서버가 켜져 있을 때만 동작합니다. 세션은 Supabase settings에 저장됩니다.';
-    hint.className = 'form-help';
+    el.className = 'baemin-applied-status baemin-applied-status--ok';
+    el.innerHTML = `
+      <strong>배민현황 적용됨</strong>
+      · 기준일 ${applied.collectDate}
+      · ${formatNumber(applied.savedCount || applied.itemCount || 0)}건
+      · 적용 ${formatDateTime(applied.appliedAt)}
+    `;
+    if (applyBtn) applyBtn.disabled = state.loading || state.applying;
+  }
+
+  function renderViewAppliedBanner(applied) {
+    const banner = $('baeminStatusAppliedBanner');
+    if (!banner) return;
+
+    const data = applied || state.config?.applied;
+    if (!data?.collectDate) {
+      banner.hidden = false;
+      banner.className = 'baemin-applied-banner baemin-applied-banner--warn';
+      banner.innerHTML = '<strong>표시할 데이터가 없습니다.</strong> 「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.';
+      return;
+    }
+
+    banner.hidden = false;
+    banner.className = 'baemin-applied-banner baemin-applied-banner--ok';
+    banner.innerHTML = `
+      <strong>적용 기준일 ${data.collectDate}</strong>
+      · ${formatNumber(data.savedCount || data.itemCount || 0)}건
+      · 적용 ${formatDateTime(data.appliedAt)}
+    `;
+  }
+
+  function renderConfig(config) {
+    state.config = config;
+    const hint = $('baeminDeliveryConfigHint');
+    if (hint) {
+      renderSessionStatus(config);
+      renderAutoCollectStatus(config);
+      renderMenuCollectStatus(config);
+
+      const missingLegacy = !config?.tableExists;
+      const missingBiz = config?.bizCollectTableExists === false;
+
+      if (missingLegacy || missingBiz) {
+        hint.textContent = 'Supabase 테이블이 없습니다. supabase/baemin_all_migrations.sql 내용 전체를 SQL Editor에 붙여넣고 Run 하세요.';
+        hint.className = 'form-help form-help--warn';
+      } else {
+        hint.textContent = '자동 수집은 PC 로컬 세션 서버가 켜져 있을 때만 동작합니다. 세션은 Supabase settings에 저장됩니다.';
+        hint.className = 'form-help';
+      }
+    }
+
+    renderAppliedStatus(config);
+    if (isViewSection()) {
+      renderViewAppliedBanner(config?.applied);
+    }
   }
 
   function todayKstDate() {
@@ -718,11 +793,7 @@
       menuDateRanges: result.menuDateRanges,
       menuResults
     });
-    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''}`);
-    await loadPartnerTabs();
-    if (state.partners.length) {
-      switchBaeminPartner(state.partners[0].partnerId);
-    }
+    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''} · [적용하기]로 배민현황에 반영하세요.`);
     await loadConfig();
   }
 
@@ -855,28 +926,36 @@
   }
 
   async function loadSubtabData(sourceMenu, partnerIdOverride = '') {
-    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    if (!isViewSection()) return;
+    const captureDate = state.appliedCollectDate || $('baeminDeliveryCaptureDate')?.value || todayKstDate();
     const partnerId = String(partnerIdOverride || selectedPartnerId() || '').trim();
     if (!partnerId) return;
     const partnerQuery = `&partnerId=${encodeURIComponent(partnerId)}`;
     const result = await adminApi(
-      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}`
+      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}&appliedOnly=1`
     );
 
     const summaryMap = {
-      delivery_status: 'baeminDeliveryStatusSummary',
-      daily_history: 'baeminDailyHistorySummary',
-      rider_history: 'baeminRiderHistorySummary'
+      delivery_status: 'baeminStatusDeliveryStatusSummary',
+      daily_history: 'baeminStatusDailyHistorySummary',
+      rider_history: 'baeminStatusRiderHistorySummary'
     };
     const rowsMap = {
-      delivery_status: 'baeminDeliveryStatusRows',
-      daily_history: 'baeminDailyHistoryRows',
-      rider_history: 'baeminRiderHistoryRows'
+      delivery_status: 'baeminStatusDeliveryStatusRows',
+      daily_history: 'baeminStatusDailyHistoryRows',
+      rider_history: 'baeminStatusRiderHistoryRows'
     };
 
     const summaryEl = $(summaryMap[sourceMenu]);
     const rowsEl = $(rowsMap[sourceMenu]);
     if (!rowsEl) return;
+
+    if (result.notApplied) {
+      if (summaryEl) summaryEl.textContent = '적용된 데이터가 없습니다.';
+      rowsEl.innerHTML = `<tr><td colspan="14" class="form-help">「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.</td></tr>`;
+      renderViewAppliedBanner(null);
+      return;
+    }
 
     if (!result.ok) {
       if (summaryEl) summaryEl.textContent = result.message || '데이터를 불러오지 못했습니다.';
@@ -906,7 +985,7 @@
       : () => '';
 
     if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="${showPartnerColumn ? 14 : 13}" class="form-help">수집된 데이터가 없습니다. [배민 전체 데이터 수집]을 실행하세요.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${showPartnerColumn ? 14 : 13}" class="form-help">적용된 데이터가 없습니다.</td></tr>`;
       return;
     }
 
@@ -974,33 +1053,31 @@
     }).join('');
   }
 
-  function switchBaeminSubtab(tabId) {
-    const tab = String(tabId || 'collect').trim();
-    if (tab === 'collect') {
-      state.activeSubtab = 'collect';
-      document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
-        btn.classList.toggle('is-active', btn.dataset.baeminSubtab === 'collect');
-      });
-      updatePanelVisibility();
+  async function applyToErp() {
+    if (state.applying || state.loading) return;
+    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    state.applying = true;
+    renderAppliedStatus(state.config);
+    const result = await adminApi('/api/admin/baemin-delivery/apply', {
+      method: 'POST',
+      body: JSON.stringify({ collectDate: captureDate })
+    });
+    state.applying = false;
+    if (!result.ok) {
+      showToast(result.message || '적용에 실패했습니다.');
+      renderAppliedStatus(state.config);
       return;
     }
-    if (!state.activePartnerId && state.partners.length) {
-      switchBaeminPartner(state.partners[0].partnerId);
-      return;
-    }
-    state.activeSubtab = 'partner';
-    updatePanelVisibility();
-    if (state.activePartnerId && state.activeMenu) {
-      void loadSubtabData(state.activeMenu, state.activePartnerId);
-    }
+    showToast(`배민현황에 ${result.collectDate} 데이터가 적용되었습니다.`);
+    await loadConfig();
   }
 
   async function loadAllSubtabData() {
-    if (state.activeSubtab === 'partner' && state.activePartnerId && state.activeMenu) {
-      await loadSubtabData(state.activeMenu, state.activePartnerId);
-      return;
-    }
+    if (!isViewSection()) return;
     await loadPartnerTabs();
+    if (state.activePartnerId && state.activeMenu) {
+      await loadSubtabData(state.activeMenu, state.activePartnerId);
+    }
   }
 
   async function runAutoCollect() {
@@ -1098,39 +1175,44 @@
       closeSetupDialog();
     });
 
-    $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
-      void loadPartnerTabs();
-      void loadLatestSummary();
-      if (state.activeSubtab === 'partner' && state.activePartnerId && state.activeMenu) {
-        void loadSubtabData(state.activeMenu, state.activePartnerId);
-      }
+    $('baeminDeliveryApplyBtn')?.addEventListener('click', () => {
+      void applyToErp();
     });
 
-    $('baeminMenuSubtabBar')?.querySelectorAll('[data-baemin-menu]').forEach(btn => {
+    $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
+      void loadLatestSummary();
+    });
+
+    $('baeminStatusMenuSubtabBar')?.querySelectorAll('[data-baemin-menu]').forEach(btn => {
       btn.addEventListener('click', () => {
         switchBaeminMenu(btn.dataset.baeminMenu || 'delivery_status');
       });
     });
-
-    document.querySelectorAll('[data-baemin-subtab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        switchBaeminSubtab(btn.dataset.baeminSubtab || 'collect');
-      });
-    });
   }
 
-  async function refresh() {
+  async function refresh(sectionId) {
+    const nextSection = String(sectionId || state.activeSection || 'baemin-biz-status').trim();
+    if (state.activeSection !== nextSection) {
+      stopPolling();
+    }
+    state.activeSection = nextSection;
     bindEvents();
-    stopStatusPoll();
-    await loadPublicLocalSessionConfig();
     const dateInput = $('baeminDeliveryCaptureDate');
     if (dateInput && !dateInput.value) {
       dateInput.value = todayKstDate();
     }
-    await loadPartnerTabs();
+
+    if (isViewSection()) {
+      updatePanelVisibility();
+      await loadConfig();
+      await loadAllSubtabData();
+      return;
+    }
+
+    stopStatusPoll();
+    await loadPublicLocalSessionConfig();
     await loadConfig();
     await loadLatestSummary();
-    await loadAllSubtabData();
 
     state.statusPollTimer = setInterval(async () => {
       await loadConfig();

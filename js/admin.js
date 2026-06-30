@@ -167,7 +167,8 @@
     { id: 'mission-management', label: '미션 관리' },
     { id: 'lease-management', label: '리스 관리' },
     { id: 'calls', label: '콜수 입력' },
-    { id: 'baemin-delivery-status', label: '배민Biz 배달현황' },
+    { id: 'baemin-biz-status', label: '배민 BIZ 현황' },
+    { id: 'baemin-status', label: '배민현황' },
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
@@ -4590,8 +4591,9 @@
       case 'calls':
         renderCalls();
         break;
-      case 'baemin-delivery-status':
-        window.BremBaeminDeliveryStatusAdmin?.refresh?.();
+      case 'baemin-biz-status':
+      case 'baemin-status':
+        window.BremBaeminDeliveryStatusAdmin?.refresh?.(sectionId);
         break;
       case 'rejections':
         renderRejections();
@@ -4705,6 +4707,9 @@
   }
 
   function runSectionModuleRefresh(sectionId) {
+    if (sectionId !== 'baemin-biz-status' && sectionId !== 'baemin-status') {
+      window.BremBaeminDeliveryStatusAdmin?.stopPolling?.();
+    }
     if (sectionId === 'data-backup' && window.BremDataBackupAdmin?.refresh) {
       window.BremDataBackupAdmin.refresh();
     }
@@ -4731,8 +4736,8 @@
     if (sectionId === 'mission-management' && window.BremAdminMissions?.refresh) {
       void window.BremAdminMissions.refresh({ renderOnly: true });
     }
-    if (sectionId === 'baemin-delivery-status' && window.BremBaeminDeliveryStatusAdmin?.refresh) {
-      void window.BremBaeminDeliveryStatusAdmin.refresh();
+    if (sectionId === 'baemin-biz-status' || sectionId === 'baemin-status') {
+      void window.BremBaeminDeliveryStatusAdmin.refresh(sectionId);
     }
   }
 

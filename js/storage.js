@@ -1395,7 +1395,8 @@ const BremStorage = (function () {
     ],
     'revenue-management': [],
     'admin-account': [],
-    'baemin-delivery-status': [],
+    'baemin-biz-status': [],
+    'baemin-status': [],
     'data-backup': [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
   });
 
@@ -9392,7 +9393,8 @@ const BremStorage = (function () {
     'mission-management',
     'lease-management',
     'calls',
-    'baemin-delivery-status',
+    'baemin-biz-status',
+    'baemin-status',
     'rejections',
     'targets',
     'promotions',
@@ -9465,12 +9467,26 @@ const BremStorage = (function () {
       }
     }
 
-    if (!normalized.includes('baemin-delivery-status')) {
+    const legacyBaeminIndex = normalized.indexOf('baemin-delivery-status');
+    if (legacyBaeminIndex >= 0) {
+      normalized.splice(legacyBaeminIndex, 1, 'baemin-biz-status', 'baemin-status');
+    }
+
+    if (!normalized.includes('baemin-biz-status')) {
       const callsIndex = normalized.indexOf('calls');
       if (callsIndex >= 0) {
-        normalized.splice(callsIndex + 1, 0, 'baemin-delivery-status');
+        normalized.splice(callsIndex + 1, 0, 'baemin-biz-status');
       } else {
-        normalized.push('baemin-delivery-status');
+        normalized.push('baemin-biz-status');
+      }
+    }
+
+    if (!normalized.includes('baemin-status')) {
+      const bizIndex = normalized.indexOf('baemin-biz-status');
+      if (bizIndex >= 0) {
+        normalized.splice(bizIndex + 1, 0, 'baemin-status');
+      } else {
+        normalized.push('baemin-status');
       }
     }
 
@@ -9592,8 +9608,11 @@ const BremStorage = (function () {
     let nextEditable = editableMenus.includes('admin-account')
       ? editableMenus
       : [...editableMenus, 'admin-account'];
-    if (nextMenus.includes('baemin-delivery-status') && !nextEditable.includes('baemin-delivery-status')) {
-      nextEditable = [...nextEditable, 'baemin-delivery-status'];
+    if (nextMenus.includes('baemin-biz-status') && !nextEditable.includes('baemin-biz-status')) {
+      nextEditable = [...nextEditable, 'baemin-biz-status'];
+    }
+    if (nextMenus.includes('baemin-status') && !nextEditable.includes('baemin-status')) {
+      nextEditable = [...nextEditable, 'baemin-status'];
     }
     if (nextMenus.includes('payroll-slips') && !nextEditable.includes('payroll-slips')) {
       nextEditable = [...nextEditable, 'payroll-slips'];

@@ -1278,9 +1278,83 @@ async function getLatestMenuCollectStatus(collectDate) {
   });
 }
 
-async function getPartnerListForAdmin(collectDate) {
+const BAEMIN_APPLIED_SETTINGS_KEY = 'brem_baemin_delivery_applied';
+
+async function readAppliedBaeminDelivery() {
+  const raw = await readSettingsValue(BAEMIN_APPLIED_SETTINGS_KEY);
+  if (!raw || typeof raw !== 'object') return null;
+  const collectDate = String(raw.collectDate || '').slice(0, 10);
+  if (!collectDate) return null;
+  return {
+    collectDate,
+    appliedAt: raw.appliedAt || null,
+    savedCount: Number(raw.savedCount || 0),
+    appliedBy: raw.appliedBy || ''
+  };
+}
+
+async function applyBaeminDelivery(collectDate, options = {}) {
+  const date = String(collectDate || '').slice(0, 10);
+  if (!date) {
+    return { ok: false, status: 400, error: 'INVALID_DATE', message: '적용할 수집 날짜가 없습니다.' };
+  }
+
   const supabase = getServiceClient();
-  const date = String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { count, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('collect_date', date);
+
+  if (error) {
+    if (isMissingBizCollectTableError(error)) {
+      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+    }
+    return { ok: false, error: error.message || '조회 실패' };
+  }
+
+  if (!count) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'NO_COLLECT_DATA',
+      message: `${date} 수집 데이터가 없습니다. [배민 전체 데이터 수집] 후 다시 적용하세요.`
+    };
+  }
+
+  const payload = {
+    collectDate: date,
+    appliedAt: new Date().toISOString(),
+    savedCount: count,
+    appliedBy: String(options.appliedBy || '').trim()
+  };
+  const saved = await writeSettingsValue(
+    BAEMIN_APPLIED_SETTINGS_KEY,
+    payload,
+    '배민현황 ERP 적용 기준일'
+  );
+  if (!saved.ok) return saved;
+
+  return { ok: true, ...payload, itemCount: count };
+}
+
+async function resolveCollectDateForAdmin(collectDate, appliedOnly = false) {
+  if (!appliedOnly) {
+    return String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  }
+  const applied = await readAppliedBaeminDelivery();
+  return applied?.collectDate || '';
+}
+
+async function getPartnerListForAdmin(collectDate, options = {}) {
+  const supabase = getServiceClient();
+  const date = await resolveCollectDateForAdmin(collectDate, options.appliedOnly);
+  if (!date) {
+    return { ok: true, collectDate: '', partners: [], count: 0, appliedOnly: true, notApplied: true };
+  }
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
@@ -1323,12 +1397,25 @@ async function getPartnerListForAdmin(collectDate) {
 
 async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   const supabase = getServiceClient();
-  const date = String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const date = await resolveCollectDateForAdmin(collectDate, options.appliedOnly);
   const menu = String(sourceMenu || '').trim();
   const partnerId = String(options.partnerId || '').trim();
 
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  if (options.appliedOnly && !date) {
+    return {
+      ok: true,
+      collectDate: '',
+      sourceMenu: menu,
+      partnerId: partnerId || null,
+      items: [],
+      count: 0,
+      appliedOnly: true,
+      notApplied: true
+    };
   }
 
   let query = supabase
@@ -1424,5 +1511,8 @@ module.exports = {
   saveCollectRun,
   getLatestMenuCollectStatus,
   getCollectItemsForAdmin,
-  getPartnerListForAdmin
+  getPartnerListForAdmin,
+  readAppliedBaeminDelivery,
+  applyBaeminDelivery,
+  BAEMIN_APPLIED_SETTINGS_KEY
 };

@@ -847,7 +847,8 @@ app.post('/api/admin/baemin-delivery/session', async (req, res) => {
 app.get('/api/admin/baemin-delivery/partners', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getPartnerList(getBearerToken(req), {
-      collectDate: req.query.collectDate
+      collectDate: req.query.collectDate,
+      appliedOnly: req.query.appliedOnly === '1' || req.query.appliedOnly === 'true'
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({
@@ -866,7 +867,8 @@ app.get('/api/admin/baemin-delivery/items', async (req, res) => {
     const result = await baeminDeliveryCollect.getCollectItems(getBearerToken(req), {
       collectDate: req.query.collectDate,
       sourceMenu: req.query.sourceMenu,
-      partnerId: req.query.partnerId
+      partnerId: req.query.partnerId,
+      appliedOnly: req.query.appliedOnly === '1' || req.query.appliedOnly === 'true'
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({
@@ -930,6 +932,24 @@ app.post('/api/admin/baemin-delivery/import-json', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 JSON 저장에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/apply', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.applyToErp(getBearerToken(req), {
+      collectDate: body.collectDate || body.captureDate
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민현황 적용에 실패했습니다.' });
   }
 });
 

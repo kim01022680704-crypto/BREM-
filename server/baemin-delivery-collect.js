@@ -520,11 +520,14 @@ async function getConfig(accessToken) {
   const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
   const baeminAutoCollect = require('./baemin-auto-collect');
   const autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin();
+  const { readAppliedBaeminDelivery } = require('./baemin-collect-pipeline');
+  const applied = await readAppliedBaeminDelivery();
 
   return {
     ok: true,
     tableExists: tableStatus.tableExists === true,
     bizCollectTableExists: bizTableStatus.tableExists === true,
+    applied: applied || null,
     sessionConfigured: sessionStatus.sessionConfigured || envCookie,
     sessionUpdatedAt: sessionStatus.updatedAt || null,
     sessionUpdatedBy: sessionStatus.updatedBy || '',
@@ -550,7 +553,8 @@ async function getCollectItems(accessToken, options = {}) {
 
   const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
   return getCollectItemsForAdmin(options.collectDate, options.sourceMenu, {
-    partnerId: options.partnerId
+    partnerId: options.partnerId,
+    appliedOnly: Boolean(options.appliedOnly)
   });
 }
 
@@ -559,7 +563,19 @@ async function getPartnerList(accessToken, options = {}) {
   if (!caller.ok) return caller;
 
   const { getPartnerListForAdmin } = require('./baemin-collect-pipeline');
-  return getPartnerListForAdmin(options.collectDate);
+  return getPartnerListForAdmin(options.collectDate, {
+    appliedOnly: Boolean(options.appliedOnly)
+  });
+}
+
+async function applyToErp(accessToken, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { applyBaeminDelivery } = require('./baemin-collect-pipeline');
+  return applyBaeminDelivery(options.collectDate, {
+    appliedBy: caller.email || caller.userId || ''
+  });
 }
 
 module.exports = {
@@ -571,6 +587,7 @@ module.exports = {
   getLatestSummary,
   getCollectItems,
   getPartnerList,
+  applyToErp,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,

@@ -113,7 +113,8 @@
         <button class="nav-btn" data-section="mission-management">미션 관리</button>
         <button class="nav-btn" data-section="lease-management">리스 관리</button>
         <button class="nav-btn" data-section="calls">콜수 입력</button>
-        <button class="nav-btn" data-section="baemin-delivery-status">배민Biz 배달현황</button>
+        <button class="nav-btn" data-section="baemin-biz-status">배민 BIZ 현황</button>
+        <button class="nav-btn" data-section="baemin-status">배민현황</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
@@ -621,21 +622,10 @@
         </div>
       </section>
 
-      <section class="section" id="baemin-delivery-status">
-        <div class="baemin-subtab-bar">
-          <button type="button" class="promotion-tab is-active" data-baemin-subtab="collect">수집/설정</button>
-        </div>
-        <nav id="baeminPartnerSubtabBar" class="baemin-partner-tab-bar" hidden aria-label="협력사"></nav>
-        <nav id="baeminMenuSubtabBar" class="baemin-subtab-bar" hidden aria-label="배달 메뉴">
-          <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
-          <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
-          <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
-        </nav>
-
-        <div class="baemin-subpanel" data-baemin-panel="collect">
+      <section class="section" id="baemin-biz-status">
         <article class="card" id="baeminDeliveryCollectCard">
           <div class="card-header">
-            <h2>배민Biz 배달 현황 수집</h2>
+            <h2>배민 BIZ 현황 수집</h2>
           </div>
           <p class="form-help" id="baeminDeliveryConfigHint">배민Biz API는 서버에서만 호출합니다.</p>
           <div id="baeminDeliverySessionStatus" class="baemin-session-status baemin-session-status--warn">세션 상태 확인 중…</div>
@@ -660,102 +650,17 @@
           </details>
           <div id="baeminDeliveryCollectResult" class="baemin-collect-result" hidden></div>
         </article>
-        </div>
 
-        <div class="baemin-subpanel" data-baemin-panel="delivery_status" hidden>
-          <article class="card">
-            <div class="card-header">
-              <h2>배달현황</h2>
-              <p class="form-help">수집된 라이더별 배달현황 (완료·거절·시간대)</p>
-            </div>
-            <p class="admin-table-summary" id="baeminDeliveryStatusSummary">데이터 없음</p>
-            <div class="table-scroll">
-              <table class="admin-table baemin-data-table">
-                <thead>
-                  <tr>
-                    <th>협력사</th>
-                    <th>라이더</th>
-                    <th>운행상태</th>
-                    <th>배민ID</th>
-                    <th>연락처</th>
-                    <th>완료</th>
-                    <th>거절</th>
-                    <th>배차취소</th>
-                    <th>배달취소(라이더귀책)</th>
-                    <th>아침점심</th>
-                    <th>오후</th>
-                    <th>저녁</th>
-                    <th>심야</th>
-                    <th>수집 시각</th>
-                  </tr>
-                </thead>
-                <tbody id="baeminDeliveryStatusRows"></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
-
-        <div class="baemin-subpanel" data-baemin-panel="daily_history" hidden>
-          <article class="card">
-            <div class="card-header">
-              <h2>일별 배달내역</h2>
-              <p class="form-help">선택한 날짜의 배달 건별 내역</p>
-            </div>
-            <p class="admin-table-summary" id="baeminDailyHistorySummary">데이터 없음</p>
-            <div class="table-scroll">
-              <table class="admin-table baemin-data-table">
-                <thead>
-                  <tr>
-                    <th>협력사</th>
-                    <th>배달일</th>
-                    <th>완료</th>
-                    <th>거절</th>
-                    <th>배차취소</th>
-                    <th>배달취소(라이더귀책)</th>
-                    <th>아침점심</th>
-                    <th>오후</th>
-                    <th>저녁</th>
-                    <th>심야</th>
-                    <th>수집 시각</th>
-                  </tr>
-                </thead>
-                <tbody id="baeminDailyHistoryRows"></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
-
-        <div class="baemin-subpanel" data-baemin-panel="rider_history" hidden>
-          <article class="card">
-            <div class="card-header">
-              <h2>라이더별 배달내역</h2>
-              <p class="form-help">선택한 날짜 기준 라이더별 집계</p>
-            </div>
-            <p class="admin-table-summary" id="baeminRiderHistorySummary">데이터 없음</p>
-            <div class="table-scroll">
-              <table class="admin-table baemin-data-table">
-                <thead>
-                  <tr>
-                    <th>협력사</th>
-                    <th>라이더</th>
-                    <th>배민ID</th>
-                    <th>연락처</th>
-                    <th>완료</th>
-                    <th>거절</th>
-                    <th>배차취소</th>
-                    <th>배달취소(라이더귀책)</th>
-                    <th>아침점심</th>
-                    <th>오후</th>
-                    <th>저녁</th>
-                    <th>심야</th>
-                    <th>수집 시각</th>
-                  </tr>
-                </thead>
-                <tbody id="baeminRiderHistoryRows"></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
+        <article class="card" id="baeminDeliveryApplyCard">
+          <div class="card-header">
+            <h2>배민현황 ERP 적용</h2>
+            <p class="form-help">수집이 끝난 뒤 [적용하기]를 누르면 「배민현황」 메뉴에 데이터가 반영됩니다.</p>
+          </div>
+          <div id="baeminDeliveryAppliedStatus" class="baemin-applied-status">적용 상태 확인 중…</div>
+          <div class="form-row">
+            <button type="button" class="primary-btn" id="baeminDeliveryApplyBtn">적용하기</button>
+          </div>
+        </article>
 
         <dialog class="baemin-json-dialog" id="baeminDeliverySessionDialog">
           <form method="dialog" class="baemin-json-dialog__inner" onsubmit="return false;">
@@ -778,6 +683,111 @@
             </div>
           </form>
         </dialog>
+      </section>
+
+      <section class="section" id="baemin-status">
+        <div id="baeminStatusAppliedBanner" class="baemin-applied-banner" hidden></div>
+        <nav id="baeminStatusPartnerSubtabBar" class="baemin-partner-tab-bar baemin-partner-tab-bar--scroll" hidden aria-label="협력사"></nav>
+        <nav id="baeminStatusMenuSubtabBar" class="baemin-subtab-bar" hidden aria-label="배달 메뉴">
+          <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
+          <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
+          <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
+        </nav>
+
+        <div class="baemin-subpanel" data-baemin-panel="delivery_status">
+          <article class="card">
+            <div class="card-header">
+              <h2>배달현황</h2>
+              <p class="form-help">적용된 수집 데이터 · 라이더별 배달현황 (완료·거절·시간대)</p>
+            </div>
+            <p class="admin-table-summary" id="baeminStatusDeliveryStatusSummary">데이터 없음</p>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table">
+                <thead>
+                  <tr>
+                    <th>협력사</th>
+                    <th>라이더</th>
+                    <th>운행상태</th>
+                    <th>배민ID</th>
+                    <th>연락처</th>
+                    <th>완료</th>
+                    <th>거절</th>
+                    <th>배차취소</th>
+                    <th>배달취소(라이더귀책)</th>
+                    <th>아침점심</th>
+                    <th>오후</th>
+                    <th>저녁</th>
+                    <th>심야</th>
+                    <th>수집 시각</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusDeliveryStatusRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel" data-baemin-panel="daily_history" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>일별 배달내역</h2>
+              <p class="form-help">적용된 수집 데이터 · 선택한 날짜의 배달 건별 내역</p>
+            </div>
+            <p class="admin-table-summary" id="baeminStatusDailyHistorySummary">데이터 없음</p>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table">
+                <thead>
+                  <tr>
+                    <th>협력사</th>
+                    <th>배달일</th>
+                    <th>완료</th>
+                    <th>거절</th>
+                    <th>배차취소</th>
+                    <th>배달취소(라이더귀책)</th>
+                    <th>아침점심</th>
+                    <th>오후</th>
+                    <th>저녁</th>
+                    <th>심야</th>
+                    <th>수집 시각</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusDailyHistoryRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel" data-baemin-panel="rider_history" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>라이더별 배달내역</h2>
+              <p class="form-help">적용된 수집 데이터 · 라이더별 집계</p>
+            </div>
+            <p class="admin-table-summary" id="baeminStatusRiderHistorySummary">데이터 없음</p>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table">
+                <thead>
+                  <tr>
+                    <th>협력사</th>
+                    <th>라이더</th>
+                    <th>배민ID</th>
+                    <th>연락처</th>
+                    <th>완료</th>
+                    <th>거절</th>
+                    <th>배차취소</th>
+                    <th>배달취소(라이더귀책)</th>
+                    <th>아침점심</th>
+                    <th>오후</th>
+                    <th>저녁</th>
+                    <th>심야</th>
+                    <th>수집 시각</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusRiderHistoryRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
       </section>
 
             <section class="section" id="rejections">
@@ -4827,7 +4837,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260702b"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260702c"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
