@@ -16,6 +16,11 @@
     activeMenu: 'delivery_status',
     partners: [],
     appliedCollectDate: '',
+    dataCache: {
+      key: '',
+      byPartner: {},
+      loadingPartner: ''
+    },
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -62,8 +67,34 @@
     }
   }
 
-  function isViewSection() {
-    return state.activeSection === 'baemin-status';
+  const MENU_IDS = ['delivery_status', 'daily_history', 'rider_history'];
+
+  function buildCacheKey() {
+    const ui = tableUiConfig();
+    if (isViewSection()) {
+      const applied = state.config?.applied || {};
+      return `view:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}`;
+    }
+    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    return `biz:${captureDate}`;
+  }
+
+  function invalidateDataCache() {
+    state.dataCache = { key: '', byPartner: {}, loadingPartner: '' };
+  }
+
+  function getCachedPartnerBundle(partnerId) {
+    const key = buildCacheKey();
+    if (state.dataCache.key !== key) return null;
+    return state.dataCache.byPartner[partnerId] || null;
+  }
+
+  function setCachedPartnerBundle(partnerId, bundle) {
+    const key = buildCacheKey();
+    if (state.dataCache.key !== key) {
+      state.dataCache = { key, byPartner: {}, loadingPartner: '' };
+    }
+    state.dataCache.byPartner[partnerId] = bundle;
   }
 
   function tableUiConfig() {
@@ -183,6 +214,10 @@
     }
     state.appliedCollectDate = isViewSection() ? (result.collectDate || '') : captureDate;
     const partners = result.ok ? (result.partners || []) : [];
+    const nextCacheKey = buildCacheKey();
+    if (state.dataCache.key && state.dataCache.key !== nextCacheKey) {
+      invalidateDataCache();
+    }
     renderPartnerTabs(partners);
     if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
       state.activePartnerId = '';
@@ -198,8 +233,11 @@
     const ui = tableUiConfig();
     const menuBar = $(ui.menuBarId);
     if (!menuBar) return;
-    const show = Boolean(state.activePartnerId) && state.partners.length > 0;
-    menuBar.hidden = !show;
+    if (isViewSection()) {
+      menuBar.hidden = false;
+    } else {
+      menuBar.hidden = !(Boolean(state.activePartnerId) && state.partners.length > 0);
+    }
     menuBar.querySelectorAll('[data-baemin-menu]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.baeminMenu === state.activeMenu);
     });
@@ -228,15 +266,33 @@
       btn.classList.toggle('is-active', btn.dataset.baeminPartner === id);
     });
     updatePanelVisibility();
-    void loadSubtabData(state.activeMenu, id);
+
+    const cached = getCachedPartnerBundle(id);
+    if (cached?.[state.activeMenu]) {
+      renderSubtabRows(state.activeMenu, id, cached[state.activeMenu], cached.meta || {});
+      return;
+    }
+    void loadPartnerBundle(id, state.activeMenu);
   }
 
   function switchBaeminMenu(menuId) {
     const menu = String(menuId || '').trim();
-    if (!menu || !state.activePartnerId) return;
+    if (!menu) return;
+    if (!state.activePartnerId && isViewSection()) {
+      state.activeMenu = menu;
+      updatePanelVisibility();
+      return;
+    }
+    if (!state.activePartnerId) return;
     state.activeMenu = menu;
     updatePanelVisibility();
-    void loadSubtabData(menu, state.activePartnerId);
+
+    const cached = getCachedPartnerBundle(state.activePartnerId);
+    if (cached?.[menu]) {
+      renderSubtabRows(menu, state.activePartnerId, cached[menu], cached.meta || {});
+      return;
+    }
+    void loadPartnerBundle(state.activePartnerId, menu);
   }
 
   function formatNumber(value) {
@@ -507,6 +563,9 @@
       <strong>적용 기준일 ${data.collectDate}</strong>
       · ${formatNumber(data.savedCount || data.itemCount || 0)}건
       · 적용 ${formatDateTime(data.appliedAt)}
+      ${data.collectedAt ? `· 수집 ${formatDateTime(data.collectedAt)}` : ''}
+      ${state.activePartnerId ? `· 지사 ${state.partners.find(partner => partner.partnerId === state.activePartnerId)?.partnerName || state.activePartnerId}` : ''}
+      <span class="form-help"> · DB 적용 스냅샷 조회 (실시간 Biz 조회 없음)</span>
     `;
   }
 
@@ -840,6 +899,7 @@
       menuResults
     });
     showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''} · 아래 미리보기 확인 후 [적용하기]`);
+    invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
       state.activePartnerId = '';
@@ -944,7 +1004,26 @@
     await loadConfig();
   }
 
+  async function loadViewConfig() {
+    const result = await adminApi('/api/admin/baemin-delivery/config?viewOnly=1');
+    if (!result.ok) {
+      if (result.message) showToast(result.message);
+      return;
+    }
+    state.config = {
+      ...(state.config || {}),
+      tableExists: result.tableExists,
+      bizCollectTableExists: result.bizCollectTableExists,
+      applied: result.applied || null
+    };
+    renderViewAppliedBanner(result.applied || null);
+  }
+
   async function loadConfig() {
+    if (isViewSection()) {
+      await loadViewConfig();
+      return;
+    }
     const result = await adminApi('/api/admin/baemin-delivery/config');
     if (result.ok) {
       renderConfig(result);
@@ -975,48 +1054,84 @@
     }
   }
 
-  async function loadSubtabData(sourceMenu, partnerIdOverride = '') {
+  async function loadPartnerBundle(partnerId, focusMenu = state.activeMenu) {
+    const id = String(partnerId || '').trim();
+    if (!id) return null;
+
+    const cached = getCachedPartnerBundle(id);
+    if (cached && MENU_IDS.every(menu => Array.isArray(cached[menu]))) {
+      if (focusMenu && cached[focusMenu]) {
+        renderSubtabRows(focusMenu, id, cached[focusMenu], cached.meta || {});
+      }
+      return cached;
+    }
+
+    if (state.dataCache.loadingPartner === id) return null;
+    state.dataCache.loadingPartner = id;
+
     const ui = tableUiConfig();
     const captureDate = isViewSection()
-      ? (state.appliedCollectDate || $('baeminDeliveryCaptureDate')?.value || todayKstDate())
+      ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
       : ($('baeminDeliveryCaptureDate')?.value || todayKstDate());
-    const partnerId = String(partnerIdOverride || selectedPartnerId() || '').trim();
-    if (!partnerId) return;
-    const partnerQuery = `&partnerId=${encodeURIComponent(partnerId)}`;
-    const result = await adminApi(
-      `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}${ui.appliedQuery}`
-    );
+    const partnerQuery = `&partnerId=${encodeURIComponent(id)}`;
+
+    const results = await Promise.all(MENU_IDS.map(async sourceMenu => {
+      const result = await adminApi(
+        `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}${ui.appliedQuery}`
+      );
+      return { sourceMenu, result };
+    }));
+
+    state.dataCache.loadingPartner = '';
+    const bundle = { meta: { captureDate, notApplied: false } };
+    results.forEach(({ sourceMenu, result }) => {
+      if (isViewSection() && result.notApplied) {
+        bundle.meta.notApplied = true;
+      }
+      bundle[sourceMenu] = result.ok ? (result.items || []) : [];
+    });
+    setCachedPartnerBundle(id, bundle);
+
+    if (focusMenu) {
+      renderSubtabRows(focusMenu, id, bundle[focusMenu] || [], bundle.meta);
+    }
+    return bundle;
+  }
+
+  function renderSubtabRows(sourceMenu, partnerId, items, meta = {}) {
+    const ui = tableUiConfig();
+    const captureDate = meta.captureDate
+      || (isViewSection()
+        ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
+        : ($('baeminDeliveryCaptureDate')?.value || todayKstDate()));
 
     const summaryEl = $(ui.summaryMap[sourceMenu]);
     const rowsEl = $(ui.rowsMap[sourceMenu]);
     if (!rowsEl) return;
 
-    if (isViewSection() && result.notApplied) {
+    if (isViewSection() && meta.notApplied) {
       if (summaryEl) summaryEl.textContent = '적용된 데이터가 없습니다.';
       rowsEl.innerHTML = `<tr><td colspan="14" class="form-help">${ui.emptyMessage}</td></tr>`;
       renderViewAppliedBanner(null);
       return;
     }
 
-    if (!result.ok) {
-      if (summaryEl) summaryEl.textContent = result.message || '데이터를 불러오지 못했습니다.';
-      rowsEl.innerHTML = '';
-      return;
-    }
-
-    const items = result.items || [];
     const menuDatePlan = state.config?.autoCollect?.menuDatePlan || state.config?.menuDatePlan || null;
     const rangeLabel = menuDatePlan?.[sourceMenu]?.label;
     const partnerLabel = state.partners.find(partner => partner.partnerId === partnerId)?.partnerName || partnerId;
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
-        summaryEl.textContent = `${partnerLabel} · 오늘 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
+        summaryEl.textContent = `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
       } else if (rangeLabel) {
         const periodHint = sourceMenu === 'rider_history' ? ' · 완료=기간 합계' : '';
         summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${formatNumber(items.length)}건${periodHint}`;
       } else {
         summaryEl.textContent = `${partnerLabel} · ${captureDate} · ${formatNumber(items.length)}건`;
       }
+    }
+
+    if (isViewSection()) {
+      renderViewAppliedBanner(state.config?.applied || null);
     }
 
     const showPartnerColumn = false;
@@ -1094,6 +1209,12 @@
     }).join('');
   }
 
+  async function loadSubtabData(sourceMenu, partnerIdOverride = '') {
+    const partnerId = String(partnerIdOverride || selectedPartnerId() || '').trim();
+    if (!partnerId) return;
+    await loadPartnerBundle(partnerId, sourceMenu);
+  }
+
   async function applyToErp() {
     if (state.applying || state.loading) return;
     const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
@@ -1110,7 +1231,12 @@
       return;
     }
     showToast(`배민현황에 ${result.collectDate} 데이터 ${formatNumber(result.itemCount || result.savedCount || 0)}건이 저장·적용되었습니다.`);
+    invalidateDataCache();
     await loadConfig();
+    if (!isViewSection()) {
+      state.activePartnerId = '';
+      await loadAllSubtabData();
+    }
   }
 
   async function loadAllSubtabData() {
@@ -1224,6 +1350,7 @@
     });
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
+      invalidateDataCache();
       void loadLatestSummary();
       if (!isViewSection()) {
         state.activePartnerId = '';
@@ -1246,6 +1373,7 @@
       stopPolling();
       state.activePartnerId = '';
       state.partners = [];
+      invalidateDataCache();
     }
     state.activeSection = nextSection;
     bindEvents();
@@ -1255,8 +1383,10 @@
     }
 
     if (isViewSection()) {
+      if (!state.activeMenu) state.activeMenu = 'delivery_status';
       updatePanelVisibility();
-      await loadConfig();
+      invalidateDataCache();
+      await loadViewConfig();
       await loadAllSubtabData();
       return;
     }

@@ -509,19 +509,30 @@ async function getLatestSummary(accessToken, captureDate) {
   };
 }
 
-async function getConfig(accessToken) {
+async function getConfig(accessToken, options = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
 
   const tableStatus = await getTableStatus();
   const { getBizCollectTableStatus } = require('./baemin-collect-pipeline');
   const bizTableStatus = await getBizCollectTableStatus();
+  const { readAppliedBaeminDelivery } = require('./baemin-collect-pipeline');
+  const applied = await readAppliedBaeminDelivery();
+
+  if (options.viewOnly) {
+    return {
+      ok: true,
+      viewOnly: true,
+      tableExists: tableStatus.tableExists === true,
+      bizCollectTableExists: bizTableStatus.tableExists === true,
+      applied: applied || null
+    };
+  }
+
   const sessionStatus = await getBaeminSession().getSessionStatus(accessToken);
   const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
   const baeminAutoCollect = require('./baemin-auto-collect');
   const autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin();
-  const { readAppliedBaeminDelivery } = require('./baemin-collect-pipeline');
-  const applied = await readAppliedBaeminDelivery();
 
   return {
     ok: true,

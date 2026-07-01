@@ -775,10 +775,6 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
   }
 
   if (sample.status < 200 || sample.status >= 300) {
-    if (ui.partnerId === partnerId) {
-      console.warn(`[BREM][center] API probe soft-pass (UI 확인): partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
-      return { ok: true, ui, sample, softVerify: true };
-    }
     console.warn(`[BREM][center] API probe failed partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
     return { ok: false, reason: 'api_probe_failed', ui, sample };
   }
@@ -885,6 +881,7 @@ async function selectPartnerCenterInner(page, target = {}) {
     await delay(1000);
 
     const optionLabel = targetName ? `${targetName} (${targetId})` : targetId;
+    const { textMatchesPartner } = require('./baemin-partner-match');
     const textOption = page.getByText(optionLabel, { exact: true });
     if (await textOption.count()) {
       await textOption.first().click({ timeout: 8000 });
@@ -901,6 +898,25 @@ async function selectPartnerCenterInner(page, target = {}) {
         await locator.first().click({ timeout: 8000 });
         picked = true;
         break;
+      }
+      if (!picked) {
+        const fuzzyCandidates = page.locator('li, [role="option"], button, a').filter({ hasText: targetId });
+        if (await fuzzyCandidates.count()) {
+          await fuzzyCandidates.first().click({ timeout: 8000 });
+          picked = true;
+        }
+      }
+      if (!picked && targetName) {
+        const allOptions = page.locator('li, [role="option"], button, a');
+        const count = await allOptions.count();
+        for (let index = 0; index < count; index += 1) {
+          const option = allOptions.nth(index);
+          const label = String(await option.textContent().catch(() => '') || '').trim();
+          if (!textMatchesPartner(label, targetId, targetName)) continue;
+          await option.click({ timeout: 8000 });
+          picked = true;
+          break;
+        }
       }
       if (!picked) {
         throw new Error(`협력사 옵션을 찾지 못했습니다: ${optionLabel}`);

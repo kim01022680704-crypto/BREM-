@@ -1225,16 +1225,10 @@ async function runFullCollectPipeline(options = {}) {
               }
             );
             if (!verified.ok) {
-              if (verified.reason === 'same_as_baseline') {
-                throw new Error(`협력사 전환 후 데이터 검증 실패 (${verified.reason || 'unknown'})`);
-              }
-              if (uiNow.partnerId === partner.partnerId) {
-                console.warn(`[BREM][collect] ${progressLabel} — API 검증 생략, UI 확인으로 수집 진행`);
-              } else {
-                throw new Error(`협력사 전환 후 데이터 검증 실패 (${verified.reason || 'unknown'})`);
-              }
-            } else if (verified.softVerify) {
-              console.log(`[BREM][collect] ${progressLabel} — API soft-verify (UI=${uiNow.partnerId})`);
+              throw new Error(`협력사 전환 후 API 검증 실패 (${verified.reason || 'unknown'})`);
+            }
+            if (verified.softVerify) {
+              console.warn(`[BREM][collect] ${progressLabel} — API soft-verify 경고 (UI=${uiNow.partnerId})`);
             } else {
               console.log(`[BREM][collect] ${progressLabel} — API fingerprint=${verified.sample?.fingerprint || '-'}`);
             }
@@ -1256,10 +1250,13 @@ async function runFullCollectPipeline(options = {}) {
               { baselineFingerprint: '', dateRange: historyDateRange }
             );
             const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
-            if (verified.ok) {
+            if (!verified.ok) {
+              throw new Error(`협력사 API 세션 확인 실패 (${verified.reason || 'unknown'})`);
+            }
+            if (verified.softVerify) {
+              console.warn(`[BREM][collect] ${progressLabel} — API soft-verify 경고 (${verified.reason || '-'})`);
+            } else {
               console.log(`[BREM][collect] ${progressLabel} — API 세션 확인 완료 (rows fingerprint=${verified.sample?.fingerprint ? 'ok' : 'empty'})`);
-            } else if (uiNow.partnerId === partner.partnerId) {
-              console.warn(`[BREM][collect] ${progressLabel} — API 검증 미통과, UI 확인으로 수집 진행 (${verified.reason || '-'})`);
             }
             if (verified.sample?.fingerprint) {
               baselineDailyFingerprint = verified.sample.fingerprint;
@@ -1440,6 +1437,7 @@ async function readAppliedBaeminDelivery() {
     batchId,
     collectDate,
     appliedAt: raw.appliedAt || null,
+    collectedAt: raw.collectedAt || null,
     savedCount: Number(raw.savedCount || 0),
     appliedBy: raw.appliedBy || ''
   };
@@ -1480,6 +1478,12 @@ async function applyBaeminDelivery(collectDate, options = {}) {
 
   const appliedAt = new Date().toISOString();
   const appliedBy = String(options.appliedBy || '').trim();
+  const collectedAt = rows.reduce((latest, row) => {
+    const value = String(row.collected_at || '').trim();
+    if (!value) return latest;
+    if (!latest || value > latest) return value;
+    return latest;
+  }, '');
 
   const { data: batchRow, error: batchError } = await supabase
     .from('baemin_delivery_applied_batches')
@@ -1546,6 +1550,7 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     batchId,
     collectDate: date,
     appliedAt,
+    collectedAt: collectedAt || null,
     savedCount: rows.length,
     appliedBy
   };
@@ -1612,6 +1617,7 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
     return { ok: false, error: error.message || '조회 실패' };
   }
 
+  const { pickBestPartnerName, sortPartnersForAdmin } = require('./baemin-partner-match');
   const partners = new Map();
   (data || []).forEach(row => {
     const parsed = row.parsed_json || {};
@@ -1623,14 +1629,12 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
     }
     if (!/^DP\d{6,}$/i.test(partnerId)) return;
     if (!partnerName || partnerName === partnerId) return;
-    if (!partners.has(partnerId)) {
-      partners.set(partnerId, partnerName);
-    }
+    partners.set(partnerId, pickBestPartnerName(partners.get(partnerId), partnerName));
   });
 
-  const items = Array.from(partners.entries())
-    .map(([partnerId, partnerName]) => ({ partnerId, partnerName }))
-    .sort((a, b) => String(a.partnerName).localeCompare(String(b.partnerName), 'ko'));
+  const items = sortPartnersForAdmin(
+    Array.from(partners.entries()).map(([partnerId, partnerName]) => ({ partnerId, partnerName }))
+  );
 
   return { ok: true, collectDate: date, partners: items, count: items.length, appliedOnly };
 }
