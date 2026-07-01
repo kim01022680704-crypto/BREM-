@@ -156,11 +156,10 @@ function computeCollectDateRange(dateKey = todayKST(), now = new Date()) {
 function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new Date()) {
   const referenceDate = String(collectDate || todayKST(now)).slice(0, 10);
   const fresh = computeHistoryCollectRange(referenceDate, now);
-  const cappedToDate = dateRange?.toDate && dateRange.toDate < fresh.toDate
-    ? dateRange.toDate
+  const fromDate = dateRange?.fromDate || fresh.fromDate;
+  const toDate = dateRange?.toDate
+    ? (dateRange.toDate <= fresh.toDate ? dateRange.toDate : fresh.toDate)
     : fresh.toDate;
-  const fromDate = fresh.fromDate;
-  const toDate = cappedToDate;
   const dates = [];
   let cursor = fromDate;
   while (cursor <= toDate) {

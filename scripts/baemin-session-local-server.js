@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260703b';
+const SERVER_VERSION = '20260703c';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -1122,13 +1122,10 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
     console.warn('[BREM] [수집 준비] 운영 도메인 전환 실패:', formatError(error));
   });
 
-  let detachRoute = () => {};
   try {
     const { resolveCenterContextViaPage } = require('../server/baemin-center-context');
-    const { attachCenterApiRoute } = require('../server/baemin-playwright-route');
     const center = await resolveCenterContextViaPage(page);
     if (center?.centerId || center?.managementId || center?.partnerId) {
-      detachRoute = attachCenterApiRoute(context, { centerContext: center });
       console.log(`[BREM] [수집 준비] centerId=${center.centerId} partnerId=${center.partnerId}`);
     }
   } catch (error) {
@@ -1148,8 +1145,6 @@ async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
     }
   } catch (error) {
     console.warn('[BREM] [수집 준비] 배달현황 이동 실패:', formatError(error));
-  } finally {
-    detachRoute();
   }
 }
 

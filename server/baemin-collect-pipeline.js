@@ -277,8 +277,13 @@ async function saveCollectRun(runRow) {
 }
 
 function mergeCenterQuery(baseQuery, registry = {}, options = {}) {
-  if (options.skipCenterQuery) return { ...baseQuery };
   const centerQuery = buildCenterQueryParams(registry.centerContext || {});
+  if (options.skipCenterQuery) {
+    if (centerQuery.partnerId) {
+      return { ...baseQuery, partnerId: centerQuery.partnerId, cooperationId: centerQuery.cooperationId };
+    }
+    return { ...baseQuery };
+  }
   return { ...baseQuery, ...centerQuery };
 }
 
@@ -516,6 +521,23 @@ function isSessionAuthFailure(result) {
     || /재로그인|로그인 만료|세션 만료/i.test(String(result?.message || ''));
 }
 
+function extractCollectItemsFingerprint(sourceId, items = []) {
+  const rows = Array.isArray(items) ? items : [];
+  if (sourceId === 'delivery_status') {
+    return rows.slice(0, 8).map(row => {
+      const acceptance = row?.deliveryAcceptanceCount || {};
+      const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+      return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
+    }).join('|');
+  }
+  if (sourceId === 'daily_history') {
+    return rows.slice(0, 5).map(row =>
+      `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`
+    ).join('|');
+  }
+  return '';
+}
+
 async function collectSource(sourceId, sessionCookie, collectDate, registry = {}, context = {}) {
   const source = getCollectSource(sourceId);
   const collectedAt = new Date().toISOString();
@@ -628,7 +650,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       ? endpointInfo.sampleHeaders
       : null;
     if (useBrowserSession) {
-      console.log(`[BREM][collect:${sourceId}] browser-session — API URL에 partnerId 생략 (쿠키 세션 사용)`);
+      const hasPartnerQuery = Boolean(baseQuery.partnerId);
+      console.log(`[BREM][collect:${sourceId}] browser-session — partnerId=${hasPartnerQuery ? baseQuery.partnerId : '(쿠키만)'}`);
     }
     console.log(`[BREM][collect:${sourceId}] partnerId=${partnerId}`);
     return fetchPaginatedApi({
@@ -813,6 +836,24 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
+  const itemFingerprint = extractCollectItemsFingerprint(sourceId, items);
+  const baselineFp = String(context.partnerDataFingerprint || '').trim();
+  if (
+    baselineFp
+    && itemFingerprint
+    && itemFingerprint === baselineFp
+    && Number(context.partnerCollectIndex || 0) > 0
+  ) {
+    console.warn(`[BREM][collect] ${sourceId} 동일 fingerprint — 협력사 세션 미반영, 저장 생략 (partner=${registry.centerContext?.partnerId || '-'})`);
+    return {
+      ok: false,
+      sourceMenu: sourceId,
+      label: source.label,
+      message: '협력사 전환 후 동일 데이터(세션 미반영)',
+      sourceUrl: fetched.meta?.sourceUrl || ''
+    };
+  }
+
   const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
   const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
   const regionName = String(registry.centerContext?.regionName || context.regionName || '').trim();
@@ -940,6 +981,10 @@ async function runPartnerSourceCollectLoop({
       dateRangeLabel: menuDateRanges[sourceDef.id]?.label
         || (sourceDef.dateQueryKeys?.length ? menuDateRanges.daily_history.label : '오늘 기준')
     };
+
+    if (sourceDef.id === 'delivery_status' && result.ok && result.rawItems?.length) {
+      pipelineContext.partnerDataFingerprint = extractCollectItemsFingerprint('delivery_status', result.rawItems);
+    }
 
     if (sourceDef.id === 'daily_history' && result.ok) {
       pipelineContext.dailyItems = result.rawItems || [];
@@ -1113,6 +1158,7 @@ async function runFullCollectPipeline(options = {}) {
       };
       pipelineContext.partnerName = registry.centerContext.partnerName;
       pipelineContext.regionName = registry.centerContext.regionName;
+      pipelineContext.partnerCollectIndex = partnerIndex;
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
       resetPartnerSpaCapture(pipelineContext, registry);
@@ -1242,7 +1288,6 @@ async function runFullCollectPipeline(options = {}) {
               baselineDailyFingerprint = verified.sample.fingerprint;
             }
           } else {
-            console.log(`[BREM][collect] ${progressLabel} — 현재 협력사 API 세션 확인`);
             const {
               ensurePartnerSessionReady,
               readActivePartnerDisplayFromPage,

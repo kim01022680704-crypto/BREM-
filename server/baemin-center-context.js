@@ -765,7 +765,7 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
         userId: '',
         phoneNumber: '',
         riderStatus: ''
-      }, false),
+      }, true),
       extract: extractStatusFingerprint
     },
     {
@@ -776,7 +776,7 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
         userId: '',
         phoneNumber: '',
         riderStatus: ''
-      }, true),
+      }, false),
       extract: extractStatusFingerprint
     },
     { url: buildProbeUrl('/v4/management/daily-delivery-status', {}, true), extract: extractDailyFingerprint }
