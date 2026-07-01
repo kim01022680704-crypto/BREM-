@@ -1225,9 +1225,15 @@ async function runFullCollectPipeline(options = {}) {
               }
             );
             if (!verified.ok) {
-              throw new Error(`협력사 전환 후 API 검증 실패 (${verified.reason || 'unknown'})`);
-            }
-            if (verified.softVerify) {
+              if (verified.reason === 'same_as_baseline' || verified.reason === 'ui_mismatch') {
+                throw new Error(`협력사 전환 후 API 검증 실패 (${verified.reason || 'unknown'})`);
+              }
+              if (verified.reason === 'api_probe_failed' && uiNow.partnerId === partner.partnerId) {
+                console.warn(`[BREM][collect] ${progressLabel} — API 검증 생략, UI 확인으로 수집 진행`);
+              } else {
+                throw new Error(`협력사 전환 후 API 검증 실패 (${verified.reason || 'unknown'})`);
+              }
+            } else if (verified.softVerify) {
               console.warn(`[BREM][collect] ${progressLabel} — API soft-verify 경고 (UI=${uiNow.partnerId})`);
             } else {
               console.log(`[BREM][collect] ${progressLabel} — API fingerprint=${verified.sample?.fingerprint || '-'}`);
@@ -1251,9 +1257,15 @@ async function runFullCollectPipeline(options = {}) {
             );
             const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
             if (!verified.ok) {
-              throw new Error(`협력사 API 세션 확인 실패 (${verified.reason || 'unknown'})`);
-            }
-            if (verified.softVerify) {
+              if (verified.reason === 'same_as_baseline' || verified.reason === 'ui_mismatch') {
+                throw new Error(`협력사 API 세션 확인 실패 (${verified.reason || 'unknown'})`);
+              }
+              if (verified.reason === 'api_probe_failed' && uiNow.partnerId === partner.partnerId) {
+                console.warn(`[BREM][collect] ${progressLabel} — API 검증 미통과, UI 확인으로 수집 진행 (${verified.reason || '-'})`);
+              } else {
+                throw new Error(`협력사 API 세션 확인 실패 (${verified.reason || 'unknown'})`);
+              }
+            } else if (verified.softVerify) {
               console.warn(`[BREM][collect] ${progressLabel} — API soft-verify 경고 (${verified.reason || '-'})`);
             } else {
               console.log(`[BREM][collect] ${progressLabel} — API 세션 확인 완료 (rows fingerprint=${verified.sample?.fingerprint ? 'ok' : 'empty'})`);

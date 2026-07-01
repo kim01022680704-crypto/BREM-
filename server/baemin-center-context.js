@@ -716,17 +716,26 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
     return { ok: false, reason: 'ui_mismatch', ui, sample: null };
   }
 
-  const buildProbeUrl = (path, extra = {}) => {
+  const centerContext = { partnerId };
+  const centerQuery = buildCenterQueryParams(centerContext);
+  const centerHeaders = buildCenterFetchHeaders(centerContext);
+
+  const buildProbeUrl = (path, extra = {}, includePartnerQuery = false) => {
     const params = new URLSearchParams({
       page: '0',
       size: '5',
       ...extra
     });
+    if (includePartnerQuery) {
+      Object.entries(centerQuery).forEach(([key, value]) => {
+        if (value != null && value !== '') params.set(key, String(value));
+      });
+    }
     if (fromDate && toDate) {
       params.set('fromDate', fromDate);
       params.set('toDate', toDate);
     }
-    return `https://api-deliverycenter.baemin.com${path}?${params}`;
+    return `https://api-deliverycenter.baemin.com${path}?${params.toString()}`;
   };
 
   const extractDailyFingerprint = payload => {
@@ -756,15 +765,29 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
         userId: '',
         phoneNumber: '',
         riderStatus: ''
-      }),
+      }, false),
       extract: extractStatusFingerprint
     },
-    { url: buildProbeUrl('/v4/management/daily-delivery-status'), extract: extractDailyFingerprint }
+    {
+      url: buildProbeUrl('/v4/management/delivery-status', {
+        orderName: 'name',
+        orderBy: 'asc',
+        name: '',
+        userId: '',
+        phoneNumber: '',
+        riderStatus: ''
+      }, true),
+      extract: extractStatusFingerprint
+    },
+    { url: buildProbeUrl('/v4/management/daily-delivery-status', {}, true), extract: extractDailyFingerprint }
   ];
 
   let sample = { status: 0, fingerprint: '', message: '', probeUrl: '' };
   for (const probe of probes) {
-    const result = await fetchBaeminJsonViaPage(page, probe.url, null, null);
+    let result = await fetchBaeminJsonViaPage(page, probe.url, null, null);
+    if (!result.ok && centerHeaders && Object.keys(centerHeaders).length) {
+      result = await fetchBaeminJsonViaPage(page, probe.url, null, centerHeaders);
+    }
     sample = {
       status: result.status || 0,
       fingerprint: result.ok ? probe.extract(result.payload || {}) : '',
@@ -775,6 +798,10 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
   }
 
   if (sample.status < 200 || sample.status >= 300) {
+    if (ui.partnerId === partnerId) {
+      console.warn(`[BREM][center] API probe soft-pass (UI 확인): partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
+      return { ok: true, ui, sample, softVerify: true, reason: 'api_probe_soft_pass' };
+    }
     console.warn(`[BREM][center] API probe failed partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
     return { ok: false, reason: 'api_probe_failed', ui, sample };
   }
