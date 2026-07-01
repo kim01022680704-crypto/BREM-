@@ -14,7 +14,7 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays } = require('./baemin-settlement-week');
+const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem, pickAcceptance } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
@@ -1627,9 +1627,34 @@ async function resolveAppliedBatchId(appliedOnly = false) {
   return applied?.batchId || '';
 }
 
+async function resolveBizCollectDateForAdmin(collectDate) {
+  const requested = String(collectDate || '').slice(0, 10);
+  const supabase = getServiceClient();
+  if (!supabase) return requested || todayKST();
+
+  if (requested) {
+    const { count, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('collect_date', requested);
+    if (!error && Number(count || 0) > 0) return requested;
+  }
+
+  const { data, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('collect_date')
+    .order('collected_at', { ascending: false })
+    .limit(1);
+  if (!error && data?.[0]?.collect_date) {
+    return String(data[0].collect_date).slice(0, 10);
+  }
+
+  return requested || todayKST();
+}
+
 async function resolveCollectDateForAdmin(collectDate, appliedOnly = false) {
   if (!appliedOnly) {
-    return String(collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    return resolveBizCollectDateForAdmin(collectDate);
   }
   const applied = await readAppliedBaeminDelivery();
   return applied?.collectDate || '';
@@ -1685,8 +1710,8 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
       if (prefix && prefix !== 'unknown') partnerId = prefix;
     }
     if (!/^DP\d{6,}$/i.test(partnerId)) return;
-    if (!partnerName || partnerName === partnerId) return;
-    partners.set(partnerId, pickBestPartnerName(partners.get(partnerId), partnerName));
+    const label = partnerName && partnerName !== partnerId ? partnerName : partnerId;
+    partners.set(partnerId, pickBestPartnerName(partners.get(partnerId), label));
   });
 
   const items = sortPartnersForAdmin(

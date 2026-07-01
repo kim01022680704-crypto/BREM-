@@ -16,6 +16,7 @@
     activeMenu: 'delivery_status',
     partners: [],
     appliedCollectDate: '',
+    bizPreviewCollectDate: '',
     dataCache: {
       key: '',
       byPartner: {},
@@ -69,13 +70,46 @@
 
   const MENU_IDS = ['delivery_status', 'daily_history', 'rider_history'];
 
+  function isViewSection() {
+    return state.activeSection === 'baemin-status';
+  }
+
+  function resolveBizCaptureDate() {
+    return String(
+      state.bizPreviewCollectDate
+      || $('baeminDeliveryCaptureDate')?.value
+      || todayKstDate()
+    ).slice(0, 10);
+  }
+
+  function setBizCaptureDate(date) {
+    const value = String(date || '').slice(0, 10);
+    if (!value) return;
+    state.bizPreviewCollectDate = value;
+    const dateInput = $('baeminDeliveryCaptureDate');
+    if (dateInput) dateInput.value = value;
+  }
+
+  function clearBizPreviewTables(message) {
+    const ui = tableUiConfig();
+    const text = message || ui.emptyMessage;
+    Object.entries(ui.rowsMap).forEach(([menu, rowsId]) => {
+      const summaryId = ui.summaryMap[menu];
+      const summaryEl = $(summaryId);
+      const rowsEl = $(rowsId);
+      const colspan = menu === 'daily_history' ? 11 : (menu === 'rider_history' ? 13 : 14);
+      if (summaryEl) summaryEl.textContent = '데이터 없음';
+      if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
+    });
+  }
+
   function buildCacheKey() {
     const ui = tableUiConfig();
     if (isViewSection()) {
       const applied = state.config?.applied || {};
       return `view:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}`;
     }
-    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const captureDate = resolveBizCaptureDate();
     return `biz:${captureDate}`;
   }
 
@@ -167,6 +201,10 @@
     if (!state.partners.length) {
       bar.hidden = true;
       bar.innerHTML = '';
+      if (!isViewSection()) {
+        clearBizPreviewTables();
+        updatePanelVisibility();
+      }
       return;
     }
 
@@ -200,7 +238,7 @@
 
   async function loadPartnerTabs() {
     const ui = tableUiConfig();
-    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const captureDate = resolveBizCaptureDate();
     const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}${ui.appliedQuery}`);
     if (isViewSection() && result.notApplied) {
       state.appliedCollectDate = '';
@@ -213,6 +251,9 @@
       return;
     }
     state.appliedCollectDate = isViewSection() ? (result.collectDate || '') : captureDate;
+    if (!isViewSection() && result.collectDate && result.collectDate !== captureDate) {
+      setBizCaptureDate(result.collectDate);
+    }
     const partners = result.ok ? (result.partners || []) : [];
     const nextCacheKey = buildCacheKey();
     if (state.dataCache.key && state.dataCache.key !== nextCacheKey) {
@@ -247,9 +288,16 @@
     const ui = tableUiConfig();
     const section = document.getElementById(ui.sectionRootId);
     if (!section) return;
+    const hasPartner = Boolean(state.activePartnerId);
     section.querySelectorAll(`[${ui.panelAttr}]`).forEach(panel => {
       const menu = panel.getAttribute(ui.panelAttr);
-      panel.hidden = !(state.activePartnerId && state.activeMenu === menu);
+      if (isViewSection()) {
+        panel.hidden = !(hasPartner && state.activeMenu === menu);
+        return;
+      }
+      panel.hidden = hasPartner
+        ? state.activeMenu !== menu
+        : menu !== 'delivery_status';
     });
     const partnerBar = $(ui.partnerBarId);
     if (partnerBar) partnerBar.hidden = !state.partners.length;
@@ -845,7 +893,7 @@
     setCollecting(true);
     renderSummary(null);
 
-    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const captureDate = resolveBizCaptureDate();
     const result = await callLocalServer('/collect/full', {
       method: 'POST',
       body: { collectDate: captureDate },
@@ -898,6 +946,7 @@
       menuDateRanges: result.menuDateRanges,
       menuResults
     });
+    setBizCaptureDate(result.collectDate || captureDate);
     showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''} · 아래 미리보기 확인 후 [적용하기]`);
     invalidateDataCache();
     await loadConfig();
@@ -1035,10 +1084,10 @@
   }
 
   async function loadLatestSummary() {
-    const dateInput = $('baeminDeliveryCaptureDate');
-    const captureDate = dateInput?.value || todayKstDate();
+    const captureDate = resolveBizCaptureDate();
     const result = await adminApi(`/api/admin/baemin-delivery/latest?captureDate=${encodeURIComponent(captureDate)}`);
     if (result.ok && result.savedCount > 0) {
+      if (result.captureDate) setBizCaptureDate(result.captureDate);
       renderSummary({
         captureDate: result.captureDate,
         savedCount: result.savedCount,
@@ -1072,7 +1121,7 @@
     const ui = tableUiConfig();
     const captureDate = isViewSection()
       ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
-      : ($('baeminDeliveryCaptureDate')?.value || todayKstDate());
+      : resolveBizCaptureDate();
     const partnerQuery = `&partnerId=${encodeURIComponent(id)}`;
 
     const results = await Promise.all(MENU_IDS.map(async sourceMenu => {
@@ -1103,7 +1152,7 @@
     const captureDate = meta.captureDate
       || (isViewSection()
         ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
-        : ($('baeminDeliveryCaptureDate')?.value || todayKstDate()));
+        : resolveBizCaptureDate());
 
     const summaryEl = $(ui.summaryMap[sourceMenu]);
     const rowsEl = $(ui.rowsMap[sourceMenu]);
@@ -1217,7 +1266,7 @@
 
   async function applyToErp() {
     if (state.applying || state.loading) return;
-    const captureDate = $('baeminDeliveryCaptureDate')?.value || todayKstDate();
+    const captureDate = resolveBizCaptureDate();
     state.applying = true;
     renderAppliedStatus(state.config);
     const result = await adminApi('/api/admin/baemin-delivery/apply', {
@@ -1350,6 +1399,7 @@
     });
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
+      state.bizPreviewCollectDate = $('baeminDeliveryCaptureDate')?.value || '';
       invalidateDataCache();
       void loadLatestSummary();
       if (!isViewSection()) {
