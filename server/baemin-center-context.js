@@ -540,7 +540,7 @@ async function replayCapturedCenterSwitch(page, captured = [], targetId = '') {
   }, { url: row.url, method: row.method, postData: row.postData || '' }).catch(() => ({ ok: false }));
   if (replay.ok) {
     console.log(`[BREM][center] 캡처 API 재실행: ${row.method} ${row.url}`);
-    await delay(2500);
+    await delay(1500);
     return true;
   }
   return false;
@@ -655,7 +655,7 @@ async function listPartnerCentersViaPage(page) {
     await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
       if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
     });
-    await delay(2500);
+    await delay(1500);
   } finally {
     page.off('response', handler);
   }
@@ -926,7 +926,7 @@ async function selectPartnerCenterInner(page, target = {}) {
       }
     }, targetId).catch(() => {});
 
-    await delay(2500);
+    await delay(1500);
     return waitForActivePartnerId(page, targetId, 20000);
   };
 
@@ -958,7 +958,7 @@ async function selectPartnerCenterInner(page, target = {}) {
       waitUntil: 'domcontentloaded',
       timeout: 60000
     }).catch(() => {});
-    await delay(2500);
+    await delay(1500);
   }
 
   const uiDisplay = await readActivePartnerDisplayFromPage(page);

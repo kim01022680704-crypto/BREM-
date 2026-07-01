@@ -305,7 +305,12 @@ function shrinkDateRangeEnd(dateRange) {
   };
 }
 
-async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange, playwrightContext = null, collectDate = null) {
+async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, dateRange, playwrightContext = null, collectDate = null, existingCapture = null) {
+  if (existingCapture?.sampleUrl || existingCapture?.spaPayload) {
+    const fromCache = applyCaptureToEndpointRegistry(sourceId, registry, existingCapture);
+    if (fromCache) return fromCache;
+  }
+
   const discovered = await discoverApiUrlViaPage(playwrightPage, sourceId, dateRange, playwrightContext, collectDate);
   if (!discovered.ok) return null;
   registry.endpoints = registry.endpoints || {};
@@ -328,10 +333,18 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}) {
   if (!capture?.spaPayload || typeof capture.spaPayload !== 'object') return null;
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
   const items = capture.spaItems || extractDataArray(capture.spaPayload) || [];
-  const totalPage = capture.spaTotalPage || readTotalPages(capture.spaPayload) || 1;
-  if (!items.length) return null;
-  if (totalPage > 1) return null;
+  const totalPage = Number(capture.spaTotalPage || readTotalPages(capture.spaPayload) || 1);
   const sourceUrl = capture.sampleUrl || endpointInfo.sampleUrl || '';
+
+  if (!items.length) {
+    console.log(`[BREM][collect] spa-capture skip (0 rows) — API pagination fallback url=${sourceUrl}`);
+    return null;
+  }
+  if (totalPage > 1) {
+    console.log(`[BREM][collect] spa-capture skip (totalPage=${totalPage}) — full pagination via API url=${sourceUrl}`);
+    return null;
+  }
+
   console.log(`[BREM][collect] spa-capture 사용 rows=${items.length} url=${sourceUrl}`);
   return {
     ok: true,
@@ -344,6 +357,37 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}) {
       via: 'spa-capture'
     }
   };
+}
+
+function applyCaptureToEndpointRegistry(sourceId, registry, capture) {
+  if (!capture || (!capture.sampleUrl && !capture.spaPayload)) return null;
+  let apiPath = capture.apiPath || registry.endpoints?.[sourceId]?.apiPath || '';
+  let apiOrigin = capture.apiOrigin || registry.endpoints?.[sourceId]?.apiOrigin || '';
+  if (capture.sampleUrl) {
+    try {
+      const parsed = new URL(capture.sampleUrl);
+      apiPath = apiPath || parsed.pathname;
+      apiOrigin = apiOrigin || parsed.origin;
+    } catch {
+      // ignore
+    }
+  }
+  registry.endpoints = registry.endpoints || {};
+  registry.endpoints[sourceId] = {
+    ...(registry.endpoints[sourceId] || {}),
+    sampleUrl: capture.sampleUrl || registry.endpoints[sourceId]?.sampleUrl || null,
+    apiPath: apiPath || registry.endpoints[sourceId]?.apiPath || null,
+    apiOrigin: apiOrigin || registry.endpoints[sourceId]?.apiOrigin || null,
+    sampleHeaders: capture.requestHeaders || registry.endpoints[sourceId]?.sampleHeaders || null,
+    spaPayload: capture.spaPayload || null,
+    spaItems: capture.spaItems || null,
+    spaTotalPage: capture.spaTotalPage || null,
+    discoveredAt: registry.endpoints[sourceId]?.discoveredAt || new Date().toISOString()
+  };
+  if (capture.sampleUrl) {
+    console.log(`[BREM][collect] ${sourceId} cached capture api=${capture.sampleUrl}`);
+  }
+  return resolveApiEndpoint(sourceId, registry);
 }
 
 function endpointOriginForPath(apiPath, preferredOrigin) {
@@ -399,8 +443,9 @@ async function fetchHistoryByDays({
     : [activeDateRange?.toDate || collectDate];
   const merged = [];
   let lastUrl = '';
+  const dayConcurrency = 4;
 
-  for (const day of dates) {
+  async function fetchOneDay(day) {
     const dayRange = {
       ...(activeDateRange || {}),
       fromDate: day,
@@ -413,19 +458,28 @@ async function fetchHistoryByDays({
       const candidates = buildEndpointCandidates(sourceId, source, endpoint);
       for (const candidate of candidates) {
         dayResult = await tryFetch(candidate, dayRange);
-        if (dayResult.ok) {
-          endpoint = candidate;
-          break;
-        }
+        if (dayResult.ok) break;
       }
     }
     if (!dayResult.ok) {
       console.warn(`[BREM][collect] ${sourceId} day=${day} failed status=${dayResult.status} msg=${dayResult.message}`);
-      continue;
+      return null;
     }
-    merged.push(...(dayResult.items || []));
-    lastUrl = dayResult.meta?.sourceUrl || lastUrl;
     console.log(`[BREM][collect] ${sourceId} day=${day} rows=${(dayResult.items || []).length}`);
+    return {
+      items: dayResult.items || [],
+      sourceUrl: dayResult.meta?.sourceUrl || ''
+    };
+  }
+
+  for (let offset = 0; offset < dates.length; offset += dayConcurrency) {
+    const batch = dates.slice(offset, offset + dayConcurrency);
+    const batchResults = await Promise.all(batch.map(day => fetchOneDay(day)));
+    batchResults.forEach(row => {
+      if (!row) return;
+      merged.push(...row.items);
+      if (row.sourceUrl) lastUrl = row.sourceUrl;
+    });
   }
 
   if (!merged.length) return null;
@@ -520,26 +574,31 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   if (context.playwrightPage) {
     const { preparePageForCollect } = require('./baemin-page-capture');
     const prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
-    const prepCapture = await preparePageForCollect(
-      context.playwrightPage,
-      sourceId,
-      prepRange || {},
-      collectDate
-    ).catch(error => {
-      console.warn(`[BREM][collect] ${sourceId} page prep failed:`, error.message);
-      return null;
-    });
-    if (prepCapture?.spaPayload) {
-      context.spaCapture = context.spaCapture || {};
-      context.spaCapture[sourceId] = prepCapture;
+    if (!context.spaCapture?.[sourceId]) {
+      const prepCapture = await preparePageForCollect(
+        context.playwrightPage,
+        sourceId,
+        prepRange || {},
+        collectDate
+      ).catch(error => {
+        console.warn(`[BREM][collect] ${sourceId} page prep failed:`, error.message);
+        return null;
+      });
+      if (prepCapture?.spaPayload || prepCapture?.sampleUrl) {
+        context.spaCapture = context.spaCapture || {};
+        context.spaCapture[sourceId] = prepCapture;
+      }
     }
   }
 
+  const cachedCapture = context.spaCapture?.[sourceId] || null;
   if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
+    endpoint = applyCaptureToEndpointRegistry(sourceId, registry, cachedCapture)
+      || await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate, cachedCapture)
       || endpoint;
   } else if (!endpoint?.apiPath && context.playwrightPage && activeDateRange) {
-    endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
+    endpoint = applyCaptureToEndpointRegistry(sourceId, registry, cachedCapture)
+      || await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate, cachedCapture)
       || endpoint;
   }
 
@@ -591,22 +650,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     });
   }
 
-  let fetched = null;
-  if (sourceId !== 'delivery_status') {
-    fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
-      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
-  }
+  let fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
+    || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
   if (!fetched?.ok) {
     fetched = await tryFetch(endpoint);
-  }
-  if ((!fetched?.ok || !(fetched.items || []).length) && context.playwrightPage && sourceId === 'delivery_status') {
-    const { preparePageForCollect } = require('./baemin-page-capture');
-    const retryCapture = await preparePageForCollect(context.playwrightPage, sourceId, {}, collectDate).catch(() => null);
-    if (retryCapture?.spaPayload) {
-      context.spaCapture = context.spaCapture || {};
-      context.spaCapture[sourceId] = retryCapture;
-    }
-    fetched = buildFetchedFromSpaCapture(retryCapture, endpoint) || await tryFetch(endpoint);
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
     console.warn(`[BREM][collect] ${sourceId} stored sampleUrl failed — rediscover`);
@@ -757,13 +804,12 @@ function readPartnerContext(registry, context = {}) {
   };
 }
 
-function resetPartnerEndpointCache(registry) {
-  if (!registry?.endpoints) return;
-  Object.keys(registry.endpoints).forEach(key => {
-    if (!registry.endpoints[key] || typeof registry.endpoints[key] !== 'object') return;
-    registry.endpoints[key].sampleUrl = null;
-    registry.endpoints[key].discoveredAt = null;
-  });
+function resetPartnerSpaCapture(context) {
+  if (!context) return;
+  context.spaCapture = {};
+  context.dailyItems = null;
+  context.dailySourceUrl = '';
+  context.shrunkHistoryToDate = null;
 }
 
 function attachCollectCenterRoute(playwrightPage, registry, detachRef = { current: null }) {
@@ -982,9 +1028,7 @@ async function runFullCollectPipeline(options = {}) {
       pipelineContext.regionName = registry.centerContext.regionName;
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
-      pipelineContext.shrunkHistoryToDate = null;
-      pipelineContext.spaCapture = {};
-      resetPartnerEndpointCache(registry);
+      resetPartnerSpaCapture(pipelineContext);
 
       const label = partnerTotal > 0
         ? `[${partnerIndex + 1}/${partnerTotal}] ${registry.centerContext.partnerName}`
@@ -1084,7 +1128,7 @@ async function runFullCollectPipeline(options = {}) {
             const { ensurePartnerSessionReady, readActivePartnerDisplayFromPage } = require('./baemin-center-context');
             const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
             console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · 화면=${uiNow.partnerName || '-'} (${uiNow.partnerId || 'unknown'})`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 800));
             const verified = await ensurePartnerSessionReady(
               playwrightPage,
               partner.partnerId,
@@ -1118,7 +1162,7 @@ async function runFullCollectPipeline(options = {}) {
               trySwitchCenterViaApi
             } = require('./baemin-center-context');
             await trySwitchCenterViaApi(playwrightPage, partner.partnerId);
-            await new Promise(resolve => setTimeout(resolve, 700));
+            await new Promise(resolve => setTimeout(resolve, 600));
             const verified = await ensurePartnerSessionReady(
               playwrightPage,
               partner.partnerId,
