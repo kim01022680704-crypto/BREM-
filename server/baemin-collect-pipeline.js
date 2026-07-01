@@ -650,8 +650,27 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     });
   }
 
-  let fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
-    || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
+  let fetched = null;
+  if (source.dateQueryKeys?.length && activeDateRange?.dayCount > 1) {
+    console.log(`[BREM][collect] ${sourceId} per-day mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일)`);
+    const byDayFirst = await fetchHistoryByDays({
+      sourceId,
+      source,
+      endpoint: { ...endpoint, sampleUrl: null },
+      sessionCookie,
+      registry,
+      context,
+      activeDateRange,
+      collectDate,
+      tryFetch
+    });
+    if (byDayFirst?.items?.length) fetched = byDayFirst;
+  }
+
+  if (!fetched?.ok) {
+    fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
+      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
+  }
   if (!fetched?.ok) {
     fetched = await tryFetch(endpoint);
   }
@@ -696,6 +715,64 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       tryFetch
     });
     if (byDay) fetched = byDay;
+  }
+  if (
+    source.dateQueryKeys?.length
+    && fetched.ok
+    && !(fetched.items || []).length
+  ) {
+    console.warn(`[BREM][collect] ${sourceId} range empty — per-day fallback ${activeDateRange?.fromDate}~${activeDateRange?.toDate}`);
+    const byDay = await fetchHistoryByDays({
+      sourceId,
+      source,
+      endpoint: { ...endpoint, sampleUrl: null },
+      sessionCookie,
+      registry,
+      context,
+      activeDateRange,
+      collectDate,
+      tryFetch
+    });
+    if (byDay?.items?.length) fetched = byDay;
+  }
+  if (
+    sourceId === 'delivery_status'
+    && context.playwrightPage
+    && (!fetched.ok || !(fetched.items || []).length)
+  ) {
+    console.warn(`[BREM][collect] delivery_status retry via SPA navigation`);
+    endpoint = { ...endpoint, sampleUrl: null };
+    if (registry.endpoints?.delivery_status) {
+      registry.endpoints.delivery_status.sampleUrl = null;
+    }
+    const pageCapture = require('./baemin-page-capture');
+    const prep = await pageCapture.preparePageForCollect(
+      context.playwrightPage,
+      'delivery_status',
+      {},
+      collectDate
+    ).catch(() => null);
+    if (prep?.sampleUrl || prep?.spaPayload) {
+      context.spaCapture = context.spaCapture || {};
+      context.spaCapture.delivery_status = prep;
+      endpoint = applyCaptureToEndpointRegistry('delivery_status', registry, prep) || endpoint;
+      const retry = buildFetchedFromSpaCapture(prep, endpoint) || await tryFetch(endpoint);
+      if (retry.ok && (retry.items || []).length) fetched = retry;
+    }
+    if (!fetched?.ok || !(fetched.items || []).length) {
+      const probed = await pageCapture.probeApiFromBrowserTab(
+        context.playwrightPage,
+        'delivery_status',
+        null,
+        context.playwrightContext,
+        collectDate
+      );
+      if (probed.ok && probed.sampleUrl) {
+        endpoint = { ...endpoint, ...probed, sampleUrl: probed.sampleUrl };
+        const retry = await tryFetch(endpoint);
+        if (retry.ok && (retry.items || []).length) fetched = retry;
+      }
+    }
   }
   if (!fetched.ok && fetched.status === 404 && source.fallbackApiPaths?.length) {
     const candidates = buildEndpointCandidates(sourceId, source, endpoint);
@@ -804,12 +881,22 @@ function readPartnerContext(registry, context = {}) {
   };
 }
 
-function resetPartnerSpaCapture(context) {
-  if (!context) return;
-  context.spaCapture = {};
-  context.dailyItems = null;
-  context.dailySourceUrl = '';
-  context.shrunkHistoryToDate = null;
+function resetPartnerSpaCapture(context, registry) {
+  if (context) {
+    context.spaCapture = {};
+    context.dailyItems = null;
+    context.dailySourceUrl = '';
+    context.shrunkHistoryToDate = null;
+  }
+  if (!registry?.endpoints) return;
+  Object.keys(registry.endpoints).forEach(key => {
+    const row = registry.endpoints[key];
+    if (!row || typeof row !== 'object') return;
+    row.sampleUrl = null;
+    row.spaPayload = null;
+    row.spaItems = null;
+    row.spaTotalPage = null;
+  });
 }
 
 function attachCollectCenterRoute(playwrightPage, registry, detachRef = { current: null }) {
@@ -1028,7 +1115,7 @@ async function runFullCollectPipeline(options = {}) {
       pipelineContext.regionName = registry.centerContext.regionName;
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
-      resetPartnerSpaCapture(pipelineContext);
+      resetPartnerSpaCapture(pipelineContext, registry);
 
       const label = partnerTotal > 0
         ? `[${partnerIndex + 1}/${partnerTotal}] ${registry.centerContext.partnerName}`

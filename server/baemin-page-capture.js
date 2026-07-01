@@ -315,10 +315,6 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
   if (!page || page.isClosed()) return null;
 
   if (sourceId === 'delivery_status') {
-    if (isDeliveryStatusSpaUrl(page.url())) {
-      await delay(800);
-      return null;
-    }
     const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
     let capture = null;
     const handler = async response => {
@@ -342,12 +338,19 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
       }
     };
     page.on('response', handler);
-    console.log(`[BREM][collect-prep] delivery_status goto ${SAFE_LANDING_URL}`);
     try {
-      await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
-        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
-      });
-      await delay(600);
+      if (isDeliveryStatusSpaUrl(page.url())) {
+        console.log(`[BREM][collect-prep] delivery_status reload ${page.url()}`);
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
+          if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+        });
+      } else {
+        console.log(`[BREM][collect-prep] delivery_status goto ${SAFE_LANDING_URL}`);
+        await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
+          if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+        });
+      }
+      await delay(900);
     } finally {
       page.off('response', handler);
     }
@@ -359,11 +362,7 @@ async function preparePageForCollect(page, sourceId, dateRange, collectDate = nu
 
   const spaUrl = buildSpaPageUrl(sourceId, dateRange, collectDate);
   if (!spaUrl) return null;
-  if (page.url() === spaUrl || page.url().split('?')[0] === spaUrl.split('?')[0]) {
-    console.log(`[BREM][collect-prep] ${sourceId} already on SPA url — skip goto`);
-    return null;
-  }
-  console.log(`[BREM][collect-prep] ${sourceId} goto ${spaUrl}`);
+  console.log(`[BREM][collect-prep] ${sourceId} navigate ${spaUrl}`);
   const captured = await navigateAndCaptureApi(page, spaUrl, sourceId);
   if (captured.ok) return captured;
   return null;
@@ -407,16 +406,18 @@ async function navigateAndCaptureApi(page, spaUrl, sourceId) {
   page.on('response', handler);
   try {
     const currentUrl = page.url();
-    const samePage = currentUrl === spaUrl || currentUrl.split('?')[0] === spaUrl.split('?')[0];
-    if (!samePage) {
+    if (currentUrl === spaUrl) {
+      console.log(`[BREM][spa-probe] reload ${spaUrl}`);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
+        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+      });
+      await delay(1200);
+    } else {
       console.log(`[BREM][spa-probe] goto ${spaUrl}`);
       await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
         if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
       });
       await delay(1200);
-    } else {
-      console.log(`[BREM][spa-probe] reuse current page ${currentUrl}`);
-      await delay(400);
     }
   } catch (error) {
     console.warn(`[BREM][spa-probe] goto failed: ${error.message || error}`);
@@ -464,13 +465,10 @@ async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContex
 
   const spaUrl = buildSpaPageUrl(sourceId, dateRange, collectDate);
   if (spaUrl && page && !page.isClosed()) {
-    const onSpaPage = page.url() === spaUrl || page.url().split('?')[0] === spaUrl.split('?')[0];
-    if (!onSpaPage) {
-      const fromSpa = await navigateAndCaptureApi(page, spaUrl, sourceId);
-      if (fromSpa.ok) return fromSpa;
-      console.warn(`[BREM][spa-probe] ${sourceId} SPA 탐색 실패 — quiet probe 재시도`);
-      await recoverBrowserTab(page).catch(() => {});
-    }
+    const fromSpa = await navigateAndCaptureApi(page, spaUrl, sourceId);
+    if (fromSpa.ok) return fromSpa;
+    console.warn(`[BREM][spa-probe] ${sourceId} SPA 탐색 실패 — quiet probe 재시도`);
+    await recoverBrowserTab(page).catch(() => {});
   } else if (page && !page.isClosed()) {
     await ensureSafeBrowserTab(page);
   }

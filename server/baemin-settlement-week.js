@@ -89,11 +89,13 @@ function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
 
 function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
   const referenceDate = String(dateKey || todayKST(now)).slice(0, 10);
-  const weekStart = settlementWeekStart(referenceDate);
-  const weekEnd = settlementWeekEnd(weekStart);
   const latest = latestQueryableDate(referenceDate, now);
-  const toDate = latest < weekEnd ? latest : weekEnd;
-  const fromDate = weekStart <= toDate ? weekStart : toDate;
+  // 정산주(수~화)는 "조회 가능한 최신 영업일" 기준 — 수요일 06시 이후에는 전주 화요일이
+  // referenceDate(오늘)의 정산주와 어긋나 1일만 수집되는 문제를 방지합니다.
+  const weekStart = settlementWeekStart(latest);
+  const weekEnd = settlementWeekEnd(weekStart);
+  const toDate = latest <= weekEnd ? latest : weekEnd;
+  const fromDate = weekStart;
 
   const dates = [];
   let cursor = fromDate;

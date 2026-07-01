@@ -143,7 +143,6 @@ async function fetchPaginatedApi({
   sampleHeaders = null
 }) {
   const { BAEMIN_API_ORIGIN, BAEMIN_ORIGIN } = require('./baemin-collect-sources');
-  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
   const origin = String(apiOrigin || BAEMIN_API_ORIGIN || BAEMIN_ORIGIN).replace(/\/$/, '');
   const cookie = String(sessionCookie || '').trim();
   if (!cookie && !playwrightContext && !playwrightPage) {
@@ -155,29 +154,18 @@ async function fetchPaginatedApi({
     };
   }
 
+  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
+
   const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
   const pageStart = Number.isFinite(pagination.pageStart) ? pagination.pageStart : 0;
   const dataKey = pagination.dataKey || 'data';
-  const parallelBatchSize = Math.min(Math.max(Number(pagination.parallelBatchSize || 4), 1), 6);
   const merged = [];
   let firstPayload = null;
   let lastUrl = '';
   let totalPage = 1;
 
-  function resolveActivePage() {
-    if (playwrightPage && !playwrightPage.isClosed()) return playwrightPage;
-    if (playwrightContext) {
-      try {
-        const pages = playwrightContext.pages().filter(page => !page.isClosed());
-        return pages[0] || null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  function buildPageUrl(page) {
+  for (let pageIndex = 0; pageIndex < totalPage; pageIndex += 1) {
+    const page = pageStart + pageIndex;
     if (sampleUrl) {
       try {
         const parsed = new URL(sampleUrl);
@@ -187,101 +175,97 @@ async function fetchPaginatedApi({
           if (value == null) return;
           parsed.searchParams.set(key, String(value));
         });
-        return parsed.toString();
+        lastUrl = parsed.toString();
       } catch {
-        return sampleUrl;
+        lastUrl = sampleUrl;
+      }
+    } else {
+      const params = new URLSearchParams();
+      Object.entries(baseQuery).forEach(([key, value]) => {
+        if (value == null) return;
+        params.set(key, String(value));
+      });
+      params.set('page', String(page));
+      params.set('size', String(size));
+      lastUrl = `${origin}${apiPath}?${params.toString()}`;
+    }
+
+    let activePage = playwrightPage;
+    if (!activePage && playwrightContext) {
+      try {
+        const pages = playwrightContext.pages().filter(page => !page.isClosed());
+        activePage = pages[0] || null;
+      } catch {
+        activePage = null;
       }
     }
-    const params = new URLSearchParams();
-    Object.entries(baseQuery).forEach(([key, value]) => {
-      if (value == null) return;
-      params.set(key, String(value));
-    });
-    params.set('page', String(page));
-    params.set('size', String(size));
-    return `${origin}${apiPath}?${params.toString()}`;
-  }
 
-  async function fetchPage(pageIndex) {
-    const page = pageStart + pageIndex;
-    const url = buildPageUrl(page);
-    const activePage = resolveActivePage();
     const centerHeaders = sampleHeaders && typeof sampleHeaders === 'object' ? sampleHeaders : null;
     const pageLogContext = logContext ? { ...logContext, pageIndex: page } : null;
     let result = null;
-    const via = activePage ? 'browser-tab' : (playwrightContext?.request ? 'playwright-request' : 'fetch');
 
-    console.log(`${logPrefix} GET ${url} (${via})`);
-
-    if (activePage) {
-      result = await fetchBaeminJsonViaPage(activePage, url, pageLogContext, centerHeaders);
+    if (activePage && !activePage.isClosed()) {
+      console.log(`${logPrefix} GET ${lastUrl} (browser-tab)`);
+      result = await fetchBaeminJsonViaPage(activePage, lastUrl, pageLogContext, centerHeaders);
       if (!result.ok && playwrightContext?.request) {
-        result = await fetchBaeminJsonViaPlaywright(playwrightContext, url, pageLogContext, centerHeaders);
+        console.warn(`${logPrefix} browser-tab failed status=${result.status}, retry playwright-request`);
+        console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
+        const retry = await fetchBaeminJsonViaPlaywright(
+          playwrightContext,
+          lastUrl,
+          pageLogContext,
+          centerHeaders
+        );
+        if (retry.ok) result = retry;
       }
     } else if (playwrightContext?.request) {
-      result = await fetchBaeminJsonViaPlaywright(playwrightContext, url, pageLogContext, centerHeaders);
+      console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
+      result = await fetchBaeminJsonViaPlaywright(
+        playwrightContext,
+        lastUrl,
+        pageLogContext,
+        centerHeaders
+      );
     } else {
-      result = await fetchBaeminJson(url, cookie, pageLogContext);
+      console.log(`${logPrefix} GET ${lastUrl} (fetch)`);
+      result = await fetchBaeminJson(lastUrl, cookie, pageLogContext);
+    }
+    if (!result.ok) {
+      console.error(`${logPrefix} FAIL status=${result.status} message=${result.message}`);
+      console.error(`${logPrefix} response.text():`, String(result.bodyText || '').slice(0, 800));
+      return result;
     }
 
-    return { page, url, result };
-  }
-
-  const first = await fetchPage(0);
-  lastUrl = first.url;
-  if (!first.result.ok) {
-    console.error(`${logPrefix} FAIL status=${first.result.status} message=${first.result.message}`);
-    console.error(`${logPrefix} response.text():`, String(first.result.bodyText || '').slice(0, 800));
-    return first.result;
-  }
-
-  firstPayload = first.result.payload;
-  const detected = readTotalPages(first.result.payload);
-  const firstRows = extractDataArray(first.result.payload, dataKey) || [];
-  if (!detected) {
-    if (firstRows.length > 0) {
-      totalPage = 1;
-      console.log(`${logPrefix} totalPage inferred=1 (data without totalPage)`);
-    } else if (Array.isArray(first.result.payload?.data)) {
-      totalPage = 1;
-      console.log(`${logPrefix} totalPage inferred=1 (empty data array)`);
-    } else {
-      console.error(`${logPrefix} totalPage missing payload keys=${Object.keys(first.result.payload || {}).join(',')}`);
-      return {
-        ok: false,
-        status: 502,
-        error: 'TOTAL_PAGE_FAILED',
-        message: 'totalPage 확인 실패',
-        bodyText: first.result.bodyText
-      };
-    }
-  } else {
-    totalPage = detected;
-    console.log(`${logPrefix} totalPage=${totalPage}`);
-  }
-
-  console.log(`${logPrefix} page=${first.page} rows=${firstRows.length}`);
-  merged.push(...firstRows);
-
-  if (totalPage > 1) {
-    const remaining = [];
-    for (let pageIndex = 1; pageIndex < totalPage; pageIndex += 1) {
-      remaining.push(pageIndex);
-    }
-    for (let offset = 0; offset < remaining.length; offset += parallelBatchSize) {
-      const batch = remaining.slice(offset, offset + parallelBatchSize);
-      const batchResults = await Promise.all(batch.map(pageIndex => fetchPage(pageIndex)));
-      for (const entry of batchResults) {
-        lastUrl = entry.url || lastUrl;
-        if (!entry.result.ok) {
-          console.error(`${logPrefix} FAIL status=${entry.result.status} message=${entry.result.message}`);
-          return entry.result;
+    if (pageIndex === 0) {
+      firstPayload = result.payload;
+      const detected = readTotalPages(result.payload);
+      const rows = extractDataArray(result.payload, dataKey) || [];
+      if (!detected) {
+        if (rows.length > 0) {
+          totalPage = 1;
+          console.log(`${logPrefix} totalPage inferred=1 (data without totalPage)`);
+        } else if (Array.isArray(result.payload?.data)) {
+          totalPage = 1;
+          console.log(`${logPrefix} totalPage inferred=1 (empty data array)`);
+        } else {
+          console.error(`${logPrefix} totalPage missing payload keys=${Object.keys(result.payload || {}).join(',')}`);
+          return {
+            ok: false,
+            status: 502,
+            error: 'TOTAL_PAGE_FAILED',
+            message: 'totalPage 확인 실패',
+            bodyText: result.bodyText
+          };
         }
-        const rows = extractDataArray(entry.result.payload, dataKey) || [];
-        console.log(`${logPrefix} page=${entry.page} rows=${rows.length}`);
-        merged.push(...rows);
+      } else {
+        totalPage = detected;
+        console.log(`${logPrefix} totalPage=${totalPage}`);
       }
     }
+
+    const rows = extractDataArray(result.payload, dataKey) || [];
+    console.log(`${logPrefix} page=${page} rows=${rows.length}`);
+    merged.push(...rows);
   }
 
   return {

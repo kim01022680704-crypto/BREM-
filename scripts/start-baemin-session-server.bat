@@ -1,14 +1,30 @@
-@echo off
+﻿@echo off
 setlocal EnableExtensions
 chcp 65001 >nul 2>&1
-title BREM 배민 세션 서버
+title BREM Baemin Session Server
 
-rem 이 bat 파일 기준으로 프로젝트 루트 (scripts\..)
-set "PROJECT_DIR=%~dp0.."
-for %%I in ("%PROJECT_DIR%") do set "PROJECT_DIR=%%~fI"
+set "PROJECT_DIR="
 
-if not exist "%PROJECT_DIR%\package.json" (
-  echo [오류] BREM 프로젝트를 찾지 못했습니다: %PROJECT_DIR%
+if exist "E:\브램로컬\BREM\package.json" (
+  set "PROJECT_DIR=E:\브램로컬\BREM"
+)
+
+if not defined PROJECT_DIR if exist "%USERPROFILE%\Desktop\BREM\package.json" (
+  set "PROJECT_DIR=%USERPROFILE%\Desktop\BREM"
+)
+
+if not defined PROJECT_DIR if exist "%~dp0..\package.json" (
+  for %%I in ("%~dp0..") do set "PROJECT_DIR=%%~fI"
+)
+
+if not defined PROJECT_DIR if exist "%~dp0package.json" (
+  set "PROJECT_DIR=%~dp0"
+)
+
+if not defined PROJECT_DIR (
+  echo [ERROR] BREM folder not found.
+  echo   E:\브램로컬\BREM
+  echo   %USERPROFILE%\Desktop\BREM
   pause
   exit /b 1
 )
@@ -18,28 +34,25 @@ set "PLAYWRIGHT_BROWSERS_PATH=%PROJECT_DIR%\.playwright-browsers"
 
 where node >nul 2>&1
 if errorlevel 1 (
-  echo [오류] Node.js가 없거나 PATH에 등록되지 않았습니다.
-  echo https://nodejs.org 에서 설치 후 다시 시도하세요.
+  echo [ERROR] Node.js not found in PATH.
   pause
   exit /b 1
 )
 
 echo.
 echo ========================================
-echo   BREM 배민 세션 서버
-echo   폴더: %PROJECT_DIR%
-echo   확인: http://127.0.0.1:3939/health
-echo ========================================
-echo   이 창을 닫으면 서버가 꺼집니다.
+echo   BREM Baemin Session Server
+echo   Folder: %PROJECT_DIR%
+echo   Health: http://127.0.0.1:3939/health
 echo ========================================
 echo.
 
-echo [업데이트] git pull 실행 중...
+echo [UPDATE] git pull ...
 git pull
 if errorlevel 1 (
-  echo [경고] git pull 실패 — 수동으로 pull 하세요.
+  echo [WARN] git pull failed
 ) else (
-  echo [업데이트] 완료
+  echo [UPDATE] done
 )
 echo.
 
@@ -47,8 +60,11 @@ call npm.cmd run baemin:session-server
 
 echo.
 if errorlevel 1 (
-  echo [오류] 서버가 비정상 종료되었습니다.
+  echo [ERROR] Server exited with error.
+  echo   - Port 3939 may already be in use
+  echo   - Check .env SUPABASE settings
+  echo   - Run: node node_modules\playwright\cli.js install chromium
 ) else (
-  echo [안내] 서버가 종료되었습니다.
+  echo [INFO] Server stopped.
 )
 pause
