@@ -717,21 +717,12 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
     return { ok: false, reason: 'ui_mismatch', ui, sample: null, sourceMenu: menu };
   }
 
-  const centerContext = { partnerId };
-  const centerQuery = buildCenterQueryParams(centerContext);
-  const centerHeaders = buildCenterFetchHeaders(centerContext);
-
-  const buildProbeUrl = (path, extra = {}, includePartnerQuery = false) => {
+  const buildProbeUrl = (path, extra = {}) => {
     const params = new URLSearchParams({
       page: '0',
       size: '5',
       ...extra
     });
-    if (includePartnerQuery) {
-      Object.entries(centerQuery).forEach(([key, value]) => {
-        if (value != null && value !== '') params.set(key, String(value));
-      });
-    }
     if (fromDate && toDate && menu !== 'delivery_status') {
       params.set('fromDate', fromDate);
       params.set('toDate', toDate);
@@ -768,25 +759,21 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
 
   const probes = menu === 'daily_history'
     ? [
-      { url: buildProbeUrl('/v4/management/daily-delivery-status', {}, true), extract: extractDailyFingerprint },
-      { url: buildProbeUrl('/v4/management/delivery/delivery-history', {}, true), extract: extractDailyFingerprint }
+      { url: buildProbeUrl('/v4/management/daily-delivery-status'), extract: extractDailyFingerprint },
+      { url: buildProbeUrl('/v4/management/delivery/delivery-history'), extract: extractDailyFingerprint }
     ]
     : menu === 'rider_history'
       ? [
-        { url: buildProbeUrl('/v4/management/rider-delivery-status', { ...statusQuery, riderStatus: '' }, true), extract: extractStatusFingerprint },
-        { url: buildProbeUrl('/v4/management/delivery/rider-history', {}, true), extract: extractStatusFingerprint }
+        { url: buildProbeUrl('/v4/management/rider-delivery-status', { ...statusQuery, riderStatus: '' }), extract: extractStatusFingerprint },
+        { url: buildProbeUrl('/v4/management/delivery/rider-history'), extract: extractStatusFingerprint }
       ]
       : [
-        { url: buildProbeUrl('/v4/management/delivery-status', statusQuery, true), extract: extractStatusFingerprint },
-        { url: buildProbeUrl('/v4/management/delivery-status', statusQuery, false), extract: extractStatusFingerprint }
+        { url: buildProbeUrl('/v4/management/delivery-status', statusQuery), extract: extractStatusFingerprint }
       ];
 
   let sample = { status: 0, fingerprint: '', message: '', probeUrl: '' };
   for (const probe of probes) {
-    let result = await fetchBaeminJsonViaPage(page, probe.url, null, null);
-    if (!result.ok && centerHeaders && Object.keys(centerHeaders).length) {
-      result = await fetchBaeminJsonViaPage(page, probe.url, null, centerHeaders);
-    }
+    const result = await fetchBaeminJsonViaPage(page, probe.url, null, null);
     sample = {
       status: result.status || 0,
       fingerprint: result.ok ? probe.extract(result.payload || {}) : '',
@@ -820,6 +807,21 @@ async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFi
   const waitMs = Number(options.waitMs || 1200);
   const sessionBefore = await readCenterSessionCookie(page);
   const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
+
+  const { SAFE_LANDING_URL, buildSpaPageUrl } = require('./baemin-page-capture');
+  if (menu === 'delivery_status' && page && !page.isClosed()) {
+    const onHistory = /\/delivery\/history/i.test(page.url() || '');
+    if (!onHistory) {
+      await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await delay(900);
+    }
+  } else if (menu !== 'delivery_status' && page && !page.isClosed()) {
+    const spaUrl = buildSpaPageUrl(menu, dateRange);
+    if (spaUrl && !page.url().includes(menu === 'daily_history' ? 'delivery-history' : 'rider-history')) {
+      await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await delay(900);
+    }
+  }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const verified = await verifyPartnerMenuApiContext(

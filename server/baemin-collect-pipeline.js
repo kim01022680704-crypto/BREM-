@@ -277,13 +277,12 @@ async function saveCollectRun(runRow) {
 }
 
 function mergeCenterQuery(baseQuery, registry = {}, options = {}) {
-  const centerQuery = buildCenterQueryParams(registry.centerContext || {});
   if (options.skipCenterQuery) {
-    if (centerQuery.partnerId) {
-      return { ...baseQuery, partnerId: centerQuery.partnerId, cooperationId: centerQuery.cooperationId };
-    }
+    // 브라우저 CENTER_SESSION 쿠키가 협력사를 식별합니다.
+    // URL에 partnerId를 넣으면 delivery-status API가 400(협력사 아이디는 필수)을 반환합니다.
     return { ...baseQuery };
   }
+  const centerQuery = buildCenterQueryParams(registry.centerContext || {});
   return { ...baseQuery, ...centerQuery };
 }
 
