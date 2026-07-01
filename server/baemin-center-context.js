@@ -703,17 +703,18 @@ async function clickPartnerConfirmButton(page) {
   return false;
 }
 
-async function verifyPartnerApiContext(page, targetId, baselineSample = '', dateRange = null) {
+async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'delivery_status', baselineSample = '', dateRange = null, options = {}) {
   const { resolveHistoryMenuQueryDates } = require('./baemin-settlement-week');
   const { fetchBaeminJsonViaPage } = require('./baemin-playwright-fetch');
   const historyDates = resolveHistoryMenuQueryDates(undefined, dateRange);
   const fromDate = historyDates.fromDate;
   const toDate = historyDates.toDate;
   const partnerId = String(targetId || '').trim();
+  const menu = String(sourceMenu || 'delivery_status').trim();
 
   const ui = await readActivePartnerDisplayFromPage(page);
   if (ui.partnerId && ui.partnerId !== partnerId) {
-    return { ok: false, reason: 'ui_mismatch', ui, sample: null };
+    return { ok: false, reason: 'ui_mismatch', ui, sample: null, sourceMenu: menu };
   }
 
   const centerContext = { partnerId };
@@ -731,7 +732,7 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
         if (value != null && value !== '') params.set(key, String(value));
       });
     }
-    if (fromDate && toDate) {
+    if (fromDate && toDate && menu !== 'delivery_status') {
       params.set('fromDate', fromDate);
       params.set('toDate', toDate);
     }
@@ -756,31 +757,29 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
       .join('|');
   };
 
-  const probes = [
-    {
-      url: buildProbeUrl('/v4/management/delivery-status', {
-        orderName: 'name',
-        orderBy: 'asc',
-        name: '',
-        userId: '',
-        phoneNumber: '',
-        riderStatus: ''
-      }, true),
-      extract: extractStatusFingerprint
-    },
-    {
-      url: buildProbeUrl('/v4/management/delivery-status', {
-        orderName: 'name',
-        orderBy: 'asc',
-        name: '',
-        userId: '',
-        phoneNumber: '',
-        riderStatus: ''
-      }, false),
-      extract: extractStatusFingerprint
-    },
-    { url: buildProbeUrl('/v4/management/daily-delivery-status', {}, true), extract: extractDailyFingerprint }
-  ];
+  const statusQuery = {
+    orderName: 'name',
+    orderBy: 'asc',
+    name: '',
+    userId: '',
+    phoneNumber: '',
+    riderStatus: ''
+  };
+
+  const probes = menu === 'daily_history'
+    ? [
+      { url: buildProbeUrl('/v4/management/daily-delivery-status', {}, true), extract: extractDailyFingerprint },
+      { url: buildProbeUrl('/v4/management/delivery/delivery-history', {}, true), extract: extractDailyFingerprint }
+    ]
+    : menu === 'rider_history'
+      ? [
+        { url: buildProbeUrl('/v4/management/rider-delivery-status', { ...statusQuery, riderStatus: '' }, true), extract: extractStatusFingerprint },
+        { url: buildProbeUrl('/v4/management/delivery/rider-history', {}, true), extract: extractStatusFingerprint }
+      ]
+      : [
+        { url: buildProbeUrl('/v4/management/delivery-status', statusQuery, true), extract: extractStatusFingerprint },
+        { url: buildProbeUrl('/v4/management/delivery-status', statusQuery, false), extract: extractStatusFingerprint }
+      ];
 
   let sample = { status: 0, fingerprint: '', message: '', probeUrl: '' };
   for (const probe of probes) {
@@ -798,40 +797,100 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
   }
 
   if (sample.status < 200 || sample.status >= 300) {
-    if (ui.partnerId === partnerId) {
-      console.warn(`[BREM][center] API probe soft-pass (UI 확인): partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
-      return { ok: true, ui, sample, softVerify: true, reason: 'api_probe_soft_pass' };
+    console.warn(`[BREM][center] ${menu} API probe failed partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
+    return { ok: false, reason: 'api_probe_failed', ui, sample, sourceMenu: menu };
+  }
+
+  const baseline = String(baselineSample || '').trim();
+  if (baseline && sample.fingerprint && sample.fingerprint === baseline) {
+    return { ok: false, reason: 'same_as_baseline', ui, sample, sourceMenu: menu };
+  }
+
+  return { ok: true, ui, sample, sourceMenu: menu };
+}
+
+async function verifyPartnerApiContext(page, targetId, baselineSample = '', dateRange = null) {
+  return verifyPartnerMenuApiContext(page, targetId, 'delivery_status', baselineSample, dateRange);
+}
+
+async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFingerprint = '', dateRange = null, options = {}) {
+  const menu = String(sourceMenu || 'delivery_status').trim();
+  const partnerId = String(targetId || '').trim();
+  const maxAttempts = Number(options.maxAttempts || 10);
+  const waitMs = Number(options.waitMs || 1200);
+  const sessionBefore = await readCenterSessionCookie(page);
+  const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const verified = await verifyPartnerMenuApiContext(
+      page,
+      partnerId,
+      menu,
+      baselineFingerprint,
+      dateRange,
+      options
+    );
+    if (verified.ok) {
+      if (attempt > 1) {
+        console.log(`[BREM][center] ${menu} API 확인 완료 (재시도 ${attempt}/${maxAttempts}) partner=${partnerId}`);
+      }
+      return verified;
     }
-    console.warn(`[BREM][center] API probe failed partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
-    return { ok: false, reason: 'api_probe_failed', ui, sample };
+    if (verified.reason === 'ui_mismatch') return verified;
+
+    if (attempt < maxAttempts) {
+      console.warn(`[BREM][center] ${menu} API ${verified.reason || 'not-ready'} — 재시도 ${attempt}/${maxAttempts} partner=${partnerId}`);
+      if (verified.reason === 'same_as_baseline') {
+        await replayCapturedCenterSwitch(page, switchCaptured, partnerId);
+        await trySwitchCenterViaApi(page, partnerId);
+        await waitForCenterSessionChange(page, sessionBefore, 8000);
+      }
+      await delay(waitMs);
+    } else {
+      return verified;
+    }
   }
 
-  if (baselineSample && sample.fingerprint && sample.fingerprint === baselineSample) {
-    return { ok: false, reason: 'same_as_baseline', ui, sample };
-  }
-
-  return { ok: true, ui, sample };
+  return { ok: false, reason: 'api_probe_timeout', sourceMenu: menu };
 }
 
 async function ensurePartnerSessionReady(page, targetId, options = {}) {
   const baseline = String(options.baselineFingerprint || '');
   const dateRange = options.dateRange || null;
-  const sessionBefore = await readCenterSessionCookie(page);
   const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
-  let verified = await verifyPartnerApiContext(page, targetId, baseline, dateRange);
-  if (verified.ok || verified.reason !== 'same_as_baseline') return verified;
 
-  console.warn(`[BREM][center] API 데이터 동일(세션 미전환) → 재전환: ${targetId}`);
+  const ui = await readActivePartnerDisplayFromPage(page);
+  if (ui.partnerId && ui.partnerId !== String(targetId || '').trim()) {
+    return { ok: false, reason: 'ui_mismatch', ui, sample: null };
+  }
+
+  let verified = await waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
+    switchCaptured,
+    maxAttempts: 10,
+    waitMs: 1200
+  });
+  if (verified.ok || verified.reason === 'ui_mismatch') return verified;
+
+  console.warn(`[BREM][center] 배달현황 API 미전환 → 재전환: ${targetId}`);
+  const sessionBefore = await readCenterSessionCookie(page);
   await replayCapturedCenterSwitch(page, switchCaptured, targetId);
   await trySwitchCenterViaApi(page, targetId);
   await waitForCenterSessionChange(page, sessionBefore, 8000);
-  verified = await verifyPartnerApiContext(page, targetId, baseline, dateRange);
-  if (verified.ok || verified.reason !== 'same_as_baseline') return verified;
+  verified = await waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
+    switchCaptured,
+    maxAttempts: 6,
+    waitMs: 1500
+  });
+  if (verified.ok || verified.reason === 'ui_mismatch') return verified;
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
   await delay(2500);
-  verified = await verifyPartnerApiContext(page, targetId, baseline, dateRange);
-  if (verified.ok || verified.reason !== 'same_as_baseline') return verified;
+  verified = await waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
+    switchCaptured,
+    maxAttempts: 4,
+    waitMs: 1500
+  });
+  if (verified.ok || verified.reason === 'ui_mismatch') return verified;
 
   await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
   await delay(2000);
@@ -843,7 +902,11 @@ async function ensurePartnerSessionReady(page, targetId, options = {}) {
     timeout: 60000
   }).catch(() => {});
   await delay(2500);
-  return verifyPartnerApiContext(page, targetId, baseline, dateRange);
+  return waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
+    switchCaptured,
+    maxAttempts: 4,
+    waitMs: 1500
+  });
 }
 
 async function selectPartnerCenter(page, target = {}) {
@@ -1159,6 +1222,8 @@ module.exports = {
   readCenterSessionCookie,
   inferRegionFromPartnerName,
   verifyPartnerApiContext,
+  verifyPartnerMenuApiContext,
+  waitForPartnerMenuApiReady,
   ensurePartnerSessionReady,
   trySwitchCenterViaApi
 };

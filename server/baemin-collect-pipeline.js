@@ -550,17 +550,9 @@ function isPartnerSessionMismatchResult(result) {
   return /세션 미반영|동일 fingerprint|협력사 전환 후 동일|협력사 전환 실패/i.test(message);
 }
 
-function rememberReferenceMenuFingerprint(context, sourceId, items = []) {
-  if (!context || Number(context.partnerCollectIndex || 0) !== 0) return;
-  const fingerprint = extractCollectItemsFingerprint(sourceId, items);
-  if (!fingerprint) return;
-  if (!context.referenceMenuFingerprints) context.referenceMenuFingerprints = {};
-  context.referenceMenuFingerprints[sourceId] = fingerprint;
-}
-
 function shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, context = {}) {
   if (!itemFingerprint || Number(context.partnerCollectIndex || 0) <= 0) return false;
-  const referenceFp = String(context.referenceMenuFingerprints?.[sourceId] || '').trim();
+  const referenceFp = String(context.lastPartnerMenuFingerprints?.[sourceId] || '').trim();
   return Boolean(referenceFp && referenceFp === itemFingerprint);
 }
 
@@ -606,6 +598,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     });
     const saveResult = await saveCollectItems(rows);
     if (!saveResult.ok) return { ...saveResult, sourceMenu: sourceId, label: source.label };
+    const menuFingerprint = extractCollectItemsFingerprint('rider_history', dailyItems);
     return {
       ok: true,
       sourceMenu: sourceId,
@@ -613,7 +606,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       savedCount: saveResult.savedCount,
       sourceUrl,
       collectedAt,
-      fallback: 'daily_aggregate'
+      fallback: 'daily_aggregate',
+      rawItems: dailyItems,
+      menuFingerprint
     };
   }
 
@@ -901,8 +896,6 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     return { ...saveResult, sourceMenu: sourceId, label: source.label, rawItems: items };
   }
 
-  rememberReferenceMenuFingerprint(context, sourceId, items);
-
   const weekStart = context.weekStart || context.dateRange?.weekStart || collectDate;
   const statsSave = await saveStatsForSource(
     sourceId,
@@ -932,6 +925,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     sourceUrl: fetched.meta?.sourceUrl || '',
     collectedAt,
     rawItems: items,
+    menuFingerprint: itemFingerprint,
     meta: fetched.meta,
     totals
   };
@@ -1011,6 +1005,42 @@ async function runPartnerSourceCollectLoop({
       continue;
     }
 
+    if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.()) {
+      const { waitForPartnerMenuApiReady } = require('./baemin-center-context');
+      const baseline = String(pipelineContext.lastPartnerMenuFingerprints?.[sourceDef.id] || '').trim();
+      console.log(`[BREM][collect] ${partner.partnerName || partner.partnerId} — ${sourceDef.label} API 확인 중…`);
+      const menuReady = await waitForPartnerMenuApiReady(
+        pipelineContext.playwrightPage,
+        partner.partnerId,
+        sourceDef.id,
+        baseline,
+        historyDateRange,
+        {
+          partnerCollectIndex: pipelineContext.partnerCollectIndex,
+          switchCaptured: pipelineContext.playwrightPage.context()?.__bremLastSwitchCaptured || []
+        }
+      );
+      if (!menuReady.ok) {
+        partnerCollectBlocked = true;
+        const reason = menuReady.reason || 'unknown';
+        results[sourceDef.id] = {
+          ok: false,
+          sourceMenu: sourceDef.id,
+          label: sourceDef.label,
+          message: reason === 'same_as_baseline'
+            ? `${sourceDef.label} API 응답이 이전 협력사와 동일(세션 미반영)`
+            : `${sourceDef.label} API 확인 실패 (${reason})`,
+          sessionMismatch: true
+        };
+        console.warn(`[BREM][collect] ${partner.partnerId} — ${sourceDef.id} API 확인 실패 (${reason})`);
+        continue;
+      }
+      if (pipelineContext.spaCapture) {
+        delete pipelineContext.spaCapture[sourceDef.id];
+      }
+      console.log(`[BREM][collect] ${partner.partnerName || partner.partnerId} — ${sourceDef.label} API 확인 완료, 수집 시작`);
+    }
+
     const result = await collectSource(sourceDef.id, cookie, collectDate, registry, pipelineContext);
     results[sourceDef.id] = {
       ...result,
@@ -1019,8 +1049,13 @@ async function runPartnerSourceCollectLoop({
     };
 
     if (sourceDef.id === 'delivery_status' && result.ok && result.rawItems?.length) {
-      pipelineContext.partnerDataFingerprint = extractCollectItemsFingerprint('delivery_status', result.rawItems);
-      rememberReferenceMenuFingerprint(pipelineContext, 'delivery_status', result.rawItems);
+      pipelineContext.partnerDataFingerprint = result.menuFingerprint
+        || extractCollectItemsFingerprint('delivery_status', result.rawItems);
+    }
+
+    if (result.ok && result.menuFingerprint) {
+      pipelineContext.currentPartnerMenuFingerprints = pipelineContext.currentPartnerMenuFingerprints || {};
+      pipelineContext.currentPartnerMenuFingerprints[sourceDef.id] = result.menuFingerprint;
     }
 
     if (isPartnerSessionMismatchResult(result)) {
@@ -1088,7 +1123,7 @@ async function runPartnerSourceCollectLoop({
     }
   }
 
-  return { results, anySuccess, sessionExpired, authFailureCount };
+  return { results, anySuccess, sessionExpired, authFailureCount, currentPartnerMenuFingerprints: pipelineContext.currentPartnerMenuFingerprints || {} };
 }
 
 async function runFullCollectPipeline(options = {}) {
@@ -1142,7 +1177,8 @@ async function runFullCollectPipeline(options = {}) {
     deliveryStatusContext: menuDateRanges.delivery_status,
     weekStart: historyDateRange.weekStart,
     shrunkHistoryToDate: null,
-    referenceMenuFingerprints: {}
+    lastPartnerMenuFingerprints: {},
+    currentPartnerMenuFingerprints: {}
   };
   let partnersToCollect = [];
 
@@ -1204,6 +1240,7 @@ async function runFullCollectPipeline(options = {}) {
       pipelineContext.partnerCollectIndex = partnerIndex;
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
+      pipelineContext.currentPartnerMenuFingerprints = {};
       resetPartnerSpaCapture(pipelineContext, registry);
 
       const label = partnerTotal > 0
@@ -1253,121 +1290,82 @@ async function runFullCollectPipeline(options = {}) {
     }
 
     if (playwrightPage && partnersToCollect.length > 0) {
-      const { selectPartnerCenter, resolveCenterContextViaPage, isValidPartnerId } = require('./baemin-center-context');
+      const {
+        selectPartnerCenter,
+        readActivePartnerDisplayFromPage,
+        ensurePartnerSessionReady,
+        isValidPartnerId
+      } = require('./baemin-center-context');
       partnersToCollect = partnersToCollect.filter(partner => isValidPartnerId(partner?.partnerId));
 
-      const activeCenter = await resolveCenterContextViaPage(playwrightPage).catch(() => ({}));
-      const activeId = String(activeCenter?.partnerId || activeCenter?.centerId || '').trim();
-      const currentPartner = partnersToCollect.find(partner => partner.partnerId === activeId);
-      const otherPartners = partnersToCollect.filter(partner => partner.partnerId !== activeId);
-      const orderedPartners = currentPartner
-        ? [currentPartner, ...otherPartners]
-        : (activeId
-          ? [{
-            centerId: activeCenter.centerId || activeId,
-            managementId: activeCenter.managementId || activeId,
-            partnerId: activeId,
-            partnerName: activeCenter.partnerName || activeId
-          }, ...partnersToCollect]
-          : partnersToCollect);
+      const orderedPartners = partnersToCollect.slice();
+      const lastPartnerMenuFingerprints = {
+        delivery_status: '',
+        daily_history: '',
+        rider_history: ''
+      };
 
-      let baselineDailyFingerprint = '';
-      if (activeId) {
-        const { verifyPartnerApiContext } = require('./baemin-center-context');
-        const baseline = await verifyPartnerApiContext(playwrightPage, activeId, '', historyDateRange).catch(() => null);
-        baselineDailyFingerprint = baseline?.sample?.fingerprint || '';
-      }
-
-      console.log(`[BREM][collect] 협력사 ${orderedPartners.length}곳 순차 수집 (현재: ${activeId || 'unknown'})`);
+      console.log(`[BREM][collect] 협력사 ${orderedPartners.length}곳 순차 수집 (목록 순서): ${orderedPartners.map(p => p.partnerName || p.partnerId).join(' → ')}`);
 
       for (let index = 0; index < orderedPartners.length; index += 1) {
         const partner = orderedPartners[index];
-        const isCurrentPartner = partner.partnerId === activeId && index === 0;
         const progressLabel = `[${index + 1}/${orderedPartners.length}] ${partner.partnerName || partner.partnerId}`;
         try {
-          let active = partner;
-          if (!isCurrentPartner) {
-            if (typeof detachRef.current === 'function') {
-              detachRef.current();
-              detachRef.current = () => {};
-            }
-            console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시도 (${partner.partnerId})`);
-            active = await selectPartnerCenter(playwrightPage, partner);
-            registry.centerContext = {
-              centerId: active.centerId || partner.partnerId,
-              managementId: active.managementId || partner.partnerId,
-              partnerId: partner.partnerId,
-              partnerName: partner.partnerName || active.partnerName || partner.partnerId,
-              regionName: partner.regionName || active.regionName || '',
-              resolvedAt: new Date().toISOString()
-            };
-            const { ensurePartnerSessionReady, readActivePartnerDisplayFromPage } = require('./baemin-center-context');
-            const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
-            console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · 화면=${uiNow.partnerName || '-'} (${uiNow.partnerId || 'unknown'})`);
-            await new Promise(resolve => setTimeout(resolve, 800));
-            const verified = await ensurePartnerSessionReady(
-              playwrightPage,
-              partner.partnerId,
-              {
-                baselineFingerprint: baselineDailyFingerprint,
-                dateRange: historyDateRange
-              }
-            );
-            if (!verified.ok) {
-              if (verified.reason === 'same_as_baseline' || verified.reason === 'ui_mismatch') {
-                throw new Error(`협력사 전환 후 API 검증 실패 (${verified.reason || 'unknown'})`);
-              }
-              if (verified.reason === 'api_probe_failed' && uiNow.partnerId === partner.partnerId) {
-                console.warn(`[BREM][collect] ${progressLabel} — API 검증 생략, UI 확인으로 수집 진행`);
-              } else {
-                throw new Error(`협력사 전환 후 API 검증 실패 (${verified.reason || 'unknown'})`);
-              }
-            } else if (verified.softVerify) {
-              console.warn(`[BREM][collect] ${progressLabel} — API soft-verify 경고 (UI=${uiNow.partnerId})`);
-            } else {
-              console.log(`[BREM][collect] ${progressLabel} — API fingerprint=${verified.sample?.fingerprint || '-'}`);
-            }
-            if (verified.sample?.fingerprint) {
-              baselineDailyFingerprint = verified.sample.fingerprint;
-            }
-          } else {
-            const {
-              ensurePartnerSessionReady,
-              readActivePartnerDisplayFromPage,
-              trySwitchCenterViaApi
-            } = require('./baemin-center-context');
-            await trySwitchCenterViaApi(playwrightPage, partner.partnerId);
-            await new Promise(resolve => setTimeout(resolve, 600));
-            const verified = await ensurePartnerSessionReady(
-              playwrightPage,
-              partner.partnerId,
-              { baselineFingerprint: '', dateRange: historyDateRange }
-            );
-            const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
-            if (!verified.ok) {
-              if (verified.reason === 'same_as_baseline' || verified.reason === 'ui_mismatch') {
-                throw new Error(`협력사 API 세션 확인 실패 (${verified.reason || 'unknown'})`);
-              }
-              if (verified.reason === 'api_probe_failed' && uiNow.partnerId === partner.partnerId) {
-                console.warn(`[BREM][collect] ${progressLabel} — API 검증 미통과, UI 확인으로 수집 진행 (${verified.reason || '-'})`);
-              } else {
-                throw new Error(`협력사 API 세션 확인 실패 (${verified.reason || 'unknown'})`);
-              }
-            } else if (verified.softVerify) {
-              console.warn(`[BREM][collect] ${progressLabel} — API soft-verify 경고 (${verified.reason || '-'})`);
-            } else {
-              console.log(`[BREM][collect] ${progressLabel} — API 세션 확인 완료 (rows fingerprint=${verified.sample?.fingerprint ? 'ok' : 'empty'})`);
-            }
-            if (verified.sample?.fingerprint) {
-              baselineDailyFingerprint = verified.sample.fingerprint;
-            }
+          if (typeof detachRef.current === 'function') {
+            detachRef.current();
+            detachRef.current = () => {};
           }
+
+          console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시작 (${partner.partnerId})`);
+          const active = await selectPartnerCenter(playwrightPage, partner);
+          registry.centerContext = {
+            centerId: active.centerId || partner.partnerId,
+            managementId: active.managementId || partner.partnerId,
+            partnerId: partner.partnerId,
+            partnerName: partner.partnerName || active.partnerName || partner.partnerId,
+            regionName: partner.regionName || active.regionName || '',
+            resolvedAt: new Date().toISOString()
+          };
+
+          const uiNow = await readActivePartnerDisplayFromPage(playwrightPage);
+          if (uiNow.partnerId && uiNow.partnerId !== partner.partnerId) {
+            throw new Error(`협력사 UI 확인 실패 (요청 ${partner.partnerId}, 화면 ${uiNow.partnerId})`);
+          }
+          console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · ${uiNow.partnerName || partner.partnerName} (${partner.partnerId})`);
+
+          const verified = await ensurePartnerSessionReady(
+            playwrightPage,
+            partner.partnerId,
+            {
+              baselineFingerprint: lastPartnerMenuFingerprints.delivery_status || '',
+              dateRange: historyDateRange,
+              switchCaptured: playwrightPage.context()?.__bremLastSwitchCaptured || []
+            }
+          );
+          if (!verified.ok) {
+            throw new Error(`협력사 전환 후 배달현황 API 검증 실패 (${verified.reason || 'unknown'})`);
+          }
+          console.log(`[BREM][collect] ${progressLabel} — 배달현황 API 세션 확인 완료`);
+
+          pipelineContext.partnerCollectIndex = index;
+          pipelineContext.lastPartnerMenuFingerprints = { ...lastPartnerMenuFingerprints };
+
           const loopResult = await runForPartner({
             ...partner,
             ...active,
             partnerName: partner.partnerName || active.partnerName,
             regionName: partner.regionName || active.regionName
           }, index, orderedPartners.length);
+
+          ['delivery_status', 'daily_history', 'rider_history'].forEach(menuId => {
+            const row = loopResult.results[menuId];
+            const fp = row?.menuFingerprint
+              || (row?.rawItems?.length ? extractCollectItemsFingerprint(menuId, row.rawItems) : '');
+            if (row?.ok && fp) {
+              lastPartnerMenuFingerprints[menuId] = fp;
+            }
+          });
+
           anySuccess = anySuccess || loopResult.anySuccess;
           sessionExpired = sessionExpired || loopResult.sessionExpired;
         } catch (error) {
