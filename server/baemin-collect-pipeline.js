@@ -1371,6 +1371,17 @@ async function runFullCollectPipeline(options = {}) {
       await getBaeminSession().markSessionValidated();
     }
 
+    let scrubResult = null;
+    if (anySuccess && !sessionExpired && partnerSummaries.length > 1) {
+      scrubResult = await scrubCrossPartnerDuplicates(collectDate).catch(error => {
+        console.warn('[BREM][collect] 협력사 중복 정리 실패:', error.message);
+        return null;
+      });
+      if (scrubResult?.deletedCount > 0) {
+        console.log(`[BREM][collect] 협력사 중복 정리 완료 — ${scrubResult.deletedCount}건 삭제`);
+      }
+    }
+
     await saveApiRegistry(registry).catch(error => {
       console.warn('[BREM][collect] registry 저장 실패:', error.message);
     });
@@ -1404,10 +1415,11 @@ async function runFullCollectPipeline(options = {}) {
       partnerSummaries,
       partnerCount: partnerSummaries.length || (registry.centerContext?.partnerId ? 1 : 0),
       sessionExpired,
+      scrubResult,
       message: sessionExpired
         ? '배민 재로그인 필요'
         : (anySuccess
-          ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · 배달현황: 오늘 · 일별/라이더: ${historyDateRange.fromDate}~${historyDateRange.toDate} · 저장 ${savedTotal}건`
+          ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · 배달현황: 오늘 · 일별/라이더: ${historyDateRange.fromDate}~${historyDateRange.toDate} · 저장 ${savedTotal}건${scrubResult?.deletedCount ? ` · 중복 정리 ${scrubResult.deletedCount}건` : ''}`
           : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'))
     };
   } finally {
@@ -1660,6 +1672,271 @@ async function resolveCollectDateForAdmin(collectDate, appliedOnly = false) {
   return applied?.collectDate || '';
 }
 
+function partnerIdFromCollectRow(row) {
+  const parsed = String(row?.parsed_json?.partnerId || row?.partner_id || '').trim();
+  if (/^DP\d{6,}$/i.test(parsed)) return parsed;
+  const prefix = String(row?.dedupe_key || '').split(':')[0];
+  if (/^DP\d{6,}$/i.test(prefix)) return prefix;
+  return '';
+}
+
+function riderSetFingerprint(rows = []) {
+  const ids = rows
+    .map(row => String(row?.rider_user_id || '').trim())
+    .filter(Boolean)
+    .sort();
+  return ids.join(',');
+}
+
+async function analyzePartnerContamination(collectDate, options = {}) {
+  const supabase = getServiceClient();
+  const appliedOnly = Boolean(options.appliedOnly);
+  const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
+
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+  if (!date) {
+    return { ok: true, collectDate: '', duplicateGroups: [], needsScrub: false, partnerStats: [] };
+  }
+
+  const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
+  let query = supabase
+    .from(tableName)
+    .select('id, partner_id, parsed_json, dedupe_key, rider_user_id, collected_at, source_menu')
+    .eq('source_menu', 'delivery_status')
+    .limit(5000);
+
+  if (appliedOnly) {
+    const batchId = await resolveAppliedBatchId(true);
+    if (!batchId) {
+      return { ok: true, collectDate: '', duplicateGroups: [], needsScrub: false, partnerStats: [] };
+    }
+    query = query.eq('batch_id', batchId);
+  } else {
+    query = query.eq('collect_date', date);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingBizCollectTableError(error) || isMissingAppliedTableError(error)) {
+      return { ok: false, tableMissing: true, message: `${tableName} 테이블이 없습니다.` };
+    }
+    return { ok: false, error: error.message || '중복 분석 실패' };
+  }
+
+  const byPartner = new Map();
+  (data || []).forEach(row => {
+    const partnerId = partnerIdFromCollectRow(row);
+    if (!partnerId) return;
+    if (!byPartner.has(partnerId)) byPartner.set(partnerId, []);
+    byPartner.get(partnerId).push(row);
+  });
+
+  const partnerStats = Array.from(byPartner.entries()).map(([partnerId, rows]) => {
+    const partnerName = String(rows[0]?.parsed_json?.partnerName || '').trim();
+    const earliestCollectedAt = rows.reduce((min, row) => {
+      const at = String(row.collected_at || '');
+      return !min || (at && at < min) ? at : min;
+    }, '');
+    return {
+      partnerId,
+      partnerName: partnerName && partnerName !== partnerId ? partnerName : partnerId,
+      riderCount: rows.length,
+      earliestCollectedAt
+    };
+  });
+
+  const fpToPartners = new Map();
+  partnerStats.forEach(stat => {
+    const rows = byPartner.get(stat.partnerId) || [];
+    const fp = riderSetFingerprint(rows);
+    if (!fp || stat.riderCount < 3) return;
+    if (!fpToPartners.has(fp)) fpToPartners.set(fp, []);
+    fpToPartners.get(fp).push(stat);
+  });
+
+  const duplicateGroups = [];
+  fpToPartners.forEach((group, fp) => {
+    if (group.length < 2) return;
+    const sorted = group.slice().sort((a, b) => {
+      const ta = String(a.earliestCollectedAt || '');
+      const tb = String(b.earliestCollectedAt || '');
+      if (ta && tb) return ta.localeCompare(tb);
+      return String(a.partnerId).localeCompare(String(b.partnerId));
+    });
+    duplicateGroups.push({
+      riderCount: fp.split(',').filter(Boolean).length,
+      keepPartnerId: sorted[0].partnerId,
+      keepPartnerName: sorted[0].partnerName,
+      removePartnerIds: sorted.slice(1).map(row => row.partnerId),
+      removePartnerNames: sorted.slice(1).map(row => row.partnerName)
+    });
+  });
+
+  return {
+    ok: true,
+    collectDate: date,
+    duplicateGroups,
+    needsScrub: duplicateGroups.length > 0,
+    partnerStats,
+    appliedOnly
+  };
+}
+
+async function deleteCollectRowsByPartner(collectDate, partnerId, options = {}) {
+  const supabase = getServiceClient();
+  const appliedOnly = Boolean(options.appliedOnly);
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
+  let query = supabase
+    .from(tableName)
+    .select('id, dedupe_key')
+    .like('dedupe_key', `${partnerId}:%`)
+    .limit(5000);
+
+  if (appliedOnly) {
+    const batchId = await resolveAppliedBatchId(true);
+    if (!batchId) return { ok: true, deletedCount: 0 };
+    query = query.eq('batch_id', batchId);
+  } else {
+    query = query.eq('collect_date', collectDate);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    return { ok: false, error: error.message || '삭제 대상 조회 실패' };
+  }
+
+  const ids = (data || []).map(row => row.id).filter(Boolean);
+  if (!ids.length) return { ok: true, deletedCount: 0 };
+
+  let deletedCount = 0;
+  const chunkSize = 200;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const { error: deleteError } = await supabase.from(tableName).delete().in('id', chunk);
+    if (deleteError) {
+      return { ok: false, error: deleteError.message || '삭제 실패', deletedCount };
+    }
+    deletedCount += chunk.length;
+  }
+
+  return { ok: true, deletedCount };
+}
+
+async function scrubCrossPartnerDuplicates(collectDate, options = {}) {
+  const analysis = await analyzePartnerContamination(collectDate, options);
+  if (!analysis.ok) return analysis;
+  if (!analysis.needsScrub) {
+    return {
+      ...analysis,
+      deletedCount: 0,
+      removedPartners: [],
+      message: '협력사 간 중복 데이터가 없습니다.'
+    };
+  }
+
+  const removePartnerIds = new Set();
+  analysis.duplicateGroups.forEach(group => {
+    group.removePartnerIds.forEach(partnerId => removePartnerIds.add(partnerId));
+  });
+
+  let deletedCount = 0;
+  const removedPartners = [];
+  for (const partnerId of removePartnerIds) {
+    const result = await deleteCollectRowsByPartner(analysis.collectDate, partnerId, options);
+    if (!result.ok) return result;
+    deletedCount += Number(result.deletedCount || 0);
+    removedPartners.push(partnerId);
+  }
+
+  console.log(`[BREM][scrub] collect_date=${analysis.collectDate} removed_partners=${removedPartners.join(',')} deleted=${deletedCount}`);
+
+  return {
+    ok: true,
+    collectDate: analysis.collectDate,
+    duplicateGroups: analysis.duplicateGroups,
+    deletedCount,
+    removedPartners,
+    message: `협력사 중복 ${removedPartners.length}곳 정리 — ${deletedCount}건 삭제`
+  };
+}
+
+async function purgeBizCollectDate(collectDate, options = {}) {
+  const supabase = getServiceClient();
+  const date = String(collectDate || '').slice(0, 10);
+  const partnerId = String(options.partnerId || '').trim();
+  const appliedOnly = Boolean(options.appliedOnly);
+
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+  if (!date) {
+    return { ok: false, status: 400, error: 'collectDate 가 필요합니다.' };
+  }
+
+  const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
+  let query = supabase.from(tableName).select('id, dedupe_key').limit(5000);
+
+  if (appliedOnly) {
+    const batchId = await resolveAppliedBatchId(true);
+    if (!batchId) return { ok: true, deletedCount: 0, collectDate: date };
+    query = query.eq('batch_id', batchId);
+  } else {
+    query = query.eq('collect_date', date);
+  }
+
+  if (partnerId) {
+    query = query.like('dedupe_key', `${partnerId}:%`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingBizCollectTableError(error) || isMissingAppliedTableError(error)) {
+      return { ok: false, tableMissing: true, message: `${tableName} 테이블이 없습니다.` };
+    }
+    return { ok: false, error: error.message || '삭제 대상 조회 실패' };
+  }
+
+  const ids = (data || []).map(row => row.id).filter(Boolean);
+  if (!ids.length) {
+    return {
+      ok: true,
+      collectDate: date,
+      partnerId: partnerId || null,
+      deletedCount: 0,
+      message: '삭제할 데이터가 없습니다.'
+    };
+  }
+
+  let deletedCount = 0;
+  const chunkSize = 200;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const { error: deleteError } = await supabase.from(tableName).delete().in('id', chunk);
+    if (deleteError) {
+      return { ok: false, error: deleteError.message || '삭제 실패', deletedCount };
+    }
+    deletedCount += chunk.length;
+  }
+
+  console.log(`[BREM][purge] collect_date=${date} partner=${partnerId || 'all'} deleted=${deletedCount}`);
+
+  return {
+    ok: true,
+    collectDate: date,
+    partnerId: partnerId || null,
+    deletedCount,
+    message: partnerId
+      ? `${date} · ${partnerId} 데이터 ${deletedCount}건 삭제`
+      : `${date} 수집 데이터 ${deletedCount}건 전체 삭제`
+  };
+}
+
 async function getPartnerListForAdmin(collectDate, options = {}) {
   const supabase = getServiceClient();
   const appliedOnly = Boolean(options.appliedOnly);
@@ -1714,11 +1991,40 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
     partners.set(partnerId, pickBestPartnerName(partners.get(partnerId), label));
   });
 
+  const contamination = appliedOnly
+    ? { duplicateGroups: [], needsScrub: false, partnerStats: [] }
+    : await analyzePartnerContamination(date, { appliedOnly: false });
+  const statsByPartner = new Map((contamination.partnerStats || []).map(row => [row.partnerId, row]));
+
   const items = sortPartnersForAdmin(
-    Array.from(partners.entries()).map(([partnerId, partnerName]) => ({ partnerId, partnerName }))
+    Array.from(partners.entries()).map(([partnerId, partnerName]) => {
+      const stat = statsByPartner.get(partnerId);
+      const duplicateGroup = (contamination.duplicateGroups || []).find(group =>
+        group.removePartnerIds.includes(partnerId) || group.keepPartnerId === partnerId
+      );
+      return {
+        partnerId,
+        partnerName,
+        riderCount: Number(stat?.riderCount || 0),
+        contaminated: duplicateGroup ? duplicateGroup.removePartnerIds.includes(partnerId) : false,
+        duplicateOf: duplicateGroup && duplicateGroup.removePartnerIds.includes(partnerId)
+          ? duplicateGroup.keepPartnerName || duplicateGroup.keepPartnerId
+          : null
+      };
+    })
   );
 
-  return { ok: true, collectDate: date, partners: items, count: items.length, appliedOnly };
+  return {
+    ok: true,
+    collectDate: date,
+    partners: items,
+    count: items.length,
+    appliedOnly,
+    contamination: {
+      needsScrub: Boolean(contamination.needsScrub),
+      duplicateGroups: contamination.duplicateGroups || []
+    }
+  };
 }
 
 async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
@@ -1847,6 +2153,9 @@ module.exports = {
   getLatestMenuCollectStatus,
   getCollectItemsForAdmin,
   getPartnerListForAdmin,
+  analyzePartnerContamination,
+  scrubCrossPartnerDuplicates,
+  purgeBizCollectDate,
   readAppliedBaeminDelivery,
   applyBaeminDelivery,
   BAEMIN_APPLIED_SETTINGS_KEY

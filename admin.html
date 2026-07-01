@@ -649,6 +649,7 @@
             <button type="button" class="small-btn" id="baeminDeliveryManualCookieSaveBtn">비상용 쿠키 저장</button>
           </details>
           <div id="baeminDeliveryCollectResult" class="baemin-collect-result" hidden></div>
+          <div id="baeminDeliveryContaminationStatus" class="baemin-contamination-banner" hidden></div>
         </article>
 
         <article class="card" id="baeminDeliveryApplyCard">
@@ -663,6 +664,10 @@
         </article>
 
         <nav id="baeminBizPartnerSubtabBar" class="baemin-partner-tab-bar baemin-partner-tab-bar--scroll" hidden aria-label="협력사"></nav>
+        <div class="form-row baemin-partner-toolbar" id="baeminBizPartnerToolbar" hidden>
+          <button type="button" class="small-btn" id="baeminDeliveryScrubDupBtn">협력사 중복 데이터 정리</button>
+          <button type="button" class="small-btn" id="baeminDeliveryPurgeCollectBtn">수집일 데이터 전체 삭제</button>
+        </div>
         <nav id="baeminBizMenuSubtabBar" class="baemin-subtab-bar" hidden aria-label="배달 메뉴">
           <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
           <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
@@ -4937,7 +4942,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260703d"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260703e"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

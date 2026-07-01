@@ -589,6 +589,27 @@ async function applyToErp(accessToken, options = {}) {
   });
 }
 
+async function scrubDuplicates(accessToken, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { scrubCrossPartnerDuplicates } = require('./baemin-collect-pipeline');
+  return scrubCrossPartnerDuplicates(options.collectDate, {
+    appliedOnly: Boolean(options.appliedOnly)
+  });
+}
+
+async function purgeCollectDate(accessToken, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { purgeBizCollectDate } = require('./baemin-collect-pipeline');
+  return purgeBizCollectDate(options.collectDate, {
+    partnerId: options.partnerId,
+    appliedOnly: Boolean(options.appliedOnly)
+  });
+}
+
 module.exports = {
   fetchAllDeliveryStatus,
   collectFromApi,
@@ -599,6 +620,8 @@ module.exports = {
   getCollectItems,
   getPartnerList,
   applyToErp,
+  scrubDuplicates,
+  purgeCollectDate,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,

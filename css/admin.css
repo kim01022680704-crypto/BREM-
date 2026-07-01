@@ -2650,6 +2650,30 @@ textarea {
   background: rgba(120, 53, 15, 0.18);
 }
 
+.baemin-contamination-banner {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.18);
+  font-size: 0.92rem;
+}
+
+.baemin-contamination-banner ul {
+  margin: 8px 0 0;
+  padding-left: 1.2rem;
+}
+
+.baemin-partner-toolbar {
+  margin: 0 0 12px;
+  gap: 8px;
+}
+
+.baemin-partner-tab-bar .promotion-tab.is-contaminated {
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fbbf24;
+}
+
 .baemin-subtab-bar {
   display: flex;
   flex-wrap: wrap;

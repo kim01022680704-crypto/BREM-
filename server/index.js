@@ -955,6 +955,44 @@ app.post('/api/admin/baemin-delivery/apply', async (req, res) => {
   }
 });
 
+app.post('/api/admin/baemin-delivery/scrub-duplicates', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.scrubDuplicates(getBearerToken(req), {
+      collectDate: body.collectDate || body.captureDate,
+      appliedOnly: Boolean(body.appliedOnly)
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '협력사 중복 정리에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/purge-collect', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.purgeCollectDate(getBearerToken(req), {
+      collectDate: body.collectDate || body.captureDate,
+      partnerId: body.partnerId
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '수집 데이터 삭제에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/rider-view/status', async (req, res) => {
   try {
     const result = await riderPublishAdmin.getRiderViewPublishStatus(getBearerToken(req));

@@ -15,6 +15,7 @@
     activePartnerId: '',
     activeMenu: 'delivery_status',
     partners: [],
+    contamination: null,
     appliedCollectDate: '',
     bizPreviewCollectDate: '',
     dataCache: {
@@ -193,6 +194,35 @@
     return String(state.activePartnerId || '').trim();
   }
 
+  function renderContaminationBanner(contamination) {
+    const el = $('baeminDeliveryContaminationStatus');
+    const toolbar = $('baeminBizPartnerToolbar');
+    if (!el || isViewSection()) return;
+
+    const needsScrub = Boolean(contamination?.needsScrub);
+    if (toolbar) toolbar.hidden = !state.partners.length;
+
+    if (!needsScrub) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+
+    const groups = contamination.duplicateGroups || [];
+    const lines = groups.map(group => {
+      const removed = (group.removePartnerNames || group.removePartnerIds || []).join(', ');
+      const kept = group.keepPartnerName || group.keepPartnerId || '-';
+      return `<li><strong>${removed}</strong> — 라이더 ${formatNumber(group.riderCount || 0)}명이 <strong>${kept}</strong> 과 동일 (세션 미반영 중복)</li>`;
+    }).join('');
+
+    el.hidden = false;
+    el.innerHTML = `
+      <strong>협력사별 데이터가 섞여 있습니다</strong>
+      <p class="form-help">예전 수집 때 배민 세션이 협력사 전환 없이 저장된 중복입니다. 탭을 바꿔도 같은 라이더가 보이면 아래 [협력사 중복 데이터 정리] 후 다시 수집하세요.</p>
+      <ul>${lines}</ul>
+    `;
+  }
+
   function renderPartnerTabs(partners = []) {
     const ui = tableUiConfig();
     const bar = $(ui.partnerBarId);
@@ -201,6 +231,8 @@
     if (!state.partners.length) {
       bar.hidden = true;
       bar.innerHTML = '';
+      const toolbar = $('baeminBizPartnerToolbar');
+      if (toolbar) toolbar.hidden = true;
       if (!isViewSection()) {
         clearBizPreviewTables();
         updatePanelVisibility();
@@ -212,8 +244,12 @@
     bar.innerHTML = state.partners.map(partner => {
       const id = partner.partnerId;
       const label = partner.partnerName || id;
+      const count = Number(partner.riderCount || 0);
+      const countLabel = count > 0 ? ` (${formatNumber(count)})` : '';
       const active = state.activePartnerId === id ? ' is-active' : '';
-      return `<button type="button" class="promotion-tab${active}" data-baemin-partner="${id}" title="${label} (${id})">${label}</button>`;
+      const contaminated = partner.contaminated ? ' is-contaminated' : '';
+      const dupHint = partner.duplicateOf ? ` · ${partner.duplicateOf}와 중복` : '';
+      return `<button type="button" class="promotion-tab${active}${contaminated}" data-baemin-partner="${id}" title="${label} (${id})${dupHint}">${label}${countLabel}</button>`;
     }).join('');
 
     bar.querySelectorAll('[data-baemin-partner]').forEach(btn => {
@@ -255,11 +291,13 @@
       setBizCaptureDate(result.collectDate);
     }
     const partners = result.ok ? (result.partners || []) : [];
+    state.contamination = result.contamination || null;
     const nextCacheKey = buildCacheKey();
     if (state.dataCache.key && state.dataCache.key !== nextCacheKey) {
       invalidateDataCache();
     }
     renderPartnerTabs(partners);
+    renderContaminationBanner(state.contamination);
     if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
       state.activePartnerId = '';
     }
@@ -947,7 +985,7 @@
       menuResults
     });
     setBizCaptureDate(result.collectDate || captureDate);
-    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''} · 아래 미리보기 확인 후 [적용하기]`);
+    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''}${result.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(result.scrubResult.deletedCount)}건` : ''} · 아래 미리보기 확인 후 [적용하기]`);
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
@@ -1264,6 +1302,56 @@
     await loadPartnerBundle(partnerId, sourceMenu);
   }
 
+  async function scrubDuplicatePartners() {
+    if (state.loading || state.collecting) return;
+    const captureDate = resolveBizCaptureDate();
+    if (!window.confirm(`${captureDate} 수집 데이터에서 협력사 간 동일 라이더 중복을 정리합니다.\n가장 먼저 수집된 협력사만 남기고 나머지 중복 협력사 데이터를 삭제합니다.\n계속할까요?`)) {
+      return;
+    }
+
+    setLoading(true);
+    const result = await adminApi('/api/admin/baemin-delivery/scrub-duplicates', {
+      method: 'POST',
+      body: JSON.stringify({ collectDate: captureDate })
+    });
+    setLoading(false);
+
+    if (!result.ok) {
+      showToast(result.message || result.error || '중복 정리에 실패했습니다.');
+      return;
+    }
+
+    showToast(result.message || `중복 정리 완료 — ${formatNumber(result.deletedCount || 0)}건 삭제`);
+    invalidateDataCache();
+    state.activePartnerId = '';
+    await loadAllSubtabData();
+  }
+
+  async function purgeCollectDateData() {
+    if (state.loading || state.collecting) return;
+    const captureDate = resolveBizCaptureDate();
+    if (!window.confirm(`${captureDate} 수집 데이터를 전부 삭제합니다.\n삭제 후 [배민 전체 데이터 수집]으로 다시 받아야 합니다.\n계속할까요?`)) {
+      return;
+    }
+
+    setLoading(true);
+    const result = await adminApi('/api/admin/baemin-delivery/purge-collect', {
+      method: 'POST',
+      body: JSON.stringify({ collectDate: captureDate })
+    });
+    setLoading(false);
+
+    if (!result.ok) {
+      showToast(result.message || result.error || '삭제에 실패했습니다.');
+      return;
+    }
+
+    showToast(result.message || `수집 데이터 ${formatNumber(result.deletedCount || 0)}건 삭제`);
+    invalidateDataCache();
+    state.activePartnerId = '';
+    await loadAllSubtabData();
+  }
+
   async function applyToErp() {
     if (state.applying || state.loading) return;
     const captureDate = resolveBizCaptureDate();
@@ -1396,6 +1484,14 @@
 
     $('baeminDeliveryApplyBtn')?.addEventListener('click', () => {
       void applyToErp();
+    });
+
+    $('baeminDeliveryScrubDupBtn')?.addEventListener('click', () => {
+      void scrubDuplicatePartners();
+    });
+
+    $('baeminDeliveryPurgeCollectBtn')?.addEventListener('click', () => {
+      void purgeCollectDateData();
     });
 
     $('baeminDeliveryCaptureDate')?.addEventListener('change', () => {
