@@ -212,14 +212,26 @@
     const lines = groups.map(group => {
       const removed = (group.removePartnerNames || group.removePartnerIds || []).join(', ');
       const kept = group.keepPartnerName || group.keepPartnerId || '-';
-      return `<li><strong>${removed}</strong> — 라이더 ${formatNumber(group.riderCount || 0)}명이 <strong>${kept}</strong> 과 동일 (세션 미반영 중복)</li>`;
+      const menus = (group.menus || ['delivery_status']).map(menu => {
+        if (menu === 'daily_history') return '일별';
+        if (menu === 'rider_history') return '라이더별';
+        return '배달현황';
+      }).join('·');
+      return `<li><strong>${removed}</strong> — ${menus} 데이터가 <strong>${kept}</strong> 과 동일</li>`;
+    }).join('');
+
+    const inconsistent = contamination.inconsistentPartners || [];
+    const partialLines = inconsistent.map(row => {
+      const counts = row.menuCounts || {};
+      return `<li><strong>${row.partnerName || row.partnerId}</strong> — 배달 ${formatNumber(counts.delivery_status || 0)} · 일별 ${formatNumber(counts.daily_history || 0)} · 라이더 ${formatNumber(counts.rider_history || 0)} (메뉴별 건수 불일치)</li>`;
     }).join('');
 
     el.hidden = false;
     el.innerHTML = `
       <strong>협력사별 데이터가 섞여 있습니다</strong>
-      <p class="form-help">예전 수집 때 배민 세션이 협력사 전환 없이 저장된 중복입니다. 탭을 바꿔도 같은 라이더가 보이면 아래 [협력사 중복 데이터 정리] 후 다시 수집하세요.</p>
-      <ul>${lines}</ul>
+      <p class="form-help">배달현황만 막히고 일별/라이더 데이터가 다른 협력사 이름으로 저장된 경우가 있습니다. 아래 [협력사 중복 데이터 정리] 후 [수집일 데이터 전체 삭제] → 다시 수집하세요.</p>
+      ${lines ? `<ul>${lines}</ul>` : ''}
+      ${partialLines ? `<ul>${partialLines}</ul>` : ''}
     `;
   }
 
@@ -245,11 +257,16 @@
       const id = partner.partnerId;
       const label = partner.partnerName || id;
       const count = Number(partner.riderCount || 0);
-      const countLabel = count > 0 ? ` (${formatNumber(count)})` : '';
+      const menuCounts = partner.menuCounts || {};
+      const menuHint = menuCounts.delivery_status || menuCounts.daily_history || menuCounts.rider_history
+        ? `배달 ${formatNumber(menuCounts.delivery_status || 0)} · 일별 ${formatNumber(menuCounts.daily_history || 0)} · 라이더 ${formatNumber(menuCounts.rider_history || 0)}`
+        : (count > 0 ? `${formatNumber(count)}명` : '');
+      const countLabel = menuHint ? ` (${menuHint})` : '';
       const active = state.activePartnerId === id ? ' is-active' : '';
-      const contaminated = partner.contaminated ? ' is-contaminated' : '';
+      const contaminated = partner.contaminated || partner.inconsistent ? ' is-contaminated' : '';
       const dupHint = partner.duplicateOf ? ` · ${partner.duplicateOf}와 중복` : '';
-      return `<button type="button" class="promotion-tab${active}${contaminated}" data-baemin-partner="${id}" title="${label} (${id})${dupHint}">${label}${countLabel}</button>`;
+      const partialHint = partner.inconsistent ? ' · 메뉴 불일치' : '';
+      return `<button type="button" class="promotion-tab${active}${contaminated}" data-baemin-partner="${id}" title="${label} (${id})${dupHint}${partialHint}">${label}${countLabel}</button>`;
     }).join('');
 
     bar.querySelectorAll('[data-baemin-partner]').forEach(btn => {

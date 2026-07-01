@@ -535,7 +535,33 @@ function extractCollectItemsFingerprint(sourceId, items = []) {
       `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`
     ).join('|');
   }
+  if (sourceId === 'rider_history') {
+    return rows.slice(0, 8).map(row => {
+      const acceptance = row?.deliveryAcceptanceCount || {};
+      const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+      return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
+    }).join('|');
+  }
   return '';
+}
+
+function isPartnerSessionMismatchResult(result) {
+  const message = String(result?.message || result?.error || '');
+  return /세션 미반영|동일 fingerprint|협력사 전환 후 동일|협력사 전환 실패/i.test(message);
+}
+
+function rememberReferenceMenuFingerprint(context, sourceId, items = []) {
+  if (!context || Number(context.partnerCollectIndex || 0) !== 0) return;
+  const fingerprint = extractCollectItemsFingerprint(sourceId, items);
+  if (!fingerprint) return;
+  if (!context.referenceMenuFingerprints) context.referenceMenuFingerprints = {};
+  context.referenceMenuFingerprints[sourceId] = fingerprint;
+}
+
+function shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, context = {}) {
+  if (!itemFingerprint || Number(context.partnerCollectIndex || 0) <= 0) return false;
+  const referenceFp = String(context.referenceMenuFingerprints?.[sourceId] || '').trim();
+  return Boolean(referenceFp && referenceFp === itemFingerprint);
 }
 
 async function collectSource(sourceId, sessionCookie, collectDate, registry = {}, context = {}) {
@@ -837,19 +863,14 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   const itemFingerprint = extractCollectItemsFingerprint(sourceId, items);
-  const baselineFp = String(context.partnerDataFingerprint || '').trim();
-  if (
-    baselineFp
-    && itemFingerprint
-    && itemFingerprint === baselineFp
-    && Number(context.partnerCollectIndex || 0) > 0
-  ) {
+  if (shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, context)) {
     console.warn(`[BREM][collect] ${sourceId} 동일 fingerprint — 협력사 세션 미반영, 저장 생략 (partner=${registry.centerContext?.partnerId || '-'})`);
     return {
       ok: false,
       sourceMenu: sourceId,
       label: source.label,
       message: '협력사 전환 후 동일 데이터(세션 미반영)',
+      sessionMismatch: true,
       sourceUrl: fetched.meta?.sourceUrl || ''
     };
   }
@@ -879,6 +900,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   if (!saveResult.ok) {
     return { ...saveResult, sourceMenu: sourceId, label: source.label, rawItems: items };
   }
+
+  rememberReferenceMenuFingerprint(context, sourceId, items);
 
   const weekStart = context.weekStart || context.dateRange?.weekStart || collectDate;
   const statsSave = await saveStatsForSource(
@@ -928,6 +951,7 @@ function resetPartnerSpaCapture(context, registry) {
     context.dailyItems = null;
     context.dailySourceUrl = '';
     context.shrunkHistoryToDate = null;
+    context.partnerDataFingerprint = '';
   }
   if (!registry?.endpoints) return;
   Object.keys(registry.endpoints).forEach(key => {
@@ -966,6 +990,7 @@ async function runPartnerSourceCollectLoop({
   let anySuccess = false;
   let sessionExpired = false;
   let authFailureCount = 0;
+  let partnerCollectBlocked = false;
   const partner = readPartnerContext(registry, pipelineContext);
 
   function isAuthFailure(result) {
@@ -975,6 +1000,17 @@ async function runPartnerSourceCollectLoop({
   }
 
   for (const sourceDef of sourceDefs) {
+    if (partnerCollectBlocked) {
+      results[sourceDef.id] = {
+        ok: false,
+        sourceMenu: sourceDef.id,
+        label: sourceDef.label,
+        message: '협력사 전환 실패로 이 협력사 후속 메뉴 생략',
+        skipped: true
+      };
+      continue;
+    }
+
     const result = await collectSource(sourceDef.id, cookie, collectDate, registry, pipelineContext);
     results[sourceDef.id] = {
       ...result,
@@ -984,6 +1020,12 @@ async function runPartnerSourceCollectLoop({
 
     if (sourceDef.id === 'delivery_status' && result.ok && result.rawItems?.length) {
       pipelineContext.partnerDataFingerprint = extractCollectItemsFingerprint('delivery_status', result.rawItems);
+      rememberReferenceMenuFingerprint(pipelineContext, 'delivery_status', result.rawItems);
+    }
+
+    if (isPartnerSessionMismatchResult(result)) {
+      partnerCollectBlocked = true;
+      console.warn(`[BREM][collect] ${partner.partnerId} — ${sourceDef.id} 세션 미반영, 동일 협력사 후속 메뉴 생략`);
     }
 
     if (sourceDef.id === 'daily_history' && result.ok) {
@@ -1099,7 +1141,8 @@ async function runFullCollectPipeline(options = {}) {
     menuDateRanges,
     deliveryStatusContext: menuDateRanges.delivery_status,
     weekStart: historyDateRange.weekStart,
-    shrunkHistoryToDate: null
+    shrunkHistoryToDate: null,
+    referenceMenuFingerprints: {}
   };
   let partnersToCollect = [];
 
@@ -1688,6 +1731,70 @@ function riderSetFingerprint(rows = []) {
   return ids.join(',');
 }
 
+function dailySetFingerprint(rows = []) {
+  return rows
+    .map(row => {
+      const date = String(row?.parsed_json?.deliveryDate || row?.parsed_json?.businessDay || row?.collect_date || '').slice(0, 10);
+      const complete = Number(row?.parsed_json?.totalComplete ?? row?.parsed_json?.completeCount ?? 0);
+      return `${date}:${complete}`;
+    })
+    .filter(token => !token.startsWith(':'))
+    .sort()
+    .join('|');
+}
+
+function buildDuplicateGroupsFromPartnerFingerprints(partnerStats, fingerprintKey) {
+  const fpToPartners = new Map();
+  partnerStats.forEach(stat => {
+    const fp = String(stat[fingerprintKey] || '').trim();
+    const rowCount = fingerprintKey === 'dailyFingerprint'
+      ? Number(stat.menuCounts?.daily_history || 0)
+      : fingerprintKey === 'riderHistoryFingerprint'
+        ? Number(stat.menuCounts?.rider_history || 0)
+        : Number(stat.riderCount || 0);
+    if (!fp || rowCount < 2) return;
+    if (!fpToPartners.has(fp)) fpToPartners.set(fp, []);
+    fpToPartners.get(fp).push({ ...stat, rowCount });
+  });
+
+  const duplicateGroups = [];
+  fpToPartners.forEach((group) => {
+    if (group.length < 2) return;
+    const sorted = group.slice().sort((a, b) => {
+      const ta = String(a.earliestCollectedAt || '');
+      const tb = String(b.earliestCollectedAt || '');
+      if (ta && tb) return ta.localeCompare(tb);
+      return String(a.partnerId).localeCompare(String(b.partnerId));
+    });
+    duplicateGroups.push({
+      riderCount: Number(sorted[0].riderCount || sorted[0].rowCount || 0),
+      rowCount: Number(sorted[0].rowCount || 0),
+      keepPartnerId: sorted[0].partnerId,
+      keepPartnerName: sorted[0].partnerName,
+      removePartnerIds: sorted.slice(1).map(row => row.partnerId),
+      removePartnerNames: sorted.slice(1).map(row => row.partnerName)
+    });
+  });
+  return duplicateGroups;
+}
+
+function mergeDuplicateGroups(groups = []) {
+  const merged = new Map();
+  groups.forEach(group => {
+    const removeIds = [...(group.removePartnerIds || [])].sort().join(',');
+    const key = `${group.keepPartnerId}|${removeIds}`;
+    if (!merged.has(key)) {
+      merged.set(key, { ...group, menus: group.menus || [] });
+      return;
+    }
+    const prev = merged.get(key);
+    prev.menus = Array.from(new Set([...(prev.menus || []), ...(group.menus || [])]));
+    prev.riderCount = Math.max(Number(prev.riderCount || 0), Number(group.riderCount || 0));
+    prev.rowCount = Math.max(Number(prev.rowCount || 0), Number(group.rowCount || 0));
+  });
+  return Array.from(merged.values());
+}
+
 async function analyzePartnerContamination(collectDate, options = {}) {
   const supabase = getServiceClient();
   const appliedOnly = Boolean(options.appliedOnly);
@@ -1703,8 +1810,8 @@ async function analyzePartnerContamination(collectDate, options = {}) {
   const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
   let query = supabase
     .from(tableName)
-    .select('id, partner_id, parsed_json, dedupe_key, rider_user_id, collected_at, source_menu')
-    .eq('source_menu', 'delivery_status')
+    .select('id, partner_id, parsed_json, dedupe_key, rider_user_id, collected_at, source_menu, collect_date')
+    .in('source_menu', ['delivery_status', 'daily_history', 'rider_history'])
     .limit(5000);
 
   if (appliedOnly) {
@@ -1725,60 +1832,84 @@ async function analyzePartnerContamination(collectDate, options = {}) {
     return { ok: false, error: error.message || '중복 분석 실패' };
   }
 
-  const byPartner = new Map();
+  const byPartnerMenu = new Map();
   (data || []).forEach(row => {
     const partnerId = partnerIdFromCollectRow(row);
-    if (!partnerId) return;
-    if (!byPartner.has(partnerId)) byPartner.set(partnerId, []);
-    byPartner.get(partnerId).push(row);
+    const menu = String(row.source_menu || '').trim();
+    if (!partnerId || !menu) return;
+    const key = `${partnerId}|${menu}`;
+    if (!byPartnerMenu.has(key)) byPartnerMenu.set(key, []);
+    byPartnerMenu.get(key).push(row);
   });
 
-  const partnerStats = Array.from(byPartner.entries()).map(([partnerId, rows]) => {
-    const partnerName = String(rows[0]?.parsed_json?.partnerName || '').trim();
-    const earliestCollectedAt = rows.reduce((min, row) => {
+  const partnerMeta = new Map();
+  byPartnerMenu.forEach((rows, key) => {
+    const [partnerId, menu] = key.split('|');
+    if (!partnerMeta.has(partnerId)) {
+      partnerMeta.set(partnerId, {
+        partnerId,
+        partnerName: String(rows[0]?.parsed_json?.partnerName || '').trim() || partnerId,
+        earliestCollectedAt: '',
+        menuCounts: { delivery_status: 0, daily_history: 0, rider_history: 0 },
+        riderCount: 0,
+        rowCount: 0,
+        riderFingerprint: '',
+        dailyFingerprint: '',
+        riderHistoryFingerprint: ''
+      });
+    }
+    const meta = partnerMeta.get(partnerId);
+    meta.menuCounts[menu] = rows.length;
+    meta.rowCount += rows.length;
+    const earliest = rows.reduce((min, row) => {
       const at = String(row.collected_at || '');
       return !min || (at && at < min) ? at : min;
-    }, '');
+    }, meta.earliestCollectedAt || '');
+    meta.earliestCollectedAt = earliest;
+    if (menu === 'delivery_status') {
+      meta.riderCount = rows.length;
+      meta.riderFingerprint = riderSetFingerprint(rows);
+    } else if (menu === 'daily_history') {
+      meta.dailyFingerprint = dailySetFingerprint(rows);
+    } else if (menu === 'rider_history') {
+      meta.riderHistoryFingerprint = riderSetFingerprint(rows);
+    }
+  });
+
+  const partnerStats = Array.from(partnerMeta.values()).map(stat => {
+    const hasDelivery = Number(stat.menuCounts.delivery_status || 0) > 0;
+    const hasDaily = Number(stat.menuCounts.daily_history || 0) > 0;
+    const hasRider = Number(stat.menuCounts.rider_history || 0) > 0;
+    const partialMenus = [hasDelivery, hasDaily, hasRider].filter(Boolean).length;
     return {
-      partnerId,
-      partnerName: partnerName && partnerName !== partnerId ? partnerName : partnerId,
-      riderCount: rows.length,
-      earliestCollectedAt
+      ...stat,
+      inconsistent: partialMenus > 0 && partialMenus < 3
     };
   });
 
-  const fpToPartners = new Map();
-  partnerStats.forEach(stat => {
-    const rows = byPartner.get(stat.partnerId) || [];
-    const fp = riderSetFingerprint(rows);
-    if (!fp || stat.riderCount < 3) return;
-    if (!fpToPartners.has(fp)) fpToPartners.set(fp, []);
-    fpToPartners.get(fp).push(stat);
-  });
+  const duplicateGroups = mergeDuplicateGroups([
+    ...buildDuplicateGroupsFromPartnerFingerprints(
+      partnerStats.filter(stat => stat.riderFingerprint),
+      'riderFingerprint'
+    ).map(group => ({ ...group, menus: ['delivery_status'] })),
+    ...buildDuplicateGroupsFromPartnerFingerprints(
+      partnerStats.filter(stat => stat.dailyFingerprint),
+      'dailyFingerprint'
+    ).map(group => ({ ...group, menus: ['daily_history'] })),
+    ...buildDuplicateGroupsFromPartnerFingerprints(
+      partnerStats.filter(stat => stat.riderHistoryFingerprint),
+      'riderHistoryFingerprint'
+    ).map(group => ({ ...group, menus: ['rider_history'] }))
+  ]);
 
-  const duplicateGroups = [];
-  fpToPartners.forEach((group, fp) => {
-    if (group.length < 2) return;
-    const sorted = group.slice().sort((a, b) => {
-      const ta = String(a.earliestCollectedAt || '');
-      const tb = String(b.earliestCollectedAt || '');
-      if (ta && tb) return ta.localeCompare(tb);
-      return String(a.partnerId).localeCompare(String(b.partnerId));
-    });
-    duplicateGroups.push({
-      riderCount: fp.split(',').filter(Boolean).length,
-      keepPartnerId: sorted[0].partnerId,
-      keepPartnerName: sorted[0].partnerName,
-      removePartnerIds: sorted.slice(1).map(row => row.partnerId),
-      removePartnerNames: sorted.slice(1).map(row => row.partnerName)
-    });
-  });
+  const needsScrub = duplicateGroups.length > 0
+    || partnerStats.some(stat => stat.inconsistent);
 
   return {
     ok: true,
     collectDate: date,
     duplicateGroups,
-    needsScrub: duplicateGroups.length > 0,
+    needsScrub,
     partnerStats,
     appliedOnly
   };
@@ -2006,6 +2137,12 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
         partnerId,
         partnerName,
         riderCount: Number(stat?.riderCount || 0),
+        menuCounts: stat?.menuCounts || {
+          delivery_status: 0,
+          daily_history: 0,
+          rider_history: 0
+        },
+        inconsistent: Boolean(stat?.inconsistent),
         contaminated: duplicateGroup ? duplicateGroup.removePartnerIds.includes(partnerId) : false,
         duplicateOf: duplicateGroup && duplicateGroup.removePartnerIds.includes(partnerId)
           ? duplicateGroup.keepPartnerName || duplicateGroup.keepPartnerId
@@ -2022,7 +2159,14 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
     appliedOnly,
     contamination: {
       needsScrub: Boolean(contamination.needsScrub),
-      duplicateGroups: contamination.duplicateGroups || []
+      duplicateGroups: contamination.duplicateGroups || [],
+      inconsistentPartners: (contamination.partnerStats || [])
+        .filter(stat => stat.inconsistent)
+        .map(stat => ({
+          partnerId: stat.partnerId,
+          partnerName: stat.partnerName,
+          menuCounts: stat.menuCounts
+        }))
     }
   };
 }
