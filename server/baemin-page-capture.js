@@ -171,9 +171,7 @@ function buildProbeUrls(sourceId, dateRange, collectDate = null) {
     ...(source.fallbackApiPaths || [])
   ].filter(Boolean))].filter(isApiProbePath);
 
-  const origins = sourceId === 'delivery_status'
-    ? [...new Set([BAEMIN_API_ORIGIN, BAEMIN_ORIGIN])]
-    : [BAEMIN_API_ORIGIN];
+  const origins = [BAEMIN_API_ORIGIN];
   const pageNumbers = sourceId === 'delivery_status' ? [0] : [0, 1];
   const urls = [];
 
@@ -476,6 +474,117 @@ async function discoverApiUrlViaPage(page, sourceId, dateRange, playwrightContex
   return probeApiFromBrowserTab(page, sourceId, dateRange, playwrightContext, collectDate);
 }
 
+async function captureBrowserMenuApiRequest(page, sourceMenu, dateRange = null, collectDate = null) {
+  if (!page || page.isClosed()) {
+    return { ok: false, message: 'Playwright page 없음' };
+  }
+
+  const { classifyApiUrl } = require('./baemin-collect-sources');
+  const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
+  const sourceId = String(sourceMenu || 'delivery_status').trim();
+  const spaUrl = sourceId === 'delivery_status'
+    ? SAFE_LANDING_URL
+    : buildSpaPageUrl(sourceId, dateRange, collectDate);
+  if (!spaUrl) {
+    return { ok: false, message: `${sourceId} SPA URL 없음` };
+  }
+
+  const captured = [];
+  const onResponse = async response => {
+    try {
+      const url = response.url();
+      if (!url.includes('api-deliverycenter.baemin.com')) return;
+      if (response.status() < 200 || response.status() >= 300) return;
+      const contentType = String(response.headers()['content-type'] || '').toLowerCase();
+      if (!contentType.includes('json')) return;
+      const req = response.request();
+      const bodyText = await response.text().catch(() => '');
+      let payload = null;
+      try {
+        payload = bodyText ? JSON.parse(bodyText) : null;
+      } catch {
+        payload = null;
+      }
+      captured.push({
+        method: req.method(),
+        url,
+        headers: req.headers(),
+        postData: req.postData() || '',
+        status: response.status(),
+        bodyText,
+        payload,
+        sourceMenu: classifyApiUrl(url)
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  page.on('response', onResponse);
+  try {
+    const currentUrl = page.url();
+    if (currentUrl === spaUrl) {
+      console.log(`[BREM][api-capture] reload ${spaUrl}`);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
+        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+      });
+    } else {
+      console.log(`[BREM][api-capture] goto ${spaUrl}`);
+      await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
+        if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
+      });
+    }
+    await delay(1500);
+  } catch (error) {
+    console.warn(`[BREM][api-capture] navigation failed: ${error.message || error}`);
+  } finally {
+    page.off('response', onResponse);
+  }
+
+  const hit = captured.find(entry => entry.sourceMenu === sourceId && /\/management\/delivery-status/i.test(entry.url))
+    || captured.find(entry => entry.sourceMenu === sourceId)
+    || captured.find(entry => /\/v4\/management\/delivery-status/i.test(entry.url))
+    || captured.find(entry => /delivery-status/i.test(entry.url))
+    || captured.find(entry => /fromDate=/i.test(entry.url) && entry.sourceMenu === sourceId);
+
+  if (!hit) {
+    return {
+      ok: false,
+      message: `${sourceId} 브라우저 API 미캡처`,
+      tried: captured.map(row => `${row.method} ${row.url} (${row.status})`)
+    };
+  }
+
+  let pathname = hit.url;
+  try {
+    pathname = new URL(hit.url).pathname;
+  } catch {
+    // ignore
+  }
+
+  const rows = extractDataArray(hit.payload) || [];
+  const totalPage = readTotalPages(hit.payload);
+  console.log(`[BREM][api-capture] ${sourceId} ← ${hit.method} ${hit.url} status=${hit.status} rows=${rows.length}`);
+  console.log(`[BREM][api-capture] request headers=${JSON.stringify(hit.headers || {})}`);
+  console.log(`[BREM][api-capture] request body=${hit.postData || ''}`);
+  return {
+    ok: true,
+    sourceMenu: sourceId,
+    method: hit.method,
+    url: hit.url,
+    sampleUrl: hit.url,
+    headers: hit.headers,
+    requestHeaders: hit.headers,
+    postData: hit.postData,
+    status: hit.status,
+    spaPayload: hit.payload,
+    spaItems: rows,
+    spaTotalPage: totalPage,
+    apiPath: pathname,
+    apiOrigin: new URL(hit.url).origin
+  };
+}
+
 module.exports = {
   SAFE_LANDING_URL,
   buildProbeUrls,
@@ -489,6 +598,7 @@ module.exports = {
   ensureSafeBrowserTab,
   preparePageForCollect,
   navigateAndCaptureApi,
+  captureBrowserMenuApiRequest,
   probeApiFromBrowserTab,
   discoverApiUrlViaPage
 };

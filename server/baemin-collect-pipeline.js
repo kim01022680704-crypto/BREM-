@@ -382,7 +382,7 @@ function applyCaptureToEndpointRegistry(sourceId, registry, capture) {
     sampleUrl: capture.sampleUrl || registry.endpoints[sourceId]?.sampleUrl || null,
     apiPath: apiPath || registry.endpoints[sourceId]?.apiPath || null,
     apiOrigin: apiOrigin || registry.endpoints[sourceId]?.apiOrigin || null,
-    sampleHeaders: capture.requestHeaders || registry.endpoints[sourceId]?.sampleHeaders || null,
+    sampleHeaders: capture.requestHeaders || capture.headers || registry.endpoints[sourceId]?.sampleHeaders || null,
     spaPayload: capture.spaPayload || null,
     spaItems: capture.spaItems || null,
     spaTotalPage: capture.spaTotalPage || null,
@@ -669,9 +669,11 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     const centerHeaders = endpointInfo.sampleHeaders && typeof endpointInfo.sampleHeaders === 'object'
       ? endpointInfo.sampleHeaders
       : null;
+    const cachedCapture = context.spaCapture?.[sourceId] || null;
+    const useExactReplay = Boolean(cachedCapture?.url && cachedCapture?.fromNetworkCapture);
     if (useBrowserSession) {
       const hasPartnerQuery = Boolean(baseQuery.partnerId);
-      console.log(`[BREM][collect:${sourceId}] browser-session — partnerId=${hasPartnerQuery ? baseQuery.partnerId : '(쿠키만)'}`);
+      console.log(`[BREM][collect:${sourceId}] browser-session — partnerId=${hasPartnerQuery ? baseQuery.partnerId : '(쿠키만)'} exactReplay=${useExactReplay}`);
     }
     console.log(`[BREM][collect:${sourceId}] partnerId=${partnerId}`);
     return fetchPaginatedApi({
@@ -679,6 +681,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       apiPath: endpointInfo.apiPath,
       sampleUrl: endpointInfo.sampleUrl,
       sampleHeaders: centerHeaders,
+      replayCapture: useExactReplay ? cachedCapture : null,
+      exactSampleUrl: useExactReplay,
       sessionCookie,
       baseQuery,
       pagination: source.pagination,
@@ -938,13 +942,16 @@ function readPartnerContext(registry, context = {}) {
   };
 }
 
-function resetPartnerSpaCapture(context, registry) {
+function resetPartnerSpaCapture(context, registry, playwrightPage = null) {
   if (context) {
     context.spaCapture = {};
     context.dailyItems = null;
     context.dailySourceUrl = '';
     context.shrunkHistoryToDate = null;
     context.partnerDataFingerprint = '';
+  }
+  if (playwrightPage?.context()) {
+    playwrightPage.context().__bremCapturedApiRequests = {};
   }
   if (!registry?.endpoints) return;
   Object.keys(registry.endpoints).forEach(key => {
@@ -1028,14 +1035,18 @@ async function runPartnerSourceCollectLoop({
           label: sourceDef.label,
           message: reason === 'same_as_baseline'
             ? `${sourceDef.label} API 응답이 이전 협력사와 동일(세션 미반영)`
-            : `${sourceDef.label} API 확인 실패 (${reason})`,
+            : reason === 'empty_data'
+              ? `${sourceDef.label} API 데이터 0건`
+              : `${sourceDef.label} API 확인 실패 (${reason})`,
           sessionMismatch: true
         };
         console.warn(`[BREM][collect] ${partner.partnerId} — ${sourceDef.id} API 확인 실패 (${reason})`);
         continue;
       }
-      if (pipelineContext.spaCapture) {
-        delete pipelineContext.spaCapture[sourceDef.id];
+      if (menuReady.captured) {
+        applyCaptureToEndpointRegistry(sourceDef.id, registry, menuReady.captured);
+        pipelineContext.spaCapture = pipelineContext.spaCapture || {};
+        pipelineContext.spaCapture[sourceDef.id] = menuReady.captured;
       }
       console.log(`[BREM][collect] ${partner.partnerName || partner.partnerId} — ${sourceDef.label} API 확인 완료, 수집 시작`);
     }
@@ -1160,6 +1171,19 @@ async function runFullCollectPipeline(options = {}) {
     };
   }
 
+  if (playwrightPage && !playwrightPage.isClosed?.()) {
+    const { readCenterSessionCookie } = require('./baemin-center-context');
+    const centerSession = await readCenterSessionCookie(playwrightPage);
+    if (!centerSession) {
+      return {
+        ok: false,
+        message: 'CENTER_SESSION 쿠키가 없습니다. 배민 브라우저에서 협력사를 선택·로그인한 뒤 다시 시도하세요.',
+        results,
+        sessionExpired: false
+      };
+    }
+  }
+
   const registry = sanitizeApiRegistry(await getApiRegistry());
   if (!registry.endpoints?.rider_history?.sampleUrl && registry.endpoints?.rider_history?.fallbackFromDaily) {
     delete registry.endpoints.rider_history.fallbackFromDaily;
@@ -1240,12 +1264,70 @@ async function runFullCollectPipeline(options = {}) {
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
       pipelineContext.currentPartnerMenuFingerprints = {};
-      resetPartnerSpaCapture(pipelineContext, registry);
+      resetPartnerSpaCapture(pipelineContext, registry, playwrightPage);
 
       const label = partnerTotal > 0
         ? `[${partnerIndex + 1}/${partnerTotal}] ${registry.centerContext.partnerName}`
         : registry.centerContext.partnerName;
       console.log(`[BREM][collect] ${label} (${registry.centerContext.partnerId}) — 현재 협력사 확인 완료`);
+
+      if (playwrightPage && !playwrightPage.isClosed?.() && registry.centerContext.partnerId) {
+        const { ensurePartnerSessionReady } = require('./baemin-center-context');
+        const verified = await ensurePartnerSessionReady(
+          playwrightPage,
+          registry.centerContext.partnerId,
+          {
+            baselineFingerprint: pipelineContext.lastPartnerMenuFingerprints?.delivery_status || '',
+            dateRange: historyDateRange,
+            switchCaptured: playwrightPage.context()?.__bremLastSwitchCaptured || [],
+            requireSessionChange: partnerIndex > 0
+          }
+        );
+        if (!verified.ok) {
+          const failMsg = `배달현황 API 검증 실패 (${verified.reason || 'unknown'})`;
+          console.warn(`[BREM][collect] ${label} — ${failMsg}`);
+          return {
+            results: {
+              delivery_status: {
+                ok: false,
+                sourceMenu: 'delivery_status',
+                label: '배달현황',
+                message: failMsg,
+                sessionMismatch: true
+              },
+              daily_history: {
+                ok: false,
+                sourceMenu: 'daily_history',
+                label: '일별 배달내역',
+                message: '배달현황 검증 실패로 생략',
+                skipped: true
+              },
+              rider_history: {
+                ok: false,
+                sourceMenu: 'rider_history',
+                label: '라이더별 배달내역',
+                message: '배달현황 검증 실패로 생략',
+                skipped: true
+              }
+            },
+            anySuccess: false,
+            sessionExpired: false,
+            authFailureCount: 0,
+            currentPartnerMenuFingerprints: {}
+          };
+        }
+        if (verified.captured) {
+          applyCaptureToEndpointRegistry('delivery_status', registry, verified.captured);
+          pipelineContext.spaCapture = pipelineContext.spaCapture || {};
+          pipelineContext.spaCapture.delivery_status = verified.captured;
+        }
+        const capturedStore = playwrightPage.context()?.__bremCapturedApiRequests || {};
+        Object.keys(capturedStore).forEach(menuId => {
+          applyCaptureToEndpointRegistry(menuId, registry, capturedStore[menuId]);
+        });
+        console.log(`[BREM][collect] ${label} — 배달현황 API 세션 확인 완료`);
+      }
+
       console.log(`[BREM][collect] ${label} — 배달현황 수집 시작`);
 
       if (playwrightPage) {
@@ -1283,7 +1365,7 @@ async function runFullCollectPipeline(options = {}) {
         results: loopResult.results
       });
 
-      console.log(`[BREM][collect] ${label} — 저장 완료 (partner_id=${registry.centerContext.partnerId}, rows=${partnerSummaries[partnerSummaries.length - 1].savedCount})`);
+      console.log(`[BREM][collect] ${label} — ${loopResult.anySuccess ? '저장 완료' : '수집 실패'} (partner_id=${registry.centerContext.partnerId}, rows=${partnerSummaries[partnerSummaries.length - 1].savedCount})`);
 
       return loopResult;
     }
@@ -1292,7 +1374,6 @@ async function runFullCollectPipeline(options = {}) {
       const {
         selectPartnerCenter,
         readActivePartnerDisplayFromPage,
-        ensurePartnerSessionReady,
         isValidPartnerId
       } = require('./baemin-center-context');
       partnersToCollect = partnersToCollect.filter(partner => isValidPartnerId(partner?.partnerId));
@@ -1316,7 +1397,10 @@ async function runFullCollectPipeline(options = {}) {
           }
 
           console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 시작 (${partner.partnerId})`);
-          const active = await selectPartnerCenter(playwrightPage, partner);
+          const active = await selectPartnerCenter(playwrightPage, {
+            ...partner,
+            requireSessionChange: index > 0
+          });
           registry.centerContext = {
             centerId: active.centerId || partner.partnerId,
             managementId: active.managementId || partner.partnerId,
@@ -1331,20 +1415,6 @@ async function runFullCollectPipeline(options = {}) {
             throw new Error(`협력사 UI 확인 실패 (요청 ${partner.partnerId}, 화면 ${uiNow.partnerId})`);
           }
           console.log(`[BREM][collect] ${progressLabel} — 협력사 전환 완료 · ${uiNow.partnerName || partner.partnerName} (${partner.partnerId})`);
-
-          const verified = await ensurePartnerSessionReady(
-            playwrightPage,
-            partner.partnerId,
-            {
-              baselineFingerprint: lastPartnerMenuFingerprints.delivery_status || '',
-              dateRange: historyDateRange,
-              switchCaptured: playwrightPage.context()?.__bremLastSwitchCaptured || []
-            }
-          );
-          if (!verified.ok) {
-            throw new Error(`협력사 전환 후 배달현황 API 검증 실패 (${verified.reason || 'unknown'})`);
-          }
-          console.log(`[BREM][collect] ${progressLabel} — 배달현황 API 세션 확인 완료`);
 
           pipelineContext.partnerCollectIndex = index;
           pipelineContext.lastPartnerMenuFingerprints = { ...lastPartnerMenuFingerprints };

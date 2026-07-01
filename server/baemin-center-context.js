@@ -453,7 +453,8 @@ async function capturePartnerSwitchRequests(page, fn) {
     pending.set(key, {
       method,
       url,
-      postData: request.postData() || ''
+      postData: request.postData() || '',
+      headers: request.headers()
     });
   };
   const onResponse = async response => {
@@ -468,13 +469,19 @@ async function capturePartnerSwitchRequests(page, fn) {
       postData: req.postData() || ''
     };
     let bodyText = '';
+    let payload = null;
     try { bodyText = await response.text(); } catch { /* ignore */ }
+    try { payload = bodyText ? JSON.parse(bodyText) : null; } catch { payload = null; }
+    const { classifyApiUrl } = require('./baemin-collect-sources');
     captured.push({
       method: base.method,
       url: base.url,
       postData: base.postData,
+      headers: base.headers || req.headers(),
       status: response.status(),
-      bodyText: bodyText.slice(0, 500)
+      bodyText: bodyText.slice(0, 8000),
+      payload,
+      sourceMenu: classifyApiUrl(url)
     });
     pending.delete(key);
   };
@@ -522,14 +529,15 @@ function pickSwitchReplayRequest(captured = [], targetId = '') {
 async function replayCapturedCenterSwitch(page, captured = [], targetId = '') {
   const row = pickSwitchReplayRequest(captured, targetId);
   if (!row?.url) return false;
-  const replay = await page.evaluate(async ({ url, method, postData }) => {
+  const replay = await page.evaluate(async ({ url, method, postData, headers }) => {
     try {
       const response = await fetch(url, {
         method,
         credentials: 'include',
         headers: {
           Accept: 'application/json, text/plain, */*',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(headers && typeof headers === 'object' ? headers : {})
         },
         body: postData || undefined
       });
@@ -537,7 +545,12 @@ async function replayCapturedCenterSwitch(page, captured = [], targetId = '') {
     } catch (error) {
       return { ok: false, status: 0, error: error.message || 'replay failed' };
     }
-  }, { url: row.url, method: row.method, postData: row.postData || '' }).catch(() => ({ ok: false }));
+  }, {
+    url: row.url,
+    method: row.method,
+    postData: row.postData || '',
+    headers: row.headers || {}
+  }).catch(() => ({ ok: false }));
   if (replay.ok) {
     console.log(`[BREM][center] 캡처 API 재실행: ${row.method} ${row.url}`);
     await delay(1500);
@@ -703,40 +716,258 @@ async function clickPartnerConfirmButton(page) {
   return false;
 }
 
+function findSuccessfulMenuCapture(capturedList, menu) {
+  const { classifyApiUrl } = require('./baemin-collect-sources');
+  const menuId = String(menu || 'delivery_status').trim();
+  const rows = (capturedList || []).filter(row => {
+    const status = Number(row.status || 0);
+    if (status < 200 || status >= 300) return false;
+    const sourceMenu = row.sourceMenu || classifyApiUrl(row.url || '');
+    if (sourceMenu === menuId) return true;
+    if (menuId === 'delivery_status' && /\/management\/delivery-status/i.test(String(row.url || ''))) return true;
+    if (menuId === 'daily_history' && /\/daily-delivery-status/i.test(String(row.url || ''))) return true;
+    if (menuId === 'rider_history' && /\/rider-delivery-status/i.test(String(row.url || ''))) return true;
+    return false;
+  });
+  return rows[rows.length - 1] || null;
+}
+
+function normalizeNetworkRowToCaptured(row, sourceMenu = '') {
+  const { classifyApiUrl } = require('./baemin-collect-sources');
+  const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
+  let payload = row?.payload || null;
+  if (!payload && row?.bodyText) {
+    try { payload = JSON.parse(row.bodyText); } catch { payload = null; }
+  }
+  const menu = String(sourceMenu || row?.sourceMenu || classifyApiUrl(row?.url || '') || '').trim();
+  const items = payload ? (extractDataArray(payload) || []) : [];
+  let apiPath = '';
+  let apiOrigin = '';
+  try {
+    const parsed = new URL(String(row.url || ''));
+    apiPath = parsed.pathname;
+    apiOrigin = parsed.origin;
+  } catch {
+    // ignore
+  }
+  return {
+    ok: true,
+    sourceMenu: menu,
+    method: row?.method || 'GET',
+    url: row?.url,
+    sampleUrl: row?.url,
+    headers: row?.headers || {},
+    requestHeaders: row?.headers || {},
+    postData: row?.postData || '',
+    status: Number(row?.status || 0),
+    spaPayload: payload,
+    spaItems: items,
+    spaTotalPage: payload ? readTotalPages(payload) : 1,
+    apiPath,
+    apiOrigin,
+    fromNetworkCapture: true
+  };
+}
+
+async function assertCenterSessionExists(page) {
+  const session = String(await readCenterSessionCookie(page) || '').trim();
+  if (!session) {
+    return { ok: false, reason: 'CENTER_SESSION 없음' };
+  }
+  return { ok: true, session };
+}
+
+async function readPartnerIdsForApi(page) {
+  const ui = await readActivePartnerDisplayFromPage(page);
+  const center = await resolveCenterContextViaPage(page).catch(() => null);
+  const partnerId = String(ui.partnerId || center?.partnerId || center?.centerId || '').trim();
+  const centerId = String(center?.centerId || partnerId || '').trim();
+  const managementId = String(center?.managementId || centerId || '').trim();
+  return {
+    partnerId,
+    centerId,
+    managementId,
+    partnerName: ui.partnerName || center?.partnerName || partnerId
+  };
+}
+
+function logBaeminApiRequest(phase, details = {}) {
+  console.log(`[BREM][api-request] ${phase}`);
+  console.log(`[BREM][api-request] partnerId=${details.partnerId || '-'} centerId=${details.centerId || '-'} managementId=${details.managementId || '-'}`);
+  console.log(`[BREM][api-request] method=${details.method || 'GET'}`);
+  console.log(`[BREM][api-request] url=${details.url || '-'}`);
+  console.log(`[BREM][api-request] headers=${JSON.stringify(details.headers || {})}`);
+  console.log(`[BREM][api-request] body=${details.body || details.postData || ''}`);
+}
+
+function storeCapturedApiRequest(page, sourceMenu, captured) {
+  if (!page || page.isClosed() || !captured?.url) return;
+  const ctx = page.context();
+  ctx.__bremCapturedApiRequests = ctx.__bremCapturedApiRequests || {};
+  ctx.__bremCapturedApiRequests[sourceMenu] = captured;
+}
+
+function getStoredCapturedApiRequest(page, sourceMenu) {
+  return page?.context()?.__bremCapturedApiRequests?.[sourceMenu] || null;
+}
+
+async function waitForPartnerSwitchComplete(page, targetId, options = {}) {
+  const partnerId = String(targetId || '').trim();
+  const requireSessionChange = Boolean(options.requireSessionChange);
+  const sessionBefore = String(options.sessionBefore || '').trim();
+  const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
+  const maxAttempts = Number(options.maxAttempts || 12);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const sessionNow = String(await readCenterSessionCookie(page) || '').trim();
+    if (!sessionNow) {
+      console.warn(`[BREM][center] 전환확인 ${attempt}/${maxAttempts} — CENTER_SESSION 없음`);
+      if (attempt < maxAttempts) {
+        await delay(1500);
+        continue;
+      }
+      return { ok: false, reason: 'CENTER_SESSION 없음' };
+    }
+
+    const ui = await readActivePartnerDisplayFromPage(page);
+    const center = await resolveCenterContextViaPage(page).catch(() => null);
+    const apiPartnerId = String(center?.partnerId || center?.centerId || '').trim();
+    const sessionChanged = Boolean(sessionBefore && sessionNow && sessionNow !== sessionBefore);
+    const uiOk = ui.partnerId === partnerId;
+    const apiOk = apiPartnerId === partnerId;
+    const deliveryCapture = findSuccessfulMenuCapture(switchCaptured, 'delivery_status');
+    const deliveryRows = deliveryCapture?.payload
+      ? (require('./baemin-api-fetch').extractDataArray(deliveryCapture.payload) || [])
+      : [];
+    const deliveryOk = Boolean(deliveryCapture && Number(deliveryCapture.status) === 200 && deliveryRows.length > 0);
+    const sessionGateOk = !requireSessionChange || sessionChanged || (uiOk && apiOk && deliveryOk);
+
+    console.log(`[BREM][center] 전환확인 ${attempt}/${maxAttempts} target=${partnerId} ui=${ui.partnerId || '-'} api=${apiPartnerId || '-'} session=${sessionChanged ? 'changed' : (sessionBefore ? 'same' : 'ready')} deliveryCapture=${deliveryOk ? 'ok' : 'no'}`);
+
+    if (uiOk && apiOk && sessionGateOk && sessionNow) {
+      return {
+        ok: true,
+        ui,
+        center,
+        session: sessionNow,
+        sessionChanged,
+        deliveryCapture
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      console.warn(`[BREM][center] 전환 미완료 — 캡처/전환 API 재실행 (${partnerId})`);
+      await replayCapturedCenterSwitch(page, switchCaptured, partnerId);
+      await trySwitchCenterViaApi(page, partnerId);
+      await waitForCenterSessionChange(page, sessionBefore, 6000);
+      await delay(1200);
+    }
+  }
+
+  const ui = await readActivePartnerDisplayFromPage(page);
+  const sessionNow = await readCenterSessionCookie(page);
+  const center = await resolveCenterContextViaPage(page).catch(() => null);
+  const reason = !sessionNow
+    ? 'CENTER_SESSION 없음'
+    : (requireSessionChange && sessionBefore && sessionNow === sessionBefore
+      ? 'CENTER_SESSION 미변경'
+      : 'partner_id_mismatch');
+  return {
+    ok: false,
+    reason,
+    ui,
+    center,
+    session: sessionNow
+  };
+}
+
+async function fetchViaCapturedBrowserRequest(page, captured, phase = 'replay') {
+  if (!captured?.url) {
+    return { ok: false, status: 400, message: '캡처된 API 요청 없음' };
+  }
+  const { replayCapturedBrowserRequest, extractIdsFromCapturedRequest } = require('./baemin-playwright-fetch');
+  const ids = extractIdsFromCapturedRequest(captured);
+  return replayCapturedBrowserRequest(page, captured, phase);
+}
+
+async function ensureCapturedMenuApiRequest(page, sourceMenu, dateRange = null, options = {}) {
+  const menu = String(sourceMenu || 'delivery_status').trim();
+  const partnerId = String(options.partnerId || '').trim();
+  const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
+
+  const sessionReady = await assertCenterSessionExists(page);
+  if (!sessionReady.ok) {
+    return { ok: false, reason: sessionReady.reason || 'CENTER_SESSION 없음' };
+  }
+
+  const switchReady = await waitForPartnerSwitchComplete(page, partnerId, {
+    ...options,
+    switchCaptured
+  });
+  if (!switchReady.ok) {
+    return { ok: false, reason: switchReady.reason || 'partner_switch_incomplete', switchReady };
+  }
+
+  const fromSwitch = findSuccessfulMenuCapture(switchCaptured, menu);
+  if (fromSwitch) {
+    const normalized = normalizeNetworkRowToCaptured(fromSwitch, menu);
+    const rows = normalized.spaItems || [];
+    console.log(`[BREM][api-capture] ${menu} ← switch-network ${normalized.method} ${normalized.url} status=${normalized.status} rows=${rows.length}`);
+    storeCapturedApiRequest(page, menu, normalized);
+    return { ok: true, captured: normalized, switchReady, fromSwitchNetwork: true };
+  }
+
+  const stored = getStoredCapturedApiRequest(page, menu);
+  if (stored?.url && stored?.fromNetworkCapture && (stored.spaItems?.length || stored.spaPayload)) {
+    return { ok: true, captured: stored, switchReady, fromCache: true };
+  }
+
+  const { captureBrowserMenuApiRequest } = require('./baemin-page-capture');
+  const captured = await captureBrowserMenuApiRequest(page, menu, dateRange);
+  if (!captured.ok) {
+    return { ok: false, reason: 'api_capture_failed', message: captured.message, tried: captured.tried || [] };
+  }
+
+  storeCapturedApiRequest(page, menu, captured);
+  return { ok: true, captured, switchReady };
+}
+
 async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'delivery_status', baselineSample = '', dateRange = null, options = {}) {
-  const { resolveHistoryMenuQueryDates } = require('./baemin-settlement-week');
-  const { fetchBaeminJsonViaPage } = require('./baemin-playwright-fetch');
-  const historyDates = resolveHistoryMenuQueryDates(undefined, dateRange);
-  const fromDate = historyDates.fromDate;
-  const toDate = historyDates.toDate;
   const partnerId = String(targetId || '').trim();
   const menu = String(sourceMenu || 'delivery_status').trim();
 
-  const ui = await readActivePartnerDisplayFromPage(page);
-  if (ui.partnerId && ui.partnerId !== partnerId) {
-    return { ok: false, reason: 'ui_mismatch', ui, sample: null, sourceMenu: menu };
+  const ensured = await ensureCapturedMenuApiRequest(page, menu, dateRange, {
+    ...options,
+    partnerId
+  });
+  if (!ensured.ok) {
+    return {
+      ok: false,
+      reason: ensured.reason || 'api_capture_failed',
+      ui: ensured.switchReady?.ui || null,
+      sample: { message: ensured.message || '', tried: ensured.tried || [] },
+      sourceMenu: menu
+    };
   }
 
-  const buildProbeUrl = (path, extra = {}) => {
-    const params = new URLSearchParams({
-      page: '0',
-      size: '5',
-      ...extra
-    });
-    if (fromDate && toDate && menu !== 'delivery_status') {
-      params.set('fromDate', fromDate);
-      params.set('toDate', toDate);
-    }
-    return `https://api-deliverycenter.baemin.com${path}?${params.toString()}`;
-  };
+  const captured = ensured.captured;
+  const { extractDataArray } = require('./baemin-api-fetch');
+  let result = null;
 
-  const extractDailyFingerprint = payload => {
-    const rows = Array.isArray(payload?.data) ? payload.data : [];
-    return rows
-      .map(row => `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`)
-      .join('|');
-  };
+  if ((ensured.fromSwitchNetwork || ensured.fromCache) && captured.spaPayload && Number(captured.status || 200) === 200) {
+    const rows = captured.spaItems || extractDataArray(captured.spaPayload) || [];
+    console.log(`[BREM][center] ${menu} verify — 캡처 응답 재사용 rows=${rows.length}`);
+    result = {
+      ok: true,
+      status: 200,
+      payload: captured.spaPayload,
+      message: ''
+    };
+  } else {
+    result = await fetchViaCapturedBrowserRequest(page, captured, `${menu}-verify`);
+  }
 
+  const verifyRows = result.ok ? (extractDataArray(result.payload) || captured.spaItems || []) : [];
   const extractStatusFingerprint = payload => {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
     return rows
@@ -747,53 +978,36 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
       })
       .join('|');
   };
-
-  const statusQuery = {
-    orderName: 'name',
-    orderBy: 'asc',
-    name: '',
-    userId: '',
-    phoneNumber: '',
-    riderStatus: ''
+  const extractDailyFingerprint = payload => {
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    return rows
+      .map(row => `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`)
+      .join('|');
+  };
+  const extract = menu === 'daily_history' ? extractDailyFingerprint : extractStatusFingerprint;
+  const sample = {
+    status: result.status || 0,
+    fingerprint: result.ok ? extract(result.payload || {}) : '',
+    message: result.message || result.error || '',
+    probeUrl: captured.url
   };
 
-  const probes = menu === 'daily_history'
-    ? [
-      { url: buildProbeUrl('/v4/management/daily-delivery-status'), extract: extractDailyFingerprint },
-      { url: buildProbeUrl('/v4/management/delivery/delivery-history'), extract: extractDailyFingerprint }
-    ]
-    : menu === 'rider_history'
-      ? [
-        { url: buildProbeUrl('/v4/management/rider-delivery-status', { ...statusQuery, riderStatus: '' }), extract: extractStatusFingerprint },
-        { url: buildProbeUrl('/v4/management/delivery/rider-history'), extract: extractStatusFingerprint }
-      ]
-      : [
-        { url: buildProbeUrl('/v4/management/delivery-status', statusQuery), extract: extractStatusFingerprint }
-      ];
-
-  let sample = { status: 0, fingerprint: '', message: '', probeUrl: '' };
-  for (const probe of probes) {
-    const result = await fetchBaeminJsonViaPage(page, probe.url, null, null);
-    sample = {
-      status: result.status || 0,
-      fingerprint: result.ok ? probe.extract(result.payload || {}) : '',
-      message: result.message || result.error || '',
-      probeUrl: probe.url
-    };
-    if (result.ok) break;
+  if (!result.ok) {
+    console.warn(`[BREM][center] ${menu} API verify failed partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
+    return { ok: false, reason: 'api_probe_failed', ui: ensured.switchReady.ui, sample, sourceMenu: menu, captured };
   }
 
-  if (sample.status < 200 || sample.status >= 300) {
-    console.warn(`[BREM][center] ${menu} API probe failed partner=${partnerId} status=${sample.status} message=${sample.message || '-'}`);
-    return { ok: false, reason: 'api_probe_failed', ui, sample, sourceMenu: menu };
+  if (menu === 'delivery_status' && !verifyRows.length) {
+    console.warn(`[BREM][center] ${menu} API verify empty rows partner=${partnerId}`);
+    return { ok: false, reason: 'empty_data', ui: ensured.switchReady.ui, sample, sourceMenu: menu, captured };
   }
 
   const baseline = String(baselineSample || '').trim();
   if (baseline && sample.fingerprint && sample.fingerprint === baseline) {
-    return { ok: false, reason: 'same_as_baseline', ui, sample, sourceMenu: menu };
+    return { ok: false, reason: 'same_as_baseline', ui: ensured.switchReady.ui, sample, sourceMenu: menu, captured };
   }
 
-  return { ok: true, ui, sample, sourceMenu: menu };
+  return { ok: true, ui: ensured.switchReady.ui, sample, sourceMenu: menu, captured };
 }
 
 async function verifyPartnerApiContext(page, targetId, baselineSample = '', dateRange = null) {
@@ -803,25 +1017,9 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
 async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFingerprint = '', dateRange = null, options = {}) {
   const menu = String(sourceMenu || 'delivery_status').trim();
   const partnerId = String(targetId || '').trim();
-  const maxAttempts = Number(options.maxAttempts || 10);
-  const waitMs = Number(options.waitMs || 1200);
-  const sessionBefore = await readCenterSessionCookie(page);
+  const maxAttempts = Number(options.maxAttempts || 6);
+  const waitMs = Number(options.waitMs || 1500);
   const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
-
-  const { SAFE_LANDING_URL, buildSpaPageUrl } = require('./baemin-page-capture');
-  if (menu === 'delivery_status' && page && !page.isClosed()) {
-    const onHistory = /\/delivery\/history/i.test(page.url() || '');
-    if (!onHistory) {
-      await page.goto(SAFE_LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      await delay(900);
-    }
-  } else if (menu !== 'delivery_status' && page && !page.isClosed()) {
-    const spaUrl = buildSpaPageUrl(menu, dateRange);
-    if (spaUrl && !page.url().includes(menu === 'daily_history' ? 'delivery-history' : 'rider-history')) {
-      await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-      await delay(900);
-    }
-  }
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const verified = await verifyPartnerMenuApiContext(
@@ -830,7 +1028,12 @@ async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFi
       menu,
       baselineFingerprint,
       dateRange,
-      options
+      {
+        ...options,
+        switchCaptured,
+        partnerId,
+        maxAttempts: 4
+      }
     );
     if (verified.ok) {
       if (attempt > 1) {
@@ -838,14 +1041,13 @@ async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFi
       }
       return verified;
     }
-    if (verified.reason === 'ui_mismatch') return verified;
+    if (verified.reason === 'ui_mismatch' || verified.reason === 'partner_switch_incomplete') return verified;
 
     if (attempt < maxAttempts) {
       console.warn(`[BREM][center] ${menu} API ${verified.reason || 'not-ready'} — 재시도 ${attempt}/${maxAttempts} partner=${partnerId}`);
       if (verified.reason === 'same_as_baseline') {
         await replayCapturedCenterSwitch(page, switchCaptured, partnerId);
         await trySwitchCenterViaApi(page, partnerId);
-        await waitForCenterSessionChange(page, sessionBefore, 8000);
       }
       await delay(waitMs);
     } else {
@@ -861,53 +1063,26 @@ async function ensurePartnerSessionReady(page, targetId, options = {}) {
   const dateRange = options.dateRange || null;
   const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
 
-  const ui = await readActivePartnerDisplayFromPage(page);
-  if (ui.partnerId && ui.partnerId !== String(targetId || '').trim()) {
-    return { ok: false, reason: 'ui_mismatch', ui, sample: null };
+  const sessionReady = await assertCenterSessionExists(page);
+  if (!sessionReady.ok) {
+    return { ok: false, reason: sessionReady.reason || 'CENTER_SESSION 없음', ui: null, sample: null };
   }
 
-  let verified = await waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
+  const switchReady = await waitForPartnerSwitchComplete(page, targetId, {
+    sessionBefore: options.sessionBefore || '',
+    requireSessionChange: Boolean(options.requireSessionChange),
     switchCaptured,
-    maxAttempts: 10,
-    waitMs: 1200
+    maxAttempts: 12
   });
-  if (verified.ok || verified.reason === 'ui_mismatch') return verified;
+  if (!switchReady.ok) {
+    return { ok: false, reason: switchReady.reason || 'partner_switch_incomplete', ui: switchReady.ui, sample: null };
+  }
 
-  console.warn(`[BREM][center] 배달현황 API 미전환 → 재전환: ${targetId}`);
-  const sessionBefore = await readCenterSessionCookie(page);
-  await replayCapturedCenterSwitch(page, switchCaptured, targetId);
-  await trySwitchCenterViaApi(page, targetId);
-  await waitForCenterSessionChange(page, sessionBefore, 8000);
-  verified = await waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
+  return verifyPartnerMenuApiContext(page, targetId, 'delivery_status', baseline, dateRange, {
+    ...options,
     switchCaptured,
-    maxAttempts: 6,
-    waitMs: 1500
-  });
-  if (verified.ok || verified.reason === 'ui_mismatch') return verified;
-
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-  await delay(2500);
-  verified = await waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
-    switchCaptured,
-    maxAttempts: 4,
-    waitMs: 1500
-  });
-  if (verified.ok || verified.reason === 'ui_mismatch') return verified;
-
-  await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-  await delay(2000);
-  await replayCapturedCenterSwitch(page, switchCaptured, targetId);
-  await trySwitchCenterViaApi(page, targetId);
-  await waitForCenterSessionChange(page, sessionBefore, 8000);
-  await page.goto('https://deliverycenter.baemin.com/delivery/history', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  }).catch(() => {});
-  await delay(2500);
-  return waitForPartnerMenuApiReady(page, targetId, 'delivery_status', baseline, dateRange, {
-    switchCaptured,
-    maxAttempts: 4,
-    waitMs: 1500
+    partnerId: targetId,
+    requireSessionChange: false
   });
 }
 
@@ -934,10 +1109,12 @@ async function selectPartnerCenterInner(page, target = {}) {
 
   const targetId = String(target.partnerId || target.centerId || target.managementId || '').trim();
   const targetName = String(target.partnerName || '').trim();
+  const requireSessionChange = Boolean(target.requireSessionChange);
   if (!isValidPartnerId(targetId)) {
     throw new Error(`협력사 ID가 올바르지 않습니다: ${targetId || '(empty)'}`);
   }
 
+  const sessionBefore = await readCenterSessionCookie(page);
   const currentId = String(
     (await readActivePartnerIdFromUi(page))
     || (await readActivePartnerIdFromPage(page))
@@ -945,20 +1122,32 @@ async function selectPartnerCenterInner(page, target = {}) {
     || (await resolveCenterContextViaPage(page))?.centerId
     || ''
   ).trim();
-  const current = await resolveCenterContextViaPage(page);
+
   if (currentId === targetId) {
+    console.log(`[BREM][center] 이미 선택된 협력사 — API 세션 재동기화 (${targetId})`);
     await trySwitchCenterViaApi(page, targetId);
-    await delay(1500);
-    const display = await readActivePartnerDisplayFromPage(page);
+    await delay(1200);
+    const switchReady = await waitForPartnerSwitchComplete(page, targetId, {
+      sessionBefore,
+      requireSessionChange,
+      switchCaptured: page.context()?.__bremLastSwitchCaptured || [],
+      maxAttempts: 8
+    });
+    if (!switchReady.ok) {
+      throw new Error(`협력사 세션 확인 실패 (${targetId}) — ${switchReady.reason || 'unknown'}`);
+    }
+    const display = switchReady.ui || await readActivePartnerDisplayFromPage(page);
+    console.log(`[BREM][center] 협력사 전환 완료: ${display.partnerName || targetName || targetId} (${targetId})`);
     return {
-      centerId: current.centerId || targetId,
-      managementId: current.managementId || targetId,
+      centerId: switchReady.center?.centerId || targetId,
+      managementId: switchReady.center?.managementId || targetId,
       partnerId: targetId,
-      partnerName: targetName || display.partnerName || current.partnerName || targetId
+      partnerName: targetName || display.partnerName || targetId,
+      regionName: target.regionName || inferRegionFromPartnerName(targetName)
     };
   }
 
-  const sessionBefore = await readCenterSessionCookie(page);
+  const sessionBeforeSwitch = sessionBefore;
 
   await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
     if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
@@ -1041,8 +1230,13 @@ async function selectPartnerCenterInner(page, target = {}) {
   const { result: active, captured: switchCaptured } = await capturePartnerSwitchRequests(page, performUiSwitch);
   page.context().__bremLastSwitchCaptured = switchCaptured;
 
+  const deliveryHit = findSuccessfulMenuCapture(switchCaptured, 'delivery_status');
+  if (deliveryHit) {
+    storeCapturedApiRequest(page, 'delivery_status', normalizeNetworkRowToCaptured(deliveryHit, 'delivery_status'));
+  }
+
   let sessionAfter = await readCenterSessionCookie(page);
-  if (!sessionAfter || sessionAfter === sessionBefore) {
+  if (!sessionAfter || sessionAfter === sessionBeforeSwitch) {
     console.warn(`[BREM][center] CENTER_SESSION 미변경 → 캡처/API 재전환 (${targetId})`);
     console.warn('[BREM][center] 전환 네트워크:', JSON.stringify(switchCaptured.slice(-6).map(row => ({
       method: row.method,
@@ -1051,8 +1245,8 @@ async function selectPartnerCenterInner(page, target = {}) {
     }))));
     await replayCapturedCenterSwitch(page, switchCaptured, targetId);
     await trySwitchCenterViaApi(page, targetId);
-    sessionAfter = await waitForCenterSessionChange(page, sessionBefore, 12000);
-    if (sessionAfter && sessionAfter !== sessionBefore) {
+    sessionAfter = await waitForCenterSessionChange(page, sessionBeforeSwitch, 12000);
+    if (sessionAfter && sessionAfter !== sessionBeforeSwitch) {
       console.log(`[BREM][center] CENTER_SESSION 변경됨 (${targetId})`);
     } else {
       console.warn(`[BREM][center] CENTER_SESSION 여전히 동일 (${targetId})`);
@@ -1069,38 +1263,26 @@ async function selectPartnerCenterInner(page, target = {}) {
     await delay(1500);
   }
 
-  const uiDisplay = await readActivePartnerDisplayFromPage(page);
-  const activeId = String(uiDisplay.partnerId || active?.partnerId || active?.centerId || '').trim();
-  if (activeId === targetId) {
-    console.log(`[BREM][center] 협력사 전환 완료: ${uiDisplay.partnerName || targetName || targetId} (${targetId})`);
-    return {
-      centerId: active?.centerId || target.centerId || targetId,
-      managementId: active?.managementId || target.managementId || targetId,
-      partnerId: targetId,
-      partnerName: targetName || uiDisplay.partnerName || active?.partnerName || targetId,
-      regionName: target.regionName || inferRegionFromPartnerName(targetName)
-    };
+  const switchReady = await waitForPartnerSwitchComplete(page, targetId, {
+    sessionBefore: sessionBeforeSwitch,
+    requireSessionChange,
+    switchCaptured,
+    maxAttempts: 12
+  });
+  if (!switchReady.ok) {
+    console.warn('[BREM][center] 전환 네트워크:', JSON.stringify(switchCaptured.slice(-8)));
+    throw new Error(`협력사 전환 미완료 (${targetId}) — ${switchReady.reason || 'CENTER_SESSION 미변경'}`);
   }
 
-  await page.goto('https://deliverycenter.baemin.com/delivery/history', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000
-  }).catch(() => {});
-  await delay(2500);
-  const retryActive = await waitForActivePartnerId(page, targetId, 10000);
-  const retryUi = await readActivePartnerDisplayFromPage(page);
-  if (retryActive || retryUi.partnerId === targetId) {
-      console.log(`[BREM][center] 협력사 전환 완료(재확인): ${targetName || targetId} (${targetId})`);
-      return {
-        centerId: retryActive?.centerId || target.centerId || targetId,
-        managementId: retryActive?.managementId || target.managementId || targetId,
-        partnerId: targetId,
-        partnerName: targetName || retryUi.partnerName || retryActive?.partnerName || targetId,
-        regionName: target.regionName || inferRegionFromPartnerName(targetName)
-      };
-    }
-    console.warn('[BREM][center] 전환 네트워크:', JSON.stringify(switchCaptured.slice(-8)));
-    throw new Error(`협력사 전환 확인 실패 (요청 ${targetId}, 현재 ${activeId || retryUi.partnerId || 'unknown'})`);
+  const uiDisplay = switchReady.ui || await readActivePartnerDisplayFromPage(page);
+  console.log(`[BREM][center] 협력사 전환 완료: ${uiDisplay.partnerName || targetName || targetId} (${targetId})`);
+  return {
+    centerId: switchReady.center?.centerId || active?.centerId || target.centerId || targetId,
+    managementId: switchReady.center?.managementId || active?.managementId || target.managementId || targetId,
+    partnerId: targetId,
+    partnerName: targetName || uiDisplay.partnerName || active?.partnerName || targetId,
+    regionName: target.regionName || inferRegionFromPartnerName(targetName)
+  };
 }
 
 async function resolveCenterContextViaPage(page) {

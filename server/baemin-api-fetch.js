@@ -140,7 +140,9 @@ async function fetchPaginatedApi({
   playwrightPage = null,
   playwrightContext = null,
   sampleUrl = null,
-  sampleHeaders = null
+  sampleHeaders = null,
+  replayCapture = null,
+  exactSampleUrl = false
 }) {
   const { BAEMIN_API_ORIGIN, BAEMIN_ORIGIN } = require('./baemin-collect-sources');
   const origin = String(apiOrigin || BAEMIN_API_ORIGIN || BAEMIN_ORIGIN).replace(/\/$/, '');
@@ -154,7 +156,7 @@ async function fetchPaginatedApi({
     };
   }
 
-  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
+  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright, replayCapturedBrowserRequest } = require('./baemin-playwright-fetch');
 
   const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
   const pageStart = Number.isFinite(pagination.pageStart) ? pagination.pageStart : 0;
@@ -164,17 +166,34 @@ async function fetchPaginatedApi({
   let lastUrl = '';
   let totalPage = 1;
 
+  const PARTNER_QUERY_KEYS = new Set(['partnerId', 'centerId', 'managementId']);
+  let activePage = playwrightPage;
+  if (!activePage && playwrightContext) {
+    try {
+      const pages = playwrightContext.pages().filter(page => !page.isClosed());
+      activePage = pages[0] || null;
+    } catch {
+      activePage = null;
+    }
+  }
+  const browserSessionFetch = Boolean(activePage && !activePage.isClosed?.());
+
   for (let pageIndex = 0; pageIndex < totalPage; pageIndex += 1) {
     const page = pageStart + pageIndex;
     if (sampleUrl) {
       try {
         const parsed = new URL(sampleUrl);
-        parsed.searchParams.set('page', String(page));
-        parsed.searchParams.set('size', String(size));
-        Object.entries(baseQuery).forEach(([key, value]) => {
-          if (value == null) return;
-          parsed.searchParams.set(key, String(value));
-        });
+        if (!exactSampleUrl || pageIndex > 0) {
+          parsed.searchParams.set('page', String(page));
+          parsed.searchParams.set('size', String(size));
+        }
+        if (!exactSampleUrl) {
+          Object.entries(baseQuery).forEach(([key, value]) => {
+            if (value == null) return;
+            if (browserSessionFetch && PARTNER_QUERY_KEYS.has(key)) return;
+            parsed.searchParams.set(key, String(value));
+          });
+        }
         lastUrl = parsed.toString();
       } catch {
         lastUrl = sampleUrl;
@@ -190,23 +209,23 @@ async function fetchPaginatedApi({
       lastUrl = `${origin}${apiPath}?${params.toString()}`;
     }
 
-    let activePage = playwrightPage;
-    if (!activePage && playwrightContext) {
-      try {
-        const pages = playwrightContext.pages().filter(page => !page.isClosed());
-        activePage = pages[0] || null;
-      } catch {
-        activePage = null;
-      }
-    }
-
     const centerHeaders = sampleHeaders && typeof sampleHeaders === 'object' ? sampleHeaders : null;
     const pageLogContext = logContext ? { ...logContext, pageIndex: page } : null;
     let result = null;
 
     if (activePage && !activePage.isClosed()) {
-      console.log(`${logPrefix} GET ${lastUrl} (browser-tab)`);
-      result = await fetchBaeminJsonViaPage(activePage, lastUrl, pageLogContext, centerHeaders);
+      const captureReplay = replayCapture || (exactSampleUrl && sampleUrl ? {
+        method: 'GET',
+        url: lastUrl,
+        headers: centerHeaders || sampleHeaders || {}
+      } : null);
+      if (captureReplay?.url) {
+        console.log(`${logPrefix} REPLAY ${lastUrl} (browser-capture)`);
+        result = await replayCapturedBrowserRequest(activePage, captureReplay, logPrefix);
+      } else {
+        console.log(`${logPrefix} GET ${lastUrl} (browser-tab)`);
+        result = await fetchBaeminJsonViaPage(activePage, lastUrl, pageLogContext, centerHeaders);
+      }
       if (!result.ok && playwrightContext?.request) {
         console.warn(`${logPrefix} browser-tab failed status=${result.status}, retry playwright-request`);
         console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
