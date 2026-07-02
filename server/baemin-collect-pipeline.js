@@ -520,28 +520,29 @@ function isSessionAuthFailure(result) {
     || /재로그인|로그인 만료|세션 만료/i.test(String(result?.message || ''));
 }
 
-function extractCollectItemsFingerprint(sourceId, items = []) {
+function extractCollectItemsFingerprint(sourceId, items = [], partnerId = '') {
   const rows = Array.isArray(items) ? items : [];
+  const prefix = String(partnerId || '').trim() ? `${String(partnerId).trim()}:` : '';
   if (sourceId === 'delivery_status') {
-    return rows.slice(0, 8).map(row => {
+    return prefix + rows.slice(0, 8).map(row => {
       const acceptance = row?.deliveryAcceptanceCount || {};
       const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
       return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
     }).join('|');
   }
   if (sourceId === 'daily_history') {
-    return rows.slice(0, 5).map(row =>
+    return prefix + rows.slice(0, 5).map(row =>
       `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`
     ).join('|');
   }
   if (sourceId === 'rider_history') {
-    return rows.slice(0, 8).map(row => {
+    return prefix + rows.slice(0, 8).map(row => {
       const acceptance = row?.deliveryAcceptanceCount || {};
       const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
       return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
     }).join('|');
   }
-  return '';
+  return prefix;
 }
 
 function isPartnerSessionMismatchResult(result) {
@@ -550,6 +551,7 @@ function isPartnerSessionMismatchResult(result) {
 }
 
 function shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, context = {}) {
+  if (sourceId !== 'delivery_status') return false;
   if (!itemFingerprint || Number(context.partnerCollectIndex || 0) <= 0) return false;
   const referenceFp = String(context.lastPartnerMenuFingerprints?.[sourceId] || '').trim();
   return Boolean(referenceFp && referenceFp === itemFingerprint);
@@ -609,7 +611,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     });
     const saveResult = await saveCollectItems(rows);
     if (!saveResult.ok) return { ...saveResult, sourceMenu: sourceId, label: source.label };
-    const menuFingerprint = extractCollectItemsFingerprint('rider_history', dailyItems);
+    const menuFingerprint = extractCollectItemsFingerprint('rider_history', dailyItems, partnerId);
     return {
       ok: true,
       sourceMenu: sourceId,
@@ -861,20 +863,49 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
+  const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+  const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
+  const regionName = String(registry.centerContext?.regionName || context.regionName || '').trim();
+
   const items = fetched.items || [];
   if (!items.length) {
+    console.log(`[BREM][collect] ${sourceId} 수집 데이터 0건 (partner=${partnerId || '-'})`);
     return {
-      ok: false,
+      ok: true,
       sourceMenu: sourceId,
       label: source.label,
-      message: '수집 데이터 0건',
-      sourceUrl: fetched.meta?.sourceUrl || ''
+      dateRangeLabel,
+      savedCount: 0,
+      sourceUrl: fetched.meta?.sourceUrl || '',
+      collectedAt,
+      rawItems: [],
+      menuFingerprint: extractCollectItemsFingerprint(sourceId, [], partnerId),
+      message: '수집 데이터 0건'
     };
   }
 
-  const itemFingerprint = extractCollectItemsFingerprint(sourceId, items);
-  if (shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, context)) {
-    console.warn(`[BREM][collect] ${sourceId} 동일 fingerprint — 협력사 세션 미반영, 저장 생략 (partner=${registry.centerContext?.partnerId || '-'})`);
+  const itemFingerprint = extractCollectItemsFingerprint(sourceId, items, partnerId);
+  if (shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, { ...context, registry })) {
+    if (context.playwrightPage && !context.playwrightPage.isClosed?.() && partnerId) {
+      context._fingerprintRetry = context._fingerprintRetry || {};
+      if (!context._fingerprintRetry[sourceId]) {
+        context._fingerprintRetry[sourceId] = true;
+        console.warn(`[BREM][collect] ${sourceId} 동일 fingerprint — 협력사 재전환 후 재수집 (partner=${partnerId})`);
+        const { selectPartnerCenter } = require('./baemin-center-context');
+        if (context.spaCapture?.[sourceId]) delete context.spaCapture[sourceId];
+        const stored = context.playwrightPage.context()?.__bremCapturedApiRequests;
+        if (stored?.[sourceId]) delete stored[sourceId];
+        await selectPartnerCenter(context.playwrightPage, {
+          partnerId,
+          partnerName,
+          requireSessionChange: false
+        }).catch(error => {
+          console.warn(`[BREM][collect] ${sourceId} 재전환 실패:`, error.message);
+        });
+        return collectSource(sourceId, sessionCookie, collectDate, registry, context);
+      }
+    }
+    console.warn(`[BREM][collect] ${sourceId} 동일 fingerprint — 협력사 세션 미반영 (partner=${partnerId || '-'})`);
     return {
       ok: false,
       sourceMenu: sourceId,
@@ -885,9 +916,6 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
-  const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
-  const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
-  const regionName = String(registry.centerContext?.regionName || context.regionName || '').trim();
   const rows = items.map((item, index) => mapItemToCollectRow(
     sourceId,
     item,
@@ -1002,7 +1030,6 @@ async function runPartnerSourceCollectLoop({
   let anySuccess = false;
   let sessionExpired = false;
   let authFailureCount = 0;
-  let partnerCollectBlocked = false;
   const partner = readPartnerContext(registry, pipelineContext);
   const partnerTimer = Date.now();
 
@@ -1014,17 +1041,6 @@ async function runPartnerSourceCollectLoop({
 
   for (const sourceDef of sourceDefs) {
     const menuTimer = Date.now();
-    if (partnerCollectBlocked) {
-      results[sourceDef.id] = {
-        ok: false,
-        sourceMenu: sourceDef.id,
-        label: sourceDef.label,
-        message: '협력사 세션 미반영 — 후속 메뉴 생략',
-        skipped: true
-      };
-      continue;
-    }
-
     if (sourceDef.dateQueryKeys?.length && menuDateRanges[sourceDef.id]?.skipped) {
       results[sourceDef.id] = {
         ok: true,
@@ -1046,6 +1062,45 @@ async function runPartnerSourceCollectLoop({
         pipelineContext.spaCapture = pipelineContext.spaCapture || {};
         pipelineContext.spaCapture.delivery_status = cached;
       }
+    } else if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.() && sourceDef.id !== 'delivery_status') {
+      const { ensureMenuPartnerReady } = require('./baemin-center-context');
+      const menuRange = sourceDef.dateQueryKeys?.length ? historyDateRange : null;
+      if (pipelineContext.spaCapture?.[sourceDef.id]) {
+        delete pipelineContext.spaCapture[sourceDef.id];
+      }
+      const storedCapture = pipelineContext.playwrightPage.context()?.__bremCapturedApiRequests;
+      if (storedCapture?.[sourceDef.id]) {
+        delete storedCapture[sourceDef.id];
+      }
+      const menuVerified = await ensureMenuPartnerReady(
+        pipelineContext.playwrightPage,
+        partner.partnerId,
+        sourceDef.id,
+        {
+          dateRange: menuRange,
+          historyDateRange: menuRange,
+          baselineFingerprint: pipelineContext.lastPartnerMenuFingerprints?.[sourceDef.id] || '',
+          partnerName: partner.partnerName,
+          switchCaptured: pipelineContext.playwrightPage.context()?.__bremLastSwitchCaptured || []
+        }
+      );
+      if (!menuVerified.ok) {
+        results[sourceDef.id] = {
+          ok: false,
+          sourceMenu: sourceDef.id,
+          label: sourceDef.label,
+          message: `${sourceDef.label} API 검증 실패 (${menuVerified.reason || 'unknown'})`,
+          sessionMismatch: true
+        };
+        console.log(`[BREM][collect][timing] ${partner.partnerId} ${sourceDef.id} fail ${Date.now() - menuTimer}ms rows=0`);
+        continue;
+      }
+      if (menuVerified.captured) {
+        applyCaptureToEndpointRegistry(sourceDef.id, registry, menuVerified.captured);
+        pipelineContext.spaCapture = pipelineContext.spaCapture || {};
+        pipelineContext.spaCapture[sourceDef.id] = menuVerified.captured;
+      }
+      console.log(`[BREM][collect] ${partner.partnerId} — ${sourceDef.label} API 세션 확인 완료`);
     } else if (pipelineContext.spaCapture?.[sourceDef.id]) {
       applyCaptureToEndpointRegistry(sourceDef.id, registry, pipelineContext.spaCapture[sourceDef.id]);
     }
@@ -1063,7 +1118,7 @@ async function runPartnerSourceCollectLoop({
 
     if (sourceDef.id === 'delivery_status' && result.ok && result.rawItems?.length) {
       pipelineContext.partnerDataFingerprint = result.menuFingerprint
-        || extractCollectItemsFingerprint('delivery_status', result.rawItems);
+        || extractCollectItemsFingerprint('delivery_status', result.rawItems, partner.partnerId);
     }
 
     if (result.ok && result.menuFingerprint) {
@@ -1071,9 +1126,8 @@ async function runPartnerSourceCollectLoop({
       pipelineContext.currentPartnerMenuFingerprints[sourceDef.id] = result.menuFingerprint;
     }
 
-    if (isPartnerSessionMismatchResult(result)) {
-      partnerCollectBlocked = true;
-      console.warn(`[BREM][collect] ${partner.partnerId} — ${sourceDef.id} 세션 미반영, 동일 협력사 후속 메뉴 생략`);
+    if (isPartnerSessionMismatchResult(result) && sourceDef.id === 'delivery_status') {
+      console.warn(`[BREM][collect] ${partner.partnerId} — ${sourceDef.id} 세션 미반영, 일별/라이더는 개별 검증 후 수집`);
     }
 
     console.log(`[BREM][collect][timing] ${partner.partnerId} ${sourceDef.id} ${result.ok ? 'ok' : 'fail'} ${Date.now() - menuTimer}ms rows=${result.savedCount || 0}`);
@@ -1213,8 +1267,8 @@ async function runFullCollectPipeline(options = {}) {
   let partnersToCollect = [];
 
   console.log(`[BREM][collect] 배달현황: 오늘 기준 (${collectDate})`);
-  console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
-  console.log(`[BREM][collect] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
+  console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label} (정산주 수요일~어제)`);
+  console.log(`[BREM][collect] 라이더별 배달내역: ${menuDateRanges.rider_history.label} (정산주 수요일~어제)`);
 
   if (playwrightContext) {
     playwrightContext.__bremCollecting = true;
@@ -1271,6 +1325,7 @@ async function runFullCollectPipeline(options = {}) {
       pipelineContext.dailyItems = null;
       pipelineContext.dailySourceUrl = '';
       pipelineContext.currentPartnerMenuFingerprints = {};
+      pipelineContext._fingerprintRetry = {};
       resetPartnerSpaCapture(pipelineContext, registry, playwrightPage);
 
       const label = partnerTotal > 0
@@ -1436,7 +1491,9 @@ async function runFullCollectPipeline(options = {}) {
           ['delivery_status', 'daily_history', 'rider_history'].forEach(menuId => {
             const row = loopResult.results[menuId];
             const fp = row?.menuFingerprint
-              || (row?.rawItems?.length ? extractCollectItemsFingerprint(menuId, row.rawItems) : '');
+              || (row?.ok
+                ? extractCollectItemsFingerprint(menuId, row.rawItems || [], partner.partnerId)
+                : '');
             if (row?.ok && fp) {
               lastPartnerMenuFingerprints[menuId] = fp;
             }

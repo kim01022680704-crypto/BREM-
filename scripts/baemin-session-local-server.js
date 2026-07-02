@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260703j';
+const SERVER_VERSION = '20260703k';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -1809,13 +1809,25 @@ const server = http.createServer(async (req, res) => {
   sendJsonWithCors(req, res, 404, { ok: false, message: 'Not found' });
 });
 
+server.on('error', error => {
+  if (error?.code === 'EADDRINUSE') {
+    console.error(`[BREM] 포트 ${PORT} 사용 중 — 이미 세션 서버가 실행 중입니다.`);
+    console.error('[BREM] 재시작: scripts\\restart-baemin-session-server.bat');
+    console.error(`[BREM] 상태 확인: http://127.0.0.1:${PORT}/health`);
+    process.exit(1);
+  }
+  throw error;
+});
+
 server.listen(PORT, '127.0.0.1', async () => {
   console.log('========================================');
   console.log(`[BREM] Baemin session server v${SERVER_VERSION}`);
   console.log(`[BREM] URL: http://127.0.0.1:${PORT}`);
   console.log(`[BREM] ERP 기본 포트: ${DEFAULT_BAEMIN_SESSION_LOCAL_PORT} (listen=${PORT})`);
   console.log(`[BREM] Script: ${SCRIPT_PATH}`);
-  console.log('[BREM] 버전이 20260701a 가 아니면 git pull 후 서버를 재시작하세요.');
+  console.log(`[BREM] health: http://127.0.0.1:${PORT}/health  (version=${SERVER_VERSION})`);
+  console.log('[BREM] ✅ 서버 준비 완료 — 이 창을 닫지 마세요.');
+  console.log('[BREM] 다음: brem.kr 관리자 → 배민Biz → [브라우저 열기] → [전체수집]');
   console.log(`[BREM] Playwright browsers: ${PLAYWRIGHT_BROWSERS_DIR}`);
   if (!hasLocalSupabaseCredentials()) {
     console.warn('[BREM] ⚠ SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 .env 에 없습니다.');

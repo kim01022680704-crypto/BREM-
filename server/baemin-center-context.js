@@ -839,7 +839,7 @@ async function waitForPartnerSwitchComplete(page, targetId, options = {}) {
     const deliveryRows = deliveryCapture?.payload
       ? (require('./baemin-api-fetch').extractDataArray(deliveryCapture.payload) || [])
       : [];
-    const deliveryOk = Boolean(deliveryCapture && Number(deliveryCapture.status) === 200 && deliveryRows.length > 0);
+    const deliveryOk = Boolean(deliveryCapture && Number(deliveryCapture.status) === 200);
     const sessionGateOk = !requireSessionChange || sessionChanged || (uiOk && apiOk && deliveryOk);
 
     console.log(`[BREM][center] 전환확인 ${attempt}/${maxAttempts} target=${partnerId} ui=${ui.partnerId || '-'} api=${apiPartnerId || '-'} session=${sessionChanged ? 'changed' : (sessionBefore ? 'same' : 'ready')} deliveryCapture=${deliveryOk ? 'ok' : 'no'}`);
@@ -926,7 +926,7 @@ async function ensureCapturedMenuApiRequest(page, sourceMenu, dateRange = null, 
   }
 
   const stored = getStoredCapturedApiRequest(page, menu);
-  if (stored?.url && stored?.fromNetworkCapture && (stored.spaItems?.length || stored.spaPayload)) {
+  if (stored?.url && stored?.fromNetworkCapture && stored.spaPayload) {
     return { ok: true, captured: stored, switchReady, fromCache: true };
   }
 
@@ -964,7 +964,6 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
   const hasValidCapture = Boolean(
     captured.spaPayload
     && Number(captured.status || 200) === 200
-    && capturedRows.length > 0
   );
 
   let result = null;
@@ -984,21 +983,29 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
   }
 
   const verifyRows = result.ok ? (extractDataArray(result.payload) || capturedRows) : [];
+  const centerIdFromCapture = String(
+    captured.headers?.['center-id']
+    || captured.requestHeaders?.['center-id']
+    || partnerId
+    || ''
+  ).trim();
   const extractStatusFingerprint = payload => {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
-    return rows
+    const body = rows
       .map(row => {
         const acceptance = row?.deliveryAcceptanceCount || {};
         const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
         return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
       })
       .join('|');
+    return centerIdFromCapture ? `${centerIdFromCapture}:${body}` : body;
   };
   const extractDailyFingerprint = payload => {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
-    return rows
+    const body = rows
       .map(row => `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`)
       .join('|');
+    return centerIdFromCapture ? `${centerIdFromCapture}:${body}` : body;
   };
   const extract = menu === 'daily_history' ? extractDailyFingerprint : extractStatusFingerprint;
   const sample = {
@@ -1014,8 +1021,7 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
   }
 
   if (menu === 'delivery_status' && !verifyRows.length) {
-    console.warn(`[BREM][center] ${menu} API verify empty rows partner=${partnerId}`);
-    return { ok: false, reason: 'empty_data', ui: ensured.switchReady.ui, sample, sourceMenu: menu, captured };
+    console.log(`[BREM][center] ${menu} API verify empty rows partner=${partnerId} (정상 0건)`);
   }
 
   const baseline = String(baselineSample || '').trim();
@@ -1072,6 +1078,62 @@ async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFi
   }
 
   return verified;
+}
+
+async function ensureMenuPartnerReady(page, targetId, sourceMenu, options = {}) {
+  const menu = String(sourceMenu || 'delivery_status').trim();
+  const partnerId = String(targetId || '').trim();
+  const baseline = String(options.baselineFingerprint || '').trim();
+  const dateRange = options.historyDateRange || options.dateRange || null;
+  const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
+
+  const clearMenuCapture = () => {
+    const ctx = page?.context();
+    if (ctx?.__bremCapturedApiRequests?.[menu]) {
+      delete ctx.__bremCapturedApiRequests[menu];
+    }
+  };
+
+  clearMenuCapture();
+
+  let verified = await waitForPartnerMenuApiReady(page, partnerId, menu, baseline, dateRange, {
+    switchCaptured,
+    partnerId,
+    requireSessionChange: false
+  });
+  if (verified.ok) return verified;
+
+  const retryReasons = new Set(['same_as_baseline', 'api_probe_failed', 'api_capture_failed', 'empty_data']);
+  if (!retryReasons.has(verified.reason)) return verified;
+
+  console.warn(`[BREM][center] ${menu} 협력사 재전환 (${partnerId}) reason=${verified.reason}`);
+  await replayCapturedCenterSwitch(page, switchCaptured, partnerId);
+  await trySwitchCenterViaApi(page, partnerId);
+  await delay(1200);
+  clearMenuCapture();
+
+  verified = await waitForPartnerMenuApiReady(page, partnerId, menu, baseline, dateRange, {
+    switchCaptured: page.context()?.__bremLastSwitchCaptured || switchCaptured,
+    partnerId,
+    requireSessionChange: false
+  });
+  if (verified.ok) return verified;
+
+  console.warn(`[BREM][center] ${menu} 재전환 후에도 미확인 (${partnerId}) — UI 전환 재시도`);
+  await selectPartnerCenterInner(page, {
+    partnerId,
+    partnerName: options.partnerName || '',
+    requireSessionChange: false
+  }).catch(error => {
+    console.warn(`[BREM][center] ${menu} UI 재전환 실패:`, error.message);
+  });
+  clearMenuCapture();
+
+  return waitForPartnerMenuApiReady(page, partnerId, menu, baseline, dateRange, {
+    switchCaptured: page.context()?.__bremLastSwitchCaptured || switchCaptured,
+    partnerId,
+    requireSessionChange: false
+  });
 }
 
 async function ensurePartnerSessionReady(page, targetId, options = {}) {
@@ -1425,5 +1487,6 @@ module.exports = {
   verifyPartnerMenuApiContext,
   waitForPartnerMenuApiReady,
   ensurePartnerSessionReady,
+  ensureMenuPartnerReady,
   trySwitchCenterViaApi
 };
