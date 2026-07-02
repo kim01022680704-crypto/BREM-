@@ -816,7 +816,7 @@ async function waitForPartnerSwitchComplete(page, targetId, options = {}) {
   const requireSessionChange = Boolean(options.requireSessionChange);
   const sessionBefore = String(options.sessionBefore || '').trim();
   const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
-  const maxAttempts = Number(options.maxAttempts || 12);
+  const maxAttempts = Number(options.maxAttempts || 3);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const sessionNow = String(await readCenterSessionCookie(page) || '').trim();
@@ -885,9 +885,17 @@ async function fetchViaCapturedBrowserRequest(page, captured, phase = 'replay') 
   if (!captured?.url) {
     return { ok: false, status: 400, message: '캡처된 API 요청 없음' };
   }
-  const { replayCapturedBrowserRequest, extractIdsFromCapturedRequest } = require('./baemin-playwright-fetch');
+  const { fetchBaeminJsonViaPage, extractIdsFromCapturedRequest } = require('./baemin-playwright-fetch');
   const ids = extractIdsFromCapturedRequest(captured);
-  return replayCapturedBrowserRequest(page, captured, phase);
+  const headers = captured.headers || captured.requestHeaders || null;
+  return fetchBaeminJsonViaPage(
+    page,
+    captured.url,
+    ids,
+    headers,
+    String(captured.method || 'GET').toUpperCase(),
+    captured.postData || ''
+  );
 }
 
 async function ensureCapturedMenuApiRequest(page, sourceMenu, dateRange = null, options = {}) {
@@ -952,11 +960,16 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
 
   const captured = ensured.captured;
   const { extractDataArray } = require('./baemin-api-fetch');
-  let result = null;
+  const capturedRows = captured.spaItems || extractDataArray(captured.spaPayload) || [];
+  const hasValidCapture = Boolean(
+    captured.spaPayload
+    && Number(captured.status || 200) === 200
+    && capturedRows.length > 0
+  );
 
-  if ((ensured.fromSwitchNetwork || ensured.fromCache) && captured.spaPayload && Number(captured.status || 200) === 200) {
-    const rows = captured.spaItems || extractDataArray(captured.spaPayload) || [];
-    console.log(`[BREM][center] ${menu} verify — 캡처 응답 재사용 rows=${rows.length}`);
+  let result = null;
+  if (hasValidCapture) {
+    console.log(`[BREM][center] ${menu} verify — 캡처 응답 재사용 rows=${capturedRows.length} (replay 생략)`);
     result = {
       ok: true,
       status: 200,
@@ -965,9 +978,12 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
     };
   } else {
     result = await fetchViaCapturedBrowserRequest(page, captured, `${menu}-verify`);
+    if (!result.ok && (result.status === 401 || result.status === 403)) {
+      console.warn(`[BREM][center] ${menu} verify ${result.status} — replay 중단, page-fetch만 사용`);
+    }
   }
 
-  const verifyRows = result.ok ? (extractDataArray(result.payload) || captured.spaItems || []) : [];
+  const verifyRows = result.ok ? (extractDataArray(result.payload) || capturedRows) : [];
   const extractStatusFingerprint = payload => {
     const rows = Array.isArray(payload?.data) ? payload.data : [];
     return rows
@@ -1017,45 +1033,45 @@ async function verifyPartnerApiContext(page, targetId, baselineSample = '', date
 async function waitForPartnerMenuApiReady(page, targetId, sourceMenu, baselineFingerprint = '', dateRange = null, options = {}) {
   const menu = String(sourceMenu || 'delivery_status').trim();
   const partnerId = String(targetId || '').trim();
-  const maxAttempts = Number(options.maxAttempts || 6);
-  const waitMs = Number(options.waitMs || 1500);
   const switchCaptured = options.switchCaptured || page.context()?.__bremLastSwitchCaptured || [];
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const verified = await verifyPartnerMenuApiContext(
-      page,
+  const verified = await verifyPartnerMenuApiContext(
+    page,
+    partnerId,
+    menu,
+    baselineFingerprint,
+    dateRange,
+    {
+      ...options,
+      switchCaptured,
       partnerId,
-      menu,
-      baselineFingerprint,
-      dateRange,
-      {
-        ...options,
-        switchCaptured,
-        partnerId,
-        maxAttempts: 4
-      }
-    );
-    if (verified.ok) {
-      if (attempt > 1) {
-        console.log(`[BREM][center] ${menu} API 확인 완료 (재시도 ${attempt}/${maxAttempts}) partner=${partnerId}`);
-      }
-      return verified;
+      maxAttempts: 2
     }
-    if (verified.reason === 'ui_mismatch' || verified.reason === 'partner_switch_incomplete') return verified;
+  );
+  if (verified.ok) return verified;
 
-    if (attempt < maxAttempts) {
-      console.warn(`[BREM][center] ${menu} API ${verified.reason || 'not-ready'} — 재시도 ${attempt}/${maxAttempts} partner=${partnerId}`);
-      if (verified.reason === 'same_as_baseline') {
-        await replayCapturedCenterSwitch(page, switchCaptured, partnerId);
-        await trySwitchCenterViaApi(page, partnerId);
-      }
-      await delay(waitMs);
-    } else {
-      return verified;
-    }
+  if (verified.reason === 'ui_mismatch' || verified.reason === 'partner_switch_incomplete') {
+    return verified;
   }
 
-  return { ok: false, reason: 'api_probe_timeout', sourceMenu: menu };
+  const authBlocked = verified.sample?.status === 401 || verified.sample?.status === 403;
+  if (authBlocked) {
+    console.warn(`[BREM][center] ${menu} API ${verified.sample?.status} — 재시도 생략 partner=${partnerId}`);
+    return verified;
+  }
+
+  if (verified.reason === 'same_as_baseline') {
+    await replayCapturedCenterSwitch(page, switchCaptured, partnerId);
+    await trySwitchCenterViaApi(page, partnerId);
+    await delay(800);
+    return verifyPartnerMenuApiContext(page, partnerId, menu, baselineFingerprint, dateRange, {
+      ...options,
+      switchCaptured,
+      partnerId
+    });
+  }
+
+  return verified;
 }
 
 async function ensurePartnerSessionReady(page, targetId, options = {}) {
@@ -1072,7 +1088,7 @@ async function ensurePartnerSessionReady(page, targetId, options = {}) {
     sessionBefore: options.sessionBefore || '',
     requireSessionChange: Boolean(options.requireSessionChange),
     switchCaptured,
-    maxAttempts: 12
+    maxAttempts: 3
   });
   if (!switchReady.ok) {
     return { ok: false, reason: switchReady.reason || 'partner_switch_incomplete', ui: switchReady.ui, sample: null };
@@ -1131,7 +1147,7 @@ async function selectPartnerCenterInner(page, target = {}) {
       sessionBefore,
       requireSessionChange,
       switchCaptured: page.context()?.__bremLastSwitchCaptured || [],
-      maxAttempts: 8
+      maxAttempts: 3
     });
     if (!switchReady.ok) {
       throw new Error(`협력사 세션 확인 실패 (${targetId}) — ${switchReady.reason || 'unknown'}`);
@@ -1267,7 +1283,7 @@ async function selectPartnerCenterInner(page, target = {}) {
     sessionBefore: sessionBeforeSwitch,
     requireSessionChange,
     switchCaptured,
-    maxAttempts: 12
+    maxAttempts: 3
   });
   if (!switchReady.ok) {
     console.warn('[BREM][center] 전환 네트워크:', JSON.stringify(switchCaptured.slice(-8)));

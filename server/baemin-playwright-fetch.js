@@ -42,7 +42,7 @@ function extractIdsFromCapturedRequest(captured = {}) {
   return { partnerId, centerId };
 }
 
-function logReplayRequest(phase, captured, ids, cookieHeader = '') {
+function logReplayRequest(phase, captured, ids, via = 'page-fetch') {
   const method = String(captured.method || 'GET').toUpperCase();
   const url = String(captured.url || '');
   let query = '';
@@ -52,16 +52,15 @@ function logReplayRequest(phase, captured, ids, cookieHeader = '') {
     // ignore
   }
   const headers = sanitizeReplayHeaders(captured.headers || captured.requestHeaders || {});
-  console.log(`[BREM][api-replay] ${phase || 'replay'}`);
+  console.log(`[BREM][api-replay] ${phase || 'replay'} via=${via}`);
   console.log(`[BREM][api-replay] partnerId=${ids.partnerId || '-'} centerId=${ids.centerId || '-'}`);
-  console.log(`[BREM][api-replay] method=${method}`);
-  console.log(`[BREM][api-replay] url=${url}`);
+  console.log(`[BREM][api-replay] method=${method} url=${url}`);
   console.log(`[BREM][api-replay] query=${query || '-'}`);
   console.log(`[BREM][api-replay] headers=${JSON.stringify(headers)}`);
-  console.log(`[BREM][api-replay] cookie=${cookieHeader ? `${cookieHeader.slice(0, 240)}${cookieHeader.length > 240 ? '...' : ''}` : '(browser-jar)'}`);
   console.log(`[BREM][api-replay] body=${captured.postData || ''}`);
 }
 
+/** context.request는 CENTER_SESSION과 분리되어 403 — page.evaluate fetch만 사용 */
 async function replayCapturedBrowserRequest(page, captured, phase = 'replay') {
   if (!page || page.isClosed()) {
     return {
@@ -75,43 +74,28 @@ async function replayCapturedBrowserRequest(page, captured, phase = 'replay') {
     return { ok: false, status: 400, message: '캡처된 API 요청 없음' };
   }
 
-  const context = page.context();
-  const method = String(captured.method || 'GET').toUpperCase();
-  const url = String(captured.url);
-  const headers = sanitizeReplayHeaders(captured.headers || captured.requestHeaders || {});
-  const postData = captured.postData || '';
   const ids = extractIdsFromCapturedRequest(captured);
-  const cookies = await context.cookies(url).catch(() => []);
-  const cookieHeader = cookies.map(row => `${row.name}=${row.value}`).join('; ');
-  logReplayRequest(phase, captured, ids, cookieHeader);
+  const headers = sanitizeReplayHeaders(captured.headers || captured.requestHeaders || {});
+  logReplayRequest(phase, captured, ids, 'page-fetch');
 
-  const fetchOptions = { method, headers };
-  if (postData && method !== 'GET' && method !== 'HEAD') {
-    fetchOptions.data = postData;
-  }
-
-  try {
-    const response = await context.request.fetch(url, fetchOptions);
-    const bodyText = await response.text();
-    const { parseBaeminFetchResponse } = require('./baemin-api-fetch');
-    return parseBaeminFetchResponse({
-      url,
-      status: response.status(),
-      bodyText,
-      logContext: ids,
-      via: 'browser-replay'
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      error: error.message || 'BROWSER_REPLAY_FAILED',
-      message: error.message || '브라우저 캡처 요청 재실행 실패'
-    };
-  }
+  return fetchBaeminJsonViaPage(
+    page,
+    captured.url,
+    ids,
+    headers,
+    String(captured.method || 'GET').toUpperCase(),
+    captured.postData || ''
+  );
 }
 
-async function fetchBaeminJsonViaPage(page, url, logContext = null, extraHeaders = null) {
+async function fetchBaeminJsonViaPage(
+  page,
+  url,
+  logContext = null,
+  extraHeaders = null,
+  method = 'GET',
+  postData = ''
+) {
   if (!page || page.isClosed()) {
     return {
       ok: false,
@@ -125,80 +109,76 @@ async function fetchBaeminJsonViaPage(page, url, logContext = null, extraHeaders
     Accept: 'application/json, text/plain, */*',
     ...(extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : {})
   };
+  const httpMethod = String(method || 'GET').toUpperCase();
+  const body = postData || '';
 
   const ctx = logContext && typeof logContext === 'object' ? logContext : {};
   console.log(`[BREM][page-fetch] partnerId=${ctx.partnerId || '-'} centerId=${ctx.centerId || '-'}`);
-  console.log(`[BREM][page-fetch] method=GET url=${url}`);
+  console.log(`[BREM][page-fetch] method=${httpMethod} url=${url}`);
   console.log(`[BREM][page-fetch] headers=${JSON.stringify(headers)}`);
-  console.log('[BREM][page-fetch] body=');
+  console.log(`[BREM][page-fetch] body=${body || ''}`);
 
-  const maxAttempts = 3;
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const result = await page.evaluate(async ({ fetchUrl, headers: fetchHeaders }) => {
-        try {
-          const response = await fetch(fetchUrl, {
-            method: 'GET',
-            credentials: 'include',
-            headers: fetchHeaders
-          });
-          return {
-            status: response.status,
-            bodyText: await response.text()
-          };
-        } catch (error) {
-          return {
-            status: 0,
-            bodyText: '',
-            error: error.message || 'page fetch failed'
-          };
+  try {
+    const result = await page.evaluate(async ({ fetchUrl, fetchHeaders, fetchMethod, fetchBody }) => {
+      try {
+        const init = {
+          method: fetchMethod || 'GET',
+          credentials: 'include',
+          headers: fetchHeaders
+        };
+        if (fetchBody && fetchMethod !== 'GET' && fetchMethod !== 'HEAD') {
+          init.body = fetchBody;
         }
-      }, { fetchUrl: url, headers });
-
-      if (result.error) {
-        const corsBlocked = /failed to fetch/i.test(String(result.error));
+        const response = await fetch(fetchUrl, init);
         return {
-          ok: false,
+          status: response.status,
+          bodyText: await response.text()
+        };
+      } catch (error) {
+        return {
           status: 0,
-          error: result.error,
-          message: corsBlocked
-            ? '배민 API 네트워크 호출 실패 (CORS/네트워크). 브라우저를 새로고침 후 다시 시도하세요.'
-            : result.error
+          bodyText: '',
+          error: error.message || 'page fetch failed'
         };
       }
+    }, {
+      fetchUrl: url,
+      fetchHeaders: headers,
+      fetchMethod: httpMethod,
+      fetchBody: body
+    });
 
-      const { parseBaeminFetchResponse } = require('./baemin-api-fetch');
-      return parseBaeminFetchResponse({
-        url,
-        status: result.status,
-        bodyText: result.bodyText,
-        logContext,
-        via: 'page-fetch'
-      });
-    } catch (error) {
-      lastError = error;
-      const navigated = /execution context was destroyed|navigation/i.test(String(error?.message || error || ''));
-      if (navigated && attempt < maxAttempts) {
-        console.warn(`[BREM][page-fetch] retry ${attempt}/${maxAttempts} after navigation`);
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        continue;
-      }
-      break;
+    if (result.error) {
+      const corsBlocked = /failed to fetch/i.test(String(result.error));
+      return {
+        ok: false,
+        status: 0,
+        error: result.error,
+        message: corsBlocked
+          ? '배민 API 네트워크 호출 실패 (CORS/네트워크). 브라우저를 새로고침 후 다시 시도하세요.'
+          : result.error
+      };
     }
-  }
 
-  const error = lastError || new Error('PLAYWRIGHT_PAGE_FETCH_FAILED');
-  const closed = /has been closed|target page, context or browser/i.test(String(error?.message || error || ''));
-  return {
-    ok: false,
-    status: 0,
-    error: error.message || 'PLAYWRIGHT_PAGE_FETCH_FAILED',
-    message: closed
-      ? 'Playwright 브라우저가 닫혔습니다. [브라우저 열기/세션 유지] 후 다시 시도하세요.'
-      : (error.message || '브라우저 탭 API 호출 실패')
-  };
+    const { parseBaeminFetchResponse } = require('./baemin-api-fetch');
+    return parseBaeminFetchResponse({
+      url,
+      status: result.status,
+      bodyText: result.bodyText,
+      logContext,
+      via: 'page-fetch'
+    });
+  } catch (error) {
+    const closed = /has been closed|target page, context or browser/i.test(String(error?.message || error || ''));
+    return {
+      ok: false,
+      status: 0,
+      error: error.message || 'PLAYWRIGHT_PAGE_FETCH_FAILED',
+      message: closed
+        ? 'Playwright 브라우저가 닫혔습니다. [브라우저 열기/세션 유지] 후 다시 시도하세요.'
+        : (error.message || '브라우저 탭 API 호출 실패')
+    };
+  }
 }
 
 async function fetchBaeminJsonViaPlaywright(context, url, logContext = null, extraHeaders = null) {

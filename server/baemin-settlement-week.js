@@ -89,13 +89,48 @@ function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
 
 function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
   const referenceDate = String(dateKey || todayKST(now)).slice(0, 10);
-  const latest = latestQueryableDate(referenceDate, now);
-  // 정산주(수~화)는 "조회 가능한 최신 영업일" 기준 — 수요일 06시 이후에는 전주 화요일이
-  // referenceDate(오늘)의 정산주와 어긋나 1일만 수집되는 문제를 방지합니다.
-  const weekStart = settlementWeekStart(latest);
+  const today = todayKST(now);
+  const todayWeekday = weekdayKST(today);
+  const weekStart = settlementWeekStart(today);
   const weekEnd = settlementWeekEnd(weekStart);
-  const toDate = latest <= weekEnd ? latest : weekEnd;
+
+  if (todayWeekday === 3) {
+    return {
+      referenceDate,
+      weekStart,
+      weekEnd,
+      latestQueryableDate: latestQueryableDate(today, now),
+      fromDate: null,
+      toDate: null,
+      dates: [],
+      dayCount: 0,
+      mode: 'wednesday_skip',
+      skipped: true,
+      skipReason: '수요일 — 일별/라이더 수집 생략',
+      label: '수요일 생략'
+    };
+  }
+
+  const latest = latestQueryableDate(today, now);
   const fromDate = weekStart;
+  const toDate = latest;
+
+  if (!fromDate || !toDate || toDate < fromDate) {
+    return {
+      referenceDate,
+      weekStart,
+      weekEnd,
+      latestQueryableDate: latest,
+      fromDate: null,
+      toDate: null,
+      dates: [],
+      dayCount: 0,
+      mode: 'empty',
+      skipped: true,
+      skipReason: '조회 가능한 일별/라이더 기간 없음',
+      label: '수집 없음'
+    };
+  }
 
   const dates = [];
   let cursor = fromDate;
@@ -113,12 +148,14 @@ function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
     toDate,
     dates,
     dayCount: dates.length,
-    mode: 'history'
+    mode: 'history',
+    skipped: false,
+    label: `${fromDate} ~ ${toDate}`
   };
 }
 
-function computeDeliveryStatusCollectContext(dateKey = todayKST()) {
-  const collectDate = String(dateKey || todayKST()).slice(0, 10);
+function computeDeliveryStatusCollectContext(dateKey = todayKST(), now = new Date()) {
+  const collectDate = todayKST(now);
   return {
     referenceDate: collectDate,
     collectDate,
@@ -130,7 +167,9 @@ function computeDeliveryStatusCollectContext(dateKey = todayKST()) {
 function buildMenuDateRanges(dateKey = todayKST(), now = new Date()) {
   const history = computeHistoryCollectRange(dateKey, now);
   const delivery = computeDeliveryStatusCollectContext(dateKey);
-  const historyLabel = `${history.fromDate} ~ ${history.toDate}`;
+  const historyLabel = history.skipped
+    ? (history.label || history.skipReason || '수집 생략')
+    : `${history.fromDate} ~ ${history.toDate}`;
   return {
     delivery_status: {
       ...delivery,
@@ -156,6 +195,9 @@ function computeCollectDateRange(dateKey = todayKST(), now = new Date()) {
 function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new Date()) {
   const referenceDate = String(collectDate || todayKST(now)).slice(0, 10);
   const fresh = computeHistoryCollectRange(referenceDate, now);
+  if (fresh.skipped) {
+    return { ...fresh };
+  }
   const fromDate = dateRange?.fromDate || fresh.fromDate;
   const toDate = dateRange?.toDate
     ? (dateRange.toDate <= fresh.toDate ? dateRange.toDate : fresh.toDate)

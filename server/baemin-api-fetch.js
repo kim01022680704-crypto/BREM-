@@ -156,7 +156,7 @@ async function fetchPaginatedApi({
     };
   }
 
-  const { fetchBaeminJsonViaPage, fetchBaeminJsonViaPlaywright, replayCapturedBrowserRequest } = require('./baemin-playwright-fetch');
+  const { fetchBaeminJsonViaPage } = require('./baemin-playwright-fetch');
 
   const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
   const pageStart = Number.isFinite(pagination.pageStart) ? pagination.pageStart : 0;
@@ -214,21 +214,16 @@ async function fetchPaginatedApi({
     let result = null;
 
     if (activePage && !activePage.isClosed()) {
-      const captureReplay = replayCapture || (exactSampleUrl && sampleUrl ? {
-        method: 'GET',
-        url: lastUrl,
-        headers: centerHeaders || sampleHeaders || {}
-      } : null);
-      if (captureReplay?.url) {
-        console.log(`${logPrefix} REPLAY ${lastUrl} (browser-capture)`);
-        result = await replayCapturedBrowserRequest(activePage, captureReplay, logPrefix);
-      } else {
-        console.log(`${logPrefix} GET ${lastUrl} (browser-tab)`);
-        result = await fetchBaeminJsonViaPage(activePage, lastUrl, pageLogContext, centerHeaders);
-      }
-      if (!result.ok && playwrightContext?.request) {
+      console.log(`${logPrefix} GET ${lastUrl} (browser-tab)`);
+      result = await fetchBaeminJsonViaPage(
+        activePage,
+        lastUrl,
+        pageLogContext,
+        centerHeaders
+      );
+      if (!result.ok && result.status !== 401 && result.status !== 403 && playwrightContext?.request) {
         console.warn(`${logPrefix} browser-tab failed status=${result.status}, retry playwright-request`);
-        console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
+        const { fetchBaeminJsonViaPlaywright } = require('./baemin-playwright-fetch');
         const retry = await fetchBaeminJsonViaPlaywright(
           playwrightContext,
           lastUrl,
@@ -236,6 +231,8 @@ async function fetchPaginatedApi({
           centerHeaders
         );
         if (retry.ok) result = retry;
+      } else if (!result.ok && (result.status === 401 || result.status === 403)) {
+        console.warn(`${logPrefix} auth ${result.status} — playwright-request 재시도 생략`);
       }
     } else if (playwrightContext?.request) {
       console.log(`${logPrefix} GET ${lastUrl} (playwright-request)`);
