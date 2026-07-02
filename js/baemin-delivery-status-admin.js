@@ -257,6 +257,12 @@
     return menu === 'daily_history' || menu === 'rider_history';
   }
 
+  function buildViewFullBundleQuery(captureDate) {
+    let query = `/api/admin/baemin-delivery/view-full-bundle?collectDate=${encodeURIComponent(captureDate)}`;
+    query += `&weekStart=${encodeURIComponent(ensureViewWeekStart())}`;
+    return query;
+  }
+
   function buildViewBundleQuery(captureDate, sourceMenu, partnerId) {
     let query = `/api/admin/baemin-delivery/view-bundle?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}`;
     if (partnerId) query += `&partnerId=${encodeURIComponent(partnerId)}`;
@@ -392,25 +398,64 @@
     card.hidden = !state.canManageRegions;
   }
 
-  function renderGrandTotalsPanel(menu = state.activeMenu, totals = state.grandTotals) {
+  function getPartnerMenuTotals(partnerId, menu = 'delivery_status') {
+    const bundle = getCachedPartnerBundle(normalizePartnerId(partnerId));
+    return bundle?.totals?.[menu] || null;
+  }
+
+  function applyFullBundleToCache(byPartner = {}, collectDate = '', weekStart = '', weekEnd = '') {
+    const key = buildCacheKey();
+    state.dataCache = { key, byPartner: {}, loadingPartner: '' };
+    Object.entries(byPartner || {}).forEach(([partnerId, data]) => {
+      const pid = normalizePartnerId(partnerId);
+      state.dataCache.byPartner[pid] = {
+        delivery_status: data.delivery_status || [],
+        daily_history: data.daily_history || [],
+        rider_history: data.rider_history || [],
+        totals: data.totals || {},
+        meta: {
+          ...(data.meta || {}),
+          captureDate: data.meta?.captureDate || collectDate,
+          weekStart: data.meta?.weekStart || weekStart || undefined,
+          weekEnd: data.meta?.weekEnd || weekEnd || undefined
+        }
+      };
+    });
+  }
+
+  function renderActiveViewFromCache() {
+    const partnerId = normalizePartnerId(state.activePartnerId);
+    const menu = state.activeMenu || 'delivery_status';
+    if (!partnerId) return;
+    const cached = getCachedPartnerBundle(partnerId);
+    if (!cached) return;
+    renderSubtabRows(menu, partnerId, cached[menu] || [], cached.meta || {});
+    renderGrandTotalsPanel(menu, partnerId);
+  }
+
+  function renderGrandTotalsPanel(menu = state.activeMenu, partnerId = state.activePartnerId) {
     const panel = $('baeminStatusGrandTotals');
     if (!panel || !isViewSection()) return;
 
-    const show = state.viewLoaded
-      && (menu === 'delivery_status' || menu === 'rider_history')
-      && totals
-      && Number(totals.rowCount || 0) > 0;
-
-    if (!show) {
+    if (!state.viewLoaded || menu !== 'delivery_status') {
       panel.hidden = true;
       panel.innerHTML = '';
       return;
     }
 
-    const title = menu === 'delivery_status' ? '배달현황 전체 합계' : '라이더별 배달내역 전체 합계';
+    const pid = normalizePartnerId(partnerId);
+    const totals = getPartnerMenuTotals(pid, 'delivery_status');
+    if (!totals || Number(totals.rowCount || 0) <= 0) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+
+    const partner = state.partners.find(item => normalizePartnerId(item.partnerId) === pid);
+    const partnerLabel = partnerDisplayLabel(partner);
     panel.hidden = false;
     panel.innerHTML = `
-      <p class="baemin-grand-totals__title">${escapeHtml(title)} · ${formatNumber(totals.rowCount)}건</p>
+      <p class="baemin-grand-totals__title">${escapeHtml(partnerLabel)} · 기사 전체 ${formatNumber(totals.rowCount)}명</p>
       <div class="baemin-grand-totals__card">
         <span class="baemin-grand-totals__label">완료</span>
         <span class="baemin-grand-totals__value baemin-grand-totals__value--accent">${formatNumber(totals.completeTotal)}</span>
@@ -424,8 +469,24 @@
         <span class="baemin-grand-totals__value">${formatNumber(totals.cancelTotal)}</span>
       </div>
       <div class="baemin-grand-totals__card">
-        <span class="baemin-grand-totals__label">라이더귀책 합계</span>
+        <span class="baemin-grand-totals__label">배달취소(라이더귀책) 합계</span>
         <span class="baemin-grand-totals__value">${formatNumber(totals.riderFault)}</span>
+      </div>
+      <div class="baemin-grand-totals__card">
+        <span class="baemin-grand-totals__label">아침점심 합계</span>
+        <span class="baemin-grand-totals__value">${formatNumber(totals.morningTotal)}</span>
+      </div>
+      <div class="baemin-grand-totals__card">
+        <span class="baemin-grand-totals__label">오후 합계</span>
+        <span class="baemin-grand-totals__value">${formatNumber(totals.afternoonTotal)}</span>
+      </div>
+      <div class="baemin-grand-totals__card">
+        <span class="baemin-grand-totals__label">저녁 합계</span>
+        <span class="baemin-grand-totals__value">${formatNumber(totals.eveningTotal)}</span>
+      </div>
+      <div class="baemin-grand-totals__card">
+        <span class="baemin-grand-totals__label">심야 합계</span>
+        <span class="baemin-grand-totals__value">${formatNumber(totals.midnightTotal)}</span>
       </div>
     `;
   }
@@ -696,6 +757,13 @@
       return;
     }
 
+    if (isViewSection() && state.viewLoaded) {
+      renderPartnerTabs(state.partners || []);
+      updateWeekPickerVisibility();
+      updatePanelVisibility();
+      return;
+    }
+
     const ui = tableUiConfig();
     const captureDate = isViewSection()
       ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
@@ -800,6 +868,11 @@
     const cached = getCachedPartnerBundle(id);
     if (cached?.[state.activeMenu]) {
       renderSubtabRows(state.activeMenu, id, cached[state.activeMenu], cached.meta || {});
+      renderGrandTotalsPanel(state.activeMenu, id);
+      return;
+    }
+    if (isViewSection() && state.viewLoaded) {
+      renderActiveViewFromCache();
       return;
     }
     void loadPartnerBundle(id, state.activeMenu);
@@ -810,25 +883,20 @@
     if (!menu) return;
 
     if (isViewSection()) {
-      const prevMenu = state.activeMenu;
       state.activeMenu = menu;
       updatePanelVisibility();
-      renderGrandTotalsPanel(menu, state.grandTotals);
-      if (menu !== prevMenu) {
-        state.activePartnerId = '';
-        invalidateDataCache();
-        if (state.viewLoaded) {
-          void loadViewData({ silent: true });
-        } else {
-          clearViewTablesForMenu(menu);
-        }
-      } else if (state.activePartnerId) {
+      if (state.activePartnerId) {
         const cached = getCachedPartnerBundle(state.activePartnerId);
         if (cached?.[menu]) {
           renderSubtabRows(menu, state.activePartnerId, cached[menu], cached.meta || {});
-        } else if (state.viewLoaded) {
-          void loadPartnerBundle(state.activePartnerId, menu);
+          renderGrandTotalsPanel(menu, state.activePartnerId);
+        } else {
+          clearViewTablesForMenu(menu);
+          renderGrandTotalsPanel(menu, state.activePartnerId);
         }
+      } else {
+        clearViewTablesForMenu(menu);
+        renderGrandTotalsPanel(menu, '');
       }
       return;
     }
@@ -1726,11 +1794,8 @@
     await loadViewConfig();
 
     const captureDate = state.config?.applied?.collectDate || todayKstDate();
-    const partnerId = state.activePartnerId || '';
-    const sourceMenu = state.activeMenu || 'delivery_status';
-
-    const bundleUrl = buildViewBundleQuery(captureDate, sourceMenu, partnerId);
-    const bundle = await adminApi(bundleUrl);
+    const weekStart = ensureViewWeekStart();
+    const bundle = await adminApi(buildViewFullBundleQuery(captureDate));
 
     state.loading = false;
     loadBtn?.classList.remove('is-loading');
@@ -1746,16 +1811,17 @@
     state.viewLoaded = true;
     state.lastClientRefreshAt = new Date().toISOString();
     state.appliedCollectDate = bundle.collectDate || captureDate;
-    state.grandTotals = bundle.grandTotals || null;
     state.partners = filterPartnersForView(bundle.partners || []);
+
+    applyFullBundleToCache(bundle.byPartner || {}, bundle.collectDate, bundle.weekStart || weekStart, bundle.weekEnd);
 
     renderRefreshMeta();
     renderPartnerTabs(state.partners);
     renderViewAppliedBanner(bundle.applied || state.config?.applied || null);
 
-    if (bundle.notApplied && sourceMenu === 'delivery_status') {
+    if (bundle.notApplied) {
       clearViewTablesNotApplied();
-      renderGrandTotalsPanel(sourceMenu, null);
+      renderGrandTotalsPanel('delivery_status', '');
       updatePanelVisibility();
       if (!silent) showToast('저장된 배민현황 데이터가 없습니다. BIZ 현황에서 저장하세요.');
       return;
@@ -1772,39 +1838,12 @@
       state.activePartnerId = normalizePartnerId(state.partners[0].partnerId);
     }
 
-    if (partnerId !== state.activePartnerId || !bundle.items) {
-      const reloadBundle = await adminApi(buildViewBundleQuery(state.appliedCollectDate, sourceMenu, state.activePartnerId));
-      if (reloadBundle.ok) {
-        state.grandTotals = reloadBundle.grandTotals || state.grandTotals;
-        const bundleData = {
-          meta: {
-            captureDate: reloadBundle.collectDate || state.appliedCollectDate,
-            weekStart: reloadBundle.weekStart,
-            weekEnd: reloadBundle.weekEnd,
-            notApplied: reloadBundle.notApplied
-          },
-          [sourceMenu]: reloadBundle.items || []
-        };
-        setCachedPartnerBundle(state.activePartnerId, bundleData);
-        renderSubtabRows(sourceMenu, state.activePartnerId, reloadBundle.items || [], bundleData.meta);
-      }
-    } else {
-      const bundleData = {
-        meta: {
-          captureDate: bundle.collectDate || state.appliedCollectDate,
-          weekStart: bundle.weekStart,
-          weekEnd: bundle.weekEnd,
-          notApplied: bundle.notApplied
-        },
-        [sourceMenu]: bundle.items || []
-      };
-      setCachedPartnerBundle(state.activePartnerId, bundleData);
-      renderSubtabRows(sourceMenu, state.activePartnerId, bundle.items || [], bundleData.meta);
-    }
-
-    renderGrandTotalsPanel(sourceMenu, state.grandTotals);
+    $(tableUiConfig().partnerBarId)?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.baeminPartner === state.activePartnerId);
+    });
     updatePanelVisibility();
-    if (!silent) showToast('배민현황 데이터를 불러왔습니다.');
+    renderActiveViewFromCache();
+    if (!silent) showToast(`배민현황 ${state.partners.length}개 지역 · 메뉴 전체 데이터를 불러왔습니다.`);
   }
 
   async function loadConfig() {
@@ -1855,36 +1894,10 @@
       const cached = getCachedPartnerBundle(id);
       if (cached?.[focusMenu]) {
         renderSubtabRows(focusMenu, id, cached[focusMenu], cached.meta || {});
-        renderGrandTotalsPanel(focusMenu, state.grandTotals);
+        renderGrandTotalsPanel(focusMenu, id);
         return cached;
       }
-
-      if (state.dataCache.loadingPartner === id) return null;
-      state.dataCache.loadingPartner = id;
-
-      const captureDate = state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate();
-      const sourceMenu = String(focusMenu || state.activeMenu || 'delivery_status').trim();
-      const result = await adminApi(buildViewBundleQuery(captureDate, sourceMenu, id));
-      state.dataCache.loadingPartner = '';
-
-      if (!result.ok) {
-        showToast(result.message || '데이터 조회에 실패했습니다.');
-        return null;
-      }
-
-      if (result.grandTotals) state.grandTotals = result.grandTotals;
-      const bundle = getCachedPartnerBundle(id) || { meta: { captureDate, notApplied: false } };
-      bundle.meta = {
-        captureDate: result.collectDate || captureDate,
-        weekStart: result.weekStart,
-        weekEnd: result.weekEnd,
-        notApplied: Boolean(result.notApplied)
-      };
-      bundle[sourceMenu] = result.items || [];
-      setCachedPartnerBundle(id, bundle);
-      renderSubtabRows(sourceMenu, id, bundle[sourceMenu], bundle.meta);
-      renderGrandTotalsPanel(sourceMenu, state.grandTotals);
-      return bundle;
+      return null;
     }
 
     const cached = getCachedPartnerBundle(id);

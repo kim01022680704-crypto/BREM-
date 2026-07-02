@@ -2898,6 +2898,85 @@ async function getViewBundleForAdmin(options = {}) {
   return bundle;
 }
 
+async function getViewFullBundleForAdmin(options = {}) {
+  const weekStart = String(options.weekStart || '').slice(0, 10);
+  const scope = options.actorScope || { allowedPartnerIds: [] };
+
+  const [partnersResult, applied] = await Promise.all([
+    getPartnerListForAdmin(options.collectDate, {
+      appliedOnly: true,
+      actorScope: scope,
+      weekStart
+    }),
+    readAppliedBaeminDelivery()
+  ]);
+
+  if (!partnersResult.ok) return partnersResult;
+
+  const collectDate = partnersResult.collectDate || applied?.collectDate || '';
+  const partnerIds = (partnersResult.partners || [])
+    .map(partner => String(partner.partnerId || '').trim().toUpperCase())
+    .filter(id => /^DP\d{6,}$/i.test(id));
+
+  const byPartner = {};
+  let weekEnd;
+  let notApplied = Boolean(partnersResult.notApplied);
+
+  await Promise.all(partnerIds.map(async partnerId => {
+    const [deliveryResult, dailyResult, riderResult] = await Promise.all([
+      getCollectItemsForAdmin(collectDate, 'delivery_status', {
+        appliedOnly: true,
+        partnerId,
+        skipScopeCheck: true
+      }),
+      getCollectItemsForAdmin(collectDate, 'daily_history', {
+        appliedOnly: true,
+        partnerId,
+        weekStart,
+        skipScopeCheck: true
+      }),
+      getCollectItemsForAdmin(collectDate, 'rider_history', {
+        appliedOnly: true,
+        partnerId,
+        weekStart,
+        skipScopeCheck: true
+      })
+    ]);
+
+    if (deliveryResult.notApplied) notApplied = true;
+    weekEnd = dailyResult.weekEnd || riderResult.weekEnd || weekEnd;
+
+    byPartner[partnerId] = {
+      delivery_status: deliveryResult.items || [],
+      daily_history: dailyResult.items || [],
+      rider_history: riderResult.items || [],
+      totals: {
+        delivery_status: deliveryResult.totals || computeItemsMetricTotals(deliveryResult.items || []),
+        daily_history: dailyResult.totals || computeItemsMetricTotals(dailyResult.items || []),
+        rider_history: riderResult.totals || computeItemsMetricTotals(riderResult.items || [])
+      },
+      meta: {
+        captureDate: collectDate,
+        weekStart: dailyResult.weekStart || riderResult.weekStart || weekStart || undefined,
+        weekEnd: dailyResult.weekEnd || riderResult.weekEnd || undefined,
+        notApplied: Boolean(deliveryResult.notApplied)
+      }
+    };
+  }));
+
+  return {
+    ok: true,
+    collectDate,
+    weekStart: weekStart || undefined,
+    weekEnd,
+    partners: partnersResult.partners || [],
+    count: partnerIds.length,
+    applied: applied || null,
+    notApplied,
+    byPartner
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -2909,6 +2988,7 @@ module.exports = {
   getCollectItemsForAdmin,
   getPartnerListForAdmin,
   getViewBundleForAdmin,
+  getViewFullBundleForAdmin,
   analyzePartnerContamination,
   scrubCrossPartnerDuplicates,
   purgeBizCollectDate,

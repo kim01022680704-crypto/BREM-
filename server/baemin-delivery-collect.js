@@ -626,6 +626,18 @@ async function getViewBundle(accessToken, options = {}) {
   });
 }
 
+async function getViewFullBundle(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getViewFullBundleForAdmin } = require('./baemin-collect-pipeline');
+  return getViewFullBundleForAdmin({
+    collectDate: options.collectDate,
+    weekStart: options.weekStart,
+    actorScope: actor.scope
+  });
+}
+
 async function applyToErp(accessToken, options = {}) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
@@ -710,6 +722,7 @@ module.exports = {
   getCollectItems,
   getPartnerList,
   getViewBundle,
+  getViewFullBundle,
   applyToErp,
   scrubDuplicates,
   purgeCollectDate,

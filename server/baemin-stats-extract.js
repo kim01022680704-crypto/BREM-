@@ -255,7 +255,11 @@ function computeItemsMetricTotals(items) {
     foodRiderFault: 0,
     bmartRiderFault: 0,
     storeRiderFault: 0,
-    riderFault: 0
+    riderFault: 0,
+    morningTotal: 0,
+    afternoonTotal: 0,
+    eveningTotal: 0,
+    midnightTotal: 0
   };
 
   (items || []).forEach(row => {
@@ -280,6 +284,10 @@ function computeItemsMetricTotals(items) {
     totals.bmartRiderFault += breakdown.bmartRiderFault;
     totals.storeRiderFault += breakdown.storeRiderFault;
     totals.riderFault += breakdown.riderFault;
+    totals.morningTotal += num(p.morningCount);
+    totals.afternoonTotal += num(p.afternoonCount);
+    totals.eveningTotal += num(p.eveningCount);
+    totals.midnightTotal += num(p.midnightCount);
   });
 
   return totals;
