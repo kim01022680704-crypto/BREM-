@@ -543,6 +543,8 @@ async function getConfig(accessToken, options = {}) {
   const applied = await readAppliedBaeminDelivery();
 
   if (options.viewOnly) {
+    const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');
+    const riderCollectRange = await getRiderCollectRangeForAdmin().catch(() => ({ ok: false, range: null }));
     return {
       ok: true,
       viewOnly: true,
@@ -553,7 +555,8 @@ async function getConfig(accessToken, options = {}) {
       baeminScope: {
         allowedPartnerIds: actor.scope.allowedPartnerIds,
         isRegionalScoped: actor.scope.isRegionalScoped
-      }
+      },
+      riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null
     };
   }
 
@@ -561,6 +564,8 @@ async function getConfig(accessToken, options = {}) {
   const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
   const baeminAutoCollect = require('./baemin-auto-collect');
   const autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin();
+  const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');
+  const riderCollectRange = await getRiderCollectRangeForAdmin().catch(() => ({ ok: false, range: null }));
 
   return {
     ok: true,
@@ -582,7 +587,8 @@ async function getConfig(accessToken, options = {}) {
     playwright: isPlaywrightFeasibleOnVercel(),
     collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none'),
     autoCollect,
-    menuStatus: autoCollect.menuStatus || []
+    menuStatus: autoCollect.menuStatus || [],
+    riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null
   };
 }
 
@@ -636,6 +642,39 @@ async function getViewFullBundle(accessToken, options = {}) {
     weekStart: options.weekStart,
     actorScope: actor.scope
   });
+}
+
+async function getRiderHistoryRange(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getRiderHistoryRangeForAdmin } = require('./baemin-collect-pipeline');
+  return getRiderHistoryRangeForAdmin({
+    fromDate: options.fromDate,
+    toDate: options.toDate,
+    partnerId: options.partnerId,
+    actorScope: actor.scope
+  });
+}
+
+async function getRiderCollectRange(accessToken) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');
+  return getRiderCollectRangeForAdmin();
+}
+
+async function saveRiderCollectRange(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { saveRiderCollectRange: saveRange } = require('./baemin-rider-collect-range');
+  return saveRange(
+    options.fromDate,
+    options.toDate,
+    actor.caller.email || actor.caller.userId || ''
+  );
 }
 
 async function applyToErp(accessToken, options = {}) {
@@ -743,6 +782,9 @@ module.exports = {
   getPartnerList,
   getViewBundle,
   getViewFullBundle,
+  getRiderHistoryRange,
+  getRiderCollectRange,
+  saveRiderCollectRange,
   applyToErp,
   scrubDuplicates,
   purgeCollectDate,

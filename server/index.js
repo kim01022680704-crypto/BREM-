@@ -994,6 +994,55 @@ app.get('/api/admin/baemin-delivery/view-full-bundle', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/view-rider-range', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getRiderHistoryRange(getBearerToken(req), {
+      fromDate: req.query.fromDate,
+      toDate: req.query.toDate,
+      partnerId: req.query.partnerId
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '라이더별 배달내역을 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/baemin-delivery/rider-collect-range', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getRiderCollectRange(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '라이더 수집 기간을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/rider-collect-range', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.saveRiderCollectRange(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '라이더 수집 기간 저장에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/latest', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getLatestSummary(

@@ -2929,6 +2929,20 @@ textarea {
   color: rgba(203, 213, 225, 0.78);
 }
 
+.baemin-rider-collect-range,
+.baemin-view-rider-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  margin-top: 8px;
+}
+
+.baemin-rider-empty td {
+  color: rgba(148, 163, 184, 0.85);
+  font-style: italic;
+}
+
 .baemin-view-data-card__header {
   display: flex;
   flex-wrap: wrap;

@@ -358,12 +358,39 @@ function computeBizHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
   };
 }
 
-function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date()) {
+function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), riderCollectRange = null) {
   const history = computeBizHistoryCollectRange(dateKey, now);
   const delivery = computeDeliveryStatusCollectContext(dateKey, now);
   const historyLabel = history.skipped
     ? (history.label || history.skipReason || '수집 생략')
     : (history.label || `${history.fromDate} ~ ${history.toDate}`);
+
+  let riderHistory;
+  if (riderCollectRange?.fromDate && riderCollectRange?.toDate) {
+    const riderDates = buildDateList(riderCollectRange.fromDate, riderCollectRange.toDate);
+    riderHistory = {
+      ...riderCollectRange,
+      fromDate: riderCollectRange.fromDate,
+      toDate: riderCollectRange.toDate,
+      dates: riderDates,
+      dayCount: riderDates.length,
+      mode: 'rider_per_day',
+      skipped: riderDates.length === 0,
+      label: riderCollectRange.label || `${riderCollectRange.fromDate} ~ ${riderCollectRange.toDate} (일별 수집 ${riderDates.length}일)`
+    };
+  } else {
+    const riderDates = history.dates || buildDateList(history.fromDate, history.toDate);
+    riderHistory = {
+      ...history,
+      dates: riderDates,
+      dayCount: riderDates.length,
+      mode: 'rider_per_day',
+      label: history.skipped
+        ? historyLabel
+        : `${history.fromDate} ~ ${history.toDate} (일별 수집 ${riderDates.length}일)`
+    };
+  }
+
   return {
     delivery_status: {
       ...delivery,
@@ -374,10 +401,7 @@ function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date()) {
       ...history,
       label: historyLabel
     },
-    rider_history: {
-      ...history,
-      label: historyLabel
-    }
+    rider_history: riderHistory
   };
 }
 

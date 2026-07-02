@@ -491,7 +491,10 @@ async function fetchHistoryByDays({
     }
     console.log(`[BREM][collect] ${sourceId} day=${day} rows=${(dayResult.items || []).length}`);
     return {
-      items: dayResult.items || [],
+      items: (dayResult.items || []).map(item => {
+        if (!item || typeof item !== 'object') return item;
+        return { ...item, __bremDayDate: day };
+      }),
       sourceUrl: dayResult.meta?.sourceUrl || ''
     };
   }
@@ -742,20 +745,67 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   let fetched = null;
-  if (source.dateQueryKeys?.length && activeDateRange?.dayCount > 1) {
+  const isRiderPerDay = sourceId === 'rider_history'
+    && source.dateQueryKeys?.length
+    && activeDateRange?.dates?.length;
+
+  if (isRiderPerDay) {
+    console.log(`[BREM][collect] ${sourceId} per-day mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, 날짜별 API)`);
+    fetched = await fetchHistoryByDays({
+      sourceId,
+      source,
+      endpoint: { ...endpoint, sampleUrl: null },
+      sessionCookie,
+      registry,
+      context,
+      activeDateRange,
+      collectDate,
+      tryFetch
+    });
+    if (!fetched?.ok && context.playwrightPage && activeDateRange) {
+      endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
+        || endpoint;
+      fetched = await fetchHistoryByDays({
+        sourceId,
+        source,
+        endpoint: { ...endpoint, sampleUrl: null },
+        sessionCookie,
+        registry,
+        context,
+        activeDateRange,
+        collectDate,
+        tryFetch
+      });
+    }
+    if (!fetched) {
+      fetched = { ok: false, status: 502, message: '라이더 일별 수집 데이터 없음', items: [] };
+    }
+  } else if (source.dateQueryKeys?.length && activeDateRange?.dayCount > 1) {
     console.log(`[BREM][collect] ${sourceId} range mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, fromDate/toDate 일괄 조회)`);
+    fetched = await tryFetch(endpoint);
+    if (!fetched?.ok || !(fetched.items || []).length) {
+      const spaFetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, { collectDate })
+        || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, { collectDate });
+      if (spaFetched?.ok && (spaFetched.items || []).length) {
+        fetched = spaFetched;
+      }
+    }
+    if (!fetched?.ok) {
+      fetched = await tryFetch(endpoint);
+    }
+  } else {
+    fetched = await tryFetch(endpoint);
+    if (!fetched?.ok || !(fetched.items || []).length) {
+      const spaFetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, { collectDate })
+        || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, { collectDate });
+      if (spaFetched?.ok && (spaFetched.items || []).length) {
+        fetched = spaFetched;
+      }
+    }
   }
 
-  // 1) fromDate~toDate 범위 API (페이지네이션 포함) — 배민 BIZ와 동일
-  fetched = await tryFetch(endpoint);
-
-  // 2) SPA 단일 페이지 캡처 (totalPage=1일 때만)
-  if (!fetched?.ok || !(fetched.items || []).length) {
-    const spaFetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, { collectDate })
-      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, { collectDate });
-    if (spaFetched?.ok && (spaFetched.items || []).length) {
-      fetched = spaFetched;
-    }
+  if (!isRiderPerDay && !fetched?.ok) {
+    fetched = fetched || await tryFetch(endpoint);
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
     console.warn(`[BREM][collect] ${sourceId} stored sampleUrl failed — rediscover`);
@@ -785,7 +835,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       shrunk = fetched.ok ? null : shrinkDateRangeEnd(activeDateRange);
     }
   }
-  if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && source.dateQueryKeys?.length) {
+  if (!isRiderPerDay && !fetched.ok && (fetched.status === 404 || fetched.status === 400) && source.dateQueryKeys?.length) {
     console.warn(`[BREM][collect] ${sourceId} range fetch failed — per-day fallback (최후 수단)`);
     const byDay = await fetchHistoryByDays({
       sourceId,
@@ -801,7 +851,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     if (byDay) fetched = byDay;
   }
   if (
-    source.dateQueryKeys?.length
+    !isRiderPerDay
+    && source.dateQueryKeys?.length
     && fetched.ok
     && !(fetched.items || []).length
   ) {
@@ -1224,8 +1275,11 @@ async function runPartnerSourceCollectLoop({
 
 async function runFullCollectPipeline(options = {}) {
   const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  const historyDateRange = options.dateRange || computeBizHistoryCollectRange(collectDate);
-  const menuDateRanges = options.menuDateRanges || buildBizMenuDateRanges(collectDate);
+  const { readRiderCollectRange } = require('./baemin-rider-collect-range');
+  const riderCollectRange = options.riderCollectRange
+    || await readRiderCollectRange(collectDate).catch(() => null);
+  const menuDateRanges = options.menuDateRanges || buildBizMenuDateRanges(collectDate, new Date(), riderCollectRange);
+  const historyDateRange = options.dateRange || menuDateRanges.daily_history || computeBizHistoryCollectRange(collectDate);
   const dateRange = historyDateRange;
   const source = String(options.source || 'local_scheduler').trim();
   const runId = options.runId || createCollectRunId();
@@ -2950,7 +3004,7 @@ async function getViewFullBundleForAdmin(options = {}) {
       byPartner[partnerId] = emptyPartnerBundle(collectDate, weekStart);
     });
   } else if (supabase && batchId) {
-    const [deliveryRows, dailyRows, riderRows] = await Promise.all([
+    const [deliveryRows, dailyRows] = await Promise.all([
       supabase
         .from('baemin_delivery_applied_items')
         .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
@@ -2959,9 +3013,6 @@ async function getViewFullBundleForAdmin(options = {}) {
         .limit(10000),
       weekStart
         ? supabase.from('baemin_daily_delivery_stats').select('*').eq('week_start', weekStart).limit(10000)
-        : Promise.resolve({ data: [], error: null }),
-      weekStart
-        ? supabase.from('baemin_rider_delivery_stats').select('*').eq('week_start', weekStart).limit(10000)
         : Promise.resolve({ data: [], error: null })
     ]);
 
@@ -2971,9 +3022,6 @@ async function getViewFullBundleForAdmin(options = {}) {
     if (dailyRows.error) {
       return { ok: false, error: dailyRows.error.message || '일별 내역 조회 실패' };
     }
-    if (riderRows.error) {
-      return { ok: false, error: riderRows.error.message || '라이더 내역 조회 실패' };
-    }
 
     const deliveryGrouped = groupAppliedRowsByPartner(
       normalizeCollectItemsForAdmin(deliveryRows.data || [], 'delivery_status', ''),
@@ -2982,13 +3030,6 @@ async function getViewFullBundleForAdmin(options = {}) {
     const dailyGrouped = groupStatsRowsByPartner(
       dedupeStatsRowsByLatest(dailyRows.data || [], 'daily_history'),
       'daily_history',
-      allowed,
-      catalog,
-      regionMap
-    );
-    const riderGrouped = groupStatsRowsByPartner(
-      dedupeStatsRowsByLatest(riderRows.data || [], 'rider_history'),
-      'rider_history',
       allowed,
       catalog,
       regionMap
@@ -3013,7 +3054,7 @@ async function getViewFullBundleForAdmin(options = {}) {
         };
       });
       const dailyItems = dailyGrouped.get(partnerId) || [];
-      const riderItems = riderGrouped.get(partnerId) || [];
+      const riderItems = [];
       byPartner[partnerId] = {
         delivery_status: deliveryItems,
         daily_history: dailyItems,
@@ -3100,6 +3141,132 @@ function groupStatsRowsByPartner(rows, menu, allowed, catalog, regionMap) {
   return map;
 }
 
+function buildRiderHistoryDaySeries(items, fromDate, toDate) {
+  const { addDays } = require('./baemin-settlement-week');
+  const byDate = new Map();
+  (items || []).forEach(row => {
+    const parsed = row.parsed_json || {};
+    const date = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
+    if (!date) return;
+    if (!byDate.has(date)) byDate.set(date, []);
+    byDate.get(date).push(row);
+  });
+
+  const days = [];
+  if (!fromDate || !toDate || toDate < fromDate) return days;
+  let cursor = fromDate;
+  while (cursor <= toDate) {
+    const dayItems = byDate.get(cursor) || [];
+    if (!dayItems.length) {
+      days.push({ date: cursor, empty: true, riderCount: 0, totals: null, items: [] });
+    } else {
+      days.push({
+        date: cursor,
+        empty: false,
+        riderCount: dayItems.length,
+        totals: computeItemsMetricTotals(dayItems),
+        items: dayItems
+      });
+    }
+    cursor = addDays(cursor, 1);
+  }
+  return days;
+}
+
+async function getRiderHistoryRangeForAdmin(options = {}) {
+  const fromDate = String(options.fromDate || '').slice(0, 10);
+  const toDate = String(options.toDate || '').slice(0, 10);
+  const partnerId = String(options.partnerId || '').trim().toUpperCase();
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (!fromDate || !toDate || toDate < fromDate) {
+    return { ok: false, status: 400, error: 'INVALID_RANGE', message: '조회 시작일과 종료일을 확인하세요.' };
+  }
+  if (partnerId && allowed.size && !options.skipScopeCheck && !allowed.has(partnerId)) {
+    return { ok: false, status: 403, error: '해당 지역에 접근 권한이 없습니다.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const batchId = await resolveAppliedBatchId(true);
+  if (!batchId) {
+    return {
+      ok: true,
+      fromDate,
+      toDate,
+      partnerId: partnerId || null,
+      items: [],
+      days: buildRiderHistoryDaySeries([], fromDate, toDate),
+      count: 0,
+      notApplied: true
+    };
+  }
+
+  let query = supabase
+    .from('baemin_delivery_applied_items')
+    .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
+    .eq('batch_id', batchId)
+    .eq('source_menu', 'rider_history')
+    .limit(20000);
+
+  if (partnerId) {
+    query = query.like('dedupe_key', `${partnerId}:%`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingAppliedTableError(error)) {
+      return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
+    }
+    return { ok: false, error: error.message || '라이더 내역 조회 실패' };
+  }
+
+  let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);
+  items = items.filter(row => {
+    const pid = String(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase();
+    if (partnerId && pid !== partnerId) return false;
+    if (allowed.size && pid && !allowed.has(pid)) return false;
+    const date = String(row.parsed_json?.businessDate || row.parsed_json?.deliveryDate || '').slice(0, 10);
+    return date >= fromDate && date <= toDate;
+  });
+
+  const catalog = await loadPartnerDisplayCatalog();
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap();
+  items = items.map(row => {
+    const parsed = row.parsed_json || {};
+    const pid = String(parsed.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || partnerId || '').toUpperCase();
+    const info = enrichPartnerEntry(catalog, pid, parsed.partnerName, regionMap);
+    return {
+      ...row,
+      parsed_json: {
+        ...parsed,
+        partnerId: pid,
+        partnerName: info.partnerName,
+        regionName: info.regionName,
+        displayName: info.displayName
+      }
+    };
+  });
+
+  const days = buildRiderHistoryDaySeries(items, fromDate, toDate);
+  return {
+    ok: true,
+    fromDate,
+    toDate,
+    partnerId: partnerId || null,
+    items,
+    days,
+    count: items.length,
+    appliedOnly: true,
+    totals: computeItemsMetricTotals(items)
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -3112,6 +3279,7 @@ module.exports = {
   getPartnerListForAdmin,
   getViewBundleForAdmin,
   getViewFullBundleForAdmin,
+  getRiderHistoryRangeForAdmin,
   analyzePartnerContamination,
   scrubCrossPartnerDuplicates,
   purgeBizCollectDate,

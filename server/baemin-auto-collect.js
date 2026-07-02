@@ -206,7 +206,10 @@ async function runAutoCollectJob(options = {}) {
   const playwrightContext = options.playwrightContext || null;
   const playwrightPage = options.playwrightPage || null;
 
-  const menuDateRanges = buildBizMenuDateRanges(captureDate);
+  const { readRiderCollectRange } = require('./baemin-rider-collect-range');
+  const riderCollectRange = options.riderCollectRange
+    || await readRiderCollectRange(captureDate).catch(() => null);
+  const menuDateRanges = buildBizMenuDateRanges(captureDate, new Date(), riderCollectRange);
   const dateRange = computeBizHistoryCollectRange(captureDate);
 
   const pipelineResult = await runFullCollectPipeline({
@@ -216,7 +219,8 @@ async function runAutoCollectJob(options = {}) {
     playwrightContext,
     playwrightPage,
     dateRange,
-    menuDateRanges
+    menuDateRanges,
+    riderCollectRange
   });
   const deliveryResult = pipelineResult.results?.delivery_status;
 

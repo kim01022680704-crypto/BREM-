@@ -241,6 +241,9 @@ function resolveApiEndpoint(sourceId, registry = {}) {
 }
 
 function extractBusinessDate(item, options = {}) {
+  if (item?.__bremDayDate && /^\d{4}-\d{2}-\d{2}$/.test(String(item.__bremDayDate).slice(0, 10))) {
+    return String(item.__bremDayDate).slice(0, 10);
+  }
   const fields = ['deliveryDate', 'date', 'targetDate', 'businessDate', 'statisticsDate', 'workDate', 'deliveryDay'];
   for (const field of fields) {
     const value = String(item?.[field] ?? '').trim().slice(0, 10);
@@ -276,13 +279,13 @@ function buildDedupeKey(sourceId, item, index = 0, options = {}) {
 
   if (sourceId === 'rider_history') {
     const riderId = String(item?.userId || item?.riderId || '').trim();
+    const businessDate = extractBusinessDate(item, options);
+    if (riderId && businessDate) return `${partnerId}:${businessDate}:${riderId}:rider`;
     const rangeFrom = options.historyQueryDates?.fromDate || options.dateRange?.fromDate || '';
     const rangeTo = options.historyQueryDates?.toDate || options.dateRange?.toDate || '';
     if (riderId && rangeFrom && rangeTo) {
       return `${partnerId}:${rangeFrom}:${rangeTo}:${riderId}`;
     }
-    const businessDate = extractBusinessDate(item, options);
-    if (riderId) return `${partnerId}:${businessDate}:${riderId}:rider`;
     const phone = String(item?.phoneNumber || item?.phone || '').trim();
     if (phone) return `${partnerId}:${businessDate}:${phone}:rider`;
     return `${partnerId}:${businessDate}:rider-${index}`;

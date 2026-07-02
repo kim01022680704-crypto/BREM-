@@ -5,7 +5,7 @@ const {
   mapToDailyStatsRow,
   mapToRiderStatsRow
 } = require('./baemin-stats-extract');
-const { buildDedupeKey } = require('./baemin-collect-sources');
+const { buildDedupeKey, extractBusinessDate } = require('./baemin-collect-sources');
 
 function statsRowFingerprint(row) {
   return [
@@ -82,17 +82,18 @@ function buildStatsRows(sourceId, items, weekStart, collectedAt, sourceUrl, opti
   }
 
   if (sourceId === 'rider_history') {
-    const rangeWeekStart = options.dateRange?.weekStart
-      || settlementWeekStart(options.dateRange?.toDate || weekStart);
     return items.map((item, index) => {
-      const stats = extractStatsFromItem(item, rangeWeekStart);
+      const stats = extractStatsFromItem(item, weekStart);
+      const businessDate = String(stats.deliveryDate || stats.businessDate || extractBusinessDate(item, options) || '').slice(0, 10);
+      const itemWeekStart = businessDate ? settlementWeekStart(businessDate) : weekStart;
       const dedupeKey = buildDedupeKey(sourceId, item, index, {
         partnerId,
-        collectDate: rangeWeekStart,
+        collectDate: itemWeekStart,
         dateRange: options.dateRange,
-        index
+        index,
+        dayDate: businessDate
       });
-      return mapToRiderStatsRow(stats, rangeWeekStart, collectedAt, sourceUrl, dedupeKey);
+      return mapToRiderStatsRow(stats, itemWeekStart, collectedAt, sourceUrl, dedupeKey);
     });
   }
 
