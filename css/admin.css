@@ -2654,8 +2654,277 @@ textarea {
   margin: 0 0 12px;
 }
 
+.baemin-view-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.baemin-view-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
+}
+
+.baemin-view-hero__title {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  color: #fbbf24;
+}
+
+.baemin-view-hero__desc {
+  margin: 0;
+  font-size: 0.92rem;
+  color: rgba(226, 232, 240, 0.82);
+  line-height: 1.5;
+}
+
+.baemin-view-hero__desc code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fde68a;
+  font-size: 0.88em;
+}
+
+.baemin-view-status-badge {
+  align-self: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.baemin-view-status-badge.baemin-applied-banner--ok,
+.baemin-view-status-badge.baemin-view-status-badge--ok {
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: rgba(22, 101, 52, 0.22);
+  color: #bbf7d0;
+}
+
+.baemin-view-status-badge.baemin-applied-banner--warn,
+.baemin-view-status-badge.baemin-view-status-badge--warn {
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.22);
+  color: #fde68a;
+}
+
 .baemin-partner-map-card {
-  margin-bottom: 14px;
+  margin-bottom: 0;
+}
+
+.baemin-partner-map-card__header h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.baemin-partner-map-form__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.baemin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.baemin-field__label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(203, 213, 225, 0.88);
+}
+
+.baemin-field input {
+  min-width: 180px;
+}
+
+.baemin-partner-map-save {
+  min-height: 42px;
+  padding-inline: 18px;
+}
+
+.baemin-partner-map-registry {
+  margin-top: 14px;
+}
+
+.baemin-partner-map-registry__empty {
+  margin: 0;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  color: rgba(203, 213, 225, 0.75);
+  font-size: 0.9rem;
+}
+
+.baemin-partner-map-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.baemin-partner-map-table th,
+.baemin-partner-map-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  text-align: left;
+}
+
+.baemin-partner-map-table th {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(203, 213, 225, 0.65);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.baemin-partner-map-table tr.is-active {
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.baemin-partner-map-table__region {
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.baemin-partner-map-table__dp {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  color: rgba(203, 213, 225, 0.78);
+}
+
+.baemin-partner-map-table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.baemin-partner-map-table__actions button {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.baemin-partner-map-table__actions button:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.baemin-view-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.baemin-view-nav__block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.baemin-view-nav__block--menus {
+  gap: 10px;
+}
+
+.baemin-view-nav__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.55);
+}
+
+.baemin-region-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.baemin-region-tabs .baemin-region-tab {
+  flex: 0 0 auto;
+  min-width: 72px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.baemin-region-tabs .baemin-region-tab:hover {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.baemin-region-tabs .baemin-region-tab.is-active {
+  border-color: rgba(251, 191, 36, 0.65);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+}
+
+.baemin-menu-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.baemin-menu-tabs .promotion-tab {
+  border-radius: 10px;
+}
+
+.baemin-view-week {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.baemin-view-week__field {
+  margin: 0;
+}
+
+.baemin-view-week__date,
+.baemin-view-week__range {
+  font-size: 0.88rem;
+  color: rgba(203, 213, 225, 0.78);
+}
+
+.baemin-view-data-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.baemin-view-data-card__summary {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 0.88rem;
+  white-space: nowrap;
 }
 
 .baemin-partner-map-form {
@@ -2720,13 +2989,40 @@ textarea {
 
 .baemin-view-meta {
   margin: 0 0 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(15, 23, 42, 0.35);
-  font-size: 0.92rem;
+  padding: 0;
+  border: none;
+  background: transparent;
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.baemin-view-meta__item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.baemin-view-meta__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.58);
+}
+
+.baemin-view-meta__value {
+  font-size: 0.95rem;
+  color: #f8fafc;
+  word-break: break-word;
+}
+
+.baemin-view-meta__value--accent {
+  color: #fbbf24;
+  font-weight: 700;
 }
 
 .baemin-view-meta strong {

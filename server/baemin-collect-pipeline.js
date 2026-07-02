@@ -154,7 +154,7 @@ async function saveCollectItems(rows) {
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   if (!rows.length) return { ok: false, status: 400, error: 'NO_ROWS', message: '저장할 데이터가 없습니다.' };
 
-  const deduped = dedupeCollectRows(rows);
+  const deduped = dedupeCollectRows(normalizeCollectRowsPartnerIdentity(rows));
   const byMenu = new Map();
   deduped.forEach(row => {
     const menuType = row.source_menu || row.record_type || 'unknown';
@@ -1709,7 +1709,7 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     return { ok: false, error: sourceError.message || '조회 실패' };
   }
 
-  const rows = sourceRows || [];
+  const rows = normalizeCollectRowsPartnerIdentity(sourceRows || []);
   if (!rows.length) {
     return {
       ok: false,
@@ -1800,7 +1800,7 @@ async function applyBaeminDelivery(collectDate, options = {}) {
   const saved = await writeSettingsValue(
     BAEMIN_APPLIED_SETTINGS_KEY,
     payload,
-    '배민현황 ERP 적용 스냅샷'
+    '배민현황 Supabase 저장 스냅샷'
   );
   if (!saved.ok) return saved;
 
@@ -2201,7 +2201,39 @@ async function purgeBizCollectDate(collectDate, options = {}) {
 
 function partnerIdFromDedupeKey(dedupeKey = '') {
   const prefix = String(dedupeKey || '').split(':')[0].trim();
-  return /^DP\d{6,}$/i.test(prefix) ? prefix : '';
+  return /^DP\d{6,}$/i.test(prefix) ? prefix.toUpperCase() : '';
+}
+
+function normalizeDpPartnerId(value, dedupeKey = '') {
+  const raw = String(value || '').trim().toUpperCase();
+  if (/^DP\d{6,}$/.test(raw)) return raw;
+  const fromKey = partnerIdFromDedupeKey(dedupeKey);
+  if (fromKey) return fromKey;
+  const match = raw.match(/(DP\d{6,})/);
+  return match ? match[1].toUpperCase() : '';
+}
+
+function normalizeCollectRowPartnerIdentity(row) {
+  if (!row || typeof row !== 'object') return row;
+  const dedupeKey = String(row.dedupe_key || '');
+  const parsed = { ...(row.parsed_json || {}) };
+  const pid = normalizeDpPartnerId(parsed.partnerId || row.partner_id, dedupeKey);
+  if (!pid) return row;
+
+  parsed.partnerId = pid;
+  row.partner_id = pid;
+  row.parsed_json = parsed;
+
+  if (dedupeKey && !dedupeKey.toUpperCase().startsWith(`${pid}:`)) {
+    const parts = dedupeKey.split(':');
+    const suffix = parts.length > 1 ? parts.slice(1).join(':') : dedupeKey;
+    row.dedupe_key = `${pid}:${suffix}`;
+  }
+  return row;
+}
+
+function normalizeCollectRowsPartnerIdentity(rows = []) {
+  return (rows || []).map(normalizeCollectRowPartnerIdentity);
 }
 
 async function loadPartnerDisplayCatalog() {

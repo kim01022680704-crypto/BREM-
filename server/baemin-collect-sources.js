@@ -300,7 +300,7 @@ function buildDedupeKey(sourceId, item, index = 0, options = {}) {
 function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt, options = {}) {
   const acceptance = pickAcceptance(item);
   const peak = item?.deliveryPeakTimeCount || {};
-  const partnerId = String(options.partnerId || options.partner_id || '').trim();
+  const partnerId = String(options.partnerId || options.partner_id || '').trim().toUpperCase();
   const partnerName = String(options.partnerName || options.partner_name || '').trim();
   const regionName = String(options.regionName || options.region_name || '').trim();
   const index = Number.isFinite(options.index) ? options.index : 0;

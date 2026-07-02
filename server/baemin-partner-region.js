@@ -88,7 +88,7 @@ function resolvePartnerDisplay(partnerId, partnerName = '', parsedRegion = '', r
   const parsed = String(parsedRegion || '').trim();
   const inferred = inferRegionFromPartnerName(name);
   const regionName = saved || parsed || inferred || '';
-  const displayName = regionName || (isGenericPartnerName(name) ? pid : name) || pid;
+  const displayName = saved || regionName || pid;
   return {
     partnerId: pid,
     partnerName: name || pid,

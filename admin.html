@@ -654,12 +654,12 @@
 
         <article class="card" id="baeminDeliveryApplyCard">
           <div class="card-header">
-            <h2>배민현황 ERP 적용</h2>
-            <p class="form-help">아래 수집 미리보기에서 데이터를 확인한 뒤 [적용하기]를 누르면, 그 시점의 데이터가 Supabase에 저장되고 「배민현황」 메뉴에 반영됩니다.</p>
+            <h2>배민현황 Supabase 저장</h2>
+            <p class="form-help">수집 미리보기 확인 후 [배민현황 저장]을 누르면 DP 코드 기준 데이터가 Supabase에 저장되고 「배민현황」에서 조회됩니다.</p>
           </div>
-          <div id="baeminDeliveryAppliedStatus" class="baemin-applied-status">적용 상태 확인 중…</div>
+          <div id="baeminDeliveryAppliedStatus" class="baemin-applied-status">저장 상태 확인 중…</div>
           <div class="form-row">
-            <button type="button" class="primary-btn" id="baeminDeliveryApplyBtn">적용하기</button>
+            <button type="button" class="primary-btn" id="baeminDeliveryApplyBtn">배민현황 저장</button>
           </div>
         </article>
 
@@ -790,54 +790,72 @@
         </dialog>
       </section>
 
-      <section class="section" id="baemin-status">
-        <article class="card baemin-partner-map-card">
-          <div class="card-header">
-            <h2>협력사 지역 매핑</h2>
-            <p class="form-help">DP 코드로 매칭 · 상단 탭에는 지역명(동A남A, 양산A 등) 표시 · Supabase에 저장</p>
+      <section class="section baemin-view-section" id="baemin-status">
+        <header class="baemin-view-hero">
+          <div class="baemin-view-hero__text">
+            <h2 class="baemin-view-hero__title">배민현황</h2>
+            <p class="baemin-view-hero__desc">Supabase 저장 데이터 조회 · Biz 매칭은 <code>DP2603096926</code> 형식 · 화면에는 등록한 지역명만 표시</p>
           </div>
-          <form id="baeminPartnerRegionForm" class="form-row baemin-partner-map-form">
-            <label>
-              DP 코드
-              <input type="text" id="baeminPartnerRegionDp" placeholder="DP2603302214" autocomplete="off" spellcheck="false">
-            </label>
-            <label>
-              지역명
-              <input type="text" id="baeminPartnerRegionName" placeholder="동A남A" autocomplete="off">
-            </label>
-            <button type="submit" class="btn-primary" id="baeminPartnerRegionSaveBtn">저장</button>
+          <div id="baeminStatusAppliedBanner" class="baemin-view-status-badge" hidden></div>
+        </header>
+
+        <article class="card baemin-partner-map-card">
+          <div class="card-header baemin-partner-map-card__header">
+            <div>
+              <h3>지역 등록</h3>
+              <p class="form-help">DP 코드로 Biz 데이터와 연결 · 아래 탭에는 지역명만 표시됩니다</p>
+            </div>
+          </div>
+          <form id="baeminPartnerRegionForm" class="baemin-partner-map-form">
+            <div class="baemin-partner-map-form__fields">
+              <label class="baemin-field">
+                <span class="baemin-field__label">DP 코드</span>
+                <input type="text" id="baeminPartnerRegionDp" placeholder="DP2603096926" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="baemin-field">
+                <span class="baemin-field__label">지역명</span>
+                <input type="text" id="baeminPartnerRegionName" placeholder="양산A" autocomplete="off">
+              </label>
+              <button type="submit" class="btn-primary baemin-partner-map-save" id="baeminPartnerRegionSaveBtn">등록</button>
+            </div>
           </form>
-          <div id="baeminPartnerRegionList" class="baemin-partner-map-list"></div>
+          <div id="baeminPartnerRegionList" class="baemin-partner-map-registry"></div>
         </article>
 
-        <div id="baeminStatusAppliedBanner" class="baemin-applied-banner" hidden></div>
-        <p class="form-help baemin-view-intro">배민 BIZ에서 수징·적용한 Supabase 데이터만 조회합니다. (실시간 Biz 호출·로컬 세션 연동 없음)</p>
-
-        <nav id="baeminStatusPartnerSubtabBar" class="baemin-partner-tab-bar baemin-partner-tab-bar--scroll baemin-partner-tab-bar--pinned" hidden aria-label="지역(협력사)"></nav>
-
-        <nav id="baeminStatusMenuSubtabBar" class="baemin-subtab-bar" aria-label="배달 메뉴">
-          <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
-          <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
-          <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
-        </nav>
-        <div id="baeminStatusWeekPickerRow" class="form-row baemin-week-picker-row" hidden>
-          <label class="admin-period-field">
-            정산주 (수요일~화요일)
-            <input type="hidden" id="baeminStatusWeekStart">
-            <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="baemin-status-week" id="baeminStatusWeekStartBtn">수요일 선택</button>
-          </label>
-          <span id="baeminStatusWeekStartLabel" class="form-help"></span>
-          <p id="baeminStatusWeekRangeLabel" class="form-help"></p>
+        <div class="baemin-view-nav">
+          <div class="baemin-view-nav__block">
+            <span class="baemin-view-nav__label">지역 선택</span>
+            <nav id="baeminStatusPartnerSubtabBar" class="baemin-region-tabs baemin-partner-tab-bar--scroll" hidden aria-label="등록 지역"></nav>
+          </div>
+          <div class="baemin-view-nav__block baemin-view-nav__block--menus">
+            <span class="baemin-view-nav__label">메뉴</span>
+            <nav id="baeminStatusMenuSubtabBar" class="baemin-menu-tabs" aria-label="배달 메뉴">
+              <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
+            </nav>
+            <div id="baeminStatusWeekPickerRow" class="baemin-view-week" hidden>
+              <label class="admin-period-field baemin-view-week__field">
+                <span class="baemin-field__label">정산주</span>
+                <input type="hidden" id="baeminStatusWeekStart">
+                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="baemin-status-week" id="baeminStatusWeekStartBtn">수요일 선택</button>
+              </label>
+              <span id="baeminStatusWeekStartLabel" class="baemin-view-week__date"></span>
+              <span id="baeminStatusWeekRangeLabel" class="baemin-view-week__range"></span>
+            </div>
+          </div>
         </div>
 
-        <div class="baemin-subpanel" data-baemin-panel="delivery_status">
-          <article class="card">
-            <div class="card-header">
-              <h2>배달현황</h2>
-              <p class="form-help">최신 적용 스냅샷 · 수집 후 [적용하기]로 저장된 데이터</p>
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="delivery_status">
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>배달현황</h2>
+                <p class="form-help">최신 적용 스냅샷 · Supabase 저장 데이터</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDeliveryStatusSummary">데이터 없음</p>
             </div>
             <div id="baeminStatusDeliveryMeta" class="baemin-view-meta" hidden></div>
-            <p class="admin-table-summary" id="baeminStatusDeliveryStatusSummary">데이터 없음</p>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table">
                 <thead>
@@ -863,13 +881,15 @@
           </article>
         </div>
 
-        <div class="baemin-subpanel" data-baemin-panel="daily_history" hidden>
-          <article class="card">
-            <div class="card-header">
-              <h2>일별 배달내역</h2>
-              <p class="form-help">선택한 정산주 기간의 일별 집계 (Supabase 저장 데이터)</p>
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="daily_history" hidden>
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>일별 배달내역</h2>
+                <p class="form-help">선택 정산주 · Supabase 저장 데이터</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDailyHistorySummary">데이터 없음</p>
             </div>
-            <p class="admin-table-summary" id="baeminStatusDailyHistorySummary">데이터 없음</p>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table">
                 <thead>
@@ -892,13 +912,15 @@
           </article>
         </div>
 
-        <div class="baemin-subpanel" data-baemin-panel="rider_history" hidden>
-          <article class="card">
-            <div class="card-header">
-              <h2>라이더별 배달내역</h2>
-              <p class="form-help">선택한 정산주 기간의 라이더별 집계 (Supabase 저장 데이터)</p>
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="rider_history" hidden>
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>라이더별 배달내역</h2>
+                <p class="form-help">선택 정산주 · Supabase 저장 데이터</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusRiderHistorySummary">데이터 없음</p>
             </div>
-            <p class="admin-table-summary" id="baeminStatusRiderHistorySummary">데이터 없음</p>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table">
                 <thead>
@@ -4971,7 +4993,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260703o"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260703q"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

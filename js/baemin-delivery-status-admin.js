@@ -135,6 +135,16 @@
     return /^(주식회사)?팀브로$/i.test(compact);
   }
 
+  function resolveRegisteredRegionName(partnerId) {
+    const id = String(partnerId || '').trim().toUpperCase();
+    if (!id) return '';
+    return String(state.partnerRegionMap?.[id] || state.partnerRegionMap?.[partnerId] || '').trim();
+  }
+
+  function normalizePartnerId(partnerId) {
+    return String(partnerId || '').trim().toUpperCase();
+  }
+
   function filterPartnersForView(partners = []) {
     const map = state.partnerRegionMap || {};
     const registeredIds = Object.keys(map);
@@ -179,6 +189,11 @@
     return Object.keys(state.partnerRegionMap || {}).length > 0;
   }
 
+  function bizPartnerTabLabel(partner) {
+    const id = normalizePartnerId(partner?.partnerId);
+    return resolveRegisteredRegionName(id) || id || partner?.partnerName || '-';
+  }
+
   function partnerDisplayLabel(partner) {
     if (!partner) return '-';
     const id = String(partner.partnerId || '').trim();
@@ -204,7 +219,7 @@
     }
     if (rangeLabel) {
       rangeLabel.textContent = weekStart
-        ? `조회 기간: ${formatViewWeekRangeLabel(weekStart)}`
+        ? `조회 ${formatViewWeekRangeLabel(weekStart)}`
         : '';
     }
   }
@@ -261,7 +276,8 @@
     if (isViewSection()) {
       const applied = state.config?.applied || {};
       const weekPart = isHistoryViewMenu() ? `:week=${ensureViewWeekStart()}` : '';
-      return `view:${state.activeMenu}:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}${weekPart}`;
+      const mapPart = Object.keys(state.partnerRegionMap || {}).sort().join('|');
+      return `view:${state.activeMenu}:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}${weekPart}:map=${mapPart}`;
     }
     const captureDate = resolveBizCaptureDate();
     return `biz:${captureDate}`;
@@ -293,7 +309,7 @@
         sectionRootId: 'baemin-status',
         panelAttr: 'data-baemin-panel',
         appliedQuery: '&appliedOnly=1',
-        emptyMessage: '「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.',
+        emptyMessage: '「배민 BIZ 현황」에서 수집 후 [배민현황 저장]을 눌러 주세요.',
         summaryMap: {
           delivery_status: 'baeminStatusDeliveryStatusSummary',
           daily_history: 'baeminStatusDailyHistorySummary',
@@ -341,10 +357,8 @@
 
   function formatPartnerCell(parsed) {
     if (isViewSection()) {
-      const pid = String(parsed?.partnerId || '').trim();
-      const saved = state.partnerRegionMap?.[pid] || state.partnerRegionMap?.[pid.toUpperCase()];
-      if (saved) return saved;
-      return pid || '-';
+      const pid = normalizePartnerId(parsed?.partnerId);
+      return resolveRegisteredRegionName(pid) || '-';
     }
     return parsed?.partnerName || parsed?.partnerId || '-';
   }
@@ -366,26 +380,34 @@
     const list = $('baeminPartnerRegionList');
     if (!list) return;
     if (!items.length) {
-      list.innerHTML = '<p class="form-help">저장된 지역 매핑이 없습니다. DP 코드와 지역명을 입력해 저장하세요.</p>';
+      list.innerHTML = '<p class="baemin-partner-map-registry__empty">등록된 지역이 없습니다. DP 코드와 지역명을 입력해 등록하세요.</p>';
       return;
     }
-    list.innerHTML = items.map(item => `
-      <div class="baemin-partner-map-chip" data-partner-id="${escapeHtml(item.partnerId)}">
-        <strong>${escapeHtml(item.regionName)}</strong>
-        <span class="form-help">${escapeHtml(item.partnerId)}</span>
-        <button type="button" data-remove-partner="${escapeHtml(item.partnerId)}" title="삭제" aria-label="삭제">✕</button>
-      </div>
-    `).join('');
-
-    list.querySelectorAll('[data-partner-id]').forEach(chip => {
-      chip.addEventListener('click', event => {
-        if (event.target.closest('[data-remove-partner]')) return;
-        const partnerId = chip.getAttribute('data-partner-id') || '';
-        if (partnerId && state.partners.some(partner => partner.partnerId === partnerId)) {
-          switchBaeminPartner(partnerId);
-        }
-      });
-    });
+    const activeId = normalizePartnerId(state.activePartnerId);
+    list.innerHTML = `
+      <table class="baemin-partner-map-table">
+        <thead>
+          <tr>
+            <th>지역명</th>
+            <th>DP 코드 (Biz 매칭)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(item => {
+            const id = normalizePartnerId(item.partnerId);
+            const active = activeId === id ? ' is-active' : '';
+            return `<tr class="${active.trim()}" data-partner-id="${escapeHtml(id)}">
+              <td class="baemin-partner-map-table__region">${escapeHtml(item.regionName)}</td>
+              <td class="baemin-partner-map-table__dp">${escapeHtml(id)}</td>
+              <td class="baemin-partner-map-table__actions">
+                <button type="button" data-remove-partner="${escapeHtml(id)}" title="삭제">삭제</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
 
     list.querySelectorAll('[data-remove-partner]').forEach(btn => {
       btn.addEventListener('click', event => {
@@ -414,15 +436,14 @@
       showToast(result.message || result.error || '저장에 실패했습니다.');
       return;
     }
-    showToast(`${region} (${pid}) 저장됨`);
+    showToast(`${region} (${pid}) 등록됨`);
     $('baeminPartnerRegionDp').value = '';
     $('baeminPartnerRegionName').value = '';
     await loadPartnerRegionMap();
     invalidateDataCache();
+    state.activePartnerId = pid;
     await loadPartnerTabs();
-    if (state.activePartnerId) {
-      await loadPartnerBundle(state.activePartnerId, state.activeMenu);
-    }
+    await loadPartnerBundle(pid, state.activeMenu);
   }
 
   async function removePartnerRegionEntry(partnerId) {
@@ -506,19 +527,23 @@
 
     bar.hidden = false;
     bar.innerHTML = state.partners.map(partner => {
-      const id = partner.partnerId;
+      const id = normalizePartnerId(partner.partnerId);
       const label = partnerDisplayLabel(partner);
+      const active = normalizePartnerId(state.activePartnerId) === id ? ' is-active' : '';
+      if (isViewSection()) {
+        return `<button type="button" class="baemin-region-tab${active}" data-baemin-partner="${id}" title="DP ${id}">${escapeHtml(label)}</button>`;
+      }
+      const bizLabel = bizPartnerTabLabel(partner);
       const count = Number(partner.riderCount || 0);
       const menuCounts = partner.menuCounts || {};
       const menuHint = menuCounts.delivery_status || menuCounts.daily_history || menuCounts.rider_history
         ? `배달 ${formatNumber(menuCounts.delivery_status || 0)} · 일별 ${formatNumber(menuCounts.daily_history || 0)} · 라이더 ${formatNumber(menuCounts.rider_history || 0)}`
         : (count > 0 ? `${formatNumber(count)}명` : '');
       const countLabel = menuHint ? ` (${menuHint})` : '';
-      const active = state.activePartnerId === id ? ' is-active' : '';
       const contaminated = partner.contaminated || partner.inconsistent ? ' is-contaminated' : '';
       const dupHint = partner.duplicateOf ? ` · ${partner.duplicateOf}와 중복` : '';
       const partialHint = partner.inconsistent ? ' · 메뉴 불일치' : '';
-      return `<button type="button" class="promotion-tab${active}${contaminated}" data-baemin-partner="${id}" title="${label} (${id})${dupHint}${partialHint}">${label}${countLabel}</button>`;
+      return `<button type="button" class="promotion-tab${active}${contaminated}" data-baemin-partner="${id}" title="DP ${id} · ${bizLabel}${dupHint}${partialHint}">${escapeHtml(bizLabel)}${countLabel}</button>`;
     }).join('');
 
     bar.querySelectorAll('[data-baemin-partner]').forEach(btn => {
@@ -526,6 +551,9 @@
         switchBaeminPartner(btn.dataset.baeminPartner || '');
       });
     });
+    if (isViewSection()) {
+      renderPartnerRegionList(state.partnerRegionItems || []);
+    }
   }
 
   function clearViewTablesNotApplied() {
@@ -583,7 +611,7 @@
         return;
       }
     }
-    if (state.activePartnerId && !viewPartners.some(partner => partner.partnerId === state.activePartnerId)) {
+    if (state.activePartnerId && !viewPartners.some(partner => normalizePartnerId(partner.partnerId) === normalizePartnerId(state.activePartnerId))) {
       state.activePartnerId = '';
     }
     if (!state.activePartnerId && viewPartners.length) {
@@ -634,7 +662,7 @@
 
   function switchBaeminPartner(partnerId) {
     const ui = tableUiConfig();
-    const id = String(partnerId || '').trim();
+    const id = normalizePartnerId(partnerId);
     if (!id) return;
     state.activePartnerId = id;
     if (!state.activeMenu) state.activeMenu = 'delivery_status';
@@ -946,17 +974,17 @@
     const applied = config?.applied;
     if (!applied?.collectDate) {
       el.className = 'baemin-applied-status baemin-applied-status--warn';
-      el.innerHTML = '<strong>아직 적용된 데이터 없음</strong> — 수집 미리보기 확인 후 [적용하기]를 누르면 Supabase에 저장되고 배민현황에 반영됩니다.';
+      el.innerHTML = '<strong>아직 배민현황 저장 데이터 없음</strong> — 수집 미리보기 확인 후 [배민현황 저장]을 누르면 DP 코드 기준으로 Supabase에 저장됩니다.';
       if (applyBtn) applyBtn.disabled = state.loading || state.applying;
       return;
     }
 
     el.className = 'baemin-applied-status baemin-applied-status--ok';
     el.innerHTML = `
-      <strong>배민현황 적용됨 (Supabase 저장)</strong>
+      <strong>배민현황 저장됨 (Supabase · DP코드 기준)</strong>
       · 기준일 ${applied.collectDate}
       · ${formatNumber(applied.savedCount || applied.itemCount || 0)}건
-      · 적용 ${formatDateTime(applied.appliedAt)}
+      · 저장 ${formatDateTime(applied.appliedAt)}
     `;
     if (applyBtn) applyBtn.disabled = state.loading || state.applying;
   }
@@ -973,16 +1001,28 @@
     }
 
     const partnerNames = state.partners.map(partner => partnerDisplayLabel(partner)).filter(Boolean);
-    const activePartner = state.partners.find(partner => partner.partnerId === state.activePartnerId);
-    const partnerLabel = activePartner
-      ? partnerDisplayLabel(activePartner)
-      : (partnerNames.length ? partnerNames.join(', ') : '-');
+    const activePartner = state.partners.find(partner => normalizePartnerId(partner.partnerId) === normalizePartnerId(state.activePartnerId));
+    const partnerLabel = activePartner ? partnerDisplayLabel(activePartner) : (partnerNames.length ? partnerNames.join(', ') : '-');
+    const partnerDp = activePartner ? normalizePartnerId(activePartner.partnerId) : '';
 
     meta.hidden = false;
     meta.innerHTML = `
-      <div><strong>적용일시</strong> ${formatDateTime(data.appliedAt)}</div>
-      <div><strong>수집일시</strong> ${formatDateTime(data.collectedAt)}</div>
-      <div><strong>협력사</strong> ${partnerLabel}</div>
+      <div class="baemin-view-meta__item">
+        <span class="baemin-view-meta__label">지역</span>
+        <span class="baemin-view-meta__value baemin-view-meta__value--accent">${escapeHtml(partnerLabel)}</span>
+      </div>
+      ${partnerDp ? `<div class="baemin-view-meta__item">
+        <span class="baemin-view-meta__label">DP 코드</span>
+        <span class="baemin-view-meta__value">${escapeHtml(partnerDp)}</span>
+      </div>` : ''}
+      <div class="baemin-view-meta__item">
+        <span class="baemin-view-meta__label">저장일시</span>
+        <span class="baemin-view-meta__value">${formatDateTime(data.appliedAt)}</span>
+      </div>
+      <div class="baemin-view-meta__item">
+        <span class="baemin-view-meta__label">수집일시</span>
+        <span class="baemin-view-meta__value">${formatDateTime(data.collectedAt)}</span>
+      </div>
     `;
   }
 
@@ -993,15 +1033,15 @@
     const data = applied || state.config?.applied;
     if (!data?.collectDate) {
       banner.hidden = false;
-      banner.className = 'baemin-applied-banner baemin-applied-banner--warn';
-      banner.innerHTML = '<strong>표시할 데이터가 없습니다.</strong> 「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.';
+      banner.className = 'baemin-view-status-badge baemin-view-status-badge--warn';
+      banner.innerHTML = '저장 데이터 없음';
       renderDeliveryStatusMeta(null);
       return;
     }
 
     banner.hidden = false;
-    banner.className = 'baemin-applied-banner baemin-applied-banner--ok';
-    banner.innerHTML = '<strong>배민현황</strong> · Supabase 저장 데이터 조회 전용 (배민 Biz·로컬 세션 실시간 호출 없음)';
+    banner.className = 'baemin-view-status-badge baemin-view-status-badge--ok';
+    banner.textContent = 'Supabase 조회';
     renderDeliveryStatusMeta(data);
   }
 
@@ -1335,7 +1375,7 @@
       menuResults
     });
     setBizCaptureDate(result.collectDate || captureDate);
-    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 저장${result.partnerCount > 1 ? ` (협력사 ${result.partnerCount}곳)` : ''}${result.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(result.scrubResult.deletedCount)}건` : ''} · 아래 미리보기 확인 후 [적용하기]`);
+    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 Supabase 저장${result.partnerCount > 1 ? ` (DP ${result.partnerCount}곳)` : ''}${result.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(result.scrubResult.deletedCount)}건` : ''} · 미리보기 확인 후 [배민현황 저장]`);
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
@@ -1566,7 +1606,7 @@
     const rangeLabel = meta.weekStart && meta.weekEnd
       ? `${meta.weekStart} ~ ${meta.weekEnd}`
       : menuDatePlan?.[sourceMenu]?.label;
-    const partnerLabel = partnerDisplayLabel(state.partners.find(partner => partner.partnerId === partnerId));
+    const partnerLabel = partnerDisplayLabel(state.partners.find(partner => normalizePartnerId(partner.partnerId) === normalizePartnerId(partnerId)));
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
         summaryEl.textContent = isViewSection()
@@ -1740,11 +1780,11 @@
     });
     state.applying = false;
     if (!result.ok) {
-      showToast(result.message || '적용에 실패했습니다.');
+      showToast(result.message || '배민현황 저장에 실패했습니다.');
       renderAppliedStatus(state.config);
       return;
     }
-    showToast(`배민현황에 ${result.collectDate} 데이터 ${formatNumber(result.itemCount || result.savedCount || 0)}건이 저장·적용되었습니다.`);
+    showToast(`배민현황 Supabase 저장 완료 — ${result.collectDate} · ${formatNumber(result.itemCount || result.savedCount || 0)}건 (DP코드 기준)`);
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
@@ -1930,6 +1970,8 @@
       await loadAllSubtabData();
       return;
     }
+
+    await loadPartnerRegionMap();
 
     stopStatusPoll();
     await loadPublicLocalSessionConfig();
