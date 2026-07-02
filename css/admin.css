@@ -2654,9 +2654,7 @@ textarea {
   margin: 0 0 12px;
 }
 
-.baemin-view-section {
-  display: flex;
-  flex-direction: column;
+#baemin-status.section.active {
   gap: 14px;
 }
 
@@ -2972,7 +2970,7 @@ textarea {
   color: #f87171;
 }
 
-.baemin-partner-tab-bar--pinned {
+#baemin-status .baemin-partner-tab-bar--pinned {
   margin: 0 0 10px;
   position: sticky;
   top: 0;
