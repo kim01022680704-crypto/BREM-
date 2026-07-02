@@ -846,6 +846,41 @@ app.post('/api/admin/baemin-delivery/session', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/partner-regions', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getPartnerRegionMap(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '협력사 지역 매핑을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/partner-regions', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.savePartnerRegionEntry(getBearerToken(req), {
+      partnerId: body.partnerId,
+      regionName: body.regionName,
+      delete: body.delete === true || body.delete === '1'
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '협력사 지역 매핑 저장에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/partners', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getPartnerList(getBearerToken(req), {

@@ -82,8 +82,13 @@ function pickBestPartnerName(existingName, candidateName) {
   return next;
 }
 
-function sortPartnersForAdmin(partners = []) {
-  return [...partners].sort((a, b) => String(a.partnerName || '').localeCompare(String(b.partnerName || ''), 'ko'));
+function sortPartnersForAdmin(partners = [], options = {}) {
+  const sortKey = options.byDisplayName ? 'displayName' : 'partnerName';
+  return [...partners].sort((a, b) => {
+    const left = String(a[sortKey] || a.displayName || a.partnerName || '');
+    const right = String(b[sortKey] || b.displayName || b.partnerName || '');
+    return left.localeCompare(right, 'ko');
+  });
 }
 
 module.exports = {

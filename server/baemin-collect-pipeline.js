@@ -2208,7 +2208,7 @@ async function loadPartnerDisplayCatalog() {
   const supabase = getServiceClient();
   if (!supabase) return new Map();
 
-  const { inferRegionFromPartnerName } = require('./baemin-center-context');
+  const { inferRegionFromPartnerName } = require('./baemin-partner-region');
   const catalog = new Map();
 
   function ingest(row) {
@@ -2217,7 +2217,7 @@ async function loadPartnerDisplayCatalog() {
     if (!/^DP\d{6,}$/i.test(pid)) return;
     const partnerName = String(parsed.partnerName || '').trim();
     const regionName = String(parsed.regionName || '').trim() || inferRegionFromPartnerName(partnerName);
-    const displayName = regionName || partnerName || pid;
+    const displayName = regionName || pid;
     const prev = catalog.get(pid);
     if (!prev || String(row.collected_at || '') >= String(prev.collectedAt || '')) {
       catalog.set(pid, {
@@ -2253,15 +2253,20 @@ async function loadPartnerDisplayCatalog() {
   return catalog;
 }
 
-function enrichPartnerEntry(catalog, partnerId, fallbackName = '') {
+function enrichPartnerEntry(catalog, partnerId, fallbackName = '', regionMap = null) {
   const pid = String(partnerId || '').trim();
   const hit = catalog?.get?.(pid);
-  if (hit) return hit;
-  const { inferRegionFromPartnerName } = require('./baemin-center-context');
-  const partnerName = String(fallbackName || '').trim() || pid;
-  const regionName = inferRegionFromPartnerName(partnerName);
-  const displayName = regionName || partnerName || pid;
-  return { partnerId: pid, partnerName, regionName, displayName };
+  const { resolvePartnerDisplay } = require('./baemin-partner-region');
+  if (hit) {
+    const resolved = resolvePartnerDisplay(pid, hit.partnerName || fallbackName, hit.regionName, regionMap);
+    return {
+      ...hit,
+      partnerId: pid,
+      regionName: resolved.regionName,
+      displayName: resolved.displayName
+    };
+  }
+  return resolvePartnerDisplay(pid, fallbackName, '', regionMap);
 }
 
 function dedupeStatsRowsByLatest(rows, menu) {
@@ -2282,10 +2287,10 @@ function dedupeStatsRowsByLatest(rows, menu) {
   return Array.from(byKey.values());
 }
 
-function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null) {
+function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null, regionMap = null) {
   const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
   const raw = row.raw_json || {};
-  const partnerInfo = enrichPartnerEntry(catalog, pid);
+  const partnerInfo = enrichPartnerEntry(catalog, pid, '', regionMap);
   return {
     collect_date: row.delivery_date,
     collected_at: row.collected_at,
@@ -2311,10 +2316,10 @@ function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null) {
   };
 }
 
-function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null) {
+function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null, regionMap = null) {
   const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
   const raw = row.raw_json || {};
-  const partnerInfo = enrichPartnerEntry(catalog, pid);
+  const partnerInfo = enrichPartnerEntry(catalog, pid, '', regionMap);
   return {
     collect_date: row.week_start,
     collected_at: row.collected_at,
@@ -2382,8 +2387,10 @@ async function getHistoryStatsItemsForAdmin(weekStart, sourceMenu, partnerId = '
   });
 
   const catalog = await loadPartnerDisplayCatalog();
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap();
   const mapper = menu === 'daily_history' ? mapDailyStatsRowToAdminItem : mapRiderStatsRowToAdminItem;
-  const items = rows.map(row => mapper(row, pid, catalog));
+  const items = rows.map(row => mapper(row, pid, catalog, regionMap));
 
   return {
     ok: true,
@@ -2419,22 +2426,24 @@ async function getPartnerListFromStatsTable(weekStart, sourceMenu) {
     return { ok: false, partners: [], error: error.message };
   }
 
-  const { pickBestPartnerName, sortPartnersForAdmin } = require('./baemin-partner-match');
+  const { sortPartnersForAdmin } = require('./baemin-partner-match');
   const catalog = await loadPartnerDisplayCatalog();
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap();
   const partners = new Map();
   const counts = new Map();
 
   (data || []).forEach(row => {
     const partnerId = partnerIdFromDedupeKey(row.dedupe_key);
     if (!partnerId) return;
-    const info = enrichPartnerEntry(catalog, partnerId);
+    const info = enrichPartnerEntry(catalog, partnerId, '', regionMap);
     partners.set(partnerId, info.displayName);
     counts.set(partnerId, (counts.get(partnerId) || 0) + 1);
   });
 
   const items = sortPartnersForAdmin(
-    Array.from(partners.entries()).map(([partnerId, displayName]) => {
-      const info = enrichPartnerEntry(catalog, partnerId, displayName);
+    Array.from(partners.entries()).map(([partnerId]) => {
+      const info = enrichPartnerEntry(catalog, partnerId, '', regionMap);
       return {
         partnerId,
         partnerName: info.partnerName,
@@ -2447,7 +2456,8 @@ async function getPartnerListFromStatsTable(weekStart, sourceMenu) {
           rider_history: menu === 'rider_history' ? (counts.get(partnerId) || 0) : 0
         }
       };
-    })
+    }),
+    { byDisplayName: true }
   );
 
   return { ok: true, partners: items };
@@ -2512,6 +2522,8 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
 
   const { pickBestPartnerName, sortPartnersForAdmin } = require('./baemin-partner-match');
   const catalog = appliedOnly ? await loadPartnerDisplayCatalog() : null;
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = appliedOnly ? await readPartnerRegionMap() : null;
   const partners = new Map();
   (data || []).forEach(row => {
     const parsed = row.parsed_json || {};
@@ -2537,7 +2549,7 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
       const duplicateGroup = (contamination.duplicateGroups || []).find(group =>
         group.removePartnerIds.includes(partnerId) || group.keepPartnerId === partnerId
       );
-      const info = appliedOnly ? enrichPartnerEntry(catalog, partnerId, partnerName) : null;
+      const info = appliedOnly ? enrichPartnerEntry(catalog, partnerId, partnerName, regionMap) : null;
       return {
         partnerId,
         partnerName,
@@ -2555,7 +2567,8 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
           ? duplicateGroup.keepPartnerName || duplicateGroup.keepPartnerId
           : null
       };
-    })
+    }),
+    appliedOnly ? { byDisplayName: true } : undefined
   );
 
   return {
@@ -2631,7 +2644,28 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     return { ok: false, error: error.message || '조회 실패' };
   }
 
-  const items = normalizeCollectItemsForAdmin(data || [], menu, partnerId);
+  let items = normalizeCollectItemsForAdmin(data || [], menu, partnerId);
+
+  if (appliedOnly) {
+    const catalog = await loadPartnerDisplayCatalog();
+    const { readPartnerRegionMap } = require('./baemin-partner-region');
+    const regionMap = await readPartnerRegionMap();
+    items = items.map(row => {
+      const parsed = row.parsed_json || {};
+      const pid = String(parsed.partnerId || '').trim() || partnerIdFromDedupeKey(row.dedupe_key);
+      const info = enrichPartnerEntry(catalog, pid, parsed.partnerName, regionMap);
+      return {
+        ...row,
+        parsed_json: {
+          ...parsed,
+          partnerId: pid,
+          partnerName: info.partnerName,
+          regionName: info.regionName,
+          displayName: info.displayName
+        }
+      };
+    });
+  }
 
   return {
     ok: true,

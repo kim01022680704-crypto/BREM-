@@ -18,6 +18,8 @@
     contamination: null,
     appliedCollectDate: '',
     viewWeekStart: '',
+    partnerRegionMap: {},
+    partnerRegionItems: [],
     bizPreviewCollectDate: '',
     dataCache: {
       key: '',
@@ -119,10 +121,29 @@
     return weekStart || '';
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function isGenericPartnerLabel(text) {
+    const compact = String(text || '').replace(/\s+/g, '');
+    if (!compact) return true;
+    return /^(주식회사)?팀브로$/i.test(compact);
+  }
+
   function partnerDisplayLabel(partner) {
     if (!partner) return '-';
+    const id = String(partner.partnerId || '').trim();
+    const saved = state.partnerRegionMap?.[id] || state.partnerRegionMap?.[id.toUpperCase()];
     if (isViewSection()) {
-      return partner.displayName || partner.regionName || partner.partnerName || partner.partnerId || '-';
+      if (saved) return saved;
+      const label = partner.displayName || partner.regionName;
+      if (label && !isGenericPartnerLabel(label)) return label;
+      return partner.regionName || id || '-';
     }
     return partner.partnerName || partner.partnerId || '-';
   }
@@ -278,9 +299,107 @@
 
   function formatPartnerCell(parsed) {
     if (isViewSection()) {
-      return parsed?.displayName || parsed?.regionName || parsed?.partnerName || parsed?.partnerId || '-';
+      const pid = String(parsed?.partnerId || '').trim();
+      const saved = state.partnerRegionMap?.[pid] || state.partnerRegionMap?.[pid.toUpperCase()];
+      if (saved) return saved;
+      const label = parsed?.displayName || parsed?.regionName;
+      if (label && !isGenericPartnerLabel(label)) return label;
+      return parsed?.regionName || pid || '-';
     }
     return parsed?.partnerName || parsed?.partnerId || '-';
+  }
+
+  async function loadPartnerRegionMap() {
+    const result = await adminApi('/api/admin/baemin-delivery/partner-regions');
+    if (!result.ok) {
+      state.partnerRegionMap = {};
+      state.partnerRegionItems = [];
+      renderPartnerRegionList([]);
+      return;
+    }
+    state.partnerRegionMap = result.map || {};
+    state.partnerRegionItems = Array.isArray(result.items) ? result.items : [];
+    renderPartnerRegionList(state.partnerRegionItems);
+  }
+
+  function renderPartnerRegionList(items = []) {
+    const list = $('baeminPartnerRegionList');
+    if (!list) return;
+    if (!items.length) {
+      list.innerHTML = '<p class="form-help">저장된 지역 매핑이 없습니다. DP 코드와 지역명을 입력해 저장하세요.</p>';
+      return;
+    }
+    list.innerHTML = items.map(item => `
+      <div class="baemin-partner-map-chip" data-partner-id="${escapeHtml(item.partnerId)}">
+        <strong>${escapeHtml(item.regionName)}</strong>
+        <span class="form-help">${escapeHtml(item.partnerId)}</span>
+        <button type="button" data-remove-partner="${escapeHtml(item.partnerId)}" title="삭제" aria-label="삭제">✕</button>
+      </div>
+    `).join('');
+
+    list.querySelectorAll('[data-partner-id]').forEach(chip => {
+      chip.addEventListener('click', event => {
+        if (event.target.closest('[data-remove-partner]')) return;
+        const partnerId = chip.getAttribute('data-partner-id') || '';
+        if (partnerId && state.partners.some(partner => partner.partnerId === partnerId)) {
+          switchBaeminPartner(partnerId);
+        }
+      });
+    });
+
+    list.querySelectorAll('[data-remove-partner]').forEach(btn => {
+      btn.addEventListener('click', event => {
+        event.stopPropagation();
+        void removePartnerRegionEntry(btn.getAttribute('data-remove-partner') || '');
+      });
+    });
+  }
+
+  async function savePartnerRegionEntry(partnerId, regionName) {
+    const pid = String(partnerId || '').trim().toUpperCase();
+    const region = String(regionName || '').trim();
+    if (!/^DP\d{6,}$/.test(pid)) {
+      showToast('DP 코드 형식을 확인하세요. (예: DP2603302214)');
+      return;
+    }
+    if (!region) {
+      showToast('지역명을 입력하세요.');
+      return;
+    }
+    const result = await adminApi('/api/admin/baemin-delivery/partner-regions', {
+      method: 'POST',
+      body: JSON.stringify({ partnerId: pid, regionName: region })
+    });
+    if (!result.ok) {
+      showToast(result.message || result.error || '저장에 실패했습니다.');
+      return;
+    }
+    showToast(`${region} (${pid}) 저장됨`);
+    $('baeminPartnerRegionDp').value = '';
+    $('baeminPartnerRegionName').value = '';
+    await loadPartnerRegionMap();
+    invalidateDataCache();
+    await loadPartnerTabs();
+    if (state.activePartnerId) {
+      await loadPartnerBundle(state.activePartnerId, state.activeMenu);
+    }
+  }
+
+  async function removePartnerRegionEntry(partnerId) {
+    const pid = String(partnerId || '').trim().toUpperCase();
+    if (!pid) return;
+    const result = await adminApi('/api/admin/baemin-delivery/partner-regions', {
+      method: 'POST',
+      body: JSON.stringify({ partnerId: pid, delete: true })
+    });
+    if (!result.ok) {
+      showToast(result.message || result.error || '삭제에 실패했습니다.');
+      return;
+    }
+    showToast('지역 매핑을 삭제했습니다.');
+    await loadPartnerRegionMap();
+    invalidateDataCache();
+    await loadPartnerTabs();
   }
 
   function selectedPartnerId() {
@@ -834,7 +953,7 @@
 
     banner.hidden = false;
     banner.className = 'baemin-applied-banner baemin-applied-banner--ok';
-    banner.innerHTML = '<strong>배민현황</strong> · Supabase 저장 데이터 조회 전용 (배민 Biz 실시간 호출 없음)';
+    banner.innerHTML = '<strong>배민현황</strong> · Supabase 저장 데이터 조회 전용 (배민 Biz·로컬 세션 실시간 호출 없음)';
     renderDeliveryStatusMeta(data);
   }
 
@@ -1714,6 +1833,15 @@
       }
     });
 
+    $('baeminPartnerRegionForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      if (!isViewSection()) return;
+      void savePartnerRegionEntry(
+        $('baeminPartnerRegionDp')?.value || '',
+        $('baeminPartnerRegionName')?.value || ''
+      );
+    });
+
     $('baeminStatusWeekStart')?.addEventListener('change', () => {
       if (!isViewSection()) return;
       handleWeekSelect($('baeminStatusWeekStart')?.value || '');
@@ -1749,6 +1877,7 @@
       syncViewWeekPicker();
       updatePanelVisibility();
       invalidateDataCache();
+      await loadPartnerRegionMap();
       await loadViewConfig();
       await loadAllSubtabData();
       return;

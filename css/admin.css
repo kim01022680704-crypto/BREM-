@@ -2654,6 +2654,64 @@ textarea {
   margin: 0 0 12px;
 }
 
+.baemin-partner-map-card {
+  margin-bottom: 14px;
+}
+
+.baemin-partner-map-form {
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.baemin-partner-map-form label {
+  min-width: 160px;
+}
+
+.baemin-partner-map-list {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.baemin-partner-map-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.35);
+  font-size: 0.9rem;
+}
+
+.baemin-partner-map-chip strong {
+  color: var(--accent, #fbbf24);
+}
+
+.baemin-partner-map-chip button {
+  border: none;
+  background: transparent;
+  color: var(--muted, #94a3b8);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 0.85rem;
+}
+
+.baemin-partner-map-chip button:hover {
+  color: #f87171;
+}
+
+.baemin-partner-tab-bar--pinned {
+  margin: 0 0 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 0;
+  background: var(--bg, #0f172a);
+}
+
 .baemin-week-picker-row {
   margin: 0 0 12px;
   align-items: flex-end;

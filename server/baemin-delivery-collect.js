@@ -613,6 +613,29 @@ async function purgeCollectDate(accessToken, options = {}) {
   });
 }
 
+async function getPartnerRegionMap(accessToken) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { getPartnerRegionMapForAdmin } = require('./baemin-partner-region');
+  return getPartnerRegionMapForAdmin();
+}
+
+async function savePartnerRegionEntry(accessToken, options = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const { upsertPartnerRegionEntry, deletePartnerRegionEntry } = require('./baemin-partner-region');
+  if (options.delete) {
+    return deletePartnerRegionEntry(options.partnerId);
+  }
+  return upsertPartnerRegionEntry(
+    options.partnerId,
+    options.regionName,
+    caller.email || caller.userId || ''
+  );
+}
+
 module.exports = {
   fetchAllDeliveryStatus,
   collectFromApi,
@@ -625,6 +648,8 @@ module.exports = {
   applyToErp,
   scrubDuplicates,
   purgeCollectDate,
+  getPartnerRegionMap,
+  savePartnerRegionEntry,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,
