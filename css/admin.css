@@ -4990,6 +4990,24 @@ textarea {
   white-space: nowrap;
 }
 
+.weekly-call-action-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.weekly-apply-call-btn {
+  white-space: nowrap;
+  border-color: #f59e0b;
+  color: #b45309;
+  background: #fffbeb;
+}
+
+.weekly-apply-call-btn:hover {
+  background: #fef3c7;
+}
+
 .weekly-call-audit-insights {
   margin: 0 0 12px;
 }

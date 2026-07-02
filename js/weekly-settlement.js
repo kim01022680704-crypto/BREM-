@@ -946,6 +946,107 @@ const BremWeeklySettlement = (function () {
     return { ...record, previewUnmatched: unmatchedRiders };
   }
 
+  function applyWeeklySettlementCallCount({
+    driverId,
+    startDate,
+    endDate,
+    platform,
+    weeklyOrderCount
+  } = {}) {
+    const id = String(driverId || '').trim();
+    const p = normalizePlatform(platform);
+    const start = String(startDate || '').slice(0, 10);
+    const end = String(endDate || '').slice(0, 10);
+    const target = Number(weeklyOrderCount || 0);
+
+    if (!id) throw new Error('매칭된 기사가 없습니다.');
+    if (!start || !end) throw new Error('정산 기간이 없습니다.');
+    if (target < 0) throw new Error('주간정산서 콜수가 올바르지 않습니다.');
+
+    const beforeAudit = buildDriverCallAudit(id, start, end, p, target);
+    const current = Number(beforeAudit.systemCallCount || 0);
+    if (target === current) {
+      return {
+        ok: true,
+        applied: false,
+        weeklyOrderCount: target,
+        systemCallCount: current,
+        updates: []
+      };
+    }
+
+    const updates = [];
+    const daysWithData = (beforeAudit.dayAudits || []).filter(day => Number(day.usedCount || 0) > 0);
+
+    if (!daysWithData.length) {
+      BremStorage.calls.upsertDaily({
+        driverId: id,
+        date: end,
+        count: target,
+        platform: p,
+        logEdit: true
+      });
+      updates.push({ date: end, count: target, source: 'call' });
+    } else {
+      let allocated = 0;
+      daysWithData.forEach((day, index) => {
+        let newCount;
+        if (index === daysWithData.length - 1) {
+          newCount = Math.max(0, target - allocated);
+        } else if (current > 0) {
+          newCount = Math.max(0, Math.round((Number(day.usedCount || 0) / current) * target));
+          allocated += newCount;
+        } else {
+          newCount = 0;
+        }
+
+        if (day.source === 'settlement' || (day.settlements || []).length) {
+          const settlementRecord = (day.settlements || []).find(row => row.id === day.usedSettlementId)
+            || pickLatestSettlementRecord(day.settlements || [])
+            || BremStorage.settlements.getAll().find(row => (
+              row.driverId === id
+              && normalizePlatform(row.platform) === p
+              && normalizePeriodDay(row.period) === day.date
+            ));
+          if (settlementRecord) {
+            const full = BremStorage.settlements.getAll().find(row => row.id === settlementRecord.id) || settlementRecord;
+            BremStorage.settlements.upsertBatch({
+              period: day.date,
+              platform: p,
+              records: [{
+                driverId: id,
+                riderId: full.riderId || '',
+                orderCount: newCount,
+                deliveryAmount: Number(full.deliveryAmount ?? full.settlementAmount ?? 0),
+                settlementAmount: Number(full.settlementAmount ?? full.deliveryAmount ?? 0)
+              }]
+            });
+            updates.push({ date: day.date, count: newCount, source: 'settlement' });
+            return;
+          }
+        }
+
+        BremStorage.calls.upsertDaily({
+          driverId: id,
+          date: day.date,
+          count: newCount,
+          platform: p,
+          logEdit: true
+        });
+        updates.push({ date: day.date, count: newCount, source: 'call' });
+      });
+    }
+
+    const afterAudit = buildDriverCallAudit(id, start, end, p, target);
+    return {
+      ok: true,
+      applied: true,
+      weeklyOrderCount: target,
+      systemCallCount: Number(afterAudit.systemCallCount || 0),
+      updates
+    };
+  }
+
   return {
     BAEMIN_SHEET_KEYWORD,
     calculateCoupangSettlementDates,
@@ -966,6 +1067,7 @@ const BremWeeklySettlement = (function () {
     buildDriversInPeriod,
     buildDriverCallStatsForPeriod,
     buildDriverCallAudit,
+    applyWeeklySettlementCallCount,
     matchSettlementRidersWithExistingData,
     buildWeeklySummary,
     buildMatchedNamesLabel,

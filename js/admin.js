@@ -4901,6 +4901,11 @@
       renderAll();
     });
 
+    document.addEventListener('brem-calls-changed', () => {
+      renderCalls();
+      renderDashboard();
+    });
+
     document.addEventListener('click', event => {
       if (event.target.closest('[data-rider-app-publish]')) {
         handleRiderAppPublish();

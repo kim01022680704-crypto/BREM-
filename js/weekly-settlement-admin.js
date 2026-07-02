@@ -284,16 +284,31 @@ const BremWeeklySettlementAdmin = (function () {
   function renderCallAuditButton(rider, context = {}) {
     if (!rider?.matchedRiderId) return '-';
     const label = rider.driverName || rider.riderName || '기사';
-    return `<button type="button" class="small-btn weekly-call-audit-btn"
-      data-weekly-call-audit="1"
-      data-driver-id="${escapeHtml(rider.matchedRiderId)}"
-      data-platform="${escapeHtml(context.platform || 'coupang')}"
-      data-start-date="${escapeHtml(context.startDate || '')}"
-      data-end-date="${escapeHtml(context.endDate || '')}"
-      data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
-      data-stored-system-call-count="${Number(rider.systemCallCount || 0)}"
-      data-driver-label="${escapeHtml(label)}"
-    >상세분석</button>`;
+    const applyBtn = rider.callCountMatched === false
+      ? `<button type="button" class="small-btn weekly-apply-call-btn"
+        data-weekly-apply-call="1"
+        data-driver-id="${escapeHtml(rider.matchedRiderId)}"
+        data-platform="${escapeHtml(context.platform || 'coupang')}"
+        data-start-date="${escapeHtml(context.startDate || '')}"
+        data-end-date="${escapeHtml(context.endDate || '')}"
+        data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
+        data-driver-label="${escapeHtml(label)}"
+        title="주간정산서 오더수로 콜수를 맞춥니다. 콜수입력·일정산 기록이 조정됩니다."
+      >주간서 기준 입력</button>`
+      : '';
+    return `<div class="weekly-call-action-cell">
+      <button type="button" class="small-btn weekly-call-audit-btn"
+        data-weekly-call-audit="1"
+        data-driver-id="${escapeHtml(rider.matchedRiderId)}"
+        data-platform="${escapeHtml(context.platform || 'coupang')}"
+        data-start-date="${escapeHtml(context.startDate || '')}"
+        data-end-date="${escapeHtml(context.endDate || '')}"
+        data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
+        data-stored-system-call-count="${Number(rider.systemCallCount || 0)}"
+        data-driver-label="${escapeHtml(label)}"
+      >상세분석</button>
+      ${applyBtn}
+    </div>`;
   }
 
   function formatAuditSource(source) {
@@ -324,6 +339,75 @@ const BremWeeklySettlementAdmin = (function () {
   function formatCallRecordsCell(day) {
     if (!day.calls?.length) return '-';
     return day.calls.map(row => `${formatNumber(row.count)}건`).join('<br>');
+  }
+
+  async function applyWeeklyCallFromReport(params = {}) {
+    const driverId = String(params.driverId || '').trim();
+    const platform = params.platform || 'coupang';
+    const startDate = params.startDate || '';
+    const endDate = params.endDate || '';
+    const weeklyOrderCount = Number(params.weeklyOrderCount || 0);
+    const driverLabel = params.driverLabel || '기사';
+
+    if (!driverId) {
+      showToast('매칭된 기사가 없어 적용할 수 없습니다.');
+      return;
+    }
+
+    const orderLabel = platformWeeklyOrderLabel(platform);
+    const confirmMessage = [
+      `${driverLabel} 기사의 콜수를 주간정산서 기준으로 맞출까요?`,
+      '',
+      `주간서 ${orderLabel}: ${formatNumber(weeklyOrderCount)}건`,
+      '일정산·콜수입력 기록이 함께 조정되며, 콜수입력 메뉴에도 반영됩니다.',
+      '적용 후 「라이더 앱 반영」을 누르면 기사 앱에도 갱신됩니다.'
+    ].join('\n');
+
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('calls');
+
+      const result = BremWeeklySettlement.applyWeeklySettlementCallCount({
+        driverId,
+        startDate,
+        endDate,
+        platform,
+        weeklyOrderCount
+      });
+
+      await BremStorage.flushStorage?.();
+
+      if (state.previewByPlatform[platform]) {
+        state.previewByPlatform[platform] = BremWeeklySettlement.refreshWeeklySettlementRiders(
+          state.previewByPlatform[platform]
+        );
+        renderPreview(platform);
+      }
+
+      if (state.detailId) {
+        const record = BremStorage.weeklySettlements.getById(state.detailId);
+        if (record) renderDetail(record);
+      }
+
+      document.dispatchEvent(new CustomEvent('brem-calls-changed'));
+
+      if (!result.applied) {
+        showToast(`${driverLabel} · 이미 주간서와 콜수가 일치합니다.`);
+        return;
+      }
+
+      const matched = result.systemCallCount === weeklyOrderCount;
+      showToast(
+        matched
+          ? `${driverLabel} · 주간서 ${formatNumber(weeklyOrderCount)}건으로 콜수 입력 완료`
+          : `${driverLabel} · ${formatNumber(weeklyOrderCount)}건 적용 (현재 합계 ${formatNumber(result.systemCallCount)}건 — 상세분석에서 확인)`
+      );
+    } catch (error) {
+      console.error('[BREM] weekly call apply failed:', error);
+      showToast(error.message || '주간정산서 기준 콜수 입력에 실패했습니다.');
+    }
   }
 
   function hideCallAudit() {
@@ -683,7 +767,7 @@ const BremWeeklySettlementAdmin = (function () {
             <th>시스템 콜수</th>
             <th>콜수 일치</th>
             <th>경고</th>
-            <th>분석</th>
+            <th>분석 · 적용</th>
           </tr>`;
     }
     const auditContext = {
@@ -760,6 +844,18 @@ const BremWeeklySettlementAdmin = (function () {
           weeklyOrderCount: Number(auditBtn.dataset.weeklyOrderCount || 0),
           storedSystemCallCount: Number(auditBtn.dataset.storedSystemCallCount || 0),
           driverLabel: auditBtn.dataset.driverLabel || ''
+        });
+        return;
+      }
+      const applyCallBtn = event.target.closest('[data-weekly-apply-call]');
+      if (applyCallBtn) {
+        void applyWeeklyCallFromReport({
+          driverId: applyCallBtn.dataset.driverId,
+          platform: applyCallBtn.dataset.platform,
+          startDate: applyCallBtn.dataset.startDate,
+          endDate: applyCallBtn.dataset.endDate,
+          weeklyOrderCount: Number(applyCallBtn.dataset.weeklyOrderCount || 0),
+          driverLabel: applyCallBtn.dataset.driverLabel || ''
         });
         return;
       }
