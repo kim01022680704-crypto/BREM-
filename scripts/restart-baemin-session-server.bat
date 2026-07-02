@@ -1,7 +1,6 @@
-@echo off
+﻿@echo off
 setlocal EnableExtensions
-chcp 65001 >nul 2>&1
-title BREM Baemin Session Server (Restart)
+title BREM Baemin Session Server Restart
 
 echo [RESTART] Stopping process on port 3939...
 set "KILLED=0"
