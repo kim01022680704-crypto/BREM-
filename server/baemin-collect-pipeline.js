@@ -16,7 +16,7 @@ const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
 const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
-const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats } = require('./baemin-stats-extract');
+const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 
@@ -2402,21 +2402,22 @@ async function getHistoryStatsItemsForAdmin(weekStart, sourceMenu, partnerId = '
 
   const { settlementWeekEnd } = require('./baemin-settlement-week');
   const tableName = menu === 'daily_history' ? 'baemin_daily_delivery_stats' : 'baemin_rider_delivery_stats';
-  const { data, error } = await supabase
+  let query = supabase
     .from(tableName)
     .select('*')
     .eq('week_start', week)
     .order(menu === 'daily_history' ? 'delivery_date' : 'rider_name', { ascending: true })
-    .limit(5000);
+    .limit(pid ? 2000 : 5000);
+  if (pid) {
+    query = query.like('dedupe_key', `${pid.toUpperCase()}:%`);
+  }
 
+  const { data, error } = await query;
   if (error) {
     return { ok: false, error: error.message || '조회 실패' };
   }
 
   let rows = data || [];
-  if (pid) {
-    rows = rows.filter(row => partnerIdFromDedupeKey(row.dedupe_key) === pid);
-  }
   rows = dedupeStatsRowsByLatest(rows, menu);
   rows.sort((a, b) => {
     if (menu === 'daily_history') {
@@ -2441,7 +2442,8 @@ async function getHistoryStatsItemsForAdmin(weekStart, sourceMenu, partnerId = '
     items,
     count: items.length,
     appliedOnly: true,
-    dataSource: 'stats'
+    dataSource: 'stats',
+    totals: computeItemsMetricTotals(items)
   };
 }
 
@@ -2505,29 +2507,57 @@ async function getPartnerListFromStatsTable(weekStart, sourceMenu) {
 async function getPartnerListForAdmin(collectDate, options = {}) {
   const supabase = getServiceClient();
   const appliedOnly = Boolean(options.appliedOnly);
-  const batchId = await resolveAppliedBatchId(appliedOnly);
   const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
   const weekStart = String(options.weekStart || '').slice(0, 10);
   const sourceMenu = String(options.sourceMenu || '').trim();
 
-  if (appliedOnly && weekStart && (sourceMenu === 'daily_history' || sourceMenu === 'rider_history')) {
-    const statsPartners = await getPartnerListFromStatsTable(weekStart, sourceMenu);
-    const { settlementWeekEnd } = require('./baemin-settlement-week');
+  if (appliedOnly) {
+    const batchId = await resolveAppliedBatchId(true);
+    const applied = await readAppliedBaeminDelivery();
+    if (!batchId && !applied?.batchId) {
+      return { ok: true, collectDate: '', partners: [], count: 0, appliedOnly: true, notApplied: true };
+    }
+
+    const { readPartnerRegionMap } = require('./baemin-partner-region');
+    const { filterPartnersByScope } = require('./baemin-admin-access');
+    const regionMap = await readPartnerRegionMap();
+    const scope = options.actorScope || { allowedPartnerIds: Object.keys(regionMap) };
+    const catalog = await loadPartnerDisplayCatalog();
+    const { sortPartnersForAdmin } = require('./baemin-partner-match');
+
+    const registeredIds = scope.allowedPartnerIds.length
+      ? scope.allowedPartnerIds
+      : Object.keys(regionMap);
+
+    const partners = sortPartnersForAdmin(
+      registeredIds.map(partnerId => {
+        const info = enrichPartnerEntry(catalog, partnerId, '', regionMap);
+        return {
+          partnerId,
+          partnerName: info.partnerName,
+          regionName: info.regionName,
+          displayName: info.displayName || regionMap[partnerId] || partnerId,
+          riderCount: 0,
+          menuCounts: {
+            delivery_status: 0,
+            daily_history: 0,
+            rider_history: 0
+          }
+        };
+      }),
+      { byDisplayName: true }
+    );
+
     return {
       ok: true,
-      collectDate: weekStart,
-      weekStart,
-      weekEnd: settlementWeekEnd(weekStart),
-      sourceMenu,
-      partners: statsPartners.partners || [],
-      count: (statsPartners.partners || []).length,
+      collectDate: applied?.collectDate || date || '',
+      weekStart: weekStart || undefined,
+      sourceMenu: sourceMenu || undefined,
+      partners,
+      count: partners.length,
       appliedOnly: true,
-      dataSource: 'stats'
+      dataSource: 'region_map'
     };
-  }
-
-  if (appliedOnly && !batchId) {
-    return { ok: true, collectDate: '', partners: [], count: 0, appliedOnly: true, notApplied: true };
   }
 
   if (!appliedOnly && !date) {
@@ -2538,17 +2568,12 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
+  const tableName = 'baemin_biz_collect_items';
   let query = supabase
     .from(tableName)
     .select('parsed_json, dedupe_key')
+    .eq('collect_date', date)
     .limit(5000);
-
-  if (appliedOnly) {
-    query = query.eq('batch_id', batchId);
-  } else {
-    query = query.eq('collect_date', date);
-  }
 
   const { data, error } = await query;
 
@@ -2636,8 +2661,14 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   const batchId = await resolveAppliedBatchId(appliedOnly);
   const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
   const menu = String(sourceMenu || '').trim();
-  const partnerId = String(options.partnerId || '').trim();
+  const partnerId = String(options.partnerId || '').trim().toUpperCase();
   const weekStart = String(options.weekStart || '').slice(0, 10);
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (partnerId && allowed.size && !options.skipScopeCheck && !allowed.has(partnerId)) {
+    return { ok: false, status: 403, error: '해당 지역에 접근 권한이 없습니다.' };
+  }
 
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
@@ -2674,6 +2705,9 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   }
 
   if (menu) query = query.eq('source_menu', menu);
+  if (partnerId) {
+    query = query.like('dedupe_key', `${String(partnerId).trim().toUpperCase()}:%`);
+  }
 
   const { data, error } = await query;
   if (error) {
@@ -2713,7 +2747,8 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     partnerId: partnerId || null,
     items,
     count: items.length,
-    appliedOnly
+    appliedOnly,
+    totals: computeItemsMetricTotals(items)
   };
 }
 
@@ -2772,6 +2807,97 @@ function normalizeCollectItemsForAdmin(rows, sourceMenu, partnerId = '') {
   return items;
 }
 
+async function getScopedMenuTotals(collectDate, sourceMenu, options = {}) {
+  const menu = String(sourceMenu || '').trim();
+  const allowed = [...new Set((options.actorScope?.allowedPartnerIds || [])
+    .map(id => String(id || '').trim().toUpperCase())
+    .filter(id => /^DP\d{6,}$/i.test(id)))];
+  if (!allowed.length) return computeItemsMetricTotals([]);
+
+  const weekStart = String(options.weekStart || '').slice(0, 10);
+  const results = await Promise.all(allowed.map(partnerId => getCollectItemsForAdmin(collectDate, menu, {
+    appliedOnly: true,
+    partnerId,
+    weekStart,
+    skipScopeCheck: true
+  })));
+  const allItems = results.flatMap(result => (result.ok ? (result.items || []) : []));
+  return computeItemsMetricTotals(allItems);
+}
+
+async function getViewBundleForAdmin(options = {}) {
+  const sourceMenu = String(options.sourceMenu || 'delivery_status').trim();
+  const partnerId = String(options.partnerId || '').trim().toUpperCase();
+  const weekStart = String(options.weekStart || '').slice(0, 10);
+  const scope = options.actorScope || { allowedPartnerIds: [] };
+  const allowed = new Set((scope.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (partnerId && allowed.size && !allowed.has(partnerId)) {
+    return { ok: false, status: 403, error: '해당 지역에 접근 권한이 없습니다.' };
+  }
+
+  const [partnersResult, applied] = await Promise.all([
+    getPartnerListForAdmin(options.collectDate, {
+      appliedOnly: true,
+      actorScope: scope,
+      weekStart,
+      sourceMenu
+    }),
+    readAppliedBaeminDelivery()
+  ]);
+
+  if (!partnersResult.ok) return partnersResult;
+
+  const bundle = {
+    ok: true,
+    collectDate: partnersResult.collectDate || applied?.collectDate || '',
+    sourceMenu,
+    partnerId: partnerId || null,
+    weekStart: weekStart || undefined,
+    partners: partnersResult.partners || [],
+    count: partnersResult.count || 0,
+    applied: applied || null,
+    notApplied: Boolean(partnersResult.notApplied),
+    items: [],
+    totals: null,
+    grandTotals: null
+  };
+
+  const tasks = [];
+  if (partnerId) {
+    tasks.push(getCollectItemsForAdmin(bundle.collectDate, sourceMenu, {
+      appliedOnly: true,
+      partnerId,
+      weekStart,
+      actorScope: scope
+    }).then(result => ({ type: 'items', result })));
+  }
+  if (sourceMenu === 'delivery_status' || sourceMenu === 'rider_history') {
+    tasks.push(getScopedMenuTotals(bundle.collectDate, sourceMenu, {
+      weekStart,
+      actorScope: scope
+    }).then(totals => ({ type: 'grandTotals', totals })));
+  }
+
+  const taskResults = await Promise.all(tasks);
+  taskResults.forEach(entry => {
+    if (entry.type === 'items' && entry.result?.ok) {
+      bundle.items = entry.result.items || [];
+      bundle.totals = entry.result.totals || null;
+      if (entry.result.weekStart) {
+        bundle.weekStart = entry.result.weekStart;
+        bundle.weekEnd = entry.result.weekEnd;
+      }
+      if (entry.result.notApplied) bundle.notApplied = true;
+    }
+    if (entry.type === 'grandTotals') {
+      bundle.grandTotals = entry.totals;
+    }
+  });
+
+  return bundle;
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -2782,6 +2908,7 @@ module.exports = {
   getLatestMenuCollectStatus,
   getCollectItemsForAdmin,
   getPartnerListForAdmin,
+  getViewBundleForAdmin,
   analyzePartnerContamination,
   scrubCrossPartnerDuplicates,
   purgeBizCollectDate,

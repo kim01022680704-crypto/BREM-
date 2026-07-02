@@ -922,6 +922,26 @@ app.get('/api/admin/baemin-delivery/items', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/view-bundle', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getViewBundle(getBearerToken(req), {
+      collectDate: req.query.collectDate,
+      sourceMenu: req.query.sourceMenu,
+      partnerId: req.query.partnerId,
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '배민현황 데이터를 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/latest', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getLatestSummary(

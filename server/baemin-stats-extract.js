@@ -240,6 +240,51 @@ function serviceBreakdownFromStats(stats) {
   };
 }
 
+function computeItemsMetricTotals(items) {
+  const totals = {
+    rowCount: 0,
+    completeTotal: 0,
+    foodReject: 0,
+    bmartReject: 0,
+    storeReject: 0,
+    totalReject: 0,
+    foodCancel: 0,
+    bmartCancel: 0,
+    storeCancel: 0,
+    cancelTotal: 0,
+    foodRiderFault: 0,
+    bmartRiderFault: 0,
+    storeRiderFault: 0,
+    riderFault: 0
+  };
+
+  (items || []).forEach(row => {
+    const p = row?.parsed_json || {};
+    const breakdown = serviceBreakdownFromStats({
+      ...p,
+      rejectTotal: p.totalReject,
+      cancelTotal: p.cancelCount,
+      totalRiderFault: p.riderFault
+    });
+    totals.rowCount += 1;
+    totals.completeTotal += num(p.totalComplete);
+    totals.foodReject += breakdown.foodReject;
+    totals.bmartReject += breakdown.bmartReject;
+    totals.storeReject += breakdown.storeReject;
+    totals.totalReject += breakdown.totalReject;
+    totals.foodCancel += breakdown.foodCancel;
+    totals.bmartCancel += breakdown.bmartCancel;
+    totals.storeCancel += breakdown.storeCancel;
+    totals.cancelTotal += breakdown.cancelCount;
+    totals.foodRiderFault += breakdown.foodRiderFault;
+    totals.bmartRiderFault += breakdown.bmartRiderFault;
+    totals.storeRiderFault += breakdown.storeRiderFault;
+    totals.riderFault += breakdown.riderFault;
+  });
+
+  return totals;
+}
+
 function mapToDailyStatsRow(stats, weekStart, collectedAt, sourceUrl, dedupeKey) {
   return {
     week_start: weekStart,
@@ -299,6 +344,7 @@ module.exports = {
   extractStatsFromItem,
   sumStats,
   serviceBreakdownFromStats,
+  computeItemsMetricTotals,
   mapToDeliveryStatusRow,
   mapToDailyStatsRow,
   mapToRiderStatsRow

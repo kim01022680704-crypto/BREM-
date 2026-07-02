@@ -1,6 +1,8 @@
 const { getServiceClient } = require('./admin-bootstrap');
-const { verifyAdminCaller } = require('./admin-users');
+const { verifyAdminCaller, resolveActorAccount } = require('./admin-users');
 const { pickAcceptance } = require('./baemin-stats-extract');
+const { loadAdminRegistry } = require('./admin-registry');
+const { resolveBaeminPartnerScope, canManageBaeminRegions, filterRegionItemsByScope } = require('./baemin-admin-access');
 
 function getBaeminSession() {
   return require('./baemin-delivery-session');
@@ -509,9 +511,30 @@ async function getLatestSummary(accessToken, captureDate) {
   };
 }
 
-async function getConfig(accessToken, options = {}) {
+async function resolveBaeminActorScope(accessToken) {
   const caller = await verifyAdminCaller(accessToken);
   if (!caller.ok) return caller;
+
+  const supabase = getServiceClient();
+  const accounts = await loadAdminRegistry(supabase, caller);
+  const account = resolveActorAccount(accounts, caller);
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap();
+  const scope = resolveBaeminPartnerScope(account, regionMap);
+
+  return {
+    ok: true,
+    caller,
+    account,
+    scope,
+    canManageRegions: canManageBaeminRegions(account),
+    regionMap
+  };
+}
+
+async function getConfig(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
 
   const tableStatus = await getTableStatus();
   const { getBizCollectTableStatus } = require('./baemin-collect-pipeline');
@@ -525,7 +548,12 @@ async function getConfig(accessToken, options = {}) {
       viewOnly: true,
       tableExists: tableStatus.tableExists === true,
       bizCollectTableExists: bizTableStatus.tableExists === true,
-      applied: applied || null
+      applied: applied || null,
+      canManageRegions: actor.canManageRegions,
+      baeminScope: {
+        allowedPartnerIds: actor.scope.allowedPartnerIds,
+        isRegionalScoped: actor.scope.isRegionalScoped
+      }
     };
   }
 
@@ -559,26 +587,42 @@ async function getConfig(accessToken, options = {}) {
 }
 
 async function getCollectItems(accessToken, options = {}) {
-  const caller = await verifyAdminCaller(accessToken);
-  if (!caller.ok) return caller;
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
 
   const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
   return getCollectItemsForAdmin(options.collectDate, options.sourceMenu, {
     partnerId: options.partnerId,
     appliedOnly: Boolean(options.appliedOnly),
-    weekStart: options.weekStart
+    weekStart: options.weekStart,
+    actorScope: actor.scope
   });
 }
 
 async function getPartnerList(accessToken, options = {}) {
-  const caller = await verifyAdminCaller(accessToken);
-  if (!caller.ok) return caller;
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
 
   const { getPartnerListForAdmin } = require('./baemin-collect-pipeline');
   return getPartnerListForAdmin(options.collectDate, {
     appliedOnly: Boolean(options.appliedOnly),
     weekStart: options.weekStart,
-    sourceMenu: options.sourceMenu
+    sourceMenu: options.sourceMenu,
+    actorScope: actor.scope
+  });
+}
+
+async function getViewBundle(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getViewBundleForAdmin } = require('./baemin-collect-pipeline');
+  return getViewBundleForAdmin({
+    collectDate: options.collectDate,
+    sourceMenu: options.sourceMenu,
+    partnerId: options.partnerId,
+    weekStart: options.weekStart,
+    actorScope: actor.scope
   });
 }
 
@@ -614,16 +658,36 @@ async function purgeCollectDate(accessToken, options = {}) {
 }
 
 async function getPartnerRegionMap(accessToken) {
-  const caller = await verifyAdminCaller(accessToken);
-  if (!caller.ok) return caller;
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
 
   const { getPartnerRegionMapForAdmin } = require('./baemin-partner-region');
-  return getPartnerRegionMapForAdmin();
+  const result = await getPartnerRegionMapForAdmin();
+  if (!result.ok) return result;
+
+  const scopedItems = filterRegionItemsByScope(result.items, actor.scope);
+  const scopedMap = {};
+  scopedItems.forEach(item => {
+    scopedMap[item.partnerId] = item.regionName;
+  });
+
+  return {
+    ...result,
+    map: scopedMap,
+    items: scopedItems,
+    count: scopedItems.length,
+    canManageRegions: actor.canManageRegions,
+    allItems: result.items,
+    allMap: result.map
+  };
 }
 
 async function savePartnerRegionEntry(accessToken, options = {}) {
-  const caller = await verifyAdminCaller(accessToken);
-  if (!caller.ok) return caller;
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+  if (!actor.canManageRegions) {
+    return { ok: false, status: 403, error: '지역 등록은 대표·총괄만 가능합니다.' };
+  }
 
   const { upsertPartnerRegionEntry, deletePartnerRegionEntry } = require('./baemin-partner-region');
   if (options.delete) {
@@ -632,7 +696,7 @@ async function savePartnerRegionEntry(accessToken, options = {}) {
   return upsertPartnerRegionEntry(
     options.partnerId,
     options.regionName,
-    caller.email || caller.userId || ''
+    actor.caller.email || actor.caller.userId || ''
   );
 }
 
@@ -645,6 +709,7 @@ module.exports = {
   getLatestSummary,
   getCollectItems,
   getPartnerList,
+  getViewBundle,
   applyToErp,
   scrubDuplicates,
   purgeCollectDate,

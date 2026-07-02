@@ -794,16 +794,21 @@
         <header class="baemin-view-hero">
           <div class="baemin-view-hero__text">
             <h2 class="baemin-view-hero__title">배민현황</h2>
-            <p class="baemin-view-hero__desc">Supabase 저장 데이터 조회 · Biz 매칭은 <code>DP2603096926</code> 형식 · 화면에는 등록한 지역명만 표시</p>
+            <p class="baemin-view-hero__desc">Supabase 저장 데이터 조회 · 지역별 배달·라이더 내역 · <strong>데이터 불러오기</strong>로 최신화</p>
           </div>
-          <div id="baeminStatusAppliedBanner" class="baemin-view-status-badge" hidden></div>
+          <div class="baemin-view-hero__actions">
+            <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusLoadBtn">데이터 불러오기</button>
+            <p class="baemin-view-refresh-meta" id="baeminStatusRefreshMeta" hidden></p>
+          </div>
         </header>
 
-        <article class="card baemin-partner-map-card">
+        <div id="baeminStatusAppliedBanner" class="baemin-view-status-badge" hidden></div>
+
+        <article class="card baemin-partner-map-card" id="baeminPartnerRegionCard" hidden>
           <div class="card-header baemin-partner-map-card__header">
             <div>
               <h3>지역 등록</h3>
-              <p class="form-help">DP 코드로 Biz 데이터와 연결 · 아래 탭에는 지역명만 표시됩니다</p>
+              <p class="form-help">DP 코드로 Biz 데이터와 연결 · 대표·총괄만 등록 가능</p>
             </div>
           </div>
           <form id="baeminPartnerRegionForm" class="baemin-partner-map-form">
@@ -846,6 +851,8 @@
           </div>
         </div>
 
+        <div id="baeminStatusGrandTotals" class="baemin-grand-totals" hidden aria-label="전체 합계"></div>
+
         <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="delivery_status">
           <article class="card baemin-view-data-card">
             <div class="card-header baemin-view-data-card__header">
@@ -853,7 +860,7 @@
                 <h2>배달현황</h2>
                 <p class="form-help">최신 적용 스냅샷 · Supabase 저장 데이터</p>
               </div>
-              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDeliveryStatusSummary">데이터 없음</p>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDeliveryStatusSummary">데이터 불러오기를 눌러 주세요</p>
             </div>
             <div id="baeminStatusDeliveryMeta" class="baemin-view-meta" hidden></div>
             <div class="table-scroll baemin-table-scroll">
@@ -888,7 +895,7 @@
                 <h2>일별 배달내역</h2>
                 <p class="form-help">선택 정산주 · Supabase 저장 데이터</p>
               </div>
-              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDailyHistorySummary">데이터 없음</p>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDailyHistorySummary">데이터 불러오기를 눌러 주세요</p>
             </div>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table">
@@ -919,7 +926,7 @@
                 <h2>라이더별 배달내역</h2>
                 <p class="form-help">선택 정산주 · Supabase 저장 데이터</p>
               </div>
-              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusRiderHistorySummary">데이터 없음</p>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusRiderHistorySummary">데이터 불러오기를 눌러 주세요</p>
             </div>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table">
@@ -3795,6 +3802,17 @@
               <p class="form-help admin-account-menu-help">노출: 메뉴 표시 · 수정: 입력·저장 가능 (수정은 노출이 켜져 있어야 합니다). 노출만 허용해도 메뉴 안 <strong>기사 검색</strong>은 사용할 수 있습니다.</p>
               <div class="admin-account-menu-grid" id="adminAccountMenuGrid"></div>
             </div>
+            <div class="admin-account-baemin-panel" id="adminAccountBaeminPanel" hidden>
+              <div class="admin-account-menu-head">
+                <strong>배민 지역 노출</strong>
+                <div class="admin-account-menu-actions">
+                  <button class="small-btn" type="button" id="adminAccountBaeminSelectAll">전체 선택</button>
+                  <button class="small-btn" type="button" id="adminAccountBaeminClearAll">전체 해제</button>
+                </div>
+              </div>
+              <p class="form-help">등록된 지역 중 이 계정에 보여줄 지역을 선택합니다. 비우면 대표·총괄은 전체, 팀장은 미배정 상태입니다.</p>
+              <div class="admin-account-baemin-grid" id="adminAccountBaeminGrid"></div>
+            </div>
             <p class="form-help" id="adminAccountStatus"></p>
             <button class="primary-btn" type="submit" id="adminAccountSubmit">계정 저장</button>
           </form>
@@ -4993,7 +5011,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260704d"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260704e"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

@@ -230,6 +230,85 @@
     $('#adminAccountPasswordConfirmWrap').hidden = isMenuOnly;
     $('#adminAccountActiveWrap').hidden = !isCreate && !isFullEdit;
     $('#adminAccountName').readOnly = isMenuOnly;
+    const showBaemin = canEditBaeminPartnerScope() && cachedBaeminRegionItems.length > 0;
+    if ($('#adminAccountBaeminPanel')) {
+      $('#adminAccountBaeminPanel').hidden = !showBaemin;
+    }
+  }
+
+  let cachedBaeminRegionItems = [];
+
+  function canEditBaeminPartnerScope() {
+    const role = getSessionAdminRole();
+    return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+  }
+
+  async function loadBaeminRegionCatalog() {
+    const token = await BremStorage.resolveAdminAccessToken?.();
+    if (!token) {
+      cachedBaeminRegionItems = [];
+      return [];
+    }
+    try {
+      const response = await fetch('/api/admin/baemin-delivery/partner-regions', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        cachedBaeminRegionItems = [];
+        return [];
+      }
+      cachedBaeminRegionItems = Array.isArray(payload.allItems)
+        ? payload.allItems
+        : (Array.isArray(payload.items) ? payload.items : []);
+      return cachedBaeminRegionItems;
+    } catch {
+      cachedBaeminRegionItems = [];
+      return [];
+    }
+  }
+
+  function renderAdminAccountBaeminGrid(selectedIds = []) {
+    const panel = $('#adminAccountBaeminPanel');
+    const grid = $('#adminAccountBaeminGrid');
+    if (!panel || !grid) return;
+    if (!canEditBaeminPartnerScope() || !cachedBaeminRegionItems.length) {
+      panel.hidden = true;
+      grid.innerHTML = '';
+      return;
+    }
+    panel.hidden = false;
+    const selected = new Set((selectedIds || []).map(id => String(id).toUpperCase()));
+    grid.innerHTML = cachedBaeminRegionItems.map(item => {
+      const id = String(item.partnerId || '').trim().toUpperCase();
+      const active = selected.has(id);
+      return `<label class="admin-account-baemin-item${active ? ' is-active' : ''}">
+        <input type="checkbox" value="${escapeHtml(id)}" ${active ? 'checked' : ''}>
+        <span>${escapeHtml(item.regionName || id)}</span>
+      </label>`;
+    }).join('');
+    grid.querySelectorAll('.admin-account-baemin-item').forEach(label => {
+      const input = label.querySelector('input[type="checkbox"]');
+      if (!input) return;
+      input.addEventListener('change', () => {
+        label.classList.toggle('is-active', input.checked);
+      });
+      label.addEventListener('click', event => {
+        if (event.target === input) return;
+        event.preventDefault();
+        input.checked = !input.checked;
+        label.classList.toggle('is-active', input.checked);
+      });
+    });
+  }
+
+  function getSelectedAdminAccountBaeminPartnerIds() {
+    const grid = $('#adminAccountBaeminGrid');
+    if (!grid) return [];
+    return [...grid.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(input => String(input.value || '').trim().toUpperCase())
+      .filter(id => /^DP\d{6,}$/i.test(id));
   }
 
   function updateAdminAccountSectionAccess() {
@@ -485,6 +564,7 @@
     $('#adminAccountPasswordConfirm').required = true;
     $('#adminAccountSubmit').textContent = '계정 저장';
     renderAdminAccountMenuGrid(ADMIN_MENU_OPTIONS.map(option => option.id), ADMIN_MENU_OPTIONS.map(option => option.id));
+    renderAdminAccountBaeminGrid([]);
     applyAdminAccountFormMode('create');
     applyAdminAccountEmailField();
   }
@@ -532,6 +612,7 @@
     $('#adminAccountPasswordConfirm').required = false;
     $('#adminAccountSubmit').textContent = menuOnly ? '메뉴 저장' : '계정 저장';
     renderAdminAccountMenuGrid(account.menus, account.editableMenus || account.menus);
+    renderAdminAccountBaeminGrid(account.baeminPartnerIds || []);
     applyAdminAccountFormMode(state.adminAccountFormMode);
     applyAdminAccountEmailField();
     $('#adminAccountFormCard').hidden = false;
@@ -593,6 +674,7 @@
         if (status) status.textContent = message;
       }
     }
+    await loadBaeminRegionCatalog();
     updateAdminAccountSectionAccess();
     applyAdminMenuPermissions();
     renderAdminAccountRows();
@@ -629,6 +711,22 @@
       setAdminAccountMenuPermissions([], []);
     });
 
+    $('#adminAccountBaeminSelectAll')?.addEventListener('click', () => {
+      const grid = $('#adminAccountBaeminGrid');
+      grid?.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.checked = true;
+        input.closest('.admin-account-baemin-item')?.classList.add('is-active');
+      });
+    });
+
+    $('#adminAccountBaeminClearAll')?.addEventListener('click', () => {
+      const grid = $('#adminAccountBaeminGrid');
+      grid?.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.checked = false;
+        input.closest('.admin-account-baemin-item')?.classList.remove('is-active');
+      });
+    });
+
     $('#adminAccountForm')?.addEventListener('submit', async event => {
       event.preventDefault();
 
@@ -641,6 +739,7 @@
       const active = $('#adminAccountActive').checked;
       const menus = getSelectedAdminAccountMenus();
       const editableMenus = getSelectedAdminAccountEditableMenus();
+      const baeminPartnerIds = getSelectedAdminAccountBaeminPartnerIds();
       const status = $('#adminAccountStatus');
       const menuOnly = state.adminAccountFormMode === 'menu-only';
       const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
@@ -665,7 +764,7 @@
       let result;
       if (accountId) {
         if (menuOnly) {
-          result = await BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus }, { actor });
+          result = await BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus, baeminPartnerIds }, { actor });
         } else {
           if (password && password.length < minPasswordLength) {
             const message = isProduction ? '비밀번호는 6자 이상 입력하세요.' : '비밀번호는 4자 이상 입력하세요.';
@@ -679,6 +778,7 @@
             password: password || undefined,
             menus,
             editableMenus,
+            baeminPartnerIds,
             active
           }, { actor });
         }
@@ -702,6 +802,7 @@
           password,
           menus,
           editableMenus,
+          baeminPartnerIds,
           active
         }, { actor });
       }

@@ -3049,6 +3049,103 @@ textarea {
   font-weight: 600;
 }
 
+.baemin-view-hero__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.baemin-view-load-btn {
+  min-width: 148px;
+}
+
+.baemin-view-load-btn.is-loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.baemin-view-refresh-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #94a3b8);
+  text-align: right;
+}
+
+.baemin-grand-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.55), rgba(15, 23, 42, 0.35));
+}
+
+.baemin-grand-totals__title {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+}
+
+.baemin-grand-totals__card {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.baemin-grand-totals__label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  margin-bottom: 4px;
+}
+
+.baemin-grand-totals__value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.baemin-grand-totals__value--accent {
+  color: #38bdf8;
+}
+
+.admin-account-baemin-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.admin-account-baemin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-account-baemin-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.25);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.admin-account-baemin-item.is-active {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(14, 116, 144, 0.2);
+}
+
 .baemin-contamination-banner {
   margin: 12px 0 0;
   padding: 12px 14px;

@@ -185,6 +185,8 @@ async function createAdminUser(accessToken, body = {}) {
   const active = body.active !== false;
   const menus = Array.isArray(body.menus) ? body.menus.map(String) : [];
   const editableMenus = Array.isArray(body.editableMenus) ? body.editableMenus.map(String) : menus;
+  const { normalizePartnerIdList } = require('./baemin-admin-access');
+  const baeminPartnerIds = normalizePartnerIdList(body.baeminPartnerIds);
   let email = normalizeEmail(body.email);
 
   if (!name) {
@@ -239,6 +241,7 @@ async function createAdminUser(accessToken, body = {}) {
     role,
     menus,
     editableMenus,
+    baeminPartnerIds,
     active,
     createdAt: now,
     updatedAt: now
@@ -284,10 +287,15 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     const editableMenus = Array.isArray(body.editableMenus)
       ? body.editableMenus.map(String)
       : menus;
+    const { normalizePartnerIdList } = require('./baemin-admin-access');
+    const baeminPartnerIds = body.baeminPartnerIds == null
+      ? (current.baeminPartnerIds || [])
+      : normalizePartnerIdList(body.baeminPartnerIds);
     const updated = {
       ...current,
       menus,
       editableMenus,
+      baeminPartnerIds,
       updatedAt: new Date().toISOString()
     };
     accounts[index] = updated;
@@ -307,6 +315,10 @@ async function updateAdminUser(accessToken, userId, body = {}) {
   const editableMenus = Array.isArray(body.editableMenus)
     ? body.editableMenus.map(String)
     : current.editableMenus;
+  const { normalizePartnerIdList } = require('./baemin-admin-access');
+  const baeminPartnerIds = body.baeminPartnerIds == null
+    ? (current.baeminPartnerIds || [])
+    : normalizePartnerIdList(body.baeminPartnerIds);
   const password = body.password == null ? '' : String(body.password);
 
   if (!name) {
@@ -360,6 +372,7 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     role,
     menus,
     editableMenus,
+    baeminPartnerIds,
     active,
     updatedAt: new Date().toISOString()
   };
@@ -414,5 +427,6 @@ module.exports = {
   createAdminUser,
   updateAdminUser,
   deleteAdminUser,
-  verifyAdminCaller
+  verifyAdminCaller,
+  resolveActorAccount
 };

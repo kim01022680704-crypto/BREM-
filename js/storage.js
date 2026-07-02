@@ -9615,6 +9615,12 @@ const BremStorage = (function () {
       .filter(menuId => allowed.has(menuId));
   }
 
+  function normalizeBaeminPartnerIdList(list) {
+    return [...new Set((Array.isArray(list) ? list : [])
+      .map(id => String(id || '').trim().toUpperCase())
+      .filter(id => /^DP\d{6,}$/i.test(id)))];
+  }
+
   function normalizeAdminAccount(raw, index = 0) {
     const now = new Date().toISOString();
     const menus = normalizeAdminMenus(raw?.menus);
@@ -9626,6 +9632,7 @@ const BremStorage = (function () {
       role: normalizeAdminRole(raw?.role, index),
       menus,
       editableMenus: normalizeAdminEditableMenus(menus, raw?.editableMenus ?? menus),
+      baeminPartnerIds: normalizeBaeminPartnerIdList(raw?.baeminPartnerIds),
       active: raw?.active !== false,
       createdAt: raw?.createdAt || now,
       updatedAt: raw?.updatedAt || now
@@ -10294,7 +10301,7 @@ const BremStorage = (function () {
       return syncAdminAccountsPromise;
     },
 
-    async createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER, email } = {}, options = {}) {
+    async createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER, email, baeminPartnerIds } = {}, options = {}) {
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
       if (actorRole !== ADMIN_ROLES.CEO) {
         return { ok: false, message: '대표만 관리자 계정을 생성할 수 있습니다.' };
@@ -10324,6 +10331,7 @@ const BremStorage = (function () {
             role: nextRole,
             menus: normalizeAdminMenus(menus),
             editableMenus: normalizeAdminEditableMenus(menus, editableMenus),
+            baeminPartnerIds: normalizeBaeminPartnerIdList(baeminPartnerIds),
             active,
             email: String(email || '').trim() || undefined
           })
@@ -10355,6 +10363,7 @@ const BremStorage = (function () {
         role: nextRole,
         menus: normalizedMenus,
         editableMenus: normalizeAdminEditableMenus(normalizedMenus, editableMenus),
+        baeminPartnerIds: normalizeBaeminPartnerIdList(baeminPartnerIds),
         active,
         createdAt: now,
         updatedAt: now
@@ -10364,7 +10373,7 @@ const BremStorage = (function () {
       return { ok: true, message: '관리자 계정이 생성되었습니다.', account };
     },
 
-    async updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role } = {}, options = {}) {
+    async updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role, baeminPartnerIds } = {}, options = {}) {
       const actor = options.actor || null;
       const actorRole = actor?.role || ADMIN_ROLES.MANAGER;
       const isProduction = getSupabaseConfig().mode === 'production';
@@ -10377,8 +10386,12 @@ const BremStorage = (function () {
         if (editableMenus != null) payload.editableMenus = editableMenus;
         if (active != null) payload.active = active;
         if (role != null) payload.role = role;
+        if (baeminPartnerIds != null) payload.baeminPartnerIds = normalizeBaeminPartnerIdList(baeminPartnerIds);
 
         const apiResult = await adminUsersApi(`/api/admin/users/${encodeURIComponent(accountId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
           method: 'PATCH',
           body: JSON.stringify(payload)
         });
@@ -10422,6 +10435,9 @@ const BremStorage = (function () {
           ...current,
           menus: normalizeAdminMenus(menus),
           editableMenus: normalizeAdminEditableMenus(menus, editableMenus),
+          baeminPartnerIds: baeminPartnerIds == null
+            ? current.baeminPartnerIds
+            : normalizeBaeminPartnerIdList(baeminPartnerIds),
           updatedAt: new Date().toISOString()
         }, index);
 
@@ -10484,6 +10500,10 @@ const BremStorage = (function () {
         }
       }
 
+      const nextBaeminPartnerIds = baeminPartnerIds == null
+        ? current.baeminPartnerIds
+        : normalizeBaeminPartnerIdList(baeminPartnerIds);
+
       const updated = normalizeAdminAccount({
         ...current,
         name: nextName,
@@ -10491,6 +10511,7 @@ const BremStorage = (function () {
         role: nextRole,
         menus: nextMenus,
         editableMenus: nextEditableMenus,
+        baeminPartnerIds: nextBaeminPartnerIds,
         active: nextActive,
         updatedAt: new Date().toISOString()
       }, index);
