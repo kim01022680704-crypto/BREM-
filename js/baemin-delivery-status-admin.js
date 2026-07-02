@@ -135,15 +135,57 @@
     return /^(주식회사)?팀브로$/i.test(compact);
   }
 
+  function filterPartnersForView(partners = []) {
+    const map = state.partnerRegionMap || {};
+    const registeredIds = Object.keys(map);
+    if (!registeredIds.length) return [];
+
+    const byId = new Map();
+    (partners || []).forEach(partner => {
+      const id = String(partner.partnerId || '').trim().toUpperCase();
+      if (id) byId.set(id, partner);
+    });
+
+    return registeredIds
+      .map(rawId => {
+        const id = String(rawId || '').trim().toUpperCase();
+        const regionName = String(map[rawId] || map[id] || '').trim();
+        const hit = byId.get(id);
+        if (hit) {
+          return {
+            ...hit,
+            partnerId: id,
+            regionName,
+            displayName: regionName
+          };
+        }
+        return {
+          partnerId: id,
+          partnerName: '',
+          regionName,
+          displayName: regionName,
+          riderCount: 0,
+          menuCounts: {
+            delivery_status: 0,
+            daily_history: 0,
+            rider_history: 0
+          }
+        };
+      })
+      .sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || ''), 'ko'));
+  }
+
+  function hasRegisteredViewPartners() {
+    return Object.keys(state.partnerRegionMap || {}).length > 0;
+  }
+
   function partnerDisplayLabel(partner) {
     if (!partner) return '-';
     const id = String(partner.partnerId || '').trim();
     const saved = state.partnerRegionMap?.[id] || state.partnerRegionMap?.[id.toUpperCase()];
     if (isViewSection()) {
       if (saved) return saved;
-      const label = partner.displayName || partner.regionName;
-      if (label && !isGenericPartnerLabel(label)) return label;
-      return partner.regionName || id || '-';
+      return id || '-';
     }
     return partner.partnerName || partner.partnerId || '-';
   }
@@ -302,9 +344,7 @@
       const pid = String(parsed?.partnerId || '').trim();
       const saved = state.partnerRegionMap?.[pid] || state.partnerRegionMap?.[pid.toUpperCase()];
       if (saved) return saved;
-      const label = parsed?.displayName || parsed?.regionName;
-      if (label && !isGenericPartnerLabel(label)) return label;
-      return parsed?.regionName || pid || '-';
+      return pid || '-';
     }
     return parsed?.partnerName || parsed?.partnerId || '-';
   }
@@ -525,23 +565,30 @@
       setBizCaptureDate(result.collectDate);
     }
     const partners = result.ok ? (result.partners || []) : [];
+    const viewPartners = isViewSection() ? filterPartnersForView(partners) : partners;
     state.contamination = result.contamination || null;
     const nextCacheKey = buildCacheKey();
     if (state.dataCache.key && state.dataCache.key !== nextCacheKey) {
       invalidateDataCache();
     }
-    renderPartnerTabs(partners);
+    renderPartnerTabs(viewPartners);
     renderContaminationBanner(state.contamination);
     if (isViewSection()) {
       renderViewAppliedBanner(state.config?.applied || null);
       updateWeekPickerVisibility();
+      if (!hasRegisteredViewPartners()) {
+        state.activePartnerId = '';
+        clearViewTablesForMenu(state.activeMenu, '상단에서 DP 코드와 지역명을 등록하면 탭이 표시됩니다.');
+        updatePanelVisibility();
+        return;
+      }
     }
-    if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
+    if (state.activePartnerId && !viewPartners.some(partner => partner.partnerId === state.activePartnerId)) {
       state.activePartnerId = '';
     }
-    if (!state.activePartnerId && partners.length) {
-      switchBaeminPartner(partners[0].partnerId);
-    } else if (!partners.length) {
+    if (!state.activePartnerId && viewPartners.length) {
+      switchBaeminPartner(viewPartners[0].partnerId);
+    } else if (!viewPartners.length) {
       updatePanelVisibility();
     }
   }
@@ -645,7 +692,7 @@
     void loadPartnerBundle(state.activePartnerId, menu);
   }
 
-  function clearViewTablesForMenu(menuId) {
+  function clearViewTablesForMenu(menuId, message) {
     const ui = tableUiConfig();
     const menu = String(menuId || '').trim();
     const rowsId = ui.rowsMap[menu];
@@ -653,13 +700,14 @@
     const summaryEl = $(summaryId);
     const rowsEl = $(rowsId);
     const colspan = menu === 'daily_history' ? 10 : (menu === 'rider_history' ? 12 : 13);
+    const text = message || ui.emptyMessage;
     if (summaryEl) {
       summaryEl.textContent = isHistoryViewMenu(menu)
         ? `${formatViewWeekRangeLabel(ensureViewWeekStart())} · 데이터 없음`
         : '데이터 없음';
     }
     if (rowsEl) {
-      rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${ui.emptyMessage}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
     }
   }
 

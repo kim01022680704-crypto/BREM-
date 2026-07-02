@@ -4,7 +4,11 @@ title BREM Baemin Session Server
 
 set "PROJECT_DIR="
 
-if exist "E:\브램로컬\BREM\package.json" set "PROJECT_DIR=E:\브램로컬\BREM"
+if exist "%~dp0..\package.json" for %%I in ("%~dp0..") do set "PROJECT_DIR=%%~fI"
+
+if not defined PROJECT_DIR (
+  if exist "E:\브램로컬\BREM\package.json" set "PROJECT_DIR=E:\브램로컬\BREM"
+)
 
 if not defined PROJECT_DIR (
   if exist "%USERPROFILE%\Desktop\BREM\package.json" set "PROJECT_DIR=%USERPROFILE%\Desktop\BREM"
