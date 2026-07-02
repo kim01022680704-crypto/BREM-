@@ -712,6 +712,26 @@ async function savePartnerRegionEntry(accessToken, options = {}) {
   );
 }
 
+async function savePartnerSetCountEntry(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { upsertPartnerSetCountEntry } = require('./baemin-partner-set-count');
+  return upsertPartnerSetCountEntry(
+    options.partnerId,
+    options.setCount,
+    actor.caller.email || actor.caller.userId || ''
+  );
+}
+
+async function getPartnerSetCountMap(accessToken) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getPartnerSetCountMapForAdmin } = require('./baemin-partner-set-count');
+  return getPartnerSetCountMapForAdmin();
+}
+
 module.exports = {
   fetchAllDeliveryStatus,
   collectFromApi,
@@ -728,6 +748,8 @@ module.exports = {
   purgeCollectDate,
   getPartnerRegionMap,
   savePartnerRegionEntry,
+  getPartnerSetCountMap,
+  savePartnerSetCountEntry,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,

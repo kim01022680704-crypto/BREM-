@@ -218,6 +218,76 @@ function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new D
   };
 }
 
+function computeBizHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
+  const referenceDate = String(dateKey || todayKST(now)).slice(0, 10);
+  const today = todayKST(now);
+  const weekStart = settlementWeekStart(today);
+  const weekEnd = settlementWeekEnd(weekStart);
+  const latest = latestQueryableDate(today, now);
+  const fromDate = addDays(today, -30);
+
+  if (!latest || latest < fromDate) {
+    return {
+      referenceDate,
+      weekStart,
+      weekEnd,
+      latestQueryableDate: latest,
+      fromDate: null,
+      toDate: null,
+      dates: [],
+      dayCount: 0,
+      mode: 'empty',
+      skipped: true,
+      skipReason: '조회 가능한 일별/라이더 기간 없음',
+      label: '수집 없음'
+    };
+  }
+
+  const dates = [];
+  let cursor = fromDate;
+  while (cursor <= latest) {
+    dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+
+  return {
+    referenceDate,
+    weekStart,
+    weekEnd,
+    latestQueryableDate: latest,
+    fromDate,
+    toDate: latest,
+    dates,
+    dayCount: dates.length,
+    mode: 'biz_month',
+    skipped: false,
+    label: `${fromDate} ~ ${latest} (최근 30일)`
+  };
+}
+
+function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date()) {
+  const history = computeBizHistoryCollectRange(dateKey, now);
+  const delivery = computeDeliveryStatusCollectContext(dateKey, now);
+  const historyLabel = history.skipped
+    ? (history.label || history.skipReason || '수집 생략')
+    : (history.label || `${history.fromDate} ~ ${history.toDate}`);
+  return {
+    delivery_status: {
+      ...delivery,
+      fromDate: delivery.collectDate,
+      toDate: delivery.collectDate
+    },
+    daily_history: {
+      ...history,
+      label: historyLabel
+    },
+    rider_history: {
+      ...history,
+      label: historyLabel
+    }
+  };
+}
+
 module.exports = {
   parseDateKey,
   formatDateKey,
@@ -229,8 +299,10 @@ module.exports = {
   settlementWeekEnd,
   latestQueryableDate,
   computeHistoryCollectRange,
+  computeBizHistoryCollectRange,
   computeDeliveryStatusCollectContext,
   buildMenuDateRanges,
+  buildBizMenuDateRanges,
   computeCollectDateRange,
   resolveHistoryMenuQueryDates
 };

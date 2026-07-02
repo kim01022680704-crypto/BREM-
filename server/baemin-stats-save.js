@@ -7,6 +7,18 @@ const {
 } = require('./baemin-stats-extract');
 const { buildDedupeKey } = require('./baemin-collect-sources');
 
+function statsRowFingerprint(row) {
+  return [
+    row.complete_total,
+    row.reject_total,
+    row.cancel_total,
+    row.complete_morning,
+    row.complete_afternoon,
+    row.complete_evening,
+    row.complete_midnight
+  ].join('|');
+}
+
 async function upsertRows(table, rows, conflictKey, menuType = '') {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
@@ -16,7 +28,10 @@ async function upsertRows(table, rows, conflictKey, menuType = '') {
   rows.forEach(row => {
     const parts = String(conflictKey || '').split(',').map(key => row[key]);
     const key = parts.join('|');
-    map.set(key, row);
+    const prev = map.get(key);
+    if (!prev || statsRowFingerprint(row) !== statsRowFingerprint(prev)) {
+      map.set(key, row);
+    }
   });
   const deduped = Array.from(map.values());
   if (menuType) {

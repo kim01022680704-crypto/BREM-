@@ -14,7 +14,7 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays, todayKST } = require('./baemin-settlement-week');
+const { computeCollectDateRange, computeHistoryCollectRange, computeBizHistoryCollectRange, buildMenuDateRanges, buildBizMenuDateRanges, resolveHistoryMenuQueryDates, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
@@ -1208,8 +1208,8 @@ async function runPartnerSourceCollectLoop({
 
 async function runFullCollectPipeline(options = {}) {
   const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  const historyDateRange = options.dateRange || computeHistoryCollectRange(collectDate);
-  const menuDateRanges = options.menuDateRanges || buildMenuDateRanges(collectDate);
+  const historyDateRange = options.dateRange || computeBizHistoryCollectRange(collectDate);
+  const menuDateRanges = options.menuDateRanges || buildBizMenuDateRanges(collectDate);
   const dateRange = historyDateRange;
   const source = String(options.source || 'local_scheduler').trim();
   const runId = options.runId || createCollectRunId();
@@ -1276,8 +1276,8 @@ async function runFullCollectPipeline(options = {}) {
   let partnersToCollect = [];
 
   console.log(`[BREM][collect] 배달현황: 오늘 기준 (${collectDate})`);
-  console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label} (정산주 수요일~어제)`);
-  console.log(`[BREM][collect] 라이더별 배달내역: ${menuDateRanges.rider_history.label} (정산주 수요일~어제)`);
+  console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
+  console.log(`[BREM][collect] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
 
   if (playwrightContext) {
     playwrightContext.__bremCollecting = true;
@@ -2902,13 +2902,14 @@ async function getViewFullBundleForAdmin(options = {}) {
   const weekStart = String(options.weekStart || '').slice(0, 10);
   const scope = options.actorScope || { allowedPartnerIds: [] };
 
-  const [partnersResult, applied] = await Promise.all([
+  const [partnersResult, applied, setCountResult] = await Promise.all([
     getPartnerListForAdmin(options.collectDate, {
       appliedOnly: true,
       actorScope: scope,
       weekStart
     }),
-    readAppliedBaeminDelivery()
+    readAppliedBaeminDelivery(),
+    require('./baemin-partner-set-count').readPartnerSetCountMap().catch(() => ({}))
   ]);
 
   if (!partnersResult.ok) return partnersResult;
@@ -2921,48 +2922,105 @@ async function getViewFullBundleForAdmin(options = {}) {
   const byPartner = {};
   let weekEnd;
   let notApplied = Boolean(partnersResult.notApplied);
+  const allowed = new Set(partnerIds);
+  const batchId = await resolveAppliedBatchId(true);
+  const supabase = getServiceClient();
+  const catalog = await loadPartnerDisplayCatalog();
+  const { readPartnerRegionMap } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap();
 
-  await Promise.all(partnerIds.map(async partnerId => {
-    const [deliveryResult, dailyResult, riderResult] = await Promise.all([
-      getCollectItemsForAdmin(collectDate, 'delivery_status', {
-        appliedOnly: true,
-        partnerId,
-        skipScopeCheck: true
-      }),
-      getCollectItemsForAdmin(collectDate, 'daily_history', {
-        appliedOnly: true,
-        partnerId,
-        weekStart,
-        skipScopeCheck: true
-      }),
-      getCollectItemsForAdmin(collectDate, 'rider_history', {
-        appliedOnly: true,
-        partnerId,
-        weekStart,
-        skipScopeCheck: true
-      })
+  if (!batchId && notApplied) {
+    partnerIds.forEach(partnerId => {
+      byPartner[partnerId] = emptyPartnerBundle(collectDate, weekStart);
+    });
+  } else if (supabase && batchId) {
+    const [deliveryRows, dailyRows, riderRows] = await Promise.all([
+      supabase
+        .from('baemin_delivery_applied_items')
+        .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
+        .eq('batch_id', batchId)
+        .eq('source_menu', 'delivery_status')
+        .limit(10000),
+      weekStart
+        ? supabase.from('baemin_daily_delivery_stats').select('*').eq('week_start', weekStart).limit(10000)
+        : Promise.resolve({ data: [], error: null }),
+      weekStart
+        ? supabase.from('baemin_rider_delivery_stats').select('*').eq('week_start', weekStart).limit(10000)
+        : Promise.resolve({ data: [], error: null })
     ]);
 
-    if (deliveryResult.notApplied) notApplied = true;
-    weekEnd = dailyResult.weekEnd || riderResult.weekEnd || weekEnd;
+    if (deliveryRows.error) {
+      return { ok: false, error: deliveryRows.error.message || '배달현황 조회 실패' };
+    }
+    if (dailyRows.error) {
+      return { ok: false, error: dailyRows.error.message || '일별 내역 조회 실패' };
+    }
+    if (riderRows.error) {
+      return { ok: false, error: riderRows.error.message || '라이더 내역 조회 실패' };
+    }
 
-    byPartner[partnerId] = {
-      delivery_status: deliveryResult.items || [],
-      daily_history: dailyResult.items || [],
-      rider_history: riderResult.items || [],
-      totals: {
-        delivery_status: deliveryResult.totals || computeItemsMetricTotals(deliveryResult.items || []),
-        daily_history: dailyResult.totals || computeItemsMetricTotals(dailyResult.items || []),
-        rider_history: riderResult.totals || computeItemsMetricTotals(riderResult.items || [])
-      },
-      meta: {
-        captureDate: collectDate,
-        weekStart: dailyResult.weekStart || riderResult.weekStart || weekStart || undefined,
-        weekEnd: dailyResult.weekEnd || riderResult.weekEnd || undefined,
-        notApplied: Boolean(deliveryResult.notApplied)
-      }
-    };
-  }));
+    const deliveryGrouped = groupAppliedRowsByPartner(
+      normalizeCollectItemsForAdmin(deliveryRows.data || [], 'delivery_status', ''),
+      allowed
+    );
+    const dailyGrouped = groupStatsRowsByPartner(
+      dedupeStatsRowsByLatest(dailyRows.data || [], 'daily_history'),
+      'daily_history',
+      allowed,
+      catalog,
+      regionMap
+    );
+    const riderGrouped = groupStatsRowsByPartner(
+      dedupeStatsRowsByLatest(riderRows.data || [], 'rider_history'),
+      'rider_history',
+      allowed,
+      catalog,
+      regionMap
+    );
+
+    const { settlementWeekEnd } = require('./baemin-settlement-week');
+    weekEnd = weekStart ? settlementWeekEnd(weekStart) : undefined;
+
+    partnerIds.forEach(partnerId => {
+      const deliveryItems = (deliveryGrouped.get(partnerId) || []).map(row => {
+        const parsed = row.parsed_json || {};
+        const info = enrichPartnerEntry(catalog, partnerId, parsed.partnerName, regionMap);
+        return {
+          ...row,
+          parsed_json: {
+            ...parsed,
+            partnerId,
+            partnerName: info.partnerName,
+            regionName: info.regionName,
+            displayName: info.displayName
+          }
+        };
+      });
+      const dailyItems = dailyGrouped.get(partnerId) || [];
+      const riderItems = riderGrouped.get(partnerId) || [];
+      byPartner[partnerId] = {
+        delivery_status: deliveryItems,
+        daily_history: dailyItems,
+        rider_history: riderItems,
+        totals: {
+          delivery_status: computeItemsMetricTotals(deliveryItems),
+          daily_history: computeItemsMetricTotals(dailyItems),
+          rider_history: computeItemsMetricTotals(riderItems)
+        },
+        meta: {
+          captureDate: collectDate,
+          weekStart: weekStart || undefined,
+          weekEnd,
+          notApplied: false
+        }
+      };
+    });
+  } else {
+    partnerIds.forEach(partnerId => {
+      byPartner[partnerId] = emptyPartnerBundle(collectDate, weekStart);
+      notApplied = true;
+    });
+  }
 
   return {
     ok: true,
@@ -2973,8 +3031,57 @@ async function getViewFullBundleForAdmin(options = {}) {
     count: partnerIds.length,
     applied: applied || null,
     notApplied,
-    byPartner
+    byPartner,
+    setCountMap: setCountResult || {}
   };
+}
+
+function emptyPartnerBundle(collectDate, weekStart) {
+  return {
+    delivery_status: [],
+    daily_history: [],
+    rider_history: [],
+    totals: {
+      delivery_status: computeItemsMetricTotals([]),
+      daily_history: computeItemsMetricTotals([]),
+      rider_history: computeItemsMetricTotals([])
+    },
+    meta: {
+      captureDate: collectDate,
+      weekStart: weekStart || undefined,
+      notApplied: true
+    }
+  };
+}
+
+function groupAppliedRowsByPartner(items, allowed) {
+  const map = new Map();
+  (items || []).forEach(row => {
+    const pid = String(partnerIdFromDedupeKey(row.dedupe_key) || row.parsed_json?.partnerId || '').toUpperCase();
+    if (!pid || !allowed.has(pid)) return;
+    if (!map.has(pid)) map.set(pid, []);
+    map.get(pid).push(row);
+  });
+  return map;
+}
+
+function groupStatsRowsByPartner(rows, menu, allowed, catalog, regionMap) {
+  const map = new Map();
+  const mapper = menu === 'daily_history' ? mapDailyStatsRowToAdminItem : mapRiderStatsRowToAdminItem;
+  (rows || []).forEach(row => {
+    const pid = String(partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase();
+    if (!pid || !allowed.has(pid)) return;
+    if (!map.has(pid)) map.set(pid, []);
+    map.get(pid).push(mapper(row, pid, catalog, regionMap));
+  });
+  Array.from(map.entries()).forEach(([pid, items]) => {
+    if (menu === 'rider_history') {
+      items.sort((a, b) => String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko'));
+    } else if (menu === 'daily_history') {
+      items.sort((a, b) => String(a.parsed_json?.deliveryDate || a.collect_date || '').localeCompare(String(b.parsed_json?.deliveryDate || b.collect_date || '')));
+    }
+  });
+  return map;
 }
 
 module.exports = {

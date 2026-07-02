@@ -834,11 +834,20 @@
           </div>
           <div class="baemin-view-nav__block baemin-view-nav__block--menus">
             <span class="baemin-view-nav__label">메뉴</span>
-            <nav id="baeminStatusMenuSubtabBar" class="baemin-menu-tabs" aria-label="배달 메뉴">
+            <nav id="baeminStatusMenuSubtabBar" class="baemin-menu-tabs baemin-menu-tabs--buttons" aria-label="배달 메뉴">
               <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
               <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
               <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="quota_achievement">할당달성</button>
             </nav>
+            <div id="baeminStatusSetCountRow" class="baemin-view-setcount" hidden>
+              <label class="baemin-view-setcount__field">
+                <span class="baemin-field__label">세트수</span>
+                <input type="number" id="baeminStatusSetCount" min="1" max="99" step="1" value="1" inputmode="numeric">
+              </label>
+              <button type="button" class="btn-primary baemin-view-setcount__save" id="baeminStatusSetCountSaveBtn">저장</button>
+              <span id="baeminStatusSetCountMeta" class="baemin-view-setcount__meta"></span>
+            </div>
             <div id="baeminStatusWeekPickerRow" class="baemin-view-week" hidden>
               <label class="admin-period-field baemin-view-week__field">
                 <span class="baemin-field__label">정산주</span>
@@ -946,6 +955,32 @@
                   </tr>
                 </thead>
                 <tbody id="baeminStatusRiderHistoryRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="quota_achievement" hidden>
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>할당달성</h2>
+                <p class="form-help">일별 배달내역 · 적용 세트수 · 수~화 정산주</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusQuotaAchievementSummary">데이터 불러오기를 눌러 주세요</p>
+            </div>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table baemin-quota-table">
+                <thead>
+                  <tr>
+                    <th>배달일</th>
+                    <th>아침점심</th>
+                    <th>오후</th>
+                    <th>저녁</th>
+                    <th>심야</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusQuotaAchievementRows"></tbody>
               </table>
             </div>
           </article>
@@ -5010,7 +5045,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260704f"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260704g"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
