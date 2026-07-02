@@ -2199,11 +2199,182 @@ async function purgeBizCollectDate(collectDate, options = {}) {
   };
 }
 
+function partnerIdFromDedupeKey(dedupeKey = '') {
+  const prefix = String(dedupeKey || '').split(':')[0].trim();
+  return /^DP\d{6,}$/i.test(prefix) ? prefix : '';
+}
+
+function mapDailyStatsRowToAdminItem(row, partnerId = '') {
+  const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
+  const raw = row.raw_json || {};
+  return {
+    collect_date: row.delivery_date,
+    collected_at: row.collected_at,
+    rider_name: '',
+    rider_user_id: '',
+    phone_number: '',
+    parsed_json: {
+      partnerId: pid,
+      deliveryDate: row.delivery_date,
+      totalComplete: row.complete_total,
+      totalReject: row.reject_total,
+      cancelCount: row.cancel_total,
+      morningCount: row.complete_morning,
+      afternoonCount: row.complete_afternoon,
+      eveningCount: row.complete_evening,
+      midnightCount: row.complete_midnight,
+      riderFault: raw.riderFault ?? raw.totalRiderFault ?? 0
+    },
+    dedupe_key: row.dedupe_key
+  };
+}
+
+function mapRiderStatsRowToAdminItem(row, partnerId = '') {
+  const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
+  const raw = row.raw_json || {};
+  return {
+    collect_date: row.week_start,
+    collected_at: row.collected_at,
+    rider_name: row.rider_name,
+    rider_user_id: row.rider_user_id,
+    phone_number: row.phone_number,
+    parsed_json: {
+      partnerId: pid,
+      totalComplete: row.complete_total,
+      totalReject: row.reject_total,
+      cancelCount: row.cancel_total,
+      morningCount: row.complete_morning,
+      afternoonCount: row.complete_afternoon,
+      eveningCount: row.complete_evening,
+      midnightCount: row.complete_midnight,
+      riderFault: raw.riderFault ?? raw.totalRiderFault ?? 0
+    },
+    raw_json: { deliveryCount: row.complete_total },
+    dedupe_key: row.dedupe_key
+  };
+}
+
+async function getHistoryStatsItemsForAdmin(weekStart, sourceMenu, partnerId = '') {
+  const supabase = getServiceClient();
+  const menu = String(sourceMenu || '').trim();
+  const week = String(weekStart || '').slice(0, 10);
+  const pid = String(partnerId || '').trim();
+
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+  if (!week || !/^\d{4}-\d{2}-\d{2}$/.test(week)) {
+    return { ok: false, status: 400, error: 'weekStart 가 필요합니다.' };
+  }
+  if (menu !== 'daily_history' && menu !== 'rider_history') {
+    return { ok: false, status: 400, error: '지원하지 않는 메뉴입니다.' };
+  }
+
+  const { settlementWeekEnd } = require('./baemin-settlement-week');
+  const tableName = menu === 'daily_history' ? 'baemin_daily_delivery_stats' : 'baemin_rider_delivery_stats';
+  const { data, error } = await supabase
+    .from(tableName)
+    .select('*')
+    .eq('week_start', week)
+    .order(menu === 'daily_history' ? 'delivery_date' : 'rider_name', { ascending: true })
+    .limit(5000);
+
+  if (error) {
+    return { ok: false, error: error.message || '조회 실패' };
+  }
+
+  let rows = data || [];
+  if (pid) {
+    rows = rows.filter(row => partnerIdFromDedupeKey(row.dedupe_key) === pid);
+  }
+
+  const mapper = menu === 'daily_history' ? mapDailyStatsRowToAdminItem : mapRiderStatsRowToAdminItem;
+  const items = rows.map(row => mapper(row, pid));
+
+  return {
+    ok: true,
+    collectDate: week,
+    weekStart: week,
+    weekEnd: settlementWeekEnd(week),
+    sourceMenu: menu,
+    partnerId: pid || null,
+    items,
+    count: items.length,
+    appliedOnly: true,
+    dataSource: 'stats'
+  };
+}
+
+async function getPartnerListFromStatsTable(weekStart, sourceMenu) {
+  const supabase = getServiceClient();
+  const week = String(weekStart || '').slice(0, 10);
+  const menu = String(sourceMenu || '').trim();
+  const tableName = menu === 'daily_history' ? 'baemin_daily_delivery_stats' : 'baemin_rider_delivery_stats';
+
+  if (!supabase || !week) {
+    return { ok: false, partners: [] };
+  }
+
+  const { data, error } = await supabase
+    .from(tableName)
+    .select('dedupe_key')
+    .eq('week_start', week)
+    .limit(5000);
+
+  if (error) {
+    return { ok: false, partners: [], error: error.message };
+  }
+
+  const { pickBestPartnerName, sortPartnersForAdmin } = require('./baemin-partner-match');
+  const partners = new Map();
+  const counts = new Map();
+
+  (data || []).forEach(row => {
+    const partnerId = partnerIdFromDedupeKey(row.dedupe_key);
+    if (!partnerId) return;
+    partners.set(partnerId, pickBestPartnerName(partners.get(partnerId), partnerId));
+    counts.set(partnerId, (counts.get(partnerId) || 0) + 1);
+  });
+
+  const items = sortPartnersForAdmin(
+    Array.from(partners.entries()).map(([partnerId, partnerName]) => ({
+      partnerId,
+      partnerName,
+      riderCount: counts.get(partnerId) || 0,
+      menuCounts: {
+        delivery_status: 0,
+        daily_history: menu === 'daily_history' ? (counts.get(partnerId) || 0) : 0,
+        rider_history: menu === 'rider_history' ? (counts.get(partnerId) || 0) : 0
+      }
+    }))
+  );
+
+  return { ok: true, partners: items };
+}
+
 async function getPartnerListForAdmin(collectDate, options = {}) {
   const supabase = getServiceClient();
   const appliedOnly = Boolean(options.appliedOnly);
   const batchId = await resolveAppliedBatchId(appliedOnly);
   const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
+  const weekStart = String(options.weekStart || '').slice(0, 10);
+  const sourceMenu = String(options.sourceMenu || '').trim();
+
+  if (appliedOnly && weekStart && (sourceMenu === 'daily_history' || sourceMenu === 'rider_history')) {
+    const statsPartners = await getPartnerListFromStatsTable(weekStart, sourceMenu);
+    const { settlementWeekEnd } = require('./baemin-settlement-week');
+    return {
+      ok: true,
+      collectDate: weekStart,
+      weekStart,
+      weekEnd: settlementWeekEnd(weekStart),
+      sourceMenu,
+      partners: statsPartners.partners || [],
+      count: (statsPartners.partners || []).length,
+      appliedOnly: true,
+      dataSource: 'stats'
+    };
+  }
 
   if (appliedOnly && !batchId) {
     return { ok: true, collectDate: '', partners: [], count: 0, appliedOnly: true, notApplied: true };
@@ -2309,9 +2480,14 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   const date = await resolveCollectDateForAdmin(collectDate, appliedOnly);
   const menu = String(sourceMenu || '').trim();
   const partnerId = String(options.partnerId || '').trim();
+  const weekStart = String(options.weekStart || '').slice(0, 10);
 
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  if (appliedOnly && weekStart && (menu === 'daily_history' || menu === 'rider_history')) {
+    return getHistoryStatsItemsForAdmin(weekStart, menu, partnerId);
   }
 
   if (appliedOnly && !batchId) {

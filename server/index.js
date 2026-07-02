@@ -850,7 +850,9 @@ app.get('/api/admin/baemin-delivery/partners', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getPartnerList(getBearerToken(req), {
       collectDate: req.query.collectDate,
-      appliedOnly: req.query.appliedOnly === '1' || req.query.appliedOnly === 'true'
+      appliedOnly: req.query.appliedOnly === '1' || req.query.appliedOnly === 'true',
+      weekStart: req.query.weekStart,
+      sourceMenu: req.query.sourceMenu
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({
@@ -870,7 +872,8 @@ app.get('/api/admin/baemin-delivery/items', async (req, res) => {
       collectDate: req.query.collectDate,
       sourceMenu: req.query.sourceMenu,
       partnerId: req.query.partnerId,
-      appliedOnly: req.query.appliedOnly === '1' || req.query.appliedOnly === 'true'
+      appliedOnly: req.query.appliedOnly === '1' || req.query.appliedOnly === 'true',
+      weekStart: req.query.weekStart
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({

@@ -565,7 +565,8 @@ async function getCollectItems(accessToken, options = {}) {
   const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
   return getCollectItemsForAdmin(options.collectDate, options.sourceMenu, {
     partnerId: options.partnerId,
-    appliedOnly: Boolean(options.appliedOnly)
+    appliedOnly: Boolean(options.appliedOnly),
+    weekStart: options.weekStart
   });
 }
 
@@ -575,7 +576,9 @@ async function getPartnerList(accessToken, options = {}) {
 
   const { getPartnerListForAdmin } = require('./baemin-collect-pipeline');
   return getPartnerListForAdmin(options.collectDate, {
-    appliedOnly: Boolean(options.appliedOnly)
+    appliedOnly: Boolean(options.appliedOnly),
+    weekStart: options.weekStart,
+    sourceMenu: options.sourceMenu
   });
 }
 

@@ -2650,6 +2650,31 @@ textarea {
   background: rgba(120, 53, 15, 0.18);
 }
 
+.baemin-view-intro {
+  margin: 0 0 12px;
+}
+
+.baemin-week-picker-row {
+  margin: 0 0 12px;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.baemin-view-meta {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.35);
+  font-size: 0.92rem;
+  display: grid;
+  gap: 6px;
+}
+
+.baemin-view-meta strong {
+  font-weight: 600;
+}
+
 .baemin-contamination-banner {
   margin: 12px 0 0;
   padding: 12px 14px;

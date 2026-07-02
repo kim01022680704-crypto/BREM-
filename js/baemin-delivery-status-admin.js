@@ -17,6 +17,7 @@
     partners: [],
     contamination: null,
     appliedCollectDate: '',
+    viewWeekStart: '',
     bizPreviewCollectDate: '',
     dataCache: {
       key: '',
@@ -104,11 +105,69 @@
     });
   }
 
+  function ensureViewWeekStart() {
+    if (state.viewWeekStart) return state.viewWeekStart;
+    const today = todayKstDate();
+    state.viewWeekStart = window.BremDatePicker?.applyWeekWednesday?.(today) || today;
+    return state.viewWeekStart;
+  }
+
+  function formatViewWeekRangeLabel(weekStart) {
+    if (window.BremDatePicker?.formatWednesdayWeekRange) {
+      return BremDatePicker.formatWednesdayWeekRange(weekStart);
+    }
+    return weekStart || '';
+  }
+
+  function syncViewWeekPicker() {
+    const input = $('baeminStatusWeekStart');
+    const label = $('baeminStatusWeekRangeLabel');
+    const weekStart = ensureViewWeekStart();
+    if (input) input.value = weekStart;
+    if (label) {
+      label.textContent = weekStart
+        ? `조회 기간: ${formatViewWeekRangeLabel(weekStart)}`
+        : '';
+    }
+  }
+
+  function updateWeekPickerVisibility() {
+    const row = $('baeminStatusWeekPickerRow');
+    if (!row || !isViewSection()) {
+      if (row) row.hidden = true;
+      return;
+    }
+    const show = state.activeMenu === 'daily_history' || state.activeMenu === 'rider_history';
+    row.hidden = !show;
+    if (show) syncViewWeekPicker();
+  }
+
+  function isHistoryViewMenu(menu = state.activeMenu) {
+    return menu === 'daily_history' || menu === 'rider_history';
+  }
+
+  function buildViewPartnersQuery(captureDate) {
+    let query = `/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}&appliedOnly=1`;
+    if (isHistoryViewMenu()) {
+      query += `&weekStart=${encodeURIComponent(ensureViewWeekStart())}&sourceMenu=${encodeURIComponent(state.activeMenu)}`;
+    }
+    return query;
+  }
+
+  function buildViewItemsQuery(captureDate, sourceMenu, partnerId) {
+    let query = `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}&partnerId=${encodeURIComponent(partnerId)}&appliedOnly=1`;
+    if (isHistoryViewMenu(sourceMenu)) {
+      query += `&weekStart=${encodeURIComponent(ensureViewWeekStart())}`;
+    }
+    return query;
+  }
+
   function buildCacheKey() {
     const ui = tableUiConfig();
     if (isViewSection()) {
       const applied = state.config?.applied || {};
-      return `view:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}`;
+      const weekPart = isHistoryViewMenu() ? `:week=${ensureViewWeekStart()}` : '';
+      return `view:${state.activeMenu}:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}${weekPart}`;
     }
     const captureDate = resolveBizCaptureDate();
     return `biz:${captureDate}`;
@@ -291,9 +350,14 @@
 
   async function loadPartnerTabs() {
     const ui = tableUiConfig();
-    const captureDate = resolveBizCaptureDate();
-    const result = await adminApi(`/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}${ui.appliedQuery}`);
-    if (isViewSection() && result.notApplied) {
+    const captureDate = isViewSection()
+      ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
+      : resolveBizCaptureDate();
+    const partnersUrl = isViewSection()
+      ? buildViewPartnersQuery(captureDate)
+      : `/api/admin/baemin-delivery/partners?collectDate=${encodeURIComponent(captureDate)}${ui.appliedQuery}`;
+    const result = await adminApi(partnersUrl);
+    if (isViewSection() && result.notApplied && !isHistoryViewMenu()) {
       state.appliedCollectDate = '';
       state.activePartnerId = '';
       state.partners = [];
@@ -315,6 +379,10 @@
     }
     renderPartnerTabs(partners);
     renderContaminationBanner(state.contamination);
+    if (isViewSection()) {
+      renderViewAppliedBanner(state.config?.applied || null);
+      updateWeekPickerVisibility();
+    }
     if (state.activePartnerId && !partners.some(partner => partner.partnerId === state.activePartnerId)) {
       state.activePartnerId = '';
     }
@@ -337,6 +405,7 @@
     menuBar.querySelectorAll('[data-baemin-menu]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.baeminMenu === state.activeMenu);
     });
+    updateWeekPickerVisibility();
   }
 
   function updatePanelVisibility() {
@@ -347,7 +416,7 @@
     section.querySelectorAll(`[${ui.panelAttr}]`).forEach(panel => {
       const menu = panel.getAttribute(ui.panelAttr);
       if (isViewSection()) {
-        panel.hidden = !(hasPartner && state.activeMenu === menu);
+        panel.hidden = state.activeMenu !== menu;
         return;
       }
       panel.hidden = hasPartner
@@ -355,7 +424,11 @@
         : menu !== 'delivery_status';
     });
     const partnerBar = $(ui.partnerBarId);
-    if (partnerBar) partnerBar.hidden = !state.partners.length;
+    if (partnerBar) {
+      partnerBar.hidden = isViewSection()
+        ? !state.partners.length
+        : !state.partners.length;
+    }
     updateMenuTabBar();
   }
 
@@ -381,11 +454,32 @@
   function switchBaeminMenu(menuId) {
     const menu = String(menuId || '').trim();
     if (!menu) return;
-    if (!state.activePartnerId && isViewSection()) {
+
+    if (isViewSection()) {
+      const prevMenu = state.activeMenu;
       state.activeMenu = menu;
       updatePanelVisibility();
+      if (menu !== prevMenu) {
+        state.activePartnerId = '';
+        invalidateDataCache();
+        void loadPartnerTabs().then(() => {
+          if (state.activePartnerId) {
+            void loadPartnerBundle(state.activePartnerId, menu);
+          } else {
+            clearViewTablesForMenu(menu);
+          }
+        });
+      } else if (state.activePartnerId) {
+        const cached = getCachedPartnerBundle(state.activePartnerId);
+        if (cached?.[menu]) {
+          renderSubtabRows(menu, state.activePartnerId, cached[menu], cached.meta || {});
+        } else {
+          void loadPartnerBundle(state.activePartnerId, menu);
+        }
+      }
       return;
     }
+
     if (!state.activePartnerId) return;
     state.activeMenu = menu;
     updatePanelVisibility();
@@ -396,6 +490,24 @@
       return;
     }
     void loadPartnerBundle(state.activePartnerId, menu);
+  }
+
+  function clearViewTablesForMenu(menuId) {
+    const ui = tableUiConfig();
+    const menu = String(menuId || '').trim();
+    const rowsId = ui.rowsMap[menu];
+    const summaryId = ui.summaryMap[menu];
+    const summaryEl = $(summaryId);
+    const rowsEl = $(rowsId);
+    const colspan = menu === 'daily_history' ? 10 : (menu === 'rider_history' ? 12 : 13);
+    if (summaryEl) {
+      summaryEl.textContent = isHistoryViewMenu(menu)
+        ? `${formatViewWeekRangeLabel(ensureViewWeekStart())} · 데이터 없음`
+        : '데이터 없음';
+    }
+    if (rowsEl) {
+      rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${ui.emptyMessage}</td></tr>`;
+    }
   }
 
   function formatNumber(value) {
@@ -648,6 +760,31 @@
     if (applyBtn) applyBtn.disabled = state.loading || state.applying;
   }
 
+  function renderDeliveryStatusMeta(applied) {
+    const meta = $('baeminStatusDeliveryMeta');
+    if (!meta || !isViewSection()) return;
+
+    const data = applied || state.config?.applied;
+    if (!data?.collectDate) {
+      meta.hidden = true;
+      meta.innerHTML = '';
+      return;
+    }
+
+    const partnerNames = state.partners.map(partner => partner.partnerName || partner.partnerId).filter(Boolean);
+    const activePartner = state.partners.find(partner => partner.partnerId === state.activePartnerId);
+    const partnerLabel = activePartner
+      ? `${activePartner.partnerName || activePartner.partnerId}`
+      : (partnerNames.length ? partnerNames.join(', ') : '-');
+
+    meta.hidden = false;
+    meta.innerHTML = `
+      <div><strong>적용일시</strong> ${formatDateTime(data.appliedAt)}</div>
+      <div><strong>수집일시</strong> ${formatDateTime(data.collectedAt)}</div>
+      <div><strong>협력사</strong> ${partnerLabel}</div>
+    `;
+  }
+
   function renderViewAppliedBanner(applied) {
     const banner = $('baeminStatusAppliedBanner');
     if (!banner) return;
@@ -657,19 +794,14 @@
       banner.hidden = false;
       banner.className = 'baemin-applied-banner baemin-applied-banner--warn';
       banner.innerHTML = '<strong>표시할 데이터가 없습니다.</strong> 「배민 BIZ 현황」에서 수집 후 [적용하기]를 눌러 주세요.';
+      renderDeliveryStatusMeta(null);
       return;
     }
 
     banner.hidden = false;
     banner.className = 'baemin-applied-banner baemin-applied-banner--ok';
-    banner.innerHTML = `
-      <strong>적용 기준일 ${data.collectDate}</strong>
-      · ${formatNumber(data.savedCount || data.itemCount || 0)}건
-      · 적용 ${formatDateTime(data.appliedAt)}
-      ${data.collectedAt ? `· 수집 ${formatDateTime(data.collectedAt)}` : ''}
-      ${state.activePartnerId ? `· 지사 ${state.partners.find(partner => partner.partnerId === state.activePartnerId)?.partnerName || state.activePartnerId}` : ''}
-      <span class="form-help"> · DB 적용 스냅샷 조회 (실시간 Biz 조회 없음)</span>
-    `;
+    banner.innerHTML = '<strong>배민현황</strong> · Supabase 저장 데이터 조회 전용 (배민 Biz 실시간 호출 없음)';
+    renderDeliveryStatusMeta(data);
   }
 
   function renderConfig(config) {
@@ -1178,21 +1310,30 @@
       ? (state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate())
       : resolveBizCaptureDate();
     const partnerQuery = `&partnerId=${encodeURIComponent(id)}`;
+    const menusToLoad = isViewSection()
+      ? [String(focusMenu || state.activeMenu || 'delivery_status').trim()]
+      : MENU_IDS;
 
-    const results = await Promise.all(MENU_IDS.map(async sourceMenu => {
-      const result = await adminApi(
-        `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}${ui.appliedQuery}`
-      );
+    const results = await Promise.all(menusToLoad.map(async sourceMenu => {
+      const itemsUrl = isViewSection()
+        ? buildViewItemsQuery(captureDate, sourceMenu, id)
+        : `/api/admin/baemin-delivery/items?collectDate=${encodeURIComponent(captureDate)}&sourceMenu=${encodeURIComponent(sourceMenu)}${partnerQuery}${ui.appliedQuery}`;
+      const result = await adminApi(itemsUrl);
       return { sourceMenu, result };
     }));
 
     state.dataCache.loadingPartner = '';
-    const bundle = { meta: { captureDate, notApplied: false } };
+    const bundle = getCachedPartnerBundle(id) || { meta: { captureDate, notApplied: false } };
+    bundle.meta = { captureDate, notApplied: false };
     results.forEach(({ sourceMenu, result }) => {
-      if (isViewSection() && result.notApplied) {
+      if (isViewSection() && result.notApplied && sourceMenu === 'delivery_status') {
         bundle.meta.notApplied = true;
       }
       bundle[sourceMenu] = result.ok ? (result.items || []) : [];
+      if (isViewSection() && result.weekStart) {
+        bundle.meta.weekStart = result.weekStart;
+        bundle.meta.weekEnd = result.weekEnd;
+      }
     });
     setCachedPartnerBundle(id, bundle);
 
@@ -1213,19 +1354,23 @@
     const rowsEl = $(ui.rowsMap[sourceMenu]);
     if (!rowsEl) return;
 
-    if (isViewSection() && meta.notApplied) {
+    if (isViewSection() && meta.notApplied && sourceMenu === 'delivery_status') {
       if (summaryEl) summaryEl.textContent = '적용된 데이터가 없습니다.';
-      rowsEl.innerHTML = `<tr><td colspan="14" class="form-help">${ui.emptyMessage}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="13" class="form-help">${ui.emptyMessage}</td></tr>`;
       renderViewAppliedBanner(null);
       return;
     }
 
     const menuDatePlan = state.config?.autoCollect?.menuDatePlan || state.config?.menuDatePlan || null;
-    const rangeLabel = menuDatePlan?.[sourceMenu]?.label;
+    const rangeLabel = meta.weekStart && meta.weekEnd
+      ? `${meta.weekStart} ~ ${meta.weekEnd}`
+      : menuDatePlan?.[sourceMenu]?.label;
     const partnerLabel = state.partners.find(partner => partner.partnerId === partnerId)?.partnerName || partnerId;
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
-        summaryEl.textContent = `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
+        summaryEl.textContent = isViewSection()
+          ? `${partnerLabel} · 최신 적용 스냅샷 · ${formatNumber(items.length)}건`
+          : `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
       } else if (rangeLabel) {
         const periodHint = sourceMenu === 'rider_history' ? ' · 완료=기간 합계' : '';
         summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${formatNumber(items.length)}건${periodHint}`;
@@ -1245,13 +1390,21 @@
       : () => '';
 
     if (!items.length) {
-      rowsEl.innerHTML = `<tr><td colspan="${showPartnerColumn ? 14 : 13}" class="form-help">${ui.emptyMessage}</td></tr>`;
+      const emptyColspan = sourceMenu === 'daily_history'
+        ? (showPartnerColumn ? 11 : 10)
+        : (sourceMenu === 'rider_history'
+          ? (showPartnerColumn ? 13 : 12)
+          : (showPartnerColumn ? 14 : 13));
+      rowsEl.innerHTML = `<tr><td colspan="${emptyColspan}" class="form-help">${ui.emptyMessage}</td></tr>`;
       return;
     }
 
     if (sourceMenu === 'delivery_status') {
       rowsEl.innerHTML = items.map(row => {
         const p = row.parsed_json || {};
+        const collectedCell = isViewSection()
+          ? ''
+          : `<td>${formatDateTime(row.collected_at)}</td>`;
         return `<tr>
           ${partnerCell(p)}
           <td>${row.rider_name || '-'}</td>
@@ -1266,7 +1419,7 @@
           <td>${formatNumber(p.afternoonCount || 0)}</td>
           <td>${formatNumber(p.eveningCount || 0)}</td>
           <td>${formatNumber(p.midnightCount || 0)}</td>
-          <td>${formatDateTime(row.collected_at)}</td>
+          ${collectedCell}
         </tr>`;
       }).join('');
       return;
@@ -1275,6 +1428,9 @@
     if (sourceMenu === 'daily_history') {
       rowsEl.innerHTML = items.map(row => {
         const p = row.parsed_json || {};
+        const collectedCell = isViewSection()
+          ? ''
+          : `<td>${formatDateTime(row.collected_at)}</td>`;
         return `<tr>
           ${partnerCell(p)}
           <td>${p.deliveryDate || row.collect_date || '-'}</td>
@@ -1286,7 +1442,7 @@
           <td>${formatNumber(p.afternoonCount || 0)}</td>
           <td>${formatNumber(p.eveningCount || 0)}</td>
           <td>${formatNumber(p.midnightCount || 0)}</td>
-          <td>${formatDateTime(row.collected_at)}</td>
+          ${collectedCell}
         </tr>`;
       }).join('');
       return;
@@ -1295,6 +1451,9 @@
     rowsEl.innerHTML = items.map(row => {
       const p = row.parsed_json || {};
       const deliveryCount = Number(row.raw_json?.deliveryCount || p.totalComplete || 0);
+      const collectedCell = isViewSection()
+        ? ''
+        : `<td>${formatDateTime(row.collected_at)}</td>`;
       return `<tr>
         ${partnerCell(p)}
         <td>${row.rider_name || '-'}</td>
@@ -1308,7 +1467,7 @@
         <td>${formatNumber(p.afternoonCount || 0)}</td>
         <td>${formatNumber(p.eveningCount || 0)}</td>
         <td>${formatNumber(p.midnightCount || 0)}</td>
-        <td>${formatDateTime(row.collected_at)}</td>
+        ${collectedCell}
       </tr>`;
     }).join('');
   }
@@ -1521,6 +1680,22 @@
       }
     });
 
+    $('baeminStatusWeekStart')?.addEventListener('change', () => {
+      if (!isViewSection()) return;
+      const raw = $('baeminStatusWeekStart')?.value || '';
+      state.viewWeekStart = window.BremDatePicker?.applyWeekWednesday?.(raw) || raw;
+      syncViewWeekPicker();
+      invalidateDataCache();
+      state.activePartnerId = '';
+      void loadPartnerTabs().then(() => {
+        if (state.activePartnerId) {
+          void loadPartnerBundle(state.activePartnerId, state.activeMenu);
+        } else {
+          clearViewTablesForMenu(state.activeMenu);
+        }
+      });
+    });
+
     ['baeminStatusMenuSubtabBar', 'baeminBizMenuSubtabBar'].forEach(barId => {
       $(barId)?.querySelectorAll('[data-baemin-menu]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1547,6 +1722,8 @@
 
     if (isViewSection()) {
       if (!state.activeMenu) state.activeMenu = 'delivery_status';
+      ensureViewWeekStart();
+      syncViewWeekPicker();
       updatePanelVisibility();
       invalidateDataCache();
       await loadViewConfig();

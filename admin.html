@@ -792,19 +792,28 @@
 
       <section class="section" id="baemin-status">
         <div id="baeminStatusAppliedBanner" class="baemin-applied-banner" hidden></div>
-        <nav id="baeminStatusPartnerSubtabBar" class="baemin-partner-tab-bar baemin-partner-tab-bar--scroll" hidden aria-label="협력사"></nav>
-        <nav id="baeminStatusMenuSubtabBar" class="baemin-subtab-bar" hidden aria-label="배달 메뉴">
+        <p class="form-help baemin-view-intro">배민 BIZ에서 수집·적용한 Supabase 데이터만 조회합니다. (실시간 Biz 호출 없음)</p>
+        <nav id="baeminStatusMenuSubtabBar" class="baemin-subtab-bar" aria-label="배달 메뉴">
           <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
           <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
           <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
         </nav>
+        <div id="baeminStatusWeekPickerRow" class="form-row baemin-week-picker-row" hidden>
+          <label>
+            정산주 (수요일~화요일)
+            <input type="date" id="baeminStatusWeekStart">
+          </label>
+          <p id="baeminStatusWeekRangeLabel" class="form-help"></p>
+        </div>
+        <nav id="baeminStatusPartnerSubtabBar" class="baemin-partner-tab-bar baemin-partner-tab-bar--scroll" hidden aria-label="협력사"></nav>
 
         <div class="baemin-subpanel" data-baemin-panel="delivery_status">
           <article class="card">
             <div class="card-header">
               <h2>배달현황</h2>
-              <p class="form-help">적용된 데이터 조회 전용 · 수정·수집 불가</p>
+              <p class="form-help">최신 적용 스냅샷 · 수집 후 [적용하기]로 저장된 데이터</p>
             </div>
+            <div id="baeminStatusDeliveryMeta" class="baemin-view-meta" hidden></div>
             <p class="admin-table-summary" id="baeminStatusDeliveryStatusSummary">데이터 없음</p>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table">
@@ -823,7 +832,6 @@
                     <th>오후</th>
                     <th>저녁</th>
                     <th>심야</th>
-                    <th>수집 시각</th>
                   </tr>
                 </thead>
                 <tbody id="baeminStatusDeliveryStatusRows"></tbody>
@@ -836,7 +844,7 @@
           <article class="card">
             <div class="card-header">
               <h2>일별 배달내역</h2>
-              <p class="form-help">적용된 수집 데이터 · 선택한 날짜의 배달 건별 내역</p>
+              <p class="form-help">선택한 정산주 기간의 일별 집계 (Supabase 저장 데이터)</p>
             </div>
             <p class="admin-table-summary" id="baeminStatusDailyHistorySummary">데이터 없음</p>
             <div class="table-scroll baemin-table-scroll">
@@ -853,7 +861,6 @@
                     <th>오후</th>
                     <th>저녁</th>
                     <th>심야</th>
-                    <th>수집 시각</th>
                   </tr>
                 </thead>
                 <tbody id="baeminStatusDailyHistoryRows"></tbody>
@@ -866,7 +873,7 @@
           <article class="card">
             <div class="card-header">
               <h2>라이더별 배달내역</h2>
-              <p class="form-help">적용된 수집 데이터 · 라이더별 집계</p>
+              <p class="form-help">선택한 정산주 기간의 라이더별 집계 (Supabase 저장 데이터)</p>
             </div>
             <p class="admin-table-summary" id="baeminStatusRiderHistorySummary">데이터 없음</p>
             <div class="table-scroll baemin-table-scroll">
@@ -885,7 +892,6 @@
                     <th>오후</th>
                     <th>저녁</th>
                     <th>심야</th>
-                    <th>수집 시각</th>
                   </tr>
                 </thead>
                 <tbody id="baeminStatusRiderHistoryRows"></tbody>
@@ -4942,7 +4948,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260703f"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260703l"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
