@@ -919,15 +919,25 @@ async function ensureCapturedMenuApiRequest(page, sourceMenu, dateRange = null, 
   const fromSwitch = findSuccessfulMenuCapture(switchCaptured, menu);
   if (fromSwitch) {
     const normalized = normalizeNetworkRowToCaptured(fromSwitch, menu);
-    const rows = normalized.spaItems || [];
-    console.log(`[BREM][api-capture] ${menu} ← switch-network ${normalized.method} ${normalized.url} status=${normalized.status} rows=${rows.length}`);
-    storeCapturedApiRequest(page, menu, normalized);
-    return { ok: true, captured: normalized, switchReady, fromSwitchNetwork: true };
+    const { historyDateRangeMatchesRequest } = require('./baemin-settlement-week');
+    if (dateRange?.mode === 'biz_month' && !historyDateRangeMatchesRequest(normalized, dateRange)) {
+      console.log(`[BREM][api-capture] ${menu} switch-network 날짜범위 불일치 — 재캡처 (${normalized.url || normalized.sampleUrl || ''})`);
+    } else {
+      const rows = normalized.spaItems || [];
+      console.log(`[BREM][api-capture] ${menu} ← switch-network ${normalized.method} ${normalized.url} status=${normalized.status} rows=${rows.length}`);
+      storeCapturedApiRequest(page, menu, normalized);
+      return { ok: true, captured: normalized, switchReady, fromSwitchNetwork: true };
+    }
   }
 
   const stored = getStoredCapturedApiRequest(page, menu);
   if (stored?.url && stored?.fromNetworkCapture && stored.spaPayload) {
-    return { ok: true, captured: stored, switchReady, fromCache: true };
+    const { historyDateRangeMatchesRequest } = require('./baemin-settlement-week');
+    if (dateRange?.mode === 'biz_month' && !historyDateRangeMatchesRequest(stored, dateRange)) {
+      console.log(`[BREM][api-capture] ${menu} cached 날짜범위 불일치 — 재캡처`);
+    } else {
+      return { ok: true, captured: stored, switchReady, fromCache: true };
+    }
   }
 
   const { captureBrowserMenuApiRequest } = require('./baemin-page-capture');

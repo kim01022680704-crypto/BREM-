@@ -191,23 +191,116 @@ function computeCollectDateRange(dateKey = todayKST(), now = new Date()) {
   return computeHistoryCollectRange(dateKey, now);
 }
 
-/** 일별/라이더 내역 API·SPA URL용 fromDate/toDate (수요일~어제, KST) */
-function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new Date()) {
-  const referenceDate = String(collectDate || todayKST(now)).slice(0, 10);
-  const fresh = computeHistoryCollectRange(referenceDate, now);
-  if (fresh.skipped) {
-    return { ...fresh };
-  }
-  const fromDate = dateRange?.fromDate || fresh.fromDate;
-  const toDate = dateRange?.toDate
-    ? (dateRange.toDate <= fresh.toDate ? dateRange.toDate : fresh.toDate)
-    : fresh.toDate;
+function buildDateList(fromDate, toDate) {
   const dates = [];
+  if (!fromDate || !toDate || toDate < fromDate) {
+    return dates;
+  }
   let cursor = fromDate;
   while (cursor <= toDate) {
     dates.push(cursor);
     cursor = addDays(cursor, 1);
   }
+  return dates;
+}
+
+function parseUrlHistoryDates(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    const fromDate = String(parsed.searchParams.get('fromDate') || '').slice(0, 10);
+    const toDate = String(parsed.searchParams.get('toDate') || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromDate) && /^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+      return { fromDate, toDate };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function historyDateRangeMatchesRequest(urlOrCapture, requestedRange = null) {
+  if (!requestedRange?.fromDate || !requestedRange?.toDate) return true;
+  const url = typeof urlOrCapture === 'string'
+    ? urlOrCapture
+    : String(urlOrCapture?.sampleUrl || urlOrCapture?.url || '');
+  const parsed = parseUrlHistoryDates(url);
+  if (!parsed) return false;
+  return parsed.fromDate <= requestedRange.fromDate && parsed.toDate >= requestedRange.toDate;
+}
+
+/** 일별/라이더 내역 API·SPA URL용 fromDate/toDate */
+function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new Date()) {
+  const referenceDate = String(collectDate || todayKST(now)).slice(0, 10);
+
+  if (
+    dateRange
+    && dateRange.fromDate
+    && dateRange.toDate
+    && dateRange.mode === 'biz_month'
+    && !dateRange.skipped
+  ) {
+    const dates = buildDateList(dateRange.fromDate, dateRange.toDate);
+    return {
+      ...dateRange,
+      referenceDate,
+      fromDate: dateRange.fromDate,
+      toDate: dateRange.toDate,
+      dates,
+      dayCount: dates.length
+    };
+  }
+
+  const fresh = computeHistoryCollectRange(referenceDate, now);
+
+  if (dateRange?.fromDate && dateRange?.toDate) {
+    const fromDate = dateRange.fromDate;
+    const toDate = dateRange.mode === 'biz_month'
+      ? dateRange.toDate
+      : (dateRange.toDate <= (fresh.toDate || dateRange.toDate) ? dateRange.toDate : fresh.toDate);
+    const dates = buildDateList(fromDate, toDate);
+    if (dates.length) {
+      return {
+        ...fresh,
+        ...dateRange,
+        referenceDate,
+        fromDate,
+        toDate,
+        dates,
+        dayCount: dates.length,
+        skipped: false
+      };
+    }
+  }
+
+  if (dateRange?.toDate && !dateRange.fromDate) {
+    const biz = computeBizHistoryCollectRange(referenceDate, now);
+    const fromDate = biz.fromDate || fresh.fromDate;
+    const toDate = dateRange.toDate;
+    const dates = buildDateList(fromDate, toDate);
+    if (dates.length) {
+      return {
+        ...fresh,
+        ...biz,
+        ...dateRange,
+        referenceDate,
+        fromDate,
+        toDate,
+        dates,
+        dayCount: dates.length,
+        skipped: false
+      };
+    }
+  }
+
+  if (fresh.skipped) {
+    return { ...fresh };
+  }
+
+  const fromDate = dateRange?.fromDate || fresh.fromDate;
+  const toDate = dateRange?.toDate
+    ? (dateRange.toDate <= fresh.toDate ? dateRange.toDate : fresh.toDate)
+    : fresh.toDate;
+  const dates = buildDateList(fromDate, toDate);
   return {
     ...fresh,
     referenceDate,
@@ -304,5 +397,8 @@ module.exports = {
   buildMenuDateRanges,
   buildBizMenuDateRanges,
   computeCollectDateRange,
-  resolveHistoryMenuQueryDates
+  resolveHistoryMenuQueryDates,
+  buildDateList,
+  parseUrlHistoryDates,
+  historyDateRangeMatchesRequest
 };

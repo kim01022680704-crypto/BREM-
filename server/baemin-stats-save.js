@@ -53,6 +53,8 @@ async function upsertRows(table, rows, conflictKey, menuType = '') {
 
 function buildStatsRows(sourceId, items, weekStart, collectedAt, sourceUrl, options = {}) {
   const partnerId = String(options.partnerId || '').trim();
+  const { settlementWeekStart } = require('./baemin-settlement-week');
+
   if (sourceId === 'delivery_status') {
     return items.map((item, index) => {
       const stats = extractStatsFromItem(item, weekStart);
@@ -67,26 +69,30 @@ function buildStatsRows(sourceId, items, weekStart, collectedAt, sourceUrl, opti
   if (sourceId === 'daily_history') {
     return items.map((item, index) => {
       const stats = extractStatsFromItem(item, weekStart);
+      const deliveryDate = String(stats.deliveryDate || stats.businessDate || '').slice(0, 10);
+      const itemWeekStart = deliveryDate ? settlementWeekStart(deliveryDate) : weekStart;
       const dedupeKey = buildDedupeKey(sourceId, item, index, {
         partnerId,
-        collectDate: weekStart,
+        collectDate: itemWeekStart,
         dateRange: options.dateRange,
         index
       });
-      return mapToDailyStatsRow(stats, weekStart, collectedAt, sourceUrl, dedupeKey);
+      return mapToDailyStatsRow(stats, itemWeekStart, collectedAt, sourceUrl, dedupeKey);
     });
   }
 
   if (sourceId === 'rider_history') {
+    const rangeWeekStart = options.dateRange?.weekStart
+      || settlementWeekStart(options.dateRange?.toDate || weekStart);
     return items.map((item, index) => {
-      const stats = extractStatsFromItem(item, weekStart);
+      const stats = extractStatsFromItem(item, rangeWeekStart);
       const dedupeKey = buildDedupeKey(sourceId, item, index, {
         partnerId,
-        collectDate: weekStart,
+        collectDate: rangeWeekStart,
         dateRange: options.dateRange,
         index
       });
-      return mapToRiderStatsRow(stats, weekStart, collectedAt, sourceUrl, dedupeKey);
+      return mapToRiderStatsRow(stats, rangeWeekStart, collectedAt, sourceUrl, dedupeKey);
     });
   }
 

@@ -1,6 +1,6 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { runFullCollectPipeline, getLatestMenuCollectStatus, getBizCollectTableStatus } = require('./baemin-collect-pipeline');
-const { buildMenuDateRanges } = require('./baemin-settlement-week');
+const { buildBizMenuDateRanges, computeBizHistoryCollectRange } = require('./baemin-settlement-week');
 
 const AUTO_COLLECT_SETTINGS_KEY = 'brem_baemin_auto_collect_status';
 const DEFAULT_SCHEDULE = ['10:00', '14:00', '17:00', '20:00', '23:30'];
@@ -206,12 +206,17 @@ async function runAutoCollectJob(options = {}) {
   const playwrightContext = options.playwrightContext || null;
   const playwrightPage = options.playwrightPage || null;
 
+  const menuDateRanges = buildBizMenuDateRanges(captureDate);
+  const dateRange = computeBizHistoryCollectRange(captureDate);
+
   const pipelineResult = await runFullCollectPipeline({
     collectDate: captureDate,
     source,
     sessionCookie: sessionCookie || undefined,
     playwrightContext,
-    playwrightPage
+    playwrightPage,
+    dateRange,
+    menuDateRanges
   });
   const deliveryResult = pipelineResult.results?.delivery_status;
 
@@ -280,7 +285,7 @@ async function getAutoCollectStatusForAdmin() {
   const localSeenAt = record.localServerLastSeenAt ? Date.parse(record.localServerLastSeenAt) : 0;
   const localServerRecentlyActive = localSeenAt > 0 && (Date.now() - localSeenAt) < 2 * 60 * 1000;
   const menuStatus = await getLatestMenuCollectStatus(record.lastCaptureDate || todayDateStringKST());
-  const menuDatePlan = buildMenuDateRanges(record.lastCaptureDate || todayDateStringKST());
+  const menuDatePlan = buildBizMenuDateRanges(record.lastCaptureDate || todayDateStringKST());
 
   return {
     schedule: record.schedule,

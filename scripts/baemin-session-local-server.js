@@ -57,7 +57,7 @@ const {
   stringifyErrorValue
 } = require('../server/baemin-error-format');
 const { probeBaeminNetwork } = require('../server/baemin-network-probe');
-const { computeCollectDateRange, buildMenuDateRanges } = require('../server/baemin-settlement-week');
+const { buildBizMenuDateRanges, computeBizHistoryCollectRange } = require('../server/baemin-settlement-week');
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -841,7 +841,7 @@ async function runLocalFullCollect(options = {}) {
   const collectDate = String(
     options.collectDate || baeminAutoCollect.todayDateStringKST()
   ).slice(0, 10);
-  const menuDateRanges = buildMenuDateRanges(collectDate);
+  const menuDateRanges = buildBizMenuDateRanges(collectDate);
   console.log(`[BREM] [전체수집] 시작 | date=${collectDate}`);
   console.log(`[BREM] [전체수집] 배달현황: 오늘 기준`);
   console.log(`[BREM] [전체수집] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
@@ -1109,7 +1109,7 @@ function startAutoCollectScheduler() {
 async function refreshApiDiscoveryBeforeCollect(context, collectDate) {
   if (!isContextAlive(context)) return;
 
-  const menuDateRanges = buildMenuDateRanges(collectDate);
+  const menuDateRanges = buildBizMenuDateRanges(collectDate);
   const tabs = scanBrowserTabs(context);
   const page = tabs.page || await context.newPage();
   const {

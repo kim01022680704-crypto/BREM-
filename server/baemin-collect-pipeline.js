@@ -342,12 +342,13 @@ async function discoverAndApplyEndpoint(sourceId, registry, playwrightPage, date
   return resolveApiEndpoint(sourceId, registry);
 }
 
-function buildFetchedFromSpaCapture(capture, endpointInfo = {}) {
+function buildFetchedFromSpaCapture(capture, endpointInfo = {}, options = {}) {
   if (!capture?.spaPayload || typeof capture.spaPayload !== 'object') return null;
   const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
   const items = capture.spaItems || extractDataArray(capture.spaPayload) || [];
   const totalPage = Number(capture.spaTotalPage || readTotalPages(capture.spaPayload) || 1);
   const sourceUrl = capture.sampleUrl || endpointInfo.sampleUrl || '';
+  const minDayCount = Number(options.minDayCount || 0);
 
   if (!items.length) {
     console.log(`[BREM][collect] spa-capture skip (0 rows) — API pagination fallback url=${sourceUrl}`);
@@ -356,6 +357,16 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}) {
   if (totalPage > 1) {
     console.log(`[BREM][collect] spa-capture skip (totalPage=${totalPage}) — full pagination via API url=${sourceUrl}`);
     return null;
+  }
+  if (minDayCount > 1) {
+    const { extractBusinessDate } = require('./baemin-collect-sources');
+    const uniqueDates = new Set(
+      items.map(item => String(extractBusinessDate(item, options) || '').slice(0, 10)).filter(Boolean)
+    );
+    if (uniqueDates.size < Math.min(minDayCount, 3)) {
+      console.log(`[BREM][collect] spa-capture skip (uniqueDays=${uniqueDates.size} < need ${minDayCount}) url=${sourceUrl}`);
+      return null;
+    }
   }
 
   console.log(`[BREM][collect] spa-capture 사용 rows=${items.length} url=${sourceUrl}`);
@@ -582,7 +593,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 
   let activeDateRange = source.dateQueryKeys?.length
     ? resolveHistoryMenuQueryDates(collectDate, context.shrunkHistoryToDate
-      ? { toDate: context.shrunkHistoryToDate }
+      ? { ...(context.historyDateRange || {}), toDate: context.shrunkHistoryToDate }
       : context.historyDateRange || null)
     : null;
 
@@ -640,8 +651,12 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     const { preparePageForCollect } = require('./baemin-page-capture');
     const prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
     const existingCapture = context.spaCapture?.[sourceId];
+    const { historyDateRangeMatchesRequest } = require('./baemin-settlement-week');
+    const captureMatchesRange = !prepRange?.mode || prepRange.mode !== 'biz_month'
+      || historyDateRangeMatchesRequest(existingCapture, prepRange);
     const hasUsableCapture = Boolean(
-      existingCapture?.spaPayload
+      captureMatchesRange
+      && existingCapture?.spaPayload
       && (existingCapture.spaItems?.length || existingCapture.spaTotalPage)
     );
     if (!hasUsableCapture) {
@@ -738,8 +753,12 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   if (!fetched?.ok) {
-    fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint)
-      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint);
+    const spaMinDays = source.dateQueryKeys?.length && activeDateRange?.dayCount > 1
+      ? activeDateRange.dayCount
+      : 0;
+    const spaOpts = { minDayCount: spaMinDays, collectDate };
+    fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, spaOpts)
+      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, spaOpts);
   }
   if (!fetched?.ok) {
     fetched = await tryFetch(endpoint);
@@ -1073,7 +1092,9 @@ async function runPartnerSourceCollectLoop({
       }
     } else if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.() && sourceDef.id !== 'delivery_status') {
       const { ensureMenuPartnerReady } = require('./baemin-center-context');
-      const menuRange = sourceDef.dateQueryKeys?.length ? historyDateRange : null;
+      const menuRange = sourceDef.dateQueryKeys?.length
+        ? (menuDateRanges[sourceDef.id] || historyDateRange)
+        : null;
       if (pipelineContext.spaCapture?.[sourceDef.id]) {
         delete pipelineContext.spaCapture[sourceDef.id];
       }
@@ -1619,7 +1640,7 @@ async function runFullCollectPipeline(options = {}) {
 
 async function getLatestMenuCollectStatus(collectDate) {
   const supabase = getServiceClient();
-  const menuDateRanges = buildMenuDateRanges(collectDate || new Date().toISOString().slice(0, 10));
+  const menuDateRanges = buildBizMenuDateRanges(collectDate || new Date().toISOString().slice(0, 10));
   const menus = listCollectSources().map(source => ({
     id: source.id,
     label: source.label,
