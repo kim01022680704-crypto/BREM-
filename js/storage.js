@@ -10392,9 +10392,6 @@ const BremStorage = (function () {
           method: 'PATCH',
           body: JSON.stringify(payload)
         });
-          method: 'PATCH',
-          body: JSON.stringify(payload)
-        });
         if (!apiResult.ok) {
           return { ok: false, message: apiResult.message };
         }
