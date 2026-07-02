@@ -243,7 +243,7 @@
                 </tbody>
               </table>
             </div>
-            <p class="form-note form-note--subtle">가입일은 <strong>신규 등록</strong> 시 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 이름+연락처가 일치하는 기존 기사는 신규 생성 없이 업로드된 값만 병합 업데이트됩니다. 빈 셀은 기존 값을 유지합니다. <strong>기존 기사의 로그인 비밀번호(기사가 변경한 비밀번호 포함)는 일괄등록·업데이트 시 절대 변경되지 않습니다.</strong></p>
+            <p class="form-note form-note--subtle">가입일은 <strong>신규 등록</strong> 시 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 이름+연락처가 일치하는 기존 기사는 신규 생성 없이 <strong>비어 있는 칸만</strong> 채웁니다. 엑셀에 값이 있어도 기존에 등록된 값은 덮어쓰지 않습니다. <strong>로그인 비밀번호(기사가 변경한 비밀번호 포함)는 절대 변경되지 않습니다.</strong></p>
           </section>
 
           <section class="bulk-preview-section" id="bulkPreviewSection" hidden>
@@ -252,7 +252,8 @@
               <div class="bulk-preview-stats">
                 <span>전체 <strong id="bulkTotalCount">0</strong>건</span>
                 <span class="ok">신규 <strong id="bulkCreateCount">0</strong>명</span>
-                <span class="update">업데이트 <strong id="bulkUpdateCount">0</strong>명</span>
+                <span class="update">변경 <strong id="bulkUpdateCount">0</strong>명</span>
+                <span class="muted">변경없음 <strong id="bulkUnchangedCount">0</strong>명</span>
                 <span class="err">중복/오류 <strong id="bulkIssueCount">0</strong>건</span>
               </div>
             </div>
@@ -296,6 +297,24 @@
                       </tr>
                     </thead>
                     <tbody id="bulkPreviewCreateBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="bulk-preview-highlight bulk-preview-highlight--update" id="bulkPreviewUpdateBox" hidden>
+                <h4 class="bulk-preview-highlight-title bulk-preview-highlight-title--update">변경 예정 <strong id="bulkPreviewUpdateTitle">0</strong>명</h4>
+                <div class="bulk-preview-highlight-wrap">
+                  <table class="bulk-preview-table bulk-preview-table--compact">
+                    <thead>
+                      <tr>
+                        <th>행</th>
+                        <th>이름</th>
+                        <th>연락처</th>
+                        <th>쿠팡아이디</th>
+                        <th>플랫폼</th>
+                        <th>변경 항목</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bulkPreviewUpdateBody"></tbody>
                   </table>
                 </div>
               </div>
@@ -362,10 +381,10 @@
   <script src="js/storage.js?v=20260703c"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/driver-program-access.js?v=20260620c"></script>
-  <script src="js/driver-utils.js?v=20260703s"></script>
+  <script src="js/driver-utils.js?v=20260703t"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
   <script src="js/app.js?v=20260703b"></script>
-  <script src="js/driver-bulk.js?v=20260703s"></script>
+  <script src="js/driver-bulk.js?v=20260703t"></script>
 </body>
 </html>

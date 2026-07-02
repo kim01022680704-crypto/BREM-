@@ -1129,6 +1129,33 @@ h2 {
   color: #1d4ed8;
 }
 
+.bulk-preview-stats .muted {
+  color: #64748b;
+}
+
+.bulk-preview-stats .muted strong {
+  color: #475569;
+}
+
+.bulk-preview-table tr.row-unchanged {
+  background: #f8fafc;
+}
+
+.bulk-result-unchanged {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.bulk-preview-highlight--update {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.bulk-preview-highlight-title--update {
+  color: #1d4ed8;
+  border-bottom-color: #bfdbfe;
+}
+
 .bulk-result-dup {
   color: #b45309;
   font-weight: 700;

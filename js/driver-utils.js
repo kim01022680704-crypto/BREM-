@@ -400,40 +400,81 @@ window.BremDriverUtils = (function () {
     return String(value).trim() !== '';
   }
 
+  const BULK_CHANGE_LABELS = {
+    bankName: '은행명',
+    accountHolder: '예금주',
+    accountNumber: '계좌번호',
+    baeminId: '배민 아이디',
+    residentNumber: '주민등록번호',
+    platformBaemin: '배민 수행',
+    platformCoupang: '쿠팡 수행',
+    longEventItemId: '이벤트 아이템',
+    longEventItem: '이벤트 아이템',
+    longEventStartDate: '이벤트 시작일',
+    memo: '메모'
+  };
+
+  function isBulkExistingFieldEmpty(existing, key) {
+    if (!existing) return true;
+    if (key === 'platformBaemin') {
+      return !Boolean(existing.platformBaemin) && !String(existing.baeminId || '').trim();
+    }
+    if (key === 'platformCoupang') {
+      return existing.platformCoupang === undefined || existing.platformCoupang === null;
+    }
+    const val = existing[key];
+    if (val === undefined || val === null) return true;
+    if (typeof val === 'boolean') return !val;
+    return String(val).trim() === '';
+  }
+
+  function describeBulkDriverChanges(changes) {
+    const labels = [];
+    Object.keys(changes || {}).forEach(key => {
+      const label = BULK_CHANGE_LABELS[key];
+      if (label && !labels.includes(label)) labels.push(label);
+    });
+    return labels.join(', ');
+  }
+
   /**
-   * 일괄등록 병합: 업로드에 값이 있는 필드만 반영합니다. 빈 셀은 기존 값을 유지합니다.
-   * 로그인 비밀번호는 병합 대상이 아니며, prepareBulkRiderRecord에서도 제외합니다.
+   * 일괄등록 병합: 업로드에 값이 있고 기존 값이 비어 있을 때만 채웁니다.
+   * 기존 값이 있으면 덮어쓰지 않습니다. 비밀번호는 병합 대상이 아닙니다.
    */
   function mergeBulkDriverData(existing, uploadData, raw) {
     if (!existing) return { ...(uploadData || {}) };
 
     const changes = {};
-    const assignString = (key) => {
+    const tryFillString = (key) => {
       const val = String(uploadData?.[key] ?? '').trim();
-      if (val) changes[key] = val;
+      if (!val || !isBulkExistingFieldEmpty(existing, key)) return;
+      changes[key] = val;
     };
 
-    ['name', 'phone', 'bankName', 'accountHolder', 'accountNumber', 'baeminId', 'memo'].forEach(assignString);
+    ['bankName', 'accountHolder', 'accountNumber', 'memo'].forEach(tryFillString);
+
+    const uploadBaeminId = String(uploadData?.baeminId || '').trim();
+    if (uploadBaeminId && isBulkExistingFieldEmpty(existing, 'baeminId')) {
+      changes.baeminId = uploadBaeminId;
+      if (!existing.platformBaemin) {
+        changes.platformBaemin = true;
+      }
+    }
 
     const residentDigits = normalizeSecretDigits(uploadData?.residentNumber);
-    if (residentDigits.length === 13) {
+    if (residentDigits.length === 13 && isBulkExistingFieldEmpty(existing, 'residentNumber')) {
       changes.residentNumber = formatResidentNumber(residentDigits);
     }
 
-    if (isBulkRawProvided(raw, 'platformCoupangRaw')) {
-      changes.platformCoupang = uploadData.platformCoupang !== false;
-    }
-    if (isBulkRawProvided(raw, 'platformBaeminRaw')) {
+    if (isBulkRawProvided(raw, 'platformBaeminRaw') && isBulkExistingFieldEmpty(existing, 'platformBaemin')) {
       changes.platformBaemin = Boolean(uploadData.platformBaemin);
-    } else if (String(uploadData?.baeminId || '').trim()) {
-      changes.platformBaemin = true;
     }
 
-    if (String(uploadData?.longEventItemId || '').trim()) {
+    if (String(uploadData?.longEventItemId || '').trim() && isBulkExistingFieldEmpty(existing, 'longEventItemId')) {
       changes.longEventItemId = uploadData.longEventItemId;
       changes.longEventItem = String(uploadData.longEventItem || '').trim();
     }
-    if (String(uploadData?.longEventStartDate || '').trim()) {
+    if (String(uploadData?.longEventStartDate || '').trim() && isBulkExistingFieldEmpty(existing, 'longEventStartDate')) {
       changes.longEventStartDate = uploadData.longEventStartDate;
     }
 
@@ -444,17 +485,13 @@ window.BremDriverUtils = (function () {
     if (!row) return null;
 
     if (row.action === 'update') {
-      const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
-      if (!Object.keys(changes).length) {
-        const unchanged = { ...row.matchedDriver };
-        delete unchanged.password;
-        delete unchanged.passwordExplicit;
-        return unchanged;
-      }
-      const updated = { ...row.matchedDriver, ...changes };
-      delete updated.password;
-      delete updated.passwordExplicit;
-      return updated;
+      const changes = row.bulkChanges || mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
+      if (!Object.keys(changes).length) return null;
+      return {
+        id: row.matchedDriver.id,
+        bulkFillPatch: true,
+        ...changes
+      };
     }
 
     if (typeof buildNewDriver !== 'function') {
@@ -786,6 +823,7 @@ window.BremDriverUtils = (function () {
     matchDriverByNameAndPhone,
     isBulkRawProvided,
     mergeBulkDriverData,
+    describeBulkDriverChanges,
     prepareBulkRiderRecord,
     matchDriverForPlatformImport,
     buildDriverDuplicateLookup,

@@ -3,6 +3,7 @@
     makeDriverLoginId,
     makeDriverMatchKey,
     mergeBulkDriverData,
+    describeBulkDriverChanges,
     prepareBulkRiderRecord,
     buildDriverDuplicateLookup,
     buildRiderMatchMap,
@@ -53,6 +54,7 @@
   const totalCountEl = document.getElementById('bulkTotalCount');
   const createCountEl = document.getElementById('bulkCreateCount');
   const updateCountEl = document.getElementById('bulkUpdateCount');
+  const unchangedCountEl = document.getElementById('bulkUnchangedCount');
   const issueCountEl = document.getElementById('bulkIssueCount');
   const applyBtn = document.getElementById('bulkApplyBtn');
   const clearBtn = document.getElementById('bulkClearBtn');
@@ -273,13 +275,21 @@
       data.password = '1234';
     }
 
+    const bulkChanges = isUpdate && matchedDriver
+      ? mergeBulkDriverData(matchedDriver, data, raw)
+      : {};
+    const action = isUpdate
+      ? (Object.keys(bulkChanges).length ? 'update' : 'unchanged')
+      : 'create';
+
     return {
       rowNumber,
       raw,
       data,
       loginId,
       matchedDriver,
-      action: isUpdate ? 'update' : 'create',
+      bulkChanges,
+      action,
       errors,
       valid: errors.length === 0,
       isIssue: errors.length > 0
@@ -361,6 +371,7 @@
     if (row.applyStatus === 'processing') return 'row-processing';
     if (row.applyStatus === 'done') return 'row-done';
     if (row.applyStatus === 'failed' || row.isIssue) return 'row-failed';
+    if (row.valid && row.action === 'unchanged') return 'row-unchanged';
     if (row.valid) return row.action === 'update' ? 'row-update' : 'row-ok';
     return 'row-error';
   }
@@ -379,8 +390,12 @@
     if (!row.valid) {
       return `<span class="bulk-result-err">${escapeHtml(row.errors.join(', '))}</span>`;
     }
+    if (row.action === 'unchanged') {
+      return '<span class="bulk-result-unchanged">변경 없음</span>';
+    }
     if (row.action === 'update') {
-      return '<span class="bulk-result-update">기존 업데이트</span>';
+      const detail = describeBulkDriverChanges(row.bulkChanges);
+      return `<span class="bulk-result-update">기존 업데이트${detail ? ` · ${escapeHtml(detail)}` : ''}</span>`;
     }
     return '<span class="bulk-result-ok">신규 등록</span>';
   }
@@ -484,11 +499,13 @@
   }
 
   function buildBulkSavePlan(processableRows) {
-    return processableRows.map(row => ({
-      row,
-      rider: prepareRiderForBulk(row),
-      action: row.action
-    }));
+    return processableRows
+      .map(row => ({
+        row,
+        rider: prepareRiderForBulk(row),
+        action: row.action
+      }))
+      .filter(entry => entry.rider);
   }
 
   function escapeHtml(value) {
@@ -503,6 +520,9 @@
   function renderPreviewDataRow(row, options = {}) {
     const includeResult = options.includeResult !== false;
     const includeReason = Boolean(options.includeReason);
+    const reasonText = options.reasonFromChanges
+      ? describeBulkDriverChanges(row.bulkChanges)
+      : row.errors.join(', ');
     return `
       <tr class="${getRowClass(row)}" data-bulk-row="${row.rowNumber}">
         <td>${row.rowNumber}</td>
@@ -511,15 +531,16 @@
         <td>${escapeHtml(row.loginId || '-')}</td>
         <td>${escapeHtml(platformLabel(row))}</td>
         ${includeResult ? `<td class="bulk-row-result">${getRowResultHtml(row)}</td>` : ''}
-        ${includeReason ? `<td class="bulk-row-reason">${escapeHtml(row.errors.join(', ') || '-')}</td>` : ''}
+        ${includeReason ? `<td class="bulk-row-reason">${escapeHtml(reasonText || '-')}</td>` : ''}
       </tr>
     `;
   }
 
-  function renderPreviewHighlights(createRows, issueRows) {
+  function renderPreviewHighlights(createRows, updateRows, issueRows) {
     const hasCreate = createRows.length > 0;
+    const hasUpdate = updateRows.length > 0;
     const hasIssue = issueRows.length > 0;
-    const showHighlights = hasCreate || hasIssue;
+    const showHighlights = hasCreate || hasUpdate || hasIssue;
 
     if (previewHighlights) previewHighlights.hidden = !showHighlights;
 
@@ -528,6 +549,17 @@
     if (previewCreateBody) {
       previewCreateBody.innerHTML = hasCreate
         ? createRows.map(row => renderPreviewDataRow(row, { includeResult: false })).join('')
+        : '';
+    }
+
+    const previewUpdateBox = document.getElementById('bulkPreviewUpdateBox');
+    const previewUpdateBody = document.getElementById('bulkPreviewUpdateBody');
+    const previewUpdateTitle = document.getElementById('bulkPreviewUpdateTitle');
+    if (previewUpdateBox) previewUpdateBox.hidden = !hasUpdate;
+    if (previewUpdateTitle) previewUpdateTitle.textContent = String(updateRows.length);
+    if (previewUpdateBody) {
+      previewUpdateBody.innerHTML = hasUpdate
+        ? updateRows.map(row => renderPreviewDataRow(row, { includeResult: false, includeReason: true, reasonFromChanges: true })).join('')
         : '';
     }
 
@@ -543,12 +575,14 @@
   function renderPreview() {
     const createRows = parsedRows.filter(row => row.valid && row.action === 'create');
     const updateRows = parsedRows.filter(row => row.valid && row.action === 'update');
+    const unchangedRows = parsedRows.filter(row => row.valid && row.action === 'unchanged');
     const issueRows = parsedRows.filter(row => row.isIssue);
     const processableCount = createRows.length + updateRows.length;
 
     totalCountEl.textContent = String(parsedRows.length);
     if (createCountEl) createCountEl.textContent = String(createRows.length);
     if (updateCountEl) updateCountEl.textContent = String(updateRows.length);
+    if (unchangedCountEl) unchangedCountEl.textContent = String(unchangedRows.length);
     if (issueCountEl) issueCountEl.textContent = String(issueRows.length);
     applyBtn.disabled = processableCount === 0 || isApplying;
 
@@ -565,7 +599,7 @@
       ` : ''
     ].join('');
 
-    renderPreviewHighlights(createRows, issueRows);
+    renderPreviewHighlights(createRows, updateRows, issueRows);
     previewSection.hidden = parsedRows.length === 0;
   }
 
@@ -596,6 +630,7 @@
     totalCountEl.textContent = '0';
     if (createCountEl) createCountEl.textContent = '0';
     if (updateCountEl) updateCountEl.textContent = '0';
+    if (unchangedCountEl) unchangedCountEl.textContent = '0';
     if (issueCountEl) issueCountEl.textContent = '0';
     applyBtn.disabled = true;
     resetApplyUi();
@@ -612,7 +647,7 @@
     bulkPanel.hidden = !isBulk;
     layout.classList.toggle('layout--bulk', isBulk);
     formSubtitle.textContent = isBulk
-      ? '엑셀 파일로 여러 기사를 한 번에 등록합니다. 기존 기사(이름+연락처)는 병합 업데이트됩니다.'
+      ? '엑셀 파일로 여러 기사를 한 번에 등록합니다. 기존 기사는 비어 있는 칸만 채우며, 비밀번호는 변경되지 않습니다.'
       : '기사 기본 정보를 입력하고 저장하세요.';
   }
 
@@ -685,7 +720,8 @@
 
       const createCount = parsedRows.filter(row => row.valid && row.action === 'create').length;
       const updateCount = parsedRows.filter(row => row.valid && row.action === 'update').length;
-      showToast(`미리보기 ${parsedRows.length}건 — 신규 ${createCount}명 · 업데이트 ${updateCount}명`);
+      const unchangedCount = parsedRows.filter(row => row.valid && row.action === 'unchanged').length;
+      showToast(`미리보기 ${parsedRows.length}건 — 신규 ${createCount}명 · 변경 ${updateCount}명 · 변경없음 ${unchangedCount}명`);
     } catch (error) {
       console.error(error);
       showToast('엑셀 파일을 읽지 못했습니다.');
@@ -694,17 +730,23 @@
   }
 
   async function applyBulk() {
-    const processableRows = parsedRows.filter(row => row.valid);
+    const processableRows = parsedRows.filter(row => row.valid && row.action !== 'unchanged');
     const issueRows = parsedRows.filter(row => row.isIssue);
+    const unchangedRows = parsedRows.filter(row => row.valid && row.action === 'unchanged');
     if (!processableRows.length) {
-      showToast('등록 가능한 행이 없습니다.');
+      showToast(unchangedRows.length
+        ? '변경할 내용이 없습니다. 빈 칸을 채울 값만 업로드하세요.'
+        : '등록 가능한 행이 없습니다.');
       return;
     }
 
     const createCount = processableRows.filter(row => row.action === 'create').length;
     const updateCount = processableRows.filter(row => row.action === 'update').length;
 
-    let confirmMessage = `신규 ${createCount}명 · 업데이트 ${updateCount}명을 일괄 처리하시겠습니까?\n\n기존 기사의 로그인 비밀번호는 변경되지 않습니다.`;
+    let confirmMessage = `신규 ${createCount}명 · 변경 ${updateCount}명을 일괄 처리하시겠습니까?\n\n기존 기사는 빈 칸만 채워지며, 비밀번호와 이미 등록된 값은 변경되지 않습니다.`;
+    if (unchangedRows.length) {
+      confirmMessage += `\n\n변경 없음 ${unchangedRows.length}건은 저장하지 않습니다.`;
+    }
     if (issueRows.length) {
       confirmMessage += `\n\n중복/오류 ${issueRows.length}건은 제외됩니다.`;
     }
@@ -719,11 +761,10 @@
     let created = 0;
     let updated = 0;
     const failedRows = [];
-    const total = processableRows.length;
+    let savePlan = [];
+    let total = 0;
     let current = 0;
     const eventSyncQueue = [];
-
-    updateApplyProgress(0, total, 0, 0, 0);
 
     function markRowFailed(entry, message) {
       if (entry.row.applyStatus === 'failed') return;
@@ -735,13 +776,18 @@
       }
     }
 
-    let savePlan = [];
-
     try {
       await ensureStorageReadyForSave();
       await ensureAllDriversLoaded();
 
       savePlan = buildBulkSavePlan(processableRows);
+      if (!savePlan.length) {
+        showToast('저장할 변경 내용이 없습니다.');
+        return;
+      }
+
+      total = savePlan.length;
+      updateApplyProgress(0, total, 0, 0, 0);
 
       for (let offset = 0; offset < savePlan.length; offset += BULK_BATCH_SIZE) {
         const batch = savePlan.slice(offset, offset + BULK_BATCH_SIZE);
@@ -790,7 +836,7 @@
         const moreCount = failedRows.length > 5 ? ` 외 ${failedRows.length - 5}명` : '';
         showToast(`실패 ${failedRows.length}명: ${failedNames}${moreCount}`);
       } else {
-        showToast(`신규등록 ${created}명 · 업데이트 ${updated}명 · 실패 0명${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}`);
+        showToast(`신규등록 ${created}명 · 변경 ${updated}명 · 실패 0명${issueRows.length ? ` · 사전 오류 ${issueRows.length}건` : ''}${unchangedRows.length ? ` · 변경없음 ${unchangedRows.length}건` : ''}`);
       }
 
       if (window.BremDriverIndex && typeof window.BremDriverIndex.refresh === 'function') {

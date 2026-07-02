@@ -367,6 +367,7 @@ function riderToRow(driver) {
   const source = driver && typeof driver === 'object' ? { ...driver } : {};
   const passwordExplicit = Boolean(source.passwordExplicit);
   delete source.passwordExplicit;
+  delete source.bulkFillPatch;
   if (!passwordExplicit) {
     delete source.password;
   } else if (source.password !== undefined) {
@@ -609,6 +610,10 @@ function buildExistingRiderMatchMap(rows) {
 }
 
 function mergeIncomingRiderWithExisting(incoming, existingRow) {
+  if (incoming?.bulkFillPatch) {
+    return incoming;
+  }
+
   const merged = { ...incoming };
   merged.id = existingRow.id;
   if (existingRow.auth_user_id) merged.authUserId = existingRow.auth_user_id;
@@ -621,6 +626,49 @@ function mergeIncomingRiderWithExisting(incoming, existingRow) {
   merged.platformCoupang = incoming.platformCoupang !== false && existingRow.platform_coupang !== false;
 
   return merged;
+}
+
+function dbRowToDriver(row) {
+  const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id || '',
+    name: row.name,
+    phone: row.phone,
+    residentNumber: row.resident_number || raw.residentNumber || '',
+    bankName: row.bank_name || '',
+    accountHolder: row.account_holder || '',
+    accountNumber: row.account_number || '',
+    baeminId: row.baemin_id || '',
+    platformCoupang: row.platform_coupang !== false,
+    platformBaemin: Boolean(row.platform_baemin),
+    longEventItemId: row.long_event_item_id || '',
+    longEventItem: row.long_event_item || '',
+    longEventStartDate: row.long_event_start_date || '',
+    joinDate: row.join_date || raw.joinDate || '',
+    status: row.status || '근무중',
+    memo: row.memo || '',
+    hiddenFields: row.hidden_fields || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function expandBulkFillPatches(supabase, riders) {
+  return Promise.all((riders || []).map(async rider => {
+    if (!rider?.bulkFillPatch || !rider?.id) return rider;
+
+    const id = String(rider.id || '').trim();
+    const { data: existing, error } = await queryRidersWithSelectFallback(
+      RIDER_DETAIL_SELECT_VARIANTS,
+      columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
+    );
+    if (error || !existing) return rider;
+
+    const base = dbRowToDriver(existing);
+    const { bulkFillPatch, id: _id, ...patch } = rider;
+    return { ...base, ...patch };
+  }));
 }
 
 async function resolveBulkRidersForUpsert(supabase, riders) {
@@ -668,7 +716,8 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   }
 
   const supabase = getServiceClient();
-  const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, list);
+  const expanded = await expandBulkFillPatches(supabase, list);
+  const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, expanded);
   const rows = await Promise.all(resolved.map(async rider => {
     const row = riderToRow(rider);
     return preserveRiderPasswordOnUpsert(
