@@ -359,7 +359,8 @@ const BremWeeklySettlementAdmin = (function () {
       `${driverLabel} 기사의 콜수를 주간정산서 기준으로 맞출까요?`,
       '',
       `주간서 ${orderLabel}: ${formatNumber(weeklyOrderCount)}건`,
-      '일정산·콜수입력 기록이 함께 조정되며, 콜수입력 메뉴에도 반영됩니다.',
+      '해당 주간의 기존 일정산·콜수 기록을 지우고, 정산 마지막 날에 주간서 총 콜수를 콜수입력으로 넣습니다.',
+      '콜수입력 메뉴·대시보드에 바로 반영됩니다.',
       '적용 후 「라이더 앱 반영」을 누르면 기사 앱에도 갱신됩니다.'
     ].join('\n');
 
@@ -369,7 +370,7 @@ const BremWeeklySettlementAdmin = (function () {
       await BremStorage.ensureSectionLoaded?.('settlements');
       await BremStorage.ensureSectionLoaded?.('calls');
 
-      const result = BremWeeklySettlement.applyWeeklySettlementCallCount({
+      const result = await BremWeeklySettlement.applyWeeklySettlementCallCount({
         driverId,
         startDate,
         endDate,
@@ -377,7 +378,7 @@ const BremWeeklySettlementAdmin = (function () {
         weeklyOrderCount
       });
 
-      await BremStorage.flushStorage?.();
+      document.dispatchEvent(new CustomEvent('brem-calls-changed'));
 
       if (state.previewByPlatform[platform]) {
         state.previewByPlatform[platform] = BremWeeklySettlement.refreshWeeklySettlementRiders(
@@ -390,8 +391,6 @@ const BremWeeklySettlementAdmin = (function () {
         const record = BremStorage.weeklySettlements.getById(state.detailId);
         if (record) renderDetail(record);
       }
-
-      document.dispatchEvent(new CustomEvent('brem-calls-changed'));
 
       if (!result.applied) {
         showToast(`${driverLabel} · 이미 주간서와 콜수가 일치합니다.`);

@@ -4903,6 +4903,7 @@
 
     document.addEventListener('brem-calls-changed', () => {
       renderCalls();
+      renderSettlements();
       renderDashboard();
     });
 

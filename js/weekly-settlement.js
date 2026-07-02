@@ -946,7 +946,35 @@ const BremWeeklySettlement = (function () {
     return { ...record, previewUnmatched: unmatchedRiders };
   }
 
-  function applyWeeklySettlementCallCount({
+  async function clearDriverPeriodCallData(driverId, startDate, endDate, platform) {
+    const id = String(driverId || '').trim();
+    const p = normalizePlatform(platform);
+    const start = String(startDate || '').slice(0, 10);
+    const end = String(endDate || '').slice(0, 10);
+    const days = new Set(listDaysInclusive(start, end));
+
+    const settlementIds = BremStorage.settlements.getAll()
+      .filter(item => item.driverId === id
+        && normalizePlatform(item.platform) === p
+        && days.has(normalizePeriodDay(item.period)))
+      .map(item => item.id);
+
+    for (const settlementId of settlementIds) {
+      await BremStorage.settlements.removeByIdAsync(settlementId);
+    }
+
+    const callIds = BremStorage.calls.getAll()
+      .filter(item => item.driverId === id
+        && normalizePlatform(item.platform) === p
+        && days.has(String(item.date).slice(0, 10)))
+      .map(item => item.id);
+
+    for (const callId of callIds) {
+      await BremStorage.calls.removeByIdAsync(callId);
+    }
+  }
+
+  async function applyWeeklySettlementCallCount({
     driverId,
     startDate,
     endDate,
@@ -975,67 +1003,17 @@ const BremWeeklySettlement = (function () {
       };
     }
 
-    const updates = [];
-    const daysWithData = (beforeAudit.dayAudits || []).filter(day => Number(day.usedCount || 0) > 0);
+    await clearDriverPeriodCallData(id, start, end, p);
 
-    if (!daysWithData.length) {
-      BremStorage.calls.upsertDaily({
-        driverId: id,
-        date: end,
-        count: target,
-        platform: p,
-        logEdit: true
-      });
-      updates.push({ date: end, count: target, source: 'call' });
-    } else {
-      let allocated = 0;
-      daysWithData.forEach((day, index) => {
-        let newCount;
-        if (index === daysWithData.length - 1) {
-          newCount = Math.max(0, target - allocated);
-        } else if (current > 0) {
-          newCount = Math.max(0, Math.round((Number(day.usedCount || 0) / current) * target));
-          allocated += newCount;
-        } else {
-          newCount = 0;
-        }
-
-        if (day.source === 'settlement' || (day.settlements || []).length) {
-          const settlementRecord = (day.settlements || []).find(row => row.id === day.usedSettlementId)
-            || pickLatestSettlementRecord(day.settlements || [])
-            || BremStorage.settlements.getAll().find(row => (
-              row.driverId === id
-              && normalizePlatform(row.platform) === p
-              && normalizePeriodDay(row.period) === day.date
-            ));
-          if (settlementRecord) {
-            const full = BremStorage.settlements.getAll().find(row => row.id === settlementRecord.id) || settlementRecord;
-            BremStorage.settlements.upsertBatch({
-              period: day.date,
-              platform: p,
-              records: [{
-                driverId: id,
-                riderId: full.riderId || '',
-                orderCount: newCount,
-                deliveryAmount: Number(full.deliveryAmount ?? full.settlementAmount ?? 0),
-                settlementAmount: Number(full.settlementAmount ?? full.deliveryAmount ?? 0)
-              }]
-            });
-            updates.push({ date: day.date, count: newCount, source: 'settlement' });
-            return;
-          }
-        }
-
-        BremStorage.calls.upsertDaily({
-          driverId: id,
-          date: day.date,
-          count: newCount,
-          platform: p,
-          logEdit: true
-        });
-        updates.push({ date: day.date, count: newCount, source: 'call' });
-      });
-    }
+    const writeResult = BremStorage.calls.upsertDaily({
+      driverId: id,
+      date: end,
+      count: target,
+      platform: p,
+      logEdit: true
+    });
+    await BremStorage.awaitPersist?.(writeResult);
+    await BremStorage.flushStorage?.();
 
     const afterAudit = buildDriverCallAudit(id, start, end, p, target);
     return {
@@ -1043,7 +1021,7 @@ const BremWeeklySettlement = (function () {
       applied: true,
       weeklyOrderCount: target,
       systemCallCount: Number(afterAudit.systemCallCount || 0),
-      updates
+      updates: [{ date: end, count: target, source: 'call' }]
     };
   }
 
