@@ -1180,6 +1180,59 @@ h2 {
   text-align: center;
 }
 
+.bulk-preview-highlights {
+  display: grid;
+  gap: 12px;
+}
+
+.bulk-preview-highlight {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.bulk-preview-highlight--create {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.bulk-preview-highlight--issue {
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.bulk-preview-highlight-title {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #166534;
+  border-bottom: 1px solid #bbf7d0;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.bulk-preview-highlight-title--warn {
+  color: #b91c1c;
+  border-bottom-color: #fecaca;
+}
+
+.bulk-preview-highlight-wrap {
+  overflow: auto;
+  max-height: 220px;
+}
+
+.bulk-preview-table--compact th,
+.bulk-preview-table--compact td {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.bulk-row-reason {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
 .bulk-apply-progress {
   margin: 0 0 10px;
   padding: 12px 14px;

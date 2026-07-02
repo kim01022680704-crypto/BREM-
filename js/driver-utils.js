@@ -402,6 +402,7 @@ window.BremDriverUtils = (function () {
 
   /**
    * 일괄등록 병합: 업로드에 값이 있는 필드만 반영합니다. 빈 셀은 기존 값을 유지합니다.
+   * 로그인 비밀번호는 병합 대상이 아니며, prepareBulkRiderRecord에서도 제외합니다.
    */
   function mergeBulkDriverData(existing, uploadData, raw) {
     if (!existing) return { ...(uploadData || {}) };
@@ -444,8 +445,16 @@ window.BremDriverUtils = (function () {
 
     if (row.action === 'update') {
       const changes = mergeBulkDriverData(row.matchedDriver, row.data, row.raw);
-      if (!Object.keys(changes).length) return row.matchedDriver;
-      return { ...row.matchedDriver, ...changes };
+      if (!Object.keys(changes).length) {
+        const unchanged = { ...row.matchedDriver };
+        delete unchanged.password;
+        delete unchanged.passwordExplicit;
+        return unchanged;
+      }
+      const updated = { ...row.matchedDriver, ...changes };
+      delete updated.password;
+      delete updated.passwordExplicit;
+      return updated;
     }
 
     if (typeof buildNewDriver !== 'function') {

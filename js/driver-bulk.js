@@ -43,6 +43,13 @@
   const fileInput = document.getElementById('bulkFileInput');
   const previewSection = document.getElementById('bulkPreviewSection');
   const previewBody = document.getElementById('bulkPreviewBody');
+  const previewHighlights = document.getElementById('bulkPreviewHighlights');
+  const previewCreateBox = document.getElementById('bulkPreviewCreateBox');
+  const previewCreateBody = document.getElementById('bulkPreviewCreateBody');
+  const previewCreateTitle = document.getElementById('bulkPreviewCreateTitle');
+  const previewIssueBox = document.getElementById('bulkPreviewIssueBox');
+  const previewIssueBody = document.getElementById('bulkPreviewIssueBody');
+  const previewIssueTitle = document.getElementById('bulkPreviewIssueTitle');
   const totalCountEl = document.getElementById('bulkTotalCount');
   const createCountEl = document.getElementById('bulkCreateCount');
   const updateCountEl = document.getElementById('bulkUpdateCount');
@@ -184,7 +191,6 @@
     const name = String(raw.name || '').trim();
     const phone = normalizePhoneDisplay(raw.phone);
     const residentNumber = normalizeDigits(raw.residentNumber || raw.password);
-    const password = '1234';
     const joinDate = today();
     const status = '근무중';
     const memo = String(raw.memo || '').trim();
@@ -249,7 +255,6 @@
       name,
       phone,
       residentNumber,
-      password,
       bankName,
       accountHolder,
       accountNumber,
@@ -263,6 +268,10 @@
       longEventStartDate: longEventStartDate || '',
       memo
     };
+
+    if (!isUpdate) {
+      data.password = '1234';
+    }
 
     return {
       rowNumber,
@@ -491,6 +500,46 @@
       .replaceAll("'", '&#039;');
   }
 
+  function renderPreviewDataRow(row, options = {}) {
+    const includeResult = options.includeResult !== false;
+    const includeReason = Boolean(options.includeReason);
+    return `
+      <tr class="${getRowClass(row)}" data-bulk-row="${row.rowNumber}">
+        <td>${row.rowNumber}</td>
+        <td>${escapeHtml(row.data.name || '-')}</td>
+        <td>${escapeHtml(row.data.phone || '-')}</td>
+        <td>${escapeHtml(row.loginId || '-')}</td>
+        <td>${escapeHtml(platformLabel(row))}</td>
+        ${includeResult ? `<td class="bulk-row-result">${getRowResultHtml(row)}</td>` : ''}
+        ${includeReason ? `<td class="bulk-row-reason">${escapeHtml(row.errors.join(', ') || '-')}</td>` : ''}
+      </tr>
+    `;
+  }
+
+  function renderPreviewHighlights(createRows, issueRows) {
+    const hasCreate = createRows.length > 0;
+    const hasIssue = issueRows.length > 0;
+    const showHighlights = hasCreate || hasIssue;
+
+    if (previewHighlights) previewHighlights.hidden = !showHighlights;
+
+    if (previewCreateBox) previewCreateBox.hidden = !hasCreate;
+    if (previewCreateTitle) previewCreateTitle.textContent = String(createRows.length);
+    if (previewCreateBody) {
+      previewCreateBody.innerHTML = hasCreate
+        ? createRows.map(row => renderPreviewDataRow(row, { includeResult: false })).join('')
+        : '';
+    }
+
+    if (previewIssueBox) previewIssueBox.hidden = !hasIssue;
+    if (previewIssueTitle) previewIssueTitle.textContent = String(issueRows.length);
+    if (previewIssueBody) {
+      previewIssueBody.innerHTML = hasIssue
+        ? issueRows.map(row => renderPreviewDataRow(row, { includeResult: false, includeReason: true })).join('')
+        : '';
+    }
+  }
+
   function renderPreview() {
     const createRows = parsedRows.filter(row => row.valid && row.action === 'create');
     const updateRows = parsedRows.filter(row => row.valid && row.action === 'update');
@@ -508,16 +557,7 @@
     const hiddenCount = Math.max(0, parsedRows.length - previewRows.length);
 
     previewBody.innerHTML = [
-      ...previewRows.map(row => `
-        <tr class="${getRowClass(row)}" data-bulk-row="${row.rowNumber}">
-          <td>${row.rowNumber}</td>
-          <td>${escapeHtml(row.data.name || '-')}</td>
-          <td>${escapeHtml(row.data.phone || '-')}</td>
-          <td>${escapeHtml(row.loginId || '-')}</td>
-          <td>${escapeHtml(platformLabel(row))}</td>
-          <td class="bulk-row-result">${getRowResultHtml(row)}</td>
-        </tr>
-      `),
+      ...previewRows.map(row => renderPreviewDataRow(row)),
       hiddenCount > 0 ? `
         <tr class="row-preview-more">
           <td colspan="6">외 ${hiddenCount}건 — 저장 시 전체 ${parsedRows.length}건이 처리됩니다 (미리보기 ${PREVIEW_LIMIT}건만 표시)</td>
@@ -525,6 +565,7 @@
       ` : ''
     ].join('');
 
+    renderPreviewHighlights(createRows, issueRows);
     previewSection.hidden = parsedRows.length === 0;
   }
 
@@ -546,6 +587,11 @@
     fileInput.value = '';
     previewSection.hidden = true;
     previewBody.innerHTML = '';
+    if (previewHighlights) previewHighlights.hidden = true;
+    if (previewCreateBox) previewCreateBox.hidden = true;
+    if (previewCreateBody) previewCreateBody.innerHTML = '';
+    if (previewIssueBox) previewIssueBox.hidden = true;
+    if (previewIssueBody) previewIssueBody.innerHTML = '';
     previewRowNumbers = new Set();
     totalCountEl.textContent = '0';
     if (createCountEl) createCountEl.textContent = '0';
@@ -658,7 +704,7 @@
     const createCount = processableRows.filter(row => row.action === 'create').length;
     const updateCount = processableRows.filter(row => row.action === 'update').length;
 
-    let confirmMessage = `신규 ${createCount}명 · 업데이트 ${updateCount}명을 일괄 처리하시겠습니까?`;
+    let confirmMessage = `신규 ${createCount}명 · 업데이트 ${updateCount}명을 일괄 처리하시겠습니까?\n\n기존 기사의 로그인 비밀번호는 변경되지 않습니다.`;
     if (issueRows.length) {
       confirmMessage += `\n\n중복/오류 ${issueRows.length}건은 제외됩니다.`;
     }

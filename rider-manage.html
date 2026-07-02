@@ -243,7 +243,7 @@
                 </tbody>
               </table>
             </div>
-            <p class="form-note form-note--subtle">가입일은 <strong>신규 등록</strong> 시 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 이름+연락처가 일치하는 기존 기사는 신규 생성 없이 업로드된 값만 병합 업데이트됩니다. 빈 셀은 기존 값을 유지합니다.</p>
+            <p class="form-note form-note--subtle">가입일은 <strong>신규 등록</strong> 시 등록 당일, 상태는 <strong>근무중</strong>으로 자동 설정됩니다. 이름+연락처가 일치하는 기존 기사는 신규 생성 없이 업로드된 값만 병합 업데이트됩니다. 빈 셀은 기존 값을 유지합니다. <strong>기존 기사의 로그인 비밀번호(기사가 변경한 비밀번호 포함)는 일괄등록·업데이트 시 절대 변경되지 않습니다.</strong></p>
           </section>
 
           <section class="bulk-preview-section" id="bulkPreviewSection" hidden>
@@ -280,6 +280,43 @@
                 </thead>
                 <tbody id="bulkPreviewBody"></tbody>
               </table>
+            </div>
+            <div class="bulk-preview-highlights" id="bulkPreviewHighlights" hidden>
+              <div class="bulk-preview-highlight bulk-preview-highlight--create" id="bulkPreviewCreateBox" hidden>
+                <h4 class="bulk-preview-highlight-title">신규 등록 <strong id="bulkPreviewCreateTitle">0</strong>명</h4>
+                <div class="bulk-preview-highlight-wrap">
+                  <table class="bulk-preview-table bulk-preview-table--compact">
+                    <thead>
+                      <tr>
+                        <th>행</th>
+                        <th>이름</th>
+                        <th>연락처</th>
+                        <th>쿠팡아이디</th>
+                        <th>플랫폼</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bulkPreviewCreateBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="bulk-preview-highlight bulk-preview-highlight--issue" id="bulkPreviewIssueBox" hidden>
+                <h4 class="bulk-preview-highlight-title bulk-preview-highlight-title--warn">중복/오류 <strong id="bulkPreviewIssueTitle">0</strong>건</h4>
+                <div class="bulk-preview-highlight-wrap">
+                  <table class="bulk-preview-table bulk-preview-table--compact">
+                    <thead>
+                      <tr>
+                        <th>행</th>
+                        <th>이름</th>
+                        <th>연락처</th>
+                        <th>쿠팡아이디</th>
+                        <th>플랫폼</th>
+                        <th>사유</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bulkPreviewIssueBody"></tbody>
+                  </table>
+                </div>
+              </div>
             </div>
             <div class="form-actions">
               <button type="button" class="btn primary" id="bulkApplyBtn" disabled>일괄 등록</button>
@@ -325,10 +362,10 @@
   <script src="js/storage.js?v=20260703c"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/driver-program-access.js?v=20260620c"></script>
-  <script src="js/driver-utils.js?v=20260621f"></script>
+  <script src="js/driver-utils.js?v=20260703s"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/index-nav.js"></script>
   <script src="js/app.js?v=20260703b"></script>
-  <script src="js/driver-bulk.js?v=20260622f"></script>
+  <script src="js/driver-bulk.js?v=20260703s"></script>
 </body>
 </html>
