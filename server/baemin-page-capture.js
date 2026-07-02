@@ -48,9 +48,11 @@ function buildSpaPageUrl(sourceId, dateRange, collectDate = null) {
   const toDate = history.toDate;
   if (!fromDate || !toDate) return null;
 
+  const daySpan = history.dates?.length
+    || (fromDate && toDate ? Math.max(1, Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1) : 1);
   const params = new URLSearchParams({
     page: '1',
-    size: '20',
+    size: String(daySpan > 7 ? 100 : 20),
     fromDate,
     toDate
   });

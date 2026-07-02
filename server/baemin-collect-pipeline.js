@@ -695,8 +695,12 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 
   async function tryFetch(endpointInfo, dateRange = activeDateRange) {
     const useBrowserSession = shouldUseBrowserSessionForCollect(context);
+    const builtQuery = buildDefaultQuery(sourceId, collectDate, dateRange);
+    if (Number(dateRange?.dayCount || 0) > 7) {
+      builtQuery.size = Math.max(Number(builtQuery.size || 0), 100);
+    }
     const baseQuery = mergeCenterQuery(
-      buildDefaultQuery(sourceId, collectDate, dateRange),
+      builtQuery,
       registry,
       { skipCenterQuery: useBrowserSession }
     );
@@ -712,7 +716,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     const centerHeaders = endpointInfo.sampleHeaders && typeof endpointInfo.sampleHeaders === 'object'
       ? endpointInfo.sampleHeaders
       : null;
-    if (useBrowserSession) {
+    if (useBrowserSession && source.dateQueryKeys?.length) {
+      console.log(`[BREM][collect:${sourceId}] browser-tab range fetch partnerId=${partnerId} ${dateRange?.fromDate}~${dateRange?.toDate}`);
+    } else if (useBrowserSession) {
       console.log(`[BREM][collect:${sourceId}] browser-tab fetch partnerId=${partnerId}`);
     }
     return fetchPaginatedApi({
@@ -737,31 +743,19 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 
   let fetched = null;
   if (source.dateQueryKeys?.length && activeDateRange?.dayCount > 1) {
-    console.log(`[BREM][collect] ${sourceId} per-day mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일)`);
-    const byDayFirst = await fetchHistoryByDays({
-      sourceId,
-      source,
-      endpoint: { ...endpoint, sampleUrl: null },
-      sessionCookie,
-      registry,
-      context,
-      activeDateRange,
-      collectDate,
-      tryFetch
-    });
-    if (byDayFirst?.items?.length) fetched = byDayFirst;
+    console.log(`[BREM][collect] ${sourceId} range mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, fromDate/toDate 일괄 조회)`);
   }
 
-  if (!fetched?.ok) {
-    const spaMinDays = source.dateQueryKeys?.length && activeDateRange?.dayCount > 1
-      ? activeDateRange.dayCount
-      : 0;
-    const spaOpts = { minDayCount: spaMinDays, collectDate };
-    fetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, spaOpts)
-      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, spaOpts);
-  }
-  if (!fetched?.ok) {
-    fetched = await tryFetch(endpoint);
+  // 1) fromDate~toDate 범위 API (페이지네이션 포함) — 배민 BIZ와 동일
+  fetched = await tryFetch(endpoint);
+
+  // 2) SPA 단일 페이지 캡처 (totalPage=1일 때만)
+  if (!fetched?.ok || !(fetched.items || []).length) {
+    const spaFetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, { collectDate })
+      || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, { collectDate });
+    if (spaFetched?.ok && (spaFetched.items || []).length) {
+      fetched = spaFetched;
+    }
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
     console.warn(`[BREM][collect] ${sourceId} stored sampleUrl failed — rediscover`);
@@ -792,6 +786,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     }
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && source.dateQueryKeys?.length) {
+    console.warn(`[BREM][collect] ${sourceId} range fetch failed — per-day fallback (최후 수단)`);
     const byDay = await fetchHistoryByDays({
       sourceId,
       source,
@@ -810,7 +805,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     && fetched.ok
     && !(fetched.items || []).length
   ) {
-    console.warn(`[BREM][collect] ${sourceId} range empty — per-day fallback ${activeDateRange?.fromDate}~${activeDateRange?.toDate}`);
+    console.warn(`[BREM][collect] ${sourceId} range empty — per-day fallback (최후 수단) ${activeDateRange?.fromDate}~${activeDateRange?.toDate}`);
     const byDay = await fetchHistoryByDays({
       sourceId,
       source,
