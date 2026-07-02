@@ -117,8 +117,21 @@ const BremStorage = (function () {
       return next;
     });
 
-    if (migrated) storageAdapter.write(KEYS.calls, normalized);
-    return normalized;
+    const deduped = dedupeRecordsById(normalized, item => item.id);
+    if (migrated || deduped.length !== normalized.length) {
+      if (deduped.length !== normalized.length) migrated = true;
+      storageAdapter.write(KEYS.calls, deduped);
+    }
+    return deduped;
+  }
+
+  function dedupeRecordsById(list, getId) {
+    const byId = new Map();
+    (list || []).forEach(item => {
+      const id = String(getId(item) || '').trim();
+      if (id) byId.set(id, item);
+    });
+    return [...byId.values()];
   }
 
   function normalizeSettlements(list) {
@@ -140,8 +153,12 @@ const BremStorage = (function () {
       return next;
     });
 
-    if (migrated) storageAdapter.write(KEYS.settlements, normalized);
-    return normalized;
+    const deduped = dedupeRecordsById(normalized, item => item.id);
+    if (migrated || deduped.length !== normalized.length) {
+      if (deduped.length !== normalized.length) migrated = true;
+      storageAdapter.write(KEYS.settlements, deduped);
+    }
+    return deduped;
   }
 
   function normalizeSettlementUnmatched(list) {
@@ -7778,6 +7795,23 @@ const BremStorage = (function () {
       await storageAdapter.flush({ skipStagedCore: true });
       window.BremDataCache?.invalidate?.(KEYS.settlements);
       window.BremDataCache?.invalidate?.(KEYS.calls);
+      return settlements.getAll();
+    },
+
+    async removeByIdsAsync(ids = []) {
+      const idSet = new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean));
+      if (!idSet.size) return settlements.getAll();
+
+      if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.deleteDailySettlementsByIds) {
+        await activeStorageAdapter.deleteDailySettlementsByIds([...idSet]);
+        return settlements.getAll();
+      }
+
+      const list = settlements.getAll().filter(item => !idSet.has(item.id));
+      await awaitPersist(storageAdapter.write(KEYS.settlements, list, {
+        allowEmpty: true,
+        deletedRowIds: [...idSet]
+      }));
       return settlements.getAll();
     },
 

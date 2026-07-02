@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260701d">
+  <link rel="stylesheet" href="css/driver.css?v=20260704d">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -356,11 +356,35 @@
                   <strong class="summary-card__value" id="weeklyAcceptanceRateBaemin">-</strong>
                 </button>
                 <div class="rate-detail-panel" id="weeklyAcceptanceRateBaeminDetail" hidden>
-                  <dl class="rate-detail-list">
+                  <dl class="rate-detail-list rate-detail-list--service-breakdown">
                     <div><dt>합계</dt><dd id="baeminRateComplete">-</dd></div>
-                    <div><dt>거절</dt><dd id="baeminRateReject">-</dd></div>
-                    <div><dt>배차취소</dt><dd id="baeminRateDispatchCancel">-</dd></div>
-                    <div><dt>배차취소(라이더귀책)</dt><dd id="baeminRateRiderCancel">-</dd></div>
+                    <div class="rate-detail-group">
+                      <dt>거절</dt>
+                      <dd class="rate-detail-breakdown">
+                        <span>푸드 <strong id="baeminRateRejectFood">-</strong></span>
+                        <span>비마트 <strong id="baeminRateRejectBmart">-</strong></span>
+                        <span>스토어 <strong id="baeminRateRejectStore">-</strong></span>
+                        <span>합계 <strong id="baeminRateReject">-</strong></span>
+                      </dd>
+                    </div>
+                    <div class="rate-detail-group">
+                      <dt>배차취소</dt>
+                      <dd class="rate-detail-breakdown">
+                        <span>푸드 <strong id="baeminRateDispatchFood">-</strong></span>
+                        <span>비마트 <strong id="baeminRateDispatchBmart">-</strong></span>
+                        <span>스토어 <strong id="baeminRateDispatchStore">-</strong></span>
+                        <span>합계 <strong id="baeminRateDispatchCancel">-</strong></span>
+                      </dd>
+                    </div>
+                    <div class="rate-detail-group">
+                      <dt>배차취소(라이더귀책)</dt>
+                      <dd class="rate-detail-breakdown">
+                        <span>푸드 <strong id="baeminRateRiderFood">-</strong></span>
+                        <span>비마트 <strong id="baeminRateRiderBmart">-</strong></span>
+                        <span>스토어 <strong id="baeminRateRiderStore">-</strong></span>
+                        <span>합계 <strong id="baeminRateRiderCancel">-</strong></span>
+                      </dd>
+                    </div>
                     <div><dt>수락율</dt><dd id="baeminRateCalculated">-</dd></div>
                   </dl>
                 </div>
@@ -553,7 +577,7 @@
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260701c"></script>
-  <script src="js/driver.js?v=20260701b"></script>
+  <script src="js/driver.js?v=20260704d"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

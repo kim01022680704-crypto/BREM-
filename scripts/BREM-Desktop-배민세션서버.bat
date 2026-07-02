@@ -1,20 +1,19 @@
 @echo off
 setlocal EnableExtensions
-title BREM 배민 세션서버 (git pull + 재시작)
+title BREM Baemin Session (git pull + restart)
 
-set "BREM_DIR=E:\브램로컬\BREM"
+set "BREM_DIR="
+call "%~dp0brem-resolve-dir.bat"
 
-if not exist "%BREM_DIR%\package.json" (
-  echo [ERROR] BREM 폴더를 찾을 수 없습니다.
-  echo   %BREM_DIR%
-  echo.
-  echo Desktop\BREM 또는 E:\브램로컬\BREM 경로를 확인하세요.
+if not defined BREM_DIR (
+  echo [ERROR] BREM folder not found.
+  echo   Checked E:\*\BREM and Desktop\BREM
   pause
   exit /b 1
 )
 
 echo ========================================
-echo   BREM 배민 세션서버
+echo   BREM Baemin Session Server
 echo   %BREM_DIR%
 echo ========================================
 echo.
@@ -23,7 +22,7 @@ cd /d "%BREM_DIR%"
 echo [UPDATE] git pull ...
 git pull
 if errorlevel 1 (
-  echo [WARN] git pull 실패 — 로컬 수정 충돌 시 stash 후 다시 실행하세요.
+  echo [WARN] git pull failed - stash local changes and try again.
   echo.
 )
 

@@ -405,7 +405,11 @@ const BremWeeklySettlementAdmin = (function () {
       );
     } catch (error) {
       console.error('[BREM] weekly call apply failed:', error);
-      showToast(error.message || '주간정산서 기준 콜수 입력에 실패했습니다.');
+      const raw = String(error?.message || '');
+      const friendly = raw.includes('cannot affect row a second time')
+        ? '같은 콜수 기록이 중복되어 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+        : (raw || '주간정산서 기준 콜수 입력에 실패했습니다.');
+      showToast(friendly);
     }
   }
 

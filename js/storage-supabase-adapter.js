@@ -274,12 +274,22 @@ window.BremSupabaseStorageAdapter = (function () {
       return results;
     }
 
+    function dedupeRowsById(rows) {
+      const byId = new Map();
+      (rows || []).forEach(row => {
+        const id = String(row?.id || '').trim();
+        if (id) byId.set(id, row);
+      });
+      return [...byId.values()];
+    }
+
     async function upsertRowsInChunks(tableName, rows, chunkSize = 200) {
       if (isLocalReadOnlySupabase()) return noopLocalPersist();
-      if (!rows.length) return;
-      window.BremPerf?.countSupabase?.(rows.length);
-      for (let index = 0; index < rows.length; index += chunkSize) {
-        const chunk = rows.slice(index, index + chunkSize);
+      const deduped = dedupeRowsById(rows);
+      if (!deduped.length) return;
+      window.BremPerf?.countSupabase?.(deduped.length);
+      for (let index = 0; index < deduped.length; index += chunkSize) {
+        const chunk = deduped.slice(index, index + chunkSize);
         let payload = chunk;
         let { error } = await client.from(tableName).upsert(payload, { onConflict: 'id' });
         if (error && tableName === 'lease_vehicles' && isMissingLeaseVehicleColumnError(error)) {

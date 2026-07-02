@@ -310,6 +310,20 @@
     panel.hidden = expanded;
   }
 
+  function serviceCount(stats, groupKey, legacyKey) {
+    const group = stats?.[groupKey];
+    if (group && typeof group === 'object') {
+      return {
+        food: Number(group.food || 0),
+        bmart: Number(group.bmart || 0),
+        store: Number(group.store || 0),
+        total: Number(group.total ?? stats?.[legacyKey] ?? 0)
+      };
+    }
+    const total = Number(stats?.[legacyKey] || 0);
+    return { food: 0, bmart: 0, store: 0, total };
+  }
+
   function renderRateDetail(platform, entry) {
     const stats = entry?.stats && typeof entry.stats === 'object' ? entry.stats : {};
     const unmeasured = stats.unmeasured === true || entry?.rate == null;
@@ -317,10 +331,22 @@
     const countLabel = value => (entry ? `${number(value)}건` : empty);
 
     if (platform === 'baemin') {
+      const reject = serviceCount(stats, 'rejectByService', 'rejectCount');
+      const dispatch = serviceCount(stats, 'dispatchCancelByService', 'dispatchCancelCount');
+      const rider = serviceCount(stats, 'riderFaultByService', 'riderCancelCount');
       setText('baeminRateComplete', entry ? countLabel(stats.completeTotal || 0) : empty);
-      setText('baeminRateReject', entry ? countLabel(stats.rejectCount || 0) : empty);
-      setText('baeminRateDispatchCancel', entry ? countLabel(stats.dispatchCancelCount || 0) : empty);
-      setText('baeminRateRiderCancel', entry ? countLabel(stats.riderCancelCount || 0) : empty);
+      setText('baeminRateRejectFood', entry ? countLabel(reject.food) : empty);
+      setText('baeminRateRejectBmart', entry ? countLabel(reject.bmart) : empty);
+      setText('baeminRateRejectStore', entry ? countLabel(reject.store) : empty);
+      setText('baeminRateReject', entry ? countLabel(reject.total) : empty);
+      setText('baeminRateDispatchFood', entry ? countLabel(dispatch.food) : empty);
+      setText('baeminRateDispatchBmart', entry ? countLabel(dispatch.bmart) : empty);
+      setText('baeminRateDispatchStore', entry ? countLabel(dispatch.store) : empty);
+      setText('baeminRateDispatchCancel', entry ? countLabel(dispatch.total) : empty);
+      setText('baeminRateRiderFood', entry ? countLabel(rider.food) : empty);
+      setText('baeminRateRiderBmart', entry ? countLabel(rider.bmart) : empty);
+      setText('baeminRateRiderStore', entry ? countLabel(rider.store) : empty);
+      setText('baeminRateRiderCancel', entry ? countLabel(rider.total) : empty);
       setText('baeminRateCalculated', !entry ? empty : (unmeasured ? '미집계' : formatPercent(entry.rate)));
       return;
     }

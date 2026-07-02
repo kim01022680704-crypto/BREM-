@@ -16,7 +16,7 @@ const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
 const { computeCollectDateRange, computeHistoryCollectRange, buildMenuDateRanges, resolveHistoryMenuQueryDates, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
-const { sumStats, extractStatsFromItem, pickAcceptance } = require('./baemin-stats-extract');
+const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 
@@ -100,8 +100,17 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     row.deliveryAcceptanceCount.bmartComplete = num(row.deliveryAcceptanceCount.bmartComplete) + acceptance.bmartComplete;
     row.deliveryAcceptanceCount.storeComplete = num(row.deliveryAcceptanceCount.storeComplete) + acceptance.storeComplete;
     row.deliveryAcceptanceCount.totalReject = num(row.deliveryAcceptanceCount.totalReject) + acceptance.rejectTotal;
+    row.deliveryAcceptanceCount.foodReject = num(row.deliveryAcceptanceCount.foodReject) + acceptance.foodReject;
+    row.deliveryAcceptanceCount.bmartReject = num(row.deliveryAcceptanceCount.bmartReject) + acceptance.bmartReject;
+    row.deliveryAcceptanceCount.storeReject = num(row.deliveryAcceptanceCount.storeReject) + acceptance.storeReject;
     row.deliveryAcceptanceCount.totalCancel = num(row.deliveryAcceptanceCount.totalCancel) + acceptance.cancelTotal;
+    row.deliveryAcceptanceCount.foodCancel = num(row.deliveryAcceptanceCount.foodCancel) + acceptance.foodCancel;
+    row.deliveryAcceptanceCount.bmartCancel = num(row.deliveryAcceptanceCount.bmartCancel) + acceptance.bmartCancel;
+    row.deliveryAcceptanceCount.storeCancel = num(row.deliveryAcceptanceCount.storeCancel) + acceptance.storeCancel;
     row.deliveryAcceptanceCount.totalRiderFault = num(row.deliveryAcceptanceCount.totalRiderFault) + acceptance.riderFault;
+    row.deliveryAcceptanceCount.foodRiderFault = num(row.deliveryAcceptanceCount.foodRiderFault) + acceptance.foodRiderFault;
+    row.deliveryAcceptanceCount.bmartRiderFault = num(row.deliveryAcceptanceCount.bmartRiderFault) + acceptance.bmartRiderFault;
+    row.deliveryAcceptanceCount.storeRiderFault = num(row.deliveryAcceptanceCount.storeRiderFault) + acceptance.storeRiderFault;
     row.deliveryPeakTimeCount.morning += num(peak.morning);
     row.deliveryPeakTimeCount.afternoon += num(peak.afternoon);
     row.deliveryPeakTimeCount.evening += num(peak.evening);
@@ -2323,6 +2332,7 @@ function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null, region
   const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
   const raw = row.raw_json || {};
   const partnerInfo = enrichPartnerEntry(catalog, pid, '', regionMap);
+  const breakdown = serviceBreakdownFromStats(raw);
   return {
     collect_date: row.delivery_date,
     collected_at: row.collected_at,
@@ -2336,13 +2346,11 @@ function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null, region
       displayName: partnerInfo.displayName,
       deliveryDate: row.delivery_date,
       totalComplete: row.complete_total,
-      totalReject: row.reject_total,
-      cancelCount: row.cancel_total,
       morningCount: row.complete_morning,
       afternoonCount: row.complete_afternoon,
       eveningCount: row.complete_evening,
       midnightCount: row.complete_midnight,
-      riderFault: raw.riderFault ?? raw.totalRiderFault ?? 0
+      ...breakdown
     },
     dedupe_key: row.dedupe_key
   };
@@ -2352,6 +2360,7 @@ function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null, region
   const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
   const raw = row.raw_json || {};
   const partnerInfo = enrichPartnerEntry(catalog, pid, '', regionMap);
+  const breakdown = serviceBreakdownFromStats(raw);
   return {
     collect_date: row.week_start,
     collected_at: row.collected_at,
@@ -2364,13 +2373,11 @@ function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null, region
       regionName: partnerInfo.regionName,
       displayName: partnerInfo.displayName,
       totalComplete: row.complete_total,
-      totalReject: row.reject_total,
-      cancelCount: row.cancel_total,
       morningCount: row.complete_morning,
       afternoonCount: row.complete_afternoon,
       eveningCount: row.complete_evening,
       midnightCount: row.complete_midnight,
-      riderFault: raw.riderFault ?? raw.totalRiderFault ?? 0
+      ...breakdown
     },
     raw_json: { deliveryCount: row.complete_total },
     dedupe_key: row.dedupe_key

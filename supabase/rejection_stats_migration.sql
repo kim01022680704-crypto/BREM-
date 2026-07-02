@@ -8,7 +8,7 @@ alter table public.admin_rejection_rates
   add column if not exists source text not null default 'manual';
 
 comment on column public.admin_rejection_rates.stats is
-  'coupang: rejectCount,cancelCount,completeCount,unmeasured | baemin: completeTotal,rejectCount,dispatchCancelCount,riderCancelCount,unmeasured';
+  'coupang: rejectCount,cancelCount,completeCount,unmeasured | baemin: completeTotal,rejectCount,dispatchCancelCount,riderCancelCount,rejectByService,dispatchCancelByService,riderFaultByService,unmeasured';
 
 -- 라이더 본인 주간 거절/수락율 조회 (기사앱)
 drop policy if exists "admin_rejection_rates rider read own" on public.admin_rejection_rates;

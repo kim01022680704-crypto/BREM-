@@ -953,25 +953,28 @@ const BremWeeklySettlement = (function () {
     const end = String(endDate || '').slice(0, 10);
     const days = new Set(listDaysInclusive(start, end));
 
-    const settlementIds = BremStorage.settlements.getAll()
+    await BremStorage.ensureSectionLoaded?.('settlements');
+    await BremStorage.ensureSectionLoaded?.('calls');
+
+    const settlementIds = [...new Set(BremStorage.settlements.getAll()
       .filter(item => item.driverId === id
         && normalizePlatform(item.platform) === p
         && days.has(normalizePeriodDay(item.period)))
-      .map(item => item.id);
+      .map(item => item.id))];
 
-    for (const settlementId of settlementIds) {
-      await BremStorage.settlements.removeByIdAsync(settlementId);
-    }
-
-    const callIds = BremStorage.calls.getAll()
+    const callIds = [...new Set(BremStorage.calls.getAll()
       .filter(item => item.driverId === id
         && normalizePlatform(item.platform) === p
         && days.has(String(item.date).slice(0, 10)))
-      .map(item => item.id);
+      .map(item => item.id))];
 
-    for (const callId of callIds) {
-      await BremStorage.calls.removeByIdAsync(callId);
+    if (settlementIds.length) {
+      await BremStorage.settlements.removeByIdsAsync(settlementIds);
     }
+    if (callIds.length) {
+      await BremStorage.calls.removeByIdsAsync(callIds);
+    }
+    await BremStorage.flushStorage?.();
   }
 
   async function applyWeeklySettlementCallCount({

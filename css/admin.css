@@ -2629,6 +2629,28 @@ textarea {
   box-shadow: 0 1px 0 var(--line);
 }
 
+.baemin-data-table .baemin-metric-group {
+  text-align: center;
+  border-left: 1px solid var(--line);
+}
+
+.baemin-data-table .baemin-metric-sub {
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.baemin-data-table .baemin-metric-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.baemin-data-table .baemin-metric-cell--total {
+  font-weight: 700;
+}
+
 .baemin-applied-status,
 .baemin-applied-banner {
   margin: 0 0 12px;

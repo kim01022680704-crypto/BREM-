@@ -6,15 +6,43 @@
   const BAEMIN_START_ROW = 4;
 
   const COUPANG_COL = { IDENTITY: 0, REJECT: 1, CANCEL: 2, COMPLETE: 3 };
-  /** E=합계, I=거절, M=배차취소, Q=라이더귀책, AT=배민ID, AU=휴대폰 (0-based) */
+  /** B~Q: 서비스별(푸드/비마트/스토어/합계) × 완료·거절·배차취소·라이더귀책 / AT·AU: ID·전화 */
   const BAEMIN_COL = {
+    FOOD_COMPLETE: 1,
+    BMART_COMPLETE: 2,
+    STORE_COMPLETE: 3,
     COMPLETE: 4,
+    FOOD_REJECT: 5,
+    BMART_REJECT: 6,
+    STORE_REJECT: 7,
     REJECT: 8,
+    FOOD_DISPATCH_CANCEL: 9,
+    BMART_DISPATCH_CANCEL: 10,
+    STORE_DISPATCH_CANCEL: 11,
     DISPATCH_CANCEL: 12,
+    FOOD_RIDER_FAULT: 13,
+    BMART_RIDER_FAULT: 14,
+    STORE_RIDER_FAULT: 15,
     RIDER_FAULT: 16,
     ID: 45,
     PHONE: 46
   };
+
+  function parseServiceCounts(sheet, rowNumber, cols) {
+    const food = parseCount(getSheetCell(sheet, rowNumber, cols.food));
+    const bmart = parseCount(getSheetCell(sheet, rowNumber, cols.bmart));
+    const store = parseCount(getSheetCell(sheet, rowNumber, cols.store));
+    const totalRaw = parseCount(getSheetCell(sheet, rowNumber, cols.total));
+    const total = Number.isNaN(totalRaw) ? 0 : totalRaw;
+    const parts = [food, bmart, store].map(v => (Number.isNaN(v) ? 0 : v));
+    const sum = parts.reduce((acc, n) => acc + n, 0);
+    return {
+      food: parts[0],
+      bmart: parts[1],
+      store: parts[2],
+      total: total || sum
+    };
+  }
 
   function normalizePlatform(platform) {
     return BremPlatforms.normalize(platform);
@@ -331,6 +359,30 @@
       const rejectRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.REJECT);
       const dispatchRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.DISPATCH_CANCEL);
       const riderFaultRaw = getSheetCell(sheet, rowNumber, BAEMIN_COL.RIDER_FAULT);
+      const completeByService = parseServiceCounts(sheet, rowNumber, {
+        food: BAEMIN_COL.FOOD_COMPLETE,
+        bmart: BAEMIN_COL.BMART_COMPLETE,
+        store: BAEMIN_COL.STORE_COMPLETE,
+        total: BAEMIN_COL.COMPLETE
+      });
+      const rejectByService = parseServiceCounts(sheet, rowNumber, {
+        food: BAEMIN_COL.FOOD_REJECT,
+        bmart: BAEMIN_COL.BMART_REJECT,
+        store: BAEMIN_COL.STORE_REJECT,
+        total: BAEMIN_COL.REJECT
+      });
+      const dispatchByService = parseServiceCounts(sheet, rowNumber, {
+        food: BAEMIN_COL.FOOD_DISPATCH_CANCEL,
+        bmart: BAEMIN_COL.BMART_DISPATCH_CANCEL,
+        store: BAEMIN_COL.STORE_DISPATCH_CANCEL,
+        total: BAEMIN_COL.DISPATCH_CANCEL
+      });
+      const riderFaultByService = parseServiceCounts(sheet, rowNumber, {
+        food: BAEMIN_COL.FOOD_RIDER_FAULT,
+        bmart: BAEMIN_COL.BMART_RIDER_FAULT,
+        store: BAEMIN_COL.STORE_RIDER_FAULT,
+        total: BAEMIN_COL.RIDER_FAULT
+      });
 
       if (!String(baeminIdRaw).trim()
         && !String(phoneRaw).trim()
@@ -350,15 +402,15 @@
       if (rateResult.error) errors.push(rateResult.error);
       if (!weekStart) errors.push('배민 적용주 미선택');
 
-      const completeTotal = parseCount(completeRaw);
-      const rejectCount = parseCount(rejectRaw);
-      const dispatchCancelCount = parseCount(dispatchRaw);
-      const riderFaultCount = parseCount(riderFaultRaw);
       const stats = {
-        completeTotal: Number.isNaN(completeTotal) ? 0 : completeTotal,
-        rejectCount: Number.isNaN(rejectCount) ? 0 : rejectCount,
-        dispatchCancelCount: Number.isNaN(dispatchCancelCount) ? 0 : dispatchCancelCount,
-        riderCancelCount: Number.isNaN(riderFaultCount) ? 0 : riderFaultCount,
+        completeTotal: completeByService.total,
+        completeByService,
+        rejectCount: rejectByService.total,
+        rejectByService,
+        dispatchCancelCount: dispatchByService.total,
+        dispatchCancelByService: dispatchByService,
+        riderCancelCount: riderFaultByService.total,
+        riderFaultByService: riderFaultByService,
         unmeasured: rateResult.unmeasured
       };
 

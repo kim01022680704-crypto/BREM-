@@ -222,6 +222,24 @@ function mapToDeliveryStatusRow(stats, weekStart, collectedAt, sourceUrl, dedupe
   };
 }
 
+function serviceBreakdownFromStats(stats) {
+  const s = stats || {};
+  return {
+    foodReject: num(s.foodReject),
+    bmartReject: num(s.bmartReject),
+    storeReject: num(s.storeReject),
+    totalReject: num(s.rejectTotal ?? s.totalReject),
+    foodCancel: num(s.foodCancel),
+    bmartCancel: num(s.bmartCancel),
+    storeCancel: num(s.storeCancel),
+    cancelCount: num(s.cancelTotal ?? s.cancelCount),
+    foodRiderFault: num(s.foodRiderFault),
+    bmartRiderFault: num(s.bmartRiderFault),
+    storeRiderFault: num(s.storeRiderFault),
+    riderFault: num(s.riderFault ?? s.totalRiderFault)
+  };
+}
+
 function mapToDailyStatsRow(stats, weekStart, collectedAt, sourceUrl, dedupeKey) {
   return {
     week_start: weekStart,
@@ -280,6 +298,7 @@ module.exports = {
   pickAcceptance,
   extractStatsFromItem,
   sumStats,
+  serviceBreakdownFromStats,
   mapToDeliveryStatusRow,
   mapToDailyStatsRow,
   mapToRiderStatsRow

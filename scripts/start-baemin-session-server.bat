@@ -3,20 +3,8 @@ setlocal EnableExtensions
 title BREM Baemin Session Server
 
 set "PROJECT_DIR="
-
-if exist "%~dp0..\package.json" for %%I in ("%~dp0..") do set "PROJECT_DIR=%%~fI"
-
-if not defined PROJECT_DIR (
-  if exist "E:\브램로컬\BREM\package.json" set "PROJECT_DIR=E:\브램로컬\BREM"
-)
-
-if not defined PROJECT_DIR (
-  if exist "%USERPROFILE%\Desktop\BREM\package.json" set "PROJECT_DIR=%USERPROFILE%\Desktop\BREM"
-)
-
-if not defined PROJECT_DIR (
-  if exist "%~dp0..\package.json" for %%I in ("%~dp0..") do set "PROJECT_DIR=%%~fI"
-)
+call "%~dp0brem-resolve-dir.bat"
+set "PROJECT_DIR=%BREM_DIR%"
 
 if not defined PROJECT_DIR (
   if exist "%~dp0package.json" set "PROJECT_DIR=%~dp0"
@@ -24,8 +12,7 @@ if not defined PROJECT_DIR (
 
 if not defined PROJECT_DIR (
   echo [ERROR] BREM folder not found.
-  echo   E:\브램로컬\BREM
-  echo   %USERPROFILE%\Desktop\BREM
+  echo   Checked E:\*\BREM and Desktop\BREM
   pause
   exit /b 1
 )

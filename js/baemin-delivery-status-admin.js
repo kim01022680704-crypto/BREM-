@@ -101,7 +101,7 @@
       const summaryId = ui.summaryMap[menu];
       const summaryEl = $(summaryId);
       const rowsEl = $(rowsId);
-      const colspan = menu === 'daily_history' ? 11 : (menu === 'rider_history' ? 13 : 14);
+      const colspan = getBaeminTableColspan(menu, { showPartner: false, includeCollected: !isViewSection() });
       if (summaryEl) summaryEl.textContent = '데이터 없음';
       if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
     });
@@ -563,7 +563,7 @@
       const summaryId = ui.summaryMap[menu];
       const summaryEl = $(summaryId);
       const rowsEl = $(rowsId);
-      const colspan = menu === 'daily_history' ? 11 : (menu === 'rider_history' ? 13 : 14);
+      const colspan = getBaeminTableColspan(menu, { showPartner: false, includeCollected: !isViewSection() });
       if (summaryEl) summaryEl.textContent = '적용된 데이터 없음';
       if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${message}</td></tr>`;
     });
@@ -727,7 +727,7 @@
     const summaryId = ui.summaryMap[menu];
     const summaryEl = $(summaryId);
     const rowsEl = $(rowsId);
-    const colspan = menu === 'daily_history' ? 10 : (menu === 'rider_history' ? 12 : 13);
+    const colspan = getBaeminTableColspan(menu, { showPartner: false, includeCollected: false });
     const text = message || ui.emptyMessage;
     if (summaryEl) {
       summaryEl.textContent = isHistoryViewMenu(menu)
@@ -741,6 +741,100 @@
 
   function formatNumber(value) {
     return Number(value || 0).toLocaleString('ko-KR');
+  }
+
+  const BAEMIN_SERVICE_METRICS = [
+    {
+      fields: ['foodReject', 'bmartReject', 'storeReject', 'totalReject'],
+      totalKeys: ['totalReject', 'rejectTotal']
+    },
+    {
+      fields: ['foodCancel', 'bmartCancel', 'storeCancel', 'cancelCount'],
+      totalKeys: ['cancelCount', 'totalCancel', 'cancelTotal']
+    },
+    {
+      fields: ['foodRiderFault', 'bmartRiderFault', 'storeRiderFault', 'riderFault'],
+      totalKeys: ['riderFault', 'totalRiderFault']
+    }
+  ];
+
+  const BAEMIN_TABLE_LAYOUTS = {
+    delivery_status: {
+      leading: ['협력사', '라이더', '운행상태', '배민ID', '연락처'],
+      trailing: ['아침점심', '오후', '저녁', '심야']
+    },
+    daily_history: {
+      leading: ['협력사', '배달일'],
+      trailing: ['아침점심', '오후', '저녁', '심야']
+    },
+    rider_history: {
+      leading: ['협력사', '라이더', '배민ID', '연락처'],
+      trailing: ['아침점심', '오후', '저녁', '심야']
+    }
+  };
+
+  const BAEMIN_METRIC_GROUP_LABELS = ['거절', '배차취소', '배달취소(라이더귀책)'];
+  const BAEMIN_METRIC_SUB_LABELS = ['푸드', '비마트', '스토어', '합계'];
+
+  function metricValue(parsed, field, totalKeys = []) {
+    const p = parsed || {};
+    if (field.startsWith('total') || field === 'cancelCount' || field === 'riderFault') {
+      for (const key of [field, ...totalKeys]) {
+        if (p[key] != null && p[key] !== '') return Number(p[key]) || 0;
+      }
+      return 0;
+    }
+    return Number(p[field] ?? 0) || 0;
+  }
+
+  function formatServiceBreakdownCells(parsed) {
+    return BAEMIN_SERVICE_METRICS.map(metric => metric.fields.map((field, index) => {
+      const isTotal = index === 3;
+      const value = isTotal
+        ? metricValue(parsed, field, metric.totalKeys)
+        : metricValue(parsed, field);
+      return `<td class="baemin-metric-cell${isTotal ? ' baemin-metric-cell--total' : ''}">${formatNumber(value)}</td>`;
+    }).join('')).join('');
+  }
+
+  function getBaeminTableColspan(menu, { showPartner = false, includeCollected = true } = {}) {
+    const layout = BAEMIN_TABLE_LAYOUTS[menu] || BAEMIN_TABLE_LAYOUTS.delivery_status;
+    let leading = layout.leading.length;
+    if (!showPartner) leading -= 1;
+    return leading + 1 + (BAEMIN_METRIC_GROUP_LABELS.length * BAEMIN_METRIC_SUB_LABELS.length)
+      + layout.trailing.length + (includeCollected ? 1 : 0);
+  }
+
+  function buildBaeminTableHeadHtml(menu, { showPartner = true, includeCollected = true } = {}) {
+    const layout = BAEMIN_TABLE_LAYOUTS[menu] || BAEMIN_TABLE_LAYOUTS.delivery_status;
+    const leading = showPartner ? layout.leading : layout.leading.slice(1);
+    const row1 = [
+      ...leading.map(label => `<th rowspan="2">${label}</th>`),
+      '<th rowspan="2">완료</th>',
+      ...BAEMIN_METRIC_GROUP_LABELS.map(label => `<th colspan="4" class="baemin-metric-group">${label}</th>`),
+      ...layout.trailing.map(label => `<th rowspan="2">${label}</th>`)
+    ];
+    if (includeCollected) row1.push('<th rowspan="2">수집 시각</th>');
+    const row2 = BAEMIN_METRIC_GROUP_LABELS.flatMap(() => BAEMIN_METRIC_SUB_LABELS
+      .map(label => `<th class="baemin-metric-sub">${label}</th>`));
+    return `<tr>${row1.join('')}</tr><tr>${row2.join('')}</tr>`;
+  }
+
+  function initBaeminServiceBreakdownTables() {
+    const tableMap = [
+      { tbodyId: 'baeminBizDeliveryStatusRows', menu: 'delivery_status', collected: true },
+      { tbodyId: 'baeminBizDailyHistoryRows', menu: 'daily_history', collected: true },
+      { tbodyId: 'baeminBizRiderHistoryRows', menu: 'rider_history', collected: true },
+      { tbodyId: 'baeminStatusDeliveryStatusRows', menu: 'delivery_status', collected: false },
+      { tbodyId: 'baeminStatusDailyHistoryRows', menu: 'daily_history', collected: false },
+      { tbodyId: 'baeminStatusRiderHistoryRows', menu: 'rider_history', collected: false }
+    ];
+    tableMap.forEach(({ tbodyId, menu, collected }) => {
+      const tbody = $(tbodyId);
+      const thead = tbody?.closest('table')?.querySelector('thead');
+      if (!thead) return;
+      thead.innerHTML = buildBaeminTableHeadHtml(menu, { showPartner: false, includeCollected: collected });
+    });
   }
 
   function formatDateTime(value) {
@@ -894,11 +988,6 @@
     `;
 
     updateActionButtons();
-  }
-
-  function formatRiderFaultCell(parsed) {
-    const p = parsed || {};
-    return formatNumber(Number(p.riderFault ?? p.totalRiderFault ?? 0));
   }
 
   function renderMenuDatePlan(menuDatePlan) {
@@ -1597,7 +1686,7 @@
 
     if (isViewSection() && meta.notApplied && sourceMenu === 'delivery_status') {
       if (summaryEl) summaryEl.textContent = '적용된 데이터가 없습니다.';
-      rowsEl.innerHTML = `<tr><td colspan="13" class="form-help">${ui.emptyMessage}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${getBaeminTableColspan(sourceMenu, { showPartner: false, includeCollected: false })}" class="form-help">${ui.emptyMessage}</td></tr>`;
       renderViewAppliedBanner(null);
       return;
     }
@@ -1631,11 +1720,10 @@
       : () => '';
 
     if (!items.length) {
-      const emptyColspan = sourceMenu === 'daily_history'
-        ? (showPartnerColumn ? 11 : 10)
-        : (sourceMenu === 'rider_history'
-          ? (showPartnerColumn ? 13 : 12)
-          : (showPartnerColumn ? 14 : 13));
+      const emptyColspan = getBaeminTableColspan(sourceMenu, {
+        showPartner: showPartnerColumn,
+        includeCollected: !isViewSection()
+      });
       rowsEl.innerHTML = `<tr><td colspan="${emptyColspan}" class="form-help">${ui.emptyMessage}</td></tr>`;
       return;
     }
@@ -1653,9 +1741,7 @@
           <td>${row.rider_user_id || '-'}</td>
           <td>${row.phone_number || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
-          <td>${formatNumber(p.totalReject || p.foodReject || 0)}</td>
-          <td>${formatNumber(p.cancelCount || 0)}</td>
-          <td>${formatRiderFaultCell(p)}</td>
+          ${formatServiceBreakdownCells(p)}
           <td>${formatNumber(p.morningCount || 0)}</td>
           <td>${formatNumber(p.afternoonCount || 0)}</td>
           <td>${formatNumber(p.eveningCount || 0)}</td>
@@ -1676,9 +1762,7 @@
           ${partnerCell(p)}
           <td>${p.deliveryDate || row.collect_date || '-'}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
-          <td>${formatNumber(p.totalReject ?? p.foodReject ?? 0)}</td>
-          <td>${formatNumber(p.cancelCount || 0)}</td>
-          <td>${formatRiderFaultCell(p)}</td>
+          ${formatServiceBreakdownCells(p)}
           <td>${formatNumber(p.morningCount || 0)}</td>
           <td>${formatNumber(p.afternoonCount || 0)}</td>
           <td>${formatNumber(p.eveningCount || 0)}</td>
@@ -1701,9 +1785,7 @@
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
         <td>${formatNumber(p.totalComplete || deliveryCount || 0)}</td>
-        <td>${formatNumber(p.totalReject ?? p.foodReject ?? 0)}</td>
-        <td>${formatNumber(p.cancelCount || 0)}</td>
-        <td>${formatRiderFaultCell(p)}</td>
+        ${formatServiceBreakdownCells(p)}
         <td>${formatNumber(p.morningCount || 0)}</td>
         <td>${formatNumber(p.afternoonCount || 0)}</td>
         <td>${formatNumber(p.eveningCount || 0)}</td>
@@ -1858,6 +1940,7 @@
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
+    initBaeminServiceBreakdownTables();
 
     $('baeminDeliverySessionRefreshBtn')?.addEventListener('click', () => {
       void startSessionRefresh();
