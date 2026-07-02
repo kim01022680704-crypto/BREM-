@@ -799,10 +799,12 @@
           <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
         </nav>
         <div id="baeminStatusWeekPickerRow" class="form-row baemin-week-picker-row" hidden>
-          <label>
+          <label class="admin-period-field">
             정산주 (수요일~화요일)
-            <input type="date" id="baeminStatusWeekStart">
+            <input type="hidden" id="baeminStatusWeekStart">
+            <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="baemin-status-week" id="baeminStatusWeekStartBtn">수요일 선택</button>
           </label>
+          <span id="baeminStatusWeekStartLabel" class="form-help"></span>
           <p id="baeminStatusWeekRangeLabel" class="form-help"></p>
         </div>
         <nav id="baeminStatusPartnerSubtabBar" class="baemin-partner-tab-bar baemin-partner-tab-bar--scroll" hidden aria-label="협력사"></nav>
@@ -4948,7 +4950,7 @@
   <script src="js/weekly-settlement.js?v=20260621d"></script>
   <script src="js/weekly-settlement-admin.js?v=20260621d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260703l"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260703m"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

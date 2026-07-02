@@ -119,16 +119,47 @@
     return weekStart || '';
   }
 
+  function partnerDisplayLabel(partner) {
+    if (!partner) return '-';
+    if (isViewSection()) {
+      return partner.displayName || partner.regionName || partner.partnerName || partner.partnerId || '-';
+    }
+    return partner.partnerName || partner.partnerId || '-';
+  }
+
   function syncViewWeekPicker() {
-    const input = $('baeminStatusWeekStart');
-    const label = $('baeminStatusWeekRangeLabel');
+    const hidden = $('baeminStatusWeekStart');
+    const label = $('baeminStatusWeekStartLabel');
+    const rangeLabel = $('baeminStatusWeekRangeLabel');
     const weekStart = ensureViewWeekStart();
-    if (input) input.value = weekStart;
-    if (label) {
-      label.textContent = weekStart
+    if (hidden) hidden.value = weekStart;
+    if (label && window.BremDatePicker) {
+      const weekday = BremDatePicker.formatWeekdayKo?.(weekStart) || '';
+      label.textContent = weekday
+        ? `${BremDatePicker.formatDate(weekStart)}(${weekday})`
+        : (BremDatePicker.formatDate(weekStart) || weekStart);
+    }
+    if (rangeLabel) {
+      rangeLabel.textContent = weekStart
         ? `조회 기간: ${formatViewWeekRangeLabel(weekStart)}`
         : '';
     }
+  }
+
+  function handleWeekSelect(value) {
+    if (!isViewSection()) return;
+    const normalized = window.BremDatePicker?.applyWeekWednesday?.(value) || String(value || '').slice(0, 10);
+    state.viewWeekStart = normalized;
+    syncViewWeekPicker();
+    invalidateDataCache();
+    state.activePartnerId = '';
+    void loadPartnerTabs().then(() => {
+      if (state.activePartnerId) {
+        void loadPartnerBundle(state.activePartnerId, state.activeMenu);
+      } else {
+        clearViewTablesForMenu(state.activeMenu);
+      }
+    });
   }
 
   function updateWeekPickerVisibility() {
@@ -246,6 +277,9 @@
   }
 
   function formatPartnerCell(parsed) {
+    if (isViewSection()) {
+      return parsed?.displayName || parsed?.regionName || parsed?.partnerName || parsed?.partnerId || '-';
+    }
     return parsed?.partnerName || parsed?.partnerId || '-';
   }
 
@@ -314,7 +348,7 @@
     bar.hidden = false;
     bar.innerHTML = state.partners.map(partner => {
       const id = partner.partnerId;
-      const label = partner.partnerName || id;
+      const label = partnerDisplayLabel(partner);
       const count = Number(partner.riderCount || 0);
       const menuCounts = partner.menuCounts || {};
       const menuHint = menuCounts.delivery_status || menuCounts.daily_history || menuCounts.rider_history
@@ -771,10 +805,10 @@
       return;
     }
 
-    const partnerNames = state.partners.map(partner => partner.partnerName || partner.partnerId).filter(Boolean);
+    const partnerNames = state.partners.map(partner => partnerDisplayLabel(partner)).filter(Boolean);
     const activePartner = state.partners.find(partner => partner.partnerId === state.activePartnerId);
     const partnerLabel = activePartner
-      ? `${activePartner.partnerName || activePartner.partnerId}`
+      ? partnerDisplayLabel(activePartner)
       : (partnerNames.length ? partnerNames.join(', ') : '-');
 
     meta.hidden = false;
@@ -1365,7 +1399,7 @@
     const rangeLabel = meta.weekStart && meta.weekEnd
       ? `${meta.weekStart} ~ ${meta.weekEnd}`
       : menuDatePlan?.[sourceMenu]?.label;
-    const partnerLabel = state.partners.find(partner => partner.partnerId === partnerId)?.partnerName || partnerId;
+    const partnerLabel = partnerDisplayLabel(state.partners.find(partner => partner.partnerId === partnerId));
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
         summaryEl.textContent = isViewSection()
@@ -1682,18 +1716,7 @@
 
     $('baeminStatusWeekStart')?.addEventListener('change', () => {
       if (!isViewSection()) return;
-      const raw = $('baeminStatusWeekStart')?.value || '';
-      state.viewWeekStart = window.BremDatePicker?.applyWeekWednesday?.(raw) || raw;
-      syncViewWeekPicker();
-      invalidateDataCache();
-      state.activePartnerId = '';
-      void loadPartnerTabs().then(() => {
-        if (state.activePartnerId) {
-          void loadPartnerBundle(state.activePartnerId, state.activeMenu);
-        } else {
-          clearViewTablesForMenu(state.activeMenu);
-        }
-      });
+      handleWeekSelect($('baeminStatusWeekStart')?.value || '');
     });
 
     ['baeminStatusMenuSubtabBar', 'baeminBizMenuSubtabBar'].forEach(barId => {
@@ -1760,6 +1783,6 @@
     stopSetupPoll();
   }
 
-  window.BremBaeminDeliveryStatusAdmin = { refresh, stopPolling };
+  window.BremBaeminDeliveryStatusAdmin = { refresh, stopPolling, handleWeekSelect };
   bindEvents();
 })();

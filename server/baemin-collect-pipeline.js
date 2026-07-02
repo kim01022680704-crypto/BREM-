@@ -2204,9 +2204,88 @@ function partnerIdFromDedupeKey(dedupeKey = '') {
   return /^DP\d{6,}$/i.test(prefix) ? prefix : '';
 }
 
-function mapDailyStatsRowToAdminItem(row, partnerId = '') {
+async function loadPartnerDisplayCatalog() {
+  const supabase = getServiceClient();
+  if (!supabase) return new Map();
+
+  const { inferRegionFromPartnerName } = require('./baemin-center-context');
+  const catalog = new Map();
+
+  function ingest(row) {
+    const parsed = row.parsed_json || {};
+    const pid = String(parsed.partnerId || '').trim() || partnerIdFromDedupeKey(row.dedupe_key);
+    if (!/^DP\d{6,}$/i.test(pid)) return;
+    const partnerName = String(parsed.partnerName || '').trim();
+    const regionName = String(parsed.regionName || '').trim() || inferRegionFromPartnerName(partnerName);
+    const displayName = regionName || partnerName || pid;
+    const prev = catalog.get(pid);
+    if (!prev || String(row.collected_at || '') >= String(prev.collectedAt || '')) {
+      catalog.set(pid, {
+        partnerId: pid,
+        partnerName,
+        regionName,
+        displayName,
+        collectedAt: row.collected_at
+      });
+    }
+  }
+
+  const batchId = await resolveAppliedBatchId(true);
+  if (batchId) {
+    const { data } = await supabase
+      .from('baemin_delivery_applied_items')
+      .select('dedupe_key, parsed_json, collected_at')
+      .eq('batch_id', batchId)
+      .limit(5000);
+    (data || []).forEach(ingest);
+  }
+
+  const { data: bizRows } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('dedupe_key, parsed_json, collected_at')
+    .order('collected_at', { ascending: false })
+    .limit(5000);
+  (bizRows || []).forEach(row => {
+    const pid = String(row.parsed_json?.partnerId || '').trim() || partnerIdFromDedupeKey(row.dedupe_key);
+    if (pid && !catalog.has(pid)) ingest(row);
+  });
+
+  return catalog;
+}
+
+function enrichPartnerEntry(catalog, partnerId, fallbackName = '') {
+  const pid = String(partnerId || '').trim();
+  const hit = catalog?.get?.(pid);
+  if (hit) return hit;
+  const { inferRegionFromPartnerName } = require('./baemin-center-context');
+  const partnerName = String(fallbackName || '').trim() || pid;
+  const regionName = inferRegionFromPartnerName(partnerName);
+  const displayName = regionName || partnerName || pid;
+  return { partnerId: pid, partnerName, regionName, displayName };
+}
+
+function dedupeStatsRowsByLatest(rows, menu) {
+  const byKey = new Map();
+  (rows || []).forEach(row => {
+    const pid = partnerIdFromDedupeKey(row.dedupe_key);
+    let key = '';
+    if (menu === 'daily_history') {
+      key = `${pid}:${row.delivery_date}`;
+    } else {
+      key = `${pid}:${row.rider_user_id || row.rider_name || row.dedupe_key}`;
+    }
+    const prev = byKey.get(key);
+    if (!prev || String(row.collected_at || '') >= String(prev.collected_at || '')) {
+      byKey.set(key, row);
+    }
+  });
+  return Array.from(byKey.values());
+}
+
+function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null) {
   const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
   const raw = row.raw_json || {};
+  const partnerInfo = enrichPartnerEntry(catalog, pid);
   return {
     collect_date: row.delivery_date,
     collected_at: row.collected_at,
@@ -2215,6 +2294,9 @@ function mapDailyStatsRowToAdminItem(row, partnerId = '') {
     phone_number: '',
     parsed_json: {
       partnerId: pid,
+      partnerName: partnerInfo.partnerName,
+      regionName: partnerInfo.regionName,
+      displayName: partnerInfo.displayName,
       deliveryDate: row.delivery_date,
       totalComplete: row.complete_total,
       totalReject: row.reject_total,
@@ -2229,9 +2311,10 @@ function mapDailyStatsRowToAdminItem(row, partnerId = '') {
   };
 }
 
-function mapRiderStatsRowToAdminItem(row, partnerId = '') {
+function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null) {
   const pid = partnerId || partnerIdFromDedupeKey(row.dedupe_key);
   const raw = row.raw_json || {};
+  const partnerInfo = enrichPartnerEntry(catalog, pid);
   return {
     collect_date: row.week_start,
     collected_at: row.collected_at,
@@ -2240,6 +2323,9 @@ function mapRiderStatsRowToAdminItem(row, partnerId = '') {
     phone_number: row.phone_number,
     parsed_json: {
       partnerId: pid,
+      partnerName: partnerInfo.partnerName,
+      regionName: partnerInfo.regionName,
+      displayName: partnerInfo.displayName,
       totalComplete: row.complete_total,
       totalReject: row.reject_total,
       cancelCount: row.cancel_total,
@@ -2287,9 +2373,17 @@ async function getHistoryStatsItemsForAdmin(weekStart, sourceMenu, partnerId = '
   if (pid) {
     rows = rows.filter(row => partnerIdFromDedupeKey(row.dedupe_key) === pid);
   }
+  rows = dedupeStatsRowsByLatest(rows, menu);
+  rows.sort((a, b) => {
+    if (menu === 'daily_history') {
+      return String(a.delivery_date || '').localeCompare(String(b.delivery_date || ''));
+    }
+    return String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko');
+  });
 
+  const catalog = await loadPartnerDisplayCatalog();
   const mapper = menu === 'daily_history' ? mapDailyStatsRowToAdminItem : mapRiderStatsRowToAdminItem;
-  const items = rows.map(row => mapper(row, pid));
+  const items = rows.map(row => mapper(row, pid, catalog));
 
   return {
     ok: true,
@@ -2326,27 +2420,34 @@ async function getPartnerListFromStatsTable(weekStart, sourceMenu) {
   }
 
   const { pickBestPartnerName, sortPartnersForAdmin } = require('./baemin-partner-match');
+  const catalog = await loadPartnerDisplayCatalog();
   const partners = new Map();
   const counts = new Map();
 
   (data || []).forEach(row => {
     const partnerId = partnerIdFromDedupeKey(row.dedupe_key);
     if (!partnerId) return;
-    partners.set(partnerId, pickBestPartnerName(partners.get(partnerId), partnerId));
+    const info = enrichPartnerEntry(catalog, partnerId);
+    partners.set(partnerId, info.displayName);
     counts.set(partnerId, (counts.get(partnerId) || 0) + 1);
   });
 
   const items = sortPartnersForAdmin(
-    Array.from(partners.entries()).map(([partnerId, partnerName]) => ({
-      partnerId,
-      partnerName,
-      riderCount: counts.get(partnerId) || 0,
-      menuCounts: {
-        delivery_status: 0,
-        daily_history: menu === 'daily_history' ? (counts.get(partnerId) || 0) : 0,
-        rider_history: menu === 'rider_history' ? (counts.get(partnerId) || 0) : 0
-      }
-    }))
+    Array.from(partners.entries()).map(([partnerId, displayName]) => {
+      const info = enrichPartnerEntry(catalog, partnerId, displayName);
+      return {
+        partnerId,
+        partnerName: info.partnerName,
+        regionName: info.regionName,
+        displayName: info.displayName,
+        riderCount: counts.get(partnerId) || 0,
+        menuCounts: {
+          delivery_status: 0,
+          daily_history: menu === 'daily_history' ? (counts.get(partnerId) || 0) : 0,
+          rider_history: menu === 'rider_history' ? (counts.get(partnerId) || 0) : 0
+        }
+      };
+    })
   );
 
   return { ok: true, partners: items };
@@ -2410,6 +2511,7 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
   }
 
   const { pickBestPartnerName, sortPartnersForAdmin } = require('./baemin-partner-match');
+  const catalog = appliedOnly ? await loadPartnerDisplayCatalog() : null;
   const partners = new Map();
   (data || []).forEach(row => {
     const parsed = row.parsed_json || {};
@@ -2435,9 +2537,12 @@ async function getPartnerListForAdmin(collectDate, options = {}) {
       const duplicateGroup = (contamination.duplicateGroups || []).find(group =>
         group.removePartnerIds.includes(partnerId) || group.keepPartnerId === partnerId
       );
+      const info = appliedOnly ? enrichPartnerEntry(catalog, partnerId, partnerName) : null;
       return {
         partnerId,
         partnerName,
+        regionName: info?.regionName || '',
+        displayName: info?.displayName || partnerName,
         riderCount: Number(stat?.riderCount || 0),
         menuCounts: stat?.menuCounts || {
           delivery_status: 0,
