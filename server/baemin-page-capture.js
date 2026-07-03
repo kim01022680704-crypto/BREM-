@@ -48,13 +48,23 @@ function buildSpaPageUrl(sourceId, dateRange, collectDate = null) {
   const toDate = history.toDate;
   if (!fromDate || !toDate) return null;
 
-  const daySpan = history.dates?.length
-    || (fromDate && toDate ? Math.max(1, Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1) : 1);
+  const useSingleDay = sourceId === 'rider_history' && dateRange?.mode === 'rider_per_day';
+  const queryFromDate = useSingleDay
+    ? (history.dates?.[0] || fromDate)
+    : fromDate;
+  const queryToDate = useSingleDay
+    ? (history.dates?.[0] || toDate)
+    : toDate;
+
+  const daySpan = useSingleDay
+    ? 1
+    : (history.dates?.length
+      || (fromDate && toDate ? Math.max(1, Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1) : 1));
   const params = new URLSearchParams({
     page: '1',
     size: String(daySpan > 7 ? 100 : 20),
-    fromDate,
-    toDate
+    fromDate: queryFromDate,
+    toDate: queryToDate
   });
   if (sourceId === 'daily_history') {
     return `${BAEMIN_ORIGIN}/delivery/delivery-history?${params.toString()}`;
@@ -167,7 +177,10 @@ function buildProbeUrls(sourceId, dateRange, collectDate = null) {
   const history = source.dateQueryKeys?.length
     ? resolveHistoryMenuQueryDates(collectDate || dateRange?.referenceDate, dateRange)
     : null;
-  const day = history?.toDate || dateRange?.toDate || dateRange?.fromDate;
+  const useSingleDay = sourceId === 'rider_history' && dateRange?.mode === 'rider_per_day';
+  const day = useSingleDay
+    ? (history?.dates?.[0] || history?.fromDate || dateRange?.fromDate)
+    : (history?.toDate || dateRange?.toDate || dateRange?.fromDate);
   const paths = [...new Set([
     source.apiPath,
     ...(source.fallbackApiPaths || [])
@@ -182,8 +195,13 @@ function buildProbeUrls(sourceId, dateRange, collectDate = null) {
       pageNumbers.forEach(pageNum => {
         const params = new URLSearchParams();
         if (source.dateQueryKeys?.length && history?.fromDate && history?.toDate) {
-          params.set('fromDate', history.fromDate);
-          params.set('toDate', history.toDate);
+          if (useSingleDay) {
+            params.set('fromDate', day);
+            params.set('toDate', day);
+          } else {
+            params.set('fromDate', history.fromDate);
+            params.set('toDate', history.toDate);
+          }
         } else if (day && source.dateQueryKeys?.length) {
           params.set('fromDate', day);
           params.set('toDate', day);

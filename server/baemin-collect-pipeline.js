@@ -14,7 +14,7 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange, computeHistoryCollectRange, computeBizHistoryCollectRange, buildMenuDateRanges, buildBizMenuDateRanges, resolveHistoryMenuQueryDates, addDays, todayKST } = require('./baemin-settlement-week');
+const { computeCollectDateRange, computeHistoryCollectRange, computeBizHistoryCollectRange, buildMenuDateRanges, buildBizMenuDateRanges, resolveHistoryMenuQueryDates, buildDateList, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
@@ -451,6 +451,46 @@ function buildEndpointCandidates(sourceId, source, endpoint) {
   return candidates;
 }
 
+async function fetchOneHistoryDay({
+  sourceId,
+  source,
+  endpoint,
+  activeDateRange,
+  collectDate,
+  tryFetch,
+  day
+}) {
+  const dayRange = {
+    ...(activeDateRange || {}),
+    fromDate: day,
+    toDate: day,
+    dates: [day],
+    dayCount: 1,
+    mode: activeDateRange?.mode || 'rider_per_day'
+  };
+  let dayResult = await tryFetch({ ...endpoint, sampleUrl: null }, dayRange);
+  if (!dayResult.ok && (dayResult.status === 404 || dayResult.status === 400)) {
+    const candidates = buildEndpointCandidates(sourceId, source, endpoint);
+    for (const candidate of candidates) {
+      dayResult = await tryFetch(candidate, dayRange);
+      if (dayResult.ok) break;
+    }
+  }
+  if (!dayResult.ok) {
+    console.warn(`[BREM][collect] ${sourceId} day=${day} failed status=${dayResult.status} msg=${dayResult.message}`);
+    return null;
+  }
+  const items = (dayResult.items || []).map(item => {
+    if (!item || typeof item !== 'object') return item;
+    return { ...item, __bremDayDate: day };
+  });
+  console.log(`[BREM][collect] ${sourceId} day=${day} rows=${items.length}`);
+  return {
+    items,
+    sourceUrl: dayResult.meta?.sourceUrl || ''
+  };
+}
+
 async function fetchHistoryByDays({
   sourceId,
   source,
@@ -464,44 +504,24 @@ async function fetchHistoryByDays({
 }) {
   const dates = activeDateRange?.dates?.length
     ? activeDateRange.dates
-    : [activeDateRange?.toDate || collectDate];
+    : (activeDateRange?.fromDate && activeDateRange?.toDate
+      ? buildDateList(activeDateRange.fromDate, activeDateRange.toDate)
+      : [activeDateRange?.toDate || collectDate]);
   const merged = [];
   let lastUrl = '';
-  const dayConcurrency = 4;
-
-  async function fetchOneDay(day) {
-    const dayRange = {
-      ...(activeDateRange || {}),
-      fromDate: day,
-      toDate: day,
-      dates: [day],
-      dayCount: 1
-    };
-    let dayResult = await tryFetch({ ...endpoint, sampleUrl: null }, dayRange);
-    if (!dayResult.ok && (dayResult.status === 404 || dayResult.status === 400)) {
-      const candidates = buildEndpointCandidates(sourceId, source, endpoint);
-      for (const candidate of candidates) {
-        dayResult = await tryFetch(candidate, dayRange);
-        if (dayResult.ok) break;
-      }
-    }
-    if (!dayResult.ok) {
-      console.warn(`[BREM][collect] ${sourceId} day=${day} failed status=${dayResult.status} msg=${dayResult.message}`);
-      return null;
-    }
-    console.log(`[BREM][collect] ${sourceId} day=${day} rows=${(dayResult.items || []).length}`);
-    return {
-      items: (dayResult.items || []).map(item => {
-        if (!item || typeof item !== 'object') return item;
-        return { ...item, __bremDayDate: day };
-      }),
-      sourceUrl: dayResult.meta?.sourceUrl || ''
-    };
-  }
+  const dayConcurrency = sourceId === 'rider_history' ? 1 : 4;
 
   for (let offset = 0; offset < dates.length; offset += dayConcurrency) {
     const batch = dates.slice(offset, offset + dayConcurrency);
-    const batchResults = await Promise.all(batch.map(day => fetchOneDay(day)));
+    const batchResults = await Promise.all(batch.map(day => fetchOneHistoryDay({
+      sourceId,
+      source,
+      endpoint,
+      activeDateRange,
+      collectDate,
+      tryFetch,
+      day
+    })));
     batchResults.forEach(row => {
       if (!row) return;
       merged.push(...row.items);
@@ -523,8 +543,100 @@ async function fetchHistoryByDays({
   };
 }
 
-function shouldAggregateRiderFromDaily(sourceId, registry) {
+async function fetchAndSaveHistoryByDays({
+  sourceId,
+  source,
+  endpoint,
+  registry,
+  context,
+  activeDateRange,
+  collectDate,
+  tryFetch
+}) {
+  const dates = activeDateRange?.dates?.length
+    ? activeDateRange.dates
+    : buildDateList(activeDateRange.fromDate, activeDateRange.toDate);
+  const partnerId = String(registry.centerContext?.partnerId || registry.centerContext?.centerId || '').trim();
+  const partnerName = String(registry.centerContext?.partnerName || context.partnerName || '').trim();
+  const regionName = String(registry.centerContext?.regionName || context.regionName || '').trim();
+  const collectedAt = new Date().toISOString();
+  let totalSaved = 0;
+  let lastUrl = '';
+  let failedDays = 0;
+  let emptyDays = 0;
+
+  for (const day of dates) {
+    const dayRow = await fetchOneHistoryDay({
+      sourceId,
+      source,
+      endpoint,
+      activeDateRange,
+      collectDate,
+      tryFetch,
+      day
+    });
+    if (!dayRow) {
+      failedDays += 1;
+      continue;
+    }
+    if (dayRow.sourceUrl) lastUrl = dayRow.sourceUrl;
+    if (!dayRow.items.length) {
+      emptyDays += 1;
+      continue;
+    }
+
+    const rows = dayRow.items.map((item, index) => mapItemToCollectRow(
+      sourceId,
+      item,
+      collectDate,
+      dayRow.sourceUrl,
+      collectedAt,
+      {
+        partnerId,
+        partnerName,
+        regionName,
+        index,
+        collectDate,
+        dateRange: { ...activeDateRange, fromDate: day, toDate: day, dates: [day], dayCount: 1 },
+        historyQueryDates: { fromDate: day, toDate: day, dates: [day], dayCount: 1 },
+        dayDate: day
+      }
+    ));
+    const saveResult = await saveCollectItems(rows);
+    if (!saveResult.ok) {
+      return {
+        ok: false,
+        message: saveResult.message || saveResult.error || `${day} 저장 실패`,
+        savedCount: totalSaved,
+        meta: { perDay: true, sourceUrl: lastUrl, failedDays, emptyDays, dayCount: dates.length }
+      };
+    }
+    totalSaved += Number(saveResult.savedCount || rows.length);
+    console.log(`[BREM][collect] ${sourceId} partner=${partnerId || '-'} day=${day} saved=${saveResult.savedCount || rows.length}`);
+  }
+
+  return {
+    ok: failedDays < dates.length,
+    savedCount: totalSaved,
+    items: [],
+    meta: {
+      totalPage: 1,
+      rawCount: totalSaved,
+      sourceUrl: lastUrl,
+      apiPath: endpoint.apiPath,
+      perDay: true,
+      incrementalSave: true,
+      failedDays,
+      emptyDays,
+      dayCount: dates.length
+    },
+    incrementalSave: true
+  };
+}
+
+function shouldAggregateRiderFromDaily(sourceId, registry, dateRange = null) {
   if (sourceId !== 'rider_history') return false;
+  if (dateRange?.mode === 'rider_per_day') return false;
   const riderEndpoint = mergeEndpointWithDefault('rider_history', registry?.endpoints?.rider_history || {});
   const dailyEndpoint = mergeEndpointWithDefault('daily_history', registry?.endpoints?.daily_history || {});
   if (riderEndpoint?.fallbackFromDaily) return true;
@@ -613,7 +725,11 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     };
   }
 
-  if (shouldAggregateRiderFromDaily(sourceId, registry)) {
+  if (sourceId === 'rider_history' && activeDateRange?.mode === 'rider_per_day' && registry?.endpoints?.rider_history?.fallbackFromDaily) {
+    delete registry.endpoints.rider_history.fallbackFromDaily;
+  }
+
+  if (shouldAggregateRiderFromDaily(sourceId, registry, activeDateRange)) {
     let dailyItems = context.dailyItems;
     let sourceUrl = context.dailySourceUrl || '';
     if (!dailyItems) {
@@ -749,15 +865,27 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   let fetched = null;
   const isRiderPerDay = sourceId === 'rider_history'
     && source.dateQueryKeys?.length
-    && activeDateRange?.dates?.length;
+    && activeDateRange
+    && !activeDateRange.skipped
+    && (activeDateRange.mode === 'rider_per_day'
+      || (activeDateRange.fromDate && activeDateRange.toDate));
+
+  if (isRiderPerDay && !activeDateRange.dates?.length && activeDateRange.fromDate && activeDateRange.toDate) {
+    const riderDates = buildDateList(activeDateRange.fromDate, activeDateRange.toDate);
+    activeDateRange = {
+      ...activeDateRange,
+      dates: riderDates,
+      dayCount: riderDates.length,
+      mode: 'rider_per_day'
+    };
+  }
 
   if (isRiderPerDay) {
-    console.log(`[BREM][collect] ${sourceId} per-day mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, 날짜별 API)`);
-    fetched = await fetchHistoryByDays({
+    console.log(`[BREM][collect] ${sourceId} per-day mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, fromDate=toDate 하루씩)`);
+    fetched = await fetchAndSaveHistoryByDays({
       sourceId,
       source,
       endpoint: { ...endpoint, sampleUrl: null },
-      sessionCookie,
       registry,
       context,
       activeDateRange,
@@ -765,13 +893,18 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       tryFetch
     });
     if (!fetched?.ok && context.playwrightPage && activeDateRange) {
-      endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate)
+      endpoint = await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, {
+        ...activeDateRange,
+        fromDate: activeDateRange.dates?.[0] || activeDateRange.fromDate,
+        toDate: activeDateRange.dates?.[0] || activeDateRange.fromDate,
+        dates: [activeDateRange.dates?.[0] || activeDateRange.fromDate],
+        dayCount: 1
+      }, context.playwrightContext, collectDate)
         || endpoint;
-      fetched = await fetchHistoryByDays({
+      fetched = await fetchAndSaveHistoryByDays({
         sourceId,
         source,
         endpoint: { ...endpoint, sampleUrl: null },
-        sessionCookie,
         registry,
         context,
         activeDateRange,
@@ -780,7 +913,38 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       });
     }
     if (!fetched) {
-      fetched = { ok: false, status: 502, message: '라이더 일별 수집 데이터 없음', items: [] };
+      fetched = { ok: false, status: 502, message: '라이더 일별 수집 데이터 없음', items: [], savedCount: 0 };
+    }
+    if (fetched.incrementalSave) {
+      if (!fetched.ok) {
+        const message = fetched.message || '라이더 일별 수집 실패';
+        return {
+          ok: false,
+          sourceMenu: sourceId,
+          label: source.label,
+          status: fetched.status,
+          message,
+          savedCount: Number(fetched.savedCount || 0),
+          sourceUrl: fetched.meta?.sourceUrl || ''
+        };
+      }
+      const savedCount = Number(fetched.savedCount || 0);
+      return {
+        ok: true,
+        sourceMenu: sourceId,
+        label: source.label,
+        dateRangeLabel,
+        savedCount,
+        statsSavedCount: 0,
+        sourceUrl: fetched.meta?.sourceUrl || '',
+        collectedAt: new Date().toISOString(),
+        rawItems: [],
+        menuFingerprint: '',
+        meta: fetched.meta,
+        message: savedCount > 0
+          ? `${activeDateRange.dayCount}일 순차 수집 · ${savedCount}건 Supabase 저장`
+          : '수집 데이터 0건'
+      };
     }
   } else if (source.dateQueryKeys?.length && activeDateRange?.dayCount > 1) {
     console.log(`[BREM][collect] ${sourceId} range mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, fromDate/toDate 일괄 조회)`);
@@ -1006,7 +1170,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       collectDate,
       dateRange: activeDateRange || context.dateRange || null,
       historyQueryDates: activeDateRange || null,
-      dayDate: activeDateRange?.dates?.[index]
+      dayDate: item?.__bremDayDate || activeDateRange?.dates?.[index]
     }
   ));
 

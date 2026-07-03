@@ -457,6 +457,24 @@
     showToast('라이더 수집기간이 저장되었습니다.');
   }
 
+  function renderBizRiderHistoryPlaceholder(savedCount = null) {
+    if (isViewSection()) return;
+    const summaryEl = $('baeminBizRiderHistorySummary');
+    const rowsEl = $('baeminBizRiderHistoryRows');
+    const rangeLabel = state.riderCollectRange?.label
+      || state.config?.menuDatePlan?.rider_history?.label
+      || '설정 기간';
+    if (summaryEl) {
+      summaryEl.textContent = savedCount != null
+        ? `${rangeLabel} · ${formatNumber(savedCount)}건 Supabase 저장됨`
+        : `${rangeLabel} · 미리보기 생략`;
+    }
+    if (rowsEl) {
+      const colspan = getBaeminTableColspan('rider_history', { showPartner: false, includeCollected: true });
+      rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">라이더별 배달내역은 데이터가 많아 BIZ 미리보기를 표시하지 않습니다. 수집 후 [배민현황 저장] → 정산주·기간 선택으로 조회하세요.</td></tr>`;
+    }
+  }
+
   function readCollectRangeFromUi() {
     return {
       dailyFromDate: $('baeminDailyCollectFrom')?.value || '',
@@ -1381,6 +1399,11 @@
     state.activeMenu = menu;
     updatePanelVisibility();
 
+    if (!isViewSection() && menu === 'rider_history') {
+      renderBizRiderHistoryPlaceholder();
+      return;
+    }
+
     const cached = getCachedPartnerBundle(state.activePartnerId);
     if (cached?.[menu]) {
       renderSubtabRows(menu, state.activePartnerId, cached[menu], cached.meta || {});
@@ -2226,12 +2249,16 @@
     });
     setBizCaptureDate(finalResult.collectDate || captureDate);
     const toastLabel = options.successToast || '배민 전체 데이터 수집 완료';
-    showToast(`${toastLabel} — ${formatNumber(savedCount)}건 Supabase 저장${finalResult.partnerCount > 1 ? ` (DP ${finalResult.partnerCount}곳)` : ''}${finalResult.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(finalResult.scrubResult.deletedCount)}건` : ''} · 미리보기 확인 후 [배민현황 저장]`);
+    showToast(`${toastLabel} — ${formatNumber(savedCount)}건 Supabase 저장${finalResult.partnerCount > 1 ? ` (DP ${finalResult.partnerCount}곳)` : ''}${finalResult.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(finalResult.scrubResult.deletedCount)}건` : ''}${options.endpoint === '/collect/rider' ? ' · 배민현황에서 기간별 조회' : ' · 미리보기 확인 후 [배민현황 저장]'}`);
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
       state.activePartnerId = '';
-      await loadAllSubtabData();
+      if (options.endpoint === '/collect/rider') {
+        renderBizRiderHistoryPlaceholder(savedCount);
+      } else {
+        await loadAllSubtabData();
+      }
     }
   }
 
@@ -2543,9 +2570,14 @@
       return null;
     }
 
+    const cachedMenus = isViewSection()
+      ? MENU_IDS
+      : MENU_IDS.filter(menu => menu !== 'rider_history');
     const cached = getCachedPartnerBundle(id);
-    if (cached && MENU_IDS.every(menu => Array.isArray(cached[menu]))) {
-      if (focusMenu && cached[focusMenu]) {
+    if (cached && cachedMenus.every(menu => Array.isArray(cached[menu]))) {
+      if (focusMenu === 'rider_history' && !isViewSection()) {
+        renderBizRiderHistoryPlaceholder();
+      } else if (focusMenu && cached[focusMenu]) {
         renderSubtabRows(focusMenu, id, cached[focusMenu], cached.meta || {});
       }
       return cached;
@@ -2561,7 +2593,7 @@
     const partnerQuery = `&partnerId=${encodeURIComponent(id)}`;
     const menusToLoad = isViewSection()
       ? [String(focusMenu || state.activeMenu || 'delivery_status').trim()]
-      : MENU_IDS;
+      : MENU_IDS.filter(menu => menu !== 'rider_history');
 
     const results = await Promise.all(menusToLoad.map(async sourceMenu => {
       const itemsUrl = isViewSection()
@@ -2587,7 +2619,11 @@
     setCachedPartnerBundle(id, bundle);
 
     if (focusMenu) {
-      renderSubtabRows(focusMenu, id, bundle[focusMenu] || [], bundle.meta);
+      if (!isViewSection() && focusMenu === 'rider_history') {
+        renderBizRiderHistoryPlaceholder();
+      } else {
+        renderSubtabRows(focusMenu, id, bundle[focusMenu] || [], bundle.meta);
+      }
     }
     return bundle;
   }
