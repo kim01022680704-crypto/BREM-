@@ -588,16 +588,17 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   const menuDateRanges = context.menuDateRanges || {};
+  const sourceRange = menuDateRanges[sourceId] || context.historyDateRange || null;
   const dateRangeLabel = menuDateRanges[sourceId]?.label
-    || (source.dateQueryKeys?.length && context.historyDateRange
-      ? `${context.historyDateRange.fromDate} ~ ${context.historyDateRange.toDate}`
+    || (source.dateQueryKeys?.length && sourceRange
+      ? `${sourceRange.fromDate} ~ ${sourceRange.toDate}`
       : '오늘 기준');
   console.log(`[BREM][collect] ${source.label}(${sourceId}): ${dateRangeLabel}`);
 
   let activeDateRange = source.dateQueryKeys?.length
     ? resolveHistoryMenuQueryDates(collectDate, context.shrunkHistoryToDate
-      ? { ...(context.historyDateRange || {}), toDate: context.shrunkHistoryToDate }
-      : context.historyDateRange || null)
+      ? { ...(sourceRange || {}), toDate: context.shrunkHistoryToDate }
+      : sourceRange)
     : null;
 
   if (source.dateQueryKeys?.length && activeDateRange?.skipped) {
@@ -655,7 +656,8 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     const prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
     const existingCapture = context.spaCapture?.[sourceId];
     const { historyDateRangeMatchesRequest } = require('./baemin-settlement-week');
-    const captureMatchesRange = !prepRange?.mode || prepRange.mode !== 'biz_month'
+    const captureMatchesRange = !prepRange?.mode
+      || (prepRange.mode !== 'biz_month' && prepRange.mode !== 'biz_range')
       || historyDateRangeMatchesRequest(existingCapture, prepRange);
     const hasUsableCapture = Boolean(
       captureMatchesRange
@@ -1276,9 +1278,15 @@ async function runPartnerSourceCollectLoop({
 async function runFullCollectPipeline(options = {}) {
   const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
   const { readRiderCollectRange } = require('./baemin-rider-collect-range');
+  const { readDailyCollectRange } = require('./baemin-daily-collect-range');
   const riderCollectRange = options.riderCollectRange
     || await readRiderCollectRange(collectDate).catch(() => null);
-  const menuDateRanges = options.menuDateRanges || buildBizMenuDateRanges(collectDate, new Date(), riderCollectRange);
+  const dailyCollectRange = options.dailyCollectRange
+    || await readDailyCollectRange(collectDate).catch(() => null);
+  const menuDateRanges = options.menuDateRanges || buildBizMenuDateRanges(collectDate, new Date(), {
+    dailyCollectRange,
+    riderCollectRange
+  });
   const historyDateRange = options.dateRange || menuDateRanges.daily_history || computeBizHistoryCollectRange(collectDate);
   const dateRange = historyDateRange;
   const source = String(options.source || 'local_scheduler').trim();
@@ -1288,7 +1296,15 @@ async function runFullCollectPipeline(options = {}) {
   const results = {};
   const partnerSummaries = [];
   const collectedAt = new Date().toISOString();
-  const sourceDefs = listCollectSources();
+  const allowedMenus = Array.isArray(options.sourceMenus) && options.sourceMenus.length
+    ? new Set(options.sourceMenus.map(id => String(id).trim()).filter(Boolean))
+    : null;
+  const sourceDefs = allowedMenus
+    ? listCollectSources().filter(def => allowedMenus.has(def.id))
+    : listCollectSources();
+  if (!sourceDefs.length) {
+    return { ok: false, message: '수집할 메뉴가 없습니다.', results, sessionExpired: false };
+  }
   const detachRef = { current: null };
   let detachCenterRoute = () => {
     if (typeof detachRef.current === 'function') detachRef.current();
@@ -1348,6 +1364,9 @@ async function runFullCollectPipeline(options = {}) {
   console.log(`[BREM][collect] 배달현황: 오늘 기준 (${collectDate})`);
   console.log(`[BREM][collect] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
   console.log(`[BREM][collect] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
+  if (allowedMenus) {
+    console.log(`[BREM][collect] 수집 메뉴: ${sourceDefs.map(def => def.id).join(', ')}`);
+  }
 
   if (playwrightContext) {
     playwrightContext.__bremCollecting = true;
@@ -1427,49 +1446,54 @@ async function runFullCollectPipeline(options = {}) {
         if (!verified.ok) {
           const failMsg = `배달현황 API 검증 실패 (${verified.reason || 'unknown'})`;
           console.warn(`[BREM][collect] ${label} — ${failMsg}`);
-          return {
-            results: {
-              delivery_status: {
-                ok: false,
-                sourceMenu: 'delivery_status',
-                label: '배달현황',
-                message: failMsg,
-                sessionMismatch: true
+          if (!allowedMenus || allowedMenus.has('delivery_status')) {
+            return {
+              results: {
+                delivery_status: {
+                  ok: false,
+                  sourceMenu: 'delivery_status',
+                  label: '배달현황',
+                  message: failMsg,
+                  sessionMismatch: true
+                },
+                daily_history: {
+                  ok: false,
+                  sourceMenu: 'daily_history',
+                  label: '일별 배달내역',
+                  message: '배달현황 검증 실패로 생략',
+                  skipped: true
+                },
+                rider_history: {
+                  ok: false,
+                  sourceMenu: 'rider_history',
+                  label: '라이더별 배달내역',
+                  message: '배달현황 검증 실패로 생략',
+                  skipped: true
+                }
               },
-              daily_history: {
-                ok: false,
-                sourceMenu: 'daily_history',
-                label: '일별 배달내역',
-                message: '배달현황 검증 실패로 생략',
-                skipped: true
-              },
-              rider_history: {
-                ok: false,
-                sourceMenu: 'rider_history',
-                label: '라이더별 배달내역',
-                message: '배달현황 검증 실패로 생략',
-                skipped: true
-              }
-            },
-            anySuccess: false,
-            sessionExpired: false,
-            authFailureCount: 0,
-            currentPartnerMenuFingerprints: {}
-          };
+              anySuccess: false,
+              sessionExpired: false,
+              authFailureCount: 0,
+              currentPartnerMenuFingerprints: {}
+            };
+          }
+          console.warn(`[BREM][collect] ${label} — history-only 수집 계속`);
+        } else {
+          if (verified.captured) {
+            applyCaptureToEndpointRegistry('delivery_status', registry, verified.captured);
+            pipelineContext.spaCapture = pipelineContext.spaCapture || {};
+            pipelineContext.spaCapture.delivery_status = verified.captured;
+          }
+          const capturedStore = playwrightPage.context()?.__bremCapturedApiRequests || {};
+          Object.keys(capturedStore).forEach(menuId => {
+            applyCaptureToEndpointRegistry(menuId, registry, capturedStore[menuId]);
+          });
+          console.log(`[BREM][collect] ${label} — 배달현황 API 세션 확인 완료`);
         }
-        if (verified.captured) {
-          applyCaptureToEndpointRegistry('delivery_status', registry, verified.captured);
-          pipelineContext.spaCapture = pipelineContext.spaCapture || {};
-          pipelineContext.spaCapture.delivery_status = verified.captured;
-        }
-        const capturedStore = playwrightPage.context()?.__bremCapturedApiRequests || {};
-        Object.keys(capturedStore).forEach(menuId => {
-          applyCaptureToEndpointRegistry(menuId, registry, capturedStore[menuId]);
-        });
-        console.log(`[BREM][collect] ${label} — 배달현황 API 세션 확인 완료`);
       }
 
-      console.log(`[BREM][collect] ${label} — 배달현황 수집 시작`);
+      const collectLabel = sourceDefs.map(def => def.label).join(' · ') || '수집';
+      console.log(`[BREM][collect] ${label} — ${collectLabel} 시작`);
 
       if (playwrightPage) {
         attachCollectCenterRoute(playwrightPage, registry, detachRef);
@@ -1656,6 +1680,18 @@ async function runFullCollectPipeline(options = {}) {
       summaryTotals.riderCount = Math.max(summaryTotals.riderCount, Number(row.totals.riderCount || 0));
     });
 
+    const dailyLabel = menuDateRanges.daily_history?.label || `${historyDateRange.fromDate}~${historyDateRange.toDate}`;
+    const riderLabel = menuDateRanges.rider_history?.label || dailyLabel;
+    const rangeSummary = allowedMenus?.has('delivery_status') && sourceDefs.length === 1
+      ? '배달현황: 오늘'
+      : (allowedMenus
+        ? sourceDefs.map(def => {
+          if (def.id === 'delivery_status') return '배달현황: 오늘';
+          if (def.id === 'daily_history') return `일별: ${dailyLabel}`;
+          if (def.id === 'rider_history') return `라이더: ${riderLabel}`;
+          return def.label;
+        }).join(' · ')
+        : `일별: ${dailyLabel} · 라이더: ${riderLabel}`);
     return {
       ok: anySuccess && !sessionExpired,
       collectDate,
@@ -1669,10 +1705,11 @@ async function runFullCollectPipeline(options = {}) {
       partnerCount: partnerSummaries.length || (registry.centerContext?.partnerId ? 1 : 0),
       sessionExpired,
       scrubResult,
+      sourceMenus: allowedMenus ? [...allowedMenus] : null,
       message: sessionExpired
         ? '배민 재로그인 필요'
         : (anySuccess
-          ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · 배달현황: 오늘 · 일별/라이더: ${historyDateRange.fromDate}~${historyDateRange.toDate} · 저장 ${savedTotal}건${scrubResult?.deletedCount ? ` · 중복 정리 ${scrubResult.deletedCount}건` : ''}`
+          ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · ${rangeSummary} · 저장 ${savedTotal}건${scrubResult?.deletedCount ? ` · 중복 정리 ${scrubResult.deletedCount}건` : ''}`
           : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'))
     };
   } finally {

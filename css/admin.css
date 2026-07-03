@@ -2929,6 +2929,7 @@ textarea {
   color: rgba(203, 213, 225, 0.78);
 }
 
+.baemin-daily-collect-range,
 .baemin-rider-collect-range,
 .baemin-view-rider-range {
   display: flex;

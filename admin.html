@@ -638,9 +638,23 @@
             </label>
             <button type="button" class="primary-btn" id="baeminDeliverySessionRefreshBtn">배민 세션 갱신</button>
             <button type="button" class="primary-btn" id="baeminBrowserOpenBtn">브라우저 열기/세션 유지</button>
+            <button type="button" class="primary-btn" id="baeminDeliveryOnlyCollectBtn">배달현황만 수집</button>
             <button type="button" class="primary-btn" id="baeminFullCollectBtn">배민 전체 데이터 수집</button>
             <button type="button" class="small-btn" id="baeminServerShutdownBtn">자동수집 서버 종료</button>
             <button type="button" class="small-btn" id="baeminDeliveryJsonPasteBtn">배민 JSON 붙여넣기</button>
+          </div>
+          <div class="form-row baemin-daily-collect-range" id="baeminDailyCollectRangeRow">
+            <label>
+              일별 수집 시작
+              <input type="date" id="baeminDailyCollectFrom" class="admin-period-input">
+            </label>
+            <label>
+              일별 수집 종료
+              <input type="date" id="baeminDailyCollectTo" class="admin-period-input">
+            </label>
+            <button type="button" class="small-btn btn-primary" id="baeminDailyCollectRangeSaveBtn">일별 수집기간 저장</button>
+            <button type="button" class="small-btn btn-primary" id="baeminDailyCollectBtn">일별 배달내역 수집</button>
+            <span id="baeminDailyCollectRangeMeta" class="form-help">일별 배달내역은 설정 기간을 fromDate~toDate로 한 번에 수집합니다.</span>
           </div>
           <div class="form-row baemin-rider-collect-range" id="baeminRiderCollectRangeRow">
             <label>
@@ -652,7 +666,8 @@
               <input type="date" id="baeminRiderCollectTo" class="admin-period-input">
             </label>
             <button type="button" class="small-btn btn-primary" id="baeminRiderCollectRangeSaveBtn">라이더 수집기간 저장</button>
-            <span id="baeminRiderCollectRangeMeta" class="form-help"></span>
+            <button type="button" class="small-btn btn-primary" id="baeminRiderCollectBtn">라이더별 배달내역 수집</button>
+            <span id="baeminRiderCollectRangeMeta" class="form-help">라이더별 배달내역은 설정한 기간을 하루씩 수집합니다.</span>
           </div>
           <details class="baemin-advanced-panel" id="baeminDeliveryAdvancedPanel">
             <summary>고급 / 비상용 쿠키 입력</summary>
@@ -868,17 +883,7 @@
               </label>
               <span id="baeminStatusWeekStartLabel" class="baemin-view-week__date"></span>
               <span id="baeminStatusWeekRangeLabel" class="baemin-view-week__range"></span>
-            </div>
-            <div id="baeminStatusRiderRangeRow" class="baemin-view-week baemin-view-rider-range" hidden>
-              <label class="baemin-field">
-                <span class="baemin-field__label">조회 시작</span>
-                <input type="date" id="baeminStatusRiderFrom" class="admin-period-input">
-              </label>
-              <label class="baemin-field">
-                <span class="baemin-field__label">조회 종료</span>
-                <input type="date" id="baeminStatusRiderTo" class="admin-period-input">
-              </label>
-              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusRiderLoadBtn">라이더 내역 불러오기</button>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusWeekLoadBtn" hidden>정산주 데이터 불러오기</button>
             </div>
           </div>
         </div>
@@ -5066,7 +5071,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260704h"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260703j"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

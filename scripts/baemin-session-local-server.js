@@ -829,6 +829,26 @@ function getAutoCollectHealthPayload() {
   };
 }
 
+async function resolveCollectRangeOptions(collectDate, body = {}) {
+  const {
+    readDailyCollectRange,
+    resolveDailyCollectRangeFromBody
+  } = require('../server/baemin-daily-collect-range');
+  const {
+    readRiderCollectRange,
+    resolveRiderCollectRangeFromBody
+  } = require('../server/baemin-rider-collect-range');
+
+  const dailyCollectRange = body.dailyCollectRange
+    || resolveDailyCollectRangeFromBody(body, collectDate)
+    || await readDailyCollectRange(collectDate).catch(() => null);
+  const riderCollectRange = body.riderCollectRange
+    || resolveRiderCollectRangeFromBody(body, collectDate)
+    || await readRiderCollectRange(collectDate).catch(() => null);
+
+  return { dailyCollectRange, riderCollectRange };
+}
+
 async function runLocalFullCollect(options = {}) {
   if (collectRunning) {
     return { ok: false, conflict: true, message: '이미 수집 중입니다.' };
@@ -841,11 +861,24 @@ async function runLocalFullCollect(options = {}) {
   const collectDate = String(
     options.collectDate || baeminAutoCollect.todayDateStringKST()
   ).slice(0, 10);
-  const menuDateRanges = buildBizMenuDateRanges(collectDate);
-  console.log(`[BREM] [전체수집] 시작 | date=${collectDate}`);
-  console.log(`[BREM] [전체수집] 배달현황: 오늘 기준`);
-  console.log(`[BREM] [전체수집] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
-  console.log(`[BREM] [전체수집] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
+  const sourceMenus = Array.isArray(options.sourceMenus) && options.sourceMenus.length
+    ? options.sourceMenus
+    : null;
+  const { dailyCollectRange, riderCollectRange } = await resolveCollectRangeOptions(collectDate, options);
+  const menuDateRanges = buildBizMenuDateRanges(collectDate, new Date(), {
+    dailyCollectRange,
+    riderCollectRange
+  });
+  const collectLabel = sourceMenus?.length === 1 && sourceMenus[0] === 'delivery_status'
+    ? '배달현황'
+    : '전체수집';
+  console.log(`[BREM] [${collectLabel}] 시작 | date=${collectDate}`);
+  console.log(`[BREM] [${collectLabel}] 배달현황: 오늘 기준`);
+  console.log(`[BREM] [${collectLabel}] 일별 배달내역: ${menuDateRanges.daily_history.label}`);
+  console.log(`[BREM] [${collectLabel}] 라이더별 배달내역: ${menuDateRanges.rider_history.label}`);
+  if (sourceMenus) {
+    console.log(`[BREM] [${collectLabel}] 수집 메뉴: ${sourceMenus.join(', ')}`);
+  }
 
   try {
     if (!isContextAlive(activeContext)) {
@@ -890,10 +923,13 @@ async function runLocalFullCollect(options = {}) {
 
     const result = await baeminAutoCollect.runAutoCollectJob({
       captureDate: collectDate,
-      source: 'local_manual',
+      source: options.source || 'local_manual',
       sessionCookie,
       playwrightContext: isContextAlive(activeContext) ? activeContext : null,
-      playwrightPage: collectPage
+      playwrightPage: collectPage,
+      dailyCollectRange,
+      riderCollectRange,
+      sourceMenus
     });
 
     autoCollectRuntime = {
@@ -1723,7 +1759,109 @@ const server = http.createServer(async (req, res) => {
       body = {};
     }
 
-    const result = await runLocalFullCollect({ collectDate: body.collectDate });
+    const result = await runLocalFullCollect({ collectDate: body.collectDate, ...body });
+    const status = result.conflict ? 409 : (result.ok ? 200 : (result.sessionExpired ? 409 : 502));
+    return sendJsonWithCors(req, res, status, {
+      ...result,
+      autoCollect: getAutoCollectHealthPayload(),
+      browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/collect/delivery' && req.method === 'POST') {
+    if (collectRunning) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: '이미 수집 중입니다.',
+        autoCollect: getAutoCollectHealthPayload(),
+        browser: getBrowserHealth()
+      });
+    }
+
+    let body = {};
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8').trim();
+      if (text) body = JSON.parse(text);
+    } catch {
+      body = {};
+    }
+
+    const result = await runLocalFullCollect({
+      collectDate: body.collectDate,
+      sourceMenus: ['delivery_status'],
+      source: 'local_delivery_only',
+      ...body
+    });
+    const status = result.conflict ? 409 : (result.ok ? 200 : (result.sessionExpired ? 409 : 502));
+    return sendJsonWithCors(req, res, status, {
+      ...result,
+      autoCollect: getAutoCollectHealthPayload(),
+      browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/collect/daily' && req.method === 'POST') {
+    if (collectRunning) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: '이미 수집 중입니다.',
+        autoCollect: getAutoCollectHealthPayload(),
+        browser: getBrowserHealth()
+      });
+    }
+
+    let body = {};
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8').trim();
+      if (text) body = JSON.parse(text);
+    } catch {
+      body = {};
+    }
+
+    const result = await runLocalFullCollect({
+      collectDate: body.collectDate,
+      sourceMenus: ['daily_history'],
+      source: 'local_daily_only',
+      ...body
+    });
+    const status = result.conflict ? 409 : (result.ok ? 200 : (result.sessionExpired ? 409 : 502));
+    return sendJsonWithCors(req, res, status, {
+      ...result,
+      autoCollect: getAutoCollectHealthPayload(),
+      browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/collect/rider' && req.method === 'POST') {
+    if (collectRunning) {
+      return sendJsonWithCors(req, res, 409, {
+        ok: false,
+        message: '이미 수집 중입니다.',
+        autoCollect: getAutoCollectHealthPayload(),
+        browser: getBrowserHealth()
+      });
+    }
+
+    let body = {};
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8').trim();
+      if (text) body = JSON.parse(text);
+    } catch {
+      body = {};
+    }
+
+    const result = await runLocalFullCollect({
+      collectDate: body.collectDate,
+      sourceMenus: ['rider_history'],
+      source: 'local_rider_only',
+      ...body
+    });
     const status = result.conflict ? 409 : (result.ok ? 200 : (result.sessionExpired ? 409 : 502));
     return sendJsonWithCors(req, res, status, {
       ...result,

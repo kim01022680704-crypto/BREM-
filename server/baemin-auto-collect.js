@@ -207,20 +207,28 @@ async function runAutoCollectJob(options = {}) {
   const playwrightPage = options.playwrightPage || null;
 
   const { readRiderCollectRange } = require('./baemin-rider-collect-range');
+  const { readDailyCollectRange } = require('./baemin-daily-collect-range');
   const riderCollectRange = options.riderCollectRange
     || await readRiderCollectRange(captureDate).catch(() => null);
-  const menuDateRanges = buildBizMenuDateRanges(captureDate, new Date(), riderCollectRange);
-  const dateRange = computeBizHistoryCollectRange(captureDate);
+  const dailyCollectRange = options.dailyCollectRange
+    || await readDailyCollectRange(captureDate).catch(() => null);
+  const menuDateRanges = buildBizMenuDateRanges(captureDate, new Date(), {
+    dailyCollectRange,
+    riderCollectRange
+  });
+  const dateRange = dailyCollectRange || computeBizHistoryCollectRange(captureDate);
 
   const pipelineResult = await runFullCollectPipeline({
     collectDate: captureDate,
-    source,
+    source: source,
     sessionCookie: sessionCookie || undefined,
     playwrightContext,
     playwrightPage,
     dateRange,
     menuDateRanges,
-    riderCollectRange
+    dailyCollectRange,
+    riderCollectRange,
+    sourceMenus: options.sourceMenus || null
   });
   const deliveryResult = pipelineResult.results?.delivery_status;
 
@@ -289,7 +297,15 @@ async function getAutoCollectStatusForAdmin() {
   const localSeenAt = record.localServerLastSeenAt ? Date.parse(record.localServerLastSeenAt) : 0;
   const localServerRecentlyActive = localSeenAt > 0 && (Date.now() - localSeenAt) < 2 * 60 * 1000;
   const menuStatus = await getLatestMenuCollectStatus(record.lastCaptureDate || todayDateStringKST());
-  const menuDatePlan = buildBizMenuDateRanges(record.lastCaptureDate || todayDateStringKST());
+  const { readRiderCollectRange } = require('./baemin-rider-collect-range');
+  const { readDailyCollectRange } = require('./baemin-daily-collect-range');
+  const captureRef = record.lastCaptureDate || todayDateStringKST();
+  const riderCollectRange = await readRiderCollectRange(captureRef).catch(() => null);
+  const dailyCollectRange = await readDailyCollectRange(captureRef).catch(() => null);
+  const menuDatePlan = buildBizMenuDateRanges(captureRef, new Date(), {
+    dailyCollectRange,
+    riderCollectRange
+  });
 
   return {
     schedule: record.schedule,

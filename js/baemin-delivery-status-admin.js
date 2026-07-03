@@ -21,6 +21,7 @@
     riderViewFromDate: '',
     riderViewToDate: '',
     riderCollectRange: null,
+    dailyCollectRange: null,
     partnerRegionMap: {},
     partnerRegionItems: [],
     partnerSetCountMap: {},
@@ -209,7 +210,19 @@
     return state.viewWeekStart;
   }
 
+  function computeViewWeekQueryRange(weekStart = ensureViewWeekStart()) {
+    const fromDate = window.BremDatePicker?.applyWeekWednesday?.(weekStart) || String(weekStart || '').slice(0, 10);
+    const weekEnd = window.BremDatePicker?.weekEndKey?.(fromDate) || addDaysDate(fromDate, 6);
+    const latest = addDaysDate(todayKstDate(), -1);
+    const toDate = weekEnd < latest ? weekEnd : latest;
+    return { fromDate, toDate, weekEnd };
+  }
+
   function formatViewWeekRangeLabel(weekStart) {
+    const range = computeViewWeekQueryRange(weekStart);
+    if (range.fromDate && range.toDate) {
+      return `${range.fromDate} ~ ${range.toDate}`;
+    }
     if (window.BremDatePicker?.formatWednesdayWeekRange) {
       return BremDatePicker.formatWednesdayWeekRange(weekStart);
     }
@@ -326,6 +339,11 @@
     syncViewWeekPicker();
     invalidateDataCache();
     state.activePartnerId = '';
+    if (state.viewLoaded && (state.activeMenu === 'daily_history' || state.activeMenu === 'rider_history')) {
+      clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 정산주 데이터 불러오기를 눌러 주세요.');
+      updateWeekPickerVisibility();
+      return;
+    }
     if (state.viewLoaded) {
       void loadViewData({ silent: true });
       return;
@@ -335,18 +353,19 @@
 
   function updateWeekPickerVisibility() {
     const row = $('baeminStatusWeekPickerRow');
-    const riderRow = $('baeminStatusRiderRangeRow');
+    const weekLoadBtn = $('baeminStatusWeekLoadBtn');
     if (!isViewSection()) {
       if (row) row.hidden = true;
-      if (riderRow) riderRow.hidden = true;
+      if (weekLoadBtn) weekLoadBtn.hidden = true;
       return;
     }
-    const showWeek = state.activeMenu === 'daily_history' || state.activeMenu === 'quota_achievement';
-    const showRiderRange = state.activeMenu === 'rider_history';
+    const showWeek = state.activeMenu === 'daily_history'
+      || state.activeMenu === 'rider_history'
+      || state.activeMenu === 'quota_achievement';
+    const showWeekLoad = state.activeMenu === 'daily_history' || state.activeMenu === 'rider_history';
     if (row) row.hidden = !showWeek;
-    if (riderRow) riderRow.hidden = !showRiderRange;
+    if (weekLoadBtn) weekLoadBtn.hidden = !showWeekLoad;
     if (showWeek) syncViewWeekPicker();
-    if (showRiderRange) syncRiderViewRangeInputs();
   }
 
   function addDaysDate(dateKey, days) {
@@ -357,18 +376,44 @@
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(date);
   }
 
-  function ensureRiderViewDateDefaults() {
-    const today = todayKstDate();
-    if (!state.riderViewFromDate) state.riderViewFromDate = addDaysDate(today, -30);
-    if (!state.riderViewToDate) state.riderViewToDate = addDaysDate(today, -1);
+  function syncDailyCollectRangeInputs(range) {
+    const fromEl = $('baeminDailyCollectFrom');
+    const toEl = $('baeminDailyCollectTo');
+    const meta = $('baeminDailyCollectRangeMeta');
+    const fromDate = range?.fromDate || '';
+    const toDate = range?.toDate || '';
+    if (fromEl && fromDate) fromEl.value = fromDate;
+    if (toEl && toDate) toEl.value = toDate;
+    if (meta) {
+      meta.textContent = range?.label
+        ? `저장됨: ${range.label}`
+        : '일별 배달내역은 설정 기간을 fromDate~toDate로 한 번에 수집합니다.';
+    }
+    state.dailyCollectRange = range || null;
   }
 
-  function syncRiderViewRangeInputs() {
-    ensureRiderViewDateDefaults();
-    const fromEl = $('baeminStatusRiderFrom');
-    const toEl = $('baeminStatusRiderTo');
-    if (fromEl && !fromEl.value) fromEl.value = state.riderViewFromDate;
-    if (toEl && !toEl.value) toEl.value = state.riderViewToDate;
+  async function loadDailyCollectRange() {
+    const result = await adminApi('/api/admin/baemin-delivery/daily-collect-range');
+    if (result.ok) {
+      syncDailyCollectRangeInputs(result.range || null);
+      return result.range;
+    }
+    return null;
+  }
+
+  async function saveDailyCollectRangeFromUi() {
+    const fromDate = $('baeminDailyCollectFrom')?.value || '';
+    const toDate = $('baeminDailyCollectTo')?.value || '';
+    const result = await adminApi('/api/admin/baemin-delivery/daily-collect-range', {
+      method: 'POST',
+      body: JSON.stringify({ fromDate, toDate })
+    });
+    if (!result.ok) {
+      showToast(result.message || '일별 수집기간 저장에 실패했습니다.');
+      return;
+    }
+    syncDailyCollectRangeInputs(result.range || null);
+    showToast('일별 수집기간이 저장되었습니다.');
   }
 
   function syncRiderCollectRangeInputs(range) {
@@ -409,6 +454,15 @@
     }
     syncRiderCollectRangeInputs(result.range || null);
     showToast('라이더 수집기간이 저장되었습니다.');
+  }
+
+  function readCollectRangeFromUi() {
+    return {
+      dailyFromDate: $('baeminDailyCollectFrom')?.value || '',
+      dailyToDate: $('baeminDailyCollectTo')?.value || '',
+      riderFromDate: $('baeminRiderCollectFrom')?.value || '',
+      riderToDate: $('baeminRiderCollectTo')?.value || ''
+    };
   }
 
   function totalsToParsed(totals = {}) {
@@ -472,53 +526,62 @@
     }).join('');
   }
 
-  async function loadRiderViewData(options = {}) {
+  async function loadViewWeekMenuData() {
     if (!isViewSection()) return;
-    const silent = Boolean(options.silent);
     const partnerId = normalizePartnerId(state.activePartnerId);
     if (!partnerId) {
-      if (!silent) showToast('지역을 선택하세요.');
+      showToast('지역을 선택하세요.');
       return;
     }
 
-    const fromDate = String($('baeminStatusRiderFrom')?.value || state.riderViewFromDate || '').slice(0, 10);
-    const toDate = String($('baeminStatusRiderTo')?.value || state.riderViewToDate || '').slice(0, 10);
-    if (!fromDate || !toDate || toDate < fromDate) {
-      if (!silent) showToast('조회 시작일과 종료일을 확인하세요.');
-      return;
-    }
+    const menu = state.activeMenu;
+    if (menu !== 'daily_history' && menu !== 'rider_history') return;
 
-    state.riderViewFromDate = fromDate;
-    state.riderViewToDate = toDate;
-
-    const loadBtn = $('baeminStatusRiderLoadBtn');
+    const weekStart = ensureViewWeekStart();
+    const range = computeViewWeekQueryRange(weekStart);
+    const loadBtn = $('baeminStatusWeekLoadBtn');
     loadBtn?.classList.add('is-loading');
     if (loadBtn) loadBtn.textContent = '불러오는 중…';
 
-    const result = await adminApi(
-      `/api/admin/baemin-delivery/view-rider-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`
-    );
-
-    loadBtn?.classList.remove('is-loading');
-    if (loadBtn) loadBtn.textContent = '라이더 내역 불러오기';
-
-    if (!result.ok) {
-      if (!silent) showToast(result.message || '라이더 내역 불러오기에 실패했습니다.');
-      return;
+    if (menu === 'daily_history') {
+      if (!state.viewLoaded) {
+        await loadViewData({ silent: true });
+      } else {
+        const captureDate = state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate();
+        const bundle = await adminApi(buildViewFullBundleQuery(captureDate));
+        if (!bundle.ok) {
+          showToast(bundle.message || '일별 배달내역 불러오기에 실패했습니다.');
+        } else {
+          applyFullBundleToCache(bundle.byPartner || {}, bundle.collectDate, bundle.weekStart || weekStart, bundle.weekEnd);
+          renderActiveViewFromCache();
+          showToast(`일별 배달내역 ${range.fromDate} ~ ${range.toDate} 조회`);
+        }
+      }
+    } else {
+      const result = await adminApi(
+        `/api/admin/baemin-delivery/view-rider-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(range.fromDate)}&toDate=${encodeURIComponent(range.toDate)}`
+      );
+      if (!result.ok) {
+        showToast(result.message || '라이더별 배달내역 불러오기에 실패했습니다.');
+      } else {
+        const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
+        cached.rider_history = result.items || [];
+        cached.rider_days = result.days || [];
+        cached.meta = {
+          ...(cached.meta || {}),
+          riderFromDate: range.fromDate,
+          riderToDate: range.toDate,
+          riderWeekStart: weekStart,
+          riderLoaded: true
+        };
+        setCachedPartnerBundle(partnerId, cached);
+        renderRiderHistoryDayRows(partnerId, cached.rider_days, range);
+        showToast(`라이더별 배달내역 ${range.fromDate} ~ ${range.toDate} 조회`);
+      }
     }
 
-    const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
-    cached.rider_history = result.items || [];
-    cached.rider_days = result.days || [];
-    cached.meta = {
-      ...(cached.meta || {}),
-      riderFromDate: fromDate,
-      riderToDate: toDate,
-      riderLoaded: true
-    };
-    setCachedPartnerBundle(partnerId, cached);
-    renderRiderHistoryDayRows(partnerId, cached.rider_days, { fromDate, toDate });
-    if (!silent) showToast(`라이더 내역 ${fromDate} ~ ${toDate} 불러왔습니다.`);
+    loadBtn?.classList.remove('is-loading');
+    if (loadBtn) loadBtn.textContent = '정산주 데이터 불러오기';
   }
 
   function isHistoryViewMenu(menu = state.activeMenu) {
@@ -562,7 +625,7 @@
       const applied = state.config?.applied || {};
       const weekPart = isHistoryViewMenu() ? `:week=${ensureViewWeekStart()}` : '';
       const riderPart = state.activeMenu === 'rider_history'
-        ? `:rider=${state.riderViewFromDate || ''}~${state.riderViewToDate || ''}`
+        ? `:week-rider=${ensureViewWeekStart()}`
         : '';
       const mapPart = Object.keys(state.partnerRegionMap || {}).sort().join('|');
       return `view:${state.activeMenu}:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}${weekPart}${riderPart}:map=${mapPart}`;
@@ -802,17 +865,15 @@
     }
     if (menu === 'rider_history' && cached.rider_days?.length) {
       renderRiderHistoryDayRows(partnerId, cached.rider_days, {
-        fromDate: cached.meta?.riderFromDate || state.riderViewFromDate,
-        toDate: cached.meta?.riderToDate || state.riderViewToDate
+        fromDate: cached.meta?.riderFromDate || computeViewWeekQueryRange().fromDate,
+        toDate: cached.meta?.riderToDate || computeViewWeekQueryRange().toDate
       });
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
     if (menu === 'rider_history') {
-      renderRiderHistoryDayRows(partnerId, [], {
-        fromDate: state.riderViewFromDate,
-        toDate: state.riderViewToDate
-      });
+      const range = computeViewWeekQueryRange();
+      renderRiderHistoryDayRows(partnerId, [], range);
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
@@ -1472,6 +1533,9 @@
 
   function updateActionButtons() {
     const fullBtn = $('baeminFullCollectBtn');
+    const deliveryOnlyBtn = $('baeminDeliveryOnlyCollectBtn');
+    const dailyCollectBtn = $('baeminDailyCollectBtn');
+    const riderCollectBtn = $('baeminRiderCollectBtn');
     const browserBtn = $('baeminBrowserOpenBtn');
     const shutdownBtn = $('baeminServerShutdownBtn');
     const jsonBtn = $('baeminDeliveryJsonPasteBtn');
@@ -1481,6 +1545,18 @@
     if (fullBtn) {
       fullBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
       fullBtn.textContent = localCollecting ? '이미 수집 중…' : '배민 전체 데이터 수집';
+    }
+    if (deliveryOnlyBtn) {
+      deliveryOnlyBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
+      deliveryOnlyBtn.textContent = localCollecting ? '이미 수집 중…' : '배달현황만 수집';
+    }
+    if (dailyCollectBtn) {
+      dailyCollectBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
+      dailyCollectBtn.textContent = localCollecting ? '수집 중…' : '일별 배달내역 수집';
+    }
+    if (riderCollectBtn) {
+      riderCollectBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
+      riderCollectBtn.textContent = localCollecting ? '수집 중…' : '라이더별 배달내역 수집';
     }
     if (browserBtn) {
       browserBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
@@ -1765,6 +1841,7 @@
     }
 
     renderAppliedStatus(config);
+    syncDailyCollectRangeInputs(config?.dailyCollectRange || state.dailyCollectRange || null);
     syncRiderCollectRangeInputs(config?.riderCollectRange || state.riderCollectRange || null);
     if (isViewSection()) {
       renderViewAppliedBanner(config?.applied);
@@ -2003,8 +2080,22 @@
     showToast(result.message || 'Playwright 브라우저를 열었습니다.');
   }
 
-  async function runFullCollect() {
+  async function runCollectRequest(options = {}) {
     if (state.loading || state.collecting) return;
+
+    const ranges = readCollectRangeFromUi();
+    if (options.endpoint === '/collect/daily') {
+      if (!ranges.dailyFromDate || !ranges.dailyToDate || ranges.dailyToDate < ranges.dailyFromDate) {
+        showToast('일별 수집 시작일과 종료일을 입력하세요.');
+        return;
+      }
+    }
+    if (options.endpoint === '/collect/rider') {
+      if (!ranges.riderFromDate || !ranges.riderToDate || ranges.riderToDate < ranges.riderFromDate) {
+        showToast('라이더 수집 시작일과 종료일을 확인하세요.');
+        return;
+      }
+    }
 
     const local = await fetchLocalHealth(state.config, null);
     state.localServerRunning = local.running;
@@ -2022,10 +2113,19 @@
     renderSummary(null);
 
     const captureDate = resolveBizCaptureDate();
-    const result = await callLocalServer('/collect/full', {
+    const ranges = readCollectRangeFromUi();
+    const endpoint = options.endpoint || '/collect/full';
+    const result = await callLocalServer(endpoint, {
       method: 'POST',
-      body: { collectDate: captureDate },
-      timeoutMs: 300000
+      body: {
+        collectDate: captureDate,
+        sourceMenus: options.sourceMenus || null,
+        dailyFromDate: ranges.dailyFromDate,
+        dailyToDate: ranges.dailyToDate,
+        riderFromDate: ranges.riderFromDate,
+        riderToDate: ranges.riderToDate
+      },
+      timeoutMs: options.timeoutMs || 300000
     });
 
     await refreshLocalServerStatus();
@@ -2036,8 +2136,10 @@
       return;
     }
 
+    const failLabel = options.failLabel || '배민 데이터 수집';
+
     if (!result.ok) {
-      renderSummary(null, result.message || '배민 전체 데이터 수집에 실패했습니다.');
+      renderSummary(null, result.message || `${failLabel}에 실패했습니다.`);
       await loadConfig();
       return;
     }
@@ -2075,13 +2177,52 @@
       menuResults
     });
     setBizCaptureDate(result.collectDate || captureDate);
-    showToast(`배민 전체 데이터 수집 완료 — ${formatNumber(savedCount)}건 Supabase 저장${result.partnerCount > 1 ? ` (DP ${result.partnerCount}곳)` : ''}${result.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(result.scrubResult.deletedCount)}건` : ''} · 미리보기 확인 후 [배민현황 저장]`);
+    const toastLabel = options.successToast || '배민 전체 데이터 수집 완료';
+    showToast(`${toastLabel} — ${formatNumber(savedCount)}건 Supabase 저장${result.partnerCount > 1 ? ` (DP ${result.partnerCount}곳)` : ''}${result.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(result.scrubResult.deletedCount)}건` : ''} · 미리보기 확인 후 [배민현황 저장]`);
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
       state.activePartnerId = '';
       await loadAllSubtabData();
     }
+  }
+
+  async function runFullCollect() {
+    return runCollectRequest({
+      endpoint: '/collect/full',
+      failLabel: '배민 전체 데이터 수집',
+      successToast: '배민 전체 데이터 수집 완료'
+    });
+  }
+
+  async function runDeliveryOnlyCollect() {
+    return runCollectRequest({
+      endpoint: '/collect/delivery',
+      sourceMenus: ['delivery_status'],
+      failLabel: '배달현황 수집',
+      successToast: '배달현황 수집 완료',
+      timeoutMs: 120000
+    });
+  }
+
+  async function runDailyOnlyCollect() {
+    return runCollectRequest({
+      endpoint: '/collect/daily',
+      sourceMenus: ['daily_history'],
+      failLabel: '일별 배달내역 수집',
+      successToast: '일별 배달내역 수집 완료',
+      timeoutMs: 600000
+    });
+  }
+
+  async function runRiderOnlyCollect() {
+    return runCollectRequest({
+      endpoint: '/collect/rider',
+      sourceMenus: ['rider_history'],
+      failLabel: '라이더별 배달내역 수집',
+      successToast: '라이더별 배달내역 수집 완료',
+      timeoutMs: 900000
+    });
   }
 
   async function shutdownLocalServer() {
@@ -2193,14 +2334,10 @@
       bizCollectTableExists: result.bizCollectTableExists,
       applied: result.applied || null,
       baeminScope: result.baeminScope || null,
-      riderCollectRange: result.riderCollectRange || null
+      riderCollectRange: result.riderCollectRange || null,
+      dailyCollectRange: result.dailyCollectRange || null
     };
     state.canManageRegions = Boolean(result.canManageRegions);
-    if (result.riderCollectRange?.fromDate) {
-      state.riderViewFromDate = result.riderCollectRange.fromDate;
-      state.riderViewToDate = result.riderCollectRange.toDate;
-      syncRiderViewRangeInputs();
-    }
     renderViewAppliedBanner(result.applied || null);
     renderRegionRegistrationCard();
   }
@@ -2654,6 +2791,10 @@
       void runFullCollect();
     });
 
+    $('baeminDeliveryOnlyCollectBtn')?.addEventListener('click', () => {
+      void runDeliveryOnlyCollect();
+    });
+
     $('baeminServerShutdownBtn')?.addEventListener('click', () => {
       void shutdownLocalServer();
     });
@@ -2717,8 +2858,20 @@
       void loadViewData();
     });
 
-    $('baeminStatusRiderLoadBtn')?.addEventListener('click', () => {
-      void loadRiderViewData();
+    $('baeminStatusWeekLoadBtn')?.addEventListener('click', () => {
+      void loadViewWeekMenuData();
+    });
+
+    $('baeminDailyCollectBtn')?.addEventListener('click', () => {
+      void runDailyOnlyCollect();
+    });
+
+    $('baeminRiderCollectBtn')?.addEventListener('click', () => {
+      void runRiderOnlyCollect();
+    });
+
+    $('baeminDailyCollectRangeSaveBtn')?.addEventListener('click', () => {
+      void saveDailyCollectRangeFromUi();
     });
 
     $('baeminRiderCollectRangeSaveBtn')?.addEventListener('click', () => {
@@ -2761,9 +2914,7 @@
     if (isViewSection()) {
       if (!state.activeMenu) state.activeMenu = 'delivery_status';
       ensureViewWeekStart();
-      ensureRiderViewDateDefaults();
       syncViewWeekPicker();
-      syncRiderViewRangeInputs();
       updateWeekPickerVisibility();
       invalidateDataCache();
       state.viewLoaded = false;
@@ -2788,7 +2939,7 @@
     stopStatusPoll();
     await loadPublicLocalSessionConfig();
     await loadConfig();
-    await loadRiderCollectRange();
+    await Promise.all([loadDailyCollectRange(), loadRiderCollectRange()]);
     await loadLatestSummary();
     await loadAllSubtabData();
 

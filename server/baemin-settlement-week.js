@@ -236,7 +236,7 @@ function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new D
     dateRange
     && dateRange.fromDate
     && dateRange.toDate
-    && dateRange.mode === 'biz_month'
+    && (dateRange.mode === 'biz_month' || dateRange.mode === 'biz_range' || dateRange.mode === 'rider_per_day')
     && !dateRange.skipped
   ) {
     const dates = buildDateList(dateRange.fromDate, dateRange.toDate);
@@ -253,8 +253,11 @@ function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new D
   const fresh = computeHistoryCollectRange(referenceDate, now);
 
   if (dateRange?.fromDate && dateRange?.toDate) {
+    const preserveUserRange = dateRange.mode === 'biz_month'
+      || dateRange.mode === 'biz_range'
+      || dateRange.mode === 'rider_per_day';
     const fromDate = dateRange.fromDate;
-    const toDate = dateRange.mode === 'biz_month'
+    const toDate = preserveUserRange
       ? dateRange.toDate
       : (dateRange.toDate <= (fresh.toDate || dateRange.toDate) ? dateRange.toDate : fresh.toDate);
     const dates = buildDateList(fromDate, toDate);
@@ -296,9 +299,12 @@ function resolveHistoryMenuQueryDates(collectDate, dateRange = null, now = new D
     return { ...fresh };
   }
 
+  const preserveUserRange = dateRange?.mode === 'biz_month'
+    || dateRange?.mode === 'biz_range'
+    || dateRange?.mode === 'rider_per_day';
   const fromDate = dateRange?.fromDate || fresh.fromDate;
   const toDate = dateRange?.toDate
-    ? (dateRange.toDate <= fresh.toDate ? dateRange.toDate : fresh.toDate)
+    ? (preserveUserRange || dateRange.toDate <= fresh.toDate ? dateRange.toDate : fresh.toDate)
     : fresh.toDate;
   const dates = buildDateList(fromDate, toDate);
   return {
@@ -358,16 +364,55 @@ function computeBizHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
   };
 }
 
-function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), riderCollectRange = null) {
-  const history = computeBizHistoryCollectRange(dateKey, now);
+function normalizeBizRangeOptions(rangeOptions = null) {
+  if (!rangeOptions) {
+    return { dailyCollectRange: null, riderCollectRange: null };
+  }
+  if (rangeOptions.dailyCollectRange || rangeOptions.riderCollectRange) {
+    return {
+      dailyCollectRange: rangeOptions.dailyCollectRange || null,
+      riderCollectRange: rangeOptions.riderCollectRange || null
+    };
+  }
+  if (rangeOptions.mode === 'rider_per_day' || rangeOptions.fromDate) {
+    return { dailyCollectRange: null, riderCollectRange: rangeOptions };
+  }
+  return { dailyCollectRange: null, riderCollectRange: null };
+}
+
+function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), rangeOptions = null) {
+  const { dailyCollectRange, riderCollectRange } = normalizeBizRangeOptions(rangeOptions);
+  const defaultHistory = computeBizHistoryCollectRange(dateKey, now);
   const delivery = computeDeliveryStatusCollectContext(dateKey, now);
+
+  let history;
+  if (dailyCollectRange?.fromDate && dailyCollectRange?.toDate) {
+    const dailyDates = dailyCollectRange.dates?.length
+      ? dailyCollectRange.dates
+      : buildDateList(dailyCollectRange.fromDate, dailyCollectRange.toDate);
+    history = {
+      ...dailyCollectRange,
+      fromDate: dailyCollectRange.fromDate,
+      toDate: dailyCollectRange.toDate,
+      dates: dailyDates,
+      dayCount: dailyDates.length,
+      mode: dailyCollectRange.mode || 'biz_range',
+      skipped: dailyDates.length === 0,
+      label: dailyCollectRange.label || `${dailyCollectRange.fromDate} ~ ${dailyCollectRange.toDate} (일괄 조회 ${dailyDates.length}일)`
+    };
+  } else {
+    history = defaultHistory;
+  }
+
   const historyLabel = history.skipped
     ? (history.label || history.skipReason || '수집 생략')
     : (history.label || `${history.fromDate} ~ ${history.toDate}`);
 
   let riderHistory;
   if (riderCollectRange?.fromDate && riderCollectRange?.toDate) {
-    const riderDates = buildDateList(riderCollectRange.fromDate, riderCollectRange.toDate);
+    const riderDates = riderCollectRange.dates?.length
+      ? riderCollectRange.dates
+      : buildDateList(riderCollectRange.fromDate, riderCollectRange.toDate);
     riderHistory = {
       ...riderCollectRange,
       fromDate: riderCollectRange.fromDate,
@@ -379,15 +424,19 @@ function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), riderCol
       label: riderCollectRange.label || `${riderCollectRange.fromDate} ~ ${riderCollectRange.toDate} (일별 수집 ${riderDates.length}일)`
     };
   } else {
-    const riderDates = history.dates || buildDateList(history.fromDate, history.toDate);
+    const { defaultRiderCollectRange } = require('./baemin-rider-collect-range');
+    const fallbackRider = defaultRiderCollectRange(dateKey, now);
+    const riderDates = fallbackRider.dates?.length
+      ? fallbackRider.dates
+      : buildDateList(fallbackRider.fromDate, fallbackRider.toDate);
     riderHistory = {
-      ...history,
+      ...fallbackRider,
       dates: riderDates,
       dayCount: riderDates.length,
       mode: 'rider_per_day',
-      label: history.skipped
-        ? historyLabel
-        : `${history.fromDate} ~ ${history.toDate} (일별 수집 ${riderDates.length}일)`
+      label: fallbackRider.skipped
+        ? (fallbackRider.label || '수집 없음')
+        : `${fallbackRider.fromDate} ~ ${fallbackRider.toDate} (일별 수집 ${riderDates.length}일)`
     };
   }
 

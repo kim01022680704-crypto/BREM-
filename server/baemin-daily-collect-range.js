@@ -1,14 +1,14 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { addDays, todayKST, latestQueryableDate, buildDateList } = require('./baemin-settlement-week');
 
-const RIDER_COLLECT_RANGE_KEY = 'baemin_rider_collect_range';
+const DAILY_COLLECT_RANGE_KEY = 'baemin_daily_collect_range';
 
 function normalizeDateKey(value) {
   const text = String(value || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
 }
 
-function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) {
+function defaultDailyCollectRange(referenceDate = todayKST(), now = new Date()) {
   const today = todayKST(now);
   const latest = latestQueryableDate(today, now);
   const fromDate = addDays(today, -30);
@@ -18,7 +18,7 @@ function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) 
       toDate: null,
       dates: [],
       dayCount: 0,
-      mode: 'rider_per_day',
+      mode: 'biz_range',
       skipped: true,
       label: '수집 없음'
     };
@@ -29,14 +29,14 @@ function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) 
     toDate: latest,
     dates,
     dayCount: dates.length,
-    mode: 'rider_per_day',
+    mode: 'biz_range',
     skipped: false,
-    label: `${fromDate} ~ ${latest} (일별 수집 ${dates.length}일)`
+    label: `${fromDate} ~ ${latest} (일괄 조회 ${dates.length}일)`
   };
 }
 
-function normalizeRiderCollectRange(raw = {}, referenceDate = todayKST(), now = new Date()) {
-  const fallback = defaultRiderCollectRange(referenceDate, now);
+function normalizeDailyCollectRange(raw = {}, referenceDate = todayKST(), now = new Date()) {
+  const fallback = defaultDailyCollectRange(referenceDate, now);
   const fromDate = normalizeDateKey(raw.fromDate) || fallback.fromDate;
   const toDate = normalizeDateKey(raw.toDate) || fallback.toDate;
   if (!fromDate || !toDate || toDate < fromDate) {
@@ -48,27 +48,27 @@ function normalizeRiderCollectRange(raw = {}, referenceDate = todayKST(), now = 
     toDate,
     dates,
     dayCount: dates.length,
-    mode: 'rider_per_day',
+    mode: 'biz_range',
     skipped: false,
-    label: `${fromDate} ~ ${toDate} (일별 수집 ${dates.length}일)`,
+    label: `${fromDate} ~ ${toDate} (일괄 조회 ${dates.length}일)`,
     updatedAt: String(raw.updatedAt || '').trim() || null,
     updatedBy: String(raw.updatedBy || '').trim() || ''
   };
 }
 
-async function readRiderCollectRange(referenceDate = todayKST()) {
+async function readDailyCollectRange(referenceDate = todayKST()) {
   const supabase = getServiceClient();
-  if (!supabase) return defaultRiderCollectRange(referenceDate);
+  if (!supabase) return defaultDailyCollectRange(referenceDate);
   const { data, error } = await supabase
     .from('settings')
     .select('value')
-    .eq('key', RIDER_COLLECT_RANGE_KEY)
+    .eq('key', DAILY_COLLECT_RANGE_KEY)
     .maybeSingle();
-  if (error) throw new Error(error.message || '라이더 수집 기간을 불러오지 못했습니다.');
-  return normalizeRiderCollectRange(data?.value || {}, referenceDate);
+  if (error) throw new Error(error.message || '일별 수집 기간을 불러오지 못했습니다.');
+  return normalizeDailyCollectRange(data?.value || {}, referenceDate);
 }
 
-async function saveRiderCollectRange(fromDate, toDate, updatedBy = '') {
+async function saveDailyCollectRange(fromDate, toDate, updatedBy = '') {
   const from = normalizeDateKey(fromDate);
   const to = normalizeDateKey(toDate);
   if (!from || !to) {
@@ -88,42 +88,42 @@ async function saveRiderCollectRange(fromDate, toDate, updatedBy = '') {
     updatedBy: String(updatedBy || '').trim()
   };
   const { error } = await supabase.from('settings').upsert({
-    key: RIDER_COLLECT_RANGE_KEY,
+    key: DAILY_COLLECT_RANGE_KEY,
     value: payload,
-    description: '배민 BIZ 라이더별 배달내역 수집 기간',
+    description: '배민 BIZ 일별 배달내역 수집 기간',
     updated_at: payload.updatedAt
   }, { onConflict: 'key' });
   if (error) {
-    return { ok: false, status: 500, error: error.message || '라이더 수집 기간 저장에 실패했습니다.' };
+    return { ok: false, status: 500, error: error.message || '일별 수집 기간 저장에 실패했습니다.' };
   }
   return {
     ok: true,
-    range: normalizeRiderCollectRange(payload)
+    range: normalizeDailyCollectRange(payload)
   };
 }
 
-async function getRiderCollectRangeForAdmin(referenceDate = todayKST()) {
+async function getDailyCollectRangeForAdmin(referenceDate = todayKST()) {
   try {
-    const range = await readRiderCollectRange(referenceDate);
+    const range = await readDailyCollectRange(referenceDate);
     return { ok: true, range };
   } catch (error) {
-    return { ok: false, status: 500, error: error.message || '라이더 수집 기간 조회 실패' };
+    return { ok: false, status: 500, error: error.message || '일별 수집 기간 조회 실패' };
   }
 }
 
-function resolveRiderCollectRangeFromBody(body = {}, referenceDate = todayKST()) {
-  const fromDate = normalizeDateKey(body.riderFromDate || body.fromDate);
-  const toDate = normalizeDateKey(body.riderToDate || body.toDate);
+function resolveDailyCollectRangeFromBody(body = {}, referenceDate = todayKST()) {
+  const fromDate = normalizeDateKey(body.dailyFromDate || body.fromDate);
+  const toDate = normalizeDateKey(body.dailyToDate || body.toDate);
   if (!fromDate || !toDate) return null;
-  return normalizeRiderCollectRange({ fromDate, toDate }, referenceDate);
+  return normalizeDailyCollectRange({ fromDate, toDate }, referenceDate);
 }
 
 module.exports = {
-  RIDER_COLLECT_RANGE_KEY,
-  defaultRiderCollectRange,
-  normalizeRiderCollectRange,
-  readRiderCollectRange,
-  saveRiderCollectRange,
-  getRiderCollectRangeForAdmin,
-  resolveRiderCollectRangeFromBody
+  DAILY_COLLECT_RANGE_KEY,
+  defaultDailyCollectRange,
+  normalizeDailyCollectRange,
+  readDailyCollectRange,
+  saveDailyCollectRange,
+  getDailyCollectRangeForAdmin,
+  resolveDailyCollectRangeFromBody
 };
