@@ -26,13 +26,19 @@ function getJson(url) {
 getJson(`http://127.0.0.1:${port}/health`)
   .then(data => {
     const running = String(data.version || '').trim();
+    const hasRiderCollect = data?.features?.collectRider === true;
     console.log(`[INFO] Server already running - version ${running}`);
+    if (!hasRiderCollect) {
+      console.log('[WARN] Running server lacks collectRider API (구버전).');
+      console.log('[WARN] Run scripts\\restart-baemin-session-server.bat to apply updates.');
+      process.exit(1);
+    }
     if (localVersion && running && running !== localVersion) {
       console.log(`[WARN] Folder version ${localVersion} != running ${running}`);
       console.log('[WARN] Run scripts\\restart-baemin-session-server.bat to apply updates.');
-    } else {
-      console.log('[INFO] Restart: scripts\\restart-baemin-session-server.bat');
+      process.exit(1);
     }
+    console.log('[INFO] Restart: scripts\\restart-baemin-session-server.bat');
     process.exit(0);
   })
   .catch(() => {

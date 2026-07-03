@@ -2159,25 +2159,42 @@
       timeoutMs: options.timeoutMs || 300000
     });
 
+    let finalResult = result;
+    if (!finalResult.ok && finalResult.status === 404 && options.sourceMenus?.length) {
+      showToast('개별 수집 API 없음 — 전체 수집 경로로 재시도합니다.');
+      finalResult = await callLocalServer('/collect/full', {
+        method: 'POST',
+        body: {
+          collectDate: captureDate,
+          sourceMenus: options.sourceMenus,
+          dailyFromDate: ranges.dailyFromDate,
+          dailyToDate: ranges.dailyToDate,
+          riderFromDate: ranges.riderFromDate,
+          riderToDate: ranges.riderToDate
+        },
+        timeoutMs: options.timeoutMs || 300000
+      });
+    }
+
     await refreshLocalServerStatus();
     setCollecting(false);
 
-    if (result.status === 409 && result.message?.includes('이미 수집')) {
+    if (finalResult.status === 409 && finalResult.message?.includes('이미 수집')) {
       showToast('이미 수집 중입니다.');
       return;
     }
 
     const failLabel = options.failLabel || '배민 데이터 수집';
 
-    if (!result.ok) {
-      renderSummary(null, result.message || `${failLabel}에 실패했습니다.`);
+    if (!finalResult.ok) {
+      renderSummary(null, finalResult.message || `${failLabel}에 실패했습니다.`);
       await loadConfig();
       return;
     }
 
-    const savedCount = Number(result.savedCount || 0);
-    const menuResults = result.results
-      ? Object.fromEntries(Object.entries(result.results).map(([id, row]) => [id, {
+    const savedCount = Number(finalResult.savedCount || 0);
+    const menuResults = finalResult.results
+      ? Object.fromEntries(Object.entries(finalResult.results).map(([id, row]) => [id, {
         label: row.label || id,
         ok: row.ok,
         savedCount: row.savedCount,
@@ -2188,28 +2205,28 @@
 
     if (savedCount <= 0) {
       renderSummary({
-        captureDate: result.collectDate || captureDate,
+        captureDate: finalResult.collectDate || captureDate,
         savedCount,
-        totalCompleteSum: result.totalCompleteSum,
-        menuDateRanges: result.menuDateRanges,
+        totalCompleteSum: finalResult.totalCompleteSum,
+        menuDateRanges: finalResult.menuDateRanges,
         menuResults
-      }, result.message || '저장된 데이터가 0건입니다.');
+      }, finalResult.message || '저장된 데이터가 0건입니다.');
       await loadConfig();
       return;
     }
 
     renderSummary({
-      captureDate: result.collectDate || captureDate,
+      captureDate: finalResult.collectDate || captureDate,
       savedCount,
-      totalCompleteSum: result.summaryTotals?.completeTotal || result.totalCompleteSum,
-      summaryTotals: result.summaryTotals,
-      dateRange: result.dateRange,
-      menuDateRanges: result.menuDateRanges,
+      totalCompleteSum: finalResult.summaryTotals?.completeTotal || finalResult.totalCompleteSum,
+      summaryTotals: finalResult.summaryTotals,
+      dateRange: finalResult.dateRange,
+      menuDateRanges: finalResult.menuDateRanges,
       menuResults
     });
-    setBizCaptureDate(result.collectDate || captureDate);
+    setBizCaptureDate(finalResult.collectDate || captureDate);
     const toastLabel = options.successToast || '배민 전체 데이터 수집 완료';
-    showToast(`${toastLabel} — ${formatNumber(savedCount)}건 Supabase 저장${result.partnerCount > 1 ? ` (DP ${result.partnerCount}곳)` : ''}${result.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(result.scrubResult.deletedCount)}건` : ''} · 미리보기 확인 후 [배민현황 저장]`);
+    showToast(`${toastLabel} — ${formatNumber(savedCount)}건 Supabase 저장${finalResult.partnerCount > 1 ? ` (DP ${finalResult.partnerCount}곳)` : ''}${finalResult.scrubResult?.deletedCount ? ` · 중복 정리 ${formatNumber(finalResult.scrubResult.deletedCount)}건` : ''} · 미리보기 확인 후 [배민현황 저장]`);
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {
