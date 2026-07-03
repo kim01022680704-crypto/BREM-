@@ -2510,6 +2510,19 @@ function partnerIdFromDedupeKey(dedupeKey = '') {
   return /^DP\d{6,}$/i.test(prefix) ? prefix.toUpperCase() : '';
 }
 
+function businessDateFromDedupeKey(dedupeKey = '') {
+  const parts = String(dedupeKey || '').split(':');
+  const candidate = String(parts[1] || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : '';
+}
+
+function resolveRiderBusinessDate(row = {}) {
+  const parsed = row.parsed_json || {};
+  const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
+  return businessDateFromDedupeKey(row.dedupe_key);
+}
+
 function normalizeDpPartnerId(value, dedupeKey = '') {
   const raw = String(value || '').trim().toUpperCase();
   if (/^DP\d{6,}$/.test(raw)) return raw;
@@ -3372,8 +3385,7 @@ function buildRiderHistoryDaySeries(items, fromDate, toDate) {
   const { addDays } = require('./baemin-settlement-week');
   const byDate = new Map();
   (items || []).forEach(row => {
-    const parsed = row.parsed_json || {};
-    const date = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
+    const date = resolveRiderBusinessDate(row);
     if (!date) return;
     if (!byDate.has(date)) byDate.set(date, []);
     byDate.get(date).push(row);
@@ -3429,7 +3441,8 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
       items: [],
       days: buildRiderHistoryDaySeries([], fromDate, toDate),
       count: 0,
-      notApplied: true
+      notApplied: true,
+      message: '배민 BIZ 현황에서 [배민현황 저장]을 먼저 실행하세요. 수집만 하면 배민현황에 표시되지 않습니다.'
     };
   }
 
@@ -3453,13 +3466,23 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   }
 
   let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);
-  items = items.filter(row => {
+  const scopedItems = items.filter(row => {
     const pid = String(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase();
     if (partnerId && pid !== partnerId) return false;
     if (allowed.size && pid && !allowed.has(pid)) return false;
-    const date = String(row.parsed_json?.businessDate || row.parsed_json?.deliveryDate || '').slice(0, 10);
+    return true;
+  });
+  items = scopedItems.filter(row => {
+    const date = resolveRiderBusinessDate(row);
     return date >= fromDate && date <= toDate;
   });
+
+  let hint = '';
+  if (!items.length && scopedItems.length) {
+    hint = `저장된 라이더 ${scopedItems.length}건은 있으나, 선택 정산주(${fromDate}~${toDate}) 배달일 데이터가 없습니다. 6월 수집분은 6월 정산주를 선택하세요.`;
+  } else if (!items.length) {
+    hint = `선택 지역·정산주(${fromDate}~${toDate})에 라이더 데이터가 없습니다.`;
+  }
 
   const catalog = await loadPartnerDisplayCatalog();
   const { readPartnerRegionMap } = require('./baemin-partner-region');
@@ -3489,6 +3512,8 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     items,
     days,
     count: items.length,
+    totalSaved: scopedItems.length,
+    hint,
     appliedOnly: true,
     totals: computeItemsMetricTotals(items)
   };

@@ -582,6 +582,23 @@
       );
       if (!result.ok) {
         showToast(result.message || '라이더별 배달내역 불러오기에 실패했습니다.');
+      } else if (result.notApplied) {
+        renderRiderHistoryDayRows(partnerId, result.days || [], range);
+        showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+      } else if (!result.count) {
+        const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
+        cached.rider_history = [];
+        cached.rider_days = result.days || [];
+        cached.meta = {
+          ...(cached.meta || {}),
+          riderFromDate: range.fromDate,
+          riderToDate: range.toDate,
+          riderWeekStart: weekStart,
+          riderLoaded: true
+        };
+        setCachedPartnerBundle(partnerId, cached);
+        renderRiderHistoryDayRows(partnerId, cached.rider_days, range);
+        showToast(result.hint || `선택 정산주 ${range.fromDate}~${range.toDate}에 라이더 데이터 없음`);
       } else {
         const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
         cached.rider_history = result.items || [];
@@ -595,7 +612,7 @@
         };
         setCachedPartnerBundle(partnerId, cached);
         renderRiderHistoryDayRows(partnerId, cached.rider_days, range);
-        showToast(`라이더별 배달내역 ${range.fromDate} ~ ${range.toDate} 조회`);
+        showToast(`라이더별 배달내역 ${range.fromDate} ~ ${range.toDate} · ${formatNumber(result.count)}건`);
       }
     }
 
