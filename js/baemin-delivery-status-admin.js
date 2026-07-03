@@ -2028,6 +2028,7 @@
           browser: payload.browser || null,
           session: payload.session || null,
           version: payload.version || '',
+          features: payload.features || null,
           healthUrl
         };
       } catch {
@@ -2067,7 +2068,14 @@
       });
       clearTimeout(timer);
       const payload = await response.json().catch(() => ({}));
-      return { ok: response.ok, status: response.status, ...payload };
+      if (!response.ok) {
+        const message = payload.message || payload.error
+          || (response.status === 404
+            ? '로컬 세션 서버가 구버전입니다. PC 터미널에서 npm run baemin:session-server 를 재시작하세요.'
+            : `로컬 서버 요청 실패 (${response.status})`);
+        return { ok: false, status: response.status, message, ...payload };
+      }
+      return { ok: true, status: response.status, ...payload };
     } catch (error) {
       clearTimeout(timer);
       return { ok: false, message: error.message || '로컬 서버 연결 실패' };
@@ -2118,6 +2126,14 @@
     if (!local.running) {
       showToast('로컬 세션 서버가 실행 중이 아닙니다. npm run baemin:session-server 를 실행하세요.');
       return;
+    }
+
+    if (options.endpoint === '/collect/daily' || options.endpoint === '/collect/rider') {
+      const featureKey = options.endpoint === '/collect/daily' ? 'collectDaily' : 'collectRider';
+      if (local.features && local.features[featureKey] === false) {
+        showToast('로컬 세션 서버가 구버전입니다. npm run baemin:session-server 를 재시작하세요.');
+        return;
+      }
     }
 
     if (local.autoCollect?.collectRunning) {

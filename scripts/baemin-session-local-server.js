@@ -1520,6 +1520,12 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       port: PORT,
       version: SERVER_VERSION,
+      features: {
+        collectDaily: true,
+        collectRider: true,
+        collectDelivery: true,
+        sessionRefresh: true
+      },
       supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
       browser: getBrowserHealth(),
