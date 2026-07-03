@@ -3,6 +3,7 @@
     config: null,
     loading: false,
     collecting: false,
+    sessionRefreshing: false,
     applying: false,
     setupPollTimer: null,
     statusPollTimer: null,
@@ -1565,7 +1566,10 @@
       shutdownBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
     }
     if (jsonBtn) jsonBtn.disabled = state.loading || localCollecting;
-    if (sessionBtn) sessionBtn.disabled = state.loading || localCollecting;
+    if (sessionBtn) {
+      sessionBtn.disabled = false;
+      sessionBtn.textContent = state.sessionRefreshing ? '갱신 준비 중…' : '배민 세션 갱신';
+    }
   }
 
   function isSessionExpired(config) {
@@ -1938,7 +1942,19 @@
     const dialog = $('baeminDeliverySessionDialog');
     const body = $('baeminDeliverySessionDialogBody');
     if (body) body.innerHTML = contentHtml;
-    if (dialog?.showModal) dialog.showModal();
+    if (!dialog) {
+      showToast('세션 갱신 안내를 표시할 수 없습니다. 브라우저 열기를 사용하세요.');
+      return;
+    }
+    try {
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', 'open');
+      }
+    } catch {
+      dialog.setAttribute('open', 'open');
+    }
   }
 
   function closeSetupDialog() {
@@ -2113,7 +2129,6 @@
     renderSummary(null);
 
     const captureDate = resolveBizCaptureDate();
-    const ranges = readCollectRangeFromUi();
     const endpoint = options.endpoint || '/collect/full';
     const result = await callLocalServer(endpoint, {
       method: 'POST',
@@ -2272,36 +2287,70 @@
   }
 
   async function startSessionRefresh() {
-    if (state.loading) return;
-    setLoading(true);
-
-    const setup = await adminApi('/api/admin/baemin-delivery/session/setup', { method: 'POST', body: '{}' });
-    setLoading(false);
-
-    if (!setup.ok) {
-      showToast(setup.message || '세션 갱신 준비에 실패했습니다.');
+    if (state.sessionRefreshing) {
+      showToast('세션 갱신 준비 중입니다…');
       return;
     }
-
-    const localRunning = await fetchLocalHealth(state.config, setup);
-    state.localServerRunning = localRunning.running;
-    const portLabel = setup.localSessionPort || state.localSessionConfig?.port || 3939;
-    const instructions = localRunning.running
-      ? `<p>로컬 세션 서버가 실행 중입니다. (포트 ${portLabel})</p><p>브라우저 창에서 배민Biz 로그인·휴대폰 인증을 완료하세요.</p>`
-      : `<p><strong>로컬 세션 서버에 연결하지 못했습니다.</strong></p>
-         <p>PC 터미널에서 프로젝트 폴더로 이동 후 아래 명령을 실행하세요:</p>
-         <pre class="baemin-cli-block">npm run baemin:session-server</pre>
-         <p>기본 포트: <strong>${portLabel}</strong> · 확인 URL: <code>${localRunning.healthUrl || setup.localHealthUrl || `http://127.0.0.1:${portLabel}/health`}</code></p>
-         <p>서버 실행 후 ERP에서 [배민 세션 갱신]을 다시 누르거나 아래 URL을 브라우저에서 엽니다:</p>
-         <pre class="baemin-cli-block">${setup.startUrl}</pre>`;
-
-    renderSetupDialog(`${instructions}<p class="hint">완료되면 이 창이 자동으로 갱신됩니다.</p>`);
-
-    if (setup.startUrl) {
-      window.open(setup.startUrl, '_blank', 'noopener,noreferrer,width=520,height=720');
+    if (state.collecting || state.localAutoCollect?.collectRunning) {
+      showToast('수집 진행 중입니다. 완료 후 다시 시도하거나 [브라우저 열기]를 사용하세요.');
     }
 
-    pollSessionSetup(setup.setupId);
+    state.sessionRefreshing = true;
+    updateActionButtons();
+    showToast('배민 세션 갱신을 준비합니다…');
+
+    try {
+      const setup = await adminApi('/api/admin/baemin-delivery/session/setup', { method: 'POST', body: '{}' });
+      if (!setup.ok) {
+        showToast(setup.message || '세션 갱신 준비에 실패했습니다.');
+        return;
+      }
+
+      const localRunning = await fetchLocalHealth(state.config, setup);
+      state.localServerRunning = localRunning.running;
+      const portLabel = setup.localSessionPort || state.localSessionConfig?.port || 3939;
+      const startLink = setup.startUrl
+        ? `<p><a href="${setup.startUrl}" target="_blank" rel="noopener">로컬 세션 갱신 페이지 열기</a></p>`
+        : '';
+
+      if (localRunning.running) {
+        const localRefresh = await callLocalServer('/session/refresh', {
+          method: 'POST',
+          body: {
+            setupId: setup.setupId,
+            setupSecret: setup.setupSecret,
+            apiBase: 'https://brem.kr'
+          },
+          timeoutMs: 30000
+        });
+        if (!localRefresh.ok) {
+          showToast(localRefresh.message || '로컬 세션 서버 갱신 요청에 실패했습니다.');
+        }
+      }
+
+      const instructions = localRunning.running
+        ? `<p>로컬 세션 서버가 실행 중입니다. (포트 ${portLabel})</p><p>Playwright 브라우저에서 배민Biz 로그인·휴대폰 인증을 완료하세요.</p>${startLink}`
+        : `<p><strong>로컬 세션 서버에 연결하지 못했습니다.</strong></p>
+           <p>PC 터미널에서 프로젝트 폴더로 이동 후 아래 명령을 실행하세요:</p>
+           <pre class="baemin-cli-block">npm run baemin:session-server</pre>
+           <p>기본 포트: <strong>${portLabel}</strong> · 확인 URL: <code>${localRunning.healthUrl || setup.localHealthUrl || `http://127.0.0.1:${portLabel}/health`}</code></p>
+           <p>서버 실행 후 ERP에서 [배민 세션 갱신]을 다시 누르거나 아래 링크를 엽니다:</p>
+           <pre class="baemin-cli-block">${setup.startUrl || ''}</pre>${startLink}`;
+
+      renderSetupDialog(`${instructions}<p class="hint">완료되면 이 창이 자동으로 갱신됩니다.</p>`);
+
+      if (setup.startUrl) {
+        const popup = window.open(setup.startUrl, '_blank', 'noopener,noreferrer,width=520,height=720');
+        if (!popup) {
+          showToast('팝업이 차단되었습니다. 안내 창의 링크를 눌러 주세요.');
+        }
+      }
+
+      pollSessionSetup(setup.setupId);
+    } finally {
+      state.sessionRefreshing = false;
+      updateActionButtons();
+    }
   }
 
   async function saveManualCookie() {

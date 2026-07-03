@@ -1912,6 +1912,57 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, activeJob || { status: 'idle', message: '대기 중' });
   }
 
+  if (url.pathname === '/session/refresh' && req.method === 'POST') {
+    let body = {};
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8').trim();
+      if (text) body = JSON.parse(text);
+    } catch {
+      body = {};
+    }
+
+    const setupId = String(body.setupId || '').trim();
+    const setupSecret = String(body.setupSecret || '').trim();
+    const apiBase = String(body.apiBase || 'https://brem.kr').trim();
+    if (!setupId || !setupSecret) {
+      return sendJsonWithCors(req, res, 400, {
+        ok: false,
+        message: 'setupId/setupSecret 이 필요합니다. ERP에서 [배민 세션 갱신]을 다시 누르세요.'
+      });
+    }
+
+    updateActiveSetup(setupId, setupSecret, apiBase);
+
+    if (shouldReuseRefreshLoop()) {
+      return sendJsonWithCors(req, res, 200, {
+        ok: true,
+        message: '기존 브라우저에서 세션 갱신을 계속합니다.',
+        browser: getBrowserHealth(),
+        job: activeJob || null
+      });
+    }
+
+    if (refreshLoopRunning || isJobRunning()) {
+      resetRefreshLoopState('브라우저 없음 — 새 갱신 시작');
+    }
+
+    void runSessionRefresh().catch(error => {
+      refreshLoopRunning = false;
+      const reason = formatPlaywrightLaunchError(error);
+      failJob(setupId, '세션 갱신 실패', '', reason);
+      console.error('[BREM] [오류]', error?.stack || reason);
+    });
+
+    return sendJsonWithCors(req, res, 202, {
+      ok: true,
+      message: '세션 갱신을 시작했습니다. Playwright 브라우저를 확인하세요.',
+      browser: getBrowserHealth(),
+      job: activeJob || null
+    });
+  }
+
   if (url.pathname === '/start' && req.method === 'GET') {
     const setupId = url.searchParams.get('setupId') || '';
     const setupSecret = url.searchParams.get('setupSecret') || '';
