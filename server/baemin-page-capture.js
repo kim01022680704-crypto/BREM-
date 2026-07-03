@@ -48,13 +48,14 @@ function buildSpaPageUrl(sourceId, dateRange, collectDate = null) {
   const toDate = history.toDate;
   if (!fromDate || !toDate) return null;
 
-  const useSingleDay = sourceId === 'rider_history' && dateRange?.mode === 'rider_per_day';
-  const queryFromDate = useSingleDay
-    ? (history.dates?.[0] || fromDate)
-    : fromDate;
-  const queryToDate = useSingleDay
-    ? (history.dates?.[0] || toDate)
-    : toDate;
+  const useSingleDay = fromDate === toDate
+    || (sourceId === 'rider_history' && dateRange?.mode === 'rider_per_day' && Number(dateRange?.dayCount || 0) <= 1);
+  const queryFromDate = fromDate === toDate
+    ? fromDate
+    : (useSingleDay ? (history.dates?.[0] || fromDate) : fromDate);
+  const queryToDate = fromDate === toDate
+    ? toDate
+    : (useSingleDay ? (history.dates?.[0] || toDate) : toDate);
 
   const daySpan = useSingleDay
     ? 1

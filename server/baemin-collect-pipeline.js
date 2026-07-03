@@ -14,7 +14,7 @@ const {
 } = require('./baemin-collect-sources');
 const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
-const { computeCollectDateRange, computeHistoryCollectRange, computeBizHistoryCollectRange, buildMenuDateRanges, buildBizMenuDateRanges, resolveHistoryMenuQueryDates, buildDateList, addDays, todayKST } = require('./baemin-settlement-week');
+const { computeCollectDateRange, computeHistoryCollectRange, computeBizHistoryCollectRange, buildMenuDateRanges, buildBizMenuDateRanges, resolveHistoryMenuQueryDates, buildDateList, toSingleDayRange, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
@@ -458,16 +458,31 @@ async function fetchOneHistoryDay({
   activeDateRange,
   collectDate,
   tryFetch,
-  day
+  day,
+  context
 }) {
-  const dayRange = {
-    ...(activeDateRange || {}),
-    fromDate: day,
-    toDate: day,
-    dates: [day],
-    dayCount: 1,
-    mode: activeDateRange?.mode || 'rider_per_day'
-  };
+  const dayRange = toSingleDayRange(day, activeDateRange);
+
+  if (sourceId === 'rider_history' && context?.playwrightPage && !context.playwrightPage.isClosed?.()) {
+    const { buildSpaPageUrl } = require('./baemin-page-capture');
+    const spaUrl = buildSpaPageUrl(sourceId, dayRange, collectDate);
+    if (spaUrl) {
+      const page = context.playwrightPage;
+      const partnerId = String(context.registry?.centerContext?.partnerId || '').trim();
+      console.log(`[BREM][collect] rider_history ▶ ${day} (${partnerId || 'partner'}) browser ${spaUrl}`);
+      try {
+        if (page.url() !== spaUrl) {
+          await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        } else {
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+        }
+        await new Promise(resolve => setTimeout(resolve, 700));
+      } catch (error) {
+        console.warn(`[BREM][collect] rider_history day=${day} browser navigate failed: ${error.message || error}`);
+      }
+    }
+  }
+
   let dayResult = await tryFetch({ ...endpoint, sampleUrl: null }, dayRange);
   if (!dayResult.ok && (dayResult.status === 404 || dayResult.status === 400)) {
     const candidates = buildEndpointCandidates(sourceId, source, endpoint);
@@ -520,7 +535,8 @@ async function fetchHistoryByDays({
       activeDateRange,
       collectDate,
       tryFetch,
-      day
+      day,
+      context
     })));
     batchResults.forEach(row => {
       if (!row) return;
@@ -573,7 +589,8 @@ async function fetchAndSaveHistoryByDays({
       activeDateRange,
       collectDate,
       tryFetch,
-      day
+      day,
+      context: { ...context, registry }
     });
     if (!dayRow) {
       failedDays += 1;
@@ -769,7 +786,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
 
   if (context.playwrightPage) {
     const { preparePageForCollect } = require('./baemin-page-capture');
-    const prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
+    let prepRange = source.dateQueryKeys?.length ? activeDateRange : null;
+    if (sourceId === 'rider_history' && activeDateRange?.mode === 'rider_per_day' && activeDateRange?.dates?.length) {
+      prepRange = toSingleDayRange(activeDateRange.dates[0], activeDateRange);
+    }
     const existingCapture = context.spaCapture?.[sourceId];
     const { historyDateRangeMatchesRequest } = require('./baemin-settlement-week');
     const captureMatchesRange = !prepRange?.mode
@@ -798,13 +818,16 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   const cachedCapture = context.spaCapture?.[sourceId] || null;
-  if (context.playwrightPage && activeDateRange && source.dateQueryKeys?.length) {
+  const discoveryRange = (sourceId === 'rider_history' && activeDateRange?.mode === 'rider_per_day' && activeDateRange?.dates?.length)
+    ? toSingleDayRange(activeDateRange.dates[0], activeDateRange)
+    : activeDateRange;
+  if (context.playwrightPage && discoveryRange && source.dateQueryKeys?.length) {
     endpoint = applyCaptureToEndpointRegistry(sourceId, registry, cachedCapture)
-      || await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate, cachedCapture)
+      || await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, discoveryRange, context.playwrightContext, collectDate, cachedCapture)
       || endpoint;
-  } else if (!endpoint?.apiPath && context.playwrightPage && activeDateRange) {
+  } else if (!endpoint?.apiPath && context.playwrightPage && discoveryRange) {
     endpoint = applyCaptureToEndpointRegistry(sourceId, registry, cachedCapture)
-      || await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, activeDateRange, context.playwrightContext, collectDate, cachedCapture)
+      || await discoverAndApplyEndpoint(sourceId, registry, context.playwrightPage, discoveryRange, context.playwrightContext, collectDate, cachedCapture)
       || endpoint;
   }
 
@@ -1304,9 +1327,12 @@ async function runPartnerSourceCollectLoop({
       }
     } else if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.() && sourceDef.id !== 'delivery_status') {
       const { ensureMenuPartnerReady } = require('./baemin-center-context');
-      const menuRange = sourceDef.dateQueryKeys?.length
+      let menuRange = sourceDef.dateQueryKeys?.length
         ? (menuDateRanges[sourceDef.id] || historyDateRange)
         : null;
+      if (sourceDef.id === 'rider_history' && menuRange?.dates?.length) {
+        menuRange = toSingleDayRange(menuRange.dates[0], menuRange);
+      }
       if (pipelineContext.spaCapture?.[sourceDef.id]) {
         delete pipelineContext.spaCapture[sourceDef.id];
       }

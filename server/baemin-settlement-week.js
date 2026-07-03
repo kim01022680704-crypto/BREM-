@@ -454,6 +454,19 @@ function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), rangeOpt
   };
 }
 
+function toSingleDayRange(day, dateRange = null) {
+  const dateKey = String(day || dateRange?.fromDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return dateRange || null;
+  return {
+    ...(dateRange || {}),
+    fromDate: dateKey,
+    toDate: dateKey,
+    dates: [dateKey],
+    dayCount: 1,
+    mode: dateRange?.mode || 'rider_per_day'
+  };
+}
+
 module.exports = {
   parseDateKey,
   formatDateKey,
@@ -472,6 +485,7 @@ module.exports = {
   computeCollectDateRange,
   resolveHistoryMenuQueryDates,
   buildDateList,
+  toSingleDayRange,
   parseUrlHistoryDates,
   historyDateRangeMatchesRequest
 };
