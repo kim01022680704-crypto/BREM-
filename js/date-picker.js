@@ -494,16 +494,23 @@ const BremDatePicker = (function () {
       close();
     }
 
+    function openAt(anchorButton, context) {
+      if (!anchorButton || !context?.hiddenInput) return false;
+      state.active = context;
+      state.viewDate = new Date(`${context.hiddenInput.value || weekStartKey()}T00:00:00`);
+      render();
+      positionPopup(popup, anchorButton);
+      return true;
+    }
+
     document.addEventListener('click', event => {
       const openButton = event.target.closest(openSelector);
       if (openButton) {
         event.preventDefault();
         event.stopPropagation();
-        state.active = getContext(openButton);
-        if (!state.active?.hiddenInput) return;
-        state.viewDate = new Date(`${state.active.hiddenInput.value || weekStartKey()}T00:00:00`);
-        render();
-        positionPopup(popup, openButton);
+        const context = getContext(openButton);
+        if (!context?.hiddenInput) return;
+        openAt(openButton, context);
         return;
       }
 
@@ -538,6 +545,8 @@ const BremDatePicker = (function () {
       if (!state.active) return;
       selectDate(state.active, weekStartKey());
     });
+
+    return { openAt, close };
   }
 
   return {

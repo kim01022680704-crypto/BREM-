@@ -1610,7 +1610,7 @@
     if (setupAdminWeekPicker.bound) return;
     setupAdminWeekPicker.bound = true;
 
-    BremDatePicker.setupWednesdayWeekDelegated({
+    window.BremAdminWednesdayWeekPicker = BremDatePicker.setupWednesdayWeekDelegated({
       popup: $('#adminWeekPickerCalendar'),
       daysContainer: $('#adminWeekPickerDays'),
       titleEl: $('#adminWeekPickerTitle'),

@@ -2375,9 +2375,10 @@
     if (keywordInput && keywordInput.value !== state.searchKeyword) keywordInput.value = state.searchKeyword;
   }
 
-  function beginUploadWeekEdit(uploadId) {
+  function beginUploadWeekEdit(uploadId, anchorButton) {
     const id = String(uploadId || '').trim();
-    if (!id) return;
+    const anchor = anchorButton instanceof Element ? anchorButton : null;
+    if (!id || !anchor) return;
     if (!canSavePayroll()) {
       showToast(state.storageStatus?.hint || '현재 환경에서는 정산주를 수정할 수 없습니다.');
       return;
@@ -2387,11 +2388,30 @@
       showToast('업로드 기록을 찾을 수 없습니다.');
       return;
     }
-    state.uploadEditId = id;
     const hidden = $('payrollUploadEditWeekStart');
+    if (!hidden) {
+      showToast('정산주 선택 UI를 찾을 수 없습니다. 페이지를 새로고침하세요.');
+      return;
+    }
+    const picker = window.BremAdminWednesdayWeekPicker;
+    if (!picker?.openAt) {
+      showToast('정산주 선택을 열 수 없습니다. 페이지를 새로고침하세요.');
+      return;
+    }
+    state.uploadEditId = id;
     const currentWeek = resolveUploadWeekKey(upload);
-    if (hidden) hidden.value = /^\d{4}-\d{2}-\d{2}$/.test(currentWeek) ? currentWeek : '';
-    $('payrollUploadEditWeekBtn')?.click();
+    hidden.value = /^\d{4}-\d{2}-\d{2}$/.test(currentWeek) ? currentWeek : '';
+    const opened = picker.openAt(anchor, {
+      hiddenInput: hidden,
+      labelEl: null,
+      onSelect(value) {
+        void applyUploadWeekEdit(value);
+      }
+    });
+    if (!opened) {
+      state.uploadEditId = '';
+      showToast('정산주 선택을 열 수 없습니다.');
+    }
   }
 
   async function applyUploadWeekEdit(weekStart) {
@@ -2616,7 +2636,9 @@
       }
       const editWeekBtn = event.target.closest('[data-payroll-edit-week]');
       if (editWeekBtn) {
-        beginUploadWeekEdit(editWeekBtn.dataset.payrollEditWeek);
+        event.preventDefault();
+        event.stopPropagation();
+        beginUploadWeekEdit(editWeekBtn.dataset.payrollEditWeek, editWeekBtn);
         return;
       }
       const deleteBtn = event.target.closest('[data-payroll-delete-upload]');
