@@ -1845,22 +1845,85 @@
     `;
   }
 
+  function formatStorageMenuCounts(byMenu = {}) {
+    const rider = Number(byMenu.rider_history || 0);
+    const daily = Number(byMenu.daily_history || 0);
+    const status = Number(byMenu.delivery_status || 0);
+    return `현황 ${formatNumber(status)} · 일별 ${formatNumber(daily)} · 라이더 ${formatNumber(rider)}`;
+  }
+
+  function renderStorageDiagnostics(config = {}) {
+    const diagnostics = config?.storageDiagnostics;
+    const bizEl = $('baeminStorageDiagnostics');
+    if (!bizEl) return;
+
+    if (!diagnostics?.ok) {
+      bizEl.hidden = true;
+      bizEl.innerHTML = '';
+      return;
+    }
+
+    const bizLine = formatStorageMenuCounts(diagnostics.biz?.byMenu);
+    const appliedLine = formatStorageMenuCounts(diagnostics.appliedSnapshot?.byMenu);
+    const riderRange = diagnostics.appliedSnapshot?.riderBusinessRange;
+    const rangeText = riderRange?.from && riderRange?.to
+      ? ` · 배달일 ${riderRange.from} ~ ${riderRange.to}`
+      : '';
+    const issue = diagnostics.issues?.[0];
+    const collectDates = Object.keys(diagnostics.biz?.byCollectDate || {}).sort().reverse().slice(0, 3);
+    const dateHint = collectDates.length
+      ? `<div class="form-help">BIZ 수집일: ${collectDates.map(date => {
+        const row = diagnostics.biz.byCollectDate[date];
+        const rider = Number(row?.byMenu?.rider_history || 0);
+        return `${date}(라이더 ${formatNumber(rider)})`;
+      }).join(' · ')}</div>`
+      : '';
+
+    bizEl.hidden = false;
+    bizEl.className = issue
+      ? 'baemin-applied-status baemin-applied-status--warn baemin-storage-diagnostics-wrap'
+      : 'baemin-applied-status baemin-applied-status--ok baemin-storage-diagnostics-wrap';
+    bizEl.innerHTML = `
+      <strong>Supabase 저장 현황</strong>
+      <div>BIZ 수집 — ${bizLine}</div>
+      <div>배민현황 저장 — ${appliedLine}${rangeText}</div>
+      ${dateHint}
+      ${issue ? `<div class="form-help form-help--warn">${escapeHtml(issue.message)}</div>` : ''}
+    `;
+  }
+
   function renderViewAppliedBanner(applied) {
     const banner = $('baeminStatusAppliedBanner');
     if (!banner) return;
 
     const data = applied || state.config?.applied;
+    const diagnostics = state.config?.storageDiagnostics;
     if (!data?.collectDate) {
       banner.hidden = false;
       banner.className = 'baemin-view-status-badge baemin-view-status-badge--warn';
-      banner.innerHTML = '저장 데이터 없음';
+      const issue = diagnostics?.issues?.find(item => item.code === 'NOT_APPLIED')
+        || diagnostics?.issues?.[0];
+      banner.innerHTML = issue
+        ? escapeHtml(issue.message)
+        : '저장 데이터 없음 — BIZ에서 [배민현황 저장]을 먼저 실행하세요.';
       renderDeliveryStatusMeta(null);
       return;
     }
 
+    const riderCount = Number(diagnostics?.appliedSnapshot?.byMenu?.rider_history || data.savedCount || 0);
+    const riderRange = diagnostics?.appliedSnapshot?.riderBusinessRange;
+    const rangeText = riderRange?.from && riderRange?.to
+      ? ` · 배달일 ${riderRange.from}~${riderRange.to}`
+      : '';
+    const issue = diagnostics?.issues?.[0];
+
     banner.hidden = false;
-    banner.className = 'baemin-view-status-badge baemin-view-status-badge--ok';
-    banner.textContent = 'Supabase 조회';
+    banner.className = issue
+      ? 'baemin-view-status-badge baemin-view-status-badge--warn'
+      : 'baemin-view-status-badge baemin-view-status-badge--ok';
+    banner.innerHTML = issue
+      ? `${escapeHtml(issue.message)}<br><span class="form-help">저장 라이더 ${formatNumber(riderCount)}건${rangeText}</span>`
+      : `Supabase 저장 · 라이더 ${formatNumber(riderCount)}건${rangeText}`;
     renderDeliveryStatusMeta(data);
   }
 
@@ -1885,6 +1948,7 @@
     }
 
     renderAppliedStatus(config);
+    renderStorageDiagnostics(config);
     syncDailyCollectRangeInputs(config?.dailyCollectRange || state.dailyCollectRange || null);
     syncRiderCollectRangeInputs(config?.riderCollectRange || state.riderCollectRange || null);
     if (isViewSection()) {
@@ -2461,10 +2525,12 @@
       applied: result.applied || null,
       baeminScope: result.baeminScope || null,
       riderCollectRange: result.riderCollectRange || null,
-      dailyCollectRange: result.dailyCollectRange || null
+      dailyCollectRange: result.dailyCollectRange || null,
+      storageDiagnostics: result.storageDiagnostics || null
     };
     state.canManageRegions = Boolean(result.canManageRegions);
     renderViewAppliedBanner(result.applied || null);
+    renderStorageDiagnostics(state.config);
     renderRegionRegistrationCard();
   }
 
@@ -2838,7 +2904,11 @@
       renderAppliedStatus(state.config);
       return;
     }
-    showToast(`배민현황 Supabase 저장 완료 — ${result.collectDate} · ${formatNumber(result.itemCount || result.savedCount || 0)}건 (DP코드 기준)`);
+    showToast(
+      `배민현황 Supabase 저장 완료 — ${result.collectDate} · ${formatNumber(result.itemCount || result.savedCount || 0)}건`
+      + `${result.byMenu?.rider_history ? ` · 라이더 ${formatNumber(result.byMenu.rider_history)}` : ''}`
+      + `${result.mergedAllDates ? ' · 전체 수집일 통합' : ''}`
+    );
     invalidateDataCache();
     await loadConfig();
     if (!isViewSection()) {

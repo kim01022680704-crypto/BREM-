@@ -539,8 +539,9 @@ async function getConfig(accessToken, options = {}) {
   const tableStatus = await getTableStatus();
   const { getBizCollectTableStatus } = require('./baemin-collect-pipeline');
   const bizTableStatus = await getBizCollectTableStatus();
-  const { readAppliedBaeminDelivery } = require('./baemin-collect-pipeline');
+  const { readAppliedBaeminDelivery, getBaeminStorageDiagnosticsForAdmin } = require('./baemin-collect-pipeline');
   const applied = await readAppliedBaeminDelivery();
+  const storageDiagnostics = await getBaeminStorageDiagnosticsForAdmin().catch(() => null);
 
   if (options.viewOnly) {
     const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');
@@ -559,7 +560,8 @@ async function getConfig(accessToken, options = {}) {
         isRegionalScoped: actor.scope.isRegionalScoped
       },
       riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null,
-      dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null
+      dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null,
+      storageDiagnostics: storageDiagnostics?.ok ? storageDiagnostics : null
     };
   }
 
@@ -594,7 +596,8 @@ async function getConfig(accessToken, options = {}) {
     autoCollect,
     menuStatus: autoCollect.menuStatus || [],
     riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null,
-    dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null
+    dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null,
+    storageDiagnostics: storageDiagnostics?.ok ? storageDiagnostics : null
   };
 }
 

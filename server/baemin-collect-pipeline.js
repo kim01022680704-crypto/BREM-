@@ -1992,21 +1992,19 @@ async function readAppliedBaeminDelivery() {
   };
 }
 
-async function applyBaeminDelivery(collectDate, options = {}) {
-  const date = String(collectDate || '').slice(0, 10);
-  if (!date) {
-    return { ok: false, status: 400, error: 'INVALID_DATE', message: '적용할 수집 날짜가 없습니다.' };
-  }
-
+async function loadBizCollectRowsForApply(preferredDate = '') {
   const supabase = getServiceClient();
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const { data: sourceRows, error: sourceError } = await supabase
+  const preferred = String(preferredDate || '').slice(0, 10);
+  const selectFields = 'collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json, raw_json';
+  const { data: allRows, error: sourceError } = await supabase
     .from('baemin_biz_collect_items')
-    .select('collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json, raw_json')
-    .eq('collect_date', date);
+    .select(selectFields)
+    .order('collected_at', { ascending: false })
+    .limit(50000);
 
   if (sourceError) {
     if (isMissingBizCollectTableError(sourceError)) {
@@ -2015,14 +2013,181 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     return { ok: false, error: sourceError.message || '조회 실패' };
   }
 
-  const rows = normalizeCollectRowsPartnerIdentity(sourceRows || []);
+  const deduped = new Map();
+  (allRows || []).forEach(row => {
+    const menu = String(row.source_menu || '').trim();
+    const dedupeKey = String(row.dedupe_key || '').trim();
+    if (!menu || !dedupeKey) return;
+    const key = `${menu}|${dedupeKey}`;
+    if (!deduped.has(key)) deduped.set(key, row);
+  });
+
+  const rows = normalizeCollectRowsPartnerIdentity(Array.from(deduped.values()));
+  const preferredCount = preferred
+    ? (allRows || []).filter(row => String(row.collect_date || '').slice(0, 10) === preferred).length
+    : 0;
+  const byMenu = {};
+  rows.forEach(row => {
+    const menu = String(row.source_menu || 'unknown');
+    byMenu[menu] = (byMenu[menu] || 0) + 1;
+  });
+
+  const effectiveCollectDate = preferred
+    || rows.reduce((latest, row) => {
+      const value = String(row.collect_date || '').slice(0, 10);
+      return value > latest ? value : latest;
+    }, '')
+    || todayKST();
+
+  return {
+    ok: true,
+    rows,
+    effectiveCollectDate,
+    mergedAllDates: !preferred || preferredCount < rows.length,
+    preferredDate: preferred,
+    preferredDateCount: preferredCount,
+    totalMerged: rows.length,
+    byMenu
+  };
+}
+
+async function countAppliedItemsByMenu(batchId) {
+  const supabase = getServiceClient();
+  const byMenu = { delivery_status: 0, daily_history: 0, rider_history: 0 };
+  if (!supabase || !batchId) return byMenu;
+
+  await Promise.all(Object.keys(byMenu).map(async menu => {
+    const { count, error } = await supabase
+      .from('baemin_delivery_applied_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('batch_id', batchId)
+      .eq('source_menu', menu);
+    byMenu[menu] = error ? -1 : Number(count || 0);
+  }));
+  return byMenu;
+}
+
+async function summarizeBizCollectDates(supabase) {
+  const summary = {};
+  if (!supabase) return summary;
+  const { data, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .select('collect_date, source_menu')
+    .order('collect_date', { ascending: false })
+    .limit(20000);
+  if (error) return summary;
+
+  (data || []).forEach(row => {
+    const date = String(row.collect_date || '').slice(0, 10);
+    const menu = String(row.source_menu || 'unknown');
+    if (!date) return;
+    if (!summary[date]) summary[date] = { total: 0, byMenu: {} };
+    summary[date].total += 1;
+    summary[date].byMenu[menu] = (summary[date].byMenu[menu] || 0) + 1;
+  });
+  return summary;
+}
+
+async function getAppliedRiderBusinessRange(batchId) {
+  const supabase = getServiceClient();
+  if (!supabase || !batchId) return null;
+
+  const { data, error } = await supabase
+    .from('baemin_delivery_applied_items')
+    .select('dedupe_key, parsed_json')
+    .eq('batch_id', batchId)
+    .eq('source_menu', 'rider_history')
+    .limit(10000);
+  if (error) return null;
+
+  const dates = (data || []).map(row => resolveRiderBusinessDate(row)).filter(Boolean).sort();
+  if (!dates.length) return { count: 0, from: null, to: null };
+  return { count: dates.length, from: dates[0], to: dates[dates.length - 1] };
+}
+
+async function getBaeminStorageDiagnosticsForAdmin() {
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const bizTableStatus = await getBizCollectTableStatus();
+  const applied = await readAppliedBaeminDelivery();
+  const [bizByCollectDate, bizLoaded, appliedByMenu, riderRange] = await Promise.all([
+    summarizeBizCollectDates(supabase),
+    loadBizCollectRowsForApply(applied?.collectDate || ''),
+    countAppliedItemsByMenu(applied?.batchId || ''),
+    getAppliedRiderBusinessRange(applied?.batchId || '')
+  ]);
+
+  const bizByMenu = bizLoaded.ok ? (bizLoaded.byMenu || {}) : {};
+  const bizTotal = Object.values(bizByMenu).reduce((sum, count) => sum + (Number(count) > 0 ? Number(count) : 0), 0);
+  const appliedTotal = Object.values(appliedByMenu).reduce((sum, count) => sum + (Number(count) > 0 ? Number(count) : 0), 0);
+
+  const issues = [];
+  if (!bizTableStatus.tableExists) {
+    issues.push({
+      code: 'BIZ_TABLE_MISSING',
+      message: 'baemin_biz_collect_items 테이블이 없습니다. supabase/baemin_all_migrations.sql 을 실행하세요.'
+    });
+  }
+  if (!applied?.batchId) {
+    issues.push({
+      code: 'NOT_APPLIED',
+      message: '배민 BIZ에서 [배민현황 저장]을 실행하지 않았습니다. 수집만으로는 배민현황에 표시되지 않습니다.'
+    });
+  } else if ((bizByMenu.rider_history || 0) > 0 && (appliedByMenu.rider_history || 0) === 0) {
+    issues.push({
+      code: 'RIDER_NOT_APPLIED',
+      message: `BIZ 수집 라이더 ${bizByMenu.rider_history}건이 있으나 배민현황 저장에는 0건입니다. [배민현황 저장]을 다시 실행하세요.`
+    });
+  } else if ((bizByMenu.rider_history || 0) > (appliedByMenu.rider_history || 0)) {
+    issues.push({
+      code: 'RIDER_APPLY_STALE',
+      message: `BIZ 라이더 ${bizByMenu.rider_history}건 · 저장 ${appliedByMenu.rider_history}건 — 최신 수집 반영을 위해 [배민현황 저장]을 다시 실행하세요.`
+    });
+  }
+
+  return {
+    ok: true,
+    bizTableExists: bizTableStatus.tableExists === true,
+    applied: applied || null,
+    biz: {
+      total: bizTotal,
+      byMenu: bizByMenu,
+      byCollectDate: bizByCollectDate,
+      mergedTotal: bizLoaded.totalMerged || 0
+    },
+    appliedSnapshot: {
+      total: appliedTotal,
+      byMenu: appliedByMenu,
+      riderBusinessRange: riderRange
+    },
+    issues
+  };
+}
+
+async function applyBaeminDelivery(collectDate, options = {}) {
+  const preferredDate = String(collectDate || '').slice(0, 10);
+
+  const loaded = await loadBizCollectRowsForApply(preferredDate);
+  if (!loaded.ok) return loaded;
+
+  const rows = loaded.rows || [];
   if (!rows.length) {
+    const hintDate = preferredDate || todayKST();
     return {
       ok: false,
       status: 400,
       error: 'NO_COLLECT_DATA',
-      message: `${date} 수집 데이터가 없습니다. [배민 전체 데이터 수집] 후 미리보기를 확인하고 다시 적용하세요.`
+      message: `${hintDate} 포함 Supabase 수집 데이터가 없습니다. BIZ에서 라이더 수집 후 [배민현황 저장]을 실행하세요.`
     };
+  }
+
+  const date = loaded.effectiveCollectDate;
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
   const appliedAt = new Date().toISOString();
@@ -2101,7 +2266,11 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     appliedAt,
     collectedAt: collectedAt || null,
     savedCount: rows.length,
-    appliedBy
+    appliedBy,
+    byMenu: loaded.byMenu || {},
+    mergedAllDates: loaded.mergedAllDates === true,
+    preferredDate: loaded.preferredDate || '',
+    preferredDateCount: loaded.preferredDateCount || 0
   };
   const saved = await writeSettingsValue(
     BAEMIN_APPLIED_SETTINGS_KEY,
@@ -3082,7 +3251,7 @@ function normalizeCollectItemsForAdmin(rows, sourceMenu, partnerId = '') {
     });
   }
 
-  if (sourceMenu === 'rider_history' || sourceMenu === 'delivery_status') {
+  if (sourceMenu === 'delivery_status') {
     const byRider = new Map();
     items.forEach(row => {
       const identity = riderIdentityKey(row);
@@ -3537,5 +3706,6 @@ module.exports = {
   purgeBizCollectDate,
   readAppliedBaeminDelivery,
   applyBaeminDelivery,
+  getBaeminStorageDiagnosticsForAdmin,
   BAEMIN_APPLIED_SETTINGS_KEY
 };
