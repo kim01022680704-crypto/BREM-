@@ -1712,6 +1712,16 @@
           };
         }
 
+        if (triggerId === 'payroll-upload-edit') {
+          return {
+            hiddenInput: $('#payrollUploadEditWeekStart'),
+            labelEl: null,
+            onSelect(value) {
+              void window.BremAdminPayrollSlips?.handleUploadEditWeekSelect?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-publish') {
           return {
             hiddenInput: $('#payrollPublishWeekStart'),

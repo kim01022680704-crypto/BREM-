@@ -36,6 +36,7 @@
     defaultDailySettlementApply: true,
     publishWeekStart: '',
     publishPaymentDateTouched: false,
+    uploadEditId: '',
     driverPickerSearch: {}
   };
 
@@ -775,6 +776,22 @@
     return utils.matchesPayPeriodFilter(itemWeek, normalizedSearch);
   }
 
+  function summarizeOtherSettlementWeeks(weekStart) {
+    const normalized = utils.normalizeSettlementWeekStart(weekStart);
+    if (!normalized) return '';
+    const counts = new Map();
+    lines.getAll().forEach(item => {
+      const itemWeek = resolveLineWeekKey(item);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(itemWeek) || itemWeek === normalized) return;
+      counts.set(itemWeek, (counts.get(itemWeek) || 0) + 1);
+    });
+    if (!counts.size) return '';
+    const parts = [...counts.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, count]) => `${formatPeriodLabel(key)} ${count}건`);
+    return ` 다른 정산주에 저장됨: ${parts.join(', ')}. 업로드 기록에서 「정산주 수정」을 사용하세요.`;
+  }
+
   function isWednesdayDateKey(dateKey) {
     const normalized = utils.normalizeSettlementWeekStart(dateKey);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
@@ -889,7 +906,8 @@
       if (status.columnMissing) {
         statusEl.textContent = 'DB 마이그레이션 필요: supabase/payroll_rider_publish_migration.sql';
       } else if (!status.totalLines && !status.totalNotices) {
-        statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 저장된 급여명세서·공지가 없습니다.`;
+        const otherHint = summarizeOtherSettlementWeeks(weekStart);
+        statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 저장된 급여명세서·공지가 없습니다.${otherHint}`;
       } else if (status.pendingTotal > 0) {
         statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 미반영 ${status.pendingTotal}건 (명세 ${status.pendingLines} · 공지 ${status.pendingNotices})`;
       } else if (status.lastPublishedAt) {
@@ -924,7 +942,10 @@
     }
     const status = BremStorage.payrollPublish?.countPendingForWeek?.(weekStart);
     if (!status?.totalLines && !status?.totalNotices) {
-      showToast('해당 정산주에 저장된 급여명세서·공지가 없습니다.');
+      const otherHint = summarizeOtherSettlementWeeks(weekStart);
+      showToast(otherHint
+        ? `선택 정산주에 명세가 없습니다.${otherHint}`
+        : '해당 정산주에 저장된 급여명세서·공지가 없습니다.');
       return;
     }
     const ok = window.confirm(
@@ -2220,6 +2241,9 @@
         <td>${escapeHtml(item.uploadedBy || '-')}</td>
         <td>
           <button type="button" class="small-btn" data-payroll-view-upload="${escapeHtml(item.id)}">보기</button>
+          ${canSavePayroll()
+            ? `<button type="button" class="small-btn" data-payroll-edit-week="${escapeHtml(item.id)}">정산주 수정</button>`
+            : ''}
           ${canDeletePayroll()
             ? `<button type="button" class="small-btn danger-btn" data-payroll-delete-upload="${escapeHtml(item.id)}">삭제</button>`
             : ''}
@@ -2349,6 +2373,80 @@
     syncPayrollListSearchWeekUI(state.searchSettlementWeekStart);
     const keywordInput = $('payrollSearchKeyword');
     if (keywordInput && keywordInput.value !== state.searchKeyword) keywordInput.value = state.searchKeyword;
+  }
+
+  function beginUploadWeekEdit(uploadId) {
+    const id = String(uploadId || '').trim();
+    if (!id) return;
+    if (!canSavePayroll()) {
+      showToast(state.storageStatus?.hint || '현재 환경에서는 정산주를 수정할 수 없습니다.');
+      return;
+    }
+    const upload = uploads.getAll().find(item => item.id === id);
+    if (!upload) {
+      showToast('업로드 기록을 찾을 수 없습니다.');
+      return;
+    }
+    state.uploadEditId = id;
+    const hidden = $('payrollUploadEditWeekStart');
+    const currentWeek = resolveUploadWeekKey(upload);
+    if (hidden) hidden.value = /^\d{4}-\d{2}-\d{2}$/.test(currentWeek) ? currentWeek : '';
+    $('payrollUploadEditWeekBtn')?.click();
+  }
+
+  async function applyUploadWeekEdit(weekStart) {
+    const uploadId = String(state.uploadEditId || '').trim();
+    state.uploadEditId = '';
+    if (!uploadId) return;
+
+    const settlementWeekStart = utils.normalizeSettlementWeekStart(weekStart);
+    if (!settlementWeekStart || !isWednesdayDateKey(settlementWeekStart)) {
+      showToast('정산주는 수요일 시작일만 선택할 수 있습니다.');
+      return;
+    }
+
+    const upload = uploads.getAll().find(item => item.id === uploadId);
+    if (!upload) {
+      showToast('업로드 기록을 찾을 수 없습니다.');
+      return;
+    }
+
+    const previousWeek = resolveUploadWeekKey(upload);
+    if (previousWeek === settlementWeekStart) {
+      showToast('이미 같은 정산주입니다.');
+      return;
+    }
+
+    const settlementWeekEnd = utils.settlementWeekEnd(settlementWeekStart);
+    const settlementWeekLabel = utils.formatSettlementWeekLabel(settlementWeekStart);
+    const ok = window.confirm(
+      `이 업로드 배치의 정산주를 변경할까요?\n\n`
+      + `현재: ${formatPeriodLabel(previousWeek)}\n`
+      + `변경: ${settlementWeekLabel}\n\n`
+      + `연결된 명세 ${Number(upload.rowCount || 0).toLocaleString('ko-KR')}건의 정산주가 함께 바뀌며, 반영 상태는 초기화됩니다.`
+    );
+    if (!ok) return;
+
+    try {
+      const result = await uploads.updateSettlementWeek(uploadId, settlementWeekStart, {
+        settlementWeekEnd,
+        settlementWeekLabel
+      });
+      syncPayrollListSearchWeekUI(settlementWeekStart);
+      syncPublishWeekUI(settlementWeekStart);
+      await refresh({ loadRemote: true });
+      void refreshPublishStatus();
+      showToast(
+        `정산주 수정 완료 · ${settlementWeekLabel} · ${Number(result.linesUpdated || 0).toLocaleString('ko-KR')}건`
+      );
+    } catch (error) {
+      console.error('[payroll edit upload week]', error);
+      showToast(error?.message || '정산주 수정에 실패했습니다.');
+    }
+  }
+
+  function handleUploadEditWeekSelect(weekStart) {
+    void applyUploadWeekEdit(weekStart);
   }
 
   async function deleteUpload(uploadId) {
@@ -2516,6 +2614,11 @@
         renderLineList();
         return;
       }
+      const editWeekBtn = event.target.closest('[data-payroll-edit-week]');
+      if (editWeekBtn) {
+        beginUploadWeekEdit(editWeekBtn.dataset.payrollEditWeek);
+        return;
+      }
       const deleteBtn = event.target.closest('[data-payroll-delete-upload]');
       if (deleteBtn) {
         void deleteUpload(deleteBtn.dataset.payrollDeleteUpload);
@@ -2562,6 +2665,7 @@
     handleSettlementWeekChange,
     handlePayrollListWeekChange,
     handlePublishWeekChange,
+    handleUploadEditWeekSelect,
     refreshPublishStatus
   };
 })();

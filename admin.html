@@ -4457,6 +4457,8 @@
               </div>
             </div>
             <p class="payroll-week-range" id="payrollSettlementWeekRange">수요일~화요일(7일) 기준 · 「정산주 선택」에서 수요일만 고르세요</p>
+            <input type="hidden" id="payrollUploadEditWeekStart">
+            <button type="button" class="week-picker-trigger" data-week-picker-trigger="payroll-upload-edit" id="payrollUploadEditWeekBtn" hidden aria-hidden="true">정산주 수정</button>
             <label class="bulk-file-field payroll-bulk-file payroll-main-file">
               <span class="bulk-file-label">급여 엑셀 선택</span>
               <input type="file" id="payrollFileInput" accept=".xlsx,.xls">
@@ -5089,7 +5091,7 @@
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260704c"></script>
-  <script src="js/admin-payroll-slips.js?v=20260703c"></script>
+  <script src="js/admin-payroll-slips.js?v=20260706a"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260704f"></script>
   <script src="js/mission-promotion-catalog.js?v=20260623m"></script>

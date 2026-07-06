@@ -6043,6 +6043,67 @@ const BremStorage = (function () {
       const removedIds = current.filter(item => idSet.has(item.id)).map(item => item.id);
       const list = current.filter(item => !idSet.has(item.id));
       await payrollSlipUploads.persistList(list, { deletedRowIds: removedIds });
+    },
+
+    async updateSettlementWeek(uploadId, settlementWeekStart, meta = {}) {
+      const id = String(uploadId || '').trim();
+      const weekStart = String(settlementWeekStart || '').trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+        throw new Error('정산주(수요일 시작)가 올바르지 않습니다.');
+      }
+      const weekEnd = String(meta.settlementWeekEnd || '').trim().slice(0, 10);
+      const weekLabel = String(meta.settlementWeekLabel || '').trim();
+      const payMonth = normalizePayrollPayMonth(weekStart);
+      const now = new Date().toISOString();
+
+      const uploadsList = payrollSlipUploads.getAll();
+      const uploadIndex = uploadsList.findIndex(item => item.id === id);
+      if (uploadIndex < 0) throw new Error('업로드 기록을 찾을 수 없습니다.');
+
+      const upload = uploadsList[uploadIndex];
+      const previousWeekStart = String(upload?.rawSummary?.settlementWeekStart || upload?.payMonth || '').slice(0, 10);
+      const updatedUpload = {
+        ...upload,
+        payMonth,
+        rawSummary: {
+          ...(upload.rawSummary && typeof upload.rawSummary === 'object' ? upload.rawSummary : {}),
+          settlementWeekStart: weekStart,
+          settlementWeekEnd: weekEnd,
+          settlementWeekLabel: weekLabel
+        },
+        updatedAt: now
+      };
+      uploadsList[uploadIndex] = updatedUpload;
+
+      const linesList = payrollSlipLines.getAll();
+      const updatedLines = [];
+      const nextLines = linesList.map(line => {
+        if (line.uploadId !== id) return line;
+        const rawData = line.rawData && typeof line.rawData === 'object' ? { ...line.rawData } : {};
+        const next = {
+          ...line,
+          payMonth,
+          riderPublishedAt: null,
+          rawData: {
+            ...rawData,
+            settlementWeekStart: weekStart,
+            settlementWeekEnd: weekEnd,
+            settlementWeekLabel: weekLabel
+          },
+          updatedAt: now
+        };
+        updatedLines.push(next);
+        return next;
+      });
+
+      await payrollSlipLines.persistList(nextLines, { incrementalRows: updatedLines });
+      await payrollSlipUploads.persistList(uploadsList, { incrementalRows: [updatedUpload] });
+      return {
+        upload: updatedUpload,
+        linesUpdated: updatedLines.length,
+        previousWeekStart,
+        settlementWeekStart: weekStart
+      };
     }
   };
 
