@@ -331,12 +331,34 @@
         ? `조회 ${formatViewWeekRangeLabel(weekStart)}`
         : '';
     }
+    syncRiderDateRangeInputs(weekStart);
+  }
+
+  function syncRiderDateRangeInputs(weekStart = state.viewWeekStart) {
+    const range = computeViewWeekQueryRange(weekStart || ensureViewWeekStart());
+    const fromEl = $('baeminStatusRiderFromDate');
+    const toEl = $('baeminStatusRiderToDate');
+    if (fromEl && !fromEl.dataset.touched) fromEl.value = range.fromDate;
+    if (toEl && !toEl.dataset.touched) toEl.value = range.toDate;
+  }
+
+  function resolveRiderViewDateRange() {
+    const fromInput = String($('baeminStatusRiderFromDate')?.value || state.riderViewFromDate || '').slice(0, 10);
+    const toInput = String($('baeminStatusRiderToDate')?.value || state.riderViewToDate || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromInput) && /^\d{4}-\d{2}-\d{2}$/.test(toInput) && toInput >= fromInput) {
+      return { fromDate: fromInput, toDate: toInput };
+    }
+    return computeViewWeekQueryRange(ensureViewWeekStart());
   }
 
   function handleWeekSelect(value) {
     if (!isViewSection()) return;
     const normalized = window.BremDatePicker?.applyWeekWednesday?.(value) || String(value || '').slice(0, 10);
     state.viewWeekStart = normalized;
+    const fromEl = $('baeminStatusRiderFromDate');
+    const toEl = $('baeminStatusRiderToDate');
+    if (fromEl) delete fromEl.dataset.touched;
+    if (toEl) delete toEl.dataset.touched;
     syncViewWeekPicker();
     invalidateDataCache();
     state.activePartnerId = '';
@@ -364,8 +386,10 @@
       || state.activeMenu === 'rider_history'
       || state.activeMenu === 'quota_achievement';
     const showWeekLoad = state.activeMenu === 'daily_history' || state.activeMenu === 'rider_history';
+    const riderRangeRow = $('baeminStatusRiderRangeRow');
     if (row) row.hidden = !showWeek;
     if (weekLoadBtn) weekLoadBtn.hidden = !showWeekLoad;
+    if (riderRangeRow) riderRangeRow.hidden = state.activeMenu !== 'rider_history';
     if (showWeek) syncViewWeekPicker();
   }
 
@@ -506,43 +530,16 @@
     };
   }
 
-  function renderRiderHistoryDayRows(partnerId, days, meta = {}) {
-    const summaryEl = $('baeminStatusRiderHistorySummary');
-    const rowsEl = $('baeminStatusRiderHistoryRows');
-    if (!rowsEl) return;
-
-    const partnerLabel = partnerDisplayLabel(state.partners.find(partner => normalizePartnerId(partner.partnerId) === normalizePartnerId(partnerId)));
+  function renderRiderHistoryRiderRows(partnerId, riders, meta = {}) {
     const fromDate = meta.fromDate || state.riderViewFromDate || '';
     const toDate = meta.toDate || state.riderViewToDate || '';
-    const filledDays = (days || []).filter(day => !day.empty).length;
-
-    if (summaryEl) {
-      summaryEl.textContent = fromDate && toDate
-        ? `${partnerLabel} · ${fromDate} ~ ${toDate} · ${formatNumber(filledDays)}일 데이터`
-        : `${partnerLabel} · 라이더 내역 없음`;
-    }
-
-    if (!days?.length) {
-      rowsEl.innerHTML = '<tr><td colspan="10" class="form-help">기간 내 데이터가 없습니다.</td></tr>';
-      return;
-    }
-
-    rowsEl.innerHTML = days.map(day => {
-      if (day.empty) {
-        return `<tr class="baemin-rider-empty"><td>${escapeHtml(day.date)}</td><td colspan="9" class="form-help">이날 데이터없음</td></tr>`;
-      }
-      const p = totalsToParsed(day.totals || {});
-      return `<tr>
-        <td>${escapeHtml(day.date)}</td>
-        <td>${formatNumber(day.riderCount || 0)}명</td>
-        <td>${formatNumber(p.totalComplete || 0)}</td>
-        ${formatServiceBreakdownCells(p)}
-        <td>${formatNumber(p.morningCount || 0)}</td>
-        <td>${formatNumber(p.afternoonCount || 0)}</td>
-        <td>${formatNumber(p.eveningCount || 0)}</td>
-        <td>${formatNumber(p.midnightCount || 0)}</td>
-      </tr>`;
-    }).join('');
+    state.riderViewFromDate = fromDate;
+    state.riderViewToDate = toDate;
+    renderSubtabRows('rider_history', partnerId, riders || [], {
+      ...meta,
+      weekStart: fromDate,
+      weekEnd: toDate
+    });
   }
 
   async function loadViewWeekMenuData() {
@@ -557,7 +554,9 @@
     if (menu !== 'daily_history' && menu !== 'rider_history') return;
 
     const weekStart = ensureViewWeekStart();
-    const range = computeViewWeekQueryRange(weekStart);
+    const range = menu === 'rider_history'
+      ? resolveRiderViewDateRange()
+      : computeViewWeekQueryRange(weekStart);
     const loadBtn = $('baeminStatusWeekLoadBtn');
     loadBtn?.classList.add('is-loading');
     if (loadBtn) loadBtn.textContent = '불러오는 중…';
@@ -583,9 +582,9 @@
       if (!result.ok) {
         showToast(result.message || '라이더별 배달내역 불러오기에 실패했습니다.');
       } else if (result.notApplied) {
-        renderRiderHistoryDayRows(partnerId, result.days || [], range);
+        renderRiderHistoryRiderRows(partnerId, [], range);
         showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
-      } else if (!result.count) {
+      } else if (!result.riderCount && !result.count) {
         const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
         cached.rider_history = [];
         cached.rider_days = result.days || [];
@@ -597,11 +596,11 @@
           riderLoaded: true
         };
         setCachedPartnerBundle(partnerId, cached);
-        renderRiderHistoryDayRows(partnerId, cached.rider_days, range);
-        showToast(result.hint || `선택 정산주 ${range.fromDate}~${range.toDate}에 라이더 데이터 없음`);
+        renderRiderHistoryRiderRows(partnerId, [], range);
+        showToast(result.hint || `선택 기간 ${range.fromDate}~${range.toDate}에 라이더 데이터 없음`);
       } else {
         const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
-        cached.rider_history = result.items || [];
+        cached.rider_history = result.riders || [];
         cached.rider_days = result.days || [];
         cached.meta = {
           ...(cached.meta || {}),
@@ -611,8 +610,8 @@
           riderLoaded: true
         };
         setCachedPartnerBundle(partnerId, cached);
-        renderRiderHistoryDayRows(partnerId, cached.rider_days, range);
-        showToast(`라이더별 배달내역 ${range.fromDate} ~ ${range.toDate} · ${formatNumber(result.count)}건`);
+        renderRiderHistoryRiderRows(partnerId, cached.rider_history, range);
+        showToast(`라이더별 배달내역 ${range.fromDate} ~ ${range.toDate} · ${formatNumber(result.riderCount || 0)}명 · 완료 ${formatNumber(result.totals?.completeTotal || 0)}건`);
       }
     }
 
@@ -899,17 +898,17 @@
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
-    if (menu === 'rider_history' && cached.rider_days?.length) {
-      renderRiderHistoryDayRows(partnerId, cached.rider_days, {
-        fromDate: cached.meta?.riderFromDate || computeViewWeekQueryRange().fromDate,
-        toDate: cached.meta?.riderToDate || computeViewWeekQueryRange().toDate
+    if (menu === 'rider_history' && cached.rider_history?.length) {
+      renderRiderHistoryRiderRows(partnerId, cached.rider_history, {
+        fromDate: cached.meta?.riderFromDate || resolveRiderViewDateRange().fromDate,
+        toDate: cached.meta?.riderToDate || resolveRiderViewDateRange().toDate
       });
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
     if (menu === 'rider_history') {
-      const range = computeViewWeekQueryRange();
-      renderRiderHistoryDayRows(partnerId, [], range);
+      const range = resolveRiderViewDateRange();
+      renderRiderHistoryRiderRows(partnerId, [], range);
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
@@ -1539,7 +1538,8 @@
       { tbodyId: 'baeminBizDailyHistoryRows', menu: 'daily_history', collected: true },
       { tbodyId: 'baeminBizRiderHistoryRows', menu: 'rider_history', collected: true },
       { tbodyId: 'baeminStatusDeliveryStatusRows', menu: 'delivery_status', collected: false },
-      { tbodyId: 'baeminStatusDailyHistoryRows', menu: 'daily_history', collected: false }
+      { tbodyId: 'baeminStatusDailyHistoryRows', menu: 'daily_history', collected: false },
+      { tbodyId: 'baeminStatusRiderHistoryRows', menu: 'rider_history', collected: false }
     ];
     tableMap.forEach(({ tbodyId, menu, collected }) => {
       const tbody = $(tbodyId);
@@ -2740,8 +2740,8 @@
           ? `${partnerLabel} · 최신 적용 스냅샷 · ${formatNumber(items.length)}건`
           : `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
       } else if (rangeLabel) {
-        const periodHint = sourceMenu === 'rider_history' ? ' · 완료=기간 합계' : '';
-        summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${formatNumber(items.length)}건${periodHint}`;
+        const periodHint = sourceMenu === 'rider_history' ? ' · 기간 합계' : '';
+        summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${formatNumber(items.length)}명${periodHint}`;
       } else {
         summaryEl.textContent = `${partnerLabel} · ${captureDate} · ${formatNumber(items.length)}건`;
       }
@@ -3065,6 +3065,14 @@
 
     $('baeminStatusWeekLoadBtn')?.addEventListener('click', () => {
       void loadViewWeekMenuData();
+    });
+    $('baeminStatusRiderFromDate')?.addEventListener('change', event => {
+      event.target.dataset.touched = '1';
+      state.riderViewFromDate = String(event.target.value || '').slice(0, 10);
+    });
+    $('baeminStatusRiderToDate')?.addEventListener('change', event => {
+      event.target.dataset.touched = '1';
+      state.riderViewToDate = String(event.target.value || '').slice(0, 10);
     });
 
     $('baeminDailyCollectBtn')?.addEventListener('click', () => {

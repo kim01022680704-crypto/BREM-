@@ -884,7 +884,18 @@
               </label>
               <span id="baeminStatusWeekStartLabel" class="baemin-view-week__date"></span>
               <span id="baeminStatusWeekRangeLabel" class="baemin-view-week__range"></span>
-              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusWeekLoadBtn" hidden>정산주 데이터 불러오기</button>
+              <div id="baeminStatusRiderRangeRow" class="baemin-view-range" hidden>
+                <label class="admin-period-field baemin-view-range__field">
+                  <span class="baemin-field__label">시작일</span>
+                  <input type="date" class="admin-period-input" id="baeminStatusRiderFromDate">
+                </label>
+                <label class="admin-period-field baemin-view-range__field">
+                  <span class="baemin-field__label">종료일</span>
+                  <input type="date" class="admin-period-input" id="baeminStatusRiderToDate">
+                </label>
+                <span class="form-help">BIZ와 동일 · 기사별 기간 합계</span>
+              </div>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusWeekLoadBtn" hidden>기간 데이터 불러오기</button>
             </div>
           </div>
         </div>
@@ -961,7 +972,7 @@
             <div class="card-header baemin-view-data-card__header">
               <div>
                 <h2>라이더별 배달내역</h2>
-                <p class="form-help">선택 기간 · 날짜별 기사 합계 · Supabase 저장 데이터</p>
+                <p class="form-help">기간 선택 → 기사별 완료·거절·시간대 합계 (BIZ 라이더별 현황과 동일)</p>
               </div>
               <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusRiderHistorySummary">기간을 선택하고 라이더 내역 불러오기를 눌러 주세요</p>
             </div>
@@ -5073,7 +5084,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260706c"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260706d"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

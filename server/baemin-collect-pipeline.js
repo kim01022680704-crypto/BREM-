@@ -3550,6 +3550,76 @@ function groupStatsRowsByPartner(rows, menu, allowed, catalog, regionMap) {
   return map;
 }
 
+function mergeRiderParsedMetrics(target, source = {}) {
+  const breakdown = serviceBreakdownFromStats({
+    ...source,
+    rejectTotal: source.totalReject,
+    cancelTotal: source.cancelCount,
+    totalRiderFault: source.riderFault
+  });
+  target.totalComplete = num(target.totalComplete) + num(source.totalComplete);
+  target.totalReject = num(target.totalReject) + num(breakdown.totalReject);
+  target.cancelCount = num(target.cancelCount) + num(breakdown.cancelCount);
+  target.riderFault = num(target.riderFault) + num(breakdown.riderFault);
+  target.foodReject = num(target.foodReject) + num(breakdown.foodReject);
+  target.bmartReject = num(target.bmartReject) + num(breakdown.bmartReject);
+  target.storeReject = num(target.storeReject) + num(breakdown.storeReject);
+  target.foodCancel = num(target.foodCancel) + num(breakdown.foodCancel);
+  target.bmartCancel = num(target.bmartCancel) + num(breakdown.bmartCancel);
+  target.storeCancel = num(target.storeCancel) + num(breakdown.storeCancel);
+  target.foodRiderFault = num(target.foodRiderFault) + num(breakdown.foodRiderFault);
+  target.bmartRiderFault = num(target.bmartRiderFault) + num(breakdown.bmartRiderFault);
+  target.storeRiderFault = num(target.storeRiderFault) + num(breakdown.storeRiderFault);
+  target.morningCount = num(target.morningCount) + num(source.morningCount);
+  target.afternoonCount = num(target.afternoonCount) + num(source.afternoonCount);
+  target.eveningCount = num(target.eveningCount) + num(source.eveningCount);
+  target.midnightCount = num(target.midnightCount) + num(source.midnightCount);
+}
+
+function aggregateRiderHistoryByRider(items) {
+  const byRider = new Map();
+  (items || []).forEach(row => {
+    const identity = riderIdentityKey(row)
+      || [row.rider_user_id, row.rider_name, row.phone_number].filter(Boolean).join('|');
+    if (!identity) return;
+    if (!byRider.has(identity)) {
+      byRider.set(identity, {
+        rider_name: row.rider_name || '',
+        rider_user_id: row.rider_user_id || '',
+        phone_number: row.phone_number || '',
+        parsed_json: {
+          totalComplete: 0,
+          totalReject: 0,
+          cancelCount: 0,
+          riderFault: 0,
+          foodReject: 0,
+          bmartReject: 0,
+          storeReject: 0,
+          foodCancel: 0,
+          bmartCancel: 0,
+          storeCancel: 0,
+          foodRiderFault: 0,
+          bmartRiderFault: 0,
+          storeRiderFault: 0,
+          morningCount: 0,
+          afternoonCount: 0,
+          eveningCount: 0,
+          midnightCount: 0
+        },
+        activeDays: 0
+      });
+    }
+    const agg = byRider.get(identity);
+    if (row.rider_name) agg.rider_name = row.rider_name;
+    if (row.rider_user_id) agg.rider_user_id = row.rider_user_id;
+    if (row.phone_number) agg.phone_number = row.phone_number;
+    mergeRiderParsedMetrics(agg.parsed_json, row.parsed_json || {});
+    agg.activeDays += 1;
+  });
+  return Array.from(byRider.values())
+    .sort((a, b) => String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko'));
+}
+
 function buildRiderHistoryDaySeries(items, fromDate, toDate) {
   const { addDays } = require('./baemin-settlement-week');
   const byDate = new Map();
@@ -3608,6 +3678,8 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
       toDate,
       partnerId: partnerId || null,
       items: [],
+      riders: [],
+      riderCount: 0,
       days: buildRiderHistoryDaySeries([], fromDate, toDate),
       count: 0,
       notApplied: true,
@@ -3673,14 +3745,17 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   });
 
   const days = buildRiderHistoryDaySeries(items, fromDate, toDate);
+  const riders = aggregateRiderHistoryByRider(items);
   return {
     ok: true,
     fromDate,
     toDate,
     partnerId: partnerId || null,
     items,
+    riders,
     days,
     count: items.length,
+    riderCount: riders.length,
     totalSaved: scopedItems.length,
     hint,
     appliedOnly: true,
