@@ -1068,8 +1068,8 @@
     const prog = formatProgress(actual, target);
     const achieved = prog.percent >= 100;
     const statusClass = achieved
-      ? ' baemin-quota-cell__status--achieved'
-      : ' baemin-quota-cell__status--missed';
+      ? ' baemin-quota-tag--achieved'
+      : ' baemin-quota-tag--missed';
     const percentClass = achieved
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
@@ -1077,7 +1077,7 @@
       <div class="baemin-quota-cell__value">${escapeHtml(prog.label)}</div>
       <div class="baemin-quota-cell__meta">
         <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
-        <span class="baemin-quota-cell__status${statusClass}">${achieved ? '달성' : '미달성'}</span>
+        <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
       </div>
     </td>`;
   }
@@ -1086,22 +1086,31 @@
     const row = $('baeminStatusSetCountRow');
     const input = $('baeminStatusSetCount');
     const meta = $('baeminStatusSetCountMeta');
+    const labelEl = $('baeminStatusSetCountLabel');
     if (!row || !isViewSection()) return;
     const pid = normalizePartnerId(partnerId);
     const show = Boolean(pid && (
-      state.viewLoaded
-      || state.activeMenu === 'quota_achievement'
+      state.activeMenu === 'quota_achievement'
       || state.activeMenu === 'delivery_status'
+      || state.viewLoaded
     ));
     row.hidden = !show;
     if (!show) return;
-    const entry = state.partnerSetCountMap?.[pid];
-    const count = getPartnerSetCount(pid);
-    if (input) input.value = String(count);
+
+    const partner = state.partners.find(p => normalizePartnerId(p.partnerId) === pid);
+    const regionLabel = partnerDisplayLabel(partner) || pid;
+    const entry = state.partnerSetCountMap?.[pid] || null;
+    const count = entry ? normalizeSetCount(entry.setCount) : 1;
+
+    if (labelEl) labelEl.textContent = `${regionLabel} 세트수`;
+    if (input) {
+      input.dataset.partnerId = pid;
+      input.value = String(count);
+    }
     if (meta) {
       meta.textContent = entry?.updatedAt
-        ? `저장됨 · ${formatDateTime(entry.updatedAt)}${entry.updatedBy ? ` · ${entry.updatedBy}` : ''}`
-        : '세트수를 저장하면 할당 목표가 계산됩니다.';
+        ? `${regionLabel}(${pid}) · ${count}세트 · ${formatDateTime(entry.updatedAt)}${entry.updatedBy ? ` · ${entry.updatedBy}` : ''}`
+        : `${regionLabel}(${pid}) · 아직 미저장(기본 1세트) · 이 지역에만 적용`;
     }
   }
 
@@ -1292,7 +1301,14 @@
       showToast('지역을 먼저 선택하세요.');
       return;
     }
-    const setCount = normalizeSetCount($('baeminStatusSetCount')?.value || 1);
+    const input = $('baeminStatusSetCount');
+    if (input?.dataset.partnerId && normalizePartnerId(input.dataset.partnerId) !== pid) {
+      showToast('지역이 바뀌었습니다. 세트수를 다시 확인한 뒤 저장하세요.');
+      renderSetCountRow(pid);
+      return;
+    }
+    const setCount = normalizeSetCount(input?.value || 1);
+    const regionLabel = partnerDisplayLabel(state.partners.find(p => normalizePartnerId(p.partnerId) === pid)) || pid;
     const result = await adminApi('/api/admin/baemin-delivery/partner-set-count', {
       method: 'POST',
       body: JSON.stringify({ partnerId: pid, setCount })
@@ -1301,15 +1317,25 @@
       showToast(result.message || result.error || '세트수 저장에 실패했습니다.');
       return;
     }
-    state.partnerSetCountMap = result.map || state.partnerSetCountMap;
+    state.partnerSetCountMap = {
+      ...(state.partnerSetCountMap || {}),
+      ...(result.map || {})
+    };
     state.partnerSetCountMap[pid] = {
       setCount: result.setCount || setCount,
       updatedAt: result.updatedAt || new Date().toISOString(),
       updatedBy: result.updatedBy || ''
     };
-    showToast(`${partnerDisplayLabel(state.partners.find(p => normalizePartnerId(p.partnerId) === pid))} · ${setCount}세트 저장됨`);
+    showToast(`${regionLabel} · ${setCount}세트 저장 (이 지역만 적용)`);
     renderSetCountRow(pid);
-    renderActiveViewFromCache();
+    if (state.activeMenu === 'quota_achievement') {
+      const cached = getCachedPartnerBundle(pid);
+      if (cached?.meta?.quotaLoaded || cached?.daily_history?.length) {
+        renderQuotaAchievementRows(pid, cached.daily_history || [], cached.meta || {});
+      }
+    } else {
+      renderActiveViewFromCache();
+    }
   }
 
   function renderPartnerRegionList(items = []) {
