@@ -441,7 +441,7 @@
       state.riderViewToDate = range.toDate;
     }
     if (state.activeMenu === 'quota_achievement') {
-      clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 정산주 데이터 불러오기를 눌러 주세요.');
+      clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 할당달성 조회를 눌러 주세요.');
       updateWeekPickerVisibility();
       return;
     }
@@ -780,6 +780,77 @@
     }
   }
 
+  function listDatesInclusive(fromDate, toDate) {
+    const from = String(fromDate || '').slice(0, 10);
+    const to = String(toDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
+      return [];
+    }
+    const dates = [];
+    let cursor = from;
+    while (cursor <= to) {
+      dates.push(cursor);
+      cursor = addDaysDate(cursor, 1);
+    }
+    return dates;
+  }
+
+  async function loadQuotaAchievementData() {
+    if (!isViewSection()) return;
+    const partnerId = normalizePartnerId(state.activePartnerId);
+    if (!partnerId) {
+      showToast('지역을 선택하세요.');
+      return;
+    }
+
+    const weekStart = ensureViewWeekStart();
+    const range = computeViewWeekQueryRange(weekStart);
+    const loadBtn = $('baeminStatusWeekLoadBtn');
+    loadBtn?.classList.add('is-loading');
+    if (loadBtn) loadBtn.textContent = '조회 중…';
+
+    const result = await adminApi(
+      `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(range.fromDate)}&toDate=${encodeURIComponent(range.toDate)}`
+    );
+
+    loadBtn?.classList.remove('is-loading');
+    if (loadBtn) loadBtn.textContent = '할당달성 조회';
+
+    if (!result.ok) {
+      showToast(result.message || '할당달성 불러오기에 실패했습니다.');
+      return;
+    }
+    if (result.notApplied) {
+      clearViewTablesForMenu('quota_achievement', result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+      showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+      return;
+    }
+
+    const items = result.items || [];
+    const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
+    cached.daily_history = items;
+    cached.meta = {
+      ...(cached.meta || {}),
+      weekStart: range.fromDate,
+      weekEnd: range.toDate,
+      quotaWeekStart: weekStart,
+      quotaLoaded: true,
+      dailyFromDate: range.fromDate,
+      dailyToDate: range.toDate,
+      dailyLoaded: true
+    };
+    setCachedPartnerBundle(partnerId, cached);
+    renderQuotaAchievementRows(partnerId, items, cached.meta);
+    renderGrandTotalsPanel('delivery_status', partnerId);
+    renderSetCountRow(partnerId);
+
+    if (!items.length) {
+      showToast(result.hint || `정산주 ${range.fromDate}~${range.toDate}에 일별 데이터 없음`);
+      return;
+    }
+    showToast(`할당달성 ${range.fromDate} ~ ${range.toDate} · ${formatNumber(items.length)}일 (일별 배달내역 기준)`);
+  }
+
   async function loadViewWeekMenuData() {
     if (!isViewSection()) return;
     if (state.activeMenu === 'rider_history') {
@@ -794,35 +865,9 @@
       await loadDeliveryStatusData();
       return;
     }
-    const partnerId = normalizePartnerId(state.activePartnerId);
-    if (!partnerId) {
-      showToast('지역을 선택하세요.');
-      return;
+    if (state.activeMenu === 'quota_achievement') {
+      await loadQuotaAchievementData();
     }
-    if (state.activeMenu !== 'quota_achievement') return;
-
-    const weekStart = ensureViewWeekStart();
-    const range = computeViewWeekQueryRange(weekStart);
-    const loadBtn = $('baeminStatusWeekLoadBtn');
-    loadBtn?.classList.add('is-loading');
-    if (loadBtn) loadBtn.textContent = '불러오는 중…';
-
-    if (!state.viewLoaded) {
-      await loadViewData({ silent: true });
-    } else {
-      const captureDate = state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate();
-      const bundle = await adminApi(buildViewFullBundleQuery(captureDate));
-      if (!bundle.ok) {
-        showToast(bundle.message || '할당달성 데이터 불러오기에 실패했습니다.');
-      } else {
-        applyFullBundleToCache(bundle.byPartner || {}, bundle.collectDate, bundle.weekStart || weekStart, bundle.weekEnd);
-        renderActiveViewFromCache();
-        showToast(`할당달성 ${range.fromDate} ~ ${range.toDate} 조회`);
-      }
-    }
-
-    loadBtn?.classList.remove('is-loading');
-    if (loadBtn) loadBtn.textContent = '정산주 데이터 불러오기';
   }
 
   function isHistoryViewMenu(menu = state.activeMenu) {
@@ -1034,7 +1079,11 @@
     const meta = $('baeminStatusSetCountMeta');
     if (!row || !isViewSection()) return;
     const pid = normalizePartnerId(partnerId);
-    const show = Boolean(state.viewLoaded && pid);
+    const show = Boolean(pid && (
+      state.viewLoaded
+      || state.activeMenu === 'quota_achievement'
+      || state.activeMenu === 'delivery_status'
+    ));
     row.hidden = !show;
     if (!show) return;
     const entry = state.partnerSetCountMap?.[pid];
@@ -1055,18 +1104,16 @@
     const pid = normalizePartnerId(partnerId);
     const setCount = getPartnerSetCount(pid);
     const partnerLabel = partnerDisplayLabel(state.partners.find(p => normalizePartnerId(p.partnerId) === pid));
-    const rangeLabel = meta.weekStart && meta.weekEnd ? `${meta.weekStart} ~ ${meta.weekEnd}` : '';
-
-    if (!items.length) {
-      if (summaryEl) summaryEl.textContent = `${partnerLabel} · 데이터 없음`;
-      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">일별 배달내역이 없습니다.</td></tr>';
-      return;
-    }
+    const weekStart = meta.quotaWeekStart || meta.weekStart || ensureViewWeekStart();
+    const weekRange = computeViewWeekQueryRange(weekStart);
+    const fromDate = meta.weekStart || weekRange.fromDate;
+    const toDate = meta.weekEnd || weekRange.toDate;
+    const rangeLabel = fromDate && toDate ? `${fromDate} ~ ${toDate}` : '';
 
     const byDate = new Map();
     items.forEach(row => {
       const p = row.parsed_json || {};
-      const date = String(p.deliveryDate || row.collect_date || '').slice(0, 10);
+      const date = String(p.deliveryDate || p.businessDate || row.collect_date || '').slice(0, 10);
       if (!date) return;
       const hit = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       hit.morning += Number(p.morningCount || 0);
@@ -1076,13 +1123,25 @@
       byDate.set(date, hit);
     });
 
-    const dates = Array.from(byDate.keys()).sort();
+    const dates = listDatesInclusive(fromDate, toDate);
+    if (!dates.length) {
+      if (summaryEl) summaryEl.textContent = `${partnerLabel} · 정산주를 선택하세요`;
+      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">정산주를 선택하고 할당달성 조회를 눌러 주세요.</td></tr>';
+      return;
+    }
+
+    const filledDays = dates.filter(date => byDate.has(date)).length;
     if (summaryEl) {
-      summaryEl.textContent = `${partnerLabel}${rangeLabel ? ` · ${rangeLabel}` : ''} · ${formatNumber(dates.length)}일 · ${setCount}세트`;
+      summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${filledDays}/${dates.length}일 · ${setCount}세트 (일별 배달내역)`;
+    }
+
+    if (!filledDays) {
+      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">해당 정산주에 일별 배달내역이 없습니다. BIZ에서 일별 수집 후 [배민현황 저장]을 실행하세요.</td></tr>';
+      return;
     }
 
     rowsEl.innerHTML = dates.map(date => {
-      const actual = byDate.get(date);
+      const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
       return `<tr>
         <td>${escapeHtml(date)}</td>
@@ -1102,7 +1161,11 @@
     if (!cached) return;
     renderSetCountRow(partnerId);
     if (menu === 'quota_achievement') {
-      renderQuotaAchievementRows(partnerId, cached.daily_history || [], cached.meta || {});
+      if (cached.meta?.quotaLoaded || cached.daily_history?.length) {
+        renderQuotaAchievementRows(partnerId, cached.daily_history || [], cached.meta || {});
+      } else {
+        clearViewTablesForMenu('quota_achievement', '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
+      }
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
@@ -1588,7 +1651,11 @@
     if (cached) {
       renderSetCountRow(id);
       if (state.activeMenu === 'quota_achievement') {
-        renderQuotaAchievementRows(id, cached.daily_history || [], cached.meta || {});
+        if (cached.meta?.quotaLoaded || cached.daily_history?.length) {
+          renderQuotaAchievementRows(id, cached.daily_history || [], cached.meta || {});
+        } else {
+          clearViewTablesForMenu('quota_achievement', '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
+        }
       } else if (state.activeMenu === 'rider_history') {
         if (cached.rider_history?.length && cached.meta?.riderLoaded) {
           renderRiderHistoryRiderRows(id, cached.rider_history, {
@@ -1633,8 +1700,12 @@
       renderSetCountRow(state.activePartnerId);
       if (state.activePartnerId) {
         const cached = getCachedPartnerBundle(state.activePartnerId);
-        if (menu === 'quota_achievement' && cached) {
-          renderQuotaAchievementRows(state.activePartnerId, cached.daily_history || [], cached.meta || {});
+        if (menu === 'quota_achievement') {
+          if (cached?.meta?.quotaLoaded || cached?.daily_history?.length) {
+            renderQuotaAchievementRows(state.activePartnerId, cached.daily_history || [], cached.meta || {});
+          } else {
+            clearViewTablesForMenu(menu, '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
+          }
           renderGrandTotalsPanel('delivery_status', state.activePartnerId);
         } else if (menu === 'rider_history') {
           if (cached?.rider_history?.length && cached.meta?.riderLoaded) {
