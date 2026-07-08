@@ -993,34 +993,35 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
   }
 
   const verifyRows = result.ok ? (extractDataArray(result.payload) || capturedRows) : [];
-  const centerIdFromCapture = String(
-    captured.headers?.['center-id']
-    || captured.requestHeaders?.['center-id']
-    || partnerId
-    || ''
-  ).trim();
+  // partner/center 접두사는 비교에 쓰지 않음 — DP만 다르면 항상 통과해 지역 섞임의 원인이 됨
+  const fingerprintBodyOnly = fp => String(fp || '').replace(/^DP\d{6,}:/i, '');
   const extractStatusFingerprint = payload => {
-    const rows = Array.isArray(payload?.data) ? payload.data : [];
-    const body = rows
+    const rows = Array.isArray(payload?.data)
+      ? payload.data
+      : (Array.isArray(payload) ? payload : []);
+    return rows
+      .slice(0, 8)
       .map(row => {
         const acceptance = row?.deliveryAcceptanceCount || {};
         const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
         return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
       })
       .join('|');
-    return centerIdFromCapture ? `${centerIdFromCapture}:${body}` : body;
   };
   const extractDailyFingerprint = payload => {
-    const rows = Array.isArray(payload?.data) ? payload.data : [];
-    const body = rows
+    const rows = Array.isArray(payload?.data)
+      ? payload.data
+      : (Array.isArray(payload) ? payload : []);
+    return rows
+      .slice(0, 5)
       .map(row => `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`)
       .join('|');
-    return centerIdFromCapture ? `${centerIdFromCapture}:${body}` : body;
   };
   const extract = menu === 'daily_history' ? extractDailyFingerprint : extractStatusFingerprint;
+  const samplePayload = result.payload || { data: verifyRows };
   const sample = {
     status: result.status || 0,
-    fingerprint: result.ok ? extract(result.payload || {}) : '',
+    fingerprint: result.ok ? extract(samplePayload) : '',
     message: result.message || result.error || '',
     probeUrl: captured.url
   };
@@ -1034,8 +1035,10 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
     console.log(`[BREM][center] ${menu} API verify empty rows partner=${partnerId} (정상 0건)`);
   }
 
-  const baseline = String(baselineSample || '').trim();
-  if (baseline && sample.fingerprint && sample.fingerprint === baseline) {
+  const baseline = fingerprintBodyOnly(baselineSample);
+  const current = fingerprintBodyOnly(sample.fingerprint);
+  if (baseline && current && baseline === current) {
+    console.warn(`[BREM][center] ${menu} same_as_baseline partner=${partnerId} — 이전 협력사와 동일 기사목록`);
     return { ok: false, reason: 'same_as_baseline', ui: ensured.switchReady.ui, sample, sourceMenu: menu, captured };
   }
 

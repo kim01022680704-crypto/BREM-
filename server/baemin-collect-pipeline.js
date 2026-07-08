@@ -1400,15 +1400,8 @@ async function runPartnerSourceCollectLoop({
       continue;
     }
 
-    if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.() && sourceDef.id === 'delivery_status') {
-      const cached = pipelineContext.spaCapture?.delivery_status
-        || pipelineContext.playwrightPage.context()?.__bremCapturedApiRequests?.delivery_status;
-      if (cached) {
-        applyCaptureToEndpointRegistry(sourceDef.id, registry, cached);
-        pipelineContext.spaCapture = pipelineContext.spaCapture || {};
-        pipelineContext.spaCapture.delivery_status = cached;
-      }
-    } else if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.() && sourceDef.id !== 'delivery_status') {
+    if (pipelineContext.playwrightPage && !pipelineContext.playwrightPage.isClosed?.()) {
+      // 배달현황도 이전 협력사 캡처 재사용 금지 — 메뉴마다 파트너 API 재검증
       const { ensureMenuPartnerReady } = require('./baemin-center-context');
       let menuRange = sourceDef.dateQueryKeys?.length
         ? (menuDateRanges[sourceDef.id] || historyDateRange)
