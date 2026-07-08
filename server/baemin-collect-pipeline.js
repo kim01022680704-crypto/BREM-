@@ -2685,6 +2685,25 @@ function businessDateFromDedupeKey(dedupeKey = '') {
   return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : '';
 }
 
+function riderPeriodFromDedupeKey(dedupeKey = '') {
+  const parts = String(dedupeKey || '').split(':');
+  const fromDate = String(parts[1] || '').slice(0, 10);
+  const toDate = String(parts[2] || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    return null;
+  }
+  return { fromDate, toDate };
+}
+
+function riderRowOverlapsRange(row = {}, fromDate = '', toDate = '') {
+  if (!fromDate || !toDate || toDate < fromDate) return false;
+  const businessDate = resolveRiderBusinessDate(row);
+  if (businessDate && businessDate >= fromDate && businessDate <= toDate) return true;
+  const period = riderPeriodFromDedupeKey(row.dedupe_key);
+  if (period) return period.toDate >= fromDate && period.fromDate <= toDate;
+  return false;
+}
+
 function resolveRiderBusinessDate(row = {}) {
   const parsed = row.parsed_json || {};
   const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
@@ -3617,7 +3636,11 @@ function aggregateRiderHistoryByRider(items) {
     agg.activeDays += 1;
   });
   return Array.from(byRider.values())
-    .sort((a, b) => String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko'));
+    .sort((a, b) => {
+      const completeDiff = Number(b.parsed_json?.totalComplete || 0) - Number(a.parsed_json?.totalComplete || 0);
+      if (completeDiff !== 0) return completeDiff;
+      return String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko');
+    });
 }
 
 function buildRiderHistoryDaySeries(items, fromDate, toDate) {
@@ -3713,16 +3736,18 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     if (allowed.size && pid && !allowed.has(pid)) return false;
     return true;
   });
-  items = scopedItems.filter(row => {
-    const date = resolveRiderBusinessDate(row);
-    return date >= fromDate && date <= toDate;
-  });
+  items = scopedItems.filter(row => riderRowOverlapsRange(row, fromDate, toDate));
 
   let hint = '';
   if (!items.length && scopedItems.length) {
-    hint = `저장된 라이더 ${scopedItems.length}건은 있으나, 선택 정산주(${fromDate}~${toDate}) 배달일 데이터가 없습니다. 6월 수집분은 6월 정산주를 선택하세요.`;
+    const savedDates = scopedItems.map(row => resolveRiderBusinessDate(row)).filter(Boolean).sort();
+    const savedFrom = savedDates[0] || '';
+    const savedTo = savedDates[savedDates.length - 1] || '';
+    hint = savedFrom && savedTo
+      ? `저장된 라이더 ${scopedItems.length}건은 있으나, 선택 기간(${fromDate}~${toDate})과 겹치지 않습니다. 저장된 배달일: ${savedFrom}~${savedTo}`
+      : `저장된 라이더 ${scopedItems.length}건은 있으나, 선택 기간(${fromDate}~${toDate}) 배달일 데이터가 없습니다.`;
   } else if (!items.length) {
-    hint = `선택 지역·정산주(${fromDate}~${toDate})에 라이더 데이터가 없습니다.`;
+    hint = `선택 지역·기간(${fromDate}~${toDate})에 라이더 데이터가 없습니다. BIZ에서 라이더 수집 후 [배민현황 저장]을 실행했는지 확인하세요.`;
   }
 
   const catalog = await loadPartnerDisplayCatalog();

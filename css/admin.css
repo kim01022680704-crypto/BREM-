@@ -2931,12 +2931,27 @@ textarea {
 
 .baemin-daily-collect-range,
 .baemin-rider-collect-range,
-.baemin-view-rider-range {
+.baemin-view-rider-range,
+.baemin-view-rider-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px 14px;
   margin-top: 8px;
+}
+
+.baemin-view-rider-toolbar {
+  width: 100%;
+  align-items: center;
+}
+
+.baemin-view-rider-toolbar__field {
+  margin: 0;
+}
+
+.baemin-view-rider-toolbar__meta {
+  margin: 0;
+  flex: 1 1 200px;
 }
 
 .baemin-rider-empty td {

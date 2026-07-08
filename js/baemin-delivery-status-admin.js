@@ -314,6 +314,15 @@
     return partner.partnerName || partner.partnerId || '-';
   }
 
+  function defaultRiderViewDateRange() {
+    const saved = state.config?.riderCollectRange;
+    if (saved?.fromDate && saved?.toDate && saved.toDate >= saved.fromDate) {
+      return { fromDate: saved.fromDate, toDate: saved.toDate };
+    }
+    const toDate = addDaysDate(todayKstDate(), -1);
+    return { fromDate: addDaysDate(toDate, -6), toDate };
+  }
+
   function syncViewWeekPicker() {
     const hidden = $('baeminStatusWeekStart');
     const label = $('baeminStatusWeekStartLabel');
@@ -331,15 +340,20 @@
         ? `조회 ${formatViewWeekRangeLabel(weekStart)}`
         : '';
     }
-    syncRiderDateRangeInputs(weekStart);
   }
 
-  function syncRiderDateRangeInputs(weekStart = state.viewWeekStart) {
-    const range = computeViewWeekQueryRange(weekStart || ensureViewWeekStart());
+  function syncRiderDateRangeInputs() {
+    const range = defaultRiderViewDateRange();
     const fromEl = $('baeminStatusRiderFromDate');
     const toEl = $('baeminStatusRiderToDate');
+    const metaEl = $('baeminStatusRiderRangeMeta');
     if (fromEl && !fromEl.dataset.touched) fromEl.value = range.fromDate;
     if (toEl && !toEl.dataset.touched) toEl.value = range.toDate;
+    if (metaEl) {
+      metaEl.textContent = state.config?.riderCollectRange?.label
+        ? `BIZ 수집 기간: ${state.config.riderCollectRange.label}`
+        : '기간 내 기사별 완료 합계 (BIZ 라이더별 현황과 동일)';
+    }
   }
 
   function resolveRiderViewDateRange() {
@@ -348,30 +362,28 @@
     if (/^\d{4}-\d{2}-\d{2}$/.test(fromInput) && /^\d{4}-\d{2}-\d{2}$/.test(toInput) && toInput >= fromInput) {
       return { fromDate: fromInput, toDate: toInput };
     }
-    return computeViewWeekQueryRange(ensureViewWeekStart());
+    return defaultRiderViewDateRange();
   }
 
   function handleWeekSelect(value) {
     if (!isViewSection()) return;
     const normalized = window.BremDatePicker?.applyWeekWednesday?.(value) || String(value || '').slice(0, 10);
     state.viewWeekStart = normalized;
-    const fromEl = $('baeminStatusRiderFromDate');
-    const toEl = $('baeminStatusRiderToDate');
-    if (fromEl) delete fromEl.dataset.touched;
-    if (toEl) delete toEl.dataset.touched;
     syncViewWeekPicker();
     invalidateDataCache();
     state.activePartnerId = '';
-    if (state.viewLoaded && (state.activeMenu === 'daily_history' || state.activeMenu === 'rider_history')) {
+    if (state.viewLoaded && state.activeMenu === 'daily_history') {
       clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 정산주 데이터 불러오기를 눌러 주세요.');
       updateWeekPickerVisibility();
       return;
     }
-    if (state.viewLoaded) {
+    if (state.viewLoaded && state.activeMenu !== 'rider_history') {
       void loadViewData({ silent: true });
       return;
     }
-    clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 데이터 불러오기를 눌러 주세요.');
+    if (state.activeMenu !== 'rider_history') {
+      clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 데이터 불러오기를 눌러 주세요.');
+    }
   }
 
   function updateWeekPickerVisibility() {
@@ -382,14 +394,13 @@
       if (weekLoadBtn) weekLoadBtn.hidden = true;
       return;
     }
-    const showWeek = state.activeMenu === 'daily_history'
-      || state.activeMenu === 'rider_history'
-      || state.activeMenu === 'quota_achievement';
-    const showWeekLoad = state.activeMenu === 'daily_history' || state.activeMenu === 'rider_history';
-    const riderRangeRow = $('baeminStatusRiderRangeRow');
+    const showWeek = state.activeMenu === 'daily_history' || state.activeMenu === 'quota_achievement';
+    const showWeekLoad = state.activeMenu === 'daily_history';
+    const riderToolbar = $('baeminStatusRiderToolbar');
     if (row) row.hidden = !showWeek;
     if (weekLoadBtn) weekLoadBtn.hidden = !showWeekLoad;
-    if (riderRangeRow) riderRangeRow.hidden = state.activeMenu !== 'rider_history';
+    if (riderToolbar) riderToolbar.hidden = state.activeMenu !== 'rider_history';
+    if (state.activeMenu === 'rider_history') syncRiderDateRangeInputs();
     if (showWeek) syncViewWeekPicker();
   }
 
@@ -495,7 +506,7 @@
     }
     if (rowsEl) {
       const colspan = getBaeminTableColspan('rider_history', { showPartner: false, includeCollected: true });
-      rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">라이더별 배달내역은 데이터가 많아 BIZ 미리보기를 표시하지 않습니다. 수집 후 [배민현황 저장] → 정산주·기간 선택으로 조회하세요.</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">라이더별 배달내역은 데이터가 많아 BIZ 미리보기를 표시하지 않습니다. 수집 후 [배민현황 저장] → 시작일·종료일 선택 후 조회하세요.</td></tr>`;
     }
   }
 
@@ -542,7 +553,7 @@
     });
   }
 
-  async function loadViewWeekMenuData() {
+  async function loadRiderHistoryData() {
     if (!isViewSection()) return;
     const partnerId = normalizePartnerId(state.activePartnerId);
     if (!partnerId) {
@@ -550,68 +561,84 @@
       return;
     }
 
-    const menu = state.activeMenu;
-    if (menu !== 'daily_history' && menu !== 'rider_history') return;
+    const range = resolveRiderViewDateRange();
+    state.riderViewFromDate = range.fromDate;
+    state.riderViewToDate = range.toDate;
+    const loadBtn = $('baeminStatusRiderLoadBtn');
+    loadBtn?.classList.add('is-loading');
+    if (loadBtn) loadBtn.textContent = '조회 중…';
+
+    const result = await adminApi(
+      `/api/admin/baemin-delivery/view-rider-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(range.fromDate)}&toDate=${encodeURIComponent(range.toDate)}`
+    );
+
+    loadBtn?.classList.remove('is-loading');
+    if (loadBtn) loadBtn.textContent = '조회';
+
+    if (!result.ok) {
+      showToast(result.message || '라이더별 배달내역 불러오기에 실패했습니다.');
+      return;
+    }
+    if (result.notApplied) {
+      renderRiderHistoryRiderRows(partnerId, [], range);
+      showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+      return;
+    }
+
+    const riders = result.riders || [];
+    const activeCount = riders.filter(row => Number(row.parsed_json?.totalComplete || 0) > 0).length;
+    const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
+    cached.rider_history = riders;
+    cached.rider_days = result.days || [];
+    cached.meta = {
+      ...(cached.meta || {}),
+      riderFromDate: range.fromDate,
+      riderToDate: range.toDate,
+      riderLoaded: true
+    };
+    setCachedPartnerBundle(partnerId, cached);
+    renderRiderHistoryRiderRows(partnerId, riders, range);
+
+    if (!riders.length) {
+      showToast(result.hint || `선택 기간 ${range.fromDate}~${range.toDate}에 라이더 데이터 없음`);
+      return;
+    }
+    showToast(
+      `${range.fromDate} ~ ${range.toDate} · 운행 ${formatNumber(activeCount)}명`
+      + ` · 완료 ${formatNumber(result.totals?.completeTotal || 0)}건`
+    );
+  }
+
+  async function loadViewWeekMenuData() {
+    if (!isViewSection()) return;
+    if (state.activeMenu === 'rider_history') {
+      await loadRiderHistoryData();
+      return;
+    }
+    const partnerId = normalizePartnerId(state.activePartnerId);
+    if (!partnerId) {
+      showToast('지역을 선택하세요.');
+      return;
+    }
+    if (state.activeMenu !== 'daily_history') return;
 
     const weekStart = ensureViewWeekStart();
-    const range = menu === 'rider_history'
-      ? resolveRiderViewDateRange()
-      : computeViewWeekQueryRange(weekStart);
+    const range = computeViewWeekQueryRange(weekStart);
     const loadBtn = $('baeminStatusWeekLoadBtn');
     loadBtn?.classList.add('is-loading');
     if (loadBtn) loadBtn.textContent = '불러오는 중…';
 
-    if (menu === 'daily_history') {
-      if (!state.viewLoaded) {
-        await loadViewData({ silent: true });
-      } else {
-        const captureDate = state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate();
-        const bundle = await adminApi(buildViewFullBundleQuery(captureDate));
-        if (!bundle.ok) {
-          showToast(bundle.message || '일별 배달내역 불러오기에 실패했습니다.');
-        } else {
-          applyFullBundleToCache(bundle.byPartner || {}, bundle.collectDate, bundle.weekStart || weekStart, bundle.weekEnd);
-          renderActiveViewFromCache();
-          showToast(`일별 배달내역 ${range.fromDate} ~ ${range.toDate} 조회`);
-        }
-      }
+    if (!state.viewLoaded) {
+      await loadViewData({ silent: true });
     } else {
-      const result = await adminApi(
-        `/api/admin/baemin-delivery/view-rider-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(range.fromDate)}&toDate=${encodeURIComponent(range.toDate)}`
-      );
-      if (!result.ok) {
-        showToast(result.message || '라이더별 배달내역 불러오기에 실패했습니다.');
-      } else if (result.notApplied) {
-        renderRiderHistoryRiderRows(partnerId, [], range);
-        showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
-      } else if (!result.riderCount && !result.count) {
-        const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
-        cached.rider_history = [];
-        cached.rider_days = result.days || [];
-        cached.meta = {
-          ...(cached.meta || {}),
-          riderFromDate: range.fromDate,
-          riderToDate: range.toDate,
-          riderWeekStart: weekStart,
-          riderLoaded: true
-        };
-        setCachedPartnerBundle(partnerId, cached);
-        renderRiderHistoryRiderRows(partnerId, [], range);
-        showToast(result.hint || `선택 기간 ${range.fromDate}~${range.toDate}에 라이더 데이터 없음`);
+      const captureDate = state.appliedCollectDate || state.config?.applied?.collectDate || todayKstDate();
+      const bundle = await adminApi(buildViewFullBundleQuery(captureDate));
+      if (!bundle.ok) {
+        showToast(bundle.message || '일별 배달내역 불러오기에 실패했습니다.');
       } else {
-        const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
-        cached.rider_history = result.riders || [];
-        cached.rider_days = result.days || [];
-        cached.meta = {
-          ...(cached.meta || {}),
-          riderFromDate: range.fromDate,
-          riderToDate: range.toDate,
-          riderWeekStart: weekStart,
-          riderLoaded: true
-        };
-        setCachedPartnerBundle(partnerId, cached);
-        renderRiderHistoryRiderRows(partnerId, cached.rider_history, range);
-        showToast(`라이더별 배달내역 ${range.fromDate} ~ ${range.toDate} · ${formatNumber(result.riderCount || 0)}명 · 완료 ${formatNumber(result.totals?.completeTotal || 0)}건`);
+        applyFullBundleToCache(bundle.byPartner || {}, bundle.collectDate, bundle.weekStart || weekStart, bundle.weekEnd);
+        renderActiveViewFromCache();
+        showToast(`일별 배달내역 ${range.fromDate} ~ ${range.toDate} 조회`);
       }
     }
 
@@ -659,8 +686,9 @@
     if (isViewSection()) {
       const applied = state.config?.applied || {};
       const weekPart = isHistoryViewMenu() ? `:week=${ensureViewWeekStart()}` : '';
+      const riderRange = resolveRiderViewDateRange();
       const riderPart = state.activeMenu === 'rider_history'
-        ? `:week-rider=${ensureViewWeekStart()}`
+        ? `:rider=${riderRange.fromDate}:${riderRange.toDate}`
         : '';
       const mapPart = Object.keys(state.partnerRegionMap || {}).sort().join('|');
       return `view:${state.activeMenu}:${state.appliedCollectDate || applied.collectDate || ''}:${applied.batchId || ''}${weekPart}${riderPart}:map=${mapPart}`;
@@ -1367,12 +1395,23 @@
     updatePanelVisibility();
 
     const cached = getCachedPartnerBundle(id);
-    if (cached?.[state.activeMenu]) {
+    if (cached) {
       renderSetCountRow(id);
       if (state.activeMenu === 'quota_achievement') {
         renderQuotaAchievementRows(id, cached.daily_history || [], cached.meta || {});
-      } else {
+      } else if (state.activeMenu === 'rider_history') {
+        if (cached.rider_history?.length && cached.meta?.riderLoaded) {
+          renderRiderHistoryRiderRows(id, cached.rider_history, {
+            fromDate: cached.meta.riderFromDate,
+            toDate: cached.meta.riderToDate
+          });
+        } else {
+          clearViewTablesForMenu('rider_history', '시작일·종료일을 선택하고 조회를 눌러 주세요.');
+        }
+      } else if (cached[state.activeMenu]?.length) {
         renderSubtabRows(state.activeMenu, id, cached[state.activeMenu], cached.meta || {});
+      } else {
+        clearViewTablesForMenu(state.activeMenu);
       }
       renderGrandTotalsPanel(state.activeMenu === 'quota_achievement' ? 'delivery_status' : state.activeMenu, id);
       return;
@@ -1396,6 +1435,16 @@
         const cached = getCachedPartnerBundle(state.activePartnerId);
         if (menu === 'quota_achievement' && cached) {
           renderQuotaAchievementRows(state.activePartnerId, cached.daily_history || [], cached.meta || {});
+          renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+        } else if (menu === 'rider_history') {
+          if (cached?.rider_history?.length && cached.meta?.riderLoaded) {
+            renderRiderHistoryRiderRows(state.activePartnerId, cached.rider_history, {
+              fromDate: cached.meta.riderFromDate,
+              toDate: cached.meta.riderToDate
+            });
+          } else {
+            clearViewTablesForMenu(menu, '시작일·종료일을 선택하고 조회를 눌러 주세요.');
+          }
           renderGrandTotalsPanel('delivery_status', state.activePartnerId);
         } else if (cached?.[menu]) {
           renderSubtabRows(menu, state.activePartnerId, cached[menu], cached.meta || {});
@@ -1439,7 +1488,9 @@
     if (summaryEl) {
       summaryEl.textContent = isHistoryViewMenu(menu)
         ? `${formatViewWeekRangeLabel(ensureViewWeekStart())} · 데이터 없음`
-        : '데이터 없음';
+        : (menu === 'rider_history'
+          ? '시작일·종료일을 선택하고 조회를 눌러 주세요'
+          : '데이터 없음');
     }
     if (rowsEl) {
       const colspan = menu === 'quota_achievement'
@@ -2741,7 +2792,16 @@
           : `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
       } else if (rangeLabel) {
         const periodHint = sourceMenu === 'rider_history' ? ' · 기간 합계' : '';
-        summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${formatNumber(items.length)}명${periodHint}`;
+        const activeCount = sourceMenu === 'rider_history'
+          ? items.filter(row => Number(row.parsed_json?.totalComplete || 0) > 0).length
+          : items.length;
+        const completeSum = sourceMenu === 'rider_history'
+          ? items.reduce((sum, row) => sum + Number(row.parsed_json?.totalComplete || 0), 0)
+          : 0;
+        const countLabel = sourceMenu === 'rider_history'
+          ? `운행 ${formatNumber(activeCount)}명 · 완료 ${formatNumber(completeSum)}건`
+          : `${formatNumber(items.length)}건`;
+        summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${countLabel}${periodHint}`;
       } else {
         summaryEl.textContent = `${partnerLabel} · ${captureDate} · ${formatNumber(items.length)}건`;
       }
@@ -2811,7 +2871,15 @@
       return;
     }
 
-    rowsEl.innerHTML = items.map(row => {
+    const riderRows = sourceMenu === 'rider_history'
+      ? [...items].sort((a, b) => {
+        const completeDiff = Number(b.parsed_json?.totalComplete || 0) - Number(a.parsed_json?.totalComplete || 0);
+        if (completeDiff !== 0) return completeDiff;
+        return String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko');
+      })
+      : items;
+
+    rowsEl.innerHTML = riderRows.map(row => {
       const p = row.parsed_json || {};
       const deliveryCount = Number(row.raw_json?.deliveryCount || p.totalComplete || 0);
       const collectedCell = isViewSection()
@@ -3066,13 +3134,18 @@
     $('baeminStatusWeekLoadBtn')?.addEventListener('click', () => {
       void loadViewWeekMenuData();
     });
+    $('baeminStatusRiderLoadBtn')?.addEventListener('click', () => {
+      void loadRiderHistoryData();
+    });
     $('baeminStatusRiderFromDate')?.addEventListener('change', event => {
       event.target.dataset.touched = '1';
       state.riderViewFromDate = String(event.target.value || '').slice(0, 10);
+      invalidateDataCache();
     });
     $('baeminStatusRiderToDate')?.addEventListener('change', event => {
       event.target.dataset.touched = '1';
       state.riderViewToDate = String(event.target.value || '').slice(0, 10);
+      invalidateDataCache();
     });
 
     $('baeminDailyCollectBtn')?.addEventListener('click', () => {
