@@ -34,6 +34,16 @@ async function resolveAdminLoginEmail(loginInput) {
     return { ok: true, email: initialEmail };
   }
 
+  try {
+    const { getPublicConfig } = require('./public-config');
+    const hinted = getPublicConfig().adminLoginHints?.[value];
+    if (hinted && String(hinted).includes('@')) {
+      return { ok: true, email: normalizeEmail(hinted) };
+    }
+  } catch {
+    /* ignore */
+  }
+
   const supabase = getServiceClient();
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };

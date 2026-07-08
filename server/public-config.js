@@ -9,6 +9,20 @@ function resolvePayrollStorageMode() {
 const { isWriteBlocked, WRITE_BLOCK_MESSAGE, isDevSupabaseConfigured, isProductionSupabaseUrl } = require('./write-guard');
 const { getErpLocalSessionConfig } = require('./baemin-session-local-config');
 
+/** DB/설정 조회가 느릴 때 이름 로그인이 끊기지 않도록 쓰는 비상 매핑 (삭제가 아닌 조회용) */
+const DEFAULT_ADMIN_LOGIN_HINTS = Object.freeze({
+  관리자: 'kim01022680704@gmail.com',
+  김형진: 'admin.g7yfepgm@gmail.com',
+  김형진2: '2.35urtxd8@gmail.com',
+  방준길: 'admin.fszu0d19@gmail.com',
+  이동주: 'admin.grb0145t@gmail.com',
+  박재현: 'admin.gik1wkeq@gmail.com',
+  장승표: 'admin.ikk1dv0r@gmail.com',
+  한승훈: 'admin.8od1nnsw@gmail.com',
+  신명화: 'admin.6cdhmwe6@gmail.com',
+  테스트01: '01.j4rpq9cs@gmail.com'
+});
+
 function parseAdminLoginHints(raw) {
   if (!raw) return {};
   try {
@@ -26,6 +40,13 @@ function parseAdminLoginHints(raw) {
   } catch {
     return {};
   }
+}
+
+function getAdminLoginHints() {
+  return {
+    ...DEFAULT_ADMIN_LOGIN_HINTS,
+    ...parseAdminLoginHints(process.env.BREM_ADMIN_LOGIN_MAP)
+  };
 }
 
 function getPublicConfig() {
@@ -51,7 +72,7 @@ function getPublicConfig() {
       loginName: String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim(),
       email: String(process.env.BREM_ADMIN_EMAIL || 'admin@brem.kr').trim()
     },
-    adminLoginHints: parseAdminLoginHints(process.env.BREM_ADMIN_LOGIN_MAP),
+    adminLoginHints: getAdminLoginHints(),
     payrollProductionRiders: {
       enabled: false,
       configured: false,
