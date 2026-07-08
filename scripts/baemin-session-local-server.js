@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260708a';
+const SERVER_VERSION = '20260708b';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -813,10 +813,12 @@ async function saveSessionAndComplete({
 }
 
 function getAutoCollectHealthPayload() {
+  const { getCollectProgress } = require('../server/baemin-collect-progress');
   return {
     enabled: true,
     sessionPaused,
     collectRunning,
+    collectProgress: getCollectProgress(),
     schedule: autoCollectRuntime.schedule,
     lastRunAt: autoCollectRuntime.lastRunAt,
     lastStatus: autoCollectRuntime.lastStatus,

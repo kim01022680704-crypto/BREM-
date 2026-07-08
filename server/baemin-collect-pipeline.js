@@ -19,6 +19,7 @@ const { saveStatsForSource } = require('./baemin-stats-save');
 const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
+const collectProgress = require('./baemin-collect-progress');
 
 function getBaeminSession() {
   return require('./baemin-delivery-session');
@@ -581,7 +582,13 @@ async function fetchAndSaveHistoryByDays({
   let failedDays = 0;
   let emptyDays = 0;
 
-  for (const day of dates) {
+  for (let dayIndex = 0; dayIndex < dates.length; dayIndex += 1) {
+    const day = dates[dayIndex];
+    collectProgress.updateDay({
+      dayIndex: dayIndex + 1,
+      dayTotal: dates.length,
+      dayDate: day
+    });
     const dayRow = await fetchOneHistoryDay({
       sourceId,
       source,
@@ -629,6 +636,7 @@ async function fetchAndSaveHistoryByDays({
       };
     }
     totalSaved += Number(saveResult.savedCount || rows.length);
+    collectProgress.addSaved(saveResult.savedCount || rows.length);
     console.log(`[BREM][collect] ${sourceId} partner=${partnerId || '-'} day=${day} saved=${saveResult.savedCount || rows.length}`);
   }
 
@@ -1304,6 +1312,7 @@ async function runPartnerSourceCollectLoop({
 
   for (const sourceDef of sourceDefs) {
     const menuTimer = Date.now();
+    collectProgress.updateMenu({ menuId: sourceDef.id, menuLabel: sourceDef.label });
     if (sourceDef.dateQueryKeys?.length && menuDateRanges[sourceDef.id]?.skipped) {
       results[sourceDef.id] = {
         ok: true,
@@ -1597,6 +1606,12 @@ async function runFullCollectPipeline(options = {}) {
   try {
     let anySuccess = false;
     let sessionExpired = false;
+    const partnerTotalEstimate = Math.max(partnersToCollect.length, 1);
+    collectProgress.startCollect({
+      collectDate,
+      partnerTotal: partnerTotalEstimate,
+      menuLabel: sourceDefs.map(def => def.label).join(', ')
+    });
 
     async function runForPartner(partnerContext, partnerIndex = 0, partnerTotal = 0) {
       registry.centerContext = {
@@ -1619,6 +1634,14 @@ async function runFullCollectPipeline(options = {}) {
       const label = partnerTotal > 0
         ? `[${partnerIndex + 1}/${partnerTotal}] ${registry.centerContext.partnerName}`
         : registry.centerContext.partnerName;
+      if (partnerTotal > 0) {
+        collectProgress.updatePartner({
+          index: partnerIndex + 1,
+          total: partnerTotal,
+          partnerId: registry.centerContext.partnerId,
+          partnerName: registry.centerContext.partnerName
+        });
+      }
       console.log(`[BREM][collect] ${label} (${registry.centerContext.partnerId}) — 현재 협력사 확인 완료`);
 
       if (playwrightPage && !playwrightPage.isClosed?.() && registry.centerContext.partnerId) {
@@ -1882,6 +1905,16 @@ async function runFullCollectPipeline(options = {}) {
           return def.label;
         }).join(' · ')
         : `일별: ${dailyLabel} · 라이더: ${riderLabel}`);
+    const finishMessage = sessionExpired
+      ? '배민 재로그인 필요'
+      : (anySuccess
+        ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · ${rangeSummary} · 저장 ${savedTotal}건${scrubResult?.deletedCount ? ` · 중복 정리 ${scrubResult.deletedCount}건` : ''}`
+        : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'));
+    collectProgress.finishCollect({
+      ok: anySuccess && !sessionExpired,
+      savedTotal,
+      message: finishMessage
+    });
     return {
       ok: anySuccess && !sessionExpired,
       collectDate,
@@ -1896,14 +1929,13 @@ async function runFullCollectPipeline(options = {}) {
       sessionExpired,
       scrubResult,
       sourceMenus: allowedMenus ? [...allowedMenus] : null,
-      message: sessionExpired
-        ? '배민 재로그인 필요'
-        : (anySuccess
-          ? `수집 완료 — 협력사 ${partnerSummaries.length || 1}곳 · ${rangeSummary} · 저장 ${savedTotal}건${scrubResult?.deletedCount ? ` · 중복 정리 ${scrubResult.deletedCount}건` : ''}`
-          : (playwrightPage ? 'API 수집 실패 (브라우저 로그인은 유지 중)' : '수집 실패'))
+      message: finishMessage
     };
   } finally {
     detachCenterRoute();
+    if (collectProgress.getCollectProgress().active) {
+      collectProgress.clearProgress();
+    }
     if (playwrightContext) {
       playwrightContext.__bremCollecting = false;
     }
@@ -2068,6 +2100,8 @@ async function fetchAppliedItemsPaged(tableName, filters = {}, selectFields) {
   return { ok: true, rows, totalFetched: rows.length };
 }
 
+const APPLIED_DELETE_CHUNK_SIZE = 80;
+
 async function deleteAppliedBatchItemsPaged(batchId) {
   const supabase = getServiceClient();
   if (!supabase || !batchId) return { ok: true, deleted: 0 };
@@ -2082,12 +2116,15 @@ async function deleteAppliedBatchItemsPaged(batchId) {
     if (error) return { ok: false, error: error.message || '이전 스냅샷 삭제 실패' };
     const ids = (data || []).map(row => row.id).filter(Boolean);
     if (!ids.length) break;
-    const { error: deleteError } = await supabase
-      .from('baemin_delivery_applied_items')
-      .delete()
-      .in('id', ids);
-    if (deleteError) return { ok: false, error: deleteError.message || '이전 스냅샷 삭제 실패' };
-    deleted += ids.length;
+    for (let offset = 0; offset < ids.length; offset += APPLIED_DELETE_CHUNK_SIZE) {
+      const chunk = ids.slice(offset, offset + APPLIED_DELETE_CHUNK_SIZE);
+      const { error: deleteError } = await supabase
+        .from('baemin_delivery_applied_items')
+        .delete()
+        .in('id', chunk);
+      if (deleteError) return { ok: false, error: deleteError.message || '이전 스냅샷 삭제 실패' };
+      deleted += chunk.length;
+    }
     if (ids.length < BIZ_COLLECT_PAGE_SIZE) break;
   }
   return { ok: true, deleted };

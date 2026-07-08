@@ -1713,6 +1713,12 @@
       || session.state === 'expired'
       || Boolean(local.sessionPaused);
     const localCollecting = Boolean(local.collectRunning || state.collecting);
+    const collectProgress = state.localCollectProgress || local.collectProgress || {};
+    const showProgress = localCollecting;
+    const progressPercent = localCollecting
+      ? Math.max(1, Math.min(100, Number(collectProgress.percent) || 0))
+      : 0;
+    const progressMessage = collectProgress.message || '수집 중…';
     const scheduleText = (auto.schedule || local.schedule || ['10:00', '14:00', '17:00', '20:00', '23:30']).join(', ');
     const lastCollect = local.lastCollectResult || {};
 
@@ -1751,7 +1757,11 @@
         </div>
         <div>
           <dt>현재 수집 중</dt>
-          <dd>${localCollecting ? '예 — 이미 수집 중입니다' : '아니오'}</dd>
+          <dd>${localCollecting
+            ? (showProgress
+              ? `${progressPercent}% · ${escapeHtml(progressMessage)}`
+              : '예 — 수집 진행 중')
+            : '아니오'}</dd>
         </div>
         <div>
           <dt>마지막 수집</dt>
@@ -1770,6 +1780,18 @@
           <dd style="word-break:break-all;font-size:0.82rem">${browser.currentUrl || '-'}</dd>
         </div>
       </dl>
+      ${showProgress ? `
+      <div class="baemin-collect-progress" role="progressbar" aria-valuenow="${progressPercent}" aria-valuemin="0" aria-valuemax="100">
+        <div class="baemin-collect-progress__track">
+          <div class="baemin-collect-progress__bar" style="width:${progressPercent}%"></div>
+        </div>
+        <p class="baemin-collect-progress__meta">
+          <strong>${progressPercent}%</strong>
+          · ${escapeHtml(progressMessage)}
+          · 저장 ${formatNumber(collectProgress.savedSoFar || 0)}건
+        </p>
+      </div>
+      ` : ''}
       <p class="baemin-auto-collect-schedule">스케줄(KST): ${scheduleText} · PC에서 <code>npm run baemin:session-server</code> 실행 · 수집 후에도 브라우저 유지</p>
     `;
 
@@ -2185,6 +2207,7 @@
         return {
           running: true,
           autoCollect: payload.autoCollect || null,
+          collectProgress: payload.autoCollect?.collectProgress || payload.collectProgress || null,
           browser: payload.browser || null,
           session: payload.session || null,
           version: payload.version || '',
@@ -2202,6 +2225,7 @@
     const local = await fetchLocalHealth(state.config, null);
     state.localServerRunning = local.running;
     state.localAutoCollect = local.autoCollect;
+    state.localCollectProgress = local.collectProgress || local.autoCollect?.collectProgress || null;
     state.localBrowser = local.browser;
     state.localSession = local.session;
     if (state.config) renderAutoCollectStatus(state.config);

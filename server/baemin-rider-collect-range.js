@@ -38,7 +38,11 @@ function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) 
 function normalizeRiderCollectRange(raw = {}, referenceDate = todayKST(), now = new Date()) {
   const fallback = defaultRiderCollectRange(referenceDate, now);
   const fromDate = normalizeDateKey(raw.fromDate) || fallback.fromDate;
-  const toDate = normalizeDateKey(raw.toDate) || fallback.toDate;
+  let toDate = normalizeDateKey(raw.toDate) || fallback.toDate;
+  const latest = latestQueryableDate(referenceDate, now);
+  if (latest && toDate && toDate > latest) {
+    toDate = latest;
+  }
   if (!fromDate || !toDate || toDate < fromDate) {
     return { ...fallback };
   }
