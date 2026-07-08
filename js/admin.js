@@ -2335,7 +2335,7 @@
             : BremStorage.auth.signInAdmin(name, password),
           new Promise((_, reject) => setTimeout(
             () => reject(new Error('로그인 시간 초과입니다. 새로고침 후 다시 시도하세요.')),
-            35000
+            45000
           ))
         ]);
         window.BremPerf?.timeEnd?.('admin.signInApi');

@@ -18,9 +18,21 @@
     inquiryStorage: 'file',
     initialAdmin: {
       loginName: '관리자',
-      email: 'admin@brem.kr'
+      email: 'kim01022680704@gmail.com'
     },
-    adminLoginHints: {}
+    // public-config 지연 시에도 이름 로그인이 가능하도록 클라이언트 기본 매핑
+    adminLoginHints: {
+      관리자: 'kim01022680704@gmail.com',
+      김형진: 'admin.g7yfepgm@gmail.com',
+      김형진2: '2.35urtxd8@gmail.com',
+      방준길: 'admin.fszu0d19@gmail.com',
+      이동주: 'admin.grb0145t@gmail.com',
+      박재현: 'admin.gik1wkeq@gmail.com',
+      장승표: 'admin.ikk1dv0r@gmail.com',
+      한승훈: 'admin.8od1nnsw@gmail.com',
+      신명화: 'admin.6cdhmwe6@gmail.com',
+      테스트01: '01.j4rpq9cs@gmail.com'
+    }
   };
 
   window.BREM_SUPABASE_CONFIG = Object.assign({}, DEFAULTS);

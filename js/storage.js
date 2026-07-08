@@ -710,6 +710,19 @@ const BremStorage = (function () {
     };
   }
 
+  const FALLBACK_ADMIN_LOGIN_HINTS = Object.freeze({
+    관리자: 'kim01022680704@gmail.com',
+    김형진: 'admin.g7yfepgm@gmail.com',
+    김형진2: '2.35urtxd8@gmail.com',
+    방준길: 'admin.fszu0d19@gmail.com',
+    이동주: 'admin.grb0145t@gmail.com',
+    박재현: 'admin.gik1wkeq@gmail.com',
+    장승표: 'admin.ikk1dv0r@gmail.com',
+    한승훈: 'admin.8od1nnsw@gmail.com',
+    신명화: 'admin.6cdhmwe6@gmail.com',
+    테스트01: '01.j4rpq9cs@gmail.com'
+  });
+
   function resolveAdminLoginInput(input) {
     const value = String(input || '').trim();
     if (!value) return value;
@@ -719,7 +732,7 @@ const BremStorage = (function () {
     const { loginName, email } = config.initialAdmin;
     if (value === loginName && email) return email;
 
-    const hinted = config.adminLoginHints?.[value];
+    const hinted = config.adminLoginHints?.[value] || FALLBACK_ADMIN_LOGIN_HINTS[value];
     if (hinted && String(hinted).includes('@')) return String(hinted).trim();
 
     const account = readAdminAccountsRaw()?.find(item => item.active && item.name === value);
@@ -4137,7 +4150,10 @@ const BremStorage = (function () {
     const initialEmail = String(config.initialAdmin?.email || '').trim().toLowerCase();
     if (loginEmail && initialEmail && loginEmail === initialEmail) return true;
 
-    const hints = config.adminLoginHints || {};
+    const hints = {
+      ...FALLBACK_ADMIN_LOGIN_HINTS,
+      ...(config.adminLoginHints || {})
+    };
     return Object.values(hints).some(email => String(email || '').trim().toLowerCase() === loginEmail);
   }
 
@@ -4341,7 +4357,11 @@ const BremStorage = (function () {
     if (payload.profile) {
       activeSupabaseProfile = payload.profile;
     } else if (!activeSupabaseProfile) {
-      activeSupabaseProfile = await loadSupabaseProfile();
+      activeSupabaseProfile = buildProfileFromAuthUser(payload.user || payload.session?.user, 'admin')
+        || await Promise.race([
+          loadSupabaseProfile(),
+          new Promise(resolve => setTimeout(() => resolve(null), 2000))
+        ]);
     }
 
     let account = null;
@@ -4366,40 +4386,117 @@ const BremStorage = (function () {
     return { ok: true, account: { ...account, password: '' } };
   }
 
+  async function signInWithPasswordFetch(email, password, timeoutMs = 25000) {
+    const config = getSupabaseConfig();
+    if (!config.url || !config.anonKey) {
+      return { data: null, error: new Error('Supabase 설정이 필요합니다.') };
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`${config.url.replace(/\/$/, '')}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: String(email || '').trim(),
+          password: String(password || '')
+        }),
+        signal: controller.signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          data: null,
+          error: new Error(payload.error_description || payload.msg || payload.error || '로그인에 실패했습니다.')
+        };
+      }
+      return {
+        data: {
+          session: {
+            access_token: payload.access_token,
+            refresh_token: payload.refresh_token,
+            expires_in: payload.expires_in,
+            expires_at: payload.expires_at,
+            token_type: payload.token_type,
+            user: payload.user
+          },
+          user: payload.user
+        },
+        error: null
+      };
+    } catch (error) {
+      const message = /abort/i.test(String(error?.message || ''))
+        ? 'auth timeout'
+        : (error.message || '로그인에 실패했습니다.');
+      return { data: null, error: new Error(message) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function signInWithSupabase(email, password, expectedRole) {
     const client = await ensureSupabaseClientForLogin();
     if (!client) return { ok: false, message: 'Supabase 설정이 필요합니다.' };
-    const authResult = await Promise.race([
-      client.auth.signInWithPassword({
-        email: String(email || '').trim(),
-        password: String(password || '')
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('auth timeout')), 15000))
-    ]).catch(error => ({ data: null, error }));
-    const { data, error } = authResult || {};
-    if (error) {
-      const message = String(error.message || '');
+
+    let data = null;
+    let error = null;
+    ({ data, error } = await signInWithPasswordFetch(email, password, 25000));
+
+    if (error && /timeout/i.test(String(error.message || ''))) {
+      const sdkResult = await Promise.race([
+        client.auth.signInWithPassword({
+          email: String(email || '').trim(),
+          password: String(password || '')
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('auth timeout')), 12000))
+      ]).catch(sdkError => ({ data: null, error: sdkError }));
+      data = sdkResult?.data || null;
+      error = sdkResult?.error || null;
+    }
+
+    if (error || !data?.session || !data?.user) {
+      const message = String(error?.message || '');
       if (/timeout/i.test(message)) {
         return { ok: false, message: '로그인 응답이 지연되고 있습니다. 잠시 후 다시 시도하세요.' };
       }
-      return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+      return { ok: false, message: message || '로그인에 실패했습니다.' };
     }
 
-    if (data.session?.access_token) {
-      rememberAdminAccessToken(data.session.access_token);
-      bindSupabaseAuthListener(client);
+    const { error: sessionError } = await client.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token
+    });
+    if (sessionError) {
+      return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
     }
 
-    let profile = await loadSupabaseProfile();
-    const roleMismatch = !profile?.active || (expectedRole && profile.role !== expectedRole);
+    rememberAdminAccessToken(data.session.access_token);
+    bindSupabaseAuthListener(client);
 
-    if (roleMismatch && expectedRole === 'admin') {
-      const bootstrapped = await tryEnsureInitialAdminProfile(
-        data.session?.access_token,
-        email
-      );
+    let profile = buildProfileFromAuthUser(data.user, expectedRole);
+    if (!profile?.active || (expectedRole && profile.role !== expectedRole)) {
+      try {
+        profile = await Promise.race([
+          loadSupabaseProfile(),
+          new Promise(resolve => setTimeout(() => resolve(null), 2500))
+        ]);
+      } catch {
+        profile = null;
+      }
+    }
+
+    if ((!profile?.active || (expectedRole && profile.role !== expectedRole)) && expectedRole === 'admin') {
+      const bootstrapped = await Promise.race([
+        tryEnsureInitialAdminProfile(data.session.access_token, email),
+        new Promise(resolve => setTimeout(() => resolve(false), 2500))
+      ]).catch(() => false);
       if (bootstrapped) {
-        profile = await loadSupabaseProfile();
+        profile = buildProfileFromAuthUser(data.user, expectedRole) || profile;
       }
     }
 
@@ -4408,9 +4505,11 @@ const BremStorage = (function () {
     }
 
     if (!profile?.active || (expectedRole && profile.role !== expectedRole)) {
-      await client.auth.signOut();
+      await client.auth.signOut().catch(() => {});
       return { ok: false, message: '접근 권한이 없습니다.' };
     }
+
+    activeSupabaseProfile = profile;
     return { ok: true, user: data.user, profile };
   }
 
@@ -10383,24 +10482,52 @@ const BremStorage = (function () {
           if (window.BremSupabaseConfig?.load) {
             await Promise.race([
               window.BremSupabaseConfig.load(),
-              new Promise(resolve => setTimeout(resolve, 3000))
+              new Promise(resolve => setTimeout(resolve, 2000))
             ]);
           }
           await ensureSupabaseClientForLogin();
 
           let email = resolveAdminLoginInput(loginInput);
+          const apiLogin = fetchAdminSignInApi(loginInput, password, 28000)
+            .then(async ({ response, payload }) => {
+              if (!response.ok) {
+                return {
+                  ok: false,
+                  message: payload.error || '로그인에 실패했습니다.',
+                  status: response.status
+                };
+              }
+              return finishProductionAdminSessionFromPayload(payload, this);
+            })
+            .catch(error => ({
+              ok: false,
+              message: error.message || '로그인에 실패했습니다.'
+            }));
+
           if (!email.includes('@')) {
-            email = await resolveLoginEmailFast(loginInput);
+            const apiResult = await apiLogin;
+            if (apiResult.ok) return apiResult;
+            email = await Promise.race([
+              resolveLoginEmailFast(loginInput),
+              new Promise(resolve => setTimeout(() => resolve(''), 2000))
+            ]);
+            if (!email.includes('@')) {
+              return {
+                ok: false,
+                message: apiResult.message || '등록된 관리자 아이디를 찾지 못했습니다. 이메일로 로그인해 보세요.'
+              };
+            }
           }
 
-          if (email.includes('@')) {
-            const direct = await signInWithSupabase(email, password, 'admin');
+          const directPromise = signInWithSupabase(email, password, 'admin').then(direct => {
             if (!direct.ok) return direct;
-
             const registryAccount = this.getAdminAccountById(direct.profile.user_id);
             const account = registryAccount || {
               id: direct.profile.user_id,
-              name: direct.profile.display_name || direct.user.email || String(loginInput || '').trim() || '관리자',
+              name: direct.profile.display_name
+                || String(loginInput || '').trim()
+                || direct.user.email
+                || '관리자',
               role: ADMIN_ROLES.CEO,
               menus: ALL_ADMIN_MENU_IDS,
               editableMenus: ALL_ADMIN_MENU_IDS,
@@ -10415,15 +10542,20 @@ const BremStorage = (function () {
             this.syncProductionAdminAccounts().catch(() => {});
             document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
             return { ok: true, account: { ...account, password: '' } };
-          }
+          });
 
-          const { response, payload } = await fetchAdminSignInApi(loginInput, password, 8000);
-          if (response.ok) {
-            return finishProductionAdminSessionFromPayload(payload, this);
-          }
+          const winner = await Promise.race([
+            apiLogin.then(result => (result.ok ? result : null)),
+            directPromise.then(result => (result.ok ? result : null))
+          ]);
+          if (winner?.ok) return winner;
+
+          const [apiResult, directResult] = await Promise.all([apiLogin, directPromise]);
+          if (directResult?.ok) return directResult;
+          if (apiResult?.ok) return apiResult;
           return {
             ok: false,
-            message: payload.error || '등록된 관리자 아이디를 찾지 못했습니다. 이메일로 로그인해 보세요.'
+            message: directResult?.message || apiResult?.message || '로그인에 실패했습니다.'
           };
         } catch (error) {
           const message = String(error?.message || '');

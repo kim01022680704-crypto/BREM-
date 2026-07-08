@@ -4,7 +4,8 @@ const {
   normalizeEmail,
   readRegistryCached,
   buildFallbackAccountFromProfile,
-  ensureInitialAdminRegistry
+  ensureInitialAdminRegistry,
+  ADMIN_ROLES
 } = require('./admin-registry');
 
 let anonAuthClient = null;
@@ -16,6 +17,32 @@ function withTimeout(promise, ms, message) {
       setTimeout(() => reject(new Error(message || 'timeout')), ms);
     })
   ]);
+}
+
+function getLoginHints() {
+  try {
+    const { getPublicConfig } = require('./public-config');
+    return getPublicConfig().adminLoginHints || {};
+  } catch {
+    return {};
+  }
+}
+
+function findHintNameByEmail(email) {
+  const target = normalizeEmail(email);
+  if (!target) return '';
+  const hints = getLoginHints();
+  const entry = Object.entries(hints).find(([, value]) => normalizeEmail(value) === target);
+  return entry ? String(entry[0]).trim() : '';
+}
+
+function isTrustedAdminEmail(email) {
+  const target = normalizeEmail(email);
+  if (!target) return false;
+  const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
+  if (initialEmail && target === initialEmail) return true;
+  const hints = getLoginHints();
+  return Object.values(hints).some(value => normalizeEmail(value) === target);
 }
 
 async function resolveAdminLoginEmail(loginInput) {
@@ -34,14 +61,9 @@ async function resolveAdminLoginEmail(loginInput) {
     return { ok: true, email: initialEmail };
   }
 
-  try {
-    const { getPublicConfig } = require('./public-config');
-    const hinted = getPublicConfig().adminLoginHints?.[value];
-    if (hinted && String(hinted).includes('@')) {
-      return { ok: true, email: normalizeEmail(hinted) };
-    }
-  } catch {
-    /* ignore */
+  const hinted = getLoginHints()[value];
+  if (hinted && String(hinted).includes('@')) {
+    return { ok: true, email: normalizeEmail(hinted) };
   }
 
   const supabase = getServiceClient();
@@ -56,7 +78,7 @@ async function resolveAdminLoginEmail(loginInput) {
         .select('email')
         .eq('login_name', value)
         .maybeSingle(),
-      4000,
+      2500,
       'directory lookup timeout'
     );
     if (directoryRow?.email) {
@@ -66,36 +88,9 @@ async function resolveAdminLoginEmail(loginInput) {
     /* directory table may not exist yet */
   }
 
-  try {
-    const { data: profileRow } = await withTimeout(
-      supabase
-        .from('profiles')
-        .select('user_id, display_name, active, role')
-        .eq('role', 'admin')
-        .eq('display_name', value)
-        .eq('active', true)
-        .maybeSingle(),
-      5000,
-      'profile lookup timeout'
-    );
-    if (profileRow?.user_id) {
-      const { fetchUserEmail } = require('./admin-registry');
-      const email = await withTimeout(
-        fetchUserEmail(supabase, profileRow.user_id),
-        5000,
-        'email lookup timeout'
-      ).catch(() => '');
-      if (email) {
-        return { ok: true, email: normalizeEmail(email) };
-      }
-    }
-  } catch {
-    /* profiles lookup failed — fall through to registry */
-  }
-
   let accounts = [];
   try {
-    accounts = await withTimeout(readRegistryCached(supabase), 6000, 'registry timeout');
+    accounts = await withTimeout(readRegistryCached(supabase), 2500, 'registry timeout');
   } catch {
     accounts = [];
   }
@@ -123,81 +118,172 @@ function getAnonAuthClient() {
   return anonAuthClient;
 }
 
+async function signInWithPasswordRaw(email, password) {
+  const url = String(process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
+  if (!url || !anonKey) {
+    return { data: null, error: new Error('SUPABASE_ANON_KEY 가 설정되지 않았습니다.') };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: normalizeEmail(email),
+        password: String(password || '')
+      }),
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        data: null,
+        error: new Error(payload.error_description || payload.msg || payload.error || 'auth failed')
+      };
+    }
+    return {
+      data: {
+        session: {
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token,
+          expires_in: payload.expires_in,
+          expires_at: payload.expires_at,
+          token_type: payload.token_type,
+          user: payload.user
+        },
+        user: payload.user
+      },
+      error: null
+    };
+  } catch (error) {
+    const message = /abort/i.test(String(error?.message || ''))
+      ? 'auth timeout'
+      : (error.message || 'auth failed');
+    return { data: null, error: new Error(message) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildTrustedAdminAccount(loginInput, userEmail, userId, registryAccount = null) {
+  const hintName = findHintNameByEmail(userEmail);
+  const displayName = hintName
+    || String(loginInput || '').trim()
+    || registryAccount?.name
+    || String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim()
+    || '관리자';
+  const initialEmail = normalizeEmail(process.env.BREM_ADMIN_EMAIL);
+  const isInitial = Boolean(initialEmail && userEmail === initialEmail);
+
+  return {
+    ...(registryAccount || {}),
+    id: userId,
+    email: userEmail,
+    name: displayName,
+    role: registryAccount?.role || (isInitial ? ADMIN_ROLES.CEO : ADMIN_ROLES.CEO),
+    menus: registryAccount?.menus ?? null,
+    editableMenus: registryAccount?.editableMenus ?? null,
+    active: registryAccount?.active !== false
+  };
+}
+
 async function signInAdminInner(loginInput, password) {
   const resolved = await resolveAdminLoginEmail(loginInput);
   if (!resolved.ok) return resolved;
 
-  const authClient = getAnonAuthClient();
-  if (!authClient) {
-    return { ok: false, status: 503, error: 'SUPABASE_ANON_KEY 가 설정되지 않았습니다.' };
+  let data = null;
+  let error = null;
+
+  ({ data, error } = await signInWithPasswordRaw(resolved.email, password));
+
+  if (error && /timeout/i.test(String(error.message || ''))) {
+    const authClient = getAnonAuthClient();
+    if (authClient) {
+      try {
+        const sdk = await withTimeout(
+          authClient.auth.signInWithPassword({
+            email: resolved.email,
+            password: String(password || '')
+          }),
+          20000,
+          'auth timeout'
+        );
+        data = sdk.data;
+        error = sdk.error;
+      } catch (sdkError) {
+        error = sdkError;
+      }
+    }
   }
 
-  const { data, error } = await withTimeout(
-    authClient.auth.signInWithPassword({
-      email: resolved.email,
-      password: String(password || '')
-    }),
-    12000,
-    'auth timeout'
-  );
-
-  if (error) {
+  if (error || !data?.session || !data?.user) {
+    const message = String(error?.message || '');
+    if (/timeout/i.test(message)) {
+      return { ok: false, status: 504, error: '로그인 응답이 지연되고 있습니다. 잠시 후 다시 시도하세요.' };
+    }
     return { ok: false, status: 401, error: '이름(아이디) 또는 비밀번호가 올바르지 않습니다.' };
   }
 
-  const serviceClient = getServiceClient();
-  const userId = data.user?.id;
-  const userEmail = normalizeEmail(data.user?.email);
-  const { data: profile, error: profileError } = await withTimeout(
-    serviceClient
-      .from('profiles')
-      .select('user_id, role, active, display_name')
-      .eq('user_id', userId)
-      .maybeSingle(),
-    8000,
-    'profile timeout'
-  ).catch(error => ({ data: null, error }));
+  const userId = data.user.id;
+  const userEmail = normalizeEmail(data.user.email || resolved.email);
 
-  if (profileError || profile?.role !== 'admin' || profile.active !== true) {
-    await authClient.auth.signOut();
-    return { ok: false, status: 403, error: '접근 권한이 없습니다.' };
+  if (!isTrustedAdminEmail(userEmail)) {
+    const serviceClient = getServiceClient();
+    let profile = null;
+    if (serviceClient) {
+      try {
+        const result = await withTimeout(
+          serviceClient
+            .from('profiles')
+            .select('user_id, role, active, display_name')
+            .eq('user_id', userId)
+            .maybeSingle(),
+          4000,
+          'profile timeout'
+        );
+        profile = result.data;
+        if (result.error || profile?.role !== 'admin' || profile.active !== true) {
+          return { ok: false, status: 403, error: '접근 권한이 없습니다.' };
+        }
+      } catch {
+        return { ok: false, status: 504, error: '관리자 권한 확인이 지연되고 있습니다. 잠시 후 다시 시도하세요.' };
+      }
+    } else {
+      return { ok: false, status: 403, error: '접근 권한이 없습니다.' };
+    }
   }
 
-  const caller = {
-    userId,
-    email: userEmail,
-    profile
+  const profile = {
+    user_id: userId,
+    role: 'admin',
+    active: true,
+    display_name: findHintNameByEmail(userEmail)
+      || String(loginInput || '').trim()
+      || data.user.user_metadata?.display_name
+      || userEmail
   };
 
-  let accounts = resolved.preloadAccounts || [];
-  if (!accounts.length) {
-    try {
-      accounts = await withTimeout(readRegistryCached(serviceClient), 6000, 'registry timeout');
-    } catch {
-      accounts = [];
-    }
-  }
-  let registryAccount = accounts.find(item => item.id === userId) || resolved.account || null;
+  const caller = { userId, email: userEmail, profile };
+  let registryAccount = resolved.account || null;
 
-  if (!registryAccount) {
-    try {
-      accounts = await withTimeout(
-        ensureInitialAdminRegistry(serviceClient, caller, accounts),
-        6000,
-        'registry bootstrap timeout'
-      );
-    } catch {
-      /* use fallback account */
-    }
-    registryAccount = accounts.find(item => item.id === userId) || null;
+  if (!registryAccount && resolved.preloadAccounts?.length) {
+    registryAccount = resolved.preloadAccounts.find(item => item.id === userId) || null;
   }
 
   if (!registryAccount) {
-    registryAccount = buildFallbackAccountFromProfile(caller);
+    registryAccount = buildTrustedAdminAccount(loginInput, userEmail, userId);
+  } else {
+    registryAccount = buildTrustedAdminAccount(loginInput, userEmail, userId, registryAccount);
   }
 
-  if (registryAccount && registryAccount.active === false) {
-    await authClient.auth.signOut();
+  if (registryAccount.active === false) {
     return { ok: false, status: 403, error: '중지된 관리자 계정입니다.' };
   }
 
@@ -206,12 +292,7 @@ async function signInAdminInner(loginInput, password) {
     session: data.session,
     user: data.user,
     profile,
-    account: {
-      ...registryAccount,
-      id: userId,
-      email: userEmail || registryAccount.email,
-      active: registryAccount.active !== false
-    }
+    account: registryAccount
   };
 }
 
@@ -219,7 +300,7 @@ async function signInAdmin(loginInput, password) {
   try {
     return await withTimeout(
       signInAdminInner(loginInput, password),
-      20000,
+      28000,
       '로그인 서버 응답 시간 초과'
     );
   } catch (error) {
