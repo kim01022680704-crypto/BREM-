@@ -992,6 +992,39 @@ app.get('/api/admin/baemin-delivery/partner-set-count', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/weekday-quota', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getWeekdayQuotaMatrix(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '요일별 할당을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/baemin-delivery/weekday-quota', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.saveWeekdayQuotaMatrixEntry(getBearerToken(req), {
+      matrix: body.matrix
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '요일별 할당 저장에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/view-full-bundle', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getViewFullBundle(getBearerToken(req), {

@@ -26,6 +26,8 @@
     partnerRegionMap: {},
     partnerRegionItems: [],
     partnerSetCountMap: {},
+    weekdayQuotaMatrix: null,
+    weekdayQuotaMeta: { updatedAt: '', updatedBy: '', isDefault: true },
     canManageRegions: false,
     viewLoaded: false,
     lastClientRefreshAt: '',
@@ -83,24 +85,76 @@
   }
 
   const MENU_IDS = ['delivery_status', 'daily_history', 'rider_history'];
-  const VIEW_MENU_IDS = [...MENU_IDS, 'quota_achievement'];
+  const VIEW_MENU_IDS = [...MENU_IDS, 'quota_achievement', 'weekday_quota'];
   const REGION_MAP_CACHE_KEY = 'brem_baemin_region_map_v1';
 
-  const BASE_QUOTA_BY_GROUP = {
-    weekday: { morning: 21, afternoon: 20, evening: 30, midnight: 29 },
-    friday: { morning: 24, afternoon: 21, evening: 32, midnight: 33 },
-    saturday: { morning: 31, afternoon: 22, evening: 36, midnight: 35 },
-    sunday: { morning: 33, afternoon: 22, evening: 35, midnight: 30 }
+  const WEEKDAY_QUOTA_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const WEEKDAY_QUOTA_SLOT_KEYS = ['morning', 'afternoon', 'evening', 'midnight'];
+  const WEEKDAY_QUOTA_SLOT_LABELS = {
+    morning: '아침점심',
+    afternoon: '오후',
+    evening: '저녁',
+    midnight: '심야'
+  };
+  /** 1세트 기본값 — 토 심야 31 (업로드 표 기준; 구코드 토 심야 35와 다름) */
+  const DEFAULT_WEEKDAY_QUOTA = {
+    mon: { morning: 21, afternoon: 20, evening: 30, midnight: 29 },
+    tue: { morning: 21, afternoon: 20, evening: 30, midnight: 29 },
+    wed: { morning: 21, afternoon: 20, evening: 30, midnight: 29 },
+    thu: { morning: 21, afternoon: 20, evening: 30, midnight: 29 },
+    fri: { morning: 24, afternoon: 21, evening: 32, midnight: 33 },
+    sat: { morning: 31, afternoon: 22, evening: 36, midnight: 31 },
+    sun: { morning: 33, afternoon: 22, evening: 35, midnight: 30 }
   };
 
-  function weekdayGroupKst(dateKey) {
+  function cloneDefaultWeekdayQuota() {
+    return JSON.parse(JSON.stringify(DEFAULT_WEEKDAY_QUOTA));
+  }
+
+  function normalizeQuotaSlotValue(value, fallback = 0) {
+    const num = Math.floor(Number(value));
+    if (!Number.isFinite(num) || num < 0) return Math.max(0, Math.floor(Number(fallback) || 0));
+    return Math.min(num, 9999);
+  }
+
+  function normalizeWeekdayQuotaMatrix(raw) {
+    const defaults = cloneDefaultWeekdayQuota();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const matrix = {};
+    WEEKDAY_QUOTA_KEYS.forEach(day => {
+      const row = source[day] && typeof source[day] === 'object' ? source[day] : {};
+      const fallback = defaults[day];
+      matrix[day] = {};
+      WEEKDAY_QUOTA_SLOT_KEYS.forEach(slot => {
+        matrix[day][slot] = normalizeQuotaSlotValue(row[slot], fallback[slot]);
+      });
+    });
+    return matrix;
+  }
+
+  function ensureWeekdayQuotaMatrix() {
+    if (!state.weekdayQuotaMatrix) {
+      state.weekdayQuotaMatrix = cloneDefaultWeekdayQuota();
+    }
+    return state.weekdayQuotaMatrix;
+  }
+
+  function weekdayKeyKst(dateKey) {
     const date = String(dateKey || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'weekday';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'mon';
     const dow = new Date(`${date}T12:00:00+09:00`).getUTCDay();
-    if (dow >= 1 && dow <= 4) return 'weekday';
-    if (dow === 5) return 'friday';
-    if (dow === 6) return 'saturday';
-    return 'sunday';
+    return WEEKDAY_QUOTA_KEYS[(dow + 6) % 7];
+  }
+
+  function weekdayShortLabelKst(dateKey) {
+    const key = weekdayKeyKst(dateKey);
+    return ({ mon: '월', tue: '화', wed: '수', thu: '목', fri: '금', sat: '토', sun: '일' })[key] || '';
+  }
+
+  function formatDeliveryDateWithWeekday(dateKey) {
+    const date = String(dateKey || '').slice(0, 10);
+    const wd = weekdayShortLabelKst(date);
+    return wd ? `${date} (${wd})` : date;
   }
 
   function normalizeSetCount(value) {
@@ -111,7 +165,9 @@
 
   function computeSlotTargets(setCount, dateKey) {
     const sets = normalizeSetCount(setCount);
-    const base = BASE_QUOTA_BY_GROUP[weekdayGroupKst(dateKey)] || BASE_QUOTA_BY_GROUP.weekday;
+    const matrix = ensureWeekdayQuotaMatrix();
+    const day = weekdayKeyKst(dateKey);
+    const base = matrix[day] || matrix.mon;
     return {
       morning: base.morning * sets,
       afternoon: base.afternoon * sets,
@@ -476,7 +532,7 @@
     }
 
     // 메뉴별 컨트롤만 표시
-    // 배달현황 → 조회만 / 일별·라이더 → 기간 / 할당달성 → 정산주+세트수
+    // 배달현황 → 조회만 / 일별·라이더 → 기간 / 할당달성 → 정산주+세트수 / 요일별할당 → 없음
     const showWeek = state.activeMenu === 'quota_achievement';
     const showRange = state.activeMenu === 'rider_history' || state.activeMenu === 'daily_history';
     const showDeliveryQuery = state.activeMenu === 'delivery_status';
@@ -489,6 +545,9 @@
     if (setCountRow) setCountRow.hidden = !showSetCount;
 
     if (showSetCount) renderSetCountRow(state.activePartnerId);
+    if (state.activeMenu === 'weekday_quota') {
+      void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
+    }
     if (showRange) {
       syncRiderDateRangeInputs();
       const metaEl = $('baeminStatusRiderRangeMeta');
@@ -781,15 +840,60 @@
     loadBtn?.classList.add('is-loading');
     if (loadBtn) loadBtn.textContent = '조회 중…';
     try {
-      await loadViewData({ silent: true });
-      const cached = getCachedPartnerBundle(partnerId);
-      if (cached?.delivery_status?.length) {
-        renderSubtabRows('delivery_status', partnerId, cached.delivery_status, cached.meta || {});
-        showToast(`배달현황 ${formatNumber(cached.delivery_status.length)}명`);
-      } else {
-        clearViewTablesForMenu('delivery_status', '저장된 배달현황이 없습니다. BIZ 수집 후 [배민현황 저장]을 실행하세요.');
-        showToast('배달현황 데이터 없음');
+      // 선택 지역 배달현황만 조회 (전체 view-full-bundle 사용 금지)
+      if (!state.config?.applied) {
+        await loadViewConfig();
       }
+      const captureDate = state.appliedCollectDate
+        || state.config?.applied?.collectDate
+        || todayKstDate();
+      const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+
+      if (!result.ok) {
+        showToast(result.message || '배달현황 불러오기에 실패했습니다.');
+        return;
+      }
+      if (result.notApplied) {
+        clearViewTablesForMenu(
+          'delivery_status',
+          result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.'
+        );
+        showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+        return;
+      }
+
+      const items = result.items || [];
+      const cached = getCachedPartnerBundle(partnerId) || { meta: {}, totals: {} };
+      cached.delivery_status = items;
+      cached.totals = {
+        ...(cached.totals || {}),
+        delivery_status: result.totals || null
+      };
+      cached.meta = {
+        ...(cached.meta || {}),
+        captureDate: result.collectDate || captureDate,
+        notApplied: false,
+        deliveryLoaded: true
+      };
+      setCachedPartnerBundle(partnerId, cached);
+
+      state.viewLoaded = true;
+      state.appliedCollectDate = result.collectDate || captureDate;
+      state.lastClientRefreshAt = new Date().toISOString();
+      renderRefreshMeta();
+
+      if (!items.length) {
+        clearViewTablesForMenu(
+          'delivery_status',
+          '저장된 배달현황이 없습니다. BIZ 수집 후 [배민현황 저장]을 실행하세요.'
+        );
+        showToast('배달현황 데이터 없음');
+        return;
+      }
+
+      renderSubtabRows('delivery_status', partnerId, items, cached.meta);
+      renderGrandTotalsPanel('delivery_status', partnerId);
+      showToast(`배달현황 ${formatNumber(items.length)}명`);
     } finally {
       loadBtn?.classList.remove('is-loading');
       if (loadBtn) loadBtn.textContent = '배달현황 조회';
@@ -841,6 +945,8 @@
       showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
       return;
     }
+
+    await ensureWeekdayQuotaLoaded();
 
     const items = result.items || [];
     const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
@@ -969,13 +1075,15 @@
           delivery_status: 'baeminStatusDeliveryStatusSummary',
           daily_history: 'baeminStatusDailyHistorySummary',
           rider_history: 'baeminStatusRiderHistorySummary',
-          quota_achievement: 'baeminStatusQuotaAchievementSummary'
+          quota_achievement: 'baeminStatusQuotaAchievementSummary',
+          weekday_quota: 'baeminStatusWeekdayQuotaSummary'
         },
         rowsMap: {
           delivery_status: 'baeminStatusDeliveryStatusRows',
           daily_history: 'baeminStatusDailyHistoryRows',
           rider_history: 'baeminStatusRiderHistoryRows',
-          quota_achievement: 'baeminStatusQuotaAchievementRows'
+          quota_achievement: 'baeminStatusQuotaAchievementRows',
+          weekday_quota: 'baeminStatusWeekdayQuotaRows'
         }
       };
     }
@@ -1175,7 +1283,7 @@
       const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
       return `<tr>
-        <td>${escapeHtml(date)}</td>
+        <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
         ${renderQuotaCell(actual.morning, targets.morning)}
         ${renderQuotaCell(actual.afternoon, targets.afternoon)}
         ${renderQuotaCell(actual.evening, targets.evening)}
@@ -1197,6 +1305,11 @@
       } else {
         clearViewTablesForMenu('quota_achievement', '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
       }
+      renderGrandTotalsPanel('delivery_status', partnerId);
+      return;
+    }
+    if (menu === 'weekday_quota') {
+      void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
@@ -1306,6 +1419,104 @@
       return;
     }
     state.partnerSetCountMap = result.map || {};
+  }
+
+  async function ensureWeekdayQuotaLoaded(force = false) {
+    if (!force && state.weekdayQuotaMatrix) return state.weekdayQuotaMatrix;
+    const result = await adminApi('/api/admin/baemin-delivery/weekday-quota');
+    if (!result.ok) {
+      state.weekdayQuotaMatrix = cloneDefaultWeekdayQuota();
+      state.weekdayQuotaMeta = { updatedAt: '', updatedBy: '', isDefault: true };
+      return state.weekdayQuotaMatrix;
+    }
+    state.weekdayQuotaMatrix = normalizeWeekdayQuotaMatrix(result.matrix);
+    state.weekdayQuotaMeta = {
+      updatedAt: result.updatedAt || '',
+      updatedBy: result.updatedBy || '',
+      isDefault: Boolean(result.isDefault)
+    };
+    return state.weekdayQuotaMatrix;
+  }
+
+  function readWeekdayQuotaFromEditor() {
+    const matrix = cloneDefaultWeekdayQuota();
+    WEEKDAY_QUOTA_KEYS.forEach(day => {
+      WEEKDAY_QUOTA_SLOT_KEYS.forEach(slot => {
+        const input = document.querySelector(`[data-weekday-quota-day="${day}"][data-weekday-quota-slot="${slot}"]`);
+        if (!input) return;
+        matrix[day][slot] = normalizeQuotaSlotValue(input.value, matrix[day][slot]);
+      });
+    });
+    return matrix;
+  }
+
+  function renderWeekdayQuotaEditor() {
+    const rowsEl = $('baeminStatusWeekdayQuotaRows');
+    const summaryEl = $('baeminStatusWeekdayQuotaSummary');
+    const metaEl = $('baeminStatusWeekdayQuotaMeta');
+    if (!rowsEl) return;
+
+    const matrix = ensureWeekdayQuotaMatrix();
+    rowsEl.innerHTML = WEEKDAY_QUOTA_SLOT_KEYS.map(slot => {
+      const cells = WEEKDAY_QUOTA_KEYS.map(day => {
+        const value = matrix[day]?.[slot] ?? 0;
+        return `<td><input type="number" class="baemin-weekday-quota-input" min="0" max="9999" step="1" inputmode="numeric" value="${value}" data-weekday-quota-day="${day}" data-weekday-quota-slot="${slot}" aria-label="${WEEKDAY_QUOTA_SLOT_LABELS[slot]} ${day}"></td>`;
+      }).join('');
+      return `<tr>
+        <th scope="row">${escapeHtml(WEEKDAY_QUOTA_SLOT_LABELS[slot])}</th>
+        ${cells}
+      </tr>`;
+    }).join('');
+
+    if (summaryEl) {
+      summaryEl.textContent = '1세트 기준 · 저장 값이 할당달성 목표로 사용됩니다';
+    }
+    if (metaEl) {
+      const meta = state.weekdayQuotaMeta || {};
+      metaEl.textContent = meta.updatedAt
+        ? `저장 ${formatDateTime(meta.updatedAt)}${meta.updatedBy ? ` · ${meta.updatedBy}` : ''}`
+        : '기본값 (아직 저장 없음) · 토 심야=31';
+    }
+  }
+
+  async function saveWeekdayQuotaMatrix() {
+    const matrix = readWeekdayQuotaFromEditor();
+    const btn = $('baeminStatusWeekdayQuotaSaveBtn');
+    btn?.classList.add('is-loading');
+    if (btn) btn.textContent = '저장 중…';
+    const result = await adminApi('/api/admin/baemin-delivery/weekday-quota', {
+      method: 'POST',
+      body: JSON.stringify({ matrix })
+    });
+    btn?.classList.remove('is-loading');
+    if (btn) btn.textContent = '할당 저장';
+    if (!result.ok) {
+      showToast(result.message || result.error || '요일별 할당 저장에 실패했습니다.');
+      return;
+    }
+    state.weekdayQuotaMatrix = normalizeWeekdayQuotaMatrix(result.matrix);
+    state.weekdayQuotaMeta = {
+      updatedAt: result.updatedAt || new Date().toISOString(),
+      updatedBy: result.updatedBy || '',
+      isDefault: false
+    };
+    renderWeekdayQuotaEditor();
+
+    const pid = normalizePartnerId(state.activePartnerId);
+    const cached = pid ? getCachedPartnerBundle(pid) : null;
+    if (pid && cached && (cached.meta?.quotaLoaded || cached.daily_history?.length)) {
+      renderQuotaAchievementRows(pid, cached.daily_history || [], cached.meta || {});
+    }
+    if (pid && state.activeMenu === 'delivery_status') {
+      renderGrandTotalsPanel('delivery_status', pid);
+    }
+    showToast('요일별 할당을 저장했습니다. 할당달성에 반영됩니다.');
+  }
+
+  async function resetWeekdayQuotaEditorToDefaults() {
+    state.weekdayQuotaMatrix = cloneDefaultWeekdayQuota();
+    renderWeekdayQuotaEditor();
+    showToast('기본값으로 되돌렸습니다. [할당 저장]을 눌러 반영하세요.');
   }
 
   async function savePartnerSetCount() {
@@ -1695,6 +1906,12 @@
     });
     updatePanelVisibility();
 
+    if (state.activeMenu === 'weekday_quota') {
+      void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
+      renderGrandTotalsPanel('delivery_status', id);
+      return;
+    }
+
     const cached = getCachedPartnerBundle(id);
     if (cached) {
       renderSetCountRow(id);
@@ -1755,6 +1972,9 @@
             clearViewTablesForMenu(menu, '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
           }
           renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+        } else if (menu === 'weekday_quota') {
+          void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
+          renderGrandTotalsPanel('delivery_status', state.activePartnerId);
         } else if (menu === 'rider_history') {
           if (cached?.rider_history?.length && cached.meta?.riderLoaded) {
             renderRiderHistoryRiderRows(state.activePartnerId, cached.rider_history, {
@@ -1814,18 +2034,22 @@
     if (summaryEl) {
       summaryEl.textContent = menu === 'quota_achievement'
         ? `${formatViewWeekRangeLabel(ensureViewWeekStart())} · 데이터 없음`
-        : (menu === 'rider_history' || menu === 'daily_history'
-          ? '시작일·종료일을 선택하고 조회를 눌러 주세요'
-          : (menu === 'delivery_status'
-            ? '배달현황 조회를 눌러 주세요'
-            : '데이터 없음'));
+        : (menu === 'weekday_quota'
+          ? '요일별 1세트 할당을 입력하세요'
+          : (menu === 'rider_history' || menu === 'daily_history'
+            ? '시작일·종료일을 선택하고 조회를 눌러 주세요'
+            : (menu === 'delivery_status'
+              ? '배달현황 조회를 눌러 주세요'
+              : '데이터 없음')));
     }
     if (rowsEl) {
       const colspan = menu === 'quota_achievement'
         ? 5
-        : (menu === 'rider_history' && isViewSection()
-          ? 10
-          : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false }));
+        : (menu === 'weekday_quota'
+          ? 8
+          : (menu === 'rider_history' && isViewSection()
+            ? 10
+            : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false })));
       rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
     }
   }
@@ -2964,7 +3188,12 @@
     if (loadBtn) loadBtn.textContent = '불러오는 중…';
 
     invalidateDataCache();
-    await Promise.all([loadPartnerRegionMap(), loadViewConfig(), loadPartnerSetCountMap()]);
+    await Promise.all([
+      loadPartnerRegionMap(),
+      loadViewConfig(),
+      loadPartnerSetCountMap(),
+      ensureWeekdayQuotaLoaded(true)
+    ]);
 
     const captureDate = state.config?.applied?.collectDate || todayKstDate();
     const weekStart = ensureViewWeekStart();
@@ -3069,8 +3298,12 @@
     if (!id) return null;
 
     if (isViewSection()) {
-      if (!state.viewLoaded) {
+      if (!state.viewLoaded && focusMenu !== 'weekday_quota') {
         clearViewTablesIdle();
+        return null;
+      }
+
+      if (focusMenu === 'weekday_quota' || focusMenu === 'quota_achievement') {
         return null;
       }
 
@@ -3237,7 +3470,7 @@
           : `<td>${formatDateTime(row.collected_at)}</td>`;
         return `<tr>
           ${partnerCell(p)}
-          <td>${p.deliveryDate || row.collect_date || '-'}</td>
+          <td>${escapeHtml(formatDeliveryDateWithWeekday(p.deliveryDate || row.collect_date || '-'))}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
           ${formatServiceBreakdownCells(p)}
           <td>${formatNumber(p.morningCount || 0)}</td>
@@ -3581,6 +3814,14 @@
       void savePartnerSetCount();
     });
 
+    $('baeminStatusWeekdayQuotaSaveBtn')?.addEventListener('click', () => {
+      void saveWeekdayQuotaMatrix();
+    });
+
+    $('baeminStatusWeekdayQuotaResetBtn')?.addEventListener('click', () => {
+      void resetWeekdayQuotaEditorToDefaults();
+    });
+
     $('baeminStatusWeekStart')?.addEventListener('change', () => {
       if (!isViewSection()) return;
       handleWeekSelect($('baeminStatusWeekStart')?.value || '');
@@ -3630,6 +3871,8 @@
         showRegionTabsFromMap(cachedMap);
       }
       void loadPartnerRegionMap();
+      void loadPartnerSetCountMap();
+      void ensureWeekdayQuotaLoaded(true);
       void loadPartnerSetCountMap();
       void loadViewConfig();
       updatePanelVisibility();

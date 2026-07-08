@@ -816,6 +816,25 @@ async function getPartnerSetCountMap(accessToken) {
   return getPartnerSetCountMapForAdmin();
 }
 
+async function getWeekdayQuotaMatrix(accessToken) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getWeekdayQuotaForAdmin } = require('./baemin-weekday-quota');
+  return getWeekdayQuotaForAdmin();
+}
+
+async function saveWeekdayQuotaMatrixEntry(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { saveWeekdayQuotaForAdmin } = require('./baemin-weekday-quota');
+  return saveWeekdayQuotaForAdmin(
+    options.matrix,
+    actor.caller.email || actor.caller.userId || ''
+  );
+}
+
 module.exports = {
   fetchAllDeliveryStatus,
   collectFromApi,
@@ -840,6 +859,8 @@ module.exports = {
   savePartnerRegionEntry,
   getPartnerSetCountMap,
   savePartnerSetCountEntry,
+  getWeekdayQuotaMatrix,
+  saveWeekdayQuotaMatrixEntry,
   mergeDataArrays,
   extractDataArray,
   mapItemToRow,

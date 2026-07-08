@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260708q">
+  <link rel="stylesheet" href="css/admin.css?v=20260708s">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -877,6 +877,7 @@
               <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
               <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
               <button type="button" class="promotion-tab" data-baemin-menu="quota_achievement">할당달성</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="weekday_quota">요일별할당입력</button>
             </nav>
             <div id="baeminStatusSetCountRow" class="baemin-view-setcount" hidden>
               <label class="baemin-view-setcount__field">
@@ -1018,7 +1019,7 @@
             <div class="card-header baemin-view-data-card__header">
               <div>
                 <h2>할당달성</h2>
-                <p class="form-help">일별 배달내역 기준 · 세트수 목표 대비 달성률 · 수~화 정산주</p>
+                <p class="form-help">일별 배달내역 기준 · 요일별할당 × 세트수 목표 대비 달성률 · 수~화 정산주</p>
               </div>
               <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusQuotaAchievementSummary">정산주를 선택하고 할당달성 조회를 눌러 주세요</p>
             </div>
@@ -1034,6 +1035,40 @@
                   </tr>
                 </thead>
                 <tbody id="baeminStatusQuotaAchievementRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="weekday_quota" hidden>
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>요일별할당입력</h2>
+                <p class="form-help">1세트 기준 월~일 × 시간대 목표 · 저장 후 할당달성·배달현황 진행률에 즉시 반영</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusWeekdayQuotaSummary">할당표를 불러오는 중…</p>
+            </div>
+            <div class="baemin-weekday-quota-toolbar">
+              <button type="button" class="btn-primary" id="baeminStatusWeekdayQuotaSaveBtn">할당 저장</button>
+              <button type="button" class="small-btn" id="baeminStatusWeekdayQuotaResetBtn">기본값으로</button>
+              <span id="baeminStatusWeekdayQuotaMeta" class="form-help"></span>
+            </div>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table baemin-weekday-quota-table" id="baeminStatusWeekdayQuotaTable">
+                <thead>
+                  <tr>
+                    <th>1세트</th>
+                    <th>월요일</th>
+                    <th>화요일</th>
+                    <th>수요일</th>
+                    <th>목요일</th>
+                    <th>금요일</th>
+                    <th>토요일</th>
+                    <th>일요일</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusWeekdayQuotaRows"></tbody>
               </table>
             </div>
           </article>
@@ -5099,7 +5134,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260708q"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260708s"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

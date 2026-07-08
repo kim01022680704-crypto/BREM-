@@ -3356,6 +3356,38 @@ textarea {
   color: #94a3b8;
 }
 
+.baemin-weekday-quota-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin: 0 0 12px;
+}
+
+.baemin-weekday-quota-table th[scope="row"] {
+  white-space: nowrap;
+  font-weight: 700;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.baemin-weekday-quota-input {
+  width: 4.5rem;
+  min-width: 3.5rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  text-align: center;
+  font-weight: 700;
+}
+
+.baemin-weekday-quota-input:focus {
+  outline: 2px solid rgba(56, 189, 248, 0.45);
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
 #baemin-status .baemin-region-tabs:not([hidden]) {
   min-height: 42px;
 }
