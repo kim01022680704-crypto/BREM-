@@ -2104,11 +2104,13 @@ async function fetchBizCollectMenuRows(supabase, menu, selectFields) {
   const rows = [];
   let offset = 0;
   while (true) {
+    // collected_at만 정렬하면 동일 시각 다건이 range에서 누락됨 → id 2차 정렬 필수
     const { data, error } = await supabase
       .from('baemin_biz_collect_items')
       .select(selectFields)
       .eq('source_menu', menu)
       .order('collected_at', { ascending: false })
+      .order('id', { ascending: true })
       .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
 
     if (error) throw error;
