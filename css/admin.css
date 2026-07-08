@@ -2900,6 +2900,14 @@ textarea {
   gap: 10px 12px;
 }
 
+.baemin-view-week[hidden],
+.baemin-view-rider-toolbar[hidden],
+.baemin-view-delivery-toolbar[hidden],
+.baemin-view-setcount[hidden],
+#baeminStatusMenuNavBlock[hidden] {
+  display: none !important;
+}
+
 .baemin-view-nav__label {
   font-size: 0.78rem;
   font-weight: 700;

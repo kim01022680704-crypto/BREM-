@@ -453,26 +453,42 @@
     const weekLoadBtn = $('baeminStatusWeekLoadBtn');
     const rangeToolbar = $('baeminStatusRangeToolbar');
     const deliveryToolbar = $('baeminStatusDeliveryToolbar');
+    const setCountRow = $('baeminStatusSetCountRow');
     const menuNav = $('baeminStatusMenuNavBlock');
     if (!isViewSection()) {
       if (row) row.hidden = true;
       if (weekLoadBtn) weekLoadBtn.hidden = true;
       if (rangeToolbar) rangeToolbar.hidden = true;
       if (deliveryToolbar) deliveryToolbar.hidden = true;
+      if (setCountRow) setCountRow.hidden = true;
       if (menuNav) menuNav.hidden = true;
       return;
     }
     const hasRegion = Boolean(normalizePartnerId(state.activePartnerId));
     if (menuNav) menuNav.hidden = !hasRegion;
+    if (!hasRegion) {
+      if (row) row.hidden = true;
+      if (weekLoadBtn) weekLoadBtn.hidden = true;
+      if (rangeToolbar) rangeToolbar.hidden = true;
+      if (deliveryToolbar) deliveryToolbar.hidden = true;
+      if (setCountRow) setCountRow.hidden = true;
+      return;
+    }
 
+    // 메뉴별 컨트롤만 표시
+    // 배달현황 → 조회만 / 일별·라이더 → 기간 / 할당달성 → 정산주+세트수
     const showWeek = state.activeMenu === 'quota_achievement';
-    const showWeekLoad = state.activeMenu === 'quota_achievement';
     const showRange = state.activeMenu === 'rider_history' || state.activeMenu === 'daily_history';
     const showDeliveryQuery = state.activeMenu === 'delivery_status';
+    const showSetCount = state.activeMenu === 'quota_achievement';
+
     if (row) row.hidden = !showWeek;
-    if (weekLoadBtn) weekLoadBtn.hidden = !showWeekLoad;
+    if (weekLoadBtn) weekLoadBtn.hidden = !showWeek;
     if (rangeToolbar) rangeToolbar.hidden = !showRange;
     if (deliveryToolbar) deliveryToolbar.hidden = !showDeliveryQuery;
+    if (setCountRow) setCountRow.hidden = !showSetCount;
+
+    if (showSetCount) renderSetCountRow(state.activePartnerId);
     if (showRange) {
       syncRiderDateRangeInputs();
       const metaEl = $('baeminStatusRiderRangeMeta');
@@ -1089,11 +1105,8 @@
     const labelEl = $('baeminStatusSetCountLabel');
     if (!row || !isViewSection()) return;
     const pid = normalizePartnerId(partnerId);
-    const show = Boolean(pid && (
-      state.activeMenu === 'quota_achievement'
-      || state.activeMenu === 'delivery_status'
-      || state.viewLoaded
-    ));
+    // 세트수는 할당달성에서만 표시
+    const show = Boolean(pid && state.activeMenu === 'quota_achievement');
     row.hidden = !show;
     if (!show) return;
 
