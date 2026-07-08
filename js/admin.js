@@ -2304,7 +2304,7 @@
       const originalLabel = submitBtn?.textContent || '로그인';
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = '로그인 중…';
+        submitBtn.textContent = '서버 로그인 중…';
       }
 
       let adminLoginTimerActive = false;
@@ -2315,14 +2315,8 @@
 
         if (window.BremSupabaseConfig?.load) {
           const configLoad = window.BremSupabaseConfig.load();
-          const bootstrap = BremStorage.waitForStorageBootstrap?.() || Promise.resolve();
-          const timeout = new Promise(resolve => setTimeout(() => resolve('bootstrap-timeout'), 3000));
-          await Promise.race([
-            Promise.all([configLoad, bootstrap]),
-            timeout
-          ]);
-        } else {
-          await BremStorage.waitForStorageBootstrap?.();
+          const timeout = new Promise(resolve => setTimeout(() => resolve('bootstrap-timeout'), 1500));
+          await Promise.race([configLoad, timeout]);
         }
 
         window.BremPerf?.time?.('admin.signInApi');
@@ -2335,7 +2329,7 @@
             : BremStorage.auth.signInAdmin(name, password),
           new Promise((_, reject) => setTimeout(
             () => reject(new Error('로그인 시간 초과입니다. 새로고침 후 다시 시도하세요.')),
-            45000
+            60000
           ))
         ]);
         window.BremPerf?.timeEnd?.('admin.signInApi');

@@ -4336,7 +4336,10 @@ const BremStorage = (function () {
   }
 
   async function finishProductionAdminSessionFromPayload(payload, authApi) {
-    const client = await ensureSupabaseClient();
+    const client = await Promise.race([
+      ensureSupabaseClientForLogin(),
+      new Promise(resolve => setTimeout(() => resolve(null), 3000))
+    ]);
     if (!client) {
       return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
     }
@@ -4344,25 +4347,22 @@ const BremStorage = (function () {
       return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
     }
 
-    const { error: sessionError } = await client.auth.setSession({
-      access_token: payload.session.access_token,
-      refresh_token: payload.session.refresh_token
-    });
-    if (sessionError) {
-      return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
+    const sessionResult = await Promise.race([
+      client.auth.setSession({
+        access_token: payload.session.access_token,
+        refresh_token: payload.session.refresh_token
+      }),
+      new Promise(resolve => setTimeout(() => resolve({ error: new Error('session timeout') }), 5000))
+    ]);
+    if (sessionResult?.error) {
+      console.warn('[BREM] setSession delayed; continuing with access token only:', sessionResult.error.message);
     }
 
     rememberAdminAccessToken(payload.session.access_token);
     bindSupabaseAuthListener(client);
-    if (payload.profile) {
-      activeSupabaseProfile = payload.profile;
-    } else if (!activeSupabaseProfile) {
-      activeSupabaseProfile = buildProfileFromAuthUser(payload.user || payload.session?.user, 'admin')
-        || await Promise.race([
-          loadSupabaseProfile(),
-          new Promise(resolve => setTimeout(() => resolve(null), 2000))
-        ]);
-    }
+    activeSupabaseProfile = payload.profile
+      || buildProfileFromAuthUser(payload.user || payload.session?.user, 'admin')
+      || activeSupabaseProfile;
 
     let account = null;
     if (payload.account) {
@@ -4373,8 +4373,20 @@ const BremStorage = (function () {
     if (!account) {
       account = productionAdminSessionAccount;
     }
+    if (!account && payload.user?.id) {
+      account = {
+        id: payload.user.id,
+        name: payload.account?.name || payload.profile?.display_name || '관리자',
+        role: ADMIN_ROLES.CEO,
+        menus: ALL_ADMIN_MENU_IDS,
+        editableMenus: ALL_ADMIN_MENU_IDS,
+        active: true,
+        email: payload.user.email || ''
+      };
+      persistProductionSessionAccount(account);
+      productionAdminSessionAccount = account;
+    }
     if (!account) {
-      await client.auth.signOut();
       return { ok: false, message: '관리자 계정 정보를 확인할 수 없습니다. 계정 상태를 확인하세요.' };
     }
 
@@ -10482,81 +10494,21 @@ const BremStorage = (function () {
           if (window.BremSupabaseConfig?.load) {
             await Promise.race([
               window.BremSupabaseConfig.load(),
-              new Promise(resolve => setTimeout(resolve, 2000))
+              new Promise(resolve => setTimeout(resolve, 1500))
             ]);
           }
-          await ensureSupabaseClientForLogin();
 
-          let email = resolveAdminLoginInput(loginInput);
-          const apiLogin = fetchAdminSignInApi(loginInput, password, 28000)
-            .then(async ({ response, payload }) => {
-              if (!response.ok) {
-                return {
-                  ok: false,
-                  message: payload.error || '로그인에 실패했습니다.',
-                  status: response.status
-                };
-              }
-              return finishProductionAdminSessionFromPayload(payload, this);
-            })
-            .catch(error => ({
-              ok: false,
-              message: error.message || '로그인에 실패했습니다.'
-            }));
-
-          if (!email.includes('@')) {
-            const apiResult = await apiLogin;
-            if (apiResult.ok) return apiResult;
-            email = await Promise.race([
-              resolveLoginEmailFast(loginInput),
-              new Promise(resolve => setTimeout(() => resolve(''), 2000))
-            ]);
-            if (!email.includes('@')) {
-              return {
-                ok: false,
-                message: apiResult.message || '등록된 관리자 아이디를 찾지 못했습니다. 이메일로 로그인해 보세요.'
-              };
-            }
+          const { response, payload } = await fetchAdminSignInApi(loginInput, password, 35000);
+          if (response.ok) {
+            await ensureSupabaseClientForLogin();
+            return finishProductionAdminSessionFromPayload(payload, this);
           }
 
-          const directPromise = signInWithSupabase(email, password, 'admin').then(direct => {
-            if (!direct.ok) return direct;
-            const registryAccount = this.getAdminAccountById(direct.profile.user_id);
-            const account = registryAccount || {
-              id: direct.profile.user_id,
-              name: direct.profile.display_name
-                || String(loginInput || '').trim()
-                || direct.user.email
-                || '관리자',
-              role: ADMIN_ROLES.CEO,
-              menus: ALL_ADMIN_MENU_IDS,
-              editableMenus: ALL_ADMIN_MENU_IDS,
-              active: true,
-              email: direct.user?.email || email
-            };
-            if (account.email) {
-              persistProductionSessionAccount(account);
-              productionAdminSessionAccount = account;
-            }
-            this.setAdminSession(account.id);
-            this.syncProductionAdminAccounts().catch(() => {});
-            document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
-            return { ok: true, account: { ...account, password: '' } };
-          });
-
-          const winner = await Promise.race([
-            apiLogin.then(result => (result.ok ? result : null)),
-            directPromise.then(result => (result.ok ? result : null))
-          ]);
-          if (winner?.ok) return winner;
-
-          const [apiResult, directResult] = await Promise.all([apiLogin, directPromise]);
-          if (directResult?.ok) return directResult;
-          if (apiResult?.ok) return apiResult;
-          return {
-            ok: false,
-            message: directResult?.message || apiResult?.message || '로그인에 실패했습니다.'
-          };
+          const message = payload.error || '로그인에 실패했습니다.';
+          if (response.status === 401) {
+            return { ok: false, message: '이름(아이디) 또는 비밀번호가 올바르지 않습니다.' };
+          }
+          return { ok: false, message };
         } catch (error) {
           const message = String(error?.message || '');
           if (/abort|timeout/i.test(message)) {
