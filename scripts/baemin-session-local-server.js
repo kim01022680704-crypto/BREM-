@@ -83,6 +83,7 @@ let activeJob = null;
 let activeContext = null;
 let activeRunToken = 0;
 let refreshLoopRunning = false;
+let refreshLaunchPromise = null;
 /** ERP 재요청 시 최신 setup 토큰으로 저장 (브라우저는 닫지 않음) */
 let activeSetup = { setupId: '', setupSecret: '', apiBase: 'https://brem.kr' };
 
@@ -1225,6 +1226,16 @@ async function persistDiscoveredApis(discoveryState) {
 }
 
 async function runSessionRefresh() {
+  if (refreshLaunchPromise) {
+    return refreshLaunchPromise;
+  }
+  refreshLaunchPromise = runSessionRefreshInner().finally(() => {
+    refreshLaunchPromise = null;
+  });
+  return refreshLaunchPromise;
+}
+
+async function runSessionRefreshInner() {
   if (refreshLoopRunning && isContextAlive(activeContext)) {
     console.log('[BREM] [시작] 이미 갱신 루프 실행 중 — 브라우저 유지');
     return;

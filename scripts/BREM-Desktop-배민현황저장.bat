@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title BREM Baemin Session (git pull + restart)
+title BREM 배민현황 저장 (로컬)
 
 set "BREM_DIR="
 for /f "delims=" %%D in ('dir /b /ad "E:\" 2^>nul') do (
@@ -8,24 +8,18 @@ for /f "delims=" %%D in ('dir /b /ad "E:\" 2^>nul') do (
 )
 
 if not defined BREM_DIR (
-  echo [ERROR] BREM folder not found.
-  echo   Checked E:\*\BREM
+  echo [ERROR] E:\*\BREM folder not found.
   pause
   exit /b 1
 )
 
+cd /d "%BREM_DIR%"
 echo ========================================
-echo   BREM Baemin Session Server
+echo   BREM 배민현황 저장 (Supabase apply)
 echo   %BREM_DIR%
 echo ========================================
 echo.
 
-cd /d "%BREM_DIR%"
-echo [UPDATE] git pull ...
-git pull
-if errorlevel 1 (
-  echo [WARN] git pull failed - stash local changes and try again.
-  echo.
-)
-
-call "%BREM_DIR%\scripts\restart-baemin-session-server-e.bat"
+node scripts\reapply-baemin-delivery.js %*
+echo.
+pause

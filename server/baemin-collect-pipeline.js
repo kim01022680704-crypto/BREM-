@@ -1993,6 +1993,7 @@ async function readAppliedBaeminDelivery() {
 }
 
 const BIZ_COLLECT_PAGE_SIZE = 1000;
+const BIZ_COLLECT_MENUS = ['delivery_status', 'daily_history', 'rider_history'];
 
 async function fetchAllBaeminBizCollectItems(selectFields) {
   const supabase = getServiceClient();
@@ -2000,28 +2001,41 @@ async function fetchAllBaeminBizCollectItems(selectFields) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  let offset = 0;
-  const rows = [];
-  while (true) {
-    const { data, error } = await supabase
-      .from('baemin_biz_collect_items')
-      .select(selectFields)
-      .order('collected_at', { ascending: false })
-      .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+  const deduped = new Map();
+  let totalFetched = 0;
 
-    if (error) {
-      if (isMissingBizCollectTableError(error)) {
-        return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+  for (const menu of BIZ_COLLECT_MENUS) {
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('baemin_biz_collect_items')
+        .select(selectFields)
+        .eq('source_menu', menu)
+        .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+
+      if (error) {
+        if (isMissingBizCollectTableError(error)) {
+          return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+        }
+        return { ok: false, error: error.message || '조회 실패' };
       }
-      return { ok: false, error: error.message || '조회 실패' };
+      if (!data?.length) break;
+      totalFetched += data.length;
+      data.forEach(row => {
+        const dedupeKey = String(row.dedupe_key || '').trim();
+        if (!dedupeKey) return;
+        const key = `${menu}|${dedupeKey}`;
+        const prev = deduped.get(key);
+        if (!prev || String(row.collected_at || '') >= String(prev.collected_at || '')) {
+          deduped.set(key, row);
+        }
+      });
+      if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+      offset += BIZ_COLLECT_PAGE_SIZE;
     }
-    if (!data?.length) break;
-    rows.push(...data);
-    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
-    offset += BIZ_COLLECT_PAGE_SIZE;
   }
 
-  return { ok: true, rows, totalFetched: rows.length };
+  return { ok: true, rows: Array.from(deduped.values()), totalFetched };
 }
 
 async function fetchAppliedItemsPaged(tableName, filters = {}, selectFields) {
@@ -2054,24 +2068,47 @@ async function fetchAppliedItemsPaged(tableName, filters = {}, selectFields) {
   return { ok: true, rows, totalFetched: rows.length };
 }
 
+async function deleteAppliedBatchItemsPaged(batchId) {
+  const supabase = getServiceClient();
+  if (!supabase || !batchId) return { ok: true, deleted: 0 };
+
+  let deleted = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('baemin_delivery_applied_items')
+      .select('id')
+      .eq('batch_id', batchId)
+      .limit(BIZ_COLLECT_PAGE_SIZE);
+    if (error) return { ok: false, error: error.message || '이전 스냅샷 삭제 실패' };
+    const ids = (data || []).map(row => row.id).filter(Boolean);
+    if (!ids.length) break;
+    const { error: deleteError } = await supabase
+      .from('baemin_delivery_applied_items')
+      .delete()
+      .in('id', ids);
+    if (deleteError) return { ok: false, error: deleteError.message || '이전 스냅샷 삭제 실패' };
+    deleted += ids.length;
+    if (ids.length < BIZ_COLLECT_PAGE_SIZE) break;
+  }
+  return { ok: true, deleted };
+}
+
+function slimParsedJsonForApply(parsed = {}) {
+  if (!parsed || typeof parsed !== 'object') return {};
+  const next = { ...parsed };
+  delete next.hourlyCompleted;
+  return next;
+}
+
 async function loadBizCollectRowsForApply(preferredDate = '') {
   const preferred = String(preferredDate || '').slice(0, 10);
-  const selectFields = 'collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json, raw_json';
+  const selectFields = 'collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json';
   const fetched = await fetchAllBaeminBizCollectItems(selectFields);
   if (!fetched.ok) return fetched;
 
   const allRows = fetched.rows || [];
 
-  const deduped = new Map();
-  (allRows || []).forEach(row => {
-    const menu = String(row.source_menu || '').trim();
-    const dedupeKey = String(row.dedupe_key || '').trim();
-    if (!menu || !dedupeKey) return;
-    const key = `${menu}|${dedupeKey}`;
-    if (!deduped.has(key)) deduped.set(key, row);
-  });
-
-  const rows = normalizeCollectRowsPartnerIdentity(Array.from(deduped.values()));
+  const rows = normalizeCollectRowsPartnerIdentity(allRows);
   const preferredCount = preferred
     ? (allRows || []).filter(row => String(row.collect_date || '').slice(0, 10) === preferred).length
     : 0;
@@ -2285,17 +2322,18 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     rider_name: row.rider_name || '',
     rider_user_id: row.rider_user_id || '',
     phone_number: row.phone_number || '',
-    parsed_json: row.parsed_json || {},
-    raw_json: row.raw_json || {}
+    parsed_json: slimParsedJsonForApply(row.parsed_json || {}),
+    raw_json: {}
   }));
 
-  const chunkSize = 100;
+  const chunkSize = 50;
   for (let i = 0; i < mapped.length; i += chunkSize) {
     const chunk = mapped.slice(i, i + chunkSize);
     const { error: insertError } = await supabase
       .from('baemin_delivery_applied_items')
       .insert(chunk);
     if (insertError) {
+      await deleteAppliedBatchItemsPaged(batchId);
       await supabase.from('baemin_delivery_applied_batches').delete().eq('id', batchId);
       if (isMissingAppliedTableError(insertError)) {
         return {
@@ -2310,6 +2348,10 @@ async function applyBaeminDelivery(collectDate, options = {}) {
 
   const previous = await readAppliedBaeminDelivery();
   if (previous?.batchId && previous.batchId !== batchId) {
+    const removed = await deleteAppliedBatchItemsPaged(previous.batchId);
+    if (!removed.ok) {
+      console.warn('[BREM][apply] previous batch item delete warn:', removed.error);
+    }
     await supabase.from('baemin_delivery_applied_batches').delete().eq('id', previous.batchId);
   }
 
@@ -3770,18 +3812,52 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   if (partnerId) {
     appliedFilters.like = { column: 'dedupe_key', pattern: `${partnerId}:%` };
   }
-  const appliedFetched = await fetchAppliedItemsPaged(
-    'baemin_delivery_applied_items',
-    appliedFilters,
-    'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key'
-  );
-  if (!appliedFetched.ok) {
-    if (isMissingAppliedTableError({ message: appliedFetched.error })) {
-      return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
+  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
+  let data = [];
+  if (partnerId && fromDate && toDate) {
+    const { data: ranged, error: rangeError } = await supabase
+      .from('baemin_delivery_applied_items')
+      .select(appliedSelect)
+      .eq('batch_id', batchId)
+      .eq('source_menu', 'rider_history')
+      .like('dedupe_key', `${partnerId}:%`)
+      .gte('parsed_json->>businessDate', fromDate)
+      .lte('parsed_json->>businessDate', toDate)
+      .limit(10000);
+    if (rangeError) {
+      return { ok: false, error: rangeError.message || '라이더 내역 조회 실패' };
     }
-    return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
+    data = ranged || [];
+    const rangeKeys = new Set(data.map(row => row.dedupe_key));
+    const appliedFetched = await fetchAppliedItemsPaged(
+      'baemin_delivery_applied_items',
+      appliedFilters,
+      appliedSelect
+    );
+    if (!appliedFetched.ok) {
+      return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
+    }
+    (appliedFetched.rows || []).forEach(row => {
+      if (rangeKeys.has(row.dedupe_key)) return;
+      if (riderRowOverlapsRange(row, fromDate, toDate)) {
+        data.push(row);
+        rangeKeys.add(row.dedupe_key);
+      }
+    });
+  } else {
+    const appliedFetched = await fetchAppliedItemsPaged(
+      'baemin_delivery_applied_items',
+      appliedFilters,
+      appliedSelect
+    );
+    if (!appliedFetched.ok) {
+      if (isMissingAppliedTableError({ message: appliedFetched.error })) {
+        return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
+      }
+      return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
+    }
+    data = appliedFetched.rows || [];
   }
-  const data = appliedFetched.rows || [];
 
   let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);
   const scopedItems = items.filter(row => {
