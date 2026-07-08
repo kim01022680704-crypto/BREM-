@@ -3,6 +3,7 @@ const {
   listCollectSources,
   getCollectSource,
   mapItemToCollectRow,
+  extractBusinessDate,
   buildDefaultQuery,
   resolveApiEndpoint,
   API_REGISTRY_KEY,
@@ -113,7 +114,15 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
   const map = new Map();
   items.forEach((item, index) => {
     const userId = String(item?.userId || item?.riderId || '').trim();
-    const key = userId || String(item?.phoneNumber || item?.phone || item?.name || index);
+    const businessDate = extractBusinessDate(item, {
+      ...options,
+      index,
+      collectDate,
+      historyMenu: true,
+      dayDate: item?.__bremDayDate
+    });
+    const riderKey = userId || String(item?.phoneNumber || item?.phone || item?.name || index);
+    const key = `${riderKey}:${businessDate || 'unknown'}`;
     if (!map.has(key)) {
       map.set(key, {
         userId,
@@ -122,7 +131,8 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
         deliveryAcceptanceCount: {},
         deliveryPeakTimeCount: { morning: 0, afternoon: 0, evening: 0, midnight: 0 },
         deliveryCount: 0,
-        sourceUrl
+        sourceUrl,
+        businessDate
       });
     }
     const row = map.get(key);
@@ -149,23 +159,32 @@ function aggregateRiderHistoryFromDaily(items, collectDate, collectedAt, sourceU
     row.deliveryPeakTimeCount.afternoon += num(peak.afternoon);
     row.deliveryPeakTimeCount.evening += num(peak.evening);
     row.deliveryPeakTimeCount.midnight += num(peak.midnight);
+    if (!row.businessDate && businessDate) row.businessDate = businessDate;
   });
-  return Array.from(map.values()).map((item, index) => mapItemToCollectRow(
-    'rider_history',
-    item,
-    collectDate,
-    sourceUrl,
-    collectedAt,
-    {
-      partnerId: options?.partnerId,
-      partnerName: options?.partnerName,
-      regionName: options?.regionName,
-      index,
+  return Array.from(map.values()).map((item, index) => {
+    const day = item.businessDate || '';
+    const dayRange = day
+      ? { fromDate: day, toDate: day, dates: [day], dayCount: 1 }
+      : (options.dateRange || null);
+    return mapItemToCollectRow(
+      'rider_history',
+      item,
       collectDate,
-      dateRange: options?.dateRange || null,
-      historyQueryDates: options?.historyQueryDates || options?.dateRange || null
-    }
-  ));
+      sourceUrl,
+      collectedAt,
+      {
+        partnerId: options?.partnerId,
+        partnerName: options?.partnerName,
+        regionName: options?.regionName,
+        index,
+        collectDate,
+        historyMenu: true,
+        dayDate: day,
+        dateRange: dayRange,
+        historyQueryDates: dayRange
+      }
+    );
+  });
 }
 
 function num(value) {
@@ -656,7 +675,8 @@ async function fetchAndSaveHistoryByDays({
         collectDate,
         dateRange: { ...activeDateRange, fromDate: day, toDate: day, dates: [day], dayCount: 1 },
         historyQueryDates: { fromDate: day, toDate: day, dates: [day], dayCount: 1 },
-        dayDate: day
+        dayDate: day,
+        historyMenu: true
       }
     ));
     const saveResult = await saveCollectItems(rows);
@@ -695,6 +715,7 @@ async function fetchAndSaveHistoryByDays({
 function shouldAggregateRiderFromDaily(sourceId, registry, dateRange = null) {
   if (sourceId !== 'rider_history') return false;
   if (dateRange?.mode === 'rider_per_day') return false;
+  if (Number(dateRange?.dayCount || 0) > 1 || (dateRange?.dates?.length || 0) > 1) return false;
   const riderEndpoint = mergeEndpointWithDefault('rider_history', registry?.endpoints?.rider_history || {});
   const dailyEndpoint = mergeEndpointWithDefault('daily_history', registry?.endpoints?.daily_history || {});
   if (riderEndpoint?.fallbackFromDaily) return true;
@@ -1232,9 +1253,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       regionName,
       index,
       collectDate,
+      historyMenu: sourceId === 'daily_history' || sourceId === 'rider_history',
       dateRange: activeDateRange || context.dateRange || null,
       historyQueryDates: activeDateRange || null,
-      dayDate: item?.__bremDayDate || activeDateRange?.dates?.[index]
+      dayDate: item?.__bremDayDate || undefined
     }
   ));
 
@@ -2321,8 +2343,13 @@ async function getAppliedRiderBusinessRange(batchId) {
     if (!data?.length) break;
 
     data.forEach(row => {
-      const date = businessDateFromDedupeKey(row.dedupe_key);
+      const date = resolveRiderBusinessDate(row);
       if (date) dates.add(date);
+      const period = riderPeriodFromDedupeKey(row.dedupe_key);
+      if (period) {
+        dates.add(period.fromDate);
+        dates.add(period.toDate);
+      }
     });
 
     if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
@@ -2927,6 +2954,13 @@ function businessDateFromDedupeKey(dedupeKey = '') {
   return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : '';
 }
 
+function isPerDayRiderDedupeKey(dedupeKey = '') {
+  const parts = String(dedupeKey || '').split(':');
+  return parts.length >= 4
+    && parts[parts.length - 1] === 'rider'
+    && /^\d{4}-\d{2}-\d{2}$/.test(String(parts[1] || '').slice(0, 10));
+}
+
 function riderPeriodFromDedupeKey(dedupeKey = '') {
   const parts = String(dedupeKey || '').split(':');
   const fromDate = String(parts[1] || '').slice(0, 10);
@@ -2941,16 +2975,28 @@ function riderRowOverlapsRange(row = {}, fromDate = '', toDate = '') {
   if (!fromDate || !toDate || toDate < fromDate) return false;
   const businessDate = resolveRiderBusinessDate(row);
   if (businessDate && businessDate >= fromDate && businessDate <= toDate) return true;
+  const dedupeDate = businessDateFromDedupeKey(row.dedupe_key);
+  if (dedupeDate && dedupeDate >= fromDate && dedupeDate <= toDate) return true;
   const period = riderPeriodFromDedupeKey(row.dedupe_key);
   if (period) return period.toDate >= fromDate && period.fromDate <= toDate;
+  const collectDate = String(row.collect_date || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(collectDate) && collectDate >= fromDate && collectDate <= toDate) {
+    return true;
+  }
   return false;
 }
 
 function resolveRiderBusinessDate(row = {}) {
   const parsed = row.parsed_json || {};
+  const fromDedupe = businessDateFromDedupeKey(row.dedupe_key);
   const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
+  if (isPerDayRiderDedupeKey(row.dedupe_key) && fromDedupe) {
+    return fromDedupe;
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
-  return businessDateFromDedupeKey(row.dedupe_key);
+  if (fromDedupe) return fromDedupe;
+  const period = riderPeriodFromDedupeKey(row.dedupe_key);
+  return period?.fromDate || '';
 }
 
 function normalizeDpPartnerId(value, dedupeKey = '') {

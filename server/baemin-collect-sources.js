@@ -244,17 +244,24 @@ function extractBusinessDate(item, options = {}) {
   if (item?.__bremDayDate && /^\d{4}-\d{2}-\d{2}$/.test(String(item.__bremDayDate).slice(0, 10))) {
     return String(item.__bremDayDate).slice(0, 10);
   }
-  const fields = ['deliveryDate', 'date', 'targetDate', 'businessDate', 'statisticsDate', 'workDate', 'deliveryDay'];
+  if (options.dayDate && /^\d{4}-\d{2}-\d{2}$/.test(String(options.dayDate).slice(0, 10))) {
+    return String(options.dayDate).slice(0, 10);
+  }
+  const fields = ['deliveryDate', 'date', 'targetDate', 'businessDate', 'statisticsDate', 'workDate', 'deliveryDay', 'businessDay'];
   for (const field of fields) {
     const value = String(item?.[field] ?? '').trim().slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   }
-  if (options.dayDate && /^\d{4}-\d{2}-\d{2}$/.test(String(options.dayDate).slice(0, 10))) {
-    return String(options.dayDate).slice(0, 10);
-  }
+  const singleDay = options.dateRange?.fromDate === options.dateRange?.toDate
+    ? String(options.dateRange.fromDate || '').slice(0, 10)
+    : '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(singleDay)) return singleDay;
   const dates = options.dateRange?.dates;
-  if (Array.isArray(dates) && Number.isFinite(options.index) && dates[options.index]) {
-    return dates[options.index];
+  if (Array.isArray(dates) && dates.length === 1 && /^\d{4}-\d{2}-\d{2}$/.test(String(dates[0]).slice(0, 10))) {
+    return String(dates[0]).slice(0, 10);
+  }
+  if (options.historyMenu) {
+    return '';
   }
   return String(options.collectDate || '').slice(0, 10);
 }
@@ -279,11 +286,14 @@ function buildDedupeKey(sourceId, item, index = 0, options = {}) {
 
   if (sourceId === 'rider_history') {
     const riderId = String(item?.userId || item?.riderId || '').trim();
-    const businessDate = extractBusinessDate(item, options);
+    const businessDate = extractBusinessDate(item, { ...options, historyMenu: true });
     if (riderId && businessDate) return `${partnerId}:${businessDate}:${riderId}:rider`;
     const rangeFrom = options.historyQueryDates?.fromDate || options.dateRange?.fromDate || '';
     const rangeTo = options.historyQueryDates?.toDate || options.dateRange?.toDate || '';
-    if (riderId && rangeFrom && rangeTo) {
+    if (riderId && rangeFrom && rangeTo && rangeFrom === rangeTo) {
+      return `${partnerId}:${rangeFrom}:${riderId}:rider`;
+    }
+    if (riderId && rangeFrom && rangeTo && rangeFrom !== rangeTo) {
       return `${partnerId}:${rangeFrom}:${rangeTo}:${riderId}`;
     }
     const phone = String(item?.phoneNumber || item?.phone || '').trim();
@@ -307,11 +317,13 @@ function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt
   const partnerName = String(options.partnerName || options.partner_name || '').trim();
   const regionName = String(options.regionName || options.region_name || '').trim();
   const index = Number.isFinite(options.index) ? options.index : 0;
-  const businessDate = extractBusinessDate(item, { ...options, collectDate });
+  const historyMenu = sourceId === 'daily_history' || sourceId === 'rider_history';
+  const businessDate = extractBusinessDate(item, { ...options, collectDate, historyMenu });
+  const storageDate = historyMenu && businessDate ? businessDate : collectDate;
   const recordType = sourceId;
 
   return {
-    collect_date: collectDate,
+    collect_date: storageDate,
     collected_at: collectedAt,
     source_menu: sourceId,
     record_type: recordType,
