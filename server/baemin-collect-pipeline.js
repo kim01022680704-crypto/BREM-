@@ -2100,6 +2100,24 @@ function slimParsedJsonForApply(parsed = {}) {
   return next;
 }
 
+async function countBizCollectByMenuMerged() {
+  const fetched = await fetchAllBaeminBizCollectItems('collected_at, source_menu, dedupe_key');
+  if (!fetched.ok) return fetched;
+
+  const byMenu = {};
+  (fetched.rows || []).forEach(row => {
+    const menu = String(row.source_menu || 'unknown');
+    byMenu[menu] = (byMenu[menu] || 0) + 1;
+  });
+
+  return {
+    ok: true,
+    byMenu,
+    totalMerged: (fetched.rows || []).length,
+    totalFetched: fetched.totalFetched || 0
+  };
+}
+
 async function loadBizCollectRowsForApply(preferredDate = '') {
   const preferred = String(preferredDate || '').slice(0, 10);
   const selectFields = 'collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json';
@@ -2157,21 +2175,31 @@ async function countAppliedItemsByMenu(batchId) {
 async function summarizeBizCollectDates(supabase) {
   const summary = {};
   if (!supabase) return summary;
-  const { data, error } = await supabase
-    .from('baemin_biz_collect_items')
-    .select('collect_date, source_menu')
-    .order('collect_date', { ascending: false })
-    .limit(20000);
-  if (error) return summary;
 
-  (data || []).forEach(row => {
-    const date = String(row.collect_date || '').slice(0, 10);
-    const menu = String(row.source_menu || 'unknown');
-    if (!date) return;
-    if (!summary[date]) summary[date] = { total: 0, byMenu: {} };
-    summary[date].total += 1;
-    summary[date].byMenu[menu] = (summary[date].byMenu[menu] || 0) + 1;
-  });
+  for (const menu of BIZ_COLLECT_MENUS) {
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('baemin_biz_collect_items')
+        .select('collect_date')
+        .eq('source_menu', menu)
+        .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+      if (error) return summary;
+      if (!data?.length) break;
+
+      data.forEach(row => {
+        const date = String(row.collect_date || '').slice(0, 10);
+        if (!date) return;
+        if (!summary[date]) summary[date] = { total: 0, byMenu: {} };
+        summary[date].total += 1;
+        summary[date].byMenu[menu] = (summary[date].byMenu[menu] || 0) + 1;
+      });
+
+      if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+      offset += BIZ_COLLECT_PAGE_SIZE;
+    }
+  }
+
   return summary;
 }
 
@@ -2179,17 +2207,30 @@ async function getAppliedRiderBusinessRange(batchId) {
   const supabase = getServiceClient();
   if (!supabase || !batchId) return null;
 
-  const { data, error } = await supabase
-    .from('baemin_delivery_applied_items')
-    .select('dedupe_key, parsed_json')
-    .eq('batch_id', batchId)
-    .eq('source_menu', 'rider_history')
-    .limit(10000);
-  if (error) return null;
+  const dates = new Set();
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('baemin_delivery_applied_items')
+      .select('dedupe_key')
+      .eq('batch_id', batchId)
+      .eq('source_menu', 'rider_history')
+      .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+    if (error) return null;
+    if (!data?.length) break;
 
-  const dates = (data || []).map(row => resolveRiderBusinessDate(row)).filter(Boolean).sort();
-  if (!dates.length) return { count: 0, from: null, to: null };
-  return { count: dates.length, from: dates[0], to: dates[dates.length - 1] };
+    data.forEach(row => {
+      const date = businessDateFromDedupeKey(row.dedupe_key);
+      if (date) dates.add(date);
+    });
+
+    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+    offset += BIZ_COLLECT_PAGE_SIZE;
+  }
+
+  const sorted = [...dates].sort();
+  if (!sorted.length) return { count: 0, from: null, to: null };
+  return { count: sorted.length, from: sorted[0], to: sorted[sorted.length - 1] };
 }
 
 async function getBaeminStorageDiagnosticsForAdmin() {
@@ -2200,14 +2241,14 @@ async function getBaeminStorageDiagnosticsForAdmin() {
 
   const bizTableStatus = await getBizCollectTableStatus();
   const applied = await readAppliedBaeminDelivery();
-  const [bizByCollectDate, bizLoaded, appliedByMenu, riderRange] = await Promise.all([
+  const [bizByCollectDate, bizCounts, appliedByMenu, riderRange] = await Promise.all([
     summarizeBizCollectDates(supabase),
-    loadBizCollectRowsForApply(applied?.collectDate || ''),
+    countBizCollectByMenuMerged(),
     countAppliedItemsByMenu(applied?.batchId || ''),
     getAppliedRiderBusinessRange(applied?.batchId || '')
   ]);
 
-  const bizByMenu = bizLoaded.ok ? (bizLoaded.byMenu || {}) : {};
+  const bizByMenu = bizCounts.ok ? (bizCounts.byMenu || {}) : {};
   const bizTotal = Object.values(bizByMenu).reduce((sum, count) => sum + (Number(count) > 0 ? Number(count) : 0), 0);
   const appliedTotal = Object.values(appliedByMenu).reduce((sum, count) => sum + (Number(count) > 0 ? Number(count) : 0), 0);
 
@@ -2246,7 +2287,7 @@ async function getBaeminStorageDiagnosticsForAdmin() {
       total: bizTotal,
       byMenu: bizByMenu,
       byCollectDate: bizByCollectDate,
-      mergedTotal: bizLoaded.totalMerged || 0
+      mergedTotal: bizCounts.totalMerged || 0
     },
     appliedSnapshot: {
       total: appliedTotal,

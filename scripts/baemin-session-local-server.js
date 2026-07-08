@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260703k';
+const SERVER_VERSION = '20260708a';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -1535,7 +1535,8 @@ const server = http.createServer(async (req, res) => {
         collectDaily: true,
         collectRider: true,
         collectDelivery: true,
-        sessionRefresh: true
+        sessionRefresh: true,
+        applyErp: true
       },
       supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
@@ -1923,6 +1924,31 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/auto-collect/status') {
     return sendJsonWithCors(req, res, 200, { ok: true, autoCollect: getAutoCollectHealthPayload() });
+  }
+
+  if (url.pathname === '/apply/erp' && req.method === 'POST') {
+    if (!hasLocalSupabaseCredentials()) {
+      return sendJsonWithCors(req, res, 503, {
+        ok: false,
+        message: '로컬 .env에 SUPABASE_SERVICE_ROLE_KEY 가 없습니다.'
+      });
+    }
+    try {
+      const body = await readJsonBody(req);
+      const collectDate = String(body.collectDate || body.captureDate || '').slice(0, 10);
+      const { applyBaeminDelivery } = require('../server/baemin-collect-pipeline');
+      const result = await applyBaeminDelivery(collectDate, { appliedBy: 'local-session-server' });
+      if (!result.ok) {
+        return sendJsonWithCors(req, res, result.status || 400, {
+          ok: false,
+          message: result.message || result.error,
+          error: result.error || result.message
+        });
+      }
+      return sendJsonWithCors(req, res, 200, { ok: true, ...result });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
   }
 
   if (url.pathname === '/job') {

@@ -541,7 +541,10 @@ async function getConfig(accessToken, options = {}) {
   const bizTableStatus = await getBizCollectTableStatus();
   const { readAppliedBaeminDelivery, getBaeminStorageDiagnosticsForAdmin } = require('./baemin-collect-pipeline');
   const applied = await readAppliedBaeminDelivery();
-  const storageDiagnostics = await getBaeminStorageDiagnosticsForAdmin().catch(() => null);
+  const light = options.light === true;
+  const storageDiagnostics = light
+    ? null
+    : await getBaeminStorageDiagnosticsForAdmin().catch(() => null);
 
   if (options.viewOnly) {
     const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');

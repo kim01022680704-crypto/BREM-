@@ -2655,14 +2655,23 @@
     if (!silent) showToast(`배민현황 ${state.partners.length}개 지역 · 메뉴 전체 데이터를 불러왔습니다.`);
   }
 
-  async function loadConfig() {
+  async function loadConfig(options = {}) {
     if (isViewSection()) {
       await loadViewConfig();
       return;
     }
-    const result = await adminApi('/api/admin/baemin-delivery/config');
+    const query = options.light ? '?light=1' : '';
+    const result = await adminApi(`/api/admin/baemin-delivery/config${query}`);
     if (result.ok) {
-      renderConfig(result);
+      const merged = options.light && state.config
+        ? {
+          ...state.config,
+          ...result,
+          storageDiagnostics: state.config.storageDiagnostics || result.storageDiagnostics || null
+        }
+        : result;
+      state.config = merged;
+      renderConfig(merged);
       await refreshLocalServerStatus();
       return;
     }
@@ -2967,10 +2976,32 @@
     const captureDate = resolveBizCaptureDate();
     state.applying = true;
     renderAppliedStatus(state.config);
-    const result = await adminApi('/api/admin/baemin-delivery/apply', {
+
+    const local = await fetchLocalHealth(state.config, null);
+    state.localServerRunning = local.running;
+    let result = null;
+
+    if (!local.running) {
+      state.applying = false;
+      showToast('로컬 세션 서버가 꺼져 있습니다. npm run baemin:session-server 실행 후 [배민현황 저장]을 누르세요.');
+      renderAppliedStatus(state.config);
+      return;
+    }
+
+    result = await callLocalServer('/apply/erp', {
       method: 'POST',
-      body: JSON.stringify({ collectDate: captureDate })
+      body: { collectDate: captureDate },
+      timeoutMs: 600000
     });
+
+    if (!result.ok && result.status === 404) {
+      showToast('로컬 서버가 구버전입니다. npm run baemin:session-server 재시작 후 다시 시도하세요.');
+      result = await adminApi('/api/admin/baemin-delivery/apply', {
+        method: 'POST',
+        body: JSON.stringify({ collectDate: captureDate })
+      });
+    }
+
     state.applying = false;
     if (!result.ok) {
       showToast(result.message || '배민현황 저장에 실패했습니다.');
@@ -3235,7 +3266,7 @@
     await loadAllSubtabData();
 
     state.statusPollTimer = setInterval(async () => {
-      await loadConfig();
+      await loadConfig({ light: true });
     }, 15000);
 
     stopLocalHealthPoll();

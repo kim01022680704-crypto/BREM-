@@ -734,7 +734,8 @@ app.post('/api/admin/lease-erp/upsert', async (req, res) => {
 app.get('/api/admin/baemin-delivery/config', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getConfig(getBearerToken(req), {
-      viewOnly: String(req.query.viewOnly || '') === '1'
+      viewOnly: String(req.query.viewOnly || '') === '1',
+      light: String(req.query.light || '') === '1'
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({
