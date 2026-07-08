@@ -247,6 +247,92 @@ async function deleteBizDeliveryStatusForPartner(partnerId) {
   return { ok: true, deleted };
 }
 
+/** 일별/라이더: 특정 DP·날짜 구간을 통째로 지운 뒤 이번 수집분으로 교체 */
+async function deleteBizHistoryForPartnerDates(partnerId, sourceMenu, dates = []) {
+  const supabase = getServiceClient();
+  const pid = String(partnerId || '').trim().toUpperCase();
+  const menu = String(sourceMenu || '').trim();
+  const dayList = [...new Set((dates || []).map(d => String(d || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))];
+  if (!supabase || !/^DP\d{6,}$/.test(pid) || !['daily_history', 'rider_history'].includes(menu) || !dayList.length) {
+    return { ok: true, deleted: 0 };
+  }
+
+  let deleted = 0;
+  const pageSize = 1000;
+  const chunkSize = 80;
+  for (const day of dayList) {
+    while (true) {
+      const { data, error } = await supabase
+        .from('baemin_biz_collect_items')
+        .select('id')
+        .eq('source_menu', menu)
+        .eq('collect_date', day)
+        .like('dedupe_key', `${pid}:%`)
+        .limit(pageSize);
+      if (error) {
+        return { ok: false, error: error.message || `${menu} 중복일 삭제 실패` };
+      }
+      const ids = (data || []).map(row => row.id).filter(Boolean);
+      if (!ids.length) break;
+      for (let offset = 0; offset < ids.length; offset += chunkSize) {
+        const chunk = ids.slice(offset, offset + chunkSize);
+        const { error: deleteError } = await supabase
+          .from('baemin_biz_collect_items')
+          .delete()
+          .in('id', chunk);
+        if (deleteError) {
+          return { ok: false, error: deleteError.message || `${menu} 중복일 삭제 실패` };
+        }
+        deleted += chunk.length;
+      }
+      if (ids.length < pageSize) break;
+    }
+  }
+  return { ok: true, deleted };
+}
+
+/** 일별/라이더: 1달(30일)보다 오래된 BIZ 수집분 정리 */
+async function pruneBizHistoryOlderThan(partnerId, sourceMenu, keepFromDate) {
+  const supabase = getServiceClient();
+  const pid = String(partnerId || '').trim().toUpperCase();
+  const menu = String(sourceMenu || '').trim();
+  const fromDate = String(keepFromDate || '').slice(0, 10);
+  if (!supabase || !/^DP\d{6,}$/.test(pid) || !['daily_history', 'rider_history'].includes(menu) || !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+    return { ok: true, deleted: 0 };
+  }
+
+  let deleted = 0;
+  const pageSize = 1000;
+  const chunkSize = 80;
+  while (true) {
+    const { data, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select('id')
+      .eq('source_menu', menu)
+      .lt('collect_date', fromDate)
+      .like('dedupe_key', `${pid}:%`)
+      .limit(pageSize);
+    if (error) {
+      return { ok: false, error: error.message || `${menu} 오래된 데이터 정리 실패` };
+    }
+    const ids = (data || []).map(row => row.id).filter(Boolean);
+    if (!ids.length) break;
+    for (let offset = 0; offset < ids.length; offset += chunkSize) {
+      const chunk = ids.slice(offset, offset + chunkSize);
+      const { error: deleteError } = await supabase
+        .from('baemin_biz_collect_items')
+        .delete()
+        .in('id', chunk);
+      if (deleteError) {
+        return { ok: false, error: deleteError.message || `${menu} 오래된 데이터 정리 실패` };
+      }
+      deleted += chunk.length;
+    }
+    if (ids.length < pageSize) break;
+  }
+  return { ok: true, deleted };
+}
+
 async function saveCollectItems(rows) {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
@@ -276,7 +362,7 @@ async function saveCollectItems(rows) {
     const sampleKeys = menuRows.slice(0, 3).map(row => row.dedupe_key).join(', ');
     console.log(`[BREM][save] menu_type=${menuType} partner_id=${partnerId} partner_name=${partnerName || '-'} rows=${menuRows.length} dedupe_sample=${sampleKeys}`);
 
-    // 배달현황은 DP별로 "이번 수집분"만 남김 — 이전 날짜·오염분 전부 교체
+    // 배달현황(배민현황 소스): DP별 최신 수집분만 유지 — 이전분 전부 삭제 후 저장
     if (menuType === 'delivery_status' && /^DP\d{6,}$/.test(partnerId)) {
       const wiped = await deleteBizDeliveryStatusForPartner(partnerId);
       if (!wiped.ok) {
@@ -289,6 +375,23 @@ async function saveCollectItems(rows) {
       }
       if (wiped.deleted) {
         console.log(`[BREM][save] replaced ${wiped.deleted} old delivery_status row(s) for ${partnerId}`);
+      }
+    }
+
+    // 일별/라이더: 같은 DP·같은 날짜가 다시 수집되면 그 날짜분 교체
+    if (['daily_history', 'rider_history'].includes(menuType) && /^DP\d{6,}$/.test(partnerId)) {
+      const days = [...new Set(menuRows.map(row => String(row.collect_date || '').slice(0, 10)).filter(Boolean))];
+      const wipedDays = await deleteBizHistoryForPartnerDates(partnerId, menuType, days);
+      if (!wipedDays.ok) {
+        return {
+          ok: false,
+          status: 500,
+          error: 'SUPABASE_SAVE_FAILED',
+          message: `${menuType}: 날짜 중복 교체 실패 — ${wipedDays.error}`
+        };
+      }
+      if (wipedDays.deleted) {
+        console.log(`[BREM][save] replaced ${wipedDays.deleted} ${menuType} row(s) for ${partnerId} days=${days.join(',')}`);
       }
     }
 
@@ -322,8 +425,13 @@ async function saveCollectItems(rows) {
       savedCount += chunk.length;
     }
 
-    if (menuType !== 'delivery_status') {
-      await pruneStaleRiderDuplicates(menuType, payload);
+    // 일별/라이더: 30일보다 오래된 분 정리 (한달치만 유지)
+    if (['daily_history', 'rider_history'].includes(menuType) && /^DP\d{6,}$/.test(partnerId)) {
+      const keepFrom = addDays(todayKST(), -30);
+      const pruned = await pruneBizHistoryOlderThan(partnerId, menuType, keepFrom);
+      if (pruned.ok && pruned.deleted) {
+        console.log(`[BREM][save] pruned ${pruned.deleted} old ${menuType} row(s) for ${partnerId} before ${keepFrom}`);
+      }
     }
   }
 

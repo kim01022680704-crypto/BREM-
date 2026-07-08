@@ -37,7 +37,7 @@ function defaultRiderCollectRange(referenceDate = todayKST(), now = new Date()) 
 
 function normalizeRiderCollectRange(raw = {}, referenceDate = todayKST(), now = new Date()) {
   const fallback = defaultRiderCollectRange(referenceDate, now);
-  const fromDate = normalizeDateKey(raw.fromDate) || fallback.fromDate;
+  let fromDate = normalizeDateKey(raw.fromDate) || fallback.fromDate;
   let toDate = normalizeDateKey(raw.toDate) || fallback.toDate;
   const latest = latestQueryableDate(referenceDate, now);
   if (latest && toDate && toDate > latest) {
@@ -46,6 +46,9 @@ function normalizeRiderCollectRange(raw = {}, referenceDate = todayKST(), now = 
   if (!fromDate || !toDate || toDate < fromDate) {
     return { ...fallback };
   }
+  // 최대 30일(한달치)만 허용
+  const minFrom = addDays(toDate, -30);
+  if (fromDate < minFrom) fromDate = minFrom;
   const dates = buildDateList(fromDate, toDate);
   return {
     fromDate,
@@ -81,20 +84,24 @@ async function saveRiderCollectRange(fromDate, toDate, updatedBy = '') {
   if (to < from) {
     return { ok: false, status: 400, error: 'INVALID_RANGE', message: '종료일은 시작일 이후여야 합니다.' };
   }
+  const clamped = normalizeRiderCollectRange({ fromDate: from, toDate: to });
+  if (clamped.dayCount > 31) {
+    return { ok: false, status: 400, error: 'RANGE_TOO_LONG', message: '라이더 수집 기간은 최대 30일(한달치)까지입니다.' };
+  }
   const supabase = getServiceClient();
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
   const payload = {
-    fromDate: from,
-    toDate: to,
+    fromDate: clamped.fromDate,
+    toDate: clamped.toDate,
     updatedAt: new Date().toISOString(),
     updatedBy: String(updatedBy || '').trim()
   };
   const { error } = await supabase.from('settings').upsert({
     key: RIDER_COLLECT_RANGE_KEY,
     value: payload,
-    description: '배민 BIZ 라이더별 배달내역 수집 기간',
+    description: '배민 BIZ 라이더별 배달내역 수집 기간(최대 30일)',
     updated_at: payload.updatedAt
   }, { onConflict: 'key' });
   if (error) {
