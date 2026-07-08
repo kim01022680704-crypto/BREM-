@@ -2955,13 +2955,12 @@ function partnerIdFromDedupeKey(dedupeKey = '') {
   return /^DP\d{6,}$/i.test(prefix) ? prefix.toUpperCase() : '';
 }
 
-/** 지역 소유권은 dedupe_key 를 우선. parsed_json.partnerId 단독 신뢰 금지(교차오염 원인). */
+/** 지역 소유권은 dedupe_key 만 사용. parsed_json.partnerId 폴백 금지(섞임 원인). */
 function rowBelongsToPartner(row, partnerId) {
   const want = String(partnerId || '').trim().toUpperCase();
   if (!want || !/^DP\d{6,}$/.test(want)) return false;
   const fromKey = partnerIdFromDedupeKey(row?.dedupe_key);
-  if (fromKey) return fromKey === want;
-  return String(row?.parsed_json?.partnerId || '').trim().toUpperCase() === want;
+  return Boolean(fromKey) && fromKey === want;
 }
 
 function businessDateFromDedupeKey(dedupeKey = '') {
@@ -3585,11 +3584,13 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     ok: true,
     collectDate: date,
     sourceMenu: menu,
-    partnerId: partnerId || null,
+    partnerId: wantPartnerId || partnerId || null,
     items,
     count: items.length,
     appliedOnly,
-    totals: computeItemsMetricTotals(items)
+    totals: computeItemsMetricTotals(items),
+    filterMode: 'dedupe_key_strict',
+    filterBuild: '20260708v'
   };
 }
 

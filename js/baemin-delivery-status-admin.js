@@ -208,6 +208,18 @@
     }, 0);
   }
 
+  function partnerIdFromDedupeKey(dedupeKey = '') {
+    const prefix = String(dedupeKey || '').split(':')[0].trim().toUpperCase();
+    return /^DP\d{6,}$/.test(prefix) ? prefix : '';
+  }
+
+  /** 서버 응답이 섞여 와도 화면에는 선택 지역만 표시 */
+  function filterRowsByPartnerId(items, partnerId) {
+    const want = normalizePartnerId(partnerId);
+    if (!want) return [];
+    return (items || []).filter(row => partnerIdFromDedupeKey(row?.dedupe_key) === want);
+  }
+
   function readCachedRegionMap() {
     try {
       const raw = sessionStorage.getItem(REGION_MAP_CACHE_KEY);
@@ -876,11 +888,14 @@
         return;
       }
 
-      const items = result.items || [];
-      const drivingCount = Number(result.totals?.drivingCount);
+      const rawItems = result.items || [];
+      const dropped = Math.max(0, rawItems.length - filterRowsByPartnerId(rawItems, partnerId).length);
+      const items = filterRowsByPartnerId(rawItems, partnerId);
+      const drivingCount = countDrivingRiders(items);
       const totals = {
         ...(result.totals || {}),
-        drivingCount: Number.isFinite(drivingCount) ? drivingCount : countDrivingRiders(items)
+        rowCount: items.length,
+        drivingCount
       };
       const cached = getCachedPartnerBundle(partnerId) || { meta: {}, totals: {} };
       cached.delivery_status = items;
@@ -906,13 +921,14 @@
           'delivery_status',
           '저장된 배달현황이 없습니다. BIZ 수집 후 [배민현황 저장]을 실행하세요.'
         );
-        showToast('배달현황 데이터 없음');
+        showToast(dropped ? `배달현황 데이터 없음 (다른 지역 ${formatNumber(dropped)}건 제외)` : '배달현황 데이터 없음');
         return;
       }
 
       renderSubtabRows('delivery_status', partnerId, items, cached.meta);
       renderGrandTotalsPanel('delivery_status', partnerId);
-      showToast(`배달현황 ${formatNumber(items.length)}명 · 운행중 ${formatNumber(totals.drivingCount)}명`);
+      const dropHint = dropped ? ` · 타지역 ${formatNumber(dropped)}건 제외` : '';
+      showToast(`배달현황 ${formatNumber(items.length)}명 · 운행중 ${formatNumber(drivingCount)}명${dropHint}`);
     } finally {
       loadBtn?.classList.remove('is-loading');
       if (loadBtn) loadBtn.textContent = '배달현황 조회';
@@ -1139,12 +1155,13 @@
     });
   }
 
-  function formatPartnerCell(parsed) {
+  function formatPartnerCell(parsed, row = null) {
+    const fromKey = partnerIdFromDedupeKey(row?.dedupe_key);
+    const pid = fromKey || normalizePartnerId(parsed?.partnerId);
     if (isViewSection()) {
-      const pid = normalizePartnerId(parsed?.partnerId);
-      return resolveRegisteredRegionName(pid) || '-';
+      return resolveRegisteredRegionName(pid) || pid || '-';
     }
-    return parsed?.partnerName || parsed?.partnerId || '-';
+    return parsed?.partnerName || pid || '-';
   }
 
   function renderRefreshMeta() {
@@ -3451,10 +3468,15 @@
     const showPartnerColumn = false;
     syncPartnerColumnVisibility(showPartnerColumn);
     const partnerCell = showPartnerColumn
-      ? (p) => `<td data-partner-col>${formatPartnerCell(p)}</td>`
+      ? (p, row) => `<td data-partner-col>${formatPartnerCell(p, row)}</td>`
       : () => '';
 
-    if (!items.length) {
+    let viewItems = items;
+    if (isViewSection() && partnerId && (sourceMenu === 'delivery_status' || sourceMenu === 'daily_history' || sourceMenu === 'rider_history')) {
+      viewItems = filterRowsByPartnerId(items, partnerId);
+    }
+
+    if (!viewItems.length) {
       const emptyColspan = getBaeminTableColspan(sourceMenu, {
         showPartner: showPartnerColumn,
         includeCollected: !isViewSection()
@@ -3464,13 +3486,13 @@
     }
 
     if (sourceMenu === 'delivery_status') {
-      rowsEl.innerHTML = items.map(row => {
+      rowsEl.innerHTML = viewItems.map(row => {
         const p = row.parsed_json || {};
         const collectedCell = isViewSection()
           ? ''
           : `<td>${formatDateTime(row.collected_at)}</td>`;
         return `<tr>
-          ${partnerCell(p)}
+          ${partnerCell(p, row)}
           <td>${row.rider_name || '-'}</td>
           <td>${p.statusDesc || '-'}</td>
           <td>${row.rider_user_id || '-'}</td>
@@ -3488,13 +3510,13 @@
     }
 
     if (sourceMenu === 'daily_history') {
-      rowsEl.innerHTML = items.map(row => {
+      rowsEl.innerHTML = viewItems.map(row => {
         const p = row.parsed_json || {};
         const collectedCell = isViewSection()
           ? ''
           : `<td>${formatDateTime(row.collected_at)}</td>`;
         return `<tr>
-          ${partnerCell(p)}
+          ${partnerCell(p, row)}
           <td>${escapeHtml(formatDeliveryDateWithWeekday(p.deliveryDate || row.collect_date || '-'))}</td>
           <td>${formatNumber(p.totalComplete || 0)}</td>
           ${formatServiceBreakdownCells(p)}
@@ -3509,12 +3531,12 @@
     }
 
     const riderRows = sourceMenu === 'rider_history'
-      ? [...items].sort((a, b) => {
+      ? [...viewItems].sort((a, b) => {
         const completeDiff = Number(b.parsed_json?.totalComplete || 0) - Number(a.parsed_json?.totalComplete || 0);
         if (completeDiff !== 0) return completeDiff;
         return String(a.rider_name || '').localeCompare(String(b.rider_name || ''), 'ko');
       })
-      : items;
+      : viewItems;
 
     rowsEl.innerHTML = riderRows.map(row => {
       const p = row.parsed_json || {};
@@ -3523,7 +3545,7 @@
         ? ''
         : `<td>${formatDateTime(row.collected_at)}</td>`;
       return `<tr>
-        ${partnerCell(p)}
+        ${partnerCell(p, row)}
         <td>${row.rider_name || '-'}</td>
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
