@@ -18,7 +18,7 @@ function defaultDailyCollectRange(referenceDate = todayKST(), now = new Date()) 
       toDate: null,
       dates: [],
       dayCount: 0,
-      mode: 'biz_range',
+      mode: 'daily_per_day',
       skipped: true,
       label: '수집 없음'
     };
@@ -29,9 +29,9 @@ function defaultDailyCollectRange(referenceDate = todayKST(), now = new Date()) 
     toDate: latest,
     dates,
     dayCount: dates.length,
-    mode: 'biz_range',
+    mode: 'daily_per_day',
     skipped: false,
-    label: `${fromDate} ~ ${latest} (일괄 조회 ${dates.length}일)`
+    label: `${fromDate} ~ ${latest} (일별 수집 ${dates.length}일)`
   };
 }
 
@@ -48,9 +48,9 @@ function normalizeDailyCollectRange(raw = {}, referenceDate = todayKST(), now = 
     toDate,
     dates,
     dayCount: dates.length,
-    mode: 'biz_range',
+    mode: 'daily_per_day',
     skipped: false,
-    label: `${fromDate} ~ ${toDate} (일괄 조회 ${dates.length}일)`,
+    label: `${fromDate} ~ ${toDate} (일별 수집 ${dates.length}일)`,
     updatedAt: String(raw.updatedAt || '').trim() || null,
     updatedBy: String(raw.updatedBy || '').trim() || ''
   };

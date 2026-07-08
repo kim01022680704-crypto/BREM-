@@ -396,17 +396,23 @@ function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), rangeOpt
       toDate: dailyCollectRange.toDate,
       dates: dailyDates,
       dayCount: dailyDates.length,
-      mode: dailyCollectRange.mode || 'biz_range',
+      mode: 'daily_per_day',
       skipped: dailyDates.length === 0,
-      label: dailyCollectRange.label || `${dailyCollectRange.fromDate} ~ ${dailyCollectRange.toDate} (일괄 조회 ${dailyDates.length}일)`
+      label: dailyCollectRange.label || `${dailyCollectRange.fromDate} ~ ${dailyCollectRange.toDate} (일별 수집 ${dailyDates.length}일)`
     };
   } else {
-    history = defaultHistory;
+    history = {
+      ...defaultHistory,
+      mode: defaultHistory.skipped ? defaultHistory.mode : 'daily_per_day',
+      label: defaultHistory.skipped
+        ? (defaultHistory.label || defaultHistory.skipReason || '수집 생략')
+        : `${defaultHistory.fromDate} ~ ${defaultHistory.toDate} (일별 수집 ${defaultHistory.dayCount || 0}일)`
+    };
   }
 
   const historyLabel = history.skipped
     ? (history.label || history.skipReason || '수집 생략')
-    : (history.label || `${history.fromDate} ~ ${history.toDate}`);
+    : (history.label || `${history.fromDate} ~ ${history.toDate} (일별 수집 ${history.dayCount || 0}일)`);
 
   let riderHistory;
   if (riderCollectRange?.fromDate && riderCollectRange?.toDate) {

@@ -516,13 +516,15 @@ async function fetchOneHistoryDay({
 }) {
   const dayRange = toSingleDayRange(day, activeDateRange);
 
-  if (sourceId === 'rider_history' && context?.playwrightPage && !context.playwrightPage.isClosed?.()) {
+  if ((sourceId === 'rider_history' || sourceId === 'daily_history')
+    && context?.playwrightPage
+    && !context.playwrightPage.isClosed?.()) {
     const { buildSpaPageUrl } = require('./baemin-page-capture');
     const spaUrl = buildSpaPageUrl(sourceId, dayRange, collectDate);
     if (spaUrl) {
       const page = context.playwrightPage;
       const partnerId = String(context.registry?.centerContext?.partnerId || '').trim();
-      console.log(`[BREM][collect] rider_history ▶ ${day} (${partnerId || 'partner'}) browser ${spaUrl}`);
+      console.log(`[BREM][collect] ${sourceId} ▶ ${day} (${partnerId || 'partner'}) browser ${spaUrl}`);
       try {
         if (page.url() !== spaUrl) {
           await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -531,7 +533,7 @@ async function fetchOneHistoryDay({
         }
         await new Promise(resolve => setTimeout(resolve, 700));
       } catch (error) {
-        console.warn(`[BREM][collect] rider_history day=${day} browser navigate failed: ${error.message || error}`);
+        console.warn(`[BREM][collect] ${sourceId} day=${day} browser navigate failed: ${error.message || error}`);
       }
     }
   }
@@ -577,7 +579,7 @@ async function fetchHistoryByDays({
       : [activeDateRange?.toDate || collectDate]);
   const merged = [];
   let lastUrl = '';
-  const dayConcurrency = sourceId === 'rider_history' ? 1 : 4;
+  const dayConcurrency = (sourceId === 'rider_history' || sourceId === 'daily_history') ? 1 : 4;
 
   for (let offset = 0; offset < dates.length; offset += dayConcurrency) {
     const batch = dates.slice(offset, offset + dayConcurrency);
@@ -948,24 +950,27 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
   }
 
   let fetched = null;
-  const isRiderPerDay = sourceId === 'rider_history'
+  const isHistoryPerDay = (sourceId === 'rider_history' || sourceId === 'daily_history')
     && source.dateQueryKeys?.length
     && activeDateRange
     && !activeDateRange.skipped
-    && (activeDateRange.mode === 'rider_per_day'
-      || (activeDateRange.fromDate && activeDateRange.toDate));
+    && (
+      activeDateRange.mode === 'rider_per_day'
+      || activeDateRange.mode === 'daily_per_day'
+      || (activeDateRange.fromDate && activeDateRange.toDate)
+    );
 
-  if (isRiderPerDay && !activeDateRange.dates?.length && activeDateRange.fromDate && activeDateRange.toDate) {
-    const riderDates = buildDateList(activeDateRange.fromDate, activeDateRange.toDate);
+  if (isHistoryPerDay && !activeDateRange.dates?.length && activeDateRange.fromDate && activeDateRange.toDate) {
+    const historyDates = buildDateList(activeDateRange.fromDate, activeDateRange.toDate);
     activeDateRange = {
       ...activeDateRange,
-      dates: riderDates,
-      dayCount: riderDates.length,
-      mode: 'rider_per_day'
+      dates: historyDates,
+      dayCount: historyDates.length,
+      mode: sourceId === 'daily_history' ? 'daily_per_day' : 'rider_per_day'
     };
   }
 
-  if (isRiderPerDay) {
+  if (isHistoryPerDay) {
     console.log(`[BREM][collect] ${sourceId} per-day mode ${activeDateRange.fromDate}~${activeDateRange.toDate} (${activeDateRange.dayCount}일, fromDate=toDate 하루씩)`);
     fetched = await fetchAndSaveHistoryByDays({
       sourceId,
@@ -1055,7 +1060,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     }
   }
 
-  if (!isRiderPerDay && !fetched?.ok) {
+  if (!isHistoryPerDay && !fetched?.ok) {
     fetched = fetched || await tryFetch(endpoint);
   }
   if (!fetched.ok && (fetched.status === 404 || fetched.status === 400) && endpoint.sampleUrl) {
@@ -1086,7 +1091,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       shrunk = fetched.ok ? null : shrinkDateRangeEnd(activeDateRange);
     }
   }
-  if (!isRiderPerDay && !fetched.ok && (fetched.status === 404 || fetched.status === 400) && source.dateQueryKeys?.length) {
+  if (!isHistoryPerDay && !fetched.ok && (fetched.status === 404 || fetched.status === 400) && source.dateQueryKeys?.length) {
     console.warn(`[BREM][collect] ${sourceId} range fetch failed — per-day fallback (최후 수단)`);
     const byDay = await fetchHistoryByDays({
       sourceId,
@@ -1102,7 +1107,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
     if (byDay) fetched = byDay;
   }
   if (
-    !isRiderPerDay
+    !isHistoryPerDay
     && source.dateQueryKeys?.length
     && fetched.ok
     && !(fetched.items || []).length
@@ -4099,6 +4104,183 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   };
 }
 
+function resolveDailyBusinessDate(row = {}) {
+  const parsed = row.parsed_json || {};
+  const fromParsed = String(parsed.deliveryDate || parsed.businessDate || parsed.businessDay || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
+  const parts = String(row.dedupe_key || '').split(':');
+  const fromKey = String(parts[1] || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fromKey)) return fromKey;
+  return String(row.collect_date || '').slice(0, 10);
+}
+
+function dailyRowOverlapsRange(row = {}, fromDate = '', toDate = '') {
+  if (!fromDate || !toDate || toDate < fromDate) return false;
+  const day = resolveDailyBusinessDate(row);
+  return Boolean(day && day >= fromDate && day <= toDate);
+}
+
+function aggregateDailyHistoryByDate(items = []) {
+  const byDate = new Map();
+  (items || []).forEach(row => {
+    const date = resolveDailyBusinessDate(row);
+    if (!date) return;
+    if (!byDate.has(date)) {
+      byDate.set(date, {
+        collect_date: date,
+        dedupe_key: row.dedupe_key || '',
+        rider_name: '',
+        rider_user_id: '',
+        phone_number: '',
+        parsed_json: {
+          deliveryDate: date,
+          businessDate: date,
+          partnerId: row.parsed_json?.partnerId || '',
+          partnerName: row.parsed_json?.partnerName || '',
+          regionName: row.parsed_json?.regionName || '',
+          displayName: row.parsed_json?.displayName || '',
+          totalComplete: 0,
+          totalReject: 0,
+          cancelCount: 0,
+          riderFault: 0,
+          foodReject: 0,
+          bmartReject: 0,
+          storeReject: 0,
+          foodCancel: 0,
+          bmartCancel: 0,
+          storeCancel: 0,
+          foodRiderFault: 0,
+          bmartRiderFault: 0,
+          storeRiderFault: 0,
+          morningCount: 0,
+          afternoonCount: 0,
+          eveningCount: 0,
+          midnightCount: 0
+        }
+      });
+    }
+    mergeRiderParsedMetrics(byDate.get(date).parsed_json, row.parsed_json || {});
+  });
+  return Array.from(byDate.values()).sort((a, b) =>
+    String(a.parsed_json?.deliveryDate || '').localeCompare(String(b.parsed_json?.deliveryDate || ''))
+  );
+}
+
+async function getDailyHistoryRangeForAdmin(options = {}) {
+  const fromDate = String(options.fromDate || '').slice(0, 10);
+  const toDate = String(options.toDate || '').slice(0, 10);
+  const partnerId = String(options.partnerId || '').trim().toUpperCase();
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (!fromDate || !toDate || toDate < fromDate) {
+    return { ok: false, status: 400, error: 'INVALID_RANGE', message: '조회 시작일과 종료일을 확인하세요.' };
+  }
+  if (partnerId && allowed.size && !options.skipScopeCheck && !allowed.has(partnerId)) {
+    return { ok: false, status: 403, error: '해당 지역에 접근 권한이 없습니다.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const batchId = await resolveAppliedBatchId(true);
+  if (!batchId) {
+    return {
+      ok: true,
+      fromDate,
+      toDate,
+      partnerId: partnerId || null,
+      items: [],
+      count: 0,
+      notApplied: true,
+      message: '배민 BIZ 현황에서 [배민현황 저장]을 먼저 실행하세요. 수집만 하면 배민현황에 표시되지 않습니다.'
+    };
+  }
+
+  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
+  const appliedFilters = {
+    batch_id: batchId,
+    source_menu: 'daily_history'
+  };
+  if (partnerId) {
+    appliedFilters.like = { column: 'dedupe_key', pattern: `${partnerId}:%` };
+  }
+  const appliedFetched = await fetchAppliedItemsPaged(
+    'baemin_delivery_applied_items',
+    appliedFilters,
+    appliedSelect
+  );
+  if (!appliedFetched.ok) {
+    if (isMissingAppliedTableError({ message: appliedFetched.error })) {
+      return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
+    }
+    return { ok: false, error: appliedFetched.error || '일별 내역 조회 실패' };
+  }
+
+  const overlapping = (appliedFetched.rows || []).filter(row => dailyRowOverlapsRange(row, fromDate, toDate));
+  let items = normalizeCollectItemsForAdmin(overlapping, 'daily_history', partnerId)
+    .filter(row => {
+      const pid = String(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase();
+      if (partnerId && pid !== partnerId) return false;
+      if (allowed.size && pid && !allowed.has(pid)) return false;
+      return true;
+    });
+
+  let hint = '';
+  if (!items.length) {
+    const allPartnerRows = normalizeCollectItemsForAdmin(appliedFetched.rows || [], 'daily_history', partnerId)
+      .filter(row => {
+        const pid = String(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase();
+        if (partnerId && pid !== partnerId) return false;
+        if (allowed.size && pid && !allowed.has(pid)) return false;
+        return true;
+      });
+    if (allPartnerRows.length) {
+      const savedDates = allPartnerRows.map(row => resolveDailyBusinessDate(row)).filter(Boolean).sort();
+      const savedFrom = savedDates[0] || '';
+      const savedTo = savedDates[savedDates.length - 1] || '';
+      hint = savedFrom && savedTo
+        ? `저장된 일별 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate})과 겹치지 않습니다. 저장된 배달일: ${savedFrom}~${savedTo}`
+        : `저장된 일별 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate}) 배달일 데이터가 없습니다.`;
+    } else {
+      hint = `선택 지역·기간(${fromDate}~${toDate})에 일별 데이터가 없습니다. BIZ에서 일별 수집 후 [배민현황 저장]을 실행했는지 확인하세요.`;
+    }
+  }
+
+  const { readPartnerRegionMap, resolvePartnerDisplay } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap().catch(() => ({}));
+  items = items.map(row => {
+    const parsed = row.parsed_json || {};
+    const pid = String(parsed.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || partnerId || '').toUpperCase();
+    const info = resolvePartnerDisplay(pid, parsed.partnerName, parsed.regionName, regionMap);
+    return {
+      ...row,
+      parsed_json: {
+        ...parsed,
+        partnerId: pid,
+        partnerName: info.partnerName,
+        regionName: info.regionName,
+        displayName: info.displayName
+      }
+    };
+  });
+
+  items = aggregateDailyHistoryByDate(items);
+  return {
+    ok: true,
+    fromDate,
+    toDate,
+    partnerId: partnerId || null,
+    items,
+    count: items.length,
+    hint,
+    appliedOnly: true,
+    totals: computeItemsMetricTotals(items)
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -4112,6 +4294,7 @@ module.exports = {
   getViewBundleForAdmin,
   getViewFullBundleForAdmin,
   getRiderHistoryRangeForAdmin,
+  getDailyHistoryRangeForAdmin,
   analyzePartnerContamination,
   scrubCrossPartnerDuplicates,
   purgeBizCollectDate,

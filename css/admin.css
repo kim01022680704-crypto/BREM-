@@ -2883,8 +2883,21 @@ textarea {
   gap: 8px;
 }
 
+.baemin-view-nav__block--regions {
+  gap: 10px;
+}
+
 .baemin-view-nav__block--menus {
   gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.baemin-view-delivery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
 }
 
 .baemin-view-nav__label {
