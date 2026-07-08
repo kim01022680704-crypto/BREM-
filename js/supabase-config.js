@@ -19,7 +19,8 @@
     initialAdmin: {
       loginName: '관리자',
       email: 'admin@brem.kr'
-    }
+    },
+    adminLoginHints: {}
   };
 
   window.BREM_SUPABASE_CONFIG = Object.assign({}, DEFAULTS);
@@ -57,6 +58,11 @@
       {},
       DEFAULTS.initialAdmin,
       config.initialAdmin || {}
+    );
+    window.BREM_SUPABASE_CONFIG.adminLoginHints = Object.assign(
+      {},
+      DEFAULTS.adminLoginHints,
+      config.adminLoginHints || {}
     );
     window.BREM_SUPABASE_CONFIG.isConfigured = Boolean(
       window.BREM_SUPABASE_CONFIG.url && window.BREM_SUPABASE_CONFIG.anonKey

@@ -40,6 +40,23 @@ async function resolveAdminLoginEmail(loginInput) {
   }
 
   try {
+    const { data: directoryRow } = await withTimeout(
+      supabase
+        .from('admin_login_directory')
+        .select('email')
+        .eq('login_name', value)
+        .maybeSingle(),
+      4000,
+      'directory lookup timeout'
+    );
+    if (directoryRow?.email) {
+      return { ok: true, email: normalizeEmail(directoryRow.email) };
+    }
+  } catch {
+    /* directory table may not exist yet */
+  }
+
+  try {
     const { data: profileRow } = await withTimeout(
       supabase
         .from('profiles')

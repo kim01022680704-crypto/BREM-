@@ -9,6 +9,25 @@ function resolvePayrollStorageMode() {
 const { isWriteBlocked, WRITE_BLOCK_MESSAGE, isDevSupabaseConfigured, isProductionSupabaseUrl } = require('./write-guard');
 const { getErpLocalSessionConfig } = require('./baemin-session-local-config');
 
+function parseAdminLoginHints(raw) {
+  if (!raw) return {};
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const hints = {};
+    Object.entries(parsed).forEach(([name, email]) => {
+      const loginName = String(name || '').trim();
+      const loginEmail = String(email || '').trim();
+      if (loginName && loginEmail.includes('@')) {
+        hints[loginName] = loginEmail;
+      }
+    });
+    return hints;
+  } catch {
+    return {};
+  }
+}
+
 function getPublicConfig() {
   const url = String(process.env.SUPABASE_URL || '').trim();
   const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
@@ -32,6 +51,7 @@ function getPublicConfig() {
       loginName: String(process.env.BREM_ADMIN_LOGIN_NAME || '관리자').trim(),
       email: String(process.env.BREM_ADMIN_EMAIL || 'admin@brem.kr').trim()
     },
+    adminLoginHints: parseAdminLoginHints(process.env.BREM_ADMIN_LOGIN_MAP),
     payrollProductionRiders: {
       enabled: false,
       configured: false,

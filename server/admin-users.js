@@ -249,6 +249,13 @@ async function createAdminUser(accessToken, body = {}) {
 
   await writeRegistry(supabase, [...accounts, account]);
 
+  await supabase.from('admin_login_directory').upsert({
+    login_name: name,
+    email,
+    user_id: userId,
+    updated_at: now
+  }, { onConflict: 'login_name' }).catch(() => {});
+
   return {
     ok: true,
     account,
