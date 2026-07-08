@@ -3227,6 +3227,33 @@ textarea {
   font-weight: 700;
 }
 
+.baemin-quota-cell__percent--missed {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.baemin-quota-cell__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.baemin-quota-cell__status {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.baemin-quota-cell__status--achieved {
+  color: #4ade80;
+}
+
+.baemin-quota-cell__status--missed {
+  color: #f87171;
+}
+
 .baemin-menu-tabs--buttons {
   display: flex;
   flex-wrap: wrap;
@@ -3295,7 +3322,6 @@ textarea {
 }
 
 .baemin-quota-cell__percent {
-  margin-top: 4px;
   font-size: 0.8rem;
   color: #94a3b8;
 }

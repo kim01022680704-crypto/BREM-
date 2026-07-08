@@ -1066,10 +1066,19 @@
 
   function renderQuotaCell(actual, target) {
     const prog = formatProgress(actual, target);
-    const overClass = prog.percent > 100 ? ' baemin-quota-cell__percent--over' : '';
+    const achieved = prog.percent >= 100;
+    const statusClass = achieved
+      ? ' baemin-quota-cell__status--achieved'
+      : ' baemin-quota-cell__status--missed';
+    const percentClass = achieved
+      ? ' baemin-quota-cell__percent--over'
+      : ' baemin-quota-cell__percent--missed';
     return `<td class="baemin-quota-cell">
       <div class="baemin-quota-cell__value">${escapeHtml(prog.label)}</div>
-      <div class="baemin-quota-cell__percent${overClass}">${escapeHtml(prog.percentLabel)}</div>
+      <div class="baemin-quota-cell__meta">
+        <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
+        <span class="baemin-quota-cell__status${statusClass}">${achieved ? '달성' : '미달성'}</span>
+      </div>
     </td>`;
   }
 
