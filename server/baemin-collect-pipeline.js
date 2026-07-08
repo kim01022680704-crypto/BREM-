@@ -2973,30 +2973,39 @@ function riderPeriodFromDedupeKey(dedupeKey = '') {
 
 function riderRowOverlapsRange(row = {}, fromDate = '', toDate = '') {
   if (!fromDate || !toDate || toDate < fromDate) return false;
-  const businessDate = resolveRiderBusinessDate(row);
-  if (businessDate && businessDate >= fromDate && businessDate <= toDate) return true;
-  const dedupeDate = businessDateFromDedupeKey(row.dedupe_key);
-  if (dedupeDate && dedupeDate >= fromDate && dedupeDate <= toDate) return true;
+  // 하루키(DP:배달일:riderId:rider)만 배달일로 판정 — collect_date 폴백 금지(중복 합산 원인)
+  if (isPerDayRiderDedupeKey(row.dedupe_key)) {
+    const day = businessDateFromDedupeKey(row.dedupe_key);
+    return Boolean(day && day >= fromDate && day <= toDate);
+  }
+  // 기간합산 키(DP:from:to:riderId) — 하루키가 없을 때만 쓰도록 상위에서 필터
   const period = riderPeriodFromDedupeKey(row.dedupe_key);
   if (period) return period.toDate >= fromDate && period.fromDate <= toDate;
-  const collectDate = String(row.collect_date || '').slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(collectDate) && collectDate >= fromDate && collectDate <= toDate) {
-    return true;
-  }
-  return false;
+  const businessDate = resolveRiderBusinessDate(row);
+  return Boolean(businessDate && businessDate >= fromDate && businessDate <= toDate);
 }
 
 function resolveRiderBusinessDate(row = {}) {
   const parsed = row.parsed_json || {};
   const fromDedupe = businessDateFromDedupeKey(row.dedupe_key);
-  const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
   if (isPerDayRiderDedupeKey(row.dedupe_key) && fromDedupe) {
     return fromDedupe;
   }
+  // 기간합산 키는 단일 배달일이 없음 — fromParsed(수집일 오염) 사용 금지
+  if (riderPeriodFromDedupeKey(row.dedupe_key)) {
+    return '';
+  }
+  const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
-  if (fromDedupe) return fromDedupe;
-  const period = riderPeriodFromDedupeKey(row.dedupe_key);
-  return period?.fromDate || '';
+  return fromDedupe || '';
+}
+
+/** 하루키와 기간키가 섞이면 기간키는 이중합산 → 하루키 우선 */
+function preferPerDayRiderHistoryRows(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const perDay = list.filter(row => isPerDayRiderDedupeKey(row?.dedupe_key));
+  if (perDay.length) return perDay;
+  return list;
 }
 
 function normalizeDpPartnerId(value, dedupeKey = '') {
@@ -4017,7 +4026,9 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     }
     return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
   }
-  const data = (appliedFetched.rows || []).filter(row => riderRowOverlapsRange(row, fromDate, toDate));
+  const data = preferPerDayRiderHistoryRows(
+    (appliedFetched.rows || []).filter(row => riderRowOverlapsRange(row, fromDate, toDate))
+  );
 
   let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);
   const scopedItems = items.filter(row => {
