@@ -4157,6 +4157,83 @@ const BremStorage = (function () {
     }
   }
 
+  async function fetchAdminSignInApi(loginInput, password) {
+    const body = JSON.stringify({
+      login: String(loginInput || '').trim(),
+      password: String(password || '')
+    });
+    const endpoints = ['/api/admin/login', '/api/admin/sign-in'];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+
+    try {
+      for (const endpoint of endpoints) {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          signal: controller.signal
+        });
+        if (response.status === 404) continue;
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+      }
+      return {
+        response: { ok: false, status: 404 },
+        payload: { error: '로그인 API를 찾을 수 없습니다.' }
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function finishProductionAdminSessionFromPayload(payload, authApi) {
+    const client = await ensureSupabaseClient();
+    if (!client) {
+      return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
+    }
+    if (!payload?.session) {
+      return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
+    }
+
+    const { error: sessionError } = await client.auth.setSession({
+      access_token: payload.session.access_token,
+      refresh_token: payload.session.refresh_token
+    });
+    if (sessionError) {
+      return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
+    }
+
+    rememberAdminAccessToken(payload.session.access_token);
+    bindSupabaseAuthListener(client);
+    if (payload.profile) {
+      activeSupabaseProfile = payload.profile;
+    } else if (!activeSupabaseProfile) {
+      activeSupabaseProfile = await loadSupabaseProfile();
+    }
+
+    let account = null;
+    if (payload.account) {
+      account = mapProductionAdminAccount(payload.account, 0);
+      persistProductionSessionAccount(account);
+      productionAdminSessionAccount = account;
+    }
+    if (!account) {
+      account = productionAdminSessionAccount;
+    }
+    if (!account) {
+      await client.auth.signOut();
+      return { ok: false, message: '관리자 계정 정보를 확인할 수 없습니다. 계정 상태를 확인하세요.' };
+    }
+
+    authApi.setAdminSession(account.id);
+    authApi.syncProductionAdminAccounts().catch(error => {
+      console.warn('[BREM] Background admin account sync after login failed:', error.message || error);
+    });
+    document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
+    return { ok: true, account: { ...account, password: '' } };
+  }
+
   async function signInWithSupabase(email, password, expectedRole) {
     const client = getSupabaseClient();
     if (!client) return { ok: false, message: 'Supabase 설정이 필요합니다.' };
@@ -10157,66 +10234,55 @@ const BremStorage = (function () {
     async signInAdmin(loginInput, password) {
       if (getSupabaseConfig().mode === 'production') {
         try {
-          const response = await fetch('/api/admin/sign-in', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              login: String(loginInput || '').trim(),
-              password: String(password || '')
-            })
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            return { ok: false, message: payload.error || '로그인에 실패했습니다.' };
+          const { response, payload } = await fetchAdminSignInApi(loginInput, password);
+          if (response.ok) {
+            return finishProductionAdminSessionFromPayload(payload, this);
           }
 
-          const client = await ensureSupabaseClient();
-          if (!client) {
-            return { ok: false, message: 'Supabase 클라이언트를 초기화할 수 없습니다.' };
-          }
-          if (payload.session) {
-            const { error: sessionError } = await client.auth.setSession({
-              access_token: payload.session.access_token,
-              refresh_token: payload.session.refresh_token
-            });
-            if (sessionError) {
-              return { ok: false, message: sessionError.message || '세션 연결에 실패했습니다.' };
-            }
-            rememberAdminAccessToken(payload.session.access_token);
-            bindSupabaseAuthListener(client);
-            if (payload.profile) {
-              activeSupabaseProfile = payload.profile;
-            } else if (!activeSupabaseProfile) {
-              activeSupabaseProfile = await loadSupabaseProfile();
-            }
-          } else {
-            return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
+          const apiMessage = payload.error || '';
+          const shouldFallback = response.status === 404
+            || response.status === 503
+            || response.status === 504
+            || /abort|timeout|network/i.test(apiMessage);
+
+          if (!shouldFallback) {
+            return { ok: false, message: apiMessage || '로그인에 실패했습니다.' };
           }
 
-          let account = null;
-          if (payload.account) {
-            account = mapProductionAdminAccount(payload.account, 0);
-            persistProductionSessionAccount(account);
-            productionAdminSessionAccount = account;
+          await ensureSupabaseClient();
+          let email = resolveAdminLoginInput(loginInput);
+          if (!email.includes('@')) {
+            await this.syncProductionAdminAccounts().catch(() => {});
+            email = resolveAdminLoginInput(loginInput);
+          }
+          if (!email.includes('@')) {
+            return {
+              ok: false,
+              message: apiMessage || '등록된 관리자 아이디를 찾지 못했습니다. 이메일로 로그인하거나 잠시 후 다시 시도하세요.'
+            };
           }
 
-          if (!account) {
-            account = productionAdminSessionAccount;
-          }
+          const direct = await signInWithSupabase(email, password, 'admin');
+          if (!direct.ok) return direct;
 
-          if (!account) {
-            await client.auth.signOut();
-            return { ok: false, message: '관리자 계정 정보를 확인할 수 없습니다. 계정 상태를 확인하세요.' };
-          }
-
+          const registryAccount = this.getAdminAccountById(direct.profile.user_id);
+          const account = registryAccount || {
+            id: direct.profile.user_id,
+            name: direct.profile.display_name || direct.user.email || String(loginInput || '').trim() || '관리자',
+            role: ADMIN_ROLES.CEO,
+            menus: ALL_ADMIN_MENU_IDS,
+            editableMenus: ALL_ADMIN_MENU_IDS,
+            active: true
+          };
           this.setAdminSession(account.id);
-          this.syncProductionAdminAccounts().catch(error => {
-            console.warn('[BREM] Background admin account sync after login failed:', error.message || error);
-          });
           document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
           return { ok: true, account: { ...account, password: '' } };
         } catch (error) {
-          return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+          const message = String(error?.message || '');
+          if (/abort/i.test(message)) {
+            return { ok: false, message: '로그인 응답이 지연되고 있습니다. 잠시 후 다시 시도하세요.' };
+          }
+          return { ok: false, message: message || '로그인에 실패했습니다.' };
         }
       }
 

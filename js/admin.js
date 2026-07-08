@@ -2314,9 +2314,12 @@
         adminLoginTimerActive = true;
 
         if (window.BremSupabaseConfig?.load) {
-          await Promise.all([
-            window.BremSupabaseConfig.load(),
-            BremStorage.waitForStorageBootstrap?.() || Promise.resolve()
+          const configLoad = window.BremSupabaseConfig.load();
+          const bootstrap = BremStorage.waitForStorageBootstrap?.() || Promise.resolve();
+          const timeout = new Promise(resolve => setTimeout(() => resolve('bootstrap-timeout'), 8000));
+          await Promise.race([
+            Promise.all([configLoad, bootstrap]),
+            timeout
           ]);
         } else {
           await BremStorage.waitForStorageBootstrap?.();

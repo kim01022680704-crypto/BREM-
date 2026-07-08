@@ -22,22 +22,34 @@ function parseRegistryAccounts(value) {
 }
 
 async function readRegistry(supabase) {
-  const { data, error } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', SETTINGS_KEY)
-    .maybeSingle();
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', SETTINGS_KEY)
+      .maybeSingle();
 
-  if (error) throw new Error(error.message || '관리자 계정 목록을 불러오지 못했습니다.');
+    if (!error) {
+      const accounts = parseRegistryAccounts(data?.value);
 
-  const accounts = parseRegistryAccounts(data?.value);
+      if (data?.value && Array.isArray(data.value)) {
+        await writeRegistry(supabase, accounts);
+      }
 
-  // 클라이언트가 배열 형태로 덮어쓴 레지스트리를 서버 형식으로 자동 복구
-  if (data?.value && Array.isArray(data.value)) {
-    await writeRegistry(supabase, accounts);
+      return accounts;
+    }
+
+    lastError = error;
+    const message = String(error.message || '');
+    if (attempt < 2 && /timeout|timed out|upstream/i.test(message)) {
+      await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+      continue;
+    }
+    break;
   }
 
-  return accounts;
+  throw new Error(lastError?.message || '관리자 계정 목록을 불러오지 못했습니다.');
 }
 
 async function writeRegistry(supabase, accounts) {

@@ -102,11 +102,7 @@ function useSupabaseInquiries() {
   return riderInquiriesSupabase.isEnabled();
 }
 
-app.get('/api/public-config', (req, res) => {
-  res.json(getPublicConfig());
-});
-
-app.post('/api/admin/sign-in', async (req, res) => {
+async function handleAdminSignInRoute(req, res) {
   try {
     const { login, password } = req.body || {};
     const result = await adminAuth.signInAdmin(login, password);
@@ -117,7 +113,14 @@ app.post('/api/admin/sign-in', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message || '관리자 로그인에 실패했습니다.' });
   }
+}
+
+app.get('/api/public-config', (req, res) => {
+  res.json(getPublicConfig());
 });
+
+app.post('/api/admin/sign-in', handleAdminSignInRoute);
+app.post('/api/admin/login', handleAdminSignInRoute);
 
 app.post('/api/admin/ensure-profile', async (req, res) => {
   try {
