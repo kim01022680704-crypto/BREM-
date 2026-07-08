@@ -194,6 +194,20 @@
     return normalizeSetCount(state.partnerSetCountMap?.[pid]?.setCount || 1);
   }
 
+  function isDrivingStatus(statusDesc) {
+    const compact = String(statusDesc || '').replace(/\s+/g, '');
+    if (!compact) return false;
+    if (compact.includes('운행종료') || compact.includes('운행중지') || compact.includes('운행불가')) return false;
+    return compact.includes('운행중');
+  }
+
+  function countDrivingRiders(items = []) {
+    return (items || []).reduce((sum, row) => {
+      const status = row?.parsed_json?.statusDesc || row?.statusDesc || '';
+      return sum + (isDrivingStatus(status) ? 1 : 0);
+    }, 0);
+  }
+
   function readCachedRegionMap() {
     try {
       const raw = sessionStorage.getItem(REGION_MAP_CACHE_KEY);
@@ -863,11 +877,16 @@
       }
 
       const items = result.items || [];
+      const drivingCount = Number(result.totals?.drivingCount);
+      const totals = {
+        ...(result.totals || {}),
+        drivingCount: Number.isFinite(drivingCount) ? drivingCount : countDrivingRiders(items)
+      };
       const cached = getCachedPartnerBundle(partnerId) || { meta: {}, totals: {} };
       cached.delivery_status = items;
       cached.totals = {
         ...(cached.totals || {}),
-        delivery_status: result.totals || null
+        delivery_status: totals
       };
       cached.meta = {
         ...(cached.meta || {}),
@@ -893,7 +912,7 @@
 
       renderSubtabRows('delivery_status', partnerId, items, cached.meta);
       renderGrandTotalsPanel('delivery_status', partnerId);
-      showToast(`배달현황 ${formatNumber(items.length)}명`);
+      showToast(`배달현황 ${formatNumber(items.length)}명 · 운행중 ${formatNumber(totals.drivingCount)}명`);
     } finally {
       loadBtn?.classList.remove('is-loading');
       if (loadBtn) loadBtn.textContent = '배달현황 조회';
@@ -1362,9 +1381,14 @@
     const partnerLabel = partnerDisplayLabel(partner);
     const setCount = getPartnerSetCount(pid);
     const todayTargets = computeSlotTargets(setCount, todayKstDate());
+    const cached = getCachedPartnerBundle(pid);
+    const drivingCount = Number.isFinite(Number(totals.drivingCount))
+      ? Number(totals.drivingCount)
+      : countDrivingRiders(cached?.delivery_status || []);
     panel.hidden = false;
     panel.innerHTML = `
-      <p class="baemin-grand-totals__title">${escapeHtml(partnerLabel)} · 기사 전체 ${formatNumber(totals.rowCount)}명 · ${setCount}세트</p>
+      <p class="baemin-grand-totals__title">${escapeHtml(partnerLabel)} · 기사 전체 ${formatNumber(totals.rowCount)}명 · 운행중 ${formatNumber(drivingCount)}명 · ${setCount}세트</p>
+      ${renderMetricCard('운행중', drivingCount, true)}
       ${renderMetricCard('완료', totals.completeTotal, true)}
       ${renderMetricCard('거절 합계', totals.totalReject)}
       ${renderMetricCard('배차취소 합계', totals.cancelTotal)}
@@ -3399,9 +3423,10 @@
     const partnerLabel = partnerDisplayLabel(state.partners.find(partner => normalizePartnerId(partner.partnerId) === normalizePartnerId(partnerId)));
     if (summaryEl) {
       if (sourceMenu === 'delivery_status') {
+        const drivingCount = countDrivingRiders(items);
         summaryEl.textContent = isViewSection()
-          ? `${partnerLabel} · 최신 적용 스냅샷 · ${formatNumber(items.length)}건`
-          : `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건`;
+          ? `${partnerLabel} · 최신 적용 스냅샷 · ${formatNumber(items.length)}건 · 운행중 ${formatNumber(drivingCount)}명`
+          : `${partnerLabel} · 적용 기준 (${captureDate}) · ${formatNumber(items.length)}건 · 운행중 ${formatNumber(drivingCount)}명`;
       } else if (rangeLabel) {
         const periodHint = sourceMenu === 'rider_history' ? ' · 기간 합계' : '';
         const activeCount = sourceMenu === 'rider_history'
@@ -3873,7 +3898,6 @@
       void loadPartnerRegionMap();
       void loadPartnerSetCountMap();
       void ensureWeekdayQuotaLoaded(true);
-      void loadPartnerSetCountMap();
       void loadViewConfig();
       updatePanelVisibility();
       return;

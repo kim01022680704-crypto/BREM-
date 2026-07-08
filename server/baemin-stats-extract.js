@@ -240,9 +240,17 @@ function serviceBreakdownFromStats(stats) {
   };
 }
 
+function isDrivingStatus(statusDesc) {
+  const compact = String(statusDesc || '').replace(/\s+/g, '');
+  if (!compact) return false;
+  if (compact.includes('운행종료') || compact.includes('운행중지') || compact.includes('운행불가')) return false;
+  return compact.includes('운행중');
+}
+
 function computeItemsMetricTotals(items) {
   const totals = {
     rowCount: 0,
+    drivingCount: 0,
     completeTotal: 0,
     foodReject: 0,
     bmartReject: 0,
@@ -271,6 +279,7 @@ function computeItemsMetricTotals(items) {
       totalRiderFault: p.riderFault
     });
     totals.rowCount += 1;
+    if (isDrivingStatus(p.statusDesc)) totals.drivingCount += 1;
     totals.completeTotal += num(p.totalComplete);
     totals.foodReject += breakdown.foodReject;
     totals.bmartReject += breakdown.bmartReject;
@@ -352,6 +361,7 @@ module.exports = {
   extractStatsFromItem,
   sumStats,
   serviceBreakdownFromStats,
+  isDrivingStatus,
   computeItemsMetricTotals,
   mapToDeliveryStatusRow,
   mapToDailyStatsRow,

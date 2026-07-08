@@ -3494,11 +3494,15 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   }
 
   const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
+  // 단건 지역 조회는 raw_json 제외해 페이로드·DB 부하 축소
+  const selectCols = appliedOnly && partnerId
+    ? 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key'
+    : 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
   let query = supabase
     .from(tableName)
-    .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
+    .select(selectCols)
     .order('collected_at', { ascending: false })
-    .limit(5000);
+    .limit(partnerId ? 2000 : 5000);
 
   if (appliedOnly) {
     query = query.eq('batch_id', batchId);
@@ -3522,24 +3526,44 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   let items = normalizeCollectItemsForAdmin(data || [], menu, partnerId);
 
   if (appliedOnly) {
-    const catalog = await loadPartnerDisplayCatalog();
     const { readPartnerRegionMap } = require('./baemin-partner-region');
-    const regionMap = await readPartnerRegionMap();
-    items = items.map(row => {
-      const parsed = row.parsed_json || {};
-      const pid = String(parsed.partnerId || '').trim() || partnerIdFromDedupeKey(row.dedupe_key);
-      const info = enrichPartnerEntry(catalog, pid, parsed.partnerName, regionMap);
-      return {
-        ...row,
-        parsed_json: {
-          ...parsed,
-          partnerId: pid,
-          partnerName: info.partnerName,
-          regionName: info.regionName,
-          displayName: info.displayName
-        }
-      };
-    });
+    // 단일 지역 조회는 전체 카탈로그(수천건) 로드 생략 — 지연의 주원인
+    if (partnerId) {
+      const regionMap = await readPartnerRegionMap();
+      const regionName = String(regionMap?.[partnerId] || '').trim();
+      items = items.map(row => {
+        const parsed = row.parsed_json || {};
+        const pid = String(parsed.partnerId || '').trim() || partnerId || partnerIdFromDedupeKey(row.dedupe_key);
+        return {
+          ...row,
+          parsed_json: {
+            ...parsed,
+            partnerId: pid,
+            partnerName: String(parsed.partnerName || '').trim(),
+            regionName: regionName || String(parsed.regionName || '').trim(),
+            displayName: regionName || pid
+          }
+        };
+      });
+    } else {
+      const catalog = await loadPartnerDisplayCatalog();
+      const regionMap = await readPartnerRegionMap();
+      items = items.map(row => {
+        const parsed = row.parsed_json || {};
+        const pid = String(parsed.partnerId || '').trim() || partnerIdFromDedupeKey(row.dedupe_key);
+        const info = enrichPartnerEntry(catalog, pid, parsed.partnerName, regionMap);
+        return {
+          ...row,
+          parsed_json: {
+            ...parsed,
+            partnerId: pid,
+            partnerName: info.partnerName,
+            regionName: info.regionName,
+            displayName: info.displayName
+          }
+        };
+      });
+    }
   }
 
   return {
