@@ -119,6 +119,18 @@ app.get('/api/public-config', (req, res) => {
   res.json(getPublicConfig());
 });
 
+app.get('/api/admin/resolve-login', async (req, res) => {
+  try {
+    const result = await adminAuth.resolveAdminLoginEmail(req.query?.login || req.query?.name || '');
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, email: result.email });
+  } catch (error) {
+    res.status(504).json({ error: error.message || '로그인 조회 시간 초과' });
+  }
+});
+
 app.post('/api/admin/sign-in', handleAdminSignInRoute);
 app.post('/api/admin/login', handleAdminSignInRoute);
 

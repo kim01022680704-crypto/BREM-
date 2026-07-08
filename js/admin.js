@@ -2316,7 +2316,7 @@
         if (window.BremSupabaseConfig?.load) {
           const configLoad = window.BremSupabaseConfig.load();
           const bootstrap = BremStorage.waitForStorageBootstrap?.() || Promise.resolve();
-          const timeout = new Promise(resolve => setTimeout(() => resolve('bootstrap-timeout'), 8000));
+          const timeout = new Promise(resolve => setTimeout(() => resolve('bootstrap-timeout'), 3000));
           await Promise.race([
             Promise.all([configLoad, bootstrap]),
             timeout
@@ -2329,9 +2329,15 @@
         const config = BremStorage.getSupabaseConfig?.() || {};
         const useLocalAdminLogin = !isProductionAdminLogin(config)
           && (config.backend === 'local' || !config.isConfigured);
-        const result = useLocalAdminLogin
-          ? BremStorage.auth.verifyAdminLogin(name, password)
-          : await BremStorage.auth.signInAdmin(name, password);
+        const result = await Promise.race([
+          useLocalAdminLogin
+            ? Promise.resolve(BremStorage.auth.verifyAdminLogin(name, password))
+            : BremStorage.auth.signInAdmin(name, password),
+          new Promise((_, reject) => setTimeout(
+            () => reject(new Error('로그인 시간 초과입니다. 새로고침 후 다시 시도하세요.')),
+            35000
+          ))
+        ]);
         window.BremPerf?.timeEnd?.('admin.signInApi');
 
         if (!result?.ok) {

@@ -4,6 +4,7 @@
   "builds": [
     { "src": "api/index.js", "use": "@vercel/node" },
     { "src": "api/admin/login.js", "use": "@vercel/node" },
+    { "src": "api/admin/resolve-login.js", "use": "@vercel/node" },
     { "src": "*.html", "use": "@vercel/static" },
     { "src": "css/**", "use": "@vercel/static" },
     { "src": "js/**", "use": "@vercel/static" },
@@ -16,6 +17,7 @@
   "routes": [
     { "src": "/api/admin/login", "dest": "/api/admin/login.js" },
     { "src": "/api/admin/sign-in", "dest": "/api/admin/login.js" },
+    { "src": "/api/admin/resolve-login", "dest": "/api/admin/resolve-login.js" },
     { "src": "/api/(.*)", "dest": "/api/index.js" },
     { "src": "/", "dest": "/index.html" },
     { "src": "/(.*)", "dest": "/$1" }

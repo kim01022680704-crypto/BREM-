@@ -4008,7 +4008,10 @@ const BremStorage = (function () {
     if (activeSupabaseClient) return activeSupabaseClient;
     if (supabaseInitPromise) {
       try {
-        await supabaseInitPromise;
+        await Promise.race([
+          supabaseInitPromise,
+          new Promise(resolve => setTimeout(resolve, 2000))
+        ]);
       } catch {
         /* bootstrap may fail; fall through */
       }
@@ -4016,17 +4019,16 @@ const BremStorage = (function () {
     }
     if (storageBootstrapPromise) {
       try {
-        await storageBootstrapPromise;
+        await Promise.race([
+          storageBootstrapPromise,
+          new Promise(resolve => setTimeout(resolve, 2000))
+        ]);
       } catch {
         /* bootstrap may fail; fall through */
       }
       if (activeSupabaseClient) return activeSupabaseClient;
     }
-    const config = getSupabaseConfig();
-    if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
-    activeSupabaseClient = createSupabaseClient(config.url, config.anonKey);
-    bindSupabaseAuthListener(activeSupabaseClient);
-    return activeSupabaseClient;
+    return ensureSupabaseClientForLogin();
   }
 
   async function waitForStorageBootstrap() {
@@ -4117,22 +4119,35 @@ const BremStorage = (function () {
   }
 
   async function loadSupabaseProfile() {
-    const client = await ensureSupabaseClient();
+    const client = await ensureSupabaseClientForLogin();
     if (!client) return null;
-    const { data: sessionData } = await client.auth.getSession();
-    const user = sessionData?.session?.user;
-    if (!user) {
-      activeSupabaseProfile = null;
-      return null;
+    const run = async () => {
+      const { data: sessionData } = await client.auth.getSession();
+      const user = sessionData?.session?.user;
+      if (!user) {
+        activeSupabaseProfile = null;
+        return null;
+      }
+      const { data, error } = await client
+        .from('profiles')
+        .select('user_id,role,rider_id,display_name,active')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      activeSupabaseProfile = data || null;
+      return activeSupabaseProfile;
+    };
+    try {
+      return await Promise.race([
+        run(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('profile timeout')), 12000))
+      ]);
+    } catch (error) {
+      if (String(error?.message || '').includes('timeout')) {
+        return activeSupabaseProfile;
+      }
+      throw error;
     }
-    const { data, error } = await client
-      .from('profiles')
-      .select('user_id,role,rider_id,display_name,active')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (error) throw error;
-    activeSupabaseProfile = data || null;
-    return activeSupabaseProfile;
   }
 
   async function tryEnsureInitialAdminProfile(accessToken, loginEmail) {
@@ -4157,14 +4172,43 @@ const BremStorage = (function () {
     }
   }
 
-  async function fetchAdminSignInApi(loginInput, password) {
+  async function ensureSupabaseClientForLogin() {
+    if (activeSupabaseClient) return activeSupabaseClient;
+    const config = getSupabaseConfig();
+    if (!config.url || !config.anonKey || !window.supabase?.createClient) return null;
+    activeSupabaseClient = createSupabaseClient(config.url, config.anonKey);
+    bindSupabaseAuthListener(activeSupabaseClient);
+    return activeSupabaseClient;
+  }
+
+  async function resolveLoginEmailFromApi(loginInput) {
+    const login = String(loginInput || '').trim();
+    if (!login || login.includes('@')) return login;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(`/api/admin/resolve-login?login=${encodeURIComponent(login)}`, {
+        signal: controller.signal,
+        credentials: 'same-origin'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return '';
+      return String(payload.email || '').trim();
+    } catch {
+      return '';
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetchAdminSignInApi(loginInput, password, timeoutMs = 12000) {
     const body = JSON.stringify({
       login: String(loginInput || '').trim(),
       password: String(password || '')
     });
     const endpoints = ['/api/admin/login', '/api/admin/sign-in'];
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       for (const endpoint of endpoints) {
@@ -4235,13 +4279,23 @@ const BremStorage = (function () {
   }
 
   async function signInWithSupabase(email, password, expectedRole) {
-    const client = getSupabaseClient();
+    const client = await ensureSupabaseClientForLogin();
     if (!client) return { ok: false, message: 'Supabase 설정이 필요합니다.' };
-    const { data, error } = await client.auth.signInWithPassword({
-      email: String(email || '').trim(),
-      password: String(password || '')
-    });
-    if (error) return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+    const authResult = await Promise.race([
+      client.auth.signInWithPassword({
+        email: String(email || '').trim(),
+        password: String(password || '')
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('auth timeout')), 15000))
+    ]).catch(error => ({ data: null, error }));
+    const { data, error } = authResult || {};
+    if (error) {
+      const message = String(error.message || '');
+      if (/timeout/i.test(message)) {
+        return { ok: false, message: '로그인 응답이 지연되고 있습니다. 잠시 후 다시 시도하세요.' };
+      }
+      return { ok: false, message: error.message || '로그인에 실패했습니다.' };
+    }
 
     if (data.session?.access_token) {
       rememberAdminAccessToken(data.session.access_token);
@@ -10234,31 +10288,26 @@ const BremStorage = (function () {
     async signInAdmin(loginInput, password) {
       if (getSupabaseConfig().mode === 'production') {
         try {
-          const { response, payload } = await fetchAdminSignInApi(loginInput, password);
-          if (response.ok) {
-            return finishProductionAdminSessionFromPayload(payload, this);
+          if (window.BremSupabaseConfig?.load) {
+            await Promise.race([
+              window.BremSupabaseConfig.load(),
+              new Promise(resolve => setTimeout(resolve, 5000))
+            ]);
           }
+          await ensureSupabaseClientForLogin();
 
-          const apiMessage = payload.error || '';
-          const shouldFallback = response.status === 404
-            || response.status === 503
-            || response.status === 504
-            || /abort|timeout|network/i.test(apiMessage);
-
-          if (!shouldFallback) {
-            return { ok: false, message: apiMessage || '로그인에 실패했습니다.' };
-          }
-
-          await ensureSupabaseClient();
           let email = resolveAdminLoginInput(loginInput);
           if (!email.includes('@')) {
-            await this.syncProductionAdminAccounts().catch(() => {});
-            email = resolveAdminLoginInput(loginInput);
+            email = await resolveLoginEmailFromApi(loginInput);
           }
           if (!email.includes('@')) {
+            const { response, payload } = await fetchAdminSignInApi(loginInput, password, 12000);
+            if (response.ok) {
+              return finishProductionAdminSessionFromPayload(payload, this);
+            }
             return {
               ok: false,
-              message: apiMessage || '등록된 관리자 아이디를 찾지 못했습니다. 이메일로 로그인하거나 잠시 후 다시 시도하세요.'
+              message: payload.error || '등록된 관리자 아이디를 찾지 못했습니다. 이메일로 로그인해 보세요.'
             };
           }
 
@@ -10272,14 +10321,20 @@ const BremStorage = (function () {
             role: ADMIN_ROLES.CEO,
             menus: ALL_ADMIN_MENU_IDS,
             editableMenus: ALL_ADMIN_MENU_IDS,
-            active: true
+            active: true,
+            email: direct.user?.email || email
           };
+          if (account.email) {
+            persistProductionSessionAccount(account);
+            productionAdminSessionAccount = account;
+          }
           this.setAdminSession(account.id);
+          this.syncProductionAdminAccounts().catch(() => {});
           document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
           return { ok: true, account: { ...account, password: '' } };
         } catch (error) {
           const message = String(error?.message || '');
-          if (/abort/i.test(message)) {
+          if (/abort|timeout/i.test(message)) {
             return { ok: false, message: '로그인 응답이 지연되고 있습니다. 잠시 후 다시 시도하세요.' };
           }
           return { ok: false, message: message || '로그인에 실패했습니다.' };
