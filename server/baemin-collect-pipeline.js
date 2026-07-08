@@ -2955,6 +2955,15 @@ function partnerIdFromDedupeKey(dedupeKey = '') {
   return /^DP\d{6,}$/i.test(prefix) ? prefix.toUpperCase() : '';
 }
 
+/** 지역 소유권은 dedupe_key 를 우선. parsed_json.partnerId 단독 신뢰 금지(교차오염 원인). */
+function rowBelongsToPartner(row, partnerId) {
+  const want = String(partnerId || '').trim().toUpperCase();
+  if (!want || !/^DP\d{6,}$/.test(want)) return false;
+  const fromKey = partnerIdFromDedupeKey(row?.dedupe_key);
+  if (fromKey) return fromKey === want;
+  return String(row?.parsed_json?.partnerId || '').trim().toUpperCase() === want;
+}
+
 function businessDateFromDedupeKey(dedupeKey = '') {
   const parts = String(dedupeKey || '').split(':');
   const candidate = String(parts[1] || '').slice(0, 10);
@@ -3494,15 +3503,16 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   }
 
   const tableName = appliedOnly ? 'baemin_delivery_applied_items' : 'baemin_biz_collect_items';
-  // 단건 지역 조회는 raw_json 제외해 페이로드·DB 부하 축소
-  const selectCols = appliedOnly && partnerId
+  const wantPartnerId = String(partnerId || '').trim().toUpperCase();
+  // 단건 지역 조회는 raw_json 제외해 페이로드·DB 부하 축소 (필터는 반드시 유지)
+  const selectCols = appliedOnly && wantPartnerId
     ? 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key'
     : 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
   let query = supabase
     .from(tableName)
     .select(selectCols)
     .order('collected_at', { ascending: false })
-    .limit(partnerId ? 2000 : 5000);
+    .limit(5000);
 
   if (appliedOnly) {
     query = query.eq('batch_id', batchId);
@@ -3511,8 +3521,8 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
   }
 
   if (menu) query = query.eq('source_menu', menu);
-  if (partnerId) {
-    query = query.like('dedupe_key', `${String(partnerId).trim().toUpperCase()}:%`);
+  if (wantPartnerId) {
+    query = query.like('dedupe_key', `${wantPartnerId}:%`);
   }
 
   const { data, error } = await query;
@@ -3523,17 +3533,22 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
     return { ok: false, error: error.message || '조회 실패' };
   }
 
-  let items = normalizeCollectItemsForAdmin(data || [], menu, partnerId);
+  let items = normalizeCollectItemsForAdmin(data || [], menu, wantPartnerId);
+  // DB like 누락/오염 대비: dedupe_key 소유권으로 한 번 더 고정
+  if (wantPartnerId) {
+    items = items.filter(row => rowBelongsToPartner(row, wantPartnerId));
+  }
 
   if (appliedOnly) {
     const { readPartnerRegionMap } = require('./baemin-partner-region');
     // 단일 지역 조회는 전체 카탈로그(수천건) 로드 생략 — 지연의 주원인
-    if (partnerId) {
+    if (wantPartnerId) {
       const regionMap = await readPartnerRegionMap();
-      const regionName = String(regionMap?.[partnerId] || '').trim();
+      const regionName = String(regionMap?.[wantPartnerId] || '').trim();
       items = items.map(row => {
         const parsed = row.parsed_json || {};
-        const pid = String(parsed.partnerId || '').trim() || partnerId || partnerIdFromDedupeKey(row.dedupe_key);
+        // 표시용 라벨만 지역맵으로 채움 — 소유권은 항상 dedupe_key
+        const pid = partnerIdFromDedupeKey(row.dedupe_key) || wantPartnerId;
         return {
           ...row,
           parsed_json: {
@@ -3550,7 +3565,7 @@ async function getCollectItemsForAdmin(collectDate, sourceMenu, options = {}) {
       const regionMap = await readPartnerRegionMap();
       items = items.map(row => {
         const parsed = row.parsed_json || {};
-        const pid = String(parsed.partnerId || '').trim() || partnerIdFromDedupeKey(row.dedupe_key);
+        const pid = partnerIdFromDedupeKey(row.dedupe_key) || String(parsed.partnerId || '').trim();
         const info = enrichPartnerEntry(catalog, pid, parsed.partnerName, regionMap);
         return {
           ...row,
@@ -3591,11 +3606,7 @@ function normalizeCollectItemsForAdmin(rows, sourceMenu, partnerId = '') {
   let items = Array.from(byKey.values());
 
   if (partnerId) {
-    items = items.filter(row => {
-      const parsedId = String(row.parsed_json?.partnerId || '').trim();
-      if (parsedId === partnerId) return true;
-      return String(row.dedupe_key || '').startsWith(`${partnerId}:`);
-    });
+    items = items.filter(row => rowBelongsToPartner(row, partnerId));
   }
 
   if (sourceMenu === 'delivery_status') {
@@ -3870,8 +3881,11 @@ function emptyPartnerBundle(collectDate, weekStart) {
 function groupAppliedRowsByPartner(items, allowed) {
   const map = new Map();
   (items || []).forEach(row => {
-    const pid = String(partnerIdFromDedupeKey(row.dedupe_key) || row.parsed_json?.partnerId || '').toUpperCase();
+    const pid = String(partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase()
+      || String(row.parsed_json?.partnerId || '').toUpperCase();
     if (!pid || !allowed.has(pid)) return;
+    // dedupe_key 와 parsed partnerId가 다르면 키를 우선 (섞임 방지)
+    if (!rowBelongsToPartner(row, pid)) return;
     if (!map.has(pid)) map.set(pid, []);
     map.get(pid).push(row);
   });
