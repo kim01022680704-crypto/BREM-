@@ -738,27 +738,38 @@ function isSessionAuthFailure(result) {
 
 function extractCollectItemsFingerprint(sourceId, items = [], partnerId = '') {
   const rows = Array.isArray(items) ? items : [];
-  const prefix = String(partnerId || '').trim() ? `${String(partnerId).trim()}:` : '';
-  if (sourceId === 'delivery_status') {
-    return prefix + rows.slice(0, 8).map(row => {
-      const acceptance = row?.deliveryAcceptanceCount || {};
-      const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
-      return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
-    }).join('|');
-  }
-  if (sourceId === 'daily_history') {
-    return prefix + rows.slice(0, 5).map(row =>
-      `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`
-    ).join('|');
-  }
-  if (sourceId === 'rider_history') {
-    return prefix + rows.slice(0, 8).map(row => {
-      const acceptance = row?.deliveryAcceptanceCount || {};
-      const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
-      return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
-    }).join('|');
-  }
-  return prefix;
+  // partnerId 접두사는 비교에 쓰지 않음(세션 미전환 감지용). 접두사 포함 시 DP만 달라져 항상 통과함.
+  const bare = (() => {
+    if (sourceId === 'delivery_status') {
+      return rows.slice(0, 8).map(row => {
+        const acceptance = row?.deliveryAcceptanceCount || {};
+        const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+        return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
+      }).join('|');
+    }
+    if (sourceId === 'daily_history') {
+      return rows.slice(0, 5).map(row =>
+        `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`
+      ).join('|');
+    }
+    if (sourceId === 'rider_history') {
+      return rows.slice(0, 8).map(row => {
+        const acceptance = row?.deliveryAcceptanceCount || {};
+        const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+        return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
+      }).join('|');
+    }
+    return '';
+  })();
+  void partnerId;
+  return bare;
+}
+
+function fingerprintBody(fp) {
+  const text = String(fp || '').trim();
+  if (!text) return '';
+  // 구버전 prefix(DP…:)가 남아 있으면 제거해 비교
+  return text.replace(/^DP\d{6,}:/i, '');
 }
 
 function isPartnerSessionMismatchResult(result) {
@@ -770,7 +781,10 @@ function shouldBlockCrossPartnerFingerprint(sourceId, itemFingerprint, context =
   if (sourceId !== 'delivery_status') return false;
   if (!itemFingerprint || Number(context.partnerCollectIndex || 0) <= 0) return false;
   const referenceFp = String(context.lastPartnerMenuFingerprints?.[sourceId] || '').trim();
-  return Boolean(referenceFp && referenceFp === itemFingerprint);
+  if (!referenceFp) return false;
+  const left = fingerprintBody(referenceFp);
+  const right = fingerprintBody(itemFingerprint);
+  return Boolean(left && right && left === right);
 }
 
 async function collectSource(sourceId, sessionCookie, collectDate, registry = {}, context = {}) {
@@ -3036,18 +3050,14 @@ function normalizeCollectRowPartnerIdentity(row) {
   if (!row || typeof row !== 'object') return row;
   const dedupeKey = String(row.dedupe_key || '');
   const parsed = { ...(row.parsed_json || {}) };
-  const pid = normalizeDpPartnerId(parsed.partnerId || row.partner_id, dedupeKey);
+  // 소유권은 dedupe_key 우선. parsed.partnerId 로 키를 덮어쓰지 않음(지역 섞임 원인).
+  const pid = partnerIdFromDedupeKey(dedupeKey)
+    || normalizeDpPartnerId(parsed.partnerId || row.partner_id, dedupeKey);
   if (!pid) return row;
 
   parsed.partnerId = pid;
   row.partner_id = pid;
   row.parsed_json = parsed;
-
-  if (dedupeKey && !dedupeKey.toUpperCase().startsWith(`${pid}:`)) {
-    const parts = dedupeKey.split(':');
-    const suffix = parts.length > 1 ? parts.slice(1).join(':') : dedupeKey;
-    row.dedupe_key = `${pid}:${suffix}`;
-  }
   return row;
 }
 
