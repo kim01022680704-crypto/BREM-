@@ -1992,26 +1992,75 @@ async function readAppliedBaeminDelivery() {
   };
 }
 
-async function loadBizCollectRowsForApply(preferredDate = '') {
+const BIZ_COLLECT_PAGE_SIZE = 1000;
+
+async function fetchAllBaeminBizCollectItems(selectFields) {
   const supabase = getServiceClient();
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
+  let offset = 0;
+  const rows = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select(selectFields)
+      .order('collected_at', { ascending: false })
+      .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+
+    if (error) {
+      if (isMissingBizCollectTableError(error)) {
+        return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
+      }
+      return { ok: false, error: error.message || '조회 실패' };
+    }
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+    offset += BIZ_COLLECT_PAGE_SIZE;
+  }
+
+  return { ok: true, rows, totalFetched: rows.length };
+}
+
+async function fetchAppliedItemsPaged(tableName, filters = {}, selectFields) {
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  let offset = 0;
+  const rows = [];
+  while (true) {
+    let query = supabase.from(tableName).select(selectFields);
+    Object.entries(filters).forEach(([key, value]) => {
+      if (key === 'like') {
+        query = query.like(value.column, value.pattern);
+      } else {
+        query = query.eq(key, value);
+      }
+    });
+    const { data, error } = await query.range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+    if (error) {
+      return { ok: false, error: error.message || '조회 실패' };
+    }
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+    offset += BIZ_COLLECT_PAGE_SIZE;
+  }
+
+  return { ok: true, rows, totalFetched: rows.length };
+}
+
+async function loadBizCollectRowsForApply(preferredDate = '') {
   const preferred = String(preferredDate || '').slice(0, 10);
   const selectFields = 'collect_date, collected_at, source_menu, source_url, dedupe_key, rider_name, rider_user_id, phone_number, parsed_json, raw_json';
-  const { data: allRows, error: sourceError } = await supabase
-    .from('baemin_biz_collect_items')
-    .select(selectFields)
-    .order('collected_at', { ascending: false })
-    .limit(50000);
+  const fetched = await fetchAllBaeminBizCollectItems(selectFields);
+  if (!fetched.ok) return fetched;
 
-  if (sourceError) {
-    if (isMissingBizCollectTableError(sourceError)) {
-      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
-    }
-    return { ok: false, error: sourceError.message || '조회 실패' };
-  }
+  const allRows = fetched.rows || [];
 
   const deduped = new Map();
   (allRows || []).forEach(row => {
@@ -2047,6 +2096,7 @@ async function loadBizCollectRowsForApply(preferredDate = '') {
     preferredDate: preferred,
     preferredDateCount: preferredCount,
     totalMerged: rows.length,
+    totalFetched: fetched.totalFetched || allRows.length,
     byMenu
   };
 }
@@ -2142,9 +2192,12 @@ async function getBaeminStorageDiagnosticsForAdmin() {
       message: `BIZ 수집 라이더 ${bizByMenu.rider_history}건이 있으나 배민현황 저장에는 0건입니다. [배민현황 저장]을 다시 실행하세요.`
     });
   } else if ((bizByMenu.rider_history || 0) > (appliedByMenu.rider_history || 0)) {
+    const bizRider = Number(bizByMenu.rider_history || 0);
+    const appliedRider = Number(appliedByMenu.rider_history || 0);
+    const ratio = bizRider > 0 ? Math.round((appliedRider / bizRider) * 100) : 0;
     issues.push({
       code: 'RIDER_APPLY_STALE',
-      message: `BIZ 라이더 ${bizByMenu.rider_history}건 · 저장 ${appliedByMenu.rider_history}건 — 최신 수집 반영을 위해 [배민현황 저장]을 다시 실행하세요.`
+      message: `BIZ 라이더 ${bizRider.toLocaleString('ko-KR')}건 · 저장 ${appliedRider.toLocaleString('ko-KR')}건 (${ratio}%) — [배민현황 저장]을 다시 실행하세요. 저장 건수가 수집보다 적으면 기간 합계가 BIZ와 맞지 않습니다.`
     });
   }
 
@@ -3710,24 +3763,25 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     };
   }
 
-  let query = supabase
-    .from('baemin_delivery_applied_items')
-    .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
-    .eq('batch_id', batchId)
-    .eq('source_menu', 'rider_history')
-    .limit(20000);
-
+  const appliedFilters = {
+    batch_id: batchId,
+    source_menu: 'rider_history'
+  };
   if (partnerId) {
-    query = query.like('dedupe_key', `${partnerId}:%`);
+    appliedFilters.like = { column: 'dedupe_key', pattern: `${partnerId}:%` };
   }
-
-  const { data, error } = await query;
-  if (error) {
-    if (isMissingAppliedTableError(error)) {
+  const appliedFetched = await fetchAppliedItemsPaged(
+    'baemin_delivery_applied_items',
+    appliedFilters,
+    'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key'
+  );
+  if (!appliedFetched.ok) {
+    if (isMissingAppliedTableError({ message: appliedFetched.error })) {
       return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
     }
-    return { ok: false, error: error.message || '라이더 내역 조회 실패' };
+    return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
   }
+  const data = appliedFetched.rows || [];
 
   let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);
   const scopedItems = items.filter(row => {

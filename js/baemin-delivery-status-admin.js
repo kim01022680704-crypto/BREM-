@@ -215,14 +215,19 @@
     const fromDate = window.BremDatePicker?.applyWeekWednesday?.(weekStart) || String(weekStart || '').slice(0, 10);
     const weekEnd = window.BremDatePicker?.weekEndKey?.(fromDate) || addDaysDate(fromDate, 6);
     const latest = addDaysDate(todayKstDate(), -1);
-    const toDate = weekEnd < latest ? weekEnd : latest;
+    let toDate = weekEnd < latest ? weekEnd : latest;
+    if (toDate < fromDate) {
+      toDate = fromDate;
+    }
     return { fromDate, toDate, weekEnd };
   }
 
   function formatViewWeekRangeLabel(weekStart) {
     const range = computeViewWeekQueryRange(weekStart);
     if (range.fromDate && range.toDate) {
-      return `${range.fromDate} ~ ${range.toDate}`;
+      const fromDate = range.fromDate <= range.toDate ? range.fromDate : range.toDate;
+      const toDate = range.fromDate <= range.toDate ? range.toDate : range.fromDate;
+      return `${fromDate} ~ ${toDate}`;
     }
     if (window.BremDatePicker?.formatWednesdayWeekRange) {
       return BremDatePicker.formatWednesdayWeekRange(weekStart);
