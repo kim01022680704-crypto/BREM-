@@ -1,5 +1,5 @@
 const { getServiceClient } = require('./admin-bootstrap');
-const { addDays, todayKST, latestQueryableDate, buildDateList } = require('./baemin-settlement-week');
+const { addDays, todayKST, latestQueryableDate, buildDateList, computeSettlementWeekCollectRange } = require('./baemin-settlement-week');
 
 const DAILY_COLLECT_RANGE_KEY = 'baemin_daily_collect_range';
 
@@ -112,6 +112,13 @@ async function getDailyCollectRangeForAdmin(referenceDate = todayKST()) {
 }
 
 function resolveDailyCollectRangeFromBody(body = {}, referenceDate = todayKST()) {
+  const weekStart = normalizeDateKey(body.weekStart || body.settlementWeekStart);
+  if (weekStart) {
+    const week = computeSettlementWeekCollectRange(weekStart);
+    if (week.fromDate && week.toDate && !week.skipped) {
+      return normalizeDailyCollectRange({ fromDate: week.fromDate, toDate: week.toDate }, referenceDate);
+    }
+  }
   const fromDate = normalizeDateKey(body.dailyFromDate || body.fromDate);
   const toDate = normalizeDateKey(body.dailyToDate || body.toDate);
   if (!fromDate || !toDate) return null;

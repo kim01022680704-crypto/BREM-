@@ -140,6 +140,33 @@ async function deletePartnerRegionEntry(partnerId) {
   return { ok: true, map: saved.map, removed: true };
 }
 
+function filterPartnersForCollect(partners = [], regionMap = {}) {
+  const map = normalizeRegionMap(regionMap);
+  const registeredIds = new Set(Object.keys(map));
+  const list = Array.isArray(partners) ? partners : [];
+  if (!registeredIds.size) {
+    return { partners: list, skipped: [] };
+  }
+  const kept = [];
+  const skipped = [];
+  list.forEach(partner => {
+    const pid = normalizePartnerId(partner?.partnerId);
+    if (!pid || !registeredIds.has(pid)) {
+      skipped.push({
+        partnerId: pid || String(partner?.partnerId || '').trim(),
+        partnerName: String(partner?.partnerName || pid || '').trim()
+      });
+      return;
+    }
+    kept.push({
+      ...partner,
+      partnerId: pid,
+      regionName: map[pid] || String(partner?.regionName || '').trim()
+    });
+  });
+  return { partners: kept, skipped };
+}
+
 module.exports = {
   PARTNER_REGION_MAP_KEY,
   formatRegionDisplay,
@@ -147,6 +174,7 @@ module.exports = {
   readPartnerRegionMap,
   savePartnerRegionMap,
   resolvePartnerDisplay,
+  filterPartnersForCollect,
   getPartnerRegionMapForAdmin,
   upsertPartnerRegionEntry,
   deletePartnerRegionEntry

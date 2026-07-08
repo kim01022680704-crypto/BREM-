@@ -1692,6 +1692,16 @@
           };
         }
 
+        if (triggerId === 'baemin-biz-collect-week') {
+          return {
+            hiddenInput: $('#baeminBizCollectWeekStart'),
+            labelEl: $('#baeminBizCollectWeekLabel'),
+            onSelect(value) {
+              window.BremBaeminDeliveryStatusAdmin?.handleBizCollectWeekSelect?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-list') {
           return {
             hiddenInput: $('#payrollSearchSettlementWeekStart'),

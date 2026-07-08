@@ -204,6 +204,52 @@
     });
   }
 
+  function ensureBizCollectWeekStart() {
+    if (state.bizCollectWeekStart) return state.bizCollectWeekStart;
+    const today = todayKstDate();
+    state.bizCollectWeekStart = window.BremDatePicker?.applyWeekWednesday?.(today) || today;
+    return state.bizCollectWeekStart;
+  }
+
+  function syncBizCollectWeekPicker() {
+    const hidden = $('baeminBizCollectWeekStart');
+    const label = $('baeminBizCollectWeekLabel');
+    const rangeLabel = $('baeminBizCollectWeekRangeLabel');
+    const weekStart = ensureBizCollectWeekStart();
+    if (hidden) hidden.value = weekStart;
+    if (label && window.BremDatePicker) {
+      const weekday = BremDatePicker.formatWeekdayKo?.(weekStart) || '';
+      label.textContent = weekday
+        ? `${BremDatePicker.formatDate(weekStart)}(${weekday})`
+        : (BremDatePicker.formatDate(weekStart) || weekStart);
+    }
+    if (rangeLabel) {
+      rangeLabel.textContent = weekStart
+        ? `수집 ${formatViewWeekRangeLabel(weekStart)}`
+        : '';
+    }
+  }
+
+  function applyBizWeekToCollectRangeInputs(weekStart = ensureBizCollectWeekStart()) {
+    const range = computeViewWeekQueryRange(weekStart);
+    const fromEl = $('baeminDailyCollectFrom');
+    const toEl = $('baeminDailyCollectTo');
+    const riderFromEl = $('baeminRiderCollectFrom');
+    const riderToEl = $('baeminRiderCollectTo');
+    if (fromEl) fromEl.value = range.fromDate;
+    if (toEl) toEl.value = range.toDate;
+    if (riderFromEl) riderFromEl.value = range.fromDate;
+    if (riderToEl) riderToEl.value = range.toDate;
+    return range;
+  }
+
+  function handleBizCollectWeekSelect(value) {
+    const normalized = window.BremDatePicker?.applyWeekWednesday?.(value) || String(value || '').slice(0, 10);
+    state.bizCollectWeekStart = normalized;
+    syncBizCollectWeekPicker();
+    applyBizWeekToCollectRangeInputs(normalized);
+  }
+
   function ensureViewWeekStart() {
     if (state.viewWeekStart) return state.viewWeekStart;
     const today = todayKstDate();
@@ -348,7 +394,10 @@
   }
 
   function syncRiderDateRangeInputs() {
-    const range = defaultRiderViewDateRange();
+    const weekRange = state.viewWeekStart ? computeViewWeekQueryRange(state.viewWeekStart) : null;
+    const range = weekRange?.fromDate && weekRange?.toDate
+      ? weekRange
+      : defaultRiderViewDateRange();
     const fromEl = $('baeminStatusRiderFromDate');
     const toEl = $('baeminStatusRiderToDate');
     const metaEl = $('baeminStatusRiderRangeMeta');
@@ -377,6 +426,21 @@
     syncViewWeekPicker();
     invalidateDataCache();
     state.activePartnerId = '';
+    if (state.activeMenu === 'rider_history') {
+      const range = computeViewWeekQueryRange(normalized);
+      const fromEl = $('baeminStatusRiderFromDate');
+      const toEl = $('baeminStatusRiderToDate');
+      if (fromEl) {
+        fromEl.value = range.fromDate;
+        fromEl.dataset.touched = '1';
+      }
+      if (toEl) {
+        toEl.value = range.toDate;
+        toEl.dataset.touched = '1';
+      }
+      state.riderViewFromDate = range.fromDate;
+      state.riderViewToDate = range.toDate;
+    }
     if (state.viewLoaded && state.activeMenu === 'daily_history') {
       clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 정산주 데이터 불러오기를 눌러 주세요.');
       updateWeekPickerVisibility();
@@ -399,7 +463,9 @@
       if (weekLoadBtn) weekLoadBtn.hidden = true;
       return;
     }
-    const showWeek = state.activeMenu === 'daily_history' || state.activeMenu === 'quota_achievement';
+    const showWeek = state.activeMenu === 'daily_history'
+      || state.activeMenu === 'quota_achievement'
+      || state.activeMenu === 'rider_history';
     const showWeekLoad = state.activeMenu === 'daily_history';
     const riderToolbar = $('baeminStatusRiderToolbar');
     if (row) row.hidden = !showWeek;
@@ -516,11 +582,13 @@
   }
 
   function readCollectRangeFromUi() {
+    const weekStart = String(state.bizCollectWeekStart || $('baeminBizCollectWeekStart')?.value || '').slice(0, 10);
     return {
       dailyFromDate: $('baeminDailyCollectFrom')?.value || '',
       dailyToDate: $('baeminDailyCollectTo')?.value || '',
       riderFromDate: $('baeminRiderCollectFrom')?.value || '',
-      riderToDate: $('baeminRiderCollectTo')?.value || ''
+      riderToDate: $('baeminRiderCollectTo')?.value || '',
+      weekStart: /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? weekStart : ''
     };
   }
 
@@ -2338,7 +2406,8 @@
         dailyFromDate: ranges.dailyFromDate,
         dailyToDate: ranges.dailyToDate,
         riderFromDate: ranges.riderFromDate,
-        riderToDate: ranges.riderToDate
+        riderToDate: ranges.riderToDate,
+        weekStart: options.weekStart || ranges.weekStart || null
       },
       timeoutMs: options.timeoutMs || 300000
     });
@@ -2354,7 +2423,8 @@
           dailyFromDate: ranges.dailyFromDate,
           dailyToDate: ranges.dailyToDate,
           riderFromDate: ranges.riderFromDate,
-          riderToDate: ranges.riderToDate
+          riderToDate: ranges.riderToDate,
+          weekStart: options.weekStart || ranges.weekStart || null
         },
         timeoutMs: options.timeoutMs || 300000
       });
@@ -2428,6 +2498,22 @@
       endpoint: '/collect/full',
       failLabel: '배민 전체 데이터 수집',
       successToast: '배민 전체 데이터 수집 완료'
+    });
+  }
+
+  async function runWeekFullCollect() {
+    const weekStart = ensureBizCollectWeekStart();
+    const range = applyBizWeekToCollectRangeInputs(weekStart);
+    if (!range.fromDate || !range.toDate || range.toDate < range.fromDate) {
+      showToast('정산주 기간을 확인하세요.');
+      return;
+    }
+    return runCollectRequest({
+      endpoint: '/collect/full',
+      weekStart,
+      failLabel: '정산주 전체수집',
+      successToast: `정산주 전체수집 완료 (${range.fromDate}~${range.toDate})`,
+      timeoutMs: 900000
     });
   }
 
@@ -3000,6 +3086,7 @@
     const captureDate = resolveBizCaptureDate();
     state.applying = true;
     renderAppliedStatus(state.config);
+    showToast('배민현황 저장 중… Supabase에 반영합니다.');
 
     const local = await fetchLocalHealth(state.config, null);
     state.localServerRunning = local.running;
@@ -3122,6 +3209,10 @@
 
     $('baeminFullCollectBtn')?.addEventListener('click', () => {
       void runFullCollect();
+    });
+
+    $('baeminWeekFullCollectBtn')?.addEventListener('click', () => {
+      void runWeekFullCollect();
     });
 
     $('baeminDeliveryOnlyCollectBtn')?.addEventListener('click', () => {
@@ -3256,6 +3347,9 @@
     if (dateInput && !dateInput.value) {
       dateInput.value = todayKstDate();
     }
+    ensureBizCollectWeekStart();
+    syncBizCollectWeekPicker();
+    applyBizWeekToCollectRangeInputs(state.bizCollectWeekStart);
 
     if (isViewSection()) {
       if (!state.activeMenu) state.activeMenu = 'delivery_status';
@@ -3312,6 +3406,12 @@
     stopSetupPoll();
   }
 
-  window.BremBaeminDeliveryStatusAdmin = { refresh, stopPolling, handleWeekSelect, loadViewData };
+  window.BremBaeminDeliveryStatusAdmin = {
+    refresh,
+    stopPolling,
+    handleWeekSelect,
+    handleBizCollectWeekSelect,
+    loadViewData
+  };
   bindEvents();
 })();

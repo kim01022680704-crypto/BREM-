@@ -643,6 +643,16 @@
             <button type="button" class="small-btn" id="baeminServerShutdownBtn">자동수집 서버 종료</button>
             <button type="button" class="small-btn" id="baeminDeliveryJsonPasteBtn">배민 JSON 붙여넣기</button>
           </div>
+          <div class="form-row baemin-week-collect-row" id="baeminWeekCollectRow">
+            <label>
+              정산주 (수~화)
+              <input type="hidden" id="baeminBizCollectWeekStart">
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="baemin-biz-collect-week" id="baeminBizCollectWeekBtn">수요일 선택</button>
+            </label>
+            <span id="baeminBizCollectWeekLabel" class="baemin-view-week__date"></span>
+            <span id="baeminBizCollectWeekRangeLabel" class="baemin-view-week__range form-help"></span>
+            <button type="button" class="primary-btn" id="baeminWeekFullCollectBtn">정산주 전체수집</button>
+          </div>
           <div class="form-row baemin-daily-collect-range" id="baeminDailyCollectRangeRow">
             <label>
               일별 수집 시작

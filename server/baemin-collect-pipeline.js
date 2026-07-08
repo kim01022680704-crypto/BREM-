@@ -21,16 +21,47 @@ const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 const collectProgress = require('./baemin-collect-progress');
 
+const BAEMIN_APPLIED_SETTINGS_KEY = 'brem_baemin_delivery_applied';
+const settingsCache = new Map();
+const SETTINGS_CACHE_MS = 30000;
+let appliedBatchCache = { batchId: '', at: 0 };
+
 function getBaeminSession() {
   return require('./baemin-delivery-session');
 }
 
+function invalidateSettingsCache(key = '') {
+  if (key) settingsCache.delete(key);
+  else settingsCache.clear();
+  appliedBatchCache = { batchId: '', at: 0 };
+}
+
 async function readSettingsValue(key) {
+  const cacheHit = settingsCache.get(key);
+  if (cacheHit && Date.now() - cacheHit.at < SETTINGS_CACHE_MS) {
+    return cacheHit.value;
+  }
+
   const supabase = getServiceClient();
   if (!supabase) return null;
-  const { data, error } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
-  if (error) throw new Error(error.message || '설정을 불러오지 못했습니다.');
-  return data?.value ?? null;
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
+    if (!error) {
+      const value = data?.value ?? null;
+      settingsCache.set(key, { value, at: Date.now() });
+      return value;
+    }
+    lastError = error;
+    const message = String(error.message || '');
+    if (attempt < 2 && /timeout|timed out|upstream/i.test(message)) {
+      await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+      continue;
+    }
+    break;
+  }
+  throw new Error(lastError?.message || '설정을 불러오지 못했습니다.');
 }
 
 async function writeSettingsValue(key, value, description) {
@@ -43,6 +74,8 @@ async function writeSettingsValue(key, value, description) {
     updated_at: new Date().toISOString()
   }, { onConflict: 'key' });
   if (error) return { ok: false, status: 500, error: error.message || '설정 저장에 실패했습니다.' };
+  invalidateSettingsCache(key);
+  if (key === BAEMIN_APPLIED_SETTINGS_KEY) invalidateSettingsCache();
   return { ok: true };
 }
 
@@ -473,9 +506,9 @@ async function fetchOneHistoryDay({
       console.log(`[BREM][collect] rider_history ▶ ${day} (${partnerId || 'partner'}) browser ${spaUrl}`);
       try {
         if (page.url() !== spaUrl) {
-          await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+          await page.goto(spaUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
         } else {
-          await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
         }
         await new Promise(resolve => setTimeout(resolve, 700));
       } catch (error) {
@@ -1756,7 +1789,19 @@ async function runFullCollectPipeline(options = {}) {
       } = require('./baemin-center-context');
       partnersToCollect = partnersToCollect.filter(partner => isValidPartnerId(partner?.partnerId));
 
+      const { readPartnerRegionMap, filterPartnersForCollect } = require('./baemin-partner-region');
+      const regionMap = await readPartnerRegionMap().catch(() => ({}));
+      const filtered = filterPartnersForCollect(partnersToCollect, regionMap);
+      if (filtered.skipped.length) {
+        const skippedNames = filtered.skipped.map(row => row.partnerName || row.partnerId).join(', ');
+        console.log(`[BREM][collect] 지역 미등록 협력사 ${filtered.skipped.length}곳 수집 생략: ${skippedNames}`);
+      }
+      partnersToCollect = filtered.partners;
+
       const orderedPartners = partnersToCollect.slice();
+      if (orderedPartners.length) {
+        collectProgress.setPartnerTotal(orderedPartners.length);
+      }
       const lastPartnerMenuFingerprints = {
         delivery_status: '',
         daily_history: '',
@@ -1819,6 +1864,13 @@ async function runFullCollectPipeline(options = {}) {
           sessionExpired = sessionExpired || loopResult.sessionExpired;
         } catch (error) {
           console.warn(`[BREM][collect] 협력사 수집 실패 (${partner.partnerName || partner.partnerId}):`, error.message);
+          collectProgress.skipPartner({
+            index: index + 1,
+            total: orderedPartners.length,
+            partnerId: partner.partnerId,
+            partnerName: partner.partnerName || partner.partnerId,
+            message: `협력사 ${index + 1}/${orderedPartners.length} · ${partner.partnerName || partner.partnerId} 실패`
+          });
           partnerSummaries.push({
             partnerId: partner.partnerId,
             partnerName: partner.partnerName || partner.partnerId,
@@ -2000,8 +2052,6 @@ async function getLatestMenuCollectStatus(collectDate) {
   });
 }
 
-const BAEMIN_APPLIED_SETTINGS_KEY = 'brem_baemin_delivery_applied';
-
 function isMissingAppliedTableError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return message.includes('baemin_delivery_applied')
@@ -2026,6 +2076,27 @@ async function readAppliedBaeminDelivery() {
 
 const BIZ_COLLECT_PAGE_SIZE = 1000;
 const BIZ_COLLECT_MENUS = ['delivery_status', 'daily_history', 'rider_history'];
+const APPLIED_INSERT_CHUNK_SIZE = 300;
+
+async function fetchBizCollectMenuRows(supabase, menu, selectFields) {
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select(selectFields)
+      .eq('source_menu', menu)
+      .order('collected_at', { ascending: false })
+      .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+    offset += BIZ_COLLECT_PAGE_SIZE;
+  }
+  return rows;
+}
 
 async function fetchAllBaeminBizCollectItems(selectFields) {
   const supabase = getServiceClient();
@@ -2036,22 +2107,12 @@ async function fetchAllBaeminBizCollectItems(selectFields) {
   const deduped = new Map();
   let totalFetched = 0;
 
-  for (const menu of BIZ_COLLECT_MENUS) {
-    let offset = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('baemin_biz_collect_items')
-        .select(selectFields)
-        .eq('source_menu', menu)
-        .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
-
-      if (error) {
-        if (isMissingBizCollectTableError(error)) {
-          return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
-        }
-        return { ok: false, error: error.message || '조회 실패' };
-      }
-      if (!data?.length) break;
+  try {
+    const menuRows = await Promise.all(
+      BIZ_COLLECT_MENUS.map(menu => fetchBizCollectMenuRows(supabase, menu, selectFields))
+    );
+    menuRows.forEach((data, menuIndex) => {
+      const menu = BIZ_COLLECT_MENUS[menuIndex];
       totalFetched += data.length;
       data.forEach(row => {
         const dedupeKey = String(row.dedupe_key || '').trim();
@@ -2062,9 +2123,12 @@ async function fetchAllBaeminBizCollectItems(selectFields) {
           deduped.set(key, row);
         }
       });
-      if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
-      offset += BIZ_COLLECT_PAGE_SIZE;
+    });
+  } catch (error) {
+    if (isMissingBizCollectTableError(error)) {
+      return { ok: false, tableMissing: true, message: 'baemin_biz_collect_items 테이블이 없습니다.' };
     }
+    return { ok: false, error: error.message || '조회 실패' };
   }
 
   return { ok: true, rows: Array.from(deduped.values()), totalFetched };
@@ -2404,7 +2468,7 @@ async function applyBaeminDelivery(collectDate, options = {}) {
     raw_json: {}
   }));
 
-  const chunkSize = 50;
+  const chunkSize = APPLIED_INSERT_CHUNK_SIZE;
   for (let i = 0; i < mapped.length; i += chunkSize) {
     const chunk = mapped.slice(i, i + chunkSize);
     const { error: insertError } = await supabase
@@ -2457,8 +2521,13 @@ async function applyBaeminDelivery(collectDate, options = {}) {
 
 async function resolveAppliedBatchId(appliedOnly = false) {
   if (!appliedOnly) return '';
+  if (appliedBatchCache.batchId && Date.now() - appliedBatchCache.at < SETTINGS_CACHE_MS) {
+    return appliedBatchCache.batchId;
+  }
   const applied = await readAppliedBaeminDelivery();
-  return applied?.batchId || '';
+  const batchId = applied?.batchId || '';
+  appliedBatchCache = { batchId, at: Date.now() };
+  return batchId;
 }
 
 async function resolveBizCollectDateForAdmin(collectDate) {
@@ -3883,6 +3952,7 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     };
   }
 
+  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
   const appliedFilters = {
     batch_id: batchId,
     source_menu: 'rider_history'
@@ -3890,52 +3960,18 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   if (partnerId) {
     appliedFilters.like = { column: 'dedupe_key', pattern: `${partnerId}:%` };
   }
-  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
-  let data = [];
-  if (partnerId && fromDate && toDate) {
-    const { data: ranged, error: rangeError } = await supabase
-      .from('baemin_delivery_applied_items')
-      .select(appliedSelect)
-      .eq('batch_id', batchId)
-      .eq('source_menu', 'rider_history')
-      .like('dedupe_key', `${partnerId}:%`)
-      .gte('parsed_json->>businessDate', fromDate)
-      .lte('parsed_json->>businessDate', toDate)
-      .limit(10000);
-    if (rangeError) {
-      return { ok: false, error: rangeError.message || '라이더 내역 조회 실패' };
+  const appliedFetched = await fetchAppliedItemsPaged(
+    'baemin_delivery_applied_items',
+    appliedFilters,
+    appliedSelect
+  );
+  if (!appliedFetched.ok) {
+    if (isMissingAppliedTableError({ message: appliedFetched.error })) {
+      return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
     }
-    data = ranged || [];
-    const rangeKeys = new Set(data.map(row => row.dedupe_key));
-    const appliedFetched = await fetchAppliedItemsPaged(
-      'baemin_delivery_applied_items',
-      appliedFilters,
-      appliedSelect
-    );
-    if (!appliedFetched.ok) {
-      return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
-    }
-    (appliedFetched.rows || []).forEach(row => {
-      if (rangeKeys.has(row.dedupe_key)) return;
-      if (riderRowOverlapsRange(row, fromDate, toDate)) {
-        data.push(row);
-        rangeKeys.add(row.dedupe_key);
-      }
-    });
-  } else {
-    const appliedFetched = await fetchAppliedItemsPaged(
-      'baemin_delivery_applied_items',
-      appliedFilters,
-      appliedSelect
-    );
-    if (!appliedFetched.ok) {
-      if (isMissingAppliedTableError({ message: appliedFetched.error })) {
-        return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
-      }
-      return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
-    }
-    data = appliedFetched.rows || [];
+    return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
   }
+  const data = (appliedFetched.rows || []).filter(row => riderRowOverlapsRange(row, fromDate, toDate));
 
   let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);
   const scopedItems = items.filter(row => {
@@ -3944,27 +3980,35 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     if (allowed.size && pid && !allowed.has(pid)) return false;
     return true;
   });
-  items = scopedItems.filter(row => riderRowOverlapsRange(row, fromDate, toDate));
+  items = scopedItems;
 
   let hint = '';
-  if (!items.length && scopedItems.length) {
-    const savedDates = scopedItems.map(row => resolveRiderBusinessDate(row)).filter(Boolean).sort();
-    const savedFrom = savedDates[0] || '';
-    const savedTo = savedDates[savedDates.length - 1] || '';
-    hint = savedFrom && savedTo
-      ? `저장된 라이더 ${scopedItems.length}건은 있으나, 선택 기간(${fromDate}~${toDate})과 겹치지 않습니다. 저장된 배달일: ${savedFrom}~${savedTo}`
-      : `저장된 라이더 ${scopedItems.length}건은 있으나, 선택 기간(${fromDate}~${toDate}) 배달일 데이터가 없습니다.`;
-  } else if (!items.length) {
-    hint = `선택 지역·기간(${fromDate}~${toDate})에 라이더 데이터가 없습니다. BIZ에서 라이더 수집 후 [배민현황 저장]을 실행했는지 확인하세요.`;
+  if (!items.length) {
+    const allPartnerRows = normalizeCollectItemsForAdmin(appliedFetched.rows || [], 'rider_history', partnerId)
+      .filter(row => {
+        const pid = String(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || '').toUpperCase();
+        if (partnerId && pid !== partnerId) return false;
+        if (allowed.size && pid && !allowed.has(pid)) return false;
+        return true;
+      });
+    if (allPartnerRows.length) {
+      const savedDates = allPartnerRows.map(row => resolveRiderBusinessDate(row)).filter(Boolean).sort();
+      const savedFrom = savedDates[0] || '';
+      const savedTo = savedDates[savedDates.length - 1] || '';
+      hint = savedFrom && savedTo
+        ? `저장된 라이더 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate})과 겹치지 않습니다. 저장된 배달일: ${savedFrom}~${savedTo}`
+        : `저장된 라이더 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate}) 배달일 데이터가 없습니다.`;
+    } else {
+      hint = `선택 지역·기간(${fromDate}~${toDate})에 라이더 데이터가 없습니다. BIZ에서 라이더 수집 후 [배민현황 저장]을 실행했는지 확인하세요.`;
+    }
   }
 
-  const catalog = await loadPartnerDisplayCatalog();
-  const { readPartnerRegionMap } = require('./baemin-partner-region');
-  const regionMap = await readPartnerRegionMap();
+  const { readPartnerRegionMap, resolvePartnerDisplay } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap().catch(() => ({}));
   items = items.map(row => {
     const parsed = row.parsed_json || {};
     const pid = String(parsed.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || partnerId || '').toUpperCase();
-    const info = enrichPartnerEntry(catalog, pid, parsed.partnerName, regionMap);
+    const info = resolvePartnerDisplay(pid, parsed.partnerName, parsed.regionName, regionMap);
     return {
       ...row,
       parsed_json: {

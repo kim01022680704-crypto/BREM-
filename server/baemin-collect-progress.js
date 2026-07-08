@@ -136,6 +136,37 @@ function addSaved(count = 0) {
   return getCollectProgress();
 }
 
+function setPartnerTotal(total = 0) {
+  if (!state.active) return getCollectProgress();
+  state.partnerTotal = Math.max(1, Number(total) || 0);
+  touch();
+  return getCollectProgress();
+}
+
+function skipPartner({
+  index = 0,
+  total = 0,
+  partnerId = '',
+  partnerName = '',
+  message = ''
+} = {}) {
+  if (!state.active) return getCollectProgress();
+  state.partnerIndex = Number(index) || state.partnerIndex;
+  if (total) state.partnerTotal = Number(total) || state.partnerTotal;
+  state.partnerId = String(partnerId || '').trim();
+  state.partnerName = String(partnerName || '').trim();
+  state.dayIndex = 0;
+  state.dayTotal = 0;
+  state.dayDate = '';
+  state.phase = 'partner_skip';
+  const base = state.partnerName
+    ? `협력사 ${state.partnerIndex}/${state.partnerTotal} · ${state.partnerName}`
+    : `협력사 ${state.partnerIndex}/${state.partnerTotal}`;
+  state.message = message || `${base} · 생략`;
+  touch();
+  return getCollectProgress();
+}
+
 function finishCollect({ ok = true, savedTotal = 0, message = '' } = {}) {
   state.active = false;
   state.percent = 100;
@@ -179,6 +210,8 @@ module.exports = {
   updateMenu,
   updateDay,
   addSaved,
+  setPartnerTotal,
+  skipPartner,
   finishCollect,
   clearProgress,
   getCollectProgress

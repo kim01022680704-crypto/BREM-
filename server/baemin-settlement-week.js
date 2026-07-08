@@ -454,6 +454,38 @@ function buildBizMenuDateRanges(dateKey = todayKST(), now = new Date(), rangeOpt
   };
 }
 
+/** 정산주(수~화) 수집·조회용 기간 — 어제(latestQueryable)까지 */
+function computeSettlementWeekCollectRange(weekStart, now = new Date()) {
+  const fromDate = settlementWeekStart(weekStart);
+  const weekEnd = settlementWeekEnd(fromDate);
+  const latest = latestQueryableDate(todayKST(now), now);
+  let toDate = weekEnd;
+  if (latest && toDate > latest) toDate = latest;
+  if (!fromDate || !toDate || toDate < fromDate) {
+    return {
+      weekStart: fromDate,
+      weekEnd,
+      fromDate,
+      toDate: fromDate,
+      dates: [],
+      dayCount: 0,
+      skipped: true,
+      label: `${fromDate} ~ ${toDate || fromDate} (조회 불가)`
+    };
+  }
+  const dates = buildDateList(fromDate, toDate);
+  return {
+    weekStart: fromDate,
+    weekEnd,
+    fromDate,
+    toDate,
+    dates,
+    dayCount: dates.length,
+    skipped: false,
+    label: `${fromDate} ~ ${toDate} (정산주 ${dates.length}일)`
+  };
+}
+
 function toSingleDayRange(day, dateRange = null) {
   const dateKey = String(day || dateRange?.fromDate || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return dateRange || null;
@@ -485,6 +517,7 @@ module.exports = {
   computeCollectDateRange,
   resolveHistoryMenuQueryDates,
   buildDateList,
+  computeSettlementWeekCollectRange,
   toSingleDayRange,
   parseUrlHistoryDates,
   historyDateRangeMatchesRequest
