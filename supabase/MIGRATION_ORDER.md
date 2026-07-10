@@ -13,6 +13,8 @@
 | 4 | `rider_inquiries_migration.sql` | 문의 사용 시 | rider_inquiries |
 | 5 | `admin_schedules_migration.sql` | **필수** | 관리자 스케줄표 |
 | 6 | `operations_tables_migration.sql` | **필수** | admin_calls · admin_rejection_rates · admin_targets + settings→table |
+| 6b | `rejection_stats_migration.sql` | 거절율 ERP 통계 | admin_rejection_rates.stats / source |
+| 6c | `baemin_live_accept_rates_migration.sql` | 배민 실시간 수락율 | baemin_live_accept_rates + 거절율 안전 반영 함수 (manual/ERP 보호) |
 | 7 | `settlements_tables_migration.sql` | **필수** | daily_settlements · weekly_settlements · settlement_upload_logs · settlement_unmatched + settings→table |
 | 8 | `promotion_apply_results_migration.sql` | 프로모션 적용 저장 시 | promotion_apply_results (settings JSON 폴백 유지) |
 | 9 | `lease_erp_migration.sql` | **리스 ERP 사용 시** | lease_vehicles · … · lease_profit_logs (brem_admin_leases 이관 지원) |
@@ -32,6 +34,7 @@
 | 관리자 스케줄 | `admin_schedules` | 이전만 (삭제 안 함) |
 | 일별 콜수 | `admin_calls` | 이전만 |
 | 주간 거절/수락율 | `admin_rejection_rates` | 이전만 |
+| 배민 실시간 수락율 | `baemin_live_accept_rates` | ❌ (BIZ 수집→거절율 반영용) |
 | 월간 목표 | `admin_targets` | 이전만 |
 | 일정산 반영 | `daily_settlements` | 이전만 |
 | 주정산 저장 | `weekly_settlements` | 이전만 |
