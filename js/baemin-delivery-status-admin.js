@@ -93,7 +93,7 @@
   }
 
   const MENU_IDS = ['delivery_status', 'daily_history', 'rider_history'];
-  const VIEW_MENU_IDS = [...MENU_IDS, 'quota_achievement', 'weekday_quota'];
+  const VIEW_MENU_IDS = [...MENU_IDS, 'quota_achievement', 'weekday_quota', 'accept_rate_live'];
   const REGION_MAP_CACHE_KEY = 'brem_baemin_region_map_v1';
 
   const WEEKDAY_QUOTA_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -541,6 +541,7 @@
     const weekLoadBtn = $('baeminStatusWeekLoadBtn');
     const rangeToolbar = $('baeminStatusRangeToolbar');
     const deliveryToolbar = $('baeminStatusDeliveryToolbar');
+    const acceptRateToolbar = $('baeminStatusAcceptRateToolbar');
     const setCountRow = $('baeminStatusSetCountRow');
     const menuNav = $('baeminStatusMenuNavBlock');
     if (!isViewSection()) {
@@ -548,6 +549,7 @@
       if (weekLoadBtn) weekLoadBtn.hidden = true;
       if (rangeToolbar) rangeToolbar.hidden = true;
       if (deliveryToolbar) deliveryToolbar.hidden = true;
+      if (acceptRateToolbar) acceptRateToolbar.hidden = true;
       if (setCountRow) setCountRow.hidden = true;
       if (menuNav) menuNav.hidden = true;
       return;
@@ -559,26 +561,38 @@
       if (weekLoadBtn) weekLoadBtn.hidden = true;
       if (rangeToolbar) rangeToolbar.hidden = true;
       if (deliveryToolbar) deliveryToolbar.hidden = true;
+      if (acceptRateToolbar) acceptRateToolbar.hidden = true;
       if (setCountRow) setCountRow.hidden = true;
       return;
     }
 
     // 메뉴별 컨트롤만 표시
-    // 배달현황 → 조회만 / 일별·라이더 → 기간 / 할당달성 → 정산주+세트수 / 요일별할당 → 없음
+    // 배달현황 → 조회만 / 일별·라이더 → 기간 / 할당달성 → 정산주+세트수 / 수락율 → 조회 / 요일별할당 → 없음
     const showWeek = state.activeMenu === 'quota_achievement';
     const showRange = state.activeMenu === 'rider_history' || state.activeMenu === 'daily_history';
     const showDeliveryQuery = state.activeMenu === 'delivery_status';
+    const showAcceptRate = state.activeMenu === 'accept_rate_live';
     const showSetCount = state.activeMenu === 'quota_achievement';
 
     if (row) row.hidden = !showWeek;
     if (weekLoadBtn) weekLoadBtn.hidden = !showWeek;
     if (rangeToolbar) rangeToolbar.hidden = !showRange;
     if (deliveryToolbar) deliveryToolbar.hidden = !showDeliveryQuery;
+    if (acceptRateToolbar) acceptRateToolbar.hidden = !showAcceptRate;
     if (setCountRow) setCountRow.hidden = !showSetCount;
 
     if (showSetCount) renderSetCountRow(state.activePartnerId);
     if (state.activeMenu === 'weekday_quota') {
       void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
+    }
+    if (showAcceptRate) {
+      const ranges = computeAcceptRateDateRanges();
+      const metaEl = $('baeminStatusAcceptRateMeta');
+      if (metaEl) {
+        metaEl.textContent = ranges.pastLabel
+          ? `과거 ${ranges.pastLabel} · 현재 ${ranges.currentLabel} (배달현황 최신 반영)`
+          : `과거 없음(수요일) · 현재 ${ranges.currentLabel} (배달현황 최신)`;
+      }
     }
     if (showRange) {
       syncRiderDateRangeInputs();
@@ -1023,6 +1037,221 @@
     }
   }
 
+  /** 수~전일(과거) / 수~현재(현재=과거+배달현황 최신) */
+  function computeAcceptRateDateRanges() {
+    const today = todayKstDate();
+    const fromDate = settlementWednesdayOf(today);
+    const yesterday = addDaysDate(today, -1);
+    const hasPast = /^\d{4}-\d{2}-\d{2}$/.test(yesterday) && yesterday >= fromDate;
+    return {
+      fromDate,
+      today,
+      yesterday,
+      pastFromDate: hasPast ? fromDate : '',
+      pastToDate: hasPast ? yesterday : '',
+      pastLabel: hasPast ? `${fromDate} ~ ${yesterday}` : '',
+      currentLabel: `${fromDate} ~ ${today}`,
+      hasPast
+    };
+  }
+
+  function extractAcceptRateMetrics(parsed = {}) {
+    const complete = Math.max(0, Number(parsed.totalComplete || parsed.completeCount || 0) || 0);
+    const foodReject = Math.max(0, Number(parsed.foodReject || 0) || 0);
+    const foodCancel = Math.max(0, Number(parsed.foodCancel || 0) || 0);
+    const foodRiderFault = Math.max(0, Number(parsed.foodRiderFault || 0) || 0);
+    return { complete, foodReject, foodCancel, foodRiderFault };
+  }
+
+  function mergeAcceptRateMetrics(a = {}, b = {}) {
+    return {
+      complete: Number(a.complete || 0) + Number(b.complete || 0),
+      foodReject: Number(a.foodReject || 0) + Number(b.foodReject || 0),
+      foodCancel: Number(a.foodCancel || 0) + Number(b.foodCancel || 0),
+      foodRiderFault: Number(a.foodRiderFault || 0) + Number(b.foodRiderFault || 0)
+    };
+  }
+
+  /**
+   * 100 - (거절푸드+배차취소푸드+배달취소라이더귀책푸드)
+   *     / (완료+거절푸드+배차취소푸드+배달취소라이더귀책푸드) * 100
+   */
+  function calcAcceptRatePercent(metrics = {}) {
+    const complete = Number(metrics.complete || 0);
+    const deny = Number(metrics.foodReject || 0)
+      + Number(metrics.foodCancel || 0)
+      + Number(metrics.foodRiderFault || 0);
+    const denom = complete + deny;
+    if (denom <= 0) return null;
+    return 100 - (deny / denom) * 100;
+  }
+
+  function formatAcceptRatePercent(value) {
+    if (value == null || !Number.isFinite(Number(value))) return '-';
+    return `${Number(value).toFixed(1)}%`;
+  }
+
+  function riderAcceptRateKey(row) {
+    return String(row?.rider_user_id || row?.parsed_json?.riderUserId || '').trim();
+  }
+
+  function renderAcceptRateLiveRows(partnerId, rows, meta = {}) {
+    const summaryEl = $('baeminStatusAcceptRateSummary');
+    const rowsEl = $('baeminStatusAcceptRateRows');
+    if (!rowsEl) return;
+    const partnerLabel = partnerDisplayLabel(
+      state.partners.find(partner => normalizePartnerId(partner.partnerId) === normalizePartnerId(partnerId))
+    );
+    const pastLabel = meta.pastLabel || '-';
+    const currentLabel = meta.currentLabel || '-';
+    if (summaryEl) {
+      summaryEl.textContent = rows.length
+        ? `${partnerLabel} · 과거 ${pastLabel} · 현재 ${currentLabel} · ${formatNumber(rows.length)}명`
+        : `${partnerLabel} · 과거 ${pastLabel} · 현재 ${currentLabel} · 데이터 없음`;
+    }
+    if (!rows.length) {
+      rowsEl.innerHTML = `<tr><td colspan="5" class="form-help">${meta.emptyMessage || '수락율 조회를 눌러 주세요.'}</td></tr>`;
+      return;
+    }
+    rowsEl.innerHTML = rows.map(row => `<tr>
+      <td>${escapeHtml(row.riderName || '-')}</td>
+      <td>${escapeHtml(row.riderUserId || '-')}</td>
+      <td>${escapeHtml(row.phoneNumber || '-')}</td>
+      <td>${formatAcceptRatePercent(row.pastRate)}</td>
+      <td>${formatAcceptRatePercent(row.currentRate)}</td>
+    </tr>`).join('');
+  }
+
+  async function loadAcceptRateLiveData() {
+    if (!isViewSection()) return;
+    const partnerId = normalizePartnerId(state.activePartnerId);
+    if (!partnerId) {
+      showToast('지역을 선택하세요.');
+      return;
+    }
+
+    const ranges = computeAcceptRateDateRanges();
+    const loadBtn = $('baeminStatusAcceptRateLoadBtn');
+    const metaEl = $('baeminStatusAcceptRateMeta');
+    loadBtn?.classList.add('is-loading');
+    if (loadBtn) loadBtn.textContent = '조회 중…';
+    if (metaEl) {
+      metaEl.textContent = ranges.pastLabel
+        ? `과거 ${ranges.pastLabel} · 현재 ${ranges.currentLabel} (배달현황 최신 반영)`
+        : `과거 없음(수요일) · 현재 ${ranges.currentLabel} (배달현황 최신)`;
+    }
+
+    try {
+      if (!state.config?.applied) {
+        await loadViewConfig();
+      }
+      const captureDate = state.appliedCollectDate
+        || state.config?.applied?.collectDate
+        || todayKstDate();
+
+      const pastPromise = ranges.hasPast
+        ? adminApi(
+          `/api/admin/baemin-delivery/view-rider-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(ranges.pastFromDate)}&toDate=${encodeURIComponent(ranges.pastToDate)}`
+        )
+        : Promise.resolve({ ok: true, riders: [], skipped: true });
+
+      const deliveryPromise = adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+      const [pastResult, deliveryResult] = await Promise.all([pastPromise, deliveryPromise]);
+
+      if (!pastResult.ok && !pastResult.skipped) {
+        showToast(pastResult.message || '과거(수~전일) 라이더 데이터 불러오기에 실패했습니다.');
+        return;
+      }
+      if (!deliveryResult.ok) {
+        showToast(deliveryResult.message || '배달현황 최신 데이터 불러오기에 실패했습니다.');
+        return;
+      }
+      if (pastResult.notApplied || deliveryResult.notApplied) {
+        const msg = pastResult.message || deliveryResult.message
+          || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.';
+        renderAcceptRateLiveRows(partnerId, [], {
+          ...ranges,
+          emptyMessage: msg
+        });
+        showToast(msg);
+        return;
+      }
+
+      const pastRiders = filterRowsByPartnerId(pastResult.riders || [], partnerId);
+      const deliveryRows = filterRowsByPartnerId(deliveryResult.items || [], partnerId);
+      const byKey = new Map();
+
+      const upsert = (row, bucket) => {
+        const key = riderAcceptRateKey(row) || `name:${String(row.rider_name || '').trim()}`;
+        if (!key || key === 'name:') return;
+        const metrics = extractAcceptRateMetrics(row.parsed_json || {});
+        const prev = byKey.get(key) || {
+          riderName: row.rider_name || '',
+          riderUserId: row.rider_user_id || '',
+          phoneNumber: row.phone_number || '',
+          past: { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 },
+          live: { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 }
+        };
+        if (row.rider_name) prev.riderName = row.rider_name;
+        if (row.rider_user_id) prev.riderUserId = row.rider_user_id;
+        if (row.phone_number) prev.phoneNumber = row.phone_number;
+        prev[bucket] = mergeAcceptRateMetrics(prev[bucket], metrics);
+        byKey.set(key, prev);
+      };
+
+      pastRiders.forEach(row => upsert(row, 'past'));
+      deliveryRows.forEach(row => upsert(row, 'live'));
+
+      const rows = [...byKey.values()]
+        .map(entry => {
+          const current = mergeAcceptRateMetrics(entry.past, entry.live);
+          return {
+            riderName: entry.riderName,
+            riderUserId: entry.riderUserId,
+            phoneNumber: entry.phoneNumber,
+            pastRate: calcAcceptRatePercent(entry.past),
+            currentRate: calcAcceptRatePercent(current),
+            pastComplete: entry.past.complete,
+            currentComplete: current.complete
+          };
+        })
+        .filter(row => Number(row.pastComplete || 0) > 0 || Number(row.currentComplete || 0) > 0)
+        .sort((a, b) => {
+          const rateDiff = Number(b.currentRate ?? -1) - Number(a.currentRate ?? -1);
+          if (rateDiff !== 0) return rateDiff;
+          return String(a.riderName || '').localeCompare(String(b.riderName || ''), 'ko');
+        });
+
+      const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
+      cached.accept_rate_live = rows;
+      cached.meta = {
+        ...(cached.meta || {}),
+        acceptRateLoaded: true,
+        acceptRatePastLabel: ranges.pastLabel || '없음',
+        acceptRateCurrentLabel: ranges.currentLabel,
+        acceptRateCaptureDate: deliveryResult.collectDate || captureDate
+      };
+      setCachedPartnerBundle(partnerId, cached);
+      state.viewLoaded = true;
+
+      renderAcceptRateLiveRows(partnerId, rows, {
+        pastLabel: ranges.pastLabel || '없음',
+        currentLabel: ranges.currentLabel
+      });
+
+      if (!rows.length) {
+        showToast('수락율 대상 라이더가 없습니다. 라이더별·배달현황 수집 후 다시 조회하세요.');
+        return;
+      }
+      showToast(
+        `수락율 ${formatNumber(rows.length)}명 · 과거 ${ranges.pastLabel || '없음'} · 현재 ${ranges.currentLabel}`
+      );
+    } finally {
+      loadBtn?.classList.remove('is-loading');
+      if (loadBtn) loadBtn.textContent = '수락율 조회';
+    }
+  }
+
   function listDatesInclusive(fromDate, toDate) {
     const from = String(fromDate || '').slice(0, 10);
     const to = String(toDate || '').slice(0, 10);
@@ -1199,14 +1428,16 @@
           daily_history: 'baeminStatusDailyHistorySummary',
           rider_history: 'baeminStatusRiderHistorySummary',
           quota_achievement: 'baeminStatusQuotaAchievementSummary',
-          weekday_quota: 'baeminStatusWeekdayQuotaSummary'
+          weekday_quota: 'baeminStatusWeekdayQuotaSummary',
+          accept_rate_live: 'baeminStatusAcceptRateSummary'
         },
         rowsMap: {
           delivery_status: 'baeminStatusDeliveryStatusRows',
           daily_history: 'baeminStatusDailyHistoryRows',
           rider_history: 'baeminStatusRiderHistoryRows',
           quota_achievement: 'baeminStatusQuotaAchievementRows',
-          weekday_quota: 'baeminStatusWeekdayQuotaRows'
+          weekday_quota: 'baeminStatusWeekdayQuotaRows',
+          accept_rate_live: 'baeminStatusAcceptRateRows'
         }
       };
     }
@@ -1437,6 +1668,18 @@
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
+    if (menu === 'accept_rate_live') {
+      if (cached.meta?.acceptRateLoaded && Array.isArray(cached.accept_rate_live)) {
+        renderAcceptRateLiveRows(partnerId, cached.accept_rate_live, {
+          pastLabel: cached.meta.acceptRatePastLabel,
+          currentLabel: cached.meta.acceptRateCurrentLabel
+        });
+      } else {
+        clearViewTablesForMenu('accept_rate_live', '수락율 조회를 눌러 주세요.');
+      }
+      renderGrandTotalsPanel('delivery_status', partnerId);
+      return;
+    }
     if (menu === 'rider_history' && cached.rider_history?.length) {
       renderRiderHistoryRiderRows(partnerId, cached.rider_history, {
         fromDate: cached.meta?.riderFromDate || resolveRiderViewDateRange().fromDate,
@@ -1512,8 +1755,18 @@
       const summaryId = ui.summaryMap[menu];
       const summaryEl = $(summaryId);
       const rowsEl = $(rowsId);
-      const colspan = getBaeminTableColspan(menu, { showPartner: false, includeCollected: false });
-      if (summaryEl) summaryEl.textContent = '데이터 불러오기를 눌러 주세요';
+      const colspan = menu === 'accept_rate_live'
+        ? 5
+        : (menu === 'quota_achievement'
+          ? 5
+          : (menu === 'weekday_quota'
+            ? 8
+            : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false })));
+      if (summaryEl) {
+        summaryEl.textContent = menu === 'accept_rate_live'
+          ? '수락율 조회를 눌러 주세요'
+          : '데이터 불러오기를 눌러 주세요';
+      }
       if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
     });
     renderGrandTotalsPanel(state.activeMenu, null);
@@ -2040,6 +2293,19 @@
       renderGrandTotalsPanel('delivery_status', id);
       return;
     }
+    if (state.activeMenu === 'accept_rate_live') {
+      const cachedAccept = getCachedPartnerBundle(id);
+      if (cachedAccept?.meta?.acceptRateLoaded && Array.isArray(cachedAccept.accept_rate_live)) {
+        renderAcceptRateLiveRows(id, cachedAccept.accept_rate_live, {
+          pastLabel: cachedAccept.meta.acceptRatePastLabel,
+          currentLabel: cachedAccept.meta.acceptRateCurrentLabel
+        });
+      } else {
+        clearViewTablesForMenu('accept_rate_live', '수락율 조회를 눌러 주세요.');
+      }
+      renderGrandTotalsPanel('delivery_status', id);
+      return;
+    }
 
     const cached = getCachedPartnerBundle(id);
     if (cached) {
@@ -2104,6 +2370,16 @@
         } else if (menu === 'weekday_quota') {
           void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
           renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+        } else if (menu === 'accept_rate_live') {
+          if (cached?.meta?.acceptRateLoaded && Array.isArray(cached.accept_rate_live)) {
+            renderAcceptRateLiveRows(state.activePartnerId, cached.accept_rate_live, {
+              pastLabel: cached.meta.acceptRatePastLabel,
+              currentLabel: cached.meta.acceptRateCurrentLabel
+            });
+          } else {
+            clearViewTablesForMenu(menu, '수락율 조회를 눌러 주세요.');
+          }
+          renderGrandTotalsPanel('delivery_status', state.activePartnerId);
         } else if (menu === 'rider_history') {
           if (cached?.rider_history?.length && cached.meta?.riderLoaded) {
             renderRiderHistoryRiderRows(state.activePartnerId, cached.rider_history, {
@@ -2165,20 +2441,24 @@
         ? `${formatViewWeekRangeLabel(ensureViewWeekStart())} · 데이터 없음`
         : (menu === 'weekday_quota'
           ? '요일별 1세트 할당을 입력하세요'
-          : (menu === 'rider_history' || menu === 'daily_history'
-            ? '시작일·종료일을 선택하고 조회를 눌러 주세요'
-            : (menu === 'delivery_status'
-              ? '배달현황 조회를 눌러 주세요'
-              : '데이터 없음')));
+          : (menu === 'accept_rate_live'
+            ? '수락율 조회를 눌러 주세요'
+            : (menu === 'rider_history' || menu === 'daily_history'
+              ? '시작일·종료일을 선택하고 조회를 눌러 주세요'
+              : (menu === 'delivery_status'
+                ? '배달현황 조회를 눌러 주세요'
+                : '데이터 없음'))));
     }
     if (rowsEl) {
       const colspan = menu === 'quota_achievement'
         ? 5
         : (menu === 'weekday_quota'
           ? 8
-          : (menu === 'rider_history' && isViewSection()
-            ? 10
-            : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false })));
+          : (menu === 'accept_rate_live'
+            ? 5
+            : (menu === 'rider_history' && isViewSection()
+              ? 10
+              : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false }))));
       rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
     }
   }
@@ -3455,7 +3735,7 @@
         return null;
       }
 
-      if (focusMenu === 'weekday_quota' || focusMenu === 'quota_achievement') {
+      if (focusMenu === 'weekday_quota' || focusMenu === 'quota_achievement' || focusMenu === 'accept_rate_live') {
         return null;
       }
 
@@ -4061,6 +4341,9 @@
     });
     $('baeminStatusDeliveryLoadBtn')?.addEventListener('click', () => {
       void loadDeliveryStatusData();
+    });
+    $('baeminStatusAcceptRateLoadBtn')?.addEventListener('click', () => {
+      void loadAcceptRateLiveData();
     });
     $('baeminStatusRiderFromDate')?.addEventListener('change', event => {
       event.target.dataset.touched = '1';

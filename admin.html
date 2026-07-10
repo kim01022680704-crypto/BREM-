@@ -885,6 +885,7 @@
               <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
               <button type="button" class="promotion-tab" data-baemin-menu="quota_achievement">할당달성</button>
               <button type="button" class="promotion-tab" data-baemin-menu="weekday_quota">요일별할당입력</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="accept_rate_live">실시간 수락율현황</button>
             </nav>
             <div id="baeminStatusSetCountRow" class="baemin-view-setcount" hidden>
               <label class="baemin-view-setcount__field">
@@ -920,6 +921,10 @@
             <div id="baeminStatusDeliveryToolbar" class="baemin-view-delivery-toolbar" hidden>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusDeliveryLoadBtn">배달현황 조회</button>
               <span class="form-help">오늘 운행 중인 라이더 현황 (최신 저장 스냅샷)</span>
+            </div>
+            <div id="baeminStatusAcceptRateToolbar" class="baemin-view-delivery-toolbar" hidden>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusAcceptRateLoadBtn">수락율 조회</button>
+              <span id="baeminStatusAcceptRateMeta" class="form-help">과거=수~전일 · 현재=수~전일+배달현황 최신(푸드 기준)</span>
             </div>
           </div>
         </div>
@@ -1077,6 +1082,32 @@
                   </tr>
                 </thead>
                 <tbody id="baeminStatusWeekdayQuotaRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="accept_rate_live" hidden>
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>실시간 수락율현황</h2>
+                <p class="form-help">수락율 = 100 − (거절푸드+배차취소푸드+배달취소라이더귀책푸드) ÷ (완료+거절푸드+배차취소푸드+배달취소라이더귀책푸드) × 100</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusAcceptRateSummary">수락율 조회를 눌러 주세요</p>
+            </div>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table" id="baeminStatusAcceptRateTable">
+                <thead>
+                  <tr>
+                    <th>라이더</th>
+                    <th>배민ID</th>
+                    <th>연락처</th>
+                    <th>수락율(과거)</th>
+                    <th>수락율(현재)</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusAcceptRateRows"></tbody>
               </table>
             </div>
           </article>
@@ -5142,7 +5173,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260710h"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260710i"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
