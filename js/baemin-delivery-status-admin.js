@@ -314,14 +314,10 @@
 
   function applyBizWeekToCollectRangeInputs(weekStart = ensureBizCollectWeekStart()) {
     const range = computeViewWeekQueryRange(weekStart);
-    const fromEl = $('baeminDailyCollectFrom');
-    const toEl = $('baeminDailyCollectTo');
-    const riderFromEl = $('baeminRiderCollectFrom');
-    const riderToEl = $('baeminRiderCollectTo');
-    if (fromEl) fromEl.value = range.fromDate;
-    if (toEl) toEl.value = range.toDate;
-    if (riderFromEl) riderFromEl.value = range.fromDate;
-    if (riderToEl) riderToEl.value = range.toDate;
+    setEnhancedDateInput('baeminDailyCollectFrom', range.fromDate);
+    setEnhancedDateInput('baeminDailyCollectTo', range.toDate);
+    setEnhancedDateInput('baeminRiderCollectFrom', range.fromDate);
+    setEnhancedDateInput('baeminRiderCollectTo', range.toDate);
     return range;
   }
 
@@ -483,8 +479,8 @@
     const fromEl = $('baeminStatusRiderFromDate');
     const toEl = $('baeminStatusRiderToDate');
     const metaEl = $('baeminStatusRiderRangeMeta');
-    if (fromEl && !fromEl.dataset.touched) fromEl.value = range.fromDate;
-    if (toEl && !toEl.dataset.touched) toEl.value = range.toDate;
+    if (fromEl && !fromEl.dataset.touched) setEnhancedDateInput('baeminStatusRiderFromDate', range.fromDate);
+    if (toEl && !toEl.dataset.touched) setEnhancedDateInput('baeminStatusRiderToDate', range.toDate);
     if (metaEl) {
       metaEl.textContent = state.config?.riderCollectRange?.label
         ? `BIZ 수집 기간: ${state.config.riderCollectRange.label}`
@@ -509,16 +505,12 @@
     invalidateDataCache();
     if (state.activeMenu === 'rider_history' || state.activeMenu === 'daily_history') {
       const range = computeViewWeekQueryRange(normalized);
+      setEnhancedDateInput('baeminStatusRiderFromDate', range.fromDate);
+      setEnhancedDateInput('baeminStatusRiderToDate', range.toDate);
       const fromEl = $('baeminStatusRiderFromDate');
       const toEl = $('baeminStatusRiderToDate');
-      if (fromEl) {
-        fromEl.value = range.fromDate;
-        fromEl.dataset.touched = '1';
-      }
-      if (toEl) {
-        toEl.value = range.toDate;
-        toEl.dataset.touched = '1';
-      }
+      if (fromEl) fromEl.dataset.touched = '1';
+      if (toEl) toEl.dataset.touched = '1';
       state.riderViewFromDate = range.fromDate;
       state.riderViewToDate = range.toDate;
     }
@@ -596,14 +588,27 @@
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(date);
   }
 
+  /** admin 커스텀 날짜버튼(날짜 선택) 라벨까지 같이 맞춤 */
+  function setEnhancedDateInput(inputId, dateValue) {
+    const input = $(inputId);
+    if (!input) return;
+    const value = String(dateValue || '').slice(0, 10);
+    input.value = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+    const label = document.getElementById(`${inputId}Label`)
+      || document.querySelector(`[data-call-date-target="${inputId}"] span`);
+    if (label) {
+      label.textContent = input.value
+        ? (window.BremDatePicker?.formatDate?.(input.value) || input.value)
+        : '날짜 선택';
+    }
+  }
+
   function syncDailyCollectRangeInputs(range) {
-    const fromEl = $('baeminDailyCollectFrom');
-    const toEl = $('baeminDailyCollectTo');
     const meta = $('baeminDailyCollectRangeMeta');
     const fromDate = range?.fromDate || '';
     const toDate = range?.toDate || '';
-    if (fromEl && fromDate) fromEl.value = fromDate;
-    if (toEl && toDate) toEl.value = toDate;
+    setEnhancedDateInput('baeminDailyCollectFrom', fromDate);
+    setEnhancedDateInput('baeminDailyCollectTo', toDate);
     if (meta) {
       meta.textContent = range?.label
         ? `저장됨: ${range.label}`
@@ -642,16 +647,28 @@
     const weekStart = window.BremDatePicker?.applyWeekWednesday?.(today) || today;
     const range = computeViewWeekQueryRange(weekStart);
     if (kind === 'daily' || kind === 'both') {
-      const fromEl = $('baeminDailyCollectFrom');
-      const toEl = $('baeminDailyCollectTo');
-      if (fromEl) fromEl.value = range.fromDate;
-      if (toEl) toEl.value = range.toDate;
+      setEnhancedDateInput('baeminDailyCollectFrom', range.fromDate);
+      setEnhancedDateInput('baeminDailyCollectTo', range.toDate);
     }
     if (kind === 'rider' || kind === 'both') {
-      const fromEl = $('baeminRiderCollectFrom');
-      const toEl = $('baeminRiderCollectTo');
-      if (fromEl) fromEl.value = range.fromDate;
-      if (toEl) toEl.value = range.toDate;
+      setEnhancedDateInput('baeminRiderCollectFrom', range.fromDate);
+      setEnhancedDateInput('baeminRiderCollectTo', range.toDate);
+    }
+    if (kind === 'status' || kind === 'both') {
+      setEnhancedDateInput('baeminStatusRiderFromDate', range.fromDate);
+      setEnhancedDateInput('baeminStatusRiderToDate', range.toDate);
+      const fromEl = $('baeminStatusRiderFromDate');
+      const toEl = $('baeminStatusRiderToDate');
+      if (fromEl) fromEl.dataset.touched = '1';
+      if (toEl) toEl.dataset.touched = '1';
+      state.riderViewFromDate = range.fromDate;
+      state.riderViewToDate = range.toDate;
+      state.viewWeekStart = weekStart;
+      syncViewWeekPicker();
+      const metaEl = $('baeminStatusRiderRangeMeta');
+      if (metaEl) {
+        metaEl.textContent = `이번주 ${range.fromDate} ~ ${range.toDate}`;
+      }
     }
     return range;
   }
@@ -660,6 +677,10 @@
     const range = applyThisWeekCollectRangeToInputs(kind);
     if (!range?.fromDate || !range?.toDate) {
       showToast('이번주 기간을 계산하지 못했습니다.');
+      return;
+    }
+    if (kind === 'status') {
+      showToast(`이번주 ${range.fromDate} ~ ${range.toDate}`);
       return;
     }
     if (kind === 'daily') {
@@ -672,13 +693,11 @@
   }
 
   function syncRiderCollectRangeInputs(range) {
-    const fromEl = $('baeminRiderCollectFrom');
-    const toEl = $('baeminRiderCollectTo');
     const meta = $('baeminRiderCollectRangeMeta');
     const fromDate = range?.fromDate || '';
     const toDate = range?.toDate || '';
-    if (fromEl && fromDate) fromEl.value = fromDate;
-    if (toEl && toDate) toEl.value = toDate;
+    setEnhancedDateInput('baeminRiderCollectFrom', fromDate);
+    setEnhancedDateInput('baeminRiderCollectTo', toDate);
     if (meta) {
       meta.textContent = range?.label
         ? `저장됨: ${range.label}`
@@ -3898,6 +3917,10 @@
 
     $('baeminRiderCollectThisWeekBtn')?.addEventListener('click', () => {
       void applyAndSaveThisWeekCollectRange('rider');
+    });
+
+    $('baeminStatusThisWeekBtn')?.addEventListener('click', () => {
+      void applyAndSaveThisWeekCollectRange('status');
     });
 
     $('baeminStatusSetCountSaveBtn')?.addEventListener('click', () => {
