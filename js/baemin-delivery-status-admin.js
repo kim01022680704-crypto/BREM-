@@ -641,11 +641,31 @@
     showToast('일별 수집기간이 저장되었습니다.');
   }
 
-  /** 이번주 정산주: 수요일 ~ 전일(어제) */
-  function applyThisWeekCollectRangeToInputs(kind) {
+  /** 이번주 정산주: 수요일 ~ 오늘 */
+  function settlementWednesdayOf(dateKey = todayKstDate()) {
+    const ref = String(dateKey || todayKstDate()).slice(0, 10);
+    const fromPicker = window.BremDatePicker?.applyWeekWednesday?.(ref);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(fromPicker || ''))) return fromPicker;
+    // BremDatePicker 없을 때 KST 수요일로 직접 계산 (fallback이 오늘이 되면 안 됨)
+    const dayName = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      weekday: 'long'
+    }).format(new Date(`${ref}T12:00:00+09:00`));
+    const map = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+    const day = map[dayName];
+    if (day == null) return ref;
+    return addDaysDate(ref, -((day - 3 + 7) % 7));
+  }
+
+  function computeThisWeekCollectRange() {
     const today = todayKstDate();
-    const weekStart = window.BremDatePicker?.applyWeekWednesday?.(today) || today;
-    const range = computeViewWeekQueryRange(weekStart);
+    const fromDate = settlementWednesdayOf(today);
+    const toDate = today < fromDate ? fromDate : today;
+    return { fromDate, toDate, weekStart: fromDate };
+  }
+
+  function applyThisWeekCollectRangeToInputs(kind) {
+    const range = computeThisWeekCollectRange();
     if (kind === 'daily' || kind === 'both') {
       setEnhancedDateInput('baeminDailyCollectFrom', range.fromDate);
       setEnhancedDateInput('baeminDailyCollectTo', range.toDate);
@@ -663,7 +683,7 @@
       if (toEl) toEl.dataset.touched = '1';
       state.riderViewFromDate = range.fromDate;
       state.riderViewToDate = range.toDate;
-      state.viewWeekStart = weekStart;
+      state.viewWeekStart = range.weekStart;
       syncViewWeekPicker();
       const metaEl = $('baeminStatusRiderRangeMeta');
       if (metaEl) {
