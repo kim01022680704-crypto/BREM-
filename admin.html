@@ -115,6 +115,7 @@
         <button class="nav-btn" data-section="calls">콜수 입력</button>
         <button class="nav-btn" data-section="baemin-biz-status">배민 BIZ 현황</button>
         <button class="nav-btn" data-section="baemin-status">배민현황</button>
+        <button class="nav-btn" data-section="baemin-status" data-baemin-menu-focus="calls_rejection_sync">콜수·거절율 동기화</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
@@ -886,6 +887,7 @@
               <button type="button" class="promotion-tab" data-baemin-menu="quota_achievement">할당달성</button>
               <button type="button" class="promotion-tab" data-baemin-menu="weekday_quota">요일별할당입력</button>
               <button type="button" class="promotion-tab" data-baemin-menu="accept_rate_live">실시간 수락율현황</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="calls_rejection_sync">콜수·거절율 동기화</button>
             </nav>
             <div id="baeminStatusSetCountRow" class="baemin-view-setcount" hidden>
               <label class="baemin-view-setcount__field">
@@ -925,6 +927,13 @@
             <div id="baeminStatusAcceptRateToolbar" class="baemin-view-delivery-toolbar" hidden>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusAcceptRateLoadBtn">수락율 조회</button>
               <span id="baeminStatusAcceptRateMeta" class="form-help">과거=수~전일 · 현재=수~전일+배달현황 최신(푸드 기준)</span>
+            </div>
+            <div id="baeminStatusSyncToolbar" class="baemin-view-delivery-toolbar" hidden>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncCallsBtn">콜수입력</button>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncRejectionPastBtn">거절율입력</button>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncAllBtn">모두입력</button>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncRejectionLiveBtn">실시간 입력</button>
+              <span id="baeminStatusSyncMeta" class="form-help">배민ID 매칭 · 수~전일 라이더내역(콜수) · 과거수락율/현재수락율(거절율)</span>
             </div>
           </div>
         </div>
@@ -1120,6 +1129,44 @@
                   </tr>
                 </thead>
                 <tbody id="baeminStatusAcceptRateRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="baemin-subpanel baemin-view-panel" data-baemin-panel="calls_rejection_sync" hidden>
+          <article class="card baemin-view-data-card">
+            <div class="card-header baemin-view-data-card__header">
+              <div>
+                <h2>콜수·거절율 동기화</h2>
+                <p class="form-help">배민현황 수집 데이터 → 콜수 입력 / 거절율 입력 메뉴 연동 (배민ID 매칭). 수동·ERP 거절율은 덮어쓰지 않습니다.</p>
+              </div>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusSyncSummary">지역 선택 후 버튼을 눌러 주세요</p>
+            </div>
+            <div class="baemin-sync-actions" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;">
+              <button type="button" class="primary-btn" id="baeminSyncCallsBtn2">콜수입력</button>
+              <button type="button" class="primary-btn" id="baeminSyncRejectionPastBtn2">거절율입력 (과거)</button>
+              <button type="button" class="primary-btn" id="baeminSyncAllBtn2">모두입력</button>
+              <button type="button" class="primary-btn" id="baeminSyncRejectionLiveBtn2">실시간 입력 (현재)</button>
+              <button type="button" class="small-btn" id="baeminSyncRematchBtn">매칭 재시도</button>
+            </div>
+            <p id="baeminStatusSyncResultMeta" class="form-help">콜수=라이더별 일별 완료 · 거절율(과거)=수~전일 수락율 · 실시간=수~전일+배달현황 수락율</p>
+            <div class="table-scroll baemin-table-scroll">
+              <table class="admin-table baemin-data-table" id="baeminStatusSyncTable">
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>라이더</th>
+                    <th>배민ID</th>
+                    <th>매칭기사</th>
+                    <th>결과</th>
+                    <th>사유</th>
+                    <th>상세</th>
+                  </tr>
+                </thead>
+                <tbody id="baeminStatusSyncRows">
+                  <tr><td colspan="7" class="form-help">동기화 결과가 여기 표시됩니다.</td></tr>
+                </tbody>
               </table>
             </div>
           </article>
@@ -5185,7 +5232,8 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260710j"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260710k"></script>
+  <script src="js/baemin-calls-rejection-sync.js?v=20260710k"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
@@ -5209,7 +5257,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260708m"></script>
+  <script src="js/admin.js?v=20260710k"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

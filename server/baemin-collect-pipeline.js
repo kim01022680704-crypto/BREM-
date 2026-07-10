@@ -4366,6 +4366,74 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   };
 }
 
+/**
+ * 실시간 수락율 스냅샷 교체: 해당 정산주(+지역) 삭제 후 upsert
+ * 로그인/기존 운영 테이블 스키마는 변경하지 않음
+ */
+async function replaceLiveAcceptRatesForAdmin(options = {}) {
+  const weekStart = String(options.weekStart || '').slice(0, 10);
+  const partnerId = String(options.partnerId || '').trim().toUpperCase();
+  const rows = Array.isArray(options.rows) ? options.rows : [];
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+    return { ok: false, status: 400, message: 'weekStart(수요일)가 필요합니다.' };
+  }
+  if (partnerId && allowed.size && !options.skipScopeCheck && !allowed.has(partnerId)) {
+    return { ok: false, status: 403, message: '해당 지역에 접근 권한이 없습니다.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, message: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  // 테이블 없으면 조용히 스킵 (마이그레이션 전 환경)
+  let delQuery = supabase
+    .from('baemin_live_accept_rates')
+    .delete()
+    .eq('week_start', weekStart);
+  if (partnerId) delQuery = delQuery.eq('partner_id', partnerId);
+  const { error: delError } = await delQuery;
+  if (delError) {
+    if (/does not exist|Could not find the table/i.test(String(delError.message || ''))) {
+      return {
+        ok: true,
+        skipped: true,
+        message: 'baemin_live_accept_rates 테이블이 없어 스냅샷 저장을 건너뜁니다.'
+      };
+    }
+    return { ok: false, message: delError.message || '기존 수락율 스냅샷 삭제 실패' };
+  }
+
+  if (!rows.length) {
+    return { ok: true, deleted: true, upserted: 0, weekStart, partnerId: partnerId || null };
+  }
+
+  const { data, error } = await supabase.rpc('brem_upsert_baemin_live_accept_rates', {
+    p_rows: rows
+  });
+  if (error) {
+    if (/Could not find the function|does not exist/i.test(String(error.message || ''))) {
+      return {
+        ok: true,
+        skipped: true,
+        message: 'upsert 함수가 없어 스냅샷 저장을 건너뜁니다.'
+      };
+    }
+    return { ok: false, message: error.message || '수락율 스냅샷 저장 실패' };
+  }
+
+  return {
+    ok: true,
+    weekStart,
+    partnerId: partnerId || null,
+    deleted: true,
+    result: data || null
+  };
+}
+
 function resolveDailyBusinessDate(row = {}) {
   const parsed = row.parsed_json || {};
   const fromParsed = String(parsed.deliveryDate || parsed.businessDate || parsed.businessDay || '').slice(0, 10);
@@ -4563,5 +4631,6 @@ module.exports = {
   readAppliedBaeminDelivery,
   applyBaeminDelivery,
   getBaeminStorageDiagnosticsForAdmin,
+  replaceLiveAcceptRatesForAdmin,
   BAEMIN_APPLIED_SETTINGS_KEY
 };

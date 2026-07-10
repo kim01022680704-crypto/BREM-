@@ -1250,6 +1250,26 @@ app.post('/api/admin/baemin-delivery/purge-collect', async (req, res) => {
   }
 });
 
+app.post('/api/admin/baemin-delivery/live-accept-rates/replace', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await baeminDeliveryCollect.replaceLiveAcceptRates(getBearerToken(req), {
+      weekStart: body.weekStart,
+      partnerId: body.partnerId,
+      rows: body.rows
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '실시간 수락율 스냅샷 저장에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/rider-view/status', async (req, res) => {
   try {
     const result = await riderPublishAdmin.getRiderViewPublishStatus(getBearerToken(req));

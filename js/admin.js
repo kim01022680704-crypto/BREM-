@@ -4983,6 +4983,14 @@
 
     $$('.nav-btn').forEach(button => {
       button.addEventListener('click', () => {
+        const focus = String(button.dataset.baeminMenuFocus || '').trim();
+        if (focus) {
+          try {
+            sessionStorage.setItem('brem_baemin_menu_focus', focus);
+          } catch (_error) {
+            /* ignore */
+          }
+        }
         void showSection(button.dataset.section);
       });
     });
