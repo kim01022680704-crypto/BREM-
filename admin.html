@@ -1100,11 +1100,23 @@
               <table class="admin-table baemin-data-table" id="baeminStatusAcceptRateTable">
                 <thead>
                   <tr>
-                    <th>라이더</th>
-                    <th>배민ID</th>
-                    <th>연락처</th>
-                    <th>수락율(과거)</th>
-                    <th>수락율(현재)</th>
+                    <th rowspan="2">라이더</th>
+                    <th rowspan="2">배민ID</th>
+                    <th rowspan="2">연락처</th>
+                    <th colspan="5" class="baemin-metric-group">과거 (수~전일)</th>
+                    <th colspan="5" class="baemin-metric-group">현재/최신 (수~전일+배달현황)</th>
+                  </tr>
+                  <tr>
+                    <th class="baemin-metric-sub">완료</th>
+                    <th class="baemin-metric-sub">거절푸드</th>
+                    <th class="baemin-metric-sub">배차취소푸드</th>
+                    <th class="baemin-metric-sub">라이더귀책푸드</th>
+                    <th class="baemin-metric-sub">수락율</th>
+                    <th class="baemin-metric-sub">완료</th>
+                    <th class="baemin-metric-sub">거절푸드</th>
+                    <th class="baemin-metric-sub">배차취소푸드</th>
+                    <th class="baemin-metric-sub">라이더귀책푸드</th>
+                    <th class="baemin-metric-sub">수락율</th>
                   </tr>
                 </thead>
                 <tbody id="baeminStatusAcceptRateRows"></tbody>
@@ -5173,7 +5185,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260710i"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260710j"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

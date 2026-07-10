@@ -1110,16 +1110,28 @@
         : `${partnerLabel} · 과거 ${pastLabel} · 현재 ${currentLabel} · 데이터 없음`;
     }
     if (!rows.length) {
-      rowsEl.innerHTML = `<tr><td colspan="5" class="form-help">${meta.emptyMessage || '수락율 조회를 눌러 주세요.'}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="13" class="form-help">${meta.emptyMessage || '수락율 조회를 눌러 주세요.'}</td></tr>`;
       return;
     }
-    rowsEl.innerHTML = rows.map(row => `<tr>
-      <td>${escapeHtml(row.riderName || '-')}</td>
-      <td>${escapeHtml(row.riderUserId || '-')}</td>
-      <td>${escapeHtml(row.phoneNumber || '-')}</td>
-      <td>${formatAcceptRatePercent(row.pastRate)}</td>
-      <td>${formatAcceptRatePercent(row.currentRate)}</td>
-    </tr>`).join('');
+    rowsEl.innerHTML = rows.map(row => {
+      const past = row.past || {};
+      const current = row.current || {};
+      return `<tr>
+        <td>${escapeHtml(row.riderName || '-')}</td>
+        <td>${escapeHtml(row.riderUserId || '-')}</td>
+        <td>${escapeHtml(row.phoneNumber || '-')}</td>
+        <td class="baemin-metric-cell">${formatNumber(past.complete || 0)}</td>
+        <td class="baemin-metric-cell">${formatNumber(past.foodReject || 0)}</td>
+        <td class="baemin-metric-cell">${formatNumber(past.foodCancel || 0)}</td>
+        <td class="baemin-metric-cell">${formatNumber(past.foodRiderFault || 0)}</td>
+        <td class="baemin-metric-cell baemin-metric-cell--total">${formatAcceptRatePercent(row.pastRate)}</td>
+        <td class="baemin-metric-cell">${formatNumber(current.complete || 0)}</td>
+        <td class="baemin-metric-cell">${formatNumber(current.foodReject || 0)}</td>
+        <td class="baemin-metric-cell">${formatNumber(current.foodCancel || 0)}</td>
+        <td class="baemin-metric-cell">${formatNumber(current.foodRiderFault || 0)}</td>
+        <td class="baemin-metric-cell baemin-metric-cell--total">${formatAcceptRatePercent(row.currentRate)}</td>
+      </tr>`;
+    }).join('');
   }
 
   async function loadAcceptRateLiveData() {
@@ -1209,6 +1221,9 @@
             riderName: entry.riderName,
             riderUserId: entry.riderUserId,
             phoneNumber: entry.phoneNumber,
+            past: { ...entry.past },
+            live: { ...entry.live },
+            current,
             pastRate: calcAcceptRatePercent(entry.past),
             currentRate: calcAcceptRatePercent(current),
             pastComplete: entry.past.complete,
@@ -1756,7 +1771,7 @@
       const summaryEl = $(summaryId);
       const rowsEl = $(rowsId);
       const colspan = menu === 'accept_rate_live'
-        ? 5
+        ? 13
         : (menu === 'quota_achievement'
           ? 5
           : (menu === 'weekday_quota'
@@ -2455,7 +2470,7 @@
         : (menu === 'weekday_quota'
           ? 8
           : (menu === 'accept_rate_live'
-            ? 5
+            ? 13
             : (menu === 'rider_history' && isViewSection()
               ? 10
               : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false }))));
