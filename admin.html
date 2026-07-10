@@ -698,6 +698,11 @@
           </div>
           <div id="baeminDeliveryAppliedStatus" class="baemin-applied-status">저장 상태 확인 중…</div>
           <div id="baeminStorageDiagnostics" class="baemin-applied-status baemin-storage-diagnostics-wrap" hidden></div>
+          <div class="form-row baemin-status-auto-loop-row" id="baeminStatusAutoLoopRow">
+            <button type="button" class="primary-btn" id="baeminStatusAutoLoopStartBtn">배민현황 자동수집 시작</button>
+            <button type="button" class="small-btn" id="baeminStatusAutoLoopStopBtn" disabled>자동수집 종료</button>
+            <span id="baeminStatusAutoLoopStatus" class="form-help">배달현황 수집 → 배민현황 저장 → 2분 대기 → 반복 (종료 전까지)</span>
+          </div>
           <div class="form-row">
             <button type="button" class="primary-btn" id="baeminDeliveryApplyBtn">배민현황 저장</button>
           </div>
@@ -5137,7 +5142,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260710e"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260710f"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

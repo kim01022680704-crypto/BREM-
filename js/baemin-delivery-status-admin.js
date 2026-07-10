@@ -38,6 +38,14 @@
       byPartner: {},
       loadingPartner: ''
     },
+    statusAutoLoop: {
+      active: false,
+      round: 0,
+      phase: 'idle',
+      message: '',
+      waitEndsAt: 0,
+      timer: null
+    },
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -2305,7 +2313,11 @@
     const shutdownBtn = $('baeminServerShutdownBtn');
     const jsonBtn = $('baeminDeliveryJsonPasteBtn');
     const sessionBtn = $('baeminDeliverySessionRefreshBtn');
-    const localCollecting = Boolean(state.localAutoCollect?.collectRunning || state.collecting);
+    const applyBtn = $('baeminDeliveryApplyBtn');
+    const loopStartBtn = $('baeminStatusAutoLoopStartBtn');
+    const loopStopBtn = $('baeminStatusAutoLoopStopBtn');
+    const loopActive = Boolean(state.statusAutoLoop?.active);
+    const localCollecting = Boolean(state.localAutoCollect?.collectRunning || state.collecting || loopActive);
 
     if (fullBtn) {
       fullBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
@@ -2333,6 +2345,16 @@
     if (sessionBtn) {
       sessionBtn.disabled = false;
       sessionBtn.textContent = state.sessionRefreshing ? '갱신 준비 중…' : '배민 세션 갱신';
+    }
+    if (applyBtn) {
+      applyBtn.disabled = state.loading || state.applying || localCollecting || !state.localServerRunning;
+    }
+    if (loopStartBtn) {
+      loopStartBtn.disabled = state.loading || loopActive || !state.localServerRunning;
+      loopStartBtn.textContent = loopActive ? '자동수집 진행 중…' : '배민현황 자동수집 시작';
+    }
+    if (loopStopBtn) {
+      loopStopBtn.disabled = !loopActive;
     }
   }
 
@@ -2540,7 +2562,9 @@
     if (!applied?.collectDate) {
       el.className = 'baemin-applied-status baemin-applied-status--warn';
       el.innerHTML = '<strong>아직 배민현황 저장 데이터 없음</strong> — 수집 미리보기 확인 후 [배민현황 저장]을 누르면 DP 코드 기준으로 Supabase에 저장됩니다.';
-      if (applyBtn) applyBtn.disabled = state.loading || state.applying;
+      if (applyBtn) {
+        applyBtn.disabled = state.loading || state.applying || Boolean(state.statusAutoLoop?.active);
+      }
       return;
     }
 
@@ -2551,7 +2575,9 @@
       · ${formatNumber(applied.savedCount || applied.itemCount || 0)}건
       · 저장 ${formatDateTime(applied.appliedAt)}
     `;
-    if (applyBtn) applyBtn.disabled = state.loading || state.applying;
+    if (applyBtn) {
+      applyBtn.disabled = state.loading || state.applying || Boolean(state.statusAutoLoop?.active);
+    }
   }
 
   function renderDeliveryStatusMeta(applied) {
@@ -2957,7 +2983,10 @@
   }
 
   async function runCollectRequest(options = {}) {
-    if (state.loading || state.collecting) return;
+    if (state.loading || state.collecting || state.statusAutoLoop?.active) {
+      if (state.statusAutoLoop?.active) showToast('배민현황 자동수집 진행 중입니다. 종료 후 다시 시도하세요.');
+      return;
+    }
 
     const ranges = readCollectRangeFromUi();
     if (options.endpoint === '/collect/daily') {
@@ -3707,10 +3736,11 @@
   }
 
   async function applyToErp() {
-    if (state.applying || state.loading) return;
+    if (state.applying || state.loading || state.statusAutoLoop?.active) return;
     const captureDate = resolveBizCaptureDate();
     state.applying = true;
     renderAppliedStatus(state.config);
+    updateActionButtons();
     showToast('배민현황 저장 중… Supabase에 반영합니다.');
 
     const local = await fetchLocalHealth(state.config, null);
@@ -3721,6 +3751,7 @@
       state.applying = false;
       showToast('로컬 세션 서버가 꺼져 있습니다. npm run baemin:session-server 실행 후 [배민현황 저장]을 누르세요.');
       renderAppliedStatus(state.config);
+      updateActionButtons();
       return;
     }
 
@@ -3739,6 +3770,7 @@
     }
 
     state.applying = false;
+    updateActionButtons();
     if (!result.ok) {
       showToast(result.message || '배민현황 저장에 실패했습니다.');
       renderAppliedStatus(state.config);
@@ -3755,6 +3787,184 @@
       state.activePartnerId = '';
       await loadAllSubtabData();
     }
+  }
+
+  const STATUS_AUTO_WAIT_MS = 2 * 60 * 1000;
+
+  function renderStatusAutoLoopPanel() {
+    const el = $('baeminStatusAutoLoopStatus');
+    const loop = state.statusAutoLoop || {};
+    updateActionButtons();
+    if (!el) return;
+
+    if (!loop.active) {
+      el.textContent = loop.message
+        ? `중지됨 — ${loop.message}`
+        : '배달현황 수집 → 배민현황 저장 → 2분 대기 → 반복 (종료 전까지)';
+      return;
+    }
+
+    if (loop.phase === 'collecting') {
+      el.textContent = `${loop.round}회차 · 배달현황 수집 중…`;
+      return;
+    }
+    if (loop.phase === 'applying') {
+      el.textContent = `${loop.round}회차 · 배민현황 Supabase 저장 중…`;
+      return;
+    }
+    if (loop.phase === 'waiting') {
+      const leftSec = Math.max(0, Math.ceil((Number(loop.waitEndsAt || 0) - Date.now()) / 1000));
+      const mm = String(Math.floor(leftSec / 60)).padStart(1, '0');
+      const ss = String(leftSec % 60).padStart(2, '0');
+      el.textContent = `${loop.round}회차 완료 · 다음 수집까지 ${mm}:${ss}`
+        + (loop.message ? ` · ${loop.message}` : '');
+      return;
+    }
+    el.textContent = `${loop.round}회차 · 자동수집 진행 중…`;
+  }
+
+  function clearStatusAutoLoopTimer() {
+    if (state.statusAutoLoop?.timer) {
+      clearTimeout(state.statusAutoLoop.timer);
+      state.statusAutoLoop.timer = null;
+    }
+  }
+
+  function waitStatusAutoLoop(ms) {
+    return new Promise(resolve => {
+      const started = Date.now();
+      state.statusAutoLoop.waitEndsAt = started + ms;
+      const tick = () => {
+        if (!state.statusAutoLoop.active) {
+          clearStatusAutoLoopTimer();
+          resolve(false);
+          return;
+        }
+        const left = ms - (Date.now() - started);
+        renderStatusAutoLoopPanel();
+        if (left <= 0) {
+          clearStatusAutoLoopTimer();
+          resolve(true);
+          return;
+        }
+        state.statusAutoLoop.timer = setTimeout(tick, Math.min(1000, left));
+      };
+      tick();
+    });
+  }
+
+  async function statusAutoLoopCollectDelivery() {
+    const captureDate = resolveBizCaptureDate();
+    setCollecting(true);
+    renderStatusAutoLoopPanel();
+    const result = await callLocalServer('/collect/delivery', {
+      method: 'POST',
+      body: {
+        collectDate: captureDate,
+        sourceMenus: ['delivery_status'],
+        source: 'status_auto_loop'
+      },
+      timeoutMs: 300000
+    });
+    await refreshLocalServerStatus();
+    setCollecting(false);
+    return result;
+  }
+
+  async function statusAutoLoopApply(collectDate) {
+    state.applying = true;
+    renderStatusAutoLoopPanel();
+    const result = await callLocalServer('/apply/erp', {
+      method: 'POST',
+      body: { collectDate: collectDate || resolveBizCaptureDate() },
+      timeoutMs: 600000
+    });
+    state.applying = false;
+    return result;
+  }
+
+  async function runStatusAutoLoop() {
+    while (state.statusAutoLoop.active) {
+      state.statusAutoLoop.round += 1;
+      state.statusAutoLoop.phase = 'collecting';
+      state.statusAutoLoop.message = '';
+      renderStatusAutoLoopPanel();
+
+      // 다른 수집이 끝나길 잠깐 대기
+      for (let i = 0; i < 30 && state.statusAutoLoop.active; i += 1) {
+        await refreshLocalServerStatus();
+        if (!state.localAutoCollect?.collectRunning) break;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      if (!state.statusAutoLoop.active) break;
+
+      const collect = await statusAutoLoopCollectDelivery();
+      if (!state.statusAutoLoop.active) break;
+
+      if (!collect?.ok) {
+        state.statusAutoLoop.message = collect?.message || '배달현황 수집 실패';
+        showToast(`자동수집 ${state.statusAutoLoop.round}회차 실패 — ${state.statusAutoLoop.message}`);
+      } else {
+        const savedCount = Number(collect.savedCount || 0);
+        state.statusAutoLoop.phase = 'applying';
+        renderStatusAutoLoopPanel();
+        const apply = await statusAutoLoopApply(collect.collectDate || resolveBizCaptureDate());
+        if (!state.statusAutoLoop.active) break;
+        if (!apply?.ok) {
+          state.statusAutoLoop.message = apply?.message || '배민현황 저장 실패';
+          showToast(`자동수집 ${state.statusAutoLoop.round}회차 저장 실패 — ${state.statusAutoLoop.message}`);
+        } else {
+          state.statusAutoLoop.message = `수집 ${formatNumber(savedCount)}건 · 저장 ${formatNumber(apply.itemCount || apply.savedCount || 0)}건`;
+          showToast(`자동수집 ${state.statusAutoLoop.round}회차 완료 — ${state.statusAutoLoop.message}`);
+          invalidateDataCache();
+          await loadConfig();
+          if (!isViewSection()) {
+            state.activePartnerId = '';
+            await loadAllSubtabData();
+          }
+        }
+      }
+
+      if (!state.statusAutoLoop.active) break;
+      state.statusAutoLoop.phase = 'waiting';
+      renderStatusAutoLoopPanel();
+      const continued = await waitStatusAutoLoop(STATUS_AUTO_WAIT_MS);
+      if (!continued) break;
+    }
+
+    state.statusAutoLoop.active = false;
+    state.statusAutoLoop.phase = 'idle';
+    clearStatusAutoLoopTimer();
+    renderStatusAutoLoopPanel();
+  }
+
+  function startStatusAutoLoop() {
+    if (state.statusAutoLoop.active) return;
+    if (!state.localServerRunning) {
+      showToast('로컬 세션 서버가 꺼져 있습니다. npm run baemin:session-server 실행 후 다시 시도하세요.');
+      return;
+    }
+    if (state.collecting || state.applying || state.localAutoCollect?.collectRunning) {
+      showToast('다른 수집/저장이 끝난 뒤 시작해 주세요.');
+      return;
+    }
+    state.statusAutoLoop.active = true;
+    state.statusAutoLoop.round = 0;
+    state.statusAutoLoop.phase = 'collecting';
+    state.statusAutoLoop.message = '';
+    renderStatusAutoLoopPanel();
+    showToast('배민현황 자동수집 시작 — 종료 버튼을 누를 때까지 반복합니다.');
+    void runStatusAutoLoop();
+  }
+
+  function stopStatusAutoLoop() {
+    if (!state.statusAutoLoop.active) return;
+    state.statusAutoLoop.active = false;
+    state.statusAutoLoop.phase = 'idle';
+    state.statusAutoLoop.message = '사용자가 종료함';
+    clearStatusAutoLoopTimer();
+    renderStatusAutoLoopPanel();
+    showToast('배민현황 자동수집을 종료했습니다.');
   }
 
   async function loadAllSubtabData() {
@@ -3874,6 +4084,14 @@
 
     $('baeminDeliveryApplyBtn')?.addEventListener('click', () => {
       void applyToErp();
+    });
+
+    $('baeminStatusAutoLoopStartBtn')?.addEventListener('click', () => {
+      startStatusAutoLoop();
+    });
+
+    $('baeminStatusAutoLoopStopBtn')?.addEventListener('click', () => {
+      stopStatusAutoLoop();
     });
 
     $('baeminDeliveryScrubDupBtn')?.addEventListener('click', () => {
