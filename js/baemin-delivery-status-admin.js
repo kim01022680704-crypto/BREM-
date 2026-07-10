@@ -636,6 +636,41 @@
     showToast('일별 수집기간이 저장되었습니다.');
   }
 
+  /** 이번주 정산주: 수요일 ~ 전일(어제) */
+  function applyThisWeekCollectRangeToInputs(kind) {
+    const today = todayKstDate();
+    const weekStart = window.BremDatePicker?.applyWeekWednesday?.(today) || today;
+    const range = computeViewWeekQueryRange(weekStart);
+    if (kind === 'daily' || kind === 'both') {
+      const fromEl = $('baeminDailyCollectFrom');
+      const toEl = $('baeminDailyCollectTo');
+      if (fromEl) fromEl.value = range.fromDate;
+      if (toEl) toEl.value = range.toDate;
+    }
+    if (kind === 'rider' || kind === 'both') {
+      const fromEl = $('baeminRiderCollectFrom');
+      const toEl = $('baeminRiderCollectTo');
+      if (fromEl) fromEl.value = range.fromDate;
+      if (toEl) toEl.value = range.toDate;
+    }
+    return range;
+  }
+
+  async function applyAndSaveThisWeekCollectRange(kind) {
+    const range = applyThisWeekCollectRangeToInputs(kind);
+    if (!range?.fromDate || !range?.toDate) {
+      showToast('이번주 기간을 계산하지 못했습니다.');
+      return;
+    }
+    if (kind === 'daily') {
+      await saveDailyCollectRangeFromUi();
+      return;
+    }
+    if (kind === 'rider') {
+      await saveRiderCollectRangeFromUi();
+    }
+  }
+
   function syncRiderCollectRangeInputs(range) {
     const fromEl = $('baeminRiderCollectFrom');
     const toEl = $('baeminRiderCollectTo');
@@ -3853,8 +3888,16 @@
       void saveDailyCollectRangeFromUi();
     });
 
+    $('baeminDailyCollectThisWeekBtn')?.addEventListener('click', () => {
+      void applyAndSaveThisWeekCollectRange('daily');
+    });
+
     $('baeminRiderCollectRangeSaveBtn')?.addEventListener('click', () => {
       void saveRiderCollectRangeFromUi();
+    });
+
+    $('baeminRiderCollectThisWeekBtn')?.addEventListener('click', () => {
+      void applyAndSaveThisWeekCollectRange('rider');
     });
 
     $('baeminStatusSetCountSaveBtn')?.addEventListener('click', () => {
