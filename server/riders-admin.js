@@ -793,6 +793,27 @@ function normalizeMissionPatchFields(fields = {}) {
     else if (!baemin && coupang) next.selected_mission_id = coupang;
     else if (!baemin && !coupang) next.selected_mission_id = '';
   }
+  // 미션관리 저장 시 프로모션 배정 필드도 같이 맞춰 화면/적용이 되돌아가지 않게 함
+  if (fields.promotionRuleIdBaemin !== undefined) {
+    next.promotion_rule_id_baemin = String(fields.promotionRuleIdBaemin || '').trim();
+  } else if (fields.selectedMissionIdBaemin !== undefined) {
+    next.promotion_rule_id_baemin = String(fields.selectedMissionIdBaemin || '').trim();
+  }
+  if (fields.promotionRuleIdCoupang !== undefined) {
+    next.promotion_rule_id_coupang = String(fields.promotionRuleIdCoupang || '').trim();
+  } else if (fields.selectedMissionIdCoupang !== undefined) {
+    next.promotion_rule_id_coupang = String(fields.selectedMissionIdCoupang || '').trim();
+  }
+  if (fields.promotionSelectorBaemin !== undefined) {
+    next.promotion_selector_baemin = String(fields.promotionSelectorBaemin || '').trim();
+  } else if (fields.selectedMissionIdBaemin !== undefined) {
+    next.promotion_selector_baemin = String(fields.selectedMissionIdBaemin || '').trim();
+  }
+  if (fields.promotionSelectorCoupang !== undefined) {
+    next.promotion_selector_coupang = String(fields.promotionSelectorCoupang || '').trim();
+  } else if (fields.selectedMissionIdCoupang !== undefined) {
+    next.promotion_selector_coupang = String(fields.selectedMissionIdCoupang || '').trim();
+  }
   return next;
 }
 
@@ -1036,6 +1057,10 @@ async function bulkPatchRiderMissions(accessToken, patches = [], options = {}) {
         normalized.selected_mission_id !== undefined
         || normalized.selected_mission_id_baemin !== undefined
         || normalized.selected_mission_id_coupang !== undefined
+        || normalized.promotion_rule_id_baemin !== undefined
+        || normalized.promotion_rule_id_coupang !== undefined
+        || normalized.promotion_selector_baemin !== undefined
+        || normalized.promotion_selector_coupang !== undefined
       );
     })
     : [];

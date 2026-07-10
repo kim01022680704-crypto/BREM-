@@ -1089,6 +1089,10 @@ const BremStorage = (function () {
       if (driver.selectedMissionId === id) patch.selectedMissionId = '';
       if (driver.selectedMissionIdBaemin === id) patch.selectedMissionIdBaemin = '';
       if (driver.selectedMissionIdCoupang === id) patch.selectedMissionIdCoupang = '';
+      if (driver.promotionRuleIdBaemin === id) patch.promotionRuleIdBaemin = '';
+      if (driver.promotionRuleIdCoupang === id) patch.promotionRuleIdCoupang = '';
+      if (driver.promotionSelectorBaemin === id) patch.promotionSelectorBaemin = '';
+      if (driver.promotionSelectorCoupang === id) patch.promotionSelectorCoupang = '';
       if (!Object.keys(patch).length) return driver;
       changed = true;
       return { ...driver, ...patch };
@@ -2422,7 +2426,11 @@ const BremStorage = (function () {
   const MISSION_DRIVER_FIELDS = new Set([
     'selectedMissionId',
     'selectedMissionIdBaemin',
-    'selectedMissionIdCoupang'
+    'selectedMissionIdCoupang',
+    'promotionRuleIdBaemin',
+    'promotionRuleIdCoupang',
+    'promotionSelectorBaemin',
+    'promotionSelectorCoupang'
   ]);
 
   const LONG_EVENT_DRIVER_FIELDS = new Set([
@@ -2448,6 +2456,18 @@ const BremStorage = (function () {
     if (changes.selectedMissionId !== undefined) {
       patch.selectedMissionId = changes.selectedMissionId;
     }
+    if (changes.promotionRuleIdBaemin !== undefined) {
+      patch.promotionRuleIdBaemin = changes.promotionRuleIdBaemin;
+    }
+    if (changes.promotionRuleIdCoupang !== undefined) {
+      patch.promotionRuleIdCoupang = changes.promotionRuleIdCoupang;
+    }
+    if (changes.promotionSelectorBaemin !== undefined) {
+      patch.promotionSelectorBaemin = changes.promotionSelectorBaemin;
+    }
+    if (changes.promotionSelectorCoupang !== undefined) {
+      patch.promotionSelectorCoupang = changes.promotionSelectorCoupang;
+    }
     return patch;
   }
 
@@ -2459,24 +2479,35 @@ const BremStorage = (function () {
   function flattenMissionPatch(item) {
     if (!item?.id) return null;
     const patch = { id: item.id };
-    if (item.changes && typeof item.changes === 'object') {
-      if (item.changes.selectedMissionIdBaemin !== undefined) {
-        patch.selectedMissionIdBaemin = item.changes.selectedMissionIdBaemin;
-      }
-      if (item.changes.selectedMissionIdCoupang !== undefined) {
-        patch.selectedMissionIdCoupang = item.changes.selectedMissionIdCoupang;
-      }
-      if (item.changes.selectedMissionId !== undefined) {
-        patch.selectedMissionId = item.changes.selectedMissionId;
-      }
-    } else {
-      if (item.selectedMissionIdBaemin !== undefined) patch.selectedMissionIdBaemin = item.selectedMissionIdBaemin;
-      if (item.selectedMissionIdCoupang !== undefined) patch.selectedMissionIdCoupang = item.selectedMissionIdCoupang;
-      if (item.selectedMissionId !== undefined) patch.selectedMissionId = item.selectedMissionId;
+    const source = (item.changes && typeof item.changes === 'object') ? item.changes : item;
+    if (source.selectedMissionIdBaemin !== undefined) {
+      patch.selectedMissionIdBaemin = source.selectedMissionIdBaemin;
+    }
+    if (source.selectedMissionIdCoupang !== undefined) {
+      patch.selectedMissionIdCoupang = source.selectedMissionIdCoupang;
+    }
+    if (source.selectedMissionId !== undefined) {
+      patch.selectedMissionId = source.selectedMissionId;
+    }
+    if (source.promotionRuleIdBaemin !== undefined) {
+      patch.promotionRuleIdBaemin = source.promotionRuleIdBaemin;
+    }
+    if (source.promotionRuleIdCoupang !== undefined) {
+      patch.promotionRuleIdCoupang = source.promotionRuleIdCoupang;
+    }
+    if (source.promotionSelectorBaemin !== undefined) {
+      patch.promotionSelectorBaemin = source.promotionSelectorBaemin;
+    }
+    if (source.promotionSelectorCoupang !== undefined) {
+      patch.promotionSelectorCoupang = source.promotionSelectorCoupang;
     }
     return patch.selectedMissionId !== undefined
       || patch.selectedMissionIdBaemin !== undefined
       || patch.selectedMissionIdCoupang !== undefined
+      || patch.promotionRuleIdBaemin !== undefined
+      || patch.promotionRuleIdCoupang !== undefined
+      || patch.promotionSelectorBaemin !== undefined
+      || patch.promotionSelectorCoupang !== undefined
       ? patch
       : null;
   }

@@ -74,16 +74,17 @@ window.BremMissionPromotionCatalog = (function () {
   function getDriverAssignment(driver) {
     if (!driver) return { baemin: '', coupang: '' };
     return {
+      // 미션관리 저장값(selectedMissionId*)을 우선. 없으면 프로모션 배정 레거시 필드.
       baemin: String(
-        driver.promotionRuleIdBaemin
+        driver.selectedMissionIdBaemin
+        || driver.promotionRuleIdBaemin
         || driver.promotionSelectorBaemin
-        || driver.selectedMissionIdBaemin
         || ''
       ).trim(),
       coupang: String(
-        driver.promotionRuleIdCoupang
+        driver.selectedMissionIdCoupang
+        || driver.promotionRuleIdCoupang
         || driver.promotionSelectorCoupang
-        || driver.selectedMissionIdCoupang
         || ''
       ).trim()
     };
@@ -94,10 +95,15 @@ window.BremMissionPromotionCatalog = (function () {
     const coupang = String(draft?.coupang || '').trim();
     const changes = {};
     if (draft?.baemin !== undefined) {
+      // 미션관리·프로모션 적용이 같은 값을 보도록 관련 필드를 함께 맞춤
       changes.selectedMissionIdBaemin = baemin;
+      changes.promotionRuleIdBaemin = baemin;
+      changes.promotionSelectorBaemin = baemin;
     }
     if (draft?.coupang !== undefined) {
       changes.selectedMissionIdCoupang = coupang;
+      changes.promotionRuleIdCoupang = coupang;
+      changes.promotionSelectorCoupang = coupang;
     }
     if (draft?.baemin !== undefined || draft?.coupang !== undefined) {
       if (baemin && coupang && baemin === coupang) changes.selectedMissionId = baemin;

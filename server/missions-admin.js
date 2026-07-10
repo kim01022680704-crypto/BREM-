@@ -151,7 +151,15 @@ async function clearMissionFromRiders(supabase, missionId) {
   const id = String(missionId || '').trim();
   if (!id) return;
 
-  const columns = ['selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang'];
+  const columns = [
+    'selected_mission_id',
+    'selected_mission_id_baemin',
+    'selected_mission_id_coupang',
+    'promotion_rule_id_baemin',
+    'promotion_rule_id_coupang',
+    'promotion_selector_baemin',
+    'promotion_selector_coupang'
+  ];
   for (const column of columns) {
     const { error } = await supabase
       .from('riders')
