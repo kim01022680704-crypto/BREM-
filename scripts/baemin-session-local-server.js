@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260710b';
+const SERVER_VERSION = '20260710c';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -880,13 +880,16 @@ function setStatusLoopPhase(phase, message = '') {
 }
 
 function computeThisWeekRangeForLoop() {
-  const { todayKST, settlementWeekStart } = require('../server/baemin-settlement-week');
+  const { todayKST, settlementWeekStart, latestQueryableDate } = require('../server/baemin-settlement-week');
   const today = todayKST();
   const fromDate = settlementWeekStart(today);
+  // 일별/라이더는 배민에서 오늘 데이터가 없음 → 조회 가능 최신일(보통 전일)까지
+  const toDateRaw = latestQueryableDate(today);
+  const toDate = !toDateRaw || toDateRaw < fromDate ? fromDate : toDateRaw;
   return {
     fromDate,
-    toDate: today < fromDate ? fromDate : today,
-    label: `${fromDate} ~ ${today < fromDate ? fromDate : today}`
+    toDate,
+    label: `${fromDate} ~ ${toDate}`
   };
 }
 
