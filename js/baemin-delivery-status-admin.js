@@ -2904,6 +2904,7 @@
           collectProgress: payload.autoCollect?.collectProgress || payload.collectProgress || null,
           browser: payload.browser || null,
           session: payload.session || null,
+          statusLoop: payload.statusLoop || payload.autoCollect?.statusLoop || null,
           version: payload.version || '',
           features: payload.features || null,
           healthUrl
@@ -2922,6 +2923,7 @@
     state.localCollectProgress = local.collectProgress || local.autoCollect?.collectProgress || null;
     state.localBrowser = local.browser;
     state.localSession = local.session;
+    syncStatusAutoLoopFromServer(local);
     if (state.config) renderAutoCollectStatus(state.config);
     updateActionButtons();
   }
@@ -3789,7 +3791,17 @@
     }
   }
 
-  const STATUS_AUTO_WAIT_MS = 2 * 60 * 1000;
+  function syncStatusAutoLoopFromServer(payload) {
+    const loop = payload?.statusLoop || payload?.autoCollect?.statusLoop || null;
+    if (!loop) return;
+    state.statusAutoLoop.active = Boolean(loop.active);
+    state.statusAutoLoop.round = Number(loop.round || 0);
+    state.statusAutoLoop.phase = loop.phase || 'idle';
+    state.statusAutoLoop.message = loop.message || '';
+    state.statusAutoLoop.waitEndsAt = Number(loop.waitEndsAt || 0);
+    state.statusAutoLoop.lastError = loop.lastError || '';
+    renderStatusAutoLoopPanel();
+  }
 
   function renderStatusAutoLoopPanel() {
     const el = $('baeminStatusAutoLoopStatus');
@@ -3800,10 +3812,14 @@
     if (!loop.active) {
       el.textContent = loop.message
         ? `중지됨 — ${loop.message}`
-        : '배달현황 수집 → 배민현황 저장 → 2분 대기 → 반복 (종료 전까지)';
+        : '첫 회차: 배달현황+일별(수~오늘)+라이더(수~오늘)→저장 / 이후: 배달현황→저장→2분 대기 반복 · 세션 서버에서 실행(다른 메뉴 봐도 유지)';
       return;
     }
 
+    if (loop.phase === 'bootstrap') {
+      el.textContent = `${loop.round || 1}회차 부트스트랩 · ${loop.message || '배달현황+일별+라이더 수집 중…'}`;
+      return;
+    }
     if (loop.phase === 'collecting') {
       el.textContent = `${loop.round}회차 · 배달현황 수집 중…`;
       return;
@@ -3814,131 +3830,16 @@
     }
     if (loop.phase === 'waiting') {
       const leftSec = Math.max(0, Math.ceil((Number(loop.waitEndsAt || 0) - Date.now()) / 1000));
-      const mm = String(Math.floor(leftSec / 60)).padStart(1, '0');
+      const mm = String(Math.floor(leftSec / 60));
       const ss = String(leftSec % 60).padStart(2, '0');
-      el.textContent = `${loop.round}회차 완료 · 다음 수집까지 ${mm}:${ss}`
+      el.textContent = `${loop.round}회차 대기 ${mm}:${ss}`
         + (loop.message ? ` · ${loop.message}` : '');
       return;
     }
-    el.textContent = `${loop.round}회차 · 자동수집 진행 중…`;
+    el.textContent = `${loop.round}회차 · 자동수집 진행 중…${loop.message ? ` · ${loop.message}` : ''}`;
   }
 
-  function clearStatusAutoLoopTimer() {
-    if (state.statusAutoLoop?.timer) {
-      clearTimeout(state.statusAutoLoop.timer);
-      state.statusAutoLoop.timer = null;
-    }
-  }
-
-  function waitStatusAutoLoop(ms) {
-    return new Promise(resolve => {
-      const started = Date.now();
-      state.statusAutoLoop.waitEndsAt = started + ms;
-      const tick = () => {
-        if (!state.statusAutoLoop.active) {
-          clearStatusAutoLoopTimer();
-          resolve(false);
-          return;
-        }
-        const left = ms - (Date.now() - started);
-        renderStatusAutoLoopPanel();
-        if (left <= 0) {
-          clearStatusAutoLoopTimer();
-          resolve(true);
-          return;
-        }
-        state.statusAutoLoop.timer = setTimeout(tick, Math.min(1000, left));
-      };
-      tick();
-    });
-  }
-
-  async function statusAutoLoopCollectDelivery() {
-    const captureDate = resolveBizCaptureDate();
-    setCollecting(true);
-    renderStatusAutoLoopPanel();
-    const result = await callLocalServer('/collect/delivery', {
-      method: 'POST',
-      body: {
-        collectDate: captureDate,
-        sourceMenus: ['delivery_status'],
-        source: 'status_auto_loop'
-      },
-      timeoutMs: 300000
-    });
-    await refreshLocalServerStatus();
-    setCollecting(false);
-    return result;
-  }
-
-  async function statusAutoLoopApply(collectDate) {
-    state.applying = true;
-    renderStatusAutoLoopPanel();
-    const result = await callLocalServer('/apply/erp', {
-      method: 'POST',
-      body: { collectDate: collectDate || resolveBizCaptureDate() },
-      timeoutMs: 600000
-    });
-    state.applying = false;
-    return result;
-  }
-
-  async function runStatusAutoLoop() {
-    while (state.statusAutoLoop.active) {
-      state.statusAutoLoop.round += 1;
-      state.statusAutoLoop.phase = 'collecting';
-      state.statusAutoLoop.message = '';
-      renderStatusAutoLoopPanel();
-
-      // 다른 수집이 끝나길 잠깐 대기
-      for (let i = 0; i < 30 && state.statusAutoLoop.active; i += 1) {
-        await refreshLocalServerStatus();
-        if (!state.localAutoCollect?.collectRunning) break;
-        await new Promise(r => setTimeout(r, 2000));
-      }
-      if (!state.statusAutoLoop.active) break;
-
-      const collect = await statusAutoLoopCollectDelivery();
-      if (!state.statusAutoLoop.active) break;
-
-      if (!collect?.ok) {
-        state.statusAutoLoop.message = collect?.message || '배달현황 수집 실패';
-        showToast(`자동수집 ${state.statusAutoLoop.round}회차 실패 — ${state.statusAutoLoop.message}`);
-      } else {
-        const savedCount = Number(collect.savedCount || 0);
-        state.statusAutoLoop.phase = 'applying';
-        renderStatusAutoLoopPanel();
-        const apply = await statusAutoLoopApply(collect.collectDate || resolveBizCaptureDate());
-        if (!state.statusAutoLoop.active) break;
-        if (!apply?.ok) {
-          state.statusAutoLoop.message = apply?.message || '배민현황 저장 실패';
-          showToast(`자동수집 ${state.statusAutoLoop.round}회차 저장 실패 — ${state.statusAutoLoop.message}`);
-        } else {
-          state.statusAutoLoop.message = `수집 ${formatNumber(savedCount)}건 · 저장 ${formatNumber(apply.itemCount || apply.savedCount || 0)}건`;
-          showToast(`자동수집 ${state.statusAutoLoop.round}회차 완료 — ${state.statusAutoLoop.message}`);
-          invalidateDataCache();
-          await loadConfig();
-          if (!isViewSection()) {
-            state.activePartnerId = '';
-            await loadAllSubtabData();
-          }
-        }
-      }
-
-      if (!state.statusAutoLoop.active) break;
-      state.statusAutoLoop.phase = 'waiting';
-      renderStatusAutoLoopPanel();
-      const continued = await waitStatusAutoLoop(STATUS_AUTO_WAIT_MS);
-      if (!continued) break;
-    }
-
-    state.statusAutoLoop.active = false;
-    state.statusAutoLoop.phase = 'idle';
-    clearStatusAutoLoopTimer();
-    renderStatusAutoLoopPanel();
-  }
-
-  function startStatusAutoLoop() {
+  async function startStatusAutoLoop() {
     if (state.statusAutoLoop.active) return;
     if (!state.localServerRunning) {
       showToast('로컬 세션 서버가 꺼져 있습니다. npm run baemin:session-server 실행 후 다시 시도하세요.');
@@ -3948,23 +3849,46 @@
       showToast('다른 수집/저장이 끝난 뒤 시작해 주세요.');
       return;
     }
-    state.statusAutoLoop.active = true;
-    state.statusAutoLoop.round = 0;
-    state.statusAutoLoop.phase = 'collecting';
-    state.statusAutoLoop.message = '';
-    renderStatusAutoLoopPanel();
-    showToast('배민현황 자동수집 시작 — 종료 버튼을 누를 때까지 반복합니다.');
-    void runStatusAutoLoop();
+
+    const result = await callLocalServer('/status-loop/start', {
+      method: 'POST',
+      body: {},
+      timeoutMs: 15000
+    });
+    if (!result.ok) {
+      if (result.status === 404) {
+        showToast('세션 서버가 구버전입니다. scripts\\restart-baemin-session-server-e.bat 로 재시작하세요. (20260710b+)');
+        return;
+      }
+      showToast(result.message || '자동수집 시작에 실패했습니다.');
+      return;
+    }
+    syncStatusAutoLoopFromServer(result);
+    showToast('배민현황 자동수집 시작 — 세션 서버에서 실행됩니다. 다른 메뉴를 봐도 종료 전까지 계속됩니다.');
+    await refreshLocalServerStatus();
   }
 
-  function stopStatusAutoLoop() {
-    if (!state.statusAutoLoop.active) return;
+  async function stopStatusAutoLoop() {
+    const result = await callLocalServer('/status-loop/stop', {
+      method: 'POST',
+      body: {},
+      timeoutMs: 15000
+    });
+    if (!result.ok && result.status === 404) {
+      state.statusAutoLoop.active = false;
+      state.statusAutoLoop.phase = 'idle';
+      state.statusAutoLoop.message = '사용자가 종료함';
+      renderStatusAutoLoopPanel();
+      showToast('배민현황 자동수집을 종료했습니다.');
+      return;
+    }
+    syncStatusAutoLoopFromServer(result);
     state.statusAutoLoop.active = false;
     state.statusAutoLoop.phase = 'idle';
-    state.statusAutoLoop.message = '사용자가 종료함';
-    clearStatusAutoLoopTimer();
+    state.statusAutoLoop.message = result.statusLoop?.message || '사용자가 종료함';
     renderStatusAutoLoopPanel();
     showToast('배민현황 자동수집을 종료했습니다.');
+    await refreshLocalServerStatus();
   }
 
   async function loadAllSubtabData() {
@@ -4087,11 +4011,11 @@
     });
 
     $('baeminStatusAutoLoopStartBtn')?.addEventListener('click', () => {
-      startStatusAutoLoop();
+      void startStatusAutoLoop();
     });
 
     $('baeminStatusAutoLoopStopBtn')?.addEventListener('click', () => {
-      stopStatusAutoLoop();
+      void stopStatusAutoLoop();
     });
 
     $('baeminDeliveryScrubDupBtn')?.addEventListener('click', () => {

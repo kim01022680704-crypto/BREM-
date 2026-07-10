@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260710a';
+const SERVER_VERSION = '20260710b';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -106,6 +106,21 @@ let autoCollectRuntime = {
   nextScheduledAt: null,
   schedule: baeminAutoCollect.DEFAULT_SCHEDULE
 };
+
+/** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속) */
+const STATUS_LOOP_WAIT_MS = 2 * 60 * 1000;
+let statusLoop = {
+  active: false,
+  stopping: false,
+  round: 0,
+  phase: 'idle', // idle | bootstrap | collecting | applying | waiting
+  message: '',
+  waitEndsAt: 0,
+  lastError: '',
+  startedAt: null,
+  updatedAt: null
+};
+let statusLoopPromise = null;
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -838,9 +853,210 @@ function getAutoCollectHealthPayload() {
     nextScheduledAt: autoCollectRuntime.nextScheduledAt,
     lastRunSlotKey,
     lastCollectResult,
+    statusLoop: getStatusLoopPayload(),
     port: PORT,
     defaultPort: DEFAULT_BAEMIN_SESSION_LOCAL_PORT
   };
+}
+
+function getStatusLoopPayload() {
+  return {
+    active: Boolean(statusLoop.active),
+    stopping: Boolean(statusLoop.stopping),
+    round: Number(statusLoop.round || 0),
+    phase: statusLoop.phase || 'idle',
+    message: statusLoop.message || '',
+    waitEndsAt: statusLoop.waitEndsAt || 0,
+    lastError: statusLoop.lastError || '',
+    startedAt: statusLoop.startedAt,
+    updatedAt: statusLoop.updatedAt
+  };
+}
+
+function setStatusLoopPhase(phase, message = '') {
+  statusLoop.phase = phase;
+  if (message !== undefined) statusLoop.message = message;
+  statusLoop.updatedAt = new Date().toISOString();
+}
+
+function computeThisWeekRangeForLoop() {
+  const { todayKST, settlementWeekStart } = require('../server/baemin-settlement-week');
+  const today = todayKST();
+  const fromDate = settlementWeekStart(today);
+  return {
+    fromDate,
+    toDate: today < fromDate ? fromDate : today,
+    label: `${fromDate} ~ ${today < fromDate ? fromDate : today}`
+  };
+}
+
+async function applyStatusLoopToErp(collectDate) {
+  if (!hasLocalSupabaseCredentials()) {
+    return { ok: false, message: '로컬 .env에 SUPABASE_SERVICE_ROLE_KEY 가 없습니다.' };
+  }
+  const { applyBaeminDelivery } = require('../server/baemin-collect-pipeline');
+  const result = await applyBaeminDelivery(collectDate, { appliedBy: 'status_auto_loop' });
+  if (!result.ok) {
+    return {
+      ok: false,
+      message: result.message || result.error || '배민현황 저장 실패',
+      error: result.error || result.message
+    };
+  }
+  return { ok: true, ...result };
+}
+
+async function waitStatusLoop(ms) {
+  const started = Date.now();
+  statusLoop.waitEndsAt = started + ms;
+  setStatusLoopPhase('waiting', statusLoop.message);
+  while (statusLoop.active && !statusLoop.stopping) {
+    const left = ms - (Date.now() - started);
+    if (left <= 0) return true;
+    statusLoop.waitEndsAt = started + ms;
+    statusLoop.updatedAt = new Date().toISOString();
+    await delay(Math.min(1000, left));
+  }
+  return false;
+}
+
+async function runStatusAutoLoopInner() {
+  console.log('[BREM] [현황자동수집] 시작 — 종료 API 호출 전까지 세션 서버에서 반복');
+  let isFirstRound = true;
+
+  while (statusLoop.active && !statusLoop.stopping) {
+    statusLoop.round += 1;
+    statusLoop.lastError = '';
+    const round = statusLoop.round;
+    const weekRange = computeThisWeekRangeForLoop();
+    const collectDate = baeminAutoCollect.todayDateStringKST();
+
+    if (isFirstRound) {
+      setStatusLoopPhase('bootstrap', `1회차 부트스트랩 · 배달현황+일별(${weekRange.label})+라이더(${weekRange.label})`);
+      console.log(`[BREM] [현황자동수집] ${round}회차 부트스트랩 수집 시작 | ${weekRange.label}`);
+      const collect = await runLocalFullCollect({
+        collectDate,
+        sourceMenus: ['delivery_status', 'daily_history', 'rider_history'],
+        dailyCollectRange: {
+          fromDate: weekRange.fromDate,
+          toDate: weekRange.toDate
+        },
+        riderCollectRange: {
+          fromDate: weekRange.fromDate,
+          toDate: weekRange.toDate
+        },
+        source: 'status_auto_loop_bootstrap'
+      });
+      if (!statusLoop.active || statusLoop.stopping) break;
+      if (!collect.ok) {
+        statusLoop.lastError = collect.message || '부트스트랩 수집 실패';
+        setStatusLoopPhase('waiting', `${round}회차 실패 — ${statusLoop.lastError}`);
+        console.warn(`[BREM] [현황자동수집] ${round}회차 실패:`, statusLoop.lastError);
+        const continued = await waitStatusLoop(STATUS_LOOP_WAIT_MS);
+        if (!continued) break;
+        continue;
+      }
+      setStatusLoopPhase('applying', `${round}회차 · 배민현황 저장 중`);
+      const apply = await applyStatusLoopToErp(collect.collectDate || collectDate);
+      if (!statusLoop.active || statusLoop.stopping) break;
+      if (!apply.ok) {
+        statusLoop.lastError = apply.message || '배민현황 저장 실패';
+        setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
+        console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
+      } else {
+        setStatusLoopPhase(
+          'waiting',
+          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건`
+        );
+        console.log(`[BREM] [현황자동수집] ${round}회차 부트스트랩 완료`);
+        isFirstRound = false;
+      }
+    } else {
+      setStatusLoopPhase('collecting', `${round}회차 · 배달현황 수집 중`);
+      console.log(`[BREM] [현황자동수집] ${round}회차 배달현황 수집`);
+      const collect = await runLocalFullCollect({
+        collectDate,
+        sourceMenus: ['delivery_status'],
+        source: 'status_auto_loop'
+      });
+      if (!statusLoop.active || statusLoop.stopping) break;
+      if (!collect.ok) {
+        statusLoop.lastError = collect.message || '배달현황 수집 실패';
+        setStatusLoopPhase('waiting', `${round}회차 실패 — ${statusLoop.lastError}`);
+        console.warn(`[BREM] [현황자동수집] ${round}회차 실패:`, statusLoop.lastError);
+      } else {
+        setStatusLoopPhase('applying', `${round}회차 · 배민현황 저장 중`);
+        const apply = await applyStatusLoopToErp(collect.collectDate || collectDate);
+        if (!statusLoop.active || statusLoop.stopping) break;
+        if (!apply.ok) {
+          statusLoop.lastError = apply.message || '배민현황 저장 실패';
+          setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
+          console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
+        } else {
+          setStatusLoopPhase(
+            'waiting',
+            `${round}회차 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건`
+          );
+          console.log(`[BREM] [현황자동수집] ${round}회차 완료`);
+        }
+      }
+    }
+
+    if (!statusLoop.active || statusLoop.stopping) break;
+    const continued = await waitStatusLoop(STATUS_LOOP_WAIT_MS);
+    if (!continued) break;
+  }
+
+  statusLoop.active = false;
+  statusLoop.stopping = false;
+  setStatusLoopPhase('idle', statusLoop.lastError ? `중지됨 — ${statusLoop.lastError}` : '중지됨');
+  console.log('[BREM] [현황자동수집] 종료');
+}
+
+function startStatusAutoLoop() {
+  if (statusLoop.active || statusLoopPromise) {
+    return { ok: true, alreadyRunning: true, statusLoop: getStatusLoopPayload() };
+  }
+  if (collectRunning) {
+    return { ok: false, message: '다른 수집이 진행 중입니다. 끝난 뒤 시작해 주세요.' };
+  }
+  if (sessionPaused) {
+    return { ok: false, message: '세션 만료 — 배민 세션 갱신 후 다시 시작하세요.', sessionExpired: true };
+  }
+
+  statusLoop.active = true;
+  statusLoop.stopping = false;
+  statusLoop.round = 0;
+  statusLoop.lastError = '';
+  statusLoop.startedAt = new Date().toISOString();
+  setStatusLoopPhase('bootstrap', '부트스트랩 준비 중…');
+
+  statusLoopPromise = runStatusAutoLoopInner()
+    .catch(error => {
+      statusLoop.lastError = formatError(error, '현황 자동수집 오류');
+      console.error('[BREM] [현황자동수집] 오류', error);
+    })
+    .finally(() => {
+      statusLoopPromise = null;
+      statusLoop.active = false;
+      statusLoop.stopping = false;
+      if (statusLoop.phase !== 'idle') {
+        setStatusLoopPhase('idle', statusLoop.lastError ? `중지됨 — ${statusLoop.lastError}` : '중지됨');
+      }
+    });
+
+  return { ok: true, started: true, statusLoop: getStatusLoopPayload() };
+}
+
+function stopStatusAutoLoop() {
+  if (!statusLoop.active && !statusLoopPromise) {
+    return { ok: true, stopped: true, statusLoop: getStatusLoopPayload() };
+  }
+  statusLoop.stopping = true;
+  statusLoop.active = false;
+  setStatusLoopPhase('idle', '사용자가 종료함');
+  console.log('[BREM] [현황자동수집] 종료 요청');
+  return { ok: true, stopped: true, statusLoop: getStatusLoopPayload() };
 }
 
 async function resolveCollectRangeOptions(collectDate, body = {}) {
@@ -1118,7 +1334,7 @@ async function runScheduledCollect(trigger = 'schedule') {
 }
 
 async function tickScheduler() {
-  if (sessionPaused || collectRunning || isJobRunning()) return;
+  if (sessionPaused || collectRunning || isJobRunning() || statusLoop.active) return;
 
   const slotKey = baeminAutoCollect.getCurrentKSTSlot(autoCollectRuntime.schedule);
   if (!slotKey || slotKey === lastRunSlotKey) return;
@@ -1572,7 +1788,8 @@ const server = http.createServer(async (req, res) => {
         collectRider: true,
         collectDelivery: true,
         sessionRefresh: true,
-        applyErp: true
+        applyErp: true,
+        statusLoop: true
       },
       supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
@@ -1584,6 +1801,7 @@ const server = http.createServer(async (req, res) => {
           ? 'expired'
           : (sessionStatus.configured ? 'ok' : 'missing')
       },
+      statusLoop: getStatusLoopPayload(),
       autoCollect: getAutoCollectHealthPayload()
     });
   }
@@ -1960,6 +2178,33 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/auto-collect/status') {
     return sendJsonWithCors(req, res, 200, { ok: true, autoCollect: getAutoCollectHealthPayload() });
+  }
+
+  if (url.pathname === '/status-loop/start' && req.method === 'POST') {
+    const result = startStatusAutoLoop();
+    const status = result.ok ? 202 : (result.sessionExpired ? 409 : 409);
+    return sendJsonWithCors(req, res, status, {
+      ...result,
+      autoCollect: getAutoCollectHealthPayload(),
+      browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/status-loop/stop' && req.method === 'POST') {
+    const result = stopStatusAutoLoop();
+    return sendJsonWithCors(req, res, 200, {
+      ...result,
+      autoCollect: getAutoCollectHealthPayload(),
+      browser: getBrowserHealth()
+    });
+  }
+
+  if (url.pathname === '/status-loop/status') {
+    return sendJsonWithCors(req, res, 200, {
+      ok: true,
+      statusLoop: getStatusLoopPayload(),
+      autoCollect: getAutoCollectHealthPayload()
+    });
   }
 
   if (url.pathname === '/apply/erp' && req.method === 'POST') {
