@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260708g';
+const SERVER_VERSION = '20260710a';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -200,8 +200,10 @@ function summarizeCookies(cookies) {
 }
 
 function isJobRunning() {
+  // refreshLoopRunning 없이 waiting_login만 남은 좀비 job은 수집/갱신을 막지 않음
   return Boolean(
-    activeJob
+    refreshLoopRunning
+    && activeJob
     && ['opening_browser', 'waiting_login', 'saving'].includes(activeJob.status)
   );
 }
@@ -247,7 +249,8 @@ function resolveCollectPlaywrightPage() {
 }
 
 function shouldReuseRefreshLoop() {
-  return (isJobRunning() || refreshLoopRunning) && isContextAlive(activeContext);
+  // 실제 갱신 루프가 돌 때만 재사용. 좀비 waiting_login 때문에 갱신이 스킵되면 안 됨
+  return refreshLoopRunning && isContextAlive(activeContext);
 }
 
 function resetRefreshLoopState(reason) {
@@ -677,6 +680,14 @@ async function closeContextSafely(context) {
 }
 
 function getBrowserHealth() {
+  // 좀비 waiting_login이 UI/상태에 남지 않게 정리
+  if (
+    activeJob
+    && ['opening_browser', 'waiting_login', 'saving'].includes(activeJob.status)
+    && !refreshLoopRunning
+  ) {
+    activeJob = { status: 'idle', message: '대기 중', updatedAt: Date.now() };
+  }
   const alive = isContextAlive(activeContext);
   const tabs = alive ? scanBrowserTabs(activeContext) : null;
   return {
@@ -855,6 +866,18 @@ async function resolveCollectRangeOptions(collectDate, body = {}) {
 async function runLocalFullCollect(options = {}) {
   if (collectRunning) {
     return { ok: false, conflict: true, message: '이미 수집 중입니다.' };
+  }
+  if (sessionPaused) {
+    // DB pause가 이미 해제됐는데 로컬 변수만 남은 경우 수집을 막지 않음
+    try {
+      const record = await baeminAutoCollect.getAutoCollectRecord();
+      if (!record.sessionPaused) {
+        sessionPaused = false;
+        console.log('[BREM] [전체수집] DB pause 해제 감지 — 로컬 pause 동기화');
+      }
+    } catch {
+      // ignore
+    }
   }
   if (sessionPaused) {
     return { ok: false, message: '세션 만료 — 배민 세션 갱신 필요', sessionExpired: true };
@@ -1322,6 +1345,12 @@ async function runSessionRefreshInner() {
       }
     }
 
+    // 브라우저 준비 await 중 토큰이 바뀌었으면 waiting_login 좀비를 남기지 않음
+    if (runToken !== activeRunToken) {
+      console.log('[BREM] [시작] 갱신 토큰 변경 — 브라우저 준비 중 이전 루프 종료');
+      return;
+    }
+
     activeJob = {
       status: 'waiting_login',
       message: '배민Biz 로그인 후 배달이력(/delivery/history) 페이지로 이동하세요.',
@@ -1333,7 +1362,10 @@ async function runSessionRefreshInner() {
     let lastVerifyReason = '';
 
     while (Date.now() - started < LOGIN_WAIT_MS) {
-      if (runToken !== activeRunToken) return;
+      if (runToken !== activeRunToken) {
+        console.log('[BREM] [시작] 갱신 토큰 변경 — 로그인 대기 루프 종료');
+        return;
+      }
 
       if (!isContextAlive(context)) {
         failJob(setupId, '브라우저가 닫혔습니다', tabs.url, '창이 닫혔습니다');
@@ -1387,6 +1419,8 @@ async function runSessionRefreshInner() {
                 closeOnComplete: false
               });
               if (saved) {
+                sessionPaused = false;
+                await baeminAutoCollect.clearSessionPause().catch(() => {});
                 try {
                   await persistDiscoveredApis(discoveryState);
                 } catch (probeError) {
