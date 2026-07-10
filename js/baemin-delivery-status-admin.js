@@ -217,7 +217,13 @@
   function filterRowsByPartnerId(items, partnerId) {
     const want = normalizePartnerId(partnerId);
     if (!want) return [];
-    return (items || []).filter(row => partnerIdFromDedupeKey(row?.dedupe_key) === want);
+    return (items || []).filter(row => {
+      const fromKey = partnerIdFromDedupeKey(row?.dedupe_key);
+      if (fromKey) return fromKey === want;
+      // 기간 합산 라이더 행처럼 dedupe_key 가 비어 있으면 parsed partnerId 로 판별
+      const fromParsed = normalizePartnerId(row?.parsed_json?.partnerId);
+      return fromParsed === want;
+    });
   }
 
   function readCachedRegionMap() {
@@ -3550,12 +3556,22 @@
       viewItems = filterRowsByPartnerId(items, partnerId);
     }
 
+    // 합계는 실제 표시 행 기준으로 (필터 전 합계 / 빈 표 불일치 방지)
+    if (summaryEl && sourceMenu === 'rider_history' && rangeLabel) {
+      const activeCount = viewItems.filter(row => Number(row.parsed_json?.totalComplete || 0) > 0).length;
+      const completeSum = viewItems.reduce((sum, row) => sum + Number(row.parsed_json?.totalComplete || 0), 0);
+      summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · 운행 ${formatNumber(activeCount)}명 · 완료 ${formatNumber(completeSum)}건 · 기간 합계`;
+    }
+
     if (!viewItems.length) {
       const emptyColspan = getBaeminTableColspan(sourceMenu, {
         showPartner: showPartnerColumn,
         includeCollected: !isViewSection()
       });
-      rowsEl.innerHTML = `<tr><td colspan="${emptyColspan}" class="form-help">${ui.emptyMessage}</td></tr>`;
+      const emptyText = (items || []).length
+        ? '선택 지역에 표시할 행이 없습니다. 기간을 확인하거나 다시 조회해 주세요.'
+        : ui.emptyMessage;
+      rowsEl.innerHTML = `<tr><td colspan="${emptyColspan}" class="form-help">${emptyText}</td></tr>`;
       return;
     }
 

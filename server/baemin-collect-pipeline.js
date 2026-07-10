@@ -4151,11 +4151,22 @@ function aggregateRiderHistoryByRider(items) {
       || [row.rider_user_id, row.rider_name, row.phone_number].filter(Boolean).join('|');
     if (!identity) return;
     if (!byRider.has(identity)) {
+      const partnerId = String(
+        row.parsed_json?.partnerId
+        || partnerIdFromDedupeKey(row.dedupe_key)
+        || ''
+      ).trim().toUpperCase();
       byRider.set(identity, {
+        // 화면 filterRowsByPartnerId 가 dedupe_key 접두를 보므로 유지
+        dedupe_key: row.dedupe_key || (partnerId ? `${partnerId}:agg:${identity}` : ''),
         rider_name: row.rider_name || '',
         rider_user_id: row.rider_user_id || '',
         phone_number: row.phone_number || '',
         parsed_json: {
+          partnerId,
+          partnerName: row.parsed_json?.partnerName || '',
+          regionName: row.parsed_json?.regionName || '',
+          displayName: row.parsed_json?.displayName || '',
           totalComplete: 0,
           totalReject: 0,
           cancelCount: 0,
@@ -4181,6 +4192,12 @@ function aggregateRiderHistoryByRider(items) {
     if (row.rider_name) agg.rider_name = row.rider_name;
     if (row.rider_user_id) agg.rider_user_id = row.rider_user_id;
     if (row.phone_number) agg.phone_number = row.phone_number;
+    if (!agg.dedupe_key && row.dedupe_key) agg.dedupe_key = row.dedupe_key;
+    if (!agg.parsed_json.partnerId) {
+      agg.parsed_json.partnerId = String(
+        row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || ''
+      ).trim().toUpperCase();
+    }
     mergeRiderParsedMetrics(agg.parsed_json, row.parsed_json || {});
     agg.activeDays += 1;
   });
