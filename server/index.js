@@ -1062,6 +1062,24 @@ app.get('/api/admin/baemin-delivery/view-rider-range', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/history-collect-coverage', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getHistoryCollectCoverage(getBearerToken(req), {
+      menu: req.query.menu,
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '수집 커버리지를 불러오지 못했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/view-daily-range', async (req, res) => {
   try {
     const result = await baeminDeliveryCollect.getDailyHistoryRange(getBearerToken(req), {

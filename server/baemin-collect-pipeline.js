@@ -809,7 +809,7 @@ async function fetchAndSaveHistoryByDays({
       dayTotal: dates.length,
       dayDate: day
     });
-    const dayRow = await fetchOneHistoryDay({
+    let dayRow = await fetchOneHistoryDay({
       sourceId,
       source,
       endpoint,
@@ -819,6 +819,21 @@ async function fetchAndSaveHistoryByDays({
       day,
       context: { ...context, registry }
     });
+    // 자동수집 첫날(수요일)이 세션/전환 직후 실패하는 경우가 많아 1회 재시도
+    if (!dayRow && dayIndex === 0) {
+      console.warn(`[BREM][collect] ${sourceId} first-day retry ${day}`);
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      dayRow = await fetchOneHistoryDay({
+        sourceId,
+        source,
+        endpoint,
+        activeDateRange,
+        collectDate,
+        tryFetch,
+        day,
+        context: { ...context, registry }
+      });
+    }
     if (!dayRow) {
       failedDays += 1;
       dayResults.push({ date: day, status: 'failed', savedCount: 0, message: '수집 실패' });
@@ -4719,6 +4734,173 @@ async function getDailyHistoryRangeForAdmin(options = {}) {
   };
 }
 
+/**
+ * 정산주(수~화) 기준 날짜×지역 수집 커버리지
+ * menu: rider_history | daily_history
+ */
+async function getHistoryCollectCoverageForAdmin(options = {}) {
+  const menu = String(options.menu || 'rider_history').trim();
+  if (!['rider_history', 'daily_history'].includes(menu)) {
+    return { ok: false, status: 400, error: 'INVALID_MENU', message: 'rider_history 또는 daily_history 만 지원합니다.' };
+  }
+
+  const weekStartRaw = String(options.weekStart || '').slice(0, 10);
+  const { settlementWeekStart, addDays: addDay } = require('./baemin-settlement-week');
+  const weekStart = settlementWeekStart(
+    /^\d{4}-\d{2}-\d{2}$/.test(weekStartRaw) ? weekStartRaw : todayKST()
+  );
+  // 수~화 고정
+  const fromDate = weekStart;
+  const toDate = addDay(weekStart, 6);
+  const dates = buildDateList(fromDate, toDate);
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const { readPartnerRegionMap, resolvePartnerDisplay } = require('./baemin-partner-region');
+  const regionMap = await readPartnerRegionMap().catch(() => ({}));
+  let partners = Object.keys(regionMap || {})
+    .filter(id => /^DP\d{6,}$/i.test(id))
+    .map(id => {
+      const info = resolvePartnerDisplay(id, '', regionMap[id] || '', regionMap);
+      return {
+        partnerId: String(id).toUpperCase(),
+        partnerName: info.partnerName || id,
+        regionName: info.regionName || regionMap[id] || '',
+        displayName: info.displayName || info.regionName || id
+      };
+    })
+    .sort((a, b) => String(a.displayName || a.partnerId).localeCompare(String(b.displayName || b.partnerId), 'ko'));
+
+  const scope = options.actorScope;
+  const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
+  if (allowed.size && !options.skipScopeCheck) {
+    partners = partners.filter(p => allowed.has(p.partnerId));
+  }
+
+  function businessDateForCoverage(row) {
+    const key = String(row.dedupe_key || '');
+    if (menu === 'daily_history') {
+      // DP:YYYY-MM-DD:daily
+      const parts = key.split(':');
+      const day = String(parts[1] || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && String(parts[2] || '') === 'daily') return day;
+      const fromParsed = String(row.parsed_json?.businessDate || row.parsed_json?.deliveryDate || '').slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(fromParsed) ? fromParsed : '';
+    }
+    if (isPerDayRiderDedupeKey(key)) return businessDateFromDedupeKey(key);
+    return resolveRiderBusinessDate(row) || '';
+  }
+
+  async function countByPartnerDate(table, extraFilter = {}) {
+    const map = new Map(); // `${pid}|${date}` -> count
+    let offset = 0;
+    while (true) {
+      let query = supabase
+        .from(table)
+        .select('dedupe_key, parsed_json')
+        .eq('source_menu', menu)
+        .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+      if (extraFilter.batch_id) query = query.eq('batch_id', extraFilter.batch_id);
+      const { data, error } = await query;
+      if (error || !data?.length) break;
+      data.forEach(row => {
+        const pid = partnerIdFromDedupeKey(row.dedupe_key)
+          || String(row.parsed_json?.partnerId || '').trim().toUpperCase();
+        const day = businessDateForCoverage(row);
+        if (!/^DP\d{6,}$/.test(pid) || !day || day < fromDate || day > toDate) return;
+        if (allowed.size && !options.skipScopeCheck && !allowed.has(pid)) return;
+        const k = `${pid}|${day}`;
+        map.set(k, (map.get(k) || 0) + 1);
+      });
+      if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+      offset += BIZ_COLLECT_PAGE_SIZE;
+    }
+    return map;
+  }
+
+  const applied = await readAppliedBaeminDelivery();
+  const [bizMap, appliedMap] = await Promise.all([
+    countByPartnerDate('baemin_biz_collect_items'),
+    applied?.batchId
+      ? countByPartnerDate('baemin_delivery_applied_items', { batch_id: applied.batchId })
+      : Promise.resolve(new Map())
+  ]);
+
+  // 조회에 등장한 partner도 포함 (등록 누락 대비)
+  const partnerIds = new Set(partners.map(p => p.partnerId));
+  [...bizMap.keys(), ...appliedMap.keys()].forEach(key => {
+    const pid = String(key.split('|')[0] || '').toUpperCase();
+    if (/^DP\d{6,}$/.test(pid)) partnerIds.add(pid);
+  });
+  partners = [...partnerIds].map(pid => {
+    const existing = partners.find(p => p.partnerId === pid);
+    if (existing) return existing;
+    const info = resolvePartnerDisplay(pid, '', '', regionMap);
+    return {
+      partnerId: pid,
+      partnerName: info.partnerName || pid,
+      regionName: info.regionName || '',
+      displayName: info.displayName || info.partnerName || pid
+    };
+  }).sort((a, b) => String(a.displayName || a.partnerId).localeCompare(String(b.displayName || b.partnerId), 'ko'));
+
+  const today = todayKST();
+  const rows = [];
+  let okCount = 0;
+  let missingCount = 0;
+  dates.forEach(date => {
+    partners.forEach(partner => {
+      const k = `${partner.partnerId}|${date}`;
+      const bizCount = Number(bizMap.get(k) || 0);
+      const appliedCount = Number(appliedMap.get(k) || 0);
+      const rowCount = appliedCount || bizCount;
+      let status = 'missing';
+      let statusLabel = '미수집';
+      if (rowCount > 0) {
+        status = 'ok';
+        statusLabel = appliedCount > 0 ? '수집완료' : '수집완료(미저장)';
+        okCount += 1;
+      } else if (date > today) {
+        status = 'pending';
+        statusLabel = '예정';
+      } else {
+        missingCount += 1;
+      }
+      rows.push({
+        date,
+        partnerId: partner.partnerId,
+        partnerName: partner.partnerName,
+        regionName: partner.regionName,
+        displayName: partner.displayName || partner.partnerName || partner.partnerId,
+        bizCount,
+        appliedCount,
+        rowCount,
+        status,
+        statusLabel
+      });
+    });
+  });
+
+  return {
+    ok: true,
+    menu,
+    weekStart: fromDate,
+    weekEnd: toDate,
+    fromDate,
+    toDate,
+    partnerCount: partners.length,
+    dateCount: dates.length,
+    okCount,
+    missingCount,
+    partners,
+    dates,
+    rows
+  };
+}
+
 module.exports = {
   getBizCollectTableStatus,
   getApiRegistry,
@@ -4733,6 +4915,7 @@ module.exports = {
   getViewFullBundleForAdmin,
   getRiderHistoryRangeForAdmin,
   getDailyHistoryRangeForAdmin,
+  getHistoryCollectCoverageForAdmin,
   analyzePartnerContamination,
   scrubCrossPartnerDuplicates,
   purgeBizCollectDate,

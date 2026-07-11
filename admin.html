@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260711e">
+  <link rel="stylesheet" href="css/admin.css?v=20260711f">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -721,13 +721,13 @@
         </nav>
 
         <div class="baemin-subpanel" data-baemin-biz-panel="delivery_status" hidden>
-          <article class="card">
+          <article class="card baemin-biz-preview-card baemin-biz-preview-card--compact">
             <div class="card-header">
               <h2>배달현황 (수집 미리보기)</h2>
               <p class="form-help">수집 직후 확인용 · 적용 전까지는 배민현황에 반영되지 않습니다</p>
             </div>
             <p class="admin-table-summary" id="baeminBizDeliveryStatusSummary">데이터 없음</p>
-            <div class="table-scroll baemin-table-scroll">
+            <div class="table-scroll baemin-table-scroll baemin-table-scroll--compact">
               <table class="admin-table baemin-data-table">
                 <thead>
                   <tr>
@@ -816,10 +816,48 @@
         <article class="card" id="baeminRiderCollectDaysCard">
           <div class="card-header">
             <h2>라이더별 배달내역 수집결과</h2>
-            <p class="form-help">설정한 라이더 수집 기간의 날짜별 수집 여부 (하루키 기준)</p>
+            <p class="form-help">정산주(수~화) · 날짜×지역 수집 여부 조회</p>
+          </div>
+          <div class="form-row baemin-collect-coverage-toolbar">
+            <label>
+              정산주 (수~화)
+              <input type="hidden" id="baeminRiderCoverageWeekStart">
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="baemin-rider-coverage-week" id="baeminRiderCoverageWeekBtn">수요일 선택</button>
+            </label>
+            <span id="baeminRiderCoverageWeekLabel" class="baemin-view-week__date"></span>
+            <span id="baeminRiderCoverageWeekRangeLabel" class="form-help"></span>
+            <button type="button" class="small-btn btn-primary" id="baeminRiderCoverageLoadBtn">조회</button>
+            <label class="baemin-coverage-missing-only">
+              <input type="checkbox" id="baeminRiderCoverageMissingOnly">
+              미수집만
+            </label>
           </div>
           <div id="baeminRiderCollectDaysResult" class="baemin-rider-day-results">
-            <p class="form-help">라이더 수집 후 날짜별로 표시됩니다.</p>
+            <p class="form-help">정산주를 고른 뒤 [조회]로 날짜·지역별 수집완료/미수집을 확인하세요.</p>
+          </div>
+        </article>
+
+        <article class="card" id="baeminDailyCollectDaysCard">
+          <div class="card-header">
+            <h2>일별 배달내역 수집결과</h2>
+            <p class="form-help">정산주(수~화) · 날짜×지역 수집 여부 조회</p>
+          </div>
+          <div class="form-row baemin-collect-coverage-toolbar">
+            <label>
+              정산주 (수~화)
+              <input type="hidden" id="baeminDailyCoverageWeekStart">
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="baemin-daily-coverage-week" id="baeminDailyCoverageWeekBtn">수요일 선택</button>
+            </label>
+            <span id="baeminDailyCoverageWeekLabel" class="baemin-view-week__date"></span>
+            <span id="baeminDailyCoverageWeekRangeLabel" class="form-help"></span>
+            <button type="button" class="small-btn btn-primary" id="baeminDailyCoverageLoadBtn">조회</button>
+            <label class="baemin-coverage-missing-only">
+              <input type="checkbox" id="baeminDailyCoverageMissingOnly">
+              미수집만
+            </label>
+          </div>
+          <div id="baeminDailyCollectDaysResult" class="baemin-rider-day-results">
+            <p class="form-help">정산주를 고른 뒤 [조회]로 날짜·지역별 수집완료/미수집을 확인하세요.</p>
           </div>
         </article>
 
@@ -5260,8 +5298,8 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260711e"></script>
-  <script src="js/baemin-calls-rejection-sync.js?v=20260711e"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260711f"></script>
+  <script src="js/baemin-calls-rejection-sync.js?v=20260711f"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
@@ -5285,7 +5323,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260710k"></script>
+  <script src="js/admin.js?v=20260711f"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

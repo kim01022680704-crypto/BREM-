@@ -24,6 +24,7 @@
     riderCollectRange: null,
     dailyCollectRange: null,
     lastRiderDayResults: null,
+    lastCoverage: { rider_history: null, daily_history: null },
     partnerRegionMap: {},
     partnerRegionItems: [],
     partnerSetCountMap: {},
@@ -763,7 +764,6 @@
         : '라이더별 배달내역은 설정한 기간을 하루씩 수집합니다.';
     }
     state.riderCollectRange = range || null;
-    renderRiderCollectDaysPanel({ range: range || null });
   }
 
   async function loadRiderCollectRange() {
@@ -3338,10 +3338,7 @@
     renderStorageDiagnostics(config);
     syncDailyCollectRangeInputs(config?.dailyCollectRange || state.dailyCollectRange || null);
     syncRiderCollectRangeInputs(config?.riderCollectRange || state.riderCollectRange || null);
-    renderRiderCollectDaysPanel({
-      diagnostics: config?.storageDiagnostics,
-      range: config?.riderCollectRange || state.riderCollectRange
-    });
+    initCoverageWeekDefaults();
     if (isViewSection()) {
       renderViewAppliedBanner(config?.applied);
     }
@@ -3426,27 +3423,12 @@
     return `<ul class="baemin-collect-stats">${items.join('')}</ul>`;
   }
 
-  function listDatesInclusiveLocal(fromDate, toDate) {
-    const from = String(fromDate || '').slice(0, 10);
-    const to = String(toDate || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
-      return [];
-    }
-    const dates = [];
-    let cursor = from;
-    while (cursor <= to) {
-      dates.push(cursor);
-      cursor = addDaysDate(cursor, 1);
-    }
-    return dates;
-  }
-
   function extractRiderDayResultsFromMenuResults(menuResults) {
     if (!menuResults || typeof menuResults !== 'object') return [];
     const byDate = new Map();
     Object.entries(menuResults).forEach(([id, row]) => {
       const menuId = String(id || '').includes(':')
-        ? String(id).split(':').slice(1).join(':')
+        ? String(id).split(':').pop()
         : String(id || '');
       if (menuId !== 'rider_history') return;
       const days = Array.isArray(row?.dayResults)
@@ -3455,21 +3437,12 @@
       days.forEach(day => {
         const date = String(day?.date || '').slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-        const prev = byDate.get(date) || {
-          date,
-          status: 'missing',
-          savedCount: 0,
-          message: ''
-        };
+        const prev = byDate.get(date) || { date, status: 'missing', savedCount: 0, message: '' };
         const status = String(day.status || '').trim();
         prev.savedCount += Number(day.savedCount || 0);
-        if (status === 'ok' || (prev.status !== 'ok' && status === 'empty')) {
-          prev.status = status;
-        } else if (prev.status === 'missing' && status) {
-          prev.status = status;
-        } else if (status === 'failed' && prev.status !== 'ok') {
-          prev.status = 'failed';
-        }
+        if (status === 'ok' || (prev.status !== 'ok' && status === 'empty')) prev.status = status;
+        else if (prev.status === 'missing' && status) prev.status = status;
+        else if (status === 'failed' && prev.status !== 'ok') prev.status = 'failed';
         if (day.message) prev.message = day.message;
         byDate.set(date, prev);
       });
@@ -3477,132 +3450,180 @@
     return [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }
 
-  function buildRiderCollectDayRows(options = {}) {
-    const diagnostics = options.diagnostics || state.config?.storageDiagnostics || {};
-    const range = options.range
-      || state.config?.riderCollectRange
-      || state.riderCollectRange
-      || resolveRiderCollectRangeFromInputs();
-    const lastDays = Array.isArray(options.dayResults)
-      ? options.dayResults
-      : (Array.isArray(state.lastRiderDayResults) ? state.lastRiderDayResults : []);
-
-    const bizMap = new Map(
-      (diagnostics.riderHistoryDays?.biz || diagnostics.biz?.riderHistoryDays || [])
-        .map(row => [String(row.date || '').slice(0, 10), row])
-    );
-    const appliedMap = new Map(
-      (diagnostics.riderHistoryDays?.applied || diagnostics.appliedSnapshot?.riderHistoryDays || [])
-        .map(row => [String(row.date || '').slice(0, 10), row])
-    );
-    const lastMap = new Map(
-      lastDays.map(row => [String(row.date || '').slice(0, 10), row])
-    );
-
-    let dates = listDatesInclusiveLocal(range?.fromDate, range?.toDate);
-    if (!dates.length) {
-      dates = [...new Set([
-        ...bizMap.keys(),
-        ...appliedMap.keys(),
-        ...lastMap.keys()
-      ].filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort();
-    }
-
-    return dates.map(date => {
-      const last = lastMap.get(date);
-      const applied = appliedMap.get(date);
-      const biz = bizMap.get(date);
-      const rowCount = Number(applied?.rowCount || biz?.rowCount || last?.savedCount || 0);
-
-      if (last?.status === 'failed') {
-        return {
-          date,
-          tone: 'failed',
-          statusLabel: '수집실패',
-          detail: last.message || ''
-        };
-      }
-      if (last?.status === 'empty' && rowCount <= 0) {
-        return {
-          date,
-          tone: 'empty',
-          statusLabel: '데이터없음',
-          detail: '0건'
-        };
-      }
-      if (last?.status === 'ok' || rowCount > 0) {
-        const savedHint = applied?.rowCount
-          ? ' · 현황저장됨'
-          : (biz?.rowCount ? ' · BIZ수집됨' : '');
-        return {
-          date,
-          tone: 'ok',
-          statusLabel: '수집완료',
-          detail: `${formatNumber(rowCount || last?.savedCount || 0)}건${savedHint}`
-        };
-      }
+  function coverageEls(menu) {
+    if (menu === 'daily_history') {
       return {
-        date,
-        tone: 'missing',
-        statusLabel: '미수집',
-        detail: ''
+        weekStart: 'baeminDailyCoverageWeekStart',
+        weekLabel: 'baeminDailyCoverageWeekLabel',
+        weekRange: 'baeminDailyCoverageWeekRangeLabel',
+        loadBtn: 'baeminDailyCoverageLoadBtn',
+        missingOnly: 'baeminDailyCoverageMissingOnly',
+        result: 'baeminDailyCollectDaysResult'
       };
-    });
-  }
-
-  function resolveRiderCollectRangeFromInputs() {
-    const fromDate = String($('baeminRiderCollectFrom')?.value || '').slice(0, 10);
-    const toDate = String($('baeminRiderCollectTo')?.value || '').slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(fromDate) && /^\d{4}-\d{2}-\d{2}$/.test(toDate) && toDate >= fromDate) {
-      return { fromDate, toDate, label: `${fromDate} ~ ${toDate}` };
     }
-    return null;
+    return {
+      weekStart: 'baeminRiderCoverageWeekStart',
+      weekLabel: 'baeminRiderCoverageWeekLabel',
+      weekRange: 'baeminRiderCoverageWeekRangeLabel',
+      loadBtn: 'baeminRiderCoverageLoadBtn',
+      missingOnly: 'baeminRiderCoverageMissingOnly',
+      result: 'baeminRiderCollectDaysResult'
+    };
   }
 
-  function renderRiderCollectDaysPanel(options = {}) {
-    const el = $('baeminRiderCollectDaysResult');
+  function syncCoverageWeekUi(menu, weekStart) {
+    const ids = coverageEls(menu);
+    const wed = settlementWednesdayOf(weekStart || todayKstDate());
+    const weekEnd = addDaysDate(wed, 6);
+    setEnhancedDateInput(ids.weekStart, wed);
+    const label = $(ids.weekLabel);
+    const range = $(ids.weekRange);
+    if (label) label.textContent = wed;
+    if (range) range.textContent = `${wed} ~ ${weekEnd}`;
+    return { weekStart: wed, weekEnd };
+  }
+
+  function handleCoverageWeekSelect(menu, value) {
+    syncCoverageWeekUi(menu, value);
+  }
+
+  function renderCoverageTable(menu, result, options = {}) {
+    const ids = coverageEls(menu);
+    const el = $(ids.result);
     if (!el) return;
 
-    if (Array.isArray(options.dayResults)) {
-      state.lastRiderDayResults = options.dayResults;
-    }
-
-    const range = options.range
-      || state.config?.riderCollectRange
-      || state.riderCollectRange
-      || resolveRiderCollectRangeFromInputs();
-    const rows = buildRiderCollectDayRows({
-      diagnostics: options.diagnostics || state.config?.storageDiagnostics,
-      range,
-      dayResults: options.dayResults
-    });
-
-    if (!rows.length) {
-      el.innerHTML = '<p class="form-help">표시할 날짜가 없습니다. 라이더 수집 기간을 설정하거나 수집을 실행하세요.</p>';
+    if (!result?.ok) {
+      el.innerHTML = `<p class="form-help form-help--warn">${escapeHtml(result?.message || '조회 실패')}</p>`;
       return;
     }
 
-    const okCount = rows.filter(row => row.tone === 'ok').length;
-    const missingCount = rows.filter(row => row.tone === 'missing' || row.tone === 'failed').length;
-    const rangeLabel = range?.label || (range?.fromDate && range?.toDate ? `${range.fromDate} ~ ${range.toDate}` : '');
+    const missingOnly = options.missingOnly
+      ?? Boolean($(ids.missingOnly)?.checked);
+    let rows = Array.isArray(result.rows) ? result.rows.slice() : [];
+    if (missingOnly) rows = rows.filter(row => row.status === 'missing');
+
+    // 날짜 → 지역 순
+    rows.sort((a, b) => {
+      const dateDiff = String(a.date).localeCompare(String(b.date));
+      if (dateDiff) return dateDiff;
+      return String(a.displayName || a.partnerId).localeCompare(String(b.displayName || b.partnerId), 'ko');
+    });
+
+    const missingCount = (result.rows || []).filter(row => row.status === 'missing').length;
+    const okCount = (result.rows || []).filter(row => row.status === 'ok').length;
+
+    if (!rows.length) {
+      el.innerHTML = `
+        <p class="form-help">
+          ${missingOnly ? '미수집 항목이 없습니다. 전부 수집완료입니다.' : '표시할 행이 없습니다.'}
+        </p>
+        <p class="baemin-rider-day-results__meta">
+          기간 ${escapeHtml(result.fromDate)} ~ ${escapeHtml(result.toDate)}
+          · 수집완료 ${formatNumber(okCount)}
+          · 미수집 ${formatNumber(missingCount)}
+        </p>
+      `;
+      return;
+    }
 
     el.innerHTML = `
-      <ul class="baemin-rider-day-results__list">
-        ${rows.map(row => `
-          <li class="baemin-rider-day-results__item baemin-rider-day-results__item--${row.tone}">
-            <span class="baemin-rider-day-results__date">${escapeHtml(row.date)}</span>
-            <span class="baemin-rider-day-results__status">
-              ${escapeHtml(row.statusLabel)}${row.detail ? ` · ${escapeHtml(row.detail)}` : ''}
-            </span>
-          </li>
-        `).join('')}
-      </ul>
+      <div class="baemin-coverage-table-wrap">
+        <table class="baemin-coverage-table">
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>지역</th>
+              <th>결과</th>
+              <th>건수</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr class="${row.status === 'ok' ? 'is-ok' : (row.status === 'missing' ? 'is-missing' : '')}">
+                <td>${escapeHtml(row.date)}</td>
+                <td>${escapeHtml(row.displayName || row.regionName || row.partnerId)}</td>
+                <td class="${row.status === 'ok' ? 'status-ok' : (row.status === 'missing' ? 'status-missing' : '')}">${escapeHtml(row.statusLabel || (row.status === 'ok' ? '수집완료' : '미수집'))}</td>
+                <td>${row.rowCount > 0 ? formatNumber(row.rowCount) : '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
       <p class="baemin-rider-day-results__meta">
-        ${rangeLabel ? `기간 ${escapeHtml(rangeLabel)} · ` : ''}
-        수집완료 ${formatNumber(okCount)}일
-        ${missingCount ? ` · 미수집/실패 ${formatNumber(missingCount)}일` : ''}
+        기간 ${escapeHtml(result.fromDate)} ~ ${escapeHtml(result.toDate)} (수~화)
+        · 지역 ${formatNumber(result.partnerCount || 0)}곳
+        · 수집완료 ${formatNumber(okCount)}
+        · 미수집 ${formatNumber(missingCount)}
+        ${missingOnly ? ' · 미수집만 표시' : ''}
       </p>
     `;
+  }
+
+  async function loadHistoryCollectCoverage(menu, options = {}) {
+    const ids = coverageEls(menu);
+    const btn = $(ids.loadBtn);
+    const weekInput = String($(ids.weekStart)?.value || '').slice(0, 10);
+    const synced = syncCoverageWeekUi(menu, weekInput || settlementWednesdayOf(todayKstDate()));
+    const weekStart = synced.weekStart;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '조회 중…';
+    }
+    try {
+      const result = await adminApi(
+        `/api/admin/baemin-delivery/history-collect-coverage?menu=${encodeURIComponent(menu)}&weekStart=${encodeURIComponent(weekStart)}`
+      );
+      if (result?.ok) {
+        state.lastCoverage = state.lastCoverage || {};
+        state.lastCoverage[menu] = result;
+      }
+      renderCoverageTable(menu, result, {
+        missingOnly: Boolean($(ids.missingOnly)?.checked)
+      });
+      if (result.ok) {
+        const missing = Number(result.missingCount || 0);
+        showToast(
+          missing > 0
+            ? `${menu === 'daily_history' ? '일별' : '라이더'} ${result.fromDate}~${result.toDate} · 미수집 ${formatNumber(missing)}건`
+            : `${menu === 'daily_history' ? '일별' : '라이더'} ${result.fromDate}~${result.toDate} · 전부 수집완료`
+        );
+      } else {
+        showToast(result.message || '수집결과 조회 실패');
+      }
+      return result;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '조회';
+      }
+    }
+  }
+
+  function renderRiderCollectDaysPanel(options = {}) {
+    // 하위 호환: 수집 직후 dayResults가 오면 안내만 갱신. 상세는 [조회]로 확인.
+    const el = $('baeminRiderCollectDaysResult');
+    if (!el) return;
+    if (Array.isArray(options.dayResults) && options.dayResults.length) {
+      state.lastRiderDayResults = options.dayResults;
+      const ok = options.dayResults.filter(d => d.status === 'ok').length;
+      const fail = options.dayResults.filter(d => d.status !== 'ok').length;
+      const existing = el.querySelector('.baemin-coverage-table-wrap');
+      if (!existing) {
+        el.innerHTML = `
+          <p class="form-help">
+            방금 수집: 완료 ${formatNumber(ok)}일${fail ? ` · 실패/없음 ${formatNumber(fail)}일` : ''}.
+            정산주 선택 후 <strong>조회</strong>로 날짜·지역별 누락을 확인하세요.
+          </p>
+        `;
+      }
+    }
+  }
+
+  function initCoverageWeekDefaults() {
+    const weekStart = settlementWednesdayOf(todayKstDate());
+    syncCoverageWeekUi('rider_history', weekStart);
+    syncCoverageWeekUi('daily_history', weekStart);
   }
 
   function stopSetupPoll() {
@@ -4897,6 +4918,21 @@
       void runRiderOnlyCollect();
     });
 
+    $('baeminRiderCoverageLoadBtn')?.addEventListener('click', () => {
+      void loadHistoryCollectCoverage('rider_history');
+    });
+    $('baeminDailyCoverageLoadBtn')?.addEventListener('click', () => {
+      void loadHistoryCollectCoverage('daily_history');
+    });
+    $('baeminRiderCoverageMissingOnly')?.addEventListener('change', () => {
+      const cached = state.lastCoverage?.rider_history;
+      if (cached) renderCoverageTable('rider_history', cached);
+    });
+    $('baeminDailyCoverageMissingOnly')?.addEventListener('change', () => {
+      const cached = state.lastCoverage?.daily_history;
+      if (cached) renderCoverageTable('daily_history', cached);
+    });
+
     $('baeminDailyCollectRangeSaveBtn')?.addEventListener('click', () => {
       void saveDailyCollectRangeFromUi();
     });
@@ -5031,6 +5067,7 @@
     stopPolling,
     handleWeekSelect,
     handleBizCollectWeekSelect,
+    handleCoverageWeekSelect,
     loadViewData,
     showToast,
     adminApi,

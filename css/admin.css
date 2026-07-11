@@ -2715,6 +2715,76 @@ textarea {
   -webkit-overflow-scrolling: touch;
 }
 
+.baemin-table-scroll--compact {
+  max-height: min(28vh, 240px);
+}
+
+.baemin-biz-preview-card--compact .card-header h2 {
+  font-size: 1rem;
+}
+
+.baemin-biz-preview-card--compact .admin-table-summary {
+  margin: 4px 0 8px;
+  font-size: 0.85rem;
+}
+
+.baemin-collect-coverage-toolbar {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.baemin-coverage-missing-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--muted, #9ca3af);
+}
+
+.baemin-coverage-table-wrap {
+  max-height: min(48vh, 420px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.baemin-coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.baemin-coverage-table th,
+.baemin-coverage-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.baemin-coverage-table th {
+  position: sticky;
+  top: 0;
+  background: #161616;
+  z-index: 1;
+}
+
+.baemin-coverage-table tr.is-missing td {
+  color: #fca5a5;
+}
+
+.baemin-coverage-table tr.is-ok td.status-ok {
+  color: #86efac;
+  font-weight: 600;
+}
+
+.baemin-coverage-table .status-missing {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
 .baemin-table-scroll .baemin-data-table thead th {
   position: sticky;
   top: 0;

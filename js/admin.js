@@ -1702,6 +1702,26 @@
           };
         }
 
+        if (triggerId === 'baemin-rider-coverage-week') {
+          return {
+            hiddenInput: $('#baeminRiderCoverageWeekStart'),
+            labelEl: $('#baeminRiderCoverageWeekLabel'),
+            onSelect(value) {
+              window.BremBaeminDeliveryStatusAdmin?.handleCoverageWeekSelect?.('rider_history', value);
+            }
+          };
+        }
+
+        if (triggerId === 'baemin-daily-coverage-week') {
+          return {
+            hiddenInput: $('#baeminDailyCoverageWeekStart'),
+            labelEl: $('#baeminDailyCoverageWeekLabel'),
+            onSelect(value) {
+              window.BremBaeminDeliveryStatusAdmin?.handleCoverageWeekSelect?.('daily_history', value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-list') {
           return {
             hiddenInput: $('#payrollSearchSettlementWeekStart'),
