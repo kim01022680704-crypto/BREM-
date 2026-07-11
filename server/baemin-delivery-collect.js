@@ -657,15 +657,13 @@ async function getViewFullBundle(accessToken, options = {}) {
 }
 
 async function getHistoryCollectCoverage(accessToken, options = {}) {
-  const account = await resolveActorAccount(accessToken);
-  if (!account) return { ok: false, status: 401, error: '로그인이 필요합니다.' };
-  const { readPartnerRegionMap } = require('./baemin-partner-region');
-  const regionMap = await readPartnerRegionMap().catch(() => ({}));
-  const scope = resolveBaeminPartnerScope(account, regionMap);
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
   const { getHistoryCollectCoverageForAdmin } = require('./baemin-collect-pipeline');
   return getHistoryCollectCoverageForAdmin({
     ...options,
-    actorScope: scope
+    actorScope: actor.scope
   });
 }
 
