@@ -10580,18 +10580,31 @@ const BremStorage = (function () {
     async signInDriver(loginInput, password) {
       if (getSupabaseConfig().mode === 'production') {
         try {
-          if (window.BremSupabaseConfig?.load) {
-            await window.BremSupabaseConfig.load();
-          }
+          const loginBody = {
+            login: String(loginInput || '').trim(),
+            password: String(password || '')
+          };
+          const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          const timeoutMs = 25000;
+          const timer = controller
+            ? setTimeout(() => controller.abort(), timeoutMs)
+            : null;
 
-          const response = await fetch('/api/rider/sign-in', {
+          // 설정 로드와 로그인 API를 병렬 — 로그인 버튼이 설정 로드만 기다리지 않게
+          const configPromise = window.BremSupabaseConfig?.load
+            ? window.BremSupabaseConfig.load().catch(() => null)
+            : Promise.resolve(null);
+
+          const responsePromise = fetch('/api/rider/sign-in', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              login: String(loginInput || '').trim(),
-              password: String(password || '')
-            })
+            body: JSON.stringify(loginBody),
+            signal: controller?.signal
           });
+
+          const [, response] = await Promise.all([configPromise, responsePromise]);
+          if (timer) clearTimeout(timer);
+
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) {
             return {
@@ -10644,7 +10657,13 @@ const BremStorage = (function () {
             driver: driver || mappedDriver
           };
         } catch (error) {
-          return { ok: false, reason: error.message || '로그인에 실패했습니다.' };
+          const aborted = error?.name === 'AbortError';
+          return {
+            ok: false,
+            reason: aborted
+              ? '로그인이 시간 초과되었습니다. 네트워크 상태를 확인 후 다시 시도하세요.'
+              : (error.message || '로그인에 실패했습니다.')
+          };
         }
       }
 

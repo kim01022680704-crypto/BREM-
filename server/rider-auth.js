@@ -348,12 +348,38 @@ async function updateLinkedRiderAuthUser(supabase, userId, rider, email, authPas
   return { ok: true, userId };
 }
 
-async function ensureRiderAuthAccount(supabase, rider, plainPassword) {
+async function upsertRiderProfile(supabase, userId, rider) {
+  const { error: profileError } = await supabase.from('profiles').upsert({
+    user_id: userId,
+    role: 'rider',
+    rider_id: rider.id,
+    display_name: rider.name || '',
+    active: true
+  }, { onConflict: 'user_id' });
+  if (profileError) {
+    return { ok: false, status: 500, error: profileError.message || '기사 프로필 연결에 실패했습니다.' };
+  }
+  return { ok: true };
+}
+
+async function ensureRiderAuthAccount(supabase, rider, plainPassword, options = {}) {
   const email = riderAuthEmail(rider.id);
   const authPassword = toSupabaseAuthPassword(plainPassword);
   let userId = rider.auth_user_id || null;
+  const forceRefresh = options.forceRefresh === true;
 
-  if (userId) {
+  // 이미 Auth 연결된 기사: 매 로그인마다 admin.updateUserById(비밀번호 재기록) 하지 않음
+  // (이 호출이 로그인 지연의 주원인)
+  if (userId && !forceRefresh) {
+    const profile = await upsertRiderProfile(supabase, userId, rider);
+    if (!profile.ok) {
+      // 프로필만 실패해도 세션 로그인은 시도할 수 있게 통과
+      console.warn('[BREM][rider-auth] profile upsert skipped:', profile.error);
+    }
+    return { ok: true, userId, email, authPassword };
+  }
+
+  if (userId && forceRefresh) {
     const linked = await updateLinkedRiderAuthUser(supabase, userId, rider, email, authPassword);
     if (linked.ok) {
       userId = linked.userId;
@@ -402,17 +428,8 @@ async function ensureRiderAuthAccount(supabase, rider, plainPassword) {
     }
   }
 
-  const { error: profileError } = await supabase.from('profiles').upsert({
-    user_id: userId,
-    role: 'rider',
-    rider_id: rider.id,
-    display_name: rider.name || '',
-    active: true
-  }, { onConflict: 'user_id' });
-
-  if (profileError) {
-    return { ok: false, status: 500, error: profileError.message || '기사 프로필 연결에 실패했습니다.' };
-  }
+  const profile = await upsertRiderProfile(supabase, userId, rider);
+  if (!profile.ok) return profile;
 
   return { ok: true, userId, email, authPassword };
 }
@@ -1222,13 +1239,23 @@ async function signInRider(loginInput, password) {
     return { ok: false, status: 401, error: verified.error };
   }
 
-  const account = await ensureRiderAuthAccount(supabase, found.rider, verified.plainPassword);
+  let account = await ensureRiderAuthAccount(supabase, found.rider, verified.plainPassword);
   if (!account.ok) return account;
 
-  const { data, error } = await authClient.auth.signInWithPassword({
+  let { data, error } = await authClient.auth.signInWithPassword({
     email: account.email,
     password: account.authPassword
   });
+
+  // Auth 비밀번호가 어긋난 경우(예전 비밀번호 기록 등) 1회만 강제 동기화 후 재시도
+  if ((error || !data?.session) && found.rider.auth_user_id) {
+    account = await ensureRiderAuthAccount(supabase, found.rider, verified.plainPassword, { forceRefresh: true });
+    if (!account.ok) return account;
+    ({ data, error } = await authClient.auth.signInWithPassword({
+      email: account.email,
+      password: account.authPassword
+    }));
+  }
 
   if (error || !data.session) {
     return { ok: false, status: 401, error: '로그인에 실패했습니다. 잠시 후 다시 시도하세요.' };
