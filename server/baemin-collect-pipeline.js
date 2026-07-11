@@ -4953,7 +4953,7 @@ async function getHistoryCollectCoverageForAdmin(options = {}) {
       let statusLabel = '미수집';
       if (rowCount > 0) {
         status = 'ok';
-        statusLabel = appliedCount > 0 ? '수집완료' : '수집완료(미저장)';
+        statusLabel = appliedCount > 0 ? '반영완료' : '수집완료(미저장)';
         okCount += 1;
       } else if (date > today) {
         status = 'pending';

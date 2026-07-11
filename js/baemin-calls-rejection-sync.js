@@ -12,6 +12,7 @@
   const state = {
     lastUnmatched: [],
     lastPreview: null,
+    lastCoverageRows: [],
     running: false
   };
 
@@ -137,6 +138,93 @@
     </tr>`).join('');
   }
 
+  function mergeCoverageMaps(...maps) {
+    const out = new Map();
+    maps.forEach(map => {
+      if (!map) return;
+      map.forEach((row, key) => {
+        const prev = out.get(key);
+        if (!prev) {
+          out.set(key, { ...row });
+          return;
+        }
+        prev.rowCount = Number(prev.rowCount || 0) + Number(row.rowCount || 0);
+        prev.complete = Number(prev.complete || 0) + Number(row.complete || 0);
+        if (row.status === 'ok' || (prev.status !== 'ok' && row.status === 'fail')) {
+          prev.status = row.status;
+          prev.statusLabel = row.statusLabel;
+        }
+        if (row.kind && prev.kind && !String(prev.kind).includes(row.kind)) {
+          prev.kind = `${prev.kind}+${row.kind}`;
+        } else if (row.kind) {
+          prev.kind = prev.kind || row.kind;
+        }
+        if (row.regionLabel) prev.regionLabel = row.regionLabel;
+      });
+    });
+    return out;
+  }
+
+  function renderCoverageRows(coverageMap) {
+    const el = $('baeminStatusSyncCoverageResult');
+    const summary = $('baeminStatusSyncCoverageSummary');
+    if (!el) return;
+
+    const rows = [...(coverageMap?.values?.() || coverageMap || [])]
+      .filter(Boolean)
+      .sort((a, b) => {
+        const dateDiff = String(a.date || a.weekStart || '').localeCompare(String(b.date || b.weekStart || ''));
+        if (dateDiff) return dateDiff;
+        return String(a.regionLabel || a.partnerId || '').localeCompare(String(b.regionLabel || b.partnerId || ''), 'ko');
+      });
+
+    state.lastCoverageRows = rows;
+
+    if (!rows.length) {
+      el.innerHTML = '<p class="form-help">날짜·지역 반영 대상이 없습니다. 라이더별 배달내역(일별) 수집·저장 후 다시 시도하세요.</p>';
+      if (summary) summary.textContent = '반영 결과 없음';
+      return;
+    }
+
+    const okCount = rows.filter(r => r.status === 'ok').length;
+    const failCount = rows.length - okCount;
+    if (summary) {
+      summary.textContent = `반영완료 ${formatNumber(okCount)} · 미반영/실패 ${formatNumber(failCount)} · 총 ${formatNumber(rows.length)}`;
+    }
+
+    el.innerHTML = `
+      <div class="baemin-coverage-table-wrap">
+        <table class="baemin-coverage-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>날짜</th>
+              <th>지역</th>
+              <th>결과</th>
+              <th>건수</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => {
+              const dateLabel = row.date || (row.weekStart ? `정산주 ${row.weekStart}` : '-');
+              const isOk = row.status === 'ok';
+              return `<tr class="${isOk ? 'is-ok' : 'is-missing'}">
+                <td>${escapeHtml(row.kind || '-')}</td>
+                <td>${escapeHtml(dateLabel)}</td>
+                <td>${escapeHtml(row.regionLabel || row.partnerId || '-')}</td>
+                <td class="${isOk ? 'status-ok' : 'status-missing'}">${escapeHtml(row.statusLabel || (isOk ? '반영완료' : '미반영'))}</td>
+                <td>${row.rowCount > 0 ? formatNumber(row.rowCount) : (row.complete > 0 ? formatNumber(row.complete) : '-')}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p class="baemin-rider-day-results__meta">
+        라이더별 배달내역 기준 · 반영완료 ${formatNumber(okCount)} · 미반영/실패 ${formatNumber(failCount)}
+      </p>
+    `;
+  }
+
   function setButtonsLoading(loading, label) {
     const ids = [
       'baeminSyncCallsBtn', 'baeminSyncRejectionPastBtn', 'baeminSyncAllBtn', 'baeminSyncRejectionLiveBtn',
@@ -174,6 +262,31 @@
 
   async function runCallsSync(ctx) {
     const results = [];
+    const coverage = new Map(); // `${partnerId}|${date}`
+    state._lastCallsCoverage = coverage;
+
+    const touchCoverage = (item, patch = {}) => {
+      const partnerId = String(item.partnerId || '').trim().toUpperCase();
+      const date = String(item.date || '').slice(0, 10);
+      if (!partnerId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+      const key = `${partnerId}|${date}`;
+      const prev = coverage.get(key) || {
+        kind: '콜수',
+        date,
+        partnerId,
+        regionLabel: item.regionLabel || partnerId,
+        rowCount: 0,
+        complete: 0,
+        matched: 0,
+        status: 'missing',
+        statusLabel: '미반영'
+      };
+      if (item.regionLabel) prev.regionLabel = item.regionLabel;
+      Object.assign(prev, patch);
+      coverage.set(key, prev);
+      return prev;
+    };
+
     const items = Array.isArray(ctx.riderItems) ? ctx.riderItems : [];
     if (!items.length) {
       return [{
@@ -233,8 +346,15 @@
     const byDayDriver = new Map();
     const unmatched = [];
     const riderDayMap = new Map(); // baeminId -> { name, dates:Set, total }
+    const datePartnerKeys = new Map(); // date -> Set(coverage keys with matched)
 
     dailyRows.forEach(item => {
+      const covBase = touchCoverage(item);
+      if (covBase) {
+        covBase.rowCount = Number(covBase.rowCount || 0) + 1;
+        covBase.complete = Number(covBase.complete || 0) + item.complete;
+      }
+
       if (item.baeminId) {
         const track = riderDayMap.get(item.baeminId) || {
           riderName: item.riderName,
@@ -273,6 +393,14 @@
         });
         return;
       }
+
+      const cov = touchCoverage(item);
+      if (cov) {
+        cov.matched = Number(cov.matched || 0) + 1;
+        if (!datePartnerKeys.has(item.date)) datePartnerKeys.set(item.date, new Set());
+        datePartnerKeys.get(item.date).add(`${item.partnerId}|${item.date}`);
+      }
+
       // 콜수 입력과 동일: 기사×날짜 1건 (같은 날 중복 지역 행은 합산)
       const key = `${driver.id}|${item.date}`;
       const prev = byDayDriver.get(key) || {
@@ -340,11 +468,18 @@
     });
 
     for (const [date, records] of byDate.entries()) {
+      const keys = datePartnerKeys.get(date) || new Set();
       try {
         await BremStorage.calls.upsertBatchDaily({
           date,
           platform: 'baemin',
           records: records.map(r => ({ driverId: r.driverId, count: r.count }))
+        });
+        keys.forEach(key => {
+          const row = coverage.get(key);
+          if (!row) return;
+          row.status = 'ok';
+          row.statusLabel = '반영완료';
         });
         records.forEach(r => {
           results.push({
@@ -359,6 +494,12 @@
           });
         });
       } catch (error) {
+        keys.forEach(key => {
+          const row = coverage.get(key);
+          if (!row) return;
+          row.status = 'fail';
+          row.statusLabel = '반영실패';
+        });
         records.forEach(r => {
           results.push({
             kind: '콜수',
@@ -391,6 +532,8 @@
 
   async function runRejectionSync(ctx, mode) {
     const results = [];
+    const coverage = new Map(); // `${partnerId||region}|${weekStart}`
+    state._lastRejectionCoverage = coverage;
     const useLive = mode === 'live';
     const kind = useLive ? '거절율(실시간)' : '거절율(주별)';
     const source = useLive ? SYNC_SOURCE_LIVE : SYNC_SOURCE_PAST;
@@ -398,6 +541,30 @@
     const weekStarts = Array.isArray(ctx.weekStarts) && ctx.weekStarts.length
       ? ctx.weekStarts
       : (ctx.weekStart ? [ctx.weekStart] : []);
+
+    const touchCoverage = (row, patch = {}) => {
+      const partnerId = String(row.partnerId || '').trim().toUpperCase();
+      const weekStart = String(row.weekStart || '').slice(0, 10);
+      const regionLabel = row.regionLabel || partnerId || '전지역';
+      if (!weekStart) return null;
+      const key = `${partnerId || regionLabel}|${weekStart}`;
+      const prev = coverage.get(key) || {
+        kind,
+        weekStart,
+        date: '',
+        partnerId,
+        regionLabel,
+        rowCount: 0,
+        complete: 0,
+        matched: 0,
+        status: 'missing',
+        statusLabel: '미반영'
+      };
+      if (regionLabel) prev.regionLabel = regionLabel;
+      Object.assign(prev, patch);
+      coverage.set(key, prev);
+      return { key, row: prev };
+    };
 
     if (!weekStarts.length) {
       return [{
@@ -437,12 +604,17 @@
 
     const entries = [];
     const unmatched = [];
+    const successKeys = new Set();
 
     filtered.forEach(row => {
       const baeminId = normalizeBaeminId(row.riderUserId || row.baeminId);
       const weekStart = row.weekStart || ctx.weekStart;
       const rate = useLive ? row.currentRate : row.pastRate;
       const metrics = useLive ? (row.current || row.past || {}) : (row.past || {});
+      const covTouch = touchCoverage({ ...row, weekStart });
+      if (covTouch) {
+        covTouch.row.rowCount = Number(covTouch.row.rowCount || 0) + 1;
+      }
       if (rate == null || !Number.isFinite(Number(rate))) {
         results.push({
           kind,
@@ -497,6 +669,11 @@
         return;
       }
 
+      if (covTouch) {
+        covTouch.row.matched = Number(covTouch.row.matched || 0) + 1;
+        successKeys.add(covTouch.key);
+      }
+
       entries.push({
         driverId: driver.id,
         weekStart,
@@ -519,7 +696,8 @@
           riderName: row.riderName,
           baeminId,
           driverName: driver.name || driver.id,
-          regionLabel: row.regionLabel || ''
+          regionLabel: row.regionLabel || '',
+          coverageKey: covTouch?.key || ''
         }
       });
     });
@@ -532,6 +710,12 @@
     if (entries.length) {
       try {
         await BremStorage.rejections.upsertWeeklyBatch(entries.map(({ _meta, ...rest }) => rest));
+        successKeys.forEach(key => {
+          const row = coverage.get(key);
+          if (!row) return;
+          row.status = 'ok';
+          row.statusLabel = '반영완료';
+        });
         entries.forEach(entry => {
           results.push({
             kind,
@@ -545,6 +729,12 @@
           });
         });
       } catch (error) {
+        successKeys.forEach(key => {
+          const row = coverage.get(key);
+          if (!row) return;
+          row.status = 'fail';
+          row.statusLabel = '반영실패';
+        });
         entries.forEach(entry => {
           results.push({
             kind,
@@ -576,6 +766,8 @@
 
     state.running = true;
     state.lastUnmatched = [];
+    state._lastCallsCoverage = new Map();
+    state._lastRejectionCoverage = new Map();
     const labels = {
       calls: '콜수 입력 중…',
       rejection_past: '거절율 입력 중…',
@@ -608,14 +800,21 @@
         results = [...callRows, ...rejRows];
       }
 
+      renderCoverageRows(mergeCoverageMaps(state._lastCallsCoverage, state._lastRejectionCoverage));
       renderResultRows(results);
       const ok = results.filter(r => r.status === 'ok').length;
       const fail = results.length - ok;
-      showToast(`동기화 완료 · 성공 ${ok} · 실패/스킵 ${fail}`);
+      const coveredOk = (state.lastCoverageRows || []).filter(r => r.status === 'ok').length;
+      showToast(
+        coveredOk > 0
+          ? `동기화 완료 · 날짜·지역 반영완료 ${coveredOk} · 기사 성공 ${ok} · 실패/스킵 ${fail}`
+          : `동기화 완료 · 성공 ${ok} · 실패/스킵 ${fail}`
+      );
 
       // 콜수/거절율 화면 갱신 신호
       document.dispatchEvent(new CustomEvent('brem-heavy-data-ready'));
     } catch (error) {
+      renderCoverageRows(new Map());
       renderResultRows([{
         kind: '동기화',
         status: 'fail',

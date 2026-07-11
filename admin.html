@@ -1217,7 +1217,22 @@
               <button type="button" class="small-btn" id="baeminSyncRematchBtn">매칭 재시도</button>
             </div>
             <p id="baeminStatusSyncResultMeta" class="form-help">기본=이번주(수~오늘) · 콜수=일별 완료 · 거절율=주별 최신화</p>
-            <div class="table-scroll baemin-table-scroll">
+            <div class="baemin-sync-coverage-block" id="baeminSyncCoverageBlock">
+              <div class="card-header baemin-view-data-card__header" style="padding:0 0 8px;margin:0;">
+                <div>
+                  <h3 style="margin:0;font-size:1.05rem;">반영여부 (날짜 × 지역)</h3>
+                  <p class="form-help" style="margin:4px 0 0;">라이더별 배달내역 기준 · 배민현황 저장되면 반영완료</p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <button type="button" class="small-btn btn-primary" id="baeminSyncCoverageLoadBtn">반영여부 조회</button>
+                  <p class="admin-table-summary" id="baeminStatusSyncCoverageSummary" style="margin:0;">조회 중 또는 아래 표 확인</p>
+                </div>
+              </div>
+              <div id="baeminStatusSyncCoverageResult" class="baemin-rider-day-results">
+                <p class="form-help">메뉴 진입 시 자동 조회합니다. 안 보이면 [반영여부 조회]를 누르세요.</p>
+              </div>
+            </div>
+            <div class="table-scroll baemin-table-scroll" style="margin-top:14px;">
               <table class="admin-table baemin-data-table" id="baeminStatusSyncTable">
                 <thead>
                   <tr>
@@ -1231,7 +1246,7 @@
                   </tr>
                 </thead>
                 <tbody id="baeminStatusSyncRows">
-                  <tr><td colspan="7" class="form-help">동기화 결과가 여기 표시됩니다.</td></tr>
+                  <tr><td colspan="7" class="form-help">동기화 상세(기사별)가 여기 표시됩니다.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -5298,8 +5313,8 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260711h"></script>
-  <script src="js/baemin-calls-rejection-sync.js?v=20260711h"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260711j"></script>
+  <script src="js/baemin-calls-rejection-sync.js?v=20260711j"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

@@ -1987,9 +1987,10 @@
     if (menu === 'calls_rejection_sync') {
       const summaryEl = $('baeminStatusSyncSummary');
       if (summaryEl && !summaryEl.textContent) {
-        summaryEl.textContent = '지역 선택 후 콜수입력 / 거절율입력 버튼을 눌러 주세요';
+        summaryEl.textContent = '전지역 · 콜수입력 / 거절율입력 버튼을 눌러 주세요';
       }
       renderGrandTotalsPanel('delivery_status', partnerId);
+      void loadSyncReflectionStatus({ silent: true });
       return;
     }
     if (menu === 'rider_history' && cached.rider_history?.length) {
@@ -2060,6 +2061,138 @@
     `;
   }
 
+  function renderSyncReflectionCoverage(result, options = {}) {
+    const el = $('baeminStatusSyncCoverageResult');
+    const summary = $('baeminStatusSyncCoverageSummary');
+    if (!el) return;
+
+    if (!result?.ok) {
+      el.innerHTML = `<p class="form-help form-help--warn">${escapeHtml(result?.message || '반영여부 조회 실패')}</p>`;
+      if (summary) summary.textContent = '조회 실패';
+      return;
+    }
+
+    const fromDate = options.fromDate || result.fromDate;
+    const toDate = options.toDate || result.toDate;
+    let rows = Array.isArray(result.rows) ? result.rows.slice() : [];
+    rows = rows.filter(row => {
+      const day = String(row.date || '').slice(0, 10);
+      return day >= fromDate && day <= toDate;
+    });
+    rows.sort((a, b) => {
+      const dateDiff = String(a.date).localeCompare(String(b.date));
+      if (dateDiff) return dateDiff;
+      return String(a.displayName || a.partnerId).localeCompare(String(b.displayName || b.partnerId), 'ko');
+    });
+
+    const okCount = rows.filter(row => row.status === 'ok').length;
+    const missingCount = rows.filter(row => row.status === 'missing').length;
+    if (summary) {
+      summary.textContent = `반영완료 ${formatNumber(okCount)} · 미반영 ${formatNumber(missingCount)} · ${fromDate}~${toDate}`;
+    }
+
+    if (!rows.length) {
+      el.innerHTML = `
+        <p class="form-help">선택 기간에 표시할 날짜·지역이 없습니다. BIZ에서 라이더별 배달내역 수집 후 [배민현황 저장]하세요.</p>
+        <p class="baemin-rider-day-results__meta">기간 ${escapeHtml(fromDate)} ~ ${escapeHtml(toDate)}</p>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="baemin-coverage-table-wrap">
+        <table class="baemin-coverage-table">
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>지역</th>
+              <th>반영여부</th>
+              <th>건수</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => {
+              const isOk = row.status === 'ok';
+              const label = row.statusLabel
+                || (isOk ? '반영완료' : (row.status === 'pending' ? '예정' : '미반영'));
+              return `<tr class="${isOk ? 'is-ok' : (row.status === 'missing' ? 'is-missing' : '')}">
+                <td>${escapeHtml(row.date)}</td>
+                <td>${escapeHtml(row.displayName || row.regionName || row.partnerId)}</td>
+                <td class="${isOk ? 'status-ok' : 'status-missing'}">${escapeHtml(label)}</td>
+                <td>${row.rowCount > 0 ? formatNumber(row.rowCount) : '-'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p class="baemin-rider-day-results__meta">
+        라이더별 배달내역 · ${escapeHtml(fromDate)} ~ ${escapeHtml(toDate)}
+        · 반영완료 ${formatNumber(okCount)} · 미반영 ${formatNumber(missingCount)}
+      </p>
+    `;
+  }
+
+  async function loadSyncReflectionStatus(options = {}) {
+    const btn = $('baeminSyncCoverageLoadBtn');
+    ensureSyncDateRangeDefaults();
+    const range = resolveSyncDateRange();
+    const fromDate = range.fromDate;
+    const toDate = range.toDate;
+    const weekStarts = listSettlementWeeksInRange(fromDate, toDate);
+    if (!weekStarts.length) {
+      renderSyncReflectionCoverage({ ok: false, message: '선택 기간의 정산주를 찾을 수 없습니다.' });
+      return null;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '조회 중…';
+    }
+    const summary = $('baeminStatusSyncCoverageSummary');
+    if (summary) summary.textContent = '반영여부 조회 중…';
+
+    try {
+      const results = await Promise.all(weekStarts.map(weekStart => adminApi(
+        `/api/admin/baemin-delivery/history-collect-coverage?menu=rider_history&weekStart=${encodeURIComponent(weekStart)}`
+      )));
+      const mergedRows = [];
+      let firstOk = null;
+      for (const result of results) {
+        if (!result?.ok) continue;
+        if (!firstOk) firstOk = result;
+        (result.rows || []).forEach(row => mergedRows.push(row));
+      }
+      if (!firstOk) {
+        const fail = results.find(r => r && !r.ok) || { message: '반영여부 조회 실패' };
+        renderSyncReflectionCoverage({ ok: false, message: fail.message || fail.error || '반영여부 조회 실패' });
+        if (!options.silent) showToast(fail.message || '반영여부 조회 실패');
+        return fail;
+      }
+      const merged = {
+        ...firstOk,
+        fromDate,
+        toDate,
+        rows: mergedRows
+      };
+      renderSyncReflectionCoverage(merged, { fromDate, toDate });
+      if (!options.silent) {
+        const ok = mergedRows.filter(r => r.status === 'ok' && r.date >= fromDate && r.date <= toDate).length;
+        const missing = mergedRows.filter(r => r.status === 'missing' && r.date >= fromDate && r.date <= toDate).length;
+        showToast(`반영여부 · 완료 ${formatNumber(ok)} · 미반영 ${formatNumber(missing)}`);
+      }
+      return merged;
+    } catch (error) {
+      renderSyncReflectionCoverage({ ok: false, message: error.message || '반영여부 조회 실패' });
+      if (!options.silent) showToast(error.message || '반영여부 조회 실패');
+      return null;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '반영여부 조회';
+      }
+    }
+  }
+
   function clearViewTablesIdle(message) {
     const ui = tableUiConfig();
     const text = message || '「데이터 불러오기」를 눌러 Supabase 데이터를 조회하세요.';
@@ -2080,10 +2213,15 @@
         summaryEl.textContent = menu === 'accept_rate_live'
           ? '수락율 조회를 눌러 주세요'
           : (menu === 'calls_rejection_sync'
-            ? '지역 선택 후 동기화 버튼을 눌러 주세요'
+            ? '전지역 · 동기화 버튼 또는 아래 반영여부 확인'
             : '데이터 불러오기를 눌러 주세요');
       }
-      if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${text}</td></tr>`;
+      if (rowsEl) {
+        const idleText = menu === 'calls_rejection_sync'
+          ? '전지역 대상 · 콜수입력 / 거절율입력 / 모두입력 버튼을 사용하세요. 반영여부는 위 표를 확인하세요.'
+          : text;
+        rowsEl.innerHTML = `<tr><td colspan="${colspan}" class="form-help">${idleText}</td></tr>`;
+      }
     });
     renderGrandTotalsPanel(state.activeMenu, null);
   }
@@ -2627,6 +2765,7 @@
     if (state.activeMenu === 'calls_rejection_sync') {
       clearViewTablesForMenu('calls_rejection_sync', '콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
       renderGrandTotalsPanel('delivery_status', id);
+      void loadSyncReflectionStatus({ silent: true });
       return;
     }
 
@@ -2681,11 +2820,12 @@
       state.activeMenu = menu;
       updatePanelVisibility();
       renderSetCountRow(state.activePartnerId);
-      if (menu === 'calls_rejection_sync') {
-        clearViewTablesForMenu(menu, '전지역 대상 · 콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
-        renderGrandTotalsPanel('delivery_status', state.activePartnerId);
-        return;
-      }
+    if (menu === 'calls_rejection_sync') {
+      clearViewTablesForMenu(menu, '전지역 대상 · 콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
+      renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+      void loadSyncReflectionStatus({ silent: true });
+      return;
+    }
       if (state.activePartnerId) {
         const cached = getCachedPartnerBundle(state.activePartnerId);
         if (menu === 'quota_achievement') {
@@ -2775,7 +2915,7 @@
           : (menu === 'accept_rate_live'
             ? '수락율 조회를 눌러 주세요'
             : (menu === 'calls_rejection_sync'
-              ? '지역 선택 후 동기화 버튼을 눌러 주세요'
+              ? '전지역 · 아래 반영여부 확인 후 동기화'
               : (menu === 'rider_history' || menu === 'daily_history'
                 ? '시작일·종료일을 선택하고 조회를 눌러 주세요'
                 : (menu === 'delivery_status'
@@ -3515,11 +3655,11 @@
     if (!rows.length) {
       el.innerHTML = `
         <p class="form-help">
-          ${missingOnly ? '미수집 항목이 없습니다. 전부 수집완료입니다.' : '표시할 행이 없습니다.'}
+          ${missingOnly ? '미수집 항목이 없습니다. 전부 반영완료입니다.' : '표시할 행이 없습니다.'}
         </p>
         <p class="baemin-rider-day-results__meta">
           기간 ${escapeHtml(result.fromDate)} ~ ${escapeHtml(result.toDate)}
-          · 수집완료 ${formatNumber(okCount)}
+          · 반영완료 ${formatNumber(okCount)}
           · 미수집 ${formatNumber(missingCount)}
         </p>
       `;
@@ -3542,7 +3682,7 @@
               <tr class="${row.status === 'ok' ? 'is-ok' : (row.status === 'missing' ? 'is-missing' : '')}">
                 <td>${escapeHtml(row.date)}</td>
                 <td>${escapeHtml(row.displayName || row.regionName || row.partnerId)}</td>
-                <td class="${row.status === 'ok' ? 'status-ok' : (row.status === 'missing' ? 'status-missing' : '')}">${escapeHtml(row.statusLabel || (row.status === 'ok' ? '수집완료' : '미수집'))}</td>
+                <td class="${row.status === 'ok' ? 'status-ok' : (row.status === 'missing' ? 'status-missing' : '')}">${escapeHtml(row.statusLabel || (row.status === 'ok' ? '반영완료' : '미수집'))}</td>
                 <td>${row.rowCount > 0 ? formatNumber(row.rowCount) : '-'}</td>
               </tr>
             `).join('')}
@@ -3552,7 +3692,7 @@
       <p class="baemin-rider-day-results__meta">
         기간 ${escapeHtml(result.fromDate)} ~ ${escapeHtml(result.toDate)} (수~화)
         · 지역 ${formatNumber(result.partnerCount || 0)}곳
-        · 수집완료 ${formatNumber(okCount)}
+        · 반영완료 ${formatNumber(okCount)}
         · 미수집 ${formatNumber(missingCount)}
         ${missingOnly ? ' · 미수집만 표시' : ''}
       </p>
@@ -3586,7 +3726,7 @@
         showToast(
           missing > 0
             ? `${menu === 'daily_history' ? '일별' : '라이더'} ${result.fromDate}~${result.toDate} · 미수집 ${formatNumber(missing)}건`
-            : `${menu === 'daily_history' ? '일별' : '라이더'} ${result.fromDate}~${result.toDate} · 전부 수집완료`
+            : `${menu === 'daily_history' ? '일별' : '라이더'} ${result.fromDate}~${result.toDate} · 전부 반영완료`
         );
       } else {
         showToast(result.message || '수집결과 조회 실패');
@@ -4924,6 +5064,28 @@
     $('baeminDailyCoverageLoadBtn')?.addEventListener('click', () => {
       void loadHistoryCollectCoverage('daily_history');
     });
+    $('baeminSyncCoverageLoadBtn')?.addEventListener('click', () => {
+      void loadSyncReflectionStatus();
+    });
+    ['baeminSyncFromDate', 'baeminSyncToDate', 'baeminSyncFromDate2', 'baeminSyncToDate2'].forEach(id => {
+      $(id)?.addEventListener('change', () => {
+        if (state.activeMenu === 'calls_rejection_sync') {
+          void loadSyncReflectionStatus({ silent: true });
+        }
+      });
+    });
+    $('baeminSyncThisWeekBtn')?.addEventListener('click', () => {
+      applySyncThisWeekRange();
+      if (state.activeMenu === 'calls_rejection_sync') {
+        void loadSyncReflectionStatus({ silent: true });
+      }
+    });
+    $('baeminSyncThisWeekBtn2')?.addEventListener('click', () => {
+      applySyncThisWeekRange();
+      if (state.activeMenu === 'calls_rejection_sync') {
+        void loadSyncReflectionStatus({ silent: true });
+      }
+    });
     $('baeminRiderCoverageMissingOnly')?.addEventListener('change', () => {
       const cached = state.lastCoverage?.rider_history;
       if (cached) renderCoverageTable('rider_history', cached);
@@ -5075,7 +5237,8 @@
     applySyncThisWeekRange,
     syncSyncDateInputs,
     ensureSyncDateRangeDefaults,
-    resolveSyncDateRange
+    resolveSyncDateRange,
+    loadSyncReflectionStatus
   };
   bindEvents();
 })();
