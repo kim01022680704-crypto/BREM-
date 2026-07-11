@@ -170,22 +170,34 @@
       }];
     }
 
-    const dated = items.map(row => ({
-      row,
-      date: resolveRiderBusinessDate(row),
-      baeminId: normalizeBaeminId(row.rider_user_id),
-      complete: extractMetrics(row.parsed_json).complete,
-      riderName: row.rider_name || ''
-    }));
+    const dated = items.map(row => {
+      const partnerId = String(
+        row.parsed_json?.partnerId
+        || String(row.dedupe_key || '').split(':')[0]
+        || ''
+      ).trim().toUpperCase();
+      return {
+        row,
+        date: resolveRiderBusinessDate(row),
+        baeminId: normalizeBaeminId(row.rider_user_id),
+        complete: extractMetrics(row.parsed_json).complete,
+        riderName: row.rider_name || '',
+        partnerId: /^DP\d{6,}$/.test(partnerId) ? partnerId : '',
+        regionLabel: row.parsed_json?.displayName || row.parsed_json?.regionName || partnerId || ''
+      };
+    });
 
-    const withDate = dated.filter(item => item.date);
+    const withDate = dated.filter(item => item.date && item.complete > 0);
     if (!withDate.length) {
+      const anyDated = dated.some(item => item.date);
       return [{
         kind: '콜수',
         status: 'fail',
         statusLabel: '실패',
-        reason: '일별 라이더 내역 없음',
-        detail: '기간합산만 있고 일별(하루) 키가 없습니다. BIZ 라이더 일별 수집·저장 후 다시 시도하세요.'
+        reason: anyDated ? '완료 0건만 있음' : '일별 라이더 내역 없음',
+        detail: anyDated
+          ? '전지역 일별 행은 있으나 완료가 없습니다.'
+          : '기간합산만 있고 일별(하루) 키가 없습니다. BIZ 라이더 일별 수집·저장 후 다시 시도하세요.'
       }];
     }
 
@@ -201,7 +213,7 @@
           status: 'fail',
           statusLabel: '실패',
           reason: '배민ID 없음',
-          detail: item.date
+          detail: `${item.regionLabel || '-'} · ${item.date}`
         });
         return;
       }
@@ -215,10 +227,11 @@
           status: 'fail',
           statusLabel: '미매칭',
           reason: '기사 배민ID 미등록',
-          detail: `${item.date} · 완료 ${item.complete}`
+          detail: `${item.regionLabel || '-'} · ${item.date} · 완료 ${item.complete}`
         });
         return;
       }
+      // 콜수 입력과 동일: 기사×날짜 1건 (같은 날 중복 지역 행은 합산)
       const key = `${driver.id}|${item.date}`;
       const prev = byDayDriver.get(key) || {
         driverId: driver.id,
@@ -226,9 +239,11 @@
         date: item.date,
         baeminId: item.baeminId,
         riderName: item.riderName,
+        regionLabel: item.regionLabel || '',
         count: 0
       };
       prev.count += item.complete;
+      if (item.regionLabel) prev.regionLabel = item.regionLabel;
       byDayDriver.set(key, prev);
     });
 
@@ -237,7 +252,8 @@
       baeminId: item.baeminId,
       riderName: item.riderName,
       date: item.date,
-      complete: item.complete
+      complete: item.complete,
+      regionLabel: item.regionLabel
     }));
 
     // 날짜별 배치 저장 (콜수 입력 메뉴와 동일 API)
@@ -263,7 +279,7 @@
             status: 'ok',
             statusLabel: '성공',
             reason: '',
-            detail: `${date} · 완료 ${formatNumber(r.count)}건 → 콜수 입력`
+            detail: `${r.regionLabel || '전지역'} · ${date} · 완료 ${formatNumber(r.count)}건 → 콜수 입력`
           });
         });
       } catch (error) {
@@ -276,7 +292,7 @@
             status: 'fail',
             statusLabel: '실패',
             reason: error.message || '콜수 저장 실패',
-            detail: date
+            detail: `${r.regionLabel || '-'} · ${date}`
           });
         });
       }
@@ -300,18 +316,20 @@
   async function runRejectionSync(ctx, mode) {
     const results = [];
     const useLive = mode === 'live';
-    const kind = useLive ? '거절율(실시간)' : '거절율(과거)';
+    const kind = useLive ? '거절율(실시간)' : '거절율(주별)';
     const source = useLive ? SYNC_SOURCE_LIVE : SYNC_SOURCE_PAST;
-    const weekStart = ctx.weekStart;
     const rows = Array.isArray(ctx.acceptRows) ? ctx.acceptRows : [];
+    const weekStarts = Array.isArray(ctx.weekStarts) && ctx.weekStarts.length
+      ? ctx.weekStarts
+      : (ctx.weekStart ? [ctx.weekStart] : []);
 
-    if (!weekStart) {
+    if (!weekStarts.length) {
       return [{
         kind,
         status: 'fail',
         statusLabel: '실패',
-        reason: '정산주(수요일) 없음',
-        detail: ''
+        reason: '정산주 없음',
+        detail: '선택 기간에서 수요일 주를 찾을 수 없습니다.'
       }];
     }
     if (!rows.length) {
@@ -320,17 +338,35 @@
         status: 'fail',
         statusLabel: '실패',
         reason: '수락율 데이터 없음',
-        detail: '실시간 수락율현황 조회와 동일 기간 데이터가 필요합니다.'
+        detail: `${ctx.fromDate || ''} ~ ${ctx.toDate || ''} 라이더 내역을 확인하세요.`
       }];
     }
+
+    // 실시간: 이번주만 / 주별: 선택 기간의 모든 정산주
+    const targetWeeks = useLive
+      ? (ctx.currentWeekStart && weekStarts.includes(ctx.currentWeekStart)
+        ? [ctx.currentWeekStart]
+        : [])
+      : weekStarts;
+    if (useLive && !targetWeeks.length) {
+      return [{
+        kind,
+        status: 'fail',
+        statusLabel: '실패',
+        reason: '이번주가 선택 기간에 없음',
+        detail: '실시간 입력은 종료일에 이번주가 포함되어야 합니다.'
+      }];
+    }
+    const filtered = rows.filter(row => targetWeeks.includes(row.weekStart));
 
     const entries = [];
     const unmatched = [];
 
-    rows.forEach(row => {
+    filtered.forEach(row => {
       const baeminId = normalizeBaeminId(row.riderUserId || row.baeminId);
+      const weekStart = row.weekStart || ctx.weekStart;
       const rate = useLive ? row.currentRate : row.pastRate;
-      const metrics = useLive ? (row.current || {}) : (row.past || {});
+      const metrics = useLive ? (row.current || row.past || {}) : (row.past || {});
       if (rate == null || !Number.isFinite(Number(rate))) {
         results.push({
           kind,
@@ -339,7 +375,7 @@
           status: 'fail',
           statusLabel: '스킵',
           reason: '수락율 미집계',
-          detail: useLive ? '현재 분모 0' : '과거 분모 0'
+          detail: `정산주 ${weekStart}`
         });
         return;
       }
@@ -351,13 +387,13 @@
           status: 'fail',
           statusLabel: '실패',
           reason: '배민ID 없음',
-          detail: ''
+          detail: weekStart
         });
         return;
       }
       const driver = matchDriverByBaeminId(baeminId);
       if (!driver?.id) {
-        unmatched.push({ baeminId, riderName: row.riderName, rate });
+        unmatched.push({ baeminId, riderName: row.riderName, rate, weekStart });
         results.push({
           kind,
           riderName: row.riderName,
@@ -365,7 +401,7 @@
           status: 'fail',
           statusLabel: '미매칭',
           reason: '기사 배민ID 미등록',
-          detail: `수락율 ${rate}%`
+          detail: `정산주 ${weekStart} · 수락율 ${rate}%`
         });
         return;
       }
@@ -380,7 +416,7 @@
           status: 'fail',
           statusLabel: '보호',
           reason: `기존 ${existing.source} 유지`,
-          detail: `수동/ERP 값은 덮어쓰지 않음 (현재 ${existing.rate}%)`
+          detail: `정산주 ${weekStart} · 수동/ERP 보호 (${existing.rate}%)`
         });
         return;
       }
@@ -406,7 +442,8 @@
         _meta: {
           riderName: row.riderName,
           baeminId,
-          driverName: driver.name || driver.id
+          driverName: driver.name || driver.id,
+          regionLabel: row.regionLabel || ''
         }
       });
     });
@@ -428,7 +465,7 @@
             status: 'ok',
             statusLabel: '성공',
             reason: '',
-            detail: `${weekStart} · 수락율 ${entry.rate}% → 거절율 입력`
+            detail: `${entry._meta.regionLabel || '전지역'} · 정산주 ${entry.weekStart} · 수락율 ${entry.rate}% → 거절율 입력`
           });
         });
       } catch (error) {
@@ -441,7 +478,7 @@
             status: 'fail',
             statusLabel: '실패',
             reason: error.message || '거절율 저장 실패',
-            detail: weekStart
+            detail: entry.weekStart
           });
         });
       }
@@ -478,7 +515,8 @@
 
       const ctx = await fetchSyncContext();
       if (meta) {
-        meta.textContent = `기간 ${ctx.pastLabel || '-'} · 현재 ${ctx.currentLabel || '-'} · 정산주 ${ctx.weekStart || '-'}`;
+        const weeks = (ctx.weekStarts || []).join(', ') || ctx.weekStart || '-';
+        meta.textContent = `전지역 ${ctx.partnerCount || 0}곳 · 기간 ${ctx.fromDate || '-'} ~ ${ctx.toDate || '-'} · 정산주 ${weeks}`;
       }
 
       let results = [];
@@ -560,6 +598,34 @@
       $(id)?.addEventListener('click', () => { void run(mode); });
     });
     $('baeminSyncRematchBtn')?.addEventListener('click', () => { void rematch(); });
+
+    const syncPair = (fromId, toId, mirrorFrom, mirrorTo) => {
+      $(fromId)?.addEventListener('change', event => {
+        const value = String(event.target.value || '').slice(0, 10);
+        if ($(mirrorFrom)) $(mirrorFrom).value = value;
+        window.BremBaeminDeliveryStatusAdmin?.syncSyncDateInputs?.(
+          value || $(mirrorFrom)?.value,
+          $(toId)?.value || $(mirrorTo)?.value
+        );
+      });
+      $(toId)?.addEventListener('change', event => {
+        const value = String(event.target.value || '').slice(0, 10);
+        if ($(mirrorTo)) $(mirrorTo).value = value;
+        window.BremBaeminDeliveryStatusAdmin?.syncSyncDateInputs?.(
+          $(fromId)?.value || $(mirrorFrom)?.value,
+          value || $(mirrorTo)?.value
+        );
+      });
+    };
+    syncPair('baeminSyncFromDate', 'baeminSyncToDate', 'baeminSyncFromDate2', 'baeminSyncToDate2');
+    syncPair('baeminSyncFromDate2', 'baeminSyncToDate2', 'baeminSyncFromDate', 'baeminSyncToDate');
+
+    $('baeminSyncThisWeekBtn')?.addEventListener('click', () => {
+      window.BremBaeminDeliveryStatusAdmin?.applySyncThisWeekRange?.();
+    });
+    $('baeminSyncThisWeekBtn2')?.addEventListener('click', () => {
+      window.BremBaeminDeliveryStatusAdmin?.applySyncThisWeekRange?.();
+    });
   }
 
   if (document.readyState === 'loading') {

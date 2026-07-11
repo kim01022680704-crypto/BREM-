@@ -928,12 +928,21 @@
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusAcceptRateLoadBtn">수락율 조회</button>
               <span id="baeminStatusAcceptRateMeta" class="form-help">과거=수~전일 · 현재=수~전일+배달현황 최신(푸드 기준)</span>
             </div>
-            <div id="baeminStatusSyncToolbar" class="baemin-view-delivery-toolbar" hidden>
+            <div id="baeminStatusSyncToolbar" class="baemin-view-rider-toolbar" hidden>
+              <label class="admin-period-field baemin-view-rider-toolbar__field">
+                <span class="baemin-field__label">시작일</span>
+                <input type="date" class="admin-period-input" id="baeminSyncFromDate">
+              </label>
+              <label class="admin-period-field baemin-view-rider-toolbar__field">
+                <span class="baemin-field__label">종료일</span>
+                <input type="date" class="admin-period-input" id="baeminSyncToDate">
+              </label>
+              <button type="button" class="small-btn" id="baeminSyncThisWeekBtn" title="정산주 수요일 ~ 오늘">이번주</button>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncCallsBtn">콜수입력</button>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncRejectionPastBtn">거절율입력</button>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncAllBtn">모두입력</button>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminSyncRejectionLiveBtn">실시간 입력</button>
-              <span id="baeminStatusSyncMeta" class="form-help">배민ID 매칭 · 수~전일 라이더내역(콜수) · 과거수락율/현재수락율(거절율)</span>
+              <span id="baeminStatusSyncMeta" class="baemin-view-rider-toolbar__meta form-help">전지역 · 기본=이번주 · 콜수=일별 · 거절율=주별</span>
             </div>
           </div>
         </div>
@@ -1139,18 +1148,27 @@
             <div class="card-header baemin-view-data-card__header">
               <div>
                 <h2>콜수·거절율 동기화</h2>
-                <p class="form-help">배민현황 수집 데이터 → 콜수 입력 / 거절율 입력 메뉴 연동 (배민ID 매칭). 수동·ERP 거절율은 덮어쓰지 않습니다.</p>
+                <p class="form-help">전지역 · 기간 선택(기본 이번주) 후 반영. 콜수=라이더별 배달내역 하루씩 → 콜수 입력 / 거절율=선택 기간의 정산주마다 최신 수락율 1회. 배민ID 매칭 · 수동·ERP 보호.</p>
               </div>
-              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusSyncSummary">지역 선택 후 버튼을 눌러 주세요</p>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusSyncSummary">기간 확인 후 버튼을 눌러 주세요</p>
             </div>
-            <div class="baemin-sync-actions" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;">
+            <div class="baemin-sync-actions" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:0 0 12px;">
+              <label class="admin-period-field">
+                <span class="baemin-field__label">시작일</span>
+                <input type="date" class="admin-period-input" id="baeminSyncFromDate2">
+              </label>
+              <label class="admin-period-field">
+                <span class="baemin-field__label">종료일</span>
+                <input type="date" class="admin-period-input" id="baeminSyncToDate2">
+              </label>
+              <button type="button" class="small-btn" id="baeminSyncThisWeekBtn2">이번주</button>
               <button type="button" class="primary-btn" id="baeminSyncCallsBtn2">콜수입력</button>
-              <button type="button" class="primary-btn" id="baeminSyncRejectionPastBtn2">거절율입력 (과거)</button>
+              <button type="button" class="primary-btn" id="baeminSyncRejectionPastBtn2">거절율입력 (주별)</button>
               <button type="button" class="primary-btn" id="baeminSyncAllBtn2">모두입력</button>
-              <button type="button" class="primary-btn" id="baeminSyncRejectionLiveBtn2">실시간 입력 (현재)</button>
+              <button type="button" class="primary-btn" id="baeminSyncRejectionLiveBtn2">실시간 입력 (이번주)</button>
               <button type="button" class="small-btn" id="baeminSyncRematchBtn">매칭 재시도</button>
             </div>
-            <p id="baeminStatusSyncResultMeta" class="form-help">콜수=라이더별 일별 완료 · 거절율(과거)=수~전일 수락율 · 실시간=수~전일+배달현황 수락율</p>
+            <p id="baeminStatusSyncResultMeta" class="form-help">기본=이번주(수~오늘) · 콜수=일별 완료 · 거절율=주별 최신화</p>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table" id="baeminStatusSyncTable">
                 <thead>
@@ -5232,8 +5250,8 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260710k"></script>
-  <script src="js/baemin-calls-rejection-sync.js?v=20260710k"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260711b"></script>
+  <script src="js/baemin-calls-rejection-sync.js?v=20260711b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>

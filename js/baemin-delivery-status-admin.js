@@ -557,8 +557,12 @@
       return;
     }
     const hasRegion = Boolean(normalizePartnerId(state.activePartnerId));
-    if (menuNav) menuNav.hidden = !hasRegion;
-    if (!hasRegion) {
+    const hasAnyRegion = hasRegion
+      || (state.partners || []).length > 0
+      || Object.keys(state.partnerRegionMap || {}).length > 0;
+    const showSync = state.activeMenu === 'calls_rejection_sync';
+    if (menuNav) menuNav.hidden = !(hasAnyRegion || showSync);
+    if (!hasAnyRegion && !showSync) {
       if (row) row.hidden = true;
       if (weekLoadBtn) weekLoadBtn.hidden = true;
       if (rangeToolbar) rangeToolbar.hidden = true;
@@ -570,12 +574,11 @@
     }
 
     // 메뉴별 컨트롤만 표시
-    const showWeek = state.activeMenu === 'quota_achievement';
-    const showRange = state.activeMenu === 'rider_history' || state.activeMenu === 'daily_history';
-    const showDeliveryQuery = state.activeMenu === 'delivery_status';
-    const showAcceptRate = state.activeMenu === 'accept_rate_live';
-    const showSync = state.activeMenu === 'calls_rejection_sync';
-    const showSetCount = state.activeMenu === 'quota_achievement';
+    const showWeek = hasRegion && state.activeMenu === 'quota_achievement';
+    const showRange = hasRegion && (state.activeMenu === 'rider_history' || state.activeMenu === 'daily_history');
+    const showDeliveryQuery = hasRegion && state.activeMenu === 'delivery_status';
+    const showAcceptRate = hasRegion && state.activeMenu === 'accept_rate_live';
+    const showSetCount = hasRegion && state.activeMenu === 'quota_achievement';
 
     if (row) row.hidden = !showWeek;
     if (weekLoadBtn) weekLoadBtn.hidden = !showWeek;
@@ -586,16 +589,19 @@
     if (setCountRow) setCountRow.hidden = !showSetCount;
 
     if (showSetCount) renderSetCountRow(state.activePartnerId);
-    if (state.activeMenu === 'weekday_quota') {
+    if (state.activeMenu === 'weekday_quota' && hasRegion) {
       void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
     }
     if (showAcceptRate || showSync) {
-      const ranges = computeAcceptRateDateRanges();
+      if (showSync) ensureSyncDateRangeDefaults();
+      const ranges = showSync ? resolveSyncDateRange() : computeAcceptRateDateRanges();
       const metaEl = showAcceptRate ? $('baeminStatusAcceptRateMeta') : $('baeminStatusSyncMeta');
       if (metaEl) {
-        metaEl.textContent = ranges.pastLabel
-          ? `과거 ${ranges.pastLabel} · 현재 ${ranges.currentLabel} (배달현황 최신 반영)`
-          : `과거 없음(수요일) · 현재 ${ranges.currentLabel} (배달현황 최신)`;
+        metaEl.textContent = showSync
+          ? `전지역 · 선택기간 ${ranges.fromDate} ~ ${ranges.toDate} · 콜수=일별 · 거절율=주별`
+          : (ranges.pastLabel
+            ? `과거 ${ranges.pastLabel} · 현재 ${ranges.currentLabel} (배달현황 최신 반영)`
+            : `과거 없음(수요일) · 현재 ${ranges.currentLabel} (배달현황 최신)`);
       }
     }
     if (showRange) {
@@ -1319,84 +1325,216 @@
     }
   }
 
-  /** 콜수·거절율 동기화용 컨텍스트 (수~전일 라이더 items + 수락율 rows) */
-  async function getSyncContext() {
-    const partnerId = normalizePartnerId(state.activePartnerId);
-    if (!partnerId) {
-      throw new Error('지역을 선택하세요.');
+  function listSyncPartnerIds() {
+    const fromPartners = (state.partners || [])
+      .map(partner => normalizePartnerId(partner.partnerId))
+      .filter(Boolean);
+    if (fromPartners.length) return [...new Set(fromPartners)];
+    return Object.keys(state.partnerRegionMap || {})
+      .map(id => normalizePartnerId(id))
+      .filter(Boolean);
+  }
+
+  function partnerLabelForId(partnerId) {
+    const pid = normalizePartnerId(partnerId);
+    const partner = (state.partners || []).find(item => normalizePartnerId(item.partnerId) === pid);
+    return partnerDisplayLabel(partner) || resolveRegisteredRegionName(pid) || pid || '-';
+  }
+
+  function syncSyncDateInputs(fromDate, toDate) {
+    setEnhancedDateInput('baeminSyncFromDate', fromDate);
+    setEnhancedDateInput('baeminSyncToDate', toDate);
+    setEnhancedDateInput('baeminSyncFromDate2', fromDate);
+    setEnhancedDateInput('baeminSyncToDate2', toDate);
+    ['baeminSyncFromDate', 'baeminSyncToDate', 'baeminSyncFromDate2', 'baeminSyncToDate2'].forEach(id => {
+      const el = $(id);
+      if (el) el.dataset.touched = '1';
+    });
+  }
+
+  function ensureSyncDateRangeDefaults() {
+    const fromEl = $('baeminSyncFromDate') || $('baeminSyncFromDate2');
+    const toEl = $('baeminSyncToDate') || $('baeminSyncToDate2');
+    const fromVal = String(fromEl?.value || '').slice(0, 10);
+    const toVal = String(toEl?.value || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromVal) && /^\d{4}-\d{2}-\d{2}$/.test(toVal) && toVal >= fromVal) {
+      syncSyncDateInputs(fromVal, toVal);
+      return { fromDate: fromVal, toDate: toVal };
     }
-    const ranges = computeAcceptRateDateRanges();
+    const range = computeThisWeekCollectRange();
+    syncSyncDateInputs(range.fromDate, range.toDate);
+    return { fromDate: range.fromDate, toDate: range.toDate };
+  }
+
+  function resolveSyncDateRange() {
+    const fromA = String($('baeminSyncFromDate')?.value || '').slice(0, 10);
+    const toA = String($('baeminSyncToDate')?.value || '').slice(0, 10);
+    const fromB = String($('baeminSyncFromDate2')?.value || '').slice(0, 10);
+    const toB = String($('baeminSyncToDate2')?.value || '').slice(0, 10);
+    const fromDate = /^\d{4}-\d{2}-\d{2}$/.test(fromA) ? fromA : fromB;
+    const toDate = /^\d{4}-\d{2}-\d{2}$/.test(toA) ? toA : toB;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromDate) && /^\d{4}-\d{2}-\d{2}$/.test(toDate) && toDate >= fromDate) {
+      return { fromDate, toDate, weekStart: settlementWednesdayOf(fromDate) };
+    }
+    return ensureSyncDateRangeDefaults();
+  }
+
+  function applySyncThisWeekRange() {
+    const range = computeThisWeekCollectRange();
+    syncSyncDateInputs(range.fromDate, range.toDate);
+    const metaEl = $('baeminStatusSyncMeta');
+    if (metaEl) {
+      metaEl.textContent = `전지역 · 이번주 ${range.fromDate} ~ ${range.toDate} · 콜수=일별 · 거절율=주별`;
+    }
+    showToast(`동기화 기간: ${range.fromDate} ~ ${range.toDate}`);
+    return range;
+  }
+
+  /** 선택 기간에 걸친 정산주(수요일) 목록 */
+  function listSettlementWeeksInRange(fromDate, toDate) {
+    const from = String(fromDate || '').slice(0, 10);
+    const to = String(toDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
+      return [];
+    }
+    const weeks = [];
+    let wed = settlementWednesdayOf(from);
+    while (wed <= to) {
+      const weekEnd = addDaysDate(wed, 6);
+      if (weekEnd >= from) weeks.push(wed);
+      wed = addDaysDate(wed, 7);
+      if (weeks.length > 60) break;
+    }
+    return weeks;
+  }
+
+  function resolveItemBusinessDate(row = {}) {
+    const parsed = row.parsed_json || {};
+    const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
+    const parts = String(row.dedupe_key || '').split(':');
+    for (const part of parts) {
+      const day = String(part || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+    }
+    return '';
+  }
+
+  /** 콜수·거절율 동기화용 컨텍스트 — 전지역 · 선택 기간 */
+  async function getSyncContext() {
+    ensureSyncDateRangeDefaults();
+    const range = resolveSyncDateRange();
+    const fromDate = range.fromDate;
+    const toDate = range.toDate;
     if (!state.config?.applied) {
       await loadViewConfig();
     }
     const captureDate = state.appliedCollectDate
       || state.config?.applied?.collectDate
       || todayKstDate();
+    const partnerIds = listSyncPartnerIds();
+    const weekStarts = listSettlementWeeksInRange(fromDate, toDate);
+    const today = todayKstDate();
+    const currentWeekStart = settlementWednesdayOf(today);
+    const includeLive = weekStarts.includes(currentWeekStart) && toDate >= currentWeekStart;
 
-    const pastPromise = ranges.hasPast
-      ? adminApi(
-        `/api/admin/baemin-delivery/view-rider-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(ranges.pastFromDate)}&toDate=${encodeURIComponent(ranges.pastToDate)}`
-      )
-      : Promise.resolve({ ok: true, riders: [], items: [], skipped: true });
-    const deliveryPromise = adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
-    const [pastResult, deliveryResult] = await Promise.all([pastPromise, deliveryPromise]);
-
-    if (!pastResult.ok && !pastResult.skipped) {
-      throw new Error(pastResult.message || '라이더별 배달내역 조회 실패');
+    const riderResult = await adminApi(
+      `/api/admin/baemin-delivery/view-rider-range?fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`
+    );
+    if (!riderResult.ok) {
+      throw new Error(riderResult.message || '전지역 라이더별 배달내역 조회 실패');
     }
-    if (!deliveryResult.ok) {
-      throw new Error(deliveryResult.message || '배달현황 조회 실패');
-    }
-    if (pastResult.notApplied || deliveryResult.notApplied) {
-      throw new Error(pastResult.message || deliveryResult.message || '배민현황 저장 후 다시 시도하세요.');
+    if (riderResult.notApplied) {
+      throw new Error(riderResult.message || '배민현황 저장 후 다시 시도하세요.');
     }
 
-    const riderItems = filterRowsByPartnerId(pastResult.items || [], partnerId);
-    const pastRiders = filterRowsByPartnerId(pastResult.riders || [], partnerId);
-    const deliveryRows = filterRowsByPartnerId(deliveryResult.items || [], partnerId);
-    const byKey = new Map();
-    const upsert = (row, bucket) => {
-      const key = riderAcceptRateKey(row) || `name:${String(row.rider_name || '').trim()}`;
-      if (!key || key === 'name:') return;
+    let deliveryRows = [];
+    if (includeLive && partnerIds.length) {
+      const deliveryBundles = await Promise.all(partnerIds.map(async pid => {
+        const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', pid));
+        return { partnerId: pid, result };
+      }));
+      deliveryBundles.forEach(({ partnerId, result }) => {
+        if (!result?.ok || result.notApplied) return;
+        filterRowsByPartnerId(result.items || [], partnerId).forEach(row => deliveryRows.push(row));
+      });
+    }
+
+    const riderItems = (riderResult.items || []).filter(row => {
+      const pid = normalizePartnerId(
+        row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || ''
+      );
+      if (partnerIds.length && pid && !partnerIds.includes(pid)) return false;
+      return true;
+    });
+
+    const byRiderWeek = new Map();
+    const upsertWeek = (row, weekStart, bucket) => {
+      const baeminId = String(row.rider_user_id || row.parsed_json?.riderUserId || '').trim();
+      const key = `${baeminId || row.rider_name || ''}|${weekStart}`;
+      if (!key || key.startsWith('|')) return;
       const metrics = extractAcceptRateMetrics(row.parsed_json || {});
-      const prev = byKey.get(key) || {
+      const prev = byRiderWeek.get(key) || {
         riderName: row.rider_name || '',
-        riderUserId: row.rider_user_id || '',
+        riderUserId: baeminId,
         phoneNumber: row.phone_number || '',
+        partnerId: normalizePartnerId(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || ''),
+        weekStart,
         past: { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 },
         live: { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 }
       };
       if (row.rider_name) prev.riderName = row.rider_name;
-      if (row.rider_user_id) prev.riderUserId = row.rider_user_id;
+      if (baeminId) prev.riderUserId = baeminId;
       if (row.phone_number) prev.phoneNumber = row.phone_number;
+      const rowPid = normalizePartnerId(row.parsed_json?.partnerId || partnerIdFromDedupeKey(row.dedupe_key) || '');
+      if (rowPid) prev.partnerId = rowPid;
       prev[bucket] = mergeAcceptRateMetrics(prev[bucket], metrics);
-      byKey.set(key, prev);
+      byRiderWeek.set(key, prev);
     };
-    pastRiders.forEach(row => upsert(row, 'past'));
-    deliveryRows.forEach(row => upsert(row, 'live'));
 
-    const acceptRows = [...byKey.values()].map(entry => {
+    riderItems.forEach(row => {
+      const day = resolveItemBusinessDate(row);
+      if (!day || day < fromDate || day > toDate) return;
+      upsertWeek(row, settlementWednesdayOf(day), 'past');
+    });
+    deliveryRows.forEach(row => {
+      upsertWeek(row, currentWeekStart, 'live');
+    });
+
+    const acceptRows = [...byRiderWeek.values()].map(entry => {
       const current = mergeAcceptRateMetrics(entry.past, entry.live);
+      const isCurrentWeek = entry.weekStart === currentWeekStart;
       return {
         riderName: entry.riderName,
         riderUserId: entry.riderUserId,
         phoneNumber: entry.phoneNumber,
+        partnerId: entry.partnerId || '',
+        regionLabel: partnerLabelForId(entry.partnerId),
+        weekStart: entry.weekStart,
         past: { ...entry.past },
         live: { ...entry.live },
         current,
         pastRate: calcAcceptRatePercent(entry.past),
-        currentRate: calcAcceptRatePercent(current)
+        currentRate: calcAcceptRatePercent(isCurrentWeek ? current : entry.past)
       };
     });
 
     return {
-      partnerId,
-      weekStart: ranges.fromDate,
-      pastLabel: ranges.pastLabel || '없음',
-      currentLabel: ranges.currentLabel,
+      partnerId: 'ALL',
+      partnerIds,
+      partnerCount: partnerIds.length,
+      fromDate,
+      toDate,
+      weekStart: range.weekStart,
+      weekStarts,
+      pastLabel: `${fromDate} ~ ${toDate}`,
+      currentLabel: includeLive ? `${fromDate} ~ ${toDate} (+배달현황)` : `${fromDate} ~ ${toDate}`,
       riderItems,
-      riderHint: pastResult.hint || '',
-      acceptRows
+      riderHint: riderResult.hint || '',
+      acceptRows,
+      allRegions: true,
+      includeLive,
+      currentWeekStart
     };
   }
 
@@ -2422,7 +2560,9 @@
     section.querySelectorAll(`[${ui.panelAttr}]`).forEach(panel => {
       const menu = panel.getAttribute(ui.panelAttr);
       if (isViewSection()) {
-        panel.hidden = !hasPartner || state.activeMenu !== menu;
+        // 콜수·거절율 동기화는 전지역 작업 → 지역 미선택이어도 패널 표시
+        const allowWithoutPartner = menu === 'calls_rejection_sync';
+        panel.hidden = (!hasPartner && !allowWithoutPartner) || state.activeMenu !== menu;
         return;
       }
       panel.hidden = hasPartner
@@ -2518,13 +2658,18 @@
     if (!menu) return;
 
     if (isViewSection()) {
-      if (!normalizePartnerId(state.activePartnerId)) {
+      if (!normalizePartnerId(state.activePartnerId) && menu !== 'calls_rejection_sync') {
         showToast('지역을 먼저 선택하세요.');
         return;
       }
       state.activeMenu = menu;
       updatePanelVisibility();
       renderSetCountRow(state.activePartnerId);
+      if (menu === 'calls_rejection_sync') {
+        clearViewTablesForMenu(menu, '전지역 대상 · 콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
+        renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+        return;
+      }
       if (state.activePartnerId) {
         const cached = getCachedPartnerBundle(state.activePartnerId);
         if (menu === 'quota_achievement') {
@@ -4675,7 +4820,11 @@
     loadViewData,
     showToast,
     adminApi,
-    getSyncContext
+    getSyncContext,
+    applySyncThisWeekRange,
+    syncSyncDateInputs,
+    ensureSyncDateRangeDefaults,
+    resolveSyncDateRange
   };
   bindEvents();
 })();
