@@ -173,7 +173,15 @@
   function applyLoginForm(scope, elements = {}) {
     const { idInput, rememberCheckbox, keepCheckbox } = elements;
     if (rememberCheckbox) rememberCheckbox.checked = isRememberIdEnabled(scope);
-    if (keepCheckbox) keepCheckbox.checked = isKeepLoggedIn(scope);
+    if (keepCheckbox) {
+      // 관리자: 기본 로그인 유지(로그아웃할 때까지)
+      if (scopeOf(scope) === SCOPES.ADMIN) {
+        keepCheckbox.checked = true;
+        if (!isKeepLoggedIn(scope)) setKeepLoggedIn(scope, true);
+      } else {
+        keepCheckbox.checked = isKeepLoggedIn(scope);
+      }
+    }
     if (idInput) {
       const remembered = getRememberedId(scope);
       if (remembered) idInput.value = remembered;
@@ -184,7 +192,12 @@
     const { idInput, rememberCheckbox, keepCheckbox } = elements;
     const loginId = String(idInput?.value || '').trim();
     saveRememberId(scope, loginId, Boolean(rememberCheckbox?.checked));
-    setKeepLoggedIn(scope, Boolean(keepCheckbox?.checked));
+    // 관리자: 체크 여부와 관계없이 항상 로그인 유지
+    if (scopeOf(scope) === SCOPES.ADMIN) {
+      setKeepLoggedIn(scope, true);
+    } else {
+      setKeepLoggedIn(scope, Boolean(keepCheckbox?.checked));
+    }
   }
 
   function restoreIdAfterLogout(scope, elements = {}) {

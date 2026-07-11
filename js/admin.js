@@ -2181,21 +2181,10 @@
   }
 
   function startAdminSessionSecurity() {
-    if (!BremStorage.auth.isAdminLoggedIn()) return;
-    if (!window.BremSessionSecurity?.start) return;
-    window.BremSessionSecurity.start({
-      idleMs: window.BremSessionSecurity.ADMIN_IDLE_MS,
-      isLoggedIn: () => {
-        try {
-          return Boolean(BremStorage.auth.isAdminLoggedIn());
-        } catch {
-          return false;
-        }
-      },
-      onIdleLogout: async (message) => {
-        await logoutAdmin({ idle: true, reload: false, message });
-      }
-    });
+    // 관리자: 유휴 자동 로그아웃 없음 — 명시적 로그아웃까지 유지
+    window.BremSessionSecurity?.stop?.();
+    // 이미 로그인 중이면 localStorage로 승격
+    window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
   }
 
   function enforceAdminRouteAccess() {
@@ -2364,6 +2353,11 @@
         } else {
           void BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
         }
+
+        // 관리자: 항상 로그인 유지(localStorage) — 로그아웃 전까지 유지
+        window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+        const keepBox = $('#adminKeepLoggedIn');
+        if (keepBox) keepBox.checked = true;
 
         window.BremLoginPrefs?.captureLoginPrefs?.('admin', {
           idInput: $('#adminName'),
@@ -6000,10 +5994,6 @@
         if (!BremStorage.auth.isAdminLoggedIn()) {
           BremStorage.auth.setAdminSession(profile.user_id);
         }
-        if (window.BremSessionSecurity?.isIdleExpired?.()) {
-          await logoutAdmin({ idle: true, reload: false });
-          return;
-        }
         const returnPath = new URLSearchParams(window.location.search).get('return');
         if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
           window.location.replace(returnPath);
@@ -6015,10 +6005,6 @@
     }
 
     if (isAdminLoggedIn()) {
-      if (window.BremSessionSecurity?.isIdleExpired?.()) {
-        await logoutAdmin({ idle: true, reload: false });
-        return;
-      }
       showAdminApp();
     } else {
       showAdminLoginPageOnly();

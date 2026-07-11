@@ -4,7 +4,7 @@
  */
 window.BremSessionSecurity = (function () {
   const DEFAULT_IDLE_MS = 30 * 60 * 1000;
-  const ADMIN_IDLE_MS = 3 * 60 * 60 * 1000;
+  const ADMIN_IDLE_MS = 0; // 관리자 유휴 자동 로그아웃 비활성 (명시적 로그아웃까지 유지)
   const CHECK_MS = 60 * 1000;
   const ACTIVITY_KEY = 'brem_session_last_activity';
   const NOTICE_KEY = 'brem_logout_notice';

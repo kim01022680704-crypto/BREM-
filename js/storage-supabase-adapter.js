@@ -17,7 +17,7 @@ window.BremSupabaseStorageAdapter = (function () {
   }
 
   const DEFAULT_RIDER_PAGE_SIZE = 100;
-  const DEFAULT_CALLS_LOOKBACK_DAYS = 540;
+  const DEFAULT_CALLS_LOOKBACK_DAYS = 730;
   const DEFAULT_REJECTION_LOOKBACK_WEEKS = 104;
   const TABLE_FETCH_PAGE_SIZE = 1000;
   const PAGINATED_TABLES = new Set([
