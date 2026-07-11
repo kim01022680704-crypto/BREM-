@@ -418,33 +418,33 @@ h3 {
 
 /* 실시간 운행현황 (배민) */
 .live-ops-card {
-  margin-top: 14px;
-  padding: 18px 16px 14px;
+  margin-top: 12px;
+  padding: 12px 12px 10px;
   border: 1px solid #e8edf2;
-  border-radius: 22px;
+  border-radius: 18px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
 .live-ops-card__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .live-ops-card__eyebrow {
   color: #0f766e;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 
 .live-ops-card__title {
-  margin-top: 4px;
+  margin-top: 1px;
   color: #0f172a;
-  font-size: 1.02rem;
+  font-size: 0.88rem;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
@@ -452,21 +452,21 @@ h3 {
 .live-ops-card__live {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 24px;
+  padding: 0 8px;
   border-radius: 999px;
   background: #ecfdf5;
   color: #047857;
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
 
 .live-ops-card__live-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #10b981;
   box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
@@ -482,15 +482,15 @@ h3 {
 .live-ops-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 7px;
 }
 
 .live-ops-metric {
   display: grid;
-  gap: 4px;
-  min-height: 108px;
-  padding: 14px 12px 12px;
-  border-radius: 16px;
+  gap: 1px;
+  min-height: 0;
+  padding: 8px 9px 7px;
+  border-radius: 12px;
   border: 1px solid transparent;
   background: #fff;
 }
@@ -499,32 +499,32 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   font-weight: 800;
   line-height: 1;
 }
 
 .live-ops-metric__label {
   color: #64748b;
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .live-ops-metric__value {
   color: #0f172a;
-  font-size: 1.35rem;
+  font-size: 1.12rem;
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .live-ops-metric__hint {
   color: #94a3b8;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 600;
 }
 
@@ -572,10 +572,31 @@ h3 {
   border-color: #bfdbfe;
   background: linear-gradient(180deg, #eff6ff, #ffffff);
   grid-column: 1 / -1;
+  padding: 8px 10px;
+  min-height: 0;
+  align-content: center;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 0;
 }
 .live-ops-metric--accept .live-ops-metric__icon {
   background: #dbeafe;
   color: #1d4ed8;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+.live-ops-metric--accept .live-ops-metric__label {
+  grid-column: 2;
+}
+.live-ops-metric--accept .live-ops-metric__value {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 1.2rem;
+}
+.live-ops-metric--accept .live-ops-metric__hint {
+  grid-column: 2;
 }
 .live-ops-metric--accept .live-ops-metric__value { color: #1d4ed8; }
 
@@ -583,23 +604,23 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid #eef2f7;
 }
 
 .live-ops-refresh-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 12px;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
   border: 1px solid #dbe4ee;
   border-radius: 999px;
   background: #fff;
   color: #334155;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   font-weight: 700;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
@@ -617,15 +638,15 @@ h3 {
 
 .live-ops-card__updated {
   color: #94a3b8;
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   font-weight: 600;
   text-align: right;
 }
 
 .live-ops-card__empty {
-  margin-top: 10px;
+  margin-top: 8px;
   color: #94a3b8;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .live-ops-card.is-empty .live-ops-grid {
@@ -638,9 +659,22 @@ h3 {
   }
   .live-ops-metric--accept {
     grid-column: auto;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    display: grid;
+    gap: 1px;
+    padding: 8px 9px 7px;
   }
-  .live-ops-metric__value {
-    font-size: 1.28rem;
+  .live-ops-metric--accept .live-ops-metric__icon,
+  .live-ops-metric--accept .live-ops-metric__label,
+  .live-ops-metric--accept .live-ops-metric__value,
+  .live-ops-metric--accept .live-ops-metric__hint {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .live-ops-metric__value,
+  .live-ops-metric--accept .live-ops-metric__value {
+    font-size: 1.08rem;
   }
 }
 
