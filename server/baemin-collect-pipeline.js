@@ -4645,7 +4645,209 @@ async function replaceLiveAcceptRatesForAdmin(options = {}) {
     weekStart,
     partnerId: partnerId || null,
     deleted: true,
+    upserted: Array.isArray(rows) ? rows.length : 0,
     result: data || null
+  };
+}
+
+function normalizeBaeminUserIdForOps(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '-') return '';
+  if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
+  return raw;
+}
+
+function extractAcceptRateMetricsFromParsed(parsed = {}) {
+  return {
+    complete: Math.max(0, Number(parsed.totalComplete || parsed.completeCount || 0) || 0),
+    foodReject: Math.max(0, Number(parsed.foodReject || 0) || 0),
+    foodCancel: Math.max(0, Number(parsed.foodCancel || 0) || 0),
+    foodRiderFault: Math.max(0, Number(parsed.foodRiderFault || 0) || 0)
+  };
+}
+
+function mergeAcceptRateMetricsBags(a = {}, b = {}) {
+  return {
+    complete: Number(a.complete || 0) + Number(b.complete || 0),
+    foodReject: Number(a.foodReject || 0) + Number(b.foodReject || 0),
+    foodCancel: Number(a.foodCancel || 0) + Number(b.foodCancel || 0),
+    foodRiderFault: Number(a.foodRiderFault || 0) + Number(b.foodRiderFault || 0)
+  };
+}
+
+function calcFoodAcceptRatePercent(metrics = {}) {
+  const complete = Number(metrics.complete || 0);
+  const deny = Number(metrics.foodReject || 0)
+    + Number(metrics.foodCancel || 0)
+    + Number(metrics.foodRiderFault || 0);
+  const denom = complete + deny;
+  if (denom <= 0) return null;
+  return Math.round((100 - (deny / denom) * 100) * 10) / 10;
+}
+
+/**
+ * 배민현황(applied) 배달현황 + 이번주 라이더내역으로
+ * baemin_live_accept_rates 를 전지역 재생성 (기사앱 실시간 운행현황용)
+ */
+async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
+  const { settlementWeekStart } = require('./baemin-settlement-week');
+  const today = todayKST();
+  const weekStartRaw = String(options.weekStart || '').slice(0, 10);
+  const weekStart = settlementWeekStart(
+    /^\d{4}-\d{2}-\d{2}$/.test(weekStartRaw) ? weekStartRaw : today
+  );
+  const yesterday = addDays(today, -1);
+  const hasPast = /^\d{4}-\d{2}-\d{2}$/.test(yesterday) && yesterday >= weekStart;
+  const pastFromDate = hasPast ? weekStart : '';
+  const pastToDate = hasPast ? yesterday : '';
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, message: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const applied = await readAppliedBaeminDelivery();
+  const batchId = await resolveAppliedBatchId(true);
+  if (!batchId) {
+    return {
+      ok: false,
+      status: 400,
+      notApplied: true,
+      message: '배민현황 저장(applied) 데이터가 없습니다. 먼저 [배민현황 저장]을 실행하세요.'
+    };
+  }
+
+  const captureDate = String(applied?.collectDate || today).slice(0, 10);
+
+  const [deliveryResult, ridersResult] = await Promise.all([
+    supabase
+      .from('baemin_delivery_applied_items')
+      .select('rider_name, rider_user_id, phone_number, parsed_json, dedupe_key, collected_at')
+      .eq('batch_id', batchId)
+      .eq('source_menu', 'delivery_status')
+      .limit(15000),
+    supabase
+      .from('riders')
+      .select('id, baemin_id')
+      .not('baemin_id', 'is', null)
+      .limit(10000)
+  ]);
+
+  if (deliveryResult.error) {
+    return { ok: false, message: deliveryResult.error.message || '배달현황 조회 실패' };
+  }
+
+  let pastItems = [];
+  if (hasPast) {
+    const pastFetched = await getRiderHistoryRangeForAdmin({
+      fromDate: pastFromDate,
+      toDate: pastToDate,
+      compact: true,
+      skipScopeCheck: true
+    });
+    if (pastFetched?.ok) {
+      pastItems = pastFetched.items || pastFetched.riders || [];
+    }
+  }
+
+  const driverByBaemin = new Map();
+  (ridersResult.data || []).forEach(row => {
+    const baeminId = normalizeBaeminUserIdForOps(row.baemin_id);
+    const driverId = String(row.id || '').trim();
+    if (baeminId && driverId && !driverByBaemin.has(baeminId)) {
+      driverByBaemin.set(baeminId, driverId);
+    }
+  });
+
+  const byKey = new Map();
+  const upsert = (row, bucket) => {
+    const baeminId = normalizeBaeminUserIdForOps(row.rider_user_id || row.parsed_json?.riderUserId);
+    const name = String(row.rider_name || '').trim();
+    const key = baeminId || (name ? `name:${name}` : '');
+    if (!key || key === 'name:') return;
+    const partnerId = String(
+      row.parsed_json?.partnerId
+      || partnerIdFromDedupeKey(row.dedupe_key)
+      || ''
+    ).trim().toUpperCase();
+    const metrics = extractAcceptRateMetricsFromParsed(row.parsed_json || {});
+    const prev = byKey.get(key) || {
+      riderName: name,
+      riderUserId: baeminId,
+      phoneNumber: String(row.phone_number || '').trim(),
+      partnerId: /^DP\d{6,}$/.test(partnerId) ? partnerId : '',
+      past: { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 },
+      live: { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 }
+    };
+    if (name) prev.riderName = name;
+    if (baeminId) prev.riderUserId = baeminId;
+    if (row.phone_number) prev.phoneNumber = String(row.phone_number).trim();
+    if (/^DP\d{6,}$/.test(partnerId)) prev.partnerId = partnerId;
+    prev[bucket] = mergeAcceptRateMetricsBags(prev[bucket], metrics);
+    byKey.set(key, prev);
+  };
+
+  pastItems.forEach(row => upsert(row, 'past'));
+  (deliveryResult.data || []).forEach(row => upsert(row, 'live'));
+
+  const rows = [...byKey.values()]
+    .filter(entry => entry.riderUserId)
+    .map(entry => {
+      const current = mergeAcceptRateMetricsBags(entry.past, entry.live);
+      const pastRate = calcFoodAcceptRatePercent(entry.past);
+      const currentRate = calcFoodAcceptRatePercent(current);
+      return {
+        weekStart,
+        partnerId: entry.partnerId || '',
+        riderUserId: entry.riderUserId,
+        riderName: entry.riderName || '',
+        phoneNumber: entry.phoneNumber || '',
+        driverId: driverByBaemin.get(entry.riderUserId) || '',
+        pastFrom: pastFromDate || null,
+        pastTo: pastToDate || null,
+        pastComplete: entry.past.complete,
+        pastFoodReject: entry.past.foodReject,
+        pastFoodCancel: entry.past.foodCancel,
+        pastFoodRiderFault: entry.past.foodRiderFault,
+        pastAcceptRate: pastRate,
+        liveComplete: entry.live.complete,
+        liveFoodReject: entry.live.foodReject,
+        liveFoodCancel: entry.live.foodCancel,
+        liveFoodRiderFault: entry.live.foodRiderFault,
+        currentComplete: current.complete,
+        currentFoodReject: current.foodReject,
+        currentFoodCancel: current.foodCancel,
+        currentFoodRiderFault: current.foodRiderFault,
+        currentAcceptRate: currentRate,
+        sourceCaptureDate: captureDate || null
+      };
+    });
+
+  const saved = await replaceLiveAcceptRatesForAdmin({
+    weekStart,
+    partnerId: '',
+    rows,
+    skipScopeCheck: true
+  });
+
+  if (!saved.ok) return saved;
+
+  const matched = rows.filter(row => row.driverId).length;
+  return {
+    ok: true,
+    weekStart,
+    pastFromDate: pastFromDate || null,
+    pastToDate: pastToDate || null,
+    captureDate,
+    riderCount: rows.length,
+    matchedDriverCount: matched,
+    deliveryCount: (deliveryResult.data || []).length,
+    pastCount: pastItems.length,
+    upserted: rows.length,
+    skipped: Boolean(saved.skipped),
+    message: saved.skipped
+      ? saved.message
+      : `수락율 스냅샷 ${rows.length}명 반영 (기사매칭 ${matched})`
   };
 }
 
@@ -5015,5 +5217,6 @@ module.exports = {
   applyBaeminDelivery,
   getBaeminStorageDiagnosticsForAdmin,
   replaceLiveAcceptRatesForAdmin,
+  rebuildLiveAcceptRatesForAppliedWeek,
   BAEMIN_APPLIED_SETTINGS_KEY
 };

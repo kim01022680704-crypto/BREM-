@@ -113,7 +113,7 @@ let statusLoop = {
   active: false,
   stopping: false,
   round: 0,
-  phase: 'idle', // idle | bootstrap | collecting | applying | waiting
+  phase: 'idle', // idle | bootstrap | collecting | applying | rider_sync | waiting
   message: '',
   waitEndsAt: 0,
   lastError: '',
@@ -121,6 +121,7 @@ let statusLoop = {
   updatedAt: null
 };
 let statusLoopPromise = null;
+let riderLiveSyncRunning = false;
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -909,6 +910,30 @@ async function applyStatusLoopToErp(collectDate) {
   return { ok: true, ...result };
 }
 
+async function rebuildLiveAcceptRatesAfterApply(label = 'status_auto_loop') {
+  if (!hasLocalSupabaseCredentials()) {
+    return { ok: false, message: '로컬 .env에 SUPABASE_SERVICE_ROLE_KEY 가 없습니다.' };
+  }
+  try {
+    const { rebuildLiveAcceptRatesForAppliedWeek } = require('../server/baemin-collect-pipeline');
+    const result = await rebuildLiveAcceptRatesForAppliedWeek({});
+    if (!result.ok) {
+      console.warn(`[BREM] [수락율스냅샷][${label}] 실패:`, result.message || result.error);
+      return {
+        ok: false,
+        message: result.message || result.error || '수락율 스냅샷 실패'
+      };
+    }
+    console.log(
+      `[BREM] [수락율스냅샷][${label}] ${result.message || `${result.upserted || 0}명`}`
+    );
+    return { ok: true, ...result };
+  } catch (error) {
+    console.warn(`[BREM] [수락율스냅샷][${label}] 오류:`, error.message || error);
+    return { ok: false, message: formatError(error, '수락율 스냅샷 오류') };
+  }
+}
+
 async function waitStatusLoop(ms) {
   const started = Date.now();
   statusLoop.waitEndsAt = started + ms;
@@ -967,9 +992,15 @@ async function runStatusAutoLoopInner() {
         setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
         console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
       } else {
+        setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
+        const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop_bootstrap');
+        if (!statusLoop.active || statusLoop.stopping) break;
+        const rateNote = rates.ok
+          ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
+          : ` · 수락율 실패(${rates.message || '오류'})`;
         setStatusLoopPhase(
           'waiting',
-          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건`
+          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}`
         );
         console.log(`[BREM] [현황자동수집] ${round}회차 부트스트랩 완료`);
         isFirstRound = false;
@@ -996,9 +1027,15 @@ async function runStatusAutoLoopInner() {
           setStatusLoopPhase('waiting', `${round}회차 저장 실패 — ${statusLoop.lastError}`);
           console.warn(`[BREM] [현황자동수집] ${round}회차 저장 실패:`, statusLoop.lastError);
         } else {
+          setStatusLoopPhase('rider_sync', `${round}회차 · 기사앱 수락율 반영 중`);
+          const rates = await rebuildLiveAcceptRatesAfterApply('status_auto_loop');
+          if (!statusLoop.active || statusLoop.stopping) break;
+          const rateNote = rates.ok
+            ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
+            : ` · 수락율 실패(${rates.message || '오류'})`;
           setStatusLoopPhase(
             'waiting',
-            `${round}회차 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건`
+            `${round}회차 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}`
           );
           console.log(`[BREM] [현황자동수집] ${round}회차 완료`);
         }
@@ -1060,6 +1097,109 @@ function stopStatusAutoLoop() {
   setStatusLoopPhase('idle', '사용자가 종료함');
   console.log('[BREM] [현황자동수집] 종료 요청');
   return { ok: true, stopped: true, statusLoop: getStatusLoopPayload() };
+}
+
+/**
+ * 1회: 배달현황 수집 → 배민현황 저장 → 수락율 스냅샷 (기사앱 실시간 운행현황)
+ */
+async function runRiderLiveSyncOnce(options = {}) {
+  if (riderLiveSyncRunning) {
+    return { ok: false, message: '기사앱 실시간 반영이 이미 진행 중입니다.' };
+  }
+  if (statusLoop.active || statusLoopPromise) {
+    return { ok: false, message: '배민현황 자동수집이 실행 중입니다. 종료 후 다시 시도하세요.' };
+  }
+  if (collectRunning) {
+    return { ok: false, message: '다른 수집이 진행 중입니다. 끝난 뒤 다시 시도하세요.' };
+  }
+  if (sessionPaused) {
+    return { ok: false, message: '세션 만료 — 배민 세션 갱신 후 다시 시도하세요.', sessionExpired: true };
+  }
+  if (!hasLocalSupabaseCredentials()) {
+    return { ok: false, message: '로컬 .env에 SUPABASE_SERVICE_ROLE_KEY 가 없습니다.' };
+  }
+
+  riderLiveSyncRunning = true;
+  const collectDate = baeminAutoCollect.todayDateStringKST();
+  const steps = [];
+  try {
+    console.log('[BREM] [기사앱실시간반영] 시작 — 배달현황 수집');
+    const collect = await runLocalFullCollect({
+      collectDate: options.collectDate || collectDate,
+      sourceMenus: ['delivery_status'],
+      source: 'rider_live_sync'
+    });
+    steps.push({
+      step: 'collect',
+      ok: Boolean(collect?.ok),
+      savedCount: Number(collect?.savedCount || 0),
+      message: collect?.message || collect?.error || ''
+    });
+    if (!collect?.ok) {
+      return {
+        ok: false,
+        phase: 'collect',
+        message: collect?.message || '배달현황 수집 실패',
+        steps
+      };
+    }
+
+    console.log('[BREM] [기사앱실시간반영] 배민현황 저장');
+    const { applyBaeminDelivery } = require('../server/baemin-collect-pipeline');
+    const apply = await applyBaeminDelivery(collect.collectDate || collectDate, {
+      appliedBy: 'rider_live_sync'
+    });
+    steps.push({
+      step: 'apply',
+      ok: Boolean(apply?.ok),
+      itemCount: Number(apply?.itemCount || apply?.savedCount || 0),
+      message: apply?.message || apply?.error || ''
+    });
+    if (!apply?.ok) {
+      return {
+        ok: false,
+        phase: 'apply',
+        message: apply?.message || apply?.error || '배민현황 저장 실패',
+        steps
+      };
+    }
+
+    console.log('[BREM] [기사앱실시간반영] 수락율 스냅샷');
+    const rates = await rebuildLiveAcceptRatesAfterApply('rider_live_sync');
+    steps.push({
+      step: 'rates',
+      ok: Boolean(rates?.ok),
+      riderCount: Number(rates?.riderCount || rates?.upserted || 0),
+      matchedDriverCount: Number(rates?.matchedDriverCount || 0),
+      message: rates?.message || ''
+    });
+    if (!rates?.ok && !rates?.skipped) {
+      return {
+        ok: false,
+        phase: 'rates',
+        message: rates?.message || '수락율 스냅샷 실패',
+        steps,
+        apply
+      };
+    }
+
+    const message = `기사앱 반영 완료 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건 · 수락율 ${Number(rates.riderCount || rates.upserted || 0)}명`;
+    console.log(`[BREM] [기사앱실시간반영] ${message}`);
+    return {
+      ok: true,
+      phase: 'done',
+      message,
+      collectDate: collect.collectDate || collectDate,
+      collect,
+      apply,
+      rates,
+      steps
+    };
+  } catch (error) {
+    return { ok: false, message: formatError(error, '기사앱 실시간 반영 오류'), steps };
+  } finally {
+    riderLiveSyncRunning = false;
+  }
 }
 
 async function resolveCollectRangeOptions(collectDate, body = {}) {
@@ -2211,6 +2351,24 @@ const server = http.createServer(async (req, res) => {
       statusLoop: getStatusLoopPayload(),
       autoCollect: getAutoCollectHealthPayload()
     });
+  }
+
+  if (url.pathname === '/rider-live-sync' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req).catch(() => ({}));
+      const result = await runRiderLiveSyncOnce(body || {});
+      const status = result.ok ? 200 : (result.sessionExpired ? 409 : 400);
+      return sendJsonWithCors(req, res, status, {
+        ...result,
+        autoCollect: getAutoCollectHealthPayload(),
+        browser: getBrowserHealth()
+      });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatError(error, '기사앱 실시간 반영 오류')
+      });
+    }
   }
 
   if (url.pathname === '/apply/erp' && req.method === 'POST') {

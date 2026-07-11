@@ -13,6 +13,8 @@
   };
   let driverDashboardLoading = false;
   let driverLoadFailed = false;
+  let baeminLiveOpsPollTimer = null;
+  const BAEMIN_LIVE_OPS_POLL_MS = 2 * 60 * 1000;
 
   function calls() {
     return BremStorage.calls.getAll();
@@ -581,6 +583,7 @@
   }
 
   function showLoggedOut() {
+    stopBaeminLiveOpsPolling();
     window.BremSessionSecurity?.stop();
     loginCard.hidden = false;
     if (mainApp) mainApp.hidden = true;
@@ -1002,6 +1005,33 @@
       'driverBaeminLiveOpsUpdated',
       `마지막 업데이트: ${formatLiveOpsUpdatedAt(ops?.updatedAt || ops?.collectedAt || ops?.cachedAt)}`
     );
+    syncBaeminLiveOpsPolling(driver);
+  }
+
+  function stopBaeminLiveOpsPolling() {
+    if (baeminLiveOpsPollTimer) {
+      window.clearInterval(baeminLiveOpsPollTimer);
+      baeminLiveOpsPollTimer = null;
+    }
+  }
+
+  function syncBaeminLiveOpsPolling(driver) {
+    const card = document.getElementById('driverBaeminLiveOps');
+    const shouldPoll = Boolean(driverHasBaemin(driver) && card && !card.hidden);
+    if (!shouldPoll) {
+      stopBaeminLiveOpsPolling();
+      return;
+    }
+    if (baeminLiveOpsPollTimer) return;
+    baeminLiveOpsPollTimer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      const liveCard = document.getElementById('driverBaeminLiveOps');
+      if (!liveCard || liveCard.hidden) {
+        stopBaeminLiveOpsPolling();
+        return;
+      }
+      void refreshBaeminLiveOps({ toast: false });
+    }, BAEMIN_LIVE_OPS_POLL_MS);
   }
 
   async function refreshBaeminLiveOps(options = {}) {

@@ -707,6 +707,17 @@ async function replaceLiveAcceptRates(accessToken, options = {}) {
   });
 }
 
+async function rebuildLiveAcceptRates(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { rebuildLiveAcceptRatesForAppliedWeek } = require('./baemin-collect-pipeline');
+  return rebuildLiveAcceptRatesForAppliedWeek({
+    weekStart: options.weekStart,
+    actorScope: actor.scope
+  });
+}
+
 async function getRiderCollectRange(accessToken) {
   const actor = await resolveBaeminActorScope(accessToken);
   if (!actor.ok) return actor;
@@ -875,6 +886,7 @@ module.exports = {
   getDailyHistoryRange,
   getHistoryCollectCoverage,
   replaceLiveAcceptRates,
+  rebuildLiveAcceptRates,
   getRiderCollectRange,
   saveRiderCollectRange,
   getDailyCollectRange,

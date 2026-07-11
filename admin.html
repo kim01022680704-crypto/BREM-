@@ -700,10 +700,12 @@
           <div id="baeminDeliveryAppliedStatus" class="baemin-applied-status">저장 상태 확인 중…</div>
           <div id="baeminStorageDiagnostics" class="baemin-applied-status baemin-storage-diagnostics-wrap" hidden></div>
           <div class="form-row baemin-status-auto-loop-row" id="baeminStatusAutoLoopRow">
+            <button type="button" class="primary-btn" id="baeminRiderLiveSyncBtn">기사앱 실시간 반영 (1회)</button>
             <button type="button" class="primary-btn" id="baeminStatusAutoLoopStartBtn">배민현황 자동수집 시작</button>
             <button type="button" class="small-btn" id="baeminStatusAutoLoopStopBtn" disabled>자동수집 종료</button>
-            <span id="baeminStatusAutoLoopStatus" class="form-help">첫 회차: 배달현황+일별(수~전일)+라이더(수~전일)→저장 / 이후: 배달현황→저장→2분 대기 반복 · 세션 서버에서 실행(다른 메뉴 봐도 유지)</span>
           </div>
+          <p id="baeminRiderLiveSyncStatus" class="form-help">기사앱 실시간 반영: 배달현황 수집 → 배민현황 저장 → 수락율 스냅샷 (배민ID 매칭)</p>
+          <span id="baeminStatusAutoLoopStatus" class="form-help">자동수집: 첫 회차 배달+일별+라이더→저장→수락율 / 이후 배달현황→저장→수락율→2분 대기 반복</span>
           <div class="form-row">
             <button type="button" class="primary-btn" id="baeminDeliveryApplyBtn">배민현황 저장</button>
           </div>
@@ -5313,7 +5315,7 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260711j"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260711n"></script>
   <script src="js/baemin-calls-rejection-sync.js?v=20260711j"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>

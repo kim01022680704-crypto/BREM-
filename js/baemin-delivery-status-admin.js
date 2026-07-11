@@ -48,6 +48,7 @@
       waitEndsAt: 0,
       timer: null
     },
+    riderLiveSyncRunning: false,
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -3071,8 +3072,10 @@
     const applyBtn = $('baeminDeliveryApplyBtn');
     const loopStartBtn = $('baeminStatusAutoLoopStartBtn');
     const loopStopBtn = $('baeminStatusAutoLoopStopBtn');
+    const riderLiveSyncBtn = $('baeminRiderLiveSyncBtn');
     const loopActive = Boolean(state.statusAutoLoop?.active);
-    const localCollecting = Boolean(state.localAutoCollect?.collectRunning || state.collecting || loopActive);
+    const riderSyncing = Boolean(state.riderLiveSyncRunning);
+    const localCollecting = Boolean(state.localAutoCollect?.collectRunning || state.collecting || loopActive || riderSyncing);
 
     if (fullBtn) {
       fullBtn.disabled = state.loading || localCollecting || !state.localServerRunning;
@@ -3105,11 +3108,15 @@
       applyBtn.disabled = state.loading || state.applying || localCollecting || !state.localServerRunning;
     }
     if (loopStartBtn) {
-      loopStartBtn.disabled = state.loading || loopActive || !state.localServerRunning;
+      loopStartBtn.disabled = state.loading || loopActive || riderSyncing || !state.localServerRunning;
       loopStartBtn.textContent = loopActive ? '자동수집 진행 중…' : '배민현황 자동수집 시작';
     }
     if (loopStopBtn) {
       loopStopBtn.disabled = !loopActive;
+    }
+    if (riderLiveSyncBtn) {
+      riderLiveSyncBtn.disabled = state.loading || loopActive || riderSyncing || !state.localServerRunning;
+      riderLiveSyncBtn.textContent = riderSyncing ? '기사앱 반영 중…' : '기사앱 실시간 반영 (1회)';
     }
   }
 
@@ -4786,7 +4793,7 @@
     if (!loop.active) {
       el.textContent = loop.message
         ? `중지됨 — ${loop.message}`
-        : '첫 회차: 배달현황+일별(수~전일)+라이더(수~전일)→저장 / 이후: 배달현황→저장→2분 대기 반복 · 세션 서버에서 실행(다른 메뉴 봐도 유지)';
+        : '자동수집: 첫 회차 배달+일별+라이더→저장→수락율 / 이후 배달현황→저장→수락율→2분 대기 반복';
       return;
     }
 
@@ -4802,6 +4809,10 @@
       el.textContent = `${loop.round}회차 · 배민현황 Supabase 저장 중…`;
       return;
     }
+    if (loop.phase === 'rider_sync') {
+      el.textContent = `${loop.round}회차 · 기사앱 수락율 반영 중…`;
+      return;
+    }
     if (loop.phase === 'waiting') {
       const leftSec = Math.max(0, Math.ceil((Number(loop.waitEndsAt || 0) - Date.now()) / 1000));
       const mm = String(Math.floor(leftSec / 60));
@@ -4813,13 +4824,68 @@
     el.textContent = `${loop.round}회차 · 자동수집 진행 중…${loop.message ? ` · ${loop.message}` : ''}`;
   }
 
+  async function runRiderLiveSyncOnce() {
+    if (state.riderLiveSyncRunning || state.statusAutoLoop?.active) {
+      showToast('이미 수집/반영이 진행 중입니다.');
+      return;
+    }
+    if (!state.localServerRunning) {
+      showToast('로컬 세션 서버가 꺼져 있습니다. npm run baemin:session-server 실행 후 다시 시도하세요.');
+      return;
+    }
+    if (state.collecting || state.applying || state.localAutoCollect?.collectRunning) {
+      showToast('다른 수집/저장이 끝난 뒤 시작해 주세요.');
+      return;
+    }
+
+    const statusEl = $('baeminRiderLiveSyncStatus');
+    state.riderLiveSyncRunning = true;
+    updateActionButtons();
+    if (statusEl) statusEl.textContent = '1/3 배달현황 수집 중…';
+    showToast('기사앱 실시간 반영 시작 — 수집 → 저장 → 수락율');
+
+    try {
+      const result = await callLocalServer('/rider-live-sync', {
+        method: 'POST',
+        body: {},
+        timeoutMs: 600000
+      });
+
+      if (!result.ok) {
+        if (statusEl) statusEl.textContent = `실패 — ${result.message || '기사앱 반영 실패'}`;
+        showToast(result.message || '기사앱 실시간 반영에 실패했습니다.');
+        return;
+      }
+
+      const rates = result.rates || {};
+      const apply = result.apply || {};
+      if (statusEl) {
+        statusEl.textContent = result.message
+          || `완료 · 저장 ${formatNumber(apply.itemCount || apply.savedCount || 0)}건 · 수락율 ${formatNumber(rates.riderCount || rates.upserted || 0)}명`;
+      }
+      showToast(result.message || '기사앱 실시간 반영 완료');
+      invalidateDataCache();
+      await loadConfig();
+      if (!isViewSection()) {
+        state.activePartnerId = '';
+        await loadAllSubtabData();
+      }
+    } catch (error) {
+      if (statusEl) statusEl.textContent = `실패 — ${error.message || '요청 오류'}`;
+      showToast(error.message || '기사앱 실시간 반영에 실패했습니다.');
+    } finally {
+      state.riderLiveSyncRunning = false;
+      updateActionButtons();
+    }
+  }
+
   async function startStatusAutoLoop() {
     if (state.statusAutoLoop.active) return;
     if (!state.localServerRunning) {
       showToast('로컬 세션 서버가 꺼져 있습니다. npm run baemin:session-server 실행 후 다시 시도하세요.');
       return;
     }
-    if (state.collecting || state.applying || state.localAutoCollect?.collectRunning) {
+    if (state.collecting || state.applying || state.localAutoCollect?.collectRunning || state.riderLiveSyncRunning) {
       showToast('다른 수집/저장이 끝난 뒤 시작해 주세요.');
       return;
     }
@@ -4982,6 +5048,10 @@
 
     $('baeminDeliveryApplyBtn')?.addEventListener('click', () => {
       void applyToErp();
+    });
+
+    $('baeminRiderLiveSyncBtn')?.addEventListener('click', () => {
+      void runRiderLiveSyncOnce();
     });
 
     $('baeminStatusAutoLoopStartBtn')?.addEventListener('click', () => {
