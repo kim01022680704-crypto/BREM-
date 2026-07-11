@@ -54,15 +54,30 @@
   }
 
   function resolveRiderBusinessDate(row = {}) {
+    const parts = String(row.dedupe_key || '').split(':');
+    const a = String(parts[1] || '').slice(0, 10);
+    const b = String(parts[2] || '').slice(0, 10);
+    // 하루키(DP:배달일:riderId:rider) — dedupe 배달일 우선 (parsed 오염 방지)
+    const isPerDay = parts.length >= 4
+      && parts[parts.length - 1] === 'rider'
+      && /^\d{4}-\d{2}-\d{2}$/.test(a);
+    if (isPerDay) return { date: a, period: false };
+
+    // 기간합산 키(DP:from:to:riderId) — 단일 배달일 없음
+    if (/^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b) && a !== b) {
+      return { date: '', period: true, periodFrom: a, periodTo: b };
+    }
+
     const parsed = row.parsed_json || {};
     const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
-    const parts = String(row.dedupe_key || '').split(':');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) {
+      return { date: fromParsed, period: false };
+    }
     for (const part of parts) {
       const day = String(part || '').slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return { date: day, period: false };
     }
-    return '';
+    return { date: '', period: false };
   }
 
   function extractMetrics(parsed = {}) {
@@ -176,9 +191,13 @@
         || String(row.dedupe_key || '').split(':')[0]
         || ''
       ).trim().toUpperCase();
+      const resolved = resolveRiderBusinessDate(row);
       return {
         row,
-        date: resolveRiderBusinessDate(row),
+        date: resolved.date,
+        isPeriod: Boolean(resolved.period),
+        periodFrom: resolved.periodFrom || '',
+        periodTo: resolved.periodTo || '',
         baeminId: normalizeBaeminId(row.rider_user_id),
         complete: extractMetrics(row.parsed_json).complete,
         riderName: row.rider_name || '',
@@ -187,24 +206,47 @@
       };
     });
 
-    const withDate = dated.filter(item => item.date && item.complete > 0);
-    if (!withDate.length) {
-      const anyDated = dated.some(item => item.date);
-      return [{
+    const periodOnly = dated.filter(item => item.isPeriod && item.complete > 0);
+    // 콜수는 날짜별만 — 기간합은 시작일 몰아넣기 금지
+    const dailyRows = dated.filter(item => !item.isPeriod && item.date && item.complete > 0);
+
+    if (periodOnly.length) {
+      results.push({
+        kind: '콜수',
+        status: 'fail',
+        statusLabel: '경고',
+        reason: '기간합 행 제외',
+        detail: `${periodOnly.length}건은 일별 키가 아니라 기간합이라 콜수에 넣지 않았습니다. 해당 기간 라이더 일별 재수집 후 [배민현황 저장]하세요.`
+      });
+    }
+
+    if (!dailyRows.length) {
+      return results.concat([{
         kind: '콜수',
         status: 'fail',
         statusLabel: '실패',
-        reason: anyDated ? '완료 0건만 있음' : '일별 라이더 내역 없음',
-        detail: anyDated
-          ? '전지역 일별 행은 있으나 완료가 없습니다.'
-          : '기간합산만 있고 일별(하루) 키가 없습니다. BIZ 라이더 일별 수집·저장 후 다시 시도하세요.'
-      }];
+        reason: '일별 라이더 내역 없음',
+        detail: '날짜별(하루) 키가 없습니다. BIZ 라이더별 배달내역을 일별로 수집·저장한 뒤 다시 시도하세요.'
+      }]);
     }
 
     const byDayDriver = new Map();
     const unmatched = [];
+    const riderDayMap = new Map(); // baeminId -> { name, dates:Set, total }
 
-    withDate.forEach(item => {
+    dailyRows.forEach(item => {
+      if (item.baeminId) {
+        const track = riderDayMap.get(item.baeminId) || {
+          riderName: item.riderName,
+          dates: new Set(),
+          total: 0
+        };
+        track.dates.add(item.date);
+        track.total += item.complete;
+        if (item.riderName) track.riderName = item.riderName;
+        riderDayMap.set(item.baeminId, track);
+      }
+
       if (!item.baeminId) {
         results.push({
           kind: '콜수',
@@ -246,6 +288,40 @@
       if (item.regionLabel) prev.regionLabel = item.regionLabel;
       byDayDriver.set(key, prev);
     });
+
+    // 같은 동기화 데이터에 있는 날짜 중, 특정 라이더만 빠진 날 경고
+    // (달력 전체 대비가 아니라, 실제 저장된 일별 키 기준 — 운휴일은 오탐 없음)
+    const daysInData = [...new Set(dailyRows.map(item => item.date))].sort();
+    if (daysInData.length >= 2) {
+      const gapSamples = [];
+      riderDayMap.forEach((track, baeminId) => {
+        if (track.dates.size >= daysInData.length) return;
+        const missing = daysInData.filter(day => !track.dates.has(day));
+        if (!missing.length) return;
+        gapSamples.push({
+          baeminId,
+          riderName: track.riderName,
+          have: [...track.dates].sort(),
+          missing,
+          total: track.total
+        });
+      });
+      if (gapSamples.length) {
+        const sample = gapSamples
+          .slice(0, 5)
+          .map(g => `${g.riderName || g.baeminId}: ${g.have.join(',')} (합${g.total}) · 없음 ${g.missing.join(',')}`)
+          .join(' / ');
+        results.push({
+          kind: '콜수',
+          status: 'fail',
+          statusLabel: '경고',
+          reason: `일별 키 누락 ${gapSamples.length}명`,
+          detail: `저장된 일별 날짜 ${daysInData.join(',')} 중 일부만 있는 라이더: ${sample}`
+            + (gapSamples.length > 5 ? ` 외 ${gapSamples.length - 5}명` : '')
+            + ' → 해당일 BIZ 재수집·[배민현황 저장] 후 다시 동기화 (합계가 BIZ보다 적을 수 있음)'
+        });
+      }
+    }
 
     state.lastUnmatched = unmatched.map(item => ({
       kind: '콜수',
@@ -298,7 +374,7 @@
       }
     }
 
-    dated.filter(item => !item.date).forEach(item => {
+    dated.filter(item => !item.isPeriod && !item.date && item.complete > 0).forEach(item => {
       results.push({
         kind: '콜수',
         riderName: item.riderName,

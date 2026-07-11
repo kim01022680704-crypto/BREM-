@@ -2447,6 +2447,75 @@ textarea {
   margin: 4px 0;
 }
 
+.baemin-rider-day-results {
+  padding: 0 4px 4px;
+}
+
+.baemin-rider-day-results__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.baemin-rider-day-results__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--black-2, #161616);
+  font-size: 0.95rem;
+}
+
+.baemin-rider-day-results__date {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.baemin-rider-day-results__status {
+  font-weight: 600;
+}
+
+.baemin-rider-day-results__item--ok {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(20, 83, 45, 0.16);
+}
+
+.baemin-rider-day-results__item--ok .baemin-rider-day-results__status {
+  color: #86efac;
+}
+
+.baemin-rider-day-results__item--missing,
+.baemin-rider-day-results__item--failed {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(127, 29, 29, 0.14);
+}
+
+.baemin-rider-day-results__item--missing .baemin-rider-day-results__status,
+.baemin-rider-day-results__item--failed .baemin-rider-day-results__status {
+  color: #fca5a5;
+}
+
+.baemin-rider-day-results__item--empty {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.16);
+}
+
+.baemin-rider-day-results__item--empty .baemin-rider-day-results__status {
+  color: #fcd34d;
+}
+
+.baemin-rider-day-results__meta {
+  margin: 10px 0 0;
+  color: var(--muted, #9ca3af);
+  font-size: 0.85rem;
+}
+
 .form-help--warn {
   color: #fbbf24;
 }

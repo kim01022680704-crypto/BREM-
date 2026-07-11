@@ -800,6 +800,7 @@ async function fetchAndSaveHistoryByDays({
   let lastUrl = '';
   let failedDays = 0;
   let emptyDays = 0;
+  const dayResults = [];
 
   for (let dayIndex = 0; dayIndex < dates.length; dayIndex += 1) {
     const day = dates[dayIndex];
@@ -820,11 +821,13 @@ async function fetchAndSaveHistoryByDays({
     });
     if (!dayRow) {
       failedDays += 1;
+      dayResults.push({ date: day, status: 'failed', savedCount: 0, message: '수집 실패' });
       continue;
     }
     if (dayRow.sourceUrl) lastUrl = dayRow.sourceUrl;
     if (!dayRow.items.length) {
       emptyDays += 1;
+      dayResults.push({ date: day, status: 'empty', savedCount: 0, message: '데이터 0건' });
       continue;
     }
 
@@ -848,16 +851,31 @@ async function fetchAndSaveHistoryByDays({
     ));
     const saveResult = await saveCollectItems(rows);
     if (!saveResult.ok) {
+      dayResults.push({
+        date: day,
+        status: 'failed',
+        savedCount: 0,
+        message: saveResult.message || saveResult.error || '저장 실패'
+      });
       return {
         ok: false,
         message: saveResult.message || saveResult.error || `${day} 저장 실패`,
         savedCount: totalSaved,
-        meta: { perDay: true, sourceUrl: lastUrl, failedDays, emptyDays, dayCount: dates.length }
+        meta: {
+          perDay: true,
+          sourceUrl: lastUrl,
+          failedDays: failedDays + 1,
+          emptyDays,
+          dayCount: dates.length,
+          dayResults
+        }
       };
     }
-    totalSaved += Number(saveResult.savedCount || rows.length);
-    collectProgress.addSaved(saveResult.savedCount || rows.length);
-    console.log(`[BREM][collect] ${sourceId} partner=${partnerId || '-'} day=${day} saved=${saveResult.savedCount || rows.length}`);
+    const savedCount = Number(saveResult.savedCount || rows.length);
+    totalSaved += savedCount;
+    collectProgress.addSaved(savedCount);
+    dayResults.push({ date: day, status: 'ok', savedCount, message: '수집완료' });
+    console.log(`[BREM][collect] ${sourceId} partner=${partnerId || '-'} day=${day} saved=${savedCount}`);
   }
 
   return {
@@ -873,7 +891,8 @@ async function fetchAndSaveHistoryByDays({
       incrementalSave: true,
       failedDays,
       emptyDays,
-      dayCount: dates.length
+      dayCount: dates.length,
+      dayResults
     },
     incrementalSave: true
   };
@@ -1194,7 +1213,9 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
           status: fetched.status,
           message,
           savedCount: Number(fetched.savedCount || 0),
-          sourceUrl: fetched.meta?.sourceUrl || ''
+          sourceUrl: fetched.meta?.sourceUrl || '',
+          meta: fetched.meta || null,
+          dayResults: Array.isArray(fetched.meta?.dayResults) ? fetched.meta.dayResults : []
         };
       }
       const savedCount = Number(fetched.savedCount || 0);
@@ -1210,6 +1231,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
         rawItems: [],
         menuFingerprint: '',
         meta: fetched.meta,
+        dayResults: Array.isArray(fetched.meta?.dayResults) ? fetched.meta.dayResults : [],
         message: savedCount > 0
           ? `${activeDateRange.dayCount}일 순차 수집 · ${savedCount}건 Supabase 저장`
           : '수집 데이터 0건'
@@ -2544,38 +2566,68 @@ async function summarizeBizCollectDates(supabase) {
 }
 
 async function getAppliedRiderBusinessRange(batchId) {
-  const supabase = getServiceClient();
-  if (!supabase || !batchId) return null;
+  const days = await summarizeRiderHistoryDaysFromApplied(batchId);
+  if (!days.length) return { count: 0, from: null, to: null, days: [] };
+  return {
+    count: days.length,
+    from: days[0].date,
+    to: days[days.length - 1].date,
+    days
+  };
+}
 
-  const dates = new Set();
+/** 라이더 하루키 기준 배달일별 건수 집계 */
+function accumulateRiderDayCounts(rows, byDate) {
+  (rows || []).forEach(row => {
+    let date = '';
+    if (isPerDayRiderDedupeKey(row.dedupe_key)) {
+      date = businessDateFromDedupeKey(row.dedupe_key);
+    } else {
+      date = resolveRiderBusinessDate(row);
+    }
+    if (!date) return;
+    const prev = byDate.get(date) || { date, rowCount: 0, status: 'ok' };
+    prev.rowCount += 1;
+    byDate.set(date, prev);
+  });
+}
+
+async function summarizeRiderHistoryDaysFromBiz(supabase) {
+  const byDate = new Map();
+  if (!supabase) return [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .select('dedupe_key, parsed_json')
+      .eq('source_menu', 'rider_history')
+      .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+    if (error || !data?.length) break;
+    accumulateRiderDayCounts(data, byDate);
+    if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+    offset += BIZ_COLLECT_PAGE_SIZE;
+  }
+  return [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+async function summarizeRiderHistoryDaysFromApplied(batchId) {
+  const supabase = getServiceClient();
+  const byDate = new Map();
+  if (!supabase || !batchId) return [];
   let offset = 0;
   while (true) {
     const { data, error } = await supabase
       .from('baemin_delivery_applied_items')
-      .select('dedupe_key')
+      .select('dedupe_key, parsed_json')
       .eq('batch_id', batchId)
       .eq('source_menu', 'rider_history')
       .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
-    if (error) return null;
-    if (!data?.length) break;
-
-    data.forEach(row => {
-      const date = resolveRiderBusinessDate(row);
-      if (date) dates.add(date);
-      const period = riderPeriodFromDedupeKey(row.dedupe_key);
-      if (period) {
-        dates.add(period.fromDate);
-        dates.add(period.toDate);
-      }
-    });
-
+    if (error || !data?.length) break;
+    accumulateRiderDayCounts(data, byDate);
     if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
     offset += BIZ_COLLECT_PAGE_SIZE;
   }
-
-  const sorted = [...dates].sort();
-  if (!sorted.length) return { count: 0, from: null, to: null };
-  return { count: sorted.length, from: sorted[0], to: sorted[sorted.length - 1] };
+  return [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
 async function getBaeminStorageDiagnosticsForAdmin() {
@@ -2586,16 +2638,18 @@ async function getBaeminStorageDiagnosticsForAdmin() {
 
   const bizTableStatus = await getBizCollectTableStatus();
   const applied = await readAppliedBaeminDelivery();
-  const [bizByCollectDate, bizCounts, appliedByMenu, riderRange] = await Promise.all([
+  const [bizByCollectDate, bizCounts, appliedByMenu, riderRange, bizRiderDays] = await Promise.all([
     summarizeBizCollectDates(supabase),
     countBizCollectByMenuMerged(),
     countAppliedItemsByMenu(applied?.batchId || ''),
-    getAppliedRiderBusinessRange(applied?.batchId || '')
+    getAppliedRiderBusinessRange(applied?.batchId || ''),
+    summarizeRiderHistoryDaysFromBiz(supabase)
   ]);
 
   const bizByMenu = bizCounts.ok ? (bizCounts.byMenu || {}) : {};
   const bizTotal = Object.values(bizByMenu).reduce((sum, count) => sum + (Number(count) > 0 ? Number(count) : 0), 0);
   const appliedTotal = Object.values(appliedByMenu).reduce((sum, count) => sum + (Number(count) > 0 ? Number(count) : 0), 0);
+  const appliedRiderDays = Array.isArray(riderRange?.days) ? riderRange.days : [];
 
   const issues = [];
   if (!bizTableStatus.tableExists) {
@@ -2632,12 +2686,20 @@ async function getBaeminStorageDiagnosticsForAdmin() {
       total: bizTotal,
       byMenu: bizByMenu,
       byCollectDate: bizByCollectDate,
-      mergedTotal: bizCounts.totalMerged || 0
+      mergedTotal: bizCounts.totalMerged || 0,
+      riderHistoryDays: bizRiderDays
     },
     appliedSnapshot: {
       total: appliedTotal,
       byMenu: appliedByMenu,
       riderBusinessRange: riderRange
+        ? { count: riderRange.count, from: riderRange.from, to: riderRange.to }
+        : null,
+      riderHistoryDays: appliedRiderDays
+    },
+    riderHistoryDays: {
+      biz: bizRiderDays,
+      applied: appliedRiderDays
     },
     issues
   };
@@ -3225,12 +3287,56 @@ function resolveRiderBusinessDate(row = {}) {
   return fromDedupe || '';
 }
 
-/** 하루키와 기간키가 섞이면 기간키는 이중합산 → 하루키 우선 */
+/**
+ * 하루키와 기간키가 섞일 때 — 라이더별로 판정.
+ * 콜수는 날짜별 입력이므로, 하루키가 있으면 무조건 하루키만 사용한다.
+ * (기간합으로 바꾸면 시작일에 몰아넣고 일별 콜수가 깨짐)
+ * 전역 필터 금지: 다른 라이더의 기간합까지 통째로 버리는 원인이었음.
+ */
 function preferPerDayRiderHistoryRows(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
-  const perDay = list.filter(row => isPerDayRiderDedupeKey(row?.dedupe_key));
-  if (perDay.length) return perDay;
-  return list;
+  if (!list.length) return list;
+
+  const groups = new Map();
+  list.forEach(row => {
+    const id = riderIdentityKey(row)
+      || [row.rider_user_id, row.rider_name, row.phone_number].filter(Boolean).join('|')
+      || String(row.dedupe_key || '');
+    if (!id) return;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(row);
+  });
+
+  const out = [];
+  groups.forEach(riderRows => {
+    const perDay = riderRows.filter(row => isPerDayRiderDedupeKey(row?.dedupe_key));
+    const period = riderRows.filter(row => riderPeriodFromDedupeKey(row?.dedupe_key));
+    const other = riderRows.filter(row => (
+      !isPerDayRiderDedupeKey(row?.dedupe_key) && !riderPeriodFromDedupeKey(row?.dedupe_key)
+    ));
+
+    if (perDay.length) {
+      out.push(...perDay, ...other);
+      return;
+    }
+    out.push(...period, ...other);
+  });
+
+  return out;
+}
+
+/** 하루키 행의 businessDate를 dedupe 배달일로 맞춰 클라이언트 날짜 오염 방지 */
+function normalizePerDayRiderBusinessDates(rows = []) {
+  return (rows || []).map(row => {
+    if (!isPerDayRiderDedupeKey(row?.dedupe_key)) return row;
+    const day = businessDateFromDedupeKey(row.dedupe_key);
+    if (!day) return row;
+    const parsed = { ...(row.parsed_json || {}) };
+    if (parsed.businessDate === day && parsed.deliveryDate === day) return row;
+    parsed.businessDate = day;
+    parsed.deliveryDate = day;
+    return { ...row, parsed_json: parsed };
+  });
 }
 
 function normalizeDpPartnerId(value, dedupeKey = '') {
@@ -4295,8 +4401,10 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     }
     return { ok: false, error: appliedFetched.error || '라이더 내역 조회 실패' };
   }
-  const data = preferPerDayRiderHistoryRows(
-    (appliedFetched.rows || []).filter(row => riderRowOverlapsRange(row, fromDate, toDate))
+  const data = normalizePerDayRiderBusinessDates(
+    preferPerDayRiderHistoryRows(
+      (appliedFetched.rows || []).filter(row => riderRowOverlapsRange(row, fromDate, toDate))
+    )
   );
 
   let items = normalizeCollectItemsForAdmin(data || [], 'rider_history', partnerId);

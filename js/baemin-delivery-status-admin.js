@@ -23,6 +23,7 @@
     riderViewToDate: '',
     riderCollectRange: null,
     dailyCollectRange: null,
+    lastRiderDayResults: null,
     partnerRegionMap: {},
     partnerRegionItems: [],
     partnerSetCountMap: {},
@@ -762,6 +763,7 @@
         : '라이더별 배달내역은 설정한 기간을 하루씩 수집합니다.';
     }
     state.riderCollectRange = range || null;
+    renderRiderCollectDaysPanel({ range: range || null });
   }
 
   async function loadRiderCollectRange() {
@@ -1409,10 +1411,24 @@
   }
 
   function resolveItemBusinessDate(row = {}) {
+    const parts = String(row.dedupe_key || '').split(':');
+    const a = String(parts[1] || '').slice(0, 10);
+    const b = String(parts[2] || '').slice(0, 10);
+    // 하루키(DP:배달일:riderId:rider) — dedupe 우선
+    if (
+      parts.length >= 4
+      && parts[parts.length - 1] === 'rider'
+      && /^\d{4}-\d{2}-\d{2}$/.test(a)
+    ) {
+      return a;
+    }
+    // 기간합산 키는 단일 배달일 없음
+    if (/^\d{4}-\d{2}-\d{2}$/.test(a) && /^\d{4}-\d{2}-\d{2}$/.test(b) && a !== b) {
+      return '';
+    }
     const parsed = row.parsed_json || {};
     const fromParsed = String(parsed.businessDate || parsed.deliveryDate || '').slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(fromParsed)) return fromParsed;
-    const parts = String(row.dedupe_key || '').split(':');
     for (const part of parts) {
       const day = String(part || '').slice(0, 10);
       if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
@@ -3322,6 +3338,10 @@
     renderStorageDiagnostics(config);
     syncDailyCollectRangeInputs(config?.dailyCollectRange || state.dailyCollectRange || null);
     syncRiderCollectRangeInputs(config?.riderCollectRange || state.riderCollectRange || null);
+    renderRiderCollectDaysPanel({
+      diagnostics: config?.storageDiagnostics,
+      range: config?.riderCollectRange || state.riderCollectRange
+    });
     if (isViewSection()) {
       renderViewAppliedBanner(config?.applied);
     }
@@ -3368,6 +3388,10 @@
     box.hidden = false;
     box.className = 'baemin-collect-result baemin-collect-result--success';
     const totals = result.summaryTotals || {};
+    const riderDayResults = extractRiderDayResultsFromMenuResults(result.menuResults);
+    if (riderDayResults.length) {
+      renderRiderCollectDaysPanel({ dayResults: riderDayResults });
+    }
     box.innerHTML = `
       <strong>수집 완료</strong>
       ${renderMenuDatePlan(result.menuDateRanges || result.menuDatePlan)}
@@ -3381,6 +3405,9 @@
         <li>배차취소합계: <strong>${formatNumber(totals.cancelTotal || 0)}</strong></li>
       </ul>
       ${renderMenuResultsList(result.menuResults)}
+      ${riderDayResults.length ? `
+        <p class="form-help" style="margin-top:10px">라이더별 날짜 결과는 아래 <strong>라이더별 배달내역 수집결과</strong>를 확인하세요.</p>
+      ` : ''}
     `;
   }
 
@@ -3397,6 +3424,185 @@
     });
     if (!items.length) return '';
     return `<ul class="baemin-collect-stats">${items.join('')}</ul>`;
+  }
+
+  function listDatesInclusiveLocal(fromDate, toDate) {
+    const from = String(fromDate || '').slice(0, 10);
+    const to = String(toDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) {
+      return [];
+    }
+    const dates = [];
+    let cursor = from;
+    while (cursor <= to) {
+      dates.push(cursor);
+      cursor = addDaysDate(cursor, 1);
+    }
+    return dates;
+  }
+
+  function extractRiderDayResultsFromMenuResults(menuResults) {
+    if (!menuResults || typeof menuResults !== 'object') return [];
+    const byDate = new Map();
+    Object.entries(menuResults).forEach(([id, row]) => {
+      const menuId = String(id || '').includes(':')
+        ? String(id).split(':').slice(1).join(':')
+        : String(id || '');
+      if (menuId !== 'rider_history') return;
+      const days = Array.isArray(row?.dayResults)
+        ? row.dayResults
+        : (Array.isArray(row?.meta?.dayResults) ? row.meta.dayResults : []);
+      days.forEach(day => {
+        const date = String(day?.date || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+        const prev = byDate.get(date) || {
+          date,
+          status: 'missing',
+          savedCount: 0,
+          message: ''
+        };
+        const status = String(day.status || '').trim();
+        prev.savedCount += Number(day.savedCount || 0);
+        if (status === 'ok' || (prev.status !== 'ok' && status === 'empty')) {
+          prev.status = status;
+        } else if (prev.status === 'missing' && status) {
+          prev.status = status;
+        } else if (status === 'failed' && prev.status !== 'ok') {
+          prev.status = 'failed';
+        }
+        if (day.message) prev.message = day.message;
+        byDate.set(date, prev);
+      });
+    });
+    return [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }
+
+  function buildRiderCollectDayRows(options = {}) {
+    const diagnostics = options.diagnostics || state.config?.storageDiagnostics || {};
+    const range = options.range
+      || state.config?.riderCollectRange
+      || state.riderCollectRange
+      || resolveRiderCollectRangeFromInputs();
+    const lastDays = Array.isArray(options.dayResults)
+      ? options.dayResults
+      : (Array.isArray(state.lastRiderDayResults) ? state.lastRiderDayResults : []);
+
+    const bizMap = new Map(
+      (diagnostics.riderHistoryDays?.biz || diagnostics.biz?.riderHistoryDays || [])
+        .map(row => [String(row.date || '').slice(0, 10), row])
+    );
+    const appliedMap = new Map(
+      (diagnostics.riderHistoryDays?.applied || diagnostics.appliedSnapshot?.riderHistoryDays || [])
+        .map(row => [String(row.date || '').slice(0, 10), row])
+    );
+    const lastMap = new Map(
+      lastDays.map(row => [String(row.date || '').slice(0, 10), row])
+    );
+
+    let dates = listDatesInclusiveLocal(range?.fromDate, range?.toDate);
+    if (!dates.length) {
+      dates = [...new Set([
+        ...bizMap.keys(),
+        ...appliedMap.keys(),
+        ...lastMap.keys()
+      ].filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort();
+    }
+
+    return dates.map(date => {
+      const last = lastMap.get(date);
+      const applied = appliedMap.get(date);
+      const biz = bizMap.get(date);
+      const rowCount = Number(applied?.rowCount || biz?.rowCount || last?.savedCount || 0);
+
+      if (last?.status === 'failed') {
+        return {
+          date,
+          tone: 'failed',
+          statusLabel: '수집실패',
+          detail: last.message || ''
+        };
+      }
+      if (last?.status === 'empty' && rowCount <= 0) {
+        return {
+          date,
+          tone: 'empty',
+          statusLabel: '데이터없음',
+          detail: '0건'
+        };
+      }
+      if (last?.status === 'ok' || rowCount > 0) {
+        const savedHint = applied?.rowCount
+          ? ' · 현황저장됨'
+          : (biz?.rowCount ? ' · BIZ수집됨' : '');
+        return {
+          date,
+          tone: 'ok',
+          statusLabel: '수집완료',
+          detail: `${formatNumber(rowCount || last?.savedCount || 0)}건${savedHint}`
+        };
+      }
+      return {
+        date,
+        tone: 'missing',
+        statusLabel: '미수집',
+        detail: ''
+      };
+    });
+  }
+
+  function resolveRiderCollectRangeFromInputs() {
+    const fromDate = String($('baeminRiderCollectFrom')?.value || '').slice(0, 10);
+    const toDate = String($('baeminRiderCollectTo')?.value || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fromDate) && /^\d{4}-\d{2}-\d{2}$/.test(toDate) && toDate >= fromDate) {
+      return { fromDate, toDate, label: `${fromDate} ~ ${toDate}` };
+    }
+    return null;
+  }
+
+  function renderRiderCollectDaysPanel(options = {}) {
+    const el = $('baeminRiderCollectDaysResult');
+    if (!el) return;
+
+    if (Array.isArray(options.dayResults)) {
+      state.lastRiderDayResults = options.dayResults;
+    }
+
+    const range = options.range
+      || state.config?.riderCollectRange
+      || state.riderCollectRange
+      || resolveRiderCollectRangeFromInputs();
+    const rows = buildRiderCollectDayRows({
+      diagnostics: options.diagnostics || state.config?.storageDiagnostics,
+      range,
+      dayResults: options.dayResults
+    });
+
+    if (!rows.length) {
+      el.innerHTML = '<p class="form-help">표시할 날짜가 없습니다. 라이더 수집 기간을 설정하거나 수집을 실행하세요.</p>';
+      return;
+    }
+
+    const okCount = rows.filter(row => row.tone === 'ok').length;
+    const missingCount = rows.filter(row => row.tone === 'missing' || row.tone === 'failed').length;
+    const rangeLabel = range?.label || (range?.fromDate && range?.toDate ? `${range.fromDate} ~ ${range.toDate}` : '');
+
+    el.innerHTML = `
+      <ul class="baemin-rider-day-results__list">
+        ${rows.map(row => `
+          <li class="baemin-rider-day-results__item baemin-rider-day-results__item--${row.tone}">
+            <span class="baemin-rider-day-results__date">${escapeHtml(row.date)}</span>
+            <span class="baemin-rider-day-results__status">
+              ${escapeHtml(row.statusLabel)}${row.detail ? ` · ${escapeHtml(row.detail)}` : ''}
+            </span>
+          </li>
+        `).join('')}
+      </ul>
+      <p class="baemin-rider-day-results__meta">
+        ${rangeLabel ? `기간 ${escapeHtml(rangeLabel)} · ` : ''}
+        수집완료 ${formatNumber(okCount)}일
+        ${missingCount ? ` · 미수집/실패 ${formatNumber(missingCount)}일` : ''}
+      </p>
+    `;
   }
 
   function stopSetupPoll() {
@@ -3683,9 +3889,17 @@
         ok: row.ok,
         savedCount: row.savedCount,
         message: row.message,
-        dateRangeLabel: row.dateRangeLabel
+        dateRangeLabel: row.dateRangeLabel,
+        dayResults: Array.isArray(row.dayResults)
+          ? row.dayResults
+          : (Array.isArray(row.meta?.dayResults) ? row.meta.dayResults : [])
       }]))
       : null;
+
+    const riderDayResults = extractRiderDayResultsFromMenuResults(menuResults);
+    if (riderDayResults.length) {
+      renderRiderCollectDaysPanel({ dayResults: riderDayResults });
+    }
 
     if (savedCount <= 0) {
       renderSummary({
