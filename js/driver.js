@@ -950,6 +950,93 @@
     await renderPlatformMission(driver, 'coupang', coupangMissionId, assigned?.coupang || null);
   }
 
+  function formatLiveOpsUpdatedAt(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw;
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${mm}. ${dd}. ${hh}:${mi}:${ss}`;
+  }
+
+  function driverHasBaemin(driver) {
+    if (!driver) return false;
+    if (driver.platformBaemin === true) return true;
+    if (String(driver.baeminId || '').trim()) return true;
+    const label = formatPlatformLabel(driver);
+    return label.includes('배민');
+  }
+
+  function renderBaeminLiveOps(driver) {
+    const card = document.getElementById('driverBaeminLiveOps');
+    if (!card) return;
+
+    const show = driverHasBaemin(driver);
+    card.hidden = !show;
+    if (!show) return;
+
+    const ops = BremStorage.getRiderBaeminOps?.() || null;
+    const emptyEl = document.getElementById('driverBaeminLiveOpsEmpty');
+    const available = Boolean(ops?.available);
+    card.classList.toggle('is-empty', !available);
+    if (emptyEl) emptyEl.hidden = available;
+
+    const callText = value => (
+      available ? `${number(value)}콜` : '-'
+    );
+    setText('baeminOpsComplete', callText(ops?.complete));
+    setText('baeminOpsReject', callText(ops?.foodReject));
+    setText('baeminOpsCancel', callText(ops?.foodCancel));
+    setText('baeminOpsRiderFault', callText(ops?.foodRiderFault));
+    setText(
+      'baeminOpsAcceptRate',
+      available && ops?.acceptRate != null && Number.isFinite(Number(ops.acceptRate))
+        ? `${Number(ops.acceptRate)}%`
+        : '-'
+    );
+    setText(
+      'driverBaeminLiveOpsUpdated',
+      `마지막 업데이트: ${formatLiveOpsUpdatedAt(ops?.updatedAt || ops?.collectedAt || ops?.cachedAt)}`
+    );
+  }
+
+  async function refreshBaeminLiveOps(options = {}) {
+    const btn = document.getElementById('driverBaeminLiveOpsRefreshBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '업데이트 중…';
+    }
+    try {
+      if (!BremStorage.refreshRiderBaeminOps) {
+        throw new Error('실시간 갱신 API를 사용할 수 없습니다.');
+      }
+      const result = await BremStorage.refreshRiderBaeminOps();
+      if (!result?.ok) {
+        throw new Error(result?.message || result?.error || '운행현황 갱신에 실패했습니다.');
+      }
+      if (state.currentDriver) renderBaeminLiveOps(state.currentDriver);
+      if (options.toast !== false) {
+        const ops = BremStorage.getRiderBaeminOps?.();
+        showToast(ops?.available ? '배민 운행현황을 갱신했습니다.' : '배민 운행현황 데이터가 없습니다.');
+      }
+      return result;
+    } catch (error) {
+      if (options.toast !== false) {
+        showToast(error.message || '운행현황 갱신에 실패했습니다.');
+      }
+      return null;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span aria-hidden="true">↻</span> 실시간 업데이트';
+      }
+    }
+  }
+
   function renderDriver(driver) {
     if (driver?.id) {
       driver = BremStorage.drivers.getById(driver.id) || driver;
@@ -1010,6 +1097,7 @@
 
     setText('monthCallsCoupang', `${number(monthStats.coupang)}콜`);
     setText('monthCallsBaemin', `${number(monthStats.baemin)}콜`);
+    renderBaeminLiveOps(driver);
 
     const monthTargetEl = document.getElementById('monthTarget');
     if (monthTargetEl) {
@@ -1071,7 +1159,17 @@
   });
 
   document.getElementById('driverRealtimeStatusBtn')?.addEventListener('click', () => {
-    window.open('about:blank', '_blank', 'noopener,noreferrer');
+    const card = document.getElementById('driverBaeminLiveOps');
+    if (card && !card.hidden) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      void refreshBaeminLiveOps({ toast: true });
+      return;
+    }
+    showToast('배민 운행현황은 배민 기사만 표시됩니다.');
+  });
+
+  document.getElementById('driverBaeminLiveOpsRefreshBtn')?.addEventListener('click', () => {
+    void refreshBaeminLiveOps({ toast: true });
   });
 
   document.getElementById('driverProfileEditCancel')?.addEventListener('click', () => {

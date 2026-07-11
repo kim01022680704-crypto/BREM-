@@ -354,6 +354,7 @@ app.get('/api/rider/live', async (req, res) => {
       targets: result.targets,
       weeklyTargets: result.weeklyTargets,
       longEvent: result.longEvent,
+      baeminOps: result.baeminOps || null,
       settings: result.settings
     });
   } catch (error) {

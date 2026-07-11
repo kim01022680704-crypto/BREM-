@@ -777,7 +777,8 @@ async function getRiderAppBundle(accessToken) {
     targetsResult,
     settingsResult,
     noticesResult,
-    missionsResult
+    missionsResult,
+    baeminOps
   ] = await Promise.all([
     buildRiderCallsQuery(supabase, riderId),
     supabase
@@ -801,7 +802,8 @@ async function getRiderAppBundle(accessToken) {
       .order('pinned', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(100),
-    missionQuery
+    missionQuery,
+    loadRiderBaeminOps(supabase, me.rider)
   ]);
 
   if (missionsResult.error) {
@@ -865,6 +867,7 @@ async function getRiderAppBundle(accessToken) {
       targets: targetsResult.data || [],
       weeklyTargets,
       longEvent,
+      baeminOps,
       settings: liveSettings
     },
     notices: noticesResult.data || []
@@ -946,6 +949,171 @@ async function getRiderSnapshot(accessToken) {
   };
 }
 
+function normalizeBaeminUserId(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '-') return '';
+  if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
+  return raw;
+}
+
+function extractDeliveryStatusMetrics(parsed = {}) {
+  return {
+    complete: Math.max(0, Number(parsed.totalComplete || parsed.completeCount || 0) || 0),
+    foodReject: Math.max(0, Number(parsed.foodReject || 0) || 0),
+    foodCancel: Math.max(0, Number(parsed.foodCancel || 0) || 0),
+    foodRiderFault: Math.max(0, Number(parsed.foodRiderFault || 0) || 0)
+  };
+}
+
+function calcAcceptRateFromMetrics(metrics = {}) {
+  const complete = Number(metrics.complete || 0);
+  const deny = Number(metrics.foodReject || 0)
+    + Number(metrics.foodCancel || 0)
+    + Number(metrics.foodRiderFault || 0);
+  const denom = complete + deny;
+  if (denom <= 0) return null;
+  return Math.round((100 - (deny / denom) * 100) * 10) / 10;
+}
+
+async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) {
+  const id = normalizeBaeminUserId(baeminId);
+  if (!id) return null;
+
+  const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
+  for (const table of tables) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('collected_at, collect_date, rider_user_id, rider_name, phone_number, parsed_json, dedupe_key')
+      .eq('source_menu', 'delivery_status')
+      .eq('rider_user_id', id)
+      .order('collected_at', { ascending: false })
+      .limit(8);
+
+    if (error) {
+      if (/does not exist|Could not find the table/i.test(String(error.message || ''))) continue;
+      console.warn(`[BREM] rider baeminOps delivery lookup (${table}):`, error.message || error);
+      continue;
+    }
+    if (!data?.length) continue;
+
+    const sorted = data.slice().sort((a, b) => {
+      const ta = Date.parse(a.collected_at || '') || 0;
+      const tb = Date.parse(b.collected_at || '') || 0;
+      if (tb !== ta) return tb - ta;
+      const ca = extractDeliveryStatusMetrics(a.parsed_json).complete;
+      const cb = extractDeliveryStatusMetrics(b.parsed_json).complete;
+      return cb - ca;
+    });
+    return { row: sorted[0], source: table };
+  }
+  return null;
+}
+
+async function fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }) {
+  const id = normalizeBaeminUserId(baeminId);
+  const did = String(driverId || '').trim();
+
+  async function query(column, value) {
+    if (!value) return null;
+    const { data, error } = await supabase
+      .from('baemin_live_accept_rates')
+      .select([
+        'week_start',
+        'partner_id',
+        'rider_user_id',
+        'driver_id',
+        'current_complete',
+        'current_food_reject',
+        'current_food_cancel',
+        'current_food_rider_fault',
+        'current_accept_rate',
+        'live_complete',
+        'source_capture_date',
+        'updated_at'
+      ].join(','))
+      .eq(column, value)
+      .order('week_start', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(3);
+    if (error) {
+      if (/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+        return { missing: true };
+      }
+      console.warn('[BREM] rider baeminOps accept-rate lookup:', error.message || error);
+      return null;
+    }
+    return data?.[0] || null;
+  }
+
+  const byDriver = did ? await query('driver_id', did) : null;
+  if (byDriver?.missing) return null;
+  if (byDriver) return byDriver;
+  const byBaemin = id ? await query('rider_user_id', id) : null;
+  if (byBaemin?.missing) return null;
+  return byBaemin || null;
+}
+
+async function loadRiderBaeminOps(supabase, rider = {}) {
+  const baeminId = normalizeBaeminUserId(rider.baemin_id || rider.baeminId);
+  const driverId = String(rider.id || '').trim();
+  const empty = {
+    available: false,
+    baeminId: baeminId || '',
+    complete: 0,
+    foodReject: 0,
+    foodCancel: 0,
+    foodRiderFault: 0,
+    acceptRate: null,
+    acceptRateSource: null,
+    collectDate: null,
+    collectedAt: null,
+    updatedAt: null,
+    reason: baeminId ? 'NO_DATA' : 'NO_BAEMIN_ID'
+  };
+
+  if (!baeminId && !driverId) return empty;
+
+  const [deliveryHit, acceptRow] = await Promise.all([
+    baeminId ? fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) : Promise.resolve(null),
+    fetchLatestLiveAcceptRate(supabase, { baeminId, driverId })
+  ]);
+
+  const metrics = deliveryHit?.row
+    ? extractDeliveryStatusMetrics(deliveryHit.row.parsed_json || {})
+    : { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 };
+
+  let acceptRate = null;
+  let acceptRateSource = null;
+  if (acceptRow && acceptRow.current_accept_rate != null && Number.isFinite(Number(acceptRow.current_accept_rate))) {
+    acceptRate = Math.round(Number(acceptRow.current_accept_rate) * 10) / 10;
+    acceptRateSource = 'live_accept_rates';
+  } else if (deliveryHit?.row) {
+    acceptRate = calcAcceptRateFromMetrics(metrics);
+    acceptRateSource = acceptRate == null ? null : 'delivery_status';
+  }
+
+  const hasDelivery = Boolean(deliveryHit?.row);
+  const hasAccept = acceptRate != null;
+  if (!hasDelivery && !hasAccept) return empty;
+
+  return {
+    available: true,
+    baeminId,
+    complete: metrics.complete,
+    foodReject: metrics.foodReject,
+    foodCancel: metrics.foodCancel,
+    foodRiderFault: metrics.foodRiderFault,
+    acceptRate,
+    acceptRateSource,
+    weekStart: acceptRow?.week_start || null,
+    collectDate: deliveryHit?.row?.collect_date || acceptRow?.source_capture_date || null,
+    collectedAt: deliveryHit?.row?.collected_at || null,
+    updatedAt: acceptRow?.updated_at || deliveryHit?.row?.collected_at || null,
+    deliverySource: deliveryHit?.source || null,
+    reason: null
+  };
+}
+
 async function getRiderLive(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -959,7 +1127,8 @@ async function getRiderLive(accessToken) {
   const [
     targetsResult,
     settingsResult,
-    callsResult
+    callsResult,
+    baeminOps
   ] = await Promise.all([
     supabase
       .from('admin_targets')
@@ -973,6 +1142,7 @@ async function getRiderLive(accessToken) {
     buildRiderCallsQuery(supabase, riderId, {
       select: 'id,driver_id,date,platform,count,updated_at'
     }),
+    loadRiderBaeminOps(supabase, me.rider)
   ]);
 
   const firstError = [targetsResult, settingsResult, callsResult].find(result => result.error);
@@ -1007,6 +1177,7 @@ async function getRiderLive(accessToken) {
     targets: targetsResult.data || [],
     weeklyTargets,
     longEvent,
+    baeminOps,
     settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets')
   };
 }

@@ -2881,6 +2881,10 @@ const BremStorage = (function () {
       }
     }
 
+    if (payload.baeminOps && typeof payload.baeminOps === 'object') {
+      riderBaeminOpsCache = { ...payload.baeminOps, cachedAt: new Date().toISOString() };
+    }
+
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
@@ -3635,6 +3639,19 @@ const BremStorage = (function () {
 
   let driverAppHydratePromise = null;
   let riderLongEventProgress = null;
+  let riderBaeminOpsCache = null;
+
+  function getRiderBaeminOps() {
+    return riderBaeminOpsCache ? { ...riderBaeminOpsCache } : null;
+  }
+
+  async function refreshRiderBaeminOps() {
+    const result = await riderApiFetch('/api/rider/live', 'live');
+    if (result?.ok) {
+      mergeRiderLiveInCache(result);
+    }
+    return result;
+  }
 
   function isDriverAppCacheReady() {
     if (!activeStorageAdapter.isHydrated?.()) return false;
@@ -11446,6 +11463,8 @@ const BremStorage = (function () {
     hydrateAdminDataInBackground,
     hydrateDriverAppData,
     isDriverAppCacheReady,
+    getRiderBaeminOps,
+    refreshRiderBaeminOps,
     syncAdminDataInBackground,
     resumeSupabaseAfterAuth,
     initStorage,
