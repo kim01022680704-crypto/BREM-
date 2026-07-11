@@ -1048,7 +1048,8 @@ app.get('/api/admin/baemin-delivery/view-rider-range', async (req, res) => {
     const result = await baeminDeliveryCollect.getRiderHistoryRange(getBearerToken(req), {
       fromDate: req.query.fromDate,
       toDate: req.query.toDate,
-      partnerId: req.query.partnerId
+      partnerId: req.query.partnerId,
+      compact: req.query.compact === '1' || req.query.compact === 'true'
     });
     if (!result.ok) {
       return res.status(result.status || 400).json({

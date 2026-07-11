@@ -2746,18 +2746,9 @@ const BremStorage = (function () {
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
-  const DRIVER_FETCH_TIMEOUT_MS = 18000;
+  const DRIVER_FETCH_TIMEOUT_MS = 12000;
   let driverAppBundlePromise = null;
   let lastDriverAppPublishedAt = null;
-
-  function withDriverFetchTimeout(promise, label = 'request') {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`${label} 시간이 초과되었습니다.`)), DRIVER_FETCH_TIMEOUT_MS);
-      })
-    ]);
-  }
 
   async function riderApiFetch(path, label = 'request') {
     const token = await resolveAdminAccessToken();
@@ -2765,21 +2756,30 @@ const BremStorage = (function () {
       return { ok: false, message: '로그인 세션이 없습니다.' };
     }
 
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), DRIVER_FETCH_TIMEOUT_MS)
+      : null;
     try {
-      const response = await withDriverFetchTimeout(
-        fetch(path, {
-          credentials: 'same-origin',
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        label
-      );
+      const response = await fetch(path, {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller?.signal
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         return { ok: false, message: payload.error || '요청에 실패했습니다.' };
       }
       return { ok: true, ...payload };
     } catch (error) {
-      return { ok: false, message: error.message || '요청에 실패했습니다.' };
+      return {
+        ok: false,
+        message: error?.name === 'AbortError'
+          ? `${label} 시간이 초과되었습니다.`
+          : (error.message || '요청에 실패했습니다.')
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -3058,11 +3058,7 @@ const BremStorage = (function () {
       }
 
       console.info('[BREM:data] driver snapshot: cache miss');
-      let bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
-      if (!bundle.ok && !options._retried) {
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
-      }
+      const bundle = await riderApiFetch('/api/rider/app-bundle', 'app-bundle');
 
       if (bundle.ok) {
         if (riderId && bundle.snapshot) cache?.write?.(riderId, 'snapshot', bundle.snapshot);

@@ -676,6 +676,7 @@ async function getRiderHistoryRange(accessToken, options = {}) {
     fromDate: options.fromDate,
     toDate: options.toDate,
     partnerId: options.partnerId,
+    compact: options.compact === true,
     actorScope: actor.scope
   });
 }

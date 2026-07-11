@@ -1455,7 +1455,7 @@
     const includeLive = weekStarts.includes(currentWeekStart) && toDate >= currentWeekStart;
 
     const riderResult = await adminApi(
-      `/api/admin/baemin-delivery/view-rider-range?fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`
+      `/api/admin/baemin-delivery/view-rider-range?fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}&compact=1`
     );
     if (!riderResult.ok) {
       throw new Error(riderResult.message || '전지역 라이더별 배달내역 조회 실패');

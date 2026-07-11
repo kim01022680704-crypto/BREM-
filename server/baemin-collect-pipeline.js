@@ -2402,6 +2402,66 @@ async function fetchAppliedItemsPaged(tableName, filters = {}, selectFields) {
   return { ok: true, rows, totalFetched: rows.length };
 }
 
+/**
+ * 콜수 동기화용: 적용 배치 전체를 읽지 않고 선택 배달일 하루키만 조회한다.
+ * 기간합 키는 날짜별 콜수로 사용할 수 없으므로 compact 조회에서 제외한다.
+ */
+async function fetchAppliedRiderItemsByDays(batchId, fromDate, toDate, partnerId, selectFields) {
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const dates = buildDateList(fromDate, toDate);
+  const rows = [];
+  let nextIndex = 0;
+  const workerCount = Math.min(4, dates.length);
+
+  async function loadDay(day) {
+    let offset = 0;
+    while (true) {
+      const pattern = partnerId
+        ? `${partnerId}:${day}:%`
+        : `%:${day}:%`;
+      const { data, error } = await supabase
+        .from('baemin_delivery_applied_items')
+        .select(selectFields)
+        .eq('batch_id', batchId)
+        .eq('source_menu', 'rider_history')
+        .like('dedupe_key', pattern)
+        .range(offset, offset + BIZ_COLLECT_PAGE_SIZE - 1);
+      if (error) {
+        throw new Error(error.message || `${day} 라이더 내역 조회 실패`);
+      }
+      if (!data?.length) break;
+      rows.push(...data);
+      if (data.length < BIZ_COLLECT_PAGE_SIZE) break;
+      offset += BIZ_COLLECT_PAGE_SIZE;
+    }
+  }
+
+  async function worker() {
+    while (nextIndex < dates.length) {
+      const day = dates[nextIndex];
+      nextIndex += 1;
+      await loadDay(day);
+    }
+  }
+
+  try {
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  } catch (error) {
+    return { ok: false, error: error.message || '선택 기간 라이더 내역 조회 실패' };
+  }
+
+  const deduped = new Map();
+  rows.forEach(row => {
+    const key = String(row.id || row.dedupe_key || '');
+    if (key) deduped.set(key, row);
+  });
+  return { ok: true, rows: [...deduped.values()], totalFetched: rows.length };
+}
+
 const APPLIED_DELETE_CHUNK_SIZE = 80;
 
 async function deleteAppliedBatchItemsPaged(batchId) {
@@ -4365,6 +4425,7 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   const fromDate = String(options.fromDate || '').slice(0, 10);
   const toDate = String(options.toDate || '').slice(0, 10);
   const partnerId = String(options.partnerId || '').trim().toUpperCase();
+  const compact = options.compact === true;
   const scope = options.actorScope;
   const allowed = new Set((scope?.allowedPartnerIds || []).map(id => String(id).toUpperCase()));
 
@@ -4397,7 +4458,9 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     };
   }
 
-  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
+  const appliedSelect = compact
+    ? 'id, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key'
+    : 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
   const appliedFilters = {
     batch_id: batchId,
     source_menu: 'rider_history'
@@ -4405,11 +4468,19 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   if (partnerId) {
     appliedFilters.like = { column: 'dedupe_key', pattern: `${partnerId}:%` };
   }
-  const appliedFetched = await fetchAppliedItemsPaged(
-    'baemin_delivery_applied_items',
-    appliedFilters,
-    appliedSelect
-  );
+  const appliedFetched = compact
+    ? await fetchAppliedRiderItemsByDays(
+      batchId,
+      fromDate,
+      toDate,
+      partnerId,
+      appliedSelect
+    )
+    : await fetchAppliedItemsPaged(
+      'baemin_delivery_applied_items',
+      appliedFilters,
+      appliedSelect
+    );
   if (!appliedFetched.ok) {
     if (isMissingAppliedTableError({ message: appliedFetched.error })) {
       return { ok: false, tableMissing: true, message: 'baemin_delivery_applied_items 테이블이 없습니다.' };
@@ -4469,6 +4540,27 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
       }
     };
   });
+
+  if (compact) {
+    return {
+      ok: true,
+      fromDate,
+      toDate,
+      partnerId: partnerId || null,
+      items: items.map(row => ({
+        dedupe_key: row.dedupe_key || '',
+        rider_name: row.rider_name || '',
+        rider_user_id: row.rider_user_id || '',
+        phone_number: row.phone_number || '',
+        parsed_json: row.parsed_json || {}
+      })),
+      count: items.length,
+      totalSaved: scopedItems.length,
+      hint,
+      appliedOnly: true,
+      compact: true
+    };
+  }
 
   const days = buildRiderHistoryDaySeries(items, fromDate, toDate);
   const riders = aggregateRiderHistoryByRider(items);

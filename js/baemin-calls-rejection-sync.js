@@ -341,7 +341,7 @@
 
     for (const [date, records] of byDate.entries()) {
       try {
-        BremStorage.calls.upsertBatchDaily({
+        await BremStorage.calls.upsertBatchDaily({
           date,
           platform: 'baemin',
           records: records.map(r => ({ driverId: r.driverId, count: r.count }))
@@ -531,7 +531,7 @@
 
     if (entries.length) {
       try {
-        BremStorage.rejections.upsertWeeklyBatch(entries.map(({ _meta, ...rest }) => rest));
+        await BremStorage.rejections.upsertWeeklyBatch(entries.map(({ _meta, ...rest }) => rest));
         entries.forEach(entry => {
           results.push({
             kind,

@@ -1770,7 +1770,10 @@ const server = http.createServer(async (req, res) => {
     if (hasLocalSupabaseCredentials()) {
       try {
         const baeminDeliverySession = require('../server/baemin-delivery-session');
-        const stored = await baeminDeliverySession.getStoredSessionRecord();
+        const stored = await Promise.race([
+          baeminDeliverySession.getStoredSessionRecord(),
+          new Promise(resolve => setTimeout(() => resolve(null), 2000))
+        ]);
         sessionStatus = {
           configured: Boolean(stored?.cookie),
           lastError: stored?.lastError || '',
