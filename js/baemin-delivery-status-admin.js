@@ -14,6 +14,9 @@
     localAutoCollect: null,
     activeSection: 'baemin-biz-status',
     activePartnerId: '',
+    selectedPartnerIds: [],
+    dashboardSelectedPartnerIds: [],
+    dashboardBaeminRegions: [],
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -27,6 +30,7 @@
     lastCoverage: { rider_history: null, daily_history: null },
     partnerRegionMap: {},
     partnerRegionItems: [],
+    viewPartnerIds: [],
     partnerSetCountMap: {},
     weekdayQuotaMatrix: null,
     weekdayQuotaMeta: { updatedAt: '', updatedBy: '', isDefault: true },
@@ -97,7 +101,7 @@
 
   const MENU_IDS = ['delivery_status', 'daily_history', 'rider_history'];
   const VIEW_MENU_IDS = [...MENU_IDS, 'quota_achievement', 'weekday_quota', 'accept_rate_live', 'calls_rejection_sync'];
-  const REGION_MAP_CACHE_KEY = 'brem_baemin_region_map_v1';
+  const REGION_MAP_CACHE_KEY = 'brem_baemin_region_map_v2';
 
   const WEEKDAY_QUOTA_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const WEEKDAY_QUOTA_SLOT_KEYS = ['morning', 'afternoon', 'evening', 'midnight'];
@@ -235,6 +239,64 @@
       const fromParsed = normalizePartnerId(row?.parsed_json?.partnerId);
       return fromParsed === want;
     });
+  }
+
+  function filterRowsByPartnerIds(items, partnerIds = []) {
+    const want = new Set((partnerIds || []).map(normalizePartnerId).filter(Boolean));
+    if (!want.size) return [];
+    return (items || []).filter(row => {
+      const fromKey = partnerIdFromDedupeKey(row?.dedupe_key);
+      if (fromKey) return want.has(fromKey);
+      const fromParsed = normalizePartnerId(row?.parsed_json?.partnerId);
+      return want.has(fromParsed);
+    });
+  }
+
+  function resolveRowPartnerId(row) {
+    return partnerIdFromDedupeKey(row?.dedupe_key)
+      || normalizePartnerId(row?.parsed_json?.partnerId)
+      || '';
+  }
+
+  function partnerLabelById(partnerId) {
+    const pid = normalizePartnerId(partnerId);
+    const partner = (state.partners || []).find(item => normalizePartnerId(item.partnerId) === pid);
+    if (partner) return partnerDisplayLabel(partner);
+    const dash = (state.dashboardBaeminRegions || []).find(item => item.partnerId === pid);
+    if (dash?.regionName) return dash.regionName;
+    return resolveRegisteredRegionName(pid) || pid || '-';
+  }
+
+  async function refreshDeliveryLiveFromLocalServer() {
+    if (!state.localServerRunning) {
+      try {
+        await refreshLocalServerStatus();
+      } catch (_e) { /* ignore */ }
+    }
+    if (!state.localServerRunning) {
+      return { ok: false, skipped: true, message: '로컬 세션 서버 미실행 — 최신 저장 데이터로 조회합니다.' };
+    }
+    if (state.collecting || state.applying || state.localAutoCollect?.collectRunning || state.riderLiveSyncRunning || state.statusAutoLoop?.active) {
+      return { ok: false, skipped: true, message: '다른 수집이 진행 중이라 저장 스냅샷으로 조회합니다.' };
+    }
+    const result = await callLocalServer('/rider-live-sync', {
+      method: 'POST',
+      body: {},
+      timeoutMs: 300000
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        skipped: false,
+        message: result.message || '실시간 수집에 실패했습니다. 저장 스냅샷으로 조회합니다.'
+      };
+    }
+    invalidateDataCache();
+    if (result.collectDate) {
+      state.appliedCollectDate = result.collectDate;
+    }
+    await loadViewConfig();
+    return { ok: true, skipped: false, message: result.message || '실시간 수집·저장 완료', collectDate: result.collectDate };
   }
 
   function readCachedRegionMap() {
@@ -400,9 +462,47 @@
     return String(partnerId || '').trim().toUpperCase();
   }
 
+  function getSelectedPartnerIds() {
+    if (isViewSection()) {
+      const ids = [...new Set((state.selectedPartnerIds || []).map(normalizePartnerId).filter(Boolean))];
+      if (ids.length) return ids;
+      const one = normalizePartnerId(state.activePartnerId);
+      return one ? [one] : [];
+    }
+    const one = normalizePartnerId(state.activePartnerId);
+    return one ? [one] : [];
+  }
+
+  function syncSelectedPartnerIds(preferredId = '') {
+    const allowed = new Set((state.partners || []).map(p => normalizePartnerId(p.partnerId)).filter(Boolean));
+    let ids = [...new Set((state.selectedPartnerIds || []).map(normalizePartnerId).filter(id => allowed.has(id)))];
+    const preferred = normalizePartnerId(preferredId);
+    if (preferred && allowed.has(preferred) && !ids.includes(preferred)) {
+      ids = [...ids, preferred];
+    }
+    if (!ids.length && preferred && allowed.has(preferred)) {
+      ids = [preferred];
+    }
+    if (!ids.length && allowed.size) {
+      const first = normalizePartnerId(state.partners[0]?.partnerId);
+      if (first) ids = [first];
+    }
+    state.selectedPartnerIds = ids;
+    if (!ids.includes(normalizePartnerId(state.activePartnerId))) {
+      state.activePartnerId = ids[0] || '';
+    }
+    return ids;
+  }
+
   function filterPartnersForView(partners = []) {
     const map = state.partnerRegionMap || {};
-    const registeredIds = Object.keys(map);
+    // 계정 배정 지역만 (서버 viewPartnerIds). 없으면 map 키(=이미 스코프된 목록)
+    const allowed = (state.viewPartnerIds || []).length
+      ? new Set(state.viewPartnerIds.map(id => String(id || '').trim().toUpperCase()).filter(Boolean))
+      : new Set(Object.keys(map).map(id => String(id || '').trim().toUpperCase()));
+    const registeredIds = Object.keys(map)
+      .map(id => String(id || '').trim().toUpperCase())
+      .filter(id => allowed.has(id));
     if (!registeredIds.length) return [];
 
     const byId = new Map();
@@ -532,7 +632,7 @@
       state.riderViewToDate = range.toDate;
     }
     if (state.activeMenu === 'quota_achievement') {
-      clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 할당달성 조회를 눌러 주세요.');
+      clearViewTablesForMenu(state.activeMenu, '정산주가 변경되었습니다. 지역별 할당 달성 조회를 눌러 주세요.');
       updateWeekPickerVisibility();
       return;
     }
@@ -559,7 +659,8 @@
       if (menuNav) menuNav.hidden = true;
       return;
     }
-    const hasRegion = Boolean(normalizePartnerId(state.activePartnerId));
+    const hasRegion = getSelectedPartnerIds().length > 0
+      || Boolean(normalizePartnerId(state.activePartnerId));
     const hasAnyRegion = hasRegion
       || (state.partners || []).length > 0
       || Object.keys(state.partnerRegionMap || {}).length > 0;
@@ -972,78 +1073,91 @@
 
   async function loadDeliveryStatusData() {
     if (!isViewSection()) return;
-    const partnerId = normalizePartnerId(state.activePartnerId);
-    if (!partnerId) {
+    const partnerIds = getSelectedPartnerIds();
+    if (!partnerIds.length) {
       showToast('지역을 선택하세요.');
       return;
     }
     const loadBtn = $('baeminStatusDeliveryLoadBtn');
     loadBtn?.classList.add('is-loading');
-    if (loadBtn) loadBtn.textContent = '조회 중…';
+    if (loadBtn) loadBtn.textContent = '실시간 조회 중…';
+    let liveHint = '';
     try {
-      // 선택 지역 배달현황만 조회 (전체 view-full-bundle 사용 금지)
+      const live = await refreshDeliveryLiveFromLocalServer();
+      if (live.ok) {
+        liveHint = ' · 실시간 반영';
+      } else if (live.message) {
+        liveHint = live.skipped ? '' : '';
+        if (!live.skipped && live.message) showToast(live.message);
+      }
+
       if (!state.config?.applied) {
         await loadViewConfig();
       }
       const captureDate = state.appliedCollectDate
         || state.config?.applied?.collectDate
         || todayKstDate();
-      const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
 
-      if (!result.ok) {
-        showToast(result.message || '배달현황 불러오기에 실패했습니다.');
-        return;
+      const merged = [];
+      let lastCollectDate = captureDate;
+      for (const partnerId of partnerIds) {
+        const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+        if (!result.ok) {
+          showToast(result.message || `${partnerLabelById(partnerId)} 배달현황 불러오기 실패`);
+          continue;
+        }
+        if (result.notApplied) {
+          clearViewTablesForMenu(
+            'delivery_status',
+            result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.'
+          );
+          showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+          return;
+        }
+        const items = filterRowsByPartnerId(result.items || [], partnerId);
+        const totals = {
+          ...(result.totals || {}),
+          rowCount: items.length,
+          drivingCount: countDrivingRiders(items)
+        };
+        const cached = getCachedPartnerBundle(partnerId) || { meta: {}, totals: {} };
+        cached.delivery_status = items;
+        cached.totals = {
+          ...(cached.totals || {}),
+          delivery_status: totals
+        };
+        cached.meta = {
+          ...(cached.meta || {}),
+          captureDate: result.collectDate || captureDate,
+          notApplied: false,
+          deliveryLoaded: true
+        };
+        setCachedPartnerBundle(partnerId, cached);
+        if (result.collectDate) lastCollectDate = result.collectDate;
+        merged.push(...items);
       }
-      if (result.notApplied) {
-        clearViewTablesForMenu(
-          'delivery_status',
-          result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.'
-        );
-        showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
-        return;
-      }
-
-      const rawItems = result.items || [];
-      const dropped = Math.max(0, rawItems.length - filterRowsByPartnerId(rawItems, partnerId).length);
-      const items = filterRowsByPartnerId(rawItems, partnerId);
-      const drivingCount = countDrivingRiders(items);
-      const totals = {
-        ...(result.totals || {}),
-        rowCount: items.length,
-        drivingCount
-      };
-      const cached = getCachedPartnerBundle(partnerId) || { meta: {}, totals: {} };
-      cached.delivery_status = items;
-      cached.totals = {
-        ...(cached.totals || {}),
-        delivery_status: totals
-      };
-      cached.meta = {
-        ...(cached.meta || {}),
-        captureDate: result.collectDate || captureDate,
-        notApplied: false,
-        deliveryLoaded: true
-      };
-      setCachedPartnerBundle(partnerId, cached);
 
       state.viewLoaded = true;
-      state.appliedCollectDate = result.collectDate || captureDate;
+      state.appliedCollectDate = lastCollectDate || captureDate;
       state.lastClientRefreshAt = new Date().toISOString();
       renderRefreshMeta();
 
-      if (!items.length) {
+      const drivingItems = merged.filter(row => isDrivingStatus(row?.parsed_json?.statusDesc || row?.statusDesc || ''));
+      if (!drivingItems.length) {
         clearViewTablesForMenu(
           'delivery_status',
-          '저장된 배달현황이 없습니다. BIZ 수집 후 [배민현황 저장]을 실행하세요.'
+          merged.length
+            ? '선택 지역에 운행중 기사가 없습니다.'
+            : '저장된 배달현황이 없습니다. BIZ 수집 후 [배민현황 저장]을 실행하세요.'
         );
-        showToast(dropped ? `배달현황 데이터 없음 (다른 지역 ${formatNumber(dropped)}건 제외)` : '배달현황 데이터 없음');
+        renderGrandTotalsPanelMulti(partnerIds);
+        showToast(merged.length ? `운행중 0명 (전체 ${formatNumber(merged.length)}명)` : '배달현황 데이터 없음');
         return;
       }
 
-      renderSubtabRows('delivery_status', partnerId, items, cached.meta);
-      renderGrandTotalsPanel('delivery_status', partnerId);
-      const dropHint = dropped ? ` · 타지역 ${formatNumber(dropped)}건 제외` : '';
-      showToast(`배달현황 ${formatNumber(items.length)}명 · 운행중 ${formatNumber(drivingCount)}명${dropHint}`);
+      renderDeliveryStatusRowsMulti(drivingItems, partnerIds, { live: Boolean(liveHint) });
+      renderGrandTotalsPanelMulti(partnerIds);
+      showToast(`운행중 ${formatNumber(drivingItems.length)}명 · 지역 ${partnerIds.length}곳${liveHint || ' · 저장 스냅샷'}`);
     } finally {
       loadBtn?.classList.remove('is-loading');
       if (loadBtn) loadBtn.textContent = '배달현황 조회';
@@ -1572,8 +1686,8 @@
 
   async function loadQuotaAchievementData() {
     if (!isViewSection()) return;
-    const partnerId = normalizePartnerId(state.activePartnerId);
-    if (!partnerId) {
+    const partnerIds = getSelectedPartnerIds();
+    if (!partnerIds.length) {
       showToast('지역을 선택하세요.');
       return;
     }
@@ -1584,48 +1698,55 @@
     loadBtn?.classList.add('is-loading');
     if (loadBtn) loadBtn.textContent = '조회 중…';
 
-    const result = await adminApi(
-      `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(range.fromDate)}&toDate=${encodeURIComponent(range.toDate)}`
-    );
-
-    loadBtn?.classList.remove('is-loading');
-    if (loadBtn) loadBtn.textContent = '할당달성 조회';
-
-    if (!result.ok) {
-      showToast(result.message || '할당달성 불러오기에 실패했습니다.');
-      return;
-    }
-    if (result.notApplied) {
-      clearViewTablesForMenu('quota_achievement', result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
-      showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
-      return;
-    }
-
     await ensureWeekdayQuotaLoaded();
 
-    const items = result.items || [];
-    const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
-    cached.daily_history = items;
-    cached.meta = {
-      ...(cached.meta || {}),
-      weekStart: range.fromDate,
-      weekEnd: range.toDate,
-      quotaWeekStart: weekStart,
-      quotaLoaded: true,
-      dailyFromDate: range.fromDate,
-      dailyToDate: range.toDate,
-      dailyLoaded: true
-    };
-    setCachedPartnerBundle(partnerId, cached);
-    renderQuotaAchievementRows(partnerId, items, cached.meta);
-    renderGrandTotalsPanel('delivery_status', partnerId);
-    renderSetCountRow(partnerId);
+    let loadedAny = false;
+    for (const partnerId of partnerIds) {
+      const result = await adminApi(
+        `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(range.fromDate)}&toDate=${encodeURIComponent(range.toDate)}`
+      );
 
-    if (!items.length) {
-      showToast(result.hint || `정산주 ${range.fromDate}~${range.toDate}에 일별 데이터 없음`);
+      if (!result.ok) {
+        showToast(result.message || `${partnerLabelById(partnerId)} 지역별 할당 달성 불러오기 실패`);
+        continue;
+      }
+      if (result.notApplied) {
+        clearViewTablesForMenu('quota_achievement', result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+        showToast(result.message || '배민 BIZ → [배민현황 저장]을 먼저 실행하세요.');
+        loadBtn?.classList.remove('is-loading');
+        if (loadBtn) loadBtn.textContent = '지역별 할당 달성 조회';
+        return;
+      }
+
+      const items = result.items || [];
+      const cached = getCachedPartnerBundle(partnerId) || { meta: {} };
+      cached.daily_history = items;
+      cached.meta = {
+        ...(cached.meta || {}),
+        weekStart: range.fromDate,
+        weekEnd: range.toDate,
+        quotaWeekStart: weekStart,
+        quotaLoaded: true,
+        dailyFromDate: range.fromDate,
+        dailyToDate: range.toDate,
+        dailyLoaded: true
+      };
+      setCachedPartnerBundle(partnerId, cached);
+      loadedAny = true;
+    }
+
+    loadBtn?.classList.remove('is-loading');
+    if (loadBtn) loadBtn.textContent = '지역별 할당 달성 조회';
+
+    if (!loadedAny) {
+      clearViewTablesForMenu('quota_achievement', '지역별 할당 달성 데이터가 없습니다.');
       return;
     }
-    showToast(`할당달성 ${range.fromDate} ~ ${range.toDate} · ${formatNumber(items.length)}일 (일별 배달내역 기준)`);
+
+    renderQuotaAchievementForSelection(partnerIds);
+    renderGrandTotalsPanelMulti(partnerIds);
+    renderSetCountRow(state.activePartnerId);
+    showToast(`지역별 할당 달성 ${range.fromDate} ~ ${range.toDate} · 지역 ${partnerIds.length}곳`);
   }
 
   async function loadViewWeekMenuData() {
@@ -1873,7 +1994,7 @@
     const labelEl = $('baeminStatusSetCountLabel');
     if (!row || !isViewSection()) return;
     const pid = normalizePartnerId(partnerId);
-    // 세트수는 할당달성에서만 표시
+    // 세트수는 지역별 할당 달성에서만 표시
     const show = Boolean(pid && state.activeMenu === 'quota_achievement');
     row.hidden = !show;
     if (!show) return;
@@ -1896,60 +2017,228 @@
   }
 
   function renderQuotaAchievementRows(partnerId, items = [], meta = {}) {
+    renderQuotaAchievementForSelection([normalizePartnerId(partnerId)].filter(Boolean), {
+      [normalizePartnerId(partnerId)]: { items, meta }
+    });
+  }
+
+  function renderQuotaAchievementForSelection(partnerIds = getSelectedPartnerIds(), bundlesById = null) {
     const rowsEl = $('baeminStatusQuotaAchievementRows');
     const summaryEl = $('baeminStatusQuotaAchievementSummary');
     if (!rowsEl) return;
 
-    const pid = normalizePartnerId(partnerId);
-    const setCount = getPartnerSetCount(pid);
-    const partnerLabel = partnerDisplayLabel(state.partners.find(p => normalizePartnerId(p.partnerId) === pid));
-    const weekStart = meta.quotaWeekStart || meta.weekStart || ensureViewWeekStart();
-    const weekRange = computeViewWeekQueryRange(weekStart);
-    const fromDate = meta.weekStart || weekRange.fromDate;
-    const toDate = meta.weekEnd || weekRange.toDate;
-    const rangeLabel = fromDate && toDate ? `${fromDate} ~ ${toDate}` : '';
+    const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
+    if (!ids.length) {
+      if (summaryEl) summaryEl.textContent = '지역을 선택하세요';
+      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">지역을 선택하고 지역별 할당 달성 조회를 눌러 주세요.</td></tr>';
+      return;
+    }
 
-    const byDate = new Map();
-    items.forEach(row => {
-      const p = row.parsed_json || {};
-      const date = String(p.deliveryDate || p.businessDate || row.collect_date || '').slice(0, 10);
-      if (!date) return;
-      const hit = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
-      hit.morning += Number(p.morningCount || 0);
-      hit.afternoon += Number(p.afternoonCount || 0);
-      hit.evening += Number(p.eveningCount || 0);
-      hit.midnight += Number(p.midnightCount || 0);
-      byDate.set(date, hit);
+    const weekStart = ensureViewWeekStart();
+    const weekRange = computeViewWeekQueryRange(weekStart);
+    const sections = [];
+    let filledTotal = 0;
+    let dayTotal = 0;
+
+    ids.forEach(pid => {
+      const cached = bundlesById?.[pid] || getCachedPartnerBundle(pid) || {};
+      const items = cached.items || cached.daily_history || [];
+      const meta = cached.meta || {};
+      const setCount = getPartnerSetCount(pid);
+      const partnerLabel = partnerLabelById(pid);
+      const fromDate = meta.weekStart || weekRange.fromDate;
+      const toDate = meta.weekEnd || weekRange.toDate;
+      const byDate = new Map();
+      items.forEach(row => {
+        const p = row.parsed_json || {};
+        const date = String(p.deliveryDate || p.businessDate || row.collect_date || '').slice(0, 10);
+        if (!date) return;
+        const hit = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+        hit.morning += Number(p.morningCount || 0);
+        hit.afternoon += Number(p.afternoonCount || 0);
+        hit.evening += Number(p.eveningCount || 0);
+        hit.midnight += Number(p.midnightCount || 0);
+        byDate.set(date, hit);
+      });
+      const dates = listDatesInclusive(fromDate, toDate);
+      dayTotal += dates.length;
+      const filledDays = dates.filter(date => byDate.has(date)).length;
+      filledTotal += filledDays;
+      if (!dates.length) return;
+      if (!filledDays) {
+        sections.push(`<tr>
+          <td>${escapeHtml(partnerLabel)}</td>
+          <td colspan="5" class="form-help">해당 정산주 일별 배달내역 없음</td>
+        </tr>`);
+        return;
+      }
+      dates.forEach(date => {
+        const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+        const targets = computeSlotTargets(setCount, date);
+        sections.push(`<tr>
+          <td>${escapeHtml(partnerLabel)}</td>
+          <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
+          ${renderQuotaCell(actual.morning, targets.morning)}
+          ${renderQuotaCell(actual.afternoon, targets.afternoon)}
+          ${renderQuotaCell(actual.evening, targets.evening)}
+          ${renderQuotaCell(actual.midnight, targets.midnight)}
+        </tr>`);
+      });
     });
 
-    const dates = listDatesInclusive(fromDate, toDate);
-    if (!dates.length) {
-      if (summaryEl) summaryEl.textContent = `${partnerLabel} · 정산주를 선택하세요`;
-      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">정산주를 선택하고 할당달성 조회를 눌러 주세요.</td></tr>';
-      return;
-    }
-
-    const filledDays = dates.filter(date => byDate.has(date)).length;
+    const rangeLabel = `${weekRange.fromDate} ~ ${weekRange.toDate}`;
     if (summaryEl) {
-      summaryEl.textContent = `${partnerLabel} · ${rangeLabel} · ${filledDays}/${dates.length}일 · ${setCount}세트 (일별 배달내역)`;
+      summaryEl.textContent = `지역 ${ids.length}곳 · ${rangeLabel} · 데이터 ${filledTotal}/${dayTotal || ids.length} · 지역별 할당 달성`;
     }
-
-    if (!filledDays) {
-      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">해당 정산주에 일별 배달내역이 없습니다. BIZ에서 일별 수집 후 [배민현황 저장]을 실행하세요.</td></tr>';
+    if (!sections.length) {
+      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">정산주를 선택하고 지역별 할당 달성 조회를 눌러 주세요.</td></tr>';
       return;
     }
+    rowsEl.innerHTML = sections.join('');
+  }
 
-    rowsEl.innerHTML = dates.map(date => {
-      const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
-      const targets = computeSlotTargets(setCount, date);
+  function renderDeliveryStatusRowsMulti(items = [], partnerIds = [], meta = {}) {
+    const rowsEl = $('baeminStatusDeliveryStatusRows');
+    const summaryEl = $('baeminStatusDeliveryStatusSummary');
+    if (!rowsEl) return;
+    const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
+    const showPartner = ids.length !== 1;
+    syncPartnerColumnVisibility(showPartner);
+    const drivingCount = countDrivingRiders(items);
+    const labels = ids.map(partnerLabelById).join(', ');
+    if (summaryEl) {
+      summaryEl.textContent = `${labels || '선택 지역'} · 운행중 ${formatNumber(drivingCount)}명 · ${meta.live ? '실시간' : '저장 스냅샷'}`;
+    }
+    if (isViewSection()) {
+      renderViewAppliedBanner(state.config?.applied || null);
+    }
+    if (!items.length) {
+      rowsEl.innerHTML = `<tr><td colspan="${showPartner ? 13 : 12}" class="form-help">운행중 기사가 없습니다.</td></tr>`;
+      return;
+    }
+    rowsEl.innerHTML = items.map(row => {
+      const p = row.parsed_json || {};
+      const pid = resolveRowPartnerId(row);
+      const partnerCell = showPartner
+        ? `<td data-partner-col>${escapeHtml(partnerLabelById(pid))}</td>`
+        : '';
       return `<tr>
-        <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
-        ${renderQuotaCell(actual.morning, targets.morning)}
-        ${renderQuotaCell(actual.afternoon, targets.afternoon)}
-        ${renderQuotaCell(actual.evening, targets.evening)}
-        ${renderQuotaCell(actual.midnight, targets.midnight)}
+        ${partnerCell}
+        <td>${escapeHtml(row.rider_name || '-')}</td>
+        <td>${escapeHtml(p.statusDesc || '-')}</td>
+        <td>${escapeHtml(row.rider_user_id || '-')}</td>
+        <td>${escapeHtml(row.phone_number || '-')}</td>
+        <td>${formatNumber(p.totalComplete || 0)}</td>
+        ${formatServiceBreakdownCells(p)}
+        <td>${formatNumber(p.morningCount || 0)}</td>
+        <td>${formatNumber(p.afternoonCount || 0)}</td>
+        <td>${formatNumber(p.eveningCount || 0)}</td>
+        <td>${formatNumber(p.midnightCount || 0)}</td>
       </tr>`;
     }).join('');
+  }
+
+  function renderDeliveryStatusForSelection() {
+    const partnerIds = getSelectedPartnerIds();
+    const merged = [];
+    partnerIds.forEach(pid => {
+      const cached = getCachedPartnerBundle(pid);
+      if (cached?.delivery_status?.length) {
+        merged.push(...cached.delivery_status);
+      }
+    });
+    const driving = merged.filter(row => isDrivingStatus(row?.parsed_json?.statusDesc || ''));
+    if (!driving.length && !merged.length) {
+      clearViewTablesForMenu('delivery_status', '배달현황 조회를 눌러 주세요');
+      renderGrandTotalsPanelMulti(partnerIds);
+      return;
+    }
+    renderDeliveryStatusRowsMulti(driving.length ? driving : merged, partnerIds, { live: false });
+    renderGrandTotalsPanelMulti(partnerIds);
+  }
+
+  function renderGrandTotalsPanelMulti(partnerIds = getSelectedPartnerIds()) {
+    const panel = $('baeminStatusGrandTotals');
+    if (!panel || !isViewSection()) return;
+    if (!state.viewLoaded || state.activeMenu !== 'delivery_status') {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+    const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
+    if (!ids.length) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+
+    const aggregate = {
+      rowCount: 0,
+      drivingCount: 0,
+      completeTotal: 0,
+      totalReject: 0,
+      cancelTotal: 0,
+      riderFault: 0,
+      morningTotal: 0,
+      afternoonTotal: 0,
+      eveningTotal: 0,
+      midnightTotal: 0
+    };
+    let setCountSum = 0;
+    ids.forEach(pid => {
+      const totals = getPartnerMenuTotals(pid, 'delivery_status') || {};
+      const cached = getCachedPartnerBundle(pid);
+      aggregate.rowCount += Number(totals.rowCount || cached?.delivery_status?.length || 0);
+      aggregate.drivingCount += Number.isFinite(Number(totals.drivingCount))
+        ? Number(totals.drivingCount)
+        : countDrivingRiders(cached?.delivery_status || []);
+      aggregate.completeTotal += Number(totals.completeTotal || 0);
+      aggregate.totalReject += Number(totals.totalReject || 0);
+      aggregate.cancelTotal += Number(totals.cancelTotal || 0);
+      aggregate.riderFault += Number(totals.riderFault || 0);
+      aggregate.morningTotal += Number(totals.morningTotal || 0);
+      aggregate.afternoonTotal += Number(totals.afternoonTotal || 0);
+      aggregate.eveningTotal += Number(totals.eveningTotal || 0);
+      aggregate.midnightTotal += Number(totals.midnightTotal || 0);
+      setCountSum += getPartnerSetCount(pid);
+    });
+
+    if (aggregate.rowCount <= 0) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+
+    const labels = ids.map(partnerLabelById).join(', ');
+    const avgSets = Math.max(1, Math.round(setCountSum / ids.length));
+    const todayTargets = computeSlotTargets(avgSets, todayKstDate());
+    panel.hidden = false;
+    panel.innerHTML = `
+      <p class="baemin-grand-totals__title">${escapeHtml(labels)} · 기사 전체 ${formatNumber(aggregate.rowCount)}명 · 운행중 ${formatNumber(aggregate.drivingCount)}명 · 지역 ${ids.length}곳</p>
+      ${renderMetricCard('운행중', aggregate.drivingCount, true)}
+      ${renderMetricCard('완료', aggregate.completeTotal, true)}
+      ${renderMetricCard('거절 합계', aggregate.totalReject)}
+      ${renderMetricCard('배차취소 합계', aggregate.cancelTotal)}
+      ${renderMetricCard('배달취소(라이더귀책) 합계', aggregate.riderFault)}
+      ${renderProgressCard('아침점심 합계', aggregate.morningTotal, todayTargets.morning)}
+      ${renderProgressCard('오후 합계', aggregate.afternoonTotal, todayTargets.afternoon)}
+      ${renderProgressCard('저녁 합계', aggregate.eveningTotal, todayTargets.evening)}
+      ${renderProgressCard('심야 합계', aggregate.midnightTotal, todayTargets.midnight)}
+    `;
+  }
+
+  function renderActiveViewFromCacheMulti() {
+    const menu = state.activeMenu || 'delivery_status';
+    if (menu === 'delivery_status') {
+      renderDeliveryStatusForSelection();
+      return;
+    }
+    if (menu === 'quota_achievement') {
+      renderQuotaAchievementForSelection();
+      renderGrandTotalsPanelMulti();
+      return;
+    }
+    renderActiveViewFromCache();
   }
 
   function renderActiveViewFromCache() {
@@ -1960,12 +2249,8 @@
     if (!cached) return;
     renderSetCountRow(partnerId);
     if (menu === 'quota_achievement') {
-      if (cached.meta?.quotaLoaded || cached.daily_history?.length) {
-        renderQuotaAchievementRows(partnerId, cached.daily_history || [], cached.meta || {});
-      } else {
-        clearViewTablesForMenu('quota_achievement', '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
-      }
-      renderGrandTotalsPanel('delivery_status', partnerId);
+      renderQuotaAchievementForSelection();
+      renderGrandTotalsPanelMulti();
       return;
     }
     if (menu === 'weekday_quota') {
@@ -1985,6 +2270,27 @@
       renderGrandTotalsPanel('delivery_status', partnerId);
       return;
     }
+    if (menu === 'delivery_status') {
+      renderDeliveryStatusForSelection();
+      return;
+    }
+    if (menu === 'rider_history') {
+      if (cached.rider_history?.length && cached.meta?.riderLoaded) {
+        renderRiderHistoryRiderRows(partnerId, cached.rider_history, {
+          fromDate: cached.meta.riderFromDate,
+          toDate: cached.meta.riderToDate
+        });
+      }
+      renderGrandTotalsPanel(menu, partnerId);
+      return;
+    }
+    if (menu === 'daily_history') {
+      if (cached.daily_history?.length && cached.meta?.dailyLoaded) {
+        renderSubtabRows('daily_history', partnerId, cached.daily_history, cached.meta || {});
+      }
+      renderGrandTotalsPanel(menu, partnerId);
+      return;
+    }
     if (menu === 'calls_rejection_sync') {
       const summaryEl = $('baeminStatusSyncSummary');
       if (summaryEl && !summaryEl.textContent) {
@@ -1994,30 +2300,9 @@
       void loadSyncReflectionStatus({ silent: true });
       return;
     }
-    if (menu === 'rider_history' && cached.rider_history?.length) {
-      renderRiderHistoryRiderRows(partnerId, cached.rider_history, {
-        fromDate: cached.meta?.riderFromDate || resolveRiderViewDateRange().fromDate,
-        toDate: cached.meta?.riderToDate || resolveRiderViewDateRange().toDate
-      });
-      renderGrandTotalsPanel('delivery_status', partnerId);
-      return;
+    if (cached[menu]?.length) {
+      renderSubtabRows(menu, partnerId, cached[menu], cached.meta || {});
     }
-    if (menu === 'rider_history') {
-      const range = resolveRiderViewDateRange();
-      renderRiderHistoryRiderRows(partnerId, [], range);
-      renderGrandTotalsPanel('delivery_status', partnerId);
-      return;
-    }
-    if (menu === 'daily_history') {
-      if (cached.daily_history?.length && cached.meta?.dailyLoaded) {
-        renderSubtabRows(menu, partnerId, cached.daily_history, cached.meta || {});
-      } else {
-        clearViewTablesForMenu(menu, '시작일·종료일을 선택하고 조회를 눌러 주세요.');
-      }
-      renderGrandTotalsPanel(menu, partnerId);
-      return;
-    }
-    renderSubtabRows(menu, partnerId, cached[menu] || [], cached.meta || {});
     renderGrandTotalsPanel(menu, partnerId);
   }
 
@@ -2206,7 +2491,7 @@
         : (menu === 'calls_rejection_sync'
           ? 7
           : (menu === 'quota_achievement'
-            ? 5
+            ? 6
             : (menu === 'weekday_quota'
               ? 8
               : getBaeminTableColspan(menu, { showPartner: false, includeCollected: false }))));
@@ -2230,23 +2515,34 @@
   async function loadPartnerRegionMap() {
     const result = await adminApi('/api/admin/baemin-delivery/partner-regions');
     if (!result.ok) {
-      state.partnerRegionMap = readCachedRegionMap();
+      // 실패 시 타계정/전체 지역 캐시를 쓰지 않음
+      state.partnerRegionMap = {};
       state.partnerRegionItems = [];
+      state.viewPartnerIds = [];
       state.canManageRegions = false;
       renderPartnerRegionList([]);
       renderRegionRegistrationCard();
-      if (isViewSection() && Object.keys(state.partnerRegionMap).length) {
-        showRegionTabsFromMap(state.partnerRegionMap);
+      if (isViewSection()) {
+        state.partners = [];
+        renderPartnerTabs([]);
+        updateWeekPickerVisibility();
+        updatePanelVisibility();
+        showToast(result.message || '담당 지역을 불러오지 못했습니다. 계정 지역 배정을 확인하세요.');
       }
       return;
     }
     state.canManageRegions = Boolean(result.canManageRegions);
     state.partnerRegionMap = result.map || {};
     state.partnerRegionItems = Array.isArray(result.items) ? result.items : [];
+    state.viewPartnerIds = Array.isArray(result.viewPartnerIds)
+      ? result.viewPartnerIds.map(id => String(id || '').trim().toUpperCase()).filter(Boolean)
+      : Object.keys(state.partnerRegionMap);
     writeCachedRegionMap(state.partnerRegionMap);
+    // 지역 등록 목록만 전체(allItems). 조회 탭은 map/items(=배정 지역)만 사용
     renderPartnerRegionList(state.canManageRegions ? (result.allItems || result.items || []) : state.partnerRegionItems);
     renderRegionRegistrationCard();
     if (isViewSection()) showRegionTabsFromMap(state.partnerRegionMap);
+    void initDashboardBaeminLive(true);
   }
 
   async function loadPartnerSetCountMap() {
@@ -2306,7 +2602,7 @@
     }).join('');
 
     if (summaryEl) {
-      summaryEl.textContent = '1세트 기준 · 저장 값이 할당달성 목표로 사용됩니다';
+      summaryEl.textContent = '1세트 기준 · 저장 값이 지역별 할당 달성 목표로 사용됩니다';
     }
     if (metaEl) {
       const meta = state.weekdayQuotaMeta || {};
@@ -2347,7 +2643,7 @@
     if (pid && state.activeMenu === 'delivery_status') {
       renderGrandTotalsPanel('delivery_status', pid);
     }
-    showToast('요일별 할당을 저장했습니다. 할당달성에 반영됩니다.');
+    showToast('요일별 할당을 저장했습니다. 지역별 할당 달성에 반영됩니다.');
   }
 
   async function resetWeekdayQuotaEditorToDefaults() {
@@ -2567,6 +2863,7 @@
     if (!state.partners.length) {
       bar.hidden = true;
       bar.innerHTML = '';
+      state.selectedPartnerIds = [];
       const toolbar = $('baeminBizPartnerToolbar');
       if (toolbar) toolbar.hidden = true;
       if (!isViewSection()) {
@@ -2576,13 +2873,20 @@
       return;
     }
 
+    if (isViewSection()) {
+      syncSelectedPartnerIds(state.activePartnerId);
+    }
+
     bar.hidden = false;
+    const selected = new Set(getSelectedPartnerIds());
     bar.innerHTML = state.partners.map(partner => {
       const id = normalizePartnerId(partner.partnerId);
       const label = partnerDisplayLabel(partner);
-      const active = normalizePartnerId(state.activePartnerId) === id ? ' is-active' : '';
+      const active = isViewSection()
+        ? (selected.has(id) ? ' is-active' : '')
+        : (normalizePartnerId(state.activePartnerId) === id ? ' is-active' : '');
       if (isViewSection()) {
-        return `<button type="button" class="baemin-region-tab${active}" data-baemin-partner="${id}" title="DP ${id}">${escapeHtml(label)}</button>`;
+        return `<button type="button" class="baemin-region-tab${active}" data-baemin-partner="${id}" title="DP ${id} · 클릭으로 다중선택" aria-pressed="${selected.has(id) ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
       }
       const bizLabel = bizPartnerTabLabel(partner);
       const count = Number(partner.riderCount || 0);
@@ -2599,7 +2903,7 @@
 
     bar.querySelectorAll('[data-baemin-partner]').forEach(btn => {
       btn.addEventListener('click', () => {
-        switchBaeminPartner(btn.dataset.baeminPartner || '');
+        switchBaeminPartner(btn.dataset.baeminPartner || '', { toggle: isViewSection() });
       });
     });
     if (isViewSection()) {
@@ -2711,7 +3015,9 @@
     const ui = tableUiConfig();
     const section = document.getElementById(ui.sectionRootId);
     if (!section) return;
-    const hasPartner = Boolean(normalizePartnerId(state.activePartnerId));
+    const hasPartner = isViewSection()
+      ? getSelectedPartnerIds().length > 0
+      : Boolean(normalizePartnerId(state.activePartnerId));
     section.querySelectorAll(`[${ui.panelAttr}]`).forEach(panel => {
       const menu = panel.getAttribute(ui.panelAttr);
       if (isViewSection()) {
@@ -2734,14 +3040,58 @@
     updateWeekPickerVisibility();
   }
 
-  function switchBaeminPartner(partnerId) {
+  function switchBaeminPartner(partnerId, options = {}) {
     const ui = tableUiConfig();
     const id = normalizePartnerId(partnerId);
     if (!id) return;
+
+    if (isViewSection() && options.toggle) {
+      const allowed = new Set((state.partners || []).map(p => normalizePartnerId(p.partnerId)).filter(Boolean));
+      if (!allowed.has(id)) return;
+      const set = new Set(getSelectedPartnerIds());
+      if (set.has(id)) {
+        if (set.size <= 1) {
+          showToast('최소 1개 지역은 선택되어 있어야 합니다.');
+          return;
+        }
+        set.delete(id);
+      } else {
+        set.add(id);
+      }
+      state.selectedPartnerIds = [...set];
+      state.activePartnerId = id;
+      $(ui.partnerBarId)?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
+        const btnId = normalizePartnerId(btn.dataset.baeminPartner);
+        const on = set.has(btnId);
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      updatePanelVisibility();
+      // 다중 선택 변경 시 현재 메뉴 캐시/합계만 다시 그림 (조회는 버튼으로)
+      if (state.activeMenu === 'weekday_quota') {
+        void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
+        renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+        return;
+      }
+      if (state.activeMenu === 'delivery_status' || state.activeMenu === 'quota_achievement') {
+        renderActiveViewFromCacheMulti();
+        return;
+      }
+      // 단건 메뉴는 마지막 클릭 지역 기준으로 표시
+    }
+
     state.activePartnerId = id;
+    if (isViewSection() && !options.toggle) {
+      state.selectedPartnerIds = [id];
+    }
     if (!state.activeMenu) state.activeMenu = 'delivery_status';
     $(ui.partnerBarId)?.querySelectorAll('[data-baemin-partner]').forEach(btn => {
-      btn.classList.toggle('is-active', btn.dataset.baeminPartner === id);
+      const btnId = normalizePartnerId(btn.dataset.baeminPartner);
+      const on = isViewSection()
+        ? getSelectedPartnerIds().includes(btnId)
+        : btnId === id;
+      btn.classList.toggle('is-active', on);
+      if (isViewSection()) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     updatePanelVisibility();
 
@@ -2774,11 +3124,7 @@
     if (cached) {
       renderSetCountRow(id);
       if (state.activeMenu === 'quota_achievement') {
-        if (cached.meta?.quotaLoaded || cached.daily_history?.length) {
-          renderQuotaAchievementRows(id, cached.daily_history || [], cached.meta || {});
-        } else {
-          clearViewTablesForMenu('quota_achievement', '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
-        }
+        renderQuotaAchievementForSelection();
       } else if (state.activeMenu === 'rider_history') {
         if (cached.rider_history?.length && cached.meta?.riderLoaded) {
           renderRiderHistoryRiderRows(id, cached.rider_history, {
@@ -2794,6 +3140,8 @@
         } else {
           clearViewTablesForMenu('daily_history', '시작일·종료일을 선택하고 조회를 눌러 주세요.');
         }
+      } else if (state.activeMenu === 'delivery_status') {
+        renderDeliveryStatusForSelection();
       } else if (cached[state.activeMenu]?.length) {
         renderSubtabRows(state.activeMenu, id, cached[state.activeMenu], cached.meta || {});
       } else {
@@ -2814,29 +3162,31 @@
     if (!menu) return;
 
     if (isViewSection()) {
-      if (!normalizePartnerId(state.activePartnerId) && menu !== 'calls_rejection_sync') {
+      if (!getSelectedPartnerIds().length && menu !== 'calls_rejection_sync') {
         showToast('지역을 먼저 선택하세요.');
         return;
       }
       state.activeMenu = menu;
       updatePanelVisibility();
       renderSetCountRow(state.activePartnerId);
-    if (menu === 'calls_rejection_sync') {
-      clearViewTablesForMenu(menu, '전지역 대상 · 콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
-      renderGrandTotalsPanel('delivery_status', state.activePartnerId);
-      void loadSyncReflectionStatus({ silent: true });
-      return;
-    }
+      if (menu === 'calls_rejection_sync') {
+        clearViewTablesForMenu(menu, '전지역 대상 · 콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
+        renderGrandTotalsPanel('delivery_status', state.activePartnerId);
+        void loadSyncReflectionStatus({ silent: true });
+        return;
+      }
+      if (menu === 'quota_achievement') {
+        renderQuotaAchievementForSelection();
+        renderGrandTotalsPanelMulti();
+        return;
+      }
+      if (menu === 'delivery_status') {
+        renderDeliveryStatusForSelection();
+        return;
+      }
       if (state.activePartnerId) {
         const cached = getCachedPartnerBundle(state.activePartnerId);
-        if (menu === 'quota_achievement') {
-          if (cached?.meta?.quotaLoaded || cached?.daily_history?.length) {
-            renderQuotaAchievementRows(state.activePartnerId, cached.daily_history || [], cached.meta || {});
-          } else {
-            clearViewTablesForMenu(menu, '정산주를 선택하고 할당달성 조회를 눌러 주세요.');
-          }
-          renderGrandTotalsPanel('delivery_status', state.activePartnerId);
-        } else if (menu === 'weekday_quota') {
+        if (menu === 'weekday_quota') {
           void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
           renderGrandTotalsPanel('delivery_status', state.activePartnerId);
         } else if (menu === 'accept_rate_live') {
@@ -2848,9 +3198,6 @@
           } else {
             clearViewTablesForMenu(menu, '수락율 조회를 눌러 주세요.');
           }
-          renderGrandTotalsPanel('delivery_status', state.activePartnerId);
-        } else if (menu === 'calls_rejection_sync') {
-          clearViewTablesForMenu(menu, '콜수입력 / 거절율입력 / 모두입력 / 실시간 입력 버튼을 사용하세요.');
           renderGrandTotalsPanel('delivery_status', state.activePartnerId);
         } else if (menu === 'rider_history') {
           if (cached?.rider_history?.length && cached.meta?.riderLoaded) {
@@ -2925,7 +3272,7 @@
     }
     if (rowsEl) {
       const colspan = menu === 'quota_achievement'
-        ? 5
+        ? 6
         : (menu === 'weekday_quota'
           ? 8
           : (menu === 'accept_rate_live'
@@ -4793,7 +5140,7 @@
     if (!loop.active) {
       el.textContent = loop.message
         ? `중지됨 — ${loop.message}`
-        : '자동수집: 첫 회차 배달+일별+라이더→저장→수락율 / 이후 배달현황→저장→수락율→2분 대기 반복';
+        : '자동수집: 첫 회차 배달+일별+라이더→저장→수락율 / 이후 배달현황→저장→수락율→30초 대기 반복';
       return;
     }
 
@@ -4993,6 +5340,146 @@
     }
   }
 
+  async function initDashboardBaeminLive(force = false) {
+    const tabs = $('dashboardBaeminRegionTabs');
+    const rows = $('dashboardBaeminLiveRows');
+    if (!tabs || !rows) return;
+
+    if (!force && state.dashboardBaeminRegions.length) {
+      renderDashboardBaeminRegionTabs();
+      return;
+    }
+
+    const result = await adminApi('/api/admin/baemin-delivery/partner-regions');
+    if (!result.ok) {
+      tabs.innerHTML = '<span class="form-help">담당 지역을 불러오지 못했습니다.</span>';
+      return;
+    }
+
+    const items = Array.isArray(result.items) ? result.items : [];
+    state.dashboardBaeminRegions = items
+      .map(item => ({
+        partnerId: normalizePartnerId(item.partnerId),
+        regionName: String(item.regionName || item.partnerId || '').trim()
+      }))
+      .filter(item => item.partnerId)
+      .sort((a, b) => a.regionName.localeCompare(b.regionName, 'ko'));
+
+    if (!state.dashboardSelectedPartnerIds.length && state.dashboardBaeminRegions.length) {
+      state.dashboardSelectedPartnerIds = [state.dashboardBaeminRegions[0].partnerId];
+    } else {
+      const allowed = new Set(state.dashboardBaeminRegions.map(r => r.partnerId));
+      state.dashboardSelectedPartnerIds = state.dashboardSelectedPartnerIds.filter(id => allowed.has(id));
+      if (!state.dashboardSelectedPartnerIds.length && state.dashboardBaeminRegions.length) {
+        state.dashboardSelectedPartnerIds = [state.dashboardBaeminRegions[0].partnerId];
+      }
+    }
+    renderDashboardBaeminRegionTabs();
+  }
+
+  function renderDashboardBaeminRegionTabs() {
+    const tabs = $('dashboardBaeminRegionTabs');
+    if (!tabs) return;
+    if (!state.dashboardBaeminRegions.length) {
+      tabs.innerHTML = '<span class="form-help">계정에 배정된 배민 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.</span>';
+      return;
+    }
+    const selected = new Set(state.dashboardSelectedPartnerIds.map(normalizePartnerId));
+    tabs.innerHTML = state.dashboardBaeminRegions.map(region => {
+      const on = selected.has(region.partnerId);
+      return `<button type="button" class="baemin-region-tab${on ? ' is-active' : ''}" data-dashboard-baemin-partner="${region.partnerId}" aria-pressed="${on ? 'true' : 'false'}">${escapeHtml(region.regionName)}</button>`;
+    }).join('');
+    tabs.querySelectorAll('[data-dashboard-baemin-partner]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = normalizePartnerId(btn.dataset.dashboardBaeminPartner);
+        const set = new Set(state.dashboardSelectedPartnerIds.map(normalizePartnerId));
+        if (set.has(id)) {
+          if (set.size <= 1) {
+            showToast('최소 1개 지역은 선택되어 있어야 합니다.');
+            return;
+          }
+          set.delete(id);
+        } else {
+          set.add(id);
+        }
+        state.dashboardSelectedPartnerIds = [...set];
+        renderDashboardBaeminRegionTabs();
+      });
+    });
+  }
+
+  async function queryDashboardBaeminLive() {
+    const partnerIds = [...new Set((state.dashboardSelectedPartnerIds || []).map(normalizePartnerId).filter(Boolean))];
+    const summary = $('dashboardBaeminLiveSummary');
+    const rowsEl = $('dashboardBaeminLiveRows');
+    const btn = $('dashboardBaeminLiveQueryBtn');
+    if (!partnerIds.length) {
+      showToast('지역을 선택하세요.');
+      return;
+    }
+    btn?.classList.add('is-loading');
+    if (btn) btn.textContent = '조회 중…';
+    if (summary) summary.textContent = '실시간 조회 중…';
+
+    try {
+      await refreshLocalServerStatus();
+    } catch (_e) { /* ignore */ }
+
+    let liveHint = '저장 스냅샷';
+    const live = await refreshDeliveryLiveFromLocalServer();
+    if (live.ok) liveHint = '실시간 반영';
+    else if (!live.skipped && live.message) showToast(live.message);
+
+    if (!state.config?.applied) {
+      await loadViewConfig();
+    }
+    const captureDate = state.appliedCollectDate
+      || state.config?.applied?.collectDate
+      || todayKstDate();
+
+    const merged = [];
+    for (const partnerId of partnerIds) {
+      const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+      if (!result.ok || result.notApplied) continue;
+      merged.push(...filterRowsByPartnerId(result.items || [], partnerId));
+    }
+
+    const driving = merged.filter(row => isDrivingStatus(row?.parsed_json?.statusDesc || ''));
+    if (summary) {
+      summary.textContent = `운행중 ${formatNumber(driving.length)}명 · 지역 ${partnerIds.length}곳 · ${liveHint}`;
+    }
+    if (!rowsEl) return;
+    if (!driving.length) {
+      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">선택 지역에 운행중 기사가 없습니다.</td></tr>';
+      showToast(`운행중 0명 · ${liveHint}`);
+      return;
+    }
+    rowsEl.innerHTML = driving.map(row => {
+      const p = row.parsed_json || {};
+      const pid = resolveRowPartnerId(row);
+      return `<tr>
+        <td>${escapeHtml(partnerLabelById(pid) || resolveRegisteredRegionName(pid) || pid)}</td>
+        <td>${escapeHtml(row.rider_name || '-')}</td>
+        <td>${escapeHtml(p.statusDesc || '-')}</td>
+        <td>${formatNumber(p.totalComplete || 0)}</td>
+        <td>${formatNumber(p.totalReject || 0)}</td>
+      </tr>`;
+    }).join('');
+    showToast(`운행중 ${formatNumber(driving.length)}명 · ${liveHint}`);
+  }
+
+  function openBaeminStatusFromDashboard() {
+    try {
+      sessionStorage.setItem('brem_baemin_menu_focus', 'delivery_status');
+    } catch (_e) { /* ignore */ }
+    const btn = document.querySelector('.nav-btn[data-section="baemin-status"]');
+    if (btn) {
+      btn.click();
+      return;
+    }
+    document.dispatchEvent(new CustomEvent('brem-admin-goto-section', { detail: { sectionId: 'baemin-status' } }));
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
@@ -5106,6 +5593,13 @@
     $('baeminStatusDeliveryLoadBtn')?.addEventListener('click', () => {
       void loadDeliveryStatusData();
     });
+    $('dashboardBaeminLiveQueryBtn')?.addEventListener('click', () => {
+      void queryDashboardBaeminLive();
+    });
+    $('dashboardBaeminOpenStatusBtn')?.addEventListener('click', () => {
+      openBaeminStatusFromDashboard();
+    });
+    void initDashboardBaeminLive();
     $('baeminStatusAcceptRateLoadBtn')?.addEventListener('click', () => {
       void loadAcceptRateLiveData();
     });
@@ -5249,11 +5743,10 @@
       state.grandTotals = null;
       renderRefreshMeta();
       clearViewTablesIdle();
-      const cachedMap = readCachedRegionMap();
-      if (Object.keys(cachedMap).length) {
-        state.partnerRegionMap = cachedMap;
-        showRegionTabsFromMap(cachedMap);
-      }
+      state.partnerRegionMap = {};
+      state.viewPartnerIds = [];
+      state.partners = [];
+      renderPartnerTabs([]);
       void loadPartnerRegionMap();
       void loadPartnerSetCountMap();
       void ensureWeekdayQuotaLoaded(true);
@@ -5308,7 +5801,8 @@
     syncSyncDateInputs,
     ensureSyncDateRangeDefaults,
     resolveSyncDateRange,
-    loadSyncReflectionStatus
+    loadSyncReflectionStatus,
+    refreshDashboardBaeminLive: () => initDashboardBaeminLive(true)
   };
   bindEvents();
 })();

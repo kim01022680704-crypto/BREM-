@@ -11,6 +11,12 @@ function canManageBaeminRegions(account) {
   return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
 }
 
+/**
+ * 배민 지역 스코프
+ * - viewPartnerIds: 대시보드·배민현황 조회용. 관리자계정에 배정된 지역만 (대표/총괄도 동일)
+ * - allowedPartnerIds: BIZ 수집 미리보기 등. 배정이 있으면 배정만, 없으면 대표/총괄만 전체 등록 지역
+ * - 지역 등록(DP) / 계정 지역 배정 UI는 대표·총괄만 (canManageRegions)
+ */
 function resolveBaeminPartnerScope(account, regionMap = {}) {
   const registered = Object.keys(regionMap || {})
     .map(key => String(key || '').trim().toUpperCase())
@@ -18,11 +24,13 @@ function resolveBaeminPartnerScope(account, regionMap = {}) {
   const assigned = normalizePartnerIdList(account?.baeminPartnerIds);
   const canManageRegions = canManageBaeminRegions(account);
 
+  const viewPartnerIds = assigned.filter(id => registered.includes(id));
+
   let allowedPartnerIds;
   if (assigned.length) {
-    allowedPartnerIds = assigned.filter(id => registered.includes(id));
+    allowedPartnerIds = viewPartnerIds.slice();
   } else if (canManageRegions) {
-    allowedPartnerIds = registered;
+    allowedPartnerIds = registered.slice();
   } else {
     allowedPartnerIds = [];
   }
@@ -30,7 +38,21 @@ function resolveBaeminPartnerScope(account, regionMap = {}) {
   return {
     canManageRegions,
     allowedPartnerIds,
-    isRegionalScoped: assigned.length > 0 || !canManageRegions
+    viewPartnerIds,
+    isRegionalScoped: true
+  };
+}
+
+/** 대시보드·배민현황·적용 데이터 조회용 스코프 (계정 배정 지역만) */
+function scopeForView(scope) {
+  const viewIds = Array.isArray(scope?.viewPartnerIds)
+    ? scope.viewPartnerIds
+    : (scope?.allowedPartnerIds || []);
+  return {
+    ...(scope || {}),
+    allowedPartnerIds: normalizePartnerIdList(viewIds),
+    viewPartnerIds: normalizePartnerIdList(viewIds),
+    isRegionalScoped: true
   };
 }
 
@@ -48,6 +70,7 @@ module.exports = {
   normalizePartnerIdList,
   canManageBaeminRegions,
   resolveBaeminPartnerScope,
+  scopeForView,
   filterPartnersByScope,
   filterRegionItemsByScope
 };

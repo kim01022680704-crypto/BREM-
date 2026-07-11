@@ -200,7 +200,7 @@
           </button>
         </div>
 
-        <div class="grid two">
+        <div class="grid two dashboard-main-grid">
           <article class="card">
             <div class="card-header dashboard-driver-card-header">
               <div class="dashboard-driver-card-head">
@@ -254,12 +254,43 @@
             <p class="dashboard-scroll-note" id="dashboardDriverCount" hidden aria-live="polite"></p>
           </article>
 
-          <article class="card">
-            <div class="card-header">
-              <h2>최근 공지사항</h2>
-            </div>
-            <div class="notice-list" id="dashboardNotices"></div>
-          </article>
+          <div class="dashboard-side-stack">
+            <article class="card dashboard-baemin-live-card">
+              <div class="card-header">
+                <h2>오늘 배민 · 지역별 할당 달성</h2>
+              </div>
+              <p class="form-help dashboard-baemin-live-help">계정에 배정된 지역만 표시 · 다중선택 후 조회로 운행중 기사 확인</p>
+              <div id="dashboardBaeminRegionTabs" class="baemin-region-tabs dashboard-baemin-region-tabs" aria-label="담당 지역"></div>
+              <div class="dashboard-baemin-live-actions">
+                <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">운행중 기사 조회</button>
+                <button type="button" class="small-btn" id="dashboardBaeminOpenStatusBtn">배민현황 열기</button>
+              </div>
+              <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">지역을 선택하고 조회하세요</p>
+              <div class="table-scroll dashboard-baemin-live-scroll">
+                <table class="admin-table dashboard-baemin-live-table">
+                  <thead>
+                    <tr>
+                      <th>지역</th>
+                      <th>라이더</th>
+                      <th>운행상태</th>
+                      <th>완료</th>
+                      <th>거절</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardBaeminLiveRows">
+                    <tr><td colspan="5" class="form-help">조회 결과가 여기에 표시됩니다.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="card-header">
+                <h2>최근 공지사항</h2>
+              </div>
+              <div class="notice-list" id="dashboardNotices"></div>
+            </article>
+          </div>
         </div>
       </section>
 
@@ -705,7 +736,7 @@
             <button type="button" class="small-btn" id="baeminStatusAutoLoopStopBtn" disabled>자동수집 종료</button>
           </div>
           <p id="baeminRiderLiveSyncStatus" class="form-help">기사앱 실시간 반영: 배달현황 수집 → 배민현황 저장 → 수락율 스냅샷 (배민ID 매칭)</p>
-          <span id="baeminStatusAutoLoopStatus" class="form-help">자동수집: 첫 회차 배달+일별+라이더→저장→수락율 / 이후 배달현황→저장→수락율→2분 대기 반복</span>
+          <span id="baeminStatusAutoLoopStatus" class="form-help">자동수집: 첫 회차 배달+일별+라이더→저장→수락율 / 이후 배달현황→저장→수락율→30초 대기 반복</span>
           <div class="form-row">
             <button type="button" class="primary-btn" id="baeminDeliveryApplyBtn">배민현황 저장</button>
           </div>
@@ -925,7 +956,7 @@
 
         <div class="baemin-view-nav">
           <div class="baemin-view-nav__block baemin-view-nav__block--regions">
-            <span class="baemin-view-nav__label">지역</span>
+            <span class="baemin-view-nav__label">지역 (다중선택)</span>
             <nav id="baeminStatusPartnerSubtabBar" class="baemin-region-tabs baemin-partner-tab-bar--scroll" hidden aria-label="등록 지역"></nav>
           </div>
           <div class="baemin-view-nav__block baemin-view-nav__block--menus" id="baeminStatusMenuNavBlock" hidden>
@@ -934,7 +965,7 @@
               <button type="button" class="promotion-tab is-active" data-baemin-menu="delivery_status">배달현황</button>
               <button type="button" class="promotion-tab" data-baemin-menu="daily_history">일별 배달내역</button>
               <button type="button" class="promotion-tab" data-baemin-menu="rider_history">라이더별 배달내역</button>
-              <button type="button" class="promotion-tab" data-baemin-menu="quota_achievement">할당달성</button>
+              <button type="button" class="promotion-tab" data-baemin-menu="quota_achievement">지역별 할당 달성</button>
               <button type="button" class="promotion-tab" data-baemin-menu="weekday_quota">요일별할당입력</button>
               <button type="button" class="promotion-tab" data-baemin-menu="accept_rate_live">실시간 수락율현황</button>
               <button type="button" class="promotion-tab" data-baemin-menu="calls_rejection_sync">콜수·거절율 동기화</button>
@@ -955,7 +986,7 @@
               </label>
               <span id="baeminStatusWeekStartLabel" class="baemin-view-week__date"></span>
               <span id="baeminStatusWeekRangeLabel" class="baemin-view-week__range"></span>
-              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusWeekLoadBtn" hidden>할당달성 조회</button>
+              <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusWeekLoadBtn" hidden>지역별 할당 달성 조회</button>
             </div>
             <div id="baeminStatusRangeToolbar" class="baemin-view-rider-toolbar" hidden>
               <label class="admin-period-field baemin-view-rider-toolbar__field">
@@ -972,7 +1003,7 @@
             </div>
             <div id="baeminStatusDeliveryToolbar" class="baemin-view-delivery-toolbar" hidden>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusDeliveryLoadBtn">배달현황 조회</button>
-              <span class="form-help">오늘 운행 중인 라이더 현황 (최신 저장 스냅샷)</span>
+              <span class="form-help">선택 지역 · 운행중 기사 실시간 조회 (로컬 세션 서버 있으면 수집→저장 후 표시, 다중선택 가능)</span>
             </div>
             <div id="baeminStatusAcceptRateToolbar" class="baemin-view-delivery-toolbar" hidden>
               <button type="button" class="primary-btn baemin-view-load-btn" id="baeminStatusAcceptRateLoadBtn">수락율 조회</button>
@@ -1003,9 +1034,9 @@
             <div class="card-header baemin-view-data-card__header">
               <div>
                 <h2>배달현황</h2>
-                <p class="form-help">최신 적용 스냅샷 · Supabase 저장 데이터</p>
+                <p class="form-help">선택 지역(다중) · 운행중 기사 · 조회 시 실시간 수집(로컬 서버) 후 표시</p>
               </div>
-              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDeliveryStatusSummary">데이터 불러오기를 눌러 주세요</p>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusDeliveryStatusSummary">지역을 선택하고 배달현황 조회를 눌러 주세요</p>
             </div>
             <div id="baeminStatusDeliveryMeta" class="baemin-view-meta" hidden></div>
             <div class="table-scroll baemin-table-scroll">
@@ -1099,15 +1130,16 @@
           <article class="card baemin-view-data-card">
             <div class="card-header baemin-view-data-card__header">
               <div>
-                <h2>할당달성</h2>
-                <p class="form-help">일별 배달내역 기준 · 요일별할당 × 세트수 목표 대비 달성률 · 수~화 정산주</p>
+                <h2>지역별 할당 달성</h2>
+                <p class="form-help">선택 지역(다중) · 일별 배달내역 기준 · 요일별할당 × 세트수 목표 대비 달성률 · 수~화 정산주</p>
               </div>
-              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusQuotaAchievementSummary">정산주를 선택하고 할당달성 조회를 눌러 주세요</p>
+              <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusQuotaAchievementSummary">정산주를 선택하고 지역별 할당 달성 조회를 눌러 주세요</p>
             </div>
             <div class="table-scroll baemin-table-scroll">
               <table class="admin-table baemin-data-table baemin-quota-table">
                 <thead>
                   <tr>
+                    <th>지역</th>
                     <th>배달일</th>
                     <th>아침점심</th>
                     <th>오후</th>
@@ -1126,7 +1158,7 @@
             <div class="card-header baemin-view-data-card__header">
               <div>
                 <h2>요일별할당입력</h2>
-                <p class="form-help">1세트 기준 월~일 × 시간대 목표 · 저장 후 할당달성·배달현황 진행률에 즉시 반영</p>
+                <p class="form-help">1세트 기준 월~일 × 시간대 목표 · 저장 후 지역별 할당 달성·배달현황 진행률에 즉시 반영</p>
               </div>
               <p class="admin-table-summary baemin-view-data-card__summary" id="baeminStatusWeekdayQuotaSummary">할당표를 불러오는 중…</p>
             </div>
@@ -4113,7 +4145,7 @@
                   <button class="small-btn" type="button" id="adminAccountBaeminClearAll">전체 해제</button>
                 </div>
               </div>
-              <p class="form-help">등록된 지역 중 이 계정에 보여줄 지역을 선택합니다. 비우면 대표·총괄은 전체, 팀장은 미배정 상태입니다.</p>
+              <p class="form-help">등록된 지역 중 이 계정에 배정할 지역을 선택합니다. 대시보드·배민현황은 배정된 지역만 조회됩니다(다중선택). 지역 배정은 대표·총괄만 가능합니다.</p>
               <div class="admin-account-baemin-grid" id="adminAccountBaeminGrid"></div>
             </div>
             <p class="form-help" id="adminAccountStatus"></p>

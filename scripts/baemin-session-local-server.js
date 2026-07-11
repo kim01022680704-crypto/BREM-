@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260711p';
+const SERVER_VERSION = '20260711q';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -108,7 +108,7 @@ let autoCollectRuntime = {
 };
 
 /** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속) */
-const STATUS_LOOP_WAIT_MS = 2 * 60 * 1000;
+const STATUS_LOOP_WAIT_MS = 30 * 1000;
 let statusLoop = {
   active: false,
   stopping: false,

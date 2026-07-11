@@ -2,7 +2,7 @@ const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller, resolveActorAccount } = require('./admin-users');
 const { pickAcceptance } = require('./baemin-stats-extract');
 const { loadAdminRegistry } = require('./admin-registry');
-const { resolveBaeminPartnerScope, canManageBaeminRegions, filterRegionItemsByScope } = require('./baemin-admin-access');
+const { resolveBaeminPartnerScope, canManageBaeminRegions, filterRegionItemsByScope, scopeForView } = require('./baemin-admin-access');
 
 function getBaeminSession() {
   return require('./baemin-delivery-session');
@@ -560,7 +560,8 @@ async function getConfig(accessToken, options = {}) {
       canManageRegions: actor.canManageRegions,
       baeminScope: {
         allowedPartnerIds: actor.scope.allowedPartnerIds,
-        isRegionalScoped: actor.scope.isRegionalScoped
+        viewPartnerIds: actor.scope.viewPartnerIds,
+        isRegionalScoped: true
       },
       riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null,
       dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null,
@@ -609,11 +610,12 @@ async function getCollectItems(accessToken, options = {}) {
   if (!actor.ok) return actor;
 
   const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
+  const appliedOnly = Boolean(options.appliedOnly);
   return getCollectItemsForAdmin(options.collectDate, options.sourceMenu, {
     partnerId: options.partnerId,
-    appliedOnly: Boolean(options.appliedOnly),
+    appliedOnly,
     weekStart: options.weekStart,
-    actorScope: actor.scope
+    actorScope: appliedOnly ? scopeForView(actor.scope) : actor.scope
   });
 }
 
@@ -622,11 +624,12 @@ async function getPartnerList(accessToken, options = {}) {
   if (!actor.ok) return actor;
 
   const { getPartnerListForAdmin } = require('./baemin-collect-pipeline');
+  const appliedOnly = Boolean(options.appliedOnly);
   return getPartnerListForAdmin(options.collectDate, {
-    appliedOnly: Boolean(options.appliedOnly),
+    appliedOnly,
     weekStart: options.weekStart,
     sourceMenu: options.sourceMenu,
-    actorScope: actor.scope
+    actorScope: appliedOnly ? scopeForView(actor.scope) : actor.scope
   });
 }
 
@@ -640,7 +643,7 @@ async function getViewBundle(accessToken, options = {}) {
     sourceMenu: options.sourceMenu,
     partnerId: options.partnerId,
     weekStart: options.weekStart,
-    actorScope: actor.scope
+    actorScope: scopeForView(actor.scope)
   });
 }
 
@@ -652,7 +655,7 @@ async function getViewFullBundle(accessToken, options = {}) {
   return getViewFullBundleForAdmin({
     collectDate: options.collectDate,
     weekStart: options.weekStart,
-    actorScope: actor.scope
+    actorScope: scopeForView(actor.scope)
   });
 }
 
@@ -663,7 +666,7 @@ async function getHistoryCollectCoverage(accessToken, options = {}) {
   const { getHistoryCollectCoverageForAdmin } = require('./baemin-collect-pipeline');
   return getHistoryCollectCoverageForAdmin({
     ...options,
-    actorScope: actor.scope
+    actorScope: scopeForView(actor.scope)
   });
 }
 
@@ -677,7 +680,7 @@ async function getRiderHistoryRange(accessToken, options = {}) {
     toDate: options.toDate,
     partnerId: options.partnerId,
     compact: options.compact === true,
-    actorScope: actor.scope
+    actorScope: scopeForView(actor.scope)
   });
 }
 
@@ -690,7 +693,7 @@ async function getDailyHistoryRange(accessToken, options = {}) {
     fromDate: options.fromDate,
     toDate: options.toDate,
     partnerId: options.partnerId,
-    actorScope: actor.scope
+    actorScope: scopeForView(actor.scope)
   });
 }
 
@@ -797,7 +800,9 @@ async function getPartnerRegionMap(accessToken) {
   const result = await getPartnerRegionMapForAdmin();
   if (!result.ok) return result;
 
-  const scopedItems = filterRegionItemsByScope(result.items, actor.scope);
+  // 대시보드·배민현황 탭: 계정에 배정된 지역만 (대표/총괄도 동일)
+  const viewScope = scopeForView(actor.scope);
+  const scopedItems = filterRegionItemsByScope(result.items, viewScope);
   const scopedMap = {};
   scopedItems.forEach(item => {
     scopedMap[item.partnerId] = item.regionName;
@@ -808,7 +813,9 @@ async function getPartnerRegionMap(accessToken) {
     map: scopedMap,
     items: scopedItems,
     count: scopedItems.length,
+    viewPartnerIds: viewScope.allowedPartnerIds || [],
     canManageRegions: actor.canManageRegions,
+    // 대표·총괄 계정 메뉴의 지역 배정 UI용 전체 등록 목록
     allItems: result.items,
     allMap: result.map
   };

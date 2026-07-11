@@ -3087,6 +3087,51 @@ textarea {
   color: #fde68a;
 }
 
+.dashboard-side-stack {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  min-width: 0;
+}
+
+.dashboard-baemin-live-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dashboard-baemin-live-help {
+  margin: 0;
+  padding: 0 18px 10px;
+}
+
+.dashboard-baemin-region-tabs {
+  padding: 0 18px 12px;
+  flex-wrap: wrap;
+}
+
+.dashboard-baemin-live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 18px 10px;
+}
+
+.dashboard-baemin-live-scroll {
+  max-height: 280px;
+  overflow: auto;
+  padding: 0 12px 14px;
+}
+
+.dashboard-baemin-live-table {
+  min-width: 0;
+}
+
+#dashboard .admin-table-summary {
+  padding: 0 18px 8px;
+  margin: 0;
+}
+
 .baemin-menu-tabs {
   display: flex;
   flex-wrap: wrap;
