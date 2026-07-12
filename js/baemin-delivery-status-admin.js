@@ -5615,17 +5615,20 @@
 
     renderDashboardWeekRowsForPartner(selectedId, items, weekRange);
 
-    // 나머지 지역은 백그라운드 캐시 (탭 전환 빠르게)
+    // 나머지 지역은 병렬 백그라운드 캐시 (탭 전환 빠르게)
     if (!options.selectedOnly) {
-      ids.filter(id => id !== selectedId).forEach(partnerId => {
-        void adminApi(
-          `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
-        ).then(result => {
-          if (result?.ok && !result.notApplied) {
-            state.dashboardWeekCache[partnerId] = { items: result.items || [], weekRange };
-          }
-        }).catch(() => {});
-      });
+      const others = ids.filter(id => id !== selectedId);
+      if (others.length) {
+        void Promise.allSettled(
+          others.map(partnerId => adminApi(
+            `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
+          ).then(result => {
+            if (result?.ok && !result.notApplied) {
+              state.dashboardWeekCache[partnerId] = { items: result.items || [], weekRange };
+            }
+          }))
+        );
+      }
     }
   }
 
@@ -5677,21 +5680,32 @@
       let targetMidnight = 0;
       let loadedRegions = 0;
 
-      for (const partnerId of partnerIds) {
-        const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
-        if (!result.ok) continue;
-        if (result.notApplied) {
-          if (summary) {
-            summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
-          }
-          panelsEl.innerHTML = `<p class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</p>`;
-          const weekRows = $('dashboardBaeminWeekRows');
-          const weekSummary = $('dashboardBaeminWeekSummary');
-          if (weekRows) weekRows.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</td></tr>`;
-          if (weekSummary) weekSummary.textContent = '스냅샷 없음';
-          if (!silent) showToast(result.message || '적용된 스냅샷이 없습니다.');
-          return;
+      // 오늘 스냅샷(지역 병렬) + 이번주 조회를 동시에 시작 — 서버/스키마 변경 없이 대기시간만 단축
+      void queryDashboardBaeminWeek(partnerIds);
+      const snapshotResults = await Promise.all(
+        partnerIds.map(async partnerId => {
+          const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+          return { partnerId, result };
+        })
+      );
+
+      const notAppliedHit = snapshotResults.find(entry => entry.result?.ok && entry.result.notApplied);
+      if (notAppliedHit) {
+        const result = notAppliedHit.result;
+        if (summary) {
+          summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
         }
+        panelsEl.innerHTML = `<p class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</p>`;
+        const weekRows = $('dashboardBaeminWeekRows');
+        const weekSummary = $('dashboardBaeminWeekSummary');
+        if (weekRows) weekRows.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</td></tr>`;
+        if (weekSummary) weekSummary.textContent = '스냅샷 없음';
+        if (!silent) showToast(result.message || '적용된 스냅샷이 없습니다.');
+        return;
+      }
+
+      for (const { partnerId, result } of snapshotResults) {
+        if (!result?.ok || result.notApplied) continue;
 
         const items = filterRowsByPartnerId(result.items || [], partnerId);
         const totals = aggregateDeliveryStatusMetrics(items);
@@ -5750,7 +5764,6 @@
       if (summary) {
         summary.textContent = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
       }
-      void queryDashboardBaeminWeek(partnerIds);
       if (!silent) {
         showToast(`오늘 할당 · 운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳`);
       }
