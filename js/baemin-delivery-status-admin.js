@@ -5341,22 +5341,25 @@
   }
 
   async function initDashboardBaeminLive(force = false) {
-    const tabs = $('dashboardBaeminRegionTabs');
     const rows = $('dashboardBaeminLiveRows');
-    if (!tabs || !rows) return;
+    if (!rows) return;
 
     if (!force && state.dashboardBaeminRegions.length) {
-      renderDashboardBaeminRegionTabs();
       return;
     }
 
     const result = await adminApi('/api/admin/baemin-delivery/partner-regions');
     if (!result.ok) {
-      tabs.innerHTML = '<span class="form-help">담당 지역을 불러오지 못했습니다.</span>';
+      rows.innerHTML = '<tr><td colspan="6" class="form-help">담당 지역을 불러오지 못했습니다.</td></tr>';
       return;
     }
 
     const items = Array.isArray(result.items) ? result.items : [];
+    state.canManageRegions = Boolean(result.canManageRegions);
+    state.viewPartnerIds = Array.isArray(result.viewPartnerIds)
+      ? result.viewPartnerIds.map(id => String(id || '').trim().toUpperCase()).filter(Boolean)
+      : Object.keys(result.map || {});
+    state.partnerRegionMap = result.map || state.partnerRegionMap || {};
     state.dashboardBaeminRegions = items
       .map(item => ({
         partnerId: normalizePartnerId(item.partnerId),
@@ -5365,107 +5368,154 @@
       .filter(item => item.partnerId)
       .sort((a, b) => a.regionName.localeCompare(b.regionName, 'ko'));
 
-    if (!state.dashboardSelectedPartnerIds.length && state.dashboardBaeminRegions.length) {
-      state.dashboardSelectedPartnerIds = [state.dashboardBaeminRegions[0].partnerId];
-    } else {
-      const allowed = new Set(state.dashboardBaeminRegions.map(r => r.partnerId));
-      state.dashboardSelectedPartnerIds = state.dashboardSelectedPartnerIds.filter(id => allowed.has(id));
-      if (!state.dashboardSelectedPartnerIds.length && state.dashboardBaeminRegions.length) {
-        state.dashboardSelectedPartnerIds = [state.dashboardBaeminRegions[0].partnerId];
-      }
-    }
-    renderDashboardBaeminRegionTabs();
-  }
-
-  function renderDashboardBaeminRegionTabs() {
-    const tabs = $('dashboardBaeminRegionTabs');
-    if (!tabs) return;
     if (!state.dashboardBaeminRegions.length) {
-      tabs.innerHTML = '<span class="form-help">계정에 배정된 배민 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.</span>';
+      const summary = $('dashboardBaeminLiveSummary');
+      const emptyMsg = state.canManageRegions
+        ? '등록된 배민 지역이 없습니다. 배민현황에서 지역을 등록하세요.'
+        : '계정에 배정된 배민 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.';
+      if (summary) summary.textContent = emptyMsg;
+      rows.innerHTML = `<tr><td colspan="6" class="form-help">${emptyMsg}</td></tr>`;
       return;
     }
-    const selected = new Set(state.dashboardSelectedPartnerIds.map(normalizePartnerId));
-    tabs.innerHTML = state.dashboardBaeminRegions.map(region => {
-      const on = selected.has(region.partnerId);
-      return `<button type="button" class="baemin-region-tab${on ? ' is-active' : ''}" data-dashboard-baemin-partner="${region.partnerId}" aria-pressed="${on ? 'true' : 'false'}">${escapeHtml(region.regionName)}</button>`;
-    }).join('');
-    tabs.querySelectorAll('[data-dashboard-baemin-partner]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = normalizePartnerId(btn.dataset.dashboardBaeminPartner);
-        const set = new Set(state.dashboardSelectedPartnerIds.map(normalizePartnerId));
-        if (set.has(id)) {
-          if (set.size <= 1) {
-            showToast('최소 1개 지역은 선택되어 있어야 합니다.');
-            return;
-          }
-          set.delete(id);
-        } else {
-          set.add(id);
-        }
-        state.dashboardSelectedPartnerIds = [...set];
-        renderDashboardBaeminRegionTabs();
-      });
+
+    // 대시보드 진입 시 최신 스냅샷 자동 조회
+    void queryDashboardBaeminLive({ silent: true });
+  }
+
+  function aggregateDeliveryStatusMetrics(items = []) {
+    return (items || []).reduce((acc, row) => {
+      const p = row?.parsed_json || {};
+      acc.rowCount += 1;
+      if (isDrivingStatus(p.statusDesc || row?.statusDesc || '')) acc.drivingCount += 1;
+      acc.completeTotal += Number(p.totalComplete || 0);
+      acc.totalReject += Number(p.totalReject || 0);
+      acc.cancelTotal += Number(p.cancelCount || p.totalCancel || 0);
+      acc.riderFault += Number(p.riderFault || p.totalRiderFault || 0);
+      acc.morningTotal += Number(p.morningCount || 0);
+      acc.afternoonTotal += Number(p.afternoonCount || 0);
+      acc.eveningTotal += Number(p.eveningCount || 0);
+      acc.midnightTotal += Number(p.midnightCount || 0);
+      return acc;
+    }, {
+      rowCount: 0,
+      drivingCount: 0,
+      completeTotal: 0,
+      totalReject: 0,
+      cancelTotal: 0,
+      riderFault: 0,
+      morningTotal: 0,
+      afternoonTotal: 0,
+      eveningTotal: 0,
+      midnightTotal: 0
     });
   }
 
-  async function queryDashboardBaeminLive() {
-    const partnerIds = [...new Set((state.dashboardSelectedPartnerIds || []).map(normalizePartnerId).filter(Boolean))];
+  async function queryDashboardBaeminLive(options = {}) {
+    const silent = options.silent === true;
     const summary = $('dashboardBaeminLiveSummary');
     const rowsEl = $('dashboardBaeminLiveRows');
     const btn = $('dashboardBaeminLiveQueryBtn');
-    if (!partnerIds.length) {
-      showToast('지역을 선택하세요.');
-      return;
+    if (!rowsEl) return;
+
+    if (!state.dashboardBaeminRegions.length) {
+      await initDashboardBaeminLive(true);
+      if (!state.dashboardBaeminRegions.length) return;
     }
+
+    const partnerIds = state.dashboardBaeminRegions.map(r => r.partnerId);
     btn?.classList.add('is-loading');
     if (btn) btn.textContent = '조회 중…';
-    if (summary) summary.textContent = '실시간 조회 중…';
+    if (summary) summary.textContent = '마지막 스냅샷 불러오는 중…';
 
     try {
-      await refreshLocalServerStatus();
-    } catch (_e) { /* ignore */ }
+      if (!state.config?.applied) {
+        await loadViewConfig();
+      }
+      const captureDate = state.appliedCollectDate
+        || state.config?.applied?.collectDate
+        || todayKstDate();
+      const appliedAt = state.config?.applied?.appliedAt || state.config?.applied?.updatedAt || '';
 
-    let liveHint = '저장 스냅샷';
-    const live = await refreshDeliveryLiveFromLocalServer();
-    if (live.ok) liveHint = '실시간 반영';
-    else if (!live.skipped && live.message) showToast(live.message);
+      const regionRows = [];
+      let drivingSum = 0;
+      let morningSum = 0;
+      let afternoonSum = 0;
+      let eveningSum = 0;
+      let midnightSum = 0;
+      let loadedRegions = 0;
 
-    if (!state.config?.applied) {
-      await loadViewConfig();
-    }
-    const captureDate = state.appliedCollectDate
-      || state.config?.applied?.collectDate
-      || todayKstDate();
+      for (const partnerId of partnerIds) {
+        const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+        if (!result.ok) continue;
+        if (result.notApplied) {
+          if (summary) {
+            summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
+          }
+          rowsEl.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</td></tr>`;
+          if (!silent) showToast(result.message || '적용된 스냅샷이 없습니다.');
+          return;
+        }
 
-    const merged = [];
-    for (const partnerId of partnerIds) {
-      const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
-      if (!result.ok || result.notApplied) continue;
-      merged.push(...filterRowsByPartnerId(result.items || [], partnerId));
-    }
+        const items = filterRowsByPartnerId(result.items || [], partnerId);
+        const totals = aggregateDeliveryStatusMetrics(items);
+        const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === partnerId)?.regionName
+          || partnerLabelById(partnerId)
+          || partnerId;
+        loadedRegions += 1;
+        drivingSum += totals.drivingCount;
+        morningSum += totals.morningTotal;
+        afternoonSum += totals.afternoonTotal;
+        eveningSum += totals.eveningTotal;
+        midnightSum += totals.midnightTotal;
+        regionRows.push({
+          partnerId,
+          regionName,
+          drivingCount: totals.drivingCount,
+          morningTotal: totals.morningTotal,
+          afternoonTotal: totals.afternoonTotal,
+          eveningTotal: totals.eveningTotal,
+          midnightTotal: totals.midnightTotal
+        });
+      }
 
-    const driving = merged.filter(row => isDrivingStatus(row?.parsed_json?.statusDesc || ''));
-    if (summary) {
-      summary.textContent = `운행중 ${formatNumber(driving.length)}명 · 지역 ${partnerIds.length}곳 · ${liveHint}`;
-    }
-    if (!rowsEl) return;
-    if (!driving.length) {
-      rowsEl.innerHTML = '<tr><td colspan="5" class="form-help">선택 지역에 운행중 기사가 없습니다.</td></tr>';
-      showToast(`운행중 0명 · ${liveHint}`);
-      return;
-    }
-    rowsEl.innerHTML = driving.map(row => {
-      const p = row.parsed_json || {};
-      const pid = resolveRowPartnerId(row);
-      return `<tr>
-        <td>${escapeHtml(partnerLabelById(pid) || resolveRegisteredRegionName(pid) || pid)}</td>
-        <td>${escapeHtml(row.rider_name || '-')}</td>
-        <td>${escapeHtml(p.statusDesc || '-')}</td>
-        <td>${formatNumber(p.totalComplete || 0)}</td>
-        <td>${formatNumber(p.totalReject || 0)}</td>
+      regionRows.sort((a, b) => String(a.regionName).localeCompare(String(b.regionName), 'ko'));
+
+      if (!regionRows.length) {
+        rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">조회할 지역 스냅샷이 없습니다.</td></tr>';
+        if (summary) summary.textContent = '스냅샷 없음';
+        return;
+      }
+
+      // 합계 행
+      const totalRow = `<tr class="dashboard-baemin-live-total-row">
+        <td><strong>합계</strong></td>
+        <td><strong>${formatNumber(drivingSum)}</strong></td>
+        <td><strong>${formatNumber(morningSum)}</strong></td>
+        <td><strong>${formatNumber(afternoonSum)}</strong></td>
+        <td><strong>${formatNumber(eveningSum)}</strong></td>
+        <td><strong>${formatNumber(midnightSum)}</strong></td>
       </tr>`;
-    }).join('');
-    showToast(`운행중 ${formatNumber(driving.length)}명 · ${liveHint}`);
+
+      rowsEl.innerHTML = totalRow + regionRows.map(row => `<tr>
+        <td>${escapeHtml(row.regionName)}</td>
+        <td>${formatNumber(row.drivingCount)}</td>
+        <td>${formatNumber(row.morningTotal)}</td>
+        <td>${formatNumber(row.afternoonTotal)}</td>
+        <td>${formatNumber(row.eveningTotal)}</td>
+        <td>${formatNumber(row.midnightTotal)}</td>
+      </tr>`).join('');
+
+      const appliedLabel = appliedAt ? ` · 적용 ${formatDateTime(appliedAt)}` : '';
+      if (summary) {
+        summary.textContent = `최신 스냅샷 · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 아침점심 ${formatNumber(morningSum)} · 오후 ${formatNumber(afternoonSum)} · 저녁 ${formatNumber(eveningSum)} · 심야 ${formatNumber(midnightSum)}${appliedLabel}`;
+      }
+      if (!silent) {
+        showToast(`운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳 (최신 스냅샷)`);
+      }
+    } finally {
+      btn?.classList.remove('is-loading');
+      if (btn) btn.textContent = '스냅샷 조회';
+    }
   }
 
   function openBaeminStatusFromDashboard() {

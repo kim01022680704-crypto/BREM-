@@ -3118,13 +3118,18 @@ textarea {
 }
 
 .dashboard-baemin-live-scroll {
-  max-height: 280px;
+  max-height: 360px;
   overflow: auto;
   padding: 0 12px 14px;
 }
 
 .dashboard-baemin-live-table {
   min-width: 0;
+}
+
+.dashboard-baemin-live-total-row td {
+  background: rgba(251, 191, 36, 0.08);
+  border-top: 1px solid rgba(251, 191, 36, 0.25);
 }
 
 #dashboard .admin-table-summary {

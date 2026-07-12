@@ -257,28 +257,28 @@
           <div class="dashboard-side-stack">
             <article class="card dashboard-baemin-live-card">
               <div class="card-header">
-                <h2>오늘 배민 · 지역별 할당 달성</h2>
+                <h2>오늘 배민 · 배달현황</h2>
               </div>
-              <p class="form-help dashboard-baemin-live-help">계정에 배정된 지역만 표시 · 다중선택 후 조회로 운행중 기사 확인</p>
-              <div id="dashboardBaeminRegionTabs" class="baemin-region-tabs dashboard-baemin-region-tabs" aria-label="담당 지역"></div>
+              <p class="form-help dashboard-baemin-live-help">마지막 적용 스냅샷 · 계정 배정 지역(대표·총괄은 전체)</p>
               <div class="dashboard-baemin-live-actions">
-                <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">운행중 기사 조회</button>
+                <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">스냅샷 조회</button>
                 <button type="button" class="small-btn" id="dashboardBaeminOpenStatusBtn">배민현황 열기</button>
               </div>
-              <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">지역을 선택하고 조회하세요</p>
+              <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">조회를 눌러 최신 스냅샷을 불러오세요</p>
               <div class="table-scroll dashboard-baemin-live-scroll">
                 <table class="admin-table dashboard-baemin-live-table">
                   <thead>
                     <tr>
                       <th>지역</th>
-                      <th>라이더</th>
-                      <th>운행상태</th>
-                      <th>완료</th>
-                      <th>거절</th>
+                      <th>운행중</th>
+                      <th>아침점심</th>
+                      <th>오후</th>
+                      <th>저녁</th>
+                      <th>심야</th>
                     </tr>
                   </thead>
                   <tbody id="dashboardBaeminLiveRows">
-                    <tr><td colspan="5" class="form-help">조회 결과가 여기에 표시됩니다.</td></tr>
+                    <tr><td colspan="6" class="form-help">조회 결과가 여기에 표시됩니다.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -4145,7 +4145,7 @@
                   <button class="small-btn" type="button" id="adminAccountBaeminClearAll">전체 해제</button>
                 </div>
               </div>
-              <p class="form-help">등록된 지역 중 이 계정에 배정할 지역을 선택합니다. 대시보드·배민현황은 배정된 지역만 조회됩니다(다중선택). 지역 배정은 대표·총괄만 가능합니다.</p>
+              <p class="form-help">등록된 지역 중 이 계정에 배정할 지역을 선택합니다. 팀장 등은 배정 지역만 조회되고, 대표·총괄은 전체 지역을 조회합니다. 지역 배정은 대표·총괄만 가능합니다.</p>
               <div class="admin-account-baemin-grid" id="adminAccountBaeminGrid"></div>
             </div>
             <p class="form-help" id="adminAccountStatus"></p>

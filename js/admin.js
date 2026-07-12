@@ -320,9 +320,9 @@
 
     if (intro) {
       if (role === ADMIN_ROLES.CEO) {
-        intro.textContent = '대표: 관리자 계정 생성·직책·메뉴·배민 담당 지역 배정이 가능합니다. 배민현황/대시보드는 배정 지역만 조회됩니다.';
+        intro.textContent = '대표: 관리자 계정 생성·직책·메뉴·배민 담당 지역 배정이 가능합니다. 배민현황/대시보드는 전체 등록 지역을 조회합니다.';
       } else if (role === ADMIN_ROLES.DIRECTOR) {
-        intro.textContent = '총괄: 팀장 메뉴·배민 담당 지역 배정이 가능합니다. 배민현황/대시보드는 배정 지역만 조회됩니다.';
+        intro.textContent = '총괄: 팀장 메뉴·배민 담당 지역 배정이 가능합니다. 배민현황/대시보드는 전체 등록 지역을 조회합니다.';
       } else {
         intro.textContent = '팀장: 관리자 계정과 접근 메뉴를 조회만 할 수 있습니다. 배민현황은 배정받은 지역만 보입니다.';
       }

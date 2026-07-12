@@ -13,8 +13,10 @@ function canManageBaeminRegions(account) {
 
 /**
  * 배민 지역 스코프
- * - viewPartnerIds: 대시보드·배민현황 조회용. 관리자계정에 배정된 지역만 (대표/총괄도 동일)
- * - allowedPartnerIds: BIZ 수집 미리보기 등. 배정이 있으면 배정만, 없으면 대표/총괄만 전체 등록 지역
+ * - viewPartnerIds: 대시보드·배민현황
+ *   · 대표/총괄 → 등록된 전체 지역
+ *   · 그 외 → 관리자계정에 배정된 지역만
+ * - allowedPartnerIds: BIZ 수집 미리보기 등 (동일 규칙)
  * - 지역 등록(DP) / 계정 지역 배정 UI는 대표·총괄만 (canManageRegions)
  */
 function resolveBaeminPartnerScope(account, regionMap = {}) {
@@ -24,26 +26,24 @@ function resolveBaeminPartnerScope(account, regionMap = {}) {
   const assigned = normalizePartnerIdList(account?.baeminPartnerIds);
   const canManageRegions = canManageBaeminRegions(account);
 
-  const viewPartnerIds = assigned.filter(id => registered.includes(id));
-
-  let allowedPartnerIds;
-  if (assigned.length) {
-    allowedPartnerIds = viewPartnerIds.slice();
-  } else if (canManageRegions) {
-    allowedPartnerIds = registered.slice();
+  let viewPartnerIds;
+  if (canManageRegions) {
+    viewPartnerIds = registered.slice();
   } else {
-    allowedPartnerIds = [];
+    viewPartnerIds = assigned.filter(id => registered.includes(id));
   }
+
+  const allowedPartnerIds = viewPartnerIds.slice();
 
   return {
     canManageRegions,
     allowedPartnerIds,
     viewPartnerIds,
-    isRegionalScoped: true
+    isRegionalScoped: !canManageRegions
   };
 }
 
-/** 대시보드·배민현황·적용 데이터 조회용 스코프 (계정 배정 지역만) */
+/** 대시보드·배민현황·적용 데이터 조회용 스코프 */
 function scopeForView(scope) {
   const viewIds = Array.isArray(scope?.viewPartnerIds)
     ? scope.viewPartnerIds
@@ -52,7 +52,7 @@ function scopeForView(scope) {
     ...(scope || {}),
     allowedPartnerIds: normalizePartnerIdList(viewIds),
     viewPartnerIds: normalizePartnerIdList(viewIds),
-    isRegionalScoped: true
+    isRegionalScoped: scope?.isRegionalScoped !== false
   };
 }
 
