@@ -110,13 +110,17 @@
       const scopedPrefix = scope === 'rider' ? 'brem-auth-rider-' : 'brem-auth-admin-';
 
       function readAuthValue(key) {
+        // keep-logged-in / LoginPrefs 없어도 localStorage 토큰을 읽을 수 있게 항상 둘 다 확인
         const stores = [];
-        if (window.BremLoginPrefs?.isKeepLoggedIn?.(scope)) {
-          stores.push(localStorage);
-        }
+        const preferLocal = window.BremLoginPrefs?.isKeepLoggedIn?.(scope) !== false;
+        if (preferLocal) stores.push(localStorage);
         stores.push(sessionStorage);
+        if (!preferLocal) stores.push(localStorage);
 
+        const seen = new Set();
         for (const store of stores) {
+          if (seen.has(store)) continue;
+          seen.add(store);
           try {
             const scoped = store.getItem(scopedPrefix + key);
             if (scoped != null) return scoped;
