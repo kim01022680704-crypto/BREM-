@@ -3098,43 +3098,132 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin-bottom: 18px;
+}
+
+.dashboard-baemin-live-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-baemin-live-card__header .dashboard-baemin-live-actions {
+  padding: 0;
 }
 
 .dashboard-baemin-live-help {
-  margin: 0;
-  padding: 0 18px 10px;
+  margin: 6px 0 0;
+  padding: 0;
 }
 
-.dashboard-baemin-region-tabs {
-  padding: 0 18px 12px;
-  flex-wrap: wrap;
+.dashboard-baemin-applied-time {
+  margin: 0;
+  padding: 10px 18px 4px;
+  color: #fde68a;
+  font-size: clamp(1.35rem, 4.2vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 .dashboard-baemin-live-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 0 18px 10px;
 }
 
-.dashboard-baemin-live-scroll {
-  max-height: 360px;
+.dashboard-baemin-live-panels {
+  display: grid;
+  gap: 14px;
+  padding: 8px 18px 18px;
+  max-height: min(70vh, 720px);
   overflow: auto;
-  padding: 0 12px 14px;
 }
 
-.dashboard-baemin-live-table {
-  min-width: 0;
+.dashboard-baemin-region-panel {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.45);
 }
 
-.dashboard-baemin-live-total-row td {
-  background: rgba(251, 191, 36, 0.08);
-  border-top: 1px solid rgba(251, 191, 36, 0.25);
+.dashboard-baemin-region-panel--summary {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.06);
 }
 
-#dashboard .admin-table-summary {
+.dashboard-baemin-region-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.dashboard-baemin-region-panel__head strong {
+  color: #fde68a;
+  font-size: 1.05rem;
+}
+
+.dashboard-baemin-region-panel__head span {
+  color: #94a3b8;
+  font-size: 0.88rem;
+}
+
+.dashboard-baemin-region-panel__cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-baemin-region-panel__cards.baemin-grand-totals {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+#dashboard .dashboard-baemin-live-card .admin-table-summary {
   padding: 0 18px 8px;
   margin: 0;
+}
+
+.baemin-grand-totals__percent--missed {
+  color: #f87171;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .dashboard-baemin-region-panel__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  #dashboard > .dashboard-baemin-live-card {
+    order: -1;
+  }
+
+  #dashboard {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dashboard-baemin-applied-time {
+    font-size: 1.55rem;
+    padding: 8px 14px 2px;
+  }
+
+  .dashboard-baemin-live-panels {
+    max-height: none;
+    padding: 8px 14px 14px;
+  }
 }
 
 .baemin-menu-tabs {

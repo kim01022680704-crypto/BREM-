@@ -173,6 +173,24 @@
       </div>
 
       <section class="section active" id="dashboard">
+        <article class="card dashboard-baemin-live-card" id="dashboardBaeminLiveCard">
+          <div class="card-header dashboard-baemin-live-card__header">
+            <div>
+              <h2>오늘 배민 · 할당 달성</h2>
+              <p class="form-help dashboard-baemin-live-help">오늘 기준 · 마지막 적용 스냅샷 · 지역별 세트수 할당 대비</p>
+            </div>
+            <div class="dashboard-baemin-live-actions">
+              <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">스냅샷 조회</button>
+              <button type="button" class="small-btn" id="dashboardBaeminOpenStatusBtn">배민현황 열기</button>
+            </div>
+          </div>
+          <p class="dashboard-baemin-applied-time" id="dashboardBaeminAppliedTime" aria-live="polite">적용시간 —</p>
+          <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">조회를 눌러 오늘 스냅샷을 불러오세요</p>
+          <div id="dashboardBaeminLivePanels" class="dashboard-baemin-live-panels">
+            <p class="form-help">조회 결과가 여기에 표시됩니다.</p>
+          </div>
+        </article>
+
                 <div class="stats-grid">
           <article class="stat-card">
             <span>등록 기사</span>
@@ -255,35 +273,6 @@
           </article>
 
           <div class="dashboard-side-stack">
-            <article class="card dashboard-baemin-live-card">
-              <div class="card-header">
-                <h2>오늘 배민 · 배달현황</h2>
-              </div>
-              <p class="form-help dashboard-baemin-live-help">마지막 적용 스냅샷 · 계정 배정 지역(대표·총괄은 전체)</p>
-              <div class="dashboard-baemin-live-actions">
-                <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">스냅샷 조회</button>
-                <button type="button" class="small-btn" id="dashboardBaeminOpenStatusBtn">배민현황 열기</button>
-              </div>
-              <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">조회를 눌러 최신 스냅샷을 불러오세요</p>
-              <div class="table-scroll dashboard-baemin-live-scroll">
-                <table class="admin-table dashboard-baemin-live-table">
-                  <thead>
-                    <tr>
-                      <th>지역</th>
-                      <th>운행중</th>
-                      <th>아침점심</th>
-                      <th>오후</th>
-                      <th>저녁</th>
-                      <th>심야</th>
-                    </tr>
-                  </thead>
-                  <tbody id="dashboardBaeminLiveRows">
-                    <tr><td colspan="6" class="form-help">조회 결과가 여기에 표시됩니다.</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </article>
-
             <article class="card">
               <div class="card-header">
                 <h2>최근 공지사항</h2>
