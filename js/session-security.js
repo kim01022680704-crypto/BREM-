@@ -57,7 +57,13 @@ window.BremSessionSecurity = (function () {
     return Date.now();
   }
 
+  function isIdleTrackingEnabled() {
+    return Number(activeIdleMs) > 0;
+  }
+
   function isIdleExpired() {
+    // idleMs 0 이하면 유휴 로그아웃 비활성
+    if (!isIdleTrackingEnabled()) return false;
     return Date.now() - getLastActivity() >= activeIdleMs;
   }
 
@@ -114,6 +120,17 @@ window.BremSessionSecurity = (function () {
 
     if (!safeIsLoggedIn(isLoggedInFn)) {
       return false;
+    }
+
+    // idleMs: 0 / false → 유휴 로그아웃 끔 (관리자 keep-logged-in)
+    if (options.idleMs === 0 || options.idleMs === false || options.disableIdle === true) {
+      activeIdleMs = 0;
+      config = {
+        isLoggedIn: isLoggedInFn,
+        onIdleLogout: onIdleLogoutFn
+      };
+      touchActivity();
+      return true;
     }
 
     activeIdleMs = Number(options.idleMs) > 0 ? Number(options.idleMs) : DEFAULT_IDLE_MS;
@@ -180,6 +197,7 @@ window.BremSessionSecurity = (function () {
     clearActivityMarker,
     consumeLogoutNotice,
     isIdleExpired,
+    isIdleTrackingEnabled,
     isActive: () => Boolean(config)
   };
 })();

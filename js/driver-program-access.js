@@ -49,7 +49,15 @@ window.BremDriverProgramAccess = (function () {
       await window.BremSupabaseConfig.load();
     }
 
-    if (window.BremSessionSecurity?.isIdleExpired?.() && BremStorage.auth.isAdminLoggedIn?.()) {
+    // 관리자 유휴 로그아웃이 꺼져 있으면(ADMIN_IDLE_MS=0) 이 검사로 강제 로그아웃하지 않음
+    // (이전: isIdleExpired가 30분 기본값으로 true → drivers.html 진입 불가/루프)
+    const adminIdleMs = Number(window.BremSessionSecurity?.ADMIN_IDLE_MS);
+    const idleEnabled = Number.isFinite(adminIdleMs) ? adminIdleMs > 0 : true;
+    if (
+      idleEnabled
+      && window.BremSessionSecurity?.isIdleExpired?.()
+      && BremStorage.auth.isAdminLoggedIn?.()
+    ) {
       try {
         sessionStorage.setItem(
           BremSessionSecurity.NOTICE_KEY,
@@ -79,6 +87,7 @@ window.BremDriverProgramAccess = (function () {
     }
 
     startProgramAdminSessionSecurity();
+    window.BremSessionSecurity?.touchActivity?.();
     window.BremDbConnectionStatus?.bind('driverDbStatus');
     return true;
   }
