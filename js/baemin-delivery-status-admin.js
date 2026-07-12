@@ -4648,7 +4648,12 @@
 
   async function loadViewConfig(options = {}) {
     const silent = options.silent === true;
-    const result = await adminApi('/api/admin/baemin-delivery/config?viewOnly=1');
+    // 자동(silent) 조회는 무거운 storageDiagnostics 전체 스캔을 생략(light=1).
+    // 진단 UI는 silent에서 렌더하지 않으므로 결과 표시에는 영향이 없다.
+    const query = silent
+      ? '/api/admin/baemin-delivery/config?viewOnly=1&light=1'
+      : '/api/admin/baemin-delivery/config?viewOnly=1';
+    const result = await adminApi(query);
     if (!result.ok) {
       if (!silent && result.message) showToast(result.message);
       return result;
@@ -4661,7 +4666,10 @@
       baeminScope: result.baeminScope || null,
       riderCollectRange: result.riderCollectRange || null,
       dailyCollectRange: result.dailyCollectRange || null,
-      storageDiagnostics: result.storageDiagnostics || null
+      // silent(light) 응답은 diagnostics가 없으므로 기존 값을 유지한다.
+      storageDiagnostics: silent
+        ? (state.config?.storageDiagnostics || null)
+        : (result.storageDiagnostics || null)
     };
     state.canManageRegions = Boolean(result.canManageRegions);
     if (!silent) {

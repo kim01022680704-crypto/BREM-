@@ -4162,7 +4162,8 @@ async function getViewFullBundleForAdmin(options = {}) {
     const [deliveryRows, dailyRows] = await Promise.all([
       supabase
         .from('baemin_delivery_applied_items')
-        .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key')
+        // 번들 delivery_status는 parsed_json 기반 집계·표시만 사용 — raw_json 제외
+        .select('id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key')
         .eq('batch_id', batchId)
         .eq('source_menu', 'delivery_status')
         .limit(10000),
@@ -4458,9 +4459,10 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     };
   }
 
+  // 라이더 집계(riders/days)는 parsed_json/dedupe_key만 사용 — raw_json 제외
   const appliedSelect = compact
     ? 'id, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key'
-    : 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
+    : 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key';
   const appliedFilters = {
     batch_id: batchId,
     source_menu: 'rider_history'
@@ -4946,7 +4948,8 @@ async function getDailyHistoryRangeForAdmin(options = {}) {
     };
   }
 
-  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, raw_json, dedupe_key';
+  // 일별 집계는 parsed_json/dedupe_key만 사용 — raw_json 제외로 페이로드·DB 부하 축소
+  const appliedSelect = 'id, collect_date, collected_at, source_menu, rider_name, rider_user_id, phone_number, parsed_json, dedupe_key';
   const appliedFilters = {
     batch_id: batchId,
     source_menu: 'daily_history'
