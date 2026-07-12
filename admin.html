@@ -189,6 +189,30 @@
           <div id="dashboardBaeminLivePanels" class="dashboard-baemin-live-panels">
             <p class="form-help">조회 결과가 여기에 표시됩니다.</p>
           </div>
+          <div class="dashboard-baemin-week-block" id="dashboardBaeminWeekBlock">
+            <div class="dashboard-baemin-week-block__head">
+              <h3>이번주 지역별 할당 달성</h3>
+              <p class="form-help dashboard-baemin-live-help">정산주(수~화) · 조회된 일자까지</p>
+            </div>
+            <p class="admin-table-summary" id="dashboardBaeminWeekSummary" aria-live="polite">오늘 스냅샷 조회 시 함께 불러옵니다</p>
+            <div class="dashboard-baemin-table-wrap">
+              <table class="admin-table dashboard-baemin-compact-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>배달일</th>
+                    <th>아침점심</th>
+                    <th>오후</th>
+                    <th>저녁</th>
+                    <th>심야</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardBaeminWeekRows">
+                  <tr><td colspan="6" class="form-help">조회 대기</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </article>
 
                 <div class="stats-grid">

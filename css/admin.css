@@ -3120,9 +3120,9 @@ textarea {
 
 .dashboard-baemin-applied-time {
   margin: 0;
-  padding: 10px 18px 4px;
+  padding: 8px 18px 2px;
   color: #fde68a;
-  font-size: clamp(1.35rem, 4.2vw, 1.85rem);
+  font-size: clamp(1.05rem, 2.8vw, 1.35rem);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.25;
@@ -3136,73 +3136,115 @@ textarea {
 
 .dashboard-baemin-live-panels {
   display: grid;
-  gap: 14px;
-  padding: 8px 18px 18px;
-  max-height: min(70vh, 720px);
-  overflow: auto;
+  gap: 10px;
+  padding: 4px 18px 10px;
+  max-height: none;
+  overflow: visible;
 }
 
-.dashboard-baemin-region-panel {
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.45);
+.dashboard-baemin-week-block {
+  padding: 4px 18px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.dashboard-baemin-region-panel--summary {
-  border-color: rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.06);
-}
-
-.dashboard-baemin-region-panel__head {
+.dashboard-baemin-week-block__head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px 12px;
-  margin-bottom: 10px;
+  gap: 6px 12px;
+  margin-bottom: 4px;
 }
 
-.dashboard-baemin-region-panel__head strong {
+.dashboard-baemin-week-block__head h3 {
+  margin: 0;
   color: #fde68a;
   font-size: 1.05rem;
+  font-weight: 800;
 }
 
-.dashboard-baemin-region-panel__head span {
+.dashboard-baemin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dashboard-baemin-compact-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.dashboard-baemin-compact-table th,
+.dashboard-baemin-compact-table td {
+  padding: 6px 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.dashboard-baemin-compact-table th {
+  color: #fbbf24;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.dashboard-baemin-compact-table__summary td {
+  background: rgba(251, 191, 36, 0.07);
+}
+
+.dashboard-baemin-region-name {
+  color: #fde68a;
+  font-weight: 700;
+}
+
+.dashboard-baemin-region-meta {
+  display: block;
   color: #94a3b8;
-  font-size: 0.88rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  margin-top: 1px;
 }
 
-.dashboard-baemin-region-panel__cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding: 0;
+.dashboard-baemin-qcell {
+  min-width: 0;
 }
 
-.dashboard-baemin-region-panel__cards.baemin-grand-totals {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+.dashboard-baemin-qcell__line {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-baemin-qcell__ratio {
+  font-weight: 700;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-baemin-qcell .baemin-quota-tag {
+  min-height: 18px;
+  padding: 1px 7px;
+  font-size: 0.68rem;
+  flex-shrink: 0;
+}
+
+.dashboard-baemin-qcell .baemin-quota-cell__percent {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 #dashboard .dashboard-baemin-live-card .admin-table-summary {
-  padding: 0 18px 8px;
+  padding: 0 18px 6px;
   margin: 0;
 }
 
 .baemin-grand-totals__percent--missed {
   color: #f87171;
   font-weight: 700;
-}
-
-@media (max-width: 900px) {
-  .dashboard-baemin-region-panel__cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 768px) {
@@ -3216,13 +3258,28 @@ textarea {
   }
 
   .dashboard-baemin-applied-time {
-    font-size: 1.55rem;
-    padding: 8px 14px 2px;
+    font-size: 1.15rem;
+    padding: 6px 14px 2px;
   }
 
-  .dashboard-baemin-live-panels {
-    max-height: none;
-    padding: 8px 14px 14px;
+  .dashboard-baemin-live-panels,
+  .dashboard-baemin-week-block {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .dashboard-baemin-compact-table {
+    min-width: 580px;
+    font-size: 0.78rem;
+  }
+
+  .dashboard-baemin-compact-table th,
+  .dashboard-baemin-compact-table td {
+    padding: 5px 6px;
+  }
+
+  .dashboard-baemin-qcell__line {
+    gap: 4px;
   }
 }
 

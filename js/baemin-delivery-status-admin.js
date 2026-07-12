@@ -5411,31 +5411,143 @@
     });
   }
 
-  function renderDashboardRegionQuotaPanel(region) {
-    const achieved = (actual, target) => Number(target) > 0 && Number(actual) >= Number(target);
-    const slotMeta = (label, actual, target) => {
-      const prog = formatProgress(actual, target);
-      const ok = achieved(actual, target);
-      const overClass = prog.percent > 100 ? ' baemin-grand-totals__percent--over' : '';
-      const missClass = !ok && prog.target > 0 ? ' baemin-grand-totals__percent--missed' : '';
-      return `<div class="baemin-grand-totals__card">
-        <span class="baemin-grand-totals__label">${escapeHtml(label)}</span>
-        <span class="baemin-grand-totals__value">${escapeHtml(prog.label)}</span>
-        <span class="baemin-grand-totals__percent${overClass}${missClass}">${escapeHtml(prog.percentLabel)}${ok ? ' · 달성' : (prog.target > 0 ? ' · 미달성' : '')}</span>
-      </div>`;
-    };
-    return `<section class="dashboard-baemin-region-panel">
-      <div class="dashboard-baemin-region-panel__head">
-        <strong>${escapeHtml(region.regionName)}</strong>
-        <span>${formatNumber(region.setCount)}세트 · 운행중 ${formatNumber(region.drivingCount)}명</span>
-      </div>
-      <div class="baemin-grand-totals dashboard-baemin-region-panel__cards">
-        ${slotMeta('아침점심', region.morningTotal, region.targets.morning)}
-        ${slotMeta('오후', region.afternoonTotal, region.targets.afternoon)}
-        ${slotMeta('저녁', region.eveningTotal, region.targets.evening)}
-        ${slotMeta('심야', region.midnightTotal, region.targets.midnight)}
-      </div>
-    </section>`;
+  function renderCompactQuotaCell(actual, target) {
+    const prog = formatProgress(actual, target);
+    const achieved = prog.target > 0 ? prog.actual >= prog.target : prog.actual > 0;
+    const statusClass = achieved ? ' baemin-quota-tag--achieved' : ' baemin-quota-tag--missed';
+    const percentClass = achieved
+      ? ' baemin-quota-cell__percent--over'
+      : ' baemin-quota-cell__percent--missed';
+    return `<td class="dashboard-baemin-qcell">
+      <span class="dashboard-baemin-qcell__line">
+        <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
+        <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
+        <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
+      </span>
+    </td>`;
+  }
+
+  function renderDashboardTodayTable(regionRows, totals) {
+    const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
+      <td><strong>전체 합계</strong></td>
+      <td>${formatNumber(totals.drivingSum)}명</td>
+      ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning)}
+      ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon)}
+      ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening)}
+      ${renderCompactQuotaCell(totals.midnightSum, totals.targetMidnight)}
+    </tr>`;
+    const bodyRows = regionRows.map(region => `<tr>
+      <td>
+        <strong class="dashboard-baemin-region-name">${escapeHtml(region.regionName)}</strong>
+        <span class="dashboard-baemin-region-meta">${formatNumber(region.setCount)}세트</span>
+      </td>
+      <td>${formatNumber(region.drivingCount)}명</td>
+      ${renderCompactQuotaCell(region.morningTotal, region.targets.morning)}
+      ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon)}
+      ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening)}
+      ${renderCompactQuotaCell(region.midnightTotal, region.targets.midnight)}
+    </tr>`).join('');
+    return `<div class="dashboard-baemin-table-wrap">
+      <table class="admin-table dashboard-baemin-compact-table">
+        <thead>
+          <tr>
+            <th>지역</th>
+            <th>운행중</th>
+            <th>아침점심</th>
+            <th>오후</th>
+            <th>저녁</th>
+            <th>심야</th>
+          </tr>
+        </thead>
+        <tbody>${summaryRow}${bodyRows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  async function queryDashboardBaeminWeek(partnerIds = []) {
+    const rowsEl = $('dashboardBaeminWeekRows');
+    const summaryEl = $('dashboardBaeminWeekSummary');
+    if (!rowsEl) return;
+
+    const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
+    if (!ids.length) {
+      if (summaryEl) summaryEl.textContent = '조회할 지역 없음';
+      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">담당 지역이 없습니다.</td></tr>';
+      return;
+    }
+
+    const weekRange = computeViewWeekQueryRange();
+    if (summaryEl) {
+      summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 불러오는 중…`;
+    }
+
+    const sections = [];
+    let filledTotal = 0;
+    let dayTotal = 0;
+    let regionWithData = 0;
+
+    for (const partnerId of ids) {
+      const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === partnerId)?.regionName
+        || partnerLabelById(partnerId)
+        || partnerId;
+      const setCount = getPartnerSetCount(partnerId);
+      const result = await adminApi(
+        `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
+      );
+      if (!result.ok || result.notApplied) {
+        sections.push(`<tr>
+          <td>${escapeHtml(regionName)}</td>
+          <td colspan="5" class="form-help">${escapeHtml(result.message || '일별 데이터 없음')}</td>
+        </tr>`);
+        continue;
+      }
+
+      const byDate = new Map();
+      (result.items || []).forEach(row => {
+        const p = row.parsed_json || {};
+        const date = String(p.deliveryDate || p.businessDate || row.collect_date || '').slice(0, 10);
+        if (!date || date < weekRange.fromDate || date > weekRange.toDate) return;
+        const hit = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+        hit.morning += Number(p.morningCount || 0);
+        hit.afternoon += Number(p.afternoonCount || 0);
+        hit.evening += Number(p.eveningCount || 0);
+        hit.midnight += Number(p.midnightCount || 0);
+        byDate.set(date, hit);
+      });
+
+      const dates = listDatesInclusive(weekRange.fromDate, weekRange.toDate);
+      const filledDates = dates.filter(date => byDate.has(date));
+      dayTotal += dates.length;
+      filledTotal += filledDates.length;
+      if (!filledDates.length) {
+        sections.push(`<tr>
+          <td>${escapeHtml(regionName)}</td>
+          <td colspan="5" class="form-help">이번주 조회된 일별 배달내역 없음</td>
+        </tr>`);
+        continue;
+      }
+      regionWithData += 1;
+      // 조회된 일자까지(데이터 있는 날만)
+      filledDates.forEach(date => {
+        const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+        const targets = computeSlotTargets(setCount, date);
+        sections.push(`<tr>
+          <td><strong class="dashboard-baemin-region-name">${escapeHtml(regionName)}</strong></td>
+          <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
+          ${renderCompactQuotaCell(actual.morning, targets.morning)}
+          ${renderCompactQuotaCell(actual.afternoon, targets.afternoon)}
+          ${renderCompactQuotaCell(actual.evening, targets.evening)}
+          ${renderCompactQuotaCell(actual.midnight, targets.midnight)}
+        </tr>`);
+      });
+    }
+
+    rowsEl.innerHTML = sections.length
+      ? sections.join('')
+      : '<tr><td colspan="6" class="form-help">이번주 데이터가 없습니다.</td></tr>';
+    if (summaryEl) {
+      summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 지역 ${formatNumber(regionWithData)}/${formatNumber(ids.length)}곳 · 데이터 ${formatNumber(filledTotal)}/${formatNumber(dayTotal)}일 · 조회된 일자까지`;
+    }
   }
 
   async function queryDashboardBaeminLive(options = {}) {
@@ -5494,6 +5606,10 @@
             summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
           }
           panelsEl.innerHTML = `<p class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</p>`;
+          const weekRows = $('dashboardBaeminWeekRows');
+          const weekSummary = $('dashboardBaeminWeekSummary');
+          if (weekRows) weekRows.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</td></tr>`;
+          if (weekSummary) weekSummary.textContent = '스냅샷 없음';
           if (!silent) showToast(result.message || '적용된 스냅샷이 없습니다.');
           return;
         }
@@ -5533,33 +5649,29 @@
       if (!regionRows.length) {
         panelsEl.innerHTML = '<p class="form-help">조회할 지역 스냅샷이 없습니다.</p>';
         if (summary) summary.textContent = '스냅샷 없음';
+        const weekRows = $('dashboardBaeminWeekRows');
+        const weekSummary = $('dashboardBaeminWeekSummary');
+        if (weekRows) weekRows.innerHTML = '<tr><td colspan="6" class="form-help">조회할 지역 스냅샷이 없습니다.</td></tr>';
+        if (weekSummary) weekSummary.textContent = '스냅샷 없음';
         return;
       }
 
-      const allTargets = {
-        morning: targetMorning,
-        afternoon: targetAfternoon,
-        evening: targetEvening,
-        midnight: targetMidnight
-      };
-      const summaryPanel = `<section class="dashboard-baemin-region-panel dashboard-baemin-region-panel--summary">
-        <div class="dashboard-baemin-region-panel__head">
-          <strong>전체 합계 · 오늘 ${escapeHtml(today)}</strong>
-          <span>지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명</span>
-        </div>
-        <div class="baemin-grand-totals dashboard-baemin-region-panel__cards">
-          ${renderProgressCard('아침점심 합계', morningSum, allTargets.morning)}
-          ${renderProgressCard('오후 합계', afternoonSum, allTargets.afternoon)}
-          ${renderProgressCard('저녁 합계', eveningSum, allTargets.evening)}
-          ${renderProgressCard('심야 합계', midnightSum, allTargets.midnight)}
-        </div>
-      </section>`;
-
-      panelsEl.innerHTML = summaryPanel + regionRows.map(renderDashboardRegionQuotaPanel).join('');
+      panelsEl.innerHTML = renderDashboardTodayTable(regionRows, {
+        drivingSum,
+        morningSum,
+        afternoonSum,
+        eveningSum,
+        midnightSum,
+        targetMorning,
+        targetAfternoon,
+        targetEvening,
+        targetMidnight
+      });
 
       if (summary) {
         summary.textContent = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
       }
+      void queryDashboardBaeminWeek(partnerIds);
       if (!silent) {
         showToast(`오늘 할당 · 운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳`);
       }
