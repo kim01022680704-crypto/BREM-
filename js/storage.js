@@ -4004,13 +4004,22 @@ const BremStorage = (function () {
       }
 
       if (sessionData?.session) {
-        const { data: profile, error: profileError } = await client
-          .from('profiles')
-          .select('user_id,role,rider_id,display_name,active')
-          .eq('user_id', sessionData.session.user.id)
-          .maybeSingle();
-        if (profileError) throw profileError;
-        activeSupabaseProfile = profile || null;
+        try {
+          const { data: profile, error: profileError } = await client
+            .from('profiles')
+            .select('user_id,role,rider_id,display_name,active')
+            .eq('user_id', sessionData.session.user.id)
+            .maybeSingle();
+          if (profileError) {
+            console.warn('[BREM] profiles load skipped:', profileError.message || profileError);
+          }
+          activeSupabaseProfile = profile
+            || buildProfileFromAuthUser(sessionData.session.user, 'admin')
+            || null;
+        } catch (profileLoadError) {
+          console.warn('[BREM] profiles load failed:', profileLoadError?.message || profileLoadError);
+          activeSupabaseProfile = buildProfileFromAuthUser(sessionData.session.user, 'admin');
+        }
       }
 
       const adapter = window.BremSupabaseStorageAdapter.createSupabaseAdapter(client, KEYS);
@@ -4385,7 +4394,44 @@ const BremStorage = (function () {
     }
   }
 
+  function getSupabaseAuthStorageKey(config = getSupabaseConfig()) {
+    const host = String(config?.url || '').replace(/^https?:\/\//i, '').split('.')[0];
+    return host ? `sb-${host}-auth-token` : '';
+  }
+
+  function persistAdminAuthSessionLocally(session, config = getSupabaseConfig()) {
+    if (!session?.access_token || !session?.refresh_token) return false;
+    const storageKey = getSupabaseAuthStorageKey(config);
+    if (!storageKey) return false;
+    const payload = JSON.stringify({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at
+        || (Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600)),
+      expires_in: session.expires_in || 3600,
+      token_type: session.token_type || 'bearer',
+      user: session.user || null
+    });
+    const prefixed = `brem-auth-admin-${storageKey}`;
+    try {
+      localStorage.setItem(prefixed, payload);
+      sessionStorage.setItem(prefixed, payload);
+      window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+      return true;
+    } catch (error) {
+      console.warn('[BREM] persistAdminAuthSessionLocally failed:', error?.message || error);
+      return false;
+    }
+  }
+
   async function finishProductionAdminSessionFromPayload(payload, authApi) {
+    // 로그인 직후 토큰이 localStorage에 쌓이도록 먼저 고정
+    try {
+      window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+    } catch {
+      /* ignore */
+    }
+
     const client = await Promise.race([
       ensureSupabaseClientForLogin(),
       new Promise(resolve => setTimeout(() => resolve(null), 3000))
@@ -4397,15 +4443,19 @@ const BremStorage = (function () {
       return { ok: false, message: '로그인 세션을 받지 못했습니다. 다시 시도해주세요.' };
     }
 
+    // 타임아웃이 나도 localStorage에 세션을 직접 남겨 drivers.html이 읽을 수 있게 한다
+    persistAdminAuthSessionLocally(payload.session);
+
     const sessionResult = await Promise.race([
       client.auth.setSession({
         access_token: payload.session.access_token,
         refresh_token: payload.session.refresh_token
       }),
-      new Promise(resolve => setTimeout(() => resolve({ error: new Error('session timeout') }), 5000))
+      new Promise(resolve => setTimeout(() => resolve({ error: new Error('session timeout') }), 8000))
     ]);
     if (sessionResult?.error) {
-      console.warn('[BREM] setSession delayed; continuing with access token only:', sessionResult.error.message);
+      console.warn('[BREM] setSession delayed; using persisted local session:', sessionResult.error.message);
+      persistAdminAuthSessionLocally(payload.session);
     }
 
     rememberAdminAccessToken(payload.session.access_token);
@@ -4413,6 +4463,20 @@ const BremStorage = (function () {
     activeSupabaseProfile = payload.profile
       || buildProfileFromAuthUser(payload.user || payload.session?.user, 'admin')
       || activeSupabaseProfile;
+
+    // 새로고침/다른 페이지에서도 getSession이 되도록 한 번 더 확인·보정
+    try {
+      const { data: verified } = await client.auth.getSession();
+      if (!verified?.session?.access_token) {
+        persistAdminAuthSessionLocally(payload.session);
+        await client.auth.setSession({
+          access_token: payload.session.access_token,
+          refresh_token: payload.session.refresh_token
+        }).catch(() => ({}));
+      }
+    } catch {
+      persistAdminAuthSessionLocally(payload.session);
+    }
 
     let account = null;
     if (payload.account) {
@@ -10331,8 +10395,35 @@ const BremStorage = (function () {
         }
         if (!profile?.active || profile.role !== 'admin') {
           const client = await ensureSupabaseClientForLogin();
-          const { data: sessionData } = await client?.auth?.getSession?.() || {};
-          const sessionUser = sessionData?.session?.user;
+          let sessionUser = null;
+          try {
+            const { data: sessionData } = await client?.auth?.getSession?.() || {};
+            sessionUser = sessionData?.session?.user || null;
+            // localStorage에 직접 저장된 세션이 있으면 setSession으로 복구
+            if (!sessionUser) {
+              const storageKey = getSupabaseAuthStorageKey();
+              const raw = storageKey
+                ? (localStorage.getItem(`brem-auth-admin-${storageKey}`)
+                  || sessionStorage.getItem(`brem-auth-admin-${storageKey}`))
+                : null;
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed?.access_token && parsed?.refresh_token) {
+                  await client.auth.setSession({
+                    access_token: parsed.access_token,
+                    refresh_token: parsed.refresh_token
+                  }).catch(() => ({}));
+                  const { data: restored } = await client.auth.getSession();
+                  sessionUser = restored?.session?.user || null;
+                  if (restored?.session?.access_token) {
+                    rememberAdminAccessToken(restored.session.access_token);
+                  }
+                }
+              }
+            }
+          } catch (restoreError) {
+            console.warn('[BREM] session restore:', restoreError?.message || restoreError);
+          }
           if (sessionUser) {
             profile = buildProfileFromAuthUser(sessionUser, 'admin');
             activeSupabaseProfile = profile;

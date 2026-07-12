@@ -1,6 +1,5 @@
 /**
  * 기사등록 프로그램( rider-manage / drivers ) 접근 — 관리자 Supabase 세션 공유
- * 세션: sessionStorage only (탭/창 종료 시 로그아웃, 새로고침 시 유지)
  */
 window.BremDriverProgramAccess = (function () {
   function startProgramAdminSessionSecurity() {
@@ -35,13 +34,22 @@ window.BremDriverProgramAccess = (function () {
           /* ignore */
         }
 
-        const returnPath = `${window.location.pathname}${window.location.search}`;
-        const query = returnPath && returnPath !== '/'
-          ? `?return=${encodeURIComponent(returnPath)}`
-          : '';
-        window.location.replace(`admin.html${query}`);
+        window.location.replace('admin.html');
       }
     });
+  }
+
+  function hasAdminAuthHint() {
+    try {
+      if (localStorage.getItem('brem_admin_logged_in') === 'true') return true;
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('brem-auth-admin-') && localStorage.getItem(key)) return true;
+      }
+    } catch {
+      /* ignore */
+    }
+    return false;
   }
 
   async function ensure() {
@@ -49,8 +57,13 @@ window.BremDriverProgramAccess = (function () {
       await window.BremSupabaseConfig.load();
     }
 
-    // 관리자 유휴 로그아웃이 꺼져 있으면(ADMIN_IDLE_MS=0) 이 검사로 강제 로그아웃하지 않음
-    // (이전: isIdleExpired가 30분 기본값으로 true → drivers.html 진입 불가/루프)
+    try {
+      window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+      window.BremLoginPrefs?.migrateSessionToPersist?.('admin');
+    } catch {
+      /* ignore */
+    }
+
     const adminIdleMs = Number(window.BremSessionSecurity?.ADMIN_IDLE_MS);
     const idleEnabled = Number.isFinite(adminIdleMs) ? adminIdleMs > 0 : true;
     if (
@@ -76,13 +89,29 @@ window.BremDriverProgramAccess = (function () {
       return false;
     }
 
-    const access = await BremStorage.auth.ensureDriverProgramAccess?.();
+    let access = await BremStorage.auth.ensureDriverProgramAccess?.();
+    if (!access?.ok && hasAdminAuthHint()) {
+      // 세션 힌트는 있는데 1회 실패 → 짧게 기다렸다 재시도
+      await new Promise(resolve => setTimeout(resolve, 500));
+      try {
+        window.BremLoginPrefs?.migrateSessionToPersist?.('admin');
+      } catch {
+        /* ignore */
+      }
+      access = await BremStorage.auth.ensureDriverProgramAccess?.();
+    }
+
     if (!access?.ok) {
-      const returnPath = `${window.location.pathname}${window.location.search}`;
-      const query = returnPath && returnPath !== '/'
-        ? `?return=${encodeURIComponent(returnPath)}`
-        : '';
-      window.location.replace(`admin.html${query}`);
+      try {
+        sessionStorage.setItem(
+          'brem_driver_program_access_error',
+          access?.message || '관리자 로그인이 필요합니다.'
+        );
+      } catch {
+        /* ignore */
+      }
+      // return= 자동 재진입 루프 방지
+      window.location.replace('admin.html');
       return false;
     }
 
@@ -92,5 +121,5 @@ window.BremDriverProgramAccess = (function () {
     return true;
   }
 
-  return { ensure };
+  return { ensure, hasAdminAuthHint };
 })();

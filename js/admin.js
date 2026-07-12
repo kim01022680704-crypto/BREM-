@@ -2151,6 +2151,15 @@
   function consumeLogoutNotice() {
     const notice = window.BremSessionSecurity?.consumeLogoutNotice?.() || '';
     if (notice) showToast(notice);
+    try {
+      const accessError = sessionStorage.getItem('brem_driver_program_access_error');
+      if (accessError) {
+        sessionStorage.removeItem('brem_driver_program_access_error');
+        showToast(accessError);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   async function logoutAdmin(options = {}) {
@@ -2380,16 +2389,32 @@
 
         const returnPath = new URLSearchParams(window.location.search).get('return');
         if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
-          // 세션이 localStorage에 반영된 뒤 drivers로 이동 (즉시 이동 시 세션 유실 루프 방지)
+          // 세션이 localStorage에 반영된 뒤에만 drivers로 이동
+          let sessionReady = false;
           try {
+            window.BremLoginPrefs?.migrateSessionToPersist?.('admin');
             const client = BremStorage.getSupabaseClient?.();
             if (client?.auth?.getSession) {
-              await client.auth.getSession();
+              const { data } = await client.auth.getSession();
+              sessionReady = Boolean(data?.session?.access_token);
+            }
+            if (!sessionReady) {
+              // 최대 2초 대기 후 재확인
+              await new Promise(resolve => setTimeout(resolve, 500));
+              const { data } = await client?.auth?.getSession?.() || {};
+              sessionReady = Boolean(data?.session?.access_token);
             }
           } catch {
-            /* ignore */
+            sessionReady = false;
           }
-          window.location.replace(returnPath);
+
+          if (sessionReady) {
+            window.location.replace(returnPath);
+          } else {
+            // 세션 미반영이면 자동 이동하지 않음 — 루프 방지
+            history.replaceState({}, '', 'admin.html');
+            showToast('로그인되었습니다. 좌측 메뉴에서 기사등록/기사목록을 다시 열어주세요.');
+          }
         }
       } catch (error) {
         console.error('[BREM] Admin login failed:', error);
@@ -6009,10 +6034,15 @@
         if (!BremStorage.auth.isAdminLoggedIn()) {
           BremStorage.auth.setAdminSession(profile.user_id);
         }
-        const returnPath = new URLSearchParams(window.location.search).get('return');
-        if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
-          window.location.replace(returnPath);
-          return;
+        // return= 자동 재진입은 로그인 루프를 만들 수 있어 사용하지 않음
+        // (로그인 성공 시에만 returnPath로 이동)
+        try {
+          const params = new URLSearchParams(window.location.search);
+          if (params.has('return')) {
+            history.replaceState({}, '', 'admin.html');
+          }
+        } catch {
+          /* ignore */
         }
         showAdminApp();
         return;
