@@ -5434,12 +5434,15 @@
     const percentClass = achieved
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
+    // 한 줄(비율+%%+태그)이면 숫자 자릿수 바뀔 때 열이 찌그러짐 → 2줄 고정
     return `<td class="dashboard-baemin-qcell">
-      <span class="dashboard-baemin-qcell__line">
+      <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
-        <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
-        <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
-      </span>
+        <span class="dashboard-baemin-qcell__meta">
+          <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
+          <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
+        </span>
+      </div>
     </td>`;
   }
 
@@ -5647,26 +5650,49 @@
     const panelsEl = $('dashboardBaeminLivePanels');
     const appliedEl = $('dashboardBaeminAppliedTime');
     const btn = $('dashboardBaeminLiveQueryBtn');
+    const card = $('dashboardBaeminLiveCard');
     if (!panelsEl) return;
+
+    if (state.dashboardLiveBusy) return;
+    state.dashboardLiveBusy = true;
 
     if (!state.dashboardBaeminRegions.length) {
       await initDashboardBaeminLive(true);
-      if (!state.dashboardBaeminRegions.length) return;
+      if (!state.dashboardBaeminRegions.length) {
+        state.dashboardLiveBusy = false;
+        return;
+      }
     }
 
     const partnerIds = state.dashboardBaeminRegions.map(r => r.partnerId);
     const today = todayKstDate();
-    btn?.classList.add('is-loading');
-    if (btn) btn.textContent = '조회 중…';
-    if (summary) summary.textContent = '오늘 스냅샷·할당 불러오는 중…';
+
+    // 수동 조회만 버튼/요약 로딩 UI — 자동 폴링은 기존 표 유지한 채 조용히 갱신
+    if (!silent) {
+      btn?.classList.add('is-loading');
+      if (btn) btn.textContent = '조회 중…';
+      if (summary) summary.textContent = '오늘 스냅샷·할당 불러오는 중…';
+    } else {
+      card?.classList.add('is-soft-refreshing');
+    }
 
     try {
-      // 자동수집 후 새 적용 스냅샷을 받으려면 매번 config를 다시 읽어야 함
-      await Promise.all([
-        loadViewConfig(),
-        loadPartnerSetCountMap(),
-        ensureWeekdayQuotaLoaded()
-      ]);
+      if (silent) {
+        // 자동 폴링: 적용시각 + 오늘 스냅샷만 (세트수/요일할당은 캐시 재사용)
+        await loadViewConfig({ silent: true });
+        if (!state.partnerSetCountMap || !Object.keys(state.partnerSetCountMap).length) {
+          await loadPartnerSetCountMap();
+        }
+        if (!state.weekdayQuotaMatrix) {
+          await ensureWeekdayQuotaLoaded();
+        }
+      } else {
+        await Promise.all([
+          loadViewConfig(),
+          loadPartnerSetCountMap(),
+          ensureWeekdayQuotaLoaded()
+        ]);
+      }
 
       const captureDate = state.appliedCollectDate
         || state.config?.applied?.collectDate
@@ -5692,7 +5718,6 @@
       let targetMidnight = 0;
       let loadedRegions = 0;
 
-      // 수동 조회 시에만 이번주 표도 갱신 (자동 폴링은 오늘 실적만)
       if (!silent) {
         void queryDashboardBaeminWeek(partnerIds);
       }
@@ -5706,15 +5731,17 @@
       const notAppliedHit = snapshotResults.find(entry => entry.result?.ok && entry.result.notApplied);
       if (notAppliedHit) {
         const result = notAppliedHit.result;
-        if (summary) {
-          summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
+        if (!silent) {
+          if (summary) {
+            summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
+          }
+          panelsEl.innerHTML = `<p class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</p>`;
+          const weekRows = $('dashboardBaeminWeekRows');
+          const weekSummary = $('dashboardBaeminWeekSummary');
+          if (weekRows) weekRows.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</td></tr>`;
+          if (weekSummary) weekSummary.textContent = '스냅샷 없음';
+          showToast(result.message || '적용된 스냅샷이 없습니다.');
         }
-        panelsEl.innerHTML = `<p class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</p>`;
-        const weekRows = $('dashboardBaeminWeekRows');
-        const weekSummary = $('dashboardBaeminWeekSummary');
-        if (weekRows) weekRows.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '적용된 스냅샷 없음')}</td></tr>`;
-        if (weekSummary) weekSummary.textContent = '스냅샷 없음';
-        if (!silent) showToast(result.message || '적용된 스냅샷이 없습니다.');
         return;
       }
 
@@ -5754,16 +5781,14 @@
       regionRows.sort((a, b) => String(a.regionName).localeCompare(String(b.regionName), 'ko'));
 
       if (!regionRows.length) {
-        panelsEl.innerHTML = '<p class="form-help">조회할 지역 스냅샷이 없습니다.</p>';
-        if (summary) summary.textContent = '스냅샷 없음';
-        const weekRows = $('dashboardBaeminWeekRows');
-        const weekSummary = $('dashboardBaeminWeekSummary');
-        if (weekRows) weekRows.innerHTML = '<tr><td colspan="6" class="form-help">조회할 지역 스냅샷이 없습니다.</td></tr>';
-        if (weekSummary) weekSummary.textContent = '스냅샷 없음';
+        if (!silent) {
+          panelsEl.innerHTML = '<p class="form-help">조회할 지역 스냅샷이 없습니다.</p>';
+          if (summary) summary.textContent = '스냅샷 없음';
+        }
         return;
       }
 
-      panelsEl.innerHTML = renderDashboardTodayTable(regionRows, {
+      const nextHtml = renderDashboardTodayTable(regionRows, {
         drivingSum,
         morningSum,
         afternoonSum,
@@ -5774,6 +5799,8 @@
         targetEvening,
         targetMidnight
       });
+      // 표는 새 HTML이 준비된 뒤에만 교체 → 깜빡임 최소화
+      panelsEl.innerHTML = nextHtml;
 
       if (summary) {
         summary.textContent = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
@@ -5782,8 +5809,14 @@
         showToast(`오늘 할당 · 운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳`);
       }
     } finally {
-      btn?.classList.remove('is-loading');
-      if (btn) btn.textContent = '스냅샷 조회';
+      state.dashboardLiveBusy = false;
+      card?.classList.remove('is-soft-refreshing');
+      if (!silent) {
+        btn?.classList.remove('is-loading');
+        if (btn) btn.textContent = '스냅샷 조회';
+      } else if (btn && !btn.classList.contains('is-loading')) {
+        btn.textContent = '스냅샷 조회';
+      }
     }
   }
 
@@ -5796,14 +5829,13 @@
 
   function startDashboardBaeminLivePoll() {
     stopDashboardBaeminLivePoll();
-    // 배민 BIZ 자동수집 반영용 — 2분마다 오늘 스냅샷 재조회
+    // 배민 BIZ 자동수집 반영용 — 2분마다 오늘 스냅샷 조용히 재조회
     const POLL_MS = 2 * 60 * 1000;
     state.dashboardLivePollTimer = setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       const dashboard = $('dashboard');
       if (dashboard && !dashboard.classList.contains('active')) return;
-      const btn = $('dashboardBaeminLiveQueryBtn');
-      if (btn?.classList.contains('is-loading')) return;
+      if (state.dashboardLiveBusy) return;
       void queryDashboardBaeminLive({ silent: true });
     }, POLL_MS);
   }
@@ -5944,11 +5976,8 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         const dashboard = $('dashboard');
-        if (dashboard?.classList.contains('active')) {
-          const btn = $('dashboardBaeminLiveQueryBtn');
-          if (!btn?.classList.contains('is-loading')) {
-            void queryDashboardBaeminLive({ silent: true });
-          }
+        if (dashboard?.classList.contains('active') && !state.dashboardLiveBusy) {
+          void queryDashboardBaeminLive({ silent: true });
         }
       }
     });
