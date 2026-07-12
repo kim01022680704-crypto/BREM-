@@ -17,6 +17,8 @@
     selectedPartnerIds: [],
     dashboardSelectedPartnerIds: [],
     dashboardBaeminRegions: [],
+    dashboardWeekPartnerId: '',
+    dashboardWeekCache: {},
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -410,14 +412,19 @@
   function ensureViewWeekStart() {
     if (state.viewWeekStart) return state.viewWeekStart;
     const today = todayKstDate();
-    state.viewWeekStart = window.BremDatePicker?.applyWeekWednesday?.(today) || today;
+    state.viewWeekStart = settlementWednesdayOf(today)
+      || window.BremDatePicker?.applyWeekWednesday?.(today)
+      || today;
     return state.viewWeekStart;
   }
 
   function computeViewWeekQueryRange(weekStart = ensureViewWeekStart()) {
-    const fromDate = window.BremDatePicker?.applyWeekWednesday?.(weekStart) || String(weekStart || '').slice(0, 10);
+    const fromDate = settlementWednesdayOf(weekStart)
+      || window.BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || String(weekStart || '').slice(0, 10);
     const weekEnd = window.BremDatePicker?.weekEndKey?.(fromDate) || addDaysDate(fromDate, 6);
-    const latest = addDaysDate(todayKstDate(), -1);
+    // 이번주 조회: 수요일 ~ 오늘(또는 주 종료 화요일 중 더 이른 날)
+    const latest = todayKstDate();
     let toDate = weekEnd < latest ? weekEnd : latest;
     if (toDate < fromDate) {
       toDate = fromDate;
@@ -5464,89 +5471,161 @@
     </div>`;
   }
 
-  async function queryDashboardBaeminWeek(partnerIds = []) {
+  function renderDashboardWeekRegionTabs(partnerIds = []) {
+    const bar = $('dashboardBaeminWeekRegionBar');
+    if (!bar) return;
+    const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
+    if (!ids.length) {
+      bar.hidden = true;
+      bar.innerHTML = '';
+      state.dashboardWeekPartnerId = '';
+      return;
+    }
+    if (!ids.includes(state.dashboardWeekPartnerId)) {
+      state.dashboardWeekPartnerId = ids[0];
+    }
+    bar.hidden = false;
+    bar.innerHTML = ids.map(partnerId => {
+      const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === partnerId)?.regionName
+        || partnerLabelById(partnerId)
+        || partnerId;
+      const active = partnerId === state.dashboardWeekPartnerId ? ' is-active' : '';
+      return `<button type="button" class="baemin-region-tab${active}" data-dashboard-week-partner="${partnerId}" aria-pressed="${partnerId === state.dashboardWeekPartnerId ? 'true' : 'false'}">${escapeHtml(regionName)}</button>`;
+    }).join('');
+    bar.querySelectorAll('[data-dashboard-week-partner]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const partnerId = normalizePartnerId(btn.dataset.dashboardWeekPartner || '');
+        if (!partnerId || partnerId === state.dashboardWeekPartnerId) return;
+        state.dashboardWeekPartnerId = partnerId;
+        renderDashboardWeekRegionTabs(ids);
+        void queryDashboardBaeminWeek([partnerId], { selectedOnly: true });
+      });
+    });
+  }
+
+  function renderDashboardWeekRowsForPartner(partnerId, items = [], weekRange) {
+    const rowsEl = $('dashboardBaeminWeekRows');
+    const summaryEl = $('dashboardBaeminWeekSummary');
+    if (!rowsEl) return;
+
+    const pid = normalizePartnerId(partnerId);
+    const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === pid)?.regionName
+      || partnerLabelById(pid)
+      || pid;
+    const setCount = getPartnerSetCount(pid);
+    const byDate = new Map();
+    (items || []).forEach(row => {
+      const p = row.parsed_json || {};
+      const date = String(p.deliveryDate || p.businessDate || row.collect_date || '').slice(0, 10);
+      if (!date || date < weekRange.fromDate || date > weekRange.toDate) return;
+      const hit = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+      hit.morning += Number(p.morningCount || 0);
+      hit.afternoon += Number(p.afternoonCount || 0);
+      hit.evening += Number(p.eveningCount || 0);
+      hit.midnight += Number(p.midnightCount || 0);
+      byDate.set(date, hit);
+    });
+
+    const dates = listDatesInclusive(weekRange.fromDate, weekRange.toDate);
+    const filledDays = dates.filter(date => byDate.has(date)).length;
+    if (!dates.length) {
+      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">이번주 조회 기간이 없습니다.</td></tr>';
+      if (summaryEl) summaryEl.textContent = '조회 기간 없음';
+      return;
+    }
+
+    rowsEl.innerHTML = dates.map(date => {
+      const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
+      const targets = computeSlotTargets(setCount, date);
+      return `<tr>
+        <td><strong class="dashboard-baemin-region-name">${escapeHtml(regionName)}</strong></td>
+        <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
+        ${renderCompactQuotaCell(actual.morning, targets.morning)}
+        ${renderCompactQuotaCell(actual.afternoon, targets.afternoon)}
+        ${renderCompactQuotaCell(actual.evening, targets.evening)}
+        ${renderCompactQuotaCell(actual.midnight, targets.midnight)}
+      </tr>`;
+    }).join('');
+
+    if (summaryEl) {
+      summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
+    }
+  }
+
+  async function queryDashboardBaeminWeek(partnerIds = [], options = {}) {
     const rowsEl = $('dashboardBaeminWeekRows');
     const summaryEl = $('dashboardBaeminWeekSummary');
     if (!rowsEl) return;
 
     const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
     if (!ids.length) {
+      renderDashboardWeekRegionTabs([]);
       if (summaryEl) summaryEl.textContent = '조회할 지역 없음';
       rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">담당 지역이 없습니다.</td></tr>';
       return;
     }
 
-    const weekRange = computeViewWeekQueryRange();
-    if (summaryEl) {
-      summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 불러오는 중…`;
+    // 배민현황 지역별 할당 달성과 동일: 이번주 수~오늘
+    const thisWeek = computeThisWeekCollectRange();
+    const weekRange = {
+      fromDate: thisWeek.fromDate,
+      toDate: thisWeek.toDate,
+      weekEnd: window.BremDatePicker?.weekEndKey?.(thisWeek.fromDate) || addDaysDate(thisWeek.fromDate, 6)
+    };
+
+    if (!options.selectedOnly) {
+      state.dashboardWeekCache = {};
+      renderDashboardWeekRegionTabs(ids);
     }
 
-    const sections = [];
-    let filledTotal = 0;
-    let dayTotal = 0;
-    let regionWithData = 0;
+    const selectedId = normalizePartnerId(state.dashboardWeekPartnerId) || ids[0];
+    state.dashboardWeekPartnerId = selectedId;
+    if (!options.selectedOnly) {
+      renderDashboardWeekRegionTabs(ids);
+    }
 
-    for (const partnerId of ids) {
-      const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === partnerId)?.regionName
-        || partnerLabelById(partnerId)
-        || partnerId;
-      const setCount = getPartnerSetCount(partnerId);
+    if (summaryEl) {
+      const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === selectedId)?.regionName
+        || partnerLabelById(selectedId)
+        || selectedId;
+      summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 불러오는 중…`;
+    }
+
+    let items = null;
+    const cached = state.dashboardWeekCache[selectedId];
+    if (
+      cached?.items
+      && cached.weekRange?.fromDate === weekRange.fromDate
+      && cached.weekRange?.toDate === weekRange.toDate
+    ) {
+      items = cached.items;
+    }
+    if (!items) {
       const result = await adminApi(
-        `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
+        `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(selectedId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
       );
       if (!result.ok || result.notApplied) {
-        sections.push(`<tr>
-          <td>${escapeHtml(regionName)}</td>
-          <td colspan="5" class="form-help">${escapeHtml(result.message || '일별 데이터 없음')}</td>
-        </tr>`);
-        continue;
+        rowsEl.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '일별 데이터 없음')}</td></tr>`;
+        if (summaryEl) summaryEl.textContent = result.message || '일별 데이터 없음';
+        return;
       }
-
-      const byDate = new Map();
-      (result.items || []).forEach(row => {
-        const p = row.parsed_json || {};
-        const date = String(p.deliveryDate || p.businessDate || row.collect_date || '').slice(0, 10);
-        if (!date || date < weekRange.fromDate || date > weekRange.toDate) return;
-        const hit = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
-        hit.morning += Number(p.morningCount || 0);
-        hit.afternoon += Number(p.afternoonCount || 0);
-        hit.evening += Number(p.eveningCount || 0);
-        hit.midnight += Number(p.midnightCount || 0);
-        byDate.set(date, hit);
-      });
-
-      const dates = listDatesInclusive(weekRange.fromDate, weekRange.toDate);
-      const filledDates = dates.filter(date => byDate.has(date));
-      dayTotal += dates.length;
-      filledTotal += filledDates.length;
-      if (!filledDates.length) {
-        sections.push(`<tr>
-          <td>${escapeHtml(regionName)}</td>
-          <td colspan="5" class="form-help">이번주 조회된 일별 배달내역 없음</td>
-        </tr>`);
-        continue;
-      }
-      regionWithData += 1;
-      // 조회된 일자까지(데이터 있는 날만)
-      filledDates.forEach(date => {
-        const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
-        const targets = computeSlotTargets(setCount, date);
-        sections.push(`<tr>
-          <td><strong class="dashboard-baemin-region-name">${escapeHtml(regionName)}</strong></td>
-          <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
-          ${renderCompactQuotaCell(actual.morning, targets.morning)}
-          ${renderCompactQuotaCell(actual.afternoon, targets.afternoon)}
-          ${renderCompactQuotaCell(actual.evening, targets.evening)}
-          ${renderCompactQuotaCell(actual.midnight, targets.midnight)}
-        </tr>`);
-      });
+      items = result.items || [];
+      state.dashboardWeekCache[selectedId] = { items, weekRange };
     }
 
-    rowsEl.innerHTML = sections.length
-      ? sections.join('')
-      : '<tr><td colspan="6" class="form-help">이번주 데이터가 없습니다.</td></tr>';
-    if (summaryEl) {
-      summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 지역 ${formatNumber(regionWithData)}/${formatNumber(ids.length)}곳 · 데이터 ${formatNumber(filledTotal)}/${formatNumber(dayTotal)}일 · 조회된 일자까지`;
+    renderDashboardWeekRowsForPartner(selectedId, items, weekRange);
+
+    // 나머지 지역은 백그라운드 캐시 (탭 전환 빠르게)
+    if (!options.selectedOnly) {
+      ids.filter(id => id !== selectedId).forEach(partnerId => {
+        void adminApi(
+          `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(partnerId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
+        ).then(result => {
+          if (result?.ok && !result.notApplied) {
+            state.dashboardWeekCache[partnerId] = { items: result.items || [], weekRange };
+          }
+        }).catch(() => {});
+      });
     }
   }
 

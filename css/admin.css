@@ -3163,6 +3163,19 @@ textarea {
   font-weight: 800;
 }
 
+.dashboard-baemin-week-region-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+.dashboard-baemin-week-region-tabs .baemin-region-tab {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 0.82rem;
+}
+
 .dashboard-baemin-table-wrap {
   width: 100%;
   overflow-x: auto;
