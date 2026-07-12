@@ -19,6 +19,7 @@
     dashboardBaeminRegions: [],
     dashboardWeekPartnerId: '',
     dashboardWeekCache: {},
+    dashboardLivePollTimer: null,
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -5773,6 +5774,27 @@
     }
   }
 
+  function stopDashboardBaeminLivePoll() {
+    if (state.dashboardLivePollTimer) {
+      clearInterval(state.dashboardLivePollTimer);
+      state.dashboardLivePollTimer = null;
+    }
+  }
+
+  function startDashboardBaeminLivePoll() {
+    stopDashboardBaeminLivePoll();
+    // 배민 BIZ 자동수집 반영용 — 3분마다 오늘 스냅샷 재조회
+    const POLL_MS = 3 * 60 * 1000;
+    state.dashboardLivePollTimer = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      const dashboard = $('dashboard');
+      if (dashboard && !dashboard.classList.contains('active')) return;
+      const btn = $('dashboardBaeminLiveQueryBtn');
+      if (btn?.classList.contains('is-loading')) return;
+      void queryDashboardBaeminLive({ silent: true });
+    }, POLL_MS);
+  }
+
   function openBaeminStatusFromDashboard() {
     try {
       sessionStorage.setItem('brem_baemin_menu_focus', 'delivery_status');
@@ -5905,6 +5927,18 @@
       openBaeminStatusFromDashboard();
     });
     void initDashboardBaeminLive();
+    startDashboardBaeminLivePoll();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        const dashboard = $('dashboard');
+        if (dashboard?.classList.contains('active')) {
+          const btn = $('dashboardBaeminLiveQueryBtn');
+          if (!btn?.classList.contains('is-loading')) {
+            void queryDashboardBaeminLive({ silent: true });
+          }
+        }
+      }
+    });
     $('baeminStatusAcceptRateLoadBtn')?.addEventListener('click', () => {
       void loadAcceptRateLiveData();
     });
