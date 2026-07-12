@@ -691,6 +691,11 @@
         }
 
         refreshDriverDashboard(BremStorage.drivers.getById(driverId) || freshDriver);
+        const readyDriver = BremStorage.drivers.getById(driverId) || freshDriver;
+        if (driverHasBaemin(readyDriver)) {
+          // 초기 로드 직후 바로 1회 조회 + 2분 폴링 시작 (Supabase 반영분 수신)
+          void refreshBaeminLiveOps({ toast: false, source: 'boot' });
+        }
         return loadResult;
       } finally {
         driverDashboardLoading = false;
@@ -966,6 +971,18 @@
     return `${mm}. ${dd}. ${hh}:${mi}:${ss}`;
   }
 
+  function pickLiveOpsDisplayTime(ops) {
+    // 폴링 직후 cachedAt(클라이언트 조회시각)을 우선 — Supabase 반영 조회가 돌고 있음을 체감
+    const candidates = [ops?.cachedAt, ops?.updatedAt, ops?.collectedAt]
+      .map(value => {
+        const ts = Date.parse(String(value || ''));
+        return Number.isFinite(ts) ? { value, ts } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.ts - a.ts);
+    return candidates[0]?.value || new Date().toISOString();
+  }
+
   function driverHasBaemin(driver) {
     if (!driver) return false;
     if (driver.platformBaemin === true) return true;
@@ -980,7 +997,10 @@
 
     const show = driverHasBaemin(driver);
     card.hidden = !show;
-    if (!show) return;
+    if (!show) {
+      stopBaeminLiveOpsPolling();
+      return;
+    }
 
     const ops = BremStorage.getRiderBaeminOps?.() || null;
     const emptyEl = document.getElementById('driverBaeminLiveOpsEmpty');
@@ -1003,7 +1023,7 @@
     );
     setText(
       'driverBaeminLiveOpsUpdated',
-      `마지막 업데이트: ${formatLiveOpsUpdatedAt(ops?.updatedAt || ops?.collectedAt || ops?.cachedAt)}`
+      `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
     );
     syncBaeminLiveOpsPolling(driver);
   }
@@ -1030,13 +1050,14 @@
         stopBaeminLiveOpsPolling();
         return;
       }
-      void refreshBaeminLiveOps({ toast: false });
+      void refreshBaeminLiveOps({ toast: false, source: 'poll' });
     }, BAEMIN_LIVE_OPS_POLL_MS);
   }
 
   async function refreshBaeminLiveOps(options = {}) {
     const btn = document.getElementById('driverBaeminLiveOpsRefreshBtn');
-    if (btn) {
+    const fromPoll = options.source === 'poll';
+    if (btn && !fromPoll) {
       btn.disabled = true;
       btn.innerHTML = '업데이트 중…';
     }
@@ -1049,6 +1070,14 @@
         throw new Error(result?.message || result?.error || '운행현황 갱신에 실패했습니다.');
       }
       if (state.currentDriver) renderBaeminLiveOps(state.currentDriver);
+      else {
+        // 폴링 성공 시 조회시각만이라도 갱신
+        const ops = BremStorage.getRiderBaeminOps?.();
+        setText(
+          'driverBaeminLiveOpsUpdated',
+          `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
+        );
+      }
       if (options.toast !== false) {
         const ops = BremStorage.getRiderBaeminOps?.();
         showToast(ops?.available ? '배민 운행현황을 갱신했습니다.' : '배민 운행현황 데이터가 없습니다.');
@@ -1057,10 +1086,12 @@
     } catch (error) {
       if (options.toast !== false) {
         showToast(error.message || '운행현황 갱신에 실패했습니다.');
+      } else if (fromPoll) {
+        console.warn('[BREM] baemin live ops poll failed:', error?.message || error);
       }
       return null;
     } finally {
-      if (btn) {
+      if (btn && !fromPoll) {
         btn.disabled = false;
         btn.innerHTML = '<span aria-hidden="true">↻</span> 실시간 업데이트';
       }
@@ -1200,6 +1231,15 @@
 
   document.getElementById('driverBaeminLiveOpsRefreshBtn')?.addEventListener('click', () => {
     void refreshBaeminLiveOps({ toast: true });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const driver = state.currentDriver;
+    const card = document.getElementById('driverBaeminLiveOps');
+    if (!driver || !card || card.hidden || !driverHasBaemin(driver)) return;
+    syncBaeminLiveOpsPolling(driver);
+    void refreshBaeminLiveOps({ toast: false, source: 'visible' });
   });
 
   document.getElementById('driverProfileEditCancel')?.addEventListener('click', () => {

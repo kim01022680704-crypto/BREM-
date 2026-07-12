@@ -2882,7 +2882,16 @@ const BremStorage = (function () {
     }
 
     if (payload.baeminOps && typeof payload.baeminOps === 'object') {
-      riderBaeminOpsCache = { ...payload.baeminOps, cachedAt: new Date().toISOString() };
+      riderBaeminOpsCache = {
+        ...payload.baeminOps,
+        cachedAt: new Date().toISOString()
+      };
+    } else if (payload.ok) {
+      // live 응답에 baeminOps가 비어도 조회 시각은 갱신해 폴링 동작이 보이게 함
+      riderBaeminOpsCache = {
+        ...(riderBaeminOpsCache || { available: false }),
+        cachedAt: new Date().toISOString()
+      };
     }
 
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
