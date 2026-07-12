@@ -1089,15 +1089,23 @@
     }
     const loadBtn = $('baeminStatusDeliveryLoadBtn');
     loadBtn?.classList.add('is-loading');
-    if (loadBtn) loadBtn.textContent = '실시간 조회 중…';
-    let liveHint = '';
+    // 로컬 세션 서버 상태를 먼저 확인해, 꺼져 있으면 실시간 시도 없이 저장 스냅샷으로 바로 조회한다.
+    if (!state.localServerRunning) {
+      try { await refreshLocalServerStatus(); } catch (_e) { /* ignore */ }
+    }
+    const serverRunning = state.localServerRunning === true;
+    if (loadBtn) loadBtn.textContent = serverRunning ? '실시간 조회 중…' : '저장값 조회 중…';
+    let liveHint = '';        // 실시간 반영 시에만 truthy (표의 live 배지 판정에 사용)
+    let sourceHint = ' · 저장 스냅샷';
     try {
-      const live = await refreshDeliveryLiveFromLocalServer();
-      if (live.ok) {
-        liveHint = ' · 실시간 반영';
-      } else if (live.message) {
-        liveHint = live.skipped ? '' : '';
-        if (!live.skipped && live.message) showToast(live.message);
+      if (serverRunning) {
+        const live = await refreshDeliveryLiveFromLocalServer();
+        if (live.ok) {
+          liveHint = ' · 실시간 반영';
+          sourceHint = liveHint;
+        } else if (!live.skipped && live.message) {
+          showToast(live.message);
+        }
       }
 
       if (!state.config?.applied) {
@@ -1166,7 +1174,7 @@
 
       renderDeliveryStatusRowsMulti(drivingItems, partnerIds, { live: Boolean(liveHint) });
       renderGrandTotalsPanelMulti(partnerIds);
-      showToast(`운행중 ${formatNumber(drivingItems.length)}명 · 지역 ${partnerIds.length}곳${liveHint || ' · 저장 스냅샷'}`);
+      showToast(`운행중 ${formatNumber(drivingItems.length)}명 · 지역 ${partnerIds.length}곳${sourceHint}`);
     } finally {
       loadBtn?.classList.remove('is-loading');
       if (loadBtn) loadBtn.textContent = '배달현황 조회';
