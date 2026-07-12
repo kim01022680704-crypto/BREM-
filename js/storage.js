@@ -4232,6 +4232,12 @@ const BremStorage = (function () {
         .maybeSingle();
       if (error) throw error;
       activeSupabaseProfile = data || null;
+      if (!activeSupabaseProfile && user) {
+        const metaRole = String(user.user_metadata?.role || '').trim();
+        if (metaRole === 'admin' || metaRole === 'rider') {
+          activeSupabaseProfile = buildProfileFromAuthUser(user, metaRole);
+        }
+      }
       return activeSupabaseProfile;
     };
     try {
@@ -10304,25 +10310,52 @@ const BremStorage = (function () {
         return { ok: false, message: error.message || 'Supabase 연결에 실패했습니다.' };
       }
 
-      let hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
-      if (!hydrated.ok) {
-        await waitForSupabaseReady(4000);
-        hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
-      }
-      if (!hydrated.ok) {
-        return hydrated;
+      // 로그인 유지 토큰이 sessionStorage에만 남아 있어도 localStorage로 승격
+      try {
+        window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+        window.BremLoginPrefs?.migrateSessionToPersist?.('admin');
+      } catch {
+        /* ignore */
       }
 
       if (config.mode === 'production') {
-        const profile = activeSupabaseProfile || await loadSupabaseProfile();
-        if (!profile?.active || profile.role !== 'admin') {
-          return { ok: false, message: '관리자 로그인이 필요합니다.' };
+        // 접근 판정은 세션/프로필만 본다. hydrate 실패로 로그인창 루프를 만들지 않는다.
+        let profile = activeSupabaseProfile;
+        if (!profile) {
+          try {
+            profile = await loadSupabaseProfile();
+          } catch (error) {
+            console.warn('[BREM] ensureDriverProgramAccess profile load:', error?.message || error);
+            profile = null;
+          }
         }
+        if (!profile?.active || profile.role !== 'admin') {
+          const client = await ensureSupabaseClientForLogin();
+          const { data: sessionData } = await client?.auth?.getSession?.() || {};
+          const sessionUser = sessionData?.session?.user;
+          if (sessionUser) {
+            profile = buildProfileFromAuthUser(sessionUser, 'admin');
+            activeSupabaseProfile = profile;
+          }
+        }
+        if (!profile?.active || profile.role !== 'admin') {
+          const token = await resolveAdminAccessToken();
+          if (!token) {
+            return { ok: false, message: '관리자 로그인이 필요합니다.' };
+          }
+          return { ok: false, message: '관리자 프로필을 확인하지 못했습니다. 다시 로그인해 주세요.' };
+        }
+
         const persisted = readPersistedProductionSessionAccount(profile);
         if (persisted) {
           productionAdminSessionAccount = persisted;
         }
         this.setAdminSession(profile.user_id);
+
+        // 데이터 hydrate는 백그라운드 — 실패해도 페이지 진입은 허용
+        void ensureSupabaseHydrated({ skipDriversSync: true }).catch(error => {
+          console.warn('[BREM] drivers hydrate deferred:', error?.message || error);
+        });
         void this.refreshProductionAdminSession().catch(() => ({}));
         return { ok: true };
       }

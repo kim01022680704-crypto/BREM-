@@ -2328,6 +2328,11 @@
           await Promise.race([configLoad, timeout]);
         }
 
+        // 관리자: 로그인 전에 먼저 로그인 유지(localStorage)로 고정 — 토큰이 sessionStorage에만 쌓이지 않게
+        window.BremLoginPrefs?.setKeepLoggedIn?.('admin', true);
+        const keepBoxEarly = $('#adminKeepLoggedIn');
+        if (keepBoxEarly) keepBoxEarly.checked = true;
+
         window.BremPerf?.time?.('admin.signInApi');
         const config = BremStorage.getSupabaseConfig?.() || {};
         const useLocalAdminLogin = !isProductionAdminLogin(config)
@@ -2364,6 +2369,7 @@
           rememberCheckbox: $('#adminRememberId'),
           keepCheckbox: $('#adminKeepLoggedIn')
         });
+        window.BremLoginPrefs?.migrateSessionToPersist?.('admin');
 
         showAdminAppShell();
         showAdminApp({ shellReady: true });
@@ -2374,6 +2380,15 @@
 
         const returnPath = new URLSearchParams(window.location.search).get('return');
         if (returnPath && returnPath.startsWith('/') && !returnPath.startsWith('//')) {
+          // 세션이 localStorage에 반영된 뒤 drivers로 이동 (즉시 이동 시 세션 유실 루프 방지)
+          try {
+            const client = BremStorage.getSupabaseClient?.();
+            if (client?.auth?.getSession) {
+              await client.auth.getSession();
+            }
+          } catch {
+            /* ignore */
+          }
           window.location.replace(returnPath);
         }
       } catch (error) {

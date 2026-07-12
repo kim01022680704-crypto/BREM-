@@ -157,6 +157,14 @@
         setItem(key, value) {
           const store = resolveWriteStore();
           store.setItem(scopedPrefix + key, value);
+          // 관리자: 로그인 유지 토큰은 localStorage에도 미러 (drivers.html 등 다른 페이지 공유)
+          if (scope === 'admin') {
+            try {
+              localStorage.setItem(scopedPrefix + key, value);
+            } catch {
+              /* ignore */
+            }
+          }
           try {
             sessionStorage.removeItem(AUTH_STORAGE_PREFIX + key);
             sessionStorage.removeItem(LEGACY_SESSION_PREFIX + key);
