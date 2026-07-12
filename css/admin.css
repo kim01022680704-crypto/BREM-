@@ -3128,6 +3128,14 @@ textarea {
   line-height: 1.25;
 }
 
+.dashboard-baemin-queried-at {
+  display: inline;
+  margin-left: 4px;
+  color: #94a3b8;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+
 .dashboard-baemin-live-actions {
   display: flex;
   flex-wrap: wrap;

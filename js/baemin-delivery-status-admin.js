@@ -5653,8 +5653,9 @@
     if (summary) summary.textContent = '오늘 스냅샷·할당 불러오는 중…';
 
     try {
+      // 자동수집 후 새 적용 스냅샷을 받으려면 매번 config를 다시 읽어야 함
       await Promise.all([
-        state.config?.applied ? Promise.resolve() : loadViewConfig(),
+        loadViewConfig(),
         loadPartnerSetCountMap(),
         ensureWeekdayQuotaLoaded()
       ]);
@@ -5663,10 +5664,12 @@
         || state.config?.applied?.collectDate
         || today;
       const appliedAt = state.config?.applied?.appliedAt || state.config?.applied?.updatedAt || '';
+      const queriedAt = new Date();
       if (appliedEl) {
-        appliedEl.textContent = appliedAt
+        const appliedLabel = appliedAt
           ? `적용시간 ${formatDateTime(appliedAt)}`
           : '적용시간 — (스냅샷 미확인)';
+        appliedEl.innerHTML = `${escapeHtml(appliedLabel)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${escapeHtml(formatDateTime(queriedAt.toISOString()))}</span>`;
       }
 
       const regionRows = [];
@@ -5681,8 +5684,10 @@
       let targetMidnight = 0;
       let loadedRegions = 0;
 
-      // 오늘 스냅샷(지역 병렬) + 이번주 조회를 동시에 시작 — 서버/스키마 변경 없이 대기시간만 단축
-      void queryDashboardBaeminWeek(partnerIds);
+      // 수동 조회 시에만 이번주 표도 갱신 (자동 폴링은 오늘 실적만)
+      if (!silent) {
+        void queryDashboardBaeminWeek(partnerIds);
+      }
       const snapshotResults = await Promise.all(
         partnerIds.map(async partnerId => {
           const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
@@ -5783,8 +5788,8 @@
 
   function startDashboardBaeminLivePoll() {
     stopDashboardBaeminLivePoll();
-    // 배민 BIZ 자동수집 반영용 — 3분마다 오늘 스냅샷 재조회
-    const POLL_MS = 3 * 60 * 1000;
+    // 배민 BIZ 자동수집 반영용 — 2분마다 오늘 스냅샷 재조회
+    const POLL_MS = 2 * 60 * 1000;
     state.dashboardLivePollTimer = setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       const dashboard = $('dashboard');
