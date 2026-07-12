@@ -20,6 +20,7 @@
     dashboardWeekPartnerId: '',
     dashboardWeekCache: {},
     dashboardLivePollTimer: null,
+    dashboardLiveBusy: false,
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -4645,11 +4646,12 @@
     await loadConfig();
   }
 
-  async function loadViewConfig() {
+  async function loadViewConfig(options = {}) {
+    const silent = options.silent === true;
     const result = await adminApi('/api/admin/baemin-delivery/config?viewOnly=1');
     if (!result.ok) {
-      if (result.message) showToast(result.message);
-      return;
+      if (!silent && result.message) showToast(result.message);
+      return result;
     }
     state.config = {
       ...(state.config || {}),
@@ -4662,9 +4664,15 @@
       storageDiagnostics: result.storageDiagnostics || null
     };
     state.canManageRegions = Boolean(result.canManageRegions);
-    renderViewAppliedBanner(result.applied || null);
-    renderStorageDiagnostics(state.config);
-    renderRegionRegistrationCard();
+    if (!silent) {
+      renderViewAppliedBanner(result.applied || null);
+      renderStorageDiagnostics(state.config);
+      renderRegionRegistrationCard();
+    } else if (result.applied) {
+      // 대시보드 폴링: 배너/진단 UI는 건드리지 않고 applied만 갱신
+      state.appliedCollectDate = result.applied.collectDate || state.appliedCollectDate || '';
+    }
+    return result;
   }
 
   async function loadViewData(options = {}) {

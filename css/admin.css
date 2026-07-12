@@ -3136,6 +3136,10 @@ textarea {
   font-weight: 700;
 }
 
+.dashboard-baemin-live-card.is-soft-refreshing .dashboard-baemin-queried-at {
+  color: #fde68a;
+}
+
 .dashboard-baemin-live-actions {
   display: flex;
   flex-wrap: wrap;
