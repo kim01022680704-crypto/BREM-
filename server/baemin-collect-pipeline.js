@@ -4505,6 +4505,7 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
   items = scopedItems;
 
   let hint = '';
+  let savedRange = null; // 선택 기간에 데이터가 없을 때 최근 저장 기간(클라이언트 자동 재조회용)
   if (!items.length) {
     const allPartnerRows = normalizeCollectItemsForAdmin(appliedFetched.rows || [], 'rider_history', partnerId)
       .filter(row => {
@@ -4517,6 +4518,9 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
       const savedDates = allPartnerRows.map(row => resolveRiderBusinessDate(row)).filter(Boolean).sort();
       const savedFrom = savedDates[0] || '';
       const savedTo = savedDates[savedDates.length - 1] || '';
+      if (savedFrom && savedTo) {
+        savedRange = { fromDate: savedFrom, toDate: savedTo };
+      }
       hint = savedFrom && savedTo
         ? `저장된 라이더 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate})과 겹치지 않습니다. 저장된 배달일: ${savedFrom}~${savedTo}`
         : `저장된 라이더 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate}) 배달일 데이터가 없습니다.`;
@@ -4578,6 +4582,7 @@ async function getRiderHistoryRangeForAdmin(options = {}) {
     riderCount: riders.length,
     totalSaved: scopedItems.length,
     hint,
+    savedRange,
     appliedOnly: true,
     totals: computeItemsMetricTotals(items)
   };
@@ -4979,6 +4984,7 @@ async function getDailyHistoryRangeForAdmin(options = {}) {
     });
 
   let hint = '';
+  let savedRange = null; // 선택 기간에 데이터가 없을 때 최근 저장 기간(클라이언트 자동 재조회용)
   if (!items.length) {
     const allPartnerRows = normalizeCollectItemsForAdmin(appliedFetched.rows || [], 'daily_history', partnerId)
       .filter(row => {
@@ -4991,6 +4997,9 @@ async function getDailyHistoryRangeForAdmin(options = {}) {
       const savedDates = allPartnerRows.map(row => resolveDailyBusinessDate(row)).filter(Boolean).sort();
       const savedFrom = savedDates[0] || '';
       const savedTo = savedDates[savedDates.length - 1] || '';
+      if (savedFrom && savedTo) {
+        savedRange = { fromDate: savedFrom, toDate: savedTo };
+      }
       hint = savedFrom && savedTo
         ? `저장된 일별 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate})과 겹치지 않습니다. 저장된 배달일: ${savedFrom}~${savedTo}`
         : `저장된 일별 ${allPartnerRows.length}건은 있으나, 선택 기간(${fromDate}~${toDate}) 배달일 데이터가 없습니다.`;
@@ -5026,6 +5035,7 @@ async function getDailyHistoryRangeForAdmin(options = {}) {
     items,
     count: items.length,
     hint,
+    savedRange,
     appliedOnly: true,
     totals: computeItemsMetricTotals(items)
   };

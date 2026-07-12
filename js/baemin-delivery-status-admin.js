@@ -623,6 +623,32 @@
     return defaultRiderViewDateRange();
   }
 
+  /**
+   * 선택 기간에 저장분이 없을 때, 서버가 알려준 최근 저장 기간(savedRange)으로
+   * 날짜 입력을 바꾸고 1회만 자동 재조회한다. (재조회는 { autoFallback: true }로 무한루프 방지)
+   * 반환 true = 자동 재조회를 시작함 → 호출부는 "데이터 없음" 안내를 생략한다.
+   */
+  function maybeAutoFallbackToSavedRange(result, range, options, reload, label) {
+    if (options && options.autoFallback) return false;
+    const saved = result && result.savedRange;
+    if (!saved || !/^\d{4}-\d{2}-\d{2}$/.test(saved.fromDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(saved.toDate || '')) {
+      return false;
+    }
+    if (saved.fromDate === range.fromDate && saved.toDate === range.toDate) return false;
+
+    setEnhancedDateInput('baeminStatusRiderFromDate', saved.fromDate);
+    setEnhancedDateInput('baeminStatusRiderToDate', saved.toDate);
+    const fromEl = $('baeminStatusRiderFromDate');
+    const toEl = $('baeminStatusRiderToDate');
+    if (fromEl) fromEl.dataset.touched = '1';
+    if (toEl) toEl.dataset.touched = '1';
+    state.riderViewFromDate = saved.fromDate;
+    state.riderViewToDate = saved.toDate;
+    showToast(`선택 기간에 저장분이 없어 최근 저장 기간(${saved.fromDate}~${saved.toDate})으로 표시합니다.`);
+    void reload({ autoFallback: true });
+    return true;
+  }
+
   function handleWeekSelect(value) {
     if (!isViewSection()) return;
     const normalized = window.BremDatePicker?.applyWeekWednesday?.(value) || String(value || '').slice(0, 10);
@@ -964,7 +990,7 @@
     });
   }
 
-  async function loadRiderHistoryData() {
+  async function loadRiderHistoryData(options = {}) {
     if (!isViewSection()) return;
     const partnerId = normalizePartnerId(state.activePartnerId);
     if (!partnerId) {
@@ -1011,6 +1037,7 @@
     renderRiderHistoryRiderRows(partnerId, riders, range);
 
     if (!riders.length) {
+      if (maybeAutoFallbackToSavedRange(result, range, options, loadRiderHistoryData, '라이더')) return;
       showToast(result.hint || `선택 기간 ${range.fromDate}~${range.toDate}에 라이더 데이터 없음`);
       return;
     }
@@ -1020,7 +1047,7 @@
     );
   }
 
-  async function loadDailyHistoryData() {
+  async function loadDailyHistoryData(options = {}) {
     if (!isViewSection()) return;
     const partnerId = normalizePartnerId(state.activePartnerId);
     if (!partnerId) {
@@ -1071,6 +1098,7 @@
     });
 
     if (!items.length) {
+      if (maybeAutoFallbackToSavedRange(result, range, options, loadDailyHistoryData, '일별')) return;
       showToast(result.hint || `선택 기간 ${range.fromDate}~${range.toDate}에 일별 데이터 없음`);
       return;
     }
