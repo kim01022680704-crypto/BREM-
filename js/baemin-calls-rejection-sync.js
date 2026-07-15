@@ -796,8 +796,14 @@
         results = await runRejectionSync(ctx, 'live');
       } else if (mode === 'all') {
         const callRows = await runCallsSync(ctx);
-        const rejRows = await runRejectionSync(ctx, 'past');
-        results = [...callRows, ...rejRows];
+        const rejPast = await runRejectionSync(ctx, 'past');
+        // 현재 정산주(수~화)는 배달현황 기준(live)으로 덮어씀.
+        // 수요일엔 과거(수~전일)가 비어 pastRate=null → past는 스킵되고, live가 오늘 배달현황만 반영.
+        // 목~화엔 past 반영 후 live(=과거+오늘 배달현황)로 최신값 덮어씀(둘 다 비보호 소스).
+        const hasCurrentWeek = Boolean(ctx.currentWeekStart)
+          && (Array.isArray(ctx.weekStarts) ? ctx.weekStarts : []).includes(ctx.currentWeekStart);
+        const rejLive = hasCurrentWeek ? await runRejectionSync(ctx, 'live') : [];
+        results = [...callRows, ...rejPast, ...rejLive];
       }
 
       renderCoverageRows(mergeCoverageMaps(state._lastCallsCoverage, state._lastRejectionCoverage));
