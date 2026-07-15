@@ -3411,6 +3411,151 @@ textarea {
   }
 }
 
+/* 쿠팡 대시보드: 피크 5칸 + 거절 — 가로 스크롤 없이 한눈에 */
+.dashboard-coupang-compact-table {
+  min-width: 0;
+  width: 100%;
+  font-size: 0.78rem;
+}
+
+.dashboard-coupang-compact-table th:nth-child(1),
+.dashboard-coupang-compact-table td:nth-child(1) {
+  width: 11%;
+}
+
+.dashboard-coupang-compact-table th:nth-child(2),
+.dashboard-coupang-compact-table td:nth-child(2) {
+  width: 8%;
+}
+
+.dashboard-coupang-compact-table th:nth-child(n+3),
+.dashboard-coupang-compact-table td:nth-child(n+3) {
+  width: auto;
+}
+
+.dashboard-coupang-compact-table th,
+.dashboard-coupang-compact-table td {
+  padding: 5px 4px;
+  text-align: center;
+}
+
+.dashboard-coupang-compact-table th:nth-child(1),
+.dashboard-coupang-compact-table td:nth-child(1) {
+  text-align: left;
+}
+
+.dashboard-coupang-compact-table .dashboard-baemin-region-name {
+  display: inline-block;
+  max-width: 4.6em;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  letter-spacing: -0.03em;
+}
+
+.dashboard-coupang-compact-table .dashboard-baemin-qcell__ratio {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.dashboard-coupang-compact-table .baemin-quota-tag {
+  min-height: 18px;
+  padding: 1px 6px;
+  font-size: 0.68rem;
+}
+
+#dashboardCoupangLiveCard .dashboard-baemin-live-actions .small-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  #dashboardCoupangLiveCard .dashboard-baemin-live-card__header {
+    gap: 8px;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-live-card__header h2 {
+    font-size: 1.05rem;
+    margin: 0;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-live-help {
+    font-size: 0.72rem;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-applied-time {
+    font-size: 0.92rem;
+    padding: 4px 12px 0;
+  }
+
+  #dashboardCoupangLiveCard .admin-table-summary {
+    font-size: 0.72rem;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-live-panels,
+  #dashboardCoupangLiveCard .dashboard-baemin-week-block {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-coupang-table-wrap {
+    overflow-x: visible;
+  }
+
+  .dashboard-coupang-compact-table {
+    min-width: 0 !important;
+    font-size: 0.62rem;
+  }
+
+  .dashboard-coupang-compact-table th,
+  .dashboard-coupang-compact-table td {
+    padding: 3px 1px;
+    line-height: 1.15;
+  }
+
+  .dashboard-coupang-compact-table th {
+    font-size: 0.58rem;
+    white-space: nowrap;
+  }
+
+  .dashboard-coupang-compact-table .dashboard-baemin-region-name {
+    max-width: 3.2em;
+    font-size: 0.62rem;
+  }
+
+  .dashboard-coupang-compact-table .dashboard-baemin-qcell__stack {
+    gap: 1px;
+  }
+
+  .dashboard-coupang-compact-table .dashboard-baemin-qcell__ratio {
+    font-size: 0.58rem;
+  }
+
+  .dashboard-coupang-compact-table .baemin-quota-tag {
+    min-height: 14px;
+    padding: 0 3px;
+    font-size: 0.54rem;
+    border-radius: 4px;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-week-region-tabs {
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-week-region-tabs .baemin-region-tab {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  #dashboardCoupangLiveCard .dashboard-baemin-week-block__head h3 {
+    font-size: 0.95rem;
+  }
+}
+
 .baemin-menu-tabs {
   display: flex;
   flex-wrap: wrap;

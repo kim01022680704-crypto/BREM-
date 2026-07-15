@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260715j">
+  <link rel="stylesheet" href="css/admin.css?v=20260715k">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -222,7 +222,7 @@
           <div class="card-header dashboard-baemin-live-card__header">
             <div>
               <h2>오늘 쿠팡 · 할당 달성</h2>
-              <p class="form-help dashboard-baemin-live-help">오늘 피크타임 기준 · 쿠팡현황 수집 데이터 · 2분마다 자동 조회</p>
+              <p class="form-help dashboard-baemin-live-help">오늘 피크 · 2분 자동조회</p>
             </div>
             <div class="dashboard-baemin-live-actions">
               <button type="button" class="primary-btn" id="dashboardCoupangLiveQueryBtn">실시간 조회</button>
@@ -237,22 +237,22 @@
           <div class="dashboard-baemin-week-block" id="dashboardCoupangWeekBlock">
             <div class="dashboard-baemin-week-block__head">
               <h3>이번주 지역별 할당 달성</h3>
-              <p class="form-help dashboard-baemin-live-help">이번주 수~오늘 · 쿠팡현황 할당달성과 동일</p>
+              <p class="form-help dashboard-baemin-live-help">이번주 수~오늘</p>
             </div>
             <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardCoupangWeekRegionBar" hidden></div>
             <p class="admin-table-summary" id="dashboardCoupangWeekSummary" aria-live="polite">오늘 조회 시 함께 불러옵니다</p>
-            <div class="dashboard-baemin-table-wrap">
-              <table class="admin-table dashboard-baemin-compact-table">
+            <div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap">
+              <table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
                 <thead>
                   <tr>
                     <th>지역</th>
-                    <th>배달일</th>
-                    <th>아침</th>
-                    <th>점심피크</th>
-                    <th>점심논피크</th>
-                    <th>저녁피크</th>
-                    <th>저녁논피크</th>
-                    <th>거절율</th>
+                    <th>일자</th>
+                    <th title="아침">아침</th>
+                    <th title="점심피크">점피</th>
+                    <th title="점심논피크">점논</th>
+                    <th title="저녁피크">저피</th>
+                    <th title="저녁논피크">저논</th>
+                    <th>거절</th>
                   </tr>
                 </thead>
                 <tbody id="dashboardCoupangWeekRows">
@@ -5521,8 +5521,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
-    <script src="js/coupang-status-admin.js?v=20260715i"></script>
-    <script src="js/coupang-rider-status-admin.js?v=20260715i"></script>
+    <script src="js/coupang-status-admin.js?v=20260715k"></script>
+    <script src="js/coupang-rider-status-admin.js?v=20260715k"></script>
     <script src="js/coupang-rejection-sync.js?v=20260715c"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>

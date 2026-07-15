@@ -411,6 +411,20 @@
   }
 
   const PEAK_LABEL = { MORNING: '아침', LUNCH: '점심피크', POST_LUNCH: '점심논피크', DINNER: '저녁피크', POST_DINNER: '저녁논피크' };
+  const PEAK_LABEL_SHORT = { MORNING: '아침', LUNCH: '점피', POST_LUNCH: '점논', DINNER: '저피', POST_DINNER: '저논' };
+
+  function shortRegionLabel(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    if (raw === '전체합계' || raw === '전체 합계') return '합계';
+    if (raw.length <= 4) return raw;
+    return raw.slice(-4);
+  }
+
+  function regionNameCell(fullName) {
+    const full = String(fullName || '').trim() || '-';
+    return `<strong class="dashboard-baemin-region-name" title="${esc(full)}">${esc(shortRegionLabel(full))}</strong>`;
+  }
 
   function renderQuotaTagCell(actual, target, hasCompleted = true) {
     const a = Number(actual) || 0;
@@ -420,12 +434,12 @@
     }
     const achieved = t > 0 ? a >= t : a > 0;
     const statusClass = achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed';
-    const ratio = hasCompleted ? `${n(a)} / ${n(t)}` : `- / ${n(t)}`;
+    const ratio = hasCompleted ? `${n(a)}/${n(t)}` : `-/${n(t)}`;
     return `<td class="dashboard-baemin-qcell">
       <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${esc(ratio)}</span>
         <span class="dashboard-baemin-qcell__meta">
-          <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달성'}</span>
+          <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달'}</span>
         </span>
       </div>
     </td>`;
@@ -468,7 +482,7 @@
       rejByDay.set(day, cur);
     });
     const days = DOW_ORDER.filter(d => byDay.has(d));
-    const header = ['요일', ...PEAK_ORDER.map(pt => PEAK_LABEL[pt]), '거절율'];
+    const header = ['요일', ...PEAK_ORDER.map(pt => PEAK_LABEL_SHORT[pt]), '거절'];
     const bodyRows = days.map(day => {
       const pk = byDay.get(day);
       const cells = PEAK_ORDER.map(pt => {
@@ -483,8 +497,8 @@
       const dLabel = `${DOW_LABEL[day] || day}${dateByDay.get(day) ? ` (${dateByDay.get(day)})` : ''}`;
       return `<tr><td>${esc(dLabel)}</td>${cells.join('')}<td>${rejRate == null ? '-' : rejRate + '%'}</td></tr>`;
     }).join('');
-    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
-      <thead><tr>${header.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap"><table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
+      <thead><tr>${header.map((h, i) => `<th${i >= 1 && i <= 5 ? ` title="${esc(PEAK_LABEL[PEAK_ORDER[i - 1]])}"` : ''}>${esc(h)}</th>`).join('')}</tr></thead>
       <tbody>${bodyRows}</tbody></table></div>`;
     if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 할당 달성(수~화) · 정산주 ${state.weekStart}`;
   }
@@ -555,22 +569,22 @@
     });
     const rejAvg = rejN > 0 ? Math.round((rejSum / rejN) * 10) / 10 : null;
 
-    const header = ['지역', '운행중', ...PEAK_ORDER.map(pt => PEAK_LABEL[pt]), '거절율'];
+    const header = ['지역', '운행', ...PEAK_ORDER.map(pt => PEAK_LABEL_SHORT[pt]), '거절'];
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
-      <td><strong>전체 합계</strong></td>
-      <td>${esc(n(onlineSum))}명</td>
+      <td><strong class="dashboard-baemin-region-name">합계</strong></td>
+      <td>${esc(n(onlineSum))}</td>
       ${PEAK_ORDER.map(pt => renderQuotaTagCell(peakTotals[pt].completed, peakTotals[pt].goal)).join('')}
       <td>${rejAvg == null ? '-' : rejAvg + '%'}</td>
     </tr>`;
     const bodyRows = regionRows.map(r => `<tr>
-      <td><strong class="dashboard-baemin-region-name">${esc(r.vendorName)}</strong></td>
-      <td>${esc(n(r.drivingCount))}명</td>
+      <td>${regionNameCell(r.vendorName)}</td>
+      <td>${esc(n(r.drivingCount))}</td>
       ${PEAK_ORDER.map(pt => renderQuotaTagCell(r.peaks[pt].completed, r.peaks[pt].goal, r.peaks[pt].has)).join('')}
       <td>${r.rejectionRate == null ? '-' : n(r.rejectionRate) + '%'}</td>
     </tr>`).join('');
 
-    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
-      <thead><tr>${header.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap"><table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
+      <thead><tr>${header.map((h, i) => `<th${i >= 2 && i <= 6 ? ` title="${esc(PEAK_LABEL[PEAK_ORDER[i - 2]])}"` : ''}>${esc(h)}</th>`).join('')}</tr></thead>
       <tbody>${summaryRow}${bodyRows}</tbody></table></div>`;
     if (summary) summary.textContent = `오늘 현황 · ${todayKey()} · 운행중 ${n(onlineSum)}/${n(totalSum)}명 · 피크타임 기준`;
   }

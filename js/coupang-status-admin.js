@@ -22,6 +22,14 @@
     DINNER: '저녁피크',
     POST_DINNER: '저녁논피크'
   };
+  /** 한눈에 보기용 짧은 헤더 */
+  const PEAK_LABEL_SHORT = {
+    MORNING: '아침',
+    LUNCH: '점피',
+    POST_LUNCH: '점논',
+    DINNER: '저피',
+    POST_DINNER: '저논'
+  };
   const state = { activeMenu: 'peak_realtime', loaded: false };
   const dash = {
     busy: false,
@@ -139,12 +147,27 @@
     const statusClass = achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed';
     return `<td class="dashboard-baemin-qcell">
       <div class="dashboard-baemin-qcell__stack">
-        <span class="dashboard-baemin-qcell__ratio">${esc(n(a))} / ${esc(n(t))}</span>
+        <span class="dashboard-baemin-qcell__ratio">${esc(n(a))}/${esc(n(t))}</span>
         <span class="dashboard-baemin-qcell__meta">
-          <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달성'}</span>
+          <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달'}</span>
         </span>
       </div>
     </td>`;
+  }
+
+  /** 길면 뒤 4글자만 (예: 울산남구중앙 → 남구중앙) */
+  function shortRegionLabel(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    if (raw === '전체합계' || raw === '전체 합계') return '합계';
+    if (raw.length <= 4) return raw;
+    return raw.slice(-4);
+  }
+
+  function regionNameCell(fullName) {
+    const full = String(fullName || '').trim() || '-';
+    const short = shortRegionLabel(full);
+    return `<strong class="dashboard-baemin-region-name" title="${esc(full)}">${esc(short)}</strong>`;
   }
 
   function tableFor(menu, items) {
@@ -253,11 +276,13 @@
   }
 
   function formatDeliveryDateWithWeekday(dateKey) {
+    const key = String(dateKey || '').slice(0, 10);
     const picker = dp();
-    if (picker?.formatDate && picker?.formatWeekdayKo) {
-      return `${picker.formatDate(dateKey)}(${picker.formatWeekdayKo(dateKey)})`;
-    }
-    return String(dateKey || '').slice(0, 10);
+    const wd = picker?.formatWeekdayKo ? picker.formatWeekdayKo(key) : '';
+    // 모바일 한눈에: 7/15(수)
+    const m = key.slice(5, 7).replace(/^0/, '');
+    const d = key.slice(8, 10).replace(/^0/, '');
+    return wd ? `${m}/${d}(${wd})` : `${m}/${d}`;
   }
 
   function thisWeekWedToToday() {
@@ -339,13 +364,15 @@
   }
 
   function renderTodayTable(regionRows, totals) {
-    const peakHeads = PEAK_ORDER.map(pt => `<th>${esc(PEAK_LABEL[pt])}</th>`).join('');
+    const peakHeads = PEAK_ORDER.map(pt =>
+      `<th title="${esc(PEAK_LABEL[pt])}">${esc(PEAK_LABEL_SHORT[pt])}</th>`
+    ).join('');
     const summaryPeakCells = PEAK_ORDER.map(pt =>
       renderQuotaTagCell(totals.peaks[pt].completed, totals.peaks[pt].goal)
     ).join('');
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
-      <td><strong>전체 합계</strong></td>
-      <td>${esc(n(totals.drivingSum))}명</td>
+      <td><strong class="dashboard-baemin-region-name">합계</strong></td>
+      <td>${esc(n(totals.drivingSum))}</td>
       ${summaryPeakCells}
       <td>${totals.rejectionRate == null ? '-' : `${esc(n(totals.rejectionRate))}%`}</td>
     </tr>`;
@@ -355,20 +382,20 @@
         return renderQuotaTagCell(peak.completed, peak.goal);
       }).join('');
       return `<tr>
-        <td><strong class="dashboard-baemin-region-name">${esc(region.vendorName)}</strong></td>
-        <td>${esc(n(region.drivingCount))}명</td>
+        <td>${regionNameCell(region.vendorName)}</td>
+        <td>${esc(n(region.drivingCount))}</td>
         ${peakCells}
         <td>${region.rejectionRate == null ? '-' : `${esc(n(region.rejectionRate))}%`}</td>
       </tr>`;
     }).join('');
-    return `<div class="dashboard-baemin-table-wrap">
-      <table class="admin-table dashboard-baemin-compact-table">
+    return `<div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap">
+      <table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
         <thead>
           <tr>
             <th>지역</th>
-            <th>운행중</th>
+            <th>운행</th>
             ${peakHeads}
-            <th>거절율</th>
+            <th>거절</th>
           </tr>
         </thead>
         <tbody>${summaryRow}${bodyRows}</tbody>
@@ -392,7 +419,8 @@
     bar.hidden = false;
     bar.innerHTML = list.map(v => {
       const active = v.vendorId === dash.weekVendorId ? ' is-active' : '';
-      return `<button type="button" class="baemin-region-tab${active}" data-coupang-week-vendor="${esc(v.vendorId)}" aria-pressed="${v.vendorId === dash.weekVendorId ? 'true' : 'false'}">${esc(v.vendorName)}</button>`;
+      const full = String(v.vendorName || v.vendorId);
+      return `<button type="button" class="baemin-region-tab${active}" data-coupang-week-vendor="${esc(v.vendorId)}" title="${esc(full)}" aria-pressed="${v.vendorId === dash.weekVendorId ? 'true' : 'false'}">${esc(shortRegionLabel(full))}</button>`;
     }).join('');
     bar.querySelectorAll('[data-coupang-week-vendor]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -428,14 +456,14 @@
       ).join('');
       const rej = day?.rejectionRate;
       return `<tr>
-        <td><strong class="dashboard-baemin-region-name">${esc(regionName)}</strong></td>
+        <td>${regionNameCell(regionName)}</td>
         <td>${esc(formatDeliveryDateWithWeekday(date))}</td>
         ${peakCells}
         <td>${rej == null ? '-' : `${esc(n(rej))}%`}</td>
       </tr>`;
     }).join('');
     if (summaryEl) {
-      summaryEl.textContent = `${regionName} · ${dash.weekRange.fromDate} ~ ${dash.weekRange.toDate} · 데이터 ${filled}/${dates.length}일 · 이번주 수~오늘`;
+      summaryEl.textContent = `${shortRegionLabel(regionName)} · ${dash.weekRange.fromDate} ~ ${dash.weekRange.toDate} · ${filled}/${dates.length}일`;
     }
     persistWeekCache();
   }
@@ -647,7 +675,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v2';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
