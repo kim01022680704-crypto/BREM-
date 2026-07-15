@@ -3299,11 +3299,6 @@ textarea {
   font-weight: 700;
 }
 
-/* 현재 시간대 안내: 데스크톱에선 숨김(모든 칸 표시), 모바일에서만 노출 */
-.dashboard-baemin-current-slot {
-  display: none;
-}
-
 @media (max-width: 768px) {
   #dashboard > .dashboard-baemin-live-card {
     order: -1;
@@ -3325,33 +3320,9 @@ textarea {
     padding-right: 14px;
   }
 
-  /* 모바일: 지역/운행중 + 현재 시간대 칸만. 나머지 시간대 칸(헤더+셀) 숨김 */
-  .dashboard-baemin-current-slot {
-    display: block;
-    padding: 4px 14px 6px;
-    color: #fbbf24;
-    font-size: 0.8rem;
-    font-weight: 700;
-  }
-
-  .dashboard-baemin-compact-table .baemin-slot-col:not(.is-current-slot) {
-    display: none;
-  }
-
   .dashboard-baemin-compact-table {
-    min-width: 0;
-    table-layout: auto;
-    font-size: 0.82rem;
-  }
-
-  /* 남는 칸이 적으니 고정 너비 해제 */
-  .dashboard-baemin-compact-table th:nth-child(1),
-  .dashboard-baemin-compact-table td:nth-child(1),
-  .dashboard-baemin-compact-table th:nth-child(2),
-  .dashboard-baemin-compact-table td:nth-child(2),
-  .dashboard-baemin-compact-table th:nth-child(n+3),
-  .dashboard-baemin-compact-table td:nth-child(n+3) {
-    width: auto;
+    min-width: 580px;
+    font-size: 0.78rem;
   }
 
   .dashboard-baemin-compact-table th,
