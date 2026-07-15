@@ -15,9 +15,30 @@
 
   const LOCAL_BASE = 'http://127.0.0.1:3940';
   const state = { activeMenu: 'peak_realtime', loaded: false };
-  const local = { running: false, hasToken: false, vendorCount: 0, collecting: false };
+  const local = { running: false, hasToken: false, vendorCount: 0, collecting: false, loop: {} };
   let localPollTimer = null;
   const $ = (id) => document.getElementById(id);
+
+  function dp() { return window.BremDatePicker; }
+  function currentWeekStart() {
+    const val = $('coupangStatusWeekDate')?.value || '';
+    const picker = dp();
+    if (!picker) return String(val || '').slice(0, 10);
+    return picker.applyWeekWednesday(val || picker.weekStartKey());
+  }
+  function shiftWeek(days) {
+    const cur = currentWeekStart();
+    const d = new Date(`${cur}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    const input = $('coupangStatusWeekDate');
+    if (input) input.value = dp() ? dp().applyWeekWednesday(d.toISOString().slice(0, 10)) : d.toISOString().slice(0, 10);
+  }
+  function renderWeekPreview() {
+    const el = $('coupangStatusWeekPreview');
+    if (!el) return;
+    const ws = currentWeekStart();
+    el.textContent = dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`;
+  }
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -210,11 +231,34 @@
     el.textContent = parts.join('  |  ');
   }
 
+  function renderLoopStatus() {
+    const el = $('coupangStatusLoopStatus');
+    if (!el) return;
+    const loop = local.loop || {};
+    if (!local.running) { el.textContent = '자동순회: 로컬 세션서버 꺼짐'; return; }
+    if (loop.active) {
+      const bits = [`실행 중 · ${loop.round || 0}회차`];
+      if (loop.message) bits.push(loop.message);
+      if (loop.lastError) bits.push(`오류: ${loop.lastError}`);
+      el.textContent = `자동순회: ${bits.join(' · ')}`;
+    } else {
+      el.textContent = `자동순회: 중지됨${loop.message ? ' — ' + loop.message : ''}`;
+    }
+  }
+
   function updateLocalButtons() {
     const openBtn = $('coupangOpenBrowserBtn');
     const collectBtn = $('coupangCollectBtn');
-    if (openBtn) openBtn.disabled = !local.running || local.collecting;
-    if (collectBtn) collectBtn.disabled = !local.running || !local.hasToken || local.collecting;
+    const weekBtn = $('coupangCollectWeekBtn');
+    const loopStart = $('coupangStatusLoopStartBtn');
+    const loopStop = $('coupangStatusLoopStopBtn');
+    const loop = local.loop || {};
+    const busy = local.collecting || Boolean(loop.active);
+    if (openBtn) openBtn.disabled = !local.running || busy;
+    if (collectBtn) collectBtn.disabled = !local.running || !local.hasToken || busy;
+    if (weekBtn) weekBtn.disabled = !local.running || !local.hasToken || busy;
+    if (loopStart) loopStart.disabled = !local.running || !local.hasToken || Boolean(loop.active);
+    if (loopStop) loopStop.disabled = !local.running || !loop.active;
   }
 
   async function refreshLocalStatus() {
@@ -223,7 +267,9 @@
     local.hasToken = Boolean(h.hasToken);
     local.vendorCount = Number(h.vendorCount || 0);
     local.collecting = Boolean(h.collecting);
+    local.loop = h.statusLoop || {};
     renderLocalStatus();
+    renderLoopStatus();
     updateLocalButtons();
   }
 
@@ -275,6 +321,45 @@
     void renderDashboardCard();
   }
 
+  async function collectWeek() {
+    await refreshLocalStatus();
+    if (!local.running) { toast('로컬 세션서버(3940)가 꺼져 있어요.'); return; }
+    if (!local.hasToken) { toast('먼저 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
+    if (local.collecting || local.loop?.active) { toast('이미 수집 중입니다.'); return; }
+    const weekStart = currentWeekStart();
+    local.collecting = true;
+    updateLocalButtons();
+    renderLocalStatus();
+    toast(`정산주(${weekStart}~) 일주일치 수집 중… (몇 분 소요)`);
+    const r = await callLocal('/collect', { method: 'POST', body: { weekStartDate: weekStart, fullWeek: true }, timeoutMs: 600000 });
+    await refreshLocalStatus();
+    if (!r.ok) { toast(r.message || '주간 수집 실패'); return; }
+    const s = r.summary || {};
+    toast(`주간 수집 완료 · 지역 ${s.vendor_info || 0} · 라이더 ${s.rider_daily || 0} · 주간 ${s.weekly_performance || 0} (${(r.dates || []).length}일)`);
+    await loadConfig();
+    await loadItems();
+    void renderDashboardCard();
+  }
+
+  async function startLoop() {
+    await refreshLocalStatus();
+    if (!local.running) { toast('로컬 세션서버(3940)가 꺼져 있어요.'); return; }
+    if (!local.hasToken) { toast('먼저 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
+    const r = await callLocal('/status-loop/start', { method: 'POST', body: {}, timeoutMs: 15000 });
+    if (r.statusLoop) local.loop = r.statusLoop;
+    toast(r.ok ? '자동순회를 시작했습니다. (1회차 대시보드+라이더 → 이후 30초마다 대시보드)' : (r.message || '자동순회 시작 실패'));
+    renderLoopStatus();
+    updateLocalButtons();
+  }
+
+  async function stopLoop() {
+    const r = await callLocal('/status-loop/stop', { method: 'POST', body: {}, timeoutMs: 10000 });
+    if (r.statusLoop) local.loop = r.statusLoop;
+    toast(r.ok ? '자동순회를 중지했습니다.' : (r.message || '자동순회 중지 실패'));
+    renderLoopStatus();
+    updateLocalButtons();
+  }
+
   function startLocalPoll() {
     if (localPollTimer) return;
     localPollTimer = setInterval(() => {
@@ -295,8 +380,25 @@
     renderMenuBar();
     bindOnce('coupangOpenBrowserBtn', () => void openBrowser());
     bindOnce('coupangCollectBtn', () => void runCollect());
+    bindOnce('coupangCollectWeekBtn', () => void collectWeek());
+    bindOnce('coupangStatusLoopStartBtn', () => void startLoop());
+    bindOnce('coupangStatusLoopStopBtn', () => void stopLoop());
+    bindOnce('coupangStatusPrevWeekBtn', () => { shiftWeek(-7); renderWeekPreview(); });
+    bindOnce('coupangStatusNextWeekBtn', () => { shiftWeek(7); renderWeekPreview(); });
     startLocalPoll();
     void refreshLocalStatus();
+    const weekInput = $('coupangStatusWeekDate');
+    if (weekInput && !weekInput.value) {
+      weekInput.value = dp() ? dp().weekStartKey() : new Date().toISOString().slice(0, 10);
+    }
+    if (weekInput && !weekInput.dataset.bound) {
+      weekInput.dataset.bound = '1';
+      weekInput.addEventListener('change', () => {
+        if (dp() && weekInput.value) weekInput.value = dp().applyWeekWednesday(weekInput.value);
+        renderWeekPreview();
+      });
+    }
+    renderWeekPreview();
     const dateInput = $('coupangStatusDate');
     if (dateInput && !dateInput.value) {
       const kst = new Date(Date.now() + 9 * 3600 * 1000);

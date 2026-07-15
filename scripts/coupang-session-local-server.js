@@ -62,20 +62,30 @@ function thisWeekStartDateKst() {
   kst.setUTCDate(kst.getUTCDate() - diff);
   return kst.toISOString().slice(0, 10);
 }
-/** 이번 정산주 수요일 ~ 오늘(영업일)까지의 날짜 배열 (라이더 일별 백필용) */
-function weekDatesUpToToday() {
-  const start = thisWeekStartDateKst();
-  const end = businessDateKst();
+/** 특정 날짜가 속한 정산주 시작(수요일) 날짜 */
+function weekStartForDate(dateStr) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return thisWeekStartDateKst();
+  const dow = d.getUTCDay(); // 0=일..3=수
+  const diff = (dow - 3 + 7) % 7; // 수요일로 되돌리기
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d.toISOString().slice(0, 10);
+}
+/** 주 시작(수)~화 7일 중 오늘(영업일) 이하의 날짜 배열 (미래 제외) */
+function weekDatesFrom(weekStart) {
+  const today = businessDateKst();
   const dates = [];
-  const cur = new Date(`${start}T00:00:00Z`);
-  const endD = new Date(`${end}T00:00:00Z`);
-  let guard = 0;
-  while (cur <= endD && guard < 14) {
-    dates.push(cur.toISOString().slice(0, 10));
+  const cur = new Date(`${String(weekStart).slice(0, 10)}T00:00:00Z`);
+  for (let i = 0; i < 7; i += 1) {
+    const ds = cur.toISOString().slice(0, 10);
+    if (ds <= today) dates.push(ds);
     cur.setUTCDate(cur.getUTCDate() + 1);
-    guard += 1;
   }
   return dates;
+}
+/** 이번 정산주 수요일 ~ 오늘(영업일)까지의 날짜 배열 (라이더 일별 백필용) */
+function weekDatesUpToToday() {
+  return weekDatesFrom(thisWeekStartDateKst());
 }
 
 async function ensureBrowser() {
@@ -182,9 +192,39 @@ async function collectRiderForDate(dateStr, summary, pushErr, httpInfo) {
   } catch (e) { pushErr(`rider ${dateStr}: ${e.message}`); }
 }
 
+/** 특정 날짜의 지역(매장)별 요약 수집. 첫 호출 응답에서 매장 목록도 반환. */
+async function collectVendorInfoForDate(seed, dateStr, summary, pushErr, httpInfo, verbose) {
+  const dayStart = businessDayStartOffset(dateStr);
+  const info = await apiGet(`/bff/api/v2/vendor/dashboard/${seed}/daily-vendor-info?dateTime=${encodeURIComponent(dayStart)}`);
+  if (verbose) summary.diag.push(httpInfo(`vendor_info GET ${dateStr}`, info));
+  let vendors = [];
+  if (info.ok && info.json) {
+    const items = sources.mapVendorInfoToItems(dateStr, info.json);
+    if (items.length) {
+      const r = await pipeline.upsertCollectItems(items);
+      if (r.ok) summary.vendor_info += r.saved; else pushErr('vendor_info 저장:' + (r.error || r.message));
+    } else if (verbose) {
+      pushErr(`vendor_info ${dateStr}: 응답에 childVendorRecordDtos 없음`);
+    }
+    vendors = (info.json.data?.childVendorRecordDtos || []).map(c => ({
+      id: String(c.vendorId), name: String(c.totalCumulativeStatus?.vendorName || '')
+    }));
+  } else if (verbose) {
+    pushErr(httpInfo(`vendor_info ${dateStr}`, info));
+  }
+  return vendors;
+}
+
 /**
- * 전체 수집: vendor_info(전 매장) → 매장별 realtime/weekly → 라이더(best-effort)
- * options: { date, weekStartDate, includeRider, skipWeekly, riderDates }
+ * 전체 수집: vendor_info(전 매장, 날짜별) → 매장별 realtime(오늘)/weekly(주1회) → 라이더(날짜별)
+ * options:
+ *   date          기준 수집일 (기본 오늘)
+ *   weekStartDate 정산주 시작(수). 미지정 시 date 기준 계산
+ *   fullWeek      true면 정산주(수~화, 오늘 이하) 전체 날짜의 vendor_info/rider 수집
+ *   riderDates    추가로 수집할 라이더 날짜 배열
+ *   includeRider  false면 라이더 생략 (대시보드만)
+ *   skipWeekly    true면 주간 생략
+ *   includeRealtime false면 실시간(오늘) 생략
  */
 async function runCollect(options = {}) {
   if (collecting) return { ok: false, message: '이미 수집 중입니다.' };
@@ -198,53 +238,55 @@ async function runCollect(options = {}) {
   };
   try {
     await captureCookieHeader();
-    const collectDate = String(options.date || businessDateKst());
+    const today = businessDateKst();
+    const collectDate = String(options.date || today);
+    const weekStart = String(options.weekStartDate || weekStartForDate(collectDate));
     const dtNow = nowKstIsoOffset();
-    const dayStart = businessDayStartOffset(collectDate);
-    const weekStart = String(options.weekStartDate || thisWeekStartDateKst());
+
+    // 수집 대상 날짜(vendor_info + rider). 미래 제외.
+    let dates;
+    if (options.fullWeek) {
+      dates = weekDatesFrom(weekStart);
+    } else {
+      dates = Array.from(new Set([collectDate, ...((Array.isArray(options.riderDates) ? options.riderDates : []))]));
+    }
+    dates = dates.filter(d => d && d <= today).sort();
+    if (!dates.length) dates = [collectDate];
+    const refDate = dates[dates.length - 1];
 
     if (!latestCookie) pushErr('쿠키를 캡처하지 못했습니다(브라우저 세션 확인).');
 
-    // 1) 매장 목록 확보: 캡처된 vendorId 중 하나로 daily-vendor-info 호출
-    let seed = [...seenVendorIds][0];
-    let vendors = [];
+    const seed = [...seenVendorIds][0];
     if (!seed) pushErr('감지된 매장 vendorId가 없습니다. 브라우저에서 쿠팡 대시보드를 한 번 여세요.');
+
+    // 1) 날짜별 지역(매장)별 요약. 첫(참조일) 응답에서 매장 목록 확보.
+    let vendors = [];
     if (seed) {
-      const info = await apiGet(`/bff/api/v2/vendor/dashboard/${seed}/daily-vendor-info?dateTime=${encodeURIComponent(dayStart)}`);
-      summary.diag.push(httpInfo('vendor_info GET', info));
-      if (info.ok && info.json) {
-        const items = sources.mapVendorInfoToItems(collectDate, info.json);
-        if (items.length) {
-          const r = await pipeline.upsertCollectItems(items);
-          if (r.ok) summary.vendor_info += r.saved; else pushErr('vendor_info 저장:' + (r.error || r.message));
-        } else {
-          pushErr('vendor_info: 응답에 childVendorRecordDtos 없음(엔드포인트/응답형태 상이 가능)');
-        }
-        vendors = (info.json.data?.childVendorRecordDtos || []).map(c => ({
-          id: String(c.vendorId), name: String(c.totalCumulativeStatus?.vendorName || '')
-        }));
-      } else {
-        pushErr(httpInfo('vendor_info', info));
+      for (const d of dates) {
+        const found = await collectVendorInfoForDate(seed, d, summary, pushErr, httpInfo, d === refDate);
+        if (!vendors.length && found.length) vendors = found;
       }
     }
-    if (!vendors.length) {
-      vendors = [...seenVendorIds].map(id => ({ id, name: '' }));
-    }
+    if (!vendors.length) vendors = [...seenVendorIds].map(id => ({ id, name: '' }));
 
-    // 2) 매장별 realtime + weekly
+    // 2) 매장별 realtime(오늘만) + weekly(정산주 1회)
+    const wantRealtime = options.includeRealtime !== false && dates.includes(today);
+    const wantWeekly = !options.skipWeekly;
     for (const v of vendors) {
-      try {
-        const rt = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/realtime-performance?dateTime=${encodeURIComponent(dtNow)}`);
-        if (rt.ok && rt.json) {
-          const items = sources.mapRealtimeToItems(v.id, v.name, collectDate, rt.json);
-          const r = await pipeline.upsertCollectItems(items);
-          if (r.ok) summary.peak_realtime += r.saved;
-          if (!items.length) pushErr(`realtime ${v.id}: 응답에 peakTimePerformance 없음`);
-        } else {
-          pushErr(httpInfo(`realtime ${v.id}`, rt));
-        }
-      } catch (e) { pushErr(`realtime ${v.id}: ${e.message}`); }
-      if (!options.skipWeekly) {
+      if (wantRealtime) {
+        try {
+          const rt = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/realtime-performance?dateTime=${encodeURIComponent(dtNow)}`);
+          if (rt.ok && rt.json) {
+            const items = sources.mapRealtimeToItems(v.id, v.name, today, rt.json);
+            const r = await pipeline.upsertCollectItems(items);
+            if (r.ok) summary.peak_realtime += r.saved;
+            if (!items.length) pushErr(`realtime ${v.id}: 응답에 peakTimePerformance 없음`);
+          } else {
+            pushErr(httpInfo(`realtime ${v.id}`, rt));
+          }
+        } catch (e) { pushErr(`realtime ${v.id}: ${e.message}`); }
+      }
+      if (wantWeekly) {
         try {
           const wk = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/weekly-performance?startDate=${encodeURIComponent(weekStart + 'T06:00:00')}`);
           if (wk.ok && wk.json) {
@@ -258,23 +300,22 @@ async function runCollect(options = {}) {
       }
     }
 
-    // 3) 라이더별(전체) — 오늘 + (옵션) 이번 정산주 날짜별 백필. best-effort.
+    // 3) 라이더별(전체) — 날짜별. best-effort.
     if (options.includeRider !== false) {
-      const riderDates = Array.from(new Set([collectDate, ...((Array.isArray(options.riderDates) ? options.riderDates : []))]))
-        .filter(Boolean);
-      for (const d of riderDates) {
+      for (const d of dates) {
         await collectRiderForDate(d, summary, pushErr, httpInfo);
       }
     }
 
     for (const menu of ['peak_realtime', 'weekly_performance', 'vendor_info', 'rider_daily']) {
-      await pipeline.saveRun(menu === 'weekly_performance' ? weekStart : collectDate, menu, summary.errors.length ? 'partial' : 'ok', summary[menu], summary.errors.join(' | ').slice(0, 500));
+      await pipeline.saveRun(menu === 'weekly_performance' ? weekStart : refDate, menu, summary.errors.length ? 'partial' : 'ok', summary[menu], summary.errors.join(' | ').slice(0, 500));
     }
     await persistToken('collect');
     return {
       ok: true,
       collectDate,
       weekStart,
+      dates,
       summary,
       vendorCount: vendors.length,
       apiSamples: [...seenApiPaths].slice(0, 60)
@@ -333,13 +374,13 @@ async function runStatusAutoLoopInner() {
     statusLoop.round += 1;
     const first = statusLoop.round === 1;
     statusLoop.phase = 'collecting';
-    statusLoop.message = first ? '첫 회차 전체 수집 중…' : `실시간 수집 중… (${statusLoop.round}회차)`;
+    statusLoop.message = first ? '첫 회차: 대시보드 + 라이더 퍼포먼스(정산주 전체) 수집 중…' : `대시보드 수집 중… (${statusLoop.round}회차)`;
     statusLoop.updatedAt = nowKstIsoOffset();
     try {
-      // 1회차: 전체 + 이번 정산주 라이더 일별 백필 / 2회차+: 주간 제외(실시간 위주)
+      // 1회차: 대시보드 + 라이더(정산주 수~오늘 전체) / 2회차+: 대시보드만(라이더·주간 제외)
       const result = first
-        ? await runCollect({ riderDates: weekDatesUpToToday() })
-        : await runCollect({ skipWeekly: true });
+        ? await runCollect({ fullWeek: true })
+        : await runCollect({ skipWeekly: true, includeRider: false });
       statusLoop.lastSummary = result && result.summary ? result.summary : null;
       statusLoop.lastError = '';
     } catch (e) {

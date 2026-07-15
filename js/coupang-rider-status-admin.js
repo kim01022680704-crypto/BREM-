@@ -11,7 +11,19 @@
 
   const LOCAL_BASE = 'http://127.0.0.1:3940';
   const ALL = '__ALL__';
-  const state = { activeVendor: ALL, weekStart: '', rows: [], vendors: [], loaded: false };
+  const SUBMENUS = [
+    { id: 'rider', label: '라이더별 현황', title: '라이더별 현황' },
+    { id: 'quota', label: '할당 달성(주간)', title: '요일별 할당 달성 (수~화)' },
+    { id: 'today', label: '오늘 현황', title: '오늘 현황' }
+  ];
+  const PEAK_ORDER = ['MORNING', 'LUNCH', 'POST_LUNCH', 'DINNER', 'POST_DINNER'];
+  const DOW_ORDER = ['WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY', 'MONDAY', 'TUESDAY'];
+  const DOW_LABEL = { WEDNESDAY: '수', THURSDAY: '목', FRIDAY: '금', SATURDAY: '토', SUNDAY: '일', MONDAY: '월', TUESDAY: '화' };
+  const state = {
+    activeVendor: ALL, activeSub: 'rider', weekStart: '',
+    rows: [], weekly: [], today: { vendor: [], peak: [] },
+    vendors: [], loaded: false
+  };
   const local = { running: false, hasToken: false, loop: {} };
   let localPollTimer = null;
   let lastLoopRound = -1;
@@ -23,7 +35,8 @@
   }
   function n(v) {
     const x = Number(v);
-    return Number.isFinite(x) ? Math.round(x).toLocaleString('ko-KR') : '0';
+    if (!Number.isFinite(x)) return '0';
+    return x.toLocaleString('ko-KR', { maximumFractionDigits: 1 });
   }
   function toast(msg) {
     if (window.BremBaeminDeliveryStatusAdmin?.showToast) return window.BremBaeminDeliveryStatusAdmin.showToast(msg);
@@ -145,11 +158,39 @@
     return String(p.vendorName || p.vendorId || '').trim();
   }
 
+  // 현재 서브메뉴의 데이터셋 (매장 탭 도출용)
+  function rowsForActiveSub() {
+    if (state.activeSub === 'quota') return state.weekly;
+    if (state.activeSub === 'today') return [...(state.today.vendor || []), ...(state.today.peak || [])];
+    return state.rows;
+  }
+  function filterByVendor(rows) {
+    return state.activeVendor === ALL ? rows : rows.filter(p => vendorLabel(p) === state.activeVendor);
+  }
+
+  function renderSubmenu() {
+    const bar = $('coupangRiderSubmenu');
+    if (!bar) return;
+    bar.innerHTML = SUBMENUS.map(m =>
+      `<button type="button" class="baemin-region-tab${m.id === state.activeSub ? ' is-active' : ''}" data-coupang-sub="${m.id}">${esc(m.label)}</button>`
+    ).join('');
+    bar.querySelectorAll('[data-coupang-sub]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (state.activeSub === btn.dataset.coupangSub) return;
+        state.activeSub = btn.dataset.coupangSub;
+        renderSubmenu();
+        void loadActive();
+      });
+    });
+    const title = $('coupangRiderCardTitle');
+    if (title) title.textContent = (SUBMENUS.find(m => m.id === state.activeSub) || {}).title || '';
+  }
+
   function renderVendorTabs() {
     const bar = $('coupangRiderVendorTabs');
     if (!bar) return;
     const set = new Map();
-    state.rows.forEach(p => {
+    rowsForActiveSub().forEach(p => {
       const label = vendorLabel(p);
       if (label) set.set(label, (set.get(label) || 0) + 1);
     });
@@ -169,12 +210,16 @@
   }
 
   function renderTable() {
+    if (state.activeSub === 'quota') return renderQuota();
+    if (state.activeSub === 'today') return renderToday();
+    return renderRiderTable();
+  }
+
+  function renderRiderTable() {
     const tableEl = $('coupangRiderTable');
     const summary = $('coupangRiderSummary');
     if (!tableEl) return;
-    const filtered = state.activeVendor === ALL
-      ? state.rows
-      : state.rows.filter(p => vendorLabel(p) === state.activeVendor);
+    const filtered = filterByVendor(state.rows);
     const riders = aggregate(filtered).sort((a, b) => b.complete - a.complete);
     if (!riders.length) {
       tableEl.innerHTML = '<p class="form-help">해당 주간·매장에 라이더 데이터가 없습니다. [자동수집 시작] 또는 쿠팡 밴더현황에서 수집 후 조회하세요.</p>';
@@ -211,25 +256,164 @@
     }
   }
 
-  async function loadWeek() {
+  const PEAK_LABEL = { MORNING: '아침', LUNCH: '점심피크', POST_LUNCH: '점심논피크', DINNER: '저녁피크', POST_DINNER: '저녁논피크' };
+
+  // 요일별 할당 달성 (수~화). 지역(매장)별 day×peak 완료/목표 + 달성률 + 거절율
+  function renderQuota() {
+    const tableEl = $('coupangRiderTable');
+    const summary = $('coupangRiderSummary');
+    if (!tableEl) return;
+    const rows = filterByVendor(state.weekly);
+    if (!rows.length) {
+      tableEl.innerHTML = '<p class="form-help">해당 정산주 할당(주간) 데이터가 없습니다. 쿠팡 밴더현황에서 [주간 수집] 후 조회하세요.</p>';
+      if (summary) summary.textContent = `할당 달성 · 정산주 ${state.weekStart} · 0건`;
+      return;
+    }
+    const byDay = new Map();      // day -> peakType -> {goal, completed, hasCompleted}
+    const dateByDay = new Map();
+    rows.forEach(p => {
+      const day = String(p.dayOfWeek || '').toUpperCase();
+      if (!day) return;
+      if (p.date && !dateByDay.has(day)) dateByDay.set(day, String(p.date).slice(5, 10));
+      if (!byDay.has(day)) byDay.set(day, new Map());
+      const pk = byDay.get(day);
+      const pt = String(p.peakType || '').toUpperCase();
+      const cur = pk.get(pt) || { goal: 0, completed: 0, hasCompleted: false };
+      cur.goal += Number(p.goalCount) || 0;
+      if (p.completedCount != null) { cur.completed += Number(p.completedCount) || 0; cur.hasCompleted = true; }
+      pk.set(pt, cur);
+    });
+    // 거절: (vendor, day) 중복 제거 후 집계
+    const rejByDay = new Map();
+    const seen = new Set();
+    rows.forEach(p => {
+      const day = String(p.dayOfWeek || '').toUpperCase();
+      const key = `${p.vendorId}:${day}`;
+      if (!day || seen.has(key)) return;
+      seen.add(key);
+      const cur = rejByDay.get(day) || { count: 0, rateSum: 0, rateN: 0 };
+      if (p.rejectionCount != null) cur.count += Number(p.rejectionCount) || 0;
+      if (p.rejectionRate != null) { cur.rateSum += Number(p.rejectionRate) || 0; cur.rateN += 1; }
+      rejByDay.set(day, cur);
+    });
+    const days = DOW_ORDER.filter(d => byDay.has(d));
+    const header = ['요일', ...PEAK_ORDER.map(pt => PEAK_LABEL[pt]), '완료/목표', '달성률', '거절', '거절율'];
+    const bodyRows = days.map(day => {
+      const pk = byDay.get(day);
+      let sumGoal = 0, sumDone = 0;
+      const cells = PEAK_ORDER.map(pt => {
+        const c = pk.get(pt);
+        if (!c || (!c.goal && !c.hasCompleted)) return '<td>-</td>';
+        sumGoal += c.goal; sumDone += c.completed;
+        return `<td>${c.hasCompleted ? n(c.completed) : '-'}/${n(c.goal)}</td>`;
+      });
+      const ach = sumGoal > 0 ? Math.round((sumDone / sumGoal) * 1000) / 10 : null;
+      const rej = rejByDay.get(day) || { count: 0, rateSum: 0, rateN: 0 };
+      const rejRate = rej.rateN > 0 ? Math.round((rej.rateSum / rej.rateN) * 10) / 10 : null;
+      const dLabel = `${DOW_LABEL[day] || day}${dateByDay.get(day) ? ` (${dateByDay.get(day)})` : ''}`;
+      return `<tr><td>${esc(dLabel)}</td>${cells.join('')}<td>${n(sumDone)}/${n(sumGoal)}</td><td>${ach == null ? '-' : ach + '%'}</td><td>${n(rej.count)}</td><td>${rejRate == null ? '-' : rejRate + '%'}</td></tr>`;
+    }).join('');
+    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
+      <thead><tr>${header.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${bodyRows}</tbody></table></div>`;
+    if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 할당 달성(수~화) · 정산주 ${state.weekStart}`;
+  }
+
+  // 오늘 현황: 지역 요약(거절율·운행중 인원) + 피크타임 현황
+  function renderToday() {
+    const tableEl = $('coupangRiderTable');
+    const summary = $('coupangRiderSummary');
+    if (!tableEl) return;
+    const vinfo = filterByVendor(state.today.vendor);
+    const peaks = filterByVendor(state.today.peak);
+    if (!vinfo.length && !peaks.length) {
+      tableEl.innerHTML = '<p class="form-help">오늘 수집된 대시보드 데이터가 없습니다. 쿠팡 밴더현황에서 [오늘 수집] 또는 [자동순회 시작]을 실행하세요.</p>';
+      if (summary) summary.textContent = '오늘 현황 · 0건';
+      return;
+    }
+    let onlineSum = 0, totalSum = 0;
+    const vrows = vinfo.map(p => {
+      const target = p.target == null ? null : Number(p.target);
+      const done = p.completedCount == null ? null : Number(p.completedCount);
+      const rate = (target && done != null) ? Math.round((done / target) * 1000) / 10 : null;
+      onlineSum += Number(p.riderOnLineCount) || 0;
+      totalSum += Number(p.riderTotalCount) || 0;
+      return `<tr>
+        <td>${esc(p.vendorName || p.vendorId)}</td>
+        <td>${n(p.target)}</td>
+        <td>${n(p.completedCount)}</td>
+        <td>${rate == null ? '-' : rate + '%'}</td>
+        <td>${n(p.onGoingCount)}</td>
+        <td>${n(p.riderOnLineCount)}/${n(p.riderTotalCount)}</td>
+        <td>${p.rejectionRate == null ? '-' : n(p.rejectionRate) + '%'}</td>
+      </tr>`;
+    }).join('');
+    const vtable = vinfo.length ? `<p class="admin-table-summary">지역 요약 · <strong>운행중 ${n(onlineSum)}/${n(totalSum)}명</strong></p>
+      <div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
+      <thead><tr><th>지역</th><th>목표</th><th>완료</th><th>달성률</th><th>진행중</th><th>운행중</th><th>거절율</th></tr></thead>
+      <tbody>${vrows}</tbody></table></div>` : '';
+    const prows = peaks.slice().sort((a, b) => PEAK_ORDER.indexOf(String(a.peakType).toUpperCase()) - PEAK_ORDER.indexOf(String(b.peakType).toUpperCase()))
+      .map(p => `<tr>
+        <td>${esc(p.vendorName || p.vendorId)}</td>
+        <td>${esc(p.peakLabel)}</td>
+        <td>${n(p.goalCount)}</td>
+        <td>${n(p.completedCount)}</td>
+        <td>${n(p.remainingCount)}</td>
+        <td>${p.achievementRate == null ? '-' : n(p.achievementRate) + '%'}</td>
+      </tr>`).join('');
+    const ptable = peaks.length ? `<p class="admin-table-summary">피크타임 현황(오늘)</p>
+      <div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
+      <thead><tr><th>지역</th><th>피크</th><th>목표</th><th>완료</th><th>잔여</th><th>달성률</th></tr></thead>
+      <tbody>${prows}</tbody></table></div>` : '';
+    tableEl.innerHTML = vtable + ptable;
+    if (summary) summary.textContent = `오늘 현황 · ${todayKey()} · 운행중 ${n(onlineSum)}/${n(totalSum)}명`;
+  }
+
+  function todayKey() {
+    const kst = new Date(Date.now() + 9 * 3600 * 1000);
+    if (kst.getUTCHours() < 6) kst.setUTCDate(kst.getUTCDate() - 1);
+    return kst.toISOString().slice(0, 10);
+  }
+
+  async function loadRider(ws, we) {
+    const res = await adminApi(`/api/admin/coupang/items?sourceMenu=rider_daily&fromDate=${encodeURIComponent(ws)}&toDate=${encodeURIComponent(we)}`);
+    state.rows = res.ok ? (res.items || []).map(it => it.parsed_json || {}) : [];
+    return res;
+  }
+  async function loadQuota(ws, we) {
+    const res = await adminApi(`/api/admin/coupang/items?sourceMenu=weekly_performance&fromDate=${encodeURIComponent(ws)}&toDate=${encodeURIComponent(we)}`);
+    state.weekly = res.ok ? (res.items || []).map(it => it.parsed_json || {}) : [];
+    return res;
+  }
+  async function loadToday() {
+    const d = todayKey();
+    const [vi, pk] = await Promise.all([
+      adminApi(`/api/admin/coupang/items?sourceMenu=vendor_info&collectDate=${encodeURIComponent(d)}`),
+      adminApi(`/api/admin/coupang/items?sourceMenu=peak_realtime&collectDate=${encodeURIComponent(d)}`)
+    ]);
+    state.today.vendor = vi.ok ? (vi.items || []).map(it => it.parsed_json || {}) : [];
+    state.today.peak = pk.ok ? (pk.items || []).map(it => it.parsed_json || {}) : [];
+    return { ok: vi.ok || pk.ok, message: vi.message || pk.message };
+  }
+
+  async function loadActive() {
     const summary = $('coupangRiderSummary');
     const ws = currentWeekStart();
     state.weekStart = ws;
     renderWeekPreview();
     if (summary) summary.textContent = '불러오는 중…';
     const we = dp()?.weekEndKey ? dp().weekEndKey(ws) : ws;
-    const res = await adminApi(`/api/admin/coupang/items?sourceMenu=rider_daily&fromDate=${encodeURIComponent(ws)}&toDate=${encodeURIComponent(we)}`);
-    if (!res.ok) {
-      state.rows = [];
-      const tableEl = $('coupangRiderTable');
-      if (tableEl) tableEl.innerHTML = `<p class="form-help">${esc(res.message || '조회 실패')}</p>`;
-      if (summary) summary.textContent = res.message || '조회 실패';
-      return;
-    }
-    state.rows = (res.items || []).map(it => it.parsed_json || {});
+    // 라이더 데이터는 거절율 동기화용으로 항상 로드
+    const riderRes = await loadRider(ws, we);
+    if (state.activeSub === 'quota') await loadQuota(ws, we);
+    else if (state.activeSub === 'today') await loadToday();
+    renderSubmenu();
     renderVendorTabs();
     renderTable();
+    if (state.activeSub === 'rider' && !riderRes.ok && summary) summary.textContent = riderRes.message || '조회 실패';
   }
+
+  async function loadWeek() { return loadActive(); }
 
   // ── 로컬 세션서버 / 자동수집 루프 ──
   function renderLocalStatus() {
@@ -345,7 +529,15 @@
     if (dateInput && !dateInput.value) {
       dateInput.value = dp() ? dp().weekStartKey() : new Date().toISOString().slice(0, 10);
     }
+    if (dateInput && !dateInput.dataset.bound) {
+      dateInput.dataset.bound = '1';
+      dateInput.addEventListener('change', () => {
+        if (dp() && dateInput.value) dateInput.value = dp().applyWeekWednesday(dateInput.value);
+        renderWeekPreview();
+      });
+    }
     renderWeekPreview();
+    renderSubmenu();
     bindOnce('coupangRiderLoadBtn', () => void loadWeek());
     bindOnce('coupangRiderPrevWeekBtn', () => { shiftWeek(-7); renderWeekPreview(); void loadWeek(); });
     bindOnce('coupangRiderNextWeekBtn', () => { shiftWeek(7); renderWeekPreview(); void loadWeek(); });

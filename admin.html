@@ -1328,12 +1328,26 @@
             </div>
             <div class="dashboard-baemin-live-actions">
               <button type="button" class="small-btn" id="coupangOpenBrowserBtn" disabled>브라우저 열기 / 로그인</button>
-              <button type="button" class="primary-btn" id="coupangCollectBtn" disabled>수집 실행</button>
+              <button type="button" class="primary-btn" id="coupangCollectBtn" disabled>오늘 수집</button>
+              <button type="button" class="small-btn" id="coupangStatusLoopStartBtn" disabled>자동순회 시작</button>
+              <button type="button" class="small-btn danger-btn" id="coupangStatusLoopStopBtn" disabled>자동순회 중지</button>
             </div>
           </div>
           <p class="admin-table-summary" id="coupangLocalStatus" aria-live="polite">로컬 세션서버 상태 확인 중…</p>
+          <p class="admin-table-summary" id="coupangStatusLoopStatus" aria-live="polite">자동순회: 중지됨</p>
           <p class="admin-table-summary" id="coupangStatusSession" aria-live="polite">최근 수집 확인 중…</p>
           <div class="dashboard-baemin-live-actions coupang-view-actions">
+            <button type="button" class="small-btn" id="coupangStatusPrevWeekBtn" title="이전 주">&lt;&lt;</button>
+            <label class="admin-period-field">
+              <span class="baemin-field__label">정산주(수)</span>
+              <input type="date" id="coupangStatusWeekDate" class="admin-period-input">
+            </label>
+            <button type="button" class="small-btn" id="coupangStatusNextWeekBtn" title="다음 주">&gt;&gt;</button>
+            <span class="field-preview" id="coupangStatusWeekPreview">수요일~화요일</span>
+            <button type="button" class="primary-btn" id="coupangCollectWeekBtn" disabled>주간 수집(일주일치)</button>
+          </div>
+          <div class="dashboard-baemin-live-actions coupang-view-actions">
+            <span class="baemin-field__label">조회일</span>
             <input type="date" id="coupangStatusDate" class="admin-period-input">
             <button type="button" class="small-btn" id="coupangStatusLoadBtn">조회</button>
           </div>
@@ -1381,11 +1395,15 @@
           </div>
         </div>
 
+        <div class="baemin-view-submenu">
+          <nav id="coupangRiderSubmenu" class="baemin-region-tabs" aria-label="현황 메뉴"></nav>
+        </div>
+
         <div class="baemin-subpanel baemin-view-panel">
           <article class="card baemin-view-data-card">
             <div class="card-header baemin-view-data-card__header">
               <div>
-                <h2>라이더별 현황</h2>
+                <h2 id="coupangRiderCardTitle">라이더별 현황</h2>
                 <p class="form-help" id="coupangRiderSummary" aria-live="polite">주간·매장을 선택하면 조회합니다.</p>
               </div>
             </div>
@@ -5466,8 +5484,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
-    <script src="js/coupang-status-admin.js?v=20260715d"></script>
-    <script src="js/coupang-rider-status-admin.js?v=20260715b"></script>
+    <script src="js/coupang-status-admin.js?v=20260715e"></script>
+    <script src="js/coupang-rider-status-admin.js?v=20260715c"></script>
     <script src="js/coupang-rejection-sync.js?v=20260715b"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
