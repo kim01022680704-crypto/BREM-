@@ -62,29 +62,45 @@ async function saveRun(collectDate, sourceMenu, status, count, message) {
   } catch { /* ignore */ }
 }
 
-/** 관리자 조회용: 특정 메뉴/일자 아이템 */
+/** 관리자 조회용: 특정 메뉴/일자 아이템 (Supabase 1000행 제한을 페이지네이션으로 넘김) */
 async function readCollectItems(sourceMenu, collectDate, options = {}) {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
-  let q = supabase
-    .from('coupang_collect_items')
-    .select('collect_date, collected_at, source_menu, vendor_id, vendor_name, courier_id, rider_name, phone_number, match_key, dedupe_key, parsed_json')
-    .eq('source_menu', sourceMenu);
   const fromDate = options.fromDate ? String(options.fromDate).slice(0, 10) : '';
   const toDate = options.toDate ? String(options.toDate).slice(0, 10) : '';
-  if (fromDate && toDate) {
-    q = q.gte('collect_date', fromDate).lte('collect_date', toDate);
-  } else if (collectDate) {
-    q = q.eq('collect_date', collectDate);
+  const vendorId = options.vendorId ? String(options.vendorId) : '';
+  const pageSize = Math.min(1000, Math.max(100, Number(options.pageSize) || 1000));
+  const maxRows = Math.min(50000, Math.max(pageSize, Number(options.limit) || 20000));
+  const selectCols = 'collect_date, collected_at, source_menu, vendor_id, vendor_name, courier_id, rider_name, phone_number, match_key, dedupe_key, parsed_json';
+
+  const items = [];
+  let offset = 0;
+  while (offset < maxRows) {
+    let q = supabase
+      .from('coupang_collect_items')
+      .select(selectCols)
+      .eq('source_menu', sourceMenu)
+      .order('collect_date', { ascending: true })
+      .order('dedupe_key', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (fromDate && toDate) {
+      q = q.gte('collect_date', fromDate).lte('collect_date', toDate);
+    } else if (collectDate) {
+      q = q.eq('collect_date', collectDate);
+    }
+    if (vendorId) q = q.eq('vendor_id', vendorId);
+
+    const { data, error } = await q;
+    if (error) {
+      if (isMissingTableError(error)) return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다.' };
+      return { ok: false, error: error.message || '조회 실패', items, count: items.length };
+    }
+    const chunk = data || [];
+    items.push(...chunk);
+    if (chunk.length < pageSize) break;
+    offset += pageSize;
   }
-  if (options.vendorId) q = q.eq('vendor_id', String(options.vendorId));
-  q = q.limit(options.limit || 20000);
-  const { data, error } = await q;
-  if (error) {
-    if (isMissingTableError(error)) return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다.' };
-    return { ok: false, error: error.message || '조회 실패' };
-  }
-  return { ok: true, items: data || [], count: (data || []).length };
+  return { ok: true, items, count: items.length };
 }
 
 /** 특정 메뉴의 최신 collect_date */
