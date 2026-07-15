@@ -4657,6 +4657,13 @@ textarea {
     align-items: stretch;
   }
 
+  /* 모바일: 기사별 현황 표는 자체 스크롤 박스로 고정(페이지가 아래로 길게 늘어나지 않게) */
+  .dashboard-driver-scroll {
+    max-height: 60vh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .dashboard-table th,
   .dashboard-table td {
     padding: 5px 6px;
