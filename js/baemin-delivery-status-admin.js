@@ -2931,7 +2931,7 @@
         ? (selected.has(id) ? ' is-active' : '')
         : (normalizePartnerId(state.activePartnerId) === id ? ' is-active' : '');
       if (isViewSection()) {
-        return `<button type="button" class="baemin-region-tab${active}" data-baemin-partner="${id}" title="DP ${id} · 클릭으로 다중선택" aria-pressed="${selected.has(id) ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+        return `<button type="button" class="baemin-region-tab${active}" data-baemin-partner="${id}" title="DP ${id} · 클릭하여 이 지역 선택" aria-pressed="${selected.has(id) ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
       }
       const bizLabel = bizPartnerTabLabel(partner);
       const count = Number(partner.riderCount || 0);
@@ -2948,7 +2948,8 @@
 
     bar.querySelectorAll('[data-baemin-partner]').forEach(btn => {
       btn.addEventListener('click', () => {
-        switchBaeminPartner(btn.dataset.baeminPartner || '', { toggle: isViewSection() });
+        // 뷰 지역탭은 단일선택(지역별). 다중선택 없음.
+        switchBaeminPartner(btn.dataset.baeminPartner || '', { toggle: false });
       });
     });
     if (isViewSection()) {
@@ -3139,6 +3140,8 @@
       if (isViewSection()) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     updatePanelVisibility();
+    // 지역 전환 시 세트수 행을 항상 선택 지역 기준으로 갱신(지역별 할당 달성). self-guard로 다른 메뉴에선 숨김.
+    renderSetCountRow(id);
 
     if (state.activeMenu === 'weekday_quota') {
       void ensureWeekdayQuotaLoaded().then(() => renderWeekdayQuotaEditor());
