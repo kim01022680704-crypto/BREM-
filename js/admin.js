@@ -2663,6 +2663,7 @@
   function renderDashboard() {
     window.BremPerf?.time?.('admin.renderDashboard');
     void window.BremBaeminDeliveryStatusAdmin?.refreshDashboardBaeminLive?.();
+    void window.BremCoupangStatusAdmin?.refreshDashboardCard?.();
     const month = dashboardMonth();
     const weekStart = dashboardWeekStart();
     const totalDrivers = drivers().length;

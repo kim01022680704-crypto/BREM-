@@ -116,6 +116,7 @@
         <button class="nav-btn" data-section="baemin-biz-status">배민 BIZ 현황</button>
         <button class="nav-btn" data-section="baemin-status">배민현황</button>
         <button class="nav-btn" data-section="baemin-status" data-baemin-menu-focus="calls_rejection_sync">콜수·거절율 동기화</button>
+        <button class="nav-btn" data-section="coupang-status">쿠팡 현황</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
@@ -213,6 +214,21 @@
                 </tbody>
               </table>
             </div>
+          </div>
+        </article>
+
+        <article class="card dashboard-baemin-live-card" id="dashboardCoupangLiveCard">
+          <div class="card-header dashboard-baemin-live-card__header">
+            <div>
+              <h2>오늘 쿠팡 · 지역별 현황</h2>
+              <p class="form-help dashboard-baemin-live-help">최근 수집 기준 · 지역별 목표/완료/진행중/운행 인원</p>
+            </div>
+            <div class="dashboard-baemin-live-actions">
+              <button type="button" class="small-btn" id="dashboardCoupangOpenStatusBtn">쿠팡 현황 열기</button>
+            </div>
+          </div>
+          <div id="dashboardCoupangCard">
+            <p class="form-help">대시보드 진입 시 자동으로 불러옵니다.</p>
           </div>
         </article>
 
@@ -1300,6 +1316,27 @@
             </div>
           </article>
         </div>
+      </section>
+
+      <section class="section" id="coupang-status">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>쿠팡이츠 현황</h2>
+              <p class="form-help">PC 로컬 세션 서버로 수집한 쿠팡 파트너포털 데이터(조회 전용)</p>
+            </div>
+            <div class="dashboard-baemin-live-actions">
+              <input type="date" id="coupangStatusDate" class="admin-period-input">
+              <button type="button" class="primary-btn" id="coupangStatusLoadBtn">조회</button>
+            </div>
+          </div>
+          <p class="admin-table-summary" id="coupangStatusSession" aria-live="polite">세션 상태 확인 중…</p>
+          <div class="baemin-region-tabs" id="coupangStatusMenuBar"></div>
+          <p class="admin-table-summary" id="coupangStatusSummary" aria-live="polite">메뉴를 선택하면 조회합니다.</p>
+          <div id="coupangStatusTable">
+            <p class="form-help">불러오는 중…</p>
+          </div>
+        </article>
       </section>
 
             <section class="section" id="rejections">
@@ -5361,8 +5398,9 @@
   <script src="js/weekly-settlement.js?v=20260703w"></script>
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
-  <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
-  <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
+    <script src="js/coupang-status-admin.js?v=20260715a"></script>
+    <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
@@ -5386,7 +5424,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-  <script src="js/admin.js?v=20260715h"></script>
+    <script src="js/admin.js?v=20260715i"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

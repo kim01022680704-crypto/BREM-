@@ -18,6 +18,7 @@ const payrollProductionRiders = require('./payroll-production-riders');
 const payrollProductionBaseData = require('./payroll-production-base-data');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
+const coupangAdmin = require('./coupang-admin');
 const riderAuth = require('./rider-auth');
 const riderWeeklyPayslip = require('./rider-weekly-payslip');
 const payrollPublishAdmin = require('./payroll-publish-admin');
@@ -1323,6 +1324,34 @@ app.post('/api/admin/baemin-delivery/live-accept-rates/rebuild', async (req, res
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '실시간 수락율 스냅샷 재생성에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/coupang/config', async (req, res) => {
+  try {
+    const result = await coupangAdmin.getConfig(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message, message: result.message || result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '쿠팡 상태 조회에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/coupang/items', async (req, res) => {
+  try {
+    const result = await coupangAdmin.getItems(getBearerToken(req), {
+      sourceMenu: req.query.sourceMenu,
+      collectDate: req.query.collectDate,
+      vendorId: req.query.vendorId
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message, message: result.message || result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '쿠팡 데이터 조회에 실패했습니다.' });
   }
 });
 

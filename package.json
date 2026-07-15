@@ -19,7 +19,9 @@
     "collect:baemin-local": "node scripts/collect-baemin-delivery-local.js",
     "baemin:session-server": "node scripts/baemin-session-local-server.js",
     "baemin:playwright-install": "node node_modules/playwright/cli.js install chromium",
-    "baemin:session-refresh": "node scripts/baemin-session-refresh-cli.js"
+    "baemin:session-refresh": "node scripts/baemin-session-refresh-cli.js",
+    "coupang:discovery": "node scripts/coupang-discovery.js",
+    "coupang:session-server": "node scripts/coupang-session-local-server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
