@@ -5770,12 +5770,29 @@
       if (!silent) {
         void queryDashboardBaeminWeek(partnerIds);
       }
-      const snapshotResults = await Promise.all(
-        partnerIds.map(async partnerId => {
-          const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
-          return { partnerId, result };
-        })
+      // 지역별 N회 왕복 대신 서버에서 한 번에(인증 1회 + 병렬) 조회. 실패 시 기존 방식으로 폴백.
+      let snapshotResults;
+      const dash = await adminApi(
+        `/api/admin/baemin-delivery/dashboard-live?collectDate=${encodeURIComponent(captureDate)}&partnerIds=${encodeURIComponent(partnerIds.join(','))}`
       );
+      if (dash.ok && dash.byPartner) {
+        snapshotResults = partnerIds.map(partnerId => {
+          const b = dash.byPartner[partnerId];
+          return {
+            partnerId,
+            result: b
+              ? { ok: b.ok !== false, items: b.items || [], notApplied: Boolean(b.notApplied), collectDate: b.collectDate || '', message: b.message || '' }
+              : { ok: true, items: [], notApplied: false }
+          };
+        });
+      } else {
+        snapshotResults = await Promise.all(
+          partnerIds.map(async partnerId => {
+            const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
+            return { partnerId, result };
+          })
+        );
+      }
 
       const notAppliedHit = snapshotResults.find(entry => entry.result?.ok && entry.result.notApplied);
       if (notAppliedHit) {

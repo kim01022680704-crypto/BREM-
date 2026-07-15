@@ -619,6 +619,50 @@ async function getCollectItems(accessToken, options = {}) {
   });
 }
 
+/**
+ * 대시보드 실시간: 지역별 배달현황을 한 번(인증 1회 + 서버 병렬)으로 조회.
+ * 지역별 /items 를 N번 왕복하던 것을 1회로 축소. per-partner 조회는 기존과 동일 함수라 결과 동일.
+ */
+async function getDashboardLive(accessToken, options = {}) {
+  const actor = await resolveBaeminActorScope(accessToken);
+  if (!actor.ok) return actor;
+
+  const { getCollectItemsForAdmin } = require('./baemin-collect-pipeline');
+  const viewScope = scopeForView(actor.scope);
+  const allowed = new Set((viewScope.allowedPartnerIds || []).map(id => String(id || '').trim().toUpperCase()));
+  const requested = String(options.partnerIds || '')
+    .split(',')
+    .map(s => s.trim().toUpperCase())
+    .filter(id => /^DP\d{6,}$/.test(id));
+  const partnerIds = (requested.length ? requested : [...allowed])
+    .filter(id => !allowed.size || allowed.has(id));
+
+  const results = await Promise.all(partnerIds.map(async pid => {
+    const r = await getCollectItemsForAdmin(options.collectDate, 'delivery_status', {
+      partnerId: pid,
+      appliedOnly: true,
+      actorScope: viewScope
+    });
+    return { partnerId: pid, r: r || {} };
+  }));
+
+  const byPartner = {};
+  let notApplied = false;
+  let collectDate = '';
+  for (const { partnerId, r } of results) {
+    byPartner[partnerId] = {
+      ok: r.ok !== false,
+      items: r.items || [],
+      notApplied: Boolean(r.notApplied),
+      collectDate: r.collectDate || '',
+      message: r.message || ''
+    };
+    if (r.notApplied) notApplied = true;
+    if (r.collectDate) collectDate = r.collectDate;
+  }
+  return { ok: true, collectDate, notApplied, partnerIds, byPartner };
+}
+
 async function getPartnerList(accessToken, options = {}) {
   const actor = await resolveBaeminActorScope(accessToken);
   if (!actor.ok) return actor;
@@ -883,6 +927,7 @@ module.exports = {
   collectFromApi,
   importFromJson,
   getConfig,
+  getDashboardLive,
   getTableStatus,
   getLatestSummary,
   getCollectItems,

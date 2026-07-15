@@ -765,6 +765,24 @@ app.get('/api/admin/baemin-delivery/config', async (req, res) => {
   }
 });
 
+app.get('/api/admin/baemin-delivery/dashboard-live', async (req, res) => {
+  try {
+    const result = await baeminDeliveryCollect.getDashboardLive(getBearerToken(req), {
+      collectDate: req.query.collectDate,
+      partnerIds: req.query.partnerIds
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '대시보드 실시간 조회에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/baemin-delivery/session', async (req, res) => {
   try {
     const result = await baeminDeliverySession.getSessionStatus(getBearerToken(req));
