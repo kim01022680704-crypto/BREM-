@@ -10,8 +10,10 @@
  */
 const http = require('http');
 const path = require('path');
+// .env.production 을 먼저 읽되(부가 변수용), 실제 로컬 .env 값이 우선하도록 override.
+// (.env.production 의 SUPABASE_SERVICE_ROLE_KEY 가 비어 있어도 .env 의 실제 키가 이김)
 require('dotenv').config({ path: path.join(process.cwd(), '.env.production') });
-require('dotenv').config({ path: path.join(process.cwd(), '.env') });
+require('dotenv').config({ path: path.join(process.cwd(), '.env'), override: true });
 
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
   process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.cwd(), '.playwright-browsers');
