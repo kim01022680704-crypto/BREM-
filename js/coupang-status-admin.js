@@ -13,7 +13,10 @@
     { id: 'rider_daily', label: '라이더별' }
   ];
 
+  const LOCAL_BASE = 'http://127.0.0.1:3940';
   const state = { activeMenu: 'peak_realtime', loaded: false };
+  const local = { running: false, hasToken: false, vendorCount: 0, collecting: false };
+  let localPollTimer = null;
   const $ = (id) => document.getElementById(id);
 
   function esc(v) {
@@ -170,8 +173,113 @@
     mount.innerHTML = `<p class="admin-table-summary">기준일 ${esc(latestDate)} · ${rows.length}개 지역</p>${table}`;
   }
 
+  // ── 로컬 세션서버(3940) 제어: 배민 BIZ와 동일한 방식 ──
+  async function callLocal(path, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs || 120000);
+    try {
+      const res = await fetch(`${LOCAL_BASE}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body != null ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+        cache: 'no-store',
+        mode: 'cors'
+      });
+      clearTimeout(timer);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, status: res.status, message: payload.message || payload.error || `요청 실패 (${res.status})`, ...payload };
+      return { ok: true, ...payload };
+    } catch (e) {
+      clearTimeout(timer);
+      return { ok: false, message: e.message || '로컬 서버 연결 실패' };
+    }
+  }
+
+  function renderLocalStatus() {
+    const el = $('coupangLocalStatus');
+    if (!el) return;
+    if (!local.running) {
+      el.textContent = '로컬 세션서버(3940): 꺼짐 — 바탕화면 [BREM-배민쿠팡-통합세션서버.bat]을 실행하세요.';
+      return;
+    }
+    const parts = ['로컬 세션서버: 실행 중'];
+    parts.push(local.hasToken ? '로그인: 완료' : '로그인: 필요 (브라우저 열기)');
+    if (local.vendorCount) parts.push(`매장 ${local.vendorCount}개 감지`);
+    if (local.collecting) parts.push('수집 중…');
+    el.textContent = parts.join('  |  ');
+  }
+
+  function updateLocalButtons() {
+    const openBtn = $('coupangOpenBrowserBtn');
+    const collectBtn = $('coupangCollectBtn');
+    if (openBtn) openBtn.disabled = !local.running || local.collecting;
+    if (collectBtn) collectBtn.disabled = !local.running || !local.hasToken || local.collecting;
+  }
+
+  async function refreshLocalStatus() {
+    const h = await callLocal('/health', { timeoutMs: 2500 });
+    local.running = Boolean(h.ok);
+    local.hasToken = Boolean(h.hasToken);
+    local.vendorCount = Number(h.vendorCount || 0);
+    local.collecting = Boolean(h.collecting);
+    renderLocalStatus();
+    updateLocalButtons();
+  }
+
+  async function openBrowser() {
+    await refreshLocalStatus();
+    if (!local.running) {
+      toast('로컬 세션서버(3940)가 꺼져 있어요. 바탕화면 통합 세션서버 bat을 먼저 실행하세요.');
+      return;
+    }
+    toast('쿠팡 브라우저를 엽니다…');
+    const r = await callLocal('/browser/open', { method: 'POST', timeoutMs: 60000 });
+    await refreshLocalStatus();
+    toast(r.ok ? '브라우저를 열었습니다. 로그인 후 대시보드를 한 번 여세요.' : (r.message || '브라우저 열기 실패'));
+  }
+
+  async function runCollect() {
+    await refreshLocalStatus();
+    if (!local.running) { toast('로컬 세션서버(3940)가 꺼져 있어요.'); return; }
+    if (!local.hasToken) { toast('먼저 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
+    if (local.collecting) { toast('이미 수집 중입니다.'); return; }
+    local.collecting = true;
+    updateLocalButtons();
+    renderLocalStatus();
+    toast('쿠팡 데이터 수집 중… (몇 분 소요)');
+    const r = await callLocal('/collect', { method: 'POST', body: {}, timeoutMs: 300000 });
+    await refreshLocalStatus();
+    if (!r.ok) { toast(r.message || '수집 실패'); return; }
+    const s = r.summary || {};
+    toast(`수집 완료 · 피크 ${s.peak_realtime || 0} · 주간 ${s.weekly_performance || 0} · 지역 ${s.vendor_info || 0} · 라이더 ${s.rider_daily || 0}`);
+    await loadConfig();
+    await loadItems();
+    void renderDashboardCard();
+  }
+
+  function startLocalPoll() {
+    if (localPollTimer) return;
+    localPollTimer = setInterval(() => {
+      const sec = document.getElementById('coupang-status');
+      if (sec && sec.classList.contains('active')) void refreshLocalStatus();
+    }, 5000);
+  }
+
+  function bindOnce(id, handler) {
+    const btn = $(id);
+    if (btn && !btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', handler);
+    }
+  }
+
   async function refresh() {
     renderMenuBar();
+    bindOnce('coupangOpenBrowserBtn', () => void openBrowser());
+    bindOnce('coupangCollectBtn', () => void runCollect());
+    startLocalPoll();
+    void refreshLocalStatus();
     const dateInput = $('coupangStatusDate');
     if (dateInput && !dateInput.value) {
       const kst = new Date(Date.now() + 9 * 3600 * 1000);

@@ -1323,14 +1323,19 @@
           <div class="card-header">
             <div>
               <h2>쿠팡이츠 현황</h2>
-              <p class="form-help">PC 로컬 세션 서버로 수집한 쿠팡 파트너포털 데이터(조회 전용)</p>
+              <p class="form-help">PC 로컬 세션서버(3940)로 쿠팡 파트너포털에 로그인하고 수집합니다. 배민 BIZ와 동일한 방식.</p>
             </div>
             <div class="dashboard-baemin-live-actions">
-              <input type="date" id="coupangStatusDate" class="admin-period-input">
-              <button type="button" class="primary-btn" id="coupangStatusLoadBtn">조회</button>
+              <button type="button" class="small-btn" id="coupangOpenBrowserBtn" disabled>브라우저 열기 / 로그인</button>
+              <button type="button" class="primary-btn" id="coupangCollectBtn" disabled>수집 실행</button>
             </div>
           </div>
-          <p class="admin-table-summary" id="coupangStatusSession" aria-live="polite">세션 상태 확인 중…</p>
+          <p class="admin-table-summary" id="coupangLocalStatus" aria-live="polite">로컬 세션서버 상태 확인 중…</p>
+          <p class="admin-table-summary" id="coupangStatusSession" aria-live="polite">최근 수집 확인 중…</p>
+          <div class="dashboard-baemin-live-actions coupang-view-actions">
+            <input type="date" id="coupangStatusDate" class="admin-period-input">
+            <button type="button" class="small-btn" id="coupangStatusLoadBtn">조회</button>
+          </div>
           <div class="baemin-region-tabs" id="coupangStatusMenuBar"></div>
           <p class="admin-table-summary" id="coupangStatusSummary" aria-live="polite">메뉴를 선택하면 조회합니다.</p>
           <div id="coupangStatusTable">
@@ -5399,7 +5404,7 @@
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
-    <script src="js/coupang-status-admin.js?v=20260715a"></script>
+    <script src="js/coupang-status-admin.js?v=20260715b"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>
