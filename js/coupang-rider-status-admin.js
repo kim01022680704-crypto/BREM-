@@ -93,24 +93,54 @@
 
   // ── 주간 도우미 ──
   function dp() { return window.BremDatePicker; }
+  function localDateKey(d) {
+    return [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0')
+    ].join('-');
+  }
   function currentWeekStart() {
     const val = $('coupangRiderWeekDate')?.value || '';
     const picker = dp();
     if (!picker) return String(val || '').slice(0, 10);
     return picker.applyWeekWednesday(val || picker.weekStartKey());
   }
+  function setWeekLabel() {
+    const btn = $('coupangRiderWeekBtn');
+    if (!btn) return;
+    const ws = currentWeekStart();
+    if (!ws) { btn.textContent = '수요일 선택'; return; }
+    const wd = dp()?.formatWeekdayKo ? dp().formatWeekdayKo(ws) : '수';
+    btn.textContent = `${dp()?.formatDate ? dp().formatDate(ws) : ws}(${wd})`;
+  }
   function shiftWeek(days) {
     const cur = currentWeekStart();
     const d = new Date(`${cur}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return;
     d.setDate(d.getDate() + days);
+    const next = dp() ? dp().applyWeekWednesday(localDateKey(d)) : localDateKey(d);
     const input = $('coupangRiderWeekDate');
-    if (input) input.value = dp() ? dp().applyWeekWednesday(d.toISOString().slice(0, 10)) : d.toISOString().slice(0, 10);
+    if (input) input.value = next;
+    setWeekLabel();
+    renderWeekPreview();
   }
   function renderWeekPreview() {
     const el = $('coupangRiderWeekPreview');
     if (!el) return;
     const ws = currentWeekStart();
-    el.textContent = dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`;
+    if (!ws) { el.textContent = '수요일을 선택하면 수~화 범위가 표시됩니다'; return; }
+    const range = dp()?.formatWednesdayWeekRangeLong
+      ? dp().formatWednesdayWeekRangeLong(ws)
+      : (dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`);
+    el.textContent = `${range} · 수~화 7일`;
+  }
+  function onWeekPicked(value) {
+    const input = $('coupangRiderWeekDate');
+    if (input && value) input.value = dp() ? dp().applyWeekWednesday(value) : value;
+    setWeekLabel();
+    renderWeekPreview();
+    void loadWeek();
   }
 
   // ── ERP 기사 매칭 맵 (쿠팡ID → 기사) ──
@@ -529,13 +559,7 @@
     if (dateInput && !dateInput.value) {
       dateInput.value = dp() ? dp().weekStartKey() : new Date().toISOString().slice(0, 10);
     }
-    if (dateInput && !dateInput.dataset.bound) {
-      dateInput.dataset.bound = '1';
-      dateInput.addEventListener('change', () => {
-        if (dp() && dateInput.value) dateInput.value = dp().applyWeekWednesday(dateInput.value);
-        renderWeekPreview();
-      });
-    }
+    setWeekLabel();
     renderWeekPreview();
     renderSubmenu();
     bindOnce('coupangRiderLoadBtn', () => void loadWeek());
@@ -553,6 +577,7 @@
     refresh,
     getWeekContext,
     loadWeek,
+    onWeekPicked,
     adminApi,
     calcRejectionRate,
     get weekStart() { return state.weekStart; }

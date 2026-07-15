@@ -1937,6 +1937,45 @@ input[type="month"].admin-period-input {
   white-space: normal;
 }
 
+#coupangWeekCollectRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #101010;
+}
+
+#coupangWeekCollectRow > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 800;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.coupang-week-picker-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#coupangWeekCollectRow .week-range-label {
+  flex: 1 1 280px;
+  min-width: min(100%, 280px);
+  text-align: left;
+}
+
+#coupang-rider-status .week-range-label {
+  min-width: min(100%, 260px);
+  max-width: 420px;
+  text-align: left;
+}
+
 .period-picker-caption {
   color: var(--muted);
   font-size: 0.76rem;

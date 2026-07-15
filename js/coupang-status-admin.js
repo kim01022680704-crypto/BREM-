@@ -20,24 +20,53 @@
   const $ = (id) => document.getElementById(id);
 
   function dp() { return window.BremDatePicker; }
+  function localDateKey(d) {
+    return [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0')
+    ].join('-');
+  }
   function currentWeekStart() {
     const val = $('coupangStatusWeekDate')?.value || '';
     const picker = dp();
     if (!picker) return String(val || '').slice(0, 10);
     return picker.applyWeekWednesday(val || picker.weekStartKey());
   }
+  function setWeekLabel() {
+    const btn = $('coupangStatusWeekBtn');
+    if (!btn) return;
+    const ws = currentWeekStart();
+    if (!ws) { btn.textContent = '수요일 선택'; return; }
+    const wd = dp()?.formatWeekdayKo ? dp().formatWeekdayKo(ws) : '수';
+    btn.textContent = `${dp()?.formatDate ? dp().formatDate(ws) : ws}(${wd})`;
+  }
   function shiftWeek(days) {
     const cur = currentWeekStart();
     const d = new Date(`${cur}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return;
     d.setDate(d.getDate() + days);
+    const next = dp() ? dp().applyWeekWednesday(localDateKey(d)) : localDateKey(d);
     const input = $('coupangStatusWeekDate');
-    if (input) input.value = dp() ? dp().applyWeekWednesday(d.toISOString().slice(0, 10)) : d.toISOString().slice(0, 10);
+    if (input) input.value = next;
+    setWeekLabel();
+    renderWeekPreview();
   }
   function renderWeekPreview() {
     const el = $('coupangStatusWeekPreview');
     if (!el) return;
     const ws = currentWeekStart();
-    el.textContent = dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`;
+    if (!ws) { el.textContent = '수요일을 선택하면 수~화 범위가 표시됩니다'; return; }
+    const range = dp()?.formatWednesdayWeekRangeLong
+      ? dp().formatWednesdayWeekRangeLong(ws)
+      : (dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`);
+    el.textContent = `수집 범위 ${range} · 라이더/지역을 하루씩 저장`;
+  }
+  function onWeekPicked(value) {
+    const input = $('coupangStatusWeekDate');
+    if (input && value) input.value = dp() ? dp().applyWeekWednesday(value) : value;
+    setWeekLabel();
+    renderWeekPreview();
   }
 
   function esc(v) {
@@ -130,9 +159,19 @@
     const summary = $('coupangStatusSummary');
     const tableEl = $('coupangStatusTable');
     if (!tableEl) return;
-    const date = String($('coupangStatusDate')?.value || '').slice(0, 10);
+    const day = String($('coupangStatusDate')?.value || '').slice(0, 10);
+    const weekStart = currentWeekStart();
     if (summary) summary.textContent = '불러오는 중…';
-    const q = `/api/admin/coupang/items?sourceMenu=${encodeURIComponent(state.activeMenu)}${date ? '&collectDate=' + encodeURIComponent(date) : ''}`;
+    let q = `/api/admin/coupang/items?sourceMenu=${encodeURIComponent(state.activeMenu)}`;
+    let labelDate = day;
+    if (state.activeMenu === 'weekly_performance') {
+      // 주간 데이터는 collect_date = 수요일(정산주 시작)
+      const ws = weekStart || day;
+      if (ws) q += `&collectDate=${encodeURIComponent(ws)}`;
+      labelDate = ws;
+    } else if (day) {
+      q += `&collectDate=${encodeURIComponent(day)}`;
+    }
     const res = await adminApi(q);
     if (!res.ok) {
       if (summary) summary.textContent = res.message || '조회 실패';
@@ -141,7 +180,13 @@
     }
     const items = res.items || [];
     tableEl.innerHTML = tableFor(state.activeMenu, items);
-    if (summary) summary.textContent = `${MENUS.find(m => m.id === state.activeMenu)?.label} · ${items.length}건${date ? ' · ' + date : ''}`;
+    if (summary) {
+      const menuLabel = MENUS.find(m => m.id === state.activeMenu)?.label || state.activeMenu;
+      const hint = state.activeMenu === 'rider_daily'
+        ? ' · 날짜를 바꿔 [하루 조회]'
+        : (state.activeMenu === 'weekly_performance' ? ' · 정산주(수)' : '');
+      summary.textContent = `${menuLabel} · ${items.length}건${labelDate ? ' · ' + labelDate : ''}${hint}`;
+    }
   }
 
   async function renderDashboardCard() {
@@ -327,15 +372,28 @@
     if (!local.hasToken) { toast('먼저 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
     if (local.collecting || local.loop?.active) { toast('이미 수집 중입니다.'); return; }
     const weekStart = currentWeekStart();
+    const rangeLabel = dp()?.formatWednesdayWeekRangeLong
+      ? dp().formatWednesdayWeekRangeLong(weekStart)
+      : weekStart;
     local.collecting = true;
     updateLocalButtons();
     renderLocalStatus();
-    toast(`정산주(${weekStart}~) 일주일치 수집 중… (몇 분 소요)`);
-    const r = await callLocal('/collect', { method: 'POST', body: { weekStartDate: weekStart, fullWeek: true }, timeoutMs: 600000 });
+    toast(`${rangeLabel} 수집 중… (라이더/지역 하루씩, 몇 분 소요)`);
+    const r = await callLocal('/collect', {
+      method: 'POST',
+      body: { weekStartDate: weekStart, fullWeek: true, includeRider: true },
+      timeoutMs: 600000
+    });
     await refreshLocalStatus();
     if (!r.ok) { toast(r.message || '주간 수집 실패'); return; }
     const s = r.summary || {};
-    toast(`주간 수집 완료 · 지역 ${s.vendor_info || 0} · 라이더 ${s.rider_daily || 0} · 주간 ${s.weekly_performance || 0} (${(r.dates || []).length}일)`);
+    const days = (r.dates || []).join(', ');
+    toast(`주간 수집 완료 · ${rangeLabel} · ${(r.dates || []).length}일(${days}) · 지역 ${s.vendor_info || 0} · 라이더 ${s.rider_daily || 0}`);
+    // 조회일을 주 시작일로 맞춰 바로 확인 가능하게
+    const dateInput = $('coupangStatusDate');
+    if (dateInput && weekStart) dateInput.value = weekStart;
+    state.activeMenu = 'rider_daily';
+    renderMenuBar();
     await loadConfig();
     await loadItems();
     void renderDashboardCard();
@@ -383,21 +441,15 @@
     bindOnce('coupangCollectWeekBtn', () => void collectWeek());
     bindOnce('coupangStatusLoopStartBtn', () => void startLoop());
     bindOnce('coupangStatusLoopStopBtn', () => void stopLoop());
-    bindOnce('coupangStatusPrevWeekBtn', () => { shiftWeek(-7); renderWeekPreview(); });
-    bindOnce('coupangStatusNextWeekBtn', () => { shiftWeek(7); renderWeekPreview(); });
+    bindOnce('coupangStatusPrevWeekBtn', () => shiftWeek(-7));
+    bindOnce('coupangStatusNextWeekBtn', () => shiftWeek(7));
     startLocalPoll();
     void refreshLocalStatus();
     const weekInput = $('coupangStatusWeekDate');
     if (weekInput && !weekInput.value) {
       weekInput.value = dp() ? dp().weekStartKey() : new Date().toISOString().slice(0, 10);
     }
-    if (weekInput && !weekInput.dataset.bound) {
-      weekInput.dataset.bound = '1';
-      weekInput.addEventListener('change', () => {
-        if (dp() && weekInput.value) weekInput.value = dp().applyWeekWednesday(weekInput.value);
-        renderWeekPreview();
-      });
-    }
+    setWeekLabel();
     renderWeekPreview();
     const dateInput = $('coupangStatusDate');
     if (dateInput && !dateInput.value) {
@@ -415,5 +467,5 @@
     state.loaded = true;
   }
 
-  window.BremCoupangStatusAdmin = { refresh, renderDashboardCard };
+  window.BremCoupangStatusAdmin = { refresh, renderDashboardCard, onWeekPicked };
 })();

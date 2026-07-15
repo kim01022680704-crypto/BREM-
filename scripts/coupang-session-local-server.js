@@ -262,8 +262,9 @@ async function runCollect(options = {}) {
     // 1) 날짜별 지역(매장)별 요약. 첫(참조일) 응답에서 매장 목록 확보.
     let vendors = [];
     if (seed) {
+      summary.diag.push(`dates: ${dates.join(',')}`);
       for (const d of dates) {
-        const found = await collectVendorInfoForDate(seed, d, summary, pushErr, httpInfo, d === refDate);
+        const found = await collectVendorInfoForDate(seed, d, summary, pushErr, httpInfo, true);
         if (!vendors.length && found.length) vendors = found;
       }
     }

@@ -1658,6 +1658,26 @@
           };
         }
 
+        if (triggerId === 'coupang-rider') {
+          return {
+            hiddenInput: $('#coupangRiderWeekDate'),
+            labelEl: $('#coupangRiderWeekBtn'),
+            onSelect(value) {
+              window.BremCoupangRiderStatusAdmin?.onWeekPicked?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'coupang-vendor') {
+          return {
+            hiddenInput: $('#coupangStatusWeekDate'),
+            labelEl: $('#coupangStatusWeekBtn'),
+            onSelect(value) {
+              window.BremCoupangStatusAdmin?.onWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'promotion-apply-saved') {
           return {
             hiddenInput: $('#promotionApplySavedWeekFilter'),

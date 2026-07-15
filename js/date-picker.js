@@ -163,6 +163,25 @@ const BremDatePicker = (function () {
     return `${formatDate(normalized)}(${formatWeekdayKo(normalized)}) ~ ${formatDate(end)}(${formatWeekdayKo(end)})`;
   }
 
+  /** 예: 2026년 7월 8일(수) ~ 2026년 7월 14일(화) */
+  function formatWednesdayWeekRangeLong(weekStart) {
+    const normalized = applyWeekWednesday(weekStart);
+    if (!normalized) return '';
+    const start = parseLocalDate(normalized);
+    const end = parseLocalDate(weekEndKey(normalized));
+    if (!start || !end) return formatWednesdayWeekRange(normalized);
+    const fmt = (d, withYear) => {
+      const m = d.getMonth() + 1;
+      const day = d.getDate();
+      const wd = WEEKDAY_KO[d.getDay()];
+      return withYear
+        ? `${d.getFullYear()}년 ${m}월 ${day}일(${wd})`
+        : `${m}월 ${day}일(${wd})`;
+    };
+    const sameYear = start.getFullYear() === end.getFullYear();
+    return `${fmt(start, true)} ~ ${fmt(end, !sameYear)}`;
+  }
+
   function setupSingle(options) {
     const {
       popup,
@@ -559,6 +578,7 @@ const BremDatePicker = (function () {
     formatDate,
     formatWeekdayKo,
     formatWednesdayWeekRange,
+    formatWednesdayWeekRangeLong,
     formatMonthLabel,
     setupSingle,
     setupDelegated,
