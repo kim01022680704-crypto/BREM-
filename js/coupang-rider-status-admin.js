@@ -412,7 +412,26 @@
 
   const PEAK_LABEL = { MORNING: '아침', LUNCH: '점심피크', POST_LUNCH: '점심논피크', DINNER: '저녁피크', POST_DINNER: '저녁논피크' };
 
-  // 요일별 할당 달성 (수~화). 지역(매장)별 day×peak 완료/목표 + 달성률 + 거절율
+  function renderQuotaTagCell(actual, target, hasCompleted = true) {
+    const a = Number(actual) || 0;
+    const t = Number(target) || 0;
+    if (!t && !hasCompleted && !a) {
+      return '<td class="dashboard-baemin-qcell"><span class="form-help">-</span></td>';
+    }
+    const achieved = t > 0 ? a >= t : a > 0;
+    const statusClass = achieved ? 'baemin-quota-tag--achieved' : 'baemin-quota-tag--missed';
+    const ratio = hasCompleted ? `${n(a)} / ${n(t)}` : `- / ${n(t)}`;
+    return `<td class="dashboard-baemin-qcell">
+      <div class="dashboard-baemin-qcell__stack">
+        <span class="dashboard-baemin-qcell__ratio">${esc(ratio)}</span>
+        <span class="dashboard-baemin-qcell__meta">
+          <span class="baemin-quota-tag ${statusClass}">${achieved ? '달성' : '미달성'}</span>
+        </span>
+      </div>
+    </td>`;
+  }
+
+  // 요일별 할당 달성 (수~화). 피크별 완료/목표 + 달성/미달성 태그 + 거절율
   function renderQuota() {
     const tableEl = $('coupangRiderTable');
     const summary = $('coupangRiderSummary');
@@ -423,7 +442,7 @@
       if (summary) summary.textContent = `할당 달성 · 정산주 ${state.weekStart} · 0건`;
       return;
     }
-    const byDay = new Map();      // day -> peakType -> {goal, completed, hasCompleted}
+    const byDay = new Map();
     const dateByDay = new Map();
     rows.forEach(p => {
       const day = String(p.dayOfWeek || '').toUpperCase();
@@ -437,7 +456,6 @@
       if (p.completedCount != null) { cur.completed += Number(p.completedCount) || 0; cur.hasCompleted = true; }
       pk.set(pt, cur);
     });
-    // 거절: (vendor, day) 중복 제거 후 집계
     const rejByDay = new Map();
     const seen = new Set();
     rows.forEach(p => {
@@ -445,27 +463,25 @@
       const key = `${p.vendorId}:${day}`;
       if (!day || seen.has(key)) return;
       seen.add(key);
-      const cur = rejByDay.get(day) || { count: 0, rateSum: 0, rateN: 0 };
-      if (p.rejectionCount != null) cur.count += Number(p.rejectionCount) || 0;
+      const cur = rejByDay.get(day) || { rateSum: 0, rateN: 0 };
       if (p.rejectionRate != null) { cur.rateSum += Number(p.rejectionRate) || 0; cur.rateN += 1; }
       rejByDay.set(day, cur);
     });
     const days = DOW_ORDER.filter(d => byDay.has(d));
-    const header = ['요일', ...PEAK_ORDER.map(pt => PEAK_LABEL[pt]), '완료/목표', '달성률', '거절', '거절율'];
+    const header = ['요일', ...PEAK_ORDER.map(pt => PEAK_LABEL[pt]), '거절율'];
     const bodyRows = days.map(day => {
       const pk = byDay.get(day);
-      let sumGoal = 0, sumDone = 0;
       const cells = PEAK_ORDER.map(pt => {
         const c = pk.get(pt);
-        if (!c || (!c.goal && !c.hasCompleted)) return '<td>-</td>';
-        sumGoal += c.goal; sumDone += c.completed;
-        return `<td>${c.hasCompleted ? n(c.completed) : '-'}/${n(c.goal)}</td>`;
+        if (!c || (!c.goal && !c.hasCompleted)) {
+          return '<td class="dashboard-baemin-qcell"><span class="form-help">-</span></td>';
+        }
+        return renderQuotaTagCell(c.completed, c.goal, c.hasCompleted);
       });
-      const ach = sumGoal > 0 ? Math.round((sumDone / sumGoal) * 1000) / 10 : null;
-      const rej = rejByDay.get(day) || { count: 0, rateSum: 0, rateN: 0 };
+      const rej = rejByDay.get(day) || { rateSum: 0, rateN: 0 };
       const rejRate = rej.rateN > 0 ? Math.round((rej.rateSum / rej.rateN) * 10) / 10 : null;
       const dLabel = `${DOW_LABEL[day] || day}${dateByDay.get(day) ? ` (${dateByDay.get(day)})` : ''}`;
-      return `<tr><td>${esc(dLabel)}</td>${cells.join('')}<td>${n(sumDone)}/${n(sumGoal)}</td><td>${ach == null ? '-' : ach + '%'}</td><td>${n(rej.count)}</td><td>${rejRate == null ? '-' : rejRate + '%'}</td></tr>`;
+      return `<tr><td>${esc(dLabel)}</td>${cells.join('')}<td>${rejRate == null ? '-' : rejRate + '%'}</td></tr>`;
     }).join('');
     tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
       <thead><tr>${header.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
@@ -473,7 +489,7 @@
     if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 할당 달성(수~화) · 정산주 ${state.weekStart}`;
   }
 
-  // 오늘 현황: 지역 요약(거절율·운행중 인원) + 피크타임 현황
+  // 오늘 현황: 지역×피크 타임 표 (운행중 + 달성 태그 + 거절율)
   function renderToday() {
     const tableEl = $('coupangRiderTable');
     const summary = $('coupangRiderSummary');
@@ -485,42 +501,78 @@
       if (summary) summary.textContent = '오늘 현황 · 0건';
       return;
     }
-    let onlineSum = 0, totalSum = 0;
-    const vrows = vinfo.map(p => {
-      const target = p.target == null ? null : Number(p.target);
-      const done = p.completedCount == null ? null : Number(p.completedCount);
-      const rate = (target && done != null) ? Math.round((done / target) * 1000) / 10 : null;
-      onlineSum += Number(p.riderOnLineCount) || 0;
-      totalSum += Number(p.riderTotalCount) || 0;
-      return `<tr>
-        <td>${esc(p.vendorName || p.vendorId)}</td>
-        <td>${n(p.target)}</td>
-        <td>${n(p.completedCount)}</td>
-        <td>${rate == null ? '-' : rate + '%'}</td>
-        <td>${n(p.onGoingCount)}</td>
-        <td>${n(p.riderOnLineCount)}/${n(p.riderTotalCount)}</td>
-        <td>${p.rejectionRate == null ? '-' : n(p.rejectionRate) + '%'}</td>
-      </tr>`;
-    }).join('');
-    const vtable = vinfo.length ? `<p class="admin-table-summary">지역 요약 · <strong>운행중 ${n(onlineSum)}/${n(totalSum)}명</strong></p>
-      <div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
-      <thead><tr><th>지역</th><th>목표</th><th>완료</th><th>달성률</th><th>진행중</th><th>운행중</th><th>거절율</th></tr></thead>
-      <tbody>${vrows}</tbody></table></div>` : '';
-    const prows = peaks.slice().sort((a, b) => PEAK_ORDER.indexOf(String(a.peakType).toUpperCase()) - PEAK_ORDER.indexOf(String(b.peakType).toUpperCase()))
-      .map(p => `<tr>
-        <td>${esc(p.vendorName || p.vendorId)}</td>
-        <td>${esc(p.peakLabel)}</td>
-        <td>${n(p.goalCount)}</td>
-        <td>${n(p.completedCount)}</td>
-        <td>${n(p.remainingCount)}</td>
-        <td>${p.achievementRate == null ? '-' : n(p.achievementRate) + '%'}</td>
-      </tr>`).join('');
-    const ptable = peaks.length ? `<p class="admin-table-summary">피크타임 현황(오늘)</p>
-      <div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
-      <thead><tr><th>지역</th><th>피크</th><th>목표</th><th>완료</th><th>잔여</th><th>달성률</th></tr></thead>
-      <tbody>${prows}</tbody></table></div>` : '';
-    tableEl.innerHTML = vtable + ptable;
-    if (summary) summary.textContent = `오늘 현황 · ${todayKey()} · 운행중 ${n(onlineSum)}/${n(totalSum)}명`;
+
+    const byVendor = new Map();
+    vinfo.forEach(p => {
+      const vid = String(p.vendorId || '').trim();
+      if (!vid) return;
+      byVendor.set(vid, {
+        vendorId: vid,
+        vendorName: String(p.vendorName || vid),
+        drivingCount: Number(p.riderOnLineCount) || 0,
+        riderTotalCount: Number(p.riderTotalCount) || 0,
+        rejectionRate: p.rejectionRate == null ? null : Number(p.rejectionRate),
+        peaks: Object.fromEntries(PEAK_ORDER.map(pt => [pt, { goal: 0, completed: 0, has: false }]))
+      });
+    });
+    peaks.forEach(p => {
+      const vid = String(p.vendorId || '').trim();
+      if (!vid) return;
+      if (!byVendor.has(vid)) {
+        byVendor.set(vid, {
+          vendorId: vid,
+          vendorName: String(p.vendorName || vid),
+          drivingCount: 0,
+          riderTotalCount: 0,
+          rejectionRate: null,
+          peaks: Object.fromEntries(PEAK_ORDER.map(pt => [pt, { goal: 0, completed: 0, has: false }]))
+        });
+      }
+      const row = byVendor.get(vid);
+      if (p.vendorName) row.vendorName = String(p.vendorName);
+      const pt = String(p.peakType || '').toUpperCase();
+      if (!PEAK_ORDER.includes(pt)) return;
+      row.peaks[pt].goal += Number(p.goalCount) || 0;
+      row.peaks[pt].completed += Number(p.completedCount) || 0;
+      row.peaks[pt].has = true;
+    });
+
+    const regionRows = Array.from(byVendor.values())
+      .sort((a, b) => String(a.vendorName).localeCompare(String(b.vendorName), 'ko'));
+    let onlineSum = 0;
+    let totalSum = 0;
+    const peakTotals = Object.fromEntries(PEAK_ORDER.map(pt => [pt, { goal: 0, completed: 0 }]));
+    let rejSum = 0;
+    let rejN = 0;
+    regionRows.forEach(r => {
+      onlineSum += r.drivingCount;
+      totalSum += r.riderTotalCount;
+      if (r.rejectionRate != null) { rejSum += r.rejectionRate; rejN += 1; }
+      PEAK_ORDER.forEach(pt => {
+        peakTotals[pt].goal += r.peaks[pt].goal;
+        peakTotals[pt].completed += r.peaks[pt].completed;
+      });
+    });
+    const rejAvg = rejN > 0 ? Math.round((rejSum / rejN) * 10) / 10 : null;
+
+    const header = ['지역', '운행중', ...PEAK_ORDER.map(pt => PEAK_LABEL[pt]), '거절율'];
+    const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
+      <td><strong>전체 합계</strong></td>
+      <td>${esc(n(onlineSum))}명</td>
+      ${PEAK_ORDER.map(pt => renderQuotaTagCell(peakTotals[pt].completed, peakTotals[pt].goal)).join('')}
+      <td>${rejAvg == null ? '-' : rejAvg + '%'}</td>
+    </tr>`;
+    const bodyRows = regionRows.map(r => `<tr>
+      <td><strong class="dashboard-baemin-region-name">${esc(r.vendorName)}</strong></td>
+      <td>${esc(n(r.drivingCount))}명</td>
+      ${PEAK_ORDER.map(pt => renderQuotaTagCell(r.peaks[pt].completed, r.peaks[pt].goal, r.peaks[pt].has)).join('')}
+      <td>${r.rejectionRate == null ? '-' : n(r.rejectionRate) + '%'}</td>
+    </tr>`).join('');
+
+    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
+      <thead><tr>${header.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${summaryRow}${bodyRows}</tbody></table></div>`;
+    if (summary) summary.textContent = `오늘 현황 · ${todayKey()} · 운행중 ${n(onlineSum)}/${n(totalSum)}명 · 피크타임 기준`;
   }
 
   async function fetchRiderItems(fromDate, toDate) {

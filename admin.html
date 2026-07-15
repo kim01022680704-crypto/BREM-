@@ -221,18 +221,47 @@
         <article class="card dashboard-baemin-live-card" id="dashboardCoupangLiveCard">
           <div class="card-header dashboard-baemin-live-card__header">
             <div>
-              <h2>오늘 쿠팡 · 지역별 현황</h2>
-              <p class="form-help dashboard-baemin-live-help">최근 수집 기준 · 지역별 목표/완료/진행중/운행 인원</p>
+              <h2>오늘 쿠팡 · 할당 달성</h2>
+              <p class="form-help dashboard-baemin-live-help">오늘 피크타임 기준 · 쿠팡현황 수집 데이터 · 2분마다 자동 조회</p>
             </div>
             <div class="dashboard-baemin-live-actions">
-              <button type="button" class="small-btn" id="dashboardCoupangOpenStatusBtn">쿠팡 현황 열기</button>
+              <button type="button" class="primary-btn" id="dashboardCoupangLiveQueryBtn">실시간 조회</button>
+              <button type="button" class="small-btn" id="dashboardCoupangOpenStatusBtn">쿠팡현황 열기</button>
             </div>
           </div>
-          <div id="dashboardCoupangCard">
-            <p class="form-help">대시보드 진입 시 자동으로 불러옵니다.</p>
+          <p class="dashboard-baemin-applied-time" id="dashboardCoupangAppliedTime" aria-live="polite">조회시간 —</p>
+          <p class="admin-table-summary" id="dashboardCoupangLiveSummary" aria-live="polite">조회를 눌러 오늘 피크·운행중을 불러오세요</p>
+          <div id="dashboardCoupangCard" class="dashboard-baemin-live-panels">
+            <p class="form-help">조회 결과가 여기에 표시됩니다.</p>
+          </div>
+          <div class="dashboard-baemin-week-block" id="dashboardCoupangWeekBlock">
+            <div class="dashboard-baemin-week-block__head">
+              <h3>이번주 지역별 할당 달성</h3>
+              <p class="form-help dashboard-baemin-live-help">이번주 수~오늘 · 쿠팡현황 할당달성과 동일</p>
+            </div>
+            <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardCoupangWeekRegionBar" hidden></div>
+            <p class="admin-table-summary" id="dashboardCoupangWeekSummary" aria-live="polite">오늘 조회 시 함께 불러옵니다</p>
+            <div class="dashboard-baemin-table-wrap">
+              <table class="admin-table dashboard-baemin-compact-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>배달일</th>
+                    <th>아침</th>
+                    <th>점심피크</th>
+                    <th>점심논피크</th>
+                    <th>저녁피크</th>
+                    <th>저녁논피크</th>
+                    <th>거절율</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardCoupangWeekRows">
+                  <tr><td colspan="8" class="form-help">조회 대기</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </article>
-
                 <div class="stats-grid">
           <article class="stat-card">
             <span>등록 기사</span>
@@ -5492,8 +5521,8 @@
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
-    <script src="js/coupang-status-admin.js?v=20260715g"></script>
-    <script src="js/coupang-rider-status-admin.js?v=20260715g"></script>
+    <script src="js/coupang-status-admin.js?v=20260715i"></script>
+    <script src="js/coupang-rider-status-admin.js?v=20260715i"></script>
     <script src="js/coupang-rejection-sync.js?v=20260715c"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
