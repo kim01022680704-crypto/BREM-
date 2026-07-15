@@ -9956,6 +9956,7 @@ const BremStorage = (function () {
     'calls',
     'baemin-biz-status',
     'baemin-status',
+    'coupang-rider-status',
     'coupang-status',
     'rejections',
     'targets',
