@@ -1082,18 +1082,34 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     ? extractDeliveryStatusMetrics(deliveryHit.row.parsed_json || {})
     : { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 };
 
-  // 실시간 카드는 '오늘 배달현황 기준'이므로, 화면에 보이는 완료/거절 수치와
-  // 동일한 배달현황으로 수락율을 계산해 일관성을 맞춘다.
-  // (live_accept_rates 스냅샷은 수락율 조회/동기화 때만 갱신돼 2분 폴링 배달현황과 어긋날 수 있음)
+  // 정산주(수~화) 첫날(수요일)에는 라이더 과거내역이 없어, 주간 스냅샷(과거+오늘) 대신
+  // 오늘 배달현황만으로 계산해야 화면의 완료/거절 수치와 일치한다.
+  // 그 외 요일(라이더 내역 존재)에는 기존대로 주간 스냅샷(current_accept_rate)을 우선한다.
+  let isSettlementWeekStartDay = false;
+  try {
+    const { todayKST, settlementWeekStart } = require('./baemin-settlement-week');
+    const today = todayKST();
+    isSettlementWeekStartDay = today === settlementWeekStart(today);
+  } catch { /* 헬퍼 없으면 기존 우선순위 유지 */ }
+
+  const deliveryRate = deliveryHit?.row ? calcAcceptRateFromMetrics(metrics) : null;
+  const snapshotRate = (acceptRow && acceptRow.current_accept_rate != null && Number.isFinite(Number(acceptRow.current_accept_rate)))
+    ? Math.round(Number(acceptRow.current_accept_rate) * 10) / 10
+    : null;
+
   let acceptRate = null;
   let acceptRateSource = null;
-  if (deliveryHit?.row) {
-    acceptRate = calcAcceptRateFromMetrics(metrics);
-    acceptRateSource = acceptRate == null ? null : 'delivery_status';
-  }
-  if (acceptRate == null && acceptRow && acceptRow.current_accept_rate != null && Number.isFinite(Number(acceptRow.current_accept_rate))) {
-    acceptRate = Math.round(Number(acceptRow.current_accept_rate) * 10) / 10;
+  if (isSettlementWeekStartDay && deliveryRate != null) {
+    // 수요일: 오늘 배달현황만 (표시 수치와 일치)
+    acceptRate = deliveryRate;
+    acceptRateSource = 'delivery_status';
+  } else if (snapshotRate != null) {
+    // 목~화: 기존처럼 주간 스냅샷(과거+오늘)
+    acceptRate = snapshotRate;
     acceptRateSource = 'live_accept_rates';
+  } else if (deliveryRate != null) {
+    acceptRate = deliveryRate;
+    acceptRateSource = 'delivery_status';
   }
 
   const hasDelivery = Boolean(deliveryHit?.row);
