@@ -72,6 +72,8 @@
   }
 
   function isKeepLoggedIn(scope) {
+    // 관리자: 항상 로그인 유지(명시적 로그아웃 전까지). 새로고침·브라우저 재시작에도 유지.
+    if (scopeOf(scope) === SCOPES.ADMIN) return true;
     try {
       return localStorage.getItem(prefKey('keepLoggedIn', scope)) === '1';
     } catch {
@@ -158,6 +160,8 @@
   }
 
   function getSessionStore(scope) {
+    // 관리자 세션은 항상 localStorage(영구). 로그아웃 시에만 clearPersistedSessionOnLogout로 해제.
+    if (scopeOf(scope) === SCOPES.ADMIN) return localStorage;
     return isKeepLoggedIn(scope) ? localStorage : sessionStorage;
   }
 
