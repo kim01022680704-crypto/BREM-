@@ -11,11 +11,60 @@ function isMissingTableError(error) {
   return t.includes('does not exist') || t.includes('schema cache') || (t.includes('relation') && t.includes('does not exist'));
 }
 
-/** 수집 아이템 upsert (dedupe_key 기준) */
-async function upsertCollectItems(items = []) {
+function collapseByDedupeKey(rows = []) {
+  const map = new Map();
+  rows.forEach(row => {
+    const key = `${row.collect_date}|${row.source_menu}|${row.dedupe_key}`;
+    map.set(key, row);
+  });
+  return [...map.values()];
+}
+
+/** 배민과 동일: 같은 메뉴·날짜 재수집 시 기존분 삭제 후 최신으로 교체 */
+async function deleteCollectItemsForDates(sourceMenu, dates = []) {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
-  const rows = (items || []).filter(Boolean).map(it => ({
+  const menu = String(sourceMenu || '').trim();
+  const uniqueDates = [...new Set((dates || []).map(d => String(d || '').slice(0, 10)).filter(Boolean))];
+  if (!menu || !uniqueDates.length) return { ok: true, deleted: 0 };
+
+  let deleted = 0;
+  for (const date of uniqueDates) {
+    // PostgREST delete는 한 번에 많을 수 있어 반복 삭제
+    let guard = 0;
+    while (guard < 50) {
+      guard += 1;
+      const { data, error } = await supabase
+        .from('coupang_collect_items')
+        .delete()
+        .eq('source_menu', menu)
+        .eq('collect_date', date)
+        .select('dedupe_key')
+        .limit(1000);
+      if (error) {
+        if (isMissingTableError(error)) {
+          return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다.' };
+        }
+        return { ok: false, error: error.message || '삭제 실패', deleted };
+      }
+      const n = (data || []).length;
+      deleted += n;
+      if (n < 1000) break;
+    }
+  }
+  return { ok: true, deleted };
+}
+
+/**
+ * 수집 아이템 저장.
+ * 기본: 배민처럼 (source_menu + collect_date) 기존분 삭제 후 upsert → 재수집 시 날짜 단위 교체
+ * options.replaceByDate=false 이면 기존 upsert만 수행
+ */
+async function upsertCollectItems(items = [], options = {}) {
+  const supabase = getServiceClient();
+  if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  const replaceByDate = options.replaceByDate !== false;
+  const rows = collapseByDedupeKey((items || []).filter(Boolean).map(it => ({
     collect_date: it.collect_date,
     collected_at: it.collected_at || new Date().toISOString(),
     source_menu: it.source_menu,
@@ -29,7 +78,27 @@ async function upsertCollectItems(items = []) {
     parsed_json: it.parsed_json || {},
     raw_json: it.raw_json || {},
     updated_at: new Date().toISOString()
-  })).filter(r => r.collect_date && r.source_menu && r.dedupe_key);
+  })).filter(r => r.collect_date && r.source_menu && r.dedupe_key));
+
+  if (!rows.length) return { ok: true, saved: 0, deleted: 0 };
+
+  let deleted = 0;
+  // 배민 rider/daily와 같이 전체 스냅샷 메뉴만 날짜 단위 교체.
+  // peak/weekly 는 매장별 저장이라 날짜 전체 삭제하면 다른 매장이 사라짐 → upsert만.
+  const FULL_REPLACE_MENUS = new Set(['rider_daily', 'vendor_info']);
+  if (replaceByDate) {
+    const byMenu = new Map();
+    rows.forEach(r => {
+      if (!FULL_REPLACE_MENUS.has(r.source_menu)) return;
+      if (!byMenu.has(r.source_menu)) byMenu.set(r.source_menu, new Set());
+      byMenu.get(r.source_menu).add(r.collect_date);
+    });
+    for (const [menu, dateSet] of byMenu.entries()) {
+      const wiped = await deleteCollectItemsForDates(menu, [...dateSet]);
+      if (!wiped.ok) return { ...wiped, saved: 0 };
+      deleted += wiped.deleted || 0;
+    }
+  }
 
   let saved = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
@@ -41,11 +110,11 @@ async function upsertCollectItems(items = []) {
       if (isMissingTableError(error)) {
         return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다. supabase/coupang_collect_migration.sql 을 실행하세요.' };
       }
-      return { ok: false, error: error.message || '저장 실패', saved };
+      return { ok: false, error: error.message || '저장 실패', saved, deleted };
     }
     saved += chunk.length;
   }
-  return { ok: true, saved };
+  return { ok: true, saved, deleted };
 }
 
 async function saveRun(collectDate, sourceMenu, status, count, message) {
@@ -120,6 +189,7 @@ async function getLatestCollectDate(sourceMenu) {
 
 module.exports = {
   upsertCollectItems,
+  deleteCollectItemsForDates,
   saveRun,
   readCollectItems,
   getLatestCollectDate

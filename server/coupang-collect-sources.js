@@ -166,11 +166,13 @@ function mapRiderToItems(collectDate, payload, fallbackVendorId, fallbackVendorN
   const rows = Array.isArray(data.vendorRecordDtos)
     ? data.vendorRecordDtos
     : (Array.isArray(data.edpRecordDtos) ? data.edpRecordDtos : []);
-  return rows.map(r => {
+  const mapped = rows.map(r => {
     const edp = r.edpDetail || {};
     const name = String(edp.name || '');
     const phone = String(edp.mobileNo || '');
     const courierId = String(r.courierId || '');
+    const matchKey = buildMatchKey(name, phone);
+    const identity = matchKey || courierId;
     const vid = String(r.vendorId || fallbackVendorId || '');
     const vname = String(r.vendorName || fallbackVendorName || '');
     const tr = r.totalRecords || {};
@@ -183,8 +185,9 @@ function mapRiderToItems(collectDate, payload, fallbackVendorId, fallbackVendorN
       courier_id: courierId,
       rider_name: name,
       phone_number: phone,
-      match_key: buildMatchKey(name, phone),
-      dedupe_key: `${vid || 'ALL'}:${collectDate}:${courierId || buildMatchKey(name, phone)}`,
+      match_key: matchKey,
+      // matchKey 우선 → 재수집 시 courierId 유무에 따라 키가 갈라지지 않음
+      dedupe_key: `${vid || 'ALL'}:${collectDate}:${identity}`,
       parsed_json: {
         vendorId: vid,
         vendorName: vname,
@@ -192,7 +195,7 @@ function mapRiderToItems(collectDate, payload, fallbackVendorId, fallbackVendorN
         courierId,
         name,
         phone,
-        matchKey: buildMatchKey(name, phone),
+        matchKey,
         edpStatus: r.edpStatus || '',
         delinkedStatus: r.delinkedStatus || '',
         peakTimeType: r.peakTimeType || '',
@@ -206,7 +209,12 @@ function mapRiderToItems(collectDate, payload, fallbackVendorId, fallbackVendorN
       },
       raw_json: {}
     };
-  });
+  }).filter(it => it.dedupe_key && !it.dedupe_key.endsWith(':'));
+
+  // 같은 응답 내 동일 dedupe_key는 마지막 값으로 유지
+  const byKey = new Map();
+  mapped.forEach(it => byKey.set(it.dedupe_key, it));
+  return [...byKey.values()];
 }
 
 module.exports = {
