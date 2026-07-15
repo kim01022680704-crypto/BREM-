@@ -169,6 +169,7 @@
     { id: 'calls', label: '콜수 입력' },
     { id: 'baemin-biz-status', label: '배민 BIZ 현황' },
     { id: 'baemin-status', label: '배민현황' },
+    { id: 'coupang-status', label: '쿠팡 현황' },
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
@@ -4784,6 +4785,9 @@
       case 'baemin-status':
         window.BremBaeminDeliveryStatusAdmin?.refresh?.(sectionId);
         break;
+      case 'coupang-status':
+        window.BremCoupangStatusAdmin?.refresh?.();
+        break;
       case 'rejections':
         renderRejections();
         break;
@@ -4927,6 +4931,9 @@
     }
     if (sectionId === 'baemin-biz-status' || sectionId === 'baemin-status') {
       void window.BremBaeminDeliveryStatusAdmin.refresh(sectionId);
+    }
+    if (sectionId === 'coupang-status' && window.BremCoupangStatusAdmin?.refresh) {
+      void window.BremCoupangStatusAdmin.refresh();
     }
   }
 
@@ -6029,7 +6036,12 @@
     await BremStorage.waitForStorageBootstrap?.();
 
     if (config.mode === 'production') {
-      const profile = await BremStorage.loadSupabaseProfile?.();
+      let profile = null;
+      try {
+        profile = await BremStorage.loadSupabaseProfile?.();
+      } catch (error) {
+        console.warn('[BREM] 관리자 프로필 로드 실패(세션 유지 폴백):', error?.message || error);
+      }
       if (profile?.active && profile.role === 'admin') {
         if (!BremStorage.auth.isAdminLoggedIn()) {
           BremStorage.auth.setAdminSession(profile.user_id);

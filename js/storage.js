@@ -1438,6 +1438,7 @@ const BremStorage = (function () {
     'admin-account': [],
     'baemin-biz-status': [],
     'baemin-status': [],
+    'coupang-status': [],
     'data-backup': [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
   });
 
@@ -4237,8 +4238,16 @@ const BremStorage = (function () {
     const client = await ensureSupabaseClientForLogin();
     if (!client) return null;
     const run = async () => {
-      const { data: sessionData } = await client.auth.getSession();
-      const user = sessionData?.session?.user;
+      // 새로고침/재접속 시 액세스 토큰이 만료됐으면 refresh_token으로 갱신한 뒤 프로필 조회.
+      // (갱신 없이 만료 토큰으로 조회하면 실패→로그인 화면으로 튕김)
+      let { data: sessionData } = await client.auth.getSession();
+      let session = sessionData?.session || null;
+      const expiresMs = session?.expires_at ? session.expires_at * 1000 : 0;
+      if (!session || (expiresMs && expiresMs - Date.now() < 60_000)) {
+        const { data: refreshed, error: refreshError } = await client.auth.refreshSession();
+        if (!refreshError && refreshed?.session) session = refreshed.session;
+      }
+      const user = session?.user;
       if (!user) {
         activeSupabaseProfile = null;
         return null;
@@ -9947,6 +9956,7 @@ const BremStorage = (function () {
     'calls',
     'baemin-biz-status',
     'baemin-status',
+    'coupang-status',
     'rejections',
     'targets',
     'promotions',
@@ -10039,6 +10049,15 @@ const BremStorage = (function () {
         normalized.splice(bizIndex + 1, 0, 'baemin-status');
       } else {
         normalized.push('baemin-status');
+      }
+    }
+
+    if (!normalized.includes('coupang-status')) {
+      const baeIndex = normalized.indexOf('baemin-status');
+      if (baeIndex >= 0) {
+        normalized.splice(baeIndex + 1, 0, 'coupang-status');
+      } else {
+        normalized.push('coupang-status');
       }
     }
 
@@ -10172,6 +10191,9 @@ const BremStorage = (function () {
     }
     if (nextMenus.includes('baemin-status') && !nextEditable.includes('baemin-status')) {
       nextEditable = [...nextEditable, 'baemin-status'];
+    }
+    if (nextMenus.includes('coupang-status') && !nextEditable.includes('coupang-status')) {
+      nextEditable = [...nextEditable, 'coupang-status'];
     }
     if (nextMenus.includes('payroll-slips') && !nextEditable.includes('payroll-slips')) {
       nextEditable = [...nextEditable, 'payroll-slips'];
