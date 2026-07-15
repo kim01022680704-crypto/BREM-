@@ -5403,9 +5403,33 @@
     }
   }
 
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache';
+
+  function readDashboardCache() {
+    try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
+  }
+  function saveDashboardCache(data) {
+    try { localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+  }
+  // 대시보드 열자마자 마지막 숫자를 즉시 표시(체감 즉각) → 뒤에서 최신값으로 조용히 갱신
+  function paintDashboardCacheInstant() {
+    const panelsEl = $('dashboardBaeminLivePanels');
+    if (!panelsEl || panelsEl.querySelector('table')) return; // 이미 표가 있으면 유지
+    const cache = readDashboardCache();
+    if (!cache || !cache.panelsHtml) return;
+    panelsEl.innerHTML = cache.panelsHtml;
+    const summary = $('dashboardBaeminLiveSummary');
+    if (summary && cache.summaryText) summary.textContent = `${cache.summaryText} · 최신 갱신 중…`;
+    const appliedEl = $('dashboardBaeminAppliedTime');
+    if (appliedEl && cache.appliedHtml) appliedEl.innerHTML = cache.appliedHtml;
+  }
+
   async function initDashboardBaeminLive(force = false) {
     const panels = $('dashboardBaeminLivePanels');
     if (!panels) return;
+
+    // 캐시된 마지막 결과를 즉시 표시(첫 표 렌더 전에만)
+    paintDashboardCacheInstant();
 
     if (!force && state.dashboardBaeminRegions.length) {
       return;
@@ -5868,9 +5892,17 @@
       // 표는 새 HTML이 준비된 뒤에만 교체 → 깜빡임 최소화
       panelsEl.innerHTML = nextHtml;
 
+      const summaryText = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
       if (summary) {
-        summary.textContent = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
+        summary.textContent = summaryText;
       }
+      // 다음 열람 때 즉시 표시할 수 있도록 마지막 결과 캐시
+      saveDashboardCache({
+        panelsHtml: nextHtml,
+        summaryText,
+        appliedHtml: appliedEl ? appliedEl.innerHTML : '',
+        savedAt: Date.now()
+      });
       if (!silent) {
         showToast(`오늘 할당 · 운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳`);
       }
