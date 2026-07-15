@@ -5734,8 +5734,10 @@
           await ensureWeekdayQuotaLoaded();
         }
       } else {
+        // 대시보드는 저장진단(무거운 전체 스캔)이 필요 없으므로 config는 light로.
+        // 적용시각/세트수/요일할당만 새로 불러온다(결과 동일, 속도만 개선).
         await Promise.all([
-          loadViewConfig(),
+          loadViewConfig({ silent: true }),
           loadPartnerSetCountMap(),
           ensureWeekdayQuotaLoaded()
         ]);
