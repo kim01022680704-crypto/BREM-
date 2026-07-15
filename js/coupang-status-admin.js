@@ -100,6 +100,18 @@
     const x = Number(v);
     return Number.isFinite(x) ? (Math.round(x * 100) / 100).toLocaleString('ko-KR') : d;
   }
+  /** 쿠팡 API 거절율: 0.103 → 10.3 (이미 %면 그대로) */
+  function toRejectionPercent(v) {
+    if (v == null || v === '') return null;
+    const x = Number(v);
+    if (!Number.isFinite(x)) return null;
+    const pct = Math.abs(x) <= 1 ? x * 100 : x;
+    return Math.round(pct * 10) / 10;
+  }
+  function rejectionPctLabel(v) {
+    const p = toRejectionPercent(v);
+    return p == null ? '-' : `${n(p)}%`;
+  }
   function toast(msg) {
     if (window.BremBaeminDeliveryStatusAdmin?.showToast) return window.BremBaeminDeliveryStatusAdmin.showToast(msg);
     console.log('[coupang]', msg);
@@ -209,7 +221,7 @@
             esc(p.peakLabel || p.peakType),
             ratio,
             tag,
-            p.rejectionRate == null ? '-' : `${n(p.rejectionRate)}%`
+            p.rejectionRate == null ? '-' : rejectionPctLabel(p.rejectionRate)
           ];
         }), true);
     }
@@ -221,7 +233,7 @@
           esc(n(p.completedCount)),
           esc(n(p.onGoingCount)),
           esc(`${n(p.riderOnLineCount)}/${n(p.riderTotalCount)}`),
-          p.rejectionRate == null ? '-' : `${n(p.rejectionRate)}%`
+          p.rejectionRate == null ? '-' : rejectionPctLabel(p.rejectionRate)
         ]), true);
     }
     // rider_daily
@@ -506,7 +518,7 @@
           day.peaks[pt].has = true;
         }
       }
-      if (p.rejectionRate != null) day.rejectionRate = Number(p.rejectionRate);
+      if (p.rejectionRate != null) day.rejectionRate = toRejectionPercent(p.rejectionRate);
     });
 
     let vendors = Array.from(vendorMap.entries()).map(([vendorId, vendorName]) => ({ vendorId, vendorName }));
@@ -574,7 +586,7 @@
           vendorName: String(p.vendorName || it.vendor_name || vid),
           drivingCount: Number(p.riderOnLineCount) || 0,
           riderTotalCount: Number(p.riderTotalCount) || 0,
-          rejectionRate: p.rejectionRate == null ? null : Number(p.rejectionRate),
+          rejectionRate: p.rejectionRate == null ? null : toRejectionPercent(p.rejectionRate),
           peaks: emptyPeaks()
         });
       });
@@ -675,7 +687,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v2';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v3';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }

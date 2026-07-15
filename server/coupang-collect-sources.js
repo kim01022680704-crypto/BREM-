@@ -36,6 +36,15 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** 쿠팡 거절율 등: 0~1 비율이면 ×100, 이미 %면 그대로 (표시용 소수 1자리) */
+function asPercent(v) {
+  if (v == null || v === '') return null;
+  const x = Number(v);
+  if (!Number.isFinite(x)) return null;
+  const pct = Math.abs(x) <= 1 ? x * 100 : x;
+  return Math.round(pct * 10) / 10;
+}
+
 /** GET /bff/api/v2/vendor/dashboard/{vendorId}/realtime-performance → 오늘 피크 현황 */
 function mapRealtimeToItems(vendorId, vendorName, collectDate, payload) {
   const data = payload?.data || {};
@@ -106,9 +115,9 @@ function mapWeeklyToItems(vendorId, vendorName, weekStart, payload) {
           achievementRate: t.achievementRate == null ? null : num(t.achievementRate),
           dailyTargetAchievement: d.dailyTargetAchievement == null ? null : num(d.dailyTargetAchievement),
           rejectionCount: d.rejectionCount == null ? null : num(d.rejectionCount),
-          rejectionRate: d.rejectionRate == null ? null : num(d.rejectionRate),
-          weeklyRejectionRate: data.weeklyRejectionRate == null ? null : num(data.weeklyRejectionRate),
-          weeklyAchievementRate: data.weeklyAchievementRate == null ? null : num(data.weeklyAchievementRate)
+          rejectionRate: asPercent(d.rejectionRate),
+          weeklyRejectionRate: asPercent(data.weeklyRejectionRate),
+          weeklyAchievementRate: asPercent(data.weeklyAchievementRate)
         },
         raw_json: {}
       });
@@ -140,7 +149,7 @@ function mapVendorInfoToItems(collectDate, payload) {
         vendorId: vid,
         vendorName: String(cum.vendorName || ''),
         date: collectDate,
-        rejectionRate: cum.rejectionRate == null ? null : num(cum.rejectionRate),
+        rejectionRate: asPercent(cum.rejectionRate),
         orderViolationCount: cum.orderViolationCount == null ? null : num(cum.orderViolationCount),
         target: shift.target == null ? null : num(shift.target),
         onGoingCount: shift.onGoingCount == null ? null : num(shift.onGoingCount),

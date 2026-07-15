@@ -39,6 +39,18 @@
     if (!Number.isFinite(x)) return '0';
     return x.toLocaleString('ko-KR', { maximumFractionDigits: 1 });
   }
+  /** 쿠팡 API 거절율: 0.103 → 10.3 (이미 %면 그대로) */
+  function toRejectionPercent(v) {
+    if (v == null || v === '') return null;
+    const x = Number(v);
+    if (!Number.isFinite(x)) return null;
+    const pct = Math.abs(x) <= 1 ? x * 100 : x;
+    return Math.round(pct * 10) / 10;
+  }
+  function rejectionPctLabel(v) {
+    const p = toRejectionPercent(v);
+    return p == null ? '-' : `${n(p)}%`;
+  }
   function toast(msg) {
     if (window.BremBaeminDeliveryStatusAdmin?.showToast) return window.BremBaeminDeliveryStatusAdmin.showToast(msg);
     console.log('[coupang현황]', msg);
@@ -478,7 +490,7 @@
       if (!day || seen.has(key)) return;
       seen.add(key);
       const cur = rejByDay.get(day) || { rateSum: 0, rateN: 0 };
-      if (p.rejectionRate != null) { cur.rateSum += Number(p.rejectionRate) || 0; cur.rateN += 1; }
+      if (p.rejectionRate != null) { cur.rateSum += toRejectionPercent(p.rejectionRate) || 0; cur.rateN += 1; }
       rejByDay.set(day, cur);
     });
     const days = DOW_ORDER.filter(d => byDay.has(d));
@@ -495,7 +507,7 @@
       const rej = rejByDay.get(day) || { rateSum: 0, rateN: 0 };
       const rejRate = rej.rateN > 0 ? Math.round((rej.rateSum / rej.rateN) * 10) / 10 : null;
       const dLabel = `${DOW_LABEL[day] || day}${dateByDay.get(day) ? ` (${dateByDay.get(day)})` : ''}`;
-      return `<tr><td>${esc(dLabel)}</td>${cells.join('')}<td>${rejRate == null ? '-' : rejRate + '%'}</td></tr>`;
+      return `<tr><td>${esc(dLabel)}</td>${cells.join('')}<td>${rejRate == null ? '-' : rejectionPctLabel(rejRate)}</td></tr>`;
     }).join('');
     tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap"><table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
       <thead><tr>${header.map((h, i) => `<th${i >= 1 && i <= 5 ? ` title="${esc(PEAK_LABEL[PEAK_ORDER[i - 1]])}"` : ''}>${esc(h)}</th>`).join('')}</tr></thead>
@@ -525,7 +537,7 @@
         vendorName: String(p.vendorName || vid),
         drivingCount: Number(p.riderOnLineCount) || 0,
         riderTotalCount: Number(p.riderTotalCount) || 0,
-        rejectionRate: p.rejectionRate == null ? null : Number(p.rejectionRate),
+        rejectionRate: p.rejectionRate == null ? null : toRejectionPercent(p.rejectionRate),
         peaks: Object.fromEntries(PEAK_ORDER.map(pt => [pt, { goal: 0, completed: 0, has: false }]))
       });
     });
@@ -574,13 +586,13 @@
       <td><strong class="dashboard-baemin-region-name">합계</strong></td>
       <td>${esc(n(onlineSum))}</td>
       ${PEAK_ORDER.map(pt => renderQuotaTagCell(peakTotals[pt].completed, peakTotals[pt].goal)).join('')}
-      <td>${rejAvg == null ? '-' : rejAvg + '%'}</td>
+      <td>${rejAvg == null ? '-' : rejectionPctLabel(rejAvg)}</td>
     </tr>`;
     const bodyRows = regionRows.map(r => `<tr>
       <td>${regionNameCell(r.vendorName)}</td>
       <td>${esc(n(r.drivingCount))}</td>
       ${PEAK_ORDER.map(pt => renderQuotaTagCell(r.peaks[pt].completed, r.peaks[pt].goal, r.peaks[pt].has)).join('')}
-      <td>${r.rejectionRate == null ? '-' : n(r.rejectionRate) + '%'}</td>
+      <td>${r.rejectionRate == null ? '-' : rejectionPctLabel(r.rejectionRate)}</td>
     </tr>`).join('');
 
     tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap"><table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
