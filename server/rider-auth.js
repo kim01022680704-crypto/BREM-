@@ -1082,14 +1082,18 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
     ? extractDeliveryStatusMetrics(deliveryHit.row.parsed_json || {})
     : { complete: 0, foodReject: 0, foodCancel: 0, foodRiderFault: 0 };
 
+  // 실시간 카드는 '오늘 배달현황 기준'이므로, 화면에 보이는 완료/거절 수치와
+  // 동일한 배달현황으로 수락율을 계산해 일관성을 맞춘다.
+  // (live_accept_rates 스냅샷은 수락율 조회/동기화 때만 갱신돼 2분 폴링 배달현황과 어긋날 수 있음)
   let acceptRate = null;
   let acceptRateSource = null;
-  if (acceptRow && acceptRow.current_accept_rate != null && Number.isFinite(Number(acceptRow.current_accept_rate))) {
-    acceptRate = Math.round(Number(acceptRow.current_accept_rate) * 10) / 10;
-    acceptRateSource = 'live_accept_rates';
-  } else if (deliveryHit?.row) {
+  if (deliveryHit?.row) {
     acceptRate = calcAcceptRateFromMetrics(metrics);
     acceptRateSource = acceptRate == null ? null : 'delivery_status';
+  }
+  if (acceptRate == null && acceptRow && acceptRow.current_accept_rate != null && Number.isFinite(Number(acceptRow.current_accept_rate))) {
+    acceptRate = Math.round(Number(acceptRow.current_accept_rate) * 10) / 10;
+    acceptRateSource = 'live_accept_rates';
   }
 
   const hasDelivery = Boolean(deliveryHit?.row);
