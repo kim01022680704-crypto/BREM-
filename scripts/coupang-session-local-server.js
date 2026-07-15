@@ -32,6 +32,7 @@ let latestToken = '';
 let latestTokenAt = 0;
 let latestCookie = '';
 const seenVendorIds = new Set();
+const seenApiPaths = new Set();   // 브라우저가 실제로 호출한 대시보드 API 경로(진단용)
 let collecting = false;
 
 function nowKstIsoOffset() {
@@ -81,6 +82,12 @@ async function ensureBrowser() {
       }
       const m = url.match(/\/dashboard\/(\d+)\//);
       if (m) seenVendorIds.add(m[1]);
+      try {
+        const u = new URL(url);
+        if (/\/bff\/api\//.test(u.pathname) || /dashboard|performance|vendor/i.test(u.pathname)) {
+          if (seenApiPaths.size < 120) seenApiPaths.add(`${req.method()} ${u.pathname}${u.search}`);
+        }
+      } catch { /* ignore */ }
     } catch { /* ignore */ }
   });
   context.on('close', () => { context = null; });
@@ -147,7 +154,12 @@ async function runCollect(options = {}) {
   if (collecting) return { ok: false, message: '이미 수집 중입니다.' };
   if (!latestToken) return { ok: false, status: 401, message: '쿠팡 로그인 토큰이 없습니다. 브라우저에서 로그인 후 대시보드를 한 번 열어주세요.' };
   collecting = true;
-  const summary = { peak_realtime: 0, weekly_performance: 0, vendor_info: 0, rider_daily: 0, errors: [] };
+  const summary = { peak_realtime: 0, weekly_performance: 0, vendor_info: 0, rider_daily: 0, errors: [], diag: [] };
+  const pushErr = (msg) => { if (summary.errors.length < 12) summary.errors.push(String(msg)); };
+  const httpInfo = (label, r) => {
+    const extra = r.json && (r.json.message || r.json.error) ? ` ${r.json.message || r.json.error}` : (r.json ? '' : ' (non-JSON 응답)');
+    return `${label}: HTTP ${r.status}${extra}`;
+  };
   try {
     await captureCookieHeader();
     const collectDate = String(options.date || businessDateKst());
@@ -155,27 +167,32 @@ async function runCollect(options = {}) {
     const dayStart = businessDayStartOffset(collectDate);
     const weekStart = String(options.weekStartDate || thisWeekStartDateKst());
 
+    if (!latestCookie) pushErr('쿠키를 캡처하지 못했습니다(브라우저 세션 확인).');
+
     // 1) 매장 목록 확보: 캡처된 vendorId 중 하나로 daily-vendor-info 호출
     let seed = [...seenVendorIds][0];
     let vendors = [];
+    if (!seed) pushErr('감지된 매장 vendorId가 없습니다. 브라우저에서 쿠팡 대시보드를 한 번 여세요.');
     if (seed) {
       const info = await apiGet(`/bff/api/v2/vendor/dashboard/${seed}/daily-vendor-info?dateTime=${encodeURIComponent(dayStart)}`);
+      summary.diag.push(httpInfo('vendor_info GET', info));
       if (info.ok && info.json) {
         const items = sources.mapVendorInfoToItems(collectDate, info.json);
         if (items.length) {
           const r = await pipeline.upsertCollectItems(items);
-          if (r.ok) summary.vendor_info += r.saved; else summary.errors.push('vendor_info:' + (r.error || r.message));
+          if (r.ok) summary.vendor_info += r.saved; else pushErr('vendor_info 저장:' + (r.error || r.message));
+        } else {
+          pushErr('vendor_info: 응답에 childVendorRecordDtos 없음(엔드포인트/응답형태 상이 가능)');
         }
         vendors = (info.json.data?.childVendorRecordDtos || []).map(c => ({
           id: String(c.vendorId), name: String(c.totalCumulativeStatus?.vendorName || '')
         }));
+      } else {
+        pushErr(httpInfo('vendor_info', info));
       }
     }
     if (!vendors.length) {
       vendors = [...seenVendorIds].map(id => ({ id, name: '' }));
-    }
-    if (!vendors.length) {
-      summary.errors.push('매장 목록을 찾지 못했습니다. 브라우저에서 대시보드를 한 번 여세요.');
     }
 
     // 2) 매장별 realtime + weekly
@@ -186,16 +203,21 @@ async function runCollect(options = {}) {
           const items = sources.mapRealtimeToItems(v.id, v.name, collectDate, rt.json);
           const r = await pipeline.upsertCollectItems(items);
           if (r.ok) summary.peak_realtime += r.saved;
+          if (!items.length) pushErr(`realtime ${v.id}: 응답에 peakTimePerformance 없음`);
+        } else {
+          pushErr(httpInfo(`realtime ${v.id}`, rt));
         }
-      } catch (e) { summary.errors.push(`realtime ${v.id}: ${e.message}`); }
+      } catch (e) { pushErr(`realtime ${v.id}: ${e.message}`); }
       try {
         const wk = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/weekly-performance?startDate=${encodeURIComponent(weekStart + 'T06:00:00')}`);
         if (wk.ok && wk.json) {
           const items = sources.mapWeeklyToItems(v.id, v.name, weekStart, wk.json);
           const r = await pipeline.upsertCollectItems(items);
           if (r.ok) summary.weekly_performance += r.saved;
+        } else {
+          pushErr(httpInfo(`weekly ${v.id}`, wk));
         }
-      } catch (e) { summary.errors.push(`weekly ${v.id}: ${e.message}`); }
+      } catch (e) { pushErr(`weekly ${v.id}: ${e.message}`); }
     }
 
     // 3) 라이더별(전체) — payload가 확정되면 정확도 향상. best-effort.
@@ -203,21 +225,31 @@ async function runCollect(options = {}) {
       try {
         const body = { targetDate: dayStart, date: collectDate, pageNum: 0, pageSize: 1000 };
         const rider = await apiPost('/bff/api/v1/vendor/dashboard/daily-vendor-performance', body);
+        summary.diag.push(httpInfo('rider POST', rider));
         if (rider.ok && rider.json) {
           const items = sources.mapRiderToItems(collectDate, rider.json);
           if (items.length) {
             const r = await pipeline.upsertCollectItems(items);
             if (r.ok) summary.rider_daily += r.saved;
           }
+        } else {
+          pushErr(httpInfo('rider', rider));
         }
-      } catch (e) { summary.errors.push(`rider: ${e.message}`); }
+      } catch (e) { pushErr(`rider: ${e.message}`); }
     }
 
     for (const menu of ['peak_realtime', 'weekly_performance', 'vendor_info', 'rider_daily']) {
       await pipeline.saveRun(menu === 'weekly_performance' ? weekStart : collectDate, menu, summary.errors.length ? 'partial' : 'ok', summary[menu], summary.errors.join(' | ').slice(0, 500));
     }
     await persistToken('collect');
-    return { ok: true, collectDate, weekStart, summary, vendorCount: vendors.length };
+    return {
+      ok: true,
+      collectDate,
+      weekStart,
+      summary,
+      vendorCount: vendors.length,
+      apiSamples: [...seenApiPaths].slice(0, 60)
+    };
   } finally {
     collecting = false;
   }
@@ -253,7 +285,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, {
       ok: true, port: PORT, browserOpen: Boolean(context),
       hasToken: Boolean(latestToken), tokenAgeSec, tokenExpiresAt: tokenExp,
-      vendorCount: seenVendorIds.size, collecting
+      vendorCount: seenVendorIds.size, collecting,
+      apiSamples: [...seenApiPaths].slice(0, 60)
     });
   }
 

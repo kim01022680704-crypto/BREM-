@@ -252,7 +252,24 @@
     await refreshLocalStatus();
     if (!r.ok) { toast(r.message || '수집 실패'); return; }
     const s = r.summary || {};
+    const total = (s.peak_realtime || 0) + (s.weekly_performance || 0) + (s.vendor_info || 0) + (s.rider_daily || 0);
     toast(`수집 완료 · 피크 ${s.peak_realtime || 0} · 주간 ${s.weekly_performance || 0} · 지역 ${s.vendor_info || 0} · 라이더 ${s.rider_daily || 0}`);
+    if (total === 0) {
+      const tableEl = $('coupangStatusTable');
+      if (tableEl) {
+        const errs = (s.errors || []).map(e => `<li>${esc(e)}</li>`).join('');
+        const diag = (s.diag || []).map(e => `<li>${esc(e)}</li>`).join('');
+        const samples = (r.apiSamples || []).map(e => `<li><code>${esc(e)}</code></li>`).join('');
+        tableEl.innerHTML = `
+          <div class="form-help" style="line-height:1.7">
+            <p><strong>수집 결과가 0건입니다.</strong> 아래 진단을 확인하세요(그대로 복사해 알려주면 매핑을 고칩니다).</p>
+            ${errs ? `<p><strong>오류</strong><ul>${errs}</ul></p>` : ''}
+            ${diag ? `<p><strong>API 상태</strong><ul>${diag}</ul></p>` : ''}
+            ${samples ? `<p><strong>브라우저가 실제 호출한 API 경로(샘플)</strong><ul>${samples}</ul></p>` : '<p>브라우저에서 쿠팡 대시보드 각 메뉴(피크/요일별/지역/라이더)를 한 번씩 연 뒤 다시 수집하세요.</p>'}
+          </div>`;
+      }
+      return;
+    }
     await loadConfig();
     await loadItems();
     void renderDashboardCard();
