@@ -1,6 +1,9 @@
 {
   "version": 2,
   "installCommand": "npm install",
+  "crons": [
+    { "path": "/api/public-config", "schedule": "*/5 * * * *" }
+  ],
   "builds": [
     { "src": "api/index.js", "use": "@vercel/node" },
     { "src": "api/admin/login.js", "use": "@vercel/node" },
