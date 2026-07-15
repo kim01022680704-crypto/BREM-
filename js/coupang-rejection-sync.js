@@ -66,7 +66,7 @@
       <td>${r.rate == null ? '-' : r.rate + '%'}</td>
       <td>${esc(r.reason || '')}</td>
     </tr>`).join('');
-    resultEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table">
+    resultEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
       <thead><tr><th>결과</th><th>이름</th><th>쿠팡ID</th><th>매칭기사</th><th>거절율</th><th>비고</th></tr></thead>
       <tbody>${body}</tbody>
     </table></div>`;

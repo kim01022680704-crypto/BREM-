@@ -199,7 +199,7 @@
         <td>${rate == null ? '-' : rate + '%'}</td>
       </tr>`;
     }).join('');
-    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table">
+    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
       <thead><tr>
         <th>매칭기사</th><th>이름</th><th>연락처</th><th>쿠팡ID</th>
         <th>완료</th><th>거절</th><th>취소</th><th>거절율</th>
