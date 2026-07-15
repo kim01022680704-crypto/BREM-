@@ -1,10 +1,8 @@
 /**
- * 쿠팡이츠 현황 → 거절율 동기화 (라이더앱 반영)
- * - 이번 정산주(수~화) rider_daily 집계 → 쿠팡ID(matchKey)로 ERP 기사 매칭
- * - 거절율 = (거절+취소)/(완료+거절+취소)×100 을 admin_rejection_rates(platform='coupang')에 upsert
- * - 수동/ERP/일괄(bulk) 소스는 보호(덮어쓰지 않음)
- * - 반영 후 라이더 앱 publish
- * 데이터는 BremCoupangRiderStatusAdmin.getWeekContext() 로 받는다.
+ * 쿠팡이츠 현황 → 거절율 반영 (거절율입력 + 라이더앱)
+ * - 정산주 수~어제(과거) + 오늘 실시간 합산 거절율
+ * - 거절율 = (거절+취소)/(완료+거절+취소)×100 → admin_rejection_rates(platform='coupang')
+ * - 수동/ERP/일괄 소스는 보호
  */
 (function () {
   'use strict';
@@ -37,7 +35,7 @@
     return map;
   }
 
-  function renderResults(rows, weekStart) {
+  function renderResults(rows, weekStart, rangeLabel) {
     const summaryEl = $('coupangRejectionSyncSummary');
     const resultEl = $('coupangRejectionSyncResult');
     const ok = rows.filter(r => r.status === 'ok').length;
@@ -45,11 +43,11 @@
     const unmatched = rows.filter(r => r.status === 'unmatched').length;
     const skip = rows.filter(r => r.status === 'skip').length;
     if (summaryEl) {
-      summaryEl.textContent = `정산주 ${weekStart || '-'} · 반영 ${fmt(ok)} · 보호 ${fmt(protectedCnt)} · 미매칭 ${fmt(unmatched)} · 미집계 ${fmt(skip)} · 총 ${fmt(rows.length)}`;
+      summaryEl.textContent = `정산주 ${weekStart || '-'} · ${rangeLabel || '수~어제+오늘'} · 반영 ${fmt(ok)} · 보호 ${fmt(protectedCnt)} · 미매칭 ${fmt(unmatched)} · 미집계 ${fmt(skip)} · 총 ${fmt(rows.length)}`;
     }
     if (!resultEl) return;
     if (!rows.length) {
-      resultEl.innerHTML = '<p class="form-help">동기화 대상 라이더가 없습니다. 먼저 주간 데이터를 조회/수집하세요.</p>';
+      resultEl.innerHTML = '<p class="form-help">반영 대상 라이더가 없습니다. 먼저 라이더별 현황을 조회/실시간 업데이트하세요.</p>';
       return;
     }
     const labelOf = {
@@ -73,13 +71,19 @@
   }
 
   async function run() {
-    if (state.running) { toast('이미 동기화 중입니다.'); return; }
+    if (state.running) { toast('이미 반영 중입니다.'); return; }
     const host = window.BremCoupangRiderStatusAdmin;
     if (!host?.getWeekContext) { toast('쿠팡현황을 먼저 열어 주세요.'); return; }
 
     state.running = true;
-    const btn = $('coupangRejectionSyncBtn');
-    if (btn) { btn.disabled = true; if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = btn.textContent; btn.textContent = '동기화 중…'; }
+    const buttons = ['coupangRejectionSyncBtn', 'coupangRiderRejectApplyBtn']
+      .map(id => $(id))
+      .filter(Boolean);
+    buttons.forEach(btn => {
+      btn.disabled = true;
+      if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = btn.textContent;
+      btn.textContent = '반영 중…';
+    });
 
     try {
       try { await window.BremStorage?.ensureSectionLoaded?.('rejections'); } catch { /* ignore */ }
@@ -88,6 +92,7 @@
 
       const ctx = host.getWeekContext();
       const weekStart = ctx.weekStart;
+      const rangeLabel = ctx.range?.label || '수~어제 + 오늘 실시간';
       const erpMap = buildErpMap();
       const entries = [];
       const results = [];
@@ -123,17 +128,24 @@
             completeCount: r.complete || 0,
             rejectCount: r.reject || 0,
             cancelCount: r.cancel || 0,
+            pastComplete: r.past?.complete || 0,
+            liveComplete: r.live?.complete || 0,
             unmeasured: false
           }
         });
-        results.push({ ...base, status: 'ok', driverName: driver.name || driver.id, reason: `완료 ${fmt(r.complete)} · 거절 ${fmt(r.reject)} · 취소 ${fmt(r.cancel)}` });
+        results.push({
+          ...base,
+          status: 'ok',
+          driverName: driver.name || driver.id,
+          reason: `합산 완료 ${fmt(r.complete)} (어제까지 ${fmt(r.past?.complete)} + 오늘 ${fmt(r.live?.complete)}) · 거절 ${fmt(r.reject)} · 취소 ${fmt(r.cancel)}`
+        });
       });
 
       if (entries.length) {
         await window.BremStorage.rejections.upsertWeeklyBatch(entries);
         try {
           const pub = await window.BremStorage.riderViewPublish.publishAllToRiderView();
-          toast(`거절율 ${entries.length}명 반영 완료 · 라이더앱 반영 ${fmt(pub?.rejectionsPublished || entries.length)}건`);
+          toast(`거절율 ${entries.length}명 반영 완료 · 라이더앱 ${fmt(pub?.rejectionsPublished || entries.length)}건 · ${rangeLabel}`);
         } catch (e) {
           toast(`거절율 ${entries.length}명 저장 완료 (라이더앱 반영 실패: ${e.message || e})`);
         }
@@ -142,22 +154,27 @@
         toast('반영할 거절율이 없습니다. (미매칭/보호/미집계만 존재)');
       }
 
-      renderResults(results, weekStart);
+      renderResults(results, weekStart, rangeLabel);
     } catch (error) {
-      toast(error.message || '거절율 동기화에 실패했습니다.');
-      renderResults([], '');
+      toast(error.message || '거절율 반영에 실패했습니다.');
+      renderResults([], '', '');
     } finally {
       state.running = false;
-      if (btn) { btn.disabled = false; if (btn.dataset.defaultLabel) btn.textContent = btn.dataset.defaultLabel; }
+      buttons.forEach(btn => {
+        btn.disabled = false;
+        if (btn.dataset.defaultLabel) btn.textContent = btn.dataset.defaultLabel;
+      });
     }
   }
 
   function bind() {
-    const btn = $('coupangRejectionSyncBtn');
-    if (btn && !btn.dataset.bound) {
-      btn.dataset.bound = '1';
-      btn.addEventListener('click', () => { void run(); });
-    }
+    ['coupangRejectionSyncBtn', 'coupangRiderRejectApplyBtn'].forEach(id => {
+      const btn = $(id);
+      if (btn && !btn.dataset.boundSync) {
+        btn.dataset.boundSync = '1';
+        btn.addEventListener('click', () => { void run(); });
+      }
+    });
   }
 
   if (document.readyState === 'loading') {

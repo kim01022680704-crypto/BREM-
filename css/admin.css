@@ -1937,6 +1937,43 @@ input[type="month"].admin-period-input {
   white-space: normal;
 }
 
+#coupangRiderLiveStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+#coupangRiderLiveStrip[hidden] { display: none !important; }
+.coupang-rider-live-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #121212;
+}
+.coupang-rider-live-card__label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.coupang-rider-live-card__value {
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.coupang-rider-live-card.is-complete .coupang-rider-live-card__value { color: #2ecc71; }
+.coupang-rider-live-card.is-reject .coupang-rider-live-card__value { color: #e74c3c; }
+.coupang-rider-live-card.is-cancel .coupang-rider-live-card__value { color: #e67e22; }
+.coupang-rider-live-card.is-rate .coupang-rider-live-card__value { color: #3498db; }
+.coupang-rider-live-card__sub {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 #coupangWeekCollectRow {
   display: flex;
   flex-wrap: wrap;

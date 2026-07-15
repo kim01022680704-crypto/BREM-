@@ -1,10 +1,9 @@
 /**
  * BREM 관리자 · 쿠팡이츠 현황 (배민현황 쿠팡판)
- * - coupang_collect_items(rider_daily)를 이번 정산주(수~화) 범위로 읽어 지역(매장)별 탭 구성
- * - 쿠팡ID(이름+전화 뒤4자리 = matchKey)로 ERP 기사와 매칭
+ * - 라이더별: 정산주 수~어제(과거) + 오늘 실시간 합산 → 거절율
  * - 거절율 = (거절+취소)/(완료+거절+취소)×100
- * - 자동수집: PC 로컬 세션서버(3940)의 30초 status-loop 제어
- * 거절율 동기화(라이더앱 반영)는 coupang-rejection-sync.js 가 getWeekContext()로 사용.
+ * - [거절율 반영] → admin_rejection_rates + 라이더앱 publish
+ * - 자동수집: PC 로컬 세션서버(3940) 30초 status-loop
  */
 (function () {
   'use strict';
@@ -21,7 +20,9 @@
   const DOW_LABEL = { WEDNESDAY: '수', THURSDAY: '목', FRIDAY: '금', SATURDAY: '토', SUNDAY: '일', MONDAY: '월', TUESDAY: '화' };
   const state = {
     activeVendor: ALL, activeSub: 'rider', weekStart: '',
-    rows: [], weekly: [], today: { vendor: [], peak: [] },
+    pastRows: [], liveRows: [], rows: [],
+    weekly: [], today: { vendor: [], peak: [] },
+    range: null, lastLiveAt: '',
     vendors: [], loaded: false
   };
   const local = { running: false, hasToken: false, loop: {} };
@@ -100,6 +101,50 @@
       String(d.getDate()).padStart(2, '0')
     ].join('-');
   }
+  function addDaysKey(dateKey, days) {
+    const d = new Date(`${String(dateKey).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + days);
+    return localDateKey(d);
+  }
+  function todayKey() {
+    const kst = new Date(Date.now() + 9 * 3600 * 1000);
+    if (kst.getUTCHours() < 6) kst.setUTCDate(kst.getUTCDate() - 1);
+    return kst.toISOString().slice(0, 10);
+  }
+  /** 배민과 동일: 이번 정산주면 수~어제 + 오늘 실시간, 과거주면 수~화 전체 */
+  function resolveRiderRange(weekStart) {
+    const picker = dp();
+    const ws = picker ? picker.applyWeekWednesday(weekStart || picker.weekStartKey()) : String(weekStart || '').slice(0, 10);
+    const we = picker?.weekEndKey ? picker.weekEndKey(ws) : addDaysKey(ws, 6);
+    const today = todayKey();
+    const currentWs = picker ? picker.applyWeekWednesday(today) : ws;
+    const isCurrentWeek = ws === currentWs;
+    if (isCurrentWeek) {
+      const yesterday = addDaysKey(today, -1);
+      const hasPast = Boolean(yesterday && yesterday >= ws);
+      return {
+        weekStart: ws,
+        weekEnd: we,
+        today,
+        includeLive: true,
+        pastFrom: hasPast ? ws : '',
+        pastTo: hasPast ? yesterday : '',
+        label: hasPast
+          ? `수~어제 ${ws} ~ ${yesterday} + 오늘 실시간 ${today}`
+          : `오늘 실시간 ${today} (수요일·과거 없음)`
+      };
+    }
+    return {
+      weekStart: ws,
+      weekEnd: we,
+      today,
+      includeLive: false,
+      pastFrom: ws,
+      pastTo: we,
+      label: `정산주 ${ws} ~ ${we}`
+    };
+  }
   function currentWeekStart() {
     const val = $('coupangRiderWeekDate')?.value || '';
     const picker = dp();
@@ -155,33 +200,59 @@
     return map;
   }
 
-  // ── 라이더별 주간 집계 (matchKey 기준) ──
+  // ── 라이더별 집계 (과거/실시간/합산) ──
+  function emptyRider(p = {}) {
+    return {
+      matchKey: p.matchKey || '',
+      courierId: p.courierId || '',
+      name: p.name || '',
+      phone: p.phone || '',
+      past: { complete: 0, reject: 0, cancel: 0 },
+      live: { complete: 0, reject: 0, cancel: 0 },
+      complete: 0,
+      reject: 0,
+      cancel: 0,
+      vendors: new Set()
+    };
+  }
+  function addMetrics(bucket, p) {
+    bucket.complete += Math.max(0, Number(p.completeCount) || 0);
+    bucket.reject += Math.max(0, Number(p.rejectCount) || 0);
+    bucket.cancel += Math.max(0, Number(p.cancelCount) || 0);
+  }
+  function mergeBuckets(a, b) {
+    return {
+      complete: Number(a.complete || 0) + Number(b.complete || 0),
+      reject: Number(a.reject || 0) + Number(b.reject || 0),
+      cancel: Number(a.cancel || 0) + Number(b.cancel || 0)
+    };
+  }
+  function upsertRiderRow(map, p, bucket) {
+    const key = String(p.matchKey || p.courierId || '').trim();
+    if (!key) return;
+    const prev = map.get(key) || emptyRider(p);
+    addMetrics(prev[bucket], p);
+    const combined = mergeBuckets(prev.past, prev.live);
+    prev.complete = combined.complete;
+    prev.reject = combined.reject;
+    prev.cancel = combined.cancel;
+    if (p.name) prev.name = p.name;
+    if (p.phone) prev.phone = p.phone;
+    if (p.courierId) prev.courierId = p.courierId;
+    if (p.matchKey) prev.matchKey = p.matchKey;
+    const vName = p.vendorName || p.vendorId;
+    if (vName) prev.vendors.add(vName);
+    map.set(key, prev);
+  }
+  function aggregateCombined(pastRows, liveRows) {
+    const map = new Map();
+    (pastRows || []).forEach(p => upsertRiderRow(map, p, 'past'));
+    (liveRows || []).forEach(p => upsertRiderRow(map, p, 'live'));
+    return [...map.values()];
+  }
+  /** 레거시: 단일 배열 합산 */
   function aggregate(rows) {
-    const byRider = new Map();
-    rows.forEach(p => {
-      const key = String(p.matchKey || p.courierId || '').trim();
-      if (!key) return;
-      const prev = byRider.get(key) || {
-        matchKey: p.matchKey || '',
-        courierId: p.courierId || '',
-        name: p.name || '',
-        phone: p.phone || '',
-        complete: 0,
-        reject: 0,
-        cancel: 0,
-        vendors: new Set()
-      };
-      prev.complete += Math.max(0, Number(p.completeCount) || 0);
-      prev.reject += Math.max(0, Number(p.rejectCount) || 0);
-      prev.cancel += Math.max(0, Number(p.cancelCount) || 0);
-      if (p.name && !prev.name) prev.name = p.name;
-      if (p.phone && !prev.phone) prev.phone = p.phone;
-      if (p.courierId && !prev.courierId) prev.courierId = p.courierId;
-      const vName = p.vendorName || p.vendorId;
-      if (vName) prev.vendors.add(vName);
-      byRider.set(key, prev);
-    });
-    return [...byRider.values()];
+    return aggregateCombined(rows, []);
   }
 
   function vendorLabel(p) {
@@ -192,7 +263,7 @@
   function rowsForActiveSub() {
     if (state.activeSub === 'quota') return state.weekly;
     if (state.activeSub === 'today') return [...(state.today.vendor || []), ...(state.today.peak || [])];
-    return state.rows;
+    return [...(state.pastRows || []), ...(state.liveRows || [])];
   }
   function filterByVendor(rows) {
     return state.activeVendor === ALL ? rows : rows.filter(p => vendorLabel(p) === state.activeVendor);
@@ -240,20 +311,60 @@
   }
 
   function renderTable() {
+    if (state.activeSub !== 'rider') {
+      const strip = $('coupangRiderLiveStrip');
+      if (strip) { strip.hidden = true; strip.innerHTML = ''; }
+    }
     if (state.activeSub === 'quota') return renderQuota();
     if (state.activeSub === 'today') return renderToday();
     return renderRiderTable();
+  }
+
+  function renderLiveStrip(riders, range) {
+    const el = $('coupangRiderLiveStrip');
+    if (!el) return;
+    if (state.activeSub !== 'rider' || !riders.length) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    const tot = riders.reduce((a, r) => {
+      a.complete += r.complete; a.reject += r.reject; a.cancel += r.cancel;
+      a.pastC += r.past.complete; a.liveC += r.live.complete;
+      return a;
+    }, { complete: 0, reject: 0, cancel: 0, pastC: 0, liveC: 0 });
+    const rate = calcRejectionRate(tot.complete, tot.reject, tot.cancel);
+    el.hidden = false;
+    el.innerHTML = `
+      <div class="coupang-rider-live-card is-complete"><span class="coupang-rider-live-card__label">현재완료</span><span class="coupang-rider-live-card__value">${n(tot.complete)}</span><span class="coupang-rider-live-card__sub">어제까지 ${n(tot.pastC)} + 오늘 ${n(tot.liveC)}</span></div>
+      <div class="coupang-rider-live-card is-reject"><span class="coupang-rider-live-card__label">거절</span><span class="coupang-rider-live-card__value">${n(tot.reject)}</span></div>
+      <div class="coupang-rider-live-card is-cancel"><span class="coupang-rider-live-card__label">취소</span><span class="coupang-rider-live-card__value">${n(tot.cancel)}</span></div>
+      <div class="coupang-rider-live-card is-rate"><span class="coupang-rider-live-card__label">거절율</span><span class="coupang-rider-live-card__value">${rate == null ? '-' : rate + '%'}</span><span class="coupang-rider-live-card__sub">${esc(range?.label || '')}</span></div>`;
+  }
+
+  function renderLiveBadge(range) {
+    const el = $('coupangRiderLiveBadge');
+    if (!el) return;
+    if (!range) { el.textContent = '라이더별: 수~어제 + 오늘 실시간'; return; }
+    const liveHint = range.includeLive
+      ? (state.lastLiveAt ? ` · 실시간 ${state.lastLiveAt}` : ' · 실시간')
+      : ' · 과거주(실시간 없음)';
+    el.textContent = `라이더별: ${range.label}${liveHint}`;
   }
 
   function renderRiderTable() {
     const tableEl = $('coupangRiderTable');
     const summary = $('coupangRiderSummary');
     if (!tableEl) return;
-    const filtered = filterByVendor(state.rows);
-    const riders = aggregate(filtered).sort((a, b) => b.complete - a.complete);
+    const range = state.range || resolveRiderRange(state.weekStart || currentWeekStart());
+    const pastFiltered = filterByVendor(state.pastRows);
+    const liveFiltered = filterByVendor(state.liveRows);
+    const riders = aggregateCombined(pastFiltered, liveFiltered).sort((a, b) => b.complete - a.complete);
+    renderLiveStrip(riders, range);
+    renderLiveBadge(range);
     if (!riders.length) {
-      tableEl.innerHTML = '<p class="form-help">해당 주간·매장에 라이더 데이터가 없습니다. [자동수집 시작] 또는 쿠팡 밴더현황에서 수집 후 조회하세요.</p>';
-      if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 0명`;
+      tableEl.innerHTML = '<p class="form-help">해당 기간·매장에 라이더 데이터가 없습니다. [실시간 업데이트] 또는 밴더현황에서 주간 수집 후 조회하세요.</p>';
+      if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 0명 · ${range.label}`;
       return;
     }
     const erpMap = buildErpMap();
@@ -263,15 +374,17 @@
       const driver = erpMap.get(String(r.matchKey || '').trim());
       if (driver) matched += 1;
       const driverLabel = driver ? esc(driver.name || driver.id) : '<span style="color:#c0392b">미매칭</span>';
+      const pastRate = calcRejectionRate(r.past.complete, r.past.reject, r.past.cancel);
+      const liveRate = calcRejectionRate(r.live.complete, r.live.reject, r.live.cancel);
       return `<tr>
         <td>${driverLabel}</td>
         <td>${esc(r.name)}</td>
         <td>${esc(r.phone)}</td>
         <td>${esc(r.matchKey)}</td>
-        <td>${n(r.complete)}</td>
-        <td>${n(r.reject)}</td>
-        <td>${n(r.cancel)}</td>
-        <td>${rate == null ? '-' : rate + '%'}</td>
+        <td title="어제까지 ${n(r.past.complete)} / 오늘 ${n(r.live.complete)}">${n(r.complete)}</td>
+        <td title="어제까지 ${n(r.past.reject)} / 오늘 ${n(r.live.reject)}">${n(r.reject)}</td>
+        <td title="어제까지 ${n(r.past.cancel)} / 오늘 ${n(r.live.cancel)}">${n(r.cancel)}</td>
+        <td title="수~어제 ${pastRate == null ? '-' : pastRate + '%'} · 오늘 ${liveRate == null ? '-' : liveRate + '%'}">${rate == null ? '-' : rate + '%'}</td>
       </tr>`;
     }).join('');
     tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table dashboard-baemin-compact-table">
@@ -282,7 +395,7 @@
       <tbody>${bodyRows}</tbody>
     </table></div>`;
     if (summary) {
-      summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · ${riders.length}명 · ERP매칭 ${matched}명 · 정산주 ${state.weekStart}`;
+      summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · ${riders.length}명 · ERP매칭 ${matched}명 · ${range.label}`;
     }
   }
 
@@ -399,16 +512,34 @@
     if (summary) summary.textContent = `오늘 현황 · ${todayKey()} · 운행중 ${n(onlineSum)}/${n(totalSum)}명`;
   }
 
-  function todayKey() {
-    const kst = new Date(Date.now() + 9 * 3600 * 1000);
-    if (kst.getUTCHours() < 6) kst.setUTCDate(kst.getUTCDate() - 1);
-    return kst.toISOString().slice(0, 10);
+  async function fetchRiderItems(fromDate, toDate) {
+    if (!fromDate || !toDate || toDate < fromDate) return { ok: true, items: [] };
+    const res = await adminApi(`/api/admin/coupang/items?sourceMenu=rider_daily&fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`);
+    if (!res.ok) return res;
+    return { ok: true, items: (res.items || []).map(it => it.parsed_json || {}) };
   }
 
-  async function loadRider(ws, we) {
-    const res = await adminApi(`/api/admin/coupang/items?sourceMenu=rider_daily&fromDate=${encodeURIComponent(ws)}&toDate=${encodeURIComponent(we)}`);
-    state.rows = res.ok ? (res.items || []).map(it => it.parsed_json || {}) : [];
-    return res;
+  async function loadRider(ws) {
+    const range = resolveRiderRange(ws);
+    state.range = range;
+    state.weekStart = range.weekStart;
+    let past = { ok: true, items: [] };
+    let live = { ok: true, items: [] };
+    if (range.pastFrom && range.pastTo) {
+      past = await fetchRiderItems(range.pastFrom, range.pastTo);
+    }
+    if (range.includeLive) {
+      live = await fetchRiderItems(range.today, range.today);
+      if (live.ok) state.lastLiveAt = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+    } else {
+      state.lastLiveAt = '';
+    }
+    state.pastRows = past.ok ? (past.items || []) : [];
+    state.liveRows = live.ok ? (live.items || []) : [];
+    state.rows = [...state.pastRows, ...state.liveRows];
+    if (!past.ok) return past;
+    if (!live.ok) return live;
+    return { ok: true };
   }
   async function loadQuota(ws, we) {
     const res = await adminApi(`/api/admin/coupang/items?sourceMenu=weekly_performance&fromDate=${encodeURIComponent(ws)}&toDate=${encodeURIComponent(we)}`);
@@ -432,9 +563,8 @@
     state.weekStart = ws;
     renderWeekPreview();
     if (summary) summary.textContent = '불러오는 중…';
-    const we = dp()?.weekEndKey ? dp().weekEndKey(ws) : ws;
-    // 라이더 데이터는 거절율 동기화용으로 항상 로드
-    const riderRes = await loadRider(ws, we);
+    const we = dp()?.weekEndKey ? dp().weekEndKey(ws) : addDaysKey(ws, 6);
+    const riderRes = await loadRider(ws);
     if (state.activeSub === 'quota') await loadQuota(ws, we);
     else if (state.activeSub === 'today') await loadToday();
     renderSubmenu();
@@ -444,6 +574,31 @@
   }
 
   async function loadWeek() { return loadActive(); }
+
+  async function refreshLiveToday() {
+    await refreshLocalStatus();
+    if (!local.running) { toast('로컬 세션서버(3940)가 꺼져 있어요. 통합 세션서버 bat을 먼저 실행하세요.'); return; }
+    if (!local.hasToken) { toast('쿠팡 밴더현황에서 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
+    const today = todayKey();
+    toast(`오늘(${today}) 라이더 실시간 수집 중…`);
+    const r = await callLocal('/collect', {
+      method: 'POST',
+      body: { date: today, includeRider: true, skipWeekly: true },
+      timeoutMs: 180000
+    });
+    if (!r.ok) { toast(r.message || '오늘 실시간 수집 실패'); return; }
+    const s = r.summary || {};
+    toast(`오늘 실시간 저장 · 라이더 ${s.rider_daily || 0} · 지역 ${s.vendor_info || 0}`);
+    await loadActive();
+  }
+
+  function applyRejectionRates() {
+    if (window.BremCoupangRejectionSync?.run) {
+      void window.BremCoupangRejectionSync.run();
+      return;
+    }
+    toast('거절율 반영 모듈을 불러오지 못했습니다.');
+  }
 
   // ── 로컬 세션서버 / 자동수집 루프 ──
   function renderLocalStatus() {
@@ -536,10 +691,10 @@
     }
   }
 
-  // ── 거절율 동기화 모듈용 컨텍스트 (전 매장 주간 집계) ──
+  // ── 거절율 반영용 컨텍스트 (수~어제 + 오늘 실시간 합산) ──
   function getWeekContext() {
     const ws = state.weekStart || currentWeekStart();
-    const riders = aggregate(state.rows).map(r => ({
+    const riders = aggregateCombined(state.pastRows, state.liveRows).map(r => ({
       matchKey: String(r.matchKey || '').trim(),
       courierId: r.courierId,
       name: r.name,
@@ -547,17 +702,24 @@
       complete: r.complete,
       reject: r.reject,
       cancel: r.cancel,
+      past: { ...r.past },
+      live: { ...r.live },
       rate: calcRejectionRate(r.complete, r.reject, r.cancel),
       vendors: [...r.vendors]
     }));
-    return { weekStart: ws, riders };
+    return {
+      weekStart: ws,
+      riders,
+      range: state.range || resolveRiderRange(ws),
+      includeLive: Boolean((state.range || resolveRiderRange(ws)).includeLive)
+    };
   }
 
   async function refresh() {
     try { await window.BremStorage?.ensureSectionLoaded?.('drivers'); } catch { /* ignore */ }
     const dateInput = $('coupangRiderWeekDate');
     if (dateInput && !dateInput.value) {
-      dateInput.value = dp() ? dp().weekStartKey() : new Date().toISOString().slice(0, 10);
+      dateInput.value = dp() ? dp().weekStartKey() : todayKey();
     }
     setWeekLabel();
     renderWeekPreview();
@@ -567,6 +729,7 @@
     bindOnce('coupangRiderNextWeekBtn', () => { shiftWeek(7); renderWeekPreview(); void loadWeek(); });
     bindOnce('coupangRiderLoopStartBtn', () => void startLoop());
     bindOnce('coupangRiderLoopStopBtn', () => void stopLoop());
+    bindOnce('coupangRiderLiveRefreshBtn', () => void refreshLiveToday());
     startLocalPoll();
     void refreshLocalStatus();
     await loadWeek();
@@ -578,6 +741,8 @@
     getWeekContext,
     loadWeek,
     onWeekPicked,
+    refreshLiveToday,
+    applyRejectionRates,
     adminApi,
     calcRejectionRate,
     get weekStart() { return state.weekStart; }
