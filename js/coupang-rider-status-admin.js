@@ -112,29 +112,40 @@
     if (kst.getUTCHours() < 6) kst.setUTCDate(kst.getUTCDate() - 1);
     return kst.toISOString().slice(0, 10);
   }
-  /** 배민과 동일: 이번 정산주면 수~어제 + 오늘 실시간, 과거주면 수~화 전체 */
+  /** 선택한 정산주(수~화)만 조회.
+   * - 과거주: 수~화 7일만
+   * - 이번주(오늘이 그 주 안): 수~어제 + 오늘 실시간
+   *   예) 오늘 18일이면 그주 수~17일 + 오늘(18)
+   */
   function resolveRiderRange(weekStart) {
     const picker = dp();
-    const ws = picker ? picker.applyWeekWednesday(weekStart || picker.weekStartKey()) : String(weekStart || '').slice(0, 10);
+    const raw = String(weekStart || $('coupangRiderWeekDate')?.value || '').slice(0, 10);
+    const ws = picker?.applyWeekWednesday
+      ? picker.applyWeekWednesday(raw || picker.weekStartKey())
+      : raw;
     const we = picker?.weekEndKey ? picker.weekEndKey(ws) : addDaysKey(ws, 6);
     const today = todayKey();
-    const currentWs = picker ? picker.applyWeekWednesday(today) : ws;
-    const isCurrentWeek = ws === currentWs;
-    if (isCurrentWeek) {
-      const yesterday = addDaysKey(today, -1);
+    const yesterday = addDaysKey(today, -1);
+    const todayInSelectedWeek = Boolean(ws && we && today >= ws && today <= we);
+
+    if (todayInSelectedWeek) {
       const hasPast = Boolean(yesterday && yesterday >= ws);
+      // 어제라도 선택 주(화)를 넘기지 않음
+      const pastTo = hasPast ? (yesterday > we ? we : yesterday) : '';
       return {
         weekStart: ws,
         weekEnd: we,
         today,
         includeLive: true,
         pastFrom: hasPast ? ws : '',
-        pastTo: hasPast ? yesterday : '',
+        pastTo,
         label: hasPast
-          ? `수~어제 ${ws} ~ ${yesterday} + 오늘 실시간 ${today}`
-          : `오늘 실시간 ${today} (수요일·과거 없음)`
+          ? `수~어제 ${ws} ~ ${pastTo} + 오늘 실시간 ${today}`
+          : `오늘 실시간 ${today} (수요일 · 과거일 없음)`
       };
     }
+
+    // 과거 정산주(또는 미래주): 해당 주 수~화만, 오늘 실시간 합산 금지
     return {
       weekStart: ws,
       weekEnd: we,
@@ -142,7 +153,7 @@
       includeLive: false,
       pastFrom: ws,
       pastTo: we,
-      label: `정산주 ${ws} ~ ${we}`
+      label: `정산주 ${ws} ~ ${we} (수~화만)`
     };
   }
   function currentWeekStart() {
@@ -178,7 +189,7 @@
     const range = dp()?.formatWednesdayWeekRangeLong
       ? dp().formatWednesdayWeekRangeLong(ws)
       : (dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`);
-    el.textContent = `${range} · 수~화 7일`;
+    el.textContent = `${range} · 선택한 수~화만 조회`;
   }
   function onWeekPicked(value) {
     const input = $('coupangRiderWeekDate');
@@ -336,7 +347,7 @@
     const rate = calcRejectionRate(tot.complete, tot.reject, tot.cancel);
     el.hidden = false;
     el.innerHTML = `
-      <div class="coupang-rider-live-card is-complete"><span class="coupang-rider-live-card__label">현재완료</span><span class="coupang-rider-live-card__value">${n(tot.complete)}</span><span class="coupang-rider-live-card__sub">어제까지 ${n(tot.pastC)} + 오늘 ${n(tot.liveC)}</span></div>
+      <div class="coupang-rider-live-card is-complete"><span class="coupang-rider-live-card__label">합계완료</span><span class="coupang-rider-live-card__value">${n(tot.complete)}</span><span class="coupang-rider-live-card__sub">${range?.includeLive ? `수~어제 ${n(tot.pastC)} + 오늘 ${n(tot.liveC)}` : `해당 주(수~화) ${n(tot.pastC)}`}</span></div>
       <div class="coupang-rider-live-card is-reject"><span class="coupang-rider-live-card__label">거절</span><span class="coupang-rider-live-card__value">${n(tot.reject)}</span></div>
       <div class="coupang-rider-live-card is-cancel"><span class="coupang-rider-live-card__label">취소</span><span class="coupang-rider-live-card__value">${n(tot.cancel)}</span></div>
       <div class="coupang-rider-live-card is-rate"><span class="coupang-rider-live-card__label">거절율</span><span class="coupang-rider-live-card__value">${rate == null ? '-' : rate + '%'}</span><span class="coupang-rider-live-card__sub">${esc(range?.label || '')}</span></div>`;
@@ -345,10 +356,10 @@
   function renderLiveBadge(range) {
     const el = $('coupangRiderLiveBadge');
     if (!el) return;
-    if (!range) { el.textContent = '라이더별: 수~어제 + 오늘 실시간'; return; }
+    if (!range) { el.textContent = '라이더별: 선택한 정산주(수~화)만 조회'; return; }
     const liveHint = range.includeLive
-      ? (state.lastLiveAt ? ` · 실시간 ${state.lastLiveAt}` : ' · 실시간')
-      : ' · 과거주(실시간 없음)';
+      ? (state.lastLiveAt ? ` · 실시간 ${state.lastLiveAt}` : ' · 오늘 실시간 포함')
+      : ' · 오늘 실시간 미포함(그 주만)';
     el.textContent = `라이더별: ${range.label}${liveHint}`;
   }
 
