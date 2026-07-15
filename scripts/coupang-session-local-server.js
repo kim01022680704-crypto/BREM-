@@ -62,6 +62,21 @@ function thisWeekStartDateKst() {
   kst.setUTCDate(kst.getUTCDate() - diff);
   return kst.toISOString().slice(0, 10);
 }
+/** 이번 정산주 수요일 ~ 오늘(영업일)까지의 날짜 배열 (라이더 일별 백필용) */
+function weekDatesUpToToday() {
+  const start = thisWeekStartDateKst();
+  const end = businessDateKst();
+  const dates = [];
+  const cur = new Date(`${start}T00:00:00Z`);
+  const endD = new Date(`${end}T00:00:00Z`);
+  let guard = 0;
+  while (cur <= endD && guard < 14) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    guard += 1;
+  }
+  return dates;
+}
 
 async function ensureBrowser() {
   if (context) {
@@ -148,9 +163,28 @@ async function persistToken(source) {
   }).catch(() => {});
 }
 
+/** 라이더별 일 실적 수집(특정 날짜). daily-vendor-performance POST. */
+async function collectRiderForDate(dateStr, summary, pushErr, httpInfo) {
+  const dayStart = businessDayStartOffset(dateStr);
+  try {
+    const body = { targetDate: dayStart, date: dateStr, pageNum: 0, pageSize: 1000 };
+    const rider = await apiPost('/bff/api/v1/vendor/dashboard/daily-vendor-performance', body);
+    summary.diag.push(httpInfo(`rider POST ${dateStr}`, rider));
+    if (rider.ok && rider.json) {
+      const items = sources.mapRiderToItems(dateStr, rider.json);
+      if (items.length) {
+        const r = await pipeline.upsertCollectItems(items);
+        if (r.ok) summary.rider_daily += r.saved; else pushErr(`rider ${dateStr} 저장:` + (r.error || r.message));
+      }
+    } else {
+      pushErr(httpInfo(`rider ${dateStr}`, rider));
+    }
+  } catch (e) { pushErr(`rider ${dateStr}: ${e.message}`); }
+}
+
 /**
  * 전체 수집: vendor_info(전 매장) → 매장별 realtime/weekly → 라이더(best-effort)
- * options: { date, weekStartDate, includeRider }
+ * options: { date, weekStartDate, includeRider, skipWeekly, riderDates }
  */
 async function runCollect(options = {}) {
   if (collecting) return { ok: false, message: '이미 수집 중입니다.' };
@@ -210,34 +244,27 @@ async function runCollect(options = {}) {
           pushErr(httpInfo(`realtime ${v.id}`, rt));
         }
       } catch (e) { pushErr(`realtime ${v.id}: ${e.message}`); }
-      try {
-        const wk = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/weekly-performance?startDate=${encodeURIComponent(weekStart + 'T06:00:00')}`);
-        if (wk.ok && wk.json) {
-          const items = sources.mapWeeklyToItems(v.id, v.name, weekStart, wk.json);
-          const r = await pipeline.upsertCollectItems(items);
-          if (r.ok) summary.weekly_performance += r.saved;
-        } else {
-          pushErr(httpInfo(`weekly ${v.id}`, wk));
-        }
-      } catch (e) { pushErr(`weekly ${v.id}: ${e.message}`); }
+      if (!options.skipWeekly) {
+        try {
+          const wk = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/weekly-performance?startDate=${encodeURIComponent(weekStart + 'T06:00:00')}`);
+          if (wk.ok && wk.json) {
+            const items = sources.mapWeeklyToItems(v.id, v.name, weekStart, wk.json);
+            const r = await pipeline.upsertCollectItems(items);
+            if (r.ok) summary.weekly_performance += r.saved;
+          } else {
+            pushErr(httpInfo(`weekly ${v.id}`, wk));
+          }
+        } catch (e) { pushErr(`weekly ${v.id}: ${e.message}`); }
+      }
     }
 
-    // 3) 라이더별(전체) — payload가 확정되면 정확도 향상. best-effort.
+    // 3) 라이더별(전체) — 오늘 + (옵션) 이번 정산주 날짜별 백필. best-effort.
     if (options.includeRider !== false) {
-      try {
-        const body = { targetDate: dayStart, date: collectDate, pageNum: 0, pageSize: 1000 };
-        const rider = await apiPost('/bff/api/v1/vendor/dashboard/daily-vendor-performance', body);
-        summary.diag.push(httpInfo('rider POST', rider));
-        if (rider.ok && rider.json) {
-          const items = sources.mapRiderToItems(collectDate, rider.json);
-          if (items.length) {
-            const r = await pipeline.upsertCollectItems(items);
-            if (r.ok) summary.rider_daily += r.saved;
-          }
-        } else {
-          pushErr(httpInfo('rider', rider));
-        }
-      } catch (e) { pushErr(`rider: ${e.message}`); }
+      const riderDates = Array.from(new Set([collectDate, ...((Array.isArray(options.riderDates) ? options.riderDates : []))]))
+        .filter(Boolean);
+      for (const d of riderDates) {
+        await collectRiderForDate(d, summary, pushErr, httpInfo);
+      }
     }
 
     for (const menu of ['peak_realtime', 'weekly_performance', 'vendor_info', 'rider_daily']) {
@@ -255,6 +282,105 @@ async function runCollect(options = {}) {
   } finally {
     collecting = false;
   }
+}
+
+// ── 30초 자동수집 루프(배민 status-loop 미러). PC 켜진 동안만 동작. ──
+const STATUS_LOOP_WAIT_MS = 30 * 1000;
+const statusLoop = {
+  active: false,
+  stopping: false,
+  round: 0,
+  phase: 'idle',
+  message: '',
+  lastError: '',
+  startedAt: null,
+  updatedAt: null,
+  waitEndsAt: 0,
+  lastSummary: null
+};
+
+function getStatusLoopPayload() {
+  return {
+    active: statusLoop.active,
+    round: statusLoop.round,
+    phase: statusLoop.phase,
+    message: statusLoop.message,
+    lastError: statusLoop.lastError,
+    startedAt: statusLoop.startedAt,
+    updatedAt: statusLoop.updatedAt,
+    waitEndsAt: statusLoop.waitEndsAt,
+    waitMs: STATUS_LOOP_WAIT_MS,
+    lastSummary: statusLoop.lastSummary
+  };
+}
+
+function waitLoop(ms) {
+  return new Promise((resolve) => {
+    const step = 1000;
+    let waited = 0;
+    const t = setInterval(() => {
+      waited += step;
+      if (!statusLoop.active || statusLoop.stopping || waited >= ms) {
+        clearInterval(t);
+        resolve();
+      }
+    }, step);
+  });
+}
+
+async function runStatusAutoLoopInner() {
+  while (statusLoop.active && !statusLoop.stopping) {
+    statusLoop.round += 1;
+    const first = statusLoop.round === 1;
+    statusLoop.phase = 'collecting';
+    statusLoop.message = first ? '첫 회차 전체 수집 중…' : `실시간 수집 중… (${statusLoop.round}회차)`;
+    statusLoop.updatedAt = nowKstIsoOffset();
+    try {
+      // 1회차: 전체 + 이번 정산주 라이더 일별 백필 / 2회차+: 주간 제외(실시간 위주)
+      const result = first
+        ? await runCollect({ riderDates: weekDatesUpToToday() })
+        : await runCollect({ skipWeekly: true });
+      statusLoop.lastSummary = result && result.summary ? result.summary : null;
+      statusLoop.lastError = '';
+    } catch (e) {
+      statusLoop.lastError = e && e.message ? e.message : String(e);
+    }
+    if (!statusLoop.active || statusLoop.stopping) break;
+    statusLoop.phase = 'waiting';
+    statusLoop.waitEndsAt = Date.now() + STATUS_LOOP_WAIT_MS;
+    statusLoop.message = `다음 회차 대기 중… (${statusLoop.round}회차 완료)`;
+    statusLoop.updatedAt = nowKstIsoOffset();
+    await waitLoop(STATUS_LOOP_WAIT_MS);
+  }
+  statusLoop.active = false;
+  statusLoop.stopping = false;
+  statusLoop.phase = 'idle';
+  statusLoop.message = statusLoop.round ? `중지됨 (${statusLoop.round}회차까지 수집)` : '중지됨';
+  statusLoop.waitEndsAt = 0;
+  statusLoop.updatedAt = nowKstIsoOffset();
+}
+
+function startStatusAutoLoop() {
+  if (statusLoop.active) return { ok: false, message: '이미 자동수집 중입니다.', statusLoop: getStatusLoopPayload() };
+  if (!latestToken) return { ok: false, status: 401, message: '쿠팡 로그인 토큰이 없습니다. 브라우저에서 로그인 후 대시보드를 한 번 여세요.' };
+  statusLoop.active = true;
+  statusLoop.stopping = false;
+  statusLoop.round = 0;
+  statusLoop.startedAt = nowKstIsoOffset();
+  statusLoop.updatedAt = statusLoop.startedAt;
+  statusLoop.lastError = '';
+  statusLoop.message = '자동수집 시작…';
+  void runStatusAutoLoopInner();
+  return { ok: true, statusLoop: getStatusLoopPayload() };
+}
+
+function stopStatusAutoLoop() {
+  if (!statusLoop.active) return { ok: true, alreadyStopped: true, statusLoop: getStatusLoopPayload() };
+  statusLoop.stopping = true;
+  statusLoop.active = false;
+  statusLoop.message = '중지 요청됨…';
+  statusLoop.updatedAt = nowKstIsoOffset();
+  return { ok: true, statusLoop: getStatusLoopPayload() };
 }
 
 function sendJson(res, status, obj) {
@@ -288,8 +414,22 @@ const server = http.createServer(async (req, res) => {
       ok: true, port: PORT, browserOpen: Boolean(context),
       hasToken: Boolean(latestToken), tokenAgeSec, tokenExpiresAt: tokenExp,
       vendorCount: seenVendorIds.size, collecting,
+      statusLoop: getStatusLoopPayload(),
       apiSamples: [...seenApiPaths].slice(0, 60)
     });
+  }
+
+  if (u.pathname === '/status-loop/start' && req.method === 'POST') {
+    const r = startStatusAutoLoop();
+    return sendJson(res, r.ok ? 202 : (r.status || 400), r);
+  }
+
+  if (u.pathname === '/status-loop/stop' && req.method === 'POST') {
+    return sendJson(res, 200, stopStatusAutoLoop());
+  }
+
+  if (u.pathname === '/status-loop/status' && req.method === 'GET') {
+    return sendJson(res, 200, { ok: true, statusLoop: getStatusLoopPayload() });
   }
 
   if (u.pathname === '/browser/open' && req.method === 'POST') {

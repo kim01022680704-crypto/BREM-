@@ -70,9 +70,15 @@ async function readCollectItems(sourceMenu, collectDate, options = {}) {
     .from('coupang_collect_items')
     .select('collect_date, collected_at, source_menu, vendor_id, vendor_name, courier_id, rider_name, phone_number, match_key, dedupe_key, parsed_json')
     .eq('source_menu', sourceMenu);
-  if (collectDate) q = q.eq('collect_date', collectDate);
+  const fromDate = options.fromDate ? String(options.fromDate).slice(0, 10) : '';
+  const toDate = options.toDate ? String(options.toDate).slice(0, 10) : '';
+  if (fromDate && toDate) {
+    q = q.gte('collect_date', fromDate).lte('collect_date', toDate);
+  } else if (collectDate) {
+    q = q.eq('collect_date', collectDate);
+  }
   if (options.vendorId) q = q.eq('vendor_id', String(options.vendorId));
-  q = q.limit(options.limit || 10000);
+  q = q.limit(options.limit || 20000);
   const { data, error } = await q;
   if (error) {
     if (isMissingTableError(error)) return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다.' };

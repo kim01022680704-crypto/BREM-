@@ -169,7 +169,8 @@
     { id: 'calls', label: '콜수 입력' },
     { id: 'baemin-biz-status', label: '배민 BIZ 현황' },
     { id: 'baemin-status', label: '배민현황' },
-    { id: 'coupang-status', label: '쿠팡 현황' },
+    { id: 'coupang-rider-status', label: '쿠팡현황' },
+    { id: 'coupang-status', label: '쿠팡 밴더현황' },
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
@@ -4789,6 +4790,9 @@
       case 'coupang-status':
         window.BremCoupangStatusAdmin?.refresh?.();
         break;
+      case 'coupang-rider-status':
+        window.BremCoupangRiderStatusAdmin?.refresh?.();
+        break;
       case 'rejections':
         renderRejections();
         break;
@@ -4935,6 +4939,9 @@
     }
     if (sectionId === 'coupang-status' && window.BremCoupangStatusAdmin?.refresh) {
       void window.BremCoupangStatusAdmin.refresh();
+    }
+    if (sectionId === 'coupang-rider-status' && window.BremCoupangRiderStatusAdmin?.refresh) {
+      void window.BremCoupangRiderStatusAdmin.refresh();
     }
   }
 

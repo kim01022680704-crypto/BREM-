@@ -116,7 +116,8 @@
         <button class="nav-btn" data-section="baemin-biz-status">배민 BIZ 현황</button>
         <button class="nav-btn" data-section="baemin-status">배민현황</button>
         <button class="nav-btn" data-section="baemin-status" data-baemin-menu-focus="calls_rejection_sync">콜수·거절율 동기화</button>
-        <button class="nav-btn" data-section="coupang-status">쿠팡 현황</button>
+        <button class="nav-btn" data-section="coupang-rider-status">쿠팡현황</button>
+        <button class="nav-btn" data-section="coupang-status">쿠팡 밴더현황</button>
         <button class="nav-btn" data-section="rejections">거절율 입력</button>
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
@@ -1322,7 +1323,7 @@
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>쿠팡이츠 현황</h2>
+              <h2>쿠팡이츠 밴더 현황</h2>
               <p class="form-help">PC 로컬 세션서버(3940)로 쿠팡 파트너포털에 로그인하고 수집합니다. 배민 BIZ와 동일한 방식.</p>
             </div>
             <div class="dashboard-baemin-live-actions">
@@ -1341,6 +1342,38 @@
           <div id="coupangStatusTable">
             <p class="form-help">불러오는 중…</p>
           </div>
+        </article>
+      </section>
+
+      <section class="section" id="coupang-rider-status">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>쿠팡이츠 현황</h2>
+              <p class="form-help">쿠팡 라이더 실적을 지역(매장)별로 보고, 쿠팡ID(이름+전화 뒤4자리)로 ERP 기사와 매칭합니다. 거절율 = (거절+취소)/(완료+거절+취소)×100.</p>
+            </div>
+            <div class="dashboard-baemin-live-actions">
+              <button type="button" class="small-btn" id="coupangRiderLoopStartBtn" disabled>자동수집 시작</button>
+              <button type="button" class="small-btn danger-btn" id="coupangRiderLoopStopBtn" disabled>중지</button>
+              <button type="button" class="primary-btn" id="coupangRejectionSyncBtn">거절율 동기화</button>
+            </div>
+          </div>
+          <p class="admin-table-summary" id="coupangRiderLocalStatus" aria-live="polite">로컬 세션서버 상태 확인 중…</p>
+          <p class="admin-table-summary" id="coupangRiderLoopStatus" aria-live="polite">자동수집: 중지됨</p>
+          <div class="dashboard-baemin-live-actions coupang-view-actions">
+            <button type="button" class="small-btn" id="coupangRiderPrevWeekBtn">&lt;&lt;</button>
+            <input type="date" id="coupangRiderWeekDate" class="admin-period-input">
+            <button type="button" class="small-btn" id="coupangRiderNextWeekBtn">&gt;&gt;</button>
+            <span class="field-preview" id="coupangRiderWeekPreview">수요일~화요일</span>
+            <button type="button" class="small-btn" id="coupangRiderLoadBtn">조회</button>
+          </div>
+          <div class="baemin-region-tabs" id="coupangRiderVendorTabs"></div>
+          <p class="admin-table-summary" id="coupangRiderSummary" aria-live="polite">주간·매장을 선택하면 조회합니다.</p>
+          <div id="coupangRiderTable">
+            <p class="form-help">불러오는 중…</p>
+          </div>
+          <p class="admin-table-summary" id="coupangRejectionSyncSummary" aria-live="polite"></p>
+          <div id="coupangRejectionSyncResult"></div>
         </article>
       </section>
 
@@ -5404,7 +5437,9 @@
   <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260715g"></script>
-    <script src="js/coupang-status-admin.js?v=20260715c"></script>
+    <script src="js/coupang-status-admin.js?v=20260715d"></script>
+    <script src="js/coupang-rider-status-admin.js?v=20260715a"></script>
+    <script src="js/coupang-rejection-sync.js?v=20260715a"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260715b"></script>
   <script src="js/promotion-apply.js?v=20260626d"></script>
   <script src="js/promotion-apply-admin.js?v=20260626d"></script>

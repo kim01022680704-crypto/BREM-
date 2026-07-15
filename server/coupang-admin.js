@@ -38,9 +38,13 @@ async function getItems(accessToken, options = {}) {
     return { ok: false, status: 400, error: 'sourceMenu 가 올바르지 않습니다.', allowed: MENUS };
   }
   const collectDate = String(options.collectDate || '').slice(0, 10);
+  const fromDate = String(options.fromDate || '').slice(0, 10);
+  const toDate = String(options.toDate || '').slice(0, 10);
   const result = await pipeline.readCollectItems(sourceMenu, collectDate || null, {
     vendorId: options.vendorId || '',
-    limit: 10000
+    fromDate: fromDate || '',
+    toDate: toDate || '',
+    limit: 20000
   });
   return result;
 }

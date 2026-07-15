@@ -1,0 +1,368 @@
+/**
+ * BREM 관리자 · 쿠팡이츠 현황 (배민현황 쿠팡판)
+ * - coupang_collect_items(rider_daily)를 이번 정산주(수~화) 범위로 읽어 지역(매장)별 탭 구성
+ * - 쿠팡ID(이름+전화 뒤4자리 = matchKey)로 ERP 기사와 매칭
+ * - 거절율 = (거절+취소)/(완료+거절+취소)×100
+ * - 자동수집: PC 로컬 세션서버(3940)의 30초 status-loop 제어
+ * 거절율 동기화(라이더앱 반영)는 coupang-rejection-sync.js 가 getWeekContext()로 사용.
+ */
+(function () {
+  'use strict';
+
+  const LOCAL_BASE = 'http://127.0.0.1:3940';
+  const ALL = '__ALL__';
+  const state = { activeVendor: ALL, weekStart: '', rows: [], vendors: [], loaded: false };
+  const local = { running: false, hasToken: false, loop: {} };
+  let localPollTimer = null;
+  let lastLoopRound = -1;
+
+  const $ = (id) => document.getElementById(id);
+
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  function n(v) {
+    const x = Number(v);
+    return Number.isFinite(x) ? Math.round(x).toLocaleString('ko-KR') : '0';
+  }
+  function toast(msg) {
+    if (window.BremBaeminDeliveryStatusAdmin?.showToast) return window.BremBaeminDeliveryStatusAdmin.showToast(msg);
+    console.log('[coupang현황]', msg);
+  }
+
+  function calcRejectionRate(complete, reject, cancel) {
+    const c = Math.max(0, Number(complete) || 0);
+    const r = Math.max(0, Number(reject) || 0);
+    const x = Math.max(0, Number(cancel) || 0);
+    const denom = c + r + x;
+    if (denom <= 0) return null;
+    return Math.round(((r + x) / denom) * 1000) / 10;
+  }
+
+  async function adminApi(path, options = {}) {
+    const token = await window.BremStorage?.resolveAdminAccessToken?.();
+    if (!token) return { ok: false, message: '관리자 로그인이 필요합니다.' };
+    try {
+      const res = await fetch(path, {
+        credentials: 'same-origin',
+        ...options,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, message: payload.message || payload.error || `요청 실패 (${res.status})` };
+      return { ok: true, ...payload };
+    } catch (e) {
+      return { ok: false, message: e.message || '네트워크 오류' };
+    }
+  }
+
+  async function callLocal(path, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs || 10000);
+    try {
+      const res = await fetch(`${LOCAL_BASE}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body != null ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+        cache: 'no-store',
+        mode: 'cors'
+      });
+      clearTimeout(timer);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, status: res.status, message: payload.message || payload.error || `요청 실패 (${res.status})`, ...payload };
+      return { ok: true, ...payload };
+    } catch (e) {
+      clearTimeout(timer);
+      return { ok: false, message: e.message || '로컬 서버 연결 실패' };
+    }
+  }
+
+  // ── 주간 도우미 ──
+  function dp() { return window.BremDatePicker; }
+  function currentWeekStart() {
+    const val = $('coupangRiderWeekDate')?.value || '';
+    const picker = dp();
+    if (!picker) return String(val || '').slice(0, 10);
+    return picker.applyWeekWednesday(val || picker.weekStartKey());
+  }
+  function shiftWeek(days) {
+    const cur = currentWeekStart();
+    const d = new Date(`${cur}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    const input = $('coupangRiderWeekDate');
+    if (input) input.value = dp() ? dp().applyWeekWednesday(d.toISOString().slice(0, 10)) : d.toISOString().slice(0, 10);
+  }
+  function renderWeekPreview() {
+    const el = $('coupangRiderWeekPreview');
+    if (!el) return;
+    const ws = currentWeekStart();
+    el.textContent = dp()?.formatWednesdayWeekRange ? dp().formatWednesdayWeekRange(ws) : `${ws} ~`;
+  }
+
+  // ── ERP 기사 매칭 맵 (쿠팡ID → 기사) ──
+  function buildErpMap() {
+    const map = new Map();
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    const utils = window.BremDriverUtils;
+    drivers.forEach(d => {
+      const id = utils?.getErpCoupangId ? utils.getErpCoupangId(d) : '';
+      if (id && !map.has(id)) map.set(id, d);
+    });
+    return map;
+  }
+
+  // ── 라이더별 주간 집계 (matchKey 기준) ──
+  function aggregate(rows) {
+    const byRider = new Map();
+    rows.forEach(p => {
+      const key = String(p.matchKey || p.courierId || '').trim();
+      if (!key) return;
+      const prev = byRider.get(key) || {
+        matchKey: p.matchKey || '',
+        courierId: p.courierId || '',
+        name: p.name || '',
+        phone: p.phone || '',
+        complete: 0,
+        reject: 0,
+        cancel: 0,
+        vendors: new Set()
+      };
+      prev.complete += Math.max(0, Number(p.completeCount) || 0);
+      prev.reject += Math.max(0, Number(p.rejectCount) || 0);
+      prev.cancel += Math.max(0, Number(p.cancelCount) || 0);
+      if (p.name && !prev.name) prev.name = p.name;
+      if (p.phone && !prev.phone) prev.phone = p.phone;
+      if (p.courierId && !prev.courierId) prev.courierId = p.courierId;
+      const vName = p.vendorName || p.vendorId;
+      if (vName) prev.vendors.add(vName);
+      byRider.set(key, prev);
+    });
+    return [...byRider.values()];
+  }
+
+  function vendorLabel(p) {
+    return String(p.vendorName || p.vendorId || '').trim();
+  }
+
+  function renderVendorTabs() {
+    const bar = $('coupangRiderVendorTabs');
+    if (!bar) return;
+    const set = new Map();
+    state.rows.forEach(p => {
+      const label = vendorLabel(p);
+      if (label) set.set(label, (set.get(label) || 0) + 1);
+    });
+    state.vendors = [...set.keys()].sort((a, b) => a.localeCompare(b, 'ko'));
+    if (state.activeVendor !== ALL && !state.vendors.includes(state.activeVendor)) state.activeVendor = ALL;
+    const tabs = [{ id: ALL, label: '전체' }, ...state.vendors.map(v => ({ id: v, label: v }))];
+    bar.innerHTML = tabs.map(t =>
+      `<button type="button" class="baemin-region-tab${t.id === state.activeVendor ? ' is-active' : ''}" data-coupang-vendor="${esc(t.id)}">${esc(t.label)}</button>`
+    ).join('');
+    bar.querySelectorAll('[data-coupang-vendor]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.activeVendor = btn.dataset.coupangVendor;
+        renderVendorTabs();
+        renderTable();
+      });
+    });
+  }
+
+  function renderTable() {
+    const tableEl = $('coupangRiderTable');
+    const summary = $('coupangRiderSummary');
+    if (!tableEl) return;
+    const filtered = state.activeVendor === ALL
+      ? state.rows
+      : state.rows.filter(p => vendorLabel(p) === state.activeVendor);
+    const riders = aggregate(filtered).sort((a, b) => b.complete - a.complete);
+    if (!riders.length) {
+      tableEl.innerHTML = '<p class="form-help">해당 주간·매장에 라이더 데이터가 없습니다. [자동수집 시작] 또는 쿠팡 밴더현황에서 수집 후 조회하세요.</p>';
+      if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 0명`;
+      return;
+    }
+    const erpMap = buildErpMap();
+    let matched = 0;
+    const bodyRows = riders.map(r => {
+      const rate = calcRejectionRate(r.complete, r.reject, r.cancel);
+      const driver = erpMap.get(String(r.matchKey || '').trim());
+      if (driver) matched += 1;
+      const driverLabel = driver ? esc(driver.name || driver.id) : '<span style="color:#c0392b">미매칭</span>';
+      return `<tr>
+        <td>${driverLabel}</td>
+        <td>${esc(r.name)}</td>
+        <td>${esc(r.phone)}</td>
+        <td>${esc(r.matchKey)}</td>
+        <td>${n(r.complete)}</td>
+        <td>${n(r.reject)}</td>
+        <td>${n(r.cancel)}</td>
+        <td>${rate == null ? '-' : rate + '%'}</td>
+      </tr>`;
+    }).join('');
+    tableEl.innerHTML = `<div class="dashboard-baemin-table-wrap"><table class="admin-table">
+      <thead><tr>
+        <th>매칭기사</th><th>이름</th><th>연락처</th><th>쿠팡ID</th>
+        <th>완료</th><th>거절</th><th>취소</th><th>거절율</th>
+      </tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table></div>`;
+    if (summary) {
+      summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · ${riders.length}명 · ERP매칭 ${matched}명 · 정산주 ${state.weekStart}`;
+    }
+  }
+
+  async function loadWeek() {
+    const summary = $('coupangRiderSummary');
+    const ws = currentWeekStart();
+    state.weekStart = ws;
+    renderWeekPreview();
+    if (summary) summary.textContent = '불러오는 중…';
+    const we = dp()?.weekEndKey ? dp().weekEndKey(ws) : ws;
+    const res = await adminApi(`/api/admin/coupang/items?sourceMenu=rider_daily&fromDate=${encodeURIComponent(ws)}&toDate=${encodeURIComponent(we)}`);
+    if (!res.ok) {
+      state.rows = [];
+      const tableEl = $('coupangRiderTable');
+      if (tableEl) tableEl.innerHTML = `<p class="form-help">${esc(res.message || '조회 실패')}</p>`;
+      if (summary) summary.textContent = res.message || '조회 실패';
+      return;
+    }
+    state.rows = (res.items || []).map(it => it.parsed_json || {});
+    renderVendorTabs();
+    renderTable();
+  }
+
+  // ── 로컬 세션서버 / 자동수집 루프 ──
+  function renderLocalStatus() {
+    const el = $('coupangRiderLocalStatus');
+    if (!el) return;
+    if (!local.running) {
+      el.textContent = '로컬 세션서버(3940): 꺼짐 — 바탕화면 통합 세션서버 bat을 실행하세요.';
+      return;
+    }
+    const parts = ['로컬 세션서버: 실행 중'];
+    parts.push(local.hasToken ? '로그인: 완료' : '로그인: 필요 (쿠팡 밴더현황에서 브라우저 열기)');
+    el.textContent = parts.join('  |  ');
+  }
+
+  function renderLoopStatus() {
+    const el = $('coupangRiderLoopStatus');
+    if (!el) return;
+    const loop = local.loop || {};
+    if (!local.running) { el.textContent = '자동수집: 로컬 세션서버 꺼짐'; return; }
+    if (loop.active) {
+      const bits = [`실행 중 · ${loop.round || 0}회차`];
+      if (loop.message) bits.push(loop.message);
+      if (loop.lastError) bits.push(`오류: ${loop.lastError}`);
+      el.textContent = `자동수집: ${bits.join(' · ')}`;
+    } else {
+      el.textContent = `자동수집: 중지됨${loop.message ? ' — ' + loop.message : ''}`;
+    }
+  }
+
+  function updateLoopButtons() {
+    const start = $('coupangRiderLoopStartBtn');
+    const stop = $('coupangRiderLoopStopBtn');
+    const loop = local.loop || {};
+    if (start) start.disabled = !local.running || !local.hasToken || Boolean(loop.active);
+    if (stop) stop.disabled = !local.running || !loop.active;
+  }
+
+  async function refreshLocalStatus() {
+    const h = await callLocal('/health', { timeoutMs: 2500 });
+    local.running = Boolean(h.ok);
+    local.hasToken = Boolean(h.hasToken);
+    local.loop = h.statusLoop || {};
+    renderLocalStatus();
+    renderLoopStatus();
+    updateLoopButtons();
+    // 루프가 새 회차를 마쳤으면 현재 주간 표를 자동 갱신
+    if (local.loop.active) {
+      const round = Number(local.loop.round || 0);
+      if (round !== lastLoopRound && local.loop.phase === 'waiting') {
+        lastLoopRound = round;
+        void loadWeek();
+      }
+    } else {
+      lastLoopRound = -1;
+    }
+  }
+
+  async function startLoop() {
+    await refreshLocalStatus();
+    if (!local.running) { toast('로컬 세션서버(3940)가 꺼져 있어요. 통합 세션서버 bat을 먼저 실행하세요.'); return; }
+    if (!local.hasToken) { toast('쿠팡 밴더현황에서 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
+    const r = await callLocal('/status-loop/start', { method: 'POST', body: {}, timeoutMs: 15000 });
+    if (r.statusLoop) local.loop = r.statusLoop;
+    toast(r.ok ? '자동수집을 시작했습니다. 30초 주기로 수집합니다.' : (r.message || '자동수집 시작 실패'));
+    renderLoopStatus();
+    updateLoopButtons();
+  }
+
+  async function stopLoop() {
+    const r = await callLocal('/status-loop/stop', { method: 'POST', body: {}, timeoutMs: 10000 });
+    if (r.statusLoop) local.loop = r.statusLoop;
+    toast(r.ok ? '자동수집을 중지했습니다.' : (r.message || '자동수집 중지 실패'));
+    renderLoopStatus();
+    updateLoopButtons();
+  }
+
+  function startLocalPoll() {
+    if (localPollTimer) return;
+    localPollTimer = setInterval(() => {
+      const sec = document.getElementById('coupang-rider-status');
+      if (sec && sec.classList.contains('active')) void refreshLocalStatus();
+    }, 5000);
+  }
+
+  function bindOnce(id, handler) {
+    const btn = $(id);
+    if (btn && !btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', handler);
+    }
+  }
+
+  // ── 거절율 동기화 모듈용 컨텍스트 (전 매장 주간 집계) ──
+  function getWeekContext() {
+    const ws = state.weekStart || currentWeekStart();
+    const riders = aggregate(state.rows).map(r => ({
+      matchKey: String(r.matchKey || '').trim(),
+      courierId: r.courierId,
+      name: r.name,
+      phone: r.phone,
+      complete: r.complete,
+      reject: r.reject,
+      cancel: r.cancel,
+      rate: calcRejectionRate(r.complete, r.reject, r.cancel),
+      vendors: [...r.vendors]
+    }));
+    return { weekStart: ws, riders };
+  }
+
+  async function refresh() {
+    try { await window.BremStorage?.ensureSectionLoaded?.('drivers'); } catch { /* ignore */ }
+    const dateInput = $('coupangRiderWeekDate');
+    if (dateInput && !dateInput.value) {
+      dateInput.value = dp() ? dp().weekStartKey() : new Date().toISOString().slice(0, 10);
+    }
+    renderWeekPreview();
+    bindOnce('coupangRiderLoadBtn', () => void loadWeek());
+    bindOnce('coupangRiderPrevWeekBtn', () => { shiftWeek(-7); renderWeekPreview(); void loadWeek(); });
+    bindOnce('coupangRiderNextWeekBtn', () => { shiftWeek(7); renderWeekPreview(); void loadWeek(); });
+    bindOnce('coupangRiderLoopStartBtn', () => void startLoop());
+    bindOnce('coupangRiderLoopStopBtn', () => void stopLoop());
+    startLocalPoll();
+    void refreshLocalStatus();
+    await loadWeek();
+    state.loaded = true;
+  }
+
+  window.BremCoupangRiderStatusAdmin = {
+    refresh,
+    getWeekContext,
+    loadWeek,
+    adminApi,
+    calcRejectionRate,
+    get weekStart() { return state.weekStart; }
+  };
+})();

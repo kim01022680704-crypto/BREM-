@@ -1344,6 +1344,8 @@ app.get('/api/admin/coupang/items', async (req, res) => {
     const result = await coupangAdmin.getItems(getBearerToken(req), {
       sourceMenu: req.query.sourceMenu,
       collectDate: req.query.collectDate,
+      fromDate: req.query.fromDate,
+      toDate: req.query.toDate,
       vendorId: req.query.vendorId
     });
     if (!result.ok) {
