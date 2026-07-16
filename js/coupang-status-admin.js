@@ -619,8 +619,13 @@
 
       if (!regionRows.length) {
         if (!silent) {
-          mount.innerHTML = '<p class="form-help">오늘 피크·지역 수집 데이터가 없습니다. 쿠팡 밴더현황에서 오늘 수집 또는 자동순회를 실행하세요.</p>';
-          if (summary) summary.textContent = '오늘 데이터 없음';
+          const viewIds = peakRes.viewVendorIds || vendorRes.viewVendorIds || [];
+          const canManage = Boolean(peakRes.canManageRegions || vendorRes.canManageRegions);
+          const emptyMsg = (!canManage && !(viewIds || []).length)
+            ? '계정에 배정된 쿠팡 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.'
+            : '오늘 피크·지역 수집 데이터가 없습니다. 쿠팡 밴더현황에서 오늘 수집 또는 자동순회를 실행하세요.';
+          mount.innerHTML = `<p class="form-help">${esc(emptyMsg)}</p>`;
+          if (summary) summary.textContent = emptyMsg;
         }
         return;
       }
@@ -687,7 +692,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v3';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v4';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }

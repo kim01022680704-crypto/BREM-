@@ -186,7 +186,9 @@ async function createAdminUser(accessToken, body = {}) {
   const menus = Array.isArray(body.menus) ? body.menus.map(String) : [];
   const editableMenus = Array.isArray(body.editableMenus) ? body.editableMenus.map(String) : menus;
   const { normalizePartnerIdList } = require('./baemin-admin-access');
+  const { normalizeVendorIdList } = require('./coupang-admin-access');
   const baeminPartnerIds = normalizePartnerIdList(body.baeminPartnerIds);
+  const coupangVendorIds = normalizeVendorIdList(body.coupangVendorIds);
   let email = normalizeEmail(body.email);
 
   if (!name) {
@@ -242,6 +244,7 @@ async function createAdminUser(accessToken, body = {}) {
     menus,
     editableMenus,
     baeminPartnerIds,
+    coupangVendorIds,
     active,
     createdAt: now,
     updatedAt: now
@@ -295,14 +298,19 @@ async function updateAdminUser(accessToken, userId, body = {}) {
       ? body.editableMenus.map(String)
       : menus;
     const { normalizePartnerIdList } = require('./baemin-admin-access');
+    const { normalizeVendorIdList } = require('./coupang-admin-access');
     const baeminPartnerIds = body.baeminPartnerIds == null
       ? (current.baeminPartnerIds || [])
       : normalizePartnerIdList(body.baeminPartnerIds);
+    const coupangVendorIds = body.coupangVendorIds == null
+      ? (current.coupangVendorIds || [])
+      : normalizeVendorIdList(body.coupangVendorIds);
     const updated = {
       ...current,
       menus,
       editableMenus,
       baeminPartnerIds,
+      coupangVendorIds,
       updatedAt: new Date().toISOString()
     };
     accounts[index] = updated;
@@ -323,9 +331,13 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     ? body.editableMenus.map(String)
     : current.editableMenus;
   const { normalizePartnerIdList } = require('./baemin-admin-access');
+  const { normalizeVendorIdList } = require('./coupang-admin-access');
   const baeminPartnerIds = body.baeminPartnerIds == null
     ? (current.baeminPartnerIds || [])
     : normalizePartnerIdList(body.baeminPartnerIds);
+  const coupangVendorIds = body.coupangVendorIds == null
+    ? (current.coupangVendorIds || [])
+    : normalizeVendorIdList(body.coupangVendorIds);
   const password = body.password == null ? '' : String(body.password);
 
   if (!name) {
@@ -380,6 +392,7 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     menus,
     editableMenus,
     baeminPartnerIds,
+    coupangVendorIds,
     active,
     updatedAt: new Date().toISOString()
   };

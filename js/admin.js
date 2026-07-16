@@ -239,10 +239,15 @@
   }
 
   let cachedBaeminRegionItems = [];
+  let cachedCoupangVendorItems = [];
 
   function canEditBaeminPartnerScope() {
     const role = getSessionAdminRole();
     return role === ADMIN_ROLES.CEO || role === ADMIN_ROLES.DIRECTOR;
+  }
+
+  function canEditCoupangVendorScope() {
+    return canEditBaeminPartnerScope();
   }
 
   async function loadBaeminRegionCatalog() {
@@ -267,6 +272,32 @@
       return cachedBaeminRegionItems;
     } catch {
       cachedBaeminRegionItems = [];
+      return [];
+    }
+  }
+
+  async function loadCoupangVendorCatalog() {
+    const token = await BremStorage.resolveAdminAccessToken?.();
+    if (!token) {
+      cachedCoupangVendorItems = [];
+      return [];
+    }
+    try {
+      const response = await fetch('/api/admin/coupang/vendor-regions', {
+        credentials: 'same-origin',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        cachedCoupangVendorItems = [];
+        return [];
+      }
+      cachedCoupangVendorItems = Array.isArray(payload.allItems)
+        ? payload.allItems
+        : (Array.isArray(payload.items) ? payload.items : []);
+      return cachedCoupangVendorItems;
+    } catch {
+      cachedCoupangVendorItems = [];
       return [];
     }
   }
@@ -305,12 +336,63 @@
     });
   }
 
+  function shortCoupangVendorLabel(name) {
+    const raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    if (raw.length <= 6) return raw;
+    return raw.slice(-4);
+  }
+
+  function renderAdminAccountCoupangGrid(selectedIds = []) {
+    const panel = $('#adminAccountCoupangPanel');
+    const grid = $('#adminAccountCoupangGrid');
+    if (!panel || !grid) return;
+    if (!canEditCoupangVendorScope() || !cachedCoupangVendorItems.length) {
+      panel.hidden = true;
+      grid.innerHTML = '';
+      return;
+    }
+    panel.hidden = false;
+    const selected = new Set((selectedIds || []).map(id => String(id).trim()));
+    grid.innerHTML = cachedCoupangVendorItems.map(item => {
+      const id = String(item.vendorId || '').trim();
+      const active = selected.has(id);
+      const label = shortCoupangVendorLabel(item.vendorName || id);
+      const full = String(item.vendorName || id);
+      return `<label class="admin-account-baemin-item${active ? ' is-active' : ''}" title="${escapeHtml(full)}">
+        <input type="checkbox" value="${escapeHtml(id)}" ${active ? 'checked' : ''}>
+        <span>${escapeHtml(label)}</span>
+      </label>`;
+    }).join('');
+    grid.querySelectorAll('.admin-account-baemin-item').forEach(labelEl => {
+      const input = labelEl.querySelector('input[type="checkbox"]');
+      if (!input) return;
+      input.addEventListener('change', () => {
+        labelEl.classList.toggle('is-active', input.checked);
+      });
+      labelEl.addEventListener('click', event => {
+        if (event.target === input) return;
+        event.preventDefault();
+        input.checked = !input.checked;
+        labelEl.classList.toggle('is-active', input.checked);
+      });
+    });
+  }
+
   function getSelectedAdminAccountBaeminPartnerIds() {
     const grid = $('#adminAccountBaeminGrid');
     if (!grid) return [];
     return [...grid.querySelectorAll('input[type="checkbox"]:checked')]
       .map(input => String(input.value || '').trim().toUpperCase())
       .filter(id => /^DP\d{6,}$/i.test(id));
+  }
+
+  function getSelectedAdminAccountCoupangVendorIds() {
+    const grid = $('#adminAccountCoupangGrid');
+    if (!grid) return [];
+    return [...grid.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(input => String(input.value || '').trim())
+      .filter(Boolean);
   }
 
   function updateAdminAccountSectionAccess() {
@@ -322,11 +404,11 @@
 
     if (intro) {
       if (role === ADMIN_ROLES.CEO) {
-        intro.textContent = '대표: 관리자 계정 생성·직책·메뉴·배민 담당 지역 배정이 가능합니다. 배민현황/대시보드는 전체 등록 지역을 조회합니다.';
+        intro.textContent = '대표: 관리자 계정 생성·직책·메뉴·배민/쿠팡 담당 지역 배정이 가능합니다. 대시보드·현황은 전체 지역을 조회합니다.';
       } else if (role === ADMIN_ROLES.DIRECTOR) {
-        intro.textContent = '총괄: 팀장 메뉴·배민 담당 지역 배정이 가능합니다. 배민현황/대시보드는 전체 등록 지역을 조회합니다.';
+        intro.textContent = '총괄: 팀장 메뉴·배민/쿠팡 담당 지역 배정이 가능합니다. 대시보드·현황은 전체 지역을 조회합니다.';
       } else {
-        intro.textContent = '팀장: 관리자 계정과 접근 메뉴를 조회만 할 수 있습니다. 배민현황은 배정받은 지역만 보입니다.';
+        intro.textContent = '팀장: 관리자 계정과 접근 메뉴를 조회만 할 수 있습니다. 배민/쿠팡 현황은 배정받은 지역만 보입니다.';
       }
     }
   }
@@ -567,6 +649,7 @@
     $('#adminAccountSubmit').textContent = '계정 저장';
     renderAdminAccountMenuGrid(ADMIN_MENU_OPTIONS.map(option => option.id), ADMIN_MENU_OPTIONS.map(option => option.id));
     renderAdminAccountBaeminGrid([]);
+    renderAdminAccountCoupangGrid([]);
     applyAdminAccountFormMode('create');
     applyAdminAccountEmailField();
   }
@@ -615,6 +698,7 @@
     $('#adminAccountSubmit').textContent = menuOnly ? '메뉴 저장' : '계정 저장';
     renderAdminAccountMenuGrid(account.menus, account.editableMenus || account.menus);
     renderAdminAccountBaeminGrid(account.baeminPartnerIds || []);
+    renderAdminAccountCoupangGrid(account.coupangVendorIds || []);
     applyAdminAccountFormMode(state.adminAccountFormMode);
     applyAdminAccountEmailField();
     $('#adminAccountFormCard').hidden = false;
@@ -677,6 +761,7 @@
       }
     }
     await loadBaeminRegionCatalog();
+    await loadCoupangVendorCatalog();
     updateAdminAccountSectionAccess();
     applyAdminMenuPermissions();
     renderAdminAccountRows();
@@ -729,6 +814,22 @@
       });
     });
 
+    $('#adminAccountCoupangSelectAll')?.addEventListener('click', () => {
+      const grid = $('#adminAccountCoupangGrid');
+      grid?.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.checked = true;
+        input.closest('.admin-account-baemin-item')?.classList.add('is-active');
+      });
+    });
+
+    $('#adminAccountCoupangClearAll')?.addEventListener('click', () => {
+      const grid = $('#adminAccountCoupangGrid');
+      grid?.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.checked = false;
+        input.closest('.admin-account-baemin-item')?.classList.remove('is-active');
+      });
+    });
+
     $('#adminAccountForm')?.addEventListener('submit', async event => {
       event.preventDefault();
 
@@ -742,6 +843,7 @@
       const menus = getSelectedAdminAccountMenus();
       const editableMenus = getSelectedAdminAccountEditableMenus();
       const baeminPartnerIds = getSelectedAdminAccountBaeminPartnerIds();
+      const coupangVendorIds = getSelectedAdminAccountCoupangVendorIds();
       const status = $('#adminAccountStatus');
       const menuOnly = state.adminAccountFormMode === 'menu-only';
       const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
@@ -766,7 +868,7 @@
       let result;
       if (accountId) {
         if (menuOnly) {
-          result = await BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus, baeminPartnerIds }, { actor });
+          result = await BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus, baeminPartnerIds, coupangVendorIds }, { actor });
         } else {
           if (password && password.length < minPasswordLength) {
             const message = isProduction ? '비밀번호는 6자 이상 입력하세요.' : '비밀번호는 4자 이상 입력하세요.';
@@ -781,6 +883,7 @@
             menus,
             editableMenus,
             baeminPartnerIds,
+            coupangVendorIds,
             active
           }, { actor });
         }
@@ -805,6 +908,7 @@
           menus,
           editableMenus,
           baeminPartnerIds,
+          coupangVendorIds,
           active
         }, { actor });
       }

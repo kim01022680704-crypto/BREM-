@@ -1339,6 +1339,18 @@ app.get('/api/admin/coupang/config', async (req, res) => {
   }
 });
 
+app.get('/api/admin/coupang/vendor-regions', async (req, res) => {
+  try {
+    const result = await coupangAdmin.getVendorRegions(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message, message: result.message || result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '쿠팡 지역 목록 조회에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/coupang/items', async (req, res) => {
   try {
     const result = await coupangAdmin.getItems(getBearerToken(req), {
