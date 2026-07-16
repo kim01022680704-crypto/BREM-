@@ -240,6 +240,7 @@
 
   let cachedBaeminRegionItems = [];
   let cachedCoupangVendorItems = [];
+  let cachedCoupangVendorLoadError = '';
 
   function canEditBaeminPartnerScope() {
     const role = getSessionAdminRole();
@@ -278,8 +279,10 @@
 
   async function loadCoupangVendorCatalog() {
     const token = await BremStorage.resolveAdminAccessToken?.();
+    cachedCoupangVendorLoadError = '';
     if (!token) {
       cachedCoupangVendorItems = [];
+      cachedCoupangVendorLoadError = '로그인이 필요합니다.';
       return [];
     }
     try {
@@ -290,14 +293,19 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         cachedCoupangVendorItems = [];
+        cachedCoupangVendorLoadError = payload.message || payload.error || `매장 목록 조회 실패 (${response.status})`;
         return [];
       }
       cachedCoupangVendorItems = Array.isArray(payload.allItems)
         ? payload.allItems
         : (Array.isArray(payload.items) ? payload.items : []);
+      if (!cachedCoupangVendorItems.length) {
+        cachedCoupangVendorLoadError = '수집된 쿠팡 매장이 없습니다. 쿠팡 밴더현황에서 수집 후 다시 열어주세요.';
+      }
       return cachedCoupangVendorItems;
-    } catch {
+    } catch (e) {
       cachedCoupangVendorItems = [];
+      cachedCoupangVendorLoadError = e?.message || '매장 목록 조회 중 오류';
       return [];
     }
   }
@@ -347,12 +355,17 @@
     const panel = $('#adminAccountCoupangPanel');
     const grid = $('#adminAccountCoupangGrid');
     if (!panel || !grid) return;
-    if (!canEditCoupangVendorScope() || !cachedCoupangVendorItems.length) {
+    // 대표·총괄이면 매장 유무와 관계없이 패널 표시 (배민과 동일하게 항상 노출)
+    if (!canEditCoupangVendorScope()) {
       panel.hidden = true;
       grid.innerHTML = '';
       return;
     }
     panel.hidden = false;
+    if (!cachedCoupangVendorItems.length) {
+      grid.innerHTML = `<p class="form-help">${escapeHtml(cachedCoupangVendorLoadError || '수집된 쿠팡 매장이 없습니다. 쿠팡 밴더현황에서 수집 후 다시 열어주세요.')}</p>`;
+      return;
+    }
     const selected = new Set((selectedIds || []).map(id => String(id).trim()));
     grid.innerHTML = cachedCoupangVendorItems.map(item => {
       const id = String(item.vendorId || '').trim();
@@ -654,18 +667,19 @@
     applyAdminAccountEmailField();
   }
 
-  function openAdminAccountCreateForm() {
+  async function openAdminAccountCreateForm() {
     if (!canCreateAdminAccount()) {
       showToast('대표만 관리자 계정을 생성할 수 있습니다.');
       return;
     }
 
+    await Promise.all([loadBaeminRegionCatalog(), loadCoupangVendorCatalog()]);
     resetAdminAccountForm();
     $('#adminAccountFormCard').hidden = false;
     $('#adminAccountName').focus();
   }
 
-  function openAdminAccountEditForm(accountId) {
+  async function openAdminAccountEditForm(accountId) {
     const account = BremStorage.auth.getAdminAccountById(accountId);
     if (!account) {
       showToast('관리자 계정을 찾을 수 없습니다.');
@@ -676,6 +690,8 @@
       showToast('이 계정을 수정할 권한이 없습니다.');
       return;
     }
+
+    await Promise.all([loadBaeminRegionCatalog(), loadCoupangVendorCatalog()]);
 
     state.editingAdminAccountId = account.id;
     const menuOnly = !canFullyEditAdminAccount();

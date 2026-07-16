@@ -187,38 +187,38 @@ async function getLatestCollectDate(sourceMenu) {
   return data?.collect_date || null;
 }
 
-/** 계정 배정·스코프용: 최근 수집에서 매장(vendor) 목록 추출 */
+/** 계정 배정·스코프용: 수집 데이터에서 매장(vendor) 목록 추출 */
 async function listKnownVendors() {
   const supabase = getServiceClient();
   if (!supabase) return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.', items: [] };
 
   const map = new Map();
-  const menus = ['vendor_info', 'weekly_performance', 'peak_realtime'];
-  for (const menu of menus) {
-    const latest = await getLatestCollectDate(menu);
-    if (!latest) continue;
-    const { data, error } = await supabase
-      .from('coupang_collect_items')
-      .select('vendor_id, vendor_name')
-      .eq('source_menu', menu)
-      .eq('collect_date', latest)
-      .limit(5000);
-    if (error) {
-      if (isMissingTableError(error)) {
-        return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다.', items: [] };
-      }
-      continue;
+
+  // 최근 수집분에서 매장 추출 (최신일만 보면 빈 날이 있어 목록이 비는 경우 방지)
+  const { data, error } = await supabase
+    .from('coupang_collect_items')
+    .select('vendor_id, vendor_name, source_menu, collect_date')
+    .in('source_menu', ['vendor_info', 'weekly_performance', 'peak_realtime'])
+    .neq('vendor_id', '')
+    .order('collect_date', { ascending: false })
+    .limit(5000);
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      return { ok: false, tableMissing: true, message: 'coupang_collect_items 테이블이 없습니다.', items: [] };
     }
-    (data || []).forEach(row => {
-      const vendorId = String(row.vendor_id || '').trim();
-      if (!vendorId) return;
-      const vendorName = String(row.vendor_name || '').trim() || vendorId;
-      const prev = map.get(vendorId);
-      if (!prev || (vendorName && vendorName !== vendorId && (!prev.vendorName || prev.vendorName === vendorId))) {
-        map.set(vendorId, { vendorId, vendorName });
-      }
-    });
+    return { ok: false, error: error.message || '매장 목록 조회 실패', items: [] };
   }
+
+  (data || []).forEach(row => {
+    const vendorId = String(row.vendor_id || '').trim();
+    if (!vendorId) return;
+    const vendorName = String(row.vendor_name || '').trim() || vendorId;
+    const prev = map.get(vendorId);
+    if (!prev || (vendorName && vendorName !== vendorId && (!prev.vendorName || prev.vendorName === vendorId))) {
+      map.set(vendorId, { vendorId, vendorName });
+    }
+  });
 
   const items = [...map.values()].sort((a, b) =>
     String(a.vendorName).localeCompare(String(b.vendorName), 'ko')
