@@ -5403,7 +5403,7 @@
     }
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v2';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -5411,12 +5411,38 @@
   function saveDashboardCache(data) {
     try { localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
   }
+
+  function buildBaeminScopeKey() {
+    const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
+    const accountId = String(account?.id || 'anon');
+    const role = String(account?.role || '').toLowerCase();
+    if (role === 'ceo' || role === 'director') return `acct:${accountId}:manage`;
+    const ids = [...new Set((account?.baeminPartnerIds || [])
+      .map(id => String(id || '').trim().toUpperCase())
+      .filter(Boolean))]
+      .sort()
+      .join('|');
+    return `acct:${accountId}:p:${ids || 'none'}`;
+  }
+
   // 대시보드 열자마자 마지막 숫자를 즉시 표시(체감 즉각) → 뒤에서 최신값으로 조용히 갱신
+  // 계정·배정 지역이 다른 캐시는 절대 그리지 않음
   function paintDashboardCacheInstant() {
     const panelsEl = $('dashboardBaeminLivePanels');
-    if (!panelsEl || panelsEl.querySelector('table')) return; // 이미 표가 있으면 유지
+    if (!panelsEl) return;
     const cache = readDashboardCache();
-    if (!cache || !cache.panelsHtml) return;
+    const scopeKey = buildBaeminScopeKey();
+    if (!cache || !cache.panelsHtml || cache.scopeKey !== scopeKey) {
+      if (cache && cache.scopeKey && cache.scopeKey !== scopeKey) {
+        try { localStorage.removeItem(DASHBOARD_CACHE_KEY); } catch { /* ignore */ }
+      }
+      try { localStorage.removeItem('brem_dashboard_baemin_cache'); } catch { /* ignore */ }
+      if (!panelsEl.querySelector('table')) {
+        panelsEl.innerHTML = '<p class="form-help">배정 지역 불러오는 중…</p>';
+      }
+      return;
+    }
+    if (panelsEl.querySelector('table')) return; // 이미 표가 있으면 유지
     panelsEl.innerHTML = cache.panelsHtml;
     const summary = $('dashboardBaeminLiveSummary');
     if (summary && cache.summaryText) summary.textContent = `${cache.summaryText} · 최신 갱신 중…`;
@@ -5898,6 +5924,7 @@
       }
       // 다음 열람 때 즉시 표시할 수 있도록 마지막 결과 캐시
       saveDashboardCache({
+        scopeKey: buildBaeminScopeKey(),
         panelsHtml: nextHtml,
         summaryText,
         appliedHtml: appliedEl ? appliedEl.innerHTML : '',

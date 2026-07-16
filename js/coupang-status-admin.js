@@ -692,7 +692,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v4';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v5';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -705,13 +705,81 @@
     saveDashboardCache({ ...prev, ...patch, savedAt: Date.now() });
   }
 
-  // 대시보드 열자마자 마지막 숫자를 즉시 표시 → 뒤에서 최신값으로 조용히 갱신 (배민과 동일)
+  function getSessionAccount() {
+    return window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
+  }
+
+  /** 계정+배정 지역이 다르면 캐시 공유 금지 */
+  function buildCoupangScopeKey(options = {}) {
+    const account = getSessionAccount();
+    const accountId = String(options.accountId || account?.id || 'anon');
+    const role = String(options.role || account?.role || '').toLowerCase();
+    const canManage = options.canManageRegions === true
+      || role === 'ceo'
+      || role === 'director';
+    if (canManage) return `acct:${accountId}:manage`;
+    const rawIds = options.viewVendorIds != null
+      ? options.viewVendorIds
+      : (account?.coupangVendorIds || []);
+    const ids = [...new Set((rawIds || []).map(id => String(id || '').trim()).filter(Boolean))]
+      .sort()
+      .join('|');
+    return `acct:${accountId}:v:${ids || 'none'}`;
+  }
+
+  function isCacheAllowedForSession(cache) {
+    if (!cache || !cache.scopeKey || !cache.panelsHtml) return false;
+    const account = getSessionAccount();
+    const accountId = String(account?.id || 'anon');
+    if (!String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return false;
+    return cache.scopeKey === buildCoupangScopeKey();
+  }
+
+  function purgeLegacyCoupangCaches() {
+    [
+      'brem_dashboard_coupang_cache',
+      'brem_dashboard_coupang_cache_v2',
+      'brem_dashboard_coupang_cache_v3',
+      'brem_dashboard_coupang_cache_v4'
+    ].forEach(key => {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    });
+  }
+
+  function resetCoupangDashboardPlaceholders() {
+    const mount = $('dashboardCoupangCard');
+    if (mount) {
+      mount.innerHTML = '<p class="form-help">배정 지역 불러오는 중…</p>';
+    }
+    const summary = $('dashboardCoupangLiveSummary');
+    if (summary) summary.textContent = '배정 지역 조회 중…';
+    const weekRows = $('dashboardCoupangWeekRows');
+    if (weekRows) {
+      weekRows.innerHTML = '<tr><td colspan="8" class="form-help">조회 대기</td></tr>';
+    }
+    const weekSummary = $('dashboardCoupangWeekSummary');
+    if (weekSummary) weekSummary.textContent = '조회 대기';
+    const bar = $('dashboardCoupangWeekRegionBar');
+    if (bar) {
+      bar.hidden = true;
+      bar.innerHTML = '';
+    }
+  }
+
+  // 대시보드 열자마자: 이 계정·배정과 일치하는 캐시만 즉시 표시 (다른 지역 절대 노출 금지)
   function paintDashboardCacheInstant() {
+    purgeLegacyCoupangCaches();
     const cache = readDashboardCache();
-    if (!cache) return;
+    if (!isCacheAllowedForSession(cache)) {
+      if (cache && cache.scopeKey && cache.scopeKey !== buildCoupangScopeKey()) {
+        try { localStorage.removeItem(DASHBOARD_CACHE_KEY); } catch { /* ignore */ }
+      }
+      resetCoupangDashboardPlaceholders();
+      return false;
+    }
 
     const mount = $('dashboardCoupangCard');
-    if (mount && !mount.querySelector('table') && cache.panelsHtml) {
+    if (mount && cache.panelsHtml) {
       mount.innerHTML = cache.panelsHtml;
       const summary = $('dashboardCoupangLiveSummary');
       if (summary && cache.summaryText) summary.textContent = `${cache.summaryText} · 최신 갱신 중…`;
@@ -720,17 +788,14 @@
     }
 
     const weekRows = $('dashboardCoupangWeekRows');
-    if (
-      weekRows
-      && cache.weekRowsHtml
-      && !weekRows.querySelector('.dashboard-baemin-qcell')
-    ) {
+    if (weekRows && cache.weekRowsHtml) {
       weekRows.innerHTML = cache.weekRowsHtml;
       const weekSummary = $('dashboardCoupangWeekSummary');
       if (weekSummary && cache.weekSummaryText) {
         weekSummary.textContent = `${cache.weekSummaryText} · 최신 갱신 중…`;
       }
     }
+    return true;
   }
 
   function persistTodayCache() {
@@ -739,6 +804,7 @@
     const appliedEl = $('dashboardCoupangAppliedTime');
     if (!mount?.querySelector('table')) return;
     mergeDashboardCache({
+      scopeKey: buildCoupangScopeKey(),
       panelsHtml: mount.innerHTML,
       summaryText: summary ? String(summary.textContent || '').replace(/\s*·\s*최신 갱신 중…$/, '') : '',
       appliedHtml: appliedEl ? appliedEl.innerHTML : ''
@@ -750,6 +816,7 @@
     const weekSummary = $('dashboardCoupangWeekSummary');
     if (!weekRows?.querySelector('.dashboard-baemin-qcell')) return;
     mergeDashboardCache({
+      scopeKey: buildCoupangScopeKey(),
       weekRowsHtml: weekRows.innerHTML,
       weekSummaryText: weekSummary
         ? String(weekSummary.textContent || '').replace(/\s*·\s*최신 갱신 중…$/, '')
@@ -757,7 +824,7 @@
     });
   }
 
-  // 배민과 동일: 캐시 즉시 페인팅 → 백그라운드 조용히 재조회
+  // 캐시(배정 일치 시만) 즉시 페인팅 → 백그라운드 조용히 재조회
   function renderDashboardCard(options = {}) {
     bindDashboardCardOnce();
     paintDashboardCacheInstant();
