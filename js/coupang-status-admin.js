@@ -692,7 +692,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v5';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v6';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -709,7 +709,11 @@
     return window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
   }
 
-  /** 계정+배정 지역이 다르면 캐시 공유 금지 */
+  function currentAccountId() {
+    return String(getSessionAccount()?.id || '').trim();
+  }
+
+  /** 계정+배정 지역 키 (저장용). 조회 즉시표시는 accountId 일치면 충분 */
   function buildCoupangScopeKey(options = {}) {
     const account = getSessionAccount();
     const accountId = String(options.accountId || account?.id || 'anon');
@@ -727,12 +731,14 @@
     return `acct:${accountId}:v:${ids || 'none'}`;
   }
 
+  /** 같은 계정의 마지막 스냅샷이면 즉시 표시 (저장 시점에 이미 배정 필터됨) */
   function isCacheAllowedForSession(cache) {
-    if (!cache || !cache.scopeKey || !cache.panelsHtml) return false;
-    const account = getSessionAccount();
-    const accountId = String(account?.id || 'anon');
-    if (!String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return false;
-    return cache.scopeKey === buildCoupangScopeKey();
+    if (!cache || !cache.panelsHtml) return false;
+    const accountId = currentAccountId();
+    if (!accountId) return false;
+    if (cache.accountId && cache.accountId === accountId) return true;
+    if (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return true;
+    return false;
   }
 
   function purgeLegacyCoupangCaches() {
@@ -740,41 +746,27 @@
       'brem_dashboard_coupang_cache',
       'brem_dashboard_coupang_cache_v2',
       'brem_dashboard_coupang_cache_v3',
-      'brem_dashboard_coupang_cache_v4'
+      'brem_dashboard_coupang_cache_v4',
+      'brem_dashboard_coupang_cache_v5'
     ].forEach(key => {
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     });
   }
 
-  function resetCoupangDashboardPlaceholders() {
-    const mount = $('dashboardCoupangCard');
-    if (mount) {
-      mount.innerHTML = '<p class="form-help">배정 지역 불러오는 중…</p>';
-    }
-    const summary = $('dashboardCoupangLiveSummary');
-    if (summary) summary.textContent = '배정 지역 조회 중…';
-    const weekRows = $('dashboardCoupangWeekRows');
-    if (weekRows) {
-      weekRows.innerHTML = '<tr><td colspan="8" class="form-help">조회 대기</td></tr>';
-    }
-    const weekSummary = $('dashboardCoupangWeekSummary');
-    if (weekSummary) weekSummary.textContent = '조회 대기';
-    const bar = $('dashboardCoupangWeekRegionBar');
-    if (bar) {
-      bar.hidden = true;
-      bar.innerHTML = '';
-    }
-  }
-
-  // 대시보드 열자마자: 이 계정·배정과 일치하는 캐시만 즉시 표시 (다른 지역 절대 노출 금지)
+  // 로그인·대시보드 진입 즉시: 이 계정의 마지막 숫자부터 표시 → 뒤에서 조용히 갱신
   function paintDashboardCacheInstant() {
     purgeLegacyCoupangCaches();
     const cache = readDashboardCache();
     if (!isCacheAllowedForSession(cache)) {
-      if (cache && cache.scopeKey && cache.scopeKey !== buildCoupangScopeKey()) {
+      // 다른 계정 캐시만 제거. 같은 계정 스냅샷이 없으면 빈 안내만 (네트워크 올 때까지)
+      const accountId = currentAccountId();
+      if (cache?.accountId && accountId && cache.accountId !== accountId) {
         try { localStorage.removeItem(DASHBOARD_CACHE_KEY); } catch { /* ignore */ }
       }
-      resetCoupangDashboardPlaceholders();
+      const mount = $('dashboardCoupangCard');
+      if (mount && !mount.querySelector('table')) {
+        mount.innerHTML = '<p class="form-help">마지막 현황 불러오는 중…</p>';
+      }
       return false;
     }
 
@@ -803,7 +795,10 @@
     const summary = $('dashboardCoupangLiveSummary');
     const appliedEl = $('dashboardCoupangAppliedTime');
     if (!mount?.querySelector('table')) return;
+    const accountId = currentAccountId();
+    if (!accountId) return;
     mergeDashboardCache({
+      accountId,
       scopeKey: buildCoupangScopeKey(),
       panelsHtml: mount.innerHTML,
       summaryText: summary ? String(summary.textContent || '').replace(/\s*·\s*최신 갱신 중…$/, '') : '',
@@ -815,7 +810,10 @@
     const weekRows = $('dashboardCoupangWeekRows');
     const weekSummary = $('dashboardCoupangWeekSummary');
     if (!weekRows?.querySelector('.dashboard-baemin-qcell')) return;
+    const accountId = currentAccountId();
+    if (!accountId) return;
     mergeDashboardCache({
+      accountId,
       scopeKey: buildCoupangScopeKey(),
       weekRowsHtml: weekRows.innerHTML,
       weekSummaryText: weekSummary
@@ -824,7 +822,7 @@
     });
   }
 
-  // 캐시(배정 일치 시만) 즉시 페인팅 → 백그라운드 조용히 재조회
+  // 캐시 즉시 페인팅 → 백그라운드 조용히 재조회
   function renderDashboardCard(options = {}) {
     bindDashboardCardOnce();
     paintDashboardCacheInstant();

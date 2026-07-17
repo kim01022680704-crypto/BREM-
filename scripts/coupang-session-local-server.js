@@ -370,6 +370,50 @@ function waitLoop(ms) {
   });
 }
 
+/** 장시간 대기 시 세션 로그아웃 방지: 라이더 퍼포먼스 ↔ 피크 대시보드 왕복 */
+const KEEP_ALIVE_PAGES = [
+  `${ORIGIN}/page/rider-performance`,
+  `${ORIGIN}/page/peak-dashboard`
+];
+
+async function getActivePage() {
+  await ensureBrowser().catch(() => null);
+  if (!context) return null;
+  const pages = context.pages();
+  return pages[0] || (await context.newPage().catch(() => null));
+}
+
+async function keepAliveDuringWait(ms) {
+  const started = Date.now();
+  let hop = 0;
+  while (Date.now() - started < ms) {
+    if (!statusLoop.active || statusLoop.stopping) return;
+    const remaining = ms - (Date.now() - started);
+    if (remaining <= 500) break;
+
+    const url = KEEP_ALIVE_PAGES[hop % KEEP_ALIVE_PAGES.length];
+    const label = url.includes('rider-performance') ? '라이더퍼포먼스' : '피크대시보드';
+    statusLoop.phase = 'waiting';
+    statusLoop.message = `세션 유지 · ${label} 이동 후 대기 (${Math.ceil(remaining / 1000)}초)`;
+    statusLoop.updatedAt = nowKstIsoOffset();
+    hop += 1;
+
+    try {
+      const page = await getActivePage();
+      if (page) {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await persistToken('keepalive').catch(() => {});
+      }
+    } catch (e) {
+      statusLoop.lastError = e && e.message ? e.message : String(e);
+    }
+
+    // 두 페이지를 번갈아 가도록 대기 구간을 절반씩(최소 8초) 나눔
+    const slice = Math.max(8000, Math.min(Math.floor(ms / 2), remaining));
+    await waitLoop(slice);
+  }
+}
+
 async function runStatusAutoLoopInner() {
   while (statusLoop.active && !statusLoop.stopping) {
     statusLoop.round += 1;
@@ -390,9 +434,9 @@ async function runStatusAutoLoopInner() {
     if (!statusLoop.active || statusLoop.stopping) break;
     statusLoop.phase = 'waiting';
     statusLoop.waitEndsAt = Date.now() + STATUS_LOOP_WAIT_MS;
-    statusLoop.message = `다음 회차 대기 중… (${statusLoop.round}회차 완료)`;
+    statusLoop.message = `다음 회차 대기 · 세션 유지 페이지 왕복 (${statusLoop.round}회차 완료)`;
     statusLoop.updatedAt = nowKstIsoOffset();
-    await waitLoop(STATUS_LOOP_WAIT_MS);
+    await keepAliveDuringWait(STATUS_LOOP_WAIT_MS);
   }
   statusLoop.active = false;
   statusLoop.stopping = false;

@@ -5403,7 +5403,7 @@
     }
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v2';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v3';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -5425,24 +5425,37 @@
     return `acct:${accountId}:p:${ids || 'none'}`;
   }
 
-  // 대시보드 열자마자 마지막 숫자를 즉시 표시(체감 즉각) → 뒤에서 최신값으로 조용히 갱신
-  // 계정·배정 지역이 다른 캐시는 절대 그리지 않음
+  function currentBaeminAccountId() {
+    return String(window.BremStorage?.auth?.getAdminSessionAccount?.()?.id || '').trim();
+  }
+
+  // 로그인 직후: 같은 계정의 마지막 숫자 즉시 표시 → 뒤에서 최신 갱신
   function paintDashboardCacheInstant() {
     const panelsEl = $('dashboardBaeminLivePanels');
     if (!panelsEl) return;
+    try { localStorage.removeItem('brem_dashboard_baemin_cache'); } catch { /* ignore */ }
+    try { localStorage.removeItem('brem_dashboard_baemin_cache_v2'); } catch { /* ignore */ }
+
     const cache = readDashboardCache();
-    const scopeKey = buildBaeminScopeKey();
-    if (!cache || !cache.panelsHtml || cache.scopeKey !== scopeKey) {
-      if (cache && cache.scopeKey && cache.scopeKey !== scopeKey) {
+    const accountId = currentBaeminAccountId();
+    const sameAccount = Boolean(
+      cache?.panelsHtml
+      && accountId
+      && (
+        cache.accountId === accountId
+        || (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`))
+      )
+    );
+    if (!sameAccount) {
+      if (cache?.accountId && accountId && cache.accountId !== accountId) {
         try { localStorage.removeItem(DASHBOARD_CACHE_KEY); } catch { /* ignore */ }
       }
-      try { localStorage.removeItem('brem_dashboard_baemin_cache'); } catch { /* ignore */ }
       if (!panelsEl.querySelector('table')) {
-        panelsEl.innerHTML = '<p class="form-help">배정 지역 불러오는 중…</p>';
+        panelsEl.innerHTML = '<p class="form-help">마지막 현황 불러오는 중…</p>';
       }
       return;
     }
-    if (panelsEl.querySelector('table')) return; // 이미 표가 있으면 유지
+    if (panelsEl.querySelector('table')) return;
     panelsEl.innerHTML = cache.panelsHtml;
     const summary = $('dashboardBaeminLiveSummary');
     if (summary && cache.summaryText) summary.textContent = `${cache.summaryText} · 최신 갱신 중…`;
@@ -5924,6 +5937,7 @@
       }
       // 다음 열람 때 즉시 표시할 수 있도록 마지막 결과 캐시
       saveDashboardCache({
+        accountId: currentBaeminAccountId(),
         scopeKey: buildBaeminScopeKey(),
         panelsHtml: nextHtml,
         summaryText,
