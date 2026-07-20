@@ -92,16 +92,24 @@ const BremPromotionEngine = (function () {
 
   function getDriverSelector(driver, platform) {
     const p = normalizePlatform(platform);
+    const catalog = window.BremMissionPromotionCatalog;
+    if (catalog?.getDriverAssignment) {
+      const assigned = catalog.getDriverAssignment(driver);
+      const fromMission = p === 'baemin' ? assigned.baemin : assigned.coupang;
+      if (fromMission) return fromMission;
+    }
     if (p === 'baemin') {
       return String(
-        driver.promotionRuleIdBaemin
+        driver.selectedMissionIdBaemin
+        || driver.promotionRuleIdBaemin
         || driver.promotionSelectorBaemin
         || driver.selectedPromotionType
         || ''
       ).trim();
     }
     return String(
-      driver.promotionRuleIdCoupang
+      driver.selectedMissionIdCoupang
+      || driver.promotionRuleIdCoupang
       || driver.promotionSelectorCoupang
       || driver.selectedPromotionType
       || ''

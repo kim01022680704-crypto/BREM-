@@ -124,9 +124,18 @@ const BremPromotionApply = (function () {
       return null;
     }
 
-    const driverRuleId = p === 'baemin'
-      ? String(driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || driver?.selectedMissionIdBaemin || driver?.selectedMissionId || '').trim()
-      : String(driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || driver?.selectedMissionIdCoupang || driver?.selectedMissionId || '').trim();
+    const driverRuleId = (() => {
+      const catalog = window.BremMissionPromotionCatalog;
+      if (catalog?.getDriverAssignment) {
+        const assigned = catalog.getDriverAssignment(driver);
+        const fromMission = p === 'baemin' ? assigned.baemin : assigned.coupang;
+        if (fromMission) return fromMission;
+      }
+      // 미션관리와 동일: selectedMissionId* 우선 (레거시 promotionRuleId* 는 뒤)
+      return p === 'baemin'
+        ? String(driver?.selectedMissionIdBaemin || driver?.promotionRuleIdBaemin || driver?.promotionSelectorBaemin || driver?.selectedMissionId || '').trim()
+        : String(driver?.selectedMissionIdCoupang || driver?.promotionRuleIdCoupang || driver?.promotionSelectorCoupang || driver?.selectedMissionId || '').trim();
+    })();
 
     if (!driverRuleId) return null;
 
@@ -319,8 +328,8 @@ const BremPromotionApply = (function () {
 
     if (!rule || !rule.enabled || normalizePlatform(rule.platform) !== ruleP) {
       const assignedId = statsPlatform === 'baemin'
-        ? String(driver.promotionRuleIdBaemin || driver.selectedMissionIdBaemin || '').trim()
-        : String(driver.promotionRuleIdCoupang || driver.selectedMissionIdCoupang || '').trim();
+        ? String(driver.selectedMissionIdBaemin || driver.promotionRuleIdBaemin || '').trim()
+        : String(driver.selectedMissionIdCoupang || driver.promotionRuleIdCoupang || '').trim();
       const failureReasons = ruleMode === 'selected_rules'
         ? ['선택한 프로모션 조건을 찾을 수 없거나 비활성화되었습니다']
         : [assignedId
