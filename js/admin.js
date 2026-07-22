@@ -22,7 +22,6 @@
     missionResultsSort: { key: 'rate', dir: 'desc' },
     eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
-    settlementPayrollEligibleByPlatform: { coupang: null, baemin: null },
     baeminHourlyInsurancePreview: null,
     baeminHourlyInsuranceLogWeek: '',
     settlementLogWeekByPlatform: { coupang: null, baemin: null },
@@ -4991,12 +4990,6 @@
       return;
     }
 
-    const payrollChoice = state.settlementPayrollEligibleByPlatform[p];
-    if (payrollChoice !== true && payrollChoice !== false) {
-      showToast('급여 일정산 「반영 / 미반영」을 먼저 선택하세요.');
-      return;
-    }
-
     applySettlementDateFromFilename(file.name, p);
 
     uploadBtn.disabled = true;
@@ -5051,7 +5044,7 @@
         totalDeliveryAmount: result.totalDeliveryAmount || 0,
         matched: result.matched,
         unmatched: result.unmatched,
-        payrollDailyEligible: state.settlementPayrollEligibleByPlatform[p] === true
+        payrollDailyEligible: readSettlementPayrollDailyEligibleCheckbox(p)
       };
 
       const uploadLog = recordDailySettlementUploadLog(p, {
@@ -5127,50 +5120,27 @@
     ));
   }
 
-  function getSettlementPayrollChoice(platform) {
-    const p = normalizePlatform(platform);
-    const value = state.settlementPayrollEligibleByPlatform[p];
-    if (value === true || value === false) return value;
-    return null;
-  }
-
-  function syncSettlementPayrollChoiceButtons(platform) {
-    const p = normalizePlatform(platform);
-    const selected = getSettlementPayrollChoice(p);
-    document.querySelectorAll(`[data-settlement-payroll-choice="${p}"]`).forEach(button => {
-      const value = button.dataset.value === 'true';
-      const active = selected === value;
-      button.classList.toggle('is-active', active);
-      button.classList.toggle('primary-btn', active);
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-    syncSettlementPayrollPreviewBadge(p);
-  }
-
-  function setSettlementPayrollChoice(platform, eligible) {
-    const p = normalizePlatform(platform);
-    state.settlementPayrollEligibleByPlatform[p] = eligible === true;
-    const preview = state.settlementPreviewByPlatform[p];
-    if (preview) preview.payrollDailyEligible = state.settlementPayrollEligibleByPlatform[p];
-    syncSettlementPayrollChoiceButtons(p);
+  function readSettlementPayrollDailyEligibleCheckbox(platform) {
+    const el = $(`#settlementPayrollDailyEligible-${normalizePlatform(platform)}`);
+    return el ? el.checked === true : false;
   }
 
   function syncSettlementPayrollPreviewBadge(platform) {
     const p = normalizePlatform(platform);
     const badge = $(`#settlementPayrollPreviewBadge-${p}`);
     if (!badge) return;
-    const choice = getSettlementPayrollChoice(p);
-    if (choice === true) {
+    const preview = state.settlementPreviewByPlatform[p];
+    const eligible = preview
+      ? preview.payrollDailyEligible === true
+      : readSettlementPayrollDailyEligibleCheckbox(p);
+    if (eligible) {
       badge.textContent = '급여 일정산 반영';
       badge.classList.add('is-on');
       badge.classList.remove('is-off');
-    } else if (choice === false) {
+    } else {
       badge.textContent = '급여 일정산 미반영';
       badge.classList.add('is-off');
       badge.classList.remove('is-on');
-    } else {
-      badge.textContent = '급여반영 미선택';
-      badge.classList.remove('is-on', 'is-off');
     }
   }
 
@@ -5411,11 +5381,8 @@
     }
 
     try {
-      const payrollDailyEligible = getSettlementPayrollChoice(p) === true;
-      if (getSettlementPayrollChoice(p) !== true && getSettlementPayrollChoice(p) !== false) {
-        showToast('급여 일정산 「반영 / 미반영」을 먼저 선택하세요.');
-        return;
-      }
+      const payrollDailyEligible = preview.payrollDailyEligible === true
+        || readSettlementPayrollDailyEligibleCheckbox(p);
       const result = await applyDailySettlementFromLogData(p, {
         period: preview.period,
         matched: preview.matched,
@@ -6187,12 +6154,13 @@
       const p = normalizePlatform(platform);
       const formatLabel = $(`#settlementFormatLabel-${p}`);
       if (formatLabel) formatLabel.textContent = platformLabel(p);
-      syncSettlementPayrollChoiceButtons(p);
 
-      document.querySelectorAll(`[data-settlement-payroll-choice="${p}"]`).forEach(button => {
-        button.addEventListener('click', () => {
-          setSettlementPayrollChoice(p, button.dataset.value === 'true');
-        });
+      $(`#settlementPayrollDailyEligible-${p}`)?.addEventListener('change', () => {
+        const preview = state.settlementPreviewByPlatform[p];
+        if (preview) {
+          preview.payrollDailyEligible = readSettlementPayrollDailyEligibleCheckbox(p);
+          syncSettlementPayrollPreviewBadge(p);
+        }
       });
 
       $(`#settlementUploadForm-${p}`)?.addEventListener('submit', event => uploadSettlement(event, p));
