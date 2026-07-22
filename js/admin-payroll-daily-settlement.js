@@ -428,7 +428,7 @@
     const pendingRows = rows.filter(row => row.status === 'pending');
     const totalAmount = pendingRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     const showCallFee = rows.some(row => row.showCallFee !== false) && isCallFeeVisible();
-    const colSpan = showCallFee ? 18 : 17;
+    const colSpan = showCallFee ? 20 : 19;
     const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
     rows = rows.map(row => {
       const driver = driverMap.get(String(row.driverId || '')) || null;
@@ -447,6 +447,14 @@
       summary.textContent = `신청일 ${date || '-'} · ${rows.length}건 · 신청중 ${pendingRows.length}건 · 신청중 합계 ${formatWon(totalAmount)}`;
     }
 
+    const selectAll = $('payrollDailyWithdrawalSelectAll');
+    if (selectAll) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      selectAll.disabled = !pendingRows.length;
+    }
+    syncWithdrawalBulkCompleteBtn();
+
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">해당 날짜 출금신청이 없습니다.</td></tr>`;
       return;
@@ -458,6 +466,11 @@
       const rowShowCall = showCallFee && row.showCallFee !== false;
       return `
       <tr>
+        <td class="pds-wd-check-col">
+          ${canComplete
+            ? `<input type="checkbox" class="pds-wd-row-check" data-pds-wd-select="${escapeHtml(row.id)}" aria-label="선택">`
+            : ''}
+        </td>
         <td>${escapeHtml(row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-')}</td>
         <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
         <td>${escapeHtml(withdrawalPlatformLabel(row.platform))}</td>
@@ -474,6 +487,7 @@
         <td class="pds-net-col"><strong>${formatWon(row.netPay)}</strong></td>
         <td>${formatWon(row.availableAtRequest)}</td>
         <td><strong>${formatWon(row.amount)}</strong></td>
+        <td>${formatWon(row.feeAmount)}</td>
         <td>${escapeHtml(statusLabel(row.status))}</td>
         <td>
           ${canComplete ? `<button type="button" class="small-btn primary-btn" data-pds-wd-complete="${escapeHtml(row.id)}">출금완료</button>` : ''}
@@ -482,6 +496,45 @@
         </td>
       </tr>`;
     }).join('');
+  }
+
+  function getSelectedWithdrawalIds() {
+    return Array.from(document.querySelectorAll('#payrollDailyWithdrawalBody .pds-wd-row-check:checked'))
+      .map(el => String(el.dataset.pdsWdSelect || '').trim())
+      .filter(Boolean);
+  }
+
+  function syncWithdrawalSelectAllState() {
+    const selectAll = $('payrollDailyWithdrawalSelectAll');
+    const checks = Array.from(document.querySelectorAll('#payrollDailyWithdrawalBody .pds-wd-row-check'));
+    if (!selectAll) return;
+    if (!checks.length) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+      selectAll.disabled = true;
+      syncWithdrawalBulkCompleteBtn();
+      return;
+    }
+    selectAll.disabled = false;
+    const checkedCount = checks.filter(el => el.checked).length;
+    selectAll.checked = checkedCount === checks.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+    syncWithdrawalBulkCompleteBtn();
+  }
+
+  function syncWithdrawalBulkCompleteBtn() {
+    const btn = $('payrollDailyWithdrawalBulkCompleteBtn');
+    if (!btn) return;
+    const count = getSelectedWithdrawalIds().length;
+    btn.disabled = count === 0;
+    btn.textContent = count > 0 ? `선택 출금완료 (${count})` : '선택 출금완료';
+  }
+
+  function setAllWithdrawalChecks(checked) {
+    document.querySelectorAll('#payrollDailyWithdrawalBody .pds-wd-row-check').forEach(el => {
+      el.checked = checked === true;
+    });
+    syncWithdrawalSelectAllState();
   }
 
   async function renderWeekWithdrawals() {
@@ -657,6 +710,43 @@
     } catch (error) {
       console.error('[withdrawal complete]', error);
       showToast(error.message || '출금완료 처리에 실패했습니다.');
+    }
+  }
+
+  async function completeSelectedWithdrawalRequests() {
+    const ids = getSelectedWithdrawalIds();
+    if (!ids.length) {
+      showToast('출금완료할 신청을 선택하세요.');
+      return;
+    }
+    if (!window.confirm(`선택한 ${ids.length}건을 출금완료 처리할까요? 기사 앱에 처리완료로 표시됩니다.`)) return;
+
+    const btn = $('payrollDailyWithdrawalBulkCompleteBtn');
+    if (btn) btn.disabled = true;
+    let okCount = 0;
+    let failCount = 0;
+    const errors = [];
+
+    for (const id of ids) {
+      try {
+        const result = await BremStorage.payrollWithdrawal.completeRequest(id);
+        if (result?.ok === false) {
+          failCount += 1;
+          errors.push(result.error || result.message || id);
+        } else {
+          okCount += 1;
+        }
+      } catch (error) {
+        failCount += 1;
+        errors.push(error.message || String(id));
+      }
+    }
+
+    await renderWithdrawalRequests();
+    if (failCount === 0) {
+      showToast(`출금완료 ${okCount}건 처리했습니다.`);
+    } else {
+      showToast(`출금완료 ${okCount}건 성공 · ${failCount}건 실패${errors[0] ? ` · ${errors[0]}` : ''}`);
     }
   }
 
@@ -1424,6 +1514,12 @@
       void renderWithdrawalRequests();
     });
     $('payrollDailyWithdrawalExcelBtn')?.addEventListener('click', exportWithdrawalExcel);
+    $('payrollDailyWithdrawalBulkCompleteBtn')?.addEventListener('click', () => {
+      void completeSelectedWithdrawalRequests();
+    });
+    $('payrollDailyWithdrawalSelectAll')?.addEventListener('change', event => {
+      setAllWithdrawalChecks(event.target.checked === true);
+    });
     $('payrollDailyWithdrawalDate')?.addEventListener('change', () => {
       void renderWithdrawalRequests();
     });
@@ -1449,6 +1545,11 @@
       }
       const deleteBtn = event.target.closest('[data-pds-wd-delete]');
       if (deleteBtn) void deleteWithdrawalRequest(deleteBtn.dataset.pdsWdDelete);
+    });
+    $('payrollDailyWithdrawalBody')?.addEventListener('change', event => {
+      if (event.target.matches?.('.pds-wd-row-check')) {
+        syncWithdrawalSelectAllState();
+      }
     });
     $('payrollDailySettlementRegionNew')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') {

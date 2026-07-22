@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260723h">
+  <link rel="stylesheet" href="css/driver.css?v=20260723o">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -240,7 +240,7 @@
             <div class="driver-withdrawal-available">
               <span>출금가능금액</span>
               <strong id="driverWithdrawalAvailable">0원</strong>
-              <p class="form-help" id="driverWithdrawalAvailableHint">일정산 실지급액 합계 − 이미 신청한 금액</p>
+              <p class="form-help" id="driverWithdrawalAvailableHint">실지급 합계 − 출금신청 − 일출금수수료</p>
             </div>
 
             <form class="driver-withdrawal-form" id="driverWithdrawalForm">
@@ -259,6 +259,7 @@
                 <span>신청금액</span>
                 <input type="number" id="driverWithdrawalAmount" min="1" step="1" placeholder="출금할 금액" required>
               </label>
+              <p class="form-help" id="driverWithdrawalFeePreview">일출금수수료(출금시적용)는 신청금액 기준으로 차감됩니다.</p>
               <button type="submit" class="target-save-btn" id="driverWithdrawalSubmitBtn">출금 신청하기</button>
             </form>
 
@@ -716,7 +717,7 @@
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260701c"></script>
-  <script src="js/driver-withdrawal.js?v=20260723h"></script>
+  <script src="js/driver-withdrawal.js?v=20260723o"></script>
   <script src="js/driver.js?v=20260723b"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

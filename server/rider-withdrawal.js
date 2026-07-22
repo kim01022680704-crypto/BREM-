@@ -66,6 +66,21 @@ function resolveDailySettlementFee(settlementAmount, fees = {}) {
   return Math.max(0, Math.round(value));
 }
 
+/** 출금신청 금액 기준 일출금수수료 (출금시적용) */
+function resolveWithdrawalFee(amount, fees = {}) {
+  return resolveDailySettlementFee(amount, fees);
+}
+
+function requestConsumedAmount(item = {}, feesByPlatform = {}) {
+  const amount = Math.max(0, Math.round(Number(item.amount || 0)));
+  if (item.feeAmount != null) {
+    return amount + Math.max(0, Math.round(Number(item.feeAmount) || 0));
+  }
+  const platform = normalizePlatform(item.platform);
+  const fees = feesByPlatform[platform] || feesByPlatform.coupang || {};
+  return amount + resolveWithdrawalFee(amount, fees);
+}
+
 function normalizePlatform(value) {
   return String(value || '').toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
 }
@@ -125,12 +140,17 @@ function normalizeRequest(item = {}) {
   const createdAt = item.createdAt || new Date().toISOString();
   const requestDate = String(item.requestDate || createdAt).slice(0, 10);
   const platform = normalizeRequestPlatform(item.platform);
+  const hasFeeAmount = Object.prototype.hasOwnProperty.call(item, 'feeAmount')
+    && item.feeAmount !== null
+    && item.feeAmount !== undefined
+    && item.feeAmount !== '';
   return {
     id: String(item.id || `wd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
     driverId: String(item.driverId),
     driverName: String(item.driverName || '').trim(),
     platform,
     amount,
+    feeAmount: hasFeeAmount ? Math.max(0, Math.round(Number(item.feeAmount) || 0)) : null,
     weekStart,
     weekEnd: settlementWeekEnd(weekStart),
     requestDate,
@@ -185,9 +205,16 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const myWeekRequests = allRequests.filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
   ));
-  const requestedTotal = myWeekRequests
-    .filter(item => item.status === 'pending')
-    .reduce((sum, item) => sum + item.amount, 0);
+  const pendingRequests = myWeekRequests.filter(item => item.status === 'pending');
+  const requestedAmountTotal = pendingRequests.reduce((sum, item) => sum + item.amount, 0);
+  const requestedFeeTotal = pendingRequests.reduce((sum, item) => {
+    const consumed = requestConsumedAmount(item, feesByPlatform);
+    return sum + Math.max(0, consumed - item.amount);
+  }, 0);
+  const requestedTotal = pendingRequests.reduce(
+    (sum, item) => sum + requestConsumedAmount(item, feesByPlatform),
+    0
+  );
 
   const enrolledPlatforms = {
     coupang: isPlatformEnrolled(rosterItem, 'coupang'),
@@ -206,9 +233,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       totalNetPay: 0,
       netPayByPlatform: { coupang: 0, baemin: 0 },
       requestedTotal,
+      requestedAmountTotal,
+      requestedFeeTotal,
       availableAmount: 0,
       enrolledPlatforms: { coupang: false, baemin: false },
       showCallFee: feesByPlatform.showCallFee !== false,
+      feesByPlatform: {
+        coupang: feesByPlatform.coupang,
+        baemin: feesByPlatform.baemin
+      },
       myRequests: myWeekRequests
     };
   }
@@ -253,9 +286,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     totalNetPay,
     netPayByPlatform,
     requestedTotal,
+    requestedAmountTotal,
+    requestedFeeTotal,
     availableAmount,
     enrolledPlatforms,
     showCallFee: feesByPlatform.showCallFee !== false,
+    feesByPlatform: {
+      coupang: feesByPlatform.coupang,
+      baemin: feesByPlatform.baemin
+    },
     myRequests: myWeekRequests
   };
 }
@@ -301,11 +340,21 @@ async function createWithdrawalRequest(accessToken, body = {}) {
       error: `${platform === 'baemin' ? '배민' : '쿠팡'} 일정산 등록이 되어 있지 않습니다.`
     };
   }
-  if (amount > summary.availableAmount) {
+
+  const feesByPlatform = normalizeFees(
+    await readSettingValue(supabase, FEES_KEY, {})
+  );
+  const platformFees = feesByPlatform[platform] || feesByPlatform.coupang || {};
+  const feeAmount = resolveWithdrawalFee(amount, platformFees);
+  const consumeAmount = amount + feeAmount;
+
+  if (consumeAmount > summary.availableAmount) {
     return {
       ok: false,
       status: 400,
-      error: `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
+      error: feeAmount > 0
+        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일출금수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다.`
+        : `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
     };
   }
 
@@ -314,6 +363,7 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     driverName: summary.driverName,
     platform,
     amount,
+    feeAmount,
     weekStart: summary.weekStart,
     requestDate: new Date().toISOString().slice(0, 10),
     availableAtRequest: summary.availableAmount,
@@ -326,13 +376,16 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   existing.unshift(request);
   await writeSettingValue(supabase, REQUESTS_KEY, existing);
 
-  const nextAvailable = Math.max(0, summary.availableAmount - amount);
+  const nextAvailable = Math.max(0, summary.availableAmount - consumeAmount);
   return {
     ok: true,
     request,
     availableAmount: nextAvailable,
     totalNetPay: summary.totalNetPay,
-    requestedTotal: summary.requestedTotal + amount,
+    requestedTotal: summary.requestedTotal + consumeAmount,
+    requestedAmountTotal: (summary.requestedAmountTotal || 0) + amount,
+    requestedFeeTotal: (summary.requestedFeeTotal || 0) + feeAmount,
+    feeAmount,
     weekStart: summary.weekStart,
     weekEnd: summary.weekEnd
   };

@@ -471,6 +471,7 @@
       '실지급액',
       '출금가능(신청시)',
       '신청금액',
+      '일출금수수료',
       '상태'
     ];
     const statusText = status => {
@@ -510,6 +511,7 @@
           Number(item.netPay) || 0,
           Number(item.availableAtRequest) || 0,
           Number(item.amount) || 0,
+          Number(item.feeAmount) || 0,
           statusText(item.status)
         );
         return row;

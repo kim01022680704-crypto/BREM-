@@ -27,6 +27,7 @@
     visible: false,
     availableAmount: 0,
     enrolledPlatforms: { coupang: false, baemin: false },
+    feesByPlatform: { coupang: null, baemin: null },
     requestSeq: 0
   };
 
@@ -102,6 +103,45 @@
     return checked ? String(checked.value || '') : '';
   }
 
+  function resolveWithdrawalFee(amount, fees = {}) {
+    const value = Math.max(0, Number(amount || 0));
+    const mode = String(fees?.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
+      ? 'percent'
+      : 'fixed';
+    const fee = Math.max(0, Number(fees?.dailySettlementFee || 0));
+    if (mode === 'percent') return Math.floor(value * (fee / 100));
+    return Math.max(0, Math.round(fee));
+  }
+
+  function estimateFeeForAmount(amount) {
+    const platform = selectedPlatform() || 'coupang';
+    const fees = state.feesByPlatform?.[platform] || state.feesByPlatform?.coupang || {};
+    return resolveWithdrawalFee(amount, fees);
+  }
+
+  function maxWithdrawableAmount() {
+    const available = Math.max(0, Number(state.availableAmount || 0));
+    const platform = selectedPlatform() || 'coupang';
+    const fees = state.feesByPlatform?.[platform] || state.feesByPlatform?.coupang || {};
+    const mode = String(fees?.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
+      ? 'percent'
+      : 'fixed';
+    const fee = Math.max(0, Number(fees?.dailySettlementFee || 0));
+    if (mode === 'percent') {
+      if (fee <= 0) return available;
+      // amount + floor(amount * fee/100) <= available
+      let lo = 0;
+      let hi = available;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi + 1) / 2);
+        if (mid + resolveWithdrawalFee(mid, fees) <= available) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo;
+    }
+    return Math.max(0, available - Math.round(fee));
+  }
+
   function syncPlatformOptions(enrolled = {}) {
     const hasFlags = enrolled.coupang !== undefined || enrolled.baemin !== undefined;
     state.enrolledPlatforms = hasFlags
@@ -137,24 +177,46 @@
 
   function renderSummary(payload) {
     state.availableAmount = Math.max(0, Number(payload.availableAmount || 0));
+    state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
     if (availableEl) availableEl.textContent = formatMoney(state.availableAmount);
     const by = payload.netPayByPlatform || {};
     const coupangNet = Math.max(0, Number(by.coupang || 0));
     const baeminNet = Math.max(0, Number(by.baemin || 0));
+    const requestedAmount = Math.max(0, Number(payload.requestedAmountTotal || 0));
+    const requestedFee = Math.max(0, Number(payload.requestedFeeTotal || 0));
     if (hintEl) {
       if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
+      } else if (requestedFee > 0) {
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
       } else {
-        hintEl.textContent = `전체 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(payload.requestedTotal)} · 쿠팡실지급 ${formatMoney(coupangNet)} / 배민실지급 ${formatMoney(baeminNet)}`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청(출금+일출금수수료) ${formatMoney(payload.requestedTotal)} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
       }
     }
+    const maxAmount = maxWithdrawableAmount();
     if (amountInput) {
-      amountInput.max = String(state.availableAmount || 0);
-      if (Number(amountInput.value || 0) > state.availableAmount) {
-        amountInput.value = state.availableAmount > 0 ? String(state.availableAmount) : '';
+      amountInput.max = String(maxAmount || 0);
+      if (Number(amountInput.value || 0) > maxAmount) {
+        amountInput.value = maxAmount > 0 ? String(maxAmount) : '';
       }
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
+    updateFeePreview();
+  }
+
+  function updateFeePreview() {
+    const preview = document.getElementById('driverWithdrawalFeePreview');
+    if (!preview) return;
+    const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
+    if (!amount) {
+      preview.textContent = '일출금수수료(출금시적용)는 신청금액 기준으로 차감됩니다.';
+      return;
+    }
+    const fee = estimateFeeForAmount(amount);
+    const consume = amount + fee;
+    preview.textContent = fee > 0
+      ? `예상 차감: 출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (가능 ${formatMoney(state.availableAmount)})`
+      : `예상 차감: ${formatMoney(amount)} (일출금수수료 없음)`;
   }
 
   function renderDays(days, showCallFee = true) {
@@ -204,6 +266,9 @@
           ${badge}
         </span>
         <strong>${formatMoney(item.amount)}</strong>
+        ${Number(item.feeAmount || 0) > 0
+          ? `<em class="driver-withdrawal-request__fee">일출금수수료 ${formatMoney(item.feeAmount)}</em>`
+          : ''}
       </li>`;
     }).join('');
   }
@@ -295,8 +360,12 @@
       showToast('신청금액을 입력하세요.');
       return;
     }
-    if (amount > state.availableAmount) {
-      showToast(`출금가능금액(${formatMoney(state.availableAmount)})을 초과할 수 없습니다.`);
+    const feeAmount = estimateFeeForAmount(amount);
+    const consume = amount + feeAmount;
+    if (consume > state.availableAmount) {
+      showToast(feeAmount > 0
+        ? `출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(feeAmount)}가 출금가능금액(${formatMoney(state.availableAmount)})을 초과합니다.`
+        : `출금가능금액(${formatMoney(state.availableAmount)})을 초과할 수 없습니다.`);
       return;
     }
     void (async () => {
@@ -311,11 +380,18 @@
         showToast(result?.message || '출금신청에 실패했습니다.');
         return;
       }
-      showToast(`출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)}`);
+      const appliedFee = Math.max(0, Number(result.feeAmount ?? feeAmount));
+      showToast(appliedFee > 0
+        ? `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)} (일출금수수료 ${formatMoney(appliedFee)})`
+        : `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)}`);
       if (amountInput) amountInput.value = '';
       await loadWithdrawal();
     })();
   });
+
+  amountInput?.addEventListener('input', updateFeePreview);
+  platformCoupang?.addEventListener('change', updateFeePreview);
+  platformBaemin?.addEventListener('change', updateFeePreview);
 
   window.BremDriverWithdrawal = {
     open: openPanel,

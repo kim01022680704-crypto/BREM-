@@ -615,6 +615,13 @@ h3 {
   color: #082f49;
 }
 
+.driver-withdrawal-request__fee {
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 700;
+  color: #0369a1;
+}
+
 .driver-withdrawal-request__meta {
   display: flex;
   flex-wrap: wrap;

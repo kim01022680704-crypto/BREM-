@@ -9390,6 +9390,27 @@ textarea {
   border-style: dashed;
 }
 
+.pds-wd-check-col {
+  width: 2.5rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.pds-wd-check-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  cursor: pointer;
+}
+
+.pds-wd-check-col input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
 .pds-net-col {
   border-left: 2px solid #f59e0b !important;
   background: #fff7ed !important;
