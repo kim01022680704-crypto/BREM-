@@ -2424,26 +2424,77 @@ textarea {
   flex-wrap: wrap;
 }
 
-.settlement-payroll-eligible-check {
+.settlement-payroll-choice {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.settlement-payroll-choice__label {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #1d4ed8;
+}
+
+.settlement-payroll-choice__btns {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.settlement-payroll-choice__btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settlement-payroll-choice__btn.is-active,
+.settlement-payroll-choice__btn.primary-btn {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.settlement-payroll-choice__btn[data-value="false"].is-active {
+  border-color: #64748b;
+  background: #64748b;
+}
+
+.settlement-payroll-choice__hint {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.settlement-payroll-preview-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
   min-height: 36px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(37, 99, 235, 0.35);
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
   font-size: 0.86rem;
   font-weight: 800;
-  cursor: pointer;
-  user-select: none;
 }
 
-.settlement-payroll-eligible-check input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: #2563eb;
+.settlement-payroll-preview-badge.is-on {
+  border-color: rgba(22, 163, 74, 0.4);
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
+}
+
+.settlement-payroll-preview-badge.is-off {
+  border-color: rgba(100, 116, 139, 0.4);
+  background: rgba(100, 116, 139, 0.1);
+  color: #475569;
 }
 
 .settlement-unmatched-card .card-header {

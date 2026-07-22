@@ -22,6 +22,7 @@
     missionResultsSort: { key: 'rate', dir: 'desc' },
     eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
+    settlementPayrollEligibleByPlatform: { coupang: null, baemin: null },
     baeminHourlyInsurancePreview: null,
     baeminHourlyInsuranceLogWeek: '',
     settlementLogWeekByPlatform: { coupang: null, baemin: null },
@@ -3876,18 +3877,13 @@
 
     rowsEl.innerHTML = rows.map(item => {
       const payrollEligible = settlementUploadLogPayrollEligible(item);
-      const canTogglePayroll = canReapplySettlementUploadLog(item);
       return `
       <tr>
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${formatDate(item.period)}</td>
         <td>${escapeHtml(item.fileName || '-')}</td>
         <td>${escapeHtml(settlementUploadLogStatusLabel(item.status))}</td>
-        <td>
-          ${canTogglePayroll
-            ? `<button type="button" class="small-btn ${payrollEligible ? 'primary-btn' : ''}" data-toggle-settlement-payroll-eligible="${escapeHtml(item.id)}" aria-pressed="${payrollEligible ? 'true' : 'false'}">${payrollEligible ? 'ON' : 'OFF'}</button>`
-            : escapeHtml(payrollEligible ? 'ON' : 'OFF')}
-        </td>
+        <td><strong class="${payrollEligible ? 'text-success' : ''}">${payrollEligible ? '반영' : '미반영'}</strong></td>
         <td>${Number(item.matchedCount || 0).toLocaleString('ko-KR')}명</td>
         <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
         <td class="settlement-upload-log-actions">
@@ -4027,6 +4023,7 @@
     $(`#settlementPreviewPeriod-${p}`).textContent = preview.period
       ? formatDate(preview.period.length >= 10 ? preview.period.slice(0, 10) : preview.period)
       : '-';
+    syncSettlementPayrollPreviewBadge(p);
 
     if (isBaemin) {
       $(`#settlementTotalDeliveries-${p}`).textContent = String(preview.totalDeliveries || 0);
@@ -4471,7 +4468,6 @@
   function clearSettlementPreview(platform) {
     const p = normalizePlatform(platform);
     state.settlementPreviewByPlatform[p] = null;
-    setSettlementPayrollDailyEligibleCheckbox(p, false);
     renderSettlementPreview(p);
   }
 
@@ -4995,6 +4991,12 @@
       return;
     }
 
+    const payrollChoice = state.settlementPayrollEligibleByPlatform[p];
+    if (payrollChoice !== true && payrollChoice !== false) {
+      showToast('급여 일정산 「반영 / 미반영」을 먼저 선택하세요.');
+      return;
+    }
+
     applySettlementDateFromFilename(file.name, p);
 
     uploadBtn.disabled = true;
@@ -5048,9 +5050,9 @@
         totalRiders: result.totalRiders || result.totalRows,
         totalDeliveryAmount: result.totalDeliveryAmount || 0,
         matched: result.matched,
-        unmatched: result.unmatched
+        unmatched: result.unmatched,
+        payrollDailyEligible: state.settlementPayrollEligibleByPlatform[p] === true
       };
-      setSettlementPayrollDailyEligibleCheckbox(p, false);
 
       const uploadLog = recordDailySettlementUploadLog(p, {
         fileName: file.name,
@@ -5125,45 +5127,50 @@
     ));
   }
 
-  function readSettlementPayrollDailyEligibleCheckbox(platform) {
-    const el = $(`#settlementPayrollDailyEligible-${normalizePlatform(platform)}`);
-    return el ? el.checked === true : false;
+  function getSettlementPayrollChoice(platform) {
+    const p = normalizePlatform(platform);
+    const value = state.settlementPayrollEligibleByPlatform[p];
+    if (value === true || value === false) return value;
+    return null;
   }
 
-  function setSettlementPayrollDailyEligibleCheckbox(platform, checked) {
-    const el = $(`#settlementPayrollDailyEligible-${normalizePlatform(platform)}`);
-    if (el) el.checked = checked === true;
+  function syncSettlementPayrollChoiceButtons(platform) {
+    const p = normalizePlatform(platform);
+    const selected = getSettlementPayrollChoice(p);
+    document.querySelectorAll(`[data-settlement-payroll-choice="${p}"]`).forEach(button => {
+      const value = button.dataset.value === 'true';
+      const active = selected === value;
+      button.classList.toggle('is-active', active);
+      button.classList.toggle('primary-btn', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    syncSettlementPayrollPreviewBadge(p);
   }
 
-  async function toggleSettlementUploadLogPayrollEligible(logId) {
-    const log = BremStorage.settlementUploadLogs.getById(logId);
-    if (!log || log.kind !== 'daily') {
-      showToast('업로드 기록을 찾을 수 없습니다.');
-      return;
-    }
-    const records = settlementUploadLogApplicableRecords(log);
-    if (!records.length) {
-      showToast('매칭된 기사가 없습니다.');
-      return;
-    }
-    const nextEligible = !settlementUploadLogPayrollEligible(log);
-    try {
-      await BremStorage.ensureSectionLoaded?.('settlements');
-      await BremStorage.ensureSectionLoaded?.('payroll-daily-settlement');
-      BremStorage.payrollDailySettlement.setPayrollDailyEligibleForRecords({
-        period: log.period,
-        platform: log.platform,
-        records,
-        eligible: nextEligible
-      });
-      await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
-      renderSettlementUploadLogs(normalizePlatform(log.platform));
-      showToast(nextEligible
-        ? `일정산 가능 ON · 매칭 ${records.length}명 급여 일정산 반영`
-        : `일정산 가능 OFF · 매칭 ${records.length}명 급여 일정산 제외`);
-    } catch (error) {
-      console.error('[BREM] settlement payroll eligible toggle failed:', error);
-      showToast(error.message || '일정산 가능 변경에 실패했습니다.');
+  function setSettlementPayrollChoice(platform, eligible) {
+    const p = normalizePlatform(platform);
+    state.settlementPayrollEligibleByPlatform[p] = eligible === true;
+    const preview = state.settlementPreviewByPlatform[p];
+    if (preview) preview.payrollDailyEligible = state.settlementPayrollEligibleByPlatform[p];
+    syncSettlementPayrollChoiceButtons(p);
+  }
+
+  function syncSettlementPayrollPreviewBadge(platform) {
+    const p = normalizePlatform(platform);
+    const badge = $(`#settlementPayrollPreviewBadge-${p}`);
+    if (!badge) return;
+    const choice = getSettlementPayrollChoice(p);
+    if (choice === true) {
+      badge.textContent = '급여 일정산 반영';
+      badge.classList.add('is-on');
+      badge.classList.remove('is-off');
+    } else if (choice === false) {
+      badge.textContent = '급여 일정산 미반영';
+      badge.classList.add('is-off');
+      badge.classList.remove('is-on');
+    } else {
+      badge.textContent = '급여반영 미선택';
+      badge.classList.remove('is-on', 'is-off');
     }
   }
 
@@ -5404,7 +5411,11 @@
     }
 
     try {
-      const payrollDailyEligible = readSettlementPayrollDailyEligibleCheckbox(p);
+      const payrollDailyEligible = getSettlementPayrollChoice(p) === true;
+      if (getSettlementPayrollChoice(p) !== true && getSettlementPayrollChoice(p) !== false) {
+        showToast('급여 일정산 「반영 / 미반영」을 먼저 선택하세요.');
+        return;
+      }
       const result = await applyDailySettlementFromLogData(p, {
         period: preview.period,
         matched: preview.matched,
@@ -6176,6 +6187,13 @@
       const p = normalizePlatform(platform);
       const formatLabel = $(`#settlementFormatLabel-${p}`);
       if (formatLabel) formatLabel.textContent = platformLabel(p);
+      syncSettlementPayrollChoiceButtons(p);
+
+      document.querySelectorAll(`[data-settlement-payroll-choice="${p}"]`).forEach(button => {
+        button.addEventListener('click', () => {
+          setSettlementPayrollChoice(p, button.dataset.value === 'true');
+        });
+      });
 
       $(`#settlementUploadForm-${p}`)?.addEventListener('submit', event => uploadSettlement(event, p));
       $(`#settlementApplyBtn-${p}`)?.addEventListener('click', () => applySettlementPreview(p));
@@ -6719,13 +6737,6 @@
             renderSettlements();
           }
         })();
-        return;
-      }
-
-      const settlementPayrollEligibleToggle = event.target.closest('[data-toggle-settlement-payroll-eligible]');
-      if (settlementPayrollEligibleToggle) {
-        const logId = settlementPayrollEligibleToggle.dataset.toggleSettlementPayrollEligible;
-        void toggleSettlementUploadLogPayrollEligible(logId);
         return;
       }
 
