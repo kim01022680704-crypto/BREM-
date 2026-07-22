@@ -9033,7 +9033,8 @@ const BremStorage = (function () {
       orderCount: Number(record.orderCount ?? record.callCount ?? 0),
       hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
       deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
-      settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0)
+      settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
+      reason: String(record.reason || '')
     };
   }
 
@@ -9059,10 +9060,17 @@ const BremStorage = (function () {
     return `s${(hash >>> 0).toString(36)}`;
   }
 
+  function normalizeSettlementUploadKind(kind) {
+    const value = String(kind || '').trim();
+    if (value === 'weekly') return 'weekly';
+    if (value === 'hourly_insurance') return 'hourly_insurance';
+    return 'daily';
+  }
+
   function normalizeSettlementUploadLog(entry = {}) {
     const period = String(entry.period || entry.startDate || '').slice(0, 10);
     const weekStart = String(entry.weekStart || (period ? weekStartKeyFromDate(period) : '')).slice(0, 10);
-    const kind = entry.kind === 'weekly' ? 'weekly' : 'daily';
+    const kind = normalizeSettlementUploadKind(entry.kind);
     const matchedRecords = Array.isArray(entry.matchedRecords)
       ? entry.matchedRecords.map(normalizeSettlementUploadApplyRecord)
       : [];
@@ -9076,6 +9084,14 @@ const BremStorage = (function () {
       entry.totalOrderCount
       || appliedRecords.reduce((sum, row) => sum + row.orderCount, 0)
       || matchedRecords.reduce((sum, row) => sum + row.orderCount, 0)
+    );
+    const totalDeliveryAmount = Number(
+      entry.totalDeliveryAmount
+      || entry.totalHourlyInsurance
+      || (kind === 'hourly_insurance'
+        ? (appliedRecords.length ? appliedRecords : matchedRecords)
+          .reduce((sum, row) => sum + Number(row.hourlyInsurance || 0), 0)
+        : 0)
     );
     return {
       id: String(entry.id || createId()),
@@ -9091,7 +9107,8 @@ const BremStorage = (function () {
       status: String(entry.status || 'uploaded'),
       matchedCount: Number(entry.matchedCount || matchedRecords.length || 0),
       unmatchedCount: Number(entry.unmatchedCount ?? unmatchedRecords.length ?? 0),
-      totalDeliveryAmount: Number(entry.totalDeliveryAmount || 0),
+      totalDeliveryAmount,
+      totalHourlyInsurance: kind === 'hourly_insurance' ? totalDeliveryAmount : Number(entry.totalHourlyInsurance || 0),
       totalOrderCount,
       contentHash: String(entry.contentHash || ''),
       matchedRecords,
@@ -9161,7 +9178,11 @@ const BremStorage = (function () {
       const target = settlementUploadLogs.getById(id);
       const rollback = options.rollback !== false;
       if (rollback && target) {
-        void settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
+        if (target.kind === 'hourly_insurance') {
+          void settlementUploadLogs.rollbackAppliedHourlyInsuranceLogAsync(target);
+        } else {
+          void settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
+        }
       }
       settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
       return target || null;
@@ -9170,9 +9191,13 @@ const BremStorage = (function () {
     async removeAsync(id, options = {}) {
       const target = settlementUploadLogs.getById(id);
       const rollback = options.rollback !== false;
-      let rollbackResult = { rolledBackSettlements: 0, rolledBackCalls: 0 };
+      let rollbackResult = { rolledBackSettlements: 0, rolledBackCalls: 0, rolledBackHourly: 0 };
       if (rollback && target) {
-        rollbackResult = await settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
+        if (target.kind === 'hourly_insurance') {
+          rollbackResult = await settlementUploadLogs.rollbackAppliedHourlyInsuranceLogAsync(target);
+        } else {
+          rollbackResult = await settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
+        }
       }
       const nextList = settlementUploadLogs.getAll().filter(item => item.id !== id);
       await settlementUploadLogs.persistList(nextList, { allowEmpty: true, deletedRowIds: [id] });
@@ -9323,6 +9348,82 @@ const BremStorage = (function () {
       }
       settlementUploadLogs.rollbackAppliedDailyLogAsync(log);
       return { rolledBack: 0 };
+    },
+
+    async rollbackAppliedHourlyInsuranceLogAsync(log) {
+      if (!log || log.kind !== 'hourly_insurance' || log.status !== 'applied') {
+        return { rolledBackHourly: 0 };
+      }
+      const p = normalizePlatform(log.platform);
+      const periodKey = String(log.period || log.startDate || '').slice(0, 10);
+      if (!periodKey) return { rolledBackHourly: 0 };
+
+      const logAppliedAt = String(log.appliedAt || log.uploadedAt || '');
+      const hasNewerAppliedLog = settlementUploadLogs.getAll().some(item => (
+        item.id !== log.id
+        && item.kind === 'hourly_insurance'
+        && normalizePlatform(item.platform) === p
+        && String(item.period).slice(0, 10) === periodKey
+        && item.status === 'applied'
+        && String(item.appliedAt || item.uploadedAt || '') > logAppliedAt
+      ));
+      if (hasNewerAppliedLog) return { rolledBackHourly: 0 };
+
+      const appliedRecords = (
+        Array.isArray(log.appliedRecords) && log.appliedRecords.length
+          ? log.appliedRecords
+          : log.matchedRecords
+      ) || [];
+      const records = appliedRecords
+        .filter(row => String(row.driverId || '').trim())
+        .map(row => ({
+          driverId: String(row.driverId || '').trim(),
+          riderId: String(row.riderId || ''),
+          hourlyInsurance: 0
+        }));
+      if (!records.length) return { rolledBackHourly: 0 };
+
+      settlements.upsertHourlyInsuranceBatch({
+        period: periodKey,
+        platform: p,
+        records
+      });
+      return { rolledBackHourly: records.length };
+    },
+
+    async removeHourlyInsuranceByWeekAsync(weekStart, platform = DEFAULT_PLATFORM, options = {}) {
+      const p = normalizePlatform(platform);
+      const weekKey = String(weekStart || '').slice(0, 10);
+      if (!weekKey) return { removed: 0, appliedCount: 0, rolledBackHourly: 0 };
+
+      const targets = settlementUploadLogs.getFiltered({
+        kind: 'hourly_insurance',
+        platform: p,
+        weekStart: weekKey
+      });
+      if (!targets.length) return { removed: 0, appliedCount: 0, rolledBackHourly: 0 };
+
+      const rollback = options.rollback !== false;
+      let appliedCount = 0;
+      let rolledBackHourly = 0;
+      const deletedIds = [];
+
+      for (const log of targets) {
+        if (rollback && log.status === 'applied') {
+          appliedCount += 1;
+          const result = await settlementUploadLogs.rollbackAppliedHourlyInsuranceLogAsync(log);
+          rolledBackHourly += Number(result.rolledBackHourly || 0);
+        }
+        deletedIds.push(log.id);
+      }
+
+      const nextList = settlementUploadLogs.getAll().filter(item => !deletedIds.includes(item.id));
+      await settlementUploadLogs.persistList(nextList, { allowEmpty: true, deletedRowIds: deletedIds });
+      await storageAdapter.flush({ skipStagedCore: true });
+      window.BremDataCache?.invalidate?.(KEYS.settlements);
+      window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
+      await refetchDataKey(KEYS.settlements);
+      return { removed: deletedIds.length, appliedCount, rolledBackHourly };
     },
 
     async removeDailyByPeriod(period, platform = DEFAULT_PLATFORM) {

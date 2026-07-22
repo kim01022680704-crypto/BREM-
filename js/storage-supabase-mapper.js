@@ -294,7 +294,9 @@ window.BremSupabaseMapper = (function () {
   function settlementUploadLogToRow(entry) {
     return {
       id: String(entry.id || ''),
-      kind: entry.kind === 'weekly' ? 'weekly' : 'daily',
+      kind: entry.kind === 'weekly'
+        ? 'weekly'
+        : (entry.kind === 'hourly_insurance' ? 'hourly_insurance' : 'daily'),
       platform: String(entry.platform || 'coupang'),
       file_name: String(entry.fileName || ''),
       period: toDate(entry.period || entry.startDate),
@@ -306,7 +308,7 @@ window.BremSupabaseMapper = (function () {
       status: String(entry.status || 'uploaded'),
       matched_count: Number(entry.matchedCount || 0),
       unmatched_count: Number(entry.unmatchedCount || 0),
-      total_delivery_amount: Number(entry.totalDeliveryAmount || 0),
+      total_delivery_amount: Number(entry.totalDeliveryAmount || entry.totalHourlyInsurance || 0),
       total_order_count: Number(entry.totalOrderCount || 0),
       content_hash: String(entry.contentHash || ''),
       matched_records: Array.isArray(entry.matchedRecords) ? entry.matchedRecords : [],
@@ -322,9 +324,12 @@ window.BremSupabaseMapper = (function () {
   }
 
   function rowToSettlementUploadLog(row) {
+    const kind = row.kind === 'weekly'
+      ? 'weekly'
+      : (row.kind === 'hourly_insurance' ? 'hourly_insurance' : 'daily');
     return {
       id: row.id,
-      kind: row.kind === 'weekly' ? 'weekly' : 'daily',
+      kind,
       platform: row.platform || 'coupang',
       fileName: row.file_name || '',
       period: row.period || row.start_date || '',
@@ -337,6 +342,7 @@ window.BremSupabaseMapper = (function () {
       matchedCount: Number(row.matched_count || 0),
       unmatchedCount: Number(row.unmatched_count || 0),
       totalDeliveryAmount: Number(row.total_delivery_amount || 0),
+      totalHourlyInsurance: kind === 'hourly_insurance' ? Number(row.total_delivery_amount || 0) : 0,
       totalOrderCount: Number(row.total_order_count || 0),
       contentHash: row.content_hash || '',
       matchedRecords: Array.isArray(row.matched_records) ? row.matched_records : [],

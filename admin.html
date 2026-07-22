@@ -3425,6 +3425,41 @@
           </div>
         </article>
 
+        <article class="card settlement-upload-log-card" id="baeminHourlyInsuranceUploadLogCard">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 시간제보험 업로드 기록</h2>
+              <p class="form-help">수요일 기준 적용주별로 업로드한 시간제보험 파일명과 적용 내역을 기록합니다. 상세에서 기사별 시간제보험 금액을 확인할 수 있습니다.</p>
+            </div>
+            <div class="settlement-week-filter-actions">
+              <label class="settlement-week-filter">
+                <span>적용주(수요일)</span>
+                <input type="date" id="baeminHourlyInsuranceLogWeek" class="admin-period-input">
+              </label>
+              <button type="button" class="small-btn primary-btn" id="baeminHourlyInsuranceLogReapplyWeek" disabled>해당주 전체 재반영</button>
+              <button type="button" class="small-btn danger-btn" id="baeminHourlyInsuranceLogClearWeek" disabled>해당주 전체 삭제</button>
+            </div>
+          </div>
+          <p class="settlement-week-range-label" id="baeminHourlyInsuranceLogWeekRange"></p>
+          <p class="admin-table-summary" id="baeminHourlyInsuranceLogSummary"></p>
+          <div class="table-wrap admin-scroll-table-wrap admin-scroll-table-wrap--upload-log">
+            <table class="settlement-upload-log-table">
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>정산일</th>
+                  <th>파일명</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="baeminHourlyInsuranceLogRows"></tbody>
+            </table>
+          </div>
+        </article>
+
         <article class="card settlement-upload-log-card">
           <div class="card-header settlement-upload-log-header">
             <div>
@@ -5589,10 +5624,10 @@
   <script src="js/supabase-config.js?v=20260712c"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
-  <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
+  <script src="js/storage-supabase-mapper.js?v=20260722e"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
   <script src="js/storage-supabase-adapter.js?v=20260703w"></script>
-  <script src="js/storage.js?v=20260722b"></script>
+  <script src="js/storage.js?v=20260722e"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -5635,7 +5670,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260722d"></script>
+    <script src="js/admin.js?v=20260722e"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
