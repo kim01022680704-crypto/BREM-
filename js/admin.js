@@ -1800,6 +1800,16 @@
           };
         }
 
+        if (triggerId === 'payroll-week-withdrawal') {
+          return {
+            hiddenInput: $('#payrollDailyWeekWithdrawalWeekStart'),
+            labelEl: $('#payrollDailyWeekWithdrawalWeekBtn'),
+            onSelect(value) {
+              window.BremAdminPayrollDailySettlement?.onWeekWithdrawalPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'promotion-apply-saved') {
           return {
             hiddenInput: $('#promotionApplySavedWeekFilter'),

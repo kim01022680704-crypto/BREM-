@@ -342,13 +342,33 @@
   function ensureWeekWithdrawalDefault() {
     const input = $('payrollDailyWeekWithdrawalWeekStart');
     if (!input) return '';
+    const todayLocal = [
+      new Date().getFullYear(),
+      String(new Date().getMonth() + 1).padStart(2, '0'),
+      String(new Date().getDate()).padStart(2, '0')
+    ].join('-');
     if (!input.value) {
-      input.value = weekStartKey(new Date().toISOString().slice(0, 10));
+      input.value = weekStartKey(todayLocal);
     } else {
       const normalized = weekStartKey(input.value);
       if (normalized && input.value !== normalized) input.value = normalized;
     }
+    updateWeekWithdrawalPickerLabel(input.value);
     return String(input.value || '').slice(0, 10);
+  }
+
+  function updateWeekWithdrawalPickerLabel(weekStart) {
+    const btn = $('payrollDailyWeekWithdrawalWeekBtn');
+    if (!btn) return;
+    const value = String(weekStart || '').slice(0, 10);
+    if (!value) {
+      btn.textContent = '수요일 선택';
+      return;
+    }
+    const utils = window.BremDatePicker || window.BremPayrollSlipUtils;
+    const formatted = utils?.formatDate?.(value) || value;
+    const weekday = utils?.formatWeekdayKo?.(value);
+    btn.textContent = weekday ? `${formatted}(${weekday})` : formatted;
   }
 
   function shiftWeekWithdrawal(deltaWeeks) {
@@ -363,6 +383,15 @@
     ].join('-'));
     const input = $('payrollDailyWeekWithdrawalWeekStart');
     if (input) input.value = next;
+    updateWeekWithdrawalPickerLabel(next);
+    void renderWeekWithdrawals();
+  }
+
+  function onWeekWithdrawalPicked(value) {
+    const input = $('payrollDailyWeekWithdrawalWeekStart');
+    const normalized = weekStartKey(value || '');
+    if (input && normalized) input.value = normalized;
+    updateWeekWithdrawalPickerLabel(normalized);
     void renderWeekWithdrawals();
   }
 
@@ -1405,10 +1434,6 @@
       void renderWeekWithdrawals();
     });
     $('payrollDailyWeekWithdrawalExcelBtn')?.addEventListener('click', exportWeekWithdrawalExcel);
-    $('payrollDailyWeekWithdrawalWeekStart')?.addEventListener('change', () => {
-      ensureWeekWithdrawalDefault();
-      void renderWeekWithdrawals();
-    });
     $('payrollDailyWeekWithdrawalPrevBtn')?.addEventListener('click', () => shiftWeekWithdrawal(-1));
     $('payrollDailyWeekWithdrawalNextBtn')?.addEventListener('click', () => shiftWeekWithdrawal(1));
     $('payrollDailyWithdrawalBody')?.addEventListener('click', event => {
@@ -1552,6 +1577,7 @@
     refresh: refreshAfterLoad,
     setPlatform,
     setSubTab,
+    onWeekWithdrawalPicked,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),
     getRegionByDriverId: driverId => roster.getRegionByDriverId(driverId)
   };
