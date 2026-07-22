@@ -292,6 +292,7 @@
     const draft = buildDraftFromForm();
     const vehicle = vehicleId ? { ...leases.getById(vehicleId), ...draft } : draft;
     const contract = erp?.getLatestContractForVehicle?.(vehicleId);
+    const runtime = erp?.resolveRuntimeStatus?.(vehicle, contract) || { label: '공차(로스)', code: 'empty' };
     if (window.BremAdminLeaseMenus?.renderStatusTagsHtml && vehicle) {
       const tagHtml = window.BremAdminLeaseMenus.renderStatusTagsHtml(vehicle, contract);
       const tagText = tagHtml
@@ -299,7 +300,6 @@
         : '';
       if ($('leaseVehicleStatusAuto')) $('leaseVehicleStatusAuto').value = tagText || '공차(로스)';
     } else {
-      const runtime = erp?.resolveRuntimeStatus?.(vehicle, contract) || { label: '공차(로스)', code: 'empty' };
       if ($('leaseVehicleStatusAuto')) $('leaseVehicleStatusAuto').value = runtime.label;
     }
     if ($('leaseEmptyStartDatePreview')) {
