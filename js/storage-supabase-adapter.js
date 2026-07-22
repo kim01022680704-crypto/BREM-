@@ -1026,6 +1026,7 @@ window.BremSupabaseStorageAdapter = (function () {
         driverName: item.driverName || '',
         driverPhone: item.driverPhone || '',
         driverId: item.driverId || '',
+        deductionPlatform: item.deductionPlatform || item.rawData?.deductionPlatform || 'coupang',
         returnDate: item.returnDate || '',
         depositAmount: Number(item.depositAmount ?? item.penaltyFee ?? 0),
         weeklyRent: Number(item.weeklyRent || 0),
@@ -1088,6 +1089,7 @@ window.BremSupabaseStorageAdapter = (function () {
         driverName: raw.driverName || '',
         driverPhone: raw.driverPhone || '',
         driverId: raw.driverId || '',
+        deductionPlatform: raw.deductionPlatform === 'baemin' ? 'baemin' : 'coupang',
         depositAmount: Number(raw.depositAmount ?? raw.penaltyFee ?? 0),
         weeklyRent: Number(raw.weeklyRent || 0),
         dailyRent: Number(raw.dailyRent || row.daily_charge || 0),
@@ -2076,12 +2078,39 @@ window.BremSupabaseStorageAdapter = (function () {
       }
     }
 
+    function mergeQueuedPersistOptions(prev, next = {}) {
+      if (!prev) return next || {};
+      const merged = { ...prev, ...next };
+      const prevInc = Array.isArray(prev.incrementalRows) ? prev.incrementalRows : null;
+      const nextInc = Array.isArray(next.incrementalRows) ? next.incrementalRows : null;
+      if (prevInc && nextInc) {
+        const byId = new Map();
+        [...prevInc, ...nextInc].forEach(row => {
+          const id = String(row?.id || '').trim();
+          if (id) byId.set(id, row);
+        });
+        merged.incrementalRows = [...byId.values()];
+      } else {
+        delete merged.incrementalRows;
+      }
+      const deletedRowIds = new Set([
+        ...(Array.isArray(prev.deletedRowIds) ? prev.deletedRowIds : []),
+        ...(Array.isArray(next.deletedRowIds) ? next.deletedRowIds : [])
+      ].map(id => String(id || '').trim()).filter(Boolean));
+      if (deletedRowIds.size) merged.deletedRowIds = [...deletedRowIds];
+      merged.allowEmpty = Boolean(prev.allowEmpty || next.allowEmpty);
+      merged.deleteOnly = Boolean(prev.deleteOnly && next.deleteOnly) && !merged.incrementalRows;
+      return merged;
+    }
+
     function queuePersist(key, value, options = {}) {
       if (isLocalReadOnlySupabase()) return noopLocalPersist();
       if (key === keys.adminAccounts || key === keys.adminCredentials) {
         return noopLocalPersist();
       }
-      pendingPersist.set(key, { value, options });
+      const prev = pendingPersist.get(key);
+      const mergedOptions = prev ? mergeQueuedPersistOptions(prev.options, options) : options;
+      pendingPersist.set(key, { value, options: mergedOptions });
       persistQueue = persistQueue.then(async () => {
         await drainPersistQueue();
       });

@@ -895,6 +895,19 @@ const BremAdminLeaseMenus = (function () {
     return checked?.value || 'lease';
   }
 
+  function readContractDeductionPlatform() {
+    const checked = document.querySelector('input[name="leaseContractDeductionPlatform"]:checked');
+    const value = checked?.value === 'baemin' ? 'baemin' : 'coupang';
+    return value;
+  }
+
+  function setContractDeductionPlatform(platform) {
+    const target = platform === 'baemin' ? 'baemin' : 'coupang';
+    document.querySelectorAll('input[name="leaseContractDeductionPlatform"]').forEach(input => {
+      input.checked = input.value === target;
+    });
+  }
+
   function contractRiderDailyRent(contract) {
     if (!contract) return 0;
     const daily = Number(contract.dailyRent || 0);
@@ -924,6 +937,7 @@ const BremAdminLeaseMenus = (function () {
       driverName: $('leaseContractDriverName')?.value || '',
       driverPhone: $('leaseContractDriverPhone')?.value || '',
       driverId: $('leaseContractDriverId')?.value || '',
+      deductionPlatform: readContractDeductionPlatform(),
       startDate: $('leaseRentalDealStartDate')?.value || '',
       endDate: $('leaseRentalDealEndDate')?.value || '',
       returnDate: $('leaseContractReturnDate')?.value || '',
@@ -1072,6 +1086,7 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === (contract.contractType || 'lease');
     });
+    setContractDeductionPlatform(contract.deductionPlatform || contract.rawData?.deductionPlatform || 'coupang');
     if ($('leaseContractDriverId')) $('leaseContractDriverId').value = contract.driverId || contract.rawData?.driverId || '';
     if ($('leaseContractDriverName')) $('leaseContractDriverName').value = contract.driverName || '';
     if ($('leaseContractDriverPhone')) $('leaseContractDriverPhone').value = contract.driverPhone || '';
@@ -1481,6 +1496,7 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === 'lease';
     });
+    setContractDeductionPlatform('coupang');
     if ($('leaseContractDeposit')) $('leaseContractDeposit').value = '';
     if ($('leaseContractReturnDate')) $('leaseContractReturnDate').value = '';
     state.contractFormSnapshot = null;

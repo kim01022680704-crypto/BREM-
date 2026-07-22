@@ -66,6 +66,12 @@ const BremLeaseErp = (function () {
     return CONTRACT_TYPES.LEASE;
   }
 
+  function normalizeDeductionPlatform(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (['baemin', 'baedal', '배민', '배달의민족', 'bm'].includes(text)) return 'baemin';
+    return 'coupang';
+  }
+
   function normalizeVehicleCategory(value, contractType) {
     const text = String(value || '').trim().toLowerCase();
     if (['company_owned', '회사보유', '회사보유차량', '자사'].includes(text)) {
@@ -404,6 +410,14 @@ const BremLeaseErp = (function () {
       modelType: normalizeModelType(raw.modelType != null ? raw.modelType : existing?.modelType),
       driverName: String(raw.driverName != null ? raw.driverName : existing?.driverName || '').trim(),
       driverPhone: String(raw.driverPhone != null ? raw.driverPhone : existing?.driverPhone || '').trim(),
+      driverId: String(
+        raw.driverId != null ? raw.driverId : (existing?.driverId ?? existing?.rawData?.driverId ?? '')
+      ).trim(),
+      deductionPlatform: normalizeDeductionPlatform(
+        raw.deductionPlatform != null
+          ? raw.deductionPlatform
+          : (existing?.deductionPlatform ?? existing?.rawData?.deductionPlatform)
+      ),
       startDate: normalizeDate(raw.startDate != null ? raw.startDate : existing?.startDate),
       endDate: normalizeDate(raw.endDate != null ? raw.endDate : existing?.endDate),
       returnDate: normalizeDate(raw.returnDate != null ? raw.returnDate : existing?.returnDate),
@@ -596,9 +610,13 @@ const BremLeaseErp = (function () {
       const deletedRowIds = Array.isArray(pending.deletedRowIds)
         ? pending.deletedRowIds.map(id => String(id || '').trim()).filter(Boolean)
         : [];
+      const incrementalRows = Array.isArray(pending.incrementalRows) && pending.incrementalRows.length
+        ? pending.incrementalRows
+        : null;
       const writeOptions = {
         allowEmpty: true,
         deletedRowIds,
+        incrementalRows,
         deleteOnly: pending.deleteOnly === true && deletedRowIds.length > 0 && !list.length
       };
       if (writeOptions.deleteOnly && list.length) {
@@ -1171,11 +1189,12 @@ const BremLeaseErp = (function () {
   }
 
   async function persistAll(options = {}) {
+    const opts = { skipFlushStorage: true, ...options };
     if (hasDeferredChanges()) {
-      await commitDeferredWrites(options);
+      await commitDeferredWrites(opts);
       return;
     }
-    await flushPendingWrites(options);
+    await flushPendingWrites(opts);
   }
 
   function payments() {

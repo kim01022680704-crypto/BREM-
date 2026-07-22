@@ -176,21 +176,29 @@
   }
 
   function renderSummary(payload) {
-    state.availableAmount = Math.max(0, Number(payload.availableAmount || 0));
+    state.availableAmount = Number(payload.availableAmount || 0);
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
-    if (availableEl) availableEl.textContent = formatMoney(state.availableAmount);
+    if (availableEl) {
+      availableEl.textContent = formatMoney(state.availableAmount);
+      availableEl.classList.toggle('is-negative', state.availableAmount < 0);
+    }
     const by = payload.netPayByPlatform || {};
-    const coupangNet = Math.max(0, Number(by.coupang || 0));
-    const baeminNet = Math.max(0, Number(by.baemin || 0));
+    const coupangNet = Number(by.coupang || 0);
+    const baeminNet = Number(by.baemin || 0);
     const requestedAmount = Math.max(0, Number(payload.requestedAmountTotal || 0));
     const requestedFee = Math.max(0, Number(payload.requestedFeeTotal || 0));
+    const lease = payload.lease || {};
+    const leaseDeduction = Math.max(0, Number(lease.leaseDeductionTotal || 0));
+    const leaseText = leaseDeduction > 0
+      ? ` − 리스비 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'})`
+      : '';
     if (hintEl) {
       if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (requestedFee > 0) {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
       } else {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청(출금+일출금수수료) ${formatMoney(payload.requestedTotal)} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청(출금+일출금수수료) ${formatMoney(payload.requestedTotal)}${leaseText} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
       }
     }
     const maxAmount = maxWithdrawableAmount();
@@ -358,6 +366,10 @@
     }
     if (!amount) {
       showToast('신청금액을 입력하세요.');
+      return;
+    }
+    if (state.availableAmount < 0) {
+      showToast(`리스비·미납 차감으로 출금가능금액이 ${formatMoney(state.availableAmount)} 입니다. 정산/미납회수 후 신청하세요.`);
       return;
     }
     const feeAmount = estimateFeeForAmount(amount);

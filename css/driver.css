@@ -465,6 +465,11 @@ h3 {
   color: #facc15;
 }
 
+.driver-withdrawal-available strong.is-negative,
+#driverWithdrawalAvailable.is-negative {
+  color: #f87171;
+}
+
 .driver-withdrawal-available .form-help {
   margin: 0;
   color: rgba(255, 255, 255, 0.72);

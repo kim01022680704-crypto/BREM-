@@ -1199,20 +1199,22 @@
   }
 
   function dashboardWeekStart() {
-    return state.dashboardWeekStart || weekStartKey();
+    return weekStartKey();
   }
 
   function dashboardMonth() {
-    return dashboardWeekStart().slice(0, 7);
+    return today().slice(0, 7);
   }
 
   function updateDashboardWeekLabel() {
     const weekStart = dashboardWeekStart();
-    const label = `주간 ${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} · 월간 ${dashboardMonth()}`;
+    const label = `현재 · 주간 ${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} · 월간 ${dashboardMonth()}`;
     const labelEl = $('#dashboardWeekLabel');
     if (labelEl) labelEl.textContent = label;
     const hidden = $('#dashboardWeekBasisDate');
     if (hidden) hidden.value = weekStart;
+    const trigger = $('#dashboardWeekBasisBtn');
+    if (trigger) trigger.hidden = true;
   }
 
   function loadDashboardWeekBasis() {

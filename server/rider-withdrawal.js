@@ -11,6 +11,144 @@ const FEES_KEY = 'brem_payroll_daily_settlement_fees_v1';
 const REQUESTS_KEY = 'brem_payroll_withdrawal_requests_v1';
 const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
 
+const ACTIVE_LEASE_STATUSES = ['active', 'operating', 'rented'];
+const COMPLETED_ARREAR_STATUSES = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
+
+function leaseNormalizeName(value) {
+  return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+}
+
+function leaseNormalizePhone(value) {
+  return String(value || '').replace(/[^0-9]/g, '');
+}
+
+function leaseFormatDateKey(date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
+  ].join('-');
+}
+
+function leaseAddDays(dateKey, days) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+  date.setDate(date.getDate() + days);
+  return leaseFormatDateKey(date);
+}
+
+function normalizeDeductionPlatform(value) {
+  return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
+}
+
+function leaseContractMatchesRider(row, rider) {
+  const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+  if (raw.driverId && String(raw.driverId) === String(rider.id)) return true;
+  const nameMatch = leaseNormalizeName(raw.driverName)
+    && leaseNormalizeName(raw.driverName) === leaseNormalizeName(rider.name);
+  const phoneMatch = leaseNormalizePhone(raw.driverPhone)
+    && leaseNormalizePhone(raw.driverPhone) === leaseNormalizePhone(rider.phone);
+  return Boolean(nameMatch && phoneMatch);
+}
+
+function countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd) {
+  if (!weekStart || !weekEnd) return 0;
+  const upper = todayKey && todayKey < weekEnd ? todayKey : weekEnd;
+  if (upper < weekStart) return 0;
+  let count = 0;
+  let cursor = weekStart;
+  let guard = 0;
+  while (cursor <= upper && guard < 60) {
+    const afterStart = !contractStart || cursor >= contractStart;
+    const beforeEnd = !contractEnd || cursor <= contractEnd;
+    if (afterStart && beforeEnd) count += 1;
+    cursor = leaseAddDays(cursor, 1);
+    guard += 1;
+  }
+  return count;
+}
+
+/**
+ * 리스 계약 기사의 이번주 일 렌탈료(매일 누적) + 미회수 미납금 합산.
+ * 미납회수(계좌이체)로 처리되면 lease_arrears 잔액이 줄어들어 자동으로 차감액이 감소한다.
+ */
+async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
+  const empty = {
+    hasLease: false,
+    dailyRent: 0,
+    deductionPlatform: 'coupang',
+    activeDays: 0,
+    leaseCharge: 0,
+    outstandingArrears: 0,
+    leaseDeductionTotal: 0,
+    contractId: ''
+  };
+  try {
+    const { data: contracts, error } = await supabase
+      .from('lease_contracts')
+      .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
+      .in('status', ACTIVE_LEASE_STATUSES)
+      .order('updated_at', { ascending: false })
+      .limit(500);
+    if (error) return empty;
+
+    const contract = (contracts || []).find(row => leaseContractMatchesRider(row, rider)) || null;
+    let dailyRent = 0;
+    let deductionPlatform = 'coupang';
+    let contractStart = '';
+    let contractEnd = '';
+    if (contract) {
+      const raw = contract.raw_data || {};
+      dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
+      deductionPlatform = normalizeDeductionPlatform(raw.deductionPlatform);
+      contractStart = String(contract.start_date || raw.startDate || '').slice(0, 10);
+      contractEnd = String(raw.returnDate || contract.end_date || raw.endDate || '').slice(0, 10);
+    }
+
+    const todayKey = leaseFormatDateKey(new Date());
+    const activeDays = contract
+      ? countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd)
+      : 0;
+    const leaseCharge = dailyRent * activeDays;
+
+    let outstandingArrears = 0;
+    const { data: arrears } = await supabase
+      .from('lease_arrears')
+      .select('amount,raw_data,status')
+      .order('updated_at', { ascending: false })
+      .limit(500);
+    (arrears || []).forEach(row => {
+      const rowRaw = row.raw_data || {};
+      const sameDriver = (rowRaw.driverId && String(rowRaw.driverId) === String(rider.id))
+        || (
+          leaseNormalizeName(rowRaw.driverName) === leaseNormalizeName(rider.name)
+          && leaseNormalizePhone(rowRaw.driverPhone) === leaseNormalizePhone(rider.phone)
+          && leaseNormalizeName(rowRaw.driverName)
+        );
+      if (!sameDriver) return;
+      const status = String(row.status || rowRaw.collectionStatus || '').toLowerCase();
+      if (COMPLETED_ARREAR_STATUSES.has(status)) return;
+      const amount = Math.max(0, Math.round(Number(row.amount ?? rowRaw.unpaidAmount ?? 0)));
+      const recovered = Math.max(0, Math.round(Number(rowRaw.recoveredAmount || 0)));
+      outstandingArrears += Math.max(0, amount - recovered);
+    });
+
+    const leaseDeductionTotal = leaseCharge + outstandingArrears;
+    return {
+      hasLease: Boolean(contract) && (dailyRent > 0 || outstandingArrears > 0),
+      dailyRent,
+      deductionPlatform,
+      activeDays,
+      leaseCharge,
+      outstandingArrears,
+      leaseDeductionTotal,
+      contractId: contract?.id || ''
+    };
+  } catch (_error) {
+    return empty;
+  }
+}
+
 const EMP_RATE = 0.008;
 const INDUSTRIAL_RATE = 0.0088;
 const WITHHOLDING_RATE = 0.033;
@@ -236,6 +374,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       requestedAmountTotal,
       requestedFeeTotal,
       availableAmount: 0,
+      lease: {
+        hasLease: false,
+        dailyRent: 0,
+        deductionPlatform: 'coupang',
+        activeDays: 0,
+        leaseCharge: 0,
+        outstandingArrears: 0,
+        leaseDeductionTotal: 0
+      },
       enrolledPlatforms: { coupang: false, baemin: false },
       showCallFee: feesByPlatform.showCallFee !== false,
       feesByPlatform: {
@@ -273,7 +420,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     acc[key] = (acc[key] || 0) + Math.max(0, row.netPay);
     return acc;
   }, { coupang: 0, baemin: 0 });
-  const availableAmount = Math.max(0, totalNetPay - requestedTotal);
+
+  const lease = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd);
+  const leaseDeduction = Math.max(0, Math.round(Number(lease?.leaseDeductionTotal || 0)));
+  const deductionPlatform = normalizeDeductionPlatform(lease?.deductionPlatform);
+  if (leaseDeduction > 0) {
+    netPayByPlatform[deductionPlatform] = (netPayByPlatform[deductionPlatform] || 0) - leaseDeduction;
+  }
+  // 리스비/미납은 최우선 차감이며 마이너스(이월)를 허용한다. (정산 주 단위로 리셋)
+  const availableAmount = totalNetPay - requestedTotal - leaseDeduction;
 
   return {
     ok: true,
@@ -289,6 +444,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     requestedAmountTotal,
     requestedFeeTotal,
     availableAmount,
+    lease: {
+      hasLease: Boolean(lease?.hasLease),
+      dailyRent: Math.max(0, Math.round(Number(lease?.dailyRent || 0))),
+      deductionPlatform,
+      activeDays: Math.max(0, Math.round(Number(lease?.activeDays || 0))),
+      leaseCharge: Math.max(0, Math.round(Number(lease?.leaseCharge || 0))),
+      outstandingArrears: Math.max(0, Math.round(Number(lease?.outstandingArrears || 0))),
+      leaseDeductionTotal: leaseDeduction
+    },
     enrolledPlatforms,
     showCallFee: feesByPlatform.showCallFee !== false,
     feesByPlatform: {
