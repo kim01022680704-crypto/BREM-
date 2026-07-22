@@ -512,6 +512,12 @@ h3 {
   opacity: 0.85;
 }
 
+.driver-withdrawal-table th.driver-withdrawal-daily-fee-head {
+  max-width: 5.2em;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
 .driver-withdrawal-table th.driver-withdrawal-net,
 .driver-withdrawal-table td.driver-withdrawal-net {
   border-left: 2px solid #f59e0b;
@@ -2795,40 +2801,53 @@ button.calendar-day:hover {
     gap: 8px;
   }
 
+  .driver-withdrawal-table {
+    font-size: 0.62rem;
+  }
+
+  .driver-withdrawal-table th,
+  .driver-withdrawal-table td {
+    padding: 5px 3px;
+    white-space: normal;
+    word-break: keep-all;
+    line-height: 1.1;
+  }
+
+  .driver-withdrawal-table th {
+    max-width: 3.4em;
+    font-size: 0.56rem;
+    font-weight: 800;
+  }
+
+  .driver-withdrawal-table th.driver-withdrawal-daily-fee-head {
+    max-width: 4.2em;
+    min-width: 0;
+    width: 4.2em;
+    padding: 4px 2px;
+    font-size: 0.54rem;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    white-space: normal;
+  }
+
+  .driver-withdrawal-table th .driver-withdrawal-th-sub {
+    display: block;
+    margin-top: 0.05em;
+    font-size: 0.9em;
+    line-height: 1.1;
+    letter-spacing: -0.04em;
+  }
+
+  .driver-withdrawal-table td {
+    font-size: 0.62rem;
+  }
+
   .driver-withdrawal-table th.driver-withdrawal-net,
   .driver-withdrawal-table td.driver-withdrawal-net {
     border-left: 2px solid #f59e0b;
     background: #fff7ed;
     color: #9a3412;
     font-weight: 900;
-  }
-
-  .driver-withdrawal-table {
-    font-size: 0.68rem;
-  }
-
-  .driver-withdrawal-table th,
-  .driver-withdrawal-table td {
-    padding: 6px 4px;
-    white-space: normal;
-    word-break: keep-all;
-    line-height: 1.15;
-  }
-
-  .driver-withdrawal-table th {
     max-width: 4.2em;
-    font-size: 0.62rem;
-    font-weight: 800;
-  }
-
-  .driver-withdrawal-table th .driver-withdrawal-th-sub {
-    display: block;
-    margin-top: 0.1em;
-    font-size: 0.9em;
-    line-height: 1.1;
-  }
-
-  .driver-withdrawal-table td {
-    font-size: 0.66rem;
   }
 }
