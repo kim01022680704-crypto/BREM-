@@ -5289,7 +5289,7 @@
             <div class="card-header">
               <div>
                 <h2>수수료 설정</h2>
-                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일정산수수료입니다. 기사 1명당 고정 금액(원)으로 차감됩니다.</p>
+                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일정산수수료입니다. 일정산수수료는 정액(원) 또는 비율(%)로 설정할 수 있습니다.</p>
               </div>
               <button type="button" class="primary-btn" id="payrollDailySettlementFeeSaveBtn">수수료 저장</button>
             </div>
@@ -5299,11 +5299,18 @@
                 <input type="number" id="payrollDailySettlementCallFee" min="0" step="1" value="0">
               </label>
               <label class="payroll-field">
-                <span>일정산수수료 (원)</span>
+                <span>일정산수수료 방식</span>
+                <select id="payrollDailySettlementDailyFeeMode">
+                  <option value="fixed">정액 (원)</option>
+                  <option value="percent">비율 (%)</option>
+                </select>
+              </label>
+              <label class="payroll-field">
+                <span id="payrollDailySettlementDailyFeeLabel">일정산수수료 (원)</span>
                 <input type="number" id="payrollDailySettlementDailyFee" min="0" step="1" value="0">
               </label>
             </div>
-            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 일정산수수료 − 시간제보험</p>
+            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 일정산수수료 %는 정산금액 기준 절사. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 일정산수수료 − 시간제보험</p>
           </article>
 
           <article class="card">

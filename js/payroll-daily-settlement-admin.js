@@ -400,7 +400,7 @@
     if (window.BremStorage?.payrollDailySettlement?.getFees) {
       return window.BremStorage.payrollDailySettlement.getFees(platform);
     }
-    return { callFee: 0, dailySettlementFee: 0 };
+    return { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' };
   }
 
   function readAllFees() {

@@ -82,10 +82,29 @@
     });
   }
 
+  function syncDailyFeeModeUi(mode) {
+    const normalized = mode === 'percent' ? 'percent' : 'fixed';
+    const modeSelect = $('payrollDailySettlementDailyFeeMode');
+    const dailyInput = $('payrollDailySettlementDailyFee');
+    const label = $('payrollDailySettlementDailyFeeLabel');
+    if (modeSelect && modeSelect.value !== normalized) modeSelect.value = normalized;
+    if (label) label.textContent = normalized === 'percent' ? '일정산수수료 (%)' : '일정산수수료 (원)';
+    if (dailyInput) {
+      dailyInput.step = normalized === 'percent' ? '0.01' : '1';
+      dailyInput.min = '0';
+    }
+  }
+
   function syncFeeInputs() {
-    const fees = roster.readFees?.(state.platform) || { callFee: 0, dailySettlementFee: 0 };
+    const fees = roster.readFees?.(state.platform) || {
+      callFee: 0,
+      dailySettlementFee: 0,
+      dailySettlementFeeMode: 'fixed'
+    };
     const callInput = $('payrollDailySettlementCallFee');
     const dailyInput = $('payrollDailySettlementDailyFee');
+    const mode = fees.dailySettlementFeeMode === 'percent' ? 'percent' : 'fixed';
+    syncDailyFeeModeUi(mode);
     if (callInput) callInput.value = String(fees.callFee || 0);
     if (dailyInput) dailyInput.value = String(fees.dailySettlementFee || 0);
   }
@@ -143,14 +162,24 @@
 
   async function saveFeesFromInputs() {
     const callFee = Math.max(0, Math.round(Number($('payrollDailySettlementCallFee')?.value || 0)));
-    const dailySettlementFee = Math.max(0, Math.round(Number($('payrollDailySettlementDailyFee')?.value || 0)));
+    const dailySettlementFeeMode = $('payrollDailySettlementDailyFeeMode')?.value === 'percent'
+      ? 'percent'
+      : 'fixed';
+    const feeRaw = Number($('payrollDailySettlementDailyFee')?.value || 0);
+    const dailySettlementFee = dailySettlementFeeMode === 'percent'
+      ? Math.max(0, Math.round(feeRaw * 1000) / 1000)
+      : Math.max(0, Math.round(feeRaw));
     try {
-      const all = roster.readAllFees?.() || { coupang: { callFee: 0, dailySettlementFee: 0 }, baemin: { callFee: 0, dailySettlementFee: 0 } };
-      all[state.platform] = { callFee, dailySettlementFee };
+      const all = roster.readAllFees?.() || {
+        coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' },
+        baemin: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' }
+      };
+      all[state.platform] = { callFee, dailySettlementFee, dailySettlementFeeMode };
       await roster.persistFees(all);
       syncFeeInputs();
       renderPayoutTable();
-      showToast(`${platformLabelKo()} 수수료 저장 완료`);
+      const modeLabel = dailySettlementFeeMode === 'percent' ? `${dailySettlementFee}%` : `${dailySettlementFee.toLocaleString('ko-KR')}원`;
+      showToast(`${platformLabelKo()} 수수료 저장 · 일정산 ${modeLabel}`);
     } catch (error) {
       console.error('[daily settlement fees]', error);
       showToast(error.message || '수수료 저장에 실패했습니다.');
@@ -922,6 +951,9 @@
     $('payrollDailySettlementExportRegionBtn')?.addEventListener('click', exportCurrentRegion);
     $('payrollDailySettlementRegionAddBtn')?.addEventListener('click', addRegionFromInput);
     $('payrollDailySettlementFeeSaveBtn')?.addEventListener('click', () => { void saveFeesFromInputs(); });
+    $('payrollDailySettlementDailyFeeMode')?.addEventListener('change', event => {
+      syncDailyFeeModeUi(event.target.value);
+    });
     $('payrollDailySettlementPayoutExcelBtn')?.addEventListener('click', exportPayoutExcel);
     $('payrollDailySettlementPayoutRefreshBtn')?.addEventListener('click', () => {
       ensurePayoutDateDefault();

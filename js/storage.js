@@ -6926,14 +6926,36 @@ const BremStorage = (function () {
     },
 
     normalizeFees(raw = {}) {
-      const makeSide = side => ({
-        callFee: Math.max(0, Math.round(Number(side?.callFee || 0))),
-        dailySettlementFee: Math.max(0, Math.round(Number(side?.dailySettlementFee || 0)))
-      });
+      const makeSide = side => {
+        const mode = String(side?.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
+          ? 'percent'
+          : 'fixed';
+        const feeRaw = Number(side?.dailySettlementFee || 0);
+        const dailySettlementFee = mode === 'percent'
+          ? Math.max(0, Math.round(feeRaw * 1000) / 1000)
+          : Math.max(0, Math.round(feeRaw));
+        return {
+          callFee: Math.max(0, Math.round(Number(side?.callFee || 0))),
+          dailySettlementFeeMode: mode,
+          dailySettlementFee
+        };
+      };
       return {
         coupang: makeSide(raw.coupang || raw),
         baemin: makeSide(raw.baemin || raw)
       };
+    },
+
+    resolveDailySettlementFee(settlementAmount, fees = {}) {
+      const amount = Math.max(0, Math.round(Number(settlementAmount) || 0));
+      const mode = String(fees.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
+        ? 'percent'
+        : 'fixed';
+      const value = Math.max(0, Number(fees.dailySettlementFee || 0));
+      if (mode === 'percent') {
+        return Math.floor(amount * (value / 100));
+      }
+      return Math.max(0, Math.round(value));
     },
 
     getFees(platform = 'coupang') {
@@ -7002,7 +7024,7 @@ const BremStorage = (function () {
         const industrialAccidentInsurance = Math.floor(settlementAmount * INDUSTRIAL_RATE);
         const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
         const callFee = Math.max(0, Math.round(Number(fees.callFee || 0)));
-        const dailySettlementFee = Math.max(0, Math.round(Number(fees.dailySettlementFee || 0)));
+        const dailySettlementFee = payrollDailySettlement.resolveDailySettlementFee(settlementAmount, fees);
         const netPay = settlementAmount
           - employmentInsurance
           - industrialAccidentInsurance
