@@ -97,6 +97,29 @@
     }
   }
 
+  // 백그라운드 저장: 연속 등록 시 UI를 막지 않고 저장을 이어간다.
+  // 동시에 여러 번 호출돼도 마지막 상태가 전체 목록으로 기록되므로 안전하다.
+  let backgroundPersistInFlight = false;
+  let backgroundPersistQueued = false;
+  async function persistLeasesInBackground() {
+    if (backgroundPersistInFlight) {
+      backgroundPersistQueued = true;
+      return;
+    }
+    backgroundPersistInFlight = true;
+    try {
+      await persistLeasesOrWarn();
+    } finally {
+      backgroundPersistInFlight = false;
+      if (backgroundPersistQueued) {
+        backgroundPersistQueued = false;
+        void persistLeasesInBackground();
+      } else {
+        window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
+      }
+    }
+  }
+
   function number(value) {
     return Math.round(Number(value || 0)).toLocaleString('ko-KR');
   }
@@ -1348,26 +1371,32 @@
           return;
         }
 
-        if (state.editingId) {
+        const isEdit = Boolean(state.editingId);
+        if (isEdit) {
           leases.update(state.editingId, data);
         } else {
           leases.create(data);
         }
-        try {
-          erp?.syncAllVehicleStatusesFromContracts?.();
-        } catch (syncError) {
-          console.warn('[BREM] vehicle status sync skipped:', syncError);
-        }
-        if (!(await persistLeasesOrWarn())) return;
-        showToast('차량을 저장했습니다.');
-        window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
 
+        // 1) 즉시 페인트: 차량 목록과 폼 초기화만 먼저 그려 바로 리스트에 내려가게 한다.
         resetForm();
         renderList();
-        renderStats();
-        window.BremAdminLeaseMenus?.renderDashboard?.();
-        void refresh({ loadRemote: false });
+        showToast(isEdit ? '차량을 수정했습니다. (저장 중…)' : '차량을 추가했습니다. (저장 중…)');
         document.querySelector('.lease-list-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+
+        // 2) 상태동기화·통계·대시보드·Supabase 저장 등 무거운 작업은 다음 틱으로 미뤄
+        //    UI 페인트를 막지 않도록 한다.
+        setTimeout(() => {
+          try {
+            erp?.syncAllVehicleStatusesFromContracts?.();
+          } catch (syncError) {
+            console.warn('[BREM] vehicle status sync skipped:', syncError);
+          }
+          renderStats();
+          window.BremAdminLeaseMenus?.renderDashboard?.();
+          window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
+          void persistLeasesInBackground();
+        }, 0);
       } catch (error) {
         console.error('[BREM] lease vehicle save failed:', error);
         showToast(error?.message

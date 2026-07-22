@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260723p">
+  <link rel="stylesheet" href="css/admin.css?v=20260723r">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -2500,7 +2500,10 @@
                   <h3>① 차량 · 렌탈자</h3>
                 </header>
                 <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense">
-                  <label>차량<select id="leaseContractVehicleId" required></select></label>
+                  <label class="lease-form-field--full">차량
+                    <input type="search" id="leaseContractVehicleSearch" placeholder="차량번호·기종·리스사 검색" autocomplete="off">
+                    <select id="leaseContractVehicleId" required></select>
+                  </label>
                   <label>차량번호<input type="text" id="leaseContractVehicleNumber" readonly tabindex="-1" placeholder="자동"></label>
                   <label>차량명<input type="text" id="leaseContractVehicleName" readonly tabindex="-1" placeholder="자동"></label>
                   <label>기종<input type="text" id="leaseContractModelType" readonly tabindex="-1" placeholder="자동"></label>
@@ -5882,9 +5885,9 @@
   <script src="js/lease-profit.js?v=20260630l"></script>
   <script src="js/lease-rental-calc.js?v=20260702a"></script>
   <script src="js/lease-erp.js?v=20260723q"></script>
-  <script src="js/admin-lease.js?v=20260723s"></script>
+  <script src="js/admin-lease.js?v=20260723u"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260723r"></script>
+  <script src="js/admin-lease-menus.js?v=20260723t"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

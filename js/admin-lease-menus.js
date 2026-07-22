@@ -1019,16 +1019,35 @@ const BremAdminLeaseMenus = (function () {
     return `${model} · ${plate} · ${source}`;
   }
 
-  function fillVehicleSelect(selectEl, includeBlank = true, preserveSelection = true) {
+  function fillVehicleSelect(selectEl, includeBlank = true, preserveSelection = true, filterQuery = '') {
     if (!selectEl || !erp()) return;
     const prev = preserveSelection ? selectEl.value : '';
+    const keyword = String(filterQuery || '').trim().toLowerCase();
+    let list = erp().vehicles().getAll();
+    if (keyword) {
+      list = list.filter(item => {
+        const source = profit()?.vehicleSourceLabel?.(item) || '';
+        const haystack = [item.model, item.vehicleNumber, source].join(' ').toLowerCase();
+        return haystack.includes(keyword);
+      });
+    }
+    // 검색으로 현재 선택된 차량이 목록에서 빠지면 계속 선택 상태를 유지하도록 포함시킨다.
+    if (prev && !list.some(item => String(item.id) === String(prev))) {
+      const selected = erp().vehicles().getById(prev);
+      if (selected) list = [selected, ...list];
+    }
     const options = (includeBlank ? ['<option value="">차량 선택</option>'] : []).concat(
-      erp().vehicles().getAll().map(item =>
+      list.map(item =>
         `<option value="${escapeHtml(item.id)}">${escapeHtml(formatVehicleSelectLabel(item))}</option>`
       )
     );
     selectEl.innerHTML = options.join('');
     if (prev) selectEl.value = prev;
+  }
+
+  function onContractVehicleSearch() {
+    const query = $('leaseContractVehicleSearch')?.value || '';
+    fillVehicleSelect($('leaseContractVehicleId'), true, true, query);
   }
 
   function onContractVehicleChange() {
@@ -1351,56 +1370,92 @@ const BremAdminLeaseMenus = (function () {
       }
       refreshContractDateLabels();
 
-      const metrics = calc().compute({
-        ...contract,
-        rentalDays: 7,
-        unpaidDays: 0,
-        emptyDays: isContractActive(contract) ? 0 : 7,
-        paidAmount: 0
-      });
-      const week = calc().weekRange(currentWeekStart());
-      const month = currentMonthKey();
-
-      erp().saveProfitSnapshot({
-        vehicleId: vehicle.id,
-        contractId: contract.id,
-        periodType: 'weekly',
-        periodStart: week.start,
-        periodEnd: week.end,
-        metrics,
-        vehicle,
-        contract
-      });
-      erp().saveProfitSnapshot({
-        vehicleId: vehicle.id,
-        contractId: contract.id,
-        periodType: 'monthly',
-        periodStart: `${month}-01`,
-        periodEnd: `${month}-${String(calc().daysInMonth(month)).padStart(2, '0')}`,
-        metrics,
-        vehicle,
-        contract
-      });
-
-      markArrearContractOptionsDirty();
-
-      await erp().persistAll({ skipFlushStorage: true });
-
+      // 1) 즉시 페인트: 계약 목록과 폼만 먼저 그려 바로 리스트에 내려가게 한다.
+      const wasEdit = Boolean(draft.id);
       $('leaseContractEditId').value = contract.id;
       fillContractForm(contract);
-      showToast('계약을 Supabase에 저장했습니다.');
-      updateLeaseErpUnsavedBanner();
-      refreshAfterLeaseMutation({ contract: true });
+      renderContractList();
       document.querySelector('.lease-contract-list-wrap')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-    } catch (error) {
-      console.error('[saveContract]', error);
-      showToast(error?.message || '계약 저장에 실패했습니다. 잠시 후 다시 시도하세요.');
-    } finally {
       state.contractSaving = false;
-      const saveBtn = $('leaseContractSaveBtn');
       if (saveBtn) {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
+      }
+      showToast(wasEdit ? '계약을 수정했습니다. (저장 중…)' : '계약을 추가했습니다. (저장 중…)');
+
+      // 2) 손익 스냅샷·대시보드·차량목록·Supabase 저장 등 무거운 작업은 다음 틱으로 미룬다.
+      setTimeout(() => {
+        try {
+          const metrics = calc().compute({
+            ...contract,
+            rentalDays: 7,
+            unpaidDays: 0,
+            emptyDays: isContractActive(contract) ? 0 : 7,
+            paidAmount: 0
+          });
+          const week = calc().weekRange(currentWeekStart());
+          const month = currentMonthKey();
+          erp().saveProfitSnapshot({
+            vehicleId: vehicle.id,
+            contractId: contract.id,
+            periodType: 'weekly',
+            periodStart: week.start,
+            periodEnd: week.end,
+            metrics,
+            vehicle,
+            contract
+          });
+          erp().saveProfitSnapshot({
+            vehicleId: vehicle.id,
+            contractId: contract.id,
+            periodType: 'monthly',
+            periodStart: `${month}-01`,
+            periodEnd: `${month}-${String(calc().daysInMonth(month)).padStart(2, '0')}`,
+            metrics,
+            vehicle,
+            contract
+          });
+          markArrearContractOptionsDirty();
+          updateLeaseErpUnsavedBanner();
+          // 계약 목록은 이미 그렸으므로 대시보드·차량목록만 갱신한다.
+          refreshAfterLeaseMutation({ contract: false });
+        } catch (deferredError) {
+          console.error('[saveContract deferred]', deferredError);
+        }
+        void persistContractInBackground();
+      }, 0);
+    } catch (error) {
+      console.error('[saveContract]', error);
+      showToast(error?.message || '계약 저장에 실패했습니다. 잠시 후 다시 시도하세요.');
+      state.contractSaving = false;
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '저장';
+      }
+    }
+  }
+
+  // 계약 백그라운드 저장: 연속 등록 시 UI를 막지 않는다.
+  let contractPersistInFlight = false;
+  let contractPersistQueued = false;
+  async function persistContractInBackground() {
+    if (contractPersistInFlight) {
+      contractPersistQueued = true;
+      return;
+    }
+    contractPersistInFlight = true;
+    try {
+      await erp().persistAll({ skipFlushStorage: true });
+    } catch (error) {
+      console.error('[persistContractInBackground]', error);
+      showToast(error?.message || '계약 저장에 실패했습니다. 새로고침 후 다시 시도하세요.');
+    } finally {
+      contractPersistInFlight = false;
+      if (contractPersistQueued) {
+        contractPersistQueued = false;
+        void persistContractInBackground();
+      } else {
+        updateLeaseErpUnsavedBanner();
       }
     }
   }
@@ -2472,6 +2527,7 @@ const BremAdminLeaseMenus = (function () {
       $(id)?.addEventListener('change', syncContractCalc);
     });
     $('leaseContractVehicleId')?.addEventListener('change', onContractVehicleChange);
+    $('leaseContractVehicleSearch')?.addEventListener('input', onContractVehicleSearch);
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.addEventListener('change', syncContractCalc);
     });

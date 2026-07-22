@@ -6488,6 +6488,36 @@ textarea {
   font-size: 0.78rem;
 }
 
+/* 계약/렌탈 등록 폼: 가로로 촘촘하게 채워 세로 길이를 줄인다(한눈에 보기). */
+.lease-contract-form--compact .lease-form-sections--compact {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.lease-contract-form--compact .lease-form-grid--2col {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  align-items: end;
+}
+
+.lease-contract-form--compact .lease-form-grid label {
+  gap: 4px;
+  font-size: 0.78rem;
+}
+
+.lease-contract-form--compact .lease-driver-picker {
+  gap: 4px;
+}
+
+.lease-contract-form--compact .lease-type-fieldset--inline {
+  padding: 4px 8px;
+}
+
+@media (max-width: 900px) {
+  .lease-contract-form--compact .lease-form-sections--compact {
+    grid-template-columns: 1fr;
+  }
+}
+
 .lease-type-fieldset--inline {
   display: flex;
   flex-wrap: wrap;
@@ -7983,6 +8013,68 @@ textarea {
 .lease-actions {
   display: flex;
   gap: 6px;
+}
+
+/* 목록 한 줄 압축: 상태 태그가 줄바꿈되지 않게 하고 행 높이를 낮춰 한눈에 보이게 한다. */
+.lease-table--compact th,
+.lease-table--compact td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  vertical-align: middle;
+}
+
+.lease-table .lease-status-tags--table {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.lease-table .lease-status-tags--table .lease-status-badge {
+  margin: 0;
+  padding: 2px 8px;
+  font-size: 0.74rem;
+}
+
+.lease-table .lease-actions {
+  flex-wrap: nowrap;
+}
+
+/* 계약/렌탈 - 등록차량 검색창을 또렷하게 */
+#leaseContractVehicleSearch {
+  font-size: 0.92rem;
+  min-height: 38px;
+  background: #0f172a;
+  border: 1px solid #3b82f6;
+}
+
+#leaseContractVehicleSearch::placeholder {
+  color: #93c5fd;
+}
+
+/* 렌탈/리스자 검색 글자 키우기(작다는 피드백 반영) */
+.lease-contract-form--compact .lease-driver-picker__search-label {
+  font-size: 0.95rem;
+}
+
+.lease-contract-form--compact .lease-driver-picker__search-label input {
+  font-size: 1rem;
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+.lease-contract-form--compact .lease-driver-picker__item strong {
+  font-size: 1rem;
+}
+
+.lease-contract-form--compact .lease-driver-picker__item span {
+  font-size: 0.9rem;
+}
+
+.lease-contract-form--compact .lease-driver-picker__selected {
+  font-size: 0.92rem;
 }
 
 .lease-bulk-card .bulk-actions {
