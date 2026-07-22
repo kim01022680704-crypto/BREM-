@@ -8,9 +8,13 @@ const BremSettlementParser = (function () {
   }
 
   function passwordVariants(password) {
-    const raw = String(password || '');
+    const raw = String(password ?? '');
     const trimmed = raw.trim();
-    return [...new Set([trimmed, raw].filter(Boolean))];
+    const compact = trimmed.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    const nfc = compact.normalize ? compact.normalize('NFC') : compact;
+    // 전각 → 반각 느낌표/숫자 보정
+    const halfWidth = nfc.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    return [...new Set([trimmed, raw, compact, nfc, halfWidth].filter(Boolean))];
   }
 
   function normalizeMatchName(value, format) {
@@ -354,17 +358,12 @@ const BremSettlementParser = (function () {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer, password ? { password } : undefined);
 
-    let sheet = null;
-    if (options.sheetName) {
-      sheet = workbook.getWorksheet(options.sheetName);
-    } else if (options.sheetMatcher) {
-      const names = workbook.worksheets.map(item => item.name);
-      const matchedName = resolveWorkbookSheetName({ SheetNames: names }, options);
-      sheet = matchedName ? workbook.getWorksheet(matchedName) : null;
-    } else {
-      sheet = workbook.worksheets[Number(options.sheetIndex || 0)] || workbook.worksheets[0];
+    const names = workbook.worksheets.map(item => item.name);
+    const resolvedName = resolveWorkbookSheetName({ SheetNames: names }, options);
+    let sheet = resolvedName ? workbook.getWorksheet(resolvedName) : null;
+    if (!sheet) {
+      sheet = workbook.worksheets[Number(options.sheetIndex || 0)] || workbook.worksheets[0] || null;
     }
-
     if (!sheet) return null;
 
     const rows = [];
@@ -555,11 +554,15 @@ const BremSettlementParser = (function () {
   }
 
   async function openWorkbookSheetRows(buffer, password, options = {}) {
-    const format = options.format || SettlementFormats.getFormat(options.formatId);
+    const format = options.format || (options.formatId ? SettlementFormats.getFormat(options.formatId) : null);
     const input = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-    const passwords = passwordVariants(normalizePassword(password));
+    // trim 전·후 모두 시도 (앞뒤 공백/보이지 않는 문자 대비)
+    const passwords = passwordVariants(password);
+    const validateRows = typeof options.validateRows === 'function'
+      ? options.validateRows
+      : (rows) => Boolean(rows?.length) && (!format || hasEnoughRows(rows, format));
 
-    async function rowsFromBuffer(source, pwd) {
+    async function rowsFromBuffer(source) {
       if (!window.XLSX) {
         throw new Error('엑셀 읽기 모듈이 로드되지 않았습니다. 페이지를 새로고침해주세요.');
       }
@@ -572,7 +575,7 @@ const BremSettlementParser = (function () {
       }
 
       const sheetName = resolveWorkbookSheetName(workbook, options);
-      if (!sheetName) return null;
+      if (!sheetName || !workbook.Sheets[sheetName]) return null;
 
       const rows = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
         header: 1,
@@ -583,8 +586,10 @@ const BremSettlementParser = (function () {
       return rows?.length ? rows : null;
     }
 
+    let openedWithoutPassword = false;
     let rows = await rowsFromBuffer(input);
-    if (rows && (!format || hasEnoughRows(rows, format))) return rows;
+    if (rows && validateRows(rows)) return rows;
+    if (rows) openedWithoutPassword = true;
 
     if (!passwords.length) {
       if (rows) return rows;
@@ -593,15 +598,19 @@ const BremSettlementParser = (function () {
       throw error;
     }
 
+    let decryptSucceeded = false;
+    let lastSheetMiss = false;
+
     for (const pwd of passwords) {
       try {
         const excelRows = await readRowsWithExcelJS(input, pwd, options);
         if (excelRows?.length) {
-          rows = excelRows;
-          if (!format || hasEnoughRows(rows, format)) return rows;
+          decryptSucceeded = true;
+          if (validateRows(excelRows)) return excelRows;
+          lastSheetMiss = true;
         }
       } catch {
-        // continue
+        // try next method
       }
     }
 
@@ -610,11 +619,29 @@ const BremSettlementParser = (function () {
       for (const pwd of passwords) {
         const decrypted = await tryOfficeCryptoDecrypt(officeCrypto, Buffer, input, pwd);
         if (!decrypted) continue;
+        decryptSucceeded = true;
         rows = await rowsFromBuffer(decrypted);
-        if (rows && (!format || hasEnoughRows(rows, format))) return rows;
+        if (rows && validateRows(rows)) return rows;
+        if (rows) lastSheetMiss = true;
+
+        try {
+          const excelRows = await readRowsWithExcelJS(decrypted, pwd, options);
+          if (excelRows?.length && validateRows(excelRows)) return excelRows;
+          if (excelRows?.length) lastSheetMiss = true;
+        } catch {
+          // try next password
+        }
       }
     } catch (error) {
       if (error.code === 'CRYPTO_LOAD_FAILED') throw error;
+    }
+
+    if (decryptSucceeded || openedWithoutPassword || lastSheetMiss) {
+      const error = new Error(
+        '파일은 열렸지만 시간제보험 시트(B열 ID·H열 금액)를 찾지 못했습니다. 시트명에 「협력사」「시간제」「보험」이 포함돼 있는지 확인하세요.'
+      );
+      error.code = 'SHEET_NOT_FOUND';
+      throw error;
     }
 
     const error = new Error(
@@ -633,16 +660,36 @@ const BremSettlementParser = (function () {
     }
 
     if (typeof options.sheetMatcher === 'function') {
-      return names.find(options.sheetMatcher) || '';
+      const matched = names.find(options.sheetMatcher);
+      if (matched) return matched;
     }
 
     if (typeof options.sheetMatcher === 'string') {
       const keyword = options.sheetMatcher.trim();
-      return names.find(name => name.includes(keyword) || name === keyword) || '';
+      const matched = names.find(name => name.includes(keyword) || name === keyword);
+      if (matched) return matched;
     }
 
-    const index = Number(options.sheetIndex ?? 0);
-    return names[index] || names[0];
+    if (Number.isFinite(Number(options.sheetIndex))) {
+      const byIndex = names[Number(options.sheetIndex)];
+      if (byIndex) return byIndex;
+    }
+
+    return names[0] || '';
+  }
+
+  function rowsLookLikeBaeminHourlyInsurance(rows) {
+    if (!Array.isArray(rows) || rows.length < 2) return false;
+    let idHits = 0;
+    const limit = Math.min(rows.length, 40);
+    for (let i = 0; i < limit; i += 1) {
+      const id = normalizeBaeminUserId(cellText(readCell(rows[i] || [], 1)));
+      if (!id) continue;
+      if (/아이디|id|협력사|라이더|시간제|정산/i.test(id)) continue;
+      idHits += 1;
+      if (idHits >= 2) return true;
+    }
+    return idHits >= 1;
   }
 
   function findBaeminSettlementSheet(workbook) {
@@ -674,14 +721,19 @@ const BremSettlementParser = (function () {
     const sheetName = bulk?.SHEET_NAME || '을지_협력사 소속 라이더 정산 확인용';
     const rows = await openWorkbookSheetRows(
       new Uint8Array(arrayBuffer),
-      normalizePassword(password),
+      password,
       {
         sheetName,
         sheetIndex: Number.isFinite(Number(bulk?.SHEET_INDEX)) ? Number(bulk.SHEET_INDEX) : 1,
         sheetMatcher: name => {
           const value = String(name || '');
-          return value.includes('협력사') || value.includes('시간제') || value === sheetName;
-        }
+          return value.includes('협력사')
+            || value.includes('시간제')
+            || value.includes('보험')
+            || value.includes('정산 확인')
+            || value === sheetName;
+        },
+        validateRows: rowsLookLikeBaeminHourlyInsurance
       }
     );
 
