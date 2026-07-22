@@ -5274,181 +5274,255 @@
       </section>
 
       <section class="section" id="payroll-daily-settlement">
-        <article class="card payroll-daily-region-card">
-          <div class="card-header">
-            <div>
-              <h2>지역 관리</h2>
-              <p class="form-help">정산 시 선택할 지역 목록입니다. 등록 기사 지역은 아래 선택식으로 변경합니다.</p>
-            </div>
-          </div>
-          <div class="payroll-toolbar payroll-daily-region-toolbar">
-            <label class="payroll-field">
-              <span>새 지역</span>
-              <input type="text" id="payrollDailySettlementRegionNew" placeholder="예: 강남, 서초, 송파">
-            </label>
-            <button type="button" class="primary-btn" id="payrollDailySettlementRegionAddBtn">지역 추가</button>
-          </div>
-          <div class="payroll-daily-region-tags" id="payrollDailySettlementRegionTags"></div>
-        </article>
+        <div class="promotion-platform-tabs admin-section-tabs" role="tablist" aria-label="급여 일정산 플랫폼">
+          <button type="button" class="promotion-tab active" data-pds-platform-tab="coupang">쿠팡</button>
+          <button type="button" class="promotion-tab" data-pds-platform-tab="baemin">배민</button>
+        </div>
 
-        <article class="card payroll-daily-region-settle-card">
-          <div class="card-header">
-            <div>
-              <h2>지역별 정산 보기</h2>
-              <p class="form-help" id="payrollDailySettlementRegionSummary">지역을 선택하면 해당 기사 목록을 확인할 수 있습니다.</p>
+        <div class="revenue-sub-tabs payroll-daily-sub-tabs" role="tablist" aria-label="급여 일정산 하위 메뉴">
+          <button type="button" class="revenue-sub-btn active" data-pds-sub-tab="payout">일정산</button>
+          <button type="button" class="revenue-sub-btn" data-pds-sub-tab="enroll">일정산 기사등록</button>
+        </div>
+
+        <div class="payroll-daily-sub-panel" data-pds-panel="payout">
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>수수료 설정</h2>
+                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일정산수수료입니다. 기사 1명당 고정 금액(원)으로 차감됩니다.</p>
+              </div>
+              <button type="button" class="primary-btn" id="payrollDailySettlementFeeSaveBtn">수수료 저장</button>
             </div>
-            <button type="button" class="small-btn" id="payrollDailySettlementRegionDetailBtn" hidden>상세보기</button>
-            <button type="button" class="small-btn" id="payrollDailySettlementExportRegionBtn" hidden>지역 엑셀</button>
-          </div>
-          <div class="payroll-toolbar">
-            <label class="payroll-field">
-              <span>정산 지역</span>
-              <select id="payrollDailySettlementRegionPicker">
-                <option value="">지역 선택</option>
-              </select>
-            </label>
-          </div>
-          <div class="payroll-daily-region-chips" id="payrollDailySettlementRegionQuickPick"></div>
-          <div class="payroll-daily-region-detail" id="payrollDailySettlementRegionDetail" hidden>
-            <div class="payroll-daily-region-detail-head">
-              <strong id="payrollDailySettlementRegionDetailTitle">지역 상세</strong>
-              <span class="form-help" id="payrollDailySettlementRegionDetailCount"></span>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>콜수수료 (원)</span>
+                <input type="number" id="payrollDailySettlementCallFee" min="0" step="1" value="0">
+              </label>
+              <label class="payroll-field">
+                <span>일정산수수료 (원)</span>
+                <input type="number" id="payrollDailySettlementDailyFee" min="0" step="1" value="0">
+              </label>
             </div>
-            <div class="table-wrap payroll-daily-region-detail-table">
+            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 일정산수수료 − 시간제보험</p>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>일정산</h2>
+                <p class="form-help" id="payrollDailySettlementPayoutSummary">일정산 등록 기사 · 일정산서 업로드 정산금액·시간제보험 기준</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailySettlementPayoutExcelBtn">엑셀 일괄다운로드</button>
+              </div>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>정산일</span>
+                <input type="date" id="payrollDailySettlementPayoutDate">
+              </label>
+              <button type="button" class="small-btn" id="payrollDailySettlementPayoutRefreshBtn">새로고침</button>
+            </div>
+            <div class="table-wrap bulk-preview-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>번호</th>
+                    <th>이름</th>
+                    <th>배민ID</th>
+                    <th>쿠팡ID</th>
+                    <th>정산금액</th>
+                    <th>고용보험</th>
+                    <th>산재보험</th>
+                    <th>원천세</th>
+                    <th>콜수수료</th>
+                    <th>일정산수수료</th>
+                    <th>시간제보험</th>
+                    <th>실지급액</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailySettlementPayoutBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="payroll-daily-sub-panel" data-pds-panel="enroll" hidden>
+          <article class="card payroll-daily-region-card">
+            <div class="card-header">
+              <div>
+                <h2>지역 관리</h2>
+                <p class="form-help">정산 시 선택할 지역 목록입니다. 등록 기사 지역은 아래 선택식으로 변경합니다.</p>
+              </div>
+            </div>
+            <div class="payroll-toolbar payroll-daily-region-toolbar">
+              <label class="payroll-field">
+                <span>새 지역</span>
+                <input type="text" id="payrollDailySettlementRegionNew" placeholder="예: 강남, 서초, 송파">
+              </label>
+              <button type="button" class="primary-btn" id="payrollDailySettlementRegionAddBtn">지역 추가</button>
+            </div>
+            <div class="payroll-daily-region-tags" id="payrollDailySettlementRegionTags"></div>
+          </article>
+
+          <article class="card payroll-daily-region-settle-card">
+            <div class="card-header">
+              <div>
+                <h2>지역별 정산 보기</h2>
+                <p class="form-help" id="payrollDailySettlementRegionSummary">지역을 선택하면 해당 기사 목록을 확인할 수 있습니다.</p>
+              </div>
+              <button type="button" class="small-btn" id="payrollDailySettlementRegionDetailBtn" hidden>상세보기</button>
+              <button type="button" class="small-btn" id="payrollDailySettlementExportRegionBtn" hidden>지역 엑셀</button>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>정산 지역</span>
+                <select id="payrollDailySettlementRegionPicker">
+                  <option value="">지역 선택</option>
+                </select>
+              </label>
+            </div>
+            <div class="payroll-daily-region-chips" id="payrollDailySettlementRegionQuickPick"></div>
+            <div class="payroll-daily-region-detail" id="payrollDailySettlementRegionDetail" hidden>
+              <div class="payroll-daily-region-detail-head">
+                <strong id="payrollDailySettlementRegionDetailTitle">지역 상세</strong>
+                <span class="form-help" id="payrollDailySettlementRegionDetailCount"></span>
+              </div>
+              <div class="table-wrap payroll-daily-region-detail-table">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>번호</th>
+                      <th>기사명</th>
+                      <th>배민ID</th>
+                      <th>쿠팡ID</th>
+                      <th>전화</th>
+                      <th>플랫폼</th>
+                      <th>지역</th>
+                    </tr>
+                  </thead>
+                  <tbody id="payrollDailySettlementRegionDetailBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>일정산 기사등록</h2>
+                <p class="form-help">일정산 대상 기사를 등록합니다. 위 플랫폼 탭(쿠팡/배민)에 맞는 등록 기사만 목록에 표시됩니다.</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailySettlementBulkTemplateBtn">일괄등록 양식</button>
+              </div>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field payroll-file-field">
+                <span>일정산 일괄등록</span>
+                <input type="file" id="payrollDailySettlementBulkFile" accept=".xlsx,.xls">
+              </label>
+              <button type="button" class="primary-btn" id="payrollDailySettlementBulkApplyBtn">일괄등록 적용</button>
+            </div>
+            <p class="form-help">A=배민ID · B=쿠팡ID (둘 중 하나 필수) · C=전화(참고) · D=지역(참고·선택 목록과 매칭)</p>
+            <div class="table-wrap" id="payrollDailySettlementBulkPreview" hidden>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>행</th><th>배민ID</th><th>쿠팡ID</th><th>전화</th><th>지역</th><th>기사명</th><th>상태</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailySettlementBulkBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>라이더 검색 · 등록</h2>
+                <p class="form-help">이름·ID·전화 검색 후 일정산 등록 · 등록 시 지역 선택 가능</p>
+              </div>
+            </div>
+            <div class="payroll-toolbar payroll-daily-enroll-toolbar">
+              <label class="payroll-daily-inline-field">
+                <span>라이더 검색</span>
+                <input type="search" id="payrollDailySettlementDriverSearch" placeholder="이름, 배민ID, 쿠팡ID, 전화">
+              </label>
+              <label class="payroll-daily-inline-field">
+                <span>등록 지역</span>
+                <select id="payrollDailySettlementEnrollRegion">
+                  <option value="">미지정</option>
+                </select>
+              </label>
+              <div class="payroll-daily-platform-checks" id="payrollDailySettlementEnrollPlatform">
+                <span class="payroll-daily-platform-label">플랫폼</span>
+                <label class="payroll-daily-platform-check"><input type="checkbox" id="payrollDailySettlementEnrollBaemin" checked> 배민</label>
+                <label class="payroll-daily-platform-check"><input type="checkbox" id="payrollDailySettlementEnrollCoupang" checked> 쿠팡</label>
+              </div>
+            </div>
+            <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-driver-list">
+              <table class="data-table bulk-preview-table">
+                <thead>
+                  <tr>
+                    <th>기사명</th>
+                    <th>배민ID</th>
+                    <th>쿠팡ID</th>
+                    <th>전화</th>
+                    <th>상태</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailySettlementDriverBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>일정산 등록 기사</h2>
+                <p class="form-help" id="payrollDailySettlementCount">0명 등록</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailySettlementExportAllBtn">전체 엑셀</button>
+                <button type="button" class="small-btn" id="payrollDailySettlementExportSelectedBtn">선택 엑셀</button>
+                <button type="button" class="small-btn danger-btn" id="payrollDailySettlementDeleteSelectedBtn">선택 삭제</button>
+              </div>
+            </div>
+            <div class="payroll-daily-roster-filters">
+              <label class="payroll-daily-inline-field payroll-daily-roster-search">
+                <span>검색</span>
+                <input type="search" id="payrollDailySettlementRosterSearch" placeholder="이름, ID, 전화, 지역">
+              </label>
+              <label class="payroll-daily-inline-field">
+                <span>지역</span>
+                <select id="payrollDailySettlementBulkRegion">
+                  <option value="">전체</option>
+                </select>
+              </label>
+              <button type="button" class="small-btn" id="payrollDailySettlementApplyBulkRegionBtn">적용</button>
+            </div>
+            <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-roster-list">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="payrollDailySettlementSelectAll" title="전체 선택"></th>
                     <th>기사명</th>
                     <th>배민ID</th>
                     <th>쿠팡ID</th>
                     <th>전화</th>
                     <th>플랫폼</th>
                     <th>지역</th>
+                    <th>수정일</th>
+                    <th>관리</th>
                   </tr>
                 </thead>
-                <tbody id="payrollDailySettlementRegionDetailBody"></tbody>
+                <tbody id="payrollDailySettlementBody"></tbody>
               </table>
             </div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-header">
-            <div>
-              <h2>급여 일정산 관리</h2>
-              <p class="form-help">일정산 등록 기사는 급여명세서에서만 표시됩니다. 총배달료 2% 일정산 수수료 · 콜수수료(O+P)에서 2% 차감 표기.</p>
-            </div>
-            <div class="payroll-action-group">
-              <button type="button" class="small-btn" id="payrollDailySettlementBulkTemplateBtn">일괄등록 양식</button>
-            </div>
-          </div>
-          <div class="payroll-toolbar">
-            <label class="payroll-field payroll-file-field">
-              <span>일정산 일괄등록</span>
-              <input type="file" id="payrollDailySettlementBulkFile" accept=".xlsx,.xls">
-            </label>
-            <button type="button" class="primary-btn" id="payrollDailySettlementBulkApplyBtn">일괄등록 적용</button>
-          </div>
-          <p class="form-help">A=배민ID · B=쿠팡ID (둘 중 하나 필수) · C=전화(참고) · D=지역(참고·선택 목록과 매칭)</p>
-          <div class="table-wrap" id="payrollDailySettlementBulkPreview" hidden>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>행</th><th>배민ID</th><th>쿠팡ID</th><th>전화</th><th>지역</th><th>기사명</th><th>상태</th>
-                </tr>
-              </thead>
-              <tbody id="payrollDailySettlementBulkBody"></tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-header">
-            <div>
-              <h2>라이더 검색 · 등록</h2>
-              <p class="form-help">이름·ID·전화 검색 후 일정산 등록 · 등록 시 지역 선택 가능</p>
-            </div>
-          </div>
-          <div class="payroll-toolbar payroll-daily-enroll-toolbar">
-            <label class="payroll-daily-inline-field">
-              <span>라이더 검색</span>
-              <input type="search" id="payrollDailySettlementDriverSearch" placeholder="이름, 배민ID, 쿠팡ID, 전화">
-            </label>
-            <label class="payroll-daily-inline-field">
-              <span>등록 지역</span>
-              <select id="payrollDailySettlementEnrollRegion">
-                <option value="">미지정</option>
-              </select>
-            </label>
-            <div class="payroll-daily-platform-checks" id="payrollDailySettlementEnrollPlatform">
-              <span class="payroll-daily-platform-label">플랫폼</span>
-              <label class="payroll-daily-platform-check"><input type="checkbox" id="payrollDailySettlementEnrollBaemin" checked> 배민</label>
-              <label class="payroll-daily-platform-check"><input type="checkbox" id="payrollDailySettlementEnrollCoupang" checked> 쿠팡</label>
-            </div>
-          </div>
-          <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-driver-list">
-            <table class="data-table bulk-preview-table">
-              <thead>
-                <tr>
-                  <th>기사명</th>
-                  <th>배민ID</th>
-                  <th>쿠팡ID</th>
-                  <th>전화</th>
-                  <th>상태</th>
-                  <th>관리</th>
-                </tr>
-              </thead>
-              <tbody id="payrollDailySettlementDriverBody"></tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-header">
-            <div>
-              <h2>일정산 등록 기사</h2>
-              <p class="form-help" id="payrollDailySettlementCount">0명 등록</p>
-            </div>
-            <div class="payroll-action-group">
-              <button type="button" class="small-btn" id="payrollDailySettlementExportAllBtn">전체 엑셀</button>
-              <button type="button" class="small-btn" id="payrollDailySettlementExportSelectedBtn">선택 엑셀</button>
-              <button type="button" class="small-btn danger-btn" id="payrollDailySettlementDeleteSelectedBtn">선택 삭제</button>
-            </div>
-          </div>
-          <div class="payroll-daily-roster-filters">
-            <label class="payroll-daily-inline-field payroll-daily-roster-search">
-              <span>검색</span>
-              <input type="search" id="payrollDailySettlementRosterSearch" placeholder="이름, ID, 전화, 지역">
-            </label>
-            <label class="payroll-daily-inline-field">
-              <span>지역</span>
-              <select id="payrollDailySettlementBulkRegion">
-                <option value="">전체</option>
-              </select>
-            </label>
-            <button type="button" class="small-btn" id="payrollDailySettlementApplyBulkRegionBtn">적용</button>
-          </div>
-          <div class="table-wrap bulk-preview-wrap payroll-daily-settlement-roster-list">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th><input type="checkbox" id="payrollDailySettlementSelectAll" title="전체 선택"></th>
-                  <th>기사명</th>
-                  <th>배민ID</th>
-                  <th>쿠팡ID</th>
-                  <th>전화</th>
-                  <th>플랫폼</th>
-                  <th>지역</th>
-                  <th>수정일</th>
-                  <th>관리</th>
-                </tr>
-              </thead>
-              <tbody id="payrollDailySettlementBody"></tbody>
-            </table>
-          </div>
-          <p class="form-help payroll-daily-selected-hint" id="payrollDailySettlementSelectedHint">선택 0명</p>
-        </article>
+            <p class="form-help payroll-daily-selected-hint" id="payrollDailySettlementSelectedHint">선택 0명</p>
+          </article>
+        </div>
       </section>
 
       <section class="section" id="data-backup">

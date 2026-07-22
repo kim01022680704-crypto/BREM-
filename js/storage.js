@@ -49,6 +49,7 @@ const BremStorage = (function () {
     leaseVehicleModelTypes: 'brem_lease_vehicle_model_types',
     payrollDailySettlementRoster: 'brem_payroll_daily_settlement_roster_v1',
     payrollDailySettlementRegions: 'brem_payroll_daily_settlement_regions_v1',
+    payrollDailySettlementFees: 'brem_payroll_daily_settlement_fees_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -1425,7 +1426,13 @@ const BremStorage = (function () {
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
-    'payroll-daily-settlement': [KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers],
+    'payroll-daily-settlement': [
+      KEYS.payrollDailySettlementRoster,
+      KEYS.payrollDailySettlementRegions,
+      KEYS.payrollDailySettlementFees,
+      KEYS.drivers,
+      KEYS.settlements
+    ],
     'lease-management': [
       KEYS.leaseVehicles,
       KEYS.leasePayments,
@@ -6882,14 +6889,17 @@ const BremStorage = (function () {
         return payrollDailySettlement.getAll();
       }
       try {
-        const [rosterValue, regionsValue] = await Promise.all([
+        const [rosterValue, regionsValue, feesValue] = await Promise.all([
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster),
-          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRegions)
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRegions),
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementFees)
         ]);
         const normalized = payrollDailySettlement.normalizeList(rosterValue || []);
         const regions = payrollDailySettlement.normalizeRegions(regionsValue || []);
+        const fees = payrollDailySettlement.normalizeFees(feesValue || {});
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, regions, { source: 'server' });
+        window.BremDataCache?.set?.(KEYS.payrollDailySettlementFees, fees, { source: 'server' });
         return normalized;
       } catch (error) {
         console.warn('[BREM] payroll daily settlement reload failed:', error);
@@ -6913,6 +6923,119 @@ const BremStorage = (function () {
     getRegions() {
       const raw = storageAdapter.read(KEYS.payrollDailySettlementRegions, []);
       return payrollDailySettlement.normalizeRegions(raw);
+    },
+
+    normalizeFees(raw = {}) {
+      const makeSide = side => ({
+        callFee: Math.max(0, Math.round(Number(side?.callFee || 0))),
+        dailySettlementFee: Math.max(0, Math.round(Number(side?.dailySettlementFee || 0)))
+      });
+      return {
+        coupang: makeSide(raw.coupang || raw),
+        baemin: makeSide(raw.baemin || raw)
+      };
+    },
+
+    getFees(platform = 'coupang') {
+      const raw = storageAdapter.read(KEYS.payrollDailySettlementFees, {});
+      const all = payrollDailySettlement.normalizeFees(raw && typeof raw === 'object' ? raw : {});
+      const p = normalizePlatform(platform);
+      return all[p] || all.coupang;
+    },
+
+    getAllFees() {
+      const raw = storageAdapter.read(KEYS.payrollDailySettlementFees, {});
+      return payrollDailySettlement.normalizeFees(raw && typeof raw === 'object' ? raw : {});
+    },
+
+    saveFees(nextFees) {
+      const normalized = payrollDailySettlement.normalizeFees(nextFees);
+      storageAdapter.write(KEYS.payrollDailySettlementFees, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailySettlementFees, normalized, { source: 'write' });
+      if (activeStorageAdapter.type === 'supabase' && typeof flushActiveStorage === 'function') {
+        flushActiveStorage().catch(error => {
+          console.warn('[BREM] payroll daily settlement fees persist failed:', error);
+        });
+      }
+      return normalized;
+    },
+
+    async persistFees(nextFees) {
+      const normalized = payrollDailySettlement.saveFees(nextFees);
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return normalized;
+    },
+
+    /** 등록 기사 + 일정산 업로드 금액으로 급여 일정산 행 계산 */
+    buildPayoutRows({ platform = 'coupang', period = '' } = {}) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      const fees = payrollDailySettlement.getFees(p);
+      const EMP_RATE = 0.008;
+      const INDUSTRIAL_RATE = 0.0088;
+      const WITHHOLDING_RATE = 0.033;
+
+      const roster = payrollDailySettlement.getAll().filter(item => (
+        p === 'baemin' ? item.platformBaemin !== false : item.platformCoupang !== false
+      ));
+      const settlementMap = new Map();
+      if (periodKey) {
+        settlements.getAll().forEach(row => {
+          if (normalizePlatform(row.platform) !== p) return;
+          if (String(row.period || '').slice(0, 10) !== periodKey) return;
+          settlementMap.set(String(row.driverId || ''), row);
+        });
+      }
+
+      const driverMap = new Map(drivers.getAll().map(driver => [String(driver.id || ''), driver]));
+
+      return roster.map(item => {
+        const settlement = settlementMap.get(String(item.driverId || '')) || null;
+        const settlementAmount = Math.max(
+          0,
+          Math.round(Number(settlement?.settlementAmount ?? settlement?.deliveryAmount ?? 0))
+        );
+        const hourlyInsurance = Math.abs(Math.round(Number(settlement?.hourlyInsurance || 0)));
+        const employmentInsurance = Math.floor(settlementAmount * EMP_RATE);
+        const industrialAccidentInsurance = Math.floor(settlementAmount * INDUSTRIAL_RATE);
+        const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
+        const callFee = Math.max(0, Math.round(Number(fees.callFee || 0)));
+        const dailySettlementFee = Math.max(0, Math.round(Number(fees.dailySettlementFee || 0)));
+        const netPay = settlementAmount
+          - employmentInsurance
+          - industrialAccidentInsurance
+          - withholdingTax
+          - callFee
+          - dailySettlementFee
+          - hourlyInsurance;
+        const driver = driverMap.get(String(item.driverId || '')) || null;
+        return {
+          rosterId: item.id,
+          driverId: item.driverId,
+          driverName: item.driverName || driver?.name || '',
+          baeminId: item.baeminId || driver?.baeminId || '',
+          coupangId: item.coupangId
+            || (typeof BremDriverUtils !== 'undefined' ? BremDriverUtils.getErpCoupangId?.(driver) : '')
+            || driver?.coupangId
+            || '',
+          accountNumber: String(driver?.accountNumber || '').trim(),
+          bankName: String(driver?.bankName || '').trim(),
+          accountHolder: String(driver?.accountHolder || '').trim(),
+          period: periodKey,
+          platform: p,
+          settlementAmount,
+          hourlyInsurance,
+          employmentInsurance,
+          industrialAccidentInsurance,
+          withholdingTax,
+          callFee,
+          dailySettlementFee,
+          netPay,
+          hasSettlement: Boolean(settlement)
+        };
+      }).sort((a, b) => String(a.driverName || '').localeCompare(String(b.driverName || ''), 'ko'));
     },
 
     getRegionOptions() {
@@ -11412,7 +11535,8 @@ const BremStorage = (function () {
         KEYS.settlementUnmatched,
         KEYS.settlements,
         KEYS.payrollDailySettlementRoster,
-        KEYS.payrollDailySettlementRegions
+        KEYS.payrollDailySettlementRegions,
+        KEYS.payrollDailySettlementFees
       ])
     })
   });

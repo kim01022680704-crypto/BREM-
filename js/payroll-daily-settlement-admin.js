@@ -396,6 +396,63 @@
     window.XLSX.writeFile(workbook, filename);
   }
 
+  function readFees(platform = 'coupang') {
+    if (window.BremStorage?.payrollDailySettlement?.getFees) {
+      return window.BremStorage.payrollDailySettlement.getFees(platform);
+    }
+    return { callFee: 0, dailySettlementFee: 0 };
+  }
+
+  function readAllFees() {
+    if (window.BremStorage?.payrollDailySettlement?.getAllFees) {
+      return window.BremStorage.payrollDailySettlement.getAllFees();
+    }
+    return { coupang: readFees('coupang'), baemin: readFees('baemin') };
+  }
+
+  async function persistFees(nextFees) {
+    if (window.BremStorage?.payrollDailySettlement?.persistFees) {
+      return window.BremStorage.payrollDailySettlement.persistFees(nextFees);
+    }
+    throw new Error('수수료 저장소를 사용할 수 없습니다.');
+  }
+
+  function buildPayoutRows(options = {}) {
+    if (window.BremStorage?.payrollDailySettlement?.buildPayoutRows) {
+      return window.BremStorage.payrollDailySettlement.buildPayoutRows(options);
+    }
+    return [];
+  }
+
+  function exportPayoutRowsToExcel(rows, filename, sheetName = '일정산지급') {
+    if (!window.XLSX) {
+      throw new Error('엑셀 라이브러리를 불러오지 못했습니다.');
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    const data = [
+      ['이름', '쿠팡ID', '배민ID', '계좌번호', '실지급액'],
+      ...list.map(item => [
+        item.driverName || '',
+        item.coupangId || '',
+        item.baeminId || '',
+        item.accountNumber || '',
+        Number(item.netPay) || 0
+      ])
+    ];
+    const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    window.XLSX.writeFile(workbook, filename);
+  }
+
+  function filterRosterByPlatform(list, platform) {
+    const p = platform === 'baemin' ? 'baemin' : 'coupang';
+    return (Array.isArray(list) ? list : []).filter(item => {
+      const platforms = normalizePlatforms(item);
+      return p === 'baemin' ? platforms.platformBaemin !== false : platforms.platformCoupang !== false;
+    });
+  }
+
   window.BremPayrollDailySettlementAdmin = Object.freeze({
     STORAGE_KEY,
     readAll,
@@ -422,6 +479,12 @@
     normalizePlatforms,
     platformLabel,
     exportRowsToExcel,
+    exportPayoutRowsToExcel,
+    readFees,
+    readAllFees,
+    persistFees,
+    buildPayoutRows,
+    filterRosterByPlatform,
     templateRows,
     resolveDriverPlatformId
   });

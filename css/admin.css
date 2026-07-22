@@ -9312,6 +9312,18 @@ textarea {
   min-width: 0;
 }
 
+.payroll-daily-sub-tabs {
+  margin: 0 0 1rem;
+}
+
+.payroll-daily-sub-panel[hidden] {
+  display: none !important;
+}
+
+#payrollDailySettlementPayoutBody tr.is-muted td {
+  opacity: 0.72;
+}
+
 .payroll-daily-settle-global {
   display: inline-flex;
   align-items: center;

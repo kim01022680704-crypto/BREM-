@@ -9,7 +9,10 @@
     rosterSearchKeyword: '',
     rosterRegionFilter: '',
     settleRegion: '',
-    regionDetailOpen: false
+    regionDetailOpen: false,
+    platform: 'coupang',
+    subTab: 'payout',
+    payoutDate: ''
   };
 
   function $(id) {
@@ -46,6 +49,153 @@
     return roster.resolveDriverPlatformId?.(driver, 'coupang') || driver.coupangId || '';
   }
 
+  function formatWon(value) {
+    return `${Math.round(Number(value) || 0).toLocaleString('ko-KR')}원`;
+  }
+
+  function platformLabelKo(platform = state.platform) {
+    return platform === 'baemin' ? '배민' : '쿠팡';
+  }
+
+  function readRosterForPlatform(list) {
+    const source = Array.isArray(list) ? list : roster.readAll();
+    return roster.filterRosterByPlatform?.(source, state.platform) || source.filter(item => {
+      const platforms = normalizePlatforms(item);
+      return state.platform === 'baemin'
+        ? platforms.platformBaemin !== false
+        : platforms.platformCoupang !== false;
+    });
+  }
+
+  function syncPlatformTabs() {
+    document.querySelectorAll('[data-pds-platform-tab]').forEach(button => {
+      button.classList.toggle('active', button.dataset.pdsPlatformTab === state.platform);
+    });
+  }
+
+  function syncSubTabs() {
+    document.querySelectorAll('[data-pds-sub-tab]').forEach(button => {
+      button.classList.toggle('active', button.dataset.pdsSubTab === state.subTab);
+    });
+    document.querySelectorAll('[data-pds-panel]').forEach(panel => {
+      panel.hidden = panel.dataset.pdsPanel !== state.subTab;
+    });
+  }
+
+  function syncFeeInputs() {
+    const fees = roster.readFees?.(state.platform) || { callFee: 0, dailySettlementFee: 0 };
+    const callInput = $('payrollDailySettlementCallFee');
+    const dailyInput = $('payrollDailySettlementDailyFee');
+    if (callInput) callInput.value = String(fees.callFee || 0);
+    if (dailyInput) dailyInput.value = String(fees.dailySettlementFee || 0);
+  }
+
+  function ensurePayoutDateDefault() {
+    const input = $('payrollDailySettlementPayoutDate');
+    if (!input) return;
+    if (state.payoutDate) {
+      input.value = state.payoutDate;
+      return;
+    }
+    if (!input.value) {
+      input.value = new Date().toISOString().slice(0, 10);
+    }
+    state.payoutDate = input.value;
+  }
+
+  function renderPayoutTable() {
+    ensurePayoutDateDefault();
+    syncFeeInputs();
+    const body = $('payrollDailySettlementPayoutBody');
+    const summary = $('payrollDailySettlementPayoutSummary');
+    if (!body) return;
+
+    const period = state.payoutDate || $('payrollDailySettlementPayoutDate')?.value || '';
+    const rows = roster.buildPayoutRows?.({ platform: state.platform, period }) || [];
+    const withAmount = rows.filter(row => row.hasSettlement && row.settlementAmount > 0);
+    const totalNet = rows.reduce((sum, row) => sum + (Number(row.netPay) || 0), 0);
+
+    if (summary) {
+      summary.textContent = `${platformLabelKo()} · 정산일 ${period || '-'} · 등록 ${rows.length}명 · 업로드매칭 ${withAmount.length}명 · 실지급 합계 ${formatWon(totalNet)}`;
+    }
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="11" class="empty">일정산 등록 기사가 없습니다. 「일정산 기사등록」에서 등록하세요.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(row => `
+      <tr class="${row.hasSettlement ? '' : 'is-muted'}">
+        <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+        <td>${escapeHtml(row.baeminId || '-')}</td>
+        <td>${escapeHtml(row.coupangId || '-')}</td>
+        <td>${formatWon(row.settlementAmount)}</td>
+        <td>${formatWon(row.employmentInsurance)}</td>
+        <td>${formatWon(row.industrialAccidentInsurance)}</td>
+        <td>${formatWon(row.withholdingTax)}</td>
+        <td>${formatWon(row.callFee)}</td>
+        <td>${formatWon(row.dailySettlementFee)}</td>
+        <td>${formatWon(row.hourlyInsurance)}</td>
+        <td><strong>${formatWon(row.netPay)}</strong></td>
+      </tr>
+    `).join('');
+  }
+
+  async function saveFeesFromInputs() {
+    const callFee = Math.max(0, Math.round(Number($('payrollDailySettlementCallFee')?.value || 0)));
+    const dailySettlementFee = Math.max(0, Math.round(Number($('payrollDailySettlementDailyFee')?.value || 0)));
+    try {
+      const all = roster.readAllFees?.() || { coupang: { callFee: 0, dailySettlementFee: 0 }, baemin: { callFee: 0, dailySettlementFee: 0 } };
+      all[state.platform] = { callFee, dailySettlementFee };
+      await roster.persistFees(all);
+      syncFeeInputs();
+      renderPayoutTable();
+      showToast(`${platformLabelKo()} 수수료 저장 완료`);
+    } catch (error) {
+      console.error('[daily settlement fees]', error);
+      showToast(error.message || '수수료 저장에 실패했습니다.');
+    }
+  }
+
+  function exportPayoutExcel() {
+    const period = state.payoutDate || $('payrollDailySettlementPayoutDate')?.value || '';
+    if (!period) {
+      showToast('정산일을 선택하세요.');
+      return;
+    }
+    const rows = roster.buildPayoutRows?.({ platform: state.platform, period }) || [];
+    if (!rows.length) {
+      showToast('내보낼 등록 기사가 없습니다.');
+      return;
+    }
+    try {
+      const stamp = period.replace(/-/g, '');
+      const filename = `BREM_급여일정산_지급_${platformLabelKo()}_${stamp}.xlsx`;
+      roster.exportPayoutRowsToExcel(rows, filename, '일정산지급');
+      showToast(`엑셀 저장: ${filename}`);
+    } catch (error) {
+      console.error('[daily settlement payout export]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
+  }
+
+  function setPlatform(platform) {
+    state.platform = platform === 'baemin' ? 'baemin' : 'coupang';
+    const enrollBaemin = $('payrollDailySettlementEnrollBaemin');
+    const enrollCoupang = $('payrollDailySettlementEnrollCoupang');
+    if (enrollBaemin) enrollBaemin.checked = state.platform === 'baemin';
+    if (enrollCoupang) enrollCoupang.checked = state.platform === 'coupang';
+    syncPlatformTabs();
+    syncFeeInputs();
+    refreshAll();
+  }
+
+  function setSubTab(tab) {
+    state.subTab = tab === 'enroll' ? 'enroll' : 'payout';
+    syncSubTabs();
+    refreshAll();
+  }
+
   function getRegions() {
     return roster.readRegions?.() || [];
   }
@@ -79,6 +229,7 @@
     const enrollSelect = $('payrollDailySettlementEnrollRegion');
     const bulkSelect = $('payrollDailySettlementBulkRegion');
     const picker = $('payrollDailySettlementRegionPicker');
+    const platformRoster = readRosterForPlatform();
 
     if (enrollSelect) {
       const prev = enrollSelect.value;
@@ -89,7 +240,7 @@
     if (bulkSelect) {
       const prev = bulkSelect.value || state.rosterRegionFilter;
       const counts = countRidersByRegion();
-      const allCount = roster.readAll().length;
+      const allCount = platformRoster.length;
       const regionRows = getRegions().map(region => {
         const count = counts.get(region) || 0;
         return `<option value="${escapeHtml(region)}">${escapeHtml(region)} (${count}명)</option>`;
@@ -115,7 +266,7 @@
         return `<option value="${escapeHtml(region)}">${escapeHtml(region)} (${count}명)</option>`;
       }).join('');
       const unsetCount = counts.get('__unset__') || 0;
-      const allCount = roster.readAll().length;
+      const allCount = platformRoster.length;
       picker.innerHTML = [
         '<option value="">지역 선택</option>',
         `<option value="__all__">전체 (${allCount}명)</option>`,
@@ -128,7 +279,7 @@
 
   function countRidersByRegion() {
     const counts = new Map();
-    roster.readAll().forEach(item => {
+    readRosterForPlatform().forEach(item => {
       const key = String(item.region || '').trim() || '__unset__';
       counts.set(key, (counts.get(key) || 0) + 1);
     });
@@ -152,7 +303,7 @@
   }
 
   function filterRoster(list) {
-    let filtered = list;
+    let filtered = readRosterForPlatform(list);
     const regionFilter = String(state.rosterRegionFilter || '').trim();
     if (regionFilter === '__unset__') {
       filtered = filtered.filter(item => !String(item.region || '').trim());
@@ -198,7 +349,7 @@
       return;
     }
     wrap.innerHTML = regions.map(region => {
-      const count = (roster.getByRegion?.(region) || []).length;
+      const count = readRosterForPlatform().filter(item => String(item.region || '').trim() === region).length;
       return `
         <span class="payroll-daily-region-tag">
           <span>${escapeHtml(region)} <em>(${count}명)</em></span>
@@ -221,7 +372,7 @@
     const allActive = state.settleRegion === '__all__' ? ' is-active' : '';
     const unsetActive = state.settleRegion === '__unset__' ? ' is-active' : '';
     wrap.innerHTML = [
-      `<button type="button" class="payroll-daily-region-chip${allActive}" data-pds-pick-region="__all__">전체 <span>${roster.readAll().length}</span></button>`,
+      `<button type="button" class="payroll-daily-region-chip${allActive}" data-pds-pick-region="__all__">전체 <span>${readRosterForPlatform().length}</span></button>`,
       `<button type="button" class="payroll-daily-region-chip${unsetActive}" data-pds-pick-region="__unset__">미지정 <span>${unsetCount}</span></button>`,
       chips
     ].join('');
@@ -305,7 +456,7 @@
       return;
     }
 
-    const riders = roster.getByRegion?.(region) || [];
+    const riders = readRosterForPlatform(roster.getByRegion?.(region) || []);
     const label = regionLabel(region);
     if (summary) summary.textContent = `${label} · ${riders.length}명 · 상세보기에서 전체 명단 확인`;
     if (detailBtn) {
@@ -376,9 +527,9 @@
     const countEl = $('payrollDailySettlementCount');
     if (!body) return;
 
-    const all = roster.readAll();
-    const list = filterRoster(all);
-    if (countEl) countEl.textContent = `${all.length}명 등록 · 표시 ${list.length}명`;
+    const all = readRosterForPlatform();
+    const list = filterRoster(roster.readAll());
+    if (countEl) countEl.textContent = `${platformLabelKo()} ${all.length}명 등록 · 표시 ${list.length}명`;
 
     if (!list.length) {
       let emptyMessage = '일정산 등록 기사가 없습니다. 라이더 검색에서 등록하거나 일괄등록을 사용하세요.';
@@ -391,6 +542,8 @@
         } else {
           emptyMessage = '표시할 기사가 없습니다.';
         }
+      } else if (roster.readAll().length) {
+        emptyMessage = `${platformLabelKo()} 플랫폼으로 등록된 기사가 없습니다.`;
       }
       body.innerHTML = `<tr><td colspan="9" class="empty">${emptyMessage}</td></tr>`;
       updateSelectedHint();
@@ -452,8 +605,11 @@
   }
 
   function refreshAll() {
+    syncPlatformTabs();
+    syncSubTabs();
     syncRegionSelects();
     renderRegionTags();
+    renderPayoutTable();
     renderRoster();
   }
 
@@ -716,7 +872,7 @@
   }
 
   function exportAllRoster() {
-    exportRows(roster.readAll(), stampExportFilename('전체'), '전체');
+    exportRows(readRosterForPlatform(), stampExportFilename(`전체_${platformLabelKo()}`), '전체');
   }
 
   function exportSelectedRoster() {
@@ -725,8 +881,8 @@
       return;
     }
     const selected = new Set(state.selectedIds);
-    const rows = roster.readAll().filter(item => selected.has(item.id));
-    exportRows(rows, stampExportFilename(`선택${rows.length}명`), '선택');
+    const rows = readRosterForPlatform().filter(item => selected.has(item.id));
+    exportRows(rows, stampExportFilename(`선택${rows.length}명_${platformLabelKo()}`), '선택');
   }
 
   function exportCurrentRegion() {
@@ -734,13 +890,13 @@
       showToast('지역을 먼저 선택하세요.');
       return;
     }
-    const rows = roster.getByRegion?.(state.settleRegion) || [];
+    const rows = readRosterForPlatform(roster.getByRegion?.(state.settleRegion) || []);
     if (!rows.length) {
       showToast('내보낼 기사가 없습니다.');
       return;
     }
     const label = regionLabel(state.settleRegion).replace(/[\\/:*?"<>|]/g, '_');
-    exportRows(rows, stampExportFilename(label), label);
+    exportRows(rows, stampExportFilename(`${label}_${platformLabelKo()}`), label);
   }
 
   function downloadTemplate() {
@@ -765,11 +921,28 @@
     $('payrollDailySettlementExportSelectedBtn')?.addEventListener('click', exportSelectedRoster);
     $('payrollDailySettlementExportRegionBtn')?.addEventListener('click', exportCurrentRegion);
     $('payrollDailySettlementRegionAddBtn')?.addEventListener('click', addRegionFromInput);
+    $('payrollDailySettlementFeeSaveBtn')?.addEventListener('click', () => { void saveFeesFromInputs(); });
+    $('payrollDailySettlementPayoutExcelBtn')?.addEventListener('click', exportPayoutExcel);
+    $('payrollDailySettlementPayoutRefreshBtn')?.addEventListener('click', () => {
+      ensurePayoutDateDefault();
+      renderPayoutTable();
+    });
+    $('payrollDailySettlementPayoutDate')?.addEventListener('change', event => {
+      state.payoutDate = String(event.target.value || '').slice(0, 10);
+      renderPayoutTable();
+    });
     $('payrollDailySettlementRegionNew')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         event.preventDefault();
         addRegionFromInput();
       }
+    });
+
+    document.querySelectorAll('[data-pds-platform-tab]').forEach(button => {
+      button.addEventListener('click', () => setPlatform(button.dataset.pdsPlatformTab));
+    });
+    document.querySelectorAll('[data-pds-sub-tab]').forEach(button => {
+      button.addEventListener('click', () => setSubTab(button.dataset.pdsSubTab));
     });
 
     $('payrollDailySettlementDriverSearch')?.addEventListener('input', event => {
@@ -874,6 +1047,7 @@
     } catch (error) {
       console.warn('[payroll daily settlement]', error);
     }
+    ensurePayoutDateDefault();
     refreshAll();
   }
 
@@ -882,6 +1056,8 @@
 
   window.BremAdminPayrollDailySettlement = {
     refresh: refreshAfterLoad,
+    setPlatform,
+    setSubTab,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),
     getRegionByDriverId: driverId => roster.getRegionByDriverId(driverId)
   };
