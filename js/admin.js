@@ -3874,12 +3874,20 @@
 
     const emptyMessage = `${formatDate(weekStart)} 주에 업로드한 ${platformLabel(p)} 일정산 기록이 없습니다. 다른 주 기록은 상단 적용주(수요일)를 변경하세요.`;
 
-    rowsEl.innerHTML = rows.map(item => `
+    rowsEl.innerHTML = rows.map(item => {
+      const payrollEligible = settlementUploadLogPayrollEligible(item);
+      const canTogglePayroll = canReapplySettlementUploadLog(item);
+      return `
       <tr>
         <td>${formatDate(item.weekStart)} ~ ${formatDate(item.weekEnd)}</td>
         <td>${formatDate(item.period)}</td>
         <td>${escapeHtml(item.fileName || '-')}</td>
         <td>${escapeHtml(settlementUploadLogStatusLabel(item.status))}</td>
+        <td>
+          ${canTogglePayroll
+            ? `<button type="button" class="small-btn ${payrollEligible ? 'primary-btn' : ''}" data-toggle-settlement-payroll-eligible="${escapeHtml(item.id)}" aria-pressed="${payrollEligible ? 'true' : 'false'}">${payrollEligible ? 'ON' : 'OFF'}</button>`
+            : escapeHtml(payrollEligible ? 'ON' : 'OFF')}
+        </td>
         <td>${Number(item.matchedCount || 0).toLocaleString('ko-KR')}명</td>
         <td>${formatDate(String(item.uploadedAt || '').slice(0, 10))}</td>
         <td class="settlement-upload-log-actions">
@@ -3889,8 +3897,8 @@
             : ''}
           <button type="button" class="small-btn danger-btn" data-delete-settlement-upload-log="${escapeHtml(item.id)}">기록 삭제</button>
         </td>
-      </tr>
-    `).join('') || `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
+      </tr>`;
+    }).join('') || `<tr><td colspan="8" class="empty">${emptyMessage}</td></tr>`;
 
     if (summaryEl) {
       summaryEl.textContent = rows.length ? `총 ${number(rows.length)}건` : '';
@@ -4335,6 +4343,7 @@
             sourceFileName: log.fileName || '',
             uploadLogId: log.id,
             forceReapply: true,
+            payrollDailyEligible: settlementUploadLogPayrollEligible(log),
             totalDeliveryAmount: Number(log.totalDeliveryAmount || 0),
             skipRender: true,
             silent: true
@@ -4462,6 +4471,7 @@
   function clearSettlementPreview(platform) {
     const p = normalizePlatform(platform);
     state.settlementPreviewByPlatform[p] = null;
+    setSettlementPayrollDailyEligibleCheckbox(p, false);
     renderSettlementPreview(p);
   }
 
@@ -5040,6 +5050,7 @@
         matched: result.matched,
         unmatched: result.unmatched
       };
+      setSettlementPayrollDailyEligibleCheckbox(p, false);
 
       const uploadLog = recordDailySettlementUploadLog(p, {
         fileName: file.name,
@@ -5102,6 +5113,60 @@
     return settlementUploadLogApplicableRecords(log).length > 0;
   }
 
+  function settlementUploadLogPayrollEligible(log) {
+    const records = settlementUploadLogApplicableRecords(log);
+    if (!records.length) return false;
+    const period = String(log.period || '').slice(0, 10);
+    const platform = normalizePlatform(log.platform);
+    const api = BremStorage?.payrollDailySettlement;
+    if (!api?.isSettlementPayrollDailyEligible) return true;
+    return records.every(row => api.isSettlementPayrollDailyEligible(
+      api.settlementRowId?.(row.driverId, period, platform) || `${row.driverId}-${period}-${platform}`
+    ));
+  }
+
+  function readSettlementPayrollDailyEligibleCheckbox(platform) {
+    const el = $(`#settlementPayrollDailyEligible-${normalizePlatform(platform)}`);
+    return el ? el.checked === true : false;
+  }
+
+  function setSettlementPayrollDailyEligibleCheckbox(platform, checked) {
+    const el = $(`#settlementPayrollDailyEligible-${normalizePlatform(platform)}`);
+    if (el) el.checked = checked === true;
+  }
+
+  async function toggleSettlementUploadLogPayrollEligible(logId) {
+    const log = BremStorage.settlementUploadLogs.getById(logId);
+    if (!log || log.kind !== 'daily') {
+      showToast('업로드 기록을 찾을 수 없습니다.');
+      return;
+    }
+    const records = settlementUploadLogApplicableRecords(log);
+    if (!records.length) {
+      showToast('매칭된 기사가 없습니다.');
+      return;
+    }
+    const nextEligible = !settlementUploadLogPayrollEligible(log);
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('payroll-daily-settlement');
+      BremStorage.payrollDailySettlement.setPayrollDailyEligibleForRecords({
+        period: log.period,
+        platform: log.platform,
+        records,
+        eligible: nextEligible
+      });
+      await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+      renderSettlementUploadLogs(normalizePlatform(log.platform));
+      showToast(nextEligible
+        ? `일정산 가능 ON · 매칭 ${records.length}명 급여 일정산 반영`
+        : `일정산 가능 OFF · 매칭 ${records.length}명 급여 일정산 제외`);
+    } catch (error) {
+      console.error('[BREM] settlement payroll eligible toggle failed:', error);
+      showToast(error.message || '일정산 가능 변경에 실패했습니다.');
+    }
+  }
+
   async function applyDailySettlementFromLogData(platform, options = {}) {
     const p = normalizePlatform(platform);
     const period = String(options.period || '').slice(0, 10);
@@ -5113,6 +5178,7 @@
     const clearPreview = options.clearPreview === true;
     const skipRender = options.skipRender === true;
     const silent = options.silent === true;
+    const payrollDailyEligible = options.payrollDailyEligible === true;
     const totalDeliveryAmount = Number(
       options.totalDeliveryAmount
       ?? matched.reduce((sum, row) => sum + settlementAmountValue(row), 0)
@@ -5201,6 +5267,14 @@
           });
           await BremStorage.awaitPersist?.(writeResult);
 
+          BremStorage.payrollDailySettlement?.setPayrollDailyEligibleForRecords?.({
+            period,
+            platform: p,
+            records: matched,
+            eligible: payrollDailyEligible
+          });
+          await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+
           const applyPatch = {
             status: 'applied',
             appliedAt: new Date().toISOString(),
@@ -5214,7 +5288,8 @@
             totalDeliveryAmount,
             totalOrderCount: appliedRecords.reduce((sum, row) => sum + Number(row.orderCount || 0), 0),
             duplicateOfLogId: '',
-            skipReason: ''
+            skipReason: '',
+            payrollDailyEligible
           };
 
           if (uploadLogId) {
@@ -5296,6 +5371,7 @@
         sourceFileName: log.fileName || '',
         uploadLogId: log.id,
         forceReapply: true,
+        payrollDailyEligible: settlementUploadLogPayrollEligible(log),
         totalDeliveryAmount: Number(log.totalDeliveryAmount || 0)
       });
       if (result.ok) {
@@ -5328,6 +5404,7 @@
     }
 
     try {
+      const payrollDailyEligible = readSettlementPayrollDailyEligibleCheckbox(p);
       const result = await applyDailySettlementFromLogData(p, {
         period: preview.period,
         matched: preview.matched,
@@ -5336,10 +5413,15 @@
         uploadLogId: preview.uploadLogId || '',
         forceReapply: false,
         clearPreview: true,
+        payrollDailyEligible,
         totalDeliveryAmount: Number(preview.totalDeliveryAmount || 0)
       });
       if (result.ok) {
-        showToast(`${platformLabel(p)} 일정산 ${preview.matched.length}건이 Supabase에 반영되었습니다.`);
+        showToast(
+          payrollDailyEligible
+            ? `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 매칭 기사 급여 일정산 포함`
+            : `${platformLabel(p)} 일정산 ${preview.matched.length}건 반영 · 급여 일정산 미포함`
+        );
       }
     } finally {
       if (applyBtn) {
@@ -6637,6 +6719,13 @@
             renderSettlements();
           }
         })();
+        return;
+      }
+
+      const settlementPayrollEligibleToggle = event.target.closest('[data-toggle-settlement-payroll-eligible]');
+      if (settlementPayrollEligibleToggle) {
+        const logId = settlementPayrollEligibleToggle.dataset.toggleSettlementPayrollEligible;
+        void toggleSettlementUploadLogPayrollEligible(logId);
         return;
       }
 

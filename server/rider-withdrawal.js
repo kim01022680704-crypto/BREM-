@@ -9,6 +9,7 @@ const {
 const ROSTER_KEY = 'brem_payroll_daily_settlement_roster_v1';
 const FEES_KEY = 'brem_payroll_daily_settlement_fees_v1';
 const REQUESTS_KEY = 'brem_payroll_withdrawal_requests_v1';
+const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
 
 const EMP_RATE = 0.008;
 const INDUSTRIAL_RATE = 0.0088;
@@ -167,13 +168,19 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const driverId = String(rider.id || '');
   const driverName = String(rider.name || '').trim();
 
-  const [rosterRaw, feesRaw, requestsRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
-    readSettingValue(supabase, REQUESTS_KEY, [])
+    readSettingValue(supabase, REQUESTS_KEY, []),
+    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, [])
   ]);
   const rosterItem = findRosterEntry(rosterRaw, driverId);
   const feesByPlatform = normalizeFees(feesRaw);
+  const excludedSettlementIds = new Set(
+    (Array.isArray(excludedRaw) ? excludedRaw : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+  );
   const allRequests = normalizeRequestList(requestsRaw);
   const myWeekRequests = allRequests.filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
@@ -220,6 +227,10 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
 
   const days = (settlementRows || [])
     .filter(row => isPlatformEnrolled(rosterItem, row.platform))
+    .filter(row => {
+      const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
+      return !excludedSettlementIds.has(id);
+    })
     .map(row => calcPayoutFromSettlement(row, feesByPlatform))
     .filter(row => row.period);
 
@@ -352,8 +363,11 @@ function sumDayTotals(days = []) {
   });
 }
 
-async function loadDriverWeekDays(supabase, driverId, weekStart, rosterItem, feesByPlatform) {
+async function loadDriverWeekDays(supabase, driverId, weekStart, rosterItem, feesByPlatform, excludedSettlementIds = null) {
   const weekEnd = settlementWeekEnd(weekStart);
+  const excluded = excludedSettlementIds instanceof Set
+    ? excludedSettlementIds
+    : new Set(Array.isArray(excludedSettlementIds) ? excludedSettlementIds : []);
   const { data: settlementRows, error } = await supabase
     .from('daily_settlements')
     .select('period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
@@ -364,6 +378,10 @@ async function loadDriverWeekDays(supabase, driverId, weekStart, rosterItem, fee
   if (error) throw error;
   return (settlementRows || [])
     .filter(row => isPlatformEnrolled(rosterItem, row.platform))
+    .filter(row => {
+      const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
+      return !excluded.has(id);
+    })
     .map(row => calcPayoutFromSettlement(row, feesByPlatform))
     .filter(row => row.period);
 }
@@ -376,13 +394,19 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
-  const [listRaw, rosterRaw, feesRaw] = await Promise.all([
+  const [listRaw, rosterRaw, feesRaw, excludedRaw] = await Promise.all([
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, ROSTER_KEY, []),
-    readSettingValue(supabase, FEES_KEY, {})
+    readSettingValue(supabase, FEES_KEY, {}),
+    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, [])
   ]);
   const list = normalizeRequestList(listRaw);
   const feesByPlatform = normalizeFees(feesRaw);
+  const excludedSettlementIds = new Set(
+    (Array.isArray(excludedRaw) ? excludedRaw : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+  );
   const weekStart = query.weekStart ? normalizeSettlementWeekStart(query.weekStart) : '';
   const date = String(query.date || '').slice(0, 10);
   const status = String(query.status || '').trim();
@@ -403,7 +427,14 @@ async function listWithdrawalRequests(accessToken, query = {}) {
       const rosterItem = findRosterEntry(rosterRaw, item.driverId);
       try {
         const days = rosterItem
-          ? await loadDriverWeekDays(supabase, item.driverId, item.weekStart, rosterItem, feesByPlatform)
+          ? await loadDriverWeekDays(
+            supabase,
+            item.driverId,
+            item.weekStart,
+            rosterItem,
+            feesByPlatform,
+            excludedSettlementIds
+          )
           : [];
         detail = sumDayTotals(days);
       } catch (_error) {

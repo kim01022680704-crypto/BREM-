@@ -51,6 +51,7 @@ const BremStorage = (function () {
     payrollDailySettlementRegions: 'brem_payroll_daily_settlement_regions_v1',
     payrollDailySettlementFees: 'brem_payroll_daily_settlement_fees_v1',
     payrollWithdrawalRequests: 'brem_payroll_withdrawal_requests_v1',
+    payrollDailyExcludedSettlements: 'brem_payroll_daily_excluded_settlements_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -1423,7 +1424,7 @@ const BremStorage = (function () {
     targets: [KEYS.drivers, KEYS.targets],
     missions: [KEYS.drivers],
     'mission-results': [KEYS.drivers],
-    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
+    settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
@@ -1432,6 +1433,7 @@ const BremStorage = (function () {
       KEYS.payrollDailySettlementRegions,
       KEYS.payrollDailySettlementFees,
       KEYS.payrollWithdrawalRequests,
+      KEYS.payrollDailyExcludedSettlements,
       KEYS.drivers,
       KEYS.settlements
     ],
@@ -6949,17 +6951,22 @@ const BremStorage = (function () {
         return payrollDailySettlement.getAll();
       }
       try {
-        const [rosterValue, regionsValue, feesValue] = await Promise.all([
+        const [rosterValue, regionsValue, feesValue, excludedValue] = await Promise.all([
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRegions),
-          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementFees)
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementFees),
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailyExcludedSettlements)
         ]);
         const normalized = payrollDailySettlement.normalizeList(rosterValue || []);
         const regions = payrollDailySettlement.normalizeRegions(regionsValue || []);
         const fees = payrollDailySettlement.normalizeFees(feesValue || {});
+        const excluded = Array.isArray(excludedValue)
+          ? [...new Set(excludedValue.map(item => String(item || '').trim()).filter(Boolean))]
+          : [];
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, regions, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementFees, fees, { source: 'server' });
+        window.BremDataCache?.set?.(KEYS.payrollDailyExcludedSettlements, excluded, { source: 'server' });
         return normalized;
       } catch (error) {
         console.warn('[BREM] payroll daily settlement reload failed:', error);
@@ -7010,6 +7017,84 @@ const BremStorage = (function () {
     isCallFeeVisible() {
       return payrollDailySettlement.getAllFees().showCallFee !== false;
     },
+
+    settlementRowId(driverId, period, platform = 'coupang') {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      const id = String(driverId || '').trim();
+      if (!id || !periodKey) return '';
+      return `${id}-${periodKey}-${p}`;
+    },
+
+    getExcludedSettlementIds() {
+      const raw = storageAdapter.read(KEYS.payrollDailyExcludedSettlements, []);
+      if (!Array.isArray(raw)) return [];
+      return [...new Set(raw.map(item => String(item || '').trim()).filter(Boolean))];
+    },
+
+    getExcludedSettlementIdSet() {
+      return new Set(payrollDailySettlement.getExcludedSettlementIds());
+    },
+
+    persistExcludedSettlementIds(list) {
+      const normalized = [...new Set((Array.isArray(list) ? list : [])
+        .map(item => String(item || '').trim())
+        .filter(Boolean))];
+      storageAdapter.write(KEYS.payrollDailyExcludedSettlements, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollDailyExcludedSettlements, normalized, { source: 'write' });
+      return normalized;
+    },
+
+    async reloadExcludedSettlementIdsFromServer() {
+      if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.reloadSettingKey) {
+        return payrollDailySettlement.getExcludedSettlementIds();
+      }
+      try {
+        const value = await activeStorageAdapter.reloadSettingKey(KEYS.payrollDailyExcludedSettlements);
+        const normalized = Array.isArray(value)
+          ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))]
+          : [];
+        window.BremDataCache?.set?.(KEYS.payrollDailyExcludedSettlements, normalized, { source: 'server' });
+        return normalized;
+      } catch (error) {
+        console.warn('[BREM] payroll daily excluded settlements reload failed:', error);
+        return payrollDailySettlement.getExcludedSettlementIds();
+      }
+    },
+
+    /**
+     * 일정산 가능 체크 → 매칭 기사를 급여 일정산 대상에 포함/제외.
+     * eligible=true: 제외 목록에서 제거 / false: 제외 목록에 추가.
+     */
+    setPayrollDailyEligibleForRecords({ period, platform = 'coupang', records = [], eligible = true } = {}) {
+      const p = normalizePlatform(platform);
+      const periodKey = String(period || '').slice(0, 10);
+      const ids = (Array.isArray(records) ? records : [])
+        .map(row => payrollDailySettlement.settlementRowId(row.driverId, periodKey, p))
+        .filter(Boolean);
+      if (!periodKey || !ids.length) {
+        return payrollDailySettlement.getExcludedSettlementIds();
+      }
+      const next = new Set(payrollDailySettlement.getExcludedSettlementIds());
+      ids.forEach(id => {
+        if (eligible) next.delete(id);
+        else next.add(id);
+      });
+      return payrollDailySettlement.persistExcludedSettlementIds([...next]);
+    },
+
+    isSettlementPayrollDailyEligible(settlementOrId, period = '', platform = 'coupang') {
+      const id = typeof settlementOrId === 'string'
+        ? settlementOrId
+        : (settlementOrId?.id || payrollDailySettlement.settlementRowId(
+          settlementOrId?.driverId,
+          period || settlementOrId?.period,
+          platform || settlementOrId?.platform
+        ));
+      if (!id) return false;
+      return !payrollDailySettlement.getExcludedSettlementIdSet().has(id);
+    },
+
     resolveDailySettlementFee(settlementAmount, fees = {}) {
       const amount = Math.max(0, Math.round(Number(settlementAmount) || 0));
       const mode = String(fees.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
@@ -7068,9 +7153,12 @@ const BremStorage = (function () {
       ));
       const settlementMap = new Map();
       if (periodKey) {
+        const excluded = payrollDailySettlement.getExcludedSettlementIdSet();
         settlements.getAll().forEach(row => {
           if (normalizePlatform(row.platform) !== p) return;
           if (String(row.period || '').slice(0, 10) !== periodKey) return;
+          const id = String(row.id || `${row.driverId}-${periodKey}-${p}`);
+          if (excluded.has(id)) return;
           settlementMap.set(String(row.driverId || ''), row);
         });
       }

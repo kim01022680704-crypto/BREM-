@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260723d">
+  <link rel="stylesheet" href="css/admin.css?v=20260723j">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -3169,7 +3169,7 @@
             </label>
             <button class="primary-btn" type="submit" id="settlementUploadBtn-coupang">업로드 및 미리보기</button>
           </form>
-          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AJ열(총정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다.</p>
+          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AJ열(총정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다. <strong>일정산 가능</strong>을 체크하면 매칭된 기사만 급여 일정산에 반영됩니다.</p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
         </article>
 
@@ -3198,6 +3198,7 @@
                   <th>정산일</th>
                   <th>파일명</th>
                   <th>상태</th>
+                  <th>일정산가능</th>
                   <th>매칭</th>
                   <th>업로드</th>
                   <th>관리</th>
@@ -3213,6 +3214,10 @@
             <h2>쿠팡 일정산서 미리보기</h2>
             <div class="settlement-preview-actions">
               <span class="settlement-period-badge" id="settlementPreviewPeriod-coupang">-</span>
+              <label class="settlement-payroll-eligible-check">
+                <input type="checkbox" id="settlementPayrollDailyEligible-coupang">
+                <span>일정산 가능</span>
+              </label>
               <button class="primary-btn" type="button" id="settlementApplyBtn-coupang">반영하기</button>
               <button class="small-btn" type="button" id="settlementCancelBtn-coupang">취소</button>
             </div>
@@ -3350,7 +3355,7 @@
             </label>
             <button class="primary-btn" type="submit" id="settlementUploadBtn-baemin">업로드 및 미리보기</button>
           </form>
-          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · <strong>U열(가게도착)·V열·AH열 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 콜수 1건 · AH열 합계 = 배달수행금액 · L열은 참고용</p>
+          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · <strong>U열(가게도착)·V열·AH열 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 콜수 1건 · AH열 합계 = 배달수행금액 · L열은 참고용. <strong>일정산 가능</strong>을 체크하면 매칭된 기사만 급여 일정산에 반영됩니다.</p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-baemin" hidden></p>
         </article>
 
@@ -3485,6 +3490,7 @@
                   <th>정산일</th>
                   <th>파일명</th>
                   <th>상태</th>
+                  <th>일정산가능</th>
                   <th>매칭</th>
                   <th>업로드</th>
                   <th>관리</th>
@@ -3500,6 +3506,10 @@
             <h2>배민 일정산서 미리보기</h2>
             <div class="settlement-preview-actions">
               <span class="settlement-period-badge" id="settlementPreviewPeriod-baemin">-</span>
+              <label class="settlement-payroll-eligible-check">
+                <input type="checkbox" id="settlementPayrollDailyEligible-baemin">
+                <span>일정산 가능</span>
+              </label>
               <button class="primary-btn" type="button" id="settlementApplyBtn-baemin">반영하기</button>
               <button class="small-btn" type="button" id="settlementCancelBtn-baemin">취소</button>
             </div>
@@ -5819,7 +5829,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260722e"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
   <script src="js/storage-supabase-adapter.js?v=20260703w"></script>
-  <script src="js/storage.js?v=20260723h"></script>
+  <script src="js/storage.js?v=20260723j"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -5862,7 +5872,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260723i"></script>
+    <script src="js/admin.js?v=20260723j"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

@@ -2424,6 +2424,28 @@ textarea {
   flex-wrap: wrap;
 }
 
+.settlement-payroll-eligible-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settlement-payroll-eligible-check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #2563eb;
+}
+
 .settlement-unmatched-card .card-header {
   flex-wrap: wrap;
 }
