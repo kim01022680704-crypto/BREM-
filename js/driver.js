@@ -1219,16 +1219,6 @@
     toggleProfileEditPanel(true);
   });
 
-  document.getElementById('driverRealtimeStatusBtn')?.addEventListener('click', () => {
-    const card = document.getElementById('driverBaeminLiveOps');
-    if (card && !card.hidden) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      void refreshBaeminLiveOps({ toast: true });
-      return;
-    }
-    showToast('배민 운행현황은 배민 기사만 표시됩니다.');
-  });
-
   document.getElementById('driverBaeminLiveOpsRefreshBtn')?.addEventListener('click', () => {
     void refreshBaeminLiveOps({ toast: true });
   });

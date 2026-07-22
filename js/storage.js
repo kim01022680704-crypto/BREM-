@@ -50,6 +50,7 @@ const BremStorage = (function () {
     payrollDailySettlementRoster: 'brem_payroll_daily_settlement_roster_v1',
     payrollDailySettlementRegions: 'brem_payroll_daily_settlement_regions_v1',
     payrollDailySettlementFees: 'brem_payroll_daily_settlement_fees_v1',
+    payrollWithdrawalRequests: 'brem_payroll_withdrawal_requests_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -1430,6 +1431,7 @@ const BremStorage = (function () {
       KEYS.payrollDailySettlementRoster,
       KEYS.payrollDailySettlementRegions,
       KEYS.payrollDailySettlementFees,
+      KEYS.payrollWithdrawalRequests,
       KEYS.drivers,
       KEYS.settlements
     ],
@@ -2759,7 +2761,7 @@ const BremStorage = (function () {
   let driverAppBundlePromise = null;
   let lastDriverAppPublishedAt = null;
 
-  async function riderApiFetch(path, label = 'request') {
+  async function riderApiFetch(path, label = 'request', options = {}) {
     const token = await resolveAdminAccessToken();
     if (!token) {
       return { ok: false, message: '로그인 세션이 없습니다.' };
@@ -2769,10 +2771,20 @@ const BremStorage = (function () {
     const timer = controller
       ? setTimeout(() => controller.abort(), DRIVER_FETCH_TIMEOUT_MS)
       : null;
+    const method = String(options.method || 'GET').toUpperCase();
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {})
+    };
+    if (method !== 'GET' && method !== 'HEAD' && options.body != null && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
     try {
       const response = await fetch(path, {
+        method,
         credentials: 'same-origin',
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
+        body: options.body,
         signal: controller?.signal
       });
       const payload = await response.json().catch(() => ({}));
@@ -2795,6 +2807,29 @@ const BremStorage = (function () {
   async function fetchRiderWeeklyPayslipFromServer(weekStart) {
     const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
     return riderApiFetch(`/api/rider/weekly-payslip${qs}`, 'weekly-payslip');
+  }
+
+  async function fetchRiderWithdrawalFromServer(weekStart) {
+    const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
+    return riderApiFetch(`/api/rider/withdrawal${qs}`, 'withdrawal');
+  }
+
+  async function submitRiderWithdrawalToServer({ weekStart, amount } = {}) {
+    return riderApiFetch('/api/rider/withdrawal', 'withdrawal-create', {
+      method: 'POST',
+      body: JSON.stringify({
+        weekStart: String(weekStart || '').slice(0, 10),
+        amount: Math.max(0, Math.round(Number(amount) || 0))
+      })
+    });
+  }
+
+  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, status } = {}) {
+    const params = new URLSearchParams();
+    if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    if (status) params.set('status', String(status));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return adminRidersApi(`/api/admin/payroll/withdrawal-requests${qs}`);
   }
 
   function mergeRiderMissionsPayload(missions = {}) {
@@ -7020,10 +7055,12 @@ const BremStorage = (function () {
           Math.round(Number(settlement?.settlementAmount ?? settlement?.deliveryAmount ?? 0))
         );
         const hourlyInsurance = Math.abs(Math.round(Number(settlement?.hourlyInsurance || 0)));
+        const orderCount = Math.max(0, Math.round(Number(settlement?.orderCount ?? settlement?.callCount ?? 0)));
         const employmentInsurance = Math.floor(settlementAmount * EMP_RATE);
         const industrialAccidentInsurance = Math.floor(settlementAmount * INDUSTRIAL_RATE);
         const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
-        const callFee = Math.max(0, Math.round(Number(fees.callFee || 0)));
+        const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
+        const callFee = orderCount * callFeeUnit;
         const dailySettlementFee = payrollDailySettlement.resolveDailySettlementFee(settlementAmount, fees);
         const netPay = settlementAmount
           - employmentInsurance
@@ -7048,6 +7085,8 @@ const BremStorage = (function () {
           period: periodKey,
           platform: p,
           settlementAmount,
+          orderCount,
+          callFeeUnit,
           hourlyInsurance,
           employmentInsurance,
           industrialAccidentInsurance,
@@ -7156,6 +7195,43 @@ const BremStorage = (function () {
 
     normalizePlatform(item = {}) {
       return normalizePayrollDailyPlatform(item);
+    }
+  };
+
+  const payrollWithdrawal = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.payrollWithdrawalRequests, []);
+      return Array.isArray(raw) ? raw : [];
+    },
+
+    saveAll(list) {
+      const normalized = Array.isArray(list) ? list : [];
+      storageAdapter.write(KEYS.payrollWithdrawalRequests, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollWithdrawalRequests, normalized, { source: 'write' });
+      return normalized;
+    },
+
+    async reloadFromServer() {
+      if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.reloadSettingKey) {
+        return payrollWithdrawal.getAll();
+      }
+      try {
+        const value = await activeStorageAdapter.reloadSettingKey(KEYS.payrollWithdrawalRequests);
+        const normalized = Array.isArray(value) ? value : [];
+        window.BremDataCache?.set?.(KEYS.payrollWithdrawalRequests, normalized, { source: 'server' });
+        return normalized;
+      } catch (error) {
+        console.warn('[BREM] payroll withdrawal reload failed:', error);
+        return payrollWithdrawal.getAll();
+      }
+    },
+
+    async fetchFromAdminApi(options = {}) {
+      const result = await fetchAdminWithdrawalRequestsFromServer(options);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '출금신청 목록을 불러오지 못했습니다.');
+      }
+      return Array.isArray(result.requests) ? result.requests : [];
     }
   };
 
@@ -11558,7 +11634,8 @@ const BremStorage = (function () {
         KEYS.settlements,
         KEYS.payrollDailySettlementRoster,
         KEYS.payrollDailySettlementRegions,
-        KEYS.payrollDailySettlementFees
+        KEYS.payrollDailySettlementFees,
+        KEYS.payrollWithdrawalRequests
       ])
     })
   });
@@ -11921,6 +11998,9 @@ const BremStorage = (function () {
     fetchRiderAssignedMissionsFromServer,
     fetchRiderDashboardFromServer,
     fetchRiderWeeklyPayslipFromServer,
+    fetchRiderWithdrawalFromServer,
+    submitRiderWithdrawalToServer,
+    fetchAdminWithdrawalRequestsFromServer,
     loadDriverAppBundle,
     getDriverAppPublishedAt,
     fetchRiderPublishStatus,
@@ -11973,6 +12053,7 @@ const BremStorage = (function () {
     payrollSlipLines,
     payrollNotices,
     payrollDailySettlement,
+    payrollWithdrawal,
     payrollPublish,
     leases,
     revenue,

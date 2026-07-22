@@ -359,6 +359,7 @@
   }
 
   function openPanel() {
+    window.BremDriverWithdrawal?.close?.();
     state.visible = true;
     panel.hidden = false;
     if (!state.weekStart) state.weekStart = currentWeekStart();

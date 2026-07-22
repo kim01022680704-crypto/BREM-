@@ -139,7 +139,7 @@
     }
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="11" class="empty">일정산 등록 기사가 없습니다. 「일정산 기사등록」에서 등록하세요.</td></tr>';
+      body.innerHTML = '<tr><td colspan="12" class="empty">일정산 등록 기사가 없습니다. 「일정산 기사등록」에서 등록하세요.</td></tr>';
       return;
     }
 
@@ -149,6 +149,7 @@
         <td>${escapeHtml(row.baeminId || '-')}</td>
         <td>${escapeHtml(row.coupangId || '-')}</td>
         <td>${formatWon(row.settlementAmount)}</td>
+        <td>${Number(row.orderCount || 0).toLocaleString('ko-KR')}</td>
         <td>${formatWon(row.employmentInsurance)}</td>
         <td>${formatWon(row.industrialAccidentInsurance)}</td>
         <td>${formatWon(row.withholdingTax)}</td>
@@ -220,9 +221,91 @@
   }
 
   function setSubTab(tab) {
-    state.subTab = tab === 'enroll' ? 'enroll' : 'payout';
+    if (tab === 'enroll') state.subTab = 'enroll';
+    else if (tab === 'withdrawals') state.subTab = 'withdrawals';
+    else state.subTab = 'payout';
     syncSubTabs();
     refreshAll();
+  }
+
+  function weekStartKey(dateValue) {
+    const utils = window.BremPayrollSlipUtils || window.BremDatePicker;
+    if (utils?.normalizeSettlementWeekStart) {
+      return utils.normalizeSettlementWeekStart(dateValue);
+    }
+    if (utils?.weekStartKey) return utils.weekStartKey(dateValue);
+    const date = new Date(`${String(dateValue || '').slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+    const diff = (date.getDay() - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function ensureWithdrawalWeekDefault() {
+    const input = $('payrollDailyWithdrawalWeekStart');
+    if (!input) return '';
+    if (!input.value) {
+      input.value = weekStartKey(new Date().toISOString().slice(0, 10));
+    } else {
+      const normalized = weekStartKey(input.value);
+      if (normalized && normalized !== input.value) input.value = normalized;
+    }
+    return input.value;
+  }
+
+  function statusLabel(status) {
+    if (status === 'cancelled') return '취소';
+    return '신청';
+  }
+
+  async function renderWithdrawalRequests() {
+    const body = $('payrollDailyWithdrawalBody');
+    const summary = $('payrollDailyWithdrawalSummary');
+    if (!body) return;
+
+    const weekStart = ensureWithdrawalWeekDefault();
+    const status = String($('payrollDailyWithdrawalStatusFilter')?.value || '').trim();
+    let rows = [];
+    try {
+      if (BremStorage?.payrollWithdrawal?.fetchFromAdminApi) {
+        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({ weekStart, status });
+      } else {
+        rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
+          if (weekStart && String(item.weekStart || '').slice(0, 10) !== weekStart) return false;
+          if (status && item.status !== status) return false;
+          return true;
+        });
+      }
+    } catch (error) {
+      console.warn('[withdrawal list]', error);
+      rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
+        if (weekStart && String(item.weekStart || '').slice(0, 10) !== weekStart) return false;
+        if (status && item.status !== status) return false;
+        return true;
+      });
+      showToast(error.message || '출금신청 목록을 불러오지 못했습니다.');
+    }
+
+    const totalAmount = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    if (summary) {
+      summary.textContent = `수~화 주간 ${weekStart || '-'} · ${rows.length}건 · 신청합계 ${formatWon(totalAmount)}`;
+    }
+
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">해당 주차 출금신청이 없습니다.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(row => `
+      <tr>
+        <td>${escapeHtml(row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-')}</td>
+        <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+        <td>${escapeHtml(`${row.weekStart || '-'} ~ ${row.weekEnd || '-'}`)}</td>
+        <td><strong>${formatWon(row.amount)}</strong></td>
+        <td>${formatWon(row.availableAtRequest)}</td>
+        <td>${escapeHtml(statusLabel(row.status))}</td>
+      </tr>
+    `).join('');
   }
 
   function getRegions() {
@@ -640,6 +723,9 @@
     renderRegionTags();
     renderPayoutTable();
     renderRoster();
+    if (state.subTab === 'withdrawals') {
+      void renderWithdrawalRequests();
+    }
   }
 
   async function handleBulkFile(event) {
@@ -962,6 +1048,17 @@
     $('payrollDailySettlementPayoutDate')?.addEventListener('change', event => {
       state.payoutDate = String(event.target.value || '').slice(0, 10);
       renderPayoutTable();
+    });
+    $('payrollDailyWithdrawalRefreshBtn')?.addEventListener('click', () => {
+      void renderWithdrawalRequests();
+    });
+    $('payrollDailyWithdrawalWeekStart')?.addEventListener('change', event => {
+      const normalized = weekStartKey(event.target.value);
+      if (normalized) event.target.value = normalized;
+      void renderWithdrawalRequests();
+    });
+    $('payrollDailyWithdrawalStatusFilter')?.addEventListener('change', () => {
+      void renderWithdrawalRequests();
     });
     $('payrollDailySettlementRegionNew')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') {

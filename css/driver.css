@@ -411,6 +411,72 @@ h3 {
   background: #f0fdfa;
 }
 
+.profile-realtime-status-btn.is-active,
+.profile-realtime-status-btn[aria-expanded="true"] {
+  color: #0f766e;
+  border-color: #0f766e;
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.driver-withdrawal-available {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.75rem 0 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  color: #fff;
+}
+
+.driver-withdrawal-available span {
+  font-size: 0.82rem;
+  opacity: 0.85;
+}
+
+.driver-withdrawal-available strong {
+  font-size: 1.65rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #facc15;
+}
+
+.driver-withdrawal-available .form-help {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.78rem;
+}
+
+.driver-withdrawal-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.driver-withdrawal-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.driver-withdrawal-form input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  font-size: 1rem;
+}
+
+.driver-withdrawal-table {
+  width: 100%;
+  font-size: 0.84rem;
+}
+
+.driver-payslip-empty-line {
+  opacity: 0.7;
+  list-style: none;
+}
+
 .profile-realtime-status-btn:focus-visible {
   outline: 2px solid #14b8a6;
   outline-offset: 2px;

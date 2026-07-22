@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260712g">
+  <link rel="stylesheet" href="css/driver.css?v=20260723a">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -151,7 +151,7 @@
               </dl>
               <div class="profile-actions">
                 <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle">정보 수정</button>
-                <button type="button" class="profile-realtime-status-btn profile-realtime-status-btn--compact" id="driverRealtimeStatusBtn" title="배민 실시간 운행현황으로 이동">실시간</button>
+                <button type="button" class="profile-realtime-status-btn profile-realtime-status-btn--compact" id="driverWithdrawalBtn" title="일정산 출금신청" aria-expanded="false" aria-controls="driverWithdrawalPanel">출금신청</button>
                 <button type="button" class="profile-payslip-btn" id="driverWeeklyPayslipBtn" aria-expanded="false" aria-controls="driverWeeklyPayslipPanel">주급명세서</button>
               </div>
             </div>
@@ -213,6 +213,73 @@
               배민 배달현황·수락율 데이터가 아직 없습니다. 관리자가 배민현황을 수집·저장하면 표시됩니다.
             </p>
           </section>
+
+          <article class="panel driver-weekly-payslip-panel driver-withdrawal-panel" id="driverWithdrawalPanel" hidden>
+            <div class="driver-payslip-header">
+              <div class="driver-payslip-header__brand">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
+                <div>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER</p>
+                  <h2>출금신청</h2>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn driver-payslip-close" id="driverWithdrawalCloseBtn">닫기</button>
+            </div>
+
+            <div class="driver-payslip-meta">
+              <div class="driver-payslip-meta__item driver-payslip-meta__item--period">
+                <span class="driver-payslip-meta__label">정산기간 (수~화)</span>
+                <div class="driver-payslip-week-nav">
+                  <button type="button" class="driver-payslip-week-btn" id="driverWithdrawalPrevWeekBtn" aria-label="이전 주">&lt;</button>
+                  <strong id="driverWithdrawalPeriod" class="driver-payslip-period-text">-</strong>
+                  <button type="button" class="driver-payslip-week-btn" id="driverWithdrawalNextWeekBtn" aria-label="다음 주">&gt;</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="driver-withdrawal-available">
+              <span>출금가능금액</span>
+              <strong id="driverWithdrawalAvailable">0원</strong>
+              <p class="form-help" id="driverWithdrawalAvailableHint">일정산 실지급액 합계 − 이미 신청한 금액</p>
+            </div>
+
+            <form class="driver-withdrawal-form" id="driverWithdrawalForm">
+              <label>
+                <span>신청금액</span>
+                <input type="number" id="driverWithdrawalAmount" min="1" step="1" placeholder="출금할 금액" required>
+              </label>
+              <button type="submit" class="target-save-btn" id="driverWithdrawalSubmitBtn">출금 신청하기</button>
+            </form>
+
+            <div class="driver-payslip-empty" id="driverWithdrawalEmpty" hidden>
+              <p id="driverWithdrawalEmptyText">해당 주차 일정산 내역이 없습니다.</p>
+            </div>
+
+            <div id="driverWithdrawalContent">
+              <section class="driver-payslip-table-block">
+                <h3>날짜별 일정산</h3>
+                <div class="table-wrap">
+                  <table class="data-table driver-withdrawal-table">
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>플랫폼</th>
+                        <th>정산금액</th>
+                        <th>콜수</th>
+                        <th>실지급액</th>
+                      </tr>
+                    </thead>
+                    <tbody id="driverWithdrawalDaysBody"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="driver-payslip-table-block">
+                <h3>내 신청내역</h3>
+                <ul class="driver-payslip-lines" id="driverWithdrawalRequestList"></ul>
+              </section>
+            </div>
+          </article>
 
           <article class="panel driver-weekly-payslip-panel" id="driverWeeklyPayslipPanel" hidden>
             <div class="driver-payslip-header">
@@ -630,11 +697,12 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260712i"></script>
+  <script src="js/storage.js?v=20260723a"></script>
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260701c"></script>
-  <script src="js/driver.js?v=20260712i"></script>
+  <script src="js/driver-withdrawal.js?v=20260723a"></script>
+  <script src="js/driver.js?v=20260723a"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
