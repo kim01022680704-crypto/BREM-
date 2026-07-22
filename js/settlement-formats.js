@@ -12,7 +12,8 @@ const SettlementFormats = (function () {
       columns: {
         name: 'C',
         orderCount: 'F',
-        settlementAmount: 'AC'
+        hourlyInsurance: 'AH',
+        settlementAmount: 'AJ'
       },
       cleanName(rawName) {
         return String(rawName || '').trim().replace(/[0-9]+$/, '');

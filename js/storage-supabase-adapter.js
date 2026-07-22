@@ -146,7 +146,7 @@ window.BremSupabaseStorageAdapter = (function () {
 
   const ADMIN_SCHEDULE_SELECT = 'id,date,title,memo,created_by,created_by_id,raw_data,created_at,updated_at';
 
-  const DAILY_SETTLEMENT_SELECT = 'id,driver_id,period,platform,rider_id,order_count,delivery_amount,settlement_amount,applied_at';
+  const DAILY_SETTLEMENT_SELECT = 'id,driver_id,period,platform,rider_id,order_count,hourly_insurance,delivery_amount,settlement_amount,applied_at';
   const WEEKLY_SETTLEMENT_SELECT = 'id,platform,region,file_name,base_settlement_date,start_date,end_date,payment_date,settlement_week_label,matched_names_label,summary,riders,uploaded_at';
   const SETTLEMENT_UPLOAD_LOG_SELECT = 'id,kind,platform,file_name,period,week_start,week_end,region,start_date,end_date,status,matched_count,unmatched_count,total_delivery_amount,total_order_count,content_hash,matched_records,unmatched_records,applied_records,duplicate_of_log_id,skip_reason,linked_record_id,uploaded_at,applied_at';
   const SETTLEMENT_UNMATCHED_SELECT = 'id,kind,platform,week_start,period,end_date,region,raw_name,name,rider_id,order_count,delivery_amount,settlement_amount,coupang_login_key,baemin_user_id,match_payload,source_file_name,saved_at';

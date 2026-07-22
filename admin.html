@@ -3169,7 +3169,7 @@
             </label>
             <button class="primary-btn" type="submit" id="settlementUploadBtn-coupang">업로드 및 미리보기</button>
           </form>
-          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AC열(정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다.</p>
+          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AJ열(총정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다.</p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
         </article>
 
@@ -3231,6 +3231,7 @@
                   <tr>
                     <th>기사명</th>
                     <th>총 오더수</th>
+                    <th>시간제보험</th>
                     <th>총 정산금액</th>
                   </tr>
                 </thead>
@@ -3248,6 +3249,7 @@
                     <th>엑셀 성함</th>
                     <th>추출 이름</th>
                     <th>오더수</th>
+                    <th>시간제보험</th>
                     <th>정산금액</th>
                   </tr>
                 </thead>
@@ -3281,6 +3283,7 @@
                   <th>엑셀 성함</th>
                   <th>추출 이름</th>
                   <th>오더수</th>
+                  <th>시간제보험</th>
                   <th>정산금액</th>
                   <th>기록일</th>
                   <th>관리</th>
@@ -3315,6 +3318,7 @@
                   <th>정산일</th>
                   <th>기사명</th>
                   <th>총 오더수</th>
+                  <th>시간제보험</th>
                   <th>총 정산금액</th>
                   <th>반영일</th>
                   <th>관리</th>
@@ -4072,7 +4076,7 @@
           <h3>미매칭 내역</h3>
           <div class="table-wrap">
             <table class="weekly-settlement-detail-table">
-              <thead>
+              <thead id="settlementUploadLogDetailUnmatchedHead">
                 <tr>
                   <th>엑셀 성함</th>
                   <th>추출 이름</th>

@@ -231,6 +231,7 @@ window.BremSupabaseMapper = (function () {
       platform: String(item.platform || 'coupang'),
       rider_id: String(item.riderId || ''),
       order_count: Number(item.orderCount ?? item.callCount ?? 0),
+      hourly_insurance: Number(item.hourlyInsurance || 0),
       delivery_amount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
       settlement_amount: Number(item.settlementAmount ?? item.deliveryAmount ?? 0),
       applied_at: toIso(item.appliedAt),
@@ -246,6 +247,7 @@ window.BremSupabaseMapper = (function () {
       platform: row.platform || 'coupang',
       riderId: row.rider_id || '',
       orderCount: Number(row.order_count || 0),
+      hourlyInsurance: Number(row.hourly_insurance || 0),
       deliveryAmount: Number(row.delivery_amount ?? row.settlement_amount ?? 0),
       settlementAmount: Number(row.settlement_amount ?? row.delivery_amount ?? 0),
       appliedAt: row.applied_at
@@ -374,6 +376,7 @@ window.BremSupabaseMapper = (function () {
   }
 
   function rowToSettlementUnmatched(row) {
+    const matchPayload = row.match_payload && typeof row.match_payload === 'object' ? row.match_payload : {};
     return {
       id: row.id,
       kind: row.kind === 'weekly' ? 'weekly' : 'daily',
@@ -386,11 +389,12 @@ window.BremSupabaseMapper = (function () {
       name: row.name || row.raw_name || '',
       riderId: row.rider_id || '',
       orderCount: Number(row.order_count || 0),
+      hourlyInsurance: Number(matchPayload.hourlyInsurance || 0),
       deliveryAmount: Number(row.delivery_amount || 0),
       settlementAmount: Number(row.settlement_amount || 0),
       coupangLoginKey: row.coupang_login_key || '',
       baeminUserId: row.baemin_user_id || '',
-      matchPayload: row.match_payload && typeof row.match_payload === 'object' ? row.match_payload : {},
+      matchPayload,
       sourceFileName: row.source_file_name || '',
       savedAt: row.saved_at
     };

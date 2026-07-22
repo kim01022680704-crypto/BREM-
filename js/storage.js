@@ -147,6 +147,7 @@ const BremStorage = (function () {
         period,
         riderId: item.riderId || '',
         deliveryAmount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
+        hourlyInsurance: Number(item.hourlyInsurance || 0),
         id: `${item.driverId}-${period}-${platform}`
       };
       if (item.platform !== platform || item.id !== next.id || item.period !== period) migrated = true;
@@ -8240,6 +8241,7 @@ const BremStorage = (function () {
         platform: p,
         riderId: record.riderId || '',
         orderCount: Number(record.orderCount ?? record.callCount ?? 0),
+        hourlyInsurance: Number(record.hourlyInsurance || 0),
         settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
         deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
         appliedAt
@@ -8983,6 +8985,7 @@ const BremStorage = (function () {
       rawName: String(record.rawName || ''),
       name: String(record.name || ''),
       orderCount: Number(record.orderCount ?? record.callCount ?? 0),
+      hourlyInsurance: Number(record.hourlyInsurance || 0),
       deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
       settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0)
     };
@@ -8997,6 +9000,7 @@ const BremStorage = (function () {
         driverId: row.driverId,
         riderId: row.riderId,
         orderCount: row.orderCount,
+        hourlyInsurance: row.hourlyInsurance,
         settlementAmount: row.settlementAmount
       }))
       .sort((a, b) => a.driverId.localeCompare(b.driverId, 'ko'));
@@ -9557,6 +9561,7 @@ const BremStorage = (function () {
           rawName,
           name,
           orderCount: Number(record.orderCount || 0),
+          hourlyInsurance: Number(record.hourlyInsurance || 0),
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
           deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
           matchPayload: {
@@ -9564,6 +9569,7 @@ const BremStorage = (function () {
             name,
             riderId: String(record.riderId || '').trim(),
             orderCount: Number(record.orderCount || 0),
+            hourlyInsurance: Number(record.hourlyInsurance || 0),
             deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
             settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0)
           },

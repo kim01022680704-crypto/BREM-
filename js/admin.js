@@ -3666,6 +3666,7 @@
       rawName: record.rawName || '',
       name: record.name || '',
       orderCount: Number(record.orderCount ?? record.callCount ?? 0),
+      hourlyInsurance: Number(record.hourlyInsurance || 0),
       deliveryAmount: settlementAmountValue(record),
       settlementAmount: settlementAmountValue(record)
     }));
@@ -3752,6 +3753,7 @@
             <th>기사명</th>
             <th>엑셀 성함</th>
             <th>콜수</th>
+            <th>시간제보험</th>
             <th>정산금액</th>
           </tr>`;
     }
@@ -3772,30 +3774,58 @@
           <td><strong>${escapeHtml(record.driverName || record.name || '-')}</strong></td>
           <td>${escapeHtml(record.rawName || record.name || '-')}</td>
           <td>${number(record.orderCount)}</td>
+          <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
         </tr>
       `;
     }).join('');
 
     $('#settlementUploadLogDetailAppliedRows').innerHTML = appliedRows
-      || '<tr><td colspan="4" class="empty">적용/매칭 내역이 없습니다.</td></tr>';
+      || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 4 : 5}" class="empty">적용/매칭 내역이 없습니다.</td></tr>`;
 
     const unmatchedBlock = $('#settlementUploadLogDetailUnmatchedBlock');
     const unmatchedRowsEl = $('#settlementUploadLogDetailUnmatchedRows');
+    const unmatchedHeadEl = $('#settlementUploadLogDetailUnmatchedHead');
     if (unmatchedBlock && unmatchedRowsEl) {
       if (!unmatchedRecords.length) {
         unmatchedBlock.hidden = true;
         unmatchedRowsEl.innerHTML = '';
       } else {
         unmatchedBlock.hidden = false;
-        unmatchedRowsEl.innerHTML = unmatchedRecords.map(record => `
+        if (unmatchedHeadEl) {
+          unmatchedHeadEl.innerHTML = isBaeminSettlementPlatform(p)
+            ? `<tr>
+                <th>엑셀 성함</th>
+                <th>추출 이름</th>
+                <th>오더수</th>
+                <th>정산금액</th>
+              </tr>`
+            : `<tr>
+                <th>엑셀 성함</th>
+                <th>추출 이름</th>
+                <th>오더수</th>
+                <th>시간제보험</th>
+                <th>정산금액</th>
+              </tr>`;
+        }
+        unmatchedRowsEl.innerHTML = unmatchedRecords.map(record => (
+          isBaeminSettlementPlatform(p) ? `
           <tr>
             <td>${escapeHtml(record.rawName || record.name || '-')}</td>
             <td>${escapeHtml(record.name || '-')}</td>
             <td>${number(record.orderCount)}</td>
             <td>${formatMoney(settlementAmountValue(record))}</td>
           </tr>
-        `).join('');
+        ` : `
+          <tr>
+            <td>${escapeHtml(record.rawName || record.name || '-')}</td>
+            <td>${escapeHtml(record.name || '-')}</td>
+            <td>${number(record.orderCount)}</td>
+            <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
+            <td>${formatMoney(settlementAmountValue(record))}</td>
+          </tr>
+        `
+        )).join('');
       }
     }
 
@@ -3914,6 +3944,7 @@
   function settlementRowCells(record, platform) {
     const orderCount = Number(record.orderCount ?? record.callCount ?? 0);
     const amount = settlementAmountValue(record);
+    const hourlyInsurance = Number(record.hourlyInsurance || 0);
 
     if (isBaeminSettlementPlatform(platform)) {
       return `
@@ -3925,6 +3956,7 @@
 
     return `
       <td>${orderCount.toLocaleString('ko-KR')}</td>
+      <td>${formatMoney(hourlyInsurance)}</td>
       <td>${formatMoney(amount)}</td>
     `;
   }
@@ -3987,9 +4019,10 @@
         <tr>
           <td><strong>${escapeHtml(record.driverName)}</strong></td>
           <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+          <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
         </tr>
-      `).join('') || '<tr><td colspan="3" class="empty">매칭된 기사가 없습니다.</td></tr>';
+      `).join('') || '<tr><td colspan="4" class="empty">매칭된 기사가 없습니다.</td></tr>';
     }
 
     const failedBlock = $(`#settlementFailedBlock-${p}`);
@@ -4001,6 +4034,7 @@
             <td>${escapeHtml(record.rawName)}</td>
             <td>${escapeHtml(record.name)}</td>
             <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+            <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
             <td>${formatMoney(settlementAmountValue(record))}</td>
           </tr>
         `
@@ -4052,7 +4086,7 @@
             <button class="small-btn danger-btn" type="button" data-delete-settlement="${record.id}">삭제</button>
           </td>
         </tr>
-      `).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 6}" class="empty">${emptyMessage}</td></tr>`;
+      `).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 7}" class="empty">${emptyMessage}</td></tr>`;
 
       if (summaryEl) {
         summaryEl.textContent = rows.length
@@ -4115,6 +4149,7 @@
           <td>${escapeHtml(record.rawName)}</td>
           <td>${escapeHtml(record.name)}</td>
           <td>${Number(record.orderCount || 0).toLocaleString('ko-KR')}</td>
+          <td>${formatMoney(Number(record.hourlyInsurance || 0))}</td>
           <td>${formatMoney(settlementAmountValue(record))}</td>
           <td>${formatDate(record.savedAt.slice(0, 10))}</td>
           <td>
@@ -4123,7 +4158,7 @@
           </td>
         </tr>
       `;
-    }).join('') || `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
+    }).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 8}" class="empty">${emptyMessage}</td></tr>`;
   }
 
   function handleSettlementPeriodChange(platform) {
@@ -4654,6 +4689,7 @@
               driverId: record.driverId,
               riderId: record.riderId || '',
               orderCount: record.orderCount,
+              hourlyInsurance: Number(record.hourlyInsurance || 0),
               deliveryAmount: settlementAmountValue(record),
               settlementAmount: settlementAmountValue(record)
             }))

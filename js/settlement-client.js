@@ -143,6 +143,7 @@ const BremSettlementParser = (function () {
     const nameCol = SettlementFormats.columnToIndex(format.columns.name);
     const orderCol = SettlementFormats.columnToIndex(format.columns.orderCount);
     const amountCol = SettlementFormats.columnToIndex(format.columns.settlementAmount);
+    const hourlyInsuranceCol = SettlementFormats.columnToIndex(format.columns.hourlyInsurance || '');
     const startIndex = Math.max(0, Number(format.startRow) - 1);
     const parsedRows = [];
 
@@ -154,13 +155,17 @@ const BremSettlementParser = (function () {
       const name = format.cleanName(rawName);
       if (!name) continue;
 
+      const settlementAmount = parseNumber(readCell(row, amountCol));
       parsedRows.push({
         rawName,
         name,
         riderId: '',
         orderCount: parseNumber(readCell(row, orderCol)),
-        deliveryAmount: parseNumber(readCell(row, amountCol)),
-        settlementAmount: parseNumber(readCell(row, amountCol))
+        hourlyInsurance: hourlyInsuranceCol >= 0
+          ? parseNumber(readCell(row, hourlyInsuranceCol))
+          : 0,
+        deliveryAmount: settlementAmount,
+        settlementAmount
       });
     }
 
@@ -499,6 +504,7 @@ const BremSettlementParser = (function () {
         name: row.name,
         riderId: row.riderId || '',
         orderCount: row.orderCount,
+        hourlyInsurance: Number(row.hourlyInsurance || 0),
         deliveryAmount: Number(row.deliveryAmount ?? row.settlementAmount ?? 0),
         settlementAmount: Number(row.settlementAmount ?? row.deliveryAmount ?? 0)
       };
