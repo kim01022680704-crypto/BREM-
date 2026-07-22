@@ -7706,7 +7706,10 @@ const BremStorage = (function () {
     },
 
     async persist() {
-      await storageAdapter.flush?.();
+      const list = leases.getAll();
+      await awaitPersist(storageAdapter.write(KEYS.leaseVehicles, list, {
+        allowEmpty: list.length === 0
+      }));
     },
 
     getAll() {

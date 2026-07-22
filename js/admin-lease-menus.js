@@ -265,9 +265,10 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function currentWeekStart() {
-    return BremStorage?.adminPreferences?.getLeaseDashboardWeekBasis?.()
-      || BremLeaseProfit?.weekStartKey?.()
+    // 대시보드는 날짜 선택 없이 항상 현재 주(수~화) 기준으로 표시한다.
+    return BremLeaseProfit?.weekStartKey?.()
       || calc()?.weekRange?.('')?.start
+      || BremStorage?.adminPreferences?.getLeaseDashboardWeekBasis?.()
       || '';
   }
 

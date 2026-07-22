@@ -85,9 +85,10 @@
     try {
       if (erp) {
         await erp.persistAll();
-      } else {
-        await leases.persist();
       }
+      // 차량 목록은 BremStorage.leases(KEYS.leaseVehicles) 경로로 기록되므로
+      // 반드시 자체 flush로 Supabase 저장을 확정하고 오류를 잡는다.
+      await leases.persist();
       return true;
     } catch (error) {
       console.error('[BREM] lease persist failed:', error);
@@ -1352,9 +1353,13 @@
         } else {
           leases.create(data);
         }
-        erp?.syncAllVehicleStatusesFromContracts?.();
+        try {
+          erp?.syncAllVehicleStatusesFromContracts?.();
+        } catch (syncError) {
+          console.warn('[BREM] vehicle status sync skipped:', syncError);
+        }
         if (!(await persistLeasesOrWarn())) return;
-        showToast(state.editingId ? '차량을 Supabase에 저장했습니다.' : '차량을 Supabase에 저장했습니다.');
+        showToast('차량을 저장했습니다.');
         window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
 
         resetForm();
@@ -1365,7 +1370,9 @@
         document.querySelector('.lease-list-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
       } catch (error) {
         console.error('[BREM] lease vehicle save failed:', error);
-        showToast('저장 중 오류가 발생했습니다. 새로고침 후 다시 시도하세요.');
+        showToast(error?.message
+          ? `저장 오류: ${error.message}`
+          : '저장 중 오류가 발생했습니다. 새로고침 후 다시 시도하세요.');
       }
     });
 
