@@ -3945,12 +3945,13 @@
   function settlementRowCells(record, platform) {
     const orderCount = Number(record.orderCount ?? record.callCount ?? 0);
     const amount = settlementAmountValue(record);
-    const hourlyInsurance = Number(record.hourlyInsurance || 0);
+    const hourlyInsurance = Math.abs(Number(record.hourlyInsurance || 0));
 
     if (isBaeminSettlementPlatform(platform)) {
       return `
         <td>${escapeHtml(record.riderId || '-')}</td>
         <td>${orderCount.toLocaleString('ko-KR')}</td>
+        <td>${formatMoney(hourlyInsurance)}</td>
         <td>${formatMoney(amount)}</td>
       `;
     }
@@ -4087,7 +4088,7 @@
             <button class="small-btn danger-btn" type="button" data-delete-settlement="${record.id}">삭제</button>
           </td>
         </tr>
-      `).join('') || `<tr><td colspan="${isBaeminSettlementPlatform(p) ? 7 : 7}" class="empty">${emptyMessage}</td></tr>`;
+      `).join('') || `<tr><td colspan="8" class="empty">${emptyMessage}</td></tr>`;
 
       if (summaryEl) {
         summaryEl.textContent = rows.length
