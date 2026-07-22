@@ -49,6 +49,7 @@ function normalizeFees(raw = {}) {
     };
   };
   return {
+    showCallFee: raw.showCallFee !== false,
     coupang: makeSide(raw.coupang || raw),
     baemin: makeSide(raw.baemin || raw)
   };
@@ -109,9 +110,8 @@ function calcPayoutFromSettlement(row, feesByPlatform) {
 function normalizeRequest(item = {}) {
   const amount = Math.max(0, Math.round(Number(item.amount || 0)));
   const weekStart = normalizeSettlementWeekStart(item.weekStart || item.settlementWeekStart);
-  const status = ['pending', 'cancelled'].includes(String(item.status || ''))
-    ? String(item.status)
-    : 'pending';
+  const statusRaw = String(item.status || 'pending');
+  const status = ['pending', 'cancelled', 'completed'].includes(statusRaw) ? statusRaw : 'pending';
   if (!item.driverId || !weekStart || amount <= 0) return null;
   const createdAt = item.createdAt || new Date().toISOString();
   const requestDate = String(item.requestDate || createdAt).slice(0, 10);
@@ -127,7 +127,8 @@ function normalizeRequest(item = {}) {
     status,
     createdAt,
     updatedAt: item.updatedAt || createdAt,
-    cancelledAt: item.cancelledAt || null
+    cancelledAt: item.cancelledAt || null,
+    completedAt: item.completedAt || null
   };
 }
 
@@ -183,6 +184,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       totalNetPay: 0,
       requestedTotal,
       availableAmount: 0,
+      showCallFee: feesByPlatform.showCallFee !== false,
       myRequests: myWeekRequests
     };
   }
@@ -218,6 +220,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     totalNetPay,
     requestedTotal,
     availableAmount,
+    showCallFee: feesByPlatform.showCallFee !== false,
     myRequests: myWeekRequests
   };
 }
@@ -281,12 +284,59 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   };
 }
 
+function sumDayTotals(days = []) {
+  return (Array.isArray(days) ? days : []).reduce((acc, row) => {
+    acc.settlementAmount += Math.max(0, Math.round(Number(row.settlementAmount) || 0));
+    acc.orderCount += Math.max(0, Math.round(Number(row.orderCount) || 0));
+    acc.employmentInsurance += Math.max(0, Math.round(Number(row.employmentInsurance) || 0));
+    acc.industrialAccidentInsurance += Math.max(0, Math.round(Number(row.industrialAccidentInsurance) || 0));
+    acc.withholdingTax += Math.max(0, Math.round(Number(row.withholdingTax) || 0));
+    acc.callFee += Math.max(0, Math.round(Number(row.callFee) || 0));
+    acc.dailySettlementFee += Math.max(0, Math.round(Number(row.dailySettlementFee) || 0));
+    acc.hourlyInsurance += Math.max(0, Math.round(Number(row.hourlyInsurance) || 0));
+    acc.netPay += Math.round(Number(row.netPay) || 0);
+    return acc;
+  }, {
+    settlementAmount: 0,
+    orderCount: 0,
+    employmentInsurance: 0,
+    industrialAccidentInsurance: 0,
+    withholdingTax: 0,
+    callFee: 0,
+    dailySettlementFee: 0,
+    hourlyInsurance: 0,
+    netPay: 0
+  });
+}
+
+async function loadDriverWeekDays(supabase, driverId, weekStart, rosterItem, feesByPlatform) {
+  const weekEnd = settlementWeekEnd(weekStart);
+  const { data: settlementRows, error } = await supabase
+    .from('daily_settlements')
+    .select('period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+    .eq('driver_id', driverId)
+    .gte('period', weekStart)
+    .lte('period', weekEnd)
+    .order('period', { ascending: true });
+  if (error) throw error;
+  return (settlementRows || [])
+    .filter(row => isPlatformEnrolled(rosterItem, row.platform))
+    .map(row => calcPayoutFromSettlement(row, feesByPlatform))
+    .filter(row => row.period);
+}
+
 async function listWithdrawalRequests(accessToken, query = {}) {
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
 
   const supabase = getServiceClient();
-  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  const [listRaw, rosterRaw, feesRaw] = await Promise.all([
+    readSettingValue(supabase, REQUESTS_KEY, []),
+    readSettingValue(supabase, ROSTER_KEY, []),
+    readSettingValue(supabase, FEES_KEY, {})
+  ]);
+  const list = normalizeRequestList(listRaw);
+  const feesByPlatform = normalizeFees(feesRaw);
   const weekStart = query.weekStart ? normalizeSettlementWeekStart(query.weekStart) : '';
   const date = String(query.date || '').slice(0, 10);
   const status = String(query.status || '').trim();
@@ -298,12 +348,37 @@ async function listWithdrawalRequests(accessToken, query = {}) {
     return true;
   });
 
+  const detailCache = new Map();
+  const requests = [];
+  for (const item of filtered) {
+    const cacheKey = `${item.driverId}|${item.weekStart}`;
+    let detail = detailCache.get(cacheKey);
+    if (!detail) {
+      const rosterItem = findRosterEntry(rosterRaw, item.driverId);
+      try {
+        const days = rosterItem
+          ? await loadDriverWeekDays(supabase, item.driverId, item.weekStart, rosterItem, feesByPlatform)
+          : [];
+        detail = sumDayTotals(days);
+      } catch (_error) {
+        detail = sumDayTotals([]);
+      }
+      detailCache.set(cacheKey, detail);
+    }
+    requests.push({
+      ...item,
+      ...detail,
+      showCallFee: feesByPlatform.showCallFee !== false
+    });
+  }
+
   return {
     ok: true,
     date: date || null,
     weekStart: weekStart || null,
-    requests: filtered,
-    total: filtered.length
+    showCallFee: feesByPlatform.showCallFee !== false,
+    requests,
+    total: requests.length
   };
 }
 
@@ -323,6 +398,9 @@ async function cancelWithdrawalRequest(accessToken, requestId) {
   if (current.status === 'cancelled') {
     return { ok: true, request: current, alreadyCancelled: true };
   }
+  if (current.status === 'completed') {
+    return { ok: false, status: 400, error: '처리완료된 신청은 취소할 수 없습니다.' };
+  }
 
   const updated = {
     ...current,
@@ -338,6 +416,42 @@ async function cancelWithdrawalRequest(accessToken, requestId) {
     request: updated,
     restoredAmount: updated.amount,
     message: `취소 완료 · ${updated.amount.toLocaleString('ko-KR')}원 출금가능금액 복구`
+  };
+}
+
+async function completeWithdrawalRequest(accessToken, requestId) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const id = String(requestId || '').trim();
+  if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
+
+  const supabase = getServiceClient();
+  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  const index = list.findIndex(item => item.id === id);
+  if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+
+  const current = list[index];
+  if (current.status === 'completed') {
+    return { ok: true, request: current, alreadyCompleted: true };
+  }
+  if (current.status === 'cancelled') {
+    return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.' };
+  }
+
+  const updated = {
+    ...current,
+    status: 'completed',
+    completedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  list[index] = updated;
+  await writeSettingValue(supabase, REQUESTS_KEY, list);
+
+  return {
+    ok: true,
+    request: updated,
+    message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`
   };
 }
 
@@ -372,6 +486,7 @@ module.exports = {
   createWithdrawalRequest,
   listWithdrawalRequests,
   cancelWithdrawalRequest,
+  completeWithdrawalRequest,
   deleteWithdrawalRequest,
   REQUESTS_KEY
 };

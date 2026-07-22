@@ -512,6 +512,34 @@ h3 {
   opacity: 0.85;
 }
 
+.driver-withdrawal-table th.driver-withdrawal-net,
+.driver-withdrawal-table td.driver-withdrawal-net {
+  border-left: 2px solid #f59e0b;
+  background: #fff7ed;
+  color: #c2410c;
+  font-weight: 900;
+}
+
+.driver-withdrawal-table td.driver-withdrawal-net strong {
+  color: #9a3412;
+  font-weight: 900;
+}
+
+.driver-withdrawal-request.is-completed {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.driver-withdrawal-request.is-completed strong {
+  color: #14532d;
+  text-decoration: none;
+}
+
+.driver-withdrawal-request__badge.is-completed {
+  background: #16a34a;
+}
+
 #driverWithdrawalRequestList {
   display: grid;
   gap: 0.55rem;
@@ -2765,6 +2793,14 @@ button.calendar-day:hover {
   .driver-payslip-notice-item {
     padding: 8px 10px;
     gap: 8px;
+  }
+
+  .driver-withdrawal-table th.driver-withdrawal-net,
+  .driver-withdrawal-table td.driver-withdrawal-net {
+    border-left: 2px solid #f59e0b;
+    background: #fff7ed;
+    color: #9a3412;
+    font-weight: 900;
   }
 
   .driver-withdrawal-table {

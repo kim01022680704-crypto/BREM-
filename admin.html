@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260715k">
+  <link rel="stylesheet" href="css/admin.css?v=20260723d">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5300,6 +5300,10 @@
                 <input type="number" id="payrollDailySettlementCallFee" min="0" step="1" value="0">
               </label>
               <label class="payroll-field">
+                <span>콜수수료 표시</span>
+                <button type="button" class="small-btn" id="payrollDailySettlementCallFeeVisibleBtn" aria-pressed="true">ON</button>
+              </label>
+              <label class="payroll-field">
                 <span>일정산수수료 방식</span>
                 <select id="payrollDailySettlementDailyFeeMode">
                   <option value="fixed">정액 (원)</option>
@@ -5311,6 +5315,7 @@
                 <input type="number" id="payrollDailySettlementDailyFee" min="0" step="1" value="0">
               </label>
             </div>
+            <p class="form-help">콜수수료 표시 OFF 시 관리자·기사앱 일정산 표에서 콜수수료 열이 숨겨집니다. (공제 계산은 유지)</p>
             <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 콜수수료 = 콜수 × 단가. 일정산수수료 %는 정산금액 기준 절사. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 일정산수수료 − 시간제보험</p>
           </article>
 
@@ -5343,10 +5348,10 @@
                     <th>고용보험</th>
                     <th>산재보험</th>
                     <th>원천세</th>
-                    <th>콜수수료</th>
+                    <th class="pds-call-fee-col">콜수수료</th>
                     <th>일정산수수료</th>
                     <th>시간제보험</th>
-                    <th>실지급액</th>
+                    <th class="pds-net-col">실지급액</th>
                   </tr>
                 </thead>
                 <tbody id="payrollDailySettlementPayoutBody"></tbody>
@@ -5362,7 +5367,10 @@
                 <h2>출금신청자</h2>
                 <p class="form-help" id="payrollDailyWithdrawalSummary">기사 앱 출금신청 내역입니다. 일별(신청일)로 조회하며, 취소 시 기사 출금가능금액이 복구됩니다.</p>
               </div>
-              <button type="button" class="small-btn" id="payrollDailyWithdrawalRefreshBtn">새로고침</button>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailyWithdrawalExcelBtn">엑셀 일괄다운로드</button>
+                <button type="button" class="small-btn" id="payrollDailyWithdrawalRefreshBtn">새로고침</button>
+              </div>
             </div>
             <div class="payroll-toolbar">
               <label class="payroll-field">
@@ -5374,20 +5382,30 @@
                 <select id="payrollDailyWithdrawalStatusFilter">
                   <option value="">전체</option>
                   <option value="pending">신청</option>
+                  <option value="completed">처리완료</option>
                   <option value="cancelled">취소</option>
                 </select>
               </label>
             </div>
             <div class="table-wrap bulk-preview-wrap">
-              <table class="data-table">
+              <table class="data-table" id="payrollDailyWithdrawalTable">
                 <thead>
                   <tr>
                     <th>신청시각</th>
                     <th>이름</th>
                     <th>신청일</th>
                     <th>정산주</th>
-                    <th>신청금액</th>
+                    <th>정산금액</th>
+                    <th>콜수</th>
+                    <th>고용보험</th>
+                    <th>산재보험</th>
+                    <th>원천세</th>
+                    <th class="pds-call-fee-col">콜수수료</th>
+                    <th>일정산수수료</th>
+                    <th>시간제보험</th>
+                    <th class="pds-net-col">실지급액</th>
                     <th>출금가능(신청시)</th>
+                    <th>신청금액</th>
                     <th>상태</th>
                     <th>관리</th>
                   </tr>
@@ -5753,7 +5771,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260722e"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
   <script src="js/storage-supabase-adapter.js?v=20260703w"></script>
-  <script src="js/storage.js?v=20260723b"></script>
+  <script src="js/storage.js?v=20260723d"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -5789,10 +5807,10 @@
   <script src="js/payroll-slip-utils.js?v=20260701d"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
-  <script src="js/payroll-daily-settlement-admin.js?v=20260723a"></script>
+  <script src="js/payroll-daily-settlement-admin.js?v=20260723e"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260723b"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260723f"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>

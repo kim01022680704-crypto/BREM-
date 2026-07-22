@@ -12,7 +12,8 @@
     regionDetailOpen: false,
     platform: 'coupang',
     subTab: 'payout',
-    payoutDate: ''
+    payoutDate: '',
+    withdrawalRows: []
   };
 
   function $(id) {
@@ -95,8 +96,33 @@
     }
   }
 
+  function syncCallFeeVisibleBtn() {
+    const btn = $('payrollDailySettlementCallFeeVisibleBtn');
+    const show = isCallFeeVisible();
+    if (btn) {
+      btn.textContent = show ? 'ON' : 'OFF';
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      btn.classList.toggle('is-off', !show);
+    }
+    document.querySelectorAll('.pds-call-fee-col').forEach(el => {
+      el.hidden = !show;
+    });
+  }
+
+  function isCallFeeVisible() {
+    if (BremStorage?.payrollDailySettlement?.isCallFeeVisible) {
+      return BremStorage.payrollDailySettlement.isCallFeeVisible();
+    }
+    return roster.readAllFees?.()?.showCallFee !== false;
+  }
+
   function syncFeeInputs() {
-    const fees = roster.readFees?.(state.platform) || {
+    const allFees = roster.readAllFees?.() || {
+      showCallFee: true,
+      coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' },
+      baemin: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' }
+    };
+    const fees = allFees[state.platform] || allFees.coupang || {
       callFee: 0,
       dailySettlementFee: 0,
       dailySettlementFeeMode: 'fixed'
@@ -107,6 +133,7 @@
     syncDailyFeeModeUi(mode);
     if (callInput) callInput.value = String(fees.callFee || 0);
     if (dailyInput) dailyInput.value = String(fees.dailySettlementFee || 0);
+    syncCallFeeVisibleBtn();
   }
 
   function ensurePayoutDateDefault() {
@@ -133,13 +160,15 @@
     const rows = roster.buildPayoutRows?.({ platform: state.platform, period }) || [];
     const withAmount = rows.filter(row => row.hasSettlement && row.settlementAmount > 0);
     const totalNet = rows.reduce((sum, row) => sum + (Number(row.netPay) || 0), 0);
+    const showCallFee = isCallFeeVisible();
+    const colSpan = showCallFee ? 12 : 11;
 
     if (summary) {
       summary.textContent = `${platformLabelKo()} · 정산일 ${period || '-'} · 등록 ${rows.length}명 · 업로드매칭 ${withAmount.length}명 · 실지급 합계 ${formatWon(totalNet)}`;
     }
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="12" class="empty">일정산 등록 기사가 없습니다. 「일정산 기사등록」에서 등록하세요.</td></tr>';
+      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">일정산 등록 기사가 없습니다. 「일정산 기사등록」에서 등록하세요.</td></tr>`;
       return;
     }
 
@@ -153,10 +182,10 @@
         <td>${formatWon(row.employmentInsurance)}</td>
         <td>${formatWon(row.industrialAccidentInsurance)}</td>
         <td>${formatWon(row.withholdingTax)}</td>
-        <td>${formatWon(row.callFee)}</td>
+        ${showCallFee ? `<td class="pds-call-fee-col">${formatWon(row.callFee)}</td>` : ''}
         <td>${formatWon(row.dailySettlementFee)}</td>
         <td>${formatWon(row.hourlyInsurance)}</td>
-        <td><strong>${formatWon(row.netPay)}</strong></td>
+        <td class="pds-net-col"><strong>${formatWon(row.netPay)}</strong></td>
       </tr>
     `).join('');
   }
@@ -172,10 +201,12 @@
       : Math.max(0, Math.round(feeRaw));
     try {
       const all = roster.readAllFees?.() || {
+        showCallFee: true,
         coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' },
         baemin: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' }
       };
       all[state.platform] = { callFee, dailySettlementFee, dailySettlementFeeMode };
+      all.showCallFee = all.showCallFee !== false;
       await roster.persistFees(all);
       syncFeeInputs();
       renderPayoutTable();
@@ -184,6 +215,24 @@
     } catch (error) {
       console.error('[daily settlement fees]', error);
       showToast(error.message || '수수료 저장에 실패했습니다.');
+    }
+  }
+
+  async function toggleCallFeeVisibility() {
+    try {
+      const all = roster.readAllFees?.() || {
+        showCallFee: true,
+        coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' },
+        baemin: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' }
+      };
+      all.showCallFee = !(all.showCallFee !== false);
+      await roster.persistFees(all);
+      syncFeeInputs();
+      renderPayoutTable();
+      showToast(all.showCallFee ? '콜수수료 표시 ON' : '콜수수료 표시 OFF');
+    } catch (error) {
+      console.error('[call fee visibility]', error);
+      showToast(error.message || '콜수수료 표시 설정 저장에 실패했습니다.');
     }
   }
 
@@ -252,6 +301,7 @@
 
   function statusLabel(status) {
     if (status === 'cancelled') return '취소';
+    if (status === 'completed') return '처리완료';
     return '신청';
   }
 
@@ -287,32 +337,78 @@
 
     const pendingRows = rows.filter(row => row.status === 'pending');
     const totalAmount = pendingRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const showCallFee = rows.some(row => row.showCallFee !== false) && isCallFeeVisible();
+    const colSpan = showCallFee ? 17 : 16;
+    const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
+    rows = rows.map(row => {
+      const driver = driverMap.get(String(row.driverId || '')) || null;
+      return {
+        ...row,
+        bankName: row.bankName || driver?.bankName || '',
+        accountNumber: row.accountNumber || driver?.accountNumber || ''
+      };
+    });
+    state.withdrawalRows = rows;
+    document.querySelectorAll('#payrollDailyWithdrawalTable .pds-call-fee-col').forEach(el => {
+      el.hidden = !showCallFee;
+    });
+
     if (summary) {
       summary.textContent = `신청일 ${date || '-'} · ${rows.length}건 · 신청중 ${pendingRows.length}건 · 신청중 합계 ${formatWon(totalAmount)}`;
     }
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="8" class="empty">해당 날짜 출금신청이 없습니다.</td></tr>';
+      body.innerHTML = `<tr><td colspan="${colSpan}" class="empty">해당 날짜 출금신청이 없습니다.</td></tr>`;
       return;
     }
 
     body.innerHTML = rows.map(row => {
       const canCancel = row.status === 'pending';
+      const canComplete = row.status === 'pending';
+      const rowShowCall = showCallFee && row.showCallFee !== false;
       return `
       <tr>
         <td>${escapeHtml(row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-')}</td>
         <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
         <td>${escapeHtml(row.requestDate || String(row.createdAt || '').slice(0, 10) || '-')}</td>
         <td>${escapeHtml(`${row.weekStart || '-'} ~ ${row.weekEnd || '-'}`)}</td>
-        <td><strong>${formatWon(row.amount)}</strong></td>
+        <td>${formatWon(row.settlementAmount)}</td>
+        <td>${Number(row.orderCount || 0).toLocaleString('ko-KR')}</td>
+        <td>${formatWon(row.employmentInsurance)}</td>
+        <td>${formatWon(row.industrialAccidentInsurance)}</td>
+        <td>${formatWon(row.withholdingTax)}</td>
+        ${rowShowCall ? `<td class="pds-call-fee-col">${formatWon(row.callFee)}</td>` : ''}
+        <td>${formatWon(row.dailySettlementFee)}</td>
+        <td>${formatWon(row.hourlyInsurance)}</td>
+        <td class="pds-net-col"><strong>${formatWon(row.netPay)}</strong></td>
         <td>${formatWon(row.availableAtRequest)}</td>
+        <td><strong>${formatWon(row.amount)}</strong></td>
         <td>${escapeHtml(statusLabel(row.status))}</td>
         <td>
+          ${canComplete ? `<button type="button" class="small-btn primary-btn" data-pds-wd-complete="${escapeHtml(row.id)}">출금완료</button>` : ''}
           ${canCancel ? `<button type="button" class="small-btn" data-pds-wd-cancel="${escapeHtml(row.id)}">취소</button>` : ''}
           <button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button>
         </td>
       </tr>`;
     }).join('');
+  }
+
+  function exportWithdrawalExcel() {
+    const rows = Array.isArray(state.withdrawalRows) ? state.withdrawalRows : [];
+    if (!rows.length) {
+      showToast('내보낼 출금신청이 없습니다.');
+      return;
+    }
+    try {
+      const date = ensureWithdrawalDateDefault() || new Date().toISOString().slice(0, 10);
+      const stamp = date.replace(/-/g, '');
+      const filename = `BREM_출금신청자_${stamp}.xlsx`;
+      roster.exportWithdrawalRowsToExcel(rows, filename, '출금신청자');
+      showToast(`엑셀 저장: ${filename}`);
+    } catch (error) {
+      console.error('[withdrawal excel]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
   }
 
   async function cancelWithdrawalRequest(id) {
@@ -325,6 +421,19 @@
     } catch (error) {
       console.error('[withdrawal cancel]', error);
       showToast(error.message || '취소에 실패했습니다.');
+    }
+  }
+
+  async function completeWithdrawalRequest(id) {
+    if (!id) return;
+    if (!window.confirm('출금완료 처리할까요? 기사 앱에 처리완료로 표시됩니다.')) return;
+    try {
+      const result = await BremStorage.payrollWithdrawal.completeRequest(id);
+      showToast(result.message || '출금완료 처리했습니다.');
+      await renderWithdrawalRequests();
+    } catch (error) {
+      console.error('[withdrawal complete]', error);
+      showToast(error.message || '출금완료 처리에 실패했습니다.');
     }
   }
 
@@ -1070,6 +1179,9 @@
     $('payrollDailySettlementExportRegionBtn')?.addEventListener('click', exportCurrentRegion);
     $('payrollDailySettlementRegionAddBtn')?.addEventListener('click', addRegionFromInput);
     $('payrollDailySettlementFeeSaveBtn')?.addEventListener('click', () => { void saveFeesFromInputs(); });
+    $('payrollDailySettlementCallFeeVisibleBtn')?.addEventListener('click', () => {
+      void toggleCallFeeVisibility();
+    });
     $('payrollDailySettlementDailyFeeMode')?.addEventListener('change', event => {
       syncDailyFeeModeUi(event.target.value);
     });
@@ -1085,6 +1197,7 @@
     $('payrollDailyWithdrawalRefreshBtn')?.addEventListener('click', () => {
       void renderWithdrawalRequests();
     });
+    $('payrollDailyWithdrawalExcelBtn')?.addEventListener('click', exportWithdrawalExcel);
     $('payrollDailyWithdrawalDate')?.addEventListener('change', () => {
       void renderWithdrawalRequests();
     });
@@ -1092,6 +1205,11 @@
       void renderWithdrawalRequests();
     });
     $('payrollDailyWithdrawalBody')?.addEventListener('click', event => {
+      const completeBtn = event.target.closest('[data-pds-wd-complete]');
+      if (completeBtn) {
+        void completeWithdrawalRequest(completeBtn.dataset.pdsWdComplete);
+        return;
+      }
       const cancelBtn = event.target.closest('[data-pds-wd-cancel]');
       if (cancelBtn) {
         void cancelWithdrawalRequest(cancelBtn.dataset.pdsWdCancel);

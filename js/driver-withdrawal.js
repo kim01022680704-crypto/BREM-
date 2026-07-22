@@ -129,11 +129,12 @@
     }
   }
 
-  function renderDays(days) {
+  function renderDays(days, showCallFee = true) {
     if (!daysBody) return;
     const list = Array.isArray(days) ? days : [];
+    const colSpan = showCallFee ? 9 : 8;
     if (!list.length) {
-      daysBody.innerHTML = '<tr><td colspan="9" class="empty">표시할 일정산 내역이 없습니다.</td></tr>';
+      daysBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty">표시할 일정산 내역이 없습니다.</td></tr>`;
       return;
     }
     daysBody.innerHTML = list.map(row => `
@@ -144,9 +145,9 @@
         <td>${formatMoney(row.employmentInsurance)}</td>
         <td>${formatMoney(row.industrialAccidentInsurance)}</td>
         <td>${formatMoney(row.withholdingTax)}</td>
-        <td>${formatMoney(row.callFee)}</td>
+        ${showCallFee ? `<td class="driver-withdrawal-call-fee">${formatMoney(row.callFee)}</td>` : ''}
         <td>${formatMoney(row.dailySettlementFee)}</td>
-        <td><strong>${formatMoney(row.netPay)}</strong></td>
+        <td class="driver-withdrawal-net"><strong>${formatMoney(row.netPay)}</strong></td>
       </tr>
     `).join('');
   }
@@ -160,15 +161,31 @@
     }
     requestList.innerHTML = list.map(item => {
       const cancelled = item.status === 'cancelled';
+      const completed = item.status === 'completed';
+      const statusClass = cancelled ? ' is-cancelled' : (completed ? ' is-completed' : '');
+      const badge = cancelled
+        ? '<em class="driver-withdrawal-request__badge">취소됨</em>'
+        : (completed
+          ? '<em class="driver-withdrawal-request__badge is-completed">처리완료</em>'
+          : '<em class="driver-withdrawal-request__badge is-pending">신청</em>');
       return `
-      <li class="driver-withdrawal-request${cancelled ? ' is-cancelled' : ''}">
+      <li class="driver-withdrawal-request${statusClass}">
         <span class="driver-withdrawal-request__meta">
           ${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '-')}
-          ${cancelled ? '<em class="driver-withdrawal-request__badge">취소됨</em>' : '<em class="driver-withdrawal-request__badge is-pending">신청</em>'}
+          ${badge}
         </span>
         <strong>${formatMoney(item.amount)}</strong>
       </li>`;
     }).join('');
+  }
+
+  function syncCallFeeHeader(showCallFee) {
+    const table = panel.querySelector('.driver-withdrawal-table');
+    if (!table) return;
+    table.classList.toggle('hide-call-fee', !showCallFee);
+    table.querySelectorAll('.driver-withdrawal-call-fee-head, .driver-withdrawal-call-fee').forEach(el => {
+      el.hidden = !showCallFee;
+    });
   }
 
   async function loadWithdrawal() {
@@ -193,7 +210,9 @@
     }
 
     renderSummary(result);
-    renderDays(result.days);
+    const showCallFee = result.showCallFee !== false;
+    syncCallFeeHeader(showCallFee);
+    renderDays(result.days, showCallFee);
     renderRequests(result.myRequests);
 
     const noDays = !Array.isArray(result.days) || !result.days.length;

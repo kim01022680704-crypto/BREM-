@@ -2841,6 +2841,14 @@ const BremStorage = (function () {
     });
   }
 
+  async function completeAdminWithdrawalRequest(requestId) {
+    const id = encodeURIComponent(String(requestId || '').trim());
+    return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}/complete`, {
+      method: 'POST',
+      body: '{}'
+    });
+  }
+
   async function deleteAdminWithdrawalRequest(requestId) {
     const id = encodeURIComponent(String(requestId || '').trim());
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}`, {
@@ -6992,11 +7000,15 @@ const BremStorage = (function () {
         };
       };
       return {
+        showCallFee: raw.showCallFee !== false,
         coupang: makeSide(raw.coupang || raw),
         baemin: makeSide(raw.baemin || raw)
       };
     },
 
+    isCallFeeVisible() {
+      return payrollDailySettlement.getAllFees().showCallFee !== false;
+    },
     resolveDailySettlementFee(settlementAmount, fees = {}) {
       const amount = Math.max(0, Math.round(Number(settlementAmount) || 0));
       const mode = String(fees.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
@@ -7254,6 +7266,14 @@ const BremStorage = (function () {
       const result = await cancelAdminWithdrawalRequest(requestId);
       if (!result?.ok) {
         throw new Error(result?.error || result?.message || '출금신청 취소에 실패했습니다.');
+      }
+      return result;
+    },
+
+    async completeRequest(requestId) {
+      const result = await completeAdminWithdrawalRequest(requestId);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '출금완료 처리에 실패했습니다.');
       }
       return result;
     },
@@ -12034,6 +12054,7 @@ const BremStorage = (function () {
     submitRiderWithdrawalToServer,
     fetchAdminWithdrawalRequestsFromServer,
     cancelAdminWithdrawalRequest,
+    completeAdminWithdrawalRequest,
     deleteAdminWithdrawalRequest,
     loadDriverAppBundle,
     getDriverAppPublishedAt,

@@ -9324,6 +9324,27 @@ textarea {
   opacity: 0.72;
 }
 
+#payrollDailySettlementCallFeeVisibleBtn {
+  min-width: 64px;
+  font-weight: 900;
+}
+
+#payrollDailySettlementCallFeeVisibleBtn.is-off {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.pds-net-col {
+  border-left: 2px solid #f59e0b !important;
+  background: #fff7ed !important;
+  color: #c2410c !important;
+  font-weight: 900;
+}
+
+.pds-call-fee-col[hidden] {
+  display: none !important;
+}
+
 .payroll-daily-settle-global {
   display: inline-flex;
   align-items: center;

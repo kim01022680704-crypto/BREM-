@@ -430,14 +430,83 @@
     }
     const list = Array.isArray(rows) ? rows : [];
     const data = [
-      ['이름', '쿠팡ID', '배민ID', '계좌번호', '실지급액'],
+      ['이름', '쿠팡ID', '배민ID', '은행명', '계좌번호', '실지급액'],
       ...list.map(item => [
         item.driverName || '',
         item.coupangId || '',
         item.baeminId || '',
+        item.bankName || '',
         item.accountNumber || '',
         Number(item.netPay) || 0
       ])
+    ];
+    const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    window.XLSX.writeFile(workbook, filename);
+  }
+
+  function exportWithdrawalRowsToExcel(rows, filename, sheetName = '출금신청자') {
+    if (!window.XLSX) {
+      throw new Error('엑셀 라이브러리를 불러오지 못했습니다.');
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    const showCallFee = list.some(item => item.showCallFee !== false);
+    const headers = [
+      '신청시각',
+      '이름',
+      '신청일',
+      '정산주',
+      '은행명',
+      '계좌번호',
+      '정산금액',
+      '콜수',
+      '고용보험',
+      '산재보험',
+      '원천세',
+      ...(showCallFee ? ['콜수수료'] : []),
+      '일정산수수료',
+      '시간제보험',
+      '실지급액',
+      '출금가능(신청시)',
+      '신청금액',
+      '상태'
+    ];
+    const statusText = status => {
+      if (status === 'cancelled') return '취소';
+      if (status === 'completed') return '처리완료';
+      return '신청';
+    };
+    const data = [
+      headers,
+      ...list.map(item => {
+        const weekLabel = item.weekStart
+          ? `${item.weekStart} ~ ${item.weekEnd || ''}`
+          : '';
+        const row = [
+          item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '',
+          item.driverName || '',
+          item.requestDate || String(item.createdAt || '').slice(0, 10),
+          weekLabel,
+          item.bankName || '',
+          item.accountNumber || '',
+          Number(item.settlementAmount) || 0,
+          Number(item.orderCount) || 0,
+          Number(item.employmentInsurance) || 0,
+          Number(item.industrialAccidentInsurance) || 0,
+          Number(item.withholdingTax) || 0
+        ];
+        if (showCallFee) row.push(Number(item.callFee) || 0);
+        row.push(
+          Number(item.dailySettlementFee) || 0,
+          Number(item.hourlyInsurance) || 0,
+          Number(item.netPay) || 0,
+          Number(item.availableAtRequest) || 0,
+          Number(item.amount) || 0,
+          statusText(item.status)
+        );
+        return row;
+      })
     ];
     const worksheet = window.XLSX.utils.aoa_to_sheet(data);
     const workbook = window.XLSX.utils.book_new();
@@ -480,6 +549,7 @@
     platformLabel,
     exportRowsToExcel,
     exportPayoutRowsToExcel,
+    exportWithdrawalRowsToExcel,
     readFees,
     readAllFees,
     persistFees,

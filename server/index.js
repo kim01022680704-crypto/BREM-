@@ -499,6 +499,21 @@ app.post('/api/admin/payroll/withdrawal-requests/:id/cancel', async (req, res) =
   }
 });
 
+app.post('/api/admin/payroll/withdrawal-requests/:id/complete', async (req, res) => {
+  try {
+    const result = await riderWithdrawal.completeWithdrawalRequest(
+      getBearerToken(req),
+      req.params.id
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '출금완료 처리에 실패했습니다.' });
+  }
+});
+
 app.delete('/api/admin/payroll/withdrawal-requests/:id', async (req, res) => {
   try {
     const result = await riderWithdrawal.deleteWithdrawalRequest(
