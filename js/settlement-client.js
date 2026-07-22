@@ -162,7 +162,7 @@ const BremSettlementParser = (function () {
         riderId: '',
         orderCount: parseNumber(readCell(row, orderCol)),
         hourlyInsurance: hourlyInsuranceCol >= 0
-          ? parseNumber(readCell(row, hourlyInsuranceCol))
+          ? Math.abs(parseNumber(readCell(row, hourlyInsuranceCol)))
           : 0,
         deliveryAmount: settlementAmount,
         settlementAmount
@@ -504,7 +504,7 @@ const BremSettlementParser = (function () {
         name: row.name,
         riderId: row.riderId || '',
         orderCount: row.orderCount,
-        hourlyInsurance: Number(row.hourlyInsurance || 0),
+        hourlyInsurance: Math.abs(Number(row.hourlyInsurance || 0)),
         deliveryAmount: Number(row.deliveryAmount ?? row.settlementAmount ?? 0),
         settlementAmount: Number(row.settlementAmount ?? row.deliveryAmount ?? 0)
       };

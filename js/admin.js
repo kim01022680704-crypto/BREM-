@@ -3666,7 +3666,7 @@
       rawName: record.rawName || '',
       name: record.name || '',
       orderCount: Number(record.orderCount ?? record.callCount ?? 0),
-      hourlyInsurance: Number(record.hourlyInsurance || 0),
+      hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
       deliveryAmount: settlementAmountValue(record),
       settlementAmount: settlementAmountValue(record)
     }));
@@ -4689,7 +4689,7 @@
               driverId: record.driverId,
               riderId: record.riderId || '',
               orderCount: record.orderCount,
-              hourlyInsurance: Number(record.hourlyInsurance || 0),
+              hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
               deliveryAmount: settlementAmountValue(record),
               settlementAmount: settlementAmountValue(record)
             }))
