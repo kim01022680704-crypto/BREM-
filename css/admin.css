@@ -6887,36 +6887,65 @@ textarea {
 
 .lease-dash-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  padding: 16px 18px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+  padding: 12px 14px 14px;
 }
 
 .lease-dash-tile {
-  display: grid;
-  gap: 4px;
-  padding: 16px;
-  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: #141414;
 }
 
 .lease-dash-tile span {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--muted);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .lease-dash-tile strong {
-  font-size: 1.35rem;
+  font-size: 1.1rem;
   font-weight: 900;
-  line-height: 1.2;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .lease-dash-tile em {
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   color: var(--muted);
   font-style: normal;
+}
+
+.lease-dash-vehicle-search {
+  min-width: 220px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101010;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.lease-dash-vehicle-search:focus {
+  outline: none;
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px rgba(255, 212, 0, 0.15);
+}
+
+/* 차량별 현황도 상태 태그를 한 줄로 유지해 행 높이를 낮춘다. */
+.lease-dash-vehicle-table .lease-status-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .lease-dash-tile--profit strong { color: #6ee7b7; }
@@ -7889,8 +7918,9 @@ textarea {
   left: 0;
   right: 0;
   z-index: 30;
-  max-height: 240px;
-  overflow: auto;
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: hidden;
   border: 1px solid #334155;
   border-radius: 12px;
   background: #111827;
@@ -7898,15 +7928,19 @@ textarea {
 }
 
 .lease-driver-picker__item {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 0;
   border-bottom: 1px solid #1f2937;
   background: transparent;
   color: #e2e8f0;
   text-align: left;
+  line-height: 1.3;
   cursor: pointer;
 }
 
@@ -7923,11 +7957,14 @@ textarea {
 .lease-driver-picker__item strong {
   color: #fff;
   font-size: 0.9rem;
+  min-width: 92px;
+  white-space: nowrap;
 }
 
 .lease-driver-picker__item span {
   color: #94a3b8;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .lease-driver-picker__empty {
@@ -8040,6 +8077,52 @@ textarea {
 
 .lease-table .lease-actions {
   flex-wrap: nowrap;
+}
+
+/* 정렬 가능한 헤더(오름/내림차순) */
+.lease-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.lease-sortable::after {
+  content: ' ⇅';
+  opacity: 0.35;
+  font-size: 0.82em;
+}
+
+.lease-sortable.is-active[data-dir="asc"]::after {
+  content: ' ▲';
+  opacity: 1;
+  color: var(--yellow);
+}
+
+.lease-sortable.is-active[data-dir="desc"]::after {
+  content: ' ▼';
+  opacity: 1;
+  color: var(--yellow);
+}
+
+/* 미납자 태그 강조 */
+.lease-unpaid-tag {
+  background: #7f1d1d !important;
+  color: #fecaca !important;
+  border: 1px solid #f87171 !important;
+  font-weight: 800;
+}
+
+/* 주정산 자동 등록 미납 태그 */
+.lease-arrear-auto-tag {
+  background: #1e3a8a !important;
+  color: #bfdbfe !important;
+  border: 1px solid #3b82f6 !important;
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+
+.lease-contract-row--unpaid td:first-child {
+  box-shadow: inset 3px 0 0 0 #f87171;
 }
 
 /* 계약/렌탈 - 등록차량 검색창을 또렷하게 */

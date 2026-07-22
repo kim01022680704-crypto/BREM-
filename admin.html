@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260723s">
+  <link rel="stylesheet" href="css/admin.css?v=20260723u">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1983,8 +1983,11 @@
                 </div>
                 <div class="lease-dash-vehicle-overview">
                   <div class="lease-dash-vehicle-overview__head">
-                    <h3>차량별 현황</h3>
-                    <p class="form-help">차량 기준 · 리스/렌탈 태그 · 계약기간 · 운행/미납/공차 복합 표시</p>
+                    <div>
+                      <h3>차량별 현황</h3>
+                      <p class="form-help">차량 기준 · 리스/렌탈 태그 · 계약기간 · 운행/미납/공차 복합 표시</p>
+                    </div>
+                    <input type="search" id="leaseDashVehicleSearch" class="lease-dash-vehicle-search" placeholder="번호판 · 기종 · 계약자 검색" autocomplete="off">
                   </div>
                   <div class="table-wrap lease-table-wrap">
                     <table class="lease-table lease-table--compact lease-dash-vehicle-table">
@@ -2588,14 +2591,14 @@
               <table class="lease-table lease-table--compact">
                 <thead>
                   <tr>
-                    <th>차량번호</th>
+                    <th class="lease-sortable" data-contract-sort="vehicleNumber">차량번호</th>
                     <th>구분</th>
-                    <th>렌탈/리스자</th>
+                    <th class="lease-sortable" data-contract-sort="driverName">렌탈/리스자</th>
                     <th>연락처</th>
                     <th>계약기간</th>
                     <th>반납일</th>
-                    <th>일 렌탈료</th>
-                    <th>상태</th>
+                    <th class="lease-sortable" data-contract-sort="dailyRent">일 렌탈료</th>
+                    <th class="lease-sortable" data-contract-sort="unpaid">상태</th>
                     <th>관리</th>
                   </tr>
                 </thead>
@@ -2775,6 +2778,7 @@
             </div>
             <div class="lease-arrear-form-actions">
               <button type="submit" class="primary-btn" id="leaseArrearRegisterBtn">미납 등록</button>
+              <button type="button" class="small-btn primary-btn" id="leaseArrearBulkWeeklyBtn" title="선택한 주(수~화)에 활성 리스 계약자의 리스비를 미납/회수에 일괄 등록합니다. 정산에서 이미 차감된 기사는 회수완료로 처리하세요.">이번주 리스비 미납 일괄 등록</button>
             </div>
           </form>
           <article class="card lease-arrear-complete-card" id="leaseArrearCompleteCard" hidden>
@@ -5892,7 +5896,7 @@
   <script src="js/lease-erp.js?v=20260723q"></script>
   <script src="js/admin-lease.js?v=20260723u"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260723u"></script>
+  <script src="js/admin-lease-menus.js?v=20260723w"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
