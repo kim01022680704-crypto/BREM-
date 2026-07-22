@@ -2005,6 +2005,7 @@ const BremAdminLeaseMenus = (function () {
       unpaidAmount,
       at: new Date().toISOString()
     };
+    const identity = contractDriverIdentity(contract);
     if (openForContract) {
       const weekEntries = Array.isArray(openForContract.rawData?.weekEntries)
         ? [...openForContract.rawData.weekEntries]
@@ -2017,6 +2018,8 @@ const BremAdminLeaseMenus = (function () {
         collectionStatus: calc().ARREAR_STATUS.COLLECTING,
         rawData: {
           ...(openForContract.rawData || {}),
+          ...identity,
+          arrearReason: openForContract.rawData?.arrearReason || '리스비 미납',
           unpaidWeekStart: openForContract.rawData?.unpaidWeekStart || unpaidWeekStart,
           weekEntries
         }
@@ -2031,6 +2034,8 @@ const BremAdminLeaseMenus = (function () {
         collectionMethods,
         collectionStatus: calc().ARREAR_STATUS.COLLECTING,
         rawData: {
+          ...identity,
+          arrearReason: '리스비 미납',
           unpaidWeekStart,
           weekEntries: [weekEntry]
         }
@@ -2059,6 +2064,15 @@ const BremAdminLeaseMenus = (function () {
         registerBtn.textContent = '미납 등록';
       }
     }
+  }
+
+  // 미납이 기사앱 출금/주급명세서에 매칭되도록 계약의 기사 식별자를 rawData에 심는다.
+  function contractDriverIdentity(contract) {
+    return {
+      driverId: String(contract?.driverId || contract?.rawData?.driverId || '').trim(),
+      driverName: String(contract?.driverName || contract?.rawData?.driverName || '').trim(),
+      driverPhone: String(contract?.driverPhone || contract?.rawData?.driverPhone || '').trim()
+    };
   }
 
   // 선택 주(수~화) 안에서 계약이 활성인 일수(오늘까지만 카운트)
@@ -2118,6 +2132,7 @@ const BremAdminLeaseMenus = (function () {
     )) return;
 
     candidates.forEach(({ contract, days, charge }) => {
+      const identity = contractDriverIdentity(contract);
       const weekEntry = { weekStart, unpaidDays: days, unpaidAmount: charge, at: new Date().toISOString(), source: 'weekly-auto' };
       const openForContract = allArrears.find(item =>
         item.contractId === contract.id && String(item.collectionStatus || '') !== completed
@@ -2134,6 +2149,8 @@ const BremAdminLeaseMenus = (function () {
           collectionStatus: calc().ARREAR_STATUS.COLLECTING,
           rawData: {
             ...(openForContract.rawData || {}),
+            ...identity,
+            arrearReason: '주정산 리스비 미납',
             unpaidWeekStart: openForContract.rawData?.unpaidWeekStart || weekStart,
             weeklyAutoWeek: weekStart,
             source: openForContract.rawData?.source || 'weekly-auto',
@@ -2149,7 +2166,7 @@ const BremAdminLeaseMenus = (function () {
           unpaidWeekStart: weekStart,
           collectionMethods: ['separate_deposit'],
           collectionStatus: calc().ARREAR_STATUS.COLLECTING,
-          rawData: { unpaidWeekStart: weekStart, weeklyAutoWeek: weekStart, source: 'weekly-auto', weekEntries: [weekEntry] }
+          rawData: { ...identity, arrearReason: '주정산 리스비 미납', unpaidWeekStart: weekStart, weeklyAutoWeek: weekStart, source: 'weekly-auto', weekEntries: [weekEntry] }
         });
       }
     });

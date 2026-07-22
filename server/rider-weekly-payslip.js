@@ -162,13 +162,17 @@ async function findRiderLeaseInfo(supabase, rider) {
   const dailyRent = Number(raw.dailyRent || contract.daily_charge || 0);
   const weeklyRent = Number(raw.weeklyRent || dailyRent * 7 || 0);
   const leaseCost = Number(raw.leaseCost || weeklyRent || 0);
-  let unpaidAmount = Number(raw.unpaidAmount || 0);
+  const contractId = contract.id ? String(contract.id) : '';
+  let unpaidAmount = 0;
+  const unpaidReasons = [];
 
+  const COMPLETED = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
+  // lease_arrears 실제 컬럼: unpaid_amount(잔액) · collection_status · contract_id · raw_data
   const { data: arrears } = await supabase
     .from('lease_arrears')
-    .select('amount,raw_data')
+    .select('unpaid_amount,raw_data,collection_status,contract_id')
     .order('updated_at', { ascending: false })
-    .limit(100);
+    .limit(200);
 
   (arrears || []).forEach(row => {
     const rowRaw = row.raw_data || {};
@@ -176,8 +180,18 @@ async function findRiderLeaseInfo(supabase, rider) {
       || (
         normalizeName(rowRaw.driverName) === normalizeName(rider.name)
         && normalizePhone(rowRaw.driverPhone) === normalizePhone(rider.phone)
+        && normalizeName(rowRaw.driverName)
       );
-    if (sameDriver) unpaidAmount += Number(row.amount || rowRaw.unpaidAmount || 0);
+    const sameContract = contractId && String(row.contract_id || '') === contractId;
+    if (!sameDriver && !sameContract) return;
+    const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
+    if (COMPLETED.has(status)) return;
+    const remaining = Math.max(0, Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0));
+    if (remaining <= 0) return;
+    unpaidAmount += remaining;
+    const reason = String(rowRaw.arrearReason || rowRaw.reason || '').trim()
+      || (rowRaw.source === 'weekly-auto' ? '주정산 리스비 미납' : '리스비 미납');
+    unpaidReasons.push(reason);
   });
 
   const contractType = String(contract.contract_type || raw.contractType || 'lease');
@@ -189,6 +203,7 @@ async function findRiderLeaseInfo(supabase, rider) {
     leaseFee: leaseCost,
     weeklyRent,
     unpaidAmount,
+    unpaidReason: [...new Set(unpaidReasons)].join(', '),
     vehicleNumber: String(raw.vehicleNumber || '').trim(),
     contractId: contract.id
   };
@@ -287,6 +302,7 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
       leaseFee: leaseInfo.leaseFee,
       weeklyRent: leaseInfo.weeklyRent,
       unpaidAmount: leaseInfo.unpaidAmount,
+      unpaidReason: leaseInfo.unpaidReason || '',
       vehicleNumber: leaseInfo.vehicleNumber || ''
     },
     notices

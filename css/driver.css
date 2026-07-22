@@ -476,6 +476,17 @@ h3 {
   font-size: 0.78rem;
 }
 
+.driver-withdrawal-unpaid {
+  margin: 0.15rem 0 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(248, 113, 113, 0.14);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .driver-withdrawal-form {
   display: grid;
   gap: 0.75rem;

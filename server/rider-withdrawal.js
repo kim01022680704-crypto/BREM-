@@ -81,6 +81,7 @@ async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
     leaseCharge: 0,
     outstandingArrears: 0,
     leaseDeductionTotal: 0,
+    arrearReason: '',
     contractId: ''
   };
   try {
@@ -111,10 +112,13 @@ async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
       : 0;
     const leaseCharge = dailyRent * activeDays;
 
+    const contractId = contract?.id ? String(contract.id) : '';
     let outstandingArrears = 0;
+    const arrearReasons = [];
+    // lease_arrears 실제 컬럼: unpaid_amount(잔액) · collection_status · contract_id · raw_data
     const { data: arrears } = await supabase
       .from('lease_arrears')
-      .select('amount,raw_data,status')
+      .select('unpaid_amount,recovered_amount,raw_data,collection_status,contract_id')
       .order('updated_at', { ascending: false })
       .limit(500);
     (arrears || []).forEach(row => {
@@ -125,13 +129,19 @@ async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
           && leaseNormalizePhone(rowRaw.driverPhone) === leaseNormalizePhone(rider.phone)
           && leaseNormalizeName(rowRaw.driverName)
         );
-      if (!sameDriver) return;
-      const status = String(row.status || rowRaw.collectionStatus || '').toLowerCase();
+      const sameContract = contractId && String(row.contract_id || '') === contractId;
+      if (!sameDriver && !sameContract) return;
+      const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
       if (COMPLETED_ARREAR_STATUSES.has(status)) return;
-      const amount = Math.max(0, Math.round(Number(row.amount ?? rowRaw.unpaidAmount ?? 0)));
-      const recovered = Math.max(0, Math.round(Number(rowRaw.recoveredAmount || 0)));
-      outstandingArrears += Math.max(0, amount - recovered);
+      // unpaid_amount 는 부분회수 시 잔액으로 갱신되므로 그대로 미회수 잔액이다.
+      const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
+      if (remaining <= 0) return;
+      outstandingArrears += remaining;
+      const reason = String(rowRaw.arrearReason || rowRaw.reason || '').trim()
+        || (rowRaw.source === 'weekly-auto' ? '주정산 리스비 미납' : '리스비 미납');
+      arrearReasons.push(reason);
     });
+    const arrearReason = [...new Set(arrearReasons)].join(', ');
 
     const leaseDeductionTotal = leaseCharge + outstandingArrears;
     return {
@@ -142,7 +152,8 @@ async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
       leaseCharge,
       outstandingArrears,
       leaseDeductionTotal,
-      contractId: contract?.id || ''
+      arrearReason,
+      contractId
     };
   } catch (_error) {
     return empty;
@@ -360,6 +371,9 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   };
 
   if (!rosterItem) {
+    // 일정산 미등록 기사라도 등록된 미납(리스미납)은 조회해서 노출한다.
+    const leaseUnenrolled = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd);
+    const unenrolledArrears = Math.max(0, Math.round(Number(leaseUnenrolled?.outstandingArrears || 0)));
     return {
       ok: true,
       enrolled: false,
@@ -373,15 +387,17 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       requestedTotal,
       requestedAmountTotal,
       requestedFeeTotal,
-      availableAmount: 0,
+      // 미회수 미납금만큼 마이너스로 노출(가불/출금은 불가하지만 미납은 이월된다)
+      availableAmount: -unenrolledArrears,
       lease: {
-        hasLease: false,
-        dailyRent: 0,
-        deductionPlatform: 'coupang',
-        activeDays: 0,
-        leaseCharge: 0,
-        outstandingArrears: 0,
-        leaseDeductionTotal: 0
+        hasLease: Boolean(leaseUnenrolled?.hasLease),
+        dailyRent: Math.max(0, Math.round(Number(leaseUnenrolled?.dailyRent || 0))),
+        deductionPlatform: normalizeDeductionPlatform(leaseUnenrolled?.deductionPlatform),
+        activeDays: Math.max(0, Math.round(Number(leaseUnenrolled?.activeDays || 0))),
+        leaseCharge: Math.max(0, Math.round(Number(leaseUnenrolled?.leaseCharge || 0))),
+        outstandingArrears: unenrolledArrears,
+        leaseDeductionTotal: unenrolledArrears,
+        arrearReason: leaseUnenrolled?.arrearReason || ''
       },
       enrolledPlatforms: { coupang: false, baemin: false },
       showCallFee: feesByPlatform.showCallFee !== false,
@@ -451,7 +467,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       activeDays: Math.max(0, Math.round(Number(lease?.activeDays || 0))),
       leaseCharge: Math.max(0, Math.round(Number(lease?.leaseCharge || 0))),
       outstandingArrears: Math.max(0, Math.round(Number(lease?.outstandingArrears || 0))),
-      leaseDeductionTotal: leaseDeduction
+      leaseDeductionTotal: leaseDeduction,
+      arrearReason: lease?.arrearReason || ''
     },
     enrolledPlatforms,
     showCallFee: feesByPlatform.showCallFee !== false,

@@ -202,7 +202,9 @@
       setText('driverPayslipBaeminId', result.rider?.baeminId || '-');
       setText('driverPayslipLeaseStatus', result.lease?.leaseLabel || '없음');
       setText('driverPayslipLeaseFee', result.lease?.leaseFee ? formatMoney(result.lease.leaseFee) : '-');
-      setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount ? formatMoney(result.lease.unpaidAmount) : '-');
+      setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount
+        ? `${formatMoney(result.lease.unpaidAmount)} (${result.lease.unpaidReason || '리스비 미납'})`
+        : '-');
       renderNotices(result.notices);
       return;
     }
@@ -222,7 +224,9 @@
     setText('driverPayslipBaeminId', rider.baeminId || payslip.baeminId || '-');
     setText('driverPayslipLeaseStatus', lease.leaseLabel || '없음');
     setText('driverPayslipLeaseFee', lease.leaseFee ? formatMoney(lease.leaseFee) : '-');
-    setText('driverPayslipLeaseUnpaid', lease.unpaidAmount ? formatMoney(lease.unpaidAmount) : '-');
+    setText('driverPayslipLeaseUnpaid', lease.unpaidAmount
+      ? `${formatMoney(lease.unpaidAmount)} (${lease.unpaidReason || '리스비 미납'})`
+      : '-');
 
     const gross = payslip.grossPaymentTotal || 0;
     const deduct = payslip.deductionTotal || 0;
@@ -259,7 +263,7 @@
         rows.push(renderPayRow('리스비', lease.leaseFee, lease.vehicleNumber || '리스/렌탈'));
       }
       if (lease.unpaidAmount) {
-        rows.push(renderPayRow('미납', lease.unpaidAmount, '리스관리'));
+        rows.push(renderPayRow('미납', lease.unpaidAmount, lease.unpaidReason || '리스비 미납'));
       }
       rows.push(renderPayRow('공제합계', totalDeduct, '합계'));
       deductBody.innerHTML = rows.join('');

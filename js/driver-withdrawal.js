@@ -189,9 +189,21 @@
     const requestedFee = Math.max(0, Number(payload.requestedFeeTotal || 0));
     const lease = payload.lease || {};
     const leaseDeduction = Math.max(0, Number(lease.leaseDeductionTotal || 0));
+    const outstandingArrears = Math.max(0, Number(lease.outstandingArrears || 0));
+    const arrearReason = String(lease.arrearReason || '리스비 미납').trim() || '리스비 미납';
     const leaseText = leaseDeduction > 0
       ? ` − 리스비 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'})`
       : '';
+    const unpaidEl = document.getElementById('driverWithdrawalUnpaid');
+    if (unpaidEl) {
+      if (outstandingArrears > 0) {
+        unpaidEl.hidden = false;
+        unpaidEl.textContent = `미납금 ${formatMoney(outstandingArrears)} (${arrearReason})`;
+      } else {
+        unpaidEl.hidden = true;
+        unpaidEl.textContent = '';
+      }
+    }
     if (hintEl) {
       if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
