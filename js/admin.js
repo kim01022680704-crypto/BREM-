@@ -22,6 +22,7 @@
     missionResultsSort: { key: 'rate', dir: 'desc' },
     eventSettingsSort: { key: 'name', dir: 'asc' },
     settlementPreviewByPlatform: { coupang: null, baemin: null },
+    baeminHourlyInsurancePreview: null,
     settlementLogWeekByPlatform: { coupang: null, baemin: null },
     settlementUnmatchedWeekByPlatform: { coupang: null, baemin: null },
     settlementHistoryDayByPlatform: { coupang: null, baemin: null },
@@ -4445,6 +4446,187 @@
     renderSettlementPreview(p);
   }
 
+  function applyBaeminHourlyInsuranceDateFromFilename(filename) {
+    const date = BremSettlementParser.parseSettlementDateFromFilename(filename);
+    const periodInput = $('#baeminHourlyInsurancePeriod');
+    const hint = $('#baeminHourlyInsuranceFileHint');
+    if (date && periodInput) {
+      periodInput.value = date;
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = `파일명에서 정산일 ${formatDate(date)} 자동 인식`;
+      }
+    } else if (hint) {
+      hint.hidden = true;
+      hint.textContent = '';
+    }
+    return date;
+  }
+
+  function renderBaeminHourlyInsurancePreview() {
+    const card = $('#baeminHourlyInsurancePreviewCard');
+    const preview = state.baeminHourlyInsurancePreview;
+    if (!card) return;
+    if (!preview) {
+      card.hidden = true;
+      return;
+    }
+
+    card.hidden = false;
+    $('#baeminHourlyInsurancePreviewPeriod').textContent = preview.period
+      ? formatDate(preview.period)
+      : '-';
+    $('#baeminHourlyInsuranceTotalCount').textContent = String(preview.totalRows || 0);
+    $('#baeminHourlyInsuranceSuccessCount').textContent = String(preview.matched?.length || 0);
+    $('#baeminHourlyInsuranceFailedCount').textContent = String(preview.unmatched?.length || 0);
+    $('#baeminHourlyInsuranceTotalAmount').textContent = formatMoney(preview.totalHourlyInsurance || 0);
+
+    $('#baeminHourlyInsuranceMatchedRows').innerHTML = (preview.matched || []).map(record => `
+      <tr>
+        <td>${escapeHtml(record.baeminId || record.riderId || '-')}</td>
+        <td><strong>${escapeHtml(record.driverName || record.name || '-')}</strong></td>
+        <td>${formatMoney(Math.abs(Number(record.hourlyInsurance || 0)))}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="3" class="empty">매칭된 기사가 없습니다.</td></tr>';
+
+    const failedBlock = $('#baeminHourlyInsuranceFailedBlock');
+    if (preview.unmatched?.length) {
+      failedBlock.hidden = false;
+      $('#baeminHourlyInsuranceFailedRows').innerHTML = preview.unmatched.map(record => `
+        <tr>
+          <td>${escapeHtml(record.baeminId || record.riderId || record.rawName || '-')}</td>
+          <td>${formatMoney(Math.abs(Number(record.hourlyInsurance || 0)))}</td>
+          <td>${escapeHtml(record.reason || '매칭 실패')}</td>
+        </tr>
+      `).join('');
+    } else {
+      failedBlock.hidden = true;
+      $('#baeminHourlyInsuranceFailedRows').innerHTML = '';
+    }
+  }
+
+  function clearBaeminHourlyInsurancePreview() {
+    state.baeminHourlyInsurancePreview = null;
+    renderBaeminHourlyInsurancePreview();
+  }
+
+  async function uploadBaeminHourlyInsurance(event) {
+    event.preventDefault();
+    const fileInput = $('#baeminHourlyInsuranceFile');
+    const passwordInput = $('#baeminHourlyInsurancePassword');
+    const periodInput = $('#baeminHourlyInsurancePeriod');
+    const uploadBtn = $('#baeminHourlyInsuranceUploadBtn');
+    const file = fileInput?.files?.[0];
+
+    if (!file) {
+      showToast('시간제보험 엑셀 파일을 선택해주세요.');
+      return;
+    }
+
+    applyBaeminHourlyInsuranceDateFromFilename(file.name);
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = '처리 중...';
+
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      if (BremStorage.fetchAllDriversFromServer) {
+        const driverLoad = await BremStorage.fetchAllDriversFromServer({ force: false });
+        if (!driverLoad?.ok) {
+          showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
+          return;
+        }
+      }
+
+      const result = await BremSettlementParser.parseBaeminHourlyInsuranceFile({
+        file,
+        password: String(passwordInput?.value || '').trim(),
+        period: periodInput?.value || BremSettlementParser.parseSettlementDateFromFilename(file.name) || '',
+        drivers: drivers().map(driver => ({
+          id: driver.id,
+          name: driver.name,
+          baeminId: driver.baeminId || ''
+        }))
+      });
+
+      const period = result.period || periodInput?.value || '';
+      if (!period) {
+        showToast('정산일을 찾지 못했습니다. 파일명에 YYYYMMDD(예: _20240721)가 있는지 확인하세요.');
+        return;
+      }
+      if (periodInput) periodInput.value = period;
+
+      state.baeminHourlyInsurancePreview = {
+        period,
+        fileName: file.name,
+        matched: result.matched || [],
+        unmatched: result.unmatched || [],
+        totalRows: result.totalRows || 0,
+        totalHourlyInsurance: result.totalHourlyInsurance || 0
+      };
+      renderBaeminHourlyInsurancePreview();
+      showToast(
+        `배민 시간제보험 미리보기 · 매칭 ${result.matched.length}명 · 실패 ${result.unmatched.length}명 · ${formatMoney(result.totalHourlyInsurance || 0)}`
+      );
+      $('#baeminHourlyInsurancePreviewCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      showToast(error.message || '시간제보험 파일을 처리하지 못했습니다.');
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = '업로드 및 미리보기';
+    }
+  }
+
+  async function applyBaeminHourlyInsurancePreview() {
+    const preview = state.baeminHourlyInsurancePreview;
+    if (!preview?.matched?.length) {
+      showToast('반영할 매칭 데이터가 없습니다.');
+      return;
+    }
+    if (!preview.period) {
+      showToast('정산일이 없어 반영할 수 없습니다.');
+      return;
+    }
+
+    const applyBtn = $('#baeminHourlyInsuranceApplyBtn');
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = '반영 중…';
+    }
+
+    try {
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      const records = preview.matched.map(record => ({
+        driverId: record.driverId,
+        riderId: record.baeminId || record.riderId || '',
+        hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0))
+      }));
+      const write = () => BremStorage.settlements.upsertHourlyInsuranceBatch({
+        period: preview.period,
+        platform: 'baemin',
+        records
+      });
+      if (window.BremPerf?.runSave) {
+        await window.BremPerf.runSave('settlements.baeminHourlyInsurance', { write });
+      } else {
+        write();
+      }
+
+      await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+      setSettlementHistoryDay('baemin', preview.period);
+      clearBaeminHourlyInsurancePreview();
+      renderSettlements();
+      showToast(`배민 시간제보험 ${preview.matched.length}명 · ${formatMoney(preview.totalHourlyInsurance || 0)} 반영 완료`);
+    } catch (error) {
+      console.error('[BREM] baemin hourly insurance apply failed:', error);
+      showToast(error.message || '시간제보험 반영에 실패했습니다.');
+    } finally {
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.textContent = '반영하기';
+      }
+    }
+  }
+
   function applySettlementDateFromFilename(filename, platform) {
     const p = normalizePlatform(platform);
     const date = BremSettlementParser.parseSettlementDateFromFilename(filename);
@@ -5644,6 +5826,23 @@
           handleSettlementPeriodChange(p);
         }
       });
+    });
+
+    $('#baeminHourlyInsuranceUploadForm')?.addEventListener('submit', event => {
+      void uploadBaeminHourlyInsurance(event);
+    });
+    $('#baeminHourlyInsuranceApplyBtn')?.addEventListener('click', () => {
+      void applyBaeminHourlyInsurancePreview();
+    });
+    $('#baeminHourlyInsuranceCancelBtn')?.addEventListener('click', () => {
+      clearBaeminHourlyInsurancePreview();
+      showToast('배민 시간제보험 미리보기를 취소했습니다.');
+    });
+    $('#baeminHourlyInsuranceFile')?.addEventListener('change', event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const date = applyBaeminHourlyInsuranceDateFromFilename(file.name);
+      if (date) showToast(`배민 시간제보험 정산일 ${formatDate(date)} 자동 설정`);
     });
 
     $('#missionForm').addEventListener('submit', event => {

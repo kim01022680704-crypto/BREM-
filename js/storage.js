@@ -8263,6 +8263,52 @@ const BremStorage = (function () {
       return persist || list;
     },
 
+    /** 시간제보험만 반영 — 콜수/정산금액·콜입력은 건드리지 않음 */
+    upsertHourlyInsuranceBatch({ period, records = [], platform = DEFAULT_PLATFORM }) {
+      if (!period) throw new Error('정산 기간이 필요합니다.');
+      const p = normalizePlatform(platform);
+      const callDate = String(period).slice(0, 10);
+      const appliedAt = new Date().toISOString();
+      const list = settlements.getAll();
+      const byId = new Map(list.map(item => [item.id, { ...item }]));
+      const touched = [];
+
+      (Array.isArray(records) ? records : []).forEach(record => {
+        const driverId = String(record.driverId || '').trim();
+        if (!driverId) return;
+        const id = `${driverId}-${callDate}-${p}`;
+        const existing = byId.get(id);
+        const hourlyInsurance = Math.abs(Number(record.hourlyInsurance || 0));
+        const next = existing
+          ? {
+              ...existing,
+              riderId: String(record.riderId || existing.riderId || ''),
+              hourlyInsurance,
+              appliedAt
+            }
+          : {
+              id,
+              driverId,
+              period: callDate,
+              platform: p,
+              riderId: String(record.riderId || ''),
+              orderCount: 0,
+              hourlyInsurance,
+              settlementAmount: 0,
+              deliveryAmount: 0,
+              appliedAt
+            };
+        byId.set(id, next);
+        touched.push(next);
+      });
+
+      if (!touched.length) return list;
+      const keepIds = new Set(touched.map(item => item.id));
+      const nextList = [...touched, ...list.filter(item => !keepIds.has(item.id))];
+      const persist = storageAdapter.write(KEYS.settlements, nextList, { incrementalRows: touched });
+      return persist || nextList;
+    },
+
     removeById(id) {
       const target = settlements.getAll().find(item => item.id === id);
       storageAdapter.write(

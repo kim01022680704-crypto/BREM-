@@ -665,8 +665,122 @@ const BremSettlementParser = (function () {
     }
   }
 
+  async function parseBaeminHourlyInsuranceFile({ file, password, drivers, period }) {
+    if (!file) throw new Error('시간제보험 엑셀 파일을 선택하세요.');
+
+    const filenamePeriod = parseSettlementDateFromFilename(file.name);
+    const arrayBuffer = await file.arrayBuffer();
+    const bulk = window.BremPayrollHourlyInsuranceBulk;
+    const sheetName = bulk?.SHEET_NAME || '을지_협력사 소속 라이더 정산 확인용';
+    const rows = await openWorkbookSheetRows(
+      new Uint8Array(arrayBuffer),
+      normalizePassword(password),
+      {
+        sheetName,
+        sheetIndex: Number.isFinite(Number(bulk?.SHEET_INDEX)) ? Number(bulk.SHEET_INDEX) : 1,
+        sheetMatcher: name => {
+          const value = String(name || '');
+          return value.includes('협력사') || value.includes('시간제') || value === sheetName;
+        }
+      }
+    );
+
+    if (!Array.isArray(rows) || !rows.length) {
+      throw new Error(`"${sheetName}" 시트에서 데이터를 읽지 못했습니다.`);
+    }
+
+    const platformIdCol = 1; // B
+    const hourlyInsuranceCol = 7; // H
+    const headerMarkers = ['아이디', 'id', '시간제', '협력사', '라이더', '정산'];
+    const driverList = Array.isArray(drivers) ? drivers : [];
+    const matchedMap = new Map();
+    const unmatched = [];
+
+    function isHeaderRow(row) {
+      const samples = [
+        cellText(readCell(row, platformIdCol)),
+        cellText(readCell(row, hourlyInsuranceCol))
+      ].map(value => String(value || '').trim().toLowerCase());
+      return headerMarkers.some(marker => samples.some(text => text.includes(marker.toLowerCase())));
+    }
+
+    rows.forEach((row, index) => {
+      if (!Array.isArray(row) || isHeaderRow(row)) return;
+      const baeminId = normalizeBaeminUserId(cellText(readCell(row, platformIdCol)));
+      const hourlyInsurance = Math.abs(parseNumber(readCell(row, hourlyInsuranceCol)));
+      if (!baeminId && !hourlyInsurance) return;
+
+      if (!baeminId) {
+        unmatched.push({
+          rawName: '',
+          name: '',
+          riderId: '',
+          baeminId: '',
+          hourlyInsurance,
+          rowNumber: index + 1,
+          reason: 'B열 배민 ID 없음'
+        });
+        return;
+      }
+
+      const driver = driverList.find(item =>
+        normalizeBaeminUserId(item.baeminId) === baeminId
+      ) || null;
+
+      if (!driver) {
+        unmatched.push({
+          rawName: baeminId,
+          name: baeminId,
+          riderId: baeminId,
+          baeminId,
+          hourlyInsurance,
+          rowNumber: index + 1,
+          reason: '등록된 기사와 매칭 실패'
+        });
+        return;
+      }
+
+      const existing = matchedMap.get(driver.id);
+      if (existing) {
+        existing.hourlyInsurance += hourlyInsurance;
+        return;
+      }
+
+      matchedMap.set(driver.id, {
+        driverId: driver.id,
+        driverName: driver.name || '',
+        riderId: baeminId,
+        baeminId,
+        rawName: baeminId,
+        name: driver.name || baeminId,
+        hourlyInsurance,
+        rowNumber: index + 1
+      });
+    });
+
+    const matched = Array.from(matchedMap.values());
+    if (!matched.length && !unmatched.length) {
+      throw new Error('B열(배민 ID)·H열(시간제보험료)에서 데이터를 읽지 못했습니다.');
+    }
+
+    const totalHourlyInsurance = matched.reduce(
+      (sum, row) => sum + Number(row.hourlyInsurance || 0),
+      0
+    );
+
+    return {
+      period: period || filenamePeriod || '',
+      filenamePeriod,
+      matched,
+      unmatched,
+      totalRows: matched.length + unmatched.length,
+      totalHourlyInsurance
+    };
+  }
+
   return {
     parseSettlementFile,
+    parseBaeminHourlyInsuranceFile,
     parseSettlementDateFromFilename,
     parseRowsWithFormat,
     matchDrivers,
@@ -678,6 +792,7 @@ const BremSettlementParser = (function () {
     cellText,
     parseNumber,
     normalizePassword,
+    normalizeBaeminUserId,
     isValidBaeminDeliveryRow,
     isValidBaeminDeliveryAmount,
     isValidBaeminStoreArrival,
