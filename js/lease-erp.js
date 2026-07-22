@@ -114,15 +114,12 @@ const BremLeaseErp = (function () {
 
   function isEmptyVehicle(item) {
     if (!item) return false;
-    if (String(item.vehicleStatus) === BremLeaseProfit.VEHICLE_STATUSES.EMPTY) return true;
-    const category = String(item.vehicleCategory || '');
-    const isLeaseLike = category === BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_LEASE
-      || String(item.contractType) === CONTRACT_TYPES.LEASE;
-    if (!isLeaseLike) return false;
     if (!hasActiveContract(item)) return false;
     if (hasActiveRentalAssignment(item)) return false;
     if (String(item.renter || '').trim()) return false;
-    return true;
+    return String(item.vehicleStatus) === BremLeaseProfit.VEHICLE_STATUSES.EMPTY
+      || String(item.contractType) === CONTRACT_TYPES.LEASE
+      || String(item.vehicleCategory || '') === BremLeaseProfit.VEHICLE_CATEGORIES.EXTERNAL_LEASE;
   }
 
   function inferVehicleStatus(record, existing = null) {
@@ -611,9 +608,11 @@ const BremLeaseErp = (function () {
         pendingWritePromises.push(BremStorage.writeTableKey(key, list, writeOptions));
       }
     });
-    deferredDirtyKeys.clear();
-    deferredWriteOptions.clear();
     await flushPendingWrites({ skipFlushStorage: true, ...options });
+    keys.forEach(key => {
+      deferredDirtyKeys.delete(key);
+      deferredWriteOptions.delete(key);
+    });
     document.dispatchEvent(new CustomEvent('brem-lease-erp-dirty'));
   }
 
@@ -638,9 +637,6 @@ const BremLeaseErp = (function () {
   function syncLegacyLeaseSettings(list) {
     const next = Array.isArray(list) ? list : vehicles().getAll();
     window.BremDataCache?.set?.(KEYS.legacy, next, { source: 'write' });
-    if (BremStorage?.writeTableKey) {
-      BremStorage.writeTableKey(KEYS.legacy, next, { allowEmpty: true });
-    }
   }
 
   function purgeVehicleDependencies(vehicleIds = [], options = {}) {
@@ -859,30 +855,8 @@ const BremLeaseErp = (function () {
 
   async function migrateLegacySettingsIfNeeded() {
     if (migrationDone) return { migrated: 0, skipped: true };
-    const current = vehicles().getAll();
-    if (current.length) {
-      migrationDone = true;
-      return { migrated: 0, skipped: true };
-    }
-    let legacy = readList(KEYS.legacy) || [];
-    if (!legacy.length && BremStorage?.refetchDataKey) {
-      try {
-        await BremStorage.refetchDataKey(KEYS.legacy);
-        legacy = readList(KEYS.legacy) || [];
-      } catch (error) {
-        console.warn('[BremLeaseErp] legacy lease settings reload failed:', error);
-      }
-    }
-    if (!legacy.length) {
-      migrationDone = true;
-      return { migrated: 0, skipped: true };
-    }
-    const mapped = legacy.map(legacyRecordToVehicle);
-    writeList(KEYS.vehicles, mapped, { allowEmpty: false });
-    syncLegacyLeaseSettings(mapped);
-    await vehicles().persist();
     migrationDone = true;
-    return { migrated: mapped.length, skipped: false };
+    return { migrated: 0, skipped: true };
   }
 
   async function ensureLoaded(options = {}) {
@@ -1180,6 +1154,8 @@ const BremLeaseErp = (function () {
       patch.returnDate = returnDate || '';
       patch.emptyStartDate = resolveEmptyStartOnTransition(current, resolvedContract, runtime);
     }
+    const changed = Object.entries(patch).some(([key, value]) => current[key] !== value);
+    if (!changed) return current;
     return vehicles().update(vehicle.id, patch);
   }
 

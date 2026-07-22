@@ -1309,7 +1309,6 @@ window.BremSupabaseStorageAdapter = (function () {
         table: 'lease_vehicles',
         key: keys.leaseVehicles,
         label: 'lease-vehicles',
-        legacyKey: keys.leases,
         fromRow: rowToLeaseVehicle,
         toRow: leaseVehicleToRow,
         order: { column: 'updated_at', ascending: false }

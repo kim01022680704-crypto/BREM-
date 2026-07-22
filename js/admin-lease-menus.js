@@ -440,7 +440,7 @@ const BremAdminLeaseMenus = (function () {
 
   async function persistLeaseFast() {
     if (!erp()) return;
-    await erp().persistPending({ skipFlushStorage: true });
+    await erp().persistAll({ skipFlushStorage: true });
   }
 
   function markArrearContractOptionsDirty() {
@@ -1447,11 +1447,12 @@ const BremAdminLeaseMenus = (function () {
       refreshContractDateLabels();
 
       markArrearContractOptionsDirty();
+      await erp().persistAll({ skipFlushStorage: true });
       updateLeaseErpUnsavedBanner();
       refreshAfterLeaseMutation({ contract: true });
       showToast(returnDate <= today
-        ? `중도반납 처리 · 반납일 ${returnDate} · 계약 종료 (Supabase 저장 필요)`
-        : `반납 예약 · ${returnDate}까지 운행 중 (Supabase 저장 필요)`);
+        ? `중도반납 처리 · 반납일 ${returnDate} · 계약 종료`
+        : `반납 예약 · ${returnDate}까지 운행 중`);
       syncContractCalc();
     } catch (error) {
       console.error('[processEarlyReturn]', error);
@@ -1856,12 +1857,16 @@ const BremAdminLeaseMenus = (function () {
     }
     try {
       const savedWeek = state.arrearWeekStart;
+      await erp().persistAll({ skipFlushStorage: true });
       $('leaseArrearRegisterForm')?.reset();
       syncArrearWeekUi(savedWeek);
       updateLeaseErpUnsavedBanner();
       showToast(openForContract ? '미납이 누적 등록되었습니다.' : '미납을 등록했습니다.');
       renderArrears();
       refreshAfterLeaseMutation({ contract: false });
+    } catch (error) {
+      console.error('[registerArrear]', error);
+      showToast(error?.message || '미납 저장에 실패했습니다.');
     } finally {
       if (registerBtn) {
         registerBtn.disabled = false;
@@ -2026,6 +2031,13 @@ const BremAdminLeaseMenus = (function () {
         processedDate: BremLeaseProfit.todayKey()
       });
     }
+    try {
+      await erp().persistAll({ skipFlushStorage: true });
+    } catch (error) {
+      console.error('[recordPartialArrearRecovery]', error);
+      showToast(error?.message || '회수 내역 저장에 실패했습니다.');
+      return;
+    }
     updateLeaseErpUnsavedBanner();
     showToast(remaining > 0
       ? `일부 회수 ${formatMoney(amount)} · 잔액 ${formatMoney(remaining)}`
@@ -2109,6 +2121,13 @@ const BremAdminLeaseMenus = (function () {
         unpaidAmount: 0,
         processedDate: BremLeaseProfit.todayKey()
       });
+    }
+    try {
+      await erp().persistAll({ skipFlushStorage: true });
+    } catch (error) {
+      console.error('[confirmCompleteArrear]', error);
+      showToast(error?.message || '미납 처리 저장에 실패했습니다.');
+      return;
     }
     hideArrearCompletePanel();
     updateLeaseErpUnsavedBanner();
@@ -2662,7 +2681,7 @@ const BremAdminLeaseMenus = (function () {
 
   async function init() {
     if (!$('lease-management')) return;
-    erp()?.setDeferRemotePersist?.(true);
+    erp()?.setDeferRemotePersist?.(false);
     bindEvents();
     syncStandaloneCalc();
     syncContractCalc();

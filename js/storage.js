@@ -1413,7 +1413,7 @@ const BremStorage = (function () {
   ]);
 
   const ADMIN_SECTION_KEYS = Object.freeze({
-    dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections],
+    dashboard: [KEYS.drivers, KEYS.notices, KEYS.calls, KEYS.rejections, KEYS.leaseVehicles],
     notices: [KEYS.notices],
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
@@ -7662,12 +7662,13 @@ const BremStorage = (function () {
     },
 
     isEmptyVehicle(item) {
+      if (window.BremLeaseErp?.isEmptyVehicle) {
+        return window.BremLeaseErp.isEmptyVehicle(item);
+      }
       if (!item || item.contractType !== leases.CONTRACT_TYPES.LEASE) return false;
       if (!leases.hasActiveContract(item)) return false;
       if (leases.hasActiveRentalAssignment(item)) return false;
-      if (String(item.renter || '').trim()) return false;
-      if (String(item.lessor || '').trim()) return false;
-      return true;
+      return !String(item.renter || '').trim();
     },
 
     getEmptyVehicles() {
@@ -7691,16 +7692,14 @@ const BremStorage = (function () {
 
     syncLeaseCache(list) {
       const value = Array.isArray(list) ? list : leases.getAll();
-      window.BremDataCache?.set?.(KEYS.leases, value, { source: 'write' });
+      window.BremDataCache?.set?.(KEYS.leaseVehicles, value, { source: 'write' });
       return value;
     },
 
     writeList(list, options = {}) {
       const next = Array.isArray(list) ? list : [];
       leases.syncLeaseCache(next);
-      const erpLoaded = activeStorageAdapter.isKeyLoaded?.(KEYS.leaseVehicles);
-      const targetKey = erpLoaded ? KEYS.leaseVehicles : KEYS.leases;
-      return storageAdapter.write(targetKey, next, {
+      return storageAdapter.write(KEYS.leaseVehicles, next, {
         allowEmpty: next.length === 0,
         ...options
       });
@@ -7711,9 +7710,7 @@ const BremStorage = (function () {
     },
 
     getAll() {
-      const erpLoaded = activeStorageAdapter.isKeyLoaded?.(KEYS.leaseVehicles);
-      if (erpLoaded) return storageAdapter.read(KEYS.leaseVehicles, []);
-      return storageAdapter.read(KEYS.leases, []);
+      return storageAdapter.read(KEYS.leaseVehicles, []);
     },
 
     getById(id) {
@@ -11744,7 +11741,7 @@ const BremStorage = (function () {
         KEYS.legacyMission,
         KEYS.notices,
         KEYS.adminSchedules,
-        KEYS.leases,
+        KEYS.leaseVehicles,
         KEYS.revenue
       ])
     }),

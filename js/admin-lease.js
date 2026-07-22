@@ -1197,6 +1197,51 @@
     }
   }
 
+  function getTestVehicleIds() {
+    return leases.getAll()
+      .filter(item => [
+        item.model,
+        item.vehicleNumber,
+        item.chassisNumber,
+        item.renter,
+        item.lessor,
+        item.memo
+      ].some(value => /(?:테스트|test)/i.test(String(value || ''))))
+      .map(item => item.id)
+      .filter(Boolean);
+  }
+
+  async function removeTestVehicles() {
+    const ids = getTestVehicleIds();
+    if (!ids.length) {
+      showToast('정리할 테스트 차량이 없습니다.');
+      return;
+    }
+    if (!window.confirm(`테스트로 표시된 차량 ${ids.length}건과 연결된 계약·손익·미납 기록을 Supabase에서 삭제할까요?`)) {
+      return;
+    }
+    const btn = $('leaseTestDataCleanupBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '정리 중…';
+    }
+    try {
+      leases.removeByIds(ids);
+      await reloadVehiclesAfterDelete();
+      ids.forEach(id => state.selectedIds.delete(id));
+      showToast(`테스트 차량 ${ids.length}건을 Supabase에서 삭제했습니다.`);
+    } catch (error) {
+      console.error('[lease test data cleanup]', error);
+      showToast(error?.message || '테스트 차량 정리에 실패했습니다.');
+      await refresh({ loadRemote: true });
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '테스트 차량 정리';
+      }
+    }
+  }
+
   function updateLeaseErpUnsavedBanner() {
     window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
   }
@@ -1432,6 +1477,10 @@
           updateBulkSelectionUi();
         }
       }
+    });
+
+    $('leaseTestDataCleanupBtn')?.addEventListener('click', () => {
+      void removeTestVehicles();
     });
 
     document.addEventListener('click', event => {
