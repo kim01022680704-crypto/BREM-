@@ -455,6 +455,7 @@
     const headers = [
       '신청시각',
       '이름',
+      '플랫폼',
       '신청일',
       '정산주',
       '은행명',
@@ -477,6 +478,11 @@
       if (status === 'completed') return '처리완료';
       return '신청';
     };
+    const platformText = platform => {
+      if (platform === 'baemin') return '배민';
+      if (platform === 'coupang') return '쿠팡';
+      return '미지정';
+    };
     const data = [
       headers,
       ...list.map(item => {
@@ -486,6 +492,7 @@
         const row = [
           item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '',
           item.driverName || '',
+          platformText(item.platform),
           item.requestDate || String(item.createdAt || '').slice(0, 10),
           weekLabel,
           item.bankName || '',

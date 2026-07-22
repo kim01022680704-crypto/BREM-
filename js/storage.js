@@ -2814,12 +2814,13 @@ const BremStorage = (function () {
     return riderApiFetch(`/api/rider/withdrawal${qs}`, 'withdrawal');
   }
 
-  async function submitRiderWithdrawalToServer({ weekStart, amount } = {}) {
+  async function submitRiderWithdrawalToServer({ weekStart, amount, platform } = {}) {
     return riderApiFetch('/api/rider/withdrawal', 'withdrawal-create', {
       method: 'POST',
       body: JSON.stringify({
         weekStart: String(weekStart || '').slice(0, 10),
-        amount: Math.max(0, Math.round(Number(amount) || 0))
+        amount: Math.max(0, Math.round(Number(amount) || 0)),
+        platform: String(platform || '').trim().toLowerCase()
       })
     });
   }

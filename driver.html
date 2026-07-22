@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260723g">
+  <link rel="stylesheet" href="css/driver.css?v=20260723h">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -244,6 +244,17 @@
             </div>
 
             <form class="driver-withdrawal-form" id="driverWithdrawalForm">
+              <fieldset class="driver-withdrawal-platform">
+                <legend>출금 플랫폼</legend>
+                <label class="driver-withdrawal-platform__option">
+                  <input type="radio" name="driverWithdrawalPlatform" value="coupang" id="driverWithdrawalPlatformCoupang">
+                  <span>쿠팡</span>
+                </label>
+                <label class="driver-withdrawal-platform__option">
+                  <input type="radio" name="driverWithdrawalPlatform" value="baemin" id="driverWithdrawalPlatformBaemin">
+                  <span>배민</span>
+                </label>
+              </fieldset>
               <label>
                 <span>신청금액</span>
                 <input type="number" id="driverWithdrawalAmount" min="1" step="1" placeholder="출금할 금액" required>
@@ -701,11 +712,11 @@
   <script src="js/storage-supabase-mapper.js?v=20260623l"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260723d"></script>
+  <script src="js/storage.js?v=20260723h"></script>
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260701c"></script>
-  <script src="js/driver-withdrawal.js?v=20260723d"></script>
+  <script src="js/driver-withdrawal.js?v=20260723h"></script>
   <script src="js/driver.js?v=20260723b"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

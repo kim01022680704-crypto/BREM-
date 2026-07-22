@@ -15,6 +15,8 @@
   const form = document.getElementById('driverWithdrawalForm');
   const amountInput = document.getElementById('driverWithdrawalAmount');
   const submitBtn = document.getElementById('driverWithdrawalSubmitBtn');
+  const platformCoupang = document.getElementById('driverWithdrawalPlatformCoupang');
+  const platformBaemin = document.getElementById('driverWithdrawalPlatformBaemin');
   const toast = document.getElementById('toast');
 
   if (!panel || !openBtn) return;
@@ -24,6 +26,7 @@
     loading: false,
     visible: false,
     availableAmount: 0,
+    enrolledPlatforms: { coupang: false, baemin: false },
     requestSeq: 0
   };
 
@@ -73,20 +76,6 @@
     return weekStartKey(formatLocalDateKey(date));
   }
 
-  function formatPeriodLabel(weekStart) {
-    const end = weekEndKey(weekStart);
-    const fmt = value => {
-      const date = new Date(`${value}T00:00:00`);
-      if (Number.isNaN(date.getTime())) return value;
-      return new Intl.DateTimeFormat('ko-KR', {
-        month: '2-digit',
-        day: '2-digit',
-        weekday: 'short'
-      }).format(date);
-    };
-    return `${weekStart}(${fmt(weekStart).slice(-2)}) ~ ${end}(${fmt(end).slice(-2)})`.replace(/\(/g, '(');
-  }
-
   function formatPeriodSimple(weekStart) {
     const end = weekEndKey(weekStart);
     const utils = window.BremPayrollSlipUtils || window.BremDatePicker;
@@ -95,7 +84,9 @@
   }
 
   function platformLabel(platform) {
-    return platform === 'baemin' ? '배민' : '쿠팡';
+    if (platform === 'baemin') return '배민';
+    if (platform === 'coupang') return '쿠팡';
+    return '미지정';
   }
 
   function escapeHtml(value) {
@@ -104,6 +95,37 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function selectedPlatform() {
+    const checked = form?.querySelector('input[name="driverWithdrawalPlatform"]:checked');
+    return checked ? String(checked.value || '') : '';
+  }
+
+  function syncPlatformOptions(enrolled = {}) {
+    const hasFlags = enrolled.coupang !== undefined || enrolled.baemin !== undefined;
+    state.enrolledPlatforms = hasFlags
+      ? { coupang: !!enrolled.coupang, baemin: !!enrolled.baemin }
+      : { coupang: true, baemin: true };
+
+    const coupangOk = state.enrolledPlatforms.coupang;
+    const baeminOk = state.enrolledPlatforms.baemin;
+    if (platformCoupang) {
+      platformCoupang.disabled = !coupangOk;
+      platformCoupang.closest('label')?.classList.toggle('is-disabled', !coupangOk);
+    }
+    if (platformBaemin) {
+      platformBaemin.disabled = !baeminOk;
+      platformBaemin.closest('label')?.classList.toggle('is-disabled', !baeminOk);
+    }
+
+    const current = selectedPlatform();
+    if (current === 'coupang' && coupangOk) return;
+    if (current === 'baemin' && baeminOk) return;
+    if (platformCoupang) platformCoupang.checked = false;
+    if (platformBaemin) platformBaemin.checked = false;
+    if (coupangOk && platformCoupang) platformCoupang.checked = true;
+    else if (baeminOk && platformBaemin) platformBaemin.checked = true;
   }
 
   function setOpenState(open) {
@@ -116,10 +138,15 @@
   function renderSummary(payload) {
     state.availableAmount = Math.max(0, Number(payload.availableAmount || 0));
     if (availableEl) availableEl.textContent = formatMoney(state.availableAmount);
+    const by = payload.netPayByPlatform || {};
+    const coupangNet = Math.max(0, Number(by.coupang || 0));
+    const baeminNet = Math.max(0, Number(by.baemin || 0));
     if (hintEl) {
-      hintEl.textContent = payload.enrolled === false
-        ? '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.'
-        : `실지급 합계 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(payload.requestedTotal)}`;
+      if (payload.enrolled === false) {
+        hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
+      } else {
+        hintEl.textContent = `전체 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(payload.requestedTotal)} · 쿠팡실지급 ${formatMoney(coupangNet)} / 배민실지급 ${formatMoney(baeminNet)}`;
+      }
     }
     if (amountInput) {
       amountInput.max = String(state.availableAmount || 0);
@@ -127,6 +154,7 @@
         amountInput.value = state.availableAmount > 0 ? String(state.availableAmount) : '';
       }
     }
+    syncPlatformOptions(payload.enrolledPlatforms || {});
   }
 
   function renderDays(days, showCallFee = true) {
@@ -172,6 +200,7 @@
       <li class="driver-withdrawal-request${statusClass}">
         <span class="driver-withdrawal-request__meta">
           ${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '-')}
+          · ${escapeHtml(platformLabel(item.platform))}
           ${badge}
         </span>
         <strong>${formatMoney(item.amount)}</strong>
@@ -257,6 +286,11 @@
   form?.addEventListener('submit', event => {
     event.preventDefault();
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
+    const platform = selectedPlatform();
+    if (!platform) {
+      showToast('출금 플랫폼(쿠팡/배민)을 선택하세요.');
+      return;
+    }
     if (!amount) {
       showToast('신청금액을 입력하세요.');
       return;
@@ -269,14 +303,15 @@
       if (submitBtn) submitBtn.disabled = true;
       const result = await window.BremStorage?.submitRiderWithdrawalToServer?.({
         weekStart: state.weekStart,
-        amount
+        amount,
+        platform
       });
       if (submitBtn) submitBtn.disabled = false;
       if (!result?.ok) {
         showToast(result?.message || '출금신청에 실패했습니다.');
         return;
       }
-      showToast(`출금신청 완료 · ${formatMoney(amount)}`);
+      showToast(`출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)}`);
       if (amountInput) amountInput.value = '';
       await loadWithdrawal();
     })();

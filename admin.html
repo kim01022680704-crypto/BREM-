@@ -5282,6 +5282,7 @@
         <div class="revenue-sub-tabs payroll-daily-sub-tabs" role="tablist" aria-label="급여 일정산 하위 메뉴">
           <button type="button" class="revenue-sub-btn active" data-pds-sub-tab="payout">일정산</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="withdrawals">출금신청자</button>
+          <button type="button" class="revenue-sub-btn" data-pds-sub-tab="week-withdrawals">주정산 출금내역</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="enroll">일정산 기사등록</button>
         </div>
 
@@ -5393,6 +5394,7 @@
                   <tr>
                     <th>신청시각</th>
                     <th>이름</th>
+                    <th>플랫폼</th>
                     <th>신청일</th>
                     <th>정산주</th>
                     <th>정산금액</th>
@@ -5411,6 +5413,49 @@
                   </tr>
                 </thead>
                 <tbody id="payrollDailyWithdrawalBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="payroll-daily-sub-panel" data-pds-panel="week-withdrawals" hidden>
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>주정산 출금내역</h2>
+                <p class="form-help" id="payrollDailyWeekWithdrawalSummary">수~화 정산주 기준으로 기사별 출금액(신청+처리완료, 취소 제외)을 합산합니다.</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailyWeekWithdrawalExcelBtn">엑셀 일괄다운로드</button>
+                <button type="button" class="small-btn" id="payrollDailyWeekWithdrawalRefreshBtn">새로고침</button>
+              </div>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>정산주 시작(수)</span>
+                <input type="date" id="payrollDailyWeekWithdrawalWeekStart">
+              </label>
+              <button type="button" class="small-btn" id="payrollDailyWeekWithdrawalPrevBtn">이전 주</button>
+              <button type="button" class="small-btn" id="payrollDailyWeekWithdrawalNextBtn">다음 주</button>
+              <strong id="payrollDailyWeekWithdrawalPeriodLabel" class="form-help" style="align-self:end;margin:0 0 0.35rem;">-</strong>
+            </div>
+            <div class="table-wrap bulk-preview-wrap">
+              <table class="data-table" id="payrollDailyWeekWithdrawalTable">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>배민ID</th>
+                    <th>쿠팡ID</th>
+                    <th>쿠팡 출금</th>
+                    <th>배민 출금</th>
+                    <th>미지정</th>
+                    <th>합계</th>
+                    <th>건수</th>
+                    <th>신청중</th>
+                    <th>처리완료</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailyWeekWithdrawalBody"></tbody>
               </table>
             </div>
           </article>
@@ -5771,7 +5816,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260722e"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
   <script src="js/storage-supabase-adapter.js?v=20260703w"></script>
-  <script src="js/storage.js?v=20260723d"></script>
+  <script src="js/storage.js?v=20260723h"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -5807,10 +5852,10 @@
   <script src="js/payroll-slip-utils.js?v=20260701d"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
-  <script src="js/payroll-daily-settlement-admin.js?v=20260723e"></script>
+  <script src="js/payroll-daily-settlement-admin.js?v=20260723h"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260723f"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260723h"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>

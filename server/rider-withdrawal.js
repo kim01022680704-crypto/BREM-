@@ -107,6 +107,14 @@ function calcPayoutFromSettlement(row, feesByPlatform) {
   };
 }
 
+function normalizeRequestPlatform(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'baemin' || raw === '배민') return 'baemin';
+  if (raw === 'coupang' || raw === '쿠팡') return 'coupang';
+  return '';
+}
+
 function normalizeRequest(item = {}) {
   const amount = Math.max(0, Math.round(Number(item.amount || 0)));
   const weekStart = normalizeSettlementWeekStart(item.weekStart || item.settlementWeekStart);
@@ -115,10 +123,12 @@ function normalizeRequest(item = {}) {
   if (!item.driverId || !weekStart || amount <= 0) return null;
   const createdAt = item.createdAt || new Date().toISOString();
   const requestDate = String(item.requestDate || createdAt).slice(0, 10);
+  const platform = normalizeRequestPlatform(item.platform);
   return {
     id: String(item.id || `wd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
     driverId: String(item.driverId),
     driverName: String(item.driverName || '').trim(),
+    platform,
     amount,
     weekStart,
     weekEnd: settlementWeekEnd(weekStart),
@@ -172,6 +182,11 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     .filter(item => item.status === 'pending')
     .reduce((sum, item) => sum + item.amount, 0);
 
+  const enrolledPlatforms = {
+    coupang: isPlatformEnrolled(rosterItem, 'coupang'),
+    baemin: isPlatformEnrolled(rosterItem, 'baemin')
+  };
+
   if (!rosterItem) {
     return {
       ok: true,
@@ -182,8 +197,10 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       driverName,
       days: [],
       totalNetPay: 0,
+      netPayByPlatform: { coupang: 0, baemin: 0 },
       requestedTotal,
       availableAmount: 0,
+      enrolledPlatforms: { coupang: false, baemin: false },
       showCallFee: feesByPlatform.showCallFee !== false,
       myRequests: myWeekRequests
     };
@@ -207,6 +224,11 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     .filter(row => row.period);
 
   const totalNetPay = days.reduce((sum, row) => sum + Math.max(0, row.netPay), 0);
+  const netPayByPlatform = days.reduce((acc, row) => {
+    const key = normalizePlatform(row.platform);
+    acc[key] = (acc[key] || 0) + Math.max(0, row.netPay);
+    return acc;
+  }, { coupang: 0, baemin: 0 });
   const availableAmount = Math.max(0, totalNetPay - requestedTotal);
 
   return {
@@ -218,8 +240,10 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     driverName,
     days,
     totalNetPay,
+    netPayByPlatform,
     requestedTotal,
     availableAmount,
+    enrolledPlatforms,
     showCallFee: feesByPlatform.showCallFee !== false,
     myRequests: myWeekRequests
   };
@@ -229,6 +253,9 @@ async function getWithdrawalSummary(accessToken, weekStartInput) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
   const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
   return buildDriverWeekSummary(supabase, me.rider, weekStartInput);
 }
 
@@ -241,12 +268,27 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     return { ok: false, status: 400, error: '신청금액을 입력하세요.' };
   }
 
+  const platform = normalizeRequestPlatform(body.platform);
+  if (!platform) {
+    return { ok: false, status: 400, error: '출금 플랫폼(쿠팡/배민)을 선택하세요.' };
+  }
+
   const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
   const summary = await buildDriverWeekSummary(supabase, me.rider, body.weekStart);
   if (!summary.ok) return summary;
 
   if (!summary.enrolled) {
     return { ok: false, status: 400, error: '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.' };
+  }
+  if (!summary.enrolledPlatforms?.[platform]) {
+    return {
+      ok: false,
+      status: 400,
+      error: `${platform === 'baemin' ? '배민' : '쿠팡'} 일정산 등록이 되어 있지 않습니다.`
+    };
   }
   if (amount > summary.availableAmount) {
     return {
@@ -259,6 +301,7 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   const request = normalizeRequest({
     driverId: summary.driverId,
     driverName: summary.driverName,
+    platform,
     amount,
     weekStart: summary.weekStart,
     requestDate: new Date().toISOString().slice(0, 10),
@@ -330,6 +373,9 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   if (!admin.ok) return admin;
 
   const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
   const [listRaw, rosterRaw, feesRaw] = await Promise.all([
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, ROSTER_KEY, []),
