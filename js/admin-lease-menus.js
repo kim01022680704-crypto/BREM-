@@ -524,9 +524,6 @@ const BremAdminLeaseMenus = (function () {
     if (menu === 'contract') {
       if (!options.keepContractForm) {
         resetContractForm();
-        fillVehicleSelect($('leaseContractVehicleId'), true, false);
-      } else {
-        fillVehicleSelect($('leaseContractVehicleId'));
       }
       syncContractCalc();
       renderContractList();
@@ -1019,25 +1016,12 @@ const BremAdminLeaseMenus = (function () {
     return `${model} · ${plate} · ${source}`;
   }
 
-  function fillVehicleSelect(selectEl, includeBlank = true, preserveSelection = true, filterQuery = '') {
-    if (!selectEl || !erp()) return;
+  function fillVehicleSelect(selectEl, includeBlank = true, preserveSelection = true) {
+    // 계약/렌탈 차량 선택은 콤보박스(검색형)로 대체됐으므로 <select> 요소에만 동작한다.
+    if (!selectEl || !erp() || selectEl.tagName !== 'SELECT') return;
     const prev = preserveSelection ? selectEl.value : '';
-    const keyword = String(filterQuery || '').trim().toLowerCase();
-    let list = erp().vehicles().getAll();
-    if (keyword) {
-      list = list.filter(item => {
-        const source = profit()?.vehicleSourceLabel?.(item) || '';
-        const haystack = [item.model, item.vehicleNumber, source].join(' ').toLowerCase();
-        return haystack.includes(keyword);
-      });
-    }
-    // 검색으로 현재 선택된 차량이 목록에서 빠지면 계속 선택 상태를 유지하도록 포함시킨다.
-    if (prev && !list.some(item => String(item.id) === String(prev))) {
-      const selected = erp().vehicles().getById(prev);
-      if (selected) list = [selected, ...list];
-    }
     const options = (includeBlank ? ['<option value="">차량 선택</option>'] : []).concat(
-      list.map(item =>
+      erp().vehicles().getAll().map(item =>
         `<option value="${escapeHtml(item.id)}">${escapeHtml(formatVehicleSelectLabel(item))}</option>`
       )
     );
@@ -1045,9 +1029,60 @@ const BremAdminLeaseMenus = (function () {
     if (prev) selectEl.value = prev;
   }
 
-  function onContractVehicleSearch() {
-    const query = $('leaseContractVehicleSearch')?.value || '';
-    fillVehicleSelect($('leaseContractVehicleId'), true, true, query);
+  // ===== 계약/렌탈 차량 검색형 콤보박스 (렌탈/리스자 검색과 동일한 방식) =====
+  function updateLeaseContractVehicleSelectedLabel(vehicle) {
+    const label = $('leaseContractVehicleSelected');
+    if (!label) return;
+    if (!vehicle) {
+      label.textContent = '선택된 차량: 없음';
+      return;
+    }
+    const plate = vehicle.vehicleNumber || '-';
+    const model = vehicle.model || '-';
+    const source = profit()?.vehicleSourceLabel?.(vehicle) || '';
+    label.textContent = `선택된 차량: ${plate} · ${model}${source ? ` · ${source}` : ''}`;
+  }
+
+  function clearLeaseContractVehicleSelection() {
+    if ($('leaseContractVehicleId')) $('leaseContractVehicleId').value = '';
+    updateLeaseContractVehicleSelectedLabel(null);
+  }
+
+  function selectLeaseContractVehicle(vehicle) {
+    if (!vehicle) return;
+    if ($('leaseContractVehicleId')) $('leaseContractVehicleId').value = vehicle.id || '';
+    if ($('leaseContractVehicleSearch')) $('leaseContractVehicleSearch').value = formatVehicleSelectLabel(vehicle);
+    state.contractVehicleSearch = '';
+    updateLeaseContractVehicleSelectedLabel(vehicle);
+    if ($('leaseContractVehicleResults')) $('leaseContractVehicleResults').hidden = true;
+    onContractVehicleChange();
+  }
+
+  function renderLeaseContractVehicleResults() {
+    const box = $('leaseContractVehicleResults');
+    if (!box || !erp()) return;
+    const keyword = String(state.contractVehicleSearch || '').trim().toLowerCase();
+    let list = erp().vehicles().getAll();
+    if (keyword) {
+      list = list.filter(item => {
+        const source = profit()?.vehicleSourceLabel?.(item) || '';
+        const haystack = [item.vehicleNumber, item.model, source].join(' ').toLowerCase();
+        return haystack.includes(keyword);
+      });
+    }
+    list = list.slice(0, 40);
+    box.hidden = false;
+    if (!list.length) {
+      box.innerHTML = '<p class="lease-driver-picker__empty">검색된 등록 차량이 없습니다. 차량관리에서 먼저 등록하세요.</p>';
+      return;
+    }
+    box.innerHTML = list.map(item => `
+      <button type="button" class="lease-driver-picker__item" data-lease-pick-vehicle="${escapeHtml(item.id)}">
+        <strong>${escapeHtml(item.vehicleNumber || '-')}</strong>
+        <span>${escapeHtml(item.model || '-')}</span>
+        <span>${escapeHtml(profit()?.vehicleSourceLabel?.(item) || '회사리스')}</span>
+      </button>
+    `).join('');
   }
 
   function onContractVehicleChange() {
@@ -1094,9 +1129,19 @@ const BremAdminLeaseMenus = (function () {
 
   function fillContractForm(contract) {
     if (!contract) return;
-    fillVehicleSelect($('leaseContractVehicleId'));
     $('leaseContractEditId').value = contract.id || '';
     if ($('leaseContractVehicleId')) $('leaseContractVehicleId').value = contract.vehicleId || '';
+    const selectedVehicle = erp()?.vehicles().getById(contract.vehicleId) || null;
+    if ($('leaseContractVehicleSearch')) {
+      $('leaseContractVehicleSearch').value = selectedVehicle
+        ? formatVehicleSelectLabel(selectedVehicle)
+        : (contract.vehicleNumber || '');
+    }
+    state.contractVehicleSearch = '';
+    updateLeaseContractVehicleSelectedLabel(selectedVehicle || (contract.vehicleNumber
+      ? { vehicleNumber: contract.vehicleNumber, model: contract.vehicleName || contract.modelType || '' }
+      : null));
+    if ($('leaseContractVehicleResults')) $('leaseContractVehicleResults').hidden = true;
     if ($('leaseContractVehicleNumber')) $('leaseContractVehicleNumber').value = contract.vehicleNumber || '';
     if ($('leaseContractVehicleName')) $('leaseContractVehicleName').value = contract.vehicleName || '';
     if ($('leaseContractModelType')) {
@@ -1150,8 +1195,13 @@ const BremAdminLeaseMenus = (function () {
 
   function openContractForVehicle(vehicleId) {
     setMenu('contract');
-    if ($('leaseContractVehicleId')) $('leaseContractVehicleId').value = vehicleId || '';
-    onContractVehicleChange();
+    const vehicle = erp()?.vehicles().getById(vehicleId);
+    if (vehicle) {
+      selectLeaseContractVehicle(vehicle);
+    } else if ($('leaseContractVehicleId')) {
+      $('leaseContractVehicleId').value = vehicleId || '';
+      onContractVehicleChange();
+    }
   }
 
   function filterContractList(contracts) {
@@ -1548,6 +1598,13 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseContractDriverResults')) {
       $('leaseContractDriverResults').hidden = true;
       $('leaseContractDriverResults').innerHTML = '';
+    }
+    state.contractVehicleSearch = '';
+    clearLeaseContractVehicleSelection();
+    if ($('leaseContractVehicleSearch')) $('leaseContractVehicleSearch').value = '';
+    if ($('leaseContractVehicleResults')) {
+      $('leaseContractVehicleResults').hidden = true;
+      $('leaseContractVehicleResults').innerHTML = '';
     }
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === 'lease';
@@ -2526,8 +2583,26 @@ const BremAdminLeaseMenus = (function () {
       $(id)?.addEventListener('input', syncContractCalc);
       $(id)?.addEventListener('change', syncContractCalc);
     });
-    $('leaseContractVehicleId')?.addEventListener('change', onContractVehicleChange);
-    $('leaseContractVehicleSearch')?.addEventListener('input', onContractVehicleSearch);
+    $('leaseContractVehicleSearch')?.addEventListener('input', event => {
+      state.contractVehicleSearch = String(event.target.value || '');
+      renderLeaseContractVehicleResults();
+    });
+    $('leaseContractVehicleSearch')?.addEventListener('focus', () => {
+      renderLeaseContractVehicleResults();
+    });
+    $('leaseContractVehicleResults')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-lease-pick-vehicle]');
+      if (!button) return;
+      const vehicle = erp()?.vehicles().getById(button.dataset.leasePickVehicle);
+      if (vehicle) selectLeaseContractVehicle(vehicle);
+    });
+    document.addEventListener('click', event => {
+      const box = $('leaseContractVehicleResults');
+      const input = $('leaseContractVehicleSearch');
+      if (!box || !input) return;
+      if (box.contains(event.target) || input.contains(event.target)) return;
+      box.hidden = true;
+    });
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.addEventListener('change', syncContractCalc);
     });
@@ -2769,7 +2844,6 @@ const BremAdminLeaseMenus = (function () {
     }
     if (!init.bootstrapped) {
       init.bootstrapped = true;
-      fillVehicleSelect($('leaseContractVehicleId'));
       fillVehicleSelect($('leaseCalcVehicleId'));
       if ($('leaseWeekStart')) syncLeaseWeeklyWeekUi(currentWeekStart());
       syncArrearWeekUi(currentWeekStart());
@@ -2789,7 +2863,6 @@ const BremAdminLeaseMenus = (function () {
         console.error('[BremAdminLeaseMenus] ensureLoaded failed', error);
       }
     }
-    fillVehicleSelect($('leaseContractVehicleId'));
     fillVehicleSelect($('leaseCalcVehicleId'));
     renderDashboardKpis();
     paintDashboardVehicleOverview();
