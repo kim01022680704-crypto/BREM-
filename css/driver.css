@@ -498,7 +498,18 @@ h3 {
 }
 
 .driver-withdrawal-table th {
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.2;
+  vertical-align: bottom;
+  word-break: keep-all;
+}
+
+.driver-withdrawal-table th .driver-withdrawal-th-sub {
+  display: inline-block;
+  margin-top: 0.15em;
+  font-size: 0.85em;
+  font-weight: 700;
+  opacity: 0.85;
 }
 
 #driverWithdrawalRequestList {
@@ -2754,5 +2765,34 @@ button.calendar-day:hover {
   .driver-payslip-notice-item {
     padding: 8px 10px;
     gap: 8px;
+  }
+
+  .driver-withdrawal-table {
+    font-size: 0.68rem;
+  }
+
+  .driver-withdrawal-table th,
+  .driver-withdrawal-table td {
+    padding: 6px 4px;
+    white-space: normal;
+    word-break: keep-all;
+    line-height: 1.15;
+  }
+
+  .driver-withdrawal-table th {
+    max-width: 4.2em;
+    font-size: 0.62rem;
+    font-weight: 800;
+  }
+
+  .driver-withdrawal-table th .driver-withdrawal-th-sub {
+    display: block;
+    margin-top: 0.1em;
+    font-size: 0.9em;
+    line-height: 1.1;
+  }
+
+  .driver-withdrawal-table td {
+    font-size: 0.66rem;
   }
 }
