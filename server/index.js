@@ -471,6 +471,7 @@ app.get('/api/admin/payroll/withdrawal-requests', async (req, res) => {
       getBearerToken(req),
       {
         weekStart: req.query.weekStart,
+        date: req.query.date,
         status: req.query.status
       }
     );
@@ -480,6 +481,36 @@ app.get('/api/admin/payroll/withdrawal-requests', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '출금신청 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/payroll/withdrawal-requests/:id/cancel', async (req, res) => {
+  try {
+    const result = await riderWithdrawal.cancelWithdrawalRequest(
+      getBearerToken(req),
+      req.params.id
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '출금신청 취소에 실패했습니다.' });
+  }
+});
+
+app.delete('/api/admin/payroll/withdrawal-requests/:id', async (req, res) => {
+  try {
+    const result = await riderWithdrawal.deleteWithdrawalRequest(
+      getBearerToken(req),
+      req.params.id
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '출금신청 삭제에 실패했습니다.' });
   }
 });
 

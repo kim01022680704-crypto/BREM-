@@ -133,7 +133,7 @@
     if (!daysBody) return;
     const list = Array.isArray(days) ? days : [];
     if (!list.length) {
-      daysBody.innerHTML = '<tr><td colspan="5" class="empty">표시할 일정산 내역이 없습니다.</td></tr>';
+      daysBody.innerHTML = '<tr><td colspan="9" class="empty">표시할 일정산 내역이 없습니다.</td></tr>';
       return;
     }
     daysBody.innerHTML = list.map(row => `
@@ -141,7 +141,11 @@
         <td>${escapeHtml(row.period || '-')}</td>
         <td>${escapeHtml(platformLabel(row.platform))}</td>
         <td>${formatMoney(row.settlementAmount)}</td>
-        <td>${Number(row.orderCount || 0).toLocaleString('ko-KR')}</td>
+        <td>${formatMoney(row.employmentInsurance)}</td>
+        <td>${formatMoney(row.industrialAccidentInsurance)}</td>
+        <td>${formatMoney(row.withholdingTax)}</td>
+        <td>${formatMoney(row.callFee)}</td>
+        <td>${formatMoney(row.dailySettlementFee)}</td>
         <td><strong>${formatMoney(row.netPay)}</strong></td>
       </tr>
     `).join('');
@@ -154,12 +158,17 @@
       requestList.innerHTML = '<li class="driver-payslip-empty-line">아직 신청 내역이 없습니다.</li>';
       return;
     }
-    requestList.innerHTML = list.map(item => `
-      <li>
-        <span>${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '-')}</span>
+    requestList.innerHTML = list.map(item => {
+      const cancelled = item.status === 'cancelled';
+      return `
+      <li class="driver-withdrawal-request${cancelled ? ' is-cancelled' : ''}">
+        <span class="driver-withdrawal-request__meta">
+          ${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR') : '-')}
+          ${cancelled ? '<em class="driver-withdrawal-request__badge">취소됨</em>' : '<em class="driver-withdrawal-request__badge is-pending">신청</em>'}
+        </span>
         <strong>${formatMoney(item.amount)}</strong>
-      </li>
-    `).join('');
+      </li>`;
+    }).join('');
   }
 
   async function loadWithdrawal() {

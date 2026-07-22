@@ -113,6 +113,8 @@ function normalizeRequest(item = {}) {
     ? String(item.status)
     : 'pending';
   if (!item.driverId || !weekStart || amount <= 0) return null;
+  const createdAt = item.createdAt || new Date().toISOString();
+  const requestDate = String(item.requestDate || createdAt).slice(0, 10);
   return {
     id: String(item.id || `wd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
     driverId: String(item.driverId),
@@ -120,10 +122,12 @@ function normalizeRequest(item = {}) {
     amount,
     weekStart,
     weekEnd: settlementWeekEnd(weekStart),
+    requestDate,
     availableAtRequest: Math.max(0, Math.round(Number(item.availableAtRequest || 0))),
     status,
-    createdAt: item.createdAt || new Date().toISOString(),
-    updatedAt: item.updatedAt || new Date().toISOString()
+    createdAt,
+    updatedAt: item.updatedAt || createdAt,
+    cancelledAt: item.cancelledAt || null
   };
 }
 
@@ -254,6 +258,7 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     driverName: summary.driverName,
     amount,
     weekStart: summary.weekStart,
+    requestDate: new Date().toISOString().slice(0, 10),
     availableAtRequest: summary.availableAmount,
     status: 'pending',
     createdAt: new Date().toISOString(),
@@ -283,9 +288,11 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   const supabase = getServiceClient();
   const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
   const weekStart = query.weekStart ? normalizeSettlementWeekStart(query.weekStart) : '';
+  const date = String(query.date || '').slice(0, 10);
   const status = String(query.status || '').trim();
 
   const filtered = list.filter(item => {
+    if (date && String(item.requestDate || item.createdAt || '').slice(0, 10) !== date) return false;
     if (weekStart && item.weekStart !== weekStart) return false;
     if (status && item.status !== status) return false;
     return true;
@@ -293,9 +300,70 @@ async function listWithdrawalRequests(accessToken, query = {}) {
 
   return {
     ok: true,
+    date: date || null,
     weekStart: weekStart || null,
     requests: filtered,
     total: filtered.length
+  };
+}
+
+async function cancelWithdrawalRequest(accessToken, requestId) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const id = String(requestId || '').trim();
+  if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
+
+  const supabase = getServiceClient();
+  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  const index = list.findIndex(item => item.id === id);
+  if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+
+  const current = list[index];
+  if (current.status === 'cancelled') {
+    return { ok: true, request: current, alreadyCancelled: true };
+  }
+
+  const updated = {
+    ...current,
+    status: 'cancelled',
+    cancelledAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  list[index] = updated;
+  await writeSettingValue(supabase, REQUESTS_KEY, list);
+
+  return {
+    ok: true,
+    request: updated,
+    restoredAmount: updated.amount,
+    message: `취소 완료 · ${updated.amount.toLocaleString('ko-KR')}원 출금가능금액 복구`
+  };
+}
+
+async function deleteWithdrawalRequest(accessToken, requestId) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const id = String(requestId || '').trim();
+  if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
+
+  const supabase = getServiceClient();
+  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+  const target = list.find(item => item.id === id);
+  if (!target) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+
+  const next = list.filter(item => item.id !== id);
+  await writeSettingValue(supabase, REQUESTS_KEY, next);
+
+  const restored = target.status === 'pending' ? target.amount : 0;
+  return {
+    ok: true,
+    deleted: target,
+    restoredAmount: restored,
+    message: restored
+      ? `삭제 완료 · ${restored.toLocaleString('ko-KR')}원 출금가능금액 복구`
+      : '삭제 완료'
   };
 }
 
@@ -303,5 +371,7 @@ module.exports = {
   getWithdrawalSummary,
   createWithdrawalRequest,
   listWithdrawalRequests,
+  cancelWithdrawalRequest,
+  deleteWithdrawalRequest,
   REQUESTS_KEY
 };

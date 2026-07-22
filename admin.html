@@ -5360,14 +5360,14 @@
             <div class="card-header">
               <div>
                 <h2>출금신청자</h2>
-                <p class="form-help" id="payrollDailyWithdrawalSummary">기사 앱에서 신청한 출금 내역입니다. 기준 주차는 수~화입니다.</p>
+                <p class="form-help" id="payrollDailyWithdrawalSummary">기사 앱 출금신청 내역입니다. 일별(신청일)로 조회하며, 취소 시 기사 출금가능금액이 복구됩니다.</p>
               </div>
               <button type="button" class="small-btn" id="payrollDailyWithdrawalRefreshBtn">새로고침</button>
             </div>
             <div class="payroll-toolbar">
               <label class="payroll-field">
-                <span>정산주 시작(수)</span>
-                <input type="date" id="payrollDailyWithdrawalWeekStart">
+                <span>신청일</span>
+                <input type="date" id="payrollDailyWithdrawalDate">
               </label>
               <label class="payroll-field">
                 <span>상태</span>
@@ -5384,10 +5384,12 @@
                   <tr>
                     <th>신청시각</th>
                     <th>이름</th>
+                    <th>신청일</th>
                     <th>정산주</th>
                     <th>신청금액</th>
                     <th>출금가능(신청시)</th>
                     <th>상태</th>
+                    <th>관리</th>
                   </tr>
                 </thead>
                 <tbody id="payrollDailyWithdrawalBody"></tbody>
@@ -5751,7 +5753,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260722e"></script>
   <script src="js/storage-guard.js?v=20260630v"></script>
   <script src="js/storage-supabase-adapter.js?v=20260703w"></script>
-  <script src="js/storage.js?v=20260723a"></script>
+  <script src="js/storage.js?v=20260723b"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -5790,7 +5792,7 @@
   <script src="js/payroll-daily-settlement-admin.js?v=20260723a"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260723a"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260723b"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>

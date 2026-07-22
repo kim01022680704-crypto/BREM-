@@ -241,16 +241,13 @@
     return date.toISOString().slice(0, 10);
   }
 
-  function ensureWithdrawalWeekDefault() {
-    const input = $('payrollDailyWithdrawalWeekStart');
+  function ensureWithdrawalDateDefault() {
+    const input = $('payrollDailyWithdrawalDate');
     if (!input) return '';
     if (!input.value) {
-      input.value = weekStartKey(new Date().toISOString().slice(0, 10));
-    } else {
-      const normalized = weekStartKey(input.value);
-      if (normalized && normalized !== input.value) input.value = normalized;
+      input.value = new Date().toISOString().slice(0, 10);
     }
-    return input.value;
+    return String(input.value || '').slice(0, 10);
   }
 
   function statusLabel(status) {
@@ -263,15 +260,16 @@
     const summary = $('payrollDailyWithdrawalSummary');
     if (!body) return;
 
-    const weekStart = ensureWithdrawalWeekDefault();
+    const date = ensureWithdrawalDateDefault();
     const status = String($('payrollDailyWithdrawalStatusFilter')?.value || '').trim();
     let rows = [];
     try {
       if (BremStorage?.payrollWithdrawal?.fetchFromAdminApi) {
-        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({ weekStart, status });
+        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({ date, status });
       } else {
         rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
-          if (weekStart && String(item.weekStart || '').slice(0, 10) !== weekStart) return false;
+          const requestDate = String(item.requestDate || item.createdAt || '').slice(0, 10);
+          if (date && requestDate !== date) return false;
           if (status && item.status !== status) return false;
           return true;
         });
@@ -279,33 +277,68 @@
     } catch (error) {
       console.warn('[withdrawal list]', error);
       rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
-        if (weekStart && String(item.weekStart || '').slice(0, 10) !== weekStart) return false;
+        const requestDate = String(item.requestDate || item.createdAt || '').slice(0, 10);
+        if (date && requestDate !== date) return false;
         if (status && item.status !== status) return false;
         return true;
       });
       showToast(error.message || '출금신청 목록을 불러오지 못했습니다.');
     }
 
-    const totalAmount = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const pendingRows = rows.filter(row => row.status === 'pending');
+    const totalAmount = pendingRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     if (summary) {
-      summary.textContent = `수~화 주간 ${weekStart || '-'} · ${rows.length}건 · 신청합계 ${formatWon(totalAmount)}`;
+      summary.textContent = `신청일 ${date || '-'} · ${rows.length}건 · 신청중 ${pendingRows.length}건 · 신청중 합계 ${formatWon(totalAmount)}`;
     }
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6" class="empty">해당 주차 출금신청이 없습니다.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="empty">해당 날짜 출금신청이 없습니다.</td></tr>';
       return;
     }
 
-    body.innerHTML = rows.map(row => `
+    body.innerHTML = rows.map(row => {
+      const canCancel = row.status === 'pending';
+      return `
       <tr>
         <td>${escapeHtml(row.createdAt ? new Date(row.createdAt).toLocaleString('ko-KR') : '-')}</td>
         <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+        <td>${escapeHtml(row.requestDate || String(row.createdAt || '').slice(0, 10) || '-')}</td>
         <td>${escapeHtml(`${row.weekStart || '-'} ~ ${row.weekEnd || '-'}`)}</td>
         <td><strong>${formatWon(row.amount)}</strong></td>
         <td>${formatWon(row.availableAtRequest)}</td>
         <td>${escapeHtml(statusLabel(row.status))}</td>
-      </tr>
-    `).join('');
+        <td>
+          ${canCancel ? `<button type="button" class="small-btn" data-pds-wd-cancel="${escapeHtml(row.id)}">취소</button>` : ''}
+          <button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function cancelWithdrawalRequest(id) {
+    if (!id) return;
+    if (!window.confirm('이 출금신청을 취소할까요? 기사 출금가능금액이 복구됩니다.')) return;
+    try {
+      const result = await BremStorage.payrollWithdrawal.cancelRequest(id);
+      showToast(result.message || '출금신청을 취소했습니다.');
+      await renderWithdrawalRequests();
+    } catch (error) {
+      console.error('[withdrawal cancel]', error);
+      showToast(error.message || '취소에 실패했습니다.');
+    }
+  }
+
+  async function deleteWithdrawalRequest(id) {
+    if (!id) return;
+    if (!window.confirm('이 출금신청을 삭제할까요? 신청 중이면 출금가능금액이 복구됩니다.')) return;
+    try {
+      const result = await BremStorage.payrollWithdrawal.deleteRequest(id);
+      showToast(result.message || '출금신청을 삭제했습니다.');
+      await renderWithdrawalRequests();
+    } catch (error) {
+      console.error('[withdrawal delete]', error);
+      showToast(error.message || '삭제에 실패했습니다.');
+    }
   }
 
   function getRegions() {
@@ -1052,13 +1085,20 @@
     $('payrollDailyWithdrawalRefreshBtn')?.addEventListener('click', () => {
       void renderWithdrawalRequests();
     });
-    $('payrollDailyWithdrawalWeekStart')?.addEventListener('change', event => {
-      const normalized = weekStartKey(event.target.value);
-      if (normalized) event.target.value = normalized;
+    $('payrollDailyWithdrawalDate')?.addEventListener('change', () => {
       void renderWithdrawalRequests();
     });
     $('payrollDailyWithdrawalStatusFilter')?.addEventListener('change', () => {
       void renderWithdrawalRequests();
+    });
+    $('payrollDailyWithdrawalBody')?.addEventListener('click', event => {
+      const cancelBtn = event.target.closest('[data-pds-wd-cancel]');
+      if (cancelBtn) {
+        void cancelWithdrawalRequest(cancelBtn.dataset.pdsWdCancel);
+        return;
+      }
+      const deleteBtn = event.target.closest('[data-pds-wd-delete]');
+      if (deleteBtn) void deleteWithdrawalRequest(deleteBtn.dataset.pdsWdDelete);
     });
     $('payrollDailySettlementRegionNew')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') {

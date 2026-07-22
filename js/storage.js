@@ -2824,12 +2824,28 @@ const BremStorage = (function () {
     });
   }
 
-  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, status } = {}) {
+  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, date, status } = {}) {
     const params = new URLSearchParams();
+    if (date) params.set('date', String(date).slice(0, 10));
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
     if (status) params.set('status', String(status));
     const qs = params.toString() ? `?${params.toString()}` : '';
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests${qs}`);
+  }
+
+  async function cancelAdminWithdrawalRequest(requestId) {
+    const id = encodeURIComponent(String(requestId || '').trim());
+    return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}/cancel`, {
+      method: 'POST',
+      body: '{}'
+    });
+  }
+
+  async function deleteAdminWithdrawalRequest(requestId) {
+    const id = encodeURIComponent(String(requestId || '').trim());
+    return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}`, {
+      method: 'DELETE'
+    });
   }
 
   function mergeRiderMissionsPayload(missions = {}) {
@@ -7232,6 +7248,22 @@ const BremStorage = (function () {
         throw new Error(result?.error || result?.message || '출금신청 목록을 불러오지 못했습니다.');
       }
       return Array.isArray(result.requests) ? result.requests : [];
+    },
+
+    async cancelRequest(requestId) {
+      const result = await cancelAdminWithdrawalRequest(requestId);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '출금신청 취소에 실패했습니다.');
+      }
+      return result;
+    },
+
+    async deleteRequest(requestId) {
+      const result = await deleteAdminWithdrawalRequest(requestId);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '출금신청 삭제에 실패했습니다.');
+      }
+      return result;
     }
   };
 
@@ -12001,6 +12033,8 @@ const BremStorage = (function () {
     fetchRiderWithdrawalFromServer,
     submitRiderWithdrawalToServer,
     fetchAdminWithdrawalRequestsFromServer,
+    cancelAdminWithdrawalRequest,
+    deleteAdminWithdrawalRequest,
     loadDriverAppBundle,
     getDriverAppPublishedAt,
     fetchRiderPublishStatus,

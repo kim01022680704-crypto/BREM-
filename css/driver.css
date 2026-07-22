@@ -356,6 +356,7 @@ h3 {
 
 .profile-actions > .profile-edit-toggle,
 .profile-actions > .profile-realtime-status-btn,
+.profile-actions > .profile-withdrawal-btn,
 .profile-actions > .profile-payslip-btn {
   width: 100%;
   min-width: 0;
@@ -376,10 +377,25 @@ h3 {
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.profile-realtime-status-btn--compact {
+.profile-withdrawal-btn {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #38bdf8;
+  border-radius: 12px;
+  color: #0c4a6e;
+  background: #e0f2fe;
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.profile-realtime-status-btn--compact,
+.profile-withdrawal-btn--compact {
   min-height: 36px;
   padding: 0 10px;
-  font-size: 0.74rem;
+  font-size: 0.78rem;
 }
 
 .profile-payslip-btn {
@@ -409,6 +425,15 @@ h3 {
   color: #0f766e;
   border-color: #5eead4;
   background: #f0fdfa;
+}
+
+.profile-withdrawal-btn:hover,
+.profile-withdrawal-btn.is-active,
+.profile-withdrawal-btn[aria-expanded="true"] {
+  color: #082f49;
+  border-color: #0ea5e9;
+  background: #bae6fd;
+  box-shadow: 0 6px 16px rgba(14, 165, 233, 0.22);
 }
 
 .profile-realtime-status-btn.is-active,
@@ -469,7 +494,78 @@ h3 {
 
 .driver-withdrawal-table {
   width: 100%;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
+}
+
+.driver-withdrawal-table th {
+  white-space: nowrap;
+}
+
+#driverWithdrawalRequestList {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-withdrawal-request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #7dd3fc;
+  border-radius: 12px;
+  background: #e0f2fe;
+  color: #0c4a6e;
+}
+
+.driver-withdrawal-request strong {
+  font-size: 1rem;
+  font-weight: 900;
+  color: #082f49;
+}
+
+.driver-withdrawal-request__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.driver-withdrawal-request__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.driver-withdrawal-request__badge.is-pending {
+  background: #0284c7;
+}
+
+.driver-withdrawal-request.is-cancelled {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.driver-withdrawal-request.is-cancelled strong {
+  color: #475569;
+  text-decoration: line-through;
+}
+
+.driver-withdrawal-request.is-cancelled .driver-withdrawal-request__badge {
+  background: #64748b;
 }
 
 .driver-payslip-empty-line {
@@ -1993,6 +2089,7 @@ button.calendar-day:hover {
   .logout-btn,
   .profile-edit-toggle,
   .profile-realtime-status-btn,
+  .profile-withdrawal-btn,
   .ghost-btn,
   .target-save-btn,
   .week-nav button,
@@ -2492,6 +2589,7 @@ button.calendar-day:hover {
 
   .profile-edit-toggle,
   .profile-realtime-status-btn--compact,
+  .profile-withdrawal-btn--compact,
   .profile-payslip-btn {
     min-height: 40px;
     padding-inline: 8px;
