@@ -513,9 +513,15 @@ h3 {
 }
 
 .driver-withdrawal-table th.driver-withdrawal-daily-fee-head {
-  max-width: 5.2em;
+  max-width: 5.8em;
   line-height: 1.2;
   letter-spacing: -0.02em;
+}
+
+.driver-withdrawal-table th.driver-withdrawal-daily-fee-head .driver-withdrawal-th-sub {
+  color: #2563eb;
+  opacity: 1;
+  font-weight: 800;
 }
 
 .driver-withdrawal-table th.driver-withdrawal-net,
@@ -2820,22 +2826,24 @@ button.calendar-day:hover {
   }
 
   .driver-withdrawal-table th.driver-withdrawal-daily-fee-head {
-    max-width: 4.2em;
+    max-width: 4.8em;
     min-width: 0;
-    width: 4.2em;
+    width: 4.8em;
     padding: 4px 2px;
-    font-size: 0.54rem;
+    font-size: 0.6rem;
     line-height: 1.15;
     letter-spacing: -0.03em;
     white-space: normal;
   }
 
-  .driver-withdrawal-table th .driver-withdrawal-th-sub {
+  .driver-withdrawal-table th.driver-withdrawal-daily-fee-head .driver-withdrawal-th-sub {
     display: block;
     margin-top: 0.05em;
-    font-size: 0.9em;
+    font-size: 0.98em;
     line-height: 1.1;
     letter-spacing: -0.04em;
+    color: #2563eb;
+    opacity: 1;
   }
 
   .driver-withdrawal-table td {
