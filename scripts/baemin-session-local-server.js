@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260711q';
+const SERVER_VERSION = '20260720a';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -948,6 +948,129 @@ async function waitStatusLoop(ms) {
   return false;
 }
 
+/** 장시간 대기 시 BIZ 세션 만료 방지: 배달현황 ↔ 일별(히스토리) 왕복 + 쿠키 저장 */
+function getKeepAlivePages() {
+  let historyUrl = `${BAEMIN_ORIGIN}/delivery/history`;
+  try {
+    historyUrl = require('../server/baemin-page-capture').SAFE_LANDING_URL || historyUrl;
+  } catch {
+    // ignore
+  }
+  return [
+    { url: `${BAEMIN_ORIGIN}/delivery-status`, label: '배달현황' },
+    { url: historyUrl, label: '일별히스토리' }
+  ];
+}
+
+async function getStatusLoopPage() {
+  if (!isContextAlive(activeContext)) {
+    try {
+      await ensurePlaywrightBrowser().catch(() => null);
+    } catch {
+      return null;
+    }
+  }
+  if (!isContextAlive(activeContext)) return null;
+  const pages = activeContext.pages().filter(page => !page.isClosed());
+  if (pages.length) return pages[0];
+  try {
+    return await activeContext.newPage();
+  } catch {
+    return null;
+  }
+}
+
+/** Playwright가 이미 BIZ 로그인 상태인데 pause/만료 플래그만 남은 경우 복구 */
+async function tryRecoverSessionFromOpenBrowser() {
+  clearActiveContextIfDead();
+  if (!isContextAlive(activeContext)) {
+    return { ok: false, message: 'Playwright 브라우저가 없습니다.' };
+  }
+
+  const tabs = scanBrowserTabs(activeContext);
+  if (!tabs.anyLoggedIn && !tabs.anyHistory) {
+    return {
+      ok: false,
+      message: '로그인된 배민Biz 탭이 없습니다. [배민 세션 갱신] 후 로그인하세요.',
+      browser: getBrowserHealth()
+    };
+  }
+
+  const synced = await syncBrowserCookiesToSupabase().catch(error => ({
+    ok: false,
+    message: formatError(error, '쿠키 저장 실패')
+  }));
+  if (!synced?.ok) {
+    return {
+      ok: false,
+      message: synced?.message || synced?.reason || '쿠키 저장 실패',
+      browser: getBrowserHealth()
+    };
+  }
+
+  sessionPaused = false;
+  await baeminAutoCollect.clearSessionPause().catch(() => {});
+  await require('../server/baemin-delivery-session').markSessionValidated().catch(() => {});
+  console.log('[BREM] [세션복구] 열린 브라우저 쿠키로 pause 해제 · 세션 재저장 완료');
+  return {
+    ok: true,
+    message: '세션 복구 완료 — 만료 플래그를 해제했습니다.',
+    browser: getBrowserHealth()
+  };
+}
+
+async function keepAliveDuringStatusWait(ms) {
+  const started = Date.now();
+  statusLoop.waitEndsAt = started + ms;
+  const pages = getKeepAlivePages();
+  let hop = 0;
+
+  while (statusLoop.active && !statusLoop.stopping) {
+    const remaining = ms - (Date.now() - started);
+    if (remaining <= 500) return true;
+
+    const target = pages[hop % pages.length];
+    setStatusLoopPhase(
+      'waiting',
+      `세션 유지 · ${target.label} 이동 후 대기 (${Math.ceil(remaining / 1000)}초)`
+    );
+    hop += 1;
+
+    try {
+      const page = await getStatusLoopPage();
+      if (page) {
+        await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const landed = safePageUrlSync(page);
+        if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
+          sessionPaused = true;
+          statusLoop.lastError = `세션 만료 감지 · ${landed}`;
+          console.warn(`[BREM] [세션유지] 로그인 페이지로 이동됨 — ${landed}`);
+        } else {
+          const synced = await syncBrowserCookiesToSupabase().catch(() => ({ ok: false }));
+          if (synced?.ok) {
+            sessionPaused = false;
+            console.log(`[BREM] [세션유지] ${target.label} 쿠키 갱신 완료`);
+          } else {
+            console.warn(`[BREM] [세션유지] ${target.label} 이동은 됐지만 쿠키 저장 실패`);
+          }
+        }
+      } else {
+        console.warn('[BREM] [세션유지] 브라우저 탭 없음 — 대기만 진행');
+      }
+    } catch (error) {
+      statusLoop.lastError = formatError(error, '세션 유지 이동 실패');
+      console.warn('[BREM] [세션유지] 오류:', statusLoop.lastError);
+    }
+
+    // 두 페이지를 번갈아 가도록 대기 구간을 절반씩(최소 8초)
+    const slice = Math.max(8000, Math.min(Math.floor(ms / 2), ms - (Date.now() - started)));
+    if (slice <= 0) break;
+    const continued = await waitStatusLoop(slice);
+    if (!continued) return false;
+  }
+  return statusLoop.active && !statusLoop.stopping;
+}
+
 async function runStatusAutoLoopInner() {
   console.log('[BREM] [현황자동수집] 시작 — 종료 API 호출 전까지 세션 서버에서 반복');
   let isFirstRound = true;
@@ -980,7 +1103,7 @@ async function runStatusAutoLoopInner() {
         statusLoop.lastError = collect.message || '부트스트랩 수집 실패';
         setStatusLoopPhase('waiting', `${round}회차 실패 — ${statusLoop.lastError}`);
         console.warn(`[BREM] [현황자동수집] ${round}회차 실패:`, statusLoop.lastError);
-        const continued = await waitStatusLoop(STATUS_LOOP_WAIT_MS);
+        const continued = await keepAliveDuringStatusWait(STATUS_LOOP_WAIT_MS);
         if (!continued) break;
         continue;
       }
@@ -1043,7 +1166,7 @@ async function runStatusAutoLoopInner() {
     }
 
     if (!statusLoop.active || statusLoop.stopping) break;
-    const continued = await waitStatusLoop(STATUS_LOOP_WAIT_MS);
+    const continued = await keepAliveDuringStatusWait(STATUS_LOOP_WAIT_MS);
     if (!continued) break;
   }
 
@@ -1993,6 +2116,18 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/session/resync' && req.method === 'POST') {
+    try {
+      const result = await tryRecoverSessionFromOpenBrowser();
+      return sendJsonWithCors(req, res, result.ok ? 200 : 409, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatError(error)
+      });
+    }
+  }
+
   if (url.pathname === '/probe/network' && req.method === 'POST') {
     if (!isContextAlive(activeContext)) {
       return sendJsonWithCors(req, res, 409, {
@@ -2530,7 +2665,21 @@ server.listen(PORT, '127.0.0.1', async () => {
     autoCollectRuntime.lastError = record.lastError;
     autoCollectRuntime.nextScheduledAt = record.nextScheduledAt;
     if (sessionPaused) {
-      console.warn('[BREM] [자동수집] 세션 pause 상태 — [배민 세션 갱신] 후 재개됩니다.');
+      console.warn('[BREM] [자동수집] 세션 pause 상태 — 열린 브라우저로 복구 시도…');
+      // persistent 프로필에 로그인 남아 있으면 pause만 풀고 쿠키 재저장
+      void (async () => {
+        try {
+          await ensurePlaywrightBrowser().catch(() => null);
+          const recovered = await tryRecoverSessionFromOpenBrowser();
+          if (recovered.ok) {
+            console.log('[BREM] [자동수집] 세션 pause 자동 해제 완료');
+          } else {
+            console.warn('[BREM] [자동수집] 자동 복구 실패 — [배민 세션 갱신] 필요:', recovered.message);
+          }
+        } catch (recoverError) {
+          console.warn('[BREM] [자동수집] 자동 복구 오류:', formatError(recoverError));
+        }
+      })();
     }
   } catch (error) {
     console.warn('[BREM] [자동수집] 상태 로드 실패:', error.message);
