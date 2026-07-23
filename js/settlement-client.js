@@ -487,23 +487,26 @@ const BremSettlementParser = (function () {
           ) || null;
         }
       } else {
-        // 쿠팡 정산서는 쿠팡ID(로그인 아이디)로 매칭하는 것을 최우선으로 한다.
+        // 쿠팡 정산서의 성함칸은 "이름+전화뒷4자리"(쿠팡ID, 예: "정우성8281") 형식이다.
+        // → 쿠팡ID로 매칭하는 것을 최우선으로 하고, 이름-단독 매칭은 마지막 백업으로만 쓴다.
         const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
-        // 1) 쿠팡ID 정확 매칭 (예: "정우성8281")
+        // 1) 기사에 등록된 쿠팡ID 정확 매칭 (예: coupangId="정우성8281")
         if (loginKey) {
           driver = driverList.find(item =>
             item.coupangId && normalizeCoupangLoginKey(item.coupangId) === loginKey
           ) || null;
         }
-        // 2) 이름 매칭 (쿠팡ID 미등록 기사 대비)
-        if (!driver) {
-          driver = driverList.find(item =>
-            normalizeDriverName(item.name, format) === normalizedRowName
-          ) || null;
-        }
-        // 3) 이름 + 전화 뒷 4자리 로그인키 매칭 (마지막 백업)
+        // 2) 이름+전화 뒷4자리로 만든 쿠팡ID 매칭 (정산서 성함 = 이름+뒷4자리)
         if (!driver && loginKey) {
           driver = driverList.find(item => makeCoupangLoginKeyForDriver(item) === loginKey) || null;
+        }
+        // 3) 이름 매칭 (쿠팡ID/전화 미등록 기사 대비 · 동명이인 없을 때만 안전)
+        if (!driver) {
+          const nameMatches = driverList.filter(item =>
+            normalizeDriverName(item.name, format) === normalizedRowName
+          );
+          // 동명이인이 여러 명이면 이름만으로 단정하지 않는다(오매칭 방지).
+          if (nameMatches.length === 1) driver = nameMatches[0];
         }
       }
 

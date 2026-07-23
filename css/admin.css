@@ -2465,6 +2465,26 @@ textarea {
   max-height: 480px;
 }
 
+/* 쿠팡ID(이름+전화 뒷4자리) 매칭 배지 — 반영 내역에서 매칭 대상 확인용 */
+.settlement-coupang-id {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  color: #bfdbfe;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.settlement-coupang-id--none {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
 .admin-scroll-table-wrap--call-records {
   max-height: 960px;
 }

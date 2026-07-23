@@ -2594,6 +2594,17 @@
     return driver ? driver.name : '삭제된 기사';
   }
 
+  // 쿠팡ID(=이름+전화 뒷4자리) 계산. 기사에 등록된 coupangId 가 있으면 그것을 우선한다.
+  function driverCoupangKey(id) {
+    const driver = drivers().find(item => item.id === id);
+    if (!driver) return '';
+    const explicit = String(driver.coupangId || driver.coupangLoginId || driver.loginId || '').trim();
+    if (explicit) return explicit;
+    const name = String(driver.name || '').replace(/\s/g, '');
+    const last4 = String(driver.phone || '').replace(/[^0-9]/g, '').slice(-4);
+    return name && last4 ? `${name}${last4}` : name;
+  }
+
   function statusBadge(status) {
     const cls = status === '근무중' ? 'work' : status === '휴무' ? 'off' : 'left';
     return `<span class="badge ${cls}">${status}</span>`;
@@ -4104,17 +4115,28 @@
             : `${formatDate(historyDay)} ${platformLabel(p)} 반영된 정산 내역이 없습니다.`
           : '정산일을 선택하세요.';
 
-      historyEl.innerHTML = rows.map(record => `
+      historyEl.innerHTML = rows.map(record => {
+        const coupangIdCell = p === 'coupang'
+          ? (() => {
+              const key = driverCoupangKey(record.driverId);
+              return key
+                ? `<td><span class="settlement-coupang-id">${escapeHtml(key)}</span></td>`
+                : '<td><span class="settlement-coupang-id settlement-coupang-id--none">미등록</span></td>';
+            })()
+          : '';
+        return `
         <tr>
           <td>${formatDate(record.period.length >= 10 ? record.period.slice(0, 10) : record.period)}</td>
           <td>${escapeHtml(driverName(record.driverId))}</td>
+          ${coupangIdCell}
           ${settlementRowCells(record, p)}
           <td>${formatDate(record.appliedAt.slice(0, 10))}</td>
           <td>
             <button class="small-btn danger-btn" type="button" data-delete-settlement="${record.id}">삭제</button>
           </td>
         </tr>
-      `).join('') || `<tr><td colspan="8" class="empty">${emptyMessage}</td></tr>`;
+      `;
+      }).join('') || `<tr><td colspan="9" class="empty">${emptyMessage}</td></tr>`;
 
       if (summaryEl) {
         summaryEl.textContent = rows.length
