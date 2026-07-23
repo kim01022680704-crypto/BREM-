@@ -178,6 +178,7 @@
   function renderSummary(payload) {
     state.availableAmount = Number(payload.availableAmount || 0);
     state.weekFinalized = payload.weekFinalized === true;
+    state.withdrawalPaused = payload.withdrawalPaused === true;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
     if (availableEl) {
       availableEl.textContent = formatMoney(state.availableAmount);
@@ -206,7 +207,9 @@
       }
     }
     if (hintEl) {
-      if (payload.weekFinalized) {
+      if (payload.withdrawalPaused) {
+        hintEl.textContent = '출금신청 일시 정지 중 · 정산 처리가 끝난 뒤 다시 신청해 주세요.';
+      } else if (payload.weekFinalized) {
         hintEl.textContent = `주정산 마무리됨 · 출금가능금액 0원 (${payload.weekStart || '-'} ~ ${payload.weekEnd || '-'})`;
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
@@ -225,6 +228,13 @@
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
     updateFeePreview();
+    if (submitBtn) {
+      const blocked = payload.withdrawalPaused === true || payload.weekFinalized === true;
+      submitBtn.disabled = blocked;
+      submitBtn.textContent = payload.withdrawalPaused
+        ? '출금신청 정지 중'
+        : (payload.weekFinalized ? '주정산 마무리됨' : '출금 신청하기');
+    }
   }
 
   function updateFeePreview() {
@@ -338,9 +348,11 @@
       if (result.enrolled === false && emptyTextEl) {
         emptyTextEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (noDays && emptyTextEl) {
-        emptyTextEl.textContent = result.weekFinalized
-          ? `주정산 마무리됨 · 출금가능금액 0원 (${result.weekStart || '-'} ~ ${result.weekEnd || '-'})`
-          : '해당 주차에 매칭된 일정산 내역이 없습니다.';
+        emptyTextEl.textContent = result.withdrawalPaused
+          ? '출금신청 일시 정지 중 · 정산 처리가 끝난 뒤 다시 신청해 주세요.'
+          : (result.weekFinalized
+            ? `주정산 마무리됨 · 출금가능금액 0원 (${result.weekStart || '-'} ~ ${result.weekEnd || '-'})`
+            : '해당 주차에 매칭된 일정산 내역이 없습니다.');
       }
     }
     if (contentEl) contentEl.hidden = result.enrolled === false;
@@ -383,6 +395,10 @@
     }
     if (!amount) {
       showToast('신청금액을 입력하세요.');
+      return;
+    }
+    if (state.withdrawalPaused) {
+      showToast('현재 출금신청이 일시 정지되어 있습니다. 정산 처리가 끝난 뒤 다시 신청해 주세요.');
       return;
     }
     if (state.weekFinalized) {

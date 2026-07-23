@@ -11,6 +11,7 @@ const FEES_KEY = 'brem_payroll_daily_settlement_fees_v1';
 const REQUESTS_KEY = 'brem_payroll_withdrawal_requests_v1';
 const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
 const FINALIZED_WEEKS_KEY = 'brem_payroll_week_finalized_v1';
+const WITHDRAWAL_PAUSE_KEY = 'brem_payroll_withdrawal_paused_v1';
 
 const ACTIVE_LEASE_STATUSES = ['active', 'operating', 'rented'];
 const COMPLETED_ARREAR_STATUSES = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
@@ -396,18 +397,29 @@ function findFinalizedWeekEntry(list, weekStart) {
   return normalizeFinalizedWeeks(list).find(item => item.weekStart === key) || null;
 }
 
+function normalizeWithdrawalPauseState(raw) {
+  if (raw === true) return { paused: true, updatedAt: '', note: '' };
+  if (!raw || typeof raw !== 'object') return { paused: false, updatedAt: '', note: '' };
+  return {
+    paused: raw.paused === true,
+    updatedAt: String(raw.updatedAt || '').trim(),
+    note: String(raw.note || '').trim()
+  };
+}
+
 async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
   const weekEnd = settlementWeekEnd(weekStart);
   const driverId = String(rider.id || '');
   const driverName = String(rider.name || '').trim();
 
-  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, REQUESTS_KEY, []),
     readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
-    readSettingValue(supabase, FINALIZED_WEEKS_KEY, [])
+    readSettingValue(supabase, FINALIZED_WEEKS_KEY, []),
+    readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {})
   ]);
   const rosterItem = findRosterEntry(rosterRaw, driverId);
   const feesByPlatform = normalizeFees(feesRaw);
@@ -418,6 +430,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   );
   const finalizedEntry = findFinalizedWeekEntry(finalizedRaw, weekStart);
   const weekFinalized = Boolean(finalizedEntry);
+  const pauseState = normalizeWithdrawalPauseState(pauseRaw);
+  const withdrawalPaused = pauseState.paused === true;
   const allRequests = normalizeRequestList(requestsRaw);
   const myWeekRequests = allRequests.filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
@@ -498,6 +512,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     availableAmount,
     weekFinalized,
     weekFinalizedAt: finalizedEntry?.finalizedAt || '',
+    withdrawalPaused,
+    withdrawalPausedAt: pauseState.updatedAt || '',
     lease: {
       hasLease: Boolean(lease?.hasLease),
       dailyRent: Math.max(0, Math.round(Number(lease?.dailyRent || 0))),
@@ -546,6 +562,18 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
+
+  const pauseState = normalizeWithdrawalPauseState(
+    await readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {})
+  );
+  if (pauseState.paused) {
+    return {
+      ok: false,
+      status: 400,
+      error: '현재 출금신청이 일시 정지되어 있습니다. 정산 처리가 끝난 뒤 다시 신청해 주세요.'
+    };
+  }
+
   const summary = await buildDriverWeekSummary(supabase, me.rider, body.weekStart);
   if (!summary.ok) return summary;
 

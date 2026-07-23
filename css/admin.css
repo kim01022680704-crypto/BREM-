@@ -9677,6 +9677,57 @@ textarea {
   background: #dc2626;
 }
 
+.payroll-withdrawal-pause-card {
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.2), rgba(20, 20, 20, 0.92));
+  margin-bottom: 1rem;
+}
+
+.payroll-withdrawal-pause-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 0 1rem 0.95rem;
+}
+
+.payroll-withdrawal-pause-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.payroll-withdrawal-pause-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  background: rgba(22, 101, 52, 0.28);
+  color: #bbf7d0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.payroll-withdrawal-pause-badge.is-paused {
+  border-color: rgba(251, 191, 36, 0.65);
+  background: rgba(180, 83, 9, 0.32);
+  color: #fde68a;
+}
+
+.payroll-withdrawal-pause-card .danger-btn {
+  background: #b45309;
+  border-color: #fbbf24;
+  color: #111;
+  font-weight: 800;
+}
+
+.payroll-withdrawal-pause-card .danger-btn:hover {
+  background: #d97706;
+}
+
 .payroll-daily-sub-tabs {
   margin: 0 0 1rem;
 }

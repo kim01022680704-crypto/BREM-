@@ -630,6 +630,88 @@
     }
   }
 
+  function syncWithdrawalPauseUi() {
+    const badge = $('payrollWithdrawalPauseBadge');
+    const hint = $('payrollWithdrawalPauseHint');
+    const pauseBtn = $('payrollWithdrawalPauseBtn');
+    const resumeBtn = $('payrollWithdrawalResumeBtn');
+    const statePause = BremStorage?.payrollDailySettlement?.getWithdrawalPause?.() || { paused: false };
+    const paused = statePause.paused === true;
+
+    if (badge) {
+      badge.textContent = paused ? '정지 중' : '신청 가능';
+      badge.classList.toggle('is-paused', paused);
+    }
+    if (pauseBtn) {
+      pauseBtn.hidden = paused;
+      pauseBtn.disabled = paused;
+    }
+    if (resumeBtn) {
+      resumeBtn.hidden = !paused;
+      resumeBtn.disabled = !paused;
+    }
+    if (hint) {
+      if (paused) {
+        const at = statePause.updatedAt
+          ? new Date(statePause.updatedAt).toLocaleString('ko-KR')
+          : '-';
+        hint.textContent = `출금신청 정지 중 · 기사앱 신규 신청이 차단됩니다. (처리시각: ${at}) · 처리완료 후 「출금신청 재개」를 누르세요.`;
+      } else {
+        hint.textContent = '정산 접수·처리완료 전에 「출금신청 정지」를 누르면 기사 신규 신청이 멈춥니다. 이미 들어온 신청은 그대로 처리 가능합니다.';
+      }
+    }
+  }
+
+  async function setWithdrawalPaused(paused) {
+    const label = paused ? '출금신청 정지' : '출금신청 재개';
+    const confirmMsg = paused
+      ? [
+        '[출금신청 정지]',
+        '',
+        '지금 정지하면 기사앱에서 신규 출금신청이 막힙니다.',
+        '· 이미 들어온 신청은 그대로 유지됩니다',
+        '· 관리자 「처리완료」는 계속 가능합니다',
+        '',
+        '정산 처리가 끝날 때까지 정지할까요?'
+      ].join('\n')
+      : [
+        '[출금신청 재개]',
+        '',
+        '출금신청 정지를 해제하면 기사앱에서 다시 신청할 수 있습니다.',
+        '처리완료를 모두 끝냈는지 확인하세요.',
+        '',
+        '출금신청을 다시 열까요?'
+      ].join('\n');
+    if (!window.confirm(confirmMsg)) return;
+
+    const pauseBtn = $('payrollWithdrawalPauseBtn');
+    const resumeBtn = $('payrollWithdrawalResumeBtn');
+    if (paused && pauseBtn) {
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = '정지 중…';
+    }
+    if (!paused && resumeBtn) {
+      resumeBtn.disabled = true;
+      resumeBtn.textContent = '재개 중…';
+    }
+    try {
+      await BremStorage?.payrollDailySettlement?.reloadWithdrawalPauseFromServer?.();
+      await BremStorage.payrollDailySettlement.setWithdrawalPaused(paused);
+      await BremStorage?.awaitPersist?.(BremStorage.flushStorage?.());
+      syncWithdrawalPauseUi();
+      showToast(paused
+        ? '출금신청 정지 · 기사앱 신규 신청 차단'
+        : '출금신청 재개 · 기사앱 신청 가능');
+    } catch (error) {
+      console.error('[withdrawal pause]', error);
+      showToast(error.message || `${label}에 실패했습니다.`);
+      syncWithdrawalPauseUi();
+    } finally {
+      if (pauseBtn) pauseBtn.textContent = '출금신청 정지';
+      if (resumeBtn) resumeBtn.textContent = '출금신청 재개';
+    }
+  }
+
   async function renderWithdrawalRequests() {
     const body = $('payrollDailyWithdrawalBody');
     const summary = $('payrollDailyWithdrawalSummary');
@@ -1412,6 +1494,7 @@
     syncRegionSelects();
     renderRegionTags();
     syncWeekFinalizeUi();
+    syncWithdrawalPauseUi();
     renderPayoutTable();
     renderRoster();
     if (state.subTab === 'withdrawals') {
@@ -1776,6 +1859,12 @@
     $('payrollWeekUnfinalizeBtn')?.addEventListener('click', () => {
       void unfinalizeSelectedWeek();
     });
+    $('payrollWithdrawalPauseBtn')?.addEventListener('click', () => {
+      void setWithdrawalPaused(true);
+    });
+    $('payrollWithdrawalResumeBtn')?.addEventListener('click', () => {
+      void setWithdrawalPaused(false);
+    });
     $('payrollDailyWithdrawalBody')?.addEventListener('click', event => {
       const completeBtn = event.target.closest('[data-pds-wd-complete]');
       if (completeBtn) {
@@ -1909,6 +1998,7 @@
       await BremStorage?.ensureSectionLoaded?.('payroll-daily-settlement');
       await BremStorage?.payrollDailySettlement?.reloadFromServer?.();
       await BremStorage?.payrollDailySettlement?.reloadFinalizedWeeksFromServer?.();
+      await BremStorage?.payrollDailySettlement?.reloadWithdrawalPauseFromServer?.();
     } catch (error) {
       console.warn('[payroll daily settlement]', error);
     }
