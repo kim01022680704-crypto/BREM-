@@ -50,7 +50,10 @@ window.BremStorageGuard = (function () {
   ]);
 
   const EMPTY_WRITE_ALLOW_KEYS = new Set([
-    'brem_data_schema_version'
+    'brem_data_schema_version',
+    // 급여 일정산 제외 목록: 비어 있는 것이 "전원 포함"의 정상 상태이므로 빈 값 저장 허용.
+    // (마지막 기사를 급여 포함으로 되돌리면 목록이 비는데, 이때 저장이 막히면 제외가 그대로 남는다.)
+    'brem_payroll_daily_excluded_settlements_v1'
   ]);
 
   function isProductionMode() {
