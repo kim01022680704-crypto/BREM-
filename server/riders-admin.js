@@ -609,6 +609,50 @@ function buildExistingRiderMatchMap(rows) {
   return map;
 }
 
+function dbRowToDriver(row) {
+  const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id || '',
+    name: row.name,
+    phone: row.phone,
+    residentNumber: row.resident_number || raw.residentNumber || '',
+    bankName: row.bank_name || '',
+    accountHolder: row.account_holder || '',
+    accountNumber: row.account_number || '',
+    baeminId: row.baemin_id || '',
+    platformCoupang: row.platform_coupang !== false,
+    platformBaemin: Boolean(row.platform_baemin),
+    longEventItemId: row.long_event_item_id || raw.longEventItemId || '',
+    longEventItem: row.long_event_item || raw.longEventItem || '',
+    longEventStartDate: row.long_event_start_date || raw.longEventStartDate || '',
+    longEventPlatform: row.long_event_platform || raw.longEventPlatform || '',
+    joinDate: row.join_date || raw.joinDate || '',
+    status: row.status || '근무중',
+    memo: row.memo || '',
+    hiddenFields: row.hidden_fields || {},
+    promotionSelectorCoupang: row.promotion_selector_coupang || raw.promotionSelectorCoupang || '',
+    promotionSelectorBaemin: row.promotion_selector_baemin || raw.promotionSelectorBaemin || '',
+    promotionRuleIdCoupang: row.promotion_rule_id_coupang || raw.promotionRuleIdCoupang || '',
+    promotionRuleIdBaemin: row.promotion_rule_id_baemin || raw.promotionRuleIdBaemin || '',
+    selectedMissionId: row.selected_mission_id
+      || raw.selectedMissionId
+      || row.selected_mission_id_baemin
+      || row.selected_mission_id_coupang
+      || '',
+    selectedMissionIdBaemin: row.selected_mission_id_baemin
+      || raw.selectedMissionIdBaemin
+      || raw.selectedMissionId
+      || '',
+    selectedMissionIdCoupang: row.selected_mission_id_coupang
+      || raw.selectedMissionIdCoupang
+      || raw.selectedMissionId
+      || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 function mergeIncomingRiderWithExisting(incoming, existingRow) {
   if (incoming?.bulkFillPatch) {
     return incoming;
@@ -625,33 +669,25 @@ function mergeIncomingRiderWithExisting(incoming, existingRow) {
   merged.platformBaemin = Boolean(incoming.platformBaemin || existingRow.platform_baemin || merged.baeminId);
   merged.platformCoupang = incoming.platformCoupang !== false && existingRow.platform_coupang !== false;
 
-  return merged;
-}
-
-function dbRowToDriver(row) {
-  const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
-  return {
-    id: row.id,
-    authUserId: row.auth_user_id || '',
-    name: row.name,
-    phone: row.phone,
-    residentNumber: row.resident_number || raw.residentNumber || '',
-    bankName: row.bank_name || '',
-    accountHolder: row.account_holder || '',
-    accountNumber: row.account_number || '',
-    baeminId: row.baemin_id || '',
-    platformCoupang: row.platform_coupang !== false,
-    platformBaemin: Boolean(row.platform_baemin),
-    longEventItemId: row.long_event_item_id || '',
-    longEventItem: row.long_event_item || '',
-    longEventStartDate: row.long_event_start_date || '',
-    joinDate: row.join_date || raw.joinDate || '',
-    status: row.status || '근무중',
-    memo: row.memo || '',
-    hiddenFields: row.hidden_fields || {},
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
+  // 일괄등록 시 미션/프로모션이 payload에 없으면 기존 값을 유지한다.
+  const keep = (incomingKey, existingKey) => {
+    if (String(merged[incomingKey] || '').trim()) return;
+    const prev = String(existingRow[existingKey] || '').trim();
+    if (prev) merged[incomingKey] = prev;
   };
+  keep('selectedMissionId', 'selected_mission_id');
+  keep('selectedMissionIdBaemin', 'selected_mission_id_baemin');
+  keep('selectedMissionIdCoupang', 'selected_mission_id_coupang');
+  keep('promotionRuleIdBaemin', 'promotion_rule_id_baemin');
+  keep('promotionRuleIdCoupang', 'promotion_rule_id_coupang');
+  keep('promotionSelectorBaemin', 'promotion_selector_baemin');
+  keep('promotionSelectorCoupang', 'promotion_selector_coupang');
+  keep('longEventItemId', 'long_event_item_id');
+  keep('longEventItem', 'long_event_item');
+  keep('longEventStartDate', 'long_event_start_date');
+  keep('longEventPlatform', 'long_event_platform');
+
+  return merged;
 }
 
 async function expandBulkFillPatches(supabase, riders) {
@@ -669,6 +705,157 @@ async function expandBulkFillPatches(supabase, riders) {
     const { bulkFillPatch, id: _id, ...patch } = rider;
     return { ...base, ...patch };
   }));
+}
+
+const PROTECTED_RIDER_COLUMNS = [
+  'selected_mission_id',
+  'selected_mission_id_baemin',
+  'selected_mission_id_coupang',
+  'promotion_rule_id_baemin',
+  'promotion_rule_id_coupang',
+  'promotion_selector_baemin',
+  'promotion_selector_coupang',
+  'long_event_item_id',
+  'long_event_item',
+  'long_event_start_date',
+  'long_event_platform'
+];
+
+/**
+ * 일괄 upsert 시 payload 가 빈 문자열이어도 기존 미션/프로모션/장기이벤트를 덮어쓰지 않는다.
+ * (계좌번호만 채우는 일괄등록에서 미션 배정이 통째로 날아가는 사고 방지)
+ */
+async function preserveProtectedFieldsOnBulkUpsert(supabase, rows) {
+  const list = Array.isArray(rows) ? rows.filter(row => row?.id) : [];
+  if (!list.length) return rows || [];
+
+  const ids = [...new Set(list.map(row => String(row.id)))];
+  const existingById = new Map();
+  const chunkSize = 200;
+  for (let offset = 0; offset < ids.length; offset += chunkSize) {
+    const chunk = ids.slice(offset, offset + chunkSize);
+    const { data, error } = await queryRidersWithSelectFallback(
+      RIDER_DETAIL_SELECT_VARIANTS,
+      columns => supabase.from('riders').select(columns).in('id', chunk)
+    );
+    if (error) {
+      console.warn('[BREM] preserveProtectedFieldsOnBulkUpsert fetch failed:', error.message || error);
+      return rows;
+    }
+    (data || []).forEach(row => {
+      if (row?.id) existingById.set(String(row.id), row);
+    });
+  }
+
+  const rawMissionKeys = [
+    'selectedMissionId',
+    'selectedMissionIdBaemin',
+    'selectedMissionIdCoupang',
+    'promotionRuleIdBaemin',
+    'promotionRuleIdCoupang',
+    'promotionSelectorBaemin',
+    'promotionSelectorCoupang',
+    'longEventItemId',
+    'longEventItem',
+    'longEventStartDate',
+    'longEventPlatform'
+  ];
+
+  return (rows || []).map(row => {
+    const id = String(row?.id || '');
+    const existing = existingById.get(id);
+    const next = { ...row };
+
+    PROTECTED_RIDER_COLUMNS.forEach(col => {
+      const incoming = String(next[col] ?? '').trim();
+      if (incoming) return;
+      const prev = existing ? String(existing[col] ?? '').trim() : '';
+      if (prev) {
+        next[col] = existing[col];
+        return;
+      }
+      // 빈 값이면 upsert payload 에서 제거 → DB 기존 값을 덮어쓰지 않음
+      delete next[col];
+    });
+
+    // raw_data 안 미션 값도 빈 값이면 기존 raw 를 유지(비밀번호는 이미 preserveRiderPasswordOnUpsert 가 처리)
+    const nextRaw = next.raw_data && typeof next.raw_data === 'object' ? { ...next.raw_data } : {};
+    const prevRaw = existing?.raw_data && typeof existing.raw_data === 'object' ? existing.raw_data : {};
+    rawMissionKeys.forEach(key => {
+      if (String(nextRaw[key] || '').trim()) return;
+      if (String(prevRaw[key] || '').trim()) {
+        nextRaw[key] = prevRaw[key];
+        return;
+      }
+      delete nextRaw[key];
+    });
+    next.raw_data = nextRaw;
+    return next;
+  });
+}
+
+/**
+ * 컬럼이 비었는데 raw_data 에 미션 ID 가 남아 있으면 복구한다.
+ * (일괄등록 덮어쓰기 사고 후 일부 복구용)
+ */
+async function restoreMissionsFromRawData(accessToken) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+
+  const supabase = getServiceClient();
+  const rows = await fetchAllRiders(supabase);
+  let restored = 0;
+  const samples = [];
+
+  for (const row of rows) {
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+    const colBaemin = String(row.selected_mission_id_baemin || '').trim();
+    const colCoupang = String(row.selected_mission_id_coupang || '').trim();
+    const colAny = String(row.selected_mission_id || '').trim();
+    const rawBaemin = String(raw.selectedMissionIdBaemin || raw.selectedMissionId || '').trim();
+    const rawCoupang = String(raw.selectedMissionIdCoupang || raw.selectedMissionId || '').trim();
+    const rawRuleBaemin = String(raw.promotionRuleIdBaemin || '').trim();
+    const rawRuleCoupang = String(raw.promotionRuleIdCoupang || '').trim();
+
+    const nextBaemin = colBaemin || rawBaemin || rawRuleBaemin;
+    const nextCoupang = colCoupang || rawCoupang || rawRuleCoupang;
+    const nextAny = colAny || nextBaemin || nextCoupang;
+    if (!nextBaemin && !nextCoupang) continue;
+    if (colBaemin === nextBaemin && colCoupang === nextCoupang && colAny === nextAny) continue;
+
+    const patch = {
+      selected_mission_id_baemin: nextBaemin,
+      selected_mission_id_coupang: nextCoupang,
+      selected_mission_id: nextAny,
+      promotion_rule_id_baemin: String(row.promotion_rule_id_baemin || rawRuleBaemin || nextBaemin || '').trim(),
+      promotion_rule_id_coupang: String(row.promotion_rule_id_coupang || rawRuleCoupang || nextCoupang || '').trim(),
+      promotion_selector_baemin: String(row.promotion_selector_baemin || raw.promotionSelectorBaemin || nextBaemin || '').trim(),
+      promotion_selector_coupang: String(row.promotion_selector_coupang || raw.promotionSelectorCoupang || nextCoupang || '').trim(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('riders').update(patch).eq('id', row.id);
+    if (error) {
+      console.warn('[BREM] restore mission failed:', row.id, error.message || error);
+      continue;
+    }
+    restored += 1;
+    if (samples.length < 20) {
+      samples.push({
+        id: row.id,
+        name: row.name,
+        baemin: nextBaemin,
+        coupang: nextCoupang
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    scanned: rows.length,
+    restored,
+    samples
+  };
 }
 
 async function resolveBulkRidersForUpsert(supabase, riders) {
@@ -739,7 +926,9 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
     if (row && row.auth_user_id !== undefined) delete row.auth_user_id;
     rowsById.set(String(row.id || ''), row);
   });
-  const rows = Array.from(rowsById.values());
+  let rows = Array.from(rowsById.values());
+  // 일괄등록/계좌채우기 등에서 미션·프로모션·장기이벤트가 빈 값으로 덮이지 않게 기존 DB 값을 보존한다.
+  rows = await preserveProtectedFieldsOnBulkUpsert(supabase, rows);
 
   let upsertPayload = rows;
   let { error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' });
@@ -1318,6 +1507,7 @@ module.exports = {
   bulkUpsertRiders,
   bulkPatchRiderMissions,
   bulkPatchRiderLongEvents,
+  restoreMissionsFromRawData,
   countRiders,
   deleteAllRiders,
   deleteRider,

@@ -649,6 +649,18 @@ app.post('/api/admin/riders/missions/bulk', async (req, res) => {
   }
 });
 
+app.post('/api/admin/riders/missions/restore-from-raw', async (req, res) => {
+  try {
+    const result = await ridersAdmin.restoreMissionsFromRawData(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'raw_data 미션 복구에 실패했습니다.' });
+  }
+});
+
 app.post('/api/admin/riders/merge-selected', async (req, res) => {
   try {
     const result = await ridersAdmin.mergeSelectedRiders(getBearerToken(req), req.body?.riderIds || []);
