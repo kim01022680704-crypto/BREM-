@@ -570,7 +570,7 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     return {
       ok: false,
       status: 400,
-      error: '현재 출금신청이 일시 정지되어 있습니다. 정산 처리가 끝난 뒤 다시 신청해 주세요.'
+      error: '정산중엔 출금신청정지 · 정산 처리가 끝난 뒤 다시 신청해 주세요.'
     };
   }
 
