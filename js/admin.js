@@ -3890,6 +3890,9 @@
         <td class="settlement-upload-log-actions">
           <button type="button" class="small-btn" data-settlement-upload-log-detail="${escapeHtml(item.id)}">상세</button>
           ${canReapplySettlementUploadLog(item)
+            ? `<button type="button" class="small-btn ${payrollEligible ? '' : 'primary-btn'}" data-toggle-payroll-eligible="${escapeHtml(item.id)}" title="출금가능금액에 반영(포함)하거나 제외합니다.">${payrollEligible ? '급여 제외' : '급여 포함'}</button>`
+            : ''}
+          ${canReapplySettlementUploadLog(item)
             ? `<button type="button" class="small-btn primary-btn" data-reapply-settlement-upload-log="${escapeHtml(item.id)}">재반영</button>`
             : ''}
           <button type="button" class="small-btn danger-btn" data-delete-settlement-upload-log="${escapeHtml(item.id)}">기록 삭제</button>
@@ -5319,6 +5322,39 @@
     }
   }
 
+  // 이미 반영된 일정산을 재업로드 없이 급여 일정산(출금)에 포함/제외 토글
+  async function toggleSettlementUploadLogPayrollEligible(logId) {
+    const log = BremStorage.settlementUploadLogs.getById(logId);
+    if (!log || log.kind !== 'daily') {
+      showToast('일정산 업로드 기록을 찾지 못했습니다.');
+      return;
+    }
+    const records = settlementUploadLogApplicableRecords(log);
+    if (!records.length) {
+      showToast('저장된 매칭 데이터가 없습니다.');
+      return;
+    }
+    const p = normalizePlatform(log.platform);
+    const period = String(log.period || '').slice(0, 10);
+    const nextEligible = !settlementUploadLogPayrollEligible(log);
+    try {
+      BremStorage.payrollDailySettlement.setPayrollDailyEligibleForRecords({
+        period,
+        platform: p,
+        records,
+        eligible: nextEligible
+      });
+      await BremStorage.awaitPersist?.(BremStorage.flushStorage?.());
+      renderSettlementUploadLogs(p);
+      showToast(nextEligible
+        ? `급여 일정산 포함 · ${records.length}명 (기사앱 출금가능금액에 반영)`
+        : `급여 일정산 제외 · ${records.length}명`);
+    } catch (error) {
+      console.error('[BREM] toggle payroll eligible failed:', error);
+      showToast(error.message || '급여 일정산 반영 상태 변경에 실패했습니다.');
+    }
+  }
+
   async function reapplySettlementUploadLog(logId) {
     const log = BremStorage.settlementUploadLogs.getById(logId);
     if (!log || log.kind !== 'daily') {
@@ -6621,6 +6657,12 @@
             renderCalls();
           }
         })();
+        return;
+      }
+
+      const togglePayrollEligibleBtn = event.target.closest('[data-toggle-payroll-eligible]');
+      if (togglePayrollEligibleBtn) {
+        void toggleSettlementUploadLogPayrollEligible(togglePayrollEligibleBtn.dataset.togglePayrollEligible);
         return;
       }
 
