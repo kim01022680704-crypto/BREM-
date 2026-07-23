@@ -718,8 +718,14 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   const supabase = getServiceClient();
   const expanded = await expandBulkFillPatches(supabase, list);
   const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, expanded);
-  const rows = await Promise.all(resolved.map(async rider => {
+  const builtRows = await Promise.all(resolved.map(async rider => {
     const row = riderToRow(rider);
+    // 일괄 업서트에서는 auth_user_id 를 절대 건드리지 않는다.
+    // - 신규: null(기본값)으로 삽입되고, 계정 프로비저닝이 별도로 id 기준 채운다.
+    // - 기존: payload 에서 빼면 UPDATE SET 대상이 아니므로 기존 값이 그대로 보존된다.
+    // 이렇게 해야 한 배치 안에서 같은/충돌 auth_user_id 가 들어가 riders_auth_user_id_key
+    // 유니크 제약을 위반하는 일이 사라진다.
+    delete row.auth_user_id;
     return preserveRiderPasswordOnUpsert(
       supabase,
       row,
@@ -727,6 +733,14 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
       rider.password
     );
   }));
+  // 배치 내 동일 id 중복 제거(마지막 값 유지) — "ON CONFLICT DO UPDATE ... affect row a second time" 방지
+  const rowsById = new Map();
+  builtRows.forEach(row => {
+    if (row && row.auth_user_id !== undefined) delete row.auth_user_id;
+    rowsById.set(String(row.id || ''), row);
+  });
+  const rows = Array.from(rowsById.values());
+
   let upsertPayload = rows;
   let { error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' });
   if (error && isMissingColumnError(error)) {
@@ -736,6 +750,42 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
       return next;
     });
     ({ error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' }));
+  }
+
+  // 배치 업서트가 여전히 실패하면(예: 잔여 제약 위반) 행별로 업서트해 정상 행은 저장되게 하고,
+  // 실패한 행만 사유와 함께 돌려준다.
+  if (error) {
+    const perRowFailed = [];
+    let anySucceeded = false;
+    for (const row of rows) {
+      let attempt = { ...row };
+      let { error: rowError } = await supabase.from('riders').upsert(attempt, { onConflict: 'id' });
+      if (rowError && isMissingColumnError(rowError)) {
+        stripOptionalRiderColumns(attempt);
+        ({ error: rowError } = await supabase.from('riders').upsert(attempt, { onConflict: 'id' }));
+      }
+      if (rowError) {
+        perRowFailed.push({ id: String(row.id || ''), error: rowError.message || '저장 실패' });
+      } else {
+        anySucceeded = true;
+      }
+    }
+    if (perRowFailed.length && !anySucceeded) {
+      return {
+        ok: false,
+        status: 400,
+        error: error.message || '기사 일괄 저장에 실패했습니다.',
+        failed: perRowFailed
+      };
+    }
+    return {
+      ok: true,
+      succeeded: rows.length - perRowFailed.length,
+      failed: perRowFailed,
+      total: list.length,
+      updated,
+      created: Math.max(0, (rows.length - perRowFailed.length) - updated)
+    };
   }
 
   if (error) {
