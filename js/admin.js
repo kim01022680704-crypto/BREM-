@@ -5025,7 +5025,9 @@
         drivers: driverList.map(driver => ({
           id: driver.id,
           name: driver.name,
-          baeminId: driver.baeminId || ''
+          phone: driver.phone || '',
+          baeminId: driver.baeminId || '',
+          coupangId: driver.coupangId || driver.coupangLoginId || driver.loginId || ''
         }))
       });
 

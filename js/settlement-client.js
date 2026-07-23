@@ -487,14 +487,23 @@ const BremSettlementParser = (function () {
           ) || null;
         }
       } else {
-        driver = driverList.find(item =>
-          normalizeDriverName(item.name, format) === normalizedRowName
-        ) || null;
+        // 쿠팡 정산서는 쿠팡ID(로그인 아이디)로 매칭하는 것을 최우선으로 한다.
+        const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
+        // 1) 쿠팡ID 정확 매칭 (예: "정우성8281")
+        if (loginKey) {
+          driver = driverList.find(item =>
+            item.coupangId && normalizeCoupangLoginKey(item.coupangId) === loginKey
+          ) || null;
+        }
+        // 2) 이름 매칭 (쿠팡ID 미등록 기사 대비)
         if (!driver) {
-          const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
-          if (loginKey) {
-            driver = driverList.find(item => makeCoupangLoginKeyForDriver(item) === loginKey) || null;
-          }
+          driver = driverList.find(item =>
+            normalizeDriverName(item.name, format) === normalizedRowName
+          ) || null;
+        }
+        // 3) 이름 + 전화 뒷 4자리 로그인키 매칭 (마지막 백업)
+        if (!driver && loginKey) {
+          driver = driverList.find(item => makeCoupangLoginKeyForDriver(item) === loginKey) || null;
         }
       }
 

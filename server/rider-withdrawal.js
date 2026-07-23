@@ -365,50 +365,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     0
   );
 
-  const enrolledPlatforms = {
-    coupang: isPlatformEnrolled(rosterItem, 'coupang'),
-    baemin: isPlatformEnrolled(rosterItem, 'baemin')
-  };
-
-  if (!rosterItem) {
-    // 일정산 미등록 기사라도 등록된 미납(리스미납)은 조회해서 노출한다.
-    const leaseUnenrolled = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd);
-    const unenrolledArrears = Math.max(0, Math.round(Number(leaseUnenrolled?.outstandingArrears || 0)));
-    return {
-      ok: true,
-      enrolled: false,
-      weekStart,
-      weekEnd,
-      driverId,
-      driverName,
-      days: [],
-      totalNetPay: 0,
-      netPayByPlatform: { coupang: 0, baemin: 0 },
-      requestedTotal,
-      requestedAmountTotal,
-      requestedFeeTotal,
-      // 미회수 미납금만큼 마이너스로 노출(가불/출금은 불가하지만 미납은 이월된다)
-      availableAmount: -unenrolledArrears,
-      lease: {
-        hasLease: Boolean(leaseUnenrolled?.hasLease),
-        dailyRent: Math.max(0, Math.round(Number(leaseUnenrolled?.dailyRent || 0))),
-        deductionPlatform: normalizeDeductionPlatform(leaseUnenrolled?.deductionPlatform),
-        activeDays: Math.max(0, Math.round(Number(leaseUnenrolled?.activeDays || 0))),
-        leaseCharge: Math.max(0, Math.round(Number(leaseUnenrolled?.leaseCharge || 0))),
-        outstandingArrears: unenrolledArrears,
-        leaseDeductionTotal: unenrolledArrears,
-        arrearReason: leaseUnenrolled?.arrearReason || ''
-      },
-      enrolledPlatforms: { coupang: false, baemin: false },
-      showCallFee: feesByPlatform.showCallFee !== false,
-      feesByPlatform: {
-        coupang: feesByPlatform.coupang,
-        baemin: feesByPlatform.baemin
-      },
-      myRequests: myWeekRequests
-    };
-  }
-
+  // 일정산 명단(roster)은 이제 "확인용"일 뿐, 출금가능금액 계산을 좌우하지 않는다.
+  // 정산서가 매칭돼 daily_settlements 에 저장된 모든 기사에 대해 계산한다.
   const { data: settlementRows, error } = await supabase
     .from('daily_settlements')
     .select('period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
@@ -422,7 +380,6 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   }
 
   const days = (settlementRows || [])
-    .filter(row => isPlatformEnrolled(rosterItem, row.platform))
     .filter(row => {
       const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
       return !excludedSettlementIds.has(id);
@@ -436,6 +393,12 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     acc[key] = (acc[key] || 0) + Math.max(0, row.netPay);
     return acc;
   }, { coupang: 0, baemin: 0 });
+
+  // 출금 선택 가능한 플랫폼: 정산서가 실제로 존재하는 플랫폼(명단 등록과 무관)
+  const enrolledPlatforms = {
+    coupang: days.some(row => normalizePlatform(row.platform) === 'coupang'),
+    baemin: days.some(row => normalizePlatform(row.platform) === 'baemin')
+  };
 
   const lease = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd);
   const leaseDeduction = Math.max(0, Math.round(Number(lease?.leaseDeductionTotal || 0)));
@@ -511,14 +474,11 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   const summary = await buildDriverWeekSummary(supabase, me.rider, body.weekStart);
   if (!summary.ok) return summary;
 
-  if (!summary.enrolled) {
-    return { ok: false, status: 400, error: '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.' };
-  }
   if (!summary.enrolledPlatforms?.[platform]) {
     return {
       ok: false,
       status: 400,
-      error: `${platform === 'baemin' ? '배민' : '쿠팡'} 일정산 등록이 되어 있지 않습니다.`
+      error: `${platform === 'baemin' ? '배민' : '쿠팡'} 정산 내역이 없어 출금할 수 없습니다.`
     };
   }
 
@@ -610,8 +570,9 @@ async function loadDriverWeekDays(supabase, driverId, weekStart, rosterItem, fee
     .lte('period', weekEnd)
     .order('period', { ascending: true });
   if (error) throw error;
+  // 일정산 명단(roster)은 확인용이므로 플랫폼 등록 여부로 거르지 않는다.
+  void rosterItem;
   return (settlementRows || [])
-    .filter(row => isPlatformEnrolled(rosterItem, row.platform))
     .filter(row => {
       const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
       return !excluded.has(id);
@@ -658,18 +619,17 @@ async function listWithdrawalRequests(accessToken, query = {}) {
     const cacheKey = `${item.driverId}|${item.weekStart}`;
     let detail = detailCache.get(cacheKey);
     if (!detail) {
+      // 일정산 명단(roster) 등록 여부와 무관하게 정산 내역을 합산한다.
       const rosterItem = findRosterEntry(rosterRaw, item.driverId);
       try {
-        const days = rosterItem
-          ? await loadDriverWeekDays(
-            supabase,
-            item.driverId,
-            item.weekStart,
-            rosterItem,
-            feesByPlatform,
-            excludedSettlementIds
-          )
-          : [];
+        const days = await loadDriverWeekDays(
+          supabase,
+          item.driverId,
+          item.weekStart,
+          rosterItem,
+          feesByPlatform,
+          excludedSettlementIds
+        );
         detail = sumDayTotals(days);
       } catch (_error) {
         detail = sumDayTotals([]);
