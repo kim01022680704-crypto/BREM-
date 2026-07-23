@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260723u">
+  <link rel="stylesheet" href="css/admin.css?v=20260723v">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1987,18 +1987,28 @@
                       <h3>차량별 현황</h3>
                       <p class="form-help">차량 기준 · 리스/렌탈 태그 · 계약기간 · 운행/미납/공차 복합 표시</p>
                     </div>
-                    <input type="search" id="leaseDashVehicleSearch" class="lease-dash-vehicle-search" placeholder="번호판 · 기종 · 계약자 검색" autocomplete="off">
+                    <div class="lease-dash-vehicle-tools">
+                      <select id="leaseDashVehicleFilter" class="lease-dash-vehicle-filter" title="현황 필터">
+                        <option value="all">전체</option>
+                        <option value="operating">계약중</option>
+                        <option value="empty">공차</option>
+                        <option value="unpaid">미납</option>
+                        <option value="lease">리스</option>
+                        <option value="rental">렌탈</option>
+                      </select>
+                      <input type="search" id="leaseDashVehicleSearch" class="lease-dash-vehicle-search" placeholder="번호판 · 기종 · 계약자 검색" autocomplete="off">
+                    </div>
                   </div>
-                  <div class="table-wrap lease-table-wrap">
+                  <div class="table-wrap lease-table-wrap lease-dash-vehicle-scroll">
                     <table class="lease-table lease-table--compact lease-dash-vehicle-table">
                       <thead>
                         <tr>
-                          <th>번호판</th>
-                          <th>기종</th>
-                          <th>보험연령</th>
-                          <th>ERP구분</th>
+                          <th class="lease-sortable" data-dash-sort="vehicleNumber">번호판</th>
+                          <th class="lease-sortable" data-dash-sort="model">기종</th>
+                          <th class="lease-sortable" data-dash-sort="insuranceAge">보험연령</th>
+                          <th class="lease-sortable" data-dash-sort="source">ERP구분</th>
                           <th>리스/렌탈</th>
-                          <th>계약자</th>
+                          <th class="lease-sortable" data-dash-sort="driver">계약자</th>
                           <th>리스기간</th>
                           <th>렌탈기간</th>
                           <th class="lease-dash-vehicle-table__status">현황</th>
@@ -5896,7 +5906,7 @@
   <script src="js/lease-erp.js?v=20260723q"></script>
   <script src="js/admin-lease.js?v=20260723u"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260723x"></script>
+  <script src="js/admin-lease-menus.js?v=20260723y"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

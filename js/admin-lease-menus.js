@@ -42,6 +42,8 @@ const BremAdminLeaseMenus = (function () {
     contractVehicleSearch: '',
     contractListSearch: '',
     dashVehicleSearch: '',
+    dashVehicleFilter: 'all',
+    dashVehicleSort: { key: 'vehicleNumber', dir: 'asc' },
     contractSort: { key: 'updatedAt', dir: 'desc' },
     weeklySelectedLogIds: new Set(),
     weeklyVisibleLogIds: [],
@@ -634,6 +636,62 @@ const BremAdminLeaseMenus = (function () {
     return String(vehicle?.vehicleCategory || '') === owned ? '브램리스' : '회사리스';
   }
 
+  function dashVehicleMeta(item) {
+    const contract = erp()?.getLatestContractForVehicle?.(item.id) || null;
+    const driver = String(contract?.driverName || item.renter || '').trim();
+    const source = dashVehicleSourceLabel(item);
+    const isRental = String(contract?.contractType || '') === 'rental';
+    const operating = isContractActive(contract);
+    const unpaidAmount = resolveVehicleUnpaidAmount(item.id, { unpaidAmount: item.unpaidAmount });
+    const isUnpaid = hasOpenArrear(item.id) || unpaidAmount > 0 || Number(item.unpaidDays || 0) > 0;
+    return { contract, driver, source, isRental, operating, isUnpaid };
+  }
+
+  function filterDashVehicles(list) {
+    const filter = state.dashVehicleFilter || 'all';
+    if (filter === 'all') return list;
+    return list.filter(item => {
+      const meta = dashVehicleMeta(item);
+      switch (filter) {
+        case 'operating': return meta.operating;
+        case 'empty': return !meta.operating;
+        case 'unpaid': return meta.isUnpaid;
+        case 'lease': return Boolean(meta.contract) && !meta.isRental;
+        case 'rental': return Boolean(meta.contract) && meta.isRental;
+        default: return true;
+      }
+    });
+  }
+
+  function sortDashVehicles(list) {
+    const sort = state.dashVehicleSort || { key: 'vehicleNumber', dir: 'asc' };
+    const factor = sort.dir === 'asc' ? 1 : -1;
+    const valueOf = (item) => {
+      switch (sort.key) {
+        case 'model': return String(item.model || '');
+        case 'insuranceAge': return Number(String(item.insuranceAge || '').replace(/[^\d]/g, '')) || 0;
+        case 'source': return dashVehicleSourceLabel(item);
+        case 'driver': return dashVehicleMeta(item).driver || '';
+        default: return String(item.vehicleNumber || '');
+      }
+    };
+    return list.slice().sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * factor;
+      return String(va).localeCompare(String(vb), 'ko') * factor;
+    });
+  }
+
+  function updateDashVehicleSortIndicators() {
+    const sort = state.dashVehicleSort || { key: 'vehicleNumber', dir: 'asc' };
+    document.querySelectorAll('#lease-management [data-dash-sort]').forEach(th => {
+      const active = th.dataset.dashSort === sort.key;
+      th.classList.toggle('is-active', active);
+      th.setAttribute('data-dir', active ? sort.dir : '');
+    });
+  }
+
   function paintDashboardVehicleOverview() {
     const rowsEl = document.querySelector('#lease-management #leaseDashVehicleRows');
     if (!rowsEl) return;
@@ -645,7 +703,7 @@ const BremAdminLeaseMenus = (function () {
       }
 
       const keyword = String(state.dashVehicleSearch || '').trim().toLowerCase();
-      const vehicles = keyword
+      let vehicles = keyword
         ? allVehicles.filter(item => {
             const contract = erp()?.getLatestContractForVehicle?.(item.id) || null;
             const driver = String(contract?.driverName || item.renter || '');
@@ -654,8 +712,11 @@ const BremAdminLeaseMenus = (function () {
           })
         : allVehicles;
 
+      vehicles = sortDashVehicles(filterDashVehicles(vehicles));
+      updateDashVehicleSortIndicators();
+
       if (!vehicles.length) {
-        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">검색 결과가 없습니다.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">검색/필터 결과가 없습니다.</td></tr>';
         return;
       }
 
@@ -2839,6 +2900,22 @@ const BremAdminLeaseMenus = (function () {
     $('leaseDashVehicleSearch')?.addEventListener('input', event => {
       state.dashVehicleSearch = String(event.target.value || '');
       paintDashboardVehicleOverview();
+    });
+    $('leaseDashVehicleFilter')?.addEventListener('change', event => {
+      state.dashVehicleFilter = String(event.target.value || 'all');
+      paintDashboardVehicleOverview();
+    });
+    document.querySelectorAll('#lease-management [data-dash-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.dashSort;
+        if (!key) return;
+        if (state.dashVehicleSort.key === key) {
+          state.dashVehicleSort.dir = state.dashVehicleSort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.dashVehicleSort = { key, dir: 'asc' };
+        }
+        paintDashboardVehicleOverview();
+      });
     });
     document.querySelectorAll('[data-contract-sort]').forEach(th => {
       th.addEventListener('click', () => {
