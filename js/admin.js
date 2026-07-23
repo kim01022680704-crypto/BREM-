@@ -1812,6 +1812,16 @@
           };
         }
 
+        if (triggerId === 'payroll-week-finalize') {
+          return {
+            hiddenInput: $('#payrollWeekFinalizeWeekStart'),
+            labelEl: $('#payrollWeekFinalizeWeekBtn'),
+            onSelect(value) {
+              window.BremAdminPayrollDailySettlement?.onWeekFinalizePicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'promotion-apply-saved') {
           return {
             hiddenInput: $('#promotionApplySavedWeekFilter'),

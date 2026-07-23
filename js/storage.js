@@ -52,6 +52,7 @@ const BremStorage = (function () {
     payrollDailySettlementFees: 'brem_payroll_daily_settlement_fees_v1',
     payrollWithdrawalRequests: 'brem_payroll_withdrawal_requests_v1',
     payrollDailyExcludedSettlements: 'brem_payroll_daily_excluded_settlements_v1',
+    payrollWeekFinalized: 'brem_payroll_week_finalized_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
     adminCredentials: 'brem_admin_credentials'
@@ -1434,6 +1435,7 @@ const BremStorage = (function () {
       KEYS.payrollDailySettlementFees,
       KEYS.payrollWithdrawalRequests,
       KEYS.payrollDailyExcludedSettlements,
+      KEYS.payrollWeekFinalized,
       KEYS.drivers,
       KEYS.settlements
     ],
@@ -6951,11 +6953,12 @@ const BremStorage = (function () {
         return payrollDailySettlement.getAll();
       }
       try {
-        const [rosterValue, regionsValue, feesValue, excludedValue] = await Promise.all([
+        const [rosterValue, regionsValue, feesValue, excludedValue, finalizedValue] = await Promise.all([
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRoster),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementRegions),
           activeStorageAdapter.reloadSettingKey(KEYS.payrollDailySettlementFees),
-          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailyExcludedSettlements)
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollDailyExcludedSettlements),
+          activeStorageAdapter.reloadSettingKey(KEYS.payrollWeekFinalized)
         ]);
         const normalized = payrollDailySettlement.normalizeList(rosterValue || []);
         const regions = payrollDailySettlement.normalizeRegions(regionsValue || []);
@@ -6963,10 +6966,12 @@ const BremStorage = (function () {
         const excluded = Array.isArray(excludedValue)
           ? [...new Set(excludedValue.map(item => String(item || '').trim()).filter(Boolean))]
           : [];
+        const finalized = payrollDailySettlement.normalizeFinalizedWeeks(finalizedValue || []);
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRoster, normalized, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementRegions, regions, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailySettlementFees, fees, { source: 'server' });
         window.BremDataCache?.set?.(KEYS.payrollDailyExcludedSettlements, excluded, { source: 'server' });
+        window.BremDataCache?.set?.(KEYS.payrollWeekFinalized, finalized, { source: 'server' });
         return normalized;
       } catch (error) {
         console.warn('[BREM] payroll daily settlement reload failed:', error);
@@ -7137,6 +7142,117 @@ const BremStorage = (function () {
         await flushActiveStorage();
       }
       return normalized;
+    },
+
+    /** 주정산 마무리(수~화) 목록 정규화 */
+    normalizeFinalizedWeeks(list) {
+      if (!Array.isArray(list)) return [];
+      const byWeek = new Map();
+      list.forEach(item => {
+        const weekStart = typeof item === 'string'
+          ? String(item || '').slice(0, 10)
+          : String(item?.weekStart || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return;
+        const prev = byWeek.get(weekStart);
+        const next = {
+          weekStart,
+          weekEnd: String(item?.weekEnd || prev?.weekEnd || '').slice(0, 10),
+          finalizedAt: String(item?.finalizedAt || prev?.finalizedAt || '').trim(),
+          note: String(item?.note || prev?.note || '').trim()
+        };
+        byWeek.set(weekStart, next);
+      });
+      return Array.from(byWeek.values()).sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+    },
+
+    getFinalizedWeeks() {
+      const raw = storageAdapter.read(KEYS.payrollWeekFinalized, []);
+      return payrollDailySettlement.normalizeFinalizedWeeks(raw);
+    },
+
+    getFinalizedWeekStarts() {
+      return payrollDailySettlement.getFinalizedWeeks().map(item => item.weekStart);
+    },
+
+    isWeekFinalized(weekStart) {
+      const key = String(weekStart || '').slice(0, 10);
+      if (!key) return false;
+      return payrollDailySettlement.getFinalizedWeekStarts().includes(key);
+    },
+
+    getFinalizedWeekEntry(weekStart) {
+      const key = String(weekStart || '').slice(0, 10);
+      if (!key) return null;
+      return payrollDailySettlement.getFinalizedWeeks().find(item => item.weekStart === key) || null;
+    },
+
+    persistFinalizedWeeks(list) {
+      const normalized = payrollDailySettlement.normalizeFinalizedWeeks(list);
+      storageAdapter.write(KEYS.payrollWeekFinalized, normalized);
+      window.BremDataCache?.set?.(KEYS.payrollWeekFinalized, normalized, { source: 'write' });
+      return normalized;
+    },
+
+    async reloadFinalizedWeeksFromServer() {
+      if (activeStorageAdapter.type !== 'supabase' || !activeStorageAdapter.reloadSettingKey) {
+        return payrollDailySettlement.getFinalizedWeeks();
+      }
+      try {
+        const value = await activeStorageAdapter.reloadSettingKey(KEYS.payrollWeekFinalized);
+        const normalized = payrollDailySettlement.normalizeFinalizedWeeks(value || []);
+        window.BremDataCache?.set?.(KEYS.payrollWeekFinalized, normalized, { source: 'server' });
+        return normalized;
+      } catch (error) {
+        console.warn('[BREM] payroll week finalized reload failed:', error);
+        return payrollDailySettlement.getFinalizedWeeks();
+      }
+    },
+
+    /**
+     * 정산주(수~화) 마무리 처리.
+     * 마무리된 주는 기사앱 출금가능금액이 0이 되고 신규출금이 차단된다.
+     */
+    async finalizeWeek({ weekStart, weekEnd = '', note = '' } = {}) {
+      const start = String(weekStart || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+        throw new Error('정산주(수요일)를 선택하세요.');
+      }
+      await payrollDailySettlement.reloadFinalizedWeeksFromServer();
+      const list = payrollDailySettlement.getFinalizedWeeks();
+      if (list.some(item => item.weekStart === start)) {
+        return { ok: true, already: true, entry: list.find(item => item.weekStart === start), list };
+      }
+      const entry = {
+        weekStart: start,
+        weekEnd: String(weekEnd || '').slice(0, 10),
+        finalizedAt: new Date().toISOString(),
+        note: String(note || '').trim()
+      };
+      const next = payrollDailySettlement.persistFinalizedWeeks([entry, ...list]);
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return { ok: true, already: false, entry, list: next };
+    },
+
+    /** 정산주 마무리 취소(출금가능금액 복구) */
+    async unfinalizeWeek(weekStart) {
+      const start = String(weekStart || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+        throw new Error('정산주(수요일)를 선택하세요.');
+      }
+      await payrollDailySettlement.reloadFinalizedWeeksFromServer();
+      const list = payrollDailySettlement.getFinalizedWeeks();
+      if (!list.some(item => item.weekStart === start)) {
+        return { ok: true, already: true, list };
+      }
+      const next = payrollDailySettlement.persistFinalizedWeeks(
+        list.filter(item => item.weekStart !== start)
+      );
+      if (typeof flushActiveStorage === 'function') {
+        await flushActiveStorage();
+      }
+      return { ok: true, already: false, list: next };
     },
 
     /** 등록 기사 + 일정산 업로드 금액으로 급여 일정산 행 계산 */
@@ -11776,7 +11892,9 @@ const BremStorage = (function () {
         KEYS.payrollDailySettlementRoster,
         KEYS.payrollDailySettlementRegions,
         KEYS.payrollDailySettlementFees,
-        KEYS.payrollWithdrawalRequests
+        KEYS.payrollWithdrawalRequests,
+        KEYS.payrollDailyExcludedSettlements,
+        KEYS.payrollWeekFinalized
       ])
     })
   });

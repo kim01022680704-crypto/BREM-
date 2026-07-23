@@ -395,6 +395,241 @@
     void renderWeekWithdrawals();
   }
 
+  function ensureWeekFinalizeDefault() {
+    const input = $('payrollWeekFinalizeWeekStart');
+    if (!input) return '';
+    const todayLocal = [
+      new Date().getFullYear(),
+      String(new Date().getMonth() + 1).padStart(2, '0'),
+      String(new Date().getDate()).padStart(2, '0')
+    ].join('-');
+    if (!input.value) {
+      input.value = weekStartKey(todayLocal);
+    } else {
+      const normalized = weekStartKey(input.value);
+      if (normalized && input.value !== normalized) input.value = normalized;
+    }
+    updateWeekFinalizePickerLabel(input.value);
+    return String(input.value || '').slice(0, 10);
+  }
+
+  function updateWeekFinalizePickerLabel(weekStart) {
+    const btn = $('payrollWeekFinalizeWeekBtn');
+    if (!btn) return;
+    const value = String(weekStart || '').slice(0, 10);
+    if (!value) {
+      btn.textContent = '수요일 선택';
+      return;
+    }
+    const utils = window.BremDatePicker || window.BremPayrollSlipUtils;
+    const formatted = utils?.formatDate?.(value) || value;
+    const weekday = utils?.formatWeekdayKo?.(value);
+    btn.textContent = weekday ? `${formatted}(${weekday})` : formatted;
+  }
+
+  function shiftWeekFinalize(deltaWeeks) {
+    const current = ensureWeekFinalizeDefault();
+    if (!current) return;
+    const date = new Date(`${current}T00:00:00`);
+    date.setDate(date.getDate() + (deltaWeeks * 7));
+    const next = weekStartKey([
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-'));
+    const input = $('payrollWeekFinalizeWeekStart');
+    if (input) input.value = next;
+    updateWeekFinalizePickerLabel(next);
+    syncWeekFinalizeUi();
+  }
+
+  function onWeekFinalizePicked(value) {
+    const input = $('payrollWeekFinalizeWeekStart');
+    const normalized = weekStartKey(value || '');
+    if (input && normalized) input.value = normalized;
+    updateWeekFinalizePickerLabel(normalized);
+    syncWeekFinalizeUi();
+  }
+
+  function syncWeekFinalizeUi() {
+    const weekStart = ensureWeekFinalizeDefault();
+    const weekEnd = weekEndKey(weekStart);
+    const periodLabel = $('payrollWeekFinalizePeriodLabel');
+    const badge = $('payrollWeekFinalizeStatusBadge');
+    const hint = $('payrollWeekFinalizeHint');
+    const finalizeBtn = $('payrollWeekFinalizeBtn');
+    const unfinalizeBtn = $('payrollWeekUnfinalizeBtn');
+    const entry = BremStorage?.payrollDailySettlement?.getFinalizedWeekEntry?.(weekStart) || null;
+    const finalized = Boolean(entry);
+
+    if (periodLabel) {
+      periodLabel.textContent = formatWeekPeriodLabel(weekStart);
+    }
+    if (badge) {
+      badge.textContent = finalized ? '마무리됨' : '미마무리';
+      badge.classList.toggle('is-finalized', finalized);
+    }
+    if (finalizeBtn) {
+      finalizeBtn.disabled = finalized || !weekStart;
+      finalizeBtn.textContent = finalized ? '이미 마무리됨' : '정산마무리';
+    }
+    if (unfinalizeBtn) {
+      unfinalizeBtn.hidden = !finalized;
+      unfinalizeBtn.disabled = !finalized;
+    }
+    if (hint) {
+      if (!weekStart) {
+        hint.textContent = '정산주(수요일)를 선택하세요.';
+      } else if (finalized) {
+        const at = entry?.finalizedAt
+          ? new Date(entry.finalizedAt).toLocaleString('ko-KR')
+          : '-';
+        hint.textContent = `${weekStart} ~ ${weekEnd} 주정산 마무리가 완료되었습니다. 기사앱 출금가능금액은 0원입니다. (처리시각: ${at})`;
+      } else {
+        hint.textContent = `${weekStart}(수) ~ ${weekEnd}(화) 주를 마무리하면 해당 주 전체 기사 출금가능금액이 0원이 되고 신규 출금신청이 차단됩니다.`;
+      }
+    }
+  }
+
+  function confirmFinalizeWeek(weekStart, weekEnd) {
+    const period = `${weekStart}(수) ~ ${weekEnd}(화)`;
+    const first = window.confirm(
+      [
+        '[주정산 마무리 확인 1/2]',
+        '',
+        `선택 정산주: ${period}`,
+        '',
+        '이 작업을 실행하면:',
+        '· 해당 주 전체 기사의 출금가능금액이 0원이 됩니다',
+        '· 해당 주 신규 출금신청이 차단됩니다',
+        '· 이미 신청된 출금 내역은 그대로 유지됩니다',
+        '',
+        '정말 이 주를 마무리할까요?'
+      ].join('\n')
+    );
+    if (!first) return false;
+
+    const typed = window.prompt(
+      [
+        '[주정산 마무리 확인 2/2]',
+        '',
+        `실수 방지를 위해 정산주 시작일(수요일)을 정확히 입력하세요.`,
+        `입력할 값: ${weekStart}`,
+        '',
+        '입력 후 확인을 누르면 마무리가 실행됩니다.'
+      ].join('\n'),
+      ''
+    );
+    if (String(typed || '').trim() !== weekStart) {
+      showToast('시작일이 일치하지 않아 마무리를 취소했습니다.');
+      return false;
+    }
+    return true;
+  }
+
+  function confirmUnfinalizeWeek(weekStart, weekEnd) {
+    const period = `${weekStart}(수) ~ ${weekEnd}(화)`;
+    const first = window.confirm(
+      [
+        '[마무리 취소 확인 1/2]',
+        '',
+        `선택 정산주: ${period}`,
+        '',
+        '마무리를 취소하면 해당 주 출금가능금액이 다시 계산됩니다.',
+        '정말 마무리를 취소할까요?'
+      ].join('\n')
+    );
+    if (!first) return false;
+
+    const typed = window.prompt(
+      [
+        '[마무리 취소 확인 2/2]',
+        '',
+        `실수 방지를 위해 정산주 시작일(수요일)을 정확히 입력하세요.`,
+        `입력할 값: ${weekStart}`
+      ].join('\n'),
+      ''
+    );
+    if (String(typed || '').trim() !== weekStart) {
+      showToast('시작일이 일치하지 않아 취소를 중단했습니다.');
+      return false;
+    }
+    return true;
+  }
+
+  async function finalizeSelectedWeek() {
+    const weekStart = ensureWeekFinalizeDefault();
+    const weekEnd = weekEndKey(weekStart);
+    if (!weekStart || !weekEnd) {
+      showToast('정산주(수요일)를 선택하세요.');
+      return;
+    }
+    if (BremStorage?.payrollDailySettlement?.isWeekFinalized?.(weekStart)) {
+      showToast('이미 마무리된 정산주입니다.');
+      syncWeekFinalizeUi();
+      return;
+    }
+    if (!confirmFinalizeWeek(weekStart, weekEnd)) return;
+
+    const btn = $('payrollWeekFinalizeBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '마무리 중…';
+    }
+    try {
+      await BremStorage?.payrollDailySettlement?.reloadFinalizedWeeksFromServer?.();
+      const result = await BremStorage.payrollDailySettlement.finalizeWeek({
+        weekStart,
+        weekEnd,
+        note: 'admin-week-finalize'
+      });
+      await BremStorage?.awaitPersist?.(BremStorage.flushStorage?.());
+      syncWeekFinalizeUi();
+      showToast(result?.already
+        ? `${weekStart} ~ ${weekEnd} 주는 이미 마무리되어 있습니다.`
+        : `정산마무리 완료 · ${weekStart} ~ ${weekEnd} · 출금가능금액 0원 처리`);
+    } catch (error) {
+      console.error('[week finalize]', error);
+      showToast(error.message || '정산마무리에 실패했습니다.');
+      syncWeekFinalizeUi();
+    }
+  }
+
+  async function unfinalizeSelectedWeek() {
+    const weekStart = ensureWeekFinalizeDefault();
+    const weekEnd = weekEndKey(weekStart);
+    if (!weekStart) {
+      showToast('정산주(수요일)를 선택하세요.');
+      return;
+    }
+    if (!BremStorage?.payrollDailySettlement?.isWeekFinalized?.(weekStart)) {
+      showToast('마무리되지 않은 정산주입니다.');
+      syncWeekFinalizeUi();
+      return;
+    }
+    if (!confirmUnfinalizeWeek(weekStart, weekEnd)) return;
+
+    const btn = $('payrollWeekUnfinalizeBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '취소 중…';
+    }
+    try {
+      await BremStorage?.payrollDailySettlement?.reloadFinalizedWeeksFromServer?.();
+      await BremStorage.payrollDailySettlement.unfinalizeWeek(weekStart);
+      await BremStorage?.awaitPersist?.(BremStorage.flushStorage?.());
+      syncWeekFinalizeUi();
+      showToast(`마무리 취소 완료 · ${weekStart} ~ ${weekEnd} · 출금가능금액 복구`);
+    } catch (error) {
+      console.error('[week unfinalize]', error);
+      showToast(error.message || '마무리 취소에 실패했습니다.');
+      syncWeekFinalizeUi();
+    } finally {
+      const unfinalizeBtn = $('payrollWeekUnfinalizeBtn');
+      if (unfinalizeBtn) unfinalizeBtn.textContent = '마무리 취소';
+    }
+  }
+
   async function renderWithdrawalRequests() {
     const body = $('payrollDailyWithdrawalBody');
     const summary = $('payrollDailyWithdrawalSummary');
@@ -1176,6 +1411,7 @@
     syncSubTabs();
     syncRegionSelects();
     renderRegionTags();
+    syncWeekFinalizeUi();
     renderPayoutTable();
     renderRoster();
     if (state.subTab === 'withdrawals') {
@@ -1532,6 +1768,14 @@
     $('payrollDailyWeekWithdrawalExcelBtn')?.addEventListener('click', exportWeekWithdrawalExcel);
     $('payrollDailyWeekWithdrawalPrevBtn')?.addEventListener('click', () => shiftWeekWithdrawal(-1));
     $('payrollDailyWeekWithdrawalNextBtn')?.addEventListener('click', () => shiftWeekWithdrawal(1));
+    $('payrollWeekFinalizePrevBtn')?.addEventListener('click', () => shiftWeekFinalize(-1));
+    $('payrollWeekFinalizeNextBtn')?.addEventListener('click', () => shiftWeekFinalize(1));
+    $('payrollWeekFinalizeBtn')?.addEventListener('click', () => {
+      void finalizeSelectedWeek();
+    });
+    $('payrollWeekUnfinalizeBtn')?.addEventListener('click', () => {
+      void unfinalizeSelectedWeek();
+    });
     $('payrollDailyWithdrawalBody')?.addEventListener('click', event => {
       const completeBtn = event.target.closest('[data-pds-wd-complete]');
       if (completeBtn) {
@@ -1664,10 +1908,12 @@
     try {
       await BremStorage?.ensureSectionLoaded?.('payroll-daily-settlement');
       await BremStorage?.payrollDailySettlement?.reloadFromServer?.();
+      await BremStorage?.payrollDailySettlement?.reloadFinalizedWeeksFromServer?.();
     } catch (error) {
       console.warn('[payroll daily settlement]', error);
     }
     ensurePayoutDateDefault();
+    ensureWeekFinalizeDefault();
     refreshAll();
   }
 
@@ -1679,6 +1925,7 @@
     setPlatform,
     setSubTab,
     onWeekWithdrawalPicked,
+    onWeekFinalizePicked,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),
     getRegionByDriverId: driverId => roster.getRegionByDriverId(driverId)
   };

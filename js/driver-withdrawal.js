@@ -177,6 +177,7 @@
 
   function renderSummary(payload) {
     state.availableAmount = Number(payload.availableAmount || 0);
+    state.weekFinalized = payload.weekFinalized === true;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
     if (availableEl) {
       availableEl.textContent = formatMoney(state.availableAmount);
@@ -205,7 +206,9 @@
       }
     }
     if (hintEl) {
-      if (payload.enrolled === false) {
+      if (payload.weekFinalized) {
+        hintEl.textContent = `주정산 마무리됨 · 출금가능금액 0원 (${payload.weekStart || '-'} ~ ${payload.weekEnd || '-'})`;
+      } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (requestedFee > 0) {
         hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
@@ -335,7 +338,9 @@
       if (result.enrolled === false && emptyTextEl) {
         emptyTextEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (noDays && emptyTextEl) {
-        emptyTextEl.textContent = '해당 주차에 매칭된 일정산 내역이 없습니다.';
+        emptyTextEl.textContent = result.weekFinalized
+          ? `주정산 마무리됨 · 출금가능금액 0원 (${result.weekStart || '-'} ~ ${result.weekEnd || '-'})`
+          : '해당 주차에 매칭된 일정산 내역이 없습니다.';
       }
     }
     if (contentEl) contentEl.hidden = result.enrolled === false;
@@ -378,6 +383,10 @@
     }
     if (!amount) {
       showToast('신청금액을 입력하세요.');
+      return;
+    }
+    if (state.weekFinalized) {
+      showToast('주정산 마무리가 완료된 주입니다. 출금신청할 수 없습니다.');
       return;
     }
     if (state.availableAmount < 0) {

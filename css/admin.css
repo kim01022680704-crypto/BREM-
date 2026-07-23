@@ -9605,6 +9605,73 @@ textarea {
   min-width: 0;
 }
 
+.payroll-week-finalize-card {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.18), rgba(20, 20, 20, 0.92));
+  margin-bottom: 1rem;
+}
+
+.payroll-week-finalize-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px 16px;
+  padding: 0 1rem 0.85rem;
+}
+
+.payroll-week-finalize-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.payroll-week-finalize-week-btn {
+  min-width: 168px;
+}
+
+.payroll-week-finalize-period {
+  margin: 0 0 0.35rem;
+  color: #fecaca;
+  font-size: 0.95rem;
+}
+
+.payroll-week-finalize-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.payroll-week-finalize-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.payroll-week-finalize-badge.is-finalized {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(185, 28, 28, 0.28);
+  color: #fecaca;
+}
+
+.payroll-week-finalize-card .danger-btn {
+  background: #b91c1c;
+  border-color: #f87171;
+  color: #fff;
+  font-weight: 800;
+}
+
+.payroll-week-finalize-card .danger-btn:hover {
+  background: #dc2626;
+}
+
 .payroll-daily-sub-tabs {
   margin: 0 0 1rem;
 }

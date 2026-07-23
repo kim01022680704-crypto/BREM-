@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260723w">
+  <link rel="stylesheet" href="css/admin.css?v=20260723y">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5325,6 +5325,33 @@
       </section>
 
       <section class="section" id="payroll-daily-settlement">
+        <article class="card payroll-week-finalize-card">
+          <div class="card-header">
+            <div>
+              <h2>주정산 마무리</h2>
+              <p class="form-help">수~화 정산주를 선택하고 마무리하면 <strong>해당 주 전체 기사의 출금가능금액이 0원</strong>이 되고 신규 출금신청이 차단됩니다. 실수하면 되돌릴 수 있지만, 반드시 주간을 확인하세요.</p>
+            </div>
+            <span class="payroll-week-finalize-badge" id="payrollWeekFinalizeStatusBadge">미마무리</span>
+          </div>
+          <div class="payroll-week-finalize-toolbar">
+            <label class="payroll-field">
+              <span>정산주 (수요일 시작)</span>
+              <div class="payroll-week-finalize-picker">
+                <input type="hidden" id="payrollWeekFinalizeWeekStart">
+                <button type="button" class="small-btn" id="payrollWeekFinalizePrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
+                <button type="button" class="week-picker-trigger admin-period-input payroll-week-finalize-week-btn" data-week-picker-trigger="payroll-week-finalize" id="payrollWeekFinalizeWeekBtn">수요일 선택</button>
+                <button type="button" class="small-btn" id="payrollWeekFinalizeNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
+              </div>
+            </label>
+            <strong id="payrollWeekFinalizePeriodLabel" class="payroll-week-finalize-period">-</strong>
+            <div class="payroll-week-finalize-actions">
+              <button type="button" class="primary-btn danger-btn" id="payrollWeekFinalizeBtn">정산마무리</button>
+              <button type="button" class="small-btn" id="payrollWeekUnfinalizeBtn" hidden>마무리 취소</button>
+            </div>
+          </div>
+          <p class="form-help" id="payrollWeekFinalizeHint">선택한 주의 주정산이 끝났을 때만 마무리하세요. 마무리 후 기사앱 출금가능금액은 0원으로 표시됩니다.</p>
+        </article>
+
         <div class="promotion-platform-tabs admin-section-tabs" role="tablist" aria-label="급여 일정산 플랫폼">
           <button type="button" class="promotion-tab active" data-pds-platform-tab="coupang">쿠팡</button>
           <button type="button" class="promotion-tab" data-pds-platform-tab="baemin">배민</button>
@@ -5876,9 +5903,9 @@
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260722e"></script>
-  <script src="js/storage-guard.js?v=20260723x"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260723q"></script>
-  <script src="js/storage.js?v=20260723t"></script>
+  <script src="js/storage-guard.js?v=20260723y"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260723r"></script>
+  <script src="js/storage.js?v=20260723u"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -5917,11 +5944,11 @@
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260723p"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260723q"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260723u"></script>
+    <script src="js/admin.js?v=20260723v"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

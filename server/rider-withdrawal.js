@@ -10,6 +10,7 @@ const ROSTER_KEY = 'brem_payroll_daily_settlement_roster_v1';
 const FEES_KEY = 'brem_payroll_daily_settlement_fees_v1';
 const REQUESTS_KEY = 'brem_payroll_withdrawal_requests_v1';
 const EXCLUDED_SETTLEMENTS_KEY = 'brem_payroll_daily_excluded_settlements_v1';
+const FINALIZED_WEEKS_KEY = 'brem_payroll_week_finalized_v1';
 
 const ACTIVE_LEASE_STATUSES = ['active', 'operating', 'rented'];
 const COMPLETED_ARREAR_STATUSES = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
@@ -371,17 +372,42 @@ function isPlatformEnrolled(rosterItem, platform) {
   return rosterItem.platformCoupang !== false;
 }
 
+function normalizeFinalizedWeeks(list) {
+  if (!Array.isArray(list)) return [];
+  const byWeek = new Map();
+  list.forEach(item => {
+    const weekStart = typeof item === 'string'
+      ? String(item || '').slice(0, 10)
+      : String(item?.weekStart || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return;
+    byWeek.set(weekStart, {
+      weekStart,
+      weekEnd: String(item?.weekEnd || '').slice(0, 10),
+      finalizedAt: String(item?.finalizedAt || '').trim(),
+      note: String(item?.note || '').trim()
+    });
+  });
+  return Array.from(byWeek.values());
+}
+
+function findFinalizedWeekEntry(list, weekStart) {
+  const key = String(weekStart || '').slice(0, 10);
+  if (!key) return null;
+  return normalizeFinalizedWeeks(list).find(item => item.weekStart === key) || null;
+}
+
 async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
   const weekEnd = settlementWeekEnd(weekStart);
   const driverId = String(rider.id || '');
   const driverName = String(rider.name || '').trim();
 
-  const [rosterRaw, feesRaw, requestsRaw, excludedRaw] = await Promise.all([
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw] = await Promise.all([
     readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, REQUESTS_KEY, []),
-    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, [])
+    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
+    readSettingValue(supabase, FINALIZED_WEEKS_KEY, [])
   ]);
   const rosterItem = findRosterEntry(rosterRaw, driverId);
   const feesByPlatform = normalizeFees(feesRaw);
@@ -390,6 +416,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       .map(item => String(item || '').trim())
       .filter(Boolean)
   );
+  const finalizedEntry = findFinalizedWeekEntry(finalizedRaw, weekStart);
+  const weekFinalized = Boolean(finalizedEntry);
   const allRequests = normalizeRequestList(requestsRaw);
   const myWeekRequests = allRequests.filter(item => (
     item.driverId === driverId && item.weekStart === weekStart
@@ -450,7 +478,9 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     netPayByPlatform[deductionPlatform] = (netPayByPlatform[deductionPlatform] || 0) - leaseDeduction;
   }
   // 리스비/미납은 최우선 차감이며 마이너스(이월)를 허용한다. (정산 주 단위로 리셋)
-  const availableAmount = totalNetPay - requestedTotal - leaseDeduction;
+  // 주정산 마무리된 주는 출금가능금액을 강제로 0 처리한다.
+  const rawAvailable = totalNetPay - requestedTotal - leaseDeduction;
+  const availableAmount = weekFinalized ? 0 : rawAvailable;
 
   return {
     ok: true,
@@ -466,6 +496,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     requestedAmountTotal,
     requestedFeeTotal,
     availableAmount,
+    weekFinalized,
+    weekFinalizedAt: finalizedEntry?.finalizedAt || '',
     lease: {
       hasLease: Boolean(lease?.hasLease),
       dailyRent: Math.max(0, Math.round(Number(lease?.dailyRent || 0))),
@@ -516,6 +548,14 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   }
   const summary = await buildDriverWeekSummary(supabase, me.rider, body.weekStart);
   if (!summary.ok) return summary;
+
+  if (summary.weekFinalized) {
+    return {
+      ok: false,
+      status: 400,
+      error: `해당 정산주(${summary.weekStart} ~ ${summary.weekEnd})는 주정산 마무리가 완료되어 출금할 수 없습니다.`
+    };
+  }
 
   if (!summary.enrolledPlatforms?.[platform]) {
     return {
