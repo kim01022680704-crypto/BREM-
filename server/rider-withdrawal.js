@@ -64,10 +64,14 @@ async function resolveDriverIdCandidates(supabase, rider) {
       const rowPhone = leaseNormalizePhone(row.phone);
       const rowName = leaseNormalizeName(row.name);
       const samePhone = phone && rowPhone === phone;
-      // 전화가 완전히 같거나, 이름이 같고 전화 뒷4자리까지 같으면 동일 인물로 간주
-      const sameNamePhone4 = name && rowName === name
-        && phone && rowPhone && rowPhone.slice(-4) === phone.slice(-4);
-      if ((samePhone || sameNamePhone4) && row.id) {
+      // 이름이 같고, 전화가 (양쪽 중 하나라도 비었거나 · 완전히 같거나 · 뒷4자리가 같으면)
+      // 동일 인물(중복 등록)로 간주한다. → 정산행 driver_id 가 로그인 id 와 갈려도 합산.
+      const sameName = name && rowName === name;
+      const phoneCompatible = !phone || !rowPhone
+        || rowPhone === phone
+        || rowPhone.slice(-4) === phone.slice(-4);
+      const linkByName = sameName && phoneCompatible;
+      if ((samePhone || linkByName) && row.id) {
         ids.add(String(row.id));
       }
     });
