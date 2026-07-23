@@ -4277,6 +4277,7 @@
         renderSettlements();
         renderCalls();
         renderDashboard();
+        renderSettlementUploadLogs(p);
       } catch (error) {
         console.error('[BREM] settlement upload log week clear failed:', error);
         showToast(error.message || '삭제 저장에 실패했습니다.');
@@ -4284,6 +4285,7 @@
         renderSettlements();
         renderCalls();
         renderDashboard();
+        renderSettlementUploadLogs(p);
       }
     })();
   }
@@ -6699,6 +6701,7 @@
             renderSettlements();
             renderCalls();
             renderDashboard();
+            renderSettlementUploadLogs(normalizePlatform(removed?.platform || log?.platform));
           } catch (error) {
             console.error('[BREM] settlement upload log delete failed:', error);
             showToast(error.message || '기록 삭제 저장에 실패했습니다.');
