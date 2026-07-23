@@ -41,6 +41,42 @@ function normalizeDeductionPlatform(value) {
   return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
 }
 
+/**
+ * 동일 인물의 driver_id 후보를 모두 수집한다.
+ * 기사 중복 등록 등으로 정산행의 driver_id 가 로그인 기사 id 와 다른 경우에도
+ * (이름+전화가 같은) 같은 사람의 정산을 놓치지 않도록 한다.
+ */
+async function resolveDriverIdCandidates(supabase, rider) {
+  const ids = new Set();
+  const primary = String(rider.id || '').trim();
+  if (primary) ids.add(primary);
+
+  const phone = leaseNormalizePhone(rider.phone);
+  const name = leaseNormalizeName(rider.name);
+  if (!phone && !name) return [...ids];
+
+  try {
+    const { data } = await supabase
+      .from('riders')
+      .select('id,name,phone')
+      .limit(5000);
+    (data || []).forEach(row => {
+      const rowPhone = leaseNormalizePhone(row.phone);
+      const rowName = leaseNormalizeName(row.name);
+      const samePhone = phone && rowPhone === phone;
+      // 전화가 완전히 같거나, 이름이 같고 전화 뒷4자리까지 같으면 동일 인물로 간주
+      const sameNamePhone4 = name && rowName === name
+        && phone && rowPhone && rowPhone.slice(-4) === phone.slice(-4);
+      if ((samePhone || sameNamePhone4) && row.id) {
+        ids.add(String(row.id));
+      }
+    });
+  } catch (_error) {
+    // 조회 실패 시 기본 id 만 사용
+  }
+  return [...ids].filter(Boolean);
+}
+
 function leaseContractMatchesRider(row, rider) {
   const raw = row?.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
   if (raw.driverId && String(raw.driverId) === String(rider.id)) return true;
@@ -367,10 +403,12 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
 
   // 일정산 명단(roster)은 이제 "확인용"일 뿐, 출금가능금액 계산을 좌우하지 않는다.
   // 정산서가 매칭돼 daily_settlements 에 저장된 모든 기사에 대해 계산한다.
+  // 기사 중복 등록 등으로 driver_id 가 갈린 경우까지 잡기 위해 동일 인물 id 후보를 모두 조회한다.
+  const driverIdCandidates = await resolveDriverIdCandidates(supabase, rider);
   const { data: settlementRows, error } = await supabase
     .from('daily_settlements')
-    .select('period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
-    .eq('driver_id', driverId)
+    .select('driver_id,period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+    .in('driver_id', driverIdCandidates.length ? driverIdCandidates : [driverId])
     .gte('period', weekStart)
     .lte('period', weekEnd)
     .order('period', { ascending: true });
@@ -381,7 +419,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
 
   const days = (settlementRows || [])
     .filter(row => {
-      const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
+      const rowDriverId = String(row.driver_id || driverId);
+      const id = `${rowDriverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
       return !excludedSettlementIds.has(id);
     })
     .map(row => calcPayoutFromSettlement(row, feesByPlatform))
