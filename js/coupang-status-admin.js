@@ -167,13 +167,21 @@
     </td>`;
   }
 
-  /** 길면 뒤 4글자만 (예: 울산남구중앙 → 남구중앙) */
+  /**
+   * 쿠팡 지역 표시명: 항상 알아볼 수 있는 뒤 4글자.
+   * 예) 울산남구중앙 → 남구중앙, 울산북구남부(2) → 북구남부
+   * (2)/(3) 접미사를 먼저 제거하지 않으면 "북구남부(2)".slice(-4) === "부(2)" 가 된다.
+   */
   function shortRegionLabel(name) {
-    const raw = String(name || '').replace(/\s+/g, '').trim();
+    let raw = String(name || '').replace(/\s+/g, '').trim();
     if (!raw) return '-';
     if (raw === '전체합계' || raw === '전체 합계') return '합계';
-    if (raw.length <= 4) return raw;
-    return raw.slice(-4);
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    if (!base) return '-';
+    if (base.length <= 4) return base;
+    return base.slice(-4);
   }
 
   function regionNameCell(fullName) {

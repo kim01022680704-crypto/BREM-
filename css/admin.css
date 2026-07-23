@@ -3522,12 +3522,14 @@ textarea {
 
 .dashboard-coupang-compact-table .dashboard-baemin-region-name {
   display: inline-block;
-  max-width: 4.6em;
-  overflow: hidden;
+  max-width: none;
+  min-width: 4.5em;
+  overflow: visible;
   text-overflow: clip;
   white-space: nowrap;
-  font-size: 0.8rem;
-  letter-spacing: -0.03em;
+  font-size: 0.84rem;
+  letter-spacing: -0.02em;
+  font-weight: 800;
 }
 
 .dashboard-coupang-compact-table .dashboard-baemin-qcell__ratio {
@@ -3598,8 +3600,11 @@ textarea {
   }
 
   .dashboard-coupang-compact-table .dashboard-baemin-region-name {
-    max-width: 3.2em;
-    font-size: 0.62rem;
+    max-width: none;
+    min-width: 4.2em;
+    overflow: visible;
+    font-size: 0.7rem;
+    font-weight: 800;
   }
 
   .dashboard-coupang-compact-table .dashboard-baemin-qcell__stack {

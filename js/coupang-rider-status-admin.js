@@ -425,12 +425,20 @@
   const PEAK_LABEL = { MORNING: '아침', LUNCH: '점심피크', POST_LUNCH: '점심논피크', DINNER: '저녁피크', POST_DINNER: '저녁논피크' };
   const PEAK_LABEL_SHORT = { MORNING: '아침', LUNCH: '점피', POST_LUNCH: '점논', DINNER: '저피', POST_DINNER: '저논' };
 
+  /**
+   * 쿠팡 지역 표시명: 항상 알아볼 수 있는 뒤 4글자.
+   * 예) 울산남구중앙 → 남구중앙, 울산북구남부(2) → 북구남부
+   */
   function shortRegionLabel(name) {
-    const raw = String(name || '').replace(/\s+/g, '').trim();
+    let raw = String(name || '').replace(/\s+/g, '').trim();
     if (!raw) return '-';
     if (raw === '전체합계' || raw === '전체 합계') return '합계';
-    if (raw.length <= 4) return raw;
-    return raw.slice(-4);
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    if (!base) return '-';
+    if (base.length <= 4) return base;
+    return base.slice(-4);
   }
 
   function regionNameCell(fullName) {
