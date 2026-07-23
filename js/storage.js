@@ -9569,7 +9569,6 @@ const BremStorage = (function () {
       window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
       await refetchDataKey(KEYS.settlements);
       await refetchDataKey(KEYS.calls);
-      await refetchDataKey(KEYS.settlementUploadLogs);
       return { ...target, rollbackResult };
     },
 
@@ -9619,7 +9618,6 @@ const BremStorage = (function () {
       window.BremDataCache?.invalidate?.(KEYS.settlementUploadLogs);
       await refetchDataKey(KEYS.settlements);
       await refetchDataKey(KEYS.calls);
-      await refetchDataKey(KEYS.settlementUploadLogs);
       return { removed: deletedIds.length, appliedCount, rolledBackCalls };
     },
 
