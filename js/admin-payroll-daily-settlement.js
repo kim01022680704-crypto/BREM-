@@ -889,11 +889,14 @@
     container.innerHTML = sortedKeys.map(dateKey => {
       const groupRows = groups.get(dateKey)
         .slice()
-        .sort((a, b) => String(b.completedAt || '').localeCompare(String(a.completedAt || '')));
+        .sort((a, b) => String(b.completedAt || b.updatedAt || '').localeCompare(String(a.completedAt || a.updatedAt || '')));
       const groupAmount = groupRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-      const bodyRows = groupRows.map(row => `
+      const bodyRows = groupRows.map(row => {
+        // 구버전 처리 건은 completedAt 이 없을 수 있어 updatedAt(마지막 갱신=처리 시각) 으로 대체한다.
+        const processedAt = row.completedAt || row.updatedAt || '';
+        return `
         <tr>
-          <td>${escapeHtml(row.completedAt ? new Date(row.completedAt).toLocaleString('ko-KR') : '-')}</td>
+          <td>${escapeHtml(processedAt ? new Date(processedAt).toLocaleString('ko-KR') : '-')}</td>
           <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
           <td>${escapeHtml(withdrawalPlatformLabel(row.platform))}</td>
           <td>${escapeHtml(row.requestDate || String(row.createdAt || '').slice(0, 10) || '-')}</td>
@@ -905,7 +908,8 @@
           <td>${escapeHtml(row.bankName || '-')} ${escapeHtml(row.accountNumber || '')}</td>
           <td><button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button></td>
         </tr>
-      `).join('');
+      `;
+      }).join('');
       return `
         <div class="payroll-completed-group">
           <div class="payroll-completed-group-head">
