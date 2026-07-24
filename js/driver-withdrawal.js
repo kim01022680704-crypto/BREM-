@@ -181,11 +181,10 @@
     state.weekFinalized = payload.weekFinalized === true;
     state.withdrawalPaused = payload.withdrawalPaused === true;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
-    // 화면에 보여주는 "출금가능금액" = 실제 신청 가능한 최대 금액(수수료 제외).
-    // 출금 시 2% 수수료가 신청금액 위에 더해지므로, 이 최대치를 넘겨 신청할 수 없다.
+    // 출금가능금액 = 실지급액 합계(주머니). 출금 시 신청액 + 2% 수수료가 여기서 차감된다.
     const maxRequestable = Math.max(0, maxWithdrawableAmount());
     if (availableEl) {
-      availableEl.textContent = formatMoney(maxRequestable);
+      availableEl.textContent = formatMoney(state.availableAmount);
       availableEl.classList.toggle('is-negative', state.availableAmount < 0);
     }
     const by = payload.netPayByPlatform || {};
@@ -228,9 +227,9 @@
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (requestedFee > 0) {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 최대신청 ${formatMoney(maxRequestable)} (출금수수료 2% 별도)`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 출금 시 신청액 + 2% 차감 (최대신청 ${formatMoney(maxRequestable)})`;
       } else {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)}${leaseText} · 최대신청 ${formatMoney(maxRequestable)} (출금수수료 2% 별도)`;
+        hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 출금 시 신청액 + 2% 수수료 차감 (최대신청 ${formatMoney(maxRequestable)})`;
       }
     }
     const maxAmount = maxRequestable;
@@ -261,9 +260,8 @@
     }
     const fee = estimateFeeForAmount(amount);
     const consume = amount + fee;
-    const maxRequestable = Math.max(0, maxWithdrawableAmount());
     preview.textContent = fee > 0
-      ? `예상 차감: 출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (최대신청 ${formatMoney(maxRequestable)})`
+      ? `예상 차감: 출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (출금가능 ${formatMoney(state.availableAmount)})`
       : `예상 차감: ${formatMoney(amount)} (일출금수수료 없음)`;
   }
 
