@@ -14,6 +14,7 @@
   const requestList = document.getElementById('driverWithdrawalRequestList');
   const form = document.getElementById('driverWithdrawalForm');
   const amountInput = document.getElementById('driverWithdrawalAmount');
+  const maxBtn = document.getElementById('driverWithdrawalMaxBtn');
   const submitBtn = document.getElementById('driverWithdrawalSubmitBtn');
   const platformCoupang = document.getElementById('driverWithdrawalPlatformCoupang');
   const platformBaemin = document.getElementById('driverWithdrawalPlatformBaemin');
@@ -180,8 +181,11 @@
     state.weekFinalized = payload.weekFinalized === true;
     state.withdrawalPaused = payload.withdrawalPaused === true;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
+    // 화면에 보여주는 "출금가능금액" = 실제 신청 가능한 최대 금액(수수료 제외).
+    // 출금 시 2% 수수료가 신청금액 위에 더해지므로, 이 최대치를 넘겨 신청할 수 없다.
+    const maxRequestable = Math.max(0, maxWithdrawableAmount());
     if (availableEl) {
-      availableEl.textContent = formatMoney(state.availableAmount);
+      availableEl.textContent = formatMoney(maxRequestable);
       availableEl.classList.toggle('is-negative', state.availableAmount < 0);
     }
     const by = payload.netPayByPlatform || {};
@@ -224,12 +228,12 @@
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (requestedFee > 0) {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 최대신청 ${formatMoney(maxRequestable)} (출금수수료 2% 별도)`;
       } else {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청(출금+일출금수수료) ${formatMoney(payload.requestedTotal)}${leaseText} · 쿠팡 ${formatMoney(coupangNet)} / 배민 ${formatMoney(baeminNet)}`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)}${leaseText} · 최대신청 ${formatMoney(maxRequestable)} (출금수수료 2% 별도)`;
       }
     }
-    const maxAmount = maxWithdrawableAmount();
+    const maxAmount = maxRequestable;
     if (amountInput) {
       amountInput.max = String(maxAmount || 0);
       if (Number(amountInput.value || 0) > maxAmount) {
@@ -257,8 +261,9 @@
     }
     const fee = estimateFeeForAmount(amount);
     const consume = amount + fee;
+    const maxRequestable = Math.max(0, maxWithdrawableAmount());
     preview.textContent = fee > 0
-      ? `예상 차감: 출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (가능 ${formatMoney(state.availableAmount)})`
+      ? `예상 차감: 출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (최대신청 ${formatMoney(maxRequestable)})`
       : `예상 차감: ${formatMoney(amount)} (일출금수수료 없음)`;
   }
 
@@ -451,6 +456,14 @@
   amountInput?.addEventListener('input', updateFeePreview);
   platformCoupang?.addEventListener('change', updateFeePreview);
   platformBaemin?.addEventListener('change', updateFeePreview);
+  maxBtn?.addEventListener('click', () => {
+    const max = Math.max(0, maxWithdrawableAmount());
+    if (amountInput) {
+      amountInput.value = max > 0 ? String(max) : '';
+      updateFeePreview();
+      amountInput.focus();
+    }
+  });
 
   window.BremDriverWithdrawal = {
     open: openPanel,

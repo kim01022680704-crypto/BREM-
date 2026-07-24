@@ -558,6 +558,39 @@ h3 {
   font-size: 1rem;
 }
 
+.driver-withdrawal-amount-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.driver-withdrawal-amount-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.driver-withdrawal-max-btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #1d4ed8;
+  border-radius: 12px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.driver-withdrawal-max-btn:hover {
+  background: #1e40af;
+  border-color: #1e40af;
+}
+
+.driver-withdrawal-max-btn:active {
+  transform: translateY(1px);
+}
+
 .driver-withdrawal-table {
   width: 100%;
   font-size: 0.78rem;

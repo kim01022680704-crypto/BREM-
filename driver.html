@@ -259,7 +259,10 @@
               </fieldset>
               <label>
                 <span>신청금액</span>
-                <input type="number" id="driverWithdrawalAmount" min="1" step="1" placeholder="출금할 금액" required>
+                <div class="driver-withdrawal-amount-row">
+                  <input type="number" id="driverWithdrawalAmount" min="1" step="1" placeholder="출금할 금액" required>
+                  <button type="button" class="driver-withdrawal-max-btn" id="driverWithdrawalMaxBtn">최대</button>
+                </div>
               </label>
               <p class="form-help" id="driverWithdrawalFeePreview">일출금수수료(출금시적용)는 신청금액 기준으로 차감됩니다.</p>
               <button type="submit" class="target-save-btn" id="driverWithdrawalSubmitBtn">출금 신청하기</button>
