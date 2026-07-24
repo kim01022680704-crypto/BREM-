@@ -22,6 +22,9 @@
 | 9b | `lease_erp_v2_columns.sql` | **리스 ERP v2** (9번 이후) | 미납일·취득세·회사소유리스 계산 필드 |
 | 9c | `lease_erp_v3_patch.sql` | **리스 ERP v3** (9b 이후) | lease_arrears · 계약 raw_data 확장 |
 | 9d | `payroll_slips_migration.sql` | **급여명세서 사용 시** | payroll_slip_uploads · payroll_slip_lines |
+| 9e | `performance_indexes.sql` | 성능 권장 | riders/notices/promotions/settings 기본 인덱스 |
+| 9f | `query_optimization_indexes.sql` | 성능 권장 (9e 이후) | riders/admin_calls/rejection/missions 인덱스 |
+| 9g | `settlement_withdrawal_indexes.sql` | **성능 권장** (9f 이후) | daily_settlements·정산·리스 조회 인덱스 (출금 계산 최적화) |
 | 10 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)

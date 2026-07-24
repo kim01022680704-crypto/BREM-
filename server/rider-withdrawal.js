@@ -16,6 +16,18 @@ const WITHDRAWAL_PAUSE_KEY = 'brem_payroll_withdrawal_paused_v1';
 const ACTIVE_LEASE_STATUSES = ['active', 'operating', 'rented'];
 const COMPLETED_ARREAR_STATUSES = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
 
+// 출금신청 목록은 settings 에 JSON 배열 하나로 저장된다.
+// 여러 요청(기사 신청 / 관리자 처리)이 동시에 read-modify-write 하면
+// 마지막 write 가 앞선 write 를 덮어써 신청 건이 유실될 수 있다.
+// 같은 프로세스 안에서는 프라미스 체인으로 직렬화해 이 경합을 막는다.
+let requestsWriteChain = Promise.resolve();
+function withRequestsLock(fn) {
+  const run = requestsWriteChain.then(() => fn());
+  // 결과/에러와 무관하게 체인이 끊기지 않도록 유지한다.
+  requestsWriteChain = run.then(() => {}, () => {});
+  return run;
+}
+
 function leaseNormalizeName(value) {
   return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
 }
@@ -635,9 +647,11 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     updatedAt: new Date().toISOString()
   });
 
-  const existing = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-  existing.unshift(request);
-  await writeSettingValue(supabase, REQUESTS_KEY, existing);
+  await withRequestsLock(async () => {
+    const existing = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    existing.unshift(request);
+    await writeSettingValue(supabase, REQUESTS_KEY, existing);
+  });
 
   const nextAvailable = Math.max(0, summary.availableAmount - consumeAmount);
   return {
@@ -679,28 +693,50 @@ function sumDayTotals(days = []) {
   });
 }
 
-async function loadDriverWeekDays(supabase, driverId, weekStart, rosterItem, feesByPlatform, excludedSettlementIds = null) {
+/**
+ * 여러 기사의 한 주(week) 일정산을 한 번의 쿼리로 배치 조회한다.
+ * 출금신청자 목록(listWithdrawalRequests)에서 신청 건마다 개별 쿼리(N+1)를 하던 것을
+ * 주차별 1회 쿼리로 합쳐 서버 부하와 응답시간을 줄인다.
+ * 반환: Map<driverId, days[]>
+ */
+async function loadWeekDaysForDrivers(supabase, driverIds, weekStart, feesByPlatform, excludedSettlementIds = null) {
+  const ids = [...new Set((Array.isArray(driverIds) ? driverIds : []).map(id => String(id || '')).filter(Boolean))];
+  const result = new Map();
+  ids.forEach(id => result.set(id, []));
+  if (!ids.length) return result;
+
   const weekEnd = settlementWeekEnd(weekStart);
   const excluded = excludedSettlementIds instanceof Set
     ? excludedSettlementIds
     : new Set(Array.isArray(excludedSettlementIds) ? excludedSettlementIds : []);
-  const { data: settlementRows, error } = await supabase
-    .from('daily_settlements')
-    .select('period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
-    .eq('driver_id', driverId)
-    .gte('period', weekStart)
-    .lte('period', weekEnd)
-    .order('period', { ascending: true });
-  if (error) throw error;
-  // 일정산 명단(roster)은 확인용이므로 플랫폼 등록 여부로 거르지 않는다.
-  void rosterItem;
-  return (settlementRows || [])
-    .filter(row => {
-      const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
-      return !excluded.has(id);
-    })
-    .map(row => calcPayoutFromSettlement(row, feesByPlatform))
-    .filter(row => row.period);
+
+  // Supabase 기본 1000행 제한을 넘어 잘리지 않도록 페이지네이션으로 전부 읽는다.
+  const PAGE_SIZE = 1000;
+  const settlementRows = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('daily_settlements')
+      .select('driver_id,period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+      .in('driver_id', ids)
+      .gte('period', weekStart)
+      .lte('period', weekEnd)
+      .order('period', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    settlementRows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+
+  settlementRows.forEach(row => {
+    const driverId = String(row.driver_id || '');
+    if (!result.has(driverId)) return;
+    const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
+    if (excluded.has(id)) return;
+    const day = calcPayoutFromSettlement(row, feesByPlatform);
+    if (day.period) result.get(driverId).push(day);
+  });
+  return result;
 }
 
 async function listWithdrawalRequests(accessToken, query = {}) {
@@ -711,9 +747,8 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   if (!supabase) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
-  const [listRaw, rosterRaw, feesRaw, excludedRaw] = await Promise.all([
+  const [listRaw, feesRaw, excludedRaw] = await Promise.all([
     readSettingValue(supabase, REQUESTS_KEY, []),
-    readSettingValue(supabase, ROSTER_KEY, []),
     readSettingValue(supabase, FEES_KEY, {}),
     readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, [])
   ]);
@@ -744,35 +779,40 @@ async function listWithdrawalRequests(accessToken, query = {}) {
     return true;
   });
 
+  // 신청 건별 개별 쿼리(N+1) 대신, 주차(weekStart)별로 기사들을 모아 한 번에 배치 조회한다.
+  const driversByWeek = new Map();
+  filtered.forEach(item => {
+    const week = String(item.weekStart || '');
+    if (!driversByWeek.has(week)) driversByWeek.set(week, new Set());
+    driversByWeek.get(week).add(String(item.driverId || ''));
+  });
+
   const detailCache = new Map();
-  const requests = [];
-  for (const item of filtered) {
-    const cacheKey = `${item.driverId}|${item.weekStart}`;
-    let detail = detailCache.get(cacheKey);
-    if (!detail) {
-      // 일정산 명단(roster) 등록 여부와 무관하게 정산 내역을 합산한다.
-      const rosterItem = findRosterEntry(rosterRaw, item.driverId);
-      try {
-        const days = await loadDriverWeekDays(
-          supabase,
-          item.driverId,
-          item.weekStart,
-          rosterItem,
-          feesByPlatform,
-          excludedSettlementIds
-        );
-        detail = sumDayTotals(days);
-      } catch (_error) {
-        detail = sumDayTotals([]);
-      }
-      detailCache.set(cacheKey, detail);
+  await Promise.all([...driversByWeek.entries()].map(async ([week, driverIdSet]) => {
+    const driverIds = [...driverIdSet];
+    try {
+      const daysByDriver = await loadWeekDaysForDrivers(
+        supabase,
+        driverIds,
+        week,
+        feesByPlatform,
+        excludedSettlementIds
+      );
+      driverIds.forEach(driverId => {
+        detailCache.set(`${driverId}|${week}`, sumDayTotals(daysByDriver.get(driverId) || []));
+      });
+    } catch (_error) {
+      driverIds.forEach(driverId => {
+        detailCache.set(`${driverId}|${week}`, sumDayTotals([]));
+      });
     }
-    requests.push({
-      ...item,
-      ...detail,
-      showCallFee: feesByPlatform.showCallFee !== false
-    });
-  }
+  }));
+
+  const requests = filtered.map(item => ({
+    ...item,
+    ...(detailCache.get(`${item.driverId}|${item.weekStart}`) || sumDayTotals([])),
+    showCallFee: feesByPlatform.showCallFee !== false
+  }));
 
   return {
     ok: true,
@@ -792,33 +832,35 @@ async function cancelWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-  const index = list.findIndex(item => item.id === id);
-  if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+  return withRequestsLock(async () => {
+    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    const index = list.findIndex(item => item.id === id);
+    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
 
-  const current = list[index];
-  if (current.status === 'cancelled') {
-    return { ok: true, request: current, alreadyCancelled: true };
-  }
-  if (current.status === 'completed') {
-    return { ok: false, status: 400, error: '처리완료된 신청은 취소할 수 없습니다.' };
-  }
+    const current = list[index];
+    if (current.status === 'cancelled') {
+      return { ok: true, request: current, alreadyCancelled: true };
+    }
+    if (current.status === 'completed') {
+      return { ok: false, status: 400, error: '처리완료된 신청은 취소할 수 없습니다.' };
+    }
 
-  const updated = {
-    ...current,
-    status: 'cancelled',
-    cancelledAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  list[index] = updated;
-  await writeSettingValue(supabase, REQUESTS_KEY, list);
+    const updated = {
+      ...current,
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    list[index] = updated;
+    await writeSettingValue(supabase, REQUESTS_KEY, list);
 
-  return {
-    ok: true,
-    request: updated,
-    restoredAmount: updated.amount,
-    message: `취소 완료 · ${updated.amount.toLocaleString('ko-KR')}원 출금가능금액 복구`
-  };
+    return {
+      ok: true,
+      request: updated,
+      restoredAmount: updated.amount,
+      message: `취소 완료 · ${updated.amount.toLocaleString('ko-KR')}원 출금가능금액 복구`
+    };
+  });
 }
 
 async function completeWithdrawalRequest(accessToken, requestId) {
@@ -829,32 +871,34 @@ async function completeWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-  const index = list.findIndex(item => item.id === id);
-  if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+  return withRequestsLock(async () => {
+    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    const index = list.findIndex(item => item.id === id);
+    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
 
-  const current = list[index];
-  if (current.status === 'completed') {
-    return { ok: true, request: current, alreadyCompleted: true };
-  }
-  if (current.status === 'cancelled') {
-    return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.' };
-  }
+    const current = list[index];
+    if (current.status === 'completed') {
+      return { ok: true, request: current, alreadyCompleted: true };
+    }
+    if (current.status === 'cancelled') {
+      return { ok: false, status: 400, error: '취소된 신청은 출금완료 처리할 수 없습니다.' };
+    }
 
-  const updated = {
-    ...current,
-    status: 'completed',
-    completedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  list[index] = updated;
-  await writeSettingValue(supabase, REQUESTS_KEY, list);
+    const updated = {
+      ...current,
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    list[index] = updated;
+    await writeSettingValue(supabase, REQUESTS_KEY, list);
 
-  return {
-    ok: true,
-    request: updated,
-    message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`
-  };
+    return {
+      ok: true,
+      request: updated,
+      message: `출금완료 처리 · ${updated.driverName || ''} ${updated.amount.toLocaleString('ko-KR')}원`
+    };
+  });
 }
 
 async function deleteWithdrawalRequest(accessToken, requestId) {
@@ -865,22 +909,24 @@ async function deleteWithdrawalRequest(accessToken, requestId) {
   if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
 
   const supabase = getServiceClient();
-  const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
-  const target = list.find(item => item.id === id);
-  if (!target) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+  return withRequestsLock(async () => {
+    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    const target = list.find(item => item.id === id);
+    if (!target) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
 
-  const next = list.filter(item => item.id !== id);
-  await writeSettingValue(supabase, REQUESTS_KEY, next);
+    const next = list.filter(item => item.id !== id);
+    await writeSettingValue(supabase, REQUESTS_KEY, next);
 
-  const restored = target.status === 'pending' ? target.amount : 0;
-  return {
-    ok: true,
-    deleted: target,
-    restoredAmount: restored,
-    message: restored
-      ? `삭제 완료 · ${restored.toLocaleString('ko-KR')}원 출금가능금액 복구`
-      : '삭제 완료'
-  };
+    const restored = target.status === 'pending' ? target.amount : 0;
+    return {
+      ok: true,
+      deleted: target,
+      restoredAmount: restored,
+      message: restored
+        ? `삭제 완료 · ${restored.toLocaleString('ko-KR')}원 출금가능금액 복구`
+        : '삭제 완료'
+    };
+  });
 }
 
 module.exports = {
