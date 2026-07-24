@@ -36,6 +36,7 @@
     defaultDailySettlementApply: true,
     publishWeekStart: '',
     publishPaymentDateTouched: false,
+    publishStatus: null,
     uploadEditId: '',
     driverPickerSearch: {}
   };
@@ -916,8 +917,14 @@
         statusEl.textContent = `${utils.formatSettlementWeekLabel(weekStart)} · 반영 완료`;
       }
     }
+    // 선택한 주의 최신 상태를 저장해 반영 버튼 클릭 시 재활용한다.
+    state.publishStatus = status;
     if (publishBtn) {
-      publishBtn.disabled = !weekStart || (!status.totalLines && !status.totalNotices);
+      // 데이터가 없어도 버튼은 눌리게 두고, 클릭 시 이유(다른 정산주 안내)를 토스트로 알려준다.
+      // (완전 비활성이면 눌러도 반응이 없어 "되는지 안 되는지" 알 수 없다는 혼란이 생김)
+      publishBtn.disabled = !weekStart;
+      const hasData = Boolean(status.totalLines || status.totalNotices);
+      publishBtn.classList.toggle('is-empty', !hasData && !!weekStart);
     }
   }
 
@@ -940,12 +947,16 @@
       showToast('지급일을 선택하세요.');
       return;
     }
-    const status = BremStorage.payrollPublish?.countPendingForWeek?.(weekStart);
+    // 최신 상태(원격 조회 포함)를 다시 확인한다. 로컬 캐시만 보면 Supabase 모드에서
+    // 실제로 데이터가 있어도 없다고 잘못 판단할 수 있으므로 refreshPublishStatus 로 갱신.
+    await refreshPublishStatus();
+    const status = state.publishStatus
+      || BremStorage.payrollPublish?.countPendingForWeek?.(weekStart);
     if (!status?.totalLines && !status?.totalNotices) {
       const otherHint = summarizeOtherSettlementWeeks(weekStart);
       showToast(otherHint
-        ? `선택 정산주에 명세가 없습니다.${otherHint}`
-        : '해당 정산주에 저장된 급여명세서·공지가 없습니다.');
+        ? `선택한 정산주(${utils.formatSettlementWeekLabel(weekStart)})에 급여명세서가 없습니다. 명세가 있는 정산주를 선택하세요.${otherHint}`
+        : `선택한 정산주(${utils.formatSettlementWeekLabel(weekStart)})에 저장된 급여명세서·공지가 없습니다.`);
       return;
     }
     const ok = window.confirm(

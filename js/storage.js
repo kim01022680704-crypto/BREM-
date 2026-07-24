@@ -2865,6 +2865,28 @@ const BremStorage = (function () {
     });
   }
 
+  async function fetchWithdrawableDriversFromServer(weekStart) {
+    const params = new URLSearchParams();
+    if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return adminRidersApi(`/api/admin/payroll/withdrawable-drivers${qs}`);
+  }
+
+  async function adminCreateWithdrawalRequestOnServer(payload = {}) {
+    return adminRidersApi('/api/admin/payroll/withdrawal-requests/admin-create', {
+      method: 'POST',
+      body: JSON.stringify({
+        driverId: String(payload.driverId || '').trim(),
+        driverName: String(payload.driverName || '').trim(),
+        platform: String(payload.platform || '').trim(),
+        weekStart: String(payload.weekStart || '').slice(0, 10),
+        amount: Math.max(0, Math.round(Number(payload.amount || 0))),
+        mode: payload.mode === 'complete' ? 'complete' : 'request',
+        allowExceed: payload.allowExceed === true
+      })
+    });
+  }
+
   function mergeRiderMissionsPayload(missions = {}) {
     const mapper = window.BremSupabaseMapper;
     const mapped = {
@@ -7554,6 +7576,22 @@ const BremStorage = (function () {
       const result = await deleteAdminWithdrawalRequest(requestId);
       if (!result?.ok) {
         throw new Error(result?.error || result?.message || '출금신청 삭제에 실패했습니다.');
+      }
+      return result;
+    },
+
+    async fetchAvailableDrivers(weekStart) {
+      const result = await fetchWithdrawableDriversFromServer(weekStart);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '기사별 출금가능금액을 불러오지 못했습니다.');
+      }
+      return result;
+    },
+
+    async adminCreate(payload = {}) {
+      const result = await adminCreateWithdrawalRequestOnServer(payload);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '관리자 출금 처리에 실패했습니다.');
       }
       return result;
     }

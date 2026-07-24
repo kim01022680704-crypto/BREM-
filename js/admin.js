@@ -1837,6 +1837,16 @@
           };
         }
 
+        if (triggerId === 'payroll-week-available') {
+          return {
+            hiddenInput: $('#payrollDailyAvailableWeekStart'),
+            labelEl: $('#payrollDailyAvailableWeekBtn'),
+            onSelect(value) {
+              window.BremAdminPayrollDailySettlement?.onAvailableWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-week-finalize') {
           return {
             hiddenInput: $('#payrollWeekFinalizeWeekStart'),

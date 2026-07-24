@@ -122,12 +122,8 @@ function countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contr
   return count;
 }
 
-/**
- * 리스 계약 기사의 이번주 일 렌탈료(매일 누적) + 미회수 미납금 합산.
- * 미납회수(계좌이체)로 처리되면 lease_arrears 잔액이 줄어들어 자동으로 차감액이 감소한다.
- */
-async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
-  const empty = {
+function emptyLeaseInfo() {
+  return {
     hasLease: false,
     dailyRent: 0,
     deductionPlatform: 'coupang',
@@ -138,79 +134,111 @@ async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
     arrearReason: '',
     contractId: ''
   };
+}
+
+/**
+ * lease_contracts(활성) + lease_arrears 를 한 번씩만 조회해 메모리에 올린다.
+ * 여러 기사 출금가능금액을 한 번에 계산할 때 기사마다 DB 를 다시 치지 않도록 한다.
+ */
+async function loadLeaseTables(supabase) {
   try {
-    const { data: contracts, error } = await supabase
-      .from('lease_contracts')
-      .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
-      .in('status', ACTIVE_LEASE_STATUSES)
-      .order('updated_at', { ascending: false })
-      .limit(500);
-    if (error) return empty;
-
-    const contract = (contracts || []).find(row => leaseContractMatchesRider(row, rider)) || null;
-    let dailyRent = 0;
-    let deductionPlatform = 'coupang';
-    let contractStart = '';
-    let contractEnd = '';
-    if (contract) {
-      const raw = contract.raw_data || {};
-      dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
-      deductionPlatform = normalizeDeductionPlatform(raw.deductionPlatform);
-      contractStart = String(contract.start_date || raw.startDate || '').slice(0, 10);
-      contractEnd = String(raw.returnDate || contract.end_date || raw.endDate || '').slice(0, 10);
-    }
-
-    const todayKey = leaseFormatDateKey(new Date());
-    const activeDays = contract
-      ? countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd)
-      : 0;
-    const leaseCharge = dailyRent * activeDays;
-
-    const contractId = contract?.id ? String(contract.id) : '';
-    let outstandingArrears = 0;
-    const arrearReasons = [];
-    // lease_arrears 실제 컬럼: unpaid_amount(잔액) · collection_status · contract_id · raw_data
-    const { data: arrears } = await supabase
-      .from('lease_arrears')
-      .select('unpaid_amount,recovered_amount,raw_data,collection_status,contract_id')
-      .order('updated_at', { ascending: false })
-      .limit(500);
-    (arrears || []).forEach(row => {
-      const rowRaw = row.raw_data || {};
-      const sameDriver = (rowRaw.driverId && String(rowRaw.driverId) === String(rider.id))
-        || (
-          leaseNormalizeName(rowRaw.driverName) === leaseNormalizeName(rider.name)
-          && leaseNormalizePhone(rowRaw.driverPhone) === leaseNormalizePhone(rider.phone)
-          && leaseNormalizeName(rowRaw.driverName)
-        );
-      const sameContract = contractId && String(row.contract_id || '') === contractId;
-      if (!sameDriver && !sameContract) return;
-      const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
-      if (COMPLETED_ARREAR_STATUSES.has(status)) return;
-      // unpaid_amount 는 부분회수 시 잔액으로 갱신되므로 그대로 미회수 잔액이다.
-      const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
-      if (remaining <= 0) return;
-      outstandingArrears += remaining;
-      const reason = String(rowRaw.arrearReason || rowRaw.reason || '').trim()
-        || (rowRaw.source === 'weekly-auto' ? '주정산 리스비 미납' : '리스비 미납');
-      arrearReasons.push(reason);
-    });
-    const arrearReason = [...new Set(arrearReasons)].join(', ');
-
-    const leaseDeductionTotal = leaseCharge + outstandingArrears;
+    const [contractsRes, arrearsRes] = await Promise.all([
+      supabase
+        .from('lease_contracts')
+        .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
+        .in('status', ACTIVE_LEASE_STATUSES)
+        .order('updated_at', { ascending: false })
+        .limit(3000),
+      supabase
+        .from('lease_arrears')
+        .select('unpaid_amount,recovered_amount,raw_data,collection_status,contract_id')
+        .order('updated_at', { ascending: false })
+        .limit(6000)
+    ]);
     return {
-      hasLease: Boolean(contract) && (dailyRent > 0 || outstandingArrears > 0),
-      dailyRent,
-      deductionPlatform,
-      activeDays,
-      leaseCharge,
-      outstandingArrears,
-      leaseDeductionTotal,
-      arrearReason,
-      contractId
+      contracts: contractsRes.data || [],
+      arrears: arrearsRes.data || []
     };
   } catch (_error) {
-    return empty;
+    return { contracts: [], arrears: [] };
+  }
+}
+
+/**
+ * 미리 로드한 lease 테이블을 기준으로 특정 기사의 이번주 리스 차감액을 계산한다.
+ * (일 렌탈료 매일 누적 + 미회수 미납 잔액)
+ */
+function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
+  const contracts = Array.isArray(tables?.contracts) ? tables.contracts : [];
+  const arrears = Array.isArray(tables?.arrears) ? tables.arrears : [];
+
+  const contract = contracts.find(row => leaseContractMatchesRider(row, rider)) || null;
+  let dailyRent = 0;
+  let deductionPlatform = 'coupang';
+  let contractStart = '';
+  let contractEnd = '';
+  if (contract) {
+    const raw = contract.raw_data || {};
+    dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
+    deductionPlatform = normalizeDeductionPlatform(raw.deductionPlatform);
+    contractStart = String(contract.start_date || raw.startDate || '').slice(0, 10);
+    contractEnd = String(raw.returnDate || contract.end_date || raw.endDate || '').slice(0, 10);
+  }
+
+  const todayKey = leaseFormatDateKey(new Date());
+  const activeDays = contract
+    ? countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd)
+    : 0;
+  const leaseCharge = dailyRent * activeDays;
+
+  const contractId = contract?.id ? String(contract.id) : '';
+  let outstandingArrears = 0;
+  const arrearReasons = [];
+  arrears.forEach(row => {
+    const rowRaw = row.raw_data || {};
+    const sameDriver = (rowRaw.driverId && String(rowRaw.driverId) === String(rider.id))
+      || (
+        leaseNormalizeName(rowRaw.driverName) === leaseNormalizeName(rider.name)
+        && leaseNormalizePhone(rowRaw.driverPhone) === leaseNormalizePhone(rider.phone)
+        && leaseNormalizeName(rowRaw.driverName)
+      );
+    const sameContract = contractId && String(row.contract_id || '') === contractId;
+    if (!sameDriver && !sameContract) return;
+    const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
+    if (COMPLETED_ARREAR_STATUSES.has(status)) return;
+    const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
+    if (remaining <= 0) return;
+    outstandingArrears += remaining;
+    const reason = String(rowRaw.arrearReason || rowRaw.reason || '').trim()
+      || (rowRaw.source === 'weekly-auto' ? '주정산 리스비 미납' : '리스비 미납');
+    arrearReasons.push(reason);
+  });
+  const arrearReason = [...new Set(arrearReasons)].join(', ');
+
+  const leaseDeductionTotal = leaseCharge + outstandingArrears;
+  return {
+    hasLease: Boolean(contract) && (dailyRent > 0 || outstandingArrears > 0),
+    dailyRent,
+    deductionPlatform,
+    activeDays,
+    leaseCharge,
+    outstandingArrears,
+    leaseDeductionTotal,
+    arrearReason,
+    contractId
+  };
+}
+
+/**
+ * 리스 계약 기사의 이번주 일 렌탈료(매일 누적) + 미회수 미납금 합산.
+ * 미납회수(계좌이체)로 처리되면 lease_arrears 잔액이 줄어들어 자동으로 차감액이 감소한다.
+ */
+async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
+  try {
+    const tables = await loadLeaseTables(supabase);
+    return computeLeaseForRider(tables, rider, weekStart, weekEnd);
+  } catch (_error) {
+    return emptyLeaseInfo();
   }
 }
 
@@ -361,6 +389,7 @@ function normalizeRequest(item = {}) {
     requestDate,
     availableAtRequest: Math.max(0, Math.round(Number(item.availableAtRequest || 0))),
     status,
+    createdBy: String(item.createdBy || 'rider').trim() || 'rider',
     createdAt,
     updatedAt: item.updatedAt || createdAt,
     cancelledAt: item.cancelledAt || null,
@@ -931,10 +960,290 @@ async function deleteWithdrawalRequest(accessToken, requestId) {
   });
 }
 
+/**
+ * 관리자용: 한 정산주(week)의 모든 일정산 등록 기사별 출금가능금액을 한 번에 계산한다.
+ * 기사앱과 동일한 로직(실지급 − 신청중 − 처리완료 − 리스차감, 주마무리 시 0)을 쓰되
+ * 설정/정산/리스 데이터를 각각 1회씩만 조회해 배치 계산한다.
+ */
+async function listWithdrawableDrivers(accessToken, weekStartInput) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
+  const weekEnd = settlementWeekEnd(weekStart);
+
+  const [rosterRaw, feesRaw, requestsRaw, excludedRaw, finalizedRaw, pauseRaw] = await Promise.all([
+    readSettingValue(supabase, ROSTER_KEY, []),
+    readSettingValue(supabase, FEES_KEY, {}),
+    readSettingValue(supabase, REQUESTS_KEY, []),
+    readSettingValue(supabase, EXCLUDED_SETTLEMENTS_KEY, []),
+    readSettingValue(supabase, FINALIZED_WEEKS_KEY, []),
+    readSettingValue(supabase, WITHDRAWAL_PAUSE_KEY, {})
+  ]);
+
+  const rosterList = Array.isArray(rosterRaw) ? rosterRaw : [];
+  const feesByPlatform = normalizeFees(feesRaw);
+  const excludedSettlementIds = new Set(
+    (Array.isArray(excludedRaw) ? excludedRaw : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+  );
+  const finalizedEntry = findFinalizedWeekEntry(finalizedRaw, weekStart);
+  const weekFinalized = Boolean(finalizedEntry);
+  const pauseState = normalizeWithdrawalPauseState(pauseRaw);
+  const allRequests = normalizeRequestList(requestsRaw);
+
+  // 기사 기본정보(이름/전화/계좌) 1회 조회
+  const ridersById = new Map();
+  try {
+    const { data: ridersData } = await supabase
+      .from('riders')
+      .select('id,name,phone,bank_name,account_number')
+      .limit(10000);
+    (ridersData || []).forEach(row => {
+      ridersById.set(String(row.id), row);
+    });
+  } catch (_error) {
+    // 조회 실패 시 roster 정보로 대체
+  }
+
+  const driverIds = [...new Set(
+    rosterList.map(item => String(item.driverId || '')).filter(Boolean)
+  )];
+
+  // 정산 데이터 1회 배치 조회 (주차 단위, 페이지네이션 포함)
+  let daysByDriver = new Map();
+  try {
+    daysByDriver = await loadWeekDaysForDrivers(
+      supabase,
+      driverIds,
+      weekStart,
+      feesByPlatform,
+      excludedSettlementIds
+    );
+  } catch (_error) {
+    daysByDriver = new Map();
+  }
+
+  // 리스 테이블 1회 로드
+  const leaseTables = await loadLeaseTables(supabase);
+
+  // 이번주 출금신청을 기사별로 그룹핑
+  const requestsByDriver = new Map();
+  allRequests
+    .filter(item => item.weekStart === weekStart)
+    .forEach(item => {
+      const id = String(item.driverId || '');
+      if (!requestsByDriver.has(id)) requestsByDriver.set(id, []);
+      requestsByDriver.get(id).push(item);
+    });
+
+  const rows = rosterList.map(rosterItem => {
+    const driverId = String(rosterItem.driverId || '');
+    const riderRow = ridersById.get(driverId) || {};
+    const rider = {
+      id: driverId,
+      name: riderRow.name || rosterItem.driverName || '',
+      phone: riderRow.phone || rosterItem.phone || ''
+    };
+
+    const days = daysByDriver.get(driverId) || [];
+    const totalNetPay = days.reduce((sum, row) => sum + Math.max(0, row.netPay), 0);
+    const netPayByPlatform = days.reduce((acc, row) => {
+      const key = normalizePlatform(row.platform);
+      acc[key] = (acc[key] || 0) + Math.max(0, row.netPay);
+      return acc;
+    }, { coupang: 0, baemin: 0 });
+    const enrolledPlatforms = {
+      coupang: days.some(row => normalizePlatform(row.platform) === 'coupang'),
+      baemin: days.some(row => normalizePlatform(row.platform) === 'baemin')
+    };
+
+    const myReq = requestsByDriver.get(driverId) || [];
+    const pending = myReq.filter(item => item.status === 'pending');
+    const completed = myReq.filter(item => item.status === 'completed');
+    const requestedAmountTotal = pending.reduce((sum, item) => sum + item.amount, 0);
+    const requestedTotal = pending.reduce(
+      (sum, item) => sum + requestConsumedAmount(item, feesByPlatform),
+      0
+    );
+    const withdrawnAmountTotal = completed.reduce((sum, item) => sum + item.amount, 0);
+    const withdrawnTotal = completed.reduce(
+      (sum, item) => sum + requestConsumedAmount(item, feesByPlatform),
+      0
+    );
+
+    const lease = computeLeaseForRider(leaseTables, rider, weekStart, weekEnd);
+    const leaseDeduction = Math.max(0, Math.round(Number(lease.leaseDeductionTotal || 0)));
+    const rawAvailable = totalNetPay - requestedTotal - withdrawnTotal - leaseDeduction;
+    const availableAmount = weekFinalized ? 0 : rawAvailable;
+
+    return {
+      driverId,
+      driverName: rider.name || '-',
+      phone: rider.phone || '',
+      baeminId: rosterItem.baeminId || '',
+      coupangId: rosterItem.coupangId || '',
+      region: rosterItem.region || '',
+      bankName: riderRow.bank_name || '',
+      accountNumber: riderRow.account_number || '',
+      totalNetPay,
+      netPayByPlatform,
+      enrolledPlatforms,
+      requestedAmountTotal,
+      requestedTotal,
+      withdrawnAmountTotal,
+      withdrawnTotal,
+      leaseDeduction,
+      leaseArrearReason: lease.arrearReason || '',
+      availableAmount,
+      hasSettlement: days.length > 0
+    };
+  });
+
+  rows.sort((a, b) => {
+    const nameCmp = String(a.driverName || '').localeCompare(String(b.driverName || ''), 'ko');
+    if (nameCmp) return nameCmp;
+    return String(a.driverId).localeCompare(String(b.driverId));
+  });
+
+  const totalAvailable = rows.reduce((sum, row) => sum + Math.max(0, row.availableAmount), 0);
+
+  return {
+    ok: true,
+    weekStart,
+    weekEnd,
+    weekFinalized,
+    weekFinalizedAt: finalizedEntry?.finalizedAt || '',
+    withdrawalPaused: pauseState.paused === true,
+    showCallFee: feesByPlatform.showCallFee !== false,
+    feesByPlatform: {
+      coupang: feesByPlatform.coupang,
+      baemin: feesByPlatform.baemin
+    },
+    rows,
+    total: rows.length,
+    totalAvailable
+  };
+}
+
+/**
+ * 관리자용: 기사를 대신해 출금신청(대행) 하거나 강제출금(즉시 처리완료) 한다.
+ *  - mode='request'  → status: pending (기사가 신청한 것처럼 목록에 추가)
+ *  - mode='complete' → status: completed (강제출금, 처리완료 내역으로 바로 이동)
+ *  - allowExceed=true → 출금가능금액 초과 검사를 건너뛴다(관리자 강제 조정용)
+ */
+async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const driverId = String(body.driverId || '').trim();
+  if (!driverId) {
+    return { ok: false, status: 400, error: '기사 ID가 없습니다.' };
+  }
+  const amount = Math.max(0, Math.round(Number(body.amount || 0)));
+  if (!amount) {
+    return { ok: false, status: 400, error: '신청금액을 입력하세요.' };
+  }
+  const platform = normalizeRequestPlatform(body.platform);
+  if (!platform) {
+    return { ok: false, status: 400, error: '출금 플랫폼(쿠팡/배민)을 선택하세요.' };
+  }
+  const mode = String(body.mode || '').trim() === 'complete' ? 'complete' : 'request';
+  const allowExceed = body.allowExceed === true;
+
+  let rider = { id: driverId, name: String(body.driverName || '').trim(), phone: '' };
+  try {
+    const { data: riderRow } = await supabase
+      .from('riders')
+      .select('id,name,phone')
+      .eq('id', driverId)
+      .maybeSingle();
+    if (riderRow) {
+      rider = { id: String(riderRow.id), name: riderRow.name || rider.name, phone: riderRow.phone || '' };
+    }
+  } catch (_error) {
+    // riders 조회 실패 시 body 정보로 진행
+  }
+
+  const summary = await buildDriverWeekSummary(supabase, rider, body.weekStart);
+  if (!summary.ok) return summary;
+
+  if (!summary.enrolledPlatforms?.[platform]) {
+    return {
+      ok: false,
+      status: 400,
+      error: `${platform === 'baemin' ? '배민' : '쿠팡'} 정산 내역이 없어 출금할 수 없습니다.`
+    };
+  }
+
+  const platformFees = summary.feesByPlatform[platform] || summary.feesByPlatform.coupang || {};
+  const feeAmount = resolveWithdrawalFee(amount, platformFees);
+  const consumeAmount = amount + feeAmount;
+
+  if (!allowExceed && consumeAmount > summary.availableAmount) {
+    return {
+      ok: false,
+      status: 400,
+      error: feeAmount > 0
+        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일출금수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다. 강제 조정하려면 초과 허용을 선택하세요.`
+        : `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
+    };
+  }
+
+  const now = new Date().toISOString();
+  const request = normalizeRequest({
+    driverId: summary.driverId,
+    driverName: summary.driverName || rider.name,
+    platform,
+    amount,
+    feeAmount,
+    weekStart: summary.weekStart,
+    requestDate: now.slice(0, 10),
+    availableAtRequest: summary.availableAmount,
+    status: mode === 'complete' ? 'completed' : 'pending',
+    createdBy: 'admin',
+    createdAt: now,
+    updatedAt: now,
+    completedAt: mode === 'complete' ? now : null
+  });
+
+  await withRequestsLock(async () => {
+    const existing = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    existing.unshift(request);
+    await writeSettingValue(supabase, REQUESTS_KEY, existing);
+  });
+
+  const nextAvailable = Math.max(0, summary.availableAmount - consumeAmount);
+  return {
+    ok: true,
+    request,
+    mode,
+    feeAmount,
+    consumeAmount,
+    availableAmount: nextAvailable,
+    message: mode === 'complete'
+      ? `강제출금 완료 · ${request.driverName} ${amount.toLocaleString('ko-KR')}원`
+      : `대행 신청 완료 · ${request.driverName} ${amount.toLocaleString('ko-KR')}원`
+  };
+}
+
 module.exports = {
   getWithdrawalSummary,
   createWithdrawalRequest,
   listWithdrawalRequests,
+  listWithdrawableDrivers,
+  adminCreateWithdrawalForDriver,
   cancelWithdrawalRequest,
   completeWithdrawalRequest,
   deleteWithdrawalRequest,

@@ -5379,6 +5379,7 @@
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="withdrawals">출금신청자</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="completed">처리완료 내역</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="week-withdrawals">주정산 출금내역</button>
+          <button type="button" class="revenue-sub-btn" data-pds-sub-tab="available">기사별 출금가능</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="enroll">일정산 기사등록</button>
         </div>
 
@@ -5588,6 +5589,93 @@
               </table>
             </div>
           </article>
+        </div>
+
+        <div class="payroll-daily-sub-panel" data-pds-panel="available" hidden>
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>기사별 출금가능금액</h2>
+                <p class="form-help" id="payrollDailyAvailableSummary">수~화 정산주 기준으로 일정산 등록 기사별 출금가능금액을 확인하고, 관리자가 직접 출금신청(대행)하거나 강제출금할 수 있습니다.</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailyAvailableExcelBtn">엑셀 일괄다운로드</button>
+                <button type="button" class="small-btn" id="payrollDailyAvailableRefreshBtn">새로고침</button>
+              </div>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>정산주 (수요일만 선택)</span>
+                <input type="hidden" id="payrollDailyAvailableWeekStart">
+                <span class="coupang-week-picker-inline">
+                  <button type="button" class="small-btn" id="payrollDailyAvailablePrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
+                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="payroll-week-available" id="payrollDailyAvailableWeekBtn">수요일 선택</button>
+                  <button type="button" class="small-btn" id="payrollDailyAvailableNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
+                </span>
+              </label>
+              <strong id="payrollDailyAvailablePeriodLabel" class="form-help" style="align-self:end;margin:0 0 0.35rem;">-</strong>
+              <label class="driver-search-field" style="margin-left:auto;">
+                <input type="search" id="payrollDailyAvailableSearch" placeholder="이름·ID 검색">
+              </label>
+            </div>
+            <div class="table-wrap bulk-preview-wrap">
+              <table class="data-table" id="payrollDailyAvailableTable">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>배민ID</th>
+                    <th>쿠팡ID</th>
+                    <th>실지급 합계</th>
+                    <th>신청중</th>
+                    <th>처리완료</th>
+                    <th>리스차감</th>
+                    <th class="pds-net-col">출금가능금액</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailyAvailableBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="pds-admin-withdrawal-modal" id="pdsAdminWithdrawalModal" hidden>
+          <div class="pds-admin-withdrawal-modal__backdrop" data-close-admin-withdrawal></div>
+          <div class="pds-admin-withdrawal-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="pdsAdminWithdrawalTitle">
+            <div class="pds-admin-withdrawal-modal__head">
+              <h3 id="pdsAdminWithdrawalTitle">관리자 출금</h3>
+              <p class="form-help" id="pdsAdminWithdrawalDriverInfo">-</p>
+            </div>
+            <div class="pds-admin-withdrawal-form">
+              <input type="hidden" id="pdsAdminWithdrawalDriverId">
+              <input type="hidden" id="pdsAdminWithdrawalWeekStart">
+              <label class="payroll-field">
+                <span>플랫폼</span>
+                <select id="pdsAdminWithdrawalPlatform"></select>
+              </label>
+              <label class="payroll-field">
+                <span>출금가능금액</span>
+                <input type="text" id="pdsAdminWithdrawalAvailable" readonly tabindex="-1">
+              </label>
+              <label class="payroll-field">
+                <span>신청금액 (원)</span>
+                <span class="driver-withdrawal-amount-row">
+                  <input type="number" id="pdsAdminWithdrawalAmount" min="0" step="1000" placeholder="0">
+                  <button type="button" class="small-btn" id="pdsAdminWithdrawalMaxBtn">최대</button>
+                </span>
+              </label>
+              <p class="form-help" id="pdsAdminWithdrawalPreview">신청금액을 입력하면 예상 차감액(신청액 + 일출금수수료)을 계산합니다.</p>
+              <label class="pds-admin-withdrawal-exceed">
+                <input type="checkbox" id="pdsAdminWithdrawalAllowExceed">
+                <span>출금가능금액 초과 허용 (강제 조정)</span>
+              </label>
+              <div class="pds-admin-withdrawal-actions">
+                <button type="button" class="small-btn" data-close-admin-withdrawal>취소</button>
+                <button type="button" class="small-btn" id="pdsAdminWithdrawalRequestBtn">대행 신청(신청중)</button>
+                <button type="button" class="primary-btn" id="pdsAdminWithdrawalForceBtn">강제출금(처리완료)</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="payroll-daily-sub-panel" data-pds-panel="enroll" hidden>

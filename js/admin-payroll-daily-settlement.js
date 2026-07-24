@@ -16,7 +16,11 @@
     withdrawalRows: [],
     completedRows: [],
     completedShowAll: false,
-    weekWithdrawalRows: []
+    weekWithdrawalRows: [],
+    availableRows: [],
+    availableSearch: '',
+    availableFees: null,
+    adminWithdrawalDriver: null
   };
 
   function $(id) {
@@ -277,6 +281,7 @@
     else if (tab === 'withdrawals') state.subTab = 'withdrawals';
     else if (tab === 'completed') state.subTab = 'completed';
     else if (tab === 'week-withdrawals') state.subTab = 'week-withdrawals';
+    else if (tab === 'available') state.subTab = 'available';
     else state.subTab = 'payout';
     syncSubTabs();
     refreshAll();
@@ -1112,6 +1117,316 @@
     }
   }
 
+  // ── 기사별 출금가능금액 + 관리자 강제출금/대행 ──────────────────────────
+
+  function ensureAvailableWeekDefault() {
+    const input = $('payrollDailyAvailableWeekStart');
+    if (!input) return '';
+    const todayLocal = [
+      new Date().getFullYear(),
+      String(new Date().getMonth() + 1).padStart(2, '0'),
+      String(new Date().getDate()).padStart(2, '0')
+    ].join('-');
+    if (!input.value) {
+      input.value = weekStartKey(todayLocal);
+    } else {
+      const normalized = weekStartKey(input.value);
+      if (normalized && input.value !== normalized) input.value = normalized;
+    }
+    updateAvailableWeekLabel(input.value);
+    return String(input.value || '').slice(0, 10);
+  }
+
+  function updateAvailableWeekLabel(weekStart) {
+    const btn = $('payrollDailyAvailableWeekBtn');
+    if (!btn) return;
+    const value = String(weekStart || '').slice(0, 10);
+    if (!value) {
+      btn.textContent = '수요일 선택';
+      return;
+    }
+    const utils = window.BremDatePicker || window.BremPayrollSlipUtils;
+    const formatted = utils?.formatDate?.(value) || value;
+    const weekday = utils?.formatWeekdayKo?.(value);
+    btn.textContent = weekday ? `${formatted}(${weekday})` : formatted;
+  }
+
+  function shiftAvailableWeek(deltaWeeks) {
+    const current = ensureAvailableWeekDefault();
+    if (!current) return;
+    const date = new Date(`${current}T00:00:00`);
+    date.setDate(date.getDate() + (deltaWeeks * 7));
+    const next = weekStartKey([
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-'));
+    const input = $('payrollDailyAvailableWeekStart');
+    if (input) input.value = next;
+    updateAvailableWeekLabel(next);
+    void renderAvailableDrivers();
+  }
+
+  function onAvailableWeekPicked(value) {
+    const input = $('payrollDailyAvailableWeekStart');
+    const normalized = weekStartKey(value || '');
+    if (input && normalized) input.value = normalized;
+    updateAvailableWeekLabel(normalized);
+    void renderAvailableDrivers();
+  }
+
+  function filterAvailableRows(rows) {
+    const keyword = String(state.availableSearch || '').trim().toLowerCase();
+    if (!keyword) return rows;
+    return rows.filter(row => [
+      row.driverName,
+      row.baeminId,
+      row.coupangId,
+      row.phone
+    ].join(' ').toLowerCase().includes(keyword));
+  }
+
+  async function renderAvailableDrivers() {
+    const body = $('payrollDailyAvailableBody');
+    const summary = $('payrollDailyAvailableSummary');
+    const periodLabel = $('payrollDailyAvailablePeriodLabel');
+    if (!body) return;
+
+    const weekStart = ensureAvailableWeekDefault();
+    const weekEnd = weekEndKey(weekStart);
+    if (periodLabel) periodLabel.textContent = formatWeekPeriodLabel(weekStart);
+
+    body.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중…</td></tr>';
+
+    let result = null;
+    try {
+      if (!BremStorage?.payrollWithdrawal?.fetchAvailableDrivers) {
+        throw new Error('출금가능금액 조회 기능을 사용할 수 없습니다.');
+      }
+      result = await BremStorage.payrollWithdrawal.fetchAvailableDrivers(weekStart);
+    } catch (error) {
+      console.warn('[available drivers]', error);
+      showToast(error.message || '기사별 출금가능금액을 불러오지 못했습니다.');
+      body.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
+      return;
+    }
+
+    const rows = Array.isArray(result.rows) ? result.rows : [];
+    state.availableRows = rows;
+    state.availableFees = result.feesByPlatform || null;
+
+    const visible = filterAvailableRows(rows);
+    const totalAvailable = rows.reduce((sum, row) => sum + Math.max(0, Number(row.availableAmount) || 0), 0);
+    const withMoney = rows.filter(row => Number(row.availableAmount) > 0).length;
+
+    if (summary) {
+      const finalizedNote = result.weekFinalized ? ' · ⚠ 주정산 마무리됨(출금가능 0원)' : '';
+      const pauseNote = result.withdrawalPaused ? ' · ⏸ 출금신청 정지중' : '';
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 등록 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)}${finalizedNote}${pauseNote}`;
+    }
+
+    if (!visible.length) {
+      body.innerHTML = '<tr><td colspan="9" class="empty">표시할 기사가 없습니다.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = visible.map(row => {
+      const available = Math.max(0, Number(row.availableAmount) || 0);
+      const negative = Number(row.availableAmount) < 0;
+      const canAct = row.enrolledPlatforms?.coupang || row.enrolledPlatforms?.baemin;
+      return `
+      <tr>
+        <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+        <td>${escapeHtml(row.baeminId || '-')}</td>
+        <td>${escapeHtml(row.coupangId || '-')}</td>
+        <td>${formatWon(row.totalNetPay)}</td>
+        <td>${formatWon(row.requestedAmountTotal)}</td>
+        <td>${formatWon(row.withdrawnAmountTotal)}</td>
+        <td>${row.leaseDeduction ? formatWon(row.leaseDeduction) : '-'}</td>
+        <td class="pds-net-col"><strong${negative ? ' style="color:#e5484d;"' : ''}>${negative ? '-' : ''}${formatWon(available)}</strong></td>
+        <td>
+          ${canAct
+            ? `<button type="button" class="small-btn primary-btn" data-pds-admin-withdraw="${escapeHtml(row.driverId)}">출금</button>`
+            : '<span class="form-help">정산없음</span>'}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function exportAvailableExcel() {
+    const rows = filterAvailableRows(Array.isArray(state.availableRows) ? state.availableRows : []);
+    if (!rows.length) {
+      showToast('내보낼 기사별 출금가능금액이 없습니다.');
+      return;
+    }
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    try {
+      const weekStart = ensureAvailableWeekDefault() || new Date().toISOString().slice(0, 10);
+      const stamp = weekStart.replace(/-/g, '');
+      const filename = `BREM_기사별출금가능_${stamp}.xlsx`;
+      const data = [
+        ['이름', '배민ID', '쿠팡ID', '실지급합계', '신청중', '처리완료', '리스차감', '출금가능금액'],
+        ...rows.map(row => [
+          row.driverName || '',
+          row.baeminId || '',
+          row.coupangId || '',
+          Number(row.totalNetPay) || 0,
+          Number(row.requestedAmountTotal) || 0,
+          Number(row.withdrawnAmountTotal) || 0,
+          Number(row.leaseDeduction) || 0,
+          Number(row.availableAmount) || 0
+        ])
+      ];
+      const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, '기사별출금가능');
+      window.XLSX.writeFile(workbook, filename);
+      showToast(`엑셀 저장: ${filename}`);
+    } catch (error) {
+      console.error('[available excel]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
+  }
+
+  function resolvePlatformFee(platform) {
+    const fees = state.availableFees || {};
+    const side = fees[platform === 'baemin' ? 'baemin' : 'coupang'] || fees.coupang || {};
+    return {
+      mode: side.dailySettlementFeeMode === 'percent' ? 'percent' : 'fixed',
+      value: Math.max(0, Number(side.dailySettlementFee || 0))
+    };
+  }
+
+  function calcWithdrawalFee(amount, platform) {
+    const amt = Math.max(0, Math.round(Number(amount) || 0));
+    const fee = resolvePlatformFee(platform);
+    if (fee.mode === 'percent') return Math.floor(amt * (fee.value / 100));
+    return Math.max(0, Math.round(fee.value));
+  }
+
+  function calcMaxRequestable(available, platform) {
+    const pool = Math.max(0, Math.round(Number(available) || 0));
+    const fee = resolvePlatformFee(platform);
+    if (pool <= 0) return 0;
+    if (fee.mode === 'percent') {
+      let candidate = Math.floor(pool * 100 / (100 + fee.value));
+      while (candidate > 0 && candidate + Math.floor(candidate * (fee.value / 100)) > pool) {
+        candidate -= 1;
+      }
+      return Math.max(0, candidate);
+    }
+    return Math.max(0, pool - Math.max(0, Math.round(fee.value)));
+  }
+
+  function selectedAdminPlatform() {
+    return $('pdsAdminWithdrawalPlatform')?.value === 'baemin' ? 'baemin' : 'coupang';
+  }
+
+  function updateAdminWithdrawalPreview() {
+    const driver = state.adminWithdrawalDriver;
+    const preview = $('pdsAdminWithdrawalPreview');
+    if (!driver || !preview) return;
+    const platform = selectedAdminPlatform();
+    const amount = Math.max(0, Math.round(Number($('pdsAdminWithdrawalAmount')?.value || 0)));
+    const available = Math.max(0, Number(driver.availableAmount) || 0);
+    const fee = calcWithdrawalFee(amount, platform);
+    const consume = amount + fee;
+    const allowExceed = $('pdsAdminWithdrawalAllowExceed')?.checked === true;
+    if (!amount) {
+      preview.textContent = `출금가능 ${formatWon(available)} · 최대신청 ${formatWon(calcMaxRequestable(available, platform))} (신청액 + 2% 수수료 차감)`;
+      preview.style.color = '';
+      return;
+    }
+    const over = !allowExceed && consume > available;
+    preview.textContent = fee > 0
+      ? `예상 차감: 신청 ${formatWon(amount)} + 일출금수수료 ${formatWon(fee)} = ${formatWon(consume)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`
+      : `예상 차감: ${formatWon(amount)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`;
+    preview.style.color = over ? '#e5484d' : '';
+  }
+
+  function openAdminWithdrawalModal(driverId) {
+    const driver = (state.availableRows || []).find(row => String(row.driverId) === String(driverId));
+    if (!driver) {
+      showToast('기사 정보를 찾을 수 없습니다.');
+      return;
+    }
+    state.adminWithdrawalDriver = driver;
+    const modal = $('pdsAdminWithdrawalModal');
+    const platformSelect = $('pdsAdminWithdrawalPlatform');
+    const info = $('pdsAdminWithdrawalDriverInfo');
+    const availableEl = $('pdsAdminWithdrawalAvailable');
+    const amountInput = $('pdsAdminWithdrawalAmount');
+    const exceedInput = $('pdsAdminWithdrawalAllowExceed');
+    $('pdsAdminWithdrawalDriverId').value = driver.driverId;
+    $('pdsAdminWithdrawalWeekStart').value = ensureAvailableWeekDefault();
+
+    if (platformSelect) {
+      const options = [];
+      if (driver.enrolledPlatforms?.coupang) options.push('<option value="coupang">쿠팡</option>');
+      if (driver.enrolledPlatforms?.baemin) options.push('<option value="baemin">배민</option>');
+      platformSelect.innerHTML = options.join('') || '<option value="coupang">쿠팡</option>';
+    }
+    if (info) {
+      info.textContent = `${driver.driverName || '-'} · 실지급 ${formatWon(driver.totalNetPay)} · 리스차감 ${formatWon(driver.leaseDeduction)}`;
+    }
+    if (availableEl) availableEl.value = formatWon(Math.max(0, Number(driver.availableAmount) || 0));
+    if (amountInput) amountInput.value = '';
+    if (exceedInput) exceedInput.checked = false;
+    updateAdminWithdrawalPreview();
+    if (modal) modal.hidden = false;
+  }
+
+  function closeAdminWithdrawalModal() {
+    const modal = $('pdsAdminWithdrawalModal');
+    if (modal) modal.hidden = true;
+    state.adminWithdrawalDriver = null;
+  }
+
+  async function submitAdminWithdrawal(mode) {
+    const driver = state.adminWithdrawalDriver;
+    if (!driver) return;
+    const platform = selectedAdminPlatform();
+    const amount = Math.max(0, Math.round(Number($('pdsAdminWithdrawalAmount')?.value || 0)));
+    const allowExceed = $('pdsAdminWithdrawalAllowExceed')?.checked === true;
+    if (!amount) {
+      showToast('신청금액을 입력하세요.');
+      return;
+    }
+    const label = mode === 'complete' ? '강제출금(처리완료)' : '대행 신청(신청중)';
+    const confirmMsg = mode === 'complete'
+      ? `${driver.driverName} · ${platformLabelKo(platform)} ${formatWon(amount)}을(를) 강제출금(즉시 처리완료) 처리할까요?`
+      : `${driver.driverName} · ${platformLabelKo(platform)} ${formatWon(amount)}을(를) 관리자 대행으로 출금신청할까요?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const reqBtn = $('pdsAdminWithdrawalRequestBtn');
+    const forceBtn = $('pdsAdminWithdrawalForceBtn');
+    if (reqBtn) reqBtn.disabled = true;
+    if (forceBtn) forceBtn.disabled = true;
+    try {
+      const result = await BremStorage.payrollWithdrawal.adminCreate({
+        driverId: driver.driverId,
+        driverName: driver.driverName,
+        platform,
+        weekStart: ensureAvailableWeekDefault(),
+        amount,
+        mode,
+        allowExceed
+      });
+      showToast(result.message || `${label} 완료`);
+      closeAdminWithdrawalModal();
+      await renderAvailableDrivers();
+    } catch (error) {
+      console.error('[admin withdrawal]', error);
+      showToast(error.message || `${label}에 실패했습니다.`);
+    } finally {
+      if (reqBtn) reqBtn.disabled = false;
+      if (forceBtn) forceBtn.disabled = false;
+    }
+  }
+
   function exportCompletedExcel() {
     const rows = Array.isArray(state.completedRows) ? state.completedRows : [];
     if (!rows.length) {
@@ -1664,6 +1979,9 @@
     if (state.subTab === 'week-withdrawals') {
       void renderWeekWithdrawals();
     }
+    if (state.subTab === 'available') {
+      void renderAvailableDrivers();
+    }
   }
 
   async function handleBulkFile(event) {
@@ -2026,6 +2344,40 @@
     $('payrollDailyWeekWithdrawalExcelBtn')?.addEventListener('click', exportWeekWithdrawalExcel);
     $('payrollDailyWeekWithdrawalPrevBtn')?.addEventListener('click', () => shiftWeekWithdrawal(-1));
     $('payrollDailyWeekWithdrawalNextBtn')?.addEventListener('click', () => shiftWeekWithdrawal(1));
+    $('payrollDailyAvailableRefreshBtn')?.addEventListener('click', () => {
+      void renderAvailableDrivers();
+    });
+    $('payrollDailyAvailableExcelBtn')?.addEventListener('click', exportAvailableExcel);
+    $('payrollDailyAvailablePrevBtn')?.addEventListener('click', () => shiftAvailableWeek(-1));
+    $('payrollDailyAvailableNextBtn')?.addEventListener('click', () => shiftAvailableWeek(1));
+    $('payrollDailyAvailableSearch')?.addEventListener('input', event => {
+      state.availableSearch = String(event.target.value || '').trim();
+      void renderAvailableDrivers();
+    });
+    $('payrollDailyAvailableBody')?.addEventListener('click', event => {
+      const btn = event.target.closest('[data-pds-admin-withdraw]');
+      if (btn) openAdminWithdrawalModal(btn.dataset.pdsAdminWithdraw);
+    });
+    document.querySelectorAll('[data-close-admin-withdrawal]').forEach(el => {
+      el.addEventListener('click', closeAdminWithdrawalModal);
+    });
+    $('pdsAdminWithdrawalPlatform')?.addEventListener('change', updateAdminWithdrawalPreview);
+    $('pdsAdminWithdrawalAmount')?.addEventListener('input', updateAdminWithdrawalPreview);
+    $('pdsAdminWithdrawalAllowExceed')?.addEventListener('change', updateAdminWithdrawalPreview);
+    $('pdsAdminWithdrawalMaxBtn')?.addEventListener('click', () => {
+      const driver = state.adminWithdrawalDriver;
+      const amountInput = $('pdsAdminWithdrawalAmount');
+      if (!driver || !amountInput) return;
+      const platform = selectedAdminPlatform();
+      amountInput.value = String(calcMaxRequestable(Math.max(0, Number(driver.availableAmount) || 0), platform));
+      updateAdminWithdrawalPreview();
+    });
+    $('pdsAdminWithdrawalRequestBtn')?.addEventListener('click', () => {
+      void submitAdminWithdrawal('request');
+    });
+    $('pdsAdminWithdrawalForceBtn')?.addEventListener('click', () => {
+      void submitAdminWithdrawal('complete');
+    });
     $('payrollWeekFinalizePrevBtn')?.addEventListener('click', () => shiftWeekFinalize(-1));
     $('payrollWeekFinalizeNextBtn')?.addEventListener('click', () => shiftWeekFinalize(1));
     $('payrollWeekFinalizeBtn')?.addEventListener('click', () => {
@@ -2194,6 +2546,7 @@
     setPlatform,
     setSubTab,
     onWeekWithdrawalPicked,
+    onAvailableWeekPicked,
     onWeekFinalizePicked,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),
     getRegionByDriverId: driverId => roster.getRegionByDriverId(driverId)

@@ -9107,6 +9107,83 @@ textarea {
   justify-self: start;
 }
 
+.payroll-publish-btn.is-empty {
+  opacity: 0.55;
+  filter: grayscale(0.4);
+}
+
+.pds-admin-withdrawal-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.pds-admin-withdrawal-modal[hidden] {
+  display: none;
+}
+
+.pds-admin-withdrawal-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.pds-admin-withdrawal-modal__dialog {
+  position: relative;
+  width: min(420px, 100%);
+  background: var(--card-bg, #1b1e24);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 1.25rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.pds-admin-withdrawal-modal__head h3 {
+  margin: 0 0 0.35rem;
+}
+
+.pds-admin-withdrawal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.pds-admin-withdrawal-form .payroll-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pds-admin-withdrawal-form .driver-withdrawal-amount-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.pds-admin-withdrawal-form .driver-withdrawal-amount-row input {
+  flex: 1;
+}
+
+.pds-admin-withdrawal-exceed {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.pds-admin-withdrawal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
 .payroll-publish-payment-field input[type="date"] {
   max-width: 220px;
 }
