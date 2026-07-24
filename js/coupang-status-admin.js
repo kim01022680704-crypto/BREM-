@@ -752,7 +752,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v6';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v7';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -807,7 +807,8 @@
       'brem_dashboard_coupang_cache_v2',
       'brem_dashboard_coupang_cache_v3',
       'brem_dashboard_coupang_cache_v4',
-      'brem_dashboard_coupang_cache_v5'
+      'brem_dashboard_coupang_cache_v5',
+      'brem_dashboard_coupang_cache_v6'
     ].forEach(key => {
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     });
