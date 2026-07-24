@@ -227,7 +227,7 @@
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (requestedFee > 0) {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일출금수수료 ${formatMoney(requestedFee)}${leaseText} · 출금 시 신청액 + 2% 차감 (최대신청 ${formatMoney(maxRequestable)})`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일정산수수료 ${formatMoney(requestedFee)}${leaseText} · 출금 시 신청액 + 2% 차감 (최대신청 ${formatMoney(maxRequestable)})`;
       } else {
         hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 출금 시 신청액 + 2% 수수료 차감 (최대신청 ${formatMoney(maxRequestable)})`;
       }
@@ -255,14 +255,14 @@
     if (!preview) return;
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
     if (!amount) {
-      preview.textContent = '일출금수수료(출금시적용)는 신청금액 기준으로 차감됩니다.';
+      preview.textContent = '일정산수수료(출금시적용)는 신청금액 기준으로 차감됩니다.';
       return;
     }
     const fee = estimateFeeForAmount(amount);
     const consume = amount + fee;
     preview.textContent = fee > 0
-      ? `예상 차감: 출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (출금가능 ${formatMoney(state.availableAmount)})`
-      : `예상 차감: ${formatMoney(amount)} (일출금수수료 없음)`;
+      ? `예상 차감: 출금 ${formatMoney(amount)} + 일정산수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (출금가능 ${formatMoney(state.availableAmount)})`
+      : `예상 차감: ${formatMoney(amount)} (일정산수수료 없음)`;
   }
 
   function renderDays(days, showCallFee = true) {
@@ -313,7 +313,7 @@
         </span>
         <strong>${formatMoney(item.amount)}</strong>
         ${Number(item.feeAmount || 0) > 0
-          ? `<em class="driver-withdrawal-request__fee">일출금수수료 ${formatMoney(item.feeAmount)}</em>`
+          ? `<em class="driver-withdrawal-request__fee">일정산수수료 ${formatMoney(item.feeAmount)}</em>`
           : ''}
       </li>`;
     }).join('');
@@ -426,7 +426,7 @@
     const consume = amount + feeAmount;
     if (consume > state.availableAmount) {
       showToast(feeAmount > 0
-        ? `출금 ${formatMoney(amount)} + 일출금수수료 ${formatMoney(feeAmount)}가 출금가능금액(${formatMoney(state.availableAmount)})을 초과합니다.`
+        ? `출금 ${formatMoney(amount)} + 일정산수수료 ${formatMoney(feeAmount)}가 출금가능금액(${formatMoney(state.availableAmount)})을 초과합니다.`
         : `출금가능금액(${formatMoney(state.availableAmount)})을 초과할 수 없습니다.`);
       return;
     }
@@ -444,7 +444,7 @@
       }
       const appliedFee = Math.max(0, Number(result.feeAmount ?? feeAmount));
       showToast(appliedFee > 0
-        ? `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)} (일출금수수료 ${formatMoney(appliedFee)})`
+        ? `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)} (일정산수수료 ${formatMoney(appliedFee)})`
         : `출금신청 완료 · ${platformLabel(platform)} · ${formatMoney(amount)}`);
       if (amountInput) amountInput.value = '';
       await loadWithdrawal();

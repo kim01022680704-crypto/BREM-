@@ -297,7 +297,7 @@ function resolveDailySettlementFee(settlementAmount, fees = {}) {
   return Math.max(0, Math.round(value));
 }
 
-/** 출금신청 금액 기준 일출금수수료 (출금시적용) */
+/** 출금신청 금액 기준 일정산수수료 (출금시적용) */
 function resolveWithdrawalFee(amount, fees = {}) {
   return resolveDailySettlementFee(amount, fees);
 }
@@ -330,7 +330,7 @@ function calcPayoutFromSettlement(row, feesByPlatform) {
   const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
   const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
   const callFee = orderCount * callFeeUnit;
-  // 일출금수수료(2%)는 "출금 시" 한 번만 부과되는 회사 수익이다.
+  // 일정산수수료(2%)는 "출금 시" 한 번만 부과되는 회사 수익이다.
   // 실지급액(netPay) 계산에서는 절대 빼지 않는다. (여기서 빼면 출금 때 또 빠져 2% 이중 차감됨)
   // 이 값은 기사 앱 일정산 표에서 "출금 시 적용될 예상 수수료" 미리보기용으로만 노출한다.
   const dailySettlementFee = resolveDailySettlementFee(settlementAmount, fees);
@@ -659,7 +659,7 @@ async function createWithdrawalRequest(accessToken, body = {}) {
       ok: false,
       status: 400,
       error: feeAmount > 0
-        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일출금수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다.`
+        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일정산수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다.`
         : `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
     };
   }
@@ -1244,7 +1244,7 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
       ok: false,
       status: 400,
       error: feeAmount > 0
-        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일출금수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다. 강제 조정하려면 초과 허용을 선택하세요.`
+        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일정산수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다. 강제 조정하려면 초과 허용을 선택하세요.`
         : `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
     };
   }

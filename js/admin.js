@@ -1847,6 +1847,16 @@
           };
         }
 
+        if (triggerId === 'payroll-week-final') {
+          return {
+            hiddenInput: $('#payrollDailyFinalWeekStart'),
+            labelEl: $('#payrollDailyFinalWeekBtn'),
+            onSelect(value) {
+              window.BremAdminPayrollDailySettlement?.onFinalWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-week-finalize') {
           return {
             hiddenInput: $('#payrollWeekFinalizeWeekStart'),

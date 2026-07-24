@@ -5381,6 +5381,7 @@
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="week-withdrawals">주정산 출금내역</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="available">기사별 출금가능</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="enroll">일정산 기사등록</button>
+          <button type="button" class="revenue-sub-btn" data-pds-sub-tab="final">최종정산</button>
         </div>
 
         <div class="payroll-daily-sub-panel" data-pds-panel="payout">
@@ -5388,7 +5389,7 @@
             <div class="card-header">
               <div>
                 <h2>수수료 설정</h2>
-                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일출금수수료입니다. 콜수수료는 <strong>콜수 × 단가(원)</strong>로 실지급액에서 차감됩니다. 일출금수수료는 정액 또는 %이며 <strong>출금 시에만</strong> 차감(회사 수익)됩니다.</p>
+                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일정산수수료입니다. 콜수수료는 <strong>콜수 × 단가(원)</strong>로 실지급액에서 차감됩니다. 일정산수수료는 정액 또는 %이며 <strong>출금 시에만</strong> 차감(회사 수익)됩니다.</p>
               </div>
               <button type="button" class="primary-btn" id="payrollDailySettlementFeeSaveBtn">수수료 저장</button>
             </div>
@@ -5402,19 +5403,19 @@
                 <button type="button" class="small-btn" id="payrollDailySettlementCallFeeVisibleBtn" aria-pressed="true">ON</button>
               </label>
               <label class="payroll-field">
-                <span>일출금수수료 방식</span>
+                <span>일정산수수료 방식</span>
                 <select id="payrollDailySettlementDailyFeeMode">
                   <option value="fixed">정액 (원)</option>
                   <option value="percent">비율 (%)</option>
                 </select>
               </label>
               <label class="payroll-field">
-                <span id="payrollDailySettlementDailyFeeLabel">일출금수수료 (원)</span>
+                <span id="payrollDailySettlementDailyFeeLabel">일정산수수료 (원)</span>
                 <input type="number" id="payrollDailySettlementDailyFee" min="0" step="1" value="0">
               </label>
             </div>
             <p class="form-help">콜수수료 표시 OFF 시 관리자·기사앱 일정산 표에서 콜수수료 열이 숨겨집니다. (공제 계산은 유지)</p>
-            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 콜수수료 = 콜수 × 단가. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 시간제보험. <strong>일출금수수료(2%)는 실지급액에서 빼지 않고 출금할 때만 차감(회사 수익)됩니다.</strong></p>
+            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 콜수수료 = 콜수 × 단가. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 시간제보험. <strong>일정산수수료(2%)는 실지급액에서 빼지 않고 출금할 때만 차감(회사 수익)됩니다.</strong></p>
           </article>
 
           <article class="card">
@@ -5447,7 +5448,7 @@
                     <th>산재보험</th>
                     <th>원천세</th>
                     <th class="pds-call-fee-col">콜수수료</th>
-                    <th>일출금수수료(예상)</th>
+                    <th>일정산수수료(예상)</th>
                     <th>시간제보험</th>
                     <th class="pds-net-col">실지급액</th>
                   </tr>
@@ -5506,12 +5507,12 @@
                     <th>산재보험</th>
                     <th>원천세</th>
                     <th class="pds-call-fee-col">콜수수료</th>
-                    <th>일출금수수료(예상)</th>
+                    <th>일정산수수료(예상)</th>
                     <th>시간제보험</th>
                     <th class="pds-net-col">실지급액</th>
                     <th>출금가능(신청시)</th>
                     <th>신청금액</th>
-                    <th>일출금수수료</th>
+                    <th>일정산수수료</th>
                     <th>상태</th>
                     <th>관리</th>
                   </tr>
@@ -5664,7 +5665,7 @@
                   <button type="button" class="small-btn" id="pdsAdminWithdrawalMaxBtn">최대</button>
                 </span>
               </label>
-              <p class="form-help" id="pdsAdminWithdrawalPreview">신청금액을 입력하면 예상 차감액(신청액 + 일출금수수료)을 계산합니다.</p>
+              <p class="form-help" id="pdsAdminWithdrawalPreview">신청금액을 입력하면 예상 차감액(신청액 + 일정산수수료)을 계산합니다.</p>
               <label class="pds-admin-withdrawal-exceed">
                 <input type="checkbox" id="pdsAdminWithdrawalAllowExceed">
                 <span>출금가능금액 초과 허용 (강제 조정)</span>
@@ -5853,6 +5854,55 @@
               </table>
             </div>
             <p class="form-help payroll-daily-selected-hint" id="payrollDailySettlementSelectedHint">선택 0명</p>
+          </article>
+        </div>
+
+        <div class="payroll-daily-sub-panel" data-pds-panel="final" hidden>
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>최종정산</h2>
+                <p class="form-help" id="payrollDailyFinalSummary">수~화 정산주 기준으로 기사별 실제 출금액(처리완료)과 걷은 일정산수수료(회사 수익)를 집계합니다.</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailyFinalExcelBtn">엑셀 일괄다운로드</button>
+                <button type="button" class="small-btn" id="payrollDailyFinalRefreshBtn">새로고침</button>
+              </div>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>정산주 (수요일만 선택)</span>
+                <input type="hidden" id="payrollDailyFinalWeekStart">
+                <span class="coupang-week-picker-inline">
+                  <button type="button" class="small-btn" id="payrollDailyFinalPrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
+                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="payroll-week-final" id="payrollDailyFinalWeekBtn">수요일 선택</button>
+                  <button type="button" class="small-btn" id="payrollDailyFinalNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
+                </span>
+              </label>
+              <strong id="payrollDailyFinalPeriodLabel" class="form-help" style="align-self:end;margin:0 0 0.35rem;">-</strong>
+              <label class="driver-search-field" style="margin-left:auto;">
+                <input type="search" id="payrollDailyFinalSearch" placeholder="이름·ID 검색">
+              </label>
+            </div>
+            <div class="payroll-final-totals" id="payrollDailyFinalTotals"></div>
+            <div class="table-wrap bulk-preview-wrap">
+              <table class="data-table" id="payrollDailyFinalTable">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>배민ID</th>
+                    <th>쿠팡ID</th>
+                    <th>출금건수</th>
+                    <th>쿠팡 출금</th>
+                    <th>배민 출금</th>
+                    <th class="pds-net-col">출금 합계</th>
+                    <th>일정산수수료(수익)</th>
+                    <th>총 차감(출금+수수료)</th>
+                  </tr>
+                </thead>
+                <tbody id="payrollDailyFinalBody"></tbody>
+              </table>
+            </div>
           </article>
         </div>
       </section>

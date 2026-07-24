@@ -9184,6 +9184,30 @@ textarea {
   margin-top: 0.5rem;
 }
 
+.payroll-final-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.payroll-final-total-chip {
+  padding: 0.4rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.85rem;
+}
+
+.payroll-final-total-chip strong {
+  margin-left: 0.35rem;
+}
+
+.payroll-final-total-chip.is-revenue {
+  background: rgba(46, 160, 67, 0.16);
+  border-color: rgba(46, 160, 67, 0.4);
+}
+
 .payroll-publish-payment-field input[type="date"] {
   max-width: 220px;
 }

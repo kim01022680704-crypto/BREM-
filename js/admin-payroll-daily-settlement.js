@@ -20,7 +20,9 @@
     availableRows: [],
     availableSearch: '',
     availableFees: null,
-    adminWithdrawalDriver: null
+    adminWithdrawalDriver: null,
+    finalRows: [],
+    finalSearch: ''
   };
 
   function $(id) {
@@ -96,7 +98,7 @@
     const dailyInput = $('payrollDailySettlementDailyFee');
     const label = $('payrollDailySettlementDailyFeeLabel');
     if (modeSelect && modeSelect.value !== normalized) modeSelect.value = normalized;
-    if (label) label.textContent = normalized === 'percent' ? '일출금수수료 (%)' : '일출금수수료 (원)';
+    if (label) label.textContent = normalized === 'percent' ? '일정산수수료 (%)' : '일정산수수료 (원)';
     if (dailyInput) {
       dailyInput.step = normalized === 'percent' ? '0.01' : '1';
       dailyInput.min = '0';
@@ -218,7 +220,7 @@
       syncFeeInputs();
       renderPayoutTable();
       const modeLabel = dailySettlementFeeMode === 'percent' ? `${dailySettlementFee}%` : `${dailySettlementFee.toLocaleString('ko-KR')}원`;
-      showToast(`${platformLabelKo()} 수수료 저장 · 일출금 ${modeLabel}`);
+      showToast(`${platformLabelKo()} 수수료 저장 · 일정산 ${modeLabel}`);
     } catch (error) {
       console.error('[daily settlement fees]', error);
       showToast(error.message || '수수료 저장에 실패했습니다.');
@@ -282,6 +284,7 @@
     else if (tab === 'completed') state.subTab = 'completed';
     else if (tab === 'week-withdrawals') state.subTab = 'week-withdrawals';
     else if (tab === 'available') state.subTab = 'available';
+    else if (tab === 'final') state.subTab = 'final';
     else state.subTab = 'payout';
     syncSubTabs();
     refreshAll();
@@ -933,7 +936,7 @@
                   <th>정산금액</th>
                   <th class="pds-net-col">실지급액</th>
                   <th>신청금액</th>
-                  <th>일출금수수료</th>
+                  <th>일정산수수료</th>
                   <th>계좌</th>
                   <th>관리</th>
                 </tr>
@@ -1342,7 +1345,7 @@
     }
     const over = !allowExceed && consume > available;
     preview.textContent = fee > 0
-      ? `예상 차감: 신청 ${formatWon(amount)} + 일출금수수료 ${formatWon(fee)} = ${formatWon(consume)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`
+      ? `예상 차감: 신청 ${formatWon(amount)} + 일정산수수료 ${formatWon(fee)} = ${formatWon(consume)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`
       : `예상 차감: ${formatWon(amount)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`;
     preview.style.color = over ? '#e5484d' : '';
   }
@@ -1424,6 +1427,233 @@
     } finally {
       if (reqBtn) reqBtn.disabled = false;
       if (forceBtn) forceBtn.disabled = false;
+    }
+  }
+
+  // ── 최종정산 (기사별 실제 출금액 + 걷은 일정산수수료) ──────────────────────
+
+  function ensureFinalWeekDefault() {
+    const input = $('payrollDailyFinalWeekStart');
+    if (!input) return '';
+    const todayLocal = [
+      new Date().getFullYear(),
+      String(new Date().getMonth() + 1).padStart(2, '0'),
+      String(new Date().getDate()).padStart(2, '0')
+    ].join('-');
+    if (!input.value) {
+      input.value = weekStartKey(todayLocal);
+    } else {
+      const normalized = weekStartKey(input.value);
+      if (normalized && input.value !== normalized) input.value = normalized;
+    }
+    updateFinalWeekLabel(input.value);
+    return String(input.value || '').slice(0, 10);
+  }
+
+  function updateFinalWeekLabel(weekStart) {
+    const btn = $('payrollDailyFinalWeekBtn');
+    if (!btn) return;
+    const value = String(weekStart || '').slice(0, 10);
+    if (!value) {
+      btn.textContent = '수요일 선택';
+      return;
+    }
+    const utils = window.BremDatePicker || window.BremPayrollSlipUtils;
+    const formatted = utils?.formatDate?.(value) || value;
+    const weekday = utils?.formatWeekdayKo?.(value);
+    btn.textContent = weekday ? `${formatted}(${weekday})` : formatted;
+  }
+
+  function shiftFinalWeek(deltaWeeks) {
+    const current = ensureFinalWeekDefault();
+    if (!current) return;
+    const date = new Date(`${current}T00:00:00`);
+    date.setDate(date.getDate() + (deltaWeeks * 7));
+    const next = weekStartKey([
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-'));
+    const input = $('payrollDailyFinalWeekStart');
+    if (input) input.value = next;
+    updateFinalWeekLabel(next);
+    void renderFinalSettlement();
+  }
+
+  function onFinalWeekPicked(value) {
+    const input = $('payrollDailyFinalWeekStart');
+    const normalized = weekStartKey(value || '');
+    if (input && normalized) input.value = normalized;
+    updateFinalWeekLabel(normalized);
+    void renderFinalSettlement();
+  }
+
+  function filterFinalRows(rows) {
+    const keyword = String(state.finalSearch || '').trim().toLowerCase();
+    if (!keyword) return rows;
+    return rows.filter(row => [
+      row.driverName,
+      row.baeminId,
+      row.coupangId
+    ].join(' ').toLowerCase().includes(keyword));
+  }
+
+  function completedRequestFee(row) {
+    // 처리완료 신청건의 걷은 수수료. 저장된 feeAmount 가 있으면 그대로 사용한다.
+    if (row.feeAmount != null && row.feeAmount !== '') {
+      return Math.max(0, Math.round(Number(row.feeAmount) || 0));
+    }
+    // 구버전 데이터로 feeAmount 가 없으면 현재 수수료 설정으로 추정한다.
+    const amount = Math.max(0, Math.round(Number(row.amount) || 0));
+    const allFees = roster.readAllFees?.() || {};
+    const side = allFees[row.platform === 'baemin' ? 'baemin' : 'coupang'] || allFees.coupang || {};
+    const mode = side.dailySettlementFeeMode === 'percent' ? 'percent' : 'fixed';
+    const value = Math.max(0, Number(side.dailySettlementFee || 0));
+    if (mode === 'percent') return Math.floor(amount * (value / 100));
+    return Math.max(0, Math.round(value));
+  }
+
+  async function renderFinalSettlement() {
+    const body = $('payrollDailyFinalBody');
+    const summary = $('payrollDailyFinalSummary');
+    const totalsEl = $('payrollDailyFinalTotals');
+    const periodLabel = $('payrollDailyFinalPeriodLabel');
+    if (!body) return;
+
+    const weekStart = ensureFinalWeekDefault();
+    const weekEnd = weekEndKey(weekStart);
+    if (periodLabel) periodLabel.textContent = formatWeekPeriodLabel(weekStart);
+
+    body.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중…</td></tr>';
+
+    let rows = [];
+    try {
+      if (BremStorage?.payrollWithdrawal?.fetchFromAdminApi) {
+        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({ weekStart });
+      } else {
+        rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => item.weekStart === weekStart);
+      }
+    } catch (error) {
+      console.warn('[final settlement]', error);
+      showToast(error.message || '최종정산 내역을 불러오지 못했습니다.');
+      body.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
+      return;
+    }
+
+    // 실제 출금(처리완료)만 집계한다.
+    const completedRows = rows.filter(row => row.status === 'completed');
+    const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
+    const byDriver = new Map();
+
+    completedRows.forEach(row => {
+      const driverId = String(row.driverId || '');
+      if (!driverId) return;
+      if (!byDriver.has(driverId)) {
+        const driver = driverMap.get(driverId) || null;
+        byDriver.set(driverId, {
+          driverId,
+          driverName: row.driverName || driver?.name || '-',
+          baeminId: driver ? (resolveBaeminId(driver) || '') : '',
+          coupangId: driver ? (resolveCoupangId(driver) || '') : '',
+          count: 0,
+          coupangAmount: 0,
+          baeminAmount: 0,
+          withdrawnAmount: 0,
+          feeCollected: 0
+        });
+      }
+      const entry = byDriver.get(driverId);
+      const amount = Math.max(0, Math.round(Number(row.amount) || 0));
+      const fee = completedRequestFee(row);
+      entry.count += 1;
+      entry.withdrawnAmount += amount;
+      entry.feeCollected += fee;
+      if (row.platform === 'baemin') entry.baeminAmount += amount;
+      else if (row.platform === 'coupang') entry.coupangAmount += amount;
+    });
+
+    const list = Array.from(byDriver.values()).sort((a, b) => {
+      const nameCmp = String(a.driverName || '').localeCompare(String(b.driverName || ''), 'ko');
+      if (nameCmp) return nameCmp;
+      return String(a.driverId).localeCompare(String(b.driverId));
+    });
+    state.finalRows = list;
+
+    const visible = filterFinalRows(list);
+    const totalWithdrawn = list.reduce((sum, row) => sum + row.withdrawnAmount, 0);
+    const totalFee = list.reduce((sum, row) => sum + row.feeCollected, 0);
+    const totalCount = list.reduce((sum, row) => sum + row.count, 0);
+
+    if (summary) {
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 출금완료 ${list.length}명 · ${totalCount}건`;
+    }
+    if (totalsEl) {
+      totalsEl.innerHTML = `
+        <span class="payroll-final-total-chip">총 출금액 <strong>${formatWon(totalWithdrawn)}</strong></span>
+        <span class="payroll-final-total-chip is-revenue">걷은 일정산수수료(수익) <strong>${formatWon(totalFee)}</strong></span>
+        <span class="payroll-final-total-chip">총 차감 <strong>${formatWon(totalWithdrawn + totalFee)}</strong></span>`;
+    }
+
+    if (!visible.length) {
+      body.innerHTML = '<tr><td colspan="9" class="empty">해당 정산주에 처리완료된 출금이 없습니다.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = visible.map(row => `
+      <tr>
+        <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+        <td>${escapeHtml(row.baeminId || '-')}</td>
+        <td>${escapeHtml(row.coupangId || '-')}</td>
+        <td>${Number(row.count || 0).toLocaleString('ko-KR')}</td>
+        <td>${formatWon(row.coupangAmount)}</td>
+        <td>${formatWon(row.baeminAmount)}</td>
+        <td class="pds-net-col"><strong>${formatWon(row.withdrawnAmount)}</strong></td>
+        <td><strong>${formatWon(row.feeCollected)}</strong></td>
+        <td>${formatWon(row.withdrawnAmount + row.feeCollected)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function exportFinalSettlementExcel() {
+    const rows = filterFinalRows(Array.isArray(state.finalRows) ? state.finalRows : []);
+    if (!rows.length) {
+      showToast('내보낼 최종정산 내역이 없습니다.');
+      return;
+    }
+    if (!window.XLSX) {
+      showToast('엑셀 라이브러리를 불러오지 못했습니다.');
+      return;
+    }
+    try {
+      const weekStart = ensureFinalWeekDefault() || new Date().toISOString().slice(0, 10);
+      const stamp = weekStart.replace(/-/g, '');
+      const filename = `BREM_최종정산_${stamp}.xlsx`;
+      const data = [
+        ['이름', '배민ID', '쿠팡ID', '출금건수', '쿠팡 출금', '배민 출금', '출금 합계', '일정산수수료(수익)', '총 차감'],
+        ...rows.map(row => [
+          row.driverName || '',
+          row.baeminId || '',
+          row.coupangId || '',
+          Number(row.count) || 0,
+          Number(row.coupangAmount) || 0,
+          Number(row.baeminAmount) || 0,
+          Number(row.withdrawnAmount) || 0,
+          Number(row.feeCollected) || 0,
+          (Number(row.withdrawnAmount) || 0) + (Number(row.feeCollected) || 0)
+        ])
+      ];
+      const totalWithdrawn = rows.reduce((sum, row) => sum + (Number(row.withdrawnAmount) || 0), 0);
+      const totalFee = rows.reduce((sum, row) => sum + (Number(row.feeCollected) || 0), 0);
+      data.push([]);
+      data.push(['합계', '', '', rows.reduce((s, r) => s + (Number(r.count) || 0), 0), '', '', totalWithdrawn, totalFee, totalWithdrawn + totalFee]);
+      const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, '최종정산');
+      window.XLSX.writeFile(workbook, filename);
+      showToast(`엑셀 저장: ${filename}`);
+    } catch (error) {
+      console.error('[final settlement excel]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
     }
   }
 
@@ -1982,6 +2212,9 @@
     if (state.subTab === 'available') {
       void renderAvailableDrivers();
     }
+    if (state.subTab === 'final') {
+      void renderFinalSettlement();
+    }
   }
 
   async function handleBulkFile(event) {
@@ -2378,6 +2611,16 @@
     $('pdsAdminWithdrawalForceBtn')?.addEventListener('click', () => {
       void submitAdminWithdrawal('complete');
     });
+    $('payrollDailyFinalRefreshBtn')?.addEventListener('click', () => {
+      void renderFinalSettlement();
+    });
+    $('payrollDailyFinalExcelBtn')?.addEventListener('click', exportFinalSettlementExcel);
+    $('payrollDailyFinalPrevBtn')?.addEventListener('click', () => shiftFinalWeek(-1));
+    $('payrollDailyFinalNextBtn')?.addEventListener('click', () => shiftFinalWeek(1));
+    $('payrollDailyFinalSearch')?.addEventListener('input', event => {
+      state.finalSearch = String(event.target.value || '').trim();
+      void renderFinalSettlement();
+    });
     $('payrollWeekFinalizePrevBtn')?.addEventListener('click', () => shiftWeekFinalize(-1));
     $('payrollWeekFinalizeNextBtn')?.addEventListener('click', () => shiftWeekFinalize(1));
     $('payrollWeekFinalizeBtn')?.addEventListener('click', () => {
@@ -2547,6 +2790,7 @@
     setSubTab,
     onWeekWithdrawalPicked,
     onAvailableWeekPicked,
+    onFinalWeekPicked,
     onWeekFinalizePicked,
     getEnrolledDriverIdSet: () => roster.getEnrolledDriverIdSet(),
     getRegionByDriverId: driverId => roster.getRegionByDriverId(driverId)

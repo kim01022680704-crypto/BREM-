@@ -7382,7 +7382,7 @@ const BremStorage = (function () {
         const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
         const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
         const callFee = orderCount * callFeeUnit;
-        // 일출금수수료(2%)는 출금 시에만 부과되는 회사 수익이므로 실지급액에서 빼지 않는다.
+        // 일정산수수료(2%)는 출금 시에만 부과되는 회사 수익이므로 실지급액에서 빼지 않는다.
         // (실지급액에서 빼면 출금 때 또 빠져 2% 이중 차감됨) — 아래 값은 미리보기 표시용.
         const dailySettlementFee = payrollDailySettlement.resolveDailySettlementFee(settlementAmount, fees);
         const netPay = settlementAmount
