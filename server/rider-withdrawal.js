@@ -770,6 +770,45 @@ async function loadWeekDaysForDrivers(supabase, driverIds, weekStart, feesByPlat
   return result;
 }
 
+/**
+ * 한 주(week)의 daily_settlements 전체를 driver_id 필터 없이 읽어
+ * 정산서가 올라온 모든 기사의 일정산을 driver_id 별로 묶어 돌려준다.
+ * (일정산 명단 등록 여부와 무관하게 업로드 반영된 전원을 노출하기 위함)
+ * 반환: Map<driverId, days[]>
+ */
+async function loadAllWeekDays(supabase, weekStart, feesByPlatform, excludedSettlementIds = null) {
+  const result = new Map();
+  const weekEnd = settlementWeekEnd(weekStart);
+  const excluded = excludedSettlementIds instanceof Set
+    ? excludedSettlementIds
+    : new Set(Array.isArray(excludedSettlementIds) ? excludedSettlementIds : []);
+
+  const PAGE_SIZE = 1000;
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('daily_settlements')
+      .select('driver_id,period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+      .gte('period', weekStart)
+      .lte('period', weekEnd)
+      .order('period', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    page.forEach(row => {
+      const driverId = String(row.driver_id || '');
+      if (!driverId) return;
+      const id = `${driverId}-${String(row.period || '').slice(0, 10)}-${normalizePlatform(row.platform)}`;
+      if (excluded.has(id)) return;
+      const day = calcPayoutFromSettlement(row, feesByPlatform);
+      if (!day.period) return;
+      if (!result.has(driverId)) result.set(driverId, []);
+      result.get(driverId).push(day);
+    });
+    if (page.length < PAGE_SIZE) break;
+  }
+  return result;
+}
+
 async function listWithdrawalRequests(accessToken, query = {}) {
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
@@ -1012,16 +1051,19 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
     // 조회 실패 시 roster 정보로 대체
   }
 
-  const driverIds = [...new Set(
-    rosterList.map(item => String(item.driverId || '')).filter(Boolean)
-  )];
+  // 일정산 명단(roster) 조회용 맵 (배민/쿠팡ID·지역 표시에 사용)
+  const rosterByDriver = new Map();
+  rosterList.forEach(item => {
+    const id = String(item.driverId || '');
+    if (id) rosterByDriver.set(id, item);
+  });
 
-  // 정산 데이터 1회 배치 조회 (주차 단위, 페이지네이션 포함)
+  // 정산서가 올라온 전체 기사를 driver_id 필터 없이 1회 배치 조회한다.
+  // (명단 등록 여부와 무관하게 업로드 반영된 전원을 노출)
   let daysByDriver = new Map();
   try {
-    daysByDriver = await loadWeekDaysForDrivers(
+    daysByDriver = await loadAllWeekDays(
       supabase,
-      driverIds,
       weekStart,
       feesByPlatform,
       excludedSettlementIds
@@ -1043,8 +1085,14 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       requestsByDriver.get(id).push(item);
     });
 
-  const rows = rosterList.map(rosterItem => {
-    const driverId = String(rosterItem.driverId || '');
+  // 대상 기사 = 정산서가 있는 전체 기사 ∪ 명단 등록 기사 ∪ 이번주 출금신청 기사
+  const driverIdSet = new Set();
+  daysByDriver.forEach((_days, id) => driverIdSet.add(id));
+  rosterByDriver.forEach((_item, id) => driverIdSet.add(id));
+  requestsByDriver.forEach((_req, id) => driverIdSet.add(id));
+
+  const rows = [...driverIdSet].map(driverId => {
+    const rosterItem = rosterByDriver.get(driverId) || {};
     const riderRow = ridersById.get(driverId) || {};
     const rider = {
       id: driverId,

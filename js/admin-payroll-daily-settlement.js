@@ -1222,7 +1222,7 @@
     if (summary) {
       const finalizedNote = result.weekFinalized ? ' · ⚠ 주정산 마무리됨(출금가능 0원)' : '';
       const pauseNote = result.withdrawalPaused ? ' · ⏸ 출금신청 정지중' : '';
-      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 등록 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)}${finalizedNote}${pauseNote}`;
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)}${finalizedNote}${pauseNote}`;
     }
 
     if (!visible.length) {
