@@ -181,12 +181,10 @@
     state.weekFinalized = payload.weekFinalized === true;
     state.withdrawalPaused = payload.withdrawalPaused === true;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
-    // 출금가능금액 = 실지급액 합계(주머니). 출금 시 신청액 + 2% 수수료가 여기서 차감된다.
+    // 출금가능금액(헤드라인) = 실제 신청 가능한 최대액 = 실지급 주머니에서 2% 수수료까지
+    // 감안한 값. 즉 여기 표시되는 금액을 그대로 신청하면 딱 맞게 출금된다.
+    // (실지급 합계 자체는 아래 힌트에 별도로 표기)
     const maxRequestable = Math.max(0, maxWithdrawableAmount());
-    if (availableEl) {
-      availableEl.textContent = formatMoney(state.availableAmount);
-      availableEl.classList.toggle('is-negative', state.availableAmount < 0);
-    }
     const by = payload.netPayByPlatform || {};
     const coupangNet = Number(by.coupang || 0);
     const baeminNet = Number(by.baemin || 0);
@@ -227,20 +225,13 @@
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else if (requestedFee > 0) {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일정산수수료 ${formatMoney(requestedFee)}${leaseText} · 출금 시 신청액 + 2% 차감 (최대신청 ${formatMoney(maxRequestable)})`;
+        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일정산수수료 ${formatMoney(requestedFee)}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
       } else {
-        hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 출금 시 신청액 + 2% 수수료 차감 (최대신청 ${formatMoney(maxRequestable)})`;
-      }
-    }
-    const maxAmount = maxRequestable;
-    if (amountInput) {
-      amountInput.max = String(maxAmount || 0);
-      if (Number(amountInput.value || 0) > maxAmount) {
-        amountInput.value = maxAmount > 0 ? String(maxAmount) : '';
+        hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
       }
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
-    updateFeePreview();
+    syncMaxUi();
     if (submitBtn) {
       const blocked = payload.withdrawalPaused === true || payload.weekFinalized === true;
       submitBtn.disabled = blocked;
@@ -250,19 +241,36 @@
     }
   }
 
+  // 헤드라인 "출금가능금액"(=최대 신청 가능액) + 입력창 max + 미리보기를 현재 상태·플랫폼 기준으로 다시 계산.
+  // 플랫폼별 수수료가 다를 수 있어 플랫폼 변경 시에도 호출한다.
+  function syncMaxUi() {
+    const maxRequestable = Math.max(0, maxWithdrawableAmount());
+    if (availableEl) {
+      availableEl.textContent = formatMoney(maxRequestable);
+      availableEl.classList.toggle('is-negative', state.availableAmount < 0);
+    }
+    if (amountInput) {
+      amountInput.max = String(maxRequestable || 0);
+      if (Number(amountInput.value || 0) > maxRequestable) {
+        amountInput.value = maxRequestable > 0 ? String(maxRequestable) : '';
+      }
+    }
+    updateFeePreview();
+  }
+
   function updateFeePreview() {
     const preview = document.getElementById('driverWithdrawalFeePreview');
     if (!preview) return;
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
     if (!amount) {
-      preview.textContent = '일정산수수료(출금시적용)는 신청금액 기준으로 차감됩니다.';
+      preview.textContent = '일정산수수료(2%)는 신청금액 기준으로 출금 시 차감됩니다.';
       return;
     }
     const fee = estimateFeeForAmount(amount);
     const consume = amount + fee;
     preview.textContent = fee > 0
-      ? `예상 차감: 출금 ${formatMoney(amount)} + 일정산수수료 ${formatMoney(fee)} = ${formatMoney(consume)} (출금가능 ${formatMoney(state.availableAmount)})`
-      : `예상 차감: ${formatMoney(amount)} (일정산수수료 없음)`;
+      ? `예상: 신청 ${formatMoney(amount)} 수령 · 일정산수수료 ${formatMoney(fee)} · 실지급에서 ${formatMoney(consume)} 차감`
+      : `예상: ${formatMoney(amount)} 수령 (일정산수수료 없음)`;
   }
 
   function renderDays(days, showCallFee = true) {
@@ -452,8 +460,8 @@
   });
 
   amountInput?.addEventListener('input', updateFeePreview);
-  platformCoupang?.addEventListener('change', updateFeePreview);
-  platformBaemin?.addEventListener('change', updateFeePreview);
+  platformCoupang?.addEventListener('change', syncMaxUi);
+  platformBaemin?.addEventListener('change', syncMaxUi);
   maxBtn?.addEventListener('click', () => {
     const max = Math.max(0, maxWithdrawableAmount());
     if (amountInput) {
