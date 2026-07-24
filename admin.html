@@ -629,7 +629,7 @@
           <div class="card-header">
             <h2>기사별 콜수 입력 (배민)</h2>
           </div>
-          <p class="form-help call-input-notice">기본은 <strong>일정산서 업로드</strong>로 콜수가 반영됩니다. 이 화면에서 수정·입력하면 <strong>수정 기록</strong>이 남습니다.</p>
+          <p class="form-help call-input-notice">배민 콜수는 <strong>BIZ 현황 크롤링(콜수·거절율 동기화)</strong>으로만 반영됩니다. 일정산서 업로드는 배민 콜수를 더 이상 반영하지 않습니다. 이 화면에서 수정·입력하면 <strong>수정 기록</strong>이 남습니다.</p>
           <form class="form-row call-daily-form" id="callForm-baemin" data-platform="baemin">
             <label>
               기사
@@ -3399,7 +3399,7 @@
               <button class="primary-btn" type="submit" id="settlementUploadBtn-baemin">업로드 및 미리보기</button>
             </div>
           </form>
-          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · <strong>U열(가게도착)·V열·AH열 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 콜수 1건 · AH열 합계 = 배달수행금액 · L열은 참고용. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다.</p>
+          <p class="form-help">배민 정산표 · 2행부터 · <strong>K열(User ID)</strong>로 기사 배민 ID와 매칭 · <strong>U열(가게도착)·V열·AH열 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 배달 1건 · AH열 합계 = 배달수행금액 · L열은 참고용. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다. <strong>배민 콜수는 이 업로드로 반영되지 않으며 BIZ 현황 크롤링에서만 반영됩니다.</strong></p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-baemin" hidden></p>
         </article>
 
@@ -5377,6 +5377,7 @@
         <div class="revenue-sub-tabs payroll-daily-sub-tabs" role="tablist" aria-label="급여 일정산 하위 메뉴">
           <button type="button" class="revenue-sub-btn active" data-pds-sub-tab="payout">일정산</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="withdrawals">출금신청자</button>
+          <button type="button" class="revenue-sub-btn" data-pds-sub-tab="completed">처리완료 내역</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="week-withdrawals">주정산 출금내역</button>
           <button type="button" class="revenue-sub-btn" data-pds-sub-tab="enroll">일정산 기사등록</button>
         </div>
@@ -5477,9 +5478,8 @@
               <label class="payroll-field">
                 <span>상태</span>
                 <select id="payrollDailyWithdrawalStatusFilter">
-                  <option value="">전체</option>
+                  <option value="">신청/취소</option>
                   <option value="pending">신청</option>
-                  <option value="completed">처리완료</option>
                   <option value="cancelled">취소</option>
                 </select>
               </label>
@@ -5518,6 +5518,29 @@
                 <tbody id="payrollDailyWithdrawalBody"></tbody>
               </table>
             </div>
+          </article>
+        </div>
+
+        <div class="payroll-daily-sub-panel" data-pds-panel="completed" hidden>
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h2>처리완료 내역</h2>
+                <p class="form-help" id="payrollDailyCompletedSummary">출금완료 처리된 신청을 처리일(출금완료 처리한 날)별로 모아 보여줍니다.</p>
+              </div>
+              <div class="payroll-action-group">
+                <button type="button" class="small-btn" id="payrollDailyCompletedExcelBtn">엑셀 일괄다운로드</button>
+                <button type="button" class="small-btn" id="payrollDailyCompletedRefreshBtn">새로고침</button>
+              </div>
+            </div>
+            <div class="payroll-toolbar">
+              <label class="payroll-field">
+                <span>처리일</span>
+                <input type="date" id="payrollDailyCompletedDate">
+              </label>
+              <button type="button" class="small-btn" id="payrollDailyCompletedAllBtn" title="전체 처리일 보기">전체 보기</button>
+            </div>
+            <div id="payrollDailyCompletedGroups" class="payroll-completed-groups"></div>
           </article>
         </div>
 

@@ -2831,11 +2831,13 @@ const BremStorage = (function () {
     });
   }
 
-  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, date, status } = {}) {
+  async function fetchAdminWithdrawalRequestsFromServer({ weekStart, date, status, view, completedDate } = {}) {
     const params = new URLSearchParams();
     if (date) params.set('date', String(date).slice(0, 10));
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
     if (status) params.set('status', String(status));
+    if (view) params.set('view', String(view));
+    if (completedDate) params.set('completedDate', String(completedDate).slice(0, 10));
     const qs = params.toString() ? `?${params.toString()}` : '';
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests${qs}`);
   }
@@ -8789,14 +8791,19 @@ const BremStorage = (function () {
         appliedAt
       }));
 
-      calls.upsertBatchDaily({
-        date: callDate,
-        platform: p,
-        records: nextRecords.map(record => ({
-          driverId: record.driverId,
-          count: record.orderCount
-        }))
-      });
+      // 배민 콜수는 이제 BIZ 현황 크롤링(콜수·거절율 동기화)에서만 반영한다.
+      // 일정산서 업로드는 배민 정산금액·시간제보험만 저장하고 콜수(brem_admin_calls)는 건드리지 않는다.
+      // 쿠팡은 기존대로 일정산서 업로드가 콜수를 반영한다.
+      if (p !== 'baemin') {
+        calls.upsertBatchDaily({
+          date: callDate,
+          platform: p,
+          records: nextRecords.map(record => ({
+            driverId: record.driverId,
+            count: record.orderCount
+          }))
+        });
+      }
 
       const keepIds = new Set(nextRecords.map(record => record.id));
       const list = settlements.getAll().filter(item => !keepIds.has(item.id));
@@ -8861,14 +8868,17 @@ const BremStorage = (function () {
       if (target) {
         const periodKey = String(target.period).slice(0, 10);
         const p = normalizePlatform(target.platform);
-        const callId = `${target.driverId}-${periodKey}-${p}`;
-        storageAdapter.write(
-          KEYS.calls,
-          calls.getAll().filter(call => call.id !== callId),
-          { allowEmpty: true }
-        );
-        if (activeStorageAdapter.deleteAdminCallsByIds) {
-          void activeStorageAdapter.deleteAdminCallsByIds([callId]);
+        // 배민 콜수는 BIZ 크롤링 소유이므로 일정산 삭제 시 배민 콜은 지우지 않는다. (쿠팡만 연동 삭제)
+        if (p !== 'baemin') {
+          const callId = `${target.driverId}-${periodKey}-${p}`;
+          storageAdapter.write(
+            KEYS.calls,
+            calls.getAll().filter(call => call.id !== callId),
+            { allowEmpty: true }
+          );
+          if (activeStorageAdapter.deleteAdminCallsByIds) {
+            void activeStorageAdapter.deleteAdminCallsByIds([callId]);
+          }
         }
       }
       return settlements.getAll();
@@ -8895,14 +8905,17 @@ const BremStorage = (function () {
       const nextSettlements = settlements.getAll().filter(item => item.id !== targetId);
       storageAdapter.write(KEYS.settlements, nextSettlements, { allowEmpty: true });
 
-      if (activeStorageAdapter.deleteAdminCallsByIds) {
-        await activeStorageAdapter.deleteAdminCallsByIds([callId]);
-      } else {
-        storageAdapter.write(
-          KEYS.calls,
-          calls.getAll().filter(call => call.id !== callId),
-          { allowEmpty: true }
-        );
+      // 배민 콜수는 BIZ 크롤링 소유이므로 일정산 삭제 시 배민 콜은 지우지 않는다. (쿠팡만 연동 삭제)
+      if (p !== 'baemin') {
+        if (activeStorageAdapter.deleteAdminCallsByIds) {
+          await activeStorageAdapter.deleteAdminCallsByIds([callId]);
+        } else {
+          storageAdapter.write(
+            KEYS.calls,
+            calls.getAll().filter(call => call.id !== callId),
+            { allowEmpty: true }
+          );
+        }
       }
 
       if (activeStorageAdapter.deleteDailySettlementsByIds) {

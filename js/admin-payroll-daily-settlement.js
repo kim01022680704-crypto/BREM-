@@ -14,6 +14,8 @@
     subTab: 'payout',
     payoutDate: '',
     withdrawalRows: [],
+    completedRows: [],
+    completedShowAll: false,
     weekWithdrawalRows: []
   };
 
@@ -273,6 +275,7 @@
   function setSubTab(tab) {
     if (tab === 'enroll') state.subTab = 'enroll';
     else if (tab === 'withdrawals') state.subTab = 'withdrawals';
+    else if (tab === 'completed') state.subTab = 'completed';
     else if (tab === 'week-withdrawals') state.subTab = 'week-withdrawals';
     else state.subTab = 'payout';
     syncSubTabs();
@@ -742,6 +745,9 @@
       showToast(error.message || '출금신청 목록을 불러오지 못했습니다.');
     }
 
+    // 처리완료 건은 '처리완료 내역' 탭으로 분리한다. 신청자 목록에는 신청중/취소만 남긴다.
+    rows = rows.filter(row => row.status !== 'completed');
+
     const pendingRows = rows.filter(row => row.status === 'pending');
     const totalAmount = pendingRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     const showCallFee = rows.some(row => row.showCallFee !== false) && isCallFeeVisible();
@@ -812,6 +818,122 @@
           <button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button>
         </td>
       </tr>`;
+    }).join('');
+  }
+
+  function ensureCompletedDateDefault() {
+    const input = $('payrollDailyCompletedDate');
+    if (!input) return '';
+    if (!input.value && !state.completedShowAll) {
+      input.value = new Date().toISOString().slice(0, 10);
+    }
+    return String(input.value || '').slice(0, 10);
+  }
+
+  async function renderCompletedWithdrawals() {
+    const container = $('payrollDailyCompletedGroups');
+    const summary = $('payrollDailyCompletedSummary');
+    if (!container) return;
+
+    const completedDate = state.completedShowAll ? '' : ensureCompletedDateDefault();
+
+    let rows = [];
+    try {
+      if (BremStorage?.payrollWithdrawal?.fetchFromAdminApi) {
+        rows = await BremStorage.payrollWithdrawal.fetchFromAdminApi({ view: 'completed', completedDate });
+      } else {
+        rows = (BremStorage?.payrollWithdrawal?.getAll?.() || []).filter(item => {
+          if (item.status !== 'completed') return false;
+          if (completedDate && String(item.completedAt || item.updatedAt || '').slice(0, 10) !== completedDate) return false;
+          return true;
+        });
+      }
+    } catch (error) {
+      console.warn('[completed withdrawal list]', error);
+      showToast(error.message || '처리완료 내역을 불러오지 못했습니다.');
+      rows = [];
+    }
+
+    const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
+    rows = rows.map(row => {
+      const driver = driverMap.get(String(row.driverId || '')) || null;
+      return {
+        ...row,
+        bankName: row.bankName || driver?.bankName || '',
+        accountNumber: row.accountNumber || driver?.accountNumber || ''
+      };
+    });
+    state.completedRows = rows;
+
+    // 처리일(completedAt) 기준으로 그룹핑
+    const groups = new Map();
+    rows.forEach(row => {
+      const key = String(row.completedAt || row.updatedAt || '').slice(0, 10) || '미상';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => b.localeCompare(a));
+
+    const totalAmount = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    if (summary) {
+      summary.textContent = completedDate
+        ? `처리일 ${completedDate} · ${rows.length}건 · 합계 ${formatWon(totalAmount)}`
+        : `전체 처리완료 ${rows.length}건 · ${sortedKeys.length}일 · 합계 ${formatWon(totalAmount)}`;
+    }
+
+    if (!rows.length) {
+      container.innerHTML = '<p class="empty" style="padding:1rem;">처리완료 내역이 없습니다.</p>';
+      return;
+    }
+
+    container.innerHTML = sortedKeys.map(dateKey => {
+      const groupRows = groups.get(dateKey)
+        .slice()
+        .sort((a, b) => String(b.completedAt || '').localeCompare(String(a.completedAt || '')));
+      const groupAmount = groupRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+      const bodyRows = groupRows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.completedAt ? new Date(row.completedAt).toLocaleString('ko-KR') : '-')}</td>
+          <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
+          <td>${escapeHtml(withdrawalPlatformLabel(row.platform))}</td>
+          <td>${escapeHtml(row.requestDate || String(row.createdAt || '').slice(0, 10) || '-')}</td>
+          <td>${escapeHtml(`${row.weekStart || '-'} ~ ${row.weekEnd || '-'}`)}</td>
+          <td>${formatWon(row.settlementAmount)}</td>
+          <td class="pds-net-col"><strong>${formatWon(row.netPay)}</strong></td>
+          <td><strong>${formatWon(row.amount)}</strong></td>
+          <td>${formatWon(row.feeAmount)}</td>
+          <td>${escapeHtml(row.bankName || '-')} ${escapeHtml(row.accountNumber || '')}</td>
+          <td><button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button></td>
+        </tr>
+      `).join('');
+      return `
+        <div class="payroll-completed-group">
+          <div class="payroll-completed-group-head">
+            <strong>${escapeHtml(dateKey)}</strong>
+            <span class="form-help">${groupRows.length}건 · 합계 ${formatWon(groupAmount)}</span>
+          </div>
+          <div class="table-wrap bulk-preview-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>처리시각</th>
+                  <th>이름</th>
+                  <th>플랫폼</th>
+                  <th>신청일</th>
+                  <th>정산주</th>
+                  <th>정산금액</th>
+                  <th class="pds-net-col">실지급액</th>
+                  <th>신청금액</th>
+                  <th>일출금수수료</th>
+                  <th>계좌</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody>${bodyRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
     }).join('');
   }
 
@@ -986,6 +1108,25 @@
     }
   }
 
+  function exportCompletedExcel() {
+    const rows = Array.isArray(state.completedRows) ? state.completedRows : [];
+    if (!rows.length) {
+      showToast('내보낼 처리완료 내역이 없습니다.');
+      return;
+    }
+    try {
+      const date = state.completedShowAll
+        ? 'ALL'
+        : (ensureCompletedDateDefault() || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+      const filename = `BREM_처리완료내역_${date}.xlsx`;
+      roster.exportWithdrawalRowsToExcel(rows, filename, '처리완료내역');
+      showToast(`엑셀 저장: ${filename}`);
+    } catch (error) {
+      console.error('[completed excel]', error);
+      showToast(error.message || '엑셀 내보내기에 실패했습니다.');
+    }
+  }
+
   function exportWithdrawalExcel() {
     const rows = Array.isArray(state.withdrawalRows) ? state.withdrawalRows : [];
     if (!rows.length) {
@@ -1076,6 +1217,19 @@
       await renderWithdrawalRequests();
     } catch (error) {
       console.error('[withdrawal delete]', error);
+      showToast(error.message || '삭제에 실패했습니다.');
+    }
+  }
+
+  async function deleteCompletedWithdrawalRequest(id) {
+    if (!id) return;
+    if (!window.confirm('이 처리완료 내역을 삭제할까요? 목록에서 영구 제거됩니다.')) return;
+    try {
+      const result = await BremStorage.payrollWithdrawal.deleteRequest(id);
+      showToast(result.message || '처리완료 내역을 삭제했습니다.');
+      await renderCompletedWithdrawals();
+    } catch (error) {
+      console.error('[completed delete]', error);
       showToast(error.message || '삭제에 실패했습니다.');
     }
   }
@@ -1500,6 +1654,9 @@
     if (state.subTab === 'withdrawals') {
       void renderWithdrawalRequests();
     }
+    if (state.subTab === 'completed') {
+      void renderCompletedWithdrawals();
+    }
     if (state.subTab === 'week-withdrawals') {
       void renderWeekWithdrawals();
     }
@@ -1845,6 +2002,20 @@
     $('payrollDailyWithdrawalStatusFilter')?.addEventListener('change', () => {
       void renderWithdrawalRequests();
     });
+    $('payrollDailyCompletedRefreshBtn')?.addEventListener('click', () => {
+      void renderCompletedWithdrawals();
+    });
+    $('payrollDailyCompletedDate')?.addEventListener('change', () => {
+      state.completedShowAll = false;
+      void renderCompletedWithdrawals();
+    });
+    $('payrollDailyCompletedAllBtn')?.addEventListener('click', () => {
+      state.completedShowAll = true;
+      const input = $('payrollDailyCompletedDate');
+      if (input) input.value = '';
+      void renderCompletedWithdrawals();
+    });
+    $('payrollDailyCompletedExcelBtn')?.addEventListener('click', exportCompletedExcel);
     $('payrollDailyWeekWithdrawalRefreshBtn')?.addEventListener('click', () => {
       void renderWeekWithdrawals();
     });
@@ -1883,6 +2054,10 @@
       if (event.target.matches?.('.pds-wd-row-check')) {
         syncWithdrawalSelectAllState();
       }
+    });
+    $('payrollDailyCompletedGroups')?.addEventListener('click', event => {
+      const deleteBtn = event.target.closest('[data-pds-wd-delete]');
+      if (deleteBtn) void deleteCompletedWithdrawalRequest(deleteBtn.dataset.pdsWdDelete);
     });
     $('payrollDailySettlementRegionNew')?.addEventListener('keydown', event => {
       if (event.key === 'Enter') {

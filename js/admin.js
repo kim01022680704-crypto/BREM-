@@ -53,6 +53,31 @@
     if (typeof renderFn === 'function') renderFn();
   }
 
+  // 리스관리 메뉴처럼 "앞에서 즉시 그리고 → 뒤에서 저장" 하는 낙관적 저장.
+  // mutateFn: 인메모리 반영(동기). storageAdapter.write 는 캐시를 즉시 갱신하고 persist 프라미스를 반환한다.
+  // renderFn: 즉시 페인트. onErrorFn: 백그라운드 저장 실패 시 롤백/재렌더.
+  function optimisticSave(label, mutateFn, renderFn, onErrorFn) {
+    let result;
+    try {
+      result = mutateFn();
+    } catch (error) {
+      console.error(`[BREM] optimistic mutate failed: ${label}`, error);
+      showToast(error.message || '저장에 실패했습니다.');
+      if (typeof onErrorFn === 'function') onErrorFn(error);
+      return;
+    }
+    if (typeof renderFn === 'function') renderFn();
+    setTimeout(() => {
+      Promise.resolve(BremStorage.awaitPersist?.(result) || BremStorage.flushStorage?.() || Promise.resolve())
+        .catch(error => {
+          console.error(`[BREM] optimistic persist failed: ${label}`, error);
+          showToast(error.message || '저장에 실패했습니다. 잠시 후 다시 시도하세요.');
+          if (typeof onErrorFn === 'function') onErrorFn(error);
+        });
+    }, 0);
+    return result;
+  }
+
   let callStatsIndex = null;
   let callStatsIndexKey = '';
   const driverSelectOptionsCache = new Map();
@@ -1199,22 +1224,22 @@
   }
 
   function dashboardWeekStart() {
-    return weekStartKey();
+    return state.dashboardWeekStart || weekStartKey();
   }
 
   function dashboardMonth() {
-    return today().slice(0, 7);
+    return dashboardWeekStart().slice(0, 7);
   }
 
   function updateDashboardWeekLabel() {
     const weekStart = dashboardWeekStart();
-    const label = `현재 · 주간 ${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} · 월간 ${dashboardMonth()}`;
+    const label = `주간 ${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} · 월간 ${dashboardMonth()}`;
     const labelEl = $('#dashboardWeekLabel');
     if (labelEl) labelEl.textContent = label;
     const hidden = $('#dashboardWeekBasisDate');
     if (hidden) hidden.value = weekStart;
     const trigger = $('#dashboardWeekBasisBtn');
-    if (trigger) trigger.hidden = true;
+    if (trigger) trigger.hidden = false;
   }
 
   function loadDashboardWeekBasis() {
@@ -6033,30 +6058,30 @@
           return;
         }
 
-        void BremPerf.runSave(`calls.save.${platform}`, {
-          write: async () => {
+        const countValue = Number($(`#callCount-${platform}`).value);
+        optimisticSave(
+          `calls.save.${platform}`,
+          () => {
             const writeResult = BremStorage.calls.upsertDaily({
               driverId,
               date,
-              count: Number($(`#callCount-${platform}`).value),
+              count: countValue,
               platform
             });
-            await BremStorage.awaitPersist?.(writeResult);
             $(`#callCount-${platform}`).value = '';
             setCallFilterDate(platform, date);
+            return writeResult;
           },
-          render: () => {
+          () => {
+            renderSettlements();
+            renderCalls();
+            showToast(`${platformLabel(platform)} 콜수 저장 중…`);
+          },
+          () => {
             renderSettlements();
             renderCalls();
           }
-        }).then(() => {
-          showToast(`${platformLabel(platform)} 콜수가 저장되었습니다. 수정 기록이 남습니다.`);
-        }).catch(error => {
-          console.error('[BREM] call persist failed:', error);
-          showToast(error.message || '콜수 Supabase 저장에 실패했습니다.');
-          renderSettlements();
-          renderCalls();
-        });
+        );
       });
 
       $(`#rejectionForm-${platform}`)?.addEventListener('submit', event => {
@@ -6073,21 +6098,19 @@
           return;
         }
 
-        void BremPerf.runSave(`rejections.save.${platform}`, {
-          write: async () => {
-            const writeResult = BremStorage.rejections.upsertWeekly({ driverId, weekStart, rate, platform });
-            await BremStorage.awaitPersist?.(writeResult);
+        optimisticSave(
+          `rejections.save.${platform}`,
+          () => BremStorage.rejections.upsertWeekly({ driverId, weekStart, rate, platform }),
+          () => {
+            renderRejections();
+            if (state.currentSection === 'dashboard') renderDashboard();
+            showToast(`${platformLabel(platform)} 주간 ${platformRateLabel(platform)} 저장 중…`);
           },
-          render: () => {
+          () => {
             renderRejections();
             if (state.currentSection === 'dashboard') renderDashboard();
           }
-        }).then(() => {
-          showToast(`${platformLabel(platform)} 주간 ${platformRateLabel(platform)} Supabase 저장 완료`);
-        }).catch(error => {
-          console.error('[BREM] rejection persist failed:', error);
-          showToast(error.message || 'Supabase 저장에 실패했습니다.');
-        });
+        );
       });
 
       $(`#rejectionWeekDate-${platform}`)?.addEventListener('change', event => {
@@ -6165,23 +6188,24 @@
         showToast('적용 월을 선택하세요.');
         return;
       }
-      void BremPerf.runSave('targets.monthly', {
-        write: async () => {
-          const writeResult = BremStorage.targets.upsertMonthly({
-            driverId,
-            month,
-            count: Number($('#targetCount').value)
-          });
-          await BremStorage.awaitPersist?.(writeResult);
+      const monthlyCount = Number($('#targetCount').value);
+      optimisticSave(
+        'targets.monthly',
+        () => {
+          const writeResult = BremStorage.targets.upsertMonthly({ driverId, month, count: monthlyCount });
           $('#targetCount').value = '';
+          return writeResult;
         },
-        render: () => {
+        () => {
+          renderTargets();
+          if (state.currentSection === 'dashboard') renderDashboard();
+          showToast('월간 목표 콜수 저장 중…');
+        },
+        () => {
           renderTargets();
           if (state.currentSection === 'dashboard') renderDashboard();
         }
-      }).then(() => {
-        showToast('월간 목표 콜수가 저장되었습니다.');
-      });
+      );
     });
 
     $('#weeklyTargetForm').addEventListener('submit', event => {
@@ -6192,24 +6216,25 @@
         showToast('적용주 수요일을 선택하세요.');
         return;
       }
-      void BremPerf.runSave('targets.weekly', {
-        write: async () => {
-          const writeResult = BremStorage.weeklyTargets.upsert({
-            driverId,
-            weekStart,
-            count: Number($('#weeklyTargetCount').value)
-          });
-          await BremStorage.awaitPersist?.(writeResult);
+      const weeklyCount = Number($('#weeklyTargetCount').value);
+      optimisticSave(
+        'targets.weekly',
+        () => {
+          const writeResult = BremStorage.weeklyTargets.upsert({ driverId, weekStart, count: weeklyCount });
           $('#weeklyTargetCount').value = '';
           updateAdminWeekTargetPreview(weekStart);
+          return writeResult;
         },
-        render: () => {
+        () => {
+          renderTargets();
+          if (state.currentSection === 'dashboard') renderDashboard();
+          showToast('주간 목표 콜수 저장 중…');
+        },
+        () => {
           renderTargets();
           if (state.currentSection === 'dashboard') renderDashboard();
         }
-      }).then(() => {
-        showToast('주간 목표 콜수가 저장되었습니다.');
-      });
+      );
     });
 
     $('#settlementUploadLogDetailClose')?.addEventListener('click', hideSettlementUploadLogDetail);
@@ -6597,16 +6622,19 @@
           showToast('목표 콜수를 입력하세요.');
           return;
         }
-        void persistAndRender('targets.monthly.inline', () => BremStorage.targets.upsertMonthly({
-          driverId: target.driverId,
-          month: target.month,
-          count
-        }), () => {
-          renderTargets();
-          if (state.currentSection === 'dashboard') renderDashboard();
-        }).then(() => {
-          showToast('월간 목표 콜수가 수정되었습니다.');
-        });
+        optimisticSave(
+          'targets.monthly.inline',
+          () => BremStorage.targets.upsertMonthly({ driverId: target.driverId, month: target.month, count }),
+          () => {
+            renderTargets();
+            if (state.currentSection === 'dashboard') renderDashboard();
+            showToast('월간 목표 콜수 저장 중…');
+          },
+          () => {
+            renderTargets();
+            if (state.currentSection === 'dashboard') renderDashboard();
+          }
+        );
         return;
       }
 

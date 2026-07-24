@@ -9502,6 +9502,26 @@ textarea {
   margin-bottom: 12px;
 }
 
+.payroll-completed-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.payroll-completed-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--yellow, #ffd400);
+}
+
+.payroll-completed-group-head strong {
+  font-size: 1rem;
+  color: var(--yellow, #ffd400);
+}
+
 .payroll-field {
   display: flex;
   flex-direction: column;

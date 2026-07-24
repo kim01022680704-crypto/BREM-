@@ -437,12 +437,20 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     item.driverId === driverId && item.weekStart === weekStart
   ));
   const pendingRequests = myWeekRequests.filter(item => item.status === 'pending');
+  const completedRequests = myWeekRequests.filter(item => item.status === 'completed');
   const requestedAmountTotal = pendingRequests.reduce((sum, item) => sum + item.amount, 0);
   const requestedFeeTotal = pendingRequests.reduce((sum, item) => {
     const consumed = requestConsumedAmount(item, feesByPlatform);
     return sum + Math.max(0, consumed - item.amount);
   }, 0);
   const requestedTotal = pendingRequests.reduce(
+    (sum, item) => sum + requestConsumedAmount(item, feesByPlatform),
+    0
+  );
+  // 처리완료(출금완료)된 금액은 이미 지급된 돈이므로 출금가능금액에서 반드시 차감한다.
+  // (이 차감이 없으면 처리완료 후 그 금액이 다시 출금가능금액으로 살아나 실지급액보다 많이 출금 가능해진다.)
+  const withdrawnAmountTotal = completedRequests.reduce((sum, item) => sum + item.amount, 0);
+  const withdrawnTotal = completedRequests.reduce(
     (sum, item) => sum + requestConsumedAmount(item, feesByPlatform),
     0
   );
@@ -493,7 +501,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   }
   // 리스비/미납은 최우선 차감이며 마이너스(이월)를 허용한다. (정산 주 단위로 리셋)
   // 주정산 마무리된 주는 출금가능금액을 강제로 0 처리한다.
-  const rawAvailable = totalNetPay - requestedTotal - leaseDeduction;
+  // 신청중(pending) + 처리완료(completed) 를 모두 차감해야 실지급액을 초과한 출금이 막힌다.
+  const rawAvailable = totalNetPay - requestedTotal - withdrawnTotal - leaseDeduction;
   const availableAmount = weekFinalized ? 0 : rawAvailable;
 
   return {
@@ -509,6 +518,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     requestedTotal,
     requestedAmountTotal,
     requestedFeeTotal,
+    withdrawnTotal,
+    withdrawnAmountTotal,
     availableAmount,
     weekFinalized,
     weekFinalizedAt: finalizedEntry?.finalizedAt || '',
@@ -716,8 +727,17 @@ async function listWithdrawalRequests(accessToken, query = {}) {
   const weekStart = query.weekStart ? normalizeSettlementWeekStart(query.weekStart) : '';
   const date = String(query.date || '').slice(0, 10);
   const status = String(query.status || '').trim();
+  const view = String(query.view || '').trim();
+  const completedDate = String(query.completedDate || '').slice(0, 10);
 
   const filtered = list.filter(item => {
+    // 처리완료 내역 뷰: 처리일(completedAt) 기준으로만 조회한다.
+    if (view === 'completed') {
+      if (item.status !== 'completed') return false;
+      if (completedDate
+        && String(item.completedAt || item.updatedAt || '').slice(0, 10) !== completedDate) return false;
+      return true;
+    }
     if (date && String(item.requestDate || item.createdAt || '').slice(0, 10) !== date) return false;
     if (weekStart && item.weekStart !== weekStart) return false;
     if (status && item.status !== status) return false;
