@@ -92,7 +92,7 @@
     const dailyInput = $('payrollDailySettlementDailyFee');
     const label = $('payrollDailySettlementDailyFeeLabel');
     if (modeSelect && modeSelect.value !== normalized) modeSelect.value = normalized;
-    if (label) label.textContent = normalized === 'percent' ? '일정산수수료 (%)' : '일정산수수료 (원)';
+    if (label) label.textContent = normalized === 'percent' ? '일출금수수료 (%)' : '일출금수수료 (원)';
     if (dailyInput) {
       dailyInput.step = normalized === 'percent' ? '0.01' : '1';
       dailyInput.min = '0';
@@ -214,7 +214,7 @@
       syncFeeInputs();
       renderPayoutTable();
       const modeLabel = dailySettlementFeeMode === 'percent' ? `${dailySettlementFee}%` : `${dailySettlementFee.toLocaleString('ko-KR')}원`;
-      showToast(`${platformLabelKo()} 수수료 저장 · 일정산 ${modeLabel}`);
+      showToast(`${platformLabelKo()} 수수료 저장 · 일출금 ${modeLabel}`);
     } catch (error) {
       console.error('[daily settlement fees]', error);
       showToast(error.message || '수수료 저장에 실패했습니다.');

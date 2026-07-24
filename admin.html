@@ -5387,7 +5387,7 @@
             <div class="card-header">
               <div>
                 <h2>수수료 설정</h2>
-                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일정산수수료입니다. 콜수수료는 <strong>콜수 × 단가(원)</strong>로 차감됩니다. 일정산수수료는 정액 또는 %입니다.</p>
+                <p class="form-help">선택한 플랫폼(쿠팡/배민)별 콜수수료·일출금수수료입니다. 콜수수료는 <strong>콜수 × 단가(원)</strong>로 실지급액에서 차감됩니다. 일출금수수료는 정액 또는 %이며 <strong>출금 시에만</strong> 차감(회사 수익)됩니다.</p>
               </div>
               <button type="button" class="primary-btn" id="payrollDailySettlementFeeSaveBtn">수수료 저장</button>
             </div>
@@ -5401,19 +5401,19 @@
                 <button type="button" class="small-btn" id="payrollDailySettlementCallFeeVisibleBtn" aria-pressed="true">ON</button>
               </label>
               <label class="payroll-field">
-                <span>일정산수수료 방식</span>
+                <span>일출금수수료 방식</span>
                 <select id="payrollDailySettlementDailyFeeMode">
                   <option value="fixed">정액 (원)</option>
                   <option value="percent">비율 (%)</option>
                 </select>
               </label>
               <label class="payroll-field">
-                <span id="payrollDailySettlementDailyFeeLabel">일정산수수료 (원)</span>
+                <span id="payrollDailySettlementDailyFeeLabel">일출금수수료 (원)</span>
                 <input type="number" id="payrollDailySettlementDailyFee" min="0" step="1" value="0">
               </label>
             </div>
             <p class="form-help">콜수수료 표시 OFF 시 관리자·기사앱 일정산 표에서 콜수수료 열이 숨겨집니다. (공제 계산은 유지)</p>
-            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 콜수수료 = 콜수 × 단가. 일정산수수료 %는 정산금액 기준 절사. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 일정산수수료 − 시간제보험</p>
+            <p class="form-help">고용보험 0.8% · 산재보험 0.88% · 원천세 3.3% (정산금액 기준, 원 미만 절사). 콜수수료 = 콜수 × 단가. 실지급액 = 정산금 − 고용 − 산재 − 원천 − 콜수수료 − 시간제보험. <strong>일출금수수료(2%)는 실지급액에서 빼지 않고 출금할 때만 차감(회사 수익)됩니다.</strong></p>
           </article>
 
           <article class="card">
@@ -5446,7 +5446,7 @@
                     <th>산재보험</th>
                     <th>원천세</th>
                     <th class="pds-call-fee-col">콜수수료</th>
-                    <th>일정산수수료</th>
+                    <th>일출금수수료(예상)</th>
                     <th>시간제보험</th>
                     <th class="pds-net-col">실지급액</th>
                   </tr>
@@ -5505,7 +5505,7 @@
                     <th>산재보험</th>
                     <th>원천세</th>
                     <th class="pds-call-fee-col">콜수수료</th>
-                    <th>일정산수수료</th>
+                    <th>일출금수수료(예상)</th>
                     <th>시간제보험</th>
                     <th class="pds-net-col">실지급액</th>
                     <th>출금가능(신청시)</th>

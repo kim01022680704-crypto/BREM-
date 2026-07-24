@@ -302,13 +302,15 @@ function calcPayoutFromSettlement(row, feesByPlatform) {
   const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
   const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
   const callFee = orderCount * callFeeUnit;
+  // 일출금수수료(2%)는 "출금 시" 한 번만 부과되는 회사 수익이다.
+  // 실지급액(netPay) 계산에서는 절대 빼지 않는다. (여기서 빼면 출금 때 또 빠져 2% 이중 차감됨)
+  // 이 값은 기사 앱 일정산 표에서 "출금 시 적용될 예상 수수료" 미리보기용으로만 노출한다.
   const dailySettlementFee = resolveDailySettlementFee(settlementAmount, fees);
   const netPay = settlementAmount
     - employmentInsurance
     - industrialAccidentInsurance
     - withholdingTax
     - callFee
-    - dailySettlementFee
     - hourlyInsurance;
 
   return {
