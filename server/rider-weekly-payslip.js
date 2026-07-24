@@ -218,10 +218,11 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  const settlementWeekStart = normalizeSettlementWeekStart(weekStartInput);
-  const settlementWeekEndDate = settlementWeekEnd(settlementWeekStart);
+  // 특정 주를 요청했는지 판별. 요청이 없으면(메뉴 첫 진입) 가장 최근 발행 주를 기본으로 쓴다.
+  const requestedRaw = String(weekStartInput || '').trim();
+  const hasRequestedWeek = /\d{4}-\d{2}-\d{2}/.test(requestedRaw);
 
-  const [linesResult, noticesResult, paymentDate, leaseInfo] = await Promise.all([
+  const [linesResult, noticesResult, leaseInfo] = await Promise.all([
     supabase
       .from('payroll_slip_lines')
       .select('*')
@@ -236,7 +237,6 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
       .order('sort_order', { ascending: false })
       .order('updated_at', { ascending: false })
       .limit(30),
-    resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate),
     findRiderLeaseInfo(supabase, me.rider)
   ]);
 
@@ -248,6 +248,25 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     }
     return { ok: false, status: 500, error: error.message || '주급명세서를 불러오지 못했습니다.' };
   }
+
+  // 발행된 명세서 줄들은 updated_at 내림차순이므로, 가장 앞의 주가 "제일 최근 업로드"이다.
+  let settlementWeekStart;
+  if (hasRequestedWeek) {
+    settlementWeekStart = normalizeSettlementWeekStart(requestedRaw);
+  } else {
+    let latestWeek = '';
+    for (const row of (lines || [])) {
+      const raw = row.raw_data || {};
+      const wk = String(raw.settlementWeekStart || raw.settlementWeekPayKey || '').slice(0, 10);
+      if (wk) {
+        latestWeek = normalizeSettlementWeekStart(wk);
+        break;
+      }
+    }
+    settlementWeekStart = latestWeek || normalizeSettlementWeekStart('');
+  }
+  const settlementWeekEndDate = settlementWeekEnd(settlementWeekStart);
+  const paymentDate = await resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate);
 
   const matchedLine = (lines || []).find(row => {
     const raw = row.raw_data || {};

@@ -277,13 +277,19 @@
   }
 
   async function fetchPayslip(weekStart) {
-    const cached = cache.get(weekStart);
+    // weekStart 가 비면 서버가 "가장 최근 발행 주"를 골라준다. 캐시는 '__latest__' 키로 관리.
+    const cacheKey = weekStart || '__latest__';
+    const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       return cached.data;
     }
-    const result = await BremStorage.fetchRiderWeeklyPayslipFromServer(weekStart);
+    const result = await BremStorage.fetchRiderWeeklyPayslipFromServer(weekStart || '');
     if (result?.ok) {
-      cache.set(weekStart, { at: Date.now(), data: result });
+      cache.set(cacheKey, { at: Date.now(), data: result });
+      // 실제 반환된 주 키로도 캐시해 네비게이션 시 재사용.
+      if (result.settlementWeekStart) {
+        cache.set(result.settlementWeekStart, { at: Date.now(), data: result });
+      }
     }
     return result;
   }
@@ -301,14 +307,17 @@
   }
 
   async function loadPayslip(options = {}) {
-    const weekStart = state.weekStart || currentWeekStart();
-    state.weekStart = weekStartKey(weekStart);
-
-    if (!options.silent) {
-      renderWeekShell(state.weekStart);
+    // state.weekStart 가 없으면(메뉴 첫 진입) 서버가 최신 발행 주를 골라 돌려준다.
+    const useLatest = !state.weekStart;
+    if (!useLatest) {
+      state.weekStart = weekStartKey(state.weekStart);
+      if (!options.silent) {
+        renderWeekShell(state.weekStart);
+      }
     }
 
-    const cached = cache.get(state.weekStart);
+    const cacheKey = useLatest ? '__latest__' : state.weekStart;
+    const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       applyPayslipResult(cached.data);
       if (!state.loading) prefetchAdjacentWeeks(state.weekStart);
@@ -321,7 +330,7 @@
     panel.classList.add('is-loading');
 
     try {
-      const result = await fetchPayslip(state.weekStart);
+      const result = await fetchPayslip(useLatest ? '' : state.weekStart);
       if (requestSeq !== state.requestSeq) return;
       if (!result.ok) {
         throw new Error(result.message || result.error || '주급명세서를 불러오지 못했습니다.');
@@ -366,7 +375,8 @@
     window.BremDriverWithdrawal?.close?.();
     state.visible = true;
     panel.hidden = false;
-    if (!state.weekStart) state.weekStart = currentWeekStart();
+    // 메뉴를 열 때마다 가장 최근 발행된 주급명세서부터 보여준다.
+    state.weekStart = null;
     openBtn.setAttribute('aria-expanded', 'true');
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     void loadPayslip();
