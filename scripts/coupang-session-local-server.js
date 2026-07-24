@@ -36,6 +36,42 @@ let latestCookie = '';
 const seenVendorIds = new Set();
 const seenApiPaths = new Set();   // 브라우저가 실제로 호출한 대시보드 API 경로(진단용)
 let collecting = false;
+// 토큰 포착 진단: 어떤 경로로 잡혔는지/한 번이라도 Bearer를 본 적 있는지
+let seenAnyAuthHeader = false;
+let lastTokenSource = '';
+let lastAuthSeenAt = 0;
+
+/** JWT 형태(header.payload.signature, payload에 exp) 검증 */
+function looksLikeJwt(tok) {
+  const t = String(tok || '').trim();
+  if (!/^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(t)) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(t.split('.')[1], 'base64').toString('utf8'));
+    return payload && typeof payload === 'object';
+  } catch { return false; }
+}
+
+/** 토큰 갱신(더 새로운 것만 채택). source는 진단용. */
+function adoptToken(tok, source) {
+  const t = String(tok || '').replace(/^Bearer\s+/i, '').trim();
+  if (!t || t === latestToken) return false;
+  if (!looksLikeJwt(t)) return false;
+  latestToken = t;
+  latestTokenAt = Date.now();
+  lastTokenSource = source || 'unknown';
+  return true;
+}
+
+/** 요청/응답 헤더 객체에서 Authorization Bearer 추출 */
+function captureAuthFromHeaders(h, source) {
+  if (!h) return;
+  const auth = h['authorization'] || h['Authorization'];
+  if (auth && /^Bearer\s+/i.test(auth)) {
+    seenAnyAuthHeader = true;
+    lastAuthSeenAt = Date.now();
+    adoptToken(auth, source || 'header');
+  }
+}
 
 function nowKstIsoOffset() {
   // 현재 시각 KST(+09:00)
@@ -101,12 +137,8 @@ async function ensureBrowser() {
     try {
       const url = req.url();
       if (!url.includes('coupangeats.com')) return;
-      const h = req.headers();
-      const auth = h['authorization'] || h['Authorization'];
-      if (auth && /^Bearer /.test(auth)) {
-        latestToken = auth.replace(/^Bearer\s+/, '').trim();
-        latestTokenAt = Date.now();
-      }
+      // 1차: 동기 헤더에서 Bearer 포착(기존 경로)
+      captureAuthFromHeaders(req.headers(), 'request');
       const m = url.match(/\/dashboard\/(\d+)\//);
       if (m) seenVendorIds.add(m[1]);
       try {
@@ -117,10 +149,60 @@ async function ensureBrowser() {
       } catch { /* ignore */ }
     } catch { /* ignore */ }
   });
+  // 2차 폴백: 완료된 요청의 전체 헤더(allHeaders)에서 Bearer 포착.
+  // 일부 헤더는 요청 시점 동기 headers()에 안 잡히고 완료 후에만 보이는 경우가 있음.
+  context.on('requestfinished', async (req) => {
+    try {
+      const url = req.url();
+      if (!url.includes('coupangeats.com')) return;
+      if (latestToken && Date.now() - latestTokenAt < 60 * 1000) return; // 최근 토큰 있으면 skip
+      const all = await req.allHeaders().catch(() => null);
+      captureAuthFromHeaders(all, 'requestfinished');
+    } catch { /* ignore */ }
+  });
   context.on('close', () => { context = null; });
   const page = context.pages()[0] || await context.newPage();
   try { await page.goto(`${ORIGIN}/`, { waitUntil: 'domcontentloaded', timeout: 120000 }); } catch { /* ignore */ }
+  await scanPageForToken(page).catch(() => {});
   return context;
+}
+
+/**
+ * 3차 폴백: 페이지 localStorage/sessionStorage 안에서 JWT(access token)를 스캔.
+ * SPA가 토큰을 헤더가 아니라 스토리지에 보관하고 fetch 시점에 주입하는 경우 대비.
+ */
+async function scanPageForToken(page) {
+  if (!page) return false;
+  try {
+    const found = await page.evaluate(() => {
+      const out = [];
+      const scan = (store) => {
+        try {
+          for (let i = 0; i < store.length; i += 1) {
+            const key = store.key(i);
+            const val = store.getItem(key);
+            if (!val) continue;
+            // 값 자체가 JWT거나, JSON 안에 accessToken/token 필드가 있는 경우
+            const push = (v) => { if (typeof v === 'string' && /^ey[\w-]+\.[\w-]+\.[\w-]*$/.test(v)) out.push(v); };
+            push(val);
+            try {
+              const obj = JSON.parse(val);
+              if (obj && typeof obj === 'object') {
+                ['accessToken', 'access_token', 'token', 'idToken', 'jwt', 'authorization'].forEach(k => push(obj[k]));
+              }
+            } catch { /* not json */ }
+          }
+        } catch { /* ignore */ }
+      };
+      try { scan(window.localStorage); } catch { /* ignore */ }
+      try { scan(window.sessionStorage); } catch { /* ignore */ }
+      return out;
+    }).catch(() => []);
+    for (const tok of (found || [])) {
+      if (adoptToken(tok, 'storage')) return true;
+    }
+  } catch { /* ignore */ }
+  return false;
 }
 
 async function captureCookieHeader() {
@@ -402,6 +484,7 @@ async function keepAliveDuringWait(ms) {
       const page = await getActivePage();
       if (page) {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await scanPageForToken(page).catch(() => {});
         await persistToken('keepalive').catch(() => {});
       }
     } catch (e) {
@@ -501,6 +584,10 @@ const server = http.createServer(async (req, res) => {
       hasToken: Boolean(latestToken), tokenAgeSec, tokenExpiresAt: tokenExp,
       vendorCount: seenVendorIds.size, collecting,
       statusLoop: getStatusLoopPayload(),
+      // 토큰 포착 진단: seenAnyAuthHeader=false 면 쿠팡이 헤더로 토큰을 안 보낸다는 뜻
+      tokenSource: lastTokenSource || null,
+      seenAnyAuthHeader,
+      lastAuthSeenAgoSec: lastAuthSeenAt ? Math.round((Date.now() - lastAuthSeenAt) / 1000) : null,
       apiSamples: [...seenApiPaths].slice(0, 60)
     });
   }
@@ -545,4 +632,13 @@ server.listen(PORT, '127.0.0.1', async () => {
   console.log('[COUPANG] 수집: POST /collect  · 상태: GET /health');
   console.log('========================================');
   try { await ensureBrowser(); } catch (e) { console.error('[COUPANG] 브라우저 실행 실패:', e.message); }
+  // 수동 로그인 후에도(자동순회 미실행) 토큰이 잡히도록 20초마다 활성 페이지 스토리지 스캔.
+  setInterval(async () => {
+    try {
+      if (!context) return;
+      if (latestToken && Date.now() - latestTokenAt < 60 * 1000) return;
+      const page = context.pages()[0];
+      if (page) await scanPageForToken(page).catch(() => {});
+    } catch { /* ignore */ }
+  }, 20 * 1000);
 });

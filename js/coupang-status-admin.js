@@ -39,7 +39,7 @@
     weekRange: null,
     bound: false
   };
-  const local = { running: false, hasToken: false, vendorCount: 0, collecting: false, loop: {} };
+  const local = { running: false, hasToken: false, vendorCount: 0, collecting: false, loop: {}, tokenSource: '', seenAnyAuthHeader: false };
   let localPollTimer = null;
   const $ = (id) => document.getElementById(id);
 
@@ -188,6 +188,43 @@
     const full = String(fullName || '').trim() || '-';
     const short = shortRegionLabel(full);
     return `<strong class="dashboard-baemin-region-name" title="${esc(full)}">${esc(short)}</strong>`;
+  }
+
+  /**
+   * 지역 중복 판정 키: 공백/괄호숫자 접미사 제거한 정규화 이름.
+   * 쿠팡이 같은 지역에 밴더ID를 새로 발급하면 이름 뒤에 (2)/(3)가 붙는데,
+   * 이를 제거해 옛 밴더·새 밴더를 같은 지역으로 묶는다.
+   */
+  function regionDedupeKey(name) {
+    const raw = String(name || '').replace(/\s+/g, '').replace(/\(\d+\)$/g, '').trim();
+    return raw;
+  }
+
+  /** 오늘 현황 행 활동 점수: 운행/완료가 있으면 최우선(최신·활성), 그다음 완료·목표 순 */
+  function todayRowActivityScore(row) {
+    let completed = 0;
+    let goal = 0;
+    PEAK_ORDER.forEach(pt => {
+      completed += Number(row.peaks?.[pt]?.completed) || 0;
+      goal += Number(row.peaks?.[pt]?.goal) || 0;
+    });
+    const active = (Number(row.drivingCount) > 0 || completed > 0) ? 1 : 0;
+    return active * 1e12 + completed * 1e6 + goal * 1e3 + (Number(row.drivingCount) || 0);
+  }
+
+  /**
+   * 같은 지역(정규화 이름)에 밴더ID가 둘 이상이면 활동 점수가 가장 높은(=최신·수집된) 하나만 남기고
+   * 비어 있는 옛 밴더 행은 버린다. 밴더ID가 서로 다른 실제 별도 지역은 그대로 유지.
+   */
+  function dedupeRegionRows(rows, scoreFn) {
+    const best = new Map();
+    (rows || []).forEach(row => {
+      const key = regionDedupeKey(row.vendorName) || String(row.vendorId || '');
+      const score = scoreFn(row);
+      const prev = best.get(key);
+      if (!prev || score > prev.score) best.set(key, { row, score });
+    });
+    return [...best.values()].map(x => x.row);
   }
 
   function tableFor(menu, items) {
@@ -531,6 +568,21 @@
 
     let vendors = Array.from(vendorMap.entries()).map(([vendorId, vendorName]) => ({ vendorId, vendorName }));
     if (!vendors.length && vendorsHint.length) vendors = vendorsHint.slice();
+    // 같은 지역에 밴더ID가 여러 개면(구ID/신ID) 주간 완료합계가 큰 최신 밴더만 남긴다.
+    const weekVendorScore = (vendor) => {
+      const days = byVendor[vendor.vendorId] || {};
+      let completed = 0;
+      let goal = 0;
+      Object.values(days).forEach(day => {
+        PEAK_ORDER.forEach(pt => {
+          completed += Number(day.peaks?.[pt]?.completed) || 0;
+          goal += Number(day.peaks?.[pt]?.goal) || 0;
+        });
+      });
+      const active = completed > 0 ? 1 : 0;
+      return active * 1e12 + completed * 1e6 + goal * 1e3 + Object.keys(days).length;
+    };
+    vendors = dedupeRegionRows(vendors, weekVendorScore);
     vendors.sort((a, b) => String(a.vendorName).localeCompare(String(b.vendorName), 'ko'));
     dash.weekCache = { vendors, byVendor, weekRange };
     renderWeekRegionTabs(vendors);
@@ -622,7 +674,7 @@
         row.peaks[pt].has = true;
       });
 
-      const regionRows = Array.from(vendorById.values())
+      const regionRows = dedupeRegionRows(Array.from(vendorById.values()), todayRowActivityScore)
         .sort((a, b) => String(a.vendorName).localeCompare(String(b.vendorName), 'ko'));
 
       if (!regionRows.length) {
@@ -869,7 +921,13 @@
       return;
     }
     const parts = ['로컬 세션서버: 실행 중'];
-    parts.push(local.hasToken ? '로그인: 완료' : '로그인: 필요 (브라우저 열기)');
+    if (local.hasToken) {
+      parts.push(`로그인: 완료${local.tokenSource ? ` (토큰:${local.tokenSource})` : ''}`);
+    } else if (local.seenAnyAuthHeader) {
+      parts.push('로그인: 필요 (토큰 만료 · 다시 로그인)');
+    } else {
+      parts.push('로그인: 필요 (브라우저 열기 → 대시보드 열기)');
+    }
     if (local.vendorCount) parts.push(`매장 ${local.vendorCount}개 감지`);
     if (local.collecting) parts.push('수집 중…');
     el.textContent = parts.join('  |  ');
@@ -912,6 +970,8 @@
     local.vendorCount = Number(h.vendorCount || 0);
     local.collecting = Boolean(h.collecting);
     local.loop = h.statusLoop || {};
+    local.tokenSource = String(h.tokenSource || '');
+    local.seenAnyAuthHeader = Boolean(h.seenAnyAuthHeader);
     renderLocalStatus();
     renderLoopStatus();
     updateLocalButtons();
