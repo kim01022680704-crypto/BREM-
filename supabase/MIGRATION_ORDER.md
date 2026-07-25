@@ -25,6 +25,7 @@
 | 9e | `performance_indexes.sql` | 성능 권장 | riders/notices/promotions/settings 기본 인덱스 |
 | 9f | `query_optimization_indexes.sql` | 성능 권장 (9e 이후) | riders/admin_calls/rejection/missions 인덱스 |
 | 9g | `settlement_withdrawal_indexes.sql` | **성능 권장** (9f 이후) | daily_settlements·정산·리스 조회 인덱스 (출금 계산 최적화) |
+| 9h | `daily_settlements_rls_fix.sql` | **RLS 오류 시** | `new row violates row-level security policy for table "daily_settlements"` 발생 시 정책 재적용(정산·콜수·거절율·목표 admin all) |
 | 10 | `verify_migration_status.sql` | 실행 후 | 테이블/count/이관 검증 |
 
 ## 데이터별 저장 위치 (최종)
