@@ -754,7 +754,7 @@ const BremWeeklySettlementAdmin = (function () {
     const rowsEl = q(ch, 'SavedRows', platform);
     if (!rowsEl) return;
 
-    BremStorage.settlementUploadLogs.syncWeeklyFromSavedRecords();
+    BremStorage.settlementUploadLogs.syncWeeklyFromSavedRecords(ch);
     const weekStart = ensureWeeklyLogWeek(ch, platform);
     updateWeeklyLogWeekRangeLabel(ch, platform);
 

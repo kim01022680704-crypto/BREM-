@@ -901,6 +901,10 @@ const BremWeeklySettlement = (function () {
 
   function saveWeeklySettlement(record) {
     const refreshed = refreshWeeklySettlementRiders(record);
+    // 채널(브로/직계약) 보존: 저장 키 라우팅에 사용되므로 반드시 유지.
+    const channel = record.channel === 'direct' || record.summary?.channel === 'direct' ? 'direct' : 'bro';
+    refreshed.channel = channel;
+    refreshed.summary = { ...(refreshed.summary || {}), channel };
     return BremStorage.weeklySettlements.save(refreshed);
   }
 

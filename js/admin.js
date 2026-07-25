@@ -1305,12 +1305,23 @@
     window.BremDbConnectionStatus?.render('adminDbStatus');
   }
 
+  // 렌더 1회당 정산 전체를 여러 번 재정규화하던 비용 제거용 메모.
+  // 동기 렌더 구간에서만 유지되고 마이크로태스크에서 자동 해제된다.
+  // (정산 데이터 변경은 항상 비동기 저장을 거쳐 마이크로태스크 경계가 생기므로 stale 위험 없음)
+  let _settlementsRenderMemo = null;
+  let _settlementUnmatchedRenderMemo = null;
   function settlements() {
-    return BremStorage.settlements.getAll();
+    if (_settlementsRenderMemo) return _settlementsRenderMemo;
+    _settlementsRenderMemo = BremStorage.settlements.getAll();
+    Promise.resolve().then(() => { _settlementsRenderMemo = null; });
+    return _settlementsRenderMemo;
   }
 
   function settlementUnmatchedList() {
-    return BremStorage.settlementUnmatched.getAll();
+    if (_settlementUnmatchedRenderMemo) return _settlementUnmatchedRenderMemo;
+    _settlementUnmatchedRenderMemo = BremStorage.settlementUnmatched.getAll();
+    Promise.resolve().then(() => { _settlementUnmatchedRenderMemo = null; });
+    return _settlementUnmatchedRenderMemo;
   }
 
   function saveSettlementUnmatched({ period, records, sourceFileName, platform }) {

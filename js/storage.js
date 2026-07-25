@@ -35,12 +35,15 @@ const BremStorage = (function () {
     settlements: 'brem_admin_settlements',
     settlementUnmatched: 'brem_admin_settlement_unmatched',
     settlementUploadLogs: 'brem_admin_settlement_upload_logs',
+    settlementUnmatchedDirect: 'brem_admin_settlement_unmatched_direct',
+    settlementUploadLogsDirect: 'brem_admin_settlement_upload_logs_direct',
     callEditLogs: 'brem_admin_call_edit_logs',
     riderViewPublish: 'brem_rider_view_publish',
     promotionRules: 'brem_admin_promotion_rules',
     promotionSettings: 'brem_admin_promotion_settings',
     promotionSelectorOptions: 'brem_admin_promotion_selector_options',
     weeklySettlements: 'brem_admin_weekly_settlements',
+    weeklySettlementsDirect: 'brem_admin_weekly_settlements_direct',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
     missionDefaults: 'brem_admin_mission_defaults',
@@ -1431,6 +1434,7 @@ const BremStorage = (function () {
     'mission-results': [KEYS.drivers],
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
+    'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [
@@ -9587,9 +9591,21 @@ const BremStorage = (function () {
     };
   }
 
+  // 브로/직계약 채널별 저장 키 라우터. 직계약은 별도 settings 키에 완전 분리 보관.
+  function weeklySettlementsKey(channel) {
+    return channel === 'direct' ? KEYS.weeklySettlementsDirect : KEYS.weeklySettlements;
+  }
+  function settlementUploadLogsKey(channel) {
+    return channel === 'direct' ? KEYS.settlementUploadLogsDirect : KEYS.settlementUploadLogs;
+  }
+  function settlementUnmatchedKey(channel) {
+    return channel === 'direct' ? KEYS.settlementUnmatchedDirect : KEYS.settlementUnmatched;
+  }
+
   const weeklySettlements = {
-    getAll() {
-      const raw = storageAdapter.read(KEYS.weeklySettlements, []);
+    getAll(channel) {
+      const key = weeklySettlementsKey(channel === 'direct' ? 'direct' : 'bro');
+      const raw = storageAdapter.read(key, []);
       const list = raw.map(normalizeWeeklySettlement);
       const repaired = list.map(item => ({
         ...item,
@@ -9599,26 +9615,44 @@ const BremStorage = (function () {
         const rawPlatform = String(raw[index]?.platform || '').trim();
         return rawPlatform !== item.platform;
       });
-      if (changed) storageAdapter.write(KEYS.weeklySettlements, repaired);
+      if (changed) storageAdapter.write(key, repaired);
       return repaired.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
     },
 
-    getById(id) {
-      return weeklySettlements.getAll().find(item => item.id === id) || null;
+    getById(id, channel) {
+      if (channel === 'direct' || channel === 'bro') {
+        return weeklySettlements.getAll(channel).find(item => item.id === id) || null;
+      }
+      return weeklySettlements.getAll('bro').find(item => item.id === id)
+        || weeklySettlements.getAll('direct').find(item => item.id === id)
+        || null;
     },
 
     save(record) {
       const next = normalizeWeeklySettlement(record);
-      const list = weeklySettlements.getAll().filter(item => item.id !== next.id);
+      const key = weeklySettlementsKey(next.channel);
+      const list = weeklySettlements.getAll(next.channel).filter(item => item.id !== next.id);
       list.unshift(next);
-      storageAdapter.write(KEYS.weeklySettlements, list);
+      storageAdapter.write(key, list);
       return next;
     },
 
-    remove(id) {
+    remove(id, channel) {
+      if (channel === 'direct' || channel === 'bro') {
+        storageAdapter.write(
+          weeklySettlementsKey(channel),
+          weeklySettlements.getAll(channel).filter(item => item.id !== id)
+        );
+        return;
+      }
+      // 채널 미지정: 양쪽에서 제거
       storageAdapter.write(
         KEYS.weeklySettlements,
-        weeklySettlements.getAll().filter(item => item.id !== id)
+        weeklySettlements.getAll('bro').filter(item => item.id !== id)
+      );
+      storageAdapter.write(
+        KEYS.weeklySettlementsDirect,
+        weeklySettlements.getAll('direct').filter(item => item.id !== id)
       );
     }
   };
@@ -9725,38 +9759,28 @@ const BremStorage = (function () {
   }
 
   const settlementUploadLogs = {
-    getAll() {
-      return storageAdapter.read(KEYS.settlementUploadLogs, [])
+    getAll(channel) {
+      const key = settlementUploadLogsKey(channel === 'direct' ? 'direct' : 'bro');
+      return storageAdapter.read(key, [])
         .map(normalizeSettlementUploadLog)
         .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
     },
 
     getById(id) {
-      return settlementUploadLogs.getAll().find(item => item.id === id) || null;
+      return settlementUploadLogs.getAll('bro').find(item => item.id === id)
+        || settlementUploadLogs.getAll('direct').find(item => item.id === id)
+        || null;
     },
 
     getFiltered(options = {}) {
       const kind = options.kind ? String(options.kind) : '';
       const platform = options.platform ? normalizePlatform(options.platform) : '';
       const weekStart = String(options.weekStart || '').slice(0, 10);
-      const channel = options.channel === 'direct' || options.channel === 'bro'
-        ? options.channel
-        : '';
-      // 채널 필터 시, 저장된 주정산 레코드의 채널로 로그 채널을 파생(로그엔 채널이 DB에 남지 않음).
-      const recordChannel = channel
-        ? new Map(weeklySettlements.getAll().map(r => [r.id, r.channel === 'direct' ? 'direct' : 'bro']))
-        : null;
-      const resolveLogChannel = item => {
-        if (item.channel === 'direct' || item.channel === 'bro') return item.channel;
-        if (item.linkedRecordId && recordChannel && recordChannel.has(item.linkedRecordId)) {
-          return recordChannel.get(item.linkedRecordId);
-        }
-        return 'bro';
-      };
-      return settlementUploadLogs.getAll().filter(item => {
+      // 직계약은 별도 저장 키에 완전 분리되어 있어 채널별로 해당 키만 읽으면 됨(추가 필터/맵 불필요).
+      const channel = options.channel === 'direct' ? 'direct' : 'bro';
+      return settlementUploadLogs.getAll(channel).filter(item => {
         if (kind && item.kind !== kind) return false;
         if (platform && item.platform !== platform) return false;
-        if (channel && resolveLogChannel(item) !== channel) return false;
         if (weekStart) {
           const itemWeekStart = String(
             item.weekStart || (item.period ? weekStartKeyFromDate(item.period) : '')
@@ -9768,39 +9792,49 @@ const BremStorage = (function () {
     },
 
     persistList(list, options = {}) {
+      const key = options.channel === 'direct' ? KEYS.settlementUploadLogsDirect : KEYS.settlementUploadLogs;
       const value = (Array.isArray(list) ? list : []).map(normalizeSettlementUploadLog);
-      return storageAdapter.write(KEYS.settlementUploadLogs, value, options);
+      return storageAdapter.write(key, value, options);
     },
 
     add(entry) {
       const next = normalizeSettlementUploadLog(entry);
-      const list = [next, ...settlementUploadLogs.getAll().filter(item => item.id !== next.id)];
-      settlementUploadLogs.persistList(list, { incrementalRows: [next] });
+      const channel = next.channel === 'direct' ? 'direct' : 'bro';
+      const list = [next, ...settlementUploadLogs.getAll(channel).filter(item => item.id !== next.id)];
+      settlementUploadLogs.persistList(list, { incrementalRows: [next], channel });
       return next;
     },
 
     update(id, patch = {}) {
-      const list = settlementUploadLogs.getAll().map(item => (
+      const channel = patch.channel === 'direct' ? 'direct'
+        : patch.channel === 'bro' ? 'bro'
+        : (settlementUploadLogs.getAll('direct').some(item => item.id === id) ? 'direct' : 'bro');
+      const list = settlementUploadLogs.getAll(channel).map(item => (
         item.id === id
           ? normalizeSettlementUploadLog({ ...item, ...patch, updatedAt: new Date().toISOString() })
           : item
       ));
       const updated = list.find(item => item.id === id) || null;
-      settlementUploadLogs.persistList(list, updated ? { incrementalRows: [updated] } : {});
+      settlementUploadLogs.persistList(list, updated ? { incrementalRows: [updated], channel } : { channel });
       return updated;
     },
 
     remove(id, options = {}) {
-      const target = settlementUploadLogs.getById(id);
+      const channel = settlementUploadLogs.getAll('direct').some(item => item.id === id) ? 'direct' : 'bro';
+      const target = settlementUploadLogs.getAll(channel).find(item => item.id === id) || null;
       const rollback = options.rollback !== false;
-      if (rollback && target) {
+      // 롤백(정산/콜수 되돌리기)은 일정산(브로 메인 키)에만 해당. 직계약 주정산 로그는 단순 삭제.
+      if (rollback && target && channel === 'bro') {
         if (target.kind === 'hourly_insurance') {
           void settlementUploadLogs.rollbackAppliedHourlyInsuranceLogAsync(target);
         } else {
           void settlementUploadLogs.rollbackAppliedDailyLogAsync(target);
         }
       }
-      settlementUploadLogs.persistList(settlementUploadLogs.getAll().filter(item => item.id !== id));
+      settlementUploadLogs.persistList(
+        settlementUploadLogs.getAll(channel).filter(item => item.id !== id),
+        { channel }
+      );
       return target || null;
     },
 
@@ -10059,21 +10093,27 @@ const BremStorage = (function () {
       const targetId = String(linkedRecordId || '').trim();
       if (!targetId) return;
       settlementUploadLogs.persistList(
-        settlementUploadLogs.getAll().filter(item => item.linkedRecordId !== targetId)
+        settlementUploadLogs.getAll('bro').filter(item => item.linkedRecordId !== targetId),
+        { channel: 'bro' }
+      );
+      settlementUploadLogs.persistList(
+        settlementUploadLogs.getAll('direct').filter(item => item.linkedRecordId !== targetId),
+        { channel: 'direct' }
       );
     },
 
-    syncWeeklyFromSavedRecords() {
+    syncWeeklyFromSavedRecords(channel) {
+      const ch = channel === 'direct' ? 'direct' : 'bro';
       const existingLinks = new Set(
-        settlementUploadLogs.getAll()
+        settlementUploadLogs.getAll(ch)
           .filter(item => item.kind === 'weekly' && item.linkedRecordId)
           .map(item => item.linkedRecordId)
       );
-      weeklySettlements.getAll().forEach(record => {
+      weeklySettlements.getAll(ch).forEach(record => {
         if (existingLinks.has(record.id)) return;
         settlementUploadLogs.add({
           kind: 'weekly',
-          channel: record.channel === 'direct' ? 'direct' : 'bro',
+          channel: ch,
           platform: record.platform,
           fileName: record.fileName,
           period: record.startDate,
@@ -10277,20 +10317,20 @@ const BremStorage = (function () {
   };
 
   const settlementUnmatched = {
-    getAll() {
-      return normalizeSettlementUnmatched(storageAdapter.read(KEYS.settlementUnmatched, []));
+    getAll(channel) {
+      const key = settlementUnmatchedKey(channel === 'direct' ? 'direct' : 'bro');
+      return normalizeSettlementUnmatched(storageAdapter.read(key, []));
     },
 
     getByWeek({ weekStart, platform, kind, channel }) {
       const weekKey = String(weekStart || '').slice(0, 10);
       const p = platform ? normalizePlatform(platform) : '';
       const kindFilter = kind === 'weekly' || kind === 'daily' ? kind : '';
-      const channelFilter = channel === 'direct' || channel === 'bro' ? channel : '';
-      return settlementUnmatched.getAll().filter((item) => {
+      // 직계약은 별도 저장 키 → 채널 키만 읽으면 됨.
+      return settlementUnmatched.getAll(channel === 'direct' ? 'direct' : 'bro').filter((item) => {
         if (item.weekStart !== weekKey) return false;
         if (p && normalizePlatform(item.platform) !== p) return false;
         if (kindFilter && item.kind !== kindFilter) return false;
-        if (channelFilter && (item.channel === 'direct' ? 'direct' : 'bro') !== channelFilter) return false;
         return true;
       });
     },
@@ -10404,24 +10444,25 @@ const BremStorage = (function () {
       });
 
       const incomingIds = new Set(nextRecords.map(record => record.id));
-      const list = settlementUnmatched.getAll().filter(item => {
+      const list = settlementUnmatched.getAll(ch).filter(item => {
         if (item.kind !== 'weekly') return true;
         if (normalizePlatform(item.platform) !== p) return true;
         if (item.weekStart !== weekKey) return true;
-        if ((item.channel === 'direct' ? 'direct' : 'bro') !== ch) return true;
         if (regionKey && item.region === regionKey) return false;
         if (incomingIds.has(item.id)) return false;
         return true;
       });
       list.unshift(...nextRecords);
-      storageAdapter.write(KEYS.settlementUnmatched, list, { incrementalRows: nextRecords });
+      storageAdapter.write(settlementUnmatchedKey(ch), list, { incrementalRows: nextRecords });
       return list;
     },
 
     removeById(id) {
+      const inDirect = settlementUnmatched.getAll('direct').some(item => item.id === id);
+      const ch = inDirect ? 'direct' : 'bro';
       storageAdapter.write(
-        KEYS.settlementUnmatched,
-        settlementUnmatched.getAll().filter(item => item.id !== id)
+        settlementUnmatchedKey(ch),
+        settlementUnmatched.getAll(ch).filter(item => item.id !== id)
       );
     },
 
@@ -10578,10 +10619,9 @@ const BremStorage = (function () {
 
       let mergedToSaved = 0;
       if (newlyMatched.length) {
-        const saved = weeklySettlements.getAll().find(record => (
+        const saved = weeklySettlements.getAll(ch).find(record => (
           normalizePlatform(record.platform) === p
           && weekStartKeyFromDate(record.startDate || record.period) === weekKey
-          && (record.channel === 'direct' ? 'direct' : 'bro') === ch
         ));
         if (saved) {
           const existingIds = new Set((saved.riders || []).map(r => String(r.matchedRiderId || '')));
@@ -10635,13 +10675,12 @@ const BremStorage = (function () {
         };
       });
 
-      const other = settlementUnmatched.getAll().filter(item => !(
+      const other = settlementUnmatched.getAll(ch).filter(item => !(
         item.kind === 'weekly'
         && item.weekStart === weekKey
         && normalizePlatform(item.platform) === p
-        && (item.channel === 'direct' ? 'direct' : 'bro') === ch
       ));
-      storageAdapter.write(KEYS.settlementUnmatched, other.concat(untouched).concat(nextPending));
+      storageAdapter.write(settlementUnmatchedKey(ch), other.concat(untouched).concat(nextPending));
       return {
         matched: newlyMatched,
         matchedCount: newlyMatched.length,
