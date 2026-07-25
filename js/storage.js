@@ -9520,32 +9520,36 @@ const BremStorage = (function () {
 
   function normalizeWeeklySettlement(record = {}) {
     const platform = normalizePlatform(record.platform || inferWeeklySettlementPlatform(record));
+    const normBaemin = (typeof BremWeeklySettlement !== 'undefined'
+      && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function')
+      ? BremWeeklySettlement.normalizeBaeminUserId
+      : (value) => String(value || '').trim();
+    // 성능: 라이더 루프 밖에서 기사 인덱스를 1회 구성한다.
+    // (기존엔 라이더마다 drivers.getById(O(n))·배민 find(O(n))를 반복해 O(riders×drivers) → 45건/1,836라이더에 ~1.8초)
+    const driverList = (Array.isArray(record.riders) && record.riders.length) ? drivers.getAll() : [];
+    const driverById = new Map(driverList.map(item => [item.id, item]));
+    let driverByBaeminId = null;
+    if (platform === 'baemin' && driverList.length) {
+      driverByBaeminId = new Map();
+      driverList.forEach(item => {
+        const key = normBaemin(item.baeminId);
+        if (key && !driverByBaeminId.has(key)) driverByBaeminId.set(key, item);
+      });
+    }
     const riders = Array.isArray(record.riders)
       ? record.riders.map(rider => {
         let matchedRiderId = String(rider.matchedRiderId || '').trim();
         let baeminUserId = String(rider.baeminUserId || '').trim();
         if (platform === 'baemin') {
-          if (typeof BremWeeklySettlement !== 'undefined'
-            && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function') {
-            baeminUserId = BremWeeklySettlement.normalizeBaeminUserId(baeminUserId);
-          }
-          if (!matchedRiderId && baeminUserId) {
-            const resolved = drivers.getAll().find(item => {
-              const driverId = typeof BremWeeklySettlement !== 'undefined'
-                && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function'
-                ? BremWeeklySettlement.normalizeBaeminUserId(item.baeminId)
-                : String(item.baeminId || '').trim();
-              return driverId && driverId === baeminUserId;
-            });
+          baeminUserId = normBaemin(baeminUserId);
+          if (!matchedRiderId && baeminUserId && driverByBaeminId) {
+            const resolved = driverByBaeminId.get(baeminUserId);
             if (resolved) matchedRiderId = resolved.id;
           }
         }
-        const driver = matchedRiderId ? drivers.getById(matchedRiderId) : null;
+        const driver = matchedRiderId ? (driverById.get(matchedRiderId) || null) : null;
         if (platform === 'baemin' && !baeminUserId && driver?.baeminId) {
-          baeminUserId = typeof BremWeeklySettlement !== 'undefined'
-            && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function'
-            ? BremWeeklySettlement.normalizeBaeminUserId(driver.baeminId)
-            : String(driver.baeminId || '').trim();
+          baeminUserId = normBaemin(driver.baeminId);
         }
         return {
           originalName: String(rider.originalName || ''),
