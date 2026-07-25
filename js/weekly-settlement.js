@@ -595,9 +595,10 @@ const BremWeeklySettlement = (function () {
       const baeminUserId = cellText(readCell(rows[i] || [], userIdColumn));
       const normalizedUserId = normalizeBaeminUserId(baeminUserId);
       if (!normalizedUserId) continue;
-      // 직계약: 시작행을 여유있게 앞으로 두어도 헤더/설명 행이 섞이지 않도록 숫자 User ID 행만 읽는다.
-      if (amountColumns && !/^\d+$/.test(normalizedUserId)) continue;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
+      // 직계약: User ID가 영문+숫자 로그인 ID(BC063824 등)라 숫자 필터를 못 쓴다.
+      // 대신 시작행을 여유있게 앞에 둬도 헤더/설명/합계 행이 섞이지 않도록 처리건수(콜수)가 숫자인 실제 데이터 행만 읽는다.
+      if (amountColumns && !/^[\d,]+(\.\d+)?$/.test(String(orderRaw ?? '').trim())) continue;
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
       const rider = {
         originalName: rawName,
