@@ -89,7 +89,8 @@
     rejections: { title: '거절율 입력', defaultPlatform: 'coupang' },
     settlements: { title: '일정산서 업로드', defaultPlatform: 'coupang' },
     'weekly-settlement': { title: '주정산서 업로드 (브로)', defaultPlatform: 'coupang' },
-    'weekly-settlement-direct': { title: '주정산서 업로드 (직계약)', defaultPlatform: 'coupang' }
+    'weekly-settlement-direct': { title: '주정산서 업로드 (직계약)', defaultPlatform: 'coupang' },
+    'settlement-result-direct': { title: '정산결과 (직계약)', defaultPlatform: 'baemin' }
   };
 
   const DRIVER_FILTERED_SECTIONS = new Set([
@@ -116,7 +117,9 @@
     'weekly-settlement-coupang': { section: 'weekly-settlement', platform: 'coupang' },
     'weekly-settlement-baemin': { section: 'weekly-settlement', platform: 'baemin' },
     'weekly-settlement-direct-coupang': { section: 'weekly-settlement-direct', platform: 'coupang' },
-    'weekly-settlement-direct-baemin': { section: 'weekly-settlement-direct', platform: 'baemin' }
+    'weekly-settlement-direct-baemin': { section: 'weekly-settlement-direct', platform: 'baemin' },
+    'settlement-result-direct-coupang': { section: 'settlement-result-direct', platform: 'coupang' },
+    'settlement-result-direct-baemin': { section: 'settlement-result-direct', platform: 'baemin' }
   };
 
   const PLATFORMS = BremPlatforms.all().map(item => item.id);
@@ -205,9 +208,11 @@
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
     { id: 'promotion-apply', label: '프로모션 적용' },
+    { id: 'promotion-settlement', label: '프로모션정산등록' },
     { id: 'settlements', label: '일정산서 업로드' },
     { id: 'weekly-settlement', label: '주정산서 업로드 (브로)' },
     { id: 'weekly-settlement-direct', label: '주정산서 업로드 (직계약)' },
+    { id: 'settlement-result-direct', label: '정산결과 (직계약)' },
     { id: 'admin-account', label: '관리자 계정' },
     { id: 'revenue-management', label: '수익 관리' },
     { id: 'payroll-slips', label: '급여명세서' },
@@ -5691,10 +5696,17 @@
         break;
       case 'weekly-settlement-direct':
         if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('direct');
-        if (typeof BremDirectAdjustmentAdmin !== 'undefined') BremDirectAdjustmentAdmin.refresh();
         break;
       case 'promotion-apply':
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+        break;
+      case 'promotion-settlement':
+        if (typeof BremDirectAdjustmentAdmin !== 'undefined') BremDirectAdjustmentAdmin.refresh();
+        break;
+      case 'settlement-result-direct':
+        if (typeof BremSettlementResultDirect !== 'undefined') {
+          BremSettlementResultDirect.refresh(state.unifiedPlatform['settlement-result-direct'] || 'baemin');
+        }
         break;
       case 'notices':
         renderNotices();

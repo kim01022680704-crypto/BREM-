@@ -32,7 +32,9 @@ const BremDirectAdjustmentAdmin = (function () {
 
   const state = {
     week: '',
-    pending: { other: null, promotion: null }
+    pending: { other: null, promotion: null },
+    erpSelected: new Set(),
+    erpPlatform: ''
   };
 
   function escapeHtml(value) {
@@ -119,7 +121,7 @@ const BremDirectAdjustmentAdmin = (function () {
       const buffer = await file.arrayBuffer();
       const workbook = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
       const { rows } = window.BremDirectAdjustmentBulk.sheetRowsFromWorkbook(workbook);
-      await window.BremStorage?.ensureSectionLoaded?.('weekly-settlement-direct');
+      await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
       const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList());
       state.pending[kind] = parsed;
       renderPreview(kind);
@@ -294,6 +296,119 @@ const BremDirectAdjustmentAdmin = (function () {
     renderPromoTax();
   }
 
+  function platformLabel(platform) {
+    if (platform === 'coupang') return '쿠팡';
+    if (platform === 'baemin') return '배민';
+    if (platform === 'combined') return '합산';
+    return platform || '-';
+  }
+
+  function erpSavedResults() {
+    const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+    const week = currentWeek();
+    const platform = state.erpPlatform;
+    return all.filter(item => {
+      const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10) || week);
+      if (itemWeek !== week) return false;
+      if (platform && String(item.platform || '') !== platform) return false;
+      return true;
+    });
+  }
+
+  function renderErpList() {
+    const body = $('#directErpSavedRows');
+    const summaryEl = $('#directErpSummary');
+    if (!body) return;
+    const results = erpSavedResults();
+    // 사라진 결과는 선택 목록에서 제거
+    const validIds = new Set(results.map(r => r.id));
+    [...state.erpSelected].forEach(id => { if (!validIds.has(id)) state.erpSelected.delete(id); });
+
+    if (!results.length) {
+      body.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(currentWeek())} 주에 저장된 프로모션 적용 결과가 없습니다.</td></tr>`;
+      if (summaryEl) summaryEl.textContent = '';
+      const allChk = $('#directErpSelectAllChk');
+      if (allChk) allChk.checked = false;
+      return;
+    }
+
+    body.innerHTML = results.map(item => {
+      const checked = state.erpSelected.has(item.id) ? 'checked' : '';
+      const conditions = Array.isArray(item.selectedPromotionRuleNames) ? item.selectedPromotionRuleNames.join(', ') : '';
+      const riderCount = item.summary?.riderCount ?? (Array.isArray(item.results) ? item.results.length : 0);
+      const total = item.summary?.totalPromotionAmount ?? 0;
+      return `
+      <tr>
+        <td><input type="checkbox" data-erp-select="${escapeHtml(item.id)}" ${checked}></td>
+        <td>${platformLabel(item.platform)}</td>
+        <td>${escapeHtml(item.settlementLabel || formatDate(item.startDate))}</td>
+        <td>${escapeHtml(item.region || '-')}</td>
+        <td class="weekly-amount-cell">${formatNumber(riderCount)}</td>
+        <td class="weekly-amount-cell">${formatNumber(total)}</td>
+        <td>${escapeHtml(conditions || '-')}</td>
+        <td>${escapeHtml(String(item.savedAt || '').slice(0, 10))}</td>
+      </tr>`;
+    }).join('');
+
+    if (summaryEl) {
+      summaryEl.innerHTML = `저장 결과 <strong>${results.length}</strong>건 · 선택 <strong>${state.erpSelected.size}</strong>건`;
+    }
+    const allChk = $('#directErpSelectAllChk');
+    if (allChk) allChk.checked = results.length > 0 && results.every(r => state.erpSelected.has(r.id));
+  }
+
+  function toggleErpSelectAll(checked) {
+    const results = erpSavedResults();
+    if (checked) results.forEach(r => state.erpSelected.add(r.id));
+    else results.forEach(r => state.erpSelected.delete(r.id));
+    renderErpList();
+  }
+
+  function applyErp() {
+    if (!state.erpSelected.size) {
+      showToast('적용할 저장 결과를 선택하세요.');
+      return;
+    }
+    const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
+    const byId = new Map(all.map(item => [item.id, item]));
+    const perDriver = new Map();
+    let skippedUnmatched = 0;
+    state.erpSelected.forEach(id => {
+      const result = byId.get(id);
+      if (!result) return;
+      (Array.isArray(result.results) ? result.results : []).forEach(row => {
+        const driverId = String(row.matchedRiderId || '').trim();
+        const amount = Number(row.totalPromotionAmount || 0);
+        if (!driverId) { skippedUnmatched += 1; return; }
+        if (!amount) return;
+        const prev = perDriver.get(driverId) || { amount: 0, name: row.driverName || row.displayName || '' };
+        prev.amount += amount;
+        perDriver.set(driverId, prev);
+      });
+    });
+
+    if (!perDriver.size) {
+      showToast('선택한 결과에 매칭된 기사·금액이 없습니다.');
+      return;
+    }
+
+    const week = currentWeek();
+    const entries = [...perDriver.entries()].map(([driverId, info]) => ({
+      driverId,
+      amount: info.amount,
+      baeminId: window.BremStorage?.drivers?.getById?.(driverId)?.baeminId || '',
+      driverName: info.name || driverName(driverId),
+      source: 'erp'
+    }));
+    window.BremStorage.directPayAdjustments.applyEntries('promotion', week, entries, { source: 'erp' });
+    void window.BremStorage.flushStorage?.();
+    renderApplied('promotion');
+    renderPromoTax();
+    let message = `ERP 프로모션 ${perDriver.size}명 → BREM프로모션 적용 완료`;
+    if (skippedUnmatched) message += ` · 미매칭 ${skippedUnmatched}행 제외`;
+    showToast(message);
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
@@ -312,10 +427,27 @@ const BremDirectAdjustmentAdmin = (function () {
       renderApplied('other');
       renderApplied('promotion');
       renderPromoTax();
+      renderErpList();
     });
+
+    $('#directErpPlatformFilter')?.addEventListener('change', event => {
+      state.erpPlatform = event.target.value || '';
+      renderErpList();
+    });
+    $('#directErpSelectAllBtn')?.addEventListener('click', () => toggleErpSelectAll(true));
+    $('#directErpSelectAllChk')?.addEventListener('change', event => toggleErpSelectAll(event.target.checked));
+    $('#directErpApplyBtn')?.addEventListener('click', applyErp);
 
     const card = $('#directAdjustCard');
     card?.addEventListener('change', event => {
+      const erpChk = event.target.closest('[data-erp-select]');
+      if (erpChk) {
+        const id = erpChk.dataset.erpSelect;
+        if (erpChk.checked) state.erpSelected.add(id);
+        else state.erpSelected.delete(id);
+        renderErpList();
+        return;
+      }
       const select = event.target.closest('[data-direct-adj-driver]');
       if (!select) return;
       const kind = select.dataset.directAdjDriver;
@@ -340,13 +472,14 @@ const BremDirectAdjustmentAdmin = (function () {
     if (!$('#directAdjustCard')) return;
     driverOptionsCache = '';
     bindEvents();
-    await window.BremStorage?.ensureSectionLoaded?.('weekly-settlement-direct');
+    await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
     ensureWeekInput();
     renderPreview('other');
     renderPreview('promotion');
     renderApplied('other');
     renderApplied('promotion');
     renderPromoTax();
+    renderErpList();
   }
 
   function init() {

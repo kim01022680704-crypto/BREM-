@@ -1437,6 +1437,8 @@ const BremStorage = (function () {
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
+    'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults],
+    'settlement-result-direct': [KEYS.drivers, KEYS.calls],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [

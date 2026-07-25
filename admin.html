@@ -122,9 +122,11 @@
         <button class="nav-btn" data-section="targets">목표 콜수</button>
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
         <button class="nav-btn" data-section="promotion-apply">프로모션 적용</button>
+        <button class="nav-btn" data-section="promotion-settlement">프로모션정산등록</button>
         <button class="nav-btn" data-section="settlements">일정산서 업로드</button>
         <button class="nav-btn" data-section="weekly-settlement">주정산서 업로드 (브로)</button>
         <button class="nav-btn" data-section="weekly-settlement-direct">주정산서 업로드 (직계약)</button>
+        <button class="nav-btn" data-section="settlement-result-direct">정산결과 (직계약)</button>
         <button class="nav-btn" data-section="admin-account">관리자 계정</button>
         <button class="nav-btn" data-section="revenue-management">수익 관리</button>
         <button class="nav-btn" data-section="payroll-slips">급여명세서 (브로)</button>
@@ -4287,15 +4289,19 @@
           </div>
         </article>
 
+        </div>
+      </section>
+
+      <section class="section" id="promotion-settlement">
         <article class="card" id="directAdjustCard">
           <div class="card-header">
-            <h2>직계약 지급 조정 · 기타지급 / BREM프로모션</h2>
+            <h2>프로모션정산등록 · 기타지급 / BREM프로모션 (직계약)</h2>
             <label class="settlement-week-filter">
               <span>적용주(수요일)</span>
               <input type="date" id="directAdjustWeek" class="admin-period-input">
             </label>
           </div>
-          <p class="form-help">엑셀 <strong>A열 배민ID · B열 금액</strong>으로 일괄 등록합니다. 프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3%(원 단위 절사)로 자동 계산됩니다.</p>
+          <p class="form-help">엑셀 <strong>A열 배민ID · B열 금액</strong>으로 일괄 등록하거나, 「프로모션 적용」에 저장된 ERP 계산 결과를 불러와 적용합니다. 프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3%(원 단위 절사) 자동 계산.</p>
           <p class="settlement-week-range-label" id="directAdjustWeekRange"></p>
 
           <div class="payroll-bulk-grid">
@@ -4328,7 +4334,7 @@
 
             <section class="card payroll-bulk-card">
               <div class="card-header"><h3>BREM프로모션 일괄등록</h3></div>
-              <p class="form-help">A열 배민ID · B열 금액 (엑셀 트랙) — ERP 프로모션 적용 결과에서 넣는 기능은 다음 단계</p>
+              <p class="form-help">A열 배민ID · B열 금액 (엑셀 트랙)</p>
               <label>정산서 파일 (.xlsx)
                 <input type="file" id="directPromotionBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
               </label>
@@ -4354,6 +4360,37 @@
             </section>
           </div>
 
+          <article class="card" id="directErpCard">
+            <div class="card-header">
+              <h3>ERP 프로모션 적용 결과 불러오기 → BREM프로모션</h3>
+              <div class="promotion-form-actions">
+                <label class="settlement-week-filter"><span>플랫폼</span>
+                  <select id="directErpPlatformFilter">
+                    <option value="">전체</option>
+                    <option value="coupang">쿠팡</option>
+                    <option value="baemin">배민</option>
+                    <option value="combined">합산</option>
+                  </select>
+                </label>
+                <button type="button" class="small-btn" id="directErpSelectAllBtn">전체선택</button>
+                <button type="button" class="primary-btn" id="directErpApplyBtn">선택 → BREM프로모션 적용</button>
+              </div>
+            </div>
+            <p class="form-help">「프로모션 적용」에 저장된 결과를 <strong>다중 선택</strong>해 이 주 BREM프로모션(직계약)에 합산 적용합니다. (배민 ID↔배민 ID, 쿠팡 ID↔쿠팡 ID로 매칭된 결과 · 이 주에 해당하는 저장 결과만 표시)</p>
+            <p class="settlement-result-stats" id="directErpSummary"></p>
+            <div class="table-wrap">
+              <table class="weekly-settlement-saved-table">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="directErpSelectAllChk"></th>
+                    <th>플랫폼</th><th>적용주</th><th>지역</th><th>기사수</th><th>총 프로모션</th><th>적용 조건</th><th>저장일</th>
+                  </tr>
+                </thead>
+                <tbody id="directErpSavedRows"></tbody>
+              </table>
+            </div>
+          </article>
+
           <article class="card">
             <div class="card-header"><h3>프로모션원천세 (자동계산 · 3.3%)</h3></div>
             <p class="form-help">프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3% · 원 단위 절사</p>
@@ -4366,7 +4403,41 @@
             </div>
           </article>
         </article>
+      </section>
+
+      <section class="section" id="settlement-result-direct">
+        <div class="promotion-platform-tabs" role="tablist">
+          <button type="button" class="promotion-tab" data-admin-platform-tab="settlement-result-direct" data-platform="coupang">쿠팡</button>
+          <button type="button" class="promotion-tab active" data-admin-platform-tab="settlement-result-direct" data-platform="baemin">배민</button>
         </div>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>정산결과 (직계약) <span id="settlementResultPlatformLabel"></span></h2>
+            <div class="promotion-form-actions">
+              <label class="settlement-week-filter"><span>정산주(수요일)</span>
+                <input type="date" id="settlementResultWeek" class="admin-period-input">
+              </label>
+              <button type="button" class="small-btn" id="settlementResultExportBtn">엑셀 내보내기</button>
+            </div>
+          </div>
+          <p class="form-help">주정산서(직계약) 금액·공제 + 프로모션정산등록의 BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 총지급액 = 지급합계 − 공제합계.</p>
+          <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
+          <p class="settlement-result-stats" id="settlementResultSummary"></p>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table" id="settlementResultTable">
+              <thead>
+                <tr>
+                  <th>기사</th><th>ID</th><th>콜수</th>
+                  <th>배달비</th><th>배민미션</th><th>기타지급</th><th>BREM프로모션</th><th>지급합계</th>
+                  <th>고용보험</th><th>산재보험</th><th>시간제보험</th><th>원천세</th><th>프로모션원천세</th><th>공제합계</th>
+                  <th>총지급액</th>
+                </tr>
+              </thead>
+              <tbody id="settlementResultRows"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
 
       <section class="section" id="promotion-apply">
@@ -6520,8 +6591,9 @@
   <script src="js/payroll-slip-utils.js?v=20260701d"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
-  <script src="js/direct-adjustment-bulk.js?v=20260725a"></script>
-  <script src="js/direct-adjustment-admin.js?v=20260725a"></script>
+  <script src="js/direct-adjustment-bulk.js?v=20260726a"></script>
+  <script src="js/direct-adjustment-admin.js?v=20260726a"></script>
+  <script src="js/settlement-result-direct.js?v=20260726a"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
