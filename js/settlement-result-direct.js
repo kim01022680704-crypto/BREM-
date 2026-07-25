@@ -2,7 +2,7 @@ const BremSettlementResultDirect = (function () {
   const $ = selector => document.querySelector(selector);
   const PROMO_TAX_RATE = 0.033;
 
-  const state = { platform: 'baemin', week: '' };
+  const state = { platform: 'baemin', week: '', withdrawals: [] };
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -66,6 +66,39 @@ const BremSettlementResultDirect = (function () {
     if (platformLabel) platformLabel.textContent = state.platform === 'coupang' ? '· 쿠팡' : '· 배민';
   }
 
+  // 콜수수료 단가(급여일정산 설정) × 콜수
+  function callFeeUnit() {
+    const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(state.platform) || {};
+    return Math.max(0, Math.round(Number(fees.callFee || 0)));
+  }
+
+  function withdrawalRowFee(row) {
+    if (row.feeAmount != null) return Math.max(0, Math.round(Number(row.feeAmount) || 0));
+    const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(row.platform || state.platform) || {};
+    const resolve = window.BremStorage?.payrollDailySettlement?.resolveDailySettlementFee;
+    return typeof resolve === 'function' ? resolve(Number(row.amount || 0), fees) : 0;
+  }
+
+  // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee }
+  function completedWithdrawalMap() {
+    const week = currentWeek();
+    const platform = state.platform;
+    const map = new Map();
+    (Array.isArray(state.withdrawals) ? state.withdrawals : []).forEach(row => {
+      if (String(row.status || '') !== 'completed') return;
+      if (String(row.weekStart || '').slice(0, 10) !== week) return;
+      const rowPlatform = String(row.platform || '');
+      if (rowPlatform && rowPlatform !== platform) return;
+      const driverId = String(row.driverId || '').trim();
+      if (!driverId) return;
+      const prev = map.get(driverId) || { prepaid: 0, fee: 0 };
+      prev.prepaid += Math.max(0, Math.round(Number(row.amount || 0)));
+      prev.fee += withdrawalRowFee(row);
+      map.set(driverId, prev);
+    });
+    return map;
+  }
+
   function computeRows() {
     const week = currentWeek();
     const platform = state.platform;
@@ -75,6 +108,8 @@ const BremSettlementResultDirect = (function () {
 
     const promoMap = window.BremStorage?.directPayAdjustments?.getWeek?.('promotion', week) || {};
     const otherMap = window.BremStorage?.directPayAdjustments?.getWeek?.('other', week) || {};
+    const withdrawMap = completedWithdrawalMap();
+    const unitCallFee = callFeeUnit();
 
     const rows = [];
     records.forEach(record => {
@@ -90,21 +125,28 @@ const BremSettlementResultDirect = (function () {
         const missionPay = Number(amounts.missionPay || 0);
         const grossPay = deliveryFee + missionPay + other + promo;
 
+        const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
         const employmentInsurance = Number(amounts.employmentInsurance || 0);
         const accidentInsurance = Number(amounts.accidentInsurance || 0);
         const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
         const withholdingTax = Number(amounts.withholdingTax || 0);
         const promotionWithholdingTax = promoTax(promo + other);
-        const deductTotal = employmentInsurance + accidentInsurance + hourlyInsurance + withholdingTax + promotionWithholdingTax;
+        const callFee = callCount * unitCallFee;
+        const wd = driverId ? (withdrawMap.get(driverId) || { prepaid: 0, fee: 0 }) : { prepaid: 0, fee: 0 };
+        const dailySettlementFee = wd.fee;
+        const prepaid = wd.prepaid;
+        const deductTotal = employmentInsurance + accidentInsurance + hourlyInsurance
+          + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee + prepaid;
         const netPay = grossPay - deductTotal;
 
         rows.push({
           name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
           idLabel,
-          callCount: Number(rider.weeklyOrderCount || rider.systemCallCount || 0),
+          callCount,
           deliveryFee, missionPay, other, promo, grossPay,
           employmentInsurance, accidentInsurance, hourlyInsurance,
-          withholdingTax, promotionWithholdingTax, deductTotal, netPay
+          withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
+          deductTotal, netPay
         });
       });
     });
@@ -120,7 +162,7 @@ const BremSettlementResultDirect = (function () {
     const rows = computeRows();
 
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="15" class="empty">이 주·플랫폼에 정산 데이터가 없습니다. (주정산서 업로드/직계약 확인)</td></tr>';
+      body.innerHTML = '<tr><td colspan="18" class="empty">이 주·플랫폼에 정산 데이터가 없습니다. (주정산서 업로드/직계약 확인)</td></tr>';
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -147,6 +189,9 @@ const BremSettlementResultDirect = (function () {
         <td class="weekly-amount-cell">${formatNumber(row.hourlyInsurance)}</td>
         <td class="weekly-amount-cell">${formatNumber(row.withholdingTax)}</td>
         <td class="weekly-amount-cell">${formatNumber(row.promotionWithholdingTax)}</td>
+        <td class="weekly-amount-cell">${formatNumber(row.callFee)}</td>
+        <td class="weekly-amount-cell">${formatNumber(row.dailySettlementFee)}</td>
+        <td class="weekly-amount-cell">${formatNumber(row.prepaid)}</td>
         <td class="weekly-amount-cell">${formatNumber(row.deductTotal)}</td>
         <td class="weekly-amount-cell"><strong>${formatNumber(row.netPay)}</strong></td>
       </tr>`).join('');
@@ -167,11 +212,11 @@ const BremSettlementResultDirect = (function () {
       return;
     }
     const header = ['기사', 'ID', '콜수', '배달비', '배민미션', '기타지급', 'BREM프로모션', '지급합계',
-      '고용보험', '산재보험', '시간제보험', '원천세', '프로모션원천세', '공제합계', '총지급액'];
+      '고용보험', '산재보험', '시간제보험', '원천세', '프로모션원천세', '콜수수료', '일정산수수료', '선정산(처리완료)', '공제합계', '총지급액'];
     const data = [header, ...rows.map(row => [
       row.name, row.idLabel, row.callCount, row.deliveryFee, row.missionPay, row.other, row.promo, row.grossPay,
       row.employmentInsurance, row.accidentInsurance, row.hourlyInsurance, row.withholdingTax,
-      row.promotionWithholdingTax, row.deductTotal, row.netPay
+      row.promotionWithholdingTax, row.callFee, row.dailySettlementFee, row.prepaid, row.deductTotal, row.netPay
     ])];
     const ws = window.XLSX.utils.aoa_to_sheet(data);
     const wb = window.XLSX.utils.book_new();
@@ -180,12 +225,27 @@ const BremSettlementResultDirect = (function () {
     window.XLSX.writeFile(wb, `정산결과_직계약_${platform}_${currentWeek()}.xlsx`);
   }
 
+  async function loadWithdrawals() {
+    const week = currentWeek();
+    try {
+      const fetchApi = window.BremStorage?.payrollWithdrawal?.fetchFromAdminApi;
+      if (typeof fetchApi === 'function') {
+        state.withdrawals = await fetchApi({ weekStart: week });
+        return;
+      }
+    } catch (error) {
+      console.warn('[BREM] settlement-result: withdrawal fetch failed, fallback to cache:', error);
+    }
+    state.withdrawals = window.BremStorage?.payrollWithdrawal?.getAll?.() || [];
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
-    $('#settlementResultWeek')?.addEventListener('change', event => {
+    $('#settlementResultWeek')?.addEventListener('change', async event => {
       state.week = weekStartKey(event.target.value || weekStartKey());
       event.target.value = state.week;
+      await loadWithdrawals();
       render();
     });
     $('#settlementResultExportBtn')?.addEventListener('click', exportExcel);
@@ -196,6 +256,7 @@ const BremSettlementResultDirect = (function () {
     state.platform = platform === 'coupang' ? 'coupang' : 'baemin';
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
+    await loadWithdrawals();
     render();
   }
 
