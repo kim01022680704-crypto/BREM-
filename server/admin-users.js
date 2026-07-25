@@ -434,7 +434,16 @@ async function deleteAdminUser(accessToken, userId) {
 
   const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(userId);
   if (deleteAuthError) {
-    return { ok: false, status: 400, error: deleteAuthError.message || 'Auth 계정 삭제에 실패했습니다.' };
+    // 이메일 없이 레지스트리에만 남은 고아 항목은 Auth 사용자가 없어 "User not found"가 난다.
+    // 이 경우엔 실패로 보지 않고 레지스트리에서만 제거해 정리한다(그 외 오류는 그대로 실패 처리).
+    const authErrMessage = String(deleteAuthError.message || '').toLowerCase();
+    const authUserMissing = deleteAuthError.status === 404
+      || deleteAuthError.code === 'user_not_found'
+      || authErrMessage.includes('user not found')
+      || authErrMessage.includes('not found');
+    if (!authUserMissing) {
+      return { ok: false, status: 400, error: deleteAuthError.message || 'Auth 계정 삭제에 실패했습니다.' };
+    }
   }
 
   await writeRegistry(supabase, accounts.filter(account => account.id !== userId));
