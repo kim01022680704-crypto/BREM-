@@ -817,15 +817,17 @@ const BremWeeklySettlement = (function () {
     return matchedRiders.map(item => item.driverName || item.riderName).filter(Boolean).join(', ');
   }
 
-  function buildWeeklySettlementId({ platform, region, year, month, week, startDate }) {
+  function buildWeeklySettlementId({ platform, region, year, month, week, startDate, channel }) {
     const p = normalizePlatform(platform);
     const regionSlug = slugify(region);
-    if (year && month && week) return `weekly_${p}_${regionSlug}_${year}_${month}_${week}`;
-    return `weekly_${p}_${regionSlug}_${String(startDate || '').replace(/-/g, '')}`;
+    const prefix = channel === 'direct' ? 'weekly_direct' : 'weekly';
+    if (year && month && week) return `${prefix}_${p}_${regionSlug}_${year}_${month}_${week}`;
+    return `${prefix}_${p}_${regionSlug}_${String(startDate || '').replace(/-/g, '')}`;
   }
 
   function buildWeeklySettlementRecord(payload) {
     const platform = normalizePlatform(payload.platform);
+    const channel = payload.channel === 'direct' ? 'direct' : 'bro';
     const matchedRiders = payload.matchedRiders || [];
     const parsedMeta = platform === 'coupang'
       ? parseCoupangFileName(payload.fileName || '')
@@ -849,9 +851,11 @@ const BremWeeklySettlement = (function () {
         year: parsedMeta.year,
         month: parsedMeta.month,
         week: parsedMeta.week,
-        startDate: dates.startDate
+        startDate: dates.startDate,
+        channel
       }),
       platform,
+      channel,
       region,
       fileName: payload.fileName || '',
       baseSettlementDate: dates.baseSettlementDate,
@@ -932,6 +936,7 @@ const BremWeeklySettlement = (function () {
 
     const record = buildWeeklySettlementRecord({
       platform,
+      channel: options.channel === 'direct' ? 'direct' : 'bro',
       region: options.region,
       fileName: file.name,
       baseSettlementDate: options.baseSettlementDate,

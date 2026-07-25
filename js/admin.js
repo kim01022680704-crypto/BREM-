@@ -30,7 +30,7 @@
     settlementUploadLogDetailId: '',
     settlementHistorySearchByPlatform: { coupang: '', baemin: '' },
     callRecordsSearchByPlatform: { coupang: '', baemin: '' },
-    unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang' }
+    unifiedPlatform: { calls: 'coupang', rejections: 'coupang', settlements: 'coupang', 'weekly-settlement': 'coupang', 'weekly-settlement-direct': 'coupang' }
   };
 
   const eventSettingsDrafts = new Map();
@@ -88,7 +88,8 @@
     calls: { title: '콜수 입력', defaultPlatform: 'coupang' },
     rejections: { title: '거절율 입력', defaultPlatform: 'coupang' },
     settlements: { title: '일정산서 업로드', defaultPlatform: 'coupang' },
-    'weekly-settlement': { title: '주정산서 업로드', defaultPlatform: 'coupang' }
+    'weekly-settlement': { title: '주정산서 업로드 (브로)', defaultPlatform: 'coupang' },
+    'weekly-settlement-direct': { title: '주정산서 업로드 (직계약)', defaultPlatform: 'coupang' }
   };
 
   const DRIVER_FILTERED_SECTIONS = new Set([
@@ -113,7 +114,9 @@
     'settlements-coupang': { section: 'settlements', platform: 'coupang' },
     'settlements-baemin': { section: 'settlements', platform: 'baemin' },
     'weekly-settlement-coupang': { section: 'weekly-settlement', platform: 'coupang' },
-    'weekly-settlement-baemin': { section: 'weekly-settlement', platform: 'baemin' }
+    'weekly-settlement-baemin': { section: 'weekly-settlement', platform: 'baemin' },
+    'weekly-settlement-direct-coupang': { section: 'weekly-settlement-direct', platform: 'coupang' },
+    'weekly-settlement-direct-baemin': { section: 'weekly-settlement-direct', platform: 'baemin' }
   };
 
   const PLATFORMS = BremPlatforms.all().map(item => item.id);
@@ -203,7 +206,8 @@
     { id: 'promotions', label: '프로모션 관리' },
     { id: 'promotion-apply', label: '프로모션 적용' },
     { id: 'settlements', label: '일정산서 업로드' },
-    { id: 'weekly-settlement', label: '주정산서 업로드' },
+    { id: 'weekly-settlement', label: '주정산서 업로드 (브로)' },
+    { id: 'weekly-settlement-direct', label: '주정산서 업로드 (직계약)' },
     { id: 'admin-account', label: '관리자 계정' },
     { id: 'revenue-management', label: '수익 관리' },
     { id: 'payroll-slips', label: '급여명세서' },
@@ -5672,7 +5676,10 @@
         renderPromotions();
         break;
       case 'weekly-settlement':
-        if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh();
+        if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('bro');
+        break;
+      case 'weekly-settlement-direct':
+        if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('direct');
         break;
       case 'promotion-apply':
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
@@ -5846,7 +5853,7 @@
     }
     $('#sidebar').classList.remove('open');
     $('#overlay').classList.remove('active');
-    if (sectionId !== 'weekly-settlement' && sectionId !== 'promotion-apply') {
+    if (sectionId !== 'weekly-settlement' && sectionId !== 'weekly-settlement-direct' && sectionId !== 'promotion-apply') {
       const detailCard = $('#weeklySettlementDetailCard');
       if (detailCard) detailCard.hidden = true;
     }

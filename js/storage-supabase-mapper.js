@@ -274,9 +274,11 @@ window.BremSupabaseMapper = (function () {
   }
 
   function rowToWeeklySettlementRecord(row) {
+    const summary = row.summary && typeof row.summary === 'object' ? row.summary : {};
     return {
       id: row.id,
       platform: row.platform || 'coupang',
+      channel: summary.channel === 'direct' ? 'direct' : 'bro',
       region: row.region || '',
       fileName: row.file_name || '',
       baseSettlementDate: row.base_settlement_date || '',
@@ -285,7 +287,7 @@ window.BremSupabaseMapper = (function () {
       paymentDate: row.payment_date || '',
       settlementWeekLabel: row.settlement_week_label || '',
       matchedNamesLabel: row.matched_names_label || '',
-      summary: row.summary && typeof row.summary === 'object' ? row.summary : {},
+      summary,
       riders: Array.isArray(row.riders) ? row.riders : [],
       uploadedAt: row.uploaded_at
     };
@@ -400,6 +402,7 @@ window.BremSupabaseMapper = (function () {
       settlementAmount: Number(row.settlement_amount || 0),
       coupangLoginKey: row.coupang_login_key || '',
       baeminUserId: row.baemin_user_id || '',
+      channel: matchPayload.channel === 'direct' ? 'direct' : 'bro',
       matchPayload,
       sourceFileName: row.source_file_name || '',
       savedAt: row.saved_at

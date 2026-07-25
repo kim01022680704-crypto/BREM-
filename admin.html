@@ -123,7 +123,8 @@
         <button class="nav-btn" data-section="promotions">프로모션 관리</button>
         <button class="nav-btn" data-section="promotion-apply">프로모션 적용</button>
         <button class="nav-btn" data-section="settlements">일정산서 업로드</button>
-        <button class="nav-btn" data-section="weekly-settlement">주정산서 업로드</button>
+        <button class="nav-btn" data-section="weekly-settlement">주정산서 업로드 (브로)</button>
+        <button class="nav-btn" data-section="weekly-settlement-direct">주정산서 업로드 (직계약)</button>
         <button class="nav-btn" data-section="admin-account">관리자 계정</button>
         <button class="nav-btn" data-section="revenue-management">수익 관리</button>
         <button class="nav-btn" data-section="payroll-slips">급여명세서 (브로)</button>
@@ -3962,6 +3963,304 @@
                 </tr>
               </thead>
               <tbody id="weeklySettlementUnmatchedRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+      </section>
+
+      <section class="section" id="weekly-settlement-direct">
+        <div class="promotion-platform-tabs admin-section-tabs" role="tablist">
+          <button type="button" class="promotion-tab active" data-admin-platform-tab="weekly-settlement-direct" data-platform="coupang">쿠팡</button>
+          <button type="button" class="promotion-tab" data-admin-platform-tab="weekly-settlement-direct" data-platform="baemin">배민</button>
+        </div>
+        <div class="admin-platform-panel" id="weekly-settlement-direct-coupang" data-platform="coupang">
+        <article class="card">
+          <div class="card-header">
+            <h2>쿠팡 주정산서 업로드 (직계약)</h2>
+            <span class="settlement-format-badge settlement-format-badge--coupang">쿠팡</span>
+          </div>
+          <p class="form-help">정산서에서 <strong>기사명만</strong> 추출해 기존 기사와 매칭합니다. 매칭된 기사만 지역별로 저장합니다. (직계약 채널로 별도 보관)</p>
+          <form class="weekly-settlement-form" id="weeklySettlementDirectUploadForm-coupang">
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <input type="text" value="쿠팡" readonly>
+              </label>
+              <label>
+                지역
+                <input type="text" id="weeklySettlementDirectRegion-coupang" placeholder="예: 중구중앙 (파일명에서 자동 입력)" required>
+              </label>
+              <label>
+                기준 정산일 (수요일)
+                <input type="date" id="weeklySettlementDirectBaseDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 시작일
+                <input type="date" id="weeklySettlementDirectStartDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 종료일
+                <input type="date" id="weeklySettlementDirectEndDate-coupang" class="admin-period-input" required>
+              </label>
+              <label>
+                지급 예정일 (금요일)
+                <input type="date" id="weeklySettlementDirectPaymentDate-coupang" class="admin-period-input">
+              </label>
+              <label>
+                정산 주차
+                <input type="text" id="weeklySettlementDirectWeekLabel-coupang" placeholder="예: 2026년 6월 3주차">
+              </label>
+              <label>
+                엑셀 비밀번호 (선택)
+                <input type="text" id="weeklySettlementDirectPassword-coupang" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                정산서 파일 (.xlsx)
+                <input type="file" id="weeklySettlementDirectFile-coupang" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+              </label>
+            </div>
+            <div class="promotion-form-section">
+              <h3>엑셀 열 설정</h3>
+              <div class="promotion-form-grid">
+                <label>기사명 열<input type="text" id="weeklySettlementDirectNameCol-coupang" value="C"></label>
+                <label>총 정산 오더수 열<input type="text" id="weeklySettlementDirectOrderCol-coupang" value="F"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementDirectStartRow-coupang" min="1" value="12"></label>
+              </div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">업로드 및 매칭</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="weeklySettlementDirectPreviewCard-coupang" hidden>
+          <div class="card-header">
+            <h2>쿠팡 정산 인수 · 매칭 미리보기 (직계약)</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="weeklySettlementDirectSaveBtn-coupang">매칭 기사만 저장</button>
+              <button type="button" class="small-btn" id="weeklySettlementDirectCancelBtn-coupang">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats" id="weeklySettlementDirectPreviewSummary-coupang"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>원본 이름</th>
+                  <th>쿠팡 ID</th>
+                  <th>주간 오더수(F)</th>
+                  <th>시스템 콜수</th>
+                  <th>콜수 일치</th>
+                  <th>매칭</th>
+                  <th>경고</th>
+                  <th>분석 · 적용</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementDirectPreviewRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>쿠팡 주정산 업로드 기록 (직계약)</h2>
+              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서 파일명입니다.</p>
+            </div>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="weeklySettlementDirectLogWeek-coupang" class="admin-period-input">
+            </label>
+          </div>
+          <p class="settlement-week-range-label" id="weeklySettlementDirectLogWeekRange-coupang"></p>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>파일명</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementDirectSavedRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>쿠팡 주정산 미매칭 기사 (직계약) <span class="settlement-period-filter-label" id="weeklySettlementDirectUnmatchedLabel-coupang"></span></h2>
+              <p class="form-help">주정산 업로드 시 미매칭 기사를 적용주 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 저장된 주정산에 합치거나 미리보기에서 저장하세요.</p>
+            </div>
+            <button type="button" class="primary-btn small-btn" id="weeklySettlementDirectUnmatchedRetryBtn-coupang">매칭 재시도</button>
+          </div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>정산기간</th>
+                  <th>지역</th>
+                  <th>원본 이름</th>
+                  <th>쿠팡 ID</th>
+                  <th>주간 오더수</th>
+                  <th>파일명</th>
+                  <th>기록일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementDirectUnmatchedRows-coupang"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+        <div class="admin-platform-panel" id="weekly-settlement-direct-baemin" data-platform="baemin" hidden>
+        <article class="card">
+          <div class="card-header">
+            <h2>배민 주정산서 업로드 (직계약)</h2>
+            <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
+          </div>
+          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다.</p>
+          <form class="weekly-settlement-form" id="weeklySettlementDirectUploadForm-baemin">
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <input type="text" value="배민" readonly>
+              </label>
+              <label>
+                지역 / 팀명
+                <input type="text" id="weeklySettlementDirectRegion-baemin" placeholder="예: 표준울산남A직계약1" required>
+              </label>
+              <label>
+                정산 시작일
+                <input type="date" id="weeklySettlementDirectStartDate-baemin" class="admin-period-input" required>
+              </label>
+              <label>
+                정산 종료일
+                <input type="date" id="weeklySettlementDirectEndDate-baemin" class="admin-period-input" required>
+              </label>
+              <label>
+                지급 예정일
+                <input type="date" id="weeklySettlementDirectPaymentDate-baemin" class="admin-period-input">
+              </label>
+              <label>
+                정산 주차 / 기간 표시
+                <input type="text" id="weeklySettlementDirectWeekLabel-baemin" placeholder="예: 2026-05-20 ~ 2026-05-26">
+              </label>
+              <label>
+                엑셀 비밀번호 (선택)
+                <input type="text" id="weeklySettlementDirectPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                정산서 파일 (.xlsx)
+                <input type="file" id="weeklySettlementDirectFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+              </label>
+            </div>
+            <div class="promotion-form-section">
+              <h3>엑셀 열 설정</h3>
+              <div class="promotion-form-grid">
+                <label>User ID 열<input type="text" id="weeklySettlementDirectUserIdCol-baemin" value="B"></label>
+                <label>라이더명 열<input type="text" id="weeklySettlementDirectNameCol-baemin" value="C"></label>
+                <label>처리건수 열<input type="text" id="weeklySettlementDirectOrderCol-baemin" value="D"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementDirectStartRow-baemin" min="1" value="2"></label>
+              </div>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="submit" class="primary-btn">업로드 및 매칭</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card" id="weeklySettlementDirectPreviewCard-baemin" hidden>
+          <div class="card-header">
+            <h2>배민 정산 인수 · 매칭 미리보기 (직계약)</h2>
+            <div class="settlement-preview-actions">
+              <button type="button" class="primary-btn" id="weeklySettlementDirectSaveBtn-baemin">매칭 기사만 저장</button>
+              <button type="button" class="small-btn" id="weeklySettlementDirectCancelBtn-baemin">취소</button>
+            </div>
+          </div>
+          <div class="settlement-result-stats" id="weeklySettlementDirectPreviewSummary-baemin"></div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-preview-table">
+              <thead>
+                <tr>
+                  <th>기사명</th>
+                  <th>원본 이름</th>
+                  <th>User ID(B)</th>
+                  <th>주간 처리건수(D)</th>
+                  <th>시스템 콜수</th>
+                  <th>콜수 일치</th>
+                  <th>매칭</th>
+                  <th>경고</th>
+                  <th>분석 · 적용</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementDirectPreviewRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 주정산 업로드 기록 (직계약)</h2>
+              <p class="form-help">수요일 기준 적용주별 업로드·저장된 주정산서 파일명입니다.</p>
+            </div>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="weeklySettlementDirectLogWeek-baemin" class="admin-period-input">
+            </label>
+          </div>
+          <p class="settlement-week-range-label" id="weeklySettlementDirectLogWeekRange-baemin"></p>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>적용주</th>
+                  <th>지역</th>
+                  <th>정산기간</th>
+                  <th>파일명</th>
+                  <th>상태</th>
+                  <th>매칭</th>
+                  <th>업로드</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementDirectSavedRows-baemin"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card settlement-unmatched-card">
+          <div class="card-header settlement-upload-log-header">
+            <div>
+              <h2>배민 주정산 미매칭 기사 (직계약) <span class="settlement-period-filter-label" id="weeklySettlementDirectUnmatchedLabel-baemin"></span></h2>
+              <p class="form-help">주정산 업로드 시 미매칭 기사를 적용주 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 저장된 주정산에 합치거나 미리보기에서 저장하세요.</p>
+            </div>
+            <button type="button" class="primary-btn small-btn" id="weeklySettlementDirectUnmatchedRetryBtn-baemin">매칭 재시도</button>
+          </div>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead>
+                <tr>
+                  <th>정산기간</th>
+                  <th>지역</th>
+                  <th>원본 이름</th>
+                  <th>User ID</th>
+                  <th>주간 처리건수</th>
+                  <th>파일명</th>
+                  <th>기록일</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="weeklySettlementDirectUnmatchedRows-baemin"></tbody>
             </table>
           </div>
         </article>

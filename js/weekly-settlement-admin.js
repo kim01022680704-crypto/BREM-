@@ -1,13 +1,46 @@
 const BremWeeklySettlementAdmin = (function () {
+  const CHANNELS = ['bro', 'direct'];
+  const PLATFORMS = ['coupang', 'baemin'];
+
   const state = {
-    previewByPlatform: { coupang: null, baemin: null },
-    detailId: '',
-    weeklyLogWeekByPlatform: { coupang: null, baemin: null }
+    // per-channel, per-platform
+    previewByChannel: {
+      bro: { coupang: null, baemin: null },
+      direct: { coupang: null, baemin: null }
+    },
+    weeklyLogWeekByChannel: {
+      bro: { coupang: null, baemin: null },
+      direct: { coupang: null, baemin: null }
+    },
+    detailId: ''
   };
 
-  const PLATFORMS = ['coupang', 'baemin'];
   const $ = selector => document.querySelector(selector);
-  const $$ = selector => Array.from(document.querySelectorAll(selector));
+
+  function normChannel(channel) {
+    return channel === 'direct' ? 'direct' : 'bro';
+  }
+
+  function prefix(channel) {
+    return normChannel(channel) === 'direct' ? 'weeklySettlementDirect' : 'weeklySettlement';
+  }
+
+  function sectionIdFor(channel) {
+    return normChannel(channel) === 'direct' ? 'weekly-settlement-direct' : 'weekly-settlement';
+  }
+
+  // element lookup: q(channel, 'UploadForm', 'coupang') → #weeklySettlementUploadForm-coupang
+  function q(channel, thing, platform) {
+    return $(`#${prefix(channel)}${thing}-${platform}`);
+  }
+
+  function getPreview(channel, platform) {
+    return state.previewByChannel[normChannel(channel)][platform];
+  }
+
+  function setPreview(channel, platform, value) {
+    state.previewByChannel[normChannel(channel)][platform] = value;
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -64,20 +97,21 @@ const BremWeeklySettlementAdmin = (function () {
     }
   }
 
-  function ensureWeeklyLogWeek(platform) {
-    if (!state.weeklyLogWeekByPlatform[platform]) {
-      state.weeklyLogWeekByPlatform[platform] = weekStartKey();
+  function ensureWeeklyLogWeek(channel, platform) {
+    const ch = normChannel(channel);
+    if (!state.weeklyLogWeekByChannel[ch][platform]) {
+      state.weeklyLogWeekByChannel[ch][platform] = weekStartKey();
     }
-    const input = $(`#weeklySettlementLogWeek-${platform}`);
+    const input = q(channel, 'LogWeek', platform);
     if (input && !input.value) {
-      input.value = state.weeklyLogWeekByPlatform[platform];
+      input.value = state.weeklyLogWeekByChannel[ch][platform];
     }
-    return state.weeklyLogWeekByPlatform[platform];
+    return state.weeklyLogWeekByChannel[ch][platform];
   }
 
-  function updateWeeklyLogWeekRangeLabel(platform) {
-    const weekStart = ensureWeeklyLogWeek(platform);
-    const label = $(`#weeklySettlementLogWeekRange-${platform}`);
+  function updateWeeklyLogWeekRangeLabel(channel, platform) {
+    const weekStart = ensureWeeklyLogWeek(channel, platform);
+    const label = q(channel, 'LogWeekRange', platform);
     if (label) {
       label.textContent = weekStart
         ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
@@ -85,8 +119,8 @@ const BremWeeklySettlementAdmin = (function () {
     }
   }
 
-  function fillCoupangDatesFromBase() {
-    const baseInput = $('#weeklySettlementBaseDate-coupang');
+  function fillCoupangDatesFromBase(channel) {
+    const baseInput = q(channel, 'BaseDate', 'coupang');
     if (!baseInput?.value) return;
     if (window.BremDatePicker?.applyWeekWednesday) {
       const normalized = BremDatePicker.applyWeekWednesday(baseInput.value);
@@ -95,30 +129,30 @@ const BremWeeklySettlementAdmin = (function () {
       }
     }
     const dates = BremWeeklySettlement.calculateCoupangSettlementDates(baseInput.value);
-    const startInput = $('#weeklySettlementStartDate-coupang');
-    const endInput = $('#weeklySettlementEndDate-coupang');
-    const paymentInput = $('#weeklySettlementPaymentDate-coupang');
+    const startInput = q(channel, 'StartDate', 'coupang');
+    const endInput = q(channel, 'EndDate', 'coupang');
+    const paymentInput = q(channel, 'PaymentDate', 'coupang');
     if (startInput) startInput.value = dates.startDate;
     if (endInput) endInput.value = dates.endDate;
     if (paymentInput) paymentInput.value = dates.paymentDate;
   }
 
-  function applyFilenameHints(platform, fileName) {
+  function applyFilenameHints(channel, platform, fileName) {
     if (!fileName) return;
     if (platform === 'coupang') {
       const parsed = BremWeeklySettlement.parseCoupangFileName(fileName);
-      const regionInput = $('#weeklySettlementRegion-coupang');
-      const weekLabelInput = $('#weeklySettlementWeekLabel-coupang');
+      const regionInput = q(channel, 'Region', 'coupang');
+      const weekLabelInput = q(channel, 'WeekLabel', 'coupang');
       if (regionInput && parsed.region) regionInput.value = parsed.region;
       if (weekLabelInput && parsed.settlementWeekLabel) weekLabelInput.value = parsed.settlementWeekLabel;
       return;
     }
     const parsed = BremWeeklySettlement.parseBaeminFileName(fileName);
-    const regionInput = $('#weeklySettlementRegion-baemin');
-    const startInput = $('#weeklySettlementStartDate-baemin');
-    const endInput = $('#weeklySettlementEndDate-baemin');
-    const paymentInput = $('#weeklySettlementPaymentDate-baemin');
-    const weekLabelInput = $('#weeklySettlementWeekLabel-baemin');
+    const regionInput = q(channel, 'Region', 'baemin');
+    const startInput = q(channel, 'StartDate', 'baemin');
+    const endInput = q(channel, 'EndDate', 'baemin');
+    const paymentInput = q(channel, 'PaymentDate', 'baemin');
+    const weekLabelInput = q(channel, 'WeekLabel', 'baemin');
     if (regionInput && parsed.teamName) regionInput.value = parsed.teamName;
     if (startInput && parsed.startDate) startInput.value = parsed.startDate;
     if (endInput && parsed.endDate) endInput.value = parsed.endDate;
@@ -143,27 +177,28 @@ const BremWeeklySettlementAdmin = (function () {
     return rider.coupangLoginKey || rider.originalName || '-';
   }
 
-  function readUploadForm(platform) {
-    if (platform === 'coupang') fillCoupangDatesFromBase();
+  function readUploadForm(channel, platform) {
+    if (platform === 'coupang') fillCoupangDatesFromBase(channel);
     return {
       platform,
-      region: $(`#weeklySettlementRegion-${platform}`)?.value?.trim() || '',
-      baseSettlementDate: $(`#weeklySettlementBaseDate-${platform}`)?.value
-        || $(`#weeklySettlementStartDate-${platform}`)?.value || '',
-      startDate: $(`#weeklySettlementStartDate-${platform}`)?.value || '',
-      endDate: $(`#weeklySettlementEndDate-${platform}`)?.value || '',
-      paymentDate: $(`#weeklySettlementPaymentDate-${platform}`)?.value || '',
-      settlementWeekLabel: $(`#weeklySettlementWeekLabel-${platform}`)?.value?.trim() || '',
-      password: $(`#weeklySettlementPassword-${platform}`)?.value || '',
-      file: $(`#weeklySettlementFile-${platform}`)?.files?.[0] || null,
+      channel: normChannel(channel),
+      region: q(channel, 'Region', platform)?.value?.trim() || '',
+      baseSettlementDate: q(channel, 'BaseDate', platform)?.value
+        || q(channel, 'StartDate', platform)?.value || '',
+      startDate: q(channel, 'StartDate', platform)?.value || '',
+      endDate: q(channel, 'EndDate', platform)?.value || '',
+      paymentDate: q(channel, 'PaymentDate', platform)?.value || '',
+      settlementWeekLabel: q(channel, 'WeekLabel', platform)?.value?.trim() || '',
+      password: q(channel, 'Password', platform)?.value || '',
+      file: q(channel, 'File', platform)?.files?.[0] || null,
       columnConfig: {
-        nameColumn: $(`#weeklySettlementNameCol-${platform}`)?.value || 'C',
+        nameColumn: q(channel, 'NameCol', platform)?.value || 'C',
         userIdColumn: platform === 'baemin'
-          ? ($(`#weeklySettlementUserIdCol-baemin`)?.value || 'B')
+          ? (q(channel, 'UserIdCol', 'baemin')?.value || 'B')
           : '',
-        orderCountColumn: $(`#weeklySettlementOrderCol-${platform}`)?.value
+        orderCountColumn: q(channel, 'OrderCol', platform)?.value
           || (platform === 'baemin' ? 'D' : 'F'),
-        startRow: Number($(`#weeklySettlementStartRow-${platform}`)?.value || (platform === 'coupang' ? 12 : 2))
+        startRow: Number(q(channel, 'StartRow', platform)?.value || (platform === 'coupang' ? 12 : 2))
       }
     };
   }
@@ -175,8 +210,9 @@ const BremWeeklySettlementAdmin = (function () {
     return '';
   }
 
-  async function uploadAndMatch(platform) {
-    const payload = readUploadForm(platform);
+  async function uploadAndMatch(channel, platform) {
+    const ch = normChannel(channel);
+    const payload = readUploadForm(channel, platform);
     const error = validateUploadForm(payload);
     if (error) {
       showToast(error);
@@ -187,6 +223,7 @@ const BremWeeklySettlementAdmin = (function () {
       const record = await BremWeeklySettlement.processWeeklyUpload(payload);
       const uploadLog = BremStorage.settlementUploadLogs.add({
         kind: 'weekly',
+        channel: ch,
         platform,
         fileName: payload.file.name,
         period: record.startDate,
@@ -198,7 +235,7 @@ const BremWeeklySettlementAdmin = (function () {
         matchedCount: Number(record.summary?.matchedRiders || record.riders?.length || 0)
       });
       record.uploadLogId = uploadLog.id;
-      state.previewByPlatform[platform] = record;
+      setPreview(ch, platform, record);
       if (record.previewUnmatched?.length) {
         BremStorage.settlementUnmatched.saveWeeklyBatch({
           weekStart: weekStartKey(record.startDate || payload.startDate),
@@ -207,12 +244,13 @@ const BremWeeklySettlementAdmin = (function () {
           records: record.previewUnmatched,
           sourceFileName: payload.file.name,
           platform,
-          region: record.region
+          region: record.region,
+          channel: ch
         });
       }
-      renderPreview(platform);
-      renderSavedList(platform);
-      renderWeeklyUnmatched(platform);
+      renderPreview(ch, platform);
+      renderSavedList(ch, platform);
+      renderWeeklyUnmatched(ch, platform);
       const mismatchCount = record.summary.callCountMismatches || 0;
       let toastMessage = `정산 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`;
       if (mismatchCount > 0) {
@@ -224,8 +262,9 @@ const BremWeeklySettlementAdmin = (function () {
     }
   }
 
-  function savePreview(platform) {
-    const record = state.previewByPlatform[platform];
+  function savePreview(channel, platform) {
+    const ch = normChannel(channel);
+    const record = getPreview(ch, platform);
     if (!record) {
       showToast('먼저 업로드 및 매칭을 실행하세요.');
       return;
@@ -235,17 +274,22 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     const { previewUnmatched, ...saveRecord } = record;
+    saveRecord.channel = ch;
     const refreshedRecord = BremWeeklySettlement.refreshWeeklySettlementRiders(saveRecord);
+    refreshedRecord.channel = ch;
     refreshedRecord.summary = {
+      ...(refreshedRecord.summary || {}),
       totalExtracted: refreshedRecord.riders.length,
       matchedRiders: refreshedRecord.riders.length,
       unmatchedRiders: 0,
-      callCountMismatches: refreshedRecord.riders.filter(r => r.callCountMatched === false).length
+      callCountMismatches: refreshedRecord.riders.filter(r => r.callCountMatched === false).length,
+      channel: ch
     };
     const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord);
     if (record.uploadLogId) {
       BremStorage.settlementUploadLogs.update(record.uploadLogId, {
         status: 'saved',
+        channel: ch,
         linkedRecordId: saved.id,
         matchedCount: saveRecord.riders.length,
         fileName: saveRecord.fileName || record.fileName || ''
@@ -253,6 +297,7 @@ const BremWeeklySettlementAdmin = (function () {
     } else {
       BremStorage.settlementUploadLogs.add({
         kind: 'weekly',
+        channel: ch,
         platform,
         fileName: saveRecord.fileName || record.fileName || '',
         period: saveRecord.startDate,
@@ -267,10 +312,11 @@ const BremWeeklySettlementAdmin = (function () {
       });
     }
     void BremStorage.flushStorage?.();
-    state.previewByPlatform[platform] = null;
-    $(`#weeklySettlementPreviewCard-${platform}`).hidden = true;
-    renderSavedList(platform);
-    renderWeeklyUnmatched(platform);
+    setPreview(ch, platform, null);
+    const card = q(ch, 'PreviewCard', platform);
+    if (card) card.hidden = true;
+    renderSavedList(ch, platform);
+    renderWeeklyUnmatched(ch, platform);
     if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
     showToast(`${record.region} · 매칭 ${record.riders.length}명 저장 완료`);
   }
@@ -289,6 +335,7 @@ const BremWeeklySettlementAdmin = (function () {
         data-weekly-apply-call="1"
         data-driver-id="${escapeHtml(rider.matchedRiderId)}"
         data-platform="${escapeHtml(context.platform || 'coupang')}"
+        data-channel="${escapeHtml(context.channel || 'bro')}"
         data-start-date="${escapeHtml(context.startDate || '')}"
         data-end-date="${escapeHtml(context.endDate || '')}"
         data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
@@ -301,6 +348,7 @@ const BremWeeklySettlementAdmin = (function () {
         data-weekly-call-audit="1"
         data-driver-id="${escapeHtml(rider.matchedRiderId)}"
         data-platform="${escapeHtml(context.platform || 'coupang')}"
+        data-channel="${escapeHtml(context.channel || 'bro')}"
         data-start-date="${escapeHtml(context.startDate || '')}"
         data-end-date="${escapeHtml(context.endDate || '')}"
         data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
@@ -344,6 +392,7 @@ const BremWeeklySettlementAdmin = (function () {
   async function applyWeeklyCallFromReport(params = {}) {
     const driverId = String(params.driverId || '').trim();
     const platform = params.platform || 'coupang';
+    const channel = normChannel(params.channel);
     const startDate = params.startDate || '';
     const endDate = params.endDate || '';
     const weeklyOrderCount = Number(params.weeklyOrderCount || 0);
@@ -380,11 +429,10 @@ const BremWeeklySettlementAdmin = (function () {
 
       document.dispatchEvent(new CustomEvent('brem-calls-changed'));
 
-      if (state.previewByPlatform[platform]) {
-        state.previewByPlatform[platform] = BremWeeklySettlement.refreshWeeklySettlementRiders(
-          state.previewByPlatform[platform]
-        );
-        renderPreview(platform);
+      const preview = getPreview(channel, platform);
+      if (preview) {
+        setPreview(channel, platform, BremWeeklySettlement.refreshWeeklySettlementRiders(preview));
+        renderPreview(channel, platform);
       }
 
       if (state.detailId) {
@@ -500,10 +548,11 @@ const BremWeeklySettlementAdmin = (function () {
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function renderPreview(platform) {
-    let record = state.previewByPlatform[platform];
-    const card = $(`#weeklySettlementPreviewCard-${platform}`);
-    const rowsEl = $(`#weeklySettlementPreviewRows-${platform}`);
+  function renderPreview(channel, platform) {
+    const ch = normChannel(channel);
+    let record = getPreview(ch, platform);
+    const card = q(ch, 'PreviewCard', platform);
+    const rowsEl = q(ch, 'PreviewRows', platform);
     if (!card || !rowsEl) return;
 
     if (!record) {
@@ -513,7 +562,7 @@ const BremWeeklySettlementAdmin = (function () {
     }
 
     record = BremWeeklySettlement.refreshWeeklySettlementRiders(record);
-    state.previewByPlatform[platform] = record;
+    setPreview(ch, platform, record);
 
     card.hidden = false;
     const unmatched = record.previewUnmatched || [];
@@ -526,7 +575,9 @@ const BremWeeklySettlementAdmin = (function () {
     const matchBasisLabel = platform === 'baemin'
       ? '배민 User ID ↔ 기사 배민 ID'
       : '정산표/콜수 기준';
-    $(`#weeklySettlementPreviewSummary-${platform}`).innerHTML = `
+    const summaryEl = q(ch, 'PreviewSummary', platform);
+    if (summaryEl) {
+      summaryEl.innerHTML = `
       <p>추출 인수 <strong>${formatNumber(record.summary.totalExtracted)}</strong>명</p>
       <p>매칭 <strong>${formatNumber(record.summary.matchedRiders)}</strong>명 (${matchBasisLabel})</p>
       <p>미매칭 <strong>${formatNumber(record.summary.unmatchedRiders)}</strong>명</p>
@@ -534,9 +585,11 @@ const BremWeeklySettlementAdmin = (function () {
       <p>저장 대상 <strong>${formatNumber(record.riders.length)}</strong>명 (매칭된 기사만)</p>
       ${summaryExtra}
     `;
+    }
 
     const auditContext = {
       platform,
+      channel: ch,
       startDate: record.startDate,
       endDate: record.endDate
     };
@@ -586,13 +639,14 @@ const BremWeeklySettlementAdmin = (function () {
     return platform === 'baemin' ? '배민 User ID 미매칭' : '쿠팡 ID(이름+연락처)/기사명 미매칭';
   }
 
-  function renderWeeklyUnmatched(platform) {
-    const rowsEl = $(`#weeklySettlementUnmatchedRows-${platform}`);
+  function renderWeeklyUnmatched(channel, platform) {
+    const ch = normChannel(channel);
+    const rowsEl = q(ch, 'UnmatchedRows', platform);
     if (!rowsEl) return;
 
-    const weekStart = ensureWeeklyLogWeek(platform);
-    updateWeeklyLogWeekRangeLabel(platform);
-    const label = $(`#weeklySettlementUnmatchedLabel-${platform}`);
+    const weekStart = ensureWeeklyLogWeek(ch, platform);
+    updateWeeklyLogWeekRangeLabel(ch, platform);
+    const label = q(ch, 'UnmatchedLabel', platform);
     if (label) {
       label.textContent = weekStart ? `· ${formatDate(weekStart)} 주` : '';
     }
@@ -600,7 +654,8 @@ const BremWeeklySettlementAdmin = (function () {
     const rows = BremStorage.settlementUnmatched.getByWeek({
       weekStart,
       platform,
-      kind: 'weekly'
+      kind: 'weekly',
+      channel: ch
     }).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 
     if (!rows.length) {
@@ -632,13 +687,15 @@ const BremWeeklySettlementAdmin = (function () {
     }).join('');
   }
 
-  function retryWeeklyUnmatched(platform, options = {}) {
-    const weekStart = ensureWeeklyLogWeek(platform);
+  function retryWeeklyUnmatched(channel, platform, options = {}) {
+    const ch = normChannel(channel);
+    const weekStart = ensureWeeklyLogWeek(ch, platform);
     const recordIds = Array.isArray(options.recordIds) ? options.recordIds : [];
     const pendingCount = BremStorage.settlementUnmatched.getByWeek({
       weekStart,
       platform,
-      kind: 'weekly'
+      kind: 'weekly',
+      channel: ch
     }).filter(record => !recordIds.length || recordIds.includes(record.id)).length;
     if (!pendingCount) {
       showToast(recordIds.length ? '재시도할 미매칭 기사가 없습니다.' : '선택한 주에 미매칭 기사가 없습니다.');
@@ -652,13 +709,15 @@ const BremWeeklySettlementAdmin = (function () {
         const result = BremStorage.settlementUnmatched.retryWeeklyMatching({
           platform,
           weekStart,
-          recordIds
+          recordIds,
+          channel: ch
         });
         await BremStorage.flushStorage?.();
 
         if (result.needsManualSave && result.matched?.length) {
-          state.previewByPlatform[platform] = {
+          setPreview(ch, platform, {
             platform,
+            channel: ch,
             region: result.region || '',
             startDate: result.startDate,
             endDate: result.endDate,
@@ -667,8 +726,8 @@ const BremWeeklySettlementAdmin = (function () {
             previewUnmatched: [],
             summary: BremWeeklySettlement.buildWeeklySummary(result.matched, []),
             uploadedAt: new Date().toISOString()
-          };
-          renderPreview(platform);
+          });
+          renderPreview(ch, platform);
           showToast(`매칭 ${result.matchedCount}명 — 저장된 주정산이 없어 미리보기를 열었습니다. 「매칭 기사만 저장」을 눌러주세요.`);
         } else {
           let message = `매칭 재시도: ${result.matchedCount}명`;
@@ -680,8 +739,8 @@ const BremWeeklySettlementAdmin = (function () {
           showToast(message);
         }
 
-        renderWeeklyUnmatched(platform);
-        renderSavedList(platform);
+        renderWeeklyUnmatched(ch, platform);
+        renderSavedList(ch, platform);
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
       } catch (error) {
         console.error('[BREM] weekly unmatched retry failed:', error);
@@ -690,18 +749,20 @@ const BremWeeklySettlementAdmin = (function () {
     })();
   }
 
-  function renderSavedList(platform) {
-    const rowsEl = $(`#weeklySettlementSavedRows-${platform}`);
+  function renderSavedList(channel, platform) {
+    const ch = normChannel(channel);
+    const rowsEl = q(ch, 'SavedRows', platform);
     if (!rowsEl) return;
 
     BremStorage.settlementUploadLogs.syncWeeklyFromSavedRecords();
-    const weekStart = ensureWeeklyLogWeek(platform);
-    updateWeeklyLogWeekRangeLabel(platform);
+    const weekStart = ensureWeeklyLogWeek(ch, platform);
+    updateWeeklyLogWeekRangeLabel(ch, platform);
 
     const list = BremStorage.settlementUploadLogs.getFiltered({
       kind: 'weekly',
       platform,
-      weekStart
+      weekStart,
+      channel: ch
     });
 
     if (!list.length) {
@@ -754,7 +815,8 @@ const BremWeeklySettlementAdmin = (function () {
     const mismatchCount = refreshedRiders.filter(r => r.callCountMatched === false).length;
     const orderLabel = platformWeeklyOrderLabel(record.platform);
     const idLabel = platformMatchIdLabel(record.platform);
-    $('#weeklySettlementDetailTitle').textContent = `${platformLabel(record.platform)} · ${record.region}`;
+    const channelLabel = (record.channel === 'direct') ? ' · 직계약' : '';
+    $('#weeklySettlementDetailTitle').textContent = `${platformLabel(record.platform)} · ${record.region}${channelLabel}`;
     $('#weeklySettlementDetailMeta').innerHTML = `
       <p>정산기간: <strong>${escapeHtml(period.startDate)} ~ ${escapeHtml(period.endDate)}</strong> (수~화 7일)</p>
       <p>매칭 ${formatNumber(record.summary.matchedRiders)}명: <strong>${escapeHtml(record.matchedNamesLabel || '-')}</strong></p>
@@ -775,6 +837,7 @@ const BremWeeklySettlementAdmin = (function () {
     }
     const auditContext = {
       platform: record.platform,
+      channel: normChannel(record.channel),
       startDate: period.startDate,
       endDate: period.endDate
     };
@@ -802,38 +865,51 @@ const BremWeeklySettlementAdmin = (function () {
     if (card) card.hidden = true;
   }
 
-  function bindPlatformEvents(platform) {
-    $(`#weeklySettlementUploadForm-${platform}`)?.addEventListener('submit', event => {
+  function channelFromEvent(event) {
+    const section = event.target.closest('.section');
+    return section?.id === 'weekly-settlement-direct' ? 'direct' : 'bro';
+  }
+
+  function platformFromEvent(event) {
+    const panel = event.target.closest('.admin-platform-panel[data-platform]');
+    return panel?.dataset?.platform || 'coupang';
+  }
+
+  function bindPlatformEvents(channel, platform) {
+    const ch = normChannel(channel);
+    q(ch, 'UploadForm', platform)?.addEventListener('submit', event => {
       event.preventDefault();
-      uploadAndMatch(platform);
+      uploadAndMatch(ch, platform);
     });
-    $(`#weeklySettlementSaveBtn-${platform}`)?.addEventListener('click', () => savePreview(platform));
-    $(`#weeklySettlementCancelBtn-${platform}`)?.addEventListener('click', () => {
-      state.previewByPlatform[platform] = null;
-      renderPreview(platform);
+    q(ch, 'SaveBtn', platform)?.addEventListener('click', () => savePreview(ch, platform));
+    q(ch, 'CancelBtn', platform)?.addEventListener('click', () => {
+      setPreview(ch, platform, null);
+      renderPreview(ch, platform);
     });
-    $(`#weeklySettlementFile-${platform}`)?.addEventListener('change', event => {
-      applyFilenameHints(platform, event.target.files?.[0]?.name || '');
+    q(ch, 'File', platform)?.addEventListener('change', event => {
+      applyFilenameHints(ch, platform, event.target.files?.[0]?.name || '');
     });
     if (platform === 'coupang') {
-      $('#weeklySettlementBaseDate-coupang')?.addEventListener('change', fillCoupangDatesFromBase);
+      q(ch, 'BaseDate', 'coupang')?.addEventListener('change', () => fillCoupangDatesFromBase(ch));
     }
-    $(`#weeklySettlementLogWeek-${platform}`)?.addEventListener('change', event => {
+    q(ch, 'LogWeek', platform)?.addEventListener('change', event => {
       const picked = weekStartKey(event.target.value || weekStartKey());
-      state.weeklyLogWeekByPlatform[platform] = picked;
+      state.weeklyLogWeekByChannel[ch][platform] = picked;
       event.target.value = picked;
-      renderSavedList(platform);
-      renderWeeklyUnmatched(platform);
+      renderSavedList(ch, platform);
+      renderWeeklyUnmatched(ch, platform);
     });
-    $(`#weeklySettlementUnmatchedRetryBtn-${platform}`)?.addEventListener('click', () => {
-      retryWeeklyUnmatched(platform);
+    q(ch, 'UnmatchedRetryBtn', platform)?.addEventListener('click', () => {
+      retryWeeklyUnmatched(ch, platform);
     });
   }
 
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
-    PLATFORMS.forEach(bindPlatformEvents);
+    CHANNELS.forEach(channel => {
+      PLATFORMS.forEach(platform => bindPlatformEvents(channel, platform));
+    });
     $('#weeklySettlementDetailClose')?.addEventListener('click', hideDetail);
     $('#weeklySettlementCallAuditClose')?.addEventListener('click', hideCallAudit);
     document.addEventListener('click', event => {
@@ -855,6 +931,7 @@ const BremWeeklySettlementAdmin = (function () {
         void applyWeeklyCallFromReport({
           driverId: applyCallBtn.dataset.driverId,
           platform: applyCallBtn.dataset.platform,
+          channel: applyCallBtn.dataset.channel || 'bro',
           startDate: applyCallBtn.dataset.startDate,
           endDate: applyCallBtn.dataset.endDate,
           weeklyOrderCount: Number(applyCallBtn.dataset.weeklyOrderCount || 0),
@@ -864,9 +941,9 @@ const BremWeeklySettlementAdmin = (function () {
       }
       const weeklyRetryBtn = event.target.closest('[data-weekly-retry-unmatched]');
       if (weeklyRetryBtn) {
-        const panel = weeklyRetryBtn.closest('.admin-platform-panel[data-platform]');
-        const platform = panel?.dataset?.platform || platformFromEvent(event);
-        retryWeeklyUnmatched(platform, { recordIds: [weeklyRetryBtn.dataset.weeklyRetryUnmatched] });
+        const channel = channelFromEvent(event);
+        const platform = platformFromEvent(event);
+        retryWeeklyUnmatched(channel, platform, { recordIds: [weeklyRetryBtn.dataset.weeklyRetryUnmatched] });
         return;
       }
       const detailBtn = event.target.closest('[data-weekly-detail]');
@@ -883,7 +960,7 @@ const BremWeeklySettlementAdmin = (function () {
         BremStorage.settlementUploadLogs.removeByLinkedRecordId(deleteBtn.dataset.weeklyDelete);
         void BremStorage.flushStorage?.();
         if (state.detailId === deleteBtn.dataset.weeklyDelete) hideDetail();
-        if (record) renderSavedList(record.platform);
+        if (record) renderSavedList(normChannel(record.channel), record.platform);
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
         showToast('주간정산이 삭제되었습니다.');
         return;
@@ -892,29 +969,32 @@ const BremWeeklySettlementAdmin = (function () {
       if (deleteLogBtn) {
         const log = BremStorage.settlementUploadLogs.getById(deleteLogBtn.dataset.weeklyDeleteLog);
         BremStorage.settlementUploadLogs.remove(deleteLogBtn.dataset.weeklyDeleteLog);
+        const channel = channelFromEvent(event);
+        const platform = log?.platform || platformFromEvent(event);
         void BremStorage.flushStorage?.().then(() => {
-          renderSavedList(log?.platform || platformFromEvent(event));
+          renderSavedList(channel, platform);
           showToast('업로드 기록이 삭제되었습니다.');
         });
       }
     });
   }
 
-  function platformFromEvent(event) {
-    const panel = event.target.closest('.admin-platform-panel[data-platform]');
-    return panel?.dataset?.platform || 'coupang';
-  }
-
-  function refresh() {
-    PLATFORMS.forEach(platform => {
-      renderPreview(platform);
-      renderSavedList(platform);
-      renderWeeklyUnmatched(platform);
+  function refresh(channelFilter) {
+    const channels = (channelFilter === 'bro' || channelFilter === 'direct')
+      ? [channelFilter]
+      : CHANNELS;
+    channels.forEach(channel => {
+      if (!$(`#${sectionIdFor(channel)}`)) return;
+      PLATFORMS.forEach(platform => {
+        renderPreview(channel, platform);
+        renderSavedList(channel, platform);
+        renderWeeklyUnmatched(channel, platform);
+      });
     });
   }
 
   function init() {
-    if (!$('#weekly-settlement')) return;
+    if (!$('#weekly-settlement') && !$('#weekly-settlement-direct')) return;
     bindEvents();
     refresh();
   }

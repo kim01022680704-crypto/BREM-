@@ -178,17 +178,20 @@ const BremStorage = (function () {
       const weekStart = String(
         item.weekStart || (periodKey ? weekStartKeyFromDate(periodKey) : '')
       ).slice(0, 10);
+      const channel = (item.channel === 'direct' || item.matchPayload?.channel === 'direct') ? 'direct' : 'bro';
+      const channelTag = channel === 'direct' ? '-direct' : '';
       const nameKey = String(item.rawName || item.name || item.originalName || item.riderName || '').replace(/\s/g, '');
       const idKey = kind === 'weekly'
         ? String(item.coupangLoginKey || item.baeminUserId || nameKey)
         : nameKey;
       const defaultId = kind === 'weekly'
-        ? `${weekStart}-weekly-${platform}-${idKey}`
+        ? `${weekStart}-weekly-${platform}${channelTag}-${idKey}`
         : `${periodKey}-${platform}-${nameKey}`;
       const next = {
         ...item,
         platform,
         kind,
+        channel,
         weekStart,
         endDate: String(item.endDate || '').slice(0, 10),
         id: String(item.id || defaultId),
@@ -9562,10 +9565,13 @@ const BremStorage = (function () {
       unmatchedRiders: 0,
       callCountMismatches: riders.filter(r => r.callCountMatched === false).length
     };
+    const channel = (record.channel === 'direct' || summary.channel === 'direct') ? 'direct' : 'bro';
+    summary.channel = channel;
 
     return {
       id: record.id || createId(),
       platform,
+      channel,
       region: String(record.region || '').trim(),
       fileName: String(record.fileName || '').trim(),
       baseSettlementDate: String(record.baseSettlementDate || '').slice(0, 10),
@@ -9690,6 +9696,7 @@ const BremStorage = (function () {
     return {
       id: String(entry.id || createId()),
       kind,
+      channel: entry.channel === 'direct' ? 'direct' : (entry.channel === 'bro' ? 'bro' : ''),
       platform: normalizePlatform(entry.platform),
       fileName: String(entry.fileName || '').trim(),
       period,
@@ -9732,9 +9739,24 @@ const BremStorage = (function () {
       const kind = options.kind ? String(options.kind) : '';
       const platform = options.platform ? normalizePlatform(options.platform) : '';
       const weekStart = String(options.weekStart || '').slice(0, 10);
+      const channel = options.channel === 'direct' || options.channel === 'bro'
+        ? options.channel
+        : '';
+      // 채널 필터 시, 저장된 주정산 레코드의 채널로 로그 채널을 파생(로그엔 채널이 DB에 남지 않음).
+      const recordChannel = channel
+        ? new Map(weeklySettlements.getAll().map(r => [r.id, r.channel === 'direct' ? 'direct' : 'bro']))
+        : null;
+      const resolveLogChannel = item => {
+        if (item.channel === 'direct' || item.channel === 'bro') return item.channel;
+        if (item.linkedRecordId && recordChannel && recordChannel.has(item.linkedRecordId)) {
+          return recordChannel.get(item.linkedRecordId);
+        }
+        return 'bro';
+      };
       return settlementUploadLogs.getAll().filter(item => {
         if (kind && item.kind !== kind) return false;
         if (platform && item.platform !== platform) return false;
+        if (channel && resolveLogChannel(item) !== channel) return false;
         if (weekStart) {
           const itemWeekStart = String(
             item.weekStart || (item.period ? weekStartKeyFromDate(item.period) : '')
@@ -10051,6 +10073,7 @@ const BremStorage = (function () {
         if (existingLinks.has(record.id)) return;
         settlementUploadLogs.add({
           kind: 'weekly',
+          channel: record.channel === 'direct' ? 'direct' : 'bro',
           platform: record.platform,
           fileName: record.fileName,
           period: record.startDate,
@@ -10258,14 +10281,16 @@ const BremStorage = (function () {
       return normalizeSettlementUnmatched(storageAdapter.read(KEYS.settlementUnmatched, []));
     },
 
-    getByWeek({ weekStart, platform, kind }) {
+    getByWeek({ weekStart, platform, kind, channel }) {
       const weekKey = String(weekStart || '').slice(0, 10);
       const p = platform ? normalizePlatform(platform) : '';
       const kindFilter = kind === 'weekly' || kind === 'daily' ? kind : '';
+      const channelFilter = channel === 'direct' || channel === 'bro' ? channel : '';
       return settlementUnmatched.getAll().filter((item) => {
         if (item.weekStart !== weekKey) return false;
         if (p && normalizePlatform(item.platform) !== p) return false;
         if (kindFilter && item.kind !== kindFilter) return false;
+        if (channelFilter && (item.channel === 'direct' ? 'direct' : 'bro') !== channelFilter) return false;
         return true;
       });
     },
@@ -10329,11 +10354,13 @@ const BremStorage = (function () {
       return list;
     },
 
-    saveWeeklyBatch({ weekStart, startDate, endDate, records, sourceFileName, platform = DEFAULT_PLATFORM, region = '' }) {
+    saveWeeklyBatch({ weekStart, startDate, endDate, records, sourceFileName, platform = DEFAULT_PLATFORM, region = '', channel = 'bro' }) {
       const weekKey = String(weekStart || weekStartKeyFromDate(startDate)).slice(0, 10);
       const startKey = String(startDate || weekKey).slice(0, 10);
       const endKey = String(endDate || weekEndKeyFromDate(weekKey)).slice(0, 10);
       const p = normalizePlatform(platform);
+      const ch = channel === 'direct' ? 'direct' : 'bro';
+      const channelTag = ch === 'direct' ? '-direct' : '';
       if (!weekKey || !Array.isArray(records) || !records.length) {
         return settlementUnmatched.getAll();
       }
@@ -10347,8 +10374,9 @@ const BremStorage = (function () {
         const baeminUserId = String(record.baeminUserId || '').trim();
         const idKey = coupangLoginKey || baeminUserId || rawName.replace(/\s/g, '');
         return {
-          id: `${weekKey}-weekly-${p}-${idKey}`,
+          id: `${weekKey}-weekly-${p}${channelTag}-${idKey}`,
           kind: 'weekly',
+          channel: ch,
           weekStart: weekKey,
           period: startKey,
           endDate: endKey,
@@ -10367,7 +10395,8 @@ const BremStorage = (function () {
             riderName: name,
             coupangLoginKey,
             baeminUserId,
-            weeklyOrderCount: Number(record.weeklyOrderCount ?? record.orderCount ?? 0)
+            weeklyOrderCount: Number(record.weeklyOrderCount ?? record.orderCount ?? 0),
+            channel: ch
           },
           sourceFileName: sourceFileName || '',
           savedAt
@@ -10379,6 +10408,7 @@ const BremStorage = (function () {
         if (item.kind !== 'weekly') return true;
         if (normalizePlatform(item.platform) !== p) return true;
         if (item.weekStart !== weekKey) return true;
+        if ((item.channel === 'direct' ? 'direct' : 'bro') !== ch) return true;
         if (regionKey && item.region === regionKey) return false;
         if (incomingIds.has(item.id)) return false;
         return true;
@@ -10507,14 +10537,16 @@ const BremStorage = (function () {
       };
     },
 
-    retryWeeklyMatching({ platform, weekStart, recordIds = [] } = {}) {
+    retryWeeklyMatching({ platform, weekStart, recordIds = [], channel = 'bro' } = {}) {
       const p = normalizePlatform(platform);
       const weekKey = String(weekStart || '').slice(0, 10);
+      const ch = channel === 'direct' ? 'direct' : 'bro';
+      const channelTag = ch === 'direct' ? '-direct' : '';
       const idFilter = new Set((Array.isArray(recordIds) ? recordIds : []).map(String).filter(Boolean));
       if (!weekKey || typeof BremWeeklySettlement === 'undefined') {
         return { matchedCount: 0, stillUnmatchedCount: 0, mergedToSaved: 0, needsManualSave: false };
       }
-      const weekPending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'weekly' });
+      const weekPending = settlementUnmatched.getByWeek({ weekStart: weekKey, platform: p, kind: 'weekly', channel: ch });
       let pending = weekPending;
       if (idFilter.size) {
         pending = pending.filter(item => idFilter.has(String(item.id)));
@@ -10549,6 +10581,7 @@ const BremStorage = (function () {
         const saved = weeklySettlements.getAll().find(record => (
           normalizePlatform(record.platform) === p
           && weekStartKeyFromDate(record.startDate || record.period) === weekKey
+          && (record.channel === 'direct' ? 'direct' : 'bro') === ch
         ));
         if (saved) {
           const existingIds = new Set((saved.riders || []).map(r => String(r.matchedRiderId || '')));
@@ -10576,8 +10609,9 @@ const BremStorage = (function () {
         const idKey = coupangLoginKey || baeminUserId || rawName.replace(/\s/g, '');
         const source = pending.find(item => item.id === record._unmatchedId);
         return {
-          id: `${weekKey}-weekly-${p}-${idKey}`,
+          id: `${weekKey}-weekly-${p}${channelTag}-${idKey}`,
           kind: 'weekly',
+          channel: ch,
           weekStart: weekKey,
           period: startDate,
           endDate,
@@ -10593,7 +10627,8 @@ const BremStorage = (function () {
             riderName: name,
             coupangLoginKey,
             baeminUserId,
-            weeklyOrderCount: Number(record.weeklyOrderCount ?? 0)
+            weeklyOrderCount: Number(record.weeklyOrderCount ?? 0),
+            channel: ch
           },
           sourceFileName: source?.sourceFileName || '',
           savedAt: new Date().toISOString()
@@ -10604,6 +10639,7 @@ const BremStorage = (function () {
         item.kind === 'weekly'
         && item.weekStart === weekKey
         && normalizePlatform(item.platform) === p
+        && (item.channel === 'direct' ? 'direct' : 'bro') === ch
       ));
       storageAdapter.write(KEYS.settlementUnmatched, other.concat(untouched).concat(nextPending));
       return {
@@ -10711,6 +10747,7 @@ const BremStorage = (function () {
     'promotion-apply',
     'settlements',
     'weekly-settlement',
+    'weekly-settlement-direct',
     'admin-account',
     'revenue-management',
     'payroll-slips',
