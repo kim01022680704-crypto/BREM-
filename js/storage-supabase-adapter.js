@@ -319,15 +319,26 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     async function fetchAllTableRows(buildQuery, fromRow, pageSize = TABLE_FETCH_PAGE_SIZE) {
+      // 페이지를 순차로 받으면 대용량 테이블에서 왕복 지연이 누적된다(예: 5천여 행 → 6.8초).
+      // 데이터/정렬 결과는 그대로 두고, 페이지를 소규모 웨이브로 병렬 요청해 왕복 횟수를 줄인다.
+      const CONCURRENCY = 4;
       const rows = [];
       let offset = 0;
-      while (true) {
-        const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
-        if (error) throw error;
-        const page = (data || []).map(fromRow);
-        rows.push(...page);
-        if (page.length < pageSize) break;
-        offset += pageSize;
+      let done = false;
+      while (!done) {
+        const batch = [];
+        for (let i = 0; i < CONCURRENCY; i += 1) {
+          const off = offset + i * pageSize;
+          batch.push(buildQuery().range(off, off + pageSize - 1));
+        }
+        const results = await Promise.all(batch);
+        for (const { data, error } of results) {
+          if (error) throw error;
+          const page = (data || []).map(fromRow);
+          rows.push(...page);
+          if (page.length < pageSize) { done = true; break; }
+        }
+        offset += CONCURRENCY * pageSize;
       }
       return rows;
     }
