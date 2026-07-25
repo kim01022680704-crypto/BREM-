@@ -54,6 +54,33 @@ const BremWeeklySettlementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
+  // 직계약 배민 정산서 금액/공제 열 (미리보기·상세에 표시)
+  const DIRECT_AMOUNT_FIELDS = [
+    { key: 'deliveryFee', label: '배달료(E)' },
+    { key: 'missionPay', label: '추가지급(F)' },
+    { key: 'totalDeliveryPay', label: '총배달료(G)' },
+    { key: 'employmentInsurance', label: '고용보험(L)' },
+    { key: 'accidentInsurance', label: '산재보험(N)' },
+    { key: 'withholdingTax', label: '원천세(Y)' }
+  ];
+
+  function isDirectBaeminView(channel, platform) {
+    return normChannel(channel) === 'direct' && platform === 'baemin';
+  }
+
+  function directAmountHeadCells(channel, platform) {
+    if (!isDirectBaeminView(channel, platform)) return '';
+    return DIRECT_AMOUNT_FIELDS.map(f => `<th>${escapeHtml(f.label)}</th>`).join('');
+  }
+
+  function directAmountBodyCells(rider, channel, platform) {
+    if (!isDirectBaeminView(channel, platform)) return '';
+    const amounts = rider?.amounts || {};
+    return DIRECT_AMOUNT_FIELDS
+      .map(f => `<td class="weekly-amount-cell">${formatNumber(amounts[f.key] || 0)}</td>`)
+      .join('');
+  }
+
   function platformLabel(platform) {
     return BremPlatforms.label(platform);
   }
@@ -177,8 +204,39 @@ const BremWeeklySettlementAdmin = (function () {
     return rider.coupangLoginKey || rider.originalName || '-';
   }
 
+  function isDirectBaemin(channel, platform) {
+    return normChannel(channel) === 'direct' && platform === 'baemin';
+  }
+
+  function readDirectBaeminAmountColumns(channel) {
+    return {
+      deliveryFee: q(channel, 'DeliveryFeeCol', 'baemin')?.value?.trim() || 'E',
+      missionPay: q(channel, 'MissionPayCol', 'baemin')?.value?.trim() || 'F',
+      totalDeliveryPay: q(channel, 'TotalPayCol', 'baemin')?.value?.trim() || 'G',
+      employmentInsurance: q(channel, 'EmploymentInsCol', 'baemin')?.value?.trim() || 'L',
+      accidentInsurance: q(channel, 'AccidentInsCol', 'baemin')?.value?.trim() || 'N',
+      withholdingTax: q(channel, 'WithholdingTaxCol', 'baemin')?.value?.trim() || 'Y'
+    };
+  }
+
   function readUploadForm(channel, platform) {
     if (platform === 'coupang') fillCoupangDatesFromBase(channel);
+    // 직계약 배민 기본 시작행은 20행(사용자 정산서 구조), 그 외는 쿠팡 12 / 배민 2.
+    const startRowDefault = isDirectBaemin(channel, platform)
+      ? 20
+      : (platform === 'coupang' ? 12 : 2);
+    const columnConfig = {
+      nameColumn: q(channel, 'NameCol', platform)?.value || 'C',
+      userIdColumn: platform === 'baemin'
+        ? (q(channel, 'UserIdCol', 'baemin')?.value || 'B')
+        : '',
+      orderCountColumn: q(channel, 'OrderCol', platform)?.value
+        || (platform === 'baemin' ? 'D' : 'F'),
+      startRow: Number(q(channel, 'StartRow', platform)?.value || startRowDefault)
+    };
+    if (isDirectBaemin(channel, platform)) {
+      columnConfig.amountColumns = readDirectBaeminAmountColumns(channel);
+    }
     return {
       platform,
       channel: normChannel(channel),
@@ -191,15 +249,7 @@ const BremWeeklySettlementAdmin = (function () {
       settlementWeekLabel: q(channel, 'WeekLabel', platform)?.value?.trim() || '',
       password: q(channel, 'Password', platform)?.value || '',
       file: q(channel, 'File', platform)?.files?.[0] || null,
-      columnConfig: {
-        nameColumn: q(channel, 'NameCol', platform)?.value || 'C',
-        userIdColumn: platform === 'baemin'
-          ? (q(channel, 'UserIdCol', 'baemin')?.value || 'B')
-          : '',
-        orderCountColumn: q(channel, 'OrderCol', platform)?.value
-          || (platform === 'baemin' ? 'D' : 'F'),
-        startRow: Number(q(channel, 'StartRow', platform)?.value || (platform === 'coupang' ? 12 : 2))
-      }
+      columnConfig
     };
   }
 
@@ -606,6 +656,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${escapeHtml(riderMatchIdValue(rider, platform))}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
+        ${directAmountBodyCells(rider, ch, platform)}
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${callStatus}</td>
         <td class="promotion-status-ok">매칭</td>
@@ -623,6 +674,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${escapeHtml(riderMatchIdValue(rider, platform))}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
+        ${directAmountBodyCells(rider, ch, platform)}
         <td>-</td>
         <td class="promotion-status-no">-</td>
         <td class="promotion-status-no">미매칭</td>
@@ -632,7 +684,8 @@ const BremWeeklySettlementAdmin = (function () {
     `;
     }).join('');
 
-    rowsEl.innerHTML = matchedRows + unmatchedRows || '<tr><td colspan="9" class="empty">데이터 없음</td></tr>';
+    const emptyColspan = isDirectBaeminView(ch, platform) ? 9 + DIRECT_AMOUNT_FIELDS.length : 9;
+    rowsEl.innerHTML = matchedRows + unmatchedRows || `<tr><td colspan="${emptyColspan}" class="empty">데이터 없음</td></tr>`;
   }
 
   function unmatchedDefaultWarning(platform) {
@@ -822,6 +875,7 @@ const BremWeeklySettlementAdmin = (function () {
       <p>매칭 ${formatNumber(record.summary.matchedRiders)}명: <strong>${escapeHtml(record.matchedNamesLabel || '-')}</strong></p>
       ${mismatchCount ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 불일치 ${formatNumber(mismatchCount)}명 — 경고 열에서 누락 일·일별 콜수를 확인하세요.</p>` : ''}
     `;
+    const detailIsDirectBaemin = isDirectBaeminView(record.channel, record.platform);
     const headEl = $('#weeklySettlementDetailHead');
     if (headEl) {
       headEl.innerHTML = `<tr>
@@ -829,6 +883,7 @@ const BremWeeklySettlementAdmin = (function () {
             <th>원본 이름</th>
             <th>${escapeHtml(idLabel)}</th>
             <th>주간 ${escapeHtml(orderLabel)}</th>
+            ${directAmountHeadCells(record.channel, record.platform)}
             <th>시스템 콜수</th>
             <th>콜수 일치</th>
             <th>경고</th>
@@ -849,6 +904,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${escapeHtml(riderMatchIdValue(rider, record.platform))}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
+        ${detailIsDirectBaemin ? directAmountBodyCells(rider, record.channel, record.platform) : ''}
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${rider.callCountMatched === false ? '불일치' : '일치'}</td>
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>

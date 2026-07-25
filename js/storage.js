@@ -9551,7 +9551,7 @@ const BremStorage = (function () {
         if (platform === 'baemin' && !baeminUserId && driver?.baeminId) {
           baeminUserId = normBaemin(driver.baeminId);
         }
-        return {
+        const normalized = {
           originalName: String(rider.originalName || ''),
           riderName: String(rider.riderName || ''),
           driverName: String(rider.driverName || driver?.name || rider.riderName || ''),
@@ -9564,6 +9564,19 @@ const BremStorage = (function () {
           baeminUserId,
           warnings: Array.isArray(rider.warnings) ? rider.warnings.map(String) : []
         };
+        // 직계약 금액/공제(배달료·추가지급·총배달료·고용/산재보험·원천세) 보존
+        if (rider.amounts && typeof rider.amounts === 'object') {
+          const a = rider.amounts;
+          normalized.amounts = {
+            deliveryFee: Number(a.deliveryFee || 0),
+            missionPay: Number(a.missionPay || 0),
+            totalDeliveryPay: Number(a.totalDeliveryPay || 0),
+            employmentInsurance: Number(a.employmentInsurance || 0),
+            accidentInsurance: Number(a.accidentInsurance || 0),
+            withholdingTax: Number(a.withholdingTax || 0)
+          };
+        }
+        return normalized;
       })
       : [];
 

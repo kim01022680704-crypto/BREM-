@@ -4168,9 +4168,22 @@
               <div class="promotion-form-grid">
                 <label>User ID 열<input type="text" id="weeklySettlementDirectUserIdCol-baemin" value="B"></label>
                 <label>라이더명 열<input type="text" id="weeklySettlementDirectNameCol-baemin" value="C"></label>
-                <label>처리건수 열<input type="text" id="weeklySettlementDirectOrderCol-baemin" value="D"></label>
-                <label>데이터 시작행<input type="number" id="weeklySettlementDirectStartRow-baemin" min="1" value="2"></label>
+                <label>콜수 열<input type="text" id="weeklySettlementDirectOrderCol-baemin" value="D"></label>
+                <label>데이터 시작행<input type="number" id="weeklySettlementDirectStartRow-baemin" min="1" value="20"></label>
               </div>
+              <h3>지급 금액 열</h3>
+              <div class="promotion-form-grid">
+                <label>배달료<input type="text" id="weeklySettlementDirectDeliveryFeeCol-baemin" value="E"></label>
+                <label>추가지급(배민미션)<input type="text" id="weeklySettlementDirectMissionPayCol-baemin" value="F"></label>
+                <label>총배달료 지급계액<input type="text" id="weeklySettlementDirectTotalPayCol-baemin" value="G"></label>
+              </div>
+              <h3>공제 열</h3>
+              <div class="promotion-form-grid">
+                <label>고용보험<input type="text" id="weeklySettlementDirectEmploymentInsCol-baemin" value="L"></label>
+                <label>산재보험<input type="text" id="weeklySettlementDirectAccidentInsCol-baemin" value="N"></label>
+                <label>원천세<input type="text" id="weeklySettlementDirectWithholdingTaxCol-baemin" value="Y"></label>
+              </div>
+              <p class="form-help">프로모션·기타지급 합산과 직계약 전용 명세서는 다음 단계에서 추가됩니다.</p>
             </div>
             <div class="promotion-form-actions">
               <button type="submit" class="primary-btn">업로드 및 매칭</button>
@@ -4194,7 +4207,13 @@
                   <th>기사명</th>
                   <th>원본 이름</th>
                   <th>User ID(B)</th>
-                  <th>주간 처리건수(D)</th>
+                  <th>주간 콜수(D)</th>
+                  <th>배달료(E)</th>
+                  <th>추가지급(F)</th>
+                  <th>총배달료(G)</th>
+                  <th>고용보험(L)</th>
+                  <th>산재보험(N)</th>
+                  <th>원천세(Y)</th>
                   <th>시스템 콜수</th>
                   <th>콜수 일치</th>
                   <th>매칭</th>

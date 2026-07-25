@@ -139,6 +139,34 @@ const BremWeeklySettlement = (function () {
     return raw;
   }
 
+  function parseAmount(value) {
+    const num = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  // 직계약 배민 정산서 금액/공제 열 기본값 (사용자 지정: E/F/G, 공제 L/N/Y)
+  const DIRECT_BAEMIN_AMOUNT_COLUMNS = Object.freeze({
+    deliveryFee: 'E',           // 배달료
+    missionPay: 'F',            // 추가지급(배민미션)
+    totalDeliveryPay: 'G',      // 총배달료 지급계액 (프로모션·기타지급은 추후 합산)
+    employmentInsurance: 'L',   // 고용보험(공제)
+    accidentInsurance: 'N',     // 산재보험(공제)
+    withholdingTax: 'Y'         // 원천세(공제)
+  });
+
+  function extractBaeminAmounts(row, amountColumns) {
+    if (!amountColumns) return null;
+    const cols = { ...DIRECT_BAEMIN_AMOUNT_COLUMNS, ...amountColumns };
+    return {
+      deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
+      missionPay: parseAmount(readCell(row, cols.missionPay)),
+      totalDeliveryPay: parseAmount(readCell(row, cols.totalDeliveryPay)),
+      employmentInsurance: parseAmount(readCell(row, cols.employmentInsurance)),
+      accidentInsurance: parseAmount(readCell(row, cols.accidentInsurance)),
+      withholdingTax: parseAmount(readCell(row, cols.withholdingTax))
+    };
+  }
+
   function normalizeName(rawName, platform) {
     return normalizePlatform(platform) === 'baemin'
       ? normalizeBaeminName(rawName)
@@ -551,6 +579,8 @@ const BremWeeklySettlement = (function () {
     const nameColumn = columnConfig.nameColumn || 'C';
     const orderCountColumn = columnConfig.orderCountColumn || 'D';
     const startRow = Number(columnConfig.startRow || 2);
+    // 직계약: 금액/공제 열이 지정되면 라이더별 amounts(배달료·추가지급·총배달료·공제)를 함께 추출한다.
+    const amountColumns = columnConfig.amountColumns || null;
     const rows = await readWeeklyRows(file, password, {
       sheetMatcher: name => name.includes(BAEMIN_SHEET_KEYWORD)
     });
@@ -565,12 +595,15 @@ const BremWeeklySettlement = (function () {
       if (!normalizedUserId) continue;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
-      pushUniqueRider(riders, seen, normalizedUserId, {
+      const rider = {
         originalName: rawName,
         riderName: normalizeBaeminName(rawName),
         baeminUserId: normalizedUserId,
         weeklyOrderCount
-      });
+      };
+      const amounts = extractBaeminAmounts(rows[i] || [], amountColumns);
+      if (amounts) rider.amounts = amounts;
+      pushUniqueRider(riders, seen, normalizedUserId, rider);
     }
 
     if (!riders.length) {
@@ -798,6 +831,8 @@ const BremWeeklySettlement = (function () {
         systemCallCount: callMatch.systemCallCount,
         callCountMatched: matched && hasSystemData ? callMatch.callCountMatched : false,
         callStatsByDay: callMatch.callStatsByDay || {},
+        // 직계약 금액/공제(있으면) 보존
+        ...(rider.amounts ? { amounts: rider.amounts } : {}),
         warnings: matched ? warnings : [unmatchedReasonForRider(p, driver, hasSystemData, rider)]
       };
     });
