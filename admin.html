@@ -4286,6 +4286,86 @@
             </table>
           </div>
         </article>
+
+        <article class="card" id="directAdjustCard">
+          <div class="card-header">
+            <h2>직계약 지급 조정 · 기타지급 / BREM프로모션</h2>
+            <label class="settlement-week-filter">
+              <span>적용주(수요일)</span>
+              <input type="date" id="directAdjustWeek" class="admin-period-input">
+            </label>
+          </div>
+          <p class="form-help">엑셀 <strong>A열 배민ID · B열 금액</strong>으로 일괄 등록합니다. 프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3%(원 단위 절사)로 자동 계산됩니다.</p>
+          <p class="settlement-week-range-label" id="directAdjustWeekRange"></p>
+
+          <div class="payroll-bulk-grid">
+            <section class="card payroll-bulk-card">
+              <div class="card-header"><h3>기타지급 일괄등록</h3></div>
+              <p class="form-help">A열 배민ID · B열 금액</p>
+              <label>정산서 파일 (.xlsx)
+                <input type="file" id="directOtherBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              </label>
+              <div class="promotion-form-actions">
+                <button type="button" class="primary-btn" id="directOtherBulkApplyBtn">적용하기</button>
+                <button type="button" class="small-btn" id="directOtherBulkClearPendingBtn">미리보기 취소</button>
+                <button type="button" class="small-btn" id="directOtherBulkRetryBtn">매칭 재시도</button>
+              </div>
+              <p class="settlement-result-stats" id="directOtherBulkSummary"></p>
+              <div class="table-wrap" id="directOtherBulkPreview" hidden>
+                <table class="weekly-settlement-saved-table">
+                  <thead><tr><th>행</th><th>배민ID</th><th>기사</th><th>금액</th><th>매칭</th></tr></thead>
+                  <tbody id="directOtherBulkBody"></tbody>
+                </table>
+              </div>
+              <h4 class="direct-adjust-subhead">적용된 기타지급 (이 주)</h4>
+              <div class="table-wrap">
+                <table class="weekly-settlement-saved-table">
+                  <thead><tr><th>기사</th><th>배민ID</th><th>금액</th><th>출처</th><th>관리</th></tr></thead>
+                  <tbody id="directOtherAppliedBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="card payroll-bulk-card">
+              <div class="card-header"><h3>BREM프로모션 일괄등록</h3></div>
+              <p class="form-help">A열 배민ID · B열 금액 (엑셀 트랙) — ERP 프로모션 적용 결과에서 넣는 기능은 다음 단계</p>
+              <label>정산서 파일 (.xlsx)
+                <input type="file" id="directPromotionBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              </label>
+              <div class="promotion-form-actions">
+                <button type="button" class="primary-btn" id="directPromotionBulkApplyBtn">적용하기</button>
+                <button type="button" class="small-btn" id="directPromotionBulkClearPendingBtn">미리보기 취소</button>
+                <button type="button" class="small-btn" id="directPromotionBulkRetryBtn">매칭 재시도</button>
+              </div>
+              <p class="settlement-result-stats" id="directPromotionBulkSummary"></p>
+              <div class="table-wrap" id="directPromotionBulkPreview" hidden>
+                <table class="weekly-settlement-saved-table">
+                  <thead><tr><th>행</th><th>배민ID</th><th>기사</th><th>금액</th><th>매칭</th></tr></thead>
+                  <tbody id="directPromotionBulkBody"></tbody>
+                </table>
+              </div>
+              <h4 class="direct-adjust-subhead">적용된 BREM프로모션 (이 주)</h4>
+              <div class="table-wrap">
+                <table class="weekly-settlement-saved-table">
+                  <thead><tr><th>기사</th><th>배민ID</th><th>금액</th><th>출처</th><th>관리</th></tr></thead>
+                  <tbody id="directPromotionAppliedBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <article class="card">
+            <div class="card-header"><h3>프로모션원천세 (자동계산 · 3.3%)</h3></div>
+            <p class="form-help">프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3% · 원 단위 절사</p>
+            <p class="settlement-result-stats" id="directPromoTaxSummary"></p>
+            <div class="table-wrap">
+              <table class="weekly-settlement-saved-table">
+                <thead><tr><th>기사</th><th>BREM프로모션</th><th>기타지급</th><th>합계</th><th>프로모션원천세</th></tr></thead>
+                <tbody id="directPromoTaxBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </article>
         </div>
       </section>
 
@@ -6440,6 +6520,8 @@
   <script src="js/payroll-slip-utils.js?v=20260701d"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
+  <script src="js/direct-adjustment-bulk.js?v=20260725a"></script>
+  <script src="js/direct-adjustment-admin.js?v=20260725a"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

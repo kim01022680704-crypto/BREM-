@@ -44,6 +44,8 @@ const BremStorage = (function () {
     promotionSelectorOptions: 'brem_admin_promotion_selector_options',
     weeklySettlements: 'brem_admin_weekly_settlements',
     weeklySettlementsDirect: 'brem_admin_weekly_settlements_direct',
+    directOtherPayments: 'brem_admin_direct_other_payments',
+    directBremPromotions: 'brem_admin_direct_brem_promotions',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
     missionDefaults: 'brem_admin_mission_defaults',
@@ -10334,6 +10336,62 @@ const BremStorage = (function () {
     }
   };
 
+  // 직계약 지급 조정(기타지급 · BREM프로모션) — 주(수~화) 단위 기사별 금액.
+  // 저장 형태: { [weekStart]: { [driverId]: { amount, baeminId, driverName, source, updatedAt } } }
+  const directPayAdjustments = {
+    keyFor(kind) {
+      return kind === 'promotion' ? KEYS.directBremPromotions : KEYS.directOtherPayments;
+    },
+    getBlob(kind) {
+      const raw = storageAdapter.read(this.keyFor(kind), {});
+      return (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    },
+    getWeek(kind, weekStart) {
+      const wk = String(weekStart || '').slice(0, 10);
+      const week = this.getBlob(kind)[wk];
+      return (week && typeof week === 'object') ? week : {};
+    },
+    // entries: [{ driverId, amount, baeminId, driverName, source }]
+    applyEntries(kind, weekStart, entries, options = {}) {
+      const wk = String(weekStart || '').slice(0, 10);
+      if (!wk) return {};
+      const blob = this.getBlob(kind);
+      const existing = options.replace
+        ? {}
+        : (blob[wk] && typeof blob[wk] === 'object' ? { ...blob[wk] } : {});
+      const now = new Date().toISOString();
+      (Array.isArray(entries) ? entries : []).forEach(entry => {
+        const id = String(entry.driverId || '').trim();
+        if (!id) return;
+        existing[id] = {
+          amount: Math.round(Number(entry.amount || 0)),
+          baeminId: String(entry.baeminId || '').trim(),
+          driverName: String(entry.driverName || '').trim(),
+          source: entry.source === 'erp' ? 'erp' : 'excel',
+          updatedAt: now
+        };
+      });
+      blob[wk] = existing;
+      storageAdapter.write(this.keyFor(kind), blob);
+      return existing;
+    },
+    removeDriver(kind, weekStart, driverId) {
+      const wk = String(weekStart || '').slice(0, 10);
+      const blob = this.getBlob(kind);
+      if (blob[wk]) {
+        delete blob[wk][String(driverId || '').trim()];
+        storageAdapter.write(this.keyFor(kind), blob, { allowEmpty: true });
+      }
+      return blob[wk] || {};
+    },
+    clearWeek(kind, weekStart) {
+      const wk = String(weekStart || '').slice(0, 10);
+      const blob = this.getBlob(kind);
+      delete blob[wk];
+      storageAdapter.write(this.keyFor(kind), blob, { allowEmpty: true });
+    }
+  };
+
   const settlementUnmatched = {
     getAll(channel) {
       const key = settlementUnmatchedKey(channel === 'direct' ? 'direct' : 'bro');
@@ -12544,6 +12602,7 @@ const BremStorage = (function () {
     resolveWeeklySettlementPlatform,
     promotionApplyResults,
     manualNameMappings,
+    directPayAdjustments,
     auth
   };
 })();

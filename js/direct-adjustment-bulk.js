@@ -1,0 +1,214 @@
+(function () {
+  // 직계약 지급 조정 일괄 업로드 파서 — A열 배민ID, B열 금액.
+  const COL = Object.freeze({
+    baeminId: 0,
+    amount: 1
+  });
+
+  const HEADER_MARKERS = ['배민', 'baemin', '아이디', 'id', '금액', 'amount', '프로모션', 'brem', '기타지급'];
+
+  function cellValue(row, index) {
+    if (!row || index >= row.length) return '';
+    const value = row[index];
+    if (value === undefined || value === null) return '';
+    return value;
+  }
+
+  function parseMoney(value) {
+    return window.BremPayrollSlipUtils?.parseMoney?.(value)
+      ?? (Number(String(value ?? '').replace(/[^\d.-]/g, '')) || 0);
+  }
+
+  function normalizeBaeminId(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    if (window.BremWeeklySettlement?.normalizeBaeminUserId) {
+      return window.BremWeeklySettlement.normalizeBaeminUserId(raw);
+    }
+    return raw;
+  }
+
+  function isHeaderRow(row) {
+    const idText = String(cellValue(row, COL.baeminId) || '').trim().toLowerCase();
+    if (!idText) return false;
+    // 금액 칸이 숫자면 데이터 행으로 간주(헤더 아님)
+    const amountText = String(cellValue(row, COL.amount) ?? '').trim();
+    const amountIsNumeric = /^[\d,]+(\.\d+)?$/.test(amountText.replace(/\s/g, ''));
+    if (amountIsNumeric) return false;
+    return HEADER_MARKERS.some(marker => idText.includes(marker));
+  }
+
+  function isRowEmpty(row) {
+    const baeminId = normalizeBaeminId(cellValue(row, COL.baeminId));
+    const amount = parseMoney(cellValue(row, COL.amount));
+    return !baeminId && !amount;
+  }
+
+  function matchStatusLabel(status) {
+    if (status === 'matched') return '매칭';
+    if (status === 'duplicate') return '중복매칭';
+    if (status === 'manual') return '수동선택';
+    if (status === 'empty_id') return 'ID 없음';
+    return '미매칭';
+  }
+
+  function matchRow(baeminId, drivers) {
+    const id = normalizeBaeminId(baeminId);
+    const list = Array.isArray(drivers) ? drivers : [];
+    if (!id) {
+      return { status: 'empty_id', driver: null, driverId: '', driverName: '', matches: [], error: 'A열 배민ID 없음' };
+    }
+    const candidates = list.filter(driver => normalizeBaeminId(driver.baeminId) === id);
+    if (candidates.length > 1) {
+      return { status: 'duplicate', driver: null, driverId: '', driverName: '', matches: candidates, error: '동일 배민ID로 여러 기사 매칭' };
+    }
+    if (!candidates.length) {
+      return { status: 'unmatched', driver: null, driverId: '', driverName: '', matches: [], error: '등록된 기사와 매칭 실패' };
+    }
+    const driver = candidates[0];
+    return { status: 'matched', driver, driverId: driver.id, driverName: driver.name || '', matches: [driver], error: '' };
+  }
+
+  function rowFromMatch(row, match) {
+    return {
+      ...row,
+      matchStatus: match.status,
+      matchStatusLabel: matchStatusLabel(match.status),
+      matchCandidates: Array.isArray(match.matches) ? match.matches : [],
+      driverId: match.driverId || '',
+      driverName: match.driverName || (match.driver?.name || ''),
+      matchedBaeminId: match.driver ? String(match.driver.baeminId || '').trim() : '',
+      error: match.error || ''
+    };
+  }
+
+  function applyManualDriverToRow(row, driverId, drivers) {
+    const id = String(driverId || '').trim();
+    const list = Array.isArray(drivers) ? drivers : [];
+    if (!id) {
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, list));
+    }
+    const driver = list.find(item => item.id === id);
+    if (!driver) {
+      return rowFromMatch(row, matchRow(row.baeminId, list));
+    }
+    return {
+      ...row,
+      matchStatus: 'manual',
+      matchStatusLabel: matchStatusLabel('manual'),
+      matchCandidates: row.matchCandidates?.length ? row.matchCandidates : [driver],
+      driverId: driver.id,
+      driverName: driver.name || '',
+      matchedBaeminId: String(driver.baeminId || '').trim(),
+      error: ''
+    };
+  }
+
+  function rematchRows(rows, drivers) {
+    return (Array.isArray(rows) ? rows : []).map(row => {
+      if (row.matchStatus === 'manual' && row.driverId) {
+        return applyManualDriverToRow(row, row.driverId, drivers);
+      }
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers));
+    });
+  }
+
+  function parseSheetRows(rows, drivers) {
+    if (!Array.isArray(rows) || !rows.length) {
+      return { rows: [], issues: ['시트에 데이터가 없습니다.'] };
+    }
+    const parsedRows = [];
+    const issues = [];
+    rows.forEach((row, index) => {
+      if (isHeaderRow(row) || isRowEmpty(row)) return;
+      const baeminId = normalizeBaeminId(cellValue(row, COL.baeminId));
+      const amount = parseMoney(cellValue(row, COL.amount));
+      const match = matchRow(baeminId, drivers);
+      const item = rowFromMatch({
+        rowNumber: index + 1,
+        rowKey: `direct-adj-${index + 1}`,
+        baeminId,
+        amount
+      }, match);
+      parsedRows.push(item);
+      if (match.status !== 'matched' && match.status !== 'manual') {
+        issues.push(`${item.rowNumber}행: ${match.error || matchStatusLabel(match.status)}`);
+      } else if (!amount) {
+        issues.push(`${item.rowNumber}행: B열 금액 없음`);
+      }
+    });
+    return { rows: parsedRows, issues };
+  }
+
+  function getUnmatchedLines(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(row =>
+      row.matchStatus === 'unmatched' || row.matchStatus === 'empty_id'
+    );
+  }
+
+  function getDuplicateLines(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(row =>
+      row.matchStatus === 'duplicate' && !String(row.driverId || '').trim()
+    );
+  }
+
+  // 기사당 1회만 — 시트 내 중복 제외(마지막 값 우선은 하지 않고 첫 값 유지)
+  function filterRowsForApply(rows) {
+    const seen = new Set();
+    const toApply = [];
+    let skippedDuplicateInSheet = 0;
+    let skippedNoAmount = 0;
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      const ok = row.matchStatus === 'matched' || row.matchStatus === 'manual';
+      if (!ok || !row.driverId) return;
+      if (!Number(row.amount || 0)) { skippedNoAmount += 1; return; }
+      const id = String(row.driverId).trim();
+      if (seen.has(id)) { skippedDuplicateInSheet += 1; return; }
+      seen.add(id);
+      toApply.push(row);
+    });
+    return { toApply, skippedDuplicateInSheet, skippedNoAmount };
+  }
+
+  function summarizeRows(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    return list.reduce((acc, row) => {
+      acc.total += 1;
+      if (row.matchStatus === 'matched' || row.matchStatus === 'manual') acc.matched += 1;
+      else acc.unmatched += 1;
+      acc.amountTotal += Number(row.amount || 0);
+      return acc;
+    }, { total: 0, matched: 0, unmatched: 0, amountTotal: 0 });
+  }
+
+  function sheetRowsFromWorkbook(workbook) {
+    if (!workbook?.SheetNames?.length) return { rows: [], sheetName: '' };
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    return { rows, sheetName };
+  }
+
+  function templateRows(kindLabel) {
+    return [
+      ['A 배민ID', `B ${kindLabel || '금액'}`],
+      ['BC063824', 100000],
+      ['kivw3233', 50000]
+    ];
+  }
+
+  window.BremDirectAdjustmentBulk = Object.freeze({
+    COL,
+    parseSheetRows,
+    rematchRows,
+    applyManualDriverToRow,
+    matchRow,
+    matchStatusLabel,
+    getUnmatchedLines,
+    getDuplicateLines,
+    filterRowsForApply,
+    summarizeRows,
+    sheetRowsFromWorkbook,
+    templateRows
+  });
+})();

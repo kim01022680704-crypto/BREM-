@@ -5691,6 +5691,7 @@
         break;
       case 'weekly-settlement-direct':
         if (typeof BremWeeklySettlementAdmin !== 'undefined') BremWeeklySettlementAdmin.refresh('direct');
+        if (typeof BremDirectAdjustmentAdmin !== 'undefined') BremDirectAdjustmentAdmin.refresh();
         break;
       case 'promotion-apply':
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();

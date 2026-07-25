@@ -6016,6 +6016,16 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+.direct-adjust-subhead {
+  margin: 16px 0 6px;
+  font-size: 0.95rem;
+  color: var(--text-secondary, #cbd5f5);
+}
+
+#directAdjustCard .payroll-bulk-card .small-select {
+  max-width: 180px;
+}
+
 .weekly-mismatch-detail {
   max-width: 420px;
   line-height: 1.45;
