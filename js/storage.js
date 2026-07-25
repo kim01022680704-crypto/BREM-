@@ -9571,6 +9571,7 @@ const BremStorage = (function () {
             deliveryFee: Number(a.deliveryFee || 0),
             missionPay: Number(a.missionPay || 0),
             totalDeliveryPay: Number(a.totalDeliveryPay || 0),
+            hourlyInsurance: Number(a.hourlyInsurance || 0),
             employmentInsurance: Number(a.employmentInsurance || 0),
             accidentInsurance: Number(a.accidentInsurance || 0),
             withholdingTax: Number(a.withholdingTax || 0)

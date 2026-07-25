@@ -144,11 +144,12 @@ const BremWeeklySettlement = (function () {
     return Number.isFinite(num) ? num : 0;
   }
 
-  // 직계약 배민 정산서 금액/공제 열 기본값 (사용자 지정: E/F/G, 공제 L/N/Y)
+  // 직계약 배민 정산서 금액/공제 열 기본값 (사용자 지정: E/F/G, 공제 H/L/N/Y)
   const DIRECT_BAEMIN_AMOUNT_COLUMNS = Object.freeze({
     deliveryFee: 'E',           // 배달료
     missionPay: 'F',            // 추가지급(배민미션)
     totalDeliveryPay: 'G',      // 총배달료 지급계액 (프로모션·기타지급은 추후 합산)
+    hourlyInsurance: 'H',       // 시간제보험(공제)
     employmentInsurance: 'L',   // 고용보험(공제)
     accidentInsurance: 'N',     // 산재보험(공제)
     withholdingTax: 'Y'         // 원천세(공제)
@@ -161,6 +162,7 @@ const BremWeeklySettlement = (function () {
       deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
       missionPay: parseAmount(readCell(row, cols.missionPay)),
       totalDeliveryPay: parseAmount(readCell(row, cols.totalDeliveryPay)),
+      hourlyInsurance: parseAmount(readCell(row, cols.hourlyInsurance)),
       employmentInsurance: parseAmount(readCell(row, cols.employmentInsurance)),
       accidentInsurance: parseAmount(readCell(row, cols.accidentInsurance)),
       withholdingTax: parseAmount(readCell(row, cols.withholdingTax))
@@ -593,6 +595,8 @@ const BremWeeklySettlement = (function () {
       const baeminUserId = cellText(readCell(rows[i] || [], userIdColumn));
       const normalizedUserId = normalizeBaeminUserId(baeminUserId);
       if (!normalizedUserId) continue;
+      // 직계약: 시작행을 여유있게 앞으로 두어도 헤더/설명 행이 섞이지 않도록 숫자 User ID 행만 읽는다.
+      if (amountColumns && !/^\d+$/.test(normalizedUserId)) continue;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
       const rider = {

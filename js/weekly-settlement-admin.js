@@ -59,6 +59,7 @@ const BremWeeklySettlementAdmin = (function () {
     { key: 'deliveryFee', label: '배달료(E)' },
     { key: 'missionPay', label: '추가지급(F)' },
     { key: 'totalDeliveryPay', label: '총배달료(G)' },
+    { key: 'hourlyInsurance', label: '시간제보험(H)' },
     { key: 'employmentInsurance', label: '고용보험(L)' },
     { key: 'accidentInsurance', label: '산재보험(N)' },
     { key: 'withholdingTax', label: '원천세(Y)' }
@@ -213,6 +214,7 @@ const BremWeeklySettlementAdmin = (function () {
       deliveryFee: q(channel, 'DeliveryFeeCol', 'baemin')?.value?.trim() || 'E',
       missionPay: q(channel, 'MissionPayCol', 'baemin')?.value?.trim() || 'F',
       totalDeliveryPay: q(channel, 'TotalPayCol', 'baemin')?.value?.trim() || 'G',
+      hourlyInsurance: q(channel, 'HourlyInsCol', 'baemin')?.value?.trim() || 'H',
       employmentInsurance: q(channel, 'EmploymentInsCol', 'baemin')?.value?.trim() || 'L',
       accidentInsurance: q(channel, 'AccidentInsCol', 'baemin')?.value?.trim() || 'N',
       withholdingTax: q(channel, 'WithholdingTaxCol', 'baemin')?.value?.trim() || 'Y'
@@ -221,9 +223,9 @@ const BremWeeklySettlementAdmin = (function () {
 
   function readUploadForm(channel, platform) {
     if (platform === 'coupang') fillCoupangDatesFromBase(channel);
-    // 직계약 배민 기본 시작행은 20행(사용자 정산서 구조), 그 외는 쿠팡 12 / 배민 2.
+    // 직계약 배민은 시작행을 여유있게 앞으로(15) 두고, 숫자 User ID 행만 읽어 헤더행을 건너뛴다.
     const startRowDefault = isDirectBaemin(channel, platform)
-      ? 20
+      ? 15
       : (platform === 'coupang' ? 12 : 2);
     const columnConfig = {
       nameColumn: q(channel, 'NameCol', platform)?.value || 'C',
