@@ -6026,6 +6026,46 @@ textarea {
   max-width: 180px;
 }
 
+/* 긴 목록은 고정 높이 스크롤 컨테이너로 */
+.table-wrap.direct-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+.table-wrap.direct-scroll table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2, #161b2e);
+}
+.table-wrap.direct-scroll-wide {
+  max-height: 460px;
+}
+
+/* ERP 카드 버튼: 너무 넓지 않게 컴팩트하게 */
+#directErpCard .promotion-form-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+#directErpCard .promotion-form-actions .small-btn,
+#directErpCard .promotion-form-actions .primary-btn {
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+#directErpCard .promotion-form-actions .settlement-week-filter {
+  flex: 0 0 auto;
+}
+
+.muted-inline {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
 .weekly-mismatch-detail {
   max-width: 420px;
   line-height: 1.45;

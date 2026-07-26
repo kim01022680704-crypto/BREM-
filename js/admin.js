@@ -2043,6 +2043,26 @@
           };
         }
 
+        if (triggerId === 'promotion-settlement') {
+          return {
+            hiddenInput: $('#directAdjustWeek'),
+            labelEl: $('#directAdjustWeekLabel'),
+            onSelect(value) {
+              window.BremDirectAdjustmentAdmin?.onWeekPicked?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'settlement-result-direct') {
+          return {
+            hiddenInput: $('#settlementResultWeek'),
+            labelEl: $('#settlementResultWeekLabel'),
+            onSelect(value) {
+              window.BremSettlementResultDirect?.onWeekPicked?.(value);
+            }
+          };
+        }
+
         const hiddenInput = document.querySelector(`[data-edit-weekly-week="${triggerId}"]`);
         const labelEl = document.querySelector(`[data-week-picker-label="${triggerId}"]`);
         if (!hiddenInput) return null;

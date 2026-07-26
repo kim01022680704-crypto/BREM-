@@ -57,13 +57,24 @@ const BremSettlementResultDirect = (function () {
   function ensureWeekInput() {
     const input = $('#settlementResultWeek');
     if (input && !input.value) input.value = currentWeek();
+    const wk = currentWeek();
+    const labelSpan = $('#settlementResultWeekLabel');
+    if (labelSpan) labelSpan.textContent = `${formatDate(wk)}(수)`;
     const label = $('#settlementResultWeekRange');
     if (label) {
-      const wk = currentWeek();
       label.textContent = `표시 범위: ${formatDate(wk)}(수) ~ ${formatDate(weekEndKey(wk))}(화)`;
     }
     const platformLabel = $('#settlementResultPlatformLabel');
     if (platformLabel) platformLabel.textContent = state.platform === 'coupang' ? '· 쿠팡' : '· 배민';
+  }
+
+  async function onWeekPicked(value) {
+    state.week = weekStartKey(value || weekStartKey());
+    const input = $('#settlementResultWeek');
+    if (input) input.value = state.week;
+    ensureWeekInput();
+    await loadWithdrawals();
+    render();
   }
 
   // 콜수수료 단가(급여일정산 설정) × 콜수
@@ -266,7 +277,7 @@ const BremSettlementResultDirect = (function () {
     ensureWeekInput();
   }
 
-  return { init, refresh };
+  return { init, refresh, onWeekPicked, state };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

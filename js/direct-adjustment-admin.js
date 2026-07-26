@@ -107,11 +107,25 @@ const BremDirectAdjustmentAdmin = (function () {
   function ensureWeekInput() {
     const input = $('#directAdjustWeek');
     if (input && !input.value) input.value = currentWeek();
+    const wk = currentWeek();
+    const labelSpan = $('#directAdjustWeekLabel');
+    if (labelSpan) labelSpan.textContent = `${formatDate(wk)}(수)`;
     const label = $('#directAdjustWeekRange');
     if (label) {
-      const wk = currentWeek();
       label.textContent = `표시 범위: ${formatDate(wk)}(수) ~ ${formatDate(weekEndKey(wk))}(화)`;
     }
+  }
+
+  function onWeekPicked(value) {
+    state.week = weekStartKey(value || weekStartKey());
+    const input = $('#directAdjustWeek');
+    if (input) input.value = state.week;
+    state.erpSelected.clear();
+    ensureWeekInput();
+    renderApplied('other');
+    renderApplied('promotion');
+    renderPromoTax();
+    renderErpList();
   }
 
   async function handleFileChange(kind, file) {
@@ -157,8 +171,10 @@ const BremDirectAdjustmentAdmin = (function () {
     body.innerHTML = parsed.rows.map((row, index) => {
       const matched = row.matchStatus === 'matched' || row.matchStatus === 'manual';
       const statusClass = matched ? 'promotion-status-ok' : 'promotion-status-no';
+      const matchedDriver = matched ? window.BremStorage?.drivers?.getById?.(row.driverId) : null;
+      const matchedIdText = matchedDriver?.baeminId ? ` <span class="muted-inline">(${escapeHtml(matchedDriver.baeminId)})</span>` : '';
       const driverCell = matched
-        ? escapeHtml(row.driverName || driverName(row.driverId))
+        ? `${escapeHtml(row.driverName || driverName(row.driverId))}${matchedIdText}`
         : `<select class="small-select" data-direct-adj-driver="${kind}" data-row-index="${index}">${driverOptionsHtml()}</select>`;
       return `
       <tr class="${matched ? '' : 'promotion-row-unpaid'}">
@@ -488,7 +504,7 @@ const BremDirectAdjustmentAdmin = (function () {
     ensureWeekInput();
   }
 
-  return { init, refresh };
+  return { init, refresh, onWeekPicked, state };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {
