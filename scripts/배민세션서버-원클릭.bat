@@ -46,7 +46,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3939" ^| findstr LISTENING'
 )
 if "%KILLED%"=="1" (
   echo   기존 서버 종료됨 - 2초 대기...
-  timeout /t 2 /nobreak >nul
+  ping -n 3 127.0.0.1 >nul
 ) else (
   echo   실행 중인 서버 없음.
 )

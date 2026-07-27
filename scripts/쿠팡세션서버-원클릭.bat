@@ -26,6 +26,7 @@ echo.
 
 echo [2/3] 포트 3940 정리 ...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3940" ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
+ping -n 2 127.0.0.1 >nul
 echo.
 
 echo [3/3] 쿠팡 세션 서버 시작 (http://127.0.0.1:3940) ...
