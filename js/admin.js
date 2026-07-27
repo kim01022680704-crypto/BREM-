@@ -90,6 +90,7 @@
     settlements: { title: '일정산서 업로드', defaultPlatform: 'coupang' },
     'weekly-settlement': { title: '주정산서 업로드 (브로)', defaultPlatform: 'coupang' },
     'weekly-settlement-direct': { title: '주정산서 업로드 (직계약)', defaultPlatform: 'coupang' },
+    'promotion-settlement': { title: '프로모션정산등록', defaultPlatform: 'baemin' },
     'settlement-result-direct': { title: '정산결과 (직계약)', defaultPlatform: 'baemin' }
   };
 
@@ -119,7 +120,9 @@
     'weekly-settlement-direct-coupang': { section: 'weekly-settlement-direct', platform: 'coupang' },
     'weekly-settlement-direct-baemin': { section: 'weekly-settlement-direct', platform: 'baemin' },
     'settlement-result-direct-coupang': { section: 'settlement-result-direct', platform: 'coupang' },
-    'settlement-result-direct-baemin': { section: 'settlement-result-direct', platform: 'baemin' }
+    'settlement-result-direct-baemin': { section: 'settlement-result-direct', platform: 'baemin' },
+    'promotion-settlement-coupang': { section: 'promotion-settlement', platform: 'coupang' },
+    'promotion-settlement-baemin': { section: 'promotion-settlement', platform: 'baemin' }
   };
 
   const PLATFORMS = BremPlatforms.all().map(item => item.id);
@@ -2043,25 +2046,8 @@
           };
         }
 
-        if (triggerId === 'promotion-settlement') {
-          return {
-            hiddenInput: $('#directAdjustWeek'),
-            labelEl: $('#directAdjustWeekLabel'),
-            onSelect(value) {
-              window.BremDirectAdjustmentAdmin?.onWeekPicked?.(value);
-            }
-          };
-        }
-
-        if (triggerId === 'settlement-result-direct') {
-          return {
-            hiddenInput: $('#settlementResultWeek'),
-            labelEl: $('#settlementResultWeekLabel'),
-            onSelect(value) {
-              window.BremSettlementResultDirect?.onWeekPicked?.(value);
-            }
-          };
-        }
+        // 프로모션정산등록·정산결과(직계약)는 주차를 직접 고르지 않는다.
+        // 정산서를 고르면 그 정산서의 기간에서 주차가 정해진다.
 
         const hiddenInput = document.querySelector(`[data-edit-weekly-week="${triggerId}"]`);
         const labelEl = document.querySelector(`[data-week-picker-label="${triggerId}"]`);
@@ -5721,7 +5707,9 @@
         if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
         break;
       case 'promotion-settlement':
-        if (typeof BremDirectAdjustmentAdmin !== 'undefined') BremDirectAdjustmentAdmin.refresh();
+        if (typeof BremDirectAdjustmentAdmin !== 'undefined') {
+          BremDirectAdjustmentAdmin.refresh(state.unifiedPlatform['promotion-settlement'] || 'baemin');
+        }
         break;
       case 'settlement-result-direct':
         if (typeof BremSettlementResultDirect !== 'undefined') {

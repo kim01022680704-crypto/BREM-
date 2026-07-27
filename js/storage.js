@@ -46,6 +46,7 @@ const BremStorage = (function () {
     weeklySettlementsDirect: 'brem_admin_weekly_settlements_direct',
     directOtherPayments: 'brem_admin_direct_other_payments',
     directBremPromotions: 'brem_admin_direct_brem_promotions',
+    directSettlementAdjustments: 'brem_admin_direct_settlement_adjustments_v1',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
     missionDefaults: 'brem_admin_mission_defaults',
@@ -1436,9 +1437,11 @@ const BremStorage = (function () {
     'mission-results': [KEYS.drivers],
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
+    // 직계약 정산서·업로드로그·미매칭은 settings 기반이라 부트스트랩에서 일괄 로드된다.
+    // (테이블 키가 아니므로 아래 목록에 넣어도 로딩·캐시 판정에는 쓰이지 않는다.)
     'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
-    'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults],
-    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
+    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [
@@ -10394,6 +10397,87 @@ const BremStorage = (function () {
     }
   };
 
+  // 정산서 단위 기타지급/BREM프로모션 (직계약).
+  // 주차만으로 묶으면 같은 주에 지역·플랫폼이 여러 개일 때 섞이므로 정산서 id 로 묶는다.
+  // 정산서 id 에 플랫폼·지역·기간이 모두 들어 있어 쿠팡/배민 분리가 자동으로 된다.
+  // 기존 주차 단위 데이터(directPayAdjustments)는 건드리지 않고 별도 키에 저장한다.
+  const directSettlementAdjustments = {
+    getBlob() {
+      const raw = storageAdapter.read(KEYS.directSettlementAdjustments, {});
+      return (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    },
+    getKind(kind) {
+      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const blob = this.getBlob();
+      const value = blob[k];
+      return (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+    },
+    getSettlement(kind, settlementId) {
+      const id = String(settlementId || '').trim();
+      if (!id) return {};
+      const entry = this.getKind(kind)[id];
+      return (entry && typeof entry === 'object') ? entry : {};
+    },
+    // entries: [{ driverId, amount, baeminId, driverName, source }]
+    applyEntries(kind, settlementId, entries, options = {}) {
+      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const id = String(settlementId || '').trim();
+      if (!id) return {};
+      const blob = this.getBlob();
+      const byKind = (blob[k] && typeof blob[k] === 'object') ? { ...blob[k] } : {};
+      const existing = options.replace
+        ? {}
+        : (byKind[id] && typeof byKind[id] === 'object' ? { ...byKind[id] } : {});
+      const now = new Date().toISOString();
+      (Array.isArray(entries) ? entries : []).forEach(entry => {
+        const driverId = String(entry.driverId || '').trim();
+        if (!driverId) return;
+        existing[driverId] = {
+          amount: Math.round(Number(entry.amount || 0)),
+          baeminId: String(entry.baeminId || '').trim(),
+          coupangId: String(entry.coupangId || '').trim(),
+          driverName: String(entry.driverName || '').trim(),
+          source: entry.source === 'erp' ? 'erp' : 'excel',
+          updatedAt: now
+        };
+      });
+      byKind[id] = existing;
+      blob[k] = byKind;
+      storageAdapter.write(KEYS.directSettlementAdjustments, blob);
+      return existing;
+    },
+    removeDriver(kind, settlementId, driverId) {
+      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const id = String(settlementId || '').trim();
+      const blob = this.getBlob();
+      if (blob[k] && blob[k][id]) {
+        delete blob[k][id][String(driverId || '').trim()];
+        storageAdapter.write(KEYS.directSettlementAdjustments, blob, { allowEmpty: true });
+      }
+      return (blob[k] && blob[k][id]) || {};
+    },
+    clearSettlement(kind, settlementId) {
+      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const id = String(settlementId || '').trim();
+      const blob = this.getBlob();
+      if (blob[k]) {
+        delete blob[k][id];
+        storageAdapter.write(KEYS.directSettlementAdjustments, blob, { allowEmpty: true });
+      }
+    },
+    summary(settlementId) {
+      const promo = this.getSettlement('promotion', settlementId);
+      const other = this.getSettlement('other', settlementId);
+      const sum = map => Object.values(map).reduce((acc, item) => acc + Number(item?.amount || 0), 0);
+      return {
+        promotionCount: Object.keys(promo).length,
+        promotionTotal: sum(promo),
+        otherCount: Object.keys(other).length,
+        otherTotal: sum(other)
+      };
+    }
+  };
+
   const settlementUnmatched = {
     getAll(channel) {
       const key = settlementUnmatchedKey(channel === 'direct' ? 'direct' : 'bro');
@@ -12607,6 +12691,7 @@ const BremStorage = (function () {
     promotionApplyResults,
     manualNameMappings,
     directPayAdjustments,
+    directSettlementAdjustments,
     auth
   };
 })();

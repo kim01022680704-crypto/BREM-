@@ -220,6 +220,7 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.settlementUnmatchedDirect,
         keys.directOtherPayments,
         keys.directBremPromotions,
+        keys.directSettlementAdjustments,
         keys.missionDefaults,
         keys.dashboardWeekBasis,
         keys.leaseDashboardWeekBasis,

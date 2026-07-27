@@ -31,7 +31,8 @@ const BremDirectAdjustmentAdmin = (function () {
   const PROMO_TAX_RATE = 0.033;
 
   const state = {
-    week: '',
+    platform: 'baemin',
+    settlementId: '',
     pending: { other: null, promotion: null },
     erpSelected: new Set(),
     erpPlatform: ''
@@ -56,27 +57,22 @@ const BremDirectAdjustmentAdmin = (function () {
   function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
     if (window.BremDatePicker?.weekStartKey) return window.BremDatePicker.weekStartKey(dateValue);
     const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
-    const day = date.getDay();
-    const diff = (day - 3 + 7) % 7;
+    const diff = (date.getDay() - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
     return date.toISOString().slice(0, 10);
-  }
-
-  function weekEndKey(weekStart) {
-    const end = new Date(`${weekStart}T00:00:00`);
-    end.setDate(end.getDate() + 6);
-    return end.toISOString().slice(0, 10);
   }
 
   function formatDate(value) {
     if (!value) return '-';
     return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
-      .format(new Date(`${value}T00:00:00`));
+      .format(new Date(`${String(value).slice(0, 10)}T00:00:00`));
   }
 
-  function currentWeek() {
-    if (!state.week) state.week = weekStartKey();
-    return state.week;
+  function platformLabel(platform) {
+    if (platform === 'coupang') return '쿠팡';
+    if (platform === 'baemin') return '배민';
+    if (platform === 'combined') return '합산';
+    return platform || '-';
   }
 
   function driversList() {
@@ -92,51 +88,95 @@ const BremDirectAdjustmentAdmin = (function () {
     return Math.floor(Number(sum || 0) * PROMO_TAX_RATE);
   }
 
-  let driverOptionsCache = '';
-  function driverOptionsHtml() {
-    if (driverOptionsCache) return driverOptionsCache;
-    const opts = driversList()
-      .slice()
-      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
-      .map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name || '(이름 없음)')}${d.baeminId ? ` · ${escapeHtml(d.baeminId)}` : ''}</option>`)
-      .join('');
-    driverOptionsCache = `<option value="">기사 직접 선택</option>${opts}`;
-    return driverOptionsCache;
+  function idField() {
+    return state.platform === 'coupang' ? 'coupangId' : 'baeminId';
   }
 
-  function ensureWeekInput() {
-    const input = $('#directAdjustWeek');
-    if (input && !input.value) input.value = currentWeek();
-    const wk = currentWeek();
-    const labelSpan = $('#directAdjustWeekLabel');
-    if (labelSpan) labelSpan.textContent = `${formatDate(wk)}(수)`;
-    const label = $('#directAdjustWeekRange');
-    if (label) {
-      label.textContent = `표시 범위: ${formatDate(wk)}(수) ~ ${formatDate(weekEndKey(wk))}(화)`;
+  function idLabel() {
+    return state.platform === 'coupang' ? '쿠팡ID' : '배민ID';
+  }
+
+  function driverPlatformId(driverId) {
+    const driver = window.BremStorage?.drivers?.getById?.(driverId);
+    return String(driver?.[idField()] || '').trim();
+  }
+
+  // --- 정산서(직계약) 목록 -------------------------------------------------
+
+  function settlementList() {
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => String(record.platform || '') === state.platform)
+      .slice()
+      .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+  }
+
+  function currentSettlement() {
+    const list = settlementList();
+    if (!list.length) return null;
+    return list.find(item => item.id === state.settlementId) || list[0];
+  }
+
+  function settlementOptionLabel(record) {
+    const riders = Array.isArray(record.riders) ? record.riders.length : 0;
+    const region = record.region ? ` · ${record.region}` : '';
+    return `${formatDate(record.startDate)} ~ ${formatDate(record.endDate)}${region} · ${riders}명`;
+  }
+
+  function settlementWeek(record) {
+    if (!record) return weekStartKey();
+    return weekStartKey(String(record.startDate || '').slice(0, 10) || weekStartKey());
+  }
+
+  function renderSettlementPicker() {
+    const select = $('#directAdjustSettlementSelect');
+    const info = $('#directAdjustSettlementInfo');
+    const platformEl = $('#directAdjustPlatformLabel');
+    if (platformEl) platformEl.textContent = `· ${platformLabel(state.platform)}`;
+    if (!select) return;
+
+    const list = settlementList();
+    const active = currentSettlement();
+    state.settlementId = active?.id || '';
+
+    if (!list.length) {
+      select.innerHTML = '<option value="">저장된 정산서 없음</option>';
+      select.disabled = true;
+      if (info) {
+        info.textContent = `${platformLabel(state.platform)} 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 정산서를 저장하세요.`;
+      }
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = list
+      .map(item => `<option value="${escapeHtml(item.id)}"${item.id === state.settlementId ? ' selected' : ''}>${escapeHtml(settlementOptionLabel(item))}</option>`)
+      .join('');
+
+    const weekInput = $('#directAdjustWeek');
+    if (weekInput) weekInput.value = settlementWeek(active);
+
+    if (info && active) {
+      const riders = Array.isArray(active.riders) ? active.riders.length : 0;
+      const file = active.fileName ? ` · 파일 ${active.fileName}` : '';
+      info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 적용주 ${formatDate(settlementWeek(active))}(수) · 대상 ${riders}명${file}`;
     }
   }
 
-  function onWeekPicked(value) {
-    state.week = weekStartKey(value || weekStartKey());
-    const input = $('#directAdjustWeek');
-    if (input) input.value = state.week;
-    state.erpSelected.clear();
-    ensureWeekInput();
-    renderApplied('other');
-    renderApplied('promotion');
-    renderPromoTax();
-    renderErpList();
-  }
+  // --- 엑셀 일괄등록 -------------------------------------------------------
 
   async function handleFileChange(kind, file) {
     if (!file) return;
     const cfg = KINDS[kind];
+    if (!currentSettlement()) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
     try {
       const buffer = await file.arrayBuffer();
       const workbook = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
       const { rows } = window.BremDirectAdjustmentBulk.sheetRowsFromWorkbook(workbook);
       await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
-      const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList());
+      const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList(), state.platform);
       state.pending[kind] = parsed;
       renderPreview(kind);
       const summary = window.BremDirectAdjustmentBulk.summarizeRows(parsed.rows);
@@ -145,6 +185,19 @@ const BremDirectAdjustmentAdmin = (function () {
       console.error('[BREM] direct adjustment parse failed:', error);
       showToast(`${cfg.label} 파일을 읽지 못했습니다. (${error.message || '오류'})`);
     }
+  }
+
+  let driverOptionsCache = '';
+  function driverOptionsHtml() {
+    if (driverOptionsCache) return driverOptionsCache;
+    const field = idField();
+    const opts = driversList()
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
+      .map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name || '(이름 없음)')}${d[field] ? ` · ${escapeHtml(d[field])}` : ''}</option>`)
+      .join('');
+    driverOptionsCache = `<option value="">기사 직접 선택</option>${opts}`;
+    return driverOptionsCache;
   }
 
   function renderPreview(kind) {
@@ -171,8 +224,8 @@ const BremDirectAdjustmentAdmin = (function () {
     body.innerHTML = parsed.rows.map((row, index) => {
       const matched = row.matchStatus === 'matched' || row.matchStatus === 'manual';
       const statusClass = matched ? 'promotion-status-ok' : 'promotion-status-no';
-      const matchedDriver = matched ? window.BremStorage?.drivers?.getById?.(row.driverId) : null;
-      const matchedIdText = matchedDriver?.baeminId ? ` <span class="muted-inline">(${escapeHtml(matchedDriver.baeminId)})</span>` : '';
+      const matchedId = matched ? driverPlatformId(row.driverId) : '';
+      const matchedIdText = matchedId ? ` <span class="muted-inline">(${escapeHtml(matchedId)})</span>` : '';
       const driverCell = matched
         ? `${escapeHtml(row.driverName || driverName(row.driverId))}${matchedIdText}`
         : `<select class="small-select" data-direct-adj-driver="${kind}" data-row-index="${index}">${driverOptionsHtml()}</select>`;
@@ -189,6 +242,11 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function applyPending(kind) {
     const cfg = KINDS[kind];
+    const settlement = currentSettlement();
+    if (!settlement) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
     const parsed = state.pending[kind];
     if (!parsed || !parsed.rows.length) {
       showToast('먼저 파일을 선택해 미리보기를 만드세요.');
@@ -199,20 +257,27 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast('적용할 매칭 행이 없습니다. (매칭·금액 확인)');
       return;
     }
-    const week = currentWeek();
-    const entries = toApply.map(row => ({
-      driverId: row.driverId,
-      amount: row.amount,
-      baeminId: row.baeminId || row.matchedBaeminId || '',
-      driverName: row.driverName || driverName(row.driverId),
-      source: 'excel'
-    }));
-    window.BremStorage.directPayAdjustments.applyEntries(kind, week, entries);
+    const coupang = state.platform === 'coupang';
+    const entries = toApply.map(row => {
+      const platformId = row.matchedBaeminId || row.baeminId || '';
+      return {
+        driverId: row.driverId,
+        amount: row.amount,
+        baeminId: coupang ? '' : platformId,
+        coupangId: coupang ? platformId : '',
+        driverName: row.driverName || driverName(row.driverId),
+        source: 'excel'
+      };
+    });
+    window.BremStorage.directSettlementAdjustments.applyEntries(kind, settlement.id, entries);
     void window.BremStorage.flushStorage?.();
     state.pending[kind] = null;
+    const fileInput = $(cfg.file);
+    if (fileInput) fileInput.value = '';
     renderPreview(kind);
     renderApplied(kind);
     renderPromoTax();
+    renderAppliedSummary();
     let message = `${cfg.label} ${toApply.length}명 적용 완료`;
     if (skippedDuplicateInSheet) message += ` · 시트 내 중복 ${skippedDuplicateInSheet} 제외`;
     if (skippedNoAmount) message += ` · 금액 없음 ${skippedNoAmount} 제외`;
@@ -232,20 +297,31 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast('미리보기가 없습니다. 파일을 먼저 선택하세요.');
       return;
     }
-    parsed.rows = window.BremDirectAdjustmentBulk.rematchRows(parsed.rows, driversList());
+    parsed.rows = window.BremDirectAdjustmentBulk.rematchRows(parsed.rows, driversList(), state.platform);
     renderPreview(kind);
     showToast('매칭을 다시 시도했습니다.');
+  }
+
+  // --- 적용 현황 -----------------------------------------------------------
+
+  function appliedMap(kind) {
+    const settlement = currentSettlement();
+    if (!settlement) return {};
+    return window.BremStorage?.directSettlementAdjustments?.getSettlement?.(kind, settlement.id) || {};
   }
 
   function renderApplied(kind) {
     const cfg = KINDS[kind];
     const body = $(cfg.applied);
     if (!body) return;
-    const week = currentWeek();
-    const map = window.BremStorage?.directPayAdjustments?.getWeek?.(kind, week) || {};
-    const entries = Object.entries(map);
+    const settlement = currentSettlement();
+    if (!settlement) {
+      body.innerHTML = `<tr><td colspan="5" class="empty">정산서를 선택하세요.</td></tr>`;
+      return;
+    }
+    const entries = Object.entries(appliedMap(kind));
     if (!entries.length) {
-      body.innerHTML = `<tr><td colspan="5" class="empty">${formatDate(week)} 주에 적용된 ${escapeHtml(cfg.label)}이 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="5" class="empty">이 정산서에 적용된 ${escapeHtml(cfg.label)}이 없습니다.</td></tr>`;
       return;
     }
     body.innerHTML = entries
@@ -253,24 +329,47 @@ const BremDirectAdjustmentAdmin = (function () {
       .map(([driverId, entry]) => `
       <tr>
         <td><strong>${escapeHtml(driverName(driverId, entry?.driverName))}</strong></td>
-        <td>${escapeHtml(entry?.baeminId || '-')}</td>
+        <td>${escapeHtml((state.platform === 'coupang' ? entry?.coupangId : entry?.baeminId) || driverPlatformId(driverId) || '-')}</td>
         <td class="weekly-amount-cell">${formatNumber(entry?.amount)}</td>
         <td>${entry?.source === 'erp' ? 'ERP' : '엑셀'}</td>
         <td><button type="button" class="small-btn danger-btn" data-direct-adj-remove="${kind}" data-driver-id="${escapeHtml(driverId)}">삭제</button></td>
       </tr>`).join('');
   }
 
+  function renderAppliedSummary() {
+    const el = $('#directAdjustAppliedSummary');
+    if (!el) return;
+    const settlement = currentSettlement();
+    if (!settlement) {
+      el.textContent = '';
+      return;
+    }
+    const summary = window.BremStorage?.directSettlementAdjustments?.summary?.(settlement.id)
+      || { promotionCount: 0, promotionTotal: 0, otherCount: 0, otherTotal: 0 };
+    if (!summary.promotionCount && !summary.otherCount) {
+      el.innerHTML = '이 정산서에 등록된 금액이 없습니다.';
+      return;
+    }
+    const tax = promoTax(summary.promotionTotal + summary.otherTotal);
+    el.innerHTML = `저장됨 · BREM프로모션 <strong>${formatNumber(summary.promotionCount)}</strong>명 <strong>${formatNumber(summary.promotionTotal)}</strong>원 · 기타지급 <strong>${formatNumber(summary.otherCount)}</strong>명 <strong>${formatNumber(summary.otherTotal)}</strong>원 · 프로모션원천세 <strong>${formatNumber(tax)}</strong>원`;
+  }
+
   function renderPromoTax() {
     const body = $('#directPromoTaxBody');
     const summaryEl = $('#directPromoTaxSummary');
     if (!body) return;
-    const week = currentWeek();
-    const promoMap = window.BremStorage?.directPayAdjustments?.getWeek?.('promotion', week) || {};
-    const otherMap = window.BremStorage?.directPayAdjustments?.getWeek?.('other', week) || {};
+    const settlement = currentSettlement();
+    if (!settlement) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">정산서를 선택하세요.</td></tr>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+    const promoMap = appliedMap('promotion');
+    const otherMap = appliedMap('other');
     const driverIds = new Set([...Object.keys(promoMap), ...Object.keys(otherMap)]);
 
     if (!driverIds.size) {
-      body.innerHTML = '<tr><td colspan="5" class="empty">이 주에 적용된 BREM프로모션·기타지급이 없습니다.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" class="empty">이 정산서에 적용된 BREM프로모션·기타지급이 없습니다.</td></tr>';
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -305,23 +404,89 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function removeApplied(kind, driverId) {
-    const week = currentWeek();
-    window.BremStorage.directPayAdjustments.removeDriver(kind, week, driverId);
+    const settlement = currentSettlement();
+    if (!settlement) return;
+    window.BremStorage.directSettlementAdjustments.removeDriver(kind, settlement.id, driverId);
     void window.BremStorage.flushStorage?.();
     renderApplied(kind);
     renderPromoTax();
+    renderAppliedSummary();
   }
 
-  function platformLabel(platform) {
-    if (platform === 'coupang') return '쿠팡';
-    if (platform === 'baemin') return '배민';
-    if (platform === 'combined') return '합산';
-    return platform || '-';
+  // --- 정산서 미지정(구 데이터) --------------------------------------------
+
+  function legacyBuckets() {
+    const out = [];
+    ['promotion', 'other'].forEach(kind => {
+      const blob = window.BremStorage?.directPayAdjustments?.getBlob?.(kind) || {};
+      Object.entries(blob).forEach(([week, map]) => {
+        const drivers = Object.keys(map || {});
+        if (!drivers.length) return;
+        const total = drivers.reduce((sum, id) => sum + Number(map[id]?.amount || 0), 0);
+        out.push({ kind, week, count: drivers.length, total });
+      });
+    });
+    return out.sort((a, b) => String(b.week).localeCompare(String(a.week)));
   }
+
+  function renderLegacy() {
+    const card = $('#directLegacyCard');
+    const body = $('#directLegacyBody');
+    if (!card || !body) return;
+    const buckets = legacyBuckets();
+    if (!buckets.length) {
+      card.hidden = true;
+      body.innerHTML = '';
+      return;
+    }
+    card.hidden = false;
+    body.innerHTML = buckets.map(item => `
+      <tr>
+        <td>${escapeHtml(KINDS[item.kind].label)}</td>
+        <td>${formatDate(item.week)}(수)</td>
+        <td class="weekly-amount-cell">${formatNumber(item.count)}</td>
+        <td class="weekly-amount-cell">${formatNumber(item.total)}</td>
+        <td><button type="button" class="small-btn" data-direct-legacy-move="${escapeHtml(item.kind)}" data-week="${escapeHtml(item.week)}">이 정산서로 옮기기</button></td>
+      </tr>`).join('');
+  }
+
+  function moveLegacy(kind, week) {
+    const settlement = currentSettlement();
+    if (!settlement) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
+    const map = window.BremStorage?.directPayAdjustments?.getWeek?.(kind, week) || {};
+    const entries = Object.entries(map).map(([driverId, entry]) => ({
+      driverId,
+      amount: entry?.amount,
+      baeminId: entry?.baeminId,
+      driverName: entry?.driverName,
+      source: entry?.source
+    }));
+    if (!entries.length) {
+      showToast('옮길 금액이 없습니다.');
+      return;
+    }
+    const label = `${KINDS[kind].label} ${formatDate(week)} 주 ${entries.length}명`;
+    if (!window.confirm(`${label}을(를) 선택한 정산서(${settlementOptionLabel(settlement)})로 옮길까요?\n\n같은 기사에 이미 등록된 금액이 있으면 덮어씁니다.`)) return;
+    window.BremStorage.directSettlementAdjustments.applyEntries(kind, settlement.id, entries);
+    window.BremStorage.directPayAdjustments.clearWeek(kind, week);
+    void window.BremStorage.flushStorage?.();
+    renderApplied(kind);
+    renderPromoTax();
+    renderAppliedSummary();
+    renderLegacy();
+    showToast(`${label} 이동 완료`);
+  }
+
+  // --- ERP 프로모션 불러오기 -----------------------------------------------
 
   function erpSavedResults() {
     const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
-    const week = currentWeek();
+    const settlement = currentSettlement();
+    if (!settlement) return [];
+    const week = settlementWeek(settlement);
     const platform = state.erpPlatform;
     return all.filter(item => {
       const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10) || week);
@@ -335,13 +500,18 @@ const BremDirectAdjustmentAdmin = (function () {
     const body = $('#directErpSavedRows');
     const summaryEl = $('#directErpSummary');
     if (!body) return;
+    const settlement = currentSettlement();
+    if (!settlement) {
+      body.innerHTML = '<tr><td colspan="8" class="empty">정산서를 선택하세요.</td></tr>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
     const results = erpSavedResults();
-    // 사라진 결과는 선택 목록에서 제거
     const validIds = new Set(results.map(r => r.id));
     [...state.erpSelected].forEach(id => { if (!validIds.has(id)) state.erpSelected.delete(id); });
 
     if (!results.length) {
-      body.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(currentWeek())} 주에 저장된 프로모션 적용 결과가 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(settlementWeek(settlement))} 주에 저장된 프로모션 적용 결과가 없습니다.</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       const allChk = $('#directErpSelectAllChk');
       if (allChk) allChk.checked = false;
@@ -381,6 +551,11 @@ const BremDirectAdjustmentAdmin = (function () {
   }
 
   function applyErp() {
+    const settlement = currentSettlement();
+    if (!settlement) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
     if (!state.erpSelected.size) {
       showToast('적용할 저장 결과를 선택하세요.');
       return;
@@ -408,21 +583,41 @@ const BremDirectAdjustmentAdmin = (function () {
       return;
     }
 
-    const week = currentWeek();
-    const entries = [...perDriver.entries()].map(([driverId, info]) => ({
-      driverId,
-      amount: info.amount,
-      baeminId: window.BremStorage?.drivers?.getById?.(driverId)?.baeminId || '',
-      driverName: info.name || driverName(driverId),
-      source: 'erp'
-    }));
-    window.BremStorage.directPayAdjustments.applyEntries('promotion', week, entries, { source: 'erp' });
+    const entries = [...perDriver.entries()].map(([driverId, info]) => {
+      const driver = window.BremStorage?.drivers?.getById?.(driverId);
+      return {
+        driverId,
+        amount: info.amount,
+        baeminId: driver?.baeminId || '',
+        coupangId: driver?.coupangId || '',
+        driverName: info.name || driverName(driverId),
+        source: 'erp'
+      };
+    });
+    window.BremStorage.directSettlementAdjustments.applyEntries('promotion', settlement.id, entries, { source: 'erp' });
     void window.BremStorage.flushStorage?.();
     renderApplied('promotion');
     renderPromoTax();
-    let message = `ERP 프로모션 ${perDriver.size}명 → BREM프로모션 적용 완료`;
+    renderAppliedSummary();
+    let message = `ERP 프로모션 ${perDriver.size}명 → 이 정산서 BREM프로모션 적용 완료`;
     if (skippedUnmatched) message += ` · 미매칭 ${skippedUnmatched}행 제외`;
     showToast(message);
+  }
+
+  // --- 이벤트 --------------------------------------------------------------
+
+  function renderAll() {
+    document.querySelectorAll('#promotion-settlement [data-direct-id-label]')
+      .forEach(el => { el.textContent = idLabel(); });
+    renderSettlementPicker();
+    renderPreview('other');
+    renderPreview('promotion');
+    renderApplied('other');
+    renderApplied('promotion');
+    renderPromoTax();
+    renderAppliedSummary();
+    renderLegacy();
+    renderErpList();
   }
 
   function bindEvents() {
@@ -436,14 +631,12 @@ const BremDirectAdjustmentAdmin = (function () {
       $(cfg.retry)?.addEventListener('click', () => retryMatch(cfg.key));
     });
 
-    $('#directAdjustWeek')?.addEventListener('change', event => {
-      state.week = weekStartKey(event.target.value || weekStartKey());
-      event.target.value = state.week;
-      ensureWeekInput();
-      renderApplied('other');
-      renderApplied('promotion');
-      renderPromoTax();
-      renderErpList();
+    $('#directAdjustSettlementSelect')?.addEventListener('change', event => {
+      state.settlementId = event.target.value || '';
+      state.erpSelected.clear();
+      state.pending.other = null;
+      state.pending.promotion = null;
+      renderAll();
     });
 
     $('#directErpPlatformFilter')?.addEventListener('change', event => {
@@ -454,8 +647,8 @@ const BremDirectAdjustmentAdmin = (function () {
     $('#directErpSelectAllChk')?.addEventListener('change', event => toggleErpSelectAll(event.target.checked));
     $('#directErpApplyBtn')?.addEventListener('click', applyErp);
 
-    const card = $('#directAdjustCard');
-    card?.addEventListener('change', event => {
+    const section = document.getElementById('promotion-settlement');
+    section?.addEventListener('change', event => {
       const erpChk = event.target.closest('[data-erp-select]');
       if (erpChk) {
         const id = erpChk.dataset.erpSelect;
@@ -470,11 +663,16 @@ const BremDirectAdjustmentAdmin = (function () {
       const index = Number(select.dataset.rowIndex);
       const parsed = state.pending[kind];
       if (!parsed || !parsed.rows[index]) return;
-      parsed.rows[index] = window.BremDirectAdjustmentBulk.applyManualDriverToRow(parsed.rows[index], select.value, driversList());
+      parsed.rows[index] = window.BremDirectAdjustmentBulk.applyManualDriverToRow(parsed.rows[index], select.value, driversList(), state.platform);
       renderPreview(kind);
     });
 
-    card?.addEventListener('click', event => {
+    section?.addEventListener('click', event => {
+      const moveBtn = event.target.closest('[data-direct-legacy-move]');
+      if (moveBtn) {
+        moveLegacy(moveBtn.dataset.directLegacyMove, moveBtn.dataset.week);
+        return;
+      }
       const removeBtn = event.target.closest('[data-direct-adj-remove]');
       if (!removeBtn) return;
       const kind = removeBtn.dataset.directAdjRemove;
@@ -484,27 +682,37 @@ const BremDirectAdjustmentAdmin = (function () {
     });
   }
 
-  async function refresh() {
+  async function refresh(platform) {
     if (!$('#directAdjustCard')) return;
+    const next = platform === 'coupang' ? 'coupang' : 'baemin';
+    if (next !== state.platform) {
+      state.platform = next;
+      state.settlementId = '';
+      state.erpSelected.clear();
+      state.pending.other = null;
+      state.pending.promotion = null;
+    }
     driverOptionsCache = '';
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
-    ensureWeekInput();
-    renderPreview('other');
-    renderPreview('promotion');
-    renderApplied('other');
-    renderApplied('promotion');
-    renderPromoTax();
-    renderErpList();
+    // ERP 목록 기본 필터를 현재 플랫폼에 맞춘다.
+    const erpFilter = $('#directErpPlatformFilter');
+    if (erpFilter && !erpFilter.dataset.userTouched) {
+      erpFilter.value = state.platform;
+      state.erpPlatform = state.platform;
+    }
+    renderAll();
   }
 
   function init() {
     if (!$('#directAdjustCard')) return;
     bindEvents();
-    ensureWeekInput();
+    $('#directErpPlatformFilter')?.addEventListener('change', event => {
+      event.target.dataset.userTouched = '1';
+    });
   }
 
-  return { init, refresh, onWeekPicked, state };
+  return { init, refresh, state };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

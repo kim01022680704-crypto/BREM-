@@ -1,11 +1,23 @@
 (function () {
-  // 직계약 지급 조정 일괄 업로드 파서 — A열 배민ID, B열 금액.
+  // 직계약 지급 조정 일괄 업로드 파서 — A열 기사ID(배민 또는 쿠팡), B열 금액.
   const COL = Object.freeze({
     baeminId: 0,
     amount: 1
   });
 
-  const HEADER_MARKERS = ['배민', 'baemin', '아이디', 'id', '금액', 'amount', '프로모션', 'brem', '기타지급'];
+  const HEADER_MARKERS = ['배민', 'baemin', '쿠팡', 'coupang', '아이디', 'id', '금액', 'amount', '프로모션', 'brem', '기타지급'];
+
+  function normalizePlatform(platform) {
+    return platform === 'coupang' ? 'coupang' : 'baemin';
+  }
+
+  function platformIdField(platform) {
+    return normalizePlatform(platform) === 'coupang' ? 'coupangId' : 'baeminId';
+  }
+
+  function platformIdLabel(platform) {
+    return normalizePlatform(platform) === 'coupang' ? '쿠팡ID' : '배민ID';
+  }
 
   function cellValue(row, index) {
     if (!row || index >= row.length) return '';
@@ -26,6 +38,17 @@
       return window.BremWeeklySettlement.normalizeBaeminUserId(raw);
     }
     return raw;
+  }
+
+  // 쿠팡ID는 배민 사용자ID 정규화 규칙과 다르므로 공백만 제거하고 대소문자만 맞춘다.
+  function normalizeCoupangId(value) {
+    return String(value ?? '').trim().replace(/\s/g, '').toLowerCase();
+  }
+
+  function normalizeIdFor(platform, value) {
+    return normalizePlatform(platform) === 'coupang'
+      ? normalizeCoupangId(value)
+      : normalizeBaeminId(value);
   }
 
   function isHeaderRow(row) {
@@ -52,15 +75,18 @@
     return '미매칭';
   }
 
-  function matchRow(baeminId, drivers) {
-    const id = normalizeBaeminId(baeminId);
+  function matchRow(baeminId, drivers, platform) {
+    const p = normalizePlatform(platform);
+    const field = platformIdField(p);
+    const label = platformIdLabel(p);
+    const id = normalizeIdFor(p, baeminId);
     const list = Array.isArray(drivers) ? drivers : [];
     if (!id) {
-      return { status: 'empty_id', driver: null, driverId: '', driverName: '', matches: [], error: 'A열 배민ID 없음' };
+      return { status: 'empty_id', driver: null, driverId: '', driverName: '', matches: [], error: `A열 ${label} 없음` };
     }
-    const candidates = list.filter(driver => normalizeBaeminId(driver.baeminId) === id);
+    const candidates = list.filter(driver => normalizeIdFor(p, driver[field]) === id);
     if (candidates.length > 1) {
-      return { status: 'duplicate', driver: null, driverId: '', driverName: '', matches: candidates, error: '동일 배민ID로 여러 기사 매칭' };
+      return { status: 'duplicate', driver: null, driverId: '', driverName: '', matches: candidates, error: `동일 ${label}로 여러 기사 매칭` };
     }
     if (!candidates.length) {
       return { status: 'unmatched', driver: null, driverId: '', driverName: '', matches: [], error: '등록된 기사와 매칭 실패' };
@@ -82,15 +108,16 @@
     };
   }
 
-  function applyManualDriverToRow(row, driverId, drivers) {
+  function applyManualDriverToRow(row, driverId, drivers, platform) {
+    const p = normalizePlatform(platform);
     const id = String(driverId || '').trim();
     const list = Array.isArray(drivers) ? drivers : [];
     if (!id) {
-      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, list));
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, list, p));
     }
     const driver = list.find(item => item.id === id);
     if (!driver) {
-      return rowFromMatch(row, matchRow(row.baeminId, list));
+      return rowFromMatch(row, matchRow(row.baeminId, list, p));
     }
     return {
       ...row,
@@ -99,21 +126,23 @@
       matchCandidates: row.matchCandidates?.length ? row.matchCandidates : [driver],
       driverId: driver.id,
       driverName: driver.name || '',
-      matchedBaeminId: String(driver.baeminId || '').trim(),
+      matchedBaeminId: String(driver[platformIdField(p)] || '').trim(),
       error: ''
     };
   }
 
-  function rematchRows(rows, drivers) {
+  function rematchRows(rows, drivers, platform) {
+    const p = normalizePlatform(platform);
     return (Array.isArray(rows) ? rows : []).map(row => {
       if (row.matchStatus === 'manual' && row.driverId) {
-        return applyManualDriverToRow(row, row.driverId, drivers);
+        return applyManualDriverToRow(row, row.driverId, drivers, p);
       }
-      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers));
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers, p));
     });
   }
 
-  function parseSheetRows(rows, drivers) {
+  function parseSheetRows(rows, drivers, platform) {
+    const p = normalizePlatform(platform);
     if (!Array.isArray(rows) || !rows.length) {
       return { rows: [], issues: ['시트에 데이터가 없습니다.'] };
     }
@@ -121,9 +150,10 @@
     const issues = [];
     rows.forEach((row, index) => {
       if (isHeaderRow(row) || isRowEmpty(row)) return;
-      const baeminId = normalizeBaeminId(cellValue(row, COL.baeminId));
+      // 표시는 원본 그대로 두고, 매칭할 때만 플랫폼 규칙으로 정규화한다.
+      const baeminId = String(cellValue(row, COL.baeminId) ?? '').trim();
       const amount = parseMoney(cellValue(row, COL.amount));
-      const match = matchRow(baeminId, drivers);
+      const match = matchRow(baeminId, drivers, p);
       const item = rowFromMatch({
         rowNumber: index + 1,
         rowKey: `direct-adj-${index + 1}`,
@@ -189,9 +219,9 @@
     return { rows, sheetName };
   }
 
-  function templateRows(kindLabel) {
+  function templateRows(kindLabel, platform) {
     return [
-      ['A 배민ID', `B ${kindLabel || '금액'}`],
+      [`A ${platformIdLabel(platform)}`, `B ${kindLabel || '금액'}`],
       ['BC063824', 100000],
       ['kivw3233', 50000]
     ];
@@ -199,6 +229,8 @@
 
   window.BremDirectAdjustmentBulk = Object.freeze({
     COL,
+    platformIdField,
+    platformIdLabel,
     parseSheetRows,
     rematchRows,
     applyManualDriverToRow,

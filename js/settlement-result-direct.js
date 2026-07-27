@@ -2,7 +2,7 @@ const BremSettlementResultDirect = (function () {
   const $ = selector => document.querySelector(selector);
   const PROMO_TAX_RATE = 0.033;
 
-  const state = { platform: 'baemin', week: '', withdrawals: [] };
+  const state = { platform: 'baemin', settlementId: '', withdrawals: [] };
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -28,25 +28,14 @@ const BremSettlementResultDirect = (function () {
     return date.toISOString().slice(0, 10);
   }
 
-  function weekEndKey(weekStart) {
-    const end = new Date(`${weekStart}T00:00:00`);
-    end.setDate(end.getDate() + 6);
-    return end.toISOString().slice(0, 10);
-  }
-
   function formatDate(value) {
     if (!value) return '-';
     return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
-      .format(new Date(`${value}T00:00:00`));
+      .format(new Date(`${String(value).slice(0, 10)}T00:00:00`));
   }
 
   function promoTax(sum) {
     return Math.floor(Number(sum || 0) * PROMO_TAX_RATE);
-  }
-
-  function currentWeek() {
-    if (!state.week) state.week = weekStartKey();
-    return state.week;
   }
 
   function driverName(driverId, fallback) {
@@ -54,28 +43,65 @@ const BremSettlementResultDirect = (function () {
     return driver?.name || fallback || '(이름 없음)';
   }
 
-  function ensureWeekInput() {
-    const input = $('#settlementResultWeek');
-    if (input && !input.value) input.value = currentWeek();
-    const wk = currentWeek();
-    const labelSpan = $('#settlementResultWeekLabel');
-    if (labelSpan) labelSpan.textContent = `${formatDate(wk)}(수)`;
-    const label = $('#settlementResultWeekRange');
-    if (label) {
-      label.textContent = `표시 범위: ${formatDate(wk)}(수) ~ ${formatDate(weekEndKey(wk))}(화)`;
-    }
-    const platformLabel = $('#settlementResultPlatformLabel');
-    if (platformLabel) platformLabel.textContent = state.platform === 'coupang' ? '· 쿠팡' : '· 배민';
+  // --- 정산서 선택 ---------------------------------------------------------
+
+  function settlementList() {
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => String(record.platform || '') === state.platform)
+      .slice()
+      .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
   }
 
-  async function onWeekPicked(value) {
-    state.week = weekStartKey(value || weekStartKey());
-    const input = $('#settlementResultWeek');
-    if (input) input.value = state.week;
-    ensureWeekInput();
-    await loadWithdrawals();
-    render();
+  function currentSettlement() {
+    const list = settlementList();
+    if (!list.length) return null;
+    return list.find(item => item.id === state.settlementId) || list[0];
   }
+
+  function settlementWeek(record) {
+    if (!record) return weekStartKey();
+    return weekStartKey(String(record.startDate || '').slice(0, 10) || weekStartKey());
+  }
+
+  function settlementOptionLabel(record) {
+    const riders = Array.isArray(record.riders) ? record.riders.length : 0;
+    const region = record.region ? ` · ${record.region}` : '';
+    return `${formatDate(record.startDate)} ~ ${formatDate(record.endDate)}${region} · ${riders}명`;
+  }
+
+  function renderSettlementPicker() {
+    const select = $('#settlementResultSettlementSelect');
+    const info = $('#settlementResultWeekRange');
+    const platformLabel = $('#settlementResultPlatformLabel');
+    if (platformLabel) platformLabel.textContent = state.platform === 'coupang' ? '· 쿠팡' : '· 배민';
+    if (!select) return;
+
+    const list = settlementList();
+    const active = currentSettlement();
+    state.settlementId = active?.id || '';
+
+    if (!list.length) {
+      select.innerHTML = '<option value="">저장된 정산서 없음</option>';
+      select.disabled = true;
+      if (info) info.textContent = '「주정산서 업로드 (직계약)」에서 정산서를 먼저 저장하세요.';
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = list
+      .map(item => `<option value="${escapeHtml(item.id)}"${item.id === state.settlementId ? ' selected' : ''}>${escapeHtml(settlementOptionLabel(item))}</option>`)
+      .join('');
+
+    const weekInput = $('#settlementResultWeek');
+    if (weekInput) weekInput.value = settlementWeek(active);
+
+    if (info && active) {
+      const file = active.fileName ? ` · 파일 ${active.fileName}` : '';
+      info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 정산주 ${formatDate(settlementWeek(active))}(수)${file}`;
+    }
+  }
+
+  // --- 계산 ---------------------------------------------------------------
 
   // 콜수수료 단가(급여일정산 설정) × 콜수
   function callFeeUnit() {
@@ -91,8 +117,7 @@ const BremSettlementResultDirect = (function () {
   }
 
   // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee }
-  function completedWithdrawalMap() {
-    const week = currentWeek();
+  function completedWithdrawalMap(week) {
     const platform = state.platform;
     const map = new Map();
     (Array.isArray(state.withdrawals) ? state.withdrawals : []).forEach(row => {
@@ -111,54 +136,52 @@ const BremSettlementResultDirect = (function () {
   }
 
   function computeRows() {
-    const week = currentWeek();
+    const settlement = currentSettlement();
+    if (!settlement) return [];
+    const week = settlementWeek(settlement);
     const platform = state.platform;
-    const records = (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => String(record.platform || '') === platform
-        && String(record.weekStart || '').slice(0, 10) === week);
 
-    const promoMap = window.BremStorage?.directPayAdjustments?.getWeek?.('promotion', week) || {};
-    const otherMap = window.BremStorage?.directPayAdjustments?.getWeek?.('other', week) || {};
-    const withdrawMap = completedWithdrawalMap();
+    const store = window.BremStorage?.directSettlementAdjustments;
+    const promoMap = store?.getSettlement?.('promotion', settlement.id) || {};
+    const otherMap = store?.getSettlement?.('other', settlement.id) || {};
+    const withdrawMap = completedWithdrawalMap(week);
     const unitCallFee = callFeeUnit();
 
     const rows = [];
-    records.forEach(record => {
-      (Array.isArray(record.riders) ? record.riders : []).forEach(rider => {
-        const driverId = String(rider.matchedRiderId || '').trim();
-        const amounts = rider.amounts || {};
-        const idLabel = platform === 'coupang'
-          ? (rider.coupangLoginKey || '-')
-          : (rider.baeminUserId || '-');
-        const promo = driverId ? Number(promoMap[driverId]?.amount || 0) : 0;
-        const other = driverId ? Number(otherMap[driverId]?.amount || 0) : 0;
-        const deliveryFee = Number(amounts.deliveryFee || 0);
-        const missionPay = Number(amounts.missionPay || 0);
-        const grossPay = deliveryFee + missionPay + other + promo;
+    (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
+      const driverId = String(rider.matchedRiderId || '').trim();
+      const amounts = rider.amounts || {};
+      const idLabel = platform === 'coupang'
+        ? (rider.coupangLoginKey || '-')
+        : (rider.baeminUserId || '-');
+      const promo = driverId ? Number(promoMap[driverId]?.amount || 0) : 0;
+      const other = driverId ? Number(otherMap[driverId]?.amount || 0) : 0;
+      const deliveryFee = Number(amounts.deliveryFee || 0);
+      const missionPay = Number(amounts.missionPay || 0);
+      const grossPay = deliveryFee + missionPay + other + promo;
 
-        const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
-        const employmentInsurance = Number(amounts.employmentInsurance || 0);
-        const accidentInsurance = Number(amounts.accidentInsurance || 0);
-        const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
-        const withholdingTax = Number(amounts.withholdingTax || 0);
-        const promotionWithholdingTax = promoTax(promo + other);
-        const callFee = callCount * unitCallFee;
-        const wd = driverId ? (withdrawMap.get(driverId) || { prepaid: 0, fee: 0 }) : { prepaid: 0, fee: 0 };
-        const dailySettlementFee = wd.fee;
-        const prepaid = wd.prepaid;
-        const deductTotal = employmentInsurance + accidentInsurance + hourlyInsurance
-          + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee + prepaid;
-        const netPay = grossPay - deductTotal;
+      const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
+      const employmentInsurance = Number(amounts.employmentInsurance || 0);
+      const accidentInsurance = Number(amounts.accidentInsurance || 0);
+      const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
+      const withholdingTax = Number(amounts.withholdingTax || 0);
+      const promotionWithholdingTax = promoTax(promo + other);
+      const callFee = callCount * unitCallFee;
+      const wd = driverId ? (withdrawMap.get(driverId) || { prepaid: 0, fee: 0 }) : { prepaid: 0, fee: 0 };
+      const dailySettlementFee = wd.fee;
+      const prepaid = wd.prepaid;
+      const deductTotal = employmentInsurance + accidentInsurance + hourlyInsurance
+        + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee + prepaid;
+      const netPay = grossPay - deductTotal;
 
-        rows.push({
-          name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
-          idLabel,
-          callCount,
-          deliveryFee, missionPay, other, promo, grossPay,
-          employmentInsurance, accidentInsurance, hourlyInsurance,
-          withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
-          deductTotal, netPay
-        });
+      rows.push({
+        name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
+        idLabel,
+        callCount,
+        deliveryFee, missionPay, other, promo, grossPay,
+        employmentInsurance, accidentInsurance, hourlyInsurance,
+        withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
+        deductTotal, netPay
       });
     });
     rows.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko-KR'));
@@ -169,11 +192,18 @@ const BremSettlementResultDirect = (function () {
     const body = $('#settlementResultRows');
     const summaryEl = $('#settlementResultSummary');
     if (!body) return;
-    ensureWeekInput();
-    const rows = computeRows();
+    renderSettlementPicker();
+    const settlement = currentSettlement();
 
+    if (!settlement) {
+      body.innerHTML = '<tr><td colspan="18" class="empty">이 플랫폼에 저장된 직계약 정산서가 없습니다. (주정산서 업로드 · 직계약 확인)</td></tr>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    const rows = computeRows();
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="18" class="empty">이 주·플랫폼에 정산 데이터가 없습니다. (주정산서 업로드/직계약 확인)</td></tr>';
+      body.innerHTML = '<tr><td colspan="18" class="empty">선택한 정산서에 라이더 데이터가 없습니다.</td></tr>';
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -182,8 +212,10 @@ const BremSettlementResultDirect = (function () {
       acc.grossPay += row.grossPay;
       acc.deductTotal += row.deductTotal;
       acc.netPay += row.netPay;
+      acc.promo += row.promo;
+      acc.other += row.other;
       return acc;
-    }, { grossPay: 0, deductTotal: 0, netPay: 0 });
+    }, { grossPay: 0, deductTotal: 0, netPay: 0, promo: 0, other: 0 });
 
     body.innerHTML = rows.map(row => `
       <tr>
@@ -208,7 +240,8 @@ const BremSettlementResultDirect = (function () {
       </tr>`).join('');
 
     if (summaryEl) {
-      summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`;
+      summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
+        + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)})</span>`;
     }
   }
 
@@ -233,11 +266,12 @@ const BremSettlementResultDirect = (function () {
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, '정산결과');
     const platform = state.platform === 'coupang' ? '쿠팡' : '배민';
-    window.XLSX.writeFile(wb, `정산결과_직계약_${platform}_${currentWeek()}.xlsx`);
+    const week = settlementWeek(currentSettlement());
+    window.XLSX.writeFile(wb, `정산결과_직계약_${platform}_${week}.xlsx`);
   }
 
   async function loadWithdrawals() {
-    const week = currentWeek();
+    const week = settlementWeek(currentSettlement());
     try {
       const fetchApi = window.BremStorage?.payrollWithdrawal?.fetchFromAdminApi;
       if (typeof fetchApi === 'function') {
@@ -250,21 +284,32 @@ const BremSettlementResultDirect = (function () {
     state.withdrawals = window.BremStorage?.payrollWithdrawal?.getAll?.() || [];
   }
 
+  async function reload() {
+    await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
+    await loadWithdrawals();
+    render();
+    showToast('정산결과를 다시 불러왔습니다.');
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
-    $('#settlementResultWeek')?.addEventListener('change', async event => {
-      state.week = weekStartKey(event.target.value || weekStartKey());
-      event.target.value = state.week;
+    $('#settlementResultSettlementSelect')?.addEventListener('change', async event => {
+      state.settlementId = event.target.value || '';
       await loadWithdrawals();
       render();
     });
+    $('#settlementResultReloadBtn')?.addEventListener('click', () => { void reload(); });
     $('#settlementResultExportBtn')?.addEventListener('click', exportExcel);
   }
 
   async function refresh(platform) {
     if (!$('#settlementResultRows')) return;
-    state.platform = platform === 'coupang' ? 'coupang' : 'baemin';
+    const next = platform === 'coupang' ? 'coupang' : 'baemin';
+    if (next !== state.platform) {
+      state.platform = next;
+      state.settlementId = '';
+    }
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
     await loadWithdrawals();
@@ -274,10 +319,9 @@ const BremSettlementResultDirect = (function () {
   function init() {
     if (!$('#settlementResultRows')) return;
     bindEvents();
-    ensureWeekInput();
   }
 
-  return { init, refresh, onWeekPicked, state };
+  return { init, refresh, state };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

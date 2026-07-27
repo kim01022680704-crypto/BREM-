@@ -6066,6 +6066,32 @@ textarea {
   font-weight: 400;
 }
 
+/* 정산서 선택 — 기간·지역·인원이 함께 들어가 라벨이 길다. */
+#directAdjustSettlementSelect,
+#settlementResultSettlementSelect {
+  min-width: 320px;
+  max-width: 100%;
+}
+
+#directAdjustSettlementSelect:disabled,
+#settlementResultSettlementSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settlement-next-step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 0 18px 16px;
+}
+
+.settlement-next-step .small-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .weekly-mismatch-detail {
   max-width: 420px;
   line-height: 1.45;
