@@ -684,6 +684,22 @@ h3 {
   color: #0369a1;
 }
 
+.driver-withdrawal-reconcile {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.driver-withdrawal-reconcile strong {
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
 .driver-withdrawal-request__meta {
   display: flex;
   flex-wrap: wrap;

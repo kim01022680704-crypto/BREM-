@@ -399,9 +399,24 @@
   prevBtn?.addEventListener('click', () => shiftWeek(-1));
   nextBtn?.addEventListener('click', () => shiftWeek(1));
 
+  // 계정 전환 시 이전 기사의 명세서가 캐시/화면에 남지 않도록 전부 비운다.
+  function resetPanel() {
+    state.requestSeq += 1;
+    state.weekStart = null;
+    state.loading = false;
+    prefetchToken += 1;
+    cache.clear();
+    closePanel();
+    if (periodEl) periodEl.textContent = '';
+    if (paymentDateEl) paymentDateEl.textContent = '';
+    if (contentEl) contentEl.hidden = true;
+    if (emptyEl) emptyEl.hidden = false;
+  }
+
   window.BremDriverWeeklyPayslip = {
     open: openPanel,
     reload: loadPayslip,
+    reset: resetPanel,
     invalidateCache() {
       cache.clear();
     }

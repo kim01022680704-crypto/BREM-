@@ -540,6 +540,10 @@
     state.selectedWeekStart = weekStartKey();
     driverDashboardLoading = false;
     driverLoadFailed = false;
+    // 출금/주급명세서는 각자 모듈 상태와 캐시를 들고 있어서, 여기서 비우지 않으면
+    // 다른 기사로 로그인했을 때 이전 기사의 금액이 그대로 남는다.
+    window.BremDriverWithdrawal?.reset?.();
+    window.BremDriverWeeklyPayslip?.reset?.();
     showLoggedOut();
     window.BremLoginPrefs?.restoreIdAfterLogout?.('rider', {
       idInput: loginIdInput,
@@ -1379,6 +1383,10 @@
       }
 
       BremStorage.auth.setDriverSessionId(driver.id);
+      // 로그아웃을 거치지 않고 계정이 바뀌는 경우(세션 만료 후 재로그인 등)에도
+      // 이전 기사 잔상이 남지 않도록 로그인 시점에 한 번 더 비운다.
+      window.BremDriverWithdrawal?.reset?.();
+      window.BremDriverWeeklyPayslip?.reset?.();
       window.BremLoginPrefs?.captureLoginPrefs?.('rider', {
         idInput: loginIdInput,
         rememberCheckbox: document.getElementById('driverRememberId'),

@@ -224,10 +224,27 @@
         hintEl.textContent = `주정산 마무리됨 · 출금가능금액 0원 (${payload.weekStart || '-'} ~ ${payload.weekEnd || '-'})`;
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
-      } else if (requestedFee > 0) {
-        hintEl.textContent = `실지급 ${formatMoney(payload.totalNetPay)} − 신청 ${formatMoney(requestedAmount)} − 일정산수수료 ${formatMoney(requestedFee)}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
       } else {
-        hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
+        // 출금가능 계산은 신청중 + 처리완료를 모두 차감한다.
+        // (이전엔 힌트에 신청중만 보여 실지급−신청만으로는 0원이 설명이 안 됐음)
+        const withdrawnAmount = Math.max(0, Number(payload.withdrawnAmountTotal || 0));
+        const withdrawnConsume = Math.max(0, Number(payload.withdrawnTotal || 0));
+        const withdrawnFee = Math.max(0, withdrawnConsume - withdrawnAmount);
+        const parts = [`실지급 ${formatMoney(payload.totalNetPay)}`];
+        if (withdrawnAmount > 0 || withdrawnFee > 0) {
+          parts.push(`처리완료 ${formatMoney(withdrawnAmount)}`);
+          if (withdrawnFee > 0) parts.push(`처리완료수수료 ${formatMoney(withdrawnFee)}`);
+        }
+        if (requestedAmount > 0 || requestedFee > 0) {
+          parts.push(`신청중 ${formatMoney(requestedAmount)}`);
+          if (requestedFee > 0) parts.push(`신청수수료 ${formatMoney(requestedFee)}`);
+        }
+        const formula = parts.join(' − ');
+        if (withdrawnAmount > 0 || requestedAmount > 0 || leaseDeduction > 0) {
+          hintEl.textContent = `${formula}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
+        } else {
+          hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
+        }
       }
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
@@ -327,6 +344,34 @@
     }).join('');
   }
 
+  // 실지급 합계 ↔ 출금수령+수수료 가 맞아 떨어지는지 한눈에 보여준다.
+  // (일별 실지급 ≠ 각 출금액 — 출금은 주 단위 주머니에서 빠지기 때문)
+  function renderReconcile(payload) {
+    const el = document.getElementById('driverWithdrawalReconcile');
+    if (!el) return;
+    const list = (Array.isArray(payload?.myRequests) ? payload.myRequests : [])
+      .filter(item => item.status === 'pending' || item.status === 'completed');
+    if (!list.length) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    const totalNet = Math.max(0, Math.round(Number(payload.totalNetPay || 0)));
+    const recv = list.reduce((sum, item) => sum + Math.max(0, Math.round(Number(item.amount || 0))), 0);
+    const fee = list.reduce((sum, item) => sum + Math.max(0, Math.round(Number(item.feeAmount || 0))), 0);
+    const consumed = recv + fee;
+    const leaseDeduction = Math.max(0, Math.round(Number(payload.lease?.leaseDeductionTotal || 0)));
+    const remain = Math.max(0, Math.round(Number(payload.availableAmount || 0)));
+    const accounted = consumed + remain + leaseDeduction;
+    const match = totalNet === accounted;
+    el.hidden = false;
+    const leaseText = leaseDeduction > 0 ? ` + 리스차감 <strong>${formatMoney(leaseDeduction)}</strong>` : '';
+    const remainText = remain > 0 ? ` + 잔액 <strong>${formatMoney(remain)}</strong>` : '';
+    el.innerHTML = match
+      ? `대조: 실지급 합계 <strong>${formatMoney(totalNet)}</strong> = 출금수령 <strong>${formatMoney(recv)}</strong> + 일정산수수료 <strong>${formatMoney(fee)}</strong>${leaseText}${remainText} · 맞음`
+      : `대조: 실지급 <strong>${formatMoney(totalNet)}</strong> · 출금수령 <strong>${formatMoney(recv)}</strong> + 수수료 <strong>${formatMoney(fee)}</strong> = <strong>${formatMoney(consumed)}</strong>${leaseText}${remainText}`;
+  }
+
   function syncCallFeeHeader(showCallFee) {
     const table = panel.querySelector('.driver-withdrawal-table');
     if (!table) return;
@@ -362,6 +407,7 @@
     syncCallFeeHeader(showCallFee);
     renderDays(result.days, showCallFee);
     renderRequests(result.myRequests);
+    renderReconcile(result);
 
     const noDays = !Array.isArray(result.days) || !result.days.length;
     if (emptyEl) {
@@ -471,9 +517,44 @@
     }
   });
 
+  // 계정 전환(로그아웃 → 다른 기사 로그인) 시 이전 기사의 금액이 화면에 남지 않도록 전부 비운다.
+  // requestSeq 를 올려 아직 응답이 안 온 이전 계정의 조회 결과도 무효화한다.
+  function resetPanel() {
+    state.requestSeq += 1;
+    state.weekStart = null;
+    state.loading = false;
+    state.availableAmount = 0;
+    state.weekFinalized = false;
+    state.withdrawalPaused = false;
+    state.enrolledPlatforms = { coupang: false, baemin: false };
+    state.feesByPlatform = { coupang: null, baemin: null };
+    setOpenState(false);
+    if (daysBody) daysBody.innerHTML = '';
+    if (requestList) requestList.innerHTML = '';
+    if (periodEl) periodEl.textContent = '';
+    if (availableEl) {
+      availableEl.textContent = formatMoney(0);
+      availableEl.classList.remove('is-negative');
+    }
+    if (hintEl) hintEl.textContent = '';
+    if (amountInput) {
+      amountInput.value = '';
+      amountInput.removeAttribute('max');
+    }
+    const reconcileEl = document.getElementById('driverWithdrawalReconcile');
+    if (reconcileEl) {
+      reconcileEl.hidden = true;
+      reconcileEl.textContent = '';
+    }
+    if (contentEl) contentEl.hidden = true;
+    if (emptyEl) emptyEl.hidden = false;
+    if (emptyTextEl) emptyTextEl.textContent = '';
+  }
+
   window.BremDriverWithdrawal = {
     open: openPanel,
     close: closePanel,
-    refresh: loadWithdrawal
+    refresh: loadWithdrawal,
+    reset: resetPanel
   };
 })();
