@@ -1860,6 +1860,26 @@
           };
         }
 
+        if (triggerId === 'direct-adjust-week') {
+          return {
+            hiddenInput: $('#directAdjustWeek'),
+            labelEl: $('#directAdjustWeekBtn'),
+            onSelect(value) {
+              window.BremDirectAdjustmentAdmin?.onWeekPicked?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'settlement-result-week') {
+          return {
+            hiddenInput: $('#settlementResultWeek'),
+            labelEl: $('#settlementResultWeekBtn'),
+            onSelect(value) {
+              window.BremSettlementResultDirect?.onWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-week-available') {
           return {
             hiddenInput: $('#payrollDailyAvailableWeekStart'),

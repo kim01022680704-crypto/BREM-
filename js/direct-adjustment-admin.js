@@ -33,6 +33,8 @@ const BremDirectAdjustmentAdmin = (function () {
   const state = {
     platform: 'baemin',
     settlementId: '',
+    // 빈 문자열이면 주 필터 없음(전체 주). 정산주는 항상 수요일 시작.
+    week: '',
     pending: { other: null, promotion: null },
     erpSelected: new Set(),
     erpPlatform: ''
@@ -54,12 +56,20 @@ const BremDirectAdjustmentAdmin = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
+  // 날짜를 로컬 기준으로 찍는다. toISOString 을 쓰면 UTC+9 에서 하루씩 밀린다.
+  function dateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function weekStartKey(dateValue = dateKey(new Date())) {
     if (window.BremDatePicker?.weekStartKey) return window.BremDatePicker.weekStartKey(dateValue);
     const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
     const diff = (date.getDay() - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
-    return date.toISOString().slice(0, 10);
+    return dateKey(date);
   }
 
   function formatDate(value) {
@@ -103,17 +113,32 @@ const BremDirectAdjustmentAdmin = (function () {
 
   // --- 정산서(직계약) 목록 -------------------------------------------------
 
-  function settlementList() {
+  function platformSettlements() {
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
       .filter(record => String(record.platform || '') === state.platform)
       .slice()
       .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
   }
 
+  // 정산주를 고르면 그 주의 정산서만 남긴다. 주를 안 골랐으면 전체를 보여준다.
+  function settlementList() {
+    const all = platformSettlements();
+    if (!state.week) return all;
+    return all.filter(record => settlementWeek(record) === state.week);
+  }
+
   function currentSettlement() {
     const list = settlementList();
     if (!list.length) return null;
     return list.find(item => item.id === state.settlementId) || list[0];
+  }
+
+  // 최초 진입 시 기본 정산주 = 가장 최근 정산서의 주.
+  function ensureWeek() {
+    if (state.week) return state.week;
+    const latest = platformSettlements()[0];
+    state.week = latest ? settlementWeek(latest) : weekStartKey();
+    return state.week;
   }
 
   function settlementOptionLabel(record) {
@@ -127,12 +152,40 @@ const BremDirectAdjustmentAdmin = (function () {
     return weekStartKey(String(record.startDate || '').slice(0, 10) || weekStartKey());
   }
 
+  function renderWeekButton() {
+    const btn = $('#directAdjustWeekBtn');
+    if (!btn) return;
+    btn.textContent = state.week
+      ? `${formatDate(state.week)}(수) 주`
+      : '전체 주';
+    const hidden = $('#directAdjustWeek');
+    if (hidden) hidden.value = state.week;
+  }
+
+  function setWeek(value) {
+    state.week = value ? weekStartKey(value) : '';
+    state.settlementId = '';
+    state.erpSelected.clear();
+    state.pending.other = null;
+    state.pending.promotion = null;
+    renderAll();
+  }
+
+  function shiftWeek(deltaWeeks) {
+    const base = ensureWeek();
+    const date = new Date(`${base}T00:00:00`);
+    date.setDate(date.getDate() + deltaWeeks * 7);
+    setWeek(dateKey(date));
+  }
+
   function renderSettlementPicker() {
     const select = $('#directAdjustSettlementSelect');
     const info = $('#directAdjustSettlementInfo');
     const platformEl = $('#directAdjustPlatformLabel');
     if (platformEl) platformEl.textContent = `· ${platformLabel(state.platform)}`;
     if (!select) return;
+
+    renderWeekButton();
 
     const list = settlementList();
     const active = currentSettlement();
@@ -142,7 +195,10 @@ const BremDirectAdjustmentAdmin = (function () {
       select.innerHTML = '<option value="">저장된 정산서 없음</option>';
       select.disabled = true;
       if (info) {
-        info.textContent = `${platformLabel(state.platform)} 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 정산서를 저장하세요.`;
+        const total = platformSettlements().length;
+        info.textContent = state.week && total
+          ? `${formatDate(state.week)}(수) 주에 저장된 ${platformLabel(state.platform)} 직계약 정산서가 없습니다. 다른 주를 고르거나 「전체 주」를 누르세요. (전체 ${total}건)`
+          : `${platformLabel(state.platform)} 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 정산서를 저장하세요.`;
       }
       return;
     }
@@ -482,18 +538,177 @@ const BremDirectAdjustmentAdmin = (function () {
 
   // --- ERP 프로모션 불러오기 -----------------------------------------------
 
+  // 같은 정산서를 여러 번 저장한 경우가 실제로 있다(조건을 고쳐 다시 저장).
+  // 둘 다 고르면 같은 기사 금액이 두 번 들어가므로, 최신 저장본만 기본으로 쓰고
+  // 이전 저장본은 stale로 표시해 고를 때 경고한다.
   function erpSavedResults() {
     const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
     const settlement = currentSettlement();
     if (!settlement) return [];
     const week = settlementWeek(settlement);
     const platform = state.erpPlatform;
-    return all.filter(item => {
+    const matched = all.filter(item => {
       const itemWeek = weekStartKey(String(item.startDate || '').slice(0, 10) || week);
       if (itemWeek !== week) return false;
       if (platform && String(item.platform || '') !== platform) return false;
       return true;
     });
+
+    const groups = new Map();
+    matched.forEach(item => {
+      const key = `${item.platform}|${item.settlementId || item.region || item.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+
+    const annotated = [];
+    groups.forEach(group => {
+      group.sort((a, b) => String(b.savedAt || '').localeCompare(String(a.savedAt || '')));
+      group.forEach((item, index) => {
+        annotated.push({ ...item, isStale: index > 0, siblingCount: group.length });
+      });
+    });
+    return annotated.sort((a, b) => String(b.savedAt || '').localeCompare(String(a.savedAt || '')));
+  }
+
+  // 선택한 결과들을 기사별로 합산하고, 적용 전에 알려야 할 위험을 함께 계산한다.
+  function buildErpPlan() {
+    const settlement = currentSettlement();
+    const empty = {
+      settlement: null, perDriver: new Map(), applicable: new Map(), selected: [],
+      staleSelected: [], sameSettlementGroups: [], overlapDrivers: [],
+      notInSettlement: [], notInSettlementAmount: 0,
+      overwriteExcel: [], droppedErp: [], droppedErpAmount: 0,
+      skippedUnmatched: 0, total: 0
+    };
+    if (!settlement) return empty;
+
+    const selected = erpSavedResults().filter(item => state.erpSelected.has(item.id));
+    if (!selected.length) return { ...empty, settlement };
+
+    const staleSelected = selected.filter(item => item.isStale);
+
+    // 같은 정산서에서 2건 이상 골랐는지
+    const bySettlement = new Map();
+    selected.forEach(item => {
+      const key = `${item.platform}|${item.settlementId || item.region || item.id}`;
+      if (!bySettlement.has(key)) bySettlement.set(key, []);
+      bySettlement.get(key).push(item);
+    });
+    const sameSettlementGroups = [...bySettlement.values()].filter(g => g.length > 1);
+
+    // 기사별 합산 + 몇 개 결과에 걸쳐 있는지
+    const perDriver = new Map();
+    let skippedUnmatched = 0;
+    selected.forEach(item => {
+      (Array.isArray(item.results) ? item.results : []).forEach(row => {
+        const driverId = String(row.matchedRiderId || '').trim();
+        const amount = Number(row.totalPromotionAmount || 0);
+        if (!driverId) { skippedUnmatched += 1; return; }
+        if (!amount) return;
+        const prev = perDriver.get(driverId)
+          || { amount: 0, name: row.driverName || row.displayName || '', sources: [] };
+        prev.amount += amount;
+        prev.sources.push({ region: item.region || '', amount, resultId: item.id });
+        perDriver.set(driverId, prev);
+      });
+    });
+
+    const overlapDrivers = [...perDriver.entries()]
+      .filter(([, info]) => info.sources.length > 1)
+      .map(([driverId, info]) => ({ driverId, ...info }));
+
+    // 직계약 정산서에 없는 기사는 적용해도 정산결과에 나오지 않는다.
+    const settlementDriverIds = new Set(
+      (Array.isArray(settlement.riders) ? settlement.riders : [])
+        .map(rider => String(rider.matchedRiderId || '').trim())
+        .filter(Boolean)
+    );
+    const notInSettlement = [...perDriver.entries()]
+      .filter(([driverId]) => !settlementDriverIds.has(driverId))
+      .map(([driverId, info]) => ({ driverId, ...info }));
+    const notInSettlementAmount = notInSettlement.reduce((sum, item) => sum + item.amount, 0);
+
+    // 정산서에 없는 기사는 저장하지 않는다. 저장해봐야 정산결과에는 안 나오면서
+    // 프로모션원천세 합계만 부풀리기 때문이다.
+    const applicable = new Map(
+      [...perDriver.entries()].filter(([driverId]) => settlementDriverIds.has(driverId))
+    );
+
+    // 엑셀로 직접 넣은 금액을 ERP가 덮어쓰게 되는 기사
+    const applied = window.BremStorage?.directSettlementAdjustments?.getSettlement?.('promotion', settlement.id) || {};
+    const overwriteExcel = [...applicable.keys()]
+      .filter(driverId => applied[driverId] && applied[driverId].source !== 'erp')
+      .map(driverId => ({
+        driverId,
+        name: applicable.get(driverId).name || driverName(driverId),
+        prevAmount: Number(applied[driverId].amount || 0),
+        nextAmount: applicable.get(driverId).amount
+      }));
+
+    // ERP 몫은 선택한 결과로 다시 쓰므로, 이번 선택에 없는 기존 ERP 적용분은 빠진다.
+    // 조용히 사라지면 안 되니 미리 알린다.
+    const droppedErp = Object.entries(applied)
+      .filter(([driverId, item]) => item?.source === 'erp' && !applicable.has(driverId))
+      .map(([driverId, item]) => ({
+        driverId,
+        name: item.driverName || driverName(driverId),
+        amount: Number(item.amount || 0)
+      }));
+    const droppedErpAmount = droppedErp.reduce((sum, item) => sum + item.amount, 0);
+
+    const total = [...applicable.values()].reduce((sum, info) => sum + info.amount, 0);
+
+    return {
+      settlement, perDriver, applicable, selected, staleSelected, sameSettlementGroups,
+      overlapDrivers, notInSettlement, notInSettlementAmount,
+      overwriteExcel, droppedErp, droppedErpAmount, skippedUnmatched, total
+    };
+  }
+
+  function renderErpPreview() {
+    const box = $('#directErpPreview');
+    if (!box) return;
+    const plan = buildErpPlan();
+    if (!plan.settlement || !plan.selected.length) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+
+    const warnings = [];
+    if (plan.sameSettlementGroups.length) {
+      const names = plan.sameSettlementGroups
+        .map(group => escapeHtml(group[0].region || group[0].settlementId || '-'))
+        .join(', ');
+      warnings.push(`같은 정산서에서 저장본을 2건 이상 선택했습니다 (${names}). 같은 기사 금액이 두 번 더해집니다.`);
+    }
+    if (plan.staleSelected.length) {
+      warnings.push(`이전 저장본 ${plan.staleSelected.length}건이 선택돼 있습니다. 보통은 최신 저장본만 씁니다.`);
+    }
+    if (plan.overlapDrivers.length) {
+      warnings.push(`기사 ${plan.overlapDrivers.length}명이 선택한 결과 여러 곳에 들어 있어 금액이 합산됩니다.`);
+    }
+    if (plan.notInSettlement.length) {
+      warnings.push(`기사 ${plan.notInSettlement.length}명(${formatNumber(plan.notInSettlementAmount)}원)은 이 정산서에 없어 제외됩니다.`);
+    }
+    if (plan.overwriteExcel.length) {
+      warnings.push(`엑셀로 넣은 금액 ${plan.overwriteExcel.length}건을 ERP 금액이 덮어씁니다.`);
+    }
+    if (plan.droppedErp.length) {
+      warnings.push(`전에 적용한 ERP 프로모션 ${plan.droppedErp.length}명(${formatNumber(plan.droppedErpAmount)}원)이 이번 선택에 없어 빠집니다. 같이 두려면 그 결과도 함께 선택하세요.`);
+    }
+    if (plan.skippedUnmatched) {
+      warnings.push(`기사 매칭이 안 된 ${plan.skippedUnmatched}행은 제외됩니다.`);
+    }
+
+    box.hidden = false;
+    box.innerHTML = `
+      <p class="direct-erp-preview-head">적용 미리보기 · 기사 <strong>${formatNumber(plan.applicable.size)}</strong>명 · 합계 <strong>${formatNumber(plan.total)}</strong>원</p>
+      ${warnings.length
+        ? `<ul class="direct-erp-preview-warn">${warnings.map(text => `<li>${text}</li>`).join('')}</ul>`
+        : '<p class="direct-erp-preview-ok">겹치거나 빠지는 기사 없이 깔끔하게 적용됩니다.</p>'}
+    `;
   }
 
   function renderErpList() {
@@ -502,8 +717,9 @@ const BremDirectAdjustmentAdmin = (function () {
     if (!body) return;
     const settlement = currentSettlement();
     if (!settlement) {
-      body.innerHTML = '<tr><td colspan="8" class="empty">정산서를 선택하세요.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="empty">정산서를 선택하세요.</td></tr>';
       if (summaryEl) summaryEl.textContent = '';
+      renderErpPreview();
       return;
     }
     const results = erpSavedResults();
@@ -511,10 +727,11 @@ const BremDirectAdjustmentAdmin = (function () {
     [...state.erpSelected].forEach(id => { if (!validIds.has(id)) state.erpSelected.delete(id); });
 
     if (!results.length) {
-      body.innerHTML = `<tr><td colspan="8" class="empty">${formatDate(settlementWeek(settlement))} 주에 저장된 프로모션 적용 결과가 없습니다.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="empty">${formatDate(settlementWeek(settlement))} 주에 저장된 프로모션 적용 결과가 없습니다.</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       const allChk = $('#directErpSelectAllChk');
       if (allChk) allChk.checked = false;
+      renderErpPreview();
       return;
     }
 
@@ -523,9 +740,13 @@ const BremDirectAdjustmentAdmin = (function () {
       const conditions = Array.isArray(item.selectedPromotionRuleNames) ? item.selectedPromotionRuleNames.join(', ') : '';
       const riderCount = item.summary?.riderCount ?? (Array.isArray(item.results) ? item.results.length : 0);
       const total = item.summary?.totalPromotionAmount ?? 0;
+      const badge = item.isStale
+        ? '<span class="direct-erp-badge stale">이전 저장본</span>'
+        : (item.siblingCount > 1 ? '<span class="direct-erp-badge latest">최신</span>' : '-');
       return `
-      <tr>
+      <tr class="${item.isStale ? 'direct-erp-stale-row' : ''}">
         <td><input type="checkbox" data-erp-select="${escapeHtml(item.id)}" ${checked}></td>
+        <td>${badge}</td>
         <td>${platformLabel(item.platform)}</td>
         <td>${escapeHtml(item.settlementLabel || formatDate(item.startDate))}</td>
         <td>${escapeHtml(item.region || '-')}</td>
@@ -537,14 +758,19 @@ const BremDirectAdjustmentAdmin = (function () {
     }).join('');
 
     if (summaryEl) {
-      summaryEl.innerHTML = `저장 결과 <strong>${results.length}</strong>건 · 선택 <strong>${state.erpSelected.size}</strong>건`;
+      const staleCount = results.filter(item => item.isStale).length;
+      summaryEl.innerHTML = `저장 결과 <strong>${results.length}</strong>건 · 선택 <strong>${state.erpSelected.size}</strong>건`
+        + (staleCount ? ` · 이전 저장본 ${staleCount}건은 전체선택에서 제외됩니다` : '');
     }
     const allChk = $('#directErpSelectAllChk');
-    if (allChk) allChk.checked = results.length > 0 && results.every(r => state.erpSelected.has(r.id));
+    const fresh = results.filter(item => !item.isStale);
+    if (allChk) allChk.checked = fresh.length > 0 && fresh.every(r => state.erpSelected.has(r.id));
+    renderErpPreview();
   }
 
+  // 전체선택은 최신 저장본만 고른다. 이전 저장본까지 한 번에 켜지면 이중 합산이 된다.
   function toggleErpSelectAll(checked) {
-    const results = erpSavedResults();
+    const results = erpSavedResults().filter(item => !item.isStale);
     if (checked) results.forEach(r => state.erpSelected.add(r.id));
     else results.forEach(r => state.erpSelected.delete(r.id));
     renderErpList();
@@ -560,30 +786,56 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast('적용할 저장 결과를 선택하세요.');
       return;
     }
-    const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
-    const byId = new Map(all.map(item => [item.id, item]));
-    const perDriver = new Map();
-    let skippedUnmatched = 0;
-    state.erpSelected.forEach(id => {
-      const result = byId.get(id);
-      if (!result) return;
-      (Array.isArray(result.results) ? result.results : []).forEach(row => {
-        const driverId = String(row.matchedRiderId || '').trim();
-        const amount = Number(row.totalPromotionAmount || 0);
-        if (!driverId) { skippedUnmatched += 1; return; }
-        if (!amount) return;
-        const prev = perDriver.get(driverId) || { amount: 0, name: row.driverName || row.displayName || '' };
-        prev.amount += amount;
-        perDriver.set(driverId, prev);
-      });
-    });
-
-    if (!perDriver.size) {
-      showToast('선택한 결과에 매칭된 기사·금액이 없습니다.');
+    const plan = buildErpPlan();
+    if (!plan.applicable.size && !plan.droppedErp.length) {
+      showToast(plan.perDriver.size
+        ? '선택한 결과의 기사가 이 정산서에 없습니다.'
+        : '선택한 결과에 매칭된 기사·금액이 없습니다.');
       return;
     }
 
-    const entries = [...perDriver.entries()].map(([driverId, info]) => {
+    const confirmLines = [];
+    if (plan.sameSettlementGroups.length) {
+      confirmLines.push(`· 같은 정산서 저장본을 ${plan.sameSettlementGroups.length}곳에서 2건 이상 선택했습니다. 금액이 두 번 더해집니다.`);
+    }
+    if (plan.staleSelected.length) {
+      confirmLines.push(`· 이전 저장본 ${plan.staleSelected.length}건이 포함돼 있습니다.`);
+    }
+    if (plan.overlapDrivers.length) {
+      confirmLines.push(`· 기사 ${plan.overlapDrivers.length}명은 여러 결과에 있어 합산됩니다.`);
+    }
+    if (plan.notInSettlement.length) {
+      confirmLines.push(`· 기사 ${plan.notInSettlement.length}명(${formatNumber(plan.notInSettlementAmount)}원)은 이 정산서에 없어 제외됩니다.`);
+    }
+    if (plan.overwriteExcel.length) {
+      confirmLines.push(`· 엑셀로 넣은 금액 ${plan.overwriteExcel.length}건을 덮어씁니다.`);
+    }
+    if (plan.droppedErp.length) {
+      confirmLines.push(`· 전에 적용한 ERP 프로모션 ${plan.droppedErp.length}명(${formatNumber(plan.droppedErpAmount)}원)이 빠집니다.`);
+    }
+
+    const summaryLine = `기사 ${formatNumber(plan.applicable.size)}명 · 합계 ${formatNumber(plan.total)}원을 적용합니다.`;
+    if (confirmLines.length) {
+      const proceed = window.confirm(`${summaryLine}\n\n확인이 필요한 내용:\n${confirmLines.join('\n')}\n\n그대로 적용할까요?`);
+      if (!proceed) return;
+    }
+
+    // ERP 몫은 선택한 결과로 매번 다시 쓴다. 그래야 여러 번 눌러도 금액이 쌓이지 않는다.
+    // 엑셀로 넣은 금액은 이번 ERP 대상이 아닌 한 그대로 둔다.
+    const store = window.BremStorage.directSettlementAdjustments;
+    const existing = store.getSettlement('promotion', settlement.id) || {};
+    const keepExcel = Object.entries(existing)
+      .filter(([driverId, item]) => item?.source !== 'erp' && !plan.applicable.has(driverId))
+      .map(([driverId, item]) => ({
+        driverId,
+        amount: Number(item.amount || 0),
+        baeminId: item.baeminId || '',
+        coupangId: item.coupangId || '',
+        driverName: item.driverName || '',
+        source: 'excel'
+      }));
+
+    const erpEntries = [...plan.applicable.entries()].map(([driverId, info]) => {
       const driver = window.BremStorage?.drivers?.getById?.(driverId);
       return {
         driverId,
@@ -594,13 +846,16 @@ const BremDirectAdjustmentAdmin = (function () {
         source: 'erp'
       };
     });
-    window.BremStorage.directSettlementAdjustments.applyEntries('promotion', settlement.id, entries, { source: 'erp' });
+
+    store.applyEntries('promotion', settlement.id, [...keepExcel, ...erpEntries], { replace: true });
     void window.BremStorage.flushStorage?.();
     renderApplied('promotion');
     renderPromoTax();
     renderAppliedSummary();
-    let message = `ERP 프로모션 ${perDriver.size}명 → 이 정산서 BREM프로모션 적용 완료`;
-    if (skippedUnmatched) message += ` · 미매칭 ${skippedUnmatched}행 제외`;
+    renderErpPreview();
+    let message = `ERP 프로모션 ${plan.applicable.size}명 · ${formatNumber(plan.total)}원 적용 완료`;
+    if (plan.notInSettlement.length) message += ` · 정산서에 없는 ${plan.notInSettlement.length}명 제외`;
+    if (plan.skippedUnmatched) message += ` · 미매칭 ${plan.skippedUnmatched}행 제외`;
     showToast(message);
   }
 
@@ -638,6 +893,10 @@ const BremDirectAdjustmentAdmin = (function () {
       state.pending.promotion = null;
       renderAll();
     });
+
+    $('#directAdjustWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#directAdjustWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    $('#directAdjustWeekAllBtn')?.addEventListener('click', () => setWeek(''));
 
     $('#directErpPlatformFilter')?.addEventListener('change', event => {
       state.erpPlatform = event.target.value || '';
@@ -688,10 +947,12 @@ const BremDirectAdjustmentAdmin = (function () {
     if (next !== state.platform) {
       state.platform = next;
       state.settlementId = '';
+      state.week = '';
       state.erpSelected.clear();
       state.pending.other = null;
       state.pending.promotion = null;
     }
+    ensureWeek();
     driverOptionsCache = '';
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
@@ -712,7 +973,7 @@ const BremDirectAdjustmentAdmin = (function () {
     });
   }
 
-  return { init, refresh, state };
+  return { init, refresh, state, renderErpList, onWeekPicked: setWeek };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

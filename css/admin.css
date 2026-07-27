@@ -6042,6 +6042,52 @@ textarea {
   max-height: 460px;
 }
 
+/* ERP 저장본 구분 배지 · 이전 저장본은 눈에 띄게 낮춰서 실수 선택을 막는다 */
+.direct-erp-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.direct-erp-badge.latest {
+  background: rgba(52, 199, 123, 0.16);
+  color: #34c77b;
+}
+.direct-erp-badge.stale {
+  background: rgba(255, 176, 32, 0.16);
+  color: #ffb020;
+}
+tr.direct-erp-stale-row > td {
+  opacity: 0.62;
+}
+
+/* 적용 미리보기 · 경고 */
+.direct-erp-preview {
+  margin: 8px 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface-2, #161b2e);
+  border: 1px solid var(--border, #2a3350);
+}
+.direct-erp-preview-head {
+  margin: 0;
+  font-size: 13px;
+}
+.direct-erp-preview-warn {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #ffb020;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.direct-erp-preview-ok {
+  margin: 6px 0 0;
+  color: #34c77b;
+  font-size: 12px;
+}
+
 /* ERP 카드 버튼: 너무 넓지 않게 컴팩트하게 */
 #directErpCard .promotion-form-actions {
   flex-wrap: wrap;

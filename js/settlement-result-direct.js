@@ -2,7 +2,8 @@ const BremSettlementResultDirect = (function () {
   const $ = selector => document.querySelector(selector);
   const PROMO_TAX_RATE = 0.033;
 
-  const state = { platform: 'baemin', settlementId: '', withdrawals: [] };
+  // week: 빈 문자열이면 주 필터 없음(전체 주). 정산주는 항상 수요일 시작.
+  const state = { platform: 'baemin', settlementId: '', week: '', withdrawals: [] };
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -20,12 +21,20 @@ const BremSettlementResultDirect = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  function weekStartKey(dateValue = new Date().toISOString().slice(0, 10)) {
+  // 날짜를 로컬 기준으로 찍는다. toISOString 을 쓰면 UTC+9 에서 하루씩 밀린다.
+  function dateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function weekStartKey(dateValue = dateKey(new Date())) {
     if (window.BremDatePicker?.weekStartKey) return window.BremDatePicker.weekStartKey(dateValue);
     const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
     const diff = (date.getDay() - 3 + 7) % 7;
     date.setDate(date.getDate() - diff);
-    return date.toISOString().slice(0, 10);
+    return dateKey(date);
   }
 
   function formatDate(value) {
@@ -45,17 +54,53 @@ const BremSettlementResultDirect = (function () {
 
   // --- 정산서 선택 ---------------------------------------------------------
 
-  function settlementList() {
+  function platformSettlements() {
     return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
       .filter(record => String(record.platform || '') === state.platform)
       .slice()
       .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
   }
 
+  // 정산주를 고르면 그 주의 정산서만 남긴다. 주를 안 골랐으면 전체를 보여준다.
+  function settlementList() {
+    const all = platformSettlements();
+    if (!state.week) return all;
+    return all.filter(record => settlementWeek(record) === state.week);
+  }
+
   function currentSettlement() {
     const list = settlementList();
     if (!list.length) return null;
     return list.find(item => item.id === state.settlementId) || list[0];
+  }
+
+  // 최초 진입 시 기본 정산주 = 가장 최근 정산서의 주.
+  function ensureWeek() {
+    if (state.week) return state.week;
+    const latest = platformSettlements()[0];
+    state.week = latest ? settlementWeek(latest) : weekStartKey();
+    return state.week;
+  }
+
+  function renderWeekButton() {
+    const btn = $('#settlementResultWeekBtn');
+    if (!btn) return;
+    btn.textContent = state.week ? `${formatDate(state.week)}(수) 주` : '전체 주';
+    const hidden = $('#settlementResultWeek');
+    if (hidden) hidden.value = state.week;
+  }
+
+  function setWeek(value) {
+    state.week = value ? weekStartKey(value) : '';
+    state.settlementId = '';
+    void refresh(state.platform);
+  }
+
+  function shiftWeek(deltaWeeks) {
+    const base = ensureWeek();
+    const date = new Date(`${base}T00:00:00`);
+    date.setDate(date.getDate() + deltaWeeks * 7);
+    setWeek(dateKey(date));
   }
 
   function settlementWeek(record) {
@@ -76,6 +121,8 @@ const BremSettlementResultDirect = (function () {
     if (platformLabel) platformLabel.textContent = state.platform === 'coupang' ? '· 쿠팡' : '· 배민';
     if (!select) return;
 
+    renderWeekButton();
+
     const list = settlementList();
     const active = currentSettlement();
     state.settlementId = active?.id || '';
@@ -83,7 +130,12 @@ const BremSettlementResultDirect = (function () {
     if (!list.length) {
       select.innerHTML = '<option value="">저장된 정산서 없음</option>';
       select.disabled = true;
-      if (info) info.textContent = '「주정산서 업로드 (직계약)」에서 정산서를 먼저 저장하세요.';
+      if (info) {
+        const total = platformSettlements().length;
+        info.textContent = state.week && total
+          ? `${formatDate(state.week)}(수) 주에 저장된 정산서가 없습니다. 다른 주를 고르거나 「전체 주」를 누르세요. (전체 ${total}건)`
+          : '「주정산서 업로드 (직계약)」에서 정산서를 먼저 저장하세요.';
+      }
       return;
     }
 
@@ -299,6 +351,9 @@ const BremSettlementResultDirect = (function () {
       await loadWithdrawals();
       render();
     });
+    $('#settlementResultWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#settlementResultWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    $('#settlementResultWeekAllBtn')?.addEventListener('click', () => setWeek(''));
     $('#settlementResultReloadBtn')?.addEventListener('click', () => { void reload(); });
     $('#settlementResultExportBtn')?.addEventListener('click', exportExcel);
   }
@@ -309,7 +364,9 @@ const BremSettlementResultDirect = (function () {
     if (next !== state.platform) {
       state.platform = next;
       state.settlementId = '';
+      state.week = '';
     }
+    ensureWeek();
     bindEvents();
     await window.BremStorage?.ensureSectionLoaded?.('settlement-result-direct');
     await loadWithdrawals();
@@ -321,7 +378,7 @@ const BremSettlementResultDirect = (function () {
     bindEvents();
   }
 
-  return { init, refresh, state };
+  return { init, refresh, state, onWeekPicked: setWeek };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

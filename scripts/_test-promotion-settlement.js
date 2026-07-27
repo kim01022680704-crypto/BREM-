@@ -79,6 +79,16 @@ const SETTLEMENTS = [
   }
 ];
 
+// 프로모션 적용 저장 결과. [10] 이후 테스트에서 중복 저장본을 덧붙인다.
+const ERP_RESULTS = [{
+  id: 'erp1', platform: 'baemin', startDate: '2026-07-22', region: '서울',
+  settlementId: 'bro_seoul_base',
+  settlementLabel: '2026-07 4주', savedAt: '2026-07-26T12:00:00',
+  selectedPromotionRuleNames: ['주말 프로모션'],
+  summary: { riderCount: 1, totalPromotionAmount: 70000 },
+  results: [{ matchedRiderId: 'd2', totalPromotionAmount: 70000, driverName: '이배민' }]
+}];
+
 window.BremStorage = {
   drivers: {
     getAll: () => DRIVERS,
@@ -88,13 +98,7 @@ window.BremStorage = {
     getAll: channel => (channel === 'direct' ? SETTLEMENTS : [])
   },
   promotionApplyResults: {
-    getAll: () => ([{
-      id: 'erp1', platform: 'baemin', startDate: '2026-07-22', region: '서울',
-      settlementLabel: '2026-07 4주', savedAt: '2026-07-26',
-      selectedPromotionRuleNames: ['주말 프로모션'],
-      summary: { riderCount: 1, totalPromotionAmount: 70000 },
-      results: [{ matchedRiderId: 'd2', totalPromotionAmount: 70000, driverName: '이배민' }]
-    }])
+    getAll: () => ERP_RESULTS
   },
   directPayAdjustments: {
     getBlob: kind => store[kind] || {},
@@ -103,7 +107,8 @@ window.BremStorage = {
   },
   directSettlementAdjustments: {
     getSettlement: (kind, id) => adjustments[kind][id] || {},
-    applyEntries(kind, id, entries) {
+    applyEntries(kind, id, entries, options = {}) {
+      if (options.replace) adjustments[kind][id] = {};
       const cur = adjustments[kind][id] || (adjustments[kind][id] = {});
       entries.forEach(e => {
         cur[e.driverId] = {
@@ -134,11 +139,14 @@ window.BremStorage = {
   flushStorage: async () => {}
 };
 
+// 실제 BremDatePicker 와 마찬가지로 로컬 기준으로 찍는다.
+// toISOString 을 쓰면 UTC+9 에서 하루 밀려 테스트가 실제 동작과 어긋난다.
 window.BremDatePicker = {
   weekStartKey(v) {
     const d = new Date(`${String(v).slice(0, 10)}T00:00:00`);
     d.setDate(d.getDate() - ((d.getDay() - 3 + 7) % 7));
-    return d.toISOString().slice(0, 10);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
 };
 
@@ -167,7 +175,8 @@ function check(label, actual, expected) {
   Adj.init();
   await Adj.refresh('baemin');
   const select = window.document.getElementById('directAdjustSettlementSelect');
-  check('배민 정산서 2건 노출', select.options.length, 2);
+  // 정산주 필터가 기본으로 최신 주에 걸리므로 그 주 정산서만 보인다.
+  check('기본 정산주의 배민 정산서 1건', select.options.length, 1);
   check('최신 정산서가 기본 선택', select.value, 'weekly_direct_baemin_seoul_20260722');
   check('ID 라벨이 배민ID', window.document.querySelector('[data-direct-id-label]').textContent, '배민ID');
 
@@ -204,7 +213,7 @@ function check(label, actual, expected) {
   Result.init();
   await Result.refresh('baemin');
   const resultSelect = window.document.getElementById('settlementResultSettlementSelect');
-  check('정산결과 정산서 2건', resultSelect.options.length, 2);
+  check('정산결과 기본 주 정산서 1건', resultSelect.options.length, 1);
   const rows = window.document.querySelectorAll('#settlementResultRows tr');
   check('라이더 2명 표시', rows.length, 2);
   const firstRow = [...rows].find(tr => tr.textContent.includes('김배민'));
@@ -222,6 +231,7 @@ function check(label, actual, expected) {
   check('총지급액', cells[17], '1,103,040');
 
   console.log('\n[6] 7/15 정산서로 바꾸면 그 정산서 금액만');
+  Result.state.week = '2026-07-15';
   Result.state.settlementId = 'weekly_direct_baemin_seoul_20260715';
   await Result.refresh('baemin');
   // refresh 는 플랫폼이 같으면 settlementId 를 유지한다
@@ -245,6 +255,7 @@ function check(label, actual, expected) {
   check('저장 결과 표시', /BREM프로모션/.test(window.document.getElementById('directAdjustAppliedSummary').textContent), 'true');
 
   console.log('\n[8] ERP 적용분이 정산결과에 반영');
+  Result.state.week = '2026-07-22';
   Result.state.settlementId = 'weekly_direct_baemin_seoul_20260722';
   await Result.refresh('baemin');
   const erpApplied = [...window.document.querySelectorAll('#settlementResultRows tr')]
@@ -256,6 +267,132 @@ function check(label, actual, expected) {
   const coupangRowsEl = window.document.querySelectorAll('#settlementResultRows tr');
   check('쿠팡 라이더 1명', coupangRowsEl.length, 1);
   check('쿠팡 ID 표시', [...coupangRowsEl[0].querySelectorAll('td')][1].textContent.trim(), 'CP000003');
+
+  console.log('\n[10] 같은 정산서 중복 저장본 — 최신만 기본 사용');
+  // 같은 브로 정산서(bro_seoul_A)를 두 번 저장한 상황 + 다른 지역 1건
+  ERP_RESULTS.push(
+    {
+      id: 'erpA_new', platform: 'baemin', startDate: '2026-07-22', region: '양산',
+      settlementId: 'bro_seoul_A', savedAt: '2026-07-26T10:00:00',
+      selectedPromotionRuleNames: ['140건 천'],
+      summary: { riderCount: 1, totalPromotionAmount: 10000 },
+      results: [{ matchedRiderId: 'd1', totalPromotionAmount: 10000, driverName: '김배민' }]
+    },
+    {
+      id: 'erpA_old', platform: 'baemin', startDate: '2026-07-22', region: '양산',
+      settlementId: 'bro_seoul_A', savedAt: '2026-07-26T09:00:00',
+      selectedPromotionRuleNames: ['140건 천'],
+      summary: { riderCount: 1, totalPromotionAmount: 12000 },
+      results: [{ matchedRiderId: 'd1', totalPromotionAmount: 12000, driverName: '김배민' }]
+    },
+    {
+      id: 'erpB', platform: 'baemin', startDate: '2026-07-22', region: '북구',
+      settlementId: 'bro_seoul_B', savedAt: '2026-07-26T08:00:00',
+      selectedPromotionRuleNames: ['130건 천'],
+      summary: { riderCount: 2, totalPromotionAmount: 12000 },
+      results: [
+        { matchedRiderId: 'd1', totalPromotionAmount: 5000, driverName: '김배민' },
+        { matchedRiderId: 'd99', totalPromotionAmount: 7000, driverName: '없는기사' }
+      ]
+    }
+  );
+
+  Adj.state.settlementId = 'weekly_direct_baemin_seoul_20260722';
+  Adj.state.erpSelected.clear();
+  await Adj.refresh('baemin');
+  const rowsEl = [...window.document.querySelectorAll('#directErpSavedRows tr')];
+  check('ERP 저장본 4건 노출', rowsEl.length, 4);
+  const staleRows = rowsEl.filter(tr => tr.classList.contains('direct-erp-stale-row'));
+  check('이전 저장본 1건만 stale 표시', staleRows.length, 1);
+  check('stale 인 것이 erpA_old', staleRows[0].querySelector('[data-erp-select]').dataset.erpSelect, 'erpA_old');
+
+  console.log('\n[11] 전체선택은 이전 저장본을 건너뛴다');
+  window.document.getElementById('directErpSelectAllBtn').click();
+  check('최신 3건만 선택', Adj.state.erpSelected.size, 3);
+  check('이전 저장본은 미선택', Adj.state.erpSelected.has('erpA_old'), 'false');
+
+  console.log('\n[12] 적용 미리보기 경고');
+  // 경고가 뜨는 상황에서는 confirm 을 거치므로 자동 승인해둔다.
+  let confirmText = '';
+  window.confirm = message => { confirmText = message; return true; };
+  const preview = window.document.getElementById('directErpPreview');
+  check('미리보기 노출', preview.hidden, 'false');
+  check('여러 결과에 걸친 기사 경고', /여러 곳에 들어 있어/.test(preview.textContent), 'true');
+  check('정산서에 없는 기사 경고', /이 정산서에 없어 제외됩니다/.test(preview.textContent), 'true');
+  check('엑셀 덮어쓰기 경고', /엑셀로 넣은 금액/.test(preview.textContent), 'true');
+
+  console.log('\n[13] 적용 결과 — 겹치는 기사는 합산, 없는 기사는 무시');
+  window.document.getElementById('directErpApplyBtn').click();
+  const applied13 = adjustments.promotion['weekly_direct_baemin_seoul_20260722'];
+  // d1 = erpA_new 10,000 + erpB 5,000 (erpA_old 12,000 은 미선택)
+  check('d1 = 15,000 (이중 합산 없음)', applied13.d1?.amount, 15000);
+  check('d1 출처가 erp 로 갱신', applied13.d1?.source, 'erp');
+  check('d2 = 70,000 유지 (erp1 도 함께 선택됨)', applied13.d2?.amount, 70000);
+  check('정산서에 없는 d99 는 저장 안 함', applied13.d99, undefined);
+  check('confirm 에 덮어쓰기 안내 포함', /엑셀로 넣은 금액/.test(confirmText), 'true');
+
+  console.log('\n[14] 같은 선택으로 다시 눌러도 금액이 쌓이지 않는다');
+  window.document.getElementById('directErpApplyBtn').click();
+  window.document.getElementById('directErpApplyBtn').click();
+  const applied14 = adjustments.promotion['weekly_direct_baemin_seoul_20260722'];
+  check('d1 여전히 15,000', applied14.d1?.amount, 15000);
+  check('d2 여전히 70,000', applied14.d2?.amount, 70000);
+
+  console.log('\n[15] 이전 저장본까지 같이 고르면 경고');
+  Adj.state.erpSelected.add('erpA_old');
+  Adj.renderErpList?.();
+  const preview15 = window.document.getElementById('directErpPreview').textContent;
+  check('같은 정산서 2건 선택 경고', /같은 정산서에서 저장본을 2건 이상/.test(preview15), 'true');
+  check('이전 저장본 포함 경고', /이전 저장본/.test(preview15), 'true');
+
+  console.log('\n[16] 선택에서 빠진 이전 ERP 적용분은 빠진다고 알린다');
+  Adj.state.erpSelected.clear();
+  Adj.state.erpSelected.add('erpB');
+  Adj.renderErpList?.();
+  const preview16 = window.document.getElementById('directErpPreview').textContent;
+  check('빠지는 ERP 안내', /이번 선택에 없어 빠집니다/.test(preview16), 'true');
+  window.document.getElementById('directErpApplyBtn').click();
+  const applied16 = adjustments.promotion['weekly_direct_baemin_seoul_20260722'];
+  check('erpB 만 남아 d1 = 5,000', applied16.d1?.amount, 5000);
+  check('선택 안 한 erp1 의 d2 는 제거', applied16.d2, undefined);
+
+  console.log('\n[17] 정산주 선택 — 그 주 정산서만 남는다');
+  Adj.state.week = '';
+  await Adj.refresh('baemin');
+  const weekBtn = window.document.getElementById('directAdjustWeekBtn');
+  check('기본 정산주 = 최신 정산서 주', Adj.state.week, '2026-07-22');
+  check('주 버튼에 날짜 표시', /2026/.test(weekBtn.textContent), 'true');
+  check('그 주 정산서 1건만', window.document.getElementById('directAdjustSettlementSelect').options.length, 1);
+
+  Adj.onWeekPicked('2026-07-15');
+  check('7/15 주로 이동', Adj.state.week, '2026-07-15');
+  check('7/15 주 정산서 1건', window.document.getElementById('directAdjustSettlementSelect').options.length, 1);
+  check('선택된 정산서가 7/15 것', Adj.state.settlementId, 'weekly_direct_baemin_seoul_20260715');
+
+  console.log('\n[18] 수요일이 아닌 날짜를 넣어도 수요일로 맞춘다');
+  Adj.onWeekPicked('2026-07-24'); // 금요일 → 7/22(수) 주
+  check('금요일 → 수요일 주로 보정', Adj.state.week, '2026-07-22');
+
+  console.log('\n[19] 정산서 없는 주 · 전체 주');
+  Adj.onWeekPicked('2026-01-07');
+  const emptySelect = window.document.getElementById('directAdjustSettlementSelect');
+  check('정산서 없음 표시', emptySelect.disabled, 'true');
+  check('안내에 전체 건수', /전체 2건/.test(window.document.getElementById('directAdjustSettlementInfo').textContent), 'true');
+  window.document.getElementById('directAdjustWeekAllBtn').click();
+  check('전체 주로 해제', Adj.state.week, '');
+  check('전체 주에서 2건 노출', window.document.getElementById('directAdjustSettlementSelect').options.length, 2);
+
+  console.log('\n[20] 정산결과에도 같은 주 선택');
+  Result.state.week = '';
+  Result.state.settlementId = '';
+  await Result.refresh('baemin');
+  check('정산결과 기본 주', Result.state.week, '2026-07-22');
+  check('그 주 정산서 1건', window.document.getElementById('settlementResultSettlementSelect').options.length, 1);
+  Result.onWeekPicked('2026-07-15');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  check('7/15 주로 이동', Result.state.week, '2026-07-15');
+  const rows20 = window.document.querySelectorAll('#settlementResultRows tr');
+  check('7/15 정산서 라이더 1명', rows20.length, 1);
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
