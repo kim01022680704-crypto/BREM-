@@ -1295,5 +1295,25 @@ module.exports = {
   cancelWithdrawalRequest,
   completeWithdrawalRequest,
   deleteWithdrawalRequest,
-  REQUESTS_KEY
+  REQUESTS_KEY,
+  // 정산 검수 스크립트 전용 노출. 검수가 계산식을 따로 구현하면 서버와 갈라져서
+  // 검수 결과 자체를 믿을 수 없게 되므로, 실제로 쓰는 순수 함수만 그대로 내보낸다.
+  // (상태를 바꾸는 함수는 절대 넣지 않는다.)
+  __audit: {
+    ROSTER_KEY,
+    FEES_KEY,
+    EXCLUDED_SETTLEMENTS_KEY,
+    FINALIZED_WEEKS_KEY,
+    EMP_RATE,
+    INDUSTRIAL_RATE,
+    WITHHOLDING_RATE,
+    normalizeFees,
+    normalizePlatform,
+    normalizeRequestList,
+    normalizeFinalizedWeeks,
+    calcPayoutFromSettlement,
+    resolveWithdrawalFee,
+    resolveDailySettlementFee,
+    requestConsumedAmount
+  }
 };
