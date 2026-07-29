@@ -246,6 +246,18 @@ const BremFinalDeposit = (function () {
     }
   }
 
+  function driverForRow(row) {
+    const id = String(row?.driverId || '').trim();
+    if (!id) return null;
+    return window.BremStorage?.drivers?.getById?.(id) || null;
+  }
+
+  function loginIdForDriver(driver) {
+    if (!driver) return '';
+    const makeId = window.BremDriverUtils?.makeDriverLoginId;
+    return typeof makeId === 'function' ? String(makeId(driver) || '').trim() : '';
+  }
+
   function exportExcel() {
     const rows = mergedRows().filter(row => row.checked);
     if (!rows.length) {
@@ -257,13 +269,37 @@ const BremFinalDeposit = (function () {
       return;
     }
     const cols = columns();
-    const data = [
+    const detail = [
       cols.map(col => col.label),
       ...rows.map(row => cols.map(col => row[col.key]))
     ];
-    const ws = window.XLSX.utils.aoa_to_sheet(data);
+    // 2시트: 은행 이체용. 받는사람=예금주, 비고=BREM 로그인ID.
+    const transfer = [
+      ['입금은행', '입금계좌번호', '입금액', '받는사람', '비고'],
+      ...rows.map(row => {
+        const driver = driverForRow(row);
+        return [
+          String(driver?.bankName || '').trim(),
+          String(driver?.accountNumber || '').trim(),
+          Number(row.netPay) || 0,
+          String(driver?.accountHolder || '').trim(),
+          loginIdForDriver(driver)
+        ];
+      })
+    ];
     const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, '최종입금');
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '최종입금');
+    const transferSheet = window.XLSX.utils.aoa_to_sheet(transfer);
+    // 계좌번호가 숫자로 깨지지 않게 텍스트로 고정한다.
+    for (let r = 1; r < transfer.length; r += 1) {
+      const cell = transferSheet[window.XLSX.utils.encode_cell({ r, c: 1 })];
+      if (cell && cell.v !== undefined && cell.v !== '') {
+        cell.t = 's';
+        cell.v = String(cell.v);
+        cell.z = '@';
+      }
+    }
+    window.XLSX.utils.book_append_sheet(wb, transferSheet, '입금');
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
   }
 
