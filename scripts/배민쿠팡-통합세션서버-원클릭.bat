@@ -42,7 +42,29 @@ if errorlevel 1 (
 
 echo [1/3] git pull ...
 git pull
-if errorlevel 1 echo [WARN] git pull failed - continuing with local files.
+if errorlevel 1 (
+  echo.
+  echo ================================================================
+  echo  [STOP] git pull failed - code was NOT updated.
+  echo ================================================================
+  echo  Starting the servers now would keep running the OLD code,
+  echo  so anything deployed to the admin site is ignored.
+  echo.
+  echo  --- locally modified files ---
+  git -c core.quotepath=false status --short
+  echo  -----------------------------
+  echo.
+  echo  If files are listed above, they are blocking the pull.
+  echo  To discard them:
+  echo     cd /d "%BREM_DIR%"
+  echo     git reset --hard origin/main
+  echo.
+  echo  If the list is empty it is a network problem. Check internet.
+  echo.
+  pause
+  exit /b 1
+)
+echo   code up to date.
 echo.
 
 echo [2/3] free ports 3939 / 3940 ...
