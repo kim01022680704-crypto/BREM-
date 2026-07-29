@@ -31,6 +31,8 @@
   const baeminIdInput = document.getElementById('driverBaeminId');
   const platformCoupangInput = document.getElementById('platformCoupang');
   const platformBaeminInput = document.getElementById('platformBaemin');
+  const regionBaeminInput = document.getElementById('driverRegionBaemin');
+  const regionCoupangInput = document.getElementById('driverRegionCoupang');
   const passwordInput = document.getElementById('driverPassword');
   const residentNumberInput = document.getElementById('driverResidentNumber');
   const bankNameInput = document.getElementById('driverBankName');
@@ -334,6 +336,58 @@
     }
   }
 
+  function shortCoupangRegionLabel(name) {
+    let raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '';
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    if (!base) return '';
+    return base.length <= 4 ? base : base.slice(-4);
+  }
+
+  async function fillRegionSelects() {
+    if (!regionBaeminInput && !regionCoupangInput) return;
+    const token = await BremStorage.resolveAdminAccessToken?.();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const keepBaemin = regionBaeminInput?.value || '';
+    const keepCoupang = regionCoupangInput?.value || '';
+
+    if (regionBaeminInput) {
+      try {
+        const res = await fetch('/api/admin/baemin-delivery/partner-regions', { headers, credentials: 'same-origin' });
+        const payload = await res.json().catch(() => ({}));
+        const items = Array.isArray(payload.allItems) ? payload.allItems : (payload.items || []);
+        regionBaeminInput.innerHTML = '<option value="">미선택</option>'
+          + items.map(item => {
+            const label = String(item.regionName || '').trim();
+            const partnerId = String(item.partnerId || '').trim();
+            if (!label) return '';
+            return `<option value="${label}">${label}${partnerId ? ` (${partnerId})` : ''}</option>`;
+          }).join('');
+        if (keepBaemin) regionBaeminInput.value = keepBaemin;
+      } catch (_) { /* ignore */ }
+    }
+
+    if (regionCoupangInput) {
+      try {
+        const res = await fetch('/api/admin/coupang/vendor-regions', { headers, credentials: 'same-origin' });
+        const payload = await res.json().catch(() => ({}));
+        const items = Array.isArray(payload.allItems) ? payload.allItems : (payload.items || []);
+        const seen = new Set();
+        const options = [];
+        items.forEach(item => {
+          const short = shortCoupangRegionLabel(item.vendorName);
+          if (!short || seen.has(short)) return;
+          seen.add(short);
+          options.push(`<option value="${short}">${short}</option>`);
+        });
+        regionCoupangInput.innerHTML = `<option value="">미선택</option>${options.join('')}`;
+        if (keepCoupang) regionCoupangInput.value = keepCoupang;
+      } catch (_) { /* ignore */ }
+    }
+  }
+
   function getFormData() {
     const eventItem = selectedEventItem();
     const baeminId = baeminIdInput.value.trim();
@@ -348,6 +402,8 @@
       baeminId,
       platformCoupang: platformCoupangInput.checked,
       platformBaemin: platformBaeminInput.checked,
+      regionBaemin: regionBaeminInput ? regionBaeminInput.value.trim() : '',
+      regionCoupang: regionCoupangInput ? regionCoupangInput.value.trim() : '',
       longEventItemId: eventItem.id,
       longEventItem: eventItem.name,
       longEventStartDate: eventStartDateInput.value,
@@ -465,6 +521,8 @@
     platformAutoSync = false;
     platformCoupangInput.checked = driver.platformCoupang !== false;
     platformBaeminInput.checked = Boolean(driver.platformBaemin);
+    if (regionBaeminInput) regionBaeminInput.value = driver.regionBaemin || '';
+    if (regionCoupangInput) regionCoupangInput.value = driver.regionCoupang || '';
     const currentPassword = driver.password || DEFAULT_DRIVER_PASSWORD;
     loadedEditPassword = currentPassword;
     configurePasswordFieldForMode(true, currentPassword);
@@ -602,9 +660,11 @@
   if (!(await ensureAdminAccess())) return;
 
   refreshHeader();
+  await fillRegionSelects();
   await loadEditFromQuery();
-  void BremStorage.reloadDrivers?.(false).then(() => {
+  void BremStorage.reloadDrivers?.(false).then(async () => {
     refreshHeader();
+    await fillRegionSelects();
     void loadEditFromQuery();
   }).catch(error => {
     showToast(error?.message || '기사 목록을 불러오지 못했습니다.');

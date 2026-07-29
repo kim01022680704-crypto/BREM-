@@ -10869,3 +10869,210 @@ tr.is-selected {
     max-width: none;
   }
 }
+
+/* 기사관리 — 조직도 / 지역관리 */
+.driver-org-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.driver-org-canvas-wrap {
+  overflow: auto;
+  padding: 20px 12px 28px;
+  background: linear-gradient(180deg, #f4f7fb 0%, #eef2f7 100%);
+  border: 1px solid #d7deea;
+  border-radius: 12px;
+  min-height: 360px;
+}
+
+.driver-org-canvas {
+  display: flex;
+  justify-content: center;
+  min-width: max-content;
+}
+
+.driver-org-tree,
+.driver-org-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.driver-org-tree ul {
+  padding-top: 28px;
+  position: relative;
+}
+
+.driver-org-tree ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 2px solid #3b82f6;
+  height: 28px;
+  transform: translateX(-50%);
+}
+
+.driver-org-tree li {
+  position: relative;
+  padding: 28px 14px 0;
+  text-align: center;
+}
+
+.driver-org-tree li::before,
+.driver-org-tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 28px;
+  border-top: 2px solid #3b82f6;
+}
+
+.driver-org-tree li::before { right: 50%; }
+.driver-org-tree li::after { left: 50%; }
+
+.driver-org-tree li:only-child::before,
+.driver-org-tree li:only-child::after,
+.driver-org-tree > li::before,
+.driver-org-tree > li::after {
+  display: none;
+}
+
+.driver-org-tree li:only-child { padding-top: 0; }
+.driver-org-tree > li { padding-top: 0; }
+
+.driver-org-tree li:first-child::before,
+.driver-org-tree li:last-child::after { border: 0 none; }
+.driver-org-tree li:last-child::before {
+  border-right: 2px solid #3b82f6;
+  border-radius: 0 8px 0 0;
+}
+.driver-org-tree li:first-child::after {
+  border-left: 2px solid #3b82f6;
+  border-radius: 8px 0 0 0;
+}
+
+.driver-org-node {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 108px;
+  max-width: 160px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #1d4ed8;
+}
+
+.driver-org-node.is-selected {
+  outline: 3px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+.driver-org-node small {
+  font-weight: 500;
+  opacity: 0.9;
+  font-size: 11px;
+}
+
+.driver-org-editor {
+  position: sticky;
+  top: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.driver-org-member-list {
+  max-height: 220px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.driver-org-member-list label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.driver-org-member-list label:hover { background: #f8fafc; }
+
+.driver-org-children ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.driver-region-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.driver-region-catalog {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.driver-region-catalog button {
+  text-align: left;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.driver-region-catalog button.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  font-weight: 700;
+}
+
+.driver-region-catalog button span {
+  float: right;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.driver-region-assign {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.driver-region-assign .field { flex: 1; }
+
+.driver-region-bulk-fail { color: #b91c1c; font-weight: 700; }
+.driver-region-bulk-ok { color: #047857; font-weight: 700; }
+
+@media (max-width: 960px) {
+  .driver-org-layout,
+  .driver-region-layout {
+    grid-template-columns: 1fr;
+  }
+  .driver-org-editor { position: static; }
+}

@@ -62,7 +62,8 @@ const BremStorage = (function () {
     payrollWithdrawalPaused: 'brem_payroll_withdrawal_paused_v1',
     preservedUnknown: 'brem_preserved_unknown_storage',
     adminAccounts: 'brem_admin_accounts',
-    adminCredentials: 'brem_admin_credentials'
+    adminCredentials: 'brem_admin_credentials',
+    driverOrgChart: 'brem_admin_driver_org_chart_v1'
   });
 
   const SCHEMA = Object.freeze({
@@ -1450,6 +1451,7 @@ const BremStorage = (function () {
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [
@@ -4918,6 +4920,8 @@ const BremStorage = (function () {
         accountNumber: String(next.accountNumber || '').trim(),
         bankName: String(next.bankName || '').trim(),
         accountHolder: String(next.accountHolder || '').trim(),
+        regionBaemin: String(next.regionBaemin || '').trim(),
+        regionCoupang: String(next.regionCoupang || '').trim(),
         platformCoupang: next.platformCoupang !== false,
         platformBaemin: Boolean(next.platformBaemin),
         promotionSelectorCoupang: String(
@@ -5243,6 +5247,8 @@ const BremStorage = (function () {
         baeminId,
         platformCoupang,
         platformBaemin,
+        regionBaemin: String(driver.regionBaemin || '').trim(),
+        regionCoupang: String(driver.regionCoupang || '').trim(),
         longEventItemId: driver.longEventItemId || '',
         longEventItem: driver.longEventItem || '',
         longEventStartDate: driver.longEventStartDate || '',
@@ -11065,6 +11071,7 @@ const BremStorage = (function () {
     'weekly-settlement-direct',
     'settlement-result-direct',
     'final-deposit',
+    'driver-management',
     'admin-account',
     'revenue-management',
     'payroll-slips',
@@ -11167,6 +11174,12 @@ const BremStorage = (function () {
     // 기존 계정은 메뉴 목록이 저장돼 있어 이 보정이 없으면 새 메뉴가 안 보인다.
     if (normalized.includes('settlement-result-direct') && !normalized.includes('final-deposit')) {
       normalized.splice(normalized.indexOf('settlement-result-direct') + 1, 0, 'final-deposit');
+    }
+
+    if (!normalized.includes('driver-management')) {
+      const adminIdx = normalized.indexOf('admin-account');
+      if (adminIdx >= 0) normalized.splice(adminIdx, 0, 'driver-management');
+      else normalized.push('driver-management');
     }
 
     if (!normalized.includes('payroll-slips')) {
@@ -12812,6 +12825,36 @@ const BremStorage = (function () {
     manualNameMappings,
     directPayAdjustments,
     directSettlementAdjustments,
+    driverOrgChart: {
+      get() {
+        const raw = storageAdapter.read(KEYS.driverOrgChart, null);
+        const nodes = Array.isArray(raw?.nodes) ? raw.nodes : [];
+        return {
+          nodes: nodes.map((node, index) => ({
+            id: String(node.id || '').trim() || createId(),
+            label: String(node.label || '').trim() || `박스 ${index + 1}`,
+            parentId: node.parentId ? String(node.parentId) : '',
+            memberRefs: Array.isArray(node.memberRefs)
+              ? node.memberRefs
+                .map(ref => ({
+                  kind: ref?.kind === 'admin' ? 'admin' : 'driver',
+                  id: String(ref?.id || '').trim()
+                }))
+                .filter(ref => ref.id)
+              : [],
+            sortOrder: Number.isFinite(Number(node.sortOrder)) ? Number(node.sortOrder) : index
+          }))
+        };
+      },
+      save(chart) {
+        const nodes = Array.isArray(chart?.nodes) ? chart.nodes : [];
+        const payload = {
+          nodes,
+          updatedAt: new Date().toISOString()
+        };
+        return storageAdapter.write(KEYS.driverOrgChart, payload).then(() => payload);
+      }
+    },
     auth
   };
 })();

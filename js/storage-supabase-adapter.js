@@ -235,6 +235,7 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.preservedUnknown,
         keys.adminAccounts,
         keys.adminCredentials,
+        keys.driverOrgChart,
         'brem_data_schema_version',
         'brem_rider_published_long_event_catalog',
         'brem_rider_published_long_event_items',

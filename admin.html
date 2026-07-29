@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260730b">
+  <link rel="stylesheet" href="css/admin.css?v=20260730m">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -128,13 +128,14 @@
         <button class="nav-btn" data-section="weekly-settlement-direct">주정산서 업로드 (직계약)</button>
         <button class="nav-btn" data-section="settlement-result-direct">정산결과 (직계약)</button>
         <button class="nav-btn" data-section="final-deposit">최종입금</button>
+        <button class="nav-btn" data-section="driver-management">기사관리</button>
         <button class="nav-btn" data-section="admin-account">관리자 계정</button>
         <button class="nav-btn" data-section="revenue-management">수익 관리</button>
         <button class="nav-btn" data-section="payroll-slips">급여명세서 (브로)</button>
         <button class="nav-btn" data-section="payroll-daily-settlement">급여 일정산</button>
         <button class="nav-btn" data-section="data-backup">데이터 백업</button>
       </nav>
-      <a class="driver-link" href="drivers.html">기사 관리 프로그램</a>
+      <a class="driver-link" href="drivers.html">기사등록프로그램</a>
     </aside>
 
     <main class="main">
@@ -153,7 +154,7 @@
           </div>
           <div class="topbar-actions">
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
-            <a class="top-link topbar-link--desktop" href="drivers.html">기사관리 프로그램</a>
+            <a class="top-link topbar-link--desktop" href="drivers.html">기사등록프로그램</a>
             <a class="top-link secondary topbar-link--desktop" href="driver.html">기사 전용 페이지 열기</a>
             <button class="top-link danger" type="button" id="adminLogoutBtn">로그아웃</button>
           </div>
@@ -5011,6 +5012,142 @@
         </article>
       </section>
 
+      <section class="section" id="driver-management">
+        <article class="card">
+          <div class="card-header">
+            <h2>기사관리</h2>
+            <div class="revenue-sub-tabs" role="tablist" aria-label="기사관리 소메뉴">
+              <button type="button" class="revenue-sub-btn active" data-driver-mgmt-tab="org">조직도</button>
+              <button type="button" class="revenue-sub-btn" data-driver-mgmt-tab="region">기사지역관리</button>
+            </div>
+          </div>
+          <p class="form-help">조직도는 박스를 자유롭게 추가·수정하고 기사·관리자를 배정합니다. 기사지역관리는 배민(등록 지역)·쿠팡(크롤링 지역) 기준으로 기사를 정리합니다.</p>
+        </article>
+
+        <div class="driver-mgmt-panel" data-driver-mgmt-panel="org">
+          <article class="card">
+            <div class="card-header">
+              <h2>조직도</h2>
+              <div class="promotion-form-actions">
+                <button type="button" class="small-btn" id="driverOrgAddRootBtn">루트 박스 추가</button>
+                <button type="button" class="primary-btn" id="driverOrgSaveBtn">조직도 저장</button>
+              </div>
+            </div>
+            <p class="form-help">박스를 클릭하면 이름·소속 인원·하위 박스를 편집합니다. 선·화살표 형태의 조직도로 표시됩니다.</p>
+            <div class="driver-org-layout">
+              <div class="driver-org-canvas-wrap">
+                <div class="driver-org-canvas" id="driverOrgCanvas"></div>
+              </div>
+              <aside class="driver-org-editor card" id="driverOrgEditor" hidden>
+                <h3 id="driverOrgEditorTitle">박스 편집</h3>
+                <label class="field">
+                  <span class="field-label">박스 이름</span>
+                  <input type="text" id="driverOrgNodeLabel" placeholder="예: 총괄 / 남구팀">
+                </label>
+                <div class="driver-org-members">
+                  <strong>소속 인원 (기사·관리자)</strong>
+                  <input type="search" id="driverOrgMemberSearch" placeholder="이름·ID 검색">
+                  <div class="driver-org-member-list" id="driverOrgMemberList"></div>
+                </div>
+                <div class="driver-org-children">
+                  <strong>하위 박스</strong>
+                  <ul id="driverOrgChildList"></ul>
+                  <button type="button" class="small-btn" id="driverOrgAddChildBtn">하위 박스 추가</button>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="small-btn danger" id="driverOrgDeleteBtn">박스 삭제</button>
+                  <button type="button" class="small-btn" id="driverOrgCloseBtn">닫기</button>
+                </div>
+              </aside>
+            </div>
+          </article>
+        </div>
+
+        <div class="driver-mgmt-panel" data-driver-mgmt-panel="region" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>기사지역관리</h2>
+              <div class="promotion-form-actions">
+                <button type="button" class="small-btn" id="driverRegionReloadBtn">지역 새로고침</button>
+              </div>
+            </div>
+            <div class="revenue-sub-tabs" role="tablist" aria-label="지역 플랫폼">
+              <button type="button" class="revenue-sub-btn active" data-driver-region-platform="baemin">배민</button>
+              <button type="button" class="revenue-sub-btn" data-driver-region-platform="coupang">쿠팡</button>
+            </div>
+            <p class="form-help" id="driverRegionHint">배민: 등록한 크롤링 지역(DP)을 선택합니다. 쿠팡: 크롤링된 지역명(4글자)을 선택합니다.</p>
+            <div class="driver-region-layout">
+              <div class="driver-region-catalog" id="driverRegionCatalog"></div>
+              <div class="driver-region-detail">
+                <div class="card-header">
+                  <h3 id="driverRegionDetailTitle">지역을 선택하세요</h3>
+                </div>
+                <div class="driver-region-assign">
+                  <label class="field">
+                    <span class="field-label">기사 추가 (선택형)</span>
+                    <select id="driverRegionAddSelect"></select>
+                  </label>
+                  <button type="button" class="small-btn primary-btn" id="driverRegionAddBtn">추가</button>
+                </div>
+                <div class="table-wrap">
+                  <table class="weekly-settlement-detail-table">
+                    <thead>
+                      <tr>
+                        <th>이름</th>
+                        <th>ID</th>
+                        <th>지역</th>
+                        <th>관리</th>
+                      </tr>
+                    </thead>
+                    <tbody id="driverRegionRows"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <h2>지역 일괄등록</h2>
+            </div>
+            <p class="form-help">쿠팡: A열 쿠팡ID · B열 지역(4글자). 배민: A열 배민ID · B열 DP코드(등록 지역명으로 변환). 매칭 실패 행은 아래에서 수정 후 다시 적용할 수 있습니다.</p>
+            <div class="promotion-form-grid">
+              <label>
+                플랫폼
+                <select id="driverRegionBulkPlatform">
+                  <option value="baemin">배민</option>
+                  <option value="coupang">쿠팡</option>
+                </select>
+              </label>
+              <label>
+                엑셀 파일
+                <input type="file" id="driverRegionBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              </label>
+            </div>
+            <div class="promotion-form-actions">
+              <button type="button" class="small-btn" id="driverRegionBulkTemplateBtn">양식 다운로드</button>
+              <button type="button" class="primary-btn" id="driverRegionBulkApplyBtn" disabled>매칭 적용</button>
+            </div>
+            <p class="direct-inline-stats" id="driverRegionBulkSummary"></p>
+            <div class="table-wrap">
+              <table class="weekly-settlement-detail-table">
+                <thead>
+                  <tr>
+                    <th>상태</th>
+                    <th>ID</th>
+                    <th>지역 입력</th>
+                    <th>매칭 결과</th>
+                    <th>기사</th>
+                    <th>수정</th>
+                  </tr>
+                </thead>
+                <tbody id="driverRegionBulkRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section class="section" id="admin-account">
         <article class="card">
           <div class="card-header">
@@ -6691,10 +6828,10 @@
   <script src="js/supabase-config.js?v=20260712c"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
-  <script src="js/storage-supabase-mapper.js?v=20260730k"></script>
+  <script src="js/storage-supabase-mapper.js?v=20260730m"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260729d"></script>
-  <script src="js/storage.js?v=20260730k"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260730m"></script>
+  <script src="js/storage.js?v=20260730m"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -6735,6 +6872,7 @@
   <script src="js/direct-settlement-calc.js?v=20260730g"></script>
   <script src="js/settlement-result-direct.js?v=20260730i"></script>
   <script src="js/final-deposit.js?v=20260730j"></script>
+  <script src="js/driver-management-admin.js?v=20260730m"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
@@ -6742,7 +6880,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260730k"></script>
+    <script src="js/admin.js?v=20260730m"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
