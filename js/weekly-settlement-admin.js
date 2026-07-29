@@ -221,6 +221,18 @@ const BremWeeklySettlementAdmin = (function () {
     return rider.coupangLoginKey || rider.originalName || '-';
   }
 
+  // 매칭 기준이 되는 ID는 눈에 바로 들어와야 해서 태그로 감싼다.
+  function riderMatchIdTag(rider, platform) {
+    const value = riderMatchIdValue(rider, platform);
+    if (!value || value === '-') return '-';
+    return `<span class="weekly-id-tag">${escapeHtml(value)}</span>`;
+  }
+
+  // 기사명 가나다순. 파일에 적힌 순서대로 두면 찾기 어렵다.
+  function byDriverName(nameOf) {
+    return (a, b) => String(nameOf(a) || '').localeCompare(String(nameOf(b) || ''), 'ko-KR');
+  }
+
   function isDirectBaemin(channel, platform) {
     return normChannel(channel) === 'direct' && platform === 'baemin';
   }
@@ -679,7 +691,10 @@ const BremWeeklySettlementAdmin = (function () {
       endDate: record.endDate
     };
 
-    const matchedRows = (record.riders || []).map(rider => {
+    // 저장 순서를 바꾸지 않으려고 원본 배열은 그대로 두고 사본을 정렬한다.
+    const matchedRows = [...(record.riders || [])]
+      .sort(byDriverName(r => r.driverName || r.riderName))
+      .map(rider => {
       const callStatus = rider.callCountMatched === false
         ? '<span class="promotion-status-no">불일치</span>'
         : '<span class="promotion-status-ok">일치</span>';
@@ -689,7 +704,7 @@ const BremWeeklySettlementAdmin = (function () {
       <tr class="${rowClass}">
         <td><strong>${escapeHtml(rider.driverName || rider.riderName)}</strong></td>
         <td>${escapeHtml(rider.originalName)}</td>
-        <td>${escapeHtml(riderMatchIdValue(rider, platform))}</td>
+        <td>${riderMatchIdTag(rider, platform)}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
         ${directAmountBodyCells(rider, ch, platform)}
         <td>${formatNumber(rider.systemCallCount)}</td>
@@ -701,13 +716,15 @@ const BremWeeklySettlementAdmin = (function () {
     `;
     }).join('');
 
-    const unmatchedRows = unmatched.map(rider => {
+    const unmatchedRows = [...unmatched]
+      .sort(byDriverName(r => r.riderName))
+      .map(rider => {
       const warningText = (rider.warnings || []).join(', ') || unmatchedDefaultWarning(platform);
       return `
       <tr class="promotion-row-unpaid">
         <td><strong>${escapeHtml(rider.riderName)}</strong></td>
         <td>${escapeHtml(rider.originalName)}</td>
-        <td>${escapeHtml(riderMatchIdValue(rider, platform))}</td>
+        <td>${riderMatchIdTag(rider, platform)}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
         ${directAmountBodyCells(rider, ch, platform)}
         <td>-</td>
@@ -933,13 +950,15 @@ const BremWeeklySettlementAdmin = (function () {
       startDate: period.startDate,
       endDate: period.endDate
     };
-    $('#weeklySettlementDetailRows').innerHTML = refreshedRiders.map(rider => {
+    $('#weeklySettlementDetailRows').innerHTML = [...refreshedRiders]
+      .sort(byDriverName(r => r.driverName || r.riderName))
+      .map(rider => {
       const warningText = formatCallMismatchWarnings(rider);
       return `
       <tr${rider.callCountMatched === false ? ' class="promotion-row-unpaid"' : ''}>
         <td><strong>${escapeHtml(rider.driverName || rider.riderName)}</strong></td>
         <td>${escapeHtml(rider.originalName)}</td>
-        <td>${escapeHtml(riderMatchIdValue(rider, record.platform))}</td>
+        <td>${riderMatchIdTag(rider, record.platform)}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
         ${detailIsDirectAmount ? directAmountBodyCells(rider, record.channel, record.platform) : ''}
         <td>${formatNumber(rider.systemCallCount)}</td>

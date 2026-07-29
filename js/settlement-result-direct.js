@@ -248,7 +248,7 @@ const BremSettlementResultDirect = (function () {
   // 차감내역(AB)은 쿠팡 정산서에만 있고, 이미 빠진 금액이라 표기 전용이다.
   const ALL_COLUMNS = [
     { key: 'name', label: '기사', money: false, strong: true },
-    { key: 'idLabel', label: 'ID', money: false },
+    { key: 'idLabel', label: 'ID', money: false, tag: true },
     { key: 'callCount', label: '콜수' },
     { key: 'deliveryFee', label: '배달비' },
     { key: 'missionPay', label: '배민미션', baeminOnly: true },
@@ -313,6 +313,8 @@ const BremSettlementResultDirect = (function () {
     const cols = columns();
     body.innerHTML = rows.map(row => `
       <tr>${cols.map(col => {
+      // 엑셀에는 원본 값이 나가야 하므로 태그는 화면 렌더에서만 씌운다.
+      if (col.tag) return `<td><span class="weekly-id-tag">${escapeHtml(row[col.key])}</span></td>`;
       const value = col.money === false ? escapeHtml(row[col.key]) : formatNumber(row[col.key]);
       const cls = col.money === false ? '' : ' class="weekly-amount-cell"';
       return `<td${cls}>${col.strong ? `<strong>${value}</strong>` : value}</td>`;

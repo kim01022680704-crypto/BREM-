@@ -70,11 +70,11 @@ const COUPANG_ROWS = [
   sheetRow({}),
   sheetRow({}),
   sheetRow({ C: '성함', F: '총 정산 오더수', AB: '차감내역', AC: '총정산금액', AE: '고용보험', AG: '산재보험', AH: '시간제보험', AJ: '정산금액' }),
-  sheetRow({ C: '박쿠팡', F: 120, AB: 5000, AC: 1212000, AE: 9000, AG: 8000, AH: 3000, AJ: 1200000 }),
-  // 차감내역이 음수로 적혀 나오는 경우도 있어 절대값으로 읽히는지 확인한다.
-  sheetRow({ C: '최쿠팡', F: 80, AB: '-1,500', AC: '808,000', AE: '6,000', AG: '5,000', AH: '2,000', AJ: '800,000' }),
+  // 실제 쿠팡 정산서는 공제를 음수로 적어 보낸다. 절대값으로 읽혀야 공제로 동작한다.
+  sheetRow({ C: '박쿠팡', F: 120, AB: 5000, AC: 1212000, AE: -9000, AG: -8000, AH: -3000, AJ: 1200000 }),
+  sheetRow({ C: '최쿠팡', F: 80, AB: '-1,500', AC: '808,000', AE: '-6,000', AG: '-5,000', AH: '-2,000', AJ: '800,000' }),
   sheetRow({ C: '없는기사', F: 40, AB: '', AC: 404000, AE: 3000, AG: 2500, AH: 1000, AJ: 400000 }),
-  sheetRow({ C: '합계', F: '', AB: 6500, AC: 2424000, AE: 18000, AG: 15500, AH: 6000, AJ: 2400000 })
+  sheetRow({ C: '합계', F: '', AB: 6500, AC: 2424000, AE: -18000, AG: -15500, AH: -6000, AJ: 2400000 })
 ];
 
 const DRIVERS = [
@@ -178,9 +178,11 @@ const DIRECT_COLS = {
 
   console.log('\n[2] 금액·공제 열 추출 (AJ / AE / AG / AH)');
   check('배달료(AJ)', direct[0]?.amounts?.deliveryFee, 1200000);
-  check('고용보험(AE)', direct[0]?.amounts?.employmentInsurance, 9000);
-  check('산재보험(AG)', direct[0]?.amounts?.accidentInsurance, 8000);
-  check('시간제보험(AH)', direct[0]?.amounts?.hourlyInsurance, 3000);
+  // 정산서에 -9,000 으로 적혀 있어도 공제로 쓰려면 양수여야 한다.
+  check('고용보험(AE) 음수를 공제액으로', direct[0]?.amounts?.employmentInsurance, 9000);
+  check('산재보험(AG) 음수를 공제액으로', direct[0]?.amounts?.accidentInsurance, 8000);
+  check('시간제보험(AH) 음수를 공제액으로', direct[0]?.amounts?.hourlyInsurance, 3000);
+  check('양수로 적혀 있으면 그대로', direct[2]?.amounts?.employmentInsurance, 3000);
 
   console.log('\n[2-1] 원천세는 정산서에 없어 AC의 3.3%로 계산');
   check('원천세기준(AC)', direct[0]?.amounts?.deductionBase, 1212000);
@@ -204,8 +206,8 @@ const DIRECT_COLS = {
 
   console.log('\n[3] 쉼표 들어간 금액도 숫자로');
   check('배달료 800,000', direct[1]?.amounts?.deliveryFee, 800000);
-  check('고용보험 6,000', direct[1]?.amounts?.employmentInsurance, 6000);
-  check('시간제보험 2,000', direct[1]?.amounts?.hourlyInsurance, 2000);
+  check('고용보험 -6,000 → 6,000', direct[1]?.amounts?.employmentInsurance, 6000);
+  check('시간제보험 -2,000 → 2,000', direct[1]?.amounts?.hourlyInsurance, 2000);
 
   console.log('\n[4] 브로 업로드는 기존 동작 유지 (금액 열 없음)');
   const bro = await WS.extractCoupangWeeklyRiders(fakeFile, '', {
@@ -282,6 +284,23 @@ const DIRECT_COLS = {
   check(`공제합계에 AB 미포함 ${money(INSURANCE + TAX)}`, cells9.includes(money(INSURANCE + TAX)), 'true');
   check(`총지급액에 AB 미포함 ${money(1200000 - INSURANCE - TAX)}`,
     cells9.includes(money(1200000 - INSURANCE - TAX)), 'true');
+
+  console.log('\n[9-1] 음수 공제가 총지급액을 부풀리지 않는다');
+  // 부호를 그대로 뒀다면 공제합계가 -59,996 이 되어 총지급액이 배달료보다 커진다.
+  const netPark = 1200000 - INSURANCE - TAX;
+  check('총지급액 < 배달료', netPark < 1200000, 'true');
+  check(`총지급액 ${money(netPark)}`, cells9.includes(money(netPark)), 'true');
+  check('공제합계가 양수', cells9.some(c => c === money(INSURANCE + TAX)), 'true');
+  check('음수 표기 없음', cells9.some(c => c.startsWith('-')), 'false');
+
+  console.log('\n[9-2] ID는 파란 태그로 표기하고 기사명 가나다순 정렬');
+  const idTags = [...window.document.querySelectorAll('#settlementResultRows .weekly-id-tag')]
+    .map(el => el.textContent.trim());
+  check('ID 태그 2개', idTags.length, 2);
+  check('태그 안에 쿠팡ID', idTags.includes('박쿠팡'), 'true');
+  const names = [...window.document.querySelectorAll('#settlementResultRows tr')]
+    .map(tr => tr.querySelector('td')?.textContent.trim());
+  check('가나다순 정렬', JSON.stringify(names), JSON.stringify([...names].sort((a, b) => a.localeCompare(b, 'ko-KR'))));
 
   console.log('\n[10] 배민에는 차감내역 열이 없다 (쿠팡 정산서에만 있는 항목)');
   SETTLEMENTS.push({

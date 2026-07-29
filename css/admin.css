@@ -6011,9 +6011,46 @@ textarea {
 }
 
 .weekly-amount-cell {
-  text-align: right;
+  text-align: center;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* 숫자를 헤더 글자 가운데에 맞춘다. 헤더는 왼쪽, 숫자는 오른쪽이면
+   열마다 눈이 좌우로 튀어 읽기 어렵다. 기사명·원본이름·경고는 글이라 왼쪽 유지. */
+.weekly-settlement-preview-table th,
+.weekly-settlement-preview-table td,
+.weekly-settlement-detail-table th,
+.weekly-settlement-detail-table td,
+#settlementResultTable th,
+#settlementResultTable td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly-settlement-preview-table th:nth-child(-n+2),
+.weekly-settlement-preview-table td:nth-child(-n+2),
+.weekly-settlement-detail-table th:nth-child(-n+2),
+.weekly-settlement-detail-table td:nth-child(-n+2),
+#settlementResultTable th:first-child,
+#settlementResultTable td:first-child,
+.weekly-settlement-preview-table .weekly-warning-cell,
+.weekly-settlement-detail-table .weekly-warning-cell {
+  text-align: left;
+}
+
+/* 매칭 기준 ID — 파란 태그로 다른 값과 구분한다. */
+.weekly-id-tag {
+  display: inline-block;
+  padding: 3px 9px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .direct-adjust-subhead {

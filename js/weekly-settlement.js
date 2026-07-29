@@ -184,9 +184,11 @@ const BremWeeklySettlement = (function () {
       // 고용·산재·시간제보험은 정산서에 적힌 값을 그대로 쓰고,
       // 원천세만 정산서에 없어서 AC 기준으로 계산한다.
       withholdingTax: Math.floor(deductionBase * COUPANG_WITHHOLDING_RATE),
-      employmentInsurance: parseAmount(readCell(row, cols.employmentInsurance)),
-      accidentInsurance: parseAmount(readCell(row, cols.accidentInsurance)),
-      hourlyInsurance: parseAmount(readCell(row, cols.hourlyInsurance))
+      // 쿠팡 정산서는 공제를 음수(-10,640)로 적어 보낸다. 부호를 그대로 두면
+      // 공제합계에 음수가 더해져 오히려 총지급액이 늘어난다. 절대값으로 맞춘다.
+      employmentInsurance: Math.abs(parseAmount(readCell(row, cols.employmentInsurance))),
+      accidentInsurance: Math.abs(parseAmount(readCell(row, cols.accidentInsurance))),
+      hourlyInsurance: Math.abs(parseAmount(readCell(row, cols.hourlyInsurance)))
     };
   }
 
@@ -197,10 +199,12 @@ const BremWeeklySettlement = (function () {
       deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
       missionPay: parseAmount(readCell(row, cols.missionPay)),
       totalDeliveryPay: parseAmount(readCell(row, cols.totalDeliveryPay)),
-      hourlyInsurance: parseAmount(readCell(row, cols.hourlyInsurance)),
-      employmentInsurance: parseAmount(readCell(row, cols.employmentInsurance)),
-      accidentInsurance: parseAmount(readCell(row, cols.accidentInsurance)),
-      withholdingTax: parseAmount(readCell(row, cols.withholdingTax))
+      // 공제는 정산서에 음수로 적혀 오는 경우가 있어 절대값으로 맞춘다.
+      // 부호를 그대로 두면 공제합계가 줄어 총지급액이 부풀어 오른다.
+      hourlyInsurance: Math.abs(parseAmount(readCell(row, cols.hourlyInsurance))),
+      employmentInsurance: Math.abs(parseAmount(readCell(row, cols.employmentInsurance))),
+      accidentInsurance: Math.abs(parseAmount(readCell(row, cols.accidentInsurance))),
+      withholdingTax: Math.abs(parseAmount(readCell(row, cols.withholdingTax)))
     };
   }
 
