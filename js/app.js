@@ -346,12 +346,32 @@
     return base.length <= 4 ? base : base.slice(-4);
   }
 
-  async function fillRegionSelects() {
+  function ensureSelectValue(selectEl, value) {
+    if (!selectEl || !value) return;
+    const exists = [...selectEl.options].some(option => option.value === value);
+    if (!exists) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = `${value} (저장값)`;
+      selectEl.appendChild(option);
+    }
+    selectEl.value = value;
+  }
+
+  async function fillRegionSelects(preferred = {}) {
     if (!regionBaeminInput && !regionCoupangInput) return;
     const token = await BremStorage.resolveAdminAccessToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const keepBaemin = regionBaeminInput?.value || '';
-    const keepCoupang = regionCoupangInput?.value || '';
+    const editingId = driverIdInput?.value || '';
+    const editingDriver = editingId ? BremStorage.drivers.getById(editingId) : null;
+    const keepBaemin = preferred.regionBaemin
+      || regionBaeminInput?.value
+      || editingDriver?.regionBaemin
+      || '';
+    const keepCoupang = preferred.regionCoupang
+      || regionCoupangInput?.value
+      || editingDriver?.regionCoupang
+      || '';
 
     if (regionBaeminInput) {
       try {
@@ -365,7 +385,7 @@
             if (!label) return '';
             return `<option value="${label}">${label}${partnerId ? ` (${partnerId})` : ''}</option>`;
           }).join('');
-        if (keepBaemin) regionBaeminInput.value = keepBaemin;
+        ensureSelectValue(regionBaeminInput, keepBaemin);
       } catch (_) { /* ignore */ }
     }
 
@@ -383,7 +403,7 @@
           options.push(`<option value="${short}">${short}</option>`);
         });
         regionCoupangInput.innerHTML = `<option value="">미선택</option>${options.join('')}`;
-        if (keepCoupang) regionCoupangInput.value = keepCoupang;
+        ensureSelectValue(regionCoupangInput, keepCoupang);
       } catch (_) { /* ignore */ }
     }
   }
@@ -521,8 +541,12 @@
     platformAutoSync = false;
     platformCoupangInput.checked = driver.platformCoupang !== false;
     platformBaeminInput.checked = Boolean(driver.platformBaemin);
-    if (regionBaeminInput) regionBaeminInput.value = driver.regionBaemin || '';
-    if (regionCoupangInput) regionCoupangInput.value = driver.regionCoupang || '';
+    ensureSelectValue(regionBaeminInput, driver.regionBaemin || '');
+    ensureSelectValue(regionCoupangInput, driver.regionCoupang || '');
+    void fillRegionSelects({
+      regionBaemin: driver.regionBaemin || '',
+      regionCoupang: driver.regionCoupang || ''
+    });
     const currentPassword = driver.password || DEFAULT_DRIVER_PASSWORD;
     loadedEditPassword = currentPassword;
     configurePasswordFieldForMode(true, currentPassword);

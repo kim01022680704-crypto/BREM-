@@ -638,6 +638,8 @@ function dbRowToDriver(row) {
     baeminId: row.baemin_id || '',
     platformCoupang: row.platform_coupang !== false,
     platformBaemin: Boolean(row.platform_baemin),
+    regionBaemin: String(raw.regionBaemin || '').trim(),
+    regionCoupang: String(raw.regionCoupang || '').trim(),
     longEventItemId: row.long_event_item_id || raw.longEventItemId || '',
     longEventItem: row.long_event_item || raw.longEventItem || '',
     longEventStartDate: row.long_event_start_date || raw.longEventStartDate || '',

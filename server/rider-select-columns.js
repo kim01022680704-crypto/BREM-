@@ -12,7 +12,7 @@ const RIDER_SELECT_BASE = [
   'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
   'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-  'created_at', 'updated_at'
+  'raw_data', 'created_at', 'updated_at'
 ].join(',');
 
 const RIDER_SELECT_WITH_PLATFORM = [
@@ -21,7 +21,7 @@ const RIDER_SELECT_WITH_PLATFORM = [
   'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
   'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-  'created_at', 'updated_at'
+  'raw_data', 'created_at', 'updated_at'
 ].join(',');
 
 const RIDER_SELECT = [
@@ -31,18 +31,16 @@ const RIDER_SELECT = [
   'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
   'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
   'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
-  'created_at', 'updated_at'
+  'raw_data', 'created_at', 'updated_at'
 ].join(',');
 
-const RIDER_ME_SELECT_WITH_PLATFORM = `${RIDER_SELECT_WITH_PLATFORM},raw_data`;
-const RIDER_ME_SELECT_BASE = `${RIDER_SELECT_BASE},raw_data`;
-const RIDER_ME_SELECT = `${RIDER_SELECT},raw_data`;
+// regionBaemin/regionCoupang 등 확장 필드는 raw_data 에 저장되므로 조회 SELECT에 포함한다.
+const RIDER_ME_SELECT_WITH_PLATFORM = RIDER_SELECT_WITH_PLATFORM;
+const RIDER_ME_SELECT_BASE = RIDER_SELECT_BASE;
+const RIDER_ME_SELECT = RIDER_SELECT;
 const RIDER_ME_SELECT_VARIANTS = [RIDER_ME_SELECT, RIDER_ME_SELECT_WITH_PLATFORM, RIDER_ME_SELECT_BASE];
 
-const RIDER_PATCH_RETURN_SELECT = [
-  RIDER_SELECT,
-  'raw_data'
-].join(',');
+const RIDER_PATCH_RETURN_SELECT = RIDER_SELECT;
 
 const RIDER_LOGIN_LOOKUP_SELECT = [
   'id', 'auth_user_id', 'name', 'phone', 'resident_number', 'raw_data', 'created_at'
@@ -52,8 +50,8 @@ const RIDER_SELECT_VARIANTS = [RIDER_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_S
 const RIDER_LIST_SELECT_VARIANTS = [RIDER_LIST_SELECT, RIDER_SELECT_WITH_PLATFORM, RIDER_SELECT_BASE];
 const RIDER_DETAIL_SELECT_VARIANTS = [
   RIDER_PATCH_RETURN_SELECT,
-  `${RIDER_SELECT_WITH_PLATFORM},raw_data`,
-  `${RIDER_SELECT_BASE},raw_data`,
+  RIDER_SELECT_WITH_PLATFORM,
+  RIDER_SELECT_BASE,
   RIDER_LIST_SELECT
 ];
 
