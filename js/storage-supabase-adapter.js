@@ -55,7 +55,7 @@ window.BremSupabaseStorageAdapter = (function () {
     'long_event_item_id', 'long_event_item', 'long_event_start_date', 'join_date',
     'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
     'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-    'created_at', 'updated_at'
+    'raw_data', 'created_at', 'updated_at'
   ].join(',');
 
   const RIDER_SELECT_WITH_PLATFORM = [
@@ -64,7 +64,7 @@ window.BremSupabaseStorageAdapter = (function () {
     'long_event_item_id', 'long_event_item', 'long_event_start_date', 'long_event_platform', 'join_date',
     'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
     'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
-    'created_at', 'updated_at'
+    'raw_data', 'created_at', 'updated_at'
   ].join(',');
 
   const RIDER_SELECT = [
@@ -74,7 +74,7 @@ window.BremSupabaseStorageAdapter = (function () {
     'status', 'memo', 'hidden_fields', 'promotion_selector_coupang', 'promotion_selector_baemin',
     'promotion_rule_id_coupang', 'promotion_rule_id_baemin',
     'selected_mission_id', 'selected_mission_id_baemin', 'selected_mission_id_coupang',
-    'created_at', 'updated_at'
+    'raw_data', 'created_at', 'updated_at'
   ].join(',');
 
   const RIDER_LIST_SELECT = [

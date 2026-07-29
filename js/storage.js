@@ -5095,6 +5095,8 @@ const BremStorage = (function () {
         baeminId,
         platformCoupang,
         platformBaemin,
+        regionBaemin: String(driver.regionBaemin || '').trim(),
+        regionCoupang: String(driver.regionCoupang || '').trim(),
         longEventItemId: driver.longEventItemId || '',
         longEventItem: driver.longEventItem || '',
         longEventStartDate: driver.longEventStartDate || '',

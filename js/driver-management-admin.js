@@ -423,9 +423,10 @@ const BremDriverManagementAdmin = (function () {
 
   async function assignDriverToRegion(driverId, region = selectedRegion()) {
     if (!driverId || !region) return;
+    // 기사등록프로그램과 동일 필드(regionBaemin/regionCoupang)에 저장한다.
     const patch = state.regionPlatform === 'coupang'
-      ? { regionCoupang: region.label }
-      : { regionBaemin: region.label };
+      ? { regionCoupang: region.label, platformCoupang: true }
+      : { regionBaemin: region.label, platformBaemin: true };
     await window.BremStorage.drivers.update(driverId, patch);
   }
 
@@ -440,8 +441,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 선택형으로 기사를 배정하세요.'
-        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다.';
+        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 여기서 배정하면 기사등록프로그램에도 동일하게 저장됩니다.'
+        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 여기서 배정하면 기사등록프로그램에도 동일하게 저장됩니다.';
     }
     if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
     else await fetchBaeminRegions();
@@ -574,8 +575,8 @@ const BremDriverManagementAdmin = (function () {
         : state.baeminRegions.find(item => item.key === row.regionKey);
       if (!region || !row.driverId) continue;
       const patch = platform === 'coupang'
-        ? { regionCoupang: region.label }
-        : { regionBaemin: region.label };
+        ? { regionCoupang: region.label, platformCoupang: true }
+        : { regionBaemin: region.label, platformBaemin: true };
       await window.BremStorage.drivers.update(row.driverId, patch);
       saved += 1;
     }
