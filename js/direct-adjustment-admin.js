@@ -471,6 +471,66 @@ const BremDirectAdjustmentAdmin = (function () {
 
   // --- 정산서 미지정(구 데이터) --------------------------------------------
 
+  // 한 주에 정산서를 여러 장 올리는 경우가 있어서, 어느 정산서에 얼마가 등록됐는지
+  // 한눈에 보여준다. 이게 없으면 지금 고른 정산서 하나만 보이고 나머지는 안 보인다.
+  function settlementRegistry() {
+    const store = window.BremStorage?.directSettlementAdjustments;
+    return settlementList().map(record => {
+      const summary = store?.summary?.(record.id)
+        || { promotionCount: 0, promotionTotal: 0, otherCount: 0, otherTotal: 0 };
+      const promotionTotal = Number(summary.promotionTotal || 0);
+      const otherTotal = Number(summary.otherTotal || 0);
+      return {
+        record,
+        promotionCount: Number(summary.promotionCount || 0),
+        promotionTotal,
+        otherCount: Number(summary.otherCount || 0),
+        otherTotal,
+        tax: promoTax(promotionTotal + otherTotal)
+      };
+    });
+  }
+
+  function renderRegistry() {
+    const card = $('#directRegistryCard');
+    const body = $('#directRegistryBody');
+    const head = $('#directRegistryHead');
+    if (!card || !body) return;
+
+    const rows = settlementRegistry();
+    if (!rows.length) {
+      card.hidden = true;
+      body.innerHTML = '';
+      return;
+    }
+    card.hidden = false;
+
+    if (head) {
+      const registered = rows.filter(row => row.promotionCount || row.otherCount).length;
+      head.textContent = state.week
+        ? `${formatDate(state.week)}(수) 주 정산서 ${rows.length}장 · 등록된 정산서 ${registered}장`
+        : `전체 정산서 ${rows.length}장 · 등록된 정산서 ${registered}장`;
+    }
+
+    const activeId = currentSettlement()?.id || '';
+    body.innerHTML = rows.map(row => {
+      const isActive = row.record.id === activeId;
+      const has = row.promotionCount || row.otherCount;
+      return `
+      <tr class="${isActive ? 'direct-registry-active' : ''}">
+        <td>${isActive ? '<strong>선택됨</strong>' : ''}</td>
+        <td>${escapeHtml(formatDate(row.record.startDate))} ~ ${escapeHtml(formatDate(row.record.endDate))}${row.record.region ? ` · ${escapeHtml(row.record.region)}` : ''}</td>
+        <td>${escapeHtml(row.record.fileName || '-')}</td>
+        <td class="weekly-amount-cell">${has || row.promotionCount ? `${formatNumber(row.promotionCount)}명 · ${formatNumber(row.promotionTotal)}` : '-'}</td>
+        <td class="weekly-amount-cell">${has || row.otherCount ? `${formatNumber(row.otherCount)}명 · ${formatNumber(row.otherTotal)}` : '-'}</td>
+        <td class="weekly-amount-cell">${has ? formatNumber(row.tax) : '-'}</td>
+        <td>${isActive
+        ? (has ? '' : '<span class="direct-registry-empty">미등록</span>')
+        : `<button type="button" class="small-btn" data-direct-registry-pick="${escapeHtml(row.record.id)}">이 정산서 보기</button>`}</td>
+      </tr>`;
+    }).join('');
+  }
+
   function legacyBuckets() {
     const out = [];
     ['promotion', 'other'].forEach(kind => {
@@ -488,15 +548,26 @@ const BremDirectAdjustmentAdmin = (function () {
   function renderLegacy() {
     const card = $('#directLegacyCard');
     const body = $('#directLegacyBody');
+    const note = $('#directLegacyNote');
+    const target = $('#directLegacyTarget');
     if (!card || !body) return;
-    const buckets = legacyBuckets();
-    if (!buckets.length) {
+
+    const all = legacyBuckets();
+    if (!all.length) {
       card.hidden = true;
       body.innerHTML = '';
+      if (note) { note.textContent = ''; note.hidden = true; }
+      if (target) { target.textContent = ''; target.hidden = true; }
       return;
     }
     card.hidden = false;
-    body.innerHTML = buckets.map(item => `
+
+    // 고른 주만 보여준다. 여러 주가 섞여 나오면 어느 주 금액인지 헷갈린다.
+    const shown = state.week ? all.filter(item => item.week === state.week) : all;
+    const others = state.week ? all.filter(item => item.week !== state.week) : [];
+
+    if (shown.length) {
+      body.innerHTML = shown.map(item => `
       <tr>
         <td>${escapeHtml(KINDS[item.kind].label)}</td>
         <td>${formatDate(item.week)}(수)</td>
@@ -504,6 +575,35 @@ const BremDirectAdjustmentAdmin = (function () {
         <td class="weekly-amount-cell">${formatNumber(item.total)}</td>
         <td><button type="button" class="small-btn" data-direct-legacy-move="${escapeHtml(item.kind)}" data-week="${escapeHtml(item.week)}">이 정산서로 옮기기</button></td>
       </tr>`).join('');
+    } else {
+      body.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(formatDate(state.week))}(수) 주에는 미지정 데이터가 없습니다.</td></tr>`;
+    }
+
+    // 다른 주 데이터를 그냥 감추면 있는 줄도 모르고 넘어간다. 남은 규모를 알려준다.
+    if (note) {
+      if (others.length) {
+        const total = others.reduce((sum, item) => sum + item.total, 0);
+        const weeks = [...new Set(others.map(item => item.week))]
+          .sort().reverse().map(week => `${formatDate(week)}(수)`).join(', ');
+        note.innerHTML = `다른 주에 미지정 데이터가 <strong>${formatNumber(others.length)}건</strong> 더 있습니다. 합계 <strong>${formatNumber(total)}</strong>원 · ${escapeHtml(weeks)} — 「전체 주」를 누르면 모두 보입니다.`;
+        note.hidden = false;
+      } else {
+        note.textContent = '';
+        note.hidden = true;
+      }
+    }
+
+    // 「이 정산서로 옮기기」가 어디로 가는지 버튼 누르기 전에 보이게 한다.
+    if (target) {
+      const settlement = currentSettlement();
+      if (settlement) {
+        target.innerHTML = `옮길 대상 정산서: <strong>${escapeHtml(settlementOptionLabel(settlement))}</strong>${settlement.fileName ? ` · ${escapeHtml(settlement.fileName)}` : ''}`;
+        target.hidden = false;
+      } else {
+        target.textContent = '옮길 대상 정산서가 없습니다. 먼저 정산서를 고르세요.';
+        target.hidden = false;
+      }
+    }
   }
 
   function moveLegacy(kind, week) {
@@ -532,8 +632,9 @@ const BremDirectAdjustmentAdmin = (function () {
     renderApplied(kind);
     renderPromoTax();
     renderAppliedSummary();
+    renderRegistry();
     renderLegacy();
-    showToast(`${label} 이동 완료`);
+    showToast(`${label} → ${formatDate(settlement.startDate)} 정산서로 이동 완료`);
   }
 
   // --- ERP 프로모션 불러오기 -----------------------------------------------
@@ -871,6 +972,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderApplied('promotion');
     renderPromoTax();
     renderAppliedSummary();
+    renderRegistry();
     renderLegacy();
     renderErpList();
   }
@@ -927,6 +1029,15 @@ const BremDirectAdjustmentAdmin = (function () {
     });
 
     section?.addEventListener('click', event => {
+      const pickBtn = event.target.closest('[data-direct-registry-pick]');
+      if (pickBtn) {
+        state.settlementId = pickBtn.dataset.directRegistryPick || '';
+        state.erpSelected.clear();
+        state.pending.other = null;
+        state.pending.promotion = null;
+        renderAll();
+        return;
+      }
       const moveBtn = event.target.closest('[data-direct-legacy-move]');
       if (moveBtn) {
         moveLegacy(moveBtn.dataset.directLegacyMove, moveBtn.dataset.week);

@@ -13,3 +13,6 @@ npm-debug.log*
 .baemin-playwright-profile/
 .playwright-browsers/
 .vercel
+
+# scripts/_preview-*.js 가 만드는 로컬 미리보기 산출물
+_preview-*.html

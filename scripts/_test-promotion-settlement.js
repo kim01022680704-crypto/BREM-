@@ -394,6 +394,57 @@ function check(label, actual, expected) {
   const rows20 = window.document.querySelectorAll('#settlementResultRows tr');
   check('7/15 정산서 라이더 1명', rows20.length, 1);
 
+  console.log('\n[21] 정산서별 등록 현황 — 어느 정산서에 등록됐는지 표기');
+  Adj.state.week = '';
+  Adj.state.settlementId = '';
+  await Adj.refresh('baemin');
+  Adj.onWeekPicked('2026-07-22');
+  const regRows = [...window.document.querySelectorAll('#directRegistryBody tr')];
+  check('등록 현황 카드 노출', window.document.getElementById('directRegistryCard').hidden, 'false');
+  check('7/22 주 정산서 1장만', regRows.length, 1);
+  check('지금 고른 정산서 표시', /선택됨/.test(regRows[0].textContent), 'true');
+  check('헤더에 정산서 장수', /1장/.test(window.document.getElementById('directRegistryHead').textContent), 'true');
+
+  window.document.getElementById('directAdjustWeekAllBtn').click();
+  const regAll = [...window.document.querySelectorAll('#directRegistryBody tr')];
+  check('전체 주에서 정산서 2장', regAll.length, 2);
+  const row0715 = regAll.find(tr => tr.textContent.includes('999,999'));
+  check('7/15 정산서 등록액이 그 행에 표기', Boolean(row0715), 'true');
+  const pickBtn = regAll.map(tr => tr.querySelector('[data-direct-registry-pick]')).find(Boolean);
+  pickBtn.click();
+  check('「이 정산서 보기」로 전환', Adj.state.settlementId, 'weekly_direct_baemin_seoul_20260715');
+
+  console.log('\n[22] 정산서 미지정(구 데이터) — 고른 주만 표시');
+  store.promotion = {
+    '2026-07-22': { d1: { amount: 11000, baeminId: 'BC000001', driverName: '김배민', source: 'excel' } },
+    '2026-07-08': { d2: { amount: 22000, baeminId: 'BC000002', driverName: '이배민', source: 'excel' } }
+  };
+  Adj.onWeekPicked('2026-07-22');
+  const legacyRows = [...window.document.querySelectorAll('#directLegacyBody tr')];
+  check('고른 주 미지정 1건만', legacyRows.length, 1);
+  check('그 주 금액 표시', /11,000/.test(legacyRows[0].textContent), 'true');
+  check('다른 주 금액은 목록에 없음', /22,000/.test(legacyRows[0].textContent), 'false');
+  const legacyNote = window.document.getElementById('directLegacyNote');
+  check('다른 주 잔여 안내 노출', legacyNote.hidden, 'false');
+  check('다른 주 합계 안내', /22,000/.test(legacyNote.textContent), 'true');
+  check('옮길 대상 정산서 표기', /옮길 대상 정산서/.test(window.document.getElementById('directLegacyTarget').textContent), 'true');
+
+  Adj.onWeekPicked('2026-07-15');
+  check('미지정 없는 주 안내', Boolean(window.document.querySelector('#directLegacyBody .empty')), 'true');
+  check('남은 2건 안내', /2건/.test(window.document.getElementById('directLegacyNote').textContent), 'true');
+
+  window.document.getElementById('directAdjustWeekAllBtn').click();
+  check('전체 주에서 미지정 2건', window.document.querySelectorAll('#directLegacyBody tr').length, 2);
+  check('전체 주에서는 잔여 안내 없음', window.document.getElementById('directLegacyNote').hidden, 'true');
+
+  console.log('\n[23] 미지정 → 고른 정산서로 이동');
+  Adj.onWeekPicked('2026-07-22');
+  window.document.querySelector('[data-direct-legacy-move]').click();
+  check('선택한 정산서로 들어감', adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 11000);
+  check('이동한 주는 미지정에서 비워짐', Boolean(store.promotion['2026-07-22']), 'false');
+  check('다른 주 미지정은 그대로', store.promotion['2026-07-08']?.d2?.amount, 22000);
+  check('등록 현황에 반영', /11,000/.test(window.document.getElementById('directRegistryBody').textContent), 'true');
+
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error('\n예외:', e.stack || e.message); process.exit(2); });

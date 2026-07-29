@@ -6063,6 +6063,48 @@ tr.direct-erp-stale-row > td {
   opacity: 0.62;
 }
 
+/* 문장형 요약 한 줄.
+   .settlement-result-stats 는 통계 카드용 3열 그리드(strong 이 1.5rem 블록)라서
+   문장에 그대로 쓰면 숫자마다 줄이 바뀌며 레이아웃이 깨진다. */
+.direct-inline-stats {
+  display: block;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--black-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.direct-inline-stats:empty {
+  display: none;
+}
+.direct-inline-stats strong {
+  color: var(--yellow);
+  font-weight: 800;
+}
+
+/* 카드 헤더 옆에 붙는 요약은 테두리 없이 글자만 */
+.direct-head-note {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+/* 정산서별 등록 현황 · 지금 고른 정산서를 눈에 띄게 해서 등록 위치를 헷갈리지 않게 한다 */
+tr.direct-registry-active > td {
+  background: rgba(52, 199, 123, 0.1);
+}
+tr.direct-registry-active > td:first-child {
+  color: #34c77b;
+}
+.direct-registry-empty {
+  color: #ffb020;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 /* 적용 미리보기 · 경고 */
 .direct-erp-preview {
   margin: 8px 0 12px;

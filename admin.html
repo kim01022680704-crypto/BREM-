@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260727c">
+  <link rel="stylesheet" href="css/admin.css?v=20260729c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4319,7 +4319,7 @@
           </div>
           <p class="form-help">「주정산서 업로드 (직계약)」에 저장된 <strong>정산서를 먼저 고른 뒤</strong>, 엑셀(<strong>A열 ID · B열 금액</strong>) 또는 「프로모션 적용」의 ERP 계산 결과를 그 정산서에 적용합니다. 적용한 금액은 「정산결과 (직계약)」에서 그대로 불러옵니다. 프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3%(원 단위 절사) 자동 계산.</p>
           <p class="settlement-week-range-label" id="directAdjustSettlementInfo"></p>
-          <p class="settlement-result-stats" id="directAdjustAppliedSummary"></p>
+          <p class="direct-inline-stats" id="directAdjustAppliedSummary"></p>
           <input type="hidden" id="directAdjustWeek">
 
           <div class="payroll-bulk-grid">
@@ -4334,7 +4334,7 @@
                 <button type="button" class="small-btn" id="directOtherBulkClearPendingBtn">미리보기 취소</button>
                 <button type="button" class="small-btn" id="directOtherBulkRetryBtn">매칭 재시도</button>
               </div>
-              <p class="settlement-result-stats" id="directOtherBulkSummary"></p>
+              <p class="direct-inline-stats" id="directOtherBulkSummary"></p>
               <div class="table-wrap" id="directOtherBulkPreview" hidden>
                 <table class="weekly-settlement-saved-table">
                   <thead><tr><th>행</th><th>기사ID</th><th>기사</th><th>금액</th><th>매칭</th></tr></thead>
@@ -4361,7 +4361,7 @@
                 <button type="button" class="small-btn" id="directPromotionBulkClearPendingBtn">미리보기 취소</button>
                 <button type="button" class="small-btn" id="directPromotionBulkRetryBtn">매칭 재시도</button>
               </div>
-              <p class="settlement-result-stats" id="directPromotionBulkSummary"></p>
+              <p class="direct-inline-stats" id="directPromotionBulkSummary"></p>
               <div class="table-wrap" id="directPromotionBulkPreview" hidden>
                 <table class="weekly-settlement-saved-table">
                   <thead><tr><th>행</th><th>기사ID</th><th>기사</th><th>금액</th><th>매칭</th></tr></thead>
@@ -4395,7 +4395,7 @@
               </div>
             </div>
             <p class="form-help">「프로모션 적용」에 저장된 결과를 <strong>다중 선택</strong>해 위에서 고른 정산서의 BREM프로모션에 합산 적용합니다. (배민 ID↔배민 ID, 쿠팡 ID↔쿠팡 ID로 매칭된 결과 · 선택한 정산서와 <strong>같은 주</strong>의 저장 결과만 표시)</p>
-            <p class="settlement-result-stats" id="directErpSummary"></p>
+            <p class="direct-inline-stats" id="directErpSummary"></p>
             <div class="direct-erp-preview" id="directErpPreview" hidden></div>
             <div class="table-wrap direct-scroll">
               <table class="weekly-settlement-saved-table">
@@ -4414,7 +4414,7 @@
           <article class="card">
             <div class="card-header"><h3>프로모션원천세 (자동계산 · 3.3%)</h3></div>
             <p class="form-help">프로모션원천세 = (BREM프로모션 + 기타지급) × 3.3% · 원 단위 절사</p>
-            <p class="settlement-result-stats" id="directPromoTaxSummary"></p>
+            <p class="direct-inline-stats" id="directPromoTaxSummary"></p>
             <div class="table-wrap direct-scroll">
               <table class="weekly-settlement-saved-table">
                 <thead><tr><th>기사</th><th>BREM프로모션</th><th>기타지급</th><th>합계</th><th>프로모션원천세</th></tr></thead>
@@ -4423,9 +4423,25 @@
             </div>
           </article>
 
+          <article class="card" id="directRegistryCard" hidden>
+            <div class="card-header">
+              <h3>정산서별 등록 현황</h3>
+              <span class="direct-head-note" id="directRegistryHead"></span>
+            </div>
+            <p class="form-help">고른 주에 저장된 <strong>직계약 정산서마다</strong> BREM프로모션·기타지급이 얼마 등록됐는지 보여줍니다. 한 주에 정산서를 여러 장 올렸을 때 어디에 등록했는지 헷갈리지 않게 하려는 표입니다. 다른 정산서를 보려면 「이 정산서 보기」를 누르세요.</p>
+            <div class="table-wrap direct-scroll">
+              <table class="weekly-settlement-saved-table">
+                <thead><tr><th>상태</th><th>정산서 기간</th><th>파일</th><th>BREM프로모션 (명·원)</th><th>기타지급 (명·원)</th><th>프로모션원천세</th><th>관리</th></tr></thead>
+                <tbody id="directRegistryBody"></tbody>
+              </table>
+            </div>
+          </article>
+
           <article class="card" id="directLegacyCard" hidden>
             <div class="card-header"><h3>정산서 미지정 (구 데이터)</h3></div>
-            <p class="form-help">정산서 선택 기능이 생기기 전에 <strong>주차 기준</strong>으로 등록된 금액입니다. 어느 정산서에 속하는지 정보가 없어 정산결과에 자동 반영되지 않습니다. 정산서를 고른 뒤 「이 정산서로 옮기기」를 누르면 옮겨집니다.</p>
+            <p class="form-help">정산서 선택 기능이 생기기 전에 <strong>주차 기준</strong>으로 등록된 금액입니다. 어느 정산서에 속하는지 정보가 없어 정산결과에 자동 반영되지 않습니다. 정산서를 고른 뒤 「이 정산서로 옮기기」를 누르면 옮겨집니다. <strong>위에서 고른 주</strong>의 데이터만 표시합니다.</p>
+            <p class="settlement-week-range-label" id="directLegacyTarget" hidden></p>
+            <p class="direct-inline-stats" id="directLegacyNote" hidden></p>
             <div class="table-wrap direct-scroll">
               <table class="weekly-settlement-saved-table">
                 <thead><tr><th>구분</th><th>주차</th><th>인원</th><th>합계</th><th>관리</th></tr></thead>
@@ -4465,7 +4481,7 @@
           </div>
           <p class="form-help">주정산서(직계약) 금액·공제 + 「프로모션정산등록」에서 <strong>그 정산서에 적용한</strong> BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 총지급액 = 지급합계 − 공제합계.</p>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
-          <p class="settlement-result-stats" id="settlementResultSummary"></p>
+          <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
             <button type="button" class="small-btn" id="settlementResultToPayslipBtn" disabled title="준비 중입니다.">급여명세서 반영</button>
             <span class="muted-inline">급여명세서 반영은 준비 중입니다.</span>
@@ -6639,7 +6655,7 @@
   <script src="js/payroll-promotion-bulk.js?v=20260701e"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260727b"></script>
-  <script src="js/direct-adjustment-admin.js?v=20260727c"></script>
+  <script src="js/direct-adjustment-admin.js?v=20260729c"></script>
   <script src="js/settlement-result-direct.js?v=20260727c"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
