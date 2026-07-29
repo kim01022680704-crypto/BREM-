@@ -51,6 +51,28 @@
       : normalizeBaeminId(value);
   }
 
+  // 기사 레코드에는 쿠팡ID가 따로 저장되지 않는다. 쿠팡ID는 「이름+연락처 뒤 4자리」로
+  // 계산되는 값이라, driver.coupangId 를 그대로 보면 비어 있어서 전원 미매칭이 된다.
+  // 주정산서 업로드·급여명세서 일괄등록과 같은 방식으로 계산해서 비교한다.
+  function driverIdForMatch(driver, platform) {
+    const p = normalizePlatform(platform);
+    const resolved = window.BremPayrollSlipUtils?.resolveDriverPlatformId?.(driver, p);
+    if (resolved) return resolved;
+    if (p === 'coupang') {
+      return String(
+        window.BremDriverUtils?.getErpCoupangId?.(driver)
+        || driver?.coupangLoginKey
+        || driver?.coupangId
+        || ''
+      ).replace(/\s/g, '');
+    }
+    return String(driver?.baeminId || '').trim();
+  }
+
+  function normalizedDriverIdForMatch(driver, platform) {
+    return normalizeIdFor(platform, driverIdForMatch(driver, platform));
+  }
+
   function isHeaderRow(row) {
     const idText = String(cellValue(row, COL.baeminId) || '').trim().toLowerCase();
     if (!idText) return false;
@@ -77,14 +99,13 @@
 
   function matchRow(baeminId, drivers, platform) {
     const p = normalizePlatform(platform);
-    const field = platformIdField(p);
     const label = platformIdLabel(p);
     const id = normalizeIdFor(p, baeminId);
     const list = Array.isArray(drivers) ? drivers : [];
     if (!id) {
       return { status: 'empty_id', driver: null, driverId: '', driverName: '', matches: [], error: `A열 ${label} 없음` };
     }
-    const candidates = list.filter(driver => normalizeIdFor(p, driver[field]) === id);
+    const candidates = list.filter(driver => normalizedDriverIdForMatch(driver, p) === id);
     if (candidates.length > 1) {
       return { status: 'duplicate', driver: null, driverId: '', driverName: '', matches: candidates, error: `동일 ${label}로 여러 기사 매칭` };
     }
@@ -95,7 +116,7 @@
     return { status: 'matched', driver, driverId: driver.id, driverName: driver.name || '', matches: [driver], error: '' };
   }
 
-  function rowFromMatch(row, match) {
+  function rowFromMatch(row, match, platform) {
     return {
       ...row,
       matchStatus: match.status,
@@ -103,7 +124,7 @@
       matchCandidates: Array.isArray(match.matches) ? match.matches : [],
       driverId: match.driverId || '',
       driverName: match.driverName || (match.driver?.name || ''),
-      matchedBaeminId: match.driver ? String(match.driver.baeminId || '').trim() : '',
+      matchedBaeminId: match.driver ? driverIdForMatch(match.driver, platform) : '',
       error: match.error || ''
     };
   }
@@ -113,11 +134,11 @@
     const id = String(driverId || '').trim();
     const list = Array.isArray(drivers) ? drivers : [];
     if (!id) {
-      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, list, p));
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, list, p), p);
     }
     const driver = list.find(item => item.id === id);
     if (!driver) {
-      return rowFromMatch(row, matchRow(row.baeminId, list, p));
+      return rowFromMatch(row, matchRow(row.baeminId, list, p), p);
     }
     return {
       ...row,
@@ -126,7 +147,7 @@
       matchCandidates: row.matchCandidates?.length ? row.matchCandidates : [driver],
       driverId: driver.id,
       driverName: driver.name || '',
-      matchedBaeminId: String(driver[platformIdField(p)] || '').trim(),
+      matchedBaeminId: driverIdForMatch(driver, p),
       error: ''
     };
   }
@@ -137,7 +158,7 @@
       if (row.matchStatus === 'manual' && row.driverId) {
         return applyManualDriverToRow(row, row.driverId, drivers, p);
       }
-      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers, p));
+      return rowFromMatch({ ...row, driverId: '' }, matchRow(row.baeminId, drivers, p), p);
     });
   }
 
@@ -159,7 +180,7 @@
         rowKey: `direct-adj-${index + 1}`,
         baeminId,
         amount
-      }, match);
+      }, match, p);
       parsedRows.push(item);
       if (match.status !== 'matched' && match.status !== 'manual') {
         issues.push(`${item.rowNumber}행: ${match.error || matchStatusLabel(match.status)}`);
@@ -231,6 +252,7 @@
     COL,
     platformIdField,
     platformIdLabel,
+    driverIdForMatch,
     parseSheetRows,
     rematchRows,
     applyManualDriverToRow,

@@ -108,7 +108,11 @@ const BremDirectAdjustmentAdmin = (function () {
 
   function driverPlatformId(driverId) {
     const driver = window.BremStorage?.drivers?.getById?.(driverId);
-    return String(driver?.[idField()] || '').trim();
+    if (!driver) return '';
+    // 쿠팡ID는 기사 레코드에 저장되지 않고 이름+연락처 뒤 4자리로 계산된다.
+    // 일괄등록 매칭과 같은 함수를 써야 화면에 표시되는 ID가 실제 매칭 값과 일치한다.
+    return window.BremDirectAdjustmentBulk?.driverIdForMatch?.(driver, state.platform)
+      ?? String(driver?.[idField()] || '').trim();
   }
 
   // --- 정산서(직계약) 목록 -------------------------------------------------
@@ -246,11 +250,13 @@ const BremDirectAdjustmentAdmin = (function () {
   let driverOptionsCache = '';
   function driverOptionsHtml() {
     if (driverOptionsCache) return driverOptionsCache;
-    const field = idField();
     const opts = driversList()
       .slice()
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
-      .map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name || '(이름 없음)')}${d[field] ? ` · ${escapeHtml(d[field])}` : ''}</option>`)
+      .map(d => {
+        const platformId = window.BremDirectAdjustmentBulk?.driverIdForMatch?.(d, state.platform) || '';
+        return `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name || '(이름 없음)')}${platformId ? ` · ${escapeHtml(platformId)}` : ''}</option>`;
+      })
       .join('');
     driverOptionsCache = `<option value="">기사 직접 선택</option>${opts}`;
     return driverOptionsCache;
