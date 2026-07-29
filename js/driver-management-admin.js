@@ -22,12 +22,20 @@ const BremDriverManagementAdmin = (function () {
     return String(dateValue || new Date().toISOString().slice(0, 10)).slice(0, 10);
   }
 
+  function localDateKey(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
   function weekEndKey(weekStart) {
     const picker = window.BremDatePicker;
     if (picker?.weekEndKey) return picker.weekEndKey(weekStart);
     const date = new Date(`${weekStartKey(weekStart)}T00:00:00`);
     date.setDate(date.getDate() + 6);
-    return date.toISOString().slice(0, 10);
+    return localDateKey(date);
   }
 
   function formatWeekRange(weekStart) {
@@ -61,10 +69,7 @@ const BremDriverManagementAdmin = (function () {
     const base = ensureWeek();
     const date = new Date(`${base}T00:00:00`);
     date.setDate(date.getDate() + deltaWeeks * 7);
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    setWeek(`${y}-${m}-${d}`);
+    setWeek(localDateKey(date));
   }
 
   function renderOrgWeekControls() {
