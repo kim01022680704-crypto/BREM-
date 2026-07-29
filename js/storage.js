@@ -9720,22 +9720,23 @@ const BremStorage = (function () {
     },
 
     remove(id, channel) {
+      const writeRemoved = (ch) => {
+        const before = weeklySettlements.getAll(ch);
+        const next = before.filter(item => item.id !== id);
+        if (next.length === before.length) return;
+        // 마지막 정산서를 지우면 빈 배열이 된다. allowEmpty 없이 쓰면
+        // 데이터 보호가 막아 Supabase에 삭제가 안 남고 새로고침 때 되살아난다.
+        storageAdapter.write(weeklySettlementsKey(ch), next, {
+          allowEmpty: true,
+          deletedRowIds: [id]
+        });
+      };
       if (channel === 'direct' || channel === 'bro') {
-        storageAdapter.write(
-          weeklySettlementsKey(channel),
-          weeklySettlements.getAll(channel).filter(item => item.id !== id)
-        );
+        writeRemoved(channel);
         return;
       }
-      // 채널 미지정: 양쪽에서 제거
-      storageAdapter.write(
-        KEYS.weeklySettlements,
-        weeklySettlements.getAll('bro').filter(item => item.id !== id)
-      );
-      storageAdapter.write(
-        KEYS.weeklySettlementsDirect,
-        weeklySettlements.getAll('direct').filter(item => item.id !== id)
-      );
+      writeRemoved('bro');
+      writeRemoved('direct');
     }
   };
 
@@ -9915,7 +9916,7 @@ const BremStorage = (function () {
       }
       settlementUploadLogs.persistList(
         settlementUploadLogs.getAll(channel).filter(item => item.id !== id),
-        { channel }
+        { channel, allowEmpty: true, deletedRowIds: [id] }
       );
       return target || null;
     },
@@ -10174,14 +10175,19 @@ const BremStorage = (function () {
     removeByLinkedRecordId(linkedRecordId) {
       const targetId = String(linkedRecordId || '').trim();
       if (!targetId) return;
-      settlementUploadLogs.persistList(
-        settlementUploadLogs.getAll('bro').filter(item => item.linkedRecordId !== targetId),
-        { channel: 'bro' }
-      );
-      settlementUploadLogs.persistList(
-        settlementUploadLogs.getAll('direct').filter(item => item.linkedRecordId !== targetId),
-        { channel: 'direct' }
-      );
+      // 채널별로 지운 id 를 넘겨야 빈 배열 저장이 「의도된 삭제」로 통과한다.
+      // 안 그러면 마지막 로그를 지울 때 데이터 보호가 막아 정산결과 삭제가 안 된다.
+      ['bro', 'direct'].forEach(channel => {
+        const before = settlementUploadLogs.getAll(channel);
+        const deletedRowIds = before
+          .filter(item => item.linkedRecordId === targetId)
+          .map(item => item.id);
+        if (!deletedRowIds.length) return;
+        settlementUploadLogs.persistList(
+          before.filter(item => item.linkedRecordId !== targetId),
+          { channel, allowEmpty: true, deletedRowIds }
+        );
+      });
     },
 
     syncWeeklyFromSavedRecords(channel) {

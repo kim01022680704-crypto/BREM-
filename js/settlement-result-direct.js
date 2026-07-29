@@ -160,7 +160,14 @@ const BremSettlementResultDirect = (function () {
     );
     if (!ok) return;
 
-    await BremWeeklySettlement.deleteDirectSettlementCascade(settlement.id);
+    try {
+      await BremWeeklySettlement.deleteDirectSettlementCascade(settlement.id);
+    } catch (error) {
+      console.error('[BREM] settlement-result delete failed:', error);
+      showToast(error.message || '정산서 삭제에 실패했습니다.');
+      await refresh(state.platform);
+      return;
+    }
     state.settlementId = '';
     notifyRelatedScreens();
     await loadWithdrawals();
@@ -184,8 +191,15 @@ const BremSettlementResultDirect = (function () {
     );
     if (!ok) return;
 
-    for (const record of list) {
-      await BremWeeklySettlement.deleteDirectSettlementCascade(record.id);
+    try {
+      for (const record of list) {
+        await BremWeeklySettlement.deleteDirectSettlementCascade(record.id);
+      }
+    } catch (error) {
+      console.error('[BREM] settlement-result week delete failed:', error);
+      showToast(error.message || '정산서 삭제에 실패했습니다.');
+      await refresh(state.platform);
+      return;
     }
     state.settlementId = '';
     notifyRelatedScreens();

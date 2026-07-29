@@ -1020,7 +1020,25 @@ const BremWeeklySettlement = (function () {
     if (options.logId) BremStorage.settlementUploadLogs.remove(options.logId);
     BremStorage.directSettlementAdjustments?.clearSettlement?.('promotion', targetId);
     BremStorage.directSettlementAdjustments?.clearSettlement?.('other', targetId);
-    await BremStorage.flushStorage?.();
+
+    let blockedMessage = '';
+    const onBlocked = (event) => {
+      blockedMessage = event?.detail?.message || '데이터 저장이 보호 정책에 의해 차단되었습니다.';
+    };
+    document.addEventListener('brem-storage-persist-blocked', onBlocked);
+    try {
+      await BremStorage.flushStorage?.();
+    } finally {
+      document.removeEventListener('brem-storage-persist-blocked', onBlocked);
+    }
+    if (blockedMessage) {
+      throw new Error(blockedMessage);
+    }
+    // 캐시에 남아 있으면 삭제 실패로 본다. (보호 차단 후 서버 값이 되살아난 경우 포함)
+    if (BremStorage.weeklySettlements.getById(targetId, channel)
+      || BremStorage.weeklySettlements.getById(targetId)) {
+      throw new Error('정산서 삭제가 반영되지 않았습니다. 잠시 후 다시 시도하세요.');
+    }
     return record;
   }
 
