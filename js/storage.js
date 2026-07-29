@@ -5105,7 +5105,18 @@ const BremStorage = (function () {
 
       const prevList = drivers.getAll();
       const merged = new Map(prevList.map(item => [item.id, item]));
-      list.forEach(item => merged.set(item.id, item));
+      // 일괄등록의 "빈 칸만 채우기" 항목은 변경된 필드만 담고 있다. 그대로 덮으면
+      // 캐시 안 기사에서 이름·미션·장기이벤트가 사라진다. 서버는 보호되지만,
+      // 그 상태로 관리자가 해당 기사를 개별 저장하면 빈 값이 DB 까지 올라간다.
+      // (개별 저장 경로에는 일괄등록용 미션 보호가 없다)
+      list.forEach(item => {
+        const id = item?.id;
+        if (!id) return;
+        const prev = merged.get(id);
+        const next = prev ? { ...prev, ...item } : { ...item };
+        delete next.bulkFillPatch;
+        merged.set(id, next);
+      });
       const nextList = Array.from(merged.values());
       setDriversCache(nextList);
 

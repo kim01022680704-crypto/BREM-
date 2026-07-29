@@ -13,6 +13,18 @@ const {
 /** @deprecated use RIDER_SELECT_WITH_PLATFORM from rider-select-columns */
 const RIDER_SELECT_LEGACY = RIDER_SELECT_VARIANTS[1];
 
+/**
+ * 일괄등록을 "안전하게 실패" 시키기 위한 에러.
+ * 보호에 필요한 기존 데이터를 못 읽었을 때 던진다. 절대 무시하고 저장하지 않는다.
+ */
+class BulkRiderGuardError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'BulkRiderGuardError';
+    this.isBulkGuard = true;
+  }
+}
+
 function stripOptionalRiderColumns(row) {
   delete row.selected_mission_id;
   delete row.selected_mission_id_baemin;
@@ -690,6 +702,13 @@ function mergeIncomingRiderWithExisting(incoming, existingRow) {
   return merged;
 }
 
+/**
+ * 일괄등록에서 "빈 칸만 채우기" patch 는 변경 필드만 담고 있다.
+ * 기존 행을 못 읽으면 patch 만으로 riderToRow 를 타게 되는데, riderToRow 는
+ * 모든 컬럼을 String(x || '') 로 만들어내므로 이름·전화·계좌·배민ID가 빈 값으로
+ * 덮이고 platform 플래그까지 초기화된다. 그래서 못 읽으면 저장하지 않고 중단한다.
+ * (읽기 실패를 무시하고 진행하면 정확히 과거 데이터 소실 사고가 재현된다)
+ */
 async function expandBulkFillPatches(supabase, riders) {
   return Promise.all((riders || []).map(async rider => {
     if (!rider?.bulkFillPatch || !rider?.id) return rider;
@@ -699,7 +718,16 @@ async function expandBulkFillPatches(supabase, riders) {
       RIDER_DETAIL_SELECT_VARIANTS,
       columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
     );
-    if (error || !existing) return rider;
+    if (error) {
+      throw new BulkRiderGuardError(
+        `기존 기사 정보를 읽지 못해 일괄등록을 중단했습니다. (id=${id}) 그대로 저장하면 이름·연락처·계좌가 빈 값으로 덮일 수 있습니다. 잠시 후 다시 시도해 주세요.`
+      );
+    }
+    if (!existing) {
+      throw new BulkRiderGuardError(
+        `일괄등록 대상 기사를 찾을 수 없어 중단했습니다. (id=${id}) 목록을 새로고침한 뒤 다시 시도해 주세요.`
+      );
+    }
 
     const base = dbRowToDriver(existing);
     const { bulkFillPatch, id: _id, ...patch } = rider;
@@ -739,8 +767,11 @@ async function preserveProtectedFieldsOnBulkUpsert(supabase, rows) {
       columns => supabase.from('riders').select(columns).in('id', chunk)
     );
     if (error) {
-      console.warn('[BREM] preserveProtectedFieldsOnBulkUpsert fetch failed:', error.message || error);
-      return rows;
+      // 여기서 rows 를 그대로 돌려주면 미션·프로모션·장기이벤트가 빈 값으로 덮인다.
+      // 읽기 실패는 곧 보호 불가이므로 저장하지 않고 중단한다.
+      throw new BulkRiderGuardError(
+        `기존 미션·프로모션 정보를 읽지 못해 일괄등록을 중단했습니다. 그대로 저장하면 미션 배정과 장기근속이벤트가 지워질 수 있습니다. 잠시 후 다시 시도해 주세요. (${error.message || error})`
+      );
     }
     (data || []).forEach(row => {
       if (row?.id) existingById.set(String(row.id), row);
@@ -903,8 +934,20 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   }
 
   const supabase = getServiceClient();
-  const expanded = await expandBulkFillPatches(supabase, list);
-  const { resolved, updated } = await resolveBulkRidersForUpsert(supabase, expanded);
+  // 보호에 필요한 기존 데이터를 못 읽으면 아무것도 저장하지 않고 사유를 돌려준다.
+  let expanded;
+  let resolved;
+  let updated;
+  try {
+    expanded = await expandBulkFillPatches(supabase, list);
+    ({ resolved, updated } = await resolveBulkRidersForUpsert(supabase, expanded));
+  } catch (error) {
+    if (error?.isBulkGuard) {
+      console.warn('[BREM] bulkUpsertRiders 중단:', error.message);
+      return { ok: false, status: 503, error: error.message };
+    }
+    throw error;
+  }
   const builtRows = await Promise.all(resolved.map(async rider => {
     const row = riderToRow(rider);
     // 일괄 업서트에서는 auth_user_id 를 절대 건드리지 않는다.
@@ -928,7 +971,15 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
   });
   let rows = Array.from(rowsById.values());
   // 일괄등록/계좌채우기 등에서 미션·프로모션·장기이벤트가 빈 값으로 덮이지 않게 기존 DB 값을 보존한다.
-  rows = await preserveProtectedFieldsOnBulkUpsert(supabase, rows);
+  try {
+    rows = await preserveProtectedFieldsOnBulkUpsert(supabase, rows);
+  } catch (error) {
+    if (error?.isBulkGuard) {
+      console.warn('[BREM] bulkUpsertRiders 중단:', error.message);
+      return { ok: false, status: 503, error: error.message };
+    }
+    throw error;
+  }
 
   let upsertPayload = rows;
   let { error } = await supabase.from('riders').upsert(upsertPayload, { onConflict: 'id' });
@@ -1513,5 +1564,17 @@ module.exports = {
   deleteRider,
   mergeSelectedRiders,
   mergeAutoRiders,
-  resetRiderPassword
+  resetRiderPassword,
+  // 일괄등록 보호 검증 전용 노출. 검증이 보호 로직을 따로 구현하면 실제 코드와
+  // 갈라져서 검증 결과를 믿을 수 없으므로, 실제로 쓰는 함수를 그대로 내보낸다.
+  // (supabase 클라이언트를 인자로 받으므로 가짜 클라이언트로 주입 검증이 가능하다)
+  __test: {
+    BulkRiderGuardError,
+    PROTECTED_RIDER_COLUMNS,
+    riderToRow,
+    expandBulkFillPatches,
+    preserveProtectedFieldsOnBulkUpsert,
+    mergeIncomingRiderWithExisting,
+    stripOptionalRiderColumns
+  }
 };
