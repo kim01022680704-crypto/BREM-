@@ -54,19 +54,31 @@ const money = n => `${Number(n || 0).toLocaleString('ko-KR')}원`;
 const norm = s => String(s || '').replace(/\s+/g, '').trim();
 const lower = s => norm(s).toLowerCase();
 
+// Supabase 는 한 번에 1000행만 준다. 그냥 select 하면 일정산 5000여 건이
+// 1000건으로 잘려서, 이미 반영된 건이 "미반영" 으로 잘못 잡힌다.
+// 반드시 끝까지 페이지를 넘겨 읽는다.
+async function fetchAll(table, columns, tweak) {
+  const size = 1000;
+  const out = [];
+  for (let from = 0; ; from += size) {
+    let q = supabase.from(table).select(columns).range(from, from + size - 1);
+    if (tweak) q = tweak(q);
+    const { data, error } = await q;
+    if (error) die(`${table} 조회 실패`, error.message);
+    out.push(...(data || []));
+    if (!data || data.length < size) break;
+  }
+  return out;
+}
+
 (async () => {
   console.log('='.repeat(76));
   console.log(' 지금 매칭 가능한 미매칭 일정산 전수 조사 (읽기 전용)');
   console.log('='.repeat(76));
 
-  const { data: riders, error: rErr } = await supabase.from('riders').select('id,name,baemin_id,phone,status');
-  if (rErr) die('riders 조회 실패', rErr.message);
-
-  const { data: unmatched, error: uErr } = await supabase.from('settlement_unmatched').select('*').eq('kind', 'daily');
-  if (uErr) die('settlement_unmatched 조회 실패', uErr.message);
-
-  const { data: settled, error: sErr } = await supabase.from('daily_settlements').select('id,driver_id,period,platform,order_count,settlement_amount');
-  if (sErr) die('daily_settlements 조회 실패', sErr.message);
+  const riders = await fetchAll('riders', 'id,name,baemin_id,phone,status');
+  const unmatched = await fetchAll('settlement_unmatched', '*', q => q.eq('kind', 'daily'));
+  const settled = await fetchAll('daily_settlements', 'id,driver_id,period,platform,order_count,settlement_amount');
 
   console.log(`\n기사 ${riders.length}명 · 미매칭(일정산) ${unmatched.length}건 · 반영된 일정산 ${settled.length}건`);
 
