@@ -1442,6 +1442,8 @@ const BremStorage = (function () {
     'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
+    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [
@@ -9621,6 +9623,8 @@ const BremStorage = (function () {
             totalDeliveryPay: Number(a.totalDeliveryPay || 0),
             // 쿠팡 원천세 기준 금액(AC열). 배민은 원천세를 Y열에서 바로 읽어 0이다.
             deductionBase: Number(a.deductionBase || 0),
+            // 쿠팡 차감내역(AB열). 표기 전용이지만 저장 때 빠뜨리면 정산결과에서 0으로 보인다.
+            deductionDetail: Number(a.deductionDetail || 0),
             hourlyInsurance: Number(a.hourlyInsurance || 0),
             employmentInsurance: Number(a.employmentInsurance || 0),
             accidentInsurance: Number(a.accidentInsurance || 0),
@@ -11047,6 +11051,7 @@ const BremStorage = (function () {
     'weekly-settlement',
     'weekly-settlement-direct',
     'settlement-result-direct',
+    'final-deposit',
     'admin-account',
     'revenue-management',
     'payroll-slips',
@@ -11143,6 +11148,12 @@ const BremStorage = (function () {
       } else {
         normalized.push('coupang-status');
       }
+    }
+
+    // 최종입금은 정산결과(직계약)를 볼 수 있는 계정에게 함께 열어준다.
+    // 기존 계정은 메뉴 목록이 저장돼 있어 이 보정이 없으면 새 메뉴가 안 보인다.
+    if (normalized.includes('settlement-result-direct') && !normalized.includes('final-deposit')) {
+      normalized.splice(normalized.indexOf('settlement-result-direct') + 1, 0, 'final-deposit');
     }
 
     if (!normalized.includes('payroll-slips')) {

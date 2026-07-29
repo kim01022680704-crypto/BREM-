@@ -216,6 +216,7 @@
     { id: 'weekly-settlement', label: '주정산서 업로드 (브로)' },
     { id: 'weekly-settlement-direct', label: '주정산서 업로드 (직계약)' },
     { id: 'settlement-result-direct', label: '정산결과 (직계약)' },
+    { id: 'final-deposit', label: '최종입금' },
     { id: 'admin-account', label: '관리자 계정' },
     { id: 'revenue-management', label: '수익 관리' },
     { id: 'payroll-slips', label: '급여명세서' },
@@ -1876,6 +1877,16 @@
             labelEl: $('#settlementResultWeekBtn'),
             onSelect(value) {
               window.BremSettlementResultDirect?.onWeekPicked?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'final-deposit-week') {
+          return {
+            hiddenInput: $('#finalDepositWeek'),
+            labelEl: $('#finalDepositWeekBtn'),
+            onSelect(value) {
+              window.BremFinalDeposit?.onWeekPicked?.(value);
             }
           };
         }
@@ -5736,6 +5747,10 @@
         if (typeof BremSettlementResultDirect !== 'undefined') {
           BremSettlementResultDirect.refresh(state.unifiedPlatform['settlement-result-direct'] || 'baemin');
         }
+        break;
+      case 'final-deposit':
+        // 최종입금은 쿠팡·배민을 한 표에서 합치므로 플랫폼 탭이 없다.
+        if (typeof BremFinalDeposit !== 'undefined') BremFinalDeposit.refresh();
         break;
       case 'notices':
         renderNotices();

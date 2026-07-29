@@ -153,16 +153,25 @@ window.BremDatePicker = {
 
 // --- 모듈 로드 -------------------------------------------------------------
 const ctx = vm.createContext(window);
-const sources = ['js/direct-adjustment-bulk.js', 'js/direct-adjustment-admin.js', 'js/settlement-result-direct.js']
+const sources = ['js/direct-adjustment-bulk.js', 'js/direct-adjustment-admin.js', 'js/direct-settlement-calc.js', 'js/settlement-result-direct.js']
   .map(rel => fs.readFileSync(path.join(root, rel), 'utf8'))
   .join('\n;\n');
 // 모듈들이 top-level const 로 선언되어 전역 객체에 붙지 않으므로 명시적으로 내보낸다.
 vm.runInContext(`${sources}
 ;globalThis.__Adj = BremDirectAdjustmentAdmin;
-globalThis.__Result = BremSettlementResultDirect;`, ctx, { filename: 'bundle.js' });
+globalThis.__Result = BremSettlementResultDirect;
+globalThis.__Calc = BremDirectSettlementCalc;`, ctx, { filename: 'bundle.js' });
 
 const Adj = ctx.__Adj;
 const Result = ctx.__Result;
+const Calc = ctx.__Calc;
+
+// 열 순서에 기대지 않고 공용 열 정의(지급내역·공제내역)로 칸을 찾는다.
+const COLUMN_INDEX = new Map(Calc.COLUMNS.map((col, index) => [col.key, index]));
+function cell(row, key) {
+  const cells = [...row.querySelectorAll('td')];
+  return cells[COLUMN_INDEX.get(key)]?.textContent.trim();
+}
 
 let failed = 0;
 function check(label, actual, expected) {
@@ -218,18 +227,17 @@ function check(label, actual, expected) {
   const rows = window.document.querySelectorAll('#settlementResultRows tr');
   check('라이더 2명 표시', rows.length, 2);
   const firstRow = [...rows].find(tr => tr.textContent.includes('김배민'));
-  const cells = [...firstRow.querySelectorAll('td')].map(td => td.textContent.trim());
   // 지급합계 = 배달비1,000,000 + 미션50,000 + 기타20,000 + 프로모션100,000
-  check('김배민 기타지급 반영', cells[5], '20,000');
-  check('김배민 BREM프로모션 반영', cells[6], '100,000');
-  check('김배민 지급합계', cells[7], '1,170,000');
+  check('김배민 기타지급 반영', cell(firstRow, 'other'), '20,000');
+  check('김배민 BREM프로모션 반영', cell(firstRow, 'promo'), '100,000');
+  check('김배민 지급합계', cell(firstRow, 'grossPay'), '1,170,000');
   // 프로모션원천세 = (100,000+20,000)*3.3% = 3,960
-  check('프로모션원천세 3.3%', cells[12], '3,960');
+  check('프로모션원천세 3.3%', cell(firstRow, 'promotionWithholdingTax'), '3,960');
   // 콜수수료 = 100콜 * 100원
-  check('콜수수료', cells[13], '10,000');
+  check('콜수수료', cell(firstRow, 'callFee'), '10,000');
   // 공제합계 = 9000+8000+3000+33000+3960+10000+0+0
-  check('공제합계', cells[16], '66,960');
-  check('총지급액', cells[17], '1,103,040');
+  check('공제합계', cell(firstRow, 'deductTotal'), '66,960');
+  check('총지급액', cell(firstRow, 'netPay'), '1,103,040');
 
   console.log('\n[6] 7/15 정산서로 바꾸면 그 정산서 금액만');
   Result.state.week = '2026-07-15';
@@ -237,8 +245,7 @@ function check(label, actual, expected) {
   await Result.refresh('baemin');
   // refresh 는 플랫폼이 같으면 settlementId 를 유지한다
   const rows2 = window.document.querySelectorAll('#settlementResultRows tr');
-  const cells2 = [...rows2[0].querySelectorAll('td')].map(td => td.textContent.trim());
-  check('7/15 정산서 프로모션', cells2[6], '999,999');
+  check('7/15 정산서 프로모션', cell(rows2[0], 'promo'), '999,999');
 
   console.log('\n[7] ERP 프로모션 → 선택한 정산서에 적용 (실제 버튼 동작)');
   await Adj.refresh('baemin');
@@ -261,13 +268,13 @@ function check(label, actual, expected) {
   await Result.refresh('baemin');
   const erpApplied = [...window.document.querySelectorAll('#settlementResultRows tr')]
     .find(tr => tr.textContent.includes('이배민'));
-  check('이배민 프로모션 70,000', [...erpApplied.querySelectorAll('td')][6].textContent.trim(), '70,000');
+  check('이배민 프로모션 70,000', cell(erpApplied, 'promo'), '70,000');
 
   console.log('\n[9] 쿠팡 정산결과 분리');
   await Result.refresh('coupang');
   const coupangRowsEl = window.document.querySelectorAll('#settlementResultRows tr');
   check('쿠팡 라이더 1명', coupangRowsEl.length, 1);
-  check('쿠팡 ID 표시', [...coupangRowsEl[0].querySelectorAll('td')][1].textContent.trim(), 'CP000003');
+  check('쿠팡 ID 표시', cell(coupangRowsEl[0], 'idLabel'), 'CP000003');
 
   console.log('\n[10] 같은 정산서 중복 저장본 — 최신만 기본 사용');
   // 같은 브로 정산서(bro_seoul_A)를 두 번 저장한 상황 + 다른 지역 1건

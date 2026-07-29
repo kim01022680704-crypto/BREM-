@@ -6186,6 +6186,94 @@ tr.direct-registry-active > td:first-child {
   font-weight: 700;
 }
 
+/* 정산결과·최종입금 공통 · 지급내역/공제내역 묶음 헤더
+   두 화면이 같은 열 정의를 쓰므로 색으로 지급·공제를 구분해 읽기 쉽게 한다 */
+.settle-grouped-table thead .settle-group-row th {
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--line);
+}
+.settle-grouped-table thead .settle-group-th.settle-group-pay {
+  color: #34c77b;
+  background: rgba(52, 199, 123, 0.1);
+}
+.settle-grouped-table thead .settle-group-th.settle-group-deduct {
+  color: #ff8a8a;
+  background: rgba(255, 138, 138, 0.1);
+}
+.settle-grouped-table thead .settle-group-th.settle-group-net {
+  color: var(--yellow);
+  background: rgba(255, 199, 0, 0.12);
+}
+.settle-grouped-table td.settle-col-net {
+  background: rgba(255, 199, 0, 0.06);
+}
+/* 차감내역은 정산서에서 이미 빠진 금액이라 합계에 안 들어간다는 걸 색으로 알린다 */
+.settle-grouped-table .settle-col-note {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* 최종입금 · 정산서 선택 */
+.final-deposit-picker {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-2, #161b2e);
+  border: 1px solid var(--border, #2a3350);
+}
+.final-deposit-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.final-deposit-select-all,
+.final-deposit-settlement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.final-deposit-settlement-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+.final-deposit-settlement {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--black-2);
+}
+.final-deposit-settlement:hover {
+  border-color: var(--yellow);
+}
+.final-deposit-settlement-body {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.final-deposit-check-th,
+.final-deposit-check-td {
+  text-align: center;
+  width: 44px;
+}
+/* 체크를 푼 기사는 최종입금 합계에서 빠졌다는 걸 바로 알 수 있게 흐리게 */
+tr.final-deposit-row-off > td {
+  opacity: 0.4;
+}
+tr.final-deposit-row-off > td.final-deposit-check-td {
+  opacity: 1;
+}
+.final-deposit-total strong {
+  font-size: 1.05em;
+}
+
 /* 적용 미리보기 · 경고 */
 .direct-erp-preview {
   margin: 8px 0 12px;

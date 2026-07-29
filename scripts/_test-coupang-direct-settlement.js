@@ -132,7 +132,7 @@ window.BremDatePicker = {
 
 // --- 모듈 로드 -------------------------------------------------------------
 const ctx = vm.createContext(window);
-const sources = ['js/settlement-formats.js', 'js/weekly-settlement.js', 'js/settlement-result-direct.js']
+const sources = ['js/settlement-formats.js', 'js/weekly-settlement.js', 'js/direct-settlement-calc.js', 'js/settlement-result-direct.js']
   .map(rel => fs.readFileSync(path.join(root, rel), 'utf8'))
   .join('\n;\n');
 vm.runInContext(`${sources}
@@ -267,16 +267,21 @@ const DIRECT_COLS = {
     .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
   check(`실지급 ${money(1200000 - INSURANCE - TAX)}`, cells7.includes(money(1200000 - INSURANCE - TAX)), 'true');
 
-  console.log('\n[8] 쿠팡에는 없는 항목(배민미션) 열을 숨긴다');
-  const headCoupang = [...window.document.querySelectorAll('#settlementResultHead th')].map(th => th.textContent.trim());
-  check('배민미션 열 없음', headCoupang.includes('배민미션'), 'false');
+  console.log('\n[8] 쿠팡·배민 지급/공제 열을 통일한다 (한쪽에만 있는 항목도 0으로 표기)');
+  // 헤더는 2줄(그룹행 + 열이름행)이라 열 이름은 두 번째 줄에서 읽는다.
+  const headRows = [...window.document.querySelectorAll('#settlementResultHead tr')];
+  const headCoupang = [...headRows[1].querySelectorAll('th')].map(th => th.textContent.trim());
+  check('배민 전용 추가지급 열도 쿠팡에 있음', headCoupang.includes('추가지급(미션)'), 'true');
   check('배달비 열 있음', headCoupang.includes('배달비'), 'true');
   check('원천세 열 있음', headCoupang.includes('원천세'), 'true');
+  const groupLabels = [...headRows[0].querySelectorAll('th')].map(th => th.textContent.trim());
+  check('지급내역 묶음 헤더', groupLabels.includes('지급내역'), 'true');
+  check('공제내역 묶음 헤더', groupLabels.includes('공제내역'), 'true');
   const bodyCells = [...window.document.querySelectorAll('#settlementResultRows tr')][0].querySelectorAll('td').length;
   check('헤더와 본문 열 수 일치', bodyCells, headCoupang.length);
 
   console.log('\n[9] 차감내역은 표기만 — 공제합계·총지급액에서 다시 빼지 않는다');
-  check('차감내역 열 있음(쿠팡)', headCoupang.includes('차감내역(표기)'), 'true');
+  check('차감내역 열 있음(쿠팡)', headCoupang.includes('차감내역(이미반영)'), 'true');
   const cells9 = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
     .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
   check('차감내역 5,000 표시', cells9.includes('5,000'), 'true');
@@ -302,7 +307,7 @@ const DIRECT_COLS = {
     .map(tr => tr.querySelector('td')?.textContent.trim());
   check('가나다순 정렬', JSON.stringify(names), JSON.stringify([...names].sort((a, b) => a.localeCompare(b, 'ko-KR'))));
 
-  console.log('\n[10] 배민에는 차감내역 열이 없다 (쿠팡 정산서에만 있는 항목)');
+  console.log('\n[10] 배민도 쿠팡과 같은 열 구성을 쓴다');
   SETTLEMENTS.push({
     id: 'weekly_direct_baemin_seoul_20260722',
     platform: 'baemin', channel: 'direct', region: '서울',
@@ -314,9 +319,11 @@ const DIRECT_COLS = {
     }]
   });
   await Result.refresh('baemin');
-  const headBaemin = [...window.document.querySelectorAll('#settlementResultHead th')].map(th => th.textContent.trim());
-  check('배민은 차감내역 열 없음', headBaemin.includes('차감내역(표기)'), 'false');
-  check('배민은 배민미션 열 있음', headBaemin.includes('배민미션'), 'true');
+  const headBaemin = [...[...window.document.querySelectorAll('#settlementResultHead tr')][1].querySelectorAll('th')]
+    .map(th => th.textContent.trim());
+  check('배민도 차감내역 열 있음', headBaemin.includes('차감내역(이미반영)'), 'true');
+  check('배민도 추가지급 열 있음', headBaemin.includes('추가지급(미션)'), 'true');
+  check('쿠팡·배민 열 구성 동일', JSON.stringify(headBaemin), JSON.stringify(headCoupang));
   const bodyBaemin = [...window.document.querySelectorAll('#settlementResultRows tr')][0].querySelectorAll('td').length;
   check('배민도 헤더와 본문 열 수 일치', bodyBaemin, headBaemin.length);
 

@@ -1016,6 +1016,35 @@ const BremWeeklySettlementAdmin = (function () {
     });
   }
 
+  // 주정산서 삭제는 정산서 자체 + 업로드 로그 + 그 정산서에 붙은 프로모션/기타지급까지
+  // 한 번에 정리해야 한다. 하나라도 남으면 정산결과·최종입금에 삭제한 건이 계속 보인다.
+  async function removeSettlementRecord(recordId, options = {}) {
+    const id = String(recordId || '').trim();
+    if (!id) return;
+    const record = BremStorage.weeklySettlements.getById(id);
+    const channel = normChannel(record?.channel || options.fallbackChannel);
+    const platform = record?.platform || options.fallbackPlatform || 'coupang';
+
+    // 채널을 확실히 아는 경우에만 해당 키에서 지운다. 모르면 양쪽에서 지운다.
+    if (record) BremStorage.weeklySettlements.remove(id, channel);
+    else BremWeeklySettlement.deleteWeeklySettlement(id);
+    BremStorage.settlementUploadLogs.removeByLinkedRecordId(id);
+    if (options.logId) BremStorage.settlementUploadLogs.remove(options.logId);
+    BremStorage.directSettlementAdjustments?.clearSettlement?.('promotion', id);
+    BremStorage.directSettlementAdjustments?.clearSettlement?.('other', id);
+
+    await BremStorage.flushStorage?.();
+    if (state.detailId === id) hideDetail();
+    renderSavedList(channel, platform);
+    if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+    // 각 화면이 보고 있던 플랫폼은 그대로 두고 다시 그리게 한다.
+    if (typeof BremSettlementResultDirect !== 'undefined') {
+      void BremSettlementResultDirect.refresh?.(BremSettlementResultDirect.state?.platform);
+    }
+    if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
+    showToast(options.message || '주간정산이 삭제되었습니다.');
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
@@ -1066,23 +1095,34 @@ const BremWeeklySettlementAdmin = (function () {
       }
       const deleteBtn = event.target.closest('[data-weekly-delete]');
       if (deleteBtn) {
-        if (!window.confirm('저장된 주간정산을 삭제할까요?')) return;
-        const record = BremStorage.weeklySettlements.getById(deleteBtn.dataset.weeklyDelete);
-        BremWeeklySettlement.deleteWeeklySettlement(deleteBtn.dataset.weeklyDelete);
-        BremStorage.settlementUploadLogs.removeByLinkedRecordId(deleteBtn.dataset.weeklyDelete);
-        void BremStorage.flushStorage?.();
-        if (state.detailId === deleteBtn.dataset.weeklyDelete) hideDetail();
-        if (record) renderSavedList(normChannel(record.channel), record.platform);
-        if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
-        showToast('주간정산이 삭제되었습니다.');
+        if (!window.confirm('저장된 주간정산을 삭제할까요?\n정산결과·최종입금에서도 함께 사라집니다.')) return;
+        void removeSettlementRecord(deleteBtn.dataset.weeklyDelete, {
+          fallbackChannel: channelFromEvent(event),
+          fallbackPlatform: platformFromEvent(event),
+          message: '주간정산이 삭제되었습니다.'
+        });
         return;
       }
       const deleteLogBtn = event.target.closest('[data-weekly-delete-log]');
       if (deleteLogBtn) {
         const log = BremStorage.settlementUploadLogs.getById(deleteLogBtn.dataset.weeklyDeleteLog);
-        BremStorage.settlementUploadLogs.remove(deleteLogBtn.dataset.weeklyDeleteLog);
         const channel = channelFromEvent(event);
         const platform = log?.platform || platformFromEvent(event);
+        // 저장된 정산서가 딸린 기록은 로그만 지워도 소용이 없다. 정산서가 남아 있으면
+        // 목록을 다시 그릴 때 syncWeeklyFromSavedRecords 가 로그를 되살리고,
+        // 정산결과·최종입금에도 그대로 남는다. 그래서 정산서까지 함께 지운다.
+        if (log?.linkedRecordId) {
+          if (!window.confirm('이 기록에는 저장된 주간정산이 딸려 있습니다.\n기록과 정산서를 함께 삭제할까요? (정산결과·최종입금에서도 사라집니다)')) return;
+          void removeSettlementRecord(log.linkedRecordId, {
+            fallbackChannel: channel,
+            fallbackPlatform: platform,
+            logId: deleteLogBtn.dataset.weeklyDeleteLog,
+            message: '업로드 기록과 주간정산이 삭제되었습니다.'
+          });
+          return;
+        }
+        if (!window.confirm('업로드 기록을 삭제할까요?')) return;
+        BremStorage.settlementUploadLogs.remove(deleteLogBtn.dataset.weeklyDeleteLog);
         void BremStorage.flushStorage?.().then(() => {
           renderSavedList(channel, platform);
           showToast('업로드 기록이 삭제되었습니다.');

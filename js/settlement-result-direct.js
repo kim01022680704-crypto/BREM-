@@ -1,16 +1,13 @@
 const BremSettlementResultDirect = (function () {
   const $ = selector => document.querySelector(selector);
-  const PROMO_TAX_RATE = 0.033;
+  // 지급내역·공제내역 정의와 계산은 「최종입금」과 공유한다. (js/direct-settlement-calc.js)
+  const Calc = () => window.BremDirectSettlementCalc;
 
   // week: 빈 문자열이면 주 필터 없음(전체 주). 정산주는 항상 수요일 시작.
   const state = { platform: 'baemin', settlementId: '', week: '', withdrawals: [] };
 
   function escapeHtml(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    return Calc().escapeHtml(value);
   }
 
   function formatNumber(value) {
@@ -21,20 +18,12 @@ const BremSettlementResultDirect = (function () {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
   }
 
-  // 날짜를 로컬 기준으로 찍는다. toISOString 을 쓰면 UTC+9 에서 하루씩 밀린다.
   function dateKey(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return Calc().dateKey(date);
   }
 
-  function weekStartKey(dateValue = dateKey(new Date())) {
-    if (window.BremDatePicker?.weekStartKey) return window.BremDatePicker.weekStartKey(dateValue);
-    const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
-    const diff = (date.getDay() - 3 + 7) % 7;
-    date.setDate(date.getDate() - diff);
-    return dateKey(date);
+  function weekStartKey(dateValue) {
+    return Calc().weekStartKey(dateValue);
   }
 
   function formatDate(value) {
@@ -43,13 +32,8 @@ const BremSettlementResultDirect = (function () {
       .format(new Date(`${String(value).slice(0, 10)}T00:00:00`));
   }
 
-  function promoTax(sum) {
-    return Math.floor(Number(sum || 0) * PROMO_TAX_RATE);
-  }
-
-  function driverName(driverId, fallback) {
-    const driver = window.BremStorage?.drivers?.getById?.(driverId);
-    return driver?.name || fallback || '(이름 없음)';
+  function settlementWeek(record) {
+    return Calc().settlementWeek(record);
   }
 
   // --- 정산서 선택 ---------------------------------------------------------
@@ -103,11 +87,6 @@ const BremSettlementResultDirect = (function () {
     setWeek(dateKey(date));
   }
 
-  function settlementWeek(record) {
-    if (!record) return weekStartKey();
-    return weekStartKey(String(record.startDate || '').slice(0, 10) || weekStartKey());
-  }
-
   function settlementOptionLabel(record) {
     const riders = Array.isArray(record.riders) ? record.riders.length : 0;
     const region = record.region ? ` · ${record.region}` : '';
@@ -155,128 +134,22 @@ const BremSettlementResultDirect = (function () {
 
   // --- 계산 ---------------------------------------------------------------
 
-  // 콜수수료 단가(급여일정산 설정) × 콜수
-  function callFeeUnit() {
-    const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(state.platform) || {};
-    return Math.max(0, Math.round(Number(fees.callFee || 0)));
-  }
-
-  function withdrawalRowFee(row) {
-    if (row.feeAmount != null) return Math.max(0, Math.round(Number(row.feeAmount) || 0));
-    const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(row.platform || state.platform) || {};
-    const resolve = window.BremStorage?.payrollDailySettlement?.resolveDailySettlementFee;
-    return typeof resolve === 'function' ? resolve(Number(row.amount || 0), fees) : 0;
-  }
-
-  // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee }
-  function completedWithdrawalMap(week) {
-    const platform = state.platform;
-    const map = new Map();
-    (Array.isArray(state.withdrawals) ? state.withdrawals : []).forEach(row => {
-      if (String(row.status || '') !== 'completed') return;
-      if (String(row.weekStart || '').slice(0, 10) !== week) return;
-      const rowPlatform = String(row.platform || '');
-      if (rowPlatform && rowPlatform !== platform) return;
-      const driverId = String(row.driverId || '').trim();
-      if (!driverId) return;
-      const prev = map.get(driverId) || { prepaid: 0, fee: 0 };
-      prev.prepaid += Math.max(0, Math.round(Number(row.amount || 0)));
-      prev.fee += withdrawalRowFee(row);
-      map.set(driverId, prev);
-    });
-    return map;
-  }
-
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
-    const week = settlementWeek(settlement);
-    const platform = state.platform;
-
-    const store = window.BremStorage?.directSettlementAdjustments;
-    const promoMap = store?.getSettlement?.('promotion', settlement.id) || {};
-    const otherMap = store?.getSettlement?.('other', settlement.id) || {};
-    const withdrawMap = completedWithdrawalMap(week);
-    const unitCallFee = callFeeUnit();
-
-    const rows = [];
-    (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
-      const driverId = String(rider.matchedRiderId || '').trim();
-      const amounts = rider.amounts || {};
-      const idLabel = platform === 'coupang'
-        ? (rider.coupangLoginKey || '-')
-        : (rider.baeminUserId || '-');
-      const promo = driverId ? Number(promoMap[driverId]?.amount || 0) : 0;
-      const other = driverId ? Number(otherMap[driverId]?.amount || 0) : 0;
-      const deliveryFee = Number(amounts.deliveryFee || 0);
-      const missionPay = Number(amounts.missionPay || 0);
-      // 쿠팡 차감내역(AB)은 배달료에서 이미 빠진 뒤 나온 금액이다.
-      // 확인용으로만 표에 싣고 grossPay·deductTotal 어디에도 넣지 않는다.
-      const deductionDetail = Number(amounts.deductionDetail || 0);
-      const grossPay = deliveryFee + missionPay + other + promo;
-
-      const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
-      const employmentInsurance = Number(amounts.employmentInsurance || 0);
-      const accidentInsurance = Number(amounts.accidentInsurance || 0);
-      const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
-      const withholdingTax = Number(amounts.withholdingTax || 0);
-      const promotionWithholdingTax = promoTax(promo + other);
-      const callFee = callCount * unitCallFee;
-      const wd = driverId ? (withdrawMap.get(driverId) || { prepaid: 0, fee: 0 }) : { prepaid: 0, fee: 0 };
-      const dailySettlementFee = wd.fee;
-      const prepaid = wd.prepaid;
-      const deductTotal = employmentInsurance + accidentInsurance + hourlyInsurance
-        + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee + prepaid;
-      const netPay = grossPay - deductTotal;
-
-      rows.push({
-        name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
-        idLabel,
-        callCount,
-        deliveryFee, missionPay, deductionDetail, other, promo, grossPay,
-        employmentInsurance, accidentInsurance, hourlyInsurance,
-        withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
-        deductTotal, netPay
-      });
-    });
-    rows.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko-KR'));
-    return rows;
+    return Calc().sortByName(Calc().computeRows(settlement, { withdrawals: state.withdrawals }));
   }
 
-  // 표 헤더·본문·엑셀이 같은 정의를 쓰게 한 곳에 모아둔다. 따로 두면 열이 어긋난다.
-  // 쿠팡 정산서에는 추가지급(배민미션) 항목이 없어 그 열은 쿠팡에서 빼고 보여준다.
-  // 차감내역(AB)은 쿠팡 정산서에만 있고, 이미 빠진 금액이라 표기 전용이다.
-  const ALL_COLUMNS = [
-    { key: 'name', label: '기사', money: false, strong: true },
-    { key: 'idLabel', label: 'ID', money: false, tag: true },
-    { key: 'callCount', label: '콜수' },
-    { key: 'deliveryFee', label: '배달비' },
-    { key: 'missionPay', label: '배민미션', baeminOnly: true },
-    { key: 'deductionDetail', label: '차감내역(표기)', coupangOnly: true },
-    { key: 'other', label: '기타지급' },
-    { key: 'promo', label: 'BREM프로모션' },
-    { key: 'grossPay', label: '지급합계', strong: true },
-    { key: 'employmentInsurance', label: '고용보험' },
-    { key: 'accidentInsurance', label: '산재보험' },
-    { key: 'hourlyInsurance', label: '시간제보험' },
-    { key: 'withholdingTax', label: '원천세' },
-    { key: 'promotionWithholdingTax', label: '프로모션원천세' },
-    { key: 'callFee', label: '콜수수료' },
-    { key: 'dailySettlementFee', label: '일정산수수료' },
-    { key: 'prepaid', label: '선정산(처리완료)' },
-    { key: 'deductTotal', label: '공제합계' },
-    { key: 'netPay', label: '총지급액', strong: true }
-  ];
-
+  // 쿠팡·배민 열을 통일했다. 한쪽에만 있는 항목(배민 추가지급, 쿠팡 차감내역)도
+  // 0으로 보여주어 두 플랫폼 표가 같은 모양이 되게 한다.
   function columns() {
-    if (state.platform === 'coupang') return ALL_COLUMNS.filter(col => !col.baeminOnly);
-    return ALL_COLUMNS.filter(col => !col.coupangOnly);
+    return Calc().COLUMNS;
   }
 
   function renderHead() {
     const head = $('#settlementResultHead');
     if (!head) return;
-    head.innerHTML = `<tr>${columns().map(col => `<th>${escapeHtml(col.label)}</th>`).join('')}</tr>`;
+    head.innerHTML = Calc().theadHtml(columns());
   }
 
   function render() {
@@ -301,29 +174,25 @@ const BremSettlementResultDirect = (function () {
       return;
     }
 
-    const totals = rows.reduce((acc, row) => {
-      acc.grossPay += row.grossPay;
-      acc.deductTotal += row.deductTotal;
-      acc.netPay += row.netPay;
-      acc.promo += row.promo;
-      acc.other += row.other;
-      return acc;
-    }, { grossPay: 0, deductTotal: 0, netPay: 0, promo: 0, other: 0 });
-
+    const totals = Calc().sumRows(rows);
     const cols = columns();
     body.innerHTML = rows.map(row => `
-      <tr>${cols.map(col => {
-      // 엑셀에는 원본 값이 나가야 하므로 태그는 화면 렌더에서만 씌운다.
-      if (col.tag) return `<td><span class="weekly-id-tag">${escapeHtml(row[col.key])}</span></td>`;
-      const value = col.money === false ? escapeHtml(row[col.key]) : formatNumber(row[col.key]);
-      const cls = col.money === false ? '' : ' class="weekly-amount-cell"';
-      return `<td${cls}>${col.strong ? `<strong>${value}</strong>` : value}</td>`;
-    }).join('')}</tr>`).join('');
+      <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
     if (summaryEl) {
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
         + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)})</span>`;
     }
+  }
+
+  // 엑셀에는 원본 값이 나가야 하므로 태그는 화면 렌더에서만 씌운다.
+  function cellHtml(col, row) {
+    if (col.tag) return `<td class="settle-col-${col.group}"><span class="weekly-id-tag">${escapeHtml(row[col.key])}</span></td>`;
+    const value = col.money === false ? escapeHtml(row[col.key]) : formatNumber(row[col.key]);
+    const classes = [`settle-col-${col.group}`];
+    if (col.money !== false) classes.push('weekly-amount-cell');
+    if (col.note) classes.push('settle-col-note');
+    return `<td class="${classes.join(' ')}">${col.strong ? `<strong>${value}</strong>` : value}</td>`;
   }
 
   function exportExcel() {
