@@ -3,7 +3,7 @@
  *
  * 가장 중요한 확인:
  *  - AC가 있는 새 행은 고용·산재·원천세를 AC 기준으로 계산한다
- *  - AC가 없는 기존 행은 지금까지처럼 정산금액(AJ) 기준을 유지한다 (소급 재계산 금지)
+ *  - AC가 없는 기존 행은 지금까지처럼 정산금액(AL) 기준을 유지한다 (소급 재계산 금지)
  *  - 관리자(js/storage.js)와 서버(server/rider-withdrawal.js) 계산이 완전히 같다
  *    → 두 곳이 어긋나면 출금 한도가 깨진다
  */
@@ -67,12 +67,12 @@ const storageSrc = fs.readFileSync(path.join(root, 'js', 'storage.js'), 'utf8');
 const FEES = { coupang: { callFee: 0, dailySettlementFee: 2, dailySettlementFeeMode: 'percent' } };
 
 console.log('\n[1] AC 있는 새 행 — 고용·산재·원천세가 AC 기준');
-// AJ 1,200,000 / AC 1,212,000
+// AJ 1,200,000 / AC 1,212,000  (테스트 금액 — 일정산 배달료 열은 AL)
 const fresh = serverCalc(
   { platform: 'coupang', settlement_amount: 1200000, deduction_base: 1212000, order_count: 120, hourly_insurance: 3000 },
   FEES
 );
-check('정산금액은 AJ 그대로', fresh.settlementAmount, 1200000);
+check('정산금액은 AL 그대로', fresh.settlementAmount, 1200000);
 check('공제기준은 AC', fresh.deductionBase, 1212000);
 check('고용보험 = AC×0.8%', fresh.employmentInsurance, Math.floor(1212000 * 0.008));
 check('산재보험 = AC×0.88%', fresh.industrialAccidentInsurance, Math.floor(1212000 * 0.0088));

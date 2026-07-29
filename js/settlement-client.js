@@ -148,7 +148,7 @@ const BremSettlementParser = (function () {
     const orderCol = SettlementFormats.columnToIndex(format.columns.orderCount);
     const amountCol = SettlementFormats.columnToIndex(format.columns.settlementAmount);
     const hourlyInsuranceCol = SettlementFormats.columnToIndex(format.columns.hourlyInsurance || '');
-    // 원천세·고용보험·산재보험 기준 금액(AC). 정산금액(AJ)은 콜수수료가 빠진 값이라 기준이 못 된다.
+    // 원천세·고용보험·산재보험 기준 금액(AC). 정산금액(AL)은 콜수수료가 빠진 값이라 기준이 못 된다.
     const deductionBaseCol = SettlementFormats.columnToIndex(format.columns.deductionBase || '');
     const startIndex = Math.max(0, Number(format.startRow) - 1);
     const parsedRows = [];

@@ -109,6 +109,7 @@ const BremSettlementResultDirect = (function () {
     if (!list.length) {
       select.innerHTML = '<option value="">저장된 정산서 없음</option>';
       select.disabled = true;
+      setDeleteButtonsEnabled(false);
       if (info) {
         const total = platformSettlements().length;
         info.textContent = state.week && total
@@ -119,6 +120,7 @@ const BremSettlementResultDirect = (function () {
     }
 
     select.disabled = false;
+    setDeleteButtonsEnabled(true);
     select.innerHTML = list
       .map(item => `<option value="${escapeHtml(item.id)}"${item.id === state.settlementId ? ' selected' : ''}>${escapeHtml(settlementOptionLabel(item))}</option>`)
       .join('');
@@ -130,6 +132,77 @@ const BremSettlementResultDirect = (function () {
       const file = active.fileName ? ` · 파일 ${active.fileName}` : '';
       info.textContent = `기간 ${formatDate(active.startDate)} ~ ${formatDate(active.endDate)} · 정산주 ${formatDate(settlementWeek(active))}(수)${file}`;
     }
+  }
+
+  function setDeleteButtonsEnabled(enabled) {
+    const deleteBtn = $('#settlementResultDeleteBtn');
+    const deleteWeekBtn = $('#settlementResultDeleteWeekBtn');
+    if (deleteBtn) deleteBtn.disabled = !enabled;
+    if (deleteWeekBtn) deleteWeekBtn.disabled = !enabled;
+  }
+
+  // 정산결과 화면에서 「처음부터」다시 할 때 쓰는 삭제.
+  // 정산서 + 업로드 로그 + 그 정산서에 붙인 프로모션/기타지급까지 지운다.
+  async function deleteCurrentSettlement() {
+    const settlement = currentSettlement();
+    if (!settlement) {
+      showToast('삭제할 정산서가 없습니다.');
+      return;
+    }
+    const platform = state.platform === 'coupang' ? '쿠팡' : '배민';
+    const riders = Array.isArray(settlement.riders) ? settlement.riders.length : 0;
+    const ok = window.confirm(
+      `${platform} 정산서를 삭제할까요?\n`
+      + `${formatDate(settlement.startDate)} ~ ${formatDate(settlement.endDate)}`
+      + `${settlement.region ? ` · ${settlement.region}` : ''} · ${riders}명\n\n`
+      + '주정산서·업로드 기록·이 정산서에 등록한 BREM프로모션/기타지급도 함께 지워집니다.\n'
+      + '최종입금에서도 사라지고, 「주정산서 업로드 (직계약)」에서 처음부터 다시 올릴 수 있습니다.'
+    );
+    if (!ok) return;
+
+    await BremWeeklySettlement.deleteDirectSettlementCascade(settlement.id);
+    state.settlementId = '';
+    notifyRelatedScreens();
+    await loadWithdrawals();
+    render();
+    showToast('정산서를 삭제했습니다. 주정산서 업로드(직계약)에서 다시 올리세요.');
+  }
+
+  // 지금 고른 정산주의 같은 플랫폼 정산서를 전부 지운다.
+  async function deleteWeekSettlements() {
+    const week = ensureWeek();
+    const list = platformSettlements().filter(record => settlementWeek(record) === week);
+    if (!list.length) {
+      showToast('이 주에 삭제할 정산서가 없습니다.');
+      return;
+    }
+    const platform = state.platform === 'coupang' ? '쿠팡' : '배민';
+    const ok = window.confirm(
+      `${platform} · ${formatDate(week)}(수) 주 정산서 ${list.length}건을 모두 삭제할까요?\n\n`
+      + '주정산서·업로드 기록·프로모션/기타지급도 함께 지워집니다.\n'
+      + '처음부터 다시 업로드할 수 있습니다.'
+    );
+    if (!ok) return;
+
+    for (const record of list) {
+      await BremWeeklySettlement.deleteDirectSettlementCascade(record.id);
+    }
+    state.settlementId = '';
+    notifyRelatedScreens();
+    await loadWithdrawals();
+    render();
+    showToast(`${platform} ${formatDate(week)}(수) 주 정산서 ${list.length}건을 삭제했습니다.`);
+  }
+
+  function notifyRelatedScreens() {
+    if (typeof BremWeeklySettlementAdmin !== 'undefined') {
+      BremWeeklySettlementAdmin.refresh?.('direct');
+    }
+    if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh?.();
+    if (typeof BremDirectAdjustmentAdmin !== 'undefined') {
+      BremDirectAdjustmentAdmin.refresh?.(state.platform);
+    }
+    if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
   }
 
   // --- 계산 ---------------------------------------------------------------
@@ -252,6 +325,8 @@ const BremSettlementResultDirect = (function () {
     $('#settlementResultWeekAllBtn')?.addEventListener('click', () => setWeek(''));
     $('#settlementResultReloadBtn')?.addEventListener('click', () => { void reload(); });
     $('#settlementResultExportBtn')?.addEventListener('click', exportExcel);
+    $('#settlementResultDeleteBtn')?.addEventListener('click', () => { void deleteCurrentSettlement(); });
+    $('#settlementResultDeleteWeekBtn')?.addEventListener('click', () => { void deleteWeekSettlements(); });
   }
 
   async function refresh(platform) {

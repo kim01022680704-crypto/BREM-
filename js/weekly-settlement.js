@@ -155,14 +155,14 @@ const BremWeeklySettlement = (function () {
     withholdingTax: 'Y'         // 원천세(공제)
   });
 
-  // 직계약 쿠팡 정산서 금액/공제 열 기본값 (배달료 AJ, 공제 AE/AG/AH, 원천세 기준 AC).
-  // AJ 는 콜수수료가 이미 빠진 금액이고 고용/산재/시간제보험은 아직 안 빠져 있다.
-  // 일정산서(brem-standard 서식)도 같은 AJ 열을 정산금액으로 읽는다.
-  // 쿠팡 정산서에는 원천세 항목이 없어 AC열의 3.3% 로 계산한다. 추가지급(미션)도 없다.
+  // 직계약 쿠팡 정산서 금액/공제 열 기본값 (배달료 AM).
+  // AM 은 지급 쪽 배달료이고, 일정산서(brem-standard) 정산금액 열(AL)과는 다르다.
+  // 공제: AB 차감내역 · AE 고용 · AG 산재 · AH 시간제는 정산서 수치 그대로.
+  // 원천세만 정산서에 없어 AC × 3.3% 로 계산한다. 추가지급(미션) 항목은 없다.
   const DIRECT_COUPANG_AMOUNT_COLUMNS = Object.freeze({
-    deliveryFee: 'AJ',          // 배달료(콜수수료 공제 후)
-    deductionDetail: 'AB',      // 차감내역 — 이미 빠진 금액이라 표기만 한다
-    deductionBase: 'AC',        // 원천세 기준 금액 (정산서에 원천세 열이 없다)
+    deliveryFee: 'AM',          // 배달료(주정산 총액)
+    deductionDetail: 'AB',      // 차감내역(공제)
+    deductionBase: 'AC',        // 원천세 기준 금액
     employmentInsurance: 'AE',  // 고용보험(공제)
     accidentInsurance: 'AG',    // 산재보험(공제)
     hourlyInsurance: 'AH'       // 시간제보험(공제)
@@ -173,19 +173,18 @@ const BremWeeklySettlement = (function () {
   function extractCoupangAmounts(row, amountColumns) {
     if (!amountColumns) return null;
     const cols = { ...DIRECT_COUPANG_AMOUNT_COLUMNS, ...amountColumns };
-    const deductionBase = parseAmount(readCell(row, cols.deductionBase));
+    const deliveryFee = parseAmount(readCell(row, cols.deliveryFee));
+    // AC가 비어 있으면 배달료(AM)로 대체한다.
+    const deductionBase = Math.abs(parseAmount(readCell(row, cols.deductionBase)))
+      || Math.abs(deliveryFee);
     return {
-      deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
-      // 차감내역(AB)은 정산서에서 이미 빠진 뒤 금액이 나온다. 여기서 또 빼면
-      // 이중공제가 되므로 공제합계·총지급액에는 넣지 않고 확인용으로만 둔다.
-      // 정산서에 음수로 적혀 있어도 표에서는 차감액으로 읽히게 절대값으로 맞춘다.
+      deliveryFee,
+      // 차감내역·고용·산재·시간제는 정산서에 음수로 올 수 있어 절대값으로 맞춘다.
+      // (부호를 그대로 두면 공제합계가 줄어 총지급액이 부푼다.)
       deductionDetail: Math.abs(parseAmount(readCell(row, cols.deductionDetail))),
       deductionBase,
-      // 고용·산재·시간제보험은 정산서에 적힌 값을 그대로 쓰고,
-      // 원천세만 정산서에 없어서 AC 기준으로 계산한다.
+      // 원천세만 우리가 AC×3.3% 로 계산한다. 나머지는 정산서 수치 그대로.
       withholdingTax: Math.floor(deductionBase * COUPANG_WITHHOLDING_RATE),
-      // 쿠팡 정산서는 공제를 음수(-10,640)로 적어 보낸다. 부호를 그대로 두면
-      // 공제합계에 음수가 더해져 오히려 총지급액이 늘어난다. 절대값으로 맞춘다.
       employmentInsurance: Math.abs(parseAmount(readCell(row, cols.employmentInsurance))),
       accidentInsurance: Math.abs(parseAmount(readCell(row, cols.accidentInsurance))),
       hourlyInsurance: Math.abs(parseAmount(readCell(row, cols.hourlyInsurance)))
@@ -1008,6 +1007,23 @@ const BremWeeklySettlement = (function () {
     return BremStorage.weeklySettlements.remove(id);
   }
 
+  // 직계약 정산서 삭제: 정산서 + 업로드 로그 + 그 정산서에 붙인 프로모션/기타지급까지 한 번에.
+  // 하나만 남으면 정산결과·최종입금에 삭제한 건이 계속 보이거나, 로그가 되살아난다.
+  async function deleteDirectSettlementCascade(id, options = {}) {
+    const targetId = String(id || '').trim();
+    if (!targetId) return null;
+    const record = BremStorage.weeklySettlements.getById(targetId);
+    const channel = record?.channel === 'bro' ? 'bro' : 'direct';
+    if (record) BremStorage.weeklySettlements.remove(targetId, channel);
+    else BremStorage.weeklySettlements.remove(targetId);
+    BremStorage.settlementUploadLogs.removeByLinkedRecordId(targetId);
+    if (options.logId) BremStorage.settlementUploadLogs.remove(options.logId);
+    BremStorage.directSettlementAdjustments?.clearSettlement?.('promotion', targetId);
+    BremStorage.directSettlementAdjustments?.clearSettlement?.('other', targetId);
+    await BremStorage.flushStorage?.();
+    return record;
+  }
+
   async function processWeeklyUpload(options) {
     const platform = normalizePlatform(options.platform);
     const file = options.file;
@@ -1153,9 +1169,12 @@ const BremWeeklySettlement = (function () {
     saveWeeklySettlement,
     loadWeeklySettlements,
     deleteWeeklySettlement,
+    deleteDirectSettlementCascade,
     saveManualNameMapping,
     loadManualNameMappings,
     resolveBaeminDriver,
     processWeeklyUpload
   };
 })();
+
+if (typeof window !== 'undefined') window.BremWeeklySettlement = BremWeeklySettlement;

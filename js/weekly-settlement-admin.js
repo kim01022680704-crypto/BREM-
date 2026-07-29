@@ -67,7 +67,7 @@ const BremWeeklySettlementAdmin = (function () {
   ];
 
   const DIRECT_AMOUNT_FIELDS_COUPANG = [
-    { key: 'deliveryFee', label: '배달료(AJ)' },
+    { key: 'deliveryFee', label: '배달료(AM)' },
     { key: 'deductionDetail', label: '차감내역(AB)' },
     { key: 'deductionBase', label: '원천세기준(AC)' },
     { key: 'withholdingTax', label: '원천세(AC×3.3%)' },
@@ -255,7 +255,7 @@ const BremWeeklySettlementAdmin = (function () {
 
   function readDirectCoupangAmountColumns(channel) {
     return {
-      deliveryFee: q(channel, 'DeliveryFeeCol', 'coupang')?.value?.trim() || 'AJ',
+      deliveryFee: q(channel, 'DeliveryFeeCol', 'coupang')?.value?.trim() || 'AM',
       deductionDetail: q(channel, 'DeductionDetailCol', 'coupang')?.value?.trim() || 'AB',
       deductionBase: q(channel, 'DeductionBaseCol', 'coupang')?.value?.trim() || 'AC',
       employmentInsurance: q(channel, 'EmploymentInsCol', 'coupang')?.value?.trim() || 'AE',
@@ -1021,22 +1021,16 @@ const BremWeeklySettlementAdmin = (function () {
   async function removeSettlementRecord(recordId, options = {}) {
     const id = String(recordId || '').trim();
     if (!id) return;
-    const record = BremStorage.weeklySettlements.getById(id);
+    const record = await BremWeeklySettlement.deleteDirectSettlementCascade(id, {
+      logId: options.logId
+    });
     const channel = normChannel(record?.channel || options.fallbackChannel);
     const platform = record?.platform || options.fallbackPlatform || 'coupang';
 
-    // 채널을 확실히 아는 경우에만 해당 키에서 지운다. 모르면 양쪽에서 지운다.
-    if (record) BremStorage.weeklySettlements.remove(id, channel);
-    else BremWeeklySettlement.deleteWeeklySettlement(id);
-    BremStorage.settlementUploadLogs.removeByLinkedRecordId(id);
-    if (options.logId) BremStorage.settlementUploadLogs.remove(options.logId);
-    BremStorage.directSettlementAdjustments?.clearSettlement?.('promotion', id);
-    BremStorage.directSettlementAdjustments?.clearSettlement?.('other', id);
-
-    await BremStorage.flushStorage?.();
     if (state.detailId === id) hideDetail();
     renderSavedList(channel, platform);
     if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+    if (typeof BremDirectAdjustmentAdmin !== 'undefined') BremDirectAdjustmentAdmin.refresh?.(platform);
     // 각 화면이 보고 있던 플랫폼은 그대로 두고 다시 그리게 한다.
     if (typeof BremSettlementResultDirect !== 'undefined') {
       void BremSettlementResultDirect.refresh?.(BremSettlementResultDirect.state?.platform);

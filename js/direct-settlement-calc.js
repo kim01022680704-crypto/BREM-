@@ -25,9 +25,8 @@ const BremDirectSettlementCalc = (function () {
     { key: 'promo', label: 'BREM프로모션', group: 'pay' },
     { key: 'grossPay', label: '지급합계', group: 'pay', strong: true },
 
-    // 차감내역은 정산서에서 이미 배달비에 반영돼 나온 금액이다. 공제합계에 더하면
-    // 이중공제가 되므로 확인용으로만 싣는다.
-    { key: 'deductionDetail', label: '차감내역(이미반영)', group: 'deduct', note: true },
+    // 차감내역(AB)은 주정산 총액(AM)에서 빼는 공제 항목이다. (원천세만 AC×3.3% 계산)
+    { key: 'deductionDetail', label: '차감내역', group: 'deduct' },
     { key: 'employmentInsurance', label: '고용보험', group: 'deduct' },
     { key: 'accidentInsurance', label: '산재보험', group: 'deduct' },
     { key: 'hourlyInsurance', label: '시간제보험', group: 'deduct' },
@@ -146,7 +145,7 @@ const BremDirectSettlementCalc = (function () {
       const wd = driverId ? (withdrawMap.get(driverId) || { prepaid: 0, fee: 0 }) : { prepaid: 0, fee: 0 };
       const dailySettlementFee = wd.fee;
       const prepaid = wd.prepaid;
-      const deductTotal = employmentInsurance + accidentInsurance + hourlyInsurance
+      const deductTotal = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
         + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee + prepaid;
       const netPay = grossPay - deductTotal;
 

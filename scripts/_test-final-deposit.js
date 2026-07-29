@@ -176,7 +176,7 @@ const money = n => Number(n).toLocaleString('ko-KR');
     if (col.key === 'name') expectedCols.push('플랫폼');
   });
   check('열 구성이 공용 정의 + 플랫폼', JSON.stringify(head.cols), JSON.stringify(expectedCols));
-  check('차감내역 열 포함', head.cols.includes('차감내역(이미반영)'), 'true');
+  check('차감내역 열 포함', head.cols.includes('차감내역'), 'true');
   check('추가지급 열 포함', head.cols.includes('추가지급(미션)'), 'true');
   check('헤더와 본문 열 수 일치 (체크칸 +1)', cellsOf(bodyRows()[0]).length, head.cols.length + 1);
 
@@ -191,14 +191,14 @@ const money = n => Number(n).toLocaleString('ko-KR');
   check(`추가지급 ${money(50000)}`, kimCells.includes(money(50000)), 'true');
   check('차감내역 5,000 표기', kimCells.includes(money(5000)), 'true');
 
-  // 지급합계 = 1,000,000 + 700,000 + 50,000 = 1,750,000 (차감내역은 이미 반영돼 안 더한다)
+  // 지급합계 = 1,000,000 + 700,000 + 50,000 = 1,750,000
   const kimGross = 1750000;
-  // 공제 = 고용 14,000 + 산재 12,000 + 시간제 5,000 + 원천세 57,750
-  const kimDeduct = 14000 + 12000 + 5000 + 57750;
+  // 공제 = 차감 5,000 + 고용 14,000 + 산재 12,000 + 시간제 5,000 + 원천세 57,750
+  const kimDeduct = 5000 + 14000 + 12000 + 5000 + 57750;
   check(`지급합계 ${money(kimGross)}`, kimCells.includes(money(kimGross)), 'true');
   check(`공제합계 ${money(kimDeduct)}`, kimCells.includes(money(kimDeduct)), 'true');
   check(`총지급액 ${money(kimGross - kimDeduct)}`, kimCells.includes(money(kimGross - kimDeduct)), 'true');
-  check('차감내역이 공제합계에 안 들어갔다', kimCells.includes(money(kimDeduct + 5000)), 'false');
+  check('차감내역이 공제합계에 들어갔다', kimCells.includes(money(kimDeduct - 5000)), 'false');
 
   console.log('\n[5] 정산서 체크를 풀면 그 정산서는 합계에서 빠진다');
   // 체크를 바꾸면 목록을 다시 그리므로 매번 새로 찾아야 한다.

@@ -13,8 +13,9 @@ const SettlementFormats = (function () {
         name: 'C',
         orderCount: 'F',
         hourlyInsurance: 'AH',
-        settlementAmount: 'AJ',
-        // AJ 는 콜수수료가 이미 빠진 금액이라 원천세·고용보험·산재보험 기준으로
+        // 일정산 쿠팡 배달료(정산금액)는 AL. 직계약 주정산 배달료(AM)와는 열이 다르다.
+        settlementAmount: 'AL',
+        // AL 은 콜수수료가 이미 빠진 금액이라 원천세·고용보험·산재보험 기준으로
         // 쓰면 금액이 맞지 않는다. 세 공제의 기준 금액은 AC 열을 쓴다.
         deductionBase: 'AC'
       },

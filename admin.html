@@ -3220,7 +3220,7 @@
               <button class="primary-btn" type="submit" id="settlementUploadBtn-coupang">업로드 및 미리보기</button>
             </div>
           </form>
-          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AJ열(총정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다.</p>
+          <p class="form-help">쿠팡 정산표 · 12행부터 C열(성함), F열(오더수), AH열(시간제보험), AL열(배달료·정산금액)을 읽습니다. 미리보기 확인 후 반영하기를 누르면 쿠팡 콜수에 저장됩니다. <strong>급여 일정산 반영</strong>을 체크해야 매칭 기사가 급여 일정산에 포함됩니다. 고용·산재·원천세는 업로드 값이 아니라 급여 일정산에서 AC(없으면 AL)×요율로 계산합니다.</p>
           <p class="form-help settlement-file-hint" id="settlementFileHint-coupang" hidden></p>
         </article>
 
@@ -4040,18 +4040,17 @@
               <p class="form-help">C열 성함이 <strong>쿠팡ID</strong>로 매칭됩니다. 시작행은 여유있게 앞으로 두어도 됩니다. 오더수가 숫자인 행만 읽어 헤더·설명·합계 행은 자동으로 건너뜁니다.</p>
               <h3>지급 금액 열</h3>
               <div class="promotion-form-grid">
-                <label>배달료<input type="text" id="weeklySettlementDirectDeliveryFeeCol-coupang" value="AJ"></label>
-                <label>차감내역<input type="text" id="weeklySettlementDirectDeductionDetailCol-coupang" value="AB"></label>
+                <label>배달료(주정산 총액)<input type="text" id="weeklySettlementDirectDeliveryFeeCol-coupang" value="AM"></label>
                 <label>원천세 기준금액<input type="text" id="weeklySettlementDirectDeductionBaseCol-coupang" value="AC"></label>
               </div>
-              <p class="form-help">AJ는 <strong>콜수수료가 이미 빠진 금액</strong>입니다. 고용·산재·시간제보험은 아직 빠지지 않은 상태이므로 아래 공제 열에서 따로 읽습니다. 「일정산서 업로드」도 같은 AJ 열을 정산금액으로 읽습니다. 정산서에 원천세 열이 없어 <strong>AC의 3.3%</strong>로 계산합니다.</p>
-              <p class="form-help">차감내역(AB)은 정산서에서 <strong>이미 빠진 뒤</strong> 금액이 나오므로 확인용으로만 표시하고, 공제합계·총지급액에서 다시 빼지 않습니다.</p>
-              <h3>공제 열</h3>
+              <h3>공제 열 (정산서 수치)</h3>
               <div class="promotion-form-grid">
+                <label>차감내역<input type="text" id="weeklySettlementDirectDeductionDetailCol-coupang" value="AB"></label>
                 <label>고용보험<input type="text" id="weeklySettlementDirectEmploymentInsCol-coupang" value="AE"></label>
                 <label>산재보험<input type="text" id="weeklySettlementDirectAccidentInsCol-coupang" value="AG"></label>
                 <label>시간제보험<input type="text" id="weeklySettlementDirectHourlyInsCol-coupang" value="AH"></label>
               </div>
+              <p class="form-help">배달료는 <strong>AM열</strong>입니다. (일정산서 업로드는 AL — 서로 다릅니다.) 공제는 정산서 수치 그대로 씁니다: <strong>AB 차감내역 · AE 고용 · AG 산재 · AH 시간제</strong>. 원천세만 정산서에 없어 <strong>AC×3.3%</strong>로 계산합니다. 정산결과·최종입금에서는 여기에 선정산(처리완료) 금액·일정산수수료를 더 빼면 총지급액이 됩니다.</p>
             </div>
             <div class="promotion-form-actions">
               <button type="submit" class="primary-btn">업로드 및 매칭</button>
@@ -4076,7 +4075,7 @@
                   <th>원본 이름</th>
                   <th>쿠팡 ID</th>
                   <th>주간 오더수(F)</th>
-                  <th>배달료(AJ)</th>
+                  <th>배달료(AM)</th>
                   <th>차감내역(AB)</th>
                   <th>원천세기준(AC)</th>
                   <th>원천세(AC×3.3%)</th>
@@ -4512,10 +4511,12 @@
               <button type="button" class="small-btn" id="settlementResultWeekAllBtn" title="주 필터를 해제하고 전체 정산서 보기">전체 주</button>
               <button type="button" class="small-btn" id="settlementResultReloadBtn">불러오기</button>
               <button type="button" class="small-btn" id="settlementResultExportBtn">엑셀 내보내기</button>
+              <button type="button" class="small-btn danger-btn" id="settlementResultDeleteBtn" title="선택한 정산서를 삭제하고 처음부터 다시 업로드합니다">정산서 삭제</button>
+              <button type="button" class="small-btn danger-btn" id="settlementResultDeleteWeekBtn" title="이 주의 정산서를 모두 삭제합니다">이 주 전체 삭제</button>
               <input type="hidden" id="settlementResultWeek">
             </div>
           </div>
-          <p class="form-help">주정산서(직계약) 금액·공제 + 「프로모션정산등록」에서 <strong>그 정산서에 적용한</strong> BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 총지급액 = 지급합계 − 공제합계.</p>
+          <p class="form-help">주정산서(직계약) 금액·공제 + 「프로모션정산등록」에서 <strong>그 정산서에 적용한</strong> BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 총지급액 = 지급합계 − 공제합계. 처음부터 다시 하려면 「정산서 삭제」또는 「이 주 전체 삭제」후 「주정산서 업로드 (직계약)」에서 다시 올리면 됩니다.</p>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
           <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
@@ -6698,15 +6699,15 @@
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/driver-utils.js?v=20260704a"></script>
-  <script src="js/settlement-formats.js?v=20260729d"></script>
-  <script src="js/settlement-client.js?v=20260729d"></script>
+  <script src="js/settlement-formats.js?v=20260730f"></script>
+  <script src="js/settlement-client.js?v=20260730f"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20260730b"></script>
   <script src="js/promotion-engine.js?v=20260730b"></script>
   <script src="js/promotion-admin.js?v=20260730b"></script>
-  <script src="js/weekly-settlement.js?v=20260730a"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260730a"></script>
+  <script src="js/weekly-settlement.js?v=20260730h"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260730h"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260729a"></script>
     <script src="js/coupang-status-admin.js?v=20260723a"></script>
@@ -6731,9 +6732,9 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
-  <script src="js/direct-settlement-calc.js?v=20260730e"></script>
-  <script src="js/settlement-result-direct.js?v=20260730e"></script>
-  <script src="js/final-deposit.js?v=20260730e"></script>
+  <script src="js/direct-settlement-calc.js?v=20260730g"></script>
+  <script src="js/settlement-result-direct.js?v=20260730h"></script>
+  <script src="js/final-deposit.js?v=20260730g"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
