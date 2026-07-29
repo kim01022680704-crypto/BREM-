@@ -445,6 +445,47 @@ function check(label, actual, expected) {
   check('다른 주 미지정은 그대로', store.promotion['2026-07-08']?.d2?.amount, 22000);
   check('등록 현황에 반영', /11,000/.test(window.document.getElementById('directRegistryBody').textContent), 'true');
 
+  // 적용 직후 「등록 현황」이 그대로 0장으로 남아 있으면, 실제로는 저장됐는데도
+  // 아무것도 안 들어간 것처럼 보인다. 새로고침 없이 즉시 갱신돼야 한다.
+  console.log('\n[24] 적용 직후 등록 현황이 새로고침 없이 갱신');
+  const registryText = () => window.document.getElementById('directRegistryBody').textContent;
+  const registryHeadText = () => window.document.getElementById('directRegistryHead').textContent;
+
+  adjustments.promotion = {};
+  adjustments.other = {};
+  store.promotion = {};
+  store.other = {};
+  Adj.state.settlementId = 'weekly_direct_baemin_seoul_20260722';
+  Adj.state.erpSelected.clear();
+  await Adj.refresh('baemin');
+  Adj.onWeekPicked('2026-07-22');
+  check('시작 시 등록된 정산서 0장', /등록된 정산서 0장/.test(registryHeadText()), 'true');
+
+  // 엑셀 일괄등록 → 적용하기
+  Adj.state.pending.other = {
+    rows: bulk.parseSheetRows([['BC000001', 33000]], DRIVERS, 'baemin').rows,
+    issues: []
+  };
+  window.document.getElementById('directOtherBulkApplyBtn').click();
+  check('엑셀 적용 후 등록 현황에 금액', /33,000/.test(registryText()), 'true');
+  check('엑셀 적용 후 등록된 정산서 1장', /등록된 정산서 1장/.test(registryHeadText()), 'true');
+  check('「미등록」 표시가 사라짐', /미등록/.test(registryText()), 'false');
+
+  // ERP 적용
+  const erpRow24 = [...window.document.querySelectorAll('#directErpSavedRows [data-erp-select]')]
+    .find(el => el.dataset.erpSelect === 'erp1');
+  check('ERP 저장본 노출', Boolean(erpRow24), 'true');
+  erpRow24.checked = true;
+  erpRow24.dispatchEvent(new window.Event('change', { bubbles: true }));
+  window.document.getElementById('directErpApplyBtn').click();
+  check('ERP 적용 후 등록 현황에 프로모션 금액', /70,000/.test(registryText()), 'true');
+
+  // 삭제
+  const removeBtn24 = window.document.querySelector('[data-direct-adj-remove="other"]');
+  check('적용 목록에 삭제 버튼', Boolean(removeBtn24), 'true');
+  removeBtn24.click();
+  check('삭제 후 등록 현황에서 빠짐', /33,000/.test(registryText()), 'false');
+
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error('\n예외:', e.stack || e.message); process.exit(2); });

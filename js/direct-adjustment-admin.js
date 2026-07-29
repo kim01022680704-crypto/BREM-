@@ -340,6 +340,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderApplied(kind);
     renderPromoTax();
     renderAppliedSummary();
+    renderRegistry();
     let message = `${cfg.label} ${toApply.length}명 적용 완료`;
     if (skippedDuplicateInSheet) message += ` · 시트 내 중복 ${skippedDuplicateInSheet} 제외`;
     if (skippedNoAmount) message += ` · 금액 없음 ${skippedNoAmount} 제외`;
@@ -473,6 +474,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderApplied(kind);
     renderPromoTax();
     renderAppliedSummary();
+    renderRegistry();
   }
 
   // --- 정산서 미지정(구 데이터) --------------------------------------------
@@ -954,11 +956,13 @@ const BremDirectAdjustmentAdmin = (function () {
 
     const erpEntries = [...plan.applicable.entries()].map(([driverId, info]) => {
       const driver = window.BremStorage?.drivers?.getById?.(driverId);
+      const bulk = window.BremDirectAdjustmentBulk;
       return {
         driverId,
         amount: info.amount,
-        baeminId: driver?.baeminId || '',
-        coupangId: driver?.coupangId || '',
+        baeminId: bulk?.driverIdForMatch?.(driver, 'baemin') || driver?.baeminId || '',
+        // 쿠팡ID는 저장된 필드가 아니라 이름+연락처 뒤 4자리로 계산된 값을 넣는다.
+        coupangId: bulk?.driverIdForMatch?.(driver, 'coupang') || driver?.coupangId || '',
         driverName: info.name || driverName(driverId),
         source: 'erp'
       };
@@ -970,6 +974,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderPromoTax();
     renderAppliedSummary();
     renderErpPreview();
+    renderRegistry();
     let message = `ERP 프로모션 ${plan.applicable.size}명 · ${formatNumber(plan.total)}원 적용 완료`;
     if (plan.notInSettlement.length) message += ` · 정산서에 없는 ${plan.notInSettlement.length}명 제외`;
     if (plan.skippedUnmatched) message += ` · 미매칭 ${plan.skippedUnmatched}행 제외`;
