@@ -1429,7 +1429,7 @@ const BremStorage = (function () {
     'mission-management': [KEYS.promotionRules, KEYS.drivers],
     'rider-inquiries': [KEYS.riderInquiries],
     promotions: [KEYS.promotionRules],
-    'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
+    'promotion-apply': [KEYS.promotionRules, KEYS.drivers, KEYS.weeklySettlements, KEYS.weeklySettlementsDirect, KEYS.promotionApplyResults, KEYS.settlements, KEYS.rejections],
     calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],
     targets: [KEYS.drivers, KEYS.targets],
@@ -9083,6 +9083,15 @@ const BremStorage = (function () {
     };
   }
 
+  function normalizePromotionPayPerCallTier(tier, index) {
+    return {
+      id: tier.id || createId(),
+      minCalls: Number(tier.minCalls ?? 0),
+      payPerCall: Number(tier.payPerCall ?? 0),
+      sortOrder: Number(tier.sortOrder ?? index)
+    };
+  }
+
   function inferPromotionType(rule) {
     const base = rule.base || rule;
     const hasPay = Number(base.payPerCall ?? rule.payPerCall ?? rule.payPerOrder ?? 0) > 0;
@@ -9101,6 +9110,17 @@ const BremStorage = (function () {
     const platform = normalizePlatform(rule.platform);
     const base = migrated.base;
     const source = String(rule.source || rule.payload?.source || '').trim();
+
+    // 소급 단가 구간은 콜수 오름차순으로 정리해 둔다. 계산은 달성한 구간 중
+    // 가장 높은 하나만 쓰므로 정렬이 흐트러져도 금액은 같지만, 편집 화면과
+    // 근거 표시가 뒤죽박죽 보이는 것을 막는다.
+    const payPerCallTiers = Array.isArray(base.payPerCallTiers)
+      ? base.payPerCallTiers
+        .map(normalizePromotionPayPerCallTier)
+        .filter(tier => tier.minCalls > 0 && tier.payPerCall > 0)
+        .sort((a, b) => a.minCalls - b.minCalls)
+      : [];
+    base.payPerCallTiers = payPerCallTiers;
 
     return {
       id: rule.id || createId(),
@@ -9122,6 +9142,7 @@ const BremStorage = (function () {
       callTiers: Array.isArray(base.callTiers)
         ? base.callTiers.map(normalizePromotionTier).sort((a, b) => a.minCalls - b.minCalls)
         : [],
+      payPerCallTiers,
       applyGlobalAcceptBlock: rule.applyGlobalAcceptBlock !== false,
       priority: Number(rule.priority ?? 100),
       allowDuplicate: Boolean(rule.allowDuplicate),
@@ -10278,6 +10299,8 @@ const BremStorage = (function () {
     return {
       id: record.id || createId(),
       platform: normalizePlatform(record.platform),
+      // 브로/직계약 구분. 채널이 없는 기존 저장본은 브로에서 계산한 것이다.
+      channel: record.channel === 'direct' ? 'direct' : 'bro',
       settlementId: String(record.settlementId || ''),
       settlementLabel: String(record.settlementLabel || '').trim(),
       region: String(record.region || '').trim(),

@@ -642,6 +642,14 @@ const BremDirectAdjustmentAdmin = (function () {
   // 같은 정산서를 여러 번 저장한 경우가 실제로 있다(조건을 고쳐 다시 저장).
   // 둘 다 고르면 같은 기사 금액이 두 번 들어가므로, 최신 저장본만 기본으로 쓰고
   // 이전 저장본은 stale로 표시해 고를 때 경고한다.
+  function erpChannelOf(item) {
+    return item?.channel === 'direct' ? 'direct' : 'bro';
+  }
+
+  function erpChannelLabel(item) {
+    return erpChannelOf(item) === 'direct' ? '직계약' : '브로';
+  }
+
   function erpSavedResults() {
     const all = window.BremStorage?.promotionApplyResults?.getAll?.() || [];
     const settlement = currentSettlement();
@@ -657,7 +665,9 @@ const BremDirectAdjustmentAdmin = (function () {
 
     const groups = new Map();
     matched.forEach(item => {
-      const key = `${item.platform}|${item.settlementId || item.region || item.id}`;
+      // 채널을 키에 넣는다. 안 넣으면 지역명으로 대체될 때 브로/직계약 결과가
+      // 같은 정산서로 묶여 한쪽이 "이전 계산본"으로 잘못 표시된다.
+      const key = `${erpChannelOf(item)}|${item.platform}|${item.settlementId || item.region || item.id}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(item);
     });
@@ -692,7 +702,7 @@ const BremDirectAdjustmentAdmin = (function () {
     // 같은 정산서에서 2건 이상 골랐는지
     const bySettlement = new Map();
     selected.forEach(item => {
-      const key = `${item.platform}|${item.settlementId || item.region || item.id}`;
+      const key = `${erpChannelOf(item)}|${item.platform}|${item.settlementId || item.region || item.id}`;
       if (!bySettlement.has(key)) bySettlement.set(key, []);
       bySettlement.get(key).push(item);
     });
@@ -848,7 +858,7 @@ const BremDirectAdjustmentAdmin = (function () {
       <tr class="${item.isStale ? 'direct-erp-stale-row' : ''}">
         <td><input type="checkbox" data-erp-select="${escapeHtml(item.id)}" ${checked}></td>
         <td>${badge}</td>
-        <td>${platformLabel(item.platform)}</td>
+        <td>${platformLabel(item.platform)}<span class="promotion-channel-badge ${erpChannelOf(item) === 'direct' ? 'is-direct' : 'is-bro'}">${escapeHtml(erpChannelLabel(item))}</span></td>
         <td>${escapeHtml(item.settlementLabel || formatDate(item.startDate))}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td class="weekly-amount-cell">${formatNumber(riderCount)}</td>

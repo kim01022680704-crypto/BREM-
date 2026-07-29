@@ -433,6 +433,8 @@ window.BremSupabaseMapper = (function () {
       meta: {
         deliveryFeeFileName: String(item.deliveryFeeFileName || ''),
         deliveryFeeLabel: String(item.deliveryFeeLabel || ''),
+        // 컬럼을 새로 만들지 않으려고 meta 안에 담는다. 없으면 브로로 읽힌다.
+        channel: item.channel === 'direct' ? 'direct' : 'bro',
         savedAt
       },
       published: false,
@@ -446,6 +448,7 @@ window.BremSupabaseMapper = (function () {
     return {
       id: row.id,
       platform: row.platform || '',
+      channel: meta.channel === 'direct' ? 'direct' : 'bro',
       region: row.region || '',
       startDate: row.week_start || '',
       endDate: row.week_end || '',

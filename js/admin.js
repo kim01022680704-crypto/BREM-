@@ -5650,7 +5650,8 @@
       case 'promotion-apply':
         return [
           'promotion-apply',
-          BremStorage.weeklySettlements?.getAll?.().length || 0,
+          BremStorage.weeklySettlements?.getAll?.('bro').length || 0,
+          BremStorage.weeklySettlements?.getAll?.('direct').length || 0,
           BremStorage.promotionApplyResults?.getAll?.().length || 0,
           BremStorage.promotionRules?.getAll?.().length || 0,
           BremStorage.drivers?.getAll?.().length || 0

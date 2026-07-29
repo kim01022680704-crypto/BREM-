@@ -96,7 +96,12 @@ const BremPromotionConditions = (function () {
       payStartCallCount: Number(raw.payStartCallCount ?? legacy.payStartCallCount ?? legacy.payStartOrder ?? 0),
       payPerCall: Number(raw.payPerCall ?? legacy.payPerCall ?? legacy.payPerOrder ?? 0),
       guaranteedUnitPrice: Number(raw.guaranteedUnitPrice ?? legacy.guaranteedUnitPrice ?? 0),
-      callTiers: Array.isArray(raw.callTiers ?? legacy.callTiers) ? raw.callTiers : []
+      callTiers: Array.isArray(raw.callTiers ?? legacy.callTiers) ? raw.callTiers : [],
+      // 소급 단가 구간. 총콜수가 구간에 닿으면 기본 건당 단가를 이 값으로 갈아치운다.
+      // 비어 있으면 기존 규칙과 계산이 완전히 같다.
+      payPerCallTiers: Array.isArray(raw.payPerCallTiers ?? legacy.payPerCallTiers)
+        ? (raw.payPerCallTiers ?? legacy.payPerCallTiers)
+        : []
     };
   }
 

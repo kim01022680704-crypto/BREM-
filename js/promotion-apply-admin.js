@@ -4,12 +4,39 @@ const BremPromotionApplyAdmin = (function () {
   const state = {
     lastResult: null,
     platform: 'coupang',
+    // 브로/직계약. 주정산서 저장 키가 달라 목록·계산·저장 모두 이 값을 따라간다.
+    channel: 'bro',
     savedResultId: '',
     settlementWeekByKey: {},
     savedWeekFilter: ''
   };
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
+
+  // 브로와 직계약은 업로드된 정산서 주차가 다를 수 있어 선택한 주차도 채널별로 나눈다.
+  // 한 칸에 같이 두면 채널을 바꿨을 때 정산서 없는 주가 그대로 남아 목록이 빈다.
+  function channelLabel(channel = state.channel) {
+    return channel === 'direct' ? '직계약' : '브로';
+  }
+
+  function platformLabel(platform) {
+    if (platform === 'baemin') return '배민';
+    if (platform === 'combined') return '합산';
+    return '쿠팡';
+  }
+
+  function weekSlot(selectKey) {
+    return `${state.channel}:${selectKey}`;
+  }
+
+  function getWeek(selectKey) {
+    return state.settlementWeekByKey[weekSlot(selectKey)];
+  }
+
+  function setWeek(selectKey, value) {
+    state.settlementWeekByKey[weekSlot(selectKey)] = value;
+    return value;
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -177,7 +204,7 @@ const BremPromotionApplyAdmin = (function () {
 
   function handleWeekSelect(selectKey, value) {
     const normalized = syncWeekPickerDisplay(selectKey, value);
-    state.settlementWeekByKey[selectKey] = normalized;
+    setWeek(selectKey, normalized);
     updateSettlementWeekRangeLabel(selectKey);
     if (selectKey.startsWith('combined-')) {
       renderCombinedSettlementSelects();
@@ -225,7 +252,7 @@ const BremPromotionApplyAdmin = (function () {
   }
 
   function defaultSettlementWeek(platform) {
-    const items = (BremPromotionApply.getWeeklySettlementIndex?.() || [])
+    const items = (BremPromotionApply.getWeeklySettlementIndex?.(state.channel) || [])
       .filter(item => item.platform === platform)
       .sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
     if (!items.length) return weekStartKey();
@@ -262,9 +289,9 @@ const BremPromotionApplyAdmin = (function () {
     SETTLEMENT_WEEK_KEYS.forEach(selectKey => {
       const platform = settlementPlatformFromKey(selectKey);
       const input = $(`#promotionApplySettlementWeek-${selectKey}`);
-      const raw = state.settlementWeekByKey[selectKey] || input?.value || defaultSettlementWeek(platform);
+      const raw = getWeek(selectKey) || input?.value || defaultSettlementWeek(platform);
       const week = applyWeekWednesday(raw);
-      state.settlementWeekByKey[selectKey] = week;
+      setWeek(selectKey, week);
       if (input) input.value = week;
       const label = $(`[data-promotion-apply-week-label="${selectKey}"]`);
       if (label) label.textContent = formatWeekPickerLabel(week);
@@ -274,11 +301,10 @@ const BremPromotionApplyAdmin = (function () {
 
   function syncSettlementWeekDefaults(selectKey) {
     const platform = settlementPlatformFromKey(selectKey);
-    if (!state.settlementWeekByKey[selectKey]) {
-      state.settlementWeekByKey[selectKey] = applyWeekWednesday(defaultSettlementWeek(platform));
+    if (!getWeek(selectKey)) {
+      setWeek(selectKey, applyWeekWednesday(defaultSettlementWeek(platform)));
     }
-    const normalized = syncWeekPickerDisplay(selectKey, state.settlementWeekByKey[selectKey]);
-    state.settlementWeekByKey[selectKey] = normalized;
+    setWeek(selectKey, syncWeekPickerDisplay(selectKey, getWeek(selectKey)));
     updateSettlementWeekRangeLabel(selectKey);
   }
 
@@ -299,19 +325,15 @@ const BremPromotionApplyAdmin = (function () {
 
   function ensureSettlementWeek(selectKey) {
     const platform = settlementPlatformFromKey(selectKey);
-    if (!state.settlementWeekByKey[selectKey]) {
-      state.settlementWeekByKey[selectKey] = applyWeekWednesday(defaultSettlementWeek(platform));
+    if (!getWeek(selectKey)) {
+      setWeek(selectKey, applyWeekWednesday(defaultSettlementWeek(platform)));
     }
-    const normalized = syncWeekPickerDisplay(selectKey, state.settlementWeekByKey[selectKey]);
-    state.settlementWeekByKey[selectKey] = normalized;
-    return normalized;
+    return setWeek(selectKey, syncWeekPickerDisplay(selectKey, getWeek(selectKey)));
   }
 
   function updateSettlementWeekRangeLabel(selectKey) {
-    const weekStart = applyWeekWednesday(
-      state.settlementWeekByKey[selectKey] || ensureSettlementWeek(selectKey)
-    );
-    state.settlementWeekByKey[selectKey] = weekStart;
+    const weekStart = applyWeekWednesday(getWeek(selectKey) || ensureSettlementWeek(selectKey));
+    setWeek(selectKey, weekStart);
     const label = $(`#promotionApplySettlementWeekRange-${selectKey}`);
     if (label) {
       label.textContent = weekStart ? `표시 범위: ${formatWeekRangeLabel(weekStart)}` : '';
@@ -427,14 +449,14 @@ const BremPromotionApplyAdmin = (function () {
     const select = $(`#promotionApplySettlementSelect-${platform}`);
     if (!select) return;
 
-    const weekStart = applyWeekWednesday(state.settlementWeekByKey[platform] || ensureSettlementWeek(platform));
-    state.settlementWeekByKey[platform] = weekStart;
+    const weekStart = applyWeekWednesday(getWeek(platform) || ensureSettlementWeek(platform));
+    setWeek(platform, weekStart);
 
     const previous = select.value;
-    const options = BremPromotionApply.getSettlementOptions(platform, { weekStart });
+    const options = BremPromotionApply.getSettlementOptions(platform, { weekStart, channel: state.channel });
     const emptyLabel = options.length
-      ? (platform === 'baemin' ? '저장된 배민 주정산 선택' : '저장된 쿠팡 주정산 선택')
-      : `${formatDate(weekStart)} 주에 저장된 ${platform === 'baemin' ? '배민' : '쿠팡'} 주정산이 없습니다`;
+      ? `저장된 ${channelLabel()} ${platformLabel(platform)} 주정산 선택`
+      : `${formatDate(weekStart)} 주에 저장된 ${channelLabel()} ${platformLabel(platform)} 주정산이 없습니다`;
 
     select.innerHTML = [`<option value="">${emptyLabel}</option>`].concat(
       options.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
@@ -453,14 +475,14 @@ const BremPromotionApplyAdmin = (function () {
       const select = $(`#promotionApplySettlementSelect-${selectKey}`);
       if (!select) return;
 
-      const weekStart = applyWeekWednesday(state.settlementWeekByKey[selectKey] || ensureSettlementWeek(selectKey));
-      state.settlementWeekByKey[selectKey] = weekStart;
+      const weekStart = applyWeekWednesday(getWeek(selectKey) || ensureSettlementWeek(selectKey));
+      setWeek(selectKey, weekStart);
 
       const previous = select.value;
-      const options = BremPromotionApply.getSettlementOptions(platform, { weekStart });
+      const options = BremPromotionApply.getSettlementOptions(platform, { weekStart, channel: state.channel });
       const emptyLabel = options.length
-        ? (platform === 'baemin' ? '저장된 배민 주정산 선택' : '저장된 쿠팡 주정산 선택')
-        : `${formatDate(weekStart)} 주에 저장된 ${platform === 'baemin' ? '배민' : '쿠팡'} 주정산이 없습니다`;
+        ? `저장된 ${channelLabel()} ${platformLabel(platform)} 주정산 선택`
+        : `${formatDate(weekStart)} 주에 저장된 ${channelLabel()} ${platformLabel(platform)} 주정산이 없습니다`;
 
       select.innerHTML = [`<option value="">${emptyLabel}</option>`].concat(
         options.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
@@ -706,7 +728,7 @@ const BremPromotionApplyAdmin = (function () {
       const weekLabel = itemWeekStart ? formatWeekRangeLabel(itemWeekStart) : '-';
       return `
       <tr>
-        <td>${escapeHtml(BremPlatforms.label(item.platform))}</td>
+        <td>${escapeHtml(BremPlatforms.label(item.platform))}<span class="promotion-channel-badge ${item.channel === 'direct' ? 'is-direct' : 'is-bro'}">${escapeHtml(channelLabel(item.channel))}</span></td>
         <td>${escapeHtml(weekLabel)}</td>
         <td>${escapeHtml(item.region || '-')}</td>
         <td>${escapeHtml(item.startDate)} ~ ${escapeHtml(item.endDate)}</td>
@@ -771,8 +793,9 @@ const BremPromotionApplyAdmin = (function () {
           showToast('저장된 배민 주정산서를 선택하세요.');
           return;
         }
-        const coupangSettlement = BremStorage.weeklySettlements.getById(ids.coupang);
-        const baeminSettlement = BremStorage.weeklySettlements.getById(ids.baemin);
+        // 채널을 명시해야 브로/직계약에 같은 지역·주차 정산서가 있을 때 엉뚱한 쪽을 잡지 않는다.
+        const coupangSettlement = BremStorage.weeklySettlements.getById(ids.coupang, state.channel);
+        const baeminSettlement = BremStorage.weeklySettlements.getById(ids.baemin, state.channel);
         if (!coupangSettlement || BremStorage.resolveWeeklySettlementPlatform(coupangSettlement) !== 'coupang') {
           showToast('쿠팡 주정산서를 확인하세요.');
           renderCombinedSettlementSelects();
@@ -792,8 +815,8 @@ const BremPromotionApplyAdmin = (function () {
 
         const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('combined', baeminSettlement, coupangSettlement);
         const applyOptions = deliveryFeeParsed
-          ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed }
-          : {};
+          ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed, channel: state.channel }
+          : { channel: state.channel };
 
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
@@ -808,9 +831,9 @@ const BremPromotionApplyAdmin = (function () {
           showToast(platform === 'baemin' ? '저장된 배민 주정산을 선택하세요.' : '저장된 쿠팡 주정산을 선택하세요.');
           return;
         }
-        const settlement = BremStorage.weeklySettlements.getById(settlementId);
+        const settlement = BremStorage.weeklySettlements.getById(settlementId, state.channel);
         if (!settlement) {
-          showToast('주정산 데이터를 찾을 수 없습니다.');
+          showToast(`${channelLabel()} 주정산 데이터를 찾을 수 없습니다.`);
           renderSettlementSelectForPlatform(platform);
           return;
         }
@@ -822,7 +845,7 @@ const BremPromotionApplyAdmin = (function () {
 
         await BremStorage.ensurePromotionCalculationCalls?.(settlement.startDate, settlement.endDate);
 
-        let applyOptions = { assignmentMode };
+        let applyOptions = { assignmentMode, channel: state.channel };
         if (platform === 'baemin') {
           const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('baemin', settlement);
           if (deliveryFeeParsed) {
@@ -962,6 +985,33 @@ const BremPromotionApplyAdmin = (function () {
     showToast('계산 결과를 초기화했습니다.');
   }
 
+  function setChannel(channel, options = {}) {
+    const ch = channel === 'direct' ? 'direct' : 'bro';
+    state.channel = ch;
+
+    const root = applyRoot();
+    root?.querySelectorAll('[data-promotion-apply-channel]').forEach(button => {
+      const active = button.dataset.promotionApplyChannel === ch;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+
+    const hint = $('#promotionApplyChannelHint');
+    if (hint) {
+      hint.textContent = ch === 'direct'
+        ? '직계약 주정산서로 계산합니다. 결과는 「프로모션정산등록」에서 직계약으로 표시됩니다.'
+        : '브로 주정산서로 계산합니다. 직계약 정산서에 적용할 프로모션은 「직계약」으로 바꿔 계산하세요.';
+    }
+
+    // 채널이 바뀌면 이전 채널 정산서로 낸 결과가 남아 있으면 안 된다.
+    const card = $('#promotionApplyResultCard');
+    if (card) card.hidden = true;
+    state.lastResult = null;
+    state.savedResultId = '';
+
+    if (!options.skipRender) renderActivePlatformSettlement();
+  }
+
   function setPlatform(platform, options = {}) {
     const p = BremPlatforms.normalize(platform);
     state.platform = p;
@@ -993,6 +1043,10 @@ const BremPromotionApplyAdmin = (function () {
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
+
+    applyRoot()?.querySelectorAll('[data-promotion-apply-channel]').forEach(button => {
+      button.addEventListener('click', () => setChannel(button.dataset.promotionApplyChannel));
+    });
 
     applyRoot()?.querySelectorAll('[data-promotion-apply-platform]').forEach(button => {
       button.addEventListener('click', () => setPlatform(button.dataset.promotionApplyPlatform));
@@ -1069,6 +1123,7 @@ const BremPromotionApplyAdmin = (function () {
   function init() {
     if (!applyRoot()) return;
     bindEvents();
+    setChannel(state.channel, { skipRender: true });
     bindLegacyWeekInputs();
     initializeAllSettlementWeeks();
     setPlatform('coupang');

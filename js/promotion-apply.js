@@ -488,6 +488,9 @@ const BremPromotionApply = (function () {
     return {
       settlementId: settlement.id,
       settlementLabel: `${settlement.region} · ${settlement.matchedNamesLabel || ''}`,
+      // 어느 채널 정산서로 계산했는지 남긴다. 프로모션정산등록에서 브로/직계약을
+      // 구분해 보여줘야 엉뚱한 채널 결과를 적용하는 실수를 막을 수 있다.
+      channel: normalizeChannel(options.channel || settlement.channel),
       platform,
       region: settlement.region,
       startDate: settlement.startDate,
@@ -565,6 +568,7 @@ const BremPromotionApply = (function () {
       coupangSettlementId: coupangSettlement.id,
       baeminSettlementId: baeminSettlement.id,
       settlementLabel: `쿠팡 ${coupangSettlement.region || '-'} + 배민 ${baeminSettlement.region || '-'}`,
+      channel: normalizeChannel(options.channel || coupangSettlement.channel),
       platform: 'combined',
       region: `${coupangSettlement.region || ''} / ${baeminSettlement.region || ''}`.trim(),
       startDate,
@@ -653,6 +657,7 @@ const BremPromotionApply = (function () {
     return {
       id: BremStorage.createId(),
       platform: calculationResult.platform,
+      channel: normalizeChannel(calculationResult.channel),
       settlementId: calculationResult.settlementId,
       settlementLabel: calculationResult.settlementLabel,
       region: calculationResult.region,
@@ -851,7 +856,7 @@ const BremPromotionApply = (function () {
   function getSettlementOptions(platform, options = {}) {
     const p = normalizePlatform(platform);
     const weekStart = options.weekStart ? applyWeekWednesday(options.weekStart) : '';
-    let items = getWeeklySettlementIndex()
+    let items = getWeeklySettlementIndex(options.channel)
       .filter(item => item.platform === p);
     if (weekStart) {
       items = items.filter(item => settlementWeekKey(item) === weekStart);
@@ -868,17 +873,25 @@ const BremPromotionApply = (function () {
       .sort((a, b) => String(a.region || '').localeCompare(String(b.region || ''), 'ko'));
   }
 
-  let weeklySettlementIndexCache = null;
+  // 브로와 직계약은 저장 키가 달라서 캐시도 채널별로 나눠 둔다.
+  // 하나로 두면 채널을 바꿀 때 이전 채널 목록이 그대로 남는다.
+  const weeklySettlementIndexCache = {};
 
-  function getWeeklySettlementIndex() {
-    const all = BremStorage.weeklySettlements.getAll();
+  function normalizeChannel(channel) {
+    return channel === 'direct' ? 'direct' : 'bro';
+  }
+
+  function getWeeklySettlementIndex(channel) {
+    const ch = normalizeChannel(channel);
+    const all = BremStorage.weeklySettlements.getAll(ch);
     const fingerprint = all.map(item => `${item.id}:${item.uploadedAt || ''}`).join('|');
-    if (weeklySettlementIndexCache?.fingerprint === fingerprint) {
-      return weeklySettlementIndexCache.items;
+    if (weeklySettlementIndexCache[ch]?.fingerprint === fingerprint) {
+      return weeklySettlementIndexCache[ch].items;
     }
 
     const items = all.map(item => ({
       id: item.id,
+      channel: ch,
       platform: BremStorage.resolveWeeklySettlementPlatform(item),
       weekStart: getWeeklySettlementWeekStart(item),
       region: item.region,
@@ -886,12 +899,14 @@ const BremPromotionApply = (function () {
       endDate: item.endDate,
       matchedNamesLabel: item.matchedNamesLabel || `${item.summary?.matchedRiders || item.riders?.length || 0}명`
     }));
-    weeklySettlementIndexCache = { fingerprint, items };
+    weeklySettlementIndexCache[ch] = { fingerprint, items };
     return items;
   }
 
   function invalidateSettlementOptionsCache() {
-    weeklySettlementIndexCache = null;
+    Object.keys(weeklySettlementIndexCache).forEach(key => {
+      delete weeklySettlementIndexCache[key];
+    });
   }
 
   function getSavedResultWeekStart(item) {

@@ -5,6 +5,7 @@ const BremPromotionAdmin = (function () {
     previewMode: 'single',
     rulesPlatformTab: 'coupang',
     tierDraft: [],
+    payTierDraft: [],
     globalSelectedRuleIds: [],
     conditionDrafts: {
       block: [],
@@ -389,7 +390,8 @@ const BremPromotionAdmin = (function () {
         payStartCallCount: 0,
         payPerCall: 0,
         guaranteedUnitPrice: 0,
-        callTiers: []
+        callTiers: [],
+        payPerCallTiers: []
       },
       blockConditions: [],
       bonusConditions: [],
@@ -439,6 +441,43 @@ const BremPromotionAdmin = (function () {
     `).join('');
   }
 
+  function readPayTierRowsFromForm({ includeEmpty = false } = {}) {
+    const rows = $$('#promotionPayTierRows .promotion-tier-row').map((row, index) => ({
+      id: row.dataset.tierId || '',
+      minCalls: row.querySelector('[data-pay-tier-min-calls]')?.value ?? '',
+      payPerCall: row.querySelector('[data-pay-tier-pay-per-call]')?.value ?? '',
+      sortOrder: index
+    }));
+    if (includeEmpty) return rows;
+    return rows
+      .filter(tier => Number(tier.minCalls) > 0 || Number(tier.payPerCall) > 0)
+      .map(tier => ({
+        ...tier,
+        minCalls: Number(tier.minCalls) || 0,
+        payPerCall: Number(tier.payPerCall) || 0
+      }));
+  }
+
+  function renderPayTierRows(tiers = []) {
+    const container = $('#promotionPayTierRows');
+    if (!container) return;
+
+    const rows = tiers.length ? tiers : [{ id: '', minCalls: '', payPerCall: '' }];
+    container.innerHTML = rows.map((tier, index) => `
+      <div class="promotion-tier-row" data-tier-id="${escapeHtml(tier.id || '')}">
+        <label>
+          <span>${index + 1}구간 · N건 달성</span>
+          <input type="number" min="0" step="1" data-pay-tier-min-calls value="${tier.minCalls ?? ''}" placeholder="예: 300">
+        </label>
+        <label>
+          <span>소급 건당 단가 (원)</span>
+          <input type="number" min="0" step="100" data-pay-tier-pay-per-call value="${tier.payPerCall ?? ''}" placeholder="예: 1200">
+        </label>
+        <button type="button" class="small-btn danger-btn" data-remove-pay-tier aria-label="구간 삭제">삭제</button>
+      </div>
+    `).join('');
+  }
+
   function fillRuleForm(rule) {
     const draft = rule || emptyRuleDraft();
     const base = draft.base || {
@@ -446,9 +485,11 @@ const BremPromotionAdmin = (function () {
       payStartCallCount: draft.payStartCallCount,
       payPerCall: draft.payPerCall,
       guaranteedUnitPrice: draft.guaranteedUnitPrice,
-      callTiers: draft.callTiers
+      callTiers: draft.callTiers,
+      payPerCallTiers: draft.payPerCallTiers
     };
     state.tierDraft = base.callTiers || draft.callTiers || [];
+    state.payTierDraft = base.payPerCallTiers || draft.payPerCallTiers || [];
     state.editingRuleId = rule?.id || '';
     const platformValue = setPromotionRulePlatformField(
       rule?.id
@@ -475,6 +516,7 @@ const BremPromotionAdmin = (function () {
     $('#promotionRuleDuplicateStrategy').value = draft.duplicateStrategy || 'highest_priority';
     $('#promotionRuleNoPayConditions').value = draft.noPayConditions || '';
     renderTierRows(state.tierDraft);
+    renderPayTierRows(state.payTierDraft);
     renderConditionLists(platformValue);
     updateRateFieldLabels(platformValue);
 
@@ -488,6 +530,7 @@ const BremPromotionAdmin = (function () {
   function hideRuleForm() {
     state.editingRuleId = '';
     state.tierDraft = [];
+    state.payTierDraft = [];
     state.conditionDrafts = { block: [], bonus: [], reference: [] };
     const formCard = $('#promotionRuleFormCard');
     if (formCard) formCard.hidden = true;
@@ -503,7 +546,8 @@ const BremPromotionAdmin = (function () {
       payStartCallCount: Number($('#promotionRulePayStartCallCount').value || 0),
       payPerCall: Number($('#promotionRulePayPerCall').value || 0),
       guaranteedUnitPrice: 0,
-      callTiers
+      callTiers,
+      payPerCallTiers: readPayTierRowsFromForm()
     };
 
     return {
@@ -545,6 +589,28 @@ const BremPromotionAdmin = (function () {
       .map(tier => tier.minCalls);
     if (new Set(tierMins).size !== tierMins.length) {
       return '콜수 구간의 최소 콜수가 중복되면 안 됩니다.';
+    }
+
+    const payTiers = payload.base.payPerCallTiers || [];
+    const halfFilled = payTiers.find(tier => !(tier.minCalls > 0) || !(tier.payPerCall > 0));
+    if (halfFilled) {
+      return '소급 단가 구간은 달성 콜수와 건당 단가를 모두 입력하세요.';
+    }
+    const payTierMins = payTiers.map(tier => tier.minCalls);
+    if (new Set(payTierMins).size !== payTierMins.length) {
+      return '소급 단가 구간의 달성 콜수가 중복되면 안 됩니다.';
+    }
+    if (payTiers.length > maxCallTiers()) {
+      return `소급 단가 구간은 최대 ${maxCallTiers()}개까지 저장할 수 있습니다.`;
+    }
+    if (payTiers.length && !(payload.base.payStartCallCount > 0)) {
+      return '소급 단가 구간을 쓰려면 지급 시작 콜수를 입력하세요.';
+    }
+    // 달성 콜수가 지급 시작 콜수보다 작으면 그 구간은 절대 단독으로 적용되지 않아
+    // 설정한 사람이 의도한 금액과 다르게 나온다.
+    const tooEarly = payTiers.find(tier => tier.minCalls < payload.base.payStartCallCount);
+    if (tooEarly) {
+      return `소급 단가 구간의 달성 콜수(${tooEarly.minCalls}건)는 지급 시작 콜수(${payload.base.payStartCallCount}건) 이상이어야 합니다.`;
     }
 
     const allConditions = [
@@ -976,6 +1042,27 @@ const BremPromotionAdmin = (function () {
         return currentRow !== row;
       });
       renderTierRows(tiers.length ? tiers : [{ id: '', minCalls: '', unitPrice: '' }]);
+    });
+
+    $('#promotionAddPayTierBtn')?.addEventListener('click', () => {
+      const tiers = readPayTierRowsFromForm({ includeEmpty: true });
+      if (tiers.length >= maxCallTiers()) {
+        showToast(`소급 단가 구간은 최대 ${maxCallTiers()}개까지 추가할 수 있습니다.`);
+        return;
+      }
+      tiers.push({ id: '', minCalls: '', payPerCall: '' });
+      renderPayTierRows(tiers);
+    });
+
+    $('#promotionPayTierRows')?.addEventListener('click', event => {
+      const removeBtn = event.target.closest('[data-remove-pay-tier]');
+      if (!removeBtn) return;
+      const row = removeBtn.closest('.promotion-tier-row');
+      const tiers = readPayTierRowsFromForm({ includeEmpty: true }).filter((_, index) => {
+        const currentRow = $$('#promotionPayTierRows .promotion-tier-row')[index];
+        return currentRow !== row;
+      });
+      renderPayTierRows(tiers.length ? tiers : [{ id: '', minCalls: '', payPerCall: '' }]);
     });
 
     $('#promotionDriverSelectorRows')?.addEventListener('change', saveDriverSelector);

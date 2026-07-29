@@ -6053,6 +6053,33 @@ textarea {
   letter-spacing: -0.01em;
 }
 
+.promotion-channel-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.promotion-channel-badge.is-bro {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5f5;
+}
+
+.promotion-channel-badge.is-direct {
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.16);
+  color: #fcd34d;
+}
+
+.promotion-apply-channel-tabs {
+  margin-bottom: 4px;
+}
+
 .direct-adjust-subhead {
   margin: 16px 0 6px;
   font-size: 0.95rem;
