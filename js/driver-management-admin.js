@@ -77,6 +77,22 @@ const BremDriverManagementAdmin = (function () {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'ko'));
   }
 
+  function formatNumber(value) {
+    return Number(value || 0).toLocaleString('ko-KR');
+  }
+
+  function driverCallAndFee(driverId) {
+    const id = String(driverId || '').trim();
+    if (!id) return { callCount: 0, deliveryFee: 0 };
+    const callCount = (window.BremStorage?.calls?.getAll?.() || [])
+      .filter(call => String(call.driverId || '') === id)
+      .reduce((sum, call) => sum + Number(call.count || call.orderCount || 0), 0);
+    const deliveryFee = (window.BremStorage?.settlements?.getAll?.() || [])
+      .filter(row => String(row.driverId || '') === id)
+      .reduce((sum, row) => sum + Number(row.deliveryAmount ?? row.settlementAmount ?? 0), 0);
+    return { callCount, deliveryFee };
+  }
+
   function memberSummary(node) {
     const n = (node.memberRefs || []).length;
     const c = childrenOf(node.id).length;
@@ -89,11 +105,67 @@ const BremDriverManagementAdmin = (function () {
     return `<ul${cls}>${nodes.map(node => `
       <li>
         <button type="button" class="driver-org-node${state.selectedNodeId === node.id ? ' is-selected' : ''}" data-org-node="${escapeHtml(node.id)}">
-          <span>${escapeHtml(node.label)}</span>
+          <span class="driver-org-node-label">${escapeHtml(node.label || '이름 없음')}</span>
           <small>${escapeHtml(memberSummary(node))}</small>
         </button>
         ${renderOrgTreeHtml(childrenOf(node.id), false)}
       </li>`).join('')}</ul>`;
+  }
+
+  function renderOrgMemberPanel() {
+    const panel = $('#driverOrgMemberPanel');
+    const rows = $('#driverOrgMemberRows');
+    const title = $('#driverOrgMemberPanelTitle');
+    const summary = $('#driverOrgMemberPanelSummary');
+    if (!panel || !rows) return;
+
+    const node = selectedNode();
+    if (!node) {
+      panel.hidden = true;
+      rows.innerHTML = '';
+      return;
+    }
+
+    panel.hidden = false;
+    if (title) title.textContent = `「${node.label}」 소속 목록`;
+
+    const refs = Array.isArray(node.memberRefs) ? node.memberRefs : [];
+    const people = refs.map(ref => {
+      if (ref.kind === 'admin') {
+        const account = window.BremStorage?.auth?.getAdminAccountById?.(ref.id)
+          || (window.BremStorage?.auth?.getAdminAccounts?.() || []).find(item => item.id === ref.id);
+        return {
+          kind: '관리자',
+          name: account?.name || account?.loginId || ref.id,
+          callCount: '-',
+          deliveryFee: '-'
+        };
+      }
+      const driver = window.BremStorage?.drivers?.getById?.(ref.id);
+      const stats = driverCallAndFee(ref.id);
+      return {
+        kind: '기사',
+        name: driver?.name || ref.id,
+        callCount: formatNumber(stats.callCount),
+        deliveryFee: `${formatNumber(stats.deliveryFee)}원`
+      };
+    });
+
+    if (summary) {
+      const driverCount = refs.filter(ref => ref.kind !== 'admin').length;
+      const adminCount = refs.length - driverCount;
+      summary.textContent = `기사 ${driverCount}명 · 관리자 ${adminCount}명`;
+    }
+
+    rows.innerHTML = people.length
+      ? people.map(person => `
+        <tr>
+          <td>${escapeHtml(person.kind)}</td>
+          <td><strong>${escapeHtml(person.name)}</strong></td>
+          <td class="weekly-amount-cell">${escapeHtml(person.callCount)}</td>
+          <td class="weekly-amount-cell">${escapeHtml(person.deliveryFee)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="4" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
   }
 
   function renderOrg() {
@@ -106,6 +178,7 @@ const BremDriverManagementAdmin = (function () {
       canvas.innerHTML = renderOrgTreeHtml(top, true);
     }
     renderOrgEditor();
+    renderOrgMemberPanel();
   }
 
   function selectedNode() {
@@ -295,8 +368,11 @@ const BremDriverManagementAdmin = (function () {
       const count = driversInRegion(region).length;
       const active = state.selectedRegionKey === region.key;
       const sub = region.platform === 'baemin' ? region.partnerId : (region.vendorName || '');
-      return `<button type="button" class="${active ? 'is-active' : ''}" data-region-key="${escapeHtml(region.key)}" title="${escapeHtml(sub)}">
-        ${escapeHtml(region.label)}<span>${count}</span>
+      const name = region.label || region.key || '이름 없음';
+      return `<button type="button" class="driver-region-item${active ? ' is-active' : ''}" data-region-key="${escapeHtml(region.key)}" title="${escapeHtml(sub || name)}">
+        <span class="driver-region-item-name">${escapeHtml(name)}</span>
+        <span class="driver-region-item-meta">${escapeHtml(sub && sub !== name ? sub : '')}</span>
+        <span class="driver-region-item-count">${count}명</span>
       </button>`;
     }).join('');
   }
@@ -320,13 +396,11 @@ const BremDriverManagementAdmin = (function () {
     const inRegion = driversInRegion(region);
     rows.innerHTML = inRegion.length
       ? inRegion.map(driver => {
-        const idLabel = state.regionPlatform === 'baemin'
-          ? (driver.baeminId || '-')
-          : makeDriverLoginId(driver);
+        const stats = driverCallAndFee(driver.id);
         return `<tr>
-          <td>${escapeHtml(driver.name)}</td>
-          <td>${escapeHtml(idLabel)}</td>
-          <td>${escapeHtml(driverRegionValue(driver, state.regionPlatform) || region.label)}</td>
+          <td><strong>${escapeHtml(driver.name)}</strong></td>
+          <td class="weekly-amount-cell">${formatNumber(stats.callCount)}</td>
+          <td class="weekly-amount-cell">${formatNumber(stats.deliveryFee)}원</td>
           <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(driver.id)}">해제</button></td>
         </tr>`;
       }).join('')

@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260730m">
+  <link rel="stylesheet" href="css/admin.css?v=20260730n">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5033,7 +5033,7 @@
                 <button type="button" class="primary-btn" id="driverOrgSaveBtn">조직도 저장</button>
               </div>
             </div>
-            <p class="form-help">박스를 클릭하면 이름·소속 인원·하위 박스를 편집합니다. 선·화살표 형태의 조직도로 표시됩니다.</p>
+            <p class="form-help">박스를 클릭하면 오른쪽에서 소속을 편집하고, 아래 스크롤 목록에 소속 기사(이름·콜수·배달료)가 표시됩니다.</p>
             <div class="driver-org-layout">
               <div class="driver-org-canvas-wrap">
                 <div class="driver-org-canvas" id="driverOrgCanvas"></div>
@@ -5059,6 +5059,25 @@
                   <button type="button" class="small-btn" id="driverOrgCloseBtn">닫기</button>
                 </div>
               </aside>
+            </div>
+            <div class="driver-org-member-panel" id="driverOrgMemberPanel" hidden>
+              <div class="card-header">
+                <h3 id="driverOrgMemberPanelTitle">소속 기사</h3>
+                <span class="form-help" id="driverOrgMemberPanelSummary"></span>
+              </div>
+              <div class="driver-scroll-table table-wrap">
+                <table class="weekly-settlement-detail-table">
+                  <thead>
+                    <tr>
+                      <th>구분</th>
+                      <th>이름</th>
+                      <th>콜수</th>
+                      <th>배달료</th>
+                    </tr>
+                  </thead>
+                  <tbody id="driverOrgMemberRows"></tbody>
+                </table>
+              </div>
             </div>
           </article>
         </div>
@@ -5089,13 +5108,13 @@
                   </label>
                   <button type="button" class="small-btn primary-btn" id="driverRegionAddBtn">추가</button>
                 </div>
-                <div class="table-wrap">
+                <div class="driver-scroll-table table-wrap">
                   <table class="weekly-settlement-detail-table">
                     <thead>
                       <tr>
                         <th>이름</th>
-                        <th>ID</th>
-                        <th>지역</th>
+                        <th>콜수</th>
+                        <th>배달료</th>
                         <th>관리</th>
                       </tr>
                     </thead>
@@ -6872,7 +6891,7 @@
   <script src="js/direct-settlement-calc.js?v=20260730g"></script>
   <script src="js/settlement-result-direct.js?v=20260730i"></script>
   <script src="js/final-deposit.js?v=20260730j"></script>
-  <script src="js/driver-management-admin.js?v=20260730m"></script>
+  <script src="js/driver-management-admin.js?v=20260730n"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
