@@ -69,11 +69,12 @@ const COUPANG_ROWS = [
   sheetRow({}),
   sheetRow({}),
   sheetRow({}),
-  sheetRow({ C: '성함', F: '총 정산 오더수', AC: '총정산금액', AE: '고용보험', AG: '산재보험', AH: '시간제보험', AJ: '정산금액' }),
-  sheetRow({ C: '박쿠팡', F: 120, AC: 1212000, AE: 9000, AG: 8000, AH: 3000, AJ: 1200000 }),
-  sheetRow({ C: '최쿠팡', F: 80, AC: '808,000', AE: '6,000', AG: '5,000', AH: '2,000', AJ: '800,000' }),
-  sheetRow({ C: '없는기사', F: 40, AC: 404000, AE: 3000, AG: 2500, AH: 1000, AJ: 400000 }),
-  sheetRow({ C: '합계', F: '', AC: 2424000, AE: 18000, AG: 15500, AH: 6000, AJ: 2400000 })
+  sheetRow({ C: '성함', F: '총 정산 오더수', AB: '차감내역', AC: '총정산금액', AE: '고용보험', AG: '산재보험', AH: '시간제보험', AJ: '정산금액' }),
+  sheetRow({ C: '박쿠팡', F: 120, AB: 5000, AC: 1212000, AE: 9000, AG: 8000, AH: 3000, AJ: 1200000 }),
+  // 차감내역이 음수로 적혀 나오는 경우도 있어 절대값으로 읽히는지 확인한다.
+  sheetRow({ C: '최쿠팡', F: 80, AB: '-1,500', AC: '808,000', AE: '6,000', AG: '5,000', AH: '2,000', AJ: '800,000' }),
+  sheetRow({ C: '없는기사', F: 40, AB: '', AC: 404000, AE: 3000, AG: 2500, AH: 1000, AJ: 400000 }),
+  sheetRow({ C: '합계', F: '', AB: 6500, AC: 2424000, AE: 18000, AG: 15500, AH: 6000, AJ: 2400000 })
 ];
 
 const DRIVERS = [
@@ -153,6 +154,7 @@ const fakeFile = { arrayBuffer: async () => new ArrayBuffer(8) };
 
 const DIRECT_COLS = {
   deliveryFee: 'AJ',
+  deductionDetail: 'AB',
   deductionBase: 'AC',
   employmentInsurance: 'AE',
   accidentInsurance: 'AG',
@@ -186,6 +188,11 @@ const DIRECT_COLS = {
   check('원천세 = AC×3.3%', direct[0]?.amounts?.withholdingTax, 39996);
   check('AC 쉼표 처리', direct[1]?.amounts?.deductionBase, 808000);
   check('두번째 기사 원천세', direct[1]?.amounts?.withholdingTax, Math.floor(808000 * 0.033));
+
+  console.log('\n[2-1-1] 차감내역(AB)은 읽어서 표기만 한다');
+  check('차감내역(AB)', direct[0]?.amounts?.deductionDetail, 5000);
+  check('음수로 적혀도 차감액으로 읽음', direct[1]?.amounts?.deductionDetail, 1500);
+  check('빈 칸은 0', direct[2]?.amounts?.deductionDetail, 0);
 
   console.log('\n[2-2] 일정산서 서식과 열이 일치');
   const daily = ctx.SettlementFormats.getFormatForPlatform('coupang');
@@ -265,6 +272,34 @@ const DIRECT_COLS = {
   check('원천세 열 있음', headCoupang.includes('원천세'), 'true');
   const bodyCells = [...window.document.querySelectorAll('#settlementResultRows tr')][0].querySelectorAll('td').length;
   check('헤더와 본문 열 수 일치', bodyCells, headCoupang.length);
+
+  console.log('\n[9] 차감내역은 표기만 — 공제합계·총지급액에서 다시 빼지 않는다');
+  check('차감내역 열 있음(쿠팡)', headCoupang.includes('차감내역(표기)'), 'true');
+  const cells9 = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
+  check('차감내역 5,000 표시', cells9.includes('5,000'), 'true');
+  // AB(5,000)가 공제로 들어갔다면 아래 두 값이 5,000 만큼 달라진다.
+  check(`공제합계에 AB 미포함 ${money(INSURANCE + TAX)}`, cells9.includes(money(INSURANCE + TAX)), 'true');
+  check(`총지급액에 AB 미포함 ${money(1200000 - INSURANCE - TAX)}`,
+    cells9.includes(money(1200000 - INSURANCE - TAX)), 'true');
+
+  console.log('\n[10] 배민에는 차감내역 열이 없다 (쿠팡 정산서에만 있는 항목)');
+  SETTLEMENTS.push({
+    id: 'weekly_direct_baemin_seoul_20260722',
+    platform: 'baemin', channel: 'direct', region: '서울',
+    fileName: '배민_직계약_0722.xlsx', startDate: '2026-07-22', endDate: '2026-07-28',
+    riders: [{
+      matchedRiderId: 'd1', baeminUserId: 'bm1', weeklyCallCount: 100,
+      amounts: { deliveryFee: 900000, missionPay: 50000, hourlyInsurance: 0,
+        employmentInsurance: 7000, accidentInsurance: 6000, withholdingTax: 30000 }
+    }]
+  });
+  await Result.refresh('baemin');
+  const headBaemin = [...window.document.querySelectorAll('#settlementResultHead th')].map(th => th.textContent.trim());
+  check('배민은 차감내역 열 없음', headBaemin.includes('차감내역(표기)'), 'false');
+  check('배민은 배민미션 열 있음', headBaemin.includes('배민미션'), 'true');
+  const bodyBaemin = [...window.document.querySelectorAll('#settlementResultRows tr')][0].querySelectorAll('td').length;
+  check('배민도 헤더와 본문 열 수 일치', bodyBaemin, headBaemin.length);
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);

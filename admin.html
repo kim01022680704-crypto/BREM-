@@ -4033,9 +4033,11 @@
               <h3>지급 금액 열</h3>
               <div class="promotion-form-grid">
                 <label>배달료<input type="text" id="weeklySettlementDirectDeliveryFeeCol-coupang" value="AJ"></label>
+                <label>차감내역<input type="text" id="weeklySettlementDirectDeductionDetailCol-coupang" value="AB"></label>
                 <label>원천세 기준금액<input type="text" id="weeklySettlementDirectDeductionBaseCol-coupang" value="AC"></label>
               </div>
               <p class="form-help">AJ는 <strong>콜수수료가 이미 빠진 금액</strong>입니다. 고용·산재·시간제보험은 아직 빠지지 않은 상태이므로 아래 공제 열에서 따로 읽습니다. 「일정산서 업로드」도 같은 AJ 열을 정산금액으로 읽습니다. 정산서에 원천세 열이 없어 <strong>AC의 3.3%</strong>로 계산합니다.</p>
+              <p class="form-help">차감내역(AB)은 정산서에서 <strong>이미 빠진 뒤</strong> 금액이 나오므로 확인용으로만 표시하고, 공제합계·총지급액에서 다시 빼지 않습니다.</p>
               <h3>공제 열</h3>
               <div class="promotion-form-grid">
                 <label>고용보험<input type="text" id="weeklySettlementDirectEmploymentInsCol-coupang" value="AE"></label>
@@ -4067,6 +4069,7 @@
                   <th>쿠팡 ID</th>
                   <th>주간 오더수(F)</th>
                   <th>배달료(AJ)</th>
+                  <th>차감내역(AB)</th>
                   <th>원천세기준(AC)</th>
                   <th>원천세(AC×3.3%)</th>
                   <th>고용보험(AE)</th>
@@ -6641,8 +6644,8 @@
   <script src="js/promotion-conditions.js?v=20260622c"></script>
   <script src="js/promotion-engine.js?v=20260720a"></script>
   <script src="js/promotion-admin.js?v=20260622c"></script>
-  <script src="js/weekly-settlement.js?v=20260729d"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260729d"></script>
+  <script src="js/weekly-settlement.js?v=20260730a"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260730a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260729a"></script>
     <script src="js/coupang-status-admin.js?v=20260723a"></script>
@@ -6667,7 +6670,7 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260727b"></script>
   <script src="js/direct-adjustment-admin.js?v=20260729c"></script>
-  <script src="js/settlement-result-direct.js?v=20260729d"></script>
+  <script src="js/settlement-result-direct.js?v=20260730a"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

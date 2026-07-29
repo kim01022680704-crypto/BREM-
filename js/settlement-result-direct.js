@@ -210,6 +210,9 @@ const BremSettlementResultDirect = (function () {
       const other = driverId ? Number(otherMap[driverId]?.amount || 0) : 0;
       const deliveryFee = Number(amounts.deliveryFee || 0);
       const missionPay = Number(amounts.missionPay || 0);
+      // 쿠팡 차감내역(AB)은 배달료에서 이미 빠진 뒤 나온 금액이다.
+      // 확인용으로만 표에 싣고 grossPay·deductTotal 어디에도 넣지 않는다.
+      const deductionDetail = Number(amounts.deductionDetail || 0);
       const grossPay = deliveryFee + missionPay + other + promo;
 
       const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
@@ -230,7 +233,7 @@ const BremSettlementResultDirect = (function () {
         name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
         idLabel,
         callCount,
-        deliveryFee, missionPay, other, promo, grossPay,
+        deliveryFee, missionPay, deductionDetail, other, promo, grossPay,
         employmentInsurance, accidentInsurance, hourlyInsurance,
         withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
         deductTotal, netPay
@@ -242,12 +245,14 @@ const BremSettlementResultDirect = (function () {
 
   // 표 헤더·본문·엑셀이 같은 정의를 쓰게 한 곳에 모아둔다. 따로 두면 열이 어긋난다.
   // 쿠팡 정산서에는 추가지급(배민미션) 항목이 없어 그 열은 쿠팡에서 빼고 보여준다.
+  // 차감내역(AB)은 쿠팡 정산서에만 있고, 이미 빠진 금액이라 표기 전용이다.
   const ALL_COLUMNS = [
     { key: 'name', label: '기사', money: false, strong: true },
     { key: 'idLabel', label: 'ID', money: false },
     { key: 'callCount', label: '콜수' },
     { key: 'deliveryFee', label: '배달비' },
     { key: 'missionPay', label: '배민미션', baeminOnly: true },
+    { key: 'deductionDetail', label: '차감내역(표기)', coupangOnly: true },
     { key: 'other', label: '기타지급' },
     { key: 'promo', label: 'BREM프로모션' },
     { key: 'grossPay', label: '지급합계', strong: true },
@@ -265,7 +270,7 @@ const BremSettlementResultDirect = (function () {
 
   function columns() {
     if (state.platform === 'coupang') return ALL_COLUMNS.filter(col => !col.baeminOnly);
-    return ALL_COLUMNS;
+    return ALL_COLUMNS.filter(col => !col.coupangOnly);
   }
 
   function renderHead() {

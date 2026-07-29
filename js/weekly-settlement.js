@@ -161,6 +161,7 @@ const BremWeeklySettlement = (function () {
   // 쿠팡 정산서에는 원천세 항목이 없어 AC열의 3.3% 로 계산한다. 추가지급(미션)도 없다.
   const DIRECT_COUPANG_AMOUNT_COLUMNS = Object.freeze({
     deliveryFee: 'AJ',          // 배달료(콜수수료 공제 후)
+    deductionDetail: 'AB',      // 차감내역 — 이미 빠진 금액이라 표기만 한다
     deductionBase: 'AC',        // 원천세 기준 금액 (정산서에 원천세 열이 없다)
     employmentInsurance: 'AE',  // 고용보험(공제)
     accidentInsurance: 'AG',    // 산재보험(공제)
@@ -175,6 +176,10 @@ const BremWeeklySettlement = (function () {
     const deductionBase = parseAmount(readCell(row, cols.deductionBase));
     return {
       deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
+      // 차감내역(AB)은 정산서에서 이미 빠진 뒤 금액이 나온다. 여기서 또 빼면
+      // 이중공제가 되므로 공제합계·총지급액에는 넣지 않고 확인용으로만 둔다.
+      // 정산서에 음수로 적혀 있어도 표에서는 차감액으로 읽히게 절대값으로 맞춘다.
+      deductionDetail: Math.abs(parseAmount(readCell(row, cols.deductionDetail))),
       deductionBase,
       // 고용·산재·시간제보험은 정산서에 적힌 값을 그대로 쓰고,
       // 원천세만 정산서에 없어서 AC 기준으로 계산한다.
