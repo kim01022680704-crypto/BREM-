@@ -69,11 +69,11 @@ const COUPANG_ROWS = [
   sheetRow({}),
   sheetRow({}),
   sheetRow({}),
-  sheetRow({ C: '성함', F: '총 정산 오더수', AE: '고용보험', AG: '산재보험', AH: '시간제보험', AJ: '정산금액' }),
-  sheetRow({ C: '박쿠팡', F: 120, AE: 9000, AG: 8000, AH: 3000, AJ: 1200000 }),
-  sheetRow({ C: '최쿠팡', F: 80, AE: '6,000', AG: '5,000', AH: '2,000', AJ: '800,000' }),
-  sheetRow({ C: '없는기사', F: 40, AE: 3000, AG: 2500, AH: 1000, AJ: 400000 }),
-  sheetRow({ C: '합계', F: '', AE: 18000, AG: 15500, AH: 6000, AJ: 2400000 })
+  sheetRow({ C: '성함', F: '총 정산 오더수', AC: '총정산금액', AE: '고용보험', AG: '산재보험', AH: '시간제보험', AJ: '정산금액' }),
+  sheetRow({ C: '박쿠팡', F: 120, AC: 1212000, AE: 9000, AG: 8000, AH: 3000, AJ: 1200000 }),
+  sheetRow({ C: '최쿠팡', F: 80, AC: '808,000', AE: '6,000', AG: '5,000', AH: '2,000', AJ: '800,000' }),
+  sheetRow({ C: '없는기사', F: 40, AC: 404000, AE: 3000, AG: 2500, AH: 1000, AJ: 400000 }),
+  sheetRow({ C: '합계', F: '', AC: 2424000, AE: 18000, AG: 15500, AH: 6000, AJ: 2400000 })
 ];
 
 const DRIVERS = [
@@ -153,6 +153,7 @@ const fakeFile = { arrayBuffer: async () => new ArrayBuffer(8) };
 
 const DIRECT_COLS = {
   deliveryFee: 'AJ',
+  deductionBase: 'AC',
   employmentInsurance: 'AE',
   accidentInsurance: 'AG',
   hourlyInsurance: 'AH'
@@ -179,12 +180,20 @@ const DIRECT_COLS = {
   check('산재보험(AG)', direct[0]?.amounts?.accidentInsurance, 8000);
   check('시간제보험(AH)', direct[0]?.amounts?.hourlyInsurance, 3000);
 
-  console.log('\n[2-1] 일정산서 서식과 열이 일치');
+  console.log('\n[2-1] 원천세는 정산서에 없어 AC의 3.3%로 계산');
+  check('원천세기준(AC)', direct[0]?.amounts?.deductionBase, 1212000);
+  // 1,212,000 × 3.3% = 39,996
+  check('원천세 = AC×3.3%', direct[0]?.amounts?.withholdingTax, 39996);
+  check('AC 쉼표 처리', direct[1]?.amounts?.deductionBase, 808000);
+  check('두번째 기사 원천세', direct[1]?.amounts?.withholdingTax, Math.floor(808000 * 0.033));
+
+  console.log('\n[2-2] 일정산서 서식과 열이 일치');
   const daily = ctx.SettlementFormats.getFormatForPlatform('coupang');
   check('일정산서 성함 열 = C', daily.columns.name, 'C');
   check('일정산서 오더수 열 = F', daily.columns.orderCount, 'F');
   check('일정산서 시간제보험 열 = AH', daily.columns.hourlyInsurance, 'AH');
   check('일정산서 정산금액 열 = AJ (주정산서 배달료와 동일)', daily.columns.settlementAmount, DIRECT_COLS.deliveryFee);
+  check('일정산서 공제기준 열 = AC (주정산서와 동일)', daily.columns.deductionBase, DIRECT_COLS.deductionBase);
 
   console.log('\n[3] 쉼표 들어간 금액도 숫자로');
   check('배달료 800,000', direct[1]?.amounts?.deliveryFee, 800000);
@@ -217,33 +226,37 @@ const DIRECT_COLS = {
   const rows = [...window.document.querySelectorAll('#settlementResultRows tr')];
   check('라이더 2명 표시', rows.length, 2);
 
+  const money = n => Number(n).toLocaleString('ko-KR');
+  const TAX = Math.floor(1212000 * 0.033); // 39,996
+  const INSURANCE = 9000 + 8000 + 3000;
+
   const parkRow = rows.find(tr => tr.textContent.includes('박쿠팡'));
   const cells = [...parkRow.querySelectorAll('td')].map(td => td.textContent.trim());
   check('쿠팡ID 표시', cells[1], '박쿠팡');
   check('오더수 120', cells[2], '120');
+  check('원천세 = AC×3.3%', cells.includes(money(TAX)), 'true');
   // 콜수수료 = 120 × 300 = 36,000
   check('콜수수료 36,000', cells.includes('36,000'), 'true');
-  // 공제합계 = 고용9,000 + 산재8,000 + 시간제3,000 + 콜수수료36,000 = 56,000
-  check('공제합계 56,000', cells.includes('56,000'), 'true');
-  // 총지급액 = 1,200,000 - 56,000 = 1,144,000
-  check('실지급 1,144,000', cells.includes('1,144,000'), 'true');
+  check(`공제합계 ${money(INSURANCE + TAX + 36000)}`, cells.includes(money(INSURANCE + TAX + 36000)), 'true');
+  check(`실지급 ${money(1200000 - INSURANCE - TAX - 36000)}`,
+    cells.includes(money(1200000 - INSURANCE - TAX - 36000)), 'true');
 
   console.log('\n[6] 콜수수료 단가를 바꾸면 정산결과도 따라간다');
   FEES = { coupang: { callFee: 250, dailySettlementFee: 0.02, dailySettlementFeeMode: 'percent' } };
   await Result.refresh('coupang');
-  const rows6 = [...window.document.querySelectorAll('#settlementResultRows tr')];
-  const cells6 = [...rows6.find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')]
-    .map(td => td.textContent.trim());
+  const cells6 = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
+    .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
   // 120 × 250 = 30,000
   check('콜수수료 30,000', cells6.includes('30,000'), 'true');
-  check('실지급 1,150,000', cells6.includes('1,150,000'), 'true');
+  check(`실지급 ${money(1200000 - INSURANCE - TAX - 30000)}`,
+    cells6.includes(money(1200000 - INSURANCE - TAX - 30000)), 'true');
 
   console.log('\n[7] 단가 0이면 콜수수료 공제 없음');
   FEES = { coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } };
   await Result.refresh('coupang');
   const cells7 = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
     .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
-  check('실지급 1,180,000', cells7.includes('1,180,000'), 'true');
+  check(`실지급 ${money(1200000 - INSURANCE - TAX)}`, cells7.includes(money(1200000 - INSURANCE - TAX)), 'true');
 
   console.log('\n[8] 쿠팡에는 없는 항목(배민미션) 열을 숨긴다');
   const headCoupang = [...window.document.querySelectorAll('#settlementResultHead th')].map(th => th.textContent.trim());

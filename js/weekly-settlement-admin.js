@@ -68,6 +68,8 @@ const BremWeeklySettlementAdmin = (function () {
 
   const DIRECT_AMOUNT_FIELDS_COUPANG = [
     { key: 'deliveryFee', label: '배달료(AJ)' },
+    { key: 'deductionBase', label: '원천세기준(AC)' },
+    { key: 'withholdingTax', label: '원천세(AC×3.3%)' },
     { key: 'employmentInsurance', label: '고용보험(AE)' },
     { key: 'accidentInsurance', label: '산재보험(AG)' },
     { key: 'hourlyInsurance', label: '시간제보험(AH)' }
@@ -241,6 +243,7 @@ const BremWeeklySettlementAdmin = (function () {
   function readDirectCoupangAmountColumns(channel) {
     return {
       deliveryFee: q(channel, 'DeliveryFeeCol', 'coupang')?.value?.trim() || 'AJ',
+      deductionBase: q(channel, 'DeductionBaseCol', 'coupang')?.value?.trim() || 'AC',
       employmentInsurance: q(channel, 'EmploymentInsCol', 'coupang')?.value?.trim() || 'AE',
       accidentInsurance: q(channel, 'AccidentInsCol', 'coupang')?.value?.trim() || 'AG',
       hourlyInsurance: q(channel, 'HourlyInsCol', 'coupang')?.value?.trim() || 'AH'

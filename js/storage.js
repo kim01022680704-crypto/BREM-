@@ -7402,9 +7402,15 @@ const BremStorage = (function () {
         );
         const hourlyInsurance = Math.abs(Math.round(Number(settlement?.hourlyInsurance || 0)));
         const orderCount = Math.max(0, Math.round(Number(settlement?.orderCount ?? settlement?.callCount ?? 0)));
-        const employmentInsurance = Math.floor(settlementAmount * EMP_RATE);
-        const industrialAccidentInsurance = Math.floor(settlementAmount * INDUSTRIAL_RATE);
-        const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
+        // 고용·산재·원천세 기준은 쿠팡 정산서 AC열(deductionBase).
+        // 정산금액(AJ)은 콜수수료가 이미 빠진 값이라 공제 기준으로 쓰면 금액이 맞지 않는다.
+        // AC가 없는 기존 행은 지금까지처럼 정산금액 기준을 유지한다. 기준을 통째로 바꾸면
+        // 이미 출금이 끝난 주가 소급 재계산되어 초과출금이 된다.
+        // (server/rider-withdrawal.js calcPayoutFromSettlement 과 반드시 같은 식을 쓴다)
+        const deductionBase = Math.max(0, Math.round(Number(settlement?.deductionBase || 0))) || settlementAmount;
+        const employmentInsurance = Math.floor(deductionBase * EMP_RATE);
+        const industrialAccidentInsurance = Math.floor(deductionBase * INDUSTRIAL_RATE);
+        const withholdingTax = Math.floor(deductionBase * WITHHOLDING_RATE);
         const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
         const callFee = orderCount * callFeeUnit;
         // 일정산수수료(2%)는 출금 시에만 부과되는 회사 수익이므로 실지급액에서 빼지 않는다.
@@ -7432,6 +7438,7 @@ const BremStorage = (function () {
           period: periodKey,
           platform: p,
           settlementAmount,
+          deductionBase,
           orderCount,
           callFeeUnit,
           hourlyInsurance,
@@ -8850,6 +8857,8 @@ const BremStorage = (function () {
         riderId: record.riderId || '',
         orderCount: Number(record.orderCount ?? record.callCount ?? 0),
         hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+        // 원천세·고용·산재 기준 금액(쿠팡 AC열). 0 이면 정산금액 기준으로 계산된다.
+        deductionBase: Math.abs(Number(record.deductionBase || 0)),
         settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
         deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
         appliedAt
@@ -9589,6 +9598,8 @@ const BremStorage = (function () {
             deliveryFee: Number(a.deliveryFee || 0),
             missionPay: Number(a.missionPay || 0),
             totalDeliveryPay: Number(a.totalDeliveryPay || 0),
+            // 쿠팡 원천세 기준 금액(AC열). 배민은 원천세를 Y열에서 바로 읽어 0이다.
+            deductionBase: Number(a.deductionBase || 0),
             hourlyInsurance: Number(a.hourlyInsurance || 0),
             employmentInsurance: Number(a.employmentInsurance || 0),
             accidentInsurance: Number(a.accidentInsurance || 0),
@@ -10551,6 +10562,7 @@ const BremStorage = (function () {
           name,
           orderCount: Number(record.orderCount || 0),
           hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+          deductionBase: Math.abs(Number(record.deductionBase || 0)),
           settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
           deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
           matchPayload: {
@@ -10559,6 +10571,8 @@ const BremStorage = (function () {
             riderId: String(record.riderId || '').trim(),
             orderCount: Number(record.orderCount || 0),
             hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+            // 나중에 매칭 재시도할 때 AC(공제기준금액)가 살아있어야 원천세가 맞게 계산된다.
+            deductionBase: Math.abs(Number(record.deductionBase || 0)),
             deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
             settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0)
           },
@@ -10758,6 +10772,10 @@ const BremStorage = (function () {
             driverId: hit.driverId,
             riderId: hit.riderId || '',
             orderCount: Number(hit.orderCount || 0),
+            // 시간제보험·공제기준금액을 안 넘기면 재매칭된 건만 공제가 0이 되어
+            // 실지급액이 부풀고 초과출금으로 이어진다.
+            hourlyInsurance: Math.abs(Number(hit.hourlyInsurance ?? item.hourlyInsurance ?? 0)),
+            deductionBase: Math.abs(Number(hit.deductionBase ?? item.deductionBase ?? 0)),
             deliveryAmount: Number(hit.deliveryAmount ?? hit.settlementAmount ?? 0),
             settlementAmount: Number(hit.settlementAmount ?? hit.deliveryAmount ?? 0)
           });

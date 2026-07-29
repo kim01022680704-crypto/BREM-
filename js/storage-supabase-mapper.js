@@ -232,6 +232,8 @@ window.BremSupabaseMapper = (function () {
       rider_id: String(item.riderId || ''),
       order_count: Number(item.orderCount ?? item.callCount ?? 0),
       hourly_insurance: Math.abs(Number(item.hourlyInsurance || 0)),
+      // 원천세·고용·산재 기준 금액(AC). 0 이면 "없음"이라 기존처럼 정산금액 기준으로 계산된다.
+      deduction_base: Math.abs(Number(item.deductionBase || 0)),
       delivery_amount: Number(item.deliveryAmount ?? item.settlementAmount ?? 0),
       settlement_amount: Number(item.settlementAmount ?? item.deliveryAmount ?? 0),
       applied_at: toIso(item.appliedAt),
@@ -248,6 +250,7 @@ window.BremSupabaseMapper = (function () {
       riderId: row.rider_id || '',
       orderCount: Number(row.order_count || 0),
       hourlyInsurance: Math.abs(Number(row.hourly_insurance || 0)),
+      deductionBase: Math.abs(Number(row.deduction_base || 0)),
       deliveryAmount: Number(row.delivery_amount ?? row.settlement_amount ?? 0),
       settlementAmount: Number(row.settlement_amount ?? row.delivery_amount ?? 0),
       appliedAt: row.applied_at
@@ -398,6 +401,7 @@ window.BremSupabaseMapper = (function () {
       riderId: row.rider_id || '',
       orderCount: Number(row.order_count || 0),
       hourlyInsurance: Math.abs(Number(matchPayload.hourlyInsurance || 0)),
+      deductionBase: Math.abs(Number(matchPayload.deductionBase || 0)),
       deliveryAmount: Number(row.delivery_amount || 0),
       settlementAmount: Number(row.settlement_amount || 0),
       coupangLoginKey: row.coupang_login_key || '',

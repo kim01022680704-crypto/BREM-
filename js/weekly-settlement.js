@@ -155,22 +155,30 @@ const BremWeeklySettlement = (function () {
     withholdingTax: 'Y'         // 원천세(공제)
   });
 
-  // 직계약 쿠팡 정산서 금액/공제 열 기본값 (배달료 AJ, 공제 AE/AG/AH).
+  // 직계약 쿠팡 정산서 금액/공제 열 기본값 (배달료 AJ, 공제 AE/AG/AH, 원천세 기준 AC).
   // AJ 는 콜수수료가 이미 빠진 금액이고 고용/산재/시간제보험은 아직 안 빠져 있다.
   // 일정산서(brem-standard 서식)도 같은 AJ 열을 정산금액으로 읽는다.
-  // 쿠팡 정산서에는 추가지급(미션)·원천세 항목이 없어 배민과 열 구성이 다르다.
+  // 쿠팡 정산서에는 원천세 항목이 없어 AC열의 3.3% 로 계산한다. 추가지급(미션)도 없다.
   const DIRECT_COUPANG_AMOUNT_COLUMNS = Object.freeze({
     deliveryFee: 'AJ',          // 배달료(콜수수료 공제 후)
+    deductionBase: 'AC',        // 원천세 기준 금액 (정산서에 원천세 열이 없다)
     employmentInsurance: 'AE',  // 고용보험(공제)
     accidentInsurance: 'AG',    // 산재보험(공제)
     hourlyInsurance: 'AH'       // 시간제보험(공제)
   });
 
+  const COUPANG_WITHHOLDING_RATE = 0.033;
+
   function extractCoupangAmounts(row, amountColumns) {
     if (!amountColumns) return null;
     const cols = { ...DIRECT_COUPANG_AMOUNT_COLUMNS, ...amountColumns };
+    const deductionBase = parseAmount(readCell(row, cols.deductionBase));
     return {
       deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
+      deductionBase,
+      // 고용·산재·시간제보험은 정산서에 적힌 값을 그대로 쓰고,
+      // 원천세만 정산서에 없어서 AC 기준으로 계산한다.
+      withholdingTax: Math.floor(deductionBase * COUPANG_WITHHOLDING_RATE),
       employmentInsurance: parseAmount(readCell(row, cols.employmentInsurance)),
       accidentInsurance: parseAmount(readCell(row, cols.accidentInsurance)),
       hourlyInsurance: parseAmount(readCell(row, cols.hourlyInsurance))

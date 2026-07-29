@@ -325,9 +325,14 @@ function calcPayoutFromSettlement(row, feesByPlatform) {
   );
   const orderCount = Math.max(0, Math.round(Number(row.order_count || 0)));
   const hourlyInsurance = Math.abs(Math.round(Number(row.hourly_insurance || 0)));
-  const employmentInsurance = Math.floor(settlementAmount * EMP_RATE);
-  const industrialAccidentInsurance = Math.floor(settlementAmount * INDUSTRIAL_RATE);
-  const withholdingTax = Math.floor(settlementAmount * WITHHOLDING_RATE);
+  // 고용·산재·원천세 기준은 쿠팡 정산서 AC열(deduction_base).
+  // 정산금액(AJ)은 콜수수료가 이미 빠진 값이라 공제 기준으로 쓰면 금액이 맞지 않는다.
+  // AC가 없는 기존 행은 지금까지처럼 정산금액 기준을 유지한다. 기준을 통째로 바꾸면
+  // 이미 출금이 끝난 주가 소급 재계산되어 초과출금이 된다.
+  const deductionBase = Math.max(0, Math.round(Number(row.deduction_base || 0))) || settlementAmount;
+  const employmentInsurance = Math.floor(deductionBase * EMP_RATE);
+  const industrialAccidentInsurance = Math.floor(deductionBase * INDUSTRIAL_RATE);
+  const withholdingTax = Math.floor(deductionBase * WITHHOLDING_RATE);
   const callFeeUnit = Math.max(0, Math.round(Number(fees.callFee || 0)));
   const callFee = orderCount * callFeeUnit;
   // 일정산수수료(2%)는 "출금 시" 한 번만 부과되는 회사 수익이다.
@@ -345,6 +350,7 @@ function calcPayoutFromSettlement(row, feesByPlatform) {
     period: String(row.period || '').slice(0, 10),
     platform,
     settlementAmount,
+    deductionBase,
     orderCount,
     hourlyInsurance,
     employmentInsurance,
@@ -504,7 +510,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const driverIdCandidates = await resolveDriverIdCandidates(supabase, rider);
   const { data: settlementRows, error } = await supabase
     .from('daily_settlements')
-    .select('driver_id,period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+    .select('driver_id,period,platform,order_count,hourly_insurance,deduction_base,delivery_amount,settlement_amount')
     .in('driver_id', driverIdCandidates.length ? driverIdCandidates : [driverId])
     .gte('period', weekStart)
     .lte('period', weekEnd)
@@ -747,7 +753,7 @@ async function loadWeekDaysForDrivers(supabase, driverIds, weekStart, feesByPlat
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('daily_settlements')
-      .select('driver_id,period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+      .select('driver_id,period,platform,order_count,hourly_insurance,deduction_base,delivery_amount,settlement_amount')
       .in('driver_id', ids)
       .gte('period', weekStart)
       .lte('period', weekEnd)
@@ -787,7 +793,7 @@ async function loadAllWeekDays(supabase, weekStart, feesByPlatform, excludedSett
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('daily_settlements')
-      .select('driver_id,period,platform,order_count,hourly_insurance,delivery_amount,settlement_amount')
+      .select('driver_id,period,platform,order_count,hourly_insurance,deduction_base,delivery_amount,settlement_amount')
       .gte('period', weekStart)
       .lte('period', weekEnd)
       .order('period', { ascending: true })
