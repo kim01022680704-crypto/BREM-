@@ -1360,7 +1360,10 @@
   }
 
   function longEventPlatformLabel(platform) {
-    return BremStorage.events.getDriverEventPlatform({ longEventPlatform: platform }) === 'baemin' ? '배민' : '쿠팡';
+    const value = BremStorage.events.getDriverEventPlatform({ longEventPlatform: platform });
+    if (value === 'baemin') return '배민';
+    if (value === 'both') return '쿠팡+배민';
+    return '쿠팡';
   }
 
   function eventPlatformOptions(selectedValue) {
@@ -1368,6 +1371,7 @@
     return `
       <option value="coupang" ${value === 'coupang' ? 'selected' : ''}>쿠팡</option>
       <option value="baemin" ${value === 'baemin' ? 'selected' : ''}>배민</option>
+      <option value="both" ${value === 'both' ? 'selected' : ''}>쿠팡+배민</option>
     `;
   }
 
@@ -2152,7 +2156,7 @@
     const target = Number(item.targetCount || 0);
     const rate = target ? Math.round((total / target) * 100) : 0;
     return `
-      <p>집계: ${longEventPlatformLabel(platform)} (합산 제외)</p>
+      <p>집계: ${longEventPlatformLabel(platform)}${platform === 'both' ? ' (합산)' : ''}</p>
       <p>시작일: ${formatDate(startDate)}</p>
       <p>${number(total)} / ${number(target)}콜</p>
       ${progress(rate)}
@@ -3583,7 +3587,7 @@
         </label>
         <label>
           집계 플랫폼
-          <select data-event-platform="${driver.id}" title="쿠팡 또는 배민 중 하나만 집계됩니다. 합산은 사용하지 않습니다.">
+          <select data-event-platform="${driver.id}" title="쿠팡 / 배민 / 쿠팡+배민(합산) 중 선택">
             ${eventPlatformOptions(platform)}
           </select>
         </label>

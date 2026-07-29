@@ -135,7 +135,10 @@ function normalizePlatformId(value) {
 }
 
 function normalizeLongEventPlatform(value) {
-  return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'baemin') return 'baemin';
+  if (v === 'both' || v === 'combined' || v === 'all') return 'both';
+  return 'coupang';
 }
 
 function makeDriverMatchKey(name, phone) {

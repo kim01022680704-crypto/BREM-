@@ -106,11 +106,17 @@ const BremStorage = (function () {
   }
 
   function normalizeLongEventPlatform(value) {
-    return normalizePlatform(value) === 'baemin' ? 'baemin' : 'coupang';
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'baemin') return 'baemin';
+    if (v === 'both' || v === 'combined' || v === 'all') return 'both';
+    return 'coupang';
   }
 
   function longEventPlatformLabel(platform) {
-    return normalizeLongEventPlatform(platform) === 'baemin' ? '배민' : '쿠팡';
+    const v = normalizeLongEventPlatform(platform);
+    if (v === 'baemin') return '배민';
+    if (v === 'both') return '쿠팡+배민';
+    return '쿠팡';
   }
 
   function normalizeCalls(list) {
@@ -5531,10 +5537,11 @@ const BremStorage = (function () {
     sumForDriverSince(driverId, startDate, platform) {
       if (!startDate) return 0;
       const scopedPlatform = platform ? normalizeLongEventPlatform(platform) : null;
+      const sumBoth = !scopedPlatform || scopedPlatform === 'both';
       return calls.getAll()
         .filter(call => {
           if (call.driverId !== driverId || call.date < startDate) return false;
-          if (!scopedPlatform) return true;
+          if (sumBoth) return true;
           return normalizePlatform(call.platform) === scopedPlatform;
         })
         .reduce((sum, call) => sum + Number(call.count || 0), 0);

@@ -749,7 +749,10 @@
   }
 
   function longEventPlatformLabel(platform) {
-    return String(platform || '').toLowerCase() === 'baemin' ? '배민' : '쿠팡';
+    const value = String(platform || '').trim().toLowerCase();
+    if (value === 'baemin') return '배민';
+    if (value === 'both' || value === 'combined' || value === 'all') return '쿠팡+배민';
+    return '쿠팡';
   }
 
   function targetFor(driverId, month) {
@@ -1206,7 +1209,7 @@
       isEventUnset
         ? '장기근속이벤트가 배정되면 진행률이 표시됩니다.'
         : eventItem && eventStartDate
-          ? `${eventItem.name} · ${formatDate(eventStartDate)}부터 ${eventPlatformLabel} 집계 (합산 제외)`
+          ? `${eventItem.name} · ${formatDate(eventStartDate)}부터 ${eventPlatformLabel} 집계${['both', 'combined', 'all'].includes(String(eventProgress.platform || driver.longEventPlatform || '').toLowerCase()) ? ' (합산)' : ''}`
           : eventItem
             ? `${eventItem.name} · 시작일 설정 필요`
             : '누적 콜수 기준으로 계산됩니다.'

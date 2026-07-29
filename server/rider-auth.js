@@ -615,6 +615,13 @@ function normalizeCallPlatform(value) {
   return String(value || '').trim().toLowerCase() === 'baemin' ? 'baemin' : 'coupang';
 }
 
+function normalizeLongEventPlatform(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'baemin') return 'baemin';
+  if (v === 'both' || v === 'combined' || v === 'all') return 'both';
+  return 'coupang';
+}
+
 function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
   const rider = riderRow || {};
   const riderId = String(rider.id || '');
@@ -633,7 +640,7 @@ function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
   const raw = rider.raw_data && typeof rider.raw_data === 'object' ? rider.raw_data : {};
   const columnItemId = String(rider.long_event_item_id || '').trim();
   const columnItemName = String(rider.long_event_item || '').trim();
-  const platform = normalizeCallPlatform(
+  const platform = normalizeLongEventPlatform(
     rider.long_event_platform || raw.longEventPlatform || 'coupang'
   );
 
@@ -678,7 +685,7 @@ function computeLongEventProgress(riderRow, settingsRows = [], callRows = []) {
   const total = calls.reduce((sum, call) => {
     const date = String(call.date || '').slice(0, 10);
     if (!date || date < startDate) return sum;
-    if (normalizeCallPlatform(call.platform) !== platform) return sum;
+    if (platform !== 'both' && normalizeCallPlatform(call.platform) !== platform) return sum;
     return sum + Math.max(0, Number(call.count) || 0);
   }, 0);
   const rate = target ? Math.round((total / target) * 100) : 0;

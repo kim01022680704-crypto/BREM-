@@ -394,9 +394,8 @@ const BremPromotionApplyAdmin = (function () {
   function resultShowsDeliveryFeeColumns(result) {
     const platform = BremPlatforms.normalize(result?.platform);
     if (platform === 'baemin') return true;
-    if (platform === 'combined') {
-      return (result?.results || []).some(row => BremPlatforms.normalize(row.appliedPlatform) === 'baemin');
-    }
+    // 합산 단가보장은 배달처리비로 보장액을 내므로 결과표에 배달처리비 열을 항상 연다.
+    if (platform === 'combined') return true;
     return false;
   }
 
@@ -406,7 +405,7 @@ const BremPromotionApplyAdmin = (function () {
 
     if (!file) {
       hintEl.innerHTML = platformKey === 'combined'
-        ? '단가보장 조건이 있으면 배민 기사(배민 단독)에 배달처리비 정산서가 필요합니다. K열 User ID로 매칭하며, 파일명 기간은 배민 주정산서와 같아야 합니다.'
+        ? '단가보장 조건이 있으면 배달처리비가 필요합니다. <strong>쿠팡+배민 합산 콜수</strong>로 보장 단가 구간을 고르고, <strong>K열 User ID</strong> 배달처리비로 보장액을 계산합니다. 파일명 기간은 배민 주정산서와 같아야 합니다.'
         : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U·V·AH 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 집계';
       return;
     }
@@ -596,7 +595,7 @@ const BremPromotionApplyAdmin = (function () {
       : '';
     const isCombined = BremPlatforms.normalize(result.platform) === 'combined';
     const combinedSummary = isCombined
-      ? `<p>적용 구분: 쿠팡 <strong>${formatNumber(result.summary?.coupangAssigned)}</strong>명 · 배민 <strong>${formatNumber(result.summary?.baeminAssigned)}</strong>명 · 겹침→쿠팡 <strong>${formatNumber(result.summary?.overlapAssigned)}</strong>명</p>`
+      ? `<p>적용 구분: 쿠팡만 <strong>${formatNumber(result.summary?.coupangAssigned)}</strong>명 · 배민만 <strong>${formatNumber(result.summary?.baeminAssigned)}</strong>명 · 쿠팡+배민 합산 <strong>${formatNumber(result.summary?.overlapAssigned)}</strong>명</p>`
       : '';
     const deliveryFeeSummary = result.deliveryFeeLabel
       ? `<p>배달처리비: <strong>${escapeHtml(result.deliveryFeeLabel)}</strong>${result.deliveryFeeFileName ? ` · ${escapeHtml(result.deliveryFeeFileName)}` : ''}</p>`

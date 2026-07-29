@@ -43,7 +43,12 @@ window.BremSupabaseMapper = (function () {
       long_event_item_id: String(driver.longEventItemId || ''),
       long_event_item: String(driver.longEventItem || ''),
       long_event_start_date: toDate(driver.longEventStartDate),
-      long_event_platform: String(driver.longEventPlatform || 'coupang') === 'baemin' ? 'baemin' : 'coupang',
+      long_event_platform: (() => {
+        const v = String(driver.longEventPlatform || 'coupang').trim().toLowerCase();
+        if (v === 'baemin') return 'baemin';
+        if (v === 'both' || v === 'combined' || v === 'all') return 'both';
+        return 'coupang';
+      })(),
       join_date: toDate(driver.joinDate),
       status: String(driver.status || '근무중'),
       memo: String(driver.memo || ''),
@@ -98,9 +103,12 @@ window.BremSupabaseMapper = (function () {
       longEventItemId: row.long_event_item_id || '',
       longEventItem: row.long_event_item || '',
       longEventStartDate: row.long_event_start_date || '',
-      longEventPlatform: String(row.long_event_platform || raw.longEventPlatform || 'coupang') === 'baemin'
-        ? 'baemin'
-        : 'coupang',
+      longEventPlatform: (() => {
+        const v = String(row.long_event_platform || raw.longEventPlatform || 'coupang').trim().toLowerCase();
+        if (v === 'baemin') return 'baemin';
+        if (v === 'both' || v === 'combined' || v === 'all') return 'both';
+        return 'coupang';
+      })(),
       joinDate: row.join_date || raw.joinDate || '',
       status: row.status || '근무중',
       memo: row.memo || '',
