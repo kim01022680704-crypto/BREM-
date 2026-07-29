@@ -10885,12 +10885,17 @@ tr.is-selected {
   border: 1px solid #d7deea;
   border-radius: 12px;
   min-height: 360px;
+  color: #0f172a;
 }
 
 .driver-org-canvas {
   display: flex;
   justify-content: center;
   min-width: max-content;
+}
+
+.driver-org-canvas-wrap .empty {
+  color: #334155;
 }
 
 .driver-org-tree,
