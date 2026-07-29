@@ -4025,9 +4025,21 @@
             <div class="promotion-form-section">
               <h3>엑셀 열 설정</h3>
               <div class="promotion-form-grid">
-                <label>기사명 열<input type="text" id="weeklySettlementDirectNameCol-coupang" value="C"></label>
+                <label>기사명(쿠팡ID) 열<input type="text" id="weeklySettlementDirectNameCol-coupang" value="C"></label>
                 <label>총 정산 오더수 열<input type="text" id="weeklySettlementDirectOrderCol-coupang" value="F"></label>
                 <label>데이터 시작행<input type="number" id="weeklySettlementDirectStartRow-coupang" min="1" value="12"></label>
+              </div>
+              <p class="form-help">C열 성함이 <strong>쿠팡ID</strong>로 매칭됩니다. 시작행은 여유있게 앞으로 두어도 됩니다. 오더수가 숫자인 행만 읽어 헤더·설명·합계 행은 자동으로 건너뜁니다.</p>
+              <h3>지급 금액 열</h3>
+              <div class="promotion-form-grid">
+                <label>배달료<input type="text" id="weeklySettlementDirectDeliveryFeeCol-coupang" value="AJ"></label>
+              </div>
+              <p class="form-help">AJ는 <strong>콜수수료가 이미 빠진 금액</strong>입니다. 고용·산재·시간제보험은 아직 빠지지 않은 상태이므로 아래 공제 열에서 따로 읽습니다. 「일정산서 업로드」도 같은 AJ 열을 정산금액으로 읽습니다.</p>
+              <h3>공제 열</h3>
+              <div class="promotion-form-grid">
+                <label>고용보험<input type="text" id="weeklySettlementDirectEmploymentInsCol-coupang" value="AE"></label>
+                <label>산재보험<input type="text" id="weeklySettlementDirectAccidentInsCol-coupang" value="AG"></label>
+                <label>시간제보험<input type="text" id="weeklySettlementDirectHourlyInsCol-coupang" value="AH"></label>
               </div>
             </div>
             <div class="promotion-form-actions">
@@ -4053,6 +4065,10 @@
                   <th>원본 이름</th>
                   <th>쿠팡 ID</th>
                   <th>주간 오더수(F)</th>
+                  <th>배달료(AJ)</th>
+                  <th>고용보험(AE)</th>
+                  <th>산재보험(AG)</th>
+                  <th>시간제보험(AH)</th>
                   <th>시스템 콜수</th>
                   <th>콜수 일치</th>
                   <th>매칭</th>
@@ -4488,15 +4504,7 @@
           </div>
           <div class="table-wrap direct-scroll direct-scroll-wide">
             <table class="weekly-settlement-saved-table" id="settlementResultTable">
-              <thead>
-                <tr>
-                  <th>기사</th><th>ID</th><th>콜수</th>
-                  <th>배달비</th><th>배민미션</th><th>기타지급</th><th>BREM프로모션</th><th>지급합계</th>
-                  <th>고용보험</th><th>산재보험</th><th>시간제보험</th><th>원천세</th><th>프로모션원천세</th>
-                  <th>콜수수료</th><th>일정산수수료</th><th>선정산(처리완료)</th><th>공제합계</th>
-                  <th>총지급액</th>
-                </tr>
-              </thead>
+              <thead id="settlementResultHead"></thead>
               <tbody id="settlementResultRows"></tbody>
             </table>
           </div>
@@ -6630,8 +6638,8 @@
   <script src="js/promotion-conditions.js?v=20260622c"></script>
   <script src="js/promotion-engine.js?v=20260720a"></script>
   <script src="js/promotion-admin.js?v=20260622c"></script>
-  <script src="js/weekly-settlement.js?v=20260703w"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260703w"></script>
+  <script src="js/weekly-settlement.js?v=20260729d"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260729d"></script>
   <script src="js/baemin-delivery-fee.js?v=20260623g"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260729a"></script>
     <script src="js/coupang-status-admin.js?v=20260723a"></script>
@@ -6656,7 +6664,7 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260727b"></script>
   <script src="js/direct-adjustment-admin.js?v=20260729c"></script>
-  <script src="js/settlement-result-direct.js?v=20260727c"></script>
+  <script src="js/settlement-result-direct.js?v=20260729d"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260706b"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

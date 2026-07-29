@@ -240,22 +240,58 @@ const BremSettlementResultDirect = (function () {
     return rows;
   }
 
+  // 표 헤더·본문·엑셀이 같은 정의를 쓰게 한 곳에 모아둔다. 따로 두면 열이 어긋난다.
+  // 쿠팡 정산서에는 추가지급(배민미션) 항목이 없어 그 열은 쿠팡에서 빼고 보여준다.
+  const ALL_COLUMNS = [
+    { key: 'name', label: '기사', money: false, strong: true },
+    { key: 'idLabel', label: 'ID', money: false },
+    { key: 'callCount', label: '콜수' },
+    { key: 'deliveryFee', label: '배달비' },
+    { key: 'missionPay', label: '배민미션', baeminOnly: true },
+    { key: 'other', label: '기타지급' },
+    { key: 'promo', label: 'BREM프로모션' },
+    { key: 'grossPay', label: '지급합계', strong: true },
+    { key: 'employmentInsurance', label: '고용보험' },
+    { key: 'accidentInsurance', label: '산재보험' },
+    { key: 'hourlyInsurance', label: '시간제보험' },
+    { key: 'withholdingTax', label: '원천세' },
+    { key: 'promotionWithholdingTax', label: '프로모션원천세' },
+    { key: 'callFee', label: '콜수수료' },
+    { key: 'dailySettlementFee', label: '일정산수수료' },
+    { key: 'prepaid', label: '선정산(처리완료)' },
+    { key: 'deductTotal', label: '공제합계' },
+    { key: 'netPay', label: '총지급액', strong: true }
+  ];
+
+  function columns() {
+    if (state.platform === 'coupang') return ALL_COLUMNS.filter(col => !col.baeminOnly);
+    return ALL_COLUMNS;
+  }
+
+  function renderHead() {
+    const head = $('#settlementResultHead');
+    if (!head) return;
+    head.innerHTML = `<tr>${columns().map(col => `<th>${escapeHtml(col.label)}</th>`).join('')}</tr>`;
+  }
+
   function render() {
     const body = $('#settlementResultRows');
     const summaryEl = $('#settlementResultSummary');
     if (!body) return;
     renderSettlementPicker();
+    renderHead();
     const settlement = currentSettlement();
+    const colspan = columns().length;
 
     if (!settlement) {
-      body.innerHTML = '<tr><td colspan="18" class="empty">이 플랫폼에 저장된 직계약 정산서가 없습니다. (주정산서 업로드 · 직계약 확인)</td></tr>';
+      body.innerHTML = `<tr><td colspan="${colspan}" class="empty">이 플랫폼에 저장된 직계약 정산서가 없습니다. (주정산서 업로드 · 직계약 확인)</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
 
     const rows = computeRows();
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="18" class="empty">선택한 정산서에 라이더 데이터가 없습니다.</td></tr>';
+      body.innerHTML = `<tr><td colspan="${colspan}" class="empty">선택한 정산서에 라이더 데이터가 없습니다.</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
@@ -269,27 +305,13 @@ const BremSettlementResultDirect = (function () {
       return acc;
     }, { grossPay: 0, deductTotal: 0, netPay: 0, promo: 0, other: 0 });
 
+    const cols = columns();
     body.innerHTML = rows.map(row => `
-      <tr>
-        <td><strong>${escapeHtml(row.name)}</strong></td>
-        <td>${escapeHtml(row.idLabel)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.missionPay)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.other)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.promo)}</td>
-        <td class="weekly-amount-cell"><strong>${formatNumber(row.grossPay)}</strong></td>
-        <td class="weekly-amount-cell">${formatNumber(row.employmentInsurance)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.accidentInsurance)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.hourlyInsurance)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.withholdingTax)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.promotionWithholdingTax)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.callFee)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.dailySettlementFee)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.prepaid)}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.deductTotal)}</td>
-        <td class="weekly-amount-cell"><strong>${formatNumber(row.netPay)}</strong></td>
-      </tr>`).join('');
+      <tr>${cols.map(col => {
+      const value = col.money === false ? escapeHtml(row[col.key]) : formatNumber(row[col.key]);
+      const cls = col.money === false ? '' : ' class="weekly-amount-cell"';
+      return `<td${cls}>${col.strong ? `<strong>${value}</strong>` : value}</td>`;
+    }).join('')}</tr>`).join('');
 
     if (summaryEl) {
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
@@ -307,13 +329,11 @@ const BremSettlementResultDirect = (function () {
       showToast('엑셀 모듈을 불러오지 못했습니다.');
       return;
     }
-    const header = ['기사', 'ID', '콜수', '배달비', '배민미션', '기타지급', 'BREM프로모션', '지급합계',
-      '고용보험', '산재보험', '시간제보험', '원천세', '프로모션원천세', '콜수수료', '일정산수수료', '선정산(처리완료)', '공제합계', '총지급액'];
-    const data = [header, ...rows.map(row => [
-      row.name, row.idLabel, row.callCount, row.deliveryFee, row.missionPay, row.other, row.promo, row.grossPay,
-      row.employmentInsurance, row.accidentInsurance, row.hourlyInsurance, row.withholdingTax,
-      row.promotionWithholdingTax, row.callFee, row.dailySettlementFee, row.prepaid, row.deductTotal, row.netPay
-    ])];
+    const cols = columns();
+    const data = [
+      cols.map(col => col.label),
+      ...rows.map(row => cols.map(col => row[col.key]))
+    ];
     const ws = window.XLSX.utils.aoa_to_sheet(data);
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, '정산결과');

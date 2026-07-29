@@ -155,6 +155,28 @@ const BremWeeklySettlement = (function () {
     withholdingTax: 'Y'         // 원천세(공제)
   });
 
+  // 직계약 쿠팡 정산서 금액/공제 열 기본값 (배달료 AJ, 공제 AE/AG/AH).
+  // AJ 는 콜수수료가 이미 빠진 금액이고 고용/산재/시간제보험은 아직 안 빠져 있다.
+  // 일정산서(brem-standard 서식)도 같은 AJ 열을 정산금액으로 읽는다.
+  // 쿠팡 정산서에는 추가지급(미션)·원천세 항목이 없어 배민과 열 구성이 다르다.
+  const DIRECT_COUPANG_AMOUNT_COLUMNS = Object.freeze({
+    deliveryFee: 'AJ',          // 배달료(콜수수료 공제 후)
+    employmentInsurance: 'AE',  // 고용보험(공제)
+    accidentInsurance: 'AG',    // 산재보험(공제)
+    hourlyInsurance: 'AH'       // 시간제보험(공제)
+  });
+
+  function extractCoupangAmounts(row, amountColumns) {
+    if (!amountColumns) return null;
+    const cols = { ...DIRECT_COUPANG_AMOUNT_COLUMNS, ...amountColumns };
+    return {
+      deliveryFee: parseAmount(readCell(row, cols.deliveryFee)),
+      employmentInsurance: parseAmount(readCell(row, cols.employmentInsurance)),
+      accidentInsurance: parseAmount(readCell(row, cols.accidentInsurance)),
+      hourlyInsurance: parseAmount(readCell(row, cols.hourlyInsurance))
+    };
+  }
+
   function extractBaeminAmounts(row, amountColumns) {
     if (!amountColumns) return null;
     const cols = { ...DIRECT_BAEMIN_AMOUNT_COLUMNS, ...amountColumns };
@@ -551,6 +573,8 @@ const BremWeeklySettlement = (function () {
     const nameColumn = columnConfig.nameColumn || 'C';
     const orderCountColumn = columnConfig.orderCountColumn || 'F';
     const startRow = Number(columnConfig.startRow || 12);
+    // 직계약: 금액/공제 열이 지정되면 라이더별 amounts(배달료·고용/산재/시간제보험)를 함께 추출한다.
+    const amountColumns = columnConfig.amountColumns || null;
     const rows = await readWeeklyRows(file, password, { sheetIndex: 0 });
     const riders = [];
     const seen = new Set();
@@ -560,14 +584,20 @@ const BremWeeklySettlement = (function () {
       const rawName = cellText(readCell(rows[i] || [], nameColumn));
       if (!rawName) continue;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
+      // 직계약: 시작행을 여유있게 앞에 둬도 헤더·설명·합계 행이 섞이지 않도록
+      // 오더수가 숫자인 실제 데이터 행만 읽는다. 브로 업로드는 기존 동작을 그대로 둔다.
+      if (amountColumns && !/^[\d,]+(\.\d+)?$/.test(String(orderRaw ?? '').trim())) continue;
       const weeklyOrderCount = Number(String(orderRaw ?? '').replace(/[^\d.-]/g, '')) || 0;
       const loginKey = normalizeCoupangLoginKey(rawName);
-      pushUniqueRider(riders, seen, loginKey, {
+      const rider = {
         originalName: rawName,
         riderName: normalizeCoupangName(rawName),
         coupangLoginKey: loginKey,
         weeklyOrderCount
-      });
+      };
+      const amounts = extractCoupangAmounts(rows[i] || [], amountColumns);
+      if (amounts) rider.amounts = amounts;
+      pushUniqueRider(riders, seen, loginKey, rider);
     }
 
     if (!riders.length) {

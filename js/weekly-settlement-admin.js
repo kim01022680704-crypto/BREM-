@@ -54,8 +54,9 @@ const BremWeeklySettlementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
-  // 직계약 배민 정산서 금액/공제 열 (미리보기·상세에 표시)
-  const DIRECT_AMOUNT_FIELDS = [
+  // 직계약 정산서 금액/공제 열 (미리보기·상세에 표시).
+  // 배민과 쿠팡은 정산서 서식이 달라 뽑는 항목도 다르다.
+  const DIRECT_AMOUNT_FIELDS_BAEMIN = [
     { key: 'deliveryFee', label: '배달료(E)' },
     { key: 'missionPay', label: '추가지급(F)' },
     { key: 'totalDeliveryPay', label: '총배달료(G)' },
@@ -65,19 +66,31 @@ const BremWeeklySettlementAdmin = (function () {
     { key: 'withholdingTax', label: '원천세(Y)' }
   ];
 
-  function isDirectBaeminView(channel, platform) {
-    return normChannel(channel) === 'direct' && platform === 'baemin';
+  const DIRECT_AMOUNT_FIELDS_COUPANG = [
+    { key: 'deliveryFee', label: '배달료(AJ)' },
+    { key: 'employmentInsurance', label: '고용보험(AE)' },
+    { key: 'accidentInsurance', label: '산재보험(AG)' },
+    { key: 'hourlyInsurance', label: '시간제보험(AH)' }
+  ];
+
+  function directAmountFields(platform) {
+    return platform === 'coupang' ? DIRECT_AMOUNT_FIELDS_COUPANG : DIRECT_AMOUNT_FIELDS_BAEMIN;
+  }
+
+  function isDirectAmountView(channel, platform) {
+    if (normChannel(channel) !== 'direct') return false;
+    return platform === 'baemin' || platform === 'coupang';
   }
 
   function directAmountHeadCells(channel, platform) {
-    if (!isDirectBaeminView(channel, platform)) return '';
-    return DIRECT_AMOUNT_FIELDS.map(f => `<th>${escapeHtml(f.label)}</th>`).join('');
+    if (!isDirectAmountView(channel, platform)) return '';
+    return directAmountFields(platform).map(f => `<th>${escapeHtml(f.label)}</th>`).join('');
   }
 
   function directAmountBodyCells(rider, channel, platform) {
-    if (!isDirectBaeminView(channel, platform)) return '';
+    if (!isDirectAmountView(channel, platform)) return '';
     const amounts = rider?.amounts || {};
-    return DIRECT_AMOUNT_FIELDS
+    return directAmountFields(platform)
       .map(f => `<td class="weekly-amount-cell">${formatNumber(amounts[f.key] || 0)}</td>`)
       .join('');
   }
@@ -209,6 +222,10 @@ const BremWeeklySettlementAdmin = (function () {
     return normChannel(channel) === 'direct' && platform === 'baemin';
   }
 
+  function isDirectCoupang(channel, platform) {
+    return normChannel(channel) === 'direct' && platform === 'coupang';
+  }
+
   function readDirectBaeminAmountColumns(channel) {
     return {
       deliveryFee: q(channel, 'DeliveryFeeCol', 'baemin')?.value?.trim() || 'E',
@@ -221,9 +238,18 @@ const BremWeeklySettlementAdmin = (function () {
     };
   }
 
+  function readDirectCoupangAmountColumns(channel) {
+    return {
+      deliveryFee: q(channel, 'DeliveryFeeCol', 'coupang')?.value?.trim() || 'AJ',
+      employmentInsurance: q(channel, 'EmploymentInsCol', 'coupang')?.value?.trim() || 'AE',
+      accidentInsurance: q(channel, 'AccidentInsCol', 'coupang')?.value?.trim() || 'AG',
+      hourlyInsurance: q(channel, 'HourlyInsCol', 'coupang')?.value?.trim() || 'AH'
+    };
+  }
+
   function readUploadForm(channel, platform) {
     if (platform === 'coupang') fillCoupangDatesFromBase(channel);
-    // 직계약 배민은 시작행을 여유있게 앞으로(15) 두고, 숫자 User ID 행만 읽어 헤더행을 건너뛴다.
+    // 직계약은 시작행을 여유있게 앞으로 두고, 오더수(콜수)가 숫자인 행만 읽어 헤더행을 건너뛴다.
     const startRowDefault = isDirectBaemin(channel, platform)
       ? 15
       : (platform === 'coupang' ? 12 : 2);
@@ -238,6 +264,8 @@ const BremWeeklySettlementAdmin = (function () {
     };
     if (isDirectBaemin(channel, platform)) {
       columnConfig.amountColumns = readDirectBaeminAmountColumns(channel);
+    } else if (isDirectCoupang(channel, platform)) {
+      columnConfig.amountColumns = readDirectCoupangAmountColumns(channel);
     }
     return {
       platform,
@@ -686,7 +714,9 @@ const BremWeeklySettlementAdmin = (function () {
     `;
     }).join('');
 
-    const emptyColspan = isDirectBaeminView(ch, platform) ? 9 + DIRECT_AMOUNT_FIELDS.length : 9;
+    const emptyColspan = isDirectAmountView(ch, platform)
+      ? 9 + directAmountFields(platform).length
+      : 9;
     rowsEl.innerHTML = matchedRows + unmatchedRows || `<tr><td colspan="${emptyColspan}" class="empty">데이터 없음</td></tr>`;
   }
 
@@ -877,7 +907,7 @@ const BremWeeklySettlementAdmin = (function () {
       <p>매칭 ${formatNumber(record.summary.matchedRiders)}명: <strong>${escapeHtml(record.matchedNamesLabel || '-')}</strong></p>
       ${mismatchCount ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 불일치 ${formatNumber(mismatchCount)}명 — 경고 열에서 누락 일·일별 콜수를 확인하세요.</p>` : ''}
     `;
-    const detailIsDirectBaemin = isDirectBaeminView(record.channel, record.platform);
+    const detailIsDirectAmount = isDirectAmountView(record.channel, record.platform);
     const headEl = $('#weeklySettlementDetailHead');
     if (headEl) {
       headEl.innerHTML = `<tr>
@@ -906,7 +936,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${escapeHtml(riderMatchIdValue(rider, record.platform))}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
-        ${detailIsDirectBaemin ? directAmountBodyCells(rider, record.channel, record.platform) : ''}
+        ${detailIsDirectAmount ? directAmountBodyCells(rider, record.channel, record.platform) : ''}
         <td>${formatNumber(rider.systemCallCount)}</td>
         <td>${rider.callCountMatched === false ? '불일치' : '일치'}</td>
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
