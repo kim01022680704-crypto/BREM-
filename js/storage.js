@@ -9627,6 +9627,16 @@ const BremStorage = (function () {
     return channel === 'direct' ? KEYS.settlementUnmatchedDirect : KEYS.settlementUnmatched;
   }
 
+  // settlement_unmatched 는 upsert 전용 테이블이라, 목록에서 빠진 행을 그냥 다시 쓰면
+  // Supabase 에서는 지워지지 않는다. 그러면 매칭이 끝난 건이 새로고침 때 미매칭으로
+  // 되살아난다. 삭제할 id 를 명시해서 넘겨야 실제로 지워진다.
+  function removedUnmatchedIds(before, after) {
+    const keep = new Set((after || []).map(item => String(item?.id || '').trim()).filter(Boolean));
+    return (before || [])
+      .map(item => String(item?.id || '').trim())
+      .filter(id => id && !keep.has(id));
+  }
+
   const weeklySettlements = {
     getAll(channel) {
       const key = weeklySettlementsKey(channel === 'direct' ? 'direct' : 'bro');
@@ -10546,13 +10556,18 @@ const BremStorage = (function () {
         };
       });
 
-      const list = settlementUnmatched.getAll().filter(item => !(
+      const current = settlementUnmatched.getAll();
+      const list = current.filter(item => !(
         item.kind === 'daily'
         && item.period === periodKey
         && normalizePlatform(item.platform) === p
       ));
       list.unshift(...nextRecords);
-      storageAdapter.write(KEYS.settlementUnmatched, list, { incrementalRows: nextRecords });
+      // 재업로드로 밀려난 옛 미매칭 행도 함께 지운다. (upsert 만 하면 DB 에 남는다)
+      storageAdapter.write(KEYS.settlementUnmatched, list, {
+        incrementalRows: nextRecords,
+        deletedRowIds: removedUnmatchedIds(current, list)
+      });
       return list;
     },
 
@@ -10606,7 +10621,8 @@ const BremStorage = (function () {
       });
 
       const incomingIds = new Set(nextRecords.map(record => record.id));
-      const list = settlementUnmatched.getAll(ch).filter(item => {
+      const current = settlementUnmatched.getAll(ch);
+      const list = current.filter(item => {
         if (item.kind !== 'weekly') return true;
         if (normalizePlatform(item.platform) !== p) return true;
         if (item.weekStart !== weekKey) return true;
@@ -10615,7 +10631,11 @@ const BremStorage = (function () {
         return true;
       });
       list.unshift(...nextRecords);
-      storageAdapter.write(settlementUnmatchedKey(ch), list, { incrementalRows: nextRecords });
+      // 재업로드로 밀려난 옛 미매칭 행도 함께 지운다. (upsert 만 하면 DB 에 남는다)
+      storageAdapter.write(settlementUnmatchedKey(ch), list, {
+        incrementalRows: nextRecords,
+        deletedRowIds: removedUnmatchedIds(current, list)
+      });
       return list;
     },
 
@@ -10631,11 +10651,15 @@ const BremStorage = (function () {
     clearByPeriod(period, platform = DEFAULT_PLATFORM) {
       const p = normalizePlatform(platform);
       const periodKey = String(period).slice(0, 10);
-      const next = settlementUnmatched.getAll().filter(item => {
+      const current = settlementUnmatched.getAll();
+      const next = current.filter(item => {
         const itemPeriod = String(item.period).slice(0, 10);
         return !(itemPeriod === periodKey && normalizePlatform(item.platform) === p && item.kind === 'daily');
       });
-      storageAdapter.write(KEYS.settlementUnmatched, next, { allowEmpty: true });
+      storageAdapter.write(KEYS.settlementUnmatched, next, {
+        allowEmpty: true,
+        deletedRowIds: removedUnmatchedIds(current, next)
+      });
     },
 
     clearByWeek({ weekStart, platform, kind }) {
@@ -10643,25 +10667,35 @@ const BremStorage = (function () {
       const p = platform ? normalizePlatform(platform) : '';
       const kindFilter = kind === 'weekly' || kind === 'daily' ? kind : '';
       if (!weekKey) return;
-      const next = settlementUnmatched.getAll().filter(item => {
+      const current = settlementUnmatched.getAll();
+      const next = current.filter(item => {
         if (item.weekStart !== weekKey) return true;
         if (p && normalizePlatform(item.platform) !== p) return true;
         if (kindFilter && item.kind !== kindFilter) return true;
         return false;
       });
-      storageAdapter.write(KEYS.settlementUnmatched, next, { allowEmpty: true });
+      storageAdapter.write(KEYS.settlementUnmatched, next, {
+        allowEmpty: true,
+        deletedRowIds: removedUnmatchedIds(current, next)
+      });
     },
 
     clearByPlatform(platform) {
       const p = normalizePlatform(platform);
-      storageAdapter.write(
-        KEYS.settlementUnmatched,
-        settlementUnmatched.getAll().filter(item => normalizePlatform(item.platform) !== p)
-      );
+      const current = settlementUnmatched.getAll();
+      const next = current.filter(item => normalizePlatform(item.platform) !== p);
+      storageAdapter.write(KEYS.settlementUnmatched, next, {
+        allowEmpty: true,
+        deletedRowIds: removedUnmatchedIds(current, next)
+      });
     },
 
     clearAll() {
-      storageAdapter.write(KEYS.settlementUnmatched, []);
+      const current = settlementUnmatched.getAll();
+      storageAdapter.write(KEYS.settlementUnmatched, [], {
+        allowEmpty: true,
+        deletedRowIds: removedUnmatchedIds(current, [])
+      });
     },
 
     retryDailyMatching({ platform, weekStart, period = '', recordIds = [] } = {}) {
@@ -10727,12 +10761,17 @@ const BremStorage = (function () {
         applied += records.length;
       });
 
-      const other = settlementUnmatched.getAll().filter(item => !(
+      const current = settlementUnmatched.getAll();
+      const other = current.filter(item => !(
         item.kind === 'daily'
         && item.weekStart === weekKey
         && normalizePlatform(item.platform) === p
       ));
-      storageAdapter.write(KEYS.settlementUnmatched, other.concat(untouched).concat(stillUnmatched));
+      const next = other.concat(untouched).concat(stillUnmatched);
+      storageAdapter.write(KEYS.settlementUnmatched, next, {
+        allowEmpty: true,
+        deletedRowIds: removedUnmatchedIds(current, next)
+      });
       return {
         matchedCount,
         stillUnmatchedCount: stillUnmatched.length,
@@ -10837,12 +10876,17 @@ const BremStorage = (function () {
         };
       });
 
-      const other = settlementUnmatched.getAll(ch).filter(item => !(
+      const current = settlementUnmatched.getAll(ch);
+      const other = current.filter(item => !(
         item.kind === 'weekly'
         && item.weekStart === weekKey
         && normalizePlatform(item.platform) === p
       ));
-      storageAdapter.write(settlementUnmatchedKey(ch), other.concat(untouched).concat(nextPending));
+      const next = other.concat(untouched).concat(nextPending);
+      storageAdapter.write(settlementUnmatchedKey(ch), next, {
+        allowEmpty: true,
+        deletedRowIds: removedUnmatchedIds(current, next)
+      });
       return {
         matched: newlyMatched,
         matchedCount: newlyMatched.length,
