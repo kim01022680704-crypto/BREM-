@@ -1896,6 +1896,16 @@
           };
         }
 
+        if (triggerId === 'driver-org-week') {
+          return {
+            hiddenInput: $('#driverOrgWeek'),
+            labelEl: $('#driverOrgWeekBtn'),
+            onSelect(value) {
+              window.BremDriverManagementAdmin?.onWeekPicked?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-week-available') {
           return {
             hiddenInput: $('#payrollDailyAvailableWeekStart'),

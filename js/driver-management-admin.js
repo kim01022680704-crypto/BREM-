@@ -8,12 +8,74 @@ const BremDriverManagementAdmin = (function () {
     org: { nodes: [] },
     selectedNodeId: '',
     memberSearch: '',
+    weekStart: '',
     regionPlatform: 'baemin',
     selectedRegionKey: '',
     baeminRegions: [],
     coupangRegions: [],
     bulkRows: []
   };
+
+  function weekStartKey(dateValue) {
+    const picker = window.BremDatePicker;
+    if (picker?.weekStartKey) return picker.weekStartKey(dateValue);
+    return String(dateValue || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  }
+
+  function weekEndKey(weekStart) {
+    const picker = window.BremDatePicker;
+    if (picker?.weekEndKey) return picker.weekEndKey(weekStart);
+    const date = new Date(`${weekStartKey(weekStart)}T00:00:00`);
+    date.setDate(date.getDate() + 6);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function formatWeekRange(weekStart) {
+    const picker = window.BremDatePicker;
+    if (picker?.formatWednesdayWeekRange) return picker.formatWednesdayWeekRange(weekStart);
+    return `${weekStartKey(weekStart)} ~ ${weekEndKey(weekStart)}`;
+  }
+
+  function formatDateShort(value) {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(new Date(`${String(value).slice(0, 10)}T00:00:00`));
+  }
+
+  function ensureWeek() {
+    if (!state.weekStart) state.weekStart = weekStartKey();
+    return state.weekStart;
+  }
+
+  function setWeek(value) {
+    const next = weekStartKey(value || weekStartKey());
+    if (next === state.weekStart) {
+      renderOrgWeekControls();
+      return;
+    }
+    state.weekStart = next;
+    renderOrgMemberPanel();
+  }
+
+  function shiftWeek(deltaWeeks) {
+    const base = ensureWeek();
+    const date = new Date(`${base}T00:00:00`);
+    date.setDate(date.getDate() + deltaWeeks * 7);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    setWeek(`${y}-${m}-${d}`);
+  }
+
+  function renderOrgWeekControls() {
+    const week = ensureWeek();
+    const btn = $('#driverOrgWeekBtn');
+    if (btn) btn.textContent = `${formatDateShort(week)}(수) 주`;
+    const hidden = $('#driverOrgWeek');
+    if (hidden) hidden.value = week;
+    const range = $('#driverOrgWeekRange');
+    if (range) range.textContent = formatWeekRange(week);
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -81,16 +143,85 @@ const BremDriverManagementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
-  function driverCallAndFee(driverId) {
+  function driverCallAndFee(driverId, weekStart = ensureWeek()) {
     const id = String(driverId || '').trim();
     if (!id) return { callCount: 0, deliveryFee: 0 };
+    const start = weekStartKey(weekStart);
+    const end = weekEndKey(start);
+    const build = window.BremWeeklySettlement?.buildDriverCallStatsForPeriod;
+    if (typeof build === 'function') {
+      let callCount = 0;
+      let deliveryFee = 0;
+      ['coupang', 'baemin'].forEach(platform => {
+        const stats = build(id, start, end, platform) || {};
+        callCount += Number(stats.callCount || 0);
+        deliveryFee += Number(stats.deliveryAmount || 0);
+      });
+      return { callCount, deliveryFee };
+    }
+    // 폴백: Supabase 로드된 calls/settlements를 수~화 기간으로 합산
     const callCount = (window.BremStorage?.calls?.getAll?.() || [])
-      .filter(call => String(call.driverId || '') === id)
+      .filter(call => {
+        if (String(call.driverId || '') !== id) return false;
+        const day = String(call.date || '').slice(0, 10);
+        return day >= start && day <= end;
+      })
       .reduce((sum, call) => sum + Number(call.count || call.orderCount || 0), 0);
-    const deliveryFee = (window.BremStorage?.settlements?.getAll?.() || [])
-      .filter(row => String(row.driverId || '') === id)
-      .reduce((sum, row) => sum + Number(row.deliveryAmount ?? row.settlementAmount ?? 0), 0);
-    return { callCount, deliveryFee };
+    const byDay = new Map();
+    (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
+      if (String(row.driverId || '') !== id) return;
+      const day = String(row.period || row.date || '').slice(0, 10);
+      if (!day || day < start || day > end) return;
+      const prev = byDay.get(day);
+      const appliedAt = String(row.appliedAt || '');
+      if (!prev || appliedAt >= prev.appliedAt) {
+        byDay.set(day, {
+          callCount: Number(row.orderCount || 0),
+          deliveryFee: Number(row.deliveryAmount ?? row.settlementAmount ?? 0),
+          appliedAt
+        });
+      }
+    });
+    let deliveryFee = 0;
+    let settlementCalls = 0;
+    byDay.forEach(day => {
+      settlementCalls += day.callCount;
+      deliveryFee += day.deliveryFee;
+    });
+    return { callCount: settlementCalls || callCount, deliveryFee };
+  }
+
+  function descendantNodeIds(rootId) {
+    const ids = [];
+    const queue = [rootId];
+    const seen = new Set();
+    while (queue.length) {
+      const id = queue.shift();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      childrenOf(id).forEach(child => queue.push(child.id));
+    }
+    return ids;
+  }
+
+  function collectSubtreeMemberEntries(rootNode) {
+    if (!rootNode) return [];
+    const entries = [];
+    descendantNodeIds(rootNode.id).forEach(nodeId => {
+      const node = state.org.nodes.find(item => item.id === nodeId);
+      if (!node) return;
+      (node.memberRefs || []).forEach(ref => {
+        entries.push({
+          kind: ref.kind === 'admin' ? 'admin' : 'driver',
+          id: ref.id,
+          nodeId: node.id,
+          boxLabel: node.label || '이름 없음',
+          isDirect: node.id === rootNode.id
+        });
+      });
+    });
+    return entries;
   }
 
   function memberSummary(node) {
@@ -115,46 +246,72 @@ const BremDriverManagementAdmin = (function () {
   function renderOrgMemberPanel() {
     const panel = $('#driverOrgMemberPanel');
     const rows = $('#driverOrgMemberRows');
+    const foot = $('#driverOrgMemberFoot');
     const title = $('#driverOrgMemberPanelTitle');
     const summary = $('#driverOrgMemberPanelSummary');
+    const totalsEl = $('#driverOrgWeekTotals');
     if (!panel || !rows) return;
 
     const node = selectedNode();
     if (!node) {
       panel.hidden = true;
       rows.innerHTML = '';
+      if (foot) foot.innerHTML = '';
+      if (totalsEl) totalsEl.textContent = '';
       return;
     }
 
     panel.hidden = false;
-    if (title) title.textContent = `「${node.label}」 소속 목록`;
+    renderOrgWeekControls();
+    if (title) title.textContent = `「${node.label}」 소속 목록 (하위 포함)`;
 
-    const refs = Array.isArray(node.memberRefs) ? node.memberRefs : [];
-    const people = refs.map(ref => {
-      if (ref.kind === 'admin') {
-        const account = window.BremStorage?.auth?.getAdminAccountById?.(ref.id)
-          || (window.BremStorage?.auth?.getAdminAccounts?.() || []).find(item => item.id === ref.id);
+    const entries = collectSubtreeMemberEntries(node);
+    let totalCalls = 0;
+    let totalFee = 0;
+    const countedDrivers = new Set();
+    const people = entries.map(entry => {
+      if (entry.kind === 'admin') {
+        const account = window.BremStorage?.auth?.getAdminAccountById?.(entry.id)
+          || (window.BremStorage?.auth?.getAdminAccounts?.() || []).find(item => item.id === entry.id);
         return {
           kind: '관리자',
-          name: account?.name || account?.loginId || ref.id,
+          name: account?.name || account?.loginId || entry.id,
+          boxLabel: entry.boxLabel,
           callCount: '-',
-          deliveryFee: '-'
+          deliveryFee: '-',
+          nodeId: entry.nodeId,
+          memberKind: 'admin',
+          memberId: entry.id
         };
       }
-      const driver = window.BremStorage?.drivers?.getById?.(ref.id);
-      const stats = driverCallAndFee(ref.id);
+      const driver = window.BremStorage?.drivers?.getById?.(entry.id);
+      const stats = driverCallAndFee(entry.id, ensureWeek());
+      if (!countedDrivers.has(entry.id)) {
+        countedDrivers.add(entry.id);
+        totalCalls += stats.callCount;
+        totalFee += stats.deliveryFee;
+      }
       return {
         kind: '기사',
-        name: driver?.name || ref.id,
+        name: driver?.name || entry.id,
+        boxLabel: entry.boxLabel,
         callCount: formatNumber(stats.callCount),
-        deliveryFee: `${formatNumber(stats.deliveryFee)}원`
+        deliveryFee: `${formatNumber(stats.deliveryFee)}원`,
+        nodeId: entry.nodeId,
+        memberKind: 'driver',
+        memberId: entry.id
       };
     });
 
     if (summary) {
-      const driverCount = refs.filter(ref => ref.kind !== 'admin').length;
-      const adminCount = refs.length - driverCount;
-      summary.textContent = `기사 ${driverCount}명 · 관리자 ${adminCount}명`;
+      const driverCount = entries.filter(ref => ref.kind !== 'admin').length;
+      const adminCount = entries.length - driverCount;
+      const directCount = entries.filter(ref => ref.isDirect).length;
+      summary.textContent = `기사 ${driverCount}명 · 관리자 ${adminCount}명 · 직속 ${directCount}명 (하위 포함)`;
+    }
+
+    if (totalsEl) {
+      totalsEl.textContent = `콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`;
     }
 
     rows.innerHTML = people.length
@@ -162,10 +319,45 @@ const BremDriverManagementAdmin = (function () {
         <tr>
           <td>${escapeHtml(person.kind)}</td>
           <td><strong>${escapeHtml(person.name)}</strong></td>
+          <td>${escapeHtml(person.boxLabel)}</td>
           <td class="weekly-amount-cell">${escapeHtml(person.callCount)}</td>
           <td class="weekly-amount-cell">${escapeHtml(person.deliveryFee)}</td>
+          <td>
+            <button type="button" class="small-btn danger"
+              data-org-unassign-node="${escapeHtml(person.nodeId)}"
+              data-org-unassign-kind="${escapeHtml(person.memberKind)}"
+              data-org-unassign-id="${escapeHtml(person.memberId)}">체크해제</button>
+          </td>
         </tr>`).join('')
-      : '<tr><td colspan="4" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
+      : '<tr><td colspan="6" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
+
+    if (foot) {
+      foot.innerHTML = people.length
+        ? `<tr>
+            <td colspan="3">총합계</td>
+            <td class="weekly-amount-cell">${formatNumber(totalCalls)}</td>
+            <td class="weekly-amount-cell">${formatNumber(totalFee)}원</td>
+            <td></td>
+          </tr>`
+        : '';
+    }
+  }
+
+  async function unassignOrgMember(nodeId, kind, memberId) {
+    const node = state.org.nodes.find(item => item.id === nodeId);
+    if (!node) return;
+    const nextKind = kind === 'admin' ? 'admin' : 'driver';
+    const before = (node.memberRefs || []).length;
+    node.memberRefs = (node.memberRefs || []).filter(ref => !(ref.kind === nextKind && ref.id === memberId));
+    if (node.memberRefs.length === before) return;
+    try {
+      await window.BremStorage.driverOrgChart.save(state.org);
+      showToast('박스에서 제외했습니다.');
+      loadOrg();
+      renderOrg();
+    } catch (error) {
+      showToast(error.message || '제외에 실패했습니다.');
+    }
   }
 
   function renderOrg() {
@@ -656,6 +848,16 @@ const BremDriverManagementAdmin = (function () {
         return;
       }
 
+      const unassignBtn = event.target.closest('[data-org-unassign-id]');
+      if (unassignBtn) {
+        void unassignOrgMember(
+          unassignBtn.dataset.orgUnassignNode,
+          unassignBtn.dataset.orgUnassignKind,
+          unassignBtn.dataset.orgUnassignId
+        );
+        return;
+      }
+
       const recheckBtn = event.target.closest('[data-bulk-recheck]');
       if (recheckBtn) {
         const index = Number(recheckBtn.dataset.bulkRecheck);
@@ -701,6 +903,8 @@ const BremDriverManagementAdmin = (function () {
       renderOrg();
     });
     $('#driverOrgSaveBtn')?.addEventListener('click', () => { void saveOrg(); });
+    $('#driverOrgWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#driverOrgWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#driverOrgNodeLabel')?.addEventListener('input', event => {
       const node = selectedNode();
       if (!node) return;
@@ -744,6 +948,7 @@ const BremDriverManagementAdmin = (function () {
   async function refresh() {
     bindEvents();
     loadOrg();
+    ensureWeek();
     setTab(state.tab);
     if (state.tab === 'region') await refreshRegions();
   }
@@ -751,6 +956,7 @@ const BremDriverManagementAdmin = (function () {
   return {
     refresh,
     shortCoupangRegion,
+    onWeekPicked: setWeek,
     async loadRegionOptions() {
       await Promise.all([fetchBaeminRegions(), fetchCoupangRegions()]);
       return {

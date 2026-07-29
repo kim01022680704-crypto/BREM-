@@ -11117,6 +11117,21 @@ tr.is-selected {
   margin-bottom: 8px;
 }
 
+.driver-org-week-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+
+.driver-org-week-totals {
+  margin: 0 0 10px;
+  color: #fbbf24;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
 .driver-scroll-table {
   max-height: 360px;
   overflow: auto;
@@ -11129,6 +11144,16 @@ tr.is-selected {
   top: 0;
   z-index: 1;
   background: #111113;
+}
+
+.driver-scroll-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: #1c1917;
+  color: #fbbf24;
+  font-weight: 700;
+  border-top: 1px solid #52525b;
 }
 
 .driver-org-node-label {
