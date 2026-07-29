@@ -3694,7 +3694,7 @@
     el.innerHTML = `
       <strong>메뉴별 수집 상태</strong>
       ${renderMenuDatePlan(menuDatePlan)}
-      <p class="form-help">배달현황=오늘 기준 · 일별/라이더=정산주 수요일~어제 (오늘 데이터 미제공)</p>
+      <p class="form-help">배달현황=오늘 기준 · 일별/라이더=어제가 속한 정산주 수요일~어제 (오늘 데이터 미제공 · 수요일엔 지난 정산주 7일 마감)</p>
       <table class="baemin-menu-collect-table">
         <thead>
           <tr>

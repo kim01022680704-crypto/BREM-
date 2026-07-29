@@ -883,14 +883,19 @@ function setStatusLoopPhase(phase, message = '') {
 function computeThisWeekRangeForLoop() {
   const { todayKST, settlementWeekStart, latestQueryableDate } = require('../server/baemin-settlement-week');
   const today = todayKST();
-  const fromDate = settlementWeekStart(today);
-  // 일별/라이더는 배민에서 오늘 데이터가 없음 → 조회 가능 최신일(보통 전일)까지
-  const toDateRaw = latestQueryableDate(today);
-  const toDate = !toDateRaw || toDateRaw < fromDate ? fromDate : toDateRaw;
+  // 일별/라이더는 배민에서 오늘 데이터가 없음 → 조회 가능 최신일(보통 전일)이 기준.
+  const latest = latestQueryableDate(today);
+  if (!latest) {
+    const fallback = settlementWeekStart(today);
+    return { fromDate: fallback, toDate: fallback, label: `${fallback} ~ ${fallback}` };
+  }
+  // 어제가 속한 정산주를 기준으로 돈다. 오늘 기준으로 잡으면 수요일마다
+  // 어제(지난 정산주 화요일)가 범위 밖으로 밀려나 지난주 마감이 빠진다.
+  const fromDate = settlementWeekStart(latest);
   return {
     fromDate,
-    toDate,
-    label: `${fromDate} ~ ${toDate}`
+    toDate: latest,
+    label: `${fromDate} ~ ${latest}`
   };
 }
 

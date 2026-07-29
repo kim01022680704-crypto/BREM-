@@ -90,28 +90,15 @@ function latestQueryableDate(dateKey = todayKST(), now = new Date()) {
 function computeHistoryCollectRange(dateKey = todayKST(), now = new Date()) {
   const referenceDate = String(dateKey || todayKST(now)).slice(0, 10);
   const today = todayKST(now);
-  const todayWeekday = weekdayKST(today);
-  const weekStart = settlementWeekStart(today);
+  const latest = latestQueryableDate(today, now);
+
+  // 배민은 오늘 데이터를 주지 않으므로 기준은 조회 가능 최신일(보통 어제)이다.
+  // 수요일에는 어제가 지난 정산주의 마지막 날(화)이라, 오늘 기준 정산주로 잡으면
+  // 범위가 오늘 하루로 접혀 지난주 마감이 통째로 빠진다.
+  // 그래서 어제가 속한 정산주를 기준으로 삼는다.
+  const weekStart = settlementWeekStart(latest || today);
   const weekEnd = settlementWeekEnd(weekStart);
 
-  if (todayWeekday === 3) {
-    return {
-      referenceDate,
-      weekStart,
-      weekEnd,
-      latestQueryableDate: latestQueryableDate(today, now),
-      fromDate: null,
-      toDate: null,
-      dates: [],
-      dayCount: 0,
-      mode: 'wednesday_skip',
-      skipped: true,
-      skipReason: '수요일 — 일별/라이더 수집 생략',
-      label: '수요일 생략'
-    };
-  }
-
-  const latest = latestQueryableDate(today, now);
   const fromDate = weekStart;
   const toDate = latest;
 
