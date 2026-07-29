@@ -6086,6 +6086,23 @@ textarea {
   color: var(--text-secondary, #cbd5f5);
 }
 
+.direct-adjust-applied-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.direct-adjust-applied-head .direct-adjust-subhead {
+  margin-bottom: 6px;
+}
+
+.direct-adjust-applied-head .small-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 #directAdjustCard .payroll-bulk-card .small-select {
   max-width: 180px;
 }

@@ -4354,7 +4354,7 @@
           <div class="payroll-bulk-grid">
             <section class="card payroll-bulk-card">
               <div class="card-header"><h3>기타지급 일괄등록</h3></div>
-              <p class="form-help">A열 <span data-direct-id-label>배민ID</span> · B열 금액</p>
+              <p class="form-help">A열 <span data-direct-id-label>배민ID</span> · B열 금액 · 같은 기사가 여러 줄이면 합산</p>
               <label>정산서 파일 (.xlsx)
                 <input type="file" id="directOtherBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
               </label>
@@ -4370,7 +4370,10 @@
                   <tbody id="directOtherBulkBody"></tbody>
                 </table>
               </div>
-              <h4 class="direct-adjust-subhead">적용된 기타지급 (이 정산서)</h4>
+              <div class="direct-adjust-applied-head">
+                <h4 class="direct-adjust-subhead">적용된 기타지급 (이 정산서)</h4>
+                <button type="button" class="small-btn danger-btn" id="directOtherClearAllBtn">전체 삭제</button>
+              </div>
               <div class="table-wrap direct-scroll">
                 <table class="weekly-settlement-saved-table">
                   <thead><tr><th>기사</th><th>기사ID</th><th>금액</th><th>출처</th><th>관리</th></tr></thead>
@@ -4381,7 +4384,7 @@
 
             <section class="card payroll-bulk-card">
               <div class="card-header"><h3>BREM프로모션 일괄등록</h3></div>
-              <p class="form-help">A열 <span data-direct-id-label>배민ID</span> · B열 금액 (엑셀 트랙)</p>
+              <p class="form-help">A열 <span data-direct-id-label>배민ID</span> · B열 금액 (엑셀 트랙) · 같은 기사가 여러 줄이면 합산</p>
               <label>정산서 파일 (.xlsx)
                 <input type="file" id="directPromotionBulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
               </label>
@@ -4397,7 +4400,10 @@
                   <tbody id="directPromotionBulkBody"></tbody>
                 </table>
               </div>
-              <h4 class="direct-adjust-subhead">적용된 BREM프로모션 (이 정산서)</h4>
+              <div class="direct-adjust-applied-head">
+                <h4 class="direct-adjust-subhead">적용된 BREM프로모션 (이 정산서)</h4>
+                <button type="button" class="small-btn danger-btn" id="directPromotionClearAllBtn">전체 삭제</button>
+              </div>
               <div class="table-wrap direct-scroll">
                 <table class="weekly-settlement-saved-table">
                   <thead><tr><th>기사</th><th>기사ID</th><th>금액</th><th>출처</th><th>관리</th></tr></thead>

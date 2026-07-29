@@ -12,7 +12,8 @@ const BremDirectAdjustmentAdmin = (function () {
       summary: '#directOtherBulkSummary',
       preview: '#directOtherBulkPreview',
       body: '#directOtherBulkBody',
-      applied: '#directOtherAppliedBody'
+      applied: '#directOtherAppliedBody',
+      clearAll: '#directOtherClearAllBtn'
     },
     promotion: {
       key: 'promotion',
@@ -24,7 +25,8 @@ const BremDirectAdjustmentAdmin = (function () {
       summary: '#directPromotionBulkSummary',
       preview: '#directPromotionBulkPreview',
       body: '#directPromotionBulkBody',
-      applied: '#directPromotionAppliedBody'
+      applied: '#directPromotionAppliedBody',
+      clearAll: '#directPromotionClearAllBtn'
     }
   };
 
@@ -279,8 +281,12 @@ const BremDirectAdjustmentAdmin = (function () {
 
     wrap.hidden = false;
     const summary = window.BremDirectAdjustmentBulk.summarizeRows(parsed.rows);
+    const dupGroups = window.BremDirectAdjustmentBulk.duplicateDriverGroups?.(parsed.rows) || new Map();
     if (summaryEl) {
-      summaryEl.innerHTML = `추출 <strong>${summary.total}</strong>행 · 매칭 <strong>${summary.matched}</strong>명 · 미매칭 <strong>${summary.unmatched}</strong>명 · 합계 <strong>${formatNumber(summary.amountTotal)}</strong>원`;
+      const dupNote = dupGroups.size
+        ? ` · 중복 <strong>${dupGroups.size}</strong>명은 합산 적용`
+        : '';
+      summaryEl.innerHTML = `추출 <strong>${summary.total}</strong>행 · 매칭 <strong>${summary.matched}</strong>명 · 미매칭 <strong>${summary.unmatched}</strong>명 · 합계 <strong>${formatNumber(summary.amountTotal)}</strong>원${dupNote}`;
     }
 
     body.innerHTML = parsed.rows.map((row, index) => {
@@ -291,12 +297,16 @@ const BremDirectAdjustmentAdmin = (function () {
       const driverCell = matched
         ? `${escapeHtml(row.driverName || driverName(row.driverId))}${matchedIdText}`
         : `<select class="small-select" data-direct-adj-driver="${kind}" data-row-index="${index}">${driverOptionsHtml()}</select>`;
+      const dup = dupGroups.get(String(row.driverId || '').trim());
+      const dupText = dup
+        ? ` <span class="muted-inline">(${dup.rowNumbers.join('+')}행 합산 ${formatNumber(dup.total)}원)</span>`
+        : '';
       return `
       <tr class="${matched ? '' : 'promotion-row-unpaid'}">
         <td>${row.rowNumber}</td>
         <td>${escapeHtml(row.baeminId || '-')}</td>
         <td>${driverCell}</td>
-        <td class="weekly-amount-cell">${formatNumber(row.amount)}</td>
+        <td class="weekly-amount-cell">${formatNumber(row.amount)}${dupText}</td>
         <td class="${statusClass}">${escapeHtml(row.matchStatusLabel)}${row.error ? ` · ${escapeHtml(row.error)}` : ''}</td>
       </tr>`;
     }).join('');
@@ -314,7 +324,7 @@ const BremDirectAdjustmentAdmin = (function () {
       showToast('먼저 파일을 선택해 미리보기를 만드세요.');
       return;
     }
-    const { toApply, skippedDuplicateInSheet, skippedNoAmount } = window.BremDirectAdjustmentBulk.filterRowsForApply(parsed.rows);
+    const { toApply, mergedRows, mergedDrivers, skippedNoAmount } = window.BremDirectAdjustmentBulk.filterRowsForApply(parsed.rows);
     if (!toApply.length) {
       showToast('적용할 매칭 행이 없습니다. (매칭·금액 확인)');
       return;
@@ -342,7 +352,7 @@ const BremDirectAdjustmentAdmin = (function () {
     renderAppliedSummary();
     renderRegistry();
     let message = `${cfg.label} ${toApply.length}명 적용 완료`;
-    if (skippedDuplicateInSheet) message += ` · 시트 내 중복 ${skippedDuplicateInSheet} 제외`;
+    if (mergedDrivers) message += ` · 중복 ${mergedDrivers}명(${mergedRows + mergedDrivers}행) 합산`;
     if (skippedNoAmount) message += ` · 금액 없음 ${skippedNoAmount} 제외`;
     showToast(message);
   }
@@ -377,12 +387,15 @@ const BremDirectAdjustmentAdmin = (function () {
     const cfg = KINDS[kind];
     const body = $(cfg.applied);
     if (!body) return;
+    const clearAllBtn = cfg.clearAll ? $(cfg.clearAll) : null;
     const settlement = currentSettlement();
     if (!settlement) {
       body.innerHTML = `<tr><td colspan="5" class="empty">정산서를 선택하세요.</td></tr>`;
+      if (clearAllBtn) clearAllBtn.disabled = true;
       return;
     }
     const entries = Object.entries(appliedMap(kind));
+    if (clearAllBtn) clearAllBtn.disabled = !entries.length;
     if (!entries.length) {
       body.innerHTML = `<tr><td colspan="5" class="empty">이 정산서에 적용된 ${escapeHtml(cfg.label)}이 없습니다.</td></tr>`;
       return;
@@ -475,6 +488,41 @@ const BremDirectAdjustmentAdmin = (function () {
     renderPromoTax();
     renderAppliedSummary();
     renderRegistry();
+  }
+
+  // 이 정산서에 등록된 금액을 한 번에 비운다. 되돌릴 수 없으니 건수·합계를 보여주고 확인받는다.
+  function clearAllApplied(kind) {
+    const cfg = KINDS[kind];
+    const settlement = currentSettlement();
+    if (!settlement) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
+    const entries = Object.entries(appliedMap(kind));
+    if (!entries.length) {
+      showToast(`이 정산서에 적용된 ${cfg.label}이 없습니다.`);
+      return;
+    }
+    const total = entries.reduce((sum, [, info]) => sum + Number(info?.amount || 0), 0);
+    const message = [
+      `${formatDate(settlement.startDate)} ~ ${formatDate(settlement.endDate)}${settlement.region ? ` · ${settlement.region}` : ''} 정산서의`,
+      `${cfg.label} ${entries.length}명 · ${formatNumber(total)}원을 모두 지웁니다.`,
+      '',
+      '되돌릴 수 없습니다. 계속하시겠습니까?'
+    ].join('\n');
+    if (!window.confirm(message)) return;
+
+    window.BremStorage.directSettlementAdjustments.clearSettlement(kind, settlement.id);
+    void window.BremStorage.flushStorage?.();
+    // 프로모션을 비웠으면 ERP 선택도 풀어야 한다. 선택이 남아 있으면
+    // 다음에 「선택 → 적용」을 누를 때 방금 지운 금액이 되살아난다.
+    if (kind === 'promotion') state.erpSelected.clear();
+    renderApplied(kind);
+    renderPromoTax();
+    renderAppliedSummary();
+    renderRegistry();
+    if (kind === 'promotion') renderErpList();
+    showToast(`${cfg.label} ${entries.length}명 · ${formatNumber(total)}원 전체 삭제 완료`);
   }
 
   // --- 정산서 미지정(구 데이터) --------------------------------------------
@@ -1007,6 +1055,7 @@ const BremDirectAdjustmentAdmin = (function () {
       $(cfg.apply)?.addEventListener('click', () => applyPending(cfg.key));
       $(cfg.clearPending)?.addEventListener('click', () => clearPending(cfg.key));
       $(cfg.retry)?.addEventListener('click', () => retryMatch(cfg.key));
+      if (cfg.clearAll) $(cfg.clearAll)?.addEventListener('click', () => clearAllApplied(cfg.key));
     });
 
     $('#directAdjustSettlementSelect')?.addEventListener('change', event => {
@@ -1105,7 +1154,7 @@ const BremDirectAdjustmentAdmin = (function () {
     });
   }
 
-  return { init, refresh, state, renderErpList, onWeekPicked: setWeek };
+  return { init, refresh, state, renderAll, renderPreview, renderErpList, onWeekPicked: setWeek };
 })();
 
 document.addEventListener('DOMContentLoaded', () => {

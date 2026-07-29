@@ -120,6 +120,7 @@ window.BremStorage = {
       return cur;
     },
     removeDriver: (kind, id, driverId) => { if (adjustments[kind][id]) delete adjustments[kind][id][driverId]; },
+    clearSettlement: (kind, id) => { delete adjustments[kind][id]; },
     summary(id) {
       const sum = m => Object.values(m || {}).reduce((s, x) => s + Number(x.amount || 0), 0);
       return {
@@ -485,6 +486,73 @@ function check(label, actual, expected) {
   check('적용 목록에 삭제 버튼', Boolean(removeBtn24), 'true');
   removeBtn24.click();
   check('삭제 후 등록 현황에서 빠짐', /33,000/.test(registryText()), 'false');
+
+  // 같은 기사가 엑셀에 여러 번 나오면 마지막/첫 값만 쓰면 돈이 새거나 덜 나간다.
+  // 예: 강승원2471 10,000 + 강승원2471 23,000 → 33,000 이 되어야 한다.
+  console.log('\n[25] 엑셀 내 같은 기사 중복 행은 합산');
+  const dupRows = bulk.parseSheetRows([
+    ['BC000002', 5000],
+    ['BC000001', 10000],
+    ['BC000001', 23000]
+  ], DRIVERS, 'baemin').rows;
+  const dupFiltered = bulk.filterRowsForApply(dupRows);
+  check('중복을 합쳐 기사 2명', dupFiltered.toApply.length, 2);
+  check('김배민 10,000+23,000 합산', dupFiltered.toApply.find(r => r.driverId === 'd1')?.amount, 33000);
+  check('중복 없는 기사는 그대로', dupFiltered.toApply.find(r => r.driverId === 'd2')?.amount, 5000);
+  check('합산된 기사 수', dupFiltered.mergedDrivers, 1);
+  check('합쳐서 사라진 행 수', dupFiltered.mergedRows, 1);
+  check('원본 미리보기 행은 안 건드림', dupRows[1].amount, 10000);
+
+  const dupGroups = bulk.duplicateDriverGroups(dupRows);
+  check('중복 그룹 1건', dupGroups.size, 1);
+  check('중복 그룹 합계', dupGroups.get('d1')?.total, 33000);
+  check('중복 그룹 행번호', (dupGroups.get('d1')?.rowNumbers || []).join('+'), '2+3');
+
+  adjustments.other = {};
+  Adj.state.pending.other = { rows: dupRows, issues: [] };
+  Adj.renderPreview('other');
+  check('미리보기에 합산 안내', /합산 적용/.test(window.document.getElementById('directOtherBulkSummary').textContent), 'true');
+  check('미리보기 행에 합산 금액', /2\+3행 합산 33,000원/.test(window.document.getElementById('directOtherBulkBody').textContent), 'true');
+
+  window.document.getElementById('directOtherBulkApplyBtn').click();
+  check('저장된 금액도 합산값', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 33000);
+  check('중복 아닌 기사도 저장', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d2?.amount, 5000);
+  // 등록 현황은 기사별이 아니라 정산서 합계로 찍힌다. 33,000 + 5,000 = 38,000
+  check('등록 현황에 합산액 반영', /2명 · 38,000/.test(registryText()), 'true');
+  // 3행이 10,000 을 덮어써 23,000 만 남는 예전 동작이 아님을 못박는다.
+  check('마지막 값으로 덮어쓰지 않음', adjustments.other['weekly_direct_baemin_seoul_20260722']?.d1?.amount === 23000, 'false');
+
+  // 등록 후 되돌리려면 한 명씩 지우는 것 말고 한 번에 비우는 길이 있어야 한다.
+  console.log('\n[26] 전체 삭제');
+  adjustments.promotion = {};
+  window.BremStorage.directSettlementAdjustments.applyEntries('promotion', 'weekly_direct_baemin_seoul_20260722',
+    [{ driverId: 'd1', amount: 70000, baeminId: 'BC000001', driverName: '김배민', source: 'erp' }]);
+  Adj.renderAll();
+  const clearAllBtn = window.document.getElementById('directOtherClearAllBtn');
+  check('기타지급 전체 삭제 버튼 존재', Boolean(clearAllBtn), 'true');
+  check('등록된 금액이 있으면 활성', clearAllBtn.disabled, 'false');
+
+  confirmText = '';
+  clearAllBtn.click();
+  check('confirm 에 건수·합계 안내', /2명 · 38,000원/.test(confirmText), 'true');
+  check('기타지급이 모두 비워짐', Object.keys(adjustments.other['weekly_direct_baemin_seoul_20260722'] || {}).length, 0);
+  check('BREM프로모션은 남아 있음', adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 70000);
+  check('전체 삭제 후 버튼 비활성', clearAllBtn.disabled, 'true');
+  check('등록 현황에서 기타지급이 0원', /0명 · 0/.test(registryText()), 'true');
+  check('등록 현황에 프로모션은 유지', /1명 · 70,000/.test(registryText()), 'true');
+
+  // 취소를 누르면 아무것도 지워지지 않아야 한다.
+  const promoClearBtn = window.document.getElementById('directPromotionClearAllBtn');
+  window.confirm = () => false;
+  promoClearBtn.click();
+  check('취소하면 그대로', adjustments.promotion['weekly_direct_baemin_seoul_20260722']?.d1?.amount, 70000);
+
+  // ERP 선택이 남아 있으면 전체 삭제 후 다시 「선택 적용」 을 눌렀을 때 되살아난다.
+  window.confirm = () => true;
+  Adj.state.erpSelected.add('erp1');
+  promoClearBtn.click();
+  check('프로모션도 모두 비워짐', Object.keys(adjustments.promotion['weekly_direct_baemin_seoul_20260722'] || {}).length, 0);
+  check('ERP 선택도 함께 해제', Adj.state.erpSelected.size, 0);
 
   console.log(`\n${failed ? `실패 ${failed}건` : '전부 통과'}`);
   process.exit(failed ? 1 : 0);

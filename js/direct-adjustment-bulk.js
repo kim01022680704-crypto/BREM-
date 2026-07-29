@@ -203,22 +203,53 @@
     );
   }
 
-  // 기사당 1회만 — 시트 내 중복 제외(마지막 값 우선은 하지 않고 첫 값 유지)
+  // 같은 기사가 시트에 여러 번 나오면 금액을 합산해 1행으로 만든다.
+  // (예: 강승원2471 10,000원 + 강승원2471 23,000원 → 33,000원)
   function filterRowsForApply(rows) {
-    const seen = new Set();
+    const byDriver = new Map();
     const toApply = [];
-    let skippedDuplicateInSheet = 0;
+    let mergedRows = 0;
+    let mergedDrivers = 0;
     let skippedNoAmount = 0;
     (Array.isArray(rows) ? rows : []).forEach(row => {
       const ok = row.matchStatus === 'matched' || row.matchStatus === 'manual';
       if (!ok || !row.driverId) return;
-      if (!Number(row.amount || 0)) { skippedNoAmount += 1; return; }
+      const amount = Number(row.amount || 0);
+      if (!amount) { skippedNoAmount += 1; return; }
       const id = String(row.driverId).trim();
-      if (seen.has(id)) { skippedDuplicateInSheet += 1; return; }
-      seen.add(id);
-      toApply.push(row);
+      const existing = byDriver.get(id);
+      if (existing) {
+        existing.amount += amount;
+        existing.mergedRowNumbers.push(row.rowNumber);
+        mergedRows += 1;
+        if (existing.mergedRowNumbers.length === 2) mergedDrivers += 1;
+        return;
+      }
+      // 원본 미리보기 행은 그대로 두고 합산용 사본을 만든다.
+      const entry = { ...row, amount, mergedRowNumbers: [row.rowNumber] };
+      byDriver.set(id, entry);
+      toApply.push(entry);
     });
-    return { toApply, skippedDuplicateInSheet, skippedNoAmount };
+    return { toApply, mergedRows, mergedDrivers, skippedNoAmount };
+  }
+
+  /** 미리보기에서 "합산됨"을 알려주기 위한 기사별 중복 그룹. driverId → { rowNumbers, total } */
+  function duplicateDriverGroups(rows) {
+    const groups = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      const ok = row.matchStatus === 'matched' || row.matchStatus === 'manual';
+      const id = String(row.driverId || '').trim();
+      const amount = Number(row.amount || 0);
+      if (!ok || !id || !amount) return;
+      const group = groups.get(id) || { rowNumbers: [], total: 0 };
+      group.rowNumbers.push(row.rowNumber);
+      group.total += amount;
+      groups.set(id, group);
+    });
+    groups.forEach((group, id) => {
+      if (group.rowNumbers.length < 2) groups.delete(id);
+    });
+    return groups;
   }
 
   function summarizeRows(rows) {
@@ -261,6 +292,7 @@
     getUnmatchedLines,
     getDuplicateLines,
     filterRowsForApply,
+    duplicateDriverGroups,
     summarizeRows,
     sheetRowsFromWorkbook,
     templateRows
