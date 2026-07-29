@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * 장정민 기사 미매칭 일정산 반영 (기본: 미리보기 / --apply 시에만 실제 반영)
+ * 기사 미매칭 일정산 반영 (기본: 미리보기 / --apply 시에만 실제 반영)
  *
- *   node scripts/_apply-jang-match.js            ← 미리보기만 (쓰기 없음)
- *   node scripts/_apply-jang-match.js --apply    ← 실제 반영
+ *   node scripts/_apply-jang-match.js 지장환            ← 미리보기만 (쓰기 없음)
+ *   node scripts/_apply-jang-match.js 지장환 --apply    ← 실제 반영
+ *
+ * 기사 등록이 늦어 미매칭으로 쌓인 일정산을, 관리자 화면의 "매칭 재시도" 와
+ * 같은 결과가 되도록 반영한다. (화면은 날짜 필터가 걸려 한 날짜만 처리된다)
  *
  * 안전 장치
  *  1) 기본은 미리보기. --apply 없이는 절대 쓰지 않는다.
@@ -44,8 +47,9 @@ function loadEnv() {
 loadEnv();
 
 const APPLY = process.argv.includes('--apply');
-const NAME = '장정민';
+const NAME = (process.argv.slice(2).find(a => !a.startsWith('--')) || '').trim();
 const PLATFORM = 'baemin';
+if (!NAME) die('기사 이름을 넣어주세요.', '예: node scripts/_apply-jang-match.js 지장환');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
