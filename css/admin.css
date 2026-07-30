@@ -6390,6 +6390,37 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   white-space: nowrap;
 }
 
+.final-deposit-reconcile {
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+.final-deposit-reconcile.ok {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.final-deposit-reconcile.warn {
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.final-deposit-reconcile-head {
+  margin: 0 0 8px;
+  color: #b45309;
+  font-weight: 800;
+}
+
+.final-deposit-reconcile-hint {
+  display: block;
+  margin-top: 4px;
+  color: #92700a;
+  font-weight: 500;
+  font-size: 12px;
+}
+
 .weekly-call-action-cell {
   display: flex;
   flex-wrap: wrap;
