@@ -9797,6 +9797,10 @@ const BremStorage = (function () {
     };
     const channel = (record.channel === 'direct' || summary.channel === 'direct') ? 'direct' : 'bro';
     summary.channel = channel;
+    summary.callCountIgnoredIds = riders
+      .filter(r => r.callCountIgnored === true && r.matchedRiderId)
+      .map(r => String(r.matchedRiderId));
+    summary.callCountMismatches = riders.filter(r => r.callCountMatched === false && r.callCountIgnored !== true).length;
 
     return {
       id: record.id || createId(),
