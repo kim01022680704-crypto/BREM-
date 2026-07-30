@@ -144,15 +144,20 @@ const BremFinalDeposit = (function () {
     const numericKeys = Calc().NUMERIC_KEYS;
     const byDriver = new Map();
 
-    // 여러 지역 정산서에 걸쳐 같은 사람의 같은 플랫폼 출금이 중복 반영되지 않도록
-    // 선정산 맵과 소비(consumed) 집합을 정산서들 사이에서 공유한다.
+    // 스필오버 배분을 정산서들 사이에서 공유한다(사람별 플랫폼 한도 기준).
+    // consumed 로 같은 사람의 같은 플랫폼 선정산이 중복 반영되지 않게 한다.
     const week = ensureWeek();
-    const prepaidMap = Calc().buildWeekPrepaidByPlatform(state.withdrawals, week);
+    const weekAll = weekSettlements();
+    const allocation = Calc().allocateWeekWithdrawals(
+      state.withdrawals,
+      week,
+      Calc().buildWeekCapacityMap(weekAll)
+    );
     const consumed = new Set();
     checkedSettlements().forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
-        _prepaidMap: prepaidMap,
+        _allocation: allocation,
         _consumed: consumed
       }).forEach(row => {
         const key = driverKey(row);
@@ -284,13 +289,13 @@ const BremFinalDeposit = (function () {
     const canon = Calc().canonicalDriverKey;
     const normP = Calc().normalizeWithdrawalPlatform;
 
-    // 반영 기준: 실제 최종입금에 합쳐지는 정산서(체크된 것)의 (사람, 플랫폼) 존재 여부
-    const presentSet = new Set();
+    // 스필오버 반영 기준: 사람이 쿠팡/배민 중 한 곳이라도 정산서가 있으면 선정산이 반영된다.
+    // 그러므로 "정산서가 아예 없는 사람"의 처리완료 출금만 미반영으로 잡는다.
+    const presentPersons = new Set();
     checkedSettlements().forEach(settlement => {
-      const platform = Calc().normalizePlatform(settlement.platform);
       (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
         const key = canon(String(rider.matchedRiderId || '').trim());
-        if (key) presentSet.add(`${key}:${platform}`);
+        if (key) presentPersons.add(key);
       });
     });
 
@@ -305,11 +310,9 @@ const BremFinalDeposit = (function () {
       if (amount <= 0) return;
       const platform = normP(w.platform);
       const key = canon(String(w.driverId || '').trim());
-      const reflected = platform && key && presentSet.has(`${key}:${platform}`);
+      const reflected = key && presentPersons.has(key);
       if (reflected) return;
-      const reason = !platform
-        ? '플랫폼 미지정'
-        : `${platformLabel(platform)} 정산서 없음`;
+      const reason = !key ? '기사 매칭 불가' : '직계약 정산서 없음';
       unmatched.push({
         name: w.driverName || w.driverId || '-',
         platform: platform || 'unknown',

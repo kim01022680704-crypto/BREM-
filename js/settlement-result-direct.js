@@ -221,12 +221,21 @@ const BremSettlementResultDirect = (function () {
 
   // --- 계산 ---------------------------------------------------------------
 
+  // 이 주의 쿠팡+배민 직계약 정산서 전체 (스필오버 한도 계산용)
+  function weekAllPlatformSettlements(settlement) {
+    const week = settlementWeek(settlement);
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => settlementWeek(record) === week);
+  }
+
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
-    // 쿠팡 출금 → 쿠팡 정산, 배민 출금 → 배민 정산. 출금 기록에 찍힌 플랫폼 그대로 정확히 반영.
+    // 각 플랫폼 실지급 한도까지 선정산을 잡고 초과분은 반대 플랫폼으로 넘긴다(스필오버).
+    // 한 사람의 쿠팡/배민 정산서를 함께 넘겨 사람 단위로 배분한다.
     return Calc().sortByName(Calc().computeRows(settlement, {
-      withdrawals: state.withdrawals
+      withdrawals: state.withdrawals,
+      weekSettlements: weekAllPlatformSettlements(settlement)
     }));
   }
 
