@@ -21,8 +21,107 @@
     weekStart: null,
     loading: false,
     visible: false,
-    requestSeq: 0
+    requestSeq: 0,
+    platform: 'total', // total | coupang | baemin
+    lastResult: null
   };
+
+  // 정산결과(직계약)과 동일한 지급·공제 틀
+  const PAY_ROWS = Object.freeze([
+    { key: 'deliveryFee', label: '배달비' },
+    { key: 'missionPay', label: '추가지급(미션)' },
+    { key: 'other', label: '기타지급' },
+    { key: 'promo', label: 'BREM프로모션' },
+    { key: 'grossPay', label: '지급합계', total: true }
+  ]);
+
+  const DEDUCT_ROWS = Object.freeze([
+    { key: 'deductionDetail', label: '차감내역' },
+    { key: 'employmentInsurance', label: '고용보험' },
+    { key: 'accidentInsurance', label: '산재보험' },
+    { key: 'hourlyInsurance', label: '시간제보험' },
+    { key: 'withholdingTax', label: '원천세' },
+    { key: 'promotionWithholdingTax', label: '프로모션원천세' },
+    { key: 'callFee', label: '콜수수료' },
+    { key: 'dailySettlementFee', label: '일정산수수료' },
+    { key: 'prepaid', label: '선정산(처리완료)' },
+    { key: 'deductTotal', label: '공제합계', total: true }
+  ]);
+
+  function emptyBucket() {
+    return {
+      callCount: 0,
+      deliveryFee: 0,
+      missionPay: 0,
+      other: 0,
+      promo: 0,
+      grossPay: 0,
+      deductionDetail: 0,
+      employmentInsurance: 0,
+      accidentInsurance: 0,
+      hourlyInsurance: 0,
+      withholdingTax: 0,
+      promotionWithholdingTax: 0,
+      callFee: 0,
+      dailySettlementFee: 0,
+      prepaid: 0,
+      deductTotal: 0,
+      netPay: 0
+    };
+  }
+
+  function normalizeBucket(source = {}) {
+    const bucket = emptyBucket();
+    bucket.callCount = Number(source.callCount || 0);
+    bucket.deliveryFee = Number(source.deliveryFee ?? source.totalDeliveryFee ?? 0);
+    bucket.missionPay = Number(source.missionPay ?? source.baeminMission ?? 0);
+    bucket.other = Number(source.other ?? source.otherPayment ?? 0);
+    bucket.promo = Number(source.promo ?? source.bremPromotion ?? 0);
+    bucket.deductionDetail = Number(source.deductionDetail || 0);
+    bucket.employmentInsurance = Number(source.employmentInsurance || 0);
+    bucket.accidentInsurance = Number(
+      source.accidentInsurance ?? source.industrialAccidentInsurance ?? 0
+    );
+    bucket.hourlyInsurance = Number(source.hourlyInsurance || 0);
+    bucket.withholdingTax = Number(source.withholdingTax || 0);
+    bucket.promotionWithholdingTax = Number(source.promotionWithholdingTax || 0);
+    bucket.callFee = Number(source.callFee || 0);
+    bucket.dailySettlementFee = Number(source.dailySettlementFee || 0);
+    bucket.prepaid = Number(source.prepaid || 0);
+    bucket.grossPay = Number(source.grossPay ?? source.grossPaymentTotal ?? 0)
+      || (bucket.deliveryFee + bucket.missionPay + bucket.other + bucket.promo);
+    bucket.deductTotal = Number(source.deductTotal ?? source.deductionTotal ?? 0)
+      || (
+        bucket.deductionDetail
+        + bucket.employmentInsurance
+        + bucket.accidentInsurance
+        + bucket.hourlyInsurance
+        + bucket.withholdingTax
+        + bucket.promotionWithholdingTax
+        + bucket.callFee
+        + bucket.dailySettlementFee
+        + bucket.prepaid
+      );
+    bucket.netPay = Number(source.netPay ?? source.finalNetPay ?? 0)
+      || (bucket.grossPay - bucket.deductTotal);
+    return bucket;
+  }
+
+  function resolvePlatformBucket(payslip, platform) {
+    const platforms = payslip?.platforms || {};
+    if (platform === 'coupang') return normalizeBucket(platforms.coupang || {});
+    if (platform === 'baemin') return normalizeBucket(platforms.baemin || {});
+    if (platforms.coupang || platforms.baemin) {
+      const total = emptyBucket();
+      const keys = Object.keys(total);
+      [platforms.coupang, platforms.baemin].forEach(side => {
+        const row = normalizeBucket(side || {});
+        keys.forEach(key => { total[key] += Number(row[key] || 0); });
+      });
+      return normalizeBucket(total);
+    }
+    return normalizeBucket(payslip || {});
+  }
 
   function showToast(message) {
     if (!toast) return;
@@ -185,8 +284,17 @@
     updateWeekNavButtons(weekStart);
   }
 
+  function syncPlatformTabs() {
+    document.querySelectorAll('[data-payslip-platform]').forEach(btn => {
+      const active = btn.dataset.payslipPlatform === state.platform;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
   function applyPayslipResult(result) {
     if (!result) return;
+    state.lastResult = result;
     state.weekStart = result.settlementWeekStart || state.weekStart;
     renderWeekShell(state.weekStart, {
       settlementWeekEnd: result.settlementWeekEnd,
@@ -218,6 +326,9 @@
     const payslip = data.payslip || {};
     const lease = data.lease || {};
     const rider = data.rider || {};
+    const platform = state.platform || 'total';
+    const bucket = resolvePlatformBucket(payslip, platform);
+    const includeLease = platform === 'total';
 
     setText('driverPayslipRiderName', rider.name || payslip.riderName || '-');
     setText('driverPayslipCoupangId', rider.coupangId || payslip.coupangId || '-');
@@ -228,51 +339,49 @@
       ? `${formatMoney(lease.unpaidAmount)} (${lease.unpaidReason || '리스비 미납'})`
       : '-');
 
-    const gross = payslip.grossPaymentTotal || 0;
-    const deduct = payslip.deductionTotal || 0;
-    const leaseDeduct = Number(lease.leaseFee || 0) + Number(lease.unpaidAmount || 0);
-    const totalDeduct = deduct + leaseDeduct;
-    const net = Math.max(0, gross - totalDeduct);
+    const leaseDeduct = includeLease
+      ? Number(lease.leaseFee || 0) + Number(lease.unpaidAmount || 0)
+      : 0;
+    const gross = bucket.grossPay;
+    const deduct = bucket.deductTotal + leaseDeduct;
+    const net = bucket.netPay - leaseDeduct;
 
     setText('driverPayslipGrossTotal', formatMoney(gross));
-    setText('driverPayslipDeductTotal', formatMoney(totalDeduct));
-    setText('driverPayslipNetTotal', formatMoney(payslip.finalNetPay || net));
+    setText('driverPayslipDeductTotal', formatMoney(deduct));
+    setText('driverPayslipNetTotal', formatMoney(net));
+
+    const platformHint = platform === 'coupang'
+      ? '쿠팡'
+      : (platform === 'baemin' ? '배민' : '합계');
+    setText('driverPayslipPayHint', `${platformHint} · 정산결과(직계약) 틀`);
+    setText('driverPayslipDeductHint', `${platformHint} · 정산결과(직계약) 틀`);
 
     const payBody = document.getElementById('driverPayslipPayRows');
     const deductBody = document.getElementById('driverPayslipDeductRows');
     if (payBody) {
-      payBody.innerHTML = [
-        renderPayRow('배달비', payslip.totalDeliveryFee, '배달료'),
-        renderPayRow('배민미션', payslip.baeminMission),
-        renderPayRow('기타지급', payslip.otherPayment),
-        renderPayRow('BREM프로모션', payslip.bremPromotion),
-        renderPayRow('지급합계', gross, '합계')
-      ].join('');
+      payBody.innerHTML = PAY_ROWS.map(row => {
+        const amount = row.key === 'grossPay' ? gross : bucket[row.key];
+        return renderPayRow(row.label, amount, row.total ? '합계' : '');
+      }).join('');
     }
     if (deductBody) {
-      const rows = [
-        renderPayRow('고용보험', payslip.employmentInsurance),
-        renderPayRow('산재보험', payslip.industrialAccidentInsurance),
-        renderPayRow('시간제보험', payslip.hourlyInsurance),
-        renderPayRow('원천세', payslip.withholdingTax),
-        renderPayRow('프로모션원천세', payslip.promotionWithholdingTax),
-        renderPayRow('콜수수료', payslip.callFee),
-        renderPayRow('일정산수수료', payslip.dailySettlementFee)
-      ];
-      if (lease.hasLease) {
+      const rows = DEDUCT_ROWS.filter(row => row.key !== 'deductTotal').map(row => (
+        renderPayRow(row.label, bucket[row.key])
+      ));
+      if (includeLease && lease.hasLease) {
         rows.push(renderPayRow('리스비', lease.leaseFee, lease.vehicleNumber || '리스/렌탈'));
       }
-      if (lease.unpaidAmount) {
+      if (includeLease && lease.unpaidAmount) {
         rows.push(renderPayRow('미납', lease.unpaidAmount, lease.unpaidReason || '리스비 미납'));
       }
-      rows.push(renderPayRow('공제합계', totalDeduct, '합계'));
+      rows.push(renderPayRow('공제합계', deduct, '합계'));
       deductBody.innerHTML = rows.join('');
     }
 
     setText('driverPayslipFormulaGross', formatMoney(gross));
-    setText('driverPayslipFormulaDeduct', formatMoney(totalDeduct));
-    setText('driverPayslipFormulaWithholding', formatMoney(payslip.withholdingTax || 0));
-    setText('driverPayslipFormulaNet', formatMoney(payslip.finalNetPay || net));
+    setText('driverPayslipFormulaDeduct', formatMoney(deduct));
+    setText('driverPayslipFormulaNet', formatMoney(net));
+    syncPlatformTabs();
     renderNotices(data.notices);
   }
 
@@ -377,6 +486,7 @@
     panel.hidden = false;
     // 메뉴를 열 때마다 가장 최근 발행된 주급명세서부터 보여준다.
     state.weekStart = null;
+    state.platform = 'total';
     openBtn.setAttribute('aria-expanded', 'true');
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     void loadPayslip();
@@ -398,11 +508,22 @@
   closeBtn?.addEventListener('click', closePanel);
   prevBtn?.addEventListener('click', () => shiftWeek(-1));
   nextBtn?.addEventListener('click', () => shiftWeek(1));
+  panel.addEventListener('click', event => {
+    const tab = event.target.closest('[data-payslip-platform]');
+    if (!tab) return;
+    const next = tab.dataset.payslipPlatform;
+    if (!['total', 'coupang', 'baemin'].includes(next) || next === state.platform) return;
+    state.platform = next;
+    if (state.lastResult?.hasPayslip) renderPayslip(state.lastResult);
+    else syncPlatformTabs();
+  });
 
   // 계정 전환 시 이전 기사의 명세서가 캐시/화면에 남지 않도록 전부 비운다.
   function resetPanel() {
     state.requestSeq += 1;
     state.weekStart = null;
+    state.platform = 'total';
+    state.lastResult = null;
     state.loading = false;
     prefetchToken += 1;
     cache.clear();

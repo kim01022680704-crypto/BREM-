@@ -73,53 +73,225 @@ function parseMoney(value) {
   return Number.isFinite(num) ? Math.round(num) : 0;
 }
 
-function readPayslipFields(line) {
+function normalizePlatform(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'coupang' || raw === '쿠팡') return 'coupang';
+  if (raw === 'baemin' || raw === '배민') return 'baemin';
+  if (raw === 'both' || raw === '쿠팡·배민' || raw === '쿠팡/배민') return 'both';
+  return '';
+}
+
+/** 정산결과(직계약)과 같은 지급·공제 키 */
+function emptyDirectBucket() {
+  return {
+    callCount: 0,
+    deliveryFee: 0,
+    missionPay: 0,
+    other: 0,
+    promo: 0,
+    grossPay: 0,
+    deductionDetail: 0,
+    employmentInsurance: 0,
+    accidentInsurance: 0,
+    hourlyInsurance: 0,
+    withholdingTax: 0,
+    promotionWithholdingTax: 0,
+    callFee: 0,
+    dailySettlementFee: 0,
+    prepaid: 0,
+    deductTotal: 0,
+    netPay: 0
+  };
+}
+
+function addBuckets(target, source) {
+  Object.keys(target).forEach(key => {
+    target[key] += parseMoney(source?.[key]);
+  });
+  return target;
+}
+
+function finalizeBucket(bucket) {
+  const next = { ...emptyDirectBucket(), ...(bucket || {}) };
+  next.callCount = Math.max(0, Math.round(Number(next.callCount || 0)));
+  next.grossPay = next.deliveryFee + next.missionPay + next.other + next.promo;
+  next.deductTotal = next.deductionDetail
+    + next.employmentInsurance
+    + next.accidentInsurance
+    + next.hourlyInsurance
+    + next.withholdingTax
+    + next.promotionWithholdingTax
+    + next.callFee
+    + next.dailySettlementFee
+    + next.prepaid;
+  next.netPay = next.grossPay - next.deductTotal;
+  return next;
+}
+
+function readRawPayslip(line) {
   const raw = line?.raw_data && typeof line.raw_data === 'object' ? line.raw_data : {};
   const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : raw;
-  const get = (key, fallbackKey) => parseMoney(payslip[key] ?? raw[key] ?? (fallbackKey ? line?.[fallbackKey] : 0));
+  return { raw, payslip };
+}
 
-  const totalDeliveryFee = get('totalDeliveryFee', 'basePay');
-  const baeminMission = get('baeminMission');
-  const otherPayment = get('otherPayment');
-  const bremPromotion = get('bremPromotion');
-  const grossPaymentTotal = get('grossPaymentTotal', 'grossPay') || (
-    totalDeliveryFee + baeminMission + otherPayment + bremPromotion
+function lineToDirectBucket(line) {
+  const { raw, payslip } = readRawPayslip(line);
+  const get = (key, ...aliases) => {
+    for (const name of [key, ...aliases]) {
+      if (payslip[name] != null && payslip[name] !== '') return parseMoney(payslip[name]);
+      if (raw[name] != null && raw[name] !== '') return parseMoney(raw[name]);
+    }
+    return 0;
+  };
+
+  const bucket = emptyDirectBucket();
+  bucket.callCount = Math.max(0, Math.round(Number(
+    payslip.callCount ?? raw.callCount ?? line?.call_count ?? 0
+  )));
+  bucket.deliveryFee = get('deliveryFee', 'totalDeliveryFee', 'basePay');
+  bucket.missionPay = get('missionPay', 'baeminMission');
+  bucket.other = get('other', 'otherPayment');
+  bucket.promo = get('promo', 'bremPromotion');
+  bucket.deductionDetail = get('deductionDetail');
+  bucket.employmentInsurance = get('employmentInsurance');
+  bucket.accidentInsurance = get('accidentInsurance', 'industrialAccidentInsurance');
+  bucket.hourlyInsurance = get('hourlyInsurance');
+  bucket.withholdingTax = get('withholdingTax', 'incomeTax');
+  bucket.promotionWithholdingTax = get('promotionWithholdingTax');
+  bucket.callFee = get('callFee');
+  bucket.dailySettlementFee = get('dailySettlementFee');
+  bucket.prepaid = get('prepaid');
+  return finalizeBucket(bucket);
+}
+
+function resolveLinePlatform(line) {
+  const { raw, payslip } = readRawPayslip(line);
+  return normalizePlatform(
+    payslip.platform
+    || raw.platform
+    || raw.matchPlatform
+    || payslip.matchPlatform
+    || raw.branchPlatform
   );
-  const employmentInsurance = get('employmentInsurance');
-  const industrialAccidentInsurance = get('industrialAccidentInsurance');
-  const hourlyInsurance = get('hourlyInsurance');
-  const withholdingTax = get('withholdingTax', 'incomeTax');
-  const promotionWithholdingTax = get('promotionWithholdingTax');
-  const callFee = get('callFee');
-  const dailySettlementFee = get('dailySettlementFee');
-  const deductionTotal = get('deductionTotal', 'totalDeduction') || (
-    employmentInsurance + industrialAccidentInsurance + hourlyInsurance
-    + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee
-  );
-  const finalNetPay = get('calculatedNetPay', 'netPay') || get('finalNetPay') || Math.max(0, grossPaymentTotal - deductionTotal);
+}
+
+/**
+ * 브로 한 줄에 쿠팡·배민이 섞인 경우:
+ * - 추가지급(미션)=배민미션 → 배민
+ * - 나머지 지급·공제 → 쿠팡
+ * (대리점명이 플랫폼을 가리키면 그 플랫폼에 전액)
+ */
+function splitLineIntoPlatforms(line) {
+  const platform = resolveLinePlatform(line);
+  const full = lineToDirectBucket(line);
+  const coupang = emptyDirectBucket();
+  const baemin = emptyDirectBucket();
+
+  if (platform === 'coupang') {
+    addBuckets(coupang, full);
+  } else if (platform === 'baemin') {
+    addBuckets(baemin, full);
+  } else {
+    // both / 미지정: 배민미션만 배민, 나머지는 쿠팡
+    baemin.missionPay = full.missionPay;
+    coupang.callCount = full.callCount;
+    coupang.deliveryFee = full.deliveryFee;
+    coupang.other = full.other;
+    coupang.promo = full.promo;
+    coupang.deductionDetail = full.deductionDetail;
+    coupang.employmentInsurance = full.employmentInsurance;
+    coupang.accidentInsurance = full.accidentInsurance;
+    coupang.hourlyInsurance = full.hourlyInsurance;
+    coupang.withholdingTax = full.withholdingTax;
+    coupang.promotionWithholdingTax = full.promotionWithholdingTax;
+    coupang.callFee = full.callFee;
+    coupang.dailySettlementFee = full.dailySettlementFee;
+    coupang.prepaid = full.prepaid;
+  }
 
   return {
-    riderName: String(payslip.riderName || line?.rider_name || '').trim(),
-    coupangId: String(payslip.coupangId || raw.matchedCoupangId || '').trim(),
-    baeminId: String(payslip.baeminId || raw.matchedBaeminId || '').trim(),
-    callCount: Number(raw.callCount || 0),
-    totalDeliveryFee,
-    baeminMission,
-    otherPayment,
-    bremPromotion,
-    grossPaymentTotal,
-    employmentInsurance,
-    industrialAccidentInsurance,
-    hourlyInsurance,
-    withholdingTax,
-    promotionWithholdingTax,
-    callFee,
-    dailySettlementFee,
-    deductionTotal,
-    finalNetPay,
-    settlementWeekStart: String(raw.settlementWeekStart || '').slice(0, 10),
-    settlementWeekEnd: String(raw.settlementWeekEnd || '').slice(0, 10),
-    settlementWeekLabel: String(raw.settlementWeekLabel || '').trim()
+    coupang: finalizeBucket(coupang),
+    baemin: finalizeBucket(baemin)
+  };
+}
+
+function bucketToLegacyPayslip(bucket, meta = {}) {
+  const row = finalizeBucket(bucket);
+  return {
+    riderName: meta.riderName || '',
+    coupangId: meta.coupangId || '',
+    baeminId: meta.baeminId || '',
+    callCount: row.callCount,
+    // 레거시 키 (기존 클라이언트·브로 호환)
+    totalDeliveryFee: row.deliveryFee,
+    baeminMission: row.missionPay,
+    otherPayment: row.other,
+    bremPromotion: row.promo,
+    grossPaymentTotal: row.grossPay,
+    employmentInsurance: row.employmentInsurance,
+    industrialAccidentInsurance: row.accidentInsurance,
+    hourlyInsurance: row.hourlyInsurance,
+    withholdingTax: row.withholdingTax,
+    promotionWithholdingTax: row.promotionWithholdingTax,
+    callFee: row.callFee,
+    dailySettlementFee: row.dailySettlementFee,
+    deductionTotal: row.deductTotal,
+    finalNetPay: row.netPay,
+    // 직계약 정렬 키
+    deliveryFee: row.deliveryFee,
+    missionPay: row.missionPay,
+    other: row.other,
+    promo: row.promo,
+    grossPay: row.grossPay,
+    deductionDetail: row.deductionDetail,
+    accidentInsurance: row.accidentInsurance,
+    prepaid: row.prepaid,
+    deductTotal: row.deductTotal,
+    netPay: row.netPay,
+    settlementWeekStart: meta.settlementWeekStart || '',
+    settlementWeekEnd: meta.settlementWeekEnd || '',
+    settlementWeekLabel: meta.settlementWeekLabel || ''
+  };
+}
+
+function buildPayslipFromLines(weekLines, meta = {}) {
+  const platforms = {
+    coupang: emptyDirectBucket(),
+    baemin: emptyDirectBucket()
+  };
+
+  weekLines.forEach(line => {
+    const split = splitLineIntoPlatforms(line);
+    addBuckets(platforms.coupang, split.coupang);
+    addBuckets(platforms.baemin, split.baemin);
+  });
+
+  platforms.coupang = finalizeBucket(platforms.coupang);
+  platforms.baemin = finalizeBucket(platforms.baemin);
+
+  const totals = emptyDirectBucket();
+  addBuckets(totals, platforms.coupang);
+  addBuckets(totals, platforms.baemin);
+  const finalized = finalizeBucket(totals);
+
+  const first = weekLines[0] || null;
+  const { raw, payslip } = first ? readRawPayslip(first) : { raw: {}, payslip: {} };
+
+  return {
+    ...bucketToLegacyPayslip(finalized, {
+      riderName: String(payslip.riderName || first?.rider_name || meta.riderName || '').trim(),
+      coupangId: String(payslip.coupangId || raw.matchedCoupangId || meta.coupangId || '').trim(),
+      baeminId: String(payslip.baeminId || raw.matchedBaeminId || meta.baeminId || '').trim(),
+      settlementWeekStart: meta.settlementWeekStart || '',
+      settlementWeekEnd: meta.settlementWeekEnd || '',
+      settlementWeekLabel: meta.settlementWeekLabel
+        || String(raw.settlementWeekLabel || '').trim()
+    }),
+    platforms: {
+      coupang: platforms.coupang,
+      baemin: platforms.baemin
+    },
+    source: 'bro'
   };
 }
 
@@ -167,7 +339,6 @@ async function findRiderLeaseInfo(supabase, rider) {
   const unpaidReasons = [];
 
   const COMPLETED = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
-  // lease_arrears 실제 컬럼: unpaid_amount(잔액) · collection_status · contract_id · raw_data
   const { data: arrears } = await supabase
     .from('lease_arrears')
     .select('unpaid_amount,raw_data,collection_status,contract_id')
@@ -218,7 +389,6 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
   }
 
-  // 특정 주를 요청했는지 판별. 요청이 없으면(메뉴 첫 진입) 가장 최근 발행 주를 기본으로 쓴다.
   const requestedRaw = String(weekStartInput || '').trim();
   const hasRequestedWeek = /\d{4}-\d{2}-\d{2}/.test(requestedRaw);
 
@@ -249,7 +419,6 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     return { ok: false, status: 500, error: error.message || '주급명세서를 불러오지 못했습니다.' };
   }
 
-  // 발행된 명세서 줄들은 updated_at 내림차순이므로, 가장 앞의 주가 "제일 최근 업로드"이다.
   let settlementWeekStart;
   if (hasRequestedWeek) {
     settlementWeekStart = normalizeSettlementWeekStart(requestedRaw);
@@ -268,11 +437,12 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
   const settlementWeekEndDate = settlementWeekEnd(settlementWeekStart);
   const paymentDate = await resolvePaymentDate(supabase, settlementWeekStart, settlementWeekEndDate);
 
-  const matchedLine = (lines || []).find(row => {
+  // 같은 주에 쿠팡·배민 줄이 각각 있으면 모두 합친다. (예전엔 첫 줄만 써서 한쪽이 빠졌다)
+  const weekLines = (lines || []).filter(row => {
     const raw = row.raw_data || {};
     const week = String(raw.settlementWeekStart || raw.settlementWeekPayKey || '').slice(0, 10);
     return week === settlementWeekStart;
-  }) || null;
+  });
 
   let notices = [];
   if (!noticesResult.error) {
@@ -296,6 +466,24 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
   }
 
   const loginId = `${String(me.rider?.name || '').replace(/\s/g, '')}${normalizePhone(me.rider?.phone).slice(-4)}`;
+  const riderMeta = {
+    id: me.riderId,
+    name: me.rider?.name || '',
+    phone: me.rider?.phone || '',
+    coupangId: loginId,
+    baeminId: String(me.rider?.baemin_id || me.rider?.baeminId || '').trim()
+  };
+
+  const payslip = weekLines.length
+    ? buildPayslipFromLines(weekLines, {
+      riderName: riderMeta.name,
+      coupangId: riderMeta.coupangId,
+      baeminId: riderMeta.baeminId,
+      settlementWeekStart,
+      settlementWeekEnd: settlementWeekEndDate,
+      settlementWeekLabel: `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`
+    })
+    : null;
 
   return {
     ok: true,
@@ -303,17 +491,11 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     settlementWeekStart,
     settlementWeekEnd: settlementWeekEndDate,
     paymentDate,
-    settlementWeekLabel: matchedLine?.raw_data?.settlementWeekLabel
+    settlementWeekLabel: payslip?.settlementWeekLabel
       || `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`,
-    hasPayslip: Boolean(matchedLine),
-    payslip: matchedLine ? readPayslipFields(matchedLine) : null,
-    rider: {
-      id: me.riderId,
-      name: me.rider?.name || '',
-      phone: me.rider?.phone || '',
-      coupangId: loginId,
-      baeminId: String(me.rider?.baemin_id || me.rider?.baeminId || '').trim()
-    },
+    hasPayslip: Boolean(payslip),
+    payslip,
+    rider: riderMeta,
     lease: {
       hasLease: leaseInfo.hasLease || leaseInfo.isRental,
       contractType: leaseInfo.contractType,
@@ -332,5 +514,8 @@ module.exports = {
   getRiderWeeklyPayslip,
   normalizeSettlementWeekStart,
   settlementWeekEnd,
-  defaultPaymentDateForWeekEnd
+  defaultPaymentDateForWeekEnd,
+  buildPayslipFromLines,
+  lineToDirectBucket,
+  splitLineIntoPlatforms
 };

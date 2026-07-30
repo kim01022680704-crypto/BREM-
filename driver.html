@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260726d">
+  <link rel="stylesheet" href="css/driver.css?v=20260730x">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -345,6 +345,12 @@
             </div>
 
             <div id="driverPayslipContent">
+              <div class="driver-payslip-platform-tabs" role="tablist" aria-label="플랫폼별 주급명세서">
+                <button type="button" class="driver-payslip-platform-tab active" data-payslip-platform="total" role="tab" aria-selected="true">합계</button>
+                <button type="button" class="driver-payslip-platform-tab" data-payslip-platform="coupang" role="tab" aria-selected="false">쿠팡</button>
+                <button type="button" class="driver-payslip-platform-tab" data-payslip-platform="baemin" role="tab" aria-selected="false">배민</button>
+              </div>
+
               <div class="driver-payslip-summary">
                 <article class="driver-payslip-summary-card">
                   <span>지급 합계</span>
@@ -362,11 +368,11 @@
 
               <div class="driver-payslip-tables">
                 <section class="driver-payslip-table-block">
-                  <h3>지급 내역</h3>
+                  <h3>지급 내역 <span class="driver-payslip-table-block__hint" id="driverPayslipPayHint">정산결과(직계약) 기준</span></h3>
                   <ul class="driver-payslip-lines" id="driverPayslipPayRows"></ul>
                 </section>
                 <section class="driver-payslip-table-block">
-                  <h3>공제 내역</h3>
+                  <h3>공제 내역 <span class="driver-payslip-table-block__hint" id="driverPayslipDeductHint">정산결과(직계약) 기준</span></h3>
                   <ul class="driver-payslip-lines" id="driverPayslipDeductRows"></ul>
                 </section>
               </div>
@@ -375,8 +381,6 @@
                 <span id="driverPayslipFormulaGross">0원</span>
                 <span class="driver-payslip-formula__op">-</span>
                 <span id="driverPayslipFormulaDeduct">0원</span>
-                <span class="driver-payslip-formula__op">-</span>
-                <span id="driverPayslipFormulaWithholding">0원</span>
                 <span class="driver-payslip-formula__op">=</span>
                 <strong id="driverPayslipFormulaNet">0원</strong>
               </div>
@@ -722,7 +726,7 @@
   <script src="js/storage.js?v=20260729d"></script>
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver-weekly-payslip.js?v=20260727a"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260730x"></script>
   <script src="js/driver-withdrawal.js?v=20260730s"></script>
   <script src="js/driver.js?v=20260730k"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>

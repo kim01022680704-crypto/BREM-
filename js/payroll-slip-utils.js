@@ -40,32 +40,33 @@
       id: 'pay',
       label: '지급',
       fields: [
-        { key: 'totalDeliveryFee', label: '배달료', money: true },
-        { key: 'baeminMission', label: '배민미션', money: true },
+        // 표시 라벨은 정산결과(직계약) 틀에 맞춘다. 엑셀 열(키)은 그대로다.
+        { key: 'totalDeliveryFee', label: '배달비', money: true },
+        { key: 'baeminMission', label: '추가지급(미션)', money: true },
         { key: 'otherPayment', label: '기타지급', money: true },
         { key: 'bremPromotion', label: 'BREM프로모션', money: true, bulkOnly: true },
-        { key: 'grossPaymentTotal', label: '지급총액', money: true, emphasis: true }
+        { key: 'grossPaymentTotal', label: '지급합계', money: true, emphasis: true }
       ]
     },
     {
       id: 'deduct',
       label: '공제',
       fields: [
-        { key: 'employmentInsurance', label: '고용', money: true },
-        { key: 'industrialAccidentInsurance', label: '산재', money: true },
+        { key: 'employmentInsurance', label: '고용보험', money: true },
+        { key: 'industrialAccidentInsurance', label: '산재보험', money: true },
         { key: 'hourlyInsurance', label: '시간제보험', money: true },
         { key: 'withholdingTax', label: '원천세', money: true },
         { key: 'promotionWithholdingTax', label: '프로모션원천세', money: true, bulkOnly: true },
         { key: 'callFee', label: '콜수수료', money: true },
         { key: 'dailySettlementFee', label: '일정산수수료', money: true, dailyOnly: true },
-        { key: 'deductionTotal', label: '공제합', money: true, emphasis: true }
+        { key: 'deductionTotal', label: '공제합계', money: true, emphasis: true }
       ]
     },
     {
       id: 'net',
       label: '실지급',
       fields: [
-        { key: 'calculatedNetPay', label: '최종지급액', money: true, emphasis: true },
+        { key: 'calculatedNetPay', label: '총지급액', money: true, emphasis: true },
         { key: 'excelNetPay', label: '엑셀', money: true, adminOnly: true },
         { key: 'netPayDiff', label: '차액', money: true, diff: true, adminOnly: true }
       ]
@@ -87,55 +88,55 @@
       id: 'pay',
       label: '지급',
       fields: [
-        { key: 'totalDeliveryFee', label: '배달료', money: true },
-        { key: 'baeminMission', label: '배민미션', money: true },
+        { key: 'totalDeliveryFee', label: '배달비', money: true },
+        { key: 'baeminMission', label: '추가지급(미션)', money: true },
         { key: 'otherPayment', label: '기타지급', money: true },
         { key: 'bremPromotion', label: 'BREM프로모션', money: true, bulkOnly: true },
-        { key: 'grossPaymentTotal', label: '지급총액', money: true, emphasis: true }
+        { key: 'grossPaymentTotal', label: '지급합계', money: true, emphasis: true }
       ]
     },
     {
       id: 'deduct',
       label: '공제',
       fields: [
-        { key: 'employmentInsurance', label: '고용', money: true },
-        { key: 'industrialAccidentInsurance', label: '산재', money: true },
+        { key: 'employmentInsurance', label: '고용보험', money: true },
+        { key: 'industrialAccidentInsurance', label: '산재보험', money: true },
         { key: 'hourlyInsurance', label: '시간제보험', money: true },
         { key: 'withholdingTax', label: '원천세', money: true },
         { key: 'promotionWithholdingTax', label: '프로모션원천세', money: true, bulkOnly: true },
         { key: 'callFee', label: '콜수수료', money: true },
         { key: 'dailySettlementFee', label: '일정산수수료', money: true, dailyOnly: true },
-        { key: 'deductionTotal', label: '공제합', money: true, emphasis: true }
+        { key: 'deductionTotal', label: '공제합계', money: true, emphasis: true }
       ]
     },
     {
       id: 'net',
       label: '실지급',
       fields: [
-        { key: 'finalNetPay', label: '최종지급액', money: true, emphasis: true }
+        { key: 'finalNetPay', label: '총지급액', money: true, emphasis: true }
       ]
     }
   ]);
 
-  /** 급여명세서 저장·출력용 필드 */
+  /** 급여명세서 저장·출력용 필드 — 엑셀 키 유지, 표시명만 직계약 틀 */
   const PAYSLIP_RECORD_FIELDS = Object.freeze([
     { key: 'riderName', label: '기사명' },
     { key: 'coupangId', label: '쿠팡ID' },
     { key: 'baeminId', label: '배민ID' },
-    { key: 'totalDeliveryFee', label: '배달료', money: true },
-    { key: 'baeminMission', label: '배민미션', money: true },
+    { key: 'totalDeliveryFee', label: '배달비', money: true },
+    { key: 'baeminMission', label: '추가지급(미션)', money: true },
     { key: 'otherPayment', label: '기타지급', money: true },
     { key: 'bremPromotion', label: 'BREM프로모션', money: true },
-    { key: 'grossPaymentTotal', label: '지급총액', money: true },
-    { key: 'employmentInsurance', label: '고용', money: true },
-    { key: 'industrialAccidentInsurance', label: '산재', money: true },
+    { key: 'grossPaymentTotal', label: '지급합계', money: true },
+    { key: 'employmentInsurance', label: '고용보험', money: true },
+    { key: 'industrialAccidentInsurance', label: '산재보험', money: true },
     { key: 'hourlyInsurance', label: '시간제보험', money: true },
     { key: 'withholdingTax', label: '원천세', money: true },
     { key: 'promotionWithholdingTax', label: '프로모션원천세', money: true },
     { key: 'callFee', label: '콜수수료', money: true },
     { key: 'dailySettlementFee', label: '일정산수수료', money: true },
-    { key: 'deductionTotal', label: '공제합', money: true },
-    { key: 'finalNetPay', label: '최종지급액', money: true }
+    { key: 'deductionTotal', label: '공제합계', money: true },
+    { key: 'finalNetPay', label: '총지급액', money: true }
   ]);
 
   const PAYSLIP_DETAIL_FIELDS = Object.freeze([

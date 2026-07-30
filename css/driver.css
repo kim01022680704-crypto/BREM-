@@ -2543,6 +2543,30 @@ button.calendar-day:hover {
   color: var(--yellow);
 }
 
+.driver-payslip-platform-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.driver-payslip-platform-tab {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.driver-payslip-platform-tab.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #facc15;
+}
+
 .driver-payslip-tables {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2553,6 +2577,16 @@ button.calendar-day:hover {
 .driver-payslip-table-block h3 {
   margin: 0 0 8px;
   font-size: 0.92rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.driver-payslip-table-block__hint {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #94a3b8;
 }
 
 .driver-payslip-lines {
