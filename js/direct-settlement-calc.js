@@ -230,6 +230,7 @@ const BremDirectSettlementCalc = (function () {
     weekStartKey,
     settlementWeek,
     normalizePlatform,
+    normalizeWithdrawalPlatform,
     driverName,
     callFeeUnit,
     completedWithdrawalMap,
