@@ -6390,6 +6390,25 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   white-space: nowrap;
 }
 
+.final-deposit-group-row td {
+  background: #111827;
+  color: var(--yellow, #facc15);
+  font-weight: 900;
+  font-size: 13px;
+  padding: 8px 10px;
+  position: sticky;
+  left: 0;
+}
+
+.final-deposit-subtotal-row td {
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .final-deposit-reconcile {
   margin: 8px 0 4px;
   font-size: 13px;

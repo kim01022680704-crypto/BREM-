@@ -133,9 +133,11 @@ const BremFinalDeposit = (function () {
   // --- 기사 단위 합산 -------------------------------------------------------
 
   // 쿠팡·배민을 한 사람으로 묶는 키. 기사 매칭이 안 된 줄은 플랫폼+ID로 따로 둔다.
+  // 쿠팡/배민을 위아래로 나누므로 키에 플랫폼을 포함해 사람도 플랫폼별로 분리한다.
+  // (같은 플랫폼의 여러 지역 정산서는 여전히 한 줄로 합친다.)
   function driverKey(row) {
-    if (row.driverId) return `d:${row.driverId}`;
-    return `u:${row.platform}:${row.idLabel}:${row.name}`;
+    const base = row.driverId ? `d:${row.driverId}` : `u:${row.idLabel}:${row.name}`;
+    return `${base}|${row.platform}`;
   }
 
   function mergedRows() {
@@ -236,11 +238,27 @@ const BremFinalDeposit = (function () {
       return;
     }
 
-    body.innerHTML = rows.map(row => `
+    // 쿠팡 그룹 → 배민 그룹 순서로 위아래 분리해서 보여준다. 각 그룹 소계 포함.
+    const rowHtml = row => `
       <tr class="${row.checked ? '' : 'final-deposit-row-off'}">
         <td class="final-deposit-check-td"><input type="checkbox" data-fd-driver="${escapeHtml(row.key)}"${row.checked ? ' checked' : ''}></td>
         ${cols.map(col => cellHtml(col, row)).join('')}
-      </tr>`).join('');
+      </tr>`;
+    const groupHtml = (platform, label) => {
+      const list = rows.filter(row => row.platform === platform);
+      if (!list.length) return '';
+      const sub = Calc().sumRows(list.filter(row => row.checked));
+      return `
+        <tr class="final-deposit-group-row"><td colspan="${colspan}">${escapeHtml(label)} 정산 · ${list.length}명</td></tr>
+        ${list.map(rowHtml).join('')}
+        <tr class="final-deposit-subtotal-row"><td colspan="${colspan}">
+          ${escapeHtml(label)} 소계 · 지급합계 <strong>${formatNumber(sub.grossPay)}</strong>
+          · 공제합계 <strong>${formatNumber(sub.deductTotal)}</strong>
+          · 선정산(처리완료) <strong>${formatNumber(sub.prepaid)}</strong>
+          · 최종입금 <strong>${formatNumber(sub.netPay)}</strong>원
+        </td></tr>`;
+    };
+    body.innerHTML = groupHtml('coupang', '쿠팡') + groupHtml('baemin', '배민');
 
     const allChk = $('#finalDepositSelectAll');
     if (allChk) allChk.checked = rows.every(row => row.checked);
