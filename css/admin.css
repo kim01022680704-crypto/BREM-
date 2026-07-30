@@ -10879,32 +10879,43 @@ tr.is-selected {
 }
 
 .driver-org-canvas-wrap {
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   padding: 20px 12px 28px;
   background: linear-gradient(180deg, #f4f7fb 0%, #eef2f7 100%);
   border: 1px solid #d7deea;
   border-radius: 12px;
   min-height: 360px;
   color: #0f172a;
+  -webkit-overflow-scrolling: touch;
 }
 
 .driver-org-canvas {
   display: flex;
-  justify-content: center;
-  min-width: max-content;
+  justify-content: flex-start;
+  align-items: flex-start;
+  width: max-content;
+  min-width: 100%;
+  padding: 8px 16px 12px;
+  box-sizing: border-box;
 }
 
 .driver-org-canvas-wrap .empty {
   color: #334155;
 }
 
+/* 형제 박스는 항상 가로로, 하위만 아래로 내려가게 한다. */
 .driver-org-tree,
 .driver-org-tree ul {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   justify-content: center;
+  align-items: flex-start;
+  width: max-content;
 }
 
 .driver-org-tree ul {
@@ -10924,8 +10935,12 @@ tr.is-selected {
 
 .driver-org-tree li {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 28px 14px 0;
   text-align: center;
+  flex: 0 0 auto;
 }
 
 .driver-org-tree li::before,

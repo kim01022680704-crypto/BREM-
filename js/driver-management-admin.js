@@ -438,15 +438,21 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function addNode(parentId = '') {
+    const parent = String(parentId || '').trim();
+    const siblings = parent
+      ? childrenOf(parent)
+      : roots();
     const node = {
       id: createId(),
-      label: parentId ? '하위 박스' : '루트',
-      parentId: parentId || '',
+      label: parent ? `하위 ${siblings.length + 1}` : (siblings.length ? `루트 ${siblings.length + 1}` : '루트'),
+      parentId: parent,
       memberRefs: [],
       sortOrder: state.org.nodes.length
     };
     state.org.nodes.push(node);
-    state.selectedNodeId = node.id;
+    // 하위 추가 후에도 부모를 선택 유지 → 연속 추가 시 옆으로(형제) 붙는다.
+    // (새 박스를 선택하면 그다음 추가가 또 그 아래로만 깊어졌다.)
+    state.selectedNodeId = parent || node.id;
     renderOrg();
   }
 
