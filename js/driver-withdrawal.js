@@ -429,6 +429,7 @@
   function openPanel() {
     document.getElementById('driverWeeklyPayslipPanel')?.setAttribute('hidden', '');
     document.getElementById('driverWeeklyPayslipBtn')?.setAttribute('aria-expanded', 'false');
+    window.BremDriverRegionDashboard?.close?.();
     setOpenState(true);
     if (!state.weekStart) state.weekStart = weekStartKey(formatLocalDateKey(new Date()));
     void loadWithdrawal();

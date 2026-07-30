@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260730z">
+  <link rel="stylesheet" href="css/driver.css?v=20260730aa">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -153,6 +153,7 @@
                 <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle">정보 수정</button>
                 <button type="button" class="profile-withdrawal-btn profile-withdrawal-btn--compact" id="driverWithdrawalBtn" title="일정산 출금신청" aria-expanded="false" aria-controls="driverWithdrawalPanel">출금신청</button>
                 <button type="button" class="profile-payslip-btn" id="driverWeeklyPayslipBtn" aria-expanded="false" aria-controls="driverWeeklyPayslipPanel">주급명세서</button>
+                <button type="button" class="profile-region-dash-btn" id="driverRegionDashboardBtn" aria-expanded="false" aria-controls="driverRegionDashboardPanel">기사대시보드</button>
               </div>
             </div>
           </div>
@@ -213,6 +214,74 @@
               배민 배달현황·수락율 데이터가 아직 없습니다. 관리자가 배민현황을 수집·저장하면 표시됩니다.
             </p>
           </section>
+
+          <article class="panel driver-weekly-payslip-panel driver-region-dashboard-panel" id="driverRegionDashboardPanel" hidden>
+            <div class="driver-payslip-header">
+              <div class="driver-payslip-header__brand">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
+                <div>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER</p>
+                  <h2>기사대시보드</h2>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn driver-payslip-close" id="driverRegionDashboardCloseBtn">닫기</button>
+            </div>
+
+            <div class="driver-payslip-platform-tabs" role="tablist" aria-label="플랫폼별 기사대시보드">
+              <button type="button" class="driver-payslip-platform-tab active" data-region-dash-platform="baemin" role="tab" aria-selected="true">배민</button>
+              <button type="button" class="driver-payslip-platform-tab" data-region-dash-platform="coupang" role="tab" aria-selected="false">쿠팡</button>
+            </div>
+
+            <div class="driver-region-dash-meta">
+              <label class="driver-region-dash-meta__item">
+                <span class="driver-payslip-meta__label">지역</span>
+                <select id="driverRegionDashboardRegion" class="driver-region-dash-select" aria-label="노출 지역 선택"></select>
+              </label>
+              <div class="driver-region-dash-meta__item">
+                <span class="driver-payslip-meta__label">정산주 (수~화)</span>
+                <strong id="driverRegionDashboardPeriod" class="driver-payslip-period-text">-</strong>
+              </div>
+              <button type="button" class="driver-region-dash-refresh" id="driverRegionDashboardRefreshBtn" title="새로고침">↻</button>
+            </div>
+
+            <div class="driver-payslip-empty" id="driverRegionDashboardEmpty">
+              <p>관리자가 노출로 설정한 지역이 없습니다.</p>
+              <p class="driver-payslip-empty-hint">기사관리 → 기사지역관리에서 「라이더 노출」을 켜면 표시됩니다.</p>
+            </div>
+
+            <div id="driverRegionDashboardContent" hidden>
+              <p class="driver-region-dash-region-chip">
+                <strong id="driverRegionDashboardRegionLabel">-</strong>
+              </p>
+
+              <div class="driver-region-dash-metrics" aria-label="지역 할당 현황">
+                <div class="driver-region-dash-metric">
+                  <span>할당</span>
+                  <strong id="driverRegionDashAssigned">-</strong>
+                </div>
+                <div class="driver-region-dash-metric">
+                  <span>운행중</span>
+                  <strong id="driverRegionDashOperating">-</strong>
+                </div>
+                <div class="driver-region-dash-metric">
+                  <span>남은할당</span>
+                  <strong id="driverRegionDashRemaining">-</strong>
+                </div>
+              </div>
+
+              <section class="driver-region-dash-rank-block">
+                <h3>실시간 콜수 TOP 10</h3>
+                <ol class="driver-region-dash-rank-list" id="driverRegionDashRealtimeList"></ol>
+              </section>
+
+              <section class="driver-region-dash-rank-block">
+                <h3>주간 콜수 TOP 10 <span class="driver-payslip-table-block__hint">수~화</span></h3>
+                <ol class="driver-region-dash-rank-list" id="driverRegionDashWeeklyList"></ol>
+              </section>
+
+              <p class="driver-region-dash-footnote" id="driverRegionDashNote">노출 지역은 관리자가 설정한 지역만 표시됩니다.</p>
+            </div>
+          </article>
 
           <article class="panel driver-weekly-payslip-panel driver-withdrawal-panel" id="driverWithdrawalPanel" hidden>
             <div class="driver-payslip-header">
@@ -724,12 +793,13 @@
   <script src="js/storage-supabase-mapper.js?v=20260729d"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260622p"></script>
-  <script src="js/storage.js?v=20260729d"></script>
+  <script src="js/storage.js?v=20260730aa"></script>
   <script src="js/driver-utils.js?v=20260622q"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver-weekly-payslip.js?v=20260730x"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260730aa"></script>
+  <script src="js/driver-region-dashboard.js?v=20260730aa"></script>
   <script src="js/driver-withdrawal.js?v=20260730y"></script>
-  <script src="js/driver.js?v=20260730k"></script>
+  <script src="js/driver.js?v=20260730aa"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

@@ -13,6 +13,7 @@ const BremDriverManagementAdmin = (function () {
     selectedRegionKey: '',
     baeminRegions: [],
     coupangRegions: [],
+    regionExposure: { baemin: {}, coupang: {} },
     bulkRows: []
   };
 
@@ -536,6 +537,59 @@ const BremDriverManagementAdmin = (function () {
     return state.regionPlatform === 'coupang' ? state.coupangRegions : state.baeminRegions;
   }
 
+  function isRegionExposed(platform, key) {
+    const side = state.regionExposure?.[platform] || {};
+    return Boolean(side[key]?.exposed);
+  }
+
+  async function loadRegionExposure() {
+    try {
+      const token = await window.BremStorage?.resolveAdminAccessToken?.();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch('/api/admin/rider-dashboard/region-exposure', {
+        headers,
+        credentials: 'same-origin'
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || '노출 설정을 불러오지 못했습니다.');
+      state.regionExposure = {
+        baemin: payload.exposure?.baemin || {},
+        coupang: payload.exposure?.coupang || {}
+      };
+    } catch (error) {
+      console.warn('[BREM] region exposure:', error);
+      state.regionExposure = { baemin: {}, coupang: {} };
+    }
+  }
+
+  async function setRegionExposure(region, exposed) {
+    if (!region) return;
+    const token = await window.BremStorage?.resolveAdminAccessToken?.();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+    const res = await fetch('/api/admin/rider-dashboard/region-exposure', {
+      method: 'POST',
+      headers,
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        platform: region.platform,
+        key: region.key,
+        exposed: exposed === true,
+        label: region.label,
+        partnerId: region.partnerId || '',
+        vendorId: region.vendorId || ''
+      })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || '노출 설정 저장에 실패했습니다.');
+    state.regionExposure = {
+      baemin: payload.exposure?.baemin || {},
+      coupang: payload.exposure?.coupang || {}
+    };
+  }
+
   function selectedRegion() {
     return regionCatalog().find(item => item.key === state.selectedRegionKey) || null;
   }
@@ -570,13 +624,20 @@ const BremDriverManagementAdmin = (function () {
     el.innerHTML = list.map(region => {
       const count = driversInRegion(region).length;
       const active = state.selectedRegionKey === region.key;
+      const exposed = isRegionExposed(region.platform, region.key);
       const sub = region.platform === 'baemin' ? region.partnerId : (region.vendorName || '');
       const name = region.label || region.key || '이름 없음';
-      return `<button type="button" class="driver-region-item${active ? ' is-active' : ''}" data-region-key="${escapeHtml(region.key)}" title="${escapeHtml(sub || name)}">
-        <span class="driver-region-item-name">${escapeHtml(name)}</span>
-        <span class="driver-region-item-meta">${escapeHtml(sub && sub !== name ? sub : '')}</span>
-        <span class="driver-region-item-count">${count}명</span>
-      </button>`;
+      return `<div class="driver-region-item${active ? ' is-active' : ''}${exposed ? ' is-exposed' : ''}" data-region-key="${escapeHtml(region.key)}">
+        <button type="button" class="driver-region-item-main" data-region-select="${escapeHtml(region.key)}" title="${escapeHtml(sub || name)}">
+          <span class="driver-region-item-name">${escapeHtml(name)}</span>
+          <span class="driver-region-item-meta">${escapeHtml(sub && sub !== name ? sub : '')}</span>
+          <span class="driver-region-item-count">${count}명</span>
+        </button>
+        <label class="driver-region-expose" title="기사앱 기사대시보드 노출">
+          <input type="checkbox" data-region-expose="${escapeHtml(region.key)}" ${exposed ? 'checked' : ''}>
+          <span>라이더 노출</span>
+        </label>
+      </div>`;
     }).join('');
   }
 
@@ -644,9 +705,10 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 여기서 배정하면 기사등록프로그램에도 동일하게 저장됩니다.'
-        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 여기서 배정하면 기사등록프로그램에도 동일하게 저장됩니다.';
+        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다.'
+        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다.';
     }
+    await loadRegionExposure();
     if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
     else await fetchBaeminRegions();
     if (!selectedRegion() && regionCatalog()[0]) {
@@ -831,9 +893,9 @@ const BremDriverManagementAdmin = (function () {
         return;
       }
 
-      const regionBtn = event.target.closest('[data-region-key]');
+      const regionBtn = event.target.closest('[data-region-select]');
       if (regionBtn) {
-        state.selectedRegionKey = regionBtn.dataset.regionKey;
+        state.selectedRegionKey = regionBtn.dataset.regionSelect;
         renderRegionCatalog();
         renderRegionDetail();
         return;
@@ -886,6 +948,26 @@ const BremDriverManagementAdmin = (function () {
     });
 
     document.addEventListener('change', event => {
+      const expose = event.target.closest('[data-region-expose]');
+      if (expose) {
+        const key = expose.dataset.regionExpose;
+        const region = regionCatalog().find(item => item.key === key);
+        if (!region) return;
+        const checked = expose.checked === true;
+        void setRegionExposure(region, checked)
+          .then(() => {
+            renderRegionCatalog();
+            showToast(checked
+              ? `「${region.label}」 라이더 노출 ON`
+              : `「${region.label}」 라이더 노출 OFF`);
+          })
+          .catch(error => {
+            expose.checked = !checked;
+            showToast(error.message || '노출 설정 저장 실패');
+          });
+        return;
+      }
+
       const member = event.target.closest('[data-org-member-id]');
       if (member) {
         const node = selectedNode();

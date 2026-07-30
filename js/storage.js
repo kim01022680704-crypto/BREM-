@@ -2967,6 +2967,15 @@ const BremStorage = (function () {
     return riderApiFetch(`/api/rider/weekly-payslip${qs}`, 'weekly-payslip');
   }
 
+  async function fetchRiderRegionDashboardFromServer({ platform, regionKey, weekStart } = {}) {
+    const params = new URLSearchParams();
+    if (platform) params.set('platform', String(platform));
+    if (regionKey) params.set('regionKey', String(regionKey));
+    if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return riderApiFetch(`/api/rider/region-dashboard${qs}`, 'region-dashboard');
+  }
+
   async function fetchRiderWithdrawalFromServer(weekStart) {
     const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
     return riderApiFetch(`/api/rider/withdrawal${qs}`, 'withdrawal');
@@ -12878,6 +12887,7 @@ const BremStorage = (function () {
     fetchRiderAssignedMissionsFromServer,
     fetchRiderDashboardFromServer,
     fetchRiderWeeklyPayslipFromServer,
+    fetchRiderRegionDashboardFromServer,
     fetchRiderWithdrawalFromServer,
     submitRiderWithdrawalToServer,
     fetchAdminWithdrawalRequestsFromServer,

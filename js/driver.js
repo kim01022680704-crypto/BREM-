@@ -544,6 +544,7 @@
     // 다른 기사로 로그인했을 때 이전 기사의 금액이 그대로 남는다.
     window.BremDriverWithdrawal?.reset?.();
     window.BremDriverWeeklyPayslip?.reset?.();
+    window.BremDriverRegionDashboard?.reset?.();
     showLoggedOut();
     window.BremLoginPrefs?.restoreIdAfterLogout?.('rider', {
       idInput: loginIdInput,
@@ -1390,6 +1391,7 @@
       // 이전 기사 잔상이 남지 않도록 로그인 시점에 한 번 더 비운다.
       window.BremDriverWithdrawal?.reset?.();
       window.BremDriverWeeklyPayslip?.reset?.();
+      window.BremDriverRegionDashboard?.reset?.();
       window.BremLoginPrefs?.captureLoginPrefs?.('rider', {
         idInput: loginIdInput,
         rememberCheckbox: document.getElementById('driverRememberId'),

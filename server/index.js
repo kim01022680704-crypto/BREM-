@@ -22,6 +22,7 @@ const coupangAdmin = require('./coupang-admin');
 const riderAuth = require('./rider-auth');
 const riderWeeklyPayslip = require('./rider-weekly-payslip');
 const riderWithdrawal = require('./rider-withdrawal');
+const riderRegionDashboard = require('./rider-region-dashboard');
 const payrollPublishAdmin = require('./payroll-publish-admin');
 const riderPublishAdmin = require('./rider-publish-admin');
 const { getPublicConfig } = require('./public-config');
@@ -432,6 +433,46 @@ app.get('/api/rider/weekly-payslip', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '주급명세서를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/region-dashboard', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.getRiderRegionDashboard(getBearerToken(req), {
+      platform: req.query.platform,
+      regionKey: req.query.regionKey,
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기사대시보드를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/admin/rider-dashboard/region-exposure', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.getAdminRegionExposure(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '지역 노출 설정을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/rider-dashboard/region-exposure', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.saveAdminRegionExposure(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '지역 노출 설정을 저장하지 못했습니다.' });
   }
 });
 
