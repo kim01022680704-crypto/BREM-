@@ -888,6 +888,81 @@ async function loadAllWeekDays(supabase, weekStart, feesByPlatform, excludedSett
   return result;
 }
 
+// riders 테이블에서 출금건별 배민ID/쿠팡ID(이름+전화뒤4) 를 채우는 resolver 를 만든다.
+async function buildWithdrawalIdEnrichment(supabase, requests) {
+  const normName = value => String(value || '').replace(/\s+/g, '');
+  const phoneTail = value => String(value || '').replace(/\D/g, '').slice(-4);
+  const coupangKey = rider => {
+    const name = normName(rider?.name);
+    const tail = phoneTail(rider?.phone);
+    return name && tail ? `${name}${tail}` : '';
+  };
+
+  const ids = new Set();
+  const names = new Set();
+  (Array.isArray(requests) ? requests : []).forEach(item => {
+    const id = String(item.driverId || '').trim();
+    if (id) ids.add(id);
+    const nm = normName(item.driverName);
+    if (nm) names.add(nm);
+  });
+
+  const byId = new Map();
+  const byName = new Map();
+  const addRider = row => {
+    if (!row) return;
+    const id = String(row.id || '').trim();
+    if (id && !byId.has(id)) byId.set(id, row);
+    const nm = normName(row.name);
+    if (nm) {
+      if (!byName.has(nm)) byName.set(nm, []);
+      const arr = byName.get(nm);
+      if (!arr.some(r => String(r.id || '') === id)) arr.push(row);
+    }
+  };
+
+  try {
+    if (ids.size) {
+      const { data } = await supabase
+        .from('riders')
+        .select('id,name,phone,baemin_id')
+        .in('id', [...ids])
+        .limit(10000);
+      (data || []).forEach(addRider);
+    }
+    // id 로 못 찾은 요청의 이름만 모아 보조 조회
+    const missingNames = [...new Set(
+      (Array.isArray(requests) ? requests : [])
+        .filter(item => !byId.has(String(item.driverId || '').trim()))
+        .map(item => normName(item.driverName))
+        .filter(Boolean)
+    )];
+    if (missingNames.length) {
+      const { data } = await supabase
+        .from('riders')
+        .select('id,name,phone,baemin_id')
+        .in('name', missingNames)
+        .limit(10000);
+      (data || []).forEach(addRider);
+    }
+  } catch (_error) {
+    // 조회 실패 시 빈 resolver
+  }
+
+  return item => {
+    const id = String(item.driverId || '').trim();
+    let rider = byId.get(id) || null;
+    if (!rider) {
+      const hits = byName.get(normName(item.driverName)) || [];
+      if (hits.length === 1) rider = hits[0];
+    }
+    return {
+      baeminId: rider ? String(rider.baemin_id || '').trim() : '',
+      coupangId: rider ? coupangKey(rider) : ''
+    };
+  };
+}
+
 async function listWithdrawalRequests(accessToken, query = {}) {
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
@@ -957,11 +1032,20 @@ async function listWithdrawalRequests(accessToken, query = {}) {
     }
   }));
 
-  const requests = filtered.map(item => ({
-    ...item,
-    ...(detailCache.get(`${item.driverId}|${item.weekStart}`) || sumDayTotals([])),
-    showCallFee: feesByPlatform.showCallFee !== false
-  }));
+  // 배민ID·쿠팡ID 표기를 위해 riders 테이블에서 직접 채운다.
+  // 출금기록 driverId 가 어긋나도(재등록 등) 이름으로 보조 매칭한다.
+  const idEnrich = await buildWithdrawalIdEnrichment(supabase, filtered);
+
+  const requests = filtered.map(item => {
+    const enrich = idEnrich(item);
+    return {
+      ...item,
+      ...(detailCache.get(`${item.driverId}|${item.weekStart}`) || sumDayTotals([])),
+      resolvedBaeminId: enrich.baeminId,
+      resolvedCoupangId: enrich.coupangId,
+      showCallFee: feesByPlatform.showCallFee !== false
+    };
+  });
 
   return {
     ok: true,

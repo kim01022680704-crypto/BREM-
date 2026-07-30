@@ -1065,11 +1065,16 @@
       if (!driverId) return;
       if (!byDriver.has(driverId)) {
         const driver = resolveWithdrawalDriver(row);
+        // 서버가 riders 테이블로 채워준 ID 우선, 없으면 로컬 기사 조회로 보완
+        const baeminId = String(row.resolvedBaeminId || '').trim()
+          || (driver ? (resolveBaeminId(driver) || '') : '');
+        const coupangId = String(row.resolvedCoupangId || '').trim()
+          || (driver ? (resolveCoupangId(driver) || '') : '');
         byDriver.set(driverId, {
           driverId,
           driverName: row.driverName || driver?.name || '-',
-          baeminId: driver ? (resolveBaeminId(driver) || '') : '',
-          coupangId: driver ? (resolveCoupangId(driver) || '') : '',
+          baeminId,
+          coupangId,
           coupangAmount: 0,
           baeminAmount: 0,
           unknownAmount: 0,
