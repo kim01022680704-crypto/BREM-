@@ -292,7 +292,8 @@
   function renderDays(days, showCallFee = true) {
     if (!daysBody) return;
     const list = Array.isArray(days) ? days : [];
-    const colSpan = showCallFee ? 9 : 8;
+    // 날짜·플랫폼·정산금액·고용·산재·시간제·원천세·(콜)·일정산수수료·실지급
+    const colSpan = showCallFee ? 10 : 9;
     if (!list.length) {
       daysBody.innerHTML = `<tr><td colspan="${colSpan}" class="empty">표시할 일정산 내역이 없습니다.</td></tr>`;
       return;
@@ -304,6 +305,7 @@
         <td>${formatMoney(row.settlementAmount)}</td>
         <td>${formatMoney(row.employmentInsurance)}</td>
         <td>${formatMoney(row.industrialAccidentInsurance)}</td>
+        <td>${formatMoney(row.hourlyInsurance)}</td>
         <td>${formatMoney(row.withholdingTax)}</td>
         ${showCallFee ? `<td class="driver-withdrawal-call-fee">${formatMoney(row.callFee)}</td>` : ''}
         <td>${formatMoney(row.dailySettlementFee)}</td>
