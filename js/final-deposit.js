@@ -109,7 +109,7 @@ const BremFinalDeposit = (function () {
       return;
     }
 
-    listEl.innerHTML = list.map(record => {
+    const cardHtml = record => {
       const id = String(record.id);
       const checked = !state.excludedSettlementIds.has(id);
       const riders = Array.isArray(record.riders) ? record.riders.length : 0;
@@ -124,7 +124,19 @@ const BremFinalDeposit = (function () {
             ${file}
           </span>
         </label>`;
-    }).join('');
+    };
+
+    // 쿠팡 그룹 → 배민 그룹으로 위아래 분리 (한 페이지에 모두 표시)
+    const groupHtml = (platform, label) => {
+      const items = list.filter(r => Calc().normalizePlatform(r.platform) === platform);
+      if (!items.length) return '';
+      return `
+        <div class="final-deposit-settlement-group">
+          <p class="final-deposit-settlement-group-head">${label} 정산서 · ${items.length}건</p>
+          <div class="final-deposit-settlement-grid">${items.map(cardHtml).join('')}</div>
+        </div>`;
+    };
+    listEl.innerHTML = groupHtml('coupang', '쿠팡') + groupHtml('baemin', '배민');
 
     const allChk = $('#finalDepositSettlementAll');
     if (allChk) allChk.checked = list.every(record => !state.excludedSettlementIds.has(String(record.id)));
