@@ -142,9 +142,11 @@ const BremFinalDeposit = (function () {
     const numericKeys = Calc().NUMERIC_KEYS;
     const byDriver = new Map();
 
+    const weekAll = weekSettlements();
     checkedSettlements().forEach(settlement => {
       Calc().computeRows(settlement, {
-        withdrawals: state.withdrawals
+        withdrawals: state.withdrawals,
+        weekSettlements: weekAll
       }).forEach(row => {
         const key = driverKey(row);
         const existing = byDriver.get(key);

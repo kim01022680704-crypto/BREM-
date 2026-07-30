@@ -100,92 +100,183 @@ const BremDirectSettlementCalc = (function () {
     return typeof resolve === 'function' ? resolve(Number(row.amount || 0), fees) : 0;
   }
 
-  function normalizePhoneTail(value) {
-    return String(value || '').replace(/\D/g, '').slice(-4);
+  // 같은 사람을 한 키로 모은다. 중복 등록으로 출금 driverId 와 정산 matchedRiderId 가
+  // 달라도(이름+전화 / 배민ID) 같은 사람이면 선정산을 합쳐 배분한다.
+  function canonicalDriverKey(driverId) {
+    const id = String(driverId || '').trim();
+    if (!id) return '';
+    const driver = window.BremStorage?.drivers?.getById?.(id);
+    if (driver) {
+      const name = String(driver.name || '').replace(/\s+/g, '');
+      const phone = String(driver.phone || driver.raw_data?.phone || '').replace(/\D/g, '').slice(-4);
+      if (name && phone) return `np:${name}|${phone}`;
+      const baeminId = String(driver.baeminId || driver.raw_data?.baeminId || '').trim().toUpperCase();
+      if (baeminId) return `b:${baeminId}`;
+    }
+    return `id:${id}`;
   }
 
-  function driverAliasKeys(driver) {
-    if (!driver) return [];
-    const keys = [];
-    const id = String(driver.id || '').trim();
-    if (id) keys.push(`id:${id}`);
-    const baeminId = String(driver.baeminId || driver.raw_data?.baeminId || '').trim().toUpperCase();
-    if (baeminId) keys.push(`baemin:${baeminId}`);
-    const name = String(driver.name || '').replace(/\s+/g, '');
-    const phone = normalizePhoneTail(driver.phone || driver.raw_data?.phone);
-    if (name && phone) keys.push(`np:${name}|${phone}`);
-    return keys;
+  function riderRowBase(rider, settlement, platform, unitCallFee, adj) {
+    const driverId = String(rider.matchedRiderId || '').trim();
+    const amounts = rider.amounts || {};
+    const idLabel = platform === 'coupang'
+      ? (rider.coupangLoginKey || '-')
+      : (rider.baeminUserId || '-');
+    const promo = driverId ? Number(adj.promoMap[driverId]?.amount || 0) : 0;
+    const other = driverId ? Number(adj.otherMap[driverId]?.amount || 0) : 0;
+    const deliveryFee = Number(amounts.deliveryFee || 0);
+    const missionPay = Number(amounts.missionPay || 0);
+    const deductionDetail = Number(amounts.deductionDetail || 0);
+    const grossPay = deliveryFee + missionPay + other + promo;
+
+    const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
+    const employmentInsurance = Number(amounts.employmentInsurance || 0);
+    const accidentInsurance = Number(amounts.accidentInsurance || 0);
+    const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
+    const withholdingTax = Number(amounts.withholdingTax || 0);
+    const promotionWithholdingTax = promoTax(promo + other);
+    const callFee = callCount * unitCallFee;
+    const baseDeduct = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
+      + withholdingTax + promotionWithholdingTax + callFee;
+    // 선정산·일정산수수료를 빼기 전 잔액 = 이 플랫폼이 흡수할 수 있는 한도(음수면 0)
+    const capacity = Math.max(0, Math.round(grossPay - baseDeduct));
+
+    return {
+      driverId,
+      canonicalKey: canonicalDriverKey(driverId),
+      platform,
+      settlementId: String(settlement.id || ''),
+      region: String(settlement.region || ''),
+      name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
+      idLabel,
+      callCount,
+      deliveryFee, missionPay, deductionDetail, other, promo, grossPay,
+      employmentInsurance, accidentInsurance, hourlyInsurance,
+      withholdingTax, promotionWithholdingTax, callFee,
+      baseDeduct, capacity
+    };
   }
 
-  // 중복 기사 등록 등으로 출금 driverId 와 정산 matchedRiderId 가 달라도
-  // 같은 사람(배민ID / 이름+전화)이면 선정산을 붙인다.
-  function buildDriverAliasLookup() {
-    const byKey = new Map();
-    const list = window.BremStorage?.drivers?.getAll?.() || [];
-    list.forEach(driver => {
-      const id = String(driver.id || '').trim();
-      if (!id) return;
-      driverAliasKeys(driver).forEach(key => {
-        if (!byKey.has(key)) byKey.set(key, new Set());
-        byKey.get(key).add(id);
+  // 이 주 모든 직계약 정산서에서 사람별·플랫폼별 흡수 한도(capacity)를 모은다.
+  function buildWeekCapacityMap(weekSettlements) {
+    const map = new Map(); // canonicalKey -> { coupang, baemin }
+    (Array.isArray(weekSettlements) ? weekSettlements : []).forEach(settlement => {
+      const platform = normalizePlatform(settlement.platform);
+      const unitCallFee = callFeeUnit(platform);
+      const adj = adjustmentMaps(settlement);
+      (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
+        const base = riderRowBase(rider, settlement, platform, unitCallFee, adj);
+        if (!base.canonicalKey) return;
+        const prev = map.get(base.canonicalKey) || { coupang: 0, baemin: 0 };
+        prev[platform] += base.capacity;
+        map.set(base.canonicalKey, prev);
       });
     });
-    return byKey;
+    return map;
   }
 
-  function expandDriverIds(driverId, aliasLookup) {
-    const ids = new Set();
-    const primary = String(driverId || '').trim();
-    if (!primary) return ids;
-    ids.add(primary);
-    const driver = window.BremStorage?.drivers?.getById?.(primary);
-    driverAliasKeys(driver).forEach(key => {
-      (aliasLookup.get(key) || []).forEach(id => ids.add(id));
+  /**
+   * 사람별로 이 주 처리완료 출금을 플랫폼 정산에 배분한다.
+   * - 출금에 찍힌 플랫폼(쿠팡/배민) 정산에서 먼저 차감
+   * - 그 플랫폼 한도를 넘으면 남은 금액을 반대 플랫폼 정산에서 차감(스필오버)
+   * - 양쪽 한도를 다 넘으면 남는 금액은 찍힌 플랫폼에 남겨 총지급액이 음수로 표기되게 한다
+   * 반환: canonicalKey -> { coupang: {prepaid, fee}, baemin: {prepaid, fee} }
+   */
+  function allocateWeekWithdrawals(withdrawals, week, capacityMap) {
+    const weekKey = String(week || '').slice(0, 10);
+    const remaining = new Map();
+    (capacityMap instanceof Map ? capacityMap : new Map()).forEach((value, key) => {
+      remaining.set(key, {
+        coupang: Math.max(0, Number(value.coupang || 0)),
+        baemin: Math.max(0, Number(value.baemin || 0))
+      });
     });
-    return ids;
+
+    const allocated = new Map();
+    const ensureAlloc = key => {
+      if (!allocated.has(key)) {
+        allocated.set(key, {
+          coupang: { prepaid: 0, fee: 0 },
+          baemin: { prepaid: 0, fee: 0 }
+        });
+      }
+      return allocated.get(key);
+    };
+
+    const rows = (Array.isArray(withdrawals) ? withdrawals : [])
+      .filter(row => String(row.status || '') === 'completed'
+        && String(row.weekStart || '').slice(0, 10) === weekKey
+        && String(row.driverId || '').trim())
+      .slice()
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+
+    rows.forEach(row => {
+      const key = canonicalDriverKey(String(row.driverId || '').trim());
+      if (!key) return;
+      const prefer = normalizeWithdrawalPlatform(row.platform);
+      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
+      const fee = withdrawalRowFee(row, prefer || 'coupang');
+      let leftFee = fee;
+      let leftPrepaid = amount;
+      const rem = remaining.get(key) || { coupang: 0, baemin: 0 };
+      const alloc = ensureAlloc(key);
+
+      // 찍힌 플랫폼 먼저, 없으면 남은 한도가 큰 쪽부터
+      const order = prefer === 'baemin'
+        ? ['baemin', 'coupang']
+        : (prefer === 'coupang'
+          ? ['coupang', 'baemin']
+          : (rem.coupang >= rem.baemin ? ['coupang', 'baemin'] : ['baemin', 'coupang']));
+
+      order.forEach(p => {
+        if (leftFee + leftPrepaid <= 0) return;
+        const room = Math.max(0, Number(rem[p] || 0));
+        if (room <= 0) return;
+        const takeFee = Math.min(leftFee, room);
+        const takePrepaid = Math.min(leftPrepaid, room - takeFee);
+        alloc[p].fee += takeFee;
+        alloc[p].prepaid += takePrepaid;
+        rem[p] -= (takeFee + takePrepaid);
+        leftFee -= takeFee;
+        leftPrepaid -= takePrepaid;
+      });
+
+      // 양쪽 한도를 다 넘긴 초과분은 찍힌(우선) 플랫폼에 남겨 음수로 표기
+      if (leftFee + leftPrepaid > 0) {
+        const p = order[0];
+        alloc[p].fee += leftFee;
+        alloc[p].prepaid += leftPrepaid;
+      }
+      remaining.set(key, rem);
+    });
+
+    return allocated;
   }
 
-  // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee }
-  // 배민 출금 → 배민 정산만, 쿠팡 출금 → 쿠팡 정산만 차감한다.
-  // (한쪽에 몰아 넣고 남은 금액을 반대편에서 까는 배분은 하지 않는다.)
-  // 표시·공제 모두 처리완료 실금액을 그대로 쓴다. (지급한도로 깎지 않음)
+  function adjustmentMaps(settlement) {
+    const store = window.BremStorage?.directSettlementAdjustments;
+    return {
+      promoMap: store?.getSettlement?.('promotion', settlement.id) || {},
+      otherMap: store?.getSettlement?.('other', settlement.id) || {}
+    };
+  }
+
+  // 이 주 선정산(일정산) 처리완료 금액·수수료 맵(스필오버 배분 없이 태그만):
+  // weekSettlements 가 없을 때의 폴백. 배민 출금→배민, 쿠팡 출금→쿠팡.
   function completedWithdrawalMap(withdrawals, week, platform) {
     const target = normalizePlatform(platform);
     const map = new Map();
-    let untaggedCount = 0;
-    let untaggedAmount = 0;
-    const aliasLookup = buildDriverAliasLookup();
-
     (Array.isArray(withdrawals) ? withdrawals : []).forEach(row => {
       if (String(row.status || '') !== 'completed') return;
       if (String(row.weekStart || '').slice(0, 10) !== week) return;
-      const rowPlatform = normalizeWithdrawalPlatform(row.platform);
-      if (!rowPlatform) {
-        untaggedCount += 1;
-        untaggedAmount += Math.max(0, Math.round(Number(row.amount || 0)));
-        return;
-      }
-      if (rowPlatform !== target) return;
-      const driverId = String(row.driverId || '').trim();
-      if (!driverId) return;
-      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
-      const fee = withdrawalRowFee(row, target);
-      // 출금에 찍힌 id + 동일인 후보 id 모두에 같은 금액을 걸어 두고,
-      // 정산행에서 한 번만 꺼내 쓰게 한다(아래 computeRows).
-      expandDriverIds(driverId, aliasLookup).forEach(id => {
-        const prev = map.get(id) || { prepaid: 0, fee: 0, sourceIds: new Set() };
-        // 같은 출금건을 alias 로 중복 합산하지 않도록 source request id 를 기억한다.
-        const sourceKey = String(row.id || `${driverId}:${amount}:${fee}:${row.completedAt || row.updatedAt || ''}`);
-        if (prev.sourceIds.has(sourceKey)) return;
-        prev.sourceIds.add(sourceKey);
-        prev.prepaid += amount;
-        prev.fee += fee;
-        map.set(id, prev);
-      });
+      if (normalizeWithdrawalPlatform(row.platform) !== target) return;
+      const key = canonicalDriverKey(String(row.driverId || '').trim());
+      if (!key) return;
+      const prev = map.get(key) || { prepaid: 0, fee: 0 };
+      prev.prepaid += Math.max(0, Math.round(Number(row.amount || 0)));
+      prev.fee += withdrawalRowFee(row, target);
+      map.set(key, prev);
     });
-
-    map.untaggedCount = untaggedCount;
-    map.untaggedAmount = untaggedAmount;
     return map;
   }
 
@@ -194,75 +285,66 @@ const BremDirectSettlementCalc = (function () {
     if (!settlement) return [];
     const platform = normalizePlatform(settlement.platform);
     const week = settlementWeek(settlement);
-
-    const store = window.BremStorage?.directSettlementAdjustments;
-    const promoMap = store?.getSettlement?.('promotion', settlement.id) || {};
-    const otherMap = store?.getSettlement?.('other', settlement.id) || {};
-    const withdrawMap = completedWithdrawalMap(options.withdrawals, week, platform);
     const unitCallFee = callFeeUnit(platform);
-    const usedWithdrawalSources = new Set();
+    const adj = adjustmentMaps(settlement);
+
+    // 스필오버 배분: 이 주 전체(쿠팡+배민) 정산서를 넘겨주면 사람별로 배분한다.
+    const weekSettlements = Array.isArray(options.weekSettlements) && options.weekSettlements.length
+      ? options.weekSettlements
+      : null;
+    let allocation = null;
+    let fallbackMap = null;
+    if (weekSettlements) {
+      const capacityMap = buildWeekCapacityMap(weekSettlements);
+      allocation = allocateWeekWithdrawals(options.withdrawals, week, capacityMap);
+    } else {
+      fallbackMap = completedWithdrawalMap(options.withdrawals, week, platform);
+    }
 
     const rows = [];
     (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
-      const driverId = String(rider.matchedRiderId || '').trim();
-      const amounts = rider.amounts || {};
-      const idLabel = platform === 'coupang'
-        ? (rider.coupangLoginKey || '-')
-        : (rider.baeminUserId || '-');
-      const promo = driverId ? Number(promoMap[driverId]?.amount || 0) : 0;
-      const other = driverId ? Number(otherMap[driverId]?.amount || 0) : 0;
-      const deliveryFee = Number(amounts.deliveryFee || 0);
-      const missionPay = Number(amounts.missionPay || 0);
-      const deductionDetail = Number(amounts.deductionDetail || 0);
-      const grossPay = deliveryFee + missionPay + other + promo;
+      const base = riderRowBase(rider, settlement, platform, unitCallFee, adj);
+      const key = base.canonicalKey;
 
-      const callCount = Number(rider.weeklyOrderCount || rider.systemCallCount || 0);
-      const employmentInsurance = Number(amounts.employmentInsurance || 0);
-      const accidentInsurance = Number(amounts.accidentInsurance || 0);
-      const hourlyInsurance = Number(amounts.hourlyInsurance || 0);
-      const withholdingTax = Number(amounts.withholdingTax || 0);
-      const promotionWithholdingTax = promoTax(promo + other);
-      const callFee = callCount * unitCallFee;
-
-      // alias 맵에 걸린 출금은 sourceIds 기준으로 한 기사행에만 반영한다.
       let prepaid = 0;
       let dailySettlementFee = 0;
-      if (driverId && withdrawMap.has(driverId)) {
-        const wd = withdrawMap.get(driverId);
-        const freshSources = [...(wd.sourceIds || [])].filter(key => !usedWithdrawalSources.has(key));
-        if (freshSources.length) {
-          freshSources.forEach(key => usedWithdrawalSources.add(key));
-          prepaid = Math.max(0, Math.round(Number(wd.prepaid || 0)));
-          dailySettlementFee = Math.max(0, Math.round(Number(wd.fee || 0)));
-        }
+      if (allocation) {
+        const slice = allocation.get(key)?.[platform] || { prepaid: 0, fee: 0 };
+        prepaid = Math.max(0, Math.round(Number(slice.prepaid || 0)));
+        dailySettlementFee = Math.max(0, Math.round(Number(slice.fee || 0)));
+      } else if (fallbackMap && key && fallbackMap.has(key)) {
+        const wd = fallbackMap.get(key);
+        prepaid = Math.max(0, Math.round(Number(wd.prepaid || 0)));
+        dailySettlementFee = Math.max(0, Math.round(Number(wd.fee || 0)));
       }
 
-      const baseDeduct = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
-        + withholdingTax + promotionWithholdingTax + callFee;
-      const capacity = Math.max(0, Math.round(grossPay - baseDeduct));
-      const prepaidConsume = prepaid + dailySettlementFee;
-      const prepaidOver = prepaidConsume > capacity;
-      const deductTotal = baseDeduct + dailySettlementFee + prepaid;
-      const netPay = grossPay - deductTotal;
+      const deductTotal = base.baseDeduct + dailySettlementFee + prepaid;
+      const netPay = base.grossPay - deductTotal;
 
       rows.push({
-        driverId,
+        driverId: base.driverId,
         platform,
-        settlementId: String(settlement.id || ''),
-        region: String(settlement.region || ''),
-        name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
-        idLabel,
-        callCount,
-        deliveryFee, missionPay, deductionDetail, other, promo, grossPay,
-        employmentInsurance, accidentInsurance, hourlyInsurance,
-        withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
-        deductTotal, netPay,
-        prepaidRaw: prepaid,
-        prepaidExcess: prepaidOver ? Math.max(0, prepaidConsume - capacity) : 0,
-        prepaidCapped: false,
-        prepaidOverCapacity: prepaidOver,
-        untaggedWithdrawalCount: withdrawMap.untaggedCount || 0,
-        untaggedWithdrawalAmount: withdrawMap.untaggedAmount || 0
+        settlementId: base.settlementId,
+        region: base.region,
+        name: base.name,
+        idLabel: base.idLabel,
+        callCount: base.callCount,
+        deliveryFee: base.deliveryFee,
+        missionPay: base.missionPay,
+        deductionDetail: base.deductionDetail,
+        other: base.other,
+        promo: base.promo,
+        grossPay: base.grossPay,
+        employmentInsurance: base.employmentInsurance,
+        accidentInsurance: base.accidentInsurance,
+        hourlyInsurance: base.hourlyInsurance,
+        withholdingTax: base.withholdingTax,
+        promotionWithholdingTax: base.promotionWithholdingTax,
+        callFee: base.callFee,
+        dailySettlementFee,
+        prepaid,
+        deductTotal,
+        netPay
       });
     });
     return rows;
@@ -305,29 +387,12 @@ const BremDirectSettlementCalc = (function () {
   function sumRows(rows) {
     const totals = {};
     NUMERIC_KEYS.forEach(key => { totals[key] = 0; });
-    let prepaidOverCount = 0;
-    let prepaidExcessTotal = 0;
     let negativeNetCount = 0;
-    let untaggedCount = 0;
-    let untaggedAmount = 0;
     (Array.isArray(rows) ? rows : []).forEach(row => {
       NUMERIC_KEYS.forEach(key => { totals[key] += Number(row[key] || 0); });
-      if (row.prepaidOverCapacity) {
-        prepaidOverCount += 1;
-        prepaidExcessTotal += Math.max(0, Math.round(Number(row.prepaidExcess) || 0));
-      }
       if (Number(row.netPay || 0) < 0) negativeNetCount += 1;
-      if (!untaggedCount && Number(row.untaggedWithdrawalCount || 0) > 0) {
-        untaggedCount = Number(row.untaggedWithdrawalCount || 0);
-        untaggedAmount = Number(row.untaggedWithdrawalAmount || 0);
-      }
     });
-    totals.prepaidCappedCount = prepaidOverCount; // 하위 호환(요약 배지)
-    totals.prepaidOverCount = prepaidOverCount;
-    totals.prepaidExcessTotal = prepaidExcessTotal;
     totals.negativeNetCount = negativeNetCount;
-    totals.untaggedWithdrawalCount = untaggedCount;
-    totals.untaggedWithdrawalAmount = untaggedAmount;
     return totals;
   }
 

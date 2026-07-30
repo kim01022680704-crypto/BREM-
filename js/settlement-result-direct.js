@@ -221,13 +221,21 @@ const BremSettlementResultDirect = (function () {
 
   // --- 계산 ---------------------------------------------------------------
 
+  // 이 주의 쿠팡+배민 직계약 정산서 전체 (스필오버 배분용 한도 계산에 필요)
+  function weekAllPlatformSettlements(settlement) {
+    const week = settlementWeek(settlement);
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => settlementWeek(record) === week);
+  }
+
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
-    // 쿠팡 출금 → 쿠팡 정산만, 배민 출금 → 배민 정산만.
-    // 한쪽에 몰아 넣고 남은 금액을 반대편에서 까지 않는다.
+    // 찍힌 플랫폼에서 먼저 차감하고, 부족분은 반대 플랫폼에서 차감(스필오버).
+    // 그래서 한 사람의 쿠팡/배민 정산서 전체를 함께 넘긴다.
     return Calc().sortByName(Calc().computeRows(settlement, {
-      withdrawals: state.withdrawals
+      withdrawals: state.withdrawals,
+      weekSettlements: weekAllPlatformSettlements(settlement)
     }));
   }
 
@@ -271,16 +279,15 @@ const BremSettlementResultDirect = (function () {
       <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
     if (summaryEl) {
-      // 선정산은 처리완료 실금액을 그대로 반영한다(총지급액이 음수여도 표기).
-      // "한도초과" 개념은 쓰지 않는다. 다만 플랫폼 태그가 없어 어느 쪽에도
-      // 매칭 못 한 출금만 별도로 알린다(쿠팡/배민 매칭 누락 방지).
-      const untagged = Number(totals.untaggedWithdrawalCount || 0);
-      const untaggedNote = untagged
-        ? ` · <span class="muted-inline">플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원)은 매칭 안 됨 — 출금내역에서 쿠팡/배민 지정 필요</span>`
+      // 선정산(처리완료)은 실출금액을 그대로 공제한다. 찍힌 플랫폼에서 먼저 빼고
+      // 부족분은 반대 플랫폼에서 뺀다(스필오버). 다 못 빼면 총지급액이 음수로 표기된다.
+      const negative = Number(totals.negativeNetCount || 0);
+      const negativeNote = negative
+        ? ` · <span class="muted-inline">총지급액 음수 <strong>${negative}</strong>명(선정산이 지급액보다 큼 — 정상 표기)</span>`
         : '';
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
         + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
-        + untaggedNote;
+        + negativeNote;
     }
   }
 
