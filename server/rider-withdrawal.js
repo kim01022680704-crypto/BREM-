@@ -1086,6 +1086,112 @@ async function updateWithdrawalRequestPlatform(accessToken, requestId, platformI
   });
 }
 
+/**
+ * 관리자용: 한 정산주의 처리완료 출금을 "실제 플랫폼별 정산액" 기준으로 자동 교정한다.
+ *  - 각 사람의 총 출금액은 절대 바뀌지 않는다(레코드의 platform 만 이동).
+ *  - 어떤 플랫폼 출금이 그 플랫폼 정산액(payable)을 넘고 반대편에 여유가 있으면 반대로 옮긴다.
+ *  - dryRun=true 면 변경 없이 제안 목록만 반환한다.
+ */
+async function autoFixWithdrawalPlatforms(accessToken, weekStartInput, options = {}) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const weekStart = normalizeSettlementWeekStart(weekStartInput || new Date());
+  const dryRun = options.dryRun === true;
+
+  // 플랫폼별 정산 가능액(payable) = 기사별 netPayByPlatform (리스 차감 반영, 출금 차감 전)
+  const info = await listWithdrawableDrivers(accessToken, weekStart);
+  if (!info.ok) return info;
+  const capByDriver = new Map();
+  (info.rows || []).forEach(r => {
+    capByDriver.set(String(r.driverId), {
+      coupang: Math.max(0, Math.round(Number(r.netPayByPlatform?.coupang || 0))),
+      baemin: Math.max(0, Math.round(Number(r.netPayByPlatform?.baemin || 0))),
+      name: r.driverName || ''
+    });
+  });
+
+  return withRequestsLock(async () => {
+    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+
+    // 이번주 처리완료 출금만 대상
+    const byDriver = new Map();
+    list.forEach(item => {
+      if (item.weekStart !== weekStart) return;
+      if (item.status !== 'completed') return;
+      const id = String(item.driverId || '');
+      if (!id) return;
+      if (!byDriver.has(id)) byDriver.set(id, []);
+      byDriver.get(id).push(item);
+    });
+
+    const changes = [];
+    byDriver.forEach((recs, driverId) => {
+      const cap = capByDriver.get(driverId) || { coupang: 0, baemin: 0, name: '' };
+      const remaining = { coupang: cap.coupang, baemin: cap.baemin };
+      // 큰 금액부터 배치해 한 플랫폼에 몰린 것을 여유 있는 쪽으로 옮긴다.
+      const sorted = recs.slice().sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
+      sorted.forEach(item => {
+        const amount = Math.max(0, Math.round(Number(item.amount) || 0));
+        const cur = normalizeRequestPlatform(item.platform);
+        const fits = p => remaining[p] >= amount;
+        let target;
+        if (cur === 'coupang' || cur === 'baemin') {
+          if (fits(cur)) target = cur;
+          else {
+            const other = cur === 'coupang' ? 'baemin' : 'coupang';
+            target = fits(other) ? other : cur; // 양쪽 다 부족하면 원래대로 둔다(음수 표기)
+          }
+        } else {
+          target = remaining.coupang >= remaining.baemin ? 'coupang' : 'baemin';
+        }
+        remaining[target] = remaining[target] - amount;
+        if (target !== cur) {
+          changes.push({
+            driverId,
+            driverName: cap.name || item.driverName || '',
+            requestId: item.id,
+            amount,
+            from: cur || 'unknown',
+            to: target
+          });
+        }
+      });
+    });
+
+    if (dryRun) {
+      return { ok: true, weekStart, dryRun: true, changes, changeCount: changes.length };
+    }
+
+    if (changes.length) {
+      const targetById = new Map(changes.map(c => [c.requestId, c.to]));
+      const now = new Date().toISOString();
+      list.forEach(item => {
+        if (targetById.has(item.id)) {
+          item.platform = targetById.get(item.id);
+          item.updatedAt = now;
+        }
+      });
+      await writeSettingValue(supabase, REQUESTS_KEY, list);
+    }
+
+    return {
+      ok: true,
+      weekStart,
+      dryRun: false,
+      changes,
+      changeCount: changes.length,
+      message: changes.length
+        ? `${changes.length}건 플랫폼 자동 교정 완료 (총액 변동 없음)`
+        : '교정할 건이 없습니다. 이미 플랫폼별로 맞습니다.'
+    };
+  });
+}
+
 async function deleteWithdrawalRequest(accessToken, requestId) {
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
@@ -1422,6 +1528,7 @@ module.exports = {
   cancelWithdrawalRequest,
   completeWithdrawalRequest,
   updateWithdrawalRequestPlatform,
+  autoFixWithdrawalPlatforms,
   deleteWithdrawalRequest,
   REQUESTS_KEY,
   // 정산 검수 스크립트 전용 노출. 검수가 계산식을 따로 구현하면 서버와 갈라져서

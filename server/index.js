@@ -587,6 +587,23 @@ app.post('/api/admin/payroll/withdrawal-requests/:id/complete', async (req, res)
   }
 });
 
+app.post('/api/admin/payroll/withdrawal-requests/auto-fix-platform', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await riderWithdrawal.autoFixWithdrawalPlatforms(
+      getBearerToken(req),
+      body.weekStart,
+      { dryRun: body.dryRun === true }
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '플랫폼 자동 교정에 실패했습니다.' });
+  }
+});
+
 app.post('/api/admin/payroll/withdrawal-requests/:id/platform', async (req, res) => {
   try {
     const result = await riderWithdrawal.updateWithdrawalRequestPlatform(

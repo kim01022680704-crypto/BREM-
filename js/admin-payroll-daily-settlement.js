@@ -1844,6 +1844,48 @@
     }
   }
 
+  // 정산주 전체 처리완료 출금을 실제 플랫폼별 정산액 기준으로 자동 교정 (총액 불변)
+  async function autoFixWeekWithdrawalPlatforms() {
+    const weekStart = ensureWeekWithdrawalDefault();
+    if (!weekStart) {
+      showToast('정산주(수요일)를 먼저 선택하세요.');
+      return;
+    }
+    try {
+      const preview = await BremStorage.payrollWithdrawal.autoFixPlatforms({ weekStart, dryRun: true });
+      const changes = Array.isArray(preview.changes) ? preview.changes : [];
+      if (!changes.length) {
+        showToast('교정할 건이 없습니다. 이미 플랫폼별로 맞습니다.');
+        return;
+      }
+      const lines = changes.slice(0, 15).map(c => {
+        const to = c.to === 'baemin' ? '배민' : '쿠팡';
+        const from = c.from === 'baemin' ? '배민' : (c.from === 'coupang' ? '쿠팡' : '미지정');
+        return `· ${c.driverName || c.driverId} : ${from}→${to} ${formatWon(c.amount)}`;
+      });
+      const more = changes.length > 15 ? `\n외 ${changes.length - 15}건` : '';
+      const ok = window.confirm(
+        [
+          `${weekStart} 주 · ${changes.length}건을 실제 플랫폼별 정산액 기준으로 교정합니다.`,
+          '각 사람의 총 출금액은 그대로이고 쿠팡/배민 분류만 바뀝니다.',
+          '',
+          ...lines
+        ].join('\n') + more + '\n\n적용할까요?'
+      );
+      if (!ok) return;
+      const result = await BremStorage.payrollWithdrawal.autoFixPlatforms({ weekStart, dryRun: false });
+      showToast(result.message || `${result.changeCount || 0}건 교정 완료`);
+      await renderWeekWithdrawals();
+      await renderCompletedWithdrawals();
+      // 정산결과(직계약)·최종입금도 갱신
+      window.BremSettlementResultDirect?.reload?.();
+      window.BremFinalDeposit?.refresh?.();
+    } catch (error) {
+      console.error('[auto-fix platform]', error);
+      showToast(error.message || '플랫폼 자동 교정에 실패했습니다.');
+    }
+  }
+
   // 출금건 플랫폼(쿠팡↔배민) 바로잡기. 정산결과 선정산 매칭이 즉시 정확해진다.
   async function changeWithdrawalPlatform(id, toPlatform, view = 'completed') {
     if (!id) return;
@@ -2657,6 +2699,9 @@
     $('payrollDailyCompletedExcelBtn')?.addEventListener('click', exportCompletedExcel);
     $('payrollDailyWeekWithdrawalRefreshBtn')?.addEventListener('click', () => {
       void renderWeekWithdrawals();
+    });
+    $('payrollDailyWeekWithdrawalAutoFixBtn')?.addEventListener('click', () => {
+      void autoFixWeekWithdrawalPlatforms();
     });
     $('payrollDailyWeekWithdrawalExcelBtn')?.addEventListener('click', exportWeekWithdrawalExcel);
     $('payrollDailyWeekWithdrawalPrevBtn')?.addEventListener('click', () => shiftWeekWithdrawal(-1));

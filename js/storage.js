@@ -3027,6 +3027,16 @@ const BremStorage = (function () {
     });
   }
 
+  async function autoFixAdminWithdrawalPlatforms({ weekStart, dryRun } = {}) {
+    return adminRidersApi('/api/admin/payroll/withdrawal-requests/auto-fix-platform', {
+      method: 'POST',
+      body: JSON.stringify({
+        weekStart: String(weekStart || '').slice(0, 10),
+        dryRun: dryRun === true
+      })
+    });
+  }
+
   async function deleteAdminWithdrawalRequest(requestId) {
     const id = encodeURIComponent(String(requestId || '').trim());
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}`, {
@@ -7770,6 +7780,14 @@ const BremStorage = (function () {
       const result = await updateAdminWithdrawalRequestPlatform(requestId, platform);
       if (!result?.ok) {
         throw new Error(result?.error || result?.message || '플랫폼 변경에 실패했습니다.');
+      }
+      return result;
+    },
+
+    async autoFixPlatforms({ weekStart, dryRun } = {}) {
+      const result = await autoFixAdminWithdrawalPlatforms({ weekStart, dryRun });
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '플랫폼 자동 교정에 실패했습니다.');
       }
       return result;
     },
@@ -12916,6 +12934,7 @@ const BremStorage = (function () {
     cancelAdminWithdrawalRequest,
     completeAdminWithdrawalRequest,
     updateAdminWithdrawalRequestPlatform,
+    autoFixAdminWithdrawalPlatforms,
     deleteAdminWithdrawalRequest,
     loadDriverAppBundle,
     getDriverAppPublishedAt,
