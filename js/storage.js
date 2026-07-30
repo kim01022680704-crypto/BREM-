@@ -47,6 +47,7 @@ const BremStorage = (function () {
     directOtherPayments: 'brem_admin_direct_other_payments',
     directBremPromotions: 'brem_admin_direct_brem_promotions',
     directSettlementAdjustments: 'brem_admin_direct_settlement_adjustments_v1',
+    directRetroAdjustments: 'brem_admin_direct_retro_adjustments_v1',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
     missionDefaults: 'brem_admin_mission_defaults',
@@ -1466,9 +1467,9 @@ const BremStorage = (function () {
     // (테이블 키가 아니므로 아래 목록에 넣어도 로딩·캐시 판정에는 쓰이지 않는다.)
     'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
-    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
-    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart, KEYS.calls, KEYS.settlements],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
@@ -10658,6 +10659,54 @@ const BremStorage = (function () {
   // 주차만으로 묶으면 같은 주에 지역·플랫폼이 여러 개일 때 섞이므로 정산서 id 로 묶는다.
   // 정산서 id 에 플랫폼·지역·기간이 모두 들어 있어 쿠팡/배민 분리가 자동으로 된다.
   // 기존 주차 단위 데이터(directPayAdjustments)는 건드리지 않고 별도 키에 저장한다.
+  // 소급분: 「마이너스 일괄 맞추기」로 기타지급에 얹은 그로스업 금액을 주별로 기록한다.
+  const directRetroAdjustments = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.directRetroAdjustments, {});
+      return (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    },
+    getWeek(weekStart) {
+      const wk = String(weekStart || '').slice(0, 10);
+      const all = this.getAll();
+      return (all[wk] && typeof all[wk] === 'object' && !Array.isArray(all[wk])) ? all[wk] : {};
+    },
+    add(weekStart, entries) {
+      const wk = String(weekStart || '').slice(0, 10);
+      if (!wk) return {};
+      const all = this.getAll();
+      const wkMap = (all[wk] && typeof all[wk] === 'object' && !Array.isArray(all[wk])) ? { ...all[wk] } : {};
+      const now = new Date().toISOString();
+      (Array.isArray(entries) ? entries : []).forEach(e => {
+        const id = String(e.driverId || '').trim();
+        if (!id) return;
+        const add = Math.round(Number(e.amount || 0));
+        if (!add) return;
+        const key = `${id}|${e.platform || ''}`;
+        const prev = wkMap[key];
+        wkMap[key] = {
+          driverId: id,
+          name: String(e.name || prev?.name || ''),
+          idLabel: String(e.idLabel || prev?.idLabel || ''),
+          platform: e.platform || prev?.platform || '',
+          settlementId: String(e.settlementId || prev?.settlementId || ''),
+          amount: (prev ? Number(prev.amount || 0) : 0) + add,
+          updatedAt: now
+        };
+      });
+      all[wk] = wkMap;
+      storageAdapter.write(KEYS.directRetroAdjustments, all);
+      return wkMap;
+    },
+    clearWeek(weekStart) {
+      const wk = String(weekStart || '').slice(0, 10);
+      const all = this.getAll();
+      if (all[wk]) {
+        delete all[wk];
+        storageAdapter.write(KEYS.directRetroAdjustments, all, { allowEmpty: true });
+      }
+    }
+  };
+
   const directSettlementAdjustments = {
     getBlob() {
       const raw = storageAdapter.read(KEYS.directSettlementAdjustments, {});
@@ -13008,6 +13057,7 @@ const BremStorage = (function () {
     manualNameMappings,
     directPayAdjustments,
     directSettlementAdjustments,
+    directRetroAdjustments,
     driverOrgChart: {
       get() {
         const raw = storageAdapter.read(KEYS.driverOrgChart, null);

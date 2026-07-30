@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260730am">
+  <link rel="stylesheet" href="css/admin.css?v=20260730ao">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4511,6 +4511,8 @@
               </label>
               <button type="button" class="small-btn" id="settlementResultWeekAllBtn" title="주 필터를 해제하고 전체 정산서 보기">전체 주</button>
               <button type="button" class="small-btn" id="settlementResultReloadBtn">불러오기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementResultBatchFixBtn" title="총지급액이 마이너스인 기사를 기타지급 그로스업으로 0원 처리합니다">마이너스 일괄 맞추기</button>
+              <button type="button" class="small-btn" id="settlementResultRetroBtn" title="일괄 맞추기(소급분) 내역을 주별로 봅니다">소급분</button>
               <button type="button" class="small-btn" id="settlementResultExportBtn">엑셀 내보내기</button>
               <button type="button" class="small-btn danger-btn" id="settlementResultDeleteBtn" title="선택한 정산서를 삭제하고 처음부터 다시 업로드합니다">정산서 삭제</button>
               <button type="button" class="small-btn danger-btn" id="settlementResultDeleteWeekBtn" title="이 주의 정산서를 모두 삭제합니다">이 주 전체 삭제</button>
@@ -4530,6 +4532,15 @@
               <tbody id="settlementResultRows"></tbody>
             </table>
           </div>
+
+          <article class="card settlement-retro-card" id="settlementResultRetroCard" hidden>
+            <div class="card-header">
+              <h2>소급분 (마이너스 일괄 맞추기 내역)</h2>
+              <button type="button" class="small-btn" id="settlementResultRetroCloseBtn">닫기</button>
+            </div>
+            <p class="form-help">「마이너스 일괄 맞추기」로 기타지급에 얹은 그로스업(소급) 금액을 정산주별로 정리합니다. 이름 · 아이디 · 플랫폼 · 소급 기타지급.</p>
+            <div id="settlementResultRetroBody"></div>
+          </article>
         </article>
       </section>
 
@@ -6865,7 +6876,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260730p"></script>
-  <script src="js/storage.js?v=20260730aj"></script>
+  <script src="js/storage.js?v=20260730ao"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -6904,7 +6915,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
   <script src="js/direct-settlement-calc.js?v=20260730an"></script>
-  <script src="js/settlement-result-direct.js?v=20260730an"></script>
+  <script src="js/settlement-result-direct.js?v=20260730ao"></script>
   <script src="js/final-deposit.js?v=20260730an"></script>
   <script src="js/driver-management-admin.js?v=20260730aa"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>

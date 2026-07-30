@@ -6390,6 +6390,21 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   white-space: nowrap;
 }
 
+.settlement-retro-card {
+  margin-top: 14px;
+  border: 1px solid #f59e0b;
+}
+
+.settlement-retro-week {
+  margin-bottom: 14px;
+}
+
+.settlement-retro-week-head {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
 .final-deposit-group-row td {
   background: #111827;
   color: var(--yellow, #facc15);

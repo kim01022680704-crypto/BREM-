@@ -292,10 +292,16 @@ const BremSettlementResultDirect = (function () {
         notes.push(`플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원) 미반영 — 출금내역에서 쿠팡/배민 지정 필요`);
       }
       const extraNote = notes.length ? ` · <span class="muted-inline">${notes.join(' · ')}</span>` : '';
+      const negativeCount = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0).length;
+      const negNote = negativeCount
+        ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 0원 처리 가능</span>`
+        : '';
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
         + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
-        + extraNote;
+        + extraNote + negNote;
     }
+
+    if (!$('#settlementResultRetroCard')?.hidden) renderRetro();
   }
 
   // 엑셀에는 원본 값이 나가야 하므로 태그는 화면 렌더에서만 씌운다.
@@ -352,6 +358,124 @@ const BremSettlementResultDirect = (function () {
     showToast('정산결과를 다시 불러왔습니다.');
   }
 
+  // 마이너스(총지급액<0) 를 0으로 만들기 위해 기타지급에 얹을 그로스업 금액.
+  // 기타지급 X 를 올리면 프로모션원천세 3.3% 도 오르므로, 순증 = X*(1-0.033).
+  // 스필오버에서도 선정산_A 는 고정이라 net' = net + X - Δ원천세 로 정확히 0에 도달한다.
+  function grossUpForZero(row) {
+    const net = Math.round(Number(row.netPay || 0));
+    if (net >= 0) return 0;
+    const promoPlusOther = Math.round(Number(row.promo || 0) + Number(row.other || 0));
+    const curTax = Math.floor(promoPlusOther * 0.033);
+    const start = Math.max(0, Math.floor(-net / (1 - 0.033)) - 5);
+    for (let x = start; x <= start + 200; x += 1) {
+      const newTax = Math.floor((promoPlusOther + x) * 0.033);
+      const newNet = net + x - (newTax - curTax);
+      if (newNet >= 0) return x;
+    }
+    return Math.ceil(-net / (1 - 0.033));
+  }
+
+  async function batchFixNegatives() {
+    const settlement = currentSettlement();
+    if (!settlement) { showToast('정산서를 먼저 선택하세요.'); return; }
+    const rows = computeRows();
+    const negatives = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0 && r.driverId);
+    if (!negatives.length) { showToast('마이너스(총지급액<0)인 기사가 없습니다.'); return; }
+
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (!store) { showToast('조정 저장소를 사용할 수 없습니다.'); return; }
+    const otherMap = store.getSettlement('other', settlement.id) || {};
+    const week = settlementWeek(settlement);
+
+    const entries = [];
+    const retro = [];
+    negatives.forEach(row => {
+      const x = grossUpForZero(row);
+      if (x <= 0) return;
+      const prev = otherMap[row.driverId] || {};
+      entries.push({
+        driverId: row.driverId,
+        amount: Math.round(Number(prev.amount || 0)) + x, // 기존 기타지급 + 소급 그로스업
+        driverName: row.name,
+        baeminId: prev.baeminId || (state.platform === 'baemin' ? row.idLabel : ''),
+        coupangId: prev.coupangId || (state.platform === 'coupang' ? row.idLabel : '')
+      });
+      retro.push({
+        driverId: row.driverId,
+        name: row.name,
+        idLabel: row.idLabel,
+        platform: row.platform,
+        amount: x,
+        settlementId: settlement.id
+      });
+    });
+    if (!entries.length) { showToast('맞출 금액이 없습니다.'); return; }
+
+    const preview = retro.slice(0, 15)
+      .map(r => `· ${r.name} (${r.idLabel}) +${formatNumber(r.amount)}원`);
+    const more = retro.length > 15 ? `\n외 ${retro.length - 15}명` : '';
+    const ok = window.confirm(
+      [
+        `${entries.length}명의 마이너스를 0원으로 맞춥니다.`,
+        '마이너스만큼 기타지급을 올리고, 원천세 3.3%까지 반영(그로스업)합니다.',
+        '총 출금액·선정산은 그대로이며, 소급분 메뉴에 기록됩니다.',
+        '',
+        ...preview
+      ].join('\n') + more + '\n\n적용할까요?'
+    );
+    if (!ok) return;
+
+    store.applyEntries('other', settlement.id, entries);
+    window.BremStorage?.directRetroAdjustments?.add?.(week, retro);
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    render();
+    if (typeof BremFinalDeposit !== 'undefined') void BremFinalDeposit.refresh?.();
+    showToast(`${entries.length}명 일괄 맞춤 완료 · 총지급액 0원 처리 (소급분 기록)`);
+  }
+
+  function toggleRetroView(force) {
+    const card = $('#settlementResultRetroCard');
+    if (!card) return;
+    const show = typeof force === 'boolean' ? force : card.hidden;
+    card.hidden = !show;
+    if (show) renderRetro();
+  }
+
+  function renderRetro() {
+    const body = $('#settlementResultRetroBody');
+    if (!body) return;
+    const store = window.BremStorage?.directRetroAdjustments;
+    const all = store?.getAll?.() || {};
+    const weeks = Object.keys(all).sort((a, b) => b.localeCompare(a));
+    if (!weeks.length) {
+      body.innerHTML = '<p class="form-help">아직 소급분(일괄 맞추기) 내역이 없습니다.</p>';
+      return;
+    }
+    body.innerHTML = weeks.map(wk => {
+      const map = all[wk] || {};
+      const list = Object.values(map).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
+      if (!list.length) return '';
+      const total = list.reduce((s, r) => s + Number(r.amount || 0), 0);
+      const rowsHtml = list.map(r => `
+        <tr>
+          <td><strong>${escapeHtml(r.name || '-')}</strong></td>
+          <td>${escapeHtml(r.idLabel || '-')}</td>
+          <td>${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
+          <td class="weekly-amount-cell">${formatNumber(r.amount)}원</td>
+        </tr>`).join('');
+      return `
+        <div class="settlement-retro-week">
+          <p class="settlement-retro-week-head"><strong>${escapeHtml(wk)}(수)</strong> 주 · ${list.length}명 · 소급 합계 <strong>${formatNumber(total)}</strong>원</p>
+          <div class="table-wrap">
+            <table class="weekly-settlement-saved-table">
+              <thead><tr><th>이름</th><th>아이디</th><th>플랫폼</th><th>소급 기타지급</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
@@ -367,6 +491,9 @@ const BremSettlementResultDirect = (function () {
     $('#settlementResultExportBtn')?.addEventListener('click', exportExcel);
     $('#settlementResultDeleteBtn')?.addEventListener('click', () => { void deleteCurrentSettlement(); });
     $('#settlementResultDeleteWeekBtn')?.addEventListener('click', () => { void deleteWeekSettlements(); });
+    $('#settlementResultBatchFixBtn')?.addEventListener('click', () => { void batchFixNegatives(); });
+    $('#settlementResultRetroBtn')?.addEventListener('click', () => toggleRetroView());
+    $('#settlementResultRetroCloseBtn')?.addEventListener('click', () => toggleRetroView(false));
   }
 
   async function refresh(platform) {
