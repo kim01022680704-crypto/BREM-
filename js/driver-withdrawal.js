@@ -27,6 +27,8 @@
     loading: false,
     visible: false,
     availableAmount: 0,
+    availableByPlatform: { coupang: 0, baemin: 0 },
+    netPayByPlatform: { coupang: 0, baemin: 0 },
     enrolledPlatforms: { coupang: false, baemin: false },
     feesByPlatform: { coupang: null, baemin: null },
     requestSeq: 0
@@ -120,9 +122,18 @@
     return resolveWithdrawalFee(amount, fees);
   }
 
+  function platformAvailableAmount(platform = selectedPlatform()) {
+    const key = platform === 'baemin' ? 'baemin' : (platform === 'coupang' ? 'coupang' : '');
+    if (!key) return Math.max(0, Number(state.availableAmount || 0));
+    if (state.availableByPlatform && state.availableByPlatform[key] != null) {
+      return Number(state.availableByPlatform[key] || 0);
+    }
+    return Math.max(0, Number(state.availableAmount || 0));
+  }
+
   function maxWithdrawableAmount() {
-    const available = Math.max(0, Number(state.availableAmount || 0));
     const platform = selectedPlatform() || 'coupang';
+    const available = Math.max(0, platformAvailableAmount(platform));
     const fees = state.feesByPlatform?.[platform] || state.feesByPlatform?.coupang || {};
     const mode = String(fees?.dailySettlementFeeMode || 'fixed').toLowerCase() === 'percent'
       ? 'percent'
@@ -178,24 +189,27 @@
 
   function renderSummary(payload) {
     state.availableAmount = Number(payload.availableAmount || 0);
+    state.availableByPlatform = {
+      coupang: Number(payload.availableByPlatform?.coupang || 0),
+      baemin: Number(payload.availableByPlatform?.baemin || 0)
+    };
+    state.netPayByPlatform = {
+      coupang: Number(payload.netPayByPlatform?.coupang || 0),
+      baemin: Number(payload.netPayByPlatform?.baemin || 0)
+    };
     state.weekFinalized = payload.weekFinalized === true;
     state.withdrawalPaused = payload.withdrawalPaused === true;
     state.feesByPlatform = payload.feesByPlatform || state.feesByPlatform || {};
-    // 출금가능금액(헤드라인) = 실제 신청 가능한 최대액 = 실지급 주머니에서 2% 수수료까지
-    // 감안한 값. 즉 여기 표시되는 금액을 그대로 신청하면 딱 맞게 출금된다.
-    // (실지급 합계 자체는 아래 힌트에 별도로 표기)
+    // 출금가능금액(헤드라인) = 선택한 플랫폼의 최대 신청 가능액 (수수료 감안)
     const maxRequestable = Math.max(0, maxWithdrawableAmount());
-    const by = payload.netPayByPlatform || {};
-    const coupangNet = Number(by.coupang || 0);
-    const baeminNet = Number(by.baemin || 0);
-    const requestedAmount = Math.max(0, Number(payload.requestedAmountTotal || 0));
-    const requestedFee = Math.max(0, Number(payload.requestedFeeTotal || 0));
+    const by = state.netPayByPlatform;
+    const avail = state.availableByPlatform;
     const lease = payload.lease || {};
     const leaseDeduction = Math.max(0, Number(lease.leaseDeductionTotal || 0));
     const outstandingArrears = Math.max(0, Number(lease.outstandingArrears || 0));
     const arrearReason = String(lease.arrearReason || '리스비 미납').trim() || '리스비 미납';
     const leaseText = leaseDeduction > 0
-      ? ` − 리스비 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'})`
+      ? ` · 리스비 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'} 차감)`
       : '';
     const unpaidEl = document.getElementById('driverWithdrawalUnpaid');
     if (unpaidEl) {
@@ -225,26 +239,11 @@
       } else if (payload.enrolled === false) {
         hintEl.textContent = '일정산 등록 기사가 아닙니다. 관리자에게 문의하세요.';
       } else {
-        // 출금가능 계산은 신청중 + 처리완료를 모두 차감한다.
-        // (이전엔 힌트에 신청중만 보여 실지급−신청만으로는 0원이 설명이 안 됐음)
-        const withdrawnAmount = Math.max(0, Number(payload.withdrawnAmountTotal || 0));
-        const withdrawnConsume = Math.max(0, Number(payload.withdrawnTotal || 0));
-        const withdrawnFee = Math.max(0, withdrawnConsume - withdrawnAmount);
-        const parts = [`실지급 ${formatMoney(payload.totalNetPay)}`];
-        if (withdrawnAmount > 0 || withdrawnFee > 0) {
-          parts.push(`처리완료 ${formatMoney(withdrawnAmount)}`);
-          if (withdrawnFee > 0) parts.push(`처리완료수수료 ${formatMoney(withdrawnFee)}`);
-        }
-        if (requestedAmount > 0 || requestedFee > 0) {
-          parts.push(`신청중 ${formatMoney(requestedAmount)}`);
-          if (requestedFee > 0) parts.push(`신청수수료 ${formatMoney(requestedFee)}`);
-        }
-        const formula = parts.join(' − ');
-        if (withdrawnAmount > 0 || requestedAmount > 0 || leaseDeduction > 0) {
-          hintEl.textContent = `${formula}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
-        } else {
-          hintEl.textContent = `실지급 합계 ${formatMoney(payload.totalNetPay)}${leaseText} · 위 금액은 2% 수수료 차감 후 최대 신청 가능액입니다`;
-        }
+        const platform = selectedPlatform();
+        const platformPart = platform
+          ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(Math.max(0, platformAvailableAmount(platform)))}`
+          : '플랫폼을 선택하세요';
+        hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(Math.max(0, avail.coupang))} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(Math.max(0, avail.baemin))}${leaseText} · ${platformPart}`;
       }
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
@@ -472,16 +471,17 @@
       showToast('주정산 마무리가 완료된 주입니다. 출금신청할 수 없습니다.');
       return;
     }
-    if (state.availableAmount < 0) {
-      showToast(`리스비·미납 차감으로 출금가능금액이 ${formatMoney(state.availableAmount)} 입니다. 정산/미납회수 후 신청하세요.`);
+    const platformPool = platformAvailableAmount(platform);
+    if (platformPool < 0) {
+      showToast(`리스비·미납 차감으로 ${platformLabel(platform)} 출금가능금액이 ${formatMoney(platformPool)} 입니다. 정산/미납회수 후 신청하세요.`);
       return;
     }
     const feeAmount = estimateFeeForAmount(amount);
     const consume = amount + feeAmount;
-    if (consume > state.availableAmount) {
+    if (consume > platformPool) {
       showToast(feeAmount > 0
-        ? `출금 ${formatMoney(amount)} + 일정산수수료 ${formatMoney(feeAmount)}가 출금가능금액(${formatMoney(state.availableAmount)})을 초과합니다.`
-        : `출금가능금액(${formatMoney(state.availableAmount)})을 초과할 수 없습니다.`);
+        ? `출금 ${formatMoney(amount)} + 일정산수수료 ${formatMoney(feeAmount)}가 ${platformLabel(platform)} 출금가능금액(${formatMoney(platformPool)})을 초과합니다.`
+        : `${platformLabel(platform)} 출금가능금액(${formatMoney(platformPool)})을 초과할 수 없습니다.`);
       return;
     }
     void (async () => {
@@ -524,6 +524,8 @@
     state.weekStart = null;
     state.loading = false;
     state.availableAmount = 0;
+    state.availableByPlatform = { coupang: 0, baemin: 0 };
+    state.netPayByPlatform = { coupang: 0, baemin: 0 };
     state.weekFinalized = false;
     state.withdrawalPaused = false;
     state.enrolledPlatforms = { coupang: false, baemin: false };

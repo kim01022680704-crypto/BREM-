@@ -370,6 +370,63 @@ function normalizeRequestPlatform(value) {
   return '';
 }
 
+function emptyRequestBuckets() {
+  return {
+    coupang: { requestedAmount: 0, requestedConsume: 0, withdrawnAmount: 0, withdrawnConsume: 0 },
+    baemin: { requestedAmount: 0, requestedConsume: 0, withdrawnAmount: 0, withdrawnConsume: 0 },
+    unknown: { requestedAmount: 0, requestedConsume: 0, withdrawnAmount: 0, withdrawnConsume: 0 }
+  };
+}
+
+// 출금신청을 플랫폼별로 나눠 합산. platform 없는 예전 건은 unknown.
+function accumulateRequestBuckets(requests, feesByPlatform) {
+  const buckets = emptyRequestBuckets();
+  (Array.isArray(requests) ? requests : []).forEach(item => {
+    const key = normalizeRequestPlatform(item.platform) || 'unknown';
+    const consume = requestConsumedAmount(item, feesByPlatform);
+    if (item.status === 'pending') {
+      buckets[key].requestedAmount += item.amount;
+      buckets[key].requestedConsume += consume;
+    } else if (item.status === 'completed') {
+      buckets[key].withdrawnAmount += item.amount;
+      buckets[key].withdrawnConsume += consume;
+    }
+  });
+  return buckets;
+}
+
+/**
+ * 플랫폼별 출금가능금액.
+ * 쿠팡 실지급은 쿠팡 출금만, 배민 실지급은 배민 출금만 차감한다.
+ * (합산 주머니로 쓰면 배민 출금이 쿠팡 정산에 섞이는 사고가 난다.)
+ */
+function computeAvailableByPlatform(netPayByPlatform, buckets, weekFinalized) {
+  const result = { coupang: 0, baemin: 0 };
+  ['coupang', 'baemin'].forEach(platform => {
+    const raw = Number(netPayByPlatform?.[platform] || 0)
+      - Number(buckets?.[platform]?.requestedConsume || 0)
+      - Number(buckets?.[platform]?.withdrawnConsume || 0);
+    result[platform] = weekFinalized ? 0 : raw;
+  });
+
+  // platform 없는 예전 출금건은 남은 잔액이 있는 플랫폼에서만 순서대로 깎는다.
+  let unknownConsume = Number(buckets?.unknown?.requestedConsume || 0)
+    + Number(buckets?.unknown?.withdrawnConsume || 0);
+  if (!weekFinalized && unknownConsume > 0) {
+    ['coupang', 'baemin'].forEach(platform => {
+      if (unknownConsume <= 0 || result[platform] <= 0) return;
+      const cut = Math.min(result[platform], unknownConsume);
+      result[platform] -= cut;
+      unknownConsume -= cut;
+    });
+  }
+  return result;
+}
+
+function totalAvailableFromPlatforms(availableByPlatform) {
+  return Number(availableByPlatform?.coupang || 0) + Number(availableByPlatform?.baemin || 0);
+}
+
 function normalizeRequest(item = {}) {
   const amount = Math.max(0, Math.round(Number(item.amount || 0)));
   const weekStart = normalizeSettlementWeekStart(item.weekStart || item.settlementWeekStart);
@@ -487,6 +544,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   ));
   const pendingRequests = myWeekRequests.filter(item => item.status === 'pending');
   const completedRequests = myWeekRequests.filter(item => item.status === 'completed');
+  const requestBuckets = accumulateRequestBuckets(myWeekRequests, feesByPlatform);
   const requestedAmountTotal = pendingRequests.reduce((sum, item) => sum + item.amount, 0);
   const requestedFeeTotal = pendingRequests.reduce((sum, item) => {
     const consumed = requestConsumedAmount(item, feesByPlatform);
@@ -549,10 +607,9 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     netPayByPlatform[deductionPlatform] = (netPayByPlatform[deductionPlatform] || 0) - leaseDeduction;
   }
   // 리스비/미납은 최우선 차감이며 마이너스(이월)를 허용한다. (정산 주 단위로 리셋)
-  // 주정산 마무리된 주는 출금가능금액을 강제로 0 처리한다.
-  // 신청중(pending) + 처리완료(completed) 를 모두 차감해야 실지급액을 초과한 출금이 막힌다.
-  const rawAvailable = totalNetPay - requestedTotal - withdrawnTotal - leaseDeduction;
-  const availableAmount = weekFinalized ? 0 : rawAvailable;
+  // 출금가능은 플랫폼별로 분리한다. 쿠팡 잔액으로 배민 출금을 막는다.
+  const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
+  const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
 
   return {
     ok: true,
@@ -564,6 +621,15 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     days,
     totalNetPay,
     netPayByPlatform,
+    availableByPlatform,
+    requestedByPlatform: {
+      coupang: requestBuckets.coupang.requestedAmount,
+      baemin: requestBuckets.baemin.requestedAmount
+    },
+    withdrawnByPlatform: {
+      coupang: requestBuckets.coupang.withdrawnAmount,
+      baemin: requestBuckets.baemin.withdrawnAmount
+    },
     requestedTotal,
     requestedAmountTotal,
     requestedFeeTotal,
@@ -659,14 +725,16 @@ async function createWithdrawalRequest(accessToken, body = {}) {
   const platformFees = feesByPlatform[platform] || feesByPlatform.coupang || {};
   const feeAmount = resolveWithdrawalFee(amount, platformFees);
   const consumeAmount = amount + feeAmount;
+  const platformAvailable = Number(summary.availableByPlatform?.[platform] ?? summary.availableAmount ?? 0);
+  const platformLabel = platform === 'baemin' ? '배민' : '쿠팡';
 
-  if (consumeAmount > summary.availableAmount) {
+  if (consumeAmount > platformAvailable) {
     return {
       ok: false,
       status: 400,
       error: feeAmount > 0
-        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일정산수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다.`
-        : `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
+        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일정산수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 ${platformLabel} 출금가능금액(${platformAvailable.toLocaleString('ko-KR')}원)을 초과합니다.`
+        : `${platformLabel} 출금가능금액(${platformAvailable.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
     };
   }
 
@@ -678,7 +746,7 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     feeAmount,
     weekStart: summary.weekStart,
     requestDate: new Date().toISOString().slice(0, 10),
-    availableAtRequest: summary.availableAmount,
+    availableAtRequest: platformAvailable,
     status: 'pending',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -690,11 +758,16 @@ async function createWithdrawalRequest(accessToken, body = {}) {
     await writeSettingValue(supabase, REQUESTS_KEY, existing);
   });
 
-  const nextAvailable = Math.max(0, summary.availableAmount - consumeAmount);
+  const nextPlatformAvailable = Math.max(0, platformAvailable - consumeAmount);
+  const nextAvailable = Math.max(0, Number(summary.availableAmount || 0) - consumeAmount);
   return {
     ok: true,
     request,
     availableAmount: nextAvailable,
+    availableByPlatform: {
+      ...(summary.availableByPlatform || { coupang: 0, baemin: 0 }),
+      [platform]: nextPlatformAvailable
+    },
     totalNetPay: summary.totalNetPay,
     requestedTotal: summary.requestedTotal + consumeAmount,
     requestedAmountTotal: (summary.requestedAmountTotal || 0) + amount,
@@ -1121,6 +1194,7 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
     const myReq = requestsByDriver.get(driverId) || [];
     const pending = myReq.filter(item => item.status === 'pending');
     const completed = myReq.filter(item => item.status === 'completed');
+    const requestBuckets = accumulateRequestBuckets(myReq, feesByPlatform);
     const requestedAmountTotal = pending.reduce((sum, item) => sum + item.amount, 0);
     const requestedTotal = pending.reduce(
       (sum, item) => sum + requestConsumedAmount(item, feesByPlatform),
@@ -1134,8 +1208,12 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
 
     const lease = computeLeaseForRider(leaseTables, rider, weekStart, weekEnd);
     const leaseDeduction = Math.max(0, Math.round(Number(lease.leaseDeductionTotal || 0)));
-    const rawAvailable = totalNetPay - requestedTotal - withdrawnTotal - leaseDeduction;
-    const availableAmount = weekFinalized ? 0 : rawAvailable;
+    const deductionPlatform = normalizeDeductionPlatform(lease.deductionPlatform);
+    if (leaseDeduction > 0) {
+      netPayByPlatform[deductionPlatform] = (netPayByPlatform[deductionPlatform] || 0) - leaseDeduction;
+    }
+    const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
+    const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
 
     return {
       driverId,
@@ -1148,6 +1226,7 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       accountNumber: riderRow.account_number || '',
       totalNetPay,
       netPayByPlatform,
+      availableByPlatform,
       enrolledPlatforms,
       requestedAmountTotal,
       requestedTotal,
@@ -1244,14 +1323,16 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
   const platformFees = summary.feesByPlatform[platform] || summary.feesByPlatform.coupang || {};
   const feeAmount = resolveWithdrawalFee(amount, platformFees);
   const consumeAmount = amount + feeAmount;
+  const platformAvailable = Number(summary.availableByPlatform?.[platform] ?? summary.availableAmount ?? 0);
+  const platformLabel = platform === 'baemin' ? '배민' : '쿠팡';
 
-  if (!allowExceed && consumeAmount > summary.availableAmount) {
+  if (!allowExceed && consumeAmount > platformAvailable) {
     return {
       ok: false,
       status: 400,
       error: feeAmount > 0
-        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일정산수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과합니다. 강제 조정하려면 초과 허용을 선택하세요.`
-        : `출금가능금액(${summary.availableAmount.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
+        ? `출금 ${amount.toLocaleString('ko-KR')}원 + 일정산수수료 ${feeAmount.toLocaleString('ko-KR')}원 = ${consumeAmount.toLocaleString('ko-KR')}원이 ${platformLabel} 출금가능금액(${platformAvailable.toLocaleString('ko-KR')}원)을 초과합니다. 강제 조정하려면 초과 허용을 선택하세요.`
+        : `${platformLabel} 출금가능금액(${platformAvailable.toLocaleString('ko-KR')}원)을 초과할 수 없습니다.`
     };
   }
 
@@ -1264,7 +1345,7 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
     feeAmount,
     weekStart: summary.weekStart,
     requestDate: now.slice(0, 10),
-    availableAtRequest: summary.availableAmount,
+    availableAtRequest: platformAvailable,
     status: mode === 'complete' ? 'completed' : 'pending',
     createdBy: 'admin',
     createdAt: now,
@@ -1278,7 +1359,7 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
     await writeSettingValue(supabase, REQUESTS_KEY, existing);
   });
 
-  const nextAvailable = Math.max(0, summary.availableAmount - consumeAmount);
+  const nextAvailable = Math.max(0, Number(summary.availableAmount || 0) - consumeAmount);
   return {
     ok: true,
     request,
@@ -1286,9 +1367,13 @@ async function adminCreateWithdrawalForDriver(accessToken, body = {}) {
     feeAmount,
     consumeAmount,
     availableAmount: nextAvailable,
+    availableByPlatform: {
+      ...(summary.availableByPlatform || { coupang: 0, baemin: 0 }),
+      [platform]: Math.max(0, platformAvailable - consumeAmount)
+    },
     message: mode === 'complete'
-      ? `강제출금 완료 · ${request.driverName} ${amount.toLocaleString('ko-KR')}원`
-      : `대행 신청 완료 · ${request.driverName} ${amount.toLocaleString('ko-KR')}원`
+      ? `강제출금 완료 · ${request.driverName} · ${platformLabel} ${amount.toLocaleString('ko-KR')}원`
+      : `대행 신청 완료 · ${request.driverName} · ${platformLabel} ${amount.toLocaleString('ko-KR')}원`
   };
 }
 

@@ -1199,7 +1199,7 @@
     const weekEnd = weekEndKey(weekStart);
     if (periodLabel) periodLabel.textContent = formatWeekPeriodLabel(weekStart);
 
-    body.innerHTML = '<tr><td colspan="9" class="empty">불러오는 중…</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="empty">불러오는 중…</td></tr>';
 
     let result = null;
     try {
@@ -1210,7 +1210,7 @@
     } catch (error) {
       console.warn('[available drivers]', error);
       showToast(error.message || '기사별 출금가능금액을 불러오지 못했습니다.');
-      body.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="10" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
       return;
     }
 
@@ -1225,17 +1225,17 @@
     if (summary) {
       const finalizedNote = result.weekFinalized ? ' · ⚠ 주정산 마무리됨(출금가능 0원)' : '';
       const pauseNote = result.withdrawalPaused ? ' · ⏸ 출금신청 정지중' : '';
-      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)}${finalizedNote}${pauseNote}`;
+      summary.textContent = `정산주 ${weekStart} ~ ${weekEnd} · 정산반영 ${rows.length}명 · 출금가능 ${withMoney}명 · 합계 ${formatWon(totalAvailable)} (쿠팡/배민 분리)${finalizedNote}${pauseNote}`;
     }
 
     if (!visible.length) {
-      body.innerHTML = '<tr><td colspan="9" class="empty">표시할 기사가 없습니다.</td></tr>';
+      body.innerHTML = '<tr><td colspan="10" class="empty">표시할 기사가 없습니다.</td></tr>';
       return;
     }
 
     body.innerHTML = visible.map(row => {
-      const available = Math.max(0, Number(row.availableAmount) || 0);
-      const negative = Number(row.availableAmount) < 0;
+      const coupangAvail = Math.max(0, driverPlatformAvailable(row, 'coupang'));
+      const baeminAvail = Math.max(0, driverPlatformAvailable(row, 'baemin'));
       const canAct = row.enrolledPlatforms?.coupang || row.enrolledPlatforms?.baemin;
       return `
       <tr>
@@ -1246,7 +1246,8 @@
         <td>${formatWon(row.requestedAmountTotal)}</td>
         <td>${formatWon(row.withdrawnAmountTotal)}</td>
         <td>${row.leaseDeduction ? formatWon(row.leaseDeduction) : '-'}</td>
-        <td class="pds-net-col"><strong${negative ? ' style="color:#e5484d;"' : ''}>${negative ? '-' : ''}${formatWon(available)}</strong></td>
+        <td class="pds-net-col"><strong>${formatWon(coupangAvail)}</strong></td>
+        <td class="pds-net-col"><strong>${formatWon(baeminAvail)}</strong></td>
         <td>
           ${canAct
             ? `<button type="button" class="small-btn primary-btn" data-pds-admin-withdraw="${escapeHtml(row.driverId)}">출금</button>`
@@ -1271,7 +1272,7 @@
       const stamp = weekStart.replace(/-/g, '');
       const filename = `BREM_기사별출금가능_${stamp}.xlsx`;
       const data = [
-        ['이름', '배민ID', '쿠팡ID', '실지급합계', '신청중', '처리완료', '리스차감', '출금가능금액'],
+        ['이름', '배민ID', '쿠팡ID', '실지급합계', '신청중', '처리완료', '리스차감', '쿠팡출금가능', '배민출금가능', '출금가능합계'],
         ...rows.map(row => [
           row.driverName || '',
           row.baeminId || '',
@@ -1280,6 +1281,8 @@
           Number(row.requestedAmountTotal) || 0,
           Number(row.withdrawnAmountTotal) || 0,
           Number(row.leaseDeduction) || 0,
+          Math.max(0, driverPlatformAvailable(row, 'coupang')),
+          Math.max(0, driverPlatformAvailable(row, 'baemin')),
           Number(row.availableAmount) || 0
         ])
       ];
@@ -1328,25 +1331,34 @@
     return $('pdsAdminWithdrawalPlatform')?.value === 'baemin' ? 'baemin' : 'coupang';
   }
 
+  function driverPlatformAvailable(driver, platform) {
+    const key = platform === 'baemin' ? 'baemin' : 'coupang';
+    if (driver?.availableByPlatform && driver.availableByPlatform[key] != null) {
+      return Number(driver.availableByPlatform[key] || 0);
+    }
+    return Number(driver?.availableAmount || 0);
+  }
+
   function updateAdminWithdrawalPreview() {
     const driver = state.adminWithdrawalDriver;
     const preview = $('pdsAdminWithdrawalPreview');
     if (!driver || !preview) return;
     const platform = selectedAdminPlatform();
     const amount = Math.max(0, Math.round(Number($('pdsAdminWithdrawalAmount')?.value || 0)));
-    const available = Math.max(0, Number(driver.availableAmount) || 0);
+    const available = Math.max(0, driverPlatformAvailable(driver, platform));
     const fee = calcWithdrawalFee(amount, platform);
     const consume = amount + fee;
     const allowExceed = $('pdsAdminWithdrawalAllowExceed')?.checked === true;
+    const label = platform === 'baemin' ? '배민' : '쿠팡';
     if (!amount) {
-      preview.textContent = `출금가능 ${formatWon(available)} · 최대신청 ${formatWon(calcMaxRequestable(available, platform))} (신청액 + 2% 수수료 차감)`;
+      preview.textContent = `${label} 출금가능 ${formatWon(available)} · 최대신청 ${formatWon(calcMaxRequestable(available, platform))} (신청액 + 2% 수수료 차감)`;
       preview.style.color = '';
       return;
     }
     const over = !allowExceed && consume > available;
     preview.textContent = fee > 0
-      ? `예상 차감: 신청 ${formatWon(amount)} + 일정산수수료 ${formatWon(fee)} = ${formatWon(consume)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`
-      : `예상 차감: ${formatWon(amount)} · 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`;
+      ? `예상 차감: 신청 ${formatWon(amount)} + 일정산수수료 ${formatWon(fee)} = ${formatWon(consume)} · ${label} 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`
+      : `예상 차감: ${formatWon(amount)} · ${label} 남는 출금가능 ${formatWon(Math.max(0, available - consume))}${over ? ' · ⚠ 초과' : ''}`;
     preview.style.color = over ? '#e5484d' : '';
   }
 
@@ -1373,9 +1385,13 @@
       platformSelect.innerHTML = options.join('') || '<option value="coupang">쿠팡</option>';
     }
     if (info) {
-      info.textContent = `${driver.driverName || '-'} · 실지급 ${formatWon(driver.totalNetPay)} · 리스차감 ${formatWon(driver.leaseDeduction)}`;
+      const by = driver.netPayByPlatform || {};
+      const avail = driver.availableByPlatform || {};
+      info.textContent = `${driver.driverName || '-'} · 쿠팡 실지급 ${formatWon(by.coupang)} / 가능 ${formatWon(Math.max(0, avail.coupang))} · 배민 실지급 ${formatWon(by.baemin)} / 가능 ${formatWon(Math.max(0, avail.baemin))} · 리스차감 ${formatWon(driver.leaseDeduction)}`;
     }
-    if (availableEl) availableEl.value = formatWon(Math.max(0, Number(driver.availableAmount) || 0));
+    if (availableEl) {
+      availableEl.value = formatWon(Math.max(0, driverPlatformAvailable(driver, selectedAdminPlatform())));
+    }
     if (amountInput) amountInput.value = '';
     if (exceedInput) exceedInput.checked = false;
     updateAdminWithdrawalPreview();
@@ -2594,7 +2610,14 @@
     document.querySelectorAll('[data-close-admin-withdrawal]').forEach(el => {
       el.addEventListener('click', closeAdminWithdrawalModal);
     });
-    $('pdsAdminWithdrawalPlatform')?.addEventListener('change', updateAdminWithdrawalPreview);
+    $('pdsAdminWithdrawalPlatform')?.addEventListener('change', () => {
+      const driver = state.adminWithdrawalDriver;
+      const availableEl = $('pdsAdminWithdrawalAvailable');
+      if (driver && availableEl) {
+        availableEl.value = formatWon(Math.max(0, driverPlatformAvailable(driver, selectedAdminPlatform())));
+      }
+      updateAdminWithdrawalPreview();
+    });
     $('pdsAdminWithdrawalAmount')?.addEventListener('input', updateAdminWithdrawalPreview);
     $('pdsAdminWithdrawalAllowExceed')?.addEventListener('change', updateAdminWithdrawalPreview);
     $('pdsAdminWithdrawalMaxBtn')?.addEventListener('click', () => {
@@ -2602,7 +2625,7 @@
       const amountInput = $('pdsAdminWithdrawalAmount');
       if (!driver || !amountInput) return;
       const platform = selectedAdminPlatform();
-      amountInput.value = String(calcMaxRequestable(Math.max(0, Number(driver.availableAmount) || 0), platform));
+      amountInput.value = String(calcMaxRequestable(Math.max(0, driverPlatformAvailable(driver, platform)), platform));
       updateAdminWithdrawalPreview();
     });
     $('pdsAdminWithdrawalRequestBtn')?.addEventListener('click', () => {
