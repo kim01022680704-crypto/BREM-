@@ -328,6 +328,16 @@
     return '미지정';
   }
 
+  // 잘못 찍힌 출금 플랫폼을 반대로 바꾸는 버튼 (쿠팡↔배민)
+  function platformSwitchButtonHtml(row) {
+    const to = row.platform === 'baemin' ? 'coupang' : 'baemin';
+    const toLabel = to === 'baemin' ? '배민' : '쿠팡';
+    return `<button type="button" class="small-btn pds-wd-platform-btn"
+      data-pds-wd-platform="${escapeHtml(row.id)}"
+      data-pds-wd-platform-to="${to}"
+      title="이 출금건을 ${toLabel}으로 변경">→${toLabel}</button>`;
+  }
+
   function weekEndKey(weekStart) {
     const utils = window.BremPayrollSlipUtils || window.BremDatePicker;
     if (utils?.settlementWeekEnd) return utils.settlementWeekEnd(weekStart);
@@ -822,6 +832,7 @@
         <td>${escapeHtml(statusLabel(row.status))}</td>
         <td>
           ${canComplete ? `<button type="button" class="small-btn primary-btn" data-pds-wd-complete="${escapeHtml(row.id)}">출금완료</button>` : ''}
+          ${platformSwitchButtonHtml(row)}
           ${canCancel ? `<button type="button" class="small-btn" data-pds-wd-cancel="${escapeHtml(row.id)}">취소</button>` : ''}
           <button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button>
         </td>
@@ -914,7 +925,10 @@
           <td><strong>${formatWon(row.amount)}</strong></td>
           <td>${formatWon(row.feeAmount)}</td>
           <td>${escapeHtml(row.bankName || '-')} ${escapeHtml(row.accountNumber || '')}</td>
-          <td><button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button></td>
+          <td>
+            ${platformSwitchButtonHtml(row)}
+            <button type="button" class="small-btn danger-btn" data-pds-wd-delete="${escapeHtml(row.id)}">삭제</button>
+          </td>
         </tr>
       `;
       }).join('');
@@ -1816,6 +1830,29 @@
     }
   }
 
+  // 출금건 플랫폼(쿠팡↔배민) 바로잡기. 정산결과 선정산 매칭이 즉시 정확해진다.
+  async function changeWithdrawalPlatform(id, toPlatform, view = 'completed') {
+    if (!id) return;
+    const to = String(toPlatform || '').trim().toLowerCase();
+    if (to !== 'coupang' && to !== 'baemin') return;
+    const toLabel = to === 'baemin' ? '배민' : '쿠팡';
+    if (!window.confirm(`이 출금건을 ${toLabel}으로 변경할까요?\n금액·상태는 그대로 두고 플랫폼만 바뀝니다.\n정산결과(직계약) 선정산도 ${toLabel} 기준으로 반영됩니다.`)) return;
+    try {
+      const result = await BremStorage.payrollWithdrawal.updateRequestPlatform(id, to);
+      showToast(result.message || `플랫폼을 ${toLabel}으로 변경했습니다.`);
+      if (view === 'pending') {
+        await renderWithdrawalRequests();
+      } else {
+        await renderCompletedWithdrawals();
+      }
+      // 주정산 출금내역 집계도 갱신
+      if (typeof renderWeekWithdrawals === 'function') await renderWeekWithdrawals();
+    } catch (error) {
+      console.error('[withdrawal platform change]', error);
+      showToast(error.message || '플랫폼 변경에 실패했습니다.');
+    }
+  }
+
   function getRegions() {
     return roster.readRegions?.() || [];
   }
@@ -2686,6 +2723,11 @@
         void cancelWithdrawalRequest(cancelBtn.dataset.pdsWdCancel);
         return;
       }
+      const platformBtn = event.target.closest('[data-pds-wd-platform]');
+      if (platformBtn) {
+        void changeWithdrawalPlatform(platformBtn.dataset.pdsWdPlatform, platformBtn.dataset.pdsWdPlatformTo, 'pending');
+        return;
+      }
       const deleteBtn = event.target.closest('[data-pds-wd-delete]');
       if (deleteBtn) void deleteWithdrawalRequest(deleteBtn.dataset.pdsWdDelete);
     });
@@ -2695,6 +2737,11 @@
       }
     });
     $('payrollDailyCompletedGroups')?.addEventListener('click', event => {
+      const platformBtn = event.target.closest('[data-pds-wd-platform]');
+      if (platformBtn) {
+        void changeWithdrawalPlatform(platformBtn.dataset.pdsWdPlatform, platformBtn.dataset.pdsWdPlatformTo, 'completed');
+        return;
+      }
       const deleteBtn = event.target.closest('[data-pds-wd-delete]');
       if (deleteBtn) void deleteCompletedWithdrawalRequest(deleteBtn.dataset.pdsWdDelete);
     });

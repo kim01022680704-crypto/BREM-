@@ -3019,6 +3019,14 @@ const BremStorage = (function () {
     });
   }
 
+  async function updateAdminWithdrawalRequestPlatform(requestId, platform) {
+    const id = encodeURIComponent(String(requestId || '').trim());
+    return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}/platform`, {
+      method: 'POST',
+      body: JSON.stringify({ platform: String(platform || '').trim().toLowerCase() })
+    });
+  }
+
   async function deleteAdminWithdrawalRequest(requestId) {
     const id = encodeURIComponent(String(requestId || '').trim());
     return adminRidersApi(`/api/admin/payroll/withdrawal-requests/${id}`, {
@@ -7754,6 +7762,14 @@ const BremStorage = (function () {
       const result = await completeAdminWithdrawalRequest(requestId);
       if (!result?.ok) {
         throw new Error(result?.error || result?.message || '출금완료 처리에 실패했습니다.');
+      }
+      return result;
+    },
+
+    async updateRequestPlatform(requestId, platform) {
+      const result = await updateAdminWithdrawalRequestPlatform(requestId, platform);
+      if (!result?.ok) {
+        throw new Error(result?.error || result?.message || '플랫폼 변경에 실패했습니다.');
       }
       return result;
     },
@@ -12899,6 +12915,7 @@ const BremStorage = (function () {
     fetchAdminWithdrawalRequestsFromServer,
     cancelAdminWithdrawalRequest,
     completeAdminWithdrawalRequest,
+    updateAdminWithdrawalRequestPlatform,
     deleteAdminWithdrawalRequest,
     loadDriverAppBundle,
     getDriverAppPublishedAt,

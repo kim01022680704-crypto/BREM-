@@ -1050,6 +1050,42 @@ async function completeWithdrawalRequest(accessToken, requestId) {
   });
 }
 
+// 관리자용: 출금신청의 플랫폼(쿠팡/배민)만 바로잡는다.
+// 배민에서 탄 출금이 쿠팡으로 잘못 저장된 경우 등. 금액·상태는 그대로 둔다.
+async function updateWithdrawalRequestPlatform(accessToken, requestId, platformInput) {
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const id = String(requestId || '').trim();
+  if (!id) return { ok: false, status: 400, error: '신청 ID가 없습니다.' };
+
+  const platform = normalizeRequestPlatform(platformInput);
+  if (!platform) {
+    return { ok: false, status: 400, error: '플랫폼은 coupang 또는 baemin 이어야 합니다.' };
+  }
+
+  const supabase = getServiceClient();
+  return withRequestsLock(async () => {
+    const list = normalizeRequestList(await readSettingValue(supabase, REQUESTS_KEY, []));
+    const index = list.findIndex(item => item.id === id);
+    if (index < 0) return { ok: false, status: 404, error: '출금신청을 찾을 수 없습니다.' };
+
+    const current = list[index];
+    if (current.platform === platform) {
+      return { ok: true, request: current, unchanged: true };
+    }
+    const updated = { ...current, platform, updatedAt: new Date().toISOString() };
+    list[index] = updated;
+    await writeSettingValue(supabase, REQUESTS_KEY, list);
+
+    return {
+      ok: true,
+      request: updated,
+      message: `플랫폼 변경 · ${updated.driverName || ''} → ${platform === 'baemin' ? '배민' : '쿠팡'}`
+    };
+  });
+}
+
 async function deleteWithdrawalRequest(accessToken, requestId) {
   const admin = await verifyAdminCaller(accessToken);
   if (!admin.ok) return admin;
@@ -1385,6 +1421,7 @@ module.exports = {
   adminCreateWithdrawalForDriver,
   cancelWithdrawalRequest,
   completeWithdrawalRequest,
+  updateWithdrawalRequestPlatform,
   deleteWithdrawalRequest,
   REQUESTS_KEY,
   // 정산 검수 스크립트 전용 노출. 검수가 계산식을 따로 구현하면 서버와 갈라져서
