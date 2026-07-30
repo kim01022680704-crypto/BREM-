@@ -5997,6 +5997,19 @@
       invalidateSectionRenders();
     });
 
+    document.addEventListener('brem-drivers-sync-ready', () => {
+      invalidateCallStatsIndex();
+      invalidateDriverSelectCache();
+      invalidateSectionRenders();
+      if (state.currentSection === 'missions'
+        || state.currentSection === 'mission-results'
+        || state.currentSection === 'mission-management'
+        || state.currentSection === 'driver-management') {
+        renderActiveSection(state.currentSection, { force: true });
+      }
+      updateDriverSearchStatus();
+    });
+
     document.addEventListener('brem-heavy-data-ready', () => {
       invalidateCallStatsIndex();
       invalidateSectionRenders();

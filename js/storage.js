@@ -963,18 +963,29 @@ const BremStorage = (function () {
 
   function markDriversCache(list, meta = {}) {
     const rows = dedupeDriversList(Array.isArray(list) ? list : []);
-    if (meta.complete === true || driversLoadMeta.complete) {
+    const nextTotal = Number(meta.supabaseTotal ?? driversLoadMeta.supabaseTotal ?? rows.length);
+    if (meta.complete === true) {
       driversLoadMeta = {
         complete: true,
-        supabaseTotal: Number(meta.supabaseTotal ?? driversLoadMeta.supabaseTotal ?? rows.length)
+        supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length
       };
+    } else if (meta.complete === false) {
+      driversLoadMeta = {
+        complete: false,
+        supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length
+      };
+    } else if (driversLoadMeta.complete) {
+      // 기존 complete 유지. 단, 총원보다  явно 적으면 부분 캐시로 강등한다.
+      if (Number.isFinite(nextTotal) && nextTotal > 0 && rows.length < nextTotal) {
+        driversLoadMeta = { complete: false, supabaseTotal: nextTotal };
+      }
     }
     setDriversCache(rows);
     window.BremDataCache?.set?.(KEYS.drivers, rows, {
+      ...meta,
       source: meta.source || 'sync',
       complete: driversLoadMeta.complete,
-      supabaseTotal: driversLoadMeta.supabaseTotal,
-      ...meta
+      supabaseTotal: driversLoadMeta.supabaseTotal
     });
   }
 
@@ -998,6 +1009,13 @@ const BremStorage = (function () {
     if (!Array.isArray(cached) || !cached.length) return false;
     const cacheMeta = window.BremDataCache.getMeta?.(KEYS.drivers);
     if (!cacheMeta?.meta?.complete) return false;
+    const supabaseTotal = Number(cacheMeta.meta.supabaseTotal) || 0;
+    // 총원보다 적게 저장된 "완료" 캐시는 폐기하고 서버에서 다시 받는다.
+    if (supabaseTotal > 0 && cached.length < supabaseTotal) {
+      window.BremDataCache?.invalidate?.(KEYS.drivers);
+      driversLoadMeta = { complete: false, supabaseTotal };
+      return false;
+    }
 
     if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.stage) {
       activeStorageAdapter.stage(KEYS.drivers, cached);
@@ -1008,13 +1026,13 @@ const BremStorage = (function () {
         window.BremDataCache?.set?.(KEYS.drivers, cached, {
           source: 'memory',
           complete: true,
-          supabaseTotal: Number(cacheMeta.meta.supabaseTotal) || cached.length
+          supabaseTotal: supabaseTotal || cached.length
         });
       }
     }
     driversLoadMeta = {
       complete: true,
-      supabaseTotal: Number(cacheMeta.meta.supabaseTotal) || cached.length
+      supabaseTotal: supabaseTotal || cached.length
     };
     logDataSource('riders', true, 'tab session');
     document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
@@ -1712,12 +1730,28 @@ const BremStorage = (function () {
     }
 
     if (needsDrivers) {
+      const needsFullDrivers = sectionId === 'missions'
+        || sectionId === 'mission-results'
+        || sectionId === 'drivers'
+        || sectionId === 'driver-management'
+        || sectionId === 'mission-management';
       const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
-      if (!force && hasDrivers && (driversLoadMeta.complete || fetchInFlight)) {
+      const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);
+      const loadedCount = drivers.getAll().length;
+      const looksComplete = driversLoadMeta.complete && (!knownTotal || loadedCount >= knownTotal);
+
+      if (!force && hasDrivers && looksComplete) {
         logDataSource('riders', true, sectionId);
-      } else if (!force && driversLoadMeta.complete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
+      } else if (!force && !needsFullDrivers && hasDrivers && (looksComplete || fetchInFlight)) {
         logDataSource('riders', true, sectionId);
+      } else if (!force && looksComplete && window.BremDataCache?.isValid?.(KEYS.drivers)) {
+        logDataSource('riders', true, sectionId);
+      } else if (needsFullDrivers) {
+        tasks.push(
+          reloadDrivers(Boolean(options.forceDrivers || options.force))
+            .then(() => awaitDriversFullyLoaded())
+        );
       } else {
         tasks.push(reloadDrivers(Boolean(options.forceDrivers || options.force)));
       }
@@ -1955,6 +1989,7 @@ const BremStorage = (function () {
       let offset = startOffset;
       let hasMore = true;
       let pages = 0;
+      let failed = false;
       try {
         while (hasMore && pages < 200) {
           const result = await syncDriversFromServer({
@@ -1962,7 +1997,10 @@ const BremStorage = (function () {
             offset,
             append: true
           });
-          if (!result.ok) break;
+          if (!result.ok) {
+            failed = true;
+            break;
+          }
           if (supabaseTotal == null && result.total != null) supabaseTotal = result.total;
           hasMore = Boolean(result.hasMore);
           offset += result.count || pageSize;
@@ -1972,13 +2010,42 @@ const BremStorage = (function () {
         }
 
         const deduped = dedupeDriversList(drivers.getAll());
-        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
-        markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: supabaseTotal ?? deduped.length });
-        document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
-          detail: { complete: true, count: deduped.length, supabaseTotal: supabaseTotal ?? deduped.length }
-        }));
+        const total = Number(supabaseTotal ?? deduped.length);
+        const fullyLoaded = !failed && !hasMore && (!total || deduped.length >= total);
+        if (fullyLoaded) {
+          markDriversLoadComplete(deduped.length, total);
+          markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: total });
+          document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+            detail: { complete: true, count: deduped.length, supabaseTotal: total }
+          }));
+        } else {
+          driversLoadMeta = { complete: false, supabaseTotal: total || deduped.length };
+          markDriversCache(deduped, { source: 'network', complete: false, supabaseTotal: total || deduped.length });
+          document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
+            detail: {
+              complete: false,
+              partial: true,
+              failed,
+              count: deduped.length,
+              supabaseTotal: total || deduped.length
+            }
+          }));
+          if (failed) {
+            console.warn('[BREM] Background rider sync incomplete:', deduped.length, '/', total || '?');
+          }
+        }
       } catch (error) {
         console.warn('[BREM] Background rider sync failed:', error.message || error);
+        const deduped = dedupeDriversList(drivers.getAll());
+        driversLoadMeta = {
+          complete: false,
+          supabaseTotal: Number(supabaseTotal ?? driversLoadMeta.supabaseTotal ?? deduped.length)
+        };
+        markDriversCache(deduped, {
+          source: 'network',
+          complete: false,
+          supabaseTotal: driversLoadMeta.supabaseTotal
+        });
       } finally {
         driversBackgroundFetchPromise = null;
         driversFullFetchInProgress = false;
@@ -1986,6 +2053,44 @@ const BremStorage = (function () {
     })();
 
     return driversBackgroundFetchPromise;
+  }
+
+  async function awaitDriversFullyLoaded(options = {}) {
+    if (driversBackgroundFetchPromise) {
+      await driversBackgroundFetchPromise;
+    }
+    if (driversFetchAllPromise) {
+      await driversFetchAllPromise;
+    }
+
+    let serverTotal = Number(driversLoadMeta.supabaseTotal || 0);
+    try {
+      const counted = await countRidersViaServer();
+      if (counted?.ok && Number(counted.count) > 0) {
+        serverTotal = Number(counted.count);
+        driversLoadMeta.supabaseTotal = serverTotal;
+      }
+    } catch (_error) {
+      /* ignore count probe failures */
+    }
+
+    const count = drivers.getAll().length;
+    const incomplete = !driversLoadMeta.complete || (serverTotal > 0 && count < serverTotal);
+    if (!incomplete) {
+      return { ok: true, count, supabaseTotal: serverTotal || count };
+    }
+
+    const result = await fetchAllDriversFromServer({
+      force: true,
+      ...(options.view ? { view: options.view } : {})
+    });
+    if (driversBackgroundFetchPromise) await driversBackgroundFetchPromise;
+    return {
+      ok: result?.ok !== false,
+      count: drivers.getAll().length,
+      supabaseTotal: driversLoadMeta.supabaseTotal || drivers.getAll().length,
+      message: result?.message
+    };
   }
 
   async function fetchAllDriversFromServer(options = {}) {
@@ -2057,11 +2162,13 @@ const BremStorage = (function () {
     const runFetch = async () => {
       logDataSource('riders', false);
       window.BremPerf?.time?.('storage.fetchAllDrivers');
-      const pageSize = 200;
+      // raw_data 포함 SELECT는 페이지가 크면 타임아웃나기 쉬워 100명 단위로 받는다.
+      const pageSize = Math.min(Math.max(Number(options.limit) || 100, 20), 200);
       let offset = 0;
       let hasMore = true;
       let supabaseTotal = null;
       let pages = 0;
+      let failed = false;
 
       if (force) clearDriversCacheHard();
 
@@ -2075,13 +2182,20 @@ const BremStorage = (function () {
             ...(options.view ? { view: options.view } : {})
           });
           if (!result.ok) {
+            failed = true;
             if (drivers.getAll().length > 0) {
+              const partial = dedupeDriversList(drivers.getAll());
+              markDriversCache(partial, {
+                source: 'network',
+                complete: false,
+                supabaseTotal: supabaseTotal ?? driversLoadMeta.supabaseTotal ?? partial.length
+              });
               return {
                 ok: true,
                 cached: true,
                 stale: true,
-                partial: !driversLoadMeta.complete,
-                count: drivers.getAll().length,
+                partial: true,
+                count: partial.length,
                 supabaseTotal: driversLoadMeta.supabaseTotal
               };
             }
@@ -2099,9 +2213,11 @@ const BremStorage = (function () {
           if (!result.count) break;
 
           const dedupedAfterPage = dedupeDriversList(drivers.getAll());
+          const pageComplete = !hasMore
+            && (!supabaseTotal || dedupedAfterPage.length >= Number(supabaseTotal));
           markDriversCache(dedupedAfterPage, {
             source: 'network',
-            complete: !hasMore,
+            complete: pageComplete,
             supabaseTotal: supabaseTotal ?? dedupedAfterPage.length
           });
           document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
@@ -2127,17 +2243,29 @@ const BremStorage = (function () {
         }
 
         const deduped = dedupeDriversList(drivers.getAll());
-        markDriversLoadComplete(deduped.length, supabaseTotal ?? deduped.length);
-        markDriversCache(deduped, { source: 'network', complete: true });
+        const total = Number(supabaseTotal ?? deduped.length);
+        const fullyLoaded = !failed && !hasMore && (!total || deduped.length >= total);
+        if (fullyLoaded) {
+          markDriversLoadComplete(deduped.length, total);
+          markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: total });
+        } else {
+          markDriversCache(deduped, { source: 'network', complete: false, supabaseTotal: total || deduped.length });
+        }
         document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
         window.BremPerf?.timeEnd?.('storage.fetchAllDrivers');
         document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready', {
-          detail: { complete: true, count: deduped.length, supabaseTotal: supabaseTotal ?? deduped.length }
+          detail: {
+            complete: fullyLoaded,
+            partial: !fullyLoaded,
+            count: deduped.length,
+            supabaseTotal: total || deduped.length
+          }
         }));
         return {
           ok: true,
+          partial: !fullyLoaded,
           count: deduped.length,
-          supabaseTotal: supabaseTotal ?? deduped.length
+          supabaseTotal: total || deduped.length
         };
       } finally {
         if (!driversBackgroundFetchPromise) {
@@ -12732,6 +12860,7 @@ const BremStorage = (function () {
     awaitPersist,
     reloadDrivers,
     fetchAllDriversFromServer,
+    awaitDriversFullyLoaded,
     waitForDriversFetch,
     fetchRiderViaServer,
     dedupeDriversList,
