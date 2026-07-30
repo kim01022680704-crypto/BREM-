@@ -142,11 +142,16 @@ const BremFinalDeposit = (function () {
     const numericKeys = Calc().NUMERIC_KEYS;
     const byDriver = new Map();
 
-    const weekAll = weekSettlements();
+    // 여러 지역 정산서에 걸쳐 같은 사람의 같은 플랫폼 출금이 중복 반영되지 않도록
+    // 선정산 맵과 소비(consumed) 집합을 정산서들 사이에서 공유한다.
+    const week = ensureWeek();
+    const prepaidMap = Calc().buildWeekPrepaidByPlatform(state.withdrawals, week);
+    const consumed = new Set();
     checkedSettlements().forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
-        weekSettlements: weekAll
+        _prepaidMap: prepaidMap,
+        _consumed: consumed
       }).forEach(row => {
         const key = driverKey(row);
         const existing = byDriver.get(key);

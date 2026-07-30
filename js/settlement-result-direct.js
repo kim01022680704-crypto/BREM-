@@ -221,21 +221,12 @@ const BremSettlementResultDirect = (function () {
 
   // --- 계산 ---------------------------------------------------------------
 
-  // 이 주의 쿠팡+배민 직계약 정산서 전체 (스필오버 배분용 한도 계산에 필요)
-  function weekAllPlatformSettlements(settlement) {
-    const week = settlementWeek(settlement);
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => settlementWeek(record) === week);
-  }
-
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
-    // 찍힌 플랫폼에서 먼저 차감하고, 부족분은 반대 플랫폼에서 차감(스필오버).
-    // 그래서 한 사람의 쿠팡/배민 정산서 전체를 함께 넘긴다.
+    // 쿠팡 출금 → 쿠팡 정산, 배민 출금 → 배민 정산. 출금 기록에 찍힌 플랫폼 그대로 정확히 반영.
     return Calc().sortByName(Calc().computeRows(settlement, {
-      withdrawals: state.withdrawals,
-      weekSettlements: weekAllPlatformSettlements(settlement)
+      withdrawals: state.withdrawals
     }));
   }
 
@@ -279,15 +270,22 @@ const BremSettlementResultDirect = (function () {
       <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
     if (summaryEl) {
-      // 선정산(처리완료)은 실출금액을 그대로 공제한다. 찍힌 플랫폼에서 먼저 빼고
-      // 부족분은 반대 플랫폼에서 뺀다(스필오버). 다 못 빼면 총지급액이 음수로 표기된다.
+      // 선정산(처리완료)은 이 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
+      // 다 못 빼면 총지급액이 음수로 표기된다. 플랫폼 미지정 출금은 반영 못 하므로 알린다.
+      const platformLabelKo = state.platform === 'coupang' ? '쿠팡' : '배민';
       const negative = Number(totals.negativeNetCount || 0);
-      const negativeNote = negative
-        ? ` · <span class="muted-inline">총지급액 음수 <strong>${negative}</strong>명(선정산이 지급액보다 큼 — 정상 표기)</span>`
-        : '';
+      const untagged = Number(totals.untaggedWithdrawalCount || 0);
+      const notes = [];
+      if (negative) {
+        notes.push(`총지급액 음수 <strong>${negative}</strong>명(선정산이 지급액보다 큼 — 정상 표기)`);
+      }
+      if (untagged) {
+        notes.push(`플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원) 미반영 — 출금내역에서 쿠팡/배민 지정 필요`);
+      }
+      const extraNote = notes.length ? ` · <span class="muted-inline">${notes.join(' · ')}</span>` : '';
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
-        + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
-        + negativeNote;
+        + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
+        + extraNote;
     }
   }
 
