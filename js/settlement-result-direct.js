@@ -221,10 +221,21 @@ const BremSettlementResultDirect = (function () {
 
   // --- 계산 ---------------------------------------------------------------
 
+  // 같은 정산주의 쿠팡+배민 정산서를 모두 넘겨 출금을 플랫폼 한도에 맞게 나눈다.
+  function weekSettlementsAllPlatforms(week = settlementWeek(currentSettlement())) {
+    const weekKey = String(week || '').slice(0, 10);
+    if (!weekKey) return [];
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => settlementWeek(record) === weekKey);
+  }
+
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
-    return Calc().sortByName(Calc().computeRows(settlement, { withdrawals: state.withdrawals }));
+    return Calc().sortByName(Calc().computeRows(settlement, {
+      withdrawals: state.withdrawals,
+      weekSettlements: weekSettlementsAllPlatforms(settlementWeek(settlement))
+    }));
   }
 
   // 쿠팡·배민 열을 통일했다. 한쪽에만 있는 항목(배민 추가지급, 쿠팡 차감내역)도
