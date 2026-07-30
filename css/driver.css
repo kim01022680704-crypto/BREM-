@@ -592,15 +592,23 @@ h3 {
 }
 
 .driver-withdrawal-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   font-size: 0.78rem;
+  table-layout: auto;
 }
 
 .driver-withdrawal-table th {
-  white-space: normal;
-  line-height: 1.2;
+  white-space: nowrap;
+  line-height: 1.25;
   vertical-align: bottom;
   word-break: keep-all;
+  padding: 10px 8px;
+}
+
+.driver-withdrawal-table td {
+  white-space: nowrap;
+  padding: 10px 8px;
 }
 
 .driver-withdrawal-table th .driver-withdrawal-th-sub {
@@ -2963,47 +2971,62 @@ button.calendar-day:hover {
     gap: 8px;
   }
 
+  /* 열을 억지로 줄이지 말고 가로 스크롤로 읽히게 한다. (시간제보험·원천세 겹침 방지) */
+  .driver-withdrawal-panel .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0;
+    padding-bottom: 6px;
+  }
+
   .driver-withdrawal-table {
-    font-size: 0.62rem;
+    width: max-content;
+    min-width: 720px;
+    font-size: 0.72rem;
+    border-collapse: separate;
+    border-spacing: 0;
   }
 
   .driver-withdrawal-table th,
   .driver-withdrawal-table td {
-    padding: 5px 3px;
-    white-space: normal;
+    padding: 8px 10px;
+    white-space: nowrap;
     word-break: keep-all;
-    line-height: 1.1;
+    line-height: 1.25;
+    min-width: 4.5em;
   }
 
   .driver-withdrawal-table th {
-    max-width: 3.4em;
-    font-size: 0.56rem;
+    max-width: none;
+    font-size: 0.68rem;
     font-weight: 800;
+    letter-spacing: -0.01em;
   }
 
   .driver-withdrawal-table th.driver-withdrawal-daily-fee-head {
-    max-width: 4.8em;
-    min-width: 0;
-    width: 4.8em;
-    padding: 4px 2px;
-    font-size: 0.6rem;
-    line-height: 1.15;
-    letter-spacing: -0.03em;
-    white-space: normal;
+    max-width: none;
+    min-width: 6.5em;
+    width: auto;
+    padding: 8px 10px;
+    font-size: 0.68rem;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
   }
 
   .driver-withdrawal-table th.driver-withdrawal-daily-fee-head .driver-withdrawal-th-sub {
-    display: block;
-    margin-top: 0.05em;
-    font-size: 0.98em;
-    line-height: 1.1;
-    letter-spacing: -0.04em;
+    display: inline;
+    margin-top: 0;
+    margin-left: 2px;
+    font-size: 0.9em;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
     color: #2563eb;
     opacity: 1;
   }
 
   .driver-withdrawal-table td {
-    font-size: 0.62rem;
+    font-size: 0.72rem;
   }
 
   .driver-withdrawal-table th.driver-withdrawal-net,
@@ -3012,6 +3035,7 @@ button.calendar-day:hover {
     background: #fff7ed;
     color: #9a3412;
     font-weight: 900;
-    max-width: 4.2em;
+    max-width: none;
+    min-width: 5.5em;
   }
 }
