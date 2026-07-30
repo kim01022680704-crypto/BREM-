@@ -138,8 +138,17 @@ const BremWeeklySettlement = (function () {
   function normalizeBaeminUserId(value) {
     const raw = String(value ?? '').trim();
     if (!raw) return '';
-    if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
-    return raw;
+    // 엑셀이 숫자로 인식해 붙인 소수점 .0 만 제거하고, 앞자리 0 은 보존한다.
+    // (예전엔 Number() 변환으로 "0123456" → "123456" 으로 앞 0 이 사라졌다)
+    const m = raw.match(/^(\d+)\.0+$/);
+    return m ? m[1] : raw;
+  }
+
+  // 매칭 비교용 키: 앞자리 0 유무·대소문자 차이를 무시해 과거 데이터와도 맞춘다.
+  function baeminIdMatchKey(value) {
+    const v = normalizeBaeminUserId(value).replace(/\s+/g, '');
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
   }
 
   function parseAmount(value) {
@@ -707,8 +716,8 @@ const BremWeeklySettlement = (function () {
     const manual = mappings.find(item => {
       const source = normalizeName(item.originalName, p);
       if (p === 'baemin') {
-        const userId = normalizeBaeminUserId(baeminUserId);
-        if (userId && normalizeBaeminUserId(item.originalName) === userId) return true;
+        const userId = baeminIdMatchKey(baeminUserId);
+        if (userId && baeminIdMatchKey(item.originalName) === userId) return true;
       }
       return source === normalizeName(originalName, p) || source === normalizeName(riderName, p);
     });
@@ -737,11 +746,11 @@ const BremWeeklySettlement = (function () {
     const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'baemin', rider.baeminUserId);
     if (manual) return manual;
 
-    const userId = normalizeBaeminUserId(rider.baeminUserId);
+    const userId = baeminIdMatchKey(rider.baeminUserId);
     if (!userId) return null;
 
     return BremStorage.drivers.getAll().find(
-      driver => normalizeBaeminUserId(driver.baeminId) === userId
+      driver => baeminIdMatchKey(driver.baeminId) === userId
     ) || null;
   }
 
@@ -755,11 +764,11 @@ const BremWeeklySettlement = (function () {
     const p = normalizePlatform(platform);
 
     if (p === 'baemin') {
-      const userId = normalizeBaeminUserId(rider.baeminUserId);
+      const userId = baeminIdMatchKey(rider.baeminUserId);
       if (!userId) return null;
       for (const driverId of driverIdsInPeriod) {
         const driver = BremStorage.drivers.getById(driverId);
-        if (driver && normalizeBaeminUserId(driver.baeminId) === userId) return driver;
+        if (driver && baeminIdMatchKey(driver.baeminId) === userId) return driver;
       }
       return null;
     }
@@ -1222,6 +1231,7 @@ const BremWeeklySettlement = (function () {
     normalizeCoupangName,
     normalizeBaeminName,
     normalizeBaeminUserId,
+    baeminIdMatchKey,
     normalizeName,
     findBaeminSettlementSheetName,
     findBaeminSettlementSheet,

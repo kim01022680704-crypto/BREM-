@@ -461,8 +461,9 @@ const BremSettlementParser = (function () {
   function normalizeBaeminUserId(value) {
     const raw = String(value ?? '').trim();
     if (!raw) return '';
-    if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
-    return raw;
+    // 엑셀 소수점 .0 만 제거하고 앞자리 0 은 보존한다(예전엔 숫자변환으로 0이 사라졌다).
+    const m = raw.match(/^(\d+)\.0+$/);
+    return m ? m[1] : raw;
   }
 
   function normalizeCoupangLoginKey(rawName) {
