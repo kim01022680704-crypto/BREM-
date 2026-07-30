@@ -182,6 +182,8 @@ const BremPromotionEngine = (function () {
   function checkGlobalRateBlock(settings, riderData, rule) {
     if (!settings?.globalBlockEnabled) return { passed: true, reasons: [] };
     if (rule && rule.applyGlobalAcceptBlock === false) return { passed: true, reasons: [] };
+    // 프로모션 적용 화면에서 「수락/거절율 무시」 시 미등록만 통과 (초과/미달 조건은 그대로)
+    const ignoreMissing = riderData?.ignoreMissingRates === true;
 
     const platform = normalizePlatform(riderData.platform);
     const blockPlatform = settings.globalBlockPlatform || 'all';
@@ -198,7 +200,9 @@ const BremPromotionEngine = (function () {
 
     if (platform === 'coupang') {
       if (rate === null || rate === undefined) {
-        return { passed: false, reasons: ['거절율 미등록'] };
+        return ignoreMissing
+          ? { passed: true, reasons: [] }
+          : { passed: false, reasons: ['거절율 미등록'] };
       }
       const maxRejectRate = Number(settings.globalMaxRejectRate ?? 15);
       if (rate > maxRejectRate) {
@@ -209,7 +213,9 @@ const BremPromotionEngine = (function () {
 
     if (platform === 'baemin') {
       if (rate === null || rate === undefined) {
-        return { passed: false, reasons: ['수락률 미등록'] };
+        return ignoreMissing
+          ? { passed: true, reasons: [] }
+          : { passed: false, reasons: ['수락률 미등록'] };
       }
       const minAcceptRate = Number(settings.globalMinAcceptRate ?? 85);
       if (rate < minAcceptRate) {
@@ -243,6 +249,9 @@ const BremPromotionEngine = (function () {
     const { minRate, maxRate } = getRuleRateBounds(rule, p, options);
 
     if (rate === null || rate === undefined) {
+      if (options.ignoreMissingRates === true) {
+        return { passed: true, reasons: [] };
+      }
       return { passed: false, reasons: [`${label} 미등록`] };
     }
 
@@ -391,7 +400,9 @@ const BremPromotionEngine = (function () {
       case 'reject_rate_under': {
         const threshold = Number(resolved.rateThreshold ?? 0);
         if (rate === null || rate === undefined) {
-          return { passed: false, reasons: ['거절율 미등록'] };
+          return riderData.ignoreMissingRates === true
+            ? { passed: true, reasons: [] }
+            : { passed: false, reasons: ['거절율 미등록'] };
         }
         const passed = type === 'reject_rate_over'
           ? rate <= threshold
@@ -407,7 +418,9 @@ const BremPromotionEngine = (function () {
       case 'accept_rate_over': {
         const threshold = Number(resolved.rateThreshold ?? 0);
         if (rate === null || rate === undefined) {
-          return { passed: false, reasons: ['수락률 미등록'] };
+          return riderData.ignoreMissingRates === true
+            ? { passed: true, reasons: [] }
+            : { passed: false, reasons: ['수락률 미등록'] };
         }
         const passed = type === 'accept_rate_under'
           ? rate >= threshold

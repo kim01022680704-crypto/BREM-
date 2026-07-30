@@ -37,8 +37,19 @@
       return String(BremWeeklySettlement.normalizeBaeminUserId(value) || '').trim();
     }
     const raw = String(value || '').trim();
-    if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
-    return raw;
+    if (!raw) return '';
+    // 엑셀 소수점 .0 만 제거 · 앞자리 0 보존
+    const m = raw.match(/^(\d+)\.0+$/);
+    return m ? m[1] : raw;
+  }
+
+  function baeminIdMatchKey(value) {
+    if (window.BremWeeklySettlement?.baeminIdMatchKey) {
+      return BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = normalizeBaeminId(value).replace(/\s+/g, '');
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
   }
 
   function getDrivers() {
@@ -46,12 +57,12 @@
   }
 
   function matchDriverByBaeminId(baeminId) {
-    const id = normalizeBaeminId(baeminId);
-    if (!id) return null;
+    const key = baeminIdMatchKey(baeminId);
+    if (!key) return null;
     if (window.BremDriverUtils?.matchDriverByBaeminErpId) {
-      return BremDriverUtils.matchDriverByBaeminErpId(id, getDrivers()) || null;
+      return BremDriverUtils.matchDriverByBaeminErpId(baeminId, getDrivers()) || null;
     }
-    return getDrivers().find(driver => normalizeBaeminId(driver.baeminId) === id) || null;
+    return getDrivers().find(driver => baeminIdMatchKey(driver.baeminId) === key) || null;
   }
 
   function resolveRiderBusinessDate(row = {}) {

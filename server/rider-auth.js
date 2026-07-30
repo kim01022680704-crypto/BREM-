@@ -959,8 +959,22 @@ async function getRiderSnapshot(accessToken) {
 function normalizeBaeminUserId(value) {
   const raw = String(value || '').trim();
   if (!raw || raw === '-') return '';
-  if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
-  return raw;
+  // 엑셀 소수점 .0 만 제거하고 앞자리 0 은 보존한다.
+  const m = raw.match(/^(\d+)\.0+$/);
+  return m ? m[1] : raw;
+}
+
+function baeminIdMatchKey(value) {
+  const v = normalizeBaeminUserId(value).replace(/\s+/g, '');
+  if (!v) return '';
+  return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+}
+
+function baeminIdLookupVariants(value) {
+  const raw = normalizeBaeminUserId(value);
+  if (!raw) return [];
+  const key = baeminIdMatchKey(raw);
+  return [...new Set([raw, key].filter(Boolean))];
 }
 
 function extractDeliveryStatusMetrics(parsed = {}) {
@@ -983,8 +997,8 @@ function calcAcceptRateFromMetrics(metrics = {}) {
 }
 
 async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) {
-  const id = normalizeBaeminUserId(baeminId);
-  if (!id) return null;
+  const variants = baeminIdLookupVariants(baeminId);
+  if (!variants.length) return null;
 
   const tables = ['baemin_delivery_applied_items', 'baemin_biz_collect_items'];
   for (const table of tables) {
@@ -992,7 +1006,7 @@ async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) {
       .from(table)
       .select('collected_at, collect_date, rider_user_id, rider_name, phone_number, parsed_json, dedupe_key')
       .eq('source_menu', 'delivery_status')
-      .eq('rider_user_id', id)
+      .in('rider_user_id', variants)
       .order('collected_at', { ascending: false })
       .limit(8);
 
@@ -1017,7 +1031,7 @@ async function fetchLatestDeliveryStatusForBaeminId(supabase, baeminId) {
 }
 
 async function fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }) {
-  const id = normalizeBaeminUserId(baeminId);
+  const variants = baeminIdLookupVariants(baeminId);
   const did = String(driverId || '').trim();
 
   async function query(column, value) {
@@ -1052,10 +1066,42 @@ async function fetchLatestLiveAcceptRate(supabase, { baeminId, driverId }) {
     return data?.[0] || null;
   }
 
+  async function queryBaeminVariants() {
+    if (!variants.length) return null;
+    const { data, error } = await supabase
+      .from('baemin_live_accept_rates')
+      .select([
+        'week_start',
+        'partner_id',
+        'rider_user_id',
+        'driver_id',
+        'current_complete',
+        'current_food_reject',
+        'current_food_cancel',
+        'current_food_rider_fault',
+        'current_accept_rate',
+        'live_complete',
+        'source_capture_date',
+        'updated_at'
+      ].join(','))
+      .in('rider_user_id', variants)
+      .order('week_start', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(3);
+    if (error) {
+      if (/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+        return { missing: true };
+      }
+      console.warn('[BREM] rider baeminOps accept-rate lookup:', error.message || error);
+      return null;
+    }
+    return data?.[0] || null;
+  }
+
   const byDriver = did ? await query('driver_id', did) : null;
   if (byDriver?.missing) return null;
   if (byDriver) return byDriver;
-  const byBaemin = id ? await query('rider_user_id', id) : null;
+  const byBaemin = await queryBaeminVariants();
   if (byBaemin?.missing) return null;
   return byBaemin || null;
 }

@@ -746,8 +746,15 @@ const BremDriverManagementAdmin = (function () {
     if (!id) return null;
     const drivers = window.BremStorage?.drivers?.getAll?.() || [];
     if (platform === 'baemin') {
-      const norm = id.toUpperCase();
-      return drivers.find(driver => String(driver.baeminId || '').trim().toUpperCase() === norm) || null;
+      const key = window.BremDriverUtils?.baeminIdMatchKey?.(id)
+        || window.BremWeeklySettlement?.baeminIdMatchKey?.(id)
+        || id.toUpperCase();
+      return drivers.find(driver => {
+        const driverKey = window.BremDriverUtils?.baeminIdMatchKey?.(driver.baeminId)
+          || window.BremWeeklySettlement?.baeminIdMatchKey?.(driver.baeminId)
+          || String(driver.baeminId || '').trim().toUpperCase();
+        return driverKey && driverKey === key;
+      }) || null;
     }
     const compact = id.replace(/\s/g, '');
     return drivers.find(driver => makeDriverLoginId(driver) === compact) || null;

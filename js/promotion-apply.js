@@ -35,21 +35,48 @@ const BremPromotionApply = (function () {
   }
 
   function makeBaeminDisplayName(driver, rider) {
-    const baeminId = BremWeeklySettlement.normalizeBaeminUserId(
-      rider?.baeminUserId || driver?.baeminId || ''
-    );
-    return baeminId || '-';
+    return getBaeminUserId(rider, driver) || '-';
   }
 
+  function matchKeyBaemin(value) {
+    if (typeof BremWeeklySettlement?.baeminIdMatchKey === 'function') {
+      return BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = String(value || '').trim().replace(/\s+/g, '');
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+  }
+
+  // 엑셀 ID(104…)로 기사 등록 ID(010…)를 찾아낸다.
+  function findDriverByBaeminIdLoose(baeminId) {
+    const key = matchKeyBaemin(baeminId);
+    if (!key) return null;
+    const list = BremStorage?.drivers?.getAll?.() || [];
+    return list.find(driver => matchKeyBaemin(driver.baeminId) === key) || null;
+  }
+
+  // 엑셀에서 0 이 빠진 ID 보다 기사 등록 배민 ID(010…)를 항상 우선한다.
   function getBaeminUserId(rider, driver) {
-    return BremWeeklySettlement.normalizeBaeminUserId(
-      rider?.baeminUserId || driver?.baeminId || ''
-    );
+    const excel = String(rider?.baeminUserId || rider?.baeminId || '').trim();
+    let resolved = driver;
+    if (!String(resolved?.baeminId || '').trim()) {
+      resolved = findDriverByBaeminIdLoose(excel)
+        || (rider?.matchedRiderId ? BremStorage.drivers.getById(rider.matchedRiderId) : null);
+    }
+    if (typeof BremWeeklySettlement?.preferRegisteredBaeminId === 'function') {
+      return BremWeeklySettlement.preferRegisteredBaeminId(excel, resolved) || excel || '';
+    }
+    const registered = String(resolved?.baeminId || '').trim();
+    if (registered && excel && matchKeyBaemin(registered) === matchKeyBaemin(excel)) {
+      return registered;
+    }
+    return registered || excel || '';
   }
 
   function resolveDriverForWeeklyRider(rider, platform) {
     if (normalizePlatform(platform) === 'baemin') {
-      return BremWeeklySettlement.resolveBaeminDriver(rider);
+      return BremWeeklySettlement.resolveBaeminDriver(rider)
+        || findDriverByBaeminIdLoose(rider?.baeminUserId);
     }
     const driverId = String(rider?.matchedRiderId || '').trim();
     return driverId ? BremStorage.drivers.getById(driverId) || null : null;
@@ -76,7 +103,8 @@ const BremPromotionApply = (function () {
   }
 
   function getResultRowBaeminRiderId(row) {
-    const driver = row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
+    const driver = (row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null)
+      || findDriverByBaeminIdLoose(row?.baeminUserId);
     return getBaeminUserId(row, driver) || '-';
   }
 
@@ -312,7 +340,8 @@ const BremPromotionApply = (function () {
     assignmentSource = '',
     assignmentMode = 'per_driver',
     deliveryFeeIndex = null,
-    requireDeliveryFee = false
+    requireDeliveryFee = false,
+    ignoreMissingRates = false
   }) {
     const statsPlatform = normalizePlatform(appliedPlatform);
     const ruleP = normalizePlatform(rulePlatform);
@@ -356,7 +385,7 @@ const BremPromotionApply = (function () {
         displayName: formatDriverDisplayName(statsPlatform, driver, rider),
         coupangLoginKey: rider.coupangLoginKey || makeCoupangLoginIdFromDriver(driver),
         originalName: rider.originalName || '',
-        baeminUserId: rider.baeminUserId || driver.baeminId || '',
+        baeminUserId: getBaeminUserId(rider, driver),
         matchedRiderId: driver.id,
         appliedPlatform: statsPlatform,
         assignmentSource,
@@ -369,8 +398,13 @@ const BremPromotionApply = (function () {
       };
     }
 
+    // 매칭·조회는 기사 등록 배민 ID(앞 0 포함) 기준으로 통일
+    const riderForLookup = driver
+      ? { ...rider, baeminUserId: getBaeminUserId(rider, driver) }
+      : rider;
+
     const { stats, feeData } = driver
-      ? resolveBaeminStats(rider, driver, settlement, statsPlatform, deliveryFeeIndex, {
+      ? resolveBaeminStats(riderForLookup, driver, settlement, statsPlatform, deliveryFeeIndex, {
         useDeliveryFee: needsDeliveryFee
       })
       : { stats: { callCount: 0, deliveryAmount: 0, byDay: {}, uploadDays: 0 }, feeData: null };
@@ -382,7 +416,7 @@ const BremPromotionApply = (function () {
         displayName: formatDriverDisplayName(statsPlatform, driver, rider),
         coupangLoginKey: rider.coupangLoginKey || '',
         originalName: rider.originalName || '',
-        baeminUserId: rider.baeminUserId || driver.baeminId || '',
+        baeminUserId: getBaeminUserId(rider, driver),
         matchedRiderId: driver.id,
         appliedPlatform: statsPlatform,
         assignmentSource,
@@ -418,7 +452,8 @@ const BremPromotionApply = (function () {
       selectedPromotionName: rule.name,
       uploadDays: stats.uploadDays,
       weekStart: settlement.startDate,
-      weekEnd: settlement.endDate
+      weekEnd: settlement.endDate,
+      ignoreMissingRates: ignoreMissingRates === true
     };
 
     const result = BremPromotionEngine.calculatePromotionForRider(rule, riderData, promotionSettings);
@@ -431,7 +466,7 @@ const BremPromotionApply = (function () {
       displayName: formatDriverDisplayName(statsPlatform, driver, rider),
       coupangLoginKey: rider.coupangLoginKey || '',
       originalName: rider.originalName || '',
-      baeminUserId: rider.baeminUserId || driver.baeminId || '',
+      baeminUserId: getBaeminUserId(rider, driver),
       matchedRiderId: driver.id,
       appliedPlatform: statsPlatform,
       assignmentSource,
@@ -490,7 +525,8 @@ const BremPromotionApply = (function () {
         promotionSettings,
         assignmentMode,
         deliveryFeeIndex: platform === 'baemin' ? deliveryFeeIndex : null,
-        requireDeliveryFee
+        requireDeliveryFee,
+        ignoreMissingRates: options.ignoreMissingRates === true
       });
     });
 
@@ -540,7 +576,8 @@ const BremPromotionApply = (function () {
     baeminSettlement,
     selectedRuleIds,
     promotionSettings,
-    deliveryFeeIndex = null
+    deliveryFeeIndex = null,
+    ignoreMissingRates = false
   }) {
     const ratePlatform = normalizePlatform(assignment.ratePlatform || 'coupang');
     const displayRider = assignment.baeminRider || assignment.coupangRider || assignment.rider;
@@ -573,7 +610,7 @@ const BremPromotionApply = (function () {
         displayName: formatDriverDisplayName(ratePlatform, driver, displayRider),
         coupangLoginKey: displayRider?.coupangLoginKey || makeCoupangLoginIdFromDriver(driver),
         originalName: displayRider?.originalName || '',
-        baeminUserId: displayRider?.baeminUserId || driver.baeminId || '',
+        baeminUserId: getBaeminUserId(displayRider, driver),
         matchedRiderId: driver.id,
         appliedPlatform: assignment.appliedPlatform || ratePlatform,
         assignmentSource: assignment.assignmentSource || '',
@@ -594,11 +631,16 @@ const BremPromotionApply = (function () {
       ? getWeekStatsForDriver(driver.id, baeminSettlement.startDate, baeminSettlement.endDate, 'baemin')
       : emptyWeekStats();
 
+    const baeminRiderForLookup = {
+      ...(assignment.baeminRider || displayRider || {}),
+      baeminUserId: getBaeminUserId(assignment.baeminRider || displayRider, driver)
+    };
+
     let feeData = null;
     if (needsDeliveryFee && deliveryFeeIndex) {
       feeData = BremBaeminDeliveryFee.lookup(
         deliveryFeeIndex,
-        assignment.baeminRider || displayRider || {},
+        baeminRiderForLookup,
         driver
       );
       if (hasValidDeliveryFeeData(feeData)) {
@@ -618,7 +660,7 @@ const BremPromotionApply = (function () {
         displayName: formatDriverDisplayName(ratePlatform, driver, displayRider),
         coupangLoginKey: displayRider?.coupangLoginKey || makeCoupangLoginIdFromDriver(driver),
         originalName: displayRider?.originalName || '',
-        baeminUserId: displayRider?.baeminUserId || driver.baeminId || '',
+        baeminUserId: getBaeminUserId(displayRider, driver),
         matchedRiderId: driver.id,
         appliedPlatform: assignment.appliedPlatform || ratePlatform,
         assignmentSource: assignment.assignmentSource || '',
@@ -662,7 +704,8 @@ const BremPromotionApply = (function () {
       selectedPromotionName: rule.name,
       uploadDays: Math.max(Number(coupangStats.uploadDays || 0), Number(baeminStats.uploadDays || 0)),
       weekStart,
-      weekEnd
+      weekEnd,
+      ignoreMissingRates: ignoreMissingRates === true
     };
 
     const result = BremPromotionEngine.calculatePromotionForRider(rule, riderData, promotionSettings);
@@ -674,7 +717,7 @@ const BremPromotionApply = (function () {
       displayName: formatDriverDisplayName(ratePlatform, driver, displayRider),
       coupangLoginKey: displayRider?.coupangLoginKey || makeCoupangLoginIdFromDriver(driver),
       originalName: displayRider?.originalName || '',
-      baeminUserId: displayRider?.baeminUserId || driver.baeminId || '',
+      baeminUserId: getBaeminUserId(displayRider, driver),
       matchedRiderId: driver.id,
       appliedPlatform: assignment.appliedPlatform || ratePlatform,
       assignmentSource: assignment.assignmentSource || '',
@@ -731,7 +774,8 @@ const BremPromotionApply = (function () {
         baeminSettlement,
         selectedRuleIds: selected,
         promotionSettings,
-        deliveryFeeIndex
+        deliveryFeeIndex,
+        ignoreMissingRates: options.ignoreMissingRates === true
       });
     });
 
@@ -975,9 +1019,7 @@ const BremPromotionApply = (function () {
     const rows = (record.results || []).map(row => {
       const driver = row.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
       const platform = normalizePlatform(row.appliedPlatform || record.platform);
-      const baeminId = BremWeeklySettlement.normalizeBaeminUserId(
-        row.baeminUserId || driver?.baeminId || ''
-      );
+      const baeminId = getBaeminUserId(row, driver);
       const coupangId = makeCoupangLoginIdFromDriver(driver) || row.coupangLoginKey || '';
       const name = driver?.name || row.driverName || row.riderName || '';
       return {

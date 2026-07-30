@@ -90,8 +90,11 @@ const BremSettlementParser = (function () {
       if (Array.isArray(value.richText)) {
         return value.richText.map(part => part.text || '').join('').trim();
       }
+      // ExcelJS: text 가 표시문자(앞자리 0 포함)라 value 숫자보다 우선한다.
+      if (value.text !== undefined && value.text !== null && String(value.text).trim() !== '') {
+        return String(value.text).trim();
+      }
       if (value.result !== undefined && value.result !== null) return String(value.result).trim();
-      if (value.text !== undefined && value.text !== null) return String(value.text).trim();
       if (value instanceof Date) {
         return [
           value.getFullYear(),
@@ -99,6 +102,10 @@ const BremSettlementParser = (function () {
           String(value.getDate()).padStart(2, '0')
         ].join('-');
       }
+    }
+    // 숫자로 읽히면 앞 0 이 이미 사라진 상태 — 문자열로만 보존
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Number.isInteger(value) ? String(value) : String(value);
     }
     return String(value).trim();
   }
@@ -215,6 +222,8 @@ const BremSettlementParser = (function () {
       const rawName = cellText(readCell(row, nameCol));
       const riderId = normalizeBaeminUserId(cellText(readCell(row, riderIdCol)));
       if (!riderId) continue;
+      // 앞자리 0 유무만 다른 ID(010… / 10…)는 같은 라이더로 합친다.
+      const groupKey = baeminIdMatchKey(riderId) || riderId;
 
       const name = format.cleanName(rawName) || riderId;
       const storeArrivalCell = readCell(row, storeArrivalCol);
@@ -233,11 +242,12 @@ const BremSettlementParser = (function () {
       totalDeliveries += 1;
       totalDeliveryAmount += amount;
 
-      if (!groups.has(riderId)) {
-        groups.set(riderId, {
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
           rawName: rawName || name,
           name,
-          riderId,
+          // 앞 0 이 있는 원문을 우선 보존
+          riderId: riderId.startsWith('0') ? riderId : riderId,
           orderCount: 0,
           deliveryAmount: 0,
           settlementAmount: 0,
@@ -245,7 +255,11 @@ const BremSettlementParser = (function () {
         });
       }
 
-      const entry = groups.get(riderId);
+      const entry = groups.get(groupKey);
+      // 그룹에 앞 0 없는 ID만 있으면, 나중에 앞 0 있는 값이 오면 교체
+      if (riderId.startsWith('0') && !String(entry.riderId || '').startsWith('0')) {
+        entry.riderId = riderId;
+      }
       entry.orderCount += 1;
       entry.deliveryAmount += amount;
       entry.settlementAmount += amount;
@@ -329,6 +343,46 @@ const BremSettlementParser = (function () {
     return excelJsPromise;
   }
 
+  // SheetJS: 문자열 셀(t=s/str)은 앞자리 0 을 살리고, 숫자 셀만 숫자 문자열로 읽는다.
+  function sheetToRowsPreserveText(sheet) {
+    if (!sheet || !window.XLSX) return [];
+    const ref = sheet['!ref'];
+    if (!ref) return [];
+    const range = window.XLSX.utils.decode_range(ref);
+    const rows = [];
+    for (let r = range.s.r; r <= range.e.r; r += 1) {
+      const row = [];
+      for (let c = range.s.c; c <= range.e.c; c += 1) {
+        const cell = sheet[window.XLSX.utils.encode_cell({ r, c })];
+        if (!cell) {
+          row.push('');
+          continue;
+        }
+        if (cell.t === 's' || cell.t === 'str') {
+          row.push(String(cell.v ?? '').trim());
+          continue;
+        }
+        // 표시문자에 앞 0 이 있으면(사용자 지정 서식) 그걸 우선
+        const formatted = cell.w != null ? String(cell.w).trim() : '';
+        if (formatted && /^0\d+$/.test(formatted.replace(/\s/g, ''))) {
+          row.push(formatted.replace(/\s/g, ''));
+          continue;
+        }
+        if (typeof cell.v === 'number' && Number.isFinite(cell.v)) {
+          row.push(Number.isInteger(cell.v) ? String(cell.v) : String(cell.v));
+          continue;
+        }
+        if (formatted) {
+          row.push(formatted);
+          continue;
+        }
+        row.push(cellText(cell.v));
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
+
   function readWorkbookRows(buffer) {
     if (!window.XLSX) {
       throw new Error('엑셀 읽기 모듈이 로드되지 않았습니다. 페이지를 새로고침해주세요.');
@@ -339,6 +393,9 @@ const BremSettlementParser = (function () {
     if (!sheetName) {
       throw new Error('엑셀 시트를 찾을 수 없습니다.');
     }
+
+    const preserved = sheetToRowsPreserveText(workbook.Sheets[sheetName]);
+    if (preserved.length) return preserved;
 
     return window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
       header: 1,
@@ -375,7 +432,9 @@ const BremSettlementParser = (function () {
     sheet.eachRow(row => {
       const values = [];
       row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        values[colNumber - 1] = cellText(cell.value);
+        // cell.text 는 표시값이라 텍스트로 저장된 앞자리 0 을 살린다.
+        const display = cell.text != null ? String(cell.text).trim() : '';
+        values[colNumber - 1] = display || cellText(cell.value);
       });
       rows.push(values);
     });
@@ -459,11 +518,24 @@ const BremSettlementParser = (function () {
   }
 
   function normalizeBaeminUserId(value) {
+    if (window.BremWeeklySettlement?.normalizeBaeminUserId) {
+      return BremWeeklySettlement.normalizeBaeminUserId(value);
+    }
     const raw = String(value ?? '').trim();
     if (!raw) return '';
     // 엑셀 소수점 .0 만 제거하고 앞자리 0 은 보존한다(예전엔 숫자변환으로 0이 사라졌다).
     const m = raw.match(/^(\d+)\.0+$/);
     return m ? m[1] : raw;
+  }
+
+  // 매칭용: 엑셀이 숫자로 읽어 앞 0 이 빠진 경우와 등록 ID(앞 0 유지)를 같게 본다.
+  function baeminIdMatchKey(value) {
+    if (window.BremWeeklySettlement?.baeminIdMatchKey) {
+      return BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = normalizeBaeminUserId(value).replace(/\s+/g, '');
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
   }
 
   function normalizeCoupangLoginKey(rawName) {
@@ -487,9 +559,10 @@ const BremSettlementParser = (function () {
       let driver = null;
 
       if (isBaemin) {
-        if (normalizedRiderId) {
+        const riderKey = baeminIdMatchKey(normalizedRiderId || row.riderId);
+        if (riderKey) {
           driver = driverList.find(item =>
-            normalizeBaeminUserId(item.baeminId) === normalizedRiderId
+            baeminIdMatchKey(item.baeminId) === riderKey
           ) || null;
         }
       } else {
@@ -595,6 +668,9 @@ const BremSettlementParser = (function () {
 
       const sheetName = resolveWorkbookSheetName(workbook, options);
       if (!sheetName || !workbook.Sheets[sheetName]) return null;
+
+      const preserved = sheetToRowsPreserveText(workbook.Sheets[sheetName]);
+      if (preserved.length) return preserved;
 
       const rows = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
         header: 1,
@@ -797,9 +873,10 @@ const BremSettlementParser = (function () {
         return;
       }
 
-      const driver = driverList.find(item =>
-        normalizeBaeminUserId(item.baeminId) === baeminId
-      ) || null;
+      const riderKey = baeminIdMatchKey(baeminId);
+      const driver = riderKey
+        ? (driverList.find(item => baeminIdMatchKey(item.baeminId) === riderKey) || null)
+        : null;
 
       if (!driver) {
         unmatched.push({
@@ -867,6 +944,7 @@ const BremSettlementParser = (function () {
     parseNumber,
     normalizePassword,
     normalizeBaeminUserId,
+    baeminIdMatchKey,
     isValidBaeminDeliveryRow,
     isValidBaeminDeliveryAmount,
     isValidBaeminStoreArrival,

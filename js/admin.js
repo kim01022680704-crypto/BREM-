@@ -4,6 +4,7 @@
   let targetMonthPicker = null;
   let rejectionHistoryReloaded = false;
   const CALL_RECORDS_VISIBLE_LIMIT = 30;
+  const REJECTION_HISTORY_VISIBLE_LIMIT = 80;
 
   const state = {
     currentSection: 'dashboard',
@@ -1144,10 +1145,31 @@
     return String(state.rejectionHistorySearchByPlatform[p] || '').trim();
   }
 
-  function driverMatchesRejectionHistorySearch(driverId, platform) {
+  function buildDriverByIdMap() {
+    const map = new Map();
+    drivers().forEach(driver => {
+      if (driver?.id) map.set(driver.id, driver);
+    });
+    return map;
+  }
+
+  function matchingDriverIdsForRejectionSearch(platform, driverById) {
+    const query = rejectionHistorySearch(platform) || state.driverSearchQuery.trim();
+    if (!query) return null;
+    const ids = new Set();
+    const list = driverById instanceof Map ? driverById.values() : drivers();
+    for (const driver of list) {
+      if (matchesDriverSearch(driver, query)) ids.add(driver.id);
+    }
+    return ids;
+  }
+
+  function driverMatchesRejectionHistorySearch(driverId, platform, driverById = null) {
     const query = rejectionHistorySearch(platform) || state.driverSearchQuery.trim();
     if (!query) return true;
-    const driver = drivers().find(item => item.id === driverId);
+    const driver = driverById instanceof Map
+      ? driverById.get(driverId)
+      : drivers().find(item => item.id === driverId);
     if (!driver) return false;
     return matchesDriverSearch(driver, query);
   }
@@ -3196,14 +3218,23 @@
     renderCallEditLogs();
   }
 
-  function platformRejections(platform) {
+  function platformRejections(platform, options = {}) {
     const p = normalizePlatform(platform);
     const weekFilter = state.rejectionHistoryWeekByPlatform[p];
+    const driverById = options.driverById instanceof Map ? options.driverById : null;
+    const matchingIds = Object.prototype.hasOwnProperty.call(options, 'matchingIds')
+      ? options.matchingIds
+      : matchingDriverIdsForRejectionSearch(p, driverById);
+
+    // 검색어가 있는데 매칭 기사가 없으면 전체 거절율 목록을 돌 필요 없음
+    if (matchingIds && matchingIds.size === 0) return [];
+
     return rejections()
       .filter(entry => {
         if (normalizePlatform(entry.platform) !== p) return false;
         if (weekFilter && entry.weekStart !== weekFilter) return false;
-        return driverMatchesRejectionHistorySearch(entry.driverId, p);
+        if (matchingIds && !matchingIds.has(entry.driverId)) return false;
+        return true;
       })
       .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   }
@@ -3215,14 +3246,19 @@
     });
   }
 
-  function updateRejectionSelectionUi(platform) {
-    const visibleEntries = platformRejections(platform);
-    const visibleIds = visibleEntries.map(entry => entry.id);
+  function updateRejectionSelectionUi(platform, options = {}) {
+    const p = normalizePlatform(platform);
+    const filtered = Array.isArray(options.filteredList)
+      ? options.filteredList
+      : platformRejections(p, options);
+    const visibleIds = Array.isArray(options.visibleIds)
+      ? options.visibleIds
+      : filtered.slice(0, REJECTION_HISTORY_VISIBLE_LIMIT).map(entry => entry.id);
     const selectedVisible = visibleIds.filter(id => selectedRejectionIds.has(id));
     const count = selectedVisible.length;
-    const bulkBtn = $(`#bulkDeleteRejections-${platform}`);
-    const selectAll = $(`#selectAllRejections-${platform}`);
-    const deleteAllBtn = $(`#deleteAllRejections-${platform}`);
+    const bulkBtn = $(`#bulkDeleteRejections-${p}`);
+    const selectAll = $(`#selectAllRejections-${p}`);
+    const deleteAllBtn = $(`#deleteAllRejections-${p}`);
 
     if (bulkBtn) {
       bulkBtn.disabled = count === 0;
@@ -3230,7 +3266,7 @@
     }
 
     if (deleteAllBtn) {
-      deleteAllBtn.disabled = visibleEntries.length === 0;
+      deleteAllBtn.disabled = filtered.length === 0;
     }
 
     if (selectAll) {
@@ -3368,35 +3404,74 @@
     })();
   }
 
-  function renderRejections() {
-    renderRiderPublishStatus();
-    pruneSelectedRejectionIds();
-    PLATFORMS.forEach(platform => {
-      updateRejectionWeekPreview(state.rejectionWeekByPlatform[platform] || weekStartKey(), platform);
-      updateRejectionHistoryWeekPreview(platform);
-      fillRejectionRateInput(platform);
+  function renderRejectionHistoryRows(platform, shared = {}) {
+    const p = normalizePlatform(platform);
+    const rowsEl = $(`#rejectionRows-${p}`);
+    if (!rowsEl) return;
 
-      const emptyMessage = (rejectionHistorySearch(platform) || state.driverSearchQuery.trim())
-        ? `검색 결과에 해당하는 ${platformRateLabel(platform)} 기록이 없습니다.`
-        : state.rejectionHistoryWeekByPlatform[normalizePlatform(platform)]
-          ? `${platformLabel(platform)} 선택 주간 ${platformRateLabel(platform)} 기록이 없습니다.`
-          : `${platformLabel(platform)} 주간 ${platformRateLabel(platform)} 기록이 없습니다.`;
-      const rowsEl = $(`#rejectionRows-${platform}`);
-      if (!rowsEl) return;
-      const platformList = platformRejections(platform);
-      rowsEl.innerHTML = platformList.map(entry => `
+    const driverById = shared.driverById instanceof Map ? shared.driverById : buildDriverByIdMap();
+    const matchingIds = Object.prototype.hasOwnProperty.call(shared, 'matchingIds')
+      ? shared.matchingIds
+      : matchingDriverIdsForRejectionSearch(p, driverById);
+    const platformList = platformRejections(p, { driverById, matchingIds });
+    const displayList = platformList.slice(0, REJECTION_HISTORY_VISIBLE_LIMIT);
+    const hiddenCount = Math.max(0, platformList.length - displayList.length);
+
+    const emptyMessage = (rejectionHistorySearch(p) || state.driverSearchQuery.trim())
+      ? `검색 결과에 해당하는 ${platformRateLabel(p)} 기록이 없습니다.`
+      : state.rejectionHistoryWeekByPlatform[p]
+        ? `${platformLabel(p)} 선택 주간 ${platformRateLabel(p)} 기록이 없습니다.`
+        : `${platformLabel(p)} 주간 ${platformRateLabel(p)} 기록이 없습니다.`;
+
+    rowsEl.innerHTML = displayList.map(entry => {
+      const driver = driverById.get(entry.driverId);
+      const name = driver ? driver.name : '삭제된 기사';
+      return `
           <tr${selectedRejectionIds.has(entry.id) ? ' class="row-selected"' : ''}>
             <td class="col-select">
               <input type="checkbox" class="rejection-select-check" data-select-rejection="${entry.id}" aria-label="선택"${selectedRejectionIds.has(entry.id) ? ' checked' : ''}>
             </td>
             <td>${formatDate(entry.weekStart)} ~ ${formatDate(weekEndKey(entry.weekStart))}</td>
-            <td>${escapeHtml(driverName(entry.driverId))}</td>
+            <td>${escapeHtml(name)}</td>
             <td>${formatPercent(entry.rate, entry)}</td>
             <td><button type="button" class="small-btn danger-btn" data-delete-rejection="${entry.id}">삭제</button></td>
           </tr>
-        `).join('') || emptyRow(5, emptyMessage);
+        `;
+    }).join('') || emptyRow(5, emptyMessage);
 
-      updateRejectionSelectionUi(platform);
+    const summaryEl = $(`#rejectionHistorySummary-${p}`);
+    if (summaryEl) {
+      if (!platformList.length) {
+        summaryEl.textContent = '기록 없음';
+      } else {
+        const weekLabel = state.rejectionHistoryWeekByPlatform[p]
+          ? `${formatDate(state.rejectionHistoryWeekByPlatform[p])} ~ ${formatDate(weekEndKey(state.rejectionHistoryWeekByPlatform[p]))}`
+          : '전체 주간';
+        const base = `${weekLabel} · ${number(platformList.length)}건`;
+        summaryEl.textContent = hiddenCount > 0
+          ? `${base} · 표시 ${number(displayList.length)}건 (검색·주간으로 좁히세요)`
+          : base;
+      }
+    }
+
+    updateRejectionSelectionUi(p, {
+      driverById,
+      matchingIds,
+      filteredList: platformList,
+      visibleIds: displayList.map(entry => entry.id)
+    });
+  }
+
+  function renderRejections() {
+    renderRiderPublishStatus();
+    pruneSelectedRejectionIds();
+    const driverById = buildDriverByIdMap();
+    PLATFORMS.forEach(platform => {
+      updateRejectionWeekPreview(state.rejectionWeekByPlatform[platform] || weekStartKey(), platform);
+      updateRejectionHistoryWeekPreview(platform);
+      fillRejectionRateInput(platform);
+      const matchingIds = matchingDriverIdsForRejectionSearch(platform, driverById);
+      renderRejectionHistoryRows(platform, { driverById, matchingIds });
     });
   }
 
@@ -5828,6 +5903,12 @@
     ? window.BremPerf.debounce(handleDashboardSearchChange, 180)
     : handleDashboardSearchChange;
 
+  const debouncedRejectionHistorySearch = window.BremPerf?.debounce
+    ? window.BremPerf.debounce((platform) => {
+      renderRejectionHistoryRows(platform);
+    }, 180)
+    : (platform) => renderRejectionHistoryRows(platform);
+
   function resolveSectionNavigation(id) {
     const legacy = LEGACY_SECTION_MAP[id];
     if (legacy) {
@@ -6302,7 +6383,7 @@
 
       document.querySelector(`[data-rejection-history-search="${platform}"]`)?.addEventListener('input', event => {
         state.rejectionHistorySearchByPlatform[platform] = event.target.value || '';
-        renderRejections();
+        debouncedRejectionHistorySearch(platform);
       });
     });
 
@@ -6663,11 +6744,14 @@
       const selectAllRejections = event.target.closest('.rejection-select-all');
       if (selectAllRejections) {
         const platform = selectAllRejections.id.replace('selectAllRejections-', '');
-        platformRejections(platform).forEach(entry => {
-          if (selectAllRejections.checked) selectedRejectionIds.add(entry.id);
-          else selectedRejectionIds.delete(entry.id);
+        const displayIds = platformRejections(platform)
+          .slice(0, REJECTION_HISTORY_VISIBLE_LIMIT)
+          .map(entry => entry.id);
+        displayIds.forEach(id => {
+          if (selectAllRejections.checked) selectedRejectionIds.add(id);
+          else selectedRejectionIds.delete(id);
         });
-        renderRejections();
+        renderRejectionHistoryRows(platform);
       }
     });
 

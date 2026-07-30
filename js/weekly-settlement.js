@@ -151,6 +151,20 @@ const BremWeeklySettlement = (function () {
     return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
   }
 
+  // 엑셀에서 앞 0 이 빠진 ID 와 기사 등록 ID(010…)가 같으면 등록 ID 를 쓴다.
+  function preferRegisteredBaeminId(excelOrStoredId, driverOrRegisteredId) {
+    const excel = normalizeBaeminUserId(excelOrStoredId);
+    const registered = normalizeBaeminUserId(
+      typeof driverOrRegisteredId === 'object'
+        ? (driverOrRegisteredId?.baeminId || driverOrRegisteredId?.raw_data?.baeminId || '')
+        : driverOrRegisteredId
+    );
+    if (!registered) return excel;
+    if (!excel) return registered;
+    if (baeminIdMatchKey(excel) === baeminIdMatchKey(registered)) return registered;
+    return excel;
+  }
+
   function parseAmount(value) {
     const num = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
     return Number.isFinite(num) ? num : 0;
@@ -259,7 +273,22 @@ const BremWeeklySettlement = (function () {
   }
 
   function pushUniqueRider(list, seen, key, rider) {
-    if (!key || seen.has(key)) return;
+    if (!key) return;
+    if (seen.has(key)) {
+      // 같은 매칭키면 앞자리 0 이 있는 ID 를 우선 보존
+      const existing = list.find(item => (
+        baeminIdMatchKey(item.baeminUserId) === key
+        || baeminIdMatchKey(item.coupangLoginKey || item.originalName) === key
+      ));
+      if (
+        existing
+        && String(rider.baeminUserId || '').startsWith('0')
+        && !String(existing.baeminUserId || '').startsWith('0')
+      ) {
+        existing.baeminUserId = rider.baeminUserId;
+      }
+      return;
+    }
     seen.add(key);
     list.push(rider);
   }
@@ -644,6 +673,8 @@ const BremWeeklySettlement = (function () {
       const baeminUserId = cellText(readCell(rows[i] || [], userIdColumn));
       const normalizedUserId = normalizeBaeminUserId(baeminUserId);
       if (!normalizedUserId) continue;
+      // 앞자리 0 유무만 다른 중복 행을 하나로 합친다.
+      const dedupeKey = baeminIdMatchKey(normalizedUserId) || normalizedUserId;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
       // 직계약: User ID가 영문+숫자 로그인 ID(BC063824 등)라 숫자 필터를 못 쓴다.
       // 대신 시작행을 여유있게 앞에 둬도 헤더/설명/합계 행이 섞이지 않도록 처리건수(콜수)가 숫자인 실제 데이터 행만 읽는다.
@@ -652,12 +683,13 @@ const BremWeeklySettlement = (function () {
       const rider = {
         originalName: rawName,
         riderName: normalizeBaeminName(rawName),
+        // 앞 0 이 있으면 그대로 보존해 이후 매칭·표시에 쓴다.
         baeminUserId: normalizedUserId,
         weeklyOrderCount
       };
       const amounts = extractBaeminAmounts(rows[i] || [], amountColumns);
       if (amounts) rider.amounts = amounts;
-      pushUniqueRider(riders, seen, normalizedUserId, rider);
+      pushUniqueRider(riders, seen, dedupeKey, rider);
     }
 
     return riders;
@@ -684,7 +716,7 @@ const BremWeeklySettlement = (function () {
     for (const attempt of attempts) {
       const rows = await readWeeklyRows(file, password, attempt);
       const riders = parseBaeminRiderRows(rows || [], parseOptions);
-      if (riders.length) return riders;
+      if (riders.length) return canonicalizeBaeminRiderIds(riders);
     }
 
     throw new Error('배민 정산서 두 번째 시트에서 User ID(B열)를 읽지 못했습니다. 시트 순서와 열/시작행을 확인하세요.');
@@ -744,7 +776,10 @@ const BremWeeklySettlement = (function () {
 
   function resolveBaeminDriver(rider) {
     const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'baemin', rider.baeminUserId);
-    if (manual) return manual;
+    if (manual) {
+      // 호출측 rider.baeminUserId 를 등록 ID 로 복원할 수 있게 참조만 돌려준다.
+      return manual;
+    }
 
     const userId = baeminIdMatchKey(rider.baeminUserId);
     if (!userId) return null;
@@ -752,6 +787,26 @@ const BremWeeklySettlement = (function () {
     return BremStorage.drivers.getAll().find(
       driver => baeminIdMatchKey(driver.baeminId) === userId
     ) || null;
+  }
+
+  // 정산 라이더 목록의 배민 ID 를 기사 등록값(앞 0 포함)으로 맞춘다.
+  function canonicalizeBaeminRiderIds(riders) {
+    return (Array.isArray(riders) ? riders : []).map(rider => {
+      const driver = resolveBaeminDriver(rider);
+      if (!driver?.baeminId) return rider;
+      const fixed = preferRegisteredBaeminId(rider.baeminUserId, driver);
+      if (!fixed || fixed === rider.baeminUserId) {
+        return driver && !rider.matchedRiderId
+          ? { ...rider, matchedRiderId: driver.id, driverName: driver.name || rider.driverName }
+          : rider;
+      }
+      return {
+        ...rider,
+        baeminUserId: fixed,
+        matchedRiderId: rider.matchedRiderId || driver.id,
+        driverName: driver.name || rider.driverName
+      };
+    });
   }
 
   function resolveDriverByWeeklyRider(rider, platform) {
@@ -918,7 +973,10 @@ const BremWeeklySettlement = (function () {
         originalName: rider.originalName,
         riderName: rider.riderName,
         coupangLoginKey: rider.coupangLoginKey || '',
-        baeminUserId: rider.baeminUserId || '',
+        // 엑셀에서 앞 0 이 빠졌어도 기사 등록 배민 ID(010…)로 복원
+        baeminUserId: p === 'baemin'
+          ? preferRegisteredBaeminId(rider.baeminUserId, driver)
+          : (rider.baeminUserId || ''),
         driverName: driver?.name || '',
         matchedRiderId: driver?.id || '',
         matched,
@@ -1232,6 +1290,8 @@ const BremWeeklySettlement = (function () {
     normalizeBaeminName,
     normalizeBaeminUserId,
     baeminIdMatchKey,
+    preferRegisteredBaeminId,
+    canonicalizeBaeminRiderIds,
     normalizeName,
     findBaeminSettlementSheetName,
     findBaeminSettlementSheet,

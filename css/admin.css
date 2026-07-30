@@ -5835,6 +5835,19 @@ textarea {
   background: linear-gradient(180deg, rgba(255, 193, 7, 0.14) 0%, rgba(255, 152, 0, 0.08) 100%);
 }
 
+.promotion-rate-missing-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.promotion-rate-missing-header-row .primary-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .promotion-rate-missing-header strong {
   display: block;
   color: #ffc107;

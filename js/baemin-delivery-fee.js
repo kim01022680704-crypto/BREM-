@@ -43,22 +43,51 @@ const BremBaeminDeliveryFee = (function () {
     return null;
   }
 
-  function buildIndex(parsedRows) {
-    const normalizeId = typeof BremWeeklySettlement !== 'undefined'
-      && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function'
-      ? BremWeeklySettlement.normalizeBaeminUserId
-      : (value) => String(value || '').trim();
+  function baeminMatchKey(value) {
+    if (typeof BremWeeklySettlement !== 'undefined'
+      && typeof BremWeeklySettlement.baeminIdMatchKey === 'function') {
+      return BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = String(value || '').trim().replace(/\s+/g, '');
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+  }
 
+  function normalizeId(value) {
+    if (typeof BremWeeklySettlement !== 'undefined'
+      && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function') {
+      return BremWeeklySettlement.normalizeBaeminUserId(value);
+    }
+    return String(value || '').trim();
+  }
+
+  // 앞 0 유무·원문·매칭키를 모두 인덱스에 넣어 어떤 형태로 와도 찾는다.
+  function indexKeysForBaeminId(riderId) {
+    const raw = normalizeId(riderId);
+    if (!raw) return [];
+    const key = baeminMatchKey(raw);
+    const keys = new Set([raw, key].filter(Boolean));
+    if (key && /^\d+$/.test(key)) {
+      keys.add(`0${key}`);
+      keys.add(key);
+    }
+    if (/^0\d+$/.test(raw)) keys.add(raw.replace(/^0+/, '') || '0');
+    return [...keys];
+  }
+
+  function buildIndex(parsedRows) {
     const index = new Map();
     (parsedRows || []).forEach(row => {
       const riderId = normalizeId(row.riderId);
-      if (!riderId) return;
+      const key = baeminMatchKey(riderId);
+      if (!key) return;
       if (Number(row.orderCount || 0) <= 0 || Number(row.deliveryAmount || 0) <= 0) return;
 
       const entry = {
         rawName: row.rawName,
         name: row.name,
-        riderId,
+        // 앞 0 이 있는 원문을 우선 보존
+        riderId: String(riderId).startsWith('0') ? riderId : (index.get(`id:${key}`)?.riderId || riderId),
         orderCount: Number(row.orderCount || 0),
         deliveryAmount: Number(row.deliveryAmount || 0),
         deliveryFees: Array.isArray(row.deliveryFees)
@@ -66,11 +95,21 @@ const BremBaeminDeliveryFee = (function () {
           : [],
         avgUnitPrice: 0
       };
+      // 같은 매칭키로 이미 있으면 합산
+      const prev = index.get(`id:${key}`);
+      if (prev) {
+        entry.orderCount += Number(prev.orderCount || 0);
+        entry.deliveryAmount += Number(prev.deliveryAmount || 0);
+        entry.deliveryFees = [...(prev.deliveryFees || []), ...entry.deliveryFees];
+        if (String(prev.riderId || '').startsWith('0')) entry.riderId = prev.riderId;
+      }
       entry.avgUnitPrice = entry.orderCount > 0
         ? Math.round(entry.deliveryAmount / entry.orderCount)
         : 0;
 
-      index.set(`id:${riderId}`, entry);
+      indexKeysForBaeminId(entry.riderId).forEach(idKey => {
+        index.set(`id:${idKey}`, entry);
+      });
     });
     return index;
   }
@@ -78,16 +117,27 @@ const BremBaeminDeliveryFee = (function () {
   function lookup(index, rider, driver) {
     if (!index || !index.size) return null;
 
-    const normalizeId = typeof BremWeeklySettlement !== 'undefined'
-      && typeof BremWeeklySettlement.normalizeBaeminUserId === 'function'
-      ? BremWeeklySettlement.normalizeBaeminUserId
-      : (value) => String(value || '').trim();
-
-    const riderId = normalizeId(rider?.baeminUserId || driver?.baeminId || '');
-    if (riderId && index.has(`id:${riderId}`)) {
-      return index.get(`id:${riderId}`);
+    const candidates = [
+      rider?.baeminUserId,
+      driver?.baeminId,
+      driver?.raw_data?.baeminId,
+      rider?.riderId,
+      rider?.originalName
+    ];
+    for (const candidate of candidates) {
+      for (const idKey of indexKeysForBaeminId(candidate)) {
+        const hit = index.get(`id:${idKey}`);
+        if (hit) return hit;
+      }
     }
 
+    // 최후: 전체 인덱스에서 매칭키로 재검색
+    const want = candidates.map(baeminMatchKey).filter(Boolean);
+    if (!want.length) return null;
+    for (const [mapKey, entry] of index.entries()) {
+      const entryKey = baeminMatchKey(String(mapKey).replace(/^id:/, ''));
+      if (want.includes(entryKey)) return entry;
+    }
     return null;
   }
 

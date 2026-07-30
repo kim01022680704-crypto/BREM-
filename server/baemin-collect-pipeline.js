@@ -4660,8 +4660,15 @@ async function replaceLiveAcceptRatesForAdmin(options = {}) {
 function normalizeBaeminUserIdForOps(value) {
   const raw = String(value || '').trim();
   if (!raw || raw === '-') return '';
-  if (/^\d+(\.0+)?$/.test(raw)) return String(Math.round(Number(raw)));
-  return raw;
+  // 엑셀 소수점 .0 만 제거하고 앞자리 0 은 보존한다.
+  const m = raw.match(/^(\d+)\.0+$/);
+  return m ? m[1] : raw;
+}
+
+function baeminIdMatchKeyForOps(value) {
+  const v = normalizeBaeminUserIdForOps(value).replace(/\s+/g, '');
+  if (!v) return '';
+  return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
 }
 
 function extractAcceptRateMetricsFromParsed(parsed = {}) {
@@ -4760,17 +4767,19 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
   const driverByBaemin = new Map();
   (ridersResult.data || []).forEach(row => {
     const baeminId = normalizeBaeminUserIdForOps(row.baemin_id);
+    const key = baeminIdMatchKeyForOps(baeminId);
     const driverId = String(row.id || '').trim();
-    if (baeminId && driverId && !driverByBaemin.has(baeminId)) {
-      driverByBaemin.set(baeminId, driverId);
+    if (key && driverId && !driverByBaemin.has(key)) {
+      driverByBaemin.set(key, driverId);
     }
   });
 
   const byKey = new Map();
   const upsert = (row, bucket) => {
     const baeminId = normalizeBaeminUserIdForOps(row.rider_user_id || row.parsed_json?.riderUserId);
+    const matchKey = baeminIdMatchKeyForOps(baeminId);
     const name = String(row.rider_name || '').trim();
-    const key = baeminId || (name ? `name:${name}` : '');
+    const key = matchKey || (name ? `name:${name}` : '');
     if (!key || key === 'name:') return;
     const partnerId = String(
       row.parsed_json?.partnerId
@@ -4809,7 +4818,7 @@ async function rebuildLiveAcceptRatesForAppliedWeek(options = {}) {
         riderUserId: entry.riderUserId,
         riderName: entry.riderName || '',
         phoneNumber: entry.phoneNumber || '',
-        driverId: driverByBaemin.get(entry.riderUserId) || '',
+        driverId: driverByBaemin.get(baeminIdMatchKeyForOps(entry.riderUserId)) || '',
         pastFrom: pastFromDate || null,
         pastTo: pastToDate || null,
         pastComplete: entry.past.complete,

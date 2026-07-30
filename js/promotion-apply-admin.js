@@ -11,7 +11,9 @@ const BremPromotionApplyAdmin = (function () {
     combinedChannel: { coupang: '', baemin: '' },
     savedResultId: '',
     settlementWeekByKey: {},
-    savedWeekFilter: ''
+    savedWeekFilter: '',
+    // 수락/거절율 미등록 기사를 막고 계산하지 않도록 기본 false. 패널 버튼으로 켠다.
+    ignoreMissingRates: false
   };
   const $ = selector => document.querySelector(selector);
   const $$ = selector => Array.from(document.querySelectorAll(selector));
@@ -129,8 +131,13 @@ const BremPromotionApplyAdmin = (function () {
     panel.hidden = false;
     panel.innerHTML = `
       <div class="promotion-rate-missing-header">
-        <strong>⚠ ${escapeHtml(rateHeader)} 미등록 · 정산 필수 ${formatNumber(rows.length)}명</strong>
-        <p>주간 콜수 1건 이상인데 ${escapeHtml(rateHeader)} 데이터가 없습니다. 거절율·수락률을 등록한 뒤 다시 계산하세요.</p>
+        <div class="promotion-rate-missing-header-row">
+          <strong>⚠ ${escapeHtml(rateHeader)} 미등록 · 정산 필수 ${formatNumber(rows.length)}명</strong>
+          <button type="button" class="primary-btn" id="promotionApplyIgnoreMissingRatesBtn">
+            ${escapeHtml(rateHeader)} 무시하고 다시 계산
+          </button>
+        </div>
+        <p>주간 콜수 1건 이상인데 ${escapeHtml(rateHeader)} 데이터가 없습니다. 거절율·수락률을 등록하거나, 위 버튼으로 미등록만 무시하고 적용하세요.</p>
       </div>
       <div class="table-wrap promotion-rate-missing-table-wrap">
         <table class="weekly-settlement-detail-table promotion-rate-missing-table">
@@ -772,12 +779,14 @@ const BremPromotionApplyAdmin = (function () {
     }
   }
 
-  async function runCalculation() {
+  async function runCalculation(options = {}) {
     const platform = getActivePlatform();
     const assignmentMode = readApplyMode(platform);
     const ruleIds = platform === 'combined' || assignmentMode === 'selected_rules'
       ? readSelectedRuleIds(platform)
       : [];
+    const ignoreMissingRates = options.ignoreMissingRates === true
+      || state.ignoreMissingRates === true;
 
     if (platform === 'combined' && !ruleIds.length) {
       showToast('적용할 합산 프로모션 조건을 선택하세요.');
@@ -831,8 +840,13 @@ const BremPromotionApplyAdmin = (function () {
         // 저장 결과 채널은 쿠팡 채널을 대표로 두고, 배민 채널은 메타에 함께 남긴다.
         const combinedMeta = { channel: coupangChannel, coupangChannel, baeminChannel };
         const applyOptions = deliveryFeeParsed
-          ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed, ...combinedMeta }
-          : { ...combinedMeta };
+          ? {
+            deliveryFeeIndex: deliveryFeeParsed.index,
+            deliveryFeeMeta: deliveryFeeParsed,
+            ignoreMissingRates,
+            ...combinedMeta
+          }
+          : { ignoreMissingRates, ...combinedMeta };
 
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
@@ -861,7 +875,7 @@ const BremPromotionApplyAdmin = (function () {
 
         await BremStorage.ensurePromotionCalculationCalls?.(settlement.startDate, settlement.endDate);
 
-        let applyOptions = { assignmentMode, channel: state.channel };
+        let applyOptions = { assignmentMode, channel: state.channel, ignoreMissingRates };
         if (platform === 'baemin') {
           const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('baemin', settlement);
           if (deliveryFeeParsed) {
@@ -882,11 +896,28 @@ const BremPromotionApplyAdmin = (function () {
       }
 
       state.savedResultId = '';
+      state.ignoreMissingRates = ignoreMissingRates;
       renderResult(state.lastResult);
-      showToast('프로모션 계산이 완료되었습니다.');
+      showToast(ignoreMissingRates
+        ? '수락/거절율 미등록을 무시하고 프로모션을 다시 계산했습니다.'
+        : '프로모션 계산이 완료되었습니다.');
     } catch (error) {
       showToast(error.message || '프로모션 계산 중 오류가 발생했습니다.');
     }
+  }
+
+  async function runCalculationIgnoringMissingRates() {
+    const rows = getRateMissingRows(state.lastResult);
+    if (!rows.length) {
+      showToast('수락/거절율 미등록 대상이 없습니다.');
+      return;
+    }
+    const ok = window.confirm(
+      `수락/거절율 미등록 ${rows.length}명을 무시하고 프로모션을 다시 계산할까요?\n\n미등록만 통과하며, 수락률 미달·거절율 초과 조건은 그대로 적용됩니다.`
+    );
+    if (!ok) return;
+    state.ignoreMissingRates = true;
+    await runCalculation({ ignoreMissingRates: true });
   }
 
   function saveCurrentResult() {
@@ -985,6 +1016,7 @@ const BremPromotionApplyAdmin = (function () {
   function resetCurrentResult() {
     state.lastResult = null;
     state.savedResultId = '';
+    state.ignoreMissingRates = false;
     const card = $('#promotionApplyResultCard');
     if (card) card.hidden = true;
     const summaryEl = $('#promotionApplyResultSummary');
@@ -1081,6 +1113,8 @@ const BremPromotionApplyAdmin = (function () {
     });
 
     $('#promotionApplyForm')?.addEventListener('submit', event => {
+      // 일반 계산은 무시 옵션을 끈다. 패널 버튼으로만 켠다.
+      state.ignoreMissingRates = false;
       event.preventDefault();
       runCalculation();
     });
@@ -1094,6 +1128,12 @@ const BremPromotionApplyAdmin = (function () {
     $('#promotionApplySaveBtn')?.addEventListener('click', saveCurrentResult);
     $('#promotionApplyDownloadBtn')?.addEventListener('click', downloadCurrentResult);
     $('#promotionApplyResetBtn')?.addEventListener('click', resetCurrentResult);
+
+    $('#promotionApplyRateMissingPanel')?.addEventListener('click', event => {
+      const btn = event.target.closest('#promotionApplyIgnoreMissingRatesBtn');
+      if (!btn) return;
+      void runCalculationIgnoringMissingRates();
+    });
 
     ['promotionApplySavedPlatformFilter', 'promotionApplySavedRegionFilter'].forEach(id => {
       const el = $(`#${id}`);

@@ -110,8 +110,12 @@ const BremDirectSettlementCalc = (function () {
       const name = String(driver.name || '').replace(/\s+/g, '');
       const phone = String(driver.phone || driver.raw_data?.phone || '').replace(/\D/g, '').slice(-4);
       if (name && phone) return `np:${name}|${phone}`;
-      const baeminId = String(driver.baeminId || driver.raw_data?.baeminId || '').trim().toUpperCase();
-      if (baeminId) return `b:${baeminId}`;
+      const baeminId = String(driver.baeminId || driver.raw_data?.baeminId || '').trim();
+      if (baeminId) {
+        const key = window.BremWeeklySettlement?.baeminIdMatchKey?.(baeminId)
+          || (/^\d+$/.test(baeminId) ? (baeminId.replace(/^0+/, '') || '0') : baeminId.toUpperCase());
+        return `b:${key}`;
+      }
     }
     return `id:${id}`;
   }

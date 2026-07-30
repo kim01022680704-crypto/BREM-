@@ -259,13 +259,24 @@ window.BremDriverUtils = (function () {
   }
 
   /** 배민 2번 시트 AT열 → baemin_id, AU열 → phone 보조 매칭 */
+  function baeminIdMatchKey(value) {
+    if (window.BremWeeklySettlement?.baeminIdMatchKey) {
+      return BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = String(value ?? '').trim().replace(/\s+/g, '');
+    if (!v) return '';
+    // 엑셀 .0 만 제거
+    const cleaned = /^\d+\.0+$/.test(v) ? v.replace(/\.0+$/, '') : v;
+    return /^\d+$/.test(cleaned) ? (cleaned.replace(/^0+/, '') || '0') : cleaned.toLowerCase();
+  }
+
   function matchDriverByBaeminErpId(baeminId, drivers) {
-    const id = String(baeminId || '').trim();
-    if (!id) return null;
+    const key = baeminIdMatchKey(baeminId);
+    if (!key) return null;
     const list = Array.isArray(drivers)
       ? drivers
       : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
-    return list.find(driver => String(driver.baeminId || '').trim() === id) || null;
+    return list.find(driver => baeminIdMatchKey(driver.baeminId) === key) || null;
   }
 
   function matchDriverByPhone(phone, drivers) {
@@ -518,8 +529,9 @@ window.BremDriverUtils = (function () {
 
     if (p === 'baemin') {
       const id = String(platformId || '').trim();
-      if (!id) return { driver: null, matchNote: '', resolvedPlatformId: '' };
-      const matches = list.filter(driver => String(driver.baeminId || '').trim() === id);
+      const key = baeminIdMatchKey(id);
+      if (!key) return { driver: null, matchNote: '', resolvedPlatformId: '' };
+      const matches = list.filter(driver => baeminIdMatchKey(driver.baeminId) === key);
       if (!matches.length) return { driver: null, matchNote: '', resolvedPlatformId: id };
 
       if (hasName) {
@@ -612,7 +624,7 @@ window.BremDriverUtils = (function () {
       const phone = normalizePhone(driver.phone);
       if (phone) byPhone.set(phone, driver);
 
-      const baeminId = String(driver.baeminId || '').trim();
+      const baeminId = baeminIdMatchKey(driver.baeminId);
       if (baeminId) byBaeminId.set(baeminId, driver);
     });
 
@@ -622,7 +634,7 @@ window.BremDriverUtils = (function () {
   function findDuplicateDriver(driverInput, excludeId) {
     const name = String(driverInput?.name || '').trim();
     const phone = normalizePhone(driverInput?.phone);
-    const baeminId = String(driverInput?.baeminId || '').trim();
+    const baeminId = baeminIdMatchKey(driverInput?.baeminId);
     const loginId = makeDriverLoginId({ name, phone });
     const lookup = buildDriverDuplicateLookup(excludeId);
 
@@ -723,8 +735,7 @@ window.BremDriverUtils = (function () {
   }
 
   function normalizeDuplicateBaeminId(value) {
-    const id = String(value || '').trim().toLowerCase();
-    return id && id !== '-' ? id : '';
+    return baeminIdMatchKey(value);
   }
 
   function buildDriverDuplicateSections(drivers) {
@@ -806,6 +817,7 @@ window.BremDriverUtils = (function () {
     buildCoupangErpIdFromCell,
     matchDriverByCoupangErpId,
     matchDriverByBaeminErpId,
+    baeminIdMatchKey,
     matchDriverByPhone,
     matchDriverByBaeminErpRow,
     resolveCoupangImportLoginId,

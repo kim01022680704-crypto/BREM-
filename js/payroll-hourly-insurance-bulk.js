@@ -24,6 +24,16 @@
     return String(value || '').trim().replace(/\s/g, '');
   }
 
+  function baeminIdMatchKey(value) {
+    if (window.BremWeeklySettlement?.baeminIdMatchKey) {
+      return BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = normalizePlatformId(value);
+    if (!v) return '';
+    const cleaned = /^\d+\.0+$/.test(v) ? v.replace(/\.0+$/, '') : v;
+    return /^\d+$/.test(cleaned) ? (cleaned.replace(/^0+/, '') || '0') : cleaned.toLowerCase();
+  }
+
   function resolveDriverPlatformId(driver, platform) {
     const driverUtils = window.BremDriverUtils;
     if (!driver) return '';
@@ -76,7 +86,8 @@
     const candidates = list.filter(driver => {
       const baeminId = resolveDriverPlatformId(driver, 'baemin');
       const coupangId = resolveDriverPlatformId(driver, 'coupang');
-      return baeminId === id || coupangId === id;
+      const baeminKey = baeminIdMatchKey(baeminId);
+      return (baeminKey && baeminKey === baeminIdMatchKey(id)) || coupangId === id;
     });
 
     if (candidates.length > 1) {
@@ -111,7 +122,7 @@
     const baeminId = resolveDriverPlatformId(driver, 'baemin');
     const coupangId = resolveDriverPlatformId(driver, 'coupang');
     let matchPlatform = '';
-    if (baeminId === id) matchPlatform = 'baemin';
+    if (baeminIdMatchKey(baeminId) === baeminIdMatchKey(id)) matchPlatform = 'baemin';
     else if (coupangId === id) matchPlatform = 'coupang';
     else if (baeminId && coupangId) matchPlatform = 'both';
 
@@ -201,7 +212,7 @@
     const baeminId = resolveDriverPlatformId(driver, 'baemin');
     const coupangId = resolveDriverPlatformId(driver, 'coupang');
     let matchPlatform = '';
-    if (baeminId === platformId) matchPlatform = 'baemin';
+    if (baeminIdMatchKey(baeminId) === baeminIdMatchKey(platformId)) matchPlatform = 'baemin';
     else if (coupangId === platformId) matchPlatform = 'coupang';
     else if (baeminId && coupangId) matchPlatform = 'both';
 

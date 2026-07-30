@@ -9776,10 +9776,19 @@ const BremStorage = (function () {
     const driverList = (Array.isArray(record.riders) && record.riders.length) ? drivers.getAll() : [];
     const driverById = new Map(driverList.map(item => [item.id, item]));
     let driverByBaeminId = null;
+    const matchBaemin = (typeof BremWeeklySettlement !== 'undefined'
+      && typeof BremWeeklySettlement.baeminIdMatchKey === 'function')
+      ? BremWeeklySettlement.baeminIdMatchKey
+      : (value) => {
+        const v = normBaemin(value).replace(/\s+/g, '');
+        if (!v) return '';
+        return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+      };
     if (platform === 'baemin' && driverList.length) {
       driverByBaeminId = new Map();
       driverList.forEach(item => {
-        const key = normBaemin(item.baeminId);
+        // 앞자리 0 유무 차이를 무시해 엑셀 숫자변환 ID 와도 매칭한다.
+        const key = matchBaemin(item.baeminId);
         if (key && !driverByBaeminId.has(key)) driverByBaeminId.set(key, item);
       });
     }
@@ -9790,13 +9799,20 @@ const BremStorage = (function () {
         if (platform === 'baemin') {
           baeminUserId = normBaemin(baeminUserId);
           if (!matchedRiderId && baeminUserId && driverByBaeminId) {
-            const resolved = driverByBaeminId.get(baeminUserId);
+            const resolved = driverByBaeminId.get(matchBaemin(baeminUserId));
             if (resolved) matchedRiderId = resolved.id;
           }
         }
         const driver = matchedRiderId ? (driverById.get(matchedRiderId) || null) : null;
-        if (platform === 'baemin' && !baeminUserId && driver?.baeminId) {
-          baeminUserId = normBaemin(driver.baeminId);
+        if (platform === 'baemin' && driver?.baeminId) {
+          // 엑셀에서 앞 0 이 빠진 ID 대신 기사 등록 배민 ID(010…)로 복원한다.
+          const prefer = (typeof BremWeeklySettlement !== 'undefined'
+            && typeof BremWeeklySettlement.preferRegisteredBaeminId === 'function')
+            ? BremWeeklySettlement.preferRegisteredBaeminId
+            : null;
+          baeminUserId = prefer
+            ? prefer(baeminUserId, driver)
+            : (normBaemin(driver.baeminId) || baeminUserId);
         }
         const normalized = {
           originalName: String(rider.originalName || ''),

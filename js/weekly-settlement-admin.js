@@ -217,7 +217,15 @@ const BremWeeklySettlementAdmin = (function () {
   }
 
   function riderMatchIdValue(rider, platform) {
-    if (platform === 'baemin') return rider.baeminUserId || '-';
+    if (platform === 'baemin') {
+      const driver = rider.matchedRiderId
+        ? window.BremStorage?.drivers?.getById?.(rider.matchedRiderId)
+        : null;
+      if (window.BremWeeklySettlement?.preferRegisteredBaeminId) {
+        return BremWeeklySettlement.preferRegisteredBaeminId(rider.baeminUserId, driver) || '-';
+      }
+      return rider.baeminUserId || driver?.baeminId || '-';
+    }
     return rider.coupangLoginKey || rider.originalName || '-';
   }
 

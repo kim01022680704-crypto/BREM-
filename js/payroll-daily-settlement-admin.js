@@ -128,6 +128,9 @@
   function matchDriver(baeminId, coupangId, phone, drivers) {
     const baemin = String(baeminId || '').trim();
     const coupang = String(coupangId || '').trim().replace(/\s/g, '');
+    const baeminKey = window.BremWeeklySettlement?.baeminIdMatchKey?.(baemin)
+      || window.BremDriverUtils?.baeminIdMatchKey?.(baemin)
+      || baemin;
     const list = Array.isArray(drivers) ? drivers : [];
 
     if (!baemin && !coupang) {
@@ -137,7 +140,12 @@
     const candidates = list.filter(driver => {
       const driverBaemin = resolveDriverPlatformId(driver, 'baemin');
       const driverCoupang = resolveDriverPlatformId(driver, 'coupang');
-      if (baemin && driverBaemin !== baemin) return false;
+      if (baemin) {
+        const driverKey = window.BremWeeklySettlement?.baeminIdMatchKey?.(driverBaemin)
+          || window.BremDriverUtils?.baeminIdMatchKey?.(driverBaemin)
+          || driverBaemin;
+        if (driverKey !== baeminKey) return false;
+      }
       if (coupang && driverCoupang !== coupang) return false;
       return true;
     });

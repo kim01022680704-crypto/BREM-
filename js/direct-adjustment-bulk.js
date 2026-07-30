@@ -40,6 +40,15 @@
     return raw;
   }
 
+  function baeminIdMatchKey(value) {
+    if (window.BremWeeklySettlement?.baeminIdMatchKey) {
+      return window.BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = normalizeBaeminId(value).replace(/\s+/g, '');
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+  }
+
   // 쿠팡ID는 배민 사용자ID 정규화 규칙과 다르므로 공백만 제거하고 대소문자만 맞춘다.
   function normalizeCoupangId(value) {
     return String(value ?? '').trim().replace(/\s/g, '').toLowerCase();
@@ -49,6 +58,12 @@
     return normalizePlatform(platform) === 'coupang'
       ? normalizeCoupangId(value)
       : normalizeBaeminId(value);
+  }
+
+  function matchIdFor(platform, value) {
+    return normalizePlatform(platform) === 'coupang'
+      ? normalizeCoupangId(value)
+      : baeminIdMatchKey(value);
   }
 
   // 기사 레코드에는 쿠팡ID가 따로 저장되지 않는다. 쿠팡ID는 「이름+연락처 뒤 4자리」로
@@ -70,7 +85,7 @@
   }
 
   function normalizedDriverIdForMatch(driver, platform) {
-    return normalizeIdFor(platform, driverIdForMatch(driver, platform));
+    return matchIdFor(platform, driverIdForMatch(driver, platform));
   }
 
   function isHeaderRow(row) {
@@ -100,7 +115,7 @@
   function matchRow(baeminId, drivers, platform) {
     const p = normalizePlatform(platform);
     const label = platformIdLabel(p);
-    const id = normalizeIdFor(p, baeminId);
+    const id = matchIdFor(p, baeminId);
     const list = Array.isArray(drivers) ? drivers : [];
     if (!id) {
       return { status: 'empty_id', driver: null, driverId: '', driverName: '', matches: [], error: `A열 ${label} 없음` };

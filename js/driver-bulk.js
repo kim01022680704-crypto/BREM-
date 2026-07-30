@@ -9,7 +9,8 @@
     buildRiderMatchMap,
     normalizeBulkUploadRaw,
     isBulkUploadRowEmpty,
-    isBulkRawProvided
+    isBulkRawProvided,
+    baeminIdMatchKey
   } = window.BremDriverUtils;
 
   const BULK_COLUMNS = [
@@ -246,8 +247,9 @@
         errors.push('쿠팡아이디(이름+연락처 뒤4자리) 중복');
       }
     }
-    if (baeminId && lookupTable.byBaeminId.has(baeminId)) {
-      const conflict = lookupTable.byBaeminId.get(baeminId);
+    const baeminKey = baeminIdMatchKey?.(baeminId) || baeminId;
+    if (baeminKey && lookupTable.byBaeminId.has(baeminKey)) {
+      const conflict = lookupTable.byBaeminId.get(baeminKey);
       if (!matchedDriver || conflict.id !== matchedDriver.id) {
         errors.push('다른 기사에 등록된 배민아이디');
       }
