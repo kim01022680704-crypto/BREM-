@@ -221,20 +221,13 @@ const BremSettlementResultDirect = (function () {
 
   // --- 계산 ---------------------------------------------------------------
 
-  // 같은 정산주의 쿠팡+배민 정산서를 모두 넘겨 출금을 플랫폼 한도에 맞게 나눈다.
-  function weekSettlementsAllPlatforms(week = settlementWeek(currentSettlement())) {
-    const weekKey = String(week || '').slice(0, 10);
-    if (!weekKey) return [];
-    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
-      .filter(record => settlementWeek(record) === weekKey);
-  }
-
   function computeRows() {
     const settlement = currentSettlement();
     if (!settlement) return [];
+    // 쿠팡 출금 → 쿠팡 정산만, 배민 출금 → 배민 정산만.
+    // 한쪽에 몰아 넣고 남은 금액을 반대편에서 까지 않는다.
     return Calc().sortByName(Calc().computeRows(settlement, {
-      withdrawals: state.withdrawals,
-      weekSettlements: weekSettlementsAllPlatforms(settlementWeek(settlement))
+      withdrawals: state.withdrawals
     }));
   }
 
@@ -278,8 +271,13 @@ const BremSettlementResultDirect = (function () {
       <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
     if (summaryEl) {
+      const capped = Number(totals.prepaidCappedCount || 0);
+      const excessNote = capped
+        ? ` · <span class="muted-inline">선정산 한도초과 <strong>${capped}</strong>명(이 플랫폼 지급액까지만 차감, 초과 ${formatNumber(totals.prepaidExcessTotal)}원 미반영)</span>`
+        : '';
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
-        + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)})</span>`;
+        + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)})</span>`
+        + excessNote;
     }
   }
 

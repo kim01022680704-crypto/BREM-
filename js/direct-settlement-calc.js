@@ -100,8 +100,9 @@ const BremDirectSettlementCalc = (function () {
     return typeof resolve === 'function' ? resolve(Number(row.amount || 0), fees) : 0;
   }
 
-  // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee }
+  // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee, rawPrepaid, rawFee }
   // 배민 출금 → 배민 정산만, 쿠팡 출금 → 쿠팡 정산만 차감한다.
+  // (한쪽에 몰아 넣고 남은 금액을 반대편에서 까는 배분은 하지 않는다.)
   function completedWithdrawalMap(withdrawals, week, platform) {
     const target = normalizePlatform(platform);
     const map = new Map();
@@ -120,127 +121,36 @@ const BremDirectSettlementCalc = (function () {
     return map;
   }
 
-  // 출금 차감 전 플랫폼별 수용 한도(실지급). 정산서 기준.
-  function buildWeekCapacityMap(settlements, week) {
-    const map = new Map();
-    const weekKey = String(week || '').slice(0, 10);
-    (Array.isArray(settlements) ? settlements : []).forEach(settlement => {
-      if (!settlement || settlementWeek(settlement) !== weekKey) return;
-      const platform = normalizePlatform(settlement.platform);
-      // 출금 없이 계산한 netPay = 그 플랫폼이 흡수할 수 있는 선정산+수수료 한도
-      computeRows(settlement, { withdrawals: [], _skipAllocation: true }).forEach(row => {
-        const driverId = String(row.driverId || '').trim();
-        if (!driverId) return;
-        const prev = map.get(driverId) || { coupang: 0, baemin: 0 };
-        prev[platform] += Math.max(0, Math.round(Number(row.netPay) || 0));
-        map.set(driverId, prev);
-      });
-    });
-    return map;
-  }
-
   /**
-   * 합산 출금 시절 잘못된 플랫폼 태그를 보정한다.
-   * 1) 기록된 플랫폼에 먼저 배정
-   * 2) 그 플랫폼 한도를 넘치면 반대 플랫폼으로 넘김
-   * → 쿠팡 정산에 배민 출금 전액이 들어가 총지급이 마이너스 되던 문제를 막는다.
+   * 이 플랫폼 정산행이 흡수할 수 있는 선정산+수수료 한도.
+   * 한도를 넘는 출금(합산 시절 잘못된 태그 등)은 이 플랫폼에 넣지 않는다.
+   * 반대 플랫폼으로 넘기지도 않는다 — 쿠팡은 쿠팡, 배민은 배민.
    */
-  function allocateWeekWithdrawals(withdrawals, week, capacityMap) {
-    const weekKey = String(week || '').slice(0, 10);
-    const remaining = new Map();
-    (capacityMap instanceof Map ? capacityMap : new Map()).forEach((value, driverId) => {
-      remaining.set(driverId, {
-        coupang: Math.max(0, Number(value.coupang || 0)),
-        baemin: Math.max(0, Number(value.baemin || 0))
-      });
-    });
-    const allocated = new Map();
-
-    const ensureAlloc = driverId => {
-      if (!allocated.has(driverId)) {
-        allocated.set(driverId, {
-          coupang: { prepaid: 0, fee: 0 },
-          baemin: { prepaid: 0, fee: 0 }
-        });
-      }
-      return allocated.get(driverId);
+  function fitPrepaidToCapacity(prepaid, fee, capacity) {
+    const room = Math.max(0, Math.round(Number(capacity) || 0));
+    let leftFee = Math.max(0, Math.round(Number(fee) || 0));
+    let leftPrepaid = Math.max(0, Math.round(Number(prepaid) || 0));
+    const rawConsume = leftPrepaid + leftFee;
+    if (rawConsume <= room) {
+      return {
+        prepaid: leftPrepaid,
+        fee: leftFee,
+        rawPrepaid: leftPrepaid,
+        rawFee: leftFee,
+        excess: 0,
+        capped: false
+      };
+    }
+    const takeFee = Math.min(leftFee, room);
+    const takePrepaid = Math.min(leftPrepaid, room - takeFee);
+    return {
+      prepaid: takePrepaid,
+      fee: takeFee,
+      rawPrepaid: leftPrepaid,
+      rawFee: leftFee,
+      excess: Math.max(0, rawConsume - room),
+      capped: true
     };
-
-    const rows = (Array.isArray(withdrawals) ? withdrawals : [])
-      .filter(row => String(row.status || '') === 'completed'
-        && String(row.weekStart || '').slice(0, 10) === weekKey
-        && String(row.driverId || '').trim())
-      .slice()
-      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-
-    rows.forEach(row => {
-      const driverId = String(row.driverId || '').trim();
-      const prefer = normalizeWithdrawalPlatform(row.platform);
-      const amount = Math.max(0, Math.round(Number(row.amount || 0)));
-      const fee = withdrawalRowFee(row, prefer || 'coupang');
-      let leftAmount = amount;
-      let leftFee = fee;
-      const rem = remaining.get(driverId) || { coupang: 0, baemin: 0 };
-      const alloc = ensureAlloc(driverId);
-      const order = prefer === 'baemin'
-        ? ['baemin', 'coupang']
-        : (prefer === 'coupang'
-          ? ['coupang', 'baemin']
-          : (rem.coupang >= rem.baemin ? ['coupang', 'baemin'] : ['baemin', 'coupang']));
-
-      order.forEach(platform => {
-        if (leftAmount + leftFee <= 0) return;
-        const room = Math.max(0, Number(rem[platform] || 0));
-        if (room <= 0) return;
-        const takeTotal = Math.min(room, leftAmount + leftFee);
-        const takeFee = Math.min(leftFee, takeTotal);
-        const takeAmount = Math.min(leftAmount, takeTotal - takeFee);
-        alloc[platform].fee += takeFee;
-        alloc[platform].prepaid += takeAmount;
-        rem[platform] -= (takeFee + takeAmount);
-        leftFee -= takeFee;
-        leftAmount -= takeAmount;
-      });
-
-      // 한도를 넘긴 초과출금은 원래 플랫폼(또는 우선 플랫폼)에 남겨 표시한다.
-      if (leftAmount + leftFee > 0) {
-        const platform = order[0];
-        alloc[platform].prepaid += leftAmount;
-        alloc[platform].fee += leftFee;
-      }
-      remaining.set(driverId, rem);
-    });
-
-    return allocated;
-  }
-
-  function withdrawalMapFromAllocation(allocation, platform) {
-    const target = normalizePlatform(platform);
-    const map = new Map();
-    (allocation instanceof Map ? allocation : new Map()).forEach((value, driverId) => {
-      const slice = value?.[target] || { prepaid: 0, fee: 0 };
-      if (!slice.prepaid && !slice.fee) return;
-      map.set(driverId, {
-        prepaid: Math.max(0, Math.round(Number(slice.prepaid || 0))),
-        fee: Math.max(0, Math.round(Number(slice.fee || 0)))
-      });
-    });
-    return map;
-  }
-
-  function resolveWithdrawMap(settlement, options = {}) {
-    const platform = normalizePlatform(settlement.platform);
-    const week = settlementWeek(settlement);
-    if (options._skipAllocation) {
-      return completedWithdrawalMap(options.withdrawals, week, platform);
-    }
-    const weekSettlements = Array.isArray(options.weekSettlements) ? options.weekSettlements : null;
-    if (weekSettlements && weekSettlements.length) {
-      const capacity = buildWeekCapacityMap(weekSettlements, week);
-      const allocation = allocateWeekWithdrawals(options.withdrawals, week, capacity);
-      return withdrawalMapFromAllocation(allocation, platform);
-    }
-    return completedWithdrawalMap(options.withdrawals, week, platform);
   }
 
   // 정산서 1건 → 라이더별 정산 행. 쿠팡·배민 모두 같은 필드를 채운다.
@@ -252,7 +162,7 @@ const BremDirectSettlementCalc = (function () {
     const store = window.BremStorage?.directSettlementAdjustments;
     const promoMap = store?.getSettlement?.('promotion', settlement.id) || {};
     const otherMap = store?.getSettlement?.('other', settlement.id) || {};
-    const withdrawMap = resolveWithdrawMap(settlement, options);
+    const withdrawMap = completedWithdrawalMap(options.withdrawals, week, platform);
     const unitCallFee = callFeeUnit(platform);
 
     const rows = [];
@@ -277,10 +187,15 @@ const BremDirectSettlementCalc = (function () {
       const promotionWithholdingTax = promoTax(promo + other);
       const callFee = callCount * unitCallFee;
       const wd = driverId ? (withdrawMap.get(driverId) || { prepaid: 0, fee: 0 }) : { prepaid: 0, fee: 0 };
-      const dailySettlementFee = wd.fee;
-      const prepaid = wd.prepaid;
-      const deductTotal = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
-        + withholdingTax + promotionWithholdingTax + callFee + dailySettlementFee + prepaid;
+
+      // 선정산·일정산수수료를 빼기 전 잔액 = 이 플랫폼이 부담할 수 있는 한도
+      const baseDeduct = deductionDetail + employmentInsurance + accidentInsurance + hourlyInsurance
+        + withholdingTax + promotionWithholdingTax + callFee;
+      const capacity = Math.max(0, Math.round(grossPay - baseDeduct));
+      const fitted = fitPrepaidToCapacity(wd.prepaid, wd.fee, capacity);
+      const dailySettlementFee = fitted.fee;
+      const prepaid = fitted.prepaid;
+      const deductTotal = baseDeduct + dailySettlementFee + prepaid;
       const netPay = grossPay - deductTotal;
 
       rows.push({
@@ -294,7 +209,10 @@ const BremDirectSettlementCalc = (function () {
         deliveryFee, missionPay, deductionDetail, other, promo, grossPay,
         employmentInsurance, accidentInsurance, hourlyInsurance,
         withholdingTax, promotionWithholdingTax, callFee, dailySettlementFee, prepaid,
-        deductTotal, netPay
+        deductTotal, netPay,
+        prepaidRaw: fitted.rawPrepaid,
+        prepaidExcess: fitted.excess,
+        prepaidCapped: fitted.capped
       });
     });
     return rows;
@@ -337,9 +255,17 @@ const BremDirectSettlementCalc = (function () {
   function sumRows(rows) {
     const totals = {};
     NUMERIC_KEYS.forEach(key => { totals[key] = 0; });
+    let prepaidCappedCount = 0;
+    let prepaidExcessTotal = 0;
     (Array.isArray(rows) ? rows : []).forEach(row => {
       NUMERIC_KEYS.forEach(key => { totals[key] += Number(row[key] || 0); });
+      if (row.prepaidCapped) {
+        prepaidCappedCount += 1;
+        prepaidExcessTotal += Math.max(0, Math.round(Number(row.prepaidExcess) || 0));
+      }
     });
+    totals.prepaidCappedCount = prepaidCappedCount;
+    totals.prepaidExcessTotal = prepaidExcessTotal;
     return totals;
   }
 
@@ -357,9 +283,7 @@ const BremDirectSettlementCalc = (function () {
     driverName,
     callFeeUnit,
     completedWithdrawalMap,
-    buildWeekCapacityMap,
-    allocateWeekWithdrawals,
-    resolveWithdrawMap,
+    fitPrepaidToCapacity,
     computeRows,
     escapeHtml,
     theadHtml,
