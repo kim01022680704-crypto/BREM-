@@ -271,12 +271,24 @@ const BremSettlementResultDirect = (function () {
       <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
     if (summaryEl) {
-      const capped = Number(totals.prepaidCappedCount || 0);
-      const excessNote = capped
-        ? ` · <span class="muted-inline">선정산 한도초과 <strong>${capped}</strong>명(이 플랫폼 지급액까지만 차감, 초과 ${formatNumber(totals.prepaidExcessTotal)}원 미반영)</span>`
+      const over = Number(totals.prepaidOverCount || totals.prepaidCappedCount || 0);
+      const negative = Number(totals.negativeNetCount || 0);
+      const untagged = Number(totals.untaggedWithdrawalCount || 0);
+      const notes = [];
+      if (over) {
+        notes.push(`선정산&gt;지급가능 <strong>${over}</strong>명(초과 ${formatNumber(totals.prepaidExcessTotal)}원 · 처리완료 금액은 그대로 반영, 총지급액 음수 가능)`);
+      }
+      if (negative) {
+        notes.push(`총지급액 음수 <strong>${negative}</strong>명`);
+      }
+      if (untagged) {
+        notes.push(`플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원)은 반영 안 됨`);
+      }
+      const excessNote = notes.length
+        ? ` · <span class="muted-inline">${notes.join(' · ')}</span>`
         : '';
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
-        + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)})</span>`
+        + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
         + excessNote;
     }
   }
