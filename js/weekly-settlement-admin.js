@@ -379,7 +379,7 @@ const BremWeeklySettlementAdmin = (function () {
       totalExtracted: refreshedRecord.riders.length,
       matchedRiders: refreshedRecord.riders.length,
       unmatchedRiders: 0,
-      callCountMismatches: refreshedRecord.riders.filter(r => r.callCountMatched === false).length,
+      callCountMismatches: refreshedRecord.riders.filter(r => isMismatchRider(r)).length,
       channel: ch
     };
     const saved = BremWeeklySettlement.saveWeeklySettlement(refreshedRecord);
@@ -424,10 +424,51 @@ const BremWeeklySettlementAdmin = (function () {
     return lines.map(line => `<span class="weekly-mismatch-line">${escapeHtml(line)}</span>`).join('');
   }
 
+  function callCountStatusHtml(rider) {
+    if (BremWeeklySettlement.isCallCountIgnored?.(rider) || rider?.callCountIgnored === true) {
+      return '<span class="promotion-status-ok weekly-call-ignored-badge">승인(콜수무시)</span>';
+    }
+    if (rider?.callCountMatched === false) {
+      return '<span class="promotion-status-no">불일치</span>';
+    }
+    return '<span class="promotion-status-ok">일치</span>';
+  }
+
+  function isMismatchRider(rider) {
+    if (typeof BremWeeklySettlement.isCallCountMismatch === 'function') {
+      return BremWeeklySettlement.isCallCountMismatch(rider);
+    }
+    return rider?.callCountMatched === false && rider?.callCountIgnored !== true;
+  }
+
   function renderCallAuditButton(rider, context = {}) {
     if (!rider?.matchedRiderId) return '-';
     const label = rider.driverName || rider.riderName || '기사';
-    const applyBtn = rider.callCountMatched === false
+    const ignored = rider.callCountIgnored === true;
+    const mismatch = isMismatchRider(rider);
+    const ignoreBtn = mismatch
+      ? `<button type="button" class="small-btn weekly-ignore-call-btn"
+        data-weekly-ignore-call="1"
+        data-driver-id="${escapeHtml(rider.matchedRiderId)}"
+        data-platform="${escapeHtml(context.platform || 'coupang')}"
+        data-channel="${escapeHtml(context.channel || 'bro')}"
+        data-settlement-id="${escapeHtml(context.settlementId || '')}"
+        data-driver-label="${escapeHtml(label)}"
+        title="시스템 콜수는 그대로 두고, 콜수 불일치 경고만 승인합니다. 정산금액은 주간서 기준으로 유지됩니다."
+      >콜수무시 승인</button>`
+      : '';
+    const undoIgnoreBtn = ignored
+      ? `<button type="button" class="small-btn weekly-undo-ignore-call-btn"
+        data-weekly-undo-ignore-call="1"
+        data-driver-id="${escapeHtml(rider.matchedRiderId)}"
+        data-platform="${escapeHtml(context.platform || 'coupang')}"
+        data-channel="${escapeHtml(context.channel || 'bro')}"
+        data-settlement-id="${escapeHtml(context.settlementId || '')}"
+        data-driver-label="${escapeHtml(label)}"
+        title="콜수무시 승인을 취소하고 불일치 경고를 다시 표시합니다."
+      >승인취소</button>`
+      : '';
+    const applyBtn = mismatch
       ? `<button type="button" class="small-btn weekly-apply-call-btn"
         data-weekly-apply-call="1"
         data-driver-id="${escapeHtml(rider.matchedRiderId)}"
@@ -437,7 +478,7 @@ const BremWeeklySettlementAdmin = (function () {
         data-end-date="${escapeHtml(context.endDate || '')}"
         data-weekly-order-count="${Number(rider.weeklyOrderCount || 0)}"
         data-driver-label="${escapeHtml(label)}"
-        title="주간정산서 오더수로 콜수를 맞춥니다. 콜수입력·일정산 기록이 조정됩니다."
+        title="주간정산서 오더수로 콜수를 맞춥니다. 콜수입력·일정산 기록이 조정됩니다. 여러 권역 콜이 있으면 쓰지 마세요."
       >주간서 기준 입력</button>`
       : '';
     return `<div class="weekly-call-action-cell">
@@ -452,6 +493,8 @@ const BremWeeklySettlementAdmin = (function () {
         data-stored-system-call-count="${Number(rider.systemCallCount || 0)}"
         data-driver-label="${escapeHtml(label)}"
       >상세분석</button>
+      ${ignoreBtn}
+      ${undoIgnoreBtn}
       ${applyBtn}
     </div>`;
   }
@@ -666,7 +709,7 @@ const BremWeeklySettlementAdmin = (function () {
     const mismatchCount = record.summary.callCountMismatches || 0;
     const orderLabel = platformWeeklyOrderLabel(platform);
     const summaryExtra = mismatchCount
-      ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 미매칭 <strong>${formatNumber(mismatchCount)}</strong>명 — 정산표 업로드/콜수입력과 주간서 ${orderLabel}을 확인하세요.</p>`
+      ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 미매칭 <strong>${formatNumber(mismatchCount)}</strong>명 — 여러 권역 콜이면 「콜수무시 승인」, 콜수를 주간서에 맞출 때만 「주간서 기준 입력」.</p>`
       : '';
 
     const matchBasisLabel = platform === 'baemin'
@@ -688,18 +731,16 @@ const BremWeeklySettlementAdmin = (function () {
       platform,
       channel: ch,
       startDate: record.startDate,
-      endDate: record.endDate
+      endDate: record.endDate,
+      settlementId: record.id || ''
     };
 
     // 저장 순서를 바꾸지 않으려고 원본 배열은 그대로 두고 사본을 정렬한다.
     const matchedRows = [...(record.riders || [])]
       .sort(byDriverName(r => r.driverName || r.riderName))
       .map(rider => {
-      const callStatus = rider.callCountMatched === false
-        ? '<span class="promotion-status-no">불일치</span>'
-        : '<span class="promotion-status-ok">일치</span>';
       const warningText = formatCallMismatchWarnings(rider);
-      const rowClass = rider.callCountMatched === false ? 'promotion-row-unpaid' : '';
+      const rowClass = isMismatchRider(rider) ? 'promotion-row-unpaid' : '';
       return `
       <tr class="${rowClass}">
         <td><strong>${escapeHtml(rider.driverName || rider.riderName)}</strong></td>
@@ -708,7 +749,7 @@ const BremWeeklySettlementAdmin = (function () {
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
         ${directAmountBodyCells(rider, ch, platform)}
         <td>${formatNumber(rider.systemCallCount)}</td>
-        <td>${callStatus}</td>
+        <td>${callCountStatusHtml(rider)}</td>
         <td class="promotion-status-ok">매칭</td>
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
         <td>${renderCallAuditButton(rider, auditContext)}</td>
@@ -919,7 +960,7 @@ const BremWeeklySettlementAdmin = (function () {
         endDate: period.endDate
       })
     ));
-    const mismatchCount = refreshedRiders.filter(r => r.callCountMatched === false).length;
+    const mismatchCount = refreshedRiders.filter(r => isMismatchRider(r)).length;
     const orderLabel = platformWeeklyOrderLabel(record.platform);
     const idLabel = platformMatchIdLabel(record.platform);
     const channelLabel = (record.channel === 'direct') ? ' · 직계약' : '';
@@ -927,7 +968,7 @@ const BremWeeklySettlementAdmin = (function () {
     $('#weeklySettlementDetailMeta').innerHTML = `
       <p>정산기간: <strong>${escapeHtml(period.startDate)} ~ ${escapeHtml(period.endDate)}</strong> (수~화 7일)</p>
       <p>매칭 ${formatNumber(record.summary.matchedRiders)}명: <strong>${escapeHtml(record.matchedNamesLabel || '-')}</strong></p>
-      ${mismatchCount ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 불일치 ${formatNumber(mismatchCount)}명 — 경고 열에서 누락 일·일별 콜수를 확인하세요.</p>` : ''}
+      ${mismatchCount ? `<p class="weekly-call-mismatch-banner">⚠ 콜수 불일치 ${formatNumber(mismatchCount)}명 — 여러 권역 콜이면 「콜수무시 승인」으로 정산을 진행하세요. (시스템 콜수는 유지)</p>` : ''}
     `;
     const detailIsDirectAmount = isDirectAmountView(record.channel, record.platform);
     const headEl = $('#weeklySettlementDetailHead');
@@ -948,27 +989,86 @@ const BremWeeklySettlementAdmin = (function () {
       platform: record.platform,
       channel: normChannel(record.channel),
       startDate: period.startDate,
-      endDate: period.endDate
+      endDate: period.endDate,
+      settlementId: record.id || ''
     };
     $('#weeklySettlementDetailRows').innerHTML = [...refreshedRiders]
       .sort(byDriverName(r => r.driverName || r.riderName))
       .map(rider => {
       const warningText = formatCallMismatchWarnings(rider);
       return `
-      <tr${rider.callCountMatched === false ? ' class="promotion-row-unpaid"' : ''}>
+      <tr${isMismatchRider(rider) ? ' class="promotion-row-unpaid"' : ''}>
         <td><strong>${escapeHtml(rider.driverName || rider.riderName)}</strong></td>
         <td>${escapeHtml(rider.originalName)}</td>
         <td>${riderMatchIdTag(rider, record.platform)}</td>
         <td>${formatNumber(rider.weeklyOrderCount)}</td>
         ${detailIsDirectAmount ? directAmountBodyCells(rider, record.channel, record.platform) : ''}
         <td>${formatNumber(rider.systemCallCount)}</td>
-        <td>${rider.callCountMatched === false ? '불일치' : '일치'}</td>
+        <td>${callCountStatusHtml(rider)}</td>
         <td class="weekly-warning-cell weekly-mismatch-detail">${warningText}</td>
         <td>${renderCallAuditButton(rider, auditContext)}</td>
       </tr>
     `;
     }).join('');
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function setCallCountIgnoredForRider(params = {}) {
+    const driverId = String(params.driverId || '').trim();
+    const platform = params.platform || 'coupang';
+    const channel = normChannel(params.channel);
+    const settlementId = String(params.settlementId || '').trim();
+    const driverLabel = params.driverLabel || '기사';
+    const ignored = params.ignored === true;
+
+    if (!driverId) {
+      showToast('매칭된 기사가 없어 처리할 수 없습니다.');
+      return;
+    }
+
+    if (ignored) {
+      const ok = window.confirm(
+        [
+          `${driverLabel} · 콜수무시 승인할까요?`,
+          '',
+          '· 시스템 콜수(여러 권역 합계)는 그대로 둡니다',
+          '· 주간서 정산금액은 그대로 정산결과에 반영됩니다',
+          '· 「주간서 기준 입력」처럼 콜수를 덮어쓰지 않습니다'
+        ].join('\n')
+      );
+      if (!ok) return;
+    }
+
+    try {
+      const saved = settlementId ? BremStorage.weeklySettlements.getById(settlementId) : null;
+      if (saved) {
+        const updated = BremWeeklySettlement.setRiderCallCountIgnored(saved, driverId, ignored);
+        updated.channel = normChannel(saved.channel || channel);
+        BremWeeklySettlement.saveWeeklySettlement(updated);
+        await BremStorage?.awaitPersist?.(BremStorage.flushStorage?.());
+        if (state.detailId === settlementId) renderDetail(updated);
+      }
+
+      const preview = getPreview(channel, platform);
+      if (preview) {
+        const nextPreview = BremWeeklySettlement.setRiderCallCountIgnored(preview, driverId, ignored);
+        setPreview(channel, platform, nextPreview);
+        renderPreview(channel, platform);
+      } else if (!saved) {
+        showToast('정산서 미리보기 또는 저장 기록을 찾지 못했습니다.');
+        return;
+      }
+
+      renderSavedList(channel, platform);
+      showToast(
+        ignored
+          ? `${driverLabel} · 콜수무시 승인 완료 (시스템 콜수 유지 · 정산금액 반영)`
+          : `${driverLabel} · 콜수무시 승인을 취소했습니다.`
+      );
+    } catch (error) {
+      console.error('[call-count-ignore]', error);
+      showToast(error.message || '콜수무시 처리에 실패했습니다.');
+    }
   }
 
   function hideDetail() {
@@ -1071,6 +1171,30 @@ const BremWeeklySettlementAdmin = (function () {
           endDate: applyCallBtn.dataset.endDate,
           weeklyOrderCount: Number(applyCallBtn.dataset.weeklyOrderCount || 0),
           driverLabel: applyCallBtn.dataset.driverLabel || ''
+        });
+        return;
+      }
+      const ignoreCallBtn = event.target.closest('[data-weekly-ignore-call]');
+      if (ignoreCallBtn) {
+        void setCallCountIgnoredForRider({
+          driverId: ignoreCallBtn.dataset.driverId,
+          platform: ignoreCallBtn.dataset.platform,
+          channel: ignoreCallBtn.dataset.channel || 'bro',
+          settlementId: ignoreCallBtn.dataset.settlementId || '',
+          driverLabel: ignoreCallBtn.dataset.driverLabel || '',
+          ignored: true
+        });
+        return;
+      }
+      const undoIgnoreCallBtn = event.target.closest('[data-weekly-undo-ignore-call]');
+      if (undoIgnoreCallBtn) {
+        void setCallCountIgnoredForRider({
+          driverId: undoIgnoreCallBtn.dataset.driverId,
+          platform: undoIgnoreCallBtn.dataset.platform,
+          channel: undoIgnoreCallBtn.dataset.channel || 'bro',
+          settlementId: undoIgnoreCallBtn.dataset.settlementId || '',
+          driverLabel: undoIgnoreCallBtn.dataset.driverLabel || '',
+          ignored: false
         });
         return;
       }

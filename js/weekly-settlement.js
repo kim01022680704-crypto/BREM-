@@ -840,18 +840,32 @@ const BremWeeklySettlement = (function () {
     };
   }
 
+  function isCallCountIgnored(rider) {
+    return rider?.callCountIgnored === true;
+  }
+
+  // 실제 경고·카운트에 쓸 불일치: 관리자가 「콜수무시 승인」한 건은 제외한다.
+  function isCallCountMismatch(rider) {
+    return rider?.callCountMatched === false && !isCallCountIgnored(rider);
+  }
+
   function refreshRiderCallMatch(rider, { platform, startDate, endDate } = {}) {
     const driverId = rider?.matchedRiderId || '';
     if (!driverId) return rider;
 
     const stats = buildDriverCallStatsForPeriod(driverId, startDate, endDate, platform);
     const callMatch = evaluateCallCountMatch(rider, stats, startDate, endDate);
+    const ignored = isCallCountIgnored(rider);
+    const warnings = ignored
+      ? [`콜수무시 승인 (주간서 ${callMatch.weeklyOrderCount} / 시스템 ${callMatch.systemCallCount} · 시스템 콜수 유지)`]
+      : callMatch.warnings;
     return {
       ...rider,
       systemCallCount: callMatch.systemCallCount,
       callCountMatched: callMatch.callCountMatched,
+      callCountIgnored: ignored,
       callStatsByDay: callMatch.callStatsByDay,
-      warnings: callMatch.warnings
+      warnings
     };
   }
 
@@ -911,7 +925,7 @@ const BremWeeklySettlement = (function () {
   }
 
   function buildWeeklySummary(matchedRiders = [], unmatchedRiders = []) {
-    const callCountMismatches = matchedRiders.filter(item => item.callCountMatched === false).length;
+    const callCountMismatches = matchedRiders.filter(item => isCallCountMismatch(item)).length;
     return {
       totalExtracted: matchedRiders.length + unmatchedRiders.length,
       matchedRiders: matchedRiders.length,
@@ -1001,9 +1015,22 @@ const BremWeeklySettlement = (function () {
         totalExtracted: riders.length,
         matchedRiders: matchedRiders.length,
         unmatchedRiders: riders.length - matchedRiders.length,
-        callCountMismatches: matchedRiders.filter(rider => rider.callCountMatched === false).length
+        callCountMismatches: matchedRiders.filter(rider => isCallCountMismatch(rider)).length
       }
     };
+  }
+
+  function setRiderCallCountIgnored(record, driverId, ignored = true) {
+    if (!record || !driverId) return record;
+    const targetId = String(driverId || '').trim();
+    const riders = (record.riders || []).map(rider => {
+      if (String(rider.matchedRiderId || '') !== targetId) return rider;
+      return {
+        ...rider,
+        callCountIgnored: ignored === true
+      };
+    });
+    return refreshWeeklySettlementRiders({ ...record, riders });
   }
 
   function saveWeeklySettlement(record) {
@@ -1185,7 +1212,10 @@ const BremWeeklySettlement = (function () {
     calculateCoupangSettlementDates,
     listDaysInclusive,
     buildCallCountMismatchDetail,
+    isCallCountIgnored,
+    isCallCountMismatch,
     refreshRiderCallMatch,
+    setRiderCallCountIgnored,
     resolveWeeklyComparePeriod,
     parseCoupangFileName,
     parseBaeminFileName,

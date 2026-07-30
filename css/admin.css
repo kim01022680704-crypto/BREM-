@@ -6408,6 +6408,28 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   background: #fef3c7;
 }
 
+.weekly-ignore-call-btn {
+  white-space: nowrap;
+  border-color: #22c55e;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.weekly-ignore-call-btn:hover {
+  background: #dcfce7;
+}
+
+.weekly-undo-ignore-call-btn {
+  white-space: nowrap;
+  border-color: #94a3b8;
+  color: #334155;
+  background: #f8fafc;
+}
+
+.weekly-call-ignored-badge {
+  white-space: nowrap;
+}
+
 .weekly-call-audit-insights {
   margin: 0 0 12px;
 }

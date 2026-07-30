@@ -198,10 +198,24 @@ window.BremSupabaseMapper = (function () {
       sort_order: index
     }));
 
+    // 브로 테이블에 call_count_ignored 컬럼이 없어 summary에 승인 기사 id를 같이 보관한다.
+    const ignoredIds = (record.riders || [])
+      .filter(rider => rider.callCountIgnored === true && rider.matchedRiderId)
+      .map(rider => String(rider.matchedRiderId));
+    header.summary = {
+      ...(header.summary && typeof header.summary === 'object' ? header.summary : {}),
+      callCountIgnoredIds: ignoredIds
+    };
+
     return { header, riders };
   }
 
   function rowsToWeeklySettlement(header, riderRows) {
+    const ignoredIds = new Set(
+      Array.isArray(header.summary?.callCountIgnoredIds)
+        ? header.summary.callCountIgnoredIds.map(String)
+        : []
+    );
     return {
       id: header.id,
       platform: header.platform,
@@ -226,6 +240,7 @@ window.BremSupabaseMapper = (function () {
           weeklyOrderCount: row.weekly_order_count,
           systemCallCount: row.system_call_count,
           callCountMatched: row.call_count_matched,
+          callCountIgnored: ignoredIds.has(String(row.rider_id || '')),
           coupangLoginKey: row.coupang_login_key || '',
           baeminUserId: row.baemin_user_id || '',
           warnings: row.warnings || []

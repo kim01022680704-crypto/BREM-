@@ -9762,6 +9762,8 @@ const BremStorage = (function () {
           weeklyOrderCount: Number(rider.weeklyOrderCount || 0),
           systemCallCount: Number(rider.systemCallCount || 0),
           callCountMatched: rider.callCountMatched !== false,
+          // 여러 권역 콜 등: 콜수 불일치여도 정산금액은 유지하고 경고만 승인 처리
+          callCountIgnored: rider.callCountIgnored === true,
           coupangLoginKey: String(rider.coupangLoginKey || ''),
           baeminUserId,
           warnings: Array.isArray(rider.warnings) ? rider.warnings.map(String) : []
@@ -9791,7 +9793,7 @@ const BremStorage = (function () {
       totalExtracted: riders.length,
       matchedRiders: riders.length,
       unmatchedRiders: 0,
-      callCountMismatches: riders.filter(r => r.callCountMatched === false).length
+      callCountMismatches: riders.filter(r => r.callCountMatched === false && r.callCountIgnored !== true).length
     };
     const channel = (record.channel === 'direct' || summary.channel === 'direct') ? 'direct' : 'bro';
     summary.channel = channel;
