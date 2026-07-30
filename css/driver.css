@@ -620,9 +620,10 @@ h3 {
 }
 
 .driver-withdrawal-table th.driver-withdrawal-daily-fee-head {
-  max-width: 5.8em;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  max-width: none;
+  min-width: 6.5em;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .driver-withdrawal-table th.driver-withdrawal-daily-fee-head .driver-withdrawal-th-sub {
