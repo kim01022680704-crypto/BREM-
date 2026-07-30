@@ -6,6 +6,9 @@ const BremPromotionApplyAdmin = (function () {
     platform: 'coupang',
     // 브로/직계약. 주정산서 저장 키가 달라 목록·계산·저장 모두 이 값을 따라간다.
     channel: 'bro',
+    // 합산(콜수합산) 전용: 배민=브로 / 쿠팡=직계약 처럼 채널이 갈릴 때 쿠팡·배민을
+    // 각각 다른 채널에서 고를 수 있게 플랫폼별 채널을 따로 둔다. (빈 값이면 state.channel 따름)
+    combinedChannel: { coupang: '', baemin: '' },
     savedResultId: '',
     settlementWeekByKey: {},
     savedWeekFilter: ''
@@ -17,6 +20,12 @@ const BremPromotionApplyAdmin = (function () {
   // 한 칸에 같이 두면 채널을 바꿨을 때 정산서 없는 주가 그대로 남아 목록이 빈다.
   function channelLabel(channel = state.channel) {
     return channel === 'direct' ? '직계약' : '브로';
+  }
+
+  // 합산 탭에서 플랫폼별로 선택된 채널(없으면 현재 채널 따름)
+  function combinedChannelFor(platform) {
+    const ch = state.combinedChannel?.[platform];
+    return ch === 'direct' || ch === 'bro' ? ch : state.channel;
   }
 
   function platformLabel(platform) {
@@ -471,17 +480,20 @@ const BremPromotionApplyAdmin = (function () {
   function renderCombinedSettlementSelects() {
     ['coupang', 'baemin'].forEach(platform => {
       const selectKey = `combined-${platform}`;
+      const channelSelect = $(`#promotionApplyCombinedChannel-${platform}`);
+      if (channelSelect) channelSelect.value = combinedChannelFor(platform);
       const select = $(`#promotionApplySettlementSelect-${selectKey}`);
       if (!select) return;
 
       const weekStart = applyWeekWednesday(getWeek(selectKey) || ensureSettlementWeek(selectKey));
       setWeek(selectKey, weekStart);
 
+      const ch = combinedChannelFor(platform);
       const previous = select.value;
-      const options = BremPromotionApply.getSettlementOptions(platform, { weekStart, channel: state.channel });
+      const options = BremPromotionApply.getSettlementOptions(platform, { weekStart, channel: ch });
       const emptyLabel = options.length
-        ? `저장된 ${channelLabel()} ${platformLabel(platform)} 주정산 선택`
-        : `${formatDate(weekStart)} 주에 저장된 ${channelLabel()} ${platformLabel(platform)} 주정산이 없습니다`;
+        ? `저장된 ${channelLabel(ch)} ${platformLabel(platform)} 주정산 선택`
+        : `${formatDate(weekStart)} 주에 저장된 ${channelLabel(ch)} ${platformLabel(platform)} 주정산이 없습니다`;
 
       select.innerHTML = [`<option value="">${emptyLabel}</option>`].concat(
         options.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
@@ -793,8 +805,11 @@ const BremPromotionApplyAdmin = (function () {
           return;
         }
         // 채널을 명시해야 브로/직계약에 같은 지역·주차 정산서가 있을 때 엉뚱한 쪽을 잡지 않는다.
-        const coupangSettlement = BremStorage.weeklySettlements.getById(ids.coupang, state.channel);
-        const baeminSettlement = BremStorage.weeklySettlements.getById(ids.baemin, state.channel);
+        // 합산은 쿠팡·배민 채널이 갈릴 수 있어(배민 브로 / 쿠팡 직계약) 각 플랫폼 채널로 조회한다.
+        const coupangChannel = combinedChannelFor('coupang');
+        const baeminChannel = combinedChannelFor('baemin');
+        const coupangSettlement = BremStorage.weeklySettlements.getById(ids.coupang, coupangChannel);
+        const baeminSettlement = BremStorage.weeklySettlements.getById(ids.baemin, baeminChannel);
         if (!coupangSettlement || BremStorage.resolveWeeklySettlementPlatform(coupangSettlement) !== 'coupang') {
           showToast('쿠팡 주정산서를 확인하세요.');
           renderCombinedSettlementSelects();
@@ -813,9 +828,11 @@ const BremPromotionApplyAdmin = (function () {
         await BremStorage.ensurePromotionCalculationCalls?.(calcStartDate);
 
         const deliveryFeeParsed = await resolveDeliveryFeeForCalculation('combined', baeminSettlement, coupangSettlement);
+        // 저장 결과 채널은 쿠팡 채널을 대표로 두고, 배민 채널은 메타에 함께 남긴다.
+        const combinedMeta = { channel: coupangChannel, coupangChannel, baeminChannel };
         const applyOptions = deliveryFeeParsed
-          ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed, channel: state.channel }
-          : { channel: state.channel };
+          ? { deliveryFeeIndex: deliveryFeeParsed.index, deliveryFeeMeta: deliveryFeeParsed, ...combinedMeta }
+          : { ...combinedMeta };
 
         state.lastResult = BremPromotionApply.applyPromotionToCombinedSettlements(
           coupangSettlement,
@@ -1054,6 +1071,12 @@ const BremPromotionApplyAdmin = (function () {
     ['coupang', 'baemin'].forEach(platform => {
       $$(`input[name="promotionApplyMode-${platform}"]`).forEach(input => {
         input.addEventListener('change', () => syncApplyModeUI(platform));
+      });
+      // 합산 탭 플랫폼별 채널 선택(배민 브로 / 쿠팡 직계약 등 교차 지원)
+      $(`#promotionApplyCombinedChannel-${platform}`)?.addEventListener('change', event => {
+        const ch = event.target.value === 'direct' ? 'direct' : 'bro';
+        state.combinedChannel[platform] = ch;
+        renderCombinedSettlementSelects();
       });
     });
 
