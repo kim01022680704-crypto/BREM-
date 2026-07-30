@@ -506,8 +506,21 @@
   });
 
   amountInput?.addEventListener('input', updateFeePreview);
-  platformCoupang?.addEventListener('change', syncMaxUi);
-  platformBaemin?.addEventListener('change', syncMaxUi);
+  platformCoupang?.addEventListener('change', () => {
+    if (hintEl && !state.withdrawalPaused && !state.weekFinalized) {
+      const by = state.netPayByPlatform || {};
+      const avail = state.availableByPlatform || {};
+      const platform = selectedPlatform();
+      const platformPart = platform
+        ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(Math.max(0, platformAvailableAmount(platform)))}`
+        : '플랫폼을 선택하세요';
+      hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(Math.max(0, avail.coupang))} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(Math.max(0, avail.baemin))} · ${platformPart}`;
+    }
+    syncMaxUi();
+  });
+  platformBaemin?.addEventListener('change', () => {
+    platformCoupang?.dispatchEvent(new Event('change'));
+  });
   maxBtn?.addEventListener('click', () => {
     const max = Math.max(0, maxWithdrawableAmount());
     if (amountInput) {
