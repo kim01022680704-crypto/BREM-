@@ -6405,6 +6405,47 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   color: #0f172a;
 }
 
+.settlement-retro-grand {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: var(--yellow, #facc15);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.settlement-retro-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.settlement-retro-table th,
+.settlement-retro-table td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+.settlement-retro-table th.settlement-retro-name,
+.settlement-retro-table td.settlement-retro-name { width: 34%; text-align: left; }
+
+.settlement-retro-table th.settlement-retro-id,
+.settlement-retro-table td.settlement-retro-id { width: 30%; text-align: left; word-break: break-all; }
+
+.settlement-retro-table th.settlement-retro-platform,
+.settlement-retro-table td.settlement-retro-platform { width: 14%; text-align: center; }
+
+.settlement-retro-table th.settlement-retro-amount,
+.settlement-retro-table td.settlement-retro-amount { width: 22%; text-align: right; white-space: nowrap; font-weight: 700; }
+
+.settlement-retro-total-row td {
+  border-top: 2px solid #111827;
+  background: #f8fafc;
+  font-weight: 800;
+}
+
+.settlement-retro-total-row td:first-child { text-align: right; }
+
 .final-deposit-group-row td {
   background: #111827;
   color: var(--yellow, #facc15);

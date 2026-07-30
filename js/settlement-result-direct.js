@@ -451,29 +451,55 @@ const BremSettlementResultDirect = (function () {
       body.innerHTML = '<p class="form-help">아직 소급분(일괄 맞추기) 내역이 없습니다.</p>';
       return;
     }
-    body.innerHTML = weeks.map(wk => {
+    let grandTotal = 0;
+    let grandCount = 0;
+    weeks.forEach(wk => {
+      Object.values(all[wk] || {}).forEach(r => {
+        grandTotal += Number(r.amount || 0);
+        grandCount += 1;
+      });
+    });
+
+    const weekBlocks = weeks.map(wk => {
       const map = all[wk] || {};
       const list = Object.values(map).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
       if (!list.length) return '';
       const total = list.reduce((s, r) => s + Number(r.amount || 0), 0);
       const rowsHtml = list.map(r => `
         <tr>
-          <td><strong>${escapeHtml(r.name || '-')}</strong></td>
-          <td>${escapeHtml(r.idLabel || '-')}</td>
-          <td>${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
-          <td class="weekly-amount-cell">${formatNumber(r.amount)}원</td>
+          <td class="settlement-retro-name"><strong>${escapeHtml(r.name || '-')}</strong></td>
+          <td class="settlement-retro-id">${escapeHtml(r.idLabel || '-')}</td>
+          <td class="settlement-retro-platform">${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
+          <td class="settlement-retro-amount">${formatNumber(r.amount)}원</td>
         </tr>`).join('');
       return `
         <div class="settlement-retro-week">
           <p class="settlement-retro-week-head"><strong>${escapeHtml(wk)}(수)</strong> 주 · ${list.length}명 · 소급 합계 <strong>${formatNumber(total)}</strong>원</p>
           <div class="table-wrap">
-            <table class="weekly-settlement-saved-table">
-              <thead><tr><th>이름</th><th>아이디</th><th>플랫폼</th><th>소급 기타지급</th></tr></thead>
+            <table class="weekly-settlement-saved-table settlement-retro-table">
+              <thead>
+                <tr>
+                  <th class="settlement-retro-name">이름</th>
+                  <th class="settlement-retro-id">아이디</th>
+                  <th class="settlement-retro-platform">플랫폼</th>
+                  <th class="settlement-retro-amount">소급 기타지급</th>
+                </tr>
+              </thead>
               <tbody>${rowsHtml}</tbody>
+              <tfoot>
+                <tr class="settlement-retro-total-row">
+                  <td colspan="3">합계 (${list.length}명)</td>
+                  <td class="settlement-retro-amount"><strong>${formatNumber(total)}원</strong></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>`;
     }).join('');
+
+    body.innerHTML = `
+      <p class="settlement-retro-grand">전체 소급 합계 · ${grandCount}건 · <strong>${formatNumber(grandTotal)}</strong>원</p>
+      ${weekBlocks}`;
   }
 
   function bindEvents() {
