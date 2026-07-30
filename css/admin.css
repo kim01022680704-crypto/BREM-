@@ -10962,33 +10962,41 @@ tr.is-selected {
   border-radius: 8px 0 0 0;
 }
 
+/* 전역 button { color: inherit } 보다 우선해 박스 이름이 항상 잘 보이게 한다. */
+button.driver-org-node,
 .driver-org-node {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-width: 108px;
-  max-width: 160px;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
+  gap: 5px;
+  min-width: 120px;
+  max-width: 180px;
+  padding: 12px 14px;
+  border: 2px solid #1d4ed8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.25;
   cursor: pointer;
-  box-shadow: 0 2px 0 #1d4ed8;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
+button.driver-org-node.is-selected,
 .driver-org-node.is-selected {
+  background: #fff7ed;
+  border-color: #f59e0b;
   outline: 3px solid #fbbf24;
   outline-offset: 2px;
 }
 
+button.driver-org-node small,
 .driver-org-node small {
-  font-weight: 500;
-  opacity: 0.9;
-  font-size: 11px;
+  color: #334155;
+  font-weight: 600;
+  opacity: 1;
+  font-size: 12px;
 }
 
 .driver-org-editor {
@@ -11159,6 +11167,11 @@ tr.is-selected {
 .driver-org-node-label {
   display: block;
   width: 100%;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
   word-break: keep-all;
 }
 
