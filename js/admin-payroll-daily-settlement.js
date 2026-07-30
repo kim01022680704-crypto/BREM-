@@ -1012,14 +1012,31 @@
     }
 
     const activeRows = rows.filter(row => row.status !== 'cancelled');
-    const driverMap = new Map(getDrivers().map(driver => [String(driver.id || ''), driver]));
+    const allDrivers = getDrivers();
+    const driverMap = new Map(allDrivers.map(driver => [String(driver.id || ''), driver]));
+    // 출금기록의 driverId 가 (기사 재등록 등으로) 현재 기사 id 와 어긋나면
+    // 이름으로 보조 매칭한다. 동명이인이 1명뿐일 때만 채택한다.
+    const byName = new Map();
+    allDrivers.forEach(driver => {
+      const name = String(driver.name || '').replace(/\s+/g, '');
+      if (!name) return;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(driver);
+    });
+    const resolveWithdrawalDriver = row => {
+      const byId = driverMap.get(String(row.driverId || ''));
+      if (byId) return byId;
+      const name = String(row.driverName || '').replace(/\s+/g, '');
+      const hits = name ? (byName.get(name) || []) : [];
+      return hits.length === 1 ? hits[0] : null;
+    };
     const byDriver = new Map();
 
     activeRows.forEach(row => {
       const driverId = String(row.driverId || '');
       if (!driverId) return;
       if (!byDriver.has(driverId)) {
-        const driver = driverMap.get(driverId) || null;
+        const driver = resolveWithdrawalDriver(row);
         byDriver.set(driverId, {
           driverId,
           driverName: row.driverName || driver?.name || '-',
