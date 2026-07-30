@@ -23,6 +23,7 @@ const riderAuth = require('./rider-auth');
 const riderWeeklyPayslip = require('./rider-weekly-payslip');
 const riderWithdrawal = require('./rider-withdrawal');
 const riderRegionDashboard = require('./rider-region-dashboard');
+const directPayslipPublish = require('./direct-payslip-publish');
 const payrollPublishAdmin = require('./payroll-publish-admin');
 const riderPublishAdmin = require('./rider-publish-admin');
 const { getPublicConfig } = require('./public-config');
@@ -584,6 +585,21 @@ app.post('/api/admin/payroll/withdrawal-requests/:id/complete', async (req, res)
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '출금완료 처리에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/payroll/direct-payslip/publish', async (req, res) => {
+  try {
+    const result = await directPayslipPublish.publishDirectSettlementPayslips(
+      getBearerToken(req),
+      req.body || {}
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '급여명세서 반영에 실패했습니다.' });
   }
 });
 

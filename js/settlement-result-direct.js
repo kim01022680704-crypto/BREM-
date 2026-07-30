@@ -502,9 +502,129 @@ const BremSettlementResultDirect = (function () {
       ${weekBlocks}`;
   }
 
+  // ── 최종결산 (그 주 전체, 쿠팡+배민, 합치지 않음) ────────────────────────
+  function finalWeek() {
+    const cur = currentSettlement();
+    return state.week || (cur ? settlementWeek(cur) : weekStartKey());
+  }
+
+  function finalWeekSettlements() {
+    const week = finalWeek();
+    return (window.BremStorage?.weeklySettlements?.getAll?.('direct') || [])
+      .filter(record => settlementWeek(record) === week);
+  }
+
+  // 그 주 모든 정산서(쿠팡+배민)의 라이더 행을 합치지 않고 모은다.
+  function finalRows() {
+    const settlements = finalWeekSettlements();
+    const rows = [];
+    settlements.forEach(settlement => {
+      Calc().computeRows(settlement, {
+        withdrawals: state.withdrawals,
+        weekSettlements: settlements
+      }).forEach(r => rows.push(r));
+    });
+    // 쿠팡 먼저, 그다음 배민, 각 그룹 내 이름순
+    return rows.sort((a, b) => {
+      if (a.platform !== b.platform) return a.platform === 'coupang' ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name), 'ko');
+    });
+  }
+
+  function renderFinal() {
+    const head = $('#settlementFinalHead');
+    const body = $('#settlementFinalRows');
+    const summaryEl = $('#settlementFinalSummary');
+    if (!body) return;
+
+    const rows = finalRows();
+    // 헤더: 기사 · 플랫폼 · ID + 정산 열들
+    const cols = Calc().COLUMNS;
+    if (head) {
+      const lead = '<th rowspan="2">플랫폼</th>';
+      head.innerHTML = Calc().theadHtml(cols, lead);
+    }
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">이 주에 저장된 직계약 정산서가 없습니다.</td></tr>`;
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+    body.innerHTML = rows.map(row => {
+      const tag = row.platform === 'coupang'
+        ? '<span class="settle-platform-tag settle-platform-tag--coupang">쿠팡</span>'
+        : '<span class="settle-platform-tag settle-platform-tag--baemin">배민</span>';
+      const cells = cols.map(col => {
+        if (col.tag) return `<td class="settle-col-${col.group}"><span class="weekly-id-tag">${escapeHtml(row[col.key])}</span></td>`;
+        const value = col.money === false ? escapeHtml(row[col.key]) : formatNumber(row[col.key]);
+        const cls = [`settle-col-${col.group}`];
+        if (col.money !== false) cls.push('weekly-amount-cell');
+        return `<td class="${cls.join(' ')}">${col.strong ? `<strong>${value}</strong>` : value}</td>`;
+      }).join('');
+      return `<tr><td>${tag}</td>${cells}</tr>`;
+    }).join('');
+
+    if (summaryEl) {
+      const t = Calc().sumRows(rows);
+      const coupangCount = rows.filter(r => r.platform === 'coupang').length;
+      const baeminCount = rows.filter(r => r.platform === 'baemin').length;
+      summaryEl.innerHTML = `전체 <strong>${rows.length}</strong>줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})`
+        + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
+        + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
+        + ` · 총선정산 <strong>${formatNumber(t.prepaid)}</strong>`
+        + ` · 총콜수수료 <strong>${formatNumber(t.callFee)}</strong>`
+        + ` · 총일정산수수료 <strong>${formatNumber(t.dailySettlementFee)}</strong>`
+        + ` · <span class="final-deposit-total">총지급액 <strong>${formatNumber(t.netPay)}</strong>원</span>`;
+    }
+  }
+
+  function toggleFinalView(show) {
+    const finalCard = $('#settlementFinalCard');
+    const mainCard = $('#settlementResultMainCard');
+    const finalTab = $('#settlementFinalTabBtn');
+    if (!finalCard) return;
+    finalCard.hidden = !show;
+    if (mainCard) mainCard.hidden = show;
+    if (finalTab) finalTab.classList.toggle('active', show);
+    // 쿠팡/배민 탭 active 는 show 일 때 해제
+    if (show) {
+      document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => btn.classList.remove('active'));
+      renderFinal();
+    }
+  }
+
+  async function publishFinalPayslips() {
+    const rows = finalRows().filter(r => r.driverId);
+    if (!rows.length) { showToast('반영할 정산 행이 없습니다.'); return; }
+    const week = finalWeek();
+    const ok = window.confirm(
+      [
+        `${week}(수) 주 전체 ${rows.length}줄을 기사앱 주급명세서로 반영합니다.`,
+        '쿠팡·배민 각 줄이 각각 반영되고, 기사앱에 즉시 노출됩니다.',
+        '지급일은 표시하지 않습니다.',
+        '',
+        '반영할까요?'
+      ].join('\n')
+    );
+    if (!ok) return;
+    try {
+      const result = await window.BremStorage.publishDirectSettlementPayslips({ weekStart: week, rows });
+      if (!result?.ok) throw new Error(result?.error || result?.message || '반영 실패');
+      showToast(result.message || `급여명세서 반영 완료 · ${result.published || rows.length}건`);
+    } catch (error) {
+      console.error('[direct payslip publish]', error);
+      showToast(error.message || '급여명세서 반영에 실패했습니다.');
+    }
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
+    $('#settlementFinalTabBtn')?.addEventListener('click', () => toggleFinalView(true));
+    $('#settlementFinalReloadBtn')?.addEventListener('click', async () => { await loadWithdrawals(); renderFinal(); });
+    $('#settlementFinalPublishBtn')?.addEventListener('click', () => { void publishFinalPayslips(); });
+    document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => {
+      btn.addEventListener('click', () => toggleFinalView(false));
+    });
     $('#settlementResultSettlementSelect')?.addEventListener('change', async event => {
       state.settlementId = event.target.value || '';
       await loadWithdrawals();

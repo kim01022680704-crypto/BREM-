@@ -3028,6 +3028,16 @@ const BremStorage = (function () {
     });
   }
 
+  async function publishDirectSettlementPayslips({ weekStart, rows } = {}) {
+    return adminRidersApi('/api/admin/payroll/direct-payslip/publish', {
+      method: 'POST',
+      body: JSON.stringify({
+        weekStart: String(weekStart || '').slice(0, 10),
+        rows: Array.isArray(rows) ? rows : []
+      })
+    });
+  }
+
   async function autoFixAdminWithdrawalPlatforms({ weekStart, dryRun } = {}) {
     return adminRidersApi('/api/admin/payroll/withdrawal-requests/auto-fix-platform', {
       method: 'POST',
@@ -12984,6 +12994,7 @@ const BremStorage = (function () {
     completeAdminWithdrawalRequest,
     updateAdminWithdrawalRequestPlatform,
     autoFixAdminWithdrawalPlatforms,
+    publishDirectSettlementPayslips,
     deleteAdminWithdrawalRequest,
     loadDriverAppBundle,
     getDriverAppPublishedAt,

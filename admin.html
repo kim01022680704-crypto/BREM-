@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260730aq">
+  <link rel="stylesheet" href="css/admin.css?v=20260730ar">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4492,9 +4492,10 @@
         <div class="promotion-platform-tabs" role="tablist">
           <button type="button" class="promotion-tab" data-admin-platform-tab="settlement-result-direct" data-platform="coupang">쿠팡</button>
           <button type="button" class="promotion-tab active" data-admin-platform-tab="settlement-result-direct" data-platform="baemin">배민</button>
+          <button type="button" class="promotion-tab" id="settlementFinalTabBtn" title="그 주 전체(쿠팡+배민) 기사를 합치지 않고 나열 + 급여명세서 반영">최종결산</button>
         </div>
 
-        <article class="card">
+        <article class="card" id="settlementResultMainCard">
           <div class="card-header">
             <h2>정산결과 (직계약) <span id="settlementResultPlatformLabel"></span></h2>
             <div class="promotion-form-actions">
@@ -4541,6 +4542,24 @@
             <p class="form-help">「마이너스 일괄 맞추기」로 기타지급에 얹은 그로스업(소급) 금액을 정산주별로 정리합니다. 이름 · 아이디 · 플랫폼 · 소급 기타지급.</p>
             <div id="settlementResultRetroBody"></div>
           </article>
+        </article>
+
+        <article class="card" id="settlementFinalCard" hidden>
+          <div class="card-header">
+            <h2>최종결산 (그 주 전체)</h2>
+            <div class="promotion-form-actions">
+              <button type="button" class="small-btn" id="settlementFinalReloadBtn">불러오기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementFinalPublishBtn" title="이 주 전체(쿠팡+배민)를 기사앱 주급명세서로 한 번에 반영합니다">급여명세서 반영</button>
+            </div>
+          </div>
+          <p class="form-help">그 주 정산서의 모든 기사를 <strong>합치지 않고</strong> 정산서별로 나열합니다. 같은 사람이 쿠팡·배민 둘 다면 각각 한 줄씩(ID도 각 플랫폼 ID로) 표시됩니다. 아래 합계는 확인용입니다.</p>
+          <p class="direct-inline-stats" id="settlementFinalSummary"></p>
+          <div class="table-wrap direct-scroll direct-scroll-wide">
+            <table class="weekly-settlement-saved-table settle-grouped-table" id="settlementFinalTable">
+              <thead id="settlementFinalHead"></thead>
+              <tbody id="settlementFinalRows"></tbody>
+            </table>
+          </div>
         </article>
       </section>
 
@@ -6876,7 +6895,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260730p"></script>
-  <script src="js/storage.js?v=20260730ao"></script>
+  <script src="js/storage.js?v=20260730ar"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -6915,7 +6934,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
   <script src="js/direct-settlement-calc.js?v=20260730an"></script>
-  <script src="js/settlement-result-direct.js?v=20260730ap"></script>
+  <script src="js/settlement-result-direct.js?v=20260730ar"></script>
   <script src="js/final-deposit.js?v=20260730aq"></script>
   <script src="js/driver-management-admin.js?v=20260730aa"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
