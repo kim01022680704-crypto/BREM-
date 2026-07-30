@@ -271,25 +271,16 @@ const BremSettlementResultDirect = (function () {
       <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
     if (summaryEl) {
-      const over = Number(totals.prepaidOverCount || totals.prepaidCappedCount || 0);
-      const negative = Number(totals.negativeNetCount || 0);
+      // 선정산은 처리완료 실금액을 그대로 반영한다(총지급액이 음수여도 표기).
+      // "한도초과" 개념은 쓰지 않는다. 다만 플랫폼 태그가 없어 어느 쪽에도
+      // 매칭 못 한 출금만 별도로 알린다(쿠팡/배민 매칭 누락 방지).
       const untagged = Number(totals.untaggedWithdrawalCount || 0);
-      const notes = [];
-      if (over) {
-        notes.push(`선정산&gt;지급가능 <strong>${over}</strong>명(초과 ${formatNumber(totals.prepaidExcessTotal)}원 · 처리완료 금액은 그대로 반영, 총지급액 음수 가능)`);
-      }
-      if (negative) {
-        notes.push(`총지급액 음수 <strong>${negative}</strong>명`);
-      }
-      if (untagged) {
-        notes.push(`플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원)은 반영 안 됨`);
-      }
-      const excessNote = notes.length
-        ? ` · <span class="muted-inline">${notes.join(' · ')}</span>`
+      const untaggedNote = untagged
+        ? ` · <span class="muted-inline">플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원)은 매칭 안 됨 — 출금내역에서 쿠팡/배민 지정 필요</span>`
         : '';
       summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
         + ` <span class="muted-inline">(불러온 BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
-        + excessNote;
+        + untaggedNote;
     }
   }
 
