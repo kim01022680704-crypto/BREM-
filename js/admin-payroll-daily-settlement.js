@@ -1026,17 +1026,31 @@
     }
 
     const activeRows = rows.filter(row => row.status !== 'cancelled');
-    const allDrivers = getDrivers();
-    const driverMap = new Map(allDrivers.map(driver => [String(driver.id || ''), driver]));
+    // ID 표기는 급여용 기사 소스 + 전체 기사 목록을 함께 써서 최대한 채운다.
+    // (급여 소스에 일부 기사가 빠져 있어도 전체 목록에서 찾도록. 금액엔 영향 없음.)
+    const driverSources = [];
+    try { (getDrivers() || []).forEach(d => driverSources.push(d)); } catch (_) { /* noop */ }
+    try { (BremStorage?.drivers?.getAll?.() || []).forEach(d => driverSources.push(d)); } catch (_) { /* noop */ }
+    const driverMap = new Map();
+    const byName = new Map();
+    driverSources.forEach(driver => {
+      const id = String(driver?.id || '');
+      // 같은 id 는 baeminId 가 채워진 레코드를 우선 보존한다.
+      if (id) {
+        const existing = driverMap.get(id);
+        if (!existing || (!resolveBaeminId(existing) && resolveBaeminId(driver))) {
+          driverMap.set(id, driver);
+        }
+      }
+      const name = String(driver?.name || '').replace(/\s+/g, '');
+      if (name) {
+        if (!byName.has(name)) byName.set(name, []);
+        const arr = byName.get(name);
+        if (!arr.some(d => String(d.id || '') === id)) arr.push(driver);
+      }
+    });
     // 출금기록의 driverId 가 (기사 재등록 등으로) 현재 기사 id 와 어긋나면
     // 이름으로 보조 매칭한다. 동명이인이 1명뿐일 때만 채택한다.
-    const byName = new Map();
-    allDrivers.forEach(driver => {
-      const name = String(driver.name || '').replace(/\s+/g, '');
-      if (!name) return;
-      if (!byName.has(name)) byName.set(name, []);
-      byName.get(name).push(driver);
-    });
     const resolveWithdrawalDriver = row => {
       const byId = driverMap.get(String(row.driverId || ''));
       if (byId) return byId;
