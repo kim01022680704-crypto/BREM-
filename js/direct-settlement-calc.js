@@ -72,6 +72,15 @@ const BremDirectSettlementCalc = (function () {
     return String(platform || '') === 'coupang' ? 'coupang' : 'baemin';
   }
 
+  // 출금건 플랫폼. 비어 있거나 알 수 없으면 '' — 정산 차감에 쓰지 않는다.
+  // (예전엔 platform 없으면 쿠팡·배민 양쪽에 들어가 교차 차감됐다.)
+  function normalizeWithdrawalPlatform(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'coupang' || raw === '쿠팡') return 'coupang';
+    if (raw === 'baemin' || raw === '배민') return 'baemin';
+    return '';
+  }
+
   function driverName(driverId, fallback) {
     const driver = window.BremStorage?.drivers?.getById?.(driverId);
     return driver?.name || fallback || '(이름 없음)';
@@ -85,20 +94,22 @@ const BremDirectSettlementCalc = (function () {
 
   function withdrawalRowFee(row, platform) {
     if (row.feeAmount != null) return Math.max(0, Math.round(Number(row.feeAmount) || 0));
-    const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(normalizePlatform(row.platform || platform)) || {};
+    const rowPlatform = normalizeWithdrawalPlatform(row.platform) || normalizePlatform(platform);
+    const fees = window.BremStorage?.payrollDailySettlement?.getFees?.(rowPlatform) || {};
     const resolve = window.BremStorage?.payrollDailySettlement?.resolveDailySettlementFee;
     return typeof resolve === 'function' ? resolve(Number(row.amount || 0), fees) : 0;
   }
 
   // 이 주 선정산(일정산) 처리완료 금액·수수료 맵: driverId → { prepaid, fee }
+  // 배민 출금 → 배민 정산만, 쿠팡 출금 → 쿠팡 정산만 차감한다.
   function completedWithdrawalMap(withdrawals, week, platform) {
     const target = normalizePlatform(platform);
     const map = new Map();
     (Array.isArray(withdrawals) ? withdrawals : []).forEach(row => {
       if (String(row.status || '') !== 'completed') return;
       if (String(row.weekStart || '').slice(0, 10) !== week) return;
-      const rowPlatform = String(row.platform || '');
-      if (rowPlatform && rowPlatform !== target) return;
+      const rowPlatform = normalizeWithdrawalPlatform(row.platform);
+      if (!rowPlatform || rowPlatform !== target) return;
       const driverId = String(row.driverId || '').trim();
       if (!driverId) return;
       const prev = map.get(driverId) || { prepaid: 0, fee: 0 };
