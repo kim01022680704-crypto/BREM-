@@ -711,9 +711,12 @@ const BremSettlementParser = (function () {
   }
 
   function findBaeminSettlementSheet(workbook) {
-    return resolveWorkbookSheetName(workbook, {
-      sheetMatcher: name => name.includes('을지_협력사 소속 라이더 정산 확인용')
-    });
+    // 배민 정산서는 라이더 정산 시트가 두 번째다. 시트명은 파일마다 달라질 수 있다.
+    const names = workbook?.SheetNames || [];
+    return names[1]
+      || names.find(name => String(name || '').includes('을지_협력사 소속 라이더 정산 확인용'))
+      || names[0]
+      || '';
   }
 
   async function readWorkbookMeta(buffer, password) {

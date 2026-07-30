@@ -1,5 +1,8 @@
 const BremWeeklySettlement = (function () {
   const BAEMIN_SHEET_KEYWORD = '을지_협력사 소속 라이더 정산 확인용';
+  // 배민 정산서는 라이더 정산 시트가 항상 두 번째다.
+  // 시트명은 파일마다 달라질 수 있어 이름보다 위치를 먼저 본다.
+  const BAEMIN_SHEET_INDEX = 1;
 
   function normalizePlatform(platform) {
     return BremPlatforms.normalize(platform);
@@ -622,19 +625,10 @@ const BremWeeklySettlement = (function () {
     return riders;
   }
 
-  async function extractBaeminWeeklyRiders(file, password, columnConfig = {}) {
-    const userIdColumn = columnConfig.userIdColumn || 'B';
-    const nameColumn = columnConfig.nameColumn || 'C';
-    const orderCountColumn = columnConfig.orderCountColumn || 'D';
-    const startRow = Number(columnConfig.startRow || 2);
-    // 직계약: 금액/공제 열이 지정되면 라이더별 amounts(배달료·추가지급·총배달료·공제)를 함께 추출한다.
-    const amountColumns = columnConfig.amountColumns || null;
-    const rows = await readWeeklyRows(file, password, {
-      sheetMatcher: name => name.includes(BAEMIN_SHEET_KEYWORD)
-    });
+  function parseBaeminRiderRows(rows, options = {}) {
+    const { userIdColumn, nameColumn, orderCountColumn, startIndex, amountColumns } = options;
     const riders = [];
     const seen = new Set();
-    const startIndex = Math.max(0, startRow - 1);
 
     for (let i = startIndex; i < rows.length; i += 1) {
       const rawName = cellText(readCell(rows[i] || [], nameColumn));
@@ -657,14 +651,41 @@ const BremWeeklySettlement = (function () {
       pushUniqueRider(riders, seen, normalizedUserId, rider);
     }
 
-    if (!riders.length) {
-      throw new Error(`배민 정산서 "${BAEMIN_SHEET_KEYWORD}" 시트에서 User ID(B열)를 읽지 못했습니다.`);
-    }
     return riders;
   }
 
+  async function extractBaeminWeeklyRiders(file, password, columnConfig = {}) {
+    const parseOptions = {
+      userIdColumn: columnConfig.userIdColumn || 'B',
+      nameColumn: columnConfig.nameColumn || 'C',
+      orderCountColumn: columnConfig.orderCountColumn || 'D',
+      startIndex: Math.max(0, Number(columnConfig.startRow || 2) - 1),
+      // 직계약: 금액/공제 열이 지정되면 라이더별 amounts(배달료·추가지급·총배달료·공제)를 함께 추출한다.
+      amountColumns: columnConfig.amountColumns || null
+    };
+
+    // 두 번째 시트 → 시트명 매칭 → 첫 시트 순으로 시도하고,
+    // User ID(B열)를 실제로 읽어낸 시트를 채택한다.
+    const attempts = [
+      { sheetIndex: BAEMIN_SHEET_INDEX },
+      { sheetMatcher: name => name.includes(BAEMIN_SHEET_KEYWORD) },
+      { sheetIndex: 0 }
+    ];
+
+    for (const attempt of attempts) {
+      const rows = await readWeeklyRows(file, password, attempt);
+      const riders = parseBaeminRiderRows(rows || [], parseOptions);
+      if (riders.length) return riders;
+    }
+
+    throw new Error('배민 정산서 두 번째 시트에서 User ID(B열)를 읽지 못했습니다. 시트 순서와 열/시작행을 확인하세요.');
+  }
+
   function findBaeminSettlementSheetName(sheetNames = []) {
-    return sheetNames.find(name => name.includes(BAEMIN_SHEET_KEYWORD)) || '';
+    const names = Array.isArray(sheetNames) ? sheetNames : [];
+    return names[BAEMIN_SHEET_INDEX]
+      || names.find(name => String(name || '').includes(BAEMIN_SHEET_KEYWORD))
+      || '';
   }
 
   function findBaeminSettlementSheet(workbookOrNames) {
@@ -1160,6 +1181,7 @@ const BremWeeklySettlement = (function () {
 
   return {
     BAEMIN_SHEET_KEYWORD,
+    BAEMIN_SHEET_INDEX,
     calculateCoupangSettlementDates,
     listDaysInclusive,
     buildCallCountMismatchDetail,
