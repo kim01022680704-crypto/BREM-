@@ -5642,6 +5642,81 @@
     }
   }
 
+  // 미매칭 내역만 현재 등록기사(배민ID·이름) 기준으로 다시 매칭해 반영한다.
+  // 기존 매칭분은 그대로 두고, 새로 매칭된 기사만 추가한다. (출금기록은 건드리지 않음)
+  async function retrySettlementUploadLogMatching(logId) {
+    const log = BremStorage.settlementUploadLogs.getById(logId);
+    if (!log || log.kind !== 'daily') {
+      showToast('업로드 기록을 찾지 못했습니다.');
+      return;
+    }
+    const unmatchedRecords = Array.isArray(log.unmatchedRecords) ? log.unmatchedRecords : [];
+    if (!unmatchedRecords.length) {
+      showToast('미매칭 내역이 없습니다.');
+      return;
+    }
+
+    const p = normalizePlatform(log.platform);
+    const period = String(log.period || '').slice(0, 10);
+    const retryBtn = $('#settlementUploadLogDetailRetryMatch');
+    if (retryBtn) { retryBtn.disabled = true; retryBtn.textContent = '기사 전체 불러오는 중…'; }
+
+    try {
+      // 부분 로드(첫 100명)로 재매칭하면 등록 기사도 계속 미매칭으로 남는다 — 전체 로드를 기다린다.
+      if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
+        await BremStorage.awaitDriversFullyLoaded();
+      }
+      await BremStorage.ensureSectionLoaded?.('settlements');
+      await BremStorage.ensureSectionLoaded?.('calls');
+
+      const driverList = BremStorage.drivers.getAll().map(driver => ({
+        id: driver.id,
+        name: driver.name,
+        phone: driver.phone || '',
+        baeminId: driver.baeminId || '',
+        coupangId: window.BremDriverUtils?.getErpCoupangId?.(driver)
+          || driver.coupangId
+          || driver.coupangLoginId
+          || driver.loginId
+          || ''
+      }));
+
+      const format = SettlementFormats.getFormat(BremPlatforms.settlementFormatId(p));
+      const { matched: newlyMatched, unmatched: stillUnmatched } =
+        BremSettlementParser.matchDrivers(unmatchedRecords, driverList, format);
+
+      if (!newlyMatched.length) {
+        showToast(`새로 매칭된 기사가 없습니다. (미매칭 ${stillUnmatched.length}명) — 기사 ${isBaeminSettlementPlatform(p) ? '배민ID' : '쿠팡ID·이름'} 등록을 확인하세요.`);
+        return;
+      }
+
+      const existingMatched = settlementUploadLogApplicableRecords(log);
+      const mergedMatched = existingMatched.concat(newlyMatched);
+
+      const result = await applyDailySettlementFromLogData(p, {
+        period,
+        matched: mergedMatched,
+        unmatched: stillUnmatched,
+        sourceFileName: log.fileName || '',
+        uploadLogId: log.id,
+        forceReapply: true,
+        payrollDailyEligible: settlementUploadLogPayrollEligible(log),
+        totalDeliveryAmount: mergedMatched.reduce((sum, row) => sum + settlementAmountValue(row), 0)
+      });
+
+      if (result.ok) {
+        invalidateCallStatsIndex();
+        showToast(`매칭 재시도 · ${newlyMatched.length}명 새로 매칭됨 (남은 미매칭 ${stillUnmatched.length}명)`);
+        renderSettlementUploadLogDetail(log.id);
+      }
+    } catch (error) {
+      console.error('[BREM] settlement retry match failed:', error);
+      showToast(error.message || '매칭 재시도에 실패했습니다.');
+    } finally {
+      if (retryBtn) { retryBtn.disabled = false; retryBtn.textContent = '미매칭 매칭 재시도'; }
+    }
+  }
+
   async function applySettlementPreview(platform) {
     const p = normalizePlatform(platform);
     const preview = state.settlementPreviewByPlatform[p];
@@ -6460,6 +6535,11 @@
     });
 
     $('#settlementUploadLogDetailClose')?.addEventListener('click', hideSettlementUploadLogDetail);
+    $('#settlementUploadLogDetailRetryMatch')?.addEventListener('click', () => {
+      const logId = state.settlementUploadLogDetailId;
+      if (!logId) return;
+      void retrySettlementUploadLogMatching(logId);
+    });
     $('#settlementUploadLogDetailReapply')?.addEventListener('click', event => {
       const hourlyLogId = event.currentTarget?.dataset?.reapplyBaeminHourlyInsuranceLog;
       if (hourlyLogId) {
