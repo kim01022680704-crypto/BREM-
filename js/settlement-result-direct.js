@@ -598,18 +598,18 @@ const BremSettlementResultDirect = (function () {
     const week = finalWeek();
     const ok = window.confirm(
       [
-        `${week}(수) 주 전체 ${rows.length}줄을 기사앱 주급명세서로 반영합니다.`,
-        '쿠팡·배민 각 줄이 각각 반영되고, 기사앱에 즉시 노출됩니다.',
-        '지급일은 표시하지 않습니다.',
+        `${week}(수) 주 전체 ${rows.length}줄을 급여명세서에 '대기' 저장합니다.`,
+        '쿠팡·배민 각 줄이 저장되지만, 아직 라이더앱에는 보이지 않습니다.',
+        '「급여명세서」 메뉴에서 「급여명세서 반영하기」를 눌러야 라이더앱에 공개됩니다.',
         '',
-        '반영할까요?'
+        '대기 저장할까요?'
       ].join('\n')
     );
     if (!ok) return;
     try {
       const result = await window.BremStorage.publishDirectSettlementPayslips({ weekStart: week, rows });
       if (!result?.ok) throw new Error(result?.error || result?.message || '반영 실패');
-      showToast(result.message || `급여명세서 반영 완료 · ${result.published || rows.length}건`);
+      showToast(result.message || `급여명세서 대기 저장 완료 · ${result.published || rows.length}건 (라이더앱 공개는 「급여명세서 반영하기」)`);
     } catch (error) {
       console.error('[direct payslip publish]', error);
       showToast(error.message || '급여명세서 반영에 실패했습니다.');

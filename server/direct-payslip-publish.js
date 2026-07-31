@@ -43,7 +43,8 @@ function weekEndOf(weekStart) {
  * 정산결과(직계약) 최종결산 행들을 기사앱 주급명세서(payroll_slip_lines)로 반영한다.
  * - 행 단위(정산서×기사×플랫폼)로 저장하며, 같은 사람이 쿠팡/배민 둘 다면 두 줄이 저장된다.
  * - id = direct-{settlementId}-{driverId} 로 재반영 시 덮어쓴다(중복 방지).
- * - rider_published_at 을 찍어 즉시 기사앱에 노출된다.
+ * - rider_published_at 은 null(대기)로 저장한다. 실제 라이더앱 공개는 별도
+ *   「급여명세서 반영하기」(/api/admin/payroll/publish) 를 눌러야 이뤄진다(2단계).
  */
 async function publishDirectSettlementPayslips(accessToken, body = {}) {
   const admin = await verifyAdminCaller(accessToken);
@@ -126,7 +127,8 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
         callCount: num(row.callCount),
         payslip
       },
-      rider_published_at: now,
+      // 대기 상태로 저장. 「급여명세서 반영하기」 를 눌러야 라이더앱에 공개된다.
+      rider_published_at: null,
       updated_at: now,
       created_at: now
     });
@@ -153,7 +155,8 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
     weekStart,
     weekEnd,
     published,
-    message: `급여명세서 반영 완료 · ${published}건 (기사앱 주급명세서에 노출)`
+    staged: published,
+    message: `급여명세서 대기 저장 완료 · ${published}건 (「급여명세서 반영하기」를 눌러야 라이더앱에 공개)`
   };
 }
 
