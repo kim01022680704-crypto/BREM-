@@ -42,6 +42,26 @@ function noticeAppliesToWeek(notice, weekStart) {
   return !scoped || scoped === weekStart;
 }
 
+// PostgREST .in() 필터는 쿼리스트링으로 붙어 URL 길이 한도(긴 direct-… id)에 걸리면
+// "Bad Request" 만 떨어지고 반영이 실패한다. 청크로 나눠 업데이트한다.
+async function updatePublishedAtByIds(supabase, table, ids, now) {
+  const list = (ids || []).filter(Boolean);
+  if (!list.length) return 0;
+  const CHUNK = 40;
+  let published = 0;
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const chunk = list.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from(table)
+      .update({ rider_published_at: now, updated_at: now })
+      .in('id', chunk)
+      .select('id');
+    if (error) throw error;
+    published += Array.isArray(data) ? data.length : 0;
+  }
+  return published;
+}
+
 async function loadPayrollLines(supabase) {
   const { data, error } = await supabase
     .from('payroll_slip_lines')
@@ -157,16 +177,12 @@ async function publishPayrollToRiders(accessToken, options = {}) {
     .map(row => row.id)
     .filter(Boolean);
 
-  let linesPublished = 0;
-  if (weekLineIds.length) {
-    const { data, error } = await supabase
-      .from('payroll_slip_lines')
-      .update({ rider_published_at: now, updated_at: now })
-      .in('id', weekLineIds)
-      .select('id');
-    if (error) throw error;
-    linesPublished = Array.isArray(data) ? data.length : 0;
-  }
+  const linesPublished = await updatePublishedAtByIds(
+    supabase,
+    'payroll_slip_lines',
+    weekLineIds,
+    now
+  );
 
   let noticesPublished = 0;
   if (!noticesResult.tableMissing) {
@@ -174,16 +190,12 @@ async function publishPayrollToRiders(accessToken, options = {}) {
       .filter(notice => noticeAppliesToWeek(notice, settlementWeekStart))
       .map(notice => notice.id)
       .filter(Boolean);
-
-    if (noticeIds.length) {
-      const { data, error } = await supabase
-        .from('payroll_notices')
-        .update({ rider_published_at: now, updated_at: now })
-        .in('id', noticeIds)
-        .select('id');
-      if (error) throw error;
-      noticesPublished = Array.isArray(data) ? data.length : 0;
-    }
+    noticesPublished = await updatePublishedAtByIds(
+      supabase,
+      'payroll_notices',
+      noticeIds,
+      now
+    );
   }
 
   const existingMeta = await readSettingValue(supabase, PUBLISH_META_KEY, {});
