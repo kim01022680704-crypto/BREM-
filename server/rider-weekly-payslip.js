@@ -266,58 +266,14 @@ function isDirectPayslipLine(line) {
   return String(line?.upload_id || '').startsWith('direct-');
 }
 
-/** 해당 줄이 실제로 금액을 채운 플랫폼(쿠팡/배민) */
-function platformsCoveredByLine(line) {
-  const split = splitLineIntoPlatforms(line);
-  const covered = [];
-  if (split.coupang.grossPay || split.coupang.deductTotal || split.coupang.callCount) {
-    covered.push('coupang');
-  }
-  if (split.baemin.grossPay || split.baemin.deductTotal || split.baemin.callCount) {
-    covered.push('baemin');
-  }
-  return covered;
-}
-
-/**
- * 같은 주에 브로·직계약이 같이 있으면:
- * - 플랫폼이 겹치면 브로를 우선 (이중합산/직계약만 보이는 문제 방지)
- * - 안 겹치면(예: 브로=배민, 직계약=쿠팡) 둘 다 합친다
- */
-function resolveWeekLinesForDisplay(weekLines) {
-  const list = Array.isArray(weekLines) ? weekLines : [];
-  if (list.length <= 1) return list;
-
-  const bro = [];
-  const direct = [];
-  list.forEach(line => {
-    (isDirectPayslipLine(line) ? direct : bro).push(line);
-  });
-  if (!bro.length || !direct.length) return list;
-
-  const broCovered = new Set();
-  bro.forEach(line => {
-    platformsCoveredByLine(line).forEach(p => broCovered.add(p));
-  });
-
-  const keptDirect = direct.filter(line => {
-    const covered = platformsCoveredByLine(line);
-    if (!covered.length) return false;
-    // 브로가 이미 채운 플랫폼만 있으면 직계약 줄은 건너뛴다.
-    return covered.some(p => !broCovered.has(p));
-  });
-
-  return bro.concat(keptDirect);
-}
-
 function buildPayslipFromLines(weekLines, meta = {}) {
-  const displayLines = resolveWeekLinesForDisplay(weekLines);
+  const list = Array.isArray(weekLines) ? weekLines : [];
   const platforms = {
     coupang: emptyDirectBucket(),
     baemin: emptyDirectBucket()
   };
 
-  displayLines.forEach(line => {
+  list.forEach(line => {
     const split = splitLineIntoPlatforms(line);
     addBuckets(platforms.coupang, split.coupang);
     addBuckets(platforms.baemin, split.baemin);
@@ -331,11 +287,10 @@ function buildPayslipFromLines(weekLines, meta = {}) {
   addBuckets(totals, platforms.baemin);
   const finalized = finalizeBucket(totals);
 
-  // 표시용 메타는 브로 줄을 우선(직계약만 남은 경우에만 직계약)
-  const first = displayLines.find(line => !isDirectPayslipLine(line)) || displayLines[0] || null;
+  const first = list[0] || null;
   const { raw, payslip } = first ? readRawPayslip(first) : { raw: {}, payslip: {} };
-  const hasBro = displayLines.some(line => !isDirectPayslipLine(line));
-  const hasDirect = displayLines.some(line => isDirectPayslipLine(line));
+  const source = meta.source
+    || (first && isDirectPayslipLine(first) ? 'direct' : 'bro');
 
   return {
     ...bucketToLegacyPayslip(finalized, {
@@ -351,7 +306,18 @@ function buildPayslipFromLines(weekLines, meta = {}) {
       coupang: platforms.coupang,
       baemin: platforms.baemin
     },
-    source: hasBro && hasDirect ? 'mixed' : (hasDirect ? 'direct' : 'bro')
+    source
+  };
+}
+
+/** 브로 / 직계약을 절대 합치지 않고 각각 따로 만든다. */
+function buildPayslipsBySource(weekLines, meta = {}) {
+  const list = Array.isArray(weekLines) ? weekLines : [];
+  const broLines = list.filter(line => !isDirectPayslipLine(line));
+  const directLines = list.filter(line => isDirectPayslipLine(line));
+  return {
+    bro: broLines.length ? buildPayslipFromLines(broLines, { ...meta, source: 'bro' }) : null,
+    direct: directLines.length ? buildPayslipFromLines(directLines, { ...meta, source: 'direct' }) : null
   };
 }
 
@@ -536,16 +502,23 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     baeminId: String(me.rider?.baemin_id || me.rider?.baeminId || '').trim()
   };
 
-  const payslip = weekLines.length
-    ? buildPayslipFromLines(weekLines, {
-      riderName: riderMeta.name,
-      coupangId: riderMeta.coupangId,
-      baeminId: riderMeta.baeminId,
-      settlementWeekStart,
-      settlementWeekEnd: settlementWeekEndDate,
-      settlementWeekLabel: `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`
-    })
-    : null;
+  const weekMeta = {
+    riderName: riderMeta.name,
+    coupangId: riderMeta.coupangId,
+    baeminId: riderMeta.baeminId,
+    settlementWeekStart,
+    settlementWeekEnd: settlementWeekEndDate,
+    settlementWeekLabel: `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`
+  };
+  const bySource = weekLines.length ? buildPayslipsBySource(weekLines, weekMeta) : { bro: null, direct: null };
+  const availableSources = [];
+  if (bySource.bro) availableSources.push('bro');
+  if (bySource.direct) availableSources.push('direct');
+  // 둘 다 있으면 브로를 기본으로, 없으면 있는 쪽.
+  const activeSource = availableSources.includes('bro')
+    ? 'bro'
+    : (availableSources[0] || '');
+  const payslip = activeSource ? bySource[activeSource] : null;
 
   return {
     ok: true,
@@ -556,7 +529,15 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
     settlementWeekLabel: payslip?.settlementWeekLabel
       || `${settlementWeekStart}(수) ~ ${settlementWeekEndDate}(화)`,
     hasPayslip: Boolean(payslip),
+    // 하위 호환: 현재 선택된 출처 한 장
     payslip,
+    activeSource,
+    availableSources,
+    // 브로 / 직계약 각각 (합치지 않음)
+    payslips: {
+      bro: bySource.bro,
+      direct: bySource.direct
+    },
     rider: riderMeta,
     lease: {
       hasLease: leaseInfo.hasLease || leaseInfo.isRental,
@@ -578,6 +559,7 @@ module.exports = {
   settlementWeekEnd,
   defaultPaymentDateForWeekEnd,
   buildPayslipFromLines,
+  buildPayslipsBySource,
   lineToDirectBucket,
   splitLineIntoPlatforms
 };
