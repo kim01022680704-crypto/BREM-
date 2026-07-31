@@ -1742,7 +1742,8 @@ const BremStorage = (function () {
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
       const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);
       const loadedCount = drivers.getAll().length;
-      const looksComplete = driversLoadMeta.complete && (!knownTotal || loadedCount >= knownTotal);
+      // 중복제거로 loadedCount < knownTotal 일 수 있어 complete 플래그로만 판단한다.
+      const looksComplete = Boolean(driversLoadMeta.complete && loadedCount > 0);
 
       if (!force && hasDrivers && looksComplete) {
         logDataSource('riders', true, sectionId);
