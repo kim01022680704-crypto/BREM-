@@ -4016,6 +4016,14 @@ const BremStorage = (function () {
 
   async function refreshDriversForSettlementMatch() {
     await ensureSectionLoaded('drivers');
+    // 백그라운드 부분 로드 중이면 끝까지 기다린 뒤, 부족하면 force 재로드한다.
+    if (typeof awaitDriversFullyLoaded === 'function') {
+      const result = await awaitDriversFullyLoaded();
+      if (result?.ok === false) {
+        throw new Error(result.message || '기사 목록을 불러오지 못했습니다.');
+      }
+      return drivers.getAll();
+    }
     if (typeof fetchAllDriversFromServer === 'function') {
       const result = await fetchAllDriversFromServer({ force: true });
       if (result?.ok === false) {

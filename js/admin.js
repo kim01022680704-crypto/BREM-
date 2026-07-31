@@ -4784,19 +4784,29 @@
 
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
-      if (BremStorage.fetchAllDriversFromServer) {
-        const driverLoad = await BremStorage.fetchAllDriversFromServer({ force: false });
-        if (!driverLoad?.ok) {
-          showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
-          return;
-        }
+      const driverLoad = BremStorage.awaitDriversFullyLoaded
+        ? await BremStorage.awaitDriversFullyLoaded()
+        : await BremStorage.refreshDriversForSettlementMatch?.();
+      if (driverLoad && driverLoad.ok === false) {
+        showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
+        return;
+      }
+      const driverList = drivers();
+      const supabaseTotal = Number(
+        driverLoad?.supabaseTotal
+        || BremStorage.drivers.getSupabaseTotal?.()
+        || driverList.length
+      );
+      if (supabaseTotal > driverList.length) {
+        showToast(`기사 ${driverList.length}/${supabaseTotal}명만 로드됨 — 전체 로드 후 다시 업로드하세요.`);
+        return;
       }
 
       const result = await BremSettlementParser.parseBaeminHourlyInsuranceFile({
         file,
         password: String(passwordInput?.value || '').trim(),
         period: periodInput?.value || BremSettlementParser.parseSettlementDateFromFilename(file.name) || '',
-        drivers: drivers().map(driver => ({
+        drivers: driverList.map(driver => ({
           id: driver.id,
           name: driver.name,
           baeminId: driver.baeminId || ''
@@ -5229,18 +5239,24 @@
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
 
-      if (BremStorage.fetchAllDriversFromServer) {
-        const driverLoad = await BremStorage.fetchAllDriversFromServer({ force: false });
-        if (!driverLoad?.ok) {
-          showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
-          return;
-        }
+      // 부분 로드(첫 100명)로 매칭하면 등록 기사도 미매칭으로 뜬다 — 전체 로드를 기다린다.
+      const driverLoad = BremStorage.awaitDriversFullyLoaded
+        ? await BremStorage.awaitDriversFullyLoaded()
+        : await BremStorage.refreshDriversForSettlementMatch?.();
+      if (driverLoad && driverLoad.ok === false) {
+        showToast(driverLoad?.message || '기사 목록을 불러오지 못했습니다.');
+        return;
       }
 
       const driverList = drivers();
-      const supabaseTotal = BremStorage.drivers.getSupabaseTotal?.() || driverList.length;
+      const supabaseTotal = Number(
+        driverLoad?.supabaseTotal
+        || BremStorage.drivers.getSupabaseTotal?.()
+        || driverList.length
+      );
       if (supabaseTotal > driverList.length) {
-        showToast(`기사 ${driverList.length}/${supabaseTotal}명만 로드됨 — 매칭 누락 가능. 잠시 후 다시 시도하세요.`);
+        showToast(`기사 ${driverList.length}/${supabaseTotal}명만 로드됨 — 전체 로드 후 다시 업로드하세요.`);
+        return;
       }
 
       const result = await BremSettlementParser.parseSettlementFile({
@@ -5253,7 +5269,11 @@
           name: driver.name,
           phone: driver.phone || '',
           baeminId: driver.baeminId || '',
-          coupangId: driver.coupangId || driver.coupangLoginId || driver.loginId || ''
+          coupangId: window.BremDriverUtils?.getErpCoupangId?.(driver)
+            || driver.coupangId
+            || driver.coupangLoginId
+            || driver.loginId
+            || ''
         }))
       });
 

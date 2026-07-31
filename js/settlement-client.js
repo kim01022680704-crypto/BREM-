@@ -543,6 +543,12 @@ const BremSettlementParser = (function () {
   }
 
   function makeCoupangLoginKeyForDriver(driver) {
+    if (window.BremDriverUtils?.getErpCoupangId) {
+      return normalizeCoupangLoginKey(BremDriverUtils.getErpCoupangId(driver));
+    }
+    if (window.BremDriverUtils?.makeDriverLoginId) {
+      return normalizeCoupangLoginKey(BremDriverUtils.makeDriverLoginId(driver));
+    }
     const name = String(driver?.name || '').replace(/\s/g, '');
     const phone = String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
     return `${name}${phone}`;
@@ -552,6 +558,24 @@ const BremSettlementParser = (function () {
     const matched = [];
     const unmatched = [];
     const isBaemin = SettlementFormats.isBaeminDelivery(format);
+    // 대량 일정산에서 O(n²) find 를 피하기 위해 쿠팡/배민 키 인덱스를 한 번만 만든다.
+    const byBaeminKey = new Map();
+    const byCoupangKey = new Map();
+    const byName = new Map();
+    (driverList || []).forEach(item => {
+      const baeminKey = baeminIdMatchKey(item?.baeminId);
+      if (baeminKey && !byBaeminKey.has(baeminKey)) byBaeminKey.set(baeminKey, item);
+      const coupangKey = makeCoupangLoginKeyForDriver(item);
+      if (coupangKey && !byCoupangKey.has(coupangKey)) byCoupangKey.set(coupangKey, item);
+      const storedCoupang = normalizeCoupangLoginKey(item?.coupangId || item?.coupangLoginId || item?.loginId);
+      if (storedCoupang && !byCoupangKey.has(storedCoupang)) byCoupangKey.set(storedCoupang, item);
+      const nameKey = normalizeDriverName(item?.name, format);
+      if (nameKey) {
+        const list = byName.get(nameKey) || [];
+        list.push(item);
+        byName.set(nameKey, list);
+      }
+    });
 
     parsedRows.forEach(row => {
       const normalizedRowName = normalizeDriverName(row.name, format);
@@ -560,31 +584,15 @@ const BremSettlementParser = (function () {
 
       if (isBaemin) {
         const riderKey = baeminIdMatchKey(normalizedRiderId || row.riderId);
-        if (riderKey) {
-          driver = driverList.find(item =>
-            baeminIdMatchKey(item.baeminId) === riderKey
-          ) || null;
-        }
+        if (riderKey) driver = byBaeminKey.get(riderKey) || null;
       } else {
         // 쿠팡 정산서의 성함칸은 "이름+전화뒷4자리"(쿠팡ID, 예: "정우성8281") 형식이다.
         // → 쿠팡ID로 매칭하는 것을 최우선으로 하고, 이름-단독 매칭은 마지막 백업으로만 쓴다.
         const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);
-        // 1) 기사에 등록된 쿠팡ID 정확 매칭 (예: coupangId="정우성8281")
-        if (loginKey) {
-          driver = driverList.find(item =>
-            item.coupangId && normalizeCoupangLoginKey(item.coupangId) === loginKey
-          ) || null;
-        }
-        // 2) 이름+전화 뒷4자리로 만든 쿠팡ID 매칭 (정산서 성함 = 이름+뒷4자리)
-        if (!driver && loginKey) {
-          driver = driverList.find(item => makeCoupangLoginKeyForDriver(item) === loginKey) || null;
-        }
-        // 3) 이름 매칭 (쿠팡ID/전화 미등록 기사 대비 · 동명이인 없을 때만 안전)
-        if (!driver) {
-          const nameMatches = driverList.filter(item =>
-            normalizeDriverName(item.name, format) === normalizedRowName
-          );
-          // 동명이인이 여러 명이면 이름만으로 단정하지 않는다(오매칭 방지).
+        if (loginKey) driver = byCoupangKey.get(loginKey) || null;
+        // 이름 매칭 (쿠팡ID/전화 미등록 기사 대비 · 동명이인 없을 때만 안전)
+        if (!driver && normalizedRowName) {
+          const nameMatches = byName.get(normalizedRowName) || [];
           if (nameMatches.length === 1) driver = nameMatches[0];
         }
       }
