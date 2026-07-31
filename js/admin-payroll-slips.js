@@ -430,9 +430,18 @@
       return;
     }
     await BremStorage.ensureSectionLoaded?.('payroll-slips');
-    const status = BremStorage.getCacheStatus?.() || {};
-    if (!status.driversComplete || !BremStorage.drivers.getAll().length) {
-      await BremStorage.fetchAllDriversFromServer?.({ force: false });
+    // 부분 로드(첫 100명)로 매칭하면 등록 기사도 미매칭으로 뜬다 — 전체 로드를 끝까지 기다린다.
+    if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
+      try {
+        await BremStorage.awaitDriversFullyLoaded();
+      } catch (error) {
+        console.warn('[payroll] 기사 전체 로드 대기 실패:', error);
+      }
+    } else {
+      const status = BremStorage.getCacheStatus?.() || {};
+      if (!status.driversComplete || !BremStorage.drivers.getAll().length) {
+        await BremStorage.fetchAllDriversFromServer?.({ force: false });
+      }
     }
     state.drivers = BremStorage.drivers.getAll();
     state.calls = BremStorage.calls.getAll();
@@ -1161,10 +1170,21 @@
     `).join('');
   }
 
-  function retryDriverMatching() {
+  async function retryDriverMatching() {
     if (!state.parsedLines.length) {
       showToast('급여 엑셀을 먼저 업로드하세요.');
       return;
+    }
+
+    const retryBtn = $('payrollRetryMatchBtn');
+    if (retryBtn) { retryBtn.disabled = true; retryBtn.textContent = '기사 전체 불러오는 중…'; }
+    // 재시도 전에 기사 목록 전체 로드를 보장한다. (부분 로드면 등록 기사도 미매칭으로 남는다)
+    try {
+      await ensurePayrollDataLoaded();
+    } catch (error) {
+      console.warn('[payroll] 매칭 재시도 전 기사 로드 실패:', error);
+    } finally {
+      if (retryBtn) { retryBtn.disabled = false; retryBtn.textContent = '매칭 재시도'; }
     }
 
     const beforeUnmatched = utils.getUnmatchedLines(state.parsedLines).length;
