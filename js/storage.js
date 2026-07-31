@@ -975,11 +975,13 @@ const BremStorage = (function () {
         complete: false,
         supabaseTotal: Number.isFinite(nextTotal) ? nextTotal : rows.length
       };
-    } else if (driversLoadMeta.complete) {
-      // 기존 complete 유지. 단, 총원보다  явно 적으면 부분 캐시로 강등한다.
-      if (Number.isFinite(nextTotal) && nextTotal > 0 && rows.length < nextTotal) {
-        driversLoadMeta = { complete: false, supabaseTotal: nextTotal };
-      }
+    } else if (Number.isFinite(nextTotal) && nextTotal > 0) {
+      // complete 미지정 호출에서는 총원 메타만 갱신.
+      // 로컬은 중복제거로 DB total 보다 적을 수 있어 그 이유로 complete 를 강등하지 않는다.
+      driversLoadMeta = {
+        complete: driversLoadMeta.complete,
+        supabaseTotal: nextTotal
+      };
     }
     setDriversCache(rows);
     window.BremDataCache?.set?.(KEYS.drivers, rows, {
@@ -2012,7 +2014,9 @@ const BremStorage = (function () {
 
         const deduped = dedupeDriversList(drivers.getAll());
         const total = Number(supabaseTotal ?? deduped.length);
-        const fullyLoaded = !failed && !hasMore && (!total || deduped.length >= total);
+        // 서버 total 은 DB 행 수, 로컬은 name+phone 중복제거 후라 적을 수 있다.
+        // 페이지를 끝까지 받았으면(!hasMore) 전체 로드로 본다.
+        const fullyLoaded = !failed && !hasMore;
         if (fullyLoaded) {
           markDriversLoadComplete(deduped.length, total);
           markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: total });
@@ -2076,9 +2080,9 @@ const BremStorage = (function () {
     }
 
     const count = drivers.getAll().length;
-    const incomplete = !driversLoadMeta.complete || (serverTotal > 0 && count < serverTotal);
-    if (!incomplete) {
-      return { ok: true, count, supabaseTotal: serverTotal || count };
+    // 중복제거로 count < serverTotal 인 것은 정상. complete 플래그만 본다.
+    if (driversLoadMeta.complete && count > 0) {
+      return { ok: true, count, supabaseTotal: serverTotal || count, complete: true };
     }
 
     const result = await fetchAllDriversFromServer({
@@ -2086,11 +2090,15 @@ const BremStorage = (function () {
       ...(options.view ? { view: options.view } : {})
     });
     if (driversBackgroundFetchPromise) await driversBackgroundFetchPromise;
+    const loaded = drivers.getAll().length;
+    const complete = Boolean(driversLoadMeta.complete);
     return {
-      ok: result?.ok !== false,
-      count: drivers.getAll().length,
-      supabaseTotal: driversLoadMeta.supabaseTotal || drivers.getAll().length,
-      message: result?.message
+      ok: result?.ok !== false && loaded > 0,
+      count: loaded,
+      supabaseTotal: driversLoadMeta.supabaseTotal || loaded,
+      complete,
+      partial: !complete,
+      message: result?.message || (!complete ? '기사 목록을 끝까지 불러오지 못했습니다.' : undefined)
     };
   }
 
@@ -2214,8 +2222,8 @@ const BremStorage = (function () {
           if (!result.count) break;
 
           const dedupedAfterPage = dedupeDriversList(drivers.getAll());
-          const pageComplete = !hasMore
-            && (!supabaseTotal || dedupedAfterPage.length >= Number(supabaseTotal));
+          // 페이지를 다 받았으면 전체 로드. (중복제거로 로컬 수 < DB total 이어도 OK)
+          const pageComplete = !hasMore;
           markDriversCache(dedupedAfterPage, {
             source: 'network',
             complete: pageComplete,
@@ -2245,7 +2253,7 @@ const BremStorage = (function () {
 
         const deduped = dedupeDriversList(drivers.getAll());
         const total = Number(supabaseTotal ?? deduped.length);
-        const fullyLoaded = !failed && !hasMore && (!total || deduped.length >= total);
+        const fullyLoaded = !failed && !hasMore;
         if (fullyLoaded) {
           markDriversLoadComplete(deduped.length, total);
           markDriversCache(deduped, { source: 'network', complete: true, supabaseTotal: total });

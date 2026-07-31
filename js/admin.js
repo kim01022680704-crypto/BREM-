@@ -4792,13 +4792,8 @@
         return;
       }
       const driverList = drivers();
-      const supabaseTotal = Number(
-        driverLoad?.supabaseTotal
-        || BremStorage.drivers.getSupabaseTotal?.()
-        || driverList.length
-      );
-      if (supabaseTotal > driverList.length) {
-        showToast(`기사 ${driverList.length}/${supabaseTotal}명만 로드됨 — 전체 로드 후 다시 업로드하세요.`);
+      if (!driverList.length) {
+        showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
         return;
       }
 
@@ -5234,12 +5229,13 @@
     applySettlementDateFromFilename(file.name, p);
 
     uploadBtn.disabled = true;
-    uploadBtn.textContent = '처리 중...';
+    uploadBtn.textContent = '기사 목록 불러오는 중...';
 
     try {
       await BremStorage.ensureSectionLoaded?.('settlements');
 
       // 부분 로드(첫 100명)로 매칭하면 등록 기사도 미매칭으로 뜬다 — 전체 로드를 기다린다.
+      // (DB 행 수 > 로컬 수는 중복제거 때문에 흔함. 그걸로 업로드를 막지 않는다.)
       const driverLoad = BremStorage.awaitDriversFullyLoaded
         ? await BremStorage.awaitDriversFullyLoaded()
         : await BremStorage.refreshDriversForSettlementMatch?.();
@@ -5249,16 +5245,15 @@
       }
 
       const driverList = drivers();
-      const supabaseTotal = Number(
-        driverLoad?.supabaseTotal
-        || BremStorage.drivers.getSupabaseTotal?.()
-        || driverList.length
-      );
-      if (supabaseTotal > driverList.length) {
-        showToast(`기사 ${driverList.length}/${supabaseTotal}명만 로드됨 — 전체 로드 후 다시 업로드하세요.`);
+      if (!driverList.length) {
+        showToast('등록된 기사가 없습니다. 기사 목록을 확인하세요.');
         return;
       }
+      if (driverLoad?.complete === false || driverLoad?.partial) {
+        showToast(`기사 ${driverList.length}명만 로드된 상태로 매칭합니다. 미매칭이 많으면 잠시 후 다시 업로드하세요.`);
+      }
 
+      uploadBtn.textContent = '정산서 처리 중...';
       const result = await BremSettlementParser.parseSettlementFile({
         file,
         password: String(passwordInput?.value || '').trim(),
