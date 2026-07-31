@@ -63,9 +63,17 @@ const BremDirectSettlementCalc = (function () {
     return dateKey(date);
   }
 
+  // 정산주(수 시작)를 구한다. 정산서 시작일이 화요일로 하루 밀려 기록되면
+  // weekStartKey 는 이를 "직전 주 수요일"로 스냅해 한 주가 밀린다.
+  // date-picker 의 applyWeekWednesday(화→다음날 수) 로 off-by-one 을 먼저 교정한다.
   function settlementWeek(record) {
     if (!record) return weekStartKey();
-    return weekStartKey(String(record.startDate || '').slice(0, 10) || weekStartKey());
+    const raw = String(record.startDate || '').slice(0, 10);
+    if (!raw) return weekStartKey();
+    if (window.BremDatePicker?.applyWeekWednesday) {
+      return window.BremDatePicker.applyWeekWednesday(raw);
+    }
+    return weekStartKey(raw);
   }
 
   function normalizePlatform(platform) {

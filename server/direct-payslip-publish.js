@@ -21,7 +21,13 @@ function normalizeWeekStart(dateValue) {
   const base = String(dateValue || '').slice(0, 10);
   const date = new Date(`${base || formatLocalDateKey(new Date())}T00:00:00`);
   if (Number.isNaN(date.getTime())) return '';
-  const diff = (date.getDay() - 3 + 7) % 7; // 수요일 시작
+  const day = date.getDay();
+  // 시작일이 화요일로 하루 밀린 경우(off-by-one) 다음날 수요일로 교정한다.
+  if (day === 2) {
+    date.setDate(date.getDate() + 1);
+    return formatLocalDateKey(date);
+  }
+  const diff = (day - 3 + 7) % 7; // 그 외에는 포함 주의 수요일로 스냅
   date.setDate(date.getDate() - diff);
   return formatLocalDateKey(date);
 }
