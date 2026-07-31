@@ -67,9 +67,12 @@ const BremSettlementResultDirect = (function () {
   }
 
   function renderWeekButton() {
+    const label = state.week ? `${formatDate(state.week)}(수) 주` : '전체 주';
     const btn = $('#settlementResultWeekBtn');
-    if (!btn) return;
-    btn.textContent = state.week ? `${formatDate(state.week)}(수) 주` : '전체 주';
+    if (btn) btn.textContent = label;
+    // 최종결산 카드에도 같은 정산주를 표시한다.
+    const finalBtn = $('#settlementFinalWeekBtn');
+    if (finalBtn) finalBtn.textContent = state.week ? label : '수요일 선택';
     const hidden = $('#settlementResultWeek');
     if (hidden) hidden.value = state.week;
   }
@@ -257,6 +260,8 @@ const BremSettlementResultDirect = (function () {
     if (!body) return;
     renderSettlementPicker();
     renderHead();
+    // 최종결산 카드가 열려 있으면 정산주 변경 시 함께 갱신한다.
+    if (!$('#settlementFinalCard')?.hidden) renderFinal();
     const settlement = currentSettlement();
     const colspan = columns().length;
 
@@ -622,6 +627,8 @@ const BremSettlementResultDirect = (function () {
     $('#settlementFinalTabBtn')?.addEventListener('click', () => toggleFinalView(true));
     $('#settlementFinalReloadBtn')?.addEventListener('click', async () => { await loadWithdrawals(); renderFinal(); });
     $('#settlementFinalPublishBtn')?.addEventListener('click', () => { void publishFinalPayslips(); });
+    $('#settlementFinalWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#settlementFinalWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => {
       btn.addEventListener('click', () => toggleFinalView(false));
     });
