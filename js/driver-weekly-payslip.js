@@ -23,38 +23,8 @@
     visible: false,
     requestSeq: 0,
     platform: 'total', // total | coupang | baemin
-    source: 'bro', // bro | direct — 합치지 않고 각각 표시
     lastResult: null
   };
-
-  function availableSources(result) {
-    const list = Array.isArray(result?.availableSources) ? result.availableSources : [];
-    if (list.length) return list.filter(s => s === 'bro' || s === 'direct');
-    const payslips = result?.payslips || {};
-    const next = [];
-    if (payslips.bro) next.push('bro');
-    if (payslips.direct) next.push('direct');
-    if (!next.length && result?.payslip) {
-      next.push(result.payslip.source === 'direct' ? 'direct' : 'bro');
-    }
-    return next;
-  }
-
-  function activePayslip(result) {
-    if (!result) return null;
-    const sources = availableSources(result);
-    if (!sources.length) return null;
-    const source = sources.includes(state.source) ? state.source : sources[0];
-    state.source = source;
-    const fromMap = result.payslips?.[source];
-    if (fromMap) return fromMap;
-    if (result.payslip && (result.payslip.source || source) === source) return result.payslip;
-    return result.payslip || null;
-  }
-
-  function sourceLabel(source) {
-    return source === 'direct' ? '직계약' : '브로';
-  }
 
   // 정산결과(직계약)과 동일한 지급·공제 틀
   const PAY_ROWS = Object.freeze([
@@ -322,42 +292,17 @@
     });
   }
 
-  function syncSourceTabs(result) {
-    const tabs = document.getElementById('driverPayslipSourceTabs');
-    if (!tabs) return;
-    const sources = availableSources(result);
-    const show = sources.length > 1;
-    tabs.hidden = !show;
-    tabs.querySelectorAll('[data-payslip-source]').forEach(btn => {
-      const key = btn.dataset.payslipSource;
-      const available = sources.includes(key);
-      btn.hidden = !available;
-      btn.disabled = !available;
-      const active = available && key === state.source;
-      btn.classList.toggle('active', active);
-      btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-  }
-
   function applyPayslipResult(result) {
     if (!result) return;
     state.lastResult = result;
     state.weekStart = result.settlementWeekStart || state.weekStart;
-    const sources = availableSources(result);
-    if (sources.length) {
-      if (!sources.includes(state.source)) {
-        state.source = result.activeSource && sources.includes(result.activeSource)
-          ? result.activeSource
-          : sources[0];
-      }
-    }
     renderWeekShell(state.weekStart, {
       settlementWeekEnd: result.settlementWeekEnd,
       settlementWeekLabel: result.settlementWeekLabel,
       paymentDate: result.paymentDate
     });
 
-    if (!result.hasPayslip || !activePayslip(result)) {
+    if (!result.hasPayslip) {
       if (emptyEl) emptyEl.hidden = false;
       if (contentEl) contentEl.hidden = true;
       setText('driverPayslipRiderName', result.rider?.name || '-');
@@ -368,7 +313,6 @@
       setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount
         ? `${formatMoney(result.lease.unpaidAmount)} (${result.lease.unpaidReason || '리스비 미납'})`
         : '-');
-      syncSourceTabs(result);
       renderNotices(result.notices);
       return;
     }
@@ -379,7 +323,7 @@
   }
 
   function renderPayslip(data) {
-    const payslip = activePayslip(data) || {};
+    const payslip = data.payslip || {};
     const lease = data.lease || {};
     const rider = data.rider || {};
     const platform = state.platform || 'total';
@@ -409,9 +353,8 @@
     const platformHint = platform === 'coupang'
       ? '쿠팡'
       : (platform === 'baemin' ? '배민' : '합계');
-    const kind = sourceLabel(state.source);
-    setText('driverPayslipPayHint', `${kind} · ${platformHint}`);
-    setText('driverPayslipDeductHint', `${kind} · ${platformHint}`);
+    setText('driverPayslipPayHint', `${platformHint} · 지급 내역`);
+    setText('driverPayslipDeductHint', `${platformHint} · 공제 내역`);
 
     const payBody = document.getElementById('driverPayslipPayRows');
     const deductBody = document.getElementById('driverPayslipDeductRows');
@@ -438,7 +381,6 @@
     setText('driverPayslipFormulaGross', formatMoney(gross));
     setText('driverPayslipFormulaDeduct', formatMoney(deduct));
     setText('driverPayslipFormulaNet', formatMoney(net));
-    syncSourceTabs(data);
     syncPlatformTabs();
     renderNotices(data.notices);
   }
@@ -548,7 +490,6 @@
     cache.clear();
     state.weekStart = null;
     state.platform = 'total';
-    state.source = 'bro';
     state.lastResult = null;
     openBtn.setAttribute('aria-expanded', 'true');
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -572,17 +513,6 @@
   prevBtn?.addEventListener('click', () => shiftWeek(-1));
   nextBtn?.addEventListener('click', () => shiftWeek(1));
   panel.addEventListener('click', event => {
-    const sourceTab = event.target.closest('[data-payslip-source]');
-    if (sourceTab) {
-      const nextSource = sourceTab.dataset.payslipSource;
-      if (!['bro', 'direct'].includes(nextSource) || nextSource === state.source) return;
-      if (!availableSources(state.lastResult).includes(nextSource)) return;
-      state.source = nextSource;
-      state.platform = 'total';
-      if (state.lastResult?.hasPayslip) renderPayslip(state.lastResult);
-      else syncSourceTabs(state.lastResult);
-      return;
-    }
     const tab = event.target.closest('[data-payslip-platform]');
     if (!tab) return;
     const next = tab.dataset.payslipPlatform;
@@ -597,7 +527,6 @@
     state.requestSeq += 1;
     state.weekStart = null;
     state.platform = 'total';
-    state.source = 'bro';
     state.lastResult = null;
     state.loading = false;
     prefetchToken += 1;
