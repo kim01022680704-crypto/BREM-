@@ -59,11 +59,13 @@ const BremDriverManagementAdmin = (function () {
   function setWeek(value) {
     const next = weekStartKey(value || weekStartKey());
     if (next === state.weekStart) {
-      renderOrgWeekControls();
+      renderWeekControls();
       return;
     }
     state.weekStart = next;
-    renderOrgMemberPanel();
+    renderWeekControls();
+    if (state.tab === 'org') renderOrgMemberPanel();
+    else renderRegionDetail();
   }
 
   function shiftWeek(deltaWeeks) {
@@ -73,14 +75,27 @@ const BremDriverManagementAdmin = (function () {
     setWeek(localDateKey(date));
   }
 
-  function renderOrgWeekControls() {
+  function renderWeekControls() {
     const week = ensureWeek();
-    const btn = $('#driverOrgWeekBtn');
-    if (btn) btn.textContent = `${formatDateShort(week)}(수) 주`;
-    const hidden = $('#driverOrgWeek');
-    if (hidden) hidden.value = week;
-    const range = $('#driverOrgWeekRange');
-    if (range) range.textContent = formatWeekRange(week);
+    const label = `${formatDateShort(week)}(수) 주`;
+    const rangeText = formatWeekRange(week);
+    const orgBtn = $('#driverOrgWeekBtn');
+    if (orgBtn) orgBtn.textContent = label;
+    const regionBtn = $('#driverRegionWeekBtn');
+    if (regionBtn) regionBtn.textContent = label;
+    const orgHidden = $('#driverOrgWeek');
+    if (orgHidden) orgHidden.value = week;
+    const regionHidden = $('#driverRegionWeek');
+    if (regionHidden) regionHidden.value = week;
+    const orgRange = $('#driverOrgWeekRange');
+    if (orgRange) orgRange.textContent = rangeText;
+    const regionRange = $('#driverRegionWeekRange');
+    if (regionRange) regionRange.textContent = rangeText;
+  }
+
+  // 하위 호환 별칭
+  function renderOrgWeekControls() {
+    renderWeekControls();
   }
 
   function escapeHtml(value) {
@@ -149,16 +164,19 @@ const BremDriverManagementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
-  function driverCallAndFee(driverId, weekStart = ensureWeek()) {
+  function driverCallAndFee(driverId, weekStart = ensureWeek(), platformFilter = '') {
     const id = String(driverId || '').trim();
     if (!id) return { callCount: 0, deliveryFee: 0 };
     const start = weekStartKey(weekStart);
     const end = weekEndKey(start);
+    const platforms = platformFilter === 'coupang' || platformFilter === 'baemin'
+      ? [platformFilter]
+      : ['coupang', 'baemin'];
     const build = window.BremWeeklySettlement?.buildDriverCallStatsForPeriod;
     if (typeof build === 'function') {
       let callCount = 0;
       let deliveryFee = 0;
-      ['coupang', 'baemin'].forEach(platform => {
+      platforms.forEach(platform => {
         const stats = build(id, start, end, platform) || {};
         callCount += Number(stats.callCount || 0);
         deliveryFee += Number(stats.deliveryAmount || 0);
@@ -169,6 +187,7 @@ const BremDriverManagementAdmin = (function () {
     const callCount = (window.BremStorage?.calls?.getAll?.() || [])
       .filter(call => {
         if (String(call.driverId || '') !== id) return false;
+        if (platformFilter && String(call.platform || '') !== platformFilter) return false;
         const day = String(call.date || '').slice(0, 10);
         return day >= start && day <= end;
       })
@@ -176,6 +195,7 @@ const BremDriverManagementAdmin = (function () {
     const byDay = new Map();
     (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
       if (String(row.driverId || '') !== id) return;
+      if (platformFilter && String(row.platform || '') !== platformFilter) return;
       const day = String(row.period || row.date || '').slice(0, 10);
       if (!day || day < start || day > end) return;
       const prev = byDay.get(day);
@@ -646,6 +666,10 @@ const BremDriverManagementAdmin = (function () {
     const title = $('#driverRegionDetailTitle');
     const rows = $('#driverRegionRows');
     const select = $('#driverRegionAddSelect');
+    const totalsEl = $('#driverRegionWeekTotals');
+    const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
+    const platformLabel = platform === 'coupang' ? '쿠팡' : '배민';
+    renderWeekControls();
     if (title) {
       title.textContent = region
         ? `${region.label}${region.platform === 'baemin' ? ` (${region.partnerId})` : ''}`
@@ -655,12 +679,19 @@ const BremDriverManagementAdmin = (function () {
     if (!region) {
       rows.innerHTML = '<tr><td colspan="4" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
       if (select) select.innerHTML = '<option value="">지역 선택 후 추가</option>';
+      if (totalsEl) totalsEl.textContent = '';
       return;
     }
+    const week = ensureWeek();
     const inRegion = driversInRegion(region);
+    let totalCalls = 0;
+    let totalFee = 0;
     rows.innerHTML = inRegion.length
       ? inRegion.map(driver => {
-        const stats = driverCallAndFee(driver.id);
+        // 배민/쿠팡 탭에 맞는 플랫폼 수치만 집계 (지역 배정 ≠ 콜수 생성)
+        const stats = driverCallAndFee(driver.id, week, platform);
+        totalCalls += stats.callCount;
+        totalFee += stats.deliveryFee;
         return `<tr>
           <td><strong>${escapeHtml(driver.name)}</strong></td>
           <td class="weekly-amount-cell">${formatNumber(stats.callCount)}</td>
@@ -669,6 +700,15 @@ const BremDriverManagementAdmin = (function () {
         </tr>`;
       }).join('')
       : '<tr><td colspan="4" class="empty">이 지역에 배정된 기사가 없습니다.</td></tr>';
+
+    if (totalsEl) {
+      totalsEl.textContent = inRegion.length
+        ? `${platformLabel} · ${formatWeekRange(week)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`
+          + (totalCalls === 0 && totalFee === 0
+            ? ' · 이 주에 수집/일정산 데이터가 없으면 0으로 나옵니다'
+            : '')
+        : '';
+    }
 
     if (select) {
       const assigned = new Set(inRegion.map(d => d.id));
@@ -705,8 +745,14 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다.'
-        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다.';
+        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다. 콜수·배달료는 아래 정산주 기준으로 집계됩니다.'
+        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다. 콜수·배달료는 아래 정산주 기준으로 집계됩니다.';
+    }
+    // 콜수/배달료 집계에 필요 — 지역 목록만 로드하면 수치가 전부 0으로 나온다.
+    try {
+      await window.BremStorage?.ensureSectionLoaded?.('driver-management');
+    } catch (error) {
+      console.warn('[driver-mgmt] calls/settlements load failed:', error);
     }
     await loadRegionExposure();
     if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
@@ -1006,6 +1052,8 @@ const BremDriverManagementAdmin = (function () {
     $('#driverOrgSaveBtn')?.addEventListener('click', () => { void saveOrg(); });
     $('#driverOrgWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#driverOrgWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
+    $('#driverRegionWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#driverRegionWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#driverOrgNodeLabel')?.addEventListener('input', event => {
       const node = selectedNode();
       if (!node) return;

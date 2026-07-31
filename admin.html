@@ -5171,6 +5171,16 @@
                 <div class="card-header">
                   <h3 id="driverRegionDetailTitle">지역을 선택하세요</h3>
                 </div>
+                <div class="driver-org-week-bar">
+                  <span class="baemin-field__label">정산주 (수~화)</span>
+                  <button type="button" class="small-btn" id="driverRegionWeekPrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
+                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="driver-region-week" id="driverRegionWeekBtn">수요일 선택</button>
+                  <input type="hidden" id="driverRegionWeek">
+                  <button type="button" class="small-btn" id="driverRegionWeekNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
+                  <span class="field-preview week-range-label" id="driverRegionWeekRange">수요일을 선택하면 수~화 범위가 표시됩니다</span>
+                </div>
+                <p class="form-help" id="driverRegionStatsHint">콜수·배달료는 지역 배정이 아니라, 선택한 정산주의 배민/쿠팡 수집·일정산 데이터에서 집계됩니다.</p>
+                <div class="driver-org-week-totals" id="driverRegionWeekTotals" aria-live="polite"></div>
                 <div class="driver-region-assign">
                   <label class="field">
                     <span class="field-label">기사 추가 (선택형)</span>
@@ -6963,7 +6973,7 @@
   <script src="js/direct-settlement-calc.js?v=20260731e"></script>
   <script src="js/settlement-result-direct.js?v=20260731h"></script>
   <script src="js/final-deposit.js?v=20260730aq"></script>
-  <script src="js/driver-management-admin.js?v=20260730aa"></script>
+  <script src="js/driver-management-admin.js?v=20260801a"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260731i"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
@@ -6971,7 +6981,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260731d"></script>
+    <script src="js/admin.js?v=20260801a"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
