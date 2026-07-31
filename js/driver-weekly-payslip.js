@@ -353,8 +353,8 @@
     const platformHint = platform === 'coupang'
       ? '쿠팡'
       : (platform === 'baemin' ? '배민' : '합계');
-    setText('driverPayslipPayHint', `${platformHint} · 정산결과(직계약) 틀`);
-    setText('driverPayslipDeductHint', `${platformHint} · 정산결과(직계약) 틀`);
+    setText('driverPayslipPayHint', `${platformHint} · 지급 내역`);
+    setText('driverPayslipDeductHint', `${platformHint} · 공제 내역`);
 
     const payBody = document.getElementById('driverPayslipPayRows');
     const deductBody = document.getElementById('driverPayslipDeductRows');
@@ -486,8 +486,11 @@
     state.visible = true;
     panel.hidden = false;
     // 메뉴를 열 때마다 가장 최근 발행된 주급명세서부터 보여준다.
+    // 관리자 반영 직후 옛 캐시(직계약만/빈값)가 남지 않도록 비운다.
+    cache.clear();
     state.weekStart = null;
     state.platform = 'total';
+    state.lastResult = null;
     openBtn.setAttribute('aria-expanded', 'true');
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     void loadPayslip();
