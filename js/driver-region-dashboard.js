@@ -18,6 +18,8 @@
   if (!panel || !openBtn) return;
 
   const CACHE_TTL_MS = 60 * 1000;
+  // 배민 자동수집 반영 — 화면이 열려 있으면 수동 새로고침 없이 갱신
+  const POLL_MS = 60 * 1000;
   const PERSIST_KEY = 'brem_rider_region_dashboard_v1';
   const cache = new Map();
 
@@ -28,7 +30,8 @@
     platform: 'baemin',
     regionKey: '',
     weekStart: '',
-    lastResult: null
+    lastResult: null,
+    pollTimer: null
   };
 
   function showToast(message) {
@@ -237,6 +240,23 @@
     }
   }
 
+  function stopAutoPoll() {
+    if (state.pollTimer) {
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+  }
+
+  function startAutoPoll() {
+    stopAutoPoll();
+    state.pollTimer = setInterval(() => {
+      if (!state.visible || document.visibilityState === 'hidden') return;
+      if (state.loading) return;
+      cache.delete(cacheKey());
+      void loadDashboard({ silent: true, force: true });
+    }, POLL_MS);
+  }
+
   async function loadDashboard({ silent = false, force = false } = {}) {
     if (!window.BremStorage?.fetchRiderRegionDashboardFromServer) {
       if (!silent) showToast('대시보드 API를 사용할 수 없습니다.');
@@ -253,10 +273,11 @@
     if (stale) renderDashboard(stale);
 
     // 이전 데이터가 있으면 전체 로딩 오버레이를 쓰지 않아 화면이 깜빡이지 않는다.
+    // 자동 폴링(silent)은 깜빡임 클래스도 생략한다.
     const hasStaleUi = Boolean(stale) || Boolean(state.lastResult);
     state.loading = true;
     if (!hasStaleUi) panel.classList.add('is-loading');
-    else panel.classList.add('is-refreshing');
+    else if (!silent) panel.classList.add('is-refreshing');
     try {
       const weekStart = ensureWeekStart();
       const result = await window.BremStorage.fetchRiderRegionDashboardFromServer({
@@ -307,10 +328,12 @@
     if (stale) renderDashboard(stale);
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     void loadDashboard({ force: false });
+    startAutoPoll();
   }
 
   function closePanel() {
     state.visible = false;
+    stopAutoPoll();
     panel.hidden = true;
     openBtn.setAttribute('aria-expanded', 'false');
   }
@@ -323,6 +346,7 @@
     state.lastResult = null;
     state.loading = false;
     cache.clear();
+    stopAutoPoll();
     closePanel();
     if (periodEl) periodEl.textContent = '-';
     if (regionLabelEl) regionLabelEl.textContent = '-';

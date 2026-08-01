@@ -18,9 +18,13 @@ const BremDriverManagementAdmin = (function () {
     regionRankingKey: '',
     regionRankingCache: new Map(),
     regionRankingRequestSeq: 0,
+    regionRankingBusy: false,
+    regionRankingPollTimer: null,
     regionAdd: { open: false, highlight: -1, candidates: [] },
     bulkRows: []
   };
+
+  const REGION_RANKING_POLL_MS = 60 * 1000;
 
   function localDateKey(date = new Date()) {
     return [
@@ -148,6 +152,29 @@ const BremDriverManagementAdmin = (function () {
     return base.length <= 4 ? base : base.slice(-4);
   }
 
+  function isDriverManagementSectionActive() {
+    return Boolean(document.getElementById('driver-management')?.classList.contains('active'));
+  }
+
+  function stopRegionRankingPoll() {
+    if (state.regionRankingPollTimer) {
+      clearInterval(state.regionRankingPollTimer);
+      state.regionRankingPollTimer = null;
+    }
+  }
+
+  function startRegionRankingPoll() {
+    stopRegionRankingPoll();
+    state.regionRankingPollTimer = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      if (!isDriverManagementSectionActive()) return;
+      if (state.tab !== 'region') return;
+      if (!selectedRegion()) return;
+      if (state.regionRankingBusy) return;
+      void loadRegionRanking();
+    }, REGION_RANKING_POLL_MS);
+  }
+
   function setTab(tab) {
     state.tab = tab === 'region' ? 'region' : 'org';
     $$('[data-driver-mgmt-tab]').forEach(btn => {
@@ -156,8 +183,13 @@ const BremDriverManagementAdmin = (function () {
     $$('[data-driver-mgmt-panel]').forEach(panel => {
       panel.hidden = panel.dataset.driverMgmtPanel !== state.tab;
     });
-    if (state.tab === 'org') renderOrg();
-    else void refreshRegions();
+    if (state.tab === 'org') {
+      stopRegionRankingPoll();
+      renderOrg();
+    } else {
+      void refreshRegions();
+      startRegionRankingPoll();
+    }
   }
 
   function loadOrg() {
@@ -824,6 +856,7 @@ const BremDriverManagementAdmin = (function () {
     const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
     const cacheKey = `${region.platform}|${region.key}|${week}`;
     const requestSeq = ++state.regionRankingRequestSeq;
+    state.regionRankingBusy = true;
     const panels = $('#driverRegionRankPanels');
     if (panels) panels.hidden = false;
 
@@ -908,6 +941,11 @@ const BremDriverManagementAdmin = (function () {
       }
       state.regionRanking = basePayload;
       state.regionRankingKey = cacheKey;
+    } finally {
+      // 더 새 요청이 이미 돌고 있으면 busy는 그쪽 finally가 내린다.
+      if (requestSeq === state.regionRankingRequestSeq) {
+        state.regionRankingBusy = false;
+      }
     }
   }
 
@@ -1515,7 +1553,12 @@ const BremDriverManagementAdmin = (function () {
     ensureWeek();
     renderWeekControls();
     setTab(state.tab);
-    if (state.tab === 'region') await refreshRegions();
+    if (state.tab === 'region') {
+      await refreshRegions();
+      startRegionRankingPoll();
+    } else {
+      stopRegionRankingPoll();
+    }
   }
 
   return {
