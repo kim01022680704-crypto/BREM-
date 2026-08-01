@@ -32,7 +32,8 @@ function pickDeliveryStatusDbRow(row) {
 }
 
 function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
+  // UTC 기준이면 KST 00~09시에 어제 날짜가 나온다 → 항상 서울 기준 영업일
+  return require('./baemin-settlement-week').todayKST();
 }
 
 function resolveSessionCookie(options = {}) {

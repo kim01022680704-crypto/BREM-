@@ -59,6 +59,9 @@
   let virtualRenderRaf = 0;
   let virtualBound = false;
   let lastRenderedDrivers = [];
+  const MOBILE_PAGE_SIZE = 60;
+  let mobileRenderedCount = 0;
+  let mobileScrollBound = false;
   const driverListSortSchema = {
     name: driver => driver.name,
     phone: driver => driver.phone,
@@ -328,6 +331,35 @@
     tableBody.dataset.virtual = '1';
   }
 
+  // 모바일은 카드 전체를 한 번에 그리면 수천 명에서 화면이 몇 초간 멈춘다 → 스크롤에 맞춰 이어붙인다.
+  function renderMobileChunk(reset) {
+    if (!mobileList) return;
+    if (reset) {
+      mobileRenderedCount = 0;
+      mobileList.innerHTML = '';
+    }
+    const next = lastRenderedDrivers.slice(mobileRenderedCount, mobileRenderedCount + MOBILE_PAGE_SIZE);
+    if (!next.length) return;
+    mobileList.insertAdjacentHTML('beforeend', next.map(renderMobileCard).join(''));
+    mobileRenderedCount += next.length;
+  }
+
+  function bindMobileInfiniteScroll() {
+    if (mobileScrollBound) return;
+    mobileScrollBound = true;
+    const onScroll = () => {
+      if (!isMobileView()) return;
+      if (mobileRenderedCount >= lastRenderedDrivers.length) return;
+      const inner = listScroll && listScroll.scrollHeight > listScroll.clientHeight + 4 ? listScroll : null;
+      const remaining = inner
+        ? inner.scrollHeight - inner.scrollTop - inner.clientHeight
+        : document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (remaining < 500) renderMobileChunk(false);
+    };
+    listScroll?.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
+
   function scheduleVirtualRender() {
     if (!useVirtualDesktop()) return;
     if (virtualRenderRaf) cancelAnimationFrame(virtualRenderRaf);
@@ -384,7 +416,8 @@
       } else {
         delete tableBody.dataset.virtual;
         tableBody.innerHTML = '';
-        mobileList.innerHTML = filteredDrivers.map(renderMobileCard).join('');
+        bindMobileInfiniteScroll();
+        renderMobileChunk(true);
       }
 
       renderedSnapshot = getDriverSnapshot();

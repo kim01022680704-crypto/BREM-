@@ -107,19 +107,44 @@ async function parseBaeminFetchResponse({ url, status, bodyText, logContext = nu
   return baseResult;
 }
 
-async function fetchBaeminJson(url, sessionCookie, logContext = null) {
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json, text/plain, */*',
-      Cookie: sessionCookie,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Referer: `${BAEMIN_ORIGIN}/delivery/history`
-    },
-    redirect: 'manual'
-  });
+// 배민 API 가 응답하지 않으면 수집 전체가 멈춘다 → 요청 단위 타임아웃 필수
+const BAEMIN_FETCH_TIMEOUT_MS = 30000;
 
-  const bodyText = await response.text();
+async function fetchBaeminJson(url, sessionCookie, logContext = null) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BAEMIN_FETCH_TIMEOUT_MS);
+  let response;
+  let bodyText;
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        Cookie: sessionCookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Referer: `${BAEMIN_ORIGIN}/delivery/history`
+      },
+      redirect: 'manual',
+      signal: controller.signal
+    });
+    bodyText = await response.text();
+  } catch (error) {
+    const aborted = error?.name === 'AbortError';
+    const message = aborted
+      ? `배민 API 응답이 ${BAEMIN_FETCH_TIMEOUT_MS / 1000}초를 넘겨 중단했습니다.`
+      : (error?.message || String(error));
+    return {
+      ok: false,
+      status: aborted ? 504 : 0,
+      bodyText: '',
+      error: message,
+      message,
+      via: 'fetch'
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+
   return parseBaeminFetchResponse({
     url,
     status: response.status,

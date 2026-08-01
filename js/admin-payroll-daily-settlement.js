@@ -2933,7 +2933,10 @@
   }
 
   bindEvents();
-  void refreshAfterLoad();
+  // 초기 로딩 부담 완화: 파싱 시점에 일정산 원격 데이터를 받지 않는다.
+  // 메뉴 진입 시 renderActiveSection → refresh(=refreshAfterLoad) 에서 로드한다.
+  ensurePayoutDateDefault();
+  ensureWeekFinalizeDefault();
 
   window.BremAdminPayrollDailySettlement = {
     refresh: refreshAfterLoad,

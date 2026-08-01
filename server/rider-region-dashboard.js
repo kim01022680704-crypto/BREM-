@@ -55,9 +55,10 @@ function normalizePlatform(value) {
   return String(value || '').toLowerCase() === 'coupang' ? 'coupang' : 'baemin';
 }
 
-function maskName(name) {
+function maskName(name, mask = true) {
   const text = String(name || '').trim();
   if (!text) return '-';
+  if (!mask) return text;
   if (text.length === 1) return text;
   if (text.length === 2) return `${text[0]}*`;
   return `${text[0]}${'*'.repeat(Math.min(2, text.length - 2))}${text[text.length - 1]}`;
@@ -65,6 +66,53 @@ function maskName(name) {
 
 function shortCoupangRegion(value) {
   return String(value || '').replace(/\s/g, '').slice(0, 4);
+}
+
+function normalizeBaeminUserId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const m = raw.match(/^(\d+)\.0+$/);
+  return m ? m[1] : raw;
+}
+
+function baeminIdMatchKey(value) {
+  const v = normalizeBaeminUserId(value).replace(/\s+/g, '');
+  if (!v) return '';
+  return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+}
+
+function normalizePersonName(value) {
+  return String(value || '').replace(/\s+/g, '').trim().toLowerCase();
+}
+
+/** 지역에 등록된 기사 인덱스 (배민ID → rider, 이름 → rider) */
+function indexRegionRiders(riders = []) {
+  const byBaeminId = new Map();
+  const byName = new Map();
+  riders.forEach(rider => {
+    const idKey = baeminIdMatchKey(rider.baeminId || rider.raw_data?.baeminId);
+    if (idKey) byBaeminId.set(idKey, rider);
+    const nameKey = normalizePersonName(rider.name);
+    if (nameKey && !byName.has(nameKey)) byName.set(nameKey, rider);
+  });
+  return { byBaeminId, byName };
+}
+
+function matchRegionRider(indexes, parsed = {}) {
+  if (!indexes) return null;
+  const crawlId = baeminIdMatchKey(
+    parsed.userId || parsed.riderId || parsed.rider_user_id || parsed.baeminId || ''
+  );
+  if (crawlId && indexes.byBaeminId.has(crawlId)) {
+    return indexes.byBaeminId.get(crawlId);
+  }
+  const nameKey = normalizePersonName(
+    parsed.riderName || parsed.rider_name || parsed.name || ''
+  );
+  if (nameKey && indexes.byName.has(nameKey)) {
+    return indexes.byName.get(nameKey);
+  }
+  return null;
 }
 
 async function readExposureMap(supabase) {
@@ -131,30 +179,34 @@ async function loadRidersForRegion(supabase, region) {
     .filter(rider => riderMatchesRegion(rider, region));
 }
 
-async function buildWeeklyRanking(supabase, region, weekStart, weekEnd) {
+async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options = {}) {
+  const mask = options.maskNames !== false;
   const riders = await loadRidersForRegion(supabase, region);
   if (!riders.length) return [];
   const riderIds = riders.map(r => r.id);
-  const { data, error } = await supabase
-    .from('admin_calls')
-    .select('driver_id,date,platform,count')
-    .in('driver_id', riderIds)
-    .eq('platform', region.platform)
-    .gte('date', weekStart)
-    .lte('date', weekEnd);
-  if (error) throw error;
-
+  // PostgREST .in() URL 한도 대비 청크
   const totals = new Map();
-  (data || []).forEach(row => {
-    const id = String(row.driver_id || '');
-    if (!id) return;
-    totals.set(id, (totals.get(id) || 0) + Math.max(0, Math.round(Number(row.count || 0))));
-  });
+  for (let i = 0; i < riderIds.length; i += 80) {
+    const chunk = riderIds.slice(i, i + 80);
+    const { data, error } = await supabase
+      .from('admin_calls')
+      .select('driver_id,date,platform,count')
+      .in('driver_id', chunk)
+      .eq('platform', region.platform)
+      .gte('date', weekStart)
+      .lte('date', weekEnd);
+    if (error) throw error;
+    (data || []).forEach(row => {
+      const id = String(row.driver_id || '');
+      if (!id) return;
+      totals.set(id, (totals.get(id) || 0) + Math.max(0, Math.round(Number(row.count || 0))));
+    });
+  }
 
   return riders
     .map(rider => ({
       driverId: rider.id,
-      name: maskName(rider.name),
+      name: maskName(rider.name, mask),
       callCount: totals.get(rider.id) || 0
     }))
     .filter(row => row.callCount > 0)
@@ -163,16 +215,21 @@ async function buildWeeklyRanking(supabase, region, weekStart, weekEnd) {
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
-async function buildBaeminLive(supabase, region, today) {
+async function buildBaeminLive(supabase, region, today, options = {}) {
+  const mask = options.maskNames !== false;
   const partnerId = String(region.partnerId || region.key || '').trim().toUpperCase();
-  const { data, error } = await supabase
-    .from('baemin_biz_collect_items')
-    .select('dedupe_key,parsed_json,partner_id')
-    .eq('collect_date', today)
-    .eq('source_menu', 'delivery_status')
-    .eq('partner_id', partnerId)
-    .limit(3000);
+  const [collectResult, regionRiders] = await Promise.all([
+    supabase
+      .from('baemin_biz_collect_items')
+      .select('dedupe_key,parsed_json,partner_id,rider_user_id,rider_name')
+      .eq('collect_date', today)
+      .eq('source_menu', 'delivery_status')
+      .eq('partner_id', partnerId)
+      .limit(3000),
+    loadRidersForRegion(supabase, region)
+  ]);
 
+  const { data, error } = collectResult;
   if (error) {
     if (/does not exist|schema cache/i.test(error.message || '')) {
       return { metrics: emptyMetrics(), realtimeRanking: [] };
@@ -180,25 +237,36 @@ async function buildBaeminLive(supabase, region, today) {
     throw error;
   }
 
+  const riderIndex = indexRegionRiders(regionRiders);
   const rows = data || [];
   let driving = 0;
-  const ranking = [];
+  // 지역 등록 기사만 순위 — 같은 기사 중복 행은 최대 완료콜 유지
+  const rankingByDriver = new Map();
   rows.forEach(row => {
     const parsed = row.parsed_json || {};
     if (isDrivingStatus(parsed.statusDesc || parsed.status_desc || '')) driving += 1;
     const complete = Math.max(0, Math.round(Number(parsed.totalComplete || parsed.total_complete || 0)));
-    const name = String(parsed.riderName || parsed.rider_name || parsed.name || '').trim();
-    if (complete > 0 || name) {
-      ranking.push({
-        driverId: String(row.dedupe_key || parsed.userId || ''),
-        name: maskName(name || '-'),
+    if (complete <= 0) return;
+    const matched = matchRegionRider(riderIndex, {
+      ...parsed,
+      userId: parsed.userId || parsed.riderId || row.rider_user_id,
+      riderName: parsed.riderName || parsed.rider_name || parsed.name || row.rider_name
+    });
+    if (!matched) return;
+    const prev = rankingByDriver.get(matched.id);
+    if (!prev || complete > prev.callCount) {
+      rankingByDriver.set(matched.id, {
+        driverId: matched.id,
+        name: maskName(matched.name || '-', mask),
         callCount: complete
       });
     }
   });
 
-  ranking.sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'));
-  const top = ranking.slice(0, 10).map((row, index) => ({ ...row, rank: index + 1 }));
+  const top = [...rankingByDriver.values()]
+    .sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'))
+    .slice(0, 10)
+    .map((row, index) => ({ ...row, rank: index + 1 }));
 
   // 할당 = 현재 시간대 목표(요일할당 × 지역 세트수), 남은할당 = max(0, 할당 - 운행중)
   let assigned = 0;
@@ -225,27 +293,44 @@ async function buildBaeminLive(supabase, region, today) {
       remaining,
       slotKey,
       slotLabel,
-      sourceNote: `배민 ${slotLabel} 할당 · 운행현황 수집 기준`
+      sourceNote: `배민 ${slotLabel} 할당 · 운행현황 수집 · 실시간순위=지역등록 ${regionRiders.length}명 중`
     },
     realtimeRanking: top
   };
 }
 
-async function buildCoupangLive(supabase, region, today) {
+async function buildCoupangLive(supabase, region, today, options = {}) {
+  // options.maskNames 는 쿠팡 실시간 순위가 비활성(가중치 0.8)이라 미사용
+  void options;
   const vendorId = region.vendorId || '';
   const label = shortCoupangRegion(region.label || region.key);
 
-  let vendorFilter = supabase
+  const baseQuery = () => supabase
     .from('coupang_collect_items')
     .select('vendor_id,vendor_name,parsed_json,source_menu,collect_date')
     .eq('collect_date', today)
-    .in('source_menu', ['peak_realtime', 'vendor_info', 'rider_daily'])
-    .limit(5000);
+    .in('source_menu', ['peak_realtime', 'vendor_info']);
 
-  const { data, error } = await vendorFilter;
+  // vendorId 가 있으면 DB 에서 먼저 좁힌다. (그날 전체 5000행을 받아 앱에서 거르면 느리다)
+  // 지역명으로만 매칭되는 수집분도 있어서, 결과가 비면 기존처럼 전체를 훑는다.
+  let { data, error } = vendorId
+    ? await baseQuery().eq('vendor_id', vendorId).limit(5000)
+    : await baseQuery().limit(5000);
+  if (!error && vendorId && !(data || []).length) {
+    ({ data, error } = await baseQuery().limit(5000));
+  }
+
   if (error) {
     if (/does not exist|schema cache/i.test(error.message || '')) {
-      return { metrics: emptyMetrics(), realtimeRanking: [] };
+      return {
+        metrics: {
+          ...emptyMetrics(),
+          sourceNote: '쿠팡 피크타임·지역요약 크롤링 테이블 없음'
+        },
+        realtimeRanking: [],
+        realtimeRankingDisabled: true,
+        realtimeRankingReason: '쿠팡 실시간 콜수는 피크 가중치(0.8 단위)라 기사별 순위 집계가 불가합니다. 할당·운행중·남은할당만 표시합니다.'
+      };
     }
     throw error;
   }
@@ -255,45 +340,56 @@ async function buildCoupangLive(supabase, region, today) {
     const vname = shortCoupangRegion(row.vendor_name || '');
     if (vendorId && vid === vendorId) return true;
     if (label && vname === label) return true;
-    if (label && shortCoupangRegion(row.vendor_name || '') === label) return true;
     return false;
   });
 
+  // 할당/남은할당 = 피크타임 현황(peak_realtime) 크롤링
+  // 운행중 = 지역별 요약(vendor_info) 크롤링
   let assigned = 0;
   let operating = 0;
   let remaining = 0;
-  const ranking = [];
+  let peakGoalSum = 0;
+  let peakRemainSum = 0;
+  let hasPeak = false;
+  let hasVendor = false;
 
   rows.forEach(row => {
     const parsed = row.parsed_json || {};
     if (row.source_menu === 'peak_realtime') {
-      assigned = Math.max(assigned, Math.round(Number(parsed.goalCount || 0)));
-      remaining = Math.max(remaining, Math.round(Number(parsed.remainingCount || 0)));
+      hasPeak = true;
+      peakGoalSum += Math.max(0, Number(parsed.goalCount || 0));
+      peakRemainSum += Math.max(0, Number(parsed.remainingCount || 0));
     }
     if (row.source_menu === 'vendor_info') {
+      hasVendor = true;
       operating = Math.max(operating, Math.round(Number(parsed.riderOnLineCount || parsed.onGoingCount || 0)));
-      if (!assigned) assigned = Math.round(Number(parsed.target || 0));
-    }
-    if (row.source_menu === 'rider_daily') {
-      const complete = Math.max(0, Math.round(Number(parsed.completeCount || 0)));
-      const name = String(parsed.name || parsed.riderName || '').trim();
-      ranking.push({
-        driverId: String(parsed.courierId || parsed.matchKey || ''),
-        name: maskName(name || '-'),
-        callCount: complete
-      });
+      if (!hasPeak) {
+        assigned = Math.max(assigned, Math.round(Number(parsed.target || 0)));
+      }
     }
   });
 
-  ranking.sort((a, b) => b.callCount - a.callCount || a.name.localeCompare(b.name, 'ko'));
+  if (hasPeak) {
+    // 피크별 목표/잔여 합산 (대시보드 피크타임 현황과 동일 소스)
+    assigned = Math.round(peakGoalSum);
+    remaining = Math.round(peakRemainSum);
+  } else if (hasVendor && assigned > 0) {
+    remaining = Math.max(0, assigned - operating);
+  }
+
   return {
     metrics: {
       assigned,
       operating,
       remaining,
-      sourceNote: '쿠팡 대시보드 수집 기준'
+      sourceNote: hasPeak || hasVendor
+        ? '쿠팡 할당=피크타임 현황(peak_realtime) · 운행중=지역별 요약(vendor_info) 크롤링'
+        : '오늘 쿠팡 피크타임·지역요약 크롤링 데이터가 없습니다'
     },
-    realtimeRanking: ranking.slice(0, 10).map((row, index) => ({ ...row, rank: index + 1 }))
+    // 쿠팡 라이더별 completeCount 는 0.8 가중치 소수 → 정수 순위 불가
+    realtimeRanking: [],
+    realtimeRankingDisabled: true,
+    realtimeRankingReason: '쿠팡 실시간 콜수는 피크 가중치(0.8 단위)라 기사별 순위 집계가 불가합니다. 할당·운행중·남은할당만 표시합니다.'
   };
 }
 
@@ -381,10 +477,67 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     selectedRegionKey: selected.key,
     region: selected,
     metrics: live.metrics,
-    realtimeRanking: live.realtimeRanking,
+    realtimeRanking: live.realtimeRanking || [],
+    realtimeRankingDisabled: live.realtimeRankingDisabled === true,
+    realtimeRankingReason: live.realtimeRankingReason || '',
     weeklyRanking,
     message: ''
   };
+}
+
+/**
+ * 관리자 기사지역관리: 실시간 TOP10 + 주간 TOP10 (노출 여부와 무관)
+ */
+async function getAdminRegionRanking(accessToken, query = {}) {
+  const { verifyAdminCaller } = require('./admin-users');
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const platform = normalizePlatform(query.platform || 'baemin');
+  const today = formatLocalDateKey(new Date());
+  const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
+  const weekEnd = settlementWeekEnd(weekStart);
+  const region = {
+    key: String(query.regionKey || query.key || '').trim(),
+    platform,
+    label: String(query.label || query.regionKey || '').trim(),
+    partnerId: String(query.partnerId || '').trim(),
+    vendorId: String(query.vendorId || '').trim()
+  };
+  if (!region.key && !region.partnerId && !region.label) {
+    return { ok: false, status: 400, error: '지역 정보가 없습니다.' };
+  }
+  if (!region.key) region.key = region.partnerId || region.label;
+  if (!region.label) region.label = region.key;
+
+  try {
+    const live = platform === 'coupang'
+      ? await buildCoupangLive(supabase, region, today, { maskNames: false })
+      : await buildBaeminLive(supabase, region, today, { maskNames: false });
+    const weeklyRanking = await buildWeeklyRanking(supabase, region, weekStart, weekEnd, { maskNames: false });
+    return {
+      ok: true,
+      platform,
+      today,
+      weekStart,
+      weekEnd,
+      region,
+      metrics: live.metrics,
+      realtimeRanking: live.realtimeRanking || [],
+      realtimeRankingDisabled: live.realtimeRankingDisabled === true,
+      realtimeRankingReason: live.realtimeRankingReason || '',
+      weeklyRanking: weeklyRanking || [],
+      realtimeFirst: (live.realtimeRanking || [])[0] || null,
+      weeklyFirst: (weeklyRanking || [])[0] || null
+    };
+  } catch (error) {
+    return { ok: false, status: 500, error: error.message || '지역 순위를 불러오지 못했습니다.' };
+  }
 }
 
 async function getAdminRegionExposure(accessToken) {
@@ -451,6 +604,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
 module.exports = {
   EXPOSURE_KEY,
   getRiderRegionDashboard,
+  getAdminRegionRanking,
   getAdminRegionExposure,
   saveAdminRegionExposure
 };

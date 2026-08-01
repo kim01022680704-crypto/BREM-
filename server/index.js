@@ -465,6 +465,25 @@ app.get('/api/admin/rider-dashboard/region-exposure', async (req, res) => {
   }
 });
 
+app.get('/api/admin/rider-dashboard/region-ranking', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.getAdminRegionRanking(getBearerToken(req), {
+      platform: req.query.platform,
+      regionKey: req.query.regionKey,
+      label: req.query.label,
+      partnerId: req.query.partnerId,
+      vendorId: req.query.vendorId,
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '지역 순위를 불러오지 못했습니다.' });
+  }
+});
+
 app.post('/api/admin/rider-dashboard/region-exposure', async (req, res) => {
   try {
     const result = await riderRegionDashboard.saveAdminRegionExposure(getBearerToken(req), req.body || {});

@@ -554,10 +554,55 @@ const BremSettlementParser = (function () {
     return `${name}${phone}`;
   }
 
-  function matchDrivers(parsedRows, driverList, format) {
+  // 관리자가 「미매칭 매칭」 툴에서 직접 지정한 매핑.
+  // originalName 에는 쿠팡 정산서 성함(=쿠팡ID) 또는 배민 라이더 User ID 가 들어간다.
+  function loadManualMappings(platform) {
+    try {
+      const all = window.BremStorage?.manualNameMappings?.getAll?.() || [];
+      return platform ? all.filter(item => item?.platform === platform) : all;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function buildManualMappingIndex(mappings, format, isBaemin) {
+    const byIdKey = new Map();
+    const byNameKey = new Map();
+    const ambiguousNames = new Set();
+    (mappings || []).forEach(item => {
+      const driverId = String(item?.driverId || '').trim();
+      const original = String(item?.originalName || '').trim();
+      if (!driverId || !original) return;
+      const idKey = isBaemin ? baeminIdMatchKey(original) : normalizeCoupangLoginKey(original);
+      if (idKey && !byIdKey.has(idKey)) byIdKey.set(idKey, driverId);
+      // 배민 라이더 ID 가 비어 있는 행만 이름으로 매핑한다.
+      // 쿠팡 성함칸은 항상 "이름+뒤4자리"라, 이름으로 매핑하면 동명이인에게 잘못 붙는다.
+      if (!isBaemin) return;
+      const nameKey = normalizeDriverName(original, format);
+      if (!nameKey) return;
+      const prev = byNameKey.get(nameKey);
+      if (prev && prev !== driverId) ambiguousNames.add(nameKey);
+      else if (!prev) byNameKey.set(nameKey, driverId);
+    });
+    ambiguousNames.forEach(key => byNameKey.delete(key));
+    return { byIdKey, byNameKey };
+  }
+
+  function matchDrivers(parsedRows, driverList, format, options = {}) {
     const matched = [];
     const unmatched = [];
     const isBaemin = SettlementFormats.isBaeminDelivery(format);
+    const manualIndex = buildManualMappingIndex(
+      Array.isArray(options.manualMappings)
+        ? options.manualMappings
+        : loadManualMappings(format?.platform),
+      format,
+      isBaemin
+    );
+    const byDriverId = new Map();
+    (driverList || []).forEach(item => {
+      if (item?.id) byDriverId.set(String(item.id), item);
+    });
     // 대량 일정산에서 O(n²) find 를 피하기 위해 쿠팡/배민 키 인덱스를 한 번만 만든다.
     const byBaeminKey = new Map();
     const byCoupangKey = new Map();
@@ -582,10 +627,22 @@ const BremSettlementParser = (function () {
       const normalizedRiderId = normalizeBaeminUserId(row.riderId);
       let driver = null;
 
-      if (isBaemin) {
+      // 수동 지정 매핑이 자동 키보다 우선한다. (관리자가 잘못된 자동매칭도 고칠 수 있어야 한다)
+      if (manualIndex.byIdKey.size || manualIndex.byNameKey.size) {
+        const manualIdKey = isBaemin
+          ? baeminIdMatchKey(normalizedRiderId || row.riderId)
+          : normalizeCoupangLoginKey(row.rawName || row.name);
+        // ID 키가 아예 없는 행만 이름 매핑으로 보조한다.
+        const manualDriverId = manualIdKey
+          ? (manualIndex.byIdKey.get(manualIdKey) || '')
+          : (normalizedRowName ? (manualIndex.byNameKey.get(normalizedRowName) || '') : '');
+        if (manualDriverId) driver = byDriverId.get(String(manualDriverId)) || null;
+      }
+
+      if (!driver && isBaemin) {
         const riderKey = baeminIdMatchKey(normalizedRiderId || row.riderId);
         if (riderKey) driver = byBaeminKey.get(riderKey) || null;
-      } else {
+      } else if (!driver) {
         // 쿠팡 정산서의 성함칸은 "이름+전화뒷4자리"(쿠팡ID, 예: "정우성8281") 형식이다.
         // → 쿠팡ID로 매칭하는 것을 최우선으로 하고, 이름-단독 매칭은 마지막 백업으로만 쓴다.
         const loginKey = normalizeCoupangLoginKey(row.rawName || row.name);

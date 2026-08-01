@@ -91,6 +91,15 @@
       return { ok: true, cached: true };
     }
     const result = await BremStorage.fetchAllDriversFromServer?.({ force: false });
+    // 첫 페이지(100명)만 온 상태에서 중복검사를 하면 기존 기사가 '신규'로 잡혀 중복 등록된다.
+    // 백그라운드 페이지까지 끝까지 기다린다.
+    if (typeof BremStorage.awaitDriversFullyLoaded === 'function') {
+      try {
+        await BremStorage.awaitDriversFullyLoaded();
+      } catch (error) {
+        console.warn('[bulk] 기사 전체 로드 대기 실패:', error);
+      }
+    }
     if (!result?.ok && BremStorage.drivers.getAll().length > 0) {
       return { ok: true, cached: true, stale: true };
     }
@@ -102,7 +111,9 @@
   }
 
   function today() {
-    return new Date().toISOString().split('T')[0];
+    // UTC 기준이면 KST 00~09시에 어제 날짜로 가입일이 들어간다 → 서울 기준 고정
+    return window.BremDriverUtils?.todayKST?.()
+      || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
   }
 
   function parseYesNo(value, fallback) {
@@ -796,12 +807,24 @@
         const riders = batch.map(entry => entry.rider);
 
         try {
-          await BremStorage.drivers.bulkUpsert(riders, {
+          const result = await BremStorage.drivers.bulkUpsert(riders, {
             skipAuthProvision: true,
             maxBatch: BULK_BATCH_SIZE
           });
 
+          // 서버가 ok:true 와 함께 실패 행(failed[])을 돌려줄 수 있다.
+          // 예전엔 이걸 무시해서 저장 안 된 행이 '등록완료'로 표시됐다.
+          const failedById = new Map(
+            (Array.isArray(result?.failed) ? result.failed : [])
+              .map(item => [String(item?.id || ''), item?.error || '저장 실패'])
+          );
+
           batch.forEach(entry => {
+            const failReason = failedById.get(String(entry.rider?.id || ''));
+            if (failReason) {
+              markRowFailed(entry, failReason);
+              return;
+            }
             entry.row.applyStatus = 'done';
             entry.row.applyAction = entry.action;
             if (entry.action === 'create') created += 1;

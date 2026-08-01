@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260730ar">
+  <link rel="stylesheet" href="css/admin.css?v=20260801g">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -3297,7 +3297,10 @@
           </div>
 
           <div class="settlement-result-block" id="settlementFailedBlock-coupang" hidden>
-            <h3>매칭 실패 기사</h3>
+            <div class="settlement-failed-head">
+              <h3>매칭 실패 기사</h3>
+              <button type="button" class="primary-btn small-btn" data-open-settlement-match-queue="coupang">미매칭 매칭하기</button>
+            </div>
             <div class="table-wrap">
               <table class="settlement-preview-table unmatched">
                 <thead>
@@ -3319,14 +3322,15 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>쿠팡 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-coupang"></span></h2>
-              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 다시 연결할 수 있습니다.</p>
+              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 행의 「매칭」을 누르면 기존 기사에 연결하거나 그 자리에서 기사를 등록해 바로 반영할 수 있습니다.</p>
             </div>
             <div class="settlement-history-toolbar">
               <label class="settlement-week-filter">
                 <span>적용주(수요일)</span>
                 <input type="date" id="settlementUnmatchedWeek-coupang" class="admin-period-input">
               </label>
-              <button type="button" class="primary-btn small-btn" id="settlementUnmatchedRetryBtn-coupang">매칭 재시도</button>
+              <button type="button" class="primary-btn small-btn" data-open-settlement-match-queue="coupang">미매칭 매칭하기</button>
+              <button type="button" class="small-btn" id="settlementUnmatchedRetryBtn-coupang">매칭 재시도</button>
               <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-coupang">선택 주 전체 삭제</button>
             </div>
           </div>
@@ -3595,7 +3599,10 @@
           </div>
 
           <div class="settlement-result-block" id="settlementFailedBlock-baemin" hidden>
-            <h3>매칭 실패 기사</h3>
+            <div class="settlement-failed-head">
+              <h3>매칭 실패 기사</h3>
+              <button type="button" class="primary-btn small-btn" data-open-settlement-match-queue="baemin">미매칭 매칭하기</button>
+            </div>
             <div class="table-wrap">
               <table class="settlement-preview-table unmatched">
                 <thead>
@@ -3616,14 +3623,15 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>배민 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-baemin"></span></h2>
-              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 기사 등록 후 「매칭 재시도」로 다시 연결할 수 있습니다.</p>
+              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 행의 「매칭」을 누르면 기존 기사에 연결하거나 그 자리에서 기사를 등록해 바로 반영할 수 있습니다.</p>
             </div>
             <div class="settlement-history-toolbar">
               <label class="settlement-week-filter">
                 <span>적용주(수요일)</span>
                 <input type="date" id="settlementUnmatchedWeek-baemin" class="admin-period-input">
               </label>
-              <button type="button" class="primary-btn small-btn" id="settlementUnmatchedRetryBtn-baemin">매칭 재시도</button>
+              <button type="button" class="primary-btn small-btn" data-open-settlement-match-queue="baemin">미매칭 매칭하기</button>
+              <button type="button" class="small-btn" id="settlementUnmatchedRetryBtn-baemin">매칭 재시도</button>
               <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-baemin">선택 주 전체 삭제</button>
             </div>
           </div>
@@ -5179,8 +5187,32 @@
                   <button type="button" class="small-btn" id="driverRegionWeekNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
                   <span class="field-preview week-range-label" id="driverRegionWeekRange">수요일을 선택하면 수~화 범위가 표시됩니다</span>
                 </div>
-                <p class="form-help" id="driverRegionStatsHint">콜수·배달료는 지역 배정이 아니라, 선택한 정산주의 배민/쿠팡 수집·일정산 데이터에서 집계됩니다.</p>
+                <p class="form-help" id="driverRegionStatsHint">콜수 = 콜수 입력 · 배달료 = 일정산 업로드 · 실시간/주간 순위 = <strong>이 지역에 등록된 기사만</strong> (실시간=오늘 크롤링 매칭, 주간=선택 정산주 콜수 입력).</p>
                 <div class="driver-org-week-totals" id="driverRegionWeekTotals" aria-live="polite"></div>
+                <div class="driver-region-rank-panels" id="driverRegionRankPanels" hidden>
+                  <div class="driver-region-metrics" id="driverRegionLiveMetrics" hidden aria-label="실시간 할당 현황">
+                    <div class="driver-region-metric"><span>할당</span><strong id="driverRegionMetricAssigned">-</strong></div>
+                    <div class="driver-region-metric"><span>운행중</span><strong id="driverRegionMetricOperating">-</strong></div>
+                    <div class="driver-region-metric"><span>남은할당</span><strong id="driverRegionMetricRemaining">-</strong></div>
+                  </div>
+                  <p class="form-help" id="driverRegionMetricsNote"></p>
+                  <div class="driver-region-rank-panel">
+                    <div class="driver-region-rank-panel__head">
+                      <h4>실시간 콜수 TOP 10</h4>
+                      <strong class="driver-region-rank-first" id="driverRegionRealtimeFirst">—</strong>
+                    </div>
+                    <ol class="driver-region-rank-list" id="driverRegionRealtimeList"></ol>
+                    <p class="form-help" id="driverRegionRealtimeNote"></p>
+                  </div>
+                  <div class="driver-region-rank-panel">
+                    <div class="driver-region-rank-panel__head">
+                      <h4>주간 콜수 TOP 10 <span class="field-preview">(수~화)</span></h4>
+                      <strong class="driver-region-rank-first" id="driverRegionWeeklyFirst">—</strong>
+                    </div>
+                    <ol class="driver-region-rank-list" id="driverRegionWeeklyList"></ol>
+                    <p class="form-help" id="driverRegionWeeklyNote"></p>
+                  </div>
+                </div>
                 <div class="driver-region-assign">
                   <label class="field">
                     <span class="field-label">기사 추가 (선택형)</span>
@@ -6845,6 +6877,107 @@
   <div class="overlay" id="overlay"></div>
   <div class="toast" id="toast"></div>
 
+  <div class="settlement-match-modal" id="settlementMatchModal" hidden>
+    <div class="settlement-match-modal__backdrop" data-close-settlement-match></div>
+    <div class="settlement-match-modal__dialog" role="dialog" aria-labelledby="settlementMatchModalTitle" aria-modal="true">
+      <div class="settlement-match-modal__head">
+        <div class="settlement-match-modal__head-top">
+          <h3 id="settlementMatchModalTitle">미매칭 기사 매칭</h3>
+          <span class="settlement-match-modal__progress" id="settlementMatchProgress"></span>
+        </div>
+        <p class="form-help">정산서에서 등록기사와 연결되지 않은 행입니다. 기존 기사에 연결하거나, 여기서 바로 기사를 등록해 매칭하세요.</p>
+        <dl class="settlement-match-record" id="settlementMatchRecord"></dl>
+      </div>
+
+      <div class="settlement-match-tabs" role="tablist">
+        <button type="button" class="settlement-match-tab is-active" data-settlement-match-tab="link" role="tab">기존 기사 연결</button>
+        <button type="button" class="settlement-match-tab" data-settlement-match-tab="create" role="tab">기사 간이 등록</button>
+      </div>
+
+      <section class="settlement-match-pane" data-settlement-match-pane="link">
+        <label class="settlement-match-search">
+          <span>기사 검색 (이름 · 연락처 · 배민ID · 쿠팡ID)</span>
+          <input type="text" id="settlementMatchSearch" placeholder="이름 또는 번호 일부를 입력" autocomplete="off">
+        </label>
+        <p class="form-help" id="settlementMatchLinkHint">연결하면 이 정산서 행이 즉시 반영되고, 다음 업로드부터는 자동으로 매칭됩니다.</p>
+        <div class="settlement-match-candidates" id="settlementMatchCandidates"></div>
+        <div class="settlement-match-actions">
+          <button type="button" class="small-btn" data-close-settlement-match>닫기</button>
+          <button type="button" class="primary-btn" id="settlementMatchLinkBtn" disabled>이 기사로 매칭</button>
+        </div>
+      </section>
+
+      <section class="settlement-match-pane" data-settlement-match-pane="create" hidden>
+        <form class="settlement-match-form" id="settlementMatchCreateForm">
+          <div class="settlement-match-grid">
+            <label>
+              이름 <em>*</em>
+              <input type="text" id="settlementMatchName" placeholder="기사 이름" required>
+            </label>
+            <label>
+              연락처 <em>*</em>
+              <input type="tel" id="settlementMatchPhone" placeholder="01012345678" required>
+            </label>
+            <label>
+              배민 라이더 ID
+              <input type="text" id="settlementMatchBaeminId" placeholder="배민 User ID">
+            </label>
+            <label>
+              가입일 <em>*</em>
+              <input type="date" id="settlementMatchJoinDate" required>
+            </label>
+            <label>
+              상태
+              <select id="settlementMatchStatus">
+                <option value="근무중">근무중</option>
+                <option value="휴무">휴무</option>
+                <option value="퇴사">퇴사</option>
+              </select>
+            </label>
+            <label>
+              은행
+              <input type="text" id="settlementMatchBankName" placeholder="예: 국민">
+            </label>
+            <label>
+              계좌번호
+              <input type="text" id="settlementMatchAccountNumber" placeholder="- 없이 입력">
+            </label>
+            <label>
+              배민 지역
+              <select id="settlementMatchRegionBaemin">
+                <option value="">미선택</option>
+              </select>
+            </label>
+            <label>
+              쿠팡 지역
+              <select id="settlementMatchRegionCoupang">
+                <option value="">미선택</option>
+              </select>
+            </label>
+            <div class="settlement-match-platforms">
+              <span>플랫폼</span>
+              <label class="settlement-match-check">
+                <input type="checkbox" id="settlementMatchPlatformCoupang"> 쿠팡
+              </label>
+              <label class="settlement-match-check">
+                <input type="checkbox" id="settlementMatchPlatformBaemin"> 배민
+              </label>
+            </div>
+            <label class="settlement-match-memo">
+              메모
+              <textarea id="settlementMatchMemo" rows="2" placeholder="정산 미매칭에서 등록"></textarea>
+            </label>
+          </div>
+          <p class="form-help" id="settlementMatchCreateHint"></p>
+          <div class="settlement-match-actions">
+            <button type="button" class="small-btn" data-close-settlement-match>닫기</button>
+            <button type="submit" class="primary-btn" id="settlementMatchCreateBtn">등록하고 매칭</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
   <div class="range-calendar month-calendar" id="adminTargetMonthCalendar" hidden>
     <div class="calendar-header">
       <button type="button" id="adminTargetMonthPrev" aria-label="이전 해">&lt;</button>
@@ -6931,14 +7064,14 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260730p"></script>
-  <script src="js/storage.js?v=20260731d"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
+  <script src="js/storage.js?v=20260801g"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
-  <script src="js/driver-utils.js?v=20260731a"></script>
+  <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/settlement-formats.js?v=20260730f"></script>
-  <script src="js/settlement-client.js?v=20260731b"></script>
+  <script src="js/settlement-client.js?v=20260801g"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20260730b"></script>
@@ -6947,8 +7080,8 @@
   <script src="js/weekly-settlement.js?v=20260731a"></script>
   <script src="js/weekly-settlement-admin.js?v=20260730ac"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
-    <script src="js/baemin-delivery-status-admin.js?v=20260729a"></script>
-    <script src="js/coupang-status-admin.js?v=20260723a"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20260801f"></script>
+    <script src="js/coupang-status-admin.js?v=20260801f"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260723a"></script>
     <script src="js/coupang-rejection-sync.js?v=20260715c"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
@@ -6973,15 +7106,15 @@
   <script src="js/direct-settlement-calc.js?v=20260731e"></script>
   <script src="js/settlement-result-direct.js?v=20260731h"></script>
   <script src="js/final-deposit.js?v=20260730aq"></script>
-  <script src="js/driver-management-admin.js?v=20260801a"></script>
+  <script src="js/driver-management-admin.js?v=20260801e"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
-  <script src="js/admin-payroll-slips.js?v=20260731i"></script>
+  <script src="js/admin-payroll-slips.js?v=20260801f"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-payroll-daily-settlement.js?v=20260730ak"></script>
+  <script src="js/admin-payroll-daily-settlement.js?v=20260801f"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260801a"></script>
+    <script src="js/admin.js?v=20260801g"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

@@ -21,6 +21,7 @@
     dashboardWeekCache: {},
     dashboardLivePollTimer: null,
     dashboardLiveBusy: false,
+    dashboardLiveFetchedAt: 0,
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -5949,6 +5950,7 @@
       }
     } finally {
       state.dashboardLiveBusy = false;
+      state.dashboardLiveFetchedAt = Date.now();
       card?.classList.remove('is-soft-refreshing');
       if (!silent) {
         btn?.classList.remove('is-loading');
@@ -6110,8 +6112,8 @@
     $('dashboardBaeminOpenStatusBtn')?.addEventListener('click', () => {
       openBaeminStatusFromDashboard();
     });
-    void initDashboardBaeminLive();
-    startDashboardBaeminLivePoll();
+    // 초기 로딩 부담 완화: 파싱 시점(=로그인 화면)에는 조회하지 않는다.
+    // 대시보드 렌더에서 refreshDashboardBaeminLive() 가 지역 조회와 폴러를 시작한다.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         const dashboard = $('dashboard');
@@ -6322,7 +6324,21 @@
     ensureSyncDateRangeDefaults,
     resolveSyncDateRange,
     loadSyncReflectionStatus,
-    refreshDashboardBaeminLive: () => initDashboardBaeminLive(true)
+    // 대시보드 재렌더마다 강제 재조회하면 렉·서버부하가 커진다.
+    // 첫 렌더에서만 지역을 받아오고(그 안에서 스냅샷 1회 조회), 이후에는 캐시를 그리고
+    // 60초가 지났을 때만 조용히 재조회한다. 폴러도 이때 보장한다.
+    refreshDashboardBaeminLive: () => {
+      if (!state.dashboardLivePollTimer) startDashboardBaeminLivePoll();
+      const hadRegions = state.dashboardBaeminRegions.length > 0;
+      if (!hadRegions) {
+        void initDashboardBaeminLive(false);
+        return;
+      }
+      paintDashboardCacheInstant();
+      if (state.dashboardLiveBusy) return;
+      if (Date.now() - (state.dashboardLiveFetchedAt || 0) < 60 * 1000) return;
+      void queryDashboardBaeminLive({ silent: true });
+    }
   };
   bindEvents();
 })();

@@ -715,29 +715,46 @@ function mergeIncomingRiderWithExisting(incoming, existingRow) {
  * (읽기 실패를 무시하고 진행하면 정확히 과거 데이터 소실 사고가 재현된다)
  */
 async function expandBulkFillPatches(supabase, riders) {
-  return Promise.all((riders || []).map(async rider => {
-    if (!rider?.bulkFillPatch || !rider?.id) return rider;
+  const list = Array.isArray(riders) ? riders : [];
+  const patchIds = [...new Set(
+    list
+      .filter(rider => rider?.bulkFillPatch && rider?.id)
+      .map(rider => String(rider.id).trim())
+      .filter(Boolean)
+  )];
+  if (!patchIds.length) return list;
 
-    const id = String(rider.id || '').trim();
-    const { data: existing, error } = await queryRidersWithSelectFallback(
+  // 행마다 SELECT 하면 300행 = 300 왕복이다 → 200개씩 묶어 한 번에 읽는다.
+  const existingById = new Map();
+  for (let offset = 0; offset < patchIds.length; offset += 200) {
+    const chunk = patchIds.slice(offset, offset + 200);
+    const { data, error } = await queryRidersWithSelectFallback(
       RIDER_DETAIL_SELECT_VARIANTS,
-      columns => supabase.from('riders').select(columns).eq('id', id).maybeSingle()
+      columns => supabase.from('riders').select(columns).in('id', chunk)
     );
     if (error) {
       throw new BulkRiderGuardError(
-        `기존 기사 정보를 읽지 못해 일괄등록을 중단했습니다. (id=${id}) 그대로 저장하면 이름·연락처·계좌가 빈 값으로 덮일 수 있습니다. 잠시 후 다시 시도해 주세요.`
+        `기존 기사 정보를 읽지 못해 일괄등록을 중단했습니다. 그대로 저장하면 이름·연락처·계좌가 빈 값으로 덮일 수 있습니다. 잠시 후 다시 시도해 주세요. (${error.message || error})`
       );
     }
+    (data || []).forEach(row => {
+      if (row?.id) existingById.set(String(row.id), row);
+    });
+  }
+
+  return list.map(rider => {
+    if (!rider?.bulkFillPatch || !rider?.id) return rider;
+    const id = String(rider.id).trim();
+    const existing = existingById.get(id);
     if (!existing) {
       throw new BulkRiderGuardError(
         `일괄등록 대상 기사를 찾을 수 없어 중단했습니다. (id=${id}) 목록을 새로고침한 뒤 다시 시도해 주세요.`
       );
     }
-
     const base = dbRowToDriver(existing);
     const { bulkFillPatch, id: _id, ...patch } = rider;
     return { ...base, ...patch };
-  }));
+  });
 }
 
 const PROTECTED_RIDER_COLUMNS = [
@@ -953,7 +970,9 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
     }
     throw error;
   }
-  const builtRows = await Promise.all(resolved.map(async rider => {
+  // 비밀번호 보존을 행마다 SELECT 하면 300명 배치에 300번 왕복이라 일괄등록이 매우 느려진다.
+  // 필요한 id 만 모아 한 번에(200개 청크) 읽고 메모리에서 합친다.
+  const draftRows = resolved.map(rider => {
     const row = riderToRow(rider);
     // 일괄 업서트에서는 auth_user_id 를 절대 건드리지 않는다.
     // - 신규: null(기본값)으로 삽입되고, 계정 프로비저닝이 별도로 id 기준 채운다.
@@ -961,13 +980,42 @@ async function bulkUpsertRiders(accessToken, riders, options = {}) {
     // 이렇게 해야 한 배치 안에서 같은/충돌 auth_user_id 가 들어가 riders_auth_user_id_key
     // 유니크 제약을 위반하는 일이 사라진다.
     delete row.auth_user_id;
-    return preserveRiderPasswordOnUpsert(
-      supabase,
-      row,
-      Boolean(rider.passwordExplicit),
-      rider.password
-    );
-  }));
+    return { row, rider };
+  });
+
+  const passwordLookupIds = [...new Set(
+    draftRows
+      .filter(({ row, rider }) => row?.id && !rider.passwordExplicit)
+      .map(({ row }) => String(row.id))
+  )];
+  const existingSecretsById = new Map();
+  for (let offset = 0; offset < passwordLookupIds.length; offset += 200) {
+    const chunk = passwordLookupIds.slice(offset, offset + 200);
+    const { data, error } = await supabase
+      .from('riders')
+      .select('id,raw_data,resident_number')
+      .in('id', chunk);
+    if (error) {
+      console.warn('[BREM] bulkUpsertRiders 비밀번호 조회 실패:', error.message || error);
+      break;
+    }
+    (data || []).forEach(item => {
+      if (item?.id) existingSecretsById.set(String(item.id), item);
+    });
+  }
+
+  const builtRows = draftRows.map(({ row, rider }) => {
+    if (rider.passwordExplicit) {
+      const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
+      raw.password = String(rider.password || raw.password || '1234').trim() || '1234';
+      return { ...row, raw_data: raw };
+    }
+    const existing = row?.id ? existingSecretsById.get(String(row.id)) : null;
+    if (!existing) return row;
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
+    raw.password = readRiderSecrets(existing).password;
+    return { ...row, raw_data: raw };
+  });
   // 배치 내 동일 id 중복 제거(마지막 값 유지) — "ON CONFLICT DO UPDATE ... affect row a second time" 방지
   const rowsById = new Map();
   builtRows.forEach(row => {

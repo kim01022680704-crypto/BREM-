@@ -1771,9 +1771,10 @@ window.BremSupabaseStorageAdapter = (function () {
         let tableOptions = options;
         if (key === keys.calls && !options.allHistory) {
           tableOptions = { ...options, sinceDate: options.sinceDate || getDefaultCallsSinceDate() };
-        } else if (key === keys.rejections) {
-          tableOptions = { ...options, allHistory: options.allHistory !== false };
         }
+        // 거절율은 예전에 여기서 무조건 allHistory=true 로 덮어써서, 대시보드 첫 로딩에도
+        // 테이블 전체(수년치)를 받아왔다. 호출자 옵션을 그대로 따르고(기본 2년) 거절율 메뉴만
+        // 전체 이력을 요청한다.
         if (backed.legacyKey) return loadTableWithLegacyFallback(backed, tableOptions);
         return loadTableCollection(backed, tableOptions);
       }

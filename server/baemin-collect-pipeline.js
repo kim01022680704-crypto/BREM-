@@ -216,35 +216,17 @@ async function deleteBizDeliveryStatusForPartner(partnerId) {
   const pid = String(partnerId || '').trim().toUpperCase();
   if (!supabase || !/^DP\d{6,}$/.test(pid)) return { ok: true, deleted: 0 };
 
-  let deleted = 0;
-  const pageSize = 1000;
-  const chunkSize = 80;
-  while (true) {
-    const { data, error } = await supabase
-      .from('baemin_biz_collect_items')
-      .select('id')
-      .eq('source_menu', 'delivery_status')
-      .like('dedupe_key', `${pid}:%`)
-      .limit(pageSize);
-    if (error) {
-      return { ok: false, error: error.message || '기존 배달현황 삭제 실패' };
-    }
-    const ids = (data || []).map(row => row.id).filter(Boolean);
-    if (!ids.length) break;
-    for (let offset = 0; offset < ids.length; offset += chunkSize) {
-      const chunk = ids.slice(offset, offset + chunkSize);
-      const { error: deleteError } = await supabase
-        .from('baemin_biz_collect_items')
-        .delete()
-        .in('id', chunk);
-      if (deleteError) {
-        return { ok: false, error: deleteError.message || '기존 배달현황 삭제 실패' };
-      }
-      deleted += chunk.length;
-    }
-    if (ids.length < pageSize) break;
+  // 조건부 DELETE 한 번으로 처리 (id SELECT → 청크 삭제 왕복 제거)
+  const { data, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .delete()
+    .eq('source_menu', 'delivery_status')
+    .like('dedupe_key', `${pid}:%`)
+    .select('id');
+  if (error) {
+    return { ok: false, error: error.message || '기존 배달현황 삭제 실패' };
   }
-  return { ok: true, deleted };
+  return { ok: true, deleted: (data || []).length };
 }
 
 /** 일별/라이더: 특정 DP·날짜 구간을 통째로 지운 뒤 이번 수집분으로 교체 */
@@ -257,38 +239,41 @@ async function deleteBizHistoryForPartnerDates(partnerId, sourceMenu, dates = []
     return { ok: true, deleted: 0 };
   }
 
+  // 조건부 DELETE 한 번으로 처리한다. (예전엔 id SELECT → 80개씩 삭제라 날짜마다 왕복이 수십 번)
   let deleted = 0;
-  const pageSize = 1000;
-  const chunkSize = 80;
   for (const day of dayList) {
-    while (true) {
-      const { data, error } = await supabase
-        .from('baemin_biz_collect_items')
-        .select('id')
-        .eq('source_menu', menu)
-        .eq('collect_date', day)
-        .like('dedupe_key', `${pid}:%`)
-        .limit(pageSize);
-      if (error) {
-        return { ok: false, error: error.message || `${menu} 중복일 삭제 실패` };
-      }
-      const ids = (data || []).map(row => row.id).filter(Boolean);
-      if (!ids.length) break;
-      for (let offset = 0; offset < ids.length; offset += chunkSize) {
-        const chunk = ids.slice(offset, offset + chunkSize);
-        const { error: deleteError } = await supabase
-          .from('baemin_biz_collect_items')
-          .delete()
-          .in('id', chunk);
-        if (deleteError) {
-          return { ok: false, error: deleteError.message || `${menu} 중복일 삭제 실패` };
-        }
-        deleted += chunk.length;
-      }
-      if (ids.length < pageSize) break;
+    const { data, error } = await supabase
+      .from('baemin_biz_collect_items')
+      .delete()
+      .eq('source_menu', menu)
+      .eq('collect_date', day)
+      .like('dedupe_key', `${pid}:%`)
+      .select('id');
+    if (error) {
+      return { ok: false, error: error.message || `${menu} 중복일 삭제 실패` };
     }
+    deleted += (data || []).length;
   }
   return { ok: true, deleted };
+}
+
+// 오래된 수집분 정리는 (협력사·메뉴·기준일)당 1회만 하면 된다.
+// 예전엔 날짜별 저장마다 돌아서 30일 수집 시 전체 스캔이 30번 반복됐다.
+const prunedHistoryKeys = new Map();
+const PRUNE_GUARD_TTL_MS = 6 * 60 * 60 * 1000;
+
+function shouldPruneHistoryNow(partnerId, sourceMenu, keepFromDate) {
+  const key = `${partnerId}|${sourceMenu}|${keepFromDate}`;
+  const last = prunedHistoryKeys.get(key) || 0;
+  const now = Date.now();
+  if (now - last < PRUNE_GUARD_TTL_MS) return false;
+  prunedHistoryKeys.set(key, now);
+  if (prunedHistoryKeys.size > 500) {
+    for (const [k, at] of prunedHistoryKeys) {
+      if (now - at >= PRUNE_GUARD_TTL_MS) prunedHistoryKeys.delete(k);
+    }
+  }
+  return true;
 }
 
 /** 일별/라이더: 1달(30일)보다 오래된 BIZ 수집분 정리 */
@@ -301,36 +286,18 @@ async function pruneBizHistoryOlderThan(partnerId, sourceMenu, keepFromDate) {
     return { ok: true, deleted: 0 };
   }
 
-  let deleted = 0;
-  const pageSize = 1000;
-  const chunkSize = 80;
-  while (true) {
-    const { data, error } = await supabase
-      .from('baemin_biz_collect_items')
-      .select('id')
-      .eq('source_menu', menu)
-      .lt('collect_date', fromDate)
-      .like('dedupe_key', `${pid}:%`)
-      .limit(pageSize);
-    if (error) {
-      return { ok: false, error: error.message || `${menu} 오래된 데이터 정리 실패` };
-    }
-    const ids = (data || []).map(row => row.id).filter(Boolean);
-    if (!ids.length) break;
-    for (let offset = 0; offset < ids.length; offset += chunkSize) {
-      const chunk = ids.slice(offset, offset + chunkSize);
-      const { error: deleteError } = await supabase
-        .from('baemin_biz_collect_items')
-        .delete()
-        .in('id', chunk);
-      if (deleteError) {
-        return { ok: false, error: deleteError.message || `${menu} 오래된 데이터 정리 실패` };
-      }
-      deleted += chunk.length;
-    }
-    if (ids.length < pageSize) break;
+  // 조건부 DELETE 한 번으로 처리 (id SELECT → 청크 삭제 왕복 제거)
+  const { data, error } = await supabase
+    .from('baemin_biz_collect_items')
+    .delete()
+    .eq('source_menu', menu)
+    .lt('collect_date', fromDate)
+    .like('dedupe_key', `${pid}:%`)
+    .select('id');
+  if (error) {
+    return { ok: false, error: error.message || `${menu} 오래된 데이터 정리 실패` };
   }
-  return { ok: true, deleted };
+  return { ok: true, deleted: (data || []).length };
 }
 
 async function saveCollectItems(rows) {
@@ -347,7 +314,8 @@ async function saveCollectItems(rows) {
   });
 
   let savedCount = 0;
-  const chunkSize = 100;
+  // 라이더별 하루치가 수백 행이라 100 단위면 왕복이 과하다 (쿠팡 파이프라인과 동일하게 300)
+  const chunkSize = 300;
 
   for (const [menuType, menuRows] of byMenu.entries()) {
     const partnerId = String(
@@ -425,12 +393,14 @@ async function saveCollectItems(rows) {
       savedCount += chunk.length;
     }
 
-    // 일별/라이더: 30일보다 오래된 분 정리 (한달치만 유지)
+    // 일별/라이더: 30일보다 오래된 분 정리 (한달치만 유지) — 협력사·메뉴별 1일 1회
     if (['daily_history', 'rider_history'].includes(menuType) && /^DP\d{6,}$/.test(partnerId)) {
       const keepFrom = addDays(todayKST(), -30);
-      const pruned = await pruneBizHistoryOlderThan(partnerId, menuType, keepFrom);
-      if (pruned.ok && pruned.deleted) {
-        console.log(`[BREM][save] pruned ${pruned.deleted} old ${menuType} row(s) for ${partnerId} before ${keepFrom}`);
+      if (shouldPruneHistoryNow(partnerId, menuType, keepFrom)) {
+        const pruned = await pruneBizHistoryOlderThan(partnerId, menuType, keepFrom);
+        if (pruned.ok && pruned.deleted) {
+          console.log(`[BREM][save] pruned ${pruned.deleted} old ${menuType} row(s) for ${partnerId} before ${keepFrom}`);
+        }
       }
     }
   }
@@ -893,10 +863,20 @@ async function fetchAndSaveHistoryByDays({
     console.log(`[BREM][collect] ${sourceId} partner=${partnerId || '-'} day=${day} saved=${savedCount}`);
   }
 
+  if (failedDays > 0) {
+    // 하루라도 실패하면 그 날짜만 데이터가 비어 있게 된다 — 조용히 넘기지 않고 남긴다.
+    const failedList = dayResults.filter(row => row.status === 'failed').map(row => row.date).join(', ');
+    console.warn(`[BREM][collect] ${sourceId} partner=${partnerId || '-'} 실패 ${failedDays}/${dates.length}일 (${failedList})`);
+  }
+
   return {
     ok: failedDays < dates.length,
     savedCount: totalSaved,
     items: [],
+    partialFailure: failedDays > 0,
+    message: failedDays > 0
+      ? `${dates.length}일 중 ${failedDays}일 수집 실패 — 해당 날짜는 다시 수집해야 합니다.`
+      : '',
     meta: {
       totalPage: 1,
       rawCount: totalSaved,
@@ -1744,7 +1724,8 @@ async function runPartnerSourceCollectLoop({
 }
 
 async function runFullCollectPipeline(options = {}) {
-  const collectDate = String(options.collectDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  // UTC 기준이면 KST 00~09시 사이에 어제 날짜로 수집돼서 하루가 비어 버린다.
+  const collectDate = String(options.collectDate || todayKST()).slice(0, 10);
   const { readRiderCollectRange } = require('./baemin-rider-collect-range');
   const { readDailyCollectRange } = require('./baemin-daily-collect-range');
   const riderCollectRange = options.riderCollectRange
@@ -2236,7 +2217,7 @@ async function runFullCollectPipeline(options = {}) {
 
 async function getLatestMenuCollectStatus(collectDate) {
   const supabase = getServiceClient();
-  const menuDateRanges = buildBizMenuDateRanges(collectDate || new Date().toISOString().slice(0, 10));
+  const menuDateRanges = buildBizMenuDateRanges(collectDate || todayKST());
   const menus = listCollectSources().map(source => ({
     id: source.id,
     label: source.label,

@@ -2710,7 +2710,9 @@
   }
 
   bindEvents();
-  void refresh();
+  // 초기 로딩 부담 완화: 파싱 시점에 급여명세서 원격 데이터를 받지 않는다.
+  // 실제 로드는 메뉴 진입 시 admin.js 의 renderActiveSection → refresh() 에서 수행한다.
+  ensureSettlementWeekInitialized();
 
   window.BremAdminPayrollSlips = {
     refresh,

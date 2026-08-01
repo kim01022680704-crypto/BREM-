@@ -13,6 +13,8 @@
     "verify:riders-schema": "node scripts/verify-riders-schema.js",
     "audit:production": "node scripts/production-audit.js",
     "test:data-cache": "node scripts/test-data-cache.js",
+    "smoke:frontend": "node scripts/smoke-frontend-modules.js",
+    "test:settlement-match": "node scripts/test-settlement-manual-match.js",
     "bootstrap:missions": "node scripts/apply-missions-bootstrap.js",
     "test:rejection-storage": "node scripts/test-rejection-supabase-storage.js",
     "test:baemin-playwright": "node scripts/test-baemin-playwright-login.js",

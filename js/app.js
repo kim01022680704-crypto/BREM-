@@ -75,7 +75,9 @@
   let platformAutoSync = true;
 
   function today() {
-    return new Date().toISOString().split('T')[0];
+    // UTC 기준이면 KST 00~09시에 어제 날짜로 가입일이 들어간다 → 서울 기준 고정
+    return window.BremDriverUtils?.todayKST?.()
+      || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
   }
 
   function showToast(message) {

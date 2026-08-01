@@ -346,6 +346,12 @@ const BremStorage = (function () {
   let dataMigrationsCompleted = false;
   let normalizedDriversCache = null;
   let normalizedDriversSourceRef = null;
+  let normalizedCallsCache = null;
+  let normalizedCallsSourceRef = null;
+  let normalizedRejectionsCache = null;
+  let normalizedRejectionsSourceRef = null;
+  let rejectionsWeekIndex = null;
+  let rejectionsWeekIndexRef = null;
 
   let adminDataHydratePromise = null;
   let ensureHydratedPromise = null;
@@ -1590,7 +1596,7 @@ const BremStorage = (function () {
     scheduleCacheSyncAfterWrite(key);
   }
 
-  async function refetchDataKey(key) {
+  async function refetchDataKey(key, options = {}) {
     return window.BremDataCache.runOnce(`refetch:${key}`, async () => {
       if (key === KEYS.drivers) {
         return fetchAllDriversFromServer({ force: true });
@@ -1599,7 +1605,7 @@ const BremStorage = (function () {
         return reloadMissions(true);
       }
       if (TABLE_STORAGE_KEYS.has(key) && activeStorageAdapter.ensureKeysLoaded) {
-        return activeStorageAdapter.ensureKeysLoaded([key], { force: true });
+        return activeStorageAdapter.ensureKeysLoaded([key], { ...options, force: true });
       }
       if (activeStorageAdapter.reloadSettingKey) {
         await activeStorageAdapter.reloadSettingKey(key);
@@ -1923,7 +1929,7 @@ const BremStorage = (function () {
     };
   }
 
-  async function refreshDataFromServer(key) {
+  async function refreshDataFromServer(key, options = {}) {
     resetBootstrapState();
     window.BremDataCache?.invalidate?.(key);
     if (TABLE_STORAGE_KEYS.has(key)) {
@@ -1936,7 +1942,7 @@ const BremStorage = (function () {
     if (key === KEYS.missions) {
       return reloadMissions(true);
     }
-    return refetchDataKey(key);
+    return refetchDataKey(key, options);
   }
 
   function dedupeDriversList(list) {
@@ -5179,13 +5185,15 @@ const BremStorage = (function () {
         const cached = window.BremDataCache.getData(KEYS.drivers);
         if (Array.isArray(cached) && cached.length) list = cached;
       }
-      list = dedupeDriversList(Array.isArray(list) ? list : []);
-      if (normalizedDriversCache && normalizedDriversSourceRef === list) {
+      const sourceRef = Array.isArray(list) ? list : [];
+      // 원본 배열 기준으로 캐시한다. (예전엔 dedupe 결과로 비교해서 캐시가 절대 맞지 않아
+      //  getAll() 호출마다 dedupe+normalize 를 전부 다시 돌렸다 → 목록/대시보드 렉의 주원인)
+      if (normalizedDriversCache && normalizedDriversSourceRef === sourceRef) {
         return normalizedDriversCache;
       }
-      const normalized = normalizeDrivers(list);
+      const normalized = normalizeDrivers(dedupeDriversList(sourceRef));
       normalizedDriversCache = normalized;
-      normalizedDriversSourceRef = list;
+      normalizedDriversSourceRef = sourceRef;
       return normalized;
     },
 
@@ -5623,7 +5631,15 @@ const BremStorage = (function () {
 
   const calls = {
     getAll() {
-      return normalizeCalls(storageAdapter.read(KEYS.calls, []));
+      // 콜수는 2년치(수만~수십만 행)라 매 호출 normalize 하면 화면이 멈춘다 → 원본 ref 기준 캐시
+      const sourceRef = storageAdapter.read(KEYS.calls, []);
+      if (normalizedCallsCache && normalizedCallsSourceRef === sourceRef) {
+        return normalizedCallsCache;
+      }
+      const normalized = normalizeCalls(sourceRef);
+      normalizedCallsCache = normalized;
+      normalizedCallsSourceRef = sourceRef;
+      return normalized;
     },
 
     saveForDriverDates(driverId, dates, count, platform = DEFAULT_PLATFORM) {
@@ -5855,8 +5871,14 @@ const BremStorage = (function () {
 
   const rejections = {
     getAll() {
-      const list = storageAdapter.read(KEYS.rejections, []);
-      return migrateRejectionsPlatform(normalizeRejections(list));
+      const sourceRef = storageAdapter.read(KEYS.rejections, []);
+      if (normalizedRejectionsCache && normalizedRejectionsSourceRef === sourceRef) {
+        return normalizedRejectionsCache;
+      }
+      const normalized = migrateRejectionsPlatform(normalizeRejections(sourceRef));
+      normalizedRejectionsCache = normalized;
+      normalizedRejectionsSourceRef = sourceRef;
+      return normalized;
     },
 
     upsertWeekly({ driverId, weekStart, rate, platform = DEFAULT_PLATFORM, stats = null, source = 'manual', riderPublishedAt = null }) {
@@ -5976,13 +5998,25 @@ const BremStorage = (function () {
     getEntryForWeek(driverId, weekStart, platform = DEFAULT_PLATFORM, options = {}) {
       const p = normalizePlatform(platform);
       const riderOnly = options.riderOnly === true;
-      const entry = rejections.getAll().find(item => {
-        if (item.driverId !== driverId || item.weekStart !== weekStart || normalizePlatform(item.platform) !== p) {
-          return false;
-        }
-        if (riderOnly && !item.riderPublishedAt) return false;
-        return true;
-      });
+      // 대시보드는 기사×플랫폼마다 이 함수를 부른다 → 선형 탐색이면 O(기사수 × 거절율행수).
+      // 목록 1회당 인덱스 Map 을 만들어 O(1) 조회로 바꾼다.
+      const list = rejections.getAll();
+      if (!rejectionsWeekIndex || rejectionsWeekIndexRef !== list) {
+        const index = new Map();
+        list.forEach(item => {
+          const key = `${item.driverId}|${item.weekStart}|${normalizePlatform(item.platform)}`;
+          const bucket = index.get(key);
+          if (!bucket) {
+            index.set(key, item);
+          } else if (!bucket.riderPublishedAt && item.riderPublishedAt) {
+            index.set(key, item);
+          }
+        });
+        rejectionsWeekIndex = index;
+        rejectionsWeekIndexRef = list;
+      }
+      const found = rejectionsWeekIndex.get(`${driverId}|${weekStart}|${p}`) || null;
+      const entry = (found && riderOnly && !found.riderPublishedAt) ? null : found;
       if (!entry) return null;
       const stats = entry.stats && typeof entry.stats === 'object' ? entry.stats : {};
       return {
@@ -10639,6 +10673,23 @@ const BremStorage = (function () {
       const p = normalizePlatform(platform);
       const key = String(originalName || '').trim();
       return manualNameMappings.getAll().find(item => item.platform === p && item.originalName === key) || null;
+    },
+
+    removeById(id) {
+      const key = String(id || '').trim();
+      if (!key) return;
+      const list = manualNameMappings.getAll().filter(item => item.id !== key);
+      storageAdapter.write(KEYS.manualNameMappings, list, { allowEmpty: true });
+    },
+
+    // 미매칭 매칭 툴에서 지운 매핑을 원본명 기준으로 되돌린다.
+    removeForOriginalName(platform, originalName) {
+      const p = normalizePlatform(platform);
+      const key = String(originalName || '').trim();
+      if (!key) return;
+      const list = manualNameMappings.getAll()
+        .filter(item => !(item.platform === p && item.originalName === key));
+      storageAdapter.write(KEYS.manualNameMappings, list, { allowEmpty: true });
     }
   };
 

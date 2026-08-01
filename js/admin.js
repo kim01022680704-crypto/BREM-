@@ -1145,12 +1145,25 @@
     return String(state.rejectionHistorySearchByPlatform[p] || '').trim();
   }
 
-  function buildDriverByIdMap() {
+  // 정산·목표·콜수 표를 그릴 때 행마다 조회하므로 선형 탐색이면 O(행수 × 기사수)가 된다.
+  // 기사 목록 배열이 바뀔 때만 Map 을 다시 만든다.
+  let driverByIdIndex = null;
+  let driverByIdIndexRef = null;
+
+  function getDriverByIdIndex() {
+    const list = drivers();
+    if (driverByIdIndex && driverByIdIndexRef === list) return driverByIdIndex;
     const map = new Map();
-    drivers().forEach(driver => {
+    list.forEach(driver => {
       if (driver?.id) map.set(driver.id, driver);
     });
+    driverByIdIndex = map;
+    driverByIdIndexRef = list;
     return map;
+  }
+
+  function buildDriverByIdMap() {
+    return getDriverByIdIndex();
   }
 
   function matchingDriverIdsForRejectionSearch(platform, driverById) {
@@ -2586,6 +2599,8 @@
         return;
       }
       renderDbConnectionStatus();
+      // 각 메뉴 모듈은 파싱 시점이 아니라 진입 시점에 로드된다 → 첫 화면도 여기서 한 번 깨워준다.
+      runSectionModuleRefresh(initialSection);
       renderActiveSection(initialSection);
       renderRiderPublishStatus();
       applySectionEditPermissions();
@@ -2749,13 +2764,13 @@
   }
 
   function driverName(id) {
-    const driver = drivers().find(item => item.id === id);
+    const driver = getDriverByIdIndex().get(id);
     return driver ? driver.name : '삭제된 기사';
   }
 
   // 쿠팡ID(=이름+전화 뒷4자리) 계산. 기사에 등록된 coupangId 가 있으면 그것을 우선한다.
   function driverCoupangKey(id) {
-    const driver = drivers().find(item => item.id === id);
+    const driver = getDriverByIdIndex().get(id);
     if (!driver) return '';
     const explicit = String(driver.coupangId || driver.coupangLoginId || driver.loginId || '').trim();
     if (explicit) return explicit;
@@ -4399,6 +4414,7 @@
             <td>${formatMoney(settlementAmountValue(record))}</td>
             <td>${formatDate(record.savedAt.slice(0, 10))}</td>
             <td>
+              <button class="small-btn primary-btn" type="button" data-match-settlement-unmatched="${record.id}">매칭</button>
               <button class="small-btn" type="button" data-retry-settlement-unmatched="${record.id}">재시도</button>
               <button class="small-btn danger-btn" type="button" data-delete-settlement-unmatched="${record.id}">삭제</button>
             </td>
@@ -4416,6 +4432,7 @@
           <td>${formatMoney(settlementAmountValue(record))}</td>
           <td>${formatDate(record.savedAt.slice(0, 10))}</td>
           <td>
+            <button class="small-btn primary-btn" type="button" data-match-settlement-unmatched="${record.id}">매칭</button>
             <button class="small-btn" type="button" data-retry-settlement-unmatched="${record.id}">재시도</button>
             <button class="small-btn danger-btn" type="button" data-delete-settlement-unmatched="${record.id}">삭제</button>
           </td>
@@ -4703,6 +4720,538 @@
         showToast(error.message || '매칭 재시도에 실패했습니다.');
       }
     })();
+  }
+
+  // ===== 일정산 미매칭 매칭 툴 =====
+  // 미매칭 행을 기존 기사에 연결하거나, 여기서 바로 기사를 등록해 매칭한다.
+  // 연결 정보는 manualNameMappings 로 남겨서 다음 업로드부터 자동 매칭된다.
+  const settlementMatchState = {
+    recordId: '',
+    platform: 'coupang',
+    selectedDriverId: '',
+    tab: 'link',
+    busy: false,
+    regionsLoaded: false,
+    regionsLoading: false
+  };
+
+  function settlementMatchQueue(platform) {
+    const p = normalizePlatform(platform || settlementMatchState.platform);
+    const weekStart = getSettlementUnmatchedWeekFilter(p);
+    const periodKey = getSettlementPeriodFilter(p);
+    return settlementUnmatchedList()
+      .filter(record => normalizePlatform(record.platform) === p)
+      .filter(record => record.kind !== 'weekly')
+      .filter(record => record.weekStart === weekStart)
+      .filter(record => matchesSettlementPeriod(record, periodKey))
+      .sort((a, b) => b.period.localeCompare(a.period) || b.savedAt.localeCompare(a.savedAt));
+  }
+
+  function settlementMatchRecord() {
+    const queue = settlementMatchQueue();
+    return queue.find(record => record.id === settlementMatchState.recordId) || null;
+  }
+
+  // 매핑 키: 배민은 라이더 User ID, 쿠팡은 정산서 성함(=쿠팡ID)
+  function settlementMatchOriginalName(record) {
+    if (!record) return '';
+    if (isBaeminSettlementPlatform(record.platform)) {
+      return String(record.riderId || record.baeminUserId || record.rawName || record.name || '').trim();
+    }
+    return String(record.rawName || record.coupangLoginKey || record.name || '').trim();
+  }
+
+  function shortCoupangRegionLabel(name) {
+    let raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '';
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    if (!base) return '';
+    return base.length <= 4 ? base : base.slice(-4);
+  }
+
+  async function fillSettlementMatchRegionSelects() {
+    if (settlementMatchState.regionsLoaded || settlementMatchState.regionsLoading) return;
+    const baeminSelect = $('#settlementMatchRegionBaemin');
+    const coupangSelect = $('#settlementMatchRegionCoupang');
+    if (!baeminSelect && !coupangSelect) return;
+    settlementMatchState.regionsLoading = true;
+    // 지역은 없어도 등록은 되어야 하므로 실패는 조용히 넘긴다.
+    // 빈손으로 돌아오면 다음에 열 때 다시 시도한다. (로그인 직후 토큰이 없을 수 있다)
+    const [baeminItems, coupangItems] = await Promise.all([
+      baeminSelect ? loadBaeminRegionCatalog().catch(() => []) : Promise.resolve([]),
+      coupangSelect ? loadCoupangVendorCatalog().catch(() => []) : Promise.resolve([])
+    ]).finally(() => {
+      settlementMatchState.regionsLoading = false;
+    });
+    settlementMatchState.regionsLoaded = Boolean(baeminItems.length || coupangItems.length);
+    if (baeminSelect) {
+      const options = baeminItems
+        .map(item => String(item?.regionName || '').trim())
+        .filter(Boolean);
+      baeminSelect.innerHTML = '<option value="">미선택</option>'
+        + [...new Set(options)].map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    }
+    if (coupangSelect) {
+      const options = coupangItems
+        .map(item => shortCoupangRegionLabel(item?.vendorName))
+        .filter(Boolean);
+      coupangSelect.innerHTML = '<option value="">미선택</option>'
+        + [...new Set(options)].map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    }
+  }
+
+  function renderSettlementMatchRecordInfo(record) {
+    const el = $('#settlementMatchRecord');
+    if (!el) return;
+    const p = normalizePlatform(record.platform);
+    const cells = [
+      ['플랫폼', platformLabel(p)],
+      ['정산일', formatDate(record.period)],
+      ['엑셀 성함', record.rawName || record.name || '-']
+    ];
+    if (isBaeminSettlementPlatform(p)) {
+      cells.push(['라이더 ID', record.riderId || '-']);
+    }
+    cells.push(['오더수', `${Number(record.orderCount || 0).toLocaleString('ko-KR')}건`]);
+    cells.push(['정산금액', formatMoney(settlementAmountValue(record))]);
+    el.innerHTML = cells
+      .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd></div>`)
+      .join('');
+  }
+
+  function settlementMatchCandidateList(record) {
+    const query = String($('#settlementMatchSearch')?.value || '').trim();
+    const recordNameKey = normalizeSearchText(record.name || record.rawName);
+    const scored = drivers()
+      .filter(driver => !query || matchesDriverSearch(driver, query))
+      .map(driver => {
+        const nameKey = normalizeSearchText(driver.name);
+        let score = 0;
+        if (recordNameKey && nameKey === recordNameKey) score = 3;
+        else if (recordNameKey && nameKey && (nameKey.includes(recordNameKey) || recordNameKey.includes(nameKey))) score = 2;
+        return { driver, score };
+      })
+      // 검색어가 없으면 이름이 비슷한 후보만 보여준다. (전체 목록을 다 그리면 느리다)
+      .filter(item => query || item.score > 0)
+      .sort((a, b) => b.score - a.score || String(a.driver.name || '').localeCompare(String(b.driver.name || ''), 'ko'))
+      .slice(0, 40);
+    return scored.map(item => item.driver);
+  }
+
+  function renderSettlementMatchCandidates(record) {
+    const el = $('#settlementMatchCandidates');
+    if (!el) return;
+    const list = settlementMatchCandidateList(record);
+    const query = String($('#settlementMatchSearch')?.value || '').trim();
+    if (!list.length) {
+      el.innerHTML = `<div class="empty">${query
+        ? '검색 결과가 없습니다. 「기사 간이 등록」에서 새로 등록하세요.'
+        : '이름이 비슷한 등록기사가 없습니다. 위에서 검색하거나 「기사 간이 등록」을 이용하세요.'}</div>`;
+    } else {
+      el.innerHTML = list.map(driver => {
+        const coupangId = window.BremDriverUtils?.getErpCoupangId?.(driver)
+          || driver.coupangId
+          || window.BremDriverUtils?.makeDriverLoginId?.(driver)
+          || '';
+        const meta = [
+          driver.phone ? `연락처 ${driver.phone}` : '',
+          driver.baeminId ? `배민 ${driver.baeminId}` : '',
+          coupangId ? `쿠팡 ${coupangId}` : '',
+          driver.status || ''
+        ].filter(Boolean).join(' · ');
+        const selected = settlementMatchState.selectedDriverId === driver.id ? ' is-selected' : '';
+        return `
+          <button type="button" class="settlement-match-candidate${selected}" data-settlement-match-driver="${escapeHtml(driver.id)}">
+            <span class="settlement-match-candidate__body">
+              <strong>${escapeHtml(driver.name || '-')}</strong>
+              <span>${escapeHtml(meta || '정보 없음')}</span>
+            </span>
+          </button>
+        `;
+      }).join('');
+    }
+    const linkBtn = $('#settlementMatchLinkBtn');
+    if (linkBtn) {
+      const stillListed = list.some(driver => driver.id === settlementMatchState.selectedDriverId);
+      if (!stillListed) settlementMatchState.selectedDriverId = '';
+      linkBtn.disabled = settlementMatchState.busy || !settlementMatchState.selectedDriverId;
+    }
+  }
+
+  function updateSettlementMatchCreateHint(record) {
+    const hint = $('#settlementMatchCreateHint');
+    if (!hint) return;
+    const name = String($('#settlementMatchName')?.value || '').trim();
+    const phone = String($('#settlementMatchPhone')?.value || '').replace(/[^0-9]/g, '');
+    const derived = window.BremDriverUtils?.makeDriverLoginId?.({ name, phone }) || '';
+    const lines = [];
+    if (derived) lines.push(`쿠팡ID(이름+연락처 뒤4자리): ${derived}`);
+    if (!isBaeminSettlementPlatform(record.platform)) {
+      const excelKey = String(record.rawName || '').replace(/\s+/g, '');
+      if (derived && excelKey && derived !== excelKey) {
+        lines.push(`엑셀 성함 "${excelKey}" 과 다릅니다. 연락처 뒤 4자리를 확인하세요. (그래도 이 행은 매칭됩니다)`);
+      }
+    }
+    hint.textContent = lines.join(' · ');
+  }
+
+  function prefillSettlementMatchCreateForm(record) {
+    const p = normalizePlatform(record.platform);
+    const isBaemin = isBaeminSettlementPlatform(p);
+    const setValue = (id, value) => {
+      const el = $(id);
+      if (el) el.value = value;
+    };
+    setValue('#settlementMatchName', String(record.name || record.rawName || '').trim());
+    setValue('#settlementMatchPhone', '');
+    setValue('#settlementMatchBaeminId', isBaemin ? String(record.riderId || record.baeminUserId || '').trim() : '');
+    setValue('#settlementMatchJoinDate', String(record.period || '').slice(0, 10));
+    setValue('#settlementMatchStatus', '근무중');
+    setValue('#settlementMatchBankName', '');
+    setValue('#settlementMatchAccountNumber', '');
+    setValue('#settlementMatchRegionBaemin', '');
+    setValue('#settlementMatchRegionCoupang', '');
+    setValue('#settlementMatchMemo', `${platformLabel(p)} 일정산 미매칭에서 등록 (${formatDate(record.period)})`);
+    const coupangCheck = $('#settlementMatchPlatformCoupang');
+    const baeminCheck = $('#settlementMatchPlatformBaemin');
+    if (coupangCheck) coupangCheck.checked = !isBaemin;
+    if (baeminCheck) baeminCheck.checked = isBaemin;
+    updateSettlementMatchCreateHint(record);
+  }
+
+  const SETTLEMENT_MATCH_LINK_HINT = '연결하면 이 정산서 행이 즉시 반영되고, 다음 업로드부터는 자동으로 매칭됩니다.';
+
+  function resetSettlementMatchLinkHint() {
+    const hint = $('#settlementMatchLinkHint');
+    if (hint) hint.textContent = SETTLEMENT_MATCH_LINK_HINT;
+  }
+
+  function renderSettlementMatchModal() {
+    const record = settlementMatchRecord();
+    if (!record) {
+      closeSettlementMatchModal();
+      return;
+    }
+    const queue = settlementMatchQueue();
+    const index = queue.findIndex(item => item.id === record.id);
+    const progress = $('#settlementMatchProgress');
+    if (progress) {
+      progress.textContent = queue.length > 1 ? `${index + 1} / ${queue.length}건` : '1건';
+    }
+    renderSettlementMatchRecordInfo(record);
+    renderSettlementMatchCandidates(record);
+    updateSettlementMatchCreateHint(record);
+  }
+
+  function setSettlementMatchTab(tab) {
+    const next = tab === 'create' ? 'create' : 'link';
+    settlementMatchState.tab = next;
+    $$('[data-settlement-match-tab]').forEach(button => {
+      button.classList.toggle('is-active', button.dataset.settlementMatchTab === next);
+    });
+    $$('[data-settlement-match-pane]').forEach(pane => {
+      pane.hidden = pane.dataset.settlementMatchPane !== next;
+    });
+    const focusTarget = next === 'create' ? $('#settlementMatchName') : $('#settlementMatchSearch');
+    focusTarget?.focus();
+  }
+
+  function openSettlementMatchModal(recordId, platform) {
+    const p = normalizePlatform(platform);
+    settlementMatchState.platform = p;
+    settlementMatchState.recordId = String(recordId || '');
+    settlementMatchState.selectedDriverId = '';
+    settlementMatchState.busy = false;
+    const record = settlementMatchRecord();
+    if (!record) {
+      showToast('미매칭 내역을 찾을 수 없습니다. 목록을 새로 고쳐주세요.');
+      return;
+    }
+    const modal = $('#settlementMatchModal');
+    if (!modal) return;
+    const search = $('#settlementMatchSearch');
+    if (search) search.value = '';
+    resetSettlementMatchLinkHint();
+    prefillSettlementMatchCreateForm(record);
+    renderSettlementMatchModal();
+    setSettlementMatchBusy(false);
+    modal.hidden = false;
+    setSettlementMatchTab('link');
+    void fillSettlementMatchRegionSelects();
+  }
+
+  // 목록 필터에 걸린 미매칭 행을 처음부터 순서대로 처리한다.
+  function openSettlementMatchQueue(platform) {
+    const p = normalizePlatform(platform);
+    settlementMatchState.platform = p;
+    const queue = settlementMatchQueue(p);
+    if (!queue.length) {
+      showToast(`${platformLabel(p)} 미매칭 기사가 없습니다. 적용주·정산일 필터를 확인하세요.`);
+      return;
+    }
+    openSettlementMatchModal(queue[0].id, p);
+  }
+
+  function closeSettlementMatchModal() {
+    const modal = $('#settlementMatchModal');
+    if (modal) modal.hidden = true;
+    settlementMatchState.recordId = '';
+    settlementMatchState.selectedDriverId = '';
+    settlementMatchState.busy = false;
+  }
+
+  function setSettlementMatchBusy(busy) {
+    settlementMatchState.busy = Boolean(busy);
+    const linkBtn = $('#settlementMatchLinkBtn');
+    if (linkBtn) linkBtn.disabled = settlementMatchState.busy || !settlementMatchState.selectedDriverId;
+    const createBtn = $('#settlementMatchCreateBtn');
+    if (createBtn) createBtn.disabled = settlementMatchState.busy;
+  }
+
+  // 업로드 기록·미리보기는 정산서 원본 행을 따로 들고 있다. 같은 행을 찾기 위한 키.
+  function settlementMatchRowKey(row, platform) {
+    if (isBaeminSettlementPlatform(platform)) {
+      return String(row?.riderId || row?.baeminUserId || row?.rawName || '').replace(/\s+/g, '');
+    }
+    return String(row?.rawName || row?.name || '').replace(/\s+/g, '');
+  }
+
+  // retryDailyMatching 은 정산·미매칭 저장소만 갱신한다.
+  // 업로드 기록과 화면의 미리보기에서도 해결된 행을 옮겨야 유령 미매칭이 남지 않는다.
+  // (미리보기에 남으면 나중에 「반영하기」를 누를 때 미매칭이 되살아난다)
+  function syncSettlementSourcesAfterMatch(record, driver) {
+    const p = normalizePlatform(record.platform);
+    const period = String(record.period || '').slice(0, 10);
+    const targetKey = settlementMatchRowKey(record.matchPayload || record, p);
+    if (!targetKey) return;
+
+    BremStorage.settlementUploadLogs
+      .getFiltered({ kind: 'daily', platform: p })
+      .filter(log => String(log.period || '').slice(0, 10) === period)
+      .forEach(log => {
+        const unmatchedRecords = Array.isArray(log.unmatchedRecords) ? log.unmatchedRecords : [];
+        const hit = unmatchedRecords.find(row => settlementMatchRowKey(row, p) === targetKey);
+        if (!hit) return;
+        const nextUnmatched = unmatchedRecords.filter(row => row !== hit);
+        // matchedRecords 에는 넣지 않는다. 업로드 기록은 공제기준금액(쿠팡 AC열)을 저장하지 않아서,
+        // 나중에 「재반영」이 돌면 이 행의 공제가 0으로 덮여 실지급액이 부풀 수 있다.
+        // 정산 반영 자체는 retryDailyMatching 이 공제기준금액까지 이미 저장했다.
+        BremStorage.settlementUploadLogs.update(log.id, {
+          unmatchedRecords: nextUnmatched,
+          matchedCount: Number(log.matchedCount || 0) + 1,
+          unmatchedCount: nextUnmatched.length
+        });
+      });
+
+    const preview = state.settlementPreviewByPlatform[p];
+    if (!preview || String(preview.period || '').slice(0, 10) !== period) return;
+    const previewUnmatched = Array.isArray(preview.unmatched) ? preview.unmatched : [];
+    const previewHit = previewUnmatched.find(row => settlementMatchRowKey(row, p) === targetKey);
+    if (!previewHit) return;
+    preview.unmatched = previewUnmatched.filter(row => row !== previewHit);
+    preview.matched = (Array.isArray(preview.matched) ? preview.matched : [])
+      .concat([{ ...previewHit, driverId: driver.id, driverName: driver.name }]);
+  }
+
+  // 매핑 저장 → 해당 행만 재매칭 → 정산 반영. 실패해도 미매칭 행은 그대로 남는다.
+  async function applySettlementMatchForRecord(record, driver) {
+    const p = normalizePlatform(record.platform);
+    const originalName = settlementMatchOriginalName(record);
+    if (originalName) {
+      BremStorage.manualNameMappings.save({
+        platform: p,
+        originalName,
+        driverId: driver.id,
+        driverName: driver.name
+      });
+      await BremStorage.flushStorage?.();
+    }
+    await Promise.all([
+      BremStorage.ensureSectionLoaded('settlements'),
+      BremStorage.ensureSectionLoaded('calls')
+    ]);
+    const result = BremStorage.settlementUnmatched.retryDailyMatching({
+      platform: p,
+      weekStart: String(record.weekStart || '').slice(0, 10),
+      period: String(record.period || '').slice(0, 10),
+      recordIds: [record.id]
+    });
+    if (result.matchedCount) {
+      syncSettlementSourcesAfterMatch(record, driver);
+      invalidateCallStatsIndex();
+    }
+    await BremStorage.flushStorage?.();
+    return result;
+  }
+
+  function advanceSettlementMatchModal(previousIndex) {
+    const queue = settlementMatchQueue();
+    if (!queue.length) {
+      closeSettlementMatchModal();
+      renderSettlements();
+      return;
+    }
+    const nextIndex = Math.min(Math.max(previousIndex, 0), queue.length - 1);
+    settlementMatchState.recordId = queue[nextIndex].id;
+    settlementMatchState.selectedDriverId = '';
+    const search = $('#settlementMatchSearch');
+    if (search) search.value = '';
+    resetSettlementMatchLinkHint();
+    const nextRecord = settlementMatchRecord();
+    if (nextRecord) prefillSettlementMatchCreateForm(nextRecord);
+    renderSettlementMatchModal();
+    renderSettlements();
+  }
+
+  async function linkSettlementMatchToDriver() {
+    if (settlementMatchState.busy) return;
+    const record = settlementMatchRecord();
+    const driver = drivers().find(item => item.id === settlementMatchState.selectedDriverId);
+    if (!record || !driver) {
+      showToast('연결할 기사를 선택하세요.');
+      return;
+    }
+    const previousIndex = settlementMatchQueue().findIndex(item => item.id === record.id);
+    setSettlementMatchBusy(true);
+    try {
+      const result = await applySettlementMatchForRecord(record, driver);
+      if (!result.matchedCount) {
+        showToast('매칭 저장에 실패했습니다. 다시 시도해주세요.');
+        renderSettlementMatchModal();
+        return;
+      }
+      setSettlementHistoryDay(normalizePlatform(record.platform), String(record.period || '').slice(0, 10));
+      showToast(`${driver.name} 기사로 매칭해 반영했습니다.`);
+      advanceSettlementMatchModal(previousIndex);
+    } catch (error) {
+      console.error('[BREM] settlement match link failed:', error);
+      showToast(error.message || '매칭에 실패했습니다.');
+    } finally {
+      setSettlementMatchBusy(false);
+    }
+  }
+
+  async function createDriverForSettlementMatch(event) {
+    event?.preventDefault();
+    if (settlementMatchState.busy) return;
+    const record = settlementMatchRecord();
+    if (!record) {
+      closeSettlementMatchModal();
+      return;
+    }
+
+    const name = String($('#settlementMatchName')?.value || '').trim();
+    const phone = String($('#settlementMatchPhone')?.value || '').trim();
+    const baeminId = String($('#settlementMatchBaeminId')?.value || '').trim();
+    const joinDate = String($('#settlementMatchJoinDate')?.value || '').slice(0, 10);
+    const platformCoupang = Boolean($('#settlementMatchPlatformCoupang')?.checked);
+    const platformBaemin = Boolean($('#settlementMatchPlatformBaemin')?.checked);
+
+    if (!name || !phone || !joinDate) {
+      showToast('이름·연락처·가입일은 필수입니다.');
+      return;
+    }
+    if (!platformCoupang && !platformBaemin) {
+      showToast('플랫폼을 최소 1개 선택하세요.');
+      return;
+    }
+    if (platformBaemin && !baeminId) {
+      showToast('배민 기사는 배민 라이더 ID가 필요합니다.');
+      return;
+    }
+
+    const duplicate = window.BremDriverUtils?.findDuplicateDriver?.({ name, phone, baeminId });
+    if (duplicate?.driver) {
+      // 이미 등록된 기사면 새로 만들지 말고 그 기사로 연결하게 유도한다.
+      settlementMatchState.selectedDriverId = duplicate.driver.id;
+      const search = $('#settlementMatchSearch');
+      if (search) search.value = duplicate.driver.name || '';
+      setSettlementMatchTab('link');
+      renderSettlementMatchCandidates(record);
+      const hint = $('#settlementMatchLinkHint');
+      if (hint) hint.textContent = `${duplicate.reason}: 이미 등록된 «${duplicate.driver.name}» 기사입니다. 「이 기사로 매칭」을 눌러 연결하세요.`;
+      showToast(`${duplicate.reason} — 기존 기사로 연결하세요.`);
+      return;
+    }
+
+    const previousIndex = settlementMatchQueue().findIndex(item => item.id === record.id);
+    setSettlementMatchBusy(true);
+    try {
+      const created = await BremStorage.drivers.create({
+        name,
+        phone,
+        baeminId,
+        platformCoupang,
+        platformBaemin,
+        regionBaemin: String($('#settlementMatchRegionBaemin')?.value || '').trim(),
+        regionCoupang: String($('#settlementMatchRegionCoupang')?.value || '').trim(),
+        bankName: String($('#settlementMatchBankName')?.value || '').trim(),
+        accountNumber: String($('#settlementMatchAccountNumber')?.value || '').trim(),
+        accountHolder: name,
+        joinDate,
+        status: String($('#settlementMatchStatus')?.value || '근무중'),
+        memo: String($('#settlementMatchMemo')?.value || '').trim()
+      });
+      if (!created?.id) throw new Error('기사 등록 결과를 확인할 수 없습니다.');
+      const result = await applySettlementMatchForRecord(record, created);
+      if (!result.matchedCount) {
+        showToast(`${created.name} 기사는 등록됐지만 매칭에 실패했습니다. 「재시도」로 다시 시도해주세요.`);
+        renderSettlements();
+        renderSettlementMatchModal();
+        return;
+      }
+      setSettlementHistoryDay(normalizePlatform(record.platform), String(record.period || '').slice(0, 10));
+      showToast(`${created.name} 기사를 등록하고 정산을 반영했습니다.`);
+      advanceSettlementMatchModal(previousIndex);
+    } catch (error) {
+      console.error('[BREM] settlement match create failed:', error);
+      showToast(error.message || '기사 등록에 실패했습니다.');
+    } finally {
+      setSettlementMatchBusy(false);
+    }
+  }
+
+  function bindSettlementMatchModal() {
+    const modal = $('#settlementMatchModal');
+    if (!modal) return;
+    modal.addEventListener('click', event => {
+      if (event.target.closest('[data-close-settlement-match]')) {
+        closeSettlementMatchModal();
+        return;
+      }
+      const tabButton = event.target.closest('[data-settlement-match-tab]');
+      if (tabButton) {
+        setSettlementMatchTab(tabButton.dataset.settlementMatchTab);
+        return;
+      }
+      const candidate = event.target.closest('[data-settlement-match-driver]');
+      if (candidate) {
+        settlementMatchState.selectedDriverId = candidate.dataset.settlementMatchDriver || '';
+        const record = settlementMatchRecord();
+        if (record) renderSettlementMatchCandidates(record);
+      }
+    });
+    $('#settlementMatchSearch')?.addEventListener('input', () => {
+      const record = settlementMatchRecord();
+      if (record) renderSettlementMatchCandidates(record);
+    });
+    $('#settlementMatchLinkBtn')?.addEventListener('click', () => {
+      void linkSettlementMatchToDriver();
+    });
+    $('#settlementMatchCreateForm')?.addEventListener('submit', event => {
+      void createDriverForSettlementMatch(event);
+    });
+    ['#settlementMatchName', '#settlementMatchPhone'].forEach(selector => {
+      $(selector)?.addEventListener('input', () => {
+        const record = settlementMatchRecord();
+        if (record) updateSettlementMatchCreateHint(record);
+      });
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !modal.hidden) closeSettlementMatchModal();
+    });
   }
 
   function clearSettlementPreview(platform) {
@@ -5330,6 +5879,9 @@
       }
 
       renderSettlements();
+      const unmatchedHint = result.unmatched.length
+        ? ` · 미매칭 ${result.unmatched.length}명은 「미매칭 매칭하기」로 처리하세요`
+        : '';
       if (isBaeminSettlementPlatform(p)) {
         const skip = result.skippedBaeminRows;
         const excluded = skip
@@ -5344,9 +5896,9 @@
         const skipLabel = excluded > 0
           ? ` · 무효행 제외 ${excluded}건${fieldSkip > 0 ? `(U·V 빈칸 등 ${fieldSkip}건)` : ''}`
           : '';
-        showToast(`${platformLabel(p)} 미리보기 · 유효 배달 ${result.totalDeliveries || 0}건 · 라이더 ${result.totalRiders || result.totalRows}명 · 매칭 ${result.matched.length}명${skipLabel}`);
+        showToast(`${platformLabel(p)} 미리보기 · 유효 배달 ${result.totalDeliveries || 0}건 · 라이더 ${result.totalRiders || result.totalRows}명 · 매칭 ${result.matched.length}명${skipLabel}${unmatchedHint}`);
       } else {
-        showToast(`${platformLabel(p)} 미리보기 준비 · 매칭 ${result.matched.length}명 / 실패 ${result.unmatched.length}명`);
+        showToast(`${platformLabel(p)} 미리보기 준비 · 매칭 ${result.matched.length}명 / 실패 ${result.unmatched.length}명${unmatchedHint}`);
       }
     } catch (error) {
       showToast(error.message || '정산표를 처리하지 못했습니다.');
@@ -6139,9 +6691,10 @@
 
     try {
       const result = await (BremStorage.ensureSectionLoaded?.(sectionId) || Promise.resolve({ ok: true }));
+      // 거절율 메뉴만 전체 이력이 필요하다 (다른 메뉴는 최근 2년 범위로 로딩됨)
       if (sectionId === 'rejections' && !rejectionHistoryReloaded && BremStorage.refreshDataFromServer) {
         rejectionHistoryReloaded = true;
-        await BremStorage.refreshDataFromServer(BremStorage.STORAGE_KEYS.rejections);
+        await BremStorage.refreshDataFromServer(BremStorage.STORAGE_KEYS.rejections, { allHistory: true });
       }
       if (result?.ok === false && !BremStorage.drivers?.getAll?.().length && sectionId !== 'admin-account') {
         showToast(result.message || '데이터를 불러오지 못했습니다.');
@@ -6543,6 +7096,8 @@
         }
       );
     });
+
+    bindSettlementMatchModal();
 
     $('#settlementUploadLogDetailClose')?.addEventListener('click', hideSettlementUploadLogDetail);
     $('#settlementUploadLogDetailRetryMatch')?.addEventListener('click', () => {
@@ -7141,6 +7696,22 @@
       const settlementUploadLogReapplyButton = event.target.closest('[data-reapply-settlement-upload-log]');
       if (settlementUploadLogReapplyButton) {
         void reapplySettlementUploadLog(settlementUploadLogReapplyButton.dataset.reapplySettlementUploadLog);
+        return;
+      }
+
+      const matchQueueButton = event.target.closest('[data-open-settlement-match-queue]');
+      if (matchQueueButton) {
+        openSettlementMatchQueue(matchQueueButton.dataset.openSettlementMatchQueue);
+        return;
+      }
+
+      const unmatchedMatchButton = event.target.closest('[data-match-settlement-unmatched]');
+      if (unmatchedMatchButton) {
+        const panel = unmatchedMatchButton.closest('.admin-platform-panel[data-platform]');
+        openSettlementMatchModal(
+          unmatchedMatchButton.dataset.matchSettlementUnmatched,
+          panel?.dataset?.platform || 'coupang'
+        );
         return;
       }
 

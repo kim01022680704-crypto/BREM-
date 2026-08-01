@@ -801,7 +801,18 @@ window.BremDriverUtils = (function () {
     });
   }
 
+  // 가입일·정산일은 서울 기준 날짜여야 한다. UTC 기준이면 KST 00~09시에 하루 밀린다.
+  function todayKST() {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+    } catch {
+      const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+      return kst.toISOString().slice(0, 10);
+    }
+  }
+
   return {
+    todayKST,
     normalizePhone,
     formatResidentNumber,
     DEFAULT_DRIVER_PASSWORD,

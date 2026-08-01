@@ -34,6 +34,7 @@
   const dash = {
     busy: false,
     pollTimer: null,
+    lastQueryAt: 0,
     weekVendorId: '',
     weekCache: null,
     weekRange: null,
@@ -888,6 +889,9 @@
     bindDashboardCardOnce();
     paintDashboardCacheInstant();
     const silent = options.silent !== false;
+    // 대시보드 재렌더마다 조회하면 렉이 생긴다 — 캐시 먼저 그리고 60초 간격으로만 재조회.
+    if (silent && Date.now() - (dash.lastQueryAt || 0) < 60 * 1000) return;
+    dash.lastQueryAt = Date.now();
     void queryDashboardCoupangLive({ silent });
   }
 
@@ -1080,9 +1084,15 @@
 
   function startLocalPoll() {
     if (localPollTimer) return;
+    // 쿠팡현황 메뉴를 벗어나면 폴러를 끈다 (예전엔 5초 폴링이 계속 살아 있었다)
     localPollTimer = setInterval(() => {
       const sec = document.getElementById('coupang-status');
-      if (sec && sec.classList.contains('active')) void refreshLocalStatus();
+      if (!sec || !sec.classList.contains('active')) {
+        clearInterval(localPollTimer);
+        localPollTimer = null;
+        return;
+      }
+      void refreshLocalStatus();
     }, 5000);
   }
 

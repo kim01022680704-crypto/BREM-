@@ -100,10 +100,10 @@
     )).join('');
   }
 
-  function renderRanking(listEl, rows = []) {
+  function renderRanking(listEl, rows = [], emptyText = '집계된 콜수가 없습니다.') {
     if (!listEl) return;
     if (!rows.length) {
-      listEl.innerHTML = '<li class="driver-region-dash-rank driver-region-dash-rank--empty">집계된 콜수가 없습니다.</li>';
+      listEl.innerHTML = `<li class="driver-region-dash-rank driver-region-dash-rank--empty">${escapeHtml(emptyText)}</li>`;
       return;
     }
     listEl.innerHTML = rows.map((row, index) => {
@@ -148,12 +148,23 @@
     if (assignedEl) assignedEl.textContent = formatNumber(metrics.assigned);
     if (operatingEl) operatingEl.textContent = formatNumber(metrics.operating);
     if (remainingEl) remainingEl.textContent = formatNumber(metrics.remaining);
-    renderRanking(realtimeList, result?.realtimeRanking || []);
+
+    const realtimeDisabled = result?.realtimeRankingDisabled === true
+      || result?.platform === 'coupang';
+    renderRanking(
+      realtimeList,
+      realtimeDisabled ? [] : (result?.realtimeRanking || []),
+      realtimeDisabled
+        ? (result.realtimeRankingReason || '쿠팡은 실시간 기사별 순위를 집계하지 않습니다. (0.8 가중치)')
+        : '집계된 콜수가 없습니다.'
+    );
     renderRanking(weeklyList, result?.weeklyRanking || []);
     if (noteEl) {
       const slot = metrics.slotLabel ? ` · ${metrics.slotLabel}` : '';
-      noteEl.textContent = metrics.sourceNote
-        || `노출 지역은 관리자가 설정한 지역만 표시됩니다${slot}.`;
+      noteEl.textContent = [
+        metrics.sourceNote || '노출 지역은 관리자가 설정한 지역만 표시됩니다',
+        '순위는 해당 지역 등록 기사만'
+      ].filter(Boolean).join(' · ') + (slot || '');
     }
   }
 

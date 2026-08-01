@@ -14,6 +14,8 @@ const BremDriverManagementAdmin = (function () {
     baeminRegions: [],
     coupangRegions: [],
     regionExposure: { baemin: {}, coupang: {} },
+    regionRanking: null,
+    regionRankingKey: '',
     bulkRows: []
   };
 
@@ -164,57 +166,71 @@ const BremDriverManagementAdmin = (function () {
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
+  /**
+   * 기사지역관리 수치 출처 (의도적으로 분리)
+   * - 콜수: 콜수 입력(admin_calls / BremStorage.calls)만
+   * - 배달료: 일정산 업로드(settlements)의 deliveryAmount만
+   * (일정산 orderCount로 콜수를 덮어쓰지 않음)
+   */
   function driverCallAndFee(driverId, weekStart = ensureWeek(), platformFilter = '') {
     const id = String(driverId || '').trim();
     if (!id) return { callCount: 0, deliveryFee: 0 };
     const start = weekStartKey(weekStart);
     const end = weekEndKey(start);
-    const platforms = platformFilter === 'coupang' || platformFilter === 'baemin'
-      ? [platformFilter]
-      : ['coupang', 'baemin'];
-    const build = window.BremWeeklySettlement?.buildDriverCallStatsForPeriod;
-    if (typeof build === 'function') {
-      let callCount = 0;
-      let deliveryFee = 0;
-      platforms.forEach(platform => {
-        const stats = build(id, start, end, platform) || {};
-        callCount += Number(stats.callCount || 0);
-        deliveryFee += Number(stats.deliveryAmount || 0);
-      });
-      return { callCount, deliveryFee };
-    }
-    // 폴백: Supabase 로드된 calls/settlements를 수~화 기간으로 합산
+    const platformOk = (platform) => {
+      const p = String(platform || '').toLowerCase();
+      if (platformFilter === 'coupang' || platformFilter === 'baemin') return p === platformFilter;
+      return p === 'coupang' || p === 'baemin';
+    };
+
     const callCount = (window.BremStorage?.calls?.getAll?.() || [])
       .filter(call => {
         if (String(call.driverId || '') !== id) return false;
-        if (platformFilter && String(call.platform || '') !== platformFilter) return false;
+        if (!platformOk(call.platform)) return false;
         const day = String(call.date || '').slice(0, 10);
         return day >= start && day <= end;
       })
-      .reduce((sum, call) => sum + Number(call.count || call.orderCount || 0), 0);
-    const byDay = new Map();
+      .reduce((sum, call) => sum + Math.max(0, Number(call.count || call.orderCount || 0)), 0);
+
+    // 같은 날 여러 번 반영된 일정산은 최신 appliedAt만 사용
+    const feeByDay = new Map();
     (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
       if (String(row.driverId || '') !== id) return;
-      if (platformFilter && String(row.platform || '') !== platformFilter) return;
+      if (!platformOk(row.platform)) return;
       const day = String(row.period || row.date || '').slice(0, 10);
       if (!day || day < start || day > end) return;
-      const prev = byDay.get(day);
+      const prev = feeByDay.get(day);
       const appliedAt = String(row.appliedAt || '');
       if (!prev || appliedAt >= prev.appliedAt) {
-        byDay.set(day, {
-          callCount: Number(row.orderCount || 0),
-          deliveryFee: Number(row.deliveryAmount ?? row.settlementAmount ?? 0),
+        feeByDay.set(day, {
+          deliveryFee: Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0)),
           appliedAt
         });
       }
     });
     let deliveryFee = 0;
-    let settlementCalls = 0;
-    byDay.forEach(day => {
-      settlementCalls += day.callCount;
+    feeByDay.forEach(day => {
       deliveryFee += day.deliveryFee;
     });
-    return { callCount: settlementCalls || callCount, deliveryFee };
+
+    return { callCount, deliveryFee };
+  }
+
+  function buildLocalWeeklyRanking(region, weekStart, platform) {
+    if (!region) return [];
+    return driversInRegion(region)
+      .map(driver => {
+        const stats = driverCallAndFee(driver.id, weekStart, platform);
+        return {
+          driverId: driver.id,
+          name: driver.name || '-',
+          callCount: Number(stats.callCount || 0)
+        };
+      })
+      .filter(row => row.callCount > 0)
+      .sort((a, b) => b.callCount - a.callCount || String(a.name).localeCompare(String(b.name), 'ko'))
+      .slice(0, 10)
+      .map((row, index) => ({ ...row, rank: index + 1 }));
   }
 
   function descendantNodeIds(rootId) {
@@ -627,9 +643,15 @@ const BremDriverManagementAdmin = (function () {
       const value = driverRegionValue(driver, platform);
       if (!value) return false;
       if (platform === 'baemin') {
-        return value === region.label || value === region.partnerId || value === region.key;
+        return value === region.label
+          || value === region.partnerId
+          || value === region.key
+          || (region.partnerId && value.includes(region.partnerId));
       }
-      return shortCoupangRegion(value) === region.key || value === region.vendorName;
+      return shortCoupangRegion(value) === region.key
+        || shortCoupangRegion(value) === shortCoupangRegion(region.label)
+        || value === region.vendorName
+        || value === region.vendorId;
     });
   }
 
@@ -661,6 +683,197 @@ const BremDriverManagementAdmin = (function () {
     }).join('');
   }
 
+  function clearRegionRankingUi(message = '') {
+    const panels = $('#driverRegionRankPanels');
+    if (panels) panels.hidden = true;
+    const realtimeList = $('#driverRegionRealtimeList');
+    const weeklyList = $('#driverRegionWeeklyList');
+    const realtimeFirst = $('#driverRegionRealtimeFirst');
+    const weeklyFirst = $('#driverRegionWeeklyFirst');
+    const realtimeNote = $('#driverRegionRealtimeNote');
+    const weeklyNote = $('#driverRegionWeeklyNote');
+    const metricsEl = $('#driverRegionLiveMetrics');
+    const metricsNote = $('#driverRegionMetricsNote');
+    if (realtimeList) realtimeList.innerHTML = '';
+    if (weeklyList) weeklyList.innerHTML = '';
+    if (realtimeFirst) realtimeFirst.textContent = '—';
+    if (weeklyFirst) weeklyFirst.textContent = '—';
+    if (realtimeNote) realtimeNote.textContent = message || '';
+    if (weeklyNote) weeklyNote.textContent = '';
+    if (metricsEl) metricsEl.hidden = true;
+    if (metricsNote) metricsNote.textContent = '';
+    ['driverRegionMetricAssigned', 'driverRegionMetricOperating', 'driverRegionMetricRemaining']
+      .forEach(id => {
+        const el = $(`#${id}`);
+        if (el) el.textContent = '-';
+      });
+    state.regionRanking = null;
+    state.regionRankingKey = '';
+  }
+
+  function renderRankList(el, rows, emptyText = '집계된 순위가 없습니다.') {
+    if (!el) return;
+    if (!rows?.length) {
+      el.innerHTML = `<li class="empty">${escapeHtml(emptyText)}</li>`;
+      return;
+    }
+    el.innerHTML = rows.map(row => {
+      const rank = Number(row.rank || 0) || 0;
+      const top = rank === 1 ? ' is-top' : '';
+      return `<li class="${top.trim()}">
+        <span class="driver-region-rank__n">${rank || '-'}</span>
+        <span class="driver-region-rank__name">${escapeHtml(row.name || '-')}</span>
+        <span class="driver-region-rank__count">${formatNumber(row.callCount || 0)}콜</span>
+      </li>`;
+    }).join('');
+  }
+
+  function renderRegionRankingUi(payload) {
+    const panels = $('#driverRegionRankPanels');
+    if (!panels) return;
+    panels.hidden = false;
+    const metrics = payload?.metrics || {};
+    const metricsEl = $('#driverRegionLiveMetrics');
+    const metricsNote = $('#driverRegionMetricsNote');
+    const hasMetrics = Number(metrics.assigned || 0) > 0
+      || Number(metrics.operating || 0) > 0
+      || Number(metrics.remaining || 0) > 0
+      || Boolean(metrics.sourceNote);
+    if (metricsEl) {
+      metricsEl.hidden = !hasMetrics;
+      const a = $('#driverRegionMetricAssigned');
+      const o = $('#driverRegionMetricOperating');
+      const r = $('#driverRegionMetricRemaining');
+      if (a) a.textContent = formatNumber(metrics.assigned);
+      if (o) o.textContent = formatNumber(metrics.operating);
+      if (r) r.textContent = formatNumber(metrics.remaining);
+    }
+    if (metricsNote) metricsNote.textContent = metrics.sourceNote || '';
+
+    const realtimeDisabled = payload?.realtimeRankingDisabled === true;
+    const realtime = realtimeDisabled ? [] : (payload?.realtimeRanking || []);
+    const weekly = payload?.weeklyRanking || [];
+    renderRankList(
+      $('#driverRegionRealtimeList'),
+      realtime,
+      realtimeDisabled
+        ? (payload.realtimeRankingReason || '쿠팡은 실시간 기사별 순위를 집계하지 않습니다.')
+        : '집계된 순위가 없습니다.'
+    );
+    renderRankList($('#driverRegionWeeklyList'), weekly);
+    const rf = payload?.realtimeFirst || realtime[0] || null;
+    const wf = payload?.weeklyFirst || weekly[0] || null;
+    const realtimeFirst = $('#driverRegionRealtimeFirst');
+    const weeklyFirst = $('#driverRegionWeeklyFirst');
+    if (realtimeFirst) {
+      realtimeFirst.textContent = realtimeDisabled
+        ? '해당없음'
+        : (rf ? `1등 ${rf.name} · ${formatNumber(rf.callCount || 0)}콜` : '1등 —');
+    }
+    if (weeklyFirst) {
+      weeklyFirst.textContent = wf
+        ? `1등 ${wf.name} · ${formatNumber(wf.callCount || 0)}콜`
+        : '1등 —';
+    }
+    const realtimeNote = $('#driverRegionRealtimeNote');
+    const weeklyNote = $('#driverRegionWeeklyNote');
+    if (realtimeNote) {
+      if (realtimeDisabled) {
+        realtimeNote.textContent = payload.realtimeRankingReason
+          || '쿠팡 실시간 콜수는 0.8 가중치라 기사별 순위가 불가합니다.';
+      } else {
+        const note = metrics.sourceNote || '';
+        realtimeNote.textContent = realtime.length
+          ? `오늘(${payload.today || ''}) 크롤링 · 지역 등록 기사만 · ${note}`
+          : `오늘(${payload.today || ''}) · 지역 등록 기사와 매칭된 실시간 콜이 없습니다. 운행현황 수집·지역 등록을 확인하세요.`;
+      }
+    }
+    if (weeklyNote) {
+      weeklyNote.textContent = weekly.length
+        ? `${formatWeekRange(payload.weekStart)} · 지역 등록 기사 · 콜수 입력 기준`
+        : `${formatWeekRange(payload.weekStart)} · 이 지역 등록 기사의 콜수 입력이 없으면 주간 순위가 비어 있습니다.`;
+    }
+  }
+
+  async function loadRegionRanking() {
+    const region = selectedRegion();
+    if (!region) {
+      clearRegionRankingUi();
+      return;
+    }
+    const week = ensureWeek();
+    const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
+    const cacheKey = `${region.platform}|${region.key}|${week}`;
+    const panels = $('#driverRegionRankPanels');
+    if (panels) panels.hidden = false;
+
+    // 주간 순위: 콜수 입력(로컬 calls) — 표의 콜수·1등과 동일 출처
+    const weeklyRanking = buildLocalWeeklyRanking(region, week, platform);
+    const today = localDateKey(new Date());
+    const basePayload = {
+      today,
+      weekStart: week,
+      weekEnd: weekEndKey(week),
+      metrics: {},
+      realtimeRanking: [],
+      realtimeRankingDisabled: platform === 'coupang',
+      realtimeRankingReason: platform === 'coupang'
+        ? '쿠팡 실시간 콜수는 피크 가중치(0.8 단위)라 기사별 순위 집계가 불가합니다. 할당·운행중·남은할당만 표시합니다.'
+        : '',
+      weeklyRanking,
+      realtimeFirst: null,
+      weeklyFirst: weeklyRanking[0] || null
+    };
+    renderRegionRankingUi(basePayload);
+
+    const realtimeNote = $('#driverRegionRealtimeNote');
+    if (realtimeNote && platform !== 'coupang') {
+      realtimeNote.textContent = '실시간 크롤링 순위 불러오는 중…';
+    }
+
+    try {
+      const token = await window.BremStorage?.resolveAdminAccessToken?.();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const params = new URLSearchParams({
+        platform: region.platform,
+        regionKey: region.key,
+        label: region.label || '',
+        partnerId: region.partnerId || '',
+        vendorId: region.vendorId || '',
+        weekStart: week
+      });
+      const res = await fetch(`/api/admin/rider-dashboard/region-ranking?${params}`, {
+        headers,
+        credentials: 'same-origin'
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || '실시간 순위를 불러오지 못했습니다.');
+      const merged = {
+        ...basePayload,
+        today: payload.today || today,
+        metrics: payload.metrics || {},
+        realtimeRanking: payload.realtimeRankingDisabled ? [] : (payload.realtimeRanking || []),
+        realtimeRankingDisabled: payload.realtimeRankingDisabled === true || platform === 'coupang',
+        realtimeRankingReason: payload.realtimeRankingReason || basePayload.realtimeRankingReason,
+        realtimeFirst: payload.realtimeRankingDisabled
+          ? null
+          : (payload.realtimeFirst || (payload.realtimeRanking || [])[0] || null),
+        weeklyRanking,
+        weeklyFirst: weeklyRanking[0] || null
+      };
+      state.regionRanking = merged;
+      state.regionRankingKey = cacheKey;
+      renderRegionRankingUi(merged);
+    } catch (error) {
+      console.warn('[BREM] region ranking realtime:', error);
+      if (realtimeNote && platform !== 'coupang') {
+        realtimeNote.textContent = error.message || '실시간 순위를 불러오지 못했습니다.';
+      }
+      state.regionRanking = basePayload;
+      state.regionRankingKey = cacheKey;
+    }
+  }
+
   function renderRegionDetail() {
     const region = selectedRegion();
     const title = $('#driverRegionDetailTitle');
@@ -680,32 +893,42 @@ const BremDriverManagementAdmin = (function () {
       rows.innerHTML = '<tr><td colspan="4" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
       if (select) select.innerHTML = '<option value="">지역 선택 후 추가</option>';
       if (totalsEl) totalsEl.textContent = '';
+      clearRegionRankingUi();
       return;
     }
     const week = ensureWeek();
     const inRegion = driversInRegion(region);
     let totalCalls = 0;
     let totalFee = 0;
-    rows.innerHTML = inRegion.length
-      ? inRegion.map(driver => {
-        // 배민/쿠팡 탭에 맞는 플랫폼 수치만 집계 (지역 배정 ≠ 콜수 생성)
-        const stats = driverCallAndFee(driver.id, week, platform);
-        totalCalls += stats.callCount;
-        totalFee += stats.deliveryFee;
-        return `<tr>
-          <td><strong>${escapeHtml(driver.name)}</strong></td>
-          <td class="weekly-amount-cell">${formatNumber(stats.callCount)}</td>
-          <td class="weekly-amount-cell">${formatNumber(stats.deliveryFee)}원</td>
-          <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(driver.id)}">해제</button></td>
+    // 주간 콜수 기준 로컬 1등 표시(표 상단 합계와 함께)
+    const ranked = inRegion.map(driver => {
+      const stats = driverCallAndFee(driver.id, week, platform);
+      return { driver, ...stats };
+    }).sort((a, b) => b.callCount - a.callCount || String(a.driver.name || '').localeCompare(String(b.driver.name || ''), 'ko'));
+    const weeklyLocalFirst = ranked.find(row => row.callCount > 0) || null;
+
+    rows.innerHTML = ranked.length
+      ? ranked.map(row => {
+        totalCalls += row.callCount;
+        totalFee += row.deliveryFee;
+        const isFirst = weeklyLocalFirst && row.driver.id === weeklyLocalFirst.driver.id;
+        return `<tr${isFirst ? ' class="is-week-first"' : ''}>
+          <td><strong>${escapeHtml(row.driver.name)}</strong>${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}</td>
+          <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
+          <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
+          <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(row.driver.id)}">해제</button></td>
         </tr>`;
       }).join('')
       : '<tr><td colspan="4" class="empty">이 지역에 배정된 기사가 없습니다.</td></tr>';
 
     if (totalsEl) {
+      const firstText = weeklyLocalFirst
+        ? ` · 주간1등 ${weeklyLocalFirst.driver.name}(${formatNumber(weeklyLocalFirst.callCount)}콜)`
+        : '';
       totalsEl.textContent = inRegion.length
-        ? `${platformLabel} · ${formatWeekRange(week)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`
+        ? `${platformLabel} · ${formatWeekRange(week)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원${firstText}`
           + (totalCalls === 0 && totalFee === 0
-            ? ' · 이 주에 수집/일정산 데이터가 없으면 0으로 나옵니다'
+            ? ' · 콜수입력·일정산이 없으면 0입니다'
             : '')
         : '';
     }
@@ -723,6 +946,8 @@ const BremDriverManagementAdmin = (function () {
           return `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.name)} · ${escapeHtml(idLabel)}</option>`;
         }).join('');
     }
+
+    void loadRegionRanking();
   }
 
   async function assignDriverToRegion(driverId, region = selectedRegion()) {
@@ -745,8 +970,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다. 콜수·배달료는 아래 정산주 기준으로 집계됩니다.'
-        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 「라이더 노출」을 켜면 기사앱 기사대시보드에 표시됩니다. 콜수·배달료는 아래 정산주 기준으로 집계됩니다.';
+        ? '쿠팡: 크롤링된 지역을 4글자로 표시합니다. 「라이더 노출」→ 기사앱 대시보드. 콜수=콜수입력 · 배달료=일정산 · 실시간순위=크롤링.'
+        : '배민: 등록한 크롤링 지역(DP→지역명)을 선택합니다. 「라이더 노출」→ 기사앱 대시보드. 콜수=콜수입력 · 배달료=일정산 · 실시간순위=크롤링.';
     }
     // 콜수/배달료 집계에 필요 — 지역 목록만 로드하면 수치가 전부 0으로 나온다.
     try {

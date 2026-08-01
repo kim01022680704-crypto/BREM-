@@ -45,10 +45,14 @@ async function getConfig(accessToken) {
   if (!scoped.ok) return scoped;
 
   const session = await sessionStore.getStoredCoupangSession().catch(() => null);
+  // 메뉴별 최신 수집일은 서로 독립적이다 → 순차 대기 대신 한 번에 조회
   const latest = {};
-  for (const m of MENUS) {
-    latest[m] = await pipeline.getLatestCollectDate(m).catch(() => null);
-  }
+  const latestDates = await Promise.all(
+    MENUS.map(m => pipeline.getLatestCollectDate(m).catch(() => null))
+  );
+  MENUS.forEach((m, index) => {
+    latest[m] = latestDates[index];
+  });
   return {
     ok: true,
     session: session ? {
