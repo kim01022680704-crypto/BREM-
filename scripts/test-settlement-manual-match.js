@@ -171,8 +171,52 @@ modalIds.forEach(id => {
   if (!css.includes(`.${cls}`)) failures.push(`admin.css 에 .${cls} 스타일 없음`);
 });
 
+// ===== 미반영 기사 목록은 "주 단위" 여야 한다 =====
+// 업로드 폼의 정산일로 좁히면 29일·30일에 각각 미매칭된 같은 기사를 볼 수 없다.
+[
+  ['renderSettlementUnmatched', 'function renderSettlementUnmatched'],
+  ['settlementMatchQueue', 'function settlementMatchQueue'],
+  ['retryDailySettlementUnmatched', 'function retryDailySettlementUnmatched']
+].forEach(([label, marker]) => {
+  const at = adminJs.indexOf(marker);
+  if (at < 0) {
+    failures.push(`${label}: 함수를 찾지 못해 주 단위 검사를 못했습니다`);
+    return;
+  }
+  const body = adminJs.slice(at, at + 1200);
+  if (body.includes('matchesSettlementPeriod')) {
+    failures.push(`${label}: 정산일 필터가 남아 있음 — 미반영 목록이 주 단위로 안 보입니다`);
+  }
+  if (!body.includes('getSettlementUnmatchedWeekFilter')) {
+    failures.push(`${label}: 적용주 필터를 쓰지 않습니다`);
+  }
+});
+
+// ===== 적용주 달력은 수요일만 선택 가능해야 한다 =====
+['coupang', 'baemin'].forEach(platform => {
+  ['settlementLogWeek', 'settlementUnmatchedWeek'].forEach(prefix => {
+    if (html.includes(`type="date" id="${prefix}-${platform}"`)) {
+      failures.push(`${prefix}-${platform}: date input 이 남아 있음 — 수요일 외 날짜가 선택됩니다`);
+    }
+    if (!html.includes(`id="${prefix}Btn-${platform}"`)) {
+      failures.push(`${prefix}-${platform}: 수요일 달력 트리거 버튼 없음`);
+    }
+    if (!html.includes(`type="hidden" id="${prefix}-${platform}"`)) {
+      failures.push(`${prefix}-${platform}: hidden input 없음`);
+    }
+  });
+  ['log', 'unmatched'].forEach(kind => {
+    if (!html.includes(`data-week-picker-trigger="settlement-${kind}-${platform}"`)) {
+      failures.push(`settlement-${kind}-${platform}: 달력 트리거 속성 없음`);
+    }
+  });
+});
+if (!adminJs.includes('/^settlement-(log|unmatched)-(coupang|baemin)$/')) {
+  failures.push('admin.js 에 일정산 적용주 달력 트리거 처리 없음');
+}
+
 if (failures.length) {
   failures.forEach(msg => console.log('FAIL:', msg));
   process.exit(1);
 }
-console.log(`OK: 수동 매핑 8개 케이스 + 모달 DOM(id ${modalIds.length}개) + 공제기준금액 ${deductionBaseGuards.length}곳 통과`);
+console.log(`OK: 수동 매핑 8개 케이스 + 모달 DOM(id ${modalIds.length}개) + 공제기준금액 ${deductionBaseGuards.length}곳 + 주단위/수요일달력 통과`);

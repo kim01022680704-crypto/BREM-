@@ -1991,6 +1991,25 @@
           };
         }
 
+        // 일정산 적용주(업로드 기록 / 미반영 기사) — 수요일만 고를 수 있어야 한다.
+        const settlementWeekMatch = triggerId?.match(/^settlement-(log|unmatched)-(coupang|baemin)$/);
+        if (settlementWeekMatch) {
+          const [, kind, weekPlatform] = settlementWeekMatch;
+          const hiddenInput = kind === 'log'
+            ? $(`#settlementLogWeek-${weekPlatform}`)
+            : $(`#settlementUnmatchedWeek-${weekPlatform}`);
+          if (!hiddenInput) return null;
+          return {
+            hiddenInput,
+            labelEl: kind === 'log'
+              ? $(`#settlementLogWeekBtn-${weekPlatform}`)
+              : $(`#settlementUnmatchedWeekBtn-${weekPlatform}`),
+            onSelect(value) {
+              handleSettlementWeekPicked(weekPlatform, value);
+            }
+          };
+        }
+
         const promotionApplyMatch = triggerId?.match(/^promotion-apply-(.+)$/);
         if (promotionApplyMatch) {
           const selectKey = promotionApplyMatch[1];
@@ -3861,16 +3880,34 @@
     return dayKey;
   }
 
+  // 적용주는 수요일만 골라야 해서 date input 대신 수요일 달력 버튼을 쓴다.
+  // (예전 date input 은 아무 날짜나 들어가서 표시 범위와 값이 어긋났다)
+  function syncSettlementWeekPicker(kind, platform, weekStart) {
+    const p = normalizePlatform(platform);
+    const suffix = kind === 'log' ? 'settlementLogWeek' : 'settlementUnmatchedWeek';
+    const input = $(`#${suffix}-${p}`);
+    if (input) input.value = weekStart || '';
+    const button = $(`#${suffix}Btn-${p}`);
+    if (button) {
+      button.textContent = weekStart ? `${formatDate(weekStart)}(수)` : '수요일 선택';
+    }
+  }
+
   function setSettlementWeekFilters(platform, weekStart) {
     const p = normalizePlatform(platform);
     const picked = weekStartKey(weekStart || weekStartKey());
     state.settlementLogWeekByPlatform[p] = picked;
     state.settlementUnmatchedWeekByPlatform[p] = picked;
-    const logInput = $(`#settlementLogWeek-${p}`);
-    const unmatchedInput = $(`#settlementUnmatchedWeek-${p}`);
-    if (logInput) logInput.value = picked;
-    if (unmatchedInput) unmatchedInput.value = picked;
+    syncSettlementWeekPicker('log', p, picked);
+    syncSettlementWeekPicker('unmatched', p, picked);
     return picked;
+  }
+
+  function handleSettlementWeekPicked(platform, value) {
+    const p = normalizePlatform(platform);
+    setSettlementWeekFilters(p, value);
+    renderSettlementUploadLogs(p);
+    renderSettlementUnmatched(p);
   }
 
   function ensureSettlementLogWeek(platform) {
@@ -3879,10 +3916,7 @@
       const latest = latestSettlementActivityForPlatform(p);
       state.settlementLogWeekByPlatform[p] = latest.weekStart || weekStartKey();
     }
-    const input = $(`#settlementLogWeek-${p}`);
-    if (input && !input.value) {
-      input.value = state.settlementLogWeekByPlatform[p];
-    }
+    syncSettlementWeekPicker('log', p, state.settlementLogWeekByPlatform[p]);
     return state.settlementLogWeekByPlatform[p];
   }
 
@@ -4177,21 +4211,25 @@
     if (!state.settlementUnmatchedWeekByPlatform[p]) {
       state.settlementUnmatchedWeekByPlatform[p] = weekStartKey();
     }
-    const input = $(`#settlementUnmatchedWeek-${p}`);
-    if (input && !input.value) {
-      input.value = state.settlementUnmatchedWeekByPlatform[p];
-    }
+    syncSettlementWeekPicker('unmatched', p, state.settlementUnmatchedWeekByPlatform[p]);
     return state.settlementUnmatchedWeekByPlatform[p];
   }
 
-  function updateSettlementUnmatchedWeekLabel(platform) {
+  function settlementUnmatchedSortName(record) {
+    return String(record?.rawName || record?.name || '').trim();
+  }
+
+  function updateSettlementUnmatchedWeekLabel(platform, rows = null) {
     const p = normalizePlatform(platform);
     const weekStart = ensureSettlementUnmatchedWeek(p);
     const label = $(`#settlementUnmatchedWeekRange-${p}`);
     const periodLabel = $(`#settlementUnmatchedPeriodLabel-${p}`);
     if (label) {
+      const summary = Array.isArray(rows) && rows.length
+        ? ` · 미반영 ${rows.length}건 / 정산일 ${new Set(rows.map(row => String(row.period || '').slice(0, 10))).size}일치`
+        : '';
       label.textContent = weekStart
-        ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)`
+        ? `표시 범위: ${formatDate(weekStart)}(수) ~ ${formatDate(weekEndKey(weekStart))}(화)${summary}`
         : '';
     }
     if (periodLabel) {
@@ -4387,23 +4425,23 @@
   function renderSettlementUnmatched(platform) {
     const p = normalizePlatform(platform);
     const weekStart = getSettlementUnmatchedWeekFilter(p);
-    const periodKey = getSettlementPeriodFilter(p);
-    updateSettlementUnmatchedWeekLabel(p);
+    // 미반영 내역은 업로드 폼의 정산일과 무관하게 선택한 주(수~화) 전체를 보여준다.
+    // 같은 기사가 29일·30일에 각각 미매칭이면 두 행이 모두 떠야 매칭할 수 있다.
     const rows = settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
       .filter(record => record.kind !== 'weekly')
       .filter(record => record.weekStart === weekStart)
-      .filter(record => matchesSettlementPeriod(record, periodKey))
-      .sort((a, b) => b.period.localeCompare(a.period) || b.savedAt.localeCompare(a.savedAt));
+      .sort((a, b) => String(a.period || '').localeCompare(String(b.period || ''))
+        || settlementUnmatchedSortName(a).localeCompare(settlementUnmatchedSortName(b), 'ko-KR'));
+
+    updateSettlementUnmatchedWeekLabel(p, rows);
 
     const rowsEl = $(`#settlementUnmatchedHistoryRows-${p}`);
     if (!rowsEl) return;
 
-    const emptyMessage = periodKey
-      ? `${formatDate(periodKey)} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
-      : weekStart
-        ? `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
-        : `${platformLabel(p)} 미반영 기사 내역이 없습니다.`;
+    const emptyMessage = weekStart
+      ? `${formatDate(weekStart)} ~ ${formatDate(weekEndKey(weekStart))} ${platformLabel(p)} 미반영 기사 내역이 없습니다.`
+      : `${platformLabel(p)} 미반영 기사 내역이 없습니다.`;
 
     rowsEl.innerHTML = rows.map(record => {
       if (isBaeminSettlementPlatform(p)) {
@@ -4674,17 +4712,16 @@
   function retryDailySettlementUnmatched(platform, options = {}) {
     const p = normalizePlatform(platform);
     const weekStart = getSettlementUnmatchedWeekFilter(p);
-    const periodKey = getSettlementPeriodFilter(p);
     const recordIds = Array.isArray(options.recordIds) ? options.recordIds : [];
     if (!weekStart) {
       showToast('적용주를 먼저 선택하세요.');
       return;
     }
+    // 재시도도 선택한 주 전체가 대상이다. (정산일 하나만 돌리면 나머지 날짜가 계속 남는다)
     const pendingCount = settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
       .filter(record => record.kind !== 'weekly')
       .filter(record => record.weekStart === weekStart)
-      .filter(record => matchesSettlementPeriod(record, periodKey))
       .filter(record => !recordIds.length || recordIds.includes(record.id))
       .length;
     if (!pendingCount) {
@@ -4702,18 +4739,15 @@
         const result = BremStorage.settlementUnmatched.retryDailyMatching({
           platform: p,
           weekStart,
-          period: periodKey,
           recordIds
         });
         await BremStorage.flushStorage?.();
-        let message = `매칭 재시도: ${result.matchedCount}명 반영`;
+        let message = `매칭 재시도: ${result.matchedCount}건 반영`;
         if (result.stillUnmatchedCount) {
-          message += ` · 미매칭 ${result.stillUnmatchedCount}명 유지`;
+          message += ` · 미매칭 ${result.stillUnmatchedCount}건 유지`;
         }
         if (!result.matchedCount) {
           message = '새로 등록한 기사와 매칭되지 않았습니다. 배민 ID·쿠팡 ID를 확인하세요.';
-        } else if (periodKey) {
-          setSettlementHistoryDay(p, periodKey);
         }
         showToast(message);
         renderSettlements();
@@ -4737,16 +4771,16 @@
     regionsLoading: false
   };
 
+  // 큐는 화면(주 단위)과 같은 순서여야 "다음"으로 넘어갈 때 헷갈리지 않는다.
   function settlementMatchQueue(platform) {
     const p = normalizePlatform(platform || settlementMatchState.platform);
     const weekStart = getSettlementUnmatchedWeekFilter(p);
-    const periodKey = getSettlementPeriodFilter(p);
     return settlementUnmatchedList()
       .filter(record => normalizePlatform(record.platform) === p)
       .filter(record => record.kind !== 'weekly')
       .filter(record => record.weekStart === weekStart)
-      .filter(record => matchesSettlementPeriod(record, periodKey))
-      .sort((a, b) => b.period.localeCompare(a.period) || b.savedAt.localeCompare(a.savedAt));
+      .sort((a, b) => String(a.period || '').localeCompare(String(b.period || ''))
+        || settlementUnmatchedSortName(a).localeCompare(settlementUnmatchedSortName(b), 'ko-KR'));
   }
 
   function settlementMatchRecord() {
@@ -4815,6 +4849,13 @@
     ];
     if (isBaeminSettlementPlatform(p)) {
       cells.push(['라이더 ID', record.riderId || '-']);
+    }
+    const siblings = settlementMatchSiblingRecords(record);
+    if (siblings.length > 1) {
+      const dates = siblings
+        .map(item => String(item.period || '').slice(5).replace('-', '/'))
+        .join(', ');
+      cells.push(['같은 주 미매칭', `${siblings.length}건 (${dates}) 함께 반영`]);
     }
     cells.push(['오더수', `${Number(record.orderCount || 0).toLocaleString('ko-KR')}건`]);
     cells.push(['정산금액', formatMoney(settlementAmountValue(record))]);
@@ -4990,7 +5031,7 @@
     settlementMatchState.platform = p;
     const queue = settlementMatchQueue(p);
     if (!queue.length) {
-      showToast(`${platformLabel(p)} 미매칭 기사가 없습니다. 적용주·정산일 필터를 확인하세요.`);
+      showToast(`${platformLabel(p)} 미매칭 기사가 없습니다. 적용주(수요일)를 확인하세요.`);
       return;
     }
     openSettlementMatchModal(queue[0].id, p);
@@ -5067,7 +5108,24 @@
       .concat([{ ...previewHit, driverId: driver.id, driverName: driver.name }]);
   }
 
-  // 매핑 저장 → 해당 행만 재매칭 → 정산 반영. 실패해도 미매칭 행은 그대로 남는다.
+  function settlementMatchKey(record) {
+    return settlementMatchOriginalName(record).replace(/\s+/g, '').toLowerCase();
+  }
+
+  // 같은 주에 정산일만 다른 동일 기사 행(예: 29일·30일 홍길동)은 한 번 연결하면 같이 반영한다.
+  function settlementMatchSiblingRecords(record) {
+    if (!record) return [];
+    const p = normalizePlatform(record.platform);
+    const weekStart = String(record.weekStart || '').slice(0, 10);
+    const key = settlementMatchKey(record);
+    return settlementUnmatchedList()
+      .filter(item => item.kind !== 'weekly')
+      .filter(item => normalizePlatform(item.platform) === p)
+      .filter(item => String(item.weekStart || '').slice(0, 10) === weekStart)
+      .filter(item => item.id === record.id || (key && settlementMatchKey(item) === key));
+  }
+
+  // 매핑 저장 → 같은 주의 동일 기사 행 재매칭 → 정산 반영. 실패한 행은 미매칭으로 남는다.
   async function applySettlementMatchForRecord(record, driver) {
     const p = normalizePlatform(record.platform);
     const originalName = settlementMatchOriginalName(record);
@@ -5084,18 +5142,30 @@
       BremStorage.ensureSectionLoaded('settlements'),
       BremStorage.ensureSectionLoaded('calls')
     ]);
+    const weekStart = String(record.weekStart || '').slice(0, 10);
+    const siblings = settlementMatchSiblingRecords(record);
     const result = BremStorage.settlementUnmatched.retryDailyMatching({
       platform: p,
-      weekStart: String(record.weekStart || '').slice(0, 10),
-      period: String(record.period || '').slice(0, 10),
-      recordIds: [record.id]
+      weekStart,
+      recordIds: siblings.map(item => item.id)
     });
     if (result.matchedCount) {
-      syncSettlementSourcesAfterMatch(record, driver);
+      // 반영된(=미매칭 목록에서 빠진) 행만 업로드 기록·미리보기에 옮긴다.
+      const remaining = new Set(BremStorage.settlementUnmatched
+        .getByWeek({ weekStart, platform: p, kind: 'daily' })
+        .map(item => String(item.id)));
+      siblings
+        .filter(item => !remaining.has(String(item.id)))
+        .forEach(item => syncSettlementSourcesAfterMatch(item, driver));
       invalidateCallStatsIndex();
     }
     await BremStorage.flushStorage?.();
     return result;
+  }
+
+  function settlementMatchAppliedSuffix(result) {
+    const count = Number(result?.matchedCount || 0);
+    return count > 1 ? ` (정산일 ${count}건 함께 반영)` : '';
   }
 
   function advanceSettlementMatchModal(previousIndex) {
@@ -5135,7 +5205,7 @@
         return;
       }
       setSettlementHistoryDay(normalizePlatform(record.platform), String(record.period || '').slice(0, 10));
-      showToast(`${driver.name} 기사로 매칭해 반영했습니다.`);
+      showToast(`${driver.name} 기사로 매칭해 반영했습니다.${settlementMatchAppliedSuffix(result)}`);
       advanceSettlementMatchModal(previousIndex);
     } catch (error) {
       console.error('[BREM] settlement match link failed:', error);
@@ -5215,7 +5285,7 @@
         return;
       }
       setSettlementHistoryDay(normalizePlatform(record.platform), String(record.period || '').slice(0, 10));
-      showToast(`${created.name} 기사를 등록하고 정산을 반영했습니다.`);
+      showToast(`${created.name} 기사를 등록하고 정산을 반영했습니다.${settlementMatchAppliedSuffix(result)}`);
       advanceSettlementMatchModal(previousIndex);
     } catch (error) {
       console.error('[BREM] settlement match create failed:', error);
@@ -7156,12 +7226,6 @@
       $(`#settlementUnmatchedRetryBtn-${p}`)?.addEventListener('click', () => {
         retryDailySettlementUnmatched(p);
       });
-      $(`#settlementUnmatchedWeek-${p}`)?.addEventListener('change', event => {
-        const picked = setSettlementWeekFilters(p, event.target.value);
-        event.target.value = picked;
-        renderSettlementUploadLogs(p);
-        renderSettlementUnmatched(p);
-      });
       $(`#settlementHistoryClearBtn-${p}`)?.addEventListener('click', () => {
         clearSettlementHistoryForSelectedPeriod(p);
       });
@@ -7177,12 +7241,6 @@
       });
       $(`#settlementPeriod-${p}`)?.addEventListener('change', () => {
         handleSettlementPeriodChange(p);
-      });
-      $(`#settlementLogWeek-${p}`)?.addEventListener('change', event => {
-        const picked = setSettlementWeekFilters(p, event.target.value);
-        event.target.value = picked;
-        renderSettlementUploadLogs(p);
-        renderSettlementUnmatched(p);
       });
       $(`#settlementUploadLogReapplyWeek-${p}`)?.addEventListener('click', () => {
         reapplySettlementUploadLogsForSelectedWeek(p);

@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260801g">
+  <link rel="stylesheet" href="css/admin.css?v=20260801h">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -3234,10 +3234,11 @@
               <p class="form-help">수요일 기준 적용주별로 업로드한 정산표 파일명과 적용 내역을 기록합니다. 상세에서 기사별 콜수·정산금액을 확인할 수 있습니다.</p>
             </div>
             <div class="settlement-week-filter-actions">
-              <label class="settlement-week-filter">
+              <div class="settlement-week-filter">
                 <span>적용주(수요일)</span>
-                <input type="date" id="settlementLogWeek-coupang" class="admin-period-input">
-              </label>
+                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-log-coupang" id="settlementLogWeekBtn-coupang">수요일 선택</button>
+                <input type="hidden" id="settlementLogWeek-coupang">
+              </div>
               <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-coupang" disabled>해당주 전체 재반영</button>
               <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-coupang" disabled>해당주 전체 삭제</button>
             </div>
@@ -3322,13 +3323,14 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>쿠팡 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-coupang"></span></h2>
-              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 행의 「매칭」을 누르면 기존 기사에 연결하거나 그 자리에서 기사를 등록해 바로 반영할 수 있습니다.</p>
+              <p class="form-help">적용주(수~화)에 업로드한 <b>모든 정산일</b>의 매칭 실패 기사를 정산일 순서로 보여줍니다. 같은 기사가 여러 날 미매칭이면 각 정산일이 따로 뜨고, 한 번 매칭하면 그 주의 같은 기사 건이 함께 반영됩니다.</p>
             </div>
             <div class="settlement-history-toolbar">
-              <label class="settlement-week-filter">
+              <div class="settlement-week-filter">
                 <span>적용주(수요일)</span>
-                <input type="date" id="settlementUnmatchedWeek-coupang" class="admin-period-input">
-              </label>
+                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-unmatched-coupang" id="settlementUnmatchedWeekBtn-coupang">수요일 선택</button>
+                <input type="hidden" id="settlementUnmatchedWeek-coupang">
+              </div>
               <button type="button" class="primary-btn small-btn" data-open-settlement-match-queue="coupang">미매칭 매칭하기</button>
               <button type="button" class="small-btn" id="settlementUnmatchedRetryBtn-coupang">매칭 재시도</button>
               <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-coupang">선택 주 전체 삭제</button>
@@ -3534,10 +3536,11 @@
               <p class="form-help">수요일 기준 적용주별로 업로드한 정산표 파일명과 적용 내역을 기록합니다. 상세에서 기사별 콜수·정산금액을 확인할 수 있습니다.</p>
             </div>
             <div class="settlement-week-filter-actions">
-              <label class="settlement-week-filter">
+              <div class="settlement-week-filter">
                 <span>적용주(수요일)</span>
-                <input type="date" id="settlementLogWeek-baemin" class="admin-period-input">
-              </label>
+                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-log-baemin" id="settlementLogWeekBtn-baemin">수요일 선택</button>
+                <input type="hidden" id="settlementLogWeek-baemin">
+              </div>
               <button type="button" class="small-btn primary-btn" id="settlementUploadLogReapplyWeek-baemin" disabled>해당주 전체 재반영</button>
               <button type="button" class="small-btn danger-btn" id="settlementUploadLogClearWeek-baemin" disabled>해당주 전체 삭제</button>
             </div>
@@ -3623,13 +3626,14 @@
           <div class="card-header settlement-upload-log-header">
             <div>
               <h2>배민 미반영 기사 내역 <span class="settlement-period-filter-label" id="settlementUnmatchedPeriodLabel-baemin"></span></h2>
-              <p class="form-help">일정산 업로드 시 매칭 실패 기사를 적용주(수~화) 단위로 보관합니다. 행의 「매칭」을 누르면 기존 기사에 연결하거나 그 자리에서 기사를 등록해 바로 반영할 수 있습니다.</p>
+              <p class="form-help">적용주(수~화)에 업로드한 <b>모든 정산일</b>의 매칭 실패 기사를 정산일 순서로 보여줍니다. 같은 기사가 여러 날 미매칭이면 각 정산일이 따로 뜨고, 한 번 매칭하면 그 주의 같은 기사 건이 함께 반영됩니다.</p>
             </div>
             <div class="settlement-history-toolbar">
-              <label class="settlement-week-filter">
+              <div class="settlement-week-filter">
                 <span>적용주(수요일)</span>
-                <input type="date" id="settlementUnmatchedWeek-baemin" class="admin-period-input">
-              </label>
+                <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-unmatched-baemin" id="settlementUnmatchedWeekBtn-baemin">수요일 선택</button>
+                <input type="hidden" id="settlementUnmatchedWeek-baemin">
+              </div>
               <button type="button" class="primary-btn small-btn" data-open-settlement-match-queue="baemin">미매칭 매칭하기</button>
               <button type="button" class="small-btn" id="settlementUnmatchedRetryBtn-baemin">매칭 재시도</button>
               <button type="button" class="small-btn danger-btn" id="settlementUnmatchedClearBtn-baemin">선택 주 전체 삭제</button>
@@ -7114,7 +7118,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260801h"></script>
+    <script src="js/admin.js?v=20260801i"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

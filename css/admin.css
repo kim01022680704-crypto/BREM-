@@ -2342,6 +2342,13 @@ textarea {
   min-width: 180px;
 }
 
+/* 적용주는 수요일 달력 버튼을 쓰려고 label 을 div 로 바꿨다. 캡션 톤은 label 과 동일하게 유지. */
+.settlement-week-filter > span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 .settlement-week-range-label {
   margin: 0 18px 12px;
   color: var(--muted, #666);
