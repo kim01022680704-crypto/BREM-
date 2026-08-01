@@ -18,6 +18,7 @@
   if (!panel || !openBtn) return;
 
   const CACHE_TTL_MS = 60 * 1000;
+  const PERSIST_KEY = 'brem_rider_region_dashboard_v1';
   const cache = new Map();
 
   const state = {
@@ -86,22 +87,60 @@
     return `${fmt(weekStart, '수')}~${fmt(weekEnd, '화')}`;
   }
 
-  function cacheKey() {
-    return [state.platform, state.regionKey || '-', state.weekStart || '-'].join('|');
+  function cacheKey(platform = state.platform, regionKey = state.regionKey, weekStart = state.weekStart) {
+    return [platform || 'baemin', regionKey || '-', weekStart || '-'].join('|');
   }
 
-  function readCache() {
-    const hit = cache.get(cacheKey());
+  function readMemoryCache(key = cacheKey()) {
+    const hit = cache.get(key);
     if (!hit) return null;
     if (Date.now() - hit.at > CACHE_TTL_MS) {
-      cache.delete(cacheKey());
+      cache.delete(key);
       return null;
     }
     return hit.data;
   }
 
-  function writeCache(data) {
-    cache.set(cacheKey(), { at: Date.now(), data });
+  function writeMemoryCache(data, key = cacheKey()) {
+    cache.set(key, { at: Date.now(), data });
+  }
+
+  function readPersistedDashboard() {
+    try {
+      const raw = sessionStorage.getItem(PERSIST_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.ok || !parsed?.platform) return null;
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writePersistedDashboard(data) {
+    if (!data?.ok) return;
+    try {
+      sessionStorage.setItem(PERSIST_KEY, JSON.stringify({
+        ...data,
+        savedAt: new Date().toISOString()
+      }));
+    } catch (_) {
+      // quota 초과는 무시
+    }
+  }
+
+  function findBestStale() {
+    const weekStart = ensureWeekStart();
+    const exact = readMemoryCache(cacheKey(state.platform, state.regionKey, weekStart));
+    if (exact) return exact;
+    const persisted = readPersistedDashboard();
+    if (!persisted) return null;
+    if (persisted.platform !== state.platform) return null;
+    if (state.regionKey && persisted.selectedRegionKey && persisted.selectedRegionKey !== state.regionKey) {
+      return null;
+    }
+    // 같은 플랫폼의 직전 성공분이면 즉시 그려서 빈 화면을 피한다.
+    return persisted;
   }
 
   function syncPlatformTabs() {
@@ -193,20 +232,26 @@
     }
   }
 
-  async function loadDashboard({ silent = false } = {}) {
+  async function loadDashboard({ silent = false, force = false } = {}) {
     if (!window.BremStorage?.fetchRiderRegionDashboardFromServer) {
       if (!silent) showToast('대시보드 API를 사용할 수 없습니다.');
       return;
     }
     const seq = ++state.requestSeq;
-    const cached = readCache();
-    if (cached) {
-      renderDashboard(cached);
-      if (!silent) return;
+    ensureWeekStart();
+    const freshMemory = force ? null : readMemoryCache();
+    if (freshMemory) {
+      renderDashboard(freshMemory);
+      return;
     }
+    const stale = force ? null : findBestStale();
+    if (stale) renderDashboard(stale);
 
+    // 이전 데이터가 있으면 전체 로딩 오버레이를 쓰지 않아 화면이 깜빡이지 않는다.
+    const hasStaleUi = Boolean(stale) || Boolean(state.lastResult);
     state.loading = true;
-    panel.classList.add('is-loading');
+    if (!hasStaleUi) panel.classList.add('is-loading');
+    else panel.classList.add('is-refreshing');
     try {
       const weekStart = ensureWeekStart();
       const result = await window.BremStorage.fetchRiderRegionDashboardFromServer({
@@ -216,27 +261,30 @@
       });
       if (seq !== state.requestSeq) return;
       if (!result?.ok) {
-        if (!silent) showToast(result?.message || result?.error || '기사대시보드를 불러오지 못했습니다.');
-        if (!cached) {
+        const msg = result?.message || result?.error || '기사대시보드를 불러오지 못했습니다.';
+        if (!silent) showToast(hasStaleUi ? `이전 데이터 표시 중 · ${msg}` : msg);
+        // 타임아웃/실패 때 empty를 덮어쓰지 않는다. (노출 안내와 섞이면 안 됨)
+        if (!hasStaleUi && /노출/i.test(msg)) {
           if (emptyEl) {
             emptyEl.hidden = false;
-            emptyEl.querySelector('p')?.replaceChildren(
-              document.createTextNode(result?.message || result?.error || '불러오기 실패')
-            );
+            emptyEl.querySelector('p')?.replaceChildren(document.createTextNode(msg));
           }
           if (contentEl) contentEl.hidden = true;
         }
         return;
       }
-      writeCache(result);
+      writeMemoryCache(result);
+      writePersistedDashboard(result);
       renderDashboard(result);
     } catch (error) {
       if (seq !== state.requestSeq) return;
-      if (!silent) showToast(error.message || '기사대시보드를 불러오지 못했습니다.');
+      const msg = error.message || '기사대시보드를 불러오지 못했습니다.';
+      if (!silent) showToast(hasStaleUi ? `이전 데이터 표시 중 · ${msg}` : msg);
     } finally {
       if (seq === state.requestSeq) {
         state.loading = false;
         panel.classList.remove('is-loading');
+        panel.classList.remove('is-refreshing');
       }
     }
   }
@@ -249,8 +297,11 @@
     openBtn.setAttribute('aria-expanded', 'true');
     ensureWeekStart();
     syncPlatformTabs();
+    // 열자마자 직전 성공분을 먼저 그린다.
+    const stale = findBestStale();
+    if (stale) renderDashboard(stale);
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    void loadDashboard();
+    void loadDashboard({ force: false });
   }
 
   function closePanel() {
@@ -289,12 +340,11 @@
   closeBtn?.addEventListener('click', closePanel);
   refreshBtn?.addEventListener('click', () => {
     cache.delete(cacheKey());
-    void loadDashboard();
+    void loadDashboard({ force: true });
   });
   regionSelect?.addEventListener('change', () => {
     state.regionKey = regionSelect.value || '';
-    cache.delete(cacheKey());
-    void loadDashboard();
+    void loadDashboard({ force: false });
   });
   panel.addEventListener('click', event => {
     const tab = event.target.closest('[data-region-dash-platform]');
@@ -304,8 +354,9 @@
     state.platform = next;
     state.regionKey = '';
     syncPlatformTabs();
-    cache.delete(cacheKey());
-    void loadDashboard();
+    const stale = findBestStale();
+    if (stale) renderDashboard(stale);
+    void loadDashboard({ force: false });
   });
 
   window.BremDriverRegionDashboard = {

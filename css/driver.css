@@ -2417,6 +2417,11 @@ button.calendar-day:hover {
   pointer-events: none;
 }
 
+/* 이전 데이터를 유지한 채 뒤에서만 갱신 — 화면을 가리지 않는다. */
+.driver-region-dashboard-panel.is-refreshing {
+  opacity: 1;
+}
+
 .driver-payslip-period-text,
 .driver-payslip-payment-text {
   display: block;

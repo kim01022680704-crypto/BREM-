@@ -16,6 +16,8 @@ const BremDriverManagementAdmin = (function () {
     regionExposure: { baemin: {}, coupang: {} },
     regionRanking: null,
     regionRankingKey: '',
+    regionRankingCache: new Map(),
+    regionRankingRequestSeq: 0,
     regionAdd: { open: false, highlight: -1, candidates: [] },
     bulkRows: []
   };
@@ -816,30 +818,35 @@ const BremDriverManagementAdmin = (function () {
     const week = ensureWeek();
     const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
     const cacheKey = `${region.platform}|${region.key}|${week}`;
+    const requestSeq = ++state.regionRankingRequestSeq;
     const panels = $('#driverRegionRankPanels');
     if (panels) panels.hidden = false;
 
     // 주간 순위: 콜수 입력(로컬 calls) — 표의 콜수·1등과 동일 출처
     const weeklyRanking = buildLocalWeeklyRanking(region, week, platform);
     const today = localDateKey(new Date());
+    const cached = state.regionRankingCache.get(cacheKey) || null;
     const basePayload = {
       today,
       weekStart: week,
       weekEnd: weekEndKey(week),
-      metrics: {},
-      realtimeRanking: [],
-      realtimeRankingDisabled: platform === 'coupang',
+      metrics: cached?.metrics || {},
+      realtimeRanking: cached?.realtimeRanking || [],
+      realtimeRankingDisabled: platform === 'coupang'
+        || cached?.realtimeRankingDisabled === true,
       realtimeRankingReason: platform === 'coupang'
         ? '쿠팡 실시간 콜수는 피크 가중치(0.8 단위)라 기사별 순위 집계가 불가합니다. 할당·운행중·남은할당만 표시합니다.'
-        : '',
+        : (cached?.realtimeRankingReason || ''),
       weeklyRanking,
-      realtimeFirst: null,
+      realtimeFirst: cached?.realtimeFirst || null,
       weeklyFirst: weeklyRanking[0] || null
     };
+    // 직전 실시간 값이 있으면 바로 그리고, 없으면 주간만이라도 먼저 그린다.
     renderRegionRankingUi(basePayload);
 
     const realtimeNote = $('#driverRegionRealtimeNote');
-    if (realtimeNote && platform !== 'coupang') {
+    const hadCachedRealtime = Boolean(cached?.metrics || cached?.realtimeRanking?.length);
+    if (realtimeNote && platform !== 'coupang' && !hadCachedRealtime) {
       realtimeNote.textContent = '실시간 크롤링 순위 불러오는 중…';
     }
 
@@ -859,6 +866,7 @@ const BremDriverManagementAdmin = (function () {
         credentials: 'same-origin'
       });
       const payload = await res.json().catch(() => ({}));
+      if (requestSeq !== state.regionRankingRequestSeq) return;
       if (!res.ok) throw new Error(payload.error || '실시간 순위를 불러오지 못했습니다.');
       const merged = {
         ...basePayload,
@@ -875,11 +883,23 @@ const BremDriverManagementAdmin = (function () {
       };
       state.regionRanking = merged;
       state.regionRankingKey = cacheKey;
+      state.regionRankingCache.set(cacheKey, merged);
+      if (state.regionRankingCache.size > 40) {
+        const oldest = state.regionRankingCache.keys().next().value;
+        state.regionRankingCache.delete(oldest);
+      }
       renderRegionRankingUi(merged);
     } catch (error) {
+      if (requestSeq !== state.regionRankingRequestSeq) return;
       console.warn('[BREM] region ranking realtime:', error);
-      if (realtimeNote && platform !== 'coupang') {
+      if (realtimeNote && platform !== 'coupang' && !hadCachedRealtime) {
         realtimeNote.textContent = error.message || '실시간 순위를 불러오지 못했습니다.';
+      } else if (realtimeNote && hadCachedRealtime) {
+        // 이전 숫자는 유지하고 갱신 실패만 짧게 알린다.
+        const prev = realtimeNote.textContent || '';
+        if (!/이전 데이터/.test(prev)) {
+          realtimeNote.textContent = `${prev || '이전 데이터 표시 중'} · 갱신 실패`;
+        }
       }
       state.regionRanking = basePayload;
       state.regionRankingKey = cacheKey;

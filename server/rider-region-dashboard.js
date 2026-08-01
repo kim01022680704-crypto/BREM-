@@ -174,28 +174,93 @@ function riderMatchesRegion(rider, region) {
     || value === region.vendorId;
 }
 
+function mapRiderRow(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    baeminId: row.baemin_id || '',
+    regionBaemin: String(row.raw_data?.regionBaemin || '').trim(),
+    regionCoupang: String(row.raw_data?.regionCoupang || '').trim(),
+    raw_data: row.raw_data || {},
+    status: row.status || ''
+  };
+}
+
+function escapePostgrestValue(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
+
+/** 응답 메모리 캐시 — 같은 지역을 연속으로 열면 DB 없이 바로 돌려준다. */
+const RESPONSE_CACHE_TTL_MS = 20 * 1000;
+const responseCache = new Map();
+
+function readResponseCache(key) {
+  const hit = responseCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > RESPONSE_CACHE_TTL_MS) {
+    responseCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function writeResponseCache(key, data) {
+  responseCache.set(key, { at: Date.now(), data });
+  if (responseCache.size > 80) {
+    const oldest = [...responseCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+    if (oldest) responseCache.delete(oldest[0]);
+  }
+}
+
 async function loadRidersForRegion(supabase, region) {
-  const { data, error } = await supabase
+  // 전체 5000건을 매번 받으면 대시보드가 12초 타임아웃 난다.
+  // raw_data JSON 키로 DB에서 먼저 좁힌 뒤, 기존 매칭 규칙으로 한 번 더 거른다.
+  let query = supabase
     .from('riders')
-    .select('id,name,baemin_id,raw_data,status')
-    .limit(5000);
-  if (error) throw error;
+    .select('id,name,baemin_id,raw_data')
+    .limit(800);
+
+  if (region.platform === 'baemin') {
+    const parts = [region.label, region.partnerId, region.key]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .filter((value, index, list) => list.indexOf(value) === index)
+      .map(value => `raw_data->>regionBaemin.eq.${escapePostgrestValue(value)}`);
+    if (parts.length) query = query.or(parts.join(','));
+  } else {
+    const short = shortCoupangRegion(region.label || region.key);
+    const parts = [region.label, region.key, region.vendorId]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .filter((value, index, list) => list.indexOf(value) === index)
+      .map(value => `raw_data->>regionCoupang.eq.${escapePostgrestValue(value)}`);
+    if (short) parts.push(`raw_data->>regionCoupang.ilike.%${escapePostgrestValue(short)}%`);
+    if (parts.length) query = query.or(parts.join(','));
+  }
+
+  let { data, error } = await query;
+  if (error) {
+    // JSON 필터가 안 되는 환경이면 예전처럼 제한 스캔으로 폴백
+    console.warn('[BREM][region-dashboard] riders region filter fallback:', error.message || error);
+    ({ data, error } = await supabase
+      .from('riders')
+      .select('id,name,baemin_id,raw_data')
+      .limit(5000));
+    if (error) throw error;
+  }
+
   return (data || [])
-    .map(row => ({
-      id: row.id,
-      name: row.name || '',
-      baeminId: row.baemin_id || '',
-      regionBaemin: String(row.raw_data?.regionBaemin || '').trim(),
-      regionCoupang: String(row.raw_data?.regionCoupang || '').trim(),
-      raw_data: row.raw_data || {},
-      status: row.status || ''
-    }))
+    .map(mapRiderRow)
     .filter(rider => riderMatchesRegion(rider, region));
 }
 
 async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options = {}) {
   const mask = options.maskNames !== false;
-  const riders = await loadRidersForRegion(supabase, region);
+  const riders = Array.isArray(options.regionRiders)
+    ? options.regionRiders
+    : await loadRidersForRegion(supabase, region);
   if (!riders.length) return [];
   const riderIds = riders.map(r => r.id);
   // PostgREST .in() URL 한도 대비 청크
@@ -273,10 +338,12 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     };
   }
 
-  const [snapshot, regionRiders] = await Promise.all([
-    loadBaeminDeliverySnapshot(supabase, partnerId, today),
-    loadRidersForRegion(supabase, region)
-  ]);
+  // regionRiders 를 밖에서 넘기면 riders 테이블을 한 번만 읽는다.
+  const snapshotPromise = loadBaeminDeliverySnapshot(supabase, partnerId, today);
+  const ridersPromise = Array.isArray(options.regionRiders)
+    ? Promise.resolve(options.regionRiders)
+    : loadRidersForRegion(supabase, region);
+  const [snapshot, regionRiders] = await Promise.all([snapshotPromise, ridersPromise]);
 
   const error = snapshot.error;
   if (error) {
@@ -469,6 +536,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   const today = formatKstDateKey(new Date());
   const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
   const weekEnd = settlementWeekEnd(weekStart);
+  const requestedKey = String(query.regionKey || '').trim();
 
   let exposure;
   try {
@@ -510,23 +578,33 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
       || riderRegionLabel === region.key;
   });
 
-  const requestedKey = String(query.regionKey || '').trim();
   const selected = regions.find(region => region.key === requestedKey)
     || preferred
     || regions[0];
 
+  const cacheKey = `rider|${platform}|${selected.key}|${weekStart}|${today}`;
+  const cached = readResponseCache(cacheKey);
+  if (cached) {
+    return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
+  }
+
   let live = { metrics: emptyMetrics(), realtimeRanking: [] };
   let weeklyRanking = [];
   try {
-    live = platform === 'coupang'
-      ? await buildCoupangLive(supabase, selected, today)
-      : await buildBaeminLive(supabase, selected, today);
-    weeklyRanking = await buildWeeklyRanking(supabase, selected, weekStart, weekEnd);
+    const regionRiders = await loadRidersForRegion(supabase, selected);
+    const liveOpts = { regionRiders };
+    const weekOpts = { regionRiders };
+    [live, weeklyRanking] = await Promise.all([
+      platform === 'coupang'
+        ? buildCoupangLive(supabase, selected, today, liveOpts)
+        : buildBaeminLive(supabase, selected, today, liveOpts),
+      buildWeeklyRanking(supabase, selected, weekStart, weekEnd, weekOpts)
+    ]);
   } catch (error) {
     return { ok: false, status: 500, error: error.message || '지역 대시보드를 불러오지 못했습니다.' };
   }
 
-  return {
+  const payload = {
     ok: true,
     platform,
     weekStart,
@@ -542,6 +620,8 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     weeklyRanking,
     message: ''
   };
+  writeResponseCache(cacheKey, payload);
+  return payload;
 }
 
 /**
@@ -574,12 +654,20 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   if (!region.key) region.key = region.partnerId || region.label;
   if (!region.label) region.label = region.key;
 
+  const cacheKey = `admin|${platform}|${region.key}|${weekStart}|${today}|nomask`;
+  const cached = readResponseCache(cacheKey);
+  if (cached) return cached;
+
   try {
-    const live = platform === 'coupang'
-      ? await buildCoupangLive(supabase, region, today, { maskNames: false })
-      : await buildBaeminLive(supabase, region, today, { maskNames: false });
-    const weeklyRanking = await buildWeeklyRanking(supabase, region, weekStart, weekEnd, { maskNames: false });
-    return {
+    const regionRiders = await loadRidersForRegion(supabase, region);
+    const shared = { maskNames: false, regionRiders };
+    const [live, weeklyRanking] = await Promise.all([
+      platform === 'coupang'
+        ? buildCoupangLive(supabase, region, today, shared)
+        : buildBaeminLive(supabase, region, today, shared),
+      buildWeeklyRanking(supabase, region, weekStart, weekEnd, shared)
+    ]);
+    const payload = {
       ok: true,
       platform,
       today,
@@ -594,6 +682,8 @@ async function getAdminRegionRanking(accessToken, query = {}) {
       realtimeFirst: (live.realtimeRanking || [])[0] || null,
       weeklyFirst: (weeklyRanking || [])[0] || null
     };
+    writeResponseCache(cacheKey, payload);
+    return payload;
   } catch (error) {
     return { ok: false, status: 500, error: error.message || '지역 순위를 불러오지 못했습니다.' };
   }

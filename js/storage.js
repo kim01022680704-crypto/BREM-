@@ -2932,6 +2932,7 @@ const BremStorage = (function () {
   }
 
   const DRIVER_FETCH_TIMEOUT_MS = 12000;
+  const REGION_DASHBOARD_TIMEOUT_MS = 20000;
   let driverAppBundlePromise = null;
   let lastDriverAppPublishedAt = null;
 
@@ -2941,9 +2942,12 @@ const BremStorage = (function () {
       return { ok: false, message: '로그인 세션이 없습니다.' };
     }
 
+    const timeoutMs = Number(options.timeoutMs) > 0
+      ? Number(options.timeoutMs)
+      : DRIVER_FETCH_TIMEOUT_MS;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = controller
-      ? setTimeout(() => controller.abort(), DRIVER_FETCH_TIMEOUT_MS)
+      ? setTimeout(() => controller.abort(), timeoutMs)
       : null;
     const method = String(options.method || 'GET').toUpperCase();
     const headers = {
@@ -2989,7 +2993,10 @@ const BremStorage = (function () {
     if (regionKey) params.set('regionKey', String(regionKey));
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
     const qs = params.toString() ? `?${params.toString()}` : '';
-    return riderApiFetch(`/api/rider/region-dashboard${qs}`, 'region-dashboard');
+    // 지역 대시보드는 집계가 길어질 수 있어 전용 타임아웃을 쓴다.
+    return riderApiFetch(`/api/rider/region-dashboard${qs}`, 'region-dashboard', {
+      timeoutMs: REGION_DASHBOARD_TIMEOUT_MS
+    });
   }
 
   async function fetchRiderWithdrawalFromServer(weekStart) {
