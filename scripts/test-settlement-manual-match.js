@@ -117,7 +117,29 @@ check('배민ID 자동 매칭 유지', out.matched[0]?.driverId, 'd1');
 // ===== 모달 DOM 연결 검증 =====
 const html = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
 const adminJs = fs.readFileSync(path.join(root, 'js', 'admin.js'), 'utf8');
+const storageJs = fs.readFileSync(path.join(root, 'js', 'storage.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'css', 'admin.css'), 'utf8');
+
+// ===== 공제기준금액(쿠팡 AC열) 유실 방지 =====
+// 정산 반영·업로드 기록 직렬화에서 deductionBase 가 빠지면 재반영 때 0 으로 덮이고
+// 원천세가 정산금액 기준으로 계산되어 실지급액이 부푼다.
+const deductionBaseGuards = [
+  ['admin.js serializeSettlementLogRecords', adminJs, 'function serializeSettlementLogRecords'],
+  ['admin.js 정산 반영 upsertBatch', adminJs, 'BremStorage.settlements.upsertBatch({'],
+  ['storage.js normalizeSettlementUploadApplyRecord', storageJs, 'function normalizeSettlementUploadApplyRecord'],
+  ['storage.js settlements.upsertBatch', storageJs, 'upsertBatch({ period, records']
+];
+deductionBaseGuards.forEach(([label, source, marker]) => {
+  const at = source.indexOf(marker);
+  if (at < 0) {
+    failures.push(`${label}: 코드를 찾지 못해 공제기준금액 검사를 못했습니다`);
+    return;
+  }
+  // 마커 뒤 레코드 매핑 블록 안에 deductionBase 가 있어야 한다.
+  if (!source.slice(at, at + 900).includes('deductionBase')) {
+    failures.push(`${label}: deductionBase 누락 — 재반영 시 공제가 0 으로 덮입니다`);
+  }
+});
 
 const modalIds = [...new Set(
   [...adminJs.matchAll(/\$\('#(settlementMatch[A-Za-z0-9_-]+)'\)/g)].map(m => m[1])
@@ -153,4 +175,4 @@ if (failures.length) {
   failures.forEach(msg => console.log('FAIL:', msg));
   process.exit(1);
 }
-console.log(`OK: 수동 매핑 8개 케이스 + 모달 DOM(id ${modalIds.length}개) 통과`);
+console.log(`OK: 수동 매핑 8개 케이스 + 모달 DOM(id ${modalIds.length}개) + 공제기준금액 ${deductionBaseGuards.length}곳 통과`);

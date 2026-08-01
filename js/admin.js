@@ -3919,6 +3919,8 @@
       name: record.name || '',
       orderCount: Number(record.orderCount ?? record.callCount ?? 0),
       hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+      // 「재반영」이 이 기록으로 정산을 다시 쓰기 때문에 공제기준금액도 보관해야 한다.
+      deductionBase: Math.abs(Number(record.deductionBase || 0)),
       deliveryAmount: settlementAmountValue(record),
       settlementAmount: settlementAmountValue(record),
       reason: record.reason || ''
@@ -5035,12 +5037,22 @@
         const hit = unmatchedRecords.find(row => settlementMatchRowKey(row, p) === targetKey);
         if (!hit) return;
         const nextUnmatched = unmatchedRecords.filter(row => row !== hit);
-        // matchedRecords 에는 넣지 않는다. 업로드 기록은 공제기준금액(쿠팡 AC열)을 저장하지 않아서,
-        // 나중에 「재반영」이 돌면 이 행의 공제가 0으로 덮여 실지급액이 부풀 수 있다.
-        // 정산 반영 자체는 retryDailyMatching 이 공제기준금액까지 이미 저장했다.
+        // 공제기준금액은 미매칭 저장분(matchPayload)이 가장 정확하다.
+        // 이 수정 전에 만들어진 업로드 기록에는 값이 없어서 0 으로 읽힌다.
+        const resolvedRow = {
+          ...hit,
+          deductionBase: Math.abs(Number(
+            record.matchPayload?.deductionBase ?? record.deductionBase ?? hit.deductionBase ?? 0
+          )),
+          driverId: driver.id,
+          driverName: driver.name
+        };
+        const nextMatched = (Array.isArray(log.matchedRecords) ? log.matchedRecords : [])
+          .concat([resolvedRow]);
         BremStorage.settlementUploadLogs.update(log.id, {
+          matchedRecords: nextMatched,
           unmatchedRecords: nextUnmatched,
-          matchedCount: Number(log.matchedCount || 0) + 1,
+          matchedCount: nextMatched.length,
           unmatchedCount: nextUnmatched.length
         });
       });
@@ -6048,6 +6060,9 @@
               riderId: record.riderId || '',
               orderCount: record.orderCount,
               hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+              // 공제기준금액(쿠팡 AC열)을 빼면 0으로 저장되어 원천세가 정산금액 기준으로 계산된다.
+              // → 실지급액이 부풀고 초과출금으로 이어진다. 반드시 같이 넘긴다.
+              deductionBase: Math.abs(Number(record.deductionBase || 0)),
               deliveryAmount: settlementAmountValue(record),
               settlementAmount: settlementAmountValue(record)
             }))

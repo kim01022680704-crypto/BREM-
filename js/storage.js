@@ -10019,6 +10019,8 @@ const BremStorage = (function () {
       name: String(record.name || ''),
       orderCount: Number(record.orderCount ?? record.callCount ?? 0),
       hourlyInsurance: Math.abs(Number(record.hourlyInsurance || 0)),
+      // 공제기준금액(쿠팡 AC열)이 빠지면 「재반영」때 0으로 덮여 원천세가 어긋난다.
+      deductionBase: Math.abs(Number(record.deductionBase || 0)),
       deliveryAmount: Number(record.deliveryAmount ?? record.settlementAmount ?? 0),
       settlementAmount: Number(record.settlementAmount ?? record.deliveryAmount ?? 0),
       reason: String(record.reason || '')
