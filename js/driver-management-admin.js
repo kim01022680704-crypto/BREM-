@@ -16,6 +16,7 @@ const BremDriverManagementAdmin = (function () {
     regionExposure: { baemin: {}, coupang: {} },
     regionRanking: null,
     regionRankingKey: '',
+    regionAdd: { open: false, highlight: -1, candidates: [] },
     bulkRows: []
   };
 
@@ -878,7 +879,6 @@ const BremDriverManagementAdmin = (function () {
     const region = selectedRegion();
     const title = $('#driverRegionDetailTitle');
     const rows = $('#driverRegionRows');
-    const select = $('#driverRegionAddSelect');
     const totalsEl = $('#driverRegionWeekTotals');
     const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
     const platformLabel = platform === 'coupang' ? '쿠팡' : '배민';
@@ -891,7 +891,8 @@ const BremDriverManagementAdmin = (function () {
     if (!rows) return;
     if (!region) {
       rows.innerHTML = '<tr><td colspan="4" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
-      if (select) select.innerHTML = '<option value="">지역 선택 후 추가</option>';
+      state.regionAdd.candidates = [];
+      resetRegionAddCombo();
       if (totalsEl) totalsEl.textContent = '';
       clearRegionRankingUi();
       return;
@@ -933,21 +934,170 @@ const BremDriverManagementAdmin = (function () {
         : '';
     }
 
-    if (select) {
-      const assigned = new Set(inRegion.map(d => d.id));
-      const candidates = (window.BremStorage?.drivers?.getAll?.() || [])
-        .filter(driver => !assigned.has(driver.id))
-        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-      select.innerHTML = '<option value="">기사 선택</option>'
-        + candidates.map(driver => {
-          const idLabel = state.regionPlatform === 'baemin'
-            ? (driver.baeminId || makeDriverLoginId(driver))
-            : makeDriverLoginId(driver);
-          return `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.name)} · ${escapeHtml(idLabel)}</option>`;
-        }).join('');
-    }
+    refreshRegionAddCandidates(inRegion);
 
     void loadRegionRanking();
+  }
+
+  // ===== 기사 추가 — 선택칸에 바로 입력해 검색하는 콤보박스 =====
+  // 별도 검색칸을 만들지 않고, 「기사 선택」 칸에 이름·ID·연락처를 입력하면 후보가 좁혀진다.
+  function regionAddIdLabel(driver) {
+    return state.regionPlatform === 'baemin'
+      ? (driver.baeminId || makeDriverLoginId(driver))
+      : makeDriverLoginId(driver);
+  }
+
+  function regionAddSearchKey(driver) {
+    return [
+      driver.name,
+      driver.baeminId,
+      driver.coupangId,
+      makeDriverLoginId(driver),
+      String(driver.phone || '').replace(/[^0-9]/g, '')
+    ].map(value => String(value || '').replace(/\s+/g, '').toLowerCase()).join('|');
+  }
+
+  function refreshRegionAddCandidates(inRegion = []) {
+    const assigned = new Set(inRegion.map(driver => driver.id));
+    state.regionAdd.candidates = (window.BremStorage?.drivers?.getAll?.() || [])
+      .filter(driver => !assigned.has(driver.id))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+    resetRegionAddCombo();
+  }
+
+  function resetRegionAddCombo() {
+    const input = $('#driverRegionAddInput');
+    const hidden = $('#driverRegionAddSelect');
+    const hasRegion = Boolean(selectedRegion());
+    if (hidden) hidden.value = '';
+    if (input) {
+      input.value = '';
+      input.classList.remove('is-picked');
+      input.disabled = !hasRegion;
+      input.placeholder = hasRegion ? '기사 선택 · 이름·ID·연락처 입력' : '지역 선택 후 추가';
+    }
+    closeRegionAddList();
+  }
+
+  function filterRegionAddCandidates(query) {
+    const key = String(query || '').replace(/\s+/g, '').toLowerCase();
+    const list = state.regionAdd.candidates;
+    if (!key) return list.slice(0, 50);
+    return list.filter(driver => regionAddSearchKey(driver).includes(key)).slice(0, 50);
+  }
+
+  function renderRegionAddList() {
+    const listEl = $('#driverRegionAddOptions');
+    const input = $('#driverRegionAddInput');
+    if (!listEl || !input) return;
+    const rows = filterRegionAddCandidates(input.value);
+    if (!rows.length) {
+      listEl.innerHTML = state.regionAdd.candidates.length
+        ? '<li class="empty">검색 결과가 없습니다.</li>'
+        : '<li class="empty">추가할 수 있는 기사가 없습니다.</li>';
+      state.regionAdd.highlight = -1;
+      return;
+    }
+    if (state.regionAdd.highlight >= rows.length) state.regionAdd.highlight = rows.length - 1;
+    listEl.innerHTML = rows.map((driver, index) => `
+      <li role="option" class="${index === state.regionAdd.highlight ? 'is-active' : ''}"
+        data-region-add-option="${escapeHtml(driver.id)}"
+        aria-selected="${index === state.regionAdd.highlight ? 'true' : 'false'}">
+        ${escapeHtml(driver.name || '-')} <span class="muted">· ${escapeHtml(regionAddIdLabel(driver))}</span>
+      </li>
+    `).join('');
+  }
+
+  function openRegionAddList() {
+    if (!selectedRegion()) return;
+    const listEl = $('#driverRegionAddOptions');
+    const input = $('#driverRegionAddInput');
+    state.regionAdd.open = true;
+    renderRegionAddList();
+    if (listEl) listEl.hidden = false;
+    if (input) input.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeRegionAddList() {
+    const listEl = $('#driverRegionAddOptions');
+    const input = $('#driverRegionAddInput');
+    state.regionAdd.open = false;
+    state.regionAdd.highlight = -1;
+    if (listEl) listEl.hidden = true;
+    if (input) input.setAttribute('aria-expanded', 'false');
+  }
+
+  function pickRegionAddDriver(driverId) {
+    const driver = state.regionAdd.candidates.find(item => item.id === driverId);
+    if (!driver) return;
+    const input = $('#driverRegionAddInput');
+    const hidden = $('#driverRegionAddSelect');
+    if (hidden) hidden.value = driver.id;
+    if (input) {
+      input.value = `${driver.name} · ${regionAddIdLabel(driver)}`;
+      input.classList.add('is-picked');
+    }
+    closeRegionAddList();
+  }
+
+  function moveRegionAddHighlight(step) {
+    const rows = filterRegionAddCandidates($('#driverRegionAddInput')?.value);
+    if (!rows.length) return;
+    const next = state.regionAdd.highlight + step;
+    state.regionAdd.highlight = next < 0 ? rows.length - 1 : (next >= rows.length ? 0 : next);
+    renderRegionAddList();
+    $('#driverRegionAddOptions')?.querySelector('li.is-active')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function bindRegionAddCombo() {
+    const input = $('#driverRegionAddInput');
+    const listEl = $('#driverRegionAddOptions');
+    if (!input || !listEl) return;
+
+    input.addEventListener('input', () => {
+      // 직접 입력하면 이전 선택은 무효 — 목록에서 다시 골라야 추가된다.
+      const hidden = $('#driverRegionAddSelect');
+      if (hidden) hidden.value = '';
+      input.classList.remove('is-picked');
+      state.regionAdd.highlight = -1;
+      openRegionAddList();
+    });
+    input.addEventListener('focus', () => openRegionAddList());
+    input.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!state.regionAdd.open) openRegionAddList();
+        moveRegionAddHighlight(event.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (event.key === 'Enter') {
+        const rows = filterRegionAddCandidates(input.value);
+        const target = rows[state.regionAdd.highlight] || (rows.length === 1 ? rows[0] : null);
+        if (target) {
+          event.preventDefault();
+          pickRegionAddDriver(target.id);
+        }
+        return;
+      }
+      if (event.key === 'Escape' && state.regionAdd.open) {
+        event.preventDefault();
+        closeRegionAddList();
+      }
+    });
+
+    // mousedown 으로 처리해야 input blur 보다 먼저 선택된다.
+    listEl.addEventListener('mousedown', event => {
+      const option = event.target.closest('[data-region-add-option]');
+      if (!option) return;
+      event.preventDefault();
+      pickRegionAddDriver(option.dataset.regionAddOption);
+    });
+
+    document.addEventListener('click', event => {
+      if (!state.regionAdd.open) return;
+      if (event.target.closest('.driver-region-combo')) return;
+      closeRegionAddList();
+    });
   }
 
   async function assignDriverToRegion(driverId, region = selectedRegion()) {
@@ -1291,10 +1441,13 @@ const BremDriverManagementAdmin = (function () {
     });
 
     $('#driverRegionReloadBtn')?.addEventListener('click', () => { void refreshRegions(); });
+    bindRegionAddCombo();
     $('#driverRegionAddBtn')?.addEventListener('click', () => {
       const id = $('#driverRegionAddSelect')?.value;
       if (!id) {
-        showToast('기사를 선택하세요.');
+        const typed = String($('#driverRegionAddInput')?.value || '').trim();
+        showToast(typed ? '검색 목록에서 기사를 선택하세요.' : '기사를 선택하세요.');
+        openRegionAddList();
         return;
       }
       void assignDriverToRegion(id).then(() => {

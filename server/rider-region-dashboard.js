@@ -215,21 +215,56 @@ async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options 
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
+/**
+ * 배달현황(delivery_status) 최신 스냅샷을 지역(DP) 기준으로 읽는다.
+ * 소유권 판정은 dedupe_key 접두사만 쓴다 — partner_id 컬럼은 수집 저장 payload 에서
+ * 빠지기 때문에(baemin-collect-pipeline saveCollectItems) 항상 비어 있어 0건이 된다.
+ */
+async function loadBaeminDeliverySnapshot(supabase, partnerId, today) {
+  const base = () => supabase
+    .from('baemin_biz_collect_items')
+    .select('dedupe_key,parsed_json,collect_date,rider_user_id,rider_name')
+    .eq('source_menu', 'delivery_status')
+    .like('dedupe_key', `${partnerId}:%`)
+    .limit(3000);
+
+  let { data, error } = await base().eq('collect_date', today);
+  if (error) return { error };
+  if (!(data || []).length) {
+    // 배달현황은 DP당 최신 스냅샷만 남는다. 자정 직후에는 collect_date 가 전날일 수 있다.
+    ({ data, error } = await base());
+    if (error) return { error };
+  }
+
+  const rows = data || [];
+  const snapshotDate = rows.reduce((latest, row) => {
+    const day = String(row.collect_date || '').slice(0, 10);
+    return day > latest ? day : latest;
+  }, '');
+  return {
+    snapshotDate,
+    rows: snapshotDate
+      ? rows.filter(row => String(row.collect_date || '').slice(0, 10) === snapshotDate)
+      : rows
+  };
+}
+
 async function buildBaeminLive(supabase, region, today, options = {}) {
   const mask = options.maskNames !== false;
   const partnerId = String(region.partnerId || region.key || '').trim().toUpperCase();
-  const [collectResult, regionRiders] = await Promise.all([
-    supabase
-      .from('baemin_biz_collect_items')
-      .select('dedupe_key,parsed_json,partner_id,rider_user_id,rider_name')
-      .eq('collect_date', today)
-      .eq('source_menu', 'delivery_status')
-      .eq('partner_id', partnerId)
-      .limit(3000),
+  if (!/^DP\d{6,}$/.test(partnerId)) {
+    return {
+      metrics: { ...emptyMetrics(), sourceNote: '지역에 배민 협력사(DP) 코드가 없어 실시간 집계를 못 합니다' },
+      realtimeRanking: []
+    };
+  }
+
+  const [snapshot, regionRiders] = await Promise.all([
+    loadBaeminDeliverySnapshot(supabase, partnerId, today),
     loadRidersForRegion(supabase, region)
   ]);
 
-  const { data, error } = collectResult;
+  const error = snapshot.error;
   if (error) {
     if (/does not exist|schema cache/i.test(error.message || '')) {
       return { metrics: emptyMetrics(), realtimeRanking: [] };
@@ -238,7 +273,7 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
   }
 
   const riderIndex = indexRegionRiders(regionRiders);
-  const rows = data || [];
+  const rows = snapshot.rows || [];
   let driving = 0;
   // 지역 등록 기사만 순위 — 같은 기사 중복 행은 최대 완료콜 유지
   const rankingByDriver = new Map();
@@ -269,8 +304,9 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     .map((row, index) => ({ ...row, rank: index + 1 }));
 
   // 할당 = 현재 시간대 목표(요일할당 × 지역 세트수), 남은할당 = max(0, 할당 - 운행중)
+  const slotKey = currentBaeminSlotKey();
   let assigned = 0;
-  let slotKey = currentBaeminSlotKey();
+  let quotaNote = '';
   try {
     const [setCountMap, matrix] = await Promise.all([
       readPartnerSetCountMap(),
@@ -279,12 +315,20 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     const setCount = normalizeSetCount(setCountMap?.[partnerId]?.setCount) || 1;
     const targets = computeSlotTargets(setCount, today, matrix);
     assigned = Math.max(0, Math.round(Number(targets[slotKey] || 0)));
-  } catch (_) {
-    assigned = 0;
+  } catch (settingsError) {
+    // 세트수·요일할당 설정을 못 읽어도 기본 할당표로는 보여준다.
+    // 전부 0 으로 두면 크롤링이 안 된 것과 구분이 안 된다.
+    console.warn('[BREM][region-ranking] 할당 설정 읽기 실패:', settingsError?.message || settingsError);
+    assigned = Math.max(0, Math.round(Number(computeSlotTargets(1, today)[slotKey] || 0)));
+    quotaNote = ' · 할당은 기본표(세트수·요일할당 설정 읽기 실패)';
   }
 
   const remaining = Math.max(0, assigned - driving);
   const slotLabel = SLOT_LABELS[slotKey] || slotKey;
+  const snapshotDate = snapshot.snapshotDate || '';
+  const snapshotNote = !rows.length
+    ? ' · 오늘 배달현황 수집분이 없습니다'
+    : (snapshotDate && snapshotDate !== today ? ` · 배달현황 스냅샷 ${snapshotDate}` : '');
 
   return {
     metrics: {
@@ -293,7 +337,8 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
       remaining,
       slotKey,
       slotLabel,
-      sourceNote: `배민 ${slotLabel} 할당 · 운행현황 수집 · 실시간순위=지역등록 ${regionRiders.length}명 중`
+      snapshotDate,
+      sourceNote: `배민 ${slotLabel} 할당 · 운행현황 수집 · 실시간순위=지역등록 ${regionRiders.length}명 중${snapshotNote}${quotaNote}`
     },
     realtimeRanking: top
   };
