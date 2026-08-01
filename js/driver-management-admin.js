@@ -20,13 +20,7 @@ const BremDriverManagementAdmin = (function () {
     bulkRows: []
   };
 
-  function weekStartKey(dateValue) {
-    const picker = window.BremDatePicker;
-    if (picker?.weekStartKey) return picker.weekStartKey(dateValue);
-    return String(dateValue || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  }
-
-  function localDateKey(date) {
+  function localDateKey(date = new Date()) {
     return [
       date.getFullYear(),
       String(date.getMonth() + 1).padStart(2, '0'),
@@ -34,9 +28,25 @@ const BremDriverManagementAdmin = (function () {
     ].join('-');
   }
 
+  // 정산주는 무조건 수~화. 오늘(토·일 등)이 들어오면 그 주의 수요일로 당긴다.
+  // BremDatePicker 미로딩·UTC 날짜(toISOString)로 수요일이 아닌 값이 남는 걸 막는다.
+  function weekStartKey(dateValue) {
+    const picker = window.BremDatePicker;
+    if (picker?.weekStartKey) {
+      const picked = String(picker.weekStartKey(dateValue || picker.today?.() || localDateKey()) || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(picked)) return picked;
+    }
+    const seed = String(dateValue || localDateKey()).slice(0, 10);
+    const date = new Date(`${/^\d{4}-\d{2}-\d{2}$/.test(seed) ? seed : localDateKey()}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return localDateKey();
+    const diff = (date.getDay() - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return localDateKey(date);
+  }
+
   function weekEndKey(weekStart) {
     const picker = window.BremDatePicker;
-    if (picker?.weekEndKey) return picker.weekEndKey(weekStart);
+    if (picker?.weekEndKey) return picker.weekEndKey(weekStartKey(weekStart));
     const date = new Date(`${weekStartKey(weekStart)}T00:00:00`);
     date.setDate(date.getDate() + 6);
     return localDateKey(date);
@@ -44,7 +54,7 @@ const BremDriverManagementAdmin = (function () {
 
   function formatWeekRange(weekStart) {
     const picker = window.BremDatePicker;
-    if (picker?.formatWednesdayWeekRange) return picker.formatWednesdayWeekRange(weekStart);
+    if (picker?.formatWednesdayWeekRange) return picker.formatWednesdayWeekRange(weekStartKey(weekStart));
     return `${weekStartKey(weekStart)} ~ ${weekEndKey(weekStart)}`;
   }
 
@@ -55,12 +65,13 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function ensureWeek() {
-    if (!state.weekStart) state.weekStart = weekStartKey();
+    // 이미 값이 있어도 수요일이 아니면 그 주의 수요일로 보정한다.
+    state.weekStart = weekStartKey(state.weekStart || localDateKey());
     return state.weekStart;
   }
 
   function setWeek(value) {
-    const next = weekStartKey(value || weekStartKey());
+    const next = weekStartKey(value || localDateKey());
     if (next === state.weekStart) {
       renderWeekControls();
       return;
@@ -1475,7 +1486,9 @@ const BremDriverManagementAdmin = (function () {
   async function refresh() {
     bindEvents();
     loadOrg();
+    // 진입 즉시 이번 정산주(수요일)로 맞춘다. 안 맞으면 주간콜수가 빈 것처럼 보인다.
     ensureWeek();
+    renderWeekControls();
     setTab(state.tab);
     if (state.tab === 'region') await refreshRegions();
   }

@@ -34,21 +34,35 @@ function formatLocalDateKey(date = new Date()) {
   ].join('-');
 }
 
+/** 서버 타임존과 무관하게 KST 달력 날짜(YYYY-MM-DD) */
+function formatKstDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
+}
+
 function normalizeSettlementWeekStart(dateValue) {
   const seed = String(dateValue || '').trim().slice(0, 10);
-  const base = seed || formatLocalDateKey(new Date());
-  const date = new Date(`${base}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return '';
-  const diff = (date.getDay() - 3 + 7) % 7;
-  date.setDate(date.getDate() - diff);
-  return formatLocalDateKey(date);
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(seed) ? seed : formatKstDateKey(new Date());
+  // 정오 KST 고정 — DST/UTC 경계에서 요일 계산이 하루 밀리지 않게
+  const date = new Date(`${base}T12:00:00+09:00`);
+  if (Number.isNaN(date.getTime())) return formatKstDateKey(new Date());
+  const dow = date.getUTCDay(); // +09:00 정오 → UTC 03:00, getUTCDay = KST 요일
+  const diff = (dow - 3 + 7) % 7;
+  date.setUTCDate(date.getUTCDate() - diff);
+  return formatKstDateKey(date);
 }
 
 function settlementWeekEnd(weekStart) {
-  const start = new Date(`${weekStart}T00:00:00`);
+  const startKey = normalizeSettlementWeekStart(weekStart);
+  if (!startKey) return '';
+  const start = new Date(`${startKey}T12:00:00+09:00`);
   if (Number.isNaN(start.getTime())) return '';
-  start.setDate(start.getDate() + 6);
-  return formatLocalDateKey(start);
+  start.setUTCDate(start.getUTCDate() + 6);
+  return formatKstDateKey(start);
 }
 
 function normalizePlatform(value) {
@@ -452,7 +466,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   }
 
   const platform = normalizePlatform(query.platform || 'baemin');
-  const today = formatLocalDateKey(new Date());
+  const today = formatKstDateKey(new Date());
   const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
   const weekEnd = settlementWeekEnd(weekStart);
 
@@ -544,7 +558,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   }
 
   const platform = normalizePlatform(query.platform || 'baemin');
-  const today = formatLocalDateKey(new Date());
+  const today = formatKstDateKey(new Date());
   const weekStart = normalizeSettlementWeekStart(query.weekStart || today);
   const weekEnd = settlementWeekEnd(weekStart);
   const region = {

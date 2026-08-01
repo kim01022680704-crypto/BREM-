@@ -52,6 +52,31 @@
     return Number(value || 0).toLocaleString('ko-KR');
   }
 
+  function localDateKey(date = new Date()) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  // 정산주 수~화 — 오늘이 토요일이어도 그 주의 수요일로 당긴다.
+  function settlementWeekStart(dateValue) {
+    if (window.BremDatePicker?.weekStartKey) {
+      return window.BremDatePicker.weekStartKey(dateValue || localDateKey());
+    }
+    const seed = String(dateValue || localDateKey()).slice(0, 10);
+    const date = new Date(`${/^\d{4}-\d{2}-\d{2}$/.test(seed) ? seed : localDateKey()}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return localDateKey();
+    date.setDate(date.getDate() - ((date.getDay() - 3 + 7) % 7));
+    return localDateKey(date);
+  }
+
+  function ensureWeekStart() {
+    state.weekStart = settlementWeekStart(state.weekStart || localDateKey());
+    return state.weekStart;
+  }
+
   function formatWeekLabel(weekStart, weekEnd) {
     if (!weekStart || !weekEnd) return '-';
     const fmt = (key, dow) => {
@@ -183,10 +208,11 @@
     state.loading = true;
     panel.classList.add('is-loading');
     try {
+      const weekStart = ensureWeekStart();
       const result = await window.BremStorage.fetchRiderRegionDashboardFromServer({
         platform: state.platform,
         regionKey: state.regionKey,
-        weekStart: state.weekStart
+        weekStart
       });
       if (seq !== state.requestSeq) return;
       if (!result?.ok) {
@@ -221,6 +247,7 @@
     state.visible = true;
     panel.hidden = false;
     openBtn.setAttribute('aria-expanded', 'true');
+    ensureWeekStart();
     syncPlatformTabs();
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     void loadDashboard();
@@ -236,7 +263,7 @@
     state.requestSeq += 1;
     state.platform = 'baemin';
     state.regionKey = '';
-    state.weekStart = '';
+    state.weekStart = settlementWeekStart(localDateKey());
     state.lastResult = null;
     state.loading = false;
     cache.clear();
