@@ -355,12 +355,26 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
 
   const riderIndex = indexRegionRiders(regionRiders);
   const rows = snapshot.rows || [];
+  const slotKey = currentBaeminSlotKey();
+  const slotPeakField = {
+    morning: ['morningCount', 'completeMorning'],
+    afternoon: ['afternoonCount', 'completeAfternoon'],
+    evening: ['eveningCount', 'completeEvening'],
+    midnight: ['midnightCount', 'completeMidnight']
+  }[slotKey] || ['eveningCount', 'completeEvening'];
+
   let driving = 0;
+  let slotComplete = 0;
   // 지역 등록 기사만 순위 — 같은 기사 중복 행은 최대 완료콜 유지
   const rankingByDriver = new Map();
   rows.forEach(row => {
     const parsed = row.parsed_json || {};
     if (isDrivingStatus(parsed.statusDesc || parsed.status_desc || '')) driving += 1;
+    // 콜달성 대시보드와 동일: DP 스냅샷 전체의 시간대 완료콜 합
+    slotComplete += Math.max(
+      0,
+      Math.round(Number(parsed[slotPeakField[0]] ?? parsed[slotPeakField[1]] ?? 0))
+    );
     const complete = Math.max(0, Math.round(Number(parsed.totalComplete || parsed.total_complete || 0)));
     if (complete <= 0) return;
     const matched = matchRegionRider(riderIndex, {
@@ -384,27 +398,26 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     .slice(0, 10)
     .map((row, index) => ({ ...row, rank: index + 1 }));
 
-  // 할당 = 현재 시간대 목표(요일할당 × 지역 세트수), 남은할당 = max(0, 할당 - 운행중)
-  const slotKey = currentBaeminSlotKey();
+  // 할당/남은할당 = 콜 목표 기준 (배민현황·콜달성 대시보드와 동일).
+  // 예전처럼 할당(콜) - 운행중(명) 하면 단위가 섞여 중구B가 36-7=29 로 어긋났다.
   let assigned = 0;
+  let setCount = 1;
   let quotaNote = '';
   try {
     const [setCountMap, matrix] = await Promise.all([
       readPartnerSetCountMap(),
       readWeekdayQuotaMatrix()
     ]);
-    const setCount = normalizeSetCount(setCountMap?.[partnerId]?.setCount) || 1;
+    setCount = normalizeSetCount(setCountMap?.[partnerId]?.setCount) || 1;
     const targets = computeSlotTargets(setCount, today, matrix);
     assigned = Math.max(0, Math.round(Number(targets[slotKey] || 0)));
   } catch (settingsError) {
-    // 세트수·요일할당 설정을 못 읽어도 기본 할당표로는 보여준다.
-    // 전부 0 으로 두면 크롤링이 안 된 것과 구분이 안 된다.
     console.warn('[BREM][region-ranking] 할당 설정 읽기 실패:', settingsError?.message || settingsError);
     assigned = Math.max(0, Math.round(Number(computeSlotTargets(1, today)[slotKey] || 0)));
     quotaNote = ' · 할당은 기본표(세트수·요일할당 설정 읽기 실패)';
   }
 
-  const remaining = Math.max(0, assigned - driving);
+  const remaining = Math.max(0, assigned - slotComplete);
   const slotLabel = SLOT_LABELS[slotKey] || slotKey;
   const snapshotDate = snapshot.snapshotDate || '';
   const snapshotNote = !rows.length
@@ -414,12 +427,15 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
   return {
     metrics: {
       assigned,
+      slotComplete,
       operating: driving,
       remaining,
+      progressLabel: `${slotComplete}/${assigned}`,
+      setCount,
       slotKey,
       slotLabel,
       snapshotDate,
-      sourceNote: `배민 ${slotLabel} 할당 · 운행현황 수집 · 실시간순위=지역등록 ${regionRiders.length}명 중${snapshotNote}${quotaNote}`
+      sourceNote: `배민 ${slotLabel} ${slotComplete}/${assigned} · 운행중 ${driving}명 · ${setCount}세트 · 실시간순위=지역등록 ${regionRiders.length}명 중${snapshotNote}${quotaNote}`
     },
     realtimeRanking: top
   };

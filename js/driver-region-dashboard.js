@@ -209,7 +209,12 @@
     }
 
     const metrics = result?.metrics || {};
-    if (assignedEl) assignedEl.textContent = formatNumber(metrics.assigned);
+    const assignedLabelEl = document.getElementById('driverRegionDashAssignedLabel');
+    const hasProgress = typeof metrics.progressLabel === 'string';
+    if (assignedLabelEl) assignedLabelEl.textContent = hasProgress ? '완료/할당' : '할당';
+    if (assignedEl) {
+      assignedEl.textContent = hasProgress ? metrics.progressLabel : formatNumber(metrics.assigned);
+    }
     if (operatingEl) operatingEl.textContent = formatNumber(metrics.operating);
     if (remainingEl) remainingEl.textContent = formatNumber(metrics.remaining);
 

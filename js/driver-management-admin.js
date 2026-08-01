@@ -752,13 +752,18 @@ const BremDriverManagementAdmin = (function () {
     const hasMetrics = Number(metrics.assigned || 0) > 0
       || Number(metrics.operating || 0) > 0
       || Number(metrics.remaining || 0) > 0
-      || Boolean(metrics.sourceNote);
+      || Boolean(metrics.sourceNote)
+      || typeof metrics.progressLabel === 'string';
     if (metricsEl) {
       metricsEl.hidden = !hasMetrics;
       const a = $('#driverRegionMetricAssigned');
       const o = $('#driverRegionMetricOperating');
       const r = $('#driverRegionMetricRemaining');
-      if (a) a.textContent = formatNumber(metrics.assigned);
+      // 배민: 콜달성과 동일하게 완료/할당. 쿠팡 등은 assigned 숫자만.
+      const assignedLabel = $('#driverRegionMetricAssignedLabel');
+      const hasProgress = typeof metrics.progressLabel === 'string';
+      if (assignedLabel) assignedLabel.textContent = hasProgress ? '완료/할당' : '할당';
+      if (a) a.textContent = hasProgress ? metrics.progressLabel : formatNumber(metrics.assigned);
       if (o) o.textContent = formatNumber(metrics.operating);
       if (r) r.textContent = formatNumber(metrics.remaining);
     }
