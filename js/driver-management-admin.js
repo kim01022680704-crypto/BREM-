@@ -1706,8 +1706,29 @@ const BremDriverManagementAdmin = (function () {
         const region = selectedRegion();
         if (region) {
           try {
+            const existingBaemin = String(duplicate.driver.baeminId || '').trim();
+            const matchKey = window.BremDriverUtils?.baeminIdMatchKey;
+            const sameBaemin = existingBaemin && baeminId && matchKey
+              ? matchKey(existingBaemin) === matchKey(baeminId)
+              : (existingBaemin && baeminId && existingBaemin === baeminId);
+            const patch = {};
+            // 기존 기사에 배민ID가 비어 있으면 크롤/폼 값으로 채운다. (공성호 케이스)
+            if (baeminId && !existingBaemin) {
+              patch.baeminId = baeminId;
+              patch.platformBaemin = true;
+            } else if (baeminId && existingBaemin && !sameBaemin) {
+              showToast(`기존 «${duplicate.driver.name}»에 다른 배민ID(${existingBaemin})가 있습니다. 수동으로 확인하세요.`);
+              return;
+            }
+            if (platformBaemin && !duplicate.driver.platformBaemin) {
+              patch.platformBaemin = true;
+            }
+            if (Object.keys(patch).length) {
+              await window.BremStorage.drivers.update(duplicate.driver.id, patch);
+            }
             await assignDriverToRegion(duplicate.driver.id, region);
-            showToast(`${duplicate.reason}: 기존 «${duplicate.driver.name}»을 이 지역에 반영했습니다.`);
+            const filled = patch.baeminId ? ' · 배민ID 반영' : '';
+            showToast(`기존 «${duplicate.driver.name}»을 이 지역에 반영했습니다.${filled}`);
             closeBulkCreateModal();
             void openCrawlMatchModal();
             renderRegionCatalog();
@@ -1721,7 +1742,7 @@ const BremDriverManagementAdmin = (function () {
       showToast(`${duplicate.reason}: 이미 «${duplicate.driver.name}» 기사가 있습니다. ID를 맞춘 뒤 다시매칭하세요.`);
       if (row) {
         row.idValue = platform === 'baemin'
-          ? (duplicate.driver.baeminId || row.idValue)
+          ? (duplicate.driver.baeminId || baeminId || row.idValue)
           : (makeDriverLoginId(duplicate.driver) || row.idValue);
         recheckBulkRow(row, platform);
         renderBulkPreview();
