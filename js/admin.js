@@ -202,7 +202,7 @@
     { id: 'mission-results', label: '장기근속이벤트 결과' },
     { id: 'missions', label: '장기근속이벤트' },
     { id: 'mission-management', label: '미션 관리' },
-    { id: 'lease-management', label: '리스 관리' },
+    { id: 'lease-management', label: '리스 및 대여관리' },
     { id: 'calls', label: '콜수 입력' },
     { id: 'baemin-biz-status', label: '배민 BIZ 현황' },
     { id: 'baemin-status', label: '배민현황' },
