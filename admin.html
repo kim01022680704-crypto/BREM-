@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260801i">
+  <link rel="stylesheet" href="css/admin.css?v=20260802b">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5249,7 +5249,7 @@
             <div class="card-header">
               <h2>지역 일괄등록</h2>
             </div>
-            <p class="form-help">쿠팡: A열 쿠팡ID · B열 지역(4글자). 배민: A열 배민ID · B열 DP코드(등록 지역명으로 변환). 매칭 실패 행은 아래에서 수정 후 다시 적용할 수 있습니다.</p>
+            <p class="form-help">쿠팡: A열 쿠팡ID · B열 지역(4글자). 배민: A열 배민ID · B열 DP코드(등록 지역명으로 변환). 매칭 실패 행은 수정·다시매칭하거나 <strong>간이등록</strong>으로 기사를 바로 추가할 수 있습니다.</p>
             <div class="promotion-form-grid">
               <label>
                 플랫폼
@@ -6986,6 +6986,86 @@
     </div>
   </div>
 
+  <div class="settlement-match-modal" id="driverRegionBulkCreateModal" hidden>
+    <div class="settlement-match-modal__backdrop" data-close-region-bulk-create></div>
+    <div class="settlement-match-modal__dialog" role="dialog" aria-labelledby="driverRegionBulkCreateTitle" aria-modal="true">
+      <div class="settlement-match-modal__head">
+        <div class="settlement-match-modal__head-top">
+          <h3 id="driverRegionBulkCreateTitle">지역 일괄등록 · 기사 간이등록</h3>
+        </div>
+        <p class="form-help">매칭 실패한 기사를 여기서 바로 등록합니다. 등록되면 기사등록프로그램에도 동일하게 들어갑니다.</p>
+        <dl class="settlement-match-record" id="driverRegionBulkCreateRecord"></dl>
+      </div>
+
+      <form class="settlement-match-form" id="driverRegionBulkCreateForm">
+        <div class="settlement-match-grid">
+          <label>
+            이름 <em>*</em>
+            <input type="text" id="driverRegionBulkCreateName" placeholder="기사 이름" required>
+          </label>
+          <label>
+            연락처 <em>*</em>
+            <input type="tel" id="driverRegionBulkCreatePhone" placeholder="01012345678" required>
+          </label>
+          <label>
+            배민 라이더 ID
+            <input type="text" id="driverRegionBulkCreateBaeminId" placeholder="배민 User ID">
+          </label>
+          <label>
+            가입일 <em>*</em>
+            <input type="date" id="driverRegionBulkCreateJoinDate" required>
+          </label>
+          <label>
+            상태
+            <select id="driverRegionBulkCreateStatus">
+              <option value="근무중">근무중</option>
+              <option value="휴무">휴무</option>
+              <option value="퇴사">퇴사</option>
+            </select>
+          </label>
+          <label>
+            은행
+            <input type="text" id="driverRegionBulkCreateBankName" placeholder="예: 국민">
+          </label>
+          <label>
+            계좌번호
+            <input type="text" id="driverRegionBulkCreateAccountNumber" placeholder="- 없이 입력">
+          </label>
+          <label>
+            배민 지역
+            <select id="driverRegionBulkCreateRegionBaemin">
+              <option value="">미선택</option>
+            </select>
+          </label>
+          <label>
+            쿠팡 지역
+            <select id="driverRegionBulkCreateRegionCoupang">
+              <option value="">미선택</option>
+            </select>
+          </label>
+          <div class="settlement-match-platforms">
+            <span>플랫폼</span>
+            <label class="settlement-match-check">
+              <input type="checkbox" id="driverRegionBulkCreatePlatformCoupang"> 쿠팡
+            </label>
+            <label class="settlement-match-check">
+              <input type="checkbox" id="driverRegionBulkCreatePlatformBaemin"> 배민
+            </label>
+          </div>
+          <label class="settlement-match-memo">
+            메모
+            <textarea id="driverRegionBulkCreateMemo" rows="2" placeholder="지역 일괄등록에서 등록"></textarea>
+          </label>
+        </div>
+        <p class="form-help" id="driverRegionBulkCreateHint"></p>
+        <div class="settlement-match-actions">
+          <button type="button" class="small-btn" data-close-region-bulk-create>닫기</button>
+          <button type="submit" class="primary-btn" id="driverRegionBulkCreateBtn">등록하고 매칭</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="range-calendar month-calendar" id="adminTargetMonthCalendar" hidden>
     <div class="calendar-header">
       <button type="button" id="adminTargetMonthPrev" aria-label="이전 해">&lt;</button>
@@ -7114,7 +7194,7 @@
   <script src="js/direct-settlement-calc.js?v=20260731e"></script>
   <script src="js/settlement-result-direct.js?v=20260731h"></script>
   <script src="js/final-deposit.js?v=20260730aq"></script>
-  <script src="js/driver-management-admin.js?v=20260802a"></script>
+  <script src="js/driver-management-admin.js?v=20260802b"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

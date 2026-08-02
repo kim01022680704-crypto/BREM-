@@ -11802,6 +11802,12 @@ tr.is-week-first td {
 
 .driver-region-bulk-fail { color: #fca5a5; font-weight: 700; }
 .driver-region-bulk-ok { color: #6ee7b7; font-weight: 700; }
+.driver-region-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
 
 .driver-org-member-panel {
   margin-top: 16px;

@@ -21,7 +21,9 @@ const BremDriverManagementAdmin = (function () {
     regionRankingBusy: false,
     regionRankingPollTimer: null,
     regionAdd: { open: false, highlight: -1, candidates: [] },
-    bulkRows: []
+    bulkRows: [],
+    bulkCreateIndex: -1,
+    bulkCreateBusy: false
   };
 
   const REGION_RANKING_POLL_MS = 60 * 1000;
@@ -1270,15 +1272,23 @@ const BremDriverManagementAdmin = (function () {
     const fail = state.bulkRows.length - ok;
     if (summary) summary.innerHTML = `총 ${state.bulkRows.length}행 · 매칭성공 <strong>${ok}</strong> · 실패 <strong>${fail}</strong>`;
     if (applyBtn) applyBtn.disabled = ok === 0;
-    body.innerHTML = state.bulkRows.map((row, index) => `
-      <tr>
+    body.innerHTML = state.bulkRows.map((row, index) => {
+      const driverFail = row.status !== 'ok' && (!row.driverId || /기사/.test(row.error || ''));
+      const createBtn = driverFail
+        ? `<button type="button" class="small-btn primary-btn" data-bulk-quick-create="${index}">간이등록</button>`
+        : '';
+      return `<tr>
         <td class="${row.status === 'ok' ? 'driver-region-bulk-ok' : 'driver-region-bulk-fail'}">${row.status === 'ok' ? '성공' : '실패'}</td>
         <td><input type="text" data-bulk-id="${index}" value="${escapeHtml(row.idValue)}"></td>
         <td><input type="text" data-bulk-region="${index}" value="${escapeHtml(row.regionInput)}"></td>
         <td>${escapeHtml(row.matchLabel || '-')}</td>
         <td>${escapeHtml(row.driverName || '-')}</td>
-        <td><button type="button" class="small-btn" data-bulk-recheck="${index}">다시매칭</button></td>
-      </tr>`).join('');
+        <td class="driver-region-bulk-actions">
+          <button type="button" class="small-btn" data-bulk-recheck="${index}">다시매칭</button>
+          ${createBtn}
+        </td>
+      </tr>`;
+    }).join('');
   }
 
   function recheckBulkRow(row, platform) {
@@ -1370,6 +1380,208 @@ const BremDriverManagementAdmin = (function () {
     window.XLSX.writeFile(wb, platform === 'coupang' ? 'BREM_쿠팡지역일괄.xlsx' : 'BREM_배민지역일괄.xlsx');
   }
 
+  function bulkCreatePlatform() {
+    return $('#driverRegionBulkPlatform')?.value === 'coupang' ? 'coupang' : 'baemin';
+  }
+
+  function fillBulkCreateRegionSelects() {
+    const baeminSelect = $('#driverRegionBulkCreateRegionBaemin');
+    const coupangSelect = $('#driverRegionBulkCreateRegionCoupang');
+    if (baeminSelect) {
+      const options = state.baeminRegions
+        .map(item => String(item.label || '').trim())
+        .filter(Boolean);
+      const current = baeminSelect.value;
+      baeminSelect.innerHTML = '<option value="">미선택</option>'
+        + [...new Set(options)].map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+      if (current) baeminSelect.value = current;
+    }
+    if (coupangSelect) {
+      const options = state.coupangRegions
+        .map(item => String(item.label || item.key || '').trim())
+        .filter(Boolean);
+      const current = coupangSelect.value;
+      coupangSelect.innerHTML = '<option value="">미선택</option>'
+        + [...new Set(options)].map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+      if (current) coupangSelect.value = current;
+    }
+  }
+
+  function closeBulkCreateModal() {
+    const modal = $('#driverRegionBulkCreateModal');
+    if (modal) modal.hidden = true;
+    state.bulkCreateIndex = -1;
+    state.bulkCreateBusy = false;
+    const btn = $('#driverRegionBulkCreateBtn');
+    if (btn) btn.disabled = false;
+  }
+
+  function openBulkCreateModal(index) {
+    const row = state.bulkRows[index];
+    if (!row) return;
+    const platform = bulkCreatePlatform();
+    state.bulkCreateIndex = index;
+    fillBulkCreateRegionSelects();
+
+    const recordEl = $('#driverRegionBulkCreateRecord');
+    if (recordEl) {
+      const region = platform === 'coupang'
+        ? matchCoupangRegion(row.regionInput)
+        : matchBaeminRegion(row.regionInput);
+      recordEl.innerHTML = `
+        <div><dt>플랫폼</dt><dd>${platform === 'coupang' ? '쿠팡' : '배민'}</dd></div>
+        <div><dt>엑셀 ID</dt><dd>${escapeHtml(row.idValue || '-')}</dd></div>
+        <div><dt>지역 입력</dt><dd>${escapeHtml(row.regionInput || '-')}</dd></div>
+        <div><dt>지역 매칭</dt><dd>${escapeHtml(region ? (platform === 'baemin' ? `${region.label} (${region.partnerId})` : region.label) : '미매칭')}</dd></div>
+      `;
+    }
+
+    const nameEl = $('#driverRegionBulkCreateName');
+    const phoneEl = $('#driverRegionBulkCreatePhone');
+    const baeminEl = $('#driverRegionBulkCreateBaeminId');
+    const joinEl = $('#driverRegionBulkCreateJoinDate');
+    const statusEl = $('#driverRegionBulkCreateStatus');
+    const bankEl = $('#driverRegionBulkCreateBankName');
+    const accountEl = $('#driverRegionBulkCreateAccountNumber');
+    const regionBaeminEl = $('#driverRegionBulkCreateRegionBaemin');
+    const regionCoupangEl = $('#driverRegionBulkCreateRegionCoupang');
+    const platformCoupangEl = $('#driverRegionBulkCreatePlatformCoupang');
+    const platformBaeminEl = $('#driverRegionBulkCreatePlatformBaemin');
+    const memoEl = $('#driverRegionBulkCreateMemo');
+    const hintEl = $('#driverRegionBulkCreateHint');
+
+    if (nameEl) nameEl.value = '';
+    if (phoneEl) phoneEl.value = '';
+    if (baeminEl) baeminEl.value = platform === 'baemin' ? (row.idValue || '') : '';
+    if (joinEl) joinEl.value = localDateKey(new Date());
+    if (statusEl) statusEl.value = '근무중';
+    if (bankEl) bankEl.value = '';
+    if (accountEl) accountEl.value = '';
+    if (memoEl) memoEl.value = '지역 일괄등록에서 등록';
+    if (platformBaeminEl) platformBaeminEl.checked = platform === 'baemin';
+    if (platformCoupangEl) platformCoupangEl.checked = platform === 'coupang';
+
+    const matchedRegion = platform === 'coupang'
+      ? matchCoupangRegion(row.regionInput)
+      : matchBaeminRegion(row.regionInput);
+    if (regionBaeminEl) {
+      regionBaeminEl.value = platform === 'baemin' && matchedRegion ? matchedRegion.label : '';
+    }
+    if (regionCoupangEl) {
+      regionCoupangEl.value = platform === 'coupang' && matchedRegion ? matchedRegion.label : '';
+    }
+    if (hintEl) {
+      hintEl.textContent = platform === 'baemin'
+        ? '배민 ID는 엑셀 값을 채워 둡니다. 이름·연락처만 입력하면 기사등록프로그램에 바로 등록됩니다.'
+        : '쿠팡은 이름·연락처로 로그인 ID가 만들어집니다. 엑셀 쿠팡ID와 맞추려면 이름+전화번호 뒤4자리를 확인하세요.';
+    }
+
+    const modal = $('#driverRegionBulkCreateModal');
+    if (modal) modal.hidden = false;
+    nameEl?.focus();
+  }
+
+  async function submitBulkCreate(event) {
+    event?.preventDefault();
+    if (state.bulkCreateBusy) return;
+    const index = state.bulkCreateIndex;
+    const row = state.bulkRows[index];
+    if (!row) {
+      closeBulkCreateModal();
+      return;
+    }
+
+    const platform = bulkCreatePlatform();
+    const name = String($('#driverRegionBulkCreateName')?.value || '').trim();
+    const phone = String($('#driverRegionBulkCreatePhone')?.value || '').trim();
+    const baeminId = String($('#driverRegionBulkCreateBaeminId')?.value || '').trim();
+    const joinDate = String($('#driverRegionBulkCreateJoinDate')?.value || '').slice(0, 10);
+    const platformCoupang = Boolean($('#driverRegionBulkCreatePlatformCoupang')?.checked);
+    const platformBaemin = Boolean($('#driverRegionBulkCreatePlatformBaemin')?.checked);
+    const regionBaemin = String($('#driverRegionBulkCreateRegionBaemin')?.value || '').trim();
+    const regionCoupang = String($('#driverRegionBulkCreateRegionCoupang')?.value || '').trim();
+
+    if (!name || !phone || !joinDate) {
+      showToast('이름·연락처·가입일은 필수입니다.');
+      return;
+    }
+    if (!platformCoupang && !platformBaemin) {
+      showToast('플랫폼을 최소 1개 선택하세요.');
+      return;
+    }
+    if (platformBaemin && !baeminId) {
+      showToast('배민 기사는 배민 라이더 ID가 필요합니다.');
+      return;
+    }
+
+    const duplicate = window.BremDriverUtils?.findDuplicateDriver?.({ name, phone, baeminId });
+    if (duplicate?.driver) {
+      showToast(`${duplicate.reason}: 이미 «${duplicate.driver.name}» 기사가 있습니다. ID를 맞춘 뒤 다시매칭하세요.`);
+      row.idValue = platform === 'baemin'
+        ? (duplicate.driver.baeminId || row.idValue)
+        : (makeDriverLoginId(duplicate.driver) || row.idValue);
+      recheckBulkRow(row, platform);
+      renderBulkPreview();
+      closeBulkCreateModal();
+      return;
+    }
+
+    state.bulkCreateBusy = true;
+    const btn = $('#driverRegionBulkCreateBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const created = await window.BremStorage.drivers.create({
+        name,
+        phone,
+        baeminId,
+        platformCoupang,
+        platformBaemin,
+        regionBaemin,
+        regionCoupang,
+        bankName: String($('#driverRegionBulkCreateBankName')?.value || '').trim(),
+        accountNumber: String($('#driverRegionBulkCreateAccountNumber')?.value || '').trim(),
+        accountHolder: name,
+        joinDate,
+        status: String($('#driverRegionBulkCreateStatus')?.value || '근무중'),
+        memo: String($('#driverRegionBulkCreateMemo')?.value || '').trim()
+      });
+      if (!created?.id) throw new Error('기사 등록 결과를 확인할 수 없습니다.');
+
+      if (platform === 'baemin' && created.baeminId) {
+        row.idValue = created.baeminId;
+      } else {
+        row.idValue = makeDriverLoginId(created) || row.idValue;
+      }
+      recheckBulkRow(row, platform);
+
+      // 지역까지 매칭되면 바로 반영 (매칭 적용을 한 번 더 누를 필요 없음)
+      if (row.status === 'ok' && row.driverId) {
+        const region = platform === 'coupang'
+          ? state.coupangRegions.find(item => item.key === row.regionKey)
+          : state.baeminRegions.find(item => item.key === row.regionKey);
+        if (region) await assignDriverToRegion(created.id, region);
+      }
+
+      renderBulkPreview();
+      closeBulkCreateModal();
+      showToast(
+        row.status === 'ok'
+          ? `${created.name} 기사를 등록하고 지역까지 반영했습니다.`
+          : `${created.name} 기사를 등록했습니다. 지역 입력을 확인한 뒤 다시매칭하세요.`
+      );
+      if (row.status === 'ok') {
+        renderRegionCatalog();
+        renderRegionDetail();
+      }
+    } catch (error) {
+      console.error('[BREM] region bulk create failed:', error);
+      showToast(error.message || '기사 등록에 실패했습니다.');
+    } finally {
+      state.bulkCreateBusy = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
@@ -1446,6 +1658,24 @@ const BremDriverManagementAdmin = (function () {
         const platform = $('#driverRegionBulkPlatform')?.value === 'coupang' ? 'coupang' : 'baemin';
         recheckBulkRow(row, platform);
         renderBulkPreview();
+        return;
+      }
+
+      const createBtn = event.target.closest('[data-bulk-quick-create]');
+      if (createBtn) {
+        const index = Number(createBtn.dataset.bulkQuickCreate);
+        const row = state.bulkRows[index];
+        if (!row) return;
+        const idInput = document.querySelector(`[data-bulk-id="${index}"]`);
+        const regionInput = document.querySelector(`[data-bulk-region="${index}"]`);
+        row.idValue = idInput?.value?.trim() || row.idValue;
+        row.regionInput = regionInput?.value?.trim() || row.regionInput;
+        openBulkCreateModal(index);
+        return;
+      }
+
+      if (event.target.closest('[data-close-region-bulk-create]')) {
+        closeBulkCreateModal();
       }
     });
 
@@ -1538,6 +1768,9 @@ const BremDriverManagementAdmin = (function () {
     });
     $('#driverRegionBulkTemplateBtn')?.addEventListener('click', () => downloadBulkTemplate());
     $('#driverRegionBulkApplyBtn')?.addEventListener('click', () => { void applyBulk(); });
+    $('#driverRegionBulkCreateForm')?.addEventListener('submit', event => {
+      void submitBulkCreate(event);
+    });
     $('#driverRegionBulkPlatform')?.addEventListener('change', () => {
       state.bulkRows = [];
       renderBulkPreview();
