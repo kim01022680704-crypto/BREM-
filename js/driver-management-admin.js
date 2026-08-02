@@ -705,6 +705,17 @@ const BremDriverManagementAdmin = (function () {
     });
   }
 
+  /** 서버 메모의 「지역등록 N명」을 로컬(사이드바) 집계와 같은 숫자로 맞춘다. */
+  function alignRegionRegisteredNote(sourceNote, region) {
+    const localN = region ? driversInRegion(region).length : 0;
+    const base = String(sourceNote || '');
+    if (!base) return localN ? `지역등록 ${localN}명` : '';
+    if (/지역등록\s*\d+명/.test(base)) {
+      return base.replace(/지역등록\s*\d+명/, `지역등록 ${localN}명`);
+    }
+    return `${base} · 지역등록 ${localN}명`;
+  }
+
   function renderRegionCatalog() {
     const el = $('#driverRegionCatalog');
     if (!el) return;
@@ -803,7 +814,9 @@ const BremDriverManagementAdmin = (function () {
       if (o) o.textContent = formatNumber(metrics.operating);
       if (r) r.textContent = formatNumber(metrics.remaining);
     }
-    if (metricsNote) metricsNote.textContent = metrics.sourceNote || '';
+    if (metricsNote) {
+      metricsNote.textContent = alignRegionRegisteredNote(metrics.sourceNote || '', selectedRegion());
+    }
 
     const realtimeDisabled = payload?.realtimeRankingDisabled === true;
     const realtime = realtimeDisabled ? [] : (payload?.realtimeRanking || []);
@@ -837,7 +850,7 @@ const BremDriverManagementAdmin = (function () {
         realtimeNote.textContent = payload.realtimeRankingReason
           || '쿠팡 실시간 콜수는 0.8 가중치라 기사별 순위가 불가합니다.';
       } else {
-        const note = metrics.sourceNote || '';
+        const note = alignRegionRegisteredNote(metrics.sourceNote || '', selectedRegion());
         realtimeNote.textContent = realtime.length
           ? `오늘(${payload.today || ''}) 크롤링 · 지역 등록 기사만 · ${note}`
           : `오늘(${payload.today || ''}) · 지역 등록 기사와 매칭된 실시간 콜이 없습니다. 운행현황 수집·지역 등록을 확인하세요.`;
@@ -1203,11 +1216,14 @@ const BremDriverManagementAdmin = (function () {
         ? '쿠팡: 「라이더 노출」켜면 그 지역에 등록된 기사만 기사앱 대시보드에 보입니다. 콜수=콜수입력 · 배달료=일정산 · 실시간=크롤링.'
         : '배민: 「라이더 노출」켜면 그 지역에 등록된 기사만 기사앱 대시보드에 보입니다. 콜수=콜수입력 · 배달료=일정산 · 실시간=크롤링.';
     }
-    // 콜수/배달료 집계에 필요 — 지역 목록만 로드하면 수치가 전부 0으로 나온다.
+    // 지역 인원 수는 drivers 전체 목록 기준 — 페이지가 덜 오면 71처럼 적게 나온다.
     try {
       await window.BremStorage?.ensureSectionLoaded?.('driver-management');
+      if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
+        await window.BremStorage.awaitDriversFullyLoaded();
+      }
     } catch (error) {
-      console.warn('[driver-mgmt] calls/settlements load failed:', error);
+      console.warn('[driver-mgmt] calls/settlements/drivers load failed:', error);
     }
     await loadRegionExposure();
     if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
@@ -1820,6 +1836,15 @@ const BremDriverManagementAdmin = (function () {
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
+
+    // 기사 목록이 백그라운드로 더 채워지면 지역 인원 수를 다시 센다.
+    document.addEventListener('brem-drivers-sync-ready', () => {
+      if (state.tab !== 'region') return;
+      renderRegionCatalog();
+      if (selectedRegion()) {
+        renderRegionDetail();
+      }
+    });
 
     document.addEventListener('click', event => {
       const tabBtn = event.target.closest('[data-driver-mgmt-tab]');

@@ -217,18 +217,36 @@ function writeResponseCache(key, data) {
 async function loadRidersForRegion(supabase, region) {
   // 전체 5000건을 매번 받으면 대시보드가 12초 타임아웃 난다.
   // raw_data JSON 키로 DB에서 먼저 좁힌 뒤, 기존 매칭 규칙으로 한 번 더 거른다.
-  let query = supabase
-    .from('riders')
-    .select('id,name,baemin_id,raw_data')
-    .limit(800);
+  // 한 번에 800으로 자르면 남구처럼 인원이 많은 지역이 덜 잡혀 「190 vs 71」 같은 불일치가 난다.
+  const pageSize = 1000;
+  const all = [];
 
+  async function fetchPages(buildQuery) {
+    for (let from = 0; from < 20000; from += pageSize) {
+      const { data, error } = await buildQuery()
+        .range(from, from + pageSize - 1);
+      if (error) return { error, data: all };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data: all, error: null };
+  }
+
+  let result;
   if (region.platform === 'baemin') {
     const parts = [region.label, region.partnerId, region.key]
       .map(value => String(value || '').trim())
       .filter(Boolean)
       .filter((value, index, list) => list.indexOf(value) === index)
       .map(value => `raw_data->>regionBaemin.eq.${escapePostgrestValue(value)}`);
-    if (parts.length) query = query.or(parts.join(','));
+    if (parts.length) {
+      result = await fetchPages(() => supabase
+        .from('riders')
+        .select('id,name,baemin_id,raw_data')
+        .or(parts.join(',')));
+    } else {
+      result = { data: [], error: null };
+    }
   } else {
     const short = shortCoupangRegion(region.label || region.key);
     const parts = [region.label, region.key, region.vendorId]
@@ -237,21 +255,26 @@ async function loadRidersForRegion(supabase, region) {
       .filter((value, index, list) => list.indexOf(value) === index)
       .map(value => `raw_data->>regionCoupang.eq.${escapePostgrestValue(value)}`);
     if (short) parts.push(`raw_data->>regionCoupang.ilike.%${escapePostgrestValue(short)}%`);
-    if (parts.length) query = query.or(parts.join(','));
+    if (parts.length) {
+      result = await fetchPages(() => supabase
+        .from('riders')
+        .select('id,name,baemin_id,raw_data')
+        .or(parts.join(',')));
+    } else {
+      result = { data: [], error: null };
+    }
   }
 
-  let { data, error } = await query;
-  if (error) {
-    // JSON 필터가 안 되는 환경이면 예전처럼 제한 스캔으로 폴백
-    console.warn('[BREM][region-dashboard] riders region filter fallback:', error.message || error);
-    ({ data, error } = await supabase
+  if (result.error) {
+    console.warn('[BREM][region-dashboard] riders region filter fallback:', result.error.message || result.error);
+    all.length = 0;
+    result = await fetchPages(() => supabase
       .from('riders')
-      .select('id,name,baemin_id,raw_data')
-      .limit(5000));
-    if (error) throw error;
+      .select('id,name,baemin_id,raw_data'));
+    if (result.error) throw result.error;
   }
 
-  return (data || [])
+  return (result.data || all)
     .map(mapRiderRow)
     .filter(rider => riderMatchesRegion(rider, region));
 }
