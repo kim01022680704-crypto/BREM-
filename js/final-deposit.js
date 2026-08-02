@@ -167,12 +167,14 @@ const BremFinalDeposit = (function () {
     );
     const consumed = new Set();
     const leaseConsumed = new Set();
+    const loanConsumed = new Set();
     checkedSettlements().forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         _allocation: allocation,
         _consumed: consumed,
-        _leaseConsumed: leaseConsumed
+        _leaseConsumed: leaseConsumed,
+        _loanConsumed: loanConsumed
       }).forEach(row => {
         const key = driverKey(row);
         const existing = byDriver.get(key);
@@ -289,6 +291,8 @@ const BremFinalDeposit = (function () {
         + ` · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong>`
         + ` · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong>`
         + ` · 선정산(처리완료) <strong>${formatNumber(totals.prepaid)}</strong>`
+        + ` · 리스차감 <strong>${formatNumber(totals.leaseFee)}</strong>`
+        + ` · 대여차감 <strong>${formatNumber(totals.loanFee)}</strong>`
         + ` · <span class="final-deposit-total">최종입금 <strong>${formatNumber(totals.netPay)}</strong>원</span>`;
     }
     renderReconcile();

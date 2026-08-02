@@ -106,6 +106,7 @@ function emptyDirectBucket() {
     dailySettlementFee: 0,
     prepaid: 0,
     leaseFee: 0,
+    loanFee: 0,
     deductTotal: 0,
     netPay: 0
   };
@@ -131,7 +132,8 @@ function finalizeBucket(bucket) {
     + next.callFee
     + next.dailySettlementFee
     + next.prepaid
-    + next.leaseFee;
+    + next.leaseFee
+    + next.loanFee;
   next.netPay = next.grossPay - next.deductTotal;
   return next;
 }
@@ -170,6 +172,7 @@ function lineToDirectBucket(line) {
   bucket.dailySettlementFee = get('dailySettlementFee');
   bucket.prepaid = get('prepaid');
   bucket.leaseFee = get('leaseFee');
+  bucket.loanFee = get('loanFee');
   return finalizeBucket(bucket);
 }
 
@@ -217,6 +220,7 @@ function splitLineIntoPlatforms(line) {
     coupang.dailySettlementFee = full.dailySettlementFee;
     coupang.prepaid = full.prepaid;
     coupang.leaseFee = full.leaseFee;
+    coupang.loanFee = full.loanFee;
   }
 
   return {
@@ -257,6 +261,7 @@ function bucketToLegacyPayslip(bucket, meta = {}) {
     accidentInsurance: row.accidentInsurance,
     prepaid: row.prepaid,
     leaseFee: row.leaseFee,
+    loanFee: row.loanFee,
     deductTotal: row.deductTotal,
     netPay: row.netPay,
     settlementWeekStart: meta.settlementWeekStart || '',
@@ -283,6 +288,7 @@ function bucketHasActivity(bucket) {
     || bucket.other
     || bucket.prepaid
     || bucket.leaseFee
+    || bucket.loanFee
   );
 }
 

@@ -48,6 +48,8 @@ const BremStorage = (function () {
     directBremPromotions: 'brem_admin_direct_brem_promotions',
     directSettlementAdjustments: 'brem_admin_direct_settlement_adjustments_v1',
     directRetroAdjustments: 'brem_admin_direct_retro_adjustments_v1',
+    leaseLoans: 'brem_lease_loans_v1',
+    deductionLedger: 'brem_deduction_ledger_v1',
     manualNameMappings: 'brem_admin_manual_name_mappings',
     promotionApplyResults: 'brem_admin_promotion_apply_results',
     missionDefaults: 'brem_admin_mission_defaults',
@@ -1475,9 +1477,9 @@ const BremStorage = (function () {
     // (테이블 키가 아니므로 아래 목록에 넣어도 로딩·캐시 판정에는 쓰이지 않는다.)
     'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
-    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
-    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster],
+    'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart, KEYS.calls, KEYS.settlements],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
@@ -1499,7 +1501,9 @@ const BremStorage = (function () {
       KEYS.leaseMaintenance,
       KEYS.leaseContracts,
       KEYS.leaseProfitLogs,
-      KEYS.leaseArrears
+      KEYS.leaseArrears,
+      KEYS.leaseLoans,
+      KEYS.deductionLedger
     ],
     'revenue-management': [],
     'admin-account': [],
@@ -10763,6 +10767,7 @@ const BremStorage = (function () {
   // 정산서 id 에 플랫폼·지역·기간이 모두 들어 있어 쿠팡/배민 분리가 자동으로 된다.
   // 기존 주차 단위 데이터(directPayAdjustments)는 건드리지 않고 별도 키에 저장한다.
   // 소급분: 「마이너스 일괄 맞추기」로 기타지급에 얹은 그로스업 금액을 주별로 기록한다.
+  // unpaidBalance = 맞추기 전 |총지급액| (차감관리 이관용). amount = 그로스업액(참고).
   const directRetroAdjustments = {
     getAll() {
       const raw = storageAdapter.read(KEYS.directRetroAdjustments, {});
@@ -10786,6 +10791,10 @@ const BremStorage = (function () {
         if (!add) return;
         const key = `${id}|${e.platform || ''}`;
         const prev = wkMap[key];
+        const unpaidBalance = Math.max(
+          0,
+          Math.round(Number(e.unpaidBalance != null ? e.unpaidBalance : (prev?.unpaidBalance || 0)))
+        );
         wkMap[key] = {
           driverId: id,
           name: String(e.name || prev?.name || ''),
@@ -10793,12 +10802,44 @@ const BremStorage = (function () {
           platform: e.platform || prev?.platform || '',
           settlementId: String(e.settlementId || prev?.settlementId || ''),
           amount: (prev ? Number(prev.amount || 0) : 0) + add,
+          grossUpAmount: (prev ? Number(prev.grossUpAmount || prev.amount || 0) : 0) + add,
+          unpaidBalance: unpaidBalance > 0
+            ? unpaidBalance
+            : Math.max(0, Math.round(Number(prev?.unpaidBalance || 0))),
+          status: prev?.status === 'sent_to_deduction'
+            ? prev.status
+            : String(e.status || prev?.status || 'logged'),
+          reason: String(e.reason != null ? e.reason : (prev?.reason || '')),
+          ledgerId: String(
+            prev?.status === 'sent_to_deduction'
+              ? (prev.ledgerId || '')
+              : (e.ledgerId != null ? e.ledgerId : (prev?.ledgerId || ''))
+          ),
           updatedAt: now
         };
       });
       all[wk] = wkMap;
       storageAdapter.write(KEYS.directRetroAdjustments, all);
       return wkMap;
+    },
+    updateEntry(weekStart, entryKey, patch = {}) {
+      const wk = String(weekStart || '').slice(0, 10);
+      const key = String(entryKey || '').trim();
+      if (!wk || !key) return null;
+      const all = this.getAll();
+      const wkMap = (all[wk] && typeof all[wk] === 'object' && !Array.isArray(all[wk])) ? { ...all[wk] } : {};
+      const prev = wkMap[key];
+      if (!prev) return null;
+      wkMap[key] = {
+        ...prev,
+        ...patch,
+        driverId: prev.driverId,
+        platform: prev.platform,
+        updatedAt: new Date().toISOString()
+      };
+      all[wk] = wkMap;
+      storageAdapter.write(KEYS.directRetroAdjustments, all);
+      return wkMap[key];
     },
     clearWeek(weekStart) {
       const wk = String(weekStart || '').slice(0, 10);
@@ -10807,6 +10848,122 @@ const BremStorage = (function () {
         delete all[wk];
         storageAdapter.write(KEYS.directRetroAdjustments, all, { allowEmpty: true });
       }
+    }
+  };
+
+  function normalizeLeaseLoan(raw = {}, existing = null) {
+    const principal = Math.max(0, Math.round(Number(raw.principal != null ? raw.principal : existing?.principal || 0)));
+    const dailyDeduct = Math.max(0, Math.round(Number(raw.dailyDeduct != null ? raw.dailyDeduct : existing?.dailyDeduct || 0)));
+    const balance = Math.max(0, Math.round(Number(
+      raw.balance != null ? raw.balance : (existing?.balance != null ? existing.balance : principal)
+    )));
+    const platform = String(raw.deductionPlatform || existing?.deductionPlatform || 'coupang') === 'baemin'
+      ? 'baemin'
+      : 'coupang';
+    return {
+      id: String(raw.id || existing?.id || createId()),
+      driverId: String(raw.driverId != null ? raw.driverId : (existing?.driverId || '')).trim(),
+      driverName: String(raw.driverName != null ? raw.driverName : (existing?.driverName || '')).trim(),
+      driverPhone: String(raw.driverPhone != null ? raw.driverPhone : (existing?.driverPhone || '')).trim(),
+      principal,
+      dailyDeduct,
+      balance,
+      deductionPlatform: platform,
+      reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
+      status: String(raw.status != null ? raw.status : (existing?.status || 'active')).trim() || 'active',
+      createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      rawData: { ...(existing?.rawData || {}), ...(raw.rawData || {}) }
+    };
+  }
+
+  function normalizeDeductionLedgerItem(raw = {}, existing = null) {
+    const kind = String(raw.kind || existing?.kind || 'unpaid').trim() || 'unpaid';
+    const platform = String(raw.deductionPlatform || existing?.deductionPlatform || 'coupang') === 'baemin'
+      ? 'baemin'
+      : 'coupang';
+    const dailyDeduct = Math.max(0, Math.round(Number(raw.dailyDeduct != null ? raw.dailyDeduct : existing?.dailyDeduct || 0)));
+    const balance = Math.max(0, Math.round(Number(raw.balance != null ? raw.balance : existing?.balance || 0)));
+    const enabled = raw.finalApplyEnabled != null
+      ? Boolean(raw.finalApplyEnabled)
+      : Boolean(existing?.finalApplyEnabled);
+    return {
+      id: String(raw.id || existing?.id || createId()),
+      kind,
+      sourceRef: String(raw.sourceRef != null ? raw.sourceRef : (existing?.sourceRef || '')).trim(),
+      driverId: String(raw.driverId != null ? raw.driverId : (existing?.driverId || '')).trim(),
+      driverName: String(raw.driverName != null ? raw.driverName : (existing?.driverName || '')).trim(),
+      driverPhone: String(raw.driverPhone != null ? raw.driverPhone : (existing?.driverPhone || '')).trim(),
+      dailyDeduct,
+      balance,
+      reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
+      deductionPlatform: platform,
+      finalApplyEnabled: enabled,
+      finalAppliedAt: enabled
+        ? String(raw.finalAppliedAt || existing?.finalAppliedAt || new Date().toISOString())
+        : String(raw.finalAppliedAt != null ? raw.finalAppliedAt : (existing?.finalAppliedAt || '')),
+      weekStart: String(raw.weekStart != null ? raw.weekStart : (existing?.weekStart || '')).slice(0, 10),
+      status: String(raw.status != null ? raw.status : (existing?.status || 'active')).trim() || 'active',
+      createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      rawData: { ...(existing?.rawData || {}), ...(raw.rawData || {}) }
+    };
+  }
+
+  const leaseLoans = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.leaseLoans, []);
+      return (Array.isArray(raw) ? raw : []).map(item => normalizeLeaseLoan(item));
+    },
+    getById(id) {
+      const target = String(id || '').trim();
+      return this.getAll().find(item => item.id === target) || null;
+    },
+    save(raw) {
+      const list = this.getAll();
+      const existing = raw?.id ? list.find(item => item.id === raw.id) : null;
+      const next = normalizeLeaseLoan(raw, existing);
+      const out = existing
+        ? list.map(item => (item.id === next.id ? next : item))
+        : [...list, next];
+      storageAdapter.write(KEYS.leaseLoans, out);
+      return next;
+    },
+    remove(id) {
+      const target = String(id || '').trim();
+      const next = this.getAll().filter(item => item.id !== target);
+      storageAdapter.write(KEYS.leaseLoans, next, { allowEmpty: true });
+    }
+  };
+
+  const deductionLedger = {
+    getAll() {
+      const raw = storageAdapter.read(KEYS.deductionLedger, []);
+      return (Array.isArray(raw) ? raw : []).map(item => normalizeDeductionLedgerItem(item));
+    },
+    getById(id) {
+      const target = String(id || '').trim();
+      return this.getAll().find(item => item.id === target) || null;
+    },
+    findBySource(kind, sourceRef) {
+      const k = String(kind || '').trim();
+      const ref = String(sourceRef || '').trim();
+      return this.getAll().find(item => item.kind === k && item.sourceRef === ref) || null;
+    },
+    save(raw) {
+      const list = this.getAll();
+      const existing = raw?.id ? list.find(item => item.id === raw.id) : null;
+      const next = normalizeDeductionLedgerItem(raw, existing);
+      const out = existing
+        ? list.map(item => (item.id === next.id ? next : item))
+        : [...list, next];
+      storageAdapter.write(KEYS.deductionLedger, out);
+      return next;
+    },
+    remove(id) {
+      const target = String(id || '').trim();
+      const next = this.getAll().filter(item => item.id !== target);
+      storageAdapter.write(KEYS.deductionLedger, next, { allowEmpty: true });
     }
   };
 
@@ -13162,6 +13319,8 @@ const BremStorage = (function () {
     directPayAdjustments,
     directSettlementAdjustments,
     directRetroAdjustments,
+    leaseLoans,
+    deductionLedger,
     driverOrgChart: {
       get() {
         const raw = storageAdapter.read(KEYS.driverOrgChart, null);

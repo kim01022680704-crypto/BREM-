@@ -60,6 +60,11 @@ const BremAdminLeaseMenus = (function () {
     deductionTab: 'lease',
     deductionLeaseSearch: '',
     deductionLeaseSelectedIds: new Set(),
+    deductionLoanSearch: '',
+    deductionManageSearch: '',
+    deductionManageKind: 'all',
+    deductionManageSelectedKeys: new Set(),
+    loanDriverSearch: '',
     leaseSaving: false
   };
 
@@ -633,7 +638,7 @@ const BremAdminLeaseMenus = (function () {
     }
     if (menu === 'deduction') {
       syncDeductionTabUi();
-      renderDeductionLease();
+      renderDeductionActivePane();
       return;
     }
     if (menu === 'dashboard') {
@@ -2573,7 +2578,7 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function syncDeductionTabUi() {
-    const tab = state.deductionTab === 'loan' ? 'loan' : 'lease';
+    const tab = ['lease', 'loan', 'manage'].includes(state.deductionTab) ? state.deductionTab : 'lease';
     state.deductionTab = tab;
     document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
       const active = btn.dataset.deductionTab === tab;
@@ -2583,6 +2588,18 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('[data-deduction-pane]').forEach(pane => {
       pane.hidden = pane.dataset.deductionPane !== tab;
     });
+  }
+
+  function renderDeductionActivePane() {
+    if (state.deductionTab === 'loan') {
+      renderDeductionLoan();
+      return;
+    }
+    if (state.deductionTab === 'manage') {
+      renderDeductionManage();
+      return;
+    }
+    renderDeductionLease();
   }
 
   function updateDeductionLeaseBulkUi() {
@@ -2640,6 +2657,7 @@ const BremAdminLeaseMenus = (function () {
         ? `${formatDriverContractLabel(contract.driverName || '기사')} · 리스 차감 반영`
         : `${formatDriverContractLabel(contract.driverName || '기사')} · 리스 차감 해제`);
       renderDeductionLease();
+      renderDeductionManage();
       refreshAfterLeaseMutation({ contract: false });
     }
     return true;
@@ -2737,6 +2755,371 @@ const BremAdminLeaseMenus = (function () {
       </tr>`;
     }).join('');
     updateDeductionLeaseBulkUi();
+  }
+
+  function readLoanDeductionPlatform() {
+    const checked = document.querySelector('input[name="leaseLoanDeductionPlatform"]:checked');
+    return checked?.value === 'baemin' ? 'baemin' : 'coupang';
+  }
+
+  function setLoanDeductionPlatform(platform) {
+    const target = platform === 'baemin' ? 'baemin' : 'coupang';
+    document.querySelectorAll('input[name="leaseLoanDeductionPlatform"]').forEach(input => {
+      input.checked = input.value === target;
+    });
+  }
+
+  function resetLoanForm() {
+    if ($('leaseLoanEditId')) $('leaseLoanEditId').value = '';
+    if ($('leaseLoanDriverId')) $('leaseLoanDriverId').value = '';
+    if ($('leaseLoanDriverSearch')) $('leaseLoanDriverSearch').value = '';
+    if ($('leaseLoanDriverName')) $('leaseLoanDriverName').value = '';
+    if ($('leaseLoanDriverPhone')) $('leaseLoanDriverPhone').value = '';
+    if ($('leaseLoanPrincipal')) $('leaseLoanPrincipal').value = '';
+    if ($('leaseLoanDailyDeduct')) $('leaseLoanDailyDeduct').value = '';
+    if ($('leaseLoanBalance')) $('leaseLoanBalance').value = '';
+    if ($('leaseLoanReason')) $('leaseLoanReason').value = '';
+    setLoanDeductionPlatform('coupang');
+    const selected = $('leaseLoanDriverSelected');
+    if (selected) selected.textContent = '선택: 없음';
+    const results = $('leaseLoanDriverResults');
+    if (results) { results.hidden = true; results.innerHTML = ''; }
+    const submit = $('leaseLoanForm')?.querySelector('button[type="submit"]');
+    if (submit) submit.textContent = '대여 등록';
+  }
+
+  function pickLoanDriver(driver) {
+    if (!driver) return;
+    if ($('leaseLoanDriverId')) $('leaseLoanDriverId').value = driver.id || '';
+    if ($('leaseLoanDriverName')) $('leaseLoanDriverName').value = driver.name || '';
+    if ($('leaseLoanDriverPhone')) $('leaseLoanDriverPhone').value = driver.phone || '';
+    const selected = $('leaseLoanDriverSelected');
+    if (selected) {
+      selected.textContent = `선택: ${driver.name || '-'} · ${driver.phone || '-'} · 쿠팡 ${makeDriverLoginId(driver) || '-'}`;
+    }
+    const results = $('leaseLoanDriverResults');
+    if (results) { results.hidden = true; results.innerHTML = ''; }
+  }
+
+  function renderLoanDriverResults() {
+    const box = $('leaseLoanDriverResults');
+    if (!box) return;
+    const keyword = String(state.loanDriverSearch || $('leaseLoanDriverSearch')?.value || '').trim().toLowerCase();
+    if (!keyword) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    const list = getContractDrivers().filter(driver => {
+      const hay = [driver.name, driver.phone, driver.baeminId, driver.coupangId, driver.coupangLoginKey, makeDriverLoginId(driver)]
+        .join(' ').toLowerCase();
+      return hay.includes(keyword);
+    }).slice(0, 20);
+    if (!list.length) {
+      box.hidden = false;
+      box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>검색 결과 없음</button>';
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = list.map(driver => `
+      <button type="button" class="lease-driver-picker__item" data-loan-pick-driver="${escapeHtml(driver.id)}">
+        <strong>${escapeHtml(driver.name || '-')}</strong>
+        <span>${escapeHtml(driver.phone || '-')} · 쿠팡 ${escapeHtml(makeDriverLoginId(driver) || '-')}</span>
+      </button>`).join('');
+  }
+
+  function syncLoanLedgerFromLoan(loan, options = {}) {
+    const store = window.BremStorage?.deductionLedger;
+    if (!store || !loan?.id) return null;
+    const existing = store.findBySource?.('loan', loan.id) || null;
+    return store.save({
+      id: existing?.id,
+      kind: 'loan',
+      sourceRef: loan.id,
+      driverId: loan.driverId,
+      driverName: loan.driverName,
+      driverPhone: loan.driverPhone,
+      dailyDeduct: loan.dailyDeduct,
+      balance: loan.balance,
+      reason: loan.reason || '대여금',
+      deductionPlatform: loan.deductionPlatform,
+      finalApplyEnabled: options.finalApplyEnabled != null
+        ? options.finalApplyEnabled
+        : Boolean(existing?.finalApplyEnabled),
+      status: loan.status || 'active'
+    });
+  }
+
+  async function saveLoanForm(event) {
+    event?.preventDefault?.();
+    const store = window.BremStorage?.leaseLoans;
+    if (!store) {
+      showToast('대여 저장소를 사용할 수 없습니다.');
+      return;
+    }
+    const driverId = String($('leaseLoanDriverId')?.value || '').trim();
+    const driverName = String($('leaseLoanDriverName')?.value || '').trim();
+    if (!driverId || !driverName) {
+      showToast('기사를 선택하세요.');
+      return;
+    }
+    const principal = Math.max(0, Math.round(Number($('leaseLoanPrincipal')?.value || 0)));
+    const dailyDeduct = Math.max(0, Math.round(Number($('leaseLoanDailyDeduct')?.value || 0)));
+    if (principal <= 0 || dailyDeduct <= 0) {
+      showToast('대여금과 일 차감액을 입력하세요.');
+      return;
+    }
+    const balanceRaw = $('leaseLoanBalance')?.value;
+    const balance = balanceRaw === '' || balanceRaw == null
+      ? principal
+      : Math.max(0, Math.round(Number(balanceRaw || 0)));
+    const editId = String($('leaseLoanEditId')?.value || '').trim();
+    const loan = store.save({
+      id: editId || undefined,
+      driverId,
+      driverName,
+      driverPhone: String($('leaseLoanDriverPhone')?.value || '').trim(),
+      principal,
+      dailyDeduct,
+      balance,
+      deductionPlatform: readLoanDeductionPlatform(),
+      reason: String($('leaseLoanReason')?.value || '').trim() || '대여금',
+      status: 'active'
+    });
+    syncLoanLedgerFromLoan(loan);
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    resetLoanForm();
+    renderDeductionLoan();
+    renderDeductionManage();
+    showToast(editId ? '대여 정보를 수정했습니다.' : '대여금을 등록했습니다.');
+  }
+
+  function editLoan(id) {
+    const loan = window.BremStorage?.leaseLoans?.getById?.(id);
+    if (!loan) return;
+    if ($('leaseLoanEditId')) $('leaseLoanEditId').value = loan.id;
+    if ($('leaseLoanDriverId')) $('leaseLoanDriverId').value = loan.driverId || '';
+    if ($('leaseLoanDriverName')) $('leaseLoanDriverName').value = loan.driverName || '';
+    if ($('leaseLoanDriverPhone')) $('leaseLoanDriverPhone').value = loan.driverPhone || '';
+    if ($('leaseLoanPrincipal')) $('leaseLoanPrincipal').value = loan.principal || '';
+    if ($('leaseLoanDailyDeduct')) $('leaseLoanDailyDeduct').value = loan.dailyDeduct || '';
+    if ($('leaseLoanBalance')) $('leaseLoanBalance').value = loan.balance || '';
+    if ($('leaseLoanReason')) $('leaseLoanReason').value = loan.reason || '';
+    setLoanDeductionPlatform(loan.deductionPlatform);
+    const selected = $('leaseLoanDriverSelected');
+    if (selected) selected.textContent = `선택: ${loan.driverName || '-'} · ${loan.driverPhone || '-'}`;
+    const submit = $('leaseLoanForm')?.querySelector('button[type="submit"]');
+    if (submit) submit.textContent = '대여 수정 저장';
+    state.deductionTab = 'loan';
+    syncDeductionTabUi();
+  }
+
+  async function deleteLoan(id) {
+    if (!id || !window.confirm('이 대여 기록을 삭제할까요? 차감관리의 연결 항목도 함께 삭제됩니다.')) return;
+    window.BremStorage?.leaseLoans?.remove?.(id);
+    const linked = window.BremStorage?.deductionLedger?.findBySource?.('loan', id);
+    if (linked?.id) window.BremStorage.deductionLedger.remove(linked.id);
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    renderDeductionLoan();
+    renderDeductionManage();
+    showToast('대여 기록을 삭제했습니다.');
+  }
+
+  function renderDeductionLoan() {
+    const rowsEl = $('leaseDeductionLoanRows');
+    const summaryEl = $('leaseDeductionLoanSummary');
+    if (!rowsEl) return;
+    let list = window.BremStorage?.leaseLoans?.getAll?.() || [];
+    const keyword = String(state.deductionLoanSearch || $('leaseDeductionLoanSearch')?.value || '').trim().toLowerCase();
+    if (keyword) {
+      list = list.filter(item => [item.driverName, item.driverPhone, item.reason].join(' ').toLowerCase().includes(keyword));
+    }
+    if (summaryEl) summaryEl.textContent = `대여금 ${list.length}건 · 잔액합 ${formatMoney(list.reduce((s, i) => s + Number(i.balance || 0), 0))}`;
+    if (!list.length) {
+      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 대여금이 없습니다.</td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = list.map(loan => `
+      <tr>
+        <td>${escapeHtml(loan.driverName || '-')}</td>
+        <td>${escapeHtml(loan.driverPhone || '-')}</td>
+        <td>${formatMoney(loan.principal)}</td>
+        <td>${formatMoney(loan.dailyDeduct)}</td>
+        <td>${formatMoney(loan.balance)}</td>
+        <td>${escapeHtml(deductionPlatformLabel(loan.deductionPlatform))}</td>
+        <td>${escapeHtml(loan.reason || '-')}</td>
+        <td>${escapeHtml(loan.status || 'active')}</td>
+        <td class="lease-payment-confirm-actions">
+          <button type="button" class="small-btn" data-loan-edit="${escapeHtml(loan.id)}">수정</button>
+          <button type="button" class="small-btn danger-btn" data-loan-delete="${escapeHtml(loan.id)}">삭제</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function buildDeductionManageRows() {
+    const weekStart = currentWeekStart();
+    const rows = [];
+    (getActivePaymentContracts() || []).forEach(contract => {
+      const daily = contractRiderDailyRent(contract);
+      if (daily <= 0) return;
+      const days = contractActiveDaysInWeek(contract, weekStart);
+      rows.push({
+        key: `lease:${contract.id}`,
+        kind: 'lease',
+        sourceId: contract.id,
+        driverId: contract.driverId || '',
+        driverName: contract.driverName || '',
+        driverPhone: contract.driverPhone || '',
+        dailyDeduct: daily,
+        balanceOrCharge: Math.round(daily * days),
+        reason: '리스/렌탈 일렌탈료',
+        platform: contract.deductionPlatform || contract.rawData?.deductionPlatform || 'coupang',
+        applied: isContractFinalApplyEnabled(contract)
+      });
+    });
+    (window.BremStorage?.deductionLedger?.getAll?.() || [])
+      .filter(item => String(item.status || '') !== 'paid' && String(item.status || '') !== 'deleted')
+      .forEach(item => {
+        rows.push({
+          key: `ledger:${item.id}`,
+          kind: item.kind === 'loan' ? 'loan' : 'unpaid',
+          sourceId: item.id,
+          driverId: item.driverId || '',
+          driverName: item.driverName || '',
+          driverPhone: item.driverPhone || '',
+          dailyDeduct: item.dailyDeduct || 0,
+          balanceOrCharge: item.balance || 0,
+          reason: item.reason || (item.kind === 'loan' ? '대여금' : '미납'),
+          platform: item.deductionPlatform || 'coupang',
+          applied: Boolean(item.finalApplyEnabled)
+        });
+      });
+    return rows.sort((a, b) => String(a.driverName).localeCompare(String(b.driverName), 'ko'));
+  }
+
+  function deductionKindLabel(kind) {
+    if (kind === 'lease') return '리스';
+    if (kind === 'loan') return '대여';
+    return '미납';
+  }
+
+  function updateDeductionManageBulkUi() {
+    const applyBtn = $('leaseDeductionManageBulkApplyBtn');
+    const clearBtn = $('leaseDeductionManageBulkClearBtn');
+    const selectAll = $('leaseDeductionManageSelectAll');
+    const count = state.deductionManageSelectedKeys.size;
+    if (applyBtn) {
+      applyBtn.disabled = count <= 0;
+      applyBtn.textContent = count > 0 ? `선택 기사앱 반영 (${count})` : '선택 기사앱 반영';
+    }
+    if (clearBtn) {
+      clearBtn.disabled = count <= 0;
+      clearBtn.textContent = count > 0 ? `선택 반영 해제 (${count})` : '선택 반영 해제';
+    }
+    if (selectAll) {
+      const boxes = [...document.querySelectorAll('[data-deduction-manage-select]')];
+      selectAll.checked = boxes.length > 0 && boxes.every(el => el.checked);
+      selectAll.indeterminate = count > 0 && !selectAll.checked;
+    }
+  }
+
+  async function setManageItemApply(key, enabled, options = {}) {
+    const [type, id] = String(key || '').split(':');
+    if (!type || !id) return false;
+    if (type === 'lease') {
+      return setContractFinalApply(id, enabled, options);
+    }
+    const store = window.BremStorage?.deductionLedger;
+    const item = store?.getById?.(id);
+    if (!item) {
+      if (!options.silent) showToast('차감 항목을 찾을 수 없습니다.');
+      return false;
+    }
+    store.save({
+      ...item,
+      finalApplyEnabled: Boolean(enabled),
+      finalAppliedAt: enabled ? new Date().toISOString() : item.finalAppliedAt
+    });
+    if (item.kind === 'loan' && item.sourceRef) {
+      const loan = window.BremStorage?.leaseLoans?.getById?.(item.sourceRef);
+      if (loan) syncLoanLedgerFromLoan(loan, { finalApplyEnabled: Boolean(enabled) });
+    }
+    if (!options.skipPersist) {
+      await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    }
+    if (!options.silent) {
+      showToast(enabled ? `${item.driverName || '기사'} · 차감 반영` : `${item.driverName || '기사'} · 차감 해제`);
+      renderDeductionManage();
+      renderDeductionLoan();
+    }
+    return true;
+  }
+
+  async function bulkSetManageApply(enabled) {
+    const keys = [...state.deductionManageSelectedKeys];
+    if (!keys.length) {
+      showToast('항목을 선택하세요.');
+      return;
+    }
+    if (!window.confirm(`선택한 ${keys.length}건을 ${enabled ? '기사앱 반영' : '반영 해제'}할까요?`)) return;
+    let ok = 0;
+    for (const key of keys) {
+      const done = await setManageItemApply(key, enabled, { skipPersist: true, silent: true });
+      if (done) ok += 1;
+    }
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    try { await erp()?.persistAll?.({ skipFlushStorage: true }); } catch (_e) { /* lease only */ }
+    state.deductionManageSelectedKeys.clear();
+    updateLeaseErpUnsavedBanner();
+    renderDeductionActivePane();
+    showToast(`${enabled ? '반영' : '해제'} ${ok}건`);
+  }
+
+  function renderDeductionManage() {
+    const rowsEl = $('leaseDeductionManageRows');
+    const summaryEl = $('leaseDeductionManageSummary');
+    if (!rowsEl) return;
+    let rows = buildDeductionManageRows();
+    const kind = state.deductionManageKind || $('leaseDeductionManageKindFilter')?.value || 'all';
+    state.deductionManageKind = kind;
+    if (kind !== 'all') rows = rows.filter(row => row.kind === kind);
+    const keyword = String(state.deductionManageSearch || $('leaseDeductionManageSearch')?.value || '').trim().toLowerCase();
+    if (keyword) {
+      rows = rows.filter(row => [row.driverName, row.driverPhone, row.reason, deductionKindLabel(row.kind)]
+        .join(' ').toLowerCase().includes(keyword));
+    }
+    const appliedCount = rows.filter(row => row.applied).length;
+    if (summaryEl) summaryEl.textContent = `차감 ${rows.length}건 · 반영 ${appliedCount}건`;
+    const visible = new Set(rows.map(row => row.key));
+    [...state.deductionManageSelectedKeys].forEach(key => {
+      if (!visible.has(key)) state.deductionManageSelectedKeys.delete(key);
+    });
+    if (!rows.length) {
+      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">차감 항목이 없습니다. 리스 반영·대여 등록·소급분 이관 후 여기에 모입니다.</td></tr>';
+      updateDeductionManageBulkUi();
+      return;
+    }
+    rowsEl.innerHTML = rows.map(row => {
+      const checked = state.deductionManageSelectedKeys.has(row.key) ? ' checked' : '';
+      const rowSelected = checked ? ' class="row-selected"' : '';
+      return `<tr${rowSelected}>
+        <td class="lease-check-col"><input type="checkbox" data-deduction-manage-select="${escapeHtml(row.key)}"${checked}></td>
+        <td>${escapeHtml(deductionKindLabel(row.kind))}</td>
+        <td>${escapeHtml(formatDriverContractLabel(row.driverName || '-'))}</td>
+        <td>${escapeHtml(row.driverPhone || '-')}</td>
+        <td>${formatMoney(row.dailyDeduct)}</td>
+        <td>${formatMoney(row.balanceOrCharge)}</td>
+        <td>${escapeHtml(row.reason || '-')}</td>
+        <td>${escapeHtml(deductionPlatformLabel(row.platform))}</td>
+        <td><span class="${row.applied ? 'lease-status--done' : 'lease-status--collecting'}">${row.applied ? '반영됨' : '미반영'}</span></td>
+        <td class="lease-payment-confirm-actions">
+          ${row.applied
+    ? `<button type="button" class="small-btn" data-deduction-manage-clear="${escapeHtml(row.key)}">반영 해제</button>`
+    : `<button type="button" class="small-btn primary-btn" data-deduction-manage-apply="${escapeHtml(row.key)}">기사앱 반영</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+    updateDeductionManageBulkUi();
   }
 
   function getActivePaymentContracts() {
@@ -4091,6 +4474,32 @@ const BremAdminLeaseMenus = (function () {
       const deductionClearBtn = event.target.closest('[data-deduction-lease-clear]');
       if (deductionClearBtn) {
         void setContractFinalApply(deductionClearBtn.dataset.deductionLeaseClear, false);
+        return;
+      }
+      const loanPick = event.target.closest('[data-loan-pick-driver]');
+      if (loanPick) {
+        const driver = getContractDrivers().find(item => String(item.id) === String(loanPick.dataset.loanPickDriver));
+        pickLoanDriver(driver);
+        return;
+      }
+      const loanEdit = event.target.closest('[data-loan-edit]');
+      if (loanEdit) {
+        editLoan(loanEdit.dataset.loanEdit);
+        return;
+      }
+      const loanDelete = event.target.closest('[data-loan-delete]');
+      if (loanDelete) {
+        void deleteLoan(loanDelete.dataset.loanDelete);
+        return;
+      }
+      const manageApply = event.target.closest('[data-deduction-manage-apply]');
+      if (manageApply) {
+        void setManageItemApply(manageApply.dataset.deductionManageApply, true);
+        return;
+      }
+      const manageClear = event.target.closest('[data-deduction-manage-clear]');
+      if (manageClear) {
+        void setManageItemApply(manageClear.dataset.deductionManageClear, false);
       }
     });
 
@@ -4136,17 +4545,38 @@ const BremAdminLeaseMenus = (function () {
 
     document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
-        state.deductionTab = btn.dataset.deductionTab === 'loan' ? 'loan' : 'lease';
+        const next = btn.dataset.deductionTab;
+        state.deductionTab = ['lease', 'loan', 'manage'].includes(next) ? next : 'lease';
         syncDeductionTabUi();
-        if (state.deductionTab === 'lease') renderDeductionLease();
+        renderDeductionActivePane();
       });
     });
     $('leaseDeductionLeaseSearch')?.addEventListener('input', event => {
       state.deductionLeaseSearch = String(event.target.value || '');
       renderDeductionLease();
     });
+    $('leaseDeductionLoanSearch')?.addEventListener('input', event => {
+      state.deductionLoanSearch = String(event.target.value || '');
+      renderDeductionLoan();
+    });
+    $('leaseDeductionManageSearch')?.addEventListener('input', event => {
+      state.deductionManageSearch = String(event.target.value || '');
+      renderDeductionManage();
+    });
+    $('leaseDeductionManageKindFilter')?.addEventListener('change', event => {
+      state.deductionManageKind = String(event.target.value || 'all');
+      renderDeductionManage();
+    });
+    $('leaseLoanDriverSearch')?.addEventListener('input', event => {
+      state.loanDriverSearch = String(event.target.value || '');
+      renderLoanDriverResults();
+    });
+    $('leaseLoanForm')?.addEventListener('submit', event => { void saveLoanForm(event); });
+    $('leaseLoanFormResetBtn')?.addEventListener('click', () => resetLoanForm());
     $('leaseDeductionLeaseBulkApplyBtn')?.addEventListener('click', () => { void bulkSetContractFinalApply(true); });
     $('leaseDeductionLeaseBulkClearBtn')?.addEventListener('click', () => { void bulkSetContractFinalApply(false); });
+    $('leaseDeductionManageBulkApplyBtn')?.addEventListener('click', () => { void bulkSetManageApply(true); });
+    $('leaseDeductionManageBulkClearBtn')?.addEventListener('click', () => { void bulkSetManageApply(false); });
     $('leaseDeductionLeaseSelectAll')?.addEventListener('change', event => {
       const checked = !!event.target.checked;
       document.querySelectorAll('[data-deduction-lease-select]').forEach(el => {
@@ -4159,6 +4589,18 @@ const BremAdminLeaseMenus = (function () {
       });
       updateDeductionLeaseBulkUi();
     });
+    $('leaseDeductionManageSelectAll')?.addEventListener('change', event => {
+      const checked = !!event.target.checked;
+      document.querySelectorAll('[data-deduction-manage-select]').forEach(el => {
+        el.checked = checked;
+        const key = String(el.dataset.deductionManageSelect || '');
+        if (!key) return;
+        if (checked) state.deductionManageSelectedKeys.add(key);
+        else state.deductionManageSelectedKeys.delete(key);
+        el.closest('tr')?.classList.toggle('row-selected', checked);
+      });
+      updateDeductionManageBulkUi();
+    });
 
     document.addEventListener('change', event => {
       const deductionLeaseCheck = event.target.closest('[data-deduction-lease-select]');
@@ -4169,6 +4611,16 @@ const BremAdminLeaseMenus = (function () {
         else state.deductionLeaseSelectedIds.delete(id);
         deductionLeaseCheck.closest('tr')?.classList.toggle('row-selected', deductionLeaseCheck.checked);
         updateDeductionLeaseBulkUi();
+        return;
+      }
+      const deductionManageCheck = event.target.closest('[data-deduction-manage-select]');
+      if (deductionManageCheck) {
+        const key = String(deductionManageCheck.dataset.deductionManageSelect || '');
+        if (!key) return;
+        if (deductionManageCheck.checked) state.deductionManageSelectedKeys.add(key);
+        else state.deductionManageSelectedKeys.delete(key);
+        deductionManageCheck.closest('tr')?.classList.toggle('row-selected', deductionManageCheck.checked);
+        updateDeductionManageBulkUi();
         return;
       }
       const paymentCheck = event.target.closest('[data-payment-select]');
@@ -4249,7 +4701,7 @@ const BremAdminLeaseMenus = (function () {
     if (state.menu === 'arrears') renderArrears();
     if (state.menu === 'payment-confirm') renderPaymentConfirm();
     if (state.menu === 'payment-paid') renderPaymentPaid();
-    if (state.menu === 'deduction') renderDeductionLease();
+    if (state.menu === 'deduction') renderDeductionActivePane();
     if (state.menu === 'empty') renderEmpty();
     if (state.menu === 'contract') renderContractList();
     if (state.menu === 'calc') syncStandaloneCalc();

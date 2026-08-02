@@ -2639,11 +2639,12 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>대여 및 차감관리</h2>
-            <p class="form-help">반영하기 한 계약만 출금가능에서 일렌탈료가 홀드되고, 직계약 정산결과 공제(리스비)에 한 번 반영됩니다.</p>
+            <p class="form-help">리스·대여·미납을 등록하고 「차감관리」에서 기사앱 반영하면 출금가능 홀드·직계약 공제에 들어갑니다.</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist">
             <button type="button" class="lease-deduction-tab active" data-deduction-tab="lease" role="tab" aria-selected="true">리스 차감</button>
-            <button type="button" class="lease-deduction-tab" data-deduction-tab="loan" role="tab" aria-selected="false">대여금 차감</button>
+            <button type="button" class="lease-deduction-tab" data-deduction-tab="loan" role="tab" aria-selected="false">대여</button>
+            <button type="button" class="lease-deduction-tab" data-deduction-tab="manage" role="tab" aria-selected="false">차감관리</button>
           </div>
 
           <div class="lease-deduction-pane" data-deduction-pane="lease">
@@ -2683,10 +2684,84 @@
           </div>
 
           <div class="lease-deduction-pane" data-deduction-pane="loan" hidden>
+            <form class="lease-form lease-contract-form--compact" id="leaseLoanForm">
+              <input type="hidden" id="leaseLoanEditId">
+              <input type="hidden" id="leaseLoanDriverId">
+              <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense" style="padding: 0 18px 12px;">
+                <div class="lease-driver-picker lease-form-field--full">
+                  <label class="lease-driver-picker__search-label">
+                    기사 검색
+                    <input type="search" id="leaseLoanDriverSearch" placeholder="이름 · 연락처 · 쿠팡ID · 배민ID" autocomplete="off">
+                  </label>
+                  <div class="lease-driver-picker__results" id="leaseLoanDriverResults" hidden></div>
+                  <p class="lease-driver-picker__selected" id="leaseLoanDriverSelected">선택: 없음</p>
+                </div>
+                <label>이름<input type="text" id="leaseLoanDriverName" readonly placeholder="기사명"></label>
+                <label>연락처<input type="tel" id="leaseLoanDriverPhone" readonly placeholder="010-0000-0000"></label>
+                <label>대여금(원금)<input type="number" id="leaseLoanPrincipal" min="0" step="1000" placeholder="0" required></label>
+                <label>일 차감액<input type="number" id="leaseLoanDailyDeduct" min="0" step="1000" placeholder="0" required></label>
+                <label>잔액<input type="number" id="leaseLoanBalance" min="0" step="1000" placeholder="등록 시 대여금과 동일"></label>
+                <label>이유<input type="text" id="leaseLoanReason" placeholder="예: 보증금 대여 · 수리비 대여"></label>
+                <fieldset class="lease-type-fieldset lease-type-fieldset--inline lease-form-field--full">
+                  <legend>차감 플랫폼</legend>
+                  <label class="lease-type-option">
+                    <input type="radio" name="leaseLoanDeductionPlatform" value="coupang" checked>
+                    <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">쿠팡</span></span>
+                  </label>
+                  <label class="lease-type-option">
+                    <input type="radio" name="leaseLoanDeductionPlatform" value="baemin">
+                    <span class="lease-type-chip lease-type-chip--lease"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">배민</span></span>
+                  </label>
+                </fieldset>
+                <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button type="submit" class="primary-btn">대여 등록</button>
+                  <button type="button" class="small-btn" id="leaseLoanFormResetBtn">초기화</button>
+                </div>
+              </div>
+            </form>
             <div class="lease-list-toolbar lease-payment-confirm-toolbar">
               <p class="form-help lease-list-count" id="leaseDeductionLoanSummary">대여금 0건</p>
-              <input type="search" id="leaseDeductionLoanSearch" class="lease-contract-list-search" placeholder="기사 · 연락처 검색" autocomplete="off" disabled>
-              <button type="button" class="primary-btn" disabled>선택 반영</button>
+              <input type="search" id="leaseDeductionLoanSearch" class="lease-contract-list-search" placeholder="기사 · 연락처 검색" autocomplete="off">
+              <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
+            </div>
+            <div class="table-wrap lease-table-wrap lease-list-scroll">
+              <table class="lease-table lease-table--compact">
+                <thead>
+                  <tr>
+                    <th>기사</th>
+                    <th>연락처</th>
+                    <th>대여금</th>
+                    <th>일 차감액</th>
+                    <th>잔액</th>
+                    <th>차감플랫폼</th>
+                    <th>이유</th>
+                    <th>상태</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="leaseDeductionLoanRows">
+                  <tr><td colspan="9" class="empty">등록된 대여금이 없습니다.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="lease-deduction-pane" data-deduction-pane="manage" hidden>
+            <div class="lease-list-toolbar lease-payment-confirm-toolbar">
+              <p class="form-help lease-list-count" id="leaseDeductionManageSummary">차감 0건 · 반영 0건</p>
+              <input type="search" id="leaseDeductionManageSearch" class="lease-contract-list-search" placeholder="기사 · 이유 · 연락처 검색" autocomplete="off">
+              <select id="leaseDeductionManageKindFilter" class="admin-period-input">
+                <option value="all">전체 종류</option>
+                <option value="lease">리스</option>
+                <option value="loan">대여</option>
+                <option value="unpaid">미납</option>
+              </select>
+              <label class="check-label lease-payment-select-all">
+                <input type="checkbox" id="leaseDeductionManageSelectAll">
+                <span>전체 선택</span>
+              </label>
+              <button type="button" class="primary-btn" id="leaseDeductionManageBulkApplyBtn" disabled>선택 기사앱 반영</button>
+              <button type="button" class="small-btn" id="leaseDeductionManageBulkClearBtn" disabled>선택 반영 해제</button>
               <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
             </div>
             <div class="table-wrap lease-table-wrap lease-list-scroll">
@@ -2694,18 +2769,19 @@
                 <thead>
                   <tr>
                     <th class="lease-check-col">선택</th>
+                    <th>종류</th>
                     <th>기사</th>
                     <th>연락처</th>
-                    <th>대여금</th>
-                    <th>일 차감액</th>
-                    <th>잔액</th>
-                    <th>차감플랫폼</th>
+                    <th>일 차감</th>
+                    <th>잔액/예정</th>
+                    <th>이유</th>
+                    <th>플랫폼</th>
                     <th>반영상태</th>
                     <th>관리</th>
                   </tr>
                 </thead>
-                <tbody id="leaseDeductionLoanRows">
-                  <tr><td colspan="9" class="empty">대여금 등록·차감은 준비 중입니다. 리스와 같은 방식으로 반영 스위치를 붙일 예정입니다.</td></tr>
+                <tbody id="leaseDeductionManageRows">
+                  <tr><td colspan="10" class="empty">차감 항목이 없습니다. 리스 반영·대여 등록·소급분 이관 후 여기에 모입니다.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -4672,6 +4748,7 @@
           <button type="button" class="promotion-tab" data-admin-platform-tab="settlement-result-direct" data-platform="coupang">쿠팡</button>
           <button type="button" class="promotion-tab active" data-admin-platform-tab="settlement-result-direct" data-platform="baemin">배민</button>
           <button type="button" class="promotion-tab" id="settlementFinalTabBtn" title="그 주 전체(쿠팡+배민) 기사를 합치지 않고 나열 + 급여명세서 반영">최종결산</button>
+          <button type="button" class="promotion-tab" id="settlementRetroUnpaidTabBtn" title="마이너스 일괄맞추기 소급분·미납잔액. 선택한 건만 차감관리로 이관">소급분 및 미납금</button>
         </div>
 
         <article class="card" id="settlementResultMainCard">
@@ -4692,14 +4769,13 @@
               <button type="button" class="small-btn" id="settlementResultWeekAllBtn" title="주 필터를 해제하고 전체 정산서 보기">전체 주</button>
               <button type="button" class="small-btn" id="settlementResultReloadBtn">불러오기</button>
               <button type="button" class="small-btn primary-btn" id="settlementResultBatchFixBtn" title="총지급액이 마이너스인 기사를 기타지급 그로스업으로 0원 처리합니다">마이너스 일괄 맞추기</button>
-              <button type="button" class="small-btn" id="settlementResultRetroBtn" title="일괄 맞추기(소급분) 내역을 주별로 봅니다">소급분</button>
               <button type="button" class="small-btn" id="settlementResultExportBtn">엑셀 내보내기</button>
               <button type="button" class="small-btn danger-btn" id="settlementResultDeleteBtn" title="선택한 정산서를 삭제하고 처음부터 다시 업로드합니다">정산서 삭제</button>
               <button type="button" class="small-btn danger-btn" id="settlementResultDeleteWeekBtn" title="이 주의 정산서를 모두 삭제합니다">이 주 전체 삭제</button>
               <input type="hidden" id="settlementResultWeek">
             </div>
           </div>
-          <p class="form-help">주정산서(직계약) 금액·공제 + 「프로모션정산등록」에서 <strong>그 정산서에 적용한</strong> BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 총지급액 = 지급합계 − 공제합계. 처음부터 다시 하려면 「정산서 삭제」또는 「이 주 전체 삭제」후 「주정산서 업로드 (직계약)」에서 다시 올리면 됩니다.</p>
+          <p class="form-help">주정산서(직계약) 금액·공제 + 「프로모션정산등록」에서 <strong>그 정산서에 적용한</strong> BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 공제내역에 <strong>리스차감·대여차감</strong>(「대여 및 차감관리」기사앱 반영분)이 포함됩니다. 총지급액 = 지급합계 − 공제합계. 처음부터 다시 하려면 「정산서 삭제」또는 「이 주 전체 삭제」후 「주정산서 업로드 (직계약)」에서 다시 올리면 됩니다.</p>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
           <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
@@ -4713,14 +4789,29 @@
             </table>
           </div>
 
-          <article class="card settlement-retro-card" id="settlementResultRetroCard" hidden>
-            <div class="card-header">
-              <h2>소급분 (마이너스 일괄 맞추기 내역)</h2>
-              <button type="button" class="small-btn" id="settlementResultRetroCloseBtn">닫기</button>
+        </article>
+
+        <article class="card" id="settlementResultRetroCard" hidden>
+          <div class="card-header">
+            <h2>소급분 및 미납금</h2>
+            <div class="promotion-form-actions">
+              <label class="settlement-week-filter">
+                <span>정산주 필터</span>
+                <select id="settlementRetroWeekFilter" class="admin-period-input">
+                  <option value="">전체 주</option>
+                </select>
+              </label>
+              <label class="settlement-week-filter">
+                <span>검색</span>
+                <input type="search" id="settlementRetroSearch" class="admin-period-input" placeholder="이름 · 아이디" autocomplete="off">
+              </label>
+              <button type="button" class="small-btn" id="settlementRetroReloadBtn">불러오기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementRetroSendBtn" title="체크한 건만 차감관리(미납)로 이관합니다">차감관리로 보내기</button>
             </div>
-            <p class="form-help">「마이너스 일괄 맞추기」로 기타지급에 얹은 그로스업(소급) 금액을 정산주별로 정리합니다. 이름 · 아이디 · 플랫폼 · 소급 기타지급.</p>
-            <div id="settlementResultRetroBody"></div>
-          </article>
+          </div>
+          <p class="form-help">「마이너스 일괄 맞추기」로 기록된 소급분입니다. <strong>미납잔액</strong>은 맞추기 전 |총지급액|이며, 고용·산재 로스 그로스업은 제외하고 리스·대여 미납만 선택해 차감관리로 수기 이관하세요. 자동 전송은 없습니다.</p>
+          <p class="direct-inline-stats" id="settlementRetroSummary"></p>
+          <div id="settlementResultRetroBody"></div>
         </article>
 
         <article class="card" id="settlementFinalCard" hidden>
@@ -4739,7 +4830,7 @@
               <button type="button" class="small-btn primary-btn" id="settlementFinalPublishBtn" title="위에서 고른 정산주 전체(쿠팡+배민)를 라이더앱 주급명세서로 즉시 반영합니다">급여명세서 반영</button>
             </div>
           </div>
-          <p class="form-help">그 주 정산서의 모든 기사를 <strong>합치지 않고</strong> 정산서별로 나열합니다. 같은 사람이 쿠팡·배민 둘 다면 각각 한 줄씩(ID도 각 플랫폼 ID로) 표시됩니다. 아래 합계는 확인용입니다.<br><strong>「급여명세서 반영」을 누르면 위에서 고른 정산주가 라이더앱에 즉시 공개됩니다.</strong></p>
+          <p class="form-help">그 주 정산서의 모든 기사를 <strong>합치지 않고</strong> 정산서별로 나열합니다. 같은 사람이 쿠팡·배민 둘 다면 각각 한 줄씩(ID도 각 플랫폼 ID로) 표시됩니다. 공제내역에 <strong>리스차감·대여차감</strong>이 포함됩니다. 아래 합계는 확인용입니다.<br><strong>「급여명세서 반영」을 누르면 위에서 고른 정산주가 라이더앱에 즉시 공개됩니다.</strong></p>
           <p class="direct-inline-stats" id="settlementFinalSummary"></p>
           <div class="table-wrap direct-scroll direct-scroll-wide">
             <table class="weekly-settlement-saved-table settle-grouped-table" id="settlementFinalTable">
@@ -4768,7 +4859,7 @@
               <input type="hidden" id="finalDepositWeek">
             </div>
           </div>
-          <p class="form-help">고른 정산주의 <strong>직계약 정산서(쿠팡·배민)</strong>를 체크해 합칩니다. 같은 기사가 쿠팡·배민 양쪽에 있으면 한 줄로 합산되고, 지급내역·공제내역은 두 플랫폼이 동일한 기준으로 표기됩니다. 최종입금 = 지급합계 − 공제합계.</p>
+          <p class="form-help">고른 정산주의 <strong>직계약 정산서(쿠팡·배민)</strong>를 체크해 합칩니다. 같은 기사가 쿠팡·배민 양쪽에 있으면 한 줄로 합산되고, 지급내역·공제내역은 두 플랫폼이 동일한 기준으로 표기됩니다(공제에 <strong>리스차감·대여차감</strong> 포함). 최종입금 = 지급합계 − 공제합계.</p>
           <p class="settlement-week-range-label" id="finalDepositWeekRange"></p>
 
           <div class="final-deposit-picker">
@@ -7354,7 +7445,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260801n"></script>
+  <script src="js/storage.js?v=20260802a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7383,7 +7474,7 @@
   <script src="js/lease-erp.js?v=20260802a"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802g"></script>
+  <script src="js/admin-lease-menus.js?v=20260802h"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7392,9 +7483,9 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
-  <script src="js/direct-settlement-calc.js?v=20260802b"></script>
-  <script src="js/settlement-result-direct.js?v=20260802c"></script>
-  <script src="js/final-deposit.js?v=20260802a"></script>
+  <script src="js/direct-settlement-calc.js?v=20260802d"></script>
+  <script src="js/settlement-result-direct.js?v=20260802e"></script>
+  <script src="js/final-deposit.js?v=20260802b"></script>
   <script src="js/driver-management-admin.js?v=20260802e"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>

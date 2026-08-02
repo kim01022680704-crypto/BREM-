@@ -4,7 +4,16 @@ const BremSettlementResultDirect = (function () {
   const Calc = () => window.BremDirectSettlementCalc;
 
   // week: 빈 문자열이면 주 필터 없음(전체 주). 정산주는 항상 수요일 시작.
-  const state = { platform: 'baemin', settlementId: '', week: '', withdrawals: [] };
+  // viewMode: platform | final | retroUnpaid
+  const state = {
+    platform: 'baemin',
+    settlementId: '',
+    week: '',
+    withdrawals: [],
+    viewMode: 'platform',
+    retroWeekFilter: '',
+    retroSearch: ''
+  };
 
   function escapeHtml(value) {
     return Calc().escapeHtml(value);
@@ -312,11 +321,12 @@ const BremSettlementResultDirect = (function () {
           ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 0원 처리 가능</span>`
           : '';
         summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
-          + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
+          + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)} · 리스차감 ${formatNumber(totals.leaseFee)} · 대여차감 ${formatNumber(totals.loanFee)})</span>`
           + extraNote + negNote;
       }
 
-      if (!$('#settlementResultRetroCard')?.hidden) renderRetro();
+      if (state.viewMode === 'retroUnpaid') renderRetro();
+      if (state.viewMode === 'final') renderFinal();
     } catch (error) {
       console.error('[settlement-result-direct] render failed', error);
       body.innerHTML = `<tr><td colspan="${colspan}" class="empty">정산 계산 중 오류가 발생했습니다. 새로고침 후에도 같으면 관리자에게 알려주세요. (${escapeHtml(error?.message || error)})</td></tr>`;
@@ -421,25 +431,31 @@ const BremSettlementResultDirect = (function () {
         baeminId: prev.baeminId || (state.platform === 'baemin' ? row.idLabel : ''),
         coupangId: prev.coupangId || (state.platform === 'coupang' ? row.idLabel : '')
       });
+      const unpaidBalance = Math.abs(Math.round(Number(row.netPay || 0)));
       retro.push({
         driverId: row.driverId,
         name: row.name,
         idLabel: row.idLabel,
         platform: row.platform,
         amount: x,
+        grossUpAmount: x,
+        unpaidBalance,
+        status: 'logged',
+        reason: '',
         settlementId: settlement.id
       });
     });
     if (!entries.length) { showToast('맞출 금액이 없습니다.'); return; }
 
     const preview = retro.slice(0, 15)
-      .map(r => `· ${r.name} (${r.idLabel}) +${formatNumber(r.amount)}원`);
+      .map(r => `· ${r.name} (${r.idLabel}) 미납 ${formatNumber(r.unpaidBalance)}원 · 그로스업 +${formatNumber(r.amount)}원`);
     const more = retro.length > 15 ? `\n외 ${retro.length - 15}명` : '';
     const ok = window.confirm(
       [
         `${entries.length}명의 마이너스를 0원으로 맞춥니다.`,
         '마이너스만큼 기타지급을 올리고, 원천세 3.3%까지 반영(그로스업)합니다.',
-        '총 출금액·선정산은 그대로이며, 소급분 메뉴에 기록됩니다.',
+        '총 출금액·선정산은 그대로이며, 「소급분 및 미납금」탭에 기록됩니다.',
+        '차감관리 이관은 자동이 아닙니다. 탭에서 선택해 보내세요.',
         '',
         ...preview
       ].join('\n') + more + '\n\n적용할까요?'
@@ -454,73 +470,236 @@ const BremSettlementResultDirect = (function () {
     showToast(`${entries.length}명 일괄 맞춤 완료 · 총지급액 0원 처리 (소급분 기록)`);
   }
 
-  function toggleRetroView(force) {
-    const card = $('#settlementResultRetroCard');
-    if (!card) return;
-    const show = typeof force === 'boolean' ? force : card.hidden;
-    card.hidden = !show;
-    if (show) renderRetro();
+  function retroStatusLabel(status) {
+    if (status === 'sent_to_deduction') return '차감관리 이관';
+    if (status === 'skipped') return '제외';
+    return '기록됨';
+  }
+
+  function collectRetroRows() {
+    const store = window.BremStorage?.directRetroAdjustments;
+    const all = store?.getAll?.() || {};
+    const q = String(state.retroSearch || '').trim().toLowerCase();
+    const weekFilter = String(state.retroWeekFilter || '').slice(0, 10);
+    const rows = [];
+    Object.keys(all).sort((a, b) => b.localeCompare(a)).forEach(wk => {
+      if (weekFilter && wk !== weekFilter) return;
+      Object.entries(all[wk] || {}).forEach(([entryKey, r]) => {
+        if (!r) return;
+        const name = String(r.name || '');
+        const idLabel = String(r.idLabel || '');
+        if (q && !`${name} ${idLabel} ${r.driverId || ''}`.toLowerCase().includes(q)) return;
+        rows.push({
+          weekStart: wk,
+          entryKey,
+          ...r,
+          unpaidBalance: Math.max(0, Math.round(Number(r.unpaidBalance != null ? r.unpaidBalance : 0))),
+          grossUpAmount: Math.max(0, Math.round(Number(r.grossUpAmount != null ? r.grossUpAmount : r.amount || 0))),
+          status: String(r.status || 'logged')
+        });
+      });
+    });
+    return rows;
+  }
+
+  function fillRetroWeekFilter() {
+    const select = $('#settlementRetroWeekFilter');
+    if (!select) return;
+    const all = window.BremStorage?.directRetroAdjustments?.getAll?.() || {};
+    const weeks = Object.keys(all).sort((a, b) => b.localeCompare(a));
+    const current = state.retroWeekFilter || select.value || '';
+    select.innerHTML = `<option value="">전체 주</option>${weeks.map(wk =>
+      `<option value="${escapeHtml(wk)}"${wk === current ? ' selected' : ''}>${escapeHtml(wk)}(수)</option>`
+    ).join('')}`;
+    state.retroWeekFilter = select.value || '';
   }
 
   function renderRetro() {
     const body = $('#settlementResultRetroBody');
+    const summaryEl = $('#settlementRetroSummary');
     if (!body) return;
-    const store = window.BremStorage?.directRetroAdjustments;
-    const all = store?.getAll?.() || {};
-    const weeks = Object.keys(all).sort((a, b) => b.localeCompare(a));
-    if (!weeks.length) {
-      body.innerHTML = '<p class="form-help">아직 소급분(일괄 맞추기) 내역이 없습니다.</p>';
+    fillRetroWeekFilter();
+    const rows = collectRetroRows();
+    if (!rows.length) {
+      body.innerHTML = '<p class="form-help">표시할 소급분·미납 내역이 없습니다. 「마이너스 일괄 맞추기」후 여기에 쌓입니다.</p>';
+      if (summaryEl) summaryEl.textContent = '';
       return;
     }
-    let grandTotal = 0;
-    let grandCount = 0;
-    weeks.forEach(wk => {
-      Object.values(all[wk] || {}).forEach(r => {
-        grandTotal += Number(r.amount || 0);
-        grandCount += 1;
-      });
+
+    let unpaidSum = 0;
+    let grossSum = 0;
+    let sentCount = 0;
+    rows.forEach(r => {
+      unpaidSum += r.unpaidBalance;
+      grossSum += r.grossUpAmount;
+      if (r.status === 'sent_to_deduction') sentCount += 1;
+    });
+    if (summaryEl) {
+      summaryEl.innerHTML = `표시 <strong>${rows.length}</strong>건 · 미납잔액 합 <strong>${formatNumber(unpaidSum)}</strong>원 · 그로스업 합 <strong>${formatNumber(grossSum)}</strong>원 · 이관됨 ${sentCount}건`;
+    }
+
+    const byWeek = new Map();
+    rows.forEach(r => {
+      if (!byWeek.has(r.weekStart)) byWeek.set(r.weekStart, []);
+      byWeek.get(r.weekStart).push(r);
     });
 
-    const weekBlocks = weeks.map(wk => {
-      const map = all[wk] || {};
-      const list = Object.values(map).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
-      if (!list.length) return '';
-      const total = list.reduce((s, r) => s + Number(r.amount || 0), 0);
-      const rowsHtml = list.map(r => `
-        <tr>
+    const weekBlocks = [...byWeek.entries()].map(([wk, list]) => {
+      list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
+      const unpaidWeek = list.reduce((s, r) => s + r.unpaidBalance, 0);
+      const rowsHtml = list.map(r => {
+        const sent = r.status === 'sent_to_deduction';
+        const checkDisabled = sent ? ' disabled' : '';
+        const checkVal = `${escapeHtml(r.weekStart)}||${escapeHtml(r.entryKey)}`;
+        return `
+        <tr class="${sent ? 'settlement-retro-row--sent' : ''}">
+          <td><input type="checkbox" class="settlement-retro-check" value="${checkVal}"${checkDisabled}></td>
           <td class="settlement-retro-name"><strong>${escapeHtml(r.name || '-')}</strong></td>
           <td class="settlement-retro-id">${escapeHtml(r.idLabel || '-')}</td>
           <td class="settlement-retro-platform">${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
-          <td class="settlement-retro-amount">${formatNumber(r.amount)}원</td>
-        </tr>`).join('');
+          <td class="settlement-retro-amount weekly-amount-cell"><strong>${formatNumber(r.unpaidBalance)}</strong>원</td>
+          <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.grossUpAmount)}원</td>
+          <td>${escapeHtml(r.reason || '-')}</td>
+          <td>${escapeHtml(retroStatusLabel(r.status))}</td>
+        </tr>`;
+      }).join('');
       return `
         <div class="settlement-retro-week">
-          <p class="settlement-retro-week-head"><strong>${escapeHtml(wk)}(수)</strong> 주 · ${list.length}명 · 소급 합계 <strong>${formatNumber(total)}</strong>원</p>
+          <p class="settlement-retro-week-head"><strong>${escapeHtml(wk)}(수)</strong> 주 · ${list.length}건 · 미납합 <strong>${formatNumber(unpaidWeek)}</strong>원</p>
           <div class="table-wrap">
             <table class="weekly-settlement-saved-table settlement-retro-table">
               <thead>
                 <tr>
-                  <th class="settlement-retro-name">이름</th>
+                  <th><input type="checkbox" class="settlement-retro-check-all" data-week="${escapeHtml(wk)}" title="이 주 선택"></th>
+                  <th class="settlement-retro-name">기사</th>
                   <th class="settlement-retro-id">아이디</th>
                   <th class="settlement-retro-platform">플랫폼</th>
-                  <th class="settlement-retro-amount">소급 기타지급</th>
+                  <th class="settlement-retro-amount">미납잔액</th>
+                  <th class="settlement-retro-amount">그로스업액(참고)</th>
+                  <th>이유/메모</th>
+                  <th>이관상태</th>
                 </tr>
               </thead>
               <tbody>${rowsHtml}</tbody>
-              <tfoot>
-                <tr class="settlement-retro-total-row">
-                  <td colspan="3">합계 (${list.length}명)</td>
-                  <td class="settlement-retro-amount"><strong>${formatNumber(total)}원</strong></td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </div>`;
     }).join('');
 
-    body.innerHTML = `
-      <p class="settlement-retro-grand">전체 소급 합계 · ${grandCount}건 · <strong>${formatNumber(grandTotal)}</strong>원</p>
-      ${weekBlocks}`;
+    body.innerHTML = weekBlocks;
+    body.querySelectorAll('.settlement-retro-check-all').forEach(master => {
+      master.addEventListener('change', () => {
+        const week = master.getAttribute('data-week') || '';
+        body.querySelectorAll('.settlement-retro-check:not([disabled])').forEach(cb => {
+          if (String(cb.value || '').startsWith(`${week}||`)) cb.checked = master.checked;
+        });
+      });
+    });
+  }
+
+  async function sendSelectedToDeduction() {
+    const body = $('#settlementResultRetroBody');
+    if (!body) return;
+    const checked = [...body.querySelectorAll('.settlement-retro-check:checked:not([disabled])')];
+    if (!checked.length) {
+      showToast('이관할 건을 선택하세요.');
+      return;
+    }
+
+    const selected = checked.map(cb => {
+      const raw = String(cb.value || '');
+      const sep = raw.indexOf('||');
+      return { weekStart: raw.slice(0, sep), entryKey: raw.slice(sep + 2) };
+    }).filter(x => x.weekStart && x.entryKey);
+
+    const store = window.BremStorage?.directRetroAdjustments;
+    const ledger = window.BremStorage?.deductionLedger;
+    if (!store || !ledger) {
+      showToast('저장소를 사용할 수 없습니다.');
+      return;
+    }
+
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    const driverById = new Map(drivers.map(d => [String(d.id), d]));
+
+    const previewRows = [];
+    selected.forEach(({ weekStart, entryKey }) => {
+      const entry = store.getWeek?.(weekStart)?.[entryKey];
+      if (!entry) return;
+      if (entry.status === 'sent_to_deduction') return;
+      const unpaid = Math.max(0, Math.round(Number(entry.unpaidBalance || 0)));
+      previewRows.push({ weekStart, entryKey, entry, unpaid });
+    });
+    if (!previewRows.length) {
+      showToast('이관 가능한 선택 건이 없습니다. (이미 이관됐거나 데이터 없음)');
+      return;
+    }
+
+    const defaultDaily = previewRows.length === 1 ? previewRows[0].unpaid : '';
+    const dailyRaw = window.prompt(
+      [
+        `${previewRows.length}건을 차감관리(미납)로 보냅니다.`,
+        '일 차감액을 입력하세요. (비우면 각 건의 미납잔액 전액 = 일 1회 완납 차감)',
+        previewRows.slice(0, 8).map(p =>
+          `· ${p.entry.name} 미납 ${formatNumber(p.unpaid)}원`
+        ).join('\n')
+      ].join('\n'),
+      defaultDaily === '' ? '' : String(defaultDaily)
+    );
+    if (dailyRaw === null) return;
+    const dailyOverride = String(dailyRaw).trim() === ''
+      ? null
+      : Math.max(0, Math.round(Number(String(dailyRaw).replace(/,/g, ''))));
+    if (dailyOverride !== null && (!Number.isFinite(dailyOverride) || dailyOverride <= 0)) {
+      showToast('일 차감액이 올바르지 않습니다.');
+      return;
+    }
+
+    const ok = window.confirm(
+      `${previewRows.length}건을 차감관리로 이관할까요?\n일 차감: ${dailyOverride == null ? '건별 미납잔액' : `${formatNumber(dailyOverride)}원`}`
+    );
+    if (!ok) return;
+
+    let created = 0;
+    let skipped = 0;
+    for (const item of previewRows) {
+      const sourceRef = `${item.weekStart}|${item.entryKey}`;
+      const existing = ledger.findBySource?.('unpaid', sourceRef);
+      if (existing || item.entry.status === 'sent_to_deduction' || item.entry.ledgerId) {
+        skipped += 1;
+        continue;
+      }
+      const unpaid = item.unpaid;
+      if (unpaid <= 0) {
+        skipped += 1;
+        continue;
+      }
+      const dailyDeduct = dailyOverride != null ? Math.min(dailyOverride, unpaid) : unpaid;
+      const driver = driverById.get(String(item.entry.driverId)) || null;
+      const saved = ledger.save({
+        kind: 'unpaid',
+        sourceRef,
+        driverId: item.entry.driverId,
+        driverName: item.entry.name || driver?.name || '',
+        driverPhone: driver?.phone || driver?.mobile || '',
+        dailyDeduct,
+        balance: unpaid,
+        reason: item.entry.reason || `소급/미납 ${item.weekStart}`,
+        deductionPlatform: item.entry.platform === 'baemin' ? 'baemin' : 'coupang',
+        finalApplyEnabled: false,
+        weekStart: item.weekStart,
+        status: 'active'
+      });
+      store.updateEntry?.(item.weekStart, item.entryKey, {
+        status: 'sent_to_deduction',
+        ledgerId: saved.id
+      });
+      created += 1;
+    }
+
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    renderRetro();
+    showToast(`차감관리 이관 ${created}건${skipped ? ` · 건너뜀 ${skipped}건` : ''}`);
   }
 
   // ── 최종결산 (그 주 전체, 쿠팡+배민, 합치지 않음) ────────────────────────
@@ -540,11 +719,13 @@ const BremSettlementResultDirect = (function () {
     const settlements = finalWeekSettlements();
     const rows = [];
     const leaseConsumed = new Set();
+    const loanConsumed = new Set();
     settlements.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         weekSettlements: settlements,
-        _leaseConsumed: leaseConsumed
+        _leaseConsumed: leaseConsumed,
+        _loanConsumed: loanConsumed
       }).forEach(r => rows.push(r));
     });
     // 쿠팡 먼저, 그다음 배민, 각 그룹 내 이름순
@@ -594,25 +775,40 @@ const BremSettlementResultDirect = (function () {
         + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
         + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
         + ` · 총선정산 <strong>${formatNumber(t.prepaid)}</strong>`
+        + ` · 총리스차감 <strong>${formatNumber(t.leaseFee)}</strong>`
+        + ` · 총대여차감 <strong>${formatNumber(t.loanFee)}</strong>`
         + ` · 총콜수수료 <strong>${formatNumber(t.callFee)}</strong>`
         + ` · 총일정산수수료 <strong>${formatNumber(t.dailySettlementFee)}</strong>`
         + ` · <span class="final-deposit-total">총지급액 <strong>${formatNumber(t.netPay)}</strong>원</span>`;
     }
   }
 
-  function toggleFinalView(show) {
+  function setSettlementView(mode) {
+    const next = mode === 'final' || mode === 'retroUnpaid' ? mode : 'platform';
+    state.viewMode = next;
     const finalCard = $('#settlementFinalCard');
     const mainCard = $('#settlementResultMainCard');
+    const retroCard = $('#settlementResultRetroCard');
     const finalTab = $('#settlementFinalTabBtn');
-    if (!finalCard) return;
-    finalCard.hidden = !show;
-    if (mainCard) mainCard.hidden = show;
-    if (finalTab) finalTab.classList.toggle('active', show);
-    // 쿠팡/배민 탭 active 는 show 일 때 해제
-    if (show) {
+    const retroTab = $('#settlementRetroUnpaidTabBtn');
+    if (mainCard) mainCard.hidden = next !== 'platform';
+    if (finalCard) finalCard.hidden = next !== 'final';
+    if (retroCard) retroCard.hidden = next !== 'retroUnpaid';
+    if (finalTab) finalTab.classList.toggle('active', next === 'final');
+    if (retroTab) retroTab.classList.toggle('active', next === 'retroUnpaid');
+    if (next !== 'platform') {
       document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => btn.classList.remove('active'));
-      renderFinal();
+    } else {
+      document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-platform') === state.platform);
+      });
     }
+    if (next === 'final') renderFinal();
+    if (next === 'retroUnpaid') renderRetro();
+  }
+
+  function toggleFinalView(show) {
+    setSettlementView(show ? 'final' : 'platform');
   }
 
   async function publishFinalPayslips() {
@@ -641,13 +837,14 @@ const BremSettlementResultDirect = (function () {
   function bindEvents() {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
-    $('#settlementFinalTabBtn')?.addEventListener('click', () => toggleFinalView(true));
+    $('#settlementFinalTabBtn')?.addEventListener('click', () => setSettlementView('final'));
+    $('#settlementRetroUnpaidTabBtn')?.addEventListener('click', () => setSettlementView('retroUnpaid'));
     $('#settlementFinalReloadBtn')?.addEventListener('click', async () => { await loadWithdrawals(); renderFinal(); });
     $('#settlementFinalPublishBtn')?.addEventListener('click', () => { void publishFinalPayslips(); });
     $('#settlementFinalWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#settlementFinalWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => {
-      btn.addEventListener('click', () => toggleFinalView(false));
+      btn.addEventListener('click', () => setSettlementView('platform'));
     });
     $('#settlementResultSettlementSelect')?.addEventListener('change', async event => {
       state.settlementId = event.target.value || '';
@@ -662,8 +859,16 @@ const BremSettlementResultDirect = (function () {
     $('#settlementResultDeleteBtn')?.addEventListener('click', () => { void deleteCurrentSettlement(); });
     $('#settlementResultDeleteWeekBtn')?.addEventListener('click', () => { void deleteWeekSettlements(); });
     $('#settlementResultBatchFixBtn')?.addEventListener('click', () => { void batchFixNegatives(); });
-    $('#settlementResultRetroBtn')?.addEventListener('click', () => toggleRetroView());
-    $('#settlementResultRetroCloseBtn')?.addEventListener('click', () => toggleRetroView(false));
+    $('#settlementRetroReloadBtn')?.addEventListener('click', () => renderRetro());
+    $('#settlementRetroSendBtn')?.addEventListener('click', () => { void sendSelectedToDeduction(); });
+    $('#settlementRetroWeekFilter')?.addEventListener('change', event => {
+      state.retroWeekFilter = event.target.value || '';
+      renderRetro();
+    });
+    $('#settlementRetroSearch')?.addEventListener('input', event => {
+      state.retroSearch = event.target.value || '';
+      renderRetro();
+    });
   }
 
   async function refresh(platform) {

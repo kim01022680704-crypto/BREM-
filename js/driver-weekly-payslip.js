@@ -45,7 +45,8 @@
     { key: 'callFee', label: '콜수수료' },
     { key: 'dailySettlementFee', label: '일정산수수료' },
     { key: 'prepaid', label: '선정산(처리완료)' },
-    { key: 'leaseFee', label: '리스비' },
+    { key: 'leaseFee', label: '리스차감' },
+    { key: 'loanFee', label: '대여차감' },
     { key: 'deductTotal', label: '공제합계', total: true }
   ]);
 
@@ -67,6 +68,7 @@
       dailySettlementFee: 0,
       prepaid: 0,
       leaseFee: 0,
+      loanFee: 0,
       deductTotal: 0,
       netPay: 0
     };
@@ -91,6 +93,7 @@
     bucket.dailySettlementFee = Number(source.dailySettlementFee || 0);
     bucket.prepaid = Number(source.prepaid || 0);
     bucket.leaseFee = Number(source.leaseFee || 0);
+    bucket.loanFee = Number(source.loanFee || 0);
     bucket.grossPay = Number(source.grossPay ?? source.grossPaymentTotal ?? 0)
       || (bucket.deliveryFee + bucket.missionPay + bucket.other + bucket.promo);
     bucket.deductTotal = Number(source.deductTotal ?? source.deductionTotal ?? 0)
@@ -105,6 +108,7 @@
         + bucket.dailySettlementFee
         + bucket.prepaid
         + bucket.leaseFee
+        + bucket.loanFee
       );
     bucket.netPay = Number(source.netPay ?? source.finalNetPay ?? 0)
       || (bucket.grossPay - bucket.deductTotal);
@@ -314,6 +318,7 @@
       setText('driverPayslipBaeminId', result.rider?.baeminId || '-');
       setText('driverPayslipLeaseStatus', result.lease?.leaseLabel || '없음');
       setText('driverPayslipLeaseFee', result.lease?.leaseFee ? formatMoney(result.lease.leaseFee) : '-');
+      setText('driverPayslipLoanFee', '-');
       setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount
         ? `${formatMoney(result.lease.unpaidAmount)} (${result.lease.unpaidReason || '리스비 미납'})`
         : '-');
@@ -338,7 +343,11 @@
     setText('driverPayslipCoupangId', rider.coupangId || payslip.coupangId || '-');
     setText('driverPayslipBaeminId', rider.baeminId || payslip.baeminId || '-');
     setText('driverPayslipLeaseStatus', lease.leaseLabel || '없음');
-    setText('driverPayslipLeaseFee', lease.leaseFee ? formatMoney(lease.leaseFee) : '-');
+    // 헤더 리스·대여차감은 정산결과(직계약) 공제열과 동일 값(버킷)을 우선 표시
+    const headerLease = Number(bucket.leaseFee || 0) || Number(lease.leaseFee || 0);
+    const headerLoan = Number(bucket.loanFee || 0);
+    setText('driverPayslipLeaseFee', headerLease ? formatMoney(headerLease) : '-');
+    setText('driverPayslipLoanFee', headerLoan ? formatMoney(headerLoan) : '-');
     setText('driverPayslipLeaseUnpaid', lease.unpaidAmount
       ? `${formatMoney(lease.unpaidAmount)} (${lease.unpaidReason || '리스비 미납'})`
       : '-');
@@ -378,7 +387,7 @@
         renderPayRow(row.label, bucket[row.key])
       ));
       if (includeLease && lease.hasLease && bucketLease <= 0) {
-        rows.push(renderPayRow('리스비', lease.leaseFee, lease.vehicleNumber || '리스/렌탈'));
+        rows.push(renderPayRow('리스차감', lease.leaseFee, lease.vehicleNumber || '리스/렌탈'));
       }
       if (includeLease && lease.unpaidAmount) {
         rows.push(renderPayRow('미납', lease.unpaidAmount, lease.unpaidReason || '리스비 미납'));

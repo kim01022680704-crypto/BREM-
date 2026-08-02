@@ -131,6 +131,7 @@ function emptyLeaseInfo() {
     leaseCharge: 0,
     outstandingArrears: 0,
     leaseDeductionTotal: 0,
+    ledgerCharge: 0,
     arrearReason: '',
     contractId: '',
     finalApplyEnabled: false
@@ -143,7 +144,7 @@ function emptyLeaseInfo() {
  */
 async function loadLeaseTables(supabase) {
   try {
-    const [contractsRes, arrearsRes] = await Promise.all([
+    const [contractsRes, arrearsRes, ledgerRes] = await Promise.all([
       supabase
         .from('lease_contracts')
         .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
@@ -154,14 +155,24 @@ async function loadLeaseTables(supabase) {
         .from('lease_arrears')
         .select('unpaid_amount,recovered_amount,raw_data,collection_status,contract_id')
         .order('updated_at', { ascending: false })
-        .limit(6000)
+        .limit(6000),
+      supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'brem_deduction_ledger_v1')
+        .maybeSingle()
     ]);
+    const ledgerRaw = ledgerRes?.data?.value;
+    const ledger = Array.isArray(ledgerRaw)
+      ? ledgerRaw
+      : (Array.isArray(ledgerRaw?.items) ? ledgerRaw.items : []);
     return {
       contracts: contractsRes.data || [],
-      arrears: arrearsRes.data || []
+      arrears: arrearsRes.data || [],
+      ledger
     };
   } catch (_error) {
-    return { contracts: [], arrears: [] };
+    return { contracts: [], arrears: [], ledger: [] };
   }
 }
 
@@ -218,14 +229,44 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   });
   const arrearReason = [...new Set(arrearReasons)].join(', ');
 
-  const leaseDeductionTotal = leaseCharge + outstandingArrears;
+  // 차감관리(대여·미납) 반영분 — 일×운행일, 잔액 한도
+  let ledgerCharge = 0;
+  const ledger = Array.isArray(tables?.ledger) ? tables.ledger : [];
+  const todayKeyForLedger = todayKey;
+  const activeDaysForLedger = countActiveLeaseDays(weekStart, weekEnd, todayKeyForLedger, '', '');
+  ledger.forEach(item => {
+    if (!item || !item.finalApplyEnabled) return;
+    if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
+    const sameDriver = (item.driverId && String(item.driverId) === String(rider.id))
+      || (
+        leaseNormalizeName(item.driverName) === leaseNormalizeName(rider.name)
+        && leaseNormalizePhone(item.driverPhone) === leaseNormalizePhone(rider.phone)
+        && leaseNormalizeName(item.driverName)
+      );
+    if (!sameDriver) return;
+    const itemPlatform = normalizeDeductionPlatform(item.deductionPlatform);
+    if (!contract) deductionPlatform = itemPlatform;
+    else if (itemPlatform === deductionPlatform || leaseCharge <= 0) {
+      // 계약 플랫폼과 같거나 리스차감이 없으면 이 플랫폼에 합산
+      if (leaseCharge <= 0) deductionPlatform = itemPlatform;
+    }
+    if (itemPlatform !== deductionPlatform && leaseCharge > 0) return;
+    const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+    const balance = Math.max(0, Math.round(Number(item.balance || 0)));
+    if (daily <= 0 || balance <= 0 || activeDaysForLedger <= 0) return;
+    ledgerCharge += Math.min(balance, daily * activeDaysForLedger);
+  });
+
+  const leaseDeductionTotal = leaseCharge + outstandingArrears + ledgerCharge;
   return {
-    hasLease: Boolean(contract) && (leaseCharge > 0 || outstandingArrears > 0 || (dailyRent > 0 && finalApplyEnabled)),
+    hasLease: Boolean(contract) && (leaseCharge > 0 || outstandingArrears > 0 || (dailyRent > 0 && finalApplyEnabled))
+      || ledgerCharge > 0,
     dailyRent,
     deductionPlatform,
     activeDays,
     leaseCharge,
     outstandingArrears,
+    ledgerCharge,
     leaseDeductionTotal,
     arrearReason,
     contractId,
@@ -650,6 +691,7 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       deductionPlatform,
       activeDays: Math.max(0, Math.round(Number(lease?.activeDays || 0))),
       leaseCharge: Math.max(0, Math.round(Number(lease?.leaseCharge || 0))),
+      ledgerCharge: Math.max(0, Math.round(Number(lease?.ledgerCharge || 0))),
       outstandingArrears: Math.max(0, Math.round(Number(lease?.outstandingArrears || 0))),
       leaseDeductionTotal: leaseDeduction,
       arrearReason: lease?.arrearReason || ''

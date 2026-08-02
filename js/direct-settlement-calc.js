@@ -35,7 +35,8 @@ const BremDirectSettlementCalc = (function () {
     { key: 'callFee', label: '콜수수료', group: 'deduct' },
     { key: 'dailySettlementFee', label: '일정산수수료', group: 'deduct' },
     { key: 'prepaid', label: '선정산(처리완료)', group: 'deduct' },
-    { key: 'leaseFee', label: '리스비', group: 'deduct' },
+    { key: 'leaseFee', label: '리스차감', group: 'deduct' },
+    { key: 'loanFee', label: '대여차감', group: 'deduct' },
     { key: 'deductTotal', label: '공제합계', group: 'deduct', strong: true },
 
     { key: 'netPay', label: '총지급액', group: 'net', strong: true }
@@ -410,11 +411,67 @@ const BremDirectSettlementCalc = (function () {
     return Math.max(0, Math.round(Number(entry.amount || 0)));
   }
 
+  function loadDeductionLedgerForFee(explicit) {
+    if (Array.isArray(explicit)) return explicit;
+    try {
+      return window.BremStorage?.deductionLedger?.getAll?.() || [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  /** 차감관리(대여·미납) 반영분 → 기사 키별 주간 차감액 (잔액 한도) */
+  function buildLoanFeeIndex(ledgerItems, weekStart) {
+    const index = new Map();
+    const start = String(weekStart || '').slice(0, 10);
+    if (!start) return index;
+    const end = weekEndFromStart(start);
+    const today = dateKey(new Date());
+    const daysInWeek = countLeaseActiveDays(start, end, today, '', '');
+    (Array.isArray(ledgerItems) ? ledgerItems : []).forEach(item => {
+      if (!item || !item.finalApplyEnabled) return;
+      if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
+      const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+      const balance = Math.max(0, Math.round(Number(item.balance || 0)));
+      if (daily <= 0 || balance <= 0 || daysInWeek <= 0) return;
+      const amount = Math.min(balance, daily * daysInWeek);
+      if (amount <= 0) return;
+      const platform = normalizePlatform(item.deductionPlatform || 'coupang');
+      const entry = { amount, platform, ledgerId: String(item.id || '') };
+      const driverId = String(item.driverId || '').trim();
+      if (driverId) {
+        const prev = index.get(`id:${driverId}`);
+        if (prev && normalizePlatform(prev.platform) === platform) {
+          prev.amount += amount;
+        } else if (!prev) {
+          index.set(`id:${driverId}`, { ...entry });
+        }
+      }
+      const name = normalizeNameKey(item.driverName);
+      const phone = normalizePhoneKey(item.driverPhone);
+      if (name && phone) {
+        const npKey = `np:${name}|${phone}`;
+        const prev = index.get(npKey);
+        if (prev && normalizePlatform(prev.platform) === platform) {
+          prev.amount += amount;
+        } else if (!prev) {
+          index.set(npKey, { ...entry });
+        }
+      }
+    });
+    return index;
+  }
+
+  function resolveLoanFeeForRow(row, loanIndex) {
+    return resolveLeaseFeeForRow(row, loanIndex);
+  }
+
   // 정산서 1건 → 라이더별 정산 행. 쿠팡·배민 모두 같은 필드를 채운다.
   // 선정산(처리완료)은 그 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
   // options._prepaidMap / options._consumed 를 넘기면 여러 정산서(지역) 사이에서
   // 같은 사람의 같은 플랫폼 출금을 한 번만 반영한다(최종입금 합산용).
   // 리스비: 「대여 및 차감관리」반영 계약만, 차감플랫폼 행에 주간분(일×운행일) 1회.
+  // 대여/차감: 차감관리 반영분(대여·미납) 동일 규칙.
   function computeRows(settlement, options = {}) {
     if (!settlement) return [];
     const platform = normalizePlatform(settlement.platform);
@@ -423,6 +480,8 @@ const BremDirectSettlementCalc = (function () {
     const adj = adjustmentMaps(settlement);
     const leaseIndex = options._leaseFeeIndex
       || buildLeaseFeeIndex(loadLeaseContractsForFee(options.leaseContracts), week);
+    const loanIndex = options._loanFeeIndex
+      || buildLoanFeeIndex(loadDeductionLedgerForFee(options.ledgerItems), week);
 
     // 스필오버 배분(권장): 이 주 전체(쿠팡+배민) 정산서를 넘겨주면, 사람별로 각 플랫폼
     // 실지급 한도까지만 선정산을 잡고 초과분은 반대 플랫폼으로 넘긴다. weekSettlements
@@ -440,6 +499,7 @@ const BremDirectSettlementCalc = (function () {
     // 같은 사람이 같은 플랫폼에서 여러 지역 정산서에 걸쳐 있어도 출금은 한 번만 반영.
     const consumed = options._consumed || new Set();
     const leaseConsumed = options._leaseConsumed || new Set();
+    const loanConsumed = options._loanConsumed || new Set();
 
     const rows = [];
     (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
@@ -465,7 +525,14 @@ const BremDirectSettlementCalc = (function () {
         if (leaseFee > 0) leaseConsumed.add(leaseDedupe);
       }
 
-      const deductTotal = base.baseDeduct + dailySettlementFee + prepaid + leaseFee;
+      let loanFee = 0;
+      const loanDedupe = `${key || base.driverId || base.name}:${platform}:loan`;
+      if (!loanConsumed.has(loanDedupe)) {
+        loanFee = resolveLoanFeeForRow(base, loanIndex);
+        if (loanFee > 0) loanConsumed.add(loanDedupe);
+      }
+
+      const deductTotal = base.baseDeduct + dailySettlementFee + prepaid + leaseFee + loanFee;
       const netPay = base.grossPay - deductTotal;
 
       rows.push({
@@ -491,6 +558,7 @@ const BremDirectSettlementCalc = (function () {
         dailySettlementFee,
         prepaid,
         leaseFee,
+        loanFee,
         deductTotal,
         netPay,
         untaggedWithdrawalCount: source.untaggedCount || 0,

@@ -90,6 +90,7 @@ async function publishDirectSettlementPayslips(accessToken, body = {}) {
       dailySettlementFee: num(row.dailySettlementFee),
       prepaid: num(row.prepaid),
       leaseFee: num(row.leaseFee),
+      loanFee: num(row.loanFee),
       deductTotal,
       netPay,
       baeminId,

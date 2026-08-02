@@ -207,10 +207,20 @@
     const lease = payload.lease || {};
     const leaseDeduction = Math.max(0, Number(lease.leaseDeductionTotal || 0));
     const outstandingArrears = Math.max(0, Number(lease.outstandingArrears || 0));
+    const ledgerCharge = Math.max(0, Number(lease.ledgerCharge || 0));
+    const leaseChargeOnly = Math.max(0, Number(lease.leaseCharge || 0));
     const arrearReason = String(lease.arrearReason || '리스비 미납').trim() || '리스비 미납';
-    const leaseText = leaseDeduction > 0
-      ? ` · 리스비 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'} 차감)`
-      : '';
+    const deductParts = [];
+    if (leaseChargeOnly > 0) deductParts.push(`리스차감 ${formatMoney(leaseChargeOnly)}`);
+    if (ledgerCharge > 0) deductParts.push(`대여차감 ${formatMoney(ledgerCharge)}`);
+    if (outstandingArrears > 0 && leaseDeduction > leaseChargeOnly + ledgerCharge) {
+      // 미납은 별도 배너로도 표시
+    }
+    const leaseText = deductParts.length
+      ? ` · ${deductParts.join(' · ')}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'} 차감)`
+      : (leaseDeduction > 0
+        ? ` · 리스·대여차감 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'} 차감)`
+        : '');
     const unpaidEl = document.getElementById('driverWithdrawalUnpaid');
     if (unpaidEl) {
       if (outstandingArrears > 0) {
@@ -476,7 +486,7 @@
     }
     const platformPool = platformAvailableAmount(platform);
     if (platformPool < 0) {
-      showToast(`리스비·미납 차감으로 ${platformLabel(platform)} 출금가능금액이 ${formatMoney(platformPool)} 입니다. 정산/미납회수 후 신청하세요.`);
+      showToast(`리스차감·대여차감·미납으로 ${platformLabel(platform)} 출금가능금액이 ${formatMoney(platformPool)} 입니다. 정산/미납회수 후 신청하세요.`);
       return;
     }
     const feeAmount = estimateFeeForAmount(amount);
