@@ -343,10 +343,46 @@
     return wd ? `${m}/${d}(${wd})` : `${m}/${d}`;
   }
 
+  /** 정산주 시작(수요일). BremDatePicker 없어도 동작 */
+  function settlementWeekStartKey(dateKey) {
+    const key = String(dateKey || '').slice(0, 10);
+    if (dp()?.weekStartKey) return dp().weekStartKey(key);
+    const d = new Date(`${key}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return key;
+    const diff = (d.getDay() - 3 + 7) % 7;
+    d.setDate(d.getDate() - diff);
+    return localDateKey(d);
+  }
+
   function thisWeekWedToToday() {
     const today = todayBusinessKey();
-    const weekStart = dp()?.weekStartKey ? dp().weekStartKey(today) : today;
+    const weekStart = settlementWeekStartKey(today);
     return { fromDate: weekStart, toDate: today, weekStart };
+  }
+
+  function absorbWeekPeakItem(byVendor, vendorMap, it, weekRange) {
+    const p = it.parsed_json || {};
+    const vid = String(p.vendorId || it.vendor_id || '').trim();
+    const date = String(p.date || it.collect_date || '').slice(0, 10);
+    if (!vid || !date || date < weekRange.fromDate || date > weekRange.toDate) return;
+    const name = String(p.vendorName || it.vendor_name || vid);
+    if (!vendorMap.has(vid)) vendorMap.set(vid, name);
+    if (!byVendor[vid]) byVendor[vid] = {};
+    if (!byVendor[vid][date]) {
+      byVendor[vid][date] = { peaks: emptyPeaks(), rejectionRate: null };
+    }
+    const day = byVendor[vid][date];
+    const pt = String(p.peakType || '').toUpperCase();
+    if (PEAK_ORDER.includes(pt)) {
+      day.peaks[pt].goal += Number(p.goalCount) || 0;
+      if (p.completedCount != null) {
+        day.peaks[pt].completed += Number(p.completedCount) || 0;
+        day.peaks[pt].has = true;
+      } else if (Number(p.goalCount) > 0) {
+        day.peaks[pt].has = true;
+      }
+    }
+    if (p.rejectionRate != null) day.rejectionRate = toRejectionPercent(p.rejectionRate);
   }
 
   function emptyPeaks() {
@@ -529,25 +565,40 @@
   async function loadWeekQuota(vendorsHint = []) {
     const weekRange = thisWeekWedToToday();
     dash.weekRange = weekRange;
+    const weekEnd = dp()?.weekEndKey
+      ? dp().weekEndKey(weekRange.weekStart)
+      : addDaysKey(weekRange.weekStart, 6);
     const summaryEl = $('dashboardCoupangWeekSummary');
     const rowsEl = $('dashboardCoupangWeekRows');
     if (summaryEl) summaryEl.textContent = `${weekRange.fromDate} ~ ${weekRange.toDate} · 불러오는 중…`;
 
-    const res = await adminApi(
-      `/api/admin/coupang/items?sourceMenu=weekly_performance&collectDate=${encodeURIComponent(weekRange.weekStart)}`
-    );
-    if (!res.ok) {
-      if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="8" class="form-help">${esc(res.message || '주간 조회 실패')}</td></tr>`;
-      if (summaryEl) summaryEl.textContent = res.message || '주간 조회 실패';
+    // 주간 API(collect_date=수요일) + 일별 피크(수~오늘) — 주간 미수집이어도 오늘 피크로 채움
+    const [weeklyRes, peakRes] = await Promise.all([
+      adminApi(
+        `/api/admin/coupang/items?sourceMenu=weekly_performance&fromDate=${encodeURIComponent(weekRange.weekStart)}&toDate=${encodeURIComponent(weekEnd)}`
+      ),
+      adminApi(
+        `/api/admin/coupang/items?sourceMenu=peak_realtime&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
+      )
+    ]);
+
+    if (!weeklyRes.ok && !peakRes.ok) {
+      if (rowsEl) rowsEl.innerHTML = `<tr><td colspan="8" class="form-help">${esc(weeklyRes.message || peakRes.message || '주간 조회 실패')}</td></tr>`;
+      if (summaryEl) summaryEl.textContent = weeklyRes.message || peakRes.message || '주간 조회 실패';
       return;
     }
 
     const byVendor = {};
     const vendorMap = new Map();
-    (res.items || []).forEach(it => {
+    // 1) 주간 달성(있으면 우선)
+    (weeklyRes.ok ? weeklyRes.items || [] : []).forEach(it => {
+      absorbWeekPeakItem(byVendor, vendorMap, it, weekRange);
+    });
+    // 2) 일별 피크로 빈 날·빈 피크 보완 (주간 수집 안 된 경우 핵심)
+    (peakRes.ok ? peakRes.items || [] : []).forEach(it => {
       const p = it.parsed_json || {};
       const vid = String(p.vendorId || it.vendor_id || '').trim();
-      const date = String(p.date || '').slice(0, 10);
+      const date = String(p.date || it.collect_date || '').slice(0, 10);
       if (!vid || !date || date < weekRange.fromDate || date > weekRange.toDate) return;
       const name = String(p.vendorName || it.vendor_name || vid);
       if (!vendorMap.has(vid)) vendorMap.set(vid, name);
@@ -557,14 +608,16 @@
       }
       const day = byVendor[vid][date];
       const pt = String(p.peakType || '').toUpperCase();
-      if (PEAK_ORDER.includes(pt)) {
-        day.peaks[pt].goal += Number(p.goalCount) || 0;
-        if (p.completedCount != null) {
-          day.peaks[pt].completed += Number(p.completedCount) || 0;
-          day.peaks[pt].has = true;
-        }
+      if (!PEAK_ORDER.includes(pt)) return;
+      const peak = day.peaks[pt];
+      // 주간에서 이미 채워진 피크는 유지
+      if (peak.has && (peak.goal > 0 || peak.completed > 0)) return;
+      peak.goal = Number(p.goalCount) || 0;
+      peak.completed = Number(p.completedCount) || 0;
+      peak.has = true;
+      if (p.rejectionRate != null && day.rejectionRate == null) {
+        day.rejectionRate = toRejectionPercent(p.rejectionRate);
       }
-      if (p.rejectionRate != null) day.rejectionRate = toRejectionPercent(p.rejectionRate);
     });
 
     let vendors = Array.from(vendorMap.entries()).map(([vendorId, vendorName]) => ({ vendorId, vendorName }));
@@ -588,7 +641,7 @@
     dash.weekCache = { vendors, byVendor, weekRange };
     renderWeekRegionTabs(vendors);
     if (!vendors.length) {
-      if (rowsEl) rowsEl.innerHTML = '<tr><td colspan="8" class="form-help">이번주 할당 데이터가 없습니다. 쿠팡 밴더현황에서 주간 수집 후 다시 조회하세요.</td></tr>';
+      if (rowsEl) rowsEl.innerHTML = '<tr><td colspan="8" class="form-help">이번주 할당 데이터가 없습니다. 쿠팡 밴더현황에서 주간·일별 수집 후 다시 조회하세요.</td></tr>';
       if (summaryEl) summaryEl.textContent = '주간 데이터 없음';
       return;
     }

@@ -3499,27 +3499,35 @@ textarea {
   min-width: 0;
   width: 100%;
   font-size: 0.78rem;
+  table-layout: fixed;
 }
 
 .dashboard-coupang-compact-table th:nth-child(1),
 .dashboard-coupang-compact-table td:nth-child(1) {
-  width: 11%;
+  width: 12%;
 }
 
 .dashboard-coupang-compact-table th:nth-child(2),
 .dashboard-coupang-compact-table td:nth-child(2) {
-  width: 8%;
+  width: 7%;
 }
 
-.dashboard-coupang-compact-table th:nth-child(n+3),
-.dashboard-coupang-compact-table td:nth-child(n+3) {
-  width: auto;
+/* 아침~저논 동일 폭 — 배민 19% 규칙이 헤더/셀을 어긋나게 하지 않도록 */
+.dashboard-coupang-compact-table th:nth-child(n+3):nth-child(-n+7),
+.dashboard-coupang-compact-table td:nth-child(n+3):nth-child(-n+7) {
+  width: 13.5%;
+}
+
+.dashboard-coupang-compact-table th:nth-child(8),
+.dashboard-coupang-compact-table td:nth-child(8) {
+  width: 8%;
 }
 
 .dashboard-coupang-compact-table th,
 .dashboard-coupang-compact-table td {
   padding: 5px 4px;
   text-align: center;
+  vertical-align: middle;
 }
 
 .dashboard-coupang-compact-table th:nth-child(1),
@@ -3529,20 +3537,31 @@ textarea {
 
 .dashboard-coupang-compact-table .dashboard-baemin-region-name {
   display: inline-block;
-  max-width: none;
-  min-width: 4.5em;
-  overflow: visible;
-  text-overflow: clip;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.84rem;
   letter-spacing: -0.02em;
   font-weight: 800;
 }
 
+/* 헤더(가운데)와 비율·달성 뱃지 세로 스택 정렬 맞춤 */
+.dashboard-coupang-compact-table .dashboard-baemin-qcell__stack {
+  align-items: center;
+  width: 100%;
+}
+
+.dashboard-coupang-compact-table .dashboard-baemin-qcell__meta {
+  justify-content: center;
+}
+
 .dashboard-coupang-compact-table .dashboard-baemin-qcell__ratio {
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  text-align: center;
 }
 
 .dashboard-coupang-compact-table .baemin-quota-tag {
@@ -3607,15 +3626,17 @@ textarea {
   }
 
   .dashboard-coupang-compact-table .dashboard-baemin-region-name {
-    max-width: none;
-    min-width: 4.2em;
-    overflow: visible;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 0.7rem;
     font-weight: 800;
   }
 
   .dashboard-coupang-compact-table .dashboard-baemin-qcell__stack {
     gap: 1px;
+    align-items: center;
   }
 
   .dashboard-coupang-compact-table .dashboard-baemin-qcell__ratio {
