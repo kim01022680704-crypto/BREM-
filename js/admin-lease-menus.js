@@ -1100,12 +1100,59 @@ const BremAdminLeaseMenus = (function () {
 
   function contractRiderDailyRent(contract) {
     if (!contract) return 0;
-    const daily = Number(contract.dailyRent || 0);
-    const weekly = Number(contract.weeklyRent || 0);
-    if (!weekly && daily) return daily;
-    if (!daily && weekly) return weekly;
-    if (weekly && daily && Math.abs(weekly - daily * 7) > 1) return weekly;
-    return daily || weekly;
+    const daily = Math.max(0, Number(contract.dailyRent || 0));
+    const weekly = Math.max(0, Number(contract.weeklyRent || 0));
+    // 일 렌탈료가 있으면 그걸 우선. (예전 로직은 weekly≠daily×7 이면 weekly를 일당처럼 써서 27000 등이 튀었다)
+    if (daily > 0) return Math.round(daily);
+    if (weekly > 0) return Math.round(weekly / 7);
+    return 0;
+  }
+
+  /** 계약 시 정한 주간 청구액(라이더 부담) = 일렌탈료 × 7 */
+  function contractRiderWeeklyCharge(contract) {
+    if (!contract) return 0;
+    const daily = contractRiderDailyRent(contract);
+    if (daily > 0) return Math.round(daily * 7);
+    return Math.max(0, Math.round(Number(contract.weeklyRent || 0)));
+  }
+
+  /** 차량관리에 등록된 주간 리스비(원가) = 일리스비 × 7 */
+  function vehicleWeeklyLeaseCost(vehicle) {
+    return Math.max(0, Math.round(Number(vehicle?.dailyLeaseCost || 0) * 7));
+  }
+
+  /** 차액(주) = 주간청구액 − 주간리스비 */
+  function contractWeeklyMargin(contract, vehicle) {
+    return contractRiderWeeklyCharge(contract) - vehicleWeeklyLeaseCost(vehicle);
+  }
+
+  function getActiveContractForVehicle(vehicleId) {
+    if (!erp() || !vehicleId) return null;
+    const ended = erp().CONTRACT_STATUS?.ENDED || 'ended';
+    const list = erp().contracts().getAll().filter(item =>
+      String(item.vehicleId || '') === String(vehicleId)
+      && String(item.status || '') !== ended
+      && String(item.driverName || item.renter || '').trim()
+    );
+    if (!list.length) return null;
+    return list.slice().sort((a, b) =>
+      String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
+    )[0];
+  }
+
+  function formatContractPeriodLabel(contract) {
+    if (!contract) return '-';
+    const start = formatDate(contract.startDate);
+    const end = formatDate(contract.endDate);
+    if (start === '-' && end === '-') return '-';
+    return `${start} ~ ${end}`;
+  }
+
+  function formatDriverContractLabel(name, { contracted = true } = {}) {
+    const base = String(name || '').trim() || '-';
+    if (!contracted || base === '-') return base;
+    if (/\(계약됨\)$/.test(base)) return base;
+    return `${base}(계약됨)`;
   }
 
   function readContractDraft() {
@@ -1192,6 +1239,12 @@ const BremAdminLeaseMenus = (function () {
         ? Number(draft.leaseCost).toLocaleString('ko-KR')
         : '';
     }
+    if ($('leaseContractMargin')) {
+      const margin = Math.round(Number(draft.weeklyRent || 0) - Number(draft.leaseCost || 0));
+      $('leaseContractMargin').value = (draft.weeklyRent || draft.leaseCost)
+        ? margin.toLocaleString('ko-KR')
+        : '';
+    }
     const previewContract = buildContractPreviewFromDraft(draft);
     const vehicle = erp()?.vehicles().getById(draft.vehicleId);
     const tags = erp()?.resolveVehicleStatusTags?.(vehicle, previewContract) || [];
@@ -1232,7 +1285,21 @@ const BremAdminLeaseMenus = (function () {
     const plate = vehicle.vehicleNumber || '-';
     const model = vehicle.model || '-';
     const source = profit()?.vehicleSourceLabel?.(vehicle) || '';
-    label.textContent = `선택된 차량: ${plate} · ${model}${source ? ` · ${source}` : ''}`;
+    const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
+    const active = getActiveContractForVehicle(vehicle.id);
+    const parts = [`선택된 차량: ${plate} · ${model}${source ? ` · ${source}` : ''}`];
+    if (weeklyLease > 0) parts.push(`주간리스비 ${formatMoney(weeklyLease)}`);
+    if (active) {
+      const charge = contractRiderWeeklyCharge(active);
+      const driver = formatDriverContractLabel(active.driverName || active.renter || '');
+      parts.push(`${driver}`);
+      parts.push(`계약기간 ${formatContractPeriodLabel(active)}`);
+      if (charge > 0) parts.push(`주간청구 ${formatMoney(charge)}`);
+      if (weeklyLease > 0 || charge > 0) {
+        parts.push(`차액 ${formatMoney(charge - weeklyLease)}`);
+      }
+    }
+    label.textContent = parts.join(' · ');
   }
 
   function clearLeaseContractVehicleSelection() {
@@ -1258,7 +1325,14 @@ const BremAdminLeaseMenus = (function () {
     if (keyword) {
       list = list.filter(item => {
         const source = profit()?.vehicleSourceLabel?.(item) || '';
-        const haystack = [item.vehicleNumber, item.model, source].join(' ').toLowerCase();
+        const active = getActiveContractForVehicle(item.id);
+        const haystack = [
+          item.vehicleNumber,
+          item.model,
+          source,
+          active?.driverName,
+          active?.driverPhone
+        ].join(' ').toLowerCase();
         return haystack.includes(keyword);
       });
     }
@@ -1268,13 +1342,20 @@ const BremAdminLeaseMenus = (function () {
       box.innerHTML = '<p class="lease-driver-picker__empty">검색된 등록 차량이 없습니다. 차량관리에서 먼저 등록하세요.</p>';
       return;
     }
-    box.innerHTML = list.map(item => `
+    box.innerHTML = list.map(item => {
+      const active = getActiveContractForVehicle(item.id);
+      const weeklyLease = vehicleWeeklyLeaseCost(item);
+      const meta = active
+        ? `${formatDriverContractLabel(active.driverName || '-')} · ${formatContractPeriodLabel(active)} · 주간청구 ${formatMoney(contractRiderWeeklyCharge(active))}`
+        : (weeklyLease > 0 ? `주간리스비 ${formatMoney(weeklyLease)} · 미계약` : '미계약');
+      return `
       <button type="button" class="lease-driver-picker__item" data-lease-pick-vehicle="${escapeHtml(item.id)}">
-        <strong>${escapeHtml(item.vehicleNumber || '-')}</strong>
-        <span>${escapeHtml(item.model || '-')}</span>
-        <span>${escapeHtml(profit()?.vehicleSourceLabel?.(item) || '회사리스')}</span>
+        <strong>${escapeHtml(item.vehicleNumber || '-')}${active ? ' (계약됨)' : ''}</strong>
+        <span>${escapeHtml(item.model || '-')} · ${escapeHtml(profit()?.vehicleSourceLabel?.(item) || '회사리스')}</span>
+        <span>${escapeHtml(meta)}</span>
       </button>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function onContractVehicleChange() {
@@ -1429,7 +1510,7 @@ const BremAdminLeaseMenus = (function () {
         case 'driverName':
           return String(contract.driverName || '');
         case 'dailyRent':
-          return Number(contractRiderDailyRent(contract) || 0);
+          return Number(contractRiderWeeklyCharge(contract) || 0);
         case 'unpaid':
           return Number(contractUnpaidInfo(contract).amount || 0);
         default:
@@ -1467,7 +1548,7 @@ const BremAdminLeaseMenus = (function () {
     }
     const deleting = state.contractDeleting;
     if (!contracts.length) {
-      rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${allContracts.length ? '검색 결과가 없습니다.' : '등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.'}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="11" class="empty">${allContracts.length ? '검색 결과가 없습니다.' : '등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.'}</td></tr>`;
       const deleteAllBtn = $('leaseContractDeleteAllBtn');
       if (deleteAllBtn) {
         deleteAllBtn.disabled = Boolean(deleting);
@@ -1479,7 +1560,7 @@ const BremAdminLeaseMenus = (function () {
       const vehicle = erp().vehicles().getById(contract.vehicleId);
       const typeLabel = profit()?.vehicleSourceLabel?.(vehicle)
         || (contract.contractType === 'rental' ? '렌탈' : '리스');
-      const period = [formatDate(contract.startDate), formatDate(contract.endDate)].filter(v => v !== '-').join(' ~ ') || '-';
+      const period = formatContractPeriodLabel(contract);
       const returnDate = formatDate(contract.returnDate || (String(contract.status || '') === 'ended' ? contract.endDate : ''));
       const statusHtml = renderStatusTagsHtml(vehicle, contract);
       const ended = String(contract.status || '') === (erp()?.CONTRACT_STATUS?.ENDED || 'ended');
@@ -1488,15 +1569,24 @@ const BremAdminLeaseMenus = (function () {
       const unpaidTag = unpaid.isUnpaid
         ? ` <span class="lease-status-badge lease-status-badge--unpaid lease-unpaid-tag">미납${unpaid.amount > 0 ? ' ' + formatMoney(unpaid.amount) : ''}</span>`
         : '';
+      const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
+      const weeklyCharge = contractRiderWeeklyCharge(contract);
+      const margin = weeklyCharge - weeklyLease;
+      const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
+      const driverLabel = ended
+        ? escapeHtml(contract.driverName || '-')
+        : escapeHtml(formatDriverContractLabel(contract.driverName || '-'));
       return `
         <tr class="${ended ? 'lease-contract-row--ended' : ''}${unpaid.isUnpaid ? ' lease-contract-row--unpaid' : ''}">
           <td><strong>${escapeHtml(contract.vehicleNumber || vehicle?.vehicleNumber || '-')}</strong></td>
           <td>${contractDealTypeBadge(contract)} ${escapeHtml(typeLabel)}</td>
-          <td>${escapeHtml(contract.driverName || '-')}${unpaidTag}</td>
+          <td>${driverLabel}${unpaidTag}</td>
           <td>${escapeHtml(contract.driverPhone || '-')}</td>
           <td>${escapeHtml(period)}</td>
           <td>${returnDate !== '-' ? escapeHtml(returnDate) : '-'}</td>
-          <td>${formatMoney(contractRiderDailyRent(contract))}</td>
+          <td>${formatMoney(weeklyLease)}</td>
+          <td>${formatMoney(weeklyCharge)}</td>
+          <td class="${marginCls}">${formatMoney(margin)}</td>
           <td class="lease-status-tags lease-status-tags--table">${statusHtml}${ended ? ' <span class="lease-status-badge lease-status-badge--ended">종료</span>' : ''}</td>
           <td class="lease-actions">
             <button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>수정</button>
@@ -2585,15 +2675,13 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
-    const days = Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7);
-    const daily = contractRiderDailyRent(contract);
-    const charge = Math.round(daily * days);
+    const charge = contractRiderWeeklyCharge(contract);
     if (charge <= 0) {
-      showToast('일 렌탈료가 없어 완납 처리할 수 없습니다. 계약/렌탈에서 요금을 확인하세요.');
+      showToast('주간 청구액이 없어 완납 처리할 수 없습니다. 계약/렌탈에서 일 렌탈료를 확인하세요.');
       return;
     }
     if (!options.skipConfirm) {
-      if (!window.confirm(`${contract.driverName || '기사'} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요?`)) return;
+      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요?`)) return;
     }
 
     upsertWeekPaymentConfirm({
@@ -2663,15 +2751,14 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
-    const days = Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7);
     const daily = contractRiderDailyRent(contract);
-    const charge = Math.round(daily * days);
+    const charge = contractRiderWeeklyCharge(contract);
     if (charge <= 0) {
-      showToast('일 렌탈료가 없어 부분납 처리할 수 없습니다.');
+      showToast('주간 청구액이 없어 부분납 처리할 수 없습니다.');
       return;
     }
     const raw = window.prompt(
-      `${contract.driverName || '기사'} · 주 청구 ${formatMoney(charge)}\n납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)`,
+      `${formatDriverContractLabel(contract.driverName || '기사')} · 주간청구 ${formatMoney(charge)}\n납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)`,
       String(Math.round(charge / 2))
     );
     if (raw == null) return;
@@ -2685,7 +2772,7 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const unpaidAmount = charge - paid;
-    const unpaidDays = daily > 0 ? Math.max(1, Math.round(unpaidAmount / daily)) : days;
+    const unpaidDays = daily > 0 ? Math.max(1, Math.round(unpaidAmount / daily)) : 7;
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
       weekStart,
@@ -2738,24 +2825,26 @@ const BremAdminLeaseMenus = (function () {
     }
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="8" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 차량에 기사를 배정하세요.</td></tr>'
-        : '<tr><td colspan="8" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+        ? '<tr><td colspan="9" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 차량에 기사를 배정하세요.</td></tr>'
+        : '<tr><td colspan="9" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
       return;
     }
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = vehicleMap.get(contract.vehicleId);
-      const days = Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7);
-      const daily = contractRiderDailyRent(contract);
-      const charge = Math.round(daily * days);
+      const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
+      const weeklyCharge = contractRiderWeeklyCharge(contract);
+      const margin = weeklyCharge - weeklyLease;
+      const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
-      const disabled = charge <= 0 ? ' disabled' : '';
+      const disabled = weeklyCharge <= 0 ? ' disabled' : '';
       return `<tr>
         <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
         <td>${escapeHtml(vehicle?.model || contract.modelType || '-')}</td>
-        <td>${escapeHtml(contract.driverName || '-')}</td>
+        <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}</td>
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
-        <td>${formatMoney(daily)}</td>
-        <td>${formatMoney(charge)}</td>
+        <td>${formatMoney(weeklyLease)}</td>
+        <td>${formatMoney(weeklyCharge)}</td>
+        <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
           <button type="button" class="small-btn primary-btn" data-payment-full="${escapeHtml(contract.id)}"${disabled}>완납</button>

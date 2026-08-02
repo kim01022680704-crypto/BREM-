@@ -2579,9 +2579,10 @@
                 </header>
                 <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense">
                   <label>일 렌탈료<input type="number" id="leaseContractWeeklyRent" min="0" placeholder="4000"></label>
-                  <label>주간 환산<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동"></label>
+                  <label>주간 청구액<input type="text" id="leaseContractDailyRent" readonly tabindex="-1" placeholder="자동"></label>
                   <label>보험료(참고)<input type="text" id="leaseContractInsurance" readonly tabindex="-1"></label>
                   <label>리스비(주)<input type="text" id="leaseContractLeaseCost" readonly tabindex="-1"></label>
+                  <label>차액(주)<input type="text" id="leaseContractMargin" readonly tabindex="-1" placeholder="청구−리스비"></label>
                   <label>보증금<input type="number" id="leaseContractDeposit" min="0" value="0"></label>
                   <label>상태<input type="text" id="leaseContractStatusPreview" readonly tabindex="-1"></label>
                   <label class="lease-form-memo">메모<textarea id="leaseContractMemo" rows="2"></textarea></label>
@@ -2618,7 +2619,9 @@
                     <th>연락처</th>
                     <th>계약기간</th>
                     <th>반납일</th>
-                    <th class="lease-sortable" data-contract-sort="dailyRent">일 렌탈료</th>
+                    <th>주간리스비</th>
+                    <th class="lease-sortable" data-contract-sort="dailyRent">주간청구액</th>
+                    <th>차액</th>
                     <th class="lease-sortable" data-contract-sort="unpaid">상태</th>
                     <th>관리</th>
                   </tr>
@@ -2634,7 +2637,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>납부 확인</h2>
-            <p class="form-help">계약/렌탈에 등록된 기사 목록 · 완납·부분납 처리 · 미납 잔액은 미납/회수로 자동 이동</p>
+            <p class="form-help">차량관리 주간리스비 · 계약 주간청구액 · 차액(청구−리스비) 기준으로 확인</p>
           </div>
           <div class="lease-arrear-week-period">
             <label class="period-label-block week-target-block">
@@ -2660,14 +2663,15 @@
                   <th>기종</th>
                   <th>렌탈/리스자</th>
                   <th>연락처</th>
-                  <th>일 렌탈료</th>
-                  <th>주 청구액</th>
+                  <th>주간리스비</th>
+                  <th>주간청구액</th>
+                  <th>차액</th>
                   <th>납부상태</th>
                   <th>관리</th>
                 </tr>
               </thead>
               <tbody id="leasePaymentConfirmRows">
-                <tr><td colspan="8" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
+                <tr><td colspan="9" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
               </tbody>
             </table>
           </div>
@@ -7266,7 +7270,7 @@
   <script src="js/lease-erp.js?v=20260723q"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802b"></script>
+  <script src="js/admin-lease-menus.js?v=20260802c"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
