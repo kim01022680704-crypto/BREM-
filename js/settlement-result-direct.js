@@ -686,6 +686,7 @@ const BremSettlementResultDirect = (function () {
         balance: unpaid,
         reason: item.entry.reason || `소급/미납 ${item.weekStart}`,
         deductionPlatform: item.entry.platform === 'baemin' ? 'baemin' : 'coupang',
+        deductStartDate: item.weekStart,
         finalApplyEnabled: false,
         weekStart: item.weekStart,
         status: 'active'
@@ -720,10 +721,16 @@ const BremSettlementResultDirect = (function () {
     const rows = [];
     const leaseConsumed = new Set();
     const loanConsumed = new Set();
+    const week = finalWeek();
+    const spill = Calc().buildLeaseLoanSpilloverAllocation(settlements, {
+      week,
+      withdrawals: state.withdrawals
+    });
     settlements.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         weekSettlements: settlements,
+        _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed
       }).forEach(r => rows.push(r));

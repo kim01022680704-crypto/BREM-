@@ -462,6 +462,19 @@ const BremLeaseErp = (function () {
         ...(existing?.rawData || {}),
         ...(raw.rawData || {}),
         metrics,
+        driverId: String(
+          raw.driverId != null ? raw.driverId : (existing?.driverId ?? existing?.rawData?.driverId ?? '')
+        ).trim(),
+        deductionPlatform: normalizeDeductionPlatform(
+          raw.deductionPlatform != null
+            ? raw.deductionPlatform
+            : (existing?.deductionPlatform ?? existing?.rawData?.deductionPlatform)
+        ),
+        deductStartDate: normalizeDate(
+          raw.deductStartDate != null
+            ? raw.deductStartDate
+            : (raw.rawData?.deductStartDate ?? existing?.deductStartDate ?? existing?.rawData?.deductStartDate)
+        ),
         finalApplyEnabled: Boolean(
           raw.finalApplyEnabled != null
             ? raw.finalApplyEnabled

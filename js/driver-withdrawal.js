@@ -217,9 +217,9 @@
       // 미납은 별도 배너로도 표시
     }
     const leaseText = deductParts.length
-      ? ` · ${deductParts.join(' · ')}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'} 차감)`
+      ? ` · ${deductParts.join(' · ')}(실지급 큰 쪽부터 홀드 · 마이너스 가능)`
       : (leaseDeduction > 0
-        ? ` · 리스·대여차감 ${formatMoney(leaseDeduction)}(${lease.deductionPlatform === 'baemin' ? '배민' : '쿠팡'} 차감)`
+        ? ` · 리스·대여차감 ${formatMoney(leaseDeduction)}(실지급 큰 쪽부터 홀드 · 마이너스 가능)`
         : '');
     const unpaidEl = document.getElementById('driverWithdrawalUnpaid');
     if (unpaidEl) {
@@ -253,7 +253,7 @@
         const platformPart = platform
           ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(Math.max(0, platformAvailableAmount(platform)))}`
           : '플랫폼을 선택하세요';
-        hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(Math.max(0, avail.coupang))} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(Math.max(0, avail.baemin))}${leaseText} · ${platformPart}`;
+        hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(avail.coupang)} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(avail.baemin)}${leaseText} · ${platformPart}`;
       }
     }
     syncPlatformOptions(payload.enrolledPlatforms || {});
@@ -527,7 +527,7 @@
       const platformPart = platform
         ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(Math.max(0, platformAvailableAmount(platform)))}`
         : '플랫폼을 선택하세요';
-      hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(Math.max(0, avail.coupang))} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(Math.max(0, avail.baemin))} · ${platformPart}`;
+      hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(avail.coupang)} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(avail.baemin)} · ${platformPart}`;
     }
     syncMaxUi();
   });

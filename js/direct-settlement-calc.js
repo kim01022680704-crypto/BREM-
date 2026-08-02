@@ -354,9 +354,7 @@ const BremDirectSettlementCalc = (function () {
   }
 
   /**
-   * 반영된 리스 계약 → 기사 키별 주간 리스비.
-   * 키: driverId / np:이름|전화
-   * 값은 { amount, platform } — 해당 공제 플랫폼 행에만 붙인다.
+   * 반영된 리스 계약 → 기사별 주간 리스차감 총액 (플랫폼 미지정, 스필오버용).
    */
   function buildLeaseFeeIndex(contracts, weekStart) {
     const index = new Map();
@@ -372,17 +370,23 @@ const BremDirectSettlementCalc = (function () {
       if (daily <= 0) return;
       const raw = contract.rawData || contract.raw_data || {};
       const cStart = String(contract.startDate || contract.start_date || raw.startDate || '').slice(0, 10);
+      const deductStart = String(raw.deductStartDate || contract.deductStartDate || '').slice(0, 10);
+      const effectiveStart = [cStart, deductStart].filter(Boolean).sort().pop() || '';
       const cEnd = String(contract.returnDate || contract.endDate || contract.end_date || raw.returnDate || raw.endDate || '').slice(0, 10);
-      const days = countLeaseActiveDays(start, end, today, cStart, cEnd);
+      const days = countLeaseActiveDays(start, end, today, effectiveStart, cEnd);
       const amount = Math.max(0, Math.round(daily * days));
       if (amount <= 0) return;
-      const platform = normalizePlatform(contract.deductionPlatform || raw.deductionPlatform || 'coupang');
-      const entry = { amount, platform, contractId: String(contract.id || '') };
       const driverId = String(contract.driverId || raw.driverId || '').trim();
-      if (driverId) index.set(`id:${driverId}`, entry);
-      const name = normalizeNameKey(contract.driverName || raw.driverName);
-      const phone = normalizePhoneKey(contract.driverPhone || raw.driverPhone);
-      if (name && phone) index.set(`np:${name}|${phone}`, entry);
+      let key = driverId ? (canonicalDriverKey(driverId) || `id:${driverId}`) : '';
+      if (!key) {
+        const name = normalizeNameKey(contract.driverName || raw.driverName);
+        const phone = normalizePhoneKey(contract.driverPhone || raw.driverPhone);
+        if (name && phone) key = `np:${name}|${phone}`;
+      }
+      if (!key) return;
+      const prev = index.get(key);
+      if (prev) prev.amount += amount;
+      else index.set(key, { amount, contractId: String(contract.id || '') });
     });
     return index;
   }
@@ -396,21 +400,6 @@ const BremDirectSettlementCalc = (function () {
     }
   }
 
-  function resolveLeaseFeeForRow(row, leaseIndex) {
-    if (!leaseIndex || !leaseIndex.size) return 0;
-    const driverId = String(row?.driverId || '').trim();
-    let entry = driverId ? leaseIndex.get(`id:${driverId}`) : null;
-    if (!entry) {
-      const name = normalizeNameKey(row?.name);
-      const driver = driverId ? window.BremStorage?.drivers?.getById?.(driverId) : null;
-      const phone = normalizePhoneKey(driver?.phone || driver?.raw_data?.phone || '');
-      if (name && phone) entry = leaseIndex.get(`np:${name}|${phone}`);
-    }
-    if (!entry) return 0;
-    if (normalizePlatform(row?.platform) !== normalizePlatform(entry.platform)) return 0;
-    return Math.max(0, Math.round(Number(entry.amount || 0)));
-  }
-
   function loadDeductionLedgerForFee(explicit) {
     if (Array.isArray(explicit)) return explicit;
     try {
@@ -420,72 +409,197 @@ const BremDirectSettlementCalc = (function () {
     }
   }
 
-  /** 차감관리(대여·미납) 반영분 → 기사 키별 주간 차감액 (잔액 한도) */
-  function buildLoanFeeIndex(ledgerItems, weekStart) {
+  function loadLeaseLoansForFee(explicit) {
+    if (Array.isArray(explicit)) return explicit;
+    try {
+      return window.BremStorage?.leaseLoans?.getAll?.() || [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  /** 대여(반영) + 미납/수기(반영) → 기사별 주간 대여차감 총액 */
+  function buildLoanFeeIndex(ledgerItems, weekStart, loanItems) {
     const index = new Map();
     const start = String(weekStart || '').slice(0, 10);
     if (!start) return index;
     const end = weekEndFromStart(start);
     const today = dateKey(new Date());
-    const daysInWeek = countLeaseActiveDays(start, end, today, '', '');
-    (Array.isArray(ledgerItems) ? ledgerItems : []).forEach(item => {
-      if (!item || !item.finalApplyEnabled) return;
+
+    const addItem = (item) => {
+      if (!item) return;
+      if (item.finalApplyEnabled != null && !item.finalApplyEnabled) return;
       if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
       const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
-      const balance = Math.max(0, Math.round(Number(item.balance || 0)));
-      if (daily <= 0 || balance <= 0 || daysInWeek <= 0) return;
-      const amount = Math.min(balance, daily * daysInWeek);
+      const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
+      if (daily <= 0 || balance <= 0) return;
+      const deductStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+      const days = countLeaseActiveDays(start, end, today, deductStart, '');
+      if (days <= 0) return;
+      const amount = Math.min(balance, daily * days);
       if (amount <= 0) return;
-      const platform = normalizePlatform(item.deductionPlatform || 'coupang');
-      const entry = { amount, platform, ledgerId: String(item.id || '') };
       const driverId = String(item.driverId || '').trim();
-      if (driverId) {
-        const prev = index.get(`id:${driverId}`);
-        if (prev && normalizePlatform(prev.platform) === platform) {
-          prev.amount += amount;
-        } else if (!prev) {
-          index.set(`id:${driverId}`, { ...entry });
-        }
+      let key = driverId ? (canonicalDriverKey(driverId) || `id:${driverId}`) : '';
+      if (!key) {
+        const name = normalizeNameKey(item.driverName);
+        const phone = normalizePhoneKey(item.driverPhone);
+        if (name && phone) key = `np:${name}|${phone}`;
       }
-      const name = normalizeNameKey(item.driverName);
-      const phone = normalizePhoneKey(item.driverPhone);
-      if (name && phone) {
-        const npKey = `np:${name}|${phone}`;
-        const prev = index.get(npKey);
-        if (prev && normalizePlatform(prev.platform) === platform) {
-          prev.amount += amount;
-        } else if (!prev) {
-          index.set(npKey, { ...entry });
-        }
-      }
+      if (!key) return;
+      const prev = index.get(key);
+      if (prev) prev.amount += amount;
+      else index.set(key, { amount });
+    };
+
+    (Array.isArray(loanItems) ? loanItems : []).forEach(loan => {
+      if (!loan?.finalApplyEnabled) return;
+      addItem(loan);
+    });
+    (Array.isArray(ledgerItems) ? ledgerItems : []).forEach(item => {
+      const kind = String(item.kind || '');
+      if (kind === 'loan') return;
+      if (kind !== 'unpaid' && kind !== 'manual') return;
+      if (!item.finalApplyEnabled) return;
+      addItem(item);
     });
     return index;
   }
 
-  function resolveLoanFeeForRow(row, loanIndex) {
-    return resolveLeaseFeeForRow(row, loanIndex);
+  function lookupDriverFeeAmount(row, feeIndex) {
+    if (!feeIndex || !feeIndex.size) return 0;
+    const driverId = String(row?.driverId || '').trim();
+    const canon = row?.canonicalKey || (driverId ? canonicalDriverKey(driverId) : '');
+    let entry = canon ? feeIndex.get(canon) : null;
+    if (!entry && driverId) entry = feeIndex.get(`id:${driverId}`);
+    if (!entry) {
+      const name = normalizeNameKey(row?.name);
+      const driver = driverId ? window.BremStorage?.drivers?.getById?.(driverId) : null;
+      const phone = normalizePhoneKey(driver?.phone || driver?.raw_data?.phone || '');
+      if (name && phone) entry = feeIndex.get(`np:${name}|${phone}`);
+    }
+    return Math.max(0, Math.round(Number(entry?.amount || 0)));
   }
 
-  // 정산서 1건 → 라이더별 정산 행. 쿠팡·배민 모두 같은 필드를 채운다.
-  // 선정산(처리완료)은 그 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
-  // options._prepaidMap / options._consumed 를 넘기면 여러 정산서(지역) 사이에서
-  // 같은 사람의 같은 플랫폼 출금을 한 번만 반영한다(최종입금 합산용).
-  // 리스비: 「대여 및 차감관리」반영 계약만, 차감플랫폼 행에 주간분(일×운행일) 1회.
-  // 대여/차감: 차감관리 반영분(대여·미납) 동일 규칙.
+  function allocateFeeAcrossPlatforms(totalByDriver, remainingCap) {
+    const out = new Map();
+    const ensure = (k) => {
+      if (!out.has(k)) out.set(k, { coupang: 0, baemin: 0 });
+      return out.get(k);
+    };
+    (totalByDriver instanceof Map ? totalByDriver : new Map()).forEach((entry, key) => {
+      let left = Math.max(0, Math.round(Number(entry?.amount || entry || 0)));
+      if (left <= 0) return;
+      const rem = remainingCap.get(key) || { coupang: 0, baemin: 0 };
+      const order = Number(rem.coupang || 0) >= Number(rem.baemin || 0)
+        ? ['coupang', 'baemin']
+        : ['baemin', 'coupang'];
+      const alloc = ensure(key);
+      order.forEach(p => {
+        if (left <= 0) return;
+        const room = Math.max(0, Number(rem[p] || 0));
+        const take = room > 0 ? Math.min(left, room) : (p === order[0] ? left : 0);
+        if (take <= 0) return;
+        alloc[p] += take;
+        rem[p] = Number(rem[p] || 0) - take;
+        left -= take;
+      });
+      if (left > 0) {
+        const prefer = order[0];
+        alloc[prefer] += left;
+        rem[prefer] = Number(rem[prefer] || 0) - left;
+      }
+      remainingCap.set(key, rem);
+    });
+    return out;
+  }
+
+  function buildDriverFeeTotalsFromIndex(feeIndex) {
+    const byDriver = new Map();
+    (feeIndex instanceof Map ? feeIndex : new Map()).forEach((entry, key) => {
+      byDriver.set(key, { amount: Math.max(0, Math.round(Number(entry?.amount || 0))) });
+    });
+    return byDriver;
+  }
+
+  function buildLeaseLoanSpilloverAllocation(weekSettlements, options = {}) {
+    const week = options.week || (weekSettlements?.[0] ? settlementWeek(weekSettlements[0]) : weekStartKey());
+    const capacityMap = buildWeekCapacityMap(weekSettlements);
+    const remaining = new Map();
+    capacityMap.forEach((v, k) => {
+      remaining.set(k, {
+        coupang: Math.max(0, Number(v.coupang || 0)),
+        baemin: Math.max(0, Number(v.baemin || 0))
+      });
+    });
+
+    let allocation = options._allocation || null;
+    if (!allocation && Array.isArray(options.withdrawals)) {
+      allocation = allocateWeekWithdrawals(options.withdrawals, week, capacityMap);
+    }
+    if (allocation) {
+      allocation.forEach((slice, key) => {
+        const rem = remaining.get(key) || { coupang: 0, baemin: 0 };
+        ['coupang', 'baemin'].forEach(p => {
+          const used = Math.max(0, Number(slice?.[p]?.prepaid || 0)) + Math.max(0, Number(slice?.[p]?.fee || 0));
+          rem[p] = Number(rem[p] || 0) - used;
+        });
+        remaining.set(key, rem);
+      });
+    }
+
+    const leaseIndex = options._leaseFeeIndex
+      || buildLeaseFeeIndex(loadLeaseContractsForFee(options.leaseContracts), week);
+    const loanIndex = options._loanFeeIndex
+      || buildLoanFeeIndex(
+        loadDeductionLedgerForFee(options.ledgerItems),
+        week,
+        loadLeaseLoansForFee(options.loanItems)
+      );
+
+    const leaseTotals = buildDriverFeeTotalsFromIndex(leaseIndex);
+    const loanTotals = buildDriverFeeTotalsFromIndex(loanIndex);
+    const leaseAlloc = allocateFeeAcrossPlatforms(leaseTotals, remaining);
+    const loanAlloc = allocateFeeAcrossPlatforms(loanTotals, remaining);
+    return { leaseAlloc, loanAlloc, leaseIndex, loanIndex };
+  }
+
+  function resolveSpilloverFeeForRow(row, allocMap, feeIndex) {
+    const driverId = String(row?.driverId || '').trim();
+    const platform = normalizePlatform(row?.platform);
+    const canon = row?.canonicalKey || (driverId ? canonicalDriverKey(driverId) : '');
+    if (canon && allocMap?.has?.(canon)) {
+      return Math.max(0, Math.round(Number(allocMap.get(canon)?.[platform] || 0)));
+    }
+    if (driverId && allocMap?.has?.(`id:${driverId}`)) {
+      return Math.max(0, Math.round(Number(allocMap.get(`id:${driverId}`)?.[platform] || 0)));
+    }
+    const name = normalizeNameKey(row?.name);
+    const driver = driverId ? window.BremStorage?.drivers?.getById?.(driverId) : null;
+    const phone = normalizePhoneKey(driver?.phone || '');
+    const namePhoneKey = (name && phone) ? `np:${name}|${phone}` : '';
+    if (namePhoneKey && allocMap?.has?.(namePhoneKey)) {
+      return Math.max(0, Math.round(Number(allocMap.get(namePhoneKey)?.[platform] || 0)));
+    }
+    return lookupDriverFeeAmount(row, feeIndex);
+  }
+
+  function resolveLeaseFeeForRow(row, leaseIndex) {
+    return lookupDriverFeeAmount(row, leaseIndex);
+  }
+
+  function resolveLoanFeeForRow(row, loanIndex) {
+    return lookupDriverFeeAmount(row, loanIndex);
+  }
+
+  // 정산서 1건 → 라이더별 정산 행.
+  // 리스차감·대여차감: ERP driverId 기준 주간분 → 실지급 큰 플랫폼부터 스필오버.
   function computeRows(settlement, options = {}) {
     if (!settlement) return [];
     const platform = normalizePlatform(settlement.platform);
     const week = settlementWeek(settlement);
     const unitCallFee = callFeeUnit(platform);
     const adj = adjustmentMaps(settlement);
-    const leaseIndex = options._leaseFeeIndex
-      || buildLeaseFeeIndex(loadLeaseContractsForFee(options.leaseContracts), week);
-    const loanIndex = options._loanFeeIndex
-      || buildLoanFeeIndex(loadDeductionLedgerForFee(options.ledgerItems), week);
 
-    // 스필오버 배분(권장): 이 주 전체(쿠팡+배민) 정산서를 넘겨주면, 사람별로 각 플랫폼
-    // 실지급 한도까지만 선정산을 잡고 초과분은 반대 플랫폼으로 넘긴다. weekSettlements
-    // 또는 _allocation 이 없으면 태그 그대로(스필오버 없음)로 폴백한다.
     let allocation = options._allocation || null;
     if (!allocation && Array.isArray(options.weekSettlements) && options.weekSettlements.length) {
       allocation = allocateWeekWithdrawals(
@@ -496,10 +610,26 @@ const BremDirectSettlementCalc = (function () {
     }
     const strictMap = allocation ? null : (options._prepaidMap || buildWeekPrepaidByPlatform(options.withdrawals, week));
     const source = allocation || strictMap;
-    // 같은 사람이 같은 플랫폼에서 여러 지역 정산서에 걸쳐 있어도 출금은 한 번만 반영.
     const consumed = options._consumed || new Set();
     const leaseConsumed = options._leaseConsumed || new Set();
     const loanConsumed = options._loanConsumed || new Set();
+
+    let spill = options._leaseLoanSpill || null;
+    if (!spill) {
+      const weekList = Array.isArray(options.weekSettlements) && options.weekSettlements.length
+        ? options.weekSettlements
+        : [settlement];
+      spill = buildLeaseLoanSpilloverAllocation(weekList, {
+        week,
+        withdrawals: options.withdrawals,
+        _allocation: allocation,
+        leaseContracts: options.leaseContracts,
+        ledgerItems: options.ledgerItems,
+        loanItems: options.loanItems,
+        _leaseFeeIndex: options._leaseFeeIndex,
+        _loanFeeIndex: options._loanFeeIndex
+      });
+    }
 
     const rows = [];
     (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
@@ -518,18 +648,19 @@ const BremDirectSettlementCalc = (function () {
         }
       }
 
+      // 스필오버 배분은 플랫폼별로 이미 나뉘어 있음. 같은 플랫폼 행만 중복 방지.
       let leaseFee = 0;
-      const leaseDedupe = `${key || base.driverId || base.name}:${platform}:lease`;
+      const leaseDedupe = `${key || base.driverId || base.name}:lease:${platform}`;
       if (!leaseConsumed.has(leaseDedupe)) {
-        leaseFee = resolveLeaseFeeForRow(base, leaseIndex);
-        if (leaseFee > 0) leaseConsumed.add(leaseDedupe);
+        leaseFee = resolveSpilloverFeeForRow(base, spill.leaseAlloc, spill.leaseIndex);
+        leaseConsumed.add(leaseDedupe);
       }
 
       let loanFee = 0;
-      const loanDedupe = `${key || base.driverId || base.name}:${platform}:loan`;
+      const loanDedupe = `${key || base.driverId || base.name}:loan:${platform}`;
       if (!loanConsumed.has(loanDedupe)) {
-        loanFee = resolveLoanFeeForRow(base, loanIndex);
-        if (loanFee > 0) loanConsumed.add(loanDedupe);
+        loanFee = resolveSpilloverFeeForRow(base, spill.loanAlloc, spill.loanIndex);
+        loanConsumed.add(loanDedupe);
       }
 
       const deductTotal = base.baseDeduct + dailySettlementFee + prepaid + leaseFee + loanFee;
@@ -639,6 +770,7 @@ const BremDirectSettlementCalc = (function () {
     buildWeekPrepaidByPlatform,
     buildWeekCapacityMap,
     allocateWeekWithdrawals,
+    buildLeaseLoanSpilloverAllocation,
     computeRows,
     escapeHtml,
     theadHtml,

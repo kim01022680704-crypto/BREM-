@@ -2562,17 +2562,7 @@
                   <label>계약 시작<input type="date" id="leaseRentalDealStartDate" class="admin-period-input"></label>
                   <label>계약 종료<input type="date" id="leaseRentalDealEndDate" class="admin-period-input"></label>
                   <label>반납일 (중도반납)<input type="date" id="leaseContractReturnDate" class="admin-period-input" placeholder="중도반납 시"></label>
-                  <fieldset class="lease-type-fieldset lease-type-fieldset--inline lease-form-field--full">
-                    <legend>렌탈료 공제 플랫폼</legend>
-                    <label class="lease-type-option">
-                      <input type="radio" name="leaseContractDeductionPlatform" value="coupang" checked>
-                      <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">쿠팡</span></span>
-                    </label>
-                    <label class="lease-type-option">
-                      <input type="radio" name="leaseContractDeductionPlatform" value="baemin">
-                      <span class="lease-type-chip lease-type-chip--lease"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">배민</span></span>
-                    </label>
-                  </fieldset>
+                  <label>차감 시작일<input type="date" id="leaseContractDeductStartDate" class="admin-period-input" title="비우면 계약 시작일부터"></label>
                 </div>
               </section>
               <section class="lease-form-section">
@@ -2639,7 +2629,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>대여 및 차감관리</h2>
-            <p class="form-help">리스·대여·미납을 등록하고 「차감관리」에서 기사앱 반영하면 출금가능 홀드·직계약 공제에 들어갑니다.</p>
+            <p class="form-help">리스·대여는 ERP 기사 ID로 매칭합니다. 정산 시 그 주 실지급이 큰 플랫폼부터 차감합니다. 「차감관리」는 미납·수기 차감만 다룹니다.</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist">
             <button type="button" class="lease-deduction-tab active" data-deduction-tab="lease" role="tab" aria-selected="true">리스 차감</button>
@@ -2669,9 +2659,9 @@
                     <th>렌탈/리스자</th>
                     <th>연락처</th>
                     <th>일렌탈료</th>
+                    <th>차감시작일</th>
                     <th>이번주 운행일</th>
                     <th>예정차감</th>
-                    <th>차감플랫폼</th>
                     <th>반영상태</th>
                     <th>관리</th>
                   </tr>
@@ -2690,7 +2680,7 @@
               <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense" style="padding: 0 18px 12px;">
                 <div class="lease-driver-picker lease-form-field--full">
                   <label class="lease-driver-picker__search-label">
-                    기사 검색
+                    기사 검색 (ERP)
                     <input type="search" id="leaseLoanDriverSearch" placeholder="이름 · 연락처 · 쿠팡ID · 배민ID" autocomplete="off">
                   </label>
                   <div class="lease-driver-picker__results" id="leaseLoanDriverResults" hidden></div>
@@ -2701,18 +2691,8 @@
                 <label>대여금(원금)<input type="number" id="leaseLoanPrincipal" min="0" step="1000" placeholder="0" required></label>
                 <label>일 차감액<input type="number" id="leaseLoanDailyDeduct" min="0" step="1000" placeholder="0" required></label>
                 <label>잔액<input type="number" id="leaseLoanBalance" min="0" step="1000" placeholder="등록 시 대여금과 동일"></label>
+                <label>차감 시작일<input type="date" id="leaseLoanDeductStartDate" required></label>
                 <label>이유<input type="text" id="leaseLoanReason" placeholder="예: 보증금 대여 · 수리비 대여"></label>
-                <fieldset class="lease-type-fieldset lease-type-fieldset--inline lease-form-field--full">
-                  <legend>차감 플랫폼</legend>
-                  <label class="lease-type-option">
-                    <input type="radio" name="leaseLoanDeductionPlatform" value="coupang" checked>
-                    <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">쿠팡</span></span>
-                  </label>
-                  <label class="lease-type-option">
-                    <input type="radio" name="leaseLoanDeductionPlatform" value="baemin">
-                    <span class="lease-type-chip lease-type-chip--lease"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">배민</span></span>
-                  </label>
-                </fieldset>
                 <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button type="submit" class="primary-btn">대여 등록</button>
                   <button type="button" class="small-btn" id="leaseLoanFormResetBtn">초기화</button>
@@ -2733,9 +2713,9 @@
                     <th>대여금</th>
                     <th>일 차감액</th>
                     <th>잔액</th>
-                    <th>차감플랫폼</th>
+                    <th>차감시작일</th>
                     <th>이유</th>
-                    <th>상태</th>
+                    <th>반영</th>
                     <th>관리</th>
                   </tr>
                 </thead>
@@ -2747,14 +2727,38 @@
           </div>
 
           <div class="lease-deduction-pane" data-deduction-pane="manage" hidden>
+            <form class="lease-form lease-contract-form--compact" id="leaseManualDeductForm">
+              <input type="hidden" id="leaseManualDeductEditId">
+              <input type="hidden" id="leaseManualDeductDriverId">
+              <div class="lease-form-grid lease-form-grid--2col lease-form-grid--dense" style="padding: 0 18px 12px;">
+                <p class="form-help lease-form-field--full">미납 이관분 + 금액·시작일을 직접 넣는 수기 차감만 관리합니다. 리스·대여는 각 탭에서 반영하세요.</p>
+                <div class="lease-driver-picker lease-form-field--full">
+                  <label class="lease-driver-picker__search-label">
+                    수기 차감 · 기사 검색
+                    <input type="search" id="leaseManualDeductDriverSearch" placeholder="이름 · 연락처 · 쿠팡ID · 배민ID" autocomplete="off">
+                  </label>
+                  <div class="lease-driver-picker__results" id="leaseManualDeductDriverResults" hidden></div>
+                  <p class="lease-driver-picker__selected" id="leaseManualDeductDriverSelected">선택: 없음</p>
+                </div>
+                <label>이름<input type="text" id="leaseManualDeductDriverName" readonly></label>
+                <label>연락처<input type="tel" id="leaseManualDeductDriverPhone" readonly></label>
+                <label>일 차감액<input type="number" id="leaseManualDeductDaily" min="0" step="1000" required></label>
+                <label>잔액(회수 대상)<input type="number" id="leaseManualDeductBalance" min="0" step="1000" required></label>
+                <label>차감 시작일<input type="date" id="leaseManualDeductStartDate" required></label>
+                <label>이유/메모<input type="text" id="leaseManualDeductReason" placeholder="예: 미납 회수 · 수기 차감"></label>
+                <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button type="submit" class="primary-btn">수기 차감 등록</button>
+                  <button type="button" class="small-btn" id="leaseManualDeductFormResetBtn">초기화</button>
+                </div>
+              </div>
+            </form>
             <div class="lease-list-toolbar lease-payment-confirm-toolbar">
               <p class="form-help lease-list-count" id="leaseDeductionManageSummary">차감 0건 · 반영 0건</p>
               <input type="search" id="leaseDeductionManageSearch" class="lease-contract-list-search" placeholder="기사 · 이유 · 연락처 검색" autocomplete="off">
               <select id="leaseDeductionManageKindFilter" class="admin-period-input">
-                <option value="all">전체 종류</option>
-                <option value="lease">리스</option>
-                <option value="loan">대여</option>
+                <option value="all">전체 (미납+수기)</option>
                 <option value="unpaid">미납</option>
+                <option value="manual">수기</option>
               </select>
               <label class="check-label lease-payment-select-all">
                 <input type="checkbox" id="leaseDeductionManageSelectAll">
@@ -2773,15 +2777,15 @@
                     <th>기사</th>
                     <th>연락처</th>
                     <th>일 차감</th>
-                    <th>잔액/예정</th>
+                    <th>잔액</th>
+                    <th>차감시작일</th>
                     <th>이유</th>
-                    <th>플랫폼</th>
                     <th>반영상태</th>
                     <th>관리</th>
                   </tr>
                 </thead>
                 <tbody id="leaseDeductionManageRows">
-                  <tr><td colspan="10" class="empty">차감 항목이 없습니다. 리스 반영·대여 등록·소급분 이관 후 여기에 모입니다.</td></tr>
+                  <tr><td colspan="10" class="empty">미납·수기 차감이 없습니다. 소급분 이관 또는 위에서 수기 등록하세요.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -7445,7 +7449,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260802b"></script>
+  <script src="js/storage.js?v=20260802c"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7471,10 +7475,10 @@
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>
   <script src="js/lease-rental-calc.js?v=20260702a"></script>
-  <script src="js/lease-erp.js?v=20260802a"></script>
+  <script src="js/lease-erp.js?v=20260802b"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802h"></script>
+  <script src="js/admin-lease-menus.js?v=20260802i"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7483,9 +7487,9 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
-  <script src="js/direct-settlement-calc.js?v=20260802d"></script>
-  <script src="js/settlement-result-direct.js?v=20260802e"></script>
-  <script src="js/final-deposit.js?v=20260802b"></script>
+  <script src="js/direct-settlement-calc.js?v=20260802e"></script>
+  <script src="js/settlement-result-direct.js?v=20260802f"></script>
+  <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260802e"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>

@@ -1495,6 +1495,7 @@ const BremStorage = (function () {
       KEYS.settlements
     ],
     'lease-management': [
+      KEYS.drivers,
       KEYS.leaseVehicles,
       KEYS.leasePayments,
       KEYS.leaseAccidents,
@@ -1747,7 +1748,8 @@ const BremStorage = (function () {
         || sectionId === 'mission-results'
         || sectionId === 'drivers'
         || sectionId === 'driver-management'
-        || sectionId === 'mission-management';
+        || sectionId === 'mission-management'
+        || sectionId === 'lease-management';
       const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
       const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);
@@ -10879,6 +10881,12 @@ const BremStorage = (function () {
     const platform = String(raw.deductionPlatform || existing?.deductionPlatform || 'coupang') === 'baemin'
       ? 'baemin'
       : 'coupang';
+    const deductStartDate = String(
+      raw.deductStartDate != null ? raw.deductStartDate : (existing?.deductStartDate || '')
+    ).slice(0, 10);
+    const enabled = raw.finalApplyEnabled != null
+      ? Boolean(raw.finalApplyEnabled)
+      : Boolean(existing?.finalApplyEnabled);
     return {
       id: String(raw.id || existing?.id || createId()),
       driverId: String(raw.driverId != null ? raw.driverId : (existing?.driverId || '')).trim(),
@@ -10888,8 +10896,13 @@ const BremStorage = (function () {
       dailyDeduct,
       balance,
       deductionPlatform: platform,
+      deductStartDate,
       reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
       status: String(raw.status != null ? raw.status : (existing?.status || 'active')).trim() || 'active',
+      finalApplyEnabled: enabled,
+      finalAppliedAt: enabled
+        ? String(raw.finalAppliedAt || existing?.finalAppliedAt || new Date().toISOString())
+        : String(raw.finalAppliedAt != null ? raw.finalAppliedAt : (existing?.finalAppliedAt || '')),
       createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       rawData: { ...(existing?.rawData || {}), ...(raw.rawData || {}) }
@@ -10897,7 +10910,8 @@ const BremStorage = (function () {
   }
 
   function normalizeDeductionLedgerItem(raw = {}, existing = null) {
-    const kind = String(raw.kind || existing?.kind || 'unpaid').trim() || 'unpaid';
+    const kindRaw = String(raw.kind || existing?.kind || 'unpaid').trim() || 'unpaid';
+    const kind = ['unpaid', 'manual', 'loan'].includes(kindRaw) ? kindRaw : 'unpaid';
     const platform = String(raw.deductionPlatform || existing?.deductionPlatform || 'coupang') === 'baemin'
       ? 'baemin'
       : 'coupang';
@@ -10906,6 +10920,9 @@ const BremStorage = (function () {
     const enabled = raw.finalApplyEnabled != null
       ? Boolean(raw.finalApplyEnabled)
       : Boolean(existing?.finalApplyEnabled);
+    const deductStartDate = String(
+      raw.deductStartDate != null ? raw.deductStartDate : (existing?.deductStartDate || '')
+    ).slice(0, 10);
     return {
       id: String(raw.id || existing?.id || createId()),
       kind,
@@ -10917,6 +10934,7 @@ const BremStorage = (function () {
       balance,
       reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
       deductionPlatform: platform,
+      deductStartDate,
       finalApplyEnabled: enabled,
       finalAppliedAt: enabled
         ? String(raw.finalAppliedAt || existing?.finalAppliedAt || new Date().toISOString())

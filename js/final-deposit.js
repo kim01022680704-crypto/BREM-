@@ -168,11 +168,18 @@ const BremFinalDeposit = (function () {
     const consumed = new Set();
     const leaseConsumed = new Set();
     const loanConsumed = new Set();
+    const spill = Calc().buildLeaseLoanSpilloverAllocation(weekAll, {
+      week,
+      withdrawals: state.withdrawals,
+      _allocation: allocation
+    });
     checkedSettlements().forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
+        weekSettlements: weekAll,
         _allocation: allocation,
         _consumed: consumed,
+        _leaseLoanSpill: spill,
         _leaseConsumed: leaseConsumed,
         _loanConsumed: loanConsumed
       }).forEach(row => {

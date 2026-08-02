@@ -144,7 +144,7 @@ function emptyLeaseInfo() {
  */
 async function loadLeaseTables(supabase) {
   try {
-    const [contractsRes, arrearsRes, ledgerRes] = await Promise.all([
+    const [contractsRes, arrearsRes, ledgerRes, loansRes] = await Promise.all([
       supabase
         .from('lease_contracts')
         .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
@@ -160,25 +160,36 @@ async function loadLeaseTables(supabase) {
         .from('settings')
         .select('value')
         .eq('key', 'brem_deduction_ledger_v1')
+        .maybeSingle(),
+      supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'brem_lease_loans_v1')
         .maybeSingle()
     ]);
     const ledgerRaw = ledgerRes?.data?.value;
     const ledger = Array.isArray(ledgerRaw)
       ? ledgerRaw
       : (Array.isArray(ledgerRaw?.items) ? ledgerRaw.items : []);
+    const loansRaw = loansRes?.data?.value;
+    const loans = Array.isArray(loansRaw)
+      ? loansRaw
+      : (Array.isArray(loansRaw?.items) ? loansRaw.items : []);
     return {
       contracts: contractsRes.data || [],
       arrears: arrearsRes.data || [],
-      ledger
+      ledger,
+      loans
     };
   } catch (_error) {
-    return { contracts: [], arrears: [], ledger: [] };
+    return { contracts: [], arrears: [], ledger: [], loans: [] };
   }
 }
 
 /**
- * 미리 로드한 lease 테이블을 기준으로 특정 기사의 이번주 리스 차감액을 계산한다.
- * (일 렌탈료 매일 누적 + 미회수 미납 잔액)
+ * 미리 로드한 lease 테이블을 기준으로 특정 기사의 이번주 리스·대여 차감액을 계산한다.
+ * (일 렌탈료 매일 누적 + 반영된 대여/미납/수기 + 미회수 미납 잔액)
+ * 플랫폼 필터 없이 기사 단위로 합산한다. (정산 스필오버와 동일하게 출금가능에서 홀드)
  */
 function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   const contracts = Array.isArray(tables?.contracts) ? tables.contracts : [];
@@ -189,17 +200,20 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   let deductionPlatform = 'coupang';
   let contractStart = '';
   let contractEnd = '';
+  let deductStartDate = '';
   if (contract) {
     const raw = contract.raw_data || {};
     dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
     deductionPlatform = normalizeDeductionPlatform(raw.deductionPlatform);
     contractStart = String(contract.start_date || raw.startDate || '').slice(0, 10);
+    deductStartDate = String(raw.deductStartDate || '').slice(0, 10);
     contractEnd = String(raw.returnDate || contract.end_date || raw.endDate || '').slice(0, 10);
   }
 
   const todayKey = leaseFormatDateKey(new Date());
+  const effectiveLeaseStart = [contractStart, deductStartDate].filter(Boolean).sort().pop() || '';
   const activeDays = contract
-    ? countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd)
+    ? countActiveLeaseDays(weekStart, weekEnd, todayKey, effectiveLeaseStart, contractEnd)
     : 0;
   // 「대여 및 차감관리」에서 반영하기 한 계약만 출금가능 홀드(일렌탈료×운행일). 미반영은 0.
   const finalApplyEnabled = Boolean(contract?.raw_data?.finalApplyEnabled);
@@ -229,12 +243,9 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   });
   const arrearReason = [...new Set(arrearReasons)].join(', ');
 
-  // 차감관리(대여·미납) 반영분 — 일×운행일, 잔액 한도
+  // 대여(반영) + 차감관리 미납·수기(반영) — 기사 단위 합산, 플랫폼 필터 없음
   let ledgerCharge = 0;
-  const ledger = Array.isArray(tables?.ledger) ? tables.ledger : [];
-  const todayKeyForLedger = todayKey;
-  const activeDaysForLedger = countActiveLeaseDays(weekStart, weekEnd, todayKeyForLedger, '', '');
-  ledger.forEach(item => {
+  const addDailyBalanceItem = (item) => {
     if (!item || !item.finalApplyEnabled) return;
     if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
     const sameDriver = (item.driverId && String(item.driverId) === String(rider.id))
@@ -244,17 +255,21 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
         && leaseNormalizeName(item.driverName)
       );
     if (!sameDriver) return;
-    const itemPlatform = normalizeDeductionPlatform(item.deductionPlatform);
-    if (!contract) deductionPlatform = itemPlatform;
-    else if (itemPlatform === deductionPlatform || leaseCharge <= 0) {
-      // 계약 플랫폼과 같거나 리스차감이 없으면 이 플랫폼에 합산
-      if (leaseCharge <= 0) deductionPlatform = itemPlatform;
-    }
-    if (itemPlatform !== deductionPlatform && leaseCharge > 0) return;
     const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
-    const balance = Math.max(0, Math.round(Number(item.balance || 0)));
-    if (daily <= 0 || balance <= 0 || activeDaysForLedger <= 0) return;
-    ledgerCharge += Math.min(balance, daily * activeDaysForLedger);
+    const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
+    if (daily <= 0 || balance <= 0) return;
+    const itemStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+    const days = countActiveLeaseDays(weekStart, weekEnd, todayKey, itemStart, '');
+    if (days <= 0) return;
+    ledgerCharge += Math.min(balance, daily * days);
+  };
+
+  (Array.isArray(tables?.loans) ? tables.loans : []).forEach(addDailyBalanceItem);
+  (Array.isArray(tables?.ledger) ? tables.ledger : []).forEach(item => {
+    const kind = String(item?.kind || '');
+    if (kind === 'loan') return;
+    if (kind && kind !== 'unpaid' && kind !== 'manual') return;
+    addDailyBalanceItem(item);
   });
 
   const leaseDeductionTotal = leaseCharge + outstandingArrears + ledgerCharge;
@@ -272,6 +287,27 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
     contractId,
     finalApplyEnabled
   };
+}
+
+/** 실지급 큰 플랫폼부터 차감 홀드. 모자라면 큰 쪽을 마이너스까지 허용. */
+function applyDeductionHoldAcrossPlatforms(netPayByPlatform, deductionTotal) {
+  let left = Math.max(0, Math.round(Number(deductionTotal || 0)));
+  if (left <= 0) return;
+  const coupang = Number(netPayByPlatform?.coupang || 0);
+  const baemin = Number(netPayByPlatform?.baemin || 0);
+  const order = coupang >= baemin ? ['coupang', 'baemin'] : ['baemin', 'coupang'];
+  order.forEach(platform => {
+    if (left <= 0) return;
+    const room = Math.max(0, Number(netPayByPlatform[platform] || 0));
+    const take = room > 0 ? Math.min(left, room) : 0;
+    if (take <= 0) return;
+    netPayByPlatform[platform] = Number(netPayByPlatform[platform] || 0) - take;
+    left -= take;
+  });
+  if (left > 0) {
+    const prefer = order[0];
+    netPayByPlatform[prefer] = Number(netPayByPlatform[prefer] || 0) - left;
+  }
 }
 
 /**
@@ -648,11 +684,8 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
   const lease = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd);
   const leaseDeduction = Math.max(0, Math.round(Number(lease?.leaseDeductionTotal || 0)));
   const deductionPlatform = normalizeDeductionPlatform(lease?.deductionPlatform);
-  if (leaseDeduction > 0) {
-    netPayByPlatform[deductionPlatform] = (netPayByPlatform[deductionPlatform] || 0) - leaseDeduction;
-  }
-  // 리스비/미납은 최우선 차감이며 마이너스(이월)를 허용한다. (정산 주 단위로 리셋)
-  // 출금가능은 플랫폼별로 분리한다. 쿠팡 잔액으로 배민 출금을 막는다.
+  // 리스·대여·미납은 최우선 차감이며 마이너스(이월)를 허용한다. 실지급 큰 플랫폼부터 홀드.
+  applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
   const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
   const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
 
@@ -1481,9 +1514,7 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
     const lease = computeLeaseForRider(leaseTables, rider, weekStart, weekEnd);
     const leaseDeduction = Math.max(0, Math.round(Number(lease.leaseDeductionTotal || 0)));
     const deductionPlatform = normalizeDeductionPlatform(lease.deductionPlatform);
-    if (leaseDeduction > 0) {
-      netPayByPlatform[deductionPlatform] = (netPayByPlatform[deductionPlatform] || 0) - leaseDeduction;
-    }
+    applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
     const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
     const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
 
