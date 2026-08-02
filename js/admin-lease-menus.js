@@ -54,7 +54,8 @@ const BremAdminLeaseMenus = (function () {
     arrearWeekStart: '',
     arrearDriverSearch: '',
     paymentWeekStart: '',
-    paymentConfirmSearch: ''
+    paymentConfirmSearch: '',
+    leaseSaving: false
   };
 
   const PAYMENT_CONFIRM_MEMO_PREFIX = '납부확인:';
@@ -222,46 +223,123 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function updateLeaseErpUnsavedBanner() {
+    if (state.leaseSaving) return;
     const banner = $('leaseErpUnsavedBanner');
     const commitBtn = $('leaseErpCommitBtn');
     const dirty = erp()?.hasDeferredChanges?.() || false;
-    if (banner) banner.hidden = !dirty;
-    if (commitBtn) {
-      commitBtn.disabled = !dirty;
-      commitBtn.textContent = dirty ? 'Supabase 저장 (미저장)' : 'Supabase 저장';
+    if (banner) {
+      banner.hidden = !dirty;
+      banner.classList.remove('lease-erp-unsaved-banner--saving', 'lease-erp-unsaved-banner--done', 'lease-erp-unsaved-banner--error');
     }
-    document.querySelectorAll('[data-lease-commit-btn]').forEach(btn => {
-      btn.classList.toggle('lease-erp-commit-btn--pulse', dirty);
-      btn.disabled = !dirty;
+    document.querySelectorAll('.lease-erp-commit-btn, #leaseErpCommitBtn, [data-lease-commit-btn]').forEach(btn => {
+      btn.classList.remove('is-loading', 'lease-erp-commit-btn--done', 'lease-erp-commit-btn--pulse');
+      if (dirty) btn.classList.add('lease-erp-commit-btn--pulse');
+      btn.disabled = false;
+      if (!btn.dataset.leaseCommitIdleLabel) {
+        btn.dataset.leaseCommitIdleLabel = 'Supabase 저장';
+      }
+      btn.textContent = dirty ? 'Supabase 저장 (미저장)' : (btn.dataset.leaseCommitIdleLabel || 'Supabase 저장');
+    });
+    if (commitBtn) {
+      commitBtn.disabled = false;
+    }
+    setLeaseSaveStatus(dirty ? '변경사항 있음 · Supabase 저장을 눌러주세요' : '', dirty ? 'warn' : '');
+  }
+
+  function setLeaseSaveStatus(message, tone = '') {
+    document.querySelectorAll('[data-lease-save-status]').forEach(el => {
+      el.textContent = message || '';
+      el.hidden = !message;
+      el.classList.remove('lease-save-status--warn', 'lease-save-status--busy', 'lease-save-status--done', 'lease-save-status--error');
+      if (message && tone) el.classList.add(`lease-save-status--${tone}`);
+    });
+  }
+
+  function setLeaseCommitButtonsBusy(busy, label) {
+    document.querySelectorAll('.lease-erp-commit-btn, #leaseErpCommitBtn, [data-lease-commit-btn]').forEach(btn => {
+      btn.classList.toggle('is-loading', busy);
+      btn.classList.remove('lease-erp-commit-btn--done', 'lease-erp-commit-btn--pulse');
+      btn.disabled = busy;
+      if (label) btn.textContent = label;
+    });
+  }
+
+  function setLeaseCommitButtonsDone() {
+    document.querySelectorAll('.lease-erp-commit-btn, #leaseErpCommitBtn, [data-lease-commit-btn]').forEach(btn => {
+      btn.classList.remove('is-loading', 'lease-erp-commit-btn--pulse');
+      btn.classList.add('lease-erp-commit-btn--done');
+      btn.disabled = false;
+      btn.textContent = '저장 완료 ✓';
     });
   }
 
   async function commitLeaseErpSave() {
-    if (!erp()?.hasDeferredChanges?.()) {
-      showToast('저장할 변경사항이 없습니다.');
-      return;
+    if (state.leaseSaving) return;
+    state.leaseSaving = true;
+    const banner = $('leaseErpUnsavedBanner');
+    const hadDeferred = Boolean(erp()?.hasDeferredChanges?.());
+    if (banner) {
+      banner.hidden = false;
+      banner.classList.add('lease-erp-unsaved-banner--saving');
+      banner.classList.remove('lease-erp-unsaved-banner--done', 'lease-erp-unsaved-banner--error');
+      const text = banner.querySelector('.lease-erp-unsaved-banner__text');
+      if (text) {
+        text.innerHTML = '<strong>저장 중…</strong><span>Supabase에 반영하고 있습니다. 잠시만 기다려 주세요.</span>';
+      }
     }
-    const btn = $('leaseErpCommitBtn');
-    const commitBtns = document.querySelectorAll('[data-lease-commit-btn]');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '저장 중…';
-    }
-    commitBtns.forEach(el => { el.disabled = true; });
+    setLeaseCommitButtonsBusy(true, '저장 중…');
+    setLeaseSaveStatus('Supabase에 저장 중…', 'busy');
+    showToast('Supabase에 저장 중…');
     try {
-      await erp().commitDeferredWrites({ skipFlushStorage: true });
-      showToast('Supabase에 저장했습니다.');
-      updateLeaseErpUnsavedBanner();
+      // 미저장(defer) + 진행 중 write 모두 확정
+      await erp().persistAll({ skipFlushStorage: true });
+      if (BremStorage?.flushStorage) {
+        try { await BremStorage.flushStorage(); } catch (_e) { /* ignore */ }
+      }
+      setLeaseCommitButtonsDone();
+      if (banner) {
+        banner.classList.remove('lease-erp-unsaved-banner--saving');
+        banner.classList.add('lease-erp-unsaved-banner--done');
+        const text = banner.querySelector('.lease-erp-unsaved-banner__text');
+        if (text) {
+          text.innerHTML = hadDeferred
+            ? '<strong>저장 완료!</strong><span>Supabase에 반영되었습니다.</span>'
+            : '<strong>동기화 완료</strong><span>이미 최신 상태입니다. Supabase와 맞춰 두었습니다.</span>';
+        }
+        banner.hidden = false;
+      }
+      setLeaseSaveStatus(hadDeferred ? '저장 완료 · Supabase 반영됨' : '동기화 완료 · 최신 상태', 'done');
+      showToast(hadDeferred ? 'Supabase 저장 완료' : '동기화 완료 · 이미 최신 상태입니다');
       renderContractList();
       renderDashboardKpis();
       paintDashboardVehicleOverview();
+      if (state.menu === 'payment-confirm') renderPaymentConfirm();
       window.BremAdminLease?.renderList?.();
+      window.setTimeout(() => {
+        state.leaseSaving = false;
+        if (banner) {
+          const text = banner.querySelector('.lease-erp-unsaved-banner__text');
+          if (text) {
+            text.innerHTML = '<strong>저장되지 않은 변경사항이 있습니다!</strong><span>목록·폼에 반영만 된 상태입니다. <em>Supabase 저장</em> 버튼을 누르지 않으면 새로고침 시 데이터가 사라집니다.</span>';
+          }
+          banner.classList.remove('lease-erp-unsaved-banner--done', 'lease-erp-unsaved-banner--saving', 'lease-erp-unsaved-banner--error');
+        }
+        updateLeaseErpUnsavedBanner();
+      }, 1800);
     } catch (error) {
       console.error('[commitLeaseErpSave]', error);
+      state.leaseSaving = false;
+      if (banner) {
+        banner.hidden = false;
+        banner.classList.remove('lease-erp-unsaved-banner--saving', 'lease-erp-unsaved-banner--done');
+        banner.classList.add('lease-erp-unsaved-banner--error');
+        const text = banner.querySelector('.lease-erp-unsaved-banner__text');
+        if (text) {
+          text.innerHTML = `<strong>저장 실패</strong><span>${escapeHtml(error?.message || '다시 시도해 주세요.')}</span>`;
+        }
+      }
+      setLeaseSaveStatus(error?.message || '저장 실패', 'error');
       showToast(error?.message || '저장에 실패했습니다.');
-      updateLeaseErpUnsavedBanner();
-    } finally {
-      if (btn) btn.textContent = 'Supabase 저장';
       updateLeaseErpUnsavedBanner();
     }
   }
@@ -1591,9 +1669,9 @@ const BremAdminLeaseMenus = (function () {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
       }
-      showToast(wasEdit ? '계약을 수정했습니다. (저장 중…)' : '계약을 추가했습니다. (저장 중…)');
+      showToast(wasEdit ? '계약을 수정했습니다. Supabase 저장을 눌러주세요.' : '계약을 추가했습니다. Supabase 저장을 눌러주세요.');
 
-      // 2) 손익 스냅샷·대시보드·차량목록·Supabase 저장 등 무거운 작업은 다음 틱으로 미룬다.
+      // 2) 손익 스냅샷·대시보드·차량목록은 다음 틱으로 미룬다. (원격 저장은 Supabase 저장 버튼)
       setTimeout(() => {
         try {
           const metrics = calc().compute({
@@ -1632,7 +1710,6 @@ const BremAdminLeaseMenus = (function () {
         } catch (deferredError) {
           console.error('[saveContract deferred]', deferredError);
         }
-        void persistContractInBackground();
       }, 0);
     } catch (error) {
       console.error('[saveContract]', error);
@@ -3500,7 +3577,7 @@ const BremAdminLeaseMenus = (function () {
 
   async function init() {
     if (!$('lease-management')) return;
-    erp()?.setDeferRemotePersist?.(false);
+    erp()?.setDeferRemotePersist?.(true);
     bindEvents();
     syncStandaloneCalc();
     syncContractCalc();

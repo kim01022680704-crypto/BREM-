@@ -1381,11 +1381,10 @@
         // 1) 즉시 페인트: 차량 목록과 폼 초기화만 먼저 그려 바로 리스트에 내려가게 한다.
         resetForm();
         renderList();
-        showToast(isEdit ? '차량을 수정했습니다. (저장 중…)' : '차량을 추가했습니다. (저장 중…)');
+        showToast(isEdit ? '차량을 수정했습니다. Supabase 저장을 눌러주세요.' : '차량을 추가했습니다. Supabase 저장을 눌러주세요.');
         document.querySelector('.lease-list-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
 
-        // 2) 상태동기화·통계·대시보드·Supabase 저장 등 무거운 작업은 다음 틱으로 미뤄
-        //    UI 페인트를 막지 않도록 한다.
+        // 2) 상태동기화·통계·대시보드만 다음 틱으로 미룬다. (원격 저장은 Supabase 저장 버튼)
         setTimeout(() => {
           try {
             erp?.syncAllVehicleStatusesFromContracts?.();
@@ -1395,7 +1394,6 @@
           renderStats();
           window.BremAdminLeaseMenus?.renderDashboard?.();
           window.BremAdminLeaseMenus?.updateLeaseErpUnsavedBanner?.();
-          void persistLeasesInBackground();
         }, 0);
       } catch (error) {
         console.error('[BREM] lease vehicle save failed:', error);
