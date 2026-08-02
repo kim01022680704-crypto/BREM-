@@ -105,6 +105,7 @@ function emptyDirectBucket() {
     callFee: 0,
     dailySettlementFee: 0,
     prepaid: 0,
+    leaseFee: 0,
     deductTotal: 0,
     netPay: 0
   };
@@ -129,7 +130,8 @@ function finalizeBucket(bucket) {
     + next.promotionWithholdingTax
     + next.callFee
     + next.dailySettlementFee
-    + next.prepaid;
+    + next.prepaid
+    + next.leaseFee;
   next.netPay = next.grossPay - next.deductTotal;
   return next;
 }
@@ -167,6 +169,7 @@ function lineToDirectBucket(line) {
   bucket.callFee = get('callFee');
   bucket.dailySettlementFee = get('dailySettlementFee');
   bucket.prepaid = get('prepaid');
+  bucket.leaseFee = get('leaseFee');
   return finalizeBucket(bucket);
 }
 
@@ -213,6 +216,7 @@ function splitLineIntoPlatforms(line) {
     coupang.callFee = full.callFee;
     coupang.dailySettlementFee = full.dailySettlementFee;
     coupang.prepaid = full.prepaid;
+    coupang.leaseFee = full.leaseFee;
   }
 
   return {
@@ -252,6 +256,7 @@ function bucketToLegacyPayslip(bucket, meta = {}) {
     deductionDetail: row.deductionDetail,
     accidentInsurance: row.accidentInsurance,
     prepaid: row.prepaid,
+    leaseFee: row.leaseFee,
     deductTotal: row.deductTotal,
     netPay: row.netPay,
     settlementWeekStart: meta.settlementWeekStart || '',
@@ -277,6 +282,7 @@ function bucketHasActivity(bucket) {
     || bucket.promo
     || bucket.other
     || bucket.prepaid
+    || bucket.leaseFee
   );
 }
 
@@ -463,9 +469,11 @@ async function findRiderLeaseInfo(supabase, rider) {
   }
 
   const raw = contract.raw_data || {};
+  const finalApplyEnabled = Boolean(raw.finalApplyEnabled);
   const dailyRent = Number(raw.dailyRent || contract.daily_charge || 0);
   const weeklyRent = Number(raw.weeklyRent || dailyRent * 7 || 0);
-  const leaseCost = Number(raw.leaseCost || weeklyRent || 0);
+  // 반영된 계약만 리스비 표시·오버레이. 실제 공제는 직계약 정산결과 leaseFee 열이 기준.
+  const leaseCost = finalApplyEnabled ? Number(raw.leaseCost || weeklyRent || 0) : 0;
   const contractId = contract.id ? String(contract.id) : '';
   let unpaidAmount = 0;
   const unpaidReasons = [];

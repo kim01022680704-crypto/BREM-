@@ -453,7 +453,35 @@ const BremLeaseErp = (function () {
       netProfit: metrics.netProfit,
       status: String(raw.status != null ? raw.status : existing?.status || CONTRACT_STATUS.ACTIVE).trim(),
       memo: String(raw.memo != null ? raw.memo : existing?.memo || '').trim(),
-      rawData: { ...(existing?.rawData || {}), ...(raw.rawData || {}), metrics },
+      finalApplyEnabled: Boolean(
+        raw.finalApplyEnabled != null
+          ? raw.finalApplyEnabled
+          : (raw.rawData?.finalApplyEnabled ?? existing?.finalApplyEnabled ?? existing?.rawData?.finalApplyEnabled)
+      ),
+      rawData: {
+        ...(existing?.rawData || {}),
+        ...(raw.rawData || {}),
+        metrics,
+        finalApplyEnabled: Boolean(
+          raw.finalApplyEnabled != null
+            ? raw.finalApplyEnabled
+            : (raw.rawData?.finalApplyEnabled ?? existing?.finalApplyEnabled ?? existing?.rawData?.finalApplyEnabled)
+        ),
+        ...(raw.finalAppliedAt != null || raw.rawData?.finalAppliedAt != null || existing?.rawData?.finalAppliedAt
+          ? {
+            finalAppliedAt: raw.finalAppliedAt != null
+              ? raw.finalAppliedAt
+              : (raw.rawData?.finalAppliedAt ?? existing?.rawData?.finalAppliedAt ?? '')
+          }
+          : {}),
+        ...(raw.finalAppliedBy != null || raw.rawData?.finalAppliedBy != null || existing?.rawData?.finalAppliedBy
+          ? {
+            finalAppliedBy: raw.finalAppliedBy != null
+              ? raw.finalAppliedBy
+              : (raw.rawData?.finalAppliedBy ?? existing?.rawData?.finalAppliedBy ?? '')
+          }
+          : {})
+      },
       createdAt: existing?.createdAt || raw.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

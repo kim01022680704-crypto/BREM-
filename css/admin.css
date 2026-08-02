@@ -8036,6 +8036,29 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   font-weight: 800;
 }
 
+.lease-deduction-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 18px 12px;
+}
+
+.lease-deduction-tab {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.35);
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.lease-deduction-tab.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(14, 165, 233, 0.18);
+  color: #e0f2fe;
+}
+
 .lease-payment-confirm-toolbar {
   display: flex;
   flex-wrap: wrap;

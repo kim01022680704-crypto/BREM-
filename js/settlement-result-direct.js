@@ -523,10 +523,12 @@ const BremSettlementResultDirect = (function () {
   function finalRows() {
     const settlements = finalWeekSettlements();
     const rows = [];
+    const leaseConsumed = new Set();
     settlements.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
-        weekSettlements: settlements
+        weekSettlements: settlements,
+        _leaseConsumed: leaseConsumed
       }).forEach(r => rows.push(r));
     });
     // 쿠팡 먼저, 그다음 배민, 각 그룹 내 이름순

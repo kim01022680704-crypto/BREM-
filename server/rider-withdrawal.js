@@ -132,7 +132,8 @@ function emptyLeaseInfo() {
     outstandingArrears: 0,
     leaseDeductionTotal: 0,
     arrearReason: '',
-    contractId: ''
+    contractId: '',
+    finalApplyEnabled: false
   };
 }
 
@@ -189,7 +190,9 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   const activeDays = contract
     ? countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd)
     : 0;
-  const leaseCharge = dailyRent * activeDays;
+  // 「대여 및 차감관리」에서 반영하기 한 계약만 출금가능 홀드(일렌탈료×운행일). 미반영은 0.
+  const finalApplyEnabled = Boolean(contract?.raw_data?.finalApplyEnabled);
+  const leaseCharge = finalApplyEnabled ? (dailyRent * activeDays) : 0;
 
   const contractId = contract?.id ? String(contract.id) : '';
   let outstandingArrears = 0;
@@ -217,7 +220,7 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
 
   const leaseDeductionTotal = leaseCharge + outstandingArrears;
   return {
-    hasLease: Boolean(contract) && (dailyRent > 0 || outstandingArrears > 0),
+    hasLease: Boolean(contract) && (leaseCharge > 0 || outstandingArrears > 0 || (dailyRent > 0 && finalApplyEnabled)),
     dailyRent,
     deductionPlatform,
     activeDays,
@@ -225,7 +228,8 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
     outstandingArrears,
     leaseDeductionTotal,
     arrearReason,
-    contractId
+    contractId,
+    finalApplyEnabled
   };
 }
 

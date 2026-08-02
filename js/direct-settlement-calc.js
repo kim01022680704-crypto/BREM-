@@ -35,6 +35,7 @@ const BremDirectSettlementCalc = (function () {
     { key: 'callFee', label: '콜수수료', group: 'deduct' },
     { key: 'dailySettlementFee', label: '일정산수수료', group: 'deduct' },
     { key: 'prepaid', label: '선정산(처리완료)', group: 'deduct' },
+    { key: 'leaseFee', label: '리스비', group: 'deduct' },
     { key: 'deductTotal', label: '공제합계', group: 'deduct', strong: true },
 
     { key: 'netPay', label: '총지급액', group: 'net', strong: true }
@@ -302,16 +303,126 @@ const BremDirectSettlementCalc = (function () {
     return map;
   }
 
+  function normalizeNameKey(value) {
+    return String(value || '').replace(/\s+/g, '').toLowerCase();
+  }
+
+  function normalizePhoneKey(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function addDaysKey(dateKey, days) {
+    const date = new Date(`${String(dateKey).slice(0, 10)}T00:00:00`);
+    date.setDate(date.getDate() + Number(days || 0));
+    return dateKey(date);
+  }
+
+  function weekEndFromStart(weekStart) {
+    return addDaysKey(weekStart, 6);
+  }
+
+  function countLeaseActiveDays(weekStart, weekEnd, todayKey, contractStart, contractEnd) {
+    if (!weekStart || !weekEnd) return 0;
+    const upper = todayKey && todayKey < weekEnd ? todayKey : weekEnd;
+    if (upper < weekStart) return 0;
+    let count = 0;
+    let cursor = weekStart;
+    let guard = 0;
+    while (cursor <= upper && guard < 60) {
+      const afterStart = !contractStart || cursor >= contractStart;
+      const beforeEnd = !contractEnd || cursor <= contractEnd;
+      if (afterStart && beforeEnd) count += 1;
+      cursor = addDaysKey(cursor, 1);
+      guard += 1;
+    }
+    return count;
+  }
+
+  function isLeaseFinalApplied(contract) {
+    if (!contract) return false;
+    if (contract.finalApplyEnabled != null) return Boolean(contract.finalApplyEnabled);
+    return Boolean(contract.rawData?.finalApplyEnabled || contract.raw_data?.finalApplyEnabled);
+  }
+
+  function contractDailyRent(contract) {
+    const raw = contract?.rawData || contract?.raw_data || {};
+    const daily = Math.max(0, Math.round(Number(contract?.dailyRent || contract?.daily_charge || raw.dailyRent || 0)));
+    if (daily > 0) return daily;
+    const weekly = Math.max(0, Math.round(Number(contract?.weeklyRent || raw.weeklyRent || 0)));
+    return weekly > 0 ? Math.round(weekly / 7) : 0;
+  }
+
+  /**
+   * 반영된 리스 계약 → 기사 키별 주간 리스비.
+   * 키: driverId / np:이름|전화
+   * 값은 { amount, platform } — 해당 공제 플랫폼 행에만 붙인다.
+   */
+  function buildLeaseFeeIndex(contracts, weekStart) {
+    const index = new Map();
+    const start = String(weekStart || '').slice(0, 10);
+    if (!start) return index;
+    const end = weekEndFromStart(start);
+    const today = dateKey(new Date());
+    const ended = 'ended';
+    (Array.isArray(contracts) ? contracts : []).forEach(contract => {
+      if (!isLeaseFinalApplied(contract)) return;
+      if (String(contract.status || '') === ended) return;
+      const daily = contractDailyRent(contract);
+      if (daily <= 0) return;
+      const raw = contract.rawData || contract.raw_data || {};
+      const cStart = String(contract.startDate || contract.start_date || raw.startDate || '').slice(0, 10);
+      const cEnd = String(contract.returnDate || contract.endDate || contract.end_date || raw.returnDate || raw.endDate || '').slice(0, 10);
+      const days = countLeaseActiveDays(start, end, today, cStart, cEnd);
+      const amount = Math.max(0, Math.round(daily * days));
+      if (amount <= 0) return;
+      const platform = normalizePlatform(contract.deductionPlatform || raw.deductionPlatform || 'coupang');
+      const entry = { amount, platform, contractId: String(contract.id || '') };
+      const driverId = String(contract.driverId || raw.driverId || '').trim();
+      if (driverId) index.set(`id:${driverId}`, entry);
+      const name = normalizeNameKey(contract.driverName || raw.driverName);
+      const phone = normalizePhoneKey(contract.driverPhone || raw.driverPhone);
+      if (name && phone) index.set(`np:${name}|${phone}`, entry);
+    });
+    return index;
+  }
+
+  function loadLeaseContractsForFee(explicit) {
+    if (Array.isArray(explicit)) return explicit;
+    try {
+      return window.BremLeaseErp?.contracts?.()?.getAll?.() || [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function resolveLeaseFeeForRow(row, leaseIndex) {
+    if (!leaseIndex || !leaseIndex.size) return 0;
+    const driverId = String(row?.driverId || '').trim();
+    let entry = driverId ? leaseIndex.get(`id:${driverId}`) : null;
+    if (!entry) {
+      const name = normalizeNameKey(row?.name);
+      const driver = driverId ? window.BremStorage?.drivers?.getById?.(driverId) : null;
+      const phone = normalizePhoneKey(driver?.phone || driver?.raw_data?.phone || '');
+      if (name && phone) entry = leaseIndex.get(`np:${name}|${phone}`);
+    }
+    if (!entry) return 0;
+    if (normalizePlatform(row?.platform) !== normalizePlatform(entry.platform)) return 0;
+    return Math.max(0, Math.round(Number(entry.amount || 0)));
+  }
+
   // 정산서 1건 → 라이더별 정산 행. 쿠팡·배민 모두 같은 필드를 채운다.
   // 선정산(처리완료)은 그 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
   // options._prepaidMap / options._consumed 를 넘기면 여러 정산서(지역) 사이에서
   // 같은 사람의 같은 플랫폼 출금을 한 번만 반영한다(최종입금 합산용).
+  // 리스비: 「대여 및 차감관리」반영 계약만, 차감플랫폼 행에 주간분(일×운행일) 1회.
   function computeRows(settlement, options = {}) {
     if (!settlement) return [];
     const platform = normalizePlatform(settlement.platform);
     const week = settlementWeek(settlement);
     const unitCallFee = callFeeUnit(platform);
     const adj = adjustmentMaps(settlement);
+    const leaseIndex = options._leaseFeeIndex
+      || buildLeaseFeeIndex(loadLeaseContractsForFee(options.leaseContracts), week);
 
     // 스필오버 배분(권장): 이 주 전체(쿠팡+배민) 정산서를 넘겨주면, 사람별로 각 플랫폼
     // 실지급 한도까지만 선정산을 잡고 초과분은 반대 플랫폼으로 넘긴다. weekSettlements
@@ -328,6 +439,7 @@ const BremDirectSettlementCalc = (function () {
     const source = allocation || strictMap;
     // 같은 사람이 같은 플랫폼에서 여러 지역 정산서에 걸쳐 있어도 출금은 한 번만 반영.
     const consumed = options._consumed || new Set();
+    const leaseConsumed = options._leaseConsumed || new Set();
 
     const rows = [];
     (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
@@ -346,7 +458,14 @@ const BremDirectSettlementCalc = (function () {
         }
       }
 
-      const deductTotal = base.baseDeduct + dailySettlementFee + prepaid;
+      let leaseFee = 0;
+      const leaseDedupe = `${key || base.driverId || base.name}:${platform}:lease`;
+      if (!leaseConsumed.has(leaseDedupe)) {
+        leaseFee = resolveLeaseFeeForRow(base, leaseIndex);
+        if (leaseFee > 0) leaseConsumed.add(leaseDedupe);
+      }
+
+      const deductTotal = base.baseDeduct + dailySettlementFee + prepaid + leaseFee;
       const netPay = base.grossPay - deductTotal;
 
       rows.push({
@@ -371,6 +490,7 @@ const BremDirectSettlementCalc = (function () {
         callFee: base.callFee,
         dailySettlementFee,
         prepaid,
+        leaseFee,
         deductTotal,
         netPay,
         untaggedWithdrawalCount: source.untaggedCount || 0,

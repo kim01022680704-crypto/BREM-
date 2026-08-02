@@ -166,11 +166,13 @@ const BremFinalDeposit = (function () {
       Calc().buildWeekCapacityMap(weekAll)
     );
     const consumed = new Set();
+    const leaseConsumed = new Set();
     checkedSettlements().forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         _allocation: allocation,
-        _consumed: consumed
+        _consumed: consumed,
+        _leaseConsumed: leaseConsumed
       }).forEach(row => {
         const key = driverKey(row);
         const existing = byDriver.get(key);

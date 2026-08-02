@@ -1,5 +1,5 @@
 /**
- * 리스 ERP — 11개 서브메뉴 (대시보드 · 차량 · 계약 · 납부확인 · 완납확인 · 자동계산 · 미납 · 공차 · 주간/월간 · 일괄)
+ * 리스 ERP — 서브메뉴 (대시보드 · 차량 · 계약 · 대여/차감 · 납부확인 · 완납확인 · 자동계산 · 미납 · 공차 · 주간/월간 · 일괄)
  */
 const BremAdminLeaseMenus = (function () {
   const erp = () => window.BremLeaseErp;
@@ -57,6 +57,9 @@ const BremAdminLeaseMenus = (function () {
     paymentConfirmSearch: '',
     paymentPaidSearch: '',
     paymentConfirmSelectedIds: new Set(),
+    deductionTab: 'lease',
+    deductionLeaseSearch: '',
+    deductionLeaseSelectedIds: new Set(),
     leaseSaving: false
   };
 
@@ -626,6 +629,11 @@ const BremAdminLeaseMenus = (function () {
     }
     if (menu === 'payment-paid') {
       renderPaymentPaid();
+      return;
+    }
+    if (menu === 'deduction') {
+      syncDeductionTabUi();
+      renderDeductionLease();
       return;
     }
     if (menu === 'dashboard') {
@@ -2367,9 +2375,9 @@ const BremAdminLeaseMenus = (function () {
     return days;
   }
 
-  // 주정산(수~화) 반영 시 리스비 미차감분을 미납/회수에 일괄 등록
-  // (정산에서 이미 차감된 기사는 회수완료로 처리하면 됨)
-  async function bulkRegisterWeeklyLeaseArrears() {
+    // 주정산(수~화) 반영 시 리스비 미차감분을 미납/회수에 일괄 등록
+    // 「대여 및 차감관리」에서 반영된 계약은 직계약 정산결과 리스비 공제로 처리하므로 여기 자동등록에서 제외(이중 공제 방지)
+    async function bulkRegisterWeeklyLeaseArrears() {
     if (!erp()) return;
     const weekStart = syncArrearWeekUi($('leaseArrearWeekStart')?.value || state.arrearWeekStart);
     if (!weekStart) {
@@ -2379,7 +2387,12 @@ const BremAdminLeaseMenus = (function () {
     const completed = calc().ARREAR_STATUS.COMPLETED;
     const allArrears = erp().arrears().getAll();
     const candidates = [];
+    let skippedApplied = 0;
     erp().contracts().getAll().forEach(contract => {
+      if (isContractFinalApplyEnabled(contract)) {
+        skippedApplied += 1;
+        return;
+      }
       const days = contractActiveDaysInWeek(contract, weekStart);
       if (days <= 0) return;
       const charge = Math.round(Number(contractRiderDailyRent(contract) || 0) * days);
@@ -2392,12 +2405,17 @@ const BremAdminLeaseMenus = (function () {
       candidates.push({ contract, days, charge });
     });
     if (!candidates.length) {
-      showToast('이번 주에 신규 등록할 리스 미납이 없습니다.');
+      showToast(skippedApplied
+        ? `이번 주 신규 미납 없음 · 반영 계약 ${skippedApplied}건은 직계약 리스비 공제 대상이라 제외`
+        : '이번 주에 신규 등록할 리스 미납이 없습니다.');
       return;
     }
     const total = candidates.reduce((sum, item) => sum + item.charge, 0);
+    const skipNote = skippedApplied
+      ? `\n(차감 반영 ${skippedApplied}건은 이중 공제 방지를 위해 제외)`
+      : '';
     if (!window.confirm(
-      `주정산(${weekStart}~) 리스비 미납 ${candidates.length}건 · 합계 ${formatMoney(total)} 을 미납/회수에 등록할까요?\n`
+      `주정산(${weekStart}~) 리스비 미납 ${candidates.length}건 · 합계 ${formatMoney(total)} 을 미납/회수에 등록할까요?${skipNote}\n`
       + '정산에서 이미 리스비가 차감된 기사는 등록 후 「회수완료」로 처리하세요.'
     )) return;
 
@@ -2542,6 +2560,183 @@ const BremAdminLeaseMenus = (function () {
       return String(item.dueDate || '').slice(0, 10) === week
         && String(item.memo || '').includes('납부확인');
     }) || null;
+  }
+
+  function isContractFinalApplyEnabled(contract) {
+    if (!contract) return false;
+    if (contract.finalApplyEnabled != null) return Boolean(contract.finalApplyEnabled);
+    return Boolean(contract.rawData?.finalApplyEnabled);
+  }
+
+  function deductionPlatformLabel(platform) {
+    return String(platform || '') === 'baemin' ? '배민' : '쿠팡';
+  }
+
+  function syncDeductionTabUi() {
+    const tab = state.deductionTab === 'loan' ? 'loan' : 'lease';
+    state.deductionTab = tab;
+    document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
+      const active = btn.dataset.deductionTab === tab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-deduction-pane]').forEach(pane => {
+      pane.hidden = pane.dataset.deductionPane !== tab;
+    });
+  }
+
+  function updateDeductionLeaseBulkUi() {
+    const applyBtn = $('leaseDeductionLeaseBulkApplyBtn');
+    const clearBtn = $('leaseDeductionLeaseBulkClearBtn');
+    const selectAll = $('leaseDeductionLeaseSelectAll');
+    const count = state.deductionLeaseSelectedIds.size;
+    if (applyBtn) {
+      applyBtn.disabled = count <= 0;
+      applyBtn.textContent = count > 0 ? `선택 반영 (${count})` : '선택 반영';
+    }
+    if (clearBtn) {
+      clearBtn.disabled = count <= 0;
+      clearBtn.textContent = count > 0 ? `선택 해제 (${count})` : '선택 해제';
+    }
+    if (selectAll) {
+      const boxes = document.querySelectorAll('[data-deduction-lease-select]');
+      const enabled = [...boxes].filter(el => !el.disabled);
+      selectAll.checked = enabled.length > 0 && enabled.every(el => el.checked);
+      selectAll.indeterminate = count > 0 && !selectAll.checked;
+    }
+  }
+
+  async function setContractFinalApply(contractId, enabled, options = {}) {
+    if (!erp() || !contractId) return false;
+    const contract = erp().contracts().getById(contractId);
+    if (!contract) {
+      if (!options.silent) showToast('계약을 찾을 수 없습니다.');
+      return false;
+    }
+    const nextEnabled = Boolean(enabled);
+    const rawData = {
+      ...(contract.rawData || {}),
+      finalApplyEnabled: nextEnabled,
+      finalAppliedAt: nextEnabled ? new Date().toISOString() : (contract.rawData?.finalAppliedAt || ''),
+      finalAppliedBy: nextEnabled ? 'admin' : (contract.rawData?.finalAppliedBy || ''),
+      finalClearedAt: nextEnabled ? '' : new Date().toISOString()
+    };
+    erp().contracts().update(contractId, {
+      finalApplyEnabled: nextEnabled,
+      rawData
+    });
+    if (!options.skipPersist) {
+      try {
+        await erp().persistAll({ skipFlushStorage: true });
+      } catch (error) {
+        console.error('[setContractFinalApply]', error);
+        if (!options.silent) showToast(error?.message || '반영 상태 저장에 실패했습니다.');
+        return false;
+      }
+      updateLeaseErpUnsavedBanner();
+    }
+    if (!options.silent) {
+      showToast(nextEnabled
+        ? `${formatDriverContractLabel(contract.driverName || '기사')} · 리스 차감 반영`
+        : `${formatDriverContractLabel(contract.driverName || '기사')} · 리스 차감 해제`);
+      renderDeductionLease();
+      refreshAfterLeaseMutation({ contract: false });
+    }
+    return true;
+  }
+
+  async function bulkSetContractFinalApply(enabled) {
+    const ids = [...state.deductionLeaseSelectedIds].map(String).filter(Boolean);
+    if (!ids.length) {
+      showToast('계약을 선택하세요.');
+      return;
+    }
+    const label = enabled ? '반영' : '해제';
+    if (!window.confirm(`선택한 ${ids.length}건을 리스 차감 ${label}할까요?`)) return;
+    let ok = 0;
+    for (const id of ids) {
+      const done = await setContractFinalApply(id, enabled, { skipPersist: true, silent: true });
+      if (done) ok += 1;
+    }
+    try {
+      await erp().persistAll({ skipFlushStorage: true });
+    } catch (error) {
+      console.error('[bulkSetContractFinalApply]', error);
+      showToast(error?.message || `일괄 ${label} 저장에 실패했습니다.`);
+      return;
+    }
+    state.deductionLeaseSelectedIds.clear();
+    updateLeaseErpUnsavedBanner();
+    showToast(`리스 차감 ${label} ${ok}건`);
+    renderDeductionLease();
+    refreshAfterLeaseMutation({ contract: false });
+  }
+
+  function renderDeductionLease() {
+    const rowsEl = $('leaseDeductionLeaseRows');
+    const summaryEl = $('leaseDeductionLeaseSummary');
+    if (!rowsEl || !erp()) return;
+    const weekStart = currentWeekStart();
+    const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
+    let contracts = getActivePaymentContracts();
+    const keyword = String(state.deductionLeaseSearch || $('leaseDeductionLeaseSearch')?.value || '').trim().toLowerCase();
+    if (keyword) {
+      contracts = contracts.filter(contract => {
+        const vehicle = vehicles.get(contract.vehicleId);
+        const hay = [
+          contract.driverName,
+          contract.driverPhone,
+          contract.vehicleNumber,
+          vehicle?.vehicleNumber,
+          vehicle?.model,
+          contract.modelType
+        ].join(' ').toLowerCase();
+        return hay.includes(keyword);
+      });
+    }
+    const appliedCount = contracts.filter(isContractFinalApplyEnabled).length;
+    if (summaryEl) {
+      summaryEl.textContent = `계약 ${contracts.length}건 · 반영 ${appliedCount}건 · 주차 ${formatPaymentWeekColumn(weekStart)}`;
+    }
+    const visibleIds = new Set(contracts.map(c => String(c.id)));
+    [...state.deductionLeaseSelectedIds].forEach(id => {
+      if (!visibleIds.has(String(id))) state.deductionLeaseSelectedIds.delete(String(id));
+    });
+    if (!contracts.length) {
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">활성 계약이 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>';
+      updateDeductionLeaseBulkUi();
+      return;
+    }
+    rowsEl.innerHTML = contracts.map(contract => {
+      const vehicle = vehicles.get(contract.vehicleId);
+      const daily = contractRiderDailyRent(contract);
+      const days = contractActiveDaysInWeek(contract, weekStart);
+      const charge = Math.round(daily * days);
+      const applied = isContractFinalApplyEnabled(contract);
+      const platform = deductionPlatformLabel(contract.deductionPlatform || contract.rawData?.deductionPlatform);
+      const checked = state.deductionLeaseSelectedIds.has(String(contract.id)) ? ' checked' : '';
+      const rowSelected = checked ? ' class="row-selected"' : '';
+      return `<tr${rowSelected}>
+        <td class="lease-check-col">
+          <input type="checkbox" data-deduction-lease-select="${escapeHtml(contract.id)}"${checked}>
+        </td>
+        <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
+        <td>${escapeHtml(vehicle?.model || contract.modelType || '-')}</td>
+        <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}</td>
+        <td>${escapeHtml(contract.driverPhone || '-')}</td>
+        <td>${formatMoney(daily)}</td>
+        <td>${days}일</td>
+        <td>${formatMoney(charge)}</td>
+        <td>${escapeHtml(platform)}</td>
+        <td><span class="${applied ? 'lease-status--done' : 'lease-status--collecting'}">${applied ? '반영됨' : '미반영'}</span></td>
+        <td class="lease-payment-confirm-actions">
+          ${applied
+    ? `<button type="button" class="small-btn" data-deduction-lease-clear="${escapeHtml(contract.id)}">반영 해제</button>`
+    : `<button type="button" class="small-btn primary-btn" data-deduction-lease-apply="${escapeHtml(contract.id)}">반영하기</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+    updateDeductionLeaseBulkUi();
   }
 
   function getActivePaymentContracts() {
@@ -3886,6 +4081,16 @@ const BremAdminLeaseMenus = (function () {
       const deletePaidBtn = event.target.closest('[data-delete-paid-payment]');
       if (deletePaidBtn) {
         void deletePaidPaymentConfirm(deletePaidBtn.dataset.deletePaidPayment);
+        return;
+      }
+      const deductionApplyBtn = event.target.closest('[data-deduction-lease-apply]');
+      if (deductionApplyBtn) {
+        void setContractFinalApply(deductionApplyBtn.dataset.deductionLeaseApply, true);
+        return;
+      }
+      const deductionClearBtn = event.target.closest('[data-deduction-lease-clear]');
+      if (deductionClearBtn) {
+        void setContractFinalApply(deductionClearBtn.dataset.deductionLeaseClear, false);
       }
     });
 
@@ -3929,7 +4134,43 @@ const BremAdminLeaseMenus = (function () {
       updatePaymentConfirmBulkUi();
     });
 
+    document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.deductionTab = btn.dataset.deductionTab === 'loan' ? 'loan' : 'lease';
+        syncDeductionTabUi();
+        if (state.deductionTab === 'lease') renderDeductionLease();
+      });
+    });
+    $('leaseDeductionLeaseSearch')?.addEventListener('input', event => {
+      state.deductionLeaseSearch = String(event.target.value || '');
+      renderDeductionLease();
+    });
+    $('leaseDeductionLeaseBulkApplyBtn')?.addEventListener('click', () => { void bulkSetContractFinalApply(true); });
+    $('leaseDeductionLeaseBulkClearBtn')?.addEventListener('click', () => { void bulkSetContractFinalApply(false); });
+    $('leaseDeductionLeaseSelectAll')?.addEventListener('change', event => {
+      const checked = !!event.target.checked;
+      document.querySelectorAll('[data-deduction-lease-select]').forEach(el => {
+        el.checked = checked;
+        const id = String(el.dataset.deductionLeaseSelect || '');
+        if (!id) return;
+        if (checked) state.deductionLeaseSelectedIds.add(id);
+        else state.deductionLeaseSelectedIds.delete(id);
+        el.closest('tr')?.classList.toggle('row-selected', checked);
+      });
+      updateDeductionLeaseBulkUi();
+    });
+
     document.addEventListener('change', event => {
+      const deductionLeaseCheck = event.target.closest('[data-deduction-lease-select]');
+      if (deductionLeaseCheck) {
+        const id = String(deductionLeaseCheck.dataset.deductionLeaseSelect || '');
+        if (!id) return;
+        if (deductionLeaseCheck.checked) state.deductionLeaseSelectedIds.add(id);
+        else state.deductionLeaseSelectedIds.delete(id);
+        deductionLeaseCheck.closest('tr')?.classList.toggle('row-selected', deductionLeaseCheck.checked);
+        updateDeductionLeaseBulkUi();
+        return;
+      }
       const paymentCheck = event.target.closest('[data-payment-select]');
       if (paymentCheck) {
         const id = String(paymentCheck.dataset.paymentSelect || '');
@@ -4008,6 +4249,7 @@ const BremAdminLeaseMenus = (function () {
     if (state.menu === 'arrears') renderArrears();
     if (state.menu === 'payment-confirm') renderPaymentConfirm();
     if (state.menu === 'payment-paid') renderPaymentPaid();
+    if (state.menu === 'deduction') renderDeductionLease();
     if (state.menu === 'empty') renderEmpty();
     if (state.menu === 'contract') renderContractList();
     if (state.menu === 'calc') syncStandaloneCalc();
