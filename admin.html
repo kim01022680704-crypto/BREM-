@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260802f">
+  <link rel="stylesheet" href="css/admin.css?v=20260802g">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -2637,18 +2637,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>납부 확인</h2>
-            <p class="form-help">차량관리 주간리스비 · 계약 주간청구액 · 차액(청구−리스비) 기준으로 확인</p>
-          </div>
-          <div class="lease-arrear-week-period">
-            <label class="period-label-block week-target-block">
-              <span class="label-row">납부 확인주 (수요일 시작 · 수~화 7일)</span>
-              <span class="field-preview week-range-label" id="leasePaymentWeekRangePreview">수요일~화요일 기준</span>
-              <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-payment-week" id="leasePaymentWeekBtn">
-                <span id="leasePaymentWeekLabel">확인주 선택</span>
-              </button>
-              <span class="period-picker-caption">선택한 주의 계약 기사 납부 상태를 확인합니다</span>
-              <input type="hidden" id="leasePaymentWeekStart">
-            </label>
+            <p class="form-help">이번주(수~화) 기준 · 주간리스비 · 주간청구액 · 차액 확인</p>
           </div>
           <div class="lease-list-toolbar lease-payment-confirm-toolbar">
             <p class="form-help lease-list-count" id="leasePaymentConfirmSummary">차량 0대 · 계약중 0건</p>
@@ -2659,6 +2648,7 @@
             <table class="lease-table lease-table--compact">
               <thead>
                 <tr>
+                  <th>주차(수~화)</th>
                   <th>차량번호</th>
                   <th>기종</th>
                   <th>렌탈/리스자</th>
@@ -2671,7 +2661,7 @@
                 </tr>
               </thead>
               <tbody id="leasePaymentConfirmRows">
-                <tr><td colspan="9" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
+                <tr><td colspan="10" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
               </tbody>
             </table>
           </div>
@@ -7270,7 +7260,7 @@
   <script src="js/lease-erp.js?v=20260723q"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802c"></script>
+  <script src="js/admin-lease-menus.js?v=20260802d"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7290,7 +7280,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260802a"></script>
+    <script src="js/admin.js?v=20260802b"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

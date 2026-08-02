@@ -527,28 +527,21 @@ const BremAdminLeaseMenus = (function () {
       || ''
     ).slice(0, 10);
     state.paymentWeekStart = normalized;
-    if ($('leasePaymentWeekStart')) $('leasePaymentWeekStart').value = normalized;
-    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
-    if ($('leasePaymentWeekRangePreview')) $('leasePaymentWeekRangePreview').textContent = rangeLabel;
-    if ($('leasePaymentWeekLabel')) {
-      if (!normalized) {
-        $('leasePaymentWeekLabel').textContent = '확인주 선택';
-      } else if (BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
-        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
-        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
-        $('leasePaymentWeekLabel').textContent = weekday
-          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
-          : BremDatePicker.formatDate(wednesday);
-      } else {
-        $('leasePaymentWeekLabel').textContent = normalized;
-      }
-    }
     return normalized;
   }
 
   function handlePaymentWeekChange(weekStart) {
     syncPaymentWeekUi(weekStart);
     renderPaymentConfirm();
+  }
+
+  function formatPaymentWeekColumn(weekStart) {
+    const start = syncPaymentWeekUi(weekStart || currentWeekStart());
+    if (!start) return '-';
+    if (BremDatePicker?.formatWednesdayWeekRange) {
+      return BremDatePicker.formatWednesdayWeekRange(start);
+    }
+    return formatLeaseWeekRangeLabel(start) || start;
   }
 
   async function persistLeaseFast() {
@@ -2802,7 +2795,8 @@ const BremAdminLeaseMenus = (function () {
     const rowsEl = $('leasePaymentConfirmRows');
     const summaryEl = $('leasePaymentConfirmSummary');
     if (!rowsEl || !erp()) return;
-    const weekStart = syncPaymentWeekUi(state.paymentWeekStart || $('leasePaymentWeekStart')?.value || currentWeekStart());
+    const weekStart = syncPaymentWeekUi(currentWeekStart());
+    const weekLabel = formatPaymentWeekColumn(weekStart);
     const vehicles = erp().vehicles().getAll();
     const vehicleMap = new Map(vehicles.map(item => [item.id, item]));
     let contracts = getActivePaymentContracts();
@@ -2821,12 +2815,12 @@ const BremAdminLeaseMenus = (function () {
       });
     }
     if (summaryEl) {
-      summaryEl.textContent = `차량 ${vehicles.length}대 · 계약중 ${getActivePaymentContracts().length}건 · 표시 ${contracts.length}건`;
+      summaryEl.textContent = `이번주 ${weekLabel} · 차량 ${vehicles.length}대 · 계약중 ${getActivePaymentContracts().length}건 · 표시 ${contracts.length}건`;
     }
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="9" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 차량에 기사를 배정하세요.</td></tr>'
-        : '<tr><td colspan="9" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+        ? '<tr><td colspan="10" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 차량에 기사를 배정하세요.</td></tr>'
+        : '<tr><td colspan="10" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
       return;
     }
     rowsEl.innerHTML = contracts.map(contract => {
@@ -2838,6 +2832,7 @@ const BremAdminLeaseMenus = (function () {
       const status = paymentConfirmStatus(contract, weekStart);
       const disabled = weeklyCharge <= 0 ? ' disabled' : '';
       return `<tr>
+        <td class="lease-payment-week-cell"><strong>${escapeHtml(weekLabel)}</strong></td>
         <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
         <td>${escapeHtml(vehicle?.model || contract.modelType || '-')}</td>
         <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}</td>

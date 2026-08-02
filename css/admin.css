@@ -8050,6 +8050,12 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   gap: 6px;
 }
 
+.lease-payment-week-cell {
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: #fde68a;
+}
+
 .lease-month-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
