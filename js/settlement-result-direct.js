@@ -266,47 +266,63 @@ const BremSettlementResultDirect = (function () {
     const colspan = columns().length;
 
     if (!settlement) {
-      body.innerHTML = `<tr><td colspan="${colspan}" class="empty">이 플랫폼에 저장된 직계약 정산서가 없습니다. (주정산서 업로드 · 직계약 확인)</td></tr>`;
+      const total = platformSettlements().length;
+      const platformKo = state.platform === 'coupang' ? '쿠팡' : '배민';
+      let emptyMsg = `이 플랫폼(${platformKo})에 저장된 직계약 정산서가 없습니다. (주정산서 업로드 · 직계약 확인)`;
+      if (state.week && total > 0) {
+        emptyMsg = `${formatDate(state.week)}(수) 주 · ${platformKo} 직계약 정산서가 없습니다. `
+          + `다른 주를 고르거나 「전체 주」를 누르세요. (${platformKo} 전체 ${total}건)`;
+      } else if (!state.week && total <= 0) {
+        emptyMsg = `${platformKo} 직계약 정산서가 없습니다. 「주정산서 업로드 (직계약)」에서 먼저 저장하세요.`;
+      }
+      body.innerHTML = `<tr><td colspan="${colspan}" class="empty">${escapeHtml(emptyMsg)}</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
 
-    const rows = computeRows();
-    if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="${colspan}" class="empty">선택한 정산서에 라이더 데이터가 없습니다.</td></tr>`;
-      if (summaryEl) summaryEl.textContent = '';
-      return;
-    }
+    try {
+      const rows = computeRows();
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="${colspan}" class="empty">선택한 정산서에 라이더 데이터가 없습니다.</td></tr>`;
+        if (summaryEl) summaryEl.textContent = '';
+        return;
+      }
 
-    const totals = Calc().sumRows(rows);
-    const cols = columns();
-    body.innerHTML = rows.map(row => `
+      const totals = Calc().sumRows(rows);
+      const cols = columns();
+      body.innerHTML = rows.map(row => `
       <tr>${cols.map(col => cellHtml(col, row)).join('')}</tr>`).join('');
 
-    if (summaryEl) {
-      // 선정산(처리완료)은 이 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
-      // 다 못 빼면 총지급액이 음수로 표기된다. 플랫폼 미지정 출금은 반영 못 하므로 알린다.
-      const platformLabelKo = state.platform === 'coupang' ? '쿠팡' : '배민';
-      const negative = Number(totals.negativeNetCount || 0);
-      const untagged = Number(totals.untaggedWithdrawalCount || 0);
-      const notes = [];
-      if (negative) {
-        notes.push(`총지급액 음수 <strong>${negative}</strong>명(선정산이 지급액보다 큼 — 정상 표기)`);
+      if (summaryEl) {
+        // 선정산(처리완료)은 이 플랫폼에서 실제 출금한 금액을 그대로 공제한다.
+        // 다 못 빼면 총지급액이 음수로 표기된다. 플랫폼 미지정 출금은 반영 못 하므로 알린다.
+        const platformLabelKo = state.platform === 'coupang' ? '쿠팡' : '배민';
+        const negative = Number(totals.negativeNetCount || 0);
+        const untagged = Number(totals.untaggedWithdrawalCount || 0);
+        const notes = [];
+        if (negative) {
+          notes.push(`총지급액 음수 <strong>${negative}</strong>명(선정산이 지급액보다 큼 — 정상 표기)`);
+        }
+        if (untagged) {
+          notes.push(`플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원) 미반영 — 출금내역에서 쿠팡/배민 지정 필요`);
+        }
+        const extraNote = notes.length ? ` · <span class="muted-inline">${notes.join(' · ')}</span>` : '';
+        const negativeCount = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0).length;
+        const negNote = negativeCount
+          ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 0원 처리 가능</span>`
+          : '';
+        summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
+          + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
+          + extraNote + negNote;
       }
-      if (untagged) {
-        notes.push(`플랫폼 미지정 출금 <strong>${untagged}</strong>건(${formatNumber(totals.untaggedWithdrawalAmount)}원) 미반영 — 출금내역에서 쿠팡/배민 지정 필요`);
-      }
-      const extraNote = notes.length ? ` · <span class="muted-inline">${notes.join(' · ')}</span>` : '';
-      const negativeCount = rows.filter(r => Math.round(Number(r.netPay || 0)) < 0).length;
-      const negNote = negativeCount
-        ? ` · <span class="muted-inline">총지급액 음수 <strong>${negativeCount}</strong>명 — 「마이너스 일괄 맞추기」로 0원 처리 가능</span>`
-        : '';
-      summaryEl.innerHTML = `대상 <strong>${rows.length}</strong>명 · 지급합계 <strong>${formatNumber(totals.grossPay)}</strong> · 공제합계 <strong>${formatNumber(totals.deductTotal)}</strong> · 총지급액 <strong>${formatNumber(totals.netPay)}</strong>원`
-        + ` <span class="muted-inline">(BREM프로모션 ${formatNumber(totals.promo)} · 기타지급 ${formatNumber(totals.other)} · ${platformLabelKo} 선정산(처리완료) ${formatNumber(totals.prepaid)})</span>`
-        + extraNote + negNote;
-    }
 
-    if (!$('#settlementResultRetroCard')?.hidden) renderRetro();
+      if (!$('#settlementResultRetroCard')?.hidden) renderRetro();
+    } catch (error) {
+      console.error('[settlement-result-direct] render failed', error);
+      body.innerHTML = `<tr><td colspan="${colspan}" class="empty">정산 계산 중 오류가 발생했습니다. 새로고침 후에도 같으면 관리자에게 알려주세요. (${escapeHtml(error?.message || error)})</td></tr>`;
+      if (summaryEl) summaryEl.textContent = '';
+      showToast(error?.message || '정산결과 표시에 실패했습니다.');
+    }
   }
 
   // 엑셀에는 원본 값이 나가야 하므로 태그는 화면 렌더에서만 씌운다.

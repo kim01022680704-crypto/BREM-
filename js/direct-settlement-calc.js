@@ -311,8 +311,8 @@ const BremDirectSettlementCalc = (function () {
     return String(value || '').replace(/\D/g, '');
   }
 
-  function addDaysKey(dateKey, days) {
-    const date = new Date(`${String(dateKey).slice(0, 10)}T00:00:00`);
+  function addDaysKey(startKey, days) {
+    const date = new Date(`${String(startKey).slice(0, 10)}T00:00:00`);
     date.setDate(date.getDate() + Number(days || 0));
     return dateKey(date);
   }
