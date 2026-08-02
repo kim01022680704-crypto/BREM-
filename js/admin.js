@@ -6473,6 +6473,7 @@
         return [
           'mission-results',
           drivers().length,
+          calls().length,
           state.missionResultsSearchQuery.trim(),
           state.missionResultsSort.key,
           state.missionResultsSort.dir
@@ -6481,6 +6482,7 @@
         return [
           'missions',
           drivers().length,
+          calls().length,
           state.eventSettingsSearchQuery.trim(),
           state.eventSettingsSort.key,
           state.eventSettingsSort.dir
@@ -6767,6 +6769,17 @@
 
     const cacheReady = BremStorage.isSectionCacheReady?.(sectionId);
     if (cacheReady) {
+      if (sectionId === 'mission-results' || sectionId === 'missions') {
+        showSectionLoadingSkeleton(sectionId);
+        showAdminDataLoading(true);
+        try {
+          await BremStorage.ensureLongEventCallsLoaded?.();
+        } catch (error) {
+          console.warn('[BREM] Long-event calls load failed:', error);
+        } finally {
+          showAdminDataLoading(false);
+        }
+      }
       scheduleSectionNavigationFinish(sectionId);
       return;
     }
@@ -6814,6 +6827,13 @@
       invalidateCallStatsIndex();
       invalidateDriverSelectCache();
       invalidateSectionRenders();
+      if (state.currentSection === 'missions'
+        || state.currentSection === 'mission-results'
+        || state.currentSection === 'dashboard'
+        || state.currentSection === 'calls'
+        || state.currentSection === 'targets') {
+        renderActiveSection(state.currentSection, { force: true });
+      }
     });
 
     document.addEventListener('brem-drivers-sync-ready', () => {

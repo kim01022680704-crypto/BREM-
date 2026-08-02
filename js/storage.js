@@ -1469,8 +1469,8 @@ const BremStorage = (function () {
     calls: [KEYS.drivers, KEYS.calls, KEYS.callEditLogs],
     rejections: [KEYS.drivers, KEYS.rejections],
     targets: [KEYS.drivers, KEYS.targets],
-    missions: [KEYS.drivers],
-    'mission-results': [KEYS.drivers],
+    missions: [KEYS.drivers, KEYS.calls],
+    'mission-results': [KEYS.drivers, KEYS.calls],
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
     'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
     // 직계약 정산서·업로드로그·미매칭은 settings 기반이라 부트스트랩에서 일괄 로드된다.
@@ -1786,6 +1786,11 @@ const BremStorage = (function () {
       await Promise.all(tasks);
     }
 
+    // 장기근속 진행률은 시작일 이후 콜수가 필요. 기본 2년 윈도우보다 이른 시작일이 있으면 더 앞부터 로드.
+    if (sectionId === 'mission-results' || sectionId === 'missions') {
+      await ensureLongEventCallsLoaded();
+    }
+
     window.BremPerf?.timeEnd?.(`storage.ensureSection:${sectionId}`);
     return { ok: true };
   }
@@ -1817,6 +1822,20 @@ const BremStorage = (function () {
       force: Boolean(options.force),
       [KEYS.calls]: { sinceDate: since }
     });
+    return { ok: true };
+  }
+
+  async function ensureLongEventCallsLoaded(options = {}) {
+    const starts = drivers.getAll()
+      .map(driver => String(driver.longEventStartDate || '').slice(0, 10))
+      .filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day))
+      .sort();
+    if (starts.length) {
+      return ensureCallsSinceDate(callsSinceDateWithBuffer(starts[0], 7), options);
+    }
+    if (!window.BremDataCache?.isValid?.(KEYS.calls) && activeStorageAdapter.ensureKeysLoaded) {
+      await activeStorageAdapter.ensureKeysLoaded([KEYS.calls], { force: Boolean(options.force) });
+    }
     return { ok: true };
   }
 
@@ -13261,6 +13280,7 @@ const BremStorage = (function () {
     persistLeaseErpTableViaServer,
     ensureSectionLoaded,
     ensureCallsSinceDate,
+    ensureLongEventCallsLoaded,
     ensurePromotionCalculationCalls,
     isSectionCacheReady,
     isBootstrapComplete,
