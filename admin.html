@@ -1938,6 +1938,7 @@
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="vehicle"><span>차량관리</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="contract"><span>계약/렌탈</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="payment-confirm"><span>납부 확인</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="payment-paid"><span>완납 확인</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="calc"><span>자동계산</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="arrears"><span>미납/회수</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="empty"><span>공차관리</span></button>
@@ -2662,6 +2663,42 @@
               </thead>
               <tbody id="leasePaymentConfirmRows">
                 <tr><td colspan="10" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+
+        <div class="lease-menu-panel" data-lease-menu-panel="payment-paid" hidden>
+        <article class="card lease-screen-card">
+          <div class="card-header">
+            <h2>완납 확인</h2>
+            <p class="form-help">납부 확인·미납/회수에서 완납 처리된 내역 · 기사·차량번호·연락처 검색</p>
+          </div>
+          <div class="lease-list-toolbar lease-payment-confirm-toolbar">
+            <p class="form-help lease-list-count" id="leasePaymentPaidSummary">완납 0건</p>
+            <input type="search" id="leasePaymentPaidSearch" class="lease-contract-list-search" placeholder="기사 · 차량번호 · 연락처 검색" autocomplete="off">
+            <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
+          </div>
+          <div class="table-wrap lease-table-wrap lease-list-scroll">
+            <table class="lease-table lease-table--compact">
+              <thead>
+                <tr>
+                  <th>주차(수~화)</th>
+                  <th>차량번호</th>
+                  <th>기종</th>
+                  <th>렌탈/리스자</th>
+                  <th>연락처</th>
+                  <th>주간리스비</th>
+                  <th>주간청구액</th>
+                  <th>차액</th>
+                  <th>납부액</th>
+                  <th>완납일</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="leasePaymentPaidRows">
+                <tr><td colspan="11" class="empty">완납 내역이 없습니다.</td></tr>
               </tbody>
             </table>
           </div>
@@ -7260,7 +7297,7 @@
   <script src="js/lease-erp.js?v=20260723q"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802d"></script>
+  <script src="js/admin-lease-menus.js?v=20260802e"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
