@@ -561,8 +561,21 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     return { ok: false, status: 500, error: error.message || '노출 설정을 불러오지 못했습니다.' };
   }
 
-  const regions = listExposedRegions(exposure, platform);
+  // 라이더 노출 ON 지역 중, 이 기사가 등록된 지역만 대시보드에 보이게 한다.
+  // (예전에는 노출만 켜면 전 기사가 해당 지역을 볼 수 있었다.)
+  const riderRow = mapRiderRow({
+    id: me.rider?.id,
+    name: me.rider?.name,
+    baemin_id: me.rider?.baemin_id || me.rider?.baeminId,
+    raw_data: me.rider?.raw_data || {
+      regionBaemin: me.rider?.regionBaemin,
+      regionCoupang: me.rider?.regionCoupang
+    }
+  });
+  const exposedAll = listExposedRegions(exposure, platform);
+  const regions = exposedAll.filter(region => riderMatchesRegion(riderRow, region));
   if (!regions.length) {
+    const hasAnyExposure = exposedAll.length > 0;
     return {
       ok: true,
       platform,
@@ -575,30 +588,16 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
       metrics: emptyMetrics(),
       realtimeRanking: [],
       weeklyRanking: [],
-      message: '관리자가 노출로 설정한 지역이 없습니다.'
+      message: hasAnyExposure
+        ? '등록된 지역에 노출된 대시보드가 없습니다. 관리자 「기사지역관리」에서 본인 지역 등록·라이더 노출을 확인하세요.'
+        : '관리자가 노출로 설정한 지역이 없습니다.'
     };
   }
 
-  // 기사 소속 지역이 노출 목록에 있으면 기본 선택
-  const riderRegionLabel = platform === 'coupang'
-    ? String(me.rider?.regionCoupang || me.rider?.raw_data?.regionCoupang || '').trim()
-    : String(me.rider?.regionBaemin || me.rider?.raw_data?.regionBaemin || '').trim();
-  const preferred = regions.find(region => {
-    if (!riderRegionLabel) return false;
-    if (platform === 'coupang') {
-      return shortCoupangRegion(riderRegionLabel) === shortCoupangRegion(region.key)
-        || shortCoupangRegion(riderRegionLabel) === shortCoupangRegion(region.label);
-    }
-    return riderRegionLabel === region.label
-      || riderRegionLabel === region.partnerId
-      || riderRegionLabel === region.key;
-  });
-
   const selected = regions.find(region => region.key === requestedKey)
-    || preferred
     || regions[0];
 
-  const cacheKey = `rider|${platform}|${selected.key}|${weekStart}|${today}`;
+  const cacheKey = `rider|${me.riderId || riderRow.id || '-'}|${platform}|${selected.key}|${weekStart}|${today}`;
   const cached = readResponseCache(cacheKey);
   if (cached) {
     return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
