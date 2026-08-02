@@ -720,6 +720,117 @@ async function getAdminRegionExposure(accessToken) {
   }
 }
 
+/**
+ * 선택 DP의 오늘 배달현황 크롤 ↔ 전체 ERP 배민ID 매칭 미리보기.
+ * 기사지역관리 「크롤링으로 지역등록」용.
+ */
+async function getAdminRegionCrawlMatch(accessToken, query = {}) {
+  const { verifyAdminCaller } = require('./admin-users');
+  const admin = await verifyAdminCaller(accessToken);
+  if (!admin.ok) return admin;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const partnerId = String(query.partnerId || query.regionKey || query.key || '').trim().toUpperCase();
+  const label = String(query.label || '').trim();
+  if (!/^DP\d{6,}$/.test(partnerId)) {
+    return { ok: false, status: 400, error: '배민 협력사(DP) 코드가 필요합니다.' };
+  }
+
+  const today = formatKstDateKey(new Date());
+  const snapshot = await loadBaeminDeliverySnapshot(supabase, partnerId, today);
+  if (snapshot.error) {
+    return { ok: false, status: 500, error: snapshot.error.message || '배달현황 크롤을 불러오지 못했습니다.' };
+  }
+
+  // 전체 기사 — 지역 필터 없이 배민ID로만 매칭
+  const { data: riderRows, error: riderError } = await supabase
+    .from('riders')
+    .select('id,name,baemin_id,raw_data')
+    .limit(8000);
+  if (riderError) {
+    return { ok: false, status: 500, error: riderError.message || '기사 목록을 불러오지 못했습니다.' };
+  }
+
+  const byBaeminId = new Map();
+  (riderRows || []).forEach(row => {
+    const rider = mapRiderRow(row);
+    const idKey = baeminIdMatchKey(rider.baeminId);
+    if (idKey && !byBaeminId.has(idKey)) byBaeminId.set(idKey, rider);
+  });
+
+  function regionMatchesTarget(regionValue) {
+    const value = String(regionValue || '').trim();
+    if (!value) return false;
+    return value === label
+      || value === partnerId
+      || (partnerId && value.includes(partnerId));
+  }
+
+  const seen = new Set();
+  const rows = [];
+  (snapshot.rows || []).forEach(row => {
+    const parsed = row.parsed_json || {};
+    const baeminId = String(
+      parsed.userId || parsed.riderId || parsed.rider_user_id || parsed.baeminId || row.rider_user_id || ''
+    ).trim();
+    const idKey = baeminIdMatchKey(baeminId);
+    if (!idKey || seen.has(idKey)) return;
+    seen.add(idKey);
+
+    const crawlName = String(
+      parsed.riderName || parsed.rider_name || parsed.name || row.rider_name || ''
+    ).trim();
+    const driver = byBaeminId.get(idKey) || null;
+    const currentRegion = driver
+      ? String(driver.regionBaemin || driver.raw_data?.regionBaemin || '').trim()
+      : '';
+
+    let status = 'unregistered';
+    if (driver) {
+      status = regionMatchesTarget(currentRegion) ? 'already' : 'assignable';
+    }
+
+    rows.push({
+      baeminId: baeminId || idKey,
+      baeminIdKey: idKey,
+      crawlName: crawlName || '-',
+      driverId: driver?.id || '',
+      driverName: driver?.name || '',
+      currentRegion,
+      status,
+      targetRegion: label || partnerId
+    });
+  });
+
+  rows.sort((a, b) => {
+    const order = { assignable: 0, unregistered: 1, already: 2 };
+    const d = (order[a.status] ?? 9) - (order[b.status] ?? 9);
+    if (d) return d;
+    return String(a.crawlName).localeCompare(String(b.crawlName), 'ko');
+  });
+
+  const summary = {
+    total: rows.length,
+    already: rows.filter(r => r.status === 'already').length,
+    assignable: rows.filter(r => r.status === 'assignable').length,
+    unregistered: rows.filter(r => r.status === 'unregistered').length
+  };
+
+  return {
+    ok: true,
+    partnerId,
+    label: label || partnerId,
+    today,
+    snapshotDate: snapshot.snapshotDate || '',
+    summary,
+    rows
+  };
+}
+
 async function saveAdminRegionExposure(accessToken, body = {}) {
   const { verifyAdminCaller } = require('./admin-users');
   const admin = await verifyAdminCaller(accessToken);
@@ -769,6 +880,7 @@ module.exports = {
   EXPOSURE_KEY,
   getRiderRegionDashboard,
   getAdminRegionRanking,
+  getAdminRegionCrawlMatch,
   getAdminRegionExposure,
   saveAdminRegionExposure
 };

@@ -23,7 +23,9 @@ const BremDriverManagementAdmin = (function () {
     regionAdd: { open: false, highlight: -1, candidates: [] },
     bulkRows: [],
     bulkCreateIndex: -1,
-    bulkCreateBusy: false
+    bulkCreateBusy: false,
+    bulkCreateSource: 'bulk',
+    crawlMatch: { rows: [], partnerId: '', label: '', busy: false }
   };
 
   const REGION_RANKING_POLL_MS = 60 * 1000;
@@ -956,8 +958,10 @@ const BremDriverManagementAdmin = (function () {
     const title = $('#driverRegionDetailTitle');
     const rows = $('#driverRegionRows');
     const totalsEl = $('#driverRegionWeekTotals');
+    const crawlBtn = $('#driverRegionCrawlMatchBtn');
     const platform = state.regionPlatform === 'coupang' ? 'coupang' : 'baemin';
     const platformLabel = platform === 'coupang' ? '쿠팡' : '배민';
+    if (crawlBtn) crawlBtn.hidden = platform !== 'baemin';
     renderWeekControls();
     if (title) {
       title.textContent = region
@@ -1412,29 +1416,21 @@ const BremDriverManagementAdmin = (function () {
     if (modal) modal.hidden = true;
     state.bulkCreateIndex = -1;
     state.bulkCreateBusy = false;
+    state.bulkCreateSource = 'bulk';
     const btn = $('#driverRegionBulkCreateBtn');
     if (btn) btn.disabled = false;
   }
 
-  function openBulkCreateModal(index) {
-    const row = state.bulkRows[index];
-    if (!row) return;
-    const platform = bulkCreatePlatform();
-    state.bulkCreateIndex = index;
+  function prefillBulkCreateForm({
+    platform = 'baemin',
+    idValue = '',
+    regionLabel = '',
+    crawlName = '',
+    recordHtml = ''
+  } = {}) {
     fillBulkCreateRegionSelects();
-
     const recordEl = $('#driverRegionBulkCreateRecord');
-    if (recordEl) {
-      const region = platform === 'coupang'
-        ? matchCoupangRegion(row.regionInput)
-        : matchBaeminRegion(row.regionInput);
-      recordEl.innerHTML = `
-        <div><dt>플랫폼</dt><dd>${platform === 'coupang' ? '쿠팡' : '배민'}</dd></div>
-        <div><dt>엑셀 ID</dt><dd>${escapeHtml(row.idValue || '-')}</dd></div>
-        <div><dt>지역 입력</dt><dd>${escapeHtml(row.regionInput || '-')}</dd></div>
-        <div><dt>지역 매칭</dt><dd>${escapeHtml(region ? (platform === 'baemin' ? `${region.label} (${region.partnerId})` : region.label) : '미매칭')}</dd></div>
-      `;
-    }
+    if (recordEl) recordEl.innerHTML = recordHtml;
 
     const nameEl = $('#driverRegionBulkCreateName');
     const phoneEl = $('#driverRegionBulkCreatePhone');
@@ -1450,48 +1446,238 @@ const BremDriverManagementAdmin = (function () {
     const memoEl = $('#driverRegionBulkCreateMemo');
     const hintEl = $('#driverRegionBulkCreateHint');
 
-    if (nameEl) nameEl.value = '';
+    if (nameEl) nameEl.value = crawlName && crawlName !== '-' ? crawlName : '';
     if (phoneEl) phoneEl.value = '';
-    if (baeminEl) baeminEl.value = platform === 'baemin' ? (row.idValue || '') : '';
+    if (baeminEl) baeminEl.value = platform === 'baemin' ? (idValue || '') : '';
     if (joinEl) joinEl.value = localDateKey(new Date());
     if (statusEl) statusEl.value = '근무중';
     if (bankEl) bankEl.value = '';
     if (accountEl) accountEl.value = '';
-    if (memoEl) memoEl.value = '지역 일괄등록에서 등록';
+    if (memoEl) {
+      memoEl.value = state.bulkCreateSource === 'crawl'
+        ? '크롤링 지역등록에서 등록'
+        : '지역 일괄등록에서 등록';
+    }
     if (platformBaeminEl) platformBaeminEl.checked = platform === 'baemin';
     if (platformCoupangEl) platformCoupangEl.checked = platform === 'coupang';
-
-    const matchedRegion = platform === 'coupang'
-      ? matchCoupangRegion(row.regionInput)
-      : matchBaeminRegion(row.regionInput);
-    if (regionBaeminEl) {
-      regionBaeminEl.value = platform === 'baemin' && matchedRegion ? matchedRegion.label : '';
-    }
-    if (regionCoupangEl) {
-      regionCoupangEl.value = platform === 'coupang' && matchedRegion ? matchedRegion.label : '';
-    }
+    if (regionBaeminEl) regionBaeminEl.value = platform === 'baemin' ? (regionLabel || '') : '';
+    if (regionCoupangEl) regionCoupangEl.value = platform === 'coupang' ? (regionLabel || '') : '';
     if (hintEl) {
       hintEl.textContent = platform === 'baemin'
-        ? '배민 ID는 엑셀 값을 채워 둡니다. 이름·연락처만 입력하면 기사등록프로그램에 바로 등록됩니다.'
-        : '쿠팡은 이름·연락처로 로그인 ID가 만들어집니다. 엑셀 쿠팡ID와 맞추려면 이름+전화번호 뒤4자리를 확인하세요.';
+        ? '배민 ID는 채워 둡니다. 이름·연락처를 입력하면 기사등록프로그램에 등록되고 이 지역에 배정됩니다.'
+        : '쿠팡은 이름·연락처로 로그인 ID가 만들어집니다.';
     }
+  }
 
+  function openBulkCreateModal(index) {
+    const row = state.bulkRows[index];
+    if (!row) return;
+    const platform = bulkCreatePlatform();
+    state.bulkCreateIndex = index;
+    state.bulkCreateSource = 'bulk';
+    const region = platform === 'coupang'
+      ? matchCoupangRegion(row.regionInput)
+      : matchBaeminRegion(row.regionInput);
+    prefillBulkCreateForm({
+      platform,
+      idValue: row.idValue,
+      regionLabel: region?.label || '',
+      recordHtml: `
+        <div><dt>플랫폼</dt><dd>${platform === 'coupang' ? '쿠팡' : '배민'}</dd></div>
+        <div><dt>엑셀 ID</dt><dd>${escapeHtml(row.idValue || '-')}</dd></div>
+        <div><dt>지역 입력</dt><dd>${escapeHtml(row.regionInput || '-')}</dd></div>
+        <div><dt>지역 매칭</dt><dd>${escapeHtml(region ? (platform === 'baemin' ? `${region.label} (${region.partnerId})` : region.label) : '미매칭')}</dd></div>
+      `
+    });
     const modal = $('#driverRegionBulkCreateModal');
     if (modal) modal.hidden = false;
-    nameEl?.focus();
+    $('#driverRegionBulkCreateName')?.focus();
+  }
+
+  function openBulkCreateFromCrawl(row) {
+    const region = selectedRegion();
+    if (!region || region.platform !== 'baemin') {
+      showToast('배민 지역에서만 간이등록할 수 있습니다.');
+      return;
+    }
+    state.bulkCreateIndex = -1;
+    state.bulkCreateSource = 'crawl';
+    prefillBulkCreateForm({
+      platform: 'baemin',
+      idValue: row.baeminId || '',
+      regionLabel: region.label,
+      crawlName: row.crawlName || '',
+      recordHtml: `
+        <div><dt>플랫폼</dt><dd>배민</dd></div>
+        <div><dt>크롤 배민ID</dt><dd>${escapeHtml(row.baeminId || '-')}</dd></div>
+        <div><dt>크롤 이름</dt><dd>${escapeHtml(row.crawlName || '-')}</dd></div>
+        <div><dt>등록 지역</dt><dd>${escapeHtml(`${region.label} (${region.partnerId})`)}</dd></div>
+      `
+    });
+    const modal = $('#driverRegionBulkCreateModal');
+    if (modal) modal.hidden = false;
+    const nameEl = $('#driverRegionBulkCreateName');
+    if (nameEl?.value) $('#driverRegionBulkCreatePhone')?.focus();
+    else nameEl?.focus();
+  }
+
+  function crawlStatusLabel(status) {
+    if (status === 'already') return '이미 등록';
+    if (status === 'assignable') return '반영 가능';
+    if (status === 'unregistered') return '미등록';
+    return status || '-';
+  }
+
+  function closeCrawlMatchModal() {
+    const modal = $('#driverRegionCrawlMatchModal');
+    if (modal) modal.hidden = true;
+    state.crawlMatch = { rows: [], partnerId: '', label: '', busy: false };
+  }
+
+  function renderCrawlMatchRows() {
+    const body = $('#driverRegionCrawlMatchRows');
+    const summary = $('#driverRegionCrawlMatchSummary');
+    const applyBtn = $('#driverRegionCrawlMatchApplyBtn');
+    const checkAll = $('#driverRegionCrawlMatchCheckAll');
+    const rows = state.crawlMatch.rows || [];
+    const s = state.crawlMatch.summary || {};
+    if (summary) {
+      const snap = state.crawlMatch.snapshotDate
+        ? ` · 스냅샷 ${state.crawlMatch.snapshotDate}`
+        : '';
+      summary.innerHTML = `총 <strong>${s.total || 0}</strong> · 이미등록 <strong>${s.already || 0}</strong> · 반영가능 <strong>${s.assignable || 0}</strong> · 미등록 <strong>${s.unregistered || 0}</strong>${snap}`;
+    }
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">크롤링된 기사가 없습니다. 배민현황 수집 후 다시 시도하세요.</td></tr>';
+      if (applyBtn) applyBtn.disabled = true;
+      if (checkAll) {
+        checkAll.checked = false;
+        checkAll.disabled = true;
+      }
+      return;
+    }
+    const region = selectedRegion();
+    body.innerHTML = rows.map((row, index) => {
+      const checked = row.status === 'assignable' ? ' checked' : '';
+      const disabled = row.status !== 'assignable' ? ' disabled' : '';
+      const statusClass = `driver-region-crawl-status--${row.status}`;
+      let statusText = crawlStatusLabel(row.status);
+      if (row.status === 'assignable' && row.currentRegion) {
+        statusText = `${row.currentRegion} → ${region?.label || row.targetRegion || ''}`;
+      }
+      const action = row.status === 'unregistered'
+        ? `<button type="button" class="small-btn primary-btn" data-crawl-quick-create="${index}">간이등록</button>`
+        : '—';
+      return `<tr>
+        <td><input type="checkbox" data-crawl-check="${index}"${checked}${disabled}></td>
+        <td>${escapeHtml(row.crawlName || '-')}</td>
+        <td>${escapeHtml(row.baeminId || '-')}</td>
+        <td>${escapeHtml(row.driverName || '-')}</td>
+        <td>${escapeHtml(row.currentRegion || (row.status === 'unregistered' ? '-' : '미배정'))}</td>
+        <td class="${statusClass}">${escapeHtml(statusText)}</td>
+        <td>${action}</td>
+      </tr>`;
+    }).join('');
+    const selectable = rows.filter(r => r.status === 'assignable').length;
+    if (applyBtn) applyBtn.disabled = selectable === 0;
+    if (checkAll) {
+      checkAll.checked = selectable > 0;
+      checkAll.disabled = selectable === 0;
+    }
+  }
+
+  async function openCrawlMatchModal() {
+    const region = selectedRegion();
+    if (!region) {
+      showToast('지역을 먼저 선택하세요.');
+      return;
+    }
+    if (region.platform !== 'baemin') {
+      showToast('크롤링 지역등록은 배민 지역만 지원합니다.');
+      return;
+    }
+    const modal = $('#driverRegionCrawlMatchModal');
+    if (!modal) return;
+    modal.hidden = false;
+    const body = $('#driverRegionCrawlMatchRows');
+    if (body) body.innerHTML = '<tr><td colspan="7" class="empty">불러오는 중…</td></tr>';
+    const applyBtn = $('#driverRegionCrawlMatchApplyBtn');
+    if (applyBtn) applyBtn.disabled = true;
+    state.crawlMatch.busy = true;
+    try {
+      const token = await window.BremStorage?.resolveAdminAccessToken?.();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const params = new URLSearchParams({
+        partnerId: region.partnerId || region.key,
+        regionKey: region.key,
+        label: region.label || ''
+      });
+      const res = await fetch(`/api/admin/rider-dashboard/region-crawl-match?${params}`, {
+        headers,
+        credentials: 'same-origin'
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || '크롤링 매칭을 불러오지 못했습니다.');
+      state.crawlMatch = {
+        rows: payload.rows || [],
+        summary: payload.summary || {},
+        partnerId: payload.partnerId || region.partnerId,
+        label: payload.label || region.label,
+        snapshotDate: payload.snapshotDate || '',
+        busy: false
+      };
+      renderCrawlMatchRows();
+    } catch (error) {
+      state.crawlMatch.busy = false;
+      if (body) {
+        body.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(error.message || '불러오기 실패')}</td></tr>`;
+      }
+      showToast(error.message || '크롤링 매칭을 불러오지 못했습니다.');
+    }
+  }
+
+  async function applyCrawlMatchSelection() {
+    const region = selectedRegion();
+    if (!region || region.platform !== 'baemin') return;
+    const checks = [...document.querySelectorAll('[data-crawl-check]:checked')];
+    const targets = checks
+      .map(el => state.crawlMatch.rows[Number(el.dataset.crawlCheck)])
+      .filter(row => row && row.status === 'assignable' && row.driverId);
+    if (!targets.length) {
+      showToast('반영할 기사를 선택하세요.');
+      return;
+    }
+    const applyBtn = $('#driverRegionCrawlMatchApplyBtn');
+    if (applyBtn) applyBtn.disabled = true;
+    let saved = 0;
+    try {
+      for (const row of targets) {
+        await assignDriverToRegion(row.driverId, region);
+        saved += 1;
+      }
+      showToast(`${saved}명을 «${region.label}»에 등록했습니다.`);
+      closeCrawlMatchModal();
+      renderRegionCatalog();
+      renderRegionDetail();
+    } catch (error) {
+      showToast(error.message || '지역 반영에 실패했습니다.');
+      if (applyBtn) applyBtn.disabled = false;
+    }
   }
 
   async function submitBulkCreate(event) {
     event?.preventDefault();
     if (state.bulkCreateBusy) return;
+    const fromCrawl = state.bulkCreateSource === 'crawl';
     const index = state.bulkCreateIndex;
-    const row = state.bulkRows[index];
-    if (!row) {
+    const row = fromCrawl ? null : state.bulkRows[index];
+    if (!fromCrawl && !row) {
       closeBulkCreateModal();
       return;
     }
 
-    const platform = bulkCreatePlatform();
+    const platform = fromCrawl ? 'baemin' : bulkCreatePlatform();
     const name = String($('#driverRegionBulkCreateName')?.value || '').trim();
     const phone = String($('#driverRegionBulkCreatePhone')?.value || '').trim();
     const baeminId = String($('#driverRegionBulkCreateBaeminId')?.value || '').trim();
@@ -1516,12 +1702,30 @@ const BremDriverManagementAdmin = (function () {
 
     const duplicate = window.BremDriverUtils?.findDuplicateDriver?.({ name, phone, baeminId });
     if (duplicate?.driver) {
+      if (fromCrawl) {
+        const region = selectedRegion();
+        if (region) {
+          try {
+            await assignDriverToRegion(duplicate.driver.id, region);
+            showToast(`${duplicate.reason}: 기존 «${duplicate.driver.name}»을 이 지역에 반영했습니다.`);
+            closeBulkCreateModal();
+            void openCrawlMatchModal();
+            renderRegionCatalog();
+            renderRegionDetail();
+          } catch (error) {
+            showToast(error.message || '지역 반영에 실패했습니다.');
+          }
+          return;
+        }
+      }
       showToast(`${duplicate.reason}: 이미 «${duplicate.driver.name}» 기사가 있습니다. ID를 맞춘 뒤 다시매칭하세요.`);
-      row.idValue = platform === 'baemin'
-        ? (duplicate.driver.baeminId || row.idValue)
-        : (makeDriverLoginId(duplicate.driver) || row.idValue);
-      recheckBulkRow(row, platform);
-      renderBulkPreview();
+      if (row) {
+        row.idValue = platform === 'baemin'
+          ? (duplicate.driver.baeminId || row.idValue)
+          : (makeDriverLoginId(duplicate.driver) || row.idValue);
+        recheckBulkRow(row, platform);
+        renderBulkPreview();
+      }
       closeBulkCreateModal();
       return;
     }
@@ -1547,6 +1751,17 @@ const BremDriverManagementAdmin = (function () {
       });
       if (!created?.id) throw new Error('기사 등록 결과를 확인할 수 없습니다.');
 
+      if (fromCrawl) {
+        const region = selectedRegion();
+        if (region) await assignDriverToRegion(created.id, region);
+        closeBulkCreateModal();
+        showToast(`${created.name} 기사를 등록하고 «${region?.label || ''}»에 반영했습니다.`);
+        void openCrawlMatchModal();
+        renderRegionCatalog();
+        renderRegionDetail();
+        return;
+      }
+
       if (platform === 'baemin' && created.baeminId) {
         row.idValue = created.baeminId;
       } else {
@@ -1554,7 +1769,6 @@ const BremDriverManagementAdmin = (function () {
       }
       recheckBulkRow(row, platform);
 
-      // 지역까지 매칭되면 바로 반영 (매칭 적용을 한 번 더 누를 필요 없음)
       if (row.status === 'ok' && row.driverId) {
         const region = platform === 'coupang'
           ? state.coupangRegions.find(item => item.key === row.regionKey)
@@ -1676,10 +1890,30 @@ const BremDriverManagementAdmin = (function () {
 
       if (event.target.closest('[data-close-region-bulk-create]')) {
         closeBulkCreateModal();
+        return;
+      }
+
+      if (event.target.closest('[data-close-region-crawl-match]')) {
+        closeCrawlMatchModal();
+        return;
+      }
+
+      const crawlQuick = event.target.closest('[data-crawl-quick-create]');
+      if (crawlQuick) {
+        const index = Number(crawlQuick.dataset.crawlQuickCreate);
+        const row = state.crawlMatch.rows[index];
+        if (row) openBulkCreateFromCrawl(row);
       }
     });
 
     document.addEventListener('change', event => {
+      if (event.target?.id === 'driverRegionCrawlMatchCheckAll') {
+        const on = Boolean(event.target.checked);
+        document.querySelectorAll('[data-crawl-check]:not(:disabled)').forEach(el => {
+          el.checked = on;
+        });
+        return;
+      }
       const expose = event.target.closest('[data-region-expose]');
       if (expose) {
         const key = expose.dataset.regionExpose;
@@ -1745,6 +1979,8 @@ const BremDriverManagementAdmin = (function () {
     });
 
     $('#driverRegionReloadBtn')?.addEventListener('click', () => { void refreshRegions(); });
+    $('#driverRegionCrawlMatchBtn')?.addEventListener('click', () => { void openCrawlMatchModal(); });
+    $('#driverRegionCrawlMatchApplyBtn')?.addEventListener('click', () => { void applyCrawlMatchSelection(); });
     bindRegionAddCombo();
     $('#driverRegionAddBtn')?.addEventListener('click', () => {
       const id = $('#driverRegionAddSelect')?.value;

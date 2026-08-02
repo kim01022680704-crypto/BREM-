@@ -484,6 +484,22 @@ app.get('/api/admin/rider-dashboard/region-ranking', async (req, res) => {
   }
 });
 
+app.get('/api/admin/rider-dashboard/region-crawl-match', async (req, res) => {
+  try {
+    const result = await riderRegionDashboard.getAdminRegionCrawlMatch(getBearerToken(req), {
+      partnerId: req.query.partnerId || req.query.regionKey,
+      regionKey: req.query.regionKey,
+      label: req.query.label
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '크롤링 지역 매칭을 불러오지 못했습니다.' });
+  }
+});
+
 app.post('/api/admin/rider-dashboard/region-exposure', async (req, res) => {
   try {
     const result = await riderRegionDashboard.saveAdminRegionExposure(getBearerToken(req), req.body || {});

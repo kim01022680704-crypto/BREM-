@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260802b">
+  <link rel="stylesheet" href="css/admin.css?v=20260802c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5227,6 +5227,7 @@
                     </div>
                   </label>
                   <button type="button" class="small-btn primary-btn" id="driverRegionAddBtn">추가</button>
+                  <button type="button" class="small-btn" id="driverRegionCrawlMatchBtn" title="오늘 배달현황 크롤의 배민ID로 ERP 기사와 매칭">크롤링으로 지역등록</button>
                 </div>
                 <div class="driver-scroll-table table-wrap">
                   <table class="weekly-settlement-detail-table">
@@ -6986,6 +6987,41 @@
     </div>
   </div>
 
+  <div class="settlement-match-modal" id="driverRegionCrawlMatchModal" hidden>
+    <div class="settlement-match-modal__backdrop" data-close-region-crawl-match></div>
+    <div class="settlement-match-modal__dialog settlement-match-modal__dialog--wide" role="dialog" aria-labelledby="driverRegionCrawlMatchTitle" aria-modal="true">
+      <div class="settlement-match-modal__head">
+        <div class="settlement-match-modal__head-top">
+          <h3 id="driverRegionCrawlMatchTitle">크롤링으로 지역등록</h3>
+        </div>
+        <p class="form-help">오늘 배달현황 크롤의 배민ID로 ERP 기사를 매칭합니다. 반영 가능 건을 선택한 뒤 「선택 반영」하세요. 미등록은 간이등록으로 추가할 수 있습니다.</p>
+        <p class="direct-inline-stats" id="driverRegionCrawlMatchSummary"></p>
+      </div>
+      <div class="table-wrap driver-region-crawl-match-table-wrap">
+        <table class="weekly-settlement-detail-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="driverRegionCrawlMatchCheckAll" title="반영가능 전체"></th>
+              <th>크롤 이름</th>
+              <th>배민ID</th>
+              <th>ERP 기사</th>
+              <th>현재 지역</th>
+              <th>상태</th>
+              <th>액션</th>
+            </tr>
+          </thead>
+          <tbody id="driverRegionCrawlMatchRows">
+            <tr><td colspan="7" class="empty">불러오는 중…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="settlement-match-actions">
+        <button type="button" class="small-btn" data-close-region-crawl-match>닫기</button>
+        <button type="button" class="primary-btn" id="driverRegionCrawlMatchApplyBtn" disabled>선택 반영</button>
+      </div>
+    </div>
+  </div>
+
   <div class="settlement-match-modal" id="driverRegionBulkCreateModal" hidden>
     <div class="settlement-match-modal__backdrop" data-close-region-bulk-create></div>
     <div class="settlement-match-modal__dialog" role="dialog" aria-labelledby="driverRegionBulkCreateTitle" aria-modal="true">
@@ -7194,7 +7230,7 @@
   <script src="js/direct-settlement-calc.js?v=20260731e"></script>
   <script src="js/settlement-result-direct.js?v=20260731h"></script>
   <script src="js/final-deposit.js?v=20260730aq"></script>
-  <script src="js/driver-management-admin.js?v=20260802b"></script>
+  <script src="js/driver-management-admin.js?v=20260802c"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

@@ -11736,6 +11736,7 @@ tr.is-week-first td {
 
 .driver-region-assign {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: end;
   margin-bottom: 12px;
@@ -11808,6 +11809,17 @@ tr.is-week-first td {
   gap: 6px;
   align-items: center;
 }
+.settlement-match-modal__dialog--wide {
+  max-width: min(960px, 96vw);
+}
+.driver-region-crawl-match-table-wrap {
+  max-height: min(52vh, 480px);
+  overflow: auto;
+  margin: 0 0 12px;
+}
+.driver-region-crawl-status--already { color: #6ee7b7; }
+.driver-region-crawl-status--assignable { color: #fbbf24; }
+.driver-region-crawl-status--unregistered { color: #fca5a5; }
 
 .driver-org-member-panel {
   margin-top: 16px;
