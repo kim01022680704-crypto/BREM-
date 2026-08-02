@@ -7972,6 +7972,20 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   font-weight: 800;
 }
 
+.lease-payment-confirm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 0 18px 12px;
+}
+
+.lease-payment-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .lease-month-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
