@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260802g">
+  <link rel="stylesheet" href="css/admin.css?v=20260802h">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -1939,12 +1939,12 @@
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="contract"><span>계약/렌탈</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="payment-confirm"><span>납부 확인</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="payment-paid"><span>완납 확인</span></button>
-              <button type="button" class="lease-erp-nav__btn" data-lease-menu="calc"><span>자동계산</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="arrears"><span>미납/회수</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="empty"><span>공차관리</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="weekly"><span>주간수익</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="monthly"><span>월간수익</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="bulk"><span>일괄등록</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="calc"><span>자동계산</span></button>
             </nav>
           </aside>
 
@@ -2643,12 +2643,18 @@
           <div class="lease-list-toolbar lease-payment-confirm-toolbar">
             <p class="form-help lease-list-count" id="leasePaymentConfirmSummary">차량 0대 · 계약중 0건</p>
             <input type="search" id="leasePaymentConfirmSearch" class="lease-contract-list-search" placeholder="기사 · 차량번호 · 연락처 검색" autocomplete="off">
+            <label class="check-label lease-payment-select-all">
+              <input type="checkbox" id="leasePaymentConfirmSelectAll">
+              <span>전체 선택</span>
+            </label>
+            <button type="button" class="primary-btn" id="leasePaymentConfirmBulkPaidBtn" disabled>선택 완납</button>
             <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
           </div>
           <div class="table-wrap lease-table-wrap lease-list-scroll">
             <table class="lease-table lease-table--compact">
               <thead>
                 <tr>
+                  <th class="lease-check-col">선택</th>
                   <th>주차(수~화)</th>
                   <th>차량번호</th>
                   <th>기종</th>
@@ -2662,7 +2668,7 @@
                 </tr>
               </thead>
               <tbody id="leasePaymentConfirmRows">
-                <tr><td colspan="10" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
+                <tr><td colspan="11" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
               </tbody>
             </table>
           </div>
@@ -2695,10 +2701,11 @@
                   <th>납부액</th>
                   <th>완납일</th>
                   <th>상태</th>
+                  <th>관리</th>
                 </tr>
               </thead>
               <tbody id="leasePaymentPaidRows">
-                <tr><td colspan="11" class="empty">완납 내역이 없습니다.</td></tr>
+                <tr><td colspan="12" class="empty">완납 내역이 없습니다.</td></tr>
               </tbody>
             </table>
           </div>
@@ -7297,7 +7304,7 @@
   <script src="js/lease-erp.js?v=20260723q"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802e"></script>
+  <script src="js/admin-lease-menus.js?v=20260802f"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

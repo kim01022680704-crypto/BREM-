@@ -8044,6 +8044,25 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   padding: 0 18px 12px;
 }
 
+.lease-payment-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.lease-table .lease-check-col {
+  width: 44px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.lease-table tr.row-selected td {
+  background: rgba(56, 189, 248, 0.08);
+}
+
 .lease-payment-confirm-actions {
   display: flex;
   flex-wrap: wrap;

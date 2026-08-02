@@ -56,6 +56,7 @@ const BremAdminLeaseMenus = (function () {
     paymentWeekStart: '',
     paymentConfirmSearch: '',
     paymentPaidSearch: '',
+    paymentConfirmSelectedIds: new Set(),
     leaseSaving: false
   };
 
@@ -2750,22 +2751,10 @@ const BremAdminLeaseMenus = (function () {
     setMenu('arrears');
   }
 
-  async function confirmPaymentFull(contractId, options = {}) {
-    if (!erp()) return;
-    const contract = erp().contracts().getById(contractId);
-    if (!contract) {
-      showToast('계약을 찾을 수 없습니다.');
-      return;
-    }
-    const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
+  function applyPaymentFullCore(contract, weekStart) {
+    if (!contract) return { ok: false, charge: 0, reason: '계약 없음' };
     const charge = contractRiderWeeklyCharge(contract);
-    if (charge <= 0) {
-      showToast('주간 청구액이 없어 완납 처리할 수 없습니다. 계약/렌탈에서 일 렌탈료를 확인하세요.');
-      return;
-    }
-    if (!options.skipConfirm) {
-      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요?`)) return;
-    }
+    if (charge <= 0) return { ok: false, charge: 0, reason: '주간청구액 없음' };
 
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
@@ -2775,7 +2764,6 @@ const BremAdminLeaseMenus = (function () {
       status: BremLeaseProfit?.PAYMENT_STATUSES?.NORMAL || 'normal'
     });
 
-    // 같은 주 미납이 열려 있으면 해당 주 청구분만큼 차감·완료 처리
     const completed = calc().ARREAR_STATUS.COMPLETED;
     const openArrear = erp().arrears().getAll().find(item =>
       item.contractId === contract.id && String(item.collectionStatus || '') !== completed
@@ -2812,20 +2800,137 @@ const BremAdminLeaseMenus = (function () {
         });
       }
     }
+    return { ok: true, charge };
+  }
+
+  async function confirmPaymentFull(contractId, options = {}) {
+    if (!erp()) return false;
+    const contract = erp().contracts().getById(contractId);
+    if (!contract) {
+      showToast('계약을 찾을 수 없습니다.');
+      return false;
+    }
+    const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
+    const charge = contractRiderWeeklyCharge(contract);
+    if (charge <= 0) {
+      showToast('주간 청구액이 없어 완납 처리할 수 없습니다. 계약/렌탈에서 일 렌탈료를 확인하세요.');
+      return false;
+    }
+    if (!options.skipConfirm) {
+      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요?`)) return false;
+    }
+
+    const result = applyPaymentFullCore(contract, weekStart);
+    if (!result.ok) {
+      showToast(result.reason || '완납 처리에 실패했습니다.');
+      return false;
+    }
+
+    if (!options.skipPersist) {
+      try {
+        await erp().persistAll({ skipFlushStorage: true });
+      } catch (error) {
+        console.error('[confirmPaymentFull]', error);
+        showToast(error?.message || '완납 저장에 실패했습니다.');
+        return false;
+      }
+      updateLeaseErpUnsavedBanner();
+    }
+
+    if (!options.silent) {
+      showToast(`완납 처리 · ${formatMoney(result.charge)} · 완납 확인으로 이동`);
+      state.paymentConfirmSelectedIds.delete(String(contractId));
+      renderPaymentConfirm();
+      renderPaymentPaid();
+      refreshAfterLeaseMutation({ contract: false });
+      if (!options.skipNavigate) setMenu('payment-paid');
+    }
+    return true;
+  }
+
+  async function bulkConfirmPaymentFull() {
+    if (!erp()) return;
+    const ids = [...state.paymentConfirmSelectedIds].map(String).filter(Boolean);
+    if (!ids.length) {
+      showToast('완납할 기사를 선택하세요.');
+      return;
+    }
+    const weekStart = syncPaymentWeekUi(currentWeekStart());
+    const contracts = ids.map(id => erp().contracts().getById(id)).filter(Boolean);
+    if (!contracts.length) {
+      showToast('선택한 계약을 찾을 수 없습니다.');
+      return;
+    }
+    const totalCharge = contracts.reduce((sum, contract) => sum + contractRiderWeeklyCharge(contract), 0);
+    if (!window.confirm(`선택한 ${contracts.length}건을 완납 처리할까요?\n합계 ${formatMoney(totalCharge)}`)) return;
+
+    let okCount = 0;
+    let failCount = 0;
+    contracts.forEach(contract => {
+      const result = applyPaymentFullCore(contract, weekStart);
+      if (result.ok) okCount += 1;
+      else failCount += 1;
+    });
 
     try {
       await erp().persistAll({ skipFlushStorage: true });
     } catch (error) {
-      console.error('[confirmPaymentFull]', error);
-      showToast(error?.message || '완납 저장에 실패했습니다.');
+      console.error('[bulkConfirmPaymentFull]', error);
+      showToast(error?.message || '일괄 완납 저장에 실패했습니다.');
       return;
     }
+    state.paymentConfirmSelectedIds.clear();
     updateLeaseErpUnsavedBanner();
-    showToast(`완납 처리 · ${formatMoney(charge)} · 완납 확인으로 이동`);
+    showToast(failCount
+      ? `완납 ${okCount}건 · 실패 ${failCount}건 · 완납 확인으로 이동`
+      : `선택 ${okCount}건 완납 처리 · 완납 확인으로 이동`);
     renderPaymentConfirm();
     renderPaymentPaid();
     refreshAfterLeaseMutation({ contract: false });
     setMenu('payment-paid');
+  }
+
+  function updatePaymentConfirmBulkUi() {
+    const btn = $('leasePaymentConfirmBulkPaidBtn');
+    const selectAll = $('leasePaymentConfirmSelectAll');
+    const count = state.paymentConfirmSelectedIds.size;
+    if (btn) {
+      btn.disabled = count <= 0;
+      btn.textContent = count > 0 ? `선택 완납 (${count})` : '선택 완납';
+    }
+    if (selectAll) {
+      const boxes = document.querySelectorAll('[data-payment-select]');
+      const enabled = [...boxes].filter(el => !el.disabled);
+      selectAll.checked = enabled.length > 0 && enabled.every(el => el.checked);
+      selectAll.indeterminate = count > 0 && !selectAll.checked;
+    }
+  }
+
+  async function deletePaidPaymentConfirm(paymentId) {
+    if (!erp() || !paymentId) return;
+    const payment = erp().payments().getById(paymentId);
+    if (!payment) return;
+    const vehicle = erp().vehicles().getById(payment.vehicleId);
+    const contract = resolveContractForVehicle(payment.vehicleId);
+    const weekStart = String(payment.dueDate || '').slice(0, 10);
+    const label = [
+      vehicle?.vehicleNumber || contract?.vehicleNumber || '-',
+      contract?.driverName || vehicle?.renter || '-',
+      formatPaymentWeekColumn(weekStart)
+    ].join(' · ');
+    if (!window.confirm(`완납 내역을 삭제할까요?\n${label}\n삭제 후 납부 확인 목록에 다시 나타날 수 있습니다.`)) return;
+    try {
+      erp().payments().removeById(paymentId);
+      await erp().persistAll({ skipFlushStorage: true });
+      updateLeaseErpUnsavedBanner();
+      renderPaymentPaid();
+      renderPaymentConfirm();
+      refreshAfterLeaseMutation({ contract: false });
+      showToast('완납 내역을 삭제했습니다.');
+    } catch (error) {
+      console.error('[deletePaidPaymentConfirm]', error);
+      showToast(error?.message || '완납 내역 삭제에 실패했습니다.');
+    }
   }
 
   async function confirmPaymentPartial(contractId) {
@@ -2912,10 +3017,15 @@ const BremAdminLeaseMenus = (function () {
       const paidCount = listPaidPaymentConfirmRows().filter(row => row.weekStart === weekStart).length;
       summaryEl.textContent = `이번주 ${weekLabel} · 미확인 ${contracts.length}건 · 완납 ${paidCount}건(완납 확인)`;
     }
+    const visibleIds = new Set(contracts.map(contract => String(contract.id)));
+    [...state.paymentConfirmSelectedIds].forEach(id => {
+      if (!visibleIds.has(String(id))) state.paymentConfirmSelectedIds.delete(String(id));
+    });
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="10" class="empty">이번주 납부 확인할 계약이 없습니다. 완납 내역은 「완납 확인」에서 보세요.</td></tr>'
-        : '<tr><td colspan="10" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+        ? '<tr><td colspan="11" class="empty">이번주 납부 확인할 계약이 없습니다. 완납 내역은 「완납 확인」에서 보세요.</td></tr>'
+        : '<tr><td colspan="11" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+      updatePaymentConfirmBulkUi();
       return;
     }
     rowsEl.innerHTML = contracts.map(contract => {
@@ -2926,7 +3036,12 @@ const BremAdminLeaseMenus = (function () {
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
       const disabled = weeklyCharge <= 0 ? ' disabled' : '';
-      return `<tr>
+      const checked = state.paymentConfirmSelectedIds.has(String(contract.id)) ? ' checked' : '';
+      const rowSelected = checked ? ' class="row-selected"' : '';
+      return `<tr${rowSelected}>
+        <td class="lease-check-col">
+          <input type="checkbox" data-payment-select="${escapeHtml(contract.id)}"${checked}${disabled}>
+        </td>
         <td class="lease-payment-week-cell"><strong>${escapeHtml(weekLabel)}</strong></td>
         <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
         <td>${escapeHtml(vehicle?.model || contract.modelType || '-')}</td>
@@ -2942,6 +3057,7 @@ const BremAdminLeaseMenus = (function () {
         </td>
       </tr>`;
     }).join('');
+    updatePaymentConfirmBulkUi();
   }
 
   function renderPaymentPaid() {
@@ -2968,7 +3084,7 @@ const BremAdminLeaseMenus = (function () {
         : `완납 ${rows.length}건`;
     }
     if (!rows.length) {
-      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">완납 내역이 없습니다. 납부 확인에서 완납 처리하거나 미납/회수에서 전액 회수하면 여기에 표시됩니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="12" class="empty">완납 내역이 없습니다. 납부 확인에서 완납 처리하거나 미납/회수에서 전액 회수하면 여기에 표시됩니다.</td></tr>';
       return;
     }
     rowsEl.innerHTML = rows.map(row => {
@@ -2985,6 +3101,9 @@ const BremAdminLeaseMenus = (function () {
         <td>${formatMoney(row.payment.paidAmount)}</td>
         <td>${formatDate(row.payment.paidDate)}</td>
         <td><span class="lease-status--done">완납</span></td>
+        <td>
+          <button type="button" class="small-btn danger-btn" data-delete-paid-payment="${escapeHtml(row.payment.id)}">삭제</button>
+        </td>
       </tr>`;
     }).join('');
   }
@@ -3762,6 +3881,11 @@ const BremAdminLeaseMenus = (function () {
       const paymentPartialBtn = event.target.closest('[data-payment-partial]');
       if (paymentPartialBtn) {
         void confirmPaymentPartial(paymentPartialBtn.dataset.paymentPartial);
+        return;
+      }
+      const deletePaidBtn = event.target.closest('[data-delete-paid-payment]');
+      if (deletePaidBtn) {
+        void deletePaidPaymentConfirm(deletePaidBtn.dataset.deletePaidPayment);
       }
     });
 
@@ -3790,8 +3914,32 @@ const BremAdminLeaseMenus = (function () {
       state.paymentPaidSearch = String(event.target.value || '');
       renderPaymentPaid();
     });
+    $('leasePaymentConfirmBulkPaidBtn')?.addEventListener('click', () => { void bulkConfirmPaymentFull(); });
+    $('leasePaymentConfirmSelectAll')?.addEventListener('change', event => {
+      const checked = !!event.target.checked;
+      document.querySelectorAll('[data-payment-select]').forEach(el => {
+        if (el.disabled) return;
+        el.checked = checked;
+        const id = String(el.dataset.paymentSelect || '');
+        if (!id) return;
+        if (checked) state.paymentConfirmSelectedIds.add(id);
+        else state.paymentConfirmSelectedIds.delete(id);
+        el.closest('tr')?.classList.toggle('row-selected', checked);
+      });
+      updatePaymentConfirmBulkUi();
+    });
 
     document.addEventListener('change', event => {
+      const paymentCheck = event.target.closest('[data-payment-select]');
+      if (paymentCheck) {
+        const id = String(paymentCheck.dataset.paymentSelect || '');
+        if (!id) return;
+        if (paymentCheck.checked) state.paymentConfirmSelectedIds.add(id);
+        else state.paymentConfirmSelectedIds.delete(id);
+        paymentCheck.closest('tr')?.classList.toggle('row-selected', paymentCheck.checked);
+        updatePaymentConfirmBulkUi();
+        return;
+      }
       const weeklyCheck = event.target.closest('[data-select-weekly-profit-log]');
       if (weeklyCheck) {
         const id = weeklyCheck.dataset.selectWeeklyProfitLog;
