@@ -1668,7 +1668,7 @@
   function enhanceAdminPeriodDateInputs() {
     const root = document.getElementById('adminApp');
     if (!root) return;
-    root.querySelectorAll('input[type="date"]:not([data-admin-date-enhanced]):not([data-settlement-week-only])').forEach(input => {
+    root.querySelectorAll('input[type="date"]:not([data-admin-date-enhanced]):not([data-settlement-week-only]):not([data-admin-date-skip])').forEach(input => {
       input.dataset.adminDateEnhanced = 'true';
       const parentLabel = input.closest('label');
       const currentValue = input.value;

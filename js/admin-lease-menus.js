@@ -2851,6 +2851,8 @@ const BremAdminLeaseMenus = (function () {
     if (!schedule?.ok) {
       if (endEl) endEl.value = '';
       if (lastEl) lastEl.value = '';
+      const endLabel = $('leaseLoanDeductEndDateLabel');
+      if (endLabel) endLabel.textContent = '자동 계산';
       if (hint && principal > 0 && dailyDeduct > 0) {
         hint.textContent = deductStartDate
           ? '종료일 계산 실패 · 원금·일 차감·시작일을 다시 확인하세요.'
@@ -2858,7 +2860,13 @@ const BremAdminLeaseMenus = (function () {
       }
       return null;
     }
-    if (endEl) endEl.value = schedule.deductEndDate;
+    if (endEl) {
+      endEl.value = schedule.deductEndDate;
+      // 커스텀 날짜버튼이 남아 있으면 라벨도 갱신
+      const endLabel = $('leaseLoanDeductEndDateLabel');
+      if (endLabel) endLabel.textContent = formatDate(schedule.deductEndDate);
+      endEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     if (lastEl) lastEl.value = formatMoney(schedule.lastDayAmount);
     if (hint) {
       const remNote = schedule.lastDayAmount !== schedule.dailyDeduct

@@ -2692,7 +2692,7 @@
                 <label>일 차감액<input type="number" id="leaseLoanDailyDeduct" min="0" step="1000" placeholder="0" required></label>
                 <label>잔액<input type="number" id="leaseLoanBalance" min="0" step="1000" placeholder="등록 시 대여금과 동일"></label>
                 <label>차감 시작일<input type="date" id="leaseLoanDeductStartDate" required></label>
-                <label>차감 종료일(자동)<input type="date" id="leaseLoanDeductEndDate" readonly tabindex="-1" title="원금÷일차감으로 자동 계산"></label>
+                <label>차감 종료일(자동)<input type="text" id="leaseLoanDeductEndDate" readonly tabindex="-1" placeholder="자동 계산" title="원금÷일차감으로 자동 계산" data-admin-date-skip="true"></label>
                 <label>마지막날 차감(자동)<input type="text" id="leaseLoanLastDayAmount" readonly tabindex="-1" placeholder="나머지를 마지막날에 합산"></label>
                 <p class="form-help lease-form-field--full" id="leaseLoanScheduleHint">원금·일 차감·시작일을 넣으면 종료일과 마지막날 차감액이 자동 계산됩니다. 예: 100만÷3만 → 32일×3만 + 마지막날 4만.</p>
                 <label>이유<input type="text" id="leaseLoanReason" placeholder="예: 보증금 대여 · 수리비 대여"></label>
@@ -7496,7 +7496,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803g"></script>
+  <script src="js/admin-lease-menus.js?v=20260803h"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7516,7 +7516,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260802d"></script>
+    <script src="js/admin.js?v=20260803h"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
