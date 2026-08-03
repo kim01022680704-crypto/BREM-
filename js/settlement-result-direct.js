@@ -557,16 +557,28 @@ const BremSettlementResultDirect = (function () {
       byWeek.get(r.weekStart).push(r);
     });
 
+    const selectableCount = rows.filter(r =>
+      r.status !== 'sent_to_deduction' && r.unpaidBalance > 0
+    ).length;
+
     const weekBlocks = [...byWeek.entries()].map(([wk, list]) => {
       list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
       const unpaidWeek = list.reduce((s, r) => s + r.unpaidBalance, 0);
       const rowsHtml = list.map(r => {
         const sent = r.status === 'sent_to_deduction';
-        const checkDisabled = sent ? ' disabled' : '';
+        const noUnpaid = r.unpaidBalance <= 0;
+        const checkDisabled = (sent || noUnpaid) ? ' disabled' : '';
+        const checkTitle = sent
+          ? '이미 차감관리로 이관됨'
+          : (noUnpaid ? '미납잔액 0원(고용·산재 로스 등) — 차감 이관 대상 아님' : '선택 후 「차감관리로 보내기」');
         const checkVal = `${escapeHtml(r.weekStart)}||${escapeHtml(r.entryKey)}`;
+        const rowClass = [
+          sent ? 'settlement-retro-row--sent' : '',
+          noUnpaid && !sent ? 'settlement-retro-row--no-unpaid' : ''
+        ].filter(Boolean).join(' ');
         return `
-        <tr class="${sent ? 'settlement-retro-row--sent' : ''}">
-          <td><input type="checkbox" class="settlement-retro-check" value="${checkVal}"${checkDisabled}></td>
+        <tr class="${rowClass}">
+          <td class="settlement-retro-check-cell"><input type="checkbox" class="settlement-retro-check" value="${checkVal}" title="${escapeHtml(checkTitle)}"${checkDisabled}></td>
           <td class="settlement-retro-name"><strong>${escapeHtml(r.name || '-')}</strong></td>
           <td class="settlement-retro-id">${escapeHtml(r.idLabel || '-')}</td>
           <td class="settlement-retro-platform">${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
@@ -586,7 +598,7 @@ const BremSettlementResultDirect = (function () {
             <table class="weekly-settlement-saved-table settlement-retro-table">
               <thead>
                 <tr>
-                  <th><input type="checkbox" class="settlement-retro-check-all" data-week="${escapeHtml(wk)}" title="이 주 선택"></th>
+                  <th class="settlement-retro-check-cell" title="이 주 선택"><input type="checkbox" class="settlement-retro-check-all" data-week="${escapeHtml(wk)}" title="이 주 · 미납 있는 건만 선택"></th>
                   <th class="settlement-retro-name">기사</th>
                   <th class="settlement-retro-id">아이디</th>
                   <th class="settlement-retro-platform">플랫폼</th>
@@ -605,23 +617,36 @@ const BremSettlementResultDirect = (function () {
         </div>`;
     }).join('');
 
-    body.innerHTML = weekBlocks;
+    body.innerHTML = `<p class="settlement-retro-select-hint">☑ 왼쪽 체크박스로 <strong>보낼 건만</strong> 고른 뒤 「차감관리로 보내기」하세요. 전체 자동 전송 없음 · 이관 가능 ${selectableCount}건</p>${weekBlocks}`;
+    const updateSelectHint = () => {
+      const n = body.querySelectorAll('.settlement-retro-check:checked:not([disabled])').length;
+      const hint = body.querySelector('.settlement-retro-select-hint');
+      if (hint) {
+        hint.innerHTML = n > 0
+          ? `☑ <strong>${n}건</strong> 선택됨 · 「차감관리로 보내기」누르면 선택한 건만 이관합니다.`
+          : `☑ 왼쪽 체크박스로 <strong>보낼 건만</strong> 고른 뒤 「차감관리로 보내기」하세요. 전체 자동 전송 없음 · 이관 가능 ${selectableCount}건`;
+      }
+    };
     body.querySelectorAll('.settlement-retro-check-all').forEach(master => {
       master.addEventListener('change', () => {
         const week = master.getAttribute('data-week') || '';
-        body.querySelectorAll('.settlement-retro-check:not([disabled])').forEach(cb => {
+        body.querySelectorAll('input.settlement-retro-check:not([disabled])').forEach(cb => {
           if (String(cb.value || '').startsWith(`${week}||`)) cb.checked = master.checked;
         });
+        updateSelectHint();
       });
+    });
+    body.querySelectorAll('input.settlement-retro-check:not([disabled])').forEach(cb => {
+      cb.addEventListener('change', updateSelectHint);
     });
   }
 
   async function sendSelectedToDeduction() {
     const body = $('#settlementResultRetroBody');
     if (!body) return;
-    const checked = [...body.querySelectorAll('.settlement-retro-check:checked:not([disabled])')];
+    const checked = [...body.querySelectorAll('input.settlement-retro-check:checked:not([disabled])')];
     if (!checked.length) {
-      showToast('이관할 건을 선택하세요.');
+      showToast('이관할 건을 먼저 체크하세요. (전체 자동 전송 없음)');
       return;
     }
 

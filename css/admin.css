@@ -6483,7 +6483,8 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
 
 .settlement-retro-table {
   width: 100%;
-  table-layout: fixed;
+  min-width: 1100px;
+  table-layout: auto;
 }
 
 .settlement-retro-table th,
@@ -6492,17 +6493,52 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   vertical-align: middle;
 }
 
+.settlement-retro-table th.settlement-retro-check-cell,
+.settlement-retro-table td.settlement-retro-check-cell {
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.settlement-retro-table .settlement-retro-check-cell input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #f59e0b;
+}
+
+.settlement-retro-table .settlement-retro-check-cell input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
 .settlement-retro-table th.settlement-retro-name,
-.settlement-retro-table td.settlement-retro-name { width: 34%; text-align: left; }
+.settlement-retro-table td.settlement-retro-name { min-width: 88px; text-align: left; }
 
 .settlement-retro-table th.settlement-retro-id,
-.settlement-retro-table td.settlement-retro-id { width: 30%; text-align: left; word-break: break-all; }
+.settlement-retro-table td.settlement-retro-id { min-width: 120px; text-align: left; word-break: break-all; }
 
 .settlement-retro-table th.settlement-retro-platform,
-.settlement-retro-table td.settlement-retro-platform { width: 14%; text-align: center; }
+.settlement-retro-table td.settlement-retro-platform { width: 64px; text-align: center; white-space: nowrap; }
 
 .settlement-retro-table th.settlement-retro-amount,
-.settlement-retro-table td.settlement-retro-amount { width: 22%; text-align: right; white-space: nowrap; font-weight: 700; }
+.settlement-retro-table td.settlement-retro-amount {
+  min-width: 88px;
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.settlement-retro-row--sent {
+  opacity: 0.55;
+}
+
+.settlement-retro-row--no-unpaid td.settlement-retro-name {
+  color: #64748b;
+}
 
 .settlement-retro-total-row td {
   border-top: 2px solid #111827;
@@ -6511,6 +6547,13 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
 }
 
 .settlement-retro-total-row td:first-child { text-align: right; }
+
+.settlement-retro-select-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b45309;
+}
 
 .final-deposit-group-row td {
   background: #111827;
