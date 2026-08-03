@@ -2756,6 +2756,9 @@
                 <label>일 차감액<input type="number" id="leaseManualDeductDaily" min="0" step="1000" required></label>
                 <label>잔액(회수 대상)<input type="number" id="leaseManualDeductBalance" min="0" step="1000" required></label>
                 <label>차감 시작일<input type="date" id="leaseManualDeductStartDate" required></label>
+                <label>차감 종료일(자동)<input type="text" id="leaseManualDeductEndDate" readonly tabindex="-1" placeholder="자동 계산" title="잔액÷일차감으로 자동 계산" data-admin-date-skip="true"></label>
+                <label>마지막날 차감(자동)<input type="text" id="leaseManualDeductLastDayAmount" readonly tabindex="-1" placeholder="나머지를 마지막날에 합산"></label>
+                <p class="form-help lease-form-field--full" id="leaseManualDeductScheduleHint">일 차감·잔액·시작일을 넣으면 대여와 같이 종료일·마지막날 차감이 자동 계산됩니다. 예: 3만×잔액 9만 → 3일.</p>
                 <label>이유/메모<input type="text" id="leaseManualDeductReason" placeholder="예: 미납 회수 · 수기 차감"></label>
                 <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button type="submit" class="primary-btn">수기 차감 등록</button>
@@ -2790,13 +2793,14 @@
                     <th>일 차감</th>
                     <th>잔액</th>
                     <th>차감시작일</th>
+                    <th>종료예정</th>
                     <th>이유</th>
                     <th>반영상태</th>
                     <th>관리</th>
                   </tr>
                 </thead>
                 <tbody id="leaseDeductionManageRows">
-                  <tr><td colspan="10" class="empty">미납·수기 차감이 없습니다. 소급분 이관 또는 위에서 수기 등록하세요.</td></tr>
+                  <tr><td colspan="11" class="empty">미납·수기 차감이 없습니다. 소급분 이관 또는 위에서 수기 등록하세요.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -7593,7 +7597,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260803k"></script>
+  <script src="js/storage.js?v=20260803l"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7622,7 +7626,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803n"></script>
+  <script src="js/admin-lease-menus.js?v=20260803o"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

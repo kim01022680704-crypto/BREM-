@@ -11157,7 +11157,30 @@ const BremStorage = (function () {
     save(raw) {
       const list = this.getAll();
       const existing = raw?.id ? list.find(item => item.id === raw.id) : null;
-      const next = normalizeDeductionLedgerItem(raw, existing);
+      const balance = Math.max(0, Math.round(Number(
+        raw?.balance != null ? raw.balance : (existing?.balance || 0)
+      )));
+      const dailyDeduct = Math.max(0, Math.round(Number(
+        raw?.dailyDeduct != null ? raw.dailyDeduct : (existing?.dailyDeduct || 0)
+      )));
+      const deductStartDate = String(
+        raw?.deductStartDate != null ? raw.deductStartDate : (existing?.deductStartDate || '')
+      ).slice(0, 10);
+      const schedule = computeLoanDeductSchedule({
+        amount: balance,
+        principal: balance,
+        dailyDeduct,
+        deductStartDate
+      });
+      const next = normalizeDeductionLedgerItem({
+        ...raw,
+        deductEndDate: schedule.ok
+          ? schedule.deductEndDate
+          : (raw?.deductEndDate || existing?.deductEndDate || ''),
+        lastDayAmount: schedule.ok
+          ? schedule.lastDayAmount
+          : (raw?.lastDayAmount || existing?.lastDayAmount || 0)
+      }, existing);
       const out = existing
         ? list.map(item => (item.id === next.id ? next : item))
         : [...list, next];

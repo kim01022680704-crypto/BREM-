@@ -3555,6 +3555,17 @@ const BremAdminLeaseMenus = (function () {
         return String(item.status || '') !== 'paid' && String(item.status || '') !== 'deleted';
       })
       .forEach(item => {
+        const deductStartDate = item.deductStartDate || item.weekStart || '';
+        let deductEndDate = item.deductEndDate || '';
+        if (!deductEndDate && item.balance > 0 && item.dailyDeduct > 0 && deductStartDate) {
+          const schedule = window.BremStorage?.computeLoanDeductSchedule?.({
+            amount: item.balance,
+            principal: item.balance,
+            dailyDeduct: item.dailyDeduct,
+            deductStartDate
+          });
+          if (schedule?.ok) deductEndDate = schedule.deductEndDate;
+        }
         rows.push({
           key: `ledger:${item.id}`,
           kind: item.kind === 'manual' ? 'manual' : 'unpaid',
@@ -3564,7 +3575,8 @@ const BremAdminLeaseMenus = (function () {
           driverPhone: item.driverPhone || '',
           dailyDeduct: item.dailyDeduct || 0,
           balanceOrCharge: item.balance || 0,
-          deductStartDate: item.deductStartDate || item.weekStart || '',
+          deductStartDate,
+          deductEndDate,
           reason: item.reason || (item.kind === 'manual' ? '수기 차감' : '미납'),
           applied: Boolean(item.finalApplyEnabled)
         });
@@ -3660,7 +3672,7 @@ const BremAdminLeaseMenus = (function () {
       if (!visible.has(key)) state.deductionManageSelectedKeys.delete(key);
     });
     if (!rows.length) {
-      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">미납·수기 차감이 없습니다. 소급분 이관 또는 위에서 수기 등록하세요.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">미납·수기 차감이 없습니다. 소급분 이관 또는 위에서 수기 등록하세요.</td></tr>';
       updateDeductionManageBulkUi();
       return;
     }
@@ -3675,6 +3687,7 @@ const BremAdminLeaseMenus = (function () {
         <td>${formatMoney(row.dailyDeduct)}</td>
         <td>${formatMoney(row.balanceOrCharge)}</td>
         <td>${escapeHtml(row.deductStartDate || '-')}</td>
+        <td>${escapeHtml(row.deductEndDate || '-')}</td>
         <td>${escapeHtml(row.reason || '-')}</td>
         <td><span class="${row.applied ? 'lease-status--done' : 'lease-status--collecting'}">${row.applied ? '반영됨' : '미반영'}</span></td>
         <td class="lease-payment-confirm-actions">
@@ -3688,6 +3701,48 @@ const BremAdminLeaseMenus = (function () {
     updateDeductionManageBulkUi();
   }
 
+  function syncManualDeductSchedulePreview() {
+    const dailyDeduct = Math.max(0, Math.round(Number($('leaseManualDeductDaily')?.value || 0)));
+    const balance = Math.max(0, Math.round(Number($('leaseManualDeductBalance')?.value || 0)));
+    let deductStartDate = String($('leaseManualDeductStartDate')?.value || '').trim();
+    const loose = deductStartDate.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if (loose && !/^\d{4}-\d{2}-\d{2}$/.test(deductStartDate.slice(0, 10))) {
+      deductStartDate = `${loose[1]}-${String(loose[2]).padStart(2, '0')}-${String(loose[3]).padStart(2, '0')}`;
+    } else {
+      deductStartDate = deductStartDate.slice(0, 10);
+    }
+    const compute = window.BremStorage?.computeLoanDeductSchedule;
+    const schedule = typeof compute === 'function'
+      ? compute({ amount: balance, principal: balance, dailyDeduct, deductStartDate })
+      : { ok: false };
+    const endEl = $('leaseManualDeductEndDate');
+    const lastEl = $('leaseManualDeductLastDayAmount');
+    const hint = $('leaseManualDeductScheduleHint');
+    if (!schedule?.ok) {
+      if (endEl) endEl.value = '';
+      if (lastEl) lastEl.value = '';
+      if (hint && balance > 0 && dailyDeduct > 0) {
+        hint.textContent = deductStartDate
+          ? '종료일 계산 실패 · 일 차감·잔액·시작일을 다시 확인하세요.'
+          : '시작일을 입력하면 종료일·마지막날 차감이 계산됩니다.';
+      } else if (hint && balance > 0 && !dailyDeduct) {
+        hint.textContent = `잔액 ${formatMoney(balance)} · 일 차감액을 입력하세요.`;
+      } else if (hint) {
+        hint.textContent = '일 차감·잔액·시작일을 넣으면 대여와 같이 종료일·마지막날 차감이 자동 계산됩니다. 예: 3만×잔액 9만 → 3일.';
+      }
+      return null;
+    }
+    if (endEl) endEl.value = schedule.deductEndDate;
+    if (lastEl) lastEl.value = formatMoney(schedule.lastDayAmount);
+    if (hint) {
+      const remNote = schedule.lastDayAmount !== schedule.dailyDeduct
+        ? ` · 마지막날 ${formatMoney(schedule.lastDayAmount)}(=일 ${formatMoney(schedule.dailyDeduct)}+나머지)`
+        : ` · 매일 ${formatMoney(schedule.dailyDeduct)}`;
+      hint.textContent = `잔액 ${formatMoney(balance)} · 총 ${schedule.days}일 (${schedule.deductStartDate} ~ ${schedule.deductEndDate})${remNote}`;
+    }
+    return schedule;
+  }
+
   function resetManualDeductForm() {
     if ($('leaseManualDeductEditId')) $('leaseManualDeductEditId').value = '';
     if ($('leaseManualDeductDriverId')) $('leaseManualDeductDriverId').value = '';
@@ -3698,6 +3753,12 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseManualDeductBalance')) $('leaseManualDeductBalance').value = '';
     if ($('leaseManualDeductReason')) $('leaseManualDeductReason').value = '';
     if ($('leaseManualDeductStartDate')) $('leaseManualDeductStartDate').value = todayDateInputValue();
+    if ($('leaseManualDeductEndDate')) $('leaseManualDeductEndDate').value = '';
+    if ($('leaseManualDeductLastDayAmount')) $('leaseManualDeductLastDayAmount').value = '';
+    const hint = $('leaseManualDeductScheduleHint');
+    if (hint) {
+      hint.textContent = '일 차감·잔액·시작일을 넣으면 대여와 같이 종료일·마지막날 차감이 자동 계산됩니다. 예: 3만×잔액 9만 → 3일.';
+    }
     const selected = $('leaseManualDeductDriverSelected');
     if (selected) selected.textContent = '선택: 없음';
     const results = $('leaseManualDeductDriverResults');
@@ -3773,6 +3834,11 @@ const BremAdminLeaseMenus = (function () {
       showToast('일 차감액·잔액·시작일을 입력하세요.');
       return;
     }
+    const schedule = syncManualDeductSchedulePreview();
+    if (!schedule?.ok) {
+      showToast('차감 스케줄을 계산할 수 없습니다. 일 차감·잔액·시작일을 확인하세요.');
+      return;
+    }
     const editId = String($('leaseManualDeductEditId')?.value || '').trim();
     store.save({
       id: editId || undefined,
@@ -3784,6 +3850,8 @@ const BremAdminLeaseMenus = (function () {
       dailyDeduct,
       balance,
       deductStartDate,
+      deductEndDate: schedule.deductEndDate,
+      lastDayAmount: schedule.lastDayAmount,
       reason: String($('leaseManualDeductReason')?.value || '').trim() || '수기 차감',
       deductionPlatform: 'coupang',
       finalApplyEnabled: false,
@@ -3792,7 +3860,9 @@ const BremAdminLeaseMenus = (function () {
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     resetManualDeductForm();
     renderDeductionManage();
-    showToast(editId ? '수기 차감을 수정했습니다.' : '수기 차감을 등록했습니다.');
+    showToast(editId
+      ? `수기 차감 수정 · ${schedule.days}일 (${schedule.deductStartDate} ~ ${schedule.deductEndDate})`
+      : `수기 차감 등록 · ${schedule.days}일 (${schedule.deductStartDate} ~ ${schedule.deductEndDate})`);
   }
 
   async function deleteManualDeduct(id) {
@@ -5702,6 +5772,11 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseManualDeductForm')?.addEventListener('submit', event => { void saveManualDeductForm(event); });
     $('leaseManualDeductFormResetBtn')?.addEventListener('click', () => resetManualDeductForm());
+    ['leaseManualDeductDaily', 'leaseManualDeductBalance', 'leaseManualDeductStartDate'].forEach(id => {
+      $(id)?.addEventListener('input', () => syncManualDeductSchedulePreview());
+      $(id)?.addEventListener('change', () => syncManualDeductSchedulePreview());
+    });
+    syncManualDeductSchedulePreview();
     $('leaseDeductionLeaseBulkApplyBtn')?.addEventListener('click', () => { void bulkSetContractFinalApply(true); });
     $('leaseDeductionLeaseBulkClearBtn')?.addEventListener('click', () => { void bulkSetContractFinalApply(false); });
     $('leaseDeductionManageBulkApplyBtn')?.addEventListener('click', () => { void bulkSetManageApply(true); });
