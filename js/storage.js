@@ -10872,6 +10872,121 @@ const BremStorage = (function () {
     }
   };
 
+  /**
+   * 대여 일차감 스케줄.
+   * 예: 100만 / 3만 → 32일×3만 + 마지막날 4만(3만+나머지1만) = 33일, 합계 정확히 100만.
+   */
+  function addDaysToDateKey(startKey, days) {
+    const raw = String(startKey || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+    const date = new Date(`${raw}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+    date.setDate(date.getDate() + Math.max(0, Math.round(Number(days) || 0)));
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function computeLoanDeductSchedule({ principal, dailyDeduct, deductStartDate, amount } = {}) {
+    const target = Math.max(0, Math.round(Number(
+      amount != null ? amount : (principal != null ? principal : 0)
+    )));
+    const daily = Math.max(0, Math.round(Number(dailyDeduct || 0)));
+    const start = String(deductStartDate || '').slice(0, 10);
+    if (target <= 0 || daily <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      return {
+        ok: false,
+        principal: target,
+        dailyDeduct: daily,
+        deductStartDate: start,
+        deductEndDate: '',
+        days: 0,
+        regularDays: 0,
+        lastDayAmount: 0,
+        total: 0
+      };
+    }
+    const fullDays = Math.floor(target / daily);
+    const rem = target % daily;
+    let days;
+    let lastDayAmount;
+    let regularDays;
+    if (rem === 0) {
+      days = fullDays;
+      lastDayAmount = daily;
+      regularDays = fullDays;
+    } else if (fullDays === 0) {
+      days = 1;
+      lastDayAmount = target;
+      regularDays = 0;
+    } else {
+      // 나머지(1만)를 마지막 일차감에 합쳐 4만으로 — 총액이 원금과 일치
+      days = fullDays;
+      lastDayAmount = daily + rem;
+      regularDays = fullDays - 1;
+    }
+    const deductEndDate = addDaysToDateKey(start, days - 1);
+    const total = regularDays * daily + lastDayAmount;
+    return {
+      ok: total === target && Boolean(deductEndDate),
+      principal: target,
+      dailyDeduct: daily,
+      deductStartDate: start,
+      deductEndDate,
+      days,
+      regularDays,
+      lastDayAmount,
+      total
+    };
+  }
+
+  /** 구간 내 대여 스케줄 차감액(잔액 한도). 마지막날은 lastDayAmount. */
+  function loanChargeInDateRange(item, rangeStart, rangeEnd, todayKey) {
+    if (!item) return 0;
+    const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
+    if (balance <= 0) return 0;
+    const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+    if (daily <= 0) return 0;
+    const start = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+    let end = String(item.deductEndDate || '').slice(0, 10);
+    let lastDayAmount = Math.max(0, Math.round(Number(item.lastDayAmount || 0)));
+    if (!end || lastDayAmount <= 0) {
+      const sched = computeLoanDeductSchedule({
+        amount: Math.max(0, Math.round(Number(item.principal || balance))),
+        dailyDeduct: daily,
+        deductStartDate: start
+      });
+      if (!sched.ok) {
+        // 스케줄 불가 시 기존 방식(일×일수, 잔액 한도)
+        const from = [String(rangeStart || '').slice(0, 10), start].filter(Boolean).sort().pop() || '';
+        const toCandidates = [String(rangeEnd || '').slice(0, 10), String(todayKey || '').slice(0, 10)].filter(Boolean).sort();
+        const to = toCandidates[0] || '';
+        if (!from || !to || from > to) return 0;
+        let days = 0;
+        for (let cur = from; cur <= to; cur = addDaysToDateKey(cur, 1)) days += 1;
+        return Math.min(balance, daily * days);
+      }
+      end = sched.deductEndDate;
+      lastDayAmount = sched.lastDayAmount;
+    }
+    const from = [String(rangeStart || '').slice(0, 10), start].filter(Boolean).sort().pop() || '';
+    const toCandidates = [
+      String(rangeEnd || '').slice(0, 10),
+      String(todayKey || '').slice(0, 10),
+      end
+    ].filter(Boolean).sort();
+    const to = toCandidates[0] || '';
+    if (!from || !to || from > to) return 0;
+    let sum = 0;
+    for (let cur = from; cur <= to; cur = addDaysToDateKey(cur, 1)) {
+      if (cur < start || cur > end) continue;
+      sum += (cur === end) ? lastDayAmount : daily;
+      if (sum >= balance) return balance;
+    }
+    return Math.min(balance, sum);
+  }
+
   function normalizeLeaseLoan(raw = {}, existing = null) {
     const principal = Math.max(0, Math.round(Number(raw.principal != null ? raw.principal : existing?.principal || 0)));
     const dailyDeduct = Math.max(0, Math.round(Number(raw.dailyDeduct != null ? raw.dailyDeduct : existing?.dailyDeduct || 0)));
@@ -10884,6 +10999,20 @@ const BremStorage = (function () {
     const deductStartDate = String(
       raw.deductStartDate != null ? raw.deductStartDate : (existing?.deductStartDate || '')
     ).slice(0, 10);
+    const schedule = computeLoanDeductSchedule({
+      principal,
+      dailyDeduct,
+      deductStartDate
+    });
+    const deductEndDate = String(
+      raw.deductEndDate != null ? raw.deductEndDate : (existing?.deductEndDate || schedule.deductEndDate || '')
+    ).slice(0, 10) || schedule.deductEndDate || '';
+    const lastDayAmount = Math.max(0, Math.round(Number(
+      raw.lastDayAmount != null ? raw.lastDayAmount : (existing?.lastDayAmount != null ? existing.lastDayAmount : schedule.lastDayAmount || 0)
+    ))) || schedule.lastDayAmount || 0;
+    const externalPaid = Math.max(0, Math.round(Number(
+      raw.externalPaid != null ? raw.externalPaid : (existing?.externalPaid || 0)
+    )));
     const enabled = raw.finalApplyEnabled != null
       ? Boolean(raw.finalApplyEnabled)
       : Boolean(existing?.finalApplyEnabled);
@@ -10897,6 +11026,9 @@ const BremStorage = (function () {
       balance,
       deductionPlatform: platform,
       deductStartDate,
+      deductEndDate,
+      lastDayAmount,
+      externalPaid,
       reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
       status: String(raw.status != null ? raw.status : (existing?.status || 'active')).trim() || 'active',
       finalApplyEnabled: enabled,
@@ -10923,6 +11055,12 @@ const BremStorage = (function () {
     const deductStartDate = String(
       raw.deductStartDate != null ? raw.deductStartDate : (existing?.deductStartDate || '')
     ).slice(0, 10);
+    const deductEndDate = String(
+      raw.deductEndDate != null ? raw.deductEndDate : (existing?.deductEndDate || '')
+    ).slice(0, 10);
+    const lastDayAmount = Math.max(0, Math.round(Number(
+      raw.lastDayAmount != null ? raw.lastDayAmount : (existing?.lastDayAmount || 0)
+    )));
     return {
       id: String(raw.id || existing?.id || createId()),
       kind,
@@ -10935,6 +11073,8 @@ const BremStorage = (function () {
       reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
       deductionPlatform: platform,
       deductStartDate,
+      deductEndDate,
+      lastDayAmount,
       finalApplyEnabled: enabled,
       finalAppliedAt: enabled
         ? String(raw.finalAppliedAt || existing?.finalAppliedAt || new Date().toISOString())
@@ -10959,7 +11099,16 @@ const BremStorage = (function () {
     save(raw) {
       const list = this.getAll();
       const existing = raw?.id ? list.find(item => item.id === raw.id) : null;
-      const next = normalizeLeaseLoan(raw, existing);
+      const schedule = computeLoanDeductSchedule({
+        principal: raw?.principal != null ? raw.principal : existing?.principal,
+        dailyDeduct: raw?.dailyDeduct != null ? raw.dailyDeduct : existing?.dailyDeduct,
+        deductStartDate: raw?.deductStartDate != null ? raw.deductStartDate : existing?.deductStartDate
+      });
+      const next = normalizeLeaseLoan({
+        ...raw,
+        deductEndDate: schedule.ok ? schedule.deductEndDate : (raw?.deductEndDate || existing?.deductEndDate || ''),
+        lastDayAmount: schedule.ok ? schedule.lastDayAmount : (raw?.lastDayAmount || existing?.lastDayAmount || 0)
+      }, existing);
       const out = existing
         ? list.map(item => (item.id === next.id ? next : item))
         : [...list, next];
@@ -13358,6 +13507,9 @@ const BremStorage = (function () {
     directSettlementAdjustments,
     directRetroAdjustments,
     leaseLoans,
+    computeLoanDeductSchedule,
+    loanChargeInDateRange,
+    addDaysToDateKey,
     deductionLedger,
     driverOrgChart: {
       get() {

@@ -28,6 +28,84 @@ function withRequestsLock(fn) {
   return run;
 }
 
+function leaseAddDaysKey(startKey, days) {
+  const raw = String(startKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + Math.max(0, Math.round(Number(days) || 0)));
+  return leaseFormatDateKey(date);
+}
+
+/** 대여 스케줄: 나머지 금액을 마지막날에 합산해 원금과 일치 */
+function computeLoanDeductSchedule({ principal, dailyDeduct, deductStartDate, amount } = {}) {
+  const target = Math.max(0, Math.round(Number(amount != null ? amount : (principal || 0))));
+  const daily = Math.max(0, Math.round(Number(dailyDeduct || 0)));
+  const start = String(deductStartDate || '').slice(0, 10);
+  if (target <= 0 || daily <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    return { ok: false, deductEndDate: '', lastDayAmount: 0, dailyDeduct: daily };
+  }
+  const fullDays = Math.floor(target / daily);
+  const rem = target % daily;
+  let days;
+  let lastDayAmount;
+  if (rem === 0) {
+    days = fullDays;
+    lastDayAmount = daily;
+  } else if (fullDays === 0) {
+    days = 1;
+    lastDayAmount = target;
+  } else {
+    days = fullDays;
+    lastDayAmount = daily + rem;
+  }
+  return {
+    ok: true,
+    deductEndDate: leaseAddDaysKey(start, days - 1),
+    lastDayAmount,
+    dailyDeduct: daily
+  };
+}
+
+function loanChargeInDateRange(item, rangeStart, rangeEnd, todayKey) {
+  if (!item) return 0;
+  const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
+  if (balance <= 0) return 0;
+  const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+  if (daily <= 0) return 0;
+  const start = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+  let end = String(item.deductEndDate || '').slice(0, 10);
+  let lastDayAmount = Math.max(0, Math.round(Number(item.lastDayAmount || 0)));
+  if (!end || lastDayAmount <= 0) {
+    const sched = computeLoanDeductSchedule({
+      amount: Math.max(0, Math.round(Number(item.principal || balance))),
+      dailyDeduct: daily,
+      deductStartDate: start
+    });
+    if (!sched.ok) {
+      const days = countActiveLeaseDays(rangeStart, rangeEnd, todayKey, start, '');
+      return days > 0 ? Math.min(balance, daily * days) : 0;
+    }
+    end = sched.deductEndDate;
+    lastDayAmount = sched.lastDayAmount;
+  }
+  const from = [String(rangeStart || '').slice(0, 10), start].filter(Boolean).sort().pop() || '';
+  const toCandidates = [
+    String(rangeEnd || '').slice(0, 10),
+    String(todayKey || '').slice(0, 10),
+    end
+  ].filter(Boolean).sort();
+  const to = toCandidates[0] || '';
+  if (!from || !to || from > to) return 0;
+  let sum = 0;
+  for (let cur = from; cur <= to; cur = leaseAddDaysKey(cur, 1)) {
+    if (cur < start || cur > end) continue;
+    sum += (cur === end) ? lastDayAmount : daily;
+    if (sum >= balance) return balance;
+  }
+  return Math.min(balance, sum);
+}
+
 function leaseNormalizeName(value) {
   return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
 }
@@ -245,7 +323,7 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
 
   // 대여(반영) + 차감관리 미납·수기(반영) — 기사 단위 합산, 플랫폼 필터 없음
   let ledgerCharge = 0;
-  const addDailyBalanceItem = (item) => {
+  const addDailyBalanceItem = (item, { useLoanSchedule = false } = {}) => {
     if (!item || !item.finalApplyEnabled) return;
     if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
     const sameDriver = (item.driverId && String(item.driverId) === String(rider.id))
@@ -255,6 +333,10 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
         && leaseNormalizeName(item.driverName)
       );
     if (!sameDriver) return;
+    if (useLoanSchedule) {
+      ledgerCharge += loanChargeInDateRange(item, weekStart, weekEnd, todayKey);
+      return;
+    }
     const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
     const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
     if (daily <= 0 || balance <= 0) return;
@@ -264,7 +346,7 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
     ledgerCharge += Math.min(balance, daily * days);
   };
 
-  (Array.isArray(tables?.loans) ? tables.loans : []).forEach(addDailyBalanceItem);
+  (Array.isArray(tables?.loans) ? tables.loans : []).forEach(item => addDailyBalanceItem(item, { useLoanSchedule: true }));
   (Array.isArray(tables?.ledger) ? tables.ledger : []).forEach(item => {
     const kind = String(item?.kind || '');
     if (kind === 'loan') return;

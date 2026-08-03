@@ -65,6 +65,9 @@ const BremAdminLeaseMenus = (function () {
     deductionManageKind: 'all',
     deductionManageSelectedKeys: new Set(),
     loanDriverSearch: '',
+    paymentSource: 'lease',
+    paymentStatusFilter: 'open',
+    paymentPaidSource: 'lease',
     leaseSaving: false
   };
 
@@ -2782,12 +2785,48 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseLoanBalance')) $('leaseLoanBalance').value = '';
     if ($('leaseLoanReason')) $('leaseLoanReason').value = '';
     if ($('leaseLoanDeductStartDate')) $('leaseLoanDeductStartDate').value = todayDateInputValue();
+    if ($('leaseLoanDeductEndDate')) $('leaseLoanDeductEndDate').value = '';
+    if ($('leaseLoanLastDayAmount')) $('leaseLoanLastDayAmount').value = '';
+    const hint = $('leaseLoanScheduleHint');
+    if (hint) {
+      hint.textContent = '원금·일 차감·시작일을 넣으면 종료일과 마지막날 차감액이 자동 계산됩니다. 예: 100만÷3만 → 32일×3만 + 마지막날 4만.';
+    }
     const selected = $('leaseLoanDriverSelected');
     if (selected) selected.textContent = '선택: 없음';
     const results = $('leaseLoanDriverResults');
     if (results) { results.hidden = true; results.innerHTML = ''; }
     const submit = $('leaseLoanForm')?.querySelector('button[type="submit"]');
     if (submit) submit.textContent = '대여 등록';
+  }
+
+  function syncLoanSchedulePreview() {
+    const principal = Math.max(0, Math.round(Number($('leaseLoanPrincipal')?.value || 0)));
+    const dailyDeduct = Math.max(0, Math.round(Number($('leaseLoanDailyDeduct')?.value || 0)));
+    const deductStartDate = String($('leaseLoanDeductStartDate')?.value || '').slice(0, 10);
+    const compute = window.BremStorage?.computeLoanDeductSchedule;
+    const schedule = typeof compute === 'function'
+      ? compute({ principal, dailyDeduct, deductStartDate })
+      : { ok: false };
+    const endEl = $('leaseLoanDeductEndDate');
+    const lastEl = $('leaseLoanLastDayAmount');
+    const hint = $('leaseLoanScheduleHint');
+    if (!schedule?.ok) {
+      if (endEl) endEl.value = '';
+      if (lastEl) lastEl.value = '';
+      if (hint && principal > 0 && dailyDeduct > 0) {
+        hint.textContent = '시작일을 입력하면 종료일·마지막날 차감이 계산됩니다.';
+      }
+      return null;
+    }
+    if (endEl) endEl.value = schedule.deductEndDate;
+    if (lastEl) lastEl.value = formatMoney(schedule.lastDayAmount);
+    if (hint) {
+      const remNote = schedule.lastDayAmount !== schedule.dailyDeduct
+        ? ` · 마지막날 ${formatMoney(schedule.lastDayAmount)}(=일 ${formatMoney(schedule.dailyDeduct)}+나머지)`
+        : ` · 매일 ${formatMoney(schedule.dailyDeduct)}`;
+      hint.textContent = `총 ${schedule.days}일 (${schedule.deductStartDate} ~ ${schedule.deductEndDate})${remNote} · 합계 ${formatMoney(schedule.total)} (원금과 일치 ${schedule.ok ? '✓' : '✗'})`;
+    }
+    return schedule;
   }
 
   function pickLoanDriver(driver) {
@@ -2862,6 +2901,8 @@ const BremAdminLeaseMenus = (function () {
       dailyDeduct: loan.dailyDeduct,
       balance: loan.balance,
       deductStartDate: loan.deductStartDate,
+      deductEndDate: loan.deductEndDate,
+      lastDayAmount: loan.lastDayAmount,
       reason: loan.reason || '대여금',
       deductionPlatform: loan.deductionPlatform || 'coupang',
       finalApplyEnabled: options.finalApplyEnabled != null
@@ -2895,6 +2936,15 @@ const BremAdminLeaseMenus = (function () {
       showToast('차감 시작일을 입력하세요.');
       return;
     }
+    const schedule = syncLoanSchedulePreview();
+    if (!schedule?.ok) {
+      showToast('차감 스케줄을 계산할 수 없습니다. 원금·일 차감·시작일을 확인하세요.');
+      return;
+    }
+    if (schedule.total !== principal) {
+      showToast(`스케줄 합계(${formatMoney(schedule.total)})가 원금(${formatMoney(principal)})과 다릅니다. 저장을 중단합니다.`);
+      return;
+    }
     const balanceRaw = $('leaseLoanBalance')?.value;
     const balance = balanceRaw === '' || balanceRaw == null
       ? principal
@@ -2910,16 +2960,21 @@ const BremAdminLeaseMenus = (function () {
       dailyDeduct,
       balance,
       deductStartDate,
+      deductEndDate: schedule.deductEndDate,
+      lastDayAmount: schedule.lastDayAmount,
       deductionPlatform: 'coupang',
       reason: String($('leaseLoanReason')?.value || '').trim() || '대여금',
       status: 'active',
-      finalApplyEnabled: Boolean(existing?.finalApplyEnabled)
+      finalApplyEnabled: Boolean(existing?.finalApplyEnabled),
+      externalPaid: existing?.externalPaid || 0
     });
     syncLoanLedgerFromLoan(loan);
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     resetLoanForm();
     renderDeductionLoan();
-    showToast(editId ? '대여 기록을 수정했습니다.' : '대여를 등록했습니다.');
+    showToast(editId
+      ? `대여 수정 · ${schedule.days}일 · 마지막날 ${formatMoney(schedule.lastDayAmount)}`
+      : `대여 등록 · ${schedule.days}일 · 마지막날 ${formatMoney(schedule.lastDayAmount)}`);
   }
 
   function editLoan(id) {
@@ -2934,6 +2989,7 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseLoanBalance')) $('leaseLoanBalance').value = loan.balance || '';
     if ($('leaseLoanReason')) $('leaseLoanReason').value = loan.reason || '';
     if ($('leaseLoanDeductStartDate')) $('leaseLoanDeductStartDate').value = loan.deductStartDate || todayDateInputValue();
+    syncLoanSchedulePreview();
     const selected = $('leaseLoanDriverSelected');
     if (selected) selected.textContent = `선택: ${loan.driverName || '-'} · ${loan.driverPhone || '-'}`;
     const submit = $('leaseLoanForm')?.querySelector('button[type="submit"]');
@@ -2984,10 +3040,18 @@ const BremAdminLeaseMenus = (function () {
       summaryEl.textContent = `대여금 ${list.length}건 · 반영 ${applied}건 · 잔액합 ${formatMoney(list.reduce((s, i) => s + Number(i.balance || 0), 0))}`;
     }
     if (!list.length) {
-      rowsEl.innerHTML = '<tr><td colspan="9" class="empty">등록된 대여금이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">등록된 대여금이 없습니다.</td></tr>';
       return;
     }
-    rowsEl.innerHTML = list.map(loan => `
+    rowsEl.innerHTML = list.map(loan => {
+      const schedule = window.BremStorage?.computeLoanDeductSchedule?.({
+        principal: loan.principal,
+        dailyDeduct: loan.dailyDeduct,
+        deductStartDate: loan.deductStartDate
+      }) || {};
+      const endDate = loan.deductEndDate || schedule.deductEndDate || '-';
+      const lastAmt = loan.lastDayAmount || schedule.lastDayAmount || 0;
+      return `
       <tr>
         <td>${escapeHtml(loan.driverName || '-')}</td>
         <td>${escapeHtml(loan.driverPhone || '-')}</td>
@@ -2995,6 +3059,8 @@ const BremAdminLeaseMenus = (function () {
         <td>${formatMoney(loan.dailyDeduct)}</td>
         <td>${formatMoney(loan.balance)}</td>
         <td>${escapeHtml(loan.deductStartDate || '-')}</td>
+        <td>${escapeHtml(endDate)}</td>
+        <td>${formatMoney(lastAmt)}</td>
         <td>${escapeHtml(loan.reason || '-')}</td>
         <td><span class="${loan.finalApplyEnabled ? 'lease-status--done' : 'lease-status--collecting'}">${loan.finalApplyEnabled ? '반영됨' : '미반영'}</span></td>
         <td class="lease-payment-confirm-actions">
@@ -3004,7 +3070,8 @@ const BremAdminLeaseMenus = (function () {
           <button type="button" class="small-btn" data-loan-edit="${escapeHtml(loan.id)}">수정</button>
           <button type="button" class="small-btn danger-btn" data-loan-delete="${escapeHtml(loan.id)}">삭제</button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   function buildDeductionManageRows() {
@@ -3730,18 +3797,241 @@ const BremAdminLeaseMenus = (function () {
     }
   }
 
+  function loanPaymentStatus(loan) {
+    const principal = Math.max(0, Math.round(Number(loan?.principal || 0)));
+    const balance = Math.max(0, Math.round(Number(loan?.balance || 0)));
+    const externalPaid = Math.max(0, Math.round(Number(loan?.externalPaid || 0)));
+    if (String(loan?.status || '') === 'paid' || balance <= 0) {
+      return { code: 'paid', label: '완납', cls: 'lease-status--done' };
+    }
+    if (externalPaid > 0 || (principal > 0 && balance < principal)) {
+      return { code: 'partial', label: '부분납', cls: 'lease-status--collecting' };
+    }
+    return { code: 'pending', label: '확인대기', cls: 'lease-status--collecting' };
+  }
+
+  function syncPaymentConfirmTabUi() {
+    const source = state.paymentSource === 'loan' ? 'loan' : 'lease';
+    const status = ['open', 'partial', 'paid'].includes(state.paymentStatusFilter)
+      ? state.paymentStatusFilter
+      : 'open';
+    state.paymentSource = source;
+    state.paymentStatusFilter = status;
+    document.querySelectorAll('[data-payment-source]').forEach(btn => {
+      const active = btn.dataset.paymentSource === source;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-payment-status]').forEach(btn => {
+      const active = btn.dataset.paymentStatus === status;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    const selectWrap = $('leasePaymentConfirmSelectAllWrap');
+    const bulkBtn = $('leasePaymentConfirmBulkPaidBtn');
+    const showBulk = source === 'lease' && status === 'open';
+    if (selectWrap) selectWrap.hidden = !showBulk;
+    if (bulkBtn) bulkBtn.hidden = !showBulk;
+  }
+
+  function syncPaymentPaidTabUi() {
+    const source = state.paymentPaidSource === 'loan' ? 'loan' : 'lease';
+    state.paymentPaidSource = source;
+    document.querySelectorAll('[data-payment-paid-source]').forEach(btn => {
+      const active = btn.dataset.paymentPaidSource === source;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
+  function matchesPaymentStatusFilter(statusCode, filter) {
+    if (filter === 'paid') return statusCode === 'paid';
+    if (filter === 'partial') return statusCode === 'partial';
+    // open = 미확인: pending + unpaid (부분납·완납 제외)
+    return statusCode === 'pending' || statusCode === 'unpaid';
+  }
+
+  async function confirmLoanPaymentFull(loanId) {
+    const store = window.BremStorage?.leaseLoans;
+    const loan = store?.getById?.(loanId);
+    if (!loan) return;
+    const balance = Math.max(0, Math.round(Number(loan.balance || 0)));
+    if (balance <= 0) {
+      showToast('이미 완납된 대여입니다.');
+      return;
+    }
+    if (!window.confirm(`${loan.driverName || '기사'} · 대여 잔액 ${formatMoney(balance)}을 완납 처리할까요?\n(계좌이체 등 외부 납부로 잔액을 0으로 만듭니다. 급여차감 반영은 해제됩니다.)`)) {
+      return;
+    }
+    const saved = store.save({
+      ...loan,
+      balance: 0,
+      externalPaid: Math.max(0, Math.round(Number(loan.externalPaid || 0))) + balance,
+      status: 'paid',
+      finalApplyEnabled: false
+    });
+    syncLoanLedgerFromLoan(saved, { finalApplyEnabled: false });
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    renderPaymentConfirm();
+    renderPaymentPaid();
+    renderDeductionLoan();
+    showToast(`${loan.driverName || '기사'} · 대여 완납 처리`);
+  }
+
+  async function confirmLoanPaymentPartial(loanId) {
+    const store = window.BremStorage?.leaseLoans;
+    const loan = store?.getById?.(loanId);
+    if (!loan) return;
+    const balance = Math.max(0, Math.round(Number(loan.balance || 0)));
+    if (balance <= 0) {
+      showToast('이미 완납된 대여입니다.');
+      return;
+    }
+    const raw = window.prompt(
+      `${loan.driverName || '기사'} · 잔액 ${formatMoney(balance)}\n부분납 금액을 입력하세요.`,
+      String(balance)
+    );
+    if (raw == null) return;
+    const paid = Math.max(0, Math.round(Number(String(raw).replace(/,/g, ''))));
+    if (!Number.isFinite(paid) || paid <= 0) {
+      showToast('부분납 금액이 올바르지 않습니다.');
+      return;
+    }
+    if (paid > balance) {
+      showToast(`잔액(${formatMoney(balance)})을 초과할 수 없습니다.`);
+      return;
+    }
+    const nextBalance = balance - paid;
+    const saved = store.save({
+      ...loan,
+      balance: nextBalance,
+      externalPaid: Math.max(0, Math.round(Number(loan.externalPaid || 0))) + paid,
+      status: nextBalance <= 0 ? 'paid' : 'active',
+      finalApplyEnabled: nextBalance <= 0 ? false : Boolean(loan.finalApplyEnabled)
+    });
+    syncLoanLedgerFromLoan(saved, {
+      finalApplyEnabled: nextBalance <= 0 ? false : Boolean(loan.finalApplyEnabled)
+    });
+    await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    renderPaymentConfirm();
+    renderPaymentPaid();
+    renderDeductionLoan();
+    showToast(nextBalance <= 0
+      ? `${loan.driverName || '기사'} · 대여 완납`
+      : `${loan.driverName || '기사'} · 부분납 ${formatMoney(paid)} · 잔액 ${formatMoney(nextBalance)}`);
+  }
+
   function renderPaymentConfirm() {
     const rowsEl = $('leasePaymentConfirmRows');
+    const headEl = $('leasePaymentConfirmHead');
     const summaryEl = $('leasePaymentConfirmSummary');
-    if (!rowsEl || !erp()) return;
+    if (!rowsEl) return;
+    syncPaymentConfirmTabUi();
+    const source = state.paymentSource;
+    const statusFilter = state.paymentStatusFilter;
+    const keyword = String(state.paymentConfirmSearch || $('leasePaymentConfirmSearch')?.value || '').trim().toLowerCase();
+
+    if (source === 'loan') {
+      if (headEl) {
+        headEl.innerHTML = `<tr>
+          <th>기사</th><th>연락처</th><th>대여금</th><th>잔액</th><th>외부납부</th>
+          <th>일 차감</th><th>시작~종료</th><th>마지막날</th><th>납부상태</th><th>관리</th>
+        </tr>`;
+      }
+      let loans = (window.BremStorage?.leaseLoans?.getAll?.() || []).filter(loan =>
+        matchesPaymentStatusFilter(loanPaymentStatus(loan).code, statusFilter)
+      );
+      if (keyword) {
+        loans = loans.filter(loan => [loan.driverName, loan.driverPhone, loan.reason]
+          .join(' ').toLowerCase().includes(keyword));
+      }
+      if (summaryEl) {
+        summaryEl.textContent = `대여 · ${statusFilter === 'paid' ? '완납' : (statusFilter === 'partial' ? '부분납' : '미확인')} ${loans.length}건`;
+      }
+      if (!loans.length) {
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">해당 조건의 대여 납부 건이 없습니다.</td></tr>';
+        updatePaymentConfirmBulkUi();
+        return;
+      }
+      rowsEl.innerHTML = loans.map(loan => {
+        const status = loanPaymentStatus(loan);
+        const schedule = window.BremStorage?.computeLoanDeductSchedule?.({
+          principal: loan.principal,
+          dailyDeduct: loan.dailyDeduct,
+          deductStartDate: loan.deductStartDate
+        }) || {};
+        const endDate = loan.deductEndDate || schedule.deductEndDate || '-';
+        const lastAmt = loan.lastDayAmount || schedule.lastDayAmount || 0;
+        const actions = status.code === 'paid'
+          ? '<span class="muted-inline">완납</span>'
+          : `<button type="button" class="small-btn primary-btn" data-loan-payment-full="${escapeHtml(loan.id)}">완납</button>
+             <button type="button" class="small-btn" data-loan-payment-partial="${escapeHtml(loan.id)}">부분납</button>`;
+        return `<tr>
+          <td>${escapeHtml(loan.driverName || '-')}</td>
+          <td>${escapeHtml(loan.driverPhone || '-')}</td>
+          <td>${formatMoney(loan.principal)}</td>
+          <td>${formatMoney(loan.balance)}</td>
+          <td>${formatMoney(loan.externalPaid)}</td>
+          <td>${formatMoney(loan.dailyDeduct)}</td>
+          <td>${escapeHtml(loan.deductStartDate || '-')} ~ ${escapeHtml(endDate)}</td>
+          <td>${formatMoney(lastAmt)}</td>
+          <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
+          <td class="lease-payment-confirm-actions">${actions}</td>
+        </tr>`;
+      }).join('');
+      updatePaymentConfirmBulkUi();
+      return;
+    }
+
+    // 리스
+    if (!erp()) return;
+    if (headEl) {
+      headEl.innerHTML = `<tr>
+        <th class="lease-check-col">선택</th>
+        <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
+        <th>주간리스비</th><th>주간청구액</th><th>차액</th><th>납부상태</th><th>관리</th>
+      </tr>`;
+    }
     const weekStart = syncPaymentWeekUi(currentWeekStart());
     const weekLabel = formatPaymentWeekColumn(weekStart);
     const vehicles = erp().vehicles().getAll();
     const vehicleMap = new Map(vehicles.map(item => [item.id, item]));
+
+    if (statusFilter === 'paid') {
+      let rows = listPaidPaymentConfirmRows().filter(row => row.weekStart === weekStart || true);
+      if (keyword) {
+        rows = rows.filter(row => [row.driverName, row.driverPhone, row.vehicleNumber, row.model]
+          .join(' ').toLowerCase().includes(keyword));
+      }
+      if (summaryEl) summaryEl.textContent = `리스 · 완납 ${rows.length}건`;
+      if (!rows.length) {
+        rowsEl.innerHTML = '<tr><td colspan="11" class="empty">완납 내역이 없습니다.</td></tr>';
+        updatePaymentConfirmBulkUi();
+        return;
+      }
+      rowsEl.innerHTML = rows.map(row => {
+        const marginCls = row.margin < 0 ? 'lease-money--deficit' : (row.margin > 0 ? 'lease-money--profit' : '');
+        return `<tr>
+          <td class="lease-check-col"></td>
+          <td class="lease-payment-week-cell"><strong>${escapeHtml(row.weekLabel)}</strong></td>
+          <td>${escapeHtml(row.vehicleNumber)}</td>
+          <td>${escapeHtml(row.model)}</td>
+          <td>${escapeHtml(formatDriverContractLabel(row.driverName))}</td>
+          <td>${escapeHtml(row.driverPhone)}</td>
+          <td>${formatMoney(row.weeklyLease)}</td>
+          <td>${formatMoney(row.weeklyCharge)}</td>
+          <td class="${marginCls}">${formatMoney(row.margin)}</td>
+          <td><span class="lease-status--done">완납</span></td>
+          <td><button type="button" class="small-btn danger-btn" data-delete-paid-payment="${escapeHtml(row.payment.id)}">삭제</button></td>
+        </tr>`;
+      }).join('');
+      updatePaymentConfirmBulkUi();
+      return;
+    }
+
     let contracts = getActivePaymentContracts().filter(contract =>
-      paymentConfirmStatus(contract, weekStart).code !== 'paid'
+      matchesPaymentStatusFilter(paymentConfirmStatus(contract, weekStart).code, statusFilter)
     );
-    const keyword = String(state.paymentConfirmSearch || $('leasePaymentConfirmSearch')?.value || '').trim().toLowerCase();
     if (keyword) {
       contracts = contracts.filter(contract => {
         const vehicle = vehicleMap.get(contract.vehicleId);
@@ -3756,8 +4046,8 @@ const BremAdminLeaseMenus = (function () {
       });
     }
     if (summaryEl) {
-      const paidCount = listPaidPaymentConfirmRows().filter(row => row.weekStart === weekStart).length;
-      summaryEl.textContent = `이번주 ${weekLabel} · 미확인 ${contracts.length}건 · 완납 ${paidCount}건(완납 확인)`;
+      const label = statusFilter === 'partial' ? '부분납' : '미확인';
+      summaryEl.textContent = `리스 · 이번주 ${weekLabel} · ${label} ${contracts.length}건`;
     }
     const visibleIds = new Set(contracts.map(contract => String(contract.id)));
     [...state.paymentConfirmSelectedIds].forEach(id => {
@@ -3765,7 +4055,7 @@ const BremAdminLeaseMenus = (function () {
     });
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="11" class="empty">이번주 납부 확인할 계약이 없습니다. 완납 내역은 「완납 확인」에서 보세요.</td></tr>'
+        ? '<tr><td colspan="11" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
         : '<tr><td colspan="11" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
       updatePaymentConfirmBulkUi();
       return;
@@ -3804,10 +4094,53 @@ const BremAdminLeaseMenus = (function () {
 
   function renderPaymentPaid() {
     const rowsEl = $('leasePaymentPaidRows');
+    const headEl = $('leasePaymentPaidHead');
     const summaryEl = $('leasePaymentPaidSummary');
-    if (!rowsEl || !erp()) return;
-    let rows = listPaidPaymentConfirmRows();
+    if (!rowsEl) return;
+    syncPaymentPaidTabUi();
+    const source = state.paymentPaidSource;
     const keyword = String(state.paymentPaidSearch || $('leasePaymentPaidSearch')?.value || '').trim().toLowerCase();
+
+    if (source === 'loan') {
+      if (headEl) {
+        headEl.innerHTML = `<tr>
+          <th>기사</th><th>연락처</th><th>대여금</th><th>외부납부</th><th>시작~종료</th><th>이유</th><th>상태</th>
+        </tr>`;
+      }
+      let loans = (window.BremStorage?.leaseLoans?.getAll?.() || [])
+        .filter(loan => loanPaymentStatus(loan).code === 'paid');
+      if (keyword) {
+        loans = loans.filter(loan => [loan.driverName, loan.driverPhone, loan.reason]
+          .join(' ').toLowerCase().includes(keyword));
+      }
+      if (summaryEl) summaryEl.textContent = `대여 완납 ${loans.length}건`;
+      if (!loans.length) {
+        rowsEl.innerHTML = '<tr><td colspan="7" class="empty">대여 완납 내역이 없습니다.</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = loans.map(loan => {
+        const endDate = loan.deductEndDate || '-';
+        return `<tr>
+          <td>${escapeHtml(loan.driverName || '-')}</td>
+          <td>${escapeHtml(loan.driverPhone || '-')}</td>
+          <td>${formatMoney(loan.principal)}</td>
+          <td>${formatMoney(loan.externalPaid)}</td>
+          <td>${escapeHtml(loan.deductStartDate || '-')} ~ ${escapeHtml(endDate)}</td>
+          <td>${escapeHtml(loan.reason || '-')}</td>
+          <td><span class="lease-status--done">완납</span></td>
+        </tr>`;
+      }).join('');
+      return;
+    }
+
+    if (!erp()) return;
+    if (headEl) {
+      headEl.innerHTML = `<tr>
+        <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
+        <th>주간리스비</th><th>주간청구액</th><th>차액</th><th>납부액</th><th>완납일</th><th>상태</th><th>관리</th>
+      </tr>`;
+    }
+    let rows = listPaidPaymentConfirmRows();
     if (keyword) {
       rows = rows.filter(row => {
         const hay = [
@@ -3822,8 +4155,8 @@ const BremAdminLeaseMenus = (function () {
     }
     if (summaryEl) {
       summaryEl.textContent = keyword
-        ? `완납 ${listPaidPaymentConfirmRows().length}건 · 검색 ${rows.length}건`
-        : `완납 ${rows.length}건`;
+        ? `리스 완납 ${listPaidPaymentConfirmRows().length}건 · 검색 ${rows.length}건`
+        : `리스 완납 ${rows.length}건`;
     }
     if (!rows.length) {
       rowsEl.innerHTML = '<tr><td colspan="12" class="empty">완납 내역이 없습니다. 납부 확인에서 완납 처리하거나 미납/회수에서 전액 회수하면 여기에 표시됩니다.</td></tr>';
@@ -4625,6 +4958,37 @@ const BremAdminLeaseMenus = (function () {
         void confirmPaymentPartial(paymentPartialBtn.dataset.paymentPartial);
         return;
       }
+      const loanPaymentFull = event.target.closest('[data-loan-payment-full]');
+      if (loanPaymentFull) {
+        void confirmLoanPaymentFull(loanPaymentFull.dataset.loanPaymentFull);
+        return;
+      }
+      const loanPaymentPartial = event.target.closest('[data-loan-payment-partial]');
+      if (loanPaymentPartial) {
+        void confirmLoanPaymentPartial(loanPaymentPartial.dataset.loanPaymentPartial);
+        return;
+      }
+      const paymentSourceBtn = event.target.closest('[data-payment-source]');
+      if (paymentSourceBtn) {
+        state.paymentSource = paymentSourceBtn.dataset.paymentSource === 'loan' ? 'loan' : 'lease';
+        state.paymentConfirmSelectedIds.clear();
+        renderPaymentConfirm();
+        return;
+      }
+      const paymentStatusBtn = event.target.closest('[data-payment-status]');
+      if (paymentStatusBtn) {
+        const next = paymentStatusBtn.dataset.paymentStatus;
+        state.paymentStatusFilter = ['open', 'partial', 'paid'].includes(next) ? next : 'open';
+        state.paymentConfirmSelectedIds.clear();
+        renderPaymentConfirm();
+        return;
+      }
+      const paymentPaidSourceBtn = event.target.closest('[data-payment-paid-source]');
+      if (paymentPaidSourceBtn) {
+        state.paymentPaidSource = paymentPaidSourceBtn.dataset.paymentPaidSource === 'loan' ? 'loan' : 'lease';
+        renderPaymentPaid();
+        return;
+      }
       const deletePaidBtn = event.target.closest('[data-delete-paid-payment]');
       if (deletePaidBtn) {
         void deletePaidPaymentConfirm(deletePaidBtn.dataset.deletePaidPayment);
@@ -4769,6 +5133,10 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseLoanForm')?.addEventListener('submit', event => { void saveLoanForm(event); });
     $('leaseLoanFormResetBtn')?.addEventListener('click', () => resetLoanForm());
+    ['leaseLoanPrincipal', 'leaseLoanDailyDeduct', 'leaseLoanDeductStartDate'].forEach(id => {
+      $(id)?.addEventListener('input', () => syncLoanSchedulePreview());
+      $(id)?.addEventListener('change', () => syncLoanSchedulePreview());
+    });
     $('leaseManualDeductDriverSearch')?.addEventListener('input', event => {
       state.manualDriverSearch = String(event.target.value || '');
       renderManualDeductDriverResults();

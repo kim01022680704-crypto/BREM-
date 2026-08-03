@@ -2692,6 +2692,9 @@
                 <label>일 차감액<input type="number" id="leaseLoanDailyDeduct" min="0" step="1000" placeholder="0" required></label>
                 <label>잔액<input type="number" id="leaseLoanBalance" min="0" step="1000" placeholder="등록 시 대여금과 동일"></label>
                 <label>차감 시작일<input type="date" id="leaseLoanDeductStartDate" required></label>
+                <label>차감 종료일(자동)<input type="date" id="leaseLoanDeductEndDate" readonly tabindex="-1" title="원금÷일차감으로 자동 계산"></label>
+                <label>마지막날 차감(자동)<input type="text" id="leaseLoanLastDayAmount" readonly tabindex="-1" placeholder="나머지를 마지막날에 합산"></label>
+                <p class="form-help lease-form-field--full" id="leaseLoanScheduleHint">원금·일 차감·시작일을 넣으면 종료일과 마지막날 차감액이 자동 계산됩니다. 예: 100만÷3만 → 32일×3만 + 마지막날 4만.</p>
                 <label>이유<input type="text" id="leaseLoanReason" placeholder="예: 보증금 대여 · 수리비 대여"></label>
                 <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button type="submit" class="primary-btn">대여 등록</button>
@@ -2714,13 +2717,15 @@
                     <th>일 차감액</th>
                     <th>잔액</th>
                     <th>차감시작일</th>
+                    <th>종료예정</th>
+                    <th>마지막날</th>
                     <th>이유</th>
                     <th>반영</th>
                     <th>관리</th>
                   </tr>
                 </thead>
                 <tbody id="leaseDeductionLoanRows">
-                  <tr><td colspan="9" class="empty">등록된 대여금이 없습니다.</td></tr>
+                  <tr><td colspan="11" class="empty">등록된 대여금이 없습니다.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -2797,12 +2802,21 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>납부 확인</h2>
-            <p class="form-help">이번주(수~화) 기준 · 주간리스비 · 주간청구액 · 차액 확인</p>
+            <p class="form-help">리스(주간 렌탈료)와 대여(원금 회수)를 나눠 확인합니다. 완납·부분납·미확인으로 필터하세요.</p>
+          </div>
+          <div class="lease-deduction-tabs" role="tablist" aria-label="납부 대상">
+            <button type="button" class="lease-deduction-tab active" data-payment-source="lease" role="tab" aria-selected="true">리스</button>
+            <button type="button" class="lease-deduction-tab" data-payment-source="loan" role="tab" aria-selected="false">대여</button>
+          </div>
+          <div class="lease-deduction-tabs" role="tablist" aria-label="납부 상태" style="margin-top:8px;">
+            <button type="button" class="lease-deduction-tab active" data-payment-status="open" role="tab" aria-selected="true">미확인</button>
+            <button type="button" class="lease-deduction-tab" data-payment-status="partial" role="tab" aria-selected="false">부분납</button>
+            <button type="button" class="lease-deduction-tab" data-payment-status="paid" role="tab" aria-selected="false">완납</button>
           </div>
           <div class="lease-list-toolbar lease-payment-confirm-toolbar">
-            <p class="form-help lease-list-count" id="leasePaymentConfirmSummary">차량 0대 · 계약중 0건</p>
+            <p class="form-help lease-list-count" id="leasePaymentConfirmSummary">0건</p>
             <input type="search" id="leasePaymentConfirmSearch" class="lease-contract-list-search" placeholder="기사 · 차량번호 · 연락처 검색" autocomplete="off">
-            <label class="check-label lease-payment-select-all">
+            <label class="check-label lease-payment-select-all" id="leasePaymentConfirmSelectAllWrap">
               <input type="checkbox" id="leasePaymentConfirmSelectAll">
               <span>전체 선택</span>
             </label>
@@ -2811,7 +2825,7 @@
           </div>
           <div class="table-wrap lease-table-wrap lease-list-scroll">
             <table class="lease-table lease-table--compact">
-              <thead>
+              <thead id="leasePaymentConfirmHead">
                 <tr>
                   <th class="lease-check-col">선택</th>
                   <th>주차(수~화)</th>
@@ -2838,7 +2852,11 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>완납 확인</h2>
-            <p class="form-help">납부 확인·미납/회수에서 완납 처리된 내역 · 기사·차량번호·연락처 검색</p>
+            <p class="form-help">리스·대여 완납 내역 · 「납부 확인」의 완납 탭과 동일 기준으로 모읍니다</p>
+          </div>
+          <div class="lease-deduction-tabs" role="tablist" aria-label="완납 대상">
+            <button type="button" class="lease-deduction-tab active" data-payment-paid-source="lease" role="tab" aria-selected="true">리스</button>
+            <button type="button" class="lease-deduction-tab" data-payment-paid-source="loan" role="tab" aria-selected="false">대여</button>
           </div>
           <div class="lease-list-toolbar lease-payment-confirm-toolbar">
             <p class="form-help lease-list-count" id="leasePaymentPaidSummary">완납 0건</p>
@@ -2847,7 +2865,7 @@
           </div>
           <div class="table-wrap lease-table-wrap lease-list-scroll">
             <table class="lease-table lease-table--compact">
-              <thead>
+              <thead id="leasePaymentPaidHead">
                 <tr>
                   <th>주차(수~화)</th>
                   <th>차량번호</th>
@@ -7449,7 +7467,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260802c"></script>
+  <script src="js/storage.js?v=20260803a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7478,7 +7496,7 @@
   <script src="js/lease-erp.js?v=20260802b"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260802i"></script>
+  <script src="js/admin-lease-menus.js?v=20260803a"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7487,7 +7505,7 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
-  <script src="js/direct-settlement-calc.js?v=20260802e"></script>
+  <script src="js/direct-settlement-calc.js?v=20260803a"></script>
   <script src="js/settlement-result-direct.js?v=20260802f"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260802e"></script>

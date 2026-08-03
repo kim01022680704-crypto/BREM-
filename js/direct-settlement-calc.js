@@ -430,13 +430,28 @@ const BremDirectSettlementCalc = (function () {
       if (!item) return;
       if (item.finalApplyEnabled != null && !item.finalApplyEnabled) return;
       if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
-      const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
       const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
-      if (daily <= 0 || balance <= 0) return;
-      const deductStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
-      const days = countLeaseActiveDays(start, end, today, deductStart, '');
-      if (days <= 0) return;
-      const amount = Math.min(balance, daily * days);
+      if (balance <= 0) return;
+      let amount = 0;
+      if (typeof window.BremStorage?.loanChargeInDateRange === 'function') {
+        amount = window.BremStorage.loanChargeInDateRange(item, start, end, today);
+      } else {
+        const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+        if (daily <= 0) return;
+        const deductStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+        const deductEnd = String(item.deductEndDate || '').slice(0, 10);
+        const days = countLeaseActiveDays(start, end, today, deductStart, deductEnd);
+        if (days <= 0) return;
+        amount = Math.min(balance, daily * days);
+        // 마지막날이 구간에 포함되면 잔액(또는 lastDayAmount) 보정
+        if (deductEnd && deductEnd >= start && deductEnd <= end && deductEnd <= today) {
+          const last = Math.max(0, Math.round(Number(item.lastDayAmount || 0)));
+          if (last > daily) {
+            const baseWithoutLast = Math.max(0, days - 1) * daily;
+            amount = Math.min(balance, baseWithoutLast + last);
+          }
+        }
+      }
       if (amount <= 0) return;
       const driverId = String(item.driverId || '').trim();
       let key = driverId ? (canonicalDriverKey(driverId) || `id:${driverId}`) : '';
