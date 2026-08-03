@@ -1098,7 +1098,8 @@ const BremLeaseErp = (function () {
     const operating = isContractOperating(contract, vehicle);
     const expiries = resolveVehicleExpiries(contract, vehicle);
     const expiringSoon = expiries.filter(item => item.code === 'expiring');
-    const unpaid = hasOpenArrearForVehicle(vehicle.id);
+    // 급여차감 반영 중이면 미납/회수 잔액으로 「미납」상태를 덮지 않는다(출금 홀드와 동일).
+    const unpaid = !isContractFinalApplyEnabled(contract) && hasOpenArrearForVehicle(vehicle.id);
     if (operating && unpaid) {
       return {
         code: 'operating',
@@ -1113,7 +1114,11 @@ const BremLeaseErp = (function () {
     }
     if (operating) {
       let label = '운행중';
-      if (expiringSoon.length === 1) {
+      if (isContractFinalApplyEnabled(contract)) {
+        const hold = resolveContractSalaryHold(contract);
+        if (hold.days > 0) label = `운행중·급여차감 ${hold.days}일`;
+        if (expiringSoon.length) label = `${label}·종료임박`;
+      } else if (expiringSoon.length === 1) {
         label = `운행중·${expiringSoon[0].label.replace('계약종료임박', '종료임박')}`;
       } else if (expiringSoon.length > 1) {
         label = '운행중·종료임박';
@@ -1139,6 +1144,75 @@ const BremLeaseErp = (function () {
     return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
   }
 
+  function formatDateKeyFromDate(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function weekStartWednesdayKey(dateValue = todayKey()) {
+    if (window.BremDatePicker?.weekStartKey) return window.BremDatePicker.weekStartKey(dateValue);
+    const date = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return String(dateValue).slice(0, 10);
+    const diff = (date.getDay() - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return formatDateKeyFromDate(date);
+  }
+
+  function isContractFinalApplyEnabled(contract) {
+    if (!contract) return false;
+    if (contract.finalApplyEnabled != null) return Boolean(contract.finalApplyEnabled);
+    return Boolean(contract.rawData?.finalApplyEnabled);
+  }
+
+  function contractDailyRentAmount(contract) {
+    const raw = contract?.rawData || {};
+    const daily = Math.max(0, Math.round(Number(contract?.dailyRent || contract?.dailyCharge || raw.dailyRent || 0)));
+    if (daily > 0) return daily;
+    const weekly = Math.max(0, Math.round(Number(contract?.weeklyRent || raw.weeklyRent || 0)));
+    return weekly > 0 ? Math.round(weekly / 7) : 0;
+  }
+
+  /** 출금가능 홀드와 동일: 이번주(수~오늘) ∩ 차감시작일~종료 */
+  function countContractSalaryHoldDays(contract, asOfKey = todayKey()) {
+    if (!contract) return 0;
+    const today = String(asOfKey || todayKey()).slice(0, 10);
+    const weekStart = weekStartWednesdayKey(today);
+    const weekEndDate = new Date(`${weekStart}T00:00:00`);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+    const weekEnd = formatDateKeyFromDate(weekEndDate);
+    const upper = today < weekEnd ? today : weekEnd;
+    const deductStart = normalizeDate(
+      contract.rawData?.deductStartDate || contract.deductStartDate || contract.startDate
+    );
+    const contractEnd = normalizeDate(contract.returnDate || contract.endDate);
+    let count = 0;
+    let cursor = weekStart;
+    let guard = 0;
+    while (cursor && cursor <= upper && guard < 60) {
+      const afterStart = !deductStart || cursor >= deductStart;
+      const beforeEnd = !contractEnd || cursor <= contractEnd;
+      if (afterStart && beforeEnd) count += 1;
+      const next = new Date(`${cursor}T00:00:00`);
+      next.setDate(next.getDate() + 1);
+      cursor = formatDateKeyFromDate(next);
+      guard += 1;
+    }
+    return count;
+  }
+
+  function resolveContractSalaryHold(contract) {
+    const days = countContractSalaryHoldDays(contract);
+    const daily = contractDailyRentAmount(contract);
+    return {
+      days,
+      daily,
+      amount: Math.max(0, Math.round(daily * days))
+    };
+  }
+
   function resolveVehicleStatusTags(vehicle, contract) {
     if (!vehicle) return [{ code: 'empty', label: '공차(로스)' }];
     const tags = [];
@@ -1149,7 +1223,9 @@ const BremLeaseErp = (function () {
     );
     const unpaidDays = openArrears.reduce((sum, item) => sum + Number(item.unpaidDays || 0), 0);
     const unpaidAmount = openArrears.reduce((sum, item) => sum + Number(item.unpaidAmount || 0), 0);
-    const hasUnpaid = openArrears.length > 0 || unpaidDays > 0 || unpaidAmount > 0;
+    const salaryApplied = isContractFinalApplyEnabled(contract);
+    // 급여차감 반영 중이면 오래된 납부확인 미납(7일·17.9만) 뱃지를 쓰지 않는다.
+    const hasUnpaid = !salaryApplied && (openArrears.length > 0 || unpaidDays > 0 || unpaidAmount > 0);
 
     if (operating) tags.push({ code: 'operating', label: '운행중' });
     expiries.forEach(exp => {
@@ -1159,13 +1235,26 @@ const BremLeaseErp = (function () {
         pushUniqueExpiryTag(tags, { code: 'ended', label: exp.label });
       }
     });
-    if (hasUnpaid) {
+    if (salaryApplied && operating) {
+      const hold = resolveContractSalaryHold(contract);
+      if (hold.days > 0) {
+        tags.push({
+          code: 'collecting',
+          label: `급여차감 ${hold.days}일`
+        });
+      }
+    } else if (hasUnpaid) {
+      const daily = contractDailyRentAmount(contract);
+      const daysFromAmount = daily > 0 && unpaidAmount > 0
+        ? Math.max(1, Math.round(unpaidAmount / daily))
+        : unpaidDays;
+      const showDays = daysFromAmount > 0 ? daysFromAmount : unpaidDays;
       tags.push({
         code: 'unpaid',
-        label: unpaidDays > 0 ? `미납 ${unpaidDays}일` : '미납'
+        label: showDays > 0 ? `미납 ${showDays}일` : '미납'
       });
     }
-    if (!operating && !hasUnpaid) tags.push({ code: 'empty', label: '공차(로스)' });
+    if (!operating && !hasUnpaid && !salaryApplied) tags.push({ code: 'empty', label: '공차(로스)' });
     return tags;
   }
 
@@ -1366,6 +1455,9 @@ const BremLeaseErp = (function () {
     commitDeferredWrites,
     flushImmediateWrites,
     resolveVehicleStatusTags,
+    isContractFinalApplyEnabled,
+    resolveContractSalaryHold,
+    countContractSalaryHoldDays,
     saveProfitSnapshot,
     buildDashboardKpis,
     applyVehicleFilters,

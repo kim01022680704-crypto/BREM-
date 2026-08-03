@@ -1521,12 +1521,28 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function contractUnpaidInfo(contract) {
+    if (isContractFinalApplyEnabled(contract)) {
+      const hold = erp()?.resolveContractSalaryHold?.(contract)
+        || {
+          days: contractActiveDaysInWeek(contract, currentWeekStart()),
+          amount: contractPaymentConfirmCharge(contract, currentWeekStart())
+        };
+      return {
+        isUnpaid: false,
+        isHolding: Number(hold.days || 0) > 0 || Number(hold.amount || 0) > 0,
+        amount: Math.max(0, Number(hold.amount || 0)),
+        days: Math.max(0, Number(hold.days || 0)),
+        mode: 'salary'
+      };
+    }
     const vehicleId = contract?.vehicleId;
     const vehicle = vehicleId ? erp()?.vehicles().getById(vehicleId) : null;
     const open = hasOpenArrear(vehicleId);
     const amount = resolveVehicleUnpaidAmount(vehicleId, { unpaidAmount: vehicle?.unpaidAmount });
-    const days = Math.max(0, Number(vehicle?.unpaidDays || 0));
-    return { isUnpaid: open || amount > 0 || days > 0, amount, days };
+    const daily = contractRiderDailyRent(contract);
+    const daysFromAmount = daily > 0 && amount > 0 ? Math.max(1, Math.round(amount / daily)) : 0;
+    const days = daysFromAmount || Math.max(0, Number(vehicle?.unpaidDays || 0));
+    return { isUnpaid: open || amount > 0 || days > 0, isHolding: false, amount, days, mode: 'arrear' };
   }
 
   function sortContracts(list) {
@@ -1595,9 +1611,12 @@ const BremAdminLeaseMenus = (function () {
       const ended = String(contract.status || '') === (erp()?.CONTRACT_STATUS?.ENDED || 'ended');
       const isDeleting = deleting && (deleting === contract.id || deleting === 'all');
       const unpaid = contractUnpaidInfo(contract);
-      const unpaidTag = unpaid.isUnpaid
-        ? ` <span class="lease-status-badge lease-status-badge--unpaid lease-unpaid-tag">미납${unpaid.amount > 0 ? ' ' + formatMoney(unpaid.amount) : ''}</span>`
-        : '';
+      const unpaidTag = unpaid.isHolding
+        ? ` <span class="lease-status-badge lease-status-badge--collecting lease-unpaid-tag">급여차감 ${unpaid.days}일 ${formatMoney(unpaid.amount)}</span>`
+        : (unpaid.isUnpaid
+          ? ` <span class="lease-status-badge lease-status-badge--unpaid lease-unpaid-tag">미납${unpaid.amount > 0 ? ' ' + formatMoney(unpaid.amount) : ''}${unpaid.days > 0 ? ` · ${unpaid.days}일` : ''}</span>`
+          : '');
+      const rowUnpaidClass = (unpaid.isUnpaid || unpaid.isHolding) ? ' lease-contract-row--unpaid' : '';
       const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
       const weeklyCharge = contractRiderWeeklyCharge(contract);
       const margin = weeklyCharge - weeklyLease;
@@ -1606,7 +1625,7 @@ const BremAdminLeaseMenus = (function () {
         ? escapeHtml(contract.driverName || '-')
         : escapeHtml(formatDriverContractLabel(contract.driverName || '-'));
       return `
-        <tr class="${ended ? 'lease-contract-row--ended' : ''}${unpaid.isUnpaid ? ' lease-contract-row--unpaid' : ''}">
+        <tr class="${ended ? 'lease-contract-row--ended' : ''}${rowUnpaidClass}">
           <td><strong>${escapeHtml(contract.vehicleNumber || vehicle?.vehicleNumber || '-')}</strong></td>
           <td>${contractDealTypeBadge(contract)} ${escapeHtml(typeLabel)}</td>
           <td>${driverLabel}${unpaidTag}</td>
