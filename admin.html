@@ -1944,6 +1944,8 @@
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="empty"><span>공차관리</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="weekly"><span>주간수익</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="monthly"><span>월간수익</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="weekly-loan"><span>주간수익(대여)</span></button>
+              <button type="button" class="lease-erp-nav__btn" data-lease-menu="monthly-loan"><span>월간수익(대여)</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="bulk"><span>일괄등록</span></button>
               <button type="button" class="lease-erp-nav__btn" data-lease-menu="calc"><span>자동계산</span></button>
             </nav>
@@ -3019,6 +3021,73 @@
             <table class="lease-table">
               <thead><tr><th></th><th>차량번호</th><th>차량명</th><th>기사명</th><th>월 렌탈일수</th><th>월 공차일수</th><th>월 미납일수</th><th>월 렌탈매출</th><th>월 미납금</th><th>월 회수금액</th><th>월 공차손실</th><th>월 비용</th><th>월 순이익</th><th>비고</th><th>관리</th></tr></thead>
               <tbody id="leaseMonthlyRows"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+
+        <div class="lease-menu-panel" data-lease-menu-panel="weekly-loan" hidden>
+        <article class="card lease-screen-card">
+          <div class="card-header">
+            <div>
+              <h2>주간수익(대여)</h2>
+              <p class="form-help">선택한 주(수~화)에 <strong>완납 처리된</strong> 대여 건만 집계합니다. 이익 = 이자(원금 제외).</p>
+            </div>
+          </div>
+          <div class="lease-weekly-period">
+            <label class="period-label-block week-target-block">
+              <span class="label-row">적용주 (수요일 시작 · 수~화 7일)</span>
+              <span class="field-preview week-range-label" id="leaseLoanWeekRangePreview">수요일~화요일 기준</span>
+              <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-loan-week" id="leaseLoanWeekStartBtn">
+                <span id="leaseLoanWeekStartLabel">수요일 선택</span>
+              </button>
+              <span class="period-picker-caption">완납일이 이 주에 속하는 건만 표시됩니다.</span>
+              <input type="hidden" id="leaseLoanWeekStart">
+            </label>
+          </div>
+          <div class="lease-toolbar">
+            <button type="button" class="small-btn" id="leaseLoanWeekRefreshBtn">조회</button>
+            <button type="button" class="small-btn" id="leaseLoanWeekExportBtn">엑셀 다운로드</button>
+          </div>
+          <div class="lease-week-summary">
+            <article><span>완납 건수</span><strong id="leaseLoanWeekCount">0건</strong></article>
+            <article><span>원금 합계</span><strong id="leaseLoanWeekPrincipal">0원</strong></article>
+            <article><span>수납 합계</span><strong id="leaseLoanWeekCollected">0원</strong></article>
+            <article class="lease-money--profit"><span>이익(이자) 합계</span><strong id="leaseLoanWeekProfit">0원</strong></article>
+          </div>
+          <div class="table-wrap lease-table-wrap">
+            <table class="lease-table">
+              <thead><tr>
+                <th>완납일</th><th>기사</th><th>연락처</th><th>원금</th><th>이자</th><th>합계</th><th>수납</th><th>이익(이자)</th><th>사유</th><th>상태</th>
+              </tr></thead>
+              <tbody id="leaseLoanWeeklyRows"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+
+        <div class="lease-menu-panel" data-lease-menu-panel="monthly-loan" hidden>
+        <article class="card lease-screen-card">
+          <div class="card-header"><h2>월간수익(대여)</h2>
+            <div class="lease-toolbar lease-month-toolbar">
+              <label>월<input type="month" id="leaseLoanMonthKey" class="admin-period-input"></label>
+              <button type="button" class="small-btn" id="leaseLoanMonthRefreshBtn">조회</button>
+              <button type="button" class="small-btn" id="leaseLoanMonthExportBtn">엑셀 다운로드</button>
+            </div>
+          </div>
+          <p class="form-help">선택한 달에 <strong>완납 처리된</strong> 대여 건만 집계합니다. 이익 = 이자(원금 제외).</p>
+          <div class="lease-month-summary">
+            <article><span>완납 건수</span><strong id="leaseLoanMonthCount">0건</strong></article>
+            <article><span>원금 합계</span><strong id="leaseLoanMonthPrincipal">0원</strong></article>
+            <article><span>수납 합계</span><strong id="leaseLoanMonthCollected">0원</strong></article>
+            <article class="lease-money--profit"><span>이익(이자) 합계</span><strong id="leaseLoanMonthProfit">0원</strong></article>
+          </div>
+          <div class="table-wrap lease-table-wrap">
+            <table class="lease-table">
+              <thead><tr>
+                <th>완납일</th><th>기사</th><th>연락처</th><th>원금</th><th>이자</th><th>합계</th><th>수납</th><th>이익(이자)</th><th>사유</th><th>상태</th>
+              </tr></thead>
+              <tbody id="leaseLoanMonthlyRows"></tbody>
             </table>
           </div>
         </article>
@@ -7523,7 +7592,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260803j"></script>
+  <script src="js/storage.js?v=20260803k"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7552,7 +7621,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803j"></script>
+  <script src="js/admin-lease-menus.js?v=20260803k"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7572,7 +7641,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260803h"></script>
+    <script src="js/admin.js?v=20260803k"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

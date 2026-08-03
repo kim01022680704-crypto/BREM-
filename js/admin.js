@@ -2136,6 +2136,16 @@
           };
         }
 
+        if (triggerId === 'lease-loan-week') {
+          return {
+            hiddenInput: $('#leaseLoanWeekStart'),
+            labelEl: $('#leaseLoanWeekStartLabel'),
+            onSelect(value) {
+              window.BremAdminLeaseMenus?.handleLoanWeeklyWeekChange?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'lease-dash-week') {
           return {
             hiddenInput: $('#leaseDashWeekStart'),

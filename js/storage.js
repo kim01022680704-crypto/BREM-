@@ -11018,6 +11018,9 @@ const BremStorage = (function () {
     const externalPaid = Math.max(0, Math.round(Number(
       raw.externalPaid != null ? raw.externalPaid : (existing?.externalPaid || 0)
     )));
+    const status = String(raw.status != null ? raw.status : (existing?.status || 'active')).trim() || 'active';
+    const paidAtRaw = raw.paidAt != null ? raw.paidAt : (existing?.paidAt || '');
+    const paidAt = String(paidAtRaw || '').slice(0, 10);
     const enabled = raw.finalApplyEnabled != null
       ? Boolean(raw.finalApplyEnabled)
       : Boolean(existing?.finalApplyEnabled);
@@ -11037,7 +11040,10 @@ const BremStorage = (function () {
       lastDayAmount,
       externalPaid,
       reason: String(raw.reason != null ? raw.reason : (existing?.reason || '')).trim(),
-      status: String(raw.status != null ? raw.status : (existing?.status || 'active')).trim() || 'active',
+      status,
+      paidAt: (status === 'paid' && balance <= 0)
+        ? (paidAt || new Date().toISOString().slice(0, 10))
+        : (status === 'paid' ? paidAt : ''),
       finalApplyEnabled: enabled,
       finalAppliedAt: enabled
         ? String(raw.finalAppliedAt || existing?.finalAppliedAt || new Date().toISOString())

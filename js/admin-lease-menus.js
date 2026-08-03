@@ -581,6 +581,8 @@ const BremAdminLeaseMenus = (function () {
     if (refreshVehicleList) window.BremAdminLease?.renderList?.();
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
+    if (state.menu === 'weekly-loan') renderWeeklyLoan();
+    if (state.menu === 'monthly-loan') renderMonthlyLoan();
     if (state.menu === 'arrears') renderArrears();
     if (state.menu === 'empty') renderEmpty();
   }
@@ -650,6 +652,16 @@ const BremAdminLeaseMenus = (function () {
     }
     if (menu === 'weekly') renderWeekly();
     if (menu === 'monthly') renderMonthly();
+    if (menu === 'weekly-loan') {
+      syncLeaseLoanWeeklyWeekUi($('leaseLoanWeekStart')?.value || state.weekStart || currentWeekStart());
+      renderWeeklyLoan();
+    }
+    if (menu === 'monthly-loan') {
+      if ($('leaseLoanMonthKey') && !$('leaseLoanMonthKey').value) {
+        $('leaseLoanMonthKey').value = state.monthKey || currentMonthKey();
+      }
+      renderMonthlyLoan();
+    }
     if (menu === 'empty') renderEmpty();
     if (menu === 'bulk') renderBulkGuide();
     if (menu === 'vehicle' && !options.keepVehicleForm) {
@@ -2220,6 +2232,199 @@ const BremAdminLeaseMenus = (function () {
       </tr>
     `).join('');
     updateMonthlySelectionUi();
+  }
+
+  function loanPaidDateKey(loan) {
+    const paidAt = String(loan?.paidAt || loan?.rawData?.paidAt || '').slice(0, 10);
+    if (paidAt) return paidAt;
+    if (loanPaymentStatus(loan).code !== 'paid') return '';
+    return String(loan?.updatedAt || '').slice(0, 10);
+  }
+
+  function loanProfitMetrics(loan) {
+    const principal = Math.max(0, Math.round(Number(loan?.principal || 0)));
+    const interest = Math.max(0, Math.round(Number(loan?.interest || 0)));
+    const total = Math.max(0, Math.round(Number(
+      loan?.totalAmount != null ? loan.totalAmount : principal + interest
+    )));
+    const collected = Math.max(0, Math.round(Number(loan?.externalPaid || 0))) || total;
+    return {
+      principal,
+      interest,
+      total,
+      collected,
+      profit: interest
+    };
+  }
+
+  function listPaidLoansInPeriod(periodStart, periodEnd) {
+    const start = String(periodStart || '').slice(0, 10);
+    const end = String(periodEnd || '').slice(0, 10);
+    if (!start || !end) return [];
+    return (window.BremStorage?.leaseLoans?.getAll?.() || [])
+      .filter(loan => loanPaymentStatus(loan).code === 'paid')
+      .map(loan => ({
+        loan,
+        paidDate: loanPaidDateKey(loan),
+        ...loanProfitMetrics(loan)
+      }))
+      .filter(row => row.paidDate && row.paidDate >= start && row.paidDate <= end)
+      .sort((a, b) => String(b.paidDate).localeCompare(String(a.paidDate)));
+  }
+
+  function syncLeaseLoanWeeklyWeekUi(weekStart) {
+    const normalized = String(
+      BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || weekStart
+      || currentWeekStart()
+      || ''
+    ).slice(0, 10);
+    if ($('leaseLoanWeekStart')) $('leaseLoanWeekStart').value = normalized;
+    state.weekStart = normalized;
+    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
+    if ($('leaseLoanWeekRangePreview')) $('leaseLoanWeekRangePreview').textContent = rangeLabel;
+    if ($('leaseLoanWeekStartLabel')) {
+      if (!normalized) {
+        $('leaseLoanWeekStartLabel').textContent = '수요일 선택';
+      } else if (BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
+        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
+        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
+        $('leaseLoanWeekStartLabel').textContent = weekday
+          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
+          : BremDatePicker.formatDate(wednesday);
+      } else {
+        $('leaseLoanWeekStartLabel').textContent = normalized;
+      }
+    }
+    return normalized;
+  }
+
+  function handleLoanWeeklyWeekChange(weekStart) {
+    syncLeaseLoanWeeklyWeekUi(weekStart);
+    renderWeeklyLoan();
+  }
+
+  function renderLoanProfitSummary(prefix, rows) {
+    const totals = rows.reduce((acc, row) => {
+      acc.count += 1;
+      acc.principal += row.principal;
+      acc.collected += row.collected;
+      acc.profit += row.profit;
+      return acc;
+    }, { count: 0, principal: 0, collected: 0, profit: 0 });
+    const setText = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+    setText(`${prefix}Count`, `${totals.count}건`);
+    setText(`${prefix}Principal`, formatMoney(totals.principal));
+    setText(`${prefix}Collected`, formatMoney(totals.collected));
+    setText(`${prefix}Profit`, formatMoney(totals.profit));
+    return totals;
+  }
+
+  function renderLoanProfitTableRows(rowsEl, rows, emptyMessage) {
+    if (!rowsEl) return;
+    if (!rows.length) {
+      rowsEl.innerHTML = `<tr><td colspan="10" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
+      return;
+    }
+    rowsEl.innerHTML = rows.map(row => {
+      const loan = row.loan || {};
+      return `<tr>
+        <td>${formatDate(row.paidDate)}</td>
+        <td><strong>${escapeHtml(loan.driverName || '-')}</strong></td>
+        <td>${escapeHtml(loan.driverPhone || '-')}</td>
+        <td>${formatMoney(row.principal)}</td>
+        <td>${formatMoney(row.interest)}</td>
+        <td>${formatMoney(row.total)}</td>
+        <td>${formatMoney(row.collected)}</td>
+        <td class="${moneyClass(row.profit)}"><strong>${formatMoney(row.profit)}</strong></td>
+        <td>${escapeHtml(loan.reason || '-')}</td>
+        <td><span class="lease-status--done">완납</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderWeeklyLoan() {
+    const rowsEl = $('leaseLoanWeeklyRows');
+    if (!rowsEl) return;
+    const weekStart = syncLeaseLoanWeeklyWeekUi(
+      $('leaseLoanWeekStart')?.value || state.weekStart || currentWeekStart()
+    );
+    const week = calc()?.weekRange?.(weekStart) || { start: weekStart, end: weekStart };
+    const rows = listPaidLoansInPeriod(week.start, week.end);
+    renderLoanProfitSummary('leaseLoanWeek', rows);
+    renderLoanProfitTableRows(
+      rowsEl,
+      rows,
+      '이 주에 완납 처리된 대여 건이 없습니다. 납부 확인 → 대여 탭에서 완납 처리하세요.'
+    );
+  }
+
+  function renderMonthlyLoan() {
+    const rowsEl = $('leaseLoanMonthlyRows');
+    if (!rowsEl) return;
+    const monthKey = $('leaseLoanMonthKey')?.value || state.monthKey || currentMonthKey();
+    state.monthKey = monthKey;
+    if ($('leaseLoanMonthKey') && !$('leaseLoanMonthKey').value) $('leaseLoanMonthKey').value = monthKey;
+    const monthStart = `${monthKey}-01`;
+    const monthEnd = `${monthKey}-${String(calc().daysInMonth(monthKey)).padStart(2, '0')}`;
+    const rows = listPaidLoansInPeriod(monthStart, monthEnd);
+    renderLoanProfitSummary('leaseLoanMonth', rows);
+    renderLoanProfitTableRows(
+      rowsEl,
+      rows,
+      '이 달에 완납 처리된 대여 건이 없습니다. 납부 확인 → 대여 탭에서 완납 처리하세요.'
+    );
+  }
+
+  function exportWeeklyLoanExcel() {
+    if (!window.XLSX) return;
+    const weekStart = $('leaseLoanWeekStart')?.value || state.weekStart || currentWeekStart();
+    const week = calc()?.weekRange?.(weekStart) || { start: weekStart, end: weekStart };
+    const rows = listPaidLoansInPeriod(week.start, week.end).map(row => [
+      row.paidDate,
+      row.loan?.driverName || '',
+      row.loan?.driverPhone || '',
+      row.principal,
+      row.interest,
+      row.total,
+      row.collected,
+      row.profit,
+      row.loan?.reason || '',
+      '완납'
+    ]);
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['완납일', '기사', '연락처', '원금', '이자', '합계', '수납', '이익(이자)', '사유', '상태'],
+      ...rows
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, '주간수익(대여)');
+    XLSX.writeFile(wb, `BREM_주간수익_대여_${weekStart}.xlsx`);
+  }
+
+  function exportMonthlyLoanExcel() {
+    if (!window.XLSX) return;
+    const monthKey = $('leaseLoanMonthKey')?.value || state.monthKey || currentMonthKey();
+    const monthStart = `${monthKey}-01`;
+    const monthEnd = `${monthKey}-${String(calc().daysInMonth(monthKey)).padStart(2, '0')}`;
+    const rows = listPaidLoansInPeriod(monthStart, monthEnd).map(row => [
+      row.paidDate,
+      row.loan?.driverName || '',
+      row.loan?.driverPhone || '',
+      row.principal,
+      row.interest,
+      row.total,
+      row.collected,
+      row.profit,
+      row.loan?.reason || '',
+      '완납'
+    ]);
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['완납일', '기사', '연락처', '원금', '이자', '합계', '수납', '이익(이자)', '사유', '상태'],
+      ...rows
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, '월간수익(대여)');
+    XLSX.writeFile(wb, `BREM_월간수익_대여_${monthKey}.xlsx`);
   }
 
   function fillArrearContractSelect(force = false) {
@@ -4112,6 +4317,7 @@ const BremAdminLeaseMenus = (function () {
       balance: 0,
       externalPaid: Math.max(0, Math.round(Number(loan.externalPaid || 0))) + balance,
       status: 'paid',
+      paidAt: contractTodayKey(),
       finalApplyEnabled: false
     });
     syncLoanLedgerFromLoan(saved, { finalApplyEnabled: false });
@@ -4119,6 +4325,8 @@ const BremAdminLeaseMenus = (function () {
     renderPaymentConfirm();
     renderPaymentPaid();
     renderDeductionLoan();
+    renderWeeklyLoan();
+    renderMonthlyLoan();
     showToast(`${loan.driverName || '기사'} · 대여 완납 처리`);
   }
 
@@ -4151,6 +4359,7 @@ const BremAdminLeaseMenus = (function () {
       balance: nextBalance,
       externalPaid: Math.max(0, Math.round(Number(loan.externalPaid || 0))) + paid,
       status: nextBalance <= 0 ? 'paid' : 'active',
+      paidAt: nextBalance <= 0 ? contractTodayKey() : (loan.paidAt || ''),
       finalApplyEnabled: nextBalance <= 0 ? false : Boolean(loan.finalApplyEnabled)
     });
     syncLoanLedgerFromLoan(saved, {
@@ -4160,6 +4369,8 @@ const BremAdminLeaseMenus = (function () {
     renderPaymentConfirm();
     renderPaymentPaid();
     renderDeductionLoan();
+    renderWeeklyLoan();
+    renderMonthlyLoan();
     showToast(nextBalance <= 0
       ? `${loan.driverName || '기사'} · 대여 완납`
       : `${loan.driverName || '기사'} · 부분납 ${formatMoney(paid)} · 잔액 ${formatMoney(nextBalance)}`);
@@ -5137,6 +5348,18 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseMonthKey')?.addEventListener('change', renderMonthly);
     $('leaseMonthExportBtn')?.addEventListener('click', exportMonthlyExcel);
+    $('leaseLoanWeekStart')?.addEventListener('change', () => {
+      syncLeaseLoanWeeklyWeekUi($('leaseLoanWeekStart')?.value);
+      renderWeeklyLoan();
+    });
+    $('leaseLoanWeekRefreshBtn')?.addEventListener('click', () => {
+      syncLeaseLoanWeeklyWeekUi($('leaseLoanWeekStart')?.value || state.weekStart || currentWeekStart());
+      renderWeeklyLoan();
+    });
+    $('leaseLoanWeekExportBtn')?.addEventListener('click', exportWeeklyLoanExcel);
+    $('leaseLoanMonthKey')?.addEventListener('change', renderMonthlyLoan);
+    $('leaseLoanMonthRefreshBtn')?.addEventListener('click', renderMonthlyLoan);
+    $('leaseLoanMonthExportBtn')?.addEventListener('click', exportMonthlyLoanExcel);
     $('leaseMonthlySelectAll')?.addEventListener('change', event => {
       const visible = getMonthlyDeletableLogIds();
       if (event.target.checked) visible.forEach(id => state.monthlySelectedLogIds.add(id));
@@ -5524,8 +5747,12 @@ const BremAdminLeaseMenus = (function () {
       init.bootstrapped = true;
       fillVehicleSelect($('leaseCalcVehicleId'));
       if ($('leaseWeekStart')) syncLeaseWeeklyWeekUi(currentWeekStart());
+      if ($('leaseLoanWeekStart')) syncLeaseLoanWeeklyWeekUi(currentWeekStart());
       syncArrearWeekUi(currentWeekStart());
       if ($('leaseMonthKey') && !$('leaseMonthKey').value) $('leaseMonthKey').value = currentMonthKey();
+      if ($('leaseLoanMonthKey') && !$('leaseLoanMonthKey').value) {
+        $('leaseLoanMonthKey').value = currentMonthKey();
+      }
       updateLeaseDashWeekUi();
       resetLoanForm();
       resetManualDeductForm();
@@ -5552,6 +5779,8 @@ const BremAdminLeaseMenus = (function () {
     }
     if (state.menu === 'weekly') renderWeekly();
     if (state.menu === 'monthly') renderMonthly();
+    if (state.menu === 'weekly-loan') renderWeeklyLoan();
+    if (state.menu === 'monthly-loan') renderMonthlyLoan();
     if (state.menu === 'arrears') renderArrears();
     if (state.menu === 'payment-confirm') renderPaymentConfirm();
     if (state.menu === 'payment-paid') renderPaymentPaid();
@@ -5575,6 +5804,8 @@ const BremAdminLeaseMenus = (function () {
     syncStandaloneCalc,
     renderWeekly,
     renderMonthly,
+    renderWeeklyLoan,
+    renderMonthlyLoan,
     renderArrears,
     renderPaymentConfirm,
     renderPaymentPaid,
@@ -5587,9 +5818,11 @@ const BremAdminLeaseMenus = (function () {
     syncLeaseDashWeekUi,
     handleDashboardWeekChange,
     handleWeeklyWeekChange,
+    handleLoanWeeklyWeekChange,
     handleArrearWeekChange,
     handlePaymentWeekChange,
     syncLeaseWeeklyWeekUi,
+    syncLeaseLoanWeeklyWeekUi,
     syncArrearWeekUi,
     syncPaymentWeekUi,
     commitLeaseErpSave,
