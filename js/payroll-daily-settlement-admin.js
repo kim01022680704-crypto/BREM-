@@ -492,9 +492,25 @@
       if (platform === 'coupang') return '쿠팡';
       return '미지정';
     };
+    const driverById = new Map(
+      (window.BremStorage?.drivers?.getAll?.() || []).map(d => [String(d.id || ''), d])
+    );
+    const resolveDriver = item => {
+      const id = String(item?.driverId || '').trim();
+      return (id && driverById.get(id)) || null;
+    };
+    const erpIdOf = (item, driver) => {
+      const makeId = window.BremDriverUtils?.makeDriverLoginId;
+      if (typeof makeId === 'function' && driver) {
+        const id = String(makeId(driver) || '').trim();
+        if (id) return id;
+      }
+      return String(item?.erpId || item?.coupangId || item?.baeminId || '').trim();
+    };
     const data = [
       headers,
       ...list.map(item => {
+        const driver = resolveDriver(item);
         const weekLabel = item.weekStart
           ? `${item.weekStart} ~ ${item.weekEnd || ''}`
           : '';
@@ -504,8 +520,8 @@
           platformText(item.platform),
           item.requestDate || String(item.createdAt || '').slice(0, 10),
           weekLabel,
-          item.bankName || '',
-          item.accountNumber || '',
+          item.bankName || driver?.bankName || '',
+          item.accountNumber || driver?.accountNumber || '',
           Number(item.settlementAmount) || 0,
           Number(item.orderCount) || 0,
           Number(item.employmentInsurance) || 0,
@@ -525,9 +541,33 @@
         return row;
       })
     ];
+    // 2시트: 은행 이체용 (최종입금과 동일 형식). 신청금액 · 받는사람=예금주 · 비고=ERP ID
+    const transfer = [
+      ['입금은행', '입금계좌번호', '신청금액', '받는사람', '비고'],
+      ...list.map(item => {
+        const driver = resolveDriver(item);
+        return [
+          String(item.bankName || driver?.bankName || '').trim(),
+          String(item.accountNumber || driver?.accountNumber || '').trim(),
+          Number(item.amount) || 0,
+          String(item.accountHolder || driver?.accountHolder || item.driverName || '').trim(),
+          erpIdOf(item, driver)
+        ];
+      })
+    ];
     const worksheet = window.XLSX.utils.aoa_to_sheet(data);
+    const transferSheet = window.XLSX.utils.aoa_to_sheet(transfer);
+    for (let r = 1; r < transfer.length; r += 1) {
+      const cell = transferSheet[window.XLSX.utils.encode_cell({ r, c: 1 })];
+      if (cell && cell.v !== undefined && cell.v !== '') {
+        cell.t = 's';
+        cell.v = String(cell.v);
+        cell.z = '@';
+      }
+    }
     const workbook = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    window.XLSX.utils.book_append_sheet(workbook, transferSheet, '입금');
     window.XLSX.writeFile(workbook, filename);
   }
 

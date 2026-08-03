@@ -776,7 +776,8 @@
       return {
         ...row,
         bankName: row.bankName || driver?.bankName || '',
-        accountNumber: row.accountNumber || driver?.accountNumber || ''
+        accountNumber: row.accountNumber || driver?.accountNumber || '',
+        accountHolder: row.accountHolder || driver?.accountHolder || ''
       };
     });
     state.withdrawalRows = rows;
