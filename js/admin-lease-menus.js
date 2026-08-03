@@ -2812,6 +2812,8 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseLoanDriverName')) $('leaseLoanDriverName').value = '';
     if ($('leaseLoanDriverPhone')) $('leaseLoanDriverPhone').value = '';
     if ($('leaseLoanPrincipal')) $('leaseLoanPrincipal').value = '';
+    if ($('leaseLoanInterest')) $('leaseLoanInterest').value = '0';
+    if ($('leaseLoanTotalAmount')) $('leaseLoanTotalAmount').value = '';
     if ($('leaseLoanDailyDeduct')) $('leaseLoanDailyDeduct').value = '';
     if ($('leaseLoanBalance')) $('leaseLoanBalance').value = '';
     if ($('leaseLoanReason')) $('leaseLoanReason').value = '';
@@ -2820,7 +2822,7 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseLoanLastDayAmount')) $('leaseLoanLastDayAmount').value = '';
     const hint = $('leaseLoanScheduleHint');
     if (hint) {
-      hint.textContent = '원금·일 차감·시작일을 넣으면 종료일과 마지막날 차감액이 자동 계산됩니다. 예: 100만÷3만 → 32일×3만 + 마지막날 4만.';
+      hint.textContent = '원금·이자·일 차감·시작일을 넣으면 합계 기준으로 종료일과 마지막날 차감액이 자동 계산됩니다. 예: (100만+이자)÷3만 → 일수×3만 + 마지막날 나머지.';
     }
     const selected = $('leaseLoanDriverSelected');
     if (selected) selected.textContent = '선택: 없음';
@@ -2830,8 +2832,23 @@ const BremAdminLeaseMenus = (function () {
     if (submit) submit.textContent = '대여 등록';
   }
 
+  function loanFormTotalAmount() {
+    const principal = Math.max(0, Math.round(Number($('leaseLoanPrincipal')?.value || 0)));
+    const interest = Math.max(0, Math.round(Number($('leaseLoanInterest')?.value || 0)));
+    return principal + interest;
+  }
+
+  function syncLoanTotalPreview() {
+    const total = loanFormTotalAmount();
+    const totalEl = $('leaseLoanTotalAmount');
+    if (totalEl) totalEl.value = total > 0 ? formatMoney(total) : '';
+    return total;
+  }
+
   function syncLoanSchedulePreview() {
     const principal = Math.max(0, Math.round(Number($('leaseLoanPrincipal')?.value || 0)));
+    const interest = Math.max(0, Math.round(Number($('leaseLoanInterest')?.value || 0)));
+    const totalAmount = syncLoanTotalPreview();
     const dailyDeduct = Math.max(0, Math.round(Number($('leaseLoanDailyDeduct')?.value || 0)));
     let deductStartDate = String($('leaseLoanDeductStartDate')?.value || '').trim();
     // type=date 외 로케일 표기(2026. 08. 05.)가 들어오면 ISO로 정규화
@@ -2843,7 +2860,7 @@ const BremAdminLeaseMenus = (function () {
     }
     const compute = window.BremStorage?.computeLoanDeductSchedule;
     const schedule = typeof compute === 'function'
-      ? compute({ principal, dailyDeduct, deductStartDate })
+      ? compute({ amount: totalAmount, principal: totalAmount, dailyDeduct, deductStartDate })
       : { ok: false };
     const endEl = $('leaseLoanDeductEndDate');
     const lastEl = $('leaseLoanLastDayAmount');
@@ -2853,16 +2870,17 @@ const BremAdminLeaseMenus = (function () {
       if (lastEl) lastEl.value = '';
       const endLabel = $('leaseLoanDeductEndDateLabel');
       if (endLabel) endLabel.textContent = '자동 계산';
-      if (hint && principal > 0 && dailyDeduct > 0) {
+      if (hint && totalAmount > 0 && dailyDeduct > 0) {
         hint.textContent = deductStartDate
-          ? '종료일 계산 실패 · 원금·일 차감·시작일을 다시 확인하세요.'
+          ? '종료일 계산 실패 · 원금·이자·일 차감·시작일을 다시 확인하세요.'
           : '시작일을 입력하면 종료일·마지막날 차감이 계산됩니다.';
+      } else if (hint && principal > 0 && !dailyDeduct) {
+        hint.textContent = `합계 ${formatMoney(totalAmount)} (원금 ${formatMoney(principal)} + 이자 ${formatMoney(interest)}) · 일 차감액을 입력하세요.`;
       }
       return null;
     }
     if (endEl) {
       endEl.value = schedule.deductEndDate;
-      // 커스텀 날짜버튼이 남아 있으면 라벨도 갱신
       const endLabel = $('leaseLoanDeductEndDateLabel');
       if (endLabel) endLabel.textContent = formatDate(schedule.deductEndDate);
       endEl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2872,7 +2890,7 @@ const BremAdminLeaseMenus = (function () {
       const remNote = schedule.lastDayAmount !== schedule.dailyDeduct
         ? ` · 마지막날 ${formatMoney(schedule.lastDayAmount)}(=일 ${formatMoney(schedule.dailyDeduct)}+나머지)`
         : ` · 매일 ${formatMoney(schedule.dailyDeduct)}`;
-      hint.textContent = `총 ${schedule.days}일 (${schedule.deductStartDate} ~ ${schedule.deductEndDate})${remNote} · 합계 ${formatMoney(schedule.total)} (원금과 일치 ${schedule.ok ? '✓' : '✗'})`;
+      hint.textContent = `합계 ${formatMoney(totalAmount)} (원금 ${formatMoney(principal)} + 이자 ${formatMoney(interest)}) · 총 ${schedule.days}일 (${schedule.deductStartDate} ~ ${schedule.deductEndDate})${remNote} · 스케줄합 ${formatMoney(schedule.total)} (${schedule.ok ? '✓' : '✗'})`;
     }
     return schedule;
   }
@@ -3137,9 +3155,11 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const principal = Math.max(0, Math.round(Number($('leaseLoanPrincipal')?.value || 0)));
+    const interest = Math.max(0, Math.round(Number($('leaseLoanInterest')?.value || 0)));
+    const totalAmount = principal + interest;
     const dailyDeduct = Math.max(0, Math.round(Number($('leaseLoanDailyDeduct')?.value || 0)));
     if (principal <= 0 || dailyDeduct <= 0) {
-      showToast('대여금과 일 차감액을 입력하세요.');
+      showToast('대여금(원금)과 일 차감액을 입력하세요.');
       return;
     }
     const deductStartDate = String($('leaseLoanDeductStartDate')?.value || '').slice(0, 10);
@@ -3149,16 +3169,16 @@ const BremAdminLeaseMenus = (function () {
     }
     const schedule = syncLoanSchedulePreview();
     if (!schedule?.ok) {
-      showToast('차감 스케줄을 계산할 수 없습니다. 원금·일 차감·시작일을 확인하세요.');
+      showToast('차감 스케줄을 계산할 수 없습니다. 원금·이자·일 차감·시작일을 확인하세요.');
       return;
     }
-    if (schedule.total !== principal) {
-      showToast(`스케줄 합계(${formatMoney(schedule.total)})가 원금(${formatMoney(principal)})과 다릅니다. 저장을 중단합니다.`);
+    if (schedule.total !== totalAmount) {
+      showToast(`스케줄 합계(${formatMoney(schedule.total)})가 원금+이자(${formatMoney(totalAmount)})와 다릅니다. 저장을 중단합니다.`);
       return;
     }
     const balanceRaw = $('leaseLoanBalance')?.value;
     const balance = balanceRaw === '' || balanceRaw == null
-      ? principal
+      ? totalAmount
       : Math.max(0, Math.round(Number(balanceRaw || 0)));
     const editId = String($('leaseLoanEditId')?.value || '').trim();
     const existing = editId ? store.getById?.(editId) : null;
@@ -3168,6 +3188,7 @@ const BremAdminLeaseMenus = (function () {
       driverName,
       driverPhone: String($('leaseLoanDriverPhone')?.value || '').trim(),
       principal,
+      interest,
       dailyDeduct,
       balance,
       deductStartDate,
@@ -3184,8 +3205,8 @@ const BremAdminLeaseMenus = (function () {
     resetLoanForm();
     renderDeductionLoan();
     showToast(editId
-      ? `대여 수정 · ${schedule.days}일 · 마지막날 ${formatMoney(schedule.lastDayAmount)}`
-      : `대여 등록 · ${schedule.days}일 · 마지막날 ${formatMoney(schedule.lastDayAmount)}`);
+      ? `대여 수정 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일`
+      : `대여 등록 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일`);
   }
 
   function editLoan(id) {
@@ -3196,6 +3217,7 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseLoanDriverName')) $('leaseLoanDriverName').value = loan.driverName || '';
     if ($('leaseLoanDriverPhone')) $('leaseLoanDriverPhone').value = loan.driverPhone || '';
     if ($('leaseLoanPrincipal')) $('leaseLoanPrincipal').value = loan.principal || '';
+    if ($('leaseLoanInterest')) $('leaseLoanInterest').value = loan.interest != null ? loan.interest : 0;
     if ($('leaseLoanDailyDeduct')) $('leaseLoanDailyDeduct').value = loan.dailyDeduct || '';
     if ($('leaseLoanBalance')) $('leaseLoanBalance').value = loan.balance || '';
     if ($('leaseLoanReason')) $('leaseLoanReason').value = loan.reason || '';
@@ -3251,12 +3273,16 @@ const BremAdminLeaseMenus = (function () {
       summaryEl.textContent = `대여금 ${list.length}건 · 반영 ${applied}건 · 잔액합 ${formatMoney(list.reduce((s, i) => s + Number(i.balance || 0), 0))}`;
     }
     if (!list.length) {
-      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">등록된 대여금이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="13" class="empty">등록된 대여금이 없습니다.</td></tr>';
       return;
     }
     rowsEl.innerHTML = list.map(loan => {
+      const total = Math.max(0, Math.round(Number(loan.totalAmount != null
+        ? loan.totalAmount
+        : (Number(loan.principal || 0) + Number(loan.interest || 0)))));
       const schedule = window.BremStorage?.computeLoanDeductSchedule?.({
-        principal: loan.principal,
+        amount: total,
+        principal: total,
         dailyDeduct: loan.dailyDeduct,
         deductStartDate: loan.deductStartDate
       }) || {};
@@ -3267,6 +3293,8 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(loan.driverName || '-')}</td>
         <td>${escapeHtml(loan.driverPhone || '-')}</td>
         <td>${formatMoney(loan.principal)}</td>
+        <td>${formatMoney(loan.interest || 0)}</td>
+        <td><strong>${formatMoney(total)}</strong></td>
         <td>${formatMoney(loan.dailyDeduct)}</td>
         <td>${formatMoney(loan.balance)}</td>
         <td>${escapeHtml(loan.deductStartDate || '-')}</td>
@@ -4171,8 +4199,12 @@ const BremAdminLeaseMenus = (function () {
       }
       rowsEl.innerHTML = loans.map(loan => {
         const status = loanPaymentStatus(loan);
+        const total = Math.max(0, Math.round(Number(loan.totalAmount != null
+          ? loan.totalAmount
+          : (Number(loan.principal || 0) + Number(loan.interest || 0)))));
         const schedule = window.BremStorage?.computeLoanDeductSchedule?.({
-          principal: loan.principal,
+          amount: total,
+          principal: total,
           dailyDeduct: loan.dailyDeduct,
           deductStartDate: loan.deductStartDate
         }) || {};
@@ -4182,10 +4214,14 @@ const BremAdminLeaseMenus = (function () {
           ? '<span class="muted-inline">완납</span>'
           : `<button type="button" class="small-btn primary-btn" data-loan-payment-full="${escapeHtml(loan.id)}">완납</button>
              <button type="button" class="small-btn" data-loan-payment-partial="${escapeHtml(loan.id)}">부분납</button>`;
+        const interest = Math.max(0, Math.round(Number(loan.interest || 0)));
+        const principalLabel = interest > 0
+          ? `${formatMoney(total)}<br><span class="muted-inline">원금 ${formatMoney(loan.principal)}+이자 ${formatMoney(interest)}</span>`
+          : formatMoney(loan.principal);
         return `<tr>
           <td>${escapeHtml(loan.driverName || '-')}</td>
           <td>${escapeHtml(loan.driverPhone || '-')}</td>
-          <td>${formatMoney(loan.principal)}</td>
+          <td>${principalLabel}</td>
           <td>${formatMoney(loan.balance)}</td>
           <td>${formatMoney(loan.externalPaid)}</td>
           <td>${formatMoney(loan.dailyDeduct)}</td>
@@ -4340,10 +4376,13 @@ const BremAdminLeaseMenus = (function () {
       }
       rowsEl.innerHTML = loans.map(loan => {
         const endDate = loan.deductEndDate || '-';
+        const total = Math.max(0, Math.round(Number(loan.totalAmount != null
+          ? loan.totalAmount
+          : (Number(loan.principal || 0) + Number(loan.interest || 0)))));
         return `<tr>
           <td>${escapeHtml(loan.driverName || '-')}</td>
           <td>${escapeHtml(loan.driverPhone || '-')}</td>
-          <td>${formatMoney(loan.principal)}</td>
+          <td>${formatMoney(total)}${Number(loan.interest || 0) > 0 ? ` <span class="muted-inline">(이자 ${formatMoney(loan.interest)})</span>` : ''}</td>
           <td>${formatMoney(loan.externalPaid)}</td>
           <td>${escapeHtml(loan.deductStartDate || '-')} ~ ${escapeHtml(endDate)}</td>
           <td>${escapeHtml(loan.reason || '-')}</td>
@@ -5375,7 +5414,7 @@ const BremAdminLeaseMenus = (function () {
     });
     $('leaseLoanForm')?.addEventListener('submit', event => { void saveLoanForm(event); });
     $('leaseLoanFormResetBtn')?.addEventListener('click', () => resetLoanForm());
-    ['leaseLoanPrincipal', 'leaseLoanDailyDeduct', 'leaseLoanDeductStartDate'].forEach(id => {
+    ['leaseLoanPrincipal', 'leaseLoanInterest', 'leaseLoanDailyDeduct', 'leaseLoanDeductStartDate'].forEach(id => {
       $(id)?.addEventListener('input', () => syncLoanSchedulePreview());
       $(id)?.addEventListener('change', () => syncLoanSchedulePreview());
     });

@@ -2689,12 +2689,14 @@
                 <label>이름<input type="text" id="leaseLoanDriverName" readonly placeholder="기사명"></label>
                 <label>연락처<input type="tel" id="leaseLoanDriverPhone" readonly placeholder="010-0000-0000"></label>
                 <label>대여금(원금)<input type="number" id="leaseLoanPrincipal" min="0" step="1000" placeholder="0" required></label>
+                <label>이자<input type="number" id="leaseLoanInterest" min="0" step="1000" placeholder="0" value="0"></label>
+                <label>합계(원금+이자)<input type="text" id="leaseLoanTotalAmount" readonly tabindex="-1" placeholder="자동 합계" title="원금+이자"></label>
                 <label>일 차감액<input type="number" id="leaseLoanDailyDeduct" min="0" step="1000" placeholder="0" required></label>
-                <label>잔액<input type="number" id="leaseLoanBalance" min="0" step="1000" placeholder="등록 시 대여금과 동일"></label>
+                <label>잔액<input type="number" id="leaseLoanBalance" min="0" step="1000" placeholder="등록 시 합계와 동일"></label>
                 <label>차감 시작일<input type="date" id="leaseLoanDeductStartDate" required></label>
-                <label>차감 종료일(자동)<input type="text" id="leaseLoanDeductEndDate" readonly tabindex="-1" placeholder="자동 계산" title="원금÷일차감으로 자동 계산" data-admin-date-skip="true"></label>
+                <label>차감 종료일(자동)<input type="text" id="leaseLoanDeductEndDate" readonly tabindex="-1" placeholder="자동 계산" title="합계÷일차감으로 자동 계산" data-admin-date-skip="true"></label>
                 <label>마지막날 차감(자동)<input type="text" id="leaseLoanLastDayAmount" readonly tabindex="-1" placeholder="나머지를 마지막날에 합산"></label>
-                <p class="form-help lease-form-field--full" id="leaseLoanScheduleHint">원금·일 차감·시작일을 넣으면 종료일과 마지막날 차감액이 자동 계산됩니다. 예: 100만÷3만 → 32일×3만 + 마지막날 4만.</p>
+                <p class="form-help lease-form-field--full" id="leaseLoanScheduleHint">원금·이자·일 차감·시작일을 넣으면 합계 기준으로 종료일과 마지막날 차감액이 자동 계산됩니다. 예: (100만+이자)÷3만 → 일수×3만 + 마지막날 나머지.</p>
                 <label>이유<input type="text" id="leaseLoanReason" placeholder="예: 보증금 대여 · 수리비 대여"></label>
                 <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button type="submit" class="primary-btn">대여 등록</button>
@@ -2713,7 +2715,9 @@
                   <tr>
                     <th>기사</th>
                     <th>연락처</th>
-                    <th>대여금</th>
+                    <th>원금</th>
+                    <th>이자</th>
+                    <th>합계</th>
                     <th>일 차감액</th>
                     <th>잔액</th>
                     <th>차감시작일</th>
@@ -2725,7 +2729,7 @@
                   </tr>
                 </thead>
                 <tbody id="leaseDeductionLoanRows">
-                  <tr><td colspan="11" class="empty">등록된 대여금이 없습니다.</td></tr>
+                  <tr><td colspan="13" class="empty">등록된 대여금이 없습니다.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -7467,7 +7471,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260803g"></script>
+  <script src="js/storage.js?v=20260803j"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7496,7 +7500,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803h"></script>
+  <script src="js/admin-lease-menus.js?v=20260803j"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

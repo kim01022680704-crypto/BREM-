@@ -10954,7 +10954,9 @@ const BremStorage = (function () {
     let lastDayAmount = Math.max(0, Math.round(Number(item.lastDayAmount || 0)));
     if (!end || lastDayAmount <= 0) {
       const sched = computeLoanDeductSchedule({
-        amount: Math.max(0, Math.round(Number(item.principal || balance))),
+        amount: Math.max(0, Math.round(Number(
+          (Number(item.principal || 0) + Number(item.interest || 0)) || balance
+        ))),
         dailyDeduct: daily,
         deductStartDate: start
       });
@@ -10990,9 +10992,11 @@ const BremStorage = (function () {
 
   function normalizeLeaseLoan(raw = {}, existing = null) {
     const principal = Math.max(0, Math.round(Number(raw.principal != null ? raw.principal : existing?.principal || 0)));
+    const interest = Math.max(0, Math.round(Number(raw.interest != null ? raw.interest : existing?.interest || 0)));
+    const totalAmount = principal + interest;
     const dailyDeduct = Math.max(0, Math.round(Number(raw.dailyDeduct != null ? raw.dailyDeduct : existing?.dailyDeduct || 0)));
     const balance = Math.max(0, Math.round(Number(
-      raw.balance != null ? raw.balance : (existing?.balance != null ? existing.balance : principal)
+      raw.balance != null ? raw.balance : (existing?.balance != null ? existing.balance : totalAmount)
     )));
     const platform = String(raw.deductionPlatform || existing?.deductionPlatform || 'coupang') === 'baemin'
       ? 'baemin'
@@ -11001,7 +11005,7 @@ const BremStorage = (function () {
       raw.deductStartDate != null ? raw.deductStartDate : (existing?.deductStartDate || '')
     ).slice(0, 10);
     const schedule = computeLoanDeductSchedule({
-      principal,
+      amount: totalAmount,
       dailyDeduct,
       deductStartDate
     });
@@ -11023,6 +11027,8 @@ const BremStorage = (function () {
       driverName: String(raw.driverName != null ? raw.driverName : (existing?.driverName || '')).trim(),
       driverPhone: String(raw.driverPhone != null ? raw.driverPhone : (existing?.driverPhone || '')).trim(),
       principal,
+      interest,
+      totalAmount,
       dailyDeduct,
       balance,
       deductionPlatform: platform,
@@ -11102,6 +11108,11 @@ const BremStorage = (function () {
       const existing = raw?.id ? list.find(item => item.id === raw.id) : null;
       const schedule = computeLoanDeductSchedule({
         principal: raw?.principal != null ? raw.principal : existing?.principal,
+        amount: Math.max(0, Math.round(Number(
+          (raw?.principal != null ? raw.principal : existing?.principal || 0)
+        ))) + Math.max(0, Math.round(Number(
+          raw?.interest != null ? raw.interest : (existing?.interest || 0)
+        ))),
         dailyDeduct: raw?.dailyDeduct != null ? raw.dailyDeduct : existing?.dailyDeduct,
         deductStartDate: raw?.deductStartDate != null ? raw.deductStartDate : existing?.deductStartDate
       });

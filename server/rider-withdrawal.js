@@ -78,7 +78,9 @@ function loanChargeInDateRange(item, rangeStart, rangeEnd, todayKey) {
   let lastDayAmount = Math.max(0, Math.round(Number(item.lastDayAmount || 0)));
   if (!end || lastDayAmount <= 0) {
     const sched = computeLoanDeductSchedule({
-      amount: Math.max(0, Math.round(Number(item.principal || balance))),
+      amount: Math.max(0, Math.round(Number(
+        (Number(item.principal || 0) + Number(item.interest || 0)) || balance
+      ))),
       dailyDeduct: daily,
       deductStartDate: start
     });
