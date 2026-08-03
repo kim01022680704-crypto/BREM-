@@ -4,7 +4,7 @@ const BremSettlementResultDirect = (function () {
   const Calc = () => window.BremDirectSettlementCalc;
 
   // week: 빈 문자열이면 주 필터 없음(전체 주). 정산주는 항상 수요일 시작.
-  // viewMode: platform | final | retroUnpaid
+  // viewMode: platform | final | retroUnpaid | spillover
   const state = {
     platform: 'baemin',
     settlementId: '',
@@ -12,7 +12,8 @@ const BremSettlementResultDirect = (function () {
     withdrawals: [],
     viewMode: 'platform',
     retroWeekFilter: '',
-    retroSearch: ''
+    retroSearch: '',
+    spillFilter: 'crossed'
   };
 
   function escapeHtml(value) {
@@ -79,9 +80,11 @@ const BremSettlementResultDirect = (function () {
     const label = state.week ? `${formatDate(state.week)}(수) 주` : '전체 주';
     const btn = $('#settlementResultWeekBtn');
     if (btn) btn.textContent = label;
-    // 최종결산 카드에도 같은 정산주를 표시한다.
+    // 최종결산·스필오버 카드에도 같은 정산주를 표시한다.
     const finalBtn = $('#settlementFinalWeekBtn');
     if (finalBtn) finalBtn.textContent = state.week ? label : '수요일 선택';
+    const spillBtn = $('#settlementSpillWeekBtn');
+    if (spillBtn) spillBtn.textContent = state.week ? label : '수요일 선택';
     const hidden = $('#settlementResultWeek');
     if (hidden) hidden.value = state.week;
   }
@@ -269,8 +272,9 @@ const BremSettlementResultDirect = (function () {
     if (!body) return;
     renderSettlementPicker();
     renderHead();
-    // 최종결산 카드가 열려 있으면 정산주 변경 시 함께 갱신한다.
+    // 열린 보조 카드는 정산주 변경 시 함께 갱신한다.
     if (!$('#settlementFinalCard')?.hidden) renderFinal();
+    if (!$('#settlementSpilloverCard')?.hidden) renderSpillover();
     const settlement = currentSettlement();
     const colspan = columns().length;
 
@@ -327,6 +331,7 @@ const BremSettlementResultDirect = (function () {
 
       if (state.viewMode === 'retroUnpaid') renderRetro();
       if (state.viewMode === 'final') renderFinal();
+      if (state.viewMode === 'spillover') renderSpillover();
     } catch (error) {
       console.error('[settlement-result-direct] render failed', error);
       body.innerHTML = `<tr><td colspan="${colspan}" class="empty">정산 계산 중 오류가 발생했습니다. 새로고침 후에도 같으면 관리자에게 알려주세요. (${escapeHtml(error?.message || error)})</td></tr>`;
@@ -853,19 +858,91 @@ const BremSettlementResultDirect = (function () {
     }
   }
 
+  function renderSpillover() {
+    const body = $('#settlementSpillRows');
+    const summaryEl = $('#settlementSpillSummary');
+    if (!body) return;
+    const filterEl = $('#settlementSpillFilter');
+    if (filterEl) state.spillFilter = filterEl.value === 'all' ? 'all' : 'crossed';
+
+    const week = finalWeek();
+    if (!week) {
+      body.innerHTML = '<tr><td colspan="14" class="empty">정산주(수요일)를 선택하세요.</td></tr>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+    const settlements = finalWeekSettlements();
+    if (!settlements.length) {
+      body.innerHTML = '<tr><td colspan="14" class="empty">이 주에 저장된 직계약 정산서가 없습니다.</td></tr>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    const report = Calc().buildSpilloverReport(settlements, {
+      week,
+      withdrawals: state.withdrawals
+    });
+    let rows = report.rows || [];
+    if (state.spillFilter === 'crossed') rows = rows.filter(r => r.crossed);
+    const crossedCount = (report.rows || []).filter(r => r.crossed).length;
+
+    if (summaryEl) {
+      summaryEl.innerHTML = `${week}(수) 주 · 배분 대상 <strong>${(report.rows || []).length}</strong>명`
+        + ` · 크로스 스필 <strong>${crossedCount}</strong>명`
+        + ` · 표시 <strong>${rows.length}</strong>건`;
+    }
+    if (!rows.length) {
+      body.innerHTML = state.spillFilter === 'crossed'
+        ? '<tr><td colspan="14" class="empty">양쪽으로 나뉜 스필오버 건이 없습니다. 「전체」로 바꾸면 단일 플랫폼 배분도 볼 수 있습니다.</td></tr>'
+        : '<tr><td colspan="14" class="empty">리스·대여·선정산 배분 대상이 없습니다.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(r => {
+      const prefer = r.prefer === 'baemin' ? '배민' : '쿠팡';
+      const badge = r.crossed
+        ? '<span class="settle-platform-tag settle-platform-tag--coupang">크로스</span>'
+        : '<span class="muted-inline">단일</span>';
+      const nameSub = [
+        r.coupangId ? `쿠팡 ${r.coupangId}` : '',
+        r.baeminId ? `배민 ${r.baeminId}` : ''
+      ].filter(Boolean).join(' · ');
+      return `<tr class="${r.crossed ? 'settlement-spill-row--crossed' : ''}">
+        <td class="settlement-retro-name"><strong>${escapeHtml(r.name || '-')}</strong>${nameSub ? `<br><span class="muted-inline">${escapeHtml(nameSub)}</span>` : ''}</td>
+        <td>${escapeHtml(prefer)}</td>
+        <td class="weekly-amount-cell">${formatNumber(r.capacityCoupang)}</td>
+        <td class="weekly-amount-cell">${formatNumber(r.capacityBaemin)}</td>
+        <td class="weekly-amount-cell"><strong>${formatNumber(r.leaseTotal)}</strong></td>
+        <td class="weekly-amount-cell">${formatNumber(r.leaseCoupang)}</td>
+        <td class="weekly-amount-cell">${formatNumber(r.leaseBaemin)}</td>
+        <td class="weekly-amount-cell"><strong>${formatNumber(r.loanTotal)}</strong></td>
+        <td class="weekly-amount-cell">${formatNumber(r.loanCoupang)}</td>
+        <td class="weekly-amount-cell">${formatNumber(r.loanBaemin)}</td>
+        <td class="weekly-amount-cell"><strong>${formatNumber(r.prepaidTotal)}</strong></td>
+        <td class="weekly-amount-cell">${formatNumber(r.prepaidCoupang)}</td>
+        <td class="weekly-amount-cell">${formatNumber(r.prepaidBaemin)}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
   function setSettlementView(mode) {
-    const next = mode === 'final' || mode === 'retroUnpaid' ? mode : 'platform';
+    const next = mode === 'final' || mode === 'retroUnpaid' || mode === 'spillover' ? mode : 'platform';
     state.viewMode = next;
     const finalCard = $('#settlementFinalCard');
     const mainCard = $('#settlementResultMainCard');
     const retroCard = $('#settlementResultRetroCard');
+    const spillCard = $('#settlementSpilloverCard');
     const finalTab = $('#settlementFinalTabBtn');
     const retroTab = $('#settlementRetroUnpaidTabBtn');
+    const spillTab = $('#settlementSpilloverTabBtn');
     if (mainCard) mainCard.hidden = next !== 'platform';
     if (finalCard) finalCard.hidden = next !== 'final';
     if (retroCard) retroCard.hidden = next !== 'retroUnpaid';
+    if (spillCard) spillCard.hidden = next !== 'spillover';
     if (finalTab) finalTab.classList.toggle('active', next === 'final');
     if (retroTab) retroTab.classList.toggle('active', next === 'retroUnpaid');
+    if (spillTab) spillTab.classList.toggle('active', next === 'spillover');
     if (next !== 'platform') {
       document.querySelectorAll('[data-admin-platform-tab="settlement-result-direct"]').forEach(btn => btn.classList.remove('active'));
     } else {
@@ -875,6 +952,7 @@ const BremSettlementResultDirect = (function () {
     }
     if (next === 'final') renderFinal();
     if (next === 'retroUnpaid') renderRetro();
+    if (next === 'spillover') renderSpillover();
   }
 
   function toggleFinalView(show) {
@@ -908,8 +986,13 @@ const BremSettlementResultDirect = (function () {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
     $('#settlementFinalTabBtn')?.addEventListener('click', () => setSettlementView('final'));
+    $('#settlementSpilloverTabBtn')?.addEventListener('click', () => setSettlementView('spillover'));
     $('#settlementRetroUnpaidTabBtn')?.addEventListener('click', () => setSettlementView('retroUnpaid'));
     $('#settlementFinalReloadBtn')?.addEventListener('click', async () => { await loadWithdrawals(); renderFinal(); });
+    $('#settlementSpillReloadBtn')?.addEventListener('click', async () => { await loadWithdrawals(); renderSpillover(); });
+    $('#settlementSpillFilter')?.addEventListener('change', () => renderSpillover());
+    $('#settlementSpillWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#settlementSpillWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#settlementFinalPublishBtn')?.addEventListener('click', () => { void publishFinalPayslips(); });
     $('#settlementFinalWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
     $('#settlementFinalWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));

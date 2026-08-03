@@ -6540,6 +6540,20 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   color: #64748b;
 }
 
+.settlement-spill-table td.settlement-retro-name {
+  min-width: 120px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.settlement-spill-row--crossed {
+  background: #eff6ff;
+}
+
+.settlement-spill-row--crossed td {
+  border-color: #bfdbfe;
+}
+
 .settlement-retro-total-row td {
   border-top: 2px solid #111827;
   background: #f8fafc;

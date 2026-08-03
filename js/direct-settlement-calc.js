@@ -578,6 +578,112 @@ const BremDirectSettlementCalc = (function () {
     return { leaseAlloc, loanAlloc, leaseIndex, loanIndex };
   }
 
+  /**
+   * 스필오버 배분 확인용 리포트.
+   * 기사별 리스·대여·선정산이 쿠팡/배민에 어떻게 나뉘었는지 한 줄로 보여준다.
+   */
+  function buildSpilloverReport(weekSettlements, options = {}) {
+    const list = Array.isArray(weekSettlements) ? weekSettlements : [];
+    const week = options.week || (list[0] ? settlementWeek(list[0]) : weekStartKey());
+    const capacityMap = buildWeekCapacityMap(list);
+    const withdrawals = Array.isArray(options.withdrawals) ? options.withdrawals : [];
+    const prepaidAlloc = allocateWeekWithdrawals(withdrawals, week, capacityMap);
+    const spill = buildLeaseLoanSpilloverAllocation(list, {
+      week,
+      withdrawals,
+      _allocation: prepaidAlloc,
+      leaseContracts: options.leaseContracts,
+      ledgerItems: options.ledgerItems,
+      loanItems: options.loanItems
+    });
+
+    const metaByKey = new Map();
+    list.forEach(settlement => {
+      const platform = normalizePlatform(settlement.platform);
+      const unitCallFee = callFeeUnit(platform);
+      const adj = adjustmentMaps(settlement);
+      (Array.isArray(settlement.riders) ? settlement.riders : []).forEach(rider => {
+        const base = riderRowBase(rider, settlement, platform, unitCallFee, adj);
+        if (!base.canonicalKey) return;
+        const prev = metaByKey.get(base.canonicalKey) || {
+          driverId: base.driverId,
+          name: base.name,
+          coupangId: '',
+          baeminId: '',
+          capacityCoupang: 0,
+          capacityBaemin: 0
+        };
+        if (platform === 'coupang') prev.coupangId = base.idLabel !== '-' ? base.idLabel : prev.coupangId;
+        if (platform === 'baemin') prev.baeminId = base.idLabel !== '-' ? base.idLabel : prev.baeminId;
+        if (base.name && base.name !== '-') prev.name = base.name;
+        if (base.driverId) prev.driverId = base.driverId;
+        metaByKey.set(base.canonicalKey, prev);
+      });
+    });
+    capacityMap.forEach((cap, key) => {
+      const meta = metaByKey.get(key) || { name: key, driverId: '', coupangId: '', baeminId: '' };
+      meta.capacityCoupang = Math.max(0, Math.round(Number(cap.coupang || 0)));
+      meta.capacityBaemin = Math.max(0, Math.round(Number(cap.baemin || 0)));
+      metaByKey.set(key, meta);
+    });
+
+    const keys = new Set([
+      ...spill.leaseAlloc.keys(),
+      ...spill.loanAlloc.keys(),
+      ...(prepaidAlloc instanceof Map ? prepaidAlloc.keys() : [])
+    ]);
+
+    const rows = [];
+    keys.forEach(key => {
+      const meta = metaByKey.get(key) || { name: key, driverId: '', coupangId: '', baeminId: '' };
+      const leaseTotal = Math.max(0, Math.round(Number(spill.leaseIndex.get(key)?.amount || 0)));
+      const loanTotal = Math.max(0, Math.round(Number(spill.loanIndex.get(key)?.amount || 0)));
+      const lease = spill.leaseAlloc.get(key) || { coupang: 0, baemin: 0 };
+      const loan = spill.loanAlloc.get(key) || { coupang: 0, baemin: 0 };
+      const prepaidSlice = prepaidAlloc?.get?.(key) || null;
+      const prepaidCoupang = Math.max(0, Math.round(Number(prepaidSlice?.coupang?.prepaid || 0)));
+      const prepaidBaemin = Math.max(0, Math.round(Number(prepaidSlice?.baemin?.prepaid || 0)));
+      const prepaidTotal = prepaidCoupang + prepaidBaemin;
+      if (leaseTotal <= 0 && loanTotal <= 0 && prepaidTotal <= 0) return;
+
+      const leaseCoupang = Math.max(0, Math.round(Number(lease.coupang || 0)));
+      const leaseBaemin = Math.max(0, Math.round(Number(lease.baemin || 0)));
+      const loanCoupang = Math.max(0, Math.round(Number(loan.coupang || 0)));
+      const loanBaemin = Math.max(0, Math.round(Number(loan.baemin || 0)));
+      const crossed = (leaseCoupang > 0 && leaseBaemin > 0)
+        || (loanCoupang > 0 && loanBaemin > 0)
+        || (prepaidCoupang > 0 && prepaidBaemin > 0);
+      const prefer = Number(meta.capacityCoupang || 0) >= Number(meta.capacityBaemin || 0) ? 'coupang' : 'baemin';
+
+      rows.push({
+        key,
+        driverId: meta.driverId || '',
+        name: meta.name || '-',
+        coupangId: meta.coupangId || '',
+        baeminId: meta.baeminId || '',
+        capacityCoupang: meta.capacityCoupang || 0,
+        capacityBaemin: meta.capacityBaemin || 0,
+        prefer,
+        leaseTotal,
+        leaseCoupang,
+        leaseBaemin,
+        loanTotal,
+        loanCoupang,
+        loanBaemin,
+        prepaidTotal,
+        prepaidCoupang,
+        prepaidBaemin,
+        crossed
+      });
+    });
+
+    rows.sort((a, b) => {
+      if (a.crossed !== b.crossed) return a.crossed ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name), 'ko');
+    });
+    return { week, rows, spill, prepaidAlloc, capacityMap };
+  }
+
   function resolveSpilloverFeeForRow(row, allocMap, feeIndex) {
     const driverId = String(row?.driverId || '').trim();
     const platform = normalizePlatform(row?.platform);
@@ -786,6 +892,7 @@ const BremDirectSettlementCalc = (function () {
     buildWeekCapacityMap,
     allocateWeekWithdrawals,
     buildLeaseLoanSpilloverAllocation,
+    buildSpilloverReport,
     computeRows,
     escapeHtml,
     theadHtml,

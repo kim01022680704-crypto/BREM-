@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260803e">
+  <link rel="stylesheet" href="css/admin.css?v=20260803g">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -4774,6 +4774,7 @@
           <button type="button" class="promotion-tab" data-admin-platform-tab="settlement-result-direct" data-platform="coupang">쿠팡</button>
           <button type="button" class="promotion-tab active" data-admin-platform-tab="settlement-result-direct" data-platform="baemin">배민</button>
           <button type="button" class="promotion-tab" id="settlementFinalTabBtn" title="그 주 전체(쿠팡+배민) 기사를 합치지 않고 나열 + 급여명세서 반영">최종결산</button>
+          <button type="button" class="promotion-tab" id="settlementSpilloverTabBtn" title="리스·대여·선정산이 쿠팡/배민에 어떻게 배분됐는지 확인">스필오버</button>
           <button type="button" class="promotion-tab" id="settlementRetroUnpaidTabBtn" title="마이너스 일괄맞추기 소급분·미납잔액. 선택한 건만 차감관리로 이관">소급분 및 미납금</button>
         </div>
 
@@ -4838,6 +4839,57 @@
           <p class="form-help">「마이너스 일괄 맞추기」로 쌓인 소급분입니다. <strong>왼쪽 체크 → 「차감관리로 보내기」</strong>하면 <strong>미납/회수 + 차감관리</strong>에 한 세트로 등록됩니다(차감은 반영 ON). 전액완료·일부회수 시 차감 잔액이 같이 줄어듭니다. 미납 0원(고용·산재 로스)은 선택 불가.</p>
           <p class="direct-inline-stats" id="settlementRetroSummary"></p>
           <div id="settlementResultRetroBody"></div>
+        </article>
+
+        <article class="card" id="settlementSpilloverCard" hidden>
+          <div class="card-header">
+            <h2>스필오버 배분</h2>
+            <div class="promotion-form-actions">
+              <label class="settlement-week-filter">
+                <span>정산주 (수요일만 선택)</span>
+                <span class="coupang-week-picker-inline">
+                  <button type="button" class="small-btn" id="settlementSpillWeekPrevBtn" title="이전 주(수요일)">&lt;&lt;</button>
+                  <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="settlement-result-week" id="settlementSpillWeekBtn">수요일 선택</button>
+                  <button type="button" class="small-btn" id="settlementSpillWeekNextBtn" title="다음 주(수요일)">&gt;&gt;</button>
+                </span>
+              </label>
+              <label class="settlement-week-filter">
+                <span>표시</span>
+                <select id="settlementSpillFilter" class="admin-period-input">
+                  <option value="crossed">크로스 배분만</option>
+                  <option value="all">전체 (리스·대여·선정산)</option>
+                </select>
+              </label>
+              <button type="button" class="small-btn" id="settlementSpillReloadBtn">불러오기</button>
+            </div>
+          </div>
+          <p class="form-help">실지급(선정산·수수료 차감 전 한도)이 큰 플랫폼부터 리스·대여를 넣고, 모자라면 반대 플랫폼으로 넘깁니다. <strong>크로스</strong> = 쿠팡·배민에 나뉜 건. 배분이 이상하면 정산서·선정산(처리완료 출금)·리스 반영 상태를 확인하세요.</p>
+          <p class="direct-inline-stats" id="settlementSpillSummary"></p>
+          <div class="table-wrap direct-scroll direct-scroll-wide">
+            <table class="weekly-settlement-saved-table settlement-spill-table">
+              <thead>
+                <tr>
+                  <th>기사</th>
+                  <th>우선</th>
+                  <th>한도(쿠팡)</th>
+                  <th>한도(배민)</th>
+                  <th>리스총</th>
+                  <th>리스·쿠팡</th>
+                  <th>리스·배민</th>
+                  <th>대여총</th>
+                  <th>대여·쿠팡</th>
+                  <th>대여·배민</th>
+                  <th>선정산총</th>
+                  <th>선정산·쿠팡</th>
+                  <th>선정산·배민</th>
+                  <th>배분</th>
+                </tr>
+              </thead>
+              <tbody id="settlementSpillRows">
+                <tr><td colspan="14" class="empty">정산주를 선택하세요.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </article>
 
         <article class="card" id="settlementFinalCard" hidden>
@@ -7509,8 +7561,8 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
-  <script src="js/direct-settlement-calc.js?v=20260803a"></script>
-  <script src="js/settlement-result-direct.js?v=20260803f"></script>
+  <script src="js/direct-settlement-calc.js?v=20260803g"></script>
+  <script src="js/settlement-result-direct.js?v=20260803g"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260802e"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
