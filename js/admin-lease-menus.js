@@ -1119,12 +1119,24 @@ const BremAdminLeaseMenus = (function () {
     return 0;
   }
 
-  /** 계약 시 정한 주간 청구액(라이더 부담) = 일렌탈료 × 7 */
+  /** 계약 시 정한 주간 청구액(라이더 부담) = 일렌탈료 × 7 · 참고용 */
   function contractRiderWeeklyCharge(contract) {
     if (!contract) return 0;
     const daily = contractRiderDailyRent(contract);
     if (daily > 0) return Math.round(daily * 7);
     return Math.max(0, Math.round(Number(contract.weeklyRent || 0)));
+  }
+
+  /**
+   * 납부확인·회수에 쓰는 이번주 청구액 = 일렌탈료 × (이번주 경과·운행가능 일수).
+   * 주가 끝나기 전에 7일 전액을 미납으로 넘기면 급여차감과 이중·과다 청구된다.
+   */
+  function contractPaymentConfirmCharge(contract, weekStart) {
+    if (!contract) return 0;
+    const daily = contractRiderDailyRent(contract);
+    if (daily <= 0) return 0;
+    const days = contractActiveDaysInWeek(contract, weekStart || currentWeekStart());
+    return Math.max(0, Math.round(daily * Math.max(0, days)));
   }
 
   /** 차량관리에 등록된 주간 리스비(원가) = 일리스비 × 7 */
@@ -3418,7 +3430,7 @@ const BremAdminLeaseMenus = (function () {
 
   function markContractWeekFullyPaid(contract, weekStart) {
     if (!contract?.vehicleId || !weekStart) return null;
-    const charge = contractRiderWeeklyCharge(contract);
+    const charge = contractPaymentConfirmCharge(contract, weekStart);
     if (charge <= 0) return null;
     return upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
@@ -3562,8 +3574,8 @@ const BremAdminLeaseMenus = (function () {
 
   function applyPaymentFullCore(contract, weekStart) {
     if (!contract) return { ok: false, charge: 0, reason: '계약 없음' };
-    const charge = contractRiderWeeklyCharge(contract);
-    if (charge <= 0) return { ok: false, charge: 0, reason: '주간청구액 없음' };
+    const charge = contractPaymentConfirmCharge(contract, weekStart);
+    if (charge <= 0) return { ok: false, charge: 0, reason: '이번주 청구액 없음' };
 
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
@@ -3620,13 +3632,13 @@ const BremAdminLeaseMenus = (function () {
       return false;
     }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
-    const charge = contractRiderWeeklyCharge(contract);
+    const charge = contractPaymentConfirmCharge(contract, weekStart);
     if (charge <= 0) {
-      showToast('주간 청구액이 없어 완납 처리할 수 없습니다. 계약/렌탈에서 일 렌탈료를 확인하세요.');
+      showToast('이번주 청구액이 없어 완납 처리할 수 없습니다. 차감시작일·일 렌탈료를 확인하세요.');
       return false;
     }
     if (!options.skipConfirm) {
-      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요?`)) return false;
+      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요? (경과 일수×일렌탈료)`)) return false;
     }
 
     const result = applyPaymentFullCore(contract, weekStart);
@@ -3670,8 +3682,8 @@ const BremAdminLeaseMenus = (function () {
       showToast('선택한 계약을 찾을 수 없습니다.');
       return;
     }
-    const totalCharge = contracts.reduce((sum, contract) => sum + contractRiderWeeklyCharge(contract), 0);
-    if (!window.confirm(`선택한 ${contracts.length}건을 완납 처리할까요?\n합계 ${formatMoney(totalCharge)}`)) return;
+    const totalCharge = contracts.reduce((sum, contract) => sum + contractPaymentConfirmCharge(contract, weekStart), 0);
+    if (!window.confirm(`선택한 ${contracts.length}건을 완납 처리할까요?\n합계 ${formatMoney(totalCharge)} (경과 일수×일렌탈료)`)) return;
 
     let okCount = 0;
     let failCount = 0;
@@ -3749,15 +3761,20 @@ const BremAdminLeaseMenus = (function () {
       showToast('계약을 찾을 수 없습니다.');
       return;
     }
+    if (isContractFinalApplyEnabled(contract)) {
+      showToast('급여차감「반영」계약입니다. 미납이관은 이중차감이라 막았습니다. 외부로 다 받았으면 「완납」만 기록하세요.');
+      return;
+    }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
     const daily = contractRiderDailyRent(contract);
-    const charge = contractRiderWeeklyCharge(contract);
+    const charge = contractPaymentConfirmCharge(contract, weekStart);
+    const days = contractActiveDaysInWeek(contract, weekStart);
     if (charge <= 0) {
-      showToast('주간 청구액이 없어 부분납 처리할 수 없습니다.');
+      showToast('이번주 청구액이 없어 부분납 처리할 수 없습니다. 차감시작일·일 렌탈료를 확인하세요.');
       return;
     }
     const raw = window.prompt(
-      `${formatDriverContractLabel(contract.driverName || '기사')} · 주간청구 ${formatMoney(charge)}\n납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)`,
+      `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)`,
       String(Math.round(charge / 2))
     );
     if (raw == null) return;
@@ -3771,7 +3788,7 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const unpaidAmount = charge - paid;
-    const unpaidDays = daily > 0 ? Math.max(1, Math.round(unpaidAmount / daily)) : 7;
+    const unpaidDays = daily > 0 ? Math.max(1, Math.round(unpaidAmount / daily)) : Math.max(1, days);
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
       weekStart,
@@ -3989,7 +4006,7 @@ const BremAdminLeaseMenus = (function () {
       headEl.innerHTML = `<tr>
         <th class="lease-check-col">선택</th>
         <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
-        <th>주간리스비</th><th>주간청구액</th><th>차액</th><th>납부상태</th><th>관리</th>
+        <th>주간리스비</th><th>이번주청구</th><th>차액</th><th>납부상태</th><th>관리</th>
       </tr>`;
     }
     const weekStart = syncPaymentWeekUi(currentWeekStart());
@@ -4063,13 +4080,17 @@ const BremAdminLeaseMenus = (function () {
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = vehicleMap.get(contract.vehicleId);
       const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
-      const weeklyCharge = contractRiderWeeklyCharge(contract);
-      const margin = weeklyCharge - weeklyLease;
+      const weeklyCharge = contractPaymentConfirmCharge(contract, weekStart);
+      const margin = weeklyCharge - Math.round(weeklyLease * (contractActiveDaysInWeek(contract, weekStart) / 7));
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
+      const applied = isContractFinalApplyEnabled(contract);
       const disabled = weeklyCharge <= 0 ? ' disabled' : '';
       const checked = state.paymentConfirmSelectedIds.has(String(contract.id)) ? ' checked' : '';
       const rowSelected = checked ? ' class="row-selected"' : '';
+      const partialBtn = applied
+        ? '<span class="muted-inline" title="급여차감 반영 중 · 미납이관 불가">반영중</span>'
+        : `<button type="button" class="small-btn" data-payment-partial="${escapeHtml(contract.id)}"${disabled}>부분납</button>`;
       return `<tr${rowSelected}>
         <td class="lease-check-col">
           <input type="checkbox" data-payment-select="${escapeHtml(contract.id)}"${checked}${disabled}>
@@ -4077,7 +4098,7 @@ const BremAdminLeaseMenus = (function () {
         <td class="lease-payment-week-cell"><strong>${escapeHtml(weekLabel)}</strong></td>
         <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
         <td>${escapeHtml(vehicle?.model || contract.modelType || '-')}</td>
-        <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}</td>
+        <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}${applied ? ' <span class="lease-status--done">급여차감</span>' : ''}</td>
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(weeklyLease)}</td>
         <td>${formatMoney(weeklyCharge)}</td>
@@ -4085,7 +4106,7 @@ const BremAdminLeaseMenus = (function () {
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
           <button type="button" class="small-btn primary-btn" data-payment-full="${escapeHtml(contract.id)}"${disabled}>완납</button>
-          <button type="button" class="small-btn" data-payment-partial="${escapeHtml(contract.id)}"${disabled}>부분납</button>
+          ${partialBtn}
         </td>
       </tr>`;
     }).join('');

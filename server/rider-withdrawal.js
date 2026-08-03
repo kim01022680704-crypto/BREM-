@@ -293,32 +293,36 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   const activeDays = contract
     ? countActiveLeaseDays(weekStart, weekEnd, todayKey, effectiveLeaseStart, contractEnd)
     : 0;
-  // 「대여 및 차감관리」에서 반영하기 한 계약만 출금가능 홀드(일렌탈료×운행일). 미반영은 0.
+  // 「대여 및 차감관리」에서 반영하기 한 계약만 출금가능 홀드(일렌탈료×일수). 미반영은 0.
   const finalApplyEnabled = Boolean(contract?.raw_data?.finalApplyEnabled);
   const leaseCharge = finalApplyEnabled ? (dailyRent * activeDays) : 0;
 
   const contractId = contract?.id ? String(contract.id) : '';
   let outstandingArrears = 0;
   const arrearReasons = [];
-  arrears.forEach(row => {
-    const rowRaw = row.raw_data || {};
-    const sameDriver = (rowRaw.driverId && String(rowRaw.driverId) === String(rider.id))
-      || (
-        leaseNormalizeName(rowRaw.driverName) === leaseNormalizeName(rider.name)
-        && leaseNormalizePhone(rowRaw.driverPhone) === leaseNormalizePhone(rider.phone)
-        && leaseNormalizeName(rowRaw.driverName)
-      );
-    const sameContract = contractId && String(row.contract_id || '') === contractId;
-    if (!sameDriver && !sameContract) return;
-    const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
-    if (COMPLETED_ARREAR_STATUSES.has(status)) return;
-    const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
-    if (remaining <= 0) return;
-    outstandingArrears += remaining;
-    const reason = String(rowRaw.arrearReason || rowRaw.reason || '').trim()
-      || (rowRaw.source === 'weekly-auto' ? '주정산 리스비 미납' : '리스비 미납');
-    arrearReasons.push(reason);
-  });
+  // 급여차감「반영」중이면 같은 계약의 미납(납부확인·주정산 자동 등)은 홀드하지 않는다.
+  // 일렌탈료×일수와 미납이 이중으로 깎이는 것을 막는다.
+  if (!finalApplyEnabled) {
+    arrears.forEach(row => {
+      const rowRaw = row.raw_data || {};
+      const sameDriver = (rowRaw.driverId && String(rowRaw.driverId) === String(rider.id))
+        || (
+          leaseNormalizeName(rowRaw.driverName) === leaseNormalizeName(rider.name)
+          && leaseNormalizePhone(rowRaw.driverPhone) === leaseNormalizePhone(rider.phone)
+          && leaseNormalizeName(rowRaw.driverName)
+        );
+      const sameContract = contractId && String(row.contract_id || '') === contractId;
+      if (!sameDriver && !sameContract) return;
+      const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
+      if (COMPLETED_ARREAR_STATUSES.has(status)) return;
+      const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
+      if (remaining <= 0) return;
+      outstandingArrears += remaining;
+      const reason = String(rowRaw.arrearReason || rowRaw.reason || '').trim()
+        || (rowRaw.source === 'weekly-auto' ? '주정산 리스비 미납' : '리스비 미납');
+      arrearReasons.push(reason);
+    });
+  }
   const arrearReason = [...new Set(arrearReasons)].join(', ');
 
   // 대여(반영) + 차감관리 미납·수기(반영) — 기사 단위 합산, 플랫폼 필터 없음
