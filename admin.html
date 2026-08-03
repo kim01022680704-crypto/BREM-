@@ -2808,7 +2808,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>납부 확인</h2>
-            <p class="form-help">계약·대여 등록 전원이 여기에 나옵니다. <strong>수기납부</strong>는 완납/부분납으로 처리하고, <strong>ERP차감</strong>은 정산·출금에서 깎습니다(미납이관 불가 · 이중차감 방지). 경과 청구 0원이어도 주간청구로 수기 완납할 수 있습니다.</p>
+            <p class="form-help">등록된 <strong>전원</strong>이 여기 나옵니다. ERP OFF/ON과 관계없이 <strong>얼마 걷었는지</strong>는 전부 수기(완납·부분납)로 확인합니다. ERP차감 ON은 정산·출금 자동차감만 켜고, 부분납 시 미납이관은 이중 방지로 안 합니다. 경과 청구 0원이어도 주간청구로 수기 완납 가능.</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist" aria-label="납부 대상">
             <button type="button" class="lease-deduction-tab active" data-payment-source="lease" role="tab" aria-selected="true">리스</button>
@@ -2841,13 +2841,14 @@
                   <th>연락처</th>
                   <th>주간리스비</th>
                   <th>주간청구액</th>
+                  <th>납부액</th>
                   <th>차액</th>
                   <th>납부상태</th>
                   <th>관리</th>
                 </tr>
               </thead>
               <tbody id="leasePaymentConfirmRows">
-                <tr><td colspan="11" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
+                <tr><td colspan="12" class="empty">계약된 기사가 없습니다. 계약/렌탈에서 먼저 배정하세요.</td></tr>
               </tbody>
             </table>
           </div>
@@ -7621,7 +7622,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803m"></script>
+  <script src="js/admin-lease-menus.js?v=20260803n"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

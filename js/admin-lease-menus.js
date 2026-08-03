@@ -4225,20 +4225,20 @@ const BremAdminLeaseMenus = (function () {
       showToast('계약을 찾을 수 없습니다.');
       return;
     }
-    if (isContractFinalApplyEnabled(contract)) {
-      showToast('ERP차감 ON 계약입니다. 미납이관은 이중차감이라 막았습니다. 외부로 다 받았으면 「완납」만 기록하세요.');
-      return;
-    }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
     const daily = contractRiderDailyRent(contract);
     const charge = resolvePaymentConfirmCharge(contract, weekStart);
     const days = contractActiveDaysInWeek(contract, weekStart) || 7;
+    const erpOn = isContractFinalApplyEnabled(contract);
     if (charge <= 0) {
       showToast('일렌탈료가 없어 부분납 처리할 수 없습니다. 계약의 일 렌탈료를 확인하세요.');
       return;
     }
+    const promptHint = erpOn
+      ? '납부 금액을 입력하세요. (ERP차감 ON · 수금액만 기록, 미납이관 안 함)'
+      : '납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)';
     const raw = window.prompt(
-      `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)`,
+      `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n${promptHint}`,
       String(Math.round(charge / 2))
     );
     if (raw == null) return;
@@ -4261,6 +4261,15 @@ const BremAdminLeaseMenus = (function () {
       status: BremLeaseProfit?.PAYMENT_STATUSES?.UNPAID || 'unpaid'
     });
     try {
+      // ERP차감 ON: 정산·출금이 이미 깎으므로 미납이관은 이중 — 수금액만 납부확인에 기록
+      if (erpOn) {
+        await erp().persistAll({ skipFlushStorage: true });
+        updateLeaseErpUnsavedBanner();
+        showToast(`부분납 ${formatMoney(paid)} 기록 · 미납 ${formatMoney(unpaidAmount)} (ERP차감 중 · 미납이관 안 함)`);
+        renderPaymentConfirm();
+        refreshAfterLeaseMutation({ contract: false });
+        return;
+      }
       await moveRemainingToArrears({
         contract,
         weekStart,
@@ -4487,7 +4496,7 @@ const BremAdminLeaseMenus = (function () {
       headEl.innerHTML = `<tr>
         <th class="lease-check-col">선택</th>
         <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
-        <th>주간리스비</th><th>이번주청구</th><th>차액</th><th>납부상태</th><th>관리</th>
+        <th>주간리스비</th><th>이번주청구</th><th>납부액</th><th>차액</th><th>납부상태</th><th>관리</th>
       </tr>`;
     }
     const weekStart = syncPaymentWeekUi(currentWeekStart());
@@ -4503,12 +4512,13 @@ const BremAdminLeaseMenus = (function () {
       }
       if (summaryEl) summaryEl.textContent = `리스 · 완납 ${rows.length}건`;
       if (!rows.length) {
-        rowsEl.innerHTML = '<tr><td colspan="11" class="empty">완납 내역이 없습니다.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="12" class="empty">완납 내역이 없습니다.</td></tr>';
         updatePaymentConfirmBulkUi();
         return;
       }
       rowsEl.innerHTML = rows.map(row => {
         const marginCls = row.margin < 0 ? 'lease-money--deficit' : (row.margin > 0 ? 'lease-money--profit' : '');
+        const paidAmt = Math.max(0, Number(row.payment?.paidAmount || row.weeklyCharge || 0));
         return `<tr>
           <td class="lease-check-col"></td>
           <td class="lease-payment-week-cell"><strong>${escapeHtml(row.weekLabel)}</strong></td>
@@ -4518,6 +4528,7 @@ const BremAdminLeaseMenus = (function () {
           <td>${escapeHtml(row.driverPhone)}</td>
           <td>${formatMoney(row.weeklyLease)}</td>
           <td>${formatMoney(row.weeklyCharge)}</td>
+          <td><strong>${formatMoney(paidAmt)}</strong></td>
           <td class="${marginCls}">${formatMoney(row.margin)}</td>
           <td><span class="lease-status--done">완납</span></td>
           <td><button type="button" class="small-btn danger-btn" data-delete-paid-payment="${escapeHtml(row.payment.id)}">삭제</button></td>
@@ -4553,8 +4564,8 @@ const BremAdminLeaseMenus = (function () {
     });
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="11" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
-        : '<tr><td colspan="11" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+        ? '<tr><td colspan="12" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
+        : '<tr><td colspan="12" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
       updatePaymentConfirmBulkUi();
       return;
     }
@@ -4564,6 +4575,8 @@ const BremAdminLeaseMenus = (function () {
       const progressiveCharge = contractPaymentConfirmCharge(contract, weekStart);
       const settleCharge = resolvePaymentConfirmCharge(contract, weekStart);
       const displayCharge = progressiveCharge > 0 ? progressiveCharge : settleCharge;
+      const payment = findWeekPaymentConfirm(contract.vehicleId, weekStart);
+      const paidAmt = Math.max(0, Number(payment?.paidAmount || 0));
       const margin = displayCharge - Math.round(weeklyLease * (Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7) / 7));
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
@@ -4575,9 +4588,6 @@ const BremAdminLeaseMenus = (function () {
       const modeBadge = applied
         ? ' <span class="lease-status--done">ERP차감</span>'
         : ' <span class="lease-status--collecting">수기납부</span>';
-      const partialBtn = applied
-        ? '<span class="muted-inline" title="ERP차감 ON · 미납이관 불가">ERP차감중</span>'
-        : `<button type="button" class="small-btn" data-payment-partial="${escapeHtml(contract.id)}"${disabled}>부분납</button>`;
       const chargeHint = progressiveCharge <= 0 && settleCharge > 0
         ? '<br><span class="muted-inline">경과0 · 주간청구</span>'
         : '';
@@ -4592,11 +4602,12 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(weeklyLease)}</td>
         <td>${formatMoney(displayCharge)}${chargeHint}</td>
+        <td><strong>${formatMoney(paidAmt)}</strong></td>
         <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
           <button type="button" class="small-btn primary-btn" data-payment-full="${escapeHtml(contract.id)}"${disabled}>완납</button>
-          ${partialBtn}
+          <button type="button" class="small-btn" data-payment-partial="${escapeHtml(contract.id)}"${disabled}>부분납</button>
         </td>
       </tr>`;
     }).join('');
