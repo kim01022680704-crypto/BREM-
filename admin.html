@@ -2631,7 +2631,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>대여 및 차감관리</h2>
-            <p class="form-help">리스·대여는 ERP 기사 ID로 매칭합니다. 정산 시 그 주 실지급이 큰 플랫폼부터 차감합니다. 「차감관리」는 미납·수기 차감만 다룹니다.</p>
+            <p class="form-help">리스·대여는 ERP 기사 ID로 매칭합니다. 기본은 <strong>수기납부</strong>(ERP 차감 안 함 · 납부확인에서 완납). BREM ERP로 깎을 때만 <strong>ERP차감 ON</strong>. 「차감관리」는 미납·수기 차감만 다룹니다.</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist">
             <button type="button" class="lease-deduction-tab active" data-deduction-tab="lease" role="tab" aria-selected="true">리스 차감</button>
@@ -2647,8 +2647,8 @@
                 <input type="checkbox" id="leaseDeductionLeaseSelectAll">
                 <span>전체 선택</span>
               </label>
-              <button type="button" class="primary-btn" id="leaseDeductionLeaseBulkApplyBtn" disabled>선택 반영</button>
-              <button type="button" class="small-btn" id="leaseDeductionLeaseBulkClearBtn" disabled>선택 해제</button>
+              <button type="button" class="primary-btn" id="leaseDeductionLeaseBulkApplyBtn" disabled>선택 ERP차감 ON</button>
+              <button type="button" class="small-btn" id="leaseDeductionLeaseBulkClearBtn" disabled>선택 수기납부</button>
               <button type="button" class="primary-btn lease-erp-commit-btn" data-lease-commit-btn>Supabase 저장</button>
             </div>
             <div class="table-wrap lease-table-wrap lease-list-scroll">
@@ -2664,7 +2664,7 @@
                     <th>차감시작일</th>
                     <th>이번주 운행일</th>
                     <th>예정차감</th>
-                    <th>반영상태</th>
+                    <th>차감방식</th>
                     <th>관리</th>
                   </tr>
                 </thead>
@@ -2726,7 +2726,7 @@
                     <th>종료예정</th>
                     <th>마지막날</th>
                     <th>이유</th>
-                    <th>반영</th>
+                    <th>차감방식</th>
                     <th>관리</th>
                   </tr>
                 </thead>
@@ -2808,7 +2808,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>납부 확인</h2>
-            <p class="form-help">리스는 <strong>이번주 경과 일수×일렌탈료</strong>만 청구합니다(7일 전액 금지). 급여차감「반영」계약은 미납이관이 막혀 이중차감을 막습니다.</p>
+            <p class="form-help">계약·대여 등록 전원이 여기에 나옵니다. <strong>수기납부</strong>는 완납/부분납으로 처리하고, <strong>ERP차감</strong>은 정산·출금에서 깎습니다(미납이관 불가 · 이중차감 방지). 경과 청구 0원이어도 주간청구로 수기 완납할 수 있습니다.</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist" aria-label="납부 대상">
             <button type="button" class="lease-deduction-tab active" data-payment-source="lease" role="tab" aria-selected="true">리스</button>
@@ -7621,7 +7621,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803k"></script>
+  <script src="js/admin-lease-menus.js?v=20260803m"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

@@ -1151,6 +1151,15 @@ const BremAdminLeaseMenus = (function () {
     return Math.max(0, Math.round(daily * Math.max(0, days)));
   }
 
+  /**
+   * 수기 완납용 청구액. 경과일이 0이어도(차감시작 전 등) 주간청구(일×7)로 기록할 수 있게 한다.
+   */
+  function resolvePaymentConfirmCharge(contract, weekStart) {
+    const progressive = contractPaymentConfirmCharge(contract, weekStart);
+    if (progressive > 0) return progressive;
+    return contractRiderWeeklyCharge(contract);
+  }
+
   /** 차량관리에 등록된 주간 리스비(원가) = 일리스비 × 7 */
   function vehicleWeeklyLeaseCost(vehicle) {
     return Math.max(0, Math.round(Number(vehicle?.dailyLeaseCost || 0) * 7));
@@ -1776,10 +1785,22 @@ const BremAdminLeaseMenus = (function () {
 
     try {
       const statusPatch = erp().resolveContractStatusOnSave?.(draft, vehicle) || {};
+      const existingContract = draft.id ? erp().contracts().getById(draft.id) : null;
+      // 신규 등록 기본 = 미반영(수기납부). BREM ERP 차감은 「ERP차감 ON」에서만.
+      const finalApplyEnabled = existingContract
+        ? isContractFinalApplyEnabled(existingContract)
+        : false;
       const contractPayload = {
         ...draft,
         ...statusPatch,
-        vehicleId: vehicle.id
+        vehicleId: vehicle.id,
+        finalApplyEnabled,
+        rawData: {
+          ...(existingContract?.rawData || {}),
+          ...(draft.rawData || {}),
+          deductStartDate: draft.deductStartDate || existingContract?.rawData?.deductStartDate || draft.startDate || '',
+          finalApplyEnabled
+        }
       };
 
       erp().vehicles().update(vehicle.id, {
@@ -1819,7 +1840,9 @@ const BremAdminLeaseMenus = (function () {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
       }
-      showToast(wasEdit ? '계약을 수정했습니다. Supabase 저장을 눌러주세요.' : '계약을 추가했습니다. Supabase 저장을 눌러주세요.');
+      showToast(wasEdit
+        ? '계약을 수정했습니다. Supabase 저장을 눌러주세요.'
+        : '계약을 추가했습니다(기본 수기납부). 납부확인에 표시됩니다. Supabase 저장을 눌러주세요.');
 
       // 2) 손익 스냅샷·대시보드·차량목록은 다음 틱으로 미룬다. (원격 저장은 Supabase 저장 버튼)
       setTimeout(() => {
@@ -2854,11 +2877,11 @@ const BremAdminLeaseMenus = (function () {
     const count = state.deductionLeaseSelectedIds.size;
     if (applyBtn) {
       applyBtn.disabled = count <= 0;
-      applyBtn.textContent = count > 0 ? `선택 반영 (${count})` : '선택 반영';
+      applyBtn.textContent = count > 0 ? `선택 ERP차감 ON (${count})` : '선택 ERP차감 ON';
     }
     if (clearBtn) {
       clearBtn.disabled = count <= 0;
-      clearBtn.textContent = count > 0 ? `선택 해제 (${count})` : '선택 해제';
+      clearBtn.textContent = count > 0 ? `선택 수기납부 (${count})` : '선택 수기납부';
     }
     if (selectAll) {
       const boxes = document.querySelectorAll('[data-deduction-lease-select]');
@@ -2902,8 +2925,8 @@ const BremAdminLeaseMenus = (function () {
     }
     if (!options.silent) {
       showToast(nextEnabled
-        ? `${formatDriverContractLabel(contract.driverName || '기사')} · 리스 차감 반영`
-        : `${formatDriverContractLabel(contract.driverName || '기사')} · 리스 차감 해제`);
+        ? `${formatDriverContractLabel(contract.driverName || '기사')} · ERP차감 ON (정산·출금 차감)`
+        : `${formatDriverContractLabel(contract.driverName || '기사')} · 수기납부 (ERP 차감 안 함)`);
       renderDeductionLease();
       renderDeductionManage();
       refreshAfterLeaseMutation({ contract: false });
@@ -2917,8 +2940,8 @@ const BremAdminLeaseMenus = (function () {
       showToast('계약을 선택하세요.');
       return;
     }
-    const label = enabled ? '반영' : '해제';
-    if (!window.confirm(`선택한 ${ids.length}건을 리스 차감 ${label}할까요?`)) return;
+    const label = enabled ? 'ERP차감 ON' : '수기납부';
+    if (!window.confirm(`선택한 ${ids.length}건을 ${label}로 바꿀까요?\n${enabled ? '정산·출금에서 리스 차감됩니다.' : 'ERP 차감 안 함 · 납부확인에서 수기 처리합니다.'}`)) return;
     let ok = 0;
     for (const id of ids) {
       const done = await setContractFinalApply(id, enabled, { skipPersist: true, silent: true });
@@ -2933,7 +2956,7 @@ const BremAdminLeaseMenus = (function () {
     }
     state.deductionLeaseSelectedIds.clear();
     updateLeaseErpUnsavedBanner();
-    showToast(`리스 차감 ${label} ${ok}건`);
+    showToast(`${label} ${ok}건`);
     renderDeductionLease();
     refreshAfterLeaseMutation({ contract: false });
   }
@@ -2962,7 +2985,7 @@ const BremAdminLeaseMenus = (function () {
     }
     const appliedCount = contracts.filter(isContractFinalApplyEnabled).length;
     if (summaryEl) {
-      summaryEl.textContent = `계약 ${contracts.length}건 · 반영 ${appliedCount}건 · 주차 ${formatPaymentWeekColumn(weekStart)} · 일렌탈료 차감`;
+      summaryEl.textContent = `계약 ${contracts.length}건 · ERP차감 ${appliedCount}건 · 수기납부 ${contracts.length - appliedCount}건 · ${formatPaymentWeekColumn(weekStart)}`;
     }
     const visibleIds = new Set(contracts.map(c => String(c.id)));
     [...state.deductionLeaseSelectedIds].forEach(id => {
@@ -2994,11 +3017,11 @@ const BremAdminLeaseMenus = (function () {
         <td><input type="date" class="admin-period-input" data-lease-deduct-start="${escapeHtml(contract.id)}" value="${escapeHtml(startDate)}" title="일차감 시작일"></td>
         <td>${days}일</td>
         <td>${formatMoney(charge)}</td>
-        <td><span class="${applied ? 'lease-status--done' : 'lease-status--collecting'}">${applied ? '반영됨' : '미반영'}</span></td>
+        <td><span class="${applied ? 'lease-status--done' : 'lease-status--collecting'}">${applied ? 'ERP차감' : '수기납부'}</span></td>
         <td class="lease-payment-confirm-actions">
           ${applied
-    ? `<button type="button" class="small-btn" data-deduction-lease-clear="${escapeHtml(contract.id)}">반영 해제</button>`
-    : `<button type="button" class="small-btn primary-btn" data-deduction-lease-apply="${escapeHtml(contract.id)}">반영하기</button>`}
+    ? `<button type="button" class="small-btn" data-deduction-lease-clear="${escapeHtml(contract.id)}" title="ERP 차감 끄고 납부확인 수기 처리">수기납부</button>`
+    : `<button type="button" class="small-btn primary-btn" data-deduction-lease-apply="${escapeHtml(contract.id)}" title="정산·출금에서 리스 차감">ERP차감 ON</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -3402,16 +3425,18 @@ const BremAdminLeaseMenus = (function () {
       deductionPlatform: 'coupang',
       reason: String($('leaseLoanReason')?.value || '').trim() || '대여금',
       status: 'active',
-      finalApplyEnabled: Boolean(existing?.finalApplyEnabled),
+      // 신규 대여 기본 = 미반영(수기납부). ERP 차감은 「ERP차감 ON」에서만.
+      finalApplyEnabled: existing ? Boolean(existing.finalApplyEnabled) : false,
       externalPaid: existing?.externalPaid || 0
     });
     syncLoanLedgerFromLoan(loan);
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     resetLoanForm();
     renderDeductionLoan();
+    if (state.menu === 'payment-confirm') renderPaymentConfirm();
     showToast(editId
       ? `대여 수정 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일`
-      : `대여 등록 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일`);
+      : `대여 등록 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일 · 납부확인에서 수기 완납 가능`);
   }
 
   function editLoan(id) {
@@ -3461,7 +3486,10 @@ const BremAdminLeaseMenus = (function () {
     syncLoanLedgerFromLoan(saved, { finalApplyEnabled: Boolean(enabled) });
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     renderDeductionLoan();
-    showToast(enabled ? `${loan.driverName || '기사'} · 대여 차감 반영` : `${loan.driverName || '기사'} · 대여 차감 해제`);
+    showToast(enabled
+      ? `${loan.driverName || '기사'} · ERP차감 ON (정산·출금 차감)`
+      : `${loan.driverName || '기사'} · 수기납부 (ERP 차감 안 함)`);
+    if (state.menu === 'payment-confirm') renderPaymentConfirm();
   }
 
   function renderDeductionLoan() {
@@ -3475,7 +3503,7 @@ const BremAdminLeaseMenus = (function () {
     }
     const applied = list.filter(i => i.finalApplyEnabled).length;
     if (summaryEl) {
-      summaryEl.textContent = `대여금 ${list.length}건 · 반영 ${applied}건 · 잔액합 ${formatMoney(list.reduce((s, i) => s + Number(i.balance || 0), 0))}`;
+      summaryEl.textContent = `대여금 ${list.length}건 · ERP차감 ${applied}건 · 수기납부 ${list.length - applied}건 · 잔액합 ${formatMoney(list.reduce((s, i) => s + Number(i.balance || 0), 0))}`;
     }
     if (!list.length) {
       rowsEl.innerHTML = '<tr><td colspan="13" class="empty">등록된 대여금이 없습니다.</td></tr>';
@@ -3506,11 +3534,11 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(endDate)}</td>
         <td>${formatMoney(lastAmt)}</td>
         <td>${escapeHtml(loan.reason || '-')}</td>
-        <td><span class="${loan.finalApplyEnabled ? 'lease-status--done' : 'lease-status--collecting'}">${loan.finalApplyEnabled ? '반영됨' : '미반영'}</span></td>
+        <td><span class="${loan.finalApplyEnabled ? 'lease-status--done' : 'lease-status--collecting'}">${loan.finalApplyEnabled ? 'ERP차감' : '수기납부'}</span></td>
         <td class="lease-payment-confirm-actions">
           ${loan.finalApplyEnabled
-    ? `<button type="button" class="small-btn" data-loan-clear="${escapeHtml(loan.id)}">반영 해제</button>`
-    : `<button type="button" class="small-btn primary-btn" data-loan-apply="${escapeHtml(loan.id)}">반영하기</button>`}
+    ? `<button type="button" class="small-btn" data-loan-clear="${escapeHtml(loan.id)}" title="ERP 차감 끄고 납부확인 수기 처리">수기납부</button>`
+    : `<button type="button" class="small-btn primary-btn" data-loan-apply="${escapeHtml(loan.id)}" title="정산·출금에서 대여 차감">ERP차감 ON</button>`}
           <button type="button" class="small-btn" data-loan-edit="${escapeHtml(loan.id)}">수정</button>
           <button type="button" class="small-btn danger-btn" data-loan-delete="${escapeHtml(loan.id)}">삭제</button>
         </td>
@@ -3862,7 +3890,7 @@ const BremAdminLeaseMenus = (function () {
 
   function markContractWeekFullyPaid(contract, weekStart) {
     if (!contract?.vehicleId || !weekStart) return null;
-    const charge = contractPaymentConfirmCharge(contract, weekStart);
+    const charge = resolvePaymentConfirmCharge(contract, weekStart);
     if (charge <= 0) return null;
     return upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
@@ -4006,8 +4034,8 @@ const BremAdminLeaseMenus = (function () {
 
   function applyPaymentFullCore(contract, weekStart) {
     if (!contract) return { ok: false, charge: 0, reason: '계약 없음' };
-    const charge = contractPaymentConfirmCharge(contract, weekStart);
-    if (charge <= 0) return { ok: false, charge: 0, reason: '이번주 청구액 없음' };
+    const charge = resolvePaymentConfirmCharge(contract, weekStart);
+    if (charge <= 0) return { ok: false, charge: 0, reason: '일렌탈료가 없어 완납 처리할 수 없습니다' };
 
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
@@ -4064,13 +4092,17 @@ const BremAdminLeaseMenus = (function () {
       return false;
     }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
-    const charge = contractPaymentConfirmCharge(contract, weekStart);
+    const progressive = contractPaymentConfirmCharge(contract, weekStart);
+    const charge = resolvePaymentConfirmCharge(contract, weekStart);
     if (charge <= 0) {
-      showToast('이번주 청구액이 없어 완납 처리할 수 없습니다. 차감시작일·일 렌탈료를 확인하세요.');
+      showToast('일렌탈료가 없어 완납 처리할 수 없습니다. 계약의 일 렌탈료를 확인하세요.');
       return false;
     }
     if (!options.skipConfirm) {
-      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요? (경과 일수×일렌탈료)`)) return false;
+      const chargeNote = progressive > 0
+        ? '경과 일수×일렌탈료'
+        : '경과 청구 0원 → 주간청구(일×7)로 수기 완납';
+      if (!window.confirm(`${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n완납 ${formatMoney(charge)} 처리할까요? (${chargeNote})`)) return false;
     }
 
     const result = applyPaymentFullCore(contract, weekStart);
@@ -4114,8 +4146,8 @@ const BremAdminLeaseMenus = (function () {
       showToast('선택한 계약을 찾을 수 없습니다.');
       return;
     }
-    const totalCharge = contracts.reduce((sum, contract) => sum + contractPaymentConfirmCharge(contract, weekStart), 0);
-    if (!window.confirm(`선택한 ${contracts.length}건을 완납 처리할까요?\n합계 ${formatMoney(totalCharge)} (경과 일수×일렌탈료)`)) return;
+    const totalCharge = contracts.reduce((sum, contract) => sum + resolvePaymentConfirmCharge(contract, weekStart), 0);
+    if (!window.confirm(`선택한 ${contracts.length}건을 완납 처리할까요?\n합계 ${formatMoney(totalCharge)}`)) return;
 
     let okCount = 0;
     let failCount = 0;
@@ -4194,15 +4226,15 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     if (isContractFinalApplyEnabled(contract)) {
-      showToast('급여차감「반영」계약입니다. 미납이관은 이중차감이라 막았습니다. 외부로 다 받았으면 「완납」만 기록하세요.');
+      showToast('ERP차감 ON 계약입니다. 미납이관은 이중차감이라 막았습니다. 외부로 다 받았으면 「완납」만 기록하세요.');
       return;
     }
     const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
     const daily = contractRiderDailyRent(contract);
-    const charge = contractPaymentConfirmCharge(contract, weekStart);
-    const days = contractActiveDaysInWeek(contract, weekStart);
+    const charge = resolvePaymentConfirmCharge(contract, weekStart);
+    const days = contractActiveDaysInWeek(contract, weekStart) || 7;
     if (charge <= 0) {
-      showToast('이번주 청구액이 없어 부분납 처리할 수 없습니다. 차감시작일·일 렌탈료를 확인하세요.');
+      showToast('일렌탈료가 없어 부분납 처리할 수 없습니다. 계약의 일 렌탈료를 확인하세요.');
       return;
     }
     const raw = window.prompt(
@@ -4309,7 +4341,7 @@ const BremAdminLeaseMenus = (function () {
       showToast('이미 완납된 대여입니다.');
       return;
     }
-    if (!window.confirm(`${loan.driverName || '기사'} · 대여 잔액 ${formatMoney(balance)}을 완납 처리할까요?\n(계좌이체 등 외부 납부로 잔액을 0으로 만듭니다. 급여차감 반영은 해제됩니다.)`)) {
+    if (!window.confirm(`${loan.driverName || '기사'} · 대여 잔액 ${formatMoney(balance)}을 완납 처리할까요?\n(계좌이체 등 외부 납부로 잔액을 0으로 만듭니다. ERP차감은 해제됩니다.)`)) {
       return;
     }
     const saved = store.save({
@@ -4429,8 +4461,11 @@ const BremAdminLeaseMenus = (function () {
         const principalLabel = interest > 0
           ? `${formatMoney(total)}<br><span class="muted-inline">원금 ${formatMoney(loan.principal)}+이자 ${formatMoney(interest)}</span>`
           : formatMoney(loan.principal);
+        const modeBadge = loan.finalApplyEnabled
+          ? ' <span class="lease-status--done">ERP차감</span>'
+          : ' <span class="lease-status--collecting">수기납부</span>';
         return `<tr>
-          <td>${escapeHtml(loan.driverName || '-')}</td>
+          <td>${escapeHtml(loan.driverName || '-')}${modeBadge}</td>
           <td>${escapeHtml(loan.driverPhone || '-')}</td>
           <td>${principalLabel}</td>
           <td>${formatMoney(loan.balance)}</td>
@@ -4526,17 +4561,26 @@ const BremAdminLeaseMenus = (function () {
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = vehicleMap.get(contract.vehicleId);
       const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
-      const weeklyCharge = contractPaymentConfirmCharge(contract, weekStart);
-      const margin = weeklyCharge - Math.round(weeklyLease * (contractActiveDaysInWeek(contract, weekStart) / 7));
+      const progressiveCharge = contractPaymentConfirmCharge(contract, weekStart);
+      const settleCharge = resolvePaymentConfirmCharge(contract, weekStart);
+      const displayCharge = progressiveCharge > 0 ? progressiveCharge : settleCharge;
+      const margin = displayCharge - Math.round(weeklyLease * (Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7) / 7));
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
       const applied = isContractFinalApplyEnabled(contract);
-      const disabled = weeklyCharge <= 0 ? ' disabled' : '';
+      const noDaily = settleCharge <= 0;
+      const disabled = noDaily ? ' disabled' : '';
       const checked = state.paymentConfirmSelectedIds.has(String(contract.id)) ? ' checked' : '';
       const rowSelected = checked ? ' class="row-selected"' : '';
+      const modeBadge = applied
+        ? ' <span class="lease-status--done">ERP차감</span>'
+        : ' <span class="lease-status--collecting">수기납부</span>';
       const partialBtn = applied
-        ? '<span class="muted-inline" title="급여차감 반영 중 · 미납이관 불가">반영중</span>'
+        ? '<span class="muted-inline" title="ERP차감 ON · 미납이관 불가">ERP차감중</span>'
         : `<button type="button" class="small-btn" data-payment-partial="${escapeHtml(contract.id)}"${disabled}>부분납</button>`;
+      const chargeHint = progressiveCharge <= 0 && settleCharge > 0
+        ? '<br><span class="muted-inline">경과0 · 주간청구</span>'
+        : '';
       return `<tr${rowSelected}>
         <td class="lease-check-col">
           <input type="checkbox" data-payment-select="${escapeHtml(contract.id)}"${checked}${disabled}>
@@ -4544,10 +4588,10 @@ const BremAdminLeaseMenus = (function () {
         <td class="lease-payment-week-cell"><strong>${escapeHtml(weekLabel)}</strong></td>
         <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
         <td>${escapeHtml(vehicle?.model || contract.modelType || '-')}</td>
-        <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}${applied ? ' <span class="lease-status--done">급여차감</span>' : ''}</td>
+        <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}${modeBadge}</td>
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(weeklyLease)}</td>
-        <td>${formatMoney(weeklyCharge)}</td>
+        <td>${formatMoney(displayCharge)}${chargeHint}</td>
         <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
