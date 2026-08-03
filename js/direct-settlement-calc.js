@@ -426,14 +426,19 @@ const BremDirectSettlementCalc = (function () {
     const end = weekEndFromStart(start);
     const today = dateKey(new Date());
 
-    const addItem = (item) => {
+    const addItem = (item, { fullBalance = false } = {}) => {
       if (!item) return;
       if (item.finalApplyEnabled != null && !item.finalApplyEnabled) return;
       if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
       const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
       if (balance <= 0) return;
       let amount = 0;
-      if (typeof window.BremStorage?.loanChargeInDateRange === 'function') {
+      if (fullBalance) {
+        // 차감관리 미납·수기: 출금홀드와 동일하게 잔액 전액
+        const deductStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+        if (deductStart && today && today < deductStart) return;
+        amount = balance;
+      } else if (typeof window.BremStorage?.loanChargeInDateRange === 'function') {
         amount = window.BremStorage.loanChargeInDateRange(item, start, end, today);
       } else {
         const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
@@ -475,7 +480,7 @@ const BremDirectSettlementCalc = (function () {
       if (kind === 'loan') return;
       if (kind !== 'unpaid' && kind !== 'manual') return;
       if (!item.finalApplyEnabled) return;
-      addItem(item);
+      addItem(item, { fullBalance: true });
     });
     return index;
   }

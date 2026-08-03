@@ -212,7 +212,7 @@
     const arrearReason = String(lease.arrearReason || '리스비 미납').trim() || '리스비 미납';
     const deductParts = [];
     if (leaseChargeOnly > 0) deductParts.push(`리스차감 ${formatMoney(leaseChargeOnly)}`);
-    if (ledgerCharge > 0) deductParts.push(`대여차감 ${formatMoney(ledgerCharge)}`);
+    if (ledgerCharge > 0) deductParts.push(`대여·차감관리 ${formatMoney(ledgerCharge)}`);
     if (outstandingArrears > 0 && leaseDeduction > leaseChargeOnly + ledgerCharge) {
       // 미납은 별도 배너로도 표시
     }
@@ -251,7 +251,7 @@
       } else {
         const platform = selectedPlatform();
         const platformPart = platform
-          ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(Math.max(0, platformAvailableAmount(platform)))}`
+          ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(platformAvailableAmount(platform))}`
           : '플랫폼을 선택하세요';
         hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(avail.coupang)} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(avail.baemin)}${leaseText} · ${platformPart}`;
       }
@@ -267,13 +267,16 @@
     }
   }
 
-  // 헤드라인 "출금가능금액"(=최대 신청 가능액) + 입력창 max + 미리보기를 현재 상태·플랫폼 기준으로 다시 계산.
+  // 헤드라인 = 실제 출금가능(마이너스 표시) / 입력 max = 신청 가능액(0 이상)
   // 플랫폼별 수수료가 다를 수 있어 플랫폼 변경 시에도 호출한다.
   function syncMaxUi() {
     const maxRequestable = Math.max(0, maxWithdrawableAmount());
+    const displayAvailable = selectedPlatform()
+      ? Number(platformAvailableAmount(selectedPlatform()) || 0)
+      : Number(state.availableAmount || 0);
     if (availableEl) {
-      availableEl.textContent = formatMoney(maxRequestable);
-      availableEl.classList.toggle('is-negative', state.availableAmount < 0);
+      availableEl.textContent = formatMoney(displayAvailable);
+      availableEl.classList.toggle('is-negative', displayAvailable < 0);
     }
     if (amountInput) {
       amountInput.max = String(maxRequestable || 0);
@@ -525,7 +528,7 @@
       const avail = state.availableByPlatform || {};
       const platform = selectedPlatform();
       const platformPart = platform
-        ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(Math.max(0, platformAvailableAmount(platform)))}`
+        ? `선택 ${platformLabel(platform)} 출금가능 ${formatMoney(platformAvailableAmount(platform))}`
         : '플랫폼을 선택하세요';
       hintEl.textContent = `쿠팡 실지급 ${formatMoney(by.coupang)} / 출금가능 ${formatMoney(avail.coupang)} · 배민 실지급 ${formatMoney(by.baemin)} / 출금가능 ${formatMoney(avail.baemin)} · ${platformPart}`;
     }

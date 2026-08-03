@@ -10889,6 +10889,12 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   font-weight: 900;
 }
 
+.pds-net-col.is-negative {
+  border-left-color: #ef4444 !important;
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
 .pds-call-fee-col[hidden] {
   display: none !important;
 }

@@ -1285,9 +1285,10 @@
     }
 
     body.innerHTML = visible.map(row => {
-      const coupangAvail = Math.max(0, driverPlatformAvailable(row, 'coupang'));
-      const baeminAvail = Math.max(0, driverPlatformAvailable(row, 'baemin'));
+      const coupangAvail = Number(driverPlatformAvailable(row, 'coupang') || 0);
+      const baeminAvail = Number(driverPlatformAvailable(row, 'baemin') || 0);
       const canAct = row.enrolledPlatforms?.coupang || row.enrolledPlatforms?.baemin;
+      const negClass = (n) => (n < 0 ? ' class="pds-net-col is-negative"' : ' class="pds-net-col"');
       return `
       <tr>
         <td><strong>${escapeHtml(row.driverName || '-')}</strong></td>
@@ -1297,8 +1298,8 @@
         <td>${formatWon(row.requestedAmountTotal)}</td>
         <td>${formatWon(row.withdrawnAmountTotal)}</td>
         <td>${row.leaseDeduction ? formatWon(row.leaseDeduction) : '-'}</td>
-        <td class="pds-net-col"><strong>${formatWon(coupangAvail)}</strong></td>
-        <td class="pds-net-col"><strong>${formatWon(baeminAvail)}</strong></td>
+        <td${negClass(coupangAvail)}><strong>${formatWon(coupangAvail)}</strong></td>
+        <td${negClass(baeminAvail)}><strong>${formatWon(baeminAvail)}</strong></td>
         <td>
           ${canAct
             ? `<button type="button" class="small-btn primary-btn" data-pds-admin-withdraw="${escapeHtml(row.driverId)}">출금</button>`

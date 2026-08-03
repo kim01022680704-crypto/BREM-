@@ -329,7 +329,7 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   }
   const arrearReason = [...new Set(arrearReasons)].join(', ');
 
-  // 대여(반영) + 차감관리 미납·수기(반영) — 기사 단위 합산, 플랫폼 필터 없음
+  // 대여(반영) = 일×일수 스케줄 / 차감관리 미납·수기(반영) = 잔액 전액 홀드(마이너스 허용)
   let ledgerCharge = 0;
   const addDailyBalanceItem = (item, { useLoanSchedule = false } = {}) => {
     if (!item || !item.finalApplyEnabled) return;
@@ -345,13 +345,12 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
       ledgerCharge += loanChargeInDateRange(item, weekStart, weekEnd, todayKey);
       return;
     }
-    const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+    // 미납·수기: 시작일 이후 잔액 전액을 계속 홀드 (일 차감은 회수 스케줄/표시용)
     const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
-    if (daily <= 0 || balance <= 0) return;
+    if (balance <= 0) return;
     const itemStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
-    const days = countActiveLeaseDays(weekStart, weekEnd, todayKey, itemStart, '');
-    if (days <= 0) return;
-    ledgerCharge += Math.min(balance, daily * days);
+    if (itemStart && todayKey && todayKey < itemStart) return;
+    ledgerCharge += balance;
   };
 
   (Array.isArray(tables?.loans) ? tables.loans : []).forEach(item => addDailyBalanceItem(item, { useLoanSchedule: true }));
