@@ -10915,7 +10915,8 @@ const BremStorage = (function () {
     if (rem === 0) {
       days = fullDays;
       lastDayAmount = daily;
-      regularDays = fullDays;
+      // 마지막날을 lastDayAmount로 쓰므로 regularDays는 fullDays-1 (아니면 total이 하루치 더해짐)
+      regularDays = Math.max(0, fullDays - 1);
     } else if (fullDays === 0) {
       days = 1;
       lastDayAmount = target;

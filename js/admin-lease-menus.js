@@ -2833,7 +2833,14 @@ const BremAdminLeaseMenus = (function () {
   function syncLoanSchedulePreview() {
     const principal = Math.max(0, Math.round(Number($('leaseLoanPrincipal')?.value || 0)));
     const dailyDeduct = Math.max(0, Math.round(Number($('leaseLoanDailyDeduct')?.value || 0)));
-    const deductStartDate = String($('leaseLoanDeductStartDate')?.value || '').slice(0, 10);
+    let deductStartDate = String($('leaseLoanDeductStartDate')?.value || '').trim();
+    // type=date 외 로케일 표기(2026. 08. 05.)가 들어오면 ISO로 정규화
+    const loose = deductStartDate.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if (loose && !/^\d{4}-\d{2}-\d{2}$/.test(deductStartDate.slice(0, 10))) {
+      deductStartDate = `${loose[1]}-${String(loose[2]).padStart(2, '0')}-${String(loose[3]).padStart(2, '0')}`;
+    } else {
+      deductStartDate = deductStartDate.slice(0, 10);
+    }
     const compute = window.BremStorage?.computeLoanDeductSchedule;
     const schedule = typeof compute === 'function'
       ? compute({ principal, dailyDeduct, deductStartDate })
@@ -2845,7 +2852,9 @@ const BremAdminLeaseMenus = (function () {
       if (endEl) endEl.value = '';
       if (lastEl) lastEl.value = '';
       if (hint && principal > 0 && dailyDeduct > 0) {
-        hint.textContent = '시작일을 입력하면 종료일·마지막날 차감이 계산됩니다.';
+        hint.textContent = deductStartDate
+          ? '종료일 계산 실패 · 원금·일 차감·시작일을 다시 확인하세요.'
+          : '시작일을 입력하면 종료일·마지막날 차감이 계산됩니다.';
       }
       return null;
     }
