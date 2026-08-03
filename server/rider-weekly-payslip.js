@@ -449,41 +449,98 @@ function contractMatchesRider(contractRow, rider) {
   return nameMatch && phoneMatch;
 }
 
+function loanItemMatchesRider(item, rider) {
+  if (!item || !rider) return false;
+  if (item.driverId && String(item.driverId) === String(rider.id)) return true;
+  const nameMatch = normalizeName(item.driverName) && normalizeName(item.driverName) === normalizeName(rider.name);
+  const phoneMatch = normalizePhone(item.driverPhone) && normalizePhone(item.driverPhone) === normalizePhone(rider.phone);
+  return Boolean(nameMatch && phoneMatch);
+}
+
+function parseSettingsList(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  return [];
+}
+
+/**
+ * 기사 주급명세서 상단용 리스/대여/미납 요약.
+ * - dailyRent / dailyLoanDeduct: 하루 차감액 (헤더 표기)
+ * - unpaidAmount: 미납/회수 잔액 (등록된 것만)
+ * - leaseFee: 하위 호환(예전 오버레이). 주급 공제표는 발행 명세서 버킷이 기준.
+ */
 async function findRiderLeaseInfo(supabase, rider) {
-  const { data: contracts, error } = await supabase
-    .from('lease_contracts')
-    .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
-    .in('status', ['active', 'operating', 'rented'])
-    .order('updated_at', { ascending: false })
-    .limit(200);
+  const empty = {
+    ok: true,
+    hasLease: false,
+    isRental: false,
+    contractType: '',
+    dailyRent: 0,
+    dailyLoanDeduct: 0,
+    leaseFee: 0,
+    weeklyRent: 0,
+    unpaidAmount: 0,
+    unpaidReason: '',
+    vehicleNumber: '',
+    finalApplyEnabled: false,
+    contractId: ''
+  };
 
-  if (error) {
-    return { ok: false, error: error.message || '리스 계약을 불러오지 못했습니다.' };
+  const [contractsRes, loansRes] = await Promise.all([
+    supabase
+      .from('lease_contracts')
+      .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
+      .in('status', ['active', 'operating', 'rented'])
+      .order('updated_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'brem_lease_loans_v1')
+      .maybeSingle()
+  ]);
+
+  if (contractsRes.error) {
+    return { ok: false, error: contractsRes.error.message || '리스 계약을 불러오지 못했습니다.' };
   }
 
-  const contract = (contracts || []).find(row => contractMatchesRider(row, rider));
-  if (!contract) {
-    return {
-      ok: true,
-      hasLease: false,
-      contractType: '',
-      leaseFee: 0,
-      weeklyRent: 0,
-      unpaidAmount: 0,
-      vehicleNumber: ''
-    };
+  const contract = (contractsRes.data || []).find(row => contractMatchesRider(row, rider));
+  let dailyRent = 0;
+  let weeklyRent = 0;
+  let finalApplyEnabled = false;
+  let vehicleNumber = '';
+  let contractId = '';
+  let contractType = '';
+  let hasLease = false;
+  let isRental = false;
+
+  if (contract) {
+    const raw = contract.raw_data || {};
+    finalApplyEnabled = Boolean(raw.finalApplyEnabled);
+    dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
+    weeklyRent = Math.max(0, Math.round(Number(raw.weeklyRent || dailyRent * 7 || 0)));
+    vehicleNumber = String(raw.vehicleNumber || '').trim();
+    contractId = contract.id ? String(contract.id) : '';
+    contractType = String(contract.contract_type || raw.contractType || 'lease');
+    hasLease = contractType === 'lease';
+    isRental = contractType === 'rental';
   }
 
-  const raw = contract.raw_data || {};
-  const finalApplyEnabled = Boolean(raw.finalApplyEnabled);
-  const dailyRent = Number(raw.dailyRent || contract.daily_charge || 0);
-  const weeklyRent = Number(raw.weeklyRent || dailyRent * 7 || 0);
-  // 반영된 계약만 리스비 표시·오버레이. 실제 공제는 직계약 정산결과 leaseFee 열이 기준.
-  const leaseCost = finalApplyEnabled ? Number(raw.leaseCost || weeklyRent || 0) : 0;
-  const contractId = contract.id ? String(contract.id) : '';
+  // 대여(대출) 일차감액 — 활성(미완납) 건의 dailyDeduct 합산 (헤더 안내용)
+  let dailyLoanDeduct = 0;
+  const loans = parseSettingsList(loansRes?.data?.value);
+  loans.forEach(item => {
+    if (!loanItemMatchesRider(item, rider)) return;
+    if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
+    const balance = Math.max(0, Math.round(Number(
+      item.balance != null ? item.balance : (Number(item.principal || 0) + Number(item.interest || 0))
+    )));
+    if (balance <= 0) return;
+    dailyLoanDeduct += Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+  });
+
   let unpaidAmount = 0;
   const unpaidReasons = [];
-
   const COMPLETED = new Set(['completed', 'recovered', 'done', 'paid', 'closed']);
   const { data: arrears } = await supabase
     .from('lease_arrears')
@@ -511,18 +568,25 @@ async function findRiderLeaseInfo(supabase, rider) {
     unpaidReasons.push(reason);
   });
 
-  const contractType = String(contract.contract_type || raw.contractType || 'lease');
+  if (!contract && dailyLoanDeduct <= 0 && unpaidAmount <= 0) {
+    return empty;
+  }
+
   return {
     ok: true,
-    hasLease: contractType === 'lease',
-    isRental: contractType === 'rental',
+    hasLease,
+    isRental,
     contractType,
-    leaseFee: leaseCost,
+    dailyRent,
+    dailyLoanDeduct,
+    // 하위 호환: 예전 클라이언트 오버레이용(주간 추정). 신규 헤더는 dailyRent 사용.
+    leaseFee: finalApplyEnabled ? dailyRent : 0,
     weeklyRent,
     unpaidAmount,
     unpaidReason: [...new Set(unpaidReasons)].join(', '),
-    vehicleNumber: String(raw.vehicleNumber || '').trim(),
-    contractId: contract.id
+    vehicleNumber,
+    finalApplyEnabled,
+    contractId
   };
 }
 
@@ -651,11 +715,14 @@ async function getRiderWeeklyPayslip(accessToken, weekStartInput) {
       hasLease: leaseInfo.hasLease || leaseInfo.isRental,
       contractType: leaseInfo.contractType,
       leaseLabel: leaseInfo.hasLease ? '리스' : (leaseInfo.isRental ? '렌탈' : '없음'),
+      dailyRent: leaseInfo.dailyRent || 0,
+      dailyLoanDeduct: leaseInfo.dailyLoanDeduct || 0,
       leaseFee: leaseInfo.leaseFee,
       weeklyRent: leaseInfo.weeklyRent,
       unpaidAmount: leaseInfo.unpaidAmount,
       unpaidReason: leaseInfo.unpaidReason || '',
-      vehicleNumber: leaseInfo.vehicleNumber || ''
+      vehicleNumber: leaseInfo.vehicleNumber || '',
+      finalApplyEnabled: Boolean(leaseInfo.finalApplyEnabled)
     },
     notices
   };

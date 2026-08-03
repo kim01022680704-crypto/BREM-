@@ -143,6 +143,25 @@
     return `${Number(value || 0).toLocaleString('ko-KR')}원`;
   }
 
+  function formatDailyMoney(value) {
+    const amount = Math.max(0, Math.round(Number(value || 0)));
+    return amount > 0 ? `${amount.toLocaleString('ko-KR')}원/일` : '-';
+  }
+
+  function formatUnpaid(lease) {
+    const amount = Math.max(0, Math.round(Number(lease?.unpaidAmount || 0)));
+    if (!amount) return '-';
+    const reason = String(lease?.unpaidReason || '').trim();
+    return reason ? `${formatMoney(amount)} (${reason})` : formatMoney(amount);
+  }
+
+  function renderHeaderLeaseBadges(lease = {}) {
+    setText('driverPayslipLeaseStatus', lease.leaseLabel || '없음');
+    setText('driverPayslipLeaseFee', formatDailyMoney(lease.dailyRent));
+    setText('driverPayslipLoanFee', formatDailyMoney(lease.dailyLoanDeduct));
+    setText('driverPayslipLeaseUnpaid', formatUnpaid(lease));
+  }
+
   function formatLocalDateKey(date) {
     return [
       date.getFullYear(),
@@ -316,12 +335,7 @@
       setText('driverPayslipRiderName', result.rider?.name || '-');
       setText('driverPayslipCoupangId', result.rider?.coupangId || '-');
       setText('driverPayslipBaeminId', result.rider?.baeminId || '-');
-      setText('driverPayslipLeaseStatus', result.lease?.leaseLabel || '없음');
-      setText('driverPayslipLeaseFee', result.lease?.leaseFee ? formatMoney(result.lease.leaseFee) : '-');
-      setText('driverPayslipLoanFee', '-');
-      setText('driverPayslipLeaseUnpaid', result.lease?.unpaidAmount
-        ? `${formatMoney(result.lease.unpaidAmount)} (${result.lease.unpaidReason || '리스비 미납'})`
-        : '-');
+      renderHeaderLeaseBadges(result.lease || {});
       renderNotices(result.notices);
       return;
     }
@@ -342,24 +356,12 @@
     setText('driverPayslipRiderName', rider.name || payslip.riderName || '-');
     setText('driverPayslipCoupangId', rider.coupangId || payslip.coupangId || '-');
     setText('driverPayslipBaeminId', rider.baeminId || payslip.baeminId || '-');
-    setText('driverPayslipLeaseStatus', lease.leaseLabel || '없음');
-    // 헤더 리스·대여차감은 정산결과(직계약) 공제열과 동일 값(버킷)을 우선 표시
-    const headerLease = Number(bucket.leaseFee || 0) || Number(lease.leaseFee || 0);
-    const headerLoan = Number(bucket.loanFee || 0);
-    setText('driverPayslipLeaseFee', headerLease ? formatMoney(headerLease) : '-');
-    setText('driverPayslipLoanFee', headerLoan ? formatMoney(headerLoan) : '-');
-    setText('driverPayslipLeaseUnpaid', lease.unpaidAmount
-      ? `${formatMoney(lease.unpaidAmount)} (${lease.unpaidReason || '리스비 미납'})`
-      : '-');
+    // 상단: 등록된 일 차감액 / 미납 잔액 (주간 공제표와 별개)
+    renderHeaderLeaseBadges(lease);
 
-    // 직계약 공제에 리스비가 이미 있으면 오버레이로 또 빼지 않는다(이중 공제 방지).
-    // 미납 잔액만 별도 오버레이로 표시·합산한다.
-    const bucketLease = Number(bucket.leaseFee || 0);
-    const leaseDeduct = includeLease
-      ? (bucketLease > 0
-        ? Number(lease.unpaidAmount || 0)
-        : Number(lease.leaseFee || 0) + Number(lease.unpaidAmount || 0))
-      : 0;
+    // 공제표·합계는 발행된 명세서 버킷이 기준.
+    // 미납만 별도 오버레이(등록된 미납/회수 잔액). 리스 오버레이 행은 넣지 않음(중복 방지).
+    const leaseDeduct = includeLease ? Math.max(0, Math.round(Number(lease.unpaidAmount || 0))) : 0;
     const gross = bucket.grossPay;
     const deduct = bucket.deductTotal + leaseDeduct;
     const net = bucket.netPay - leaseDeduct;
@@ -386,11 +388,8 @@
       const rows = DEDUCT_ROWS.filter(row => row.key !== 'deductTotal').map(row => (
         renderPayRow(row.label, bucket[row.key])
       ));
-      if (includeLease && lease.hasLease && bucketLease <= 0) {
-        rows.push(renderPayRow('리스차감', lease.leaseFee, lease.vehicleNumber || '리스/렌탈'));
-      }
-      if (includeLease && lease.unpaidAmount) {
-        rows.push(renderPayRow('미납', lease.unpaidAmount, lease.unpaidReason || '리스비 미납'));
+      if (includeLease && leaseDeduct > 0) {
+        rows.push(renderPayRow('미납', leaseDeduct, lease.unpaidReason || '리스비 미납'));
       }
       rows.push(renderPayRow('공제합계', deduct, '합계'));
       deductBody.innerHTML = rows.join('');
