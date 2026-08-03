@@ -2458,7 +2458,7 @@ const BremAdminLeaseMenus = (function () {
       : '';
     if (!window.confirm(
       `주정산(${weekStart}~) 리스비 미납 ${candidates.length}건 · 합계 ${formatMoney(total)} 을 미납/회수에 등록할까요?${skipNote}\n`
-      + '정산에서 이미 리스비가 차감된 기사는 등록 후 「회수완료」로 처리하세요.'
+      + '※ 급여차감「반영」계약은 제외됩니다. 반영분은 주정산 리스차감 → 마이너스 시 소급분에서 선택 차감하세요.'
     )) return;
 
     candidates.forEach(({ contract, days, charge }) => {

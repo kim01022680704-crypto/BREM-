@@ -3058,7 +3058,7 @@
             </div>
             <div class="lease-arrear-form-actions">
               <button type="submit" class="primary-btn" id="leaseArrearRegisterBtn">미납 등록</button>
-              <button type="button" class="small-btn primary-btn" id="leaseArrearBulkWeeklyBtn" title="선택한 주(수~화)에 미반영 계약의 리스비를 미납/회수에 일괄 등록합니다. 「대여 및 차감관리」에서 반영된 계약은 직계약 리스비 공제 대상이라 제외됩니다.">이번주 리스비 미납 일괄 등록</button>
+              <button type="button" class="small-btn primary-btn" id="leaseArrearBulkWeeklyBtn" title="선택한 주(수~화) · 미반영 계약만. 급여차감「반영」계약은 주정산 리스차감으로 처리하므로 제외(이중 방지).">이번주 리스비 미납 일괄 등록</button>
             </div>
           </form>
           <article class="card lease-arrear-complete-card" id="leaseArrearCompleteCard" hidden>
@@ -4790,14 +4790,14 @@
               </label>
               <button type="button" class="small-btn" id="settlementResultWeekAllBtn" title="주 필터를 해제하고 전체 정산서 보기">전체 주</button>
               <button type="button" class="small-btn" id="settlementResultReloadBtn">불러오기</button>
-              <button type="button" class="small-btn primary-btn" id="settlementResultBatchFixBtn" title="총지급액이 마이너스인 기사를 기타지급 그로스업으로 0원 처리합니다">마이너스 일괄 맞추기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementResultBatchFixBtn" title="총지급액 마이너스 → 0원 맞추기. 소급분 탭에 기록 후 선택해 차감관리로 보내세요">마이너스 일괄 맞추기</button>
               <button type="button" class="small-btn" id="settlementResultExportBtn">엑셀 내보내기</button>
               <button type="button" class="small-btn danger-btn" id="settlementResultDeleteBtn" title="선택한 정산서를 삭제하고 처음부터 다시 업로드합니다">정산서 삭제</button>
               <button type="button" class="small-btn danger-btn" id="settlementResultDeleteWeekBtn" title="이 주의 정산서를 모두 삭제합니다">이 주 전체 삭제</button>
               <input type="hidden" id="settlementResultWeek">
             </div>
           </div>
-          <p class="form-help">주정산서(직계약) 금액·공제 + 「프로모션정산등록」에서 <strong>그 정산서에 적용한</strong> BREM프로모션·기타지급으로 라이더별 최종 정산을 계산합니다. 공제내역에 <strong>리스차감·대여차감</strong>(「대여 및 차감관리」기사앱 반영분)이 포함됩니다. 총지급액 = 지급합계 − 공제합계. 처음부터 다시 하려면 「정산서 삭제」또는 「이 주 전체 삭제」후 「주정산서 업로드 (직계약)」에서 다시 올리면 됩니다.</p>
+          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 주중 출금가능에서 리스를 다 못 깎아도 OK입니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요. 반영 계약은 미납/회수 일괄에 넣지 않습니다(이중 방지).</p>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
           <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
@@ -4831,7 +4831,7 @@
               <button type="button" class="small-btn primary-btn" id="settlementRetroSendBtn" title="체크한 건만 차감관리(미납)로 이관합니다">차감관리로 보내기</button>
             </div>
           </div>
-          <p class="form-help">「마이너스 일괄 맞추기」로 기록된 소급분입니다. <strong>미납잔액</strong>은 맞추기 전 |총지급액|이며, 고용·산재 로스 그로스업은 제외하고 리스·대여 미납만 선택해 차감관리로 수기 이관하세요. 자동 전송은 없습니다.</p>
+          <p class="form-help">「마이너스 일괄 맞추기」로 쌓인 소급분입니다. <strong>미납잔액</strong> = 맞추기 전 |총지급액|(선정산·리스·대여 등으로 마이너스 난 금액). 리스·대여 미납만 골라 「차감관리로 보내기」하세요. 자동 전송 없음. 고용·산재 로스만인 건은 보내지 마세요.</p>
           <p class="direct-inline-stats" id="settlementRetroSummary"></p>
           <div id="settlementResultRetroBody"></div>
         </article>
@@ -7496,7 +7496,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803c"></script>
+  <script src="js/admin-lease-menus.js?v=20260803d"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7506,7 +7506,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
   <script src="js/direct-settlement-calc.js?v=20260803a"></script>
-  <script src="js/settlement-result-direct.js?v=20260802f"></script>
+  <script src="js/settlement-result-direct.js?v=20260803d"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260802e"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>

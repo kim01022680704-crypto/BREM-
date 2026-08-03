@@ -432,6 +432,13 @@ const BremSettlementResultDirect = (function () {
         coupangId: prev.coupangId || (state.platform === 'coupang' ? row.idLabel : '')
       });
       const unpaidBalance = Math.abs(Math.round(Number(row.netPay || 0)));
+      const leaseFee = Math.max(0, Math.round(Number(row.leaseFee || 0)));
+      const loanFee = Math.max(0, Math.round(Number(row.loanFee || 0)));
+      const prepaid = Math.max(0, Math.round(Number(row.prepaid || 0)));
+      const reasonParts = [];
+      if (leaseFee > 0) reasonParts.push(`리스차감 ${leaseFee.toLocaleString('ko-KR')}`);
+      if (loanFee > 0) reasonParts.push(`대여차감 ${loanFee.toLocaleString('ko-KR')}`);
+      if (prepaid > 0) reasonParts.push(`선정산 ${prepaid.toLocaleString('ko-KR')}`);
       retro.push({
         driverId: row.driverId,
         name: row.name,
@@ -440,22 +447,25 @@ const BremSettlementResultDirect = (function () {
         amount: x,
         grossUpAmount: x,
         unpaidBalance,
+        leaseFee,
+        loanFee,
+        prepaid,
         status: 'logged',
-        reason: '',
+        reason: reasonParts.join(' · ') || '',
         settlementId: settlement.id
       });
     });
     if (!entries.length) { showToast('맞출 금액이 없습니다.'); return; }
 
     const preview = retro.slice(0, 15)
-      .map(r => `· ${r.name} (${r.idLabel}) 미납 ${formatNumber(r.unpaidBalance)}원 · 그로스업 +${formatNumber(r.amount)}원`);
+      .map(r => `· ${r.name} (${r.idLabel}) 미납 ${formatNumber(r.unpaidBalance)}원 · 그로스업 +${formatNumber(r.amount)}원${r.reason ? ` [${r.reason}]` : ''}`);
     const more = retro.length > 15 ? `\n외 ${retro.length - 15}명` : '';
     const ok = window.confirm(
       [
         `${entries.length}명의 마이너스를 0원으로 맞춥니다.`,
         '마이너스만큼 기타지급을 올리고, 원천세 3.3%까지 반영(그로스업)합니다.',
-        '총 출금액·선정산은 그대로이며, 「소급분 및 미납금」탭에 기록됩니다.',
-        '차감관리 이관은 자동이 아닙니다. 탭에서 선택해 보내세요.',
+        '선정산·리스차감·대여차감은 그대로이며, 「소급분 및 미납금」에 미납잔액이 기록됩니다.',
+        '차감관리 이관은 자동이 아닙니다. 탭에서 리스·대여 관련 건만 선택해 보내세요.',
         '',
         ...preview
       ].join('\n') + more + '\n\n적용할까요?'
@@ -495,6 +505,9 @@ const BremSettlementResultDirect = (function () {
           ...r,
           unpaidBalance: Math.max(0, Math.round(Number(r.unpaidBalance != null ? r.unpaidBalance : 0))),
           grossUpAmount: Math.max(0, Math.round(Number(r.grossUpAmount != null ? r.grossUpAmount : r.amount || 0))),
+          leaseFee: Math.max(0, Math.round(Number(r.leaseFee || 0))),
+          loanFee: Math.max(0, Math.round(Number(r.loanFee || 0))),
+          prepaid: Math.max(0, Math.round(Number(r.prepaid || 0))),
           status: String(r.status || 'logged')
         });
       });
@@ -558,6 +571,9 @@ const BremSettlementResultDirect = (function () {
           <td class="settlement-retro-id">${escapeHtml(r.idLabel || '-')}</td>
           <td class="settlement-retro-platform">${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
           <td class="settlement-retro-amount weekly-amount-cell"><strong>${formatNumber(r.unpaidBalance)}</strong>원</td>
+          <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.leaseFee)}원</td>
+          <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.loanFee)}원</td>
+          <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.prepaid)}원</td>
           <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.grossUpAmount)}원</td>
           <td>${escapeHtml(r.reason || '-')}</td>
           <td>${escapeHtml(retroStatusLabel(r.status))}</td>
@@ -575,7 +591,10 @@ const BremSettlementResultDirect = (function () {
                   <th class="settlement-retro-id">아이디</th>
                   <th class="settlement-retro-platform">플랫폼</th>
                   <th class="settlement-retro-amount">미납잔액</th>
-                  <th class="settlement-retro-amount">그로스업액(참고)</th>
+                  <th class="settlement-retro-amount">리스차감</th>
+                  <th class="settlement-retro-amount">대여차감</th>
+                  <th class="settlement-retro-amount">선정산</th>
+                  <th class="settlement-retro-amount">그로스업(참고)</th>
                   <th>이유/메모</th>
                   <th>이관상태</th>
                 </tr>
