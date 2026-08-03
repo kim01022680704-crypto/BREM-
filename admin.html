@@ -4828,10 +4828,10 @@
                 <input type="search" id="settlementRetroSearch" class="admin-period-input" placeholder="이름 · 아이디" autocomplete="off">
               </label>
               <button type="button" class="small-btn" id="settlementRetroReloadBtn">불러오기</button>
-              <button type="button" class="small-btn primary-btn" id="settlementRetroSendBtn" title="체크한 건만 차감관리(미납)로 이관합니다">차감관리로 보내기</button>
+              <button type="button" class="small-btn primary-btn" id="settlementRetroSendBtn" title="체크한 건만 미납/회수 + 차감관리로 이관합니다">미납·차감으로 보내기</button>
             </div>
           </div>
-          <p class="form-help">「마이너스 일괄 맞추기」로 쌓인 소급분입니다. <strong>왼쪽 체크박스로 선택 → 「차감관리로 보내기」</strong>(선택한 건만 이관, 전체 자동 전송 없음). <strong>미납잔액</strong> = 맞추기 전 |총지급액|. 리스·대여 미납만 보내세요. 미납 0원(고용·산재 로스)은 선택 불가입니다.</p>
+          <p class="form-help">「마이너스 일괄 맞추기」로 쌓인 소급분입니다. <strong>왼쪽 체크 → 「차감관리로 보내기」</strong>하면 <strong>미납/회수 + 차감관리</strong>에 한 세트로 등록됩니다(차감은 반영 ON). 전액완료·일부회수 시 차감 잔액이 같이 줄어듭니다. 미납 0원(고용·산재 로스)은 선택 불가.</p>
           <p class="direct-inline-stats" id="settlementRetroSummary"></p>
           <div id="settlementResultRetroBody"></div>
         </article>
@@ -7496,7 +7496,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260803d"></script>
+  <script src="js/admin-lease-menus.js?v=20260803f"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7506,7 +7506,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
   <script src="js/direct-settlement-calc.js?v=20260803a"></script>
-  <script src="js/settlement-result-direct.js?v=20260803e"></script>
+  <script src="js/settlement-result-direct.js?v=20260803f"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260802e"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260723o"></script>

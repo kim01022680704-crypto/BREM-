@@ -617,14 +617,14 @@ const BremSettlementResultDirect = (function () {
         </div>`;
     }).join('');
 
-    body.innerHTML = `<p class="settlement-retro-select-hint">☑ 왼쪽 체크박스로 <strong>보낼 건만</strong> 고른 뒤 「차감관리로 보내기」하세요. 전체 자동 전송 없음 · 이관 가능 ${selectableCount}건</p>${weekBlocks}`;
+    body.innerHTML = `<p class="settlement-retro-select-hint">☑ 보낼 건만 체크 → 「미납·차감으로 보내기」(미납/회수 + 차감관리 세트 · 자동 전체전송 없음 · 이관 가능 ${selectableCount}건)</p>${weekBlocks}`;
     const updateSelectHint = () => {
-      const n = body.querySelectorAll('.settlement-retro-check:checked:not([disabled])').length;
+      const n = body.querySelectorAll('input.settlement-retro-check:checked:not([disabled])').length;
       const hint = body.querySelector('.settlement-retro-select-hint');
       if (hint) {
         hint.innerHTML = n > 0
-          ? `☑ <strong>${n}건</strong> 선택됨 · 「차감관리로 보내기」누르면 선택한 건만 이관합니다.`
-          : `☑ 왼쪽 체크박스로 <strong>보낼 건만</strong> 고른 뒤 「차감관리로 보내기」하세요. 전체 자동 전송 없음 · 이관 가능 ${selectableCount}건`;
+          ? `☑ <strong>${n}건</strong> 선택됨 · 「미납·차감으로 보내기」누르면 미납/회수+차감관리에 등록됩니다.`
+          : `☑ 보낼 건만 체크 → 「미납·차감으로 보내기」(미납/회수 + 차감관리 세트 · 자동 전체전송 없음 · 이관 가능 ${selectableCount}건)`;
       }
     };
     body.querySelectorAll('.settlement-retro-check-all').forEach(master => {
@@ -658,8 +658,13 @@ const BremSettlementResultDirect = (function () {
 
     const store = window.BremStorage?.directRetroAdjustments;
     const ledger = window.BremStorage?.deductionLedger;
+    const pairFn = window.BremAdminLeaseMenus?.createRetroUnpaidPair;
     if (!store || !ledger) {
       showToast('저장소를 사용할 수 없습니다.');
+      return;
+    }
+    if (typeof pairFn !== 'function') {
+      showToast('미납/회수 연동 기능을 불러오지 못했습니다. 페이지를 새로고침하세요.');
       return;
     }
 
@@ -682,8 +687,12 @@ const BremSettlementResultDirect = (function () {
     const defaultDaily = previewRows.length === 1 ? previewRows[0].unpaid : '';
     const dailyRaw = window.prompt(
       [
-        `${previewRows.length}건을 차감관리(미납)로 보냅니다.`,
-        '일 차감액을 입력하세요. (비우면 각 건의 미납잔액 전액 = 일 1회 완납 차감)',
+        `${previewRows.length}건을 「미납/회수」+「차감관리」로 보냅니다.`,
+        '· 미납/회수: 장부·회수 관리',
+        '· 차감관리: 출금가능 홀드(반영 ON)',
+        '· 전액완료/일부회수 시 차감 잔액 자동 동기화',
+        '',
+        '일 차감액을 입력하세요. (비우면 각 건의 미납잔액 전액)',
         previewRows.slice(0, 8).map(p =>
           `· ${p.entry.name} 미납 ${formatNumber(p.unpaid)}원`
         ).join('\n')
@@ -700,7 +709,7 @@ const BremSettlementResultDirect = (function () {
     }
 
     const ok = window.confirm(
-      `${previewRows.length}건을 차감관리로 이관할까요?\n일 차감: ${dailyOverride == null ? '건별 미납잔액' : `${formatNumber(dailyOverride)}원`}`
+      `${previewRows.length}건을 미납/회수 + 차감관리로 이관할까요?\n일 차감: ${dailyOverride == null ? '건별 미납잔액' : `${formatNumber(dailyOverride)}원`}`
     );
     if (!ok) return;
 
@@ -720,31 +729,41 @@ const BremSettlementResultDirect = (function () {
       }
       const dailyDeduct = dailyOverride != null ? Math.min(dailyOverride, unpaid) : unpaid;
       const driver = driverById.get(String(item.entry.driverId)) || null;
-      const saved = ledger.save({
-        kind: 'unpaid',
+      const result = pairFn({
         sourceRef,
+        weekStart: item.weekStart,
+        unpaid,
+        dailyDeduct,
         driverId: item.entry.driverId,
         driverName: item.entry.name || driver?.name || '',
         driverPhone: driver?.phone || driver?.mobile || '',
-        dailyDeduct,
-        balance: unpaid,
         reason: item.entry.reason || `소급/미납 ${item.weekStart}`,
         deductionPlatform: item.entry.platform === 'baemin' ? 'baemin' : 'coupang',
-        deductStartDate: item.weekStart,
-        finalApplyEnabled: false,
-        weekStart: item.weekStart,
-        status: 'active'
+        leaseFee: item.entry.leaseFee,
+        loanFee: item.entry.loanFee,
+        prepaid: item.entry.prepaid
       });
+      if (!result?.ok) {
+        skipped += 1;
+        continue;
+      }
       store.updateEntry?.(item.weekStart, item.entryKey, {
         status: 'sent_to_deduction',
-        ledgerId: saved.id
+        ledgerId: result.ledger?.id || '',
+        arrearId: result.arrear?.id || ''
       });
       created += 1;
     }
 
+    try {
+      await window.BremLeaseErp?.persistAll?.({ skipFlushStorage: true });
+    } catch (_err) { /* ignore */ }
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     renderRetro();
-    showToast(`차감관리 이관 ${created}건${skipped ? ` · 건너뜀 ${skipped}건` : ''}`);
+    try {
+      window.BremAdminLeaseMenus?.refresh?.({ loadRemote: false });
+    } catch (_err) { /* ignore */ }
+    showToast(`미납/회수·차감 이관 ${created}건${skipped ? ` · 건너뜀 ${skipped}건` : ''}`);
   }
 
   // ── 최종결산 (그 주 전체, 쿠팡+배민, 합치지 않음) ────────────────────────

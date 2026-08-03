@@ -2943,6 +2943,169 @@ const BremAdminLeaseMenus = (function () {
     });
   }
 
+  /** 미납/회수 ↔ 차감관리 잔액·상태 동기화 (전액완료·일부회수) */
+  function syncLedgerFromArrear(arrear) {
+    const store = window.BremStorage?.deductionLedger;
+    if (!store || !arrear) return null;
+    const ledgerId = String(arrear.rawData?.ledgerId || '').trim();
+    const sourceRef = String(
+      arrear.rawData?.ledgerSourceRef || arrear.rawData?.sourceRef || ''
+    ).trim();
+    let existing = ledgerId ? store.getById?.(ledgerId) : null;
+    if (!existing && sourceRef) existing = store.findBySource?.('unpaid', sourceRef) || null;
+    if (!existing) return null;
+
+    const remaining = Math.max(0, Math.round(Number(arrear.unpaidAmount || 0)));
+    const completedStatus = calc()?.ARREAR_STATUS?.COMPLETED || 'completed';
+    const done = String(arrear.collectionStatus || '') === completedStatus || remaining <= 0;
+    return store.save({
+      id: existing.id,
+      balance: done ? 0 : remaining,
+      status: done ? 'paid' : 'active',
+      finalApplyEnabled: done ? false : Boolean(existing.finalApplyEnabled),
+      rawData: {
+        ...(existing.rawData || {}),
+        arrearId: arrear.id,
+        holdViaLedger: true,
+        syncedFromArrearAt: new Date().toISOString()
+      }
+    });
+  }
+
+  function findContractForDriver(driverId, driverName, driverPhone) {
+    const contracts = erp()?.contracts?.()?.getAll?.() || [];
+    const id = String(driverId || '').trim();
+    if (id) {
+      const byId = contracts.find(c =>
+        String(c.driverId || c.rawData?.driverId || '').trim() === id
+        && String(c.status || '') !== 'ended'
+      ) || contracts.find(c => String(c.driverId || c.rawData?.driverId || '').trim() === id);
+      if (byId) return byId;
+    }
+    const name = String(driverName || '').trim().toLowerCase().replace(/\s+/g, '');
+    const phone = String(driverPhone || '').replace(/\D/g, '').slice(-4);
+    if (!name || !phone) return null;
+    return contracts.find(c => {
+      const cName = String(c.driverName || c.rawData?.driverName || '').trim().toLowerCase().replace(/\s+/g, '');
+      const cPhone = String(c.driverPhone || c.rawData?.driverPhone || '').replace(/\D/g, '').slice(-4);
+      return cName === name && cPhone === phone;
+    }) || null;
+  }
+
+  /**
+   * 소급분 미납 → 미납/회수(장부) + 차감관리(홀드) 한 세트.
+   * 출금 홀드는 차감「반영」만. 미납은 holdViaLedger 로 이중 홀드 방지.
+   */
+  function createRetroUnpaidPair(payload = {}) {
+    const ledger = window.BremStorage?.deductionLedger;
+    if (!ledger || !erp()) return { ok: false, reason: 'store' };
+    const sourceRef = String(payload.sourceRef || '').trim();
+    const unpaid = Math.max(0, Math.round(Number(payload.unpaid || 0)));
+    if (!sourceRef || unpaid <= 0) return { ok: false, reason: 'amount' };
+    if (ledger.findBySource?.('unpaid', sourceRef)) return { ok: false, reason: 'dup-ledger', skipped: true };
+
+    const completed = calc()?.ARREAR_STATUS?.COMPLETED || 'completed';
+    const collecting = calc()?.ARREAR_STATUS?.COLLECTING || 'collecting';
+    const existingArrear = erp().arrears().getAll().find(item =>
+      String(item.rawData?.sourceRef || '') === sourceRef
+      && String(item.collectionStatus || '') !== completed
+    );
+    if (existingArrear?.rawData?.ledgerId) return { ok: false, reason: 'dup-arrear', skipped: true };
+
+    const weekStart = String(payload.weekStart || '').slice(0, 10);
+    const dailyDeduct = Math.max(0, Math.round(Number(payload.dailyDeduct != null ? payload.dailyDeduct : unpaid)));
+    const driverId = String(payload.driverId || '').trim();
+    const driverName = String(payload.driverName || '').trim();
+    const driverPhone = String(payload.driverPhone || '').trim();
+    const reason = String(payload.reason || `정산 미납 ${weekStart}`).trim();
+    const deductionPlatform = payload.deductionPlatform === 'baemin' ? 'baemin' : 'coupang';
+    const contract = findContractForDriver(driverId, driverName, driverPhone);
+    const identity = contract
+      ? contractDriverIdentity(contract)
+      : { driverId, driverName, driverPhone };
+
+    const savedLedger = ledger.save({
+      kind: 'unpaid',
+      sourceRef,
+      driverId: identity.driverId || driverId,
+      driverName: identity.driverName || driverName,
+      driverPhone: identity.driverPhone || driverPhone,
+      dailyDeduct: dailyDeduct > 0 ? dailyDeduct : unpaid,
+      balance: unpaid,
+      reason,
+      deductionPlatform,
+      deductStartDate: weekStart,
+      finalApplyEnabled: true,
+      finalAppliedAt: new Date().toISOString(),
+      weekStart,
+      status: 'active',
+      rawData: {
+        source: 'retro-settlement',
+        holdViaLedger: true,
+        leaseFee: Math.max(0, Math.round(Number(payload.leaseFee || 0))),
+        loanFee: Math.max(0, Math.round(Number(payload.loanFee || 0))),
+        prepaid: Math.max(0, Math.round(Number(payload.prepaid || 0)))
+      }
+    });
+
+    let arrear;
+    if (existingArrear) {
+      arrear = erp().arrears().update(existingArrear.id, {
+        unpaidAmount: Number(existingArrear.unpaidAmount || 0) + unpaid,
+        collectionMethods: [...new Set([
+          ...(existingArrear.collectionMethods || []),
+          'salary_deduction',
+          'separate_deposit'
+        ])],
+        collectionStatus: collecting,
+        rawData: {
+          ...(existingArrear.rawData || {}),
+          ...identity,
+          source: 'retro-settlement',
+          sourceRef,
+          ledgerId: savedLedger.id,
+          ledgerSourceRef: sourceRef,
+          holdViaLedger: true,
+          arrearReason: existingArrear.rawData?.arrearReason || reason
+        }
+      });
+    } else {
+      arrear = erp().arrears().create({
+        vehicleId: contract?.vehicleId || '',
+        contractId: contract?.id || '',
+        unpaidDays: 0,
+        unpaidAmount: unpaid,
+        paidAmount: 0,
+        recoveredAmount: 0,
+        collectionMethods: ['salary_deduction', 'separate_deposit'],
+        collectionStatus: collecting,
+        unpaidWeekStart: weekStart,
+        memo: reason,
+        rawData: {
+          ...identity,
+          arrearReason: reason,
+          unpaidWeekStart: weekStart,
+          source: 'retro-settlement',
+          sourceRef,
+          ledgerId: savedLedger.id,
+          ledgerSourceRef: sourceRef,
+          holdViaLedger: true
+        }
+      });
+    }
+
+    const linkedLedger = ledger.save({
+      id: savedLedger.id,
+      rawData: {
+        ...(savedLedger.rawData || {}),
+        arrearId: arrear.id,
+        holdViaLedger: true
+      }
+    });
+
+    return { ok: true, ledger: linkedLedger, arrear };
+  }
+
   async function saveLoanForm(event) {
     event?.preventDefault?.();
     const store = window.BremStorage?.leaseLoans;
@@ -4248,12 +4411,18 @@ const BremAdminLeaseMenus = (function () {
       const remaining = Math.max(0, Number(item.unpaidAmount || 0));
       const autoTag = item.rawData?.source === 'weekly-auto'
         ? ' <span class="lease-status-badge lease-arrear-auto-tag">주정산</span>'
-        : '';
+        : (item.rawData?.source === 'retro-settlement' || item.rawData?.ledgerId
+          ? ' <span class="lease-status-badge lease-arrear-auto-tag">정산연동·차감</span>'
+          : '');
+      const driverLabel = contract?.driverName
+        || item.rawData?.driverName
+        || vehicle?.renter
+        || '-';
       return `
         <tr>
           <td>${escapeHtml(vehicle?.vehicleNumber || '-')}</td>
           <td>${escapeHtml(vehicle?.model || '-')}</td>
-          <td>${escapeHtml(contract?.driverName || vehicle?.renter || '-')}${autoTag}</td>
+          <td>${escapeHtml(driverLabel)}${autoTag}</td>
           <td>${escapeHtml(formatArrearWeeksSummary(item))}${weekCount > 1 ? ` <em class="lease-arrear-week-count">(${weekCount}주)</em>` : ''}</td>
           <td>${item.unpaidDays}일</td>
           <td class="lease-money--warning">${formatMoney(remaining)}</td>
@@ -4300,13 +4469,19 @@ const BremAdminLeaseMenus = (function () {
     });
     const completed = calc().ARREAR_STATUS.COMPLETED;
     const collecting = calc().ARREAR_STATUS.COLLECTING;
-    erp().arrears().update(id, {
+    const updated = erp().arrears().update(id, {
       paidAmount: Number(item.paidAmount || 0) + amount,
       recoveredAmount: Number(item.recoveredAmount || 0) + amount,
       unpaidAmount: remaining,
       collectionStatus: remaining > 0 ? collecting : completed,
       processedDate: remaining > 0 ? item.processedDate : BremLeaseProfit.todayKey(),
       rawData: { ...(item.rawData || {}), processingHistory: history }
+    });
+    syncLedgerFromArrear(updated || {
+      ...item,
+      unpaidAmount: remaining,
+      collectionStatus: remaining > 0 ? collecting : completed,
+      recoveredAmount: Number(item.recoveredAmount || 0) + amount
     });
     if (item.contractId && remaining === 0) {
       erp().contracts().update(item.contractId, {
@@ -4324,6 +4499,7 @@ const BremAdminLeaseMenus = (function () {
     }
     try {
       await erp().persistAll({ skipFlushStorage: true });
+      await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     } catch (error) {
       console.error('[recordPartialArrearRecovery]', error);
       showToast(error?.message || '회수 내역 저장에 실패했습니다.');
@@ -4331,11 +4507,12 @@ const BremAdminLeaseMenus = (function () {
     }
     updateLeaseErpUnsavedBanner();
     showToast(remaining > 0
-      ? `일부 회수 ${formatMoney(amount)} · 잔액 ${formatMoney(remaining)}`
-      : `전액 회수 완료 (${formatMoney(amount)}) · 납부확인도 완납 처리`);
+      ? `일부 회수 ${formatMoney(amount)} · 잔액 ${formatMoney(remaining)} (차감관리 잔액 동기화)`
+      : `전액 회수 완료 (${formatMoney(amount)}) · 차감관리 완납 · 납부확인도 완납 처리`);
     renderArrears();
     renderPaymentConfirm();
     renderPaymentPaid();
+    if (state.menu === 'deduction') renderDeductionActivePane();
     refreshAfterLeaseMutation({ contract: false });
   }
 
@@ -4397,7 +4574,7 @@ const BremAdminLeaseMenus = (function () {
       memo,
       processedDate: BremLeaseProfit.todayKey()
     });
-    erp().arrears().update(id, {
+    const updated = erp().arrears().update(id, {
       collectionStatus: calc().ARREAR_STATUS.COMPLETED,
       processedDate: BremLeaseProfit.todayKey(),
       recoveredAmount: recovered,
@@ -4405,6 +4582,12 @@ const BremAdminLeaseMenus = (function () {
       paidAmount: item.paidAmount + recovered,
       memo,
       rawData: { ...(item.rawData || {}), processingHistory: history }
+    });
+    // 전액완료 패널은 회수 처리 완료로 보고 차감도 완납(잔액 0)
+    syncLedgerFromArrear({
+      ...(updated || item),
+      unpaidAmount: 0,
+      collectionStatus: calc().ARREAR_STATUS.COMPLETED
     });
     if (item.contractId) {
       erp().contracts().update(item.contractId, {
@@ -4418,6 +4601,7 @@ const BremAdminLeaseMenus = (function () {
     }
     try {
       await erp().persistAll({ skipFlushStorage: true });
+      await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     } catch (error) {
       console.error('[confirmCompleteArrear]', error);
       showToast(error?.message || '미납 처리 저장에 실패했습니다.');
@@ -4425,10 +4609,11 @@ const BremAdminLeaseMenus = (function () {
     }
     hideArrearCompletePanel();
     updateLeaseErpUnsavedBanner();
-    showToast('미납 처리 완료 · 납부확인도 완납으로 반영');
+    showToast('미납 처리 완료 · 차감관리 완납 · 납부확인도 완납으로 반영');
     renderArrears();
     renderPaymentConfirm();
     renderPaymentPaid();
+    if (state.menu === 'deduction') renderDeductionActivePane();
     refreshAfterLeaseMutation({ contract: false });
   }
 
@@ -5355,7 +5540,9 @@ const BremAdminLeaseMenus = (function () {
     updateLeaseErpUnsavedBanner,
     renderStatusTagsHtml,
     currentWeekStart,
-    renderContractList
+    renderContractList,
+    syncLedgerFromArrear,
+    createRetroUnpaidPair
   };
 })();
 

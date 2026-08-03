@@ -315,6 +315,8 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
       if (!sameDriver && !sameContract) return;
       const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
       if (COMPLETED_ARREAR_STATUSES.has(status)) return;
+      // 소급분 이관 건: 홀드는 연결된 차감관리(반영)만 — 미납 전액 이중 홀드 방지
+      if (rowRaw.holdViaLedger || rowRaw.ledgerId) return;
       const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
       if (remaining <= 0) return;
       outstandingArrears += remaining;
