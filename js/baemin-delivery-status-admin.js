@@ -22,6 +22,7 @@
     dashboardLivePollTimer: null,
     dashboardLiveBusy: false,
     dashboardLiveFetchedAt: 0,
+    dashboardLastActivity: 0,
     activeMenu: 'delivery_status',
     partners: [],
     contamination: null,
@@ -5471,19 +5472,68 @@
     });
   }
 
-  function persistTodayDashboardCache() {
+  function dashboardActivityScore(parts = {}) {
+    return Number(parts.drivingSum || 0)
+      + Number(parts.morningSum || 0)
+      + Number(parts.afternoonSum || 0)
+      + Number(parts.eveningSum || 0)
+      + Number(parts.midnightSum || 0);
+  }
+
+  function estimateActivityFromCache(cache) {
+    if (!cache) return 0;
+    if (Number(cache.activityScore) > 0) return Number(cache.activityScore);
+    const drive = String(cache.summaryText || '').match(/운행중\s*([\d,]+)/);
+    if (drive) {
+      const n = Number(String(drive[1]).replace(/,/g, '')) || 0;
+      if (n > 0) return n;
+    }
+    let sum = 0;
+    const hits = String(cache.panelsHtml || '').match(/(\d+)\s*\/\s*\d+/g) || [];
+    hits.forEach(token => {
+      const m = String(token).match(/(\d+)\s*\//);
+      if (m) sum += Number(m[1]) || 0;
+    });
+    return sum;
+  }
+
+  /** 자동갱신 중 빈·불완전 응답으로 표를 지우지 않음 — 이전 숫자 유지 후 준비되면 한 번에 교체 */
+  function shouldKeepPreviousDashboardPaint({
+    silent,
+    hadTable,
+    prevActivity,
+    itemCount,
+    loadedRegions,
+    expectedRegions
+  }) {
+    if (!silent || !hadTable) return false;
+    // 아이템 0건(빈 스냅샷/일시 실패)이면 기존 유지. 실제 0콜(아이템은 있음)은 정상 반영.
+    if (prevActivity > 0 && Number(itemCount || 0) <= 0) return true;
+    if (
+      prevActivity > 0
+      && Number(expectedRegions || 0) > 1
+      && Number(loadedRegions || 0) < Math.ceil(Number(expectedRegions) / 2)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function persistTodayDashboardCache(activityScore) {
     const panelsEl = $('dashboardBaeminLivePanels');
     const summary = $('dashboardBaeminLiveSummary');
     const appliedEl = $('dashboardBaeminAppliedTime');
     if (!panelsEl?.querySelector('table')) return;
     const accountId = currentBaeminAccountId();
     if (!accountId) return;
+    const score = activityScore == null ? state.dashboardLastActivity : Number(activityScore || 0);
     mergeDashboardCache({
       accountId,
       scopeKey: buildBaeminScopeKey(),
       panelsHtml: panelsEl.innerHTML,
       summaryText: stripRefreshingSuffix(summary?.textContent || ''),
       appliedHtml: appliedEl ? appliedEl.innerHTML : '',
+      activityScore: score,
       regionMeta: (state.dashboardBaeminRegions || []).map(r => ({
         partnerId: r.partnerId,
         regionName: r.regionName
@@ -5535,6 +5585,7 @@
     // 오늘 표: 비어 있을 때만 캐시로 채움 (이미 최신이면 유지)
     if (!panelsEl.querySelector('table') && cache.panelsHtml) {
       panelsEl.innerHTML = cache.panelsHtml;
+      state.dashboardLastActivity = estimateActivityFromCache(cache);
       const summary = $('dashboardBaeminLiveSummary');
       if (summary && cache.summaryText) {
         summary.textContent = `${cache.summaryText}${DASHBOARD_REFRESHING_SUFFIX}`;
@@ -5883,11 +5934,13 @@
     const partnerIds = state.dashboardBaeminRegions.map(r => r.partnerId);
     const today = todayKstDate();
 
-    // 수동 조회만 버튼/요약 로딩 UI — 자동 폴링은 기존 표 유지한 채 조용히 갱신
+    // 표가 있으면 숫자 유지한 채 소프트 갱신만 — 로딩 문구로 표를 비우지 않음
+    const hadTable = Boolean(panelsEl.querySelector('table'));
     if (!silent) {
       btn?.classList.add('is-loading');
       if (btn) btn.textContent = '조회 중…';
-      if (summary) summary.textContent = '오늘 스냅샷·할당 불러오는 중…';
+      if (!hadTable && summary) summary.textContent = '오늘 스냅샷·할당 불러오는 중…';
+      else card?.classList.add('is-soft-refreshing');
     } else {
       card?.classList.add('is-soft-refreshing');
     }
@@ -5917,12 +5970,6 @@
         || today;
       const appliedAt = state.config?.applied?.appliedAt || state.config?.applied?.updatedAt || '';
       const queriedAt = new Date();
-      if (appliedEl) {
-        const appliedLabel = appliedAt
-          ? `적용시간 ${formatDateTime(appliedAt)}`
-          : '적용시간 — (스냅샷 미확인)';
-        appliedEl.innerHTML = `${escapeHtml(appliedLabel)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${escapeHtml(formatDateTime(queriedAt.toISOString()))}</span>`;
-      }
 
       const regionRows = [];
       let drivingSum = 0;
@@ -5935,9 +5982,8 @@
       let targetEvening = 0;
       let targetMidnight = 0;
       let loadedRegions = 0;
+      let itemCount = 0;
 
-      // 오늘 표와 함께 주간·지역탭도 자동 갱신. silent면 기존 표 유지한 채 뒤에서 교체
-      void queryDashboardBaeminWeek(partnerIds, { silent, forceRefresh: silent });
       // 지역별 N회 왕복 대신 서버에서 한 번에(인증 1회 + 병렬) 조회. 실패 시 기존 방식으로 폴백.
       let snapshotResults;
       const dash = await adminApi(
@@ -5950,7 +5996,7 @@
             partnerId,
             result: b
               ? { ok: b.ok !== false, items: b.items || [], notApplied: Boolean(b.notApplied), collectDate: b.collectDate || '', message: b.message || '' }
-              : { ok: true, items: [], notApplied: false }
+              : { ok: false, items: [], notApplied: false, message: '지역 스냅샷 없음' }
           };
         });
       } else {
@@ -5965,6 +6011,7 @@
       const notAppliedHit = snapshotResults.find(entry => entry.result?.ok && entry.result.notApplied);
       if (notAppliedHit) {
         const result = notAppliedHit.result;
+        // 자동갱신: 스냅샷 없음이어도 기존 표는 유지 (0으로 리셋 금지)
         if (!silent) {
           if (summary) {
             summary.textContent = result.message || '적용된 배민현황 스냅샷이 없습니다. BIZ 수집 후 저장하세요.';
@@ -5983,6 +6030,7 @@
         if (!result?.ok || result.notApplied) continue;
 
         const items = filterRowsByPartnerId(result.items || [], partnerId);
+        itemCount += items.length;
         const totals = aggregateDeliveryStatusMetrics(items);
         const setCount = getPartnerSetCount(partnerId);
         const targets = computeSlotTargets(setCount, today);
@@ -6022,6 +6070,26 @@
         return;
       }
 
+      const nextActivity = dashboardActivityScore({
+        drivingSum,
+        morningSum,
+        afternoonSum,
+        eveningSum,
+        midnightSum
+      });
+      const prevActivity = Number(state.dashboardLastActivity || 0);
+      if (shouldKeepPreviousDashboardPaint({
+        silent,
+        hadTable,
+        prevActivity,
+        itemCount,
+        loadedRegions,
+        expectedRegions: partnerIds.length
+      })) {
+        // 빈·불완전 응답은 버리고 이전 숫자 유지 — 다음 폴링에서 다시 시도
+        return;
+      }
+
       const nextHtml = renderDashboardTodayTable(regionRows, {
         drivingSum,
         morningSum,
@@ -6033,15 +6101,23 @@
         targetEvening,
         targetMidnight
       });
-      // 표는 새 HTML이 준비된 뒤에만 교체 → 깜빡임 최소화
+      // 적용시각·표는 새 결과가 준비된 뒤에만 교체 (중간 0 깜빡임 방지)
+      if (appliedEl) {
+        const appliedLabel = appliedAt
+          ? `적용시간 ${formatDateTime(appliedAt)}`
+          : '적용시간 — (스냅샷 미확인)';
+        appliedEl.innerHTML = `${escapeHtml(appliedLabel)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${escapeHtml(formatDateTime(queriedAt.toISOString()))}</span>`;
+      }
       panelsEl.innerHTML = nextHtml;
 
       const summaryText = `오늘 ${today} · 지역 ${formatNumber(loadedRegions)}곳 · 운행중 ${formatNumber(drivingSum)}명 · 세트수 할당 대비`;
       if (summary) {
         summary.textContent = summaryText;
       }
-      // 다음 열람 때 즉시 표시할 수 있도록 마지막 결과 캐시 (주간은 week 조회 완료 시 merge)
-      persistTodayDashboardCache();
+      state.dashboardLastActivity = nextActivity;
+      persistTodayDashboardCache(nextActivity);
+      // 오늘 확정 후에만 주간 갱신 (실패/빈응답 때 주간까지 0으로 덮지 않음)
+      void queryDashboardBaeminWeek(partnerIds, { silent, forceRefresh: silent });
       if (!silent) {
         showToast(`오늘 할당 · 운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳`);
       }

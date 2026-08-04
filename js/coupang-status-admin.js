@@ -35,6 +35,7 @@
     busy: false,
     pollTimer: null,
     lastQueryAt: 0,
+    lastActivity: 0,
     weekVendorId: '',
     weekCache: null,
     weekRange: null,
@@ -660,10 +661,12 @@
     if (dash.busy) return;
     dash.busy = true;
 
+    const hadTable = Boolean(mount.querySelector('table'));
     if (!silent) {
       btn?.classList.add('is-loading');
       if (btn) btn.textContent = '조회 중…';
-      if (summary) summary.textContent = '오늘 피크·운행중 불러오는 중…';
+      if (!hadTable && summary) summary.textContent = '오늘 피크·운행중 불러오는 중…';
+      else card?.classList.add('is-soft-refreshing');
     } else {
       card?.classList.add('is-soft-refreshing');
     }
@@ -671,9 +674,6 @@
     try {
       const today = todayBusinessKey();
       const queriedAt = new Date();
-      if (appliedEl) {
-        appliedEl.innerHTML = `기준일 ${esc(today)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${esc(formatDateTimeLabel(queriedAt))}</span>`;
-      }
 
       const [peakRes, vendorRes] = await Promise.all([
         adminApi(`/api/admin/coupang/items?sourceMenu=peak_realtime&collectDate=${encodeURIComponent(today)}`),
@@ -682,6 +682,7 @@
 
       if (!peakRes.ok && !vendorRes.ok) {
         const msg = peakRes.message || vendorRes.message || '조회 실패';
+        // 자동갱신 실패 시 기존 표 유지 (0으로 리셋 금지)
         if (!silent) {
           mount.innerHTML = `<p class="form-help">${esc(msg)}</p>`;
           if (summary) summary.textContent = msg;
@@ -766,9 +767,22 @@
         totals.rejectionRate = Math.round((totals.rejectionRateSum / totals.rejectionRateN) * 10) / 10;
       }
 
+      const nextActivity = Number(totals.drivingSum || 0)
+        + PEAK_ORDER.reduce((sum, pt) => sum + Number(totals.peaks[pt]?.completed || 0), 0);
+      const itemCount = (peakRes.items || []).length + (vendorRes.items || []).length;
+      const prevActivity = Number(dash.lastActivity || 0);
+      // 자동갱신: 이전 숫자가 있는데 빈/0 응답이면 표 유지 (깜빡이며 0 되는 것 방지)
+      if (silent && hadTable && prevActivity > 0 && (nextActivity <= 0 || itemCount <= 0)) {
+        return;
+      }
+
+      if (appliedEl) {
+        appliedEl.innerHTML = `기준일 ${esc(today)}<span class="dashboard-baemin-queried-at"> · 자동조회 ${esc(formatDateTimeLabel(queriedAt))}</span>`;
+      }
       mount.innerHTML = renderTodayTable(regionRows, totals);
       const summaryText = `오늘 ${today} · 지역 ${regionRows.length}곳 · 운행중 ${n(totals.drivingSum)}명 · 피크 할당 대비 · 2분마다 자동 조회`;
       if (summary) summary.textContent = summaryText;
+      dash.lastActivity = nextActivity;
       persistTodayCache();
       if (!silent || !dash.weekCache) {
         void loadWeekQuota(regionRows.map(r => ({ vendorId: r.vendorId, vendorName: r.vendorName })));
@@ -888,6 +902,11 @@
     const mount = $('dashboardCoupangCard');
     if (mount && cache.panelsHtml) {
       mount.innerHTML = cache.panelsHtml;
+      const drive = String(cache.summaryText || '').match(/운행중\s*([\d,]+)/);
+      dash.lastActivity = Number(cache.activityScore || 0)
+        || (drive ? Number(String(drive[1]).replace(/,/g, '')) || 0 : 0)
+        || dash.lastActivity
+        || 1;
       const summary = $('dashboardCoupangLiveSummary');
       if (summary && cache.summaryText) summary.textContent = `${cache.summaryText} · 최신 갱신 중…`;
       const appliedEl = $('dashboardCoupangAppliedTime');
@@ -917,7 +936,8 @@
       scopeKey: buildCoupangScopeKey(),
       panelsHtml: mount.innerHTML,
       summaryText: summary ? String(summary.textContent || '').replace(/\s*·\s*최신 갱신 중…$/, '') : '',
-      appliedHtml: appliedEl ? appliedEl.innerHTML : ''
+      appliedHtml: appliedEl ? appliedEl.innerHTML : '',
+      activityScore: Number(dash.lastActivity || 0)
     });
   }
 
