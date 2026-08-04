@@ -226,23 +226,72 @@ function authHeaders() {
   return h;
 }
 
-async function apiGet(pathAndQuery) {
-  const res = await fetch(`${ORIGIN}${pathAndQuery}`, { method: 'GET', headers: authHeaders() });
-  const txt = await res.text();
-  let json = null;
-  try { json = JSON.parse(txt); } catch { /* non-json */ }
-  return { ok: res.ok, status: res.status, json };
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
-async function apiPost(pathAndQuery, body) {
-  const res = await fetch(`${ORIGIN}${pathAndQuery}`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'content-type': 'application/json' },
-    body: JSON.stringify(body || {})
-  });
-  const txt = await res.text();
-  let json = null;
-  try { json = JSON.parse(txt); } catch { /* non-json */ }
-  return { ok: res.ok, status: res.status, json };
+
+/** 동시 N개 제한 풀 실행 */
+async function mapPool(items, concurrency, worker) {
+  const list = Array.isArray(items) ? items : [];
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, list.length || 1));
+  const results = new Array(list.length);
+  let next = 0;
+  async function runOne() {
+    while (next < list.length) {
+      const index = next;
+      next += 1;
+      results[index] = await worker(list[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, () => runOne()));
+  return results;
+}
+
+async function apiGet(pathAndQuery, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.retries) || 3);
+  let last = { ok: false, status: 0, json: null };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(`${ORIGIN}${pathAndQuery}`, { method: 'GET', headers: authHeaders() });
+    const txt = await res.text();
+    let json = null;
+    try { json = JSON.parse(txt); } catch { /* non-json */ }
+    last = { ok: res.ok, status: res.status, json };
+    if (res.ok) return last;
+    if (res.status === 401) return last;
+    if (res.status === 429 || res.status >= 500) {
+      const backoff = Math.min(8000, 400 * (2 ** (attempt - 1)));
+      console.warn(`[BREM][coupang] GET retry ${attempt}/${maxAttempts} status=${res.status} wait=${backoff}ms`);
+      await sleep(backoff);
+      continue;
+    }
+    return last;
+  }
+  return last;
+}
+async function apiPost(pathAndQuery, body, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.retries) || 3);
+  let last = { ok: false, status: 0, json: null };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(`${ORIGIN}${pathAndQuery}`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+    const txt = await res.text();
+    let json = null;
+    try { json = JSON.parse(txt); } catch { /* non-json */ }
+    last = { ok: res.ok, status: res.status, json };
+    if (res.ok) return last;
+    if (res.status === 401) return last;
+    if (res.status === 429 || res.status >= 500) {
+      const backoff = Math.min(8000, 400 * (2 ** (attempt - 1)));
+      console.warn(`[BREM][coupang] POST retry ${attempt}/${maxAttempts} status=${res.status} wait=${backoff}ms`);
+      await sleep(backoff);
+      continue;
+    }
+    return last;
+  }
+  return last;
 }
 
 async function persistToken(source) {
@@ -266,12 +315,14 @@ async function collectRiderForDate(dateStr, summary, pushErr, httpInfo) {
       const items = sources.mapRiderToItems(dateStr, rider.json);
       if (items.length) {
         const r = await pipeline.upsertCollectItems(items);
-        if (r.ok) summary.rider_daily += r.saved; else pushErr(`rider ${dateStr} 저장:` + (r.error || r.message));
+        if (r.ok) return Number(r.saved || 0);
+        pushErr(`rider ${dateStr} 저장:` + (r.error || r.message));
       }
     } else {
       pushErr(httpInfo(`rider ${dateStr}`, rider));
     }
   } catch (e) { pushErr(`rider ${dateStr}: ${e.message}`); }
+  return 0;
 }
 
 /** 특정 날짜의 지역(매장)별 요약 수집. 첫 호출 응답에서 매장 목록도 반환. */
@@ -280,11 +331,13 @@ async function collectVendorInfoForDate(seed, dateStr, summary, pushErr, httpInf
   const info = await apiGet(`/bff/api/v2/vendor/dashboard/${seed}/daily-vendor-info?dateTime=${encodeURIComponent(dayStart)}`);
   if (verbose) summary.diag.push(httpInfo(`vendor_info GET ${dateStr}`, info));
   let vendors = [];
+  let saved = 0;
   if (info.ok && info.json) {
     const items = sources.mapVendorInfoToItems(dateStr, info.json);
     if (items.length) {
       const r = await pipeline.upsertCollectItems(items);
-      if (r.ok) summary.vendor_info += r.saved; else pushErr('vendor_info 저장:' + (r.error || r.message));
+      if (r.ok) saved = Number(r.saved || 0);
+      else pushErr('vendor_info 저장:' + (r.error || r.message));
     } else if (verbose) {
       pushErr(`vendor_info ${dateStr}: 응답에 childVendorRecordDtos 없음`);
     }
@@ -294,7 +347,7 @@ async function collectVendorInfoForDate(seed, dateStr, summary, pushErr, httpInf
   } else if (verbose) {
     pushErr(httpInfo(`vendor_info ${dateStr}`, info));
   }
-  return vendors;
+  return { vendors, saved };
 }
 
 /**
@@ -341,28 +394,39 @@ async function runCollect(options = {}) {
     const seed = [...seenVendorIds][0];
     if (!seed) pushErr('감지된 매장 vendorId가 없습니다. 브라우저에서 쿠팡 대시보드를 한 번 여세요.');
 
-    // 1) 날짜별 지역(매장)별 요약. 첫(참조일) 응답에서 매장 목록 확보.
+    // 1) vendor 목록은 참조일 1회로 seed → 나머지 날짜는 병렬 backfill
+    const VENDOR_POOL = 3;
+    const DASHBOARD_POOL = 4;
     let vendors = [];
     if (seed) {
-      summary.diag.push(`dates: ${dates.join(',')}`);
-      for (const d of dates) {
-        const found = await collectVendorInfoForDate(seed, d, summary, pushErr, httpInfo, true);
-        if (!vendors.length && found.length) vendors = found;
+      summary.diag.push(`dates: ${dates.join(',')} · vendorPool=${VENDOR_POOL} dashboardPool=${DASHBOARD_POOL}`);
+      const seedDate = refDate;
+      const seeded = await collectVendorInfoForDate(seed, seedDate, summary, pushErr, httpInfo, true);
+      if (seeded.vendors.length) vendors = seeded.vendors;
+      summary.vendor_info += Number(seeded.saved || 0);
+      const otherDates = dates.filter(d => d !== seedDate);
+      if (otherDates.length) {
+        const backfill = await mapPool(otherDates, VENDOR_POOL, async (d) => (
+          collectVendorInfoForDate(seed, d, summary, pushErr, httpInfo, false)
+        ));
+        summary.vendor_info += backfill.reduce((sum, row) => sum + Number(row?.saved || 0), 0);
       }
     }
     if (!vendors.length) vendors = [...seenVendorIds].map(id => ({ id, name: '' }));
 
-    // 2) 매장별 realtime(오늘만) + weekly(정산주 1회)
+    // 2) 매장별 realtime(오늘만) + weekly(정산주 1회) — 소규모 병렬
     const wantRealtime = options.includeRealtime !== false && dates.includes(today);
     const wantWeekly = !options.skipWeekly;
-    for (const v of vendors) {
+    const dashResults = await mapPool(vendors, DASHBOARD_POOL, async (v) => {
+      let realtimeSaved = 0;
+      let weeklySaved = 0;
       if (wantRealtime) {
         try {
           const rt = await apiGet(`/bff/api/v2/vendor/dashboard/${v.id}/realtime-performance?dateTime=${encodeURIComponent(dtNow)}`);
           if (rt.ok && rt.json) {
             const items = sources.mapRealtimeToItems(v.id, v.name, today, rt.json);
             const r = await pipeline.upsertCollectItems(items);
-            if (r.ok) summary.peak_realtime += r.saved;
+            if (r.ok) realtimeSaved = Number(r.saved || 0);
             if (!items.length) pushErr(`realtime ${v.id}: 응답에 peakTimePerformance 없음`);
           } else {
             pushErr(httpInfo(`realtime ${v.id}`, rt));
@@ -375,19 +439,23 @@ async function runCollect(options = {}) {
           if (wk.ok && wk.json) {
             const items = sources.mapWeeklyToItems(v.id, v.name, weekStart, wk.json);
             const r = await pipeline.upsertCollectItems(items);
-            if (r.ok) summary.weekly_performance += r.saved;
+            if (r.ok) weeklySaved = Number(r.saved || 0);
           } else {
             pushErr(httpInfo(`weekly ${v.id}`, wk));
           }
         } catch (e) { pushErr(`weekly ${v.id}: ${e.message}`); }
       }
-    }
+      return { realtimeSaved, weeklySaved };
+    });
+    summary.peak_realtime += dashResults.reduce((sum, row) => sum + Number(row?.realtimeSaved || 0), 0);
+    summary.weekly_performance += dashResults.reduce((sum, row) => sum + Number(row?.weeklySaved || 0), 0);
 
-    // 3) 라이더별(전체) — 날짜별. best-effort.
+    // 3) 라이더별(전체) — 날짜별 소규모 병렬
     if (options.includeRider !== false) {
-      for (const d of dates) {
-        await collectRiderForDate(d, summary, pushErr, httpInfo);
-      }
+      const riderSaved = await mapPool(dates, VENDOR_POOL, async (d) => (
+        collectRiderForDate(d, summary, pushErr, httpInfo)
+      ));
+      summary.rider_daily += riderSaved.reduce((sum, n) => sum + Number(n || 0), 0);
     }
 
     for (const menu of ['peak_realtime', 'weekly_performance', 'vendor_info', 'rider_daily']) {
@@ -467,19 +535,18 @@ async function getActivePage() {
 
 async function keepAliveDuringWait(ms) {
   const started = Date.now();
-  let hop = 0;
-  while (Date.now() - started < ms) {
-    if (!statusLoop.active || statusLoop.stopping) return;
-    const remaining = ms - (Date.now() - started);
-    if (remaining <= 500) break;
+  // 대기 구간당 keep-alive 최대 1회. 토큰 없음/오류/5회차마다만 페이지 터치.
+  if (!statusLoop.active || statusLoop.stopping) return;
+  const needHop = !latestToken || Boolean(statusLoop.lastError) || (statusLoop.round > 0 && statusLoop.round % 5 === 0);
+  const url = KEEP_ALIVE_PAGES[statusLoop.round % KEEP_ALIVE_PAGES.length];
+  const label = url.includes('rider-performance') ? '라이더퍼포먼스' : '피크대시보드';
+  statusLoop.phase = 'waiting';
+  statusLoop.message = needHop
+    ? `세션 유지 · ${label} 1회 확인 후 대기 (${Math.ceil(ms / 1000)}초)`
+    : `다음 회차 대기 · 토큰 유지 중 (${Math.ceil(ms / 1000)}초)`;
+  statusLoop.updatedAt = nowKstIsoOffset();
 
-    const url = KEEP_ALIVE_PAGES[hop % KEEP_ALIVE_PAGES.length];
-    const label = url.includes('rider-performance') ? '라이더퍼포먼스' : '피크대시보드';
-    statusLoop.phase = 'waiting';
-    statusLoop.message = `세션 유지 · ${label} 이동 후 대기 (${Math.ceil(remaining / 1000)}초)`;
-    statusLoop.updatedAt = nowKstIsoOffset();
-    hop += 1;
-
+  if (needHop) {
     try {
       const page = await getActivePage();
       if (page) {
@@ -490,10 +557,14 @@ async function keepAliveDuringWait(ms) {
     } catch (e) {
       statusLoop.lastError = e && e.message ? e.message : String(e);
     }
+  } else {
+    // 가벼운 토큰 재저장만 (페이지 이동 없음)
+    await persistToken('keepalive-light').catch(() => {});
+  }
 
-    // 두 페이지를 번갈아 가도록 대기 구간을 절반씩(최소 8초) 나눔
-    const slice = Math.max(8000, Math.min(Math.floor(ms / 2), remaining));
-    await waitLoop(slice);
+  const remaining = ms - (Date.now() - started);
+  if (remaining > 500 && statusLoop.active && !statusLoop.stopping) {
+    await waitLoop(remaining);
   }
 }
 

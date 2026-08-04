@@ -1028,49 +1028,61 @@ async function keepAliveDuringStatusWait(ms) {
   const started = Date.now();
   statusLoop.waitEndsAt = started + ms;
   const pages = getKeepAlivePages();
-  let hop = 0;
+  if (!statusLoop.active || statusLoop.stopping) return false;
 
-  while (statusLoop.active && !statusLoop.stopping) {
-    const remaining = ms - (Date.now() - started);
-    if (remaining <= 500) return true;
+  // 대기당 keep-alive 1회. 세션 만료/오류/5회차마다만 SPA 이동, 아니면 쿠키 동기화만.
+  const needHop = Boolean(sessionPaused || statusLoop.lastError)
+    || (statusLoop.round > 0 && statusLoop.round % 5 === 0);
+  const target = pages[statusLoop.round % pages.length] || pages[0];
+  setStatusLoopPhase(
+    'waiting',
+    needHop
+      ? `세션 유지 · ${target.label} 1회 확인 후 대기 (${Math.ceil(ms / 1000)}초)`
+      : `다음 회차 대기 · 세션 유지 중 (${Math.ceil(ms / 1000)}초)`
+  );
 
-    const target = pages[hop % pages.length];
-    setStatusLoopPhase(
-      'waiting',
-      `세션 유지 · ${target.label} 이동 후 대기 (${Math.ceil(remaining / 1000)}초)`
-    );
-    hop += 1;
-
-    try {
-      const page = await getStatusLoopPage();
-      if (page) {
-        await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        const landed = safePageUrlSync(page);
-        if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
-          sessionPaused = true;
-          statusLoop.lastError = `세션 만료 감지 · ${landed}`;
-          console.warn(`[BREM] [세션유지] 로그인 페이지로 이동됨 — ${landed}`);
-        } else {
-          const synced = await syncBrowserCookiesToSupabase().catch(() => ({ ok: false }));
-          if (synced?.ok) {
-            sessionPaused = false;
-            console.log(`[BREM] [세션유지] ${target.label} 쿠키 갱신 완료`);
-          } else {
-            console.warn(`[BREM] [세션유지] ${target.label} 이동은 됐지만 쿠키 저장 실패`);
-          }
-        }
+  try {
+    const page = await getStatusLoopPage();
+    if (page && needHop) {
+      await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      const landed = safePageUrlSync(page);
+      if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
+        sessionPaused = true;
+        statusLoop.lastError = `세션 만료 감지 · ${landed}`;
+        console.warn(`[BREM] [세션유지] 로그인 페이지로 이동됨 — ${landed}`);
       } else {
-        console.warn('[BREM] [세션유지] 브라우저 탭 없음 — 대기만 진행');
+        const synced = await syncBrowserCookiesToSupabase().catch(() => ({ ok: false }));
+        if (synced?.ok) {
+          sessionPaused = false;
+          console.log(`[BREM] [세션유지] ${target.label} 쿠키 갱신 완료`);
+        } else {
+          console.warn(`[BREM] [세션유지] ${target.label} 이동은 됐지만 쿠키 저장 실패`);
+        }
       }
-    } catch (error) {
-      statusLoop.lastError = formatError(error, '세션 유지 이동 실패');
-      console.warn('[BREM] [세션유지] 오류:', statusLoop.lastError);
+    } else if (page) {
+      const landed = safePageUrlSync(page);
+      if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
+        sessionPaused = true;
+        statusLoop.lastError = `세션 만료 감지 · ${landed}`;
+        console.warn(`[BREM] [세션유지] 현재 탭이 로그인 페이지 — ${landed}`);
+      } else {
+        const synced = await syncBrowserCookiesToSupabase().catch(() => ({ ok: false }));
+        if (synced?.ok) {
+          sessionPaused = false;
+          console.log('[BREM] [세션유지] 페이지 이동 없이 쿠키 동기화');
+        }
+      }
+    } else {
+      console.warn('[BREM] [세션유지] 브라우저 탭 없음 — 대기만 진행');
     }
+  } catch (error) {
+    statusLoop.lastError = formatError(error, '세션 유지 이동 실패');
+    console.warn('[BREM] [세션유지] 오류:', statusLoop.lastError);
+  }
 
-    // 두 페이지를 번갈아 가도록 대기 구간을 절반씩(최소 8초)
-    const slice = Math.max(8000, Math.min(Math.floor(ms / 2), ms - (Date.now() - started)));
-    if (slice <= 0) break;
-    const continued = await waitStatusLoop(slice);
+  const remaining = ms - (Date.now() - started);
+  if (remaining > 500) {
+    const continued = await waitStatusLoop(remaining);
     if (!continued) return false;
   }
   return statusLoop.active && !statusLoop.stopping;

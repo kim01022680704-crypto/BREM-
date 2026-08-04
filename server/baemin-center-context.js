@@ -1243,14 +1243,20 @@ async function selectPartnerCenterInner(page, target = {}) {
   await page.goto(BAEMIN_CENTER_CHANGE_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(error => {
     if (!String(error.message || '').includes('ERR_ABORTED')) throw error;
   });
-  await delay(2500);
+  // 고정 2.5s sleep 대신 협력사 트리거 등장까지 대기 (최대 2s)
+  try {
+    await page.getByRole('button', { name: /\([A-Z]{2}\d{6,}\)/ }).first()
+      .waitFor({ state: 'visible', timeout: 2000 });
+  } catch {
+    await delay(800);
+  }
 
   const performUiSwitch = async () => {
     console.log(`[BREM][center] UI 전환 시작: ${targetName || targetId} (${targetId})`);
 
     const trigger = page.getByRole('button', { name: /\([A-Z]{2}\d{6,}\)/ }).filter({ hasNotText: /선택\s*완료/ }).first();
     await trigger.click({ timeout: 10000 });
-    await delay(1000);
+    await delay(600);
 
     const optionLabel = targetName ? `${targetName} (${targetId})` : targetId;
     const { textMatchesPartner } = require('./baemin-partner-match');

@@ -167,7 +167,11 @@ async function fetchPaginatedApi({
   sampleUrl = null,
   sampleHeaders = null,
   replayCapture = null,
-  exactSampleUrl = false
+  exactSampleUrl = false,
+  /** SPA 1페이지 재사용: 이미 가진 rows + totalPage 로 나머지 페이지만 요청 */
+  seedItems = null,
+  seedTotalPage = null,
+  skipFirstPage = false
 }) {
   const { BAEMIN_API_ORIGIN, BAEMIN_ORIGIN } = require('./baemin-collect-sources');
   const origin = String(apiOrigin || BAEMIN_API_ORIGIN || BAEMIN_ORIGIN).replace(/\/$/, '');
@@ -183,13 +187,28 @@ async function fetchPaginatedApi({
 
   const { fetchBaeminJsonViaPage } = require('./baemin-playwright-fetch');
 
-  const size = Math.min(Math.max(Number(baseQuery.size || pagination.defaultSize || 20), 1), 100);
+  let sizeFromSample = 0;
+  if (sampleUrl) {
+    try {
+      sizeFromSample = Number(new URL(sampleUrl).searchParams.get('size') || 0);
+    } catch {
+      sizeFromSample = 0;
+    }
+  }
+  const size = Math.min(Math.max(Number(
+    baseQuery.size || sizeFromSample || pagination.defaultSize || 50
+  ), 1), 100);
   const pageStart = Number.isFinite(pagination.pageStart) ? pagination.pageStart : 0;
   const dataKey = pagination.dataKey || 'data';
-  const merged = [];
+  const seeded = Array.isArray(seedItems) ? seedItems.filter(Boolean) : [];
+  const merged = [...seeded];
   let firstPayload = null;
-  let lastUrl = '';
-  let totalPage = 1;
+  let lastUrl = sampleUrl || '';
+  let totalPage = Number(seedTotalPage) > 0 ? Number(seedTotalPage) : 1;
+  const startPageIndex = (skipFirstPage && seeded.length) ? 1 : 0;
+  if (seeded.length) {
+    console.log(`${logPrefix} spa seed rows=${seeded.length} skipFirst=${Boolean(skipFirstPage && seeded.length)} totalPage=${totalPage}`);
+  }
 
   const PARTNER_QUERY_KEYS = new Set(['partnerId', 'centerId', 'managementId']);
   let activePage = playwrightPage;
@@ -203,12 +222,12 @@ async function fetchPaginatedApi({
   }
   const browserSessionFetch = Boolean(activePage && !activePage.isClosed?.());
 
-  for (let pageIndex = 0; pageIndex < totalPage; pageIndex += 1) {
+  for (let pageIndex = startPageIndex; pageIndex < totalPage; pageIndex += 1) {
     const page = pageStart + pageIndex;
     if (sampleUrl) {
       try {
         const parsed = new URL(sampleUrl);
-        if (!exactSampleUrl || pageIndex > 0) {
+        if (!exactSampleUrl || pageIndex > 0 || skipFirstPage) {
           parsed.searchParams.set('page', String(page));
           parsed.searchParams.set('size', String(size));
         }
@@ -277,7 +296,7 @@ async function fetchPaginatedApi({
       return result;
     }
 
-    if (pageIndex === 0) {
+    if (pageIndex === startPageIndex && !Number(seedTotalPage)) {
       firstPayload = result.payload;
       const detected = readTotalPages(result.payload);
       const rows = extractDataArray(result.payload, dataKey) || [];
@@ -302,6 +321,8 @@ async function fetchPaginatedApi({
         totalPage = detected;
         console.log(`${logPrefix} totalPage=${totalPage}`);
       }
+    } else if (pageIndex === startPageIndex) {
+      firstPayload = result.payload;
     }
 
     const rows = extractDataArray(result.payload, dataKey) || [];
@@ -317,6 +338,8 @@ async function fetchPaginatedApi({
       rawCount: merged.length,
       sourceUrl: lastUrl,
       apiPath,
+      seededRows: seeded.length,
+      via: seeded.length ? 'spa-seed+api' : 'api',
       firstPayloadSummary: {
         total: firstPayload?.total ?? null,
         totalElements: firstPayload?.totalElements ?? null

@@ -214,7 +214,7 @@ function buildProbeUrls(sourceId, dateRange, collectDate = null) {
           });
         }
         params.set('page', String(pageNum));
-        params.set('size', String(source.pagination?.defaultSize || 20));
+        params.set('size', String(source.pagination?.defaultSize || 50));
         urls.push(`${origin}${apiPath}?${params.toString()}`);
       });
     });

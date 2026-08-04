@@ -542,10 +542,6 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}, options = {}) {
     console.log(`[BREM][collect] spa-capture skip (0 rows) — API pagination fallback url=${sourceUrl}`);
     return null;
   }
-  if (totalPage > 1) {
-    console.log(`[BREM][collect] spa-capture skip (totalPage=${totalPage}) — full pagination via API url=${sourceUrl}`);
-    return null;
-  }
   if (minDayCount > 1) {
     const { extractBusinessDate } = require('./baemin-collect-sources');
     const uniqueDates = new Set(
@@ -555,6 +551,23 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}, options = {}) {
       console.log(`[BREM][collect] spa-capture skip (uniqueDays=${uniqueDates.size} < need ${minDayCount}) url=${sourceUrl}`);
       return null;
     }
+  }
+
+  // totalPage>1: 1페이지는 SPA 재사용, 나머지는 API로 이어받음
+  if (totalPage > 1) {
+    console.log(`[BREM][collect] spa-capture partial rows=${items.length} totalPage=${totalPage} — remaining via API url=${sourceUrl}`);
+    return {
+      ok: true,
+      items,
+      meta: {
+        totalPage: Math.max(totalPage, 1),
+        rawCount: items.length,
+        sourceUrl,
+        apiPath: endpointInfo.apiPath,
+        via: 'spa-capture-partial',
+        needsRemainingPages: true
+      }
+    };
   }
 
   console.log(`[BREM][collect] spa-capture 사용 rows=${items.length} url=${sourceUrl}`);
@@ -569,6 +582,29 @@ function buildFetchedFromSpaCapture(capture, endpointInfo = {}, options = {}) {
       via: 'spa-capture'
     }
   };
+}
+
+/** SPA 1페이지 + API 나머지 페이지 병합 */
+async function completeSpaPartialWithApi(spaFetched, tryFetch, endpoint) {
+  if (!spaFetched?.ok || !spaFetched.meta?.needsRemainingPages) return spaFetched;
+  const seedItems = spaFetched.items || [];
+  const seedTotalPage = Number(spaFetched.meta.totalPage || 0);
+  if (!seedItems.length || seedTotalPage <= 1) {
+    return { ...spaFetched, meta: { ...spaFetched.meta, needsRemainingPages: false, via: 'spa-capture' } };
+  }
+  const completed = await tryFetch({
+    ...endpoint,
+    sampleUrl: spaFetched.meta.sourceUrl || endpoint.sampleUrl || null,
+    seedItems,
+    seedTotalPage,
+    skipFirstPage: true
+  });
+  if (completed?.ok) {
+    console.log(`[BREM][collect] spa+api merge rows=${(completed.items || []).length} (seed=${seedItems.length})`);
+    return completed;
+  }
+  console.warn(`[BREM][collect] spa remaining pages failed — seed-only rows=${seedItems.length}`);
+  return spaFetched;
 }
 
 function applyCaptureToEndpointRegistry(sourceId, registry, capture) {
@@ -647,11 +683,14 @@ async function fetchOneHistoryDay({
   collectDate,
   tryFetch,
   day,
-  context
+  context,
+  skipSpaNavigate = false
 }) {
   const dayRange = toSingleDayRange(day, activeDateRange);
 
-  if ((sourceId === 'rider_history' || sourceId === 'daily_history')
+  // skipSpaNavigate=true: API 경로 검증 후 날짜별 SPA goto 생략 (쿠키/API만)
+  if (!skipSpaNavigate
+    && (sourceId === 'rider_history' || sourceId === 'daily_history')
     && context?.playwrightPage
     && !context.playwrightPage.isClosed?.()) {
     const { buildSpaPageUrl } = require('./baemin-page-capture');
@@ -671,6 +710,8 @@ async function fetchOneHistoryDay({
         console.warn(`[BREM][collect] ${sourceId} day=${day} browser navigate failed: ${error.message || error}`);
       }
     }
+  } else if (skipSpaNavigate) {
+    console.log(`[BREM][collect] ${sourceId} ▶ ${day} API-only (spa goto skip)`);
   }
 
   let dayResult = await tryFetch({ ...endpoint, sampleUrl: null }, dayRange);
@@ -714,11 +755,18 @@ async function fetchHistoryByDays({
       : [activeDateRange?.toDate || collectDate]);
   const merged = [];
   let lastUrl = '';
-  const dayConcurrency = (sourceId === 'rider_history' || sourceId === 'daily_history') ? 1 : 4;
+  const apiReady = Boolean(endpoint?.apiPath || endpoint?.sampleUrl);
+  // API 검증 후면 SPA 불필요 → day concurrency 2 허용. 미검증이면 1(SPA 직렬).
+  const dayConcurrency = (sourceId === 'rider_history' || sourceId === 'daily_history')
+    ? (apiReady ? 2 : 1)
+    : 4;
+  if (apiReady && (sourceId === 'rider_history' || sourceId === 'daily_history')) {
+    console.log(`[BREM][collect] ${sourceId} history API-ready · spa skip · dayConcurrency=${dayConcurrency}`);
+  }
 
   for (let offset = 0; offset < dates.length; offset += dayConcurrency) {
     const batch = dates.slice(offset, offset + dayConcurrency);
-    const batchResults = await Promise.all(batch.map(day => fetchOneHistoryDay({
+    const batchResults = await Promise.all(batch.map((day, batchIndex) => fetchOneHistoryDay({
       sourceId,
       source,
       endpoint,
@@ -726,7 +774,8 @@ async function fetchHistoryByDays({
       collectDate,
       tryFetch,
       day,
-      context
+      context,
+      skipSpaNavigate: apiReady || offset + batchIndex > 0
     })));
     batchResults.forEach(row => {
       if (!row) return;
@@ -772,6 +821,10 @@ async function fetchAndSaveHistoryByDays({
   let emptyDays = 0;
   const dayResults = [];
 
+  const historyApiReady = Boolean(endpoint?.apiPath || endpoint?.sampleUrl);
+  if (historyApiReady) {
+    console.log(`[BREM][collect] ${sourceId} save-by-day API-ready · spa goto skip after day1`);
+  }
   for (let dayIndex = 0; dayIndex < dates.length; dayIndex += 1) {
     const day = dates[dayIndex];
     collectProgress.updateDay({
@@ -787,7 +840,8 @@ async function fetchAndSaveHistoryByDays({
       collectDate,
       tryFetch,
       day,
-      context: { ...context, registry }
+      context: { ...context, registry },
+      skipSpaNavigate: historyApiReady || dayIndex > 0
     });
     // 자동수집 첫날(수요일)이 세션/전환 직후 실패하는 경우가 많아 1회 재시도
     if (!dayRow && dayIndex === 0) {
@@ -801,7 +855,8 @@ async function fetchAndSaveHistoryByDays({
         collectDate,
         tryFetch,
         day,
-        context: { ...context, registry }
+        context: { ...context, registry },
+        skipSpaNavigate: false
       });
     }
     if (!dayRow) {
@@ -1138,7 +1193,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
         runId: context.runId
       } : null,
       playwrightContext: context.playwrightContext || null,
-      playwrightPage: context.playwrightPage || null
+      playwrightPage: context.playwrightPage || null,
+      seedItems: endpointInfo.seedItems || null,
+      seedTotalPage: endpointInfo.seedTotalPage || null,
+      skipFirstPage: Boolean(endpointInfo.skipFirstPage)
     });
   }
 
@@ -1239,7 +1297,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       const spaFetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, { collectDate })
         || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, { collectDate });
       if (spaFetched?.ok && (spaFetched.items || []).length) {
-        fetched = spaFetched;
+        fetched = await completeSpaPartialWithApi(spaFetched, tryFetch, endpoint);
       }
     }
     if (!fetched?.ok) {
@@ -1251,7 +1309,7 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       const spaFetched = buildFetchedFromSpaCapture(context.spaCapture?.[sourceId], endpoint, { collectDate })
         || buildFetchedFromSpaCapture(registry.endpoints?.[sourceId], endpoint, { collectDate });
       if (spaFetched?.ok && (spaFetched.items || []).length) {
-        fetched = spaFetched;
+        fetched = await completeSpaPartialWithApi(spaFetched, tryFetch, endpoint);
       }
     }
   }
@@ -1343,7 +1401,10 @@ async function collectSource(sourceId, sessionCookie, collectDate, registry = {}
       context.spaCapture = context.spaCapture || {};
       context.spaCapture.delivery_status = prep;
       endpoint = applyCaptureToEndpointRegistry('delivery_status', registry, prep) || endpoint;
-      const retry = buildFetchedFromSpaCapture(prep, endpoint) || await tryFetch(endpoint);
+      const spaRetry = buildFetchedFromSpaCapture(prep, endpoint);
+      const retry = spaRetry
+        ? await completeSpaPartialWithApi(spaRetry, tryFetch, endpoint)
+        : await tryFetch(endpoint);
       if (retry.ok && (retry.items || []).length) fetched = retry;
     }
     if (!fetched?.ok || !(fetched.items || []).length) {
