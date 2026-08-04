@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260805c">
+  <link rel="stylesheet" href="css/admin.css?v=20260805f">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5511,9 +5511,9 @@
                 <button type="button" class="primary-btn" id="driverOrgSaveBtn">조직도 저장</button>
               </div>
             </div>
-            <p class="form-help">박스를 클릭하면 오른쪽에서 소속을 편집합니다. 같은 박스에서 「하위 박스 추가」를 여러 번 누르면 옆으로 나란히 붙고, 더 깊은 단계는 그 하위 박스를 선택한 뒤 추가하세요. 트리가 넓어지면 캔버스를 좌우로 스크롤할 수 있습니다.</p>
+            <p class="form-help">박스를 클릭하면 오른쪽에서 소속을 편집합니다. ERP ID 엑셀은 <strong>조직도 박스 위에 끌어다 놓으면</strong> 그 박스에 일괄 체크됩니다. 같은 박스에서 「하위 박스 추가」를 여러 번 누르면 옆으로 나란히 붙고, 트리가 넓어지면 캔버스를 좌우로 스크롤할 수 있습니다.</p>
             <div class="driver-org-layout">
-              <div class="driver-org-canvas-wrap">
+              <div class="driver-org-canvas-wrap" id="driverOrgCanvasWrap">
                 <div class="driver-org-canvas" id="driverOrgCanvas"></div>
               </div>
               <aside class="driver-org-editor card" id="driverOrgEditor" hidden>
@@ -5524,7 +5524,7 @@
                 </label>
                 <div class="driver-org-members">
                   <strong>소속 인원 (기사·관리자)</strong>
-                  <p class="form-help">개별 체크도 되고, ERP ID 엑셀로 이 박스에 일괄 체크할 수 있습니다.</p>
+                  <p class="form-help">개별 체크 · 버튼 업로드 · <strong>왼쪽 조직도 박스에 엑셀 드래그</strong> 모두 됩니다. (ERP ID = 이름+전화뒤4 / 배민ID / 쿠팡ID)</p>
                   <div class="driver-org-member-bulk">
                     <button type="button" class="small-btn" id="driverOrgMemberTemplateBtn">ERP ID 양식</button>
                     <label class="small-btn driver-org-member-bulk__file">
@@ -5537,9 +5537,13 @@
                   <div class="driver-org-member-list" id="driverOrgMemberList"></div>
                 </div>
                 <div class="driver-org-children">
-                  <strong>하위 박스</strong>
+                  <strong>하위·상위 박스</strong>
                   <ul id="driverOrgChildList"></ul>
-                  <button type="button" class="small-btn" id="driverOrgAddChildBtn">하위 박스 추가</button>
+                  <div class="driver-org-structure-actions">
+                    <button type="button" class="small-btn" id="driverOrgAddChildBtn">하위 박스 추가</button>
+                    <button type="button" class="small-btn" id="driverOrgAddParentBtn" title="선택한 박스 위에 새 상위 박스를 끼워 넣습니다">상위 박스 추가</button>
+                    <button type="button" class="small-btn" id="driverOrgMoveUpBtn" title="선택한 박스를 한 단계 위로 올립니다">한 단계 위로</button>
+                  </div>
                 </div>
                 <div class="form-actions">
                   <button type="button" class="small-btn danger" id="driverOrgDeleteBtn">박스 삭제</button>
@@ -7647,7 +7651,7 @@
   <script src="js/direct-settlement-calc.js?v=20260803h"></script>
   <script src="js/settlement-result-direct.js?v=20260803g"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
-  <script src="js/driver-management-admin.js?v=20260805c"></script>
+  <script src="js/driver-management-admin.js?v=20260805f"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
