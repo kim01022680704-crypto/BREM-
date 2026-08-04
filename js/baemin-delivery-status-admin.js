@@ -5404,13 +5404,30 @@
     }
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v3';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v4';
+  const DASHBOARD_REFRESHING_SUFFIX = ' · 최신 갱신 중…';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
   }
   function saveDashboardCache(data) {
     try { localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+  }
+  function mergeDashboardCache(patch) {
+    const prev = readDashboardCache() || {};
+    saveDashboardCache({ ...prev, ...patch, savedAt: Date.now() });
+  }
+  function stripRefreshingSuffix(text) {
+    return String(text || '').replace(/\s*·\s*최신 갱신 중…$/, '');
+  }
+  function purgeLegacyBaeminDashboardCaches() {
+    [
+      'brem_dashboard_baemin_cache',
+      'brem_dashboard_baemin_cache_v2',
+      'brem_dashboard_baemin_cache_v3'
+    ].forEach(key => {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    });
   }
 
   function buildBaeminScopeKey() {
@@ -5430,38 +5447,122 @@
     return String(window.BremStorage?.auth?.getAdminSessionAccount?.()?.id || '').trim();
   }
 
+  function isBaeminCacheAllowedForSession(cache) {
+    if (!cache || !cache.panelsHtml) return false;
+    const accountId = currentBaeminAccountId();
+    if (!accountId) return false;
+    if (cache.accountId && cache.accountId === accountId) return true;
+    if (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return true;
+    return false;
+  }
+
+  function bindDashboardWeekRegionBarClicks(partnerIds = []) {
+    const bar = $('dashboardBaeminWeekRegionBar');
+    if (!bar) return;
+    const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
+    bar.querySelectorAll('[data-dashboard-week-partner]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const partnerId = normalizePartnerId(btn.dataset.dashboardWeekPartner || '');
+        if (!partnerId || partnerId === state.dashboardWeekPartnerId) return;
+        state.dashboardWeekPartnerId = partnerId;
+        renderDashboardWeekRegionTabs(ids);
+        void queryDashboardBaeminWeek([partnerId], { selectedOnly: true });
+      });
+    });
+  }
+
+  function persistTodayDashboardCache() {
+    const panelsEl = $('dashboardBaeminLivePanels');
+    const summary = $('dashboardBaeminLiveSummary');
+    const appliedEl = $('dashboardBaeminAppliedTime');
+    if (!panelsEl?.querySelector('table')) return;
+    const accountId = currentBaeminAccountId();
+    if (!accountId) return;
+    mergeDashboardCache({
+      accountId,
+      scopeKey: buildBaeminScopeKey(),
+      panelsHtml: panelsEl.innerHTML,
+      summaryText: stripRefreshingSuffix(summary?.textContent || ''),
+      appliedHtml: appliedEl ? appliedEl.innerHTML : '',
+      regionMeta: (state.dashboardBaeminRegions || []).map(r => ({
+        partnerId: r.partnerId,
+        regionName: r.regionName
+      }))
+    });
+  }
+
+  function persistWeekDashboardCache() {
+    const weekRows = $('dashboardBaeminWeekRows');
+    const weekSummary = $('dashboardBaeminWeekSummary');
+    const bar = $('dashboardBaeminWeekRegionBar');
+    if (!weekRows?.querySelector('.dashboard-baemin-qcell')) return;
+    const accountId = currentBaeminAccountId();
+    if (!accountId) return;
+    const partnerIds = (state.dashboardBaeminRegions || []).map(r => r.partnerId).filter(Boolean);
+    mergeDashboardCache({
+      accountId,
+      scopeKey: buildBaeminScopeKey(),
+      weekRowsHtml: weekRows.innerHTML,
+      weekSummaryText: stripRefreshingSuffix(weekSummary?.textContent || ''),
+      weekBarHtml: bar && !bar.hidden ? bar.innerHTML : '',
+      weekPartnerIds: partnerIds,
+      weekPartnerId: state.dashboardWeekPartnerId || partnerIds[0] || '',
+      regionMeta: (state.dashboardBaeminRegions || []).map(r => ({
+        partnerId: r.partnerId,
+        regionName: r.regionName
+      }))
+    });
+  }
+
   // 로그인 직후: 같은 계정의 마지막 숫자 즉시 표시 → 뒤에서 최신 갱신
   function paintDashboardCacheInstant() {
     const panelsEl = $('dashboardBaeminLivePanels');
-    if (!panelsEl) return;
-    try { localStorage.removeItem('brem_dashboard_baemin_cache'); } catch { /* ignore */ }
-    try { localStorage.removeItem('brem_dashboard_baemin_cache_v2'); } catch { /* ignore */ }
+    if (!panelsEl) return false;
+    purgeLegacyBaeminDashboardCaches();
 
     const cache = readDashboardCache();
-    const accountId = currentBaeminAccountId();
-    const sameAccount = Boolean(
-      cache?.panelsHtml
-      && accountId
-      && (
-        cache.accountId === accountId
-        || (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`))
-      )
-    );
-    if (!sameAccount) {
+    if (!isBaeminCacheAllowedForSession(cache)) {
+      const accountId = currentBaeminAccountId();
       if (cache?.accountId && accountId && cache.accountId !== accountId) {
         try { localStorage.removeItem(DASHBOARD_CACHE_KEY); } catch { /* ignore */ }
       }
       if (!panelsEl.querySelector('table')) {
         panelsEl.innerHTML = '<p class="form-help">마지막 현황 불러오는 중…</p>';
       }
-      return;
+      return false;
     }
-    if (panelsEl.querySelector('table')) return;
-    panelsEl.innerHTML = cache.panelsHtml;
-    const summary = $('dashboardBaeminLiveSummary');
-    if (summary && cache.summaryText) summary.textContent = `${cache.summaryText} · 최신 갱신 중…`;
-    const appliedEl = $('dashboardBaeminAppliedTime');
-    if (appliedEl && cache.appliedHtml) appliedEl.innerHTML = cache.appliedHtml;
+
+    // 오늘 표: 비어 있을 때만 캐시로 채움 (이미 최신이면 유지)
+    if (!panelsEl.querySelector('table') && cache.panelsHtml) {
+      panelsEl.innerHTML = cache.panelsHtml;
+      const summary = $('dashboardBaeminLiveSummary');
+      if (summary && cache.summaryText) {
+        summary.textContent = `${cache.summaryText}${DASHBOARD_REFRESHING_SUFFIX}`;
+      }
+      const appliedEl = $('dashboardBaeminAppliedTime');
+      if (appliedEl && cache.appliedHtml) appliedEl.innerHTML = cache.appliedHtml;
+    }
+
+    // 주간 표·지역 탭(팀장 지역 전환): 캐시 즉시 복원
+    const weekRows = $('dashboardBaeminWeekRows');
+    if (weekRows && cache.weekRowsHtml && !weekRows.querySelector('.dashboard-baemin-qcell')) {
+      weekRows.innerHTML = cache.weekRowsHtml;
+      const weekSummary = $('dashboardBaeminWeekSummary');
+      if (weekSummary && cache.weekSummaryText) {
+        weekSummary.textContent = `${cache.weekSummaryText}${DASHBOARD_REFRESHING_SUFFIX}`;
+      }
+    }
+    const bar = $('dashboardBaeminWeekRegionBar');
+    const weekPartnerIds = Array.isArray(cache.weekPartnerIds)
+      ? cache.weekPartnerIds.map(normalizePartnerId).filter(Boolean)
+      : [];
+    if (bar && cache.weekBarHtml && weekPartnerIds.length && (bar.hidden || !bar.querySelector('[data-dashboard-week-partner]'))) {
+      state.dashboardWeekPartnerId = normalizePartnerId(cache.weekPartnerId) || weekPartnerIds[0];
+      bar.hidden = false;
+      bar.innerHTML = cache.weekBarHtml;
+      bindDashboardWeekRegionBarClicks(weekPartnerIds);
+    }
+    return true;
   }
 
   async function initDashboardBaeminLive(force = false) {
@@ -5615,15 +5716,7 @@
       const active = partnerId === state.dashboardWeekPartnerId ? ' is-active' : '';
       return `<button type="button" class="baemin-region-tab${active}" data-dashboard-week-partner="${partnerId}" aria-pressed="${partnerId === state.dashboardWeekPartnerId ? 'true' : 'false'}">${escapeHtml(regionName)}</button>`;
     }).join('');
-    bar.querySelectorAll('[data-dashboard-week-partner]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const partnerId = normalizePartnerId(btn.dataset.dashboardWeekPartner || '');
-        if (!partnerId || partnerId === state.dashboardWeekPartnerId) return;
-        state.dashboardWeekPartnerId = partnerId;
-        renderDashboardWeekRegionTabs(ids);
-        void queryDashboardBaeminWeek([partnerId], { selectedOnly: true });
-      });
-    });
+    bindDashboardWeekRegionBarClicks(ids);
   }
 
   function renderDashboardWeekRowsForPartner(partnerId, items = [], weekRange) {
@@ -5673,6 +5766,7 @@
     if (summaryEl) {
       summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
     }
+    persistWeekDashboardCache();
   }
 
   async function queryDashboardBaeminWeek(partnerIds = [], options = {}) {
@@ -5680,11 +5774,14 @@
     const summaryEl = $('dashboardBaeminWeekSummary');
     if (!rowsEl) return;
 
+    const silent = options.silent === true;
     const ids = (partnerIds || []).map(normalizePartnerId).filter(Boolean);
     if (!ids.length) {
-      renderDashboardWeekRegionTabs([]);
-      if (summaryEl) summaryEl.textContent = '조회할 지역 없음';
-      rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">담당 지역이 없습니다.</td></tr>';
+      if (!silent) {
+        renderDashboardWeekRegionTabs([]);
+        if (summaryEl) summaryEl.textContent = '조회할 지역 없음';
+        rowsEl.innerHTML = '<tr><td colspan="6" class="form-help">담당 지역이 없습니다.</td></tr>';
+      }
       return;
     }
 
@@ -5696,8 +5793,11 @@
       weekEnd: window.BremDatePicker?.weekEndKey?.(thisWeek.fromDate) || addDaysDate(thisWeek.fromDate, 6)
     };
 
-    if (!options.selectedOnly) {
+    // 자동 갱신: 기존 표 유지. 수동 조회만 메모리 캐시 비우고 로딩 문구 표시
+    if (!options.selectedOnly && !silent) {
       state.dashboardWeekCache = {};
+    }
+    if (!options.selectedOnly) {
       renderDashboardWeekRegionTabs(ids);
     }
 
@@ -5707,7 +5807,8 @@
       renderDashboardWeekRegionTabs(ids);
     }
 
-    if (summaryEl) {
+    const keepUi = silent && Boolean(rowsEl.querySelector('.dashboard-baemin-qcell'));
+    if (summaryEl && !keepUi) {
       const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === selectedId)?.regionName
         || partnerLabelById(selectedId)
         || selectedId;
@@ -5716,8 +5817,10 @@
 
     let items = null;
     const cached = state.dashboardWeekCache[selectedId];
+    const canUseMem = !silent && !options.forceRefresh;
     if (
-      cached?.items
+      canUseMem
+      && cached?.items
       && cached.weekRange?.fromDate === weekRange.fromDate
       && cached.weekRange?.toDate === weekRange.toDate
     ) {
@@ -5728,8 +5831,10 @@
         `/api/admin/baemin-delivery/view-daily-range?partnerId=${encodeURIComponent(selectedId)}&fromDate=${encodeURIComponent(weekRange.fromDate)}&toDate=${encodeURIComponent(weekRange.toDate)}`
       );
       if (!result.ok || result.notApplied) {
-        rowsEl.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '일별 데이터 없음')}</td></tr>`;
-        if (summaryEl) summaryEl.textContent = result.message || '일별 데이터 없음';
+        if (!keepUi) {
+          rowsEl.innerHTML = `<tr><td colspan="6" class="form-help">${escapeHtml(result.message || '일별 데이터 없음')}</td></tr>`;
+          if (summaryEl) summaryEl.textContent = result.message || '일별 데이터 없음';
+        }
         return;
       }
       items = result.items || [];
@@ -5738,7 +5843,7 @@
 
     renderDashboardWeekRowsForPartner(selectedId, items, weekRange);
 
-    // 나머지 지역은 병렬 백그라운드 캐시 (탭 전환 빠르게)
+    // 나머지 지역은 병렬 백그라운드 캐시 (팀장 지역 탭 전환 빠르게)
     if (!options.selectedOnly) {
       const others = ids.filter(id => id !== selectedId);
       if (others.length) {
@@ -5831,9 +5936,8 @@
       let targetMidnight = 0;
       let loadedRegions = 0;
 
-      if (!silent) {
-        void queryDashboardBaeminWeek(partnerIds);
-      }
+      // 오늘 표와 함께 주간·지역탭도 자동 갱신. silent면 기존 표 유지한 채 뒤에서 교체
+      void queryDashboardBaeminWeek(partnerIds, { silent, forceRefresh: silent });
       // 지역별 N회 왕복 대신 서버에서 한 번에(인증 1회 + 병렬) 조회. 실패 시 기존 방식으로 폴백.
       let snapshotResults;
       const dash = await adminApi(
@@ -5936,15 +6040,8 @@
       if (summary) {
         summary.textContent = summaryText;
       }
-      // 다음 열람 때 즉시 표시할 수 있도록 마지막 결과 캐시
-      saveDashboardCache({
-        accountId: currentBaeminAccountId(),
-        scopeKey: buildBaeminScopeKey(),
-        panelsHtml: nextHtml,
-        summaryText,
-        appliedHtml: appliedEl ? appliedEl.innerHTML : '',
-        savedAt: Date.now()
-      });
+      // 다음 열람 때 즉시 표시할 수 있도록 마지막 결과 캐시 (주간은 week 조회 완료 시 merge)
+      persistTodayDashboardCache();
       if (!silent) {
         showToast(`오늘 할당 · 운행중 ${formatNumber(drivingSum)}명 · 지역 ${formatNumber(loadedRegions)}곳`);
       }
@@ -6324,21 +6421,24 @@
     ensureSyncDateRangeDefaults,
     resolveSyncDateRange,
     loadSyncReflectionStatus,
-    // 대시보드 재렌더마다 강제 재조회하면 렉·서버부하가 커진다.
-    // 첫 렌더에서만 지역을 받아오고(그 안에서 스냅샷 1회 조회), 이후에는 캐시를 그리고
-    // 60초가 지났을 때만 조용히 재조회한다. 폴러도 이때 보장한다.
+    // 대시보드 진입: 마지막 스냅샷 즉시 표시 → 바로 조용히 최신 조회.
+    // 재렌더 스팸 방지는 60초 스로틀. 2분 폴러로 이후 자동 갱신.
     refreshDashboardBaeminLive: () => {
       if (!state.dashboardLivePollTimer) startDashboardBaeminLivePoll();
+      paintDashboardCacheInstant();
       const hadRegions = state.dashboardBaeminRegions.length > 0;
       if (!hadRegions) {
         void initDashboardBaeminLive(false);
         return;
       }
-      paintDashboardCacheInstant();
       if (state.dashboardLiveBusy) return;
-      if (Date.now() - (state.dashboardLiveFetchedAt || 0) < 60 * 1000) return;
+      const staleMs = Date.now() - (state.dashboardLiveFetchedAt || 0);
+      const weekEmpty = !$('dashboardBaeminWeekRows')?.querySelector('.dashboard-baemin-qcell');
+      if (staleMs < 60 * 1000 && !weekEmpty) return;
       void queryDashboardBaeminLive({ silent: true });
     }
   };
   bindEvents();
+  // 스크립트 로드 직후(이미 세션 있는 새로고침)에도 캐시 선표시
+  paintDashboardCacheInstant();
 })();
