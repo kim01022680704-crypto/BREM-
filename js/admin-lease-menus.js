@@ -4048,6 +4048,8 @@ const BremAdminLeaseMenus = (function () {
     let existing = existingId ? store.getById?.(existingId) : null;
     if (!existing) existing = store.findBySource?.('unpaid', sourceRef) || null;
 
+    // 미납 이관 시 기본은 「미반영」. 차감관리에서 기사앱 반영 여부를 직접 선택.
+    const keepApplied = existing ? Boolean(existing.finalApplyEnabled) : false;
     const saved = store.save({
       id: existing?.id,
       kind: 'unpaid',
@@ -4060,8 +4062,8 @@ const BremAdminLeaseMenus = (function () {
       reason: `납부확인 미납 ${weekStart}`,
       deductionPlatform: platform,
       deductStartDate: weekStart,
-      finalApplyEnabled: !erpOn,
-      finalAppliedAt: !erpOn ? new Date().toISOString() : (existing?.finalAppliedAt || ''),
+      finalApplyEnabled: keepApplied,
+      finalAppliedAt: keepApplied ? (existing?.finalAppliedAt || '') : '',
       weekStart,
       status: 'active',
       rawData: {
@@ -4070,7 +4072,8 @@ const BremAdminLeaseMenus = (function () {
         holdViaLedger: true,
         arrearId: arrear.id,
         unpaidDays: Number(unpaidDays || 0),
-        erpLeaseOn: erpOn
+        erpLeaseOn: erpOn,
+        awaitManualApply: !keepApplied
       }
     });
 
@@ -4414,12 +4417,11 @@ const BremAdminLeaseMenus = (function () {
       setMenu('arrears');
       return;
     }
-    const erpOn = isContractFinalApplyEnabled(contract);
     const unpaidDays = daily > 0 ? Math.max(1, Math.round(charge / daily)) : Math.max(1, days);
     if (!window.confirm(
       `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n`
-      + `미납 처리하면 차감관리 + 미납/회수로 넘깁니다.`
-      + (erpOn ? '\n(ERP차감 ON · 차감관리 반영은 이중 방지로 OFF)' : '')
+      + '미납 처리하면 차감관리 + 미납/회수로 넘깁니다.\n'
+      + '차감관리에서는 「미반영」으로 들어가며, 기사앱 반영은 직접 선택하세요.'
     )) {
       return;
     }
@@ -4439,7 +4441,7 @@ const BremAdminLeaseMenus = (function () {
         paidAmount: 0,
         navigate: true
       });
-      showToast(`미납 ${formatMoney(charge)} → 차감관리·미납/회수로 이동`);
+      showToast(`미납 ${formatMoney(charge)} → 차감관리(미반영)·미납/회수. 반영은 차감관리에서 선택하세요.`);
       refreshAfterLeaseMutation({ contract: false });
       try { renderDeductionManage(); } catch (_e) { /* optional */ }
     } catch (error) {
