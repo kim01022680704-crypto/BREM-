@@ -3915,15 +3915,12 @@ const BremAdminLeaseMenus = (function () {
     if (payment && charge > 0 && paid >= charge) {
       return { code: 'paid', label: '완납', cls: 'lease-status--done' };
     }
+    // 미납/회수 이관분 · 미납 수기 기록은 모두 「미납」(부분납 구분 없음)
     if (openArrear) {
-      const remaining = Math.max(0, Number(openArrear.unpaidAmount || 0));
-      if (paid > 0 && remaining > 0) {
-        return { code: 'partial', label: '부분납', cls: 'lease-status--collecting' };
-      }
       return { code: 'unpaid', label: '미납', cls: 'lease-status--unpaid' };
     }
-    if (payment && paid > 0 && paid < charge) {
-      return { code: 'partial', label: '부분납', cls: 'lease-status--collecting' };
+    if (payment && charge > 0 && paid < charge) {
+      return { code: 'unpaid', label: '미납', cls: 'lease-status--unpaid' };
     }
     return { code: 'pending', label: '확인대기', cls: 'lease-status--collecting' };
   }
@@ -4034,8 +4031,68 @@ const BremAdminLeaseMenus = (function () {
       });
   }
 
-  /** 미납 잔액을 미납/회수에 등록(누적)하고 미납/회수 메뉴로 이동 */
-  async function moveRemainingToArrears({ contract, weekStart, unpaidDays, unpaidAmount, paidAmount }) {
+  /** 납부확인 미납 → 차감관리(홀드 장부) 생성/갱신. ERP차감 ON이면 이중 방지로 반영 OFF */
+  function ensurePaymentConfirmUnpaidLedger({ contract, arrear, weekStart, unpaidAmount, unpaidDays }) {
+    const store = window.BremStorage?.deductionLedger;
+    if (!store || !contract || !arrear) return null;
+    const amount = Math.max(0, Math.round(Number(arrear.unpaidAmount || unpaidAmount || 0)));
+    if (amount <= 0) return null;
+    const sourceRef = `payment-confirm:${contract.id}:${weekStart}`;
+    const identity = contractDriverIdentity(contract);
+    const erpOn = isContractFinalApplyEnabled(contract);
+    const daily = Math.max(0, Math.round(Number(contractRiderDailyRent(contract) || 0))) || amount;
+    const platform = String(contract.deductionPlatform || contract.rawData?.deductionPlatform || 'coupang') === 'baemin'
+      ? 'baemin'
+      : 'coupang';
+    const existingId = String(arrear.rawData?.ledgerId || '').trim();
+    let existing = existingId ? store.getById?.(existingId) : null;
+    if (!existing) existing = store.findBySource?.('unpaid', sourceRef) || null;
+
+    const saved = store.save({
+      id: existing?.id,
+      kind: 'unpaid',
+      sourceRef,
+      driverId: identity.driverId || '',
+      driverName: identity.driverName || contract.driverName || '',
+      driverPhone: identity.driverPhone || contract.driverPhone || '',
+      dailyDeduct: daily,
+      balance: amount,
+      reason: `납부확인 미납 ${weekStart}`,
+      deductionPlatform: platform,
+      deductStartDate: weekStart,
+      finalApplyEnabled: !erpOn,
+      finalAppliedAt: !erpOn ? new Date().toISOString() : (existing?.finalAppliedAt || ''),
+      weekStart,
+      status: 'active',
+      rawData: {
+        ...(existing?.rawData || {}),
+        source: 'payment-confirm',
+        holdViaLedger: true,
+        arrearId: arrear.id,
+        unpaidDays: Number(unpaidDays || 0),
+        erpLeaseOn: erpOn
+      }
+    });
+
+    erp().arrears().update(arrear.id, {
+      collectionMethods: [...new Set([
+        ...(arrear.collectionMethods || []),
+        'salary_deduction',
+        'separate_deposit'
+      ])],
+      rawData: {
+        ...(arrear.rawData || {}),
+        ...identity,
+        ledgerId: saved.id,
+        ledgerSourceRef: sourceRef,
+        holdViaLedger: true
+      }
+    });
+    return saved;
+  }
+
+  /** 미납 잔액을 미납/회수 + 차감관리에 등록(누적)하고 미납/회수 메뉴로 이동 */
+  async function moveRemainingToArrears({ contract, weekStart, unpaidDays, unpaidAmount, paidAmount, navigate = true }) {
     const completed = calc().ARREAR_STATUS.COMPLETED;
     const collecting = calc().ARREAR_STATUS.COLLECTING;
     const identity = contractDriverIdentity(contract);
@@ -4050,16 +4107,21 @@ const BremAdminLeaseMenus = (function () {
     const openForContract = erp().arrears().getAll().find(item =>
       item.contractId === contract.id && String(item.collectionStatus || '') !== completed
     );
+    let arrear;
     if (openForContract) {
       const weekEntries = Array.isArray(openForContract.rawData?.weekEntries)
         ? [...openForContract.rawData.weekEntries]
         : [];
       weekEntries.push(weekEntry);
-      erp().arrears().update(openForContract.id, {
+      arrear = erp().arrears().update(openForContract.id, {
         unpaidDays: Number(openForContract.unpaidDays || 0) + unpaidDays,
         unpaidAmount: Number(openForContract.unpaidAmount || 0) + unpaidAmount,
         paidAmount: Number(openForContract.paidAmount || 0) + Number(paidAmount || 0),
-        collectionMethods: [...new Set([...(openForContract.collectionMethods || []), 'separate_deposit'])],
+        collectionMethods: [...new Set([
+          ...(openForContract.collectionMethods || []),
+          'salary_deduction',
+          'separate_deposit'
+        ])],
         collectionStatus: collecting,
         rawData: {
           ...(openForContract.rawData || {}),
@@ -4071,14 +4133,14 @@ const BremAdminLeaseMenus = (function () {
         }
       });
     } else {
-      erp().arrears().create({
+      arrear = erp().arrears().create({
         vehicleId: contract.vehicleId,
         contractId: contract.id,
         unpaidDays,
         unpaidAmount,
         paidAmount: paidAmount || 0,
         unpaidWeekStart: weekStart,
-        collectionMethods: ['separate_deposit'],
+        collectionMethods: ['salary_deduction', 'separate_deposit'],
         collectionStatus: collecting,
         rawData: {
           ...identity,
@@ -4096,10 +4158,21 @@ const BremAdminLeaseMenus = (function () {
         collectionStatus: collecting
       });
     }
+    ensurePaymentConfirmUnpaidLedger({
+      contract,
+      arrear,
+      weekStart,
+      unpaidAmount,
+      unpaidDays
+    });
     await erp().persistAll({ skipFlushStorage: true });
+    try {
+      await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    } catch (_err) { /* ignore */ }
     updateLeaseErpUnsavedBanner();
     syncArrearWeekUi(weekStart);
-    setMenu('arrears');
+    if (navigate !== false) setMenu('arrears');
+    return arrear;
   }
 
   function applyPaymentFullCore(contract, weekStart) {
@@ -4288,7 +4361,8 @@ const BremAdminLeaseMenus = (function () {
     }
   }
 
-  async function confirmPaymentPartial(contractId) {
+  /** 납부확인 미납: 이번주 청구 전액 → 차감관리 + 미납/회수 */
+  async function confirmPaymentUnpaid(contractId) {
     if (!erp()) return;
     const contract = erp().contracts().getById(contractId);
     if (!contract) {
@@ -4299,61 +4373,51 @@ const BremAdminLeaseMenus = (function () {
     const daily = contractRiderDailyRent(contract);
     const charge = resolvePaymentConfirmCharge(contract, weekStart);
     const days = contractActiveDaysInWeek(contract, weekStart) || 7;
-    const erpOn = isContractFinalApplyEnabled(contract);
     if (charge <= 0) {
-      showToast('일렌탈료가 없어 부분납 처리할 수 없습니다. 계약의 일 렌탈료를 확인하세요.');
+      showToast('일렌탈료가 없어 미납 처리할 수 없습니다. 계약의 일 렌탈료를 확인하세요.');
       return;
     }
-    const promptHint = erpOn
-      ? '납부 금액을 입력하세요. (ERP차감 ON · 수금액만 기록, 미납이관 안 함)'
-      : '납부 금액을 입력하세요. (0원이면 전액 미납 → 미납/회수 이동)';
-    const raw = window.prompt(
-      `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n${promptHint}`,
-      String(Math.round(charge / 2))
-    );
-    if (raw == null) return;
-    const paid = Math.max(0, Math.round(Number(String(raw).replace(/[^0-9.-]/g, '')) || 0));
-    if (paid > charge) {
-      showToast(`납부액이 청구액(${formatMoney(charge)})을 초과합니다.`);
+    const status = paymentConfirmStatus(contract, weekStart);
+    if (status.code === 'paid') {
+      showToast('이미 완납된 건입니다.');
       return;
     }
-    if (paid >= charge) {
-      await confirmPaymentFull(contractId, { skipConfirm: true });
+    if (status.code === 'unpaid') {
+      showToast('이미 미납으로 이관된 건입니다. 차감관리·미납/회수에서 확인하세요.');
+      setMenu('arrears');
       return;
     }
-    const unpaidAmount = charge - paid;
-    const unpaidDays = daily > 0 ? Math.max(1, Math.round(unpaidAmount / daily)) : Math.max(1, days);
+    const erpOn = isContractFinalApplyEnabled(contract);
+    const unpaidDays = daily > 0 ? Math.max(1, Math.round(charge / daily)) : Math.max(1, days);
+    if (!window.confirm(
+      `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n`
+      + `미납 처리하면 차감관리 + 미납/회수로 넘깁니다.`
+      + (erpOn ? '\n(ERP차감 ON · 차감관리 반영은 이중 방지로 OFF)' : '')
+    )) {
+      return;
+    }
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
       weekStart,
       chargeAmount: charge,
-      paidAmount: paid,
+      paidAmount: 0,
       status: BremLeaseProfit?.PAYMENT_STATUSES?.UNPAID || 'unpaid'
     });
     try {
-      // ERP차감 ON: 정산·출금이 이미 깎으므로 미납이관은 이중 — 수금액만 납부확인에 기록
-      if (erpOn) {
-        await erp().persistAll({ skipFlushStorage: true });
-        updateLeaseErpUnsavedBanner();
-        showToast(`부분납 ${formatMoney(paid)} 기록 · 미납 ${formatMoney(unpaidAmount)} (ERP차감 중 · 미납이관 안 함)`);
-        renderPaymentConfirm();
-        refreshAfterLeaseMutation({ contract: false });
-        return;
-      }
       await moveRemainingToArrears({
         contract,
         weekStart,
         unpaidDays,
-        unpaidAmount,
-        paidAmount: paid
+        unpaidAmount: charge,
+        paidAmount: 0,
+        navigate: true
       });
-      showToast(paid > 0
-        ? `부분납 ${formatMoney(paid)} · 미납 ${formatMoney(unpaidAmount)} → 미납/회수로 이동`
-        : `미납 ${formatMoney(unpaidAmount)} → 미납/회수로 이동`);
+      showToast(`미납 ${formatMoney(charge)} → 차감관리·미납/회수로 이동`);
       refreshAfterLeaseMutation({ contract: false });
+      try { renderDeductionManage(); } catch (_e) { /* optional */ }
     } catch (error) {
-      console.error('[confirmPaymentPartial]', error);
-      showToast(error?.message || '부분납/미납 처리에 실패했습니다.');
+      console.error('[confirmPaymentUnpaid]', error);
+      showToast(error?.message || '미납 처리에 실패했습니다.');
     }
   }
 
@@ -4365,16 +4429,16 @@ const BremAdminLeaseMenus = (function () {
       return { code: 'paid', label: '완납', cls: 'lease-status--done' };
     }
     if (externalPaid > 0 || (principal > 0 && balance < principal)) {
-      return { code: 'partial', label: '부분납', cls: 'lease-status--collecting' };
+      return { code: 'unpaid', label: '미납', cls: 'lease-status--unpaid' };
     }
     return { code: 'pending', label: '확인대기', cls: 'lease-status--collecting' };
   }
 
   function syncPaymentConfirmTabUi() {
     const source = state.paymentSource === 'loan' ? 'loan' : 'lease';
-    const status = ['open', 'partial', 'paid'].includes(state.paymentStatusFilter)
-      ? state.paymentStatusFilter
-      : 'open';
+    let status = state.paymentStatusFilter;
+    if (status === 'partial') status = 'unpaid';
+    if (!['open', 'unpaid', 'paid'].includes(status)) status = 'open';
     state.paymentSource = source;
     state.paymentStatusFilter = status;
     document.querySelectorAll('[data-payment-source]').forEach(btn => {
@@ -4406,9 +4470,11 @@ const BremAdminLeaseMenus = (function () {
 
   function matchesPaymentStatusFilter(statusCode, filter) {
     if (filter === 'paid') return statusCode === 'paid';
-    if (filter === 'partial') return statusCode === 'partial';
-    // open = 미확인: pending + unpaid (부분납·완납 제외)
-    return statusCode === 'pending' || statusCode === 'unpaid';
+    if (filter === 'unpaid' || filter === 'partial') {
+      return statusCode === 'unpaid' || statusCode === 'partial';
+    }
+    // open = 미확인(확인대기만)
+    return statusCode === 'pending';
   }
 
   async function confirmLoanPaymentFull(loanId) {
@@ -4441,7 +4507,8 @@ const BremAdminLeaseMenus = (function () {
     showToast(`${loan.driverName || '기사'} · 대여 완납 처리`);
   }
 
-  async function confirmLoanPaymentPartial(loanId) {
+  /** 대여 미납: 잔액은 차감관리에서 계속 관리 → 대여 및 차감관리로 이동 */
+  async function confirmLoanPaymentUnpaid(loanId) {
     const store = window.BremStorage?.leaseLoans;
     const loan = store?.getById?.(loanId);
     if (!loan) return;
@@ -4450,41 +4517,18 @@ const BremAdminLeaseMenus = (function () {
       showToast('이미 완납된 대여입니다.');
       return;
     }
-    const raw = window.prompt(
-      `${loan.driverName || '기사'} · 잔액 ${formatMoney(balance)}\n부분납 금액을 입력하세요.`,
-      String(balance)
-    );
-    if (raw == null) return;
-    const paid = Math.max(0, Math.round(Number(String(raw).replace(/,/g, ''))));
-    if (!Number.isFinite(paid) || paid <= 0) {
-      showToast('부분납 금액이 올바르지 않습니다.');
+    if (!window.confirm(
+      `${loan.driverName || '기사'} · 대여 잔액 ${formatMoney(balance)}\n미납으로 두고 차감관리로 이동할까요?`
+    )) {
       return;
     }
-    if (paid > balance) {
-      showToast(`잔액(${formatMoney(balance)})을 초과할 수 없습니다.`);
-      return;
-    }
-    const nextBalance = balance - paid;
-    const saved = store.save({
-      ...loan,
-      balance: nextBalance,
-      externalPaid: Math.max(0, Math.round(Number(loan.externalPaid || 0))) + paid,
-      status: nextBalance <= 0 ? 'paid' : 'active',
-      paidAt: nextBalance <= 0 ? contractTodayKey() : (loan.paidAt || ''),
-      finalApplyEnabled: nextBalance <= 0 ? false : Boolean(loan.finalApplyEnabled)
-    });
-    syncLoanLedgerFromLoan(saved, {
-      finalApplyEnabled: nextBalance <= 0 ? false : Boolean(loan.finalApplyEnabled)
+    syncLoanLedgerFromLoan(loan, {
+      finalApplyEnabled: Boolean(loan.finalApplyEnabled)
     });
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
-    renderPaymentConfirm();
-    renderPaymentPaid();
-    renderDeductionLoan();
-    renderWeeklyLoan();
-    renderMonthlyLoan();
-    showToast(nextBalance <= 0
-      ? `${loan.driverName || '기사'} · 대여 완납`
-      : `${loan.driverName || '기사'} · 부분납 ${formatMoney(paid)} · 잔액 ${formatMoney(nextBalance)}`);
+    showToast(`${loan.driverName || '기사'} · 대여 미납 잔액 ${formatMoney(balance)} → 차감관리`);
+    setMenu('deduction');
+    try { renderDeductionLoan(); } catch (_e) { /* ignore */ }
   }
 
   function renderPaymentConfirm() {
@@ -4512,7 +4556,8 @@ const BremAdminLeaseMenus = (function () {
           .join(' ').toLowerCase().includes(keyword));
       }
       if (summaryEl) {
-        summaryEl.textContent = `대여 · ${statusFilter === 'paid' ? '완납' : (statusFilter === 'partial' ? '부분납' : '미확인')} ${loans.length}건`;
+        const statusLabel = statusFilter === 'paid' ? '완납' : (statusFilter === 'unpaid' || statusFilter === 'partial' ? '미납' : '미확인');
+        summaryEl.textContent = `대여 · ${statusLabel} ${loans.length}건`;
       }
       if (!loans.length) {
         rowsEl.innerHTML = '<tr><td colspan="10" class="empty">해당 조건의 대여 납부 건이 없습니다.</td></tr>';
@@ -4535,7 +4580,7 @@ const BremAdminLeaseMenus = (function () {
         const actions = status.code === 'paid'
           ? '<span class="muted-inline">완납</span>'
           : `<button type="button" class="small-btn primary-btn" data-loan-payment-full="${escapeHtml(loan.id)}">완납</button>
-             <button type="button" class="small-btn" data-loan-payment-partial="${escapeHtml(loan.id)}">부분납</button>`;
+             <button type="button" class="small-btn" data-loan-payment-unpaid="${escapeHtml(loan.id)}">미납</button>`;
         const interest = Math.max(0, Math.round(Number(loan.interest || 0)));
         const principalLabel = interest > 0
           ? `${formatMoney(total)}<br><span class="muted-inline">원금 ${formatMoney(loan.principal)}+이자 ${formatMoney(interest)}</span>`
@@ -4625,7 +4670,7 @@ const BremAdminLeaseMenus = (function () {
       });
     }
     if (summaryEl) {
-      const label = statusFilter === 'partial' ? '부분납' : '미확인';
+      const label = (statusFilter === 'unpaid' || statusFilter === 'partial') ? '미납' : '미확인';
       summaryEl.textContent = `리스 · 이번주 ${weekLabel} · ${label} ${contracts.length}건`;
     }
     const visibleIds = new Set(contracts.map(contract => String(contract.id)));
@@ -4677,7 +4722,7 @@ const BremAdminLeaseMenus = (function () {
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
           <button type="button" class="small-btn primary-btn" data-payment-full="${escapeHtml(contract.id)}"${disabled}>완납</button>
-          <button type="button" class="small-btn" data-payment-partial="${escapeHtml(contract.id)}"${disabled}>부분납</button>
+          <button type="button" class="small-btn" data-payment-unpaid="${escapeHtml(contract.id)}"${disabled}>미납</button>
         </td>
       </tr>`;
     }).join('');
@@ -5582,9 +5627,9 @@ const BremAdminLeaseMenus = (function () {
         void confirmPaymentFull(paymentFullBtn.dataset.paymentFull);
         return;
       }
-      const paymentPartialBtn = event.target.closest('[data-payment-partial]');
-      if (paymentPartialBtn) {
-        void confirmPaymentPartial(paymentPartialBtn.dataset.paymentPartial);
+      const paymentUnpaidBtn = event.target.closest('[data-payment-unpaid]');
+      if (paymentUnpaidBtn) {
+        void confirmPaymentUnpaid(paymentUnpaidBtn.dataset.paymentUnpaid);
         return;
       }
       const loanPaymentFull = event.target.closest('[data-loan-payment-full]');
@@ -5592,9 +5637,9 @@ const BremAdminLeaseMenus = (function () {
         void confirmLoanPaymentFull(loanPaymentFull.dataset.loanPaymentFull);
         return;
       }
-      const loanPaymentPartial = event.target.closest('[data-loan-payment-partial]');
-      if (loanPaymentPartial) {
-        void confirmLoanPaymentPartial(loanPaymentPartial.dataset.loanPaymentPartial);
+      const loanPaymentUnpaid = event.target.closest('[data-loan-payment-unpaid]');
+      if (loanPaymentUnpaid) {
+        void confirmLoanPaymentUnpaid(loanPaymentUnpaid.dataset.loanPaymentUnpaid);
         return;
       }
       const paymentSourceBtn = event.target.closest('[data-payment-source]');
@@ -5607,7 +5652,8 @@ const BremAdminLeaseMenus = (function () {
       const paymentStatusBtn = event.target.closest('[data-payment-status]');
       if (paymentStatusBtn) {
         const next = paymentStatusBtn.dataset.paymentStatus;
-        state.paymentStatusFilter = ['open', 'partial', 'paid'].includes(next) ? next : 'open';
+        const normalized = next === 'partial' ? 'unpaid' : next;
+        state.paymentStatusFilter = ['open', 'unpaid', 'paid'].includes(normalized) ? normalized : 'open';
         state.paymentConfirmSelectedIds.clear();
         renderPaymentConfirm();
         return;
