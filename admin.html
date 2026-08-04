@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260803i">
+  <link rel="stylesheet" href="css/admin.css?v=20260805c">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5524,7 +5524,16 @@
                 </label>
                 <div class="driver-org-members">
                   <strong>소속 인원 (기사·관리자)</strong>
-                  <input type="search" id="driverOrgMemberSearch" placeholder="이름·ID 검색">
+                  <p class="form-help">개별 체크도 되고, ERP ID 엑셀로 이 박스에 일괄 체크할 수 있습니다.</p>
+                  <div class="driver-org-member-bulk">
+                    <button type="button" class="small-btn" id="driverOrgMemberTemplateBtn">ERP ID 양식</button>
+                    <label class="small-btn driver-org-member-bulk__file">
+                      엑셀 일괄등록
+                      <input type="file" id="driverOrgMemberBulkFile" accept=".xlsx,.xls,.csv" hidden>
+                    </label>
+                    <span class="form-help" id="driverOrgMemberBulkSummary" aria-live="polite"></span>
+                  </div>
+                  <input type="search" id="driverOrgMemberSearch" placeholder="이름·ERP ID·배민ID·쿠팡ID 검색">
                   <div class="driver-org-member-list" id="driverOrgMemberList"></div>
                 </div>
                 <div class="driver-org-children">
@@ -7638,7 +7647,7 @@
   <script src="js/direct-settlement-calc.js?v=20260803h"></script>
   <script src="js/settlement-result-direct.js?v=20260803g"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
-  <script src="js/driver-management-admin.js?v=20260802e"></script>
+  <script src="js/driver-management-admin.js?v=20260805c"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

@@ -470,12 +470,18 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function allPeople() {
-    const drivers = (window.BremStorage?.drivers?.getAll?.() || []).map(driver => ({
-      kind: 'driver',
-      id: driver.id,
-      label: `${driver.name} · ${makeDriverLoginId(driver)}${driver.baeminId ? ` · 배민 ${driver.baeminId}` : ''}`,
-      search: `${driver.name} ${makeDriverLoginId(driver)} ${driver.baeminId || ''} ${driver.phone || ''}`
-    }));
+    const utils = window.BremDriverUtils;
+    const drivers = (window.BremStorage?.drivers?.getAll?.() || []).map(driver => {
+      const loginId = makeDriverLoginId(driver);
+      const coupangErp = utils?.getErpCoupangId?.(driver) || loginId;
+      const baeminId = String(driver.baeminId || '').trim();
+      return {
+        kind: 'driver',
+        id: driver.id,
+        label: `${driver.name} · ${loginId}${baeminId ? ` · 배민 ${baeminId}` : ''}${coupangErp && coupangErp !== loginId ? ` · 쿠팡 ${coupangErp}` : ''}`,
+        search: `${driver.name} ${loginId} ${baeminId} ${coupangErp} ${driver.phone || ''}`
+      };
+    });
     const admins = (window.BremStorage?.auth?.getAdminAccounts?.() || []).map(account => ({
       kind: 'admin',
       id: account.id,
@@ -483,6 +489,121 @@ const BremDriverManagementAdmin = (function () {
       search: `${account.name || ''} ${account.loginId || ''} ${account.id}`
     }));
     return [...admins, ...drivers];
+  }
+
+  function normalizeOrgErpCell(value) {
+    let raw = String(value ?? '').trim().replace(/\s+/g, '');
+    if (!raw) return '';
+    if (/^\d+\.0+$/.test(raw)) raw = raw.replace(/\.0+$/, '');
+    return raw;
+  }
+
+  function matchPersonByErpId(rawId, drivers, admins) {
+    const raw = normalizeOrgErpCell(rawId);
+    if (!raw) return null;
+    const utils = window.BremDriverUtils;
+    const byBaemin = utils?.matchDriverByBaeminErpId?.(raw, drivers);
+    if (byBaemin?.id) return { kind: 'driver', id: byBaemin.id, via: 'baemin' };
+    const byCoupang = utils?.matchDriverByCoupangErpId?.(raw, drivers);
+    if (byCoupang?.id) return { kind: 'driver', id: byCoupang.id, via: 'coupang' };
+    const loginKey = raw.toLowerCase();
+    const byLogin = (drivers || []).find(driver => {
+      const loginId = String(makeDriverLoginId(driver) || '').replace(/\s/g, '').toLowerCase();
+      const erp = String(utils?.getErpCoupangId?.(driver) || '').replace(/\s/g, '').toLowerCase();
+      return loginId === loginKey || erp === loginKey;
+    });
+    if (byLogin?.id) return { kind: 'driver', id: byLogin.id, via: 'login' };
+    const admin = (admins || []).find(account => {
+      const loginId = String(account.loginId || '').replace(/\s/g, '').toLowerCase();
+      return loginId === loginKey || String(account.id || '') === raw;
+    });
+    if (admin?.id) return { kind: 'admin', id: admin.id, via: 'admin' };
+    return null;
+  }
+
+  function downloadOrgMemberTemplate() {
+    if (!window.XLSX) {
+      showToast('엑셀 모듈을 불러오지 못했습니다.');
+      return;
+    }
+    const ws = window.XLSX.utils.aoa_to_sheet([
+      ['ERP ID'],
+      ['BC000001'],
+      ['홍길동1234']
+    ]);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, '조직도일괄');
+    window.XLSX.writeFile(wb, 'BREM_조직도_ERP_ID_일괄등록.xlsx');
+  }
+
+  async function applyOrgMemberBulkExcel(file) {
+    const node = selectedNode();
+    if (!node) {
+      showToast('박스를 먼저 선택하세요.');
+      return;
+    }
+    if (!window.XLSX) throw new Error('엑셀 모듈을 불러오지 못했습니다.');
+
+    const buffer = await file.arrayBuffer();
+    const workbook = window.XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    if (!rows.length) {
+      showToast('엑셀에 데이터가 없습니다.');
+      return;
+    }
+
+    const firstCell = normalizeOrgErpCell(rows[0]?.[0]);
+    const hasHeader = /^(erp\s*id|배민\s*id|쿠팡\s*id|아이디|id)$/i.test(firstCell);
+    const ids = [];
+    const seen = new Set();
+    for (const row of rows.slice(hasHeader ? 1 : 0)) {
+      const id = normalizeOrgErpCell(row?.[0]);
+      if (!id) continue;
+      const key = id.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ids.push(id);
+    }
+    if (!ids.length) {
+      showToast('A열에서 ERP ID를 찾지 못했습니다. 양식을 확인하세요.');
+      return;
+    }
+
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    const admins = window.BremStorage?.auth?.getAdminAccounts?.() || [];
+    const next = new Map((node.memberRefs || []).map(ref => [`${ref.kind}:${ref.id}`, ref]));
+    let matched = 0;
+    let already = 0;
+    const missing = [];
+    ids.forEach(id => {
+      const hit = matchPersonByErpId(id, drivers, admins);
+      if (!hit) {
+        missing.push(id);
+        return;
+      }
+      const key = `${hit.kind}:${hit.id}`;
+      if (next.has(key)) {
+        already += 1;
+        return;
+      }
+      next.set(key, { kind: hit.kind, id: hit.id });
+      matched += 1;
+    });
+
+    node.memberRefs = [...next.values()];
+    state.memberSearch = '';
+    const searchInput = $('#driverOrgMemberSearch');
+    if (searchInput) searchInput.value = '';
+    const summary = $('#driverOrgMemberBulkSummary');
+    const summaryText = `체크 ${matched}명 · 이미선택 ${already}명 · 미매칭 ${missing.length}명 / 총 ${ids.length}건`;
+    if (summary) summary.textContent = summaryText;
+    renderOrg();
+    if (missing.length && missing.length <= 8) {
+      showToast(`${summaryText} · 미매칭: ${missing.join(', ')}`);
+    } else {
+      showToast(`${summaryText}. 저장하려면 「조직도 저장」을 누르세요.`);
+    }
   }
 
   function renderOrgEditor() {
@@ -503,13 +624,24 @@ const BremDriverManagementAdmin = (function () {
     const selected = new Set((node.memberRefs || []).map(ref => `${ref.kind}:${ref.id}`));
     const list = $('#driverOrgMemberList');
     if (list) {
-      list.innerHTML = allPeople()
+      // 체크된 인원을 위로 — 일괄등록 직후 바로 보이게
+      const people = allPeople()
         .filter(person => !q || person.search.toLowerCase().includes(q))
-        .slice(0, 200)
+        .sort((a, b) => {
+          const ak = selected.has(`${a.kind}:${a.id}`) ? 0 : 1;
+          const bk = selected.has(`${b.kind}:${b.id}`) ? 0 : 1;
+          if (ak !== bk) return ak - bk;
+          return String(a.label).localeCompare(String(b.label), 'ko');
+        });
+      const selectedPeople = people.filter(person => selected.has(`${person.kind}:${person.id}`));
+      const rest = people.filter(person => !selected.has(`${person.kind}:${person.id}`)).slice(0, 200);
+      const visible = [...selectedPeople, ...rest];
+      list.innerHTML = visible
         .map(person => {
           const key = `${person.kind}:${person.id}`;
-          return `<label>
-            <input type="checkbox" data-org-member-kind="${person.kind}" data-org-member-id="${escapeHtml(person.id)}"${selected.has(key) ? ' checked' : ''}>
+          const checked = selected.has(key);
+          return `<label class="${checked ? 'is-org-checked' : ''}">
+            <input type="checkbox" data-org-member-kind="${person.kind}" data-org-member-id="${escapeHtml(person.id)}"${checked ? ' checked' : ''}>
             <span>${escapeHtml(person.label)}</span>
           </label>`;
         }).join('') || '<p class="empty">검색 결과가 없습니다.</p>';
@@ -2022,6 +2154,14 @@ const BremDriverManagementAdmin = (function () {
     $('#driverOrgMemberSearch')?.addEventListener('input', event => {
       state.memberSearch = event.target.value || '';
       renderOrgEditor();
+    });
+    $('#driverOrgMemberTemplateBtn')?.addEventListener('click', () => downloadOrgMemberTemplate());
+    $('#driverOrgMemberBulkFile')?.addEventListener('change', event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      void applyOrgMemberBulkExcel(file)
+        .catch(error => showToast(error.message || '엑셀 일괄등록 실패'))
+        .finally(() => { event.target.value = ''; });
     });
 
     $('#driverRegionReloadBtn')?.addEventListener('click', () => { void refreshRegions(); });
