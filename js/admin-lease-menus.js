@@ -4228,7 +4228,10 @@ const BremAdminLeaseMenus = (function () {
   }
 
   async function confirmPaymentFull(contractId, options = {}) {
-    if (!erp()) return false;
+    if (!erp()) {
+      showToast('리스 데이터를 아직 불러오는 중입니다. 잠시 후 다시 눌러주세요.');
+      return false;
+    }
     const contract = erp().contracts().getById(contractId);
     if (!contract) {
       showToast('계약을 찾을 수 없습니다.');
@@ -4323,15 +4326,36 @@ const BremAdminLeaseMenus = (function () {
     const selectAll = $('leasePaymentConfirmSelectAll');
     const count = state.paymentConfirmSelectedIds.size;
     if (btn) {
-      btn.disabled = count <= 0;
+      // disabled면 클릭이 먹통처럼 보여서, 비활성은 속성이 아니라 상태만 반영
+      btn.disabled = false;
+      btn.classList.toggle('is-busy', count <= 0);
       btn.textContent = count > 0 ? `선택 완납 (${count})` : '선택 완납';
+      btn.title = count > 0 ? `선택한 ${count}건 완납` : '아래에서 체크한 뒤 누르세요';
     }
     if (selectAll) {
-      const boxes = document.querySelectorAll('[data-payment-select]');
-      const enabled = [...boxes].filter(el => !el.disabled);
-      selectAll.checked = enabled.length > 0 && enabled.every(el => el.checked);
-      selectAll.indeterminate = count > 0 && !selectAll.checked;
+      selectAll.disabled = false;
+      const boxes = [...document.querySelectorAll('#leasePaymentConfirmRows [data-payment-select]')];
+      selectAll.checked = boxes.length > 0 && boxes.every(el => el.checked);
+      selectAll.indeterminate = boxes.some(el => el.checked) && !selectAll.checked;
     }
+  }
+
+  function togglePaymentConfirmSelectAll(checked) {
+    const next = !!checked;
+    document.querySelectorAll('#leasePaymentConfirmRows [data-payment-select]').forEach(el => {
+      el.checked = next;
+      const id = String(el.dataset.paymentSelect || '');
+      if (!id) return;
+      if (next) state.paymentConfirmSelectedIds.add(id);
+      else state.paymentConfirmSelectedIds.delete(id);
+      el.closest('tr')?.classList.toggle('row-selected', next);
+    });
+    const selectAll = $('leasePaymentConfirmSelectAll');
+    if (selectAll) {
+      selectAll.checked = next;
+      selectAll.indeterminate = false;
+    }
+    updatePaymentConfirmBulkUi();
   }
 
   async function deletePaidPaymentConfirm(paymentId) {
@@ -4363,7 +4387,10 @@ const BremAdminLeaseMenus = (function () {
 
   /** 납부확인 미납: 이번주 청구 전액 → 차감관리 + 미납/회수 */
   async function confirmPaymentUnpaid(contractId) {
-    if (!erp()) return;
+    if (!erp()) {
+      showToast('리스 데이터를 아직 불러오는 중입니다. 잠시 후 다시 눌러주세요.');
+      return;
+    }
     const contract = erp().contracts().getById(contractId);
     if (!contract) {
       showToast('계약을 찾을 수 없습니다.');
@@ -4696,8 +4723,7 @@ const BremAdminLeaseMenus = (function () {
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
       const applied = isContractFinalApplyEnabled(contract);
-      const noDaily = settleCharge <= 0;
-      const disabled = noDaily ? ' disabled' : '';
+      // disabled 속성은 클릭 자체를 삼켜서 "아무 반응 없음"이 됨 → 항상 클릭 가능하게 두고 핸들러에서 안내
       const checked = state.paymentConfirmSelectedIds.has(String(contract.id)) ? ' checked' : '';
       const rowSelected = checked ? ' class="row-selected"' : '';
       const modeBadge = applied
@@ -4705,10 +4731,10 @@ const BremAdminLeaseMenus = (function () {
         : ' <span class="lease-status--collecting">수기납부</span>';
       const chargeHint = progressiveCharge <= 0 && settleCharge > 0
         ? '<br><span class="muted-inline">경과0 · 주간청구</span>'
-        : '';
+        : (settleCharge <= 0 ? '<br><span class="muted-inline">일렌탈료 없음</span>' : '');
       return `<tr${rowSelected}>
         <td class="lease-check-col">
-          <input type="checkbox" data-payment-select="${escapeHtml(contract.id)}"${checked}${disabled}>
+          <input type="checkbox" data-payment-select="${escapeHtml(contract.id)}"${checked}>
         </td>
         <td class="lease-payment-week-cell"><strong>${escapeHtml(weekLabel)}</strong></td>
         <td>${escapeHtml(vehicle?.vehicleNumber || contract.vehicleNumber || '-')}</td>
@@ -4721,8 +4747,8 @@ const BremAdminLeaseMenus = (function () {
         <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
-          <button type="button" class="small-btn primary-btn" data-payment-full="${escapeHtml(contract.id)}"${disabled}>완납</button>
-          <button type="button" class="small-btn" data-payment-unpaid="${escapeHtml(contract.id)}"${disabled}>미납</button>
+          <button type="button" class="small-btn primary-btn" data-payment-full="${escapeHtml(contract.id)}">완납</button>
+          <button type="button" class="small-btn" data-payment-unpaid="${escapeHtml(contract.id)}">미납</button>
         </td>
       </tr>`;
     }).join('');
@@ -5624,12 +5650,24 @@ const BremAdminLeaseMenus = (function () {
       }
       const paymentFullBtn = event.target.closest('[data-payment-full]');
       if (paymentFullBtn) {
-        void confirmPaymentFull(paymentFullBtn.dataset.paymentFull);
+        event.preventDefault();
+        const id = String(paymentFullBtn.getAttribute('data-payment-full') || paymentFullBtn.dataset.paymentFull || '').trim();
+        if (!id) {
+          showToast('계약 ID를 찾지 못했습니다. 새로고침 후 다시 시도하세요.');
+          return;
+        }
+        void confirmPaymentFull(id);
         return;
       }
       const paymentUnpaidBtn = event.target.closest('[data-payment-unpaid]');
       if (paymentUnpaidBtn) {
-        void confirmPaymentUnpaid(paymentUnpaidBtn.dataset.paymentUnpaid);
+        event.preventDefault();
+        const id = String(paymentUnpaidBtn.getAttribute('data-payment-unpaid') || paymentUnpaidBtn.dataset.paymentUnpaid || '').trim();
+        if (!id) {
+          showToast('계약 ID를 찾지 못했습니다. 새로고침 후 다시 시도하세요.');
+          return;
+        }
+        void confirmPaymentUnpaid(id);
         return;
       }
       const loanPaymentFull = event.target.closest('[data-loan-payment-full]');
@@ -5763,19 +5801,23 @@ const BremAdminLeaseMenus = (function () {
       state.paymentPaidSearch = String(event.target.value || '');
       renderPaymentPaid();
     });
-    $('leasePaymentConfirmBulkPaidBtn')?.addEventListener('click', () => { void bulkConfirmPaymentFull(); });
+    $('leasePaymentConfirmBulkPaidBtn')?.addEventListener('click', () => {
+      if (state.paymentConfirmSelectedIds.size <= 0) {
+        showToast('완납할 건을 아래에서 체크하세요.');
+        return;
+      }
+      void bulkConfirmPaymentFull();
+    });
     $('leasePaymentConfirmSelectAll')?.addEventListener('change', event => {
-      const checked = !!event.target.checked;
-      document.querySelectorAll('[data-payment-select]').forEach(el => {
-        if (el.disabled) return;
-        el.checked = checked;
-        const id = String(el.dataset.paymentSelect || '');
-        if (!id) return;
-        if (checked) state.paymentConfirmSelectedIds.add(id);
-        else state.paymentConfirmSelectedIds.delete(id);
-        el.closest('tr')?.classList.toggle('row-selected', checked);
-      });
-      updatePaymentConfirmBulkUi();
+      togglePaymentConfirmSelectAll(!!event.target.checked);
+    });
+    $('leasePaymentConfirmSelectAllWrap')?.addEventListener('click', event => {
+      // 라벨 클릭이 간헐적으로 change를 안 타는 경우 대비
+      if (event.target === $('leasePaymentConfirmSelectAll')) return;
+      const selectAll = $('leasePaymentConfirmSelectAll');
+      if (!selectAll) return;
+      event.preventDefault();
+      togglePaymentConfirmSelectAll(!selectAll.checked);
     });
 
     document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
