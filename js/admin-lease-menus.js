@@ -689,6 +689,15 @@ const BremAdminLeaseMenus = (function () {
     if (menu === 'arrears') {
       markArrearContractOptionsDirty();
       syncArrearWeekUi(state.arrearWeekStart || currentWeekStart());
+      const purged = purgeOrphanContractDeductions();
+      if (purged.arrearCount || purged.ledgerCount) {
+        void (async () => {
+          await erp().flushImmediateWrites?.();
+          try { await window.BremStorage?.flushStorage?.(); } catch (_e) { /* ignore */ }
+          updateLeaseErpUnsavedBanner();
+        })();
+        showToast(`없는 계약 잔존분 정리 · 미납 ${purged.arrearCount} · 차감 ${purged.ledgerCount}`);
+      }
       renderArrears();
       return;
     }
@@ -704,6 +713,15 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     if (menu === 'deduction') {
+      const purged = purgeOrphanContractDeductions();
+      if (purged.arrearCount || purged.ledgerCount) {
+        void (async () => {
+          await erp().flushImmediateWrites?.();
+          try { await window.BremStorage?.flushStorage?.(); } catch (_e) { /* ignore */ }
+          updateLeaseErpUnsavedBanner();
+        })();
+        showToast(`없는 계약 잔존분 정리 · 미납 ${purged.arrearCount} · 차감 ${purged.ledgerCount}`);
+      }
       syncDeductionTabUi();
       renderDeductionActivePane();
       return;
@@ -1779,6 +1797,74 @@ const BremAdminLeaseMenus = (function () {
     });
   }
 
+  /** 계약 삭제 시 미납/회수 + 차감관리(연동 분)도 같이 정리 */
+  function cleanupLinkedDeductionsForContracts(contractIds = []) {
+    const idSet = new Set((contractIds || []).map(id => String(id || '').trim()).filter(Boolean));
+    if (!idSet.size || !erp()) return { arrearCount: 0, ledgerCount: 0 };
+
+    const ledger = window.BremStorage?.deductionLedger;
+    const arrearIds = [];
+    const ledgerIds = new Set();
+
+    (erp().arrears().getAll() || []).forEach(item => {
+      const contractId = String(item.contractId || '').trim();
+      if (!idSet.has(contractId)) return;
+      arrearIds.push(String(item.id));
+      const lid = String(item.rawData?.ledgerId || '').trim();
+      if (lid) ledgerIds.add(lid);
+      const sref = String(item.rawData?.ledgerSourceRef || item.rawData?.sourceRef || '').trim();
+      if (sref) {
+        const hit = ledger?.findBySource?.('unpaid', sref);
+        if (hit?.id) ledgerIds.add(String(hit.id));
+      }
+    });
+
+    const arrearIdSet = new Set(arrearIds);
+    (ledger?.getAll?.() || []).forEach(item => {
+      const ref = String(item.sourceRef || '');
+      const kind = String(item.kind || '');
+      if (kind !== 'unpaid' && kind !== 'manual') return;
+      for (const cid of idSet) {
+        if (ref === cid || ref.startsWith(`payment-confirm:${cid}:`) || ref.includes(`:${cid}:`)) {
+          ledgerIds.add(String(item.id));
+          break;
+        }
+      }
+      if (arrearIdSet.has(String(item.rawData?.arrearId || ''))) {
+        ledgerIds.add(String(item.id));
+      }
+    });
+
+    if (arrearIds.length) {
+      if (typeof erp().arrears().removeByIds === 'function') {
+        erp().arrears().removeByIds(arrearIds, { immediate: true });
+      } else {
+        arrearIds.forEach(id => erp().arrears().removeById(id, { immediate: true }));
+      }
+    }
+    [...ledgerIds].forEach(id => ledger?.remove?.(id));
+
+    return { arrearCount: arrearIds.length, ledgerCount: ledgerIds.size };
+  }
+
+  /** 이미 계약이 없는 미납·차감 잔존분 정리 */
+  function purgeOrphanContractDeductions() {
+    if (!erp()) return { arrearCount: 0, ledgerCount: 0 };
+    const living = new Set((erp().contracts().getAll() || []).map(item => String(item.id || '').trim()).filter(Boolean));
+    const orphanIds = new Set();
+    (erp().arrears().getAll() || []).forEach(item => {
+      const cid = String(item.contractId || '').trim();
+      if (cid && !living.has(cid)) orphanIds.add(cid);
+    });
+    (window.BremStorage?.deductionLedger?.getAll?.() || []).forEach(item => {
+      const ref = String(item.sourceRef || '');
+      const match = ref.match(/^payment-confirm:([^:]+):/);
+      if (match?.[1] && !living.has(match[1])) orphanIds.add(match[1]);
+    });
+    if (!orphanIds.size) return { arrearCount: 0, ledgerCount: 0 };
+    return cleanupLinkedDeductionsForContracts([...orphanIds]);
+  }
+
   async function removeContracts(contractIds = []) {
     if (!erp()) return false;
     const ids = [...new Set(contractIds.map(id => String(id || '').trim()).filter(Boolean))];
@@ -1794,6 +1880,9 @@ const BremAdminLeaseMenus = (function () {
     renderContractList();
 
     try {
+      // 계약보다 먼저 연동 미납·차감 정리 (contractId 매칭이 필요)
+      const cleaned = cleanupLinkedDeductionsForContracts(ids);
+
       if (ids.length === 1) {
         erp().contracts().removeById(ids[0]);
       } else {
@@ -1807,9 +1896,22 @@ const BremAdminLeaseMenus = (function () {
       }
 
       refreshContractViews();
+      if (state.menu === 'arrears') renderArrears();
+      if (state.menu === 'deduction') renderDeductionActivePane();
       await erp().flushImmediateWrites();
+      if (window.BremStorage?.flushStorage) {
+        try { await window.BremStorage.flushStorage(); } catch (_e) { /* ignore */ }
+      }
+      updateLeaseErpUnsavedBanner();
 
-      showToast(ids.length === 1 ? 'Supabase에서 계약을 삭제했습니다.' : `Supabase에서 계약 ${ids.length}건을 삭제했습니다.`);
+      const extra = (cleaned.arrearCount || cleaned.ledgerCount)
+        ? ` · 미납 ${cleaned.arrearCount} · 차감 ${cleaned.ledgerCount} 함께 삭제`
+        : '';
+      showToast(
+        ids.length === 1
+          ? `계약을 삭제했습니다${extra}`
+          : `계약 ${ids.length}건을 삭제했습니다${extra}`
+      );
       return true;
     } catch (error) {
       console.error('[removeContracts]', error);
@@ -1834,7 +1936,9 @@ const BremAdminLeaseMenus = (function () {
     const vehicle = erp().vehicles().getById(contract.vehicleId);
     const plate = contract.vehicleNumber || vehicle?.vehicleNumber || '-';
     const name = contract.driverName || '-';
-    if (!window.confirm(`계약을 삭제하시겠습니까?\n${plate} · ${name}`)) return;
+    if (!window.confirm(
+      `계약을 삭제하시겠습니까?\n${plate} · ${name}\n\n연결된 미납/회수 · 차감관리 항목도 함께 삭제됩니다.`
+    )) return;
     await removeContracts([contractId]);
   }
 
@@ -1845,7 +1949,9 @@ const BremAdminLeaseMenus = (function () {
       showToast('삭제할 계약이 없습니다.');
       return;
     }
-    if (!window.confirm(`등록된 계약 ${contracts.length}건을 모두 삭제하시겠습니까?\n되돌릴 수 없습니다.`)) return;
+    if (!window.confirm(
+      `등록된 계약 ${contracts.length}건을 모두 삭제하시겠습니까?\n연결된 미납/회수 · 차감관리도 함께 삭제됩니다.\n되돌릴 수 없습니다.`
+    )) return;
     await removeContracts(contracts.map(contract => contract.id));
   }
 
