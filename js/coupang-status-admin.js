@@ -1142,7 +1142,7 @@
     if (!local.hasToken) { toast('먼저 [브라우저 열기]로 로그인 후 대시보드를 한 번 여세요.'); return; }
     const r = await callLocal('/status-loop/start', { method: 'POST', body: {}, timeoutMs: 15000 });
     if (r.statusLoop) local.loop = r.statusLoop;
-    toast(r.ok ? '자동순회를 시작했습니다. (1회차 대시보드+라이더 → 이후 30초마다 대시보드)' : (r.message || '자동순회 시작 실패'));
+    toast(r.ok ? '자동순회를 시작했습니다. (매 회차 대시보드+라이더 퍼포먼스 · 약 30초 주기)' : (r.message || '자동순회 시작 실패'));
     renderLoopStatus();
     updateLocalButtons();
   }

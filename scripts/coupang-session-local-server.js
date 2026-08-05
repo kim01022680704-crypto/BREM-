@@ -573,13 +573,16 @@ async function runStatusAutoLoopInner() {
     statusLoop.round += 1;
     const first = statusLoop.round === 1;
     statusLoop.phase = 'collecting';
-    statusLoop.message = first ? '첫 회차: 대시보드 + 라이더 퍼포먼스(정산주 전체) 수집 중…' : `대시보드 수집 중… (${statusLoop.round}회차)`;
+    // 자동순회: 매 회차 라이더 퍼포먼스(rider_daily) 포함 — 기여도(0.8/1 단위 콜) 연속 반영
+    statusLoop.message = first
+      ? '첫 회차: 대시보드 + 라이더 퍼포먼스(정산주 전체) 수집 중…'
+      : `대시보드 + 라이더 퍼포먼스(오늘) 수집 중… (${statusLoop.round}회차)`;
     statusLoop.updatedAt = nowKstIsoOffset();
     try {
-      // 1회차: 대시보드 + 라이더(정산주 수~오늘 전체) / 2회차+: 대시보드만(라이더·주간 제외)
+      // 1회차: 정산주 수~오늘 전체 / 2회차+: 주간 생략·오늘은 라이더까지 계속
       const result = first
-        ? await runCollect({ fullWeek: true })
-        : await runCollect({ skipWeekly: true, includeRider: false });
+        ? await runCollect({ fullWeek: true, includeRider: true })
+        : await runCollect({ skipWeekly: true, includeRider: true });
       statusLoop.lastSummary = result && result.summary ? result.summary : null;
       statusLoop.lastError = '';
     } catch (e) {
@@ -588,7 +591,7 @@ async function runStatusAutoLoopInner() {
     if (!statusLoop.active || statusLoop.stopping) break;
     statusLoop.phase = 'waiting';
     statusLoop.waitEndsAt = Date.now() + STATUS_LOOP_WAIT_MS;
-    statusLoop.message = `다음 회차 대기 · 세션 유지 페이지 왕복 (${statusLoop.round}회차 완료)`;
+    statusLoop.message = `다음 회차 대기 · 세션 유지 + 라이더 연속수집 (${statusLoop.round}회차 완료)`;
     statusLoop.updatedAt = nowKstIsoOffset();
     await keepAliveDuringWait(STATUS_LOOP_WAIT_MS);
   }
