@@ -12148,6 +12148,132 @@ tr.is-week-first td {
   word-break: keep-all;
 }
 
+/* 조직도 정리 — 계층 리스트 */
+.driver-org-list-summary {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.driver-org-list {
+  display: grid;
+  gap: 12px;
+}
+
+.driver-org-list__empty {
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+}
+
+.driver-org-list-node {
+  border: 1px solid #d7deea;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.driver-org-list-node__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.driver-org-list-node__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.driver-org-list-node__meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.driver-org-list-node__body {
+  padding: 12px 14px 14px;
+}
+
+.driver-org-list-node__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-org-list-node__people:last-child {
+  margin-bottom: 0;
+}
+
+.driver-org-list-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.driver-org-list-chip--admin {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.driver-org-list-chip__kind {
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+.driver-org-list-node__empty-people {
+  margin: 0 0 10px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.driver-org-list-node__children {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-left: 12px;
+  border-left: 3px solid #93c5fd;
+}
+
+.driver-org-list-node__children .driver-org-list-node {
+  background: #fcfdff;
+}
+
+.driver-org-list-node__children .driver-org-list-node__children {
+  border-left-color: #60a5fa;
+}
+
+.driver-org-list-node__children .driver-org-list-node__children .driver-org-list-node__children {
+  border-left-color: #3b82f6;
+}
+
 @media (max-width: 960px) {
   .driver-org-layout,
   .driver-region-layout {

@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260805f">
+  <link rel="stylesheet" href="css/admin.css?v=20260805g">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5567,10 +5567,11 @@
             <h2>기사관리</h2>
             <div class="revenue-sub-tabs" role="tablist" aria-label="기사관리 소메뉴">
               <button type="button" class="revenue-sub-btn active" data-driver-mgmt-tab="org">조직도</button>
+              <button type="button" class="revenue-sub-btn" data-driver-mgmt-tab="org-list">조직도 정리</button>
               <button type="button" class="revenue-sub-btn" data-driver-mgmt-tab="region">기사지역관리</button>
             </div>
           </div>
-          <p class="form-help">조직도는 박스를 자유롭게 추가·수정하고 기사·관리자를 배정합니다. 기사지역관리는 배민·쿠팡 지역으로 기사를 정리하며, 기사등록프로그램과 지역이 양방향으로 동기화됩니다.</p>
+          <p class="form-help">조직도는 박스를 자유롭게 추가·수정하고 기사·관리자를 배정합니다. 조직도 정리는 같은 구조를 이름 리스트로 보여 줍니다. 기사지역관리는 배민·쿠팡 지역으로 기사를 정리하며, 기사등록프로그램과 지역이 양방향으로 동기화됩니다.</p>
         </article>
 
         <div class="driver-mgmt-panel" data-driver-mgmt-panel="org">
@@ -5653,6 +5654,20 @@
                 </table>
               </div>
             </div>
+          </article>
+        </div>
+
+        <div class="driver-mgmt-panel" data-driver-mgmt-panel="org-list" hidden>
+          <article class="card">
+            <div class="card-header">
+              <h2>조직도 정리</h2>
+              <div class="promotion-form-actions">
+                <button type="button" class="small-btn" id="driverOrgListReloadBtn">새로고침</button>
+              </div>
+            </div>
+            <p class="form-help">조직도 박스를 기준으로 소속 이름을 계층 리스트로 정리합니다. 조직도에서 저장한 내용이 그대로 반영됩니다.</p>
+            <div class="driver-org-list-summary" id="driverOrgListSummary" aria-live="polite"></div>
+            <div class="driver-org-list" id="driverOrgListRoot"></div>
           </article>
         </div>
 
@@ -7723,7 +7738,7 @@
   <script src="js/direct-settlement-calc.js?v=20260803h"></script>
   <script src="js/settlement-result-direct.js?v=20260805b"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
-  <script src="js/driver-management-admin.js?v=20260805f"></script>
+  <script src="js/driver-management-admin.js?v=20260805g"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260801f"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

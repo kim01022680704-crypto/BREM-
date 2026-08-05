@@ -180,7 +180,8 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function setTab(tab) {
-    state.tab = tab === 'region' ? 'region' : 'org';
+    const next = String(tab || 'org');
+    state.tab = next === 'region' || next === 'org-list' ? next : 'org';
     $$('[data-driver-mgmt-tab]').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.driverMgmtTab === state.tab);
     });
@@ -190,10 +191,15 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org') {
       stopRegionRankingPoll();
       renderOrg();
-    } else {
-      void refreshRegions();
-      startRegionRankingPoll();
+      return;
     }
+    if (state.tab === 'org-list') {
+      stopRegionRankingPoll();
+      renderOrgList();
+      return;
+    }
+    void refreshRegions();
+    startRegionRankingPoll();
   }
 
   function loadOrg() {
@@ -463,6 +469,86 @@ const BremDriverManagementAdmin = (function () {
     }
     renderOrgEditor();
     renderOrgMemberPanel();
+    if (state.tab === 'org-list') renderOrgList();
+  }
+
+  function resolveOrgMemberName(ref) {
+    if (!ref?.id) return null;
+    if (ref.kind === 'admin') {
+      const account = window.BremStorage?.auth?.getAdminAccountById?.(ref.id)
+        || (window.BremStorage?.auth?.getAdminAccounts?.() || []).find(item => item.id === ref.id);
+      return {
+        kind: 'admin',
+        name: account?.name || account?.loginId || ref.id
+      };
+    }
+    const driver = window.BremStorage?.drivers?.getById?.(ref.id);
+    return {
+      kind: 'driver',
+      name: driver?.name || (driver ? makeDriverLoginId(driver) : '') || ref.id
+    };
+  }
+
+  function renderOrgListNodeHtml(node) {
+    const members = (node.memberRefs || [])
+      .map(resolveOrgMemberName)
+      .filter(item => item?.name)
+      .sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 'admin' ? -1 : 1;
+        return String(a.name).localeCompare(String(b.name), 'ko');
+      });
+    const kids = childrenOf(node.id);
+    const peopleHtml = members.length
+      ? `<ul class="driver-org-list-node__people">${members.map(person => `
+          <li class="driver-org-list-chip${person.kind === 'admin' ? ' driver-org-list-chip--admin' : ''}">
+            ${person.kind === 'admin' ? '<span class="driver-org-list-chip__kind">관리</span>' : ''}
+            <span>${escapeHtml(person.name)}</span>
+          </li>`).join('')}</ul>`
+      : '<p class="driver-org-list-node__empty-people">소속 인원 없음</p>';
+    const childrenHtml = kids.length
+      ? `<div class="driver-org-list-node__children">${kids.map(renderOrgListNodeHtml).join('')}</div>`
+      : '';
+    return `
+      <section class="driver-org-list-node">
+        <div class="driver-org-list-node__head">
+          <h3 class="driver-org-list-node__title">${escapeHtml(node.label || '이름 없음')}</h3>
+          <span class="driver-org-list-node__meta">인원 ${members.length} · 하위 ${kids.length}</span>
+        </div>
+        <div class="driver-org-list-node__body">
+          ${peopleHtml}
+          ${childrenHtml}
+        </div>
+      </section>`;
+  }
+
+  function renderOrgList() {
+    const root = $('#driverOrgListRoot');
+    const summary = $('#driverOrgListSummary');
+    if (!root) return;
+    loadOrg();
+    const top = roots();
+    if (!top.length) {
+      root.innerHTML = '<p class="driver-org-list__empty">조직도 박스가 없습니다. 「조직도」에서 루트 박스를 추가하세요.</p>';
+      if (summary) summary.textContent = '박스 0 · 배정 인원 0명';
+      return;
+    }
+
+    let boxCount = 0;
+    let memberCount = 0;
+    const seenMembers = new Set();
+    state.org.nodes.forEach(node => {
+      boxCount += 1;
+      (node.memberRefs || []).forEach(ref => {
+        const key = `${ref.kind}:${ref.id}`;
+        if (seenMembers.has(key)) return;
+        seenMembers.add(key);
+        memberCount += 1;
+      });
+    });
+    if (summary) {
+      summary.textContent = `박스 ${formatNumber(boxCount)} · 배정 인원 ${formatNumber(memberCount)}명 · 루트 ${formatNumber(top.length)}`;
+    }
+    root.innerHTML = `<div class="driver-org-list">${top.map(renderOrgListNodeHtml).join('')}</div>`;
   }
 
   function selectedNode() {
@@ -2303,6 +2389,11 @@ const BremDriverManagementAdmin = (function () {
       }
     });
 
+    $('#driverOrgListReloadBtn')?.addEventListener('click', () => {
+      loadOrg();
+      renderOrgList();
+      showToast('조직도 정리를 새로고침했습니다.');
+    });
     $('#driverOrgAddRootBtn')?.addEventListener('click', () => addNode(''));
     $('#driverOrgAddChildBtn')?.addEventListener('click', () => {
       if (!state.selectedNodeId) {
@@ -2393,6 +2484,7 @@ const BremDriverManagementAdmin = (function () {
     } else {
       stopRegionRankingPoll();
     }
+    if (state.tab === 'org-list') renderOrgList();
   }
 
   return {
