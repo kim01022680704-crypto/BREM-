@@ -52,10 +52,27 @@ window.BremDriverDataCache = (function () {
     });
   }
 
+  /** 로그아웃 시 모든 기사 세션 캐시 제거 (다른 기사 잔존 방지) */
+  function clearAll() {
+    try {
+      const keys = [];
+      for (let i = 0; i < sessionStorage.length; i += 1) {
+        const key = sessionStorage.key(i);
+        if (key && key.startsWith(PREFIX)) keys.push(key);
+      }
+      keys.forEach(key => {
+        try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   return {
     TTL_MS,
     read,
     write,
-    invalidate
+    invalidate,
+    clearAll
   };
 })();

@@ -1114,6 +1114,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
   const driverId = String(rider.id || '').trim();
   const empty = {
     available: false,
+    riderId: driverId,
     baeminId: baeminId || '',
     complete: 0,
     foodReject: 0,
@@ -1174,6 +1175,7 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
 
   return {
     available: true,
+    riderId: driverId,
     baeminId,
     complete: metrics.complete,
     foodReject: metrics.foodReject,
@@ -1246,8 +1248,10 @@ async function fetchCoupangRiderDailyByMatch(supabase, matchKey, fromDate, toDat
  */
 async function loadRiderCoupangOps(supabase, rider = {}) {
   const matchKey = makeRiderLoginId(rider);
+  const riderId = String(rider.id || '').trim();
   const empty = {
     available: false,
+    riderId,
     matchKey: matchKey || '',
     complete: 0,
     reject: 0,
@@ -1318,6 +1322,7 @@ async function loadRiderCoupangOps(supabase, rider = {}) {
 
   return {
     available: true,
+    riderId,
     matchKey,
     complete: live.complete,
     reject: live.reject,

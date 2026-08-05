@@ -526,6 +526,8 @@
     const { idle = false, message = '' } = options;
     const riderId = state.currentDriver?.id || BremStorage.auth.getDriverSessionId?.();
     window.BremSessionSecurity?.stop();
+    stopBaeminLiveOpsPolling();
+    stopCoupangLiveOpsPolling();
 
     if (BremStorage.getSupabaseConfig?.().mode === 'production') {
       await BremStorage.auth.signOutSupabase('rider');
@@ -534,9 +536,9 @@
       BremStorage.auth.clearSessionAuth?.('rider');
     }
 
-    if (riderId) {
-      BremStorage.invalidateDriverAppCache?.(riderId);
-    }
+    BremStorage.clearRiderLiveOpsCache?.();
+    BremStorage.invalidateDriverAppCache?.(riderId || '');
+    window.BremDriverDataCache?.clearAll?.();
 
     state.currentDriver = null;
     state.selectedWeekStart = weekStartKey();
@@ -1023,7 +1025,11 @@
       return;
     }
 
-    const ops = BremStorage.getRiderBaeminOps?.() || null;
+    const opsRaw = BremStorage.getRiderBaeminOps?.() || null;
+    const driverId = String(driver?.id || '').trim();
+    const opsRiderId = String(opsRaw?.riderId || '').trim();
+    // 다른 기사 세션 잔존 데이터는 표시하지 않음
+    const ops = (opsRaw && (!opsRiderId || !driverId || opsRiderId === driverId)) ? opsRaw : null;
     const emptyEl = document.getElementById('driverBaeminLiveOpsEmpty');
     const available = Boolean(ops?.available);
     card.classList.toggle('is-empty', !available);
@@ -1130,7 +1136,10 @@
       return;
     }
 
-    const ops = BremStorage.getRiderCoupangOps?.() || null;
+    const opsRaw = BremStorage.getRiderCoupangOps?.() || null;
+    const driverId = String(driver?.id || '').trim();
+    const opsRiderId = String(opsRaw?.riderId || '').trim();
+    const ops = (opsRaw && (!opsRiderId || !driverId || opsRiderId === driverId)) ? opsRaw : null;
     const emptyEl = document.getElementById('driverCoupangLiveOpsEmpty');
     const available = Boolean(ops?.available);
     card.classList.toggle('is-empty', !available);

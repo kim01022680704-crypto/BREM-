@@ -3218,29 +3218,53 @@ const BremStorage = (function () {
       }
     }
 
-    if (payload.baeminOps && typeof payload.baeminOps === 'object') {
-      riderBaeminOpsCache = {
-        ...payload.baeminOps,
-        cachedAt: new Date().toISOString()
-      };
-    } else if (payload.ok) {
-      // live 응답에 baeminOps가 비어도 조회 시각은 갱신해 폴링 동작이 보이게 함
-      riderBaeminOpsCache = {
-        ...(riderBaeminOpsCache || { available: false }),
-        cachedAt: new Date().toISOString()
-      };
-    }
+    const liveRiderId = String(payload.riderId || payload.rider?.id || '').trim();
+    const hasLiveOpsPayload = (
+      Object.prototype.hasOwnProperty.call(payload, 'baeminOps')
+      || Object.prototype.hasOwnProperty.call(payload, 'coupangOps')
+      || Boolean(liveRiderId)
+      || payload.ok === true
+    );
 
-    if (payload.coupangOps && typeof payload.coupangOps === 'object') {
-      riderCoupangOpsCache = {
-        ...payload.coupangOps,
-        cachedAt: new Date().toISOString()
-      };
-    } else if (payload.ok) {
-      riderCoupangOpsCache = {
-        ...(riderCoupangOpsCache || { available: false }),
-        cachedAt: new Date().toISOString()
-      };
+    if (hasLiveOpsPayload) {
+      // 이전 기사 실시간 수치가 다음 로그인에 묻어나오지 않도록 항상 교체한다.
+      if (payload.baeminOps && typeof payload.baeminOps === 'object') {
+        riderBaeminOpsCache = {
+          ...payload.baeminOps,
+          riderId: liveRiderId || payload.baeminOps.riderId || '',
+          cachedAt: new Date().toISOString()
+        };
+      } else {
+        riderBaeminOpsCache = {
+          available: false,
+          riderId: liveRiderId,
+          complete: 0,
+          foodReject: 0,
+          foodCancel: 0,
+          foodRiderFault: 0,
+          acceptRate: null,
+          cachedAt: new Date().toISOString()
+        };
+      }
+
+      if (payload.coupangOps && typeof payload.coupangOps === 'object') {
+        riderCoupangOpsCache = {
+          ...payload.coupangOps,
+          riderId: liveRiderId || payload.coupangOps.riderId || '',
+          cachedAt: new Date().toISOString()
+        };
+      } else {
+        riderCoupangOpsCache = {
+          available: false,
+          riderId: liveRiderId,
+          complete: 0,
+          reject: 0,
+          cancel: 0,
+          pastComplete: 0,
+          rejectionRate: null,
+          cachedAt: new Date().toISOString()
+        };
+      }
     }
 
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
@@ -3350,8 +3374,23 @@ const BremStorage = (function () {
     };
   }
 
+  let riderLongEventProgress = null;
+  let riderBaeminOpsCache = null;
+  let riderCoupangOpsCache = null;
+
+  function clearRiderLiveOpsCache() {
+    riderBaeminOpsCache = null;
+    riderCoupangOpsCache = null;
+    riderLongEventProgress = null;
+  }
+
   function invalidateDriverAppCache(riderId) {
-    window.BremDriverDataCache?.invalidate?.(riderId);
+    if (riderId) {
+      window.BremDriverDataCache?.invalidate?.(riderId);
+    } else {
+      window.BremDriverDataCache?.clearAll?.();
+    }
+    clearRiderLiveOpsCache();
     lastDriverAppPublishedAt = null;
   }
 
@@ -3365,6 +3404,11 @@ const BremStorage = (function () {
         || activeSupabaseProfile?.rider_id
         || sessionAdapter.read(SESSION_KEYS.driverId, '')
       ).trim();
+
+      // 로그인 직후 이전 기사 실시간 카드가 잠깐이라도 보이지 않게 비움
+      if (options.force || !riderBaeminOpsCache || String(riderBaeminOpsCache.riderId || '') !== riderId) {
+        clearRiderLiveOpsCache();
+      }
 
       if (!isProductionMode() || !isRiderProductionSession()) {
         const hydrated = await ensureSupabaseHydrated({ skipDriversSync: true });
@@ -3996,16 +4040,21 @@ const BremStorage = (function () {
   }
 
   let driverAppHydratePromise = null;
-  let riderLongEventProgress = null;
-  let riderBaeminOpsCache = null;
-  let riderCoupangOpsCache = null;
 
   function getRiderBaeminOps() {
-    return riderBaeminOpsCache ? { ...riderBaeminOpsCache } : null;
+    if (!riderBaeminOpsCache) return null;
+    const sessionRiderId = String(activeSupabaseProfile?.rider_id || sessionAdapter.read(SESSION_KEYS.driverId, '') || '').trim();
+    const cacheRiderId = String(riderBaeminOpsCache.riderId || '').trim();
+    if (sessionRiderId && cacheRiderId && sessionRiderId !== cacheRiderId) return null;
+    return { ...riderBaeminOpsCache };
   }
 
   function getRiderCoupangOps() {
-    return riderCoupangOpsCache ? { ...riderCoupangOpsCache } : null;
+    if (!riderCoupangOpsCache) return null;
+    const sessionRiderId = String(activeSupabaseProfile?.rider_id || sessionAdapter.read(SESSION_KEYS.driverId, '') || '').trim();
+    const cacheRiderId = String(riderCoupangOpsCache.riderId || '').trim();
+    if (sessionRiderId && cacheRiderId && sessionRiderId !== cacheRiderId) return null;
+    return { ...riderCoupangOpsCache };
   }
 
   async function refreshRiderBaeminOps() {
@@ -12917,6 +12966,8 @@ const BremStorage = (function () {
       }
       this.clearSessionAuth(scope);
       resetBootstrapState();
+      clearRiderLiveOpsCache();
+      window.BremDriverDataCache?.clearAll?.();
       window.BremDataCache?.clearAll?.();
       window.BremSessionSecurity?.stop?.();
     },
@@ -13687,6 +13738,7 @@ const BremStorage = (function () {
     fetchRiderPublishStatus,
     checkDriverAppPublishUpdate,
     invalidateDriverAppCache,
+    clearRiderLiveOpsCache,
     purgeLegacyAuthFromLocalStorage,
     waitForSupabaseReady,
     ensureSupabaseHydrated,
