@@ -2823,6 +2823,18 @@
             <button type="button" class="lease-deduction-tab" data-payment-status="unpaid" role="tab" aria-selected="false">미납</button>
             <button type="button" class="lease-deduction-tab" data-payment-status="paid" role="tab" aria-selected="false">완납</button>
           </div>
+          <div class="lease-arrear-week-period" style="margin-top:10px;">
+            <label class="period-label-block week-target-block">
+              <span class="label-row">확인 주차 (수~화)</span>
+              <span class="field-preview week-range-label" id="leasePaymentConfirmWeekRangePreview">수요일~화요일 기준</span>
+              <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-payment-week" id="leasePaymentConfirmWeekBtn">
+                <span id="leasePaymentConfirmWeekLabel">주차 선택</span>
+              </button>
+              <span class="period-picker-caption">주차별 계약자 확인 · 완납 탭에서는 「전체 주」도 가능</span>
+              <input type="hidden" id="leasePaymentConfirmWeekStart">
+            </label>
+            <button type="button" class="small-btn" id="leasePaymentConfirmWeekAllBtn" title="완납 목록을 주차 없이 전부 표시">전체 주</button>
+          </div>
           <div class="lease-list-toolbar lease-payment-confirm-toolbar">
             <p class="form-help lease-list-count" id="leasePaymentConfirmSummary">0건</p>
             <input type="search" id="leasePaymentConfirmSearch" class="lease-contract-list-search" placeholder="기사 · 차량번호 · 연락처 검색" autocomplete="off">
@@ -2863,11 +2875,22 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>완납 확인</h2>
-            <p class="form-help">리스·대여 완납 내역 · 「납부 확인」의 완납 탭과 동일 기준으로 모읍니다</p>
+            <p class="form-help">리스·대여 완납 내역 · 주차 필터로 확인하거나 「전체 주」로 모읍니다</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist" aria-label="완납 대상">
             <button type="button" class="lease-deduction-tab active" data-payment-paid-source="lease" role="tab" aria-selected="true">리스</button>
             <button type="button" class="lease-deduction-tab" data-payment-paid-source="loan" role="tab" aria-selected="false">대여</button>
+          </div>
+          <div class="lease-arrear-week-period" style="margin-top:10px;">
+            <label class="period-label-block week-target-block">
+              <span class="label-row">완납 주차 (수~화)</span>
+              <span class="field-preview week-range-label" id="leasePaymentPaidWeekRangePreview">수요일~화요일 기준</span>
+              <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-payment-paid-week" id="leasePaymentPaidWeekBtn">
+                <span id="leasePaymentPaidWeekLabel">주차 선택</span>
+              </button>
+              <input type="hidden" id="leasePaymentPaidWeekStart">
+            </label>
+            <button type="button" class="small-btn" id="leasePaymentPaidWeekAllBtn" title="모든 주 완납 내역">전체 주</button>
           </div>
           <div class="lease-list-toolbar lease-payment-confirm-toolbar">
             <p class="form-help lease-list-count" id="leasePaymentPaidSummary">완납 0건</p>
@@ -7616,7 +7639,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260803l"></script>
+  <script src="js/storage.js?v=20260805m"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7645,7 +7668,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260805k"></script>
+  <script src="js/admin-lease-menus.js?v=20260805m"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7665,7 +7688,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260803k"></script>
+    <script src="js/admin.js?v=20260805m"></script>
   <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

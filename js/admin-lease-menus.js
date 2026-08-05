@@ -54,6 +54,9 @@ const BremAdminLeaseMenus = (function () {
     arrearWeekStart: '',
     arrearDriverSearch: '',
     paymentWeekStart: '',
+    paymentWeekAll: false,
+    paymentPaidWeekStart: '',
+    paymentPaidWeekAll: true,
     paymentConfirmSearch: '',
     paymentPaidSearch: '',
     paymentConfirmSelectedIds: new Set(),
@@ -540,12 +543,69 @@ const BremAdminLeaseMenus = (function () {
       || ''
     ).slice(0, 10);
     state.paymentWeekStart = normalized;
+    if ($('leasePaymentConfirmWeekStart')) $('leasePaymentConfirmWeekStart').value = normalized;
+    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
+    if ($('leasePaymentConfirmWeekRangePreview')) {
+      $('leasePaymentConfirmWeekRangePreview').textContent = state.paymentWeekAll && state.paymentStatusFilter === 'paid'
+        ? '전체 주'
+        : rangeLabel;
+    }
+    if ($('leasePaymentConfirmWeekLabel')) {
+      if (state.paymentWeekAll && state.paymentStatusFilter === 'paid') {
+        $('leasePaymentConfirmWeekLabel').textContent = '전체 주';
+      } else if (normalized && BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
+        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
+        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
+        $('leasePaymentConfirmWeekLabel').textContent = weekday
+          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
+          : BremDatePicker.formatDate(wednesday);
+      } else {
+        $('leasePaymentConfirmWeekLabel').textContent = normalized || '주차 선택';
+      }
+    }
+    return normalized;
+  }
+
+  function syncPaymentPaidWeekUi(weekStart) {
+    const normalized = String(
+      BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || weekStart
+      || state.paymentWeekStart
+      || currentWeekStart()
+      || ''
+    ).slice(0, 10);
+    state.paymentPaidWeekStart = normalized;
+    if ($('leasePaymentPaidWeekStart')) $('leasePaymentPaidWeekStart').value = normalized;
+    const rangeLabel = formatLeaseWeekRangeLabel(normalized);
+    if ($('leasePaymentPaidWeekRangePreview')) {
+      $('leasePaymentPaidWeekRangePreview').textContent = state.paymentPaidWeekAll ? '전체 주' : rangeLabel;
+    }
+    if ($('leasePaymentPaidWeekLabel')) {
+      if (state.paymentPaidWeekAll) {
+        $('leasePaymentPaidWeekLabel').textContent = '전체 주';
+      } else if (normalized && BremDatePicker?.formatDate && BremDatePicker?.formatWeekdayKo) {
+        const wednesday = BremDatePicker.applyWeekWednesday(normalized);
+        const weekday = BremDatePicker.formatWeekdayKo(wednesday);
+        $('leasePaymentPaidWeekLabel').textContent = weekday
+          ? `${BremDatePicker.formatDate(wednesday)}(${weekday})`
+          : BremDatePicker.formatDate(wednesday);
+      } else {
+        $('leasePaymentPaidWeekLabel').textContent = normalized || '주차 선택';
+      }
+    }
     return normalized;
   }
 
   function handlePaymentWeekChange(weekStart) {
+    state.paymentWeekAll = false;
     syncPaymentWeekUi(weekStart);
     renderPaymentConfirm();
+  }
+
+  function handlePaymentPaidWeekChange(weekStart) {
+    state.paymentPaidWeekAll = false;
+    syncPaymentPaidWeekUi(weekStart);
+    renderPaymentPaid();
   }
 
   function formatPaymentWeekColumn(weekStart) {
@@ -633,11 +693,13 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     if (menu === 'payment-confirm') {
-      syncPaymentWeekUi(currentWeekStart());
+      if (!state.paymentWeekStart) state.paymentWeekAll = false;
+      syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
       renderPaymentConfirm();
       return;
     }
     if (menu === 'payment-paid') {
+      syncPaymentPaidWeekUi(state.paymentPaidWeekStart || state.paymentWeekStart || currentWeekStart());
       renderPaymentPaid();
       return;
     }
@@ -4621,25 +4683,32 @@ const BremAdminLeaseMenus = (function () {
 
     // 리스
     if (!erp()) return;
-    if (headEl) {
-      headEl.innerHTML = `<tr>
-        <th class="lease-check-col">선택</th>
-        <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
-        <th>주간리스비</th><th>이번주청구</th><th>납부액</th><th>차액</th><th>납부상태</th><th>관리</th>
-      </tr>`;
-    }
-    const weekStart = syncPaymentWeekUi(currentWeekStart());
+    const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
     const weekLabel = formatPaymentWeekColumn(weekStart);
     const vehicles = erp().vehicles().getAll();
     const vehicleMap = new Map(vehicles.map(item => [item.id, item]));
 
     if (statusFilter === 'paid') {
-      let rows = listPaidPaymentConfirmRows().filter(row => row.weekStart === weekStart || true);
+      if (headEl) {
+        headEl.innerHTML = `<tr>
+          <th class="lease-check-col"></th>
+          <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
+          <th>주간리스비</th><th>주간청구액</th><th>납부액</th><th>차액</th><th>납부상태</th><th>관리</th>
+        </tr>`;
+      }
+      let rows = listPaidPaymentConfirmRows();
+      if (!state.paymentWeekAll) {
+        rows = rows.filter(row => row.weekStart === weekStart);
+      }
       if (keyword) {
         rows = rows.filter(row => [row.driverName, row.driverPhone, row.vehicleNumber, row.model]
           .join(' ').toLowerCase().includes(keyword));
       }
-      if (summaryEl) summaryEl.textContent = `리스 · 완납 ${rows.length}건`;
+      if (summaryEl) {
+        summaryEl.textContent = state.paymentWeekAll
+          ? `리스 · 완납 전체 ${rows.length}건`
+          : `리스 · ${weekLabel} 완납 ${rows.length}건`;
+      }
       if (!rows.length) {
         rowsEl.innerHTML = '<tr><td colspan="12" class="empty">완납 내역이 없습니다.</td></tr>';
         updatePaymentConfirmBulkUi();
@@ -4667,6 +4736,15 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
 
+    // 미확인·미납: 납부액 컬럼 없음 (확인만 / 정확도는 주정산)
+    if (headEl) {
+      headEl.innerHTML = `<tr>
+        <th class="lease-check-col">선택</th>
+        <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
+        <th>주간리스비</th><th>이번주청구</th><th>차액</th><th>납부상태</th><th>관리</th>
+      </tr>`;
+    }
+
     let contracts = getActivePaymentContracts().filter(contract =>
       matchesPaymentStatusFilter(paymentConfirmStatus(contract, weekStart).code, statusFilter)
     );
@@ -4685,7 +4763,7 @@ const BremAdminLeaseMenus = (function () {
     }
     if (summaryEl) {
       const label = (statusFilter === 'unpaid' || statusFilter === 'partial') ? '미납' : '미확인';
-      summaryEl.textContent = `리스 · 이번주 ${weekLabel} · ${label} ${contracts.length}건`;
+      summaryEl.textContent = `리스 · ${weekLabel} · ${label} ${contracts.length}건`;
     }
     const visibleIds = new Set(contracts.map(contract => String(contract.id)));
     [...state.paymentConfirmSelectedIds].forEach(id => {
@@ -4693,8 +4771,8 @@ const BremAdminLeaseMenus = (function () {
     });
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="12" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
-        : '<tr><td colspan="12" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+        ? '<tr><td colspan="11" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
+        : '<tr><td colspan="11" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
       updatePaymentConfirmBulkUi();
       return;
     }
@@ -4704,8 +4782,6 @@ const BremAdminLeaseMenus = (function () {
       const progressiveCharge = contractPaymentConfirmCharge(contract, weekStart);
       const settleCharge = resolvePaymentConfirmCharge(contract, weekStart);
       const displayCharge = progressiveCharge > 0 ? progressiveCharge : settleCharge;
-      const payment = findWeekPaymentConfirm(contract.vehicleId, weekStart);
-      const paidAmt = Math.max(0, Number(payment?.paidAmount || 0));
       const margin = displayCharge - Math.round(weeklyLease * (Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7) / 7));
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
@@ -4730,7 +4806,6 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(weeklyLease)}</td>
         <td>${formatMoney(displayCharge)}${chargeHint}</td>
-        <td><strong>${formatMoney(paidAmt)}</strong></td>
         <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
@@ -4787,6 +4862,7 @@ const BremAdminLeaseMenus = (function () {
     }
 
     if (!erp()) return;
+    const paidWeek = syncPaymentPaidWeekUi(state.paymentPaidWeekStart || state.paymentWeekStart || currentWeekStart());
     if (headEl) {
       headEl.innerHTML = `<tr>
         <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
@@ -4794,6 +4870,9 @@ const BremAdminLeaseMenus = (function () {
       </tr>`;
     }
     let rows = listPaidPaymentConfirmRows();
+    if (!state.paymentPaidWeekAll) {
+      rows = rows.filter(row => row.weekStart === paidWeek);
+    }
     if (keyword) {
       rows = rows.filter(row => {
         const hay = [
@@ -4807,9 +4886,8 @@ const BremAdminLeaseMenus = (function () {
       });
     }
     if (summaryEl) {
-      summaryEl.textContent = keyword
-        ? `리스 완납 ${listPaidPaymentConfirmRows().length}건 · 검색 ${rows.length}건`
-        : `리스 완납 ${rows.length}건`;
+      const scope = state.paymentPaidWeekAll ? '전체' : formatPaymentWeekColumn(paidWeek);
+      summaryEl.textContent = `리스 완납 · ${scope} ${rows.length}건`;
     }
     if (!rows.length) {
       rowsEl.innerHTML = '<tr><td colspan="12" class="empty">완납 내역이 없습니다. 납부 확인에서 완납 처리하거나 미납/회수에서 전액 회수하면 여기에 표시됩니다.</td></tr>';
@@ -5814,6 +5892,17 @@ const BremAdminLeaseMenus = (function () {
       event.preventDefault();
       togglePaymentConfirmSelectAll(!selectAll.checked);
     });
+    $('leasePaymentConfirmWeekAllBtn')?.addEventListener('click', () => {
+      state.paymentWeekAll = true;
+      state.paymentStatusFilter = 'paid';
+      syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
+      renderPaymentConfirm();
+    });
+    $('leasePaymentPaidWeekAllBtn')?.addEventListener('click', () => {
+      state.paymentPaidWeekAll = true;
+      syncPaymentPaidWeekUi(state.paymentPaidWeekStart || currentWeekStart());
+      renderPaymentPaid();
+    });
 
     document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -6034,10 +6123,12 @@ const BremAdminLeaseMenus = (function () {
     handleLoanWeeklyWeekChange,
     handleArrearWeekChange,
     handlePaymentWeekChange,
+    handlePaymentPaidWeekChange,
     syncLeaseWeeklyWeekUi,
     syncLeaseLoanWeeklyWeekUi,
     syncArrearWeekUi,
     syncPaymentWeekUi,
+    syncPaymentPaidWeekUi,
     commitLeaseErpSave,
     updateLeaseErpUnsavedBanner,
     renderStatusTagsHtml,

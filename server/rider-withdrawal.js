@@ -202,6 +202,81 @@ function countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contr
   return count;
 }
 
+/** 일정산 period별 실지급 합 → 날짜 오름차순 풀 */
+function buildPeriodNetPayList(days) {
+  const map = new Map();
+  (Array.isArray(days) ? days : []).forEach(row => {
+    const date = String(row.period || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    map.set(date, (map.get(date) || 0) + Math.max(0, Math.round(Number(row.netPay) || 0)));
+  });
+  return [...map.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([date, netPay]) => ({ date, netPay, left: netPay }));
+}
+
+/**
+ * 정산서 날짜 순으로 일차감. 모자란 금액만 같은 주 풀 안에서 다음날로 이월.
+ * 홀드액 = 실제로 정산에서 깎인 합(totalApplied). 남은 carry는 출금홀드에 넣지 않음(주정산 처리).
+ */
+function consumeDailyChargeFromPool(pool, {
+  dailyCharge = 0,
+  isActiveOnDate,
+  balanceCap = Infinity,
+  chargeForDate = null
+} = {}) {
+  let carry = 0;
+  let totalApplied = 0;
+  let chargedDays = 0;
+  const cap = Number.isFinite(balanceCap) ? Math.max(0, Math.round(balanceCap)) : Infinity;
+  const baseDaily = Math.max(0, Math.round(Number(dailyCharge) || 0));
+  (Array.isArray(pool) ? pool : []).forEach(slot => {
+    if (totalApplied >= cap) return;
+    if (typeof isActiveOnDate === 'function' && !isActiveOnDate(slot.date)) return;
+    const dayFee = Math.max(0, Math.round(Number(
+      typeof chargeForDate === 'function' ? chargeForDate(slot.date) : baseDaily
+    ) || 0));
+    if (dayFee <= 0 && carry <= 0) return;
+    chargedDays += 1;
+    const due = Math.min(cap - totalApplied, dayFee + carry);
+    if (due <= 0) {
+      carry = 0;
+      return;
+    }
+    const room = Math.max(0, Math.round(Number(slot.left) || 0));
+    const applied = Math.min(due, room);
+    slot.left = room - applied;
+    carry = due - applied;
+    totalApplied += applied;
+  });
+  return { totalApplied, carry, chargedDays };
+}
+
+function loanDayChargeOnDate(item, dateKey) {
+  if (!item || !dateKey) return 0;
+  const daily = Math.max(0, Math.round(Number(item.dailyDeduct || 0)));
+  if (daily <= 0) return 0;
+  const start = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
+  let end = String(item.deductEndDate || '').slice(0, 10);
+  let lastDayAmount = Math.max(0, Math.round(Number(item.lastDayAmount || 0)));
+  if (!end || lastDayAmount <= 0) {
+    const sched = computeLoanDeductSchedule({
+      amount: Math.max(0, Math.round(Number(
+        (Number(item.principal || 0) + Number(item.interest || 0))
+        || (item.balance != null ? item.balance : 0)
+      ))),
+      dailyDeduct: daily,
+      deductStartDate: start
+    });
+    if (!sched.ok) return (!start || dateKey >= start) ? daily : 0;
+    end = sched.deductEndDate;
+    lastDayAmount = sched.lastDayAmount;
+  }
+  if (start && dateKey < start) return 0;
+  if (end && dateKey > end) return 0;
+  return dateKey === end ? lastDayAmount : daily;
+}
+
 function emptyLeaseInfo() {
   return {
     hasLease: false,
@@ -267,11 +342,12 @@ async function loadLeaseTables(supabase) {
 }
 
 /**
- * 미리 로드한 lease 테이블을 기준으로 특정 기사의 이번주 리스·대여 차감액을 계산한다.
- * (일 렌탈료 매일 누적 + 반영된 대여/미납/수기 + 미회수 미납 잔액)
- * 플랫폼 필터 없이 기사 단위로 합산한다. (정산 스필오버와 동일하게 출금가능에서 홀드)
+ * 미리 로드한 lease 테이블 + 이번주 일정산(period) 기준으로 출금 홀드액을 계산한다.
+ * 리스·대여(스케줄): 정산서 날짜순 일차감, 부족분만 주(수~화) 안 이월. 홀드=실적용분.
+ * 미납·수기 장부: 잔액 전액 홀드(기존).
+ * periodNets 없으면 일차감 0 (정산서 없으면 깎을 돈 없음). 주정산 공제는 별도.
  */
-function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
+function computeLeaseForRider(tables, rider, weekStart, weekEnd, periodNets = []) {
   const contracts = Array.isArray(tables?.contracts) ? tables.contracts : [];
   const arrears = Array.isArray(tables?.arrears) ? tables.arrears : [];
 
@@ -292,18 +368,45 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
 
   const todayKey = leaseFormatDateKey(new Date());
   const effectiveLeaseStart = [contractStart, deductStartDate].filter(Boolean).sort().pop() || '';
-  const activeDays = contract
-    ? countActiveLeaseDays(weekStart, weekEnd, todayKey, effectiveLeaseStart, contractEnd)
-    : 0;
-  // 「대여 및 차감관리」에서 반영하기 한 계약만 출금가능 홀드(일렌탈료×일수). 미반영은 0.
   const finalApplyEnabled = Boolean(contract?.raw_data?.finalApplyEnabled);
-  const leaseCharge = finalApplyEnabled ? (dailyRent * activeDays) : 0;
+  const weekStartKey = String(weekStart || '').slice(0, 10);
+  const weekEndKey = String(weekEnd || '').slice(0, 10);
+
+  // 주 범위 안의 정산일만 풀로 사용 (수~화 리셋 = 주 단위로 풀을 새로 만듦)
+  const pool = (Array.isArray(periodNets) ? periodNets : [])
+    .filter(item => {
+      const date = String(item?.date || '').slice(0, 10);
+      if (!date) return false;
+      if (weekStartKey && date < weekStartKey) return false;
+      if (weekEndKey && date > weekEndKey) return false;
+      return true;
+    })
+    .map(item => ({
+      date: String(item.date).slice(0, 10),
+      netPay: Math.max(0, Math.round(Number(item.netPay) || 0)),
+      left: Math.max(0, Math.round(Number(item.left != null ? item.left : item.netPay) || 0))
+    }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  let leaseCharge = 0;
+  let activeDays = 0;
+  if (finalApplyEnabled && dailyRent > 0 && pool.length) {
+    const leaseApply = consumeDailyChargeFromPool(pool, {
+      dailyCharge: dailyRent,
+      isActiveOnDate: (date) => {
+        const afterStart = !effectiveLeaseStart || date >= effectiveLeaseStart;
+        const beforeEnd = !contractEnd || date <= contractEnd;
+        return afterStart && beforeEnd;
+      }
+    });
+    leaseCharge = leaseApply.totalApplied;
+    activeDays = leaseApply.chargedDays;
+  }
 
   const contractId = contract?.id ? String(contract.id) : '';
   let outstandingArrears = 0;
   const arrearReasons = [];
-  // 급여차감「반영」중이면 같은 계약의 미납(납부확인·주정산 자동 등)은 홀드하지 않는다.
-  // 일렌탈료×일수와 미납이 이중으로 깎이는 것을 막는다.
+  // 급여차감「반영」중이면 같은 계약의 미납은 홀드하지 않는다 (일차감과 이중 방지).
   if (!finalApplyEnabled) {
     arrears.forEach(row => {
       const rowRaw = row.raw_data || {};
@@ -317,7 +420,6 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
       if (!sameDriver && !sameContract) return;
       const status = String(row.collection_status || rowRaw.collectionStatus || '').toLowerCase();
       if (COMPLETED_ARREAR_STATUSES.has(status)) return;
-      // 소급분 이관 건: 홀드는 연결된 차감관리(반영)만 — 미납 전액 이중 홀드 방지
       if (rowRaw.holdViaLedger || rowRaw.ledgerId) return;
       const remaining = Math.max(0, Math.round(Number(row.unpaid_amount ?? rowRaw.unpaidAmount ?? 0)));
       if (remaining <= 0) return;
@@ -329,9 +431,10 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
   }
   const arrearReason = [...new Set(arrearReasons)].join(', ');
 
-  // 대여(반영) = 일×일수 스케줄 / 차감관리 미납·수기(반영) = 잔액 전액 홀드(마이너스 허용)
+  // 대여: 리스 다음으로 같은 정산 풀에서 일차감+이월. 미납·수기: 잔액 전액 홀드.
   let ledgerCharge = 0;
-  const addDailyBalanceItem = (item, { useLoanSchedule = false } = {}) => {
+  let loanScheduleCharge = 0;
+  (Array.isArray(tables?.loans) ? tables.loans : []).forEach(item => {
     if (!item || !item.finalApplyEnabled) return;
     if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
     const sameDriver = (item.driverId && String(item.driverId) === String(rider.id))
@@ -341,24 +444,35 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
         && leaseNormalizeName(item.driverName)
       );
     if (!sameDriver) return;
-    if (useLoanSchedule) {
-      ledgerCharge += loanChargeInDateRange(item, weekStart, weekEnd, todayKey);
-      return;
-    }
-    // 미납·수기: 시작일 이후 잔액 전액을 계속 홀드 (일 차감은 회수 스케줄/표시용)
+    const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
+    if (balance <= 0 || !pool.length) return;
+    const loanApply = consumeDailyChargeFromPool(pool, {
+      balanceCap: balance,
+      chargeForDate: (date) => loanDayChargeOnDate(item, date),
+      isActiveOnDate: (date) => loanDayChargeOnDate(item, date) > 0
+    });
+    loanScheduleCharge += loanApply.totalApplied;
+  });
+  ledgerCharge += loanScheduleCharge;
+
+  (Array.isArray(tables?.ledger) ? tables.ledger : []).forEach(item => {
+    if (!item || !item.finalApplyEnabled) return;
+    if (String(item.status || '') === 'paid' || String(item.status || '') === 'deleted') return;
+    const kind = String(item?.kind || '');
+    if (kind === 'loan') return;
+    if (kind && kind !== 'unpaid' && kind !== 'manual') return;
+    const sameDriver = (item.driverId && String(item.driverId) === String(rider.id))
+      || (
+        leaseNormalizeName(item.driverName) === leaseNormalizeName(rider.name)
+        && leaseNormalizePhone(item.driverPhone) === leaseNormalizePhone(rider.phone)
+        && leaseNormalizeName(item.driverName)
+      );
+    if (!sameDriver) return;
     const balance = Math.max(0, Math.round(Number(item.balance != null ? item.balance : item.principal || 0)));
     if (balance <= 0) return;
     const itemStart = String(item.deductStartDate || item.weekStart || '').slice(0, 10);
     if (itemStart && todayKey && todayKey < itemStart) return;
     ledgerCharge += balance;
-  };
-
-  (Array.isArray(tables?.loans) ? tables.loans : []).forEach(item => addDailyBalanceItem(item, { useLoanSchedule: true }));
-  (Array.isArray(tables?.ledger) ? tables.ledger : []).forEach(item => {
-    const kind = String(item?.kind || '');
-    if (kind === 'loan') return;
-    if (kind && kind !== 'unpaid' && kind !== 'manual') return;
-    addDailyBalanceItem(item);
   });
 
   const leaseDeductionTotal = leaseCharge + outstandingArrears + ledgerCharge;
@@ -371,6 +485,7 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd) {
     leaseCharge,
     outstandingArrears,
     ledgerCharge,
+    loanScheduleCharge,
     leaseDeductionTotal,
     arrearReason,
     contractId,
@@ -400,13 +515,12 @@ function applyDeductionHoldAcrossPlatforms(netPayByPlatform, deductionTotal) {
 }
 
 /**
- * 리스 계약 기사의 이번주 일 렌탈료(매일 누적) + 미회수 미납금 합산.
- * 미납회수(계좌이체)로 처리되면 lease_arrears 잔액이 줄어들어 자동으로 차감액이 감소한다.
+ * 리스·대여 출금 홀드. periodNets = 이번주 일정산 날짜별 실지급.
  */
-async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd) {
+async function loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd, periodNets = []) {
   try {
     const tables = await loadLeaseTables(supabase);
-    return computeLeaseForRider(tables, rider, weekStart, weekEnd);
+    return computeLeaseForRider(tables, rider, weekStart, weekEnd, periodNets);
   } catch (_error) {
     return emptyLeaseInfo();
   }
@@ -770,10 +884,11 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
     baemin: days.some(row => normalizePlatform(row.platform) === 'baemin')
   };
 
-  const lease = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd);
+  const periodNets = buildPeriodNetPayList(days);
+  const lease = await loadLeaseWithdrawalInfo(supabase, rider, weekStart, weekEnd, periodNets);
   const leaseDeduction = Math.max(0, Math.round(Number(lease?.leaseDeductionTotal || 0)));
   const deductionPlatform = normalizeDeductionPlatform(lease?.deductionPlatform);
-  // 리스·대여·미납은 최우선 차감이며 마이너스(이월)를 허용한다. 실지급 큰 플랫폼부터 홀드.
+  // 리스·대여·미납은 최우선 차감. 홀드액은 정산일별 실적용분(+미납장부 잔액).
   applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);
   const availableByPlatform = computeAvailableByPlatform(netPayByPlatform, requestBuckets, weekFinalized);
   const availableAmount = weekFinalized ? 0 : totalAvailableFromPlatforms(availableByPlatform);
@@ -1600,7 +1715,8 @@ async function listWithdrawableDrivers(accessToken, weekStartInput) {
       0
     );
 
-    const lease = computeLeaseForRider(leaseTables, rider, weekStart, weekEnd);
+    const periodNets = buildPeriodNetPayList(days);
+    const lease = computeLeaseForRider(leaseTables, rider, weekStart, weekEnd, periodNets);
     const leaseDeduction = Math.max(0, Math.round(Number(lease.leaseDeductionTotal || 0)));
     const deductionPlatform = normalizeDeductionPlatform(lease.deductionPlatform);
     applyDeductionHoldAcrossPlatforms(netPayByPlatform, leaseDeduction);

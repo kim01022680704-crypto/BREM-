@@ -2166,6 +2166,26 @@
           };
         }
 
+        if (triggerId === 'lease-payment-week') {
+          return {
+            hiddenInput: $('#leasePaymentConfirmWeekStart'),
+            labelEl: $('#leasePaymentConfirmWeekLabel'),
+            onSelect(value) {
+              window.BremAdminLeaseMenus?.handlePaymentWeekChange?.(value);
+            }
+          };
+        }
+
+        if (triggerId === 'lease-payment-paid-week') {
+          return {
+            hiddenInput: $('#leasePaymentPaidWeekStart'),
+            labelEl: $('#leasePaymentPaidWeekLabel'),
+            onSelect(value) {
+              window.BremAdminLeaseMenus?.handlePaymentPaidWeekChange?.(value);
+            }
+          };
+        }
+
         // 프로모션정산등록·정산결과(직계약)는 주차를 직접 고르지 않는다.
         // 정산서를 고르면 그 정산서의 기간에서 주차가 정해진다.
 

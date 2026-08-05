@@ -9164,6 +9164,11 @@ const BremStorage = (function () {
       const list = settlements.getAll().filter(item => !keepIds.has(item.id));
       list.unshift(...nextRecords);
       const persist = storageAdapter.write(KEYS.settlements, list, { incrementalRows: nextRecords });
+      try {
+        applyLoanDailyDeductFromSettlementPeriod(callDate);
+      } catch (error) {
+        console.warn('[settlements.upsertBatch] loan daily deduct sync skipped:', error?.message || error);
+      }
       return persist || list;
     },
 
@@ -10940,6 +10945,171 @@ const BremStorage = (function () {
       lastDayAmount,
       total
     };
+  }
+
+  /**
+   * 일정산 업로드 후: 해당 주(수~화) 정산일을 다시 돌며 ERP차감 대여 balance 감소.
+   * 리스 일차감 → 대여 일차감(+주내 이월). period별 rawData.dailyApplied 로 중복 방지.
+   */
+  function applyLoanDailyDeductFromSettlementPeriod(period) {
+    const periodKey = String(period || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(periodKey)) return { ok: false, updated: 0 };
+    const weekStart = weekStartKeyFromDate(periodKey);
+    const weekEnd = addDaysToDateKey(weekStart, 6);
+    if (!weekStart || !weekEnd) return { ok: false, updated: 0 };
+
+    const EMP_RATE = 0.008;
+    const INDUSTRIAL_RATE = 0.0088;
+    const WITHHOLDING_RATE = 0.033;
+    const excluded = typeof payrollDailySettlement?.getExcludedSettlementIdSet === 'function'
+      ? payrollDailySettlement.getExcludedSettlementIdSet()
+      : new Set();
+
+    const netPayRow = (row) => {
+      const settlementAmount = Math.max(0, Math.round(Number(row.settlementAmount ?? row.deliveryAmount ?? 0)));
+      const deductionBase = Math.max(0, Math.round(Number(row.deductionBase || 0))) || settlementAmount;
+      const hourlyInsurance = Math.abs(Math.round(Number(row.hourlyInsurance || 0)));
+      const orderCount = Math.max(0, Math.round(Number(row.orderCount ?? row.callCount ?? 0)));
+      const fees = payrollDailySettlement.getFees(normalizePlatform(row.platform));
+      const callFee = orderCount * Math.max(0, Math.round(Number(fees.callFee || 0)));
+      return Math.max(0, settlementAmount
+        - Math.floor(deductionBase * EMP_RATE)
+        - Math.floor(deductionBase * INDUSTRIAL_RATE)
+        - Math.floor(deductionBase * WITHHOLDING_RATE)
+        - callFee
+        - hourlyInsurance);
+    };
+
+    // driverId → [{ date, left }]
+    const poolsByDriver = new Map();
+    const touchedDrivers = new Set();
+    settlements.getAll().forEach(row => {
+      const date = String(row.period || '').slice(0, 10);
+      if (!date || date < weekStart || date > weekEnd) return;
+      const driverId = String(row.driverId || '').trim();
+      if (!driverId) return;
+      const platform = normalizePlatform(row.platform);
+      const id = String(row.id || `${driverId}-${date}-${platform}`);
+      if (excluded.has(id)) return;
+      if (date === periodKey) touchedDrivers.add(driverId);
+      if (!poolsByDriver.has(driverId)) poolsByDriver.set(driverId, new Map());
+      const byDate = poolsByDriver.get(driverId);
+      byDate.set(date, (byDate.get(date) || 0) + netPayRow(row));
+    });
+    if (!touchedDrivers.size) return { ok: true, updated: 0 };
+
+    const driverMap = new Map(drivers.getAll().map(d => [String(d.id || ''), d]));
+    let contracts = [];
+    try {
+      contracts = window.BremLeaseErp?.contracts?.()?.getAll?.() || [];
+    } catch (_e) {
+      contracts = [];
+    }
+
+    const matchDriver = (item, driverId, driver) => {
+      if (item?.driverId && String(item.driverId) === String(driverId)) return true;
+      const name = String(item?.driverName || item?.rawData?.driverName || '').replace(/\s+/g, '').toLowerCase();
+      const phone = String(item?.driverPhone || item?.rawData?.driverPhone || '').replace(/[^0-9]/g, '');
+      const dName = String(driver?.name || '').replace(/\s+/g, '').toLowerCase();
+      const dPhone = String(driver?.phone || '').replace(/[^0-9]/g, '');
+      return Boolean(name && dName && name === dName && phone && dPhone && phone === dPhone);
+    };
+
+    const toPool = (byDate) => [...byDate.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([date, netPay]) => ({ date, left: Math.max(0, Math.round(netPay || 0)) }));
+
+    let updated = 0;
+    touchedDrivers.forEach(driverId => {
+      const driver = driverMap.get(driverId);
+      const pool = toPool(poolsByDriver.get(driverId) || new Map());
+      if (!pool.length) return;
+
+      const contract = contracts.find(c => {
+        const raw = c.rawData || {};
+        const enabled = c.finalApplyEnabled != null ? c.finalApplyEnabled : raw.finalApplyEnabled;
+        if (!enabled) return false;
+        return matchDriver({
+          driverId: c.driverId || raw.driverId,
+          driverName: c.driverName || raw.driverName,
+          driverPhone: c.driverPhone || raw.driverPhone
+        }, driverId, driver);
+      });
+      if (contract) {
+        const raw = contract.rawData || {};
+        const dailyRent = Math.max(0, Math.round(Number(contract.dailyRent || raw.dailyRent || contract.daily_charge || 0)));
+        const cStart = String(contract.startDate || raw.startDate || '').slice(0, 10);
+        const deductStart = String(raw.deductStartDate || '').slice(0, 10);
+        const effectiveStart = [cStart, deductStart].filter(Boolean).sort().pop() || '';
+        const cEnd = String(contract.returnDate || contract.endDate || raw.returnDate || raw.endDate || '').slice(0, 10);
+        let leaseCarry = 0;
+        pool.forEach(slot => {
+          const active = (!effectiveStart || slot.date >= effectiveStart) && (!cEnd || slot.date <= cEnd);
+          if (!active || dailyRent <= 0) return;
+          const due = dailyRent + leaseCarry;
+          const applied = Math.min(due, slot.left);
+          slot.left -= applied;
+          leaseCarry = due - applied;
+        });
+      }
+
+      leaseLoans.getAll().forEach(loan => {
+        if (!loan?.finalApplyEnabled) return;
+        if (String(loan.status || '') === 'paid' || String(loan.status || '') === 'deleted') return;
+        if (!matchDriver(loan, driverId, driver)) return;
+        const appliedMap = { ...(loan.rawData?.dailyApplied || {}) };
+        let balance = Math.max(0, Math.round(Number(loan.balance != null ? loan.balance : loan.principal || 0)));
+        // 이미 기록된 적용분은 잔액에 다시 더해 주 전체 재계산 (idempotent)
+        Object.keys(appliedMap).forEach(date => {
+          if (date < weekStart || date > weekEnd) return;
+          balance += Math.max(0, Math.round(Number(appliedMap[date]) || 0));
+          delete appliedMap[date];
+        });
+        if (balance <= 0) return;
+        const daily = Math.max(0, Math.round(Number(loan.dailyDeduct || 0)));
+        const start = String(loan.deductStartDate || '').slice(0, 10);
+        const end = String(loan.deductEndDate || '').slice(0, 10);
+        const last = Math.max(0, Math.round(Number(loan.lastDayAmount || 0))) || daily;
+        let carry = 0;
+        let changed = false;
+        let nextBalance = balance;
+        // 기사별 풀 복사본 (대출 여러 건이면 순차 소비)
+        const loanPool = pool.map(slot => ({ date: slot.date, left: slot.left }));
+        loanPool.forEach(slot => {
+          if (nextBalance <= 0) return;
+          if (start && slot.date < start) return;
+          if (end && slot.date > end) return;
+          const dayFee = (end && slot.date === end) ? last : daily;
+          if (dayFee <= 0 && carry <= 0) return;
+          const due = Math.min(nextBalance, dayFee + carry);
+          const applied = Math.min(due, slot.left);
+          slot.left -= applied;
+          carry = due - applied;
+          if (applied > 0) {
+            appliedMap[slot.date] = applied;
+            nextBalance = Math.max(0, nextBalance - applied);
+            changed = true;
+          }
+          // 풀 원본에도 반영 (다음 대출 건)
+          const origin = pool.find(p => p.date === slot.date);
+          if (origin) origin.left = slot.left;
+        });
+        if (!changed) return;
+        leaseLoans.save({
+          ...loan,
+          balance: nextBalance,
+          status: nextBalance <= 0 ? 'paid' : (loan.status || 'active'),
+          paidAt: nextBalance <= 0 ? (loan.paidAt || periodKey) : loan.paidAt,
+          finalApplyEnabled: nextBalance <= 0 ? false : loan.finalApplyEnabled,
+          rawData: {
+            ...(loan.rawData || {}),
+            dailyApplied: appliedMap
+          }
+        });
+        updated += 1;
+      });
+    });
+    return { ok: true, updated };
   }
 
   /** 구간 내 대여 스케줄 차감액(잔액 한도). 마지막날은 lastDayAmount. */
