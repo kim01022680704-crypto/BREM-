@@ -1142,26 +1142,13 @@
     setText('coupangOpsComplete', callText(ops?.complete));
     setText('coupangOpsReject', callText(ops?.reject));
     setText('coupangOpsCancel', callText(ops?.cancel));
+    setText('coupangOpsPastComplete', callText(ops?.pastComplete));
     setText(
       'coupangOpsRejectRate',
       available && ops?.rejectionRate != null && Number.isFinite(Number(ops.rejectionRate))
         ? `${Number(ops.rejectionRate)}%`
         : '-'
     );
-    const hintEl = document.getElementById('coupangOpsRejectRateHint');
-    if (hintEl) {
-      const past = ops?.pastRejectionRate;
-      const today = ops?.todayRejectionRate;
-      if (past != null && today != null) {
-        hintEl.textContent = `어제까지 ${past}% + 오늘 ${today}% ÷ 2`;
-      } else if (today != null) {
-        hintEl.textContent = '오늘 거절율';
-      } else if (past != null) {
-        hintEl.textContent = '수~어제 거절율';
-      } else {
-        hintEl.textContent = '수~어제 + 오늘 ÷ 2';
-      }
-    }
     setText(
       'driverCoupangLiveOpsUpdated',
       `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
