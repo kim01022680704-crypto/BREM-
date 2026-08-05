@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260801n">
+  <link rel="stylesheet" href="css/driver.css?v=20260805a">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -212,6 +212,57 @@
             </div>
             <p class="live-ops-card__empty form-help" id="driverBaeminLiveOpsEmpty" hidden>
               배민 배달현황·수락율 데이터가 아직 없습니다. 관리자가 배민현황을 수집·저장하면 표시됩니다.
+            </p>
+          </section>
+
+          <section class="live-ops-card live-ops-card--coupang" id="driverCoupangLiveOps" hidden>
+            <div class="live-ops-card__head">
+              <div>
+                <p class="live-ops-card__eyebrow">실시간 운행현황 (쿠팡)</p>
+                <h2 class="live-ops-card__title">오늘 실적 · 거절율(어제까지+오늘)/2</h2>
+              </div>
+              <span class="live-ops-card__live" id="driverCoupangLiveOpsBadge">
+                <span class="live-ops-card__live-dot" aria-hidden="true"></span>
+                LIVE
+              </span>
+            </div>
+            <div class="live-ops-grid live-ops-grid--coupang" id="driverCoupangLiveOpsGrid">
+              <article class="live-ops-metric live-ops-metric--complete">
+                <span class="live-ops-metric__icon" aria-hidden="true">✓</span>
+                <span class="live-ops-metric__label">현재완료</span>
+                <strong class="live-ops-metric__value" id="coupangOpsComplete">-</strong>
+                <span class="live-ops-metric__hint">오늘</span>
+              </article>
+              <article class="live-ops-metric live-ops-metric--reject">
+                <span class="live-ops-metric__icon" aria-hidden="true">✕</span>
+                <span class="live-ops-metric__label">거절</span>
+                <strong class="live-ops-metric__value" id="coupangOpsReject">-</strong>
+                <span class="live-ops-metric__hint">오늘</span>
+              </article>
+              <article class="live-ops-metric live-ops-metric--cancel">
+                <span class="live-ops-metric__icon" aria-hidden="true">⊘</span>
+                <span class="live-ops-metric__label">취소</span>
+                <strong class="live-ops-metric__value" id="coupangOpsCancel">-</strong>
+                <span class="live-ops-metric__hint">오늘</span>
+              </article>
+              <article class="live-ops-metric live-ops-metric--reject-rate">
+                <span class="live-ops-metric__icon" aria-hidden="true">↘</span>
+                <span class="live-ops-metric__label">현재거절율</span>
+                <strong class="live-ops-metric__value" id="coupangOpsRejectRate">-</strong>
+                <span class="live-ops-metric__hint" id="coupangOpsRejectRateHint">수~어제 + 오늘 ÷ 2</span>
+              </article>
+            </div>
+            <div class="live-ops-card__foot">
+              <button type="button" class="live-ops-refresh-btn" id="driverCoupangLiveOpsRefreshBtn">
+                <span aria-hidden="true">↻</span> 실시간 업데이트
+              </button>
+              <div class="live-ops-card__meta">
+                <p class="live-ops-card__auto">2분마다 자동업데이트</p>
+                <p class="live-ops-card__updated" id="driverCoupangLiveOpsUpdated">마지막 업데이트: -</p>
+              </div>
+            </div>
+            <p class="live-ops-card__empty form-help" id="driverCoupangLiveOpsEmpty" hidden>
+              쿠팡 라이더 실적·거절율 데이터가 아직 없습니다. 관리자가 쿠팡 수집을 돌리면 표시됩니다.
             </p>
           </section>
 
@@ -794,13 +845,13 @@
   <script src="js/storage-supabase-mapper.js?v=20260729d"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260801n"></script>
+  <script src="js/storage.js?v=20260805a"></script>
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260803i"></script>
   <script src="js/driver-region-dashboard.js?v=20260801o"></script>
   <script src="js/driver-withdrawal.js?v=20260803a"></script>
-  <script src="js/driver.js?v=20260730aa"></script>
+  <script src="js/driver.js?v=20260805a"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

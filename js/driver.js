@@ -14,7 +14,9 @@
   let driverDashboardLoading = false;
   let driverLoadFailed = false;
   let baeminLiveOpsPollTimer = null;
+  let coupangLiveOpsPollTimer = null;
   const BAEMIN_LIVE_OPS_POLL_MS = 2 * 60 * 1000;
+  const COUPANG_LIVE_OPS_POLL_MS = 2 * 60 * 1000;
 
   function calls() {
     return BremStorage.calls.getAll();
@@ -701,6 +703,9 @@
           // 초기 로드 직후 바로 1회 조회 + 2분 폴링 시작 (Supabase 반영분 수신)
           void refreshBaeminLiveOps({ toast: false, source: 'boot' });
         }
+        if (driverHasCoupang(readyDriver)) {
+          void refreshCoupangLiveOps({ toast: false, source: 'boot' });
+        }
         return loadResult;
       } finally {
         driverDashboardLoading = false;
@@ -999,6 +1004,14 @@
     return label.includes('배민');
   }
 
+  function driverHasCoupang(driver) {
+    if (!driver) return false;
+    if (driver.platformCoupang === true) return true;
+    if (String(driver.coupangId || '').trim()) return true;
+    const label = formatPlatformLabel(driver);
+    return label.includes('쿠팡');
+  }
+
   function renderBaeminLiveOps(driver) {
     const card = document.getElementById('driverBaeminLiveOps');
     if (!card) return;
@@ -1106,6 +1119,127 @@
     }
   }
 
+  function renderCoupangLiveOps(driver) {
+    const card = document.getElementById('driverCoupangLiveOps');
+    if (!card) return;
+
+    const show = driverHasCoupang(driver);
+    card.hidden = !show;
+    if (!show) {
+      stopCoupangLiveOpsPolling();
+      return;
+    }
+
+    const ops = BremStorage.getRiderCoupangOps?.() || null;
+    const emptyEl = document.getElementById('driverCoupangLiveOpsEmpty');
+    const available = Boolean(ops?.available);
+    card.classList.toggle('is-empty', !available);
+    if (emptyEl) emptyEl.hidden = available;
+
+    const callText = value => (
+      available ? `${number(value)}콜` : '-'
+    );
+    setText('coupangOpsComplete', callText(ops?.complete));
+    setText('coupangOpsReject', callText(ops?.reject));
+    setText('coupangOpsCancel', callText(ops?.cancel));
+    setText(
+      'coupangOpsRejectRate',
+      available && ops?.rejectionRate != null && Number.isFinite(Number(ops.rejectionRate))
+        ? `${Number(ops.rejectionRate)}%`
+        : '-'
+    );
+    const hintEl = document.getElementById('coupangOpsRejectRateHint');
+    if (hintEl) {
+      const past = ops?.pastRejectionRate;
+      const today = ops?.todayRejectionRate;
+      if (past != null && today != null) {
+        hintEl.textContent = `어제까지 ${past}% + 오늘 ${today}% ÷ 2`;
+      } else if (today != null) {
+        hintEl.textContent = '오늘 거절율';
+      } else if (past != null) {
+        hintEl.textContent = '수~어제 거절율';
+      } else {
+        hintEl.textContent = '수~어제 + 오늘 ÷ 2';
+      }
+    }
+    setText(
+      'driverCoupangLiveOpsUpdated',
+      `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
+    );
+    syncCoupangLiveOpsPolling(driver);
+  }
+
+  function stopCoupangLiveOpsPolling() {
+    if (coupangLiveOpsPollTimer) {
+      window.clearInterval(coupangLiveOpsPollTimer);
+      coupangLiveOpsPollTimer = null;
+    }
+  }
+
+  function syncCoupangLiveOpsPolling(driver) {
+    const card = document.getElementById('driverCoupangLiveOps');
+    const shouldPoll = Boolean(driverHasCoupang(driver) && card && !card.hidden);
+    if (!shouldPoll) {
+      stopCoupangLiveOpsPolling();
+      return;
+    }
+    if (coupangLiveOpsPollTimer) return;
+    coupangLiveOpsPollTimer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      const liveCard = document.getElementById('driverCoupangLiveOps');
+      if (!liveCard || liveCard.hidden) {
+        stopCoupangLiveOpsPolling();
+        return;
+      }
+      void refreshCoupangLiveOps({ toast: false, source: 'poll' });
+    }, COUPANG_LIVE_OPS_POLL_MS);
+  }
+
+  async function refreshCoupangLiveOps(options = {}) {
+    const btn = document.getElementById('driverCoupangLiveOpsRefreshBtn');
+    const fromPoll = options.source === 'poll';
+    if (btn && !fromPoll) {
+      btn.disabled = true;
+      btn.innerHTML = '업데이트 중…';
+    }
+    try {
+      if (!BremStorage.refreshRiderCoupangOps) {
+        throw new Error('실시간 갱신 API를 사용할 수 없습니다.');
+      }
+      const result = await BremStorage.refreshRiderCoupangOps();
+      if (!result?.ok) {
+        throw new Error(result?.message || result?.error || '쿠팡 운행현황 갱신에 실패했습니다.');
+      }
+      if (state.currentDriver) {
+        renderCoupangLiveOps(state.currentDriver);
+        if (driverHasBaemin(state.currentDriver)) renderBaeminLiveOps(state.currentDriver);
+      } else {
+        const ops = BremStorage.getRiderCoupangOps?.();
+        setText(
+          'driverCoupangLiveOpsUpdated',
+          `마지막 업데이트: ${formatLiveOpsUpdatedAt(pickLiveOpsDisplayTime(ops))}`
+        );
+      }
+      if (options.toast !== false) {
+        const ops = BremStorage.getRiderCoupangOps?.();
+        showToast(ops?.available ? '쿠팡 운행현황을 갱신했습니다.' : '쿠팡 운행현황 데이터가 없습니다.');
+      }
+      return result;
+    } catch (error) {
+      if (options.toast !== false) {
+        showToast(error.message || '쿠팡 운행현황 갱신에 실패했습니다.');
+      } else if (fromPoll) {
+        console.warn('[BREM] coupang live ops poll failed:', error?.message || error);
+      }
+      return null;
+    } finally {
+      if (btn && !fromPoll) {
+        btn.disabled = false;
+        btn.innerHTML = '<span aria-hidden="true">↻</span> 실시간 업데이트';
+      }
+    }
+  }
+
   function renderDriver(driver) {
     if (driver?.id) {
       driver = BremStorage.drivers.getById(driver.id) || driver;
@@ -1167,6 +1301,7 @@
     setText('monthCallsCoupang', `${number(monthStats.coupang)}콜`);
     setText('monthCallsBaemin', `${number(monthStats.baemin)}콜`);
     renderBaeminLiveOps(driver);
+    renderCoupangLiveOps(driver);
 
     const monthTargetEl = document.getElementById('monthTarget');
     if (monthTargetEl) {
@@ -1230,14 +1365,24 @@
   document.getElementById('driverBaeminLiveOpsRefreshBtn')?.addEventListener('click', () => {
     void refreshBaeminLiveOps({ toast: true });
   });
+  document.getElementById('driverCoupangLiveOpsRefreshBtn')?.addEventListener('click', () => {
+    void refreshCoupangLiveOps({ toast: true });
+  });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     const driver = state.currentDriver;
-    const card = document.getElementById('driverBaeminLiveOps');
-    if (!driver || !card || card.hidden || !driverHasBaemin(driver)) return;
-    syncBaeminLiveOpsPolling(driver);
-    void refreshBaeminLiveOps({ toast: false, source: 'visible' });
+    if (!driver) return;
+    const baeminCard = document.getElementById('driverBaeminLiveOps');
+    if (baeminCard && !baeminCard.hidden && driverHasBaemin(driver)) {
+      syncBaeminLiveOpsPolling(driver);
+      void refreshBaeminLiveOps({ toast: false, source: 'visible' });
+    }
+    const coupangCard = document.getElementById('driverCoupangLiveOps');
+    if (coupangCard && !coupangCard.hidden && driverHasCoupang(driver)) {
+      syncCoupangLiveOpsPolling(driver);
+      void refreshCoupangLiveOps({ toast: false, source: 'visible' });
+    }
   });
 
   document.getElementById('driverProfileEditCancel')?.addEventListener('click', () => {

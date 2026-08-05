@@ -3231,6 +3231,18 @@ const BremStorage = (function () {
       };
     }
 
+    if (payload.coupangOps && typeof payload.coupangOps === 'object') {
+      riderCoupangOpsCache = {
+        ...payload.coupangOps,
+        cachedAt: new Date().toISOString()
+      };
+    } else if (payload.ok) {
+      riderCoupangOpsCache = {
+        ...(riderCoupangOpsCache || { available: false }),
+        cachedAt: new Date().toISOString()
+      };
+    }
+
     document.dispatchEvent(new CustomEvent('brem-cache-status-changed'));
   }
 
@@ -3986,12 +3998,25 @@ const BremStorage = (function () {
   let driverAppHydratePromise = null;
   let riderLongEventProgress = null;
   let riderBaeminOpsCache = null;
+  let riderCoupangOpsCache = null;
 
   function getRiderBaeminOps() {
     return riderBaeminOpsCache ? { ...riderBaeminOpsCache } : null;
   }
 
+  function getRiderCoupangOps() {
+    return riderCoupangOpsCache ? { ...riderCoupangOpsCache } : null;
+  }
+
   async function refreshRiderBaeminOps() {
+    const result = await riderApiFetch('/api/rider/live', 'live');
+    if (result?.ok) {
+      mergeRiderLiveInCache(result);
+    }
+    return result;
+  }
+
+  async function refreshRiderCoupangOps() {
     const result = await riderApiFetch('/api/rider/live', 'live');
     if (result?.ok) {
       mergeRiderLiveInCache(result);
@@ -13689,6 +13714,8 @@ const BremStorage = (function () {
     isDriverAppCacheReady,
     getRiderBaeminOps,
     refreshRiderBaeminOps,
+    getRiderCoupangOps,
+    refreshRiderCoupangOps,
     syncAdminDataInBackground,
     resumeSupabaseAfterAuth,
     initStorage,

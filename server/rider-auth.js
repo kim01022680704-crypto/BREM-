@@ -785,7 +785,8 @@ async function getRiderAppBundle(accessToken) {
     settingsResult,
     noticesResult,
     missionsResult,
-    baeminOps
+    baeminOps,
+    coupangOps
   ] = await Promise.all([
     buildRiderCallsQuery(supabase, riderId),
     supabase
@@ -810,7 +811,8 @@ async function getRiderAppBundle(accessToken) {
       .order('created_at', { ascending: false })
       .limit(100),
     missionQuery,
-    loadRiderBaeminOps(supabase, me.rider)
+    loadRiderBaeminOps(supabase, me.rider),
+    loadRiderCoupangOps(supabase, me.rider)
   ]);
 
   if (missionsResult.error) {
@@ -875,6 +877,7 @@ async function getRiderAppBundle(accessToken) {
       weeklyTargets,
       longEvent,
       baeminOps,
+      coupangOps,
       settings: liveSettings
     },
     notices: noticesResult.data || []
@@ -1187,6 +1190,153 @@ async function loadRiderBaeminOps(supabase, rider = {}) {
   };
 }
 
+function calcRejectionRateFromCounts(complete, reject, cancel) {
+  const c = Math.max(0, Number(complete) || 0);
+  const r = Math.max(0, Number(reject) || 0);
+  const x = Math.max(0, Number(cancel) || 0);
+  const denom = c + r + x;
+  if (denom <= 0) return null;
+  return Math.round(((r + x) / denom) * 1000) / 10;
+}
+
+function sumCoupangRiderDailyRows(rows = []) {
+  return (rows || []).reduce((acc, row) => {
+    const p = row?.parsed_json && typeof row.parsed_json === 'object' ? row.parsed_json : {};
+    acc.complete += Math.max(0, Number(p.completeCount ?? row.complete_count) || 0);
+    acc.reject += Math.max(0, Number(p.rejectCount ?? row.reject_count) || 0);
+    acc.cancel += Math.max(0, Number(p.cancelCount ?? row.cancel_count) || 0);
+    const collectedAt = row.collected_at || null;
+    if (collectedAt && (!acc.collectedAt || String(collectedAt) > String(acc.collectedAt))) {
+      acc.collectedAt = collectedAt;
+    }
+    return acc;
+  }, { complete: 0, reject: 0, cancel: 0, collectedAt: null });
+}
+
+async function fetchCoupangRiderDailyByMatch(supabase, matchKey, fromDate, toDate) {
+  const key = String(matchKey || '').trim();
+  const from = String(fromDate || '').slice(0, 10);
+  const to = String(toDate || '').slice(0, 10);
+  if (!key || !from || !to || from > to) return [];
+
+  const { data, error } = await supabase
+    .from('coupang_collect_items')
+    .select('collect_date,collected_at,match_key,courier_id,rider_name,phone_number,vendor_id,parsed_json')
+    .eq('source_menu', 'rider_daily')
+    .eq('match_key', key)
+    .gte('collect_date', from)
+    .lte('collect_date', to)
+    .order('collected_at', { ascending: false })
+    .limit(500);
+
+  if (error) {
+    if (/does not exist|Could not find the table/i.test(String(error.message || ''))) {
+      return { missing: true, rows: [] };
+    }
+    console.warn('[BREM] rider coupangOps daily lookup:', error.message || error);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * 쿠팡 실시간 운행현황.
+ * - 오늘 완료/거절/취소: rider_daily 오늘분
+ * - 거절율: (수~어제 거절율 + 오늘 거절율) / 2  (한쪽만 있으면 그 값)
+ */
+async function loadRiderCoupangOps(supabase, rider = {}) {
+  const matchKey = makeRiderLoginId(rider);
+  const empty = {
+    available: false,
+    matchKey: matchKey || '',
+    complete: 0,
+    reject: 0,
+    cancel: 0,
+    rejectionRate: null,
+    pastRejectionRate: null,
+    todayRejectionRate: null,
+    rejectionRateSource: null,
+    weekStart: null,
+    collectDate: null,
+    collectedAt: null,
+    updatedAt: null,
+    reason: matchKey ? 'NO_DATA' : 'NO_COUPANG_ID'
+  };
+  if (!matchKey || matchKey.length < 5) return empty;
+
+  let today = '';
+  let weekStart = '';
+  let yesterday = '';
+  try {
+    const week = require('./baemin-settlement-week');
+    today = week.todayKST();
+    weekStart = week.settlementWeekStart(today);
+    yesterday = week.addDays(today, -1);
+  } catch {
+    today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    weekStart = today;
+    yesterday = today;
+  }
+
+  const pastFrom = weekStart;
+  const pastTo = yesterday >= weekStart && yesterday < today ? yesterday : '';
+
+  const [pastResult, todayResult] = await Promise.all([
+    pastTo
+      ? fetchCoupangRiderDailyByMatch(supabase, matchKey, pastFrom, pastTo)
+      : Promise.resolve([]),
+    fetchCoupangRiderDailyByMatch(supabase, matchKey, today, today)
+  ]);
+
+  if (pastResult?.missing || todayResult?.missing) {
+    return { ...empty, reason: 'TABLE_MISSING' };
+  }
+
+  const pastRows = Array.isArray(pastResult) ? pastResult : [];
+  const todayRows = Array.isArray(todayResult) ? todayResult : [];
+  const past = sumCoupangRiderDailyRows(pastRows);
+  const live = sumCoupangRiderDailyRows(todayRows);
+
+  const pastRate = calcRejectionRateFromCounts(past.complete, past.reject, past.cancel);
+  const todayRate = calcRejectionRateFromCounts(live.complete, live.reject, live.cancel);
+
+  let rejectionRate = null;
+  let rejectionRateSource = null;
+  if (pastRate != null && todayRate != null) {
+    rejectionRate = Math.round(((pastRate + todayRate) / 2) * 10) / 10;
+    rejectionRateSource = 'past_today_avg';
+  } else if (todayRate != null) {
+    rejectionRate = todayRate;
+    rejectionRateSource = 'today';
+  } else if (pastRate != null) {
+    rejectionRate = pastRate;
+    rejectionRateSource = 'past';
+  }
+
+  const hasAny = pastRows.length > 0 || todayRows.length > 0;
+  if (!hasAny) return empty;
+
+  return {
+    available: true,
+    matchKey,
+    complete: live.complete,
+    reject: live.reject,
+    cancel: live.cancel,
+    pastComplete: past.complete,
+    pastReject: past.reject,
+    pastCancel: past.cancel,
+    rejectionRate,
+    pastRejectionRate: pastRate,
+    todayRejectionRate: todayRate,
+    rejectionRateSource,
+    weekStart,
+    collectDate: today,
+    collectedAt: live.collectedAt || past.collectedAt || null,
+    updatedAt: live.collectedAt || past.collectedAt || null,
+    reason: null
+  };
+}
+
 async function getRiderLive(accessToken) {
   const me = await getRiderMe(accessToken);
   if (!me.ok) return me;
@@ -1201,7 +1351,8 @@ async function getRiderLive(accessToken) {
     targetsResult,
     settingsResult,
     callsResult,
-    baeminOps
+    baeminOps,
+    coupangOps
   ] = await Promise.all([
     supabase
       .from('admin_targets')
@@ -1215,7 +1366,8 @@ async function getRiderLive(accessToken) {
     buildRiderCallsQuery(supabase, riderId, {
       select: 'id,driver_id,date,platform,count,updated_at'
     }),
-    loadRiderBaeminOps(supabase, me.rider)
+    loadRiderBaeminOps(supabase, me.rider),
+    loadRiderCoupangOps(supabase, me.rider)
   ]);
 
   const firstError = [targetsResult, settingsResult, callsResult].find(result => result.error);
@@ -1251,6 +1403,7 @@ async function getRiderLive(accessToken) {
     weeklyTargets,
     longEvent,
     baeminOps,
+    coupangOps,
     settings: settingsRows.filter(row => row.key !== 'brem_driver_weekly_targets')
   };
 }
