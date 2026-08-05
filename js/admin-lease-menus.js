@@ -4840,13 +4840,21 @@ const BremAdminLeaseMenus = (function () {
     const rowsEl = $('leaseArrearRows');
     if (!rowsEl || !erp()) return;
     fillArrearContractSelect(state.arrearContractOptionsDirty);
+    // 주차 UI는 수기 등록용. 목록은 주차 필터 없이 완납 전까지 전부 표시.
     syncArrearWeekUi(state.arrearWeekStart || $('leaseArrearWeekStart')?.value || currentWeekStart());
     const list = erp().arrears().getAll();
     const vehicles = new Map(erp().vehicles().getAll().map(item => [item.id, item]));
     const active = list.filter(item => item.collectionStatus !== calc().ARREAR_STATUS.COMPLETED);
+    const summaryEl = $('leaseArrearSummary');
+    if (summaryEl) {
+      const totalRemain = active.reduce((sum, item) => sum + Math.max(0, Number(item.unpaidAmount || 0)), 0);
+      summaryEl.textContent = active.length
+        ? `진행 중 ${active.length}건 · 잔액 합계 ${formatMoney(totalRemain)} · 완납될 때까지 주차 무관 전체 표시`
+        : '진행 중 0건 · 완납될 때까지 주차 무관 전체 표시';
+    }
     renderArrearHistory(list, vehicles);
     if (!active.length) {
-      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">진행 중인 미납 기록이 없습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">진행 중인 미납이 없습니다. 주정산 소급분에서 보내거나 위에서 수기 등록하세요.</td></tr>';
       return;
     }
     rowsEl.innerHTML = active.map(item => {
