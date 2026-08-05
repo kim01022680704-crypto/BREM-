@@ -12148,13 +12148,14 @@ tr.is-week-first td {
   word-break: keep-all;
 }
 
-/* 조직도 정리 — 계층 리스트 */
+/* 조직도 정리 — 계층 리스트 (다크) */
 .driver-org-list-summary {
   margin: 0 0 14px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--black-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 600;
 }
@@ -12168,16 +12169,16 @@ tr.is-week-first td {
   margin: 0;
   padding: 28px 16px;
   text-align: center;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
+  color: var(--muted);
+  background: var(--black-2);
+  border: 1px dashed var(--line);
   border-radius: 12px;
 }
 
 .driver-org-list-node {
-  border: 1px solid #d7deea;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: #171717;
   overflow: hidden;
 }
 
@@ -12187,22 +12188,22 @@ tr.is-week-first td {
   align-items: baseline;
   gap: 8px 12px;
   padding: 12px 14px;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #222 0%, #1a1a1a 100%);
+  border-bottom: 1px solid var(--line);
 }
 
 .driver-org-list-node__title {
   margin: 0;
   font-size: 16px;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text);
   letter-spacing: -0.02em;
 }
 
 .driver-org-list-node__meta {
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .driver-org-list-node__body {
@@ -12228,29 +12229,29 @@ tr.is-week-first td {
   gap: 4px;
   padding: 5px 10px;
   border-radius: 999px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  color: #1e3a8a;
+  background: rgba(255, 212, 0, 0.1);
+  border: 1px solid rgba(255, 212, 0, 0.35);
+  color: #ffe15a;
   font-size: 13px;
   font-weight: 650;
   line-height: 1.2;
 }
 
 .driver-org-list-chip--admin {
-  background: #fef3c7;
-  border-color: #fcd34d;
-  color: #92400e;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
 }
 
 .driver-org-list-chip__kind {
   font-size: 10px;
   font-weight: 700;
-  opacity: 0.75;
+  opacity: 0.8;
 }
 
 .driver-org-list-node__empty-people {
   margin: 0 0 10px;
-  color: #94a3b8;
+  color: #6b7280;
   font-size: 13px;
 }
 
@@ -12259,19 +12260,19 @@ tr.is-week-first td {
   gap: 10px;
   margin-top: 4px;
   padding-left: 12px;
-  border-left: 3px solid #93c5fd;
+  border-left: 3px solid rgba(255, 212, 0, 0.45);
 }
 
 .driver-org-list-node__children .driver-org-list-node {
-  background: #fcfdff;
+  background: #141414;
 }
 
 .driver-org-list-node__children .driver-org-list-node__children {
-  border-left-color: #60a5fa;
+  border-left-color: rgba(255, 212, 0, 0.3);
 }
 
 .driver-org-list-node__children .driver-org-list-node__children .driver-org-list-node__children {
-  border-left-color: #3b82f6;
+  border-left-color: rgba(255, 212, 0, 0.2);
 }
 
 @media (max-width: 960px) {
