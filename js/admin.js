@@ -208,6 +208,7 @@
     { id: 'baemin-status', label: '배민현황' },
     { id: 'coupang-rider-status', label: '쿠팡현황' },
     { id: 'coupang-status', label: '쿠팡 밴더현황' },
+    { id: 'contribution', label: '기여도' },
     { id: 'rejections', label: '거절율 입력' },
     { id: 'targets', label: '목표 콜수' },
     { id: 'promotions', label: '프로모션 관리' },
@@ -6745,6 +6746,9 @@
     }
     if (sectionId === 'coupang-rider-status' && window.BremCoupangRiderStatusAdmin?.refresh) {
       void window.BremCoupangRiderStatusAdmin.refresh();
+    }
+    if (sectionId === 'contribution' && window.BremContributionAdmin?.refresh) {
+      void window.BremContributionAdmin.refresh();
     }
   }
 

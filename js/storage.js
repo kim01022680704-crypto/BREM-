@@ -1511,6 +1511,7 @@ const BremStorage = (function () {
     'baemin-biz-status': [],
     'baemin-status': [],
     'coupang-status': [],
+    'contribution': [],
     'data-backup': [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
   });
 
@@ -11946,6 +11947,7 @@ const BremStorage = (function () {
     'baemin-status',
     'coupang-rider-status',
     'coupang-status',
+    'contribution',
     'rejections',
     'targets',
     'promotions',
@@ -12052,6 +12054,15 @@ const BremStorage = (function () {
         normalized.splice(baeIndex + 1, 0, 'coupang-status');
       } else {
         normalized.push('coupang-status');
+      }
+    }
+
+    if (!normalized.includes('contribution')) {
+      const coupangIndex = normalized.indexOf('coupang-status');
+      if (coupangIndex >= 0) {
+        normalized.splice(coupangIndex + 1, 0, 'contribution');
+      } else {
+        normalized.push('contribution');
       }
     }
 
@@ -12207,6 +12218,9 @@ const BremStorage = (function () {
     }
     if (nextMenus.includes('coupang-status') && !nextEditable.includes('coupang-status')) {
       nextEditable = [...nextEditable, 'coupang-status'];
+    }
+    if (nextMenus.includes('contribution') && !nextEditable.includes('contribution')) {
+      nextEditable = [...nextEditable, 'contribution'];
     }
     if (nextMenus.includes('payroll-slips') && !nextEditable.includes('payroll-slips')) {
       nextEditable = [...nextEditable, 'payroll-slips'];

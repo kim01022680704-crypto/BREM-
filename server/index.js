@@ -19,6 +19,7 @@ const payrollProductionBaseData = require('./payroll-production-base-data');
 const baeminDeliveryCollect = require('./baemin-delivery-collect');
 const baeminDeliverySession = require('./baemin-delivery-session');
 const coupangAdmin = require('./coupang-admin');
+const contributionAdmin = require('./contribution-admin');
 const riderAuth = require('./rider-auth');
 const riderWeeklyPayslip = require('./rider-weekly-payslip');
 const riderWithdrawal = require('./rider-withdrawal');
@@ -1630,6 +1631,48 @@ app.get('/api/admin/coupang/items', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '쿠팡 데이터 조회에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/contribution/daily', async (req, res) => {
+  try {
+    const result = await contributionAdmin.listDaily(getBearerToken(req), {
+      date: req.query.date,
+      platform: req.query.platform,
+      region: req.query.region,
+      keyword: req.query.keyword
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error,
+        tableMissing: Boolean(result.tableMissing)
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기여도 조회에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/contribution/refresh', async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const result = await contributionAdmin.refreshSnapshot(getBearerToken(req), {
+      date: body.date || req.query.date,
+      platform: body.platform || req.query.platform
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({
+        error: result.error || result.message,
+        message: result.message || result.error,
+        tableMissing: Boolean(result.tableMissing),
+        summary: result.summary
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '기여도 저장에 실패했습니다.' });
   }
 });
 
