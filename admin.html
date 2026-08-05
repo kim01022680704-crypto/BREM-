@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260805h">
+  <link rel="stylesheet" href="css/admin.css?v=20260805i">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -2555,7 +2555,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>계약 / 렌탈 등록</h2>
-            <p class="form-help">차량관리에 등록된 차량에 렌탈자·리스자를 배정하고 요금·보증금을 설정합니다.</p>
+            <p class="form-help">차량관리에 등록된 차량에 렌탈자·리스자를 배정하고 요금·보증금을 설정합니다. 등록 때 <strong>ERP차감 / 수기납부</strong>를 선택하세요.</p>
           </div>
           <form class="lease-form lease-contract-form--compact" id="leaseContractForm">
             <input type="hidden" id="leaseContractEditId">
@@ -2587,6 +2587,18 @@
                       <input type="radio" name="leaseContractDealType" value="rental">
                       <span class="lease-type-chip lease-type-chip--rental"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">렌탈</span></span>
                     </label>
+                  </fieldset>
+                  <fieldset class="lease-type-fieldset lease-type-fieldset--inline lease-form-field--full">
+                    <legend>납부 방식</legend>
+                    <label class="lease-type-option">
+                      <input type="radio" name="leaseContractPayMode" value="manual" checked>
+                      <span class="lease-type-chip lease-type-chip--manual"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">수기납부</span></span>
+                    </label>
+                    <label class="lease-type-option">
+                      <input type="radio" name="leaseContractPayMode" value="erp">
+                      <span class="lease-type-chip lease-type-chip--erp"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">ERP차감</span></span>
+                    </label>
+                    <p class="form-help" style="margin:0;flex:1 1 100%;">수기납부 = 납부확인에서 완납 · ERP차감 = 정산·출금에서 자동 차감</p>
                   </fieldset>
                   <div class="lease-driver-picker lease-form-field--full">
                     <input type="hidden" id="leaseContractDriverId">
@@ -2654,6 +2666,7 @@
                     <th>주간리스비</th>
                     <th class="lease-sortable" data-contract-sort="dailyRent">주간청구액</th>
                     <th>차액</th>
+                    <th>납부방식</th>
                     <th class="lease-sortable" data-contract-sort="unpaid">상태</th>
                     <th>관리</th>
                   </tr>
@@ -2738,6 +2751,17 @@
                 <label>마지막날 차감(자동)<input type="text" id="leaseLoanLastDayAmount" readonly tabindex="-1" placeholder="나머지를 마지막날에 합산"></label>
                 <p class="form-help lease-form-field--full" id="leaseLoanScheduleHint">원금·이자·일 차감·시작일을 넣으면 합계 기준으로 종료일과 마지막날 차감액이 자동 계산됩니다. 예: (100만+이자)÷3만 → 일수×3만 + 마지막날 나머지.</p>
                 <label>이유<input type="text" id="leaseLoanReason" placeholder="예: 보증금 대여 · 수리비 대여"></label>
+                <fieldset class="lease-type-fieldset lease-type-fieldset--inline lease-form-field--full">
+                  <legend>납부 방식</legend>
+                  <label class="lease-type-option">
+                    <input type="radio" name="leaseLoanPayMode" value="manual" checked>
+                    <span class="lease-type-chip lease-type-chip--manual"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">수기납부</span></span>
+                  </label>
+                  <label class="lease-type-option">
+                    <input type="radio" name="leaseLoanPayMode" value="erp">
+                    <span class="lease-type-chip lease-type-chip--erp"><span class="lease-type-chip__mark">✓</span><span class="lease-type-chip__label">ERP차감</span></span>
+                  </label>
+                </fieldset>
                 <div class="lease-form-field--full" style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button type="submit" class="primary-btn">대여 등록</button>
                   <button type="button" class="small-btn" id="leaseLoanFormResetBtn">초기화</button>
@@ -3163,46 +3187,44 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>미납 / 회수관리</h2>
-            <p class="form-help">아래 목록은 <strong>완납될 때까지 주차 상관없이</strong> 전부 보여 줍니다. 차감관리와 연동되며, 주정산 마이너스 → 소급분에서 보낸 건·수기 등록 건을 여기서 회수·완납합니다. 주차 선택은 <strong>새로 등록할 때만</strong> 씁니다.</p>
+            <p class="form-help">진행 중 미납은 <strong>주차 선택 없이 전부</strong> 보여 주고, <strong>완납될 때까지</strong> 목록에 남습니다. 주정산 소급분·수기 등록 건을 여기서 회수·완납합니다.</p>
           </div>
-          <form id="leaseArrearRegisterForm" class="lease-arrear-form">
-            <div class="lease-arrear-week-period">
-              <label class="period-label-block week-target-block">
-                <span class="label-row">등록용 미납주 (수~화 · 목록 필터 아님)</span>
-                <span class="field-preview week-range-label" id="leaseArrearWeekRangePreview">수요일~화요일 기준</span>
-                <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="lease-arrear-week" id="leaseArrearWeekBtn">
-                  <span id="leaseArrearWeekLabel">미납주 선택</span>
-                </button>
-                <span class="period-picker-caption">수기 미납 등록 시에만 사용 · 진행 목록은 주차와 무관</span>
-                <input type="hidden" id="leaseArrearWeekStart">
-              </label>
-            </div>
-            <div class="lease-arrear-form-grid">
-              <label class="lease-form-field--full">계약 기사 검색
-                <input type="search" id="leaseArrearDriverSearch" placeholder="이름 · 연락처 · 차량번호 · 기종" autocomplete="off">
-              </label>
-              <label>계약 기사
-                <select id="leaseArrearContractId" required>
-                  <option value="">기사 선택</option>
-                </select>
-              </label>
-              <label>미납일(일)
-                <input type="number" id="leaseArrearUnpaidDays" min="0" step="1" placeholder="0" required>
-              </label>
-              <label>미납금(원)
-                <input type="number" id="leaseArrearUnpaidAmount" min="0" step="1" placeholder="0" required>
-              </label>
-              <fieldset class="lease-arrear-methods">
-                <legend>회수방법</legend>
-                <label class="check-label"><input type="checkbox" name="leaseArrearMethod" value="salary_deduction"> 급여공제</label>
-                <label class="check-label"><input type="checkbox" name="leaseArrearMethod" value="separate_deposit"> 별도입금</label>
-              </fieldset>
-            </div>
-            <div class="lease-arrear-form-actions">
-              <button type="submit" class="primary-btn" id="leaseArrearRegisterBtn">미납 등록</button>
-              <button type="button" class="small-btn" id="leaseArrearBulkWeeklyBtn" hidden title="구버전 · 주정산 소급분 이관을 사용하세요">이번주 리스비 미납 일괄 등록</button>
-            </div>
-          </form>
+          <details class="lease-arrear-manual-register">
+            <summary>수기 미납 등록 (선택)</summary>
+            <form id="leaseArrearRegisterForm" class="lease-arrear-form">
+              <input type="hidden" id="leaseArrearWeekStart">
+              <p class="form-help">수기 등록 시 미납주는 자동으로 이번 정산주(수~화)로 기록됩니다. 목록 필터는 없습니다.</p>
+              <div class="lease-arrear-form-grid">
+                <label class="lease-form-field--full">계약 기사 검색
+                  <input type="search" id="leaseArrearDriverSearch" placeholder="이름 · 연락처 · 차량번호 · 기종" autocomplete="off">
+                </label>
+                <label>계약 기사
+                  <select id="leaseArrearContractId" required>
+                    <option value="">기사 선택</option>
+                  </select>
+                </label>
+                <label>미납일(일)
+                  <input type="number" id="leaseArrearUnpaidDays" min="0" step="1" placeholder="0" required>
+                </label>
+                <label>미납금(원)
+                  <input type="number" id="leaseArrearUnpaidAmount" min="0" step="1" placeholder="0" required>
+                </label>
+                <fieldset class="lease-arrear-methods">
+                  <legend>회수방법</legend>
+                  <label class="check-label"><input type="checkbox" name="leaseArrearMethod" value="salary_deduction"> 급여공제</label>
+                  <label class="check-label"><input type="checkbox" name="leaseArrearMethod" value="separate_deposit"> 별도입금</label>
+                </fieldset>
+              </div>
+              <div class="lease-arrear-form-actions">
+                <button type="submit" class="primary-btn" id="leaseArrearRegisterBtn">미납 등록</button>
+                <button type="button" class="small-btn" id="leaseArrearBulkWeeklyBtn" hidden title="구버전 · 주정산 소급분 이관을 사용하세요">이번주 리스비 미납 일괄 등록</button>
+              </div>
+            </form>
+          </details>
+          <!-- 주차 UI 제거 후에도 스크립트 호환용 (숨김) -->
+          <span id="leaseArrearWeekRangePreview" hidden></span>
+          <span id="leaseArrearWeekLabel" hidden></span>
+          <button type="button" id="leaseArrearWeekBtn" hidden aria-hidden="true"></button>
           <article class="card lease-arrear-complete-card" id="leaseArrearCompleteCard" hidden>
             <div class="card-header"><h3>미납 처리 완료</h3></div>
             <input type="hidden" id="leaseArrearCompleteId">
@@ -7726,7 +7748,7 @@
   <script src="js/lease-erp.js?v=20260803c"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260805m"></script>
+  <script src="js/admin-lease-menus.js?v=20260805n"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

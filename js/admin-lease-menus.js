@@ -531,8 +531,8 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function handleArrearWeekChange(weekStart) {
-    syncArrearWeekUi(weekStart);
-    renderArrears();
+    // 목록은 주차 필터 없음. 수기 등록용 주차 기록만 갱신.
+    syncArrearWeekUi(weekStart || currentWeekStart());
   }
 
   function syncPaymentWeekUi(weekStart) {
@@ -1301,8 +1301,33 @@ const BremAdminLeaseMenus = (function () {
       penaltyFee: depositAmount,
       collectionMethods: [],
       collectionStatus: engine.ARREAR_STATUS.COMPLETED,
-      memo: $('leaseContractMemo')?.value || ''
+      memo: $('leaseContractMemo')?.value || '',
+      finalApplyEnabled: readContractPayModeErp()
     };
+  }
+
+  function readContractPayModeErp() {
+    const checked = document.querySelector('input[name="leaseContractPayMode"]:checked');
+    return String(checked?.value || 'manual') === 'erp';
+  }
+
+  function setContractPayMode(enabled) {
+    const mode = enabled ? 'erp' : 'manual';
+    document.querySelectorAll('input[name="leaseContractPayMode"]').forEach(input => {
+      input.checked = input.value === mode;
+    });
+  }
+
+  function readLoanPayModeErp() {
+    const checked = document.querySelector('input[name="leaseLoanPayMode"]:checked');
+    return String(checked?.value || 'manual') === 'erp';
+  }
+
+  function setLoanPayMode(enabled) {
+    const mode = enabled ? 'erp' : 'manual';
+    document.querySelectorAll('input[name="leaseLoanPayMode"]').forEach(input => {
+      input.checked = input.value === mode;
+    });
   }
 
   function syncContractReturnDateWithEndDate() {
@@ -1531,6 +1556,7 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === (contract.contractType || 'lease');
     });
+    setContractPayMode(isContractFinalApplyEnabled(contract));
     setContractDeductionPlatform(contract.deductionPlatform || contract.rawData?.deductionPlatform || 'coupang');
     if ($('leaseContractDriverId')) $('leaseContractDriverId').value = contract.driverId || contract.rawData?.driverId || '';
     if ($('leaseContractDriverName')) $('leaseContractDriverName').value = contract.driverName || '';
@@ -1676,7 +1702,7 @@ const BremAdminLeaseMenus = (function () {
     }
     const deleting = state.contractDeleting;
     if (!contracts.length) {
-      rowsEl.innerHTML = `<tr><td colspan="11" class="empty">${allContracts.length ? '검색 결과가 없습니다.' : '등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.'}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="12" class="empty">${allContracts.length ? '검색 결과가 없습니다.' : '등록된 계약이 없습니다. 차량을 선택해 렌탈/리스자를 등록하세요.'}</td></tr>`;
       const deleteAllBtn = $('leaseContractDeleteAllBtn');
       if (deleteAllBtn) {
         deleteAllBtn.disabled = Boolean(deleting);
@@ -1704,6 +1730,10 @@ const BremAdminLeaseMenus = (function () {
       const weeklyCharge = contractRiderWeeklyCharge(contract);
       const margin = weeklyCharge - weeklyLease;
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
+      const erpOn = isContractFinalApplyEnabled(contract);
+      const payModeHtml = erpOn
+        ? '<span class="lease-status--done">ERP차감</span>'
+        : '<span class="lease-status--collecting">수기납부</span>';
       const driverLabel = ended
         ? escapeHtml(contract.driverName || '-')
         : escapeHtml(formatDriverContractLabel(contract.driverName || '-'));
@@ -1718,6 +1748,7 @@ const BremAdminLeaseMenus = (function () {
           <td>${formatMoney(weeklyLease)}</td>
           <td>${formatMoney(weeklyCharge)}</td>
           <td class="${marginCls}">${formatMoney(margin)}</td>
+          <td>${payModeHtml}</td>
           <td class="lease-status-tags lease-status-tags--table">${statusHtml}${ended ? ' <span class="lease-status-badge lease-status-badge--ended">종료</span>' : ''}</td>
           <td class="lease-actions">
             <button type="button" class="small-btn" data-edit-contract="${escapeHtml(contract.id)}" ${isDeleting ? 'disabled' : ''}>수정</button>
@@ -1848,10 +1879,8 @@ const BremAdminLeaseMenus = (function () {
     try {
       const statusPatch = erp().resolveContractStatusOnSave?.(draft, vehicle) || {};
       const existingContract = draft.id ? erp().contracts().getById(draft.id) : null;
-      // 신규 등록 기본 = 미반영(수기납부). BREM ERP 차감은 「ERP차감 ON」에서만.
-      const finalApplyEnabled = existingContract
-        ? isContractFinalApplyEnabled(existingContract)
-        : false;
+      // 등록 폼의 납부 방식(수기납부 / ERP차감)을 그대로 저장
+      const finalApplyEnabled = Boolean(draft.finalApplyEnabled);
       const contractPayload = {
         ...draft,
         ...statusPatch,
@@ -1903,8 +1932,8 @@ const BremAdminLeaseMenus = (function () {
         saveBtn.textContent = '저장';
       }
       showToast(wasEdit
-        ? '계약을 수정했습니다. Supabase 저장을 눌러주세요.'
-        : '계약을 추가했습니다(기본 수기납부). 납부확인에 표시됩니다. Supabase 저장을 눌러주세요.');
+        ? `계약을 수정했습니다(${finalApplyEnabled ? 'ERP차감' : '수기납부'}). Supabase 저장을 눌러주세요.`
+        : `계약을 추가했습니다(${finalApplyEnabled ? 'ERP차감' : '수기납부'}). Supabase 저장을 눌러주세요.`);
 
       // 2) 손익 스냅샷·대시보드·차량목록은 다음 틱으로 미룬다. (원격 저장은 Supabase 저장 버튼)
       setTimeout(() => {
@@ -2081,6 +2110,7 @@ const BremAdminLeaseMenus = (function () {
     document.querySelectorAll('input[name="leaseContractDealType"]').forEach(input => {
       input.checked = input.value === 'lease';
     });
+    setContractPayMode(false);
     setContractDeductionPlatform('coupang');
     if ($('leaseContractDeposit')) $('leaseContractDeposit').value = '';
     if ($('leaseContractReturnDate')) $('leaseContractReturnDate').value = '';
@@ -3118,6 +3148,7 @@ const BremAdminLeaseMenus = (function () {
     if (selected) selected.textContent = '선택: 없음';
     const results = $('leaseLoanDriverResults');
     if (results) { results.hidden = true; results.innerHTML = ''; }
+    setLoanPayMode(false);
     const submit = $('leaseLoanForm')?.querySelector('button[type="submit"]');
     if (submit) submit.textContent = '대여 등록';
   }
@@ -3487,18 +3518,18 @@ const BremAdminLeaseMenus = (function () {
       deductionPlatform: 'coupang',
       reason: String($('leaseLoanReason')?.value || '').trim() || '대여금',
       status: 'active',
-      // 신규 대여 기본 = 미반영(수기납부). ERP 차감은 「ERP차감 ON」에서만.
-      finalApplyEnabled: existing ? Boolean(existing.finalApplyEnabled) : false,
+      finalApplyEnabled: readLoanPayModeErp(),
       externalPaid: existing?.externalPaid || 0
     });
-    syncLoanLedgerFromLoan(loan);
+    syncLoanLedgerFromLoan(loan, { finalApplyEnabled: Boolean(loan.finalApplyEnabled) });
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
     resetLoanForm();
     renderDeductionLoan();
     if (state.menu === 'payment-confirm') renderPaymentConfirm();
+    const payLabel = loan.finalApplyEnabled ? 'ERP차감' : '수기납부';
     showToast(editId
-      ? `대여 수정 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일`
-      : `대여 등록 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일 · 납부확인에서 수기 완납 가능`);
+      ? `대여 수정 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일 · ${payLabel}`
+      : `대여 등록 · 합계 ${formatMoney(totalAmount)} · ${schedule.days}일 · ${payLabel}`);
   }
 
   function editLoan(id) {
@@ -3514,6 +3545,7 @@ const BremAdminLeaseMenus = (function () {
     if ($('leaseLoanBalance')) $('leaseLoanBalance').value = loan.balance || '';
     if ($('leaseLoanReason')) $('leaseLoanReason').value = loan.reason || '';
     if ($('leaseLoanDeductStartDate')) $('leaseLoanDeductStartDate').value = loan.deductStartDate || todayDateInputValue();
+    setLoanPayMode(Boolean(loan.finalApplyEnabled));
     syncLoanSchedulePreview();
     const selected = $('leaseLoanDriverSelected');
     if (selected) selected.textContent = `선택: ${loan.driverName || '-'} · ${loan.driverPhone || '-'}`;

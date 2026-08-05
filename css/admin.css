@@ -8829,6 +8829,58 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   color: #fdba74;
 }
 
+.lease-type-option input:checked + .lease-type-chip--manual {
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  box-shadow: none;
+}
+
+.lease-type-option input:checked + .lease-type-chip--manual .lease-type-chip__mark {
+  background: rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
+}
+
+.lease-type-option input:checked + .lease-type-chip--erp {
+  border-color: rgba(255, 212, 0, 0.55);
+  background: rgba(255, 212, 0, 0.12);
+  color: #ffe15a;
+  box-shadow: none;
+}
+
+.lease-type-option input:checked + .lease-type-chip--erp .lease-type-chip__mark {
+  background: rgba(255, 212, 0, 0.22);
+  color: #ffd400;
+}
+
+.lease-arrear-manual-register {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #171717;
+}
+
+.lease-arrear-manual-register > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lease-arrear-manual-register > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lease-arrear-manual-register[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.lease-arrear-manual-register .lease-arrear-form {
+  padding: 12px 14px 14px;
+}
+
 .lease-type-option input:not(:checked) + .lease-type-chip {
   opacity: 0.92;
 }
