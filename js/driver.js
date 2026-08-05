@@ -1025,11 +1025,7 @@
       return;
     }
 
-    const opsRaw = BremStorage.getRiderBaeminOps?.() || null;
-    const driverId = String(driver?.id || '').trim();
-    const opsRiderId = String(opsRaw?.riderId || '').trim();
-    // 다른 기사 세션 잔존 데이터는 표시하지 않음
-    const ops = (opsRaw && (!opsRiderId || !driverId || opsRiderId === driverId)) ? opsRaw : null;
+    const ops = BremStorage.getRiderBaeminOps?.() || null;
     const emptyEl = document.getElementById('driverBaeminLiveOpsEmpty');
     const available = Boolean(ops?.available);
     card.classList.toggle('is-empty', !available);
@@ -1136,10 +1132,7 @@
       return;
     }
 
-    const opsRaw = BremStorage.getRiderCoupangOps?.() || null;
-    const driverId = String(driver?.id || '').trim();
-    const opsRiderId = String(opsRaw?.riderId || '').trim();
-    const ops = (opsRaw && (!opsRiderId || !driverId || opsRiderId === driverId)) ? opsRaw : null;
+    const ops = BremStorage.getRiderCoupangOps?.() || null;
     const emptyEl = document.getElementById('driverCoupangLiveOpsEmpty');
     const available = Boolean(ops?.available);
     card.classList.toggle('is-empty', !available);

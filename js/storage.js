@@ -3219,49 +3219,23 @@ const BremStorage = (function () {
     }
 
     const liveRiderId = String(payload.riderId || payload.rider?.id || '').trim();
-    const hasLiveOpsPayload = (
-      Object.prototype.hasOwnProperty.call(payload, 'baeminOps')
-      || Object.prototype.hasOwnProperty.call(payload, 'coupangOps')
-      || Boolean(liveRiderId)
-      || payload.ok === true
-    );
 
-    if (hasLiveOpsPayload) {
-      // 이전 기사 실시간 수치가 다음 로그인에 묻어나오지 않도록 항상 교체한다.
+    // 키가 있을 때만 해당 플랫폼을 갱신한다. (한쪽 응답 때문에 다른쪽을 비우지 않음)
+    if (Object.prototype.hasOwnProperty.call(payload, 'baeminOps')) {
       if (payload.baeminOps && typeof payload.baeminOps === 'object') {
         riderBaeminOpsCache = {
           ...payload.baeminOps,
           riderId: liveRiderId || payload.baeminOps.riderId || '',
           cachedAt: new Date().toISOString()
         };
-      } else {
-        riderBaeminOpsCache = {
-          available: false,
-          riderId: liveRiderId,
-          complete: 0,
-          foodReject: 0,
-          foodCancel: 0,
-          foodRiderFault: 0,
-          acceptRate: null,
-          cachedAt: new Date().toISOString()
-        };
       }
+    }
 
+    if (Object.prototype.hasOwnProperty.call(payload, 'coupangOps')) {
       if (payload.coupangOps && typeof payload.coupangOps === 'object') {
         riderCoupangOpsCache = {
           ...payload.coupangOps,
           riderId: liveRiderId || payload.coupangOps.riderId || '',
-          cachedAt: new Date().toISOString()
-        };
-      } else {
-        riderCoupangOpsCache = {
-          available: false,
-          riderId: liveRiderId,
-          complete: 0,
-          reject: 0,
-          cancel: 0,
-          pastComplete: 0,
-          rejectionRate: null,
           cachedAt: new Date().toISOString()
         };
       }
@@ -3390,7 +3364,7 @@ const BremStorage = (function () {
     } else {
       window.BremDriverDataCache?.clearAll?.();
     }
-    clearRiderLiveOpsCache();
+    // 실시간 ops는 로그아웃/기사전환 시에만 비운다. publish 갱신마다 지우면 쿠팡 카드가 깜빡인다.
     lastDriverAppPublishedAt = null;
   }
 
@@ -3405,8 +3379,11 @@ const BremStorage = (function () {
         || sessionAdapter.read(SESSION_KEYS.driverId, '')
       ).trim();
 
-      // 로그인 직후 이전 기사 실시간 카드가 잠깐이라도 보이지 않게 비움
-      if (options.force || !riderBaeminOpsCache || String(riderBaeminOpsCache.riderId || '') !== riderId) {
+      // 이전 기사 캐시가 남아 있을 때만 비움 (같은 기사 재로딩에서는 유지)
+      const prevBaeminRider = String(riderBaeminOpsCache?.riderId || '').trim();
+      const prevCoupangRider = String(riderCoupangOpsCache?.riderId || '').trim();
+      const prevRider = prevBaeminRider || prevCoupangRider;
+      if (riderId && prevRider && prevRider !== riderId) {
         clearRiderLiveOpsCache();
       }
 
