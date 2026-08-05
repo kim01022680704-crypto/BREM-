@@ -4977,7 +4977,11 @@
               <button type="button" class="small-btn primary-btn" id="settlementRetroSendBtn" title="체크한 건만 미납/회수 + 차감관리로 이관합니다">미납·차감으로 보내기</button>
             </div>
           </div>
-          <p class="form-help">「마이너스 일괄 맞추기」로 쌓인 소급분입니다. <strong>왼쪽 체크 → 「차감관리로 보내기」</strong>하면 <strong>미납/회수 + 차감관리</strong>에 한 세트로 등록됩니다(차감은 반영 ON). 전액완료·일부회수 시 차감 잔액이 같이 줄어듭니다. 미납 0원(고용·산재 로스)은 선택 불가.</p>
+          <p class="form-help">
+            「마이너스 일괄 맞추기」소급분. <strong>이관액</strong> 열 = 미납/차감으로 보낼 금액(리스·대여·선정산·미납).
+            체크 후 「미납·차감으로 보내기」하면 미납/회수+차감관리에 등록됩니다.
+            <strong>그로스업만 있는 건 = 고용·산재 회사로스</strong> → 선택 불가(회수 대상 아님).
+          </p>
           <p class="direct-inline-stats" id="settlementRetroSummary"></p>
           <div id="settlementResultRetroBody"></div>
         </article>
@@ -7717,7 +7721,7 @@
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
   <script src="js/direct-settlement-calc.js?v=20260803h"></script>
-  <script src="js/settlement-result-direct.js?v=20260805a"></script>
+  <script src="js/settlement-result-direct.js?v=20260805b"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260805f"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>

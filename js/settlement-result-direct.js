@@ -436,14 +436,18 @@ const BremSettlementResultDirect = (function () {
         baeminId: prev.baeminId || (state.platform === 'baemin' ? row.idLabel : ''),
         coupangId: prev.coupangId || (state.platform === 'coupang' ? row.idLabel : '')
       });
-      const unpaidBalance = Math.abs(Math.round(Number(row.netPay || 0)));
+      const shortfall = Math.abs(Math.round(Number(row.netPay || 0)));
       const leaseFee = Math.max(0, Math.round(Number(row.leaseFee || 0)));
       const loanFee = Math.max(0, Math.round(Number(row.loanFee || 0)));
       const prepaid = Math.max(0, Math.round(Number(row.prepaid || 0)));
+      const feeSum = leaseFee + loanFee + prepaid;
+      // 리스·대여·선정산이 있을 때만 회수(미납) 대상. 없으면 고용·산재 회사로스.
+      const unpaidBalance = feeSum > 0 ? shortfall : 0;
       const reasonParts = [];
       if (leaseFee > 0) reasonParts.push(`리스차감 ${leaseFee.toLocaleString('ko-KR')}`);
       if (loanFee > 0) reasonParts.push(`대여차감 ${loanFee.toLocaleString('ko-KR')}`);
       if (prepaid > 0) reasonParts.push(`선정산 ${prepaid.toLocaleString('ko-KR')}`);
+      if (feeSum <= 0) reasonParts.push('고용·산재 로스(회사부담)');
       retro.push({
         driverId: row.driverId,
         name: row.name,
@@ -456,21 +460,29 @@ const BremSettlementResultDirect = (function () {
         loanFee,
         prepaid,
         status: 'logged',
+        lossType: feeSum > 0 ? 'recoverable' : 'insurance_loss',
         reason: reasonParts.join(' · ') || '',
         settlementId: settlement.id
       });
     });
     if (!entries.length) { showToast('맞출 금액이 없습니다.'); return; }
 
+    const recoverable = retro.filter(r => r.unpaidBalance > 0 || (r.leaseFee + r.loanFee + r.prepaid) > 0);
+    const insuranceLoss = retro.length - recoverable.length;
     const preview = retro.slice(0, 15)
-      .map(r => `· ${r.name} (${r.idLabel}) 미납 ${formatNumber(r.unpaidBalance)}원 · 그로스업 +${formatNumber(r.amount)}원${r.reason ? ` [${r.reason}]` : ''}`);
+      .map(r => {
+        const transfer = resolveTransferUnpaid(r);
+        return `· ${r.name} (${r.idLabel}) 이관 ${formatNumber(transfer)}원 · 그로스업 +${formatNumber(r.amount)}원`
+          + (transfer <= 0 ? ' [회사로스]' : '')
+          + (r.reason ? ` [${r.reason}]` : '');
+      });
     const more = retro.length > 15 ? `\n외 ${retro.length - 15}명` : '';
     const ok = window.confirm(
       [
         `${entries.length}명의 마이너스를 0원으로 맞춥니다.`,
         '마이너스만큼 기타지급을 올리고, 원천세 3.3%까지 반영(그로스업)합니다.',
-        '선정산·리스차감·대여차감은 그대로이며, 「소급분 및 미납금」에 기록됩니다.',
-        '차감관리 이관은 자동이 아닙니다. 탭에서 마이너스 맞춤 건을 선택해 보내세요. (미납 0·그로스업만 있어도 가능)',
+        `회수대상(리스·대여·선정산·미납) ${recoverable.length}명 · 고용·산재 회사로스 ${insuranceLoss}명(이관 선택 불가)`,
+        '차감관리 이관은 자동이 아닙니다. 「소급분」탭에서 이관액 있는 건만 선택해 보내세요.',
         '',
         ...preview
       ].join('\n') + more + '\n\n적용할까요?'
@@ -491,25 +503,26 @@ const BremSettlementResultDirect = (function () {
     return '기록됨';
   }
 
-  /** 이관 금액: 미납잔액 → 리스+대여+선정산 → 그로스업의 세후 상당(원 마이너스 복원) */
+  /** 차감/미납으로 보낼 금액. 그로스업(회사 고용·산재 로스)은 포함하지 않음. */
   function resolveTransferUnpaid(entry) {
+    const leaseFee = Math.max(0, Math.round(Number(entry?.leaseFee || 0)));
+    const loanFee = Math.max(0, Math.round(Number(entry?.loanFee || 0)));
+    const prepaid = Math.max(0, Math.round(Number(entry?.prepaid || 0)));
+    const feeSum = leaseFee + loanFee + prepaid;
     const unpaid = Math.max(0, Math.round(Number(entry?.unpaidBalance || 0)));
-    if (unpaid > 0) return unpaid;
-    const feeSum = Math.max(0,
-      Math.round(Number(entry?.leaseFee || 0))
-      + Math.round(Number(entry?.loanFee || 0))
-      + Math.round(Number(entry?.prepaid || 0))
-    );
-    if (feeSum > 0) return feeSum;
-    const gross = Math.max(0, Math.round(Number(
-      entry?.grossUpAmount != null ? entry.grossUpAmount : (entry?.amount || 0)
-    )));
-    if (gross > 0) return Math.max(1, Math.round(gross * (1 - 0.033)));
-    return 0;
+    // 리스·대여·선정산이 전혀 없으면 회사로스 → 이관액 0
+    if (feeSum <= 0 && unpaid <= 0) return 0;
+    if (feeSum <= 0) return 0;
+    return unpaid > 0 ? unpaid : feeSum;
+  }
+
+  function isCompanyLoss(row) {
+    return resolveTransferUnpaid(row) <= 0;
   }
 
   function isRetroSelectable(row) {
-    return String(row?.status || '') !== 'sent_to_deduction';
+    if (String(row?.status || '') === 'sent_to_deduction') return false;
+    return resolveTransferUnpaid(row) > 0;
   }
 
   function collectRetroRows() {
@@ -567,14 +580,24 @@ const BremSettlementResultDirect = (function () {
 
     let unpaidSum = 0;
     let grossSum = 0;
+    let transferSum = 0;
     let sentCount = 0;
+    let lossCount = 0;
     rows.forEach(r => {
       unpaidSum += r.unpaidBalance;
       grossSum += r.grossUpAmount;
+      const t = resolveTransferUnpaid(r);
+      if (t > 0 && r.status !== 'sent_to_deduction') transferSum += t;
       if (r.status === 'sent_to_deduction') sentCount += 1;
+      if (isCompanyLoss(r) && r.status !== 'sent_to_deduction') lossCount += 1;
     });
+    const selectableCount = rows.filter(isRetroSelectable).length;
     if (summaryEl) {
-      summaryEl.innerHTML = `표시 <strong>${rows.length}</strong>건 · 미납잔액 합 <strong>${formatNumber(unpaidSum)}</strong>원 · 그로스업 합 <strong>${formatNumber(grossSum)}</strong>원 · 이관됨 ${sentCount}건`;
+      summaryEl.innerHTML = `표시 <strong>${rows.length}</strong>건`
+        + ` · <strong style="color:#b45309;">이관가능 ${selectableCount}건 / ${formatNumber(transferSum)}원</strong>`
+        + ` · 회사로스(고용·산재) ${lossCount}건`
+        + ` · 그로스업(참고) ${formatNumber(grossSum)}원`
+        + ` · 이관됨 ${sentCount}건`;
     }
 
     const byWeek = new Map();
@@ -583,24 +606,34 @@ const BremSettlementResultDirect = (function () {
       byWeek.get(r.weekStart).push(r);
     });
 
-    const selectableCount = rows.filter(isRetroSelectable).length;
-
     const weekBlocks = [...byWeek.entries()].map(([wk, list]) => {
-      list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
-      const unpaidWeek = list.reduce((s, r) => s + r.unpaidBalance, 0);
+      list.sort((a, b) => {
+        const ta = resolveTransferUnpaid(a);
+        const tb = resolveTransferUnpaid(b);
+        if (tb !== ta) return tb - ta;
+        return String(a.name).localeCompare(String(b.name), 'ko');
+      });
+      const transferWeek = list.reduce((s, r) => (
+        r.status === 'sent_to_deduction' ? s : s + resolveTransferUnpaid(r)
+      ), 0);
       const rowsHtml = list.map(r => {
         const sent = r.status === 'sent_to_deduction';
         const transferAmt = resolveTransferUnpaid(r);
-        const checkDisabled = sent ? ' disabled' : '';
+        const companyLoss = transferAmt <= 0;
+        const checkDisabled = (sent || companyLoss) ? ' disabled' : '';
         const checkTitle = sent
           ? '이미 차감관리로 이관됨'
-          : (transferAmt > 0
-            ? `선택 후 「미납·차감으로 보내기」(이관액 ${transferAmt.toLocaleString('ko-KR')}원)`
-            : '선택 후 「미납·차감으로 보내기」(금액 없으면 이관완료 표시만)');
+          : (companyLoss
+            ? '고용·산재 회사로스 — 차감 이관 대상 아님'
+            : `선택 후 「미납·차감으로 보내기」→ 이관액 ${transferAmt.toLocaleString('ko-KR')}원`);
+        const kindLabel = sent
+          ? '이관완료'
+          : (companyLoss ? '회사로스' : '회수대상');
         const checkVal = `${escapeHtml(r.weekStart)}||${escapeHtml(r.entryKey)}`;
         const rowClass = [
           sent ? 'settlement-retro-row--sent' : '',
-          r.unpaidBalance <= 0 && !sent ? 'settlement-retro-row--no-unpaid' : ''
+          companyLoss && !sent ? 'settlement-retro-row--no-unpaid' : '',
+          !companyLoss && !sent ? 'settlement-retro-row--recoverable' : ''
         ].filter(Boolean).join(' ');
         return `
         <tr class="${rowClass}">
@@ -608,7 +641,9 @@ const BremSettlementResultDirect = (function () {
           <td class="settlement-retro-name"><strong>${escapeHtml(r.name || '-')}</strong></td>
           <td class="settlement-retro-id">${escapeHtml(r.idLabel || '-')}</td>
           <td class="settlement-retro-platform">${escapeHtml(r.platform === 'coupang' ? '쿠팡' : (r.platform === 'baemin' ? '배민' : '-'))}</td>
-          <td class="settlement-retro-amount weekly-amount-cell"><strong>${formatNumber(r.unpaidBalance)}</strong>원</td>
+          <td class="settlement-retro-amount weekly-amount-cell"><strong style="color:${transferAmt > 0 ? '#b45309' : 'inherit'};">${formatNumber(transferAmt)}</strong>원</td>
+          <td>${escapeHtml(kindLabel)}</td>
+          <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.unpaidBalance)}원</td>
           <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.leaseFee)}원</td>
           <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.loanFee)}원</td>
           <td class="settlement-retro-amount weekly-amount-cell">${formatNumber(r.prepaid)}원</td>
@@ -619,15 +654,17 @@ const BremSettlementResultDirect = (function () {
       }).join('');
       return `
         <div class="settlement-retro-week">
-          <p class="settlement-retro-week-head"><strong>${escapeHtml(wk)}(수)</strong> 주 · ${list.length}건 · 미납합 <strong>${formatNumber(unpaidWeek)}</strong>원</p>
+          <p class="settlement-retro-week-head"><strong>${escapeHtml(wk)}(수)</strong> 주 · ${list.length}건 · <strong>이관액 합 ${formatNumber(transferWeek)}원</strong></p>
           <div class="table-wrap">
             <table class="weekly-settlement-saved-table settlement-retro-table">
               <thead>
                 <tr>
-                  <th class="settlement-retro-check-cell" title="이 주 선택"><input type="checkbox" class="settlement-retro-check-all" data-week="${escapeHtml(wk)}" title="이 주 · 아직 이관 안 된 건 전체 선택"></th>
+                  <th class="settlement-retro-check-cell" title="이 주 선택"><input type="checkbox" class="settlement-retro-check-all" data-week="${escapeHtml(wk)}" title="이 주 · 회수대상(이관액&gt;0)만 선택"></th>
                   <th class="settlement-retro-name">기사</th>
                   <th class="settlement-retro-id">아이디</th>
                   <th class="settlement-retro-platform">플랫폼</th>
+                  <th class="settlement-retro-amount">이관액</th>
+                  <th>구분</th>
                   <th class="settlement-retro-amount">미납잔액</th>
                   <th class="settlement-retro-amount">리스차감</th>
                   <th class="settlement-retro-amount">대여차감</th>
@@ -643,14 +680,24 @@ const BremSettlementResultDirect = (function () {
         </div>`;
     }).join('');
 
-    body.innerHTML = `<p class="settlement-retro-select-hint">☑ 마이너스 맞춤 건 전부 체크 가능 → 「미납·차감으로 보내기」(미납 0이어도 가능 · 그로스업은 참고 · 이관 가능 ${selectableCount}건)</p>${weekBlocks}`;
+    body.innerHTML = `<p class="settlement-retro-select-hint">☑ <strong>이관액</strong>이 있는 회수대상만 체크 → 「미납·차감으로 보내기」(이관 가능 ${selectableCount}건 / ${formatNumber(transferSum)}원 · 회사로스 ${lossCount}건은 선택 불가)</p>${weekBlocks}`;
     const updateSelectHint = () => {
-      const n = body.querySelectorAll('input.settlement-retro-check:checked:not([disabled])').length;
+      const checked = [...body.querySelectorAll('input.settlement-retro-check:checked:not([disabled])')];
+      const n = checked.length;
+      let selectedSum = 0;
+      checked.forEach(cb => {
+        const raw = String(cb.value || '');
+        const sep = raw.indexOf('||');
+        const weekStart = raw.slice(0, sep);
+        const entryKey = raw.slice(sep + 2);
+        const entry = window.BremStorage?.directRetroAdjustments?.getWeek?.(weekStart)?.[entryKey];
+        if (entry) selectedSum += resolveTransferUnpaid(entry);
+      });
       const hint = body.querySelector('.settlement-retro-select-hint');
       if (hint) {
         hint.innerHTML = n > 0
-          ? `☑ <strong>${n}건</strong> 선택됨 · 「미납·차감으로 보내기」누르면 미납/회수+차감관리에 등록됩니다.`
-          : `☑ 마이너스 맞춤 건 전부 체크 가능 → 「미납·차감으로 보내기」(미납 0이어도 가능 · 그로스업은 참고 · 이관 가능 ${selectableCount}건)`;
+          ? `☑ <strong>${n}건</strong> 선택 · 이관 예정 <strong>${formatNumber(selectedSum)}원</strong> → 「미납·차감으로 보내기」`
+          : `☑ <strong>이관액</strong>이 있는 회수대상만 체크 → 「미납·차감으로 보내기」(이관 가능 ${selectableCount}건 / ${formatNumber(transferSum)}원 · 회사로스 ${lossCount}건은 선택 불가)`;
       }
     };
     body.querySelectorAll('.settlement-retro-check-all').forEach(master => {
@@ -710,25 +757,25 @@ const BremSettlementResultDirect = (function () {
       return;
     }
 
-    const withAmount = previewRows.filter(p => p.unpaid > 0);
-    const zeroAmount = previewRows.length - withAmount.length;
-    const defaultDaily = withAmount.length === 1 ? withAmount[0].unpaid : '';
+    const sendRows = previewRows.filter(p => p.unpaid > 0);
+    if (!sendRows.length) {
+      showToast('이관액이 있는 회수대상만 보낼 수 있습니다. (고용·산재 회사로스는 제외)');
+      return;
+    }
+    const totalTransfer = sendRows.reduce((s, p) => s + p.unpaid, 0);
+    const defaultDaily = sendRows.length === 1 ? sendRows[0].unpaid : '';
     const dailyRaw = window.prompt(
       [
-        `${previewRows.length}건을 「미납/회수」+「차감관리」로 보냅니다.`,
+        `${sendRows.length}건 · 합계 ${formatNumber(totalTransfer)}원을 「미납/회수」+「차감관리」로 보냅니다.`,
         '· 미납/회수: 장부·회수 관리',
         '· 차감관리: 출금가능 홀드(반영 ON)',
-        '· 미납잔액 0이어도 마이너스 맞춤 건은 이관 가능(그로스업 참고→원 마이너스액 복원)',
-        zeroAmount ? `· 금액 0원 ${zeroAmount}건은 이관완료 표시만 합니다.` : '',
+        '· 이관액 = 미납잔액(없으면 리스+대여+선정산). 그로스업은 보내지 않음',
         '',
         '일 차감액을 입력하세요. (비우면 각 건의 이관액 전액)',
-        previewRows.slice(0, 8).map(p =>
+        sendRows.slice(0, 10).map(p =>
           `· ${p.entry.name} 이관 ${formatNumber(p.unpaid)}원`
-          + (Math.max(0, Math.round(Number(p.entry.unpaidBalance || 0))) <= 0 && p.unpaid > 0
-            ? ' (미납0→복원)'
-            : '')
         ).join('\n')
-      ].filter(Boolean).join('\n'),
+      ].join('\n'),
       defaultDaily === '' ? '' : String(defaultDaily)
     );
     if (dailyRaw === null) return;
@@ -741,14 +788,13 @@ const BremSettlementResultDirect = (function () {
     }
 
     const ok = window.confirm(
-      `${previewRows.length}건을 미납/회수 + 차감관리로 이관할까요?\n일 차감: ${dailyOverride == null ? '건별 이관액' : `${formatNumber(dailyOverride)}원`}`
+      `${sendRows.length}건 / ${formatNumber(totalTransfer)}원을 미납/회수 + 차감관리로 이관할까요?\n일 차감: ${dailyOverride == null ? '건별 이관액' : `${formatNumber(dailyOverride)}원`}`
     );
     if (!ok) return;
 
     let created = 0;
-    let markedOnly = 0;
     let skipped = 0;
-    for (const item of previewRows) {
+    for (const item of sendRows) {
       const sourceRef = `${item.weekStart}|${item.entryKey}`;
       const existing = ledger.findBySource?.('unpaid', sourceRef);
       if (existing || item.entry.status === 'sent_to_deduction' || item.entry.ledgerId) {
@@ -756,16 +802,6 @@ const BremSettlementResultDirect = (function () {
         continue;
       }
       const unpaid = item.unpaid;
-      if (unpaid <= 0) {
-        store.updateEntry?.(item.weekStart, item.entryKey, {
-          status: 'sent_to_deduction',
-          ledgerId: '',
-          arrearId: '',
-          markedOnly: true
-        });
-        markedOnly += 1;
-        continue;
-      }
       const dailyDeduct = dailyOverride != null ? Math.min(dailyOverride, unpaid) : unpaid;
       const driver = driverById.get(String(item.entry.driverId)) || null;
       const result = pairFn({
@@ -802,11 +838,7 @@ const BremSettlementResultDirect = (function () {
     try {
       window.BremAdminLeaseMenus?.refresh?.({ loadRemote: false });
     } catch (_err) { /* ignore */ }
-    showToast(
-      `미납/회수·차감 이관 ${created}건`
-      + (markedOnly ? ` · 표시만 ${markedOnly}건` : '')
-      + (skipped ? ` · 건너뜀 ${skipped}건` : '')
-    );
+    showToast(`미납/회수·차감 이관 ${created}건${skipped ? ` · 건너뜀 ${skipped}건` : ''}`);
   }
 
   // ── 최종결산 (그 주 전체, 쿠팡+배민, 합치지 않음) ────────────────────────
