@@ -2026,12 +2026,11 @@ const BremAdminLeaseMenus = (function () {
       }
       refreshContractDateLabels();
 
-      // 1) 즉시 페인트: 계약 목록과 폼만 먼저 그려 바로 리스트에 내려가게 한다.
+      // 1) 목록 반영 후 폼은 비워서 바로 다음 건을 등록할 수 있게 한다.
       const wasEdit = Boolean(draft.id);
-      $('leaseContractEditId').value = contract.id;
-      fillContractForm(contract);
       renderContractList();
-      document.querySelector('.lease-contract-list-wrap')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      resetContractForm();
+      $('leaseContractForm')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
       state.contractSaving = false;
       if (saveBtn) {
         saveBtn.disabled = false;
@@ -2041,8 +2040,8 @@ const BremAdminLeaseMenus = (function () {
       try {
         await persistPayModeToSupabase();
         showToast(wasEdit
-          ? `계약 수정 · ${finalApplyEnabled ? 'ERP차감' : '수기납부'} · 바로 반영됨`
-          : `계약 추가 · ${finalApplyEnabled ? 'ERP차감' : '수기납부'} · 바로 반영됨`);
+          ? `계약 수정 · ${finalApplyEnabled ? 'ERP차감' : '수기납부'} · 바로 반영됨 · 다음 등록 가능`
+          : `계약 추가 · ${finalApplyEnabled ? 'ERP차감' : '수기납부'} · 바로 반영됨 · 다음 등록 가능`);
       } catch (persistError) {
         console.error('[saveContract persist]', persistError);
         showToast(wasEdit
