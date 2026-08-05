@@ -1931,11 +1931,20 @@ const BremAdminLeaseMenus = (function () {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
       }
-      showToast(wasEdit
-        ? `계약을 수정했습니다(${finalApplyEnabled ? 'ERP차감' : '수기납부'}). Supabase 저장을 눌러주세요.`
-        : `계약을 추가했습니다(${finalApplyEnabled ? 'ERP차감' : '수기납부'}). Supabase 저장을 눌러주세요.`);
+      // 납부방식(ERP/수기)은 기사 차감에 바로 쓰이므로 계약 저장 시 즉시 Supabase 반영
+      try {
+        await persistPayModeToSupabase();
+        showToast(wasEdit
+          ? `계약 수정 · ${finalApplyEnabled ? 'ERP차감' : '수기납부'} · 바로 반영됨`
+          : `계약 추가 · ${finalApplyEnabled ? 'ERP차감' : '수기납부'} · 바로 반영됨`);
+      } catch (persistError) {
+        console.error('[saveContract persist]', persistError);
+        showToast(wasEdit
+          ? '계약을 수정했습니다. Supabase 저장을 눌러주세요.'
+          : '계약을 추가했습니다. Supabase 저장을 눌러주세요.');
+      }
 
-      // 2) 손익 스냅샷·대시보드·차량목록은 다음 틱으로 미룬다. (원격 저장은 Supabase 저장 버튼)
+      // 2) 손익 스냅샷·대시보드·차량목록은 다음 틱으로 미룬다.
       setTimeout(() => {
         try {
           const metrics = calc().compute({
@@ -2983,6 +2992,18 @@ const BremAdminLeaseMenus = (function () {
     }
   }
 
+  async function persistPayModeToSupabase() {
+    // ERP ON/OFF는 미저장 대기 없이 바로 Supabase·기사 반영
+    await erp().persistAll({ skipFlushStorage: true });
+    if (erp().flushImmediateWrites) {
+      try { await erp().flushImmediateWrites({ skipFlushStorage: true }); } catch (_e) { /* ignore */ }
+    }
+    if (window.BremStorage?.flushStorage) {
+      try { await window.BremStorage.flushStorage(); } catch (_e) { /* ignore */ }
+    }
+    updateLeaseErpUnsavedBanner();
+  }
+
   async function setContractFinalApply(contractId, enabled, options = {}) {
     if (!erp() || !contractId) return false;
     const contract = erp().contracts().getById(contractId);
@@ -2991,12 +3012,17 @@ const BremAdminLeaseMenus = (function () {
       return false;
     }
     const nextEnabled = Boolean(enabled);
+    const nowIso = new Date().toISOString();
     const rawData = {
       ...(contract.rawData || {}),
       finalApplyEnabled: nextEnabled,
-      finalAppliedAt: nextEnabled ? new Date().toISOString() : (contract.rawData?.finalAppliedAt || ''),
+      finalAppliedAt: nextEnabled ? nowIso : (contract.rawData?.finalAppliedAt || ''),
       finalAppliedBy: nextEnabled ? 'admin' : (contract.rawData?.finalAppliedBy || ''),
-      finalClearedAt: nextEnabled ? '' : new Date().toISOString()
+      // 수기납부로 돌리면 그날부터 ERP 일차감 종료
+      finalClearedAt: nextEnabled ? '' : nowIso,
+      finalClearedDate: nextEnabled
+        ? ''
+        : String(options.clearedDate || todayDateInputValue() || '').slice(0, 10)
     };
     if (options.deductStartDate != null) {
       rawData.deductStartDate = String(options.deductStartDate || '').slice(0, 10);
@@ -3004,23 +3030,23 @@ const BremAdminLeaseMenus = (function () {
     erp().contracts().update(contractId, {
       finalApplyEnabled: nextEnabled,
       rawData
-    });
+    }, { immediate: true });
     if (!options.skipPersist) {
       try {
-        await erp().persistAll({ skipFlushStorage: true });
+        await persistPayModeToSupabase();
       } catch (error) {
         console.error('[setContractFinalApply]', error);
         if (!options.silent) showToast(error?.message || '반영 상태 저장에 실패했습니다.');
         return false;
       }
-      updateLeaseErpUnsavedBanner();
     }
     if (!options.silent) {
       showToast(nextEnabled
-        ? `${formatDriverContractLabel(contract.driverName || '기사')} · ERP차감 ON (정산·출금 차감)`
-        : `${formatDriverContractLabel(contract.driverName || '기사')} · 수기납부 (ERP 차감 안 함)`);
+        ? `${formatDriverContractLabel(contract.driverName || '기사')} · ERP차감 ON · 바로 기사 반영됨`
+        : `${formatDriverContractLabel(contract.driverName || '기사')} · 수기납부 · 오늘부터 ERP 차감 종료`);
       renderDeductionLease();
       renderDeductionManage();
+      renderContractList();
       refreshAfterLeaseMutation({ contract: false });
     }
     return true;
@@ -3033,23 +3059,23 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
     const label = enabled ? 'ERP차감 ON' : '수기납부';
-    if (!window.confirm(`선택한 ${ids.length}건을 ${label}로 바꿀까요?\n${enabled ? '정산·출금에서 리스 차감됩니다.' : 'ERP 차감 안 함 · 납부확인에서 수기 처리합니다.'}`)) return;
+    if (!window.confirm(`선택한 ${ids.length}건을 ${label}로 바꿀까요?\n${enabled ? '정산·출금에서 바로 차감됩니다.' : '오늘부터 ERP 차감이 끝나고 수기납부로 바뀝니다.'}\n(Supabase에 바로 저장됩니다)`)) return;
     let ok = 0;
     for (const id of ids) {
       const done = await setContractFinalApply(id, enabled, { skipPersist: true, silent: true });
       if (done) ok += 1;
     }
     try {
-      await erp().persistAll({ skipFlushStorage: true });
+      await persistPayModeToSupabase();
     } catch (error) {
       console.error('[bulkSetContractFinalApply]', error);
       showToast(error?.message || `일괄 ${label} 저장에 실패했습니다.`);
       return;
     }
     state.deductionLeaseSelectedIds.clear();
-    updateLeaseErpUnsavedBanner();
-    showToast(`${label} ${ok}건`);
+    showToast(`${label} ${ok}건 · 바로 기사 반영됨`);
     renderDeductionLease();
+    renderContractList();
     refreshAfterLeaseMutation({ contract: false });
   }
 
@@ -3579,10 +3605,11 @@ const BremAdminLeaseMenus = (function () {
     });
     syncLoanLedgerFromLoan(saved, { finalApplyEnabled: Boolean(enabled) });
     await window.BremStorage?.awaitPersist?.(window.BremStorage.flushStorage?.());
+    updateLeaseErpUnsavedBanner();
     renderDeductionLoan();
     showToast(enabled
-      ? `${loan.driverName || '기사'} · ERP차감 ON (정산·출금 차감)`
-      : `${loan.driverName || '기사'} · 수기납부 (ERP 차감 안 함)`);
+      ? `${loan.driverName || '기사'} · ERP차감 ON · 바로 기사 반영됨`
+      : `${loan.driverName || '기사'} · 수기납부 · 오늘부터 ERP 차감 종료`);
     if (state.menu === 'payment-confirm') renderPaymentConfirm();
   }
 
@@ -5557,6 +5584,13 @@ const BremAdminLeaseMenus = (function () {
     });
 
     $('leaseContractForm')?.addEventListener('submit', saveContract);
+    document.querySelectorAll('input[name="leaseContractPayMode"]').forEach(input => {
+      input.addEventListener('change', () => {
+        const id = String($('leaseContractEditId')?.value || '').trim();
+        if (!id) return;
+        void setContractFinalApply(id, readContractPayModeErp());
+      });
+    });
     $('leaseContractResetBtn')?.addEventListener('click', resetContractForm);
     $('leaseContractDeleteAllBtn')?.addEventListener('click', () => { void deleteAllContracts(); });
     $('leaseContractEndBtn')?.addEventListener('click', endContractAsEmpty);

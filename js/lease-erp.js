@@ -831,19 +831,19 @@ const BremLeaseErp = (function () {
       getByVehicleId(vehicleId) {
         return store.getAll().filter(item => item.vehicleId === vehicleId);
       },
-      create(raw) {
+      create(raw, options = {}) {
         const record = normalizeFn(raw);
         const list = store.getAll();
         list.unshift(record);
-        writeList(key, list, { incrementalRows: [record] });
+        writeList(key, list, { incrementalRows: [record], ...options });
         return record;
       },
-      update(id, raw) {
+      update(id, raw, options = {}) {
         const existing = store.getById(id);
         if (!existing) return null;
         const record = normalizeFn({ ...existing, ...raw }, existing);
         const list = store.getAll().map(item => item.id === id ? record : item);
-        writeList(key, list, { incrementalRows: [record] });
+        writeList(key, list, { incrementalRows: [record], ...options });
         return record;
       },
       removeById(id, options = {}) {
