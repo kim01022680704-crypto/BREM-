@@ -292,20 +292,32 @@ function getBaeminSessionModule() {
 
 async function getAutoCollectStatusForAdmin() {
   const record = await getAutoCollectRecord();
-  const session = await getBaeminSessionModule().getStoredSessionRecord();
+  const session = await getBaeminSessionModule().getStoredSessionRecord().catch(() => null);
   const nextScheduledAt = record.nextScheduledAt || computeNextScheduledAt(record.schedule);
   const localSeenAt = record.localServerLastSeenAt ? Date.parse(record.localServerLastSeenAt) : 0;
   const localServerRecentlyActive = localSeenAt > 0 && (Date.now() - localSeenAt) < 2 * 60 * 1000;
-  const menuStatus = await getLatestMenuCollectStatus(record.lastCaptureDate || todayDateStringKST());
+  const captureRef = record.lastCaptureDate || todayDateStringKST();
+  let menuStatus = [];
+  try {
+    menuStatus = await getLatestMenuCollectStatus(captureRef) || [];
+  } catch (err) {
+    console.warn('[BREM][auto-collect] menuStatus failed:', err?.message || err);
+    menuStatus = [];
+  }
   const { readRiderCollectRange } = require('./baemin-rider-collect-range');
   const { readDailyCollectRange } = require('./baemin-daily-collect-range');
-  const captureRef = record.lastCaptureDate || todayDateStringKST();
   const riderCollectRange = await readRiderCollectRange(captureRef).catch(() => null);
   const dailyCollectRange = await readDailyCollectRange(captureRef).catch(() => null);
-  const menuDatePlan = buildBizMenuDateRanges(captureRef, new Date(), {
-    dailyCollectRange,
-    riderCollectRange
-  });
+  let menuDatePlan = null;
+  try {
+    menuDatePlan = buildBizMenuDateRanges(captureRef, new Date(), {
+      dailyCollectRange,
+      riderCollectRange
+    });
+  } catch (err) {
+    console.warn('[BREM][auto-collect] menuDatePlan failed:', err?.message || err);
+    menuDatePlan = null;
+  }
 
   return {
     schedule: record.schedule,

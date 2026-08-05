@@ -4691,12 +4691,11 @@
     const silent = options.silent === true;
     // 자동(silent) 조회는 무거운 storageDiagnostics 전체 스캔을 생략(light=1).
     // 진단 UI는 silent에서 렌더하지 않으므로 결과 표시에는 영향이 없다.
-    const query = silent
-      ? '/api/admin/baemin-delivery/config?viewOnly=1&light=1'
-      : '/api/admin/baemin-delivery/config?viewOnly=1';
+    // 항상 light=1: storageDiagnostics 전체 스캔이 Vercel에서 타임아웃(500) 나기 쉬움
+    const query = '/api/admin/baemin-delivery/config?viewOnly=1&light=1';
     const result = await adminApi(query);
     if (!result.ok) {
-      if (!silent && result.message) showToast(result.message);
+      if (!silent) showToast(result.message || `요청 실패 (${result.status || '?'})`);
       return result;
     }
     state.config = {

@@ -534,76 +534,108 @@ async function resolveBaeminActorScope(accessToken) {
 }
 
 async function getConfig(accessToken, options = {}) {
-  const actor = await resolveBaeminActorScope(accessToken);
-  if (!actor.ok) return actor;
+  try {
+    const actor = await resolveBaeminActorScope(accessToken);
+    if (!actor.ok) return actor;
 
-  const tableStatus = await getTableStatus();
-  const { getBizCollectTableStatus } = require('./baemin-collect-pipeline');
-  const bizTableStatus = await getBizCollectTableStatus();
-  const { readAppliedBaeminDelivery, getBaeminStorageDiagnosticsForAdmin } = require('./baemin-collect-pipeline');
-  const applied = await readAppliedBaeminDelivery();
-  const light = options.light === true;
-  const storageDiagnostics = light
-    ? null
-    : await getBaeminStorageDiagnosticsForAdmin().catch(() => null);
+    const {
+      getBizCollectTableStatus,
+      readAppliedBaeminDelivery,
+      getBaeminStorageDiagnosticsForAdmin
+    } = require('./baemin-collect-pipeline');
 
-  if (options.viewOnly) {
+    const [tableStatus, bizTableStatus, applied] = await Promise.all([
+      getTableStatus().catch(err => ({ ok: false, tableExists: false, error: err?.message || String(err) })),
+      getBizCollectTableStatus().catch(err => ({ ok: false, tableExists: false, error: err?.message || String(err) })),
+      readAppliedBaeminDelivery().catch(() => null)
+    ]);
+
+    const light = options.light === true;
+    // light가 아니면 스토리지 진단이 무거워 타임아웃(500) 나기 쉬움 → 실패해도 config 자체는 성공 반환
+    const storageDiagnostics = light
+      ? null
+      : await getBaeminStorageDiagnosticsForAdmin().catch(err => {
+        console.warn('[BREM][baemin-config] storageDiagnostics failed:', err?.message || err);
+        return null;
+      });
+
     const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');
     const { getDailyCollectRangeForAdmin } = require('./baemin-daily-collect-range');
-    const riderCollectRange = await getRiderCollectRangeForAdmin().catch(() => ({ ok: false, range: null }));
-    const dailyCollectRange = await getDailyCollectRangeForAdmin().catch(() => ({ ok: false, range: null }));
+    const [riderCollectRange, dailyCollectRange] = await Promise.all([
+      getRiderCollectRangeForAdmin().catch(() => ({ ok: false, range: null })),
+      getDailyCollectRangeForAdmin().catch(() => ({ ok: false, range: null }))
+    ]);
+
+    if (options.viewOnly) {
+      return {
+        ok: true,
+        viewOnly: true,
+        tableExists: tableStatus.tableExists === true,
+        bizCollectTableExists: bizTableStatus.tableExists === true,
+        applied: applied || null,
+        canManageRegions: actor.canManageRegions,
+        baeminScope: {
+          allowedPartnerIds: actor.scope.allowedPartnerIds,
+          viewPartnerIds: actor.scope.viewPartnerIds,
+          isRegionalScoped: true
+        },
+        riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null,
+        dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null,
+        storageDiagnostics: storageDiagnostics?.ok ? storageDiagnostics : null
+      };
+    }
+
+    let sessionStatus = {};
+    try {
+      sessionStatus = await getBaeminSession().getSessionStatus(accessToken) || {};
+    } catch (err) {
+      console.warn('[BREM][baemin-config] sessionStatus failed:', err?.message || err);
+      sessionStatus = {};
+    }
+
+    const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
+    let autoCollect = {};
+    try {
+      const baeminAutoCollect = require('./baemin-auto-collect');
+      autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin() || {};
+    } catch (err) {
+      console.warn('[BREM][baemin-config] autoCollect failed:', err?.message || err);
+      autoCollect = { enabled: false, lastError: err?.message || '자동수집 상태 조회 실패' };
+    }
+
     return {
       ok: true,
-      viewOnly: true,
       tableExists: tableStatus.tableExists === true,
       bizCollectTableExists: bizTableStatus.tableExists === true,
       applied: applied || null,
-      canManageRegions: actor.canManageRegions,
-      baeminScope: {
-        allowedPartnerIds: actor.scope.allowedPartnerIds,
-        viewPartnerIds: actor.scope.viewPartnerIds,
-        isRegionalScoped: true
-      },
+      sessionConfigured: sessionStatus.sessionConfigured || envCookie,
+      sessionUpdatedAt: sessionStatus.updatedAt || null,
+      sessionUpdatedBy: sessionStatus.updatedBy || '',
+      sessionSource: sessionStatus.source || (envCookie ? 'env' : ''),
+      sessionLastError: sessionStatus.lastError || '',
+      sessionLastValidatedAt: sessionStatus.lastValidatedAt || null,
+      envCookieConfigured: envCookie,
+      cookieConfigured: sessionStatus.sessionConfigured || envCookie,
+      localSessionPort: sessionStatus.localSessionPort,
+      localSessionUrl: sessionStatus.localSessionUrl,
+      localHealthUrl: sessionStatus.localHealthUrl,
+      localHealthUrls: sessionStatus.localHealthUrls,
+      playwright: isPlaywrightFeasibleOnVercel(),
+      collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none'),
+      autoCollect,
+      menuStatus: autoCollect.menuStatus || [],
       riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null,
       dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null,
       storageDiagnostics: storageDiagnostics?.ok ? storageDiagnostics : null
     };
+  } catch (error) {
+    console.error('[BREM][baemin-config] fatal:', error?.message || error);
+    return {
+      ok: false,
+      status: 500,
+      error: error?.message || '배민 수집 설정을 확인하지 못했습니다.'
+    };
   }
-
-  const sessionStatus = await getBaeminSession().getSessionStatus(accessToken);
-  const envCookie = Boolean(String(process.env.BAEMIN_BIZ_SESSION_COOKIE || '').trim());
-  const baeminAutoCollect = require('./baemin-auto-collect');
-  const autoCollect = await baeminAutoCollect.getAutoCollectStatusForAdmin();
-  const { getRiderCollectRangeForAdmin } = require('./baemin-rider-collect-range');
-  const { getDailyCollectRangeForAdmin } = require('./baemin-daily-collect-range');
-  const riderCollectRange = await getRiderCollectRangeForAdmin().catch(() => ({ ok: false, range: null }));
-  const dailyCollectRange = await getDailyCollectRangeForAdmin().catch(() => ({ ok: false, range: null }));
-
-  return {
-    ok: true,
-    tableExists: tableStatus.tableExists === true,
-    bizCollectTableExists: bizTableStatus.tableExists === true,
-    applied: applied || null,
-    sessionConfigured: sessionStatus.sessionConfigured || envCookie,
-    sessionUpdatedAt: sessionStatus.updatedAt || null,
-    sessionUpdatedBy: sessionStatus.updatedBy || '',
-    sessionSource: sessionStatus.source || (envCookie ? 'env' : ''),
-    sessionLastError: sessionStatus.lastError || '',
-    sessionLastValidatedAt: sessionStatus.lastValidatedAt || null,
-    envCookieConfigured: envCookie,
-    cookieConfigured: sessionStatus.sessionConfigured || envCookie,
-    localSessionPort: sessionStatus.localSessionPort,
-    localSessionUrl: sessionStatus.localSessionUrl,
-    localHealthUrl: sessionStatus.localHealthUrl,
-    localHealthUrls: sessionStatus.localHealthUrls,
-    playwright: isPlaywrightFeasibleOnVercel(),
-    collectMode: sessionStatus.collectMode || (envCookie ? 'env_cookie' : 'none'),
-    autoCollect,
-    menuStatus: autoCollect.menuStatus || [],
-    riderCollectRange: riderCollectRange.ok ? riderCollectRange.range : null,
-    dailyCollectRange: dailyCollectRange.ok ? dailyCollectRange.range : null,
-    storageDiagnostics: storageDiagnostics?.ok ? storageDiagnostics : null
-  };
 }
 
 async function getCollectItems(accessToken, options = {}) {
