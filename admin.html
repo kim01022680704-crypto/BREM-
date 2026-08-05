@@ -1404,8 +1404,8 @@
             <div>
               <h2>기여도</h2>
               <p class="form-help">
-                일별 스냅샷 · 배민=<strong>콜수기여도</strong>(배달현황 완료콜) · 쿠팡=<strong>소수 콜</strong>(rider_daily completeCount, 0.8/1 단위).
-                크롤 현황을 읽어 Supabase <code>contribution_daily</code>에 날짜별로 저장합니다. 오차 허용.
+                배민·쿠팡 <strong>타임별</strong>로 분리. 크롤 중 해당 타임 할당이 <strong>달성/종료되면 즉시 고정</strong>.
+                기여도 = 그 타임 안에서 쌓인 콜수(할당 0→달성). 과거 일일합계는 무시 · <strong>오늘 저녁부터</strong> 쌓입니다.
               </p>
             </div>
             <div class="dashboard-baemin-live-actions">
@@ -1413,16 +1413,13 @@
               <button type="button" class="small-btn" id="contributionLoadBtn">조회</button>
             </div>
           </div>
+          <div class="promotion-platform-tabs admin-section-tabs" role="tablist" aria-label="기여도 플랫폼">
+            <button type="button" class="promotion-tab active" data-contribution-platform="baemin">배민</button>
+            <button type="button" class="promotion-tab" data-contribution-platform="coupang">쿠팡</button>
+          </div>
           <div class="form-row" style="gap:10px;flex-wrap:wrap;align-items:end;">
             <label>일자
               <input type="date" id="contributionDate" class="admin-period-input">
-            </label>
-            <label>플랫폼
-              <select id="contributionPlatform">
-                <option value="all">전체</option>
-                <option value="baemin">배민</option>
-                <option value="coupang">쿠팡</option>
-              </select>
             </label>
             <label>지역
               <input type="search" id="contributionRegion" placeholder="지역명 필터" autocomplete="off">
@@ -7698,7 +7695,7 @@
     <script src="js/baemin-delivery-status-admin.js?v=20260805b"></script>
     <script src="js/coupang-status-admin.js?v=20260805n"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260723a"></script>
-    <script src="js/contribution-admin.js?v=20260805a"></script>
+    <script src="js/contribution-admin.js?v=20260805e"></script>
     <script src="js/coupang-rejection-sync.js?v=20260715c"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
   <script src="js/promotion-apply.js?v=20260731a"></script>

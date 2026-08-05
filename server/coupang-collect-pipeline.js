@@ -114,6 +114,23 @@ async function upsertCollectItems(items = [], options = {}) {
     }
     saved += chunk.length;
   }
+  if (saved > 0) {
+    const dates = new Set();
+    let touchContribution = false;
+    rows.forEach(r => {
+      if (r.source_menu === 'rider_daily' || r.source_menu === 'peak_realtime') {
+        touchContribution = true;
+        if (r.collect_date) dates.add(String(r.collect_date).slice(0, 10));
+      }
+    });
+    if (touchContribution) {
+      try {
+        const contributionAdmin = require('./contribution-admin');
+        const date = [...dates][0] || '';
+        contributionAdmin.scheduleAutoRefresh({ date, platform: 'coupang' });
+      } catch (_e) { /* ignore */ }
+    }
+  }
   return { ok: true, saved, deleted };
 }
 

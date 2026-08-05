@@ -405,6 +405,23 @@ async function saveCollectItems(rows) {
     }
   }
 
+  // 배달현황 저장 직후 → 기여도 타임별 갱신/고정 (할당 달성·슬롯 종료 시 freeze)
+  if (savedCount > 0) {
+    const deliveryDates = new Set();
+    deduped.forEach(row => {
+      if (String(row.source_menu || row.record_type || '') !== 'delivery_status') return;
+      const d = String(row.collect_date || '').slice(0, 10);
+      if (d) deliveryDates.add(d);
+    });
+    if (deliveryDates.size) {
+      try {
+        const contributionAdmin = require('./contribution-admin');
+        const date = [...deliveryDates][0] || contributionAdmin.todayKst();
+        contributionAdmin.scheduleAutoRefresh({ date, platform: 'baemin' });
+      } catch (_e) { /* ignore */ }
+    }
+  }
+
   return { ok: true, savedCount };
 }
 

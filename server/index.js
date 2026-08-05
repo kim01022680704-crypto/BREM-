@@ -1472,6 +1472,10 @@ app.post('/api/admin/baemin-delivery/collect', async (req, res) => {
         message: result.message || result.error
       });
     }
+    contributionAdmin.scheduleAutoRefresh({
+      date: result.collectDate || result.captureDate || contributionAdmin.todayKst(),
+      platform: 'baemin'
+    });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 자동 수집에 실패했습니다.' });
@@ -1492,6 +1496,10 @@ app.post('/api/admin/baemin-delivery/import-json', async (req, res) => {
         message: result.message || result.error
       });
     }
+    contributionAdmin.scheduleAutoRefresh({
+      date: result.collectDate || body.captureDate || contributionAdmin.todayKst(),
+      platform: 'baemin'
+    });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '배민 JSON 저장에 실패했습니다.' });
