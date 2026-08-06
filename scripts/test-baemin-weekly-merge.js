@@ -78,6 +78,10 @@ check('parse start A', parsedA.startDate, '2026-07-29');
 check('parse end A', parsedA.endDate, '2026-07-31');
 check('parse team A', parsedA.teamName, '울산울주a');
 
+const parsedNoSpace = WS.parseBaeminFileName('260729-260731울산aa.xlsx');
+check('parse no-space start', parsedNoSpace.startDate, '2026-07-29');
+check('parse no-space team', parsedNoSpace.teamName, '울산aa');
+
 const parsedB = WS.parseBaeminFileName('260801-260804 울산울주a.xlsx');
 check('parse start B', parsedB.startDate, '2026-08-01');
 check('parse end B', parsedB.endDate, '2026-08-04');

@@ -181,6 +181,46 @@ const BremWeeklySettlementAdmin = (function () {
     if (paymentInput) paymentInput.value = dates.paymentDate;
   }
 
+  /** 배민 파일 1·2 에서 기간을 읽어 시작/종료/주차표시/지급일/적용주 필터를 한꺼번에 맞춤 */
+  function syncBaeminPeriodFields(channel, fileNameOrList) {
+    const ch = normChannel(channel);
+    const names = Array.isArray(fileNameOrList)
+      ? fileNameOrList.map(String).filter(Boolean)
+      : (fileNameOrList ? [String(fileNameOrList)] : collectBaeminFileNames(ch));
+    if (!names.length || typeof BremWeeklySettlement?.parseBaeminFileName !== 'function') return null;
+
+    const parsedList = names.map(name => BremWeeklySettlement.parseBaeminFileName(name));
+    const starts = parsedList.map(p => p.startDate).filter(Boolean).sort();
+    const ends = parsedList.map(p => p.endDate).filter(Boolean).sort();
+    const startDate = starts[0] || '';
+    const endDate = ends[ends.length - 1] || '';
+    const regions = [...new Set(parsedList.map(p => String(p.teamName || '').trim()).filter(Boolean))];
+    const weekStart = startDate ? weekStartKey(startDate) : '';
+    const weekLabel = startDate && endDate ? `${startDate} ~ ${endDate}` : '';
+    const paymentDate = startDate
+      ? BremWeeklySettlement.calculateCoupangSettlementDates(startDate).paymentDate
+      : '';
+
+    const regionInput = q(ch, 'Region', 'baemin');
+    const startInput = q(ch, 'StartDate', 'baemin');
+    const endInput = q(ch, 'EndDate', 'baemin');
+    const paymentInput = q(ch, 'PaymentDate', 'baemin');
+    const weekLabelInput = q(ch, 'WeekLabel', 'baemin');
+    const logWeekInput = q(ch, 'LogWeek', 'baemin');
+
+    if (regionInput && regions.length === 1) regionInput.value = regions[0];
+    if (startInput && startDate) startInput.value = startDate;
+    if (endInput && endDate) endInput.value = endDate;
+    if (paymentInput && paymentDate) paymentInput.value = paymentDate;
+    // 주차 표시는 항상 두 파일 합친 전체 기간 (한쪽 파일 기간만 남지 않게)
+    if (weekLabelInput && weekLabel) weekLabelInput.value = weekLabel;
+    if (logWeekInput && weekStart) {
+      logWeekInput.value = weekStart;
+      state.weeklyLogWeekByChannel[ch].baemin = weekStart;
+    }
+    return { startDate, endDate, weekStart, weekLabel, paymentDate, regions };
+  }
+
   function applyFilenameHints(channel, platform, fileNameOrList) {
     const names = Array.isArray(fileNameOrList)
       ? fileNameOrList.map(String).filter(Boolean)
@@ -194,27 +234,7 @@ const BremWeeklySettlementAdmin = (function () {
       if (weekLabelInput && parsed.settlementWeekLabel) weekLabelInput.value = parsed.settlementWeekLabel;
       return;
     }
-    const parsedList = names.map(name => BremWeeklySettlement.parseBaeminFileName(name));
-    const starts = parsedList.map(p => p.startDate).filter(Boolean).sort();
-    const ends = parsedList.map(p => p.endDate).filter(Boolean).sort();
-    const startDate = starts[0] || '';
-    const endDate = ends[ends.length - 1] || '';
-    const regions = [...new Set(parsedList.map(p => p.teamName).filter(Boolean))];
-    const regionInput = q(channel, 'Region', 'baemin');
-    const startInput = q(channel, 'StartDate', 'baemin');
-    const endInput = q(channel, 'EndDate', 'baemin');
-    const paymentInput = q(channel, 'PaymentDate', 'baemin');
-    const weekLabelInput = q(channel, 'WeekLabel', 'baemin');
-    // 여러 지역 파일이면 지역칸은 비워 두고 파일명 지역을 각각 씀
-    if (regionInput && regions.length === 1) regionInput.value = regions[0];
-    if (startInput && startDate) startInput.value = startDate;
-    if (endInput && endDate) endInput.value = endDate;
-    if (paymentInput && startDate) {
-      paymentInput.value = BremWeeklySettlement.calculateCoupangSettlementDates(startDate).paymentDate;
-    }
-    if (weekLabelInput && startDate && endDate) {
-      weekLabelInput.value = `${startDate} ~ ${endDate}`;
-    }
+    syncBaeminPeriodFields(channel, names);
   }
 
   function platformWeeklyOrderLabel(platform) {
@@ -376,7 +396,19 @@ const BremWeeklySettlementAdmin = (function () {
 
   async function uploadAndMatch(channel, platform) {
     const ch = normChannel(channel);
+    // 배민: 업로드 직전에 파일 1·2 기간으로 폼·적용주를 다시 맞춤 (주차 어긋남 방지)
+    if (platform === 'baemin') {
+      syncBaeminPeriodFields(ch, collectBaeminFileNames(ch));
+    }
     const payload = readUploadForm(channel, platform);
+    if (platform === 'baemin' && payload.files?.length) {
+      const synced = syncBaeminPeriodFields(ch, payload.files.map(file => file.name));
+      if (synced?.startDate) payload.startDate = synced.startDate;
+      if (synced?.endDate) payload.endDate = synced.endDate;
+      if (synced?.weekLabel) payload.settlementWeekLabel = synced.weekLabel;
+      if (synced?.paymentDate) payload.paymentDate = synced.paymentDate;
+      if (synced?.startDate) payload.baseSettlementDate = synced.startDate;
+    }
     const error = validateUploadForm(payload);
     if (error) {
       showToast(error);
@@ -1198,15 +1230,30 @@ const BremWeeklySettlementAdmin = (function () {
     });
     q(ch, 'File', platform)?.addEventListener('change', () => {
       if (platform === 'baemin') {
-        applyFilenameHints(ch, platform, collectBaeminFileNames(ch));
+        syncBaeminPeriodFields(ch, collectBaeminFileNames(ch));
         return;
       }
       applyFilenameHints(ch, platform, q(ch, 'File', platform)?.files?.[0]?.name || '');
     });
     if (platform === 'baemin') {
       q(ch, 'File2', platform)?.addEventListener('change', () => {
-        applyFilenameHints(ch, platform, collectBaeminFileNames(ch));
+        syncBaeminPeriodFields(ch, collectBaeminFileNames(ch));
       });
+      // 시작·종료를 손으로 고쳐도 주차 표시는 항상 따라가게
+      const syncLabelFromInputs = () => {
+        const start = q(ch, 'StartDate', 'baemin')?.value || '';
+        const end = q(ch, 'EndDate', 'baemin')?.value || '';
+        const weekLabelInput = q(ch, 'WeekLabel', 'baemin');
+        if (weekLabelInput && start && end) weekLabelInput.value = `${start} ~ ${end}`;
+        const logWeekInput = q(ch, 'LogWeek', 'baemin');
+        if (logWeekInput && start) {
+          const wk = weekStartKey(start);
+          logWeekInput.value = wk;
+          state.weeklyLogWeekByChannel[ch].baemin = wk;
+        }
+      };
+      q(ch, 'StartDate', 'baemin')?.addEventListener('change', syncLabelFromInputs);
+      q(ch, 'EndDate', 'baemin')?.addEventListener('change', syncLabelFromInputs);
     }
     if (platform === 'coupang') {
       q(ch, 'BaseDate', 'coupang')?.addEventListener('change', () => fillCoupangDatesFromBase(ch));

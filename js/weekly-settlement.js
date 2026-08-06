@@ -149,9 +149,9 @@ const BremWeeklySettlement = (function () {
       result.teamName = String(strict[7] || '').trim();
       return result;
     }
-    // 260729-260731 울산울주a  /  260729-260731_울산울주a
+    // 260729-260731 울산울주a  /  260729-260731_울산울주a  /  붙임상 지역명
     const compact = baseName.match(
-      /^(\d{2})(\d{2})(\d{2})\s*[-_~]\s*(\d{2})(\d{2})(\d{2})(?:[\s_]+)(.+)$/
+      /^(\d{2})(\d{2})(\d{2})\s*[-–—_~]\s*(\d{2})(\d{2})(\d{2})(?:[\s_\-–—]*(.+))?$/
     );
     if (compact) {
       result.startDate = yymmddToIso(compact[1], compact[2], compact[3]);
@@ -161,7 +161,7 @@ const BremWeeklySettlement = (function () {
     }
     // 20260729-20260804 울산울주a
     const fullDash = baseName.match(
-      /^(\d{4})(\d{2})(\d{2})\s*[-_~]\s*(\d{4})(\d{2})(\d{2})(?:[\s_]+)(.+)$/
+      /^(\d{4})(\d{2})(\d{2})\s*[-–—_~]\s*(\d{4})(\d{2})(\d{2})(?:[\s_\-–—]*(.+))?$/
     );
     if (fullDash) {
       result.startDate = `${fullDash[1]}-${fullDash[2]}-${fullDash[3]}`;
@@ -1496,12 +1496,19 @@ const BremWeeklySettlement = (function () {
           endDate,
           paymentDate: options.paymentDate
             || calculateCoupangSettlementDates(startDate).paymentDate,
-          settlementWeekLabel: options.settlementWeekLabel || (startDate && endDate ? `${startDate} ~ ${endDate}` : ''),
+          // 합친 전체 기간을 우선 (폼에 한쪽 파일 기간만 남아 주차가 어긋나지 않게)
+          settlementWeekLabel: (startDate && endDate ? `${startDate} ~ ${endDate}` : '')
+            || options.settlementWeekLabel
+            || '',
           matchedRiders,
           unmatchedRiders
         });
         record = {
           ...record,
+          startDate,
+          endDate,
+          baseSettlementDate: startDate,
+          settlementWeekLabel: startDate && endDate ? `${startDate} ~ ${endDate}` : record.settlementWeekLabel,
           sourceParts,
           fileNames: groupParts.map(p => p.fileName),
           previewUnmatched: unmatchedRiders
