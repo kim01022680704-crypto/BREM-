@@ -209,13 +209,26 @@
     const outstandingArrears = Math.max(0, Number(lease.outstandingArrears || 0));
     const ledgerCharge = Math.max(0, Number(lease.ledgerCharge || 0));
     const leaseChargeOnly = Math.max(0, Number(lease.leaseCharge || 0));
+    const leaseActiveDays = Math.max(0, Number(lease.activeDays || 0));
+    const leaseDailyRent = Math.max(0, Number(lease.dailyRent || 0));
+    const erpOn = lease.finalApplyEnabled === true;
     const arrearReason = String(lease.arrearReason || '리스비 미납').trim() || '리스비 미납';
     const deductParts = [];
-    if (leaseChargeOnly > 0) deductParts.push(`리스차감 ${formatMoney(leaseChargeOnly)}`);
-    if (ledgerCharge > 0) deductParts.push(`대여·차감관리 ${formatMoney(ledgerCharge)}`);
-    if (outstandingArrears > 0 && leaseDeduction > leaseChargeOnly + ledgerCharge) {
-      // 미납은 별도 배너로도 표시
+    if (leaseChargeOnly > 0) {
+      deductParts.push(
+        leaseActiveDays > 0
+          ? `리스차감 ${formatMoney(leaseChargeOnly)}(${leaseActiveDays}일)`
+          : `리스차감 ${formatMoney(leaseChargeOnly)}`
+      );
+    } else if (erpOn && leaseDailyRent > 0) {
+      const waitStart = String(lease.deductStartDate || '').slice(0, 10);
+      deductParts.push(
+        waitStart
+          ? `리스차감 대기 ${formatMoney(leaseDailyRent)}/일(시작 ${waitStart})`
+          : `리스차감 대기 ${formatMoney(leaseDailyRent)}/일`
+      );
     }
+    if (ledgerCharge > 0) deductParts.push(`대여·차감관리 ${formatMoney(ledgerCharge)}`);
     const leaseText = deductParts.length
       ? ` · ${deductParts.join(' · ')}(실지급 큰 쪽부터 홀드 · 마이너스 가능)`
       : (leaseDeduction > 0

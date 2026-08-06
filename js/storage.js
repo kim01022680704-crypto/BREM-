@@ -4136,6 +4136,32 @@ const BremStorage = (function () {
     return drivers.getAll();
   }
 
+  /** 기사 검색 결과를 로컬 캐시에 병합 (전체 동기화 promise와 독립) */
+  async function searchDriversAndMerge(keyword, options = {}) {
+    const q = String(keyword || '').trim();
+    if (!q) return { ok: true, count: 0 };
+    if (isProductionMode()) {
+      return syncDriversFromServer({
+        limit: options.limit || 200,
+        offset: options.offset || 0,
+        search: q,
+        status: options.status || '',
+        append: true
+      });
+    }
+    if (activeStorageAdapter.type === 'supabase' && activeStorageAdapter.reloadRiders) {
+      return activeStorageAdapter.reloadRiders({
+        limit: options.limit || 200,
+        offset: options.offset || 0,
+        search: q,
+        status: options.status || '',
+        append: true,
+        force: false
+      });
+    }
+    return { ok: true, count: 0 };
+  }
+
   async function reloadDrivers(force = false, options = {}) {
     const hasSearch = Boolean(String(options.search || '').trim());
     const hasStatusFilter = options.status && options.status !== '전체';
@@ -4156,6 +4182,17 @@ const BremStorage = (function () {
         };
       }
       return fetchAllDriversFromServer({ force: false });
+    }
+
+    // 검색은 전체 동기화와 겹쳐도 막히지 않게 별도 경로
+    if (hasSearch && append) {
+      const result = await searchDriversAndMerge(options.search, {
+        limit: options.limit || 100,
+        offset: options.offset || 0,
+        status: options.status || ''
+      });
+      document.dispatchEvent(new CustomEvent('brem-drivers-sync-ready'));
+      return result;
     }
 
     if (driversSyncPromise) return driversSyncPromise;
@@ -10003,12 +10040,31 @@ const BremStorage = (function () {
       .map(r => String(r.matchedRiderId));
     summary.callCountMismatches = riders.filter(r => r.callCountMatched === false && r.callCountIgnored !== true).length;
 
+    const fileNames = Array.isArray(record.fileNames)
+      ? record.fileNames.map(item => String(item || '').trim()).filter(Boolean)
+      : [];
+    const sourceParts = Array.isArray(record.sourceParts)
+      ? record.sourceParts.map(part => ({
+        fileName: String(part?.fileName || '').trim(),
+        startDate: String(part?.startDate || '').slice(0, 10),
+        endDate: String(part?.endDate || '').slice(0, 10),
+        riders: Array.isArray(part?.riders) ? part.riders : []
+      })).filter(part => part.fileName)
+      : undefined;
+
     return {
       id: record.id || createId(),
       platform,
       channel,
       region: String(record.region || '').trim(),
-      fileName: String(record.fileName || '').trim(),
+      fileName: String(record.fileName || '').trim()
+        || (fileNames.length ? fileNames.join(' + ') : ''),
+      fileNames: fileNames.length
+        ? fileNames
+        : (String(record.fileName || '').includes(' + ')
+          ? String(record.fileName).split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean)
+          : (record.fileName ? [String(record.fileName).trim()] : [])),
+      sourceParts,
       baseSettlementDate: String(record.baseSettlementDate || '').slice(0, 10),
       startDate: String(record.startDate || '').slice(0, 10),
       endDate: String(record.endDate || '').slice(0, 10),
@@ -11089,7 +11145,10 @@ const BremStorage = (function () {
       });
       if (contract) {
         const raw = contract.rawData || {};
-        const dailyRent = Math.max(0, Math.round(Number(contract.dailyRent || raw.dailyRent || contract.daily_charge || 0)));
+        // 계약/렌탈 일렌탈료 (차량 리스비 원가 사용 금지)
+        const dailyRent = Math.max(0, Math.round(Number(
+          contract.dailyCharge || contract.daily_charge || contract.dailyRent || raw.dailyRent || 0
+        )));
         const cStart = String(contract.startDate || raw.startDate || '').slice(0, 10);
         const deductStart = String(raw.deductStartDate || '').slice(0, 10);
         const effectiveStart = [cStart, deductStart].filter(Boolean).sort().pop() || '';
@@ -13681,6 +13740,7 @@ const BremStorage = (function () {
     flushStorage: flushActiveStorage,
     awaitPersist,
     reloadDrivers,
+    searchDriversAndMerge,
     fetchAllDriversFromServer,
     awaitDriversFullyLoaded,
     waitForDriversFetch,

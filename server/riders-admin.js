@@ -444,7 +444,21 @@ async function listRiders(accessToken, options = {}) {
       query = query.eq('status', status);
     }
     if (search) {
-      query = query.ilike('name', `%${search}%`);
+      // ERP 등록 기사: 이름·연락처·배민ID로 검색 (특수문자로 or 필터가 깨지지 않게 정리)
+      const safe = search.replace(/[%_,.()]/g, ' ').replace(/\s+/g, ' ').trim();
+      const digits = search.replace(/[^0-9]/g, '');
+      if (safe || digits) {
+        const parts = [];
+        if (safe) {
+          parts.push(`name.ilike.%${safe}%`);
+          parts.push(`phone.ilike.%${safe}%`);
+          parts.push(`baemin_id.ilike.%${safe}%`);
+        }
+        if (digits && digits !== safe) {
+          parts.push(`phone.ilike.%${digits}%`);
+        }
+        if (parts.length) query = query.or(parts.join(','));
+      }
     }
 
     return query;

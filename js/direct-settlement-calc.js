@@ -347,7 +347,14 @@ const BremDirectSettlementCalc = (function () {
 
   function contractDailyRent(contract) {
     const raw = contract?.rawData || contract?.raw_data || {};
-    const daily = Math.max(0, Math.round(Number(contract?.dailyRent || contract?.daily_charge || raw.dailyRent || 0)));
+    // 계약/렌탈 일렌탈료만 (차량 dailyLeaseCost·daily_cost 사용 금지)
+    const daily = Math.max(0, Math.round(Number(
+      contract?.daily_charge
+      || contract?.dailyCharge
+      || contract?.dailyRent
+      || raw.dailyRent
+      || 0
+    )));
     if (daily > 0) return daily;
     const weekly = Math.max(0, Math.round(Number(contract?.weeklyRent || raw.weeklyRent || 0)));
     return weekly > 0 ? Math.round(weekly / 7) : 0;

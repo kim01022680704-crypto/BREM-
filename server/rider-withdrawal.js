@@ -29,12 +29,7 @@ function withRequestsLock(fn) {
 }
 
 function leaseAddDaysKey(startKey, days) {
-  const raw = String(startKey || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
-  const date = new Date(`${raw}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return '';
-  date.setDate(date.getDate() + Math.max(0, Math.round(Number(days) || 0)));
-  return leaseFormatDateKey(date);
+  return leaseAddDays(startKey, Math.max(0, Math.round(Number(days) || 0))) || '';
 }
 
 /** 대여 스케줄: 나머지 금액을 마지막날에 합산해 원금과 일치 */
@@ -116,19 +111,39 @@ function leaseNormalizePhone(value) {
   return String(value || '').replace(/[^0-9]/g, '');
 }
 
-function leaseFormatDateKey(date) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')
-  ].join('-');
+/** 정산·리스 일자는 항상 KST 기준 (Vercel UTC에서 getDate 쓰면 자정~오전 오차). */
+function leaseFormatDateKey(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+/** YYYY-MM-DD 로 정규화. 2026-8-6 같이 자리수 안 맞으면 비교가 전부 실패해 리스홀드 0이 됨. */
+function leaseNormalizeDateKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const iso = raw.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const loose = raw.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (!loose) return '';
+  const y = Number(loose[1]);
+  const m = Number(loose[2]);
+  const d = Number(loose[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return '';
+  if (m < 1 || m > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
 function leaseAddDays(dateKey, days) {
-  const date = new Date(`${dateKey}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return dateKey;
-  date.setDate(date.getDate() + days);
-  return leaseFormatDateKey(date);
+  const raw = leaseNormalizeDateKey(dateKey);
+  if (!raw) return '';
+  const [y, m, d] = raw.split('-').map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d + Math.round(Number(days) || 0)));
+  return [
+    utc.getUTCFullYear(),
+    String(utc.getUTCMonth() + 1).padStart(2, '0'),
+    String(utc.getUTCDate()).padStart(2, '0')
+  ].join('-');
 }
 
 function normalizeDeductionPlatform(value) {
@@ -183,6 +198,35 @@ function leaseContractMatchesRider(row, rider) {
   const phoneMatch = leaseNormalizePhone(raw.driverPhone)
     && leaseNormalizePhone(raw.driverPhone) === leaseNormalizePhone(rider.phone);
   return Boolean(nameMatch && phoneMatch);
+}
+
+/** 기사앱·출금 리스차감 = 계약/렌탈 일렌탈료 (차량 리스비 원가 사용 금지) */
+function resolveLeaseContractDailyRent(contractRow) {
+  if (!contractRow) return 0;
+  const raw = contractRow.raw_data && typeof contractRow.raw_data === 'object'
+    ? contractRow.raw_data
+    : {};
+  const daily = Math.max(0, Math.round(Number(
+    contractRow.daily_charge
+    || raw.dailyRent
+    || 0
+  )));
+  if (daily > 0) return daily;
+  const weekly = Math.max(0, Math.round(Number(raw.weeklyRent || 0)));
+  return weekly > 0 ? Math.round(weekly / 7) : 0;
+}
+
+function pickBestLeaseContractForRider(rows, rider) {
+  const matched = (Array.isArray(rows) ? rows : []).filter(row => leaseContractMatchesRider(row, rider));
+  if (!matched.length) return null;
+  const scored = matched.map((row, index) => {
+    const daily = resolveLeaseContractDailyRent(row);
+    const status = String(row.status || '').toLowerCase();
+    const activeBoost = status === 'ended' ? 0 : 100;
+    return { row, score: activeBoost + (daily > 0 ? 10 : 0) - index * 0.001 };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].row;
 }
 
 function countActiveLeaseDays(weekStart, weekEnd, todayKey, contractStart, contractEnd) {
@@ -289,7 +333,8 @@ function emptyLeaseInfo() {
     ledgerCharge: 0,
     arrearReason: '',
     contractId: '',
-    finalApplyEnabled: false
+    finalApplyEnabled: false,
+    deductStartDate: ''
   };
 }
 
@@ -351,7 +396,7 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd, periodNets = []
   const contracts = Array.isArray(tables?.contracts) ? tables.contracts : [];
   const arrears = Array.isArray(tables?.arrears) ? tables.arrears : [];
 
-  const contract = contracts.find(row => leaseContractMatchesRider(row, rider)) || null;
+  const contract = pickBestLeaseContractForRider(contracts, rider);
   let dailyRent = 0;
   let deductionPlatform = 'coupang';
   let contractStart = '';
@@ -359,18 +404,20 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd, periodNets = []
   let deductStartDate = '';
   if (contract) {
     const raw = contract.raw_data || {};
-    dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
+    dailyRent = resolveLeaseContractDailyRent(contract);
     deductionPlatform = normalizeDeductionPlatform(raw.deductionPlatform);
-    contractStart = String(contract.start_date || raw.startDate || '').slice(0, 10);
-    deductStartDate = String(raw.deductStartDate || '').slice(0, 10);
-    contractEnd = String(raw.returnDate || contract.end_date || raw.endDate || '').slice(0, 10);
+    contractStart = leaseNormalizeDateKey(contract.start_date || raw.startDate || '');
+    deductStartDate = leaseNormalizeDateKey(raw.deductStartDate || '');
+    contractEnd = leaseNormalizeDateKey(raw.returnDate || contract.end_date || raw.endDate || '');
   }
 
   const todayKey = leaseFormatDateKey(new Date());
-  const effectiveLeaseStart = [contractStart, deductStartDate].filter(Boolean).sort().pop() || '';
+  // ERP 차감시작일이 있으면 그날을 사용. 없으면 계약시작.
+  // (예전 max(계약시작,차감시작)은 계약시작이 더 늦으면 홀드가 0「대기」로 남는 경우가 있었음)
+  const effectiveLeaseStart = deductStartDate || contractStart || '';
   const finalApplyEnabled = Boolean(contract?.raw_data?.finalApplyEnabled);
-  const weekStartKey = String(weekStart || '').slice(0, 10);
-  const weekEndKey = String(weekEnd || '').slice(0, 10);
+  const weekStartKey = leaseNormalizeDateKey(weekStart);
+  const weekEndKey = leaseNormalizeDateKey(weekEnd);
 
   // 주 범위 안의 정산일만 풀로 사용 (수~화 리셋 = 주 단위로 풀을 새로 만듦)
   const pool = (Array.isArray(periodNets) ? periodNets : [])
@@ -388,20 +435,37 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd, periodNets = []
     }))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-  let leaseCharge = 0;
+  const isLeaseActiveOnDate = (date) => {
+    const day = leaseNormalizeDateKey(date);
+    if (!day) return false;
+    const afterStart = !effectiveLeaseStart || day >= effectiveLeaseStart;
+    const beforeEnd = !contractEnd || day <= contractEnd;
+    return afterStart && beforeEnd;
+  };
+
+  // ERP차감: 차감시작~오늘(주 안) 경과일 × 일렌탈료 = 홀드액.
+  // 정산(실지급)이 아직 0이어도 마이너스로 잡혀야 함. (지난주 부족분은 주정산 수기)
   let activeDays = 0;
-  if (finalApplyEnabled && dailyRent > 0 && pool.length) {
-    const leaseApply = consumeDailyChargeFromPool(pool, {
-      dailyCharge: dailyRent,
-      isActiveOnDate: (date) => {
-        const afterStart = !effectiveLeaseStart || date >= effectiveLeaseStart;
-        const beforeEnd = !contractEnd || date <= contractEnd;
-        return afterStart && beforeEnd;
-      }
-    });
-    leaseCharge = leaseApply.totalApplied;
-    activeDays = leaseApply.chargedDays;
+  if (finalApplyEnabled && dailyRent > 0 && weekStartKey) {
+    const upper = [todayKey, weekEndKey].filter(Boolean).sort()[0] || todayKey;
+    let cursor = weekStartKey;
+    let guard = 0;
+    while (cursor && cursor <= upper && guard < 60) {
+      if (isLeaseActiveOnDate(cursor)) activeDays += 1;
+      cursor = leaseAddDays(cursor, 1);
+      guard += 1;
+    }
   }
+  const accruedLease = Math.max(0, Math.round(dailyRent * activeDays));
+
+  // 정산서가 있는 날도 동일 규칙으로 소비(표시/디버그). 홀드는 발생분(accrued) 기준.
+  if (finalApplyEnabled && dailyRent > 0 && pool.length) {
+    consumeDailyChargeFromPool(pool, {
+      dailyCharge: dailyRent,
+      isActiveOnDate: isLeaseActiveOnDate
+    });
+  }
+  const leaseCharge = finalApplyEnabled && dailyRent > 0 ? accruedLease : 0;
 
   const contractId = contract?.id ? String(contract.id) : '';
   let outstandingArrears = 0;
@@ -489,7 +553,8 @@ function computeLeaseForRider(tables, rider, weekStart, weekEnd, periodNets = []
     leaseDeductionTotal,
     arrearReason,
     contractId,
-    finalApplyEnabled
+    finalApplyEnabled,
+    deductStartDate: effectiveLeaseStart || deductStartDate || contractStart || ''
   };
 }
 
@@ -931,7 +996,9 @@ async function buildDriverWeekSummary(supabase, rider, weekStartInput) {
       ledgerCharge: Math.max(0, Math.round(Number(lease?.ledgerCharge || 0))),
       outstandingArrears: Math.max(0, Math.round(Number(lease?.outstandingArrears || 0))),
       leaseDeductionTotal: leaseDeduction,
-      arrearReason: lease?.arrearReason || ''
+      arrearReason: lease?.arrearReason || '',
+      finalApplyEnabled: lease?.finalApplyEnabled === true,
+      deductStartDate: leaseNormalizeDateKey(lease?.deductStartDate || '')
     },
     enrolledPlatforms,
     showCallFee: feesByPlatform.showCallFee !== false,

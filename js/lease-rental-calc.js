@@ -351,20 +351,58 @@ const BremLeaseRentalCalc = (function () {
     const vehicleCost = Math.round(dailyOwnedCost * periodDays);
     const owned = String(vehicle.vehicleCategory || vm.mode || '') === 'company_owned';
     const resolvedVehicleCost = owned ? vehicleCost : leaseCost;
+    const dailyHoldingCost = owned ? dailyOwnedCost : dailyLeaseCost;
 
-    // 해당 기간 렌탈매출 = 일 렌탈료 × 그 주(월) 실제 운행일수만
+    // 배정(운행·계약예정) vs 이번 기간 수금창 — 대수는 배정, 공차손실은 이번 기간 빈 차만
+    const driverName = String(contract?.driverName || vehicle?.renter || '').trim();
+    const contractEnded = String(contract?.status || '') === 'ended';
+    const contractStart = String(contract?.startDate || '').slice(0, 10);
+    const contractEndBound = String(contract?.returnDate || contract?.endDate || '').slice(0, 10);
+    const today = String(new Date().toISOString().slice(0, 10));
+    const isScheduled = Boolean(
+      driverName && !contractEnded && contractStart && contractStart > today
+      && (!contractEndBound || contractEndBound >= contractStart)
+    );
+    const hasAssignedContract = Boolean(activeWindow && driverName) || isScheduled;
+    const hasCollectionThisPeriod = Boolean(activeWindow && driverName);
+
+    // 해당 기간 렌탈매출 = 계약 일렌탈료 × 그 주(월) 계약 일수
     const rentalRevenue = dailyRent * rentalDays;
-    // 공차손실 = 미운행일 기회손실(일 렌탈료) + 추가 공차부담(설정 시)
-    const emptyOpportunity = dailyRent * emptyDays;
-    const extraEmptyCarrying = emptyDailyOverride > dailyLeaseCost && dailyLeaseCost >= 0
-      ? (emptyDailyOverride - (owned ? dailyOwnedCost : dailyLeaseCost)) * emptyDays
-      : 0;
-    const emptyLoss = emptyOpportunity + Math.max(0, extraEmptyCarrying);
-    // 리스/원가·보험·정비·사고만 비용 — 공차손실은 매출 누락으로 이미 반영
-    const totalCost = resolvedVehicleCost + insuranceCost + maintenanceCost + accidentCost;
-    const expectedProfit = rentalRevenue - totalCost;
-    const actualProfit = rentalRevenue + recoveredAmount - totalCost - unpaidAmount;
+
+    let emptyLoss = 0;
+    let totalCost = 0;
+    let expectedProfit = 0;
+    let actualProfit = 0;
+
+    if (hasCollectionThisPeriod) {
+      // 이번 주(월) 계약 창 있음 → 공차손실 아님
+      emptyLoss = 0;
+      totalCost = resolvedVehicleCost + insuranceCost + maintenanceCost + accidentCost;
+      expectedProfit = rentalRevenue - totalCost;
+      actualProfit = rentalRevenue + recoveredAmount - totalCost;
+    } else {
+      // 이번 기간 빈 차 = 회사 리스비(일×기간) 실지출
+      const emptyPeriodDays = periodDays;
+      emptyLoss = Math.round(dailyHoldingCost * emptyPeriodDays);
+      if (emptyDailyOverride > dailyHoldingCost) {
+        emptyLoss = Math.round(emptyDailyOverride * emptyPeriodDays);
+      }
+      totalCost = maintenanceCost + accidentCost;
+      expectedProfit = 0;
+      actualProfit = recoveredAmount - totalCost;
+      emptyDays = emptyPeriodDays;
+    }
+
     const netProfit = actualProfit;
+    const hasUnpaid = unpaidAmount > 0 || unpaidDays > 0;
+    const erpCollecting = hasAssignedContract && (
+      contract?.finalApplyEnabled != null
+        ? Boolean(contract.finalApplyEnabled)
+        : Boolean(contract?.rawData?.finalApplyEnabled)
+    );
+    const unpaidCountsAsDeficit = hasUnpaid && hasAssignedContract && !erpCollecting;
+    // 적자 대수: 미배정 공차 + 수기 미납 (계약예정은 공차 아님)
+    const isDeficit = unpaidCountsAsDeficit || !hasAssignedContract;
 
     return {
       periodDays,
@@ -377,18 +415,20 @@ const BremLeaseRentalCalc = (function () {
       unpaidAmount,
       emptyLoss,
       insuranceCost,
-      leaseCost: resolvedVehicleCost,
-      vehicleCost: resolvedVehicleCost,
+      leaseCost: hasCollectionThisPeriod ? resolvedVehicleCost : emptyLoss,
+      vehicleCost: hasCollectionThisPeriod ? resolvedVehicleCost : emptyLoss,
       maintenanceCost,
       accidentCost,
       totalCost,
       expectedProfit,
       actualProfit,
       netProfit,
-      isDeficit: netProfit < 0,
-      isOperating: rentalDays > 0,
-      isEmpty: rentalDays === 0 && emptyDays > 0,
-      hasUnpaid: unpaidAmount > 0 || unpaidDays > 0
+      weekLossExposure: emptyLoss + unpaidAmount,
+      isDeficit,
+      isOperating: rentalDays > 0 || isScheduled,
+      isEmpty: !hasAssignedContract,
+      hasUnpaid,
+      hasPlannedCollection: hasAssignedContract
     };
   }
 
@@ -402,6 +442,9 @@ const BremLeaseRentalCalc = (function () {
       totals.recoveredAmount += money(row.recoveredAmount);
       totals.unpaidAmount += money(row.unpaidAmount);
       totals.emptyLoss += money(row.emptyLoss);
+      totals.weekLossExposure += money(row.weekLossExposure != null
+        ? row.weekLossExposure
+        : (money(row.emptyLoss) + money(row.unpaidAmount)));
       totals.totalCost += money(row.totalCost);
       totals.expectedProfit += money(row.expectedProfit);
       totals.actualProfit += money(row.actualProfit);
@@ -418,6 +461,7 @@ const BremLeaseRentalCalc = (function () {
       recoveredAmount: 0,
       unpaidAmount: 0,
       emptyLoss: 0,
+      weekLossExposure: 0,
       totalCost: 0,
       expectedProfit: 0,
       actualProfit: 0,

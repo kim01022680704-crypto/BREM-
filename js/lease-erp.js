@@ -918,16 +918,57 @@ const BremLeaseErp = (function () {
     return { migrated: 0, skipped: true };
   }
 
+  /** 계약 raw.dailyRent를 계약 일렌탈료로 맞춤. 차량 원가(dailyLeaseCost)는 건드리지 않음. */
+  function repairContractRiderDailyRentFields() {
+    let changed = 0;
+    contracts().getAll().forEach(contract => {
+      const daily = Math.max(0, Math.round(Number(
+        contract.dailyCharge || contract.dailyRent || contract.rawData?.dailyRent || 0
+      )));
+      if (daily <= 0) return;
+      const raw = contract.rawData || {};
+      const same =
+        Math.round(Number(contract.dailyCharge || 0)) === daily
+        && Math.round(Number(contract.dailyRent || 0)) === daily
+        && Math.round(Number(raw.dailyRent || 0)) === daily
+        && String(raw.driverId || '') === String(contract.driverId || raw.driverId || '');
+      if (same) return;
+      contracts().update(contract.id, {
+        dailyCharge: daily,
+        dailyRent: daily,
+        weeklyRent: daily * 7,
+        rawData: {
+          ...raw,
+          dailyRent: daily,
+          weeklyRent: daily * 7,
+          driverId: contract.driverId || raw.driverId || '',
+          driverName: contract.driverName || raw.driverName || '',
+          driverPhone: contract.driverPhone || raw.driverPhone || ''
+        }
+      });
+      changed += 1;
+    });
+    return changed;
+  }
+
   async function ensureLoaded(options = {}) {
     await BremStorage?.ensureSectionLoaded?.('lease-management');
     if (BremStorage?.ensureLeaseErpKeysLoaded) {
       await BremStorage.ensureLeaseErpKeysLoaded(options);
     }
     await migrateLegacySettingsIfNeeded();
+    const repaired = repairContractRiderDailyRentFields();
+    if (repaired > 0 && typeof BremStorage?.persistLeaseErpTableViaServer === 'function') {
+      // 계약만 자동 보정 저장 — 차량 원가 테이블은 저장하지 않음
+      void BremStorage.persistLeaseErpTableViaServer(
+        'lease_contracts',
+        contracts().getAll()
+      ).catch(error => console.warn('[lease-erp] contract dailyRent heal failed', error));
+    }
     if (options.syncStatuses !== false) {
       syncAllVehicleStatusesFromContracts();
     }
-    return { ok: true };
+    return { ok: true, repairedContracts: repaired };
   }
 
   function daysUntilDate(dateValue, fromDate = todayKey()) {
@@ -1054,8 +1095,14 @@ const BremLeaseErp = (function () {
   function resolveContractExpiry(contract, vehicle = null, today = todayKey()) {
     if (!contract || !resolveContractDriverName(contract, vehicle)) return null;
     const prefix = resolveDealTypePrefix(contract, vehicle);
+    const start = normalizeDate(contract.startDate);
     const end = resolveEffectiveContractEnd(contract.endDate, contract.returnDate, today);
     const operating = isContractOperating(contract, vehicle);
+
+    // 시작일 전 = 아직 운행 전(계약예정). 종료/공차로 보지 않는다.
+    if (start && start > today) {
+      return { code: 'scheduled', label: '계약예정', scope: 'driver', startDate: start };
+    }
 
     if (!operating) {
       return { code: 'ended', label: `${prefix}계약종료`, scope: 'driver' };
@@ -1094,6 +1141,17 @@ const BremLeaseErp = (function () {
   function resolveRuntimeStatus(vehicle, contract) {
     if (!vehicle) {
       return { code: 'empty', label: '공차(로스)', operating: false, unpaid: false };
+    }
+    const today = todayKey();
+    const start = normalizeDate(contract?.startDate);
+    if (start && start > today && resolveContractDriverName(contract, vehicle)) {
+      return {
+        code: 'scheduled',
+        label: '계약예정',
+        operating: false,
+        unpaid: false,
+        scheduled: true
+      };
     }
     const operating = isContractOperating(contract, vehicle);
     const expiries = resolveVehicleExpiries(contract, vehicle);
@@ -1169,7 +1227,13 @@ const BremLeaseErp = (function () {
 
   function contractDailyRentAmount(contract) {
     const raw = contract?.rawData || {};
-    const daily = Math.max(0, Math.round(Number(contract?.dailyRent || contract?.dailyCharge || raw.dailyRent || 0)));
+    // 계약/렌탈 일렌탈료만 (차량 dailyLeaseCost 사용 금지)
+    const daily = Math.max(0, Math.round(Number(
+      contract?.dailyCharge
+      || contract?.dailyRent
+      || raw.dailyRent
+      || 0
+    )));
     if (daily > 0) return daily;
     const weekly = Math.max(0, Math.round(Number(contract?.weeklyRent || raw.weeklyRent || 0)));
     return weekly > 0 ? Math.round(weekly / 7) : 0;
@@ -1218,6 +1282,7 @@ const BremLeaseErp = (function () {
     const tags = [];
     const operating = isContractOperating(contract, vehicle);
     const expiries = resolveVehicleExpiries(contract, vehicle);
+    const isScheduled = expiries.some(item => item.code === 'scheduled');
     const openArrears = arrears().getAll().filter(item =>
       item.vehicleId === vehicle.id && String(item.collectionStatus || '') !== ARREAR_STATUS.COMPLETED
     );
@@ -1229,9 +1294,13 @@ const BremLeaseErp = (function () {
 
     if (operating) tags.push({ code: 'operating', label: '운행중' });
     expiries.forEach(exp => {
-      if (exp.code === 'expiring') {
+      if (exp.code === 'scheduled') {
+        pushUniqueExpiryTag(tags, { code: 'scheduled', label: exp.label });
+      } else if (exp.code === 'expiring') {
         pushUniqueExpiryTag(tags, { code: 'expiring', label: exp.label });
       } else if (exp.code === 'ended') {
+        // 계약예정인 기사계약이 있으면 차량회사리스 종료 뱃지만 허용, 기사계약종료로 오인 방지
+        if (isScheduled && exp.scope === 'driver') return;
         pushUniqueExpiryTag(tags, { code: 'ended', label: exp.label });
       }
     });
@@ -1243,7 +1312,7 @@ const BremLeaseErp = (function () {
           label: `급여차감 ${hold.days}일`
         });
       }
-    } else if (hasUnpaid) {
+    } else if (hasUnpaid && !isScheduled) {
       const daily = contractDailyRentAmount(contract);
       const daysFromAmount = daily > 0 && unpaidAmount > 0
         ? Math.max(1, Math.round(unpaidAmount / daily))
@@ -1254,7 +1323,10 @@ const BremLeaseErp = (function () {
         label: showDays > 0 ? `미납 ${showDays}일` : '미납'
       });
     }
-    if (!operating && !hasUnpaid && !salaryApplied) tags.push({ code: 'empty', label: '공차(로스)' });
+    // 시작 전 배정 계약은 공차(로스)가 아님
+    if (!operating && !hasUnpaid && !salaryApplied && !isScheduled) {
+      tags.push({ code: 'empty', label: '공차(로스)' });
+    }
     return tags;
   }
 
@@ -1282,7 +1354,8 @@ const BremLeaseErp = (function () {
     const resolvedContract = contract ?? getLatestContractForVehicle(vehicle.id);
     const runtime = resolveRuntimeStatus(current, resolvedContract);
     const patch = {};
-    if (runtime.operating) {
+    // 운행중 + 계약예정(시작일 전 배정)은 공차로 비우지 않음
+    if (runtime.operating || runtime.scheduled) {
       patch.vehicleStatus = BremLeaseProfit.VEHICLE_STATUSES.OPERATING;
       patch.renter = resolveContractDriverName(resolvedContract, current) || '';
       patch.lesseePhone = resolvedContract?.driverPhone || current.lesseePhone || '';

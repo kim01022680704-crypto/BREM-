@@ -449,6 +449,110 @@ function contractMatchesRider(contractRow, rider) {
   return nameMatch && phoneMatch;
 }
 
+/** 기사앱 리스차감(일) = 계약/렌탈 일렌탈료. 차량 리스비(daily_cost 등)는 절대 쓰지 않음. */
+function resolveContractDailyRent(contractRow) {
+  if (!contractRow) return 0;
+  const raw = contractRow.raw_data && typeof contractRow.raw_data === 'object'
+    ? contractRow.raw_data
+    : {};
+  // daily_charge = 계약 저장 시 일렌탈료 컬럼(원가와 무관). raw 구값보다 우선.
+  const daily = Math.max(0, Math.round(Number(
+    contractRow.daily_charge
+    || raw.dailyRent
+    || 0
+  )));
+  if (daily > 0) return daily;
+  const weekly = Math.max(0, Math.round(Number(raw.weeklyRent || 0)));
+  return weekly > 0 ? Math.round(weekly / 7) : 0;
+}
+
+function pickBestRiderContract(rows) {
+  const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!list.length) return null;
+  const scored = list.map((row, index) => {
+    const daily = resolveContractDailyRent(row);
+    const status = String(row.status || '').toLowerCase();
+    const activeBoost = status === 'ended' ? 0 : 100;
+    return { row, score: activeBoost + (daily > 0 ? 10 : 0) - index * 0.001 };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].row;
+}
+
+/** 해당 기사 계약을 DB에서 직접 찾음 (200건 잘라서 누락되던 문제 수정). 차량 테이블은 조회하지 않음. */
+async function loadContractsForRider(supabase, rider) {
+  const riderId = String(rider?.id || '').trim();
+  const selectCols = 'id,contract_type,status,daily_charge,raw_data,start_date,end_date,updated_at';
+  const matches = [];
+
+  if (riderId) {
+    const byId = await supabase
+      .from('lease_contracts')
+      .select(selectCols)
+      .eq('raw_data->>driverId', riderId)
+      .order('updated_at', { ascending: false })
+      .limit(100);
+    if (!byId.error && byId.data?.length) {
+      matches.push(...byId.data);
+    }
+  }
+
+  if (!matches.length) {
+    // 종료 제외 전체에서 이름·연락처 매칭 (차량 원가 테이블 미사용)
+    const broad = await supabase
+      .from('lease_contracts')
+      .select(selectCols)
+      .neq('status', 'ended')
+      .order('updated_at', { ascending: false })
+      .limit(5000);
+    if (!broad.error) {
+      (broad.data || []).forEach(row => {
+        if (contractMatchesRider(row, rider)) matches.push(row);
+      });
+    }
+  }
+
+  // 활성 상태 우선, 없으면 ended 포함 재조회
+  const active = matches.filter(row => {
+    const status = String(row.status || '').toLowerCase();
+    return status !== 'ended';
+  });
+  if (active.length) return active;
+
+  if (riderId && !matches.length) {
+    const anyStatus = await supabase
+      .from('lease_contracts')
+      .select(selectCols)
+      .eq('raw_data->>driverId', riderId)
+      .order('updated_at', { ascending: false })
+      .limit(100);
+    if (!anyStatus.error && anyStatus.data?.length) return anyStatus.data;
+  }
+  return matches;
+}
+
+async function healContractDailyRentRaw(supabase, contract, dailyRent) {
+  if (!supabase || !contract?.id || dailyRent <= 0) return;
+  const raw = { ...(contract.raw_data && typeof contract.raw_data === 'object' ? contract.raw_data : {}) };
+  const rawDaily = Math.max(0, Math.round(Number(raw.dailyRent || 0)));
+  const colDaily = Math.max(0, Math.round(Number(contract.daily_charge || 0)));
+  if (rawDaily === dailyRent && colDaily === dailyRent) return;
+  raw.dailyRent = dailyRent;
+  raw.weeklyRent = Math.max(0, Math.round(Number(raw.weeklyRent || 0))) || dailyRent * 7;
+  try {
+    await supabase
+      .from('lease_contracts')
+      .update({
+        daily_charge: dailyRent,
+        raw_data: raw,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', contract.id);
+  } catch (_error) {
+    /* 기사앱 노출이 우선 — heal 실패는 무시 */
+  }
+}
+
 function loanItemMatchesRider(item, rider) {
   if (!item || !rider) return false;
   if (item.driverId && String(item.driverId) === String(rider.id)) return true;
@@ -486,13 +590,8 @@ async function findRiderLeaseInfo(supabase, rider) {
     contractId: ''
   };
 
-  const [contractsRes, loansRes] = await Promise.all([
-    supabase
-      .from('lease_contracts')
-      .select('id,contract_type,status,daily_charge,raw_data,start_date,end_date')
-      .in('status', ['active', 'operating', 'rented'])
-      .order('updated_at', { ascending: false })
-      .limit(200),
+  const [riderContracts, loansRes] = await Promise.all([
+    loadContractsForRider(supabase, rider),
     supabase
       .from('settings')
       .select('value')
@@ -500,11 +599,7 @@ async function findRiderLeaseInfo(supabase, rider) {
       .maybeSingle()
   ]);
 
-  if (contractsRes.error) {
-    return { ok: false, error: contractsRes.error.message || '리스 계약을 불러오지 못했습니다.' };
-  }
-
-  const contract = (contractsRes.data || []).find(row => contractMatchesRider(row, rider));
+  const contract = pickBestRiderContract(riderContracts);
   let dailyRent = 0;
   let weeklyRent = 0;
   let finalApplyEnabled = false;
@@ -517,13 +612,17 @@ async function findRiderLeaseInfo(supabase, rider) {
   if (contract) {
     const raw = contract.raw_data || {};
     finalApplyEnabled = Boolean(raw.finalApplyEnabled);
-    dailyRent = Math.max(0, Math.round(Number(raw.dailyRent || contract.daily_charge || 0)));
+    dailyRent = resolveContractDailyRent(contract);
     weeklyRent = Math.max(0, Math.round(Number(raw.weeklyRent || dailyRent * 7 || 0)));
     vehicleNumber = String(raw.vehicleNumber || '').trim();
     contractId = contract.id ? String(contract.id) : '';
     contractType = String(contract.contract_type || raw.contractType || 'lease');
     hasLease = contractType === 'lease';
     isRental = contractType === 'rental';
+    // 기사앱 노출용 raw 보정 (차량 원가는 절대 수정하지 않음)
+    if (dailyRent > 0) {
+      void healContractDailyRentRaw(supabase, contract, dailyRent);
+    }
   }
 
   // 대여(대출) 일차감액 — 활성(미완납) 건의 dailyDeduct 합산 (헤더 안내용)

@@ -1045,18 +1045,23 @@ window.BremSupabaseStorageAdapter = (function () {
     }
 
     function leaseContractToRow(item) {
+      // rawData를 먼저 깔고, 계약/렌탈 일렌탈료·기사정보는 항상 최신 필드로 덮어쓴다.
+      // (예전엔 rawData.dailyRent가 뒤에 덮어써서 차량 요금/구값이 기사앱에 남을 수 있었음)
+      const dailyRent = Number(item.dailyCharge || item.dailyRent || 0);
+      const weeklyRent = Number(item.weeklyRent || 0) || (dailyRent > 0 ? dailyRent * 7 : 0);
       const raw = {
+        ...(item.rawData || {}),
         vehicleNumber: item.vehicleNumber || '',
         vehicleName: item.vehicleName || '',
         modelType: item.modelType || '',
         driverName: item.driverName || '',
         driverPhone: item.driverPhone || '',
-        driverId: item.driverId || '',
+        driverId: item.driverId || item.rawData?.driverId || '',
         deductionPlatform: item.deductionPlatform || item.rawData?.deductionPlatform || 'coupang',
         returnDate: item.returnDate || '',
         depositAmount: Number(item.depositAmount ?? item.penaltyFee ?? 0),
-        weeklyRent: Number(item.weeklyRent || 0),
-        dailyRent: Number(item.dailyRent || 0),
+        weeklyRent,
+        dailyRent,
         rentalDays: Number(item.rentalDays || 0),
         emptyDays: Number(item.emptyDays || 0),
         unpaidDays: Number(item.unpaidDays || 0),
@@ -1078,7 +1083,10 @@ window.BremSupabaseStorageAdapter = (function () {
         emptyLoss: Number(item.emptyLoss || 0),
         totalCost: Number(item.totalCost || 0),
         netProfit: Number(item.netProfit || 0),
-        ...(item.rawData || {})
+        finalApplyEnabled: item.finalApplyEnabled != null
+          ? Boolean(item.finalApplyEnabled)
+          : Boolean(item.rawData?.finalApplyEnabled),
+        deductStartDate: item.rawData?.deductStartDate || item.deductStartDate || item.startDate || ''
       };
       return {
         id: item.id,
@@ -1086,7 +1094,7 @@ window.BremSupabaseStorageAdapter = (function () {
         contract_type: item.contractType || 'lease',
         start_date: item.startDate || null,
         end_date: item.endDate || null,
-        daily_charge: Number(item.dailyCharge || item.dailyRent || 0),
+        daily_charge: dailyRent,
         daily_cost: Number(item.dailyCost || 0),
         status: item.status || 'active',
         memo: item.memo || '',

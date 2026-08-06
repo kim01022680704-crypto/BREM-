@@ -181,30 +181,39 @@ const BremWeeklySettlementAdmin = (function () {
     if (paymentInput) paymentInput.value = dates.paymentDate;
   }
 
-  function applyFilenameHints(channel, platform, fileName) {
-    if (!fileName) return;
+  function applyFilenameHints(channel, platform, fileNameOrList) {
+    const names = Array.isArray(fileNameOrList)
+      ? fileNameOrList.map(String).filter(Boolean)
+      : (fileNameOrList ? [String(fileNameOrList)] : []);
+    if (!names.length) return;
     if (platform === 'coupang') {
-      const parsed = BremWeeklySettlement.parseCoupangFileName(fileName);
+      const parsed = BremWeeklySettlement.parseCoupangFileName(names[0]);
       const regionInput = q(channel, 'Region', 'coupang');
       const weekLabelInput = q(channel, 'WeekLabel', 'coupang');
       if (regionInput && parsed.region) regionInput.value = parsed.region;
       if (weekLabelInput && parsed.settlementWeekLabel) weekLabelInput.value = parsed.settlementWeekLabel;
       return;
     }
-    const parsed = BremWeeklySettlement.parseBaeminFileName(fileName);
+    const parsedList = names.map(name => BremWeeklySettlement.parseBaeminFileName(name));
+    const starts = parsedList.map(p => p.startDate).filter(Boolean).sort();
+    const ends = parsedList.map(p => p.endDate).filter(Boolean).sort();
+    const startDate = starts[0] || '';
+    const endDate = ends[ends.length - 1] || '';
+    const regions = [...new Set(parsedList.map(p => p.teamName).filter(Boolean))];
     const regionInput = q(channel, 'Region', 'baemin');
     const startInput = q(channel, 'StartDate', 'baemin');
     const endInput = q(channel, 'EndDate', 'baemin');
     const paymentInput = q(channel, 'PaymentDate', 'baemin');
     const weekLabelInput = q(channel, 'WeekLabel', 'baemin');
-    if (regionInput && parsed.teamName) regionInput.value = parsed.teamName;
-    if (startInput && parsed.startDate) startInput.value = parsed.startDate;
-    if (endInput && parsed.endDate) endInput.value = parsed.endDate;
-    if (paymentInput && parsed.startDate) {
-      paymentInput.value = BremWeeklySettlement.calculateCoupangSettlementDates(parsed.startDate).paymentDate;
+    // 여러 지역 파일이면 지역칸은 비워 두고 파일명 지역을 각각 씀
+    if (regionInput && regions.length === 1) regionInput.value = regions[0];
+    if (startInput && startDate) startInput.value = startDate;
+    if (endInput && endDate) endInput.value = endDate;
+    if (paymentInput && startDate) {
+      paymentInput.value = BremWeeklySettlement.calculateCoupangSettlementDates(startDate).paymentDate;
     }
-    if (weekLabelInput && parsed.startDate && parsed.endDate) {
-      weekLabelInput.value = `${parsed.startDate} ~ ${parsed.endDate}`;
+    if (weekLabelInput && startDate && endDate) {
+      weekLabelInput.value = `${startDate} ~ ${endDate}`;
     }
   }
 
@@ -292,6 +301,8 @@ const BremWeeklySettlementAdmin = (function () {
     } else if (isDirectCoupang(channel, platform)) {
       columnConfig.amountColumns = readDirectCoupangAmountColumns(channel);
     }
+    const fileList = q(channel, 'File', platform)?.files;
+    const files = fileList?.length ? [...fileList] : [];
     return {
       platform,
       channel: normChannel(channel),
@@ -303,16 +314,49 @@ const BremWeeklySettlementAdmin = (function () {
       paymentDate: q(channel, 'PaymentDate', platform)?.value || '',
       settlementWeekLabel: q(channel, 'WeekLabel', platform)?.value?.trim() || '',
       password: q(channel, 'Password', platform)?.value || '',
-      file: q(channel, 'File', platform)?.files?.[0] || null,
+      file: files[0] || null,
+      files,
       columnConfig
     };
   }
 
   function validateUploadForm(payload) {
-    if (!payload.region) return '지역을 입력하세요.';
+    const multiBaemin = payload.platform === 'baemin' && (payload.files?.length || 0) > 1;
+    // 배민 여러 파일이면 지역은 파일명에서 나눠 쓰므로 폼 지역 생략 가능
+    if (!payload.region && !multiBaemin) return '지역을 입력하세요.';
     if (!payload.startDate || !payload.endDate) return '정산 시작일과 종료일을 입력하세요.';
-    if (!payload.file) return '엑셀 파일을 선택하세요.';
+    if (!payload.file && !(payload.files && payload.files.length)) return '엑셀 파일을 선택하세요.';
     return '';
+  }
+
+  function finalizeWeeklyPreviewRecord(ch, platform, record, sourceFileName) {
+    const uploadLog = BremStorage.settlementUploadLogs.add({
+      kind: 'weekly',
+      channel: ch,
+      platform,
+      fileName: record.fileName || sourceFileName || '',
+      period: record.startDate,
+      weekStart: weekStartKey(record.startDate),
+      region: record.region,
+      startDate: record.startDate,
+      endDate: record.endDate,
+      status: 'uploaded',
+      matchedCount: Number(record.summary?.matchedRiders || record.riders?.length || 0)
+    });
+    record.uploadLogId = uploadLog.id;
+    if (record.previewUnmatched?.length) {
+      BremStorage.settlementUnmatched.saveWeeklyBatch({
+        weekStart: weekStartKey(record.startDate),
+        startDate: record.startDate,
+        endDate: record.endDate,
+        records: record.previewUnmatched,
+        sourceFileName: record.fileName || sourceFileName || '',
+        platform,
+        region: record.region,
+        channel: ch
+      });
+    }
+    return record;
   }
 
   async function uploadAndMatch(channel, platform) {
@@ -325,39 +369,70 @@ const BremWeeklySettlementAdmin = (function () {
     }
     try {
       await BremStorage.refreshDriversForSettlementMatch?.();
-      const record = await BremWeeklySettlement.processWeeklyUpload(payload);
-      const uploadLog = BremStorage.settlementUploadLogs.add({
-        kind: 'weekly',
-        channel: ch,
-        platform,
-        fileName: payload.file.name,
-        period: record.startDate,
-        weekStart: weekStartKey(record.startDate || payload.startDate),
-        region: record.region,
-        startDate: record.startDate,
-        endDate: record.endDate,
-        status: 'uploaded',
-        matchedCount: Number(record.summary?.matchedRiders || record.riders?.length || 0)
-      });
-      record.uploadLogId = uploadLog.id;
-      setPreview(ch, platform, record);
-      if (record.previewUnmatched?.length) {
-        BremStorage.settlementUnmatched.saveWeeklyBatch({
-          weekStart: weekStartKey(record.startDate || payload.startDate),
-          startDate: record.startDate,
-          endDate: record.endDate,
-          records: record.previewUnmatched,
-          sourceFileName: payload.file.name,
-          platform,
-          region: record.region,
-          channel: ch
-        });
+      // 여러 지역 파일이면 폼 지역값을 비워 파일명 지역을 각각 쓴다
+      if (platform === 'baemin' && payload.files?.length > 1) {
+        const regions = new Set(
+          payload.files
+            .map(file => BremWeeklySettlement.parseBaeminFileName(file.name).teamName)
+            .filter(Boolean)
+        );
+        if (regions.size > 1) payload.region = '';
       }
+      const result = await BremWeeklySettlement.processWeeklyUpload(payload);
+
+      // 배민 여러 지역 묶음: 각각 합친 뒤 바로 저장(미리보기 생략)
+      if (result?.multi && Array.isArray(result.records)) {
+        let savedCount = 0;
+        let matchedTotal = 0;
+        for (const record of result.records) {
+          finalizeWeeklyPreviewRecord(ch, platform, record, record.fileName);
+          const { previewUnmatched, ...saveRecord } = record;
+          saveRecord.channel = ch;
+          const refreshed = BremWeeklySettlement.refreshWeeklySettlementRiders(saveRecord);
+          refreshed.channel = ch;
+          refreshed.summary = {
+            ...(refreshed.summary || {}),
+            totalExtracted: refreshed.riders.length,
+            matchedRiders: refreshed.riders.length,
+            unmatchedRiders: 0,
+            callCountMismatches: refreshed.riders.filter(r => isMismatchRider(r)).length,
+            channel: ch
+          };
+          const saved = BremWeeklySettlement.saveWeeklySettlement(refreshed);
+          if (record.uploadLogId) {
+            BremStorage.settlementUploadLogs.update(record.uploadLogId, {
+              status: 'saved',
+              channel: ch,
+              linkedRecordId: saved.id,
+              matchedCount: saveRecord.riders.length,
+              fileName: saveRecord.fileName || ''
+            });
+          }
+          savedCount += 1;
+          matchedTotal += Number(saved.riders?.length || 0);
+        }
+        void BremStorage.flushStorage?.();
+        setPreview(ch, platform, null);
+        const card = q(ch, 'PreviewCard', platform);
+        if (card) card.hidden = true;
+        renderSavedList(ch, platform);
+        renderWeeklyUnmatched(ch, platform);
+        if (typeof BremPromotionApplyAdmin !== 'undefined') BremPromotionApplyAdmin.refresh();
+        showToast(`배민 ${savedCount}개 지역 · 월말 분할 합산 저장 · 매칭 ${matchedTotal}명`);
+        return;
+      }
+
+      const record = result;
+      finalizeWeeklyPreviewRecord(ch, platform, record, payload.file?.name || record.fileName);
+      setPreview(ch, platform, record);
       renderPreview(ch, platform);
       renderSavedList(ch, platform);
       renderWeeklyUnmatched(ch, platform);
-      const mismatchCount = record.summary.callCountMismatches || 0;
-      let toastMessage = `정산 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`;
+      const mismatchCount = record.summary?.callCountMismatches || 0;
+      const parts = Array.isArray(record.fileNames) ? record.fileNames.length : 1;
+      let toastMessage = parts > 1
+        ? `월말 분할 ${parts}파일 합산 · 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`
+        : `정산 인수 ${record.summary.totalExtracted}명 · 매칭 ${record.summary.matchedRiders}명`;
       if (mismatchCount > 0) {
         toastMessage += ` · ⚠ 콜수 불일치 ${mismatchCount}명 (정산표/콜수입력 확인)`;
       }
@@ -1107,7 +1182,10 @@ const BremWeeklySettlementAdmin = (function () {
       renderPreview(ch, platform);
     });
     q(ch, 'File', platform)?.addEventListener('change', event => {
-      applyFilenameHints(ch, platform, event.target.files?.[0]?.name || '');
+      const list = event.target.files?.length
+        ? [...event.target.files].map(file => file.name)
+        : [];
+      applyFilenameHints(ch, platform, list.length ? list : (event.target.files?.[0]?.name || ''));
     });
     if (platform === 'coupang') {
       q(ch, 'BaseDate', 'coupang')?.addEventListener('change', () => fillCoupangDatesFromBase(ch));

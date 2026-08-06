@@ -15,6 +15,7 @@
     "test:data-cache": "node scripts/test-data-cache.js",
     "smoke:frontend": "node scripts/smoke-frontend-modules.js",
     "test:settlement-match": "node scripts/test-settlement-manual-match.js",
+    "test:baemin-weekly-merge": "node scripts/test-baemin-weekly-merge.js",
     "bootstrap:missions": "node scripts/apply-missions-bootstrap.js",
     "test:rejection-storage": "node scripts/test-rejection-supabase-storage.js",
     "test:baemin-playwright": "node scripts/test-baemin-playwright-login.js",

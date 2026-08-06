@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260805i">
+  <link rel="stylesheet" href="css/admin.css?v=20260806k">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -2003,7 +2003,7 @@
                 <div class="card-header lease-dash-card-header">
                   <div>
                     <h2>리스 관리 대시보드</h2>
-                    <p class="form-help">현재 상황 기준 · 차량별 현황</p>
+                    <p class="form-help">주간예상 = (일렌탈료−회사리스비)×7 합 · 실제/순이익 = 오늘까지 경과분(+회수) · 공차·미납은 별도</p>
                   </div>
                 </div>
                 <div class="lease-dash-week-period" hidden>
@@ -2022,26 +2022,53 @@
                   <article class="lease-dash-tile lease-dash-tile--success"><span>계약중</span><strong id="leaseKpiOperating">0</strong><em>대</em></article>
                   <article class="lease-dash-tile lease-dash-tile--warning"><span>공차</span><strong id="leaseStatEmpty">0</strong><em>대</em></article>
                   <article class="lease-dash-tile lease-dash-tile--warning"><span>미납 차량</span><strong id="leaseKpiUnpaidCount">0</strong><em>대</em></article>
-                  <article class="lease-dash-tile lease-dash-tile--profit"><span>주간 예상수익</span><strong id="leaseHeroWeekExpected">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--profit"><span>주간 실제수익</span><strong id="leaseHeroWeekActual">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--profit"><span>주간 순이익</span><strong id="leaseHeroWeekProfit">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--profit"><span>월간 예상수익</span><strong id="leaseKpiMonthExpected">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--cost" title="차량관리에 등록된 리스비(일)×7 · 회사에 납부할 주간 원가">
+                    <span>주간 리스비(회사)</span>
+                    <strong id="leaseDashWeeklyLeaseCost">0원</strong>
+                    <em>차량관리 원가</em>
+                  </article>
+                  <article class="lease-dash-tile lease-dash-tile--profit" title="계약 배정 차량 (일렌탈료 − 회사리스비) × 7 합계">
+                    <span>주간 예상수익</span><strong id="leaseHeroWeekExpected">0원</strong>
+                    <em>(일렌탈−회사리스)×7</em>
+                  </article>
+                  <article class="lease-dash-tile lease-dash-tile--profit" title="수~오늘(또는 주말)까지 계약일수 × 일마진">
+                    <span>주간 실제수익</span><strong id="leaseHeroWeekActual">0원</strong>
+                    <em>오늘까지 경과</em>
+                  </article>
+                  <article class="lease-dash-tile lease-dash-tile--profit" title="주간 실제수익 + 이번 주 회수금액">
+                    <span>주간 순이익</span><strong id="leaseHeroWeekProfit">0원</strong>
+                    <em>실제+회수</em>
+                  </article>
+                  <article class="lease-dash-tile lease-dash-tile--profit" title="계약 배정 차량 (일렌탈료 − 회사리스비) × 월일수">
+                    <span>월간 예상수익</span><strong id="leaseKpiMonthExpected">0원</strong>
+                  </article>
                   <article class="lease-dash-tile lease-dash-tile--profit"><span>월간 실제수익</span><strong id="leaseKpiMonthProfit">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--warning"><span>현재 미납 총액</span><strong id="leaseHeroUnpaid">0원</strong></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning" title="미납/회수에 등록된 잔액 · 갚기 시작하면 감소">
+                    <span>현재 미납 총액</span><strong id="leaseHeroUnpaid">0원</strong>
+                    <em>회수 시 감소</em>
+                  </article>
                   <article class="lease-dash-tile lease-dash-tile--success"><span>처리완료 수납</span><strong id="leaseHeroRecovered">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--warning"><span>공차손실</span><strong id="leaseHeroEmptyLoss">0원</strong></article>
-                  <article class="lease-dash-tile lease-dash-tile--deficit"><span>적자 차량</span><strong id="leaseDashDeficitCount">0</strong><em>대</em></article>
+                  <article class="lease-dash-tile lease-dash-tile--warning" title="공차 차량의 회사 리스비(일×7) · 실제로 나가는 기본 손해">
+                    <span>공차손실(주)</span><strong id="leaseHeroEmptyLoss">0원</strong>
+                    <em>회사 리스비 실지출</em>
+                  </article>
+                  <article class="lease-dash-tile lease-dash-tile--deficit" title="공차손실 + 미납 잔액 · 미납을 회수하면 미납분만 줄어듦">
+                    <span>주간 손실(공차+미납)</span><strong id="leaseDashWeekLossTotal">0원</strong>
+                  </article>
+                  <article class="lease-dash-tile lease-dash-tile--deficit" title="공차(회사 리스비 부담) 또는 수기납부 미납 등록분만 · 수금 예정 계약 제외">
+                    <span>적자 차량</span><strong id="leaseDashDeficitCount">0</strong><em>대</em>
+                  </article>
                 </div>
                 <div class="lease-dash-vehicle-overview">
                   <div class="lease-dash-vehicle-overview__head">
                     <div>
                       <h3>차량별 현황</h3>
-                      <p class="form-help">차량 기준 · 리스/렌탈 태그 · 계약기간 · 운행/미납/공차 복합 표시</p>
+                      <p class="form-help">차량 기준 · 주리스비는 차량관리 원가(일×7, 회사 납부) · 계약기간 · 운행/미납/공차</p>
                     </div>
                     <div class="lease-dash-vehicle-tools">
                       <select id="leaseDashVehicleFilter" class="lease-dash-vehicle-filter" title="현황 필터">
                         <option value="all">전체</option>
-                        <option value="operating">계약중</option>
+                        <option value="operating">계약중(예정포함)</option>
                         <option value="empty">공차</option>
                         <option value="unpaid">미납</option>
                         <option value="lease">리스</option>
@@ -2060,6 +2087,7 @@
                           <th class="lease-sortable" data-dash-sort="source">ERP구분</th>
                           <th>리스/렌탈</th>
                           <th class="lease-sortable" data-dash-sort="driver">계약자</th>
+                          <th class="lease-sortable" data-dash-sort="weeklyLease" title="차량관리 리스비(일)×7 · 회사 납부 원가">주리스비</th>
                           <th>리스기간</th>
                           <th>렌탈기간</th>
                           <th class="lease-dash-vehicle-table__status">현황</th>
@@ -4284,7 +4312,7 @@
             <h2>배민 주정산서 업로드</h2>
             <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
           </div>
-          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다.</p>
+          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다. <strong>월말로 쪼개진 파일</strong>(예: 7/29~31 + 8/1~4)은 여러 개 선택하면 날짜로 수~화 주를 잡고 <strong>같은 지역·기사별 금액·콜수를 합쳐</strong> 한 주정산으로 저장합니다.</p>
           <form class="weekly-settlement-form" id="weeklySettlementUploadForm-baemin">
             <div class="promotion-form-grid">
               <label>
@@ -4293,7 +4321,7 @@
               </label>
               <label>
                 지역 / 팀명
-                <input type="text" id="weeklySettlementRegion-baemin" placeholder="예: 표준울산남A팀브로1" required>
+                <input type="text" id="weeklySettlementRegion-baemin" placeholder="예: 울산울주a (파일명에서 자동)" required>
               </label>
               <label>
                 정산 시작일
@@ -4316,8 +4344,8 @@
                 <input type="text" id="weeklySettlementPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
               </label>
               <label>
-                정산서 파일 (.xlsx)
-                <input type="file" id="weeklySettlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                정산서 파일 (.xlsx) · 여러 개 가능
+                <input type="file" id="weeklySettlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple required>
               </label>
             </div>
             <div class="promotion-form-section">
@@ -4603,7 +4631,7 @@
             <h2>배민 주정산서 업로드 (직계약)</h2>
             <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
           </div>
-          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다.</p>
+          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다. <strong>월말로 쪼개진 파일</strong>은 여러 개 선택하면 수~화 주·지역별로 묶어 <strong>기사 금액·콜수 전부 합산</strong>해 저장합니다.</p>
           <form class="weekly-settlement-form" id="weeklySettlementDirectUploadForm-baemin">
             <div class="promotion-form-grid">
               <label>
@@ -4612,7 +4640,7 @@
               </label>
               <label>
                 지역 / 팀명
-                <input type="text" id="weeklySettlementDirectRegion-baemin" placeholder="예: 표준울산남A직계약1" required>
+                <input type="text" id="weeklySettlementDirectRegion-baemin" placeholder="예: 울산울주a (파일명에서 자동)" required>
               </label>
               <label>
                 정산 시작일
@@ -4635,8 +4663,8 @@
                 <input type="text" id="weeklySettlementDirectPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
               </label>
               <label>
-                정산서 파일 (.xlsx)
-                <input type="file" id="weeklySettlementDirectFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                정산서 파일 (.xlsx) · 여러 개 가능
+                <input type="file" id="weeklySettlementDirectFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple required>
               </label>
             </div>
             <div class="promotion-form-section">
@@ -7717,8 +7745,8 @@
   <script src="js/data-loading-ui.js?v=20260622f"></script>
   <script src="js/storage-supabase-mapper.js?v=20260730ac"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260805n"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260806a"></script>
+  <script src="js/storage.js?v=20260806a"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7730,8 +7758,8 @@
   <script src="js/promotion-conditions.js?v=20260730b"></script>
   <script src="js/promotion-engine.js?v=20260730b"></script>
   <script src="js/promotion-admin.js?v=20260730b"></script>
-  <script src="js/weekly-settlement.js?v=20260731a"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260730ac"></script>
+  <script src="js/weekly-settlement.js?v=20260806n"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260806m"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260805c"></script>
     <script src="js/coupang-status-admin.js?v=20260805n"></script>
@@ -7744,11 +7772,11 @@
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>
-  <script src="js/lease-rental-calc.js?v=20260702a"></script>
-  <script src="js/lease-erp.js?v=20260805o"></script>
+  <script src="js/lease-rental-calc.js?v=20260806f"></script>
+  <script src="js/lease-erp.js?v=20260806b"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260805q"></script>
+  <script src="js/admin-lease-menus.js?v=20260806k"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
@@ -7757,7 +7785,7 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260622k"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
   <script src="js/direct-adjustment-admin.js?v=20260730d"></script>
-  <script src="js/direct-settlement-calc.js?v=20260803h"></script>
+  <script src="js/direct-settlement-calc.js?v=20260806a"></script>
   <script src="js/settlement-result-direct.js?v=20260805b"></script>
   <script src="js/final-deposit.js?v=20260802c"></script>
   <script src="js/driver-management-admin.js?v=20260805g"></script>

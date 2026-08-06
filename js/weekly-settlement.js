@@ -108,14 +108,65 @@ const BremWeeklySettlement = (function () {
     return result;
   }
 
+  function yymmddToIso(yy, mm, dd) {
+    const y = Number(yy);
+    const m = Number(mm);
+    const d = Number(dd);
+    if (![y, m, d].every(Number.isFinite) || m < 1 || m > 12 || d < 1 || d > 31) return '';
+    const year = y < 100 ? 2000 + y : y;
+    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  /** 수~화 주차 시작(수요일). 화요일 시작 off-by-one 은 다음날 수로 보정. */
+  function baeminWeekStartKey(dateValue) {
+    const raw = String(dateValue || '').slice(0, 10);
+    if (!raw) return '';
+    if (typeof window !== 'undefined' && window.BremDatePicker?.applyWeekWednesday) {
+      return window.BremDatePicker.applyWeekWednesday(raw);
+    }
+    if (typeof window !== 'undefined' && window.BremDatePicker?.weekStartKey) {
+      return window.BremDatePicker.weekStartKey(raw);
+    }
+    const date = new Date(`${raw}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+    const day = date.getDay();
+    if (day === 2) {
+      date.setDate(date.getDate() + 1);
+      return dateKey(date);
+    }
+    const diff = (day - 3 + 7) % 7;
+    date.setDate(date.getDate() - diff);
+    return dateKey(date);
+  }
+
   function parseBaeminFileName(fileName) {
-    const baseName = String(fileName || '').replace(/\.(xlsx|xls)$/i, '');
+    const baseName = String(fileName || '').replace(/\.(xlsx|xls)$/i, '').trim();
     const result = { startDate: '', endDate: '', teamName: '' };
     const strict = baseName.match(/^(\d{4})(\d{2})(\d{2})_(\d{4})(\d{2})(\d{2})_(.+?)_정산서$/);
     if (strict) {
       result.startDate = `${strict[1]}-${strict[2]}-${strict[3]}`;
       result.endDate = `${strict[4]}-${strict[5]}-${strict[6]}`;
-      result.teamName = strict[7];
+      result.teamName = String(strict[7] || '').trim();
+      return result;
+    }
+    // 260729-260731 울산울주a  /  260729-260731_울산울주a
+    const compact = baseName.match(
+      /^(\d{2})(\d{2})(\d{2})\s*[-_~]\s*(\d{2})(\d{2})(\d{2})(?:[\s_]+)(.+)$/
+    );
+    if (compact) {
+      result.startDate = yymmddToIso(compact[1], compact[2], compact[3]);
+      result.endDate = yymmddToIso(compact[4], compact[5], compact[6]);
+      result.teamName = String(compact[7] || '').replace(/_?정산서$/i, '').trim();
+      return result;
+    }
+    // 20260729-20260804 울산울주a
+    const fullDash = baseName.match(
+      /^(\d{4})(\d{2})(\d{2})\s*[-_~]\s*(\d{4})(\d{2})(\d{2})(?:[\s_]+)(.+)$/
+    );
+    if (fullDash) {
+      result.startDate = `${fullDash[1]}-${fullDash[2]}-${fullDash[3]}`;
+      result.endDate = `${fullDash[4]}-${fullDash[5]}-${fullDash[6]}`;
+      result.teamName = String(fullDash[7] || '').replace(/_?정산서$/i, '').trim();
       return result;
     }
     const parts = baseName.split('_').filter(Boolean);
@@ -125,6 +176,168 @@ const BremWeeklySettlement = (function () {
       result.teamName = parts.slice(2).join('_').replace(/_?정산서$/i, '');
     }
     return result;
+  }
+
+  function sumAmountMaps(a = {}, b = {}) {
+    const out = { ...(a && typeof a === 'object' ? a : {}) };
+    Object.entries(b && typeof b === 'object' ? b : {}).forEach(([key, value]) => {
+      const left = Number(out[key] || 0);
+      const right = Number(value || 0);
+      out[key] = Math.round((Number.isFinite(left) ? left : 0) + (Number.isFinite(right) ? right : 0));
+    });
+    return out;
+  }
+
+  /** 배민ID 기준 기사 목록 합치기 — 콜수·amounts 전 항목 합산 */
+  function mergeBaeminRiders(riderLists = []) {
+    const byKey = new Map();
+    (Array.isArray(riderLists) ? riderLists : []).forEach(list => {
+      (Array.isArray(list) ? list : []).forEach(rider => {
+        if (!rider) return;
+        const key = baeminIdMatchKey(rider.baeminUserId)
+          || String(rider.baeminUserId || '').trim()
+          || baeminIdMatchKey(rider.matchedRiderId)
+          || '';
+        if (!key) return;
+        if (!byKey.has(key)) {
+          byKey.set(key, {
+            ...rider,
+            weeklyOrderCount: Math.round(Number(rider.weeklyOrderCount || 0)),
+            amounts: rider.amounts && typeof rider.amounts === 'object'
+              ? { ...rider.amounts }
+              : undefined
+          });
+          return;
+        }
+        const existing = byKey.get(key);
+        existing.weeklyOrderCount = Math.round(
+          Number(existing.weeklyOrderCount || 0) + Number(rider.weeklyOrderCount || 0)
+        );
+        if (rider.amounts || existing.amounts) {
+          existing.amounts = sumAmountMaps(existing.amounts, rider.amounts);
+        }
+        if (!existing.riderName && rider.riderName) existing.riderName = rider.riderName;
+        if (!existing.originalName && rider.originalName) existing.originalName = rider.originalName;
+        if (!existing.driverName && rider.driverName) existing.driverName = rider.driverName;
+        if (
+          String(rider.baeminUserId || '').startsWith('0')
+          && !String(existing.baeminUserId || '').startsWith('0')
+        ) {
+          existing.baeminUserId = rider.baeminUserId;
+        } else if (!existing.baeminUserId && rider.baeminUserId) {
+          existing.baeminUserId = rider.baeminUserId;
+        }
+        if (!existing.matchedRiderId && rider.matchedRiderId) {
+          existing.matchedRiderId = rider.matchedRiderId;
+          existing.matched = true;
+          if (rider.driverName) existing.driverName = rider.driverName;
+        }
+      });
+    });
+    return [...byKey.values()];
+  }
+
+  function listBaeminSourceParts(record) {
+    if (Array.isArray(record?.sourceParts) && record.sourceParts.length) {
+      return record.sourceParts.map(part => ({
+        fileName: String(part.fileName || '').trim(),
+        startDate: String(part.startDate || '').slice(0, 10),
+        endDate: String(part.endDate || '').slice(0, 10),
+        riders: Array.isArray(part.riders) ? part.riders : []
+      })).filter(part => part.fileName);
+    }
+    const fileName = String(record?.fileName || '').trim();
+    if (!fileName || fileName.includes(' + ')) {
+      const names = fileName.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+      if (names.length > 1) {
+        // 예전 합쳐진 라벨만 있고 part 없으면 통짜 riders 를 첫 파일에만 귀속
+        return [{
+          fileName: names[0],
+          startDate: String(record?.startDate || '').slice(0, 10),
+          endDate: String(record?.endDate || '').slice(0, 10),
+          riders: Array.isArray(record?.riders) ? record.riders : []
+        }];
+      }
+    }
+    if (!fileName) return [];
+    return [{
+      fileName,
+      startDate: String(record?.startDate || '').slice(0, 10),
+      endDate: String(record?.endDate || '').slice(0, 10),
+      riders: Array.isArray(record?.riders) ? record.riders : []
+    }];
+  }
+
+  /**
+   * 월말 쪼개진 배민 주정산 part 를 같은 지역·수~화 주에 upsert 후 기사별 합산.
+   * 같은 fileName 재업로드면 그 part 만 교체(이중 합산 방지).
+   */
+  function upsertBaeminWeeklyParts(existing, incoming) {
+    const base = existing && typeof existing === 'object' ? existing : null;
+    const parts = listBaeminSourceParts(base);
+    const incomingName = String(incoming?.fileName || '').trim();
+    const incomingPart = {
+      fileName: incomingName,
+      startDate: String(incoming?.startDate || '').slice(0, 10),
+      endDate: String(incoming?.endDate || '').slice(0, 10),
+      riders: Array.isArray(incoming?.riders) ? incoming.riders : []
+    };
+    if (incomingName) {
+      const idx = parts.findIndex(part => part.fileName === incomingName);
+      if (idx >= 0) parts[idx] = incomingPart;
+      else parts.push(incomingPart);
+    }
+    // 한 번에 여러 파일(incoming.sourceParts)도 반영
+    (Array.isArray(incoming?.sourceParts) ? incoming.sourceParts : []).forEach(part => {
+      const name = String(part?.fileName || '').trim();
+      if (!name) return;
+      const next = {
+        fileName: name,
+        startDate: String(part.startDate || '').slice(0, 10),
+        endDate: String(part.endDate || '').slice(0, 10),
+        riders: Array.isArray(part.riders) ? part.riders : []
+      };
+      const idx = parts.findIndex(item => item.fileName === name);
+      if (idx >= 0) parts[idx] = next;
+      else parts.push(next);
+    });
+
+    const startDate = parts.map(p => p.startDate).filter(Boolean).sort()[0]
+      || String(incoming?.startDate || base?.startDate || '').slice(0, 10);
+    const endDate = parts.map(p => p.endDate).filter(Boolean).sort().pop()
+      || String(incoming?.endDate || base?.endDate || '').slice(0, 10);
+    const fileNames = parts.map(p => p.fileName).filter(Boolean);
+    const riders = mergeBaeminRiders(parts.map(p => p.riders));
+    const region = String(incoming?.region || base?.region || '').trim();
+    const channel = (incoming?.channel === 'direct' || base?.channel === 'direct') ? 'direct' : 'bro';
+    const weekStart = baeminWeekStartKey(startDate);
+    const id = incoming?.id || base?.id || buildWeeklySettlementId({
+      platform: 'baemin',
+      region,
+      startDate: weekStart || startDate,
+      channel
+    });
+    return {
+      ...(base || {}),
+      ...(incoming || {}),
+      id,
+      platform: 'baemin',
+      channel,
+      region,
+      startDate,
+      endDate,
+      baseSettlementDate: startDate,
+      settlementWeekLabel: startDate && endDate ? `${startDate} ~ ${endDate}` : (incoming?.settlementWeekLabel || base?.settlementWeekLabel || ''),
+      fileName: fileNames.join(' + '),
+      fileNames,
+      sourceParts: parts,
+      riders,
+      matchedNamesLabel: buildMatchedNamesLabel(riders.filter(r => r.matched || r.matchedRiderId)),
+      summary: buildWeeklySummary(
+        riders.filter(r => r.matched || r.matchedRiderId),
+        riders.filter(r => !r.matched && !r.matchedRiderId)
+      )
+    };
   }
 
   function normalizeCoupangName(rawName) {
@@ -279,6 +492,7 @@ const BremWeeklySettlement = (function () {
       const existing = list.find(item => (
         baeminIdMatchKey(item.baeminUserId) === key
         || baeminIdMatchKey(item.coupangLoginKey || item.originalName) === key
+        || normalizeCoupangLoginKey(item.coupangLoginKey || item.originalName) === key
       ));
       if (
         existing
@@ -291,6 +505,44 @@ const BremWeeklySettlement = (function () {
     }
     seen.add(key);
     list.push(rider);
+  }
+
+  /**
+   * 배민 한 파일 안 중복(같은 User ID / 같은 이름) → 콜수·amounts 합산.
+   * User ID 가 있으면 ID 우선, 없으면 정규화 이름으로 합친다.
+   */
+  function pushOrSumBaeminRider(list, byKey, rider) {
+    const idKey = baeminIdMatchKey(rider.baeminUserId);
+    const nameKey = normalizeBaeminName(rider.riderName || rider.originalName);
+    const key = idKey ? `id:${idKey}` : (nameKey ? `name:${nameKey}` : '');
+    if (!key) return;
+    if (!byKey.has(key)) {
+      const row = {
+        ...rider,
+        weeklyOrderCount: Math.round(Number(rider.weeklyOrderCount || 0)),
+        amounts: rider.amounts && typeof rider.amounts === 'object' ? { ...rider.amounts } : undefined
+      };
+      byKey.set(key, row);
+      list.push(row);
+      return;
+    }
+    const existing = byKey.get(key);
+    existing.weeklyOrderCount = Math.round(
+      Number(existing.weeklyOrderCount || 0) + Number(rider.weeklyOrderCount || 0)
+    );
+    if (rider.amounts || existing.amounts) {
+      existing.amounts = sumAmountMaps(existing.amounts, rider.amounts);
+    }
+    if (!existing.riderName && rider.riderName) existing.riderName = rider.riderName;
+    if (!existing.originalName && rider.originalName) existing.originalName = rider.originalName;
+    if (
+      String(rider.baeminUserId || '').startsWith('0')
+      && !String(existing.baeminUserId || '').startsWith('0')
+    ) {
+      existing.baeminUserId = rider.baeminUserId;
+    } else if (!existing.baeminUserId && rider.baeminUserId) {
+      existing.baeminUserId = rider.baeminUserId;
+    }
   }
 
   function buildDriversInPeriod(startDate, endDate, platform) {
@@ -666,15 +918,13 @@ const BremWeeklySettlement = (function () {
   function parseBaeminRiderRows(rows, options = {}) {
     const { userIdColumn, nameColumn, orderCountColumn, startIndex, amountColumns } = options;
     const riders = [];
-    const seen = new Set();
+    const byKey = new Map();
 
     for (let i = startIndex; i < rows.length; i += 1) {
       const rawName = cellText(readCell(rows[i] || [], nameColumn));
       const baeminUserId = cellText(readCell(rows[i] || [], userIdColumn));
       const normalizedUserId = normalizeBaeminUserId(baeminUserId);
       if (!normalizedUserId) continue;
-      // 앞자리 0 유무만 다른 중복 행을 하나로 합친다.
-      const dedupeKey = baeminIdMatchKey(normalizedUserId) || normalizedUserId;
       const orderRaw = readCell(rows[i] || [], orderCountColumn);
       // 직계약: User ID가 영문+숫자 로그인 ID(BC063824 등)라 숫자 필터를 못 쓴다.
       // 대신 시작행을 여유있게 앞에 둬도 헤더/설명/합계 행이 섞이지 않도록 처리건수(콜수)가 숫자인 실제 데이터 행만 읽는다.
@@ -689,7 +939,7 @@ const BremWeeklySettlement = (function () {
       };
       const amounts = extractBaeminAmounts(rows[i] || [], amountColumns);
       if (amounts) rider.amounts = amounts;
-      pushUniqueRider(riders, seen, dedupeKey, rider);
+      pushOrSumBaeminRider(riders, byKey, rider);
     }
 
     return riders;
@@ -1010,7 +1260,11 @@ const BremWeeklySettlement = (function () {
     const regionSlug = slugify(region);
     const prefix = channel === 'direct' ? 'weekly_direct' : 'weekly';
     if (year && month && week) return `${prefix}_${p}_${regionSlug}_${year}_${month}_${week}`;
-    return `${prefix}_${p}_${regionSlug}_${String(startDate || '').replace(/-/g, '')}`;
+    // 배민: 월말 쪼개진 파일이 같은 수~화 주를 공유하도록 startDate 대신 수요일 weekStart 사용
+    const idDate = p === 'baemin'
+      ? (baeminWeekStartKey(startDate) || startDate)
+      : startDate;
+    return `${prefix}_${p}_${regionSlug}_${String(idDate || '').replace(/-/g, '')}`;
   }
 
   function buildWeeklySettlementRecord(payload) {
@@ -1031,6 +1285,10 @@ const BremWeeklySettlement = (function () {
       };
 
     const region = payload.region || parsedMeta.region || parsedMeta.teamName || '';
+    const fileNames = Array.isArray(payload.fileNames)
+      ? payload.fileNames.map(String).filter(Boolean)
+      : (payload.fileName ? [String(payload.fileName)] : []);
+    const sourceParts = Array.isArray(payload.sourceParts) ? payload.sourceParts : null;
 
     return {
       id: payload.id || buildWeeklySettlementId({
@@ -1045,7 +1303,9 @@ const BremWeeklySettlement = (function () {
       platform,
       channel,
       region,
-      fileName: payload.fileName || '',
+      fileName: fileNames.length ? fileNames.join(' + ') : (payload.fileName || ''),
+      fileNames,
+      sourceParts: sourceParts || undefined,
       baseSettlementDate: dates.baseSettlementDate,
       startDate: dates.startDate,
       endDate: dates.endDate,
@@ -1101,11 +1361,22 @@ const BremWeeklySettlement = (function () {
   }
 
   function saveWeeklySettlement(record) {
-    const refreshed = refreshWeeklySettlementRiders(record);
     // 채널(브로/직계약) 보존: 저장 키 라우팅에 사용되므로 반드시 유지.
     const channel = record.channel === 'direct' || record.summary?.channel === 'direct' ? 'direct' : 'bro';
+    let toSave = record;
+    // 배민: 같은 지역·수~화 주 기존 건이 있으면 part upsert 후 금액·콜수 합산
+    if (normalizePlatform(record.platform) === 'baemin' && record.id) {
+      const existing = BremStorage.weeklySettlements.getById(record.id, channel)
+        || BremStorage.weeklySettlements.getById(record.id);
+      if (existing && normalizePlatform(existing.platform) === 'baemin') {
+        toSave = upsertBaeminWeeklyParts(existing, { ...record, channel });
+      }
+    }
+    const refreshed = refreshWeeklySettlementRiders(toSave);
     refreshed.channel = channel;
     refreshed.summary = { ...(refreshed.summary || {}), channel };
+    if (Array.isArray(toSave.fileNames)) refreshed.fileNames = toSave.fileNames;
+    if (Array.isArray(toSave.sourceParts)) refreshed.sourceParts = toSave.sourceParts;
     return BremStorage.weeklySettlements.save(refreshed);
   }
 
@@ -1159,29 +1430,116 @@ const BremWeeklySettlement = (function () {
 
   async function processWeeklyUpload(options) {
     const platform = normalizePlatform(options.platform);
-    const file = options.file;
-    if (!file) throw new Error('정산서 파일을 선택하세요.');
+    const files = Array.isArray(options.files) && options.files.length
+      ? options.files.filter(Boolean)
+      : (options.file ? [options.file] : []);
+    if (!files.length) throw new Error('정산서 파일을 선택하세요.');
 
     const columnConfig = options.columnConfig || {};
+    const channel = options.channel === 'direct' ? 'direct' : 'bro';
+
+    // 배민 여러 파일: 파일별 추출 후 지역·주차로 묶고 배민ID별 금액 합산
+    if (platform === 'baemin' && files.length > 1) {
+      const parts = [];
+      for (const file of files) {
+        const parsed = parseBaeminFileName(file.name);
+        // 파일별 기간·지역은 파일명을 우선 (폼에 합친 기간이 들어와 반쪽 날짜가 덮이지 않게)
+        const startDate = parsed.startDate || options.startDate || '';
+        const endDate = parsed.endDate || options.endDate || '';
+        const region = parsed.teamName || options.region || '';
+        const riders = await extractBaeminWeeklyRiders(file, options.password, columnConfig);
+        parts.push({
+          fileName: file.name,
+          startDate,
+          endDate,
+          region,
+          weekStart: baeminWeekStartKey(startDate || parsed.startDate),
+          riders
+        });
+      }
+      const groups = new Map();
+      parts.forEach(part => {
+        const region = String(part.region || options.region || '').trim() || 'unknown';
+        const weekStart = part.weekStart || baeminWeekStartKey(part.startDate) || '';
+        const key = `${slugify(region)}|${weekStart}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(part);
+      });
+
+      const records = [];
+      for (const groupParts of groups.values()) {
+        const region = groupParts.map(p => p.region).find(Boolean) || options.region || '';
+        const startDate = groupParts.map(p => p.startDate).filter(Boolean).sort()[0] || options.startDate || '';
+        const endDate = groupParts.map(p => p.endDate).filter(Boolean).sort().pop() || options.endDate || '';
+        const extracted = mergeBaeminRiders(groupParts.map(p => p.riders));
+        const allMatched = matchSettlementRidersWithExistingData(extracted, platform, {
+          startDate,
+          endDate
+        });
+        const matchedRiders = allMatched.filter(item => item.matched);
+        const unmatchedRiders = allMatched.filter(item => !item.matched);
+        const sourceParts = groupParts.map(part => ({
+          fileName: part.fileName,
+          startDate: part.startDate,
+          endDate: part.endDate,
+          riders: matchSettlementRidersWithExistingData(part.riders, platform, { startDate, endDate })
+        }));
+        let record = buildWeeklySettlementRecord({
+          platform,
+          channel,
+          region,
+          fileName: groupParts.map(p => p.fileName).join(' + '),
+          fileNames: groupParts.map(p => p.fileName),
+          sourceParts,
+          baseSettlementDate: startDate,
+          startDate,
+          endDate,
+          paymentDate: options.paymentDate
+            || calculateCoupangSettlementDates(startDate).paymentDate,
+          settlementWeekLabel: options.settlementWeekLabel || (startDate && endDate ? `${startDate} ~ ${endDate}` : ''),
+          matchedRiders,
+          unmatchedRiders
+        });
+        record = {
+          ...record,
+          sourceParts,
+          fileNames: groupParts.map(p => p.fileName),
+          previewUnmatched: unmatchedRiders
+        };
+        records.push(record);
+      }
+      if (records.length === 1) return records[0];
+      return { ok: true, multi: true, records };
+    }
+
+    const file = files[0];
+    const parsedMeta = platform === 'baemin' ? parseBaeminFileName(file.name) : {};
+    const startDate = options.startDate || parsedMeta.startDate || '';
+    const endDate = options.endDate || parsedMeta.endDate || '';
+
     const extracted = platform === 'coupang'
       ? await extractCoupangWeeklyRiders(file, options.password, columnConfig)
       : await extractBaeminWeeklyRiders(file, options.password, columnConfig);
 
     const allMatched = matchSettlementRidersWithExistingData(extracted, platform, {
-      startDate: options.startDate,
-      endDate: options.endDate
+      startDate,
+      endDate
     });
     const matchedRiders = allMatched.filter(item => item.matched);
     const unmatchedRiders = allMatched.filter(item => !item.matched);
 
     const record = buildWeeklySettlementRecord({
       platform,
-      channel: options.channel === 'direct' ? 'direct' : 'bro',
-      region: options.region,
+      channel,
+      region: options.region || parsedMeta.teamName || '',
       fileName: file.name,
-      baseSettlementDate: options.baseSettlementDate,
-      startDate: options.startDate,
-      endDate: options.endDate,
+      fileNames: [file.name],
+      sourceParts: platform === 'baemin'
+        ? [{ fileName: file.name, startDate, endDate, riders: allMatched }]
+        : undefined,
+      baseSettlementDate: options.baseSettlementDate || startDate,
+      startDate,
+      endDate,
       paymentDate: options.paymentDate,
       settlementWeekLabel: options.settlementWeekLabel,
       matchedRiders,
@@ -1286,6 +1644,9 @@ const BremWeeklySettlement = (function () {
     resolveWeeklyComparePeriod,
     parseCoupangFileName,
     parseBaeminFileName,
+    baeminWeekStartKey,
+    mergeBaeminRiders,
+    upsertBaeminWeeklyParts,
     normalizeCoupangName,
     normalizeBaeminName,
     normalizeBaeminUserId,

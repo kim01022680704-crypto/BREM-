@@ -77,7 +77,14 @@ const BremAdminLeaseMenus = (function () {
   const PAYMENT_CONFIRM_MEMO_PREFIX = '납부확인:';
 
   function getContractDrivers() {
-    return BremStorage?.drivers?.getAll?.() || [];
+    const list = BremStorage?.drivers?.getAll?.() || [];
+    // ERP에 등록된 전체 기사 (상태 무관 — 퇴사/휴무 포함)
+    return list.slice().sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'ko'));
+  }
+
+  function isLeaseDriversCacheComplete() {
+    const status = window.BremStorage?.getCacheStatus?.() || {};
+    return Boolean(status.driversComplete && Number(status.driversCount || 0) > 0);
   }
 
   function makeDriverLoginId(driver) {
@@ -88,20 +95,52 @@ const BremAdminLeaseMenus = (function () {
     return `${String(driver?.name || '').replace(/\s/g, '')}${phone.slice(-4)}`;
   }
 
-  function filterContractDrivers(list) {
-    const keyword = String(state.contractDriverSearch || '').trim().toLowerCase();
-    if (!keyword) return list;
-    return list.filter(driver => {
-      const haystack = [
-        driver.name,
-        driver.phone,
-        driver.baeminId,
-        driver.coupangId,
-        driver.coupangLoginKey,
-        makeDriverLoginId(driver)
-      ].join(' ').toLowerCase();
-      return haystack.includes(keyword);
-    });
+  function normalizeDriverSearchText(value) {
+    return String(value || '').replace(/\s+/g, '').toLowerCase();
+  }
+
+  function driverMatchesSearch(driver, keyword) {
+    const q = String(keyword || '').trim();
+    if (!q) return true;
+    const nameKey = normalizeDriverSearchText(q);
+    const phoneKey = q.replace(/[^0-9]/g, '');
+    const lowered = q.toLowerCase();
+    const name = normalizeDriverSearchText(driver?.name);
+    const phone = String(driver?.phone || '').replace(/[^0-9]/g, '');
+    if (nameKey && name.includes(nameKey)) return true;
+    if (phoneKey && phone.includes(phoneKey)) return true;
+    const hay = [
+      driver?.baeminId,
+      driver?.coupangId,
+      driver?.coupangLoginKey,
+      makeDriverLoginId(driver),
+      driver?.id
+    ].join(' ').toLowerCase();
+    return hay.includes(lowered);
+  }
+
+  function filterContractDrivers(list, keyword = state.contractDriverSearch) {
+    const q = String(keyword || '').trim();
+    if (!q) return list;
+    return list.filter(driver => driverMatchesSearch(driver, q));
+  }
+
+  let leaseDriverSearchTimer = null;
+  let leaseDriversLoadPromise = null;
+
+  async function searchLeaseDriversFromServer(keyword) {
+    const q = String(keyword || '').trim();
+    if (!q) return;
+    try {
+      if (typeof window.BremStorage?.searchDriversAndMerge === 'function') {
+        await window.BremStorage.searchDriversAndMerge(q, { limit: 200 });
+      } else if (typeof window.BremStorage?.reloadDrivers === 'function') {
+        // append:true — 검색 결과가 전체 기사 캐시를 덮어쓰지 않도록 병합
+        await window.BremStorage.reloadDrivers(false, { search: q, append: true, limit: 200 });
+      }
+    } catch (error) {
+      console.warn('[lease] driver search failed', error);
+    }
   }
 
   function updateLeaseContractDriverSelectedLabel(driver) {
@@ -132,16 +171,12 @@ const BremAdminLeaseMenus = (function () {
     updateLeaseContractDriverSelectedLabel(null);
   }
 
-  function renderLeaseContractDriverResults() {
-    const box = $('leaseContractDriverResults');
-    if (!box) return;
-    const drivers = filterContractDrivers(getContractDrivers()).slice(0, 100);
-    box.hidden = false;
-    if (!drivers.length) {
-      box.innerHTML = '<p class="lease-driver-picker__empty">검색된 등록 기사가 없습니다.</p>';
+  function paintLeaseContractDriverList(box, list, emptyText) {
+    if (!list.length) {
+      box.innerHTML = `<p class="lease-driver-picker__empty">${escapeHtml(emptyText || '검색된 등록 기사가 없습니다.')}</p>`;
       return;
     }
-    box.innerHTML = drivers.map(driver => `
+    box.innerHTML = list.map(driver => `
       <button type="button" class="lease-driver-picker__item" data-lease-pick-driver="${escapeHtml(driver.id)}">
         <strong>${escapeHtml(driver.name || '-')}</strong>
         <span>${escapeHtml(driver.phone || '-')}</span>
@@ -149,6 +184,48 @@ const BremAdminLeaseMenus = (function () {
         <span>배민 ${escapeHtml(driver.baeminId || '-')}</span>
       </button>
     `).join('');
+  }
+
+  function renderLeaseContractDriverResults() {
+    const box = $('leaseContractDriverResults');
+    if (!box) return;
+    const keyword = String(state.contractDriverSearch || '').trim();
+    box.hidden = false;
+
+    const runSearch = async () => {
+      // ERP 등록 기사 전체를 먼저 확보한 뒤 검색 (부분 캐시로 누락되지 않게)
+      const loadTask = ensureLeaseDriversLoaded();
+      const searchTask = keyword ? searchLeaseDriversFromServer(keyword) : Promise.resolve();
+      if (!isLeaseDriversCacheComplete() || !getContractDrivers().length) {
+        box.innerHTML = '<p class="lease-driver-picker__empty">ERP 등록 기사 불러오는 중…</p>';
+      } else if (keyword) {
+        box.innerHTML = '<p class="lease-driver-picker__empty">기사 검색 중…</p>';
+      }
+      await Promise.all([loadTask, searchTask]);
+      if (String(state.contractDriverSearch || '').trim() !== keyword) return;
+      const matched = filterContractDrivers(getContractDrivers(), keyword).slice(0, 200);
+      paintLeaseContractDriverList(
+        box,
+        matched,
+        keyword ? '검색된 등록 기사가 없습니다.' : '등록된 기사가 없습니다.'
+      );
+    };
+
+    clearTimeout(leaseDriverSearchTimer);
+    const matchedNow = filterContractDrivers(getContractDrivers(), keyword).slice(0, 200);
+    if (matchedNow.length && isLeaseDriversCacheComplete()) {
+      paintLeaseContractDriverList(box, matchedNow);
+      // 키워드가 있으면 서버 결과도 한 번 더 합쳐 누락 방지
+      if (keyword) {
+        leaseDriverSearchTimer = setTimeout(() => { void runSearch(); }, 180);
+      }
+      return;
+    }
+
+    box.innerHTML = `<p class="lease-driver-picker__empty">${
+      keyword ? '기사 검색 중…' : 'ERP 등록 기사 불러오는 중…'
+    }</p>`;
+    leaseDriverSearchTimer = setTimeout(() => { void runSearch(); }, keyword ? 180 : 0);
   }
 
   function escapeHtml(value) {
@@ -766,6 +843,68 @@ const BremAdminLeaseMenus = (function () {
     void renderDashboardVehicleOverview();
   }
 
+  function contractRiderDailyRentAmount(contract, vehicle = null) {
+    const daily = Math.max(0, Math.round(Number(contract?.dailyRent || contract?.dailyCharge || 0)));
+    if (daily > 0) return daily;
+    const weekly = Math.max(0, Math.round(Number(contract?.weeklyRent || 0)));
+    if (weekly > 0) return Math.round(weekly / 7);
+    return Math.max(0, Math.round(Number(vehicle?.dailyChargeAmount || 0)));
+  }
+
+  /** 대시보드 마진: (일렌탈료 − 회사리스비) × 일수. 보험/정비/공차는 넣지 않음. */
+  function computeDashboardMarginTotals(periodStart, periodEnd, { throughToday = false } = {}) {
+    const vehicles = getAllDashboardVehicles();
+    const today = contractTodayKey();
+    const rangeEnd = throughToday && today < periodEnd ? today : periodEnd;
+    const periodDays = Math.max(1, Number(calc()?.daysInclusive?.(periodStart, periodEnd) || 7));
+    let expectedMargin = 0; // 배정 차량 기간 풀 마진
+    let actualMargin = 0; // 기간∩오늘까지 마진
+    let recoveredAmount = 0;
+    let unpaidAmount = 0;
+    const completed = calc()?.ARREAR_STATUS?.COMPLETED || 'completed';
+    const seenUnpaid = new Set();
+
+    vehicles.forEach(vehicle => {
+      const contract = getLatestContractForVehicle(vehicle.id);
+      const dailyLease = Math.max(0, Math.round(Number(vehicle?.dailyLeaseCost || 0)));
+
+      (erp()?.arrears?.().getAll?.() || []).forEach(item => {
+        if (String(item.vehicleId || '') !== String(vehicle.id || '')) return;
+        if (String(item.collectionStatus || '') === completed) {
+          if (calc()?.isDateInRange?.(item.processedDate, periodStart, periodEnd)) {
+            recoveredAmount += Math.max(0, Math.round(Number(item.recoveredAmount || item.paidAmount || 0)));
+          }
+          return;
+        }
+        const key = String(item.id || `${vehicle.id}:${item.unpaidAmount}`);
+        if (seenUnpaid.has(key)) return;
+        seenUnpaid.add(key);
+        unpaidAmount += Math.max(0, Math.round(Number(item.unpaidAmount || 0)));
+      });
+
+      if (!isDashContractAssigned(vehicle, contract)) return;
+
+      const dailyRent = contractRiderDailyRentAmount(contract, vehicle);
+      const dailyMargin = dailyRent - dailyLease;
+      // 예상 = 일마진 × 기간일수 (계약 배정만)
+      expectedMargin += dailyMargin * periodDays;
+
+      const win = calc()?.resolveContractActiveWindow?.(contract, periodStart, rangeEnd, vehicle);
+      const days = win?.rentalDays || 0;
+      if (days > 0) actualMargin += dailyMargin * days;
+      // 계약예정(시작 전): 실제 마진 0 · 예상만 반영
+    });
+
+    return {
+      expectedMargin,
+      actualMargin,
+      // 순이익 = 경과 마진 + 기간 회수 (미납·공차는 별도 타일)
+      netProfit: actualMargin + recoveredAmount,
+      recoveredAmount,
+      unpaidAmount
+    };
+  }
+
   function renderDashboardKpis() {
     if (!erp() || !profit()) return;
     updateLeaseDashWeekUi();
@@ -775,28 +914,54 @@ const BremAdminLeaseMenus = (function () {
     const monthStart = `${monthKey}-01`;
     const monthEnd = `${monthKey}-${String(calc().daysInMonth(monthKey)).padStart(2, '0')}`;
 
-    const weekAgg = computeFleetPeriodAggregate(week.start, week.end);
-    const monthAgg = computeFleetPeriodAggregate(monthStart, monthEnd);
-
     const vehicles = getAllDashboardVehicles();
+    const statusCounts = countDashboardVehicleStatuses(vehicles);
+    const weekMargin = computeDashboardMarginTotals(week.start, week.end, { throughToday: true });
+    const monthMargin = computeDashboardMarginTotals(monthStart, monthEnd, { throughToday: true });
+    const weekFull = computeDashboardMarginTotals(week.start, week.end, { throughToday: false });
+    const monthFull = computeDashboardMarginTotals(monthStart, monthEnd, { throughToday: false });
+
     const setText = (id, value) => {
       const el = $(id);
       if (el) el.textContent = value;
     };
 
-    setText('leaseStatTotal', String(weekAgg.count || vehicles.length));
-    setText('leaseKpiOperating', String(weekAgg.operatingCount));
-    setText('leaseStatEmpty', String(weekAgg.emptyCount));
-    setText('leaseHeroWeekExpected', formatMoney(weekAgg.expectedProfit));
-    setText('leaseHeroWeekActual', formatMoney(weekAgg.actualProfit));
-    setText('leaseKpiMonthExpected', formatMoney(monthAgg.expectedProfit));
-    setText('leaseKpiMonthProfit', formatMoney(monthAgg.actualProfit));
-    setText('leaseHeroUnpaid', formatMoney(weekAgg.unpaidAmount));
-    setText('leaseHeroRecovered', formatMoney(weekAgg.recoveredAmount));
-    setText('leaseHeroEmptyLoss', formatMoney(weekAgg.emptyLoss));
-    setText('leaseHeroWeekProfit', formatMoney(weekAgg.netProfit));
-    setText('leaseDashDeficitCount', String(weekAgg.deficitCount));
-    setText('leaseKpiUnpaidCount', String(weekAgg.unpaidCount));
+    let emptyLoss = 0;
+    let deficitCount = 0;
+    vehicles.forEach(vehicle => {
+      const contract = getLatestContractForVehicle(vehicle.id);
+      if (!isDashEmptyVehicle(vehicle, contract)) return;
+      emptyLoss += vehicleWeeklyLeaseCost(vehicle);
+      deficitCount += 1;
+    });
+    vehicles.forEach(vehicle => {
+      const contract = getLatestContractForVehicle(vehicle.id);
+      if (isDashEmptyVehicle(vehicle, contract)) return;
+      if (isContractFinalApplyEnabled(contract)) return;
+      if (hasOpenArrear(vehicle.id) || resolveVehicleUnpaidAmount(vehicle.id, {}) > 0) {
+        deficitCount += 1;
+      }
+    });
+
+    const weeklyLeaseCostTotal = vehicles.reduce((sum, vehicle) => sum + vehicleWeeklyLeaseCost(vehicle), 0);
+    const weekLossTotal = emptyLoss + Number(weekMargin.unpaidAmount || 0);
+
+    setText('leaseStatTotal', String(vehicles.length));
+    setText('leaseKpiOperating', String(statusCounts.operating));
+    setText('leaseStatEmpty', String(statusCounts.empty));
+    setText('leaseDashWeeklyLeaseCost', formatMoney(weeklyLeaseCostTotal));
+    // 예상 = 배정 차량 (일렌탈료−회사리스비)×7 · 공차/보험 미포함
+    setText('leaseHeroWeekExpected', formatMoney(weekFull.expectedMargin));
+    setText('leaseHeroWeekActual', formatMoney(weekMargin.actualMargin));
+    setText('leaseKpiMonthExpected', formatMoney(monthFull.expectedMargin));
+    setText('leaseKpiMonthProfit', formatMoney(monthMargin.actualMargin));
+    setText('leaseHeroUnpaid', formatMoney(weekMargin.unpaidAmount));
+    setText('leaseHeroRecovered', formatMoney(weekMargin.recoveredAmount));
+    setText('leaseHeroEmptyLoss', formatMoney(emptyLoss));
+    setText('leaseDashWeekLossTotal', formatMoney(weekLossTotal));
+    setText('leaseHeroWeekProfit', formatMoney(weekMargin.netProfit));
+    setText('leaseDashDeficitCount', String(deficitCount));
+    setText('leaseKpiUnpaidCount', String(statusCounts.unpaid));
   }
 
   function resolveVehicleUnpaidAmount(vehicleId, metrics) {
@@ -827,20 +992,6 @@ const BremAdminLeaseMenus = (function () {
     return { code: 'empty', label: '공차' };
   }
 
-  function countDashboardVehicleStatuses(vehicles = []) {
-    return vehicles.reduce((counts, item) => {
-      const contract = erp()?.getLatestContractForVehicle?.(item.id) || null;
-      const runtime = erp()?.resolveRuntimeStatus?.(item, contract)
-        || { code: 'empty', label: '공차' };
-      const code = runtime.code === 'unpaid' ? 'unpaid'
-        : runtime.code === 'operating' ? 'operating' : 'empty';
-      if (code === 'operating') counts.operating += 1;
-      else if (code === 'unpaid') counts.unpaid += 1;
-      else counts.empty += 1;
-      return counts;
-    }, { operating: 0, empty: 0, unpaid: 0 });
-  }
-
   function getAllDashboardVehicles() {
     const list = erp()?.vehicles?.().getAll?.()
       || window.BremStorage?.readTableKey?.('brem_lease_vehicles')
@@ -849,6 +1000,45 @@ const BremAdminLeaseMenus = (function () {
     return (Array.isArray(list) ? list : []).slice().sort((a, b) =>
       String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || ''), 'ko')
     );
+  }
+
+  /** 계약예정(시작일 전·기사 배정) — 공차 아님 */
+  function isDashContractScheduled(vehicle, contract = null) {
+    const c = contract || getLatestContractForVehicle(vehicle?.id);
+    if (!c) return false;
+    if (String(c.status || '') === (erp()?.CONTRACT_STATUS?.ENDED || 'ended')) return false;
+    const driver = String(c.driverName || '').trim();
+    if (!driver) return false;
+    const today = contractTodayKey();
+    const start = String(c.startDate || '').slice(0, 10);
+    if (!start || start <= today) return false;
+    const end = String(c.returnDate || c.endDate || '').slice(0, 10);
+    return !end || end >= start;
+  }
+
+  /** 계약중 = 운행중 또는 계약예정(배정됨) */
+  function isDashContractAssigned(vehicle, contract = null) {
+    const c = contract || getLatestContractForVehicle(vehicle?.id);
+    if (isContractActive(c)) return true;
+    return isDashContractScheduled(vehicle, c);
+  }
+
+  /** 공차 = 기사 계약 배정 없음 (목록 필터와 동일) */
+  function isDashEmptyVehicle(vehicle, contract = null) {
+    return !isDashContractAssigned(vehicle, contract);
+  }
+
+  function countDashboardVehicleStatuses(vehicles = []) {
+    return vehicles.reduce((counts, item) => {
+      const contract = getLatestContractForVehicle(item.id);
+      if (isDashContractAssigned(item, contract)) counts.operating += 1;
+      else counts.empty += 1;
+      const unpaidAmount = resolveVehicleUnpaidAmount(item.id, { unpaidAmount: item.unpaidAmount });
+      if (hasOpenArrear(item.id) || unpaidAmount > 0 || Number(item.unpaidDays || 0) > 0) {
+        counts.unpaid += 1;
+      }
+      return counts;
+    }, { operating: 0, empty: 0, unpaid: 0 });
   }
 
   function formatInsuranceAge(value) {
@@ -865,14 +1055,16 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function dashVehicleMeta(item) {
-    const contract = erp()?.getLatestContractForVehicle?.(item.id) || null;
+    const contract = getLatestContractForVehicle(item.id);
     const driver = String(contract?.driverName || item.renter || '').trim();
     const source = dashVehicleSourceLabel(item);
     const isRental = String(contract?.contractType || '') === 'rental';
     const operating = isContractActive(contract);
+    const scheduled = isDashContractScheduled(item, contract);
+    const assigned = operating || scheduled;
     const unpaidAmount = resolveVehicleUnpaidAmount(item.id, { unpaidAmount: item.unpaidAmount });
     const isUnpaid = hasOpenArrear(item.id) || unpaidAmount > 0 || Number(item.unpaidDays || 0) > 0;
-    return { contract, driver, source, isRental, operating, isUnpaid };
+    return { contract, driver, source, isRental, operating, scheduled, assigned, isUnpaid };
   }
 
   function filterDashVehicles(list) {
@@ -881,8 +1073,8 @@ const BremAdminLeaseMenus = (function () {
     return list.filter(item => {
       const meta = dashVehicleMeta(item);
       switch (filter) {
-        case 'operating': return meta.operating;
-        case 'empty': return !meta.operating;
+        case 'operating': return meta.assigned; // 운행중 + 계약예정
+        case 'empty': return !meta.assigned; // 진짜 공차만
         case 'unpaid': return meta.isUnpaid;
         case 'lease': return Boolean(meta.contract) && !meta.isRental;
         case 'rental': return Boolean(meta.contract) && meta.isRental;
@@ -900,6 +1092,7 @@ const BremAdminLeaseMenus = (function () {
         case 'insuranceAge': return Number(String(item.insuranceAge || '').replace(/[^\d]/g, '')) || 0;
         case 'source': return dashVehicleSourceLabel(item);
         case 'driver': return dashVehicleMeta(item).driver || '';
+        case 'weeklyLease': return vehicleWeeklyLeaseCost(item);
         default: return String(item.vehicleNumber || '');
       }
     };
@@ -926,7 +1119,7 @@ const BremAdminLeaseMenus = (function () {
     try {
       const allVehicles = getAllDashboardVehicles();
       if (!allVehicles.length) {
-        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">등록된 차량이 없습니다.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="11" class="empty">등록된 차량이 없습니다.</td></tr>';
         return;
       }
 
@@ -944,7 +1137,7 @@ const BremAdminLeaseMenus = (function () {
       updateDashVehicleSortIndicators();
 
       if (!vehicles.length) {
-        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">검색/필터 결과가 없습니다.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="11" class="empty">검색/필터 결과가 없습니다.</td></tr>';
         return;
       }
 
@@ -953,6 +1146,7 @@ const BremAdminLeaseMenus = (function () {
         const driver = String(contract?.driverName || item.renter || '').trim() || '-';
         const source = dashVehicleSourceLabel(item);
         const statusHtml = renderStatusTagsHtml(item, contract);
+        const weeklyLease = vehicleWeeklyLeaseCost(item);
         return `
         <tr class="lease-dash-vehicle-row">
           <td><strong>${escapeHtml(item.vehicleNumber || '-')}</strong></td>
@@ -961,6 +1155,7 @@ const BremAdminLeaseMenus = (function () {
           <td>${escapeHtml(source)}</td>
           <td>${contractDealTypeBadge(contract)}</td>
           <td>${escapeHtml(driver)}</td>
+          <td class="lease-dash-weekly-lease" title="차량관리 리스비(일)×7">${weeklyLease > 0 ? formatMoney(weeklyLease) : '-'}</td>
           <td>${escapeHtml(formatLeaseVehiclePeriod(item))}</td>
           <td>${escapeHtml(formatRentalContractPeriod(contract))}</td>
           <td class="lease-dash-vehicle-table__status lease-status-tags">${statusHtml}</td>
@@ -969,7 +1164,7 @@ const BremAdminLeaseMenus = (function () {
       }).join('');
     } catch (error) {
       console.error('[BremAdminLeaseMenus] paintDashboardVehicleOverview failed', error);
-      rowsEl.innerHTML = '<tr><td colspan="10" class="empty">차량 목록을 불러오지 못했습니다.</td></tr>';
+      rowsEl.innerHTML = '<tr><td colspan="11" class="empty">차량 목록을 불러오지 못했습니다.</td></tr>';
     }
   }
 
@@ -1992,10 +2187,23 @@ const BremAdminLeaseMenus = (function () {
         ...statusPatch,
         vehicleId: vehicle.id,
         finalApplyEnabled,
+        dailyCharge: draft.dailyRent,
         rawData: {
           ...(existingContract?.rawData || {}),
           ...(draft.rawData || {}),
-          deductStartDate: draft.deductStartDate || existingContract?.rawData?.deductStartDate || draft.startDate || '',
+          // 기사앱 리스차감(일) = 계약/렌탈 일렌탈료 (차량 리스비 원가와 무관)
+          driverId: draft.driverId || existingContract?.rawData?.driverId || '',
+          driverName: draft.driverName || '',
+          driverPhone: draft.driverPhone || '',
+          dailyRent: draft.dailyRent,
+          weeklyRent: draft.weeklyRent,
+          // 폼 차감시작이 비면 계약시작을 씀. (예전 잘못된 미래 날짜가 raw에 남아 출금 홀드 0이 되던 문제 방지)
+          deductStartDate: String(
+            draft.deductStartDate
+            || draft.startDate
+            || existingContract?.rawData?.deductStartDate
+            || ''
+          ).slice(0, 10),
           finalApplyEnabled
         }
       };
@@ -3118,6 +3326,7 @@ const BremAdminLeaseMenus = (function () {
     }
     const nextEnabled = Boolean(enabled);
     const nowIso = new Date().toISOString();
+    const todayKey = String(todayDateInputValue() || '').slice(0, 10);
     const rawData = {
       ...(contract.rawData || {}),
       finalApplyEnabled: nextEnabled,
@@ -3127,10 +3336,14 @@ const BremAdminLeaseMenus = (function () {
       finalClearedAt: nextEnabled ? '' : nowIso,
       finalClearedDate: nextEnabled
         ? ''
-        : String(options.clearedDate || todayDateInputValue() || '').slice(0, 10)
+        : String(options.clearedDate || todayKey || '').slice(0, 10)
     };
     if (options.deductStartDate != null) {
       rawData.deductStartDate = String(options.deductStartDate || '').slice(0, 10);
+    } else if (nextEnabled && !String(rawData.deductStartDate || '').trim()) {
+      // ERP ON 시 차감시작이 비어 있으면 오늘부터 (출금 홀드 0원「대기」방지)
+      rawData.deductStartDate = todayKey
+        || String(contract.startDate || contract.rawData?.startDate || '').slice(0, 10);
     }
     erp().contracts().update(contractId, {
       finalApplyEnabled: nextEnabled,
@@ -3219,6 +3432,7 @@ const BremAdminLeaseMenus = (function () {
       updateDeductionLeaseBulkUi();
       return;
     }
+    const todayKey = todayDateInputValue();
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = vehicles.get(contract.vehicleId);
       const daily = contractRiderDailyRent(contract);
@@ -3226,8 +3440,12 @@ const BremAdminLeaseMenus = (function () {
       const charge = Math.round(daily * days);
       const applied = isContractFinalApplyEnabled(contract);
       const startDate = contractDeductStartDate(contract);
+      const futureStart = Boolean(startDate && todayKey && startDate > todayKey);
       const checked = state.deductionLeaseSelectedIds.has(String(contract.id)) ? ' checked' : '';
       const rowSelected = checked ? ' class="row-selected"' : '';
+      const startTitle = futureStart
+        ? `차감시작이 미래(${startDate})라 이번주 0원·출금 미차감. 계약시작일로 바꾸세요.`
+        : '일차감 시작일';
       return `<tr${rowSelected}>
         <td class="lease-check-col">
           <input type="checkbox" data-deduction-lease-select="${escapeHtml(contract.id)}"${checked}>
@@ -3237,7 +3455,10 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}</td>
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(daily)}</td>
-        <td><input type="date" class="admin-period-input" data-lease-deduct-start="${escapeHtml(contract.id)}" value="${escapeHtml(startDate)}" title="일차감 시작일"></td>
+        <td>
+          <input type="date" class="admin-period-input${futureStart ? ' lease-deduct-start--future' : ''}" data-lease-deduct-start="${escapeHtml(contract.id)}" value="${escapeHtml(startDate)}" title="${escapeHtml(startTitle)}">
+          ${futureStart ? '<div class="form-help lease-deduct-start-warn">시작일이 미래 → 출금 미차감</div>' : ''}
+        </td>
         <td>${days}일</td>
         <td>${formatMoney(charge)}</td>
         <td><span class="${applied ? 'lease-status--done' : 'lease-status--collecting'}">${applied ? 'ERP차감' : '수기납부'}</span></td>
@@ -3361,18 +3582,34 @@ const BremAdminLeaseMenus = (function () {
   }
 
   async function ensureLeaseDriversLoaded() {
-    try {
-      await window.BremStorage?.ensureSectionLoaded?.('lease-management');
-      await window.BremStorage?.awaitDriversFullyLoaded?.();
-    } catch (_error) {
-      /* ignore */
+    if (isLeaseDriversCacheComplete()) {
+      return { ok: true, count: getContractDrivers().length, complete: true };
     }
+    if (leaseDriversLoadPromise) return leaseDriversLoadPromise;
+    leaseDriversLoadPromise = (async () => {
+      try {
+        await window.BremStorage?.ensureSectionLoaded?.('lease-management');
+        const result = await window.BremStorage?.awaitDriversFullyLoaded?.();
+        return {
+          ok: result?.ok !== false && getContractDrivers().length > 0,
+          count: getContractDrivers().length,
+          complete: isLeaseDriversCacheComplete(),
+          ...(result || {})
+        };
+      } catch (error) {
+        console.warn('[lease] ensureLeaseDriversLoaded failed', error);
+        return { ok: false, count: getContractDrivers().length, complete: false };
+      } finally {
+        leaseDriversLoadPromise = null;
+      }
+    })();
+    return leaseDriversLoadPromise;
   }
 
   function renderLoanDriverResults() {
     const box = $('leaseLoanDriverResults');
     if (!box) return;
-    const keyword = String(state.loanDriverSearch || $('leaseLoanDriverSearch')?.value || '').trim().toLowerCase();
+    const keyword = String(state.loanDriverSearch || $('leaseLoanDriverSearch')?.value || '').trim();
     if (!keyword) {
       box.hidden = true;
       box.innerHTML = '';
@@ -3387,22 +3624,35 @@ const BremAdminLeaseMenus = (function () {
       });
       return;
     }
-    const list = drivers.filter(driver => {
-      const hay = [driver.name, driver.phone, driver.baeminId, driver.coupangId, driver.coupangLoginKey, makeDriverLoginId(driver), driver.id]
-        .join(' ').toLowerCase();
-      return hay.includes(keyword);
-    }).slice(0, 20);
-    if (!list.length) {
+    const paint = (list) => {
+      if (!list.length) {
+        box.hidden = false;
+        box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>검색 결과 없음</button>';
+        return;
+      }
       box.hidden = false;
-      box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>검색 결과 없음</button>';
-      return;
-    }
-    box.hidden = false;
-    box.innerHTML = list.map(driver => `
+      box.innerHTML = list.map(driver => `
       <button type="button" class="lease-driver-picker__item" data-loan-pick-driver="${escapeHtml(driver.id)}">
         <strong>${escapeHtml(driver.name || '-')}</strong>
         <span>${escapeHtml(driver.phone || '-')} · 쿠팡 ${escapeHtml(makeDriverLoginId(driver) || '-')} · 배민 ${escapeHtml(driver.baeminId || '-')}</span>
       </button>`).join('');
+    };
+    const list = drivers.filter(driver => driverMatchesSearch(driver, keyword)).slice(0, 50);
+    box.hidden = false;
+    if (!list.length || !isLeaseDriversCacheComplete()) {
+      box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>ERP 기사 검색 중…</button>';
+    } else {
+      paint(list);
+    }
+    clearTimeout(leaseDriverSearchTimer);
+    leaseDriverSearchTimer = setTimeout(async () => {
+      await Promise.all([
+        ensureLeaseDriversLoaded(),
+        searchLeaseDriversFromServer(keyword)
+      ]);
+      if (String(state.loanDriverSearch || $('leaseLoanDriverSearch')?.value || '').trim() !== keyword) return;
+      paint(getContractDrivers().filter(driver => driverMatchesSearch(driver, keyword)).slice(0, 50));
+    }, 180);
   }
 
   function syncLoanLedgerFromLoan(loan, options = {}) {
@@ -4007,7 +4257,7 @@ const BremAdminLeaseMenus = (function () {
   function renderManualDeductDriverResults() {
     const box = $('leaseManualDeductDriverResults');
     if (!box) return;
-    const keyword = String(state.manualDriverSearch || $('leaseManualDeductDriverSearch')?.value || '').trim().toLowerCase();
+    const keyword = String(state.manualDriverSearch || $('leaseManualDeductDriverSearch')?.value || '').trim();
     if (!keyword) {
       box.hidden = true;
       box.innerHTML = '';
@@ -4022,22 +4272,35 @@ const BremAdminLeaseMenus = (function () {
       });
       return;
     }
-    const list = drivers.filter(driver => {
-      const hay = [driver.name, driver.phone, driver.baeminId, driver.coupangId, makeDriverLoginId(driver), driver.id]
-        .join(' ').toLowerCase();
-      return hay.includes(keyword);
-    }).slice(0, 20);
-    if (!list.length) {
+    const paint = (list) => {
+      if (!list.length) {
+        box.hidden = false;
+        box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>검색 결과 없음</button>';
+        return;
+      }
       box.hidden = false;
-      box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>검색 결과 없음</button>';
-      return;
-    }
-    box.hidden = false;
-    box.innerHTML = list.map(driver => `
+      box.innerHTML = list.map(driver => `
       <button type="button" class="lease-driver-picker__item" data-manual-pick-driver="${escapeHtml(driver.id)}">
         <strong>${escapeHtml(driver.name || '-')}</strong>
         <span>${escapeHtml(driver.phone || '-')} · 쿠팡 ${escapeHtml(makeDriverLoginId(driver) || '-')} · 배민 ${escapeHtml(driver.baeminId || '-')}</span>
       </button>`).join('');
+    };
+    const list = drivers.filter(driver => driverMatchesSearch(driver, keyword)).slice(0, 50);
+    box.hidden = false;
+    if (!list.length || !isLeaseDriversCacheComplete()) {
+      box.innerHTML = '<button type="button" class="lease-driver-picker__item" disabled>ERP 기사 검색 중…</button>';
+    } else {
+      paint(list);
+    }
+    clearTimeout(leaseDriverSearchTimer);
+    leaseDriverSearchTimer = setTimeout(async () => {
+      await Promise.all([
+        ensureLeaseDriversLoaded(),
+        searchLeaseDriversFromServer(keyword)
+      ]);
+      if (String(state.manualDriverSearch || $('leaseManualDeductDriverSearch')?.value || '').trim() !== keyword) return;
+      paint(getContractDrivers().filter(driver => driverMatchesSearch(driver, keyword)).slice(0, 50));
+    }, 180);
   }
 
   async function saveManualDeductForm(event) {
@@ -4104,14 +4367,15 @@ const BremAdminLeaseMenus = (function () {
     const contract = erp().contracts().getById(contractId);
     if (!contract) return;
     const deductStartDate = String(value || '').slice(0, 10);
+    const todayKey = todayDateInputValue();
     erp().contracts().update(contractId, {
       rawData: {
         ...(contract.rawData || {}),
         deductStartDate
       }
-    });
+    }, { immediate: true });
     try {
-      await erp().persistAll({ skipFlushStorage: true });
+      await persistPayModeToSupabase();
     } catch (error) {
       console.error('[saveLeaseDeductStartDate]', error);
       showToast(error?.message || '차감 시작일 저장 실패');
@@ -4119,6 +4383,11 @@ const BremAdminLeaseMenus = (function () {
     }
     updateLeaseErpUnsavedBanner();
     renderDeductionLease();
+    if (deductStartDate && todayKey && deductStartDate > todayKey) {
+      showToast(`차감시작 ${deductStartDate} (미래) · 그날까지 출금 리스차감 0원`);
+    } else if (deductStartDate) {
+      showToast(`차감시작 ${deductStartDate} 저장 · 출금에 바로 반영`);
+    }
   }
 
   function getActivePaymentContracts() {
@@ -5741,6 +6010,14 @@ const BremAdminLeaseMenus = (function () {
       renderLeaseContractDriverResults();
     });
     $('leaseContractDriverSearch')?.addEventListener('focus', () => {
+      void ensureLeaseDriversLoaded();
+      renderLeaseContractDriverResults();
+    });
+    document.addEventListener('brem-drivers-sync-ready', () => {
+      const input = $('leaseContractDriverSearch');
+      const box = $('leaseContractDriverResults');
+      if (!input || !box || box.hidden) return;
+      if (!String(state.contractDriverSearch || input.value || '').trim()) return;
       renderLeaseContractDriverResults();
     });
     $('leaseContractDriverResults')?.addEventListener('click', event => {

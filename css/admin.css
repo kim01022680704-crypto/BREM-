@@ -7684,6 +7684,22 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
 .lease-dash-tile--warning strong { color: #fde047; }
 .lease-dash-tile--deficit strong { color: #f87171; }
 .lease-dash-tile--success strong { color: #93c5fd; }
+.lease-dash-tile--cost strong { color: #fbbf24; }
+.lease-dash-tile--cost em,
+.lease-dash-tile--warning em,
+.lease-dash-tile--profit em {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-style: normal;
+  color: #94a3b8;
+}
+.lease-dash-weekly-lease {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: #fbbf24;
+  font-weight: 700;
+}
 
 .lease-dash-vehicle-overview {
   margin-top: 18px;
@@ -7875,6 +7891,16 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
 .lease-status-badge--expiring {
   background: rgba(251, 146, 60, 0.16);
   color: #fdba74;
+}
+
+.lease-status-badge--scheduled {
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+}
+
+.lease-status-badge--collecting {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
 }
 
 .lease-status-tags--table {
@@ -8092,6 +8118,18 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
 .lease-status--done {
   color: #6ee7b7;
   font-weight: 800;
+}
+
+.lease-deduct-start--future {
+  outline: 2px solid #f87171;
+  border-radius: 6px;
+}
+
+.lease-deduct-start-warn {
+  margin-top: 4px;
+  color: #fca5a5 !important;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .lease-status--collecting {
