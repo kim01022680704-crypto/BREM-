@@ -1511,6 +1511,7 @@ const BremStorage = (function () {
     'baemin-biz-status': [],
     'baemin-status': [],
     'coupang-status': [],
+    'coupang-rider-status': [KEYS.drivers],
     'contribution': [],
     'data-backup': [KEYS.drivers, KEYS.notices, KEYS.missions, KEYS.promotionRules, KEYS.riderInquiries]
   });
@@ -1750,7 +1751,9 @@ const BremStorage = (function () {
         || sectionId === 'drivers'
         || sectionId === 'driver-management'
         || sectionId === 'mission-management'
-        || sectionId === 'lease-management';
+        || sectionId === 'lease-management'
+        || sectionId === 'coupang-rider-status'
+        || sectionId === 'rejections';
       const hasDrivers = drivers.getAll().length > 0 && window.BremDataCache?.isValid?.(KEYS.drivers);
       const fetchInFlight = Boolean(driversFetchAllPromise || driversBackgroundFetchPromise || driversFullFetchInProgress);
       const knownTotal = Number(driversLoadMeta.supabaseTotal || 0);

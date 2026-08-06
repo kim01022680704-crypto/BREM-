@@ -24,15 +24,31 @@
     console.log('[coupang거절율]', msg);
   }
 
-  function buildErpMap() {
-    const map = new Map();
-    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+  function buildErpLookup() {
     const utils = window.BremDriverUtils;
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    if (typeof utils?.buildCoupangErpLookup === 'function') {
+      return utils.buildCoupangErpLookup(drivers);
+    }
+    const map = new Map();
     drivers.forEach(d => {
       const id = utils?.getErpCoupangId ? utils.getErpCoupangId(d) : '';
       if (id && !map.has(id)) map.set(id, d);
     });
-    return map;
+    return { byKey: map, byPhone: new Map(), byTail: new Map(), list: drivers };
+  }
+
+  function resolveErpDriver(rider, lookup) {
+    const utils = window.BremDriverUtils;
+    if (typeof utils?.resolveCoupangErpDriver === 'function') {
+      return utils.resolveCoupangErpDriver({
+        matchKey: rider?.matchKey,
+        name: rider?.name,
+        phone: rider?.phone
+      }, lookup).driver || null;
+    }
+    const key = String(rider?.matchKey || '').trim();
+    return key ? lookup.byKey.get(key) || null : null;
   }
 
   function renderResults(rows, weekStart, rangeLabel) {
@@ -87,13 +103,20 @@
 
     try {
       try { await window.BremStorage?.ensureSectionLoaded?.('rejections'); } catch { /* ignore */ }
-      try { await window.BremStorage?.ensureSectionLoaded?.('drivers'); } catch { /* ignore */ }
+      try {
+        if (typeof window.BremStorage?.refreshDriversForSettlementMatch === 'function') {
+          await window.BremStorage.refreshDriversForSettlementMatch();
+        } else {
+          await window.BremStorage?.ensureSectionLoaded?.('drivers');
+          await window.BremStorage?.awaitDriversFullyLoaded?.();
+        }
+      } catch { /* ignore */ }
       if (host.loadWeek) await host.loadWeek();
 
       const ctx = host.getWeekContext();
       const weekStart = ctx.weekStart;
       const rangeLabel = ctx.range?.label || '수~어제 + 오늘 실시간';
-      const erpMap = buildErpMap();
+      const erpLookup = buildErpLookup();
       const entries = [];
       const results = [];
 
@@ -108,7 +131,7 @@
           results.push({ ...base, status: 'skip', reason: '완료+거절+취소 0' });
           return;
         }
-        const driver = erpMap.get(matchKey);
+        const driver = resolveErpDriver(r, erpLookup);
         if (!driver?.id) {
           results.push({ ...base, status: 'unmatched', reason: '기사 쿠팡ID 미등록' });
           return;

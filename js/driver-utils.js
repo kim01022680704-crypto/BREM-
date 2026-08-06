@@ -258,6 +258,131 @@ window.BremDriverUtils = (function () {
     return null;
   }
 
+  function normalizeCoupangMatchKey(value) {
+    return String(value || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+  }
+
+  function namesEditDistanceAtMostOne(a, b) {
+    const left = normalizeCoupangMatchKey(a);
+    const right = normalizeCoupangMatchKey(b);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const lenDiff = Math.abs(left.length - right.length);
+    if (lenDiff > 1) return false;
+    let i = 0;
+    let j = 0;
+    let diffs = 0;
+    while (i < left.length && j < right.length) {
+      if (left[i] === right[j]) {
+        i += 1;
+        j += 1;
+        continue;
+      }
+      diffs += 1;
+      if (diffs > 1) return false;
+      if (left.length === right.length) {
+        i += 1;
+        j += 1;
+      } else if (left.length > right.length) {
+        i += 1;
+      } else {
+        j += 1;
+      }
+    }
+    diffs += (left.length - i) + (right.length - j);
+    return diffs <= 1;
+  }
+
+  /**
+   * 쿠팡 현황/거절율 ERP 매칭용 인덱스.
+   * - 쿠팡ID(이름+전화뒤4) exact
+   * - 저장 커스텀 coupangLoginKey
+   * - 전화번호 전체 (유일 매칭용)
+   */
+  function buildCoupangErpLookup(drivers) {
+    const list = Array.isArray(drivers)
+      ? drivers
+      : (typeof BremStorage !== 'undefined' ? BremStorage.drivers.getAll() : []);
+    const byKey = new Map();
+    const byPhone = new Map();
+    const byTail = new Map();
+
+    list.forEach(driver => {
+      const loginId = normalizeCoupangMatchKey(makeDriverLoginId(driver));
+      const erpId = normalizeCoupangMatchKey(getErpCoupangId(driver));
+      if (loginId && !byKey.has(loginId)) byKey.set(loginId, driver);
+      if (erpId && !byKey.has(erpId)) byKey.set(erpId, driver);
+
+      const phone = normalizePhone(driver.phone);
+      if (phone) {
+        if (!byPhone.has(phone)) byPhone.set(phone, []);
+        byPhone.get(phone).push(driver);
+        const tail = phone.slice(-4);
+        if (tail.length === 4) {
+          if (!byTail.has(tail)) byTail.set(tail, []);
+          byTail.get(tail).push(driver);
+        }
+      }
+    });
+
+    return { byKey, byPhone, byTail, list };
+  }
+
+  /**
+   * 쿠팡 수집 라이더 → ERP 기사.
+   * 1) 쿠팡ID exact  2) 전화 유일  3) 마스킹이름+뒤4  4) 뒤4+이름 1글자 오타
+   */
+  function resolveCoupangErpDriver(matchKeyOrRider, driversOrLookup) {
+    const input = matchKeyOrRider && typeof matchKeyOrRider === 'object'
+      ? matchKeyOrRider
+      : { matchKey: matchKeyOrRider };
+    const matchKey = normalizeCoupangMatchKey(input.matchKey || input.coupangId || '');
+    const name = normalizeCoupangMatchKey(input.name || input.riderName || '');
+    const phone = normalizePhone(input.phone || input.phoneNumber || '');
+
+    const lookup = driversOrLookup?.byKey
+      ? driversOrLookup
+      : buildCoupangErpLookup(driversOrLookup);
+
+    if (matchKey && lookup.byKey.has(matchKey)) {
+      return { driver: lookup.byKey.get(matchKey), via: 'coupangId' };
+    }
+
+    if (phone && (lookup.byPhone.get(phone) || []).length === 1) {
+      return { driver: lookup.byPhone.get(phone)[0], via: 'phone' };
+    }
+
+    const masked = matchKey.match(/^(.*?)\*+(\d{4})$/) || (name.includes('*')
+      ? [null, name.split('*')[0], phone.slice(-4) || '']
+      : null);
+    if (masked && masked[1] && String(masked[2] || '').length === 4) {
+      const prefix = String(masked[1]);
+      const tail = String(masked[2]);
+      const cands = (lookup.byTail.get(tail) || []).filter(driver =>
+        normalizeCoupangMatchKey(driver.name).startsWith(prefix)
+      );
+      if (cands.length === 1) {
+        return { driver: cands[0], via: 'maskedName' };
+      }
+    }
+
+    const tail = phone.slice(-4) || (matchKey.match(/(\d{4})$/) || [])[1] || '';
+    const compareName = name.includes('*') ? '' : (name || matchKey.replace(/\d{4}$/, ''));
+    if (tail.length === 4 && compareName) {
+      const cands = (lookup.byTail.get(tail) || []).filter(driver =>
+        namesEditDistanceAtMostOne(compareName, driver.name)
+      );
+      if (cands.length === 1) {
+        return { driver: cands[0], via: 'fuzzyName' };
+      }
+    }
+
+    return { driver: null, via: '' };
+  }
+
   /** 배민 2번 시트 AT열 → baemin_id, AU열 → phone 보조 매칭 */
   function baeminIdMatchKey(value) {
     if (window.BremWeeklySettlement?.baeminIdMatchKey) {
@@ -827,6 +952,9 @@ window.BremDriverUtils = (function () {
     getErpCoupangId,
     buildCoupangErpIdFromCell,
     matchDriverByCoupangErpId,
+    buildCoupangErpLookup,
+    resolveCoupangErpDriver,
+    normalizeCoupangMatchKey,
     matchDriverByBaeminErpId,
     baeminIdMatchKey,
     matchDriverByPhone,

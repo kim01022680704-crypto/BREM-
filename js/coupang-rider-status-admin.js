@@ -211,16 +211,45 @@
     void loadWeek();
   }
 
-  // ── ERP 기사 매칭 맵 (쿠팡ID → 기사) ──
-  function buildErpMap() {
-    const map = new Map();
-    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+  // ── ERP 기사 매칭 (쿠팡ID exact + 전화/마스킹/오타 보조) ──
+  function buildErpLookup() {
     const utils = window.BremDriverUtils;
+    const drivers = window.BremStorage?.drivers?.getAll?.() || [];
+    if (typeof utils?.buildCoupangErpLookup === 'function') {
+      return utils.buildCoupangErpLookup(drivers);
+    }
+    const map = new Map();
     drivers.forEach(d => {
       const id = utils?.getErpCoupangId ? utils.getErpCoupangId(d) : '';
       if (id && !map.has(id)) map.set(id, d);
     });
-    return map;
+    return { byKey: map, byPhone: new Map(), byTail: new Map(), list: drivers };
+  }
+
+  function resolveErpDriver(rider, lookup) {
+    const utils = window.BremDriverUtils;
+    if (typeof utils?.resolveCoupangErpDriver === 'function') {
+      return utils.resolveCoupangErpDriver({
+        matchKey: rider?.matchKey,
+        name: rider?.name,
+        phone: rider?.phone
+      }, lookup || buildErpLookup()).driver || null;
+    }
+    const key = String(rider?.matchKey || '').trim();
+    return key ? (lookup || buildErpLookup()).byKey.get(key) || null : null;
+  }
+
+  async function ensureDriversReady() {
+    try {
+      if (typeof window.BremStorage?.refreshDriversForSettlementMatch === 'function') {
+        await window.BremStorage.refreshDriversForSettlementMatch();
+        return;
+      }
+      await window.BremStorage?.ensureSectionLoaded?.('drivers');
+      await window.BremStorage?.awaitDriversFullyLoaded?.();
+    } catch {
+      /* ignore — 부분 목록으로라도 매칭 */
+    }
   }
 
   // ── 라이더별 집계 (과거/실시간/합산) ──
@@ -390,11 +419,11 @@
       if (summary) summary.textContent = `${state.activeVendor === ALL ? '전체' : state.activeVendor} · 0명 · ${range.label}`;
       return;
     }
-    const erpMap = buildErpMap();
+    const erpLookup = buildErpLookup();
     let matched = 0;
     const bodyRows = riders.map(r => {
       const rate = calcRejectionRate(r.complete, r.reject, r.cancel);
-      const driver = erpMap.get(String(r.matchKey || '').trim());
+      const driver = resolveErpDriver(r, erpLookup);
       if (driver) matched += 1;
       const driverLabel = driver ? esc(driver.name || driver.id) : '<span style="color:#c0392b">미매칭</span>';
       const pastRate = calcRejectionRate(r.past.complete, r.past.reject, r.past.cancel);
@@ -661,7 +690,11 @@
     renderWeekPreview();
     if (summary) summary.textContent = '불러오는 중…';
     const we = dp()?.weekEndKey ? dp().weekEndKey(ws) : addDaysKey(ws, 6);
-    const riderRes = await loadRider(ws);
+    // 기사 목록이 일부만 있으면 미매칭이 부풀려지므로 전체 로드를 먼저 끝낸다.
+    const [riderRes] = await Promise.all([
+      loadRider(ws),
+      ensureDriversReady()
+    ]);
     if (state.activeSub === 'quota') await loadQuota(ws, we);
     else if (state.activeSub === 'today') await loadToday();
     renderSubmenu();
@@ -813,7 +846,7 @@
   }
 
   async function refresh() {
-    try { await window.BremStorage?.ensureSectionLoaded?.('drivers'); } catch { /* ignore */ }
+    await ensureDriversReady();
     const dateInput = $('coupangRiderWeekDate');
     if (dateInput && !dateInput.value) {
       dateInput.value = dp() ? dp().weekStartKey() : todayKey();
