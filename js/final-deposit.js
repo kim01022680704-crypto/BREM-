@@ -388,6 +388,123 @@ const BremFinalDeposit = (function () {
     return typeof makeId === 'function' ? String(makeId(driver) || '').trim() : '';
   }
 
+  function bankScore(driver) {
+    if (!driver) return 0;
+    let score = 0;
+    if (String(driver.bankName || '').trim()) score += 2;
+    if (String(driver.accountNumber || '').trim()) score += 4;
+    if (String(driver.accountHolder || '').trim()) score += 1;
+    return score;
+  }
+
+  function idLabelsOf(row) {
+    return String(row?.idLabel || '')
+      .split('/')
+      .map(part => part.trim())
+      .filter(part => part && part !== '-');
+  }
+
+  // 삭제·미매칭·계좌 빈 기사도 ERP ID·이름으로 다시 찾아 구멍을 줄인다.
+  function resolveDriverForExport(row) {
+    const utils = window.BremDriverUtils;
+    const list = window.BremStorage?.drivers?.getAll?.() || [];
+    let best = driverForRow(row);
+    let bestScore = bankScore(best);
+
+    const consider = (candidate) => {
+      if (!candidate) return;
+      const score = bankScore(candidate);
+      if (!best || score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    };
+
+    idLabelsOf(row).forEach(label => {
+      consider(utils?.matchDriverByCoupangErpId?.(label, list));
+      consider(utils?.matchDriverByBaeminErpId?.(label, list));
+      const byLogin = list.find(driver => loginIdForDriver(driver) === label.replace(/\s/g, ''));
+      consider(byLogin || null);
+    });
+
+    const name = String(row?.name || '').replace(/\s+/g, '');
+    if (name) {
+      const sameName = list.filter(driver => String(driver.name || '').replace(/\s+/g, '') === name);
+      if (sameName.length === 1) consider(sameName[0]);
+      else {
+        const withBank = sameName.filter(driver => bankScore(driver) > 0);
+        if (withBank.length === 1) consider(withBank[0]);
+      }
+    }
+
+    return best;
+  }
+
+  function normalizeAccountNumber(value) {
+    return String(value || '').trim().replace(/[^\d]/g, '');
+  }
+
+  function transferInfoForRow(row) {
+    const driver = resolveDriverForExport(row);
+    const bankName = String(driver?.bankName || '').trim();
+    const accountNumber = String(driver?.accountNumber || '').trim();
+    const accountHolder = String(driver?.accountHolder || driver?.name || row?.name || '').trim();
+    const erpId = loginIdForDriver(driver)
+      || idLabelsOf(row).find(label => /\d{3,}$/.test(label.replace(/\s/g, '')))
+      || idLabelsOf(row)[0]
+      || '';
+    const riderName = String(driver?.name || row?.name || '').trim();
+    return {
+      driver,
+      bankName,
+      accountNumber,
+      accountHolder,
+      erpId,
+      riderName,
+      netPay: Math.round(Number(row?.netPay) || 0),
+      complete: Boolean(bankName && accountNumber && accountHolder)
+    };
+  }
+
+  // 입금 시트는 이체 1건=1줄. 쿠팡/배민으로 갈라진 같은 사람은 금액만 합친다.
+  function buildTransferRows(rows) {
+    const byKey = new Map();
+    rows.forEach(row => {
+      const info = transferInfoForRow(row);
+      if (info.netPay === 0) return;
+      const acctKey = normalizeAccountNumber(info.accountNumber);
+      const mergeKey = info.driver?.id
+        ? `d:${info.driver.id}`
+        : (acctKey
+          ? `a:${acctKey}`
+          : (info.erpId ? `e:${info.erpId}` : `r:${row.key}`));
+      const existing = byKey.get(mergeKey);
+      if (!existing) {
+        byKey.set(mergeKey, { ...info });
+        return;
+      }
+      existing.netPay += info.netPay;
+      if (bankScore(info.driver) > bankScore(existing.driver)) {
+        existing.driver = info.driver;
+        existing.bankName = info.bankName;
+        existing.accountNumber = info.accountNumber;
+        existing.accountHolder = info.accountHolder;
+        existing.erpId = info.erpId || existing.erpId;
+        existing.riderName = info.riderName || existing.riderName;
+        existing.complete = info.complete;
+      } else {
+        if (!existing.bankName && info.bankName) existing.bankName = info.bankName;
+        if (!existing.accountNumber && info.accountNumber) existing.accountNumber = info.accountNumber;
+        if (!existing.accountHolder && info.accountHolder) existing.accountHolder = info.accountHolder;
+        if (!existing.erpId && info.erpId) existing.erpId = info.erpId;
+        existing.complete = Boolean(existing.bankName && existing.accountNumber && existing.accountHolder);
+      }
+    });
+    return [...byKey.values()].sort((a, b) => (
+      String(a.riderName || a.erpId).localeCompare(String(b.riderName || b.erpId), 'ko-KR')
+    ));
+  }
+
   function exportExcel() {
     const rows = mergedRows().filter(row => row.checked);
     if (!rows.length) {
@@ -403,19 +520,19 @@ const BremFinalDeposit = (function () {
       cols.map(col => col.label),
       ...rows.map(row => cols.map(col => row[col.key]))
     ];
-    // 2시트: 은행 이체용. 받는사람=예금주, 비고=BREM 로그인ID.
+    const transferRows = buildTransferRows(rows);
+    const ready = transferRows.filter(info => info.netPay > 0 && info.complete);
+    const missing = transferRows.filter(info => info.netPay > 0 && !info.complete);
+    // 2시트: 은행 이체용(계좌 완성분만). 받는사람=예금주, 비고=ERP ID.
     const transfer = [
       ['입금은행', '입금계좌번호', '입금액', '받는사람', '비고'],
-      ...rows.map(row => {
-        const driver = driverForRow(row);
-        return [
-          String(driver?.bankName || '').trim(),
-          String(driver?.accountNumber || '').trim(),
-          Number(row.netPay) || 0,
-          String(driver?.accountHolder || '').trim(),
-          loginIdForDriver(driver)
-        ];
-      })
+      ...ready.map(info => [
+        info.bankName,
+        info.accountNumber,
+        info.netPay,
+        info.accountHolder,
+        info.erpId
+      ])
     ];
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '최종입금');
@@ -430,7 +547,41 @@ const BremFinalDeposit = (function () {
       }
     }
     window.XLSX.utils.book_append_sheet(wb, transferSheet, '입금');
+
+    if (missing.length) {
+      const missingSheet = [
+        ['기사명', 'ERP ID', '입금액', '입금은행', '입금계좌번호', '예금주', '비고'],
+        ...missing.map(info => [
+          info.riderName,
+          info.erpId,
+          info.netPay,
+          info.bankName,
+          info.accountNumber,
+          info.accountHolder,
+          '기사목록에서 은행·계좌·예금주를 등록한 뒤 다시 내보내세요'
+        ])
+      ];
+      const ms = window.XLSX.utils.aoa_to_sheet(missingSheet);
+      for (let r = 1; r < missingSheet.length; r += 1) {
+        const cell = ms[window.XLSX.utils.encode_cell({ r, c: 4 })];
+        if (cell && cell.v !== undefined && cell.v !== '') {
+          cell.t = 's';
+          cell.v = String(cell.v);
+          cell.z = '@';
+        }
+      }
+      window.XLSX.utils.book_append_sheet(wb, ms, '계좌미등록');
+    }
+
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
+
+    if (missing.length) {
+      const names = missing.slice(0, 5).map(info => info.erpId || info.riderName || '?').join(', ');
+      const more = missing.length > 5 ? ` 외 ${missing.length - 5}명` : '';
+      showToast(`엑셀 저장 · 입금 ${ready.length}명 · 계좌미등록 ${missing.length}명 (${names}${more})`);
+    } else {
+      showToast(`엑셀 저장 · 입금 ${ready.length}명 (쿠팡+배민 합산)`);
+    }
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
