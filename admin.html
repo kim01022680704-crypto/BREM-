@@ -4312,7 +4312,7 @@
             <h2>배민 주정산서 업로드</h2>
             <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
           </div>
-          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다. <strong>월말로 쪼개진 파일</strong>(예: 7/29~31 + 8/1~4)은 여러 개 선택하면 날짜로 수~화 주를 잡고 <strong>같은 지역·기사별 금액·콜수를 합쳐</strong> 한 주정산으로 저장합니다.</p>
+          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다. <strong>월말로 쪼개진 파일</strong>은 <strong>파일 1·파일 2</strong>에 각각 넣고 올리면 수~화 주로 묶어 <strong>같은 지역·기사별 금액·콜수를 합쳐</strong> 저장합니다.</p>
           <form class="weekly-settlement-form" id="weeklySettlementUploadForm-baemin">
             <div class="promotion-form-grid">
               <label>
@@ -4344,8 +4344,14 @@
                 <input type="text" id="weeklySettlementPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
               </label>
               <label>
-                정산서 파일 (.xlsx) · 여러 개 가능
-                <input type="file" id="weeklySettlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple required>
+                정산서 파일 1 (.xlsx)
+                <input type="file" id="weeklySettlementFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                <span class="form-help">앞기간 · 예: 7/29~31</span>
+              </label>
+              <label>
+                정산서 파일 2 (.xlsx · 선택)
+                <input type="file" id="weeklySettlementFile2-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <span class="form-help">뒷기간 · 예: 8/1~4 (월말 쪼개짐일 때)</span>
               </label>
             </div>
             <div class="promotion-form-section">
@@ -4631,7 +4637,7 @@
             <h2>배민 주정산서 업로드 (직계약)</h2>
             <span class="settlement-format-badge settlement-format-badge--baemin">배민</span>
           </div>
-          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다. <strong>월말로 쪼개진 파일</strong>은 여러 개 선택하면 수~화 주·지역별로 묶어 <strong>기사 금액·콜수 전부 합산</strong>해 저장합니다.</p>
+          <p class="form-help">시트 「을지_협력사 소속 라이더 정산 확인용」 <strong>B열 User ID</strong>로 기사 관리의 <strong>배민 ID</strong>와 매칭합니다. C열은 참고용 라이더명입니다. <strong>월말로 쪼개진 파일</strong>은 <strong>파일 1·파일 2</strong>에 각각 넣고 올리면 수~화 주·지역별로 묶어 <strong>기사 금액·콜수 전부 합산</strong>해 저장합니다.</p>
           <form class="weekly-settlement-form" id="weeklySettlementDirectUploadForm-baemin">
             <div class="promotion-form-grid">
               <label>
@@ -4663,8 +4669,14 @@
                 <input type="text" id="weeklySettlementDirectPassword-baemin" placeholder="없으면 비워두세요" autocomplete="off" spellcheck="false">
               </label>
               <label>
-                정산서 파일 (.xlsx) · 여러 개 가능
-                <input type="file" id="weeklySettlementDirectFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple required>
+                정산서 파일 1 (.xlsx)
+                <input type="file" id="weeklySettlementDirectFile-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                <span class="form-help">앞기간 · 예: 7/29~31</span>
+              </label>
+              <label>
+                정산서 파일 2 (.xlsx · 선택)
+                <input type="file" id="weeklySettlementDirectFile2-baemin" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <span class="form-help">뒷기간 · 예: 8/1~4 (월말 쪼개짐일 때)</span>
               </label>
             </div>
             <div class="promotion-form-section">
@@ -7758,8 +7770,8 @@
   <script src="js/promotion-conditions.js?v=20260730b"></script>
   <script src="js/promotion-engine.js?v=20260730b"></script>
   <script src="js/promotion-admin.js?v=20260730b"></script>
-  <script src="js/weekly-settlement.js?v=20260806n"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260806m"></script>
+  <script src="js/weekly-settlement.js?v=20260806o"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260806o"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260805c"></script>
     <script src="js/coupang-status-admin.js?v=20260805n"></script>

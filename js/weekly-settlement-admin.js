@@ -301,8 +301,14 @@ const BremWeeklySettlementAdmin = (function () {
     } else if (isDirectCoupang(channel, platform)) {
       columnConfig.amountColumns = readDirectCoupangAmountColumns(channel);
     }
-    const fileList = q(channel, 'File', platform)?.files;
-    const files = fileList?.length ? [...fileList] : [];
+    const files = [];
+    const file1 = q(channel, 'File', platform)?.files?.[0];
+    if (file1) files.push(file1);
+    // 배민: 월말 쪼개짐용 두 번째 칸
+    if (platform === 'baemin') {
+      const file2 = q(channel, 'File2', platform)?.files?.[0];
+      if (file2) files.push(file2);
+    }
     return {
       platform,
       channel: normChannel(channel),
@@ -318,6 +324,15 @@ const BremWeeklySettlementAdmin = (function () {
       files,
       columnConfig
     };
+  }
+
+  function collectBaeminFileNames(channel) {
+    const names = [];
+    const f1 = q(channel, 'File', 'baemin')?.files?.[0]?.name;
+    const f2 = q(channel, 'File2', 'baemin')?.files?.[0]?.name;
+    if (f1) names.push(f1);
+    if (f2) names.push(f2);
+    return names;
   }
 
   function validateUploadForm(payload) {
@@ -1181,12 +1196,18 @@ const BremWeeklySettlementAdmin = (function () {
       setPreview(ch, platform, null);
       renderPreview(ch, platform);
     });
-    q(ch, 'File', platform)?.addEventListener('change', event => {
-      const list = event.target.files?.length
-        ? [...event.target.files].map(file => file.name)
-        : [];
-      applyFilenameHints(ch, platform, list.length ? list : (event.target.files?.[0]?.name || ''));
+    q(ch, 'File', platform)?.addEventListener('change', () => {
+      if (platform === 'baemin') {
+        applyFilenameHints(ch, platform, collectBaeminFileNames(ch));
+        return;
+      }
+      applyFilenameHints(ch, platform, q(ch, 'File', platform)?.files?.[0]?.name || '');
     });
+    if (platform === 'baemin') {
+      q(ch, 'File2', platform)?.addEventListener('change', () => {
+        applyFilenameHints(ch, platform, collectBaeminFileNames(ch));
+      });
+    }
     if (platform === 'coupang') {
       q(ch, 'BaseDate', 'coupang')?.addEventListener('change', () => fillCoupangDatesFromBase(ch));
     }
