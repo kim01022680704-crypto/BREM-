@@ -4,7 +4,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const { parseSettlementFile } = require('./settlement-parser');
+const { parseSettlementFile, openSheetRows } = require('./settlement-parser');
 const riderInquiriesStore = require('./rider-inquiries-store');
 const riderInquiriesSupabase = require('./rider-inquiries-supabase');
 const adminBootstrap = require('./admin-bootstrap');
@@ -1792,6 +1792,33 @@ app.post('/api/settlement/preview', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: error.message });
     }
     res.status(400).json({ error: error.message || '정산표를 처리하지 못했습니다.' });
+  }
+});
+
+// 브라우저(esm.sh) 암호해제가 실패할 때 주정산 업로드용 서버 폴백
+app.post('/api/settlement/open-sheet', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: '정산표 파일을 선택해주세요.' });
+    }
+    const password = String(req.body.password || '');
+    const sheetIndex = Number(req.body.sheetIndex || 0);
+    const sheetName = String(req.body.sheetName || '').trim();
+    const result = await openSheetRows({
+      buffer: req.file.buffer,
+      password,
+      sheetIndex,
+      sheetName
+    });
+    res.json(result);
+  } catch (error) {
+    if (error.code === 'WRONG_PASSWORD') {
+      return res.status(401).json({ error: error.message, code: error.code });
+    }
+    if (error.code === 'PASSWORD_REQUIRED') {
+      return res.status(400).json({ error: error.message, code: error.code });
+    }
+    res.status(400).json({ error: error.message || '엑셀을 열지 못했습니다.' });
   }
 });
 

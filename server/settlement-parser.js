@@ -224,6 +224,92 @@ async function parseSettlementFile({ buffer, password, drivers, period }) {
   };
 }
 
+function passwordVariants(password) {
+  const raw = String(password ?? '');
+  const trimmed = raw.trim();
+  const compact = trimmed.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+  const noSpaces = compact.replace(/\s+/g, '');
+  const nfc = compact.normalize ? compact.normalize('NFC') : compact;
+  const nfkc = compact.normalize ? compact.normalize('NFKC') : compact;
+  const halfWidth = nfc.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  return [...new Set([trimmed, raw, compact, noSpaces, nfc, nfkc, halfWidth].filter(Boolean))];
+}
+
+/**
+ * 브라우저 암호해제 실패 시 서버에서 열어 시트 행을 반환.
+ * 주정산(쿠팡/배민) 업로드 폴백용.
+ */
+async function openSheetRows({ buffer, password, sheetIndex = 0, sheetName = '' }) {
+  const input = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  const variants = passwordVariants(password);
+  let decrypted = null;
+  let lastError = null;
+
+  if (!officeCrypto.isEncrypted(input)) {
+    decrypted = input;
+  } else {
+    if (!variants.length) {
+      const error = new Error('비밀번호가 필요한 파일입니다.');
+      error.code = 'PASSWORD_REQUIRED';
+      throw error;
+    }
+    for (const pwd of variants) {
+      try {
+        decrypted = await officeCrypto.decrypt(input, { password: pwd });
+        break;
+      } catch (err) {
+        lastError = err;
+        try {
+          decrypted = await officeCrypto.decrypt(input, { password: pwd, type: 'standard' });
+          break;
+        } catch (err2) {
+          lastError = err2;
+        }
+      }
+    }
+    if (!decrypted) {
+      const error = new Error(
+        lastError?.message?.includes('password') || lastError?.message?.includes('Password')
+          ? '엑셀 비밀번호가 올바르지 않습니다. 쿠팡에서 받은 열람 비밀번호를 다시 확인하세요.'
+          : '엑셀을 열지 못했습니다. 비밀번호를 다시 확인하거나, Microsoft Excel에서 비밀번호 없이 다른 이름으로 저장 후 업로드해주세요.'
+      );
+      error.code = 'WRONG_PASSWORD';
+      throw error;
+    }
+  }
+
+  const workbook = XLSX.read(decrypted, { type: 'buffer', cellDates: true });
+  const names = workbook.SheetNames || [];
+  if (!names.length) {
+    throw new Error('엑셀 시트를 찾을 수 없습니다.');
+  }
+
+  let resolved = sheetName && names.includes(sheetName) ? sheetName : '';
+  if (!resolved) {
+    const idx = Math.max(0, Number(sheetIndex) || 0);
+    resolved = names[idx] || names[0];
+  }
+
+  const sheet = workbook.Sheets[resolved];
+  if (!sheet) {
+    throw new Error('엑셀 시트를 찾을 수 없습니다.');
+  }
+
+  const rows = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: false,
+    defval: ''
+  });
+
+  return {
+    sheetName: resolved,
+    sheetNames: names,
+    rows: Array.isArray(rows) ? rows : []
+  };
+}
+
 module.exports = {
-  parseSettlementFile
+  parseSettlementFile,
+  openSheetRows,
+  decryptWorkbookBuffer
 };

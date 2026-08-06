@@ -10,11 +10,14 @@ const BremSettlementParser = (function () {
   function passwordVariants(password) {
     const raw = String(password ?? '');
     const trimmed = raw.trim();
-    const compact = trimmed.replace(/[\u200B-\u200D\uFEFF]/g, '');
+    // ZWSP·BOM·NBSP 제거
+    const compact = trimmed.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+    const noSpaces = compact.replace(/\s+/g, '');
     const nfc = compact.normalize ? compact.normalize('NFC') : compact;
-    // 전각 → 반각 느낌표/숫자 보정
+    const nfkc = compact.normalize ? compact.normalize('NFKC') : compact;
+    // 전각 → 반각 숫자·영문·기호 보정
     const halfWidth = nfc.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
-    return [...new Set([trimmed, raw, compact, nfc, halfWidth].filter(Boolean))];
+    return [...new Set([trimmed, raw, compact, noSpaces, nfc, nfkc, halfWidth].filter(Boolean))];
   }
 
   function normalizeMatchName(value, format) {
@@ -320,7 +323,11 @@ const BremSettlementParser = (function () {
 
   async function loadOfficeCrypto() {
     if (!officeCryptoPromise) {
-      officeCryptoPromise = Promise.all([loadBuffer(), import('https://esm.sh/officecrypto-tool')])
+      // 로컬 서버와 같은 버전으로 고정 (esm.sh latest 드리프트 방지)
+      officeCryptoPromise = Promise.all([
+        loadBuffer(),
+        import('https://esm.sh/officecrypto-tool@0.0.19')
+      ])
         .then(([Buffer, module]) => ({
           Buffer,
           officeCrypto: module.default || module
@@ -332,6 +339,33 @@ const BremSettlementParser = (function () {
         });
     }
     return officeCryptoPromise;
+  }
+
+  async function openSheetRowsViaServer(buffer, password, options = {}) {
+    const form = new FormData();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    form.append('file', blob, options.fileName || 'settlement.xlsx');
+    form.append('password', String(password || ''));
+    if (options.sheetIndex != null) form.append('sheetIndex', String(options.sheetIndex));
+    if (options.sheetName) form.append('sheetName', String(options.sheetName));
+
+    const response = await fetch('/api/settlement/open-sheet', {
+      method: 'POST',
+      body: form,
+      credentials: 'same-origin'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.error || '서버에서 엑셀을 열지 못했습니다.');
+      error.code = data.code || (response.status === 401 ? 'WRONG_PASSWORD' : 'SERVER_OPEN_FAILED');
+      throw error;
+    }
+    if (!Array.isArray(data.rows)) {
+      throw new Error('서버 엑셀 응답 형식이 올바르지 않습니다.');
+    }
+    return data.rows;
   }
 
   async function loadExcelJS() {
@@ -793,7 +827,8 @@ const BremSettlementParser = (function () {
         }
       }
     } catch (error) {
-      if (error.code === 'CRYPTO_LOAD_FAILED') throw error;
+      // 브라우저 모듈 로드 실패는 서버 폴백으로 이어간다 (바로 throw 하지 않음)
+      if (error.code && error.code !== 'CRYPTO_LOAD_FAILED') throw error;
     }
 
     if (decryptSucceeded || openedWithoutPassword || lastSheetMiss) {
@@ -804,8 +839,37 @@ const BremSettlementParser = (function () {
       throw error;
     }
 
+    // 브라우저 암호해제 실패 → 서버(Node officecrypto)로 재시도
+    if (passwords.length) {
+      try {
+        for (const pwd of passwords) {
+          try {
+            const serverRows = await openSheetRowsViaServer(input, pwd, options);
+            if (serverRows?.length && validateRows(serverRows)) return serverRows;
+            if (serverRows?.length) {
+              const error = new Error(
+                '파일은 열렸지만 필요한 시트를 찾지 못했습니다. 시트명·시작행을 확인하세요.'
+              );
+              error.code = 'SHEET_NOT_FOUND';
+              throw error;
+            }
+          } catch (serverError) {
+            if (serverError.code === 'SHEET_NOT_FOUND') throw serverError;
+            if (serverError.code === 'PASSWORD_REQUIRED') throw serverError;
+            // WRONG_PASSWORD 등 → 다음 비밀번호 변형 시도
+          }
+        }
+      } catch (serverError) {
+        if (serverError.code === 'SHEET_NOT_FOUND' || serverError.code === 'PASSWORD_REQUIRED') {
+          throw serverError;
+        }
+      }
+    }
+
     const error = new Error(
-      '엑셀을 열지 못했습니다. 비밀번호를 다시 확인하거나, Microsoft Excel에서 비밀번호 없이 다른 이름으로 저장 후 업로드해주세요.'
+      passwords.length
+        ? '엑셀을 열지 못했습니다. 비밀번호가 정확한지 다시 확인하세요. (쿠팡 열람 암호) 그래도 안 되면 Microsoft Excel에서 비밀번호 없이 「다른 이름으로 저장」 후 올려주세요.'
+        : '비밀번호가 필요한 파일입니다. 엑셀 비밀번호를 입력하세요.'
     );
     error.code = 'WRONG_PASSWORD';
     throw error;
