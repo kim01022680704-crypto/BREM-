@@ -3,7 +3,7 @@
  *
  * 확인 항목
  *  - C열 성함을 쿠팡ID로 읽고, F열 오더수를 주간 오더수로 읽는지
- *  - AM(배달료) / AB·AE·AG·AH(공제 시트값) 를 읽고, 원천세만 AC×3.3%로 계산하는지
+ *  - 배달료 = AM+AB (AM은 AB 차감 후) / AB·AE·AG·AH(공제) / 원천세만 AC×3.3%
  *  - 일정산서 서식은 배달료 AL (주정산 AM과 다름)
  *  - 헤더·설명·합계 행을 건너뛰는지 (직계약만 해당)
  *  - 브로 채널 업로드는 금액 열 없이 기존 동작을 유지하는지
@@ -179,8 +179,9 @@ const TAX = base => Math.floor(base * 0.033);
   check('헤더 행 제외', direct.some(r => r.coupangLoginKey === '성함'), 'false');
   check('합계 행 제외', direct.some(r => r.coupangLoginKey === '합계'), 'false');
 
-  console.log('\n[2] 배달료(AM) + 공제 시트값(AB/AE/AG/AH) + 원천세만 AC×3.3%');
-  check('배달료(AM)', direct[0]?.amounts?.deliveryFee, 1200000);
+  console.log('\n[2] 배달료(AM+AB) + 공제 시트값(AB/AE/AG/AH) + 원천세만 AC×3.3%');
+  check('배달료(AM+AB)', direct[0]?.amounts?.deliveryFee, 1205000);
+  check('시트 AM 원본 보존', direct[0]?.amounts?.deliveryFeeAm, 1200000);
   check('고용보험(AE) 음수를 공제액으로', direct[0]?.amounts?.employmentInsurance, 9000);
   check('산재보험(AG) 음수를 공제액으로', direct[0]?.amounts?.accidentInsurance, 8000);
   check('시간제보험(AH) 음수를 공제액으로', direct[0]?.amounts?.hourlyInsurance, 3000);
@@ -210,7 +211,7 @@ const TAX = base => Math.floor(base * 0.033);
   check('일정산 AL ≠ 주정산 AM', daily.columns.settlementAmount === DIRECT_COLS.deliveryFee, 'false');
 
   console.log('\n[3] 쉼표 들어간 금액도 숫자로');
-  check('배달료 800,000', direct[1]?.amounts?.deliveryFee, 800000);
+  check('배달료 800,000+1,500', direct[1]?.amounts?.deliveryFee, 801500);
   check('고용보험 -6,000 → 6,000', direct[1]?.amounts?.employmentInsurance, 6000);
   check('시간제보험 -2,000 → 2,000', direct[1]?.amounts?.hourlyInsurance, 2000);
 
@@ -243,6 +244,8 @@ const TAX = base => Math.floor(base * 0.033);
   const money = n => Number(n).toLocaleString('ko-KR');
   const BASE = 1212000;
   const parkTax = TAX(BASE);
+  // 배달료 = AM+AB = 1,200,000+5,000
+  const parkDelivery = 1205000;
   // AB 5,000 + AE 9,000 + AG 8,000 + AH 3,000
   const parkSheetDeduct = 5000 + 9000 + 8000 + 3000;
 
@@ -257,8 +260,8 @@ const TAX = base => Math.floor(base * 0.033);
   // 콜수수료 = 120 × 300 = 36,000
   check('콜수수료 36,000', cells.includes('36,000'), 'true');
   check(`공제합계 ${money(parkSheetDeduct + parkTax + 36000)}`, cells.includes(money(parkSheetDeduct + parkTax + 36000)), 'true');
-  check(`실지급 ${money(1200000 - parkSheetDeduct - parkTax - 36000)}`,
-    cells.includes(money(1200000 - parkSheetDeduct - parkTax - 36000)), 'true');
+  check(`실지급 ${money(parkDelivery - parkSheetDeduct - parkTax - 36000)}`,
+    cells.includes(money(parkDelivery - parkSheetDeduct - parkTax - 36000)), 'true');
 
   console.log('\n[6] 콜수수료 단가를 바꾸면 정산결과도 따라간다');
   FEES = { coupang: { callFee: 250, dailySettlementFee: 0.02, dailySettlementFeeMode: 'percent' } };
@@ -267,15 +270,15 @@ const TAX = base => Math.floor(base * 0.033);
     .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
   // 120 × 250 = 30,000
   check('콜수수료 30,000', cells6.includes('30,000'), 'true');
-  check(`실지급 ${money(1200000 - parkSheetDeduct - parkTax - 30000)}`,
-    cells6.includes(money(1200000 - parkSheetDeduct - parkTax - 30000)), 'true');
+  check(`실지급 ${money(parkDelivery - parkSheetDeduct - parkTax - 30000)}`,
+    cells6.includes(money(parkDelivery - parkSheetDeduct - parkTax - 30000)), 'true');
 
   console.log('\n[7] 단가 0이면 콜수수료 공제 없음');
   FEES = { coupang: { callFee: 0, dailySettlementFee: 0, dailySettlementFeeMode: 'fixed' } };
   await Result.refresh('coupang');
   const cells7 = [...[...window.document.querySelectorAll('#settlementResultRows tr')]
     .find(tr => tr.textContent.includes('박쿠팡')).querySelectorAll('td')].map(td => td.textContent.trim());
-  check(`실지급 ${money(1200000 - parkSheetDeduct - parkTax)}`, cells7.includes(money(1200000 - parkSheetDeduct - parkTax)), 'true');
+  check(`실지급 ${money(parkDelivery - parkSheetDeduct - parkTax)}`, cells7.includes(money(parkDelivery - parkSheetDeduct - parkTax)), 'true');
 
   console.log('\n[8] 쿠팡·배민 지급/공제 열을 통일한다 (한쪽에만 있는 항목도 0으로 표기)');
   // 헤더는 2줄(그룹행 + 열이름행)이라 열 이름은 두 번째 줄에서 읽는다.
@@ -297,12 +300,12 @@ const TAX = base => Math.floor(base * 0.033);
   check('차감내역 5,000 표시', cells9.includes('5,000'), 'true');
   // AB(5,000)가 공제에 들어가야 한다.
   check(`공제합계에 AB 포함 ${money(parkSheetDeduct + parkTax)}`, cells9.includes(money(parkSheetDeduct + parkTax)), 'true');
-  check(`총지급액에 AB 반영 ${money(1200000 - parkSheetDeduct - parkTax)}`,
-    cells9.includes(money(1200000 - parkSheetDeduct - parkTax)), 'true');
+  check(`총지급액에 AB 반영 ${money(parkDelivery - parkSheetDeduct - parkTax)}`,
+    cells9.includes(money(parkDelivery - parkSheetDeduct - parkTax)), 'true');
 
   console.log('\n[9-1] 음수 공제가 총지급액을 부풀리지 않는다');
-  const netPark = 1200000 - parkSheetDeduct - parkTax;
-  check('총지급액 < 배달료', netPark < 1200000, 'true');
+  const netPark = parkDelivery - parkSheetDeduct - parkTax;
+  check('총지급액 < 배달료', netPark < parkDelivery, 'true');
   check(`총지급액 ${money(netPark)}`, cells9.includes(money(netPark)), 'true');
   check('공제합계가 양수', cells9.some(c => c === money(parkSheetDeduct + parkTax)), 'true');
   check('음수 표기 없음', cells9.some(c => c.startsWith('-')), 'false');

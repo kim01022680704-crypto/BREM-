@@ -4519,7 +4519,7 @@
               <p class="form-help">C열 성함이 <strong>쿠팡ID</strong>로 매칭됩니다. 시작행은 여유있게 앞으로 두어도 됩니다. 오더수가 숫자인 행만 읽어 헤더·설명·합계 행은 자동으로 건너뜁니다.</p>
               <h3>지급 금액 열</h3>
               <div class="promotion-form-grid">
-                <label>배달료(주정산 총액)<input type="text" id="weeklySettlementDirectDeliveryFeeCol-coupang" value="AM"></label>
+                <label>배달료 열(AM, AB 합산)<input type="text" id="weeklySettlementDirectDeliveryFeeCol-coupang" value="AM"></label>
                 <label>원천세 기준금액<input type="text" id="weeklySettlementDirectDeductionBaseCol-coupang" value="AC"></label>
               </div>
               <h3>공제 열 (정산서 수치)</h3>
@@ -4529,7 +4529,7 @@
                 <label>산재보험<input type="text" id="weeklySettlementDirectAccidentInsCol-coupang" value="AG"></label>
                 <label>시간제보험<input type="text" id="weeklySettlementDirectHourlyInsCol-coupang" value="AH"></label>
               </div>
-              <p class="form-help">배달료는 <strong>AM열</strong>입니다. (일정산서 업로드는 AL — 서로 다릅니다.) 공제는 정산서 수치 그대로 씁니다: <strong>AB 차감내역 · AE 고용 · AG 산재 · AH 시간제</strong>. 원천세만 정산서에 없어 <strong>AC×3.3%</strong>로 계산합니다. 정산결과·최종입금에서는 여기에 선정산(처리완료) 금액·일정산수수료를 더 빼면 총지급액이 됩니다.</p>
+              <p class="form-help">배달료는 <strong>AM+AB</strong>입니다. (AM은 AB 차감 후 금액 · 일정산서 AL과 다름.) 공제는 정산서 수치 그대로: <strong>AB 차감내역 · AE 고용 · AG 산재 · AH 시간제</strong>. 원천세만 <strong>AC×3.3%</strong>. 정산결과·최종입금에서는 선정산(처리완료)·일정산수수료를 더 빼면 총지급액이 됩니다.</p>
             </div>
             <div class="promotion-form-actions">
               <button type="submit" class="primary-btn">업로드 및 매칭</button>
@@ -4554,7 +4554,7 @@
                   <th>원본 이름</th>
                   <th>쿠팡 ID</th>
                   <th>주간 오더수(F)</th>
-                  <th>배달료(AM)</th>
+                  <th>배달료(AM+AB)</th>
                   <th>차감내역(AB)</th>
                   <th>원천세기준(AC)</th>
                   <th>원천세(AC×3.3%)</th>
@@ -7780,8 +7780,8 @@
   <script src="js/promotion-conditions.js?v=20260730b"></script>
   <script src="js/promotion-engine.js?v=20260730b"></script>
   <script src="js/promotion-admin.js?v=20260730b"></script>
-  <script src="js/weekly-settlement.js?v=20260806p"></script>
-  <script src="js/weekly-settlement-admin.js?v=20260806p"></script>
+  <script src="js/weekly-settlement.js?v=20260807a"></script>
+  <script src="js/weekly-settlement-admin.js?v=20260807a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260805c"></script>

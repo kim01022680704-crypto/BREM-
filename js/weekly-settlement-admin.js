@@ -67,7 +67,7 @@ const BremWeeklySettlementAdmin = (function () {
   ];
 
   const DIRECT_AMOUNT_FIELDS_COUPANG = [
-    { key: 'deliveryFee', label: '배달료(AM)' },
+    { key: 'deliveryFee', label: '배달료(AM+AB)' },
     { key: 'deductionDetail', label: '차감내역(AB)' },
     { key: 'deductionBase', label: '원천세기준(AC)' },
     { key: 'withholdingTax', label: '원천세(AC×3.3%)' },

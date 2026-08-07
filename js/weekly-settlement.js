@@ -394,12 +394,14 @@ const BremWeeklySettlement = (function () {
     withholdingTax: 'Y'         // 원천세(공제)
   });
 
-  // 직계약 쿠팡 정산서 금액/공제 열 기본값 (배달료 AM).
-  // AM 은 지급 쪽 배달료이고, 일정산서(brem-standard) 정산금액 열(AL)과는 다르다.
+  // 직계약 쿠팡 정산서 금액/공제 열 기본값.
+  // AM 은 시트상 배달료이지만 AB(차감내역)가 이미 빠진 금액이다.
+  // 그래서 표기·지급용 배달료 = AM + AB. 공제에서 AB를 다시 빼면 순지급이 AM 기준으로 맞는다.
+  // 일정산서(brem-standard) 정산금액 열(AL)과는 다르다.
   // 공제: AB 차감내역 · AE 고용 · AG 산재 · AH 시간제는 정산서 수치 그대로.
   // 원천세만 정산서에 없어 AC × 3.3% 로 계산한다. 추가지급(미션) 항목은 없다.
   const DIRECT_COUPANG_AMOUNT_COLUMNS = Object.freeze({
-    deliveryFee: 'AM',          // 배달료(주정산 총액)
+    deliveryFee: 'AM',          // 시트 배달료(AB 차감 후) — 저장 시 AM+AB 로 보정
     deductionDetail: 'AB',      // 차감내역(공제)
     deductionBase: 'AC',        // 원천세 기준 금액
     employmentInsurance: 'AE',  // 고용보험(공제)
@@ -412,15 +414,19 @@ const BremWeeklySettlement = (function () {
   function extractCoupangAmounts(row, amountColumns) {
     if (!amountColumns) return null;
     const cols = { ...DIRECT_COUPANG_AMOUNT_COLUMNS, ...amountColumns };
-    const deliveryFee = parseAmount(readCell(row, cols.deliveryFee));
-    // AC가 비어 있으면 배달료(AM)로 대체한다.
+    const amDeliveryFee = parseAmount(readCell(row, cols.deliveryFee));
+    // 차감내역·고용·산재·시간제는 정산서에 음수로 올 수 있어 절대값으로 맞춘다.
+    // (부호를 그대로 두면 공제합계가 줄어 총지급액이 부푼다.)
+    const deductionDetail = Math.abs(parseAmount(readCell(row, cols.deductionDetail)));
+    // AM 은 AB가 이미 빠진 값이므로 표기 배달료는 AM+AB.
+    const deliveryFee = amDeliveryFee + deductionDetail;
+    // AC가 비어 있으면 시트 AM(원본)으로 대체 — 세금 기준은 시트 값을 우선.
     const deductionBase = Math.abs(parseAmount(readCell(row, cols.deductionBase)))
-      || Math.abs(deliveryFee);
+      || Math.abs(amDeliveryFee);
     return {
       deliveryFee,
-      // 차감내역·고용·산재·시간제는 정산서에 음수로 올 수 있어 절대값으로 맞춘다.
-      // (부호를 그대로 두면 공제합계가 줄어 총지급액이 부푼다.)
-      deductionDetail: Math.abs(parseAmount(readCell(row, cols.deductionDetail))),
+      deliveryFeeAm: amDeliveryFee,
+      deductionDetail,
       deductionBase,
       // 원천세만 우리가 AC×3.3% 로 계산한다. 나머지는 정산서 수치 그대로.
       withholdingTax: Math.floor(deductionBase * COUPANG_WITHHOLDING_RATE),
