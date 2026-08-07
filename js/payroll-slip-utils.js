@@ -866,6 +866,119 @@
     };
   }
 
+  /**
+   * 이미 저장된 급여명세서 라인에 BREM프로모션 금액을 합산하고 공제·실수령을 재계산합니다.
+   * @param {object} savedLine storage payrollSlipLines 항목
+   * @param {number} addAmount 추가할 프로모션 금액 (기존에 더함)
+   */
+  function applyPromotionDeltaToSavedLine(savedLine, addAmount) {
+    const delta = parseMoney(addAmount);
+    if (!(delta > 0) || !savedLine || typeof savedLine !== 'object') {
+      return { line: savedLine, added: 0, previousPromotion: 0, nextPromotion: 0 };
+    }
+
+    const raw = savedLine.rawData && typeof savedLine.rawData === 'object' ? savedLine.rawData : {};
+    const payslipPrev = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+    const hasRawPromo = raw.bremPromotion !== undefined
+      && raw.bremPromotion !== null
+      && String(raw.bremPromotion).trim() !== '';
+    const previousPromotion = parseMoney(hasRawPromo ? raw.bremPromotion : payslipPrev.bremPromotion);
+    const nextPromotion = previousPromotion + delta;
+
+    const computed = computeLine({
+      riderName: raw.riderName || savedLine.riderName || '',
+      totalDeliveryFee: raw.totalDeliveryFee ?? savedLine.basePay,
+      baeminMission: raw.baeminMission,
+      otherPayment: raw.otherPayment,
+      bremPromotion: nextPromotion,
+      bremPromotionFromBulk: true,
+      jColumnAmount: raw.jColumnAmount,
+      excelWithholdingTax: raw.excelWithholdingTax,
+      employmentInsurance: raw.employmentInsurance,
+      industrialAccidentInsurance: raw.industrialAccidentInsurance,
+      hourlyInsurance: raw.hourlyInsurance,
+      hourlyInsuranceFromBulk: Boolean(raw.hourlyInsuranceFromBulk),
+      callFeeO: raw.callFeeO,
+      callFeeP: raw.callFeeP,
+      excelNetPay: raw.excelNetPay,
+      callCount: raw.callCount,
+      registeredCallCount: raw.registeredCallCount,
+      dailySettlementEnrolled: raw.dailySettlementEnrolled === true,
+      dailySettlementApply: raw.dailySettlementApply !== false,
+      dailySettlementRegion: raw.dailySettlementRegion || '',
+      selectedDriverId: raw.selectedDriverId || savedLine.driverId || '',
+      selectedDriverName: raw.selectedDriverName || savedLine.riderName || '',
+      matchedBaeminId: raw.matchedBaeminId || payslipPrev.baeminId,
+      matchedCoupangId: raw.matchedCoupangId || payslipPrev.coupangId,
+      baeminId: raw.baeminId || payslipPrev.baeminId,
+      coupangId: raw.coupangId || payslipPrev.coupangId
+    });
+
+    const payslip = buildPayslipRecord({
+      ...computed,
+      riderName: computed.riderName || savedLine.riderName,
+      baeminId: computed.baeminId || raw.matchedBaeminId || payslipPrev.baeminId,
+      coupangId: computed.coupangId || raw.matchedCoupangId || payslipPrev.coupangId
+    });
+
+    const now = new Date().toISOString();
+    const nextRaw = {
+      ...raw,
+      totalDeliveryFee: computed.totalDeliveryFee,
+      baeminMission: computed.baeminMission,
+      otherPayment: computed.otherPayment,
+      bremPromotion: computed.bremPromotion,
+      bremPromotionFromBulk: true,
+      grossPaymentTotal: computed.grossPaymentTotal,
+      employmentInsurance: computed.employmentInsurance,
+      industrialAccidentInsurance: computed.industrialAccidentInsurance,
+      hourlyInsurance: computed.hourlyInsurance,
+      hourlyInsuranceFromBulk: Boolean(computed.hourlyInsuranceFromBulk),
+      excelWithholdingTax: computed.excelWithholdingTax,
+      jColumnAmount: computed.jColumnAmount,
+      jWithholdingDeduction: computed.jWithholdingDeduction,
+      otherPaymentWithholdingDeduction: computed.jWithholdingDeduction,
+      withholdingTax: computed.withholdingTax,
+      promotionWithholdingTax: computed.promotionWithholdingTax,
+      callFeeO: computed.callFeeO,
+      callFeeP: computed.callFeeP,
+      callFee: computed.callFee,
+      rawCallFee: computed.rawCallFee,
+      dailySettlementEnrolled: computed.dailySettlementEnrolled,
+      dailySettlementApply: computed.dailySettlementApply,
+      dailySettlementFee: computed.dailySettlementFee,
+      adminAdjustedCallFee: computed.adminAdjustedCallFee,
+      dailySettlementRegion: computed.dailySettlementRegion,
+      paymentTotal: computed.paymentTotal,
+      deductionTotal: computed.deductionTotal,
+      calculatedNetPay: computed.calculatedNetPay,
+      excelNetPay: computed.excelNetPay,
+      netPayDiff: computed.netPayDiff,
+      payslip
+    };
+
+    return {
+      line: {
+        ...savedLine,
+        allowance: computed.baeminMission + computed.otherPayment + computed.bremPromotion,
+        grossPay: computed.paymentTotal,
+        incomeTax: computed.withholdingTax,
+        localTax: Number(savedLine.localTax || 0),
+        insurance: computed.employmentInsurance + computed.industrialAccidentInsurance,
+        otherDeduction: computed.callFee + computed.hourlyInsurance
+          + computed.promotionWithholdingTax + computed.dailySettlementFee,
+        totalDeduction: computed.deductionTotal,
+        netPay: payslip.finalNetPay,
+        riderPublishedAt: null,
+        updatedAt: now,
+        rawData: nextRaw
+      },
+      added: delta,
+      previousPromotion,
+      nextPromotion
+    };
+  }
+
   function flattenPayslipPreviewFields(includeDetail = false) {
     const fields = PAYSLIP_PREVIEW_GROUPS.flatMap(group => group.fields);
     if (includeDetail) {
@@ -895,6 +1008,7 @@
     buildHourlyInsuranceBulkMap,
     applyPromotionBulkToLine,
     applyHourlyInsuranceBulkToLine,
+    applyPromotionDeltaToSavedLine,
     computeLine,
     validateLine,
     summarizeLines,

@@ -1548,6 +1548,181 @@
     showToast('BREM프로모션 적용 건을 삭제했습니다.');
   }
 
+  function resolvePromotionMergeWeekStart() {
+    const raw = activeSettlementWeekStart()
+      || activeListSearchWeekStart()
+      || state.publishWeekStart
+      || '';
+    if (!raw) return '';
+    return utils.normalizeSettlementWeekStart(raw);
+  }
+
+  function resolvePromotionMergeUploadId(weekLines) {
+    const uploadIds = [...new Set(
+      (Array.isArray(weekLines) ? weekLines : [])
+        .map(line => String(line.uploadId || '').trim())
+        .filter(Boolean)
+    )];
+    if (!uploadIds.length) return '';
+    if (state.selectedUploadId && uploadIds.includes(state.selectedUploadId)) {
+      return state.selectedUploadId;
+    }
+    if (uploadIds.length === 1) return uploadIds[0];
+    return '';
+  }
+
+  async function mergePromotionIntoSavedSlips() {
+    if (!canSavePayroll()) {
+      showToast(state.storageStatus?.hint || '현재 환경에서는 급여명세서를 저장할 수 없습니다.');
+      return;
+    }
+    if (typeof utils.applyPromotionDeltaToSavedLine !== 'function') {
+      showToast('급여명세서 유틸을 새로고침한 뒤 다시 시도하세요.');
+      return;
+    }
+
+    const weekStart = resolvePromotionMergeWeekStart();
+    if (!weekStart) {
+      showToast('정산주(수요일 시작)를 선택하세요.');
+      return;
+    }
+
+    const pendingBatches = state.promotionAppliedBatches.filter(batch => !batch.mergedToSavedAt);
+    if (!pendingBatches.length) {
+      showToast(state.promotionAppliedBatches.length
+        ? '이미 저장된 명세서에 반영된 적용 내역입니다. 빠진 프로모션 파일을 다시 「적용하기」 하세요.'
+        : '먼저 프로모션 엑셀을 「적용하기」 하세요.');
+      return;
+    }
+
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    const aggregated = bulkUtils?.aggregateAppliedBatches
+      ? bulkUtils.aggregateAppliedBatches(pendingBatches)
+      : pendingBatches.flatMap(batch => batch.rows || []);
+    const bulkMap = utils.buildPromotionBulkMap(aggregated);
+    if (!bulkMap.size) {
+      showToast('반영할 프로모션 금액이 없습니다.');
+      return;
+    }
+
+    const addTotal = [...bulkMap.values()].reduce((sum, row) => sum + Number(row.bremPromotion || 0), 0);
+    try {
+      await ensurePayrollDataLoaded();
+    } catch (error) {
+      console.error('[payroll promo merge load]', error);
+      showToast(error?.message || '급여 데이터를 불러오지 못했습니다.');
+      return;
+    }
+
+    const weekLines = lines.getAll().filter(line => {
+      const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+      return String(raw.settlementWeekStart || '').slice(0, 10) === weekStart;
+    });
+    if (!weekLines.length) {
+      showToast(`${utils.formatSettlementWeekLabel(weekStart)}에 저장된 급여명세서가 없습니다.`);
+      return;
+    }
+
+    const targetUploadId = resolvePromotionMergeUploadId(weekLines);
+    if (!targetUploadId) {
+      showToast('같은 주에 업로드가 여러 건입니다. 아래 목록에서 「보기」로 대상 명세서를 선택한 뒤 다시 눌러주세요.');
+      return;
+    }
+
+    const targetLines = weekLines.filter(line => line.uploadId === targetUploadId);
+    const matchedDrivers = [...bulkMap.keys()].filter(driverId =>
+      targetLines.some(line => String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId)
+    ).length;
+    const unmatchedDrivers = bulkMap.size - matchedDrivers;
+
+    const ok = window.confirm(
+      `${utils.formatSettlementWeekLabel(weekStart)}\n`
+      + `저장된 명세서 ${targetLines.length}명에 BREM프로모션을 합산합니다.\n`
+      + `· 추가 금액 합계 ${addTotal.toLocaleString('ko-KR')}원 · 매칭 예상 ${matchedDrivers}명`
+      + (unmatchedDrivers ? ` · 명세서에 없는 기사 ${unmatchedDrivers}명` : '')
+      + `\n\n기존 프로모션에 더합니다. (이미 넣은 금액을 포함한 전체 파일을 다시 올리면 중복됩니다)\n계속할까요?`
+    );
+    if (!ok) return;
+
+    const now = new Date().toISOString();
+    const updatedById = new Map();
+    let updatedCount = 0;
+    let addedSum = 0;
+    let missedCount = 0;
+
+    bulkMap.forEach((bulk, driverId) => {
+      const amount = Number(bulk.bremPromotion || 0);
+      if (!(amount > 0)) return;
+      const match = targetLines.find(line =>
+        String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
+      );
+      if (!match) {
+        missedCount += 1;
+        return;
+      }
+      const result = utils.applyPromotionDeltaToSavedLine(match, amount);
+      if (!(result.added > 0) || !result.line) return;
+      updatedById.set(result.line.id, result.line);
+      updatedCount += 1;
+      addedSum += result.added;
+    });
+
+    if (!updatedById.size) {
+      showToast(missedCount
+        ? `저장된 명세서에서 매칭된 기사가 없습니다. (미매칭 ${missedCount}명)`
+        : '반영할 항목이 없습니다.');
+      return;
+    }
+
+    try {
+      const allLines = lines.getAll();
+      const nextLines = allLines.map(line => updatedById.get(line.id) || line);
+      const incrementalRows = [...updatedById.values()];
+      await lines.persistList(nextLines, { incrementalRows });
+
+      const uploadLines = nextLines.filter(line => line.uploadId === targetUploadId);
+      const uploadList = uploads.getAll();
+      const uploadIndex = uploadList.findIndex(item => item.id === targetUploadId);
+      if (uploadIndex >= 0) {
+        const upload = uploadList[uploadIndex];
+        const nextUpload = {
+          ...upload,
+          totalGross: uploadLines.reduce((sum, line) => sum + Number(line.grossPay || 0), 0),
+          totalDeduction: uploadLines.reduce((sum, line) => sum + Number(line.totalDeduction || 0), 0),
+          totalNet: uploadLines.reduce((sum, line) => sum + Number(line.netPay || 0), 0),
+          updatedAt: now,
+          rawSummary: {
+            ...(upload.rawSummary && typeof upload.rawSummary === 'object' ? upload.rawSummary : {}),
+            promotionMergedAt: now,
+            promotionMergedAmount: addedSum,
+            promotionMergedDrivers: updatedCount
+          }
+        };
+        uploadList[uploadIndex] = nextUpload;
+        await uploads.persistList(uploadList, { incrementalRows: [nextUpload] });
+      }
+
+      state.promotionAppliedBatches = state.promotionAppliedBatches.map(batch => (
+        batch.mergedToSavedAt
+          ? batch
+          : { ...batch, mergedToSavedAt: now }
+      ));
+      renderPromotionBulkPreview();
+      syncPayrollListSearchWeekUI(weekStart);
+      syncPublishWeekUI(weekStart);
+      await refresh({ loadRemote: true });
+      void refreshPublishStatus();
+      showToast(
+        `저장된 명세서에 프로모션 합산 ${updatedCount}명 · +${addedSum.toLocaleString('ko-KR')}원`
+        + (missedCount ? ` · 미매칭 ${missedCount}명` : '')
+        + ' · 이어서 「급여명세서 반영하기」를 눌러주세요'
+      );
+    } catch (error) {
+      console.error('[payroll promo merge saved]', error);
+      showToast(error?.message || '저장된 명세서 반영에 실패했습니다.');
+    }
+  }
+
   function retryPromotionBulkMatching() {
     const bulkUtils = window.BremPayrollPromotionBulk;
     if (!bulkUtils || !state.promotionPendingRows.length) {
@@ -1752,31 +1927,40 @@
     });
 
     const applied = bulkUtils.summarizeAppliedBatches(state.promotionAppliedBatches);
+    const pendingMergeCount = state.promotionAppliedBatches.filter(batch => !batch.mergedToSavedAt).length;
+    const mergeSavedBtn = $('payrollPromotionBulkMergeSavedBtn');
     if (appliedSection) {
       appliedSection.hidden = !state.promotionAppliedBatches.length;
     }
     if (appliedSummaryEl) {
       appliedSummaryEl.textContent = state.promotionAppliedBatches.length
         ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 (파일 추가 시 합산) · 합계 ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원`
+          + (pendingMergeCount
+            ? ` · 저장 명세서 미반영 ${pendingMergeCount}건`
+            : ' · 저장 명세서 반영 완료')
         : '아직 적용된 프로모션 정산서가 없습니다';
+    }
+    if (mergeSavedBtn) {
+      mergeSavedBtn.disabled = !pendingMergeCount || !canSavePayroll();
+      mergeSavedBtn.hidden = !state.promotionAppliedBatches.length;
     }
     if (appliedBody) {
       appliedBody.innerHTML = state.promotionAppliedBatches.map((batch, index) => `
         <tr>
           <td>${index + 1}</td>
-          <td>${escapeHtml(batch.fileName || '-')}</td>
+          <td>${escapeHtml(batch.fileName || '-')}${batch.mergedToSavedAt ? ' <span class="payroll-bulk-merged-tag">명세서반영</span>' : ''}</td>
           <td>${new Date(batch.appliedAt).toLocaleString('ko-KR')}</td>
           <td>${Number(batch.matchedCount || 0).toLocaleString('ko-KR')}건</td>
           <td>${formatMoney(batch.totalAmount)}</td>
           <td>
-            <button type="button" class="small-btn danger-btn" data-promotion-remove-batch="${escapeHtml(batch.id)}">삭제</button>
+            <button type="button" class="small-btn danger-btn" data-promotion-remove-batch="${escapeHtml(batch.id)}" ${batch.mergedToSavedAt ? 'disabled' : ''}>삭제</button>
           </td>
         </tr>
       `).join('');
     }
 
     if (!state.promotionPendingRows.length && !state.promotionAppliedBatches.length && summaryEl) {
-      summaryEl.textContent = '프로모션 엑셀 업로드 → 미리보기 → 적용하기 (파일·시트 중복은 금액 합산)';
+      summaryEl.textContent = '프로모션 엑셀 업로드 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영';
     }
   }
 
@@ -2558,6 +2742,7 @@
     $('payrollPromotionBulkTemplateBtn')?.addEventListener('click', downloadPromotionBulkTemplate);
     $('payrollPromotionBulkFile')?.addEventListener('change', event => { void handlePromotionBulkFileChange(event); });
     $('payrollPromotionBulkApplyBtn')?.addEventListener('click', applyPromotionPending);
+    $('payrollPromotionBulkMergeSavedBtn')?.addEventListener('click', () => { void mergePromotionIntoSavedSlips(); });
     $('payrollPromotionBulkClearPendingBtn')?.addEventListener('click', resetPromotionPending);
     $('payrollPromotionBulkClearBtn')?.addEventListener('click', resetPromotionBulk);
     $('payrollPromotionRetryMatchBtn')?.addEventListener('click', retryPromotionBulkMatching);

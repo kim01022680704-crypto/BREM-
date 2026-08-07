@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260806k">
+  <link rel="stylesheet" href="css/admin.css?v=20260807d">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -6360,17 +6360,18 @@
                   <span>B 쿠팡ID</span>
                   <span>D BREM금액</span>
                 </div>
-                <p class="payroll-bulk-note">급여 엑셀 J열은 읽지 않습니다 · 양산 등 파일 추가 시 같은 기사 금액은 <strong>합산</strong>합니다</p>
+                <p class="payroll-bulk-note">급여 엑셀 J열은 읽지 않습니다 · 양산 등 파일 추가 시 같은 기사 금액은 <strong>합산</strong>합니다 · 이미 저장된 명세서에도 「저장된 명세서에 합산 반영」으로 넣을 수 있습니다 (빠진 금액만 올리세요)</p>
                 <div class="payroll-bulk-actions">
                   <label class="bulk-file-field payroll-bulk-file">
                     <span class="bulk-file-label">프로모션 엑셀 선택</span>
                     <input type="file" id="payrollPromotionBulkFile" accept=".xlsx,.xls">
                   </label>
                   <button type="button" class="primary-btn" id="payrollPromotionBulkApplyBtn" disabled>적용하기</button>
+                  <button type="button" class="primary-btn" id="payrollPromotionBulkMergeSavedBtn" hidden disabled>저장된 명세서에 합산 반영</button>
                   <button type="button" class="small-btn" id="payrollPromotionBulkClearPendingBtn">미리보기 취소</button>
                   <button type="button" class="small-btn" id="payrollPromotionBulkClearBtn">전체 초기화</button>
                 </div>
-                <p class="payroll-bulk-status" id="payrollPromotionBulkSummary">프로모션 엑셀 업로드 → 미리보기 → 적용하기</p>
+                <p class="payroll-bulk-status" id="payrollPromotionBulkSummary">프로모션 엑셀 업로드 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영</p>
                 <div class="bulk-preview-wrap payroll-bulk-preview" id="payrollPromotionBulkPreview" hidden>
                   <p class="payroll-bulk-preview-title">업로드 미리보기 (적용 전)</p>
                   <table class="bulk-preview-table">
@@ -7803,7 +7804,7 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
-  <script src="js/payroll-slip-utils.js?v=20260807b"></script>
+  <script src="js/payroll-slip-utils.js?v=20260807d"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260807a"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260730c"></script>
@@ -7813,7 +7814,7 @@
   <script src="js/final-deposit.js?v=20260806r"></script>
   <script src="js/driver-management-admin.js?v=20260805g"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
-  <script src="js/admin-payroll-slips.js?v=20260807c"></script>
+  <script src="js/admin-payroll-slips.js?v=20260807d"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260803j"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>

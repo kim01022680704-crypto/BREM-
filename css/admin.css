@@ -10584,6 +10584,18 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   line-height: 1.4;
 }
 
+.payroll-bulk-merged-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e8f5e9;
+  color: #1b5e20;
+  font-size: 0.7rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
 .payroll-bulk-preview {
   margin-top: 2px;
 }
