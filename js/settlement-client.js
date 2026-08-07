@@ -282,9 +282,69 @@ const BremSettlementParser = (function () {
     };
   }
 
+  function parseCoupangDeliveryRows(rows, format) {
+    if (!rows.length) {
+      throw new Error('엑셀 데이터가 비어 있습니다.');
+    }
+
+    const nameCol = SettlementFormats.columnToIndex(format.columns.name || 'B');
+    const amountCol = SettlementFormats.columnToIndex(format.columns.deliveryAmount || 'Y');
+    const startIndex = Math.max(0, Number(format.startRow || 1) - 1);
+    const groups = new Map();
+    let totalDeliveries = 0;
+    let totalDeliveryAmount = 0;
+
+    for (let i = startIndex; i < rows.length; i++) {
+      const row = rows[i] || [];
+      const rawName = cellText(readCell(row, nameCol));
+      const name = (format.cleanName ? format.cleanName(rawName) : String(rawName || '').trim().replace(/\s+/g, '')) || '';
+      if (!name) continue;
+      if (/^(이름|성함|라이더|rider|name)$/i.test(name)) continue;
+
+      const amount = parseNumber(readCell(row, amountCol));
+      if (!(amount > 0)) continue;
+
+      totalDeliveries += 1;
+      totalDeliveryAmount += amount;
+
+      if (!groups.has(name)) {
+        groups.set(name, {
+          rawName: rawName || name,
+          name,
+          riderId: name,
+          orderCount: 0,
+          deliveryAmount: 0,
+          settlementAmount: 0,
+          deliveryFees: []
+        });
+      }
+
+      const entry = groups.get(name);
+      entry.orderCount += 1;
+      entry.deliveryAmount += amount;
+      entry.settlementAmount += amount;
+      entry.deliveryFees.push(amount);
+    }
+
+    const parsedRows = Array.from(groups.values());
+    if (!parsedRows.length) {
+      throw new Error('3시트 오더별 상세내역에서 B열(이름)·Y열(정산금액) 데이터를 읽지 못했습니다.');
+    }
+
+    return {
+      parsedRows,
+      totalDeliveries,
+      totalDeliveryAmount,
+      skippedRows: null
+    };
+  }
+
   function parseRowsWithFormat(rows, format) {
     if (SettlementFormats.isBaeminDelivery(format)) {
       return parseBaeminDeliveryRows(rows, format);
+    }
+    if (typeof SettlementFormats.isCoupangDelivery === 'function' && SettlementFormats.isCoupangDelivery(format)) {
+      return parseCoupangDeliveryRows(rows, format);
     }
     return parseDriverRows(rows, format);
   }
@@ -308,6 +368,16 @@ const BremSettlementParser = (function () {
       }
       const nameCol = SettlementFormats.columnToIndex(format.columns.name);
       return rows.some(row => String(cellText(readCell(row || [], nameCol)) || '').trim());
+    }
+
+    if (typeof SettlementFormats.isCoupangDelivery === 'function' && SettlementFormats.isCoupangDelivery(format)) {
+      const nameCol = SettlementFormats.columnToIndex(format.columns.name || 'B');
+      const amountCol = SettlementFormats.columnToIndex(format.columns.deliveryAmount || 'Y');
+      return rows.some(row => {
+        const name = String(cellText(readCell(row || [], nameCol)) || '').trim();
+        if (!name || /^(이름|성함|라이더|rider|name)$/i.test(name)) return false;
+        return parseNumber(readCell(row || [], amountCol)) > 0;
+      });
     }
 
     return rows.length >= Number(format?.startRow || 0);

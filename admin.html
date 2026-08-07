@@ -5174,7 +5174,7 @@
           <div class="card-header">
             <h2>프로모션 적용</h2>
           </div>
-          <p class="form-help">저장된 주간정산 인수에 <strong>미션 관리에서 기사별 배정한 프로모션</strong>을 자동 적용해 계산합니다. 배민 단가보장은 배달처리비 정산서(K열·U열·V열·AH열)가 필요합니다.</p>
+          <p class="form-help">저장된 주간정산 인수에 <strong>미션 관리에서 기사별 배정한 프로모션</strong>을 자동 적용해 계산합니다. 배민 단가보장은 배달처리비(K·U·V·AH), 합산 단가보장은 쿠팡(3시트 B·Y)·배민 배달처리비가 필요합니다.</p>
           <div class="promotion-platform-tabs promotion-apply-channel-tabs" role="tablist">
             <button type="button" class="promotion-tab active" data-promotion-apply-channel="bro">브로</button>
             <button type="button" class="promotion-tab" data-promotion-apply-channel="direct">직계약</button>
@@ -5278,7 +5278,7 @@
               </div>
             </div>
             <div class="promotion-apply-panel" data-promotion-apply-panel="combined" hidden>
-              <p class="form-help">쿠팡·배민 주정산서를 각각 선택하세요. <strong>콜수는 쿠팡+배민 합산</strong>으로 단가보장 구간·건당 지급에 쓰고, 단가보장은 <strong>배민 배달처리비</strong>로 보장액을 계산합니다. 미지급/추가 조건의 거절율·수락률은 쿠팡만 있으면 거절율, 배민만 있으면 수락률, 양쪽이면 거절율(쿠팡) 기준입니다.</p>
+              <p class="form-help">쿠팡·배민 주정산서를 각각 선택하세요. <strong>콜수는 쿠팡+배민 합산</strong>으로 단가보장 구간·건당 지급에 쓰고, 단가보장은 <strong>쿠팡·배민 배달처리비</strong>에 각각 적용해 합산합니다. 미지급/추가 조건의 거절율·수락률은 쿠팡만 있으면 거절율, 배민만 있으면 수락률, 양쪽이면 거절율(쿠팡) 기준입니다.</p>
               <div class="promotion-settlement-picker-grid">
                 <div class="promotion-settlement-picker">
                   <div class="promotion-settlement-picker-week">
@@ -5332,14 +5332,20 @@
               <div class="promotion-form-grid promotion-delivery-fee-grid">
                 <label>
                   배달처리비 엑셀 비밀번호
-                  <input type="text" id="promotionApplyDeliveryFeePassword-combined" placeholder="엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
+                  <input type="text" id="promotionApplyDeliveryFeePassword-combined" placeholder="엑셀 열람 비밀번호 (공통)" autocomplete="off" spellcheck="false">
                 </label>
                 <label>
-                  배달처리비 정산서 (.xlsx)
-                  <input type="file" id="promotionApplyDeliveryFeeFile-combined" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                  쿠팡 배달처리비 정산서 (.xlsx)
+                  <input type="file" id="promotionApplyDeliveryFeeFile-combined-coupang" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                </label>
+                <label>
+                  배민 배달처리비 정산서 (.xlsx)
+                  <input type="file" id="promotionApplyDeliveryFeeFile-combined-baemin" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                 </label>
               </div>
-              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined">단가보장 조건이 있으면 배달처리비 정산서가 필요합니다. 합산 콜수(쿠팡+배민)로 보장 단가 구간을 고르고, 배달처리비(K열 User ID)로 보장액을 계산합니다. 파일명 기간은 배민 주정산서와 같아야 합니다.</p>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined">단가보장 조건이 있으면 <strong>쿠팡·배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 보장 단가 구간을 고르고, 쿠팡은 3시트 오더별 상세 <strong>B열 이름·Y열 정산금액</strong>, 배민은 <strong>K열 User ID·AH열</strong>로 보장액을 각각 계산합니다. 파일명 기간은 각 주정산서와 같아야 합니다.</p>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined-coupang" hidden></p>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined-baemin" hidden></p>
               <div class="promotion-form-section">
                 <h3>적용할 합산 프로모션 조건</h3>
                 <div class="weekly-settlement-promotion-rules" id="promotionApplyRuleList-combined"></div>
@@ -7763,8 +7769,8 @@
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
   <script src="js/driver-utils.js?v=20260806s"></script>
-  <script src="js/settlement-formats.js?v=20260730f"></script>
-  <script src="js/settlement-client.js?v=20260806q"></script>
+  <script src="js/settlement-formats.js?v=20260807a"></script>
+  <script src="js/settlement-client.js?v=20260807a"></script>
   <script src="js/rejection-bulk.js?v=20260622n"></script>
   <script src="js/rejection-erp-bulk.js?v=20260704d"></script>
   <script src="js/promotion-conditions.js?v=20260730b"></script>
@@ -7773,14 +7779,15 @@
   <script src="js/weekly-settlement.js?v=20260806p"></script>
   <script src="js/weekly-settlement-admin.js?v=20260806p"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
+  <script src="js/coupang-delivery-fee.js?v=20260807a"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260805c"></script>
     <script src="js/coupang-status-admin.js?v=20260805n"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260806s"></script>
     <script src="js/contribution-admin.js?v=20260805e"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20260731a"></script>
-  <script src="js/promotion-apply-admin.js?v=20260731a"></script>
+  <script src="js/promotion-apply.js?v=20260807a"></script>
+  <script src="js/promotion-apply-admin.js?v=20260807a"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

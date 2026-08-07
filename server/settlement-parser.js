@@ -285,6 +285,9 @@ async function openSheetRows({ buffer, password, sheetIndex = 0, sheetName = '' 
   }
 
   let resolved = sheetName && names.includes(sheetName) ? sheetName : '';
+  if (!resolved && sheetName) {
+    resolved = names.find(name => String(name || '').includes(String(sheetName))) || '';
+  }
   if (!resolved) {
     const idx = Math.max(0, Number(sheetIndex) || 0);
     resolved = names[idx] || names[0];

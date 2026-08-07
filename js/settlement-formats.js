@@ -40,6 +40,22 @@ const SettlementFormats = (function () {
       cleanName(rawName) {
         return String(rawName || '').trim().replace(/\s+/g, '');
       }
+    },
+    'brem-coupang-delivery': {
+      id: 'brem-coupang-delivery',
+      label: '쿠팡 오더별 상세내역',
+      platform: 'coupang',
+      mode: 'coupang-delivery',
+      sheetIndex: 2,
+      sheetMatcher: '오더별 상세내역',
+      startRow: 2,
+      columns: {
+        name: 'B',
+        deliveryAmount: 'Y'
+      },
+      cleanName(rawName) {
+        return String(rawName || '').trim().replace(/\s+/g, '');
+      }
     }
   };
 
@@ -71,6 +87,10 @@ const SettlementFormats = (function () {
     return format?.mode === 'baemin-delivery';
   }
 
+  function isCoupangDelivery(format) {
+    return format?.mode === 'coupang-delivery';
+  }
+
   return {
     DEFAULT_FORMAT_ID,
     formats,
@@ -78,6 +98,7 @@ const SettlementFormats = (function () {
     getFormat,
     getFormatForPlatform,
     isBaeminDelivery,
+    isCoupangDelivery,
     listFormats
   };
 })();

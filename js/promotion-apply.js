@@ -211,9 +211,24 @@ const BremPromotionApply = (function () {
     });
   }
 
+  function guaranteeTopUpFromFees(unitPrice, fees, orders, amount) {
+    const unit = Number(unitPrice || 0);
+    if (unit <= 0) return 0;
+    const list = Array.isArray(fees)
+      ? fees.map(fee => Number(fee || 0)).filter(fee => fee > 0)
+      : [];
+    if (list.length) {
+      return list.reduce((sum, fee) => sum + Math.max(0, unit - fee), 0);
+    }
+    const orderCount = Number(orders || 0);
+    const deliveryAmount = Number(amount || 0);
+    if (orderCount <= 0) return 0;
+    return Math.max(0, unit * orderCount - deliveryAmount);
+  }
+
   function combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selectedRuleIds = []) {
-    // 합산 단가보장은 쿠팡+배민 콜수 합으로 구간을 고르고, 배민 배달처리비로 보장액을 낸다.
-    // 그래서 단가보장 조건이면 배달처리비가 항상 필요하다 (배민 단독 기사만이 아님).
+    // 합산 단가보장은 쿠팡+배민 콜수 합으로 구간을 고르고,
+    // 쿠팡·배민 배달처리비에 각각 보장액을 적용한다.
     if (selectedRulesNeedDeliveryFee(selectedRuleIds)) return true;
     if (!coupangSettlement && !baeminSettlement) return false;
     const assignments = buildDriverAssignments(coupangSettlement, baeminSettlement);
@@ -577,6 +592,7 @@ const BremPromotionApply = (function () {
     selectedRuleIds,
     promotionSettings,
     deliveryFeeIndex = null,
+    coupangDeliveryFeeIndex = null,
     ignoreMissingRates = false
   }) {
     const ratePlatform = normalizePlatform(assignment.ratePlatform || 'coupang');
@@ -631,29 +647,69 @@ const BremPromotionApply = (function () {
       ? getWeekStatsForDriver(driver.id, baeminSettlement.startDate, baeminSettlement.endDate, 'baemin')
       : emptyWeekStats();
 
+    const coupangRiderForLookup = {
+      ...(assignment.coupangRider || {}),
+      coupangLoginKey: assignment.coupangRider?.coupangLoginKey
+        || makeCoupangLoginIdFromDriver(driver)
+    };
     const baeminRiderForLookup = {
       ...(assignment.baeminRider || displayRider || {}),
       baeminUserId: getBaeminUserId(assignment.baeminRider || displayRider, driver)
     };
 
-    let feeData = null;
+    let coupangFeeData = null;
+    let baeminFeeData = null;
+
+    if (needsDeliveryFee && coupangDeliveryFeeIndex && typeof BremCoupangDeliveryFee?.lookup === 'function') {
+      coupangFeeData = BremCoupangDeliveryFee.lookup(
+        coupangDeliveryFeeIndex,
+        coupangRiderForLookup,
+        driver
+      );
+      if (hasValidDeliveryFeeData(coupangFeeData)) {
+        coupangStats = {
+          ...coupangStats,
+          callCount: Number(coupangFeeData.orderCount || 0),
+          deliveryAmount: Number(coupangFeeData.deliveryAmount || 0),
+          uploadDays: Math.max(Number(coupangStats.uploadDays || 0), 1)
+        };
+      }
+    }
+
     if (needsDeliveryFee && deliveryFeeIndex) {
-      feeData = BremBaeminDeliveryFee.lookup(
+      baeminFeeData = BremBaeminDeliveryFee.lookup(
         deliveryFeeIndex,
         baeminRiderForLookup,
         driver
       );
-      if (hasValidDeliveryFeeData(feeData)) {
+      if (hasValidDeliveryFeeData(baeminFeeData)) {
         baeminStats = {
           ...baeminStats,
-          callCount: Number(feeData.orderCount || 0),
-          deliveryAmount: Number(feeData.deliveryAmount || 0),
+          callCount: Number(baeminFeeData.orderCount || 0),
+          deliveryAmount: Number(baeminFeeData.deliveryAmount || 0),
           uploadDays: Math.max(Number(baeminStats.uploadDays || 0), 1)
         };
       }
     }
 
-    if (needsDeliveryFee && !hasValidDeliveryFeeData(feeData)) {
+    const hasCoupangFee = hasValidDeliveryFeeData(coupangFeeData);
+    const hasBaeminFee = hasValidDeliveryFeeData(baeminFeeData);
+
+    if (needsDeliveryFee && !hasCoupangFee && !hasBaeminFee) {
+      const reasons = [];
+      if (assignment.coupangRider) {
+        reasons.push(coupangFeeData
+          ? '쿠팡 배달처리비 유효 건 없음 (Y열 정산금액 0)'
+          : '쿠팡 배달처리비에서 이름(B열)·쿠팡ID 매칭 실패');
+      }
+      if (assignment.baeminRider) {
+        reasons.push(baeminFeeData
+          ? '배민 배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0)'
+          : '배민 배달처리비에서 User ID(K열) 매칭 실패');
+      }
+      if (!reasons.length) {
+        reasons.push('배달처리비 정산서에서 해당 기사를 찾지 못했습니다');
+      }
       return {
         riderName: displayRider?.riderName || driver.name,
         driverName: driver.name,
@@ -666,19 +722,19 @@ const BremPromotionApply = (function () {
         assignmentSource: assignment.assignmentSource || '',
         callCount: 0,
         coupangCallCount: Number(coupangStats.callCount || 0),
-        baeminCallCount: 0,
+        baeminCallCount: Number(baeminStats.callCount || 0),
         deliveryAmountTotal: 0,
         avgDeliveryUnitPrice: 0,
         guaranteedUnitPrice: 0,
         guaranteePromotionAmount: 0,
+        coupangGuaranteeAmount: 0,
+        baeminGuaranteeAmount: 0,
         basePromotionAmount: 0,
         extraPromotionAmount: 0,
         totalPromotionAmount: 0,
         appliedConditions: [],
         failedConditions: [],
-        failureReasons: [feeData
-          ? '배달처리비 유효 건 없음 (U·V열 빈칸·AH열 0·배달 미수행)'
-          : '배달처리비 정산서에서 User ID를 찾지 못했습니다 (K열·기사 배민 ID 확인)']
+        failureReasons: reasons
       };
     }
 
@@ -690,6 +746,20 @@ const BremPromotionApply = (function () {
     const weekEnd = coupangSettlement?.endDate || baeminSettlement?.endDate || '';
     const platformRate = BremStorage.rejections.getRateForWeek(driver.id, weekStart, ratePlatform);
 
+    const coupangFees = hasCoupangFee && Array.isArray(coupangFeeData.deliveryFees)
+      ? coupangFeeData.deliveryFees
+      : [];
+    const baeminFees = hasBaeminFee && Array.isArray(baeminFeeData.deliveryFees)
+      ? baeminFeeData.deliveryFees
+      : [];
+    const coupangDeliveryAmount = hasCoupangFee
+      ? Number(coupangFeeData.deliveryAmount || 0)
+      : 0;
+    const baeminDeliveryAmount = hasBaeminFee
+      ? Number(baeminFeeData.deliveryAmount || 0)
+      : 0;
+    const deliveryAmountTotal = coupangDeliveryAmount + baeminDeliveryAmount;
+
     const riderData = {
       driverId: driver.id,
       name: driver.name,
@@ -698,8 +768,8 @@ const BremPromotionApply = (function () {
       platformRate: platformRate === null || platformRate === undefined ? null : Number(platformRate),
       rateLabel: BremPlatforms.rateLabel(ratePlatform),
       dailyOrders: mergeDailyOrders(coupangStats.byDay, baeminStats.byDay),
-      deliveryAmount: Number(feeData?.deliveryAmount ?? baeminStats.deliveryAmount ?? 0),
-      deliveryFees: Array.isArray(feeData?.deliveryFees) ? feeData.deliveryFees : [],
+      deliveryAmount: deliveryAmountTotal,
+      deliveryFees: [...coupangFees, ...baeminFees],
       selectedPromotionRuleId: rule.id,
       selectedPromotionName: rule.name,
       uploadDays: Math.max(Number(coupangStats.uploadDays || 0), Number(baeminStats.uploadDays || 0)),
@@ -709,7 +779,34 @@ const BremPromotionApply = (function () {
     };
 
     const result = BremPromotionEngine.calculatePromotionForRider(rule, riderData, promotionSettings);
-    const guaranteePromotionAmount = Number(result.guaranteeBonus || 0);
+    const guaranteedUnitPrice = Number(result.appliedUnitPrice || 0);
+    const coupangGuaranteeAmount = guaranteeTopUpFromFees(
+      guaranteedUnitPrice,
+      coupangFees,
+      hasCoupangFee ? coupangCallCount : 0,
+      coupangDeliveryAmount
+    );
+    const baeminGuaranteeAmount = guaranteeTopUpFromFees(
+      guaranteedUnitPrice,
+      baeminFees,
+      hasBaeminFee ? baeminCallCount : 0,
+      baeminDeliveryAmount
+    );
+    const guaranteePromotionAmount = coupangGuaranteeAmount + baeminGuaranteeAmount;
+    // 엔진 합산과 분리 합이 다르면(둘 다 없는 경우 등) 엔진 값을 우선하되, 분리 적용이 있으면 그 합을 쓴다.
+    const engineGuarantee = Number(result.guaranteeBonus || 0);
+    const finalGuarantee = (coupangFees.length || baeminFees.length)
+      ? guaranteePromotionAmount
+      : engineGuarantee;
+    const avgDeliveryUnitPrice = totalOrders > 0
+      ? Math.round(deliveryAmountTotal / totalOrders)
+      : 0;
+
+    // 엔진 totalBonus 에서 엔진 보장액을 빼고 분리 보장액으로 교체
+    const engineTotal = Number(result.totalBonus || 0);
+    const basePromotionAmount = Number(result.basePay || result.perCallBonus || 0);
+    const extraPromotionAmount = Number(result.bonusPay || 0);
+    const totalPromotionAmount = Math.max(0, engineTotal - engineGuarantee + finalGuarantee);
 
     return {
       riderName: displayRider?.riderName || driver.name,
@@ -725,15 +822,17 @@ const BremPromotionApply = (function () {
       coupangCallCount,
       baeminCallCount,
       platformRate: riderData.platformRate,
-      deliveryAmountTotal: Number(feeData?.deliveryAmount ?? baeminStats.deliveryAmount ?? 0),
-      avgDeliveryUnitPrice: Number(feeData?.avgUnitPrice || 0),
-      guaranteedUnitPrice: Number(result.appliedUnitPrice || 0),
-      guaranteePromotionAmount,
+      deliveryAmountTotal,
+      avgDeliveryUnitPrice,
+      guaranteedUnitPrice,
+      guaranteePromotionAmount: finalGuarantee,
+      coupangGuaranteeAmount,
+      baeminGuaranteeAmount,
       ruleId: rule.id,
       ruleName: rule.name,
-      basePromotionAmount: Number(result.basePay || result.perCallBonus || 0),
-      extraPromotionAmount: Number(result.bonusPay || 0),
-      totalPromotionAmount: Number(result.totalBonus || 0),
+      basePromotionAmount,
+      extraPromotionAmount,
+      totalPromotionAmount,
       appliedConditions: mergeAppliedConditionNames(result),
       failedConditions: (result.failedBonusConditions || []).map(item => item.name || item.reason),
       failureReasons: result.failureReasons || []
@@ -758,11 +857,15 @@ const BremPromotionApply = (function () {
     if (!assignments.length) throw new Error('매칭된 기사가 없습니다.');
 
     const deliveryFeeIndex = options.deliveryFeeIndex || null;
+    const coupangDeliveryFeeIndex = options.coupangDeliveryFeeIndex || null;
     const requireDeliveryFee = options.requireDeliveryFee === true
       || combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, selected);
 
     if (requireDeliveryFee && !deliveryFeeIndex) {
-      throw new Error('단가보장 프로모션은 배달처리비 정산서 업로드가 필요합니다.');
+      throw new Error('단가보장 프로모션은 배민 배달처리비 정산서 업로드가 필요합니다.');
+    }
+    if (requireDeliveryFee && !coupangDeliveryFeeIndex) {
+      throw new Error('단가보장 프로모션은 쿠팡 배달처리비 정산서 업로드가 필요합니다.');
     }
 
     const results = assignments.map(item => {
@@ -775,6 +878,7 @@ const BremPromotionApply = (function () {
         selectedRuleIds: selected,
         promotionSettings,
         deliveryFeeIndex,
+        coupangDeliveryFeeIndex,
         ignoreMissingRates: options.ignoreMissingRates === true
       });
     });
@@ -782,6 +886,18 @@ const BremPromotionApply = (function () {
     const totalPromotionAmount = results.reduce((sum, item) => sum + item.totalPromotionAmount, 0);
     const startDate = [coupangSettlement.startDate, baeminSettlement.startDate].filter(Boolean).sort()[0] || '';
     const endDate = [coupangSettlement.endDate, baeminSettlement.endDate].filter(Boolean).sort().slice(-1)[0] || '';
+
+    const baeminLabel = options.deliveryFeeMeta && typeof BremBaeminDeliveryFee?.formatMetaLabel === 'function'
+      ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
+      : '';
+    const coupangLabel = options.coupangDeliveryFeeMeta && typeof BremCoupangDeliveryFee?.formatMetaLabel === 'function'
+      ? BremCoupangDeliveryFee.formatMetaLabel(options.coupangDeliveryFeeMeta)
+      : '';
+    const feeLabels = [coupangLabel, baeminLabel].filter(Boolean);
+    const feeFiles = [
+      options.coupangDeliveryFeeMeta?.fileName,
+      options.deliveryFeeMeta?.fileName
+    ].filter(Boolean);
 
     return {
       settlementId: `${coupangSettlement.id}|${baeminSettlement.id}`,
@@ -795,10 +911,8 @@ const BremPromotionApply = (function () {
       endDate,
       selectedPromotionRuleIds: selected,
       selectedPromotionRuleNames: selected.map(id => BremStorage.promotionRules.getById(id)?.name || id).filter(Boolean),
-      deliveryFeeFileName: options.deliveryFeeMeta?.fileName || '',
-      deliveryFeeLabel: options.deliveryFeeMeta
-        ? BremBaeminDeliveryFee.formatMetaLabel(options.deliveryFeeMeta)
-        : '',
+      deliveryFeeFileName: feeFiles.join(' / '),
+      deliveryFeeLabel: feeLabels.join(' / '),
       results,
       summary: {
         riderCount: results.length,
@@ -953,11 +1067,11 @@ const BremPromotionApply = (function () {
       : (platform === 'coupang' ? '쿠팡 ID' : '기사명');
     const baeminIdLabel = '배민 RIDER ID';
     const baeminNameLabel = '매칭 기사명';
-    const showDeliveryFee = platform === 'baemin'
-      || (isCombined && (record.results || []).some(row => BremPlatforms.normalize(row.appliedPlatform) === 'baemin'));
+    const showDeliveryFee = platform === 'baemin' || isCombined
+      || (record.results || []).some(row => Number(row.guaranteePromotionAmount || 0) > 0);
     const header = [
       ...(platform === 'baemin' ? [baeminIdLabel, baeminNameLabel] : [driverLabel]),
-      ...(isCombined ? ['적용 플랫폼', '구분'] : []),
+      ...(isCombined ? ['적용 플랫폼', '구분', '쿠팡콜', '배민콜'] : []),
       '주간 콜수',
       rateLabel,
       '적용 프로모션',
@@ -965,6 +1079,7 @@ const BremPromotionApply = (function () {
         '배달처리비합계',
         '건당실제',
         '보장단가',
+        ...(isCombined ? ['쿠팡보장', '배민보장'] : []),
         '단가보장지급'
       ] : []),
       '기본 지급',
@@ -983,7 +1098,9 @@ const BremPromotionApply = (function () {
         ...identityCells,
         ...(isCombined ? [
           BremPlatforms.label(rowPlatform),
-          row.assignmentSource || '-'
+          row.assignmentSource || '-',
+          Number(row.coupangCallCount || 0),
+          Number(row.baeminCallCount || 0)
         ] : []),
         Number(row.callCount || 0),
         formatRateForExport(row.platformRate, rowPlatform),
@@ -992,6 +1109,10 @@ const BremPromotionApply = (function () {
           Number(row.deliveryAmountTotal || 0),
           Number(row.avgDeliveryUnitPrice || 0),
           Number(row.guaranteedUnitPrice || 0),
+          ...(isCombined ? [
+            Number(row.coupangGuaranteeAmount || 0),
+            Number(row.baeminGuaranteeAmount || 0)
+          ] : []),
           Number(row.guaranteePromotionAmount || 0)
         ] : []),
         Number(row.basePromotionAmount || 0),

@@ -421,18 +421,51 @@ const BremPromotionApplyAdmin = (function () {
 
     if (!file) {
       hintEl.innerHTML = platformKey === 'combined'
-        ? '단가보장 조건이 있으면 배달처리비가 필요합니다. <strong>쿠팡+배민 합산 콜수</strong>로 보장 단가 구간을 고르고, <strong>K열 User ID</strong> 배달처리비로 보장액을 계산합니다. 파일명 기간은 배민 주정산서와 같아야 합니다.'
+        ? '단가보장 조건이 있으면 <strong>쿠팡·배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 구간을 고르고, 쿠팡은 <strong>B열 이름·Y열</strong>, 배민은 <strong>K열·AH열</strong>로 보장액을 각각 계산합니다.'
         : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U·V·AH 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 집계';
       return;
     }
 
-    const meta = BremBaeminDeliveryFee.parseFileName(file.name);
+    const parser = platformKey.includes('coupang') && typeof BremCoupangDeliveryFee !== 'undefined'
+      ? BremCoupangDeliveryFee
+      : BremBaeminDeliveryFee;
+    const meta = parser.parseFileName(file.name);
     if (!meta?.startDate || !meta?.endDate) {
       hintEl.innerHTML = `<span class="field-error">파일명에서 정산기간을 읽지 못했습니다. 예: 배달처리비_표준울산남A팀브로1_20260610_20260616</span>`;
       return;
     }
 
     hintEl.innerHTML = `선택 파일: <strong>${escapeHtml(file.name)}</strong> · 팀 <strong>${escapeHtml(meta.teamName || '-')}</strong> · 기간 <strong>${escapeHtml(meta.startDate)} ~ ${escapeHtml(meta.endDate)}</strong>`;
+  }
+
+  function updateCombinedDeliveryFeeHints() {
+    const coupangFile = $('#promotionApplyDeliveryFeeFile-combined-coupang')?.files?.[0] || null;
+    const baeminFile = $('#promotionApplyDeliveryFeeFile-combined-baemin')?.files?.[0] || null;
+    const mainHint = $('#promotionApplyDeliveryFeeHint-combined');
+    const parts = [];
+
+    if (coupangFile) {
+      const meta = BremCoupangDeliveryFee?.parseFileName?.(coupangFile.name);
+      parts.push(meta?.startDate
+        ? `쿠팡: <strong>${escapeHtml(coupangFile.name)}</strong> (${escapeHtml(meta.startDate)}~${escapeHtml(meta.endDate)})`
+        : `쿠팡: <span class="field-error">${escapeHtml(coupangFile.name)} (기간 인식 실패)</span>`);
+    } else {
+      parts.push('쿠팡: <span class="field-error">미선택</span>');
+    }
+
+    if (baeminFile) {
+      const meta = BremBaeminDeliveryFee?.parseFileName?.(baeminFile.name);
+      parts.push(meta?.startDate
+        ? `배민: <strong>${escapeHtml(baeminFile.name)}</strong> (${escapeHtml(meta.startDate)}~${escapeHtml(meta.endDate)})`
+        : `배민: <span class="field-error">${escapeHtml(baeminFile.name)} (기간 인식 실패)</span>`);
+    } else {
+      parts.push('배민: <span class="field-error">미선택</span>');
+    }
+
+    if (mainHint) {
+      mainHint.innerHTML = parts.join(' · ')
+        + '<br>단가보장 시 합산 콜수로 구간을 고르고, 쿠팡(B·Y)·배민(K·AH) 보장액을 각각 적용합니다.';
+    }
   }
 
   async function resolveDeliveryFeeForCalculation(platform, baeminSettlement, coupangSettlement = null) {
@@ -445,6 +478,34 @@ const BremPromotionApplyAdmin = (function () {
       ? BremPromotionApply.combinedSettlementsNeedDeliveryFee(coupangSettlement, baeminSettlement, ruleIds)
       : BremPromotionApply.settlementNeedsDeliveryFee(baeminSettlement, 'baemin', ruleIds, pickOptions);
     if (!needsFile) return null;
+
+    if (platform === 'combined') {
+      const password = $('#promotionApplyDeliveryFeePassword-combined')?.value ?? '';
+      const coupangFile = $('#promotionApplyDeliveryFeeFile-combined-coupang')?.files?.[0];
+      const baeminFile = $('#promotionApplyDeliveryFeeFile-combined-baemin')?.files?.[0];
+      if (!coupangFile) {
+        throw new Error('단가보장 프로모션은 쿠팡 배달처리비 정산서 파일을 선택하세요.');
+      }
+      if (!baeminFile) {
+        throw new Error('단가보장 프로모션은 배민 배달처리비 정산서 파일을 선택하세요.');
+      }
+
+      const coupangParsed = await BremCoupangDeliveryFee.parseFile(coupangFile, password);
+      BremCoupangDeliveryFee.assertDateMatch(coupangSettlement, coupangParsed);
+      const baeminParsed = await BremBaeminDeliveryFee.parseFile(baeminFile, password);
+      BremBaeminDeliveryFee.assertDateMatch(baeminSettlement, baeminParsed);
+
+      return {
+        baemin: baeminParsed,
+        coupang: coupangParsed,
+        index: baeminParsed.index,
+        fileName: [coupangParsed.fileName, baeminParsed.fileName].filter(Boolean).join(' / '),
+        teamName: baeminParsed.teamName,
+        startDate: baeminParsed.startDate,
+        endDate: baeminParsed.endDate,
+        riderCount: Number(baeminParsed.riderCount || 0) + Number(coupangParsed.riderCount || 0)
+      };
+    }
 
     const panelKey = deliveryFeePanelKey(platform);
     const fileInput = $(`#promotionApplyDeliveryFeeFile-${panelKey}`);
@@ -658,6 +719,7 @@ const BremPromotionApplyAdmin = (function () {
           <th>배달처리비합계</th>
           <th>건당실제</th>
           <th>보장단가</th>
+          ${isCombinedResult ? '<th>쿠팡보장</th><th>배민보장</th>' : ''}
           <th>단가보장지급</th>
           ` : ''}
           <th>기본 지급</th>
@@ -674,6 +736,7 @@ const BremPromotionApplyAdmin = (function () {
     rowsEl.innerHTML = result.results.map(row => {
       const rowPlatform = row.appliedPlatform || platform;
       const isBaeminRow = BremPlatforms.normalize(rowPlatform) === 'baemin';
+      const showFeeAmounts = showDeliveryFee && (isBaeminTab || isCombinedResult || isBaeminRow);
       const rateMissing = isRateUnregistered(row, rowPlatform);
       const identityCells = isBaeminTab
         ? `
@@ -692,10 +755,14 @@ const BremPromotionApplyAdmin = (function () {
         <td>${formatRate(row.platformRate, rowPlatform, { highlightMissing: rateMissing })}</td>
         <td>${escapeHtml(row.ruleName || '-')}</td>
         ${showDeliveryFee ? `
-        <td>${isBaeminRow ? formatMoney(row.deliveryAmountTotal) : '-'}</td>
-        <td>${isBaeminRow && row.avgDeliveryUnitPrice ? `${formatNumber(row.avgDeliveryUnitPrice)}원` : (isBaeminRow ? '0원' : '-')}</td>
-        <td>${isBaeminRow && row.guaranteedUnitPrice ? `${formatNumber(row.guaranteedUnitPrice)}원` : (isBaeminRow ? '-' : '-')}</td>
-        <td>${isBaeminRow ? formatMoney(row.guaranteePromotionAmount) : '-'}</td>
+        <td>${showFeeAmounts ? formatMoney(row.deliveryAmountTotal) : '-'}</td>
+        <td>${showFeeAmounts && row.avgDeliveryUnitPrice ? `${formatNumber(row.avgDeliveryUnitPrice)}원` : (showFeeAmounts ? '0원' : '-')}</td>
+        <td>${showFeeAmounts && row.guaranteedUnitPrice ? `${formatNumber(row.guaranteedUnitPrice)}원` : (showFeeAmounts ? '-' : '-')}</td>
+        ${isCombinedResult ? `
+        <td>${formatMoney(row.coupangGuaranteeAmount)}</td>
+        <td>${formatMoney(row.baeminGuaranteeAmount)}</td>
+        ` : ''}
+        <td>${showFeeAmounts ? formatMoney(row.guaranteePromotionAmount) : '-'}</td>
         ` : ''}
         <td>${formatMoney(row.basePromotionAmount)}</td>
         <td>${formatMoney(row.extraPromotionAmount)}</td>
@@ -841,8 +908,10 @@ const BremPromotionApplyAdmin = (function () {
         const combinedMeta = { channel: coupangChannel, coupangChannel, baeminChannel };
         const applyOptions = deliveryFeeParsed
           ? {
-            deliveryFeeIndex: deliveryFeeParsed.index,
-            deliveryFeeMeta: deliveryFeeParsed,
+            deliveryFeeIndex: deliveryFeeParsed.baemin?.index || deliveryFeeParsed.index,
+            deliveryFeeMeta: deliveryFeeParsed.baemin || deliveryFeeParsed,
+            coupangDeliveryFeeIndex: deliveryFeeParsed.coupang?.index || null,
+            coupangDeliveryFeeMeta: deliveryFeeParsed.coupang || null,
             ignoreMissingRates,
             ...combinedMeta
           }
@@ -1119,9 +1188,12 @@ const BremPromotionApplyAdmin = (function () {
       runCalculation();
     });
 
-    ['baemin', 'combined'].forEach(panelKey => {
-      $(`#promotionApplyDeliveryFeeFile-${panelKey}`)?.addEventListener('change', event => {
-        updateDeliveryFeeHint(panelKey, event.target.files?.[0] || null);
+    $('#promotionApplyDeliveryFeeFile-baemin')?.addEventListener('change', event => {
+      updateDeliveryFeeHint('baemin', event.target.files?.[0] || null);
+    });
+    ['combined-coupang', 'combined-baemin'].forEach(panelKey => {
+      $(`#promotionApplyDeliveryFeeFile-${panelKey}`)?.addEventListener('change', () => {
+        updateCombinedDeliveryFeeHints();
       });
     });
 
