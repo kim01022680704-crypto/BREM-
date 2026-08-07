@@ -1498,12 +1498,8 @@
     const toApply = filtered.toApply;
 
     if (!toApply.length) {
-      const parts = [];
-      if (filtered.skippedAlreadyApplied) parts.push(`이미 적용 ${filtered.skippedAlreadyApplied}명`);
-      if (filtered.skippedDuplicateInSheet) parts.push(`시트 중복 ${filtered.skippedDuplicateInSheet}명`);
-      if (filtered.skippedNoAmount) parts.push(`금액 없음 ${filtered.skippedNoAmount}건`);
-      showToast(parts.length
-        ? `새로 적용할 기사가 없습니다. (${parts.join(' · ')})`
+      showToast(filtered.skippedNoAmount
+        ? `적용할 금액이 없습니다. (금액 없음 ${filtered.skippedNoAmount}건)`
         : '적용할 매칭된 BREM프로모션 데이터가 없습니다.');
       return;
     }
@@ -1516,8 +1512,8 @@
       rows: toApply.map(row => ({ ...row })),
       matchedCount: summary.matched,
       totalAmount: summary.bremPromotionTotal,
-      skippedAlreadyApplied: filtered.skippedAlreadyApplied,
-      skippedDuplicateInSheet: filtered.skippedDuplicateInSheet
+      mergedAlreadyApplied: filtered.mergedAlreadyApplied || 0,
+      mergedDuplicateInSheet: filtered.mergedDuplicateInSheet || 0
     };
 
     state.promotionAppliedBatches.push(batch);
@@ -1531,12 +1527,12 @@
       renderPreview();
     }
 
-    const skipParts = [];
-    if (filtered.skippedAlreadyApplied) skipParts.push(`이미적용 제외 ${filtered.skippedAlreadyApplied}명`);
-    if (filtered.skippedDuplicateInSheet) skipParts.push(`중복 제외 ${filtered.skippedDuplicateInSheet}명`);
-    const skipText = skipParts.length ? ` · ${skipParts.join(' · ')}` : '';
+    const mergeParts = [];
+    if (filtered.mergedAlreadyApplied) mergeParts.push(`기존기사 합산 ${filtered.mergedAlreadyApplied}명`);
+    if (filtered.mergedDuplicateInSheet) mergeParts.push(`시트내 합산 ${filtered.mergedDuplicateInSheet}건`);
+    const mergeText = mergeParts.length ? ` · ${mergeParts.join(' · ')}` : '';
     showToast(
-      `BREM프로모션 적용 ${summary.matched}명 ${summary.bremPromotionTotal.toLocaleString('ko-KR')}원${skipText} (전체 ${applied.matchedDrivers}명)`
+      `BREM프로모션 적용 ${summary.matched}명 ${summary.bremPromotionTotal.toLocaleString('ko-KR')}원${mergeText} (합산 후 ${applied.matchedDrivers}명 · ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원)`
     );
   }
 
@@ -1687,7 +1683,10 @@
 
     const appliedDriverIds = bulkUtils.collectAppliedDriverIds(state.promotionAppliedBatches);
     const pendingFiltered = bulkUtils.filterRowsForApply(state.promotionPendingRows, appliedDriverIds);
-    const pendingSeen = new Set();
+    const previewBuilt = typeof bulkUtils.buildPreviewRows === 'function'
+      ? bulkUtils.buildPreviewRows(state.promotionPendingRows)
+      : { rows: state.promotionPendingRows, mergedDuplicateInSheet: 0 };
+    const previewRows = previewBuilt.rows || [];
 
     if (pendingSection) {
       pendingSection.hidden = !state.promotionPendingRows.length;
@@ -1701,28 +1700,31 @@
     } else {
       if (summaryEl) {
         const applyCount = pendingFiltered.toApply.length;
-        summaryEl.textContent = `${state.promotionPendingFileName || '미리보기'} · 신규 적용 ${applyCount}명 · ${pendingFiltered.toApply.reduce((s, r) => s + Number(r.bremPromotion || 0), 0).toLocaleString('ko-KR')}원`;
+        const applyAmount = pendingFiltered.toApply.reduce((s, r) => s + Number(r.bremPromotion || 0), 0);
+        const mergeNote = previewBuilt.mergedDuplicateInSheet
+          ? ` · 시트내 합산 ${previewBuilt.mergedDuplicateInSheet}건`
+          : '';
+        summaryEl.textContent = `${state.promotionPendingFileName || '미리보기'} · 적용 예정 ${applyCount}명 · ${applyAmount.toLocaleString('ko-KR')}원${mergeNote}`;
       }
-      pendingBody.innerHTML = state.promotionPendingRows.map(row => {
+      pendingBody.innerHTML = previewRows.map(row => {
         let applyLabel = row.matchStatusLabel || '-';
         let statusCls = row.matchStatus === 'matched' || row.matchStatus === 'manual'
           ? 'text-success'
           : (row.matchStatus === 'duplicate' ? 'text-warning' : 'text-danger');
         const driverId = String(row.driverId || '').trim();
+        const mergeCount = Number(row.mergeCount || 1);
         if ((row.matchStatus === 'matched' || row.matchStatus === 'manual') && driverId) {
           if (appliedDriverIds.has(driverId)) {
-            applyLabel = '이미 적용';
+            applyLabel = mergeCount > 1 ? `합산(${mergeCount})·추가적용` : '추가적용';
             statusCls = 'text-warning';
-          } else if (pendingSeen.has(driverId)) {
-            applyLabel = '시트 중복';
-            statusCls = 'text-warning';
-          } else {
-            pendingSeen.add(driverId);
+          } else if (mergeCount > 1) {
+            applyLabel = `합산(${mergeCount})`;
+            statusCls = 'text-success';
           }
         }
         return `
           <tr>
-            <td>${row.rowNumber}</td>
+            <td>${escapeHtml(String(row.rowNumber || '-'))}</td>
             <td>${escapeHtml(row.baeminId || '-')}</td>
             <td>${escapeHtml(row.coupangId || '-')}</td>
             <td>${formatMoney(row.bremPromotion)}</td>
@@ -1755,7 +1757,7 @@
     }
     if (appliedSummaryEl) {
       appliedSummaryEl.textContent = state.promotionAppliedBatches.length
-        ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 (기사당 1회) · 합계 ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원`
+        ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 (파일 추가 시 합산) · 합계 ${applied.bremPromotionTotal.toLocaleString('ko-KR')}원`
         : '아직 적용된 프로모션 정산서가 없습니다';
     }
     if (appliedBody) {
@@ -1774,7 +1776,7 @@
     }
 
     if (!state.promotionPendingRows.length && !state.promotionAppliedBatches.length && summaryEl) {
-      summaryEl.textContent = '프로모션 엑셀 업로드 → 미리보기 → 적용하기 (기사당 1회)';
+      summaryEl.textContent = '프로모션 엑셀 업로드 → 미리보기 → 적용하기 (파일·시트 중복은 금액 합산)';
     }
   }
 

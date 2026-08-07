@@ -234,9 +234,16 @@
       if (!row.driverId) return;
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
       const id = String(row.driverId).trim();
-      if (map.has(id)) return;
+      if (!id) return;
+      const amount = parseMoney(row.bremPromotion);
+      if (!(amount > 0)) return;
+      const prev = map.get(id);
+      if (prev) {
+        prev.bremPromotion += amount;
+        return;
+      }
       map.set(id, {
-        bremPromotion: parseMoney(row.bremPromotion),
+        bremPromotion: amount,
         baeminId: row.baeminId || '',
         coupangId: row.coupangId || ''
       });

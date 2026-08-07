@@ -251,45 +251,111 @@
     );
   }
 
-  /** 기사당 1회만 — 시트 내 중복·이미 적용된 기사 제외 */
+  function normalizeId(value) {
+    return String(value || '').trim();
+  }
+
+  /** 매칭 행을 ERP 기사 기준으로 BREM금액 합산 */
+  function aggregateMatchedRowsByDriver(rows) {
+    const byDriver = new Map();
+    let mergedDuplicateInSheet = 0;
+
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
+      const driverId = normalizeId(row.driverId);
+      if (!driverId) return;
+      const amount = Number(row.bremPromotion || 0);
+
+      if (byDriver.has(driverId)) {
+        const prev = byDriver.get(driverId);
+        prev.bremPromotion = Number(prev.bremPromotion || 0) + amount;
+        prev.mergeCount = Number(prev.mergeCount || 1) + 1;
+        if (!prev.baeminId && row.baeminId) prev.baeminId = row.baeminId;
+        if (!prev.coupangId && row.coupangId) prev.coupangId = row.coupangId;
+        const rowNums = String(prev.rowNumber || '').split(',');
+        if (!rowNums.includes(String(row.rowNumber))) {
+          prev.rowNumber = `${prev.rowNumber},${row.rowNumber}`;
+        }
+        mergedDuplicateInSheet += 1;
+        return;
+      }
+
+      byDriver.set(driverId, {
+        ...row,
+        bremPromotion: amount,
+        mergeCount: 1
+      });
+    });
+
+    return {
+      rows: [...byDriver.values()],
+      mergedDuplicateInSheet
+    };
+  }
+
+  /**
+   * 여러 파일·시트 중복 대응: 같은 기사는 금액을 합산.
+   * 이미 적용된 기사 → 제외하지 않고 추가 적용(배치 합산)
+   */
   function filterRowsForApply(rows, appliedDriverIds) {
     const applied = appliedDriverIds instanceof Set
       ? appliedDriverIds
       : collectAppliedDriverIds(appliedDriverIds);
-    const seenInBatch = new Set();
-    const toApply = [];
-    let skippedAlreadyApplied = 0;
-    let skippedDuplicateInSheet = 0;
+    const aggregated = aggregateMatchedRowsByDriver(rows);
+    let mergedAlreadyApplied = 0;
     let skippedNoAmount = 0;
+    const toApply = [];
 
-    (Array.isArray(rows) ? rows : []).forEach(row => {
-      const okStatus = row.matchStatus === 'matched' || row.matchStatus === 'manual';
-      if (!okStatus || !row.driverId) return;
-      if (!Number(row.bremPromotion || 0)) {
+    aggregated.rows.forEach(row => {
+      if (!(Number(row.bremPromotion || 0) > 0)) {
         skippedNoAmount += 1;
         return;
       }
-      const driverId = String(row.driverId).trim();
-      if (applied.has(driverId)) {
-        skippedAlreadyApplied += 1;
-        return;
-      }
-      if (seenInBatch.has(driverId)) {
-        skippedDuplicateInSheet += 1;
-        return;
-      }
-      seenInBatch.add(driverId);
+      const driverId = normalizeId(row.driverId);
+      if (applied.has(driverId)) mergedAlreadyApplied += 1;
       toApply.push(row);
     });
 
-    return { toApply, skippedAlreadyApplied, skippedDuplicateInSheet, skippedNoAmount };
+    return {
+      toApply,
+      skippedAlreadyApplied: 0,
+      skippedDuplicateInSheet: 0,
+      skippedNoAmount,
+      mergedDuplicateInSheet: aggregated.mergedDuplicateInSheet,
+      mergedAlreadyApplied
+    };
+  }
+
+  function buildPreviewRows(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const unmatched = list.filter(row =>
+      row.matchStatus !== 'matched' && row.matchStatus !== 'manual'
+    );
+    const aggregated = aggregateMatchedRowsByDriver(list);
+    const matched = aggregated.rows.map(row => {
+      const mergeCount = Number(row.mergeCount || 1);
+      if (mergeCount <= 1) return row;
+      return {
+        ...row,
+        matchStatusLabel: `합산(${mergeCount})`,
+        error: ''
+      };
+    });
+    return {
+      rows: [...matched, ...unmatched].sort((a, b) => {
+        const aNum = Number(String(a.rowNumber || '').split(',')[0]) || 0;
+        const bNum = Number(String(b.rowNumber || '').split(',')[0]) || 0;
+        return aNum - bNum;
+      }),
+      mergedDuplicateInSheet: aggregated.mergedDuplicateInSheet
+    };
   }
 
   function collectAppliedDriverIds(batches) {
     const ids = new Set();
     (Array.isArray(batches) ? batches : []).forEach(batch => {
       (Array.isArray(batch.rows) ? batch.rows : []).forEach(row => {
-        const id = String(row.driverId || '').trim();
+        const id = normalizeId(row.driverId);
         if (id) ids.add(id);
       });
     });
@@ -298,19 +364,23 @@
 
   function aggregateAppliedBatches(batches) {
     const list = Array.isArray(batches) ? batches : [];
-    const rows = [];
-    const seen = new Set();
+    const byDriver = new Map();
     list.forEach(batch => {
       (Array.isArray(batch.rows) ? batch.rows : []).forEach(row => {
         if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
-        if (!row.driverId) return;
-        const id = String(row.driverId).trim();
-        if (seen.has(id)) return;
-        seen.add(id);
-        rows.push(row);
+        const id = normalizeId(row.driverId);
+        if (!id) return;
+        const amount = parseMoney(row.bremPromotion);
+        if (!(amount > 0)) return;
+        const prev = byDriver.get(id);
+        if (prev) {
+          prev.bremPromotion = Number(prev.bremPromotion || 0) + amount;
+          return;
+        }
+        byDriver.set(id, { ...row, bremPromotion: amount });
       });
     });
-    return rows;
+    return [...byDriver.values()];
   }
 
   function buildPromotionBulkMap(bulkRows) {
@@ -318,10 +388,17 @@
     (Array.isArray(bulkRows) ? bulkRows : []).forEach(row => {
       if (!row.driverId) return;
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
-      const id = String(row.driverId).trim();
-      if (map.has(id)) return;
+      const id = normalizeId(row.driverId);
+      if (!id) return;
+      const amount = parseMoney(row.bremPromotion);
+      if (!(amount > 0)) return;
+      const prev = map.get(id);
+      if (prev) {
+        prev.bremPromotion += amount;
+        return;
+      }
       map.set(id, {
-        bremPromotion: parseMoney(row.bremPromotion),
+        bremPromotion: amount,
         baeminId: row.baeminId || '',
         coupangId: row.coupangId || '',
         matchPlatformLabel: row.matchPlatformLabel || '-',
@@ -376,9 +453,11 @@
     summarizeRows,
     buildPromotionBulkMap,
     collectAppliedDriverIds,
+    aggregateMatchedRowsByDriver,
     aggregateAppliedBatches,
     summarizeAppliedBatches,
     filterRowsForApply,
+    buildPreviewRows,
     getUnmatchedLines,
     getDuplicateLines,
     rematchRows,
