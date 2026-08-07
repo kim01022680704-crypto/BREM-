@@ -131,6 +131,23 @@ const BremPromotionApply = (function () {
     return row?.displayName || row?.driverName || row?.riderName || '';
   }
 
+  function getResultRowErpName(row) {
+    return getResultRowMatchedDriverName(row)
+      || String(row?.driverName || row?.riderName || '').trim()
+      || '-';
+  }
+
+  function getResultRowCoupangId(row) {
+    const driver = row?.matchedRiderId ? BremStorage.drivers.getById(row.matchedRiderId) : null;
+    return makeCoupangLoginIdFromDriver(driver)
+      || String(row?.coupangLoginKey || '').trim()
+      || '-';
+  }
+
+  function getResultRowBaeminId(row) {
+    return getResultRowBaeminRiderId(row) || '-';
+  }
+
   function pickPromotionRule(driver, platform, selectedPromotionRuleIds = [], options = {}) {
     const p = normalizePlatform(platform);
     const selected = (selectedPromotionRuleIds || []).filter(Boolean);
@@ -1062,15 +1079,16 @@ const BremPromotionApply = (function () {
       ['총 프로모션', record.summary?.totalPromotionAmount || 0],
       []
     ];
-    const driverLabel = isCombined
-      ? '기사'
-      : (platform === 'coupang' ? '쿠팡 ID' : '기사명');
     const baeminIdLabel = '배민 RIDER ID';
     const baeminNameLabel = '매칭 기사명';
     const showDeliveryFee = platform === 'baemin' || isCombined
       || (record.results || []).some(row => Number(row.guaranteePromotionAmount || 0) > 0);
     const header = [
-      ...(platform === 'baemin' ? [baeminIdLabel, baeminNameLabel] : [driverLabel]),
+      ...(platform === 'baemin'
+        ? [baeminIdLabel, baeminNameLabel]
+        : isCombined
+          ? ['ERP 기사명', '쿠팡ID', '배민ID']
+          : [platform === 'coupang' ? '쿠팡 ID' : '기사명', 'ERP 기사명']),
       ...(isCombined ? ['적용 플랫폼', '구분', '쿠팡콜', '배민콜'] : []),
       '주간 콜수',
       rateLabel,
@@ -1093,7 +1111,9 @@ const BremPromotionApply = (function () {
       const rowPlatform = isCombined ? normalizePlatform(row.appliedPlatform || 'coupang') : platform;
       const identityCells = platform === 'baemin'
         ? [getResultRowBaeminRiderId(row), getResultRowMatchedDriverName(row)]
-        : [getResultRowDisplayName(row, platform)];
+        : isCombined
+          ? [getResultRowErpName(row), getResultRowCoupangId(row), getResultRowBaeminId(row)]
+          : [getResultRowDisplayName(row, platform), getResultRowErpName(row)];
       const base = [
         ...identityCells,
         ...(isCombined ? [
@@ -1327,6 +1347,9 @@ const BremPromotionApply = (function () {
     getResultRowDisplayName,
     getResultRowBaeminRiderId,
     getResultRowMatchedDriverName,
+    getResultRowErpName,
+    getResultRowCoupangId,
+    getResultRowBaeminId,
     buildSaveRecord,
     saveResult,
     getSavedResults,

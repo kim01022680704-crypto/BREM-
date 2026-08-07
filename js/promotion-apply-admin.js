@@ -709,8 +709,13 @@ const BremPromotionApplyAdmin = (function () {
           ${isBaeminTab ? `
           <th>배민 RIDER ID</th>
           <th>매칭 기사명</th>
+          ` : isCombinedResult ? `
+          <th>ERP 기사명</th>
+          <th>쿠팡ID</th>
+          <th>배민ID</th>
           ` : `
-          <th>${escapeHtml(isCombinedResult ? '기사' : (platform === 'coupang' ? '쿠팡 ID' : '기사'))}</th>
+          <th>${escapeHtml(platform === 'coupang' ? '쿠팡 ID' : '기사')}</th>
+          <th>ERP 기사명</th>
           `}
           ${isCombinedResult ? '<th>적용 플랫폼</th><th>구분</th>' : ''}
           <th>주간 콜수</th>
@@ -744,7 +749,16 @@ const BremPromotionApplyAdmin = (function () {
         <td><strong>${escapeHtml(BremPromotionApply.getResultRowBaeminRiderId(row))}</strong></td>
         <td>${escapeHtml(BremPromotionApply.getResultRowMatchedDriverName(row) || '-')}</td>
         `
-        : `<td><strong>${escapeHtml(BremPromotionApply.getResultRowDisplayName(row, platform))}</strong></td>`;
+        : isCombinedResult
+          ? `
+        <td><strong>${escapeHtml(BremPromotionApply.getResultRowErpName(row))}</strong></td>
+        <td>${escapeHtml(BremPromotionApply.getResultRowCoupangId(row))}</td>
+        <td>${escapeHtml(BremPromotionApply.getResultRowBaeminId(row))}</td>
+        `
+          : `
+        <td><strong>${escapeHtml(BremPromotionApply.getResultRowDisplayName(row, platform))}</strong></td>
+        <td>${escapeHtml(BremPromotionApply.getResultRowErpName(row))}</td>
+        `;
       return `
       <tr class="${row.totalPromotionAmount > 0 ? 'promotion-row-paid' : 'promotion-row-unpaid'}${rateMissing ? ' promotion-row-rate-missing' : ''}">
         ${identityCells}
