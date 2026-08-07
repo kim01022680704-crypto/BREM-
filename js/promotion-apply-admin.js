@@ -480,7 +480,8 @@ const BremPromotionApplyAdmin = (function () {
     if (!needsFile) return null;
 
     if (platform === 'combined') {
-      const password = $('#promotionApplyDeliveryFeePassword-combined')?.value ?? '';
+      const coupangPassword = $('#promotionApplyDeliveryFeePassword-combined-coupang')?.value ?? '';
+      const baeminPassword = $('#promotionApplyDeliveryFeePassword-combined-baemin')?.value ?? '';
       const coupangFile = $('#promotionApplyDeliveryFeeFile-combined-coupang')?.files?.[0];
       const baeminFile = $('#promotionApplyDeliveryFeeFile-combined-baemin')?.files?.[0];
       if (!coupangFile) {
@@ -490,9 +491,9 @@ const BremPromotionApplyAdmin = (function () {
         throw new Error('단가보장 프로모션은 배민 배달처리비 정산서 파일을 선택하세요.');
       }
 
-      const coupangParsed = await BremCoupangDeliveryFee.parseFile(coupangFile, password);
+      const coupangParsed = await BremCoupangDeliveryFee.parseFile(coupangFile, coupangPassword);
       BremCoupangDeliveryFee.assertDateMatch(coupangSettlement, coupangParsed);
-      const baeminParsed = await BremBaeminDeliveryFee.parseFile(baeminFile, password);
+      const baeminParsed = await BremBaeminDeliveryFee.parseFile(baeminFile, baeminPassword);
       BremBaeminDeliveryFee.assertDateMatch(baeminSettlement, baeminParsed);
 
       return {
