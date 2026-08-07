@@ -1905,7 +1905,10 @@
 
     const appliedDriverIds = bulkUtils.collectAppliedDriverIds(state.hourlyInsuranceAppliedBatches);
     const pendingFiltered = bulkUtils.filterRowsForApply(state.hourlyInsurancePendingRows, appliedDriverIds);
-    const pendingSeen = new Set();
+    const previewBuilt = typeof bulkUtils.buildPreviewRows === 'function'
+      ? bulkUtils.buildPreviewRows(state.hourlyInsurancePendingRows)
+      : { rows: state.hourlyInsurancePendingRows, mergedDuplicateInSheet: 0 };
+    const previewRows = previewBuilt.rows || [];
 
     if (pendingSection) {
       pendingSection.hidden = !state.hourlyInsurancePendingRows.length;
@@ -1919,26 +1922,31 @@
     } else {
       if (summaryEl) {
         const applyCount = pendingFiltered.toApply.length;
-        summaryEl.textContent = `${state.hourlyInsurancePendingFileName || '미리보기'} · 신규 적용 ${applyCount}명 · ${pendingFiltered.toApply.reduce((s, r) => s + Number(r.hourlyInsurance || 0), 0).toLocaleString('ko-KR')}원`;
+        const applyAmount = pendingFiltered.toApply.reduce((s, r) => s + Number(r.hourlyInsurance || 0), 0);
+        const mergeNote = previewBuilt.mergedDuplicateInSheet
+          ? ` · 시트내 합산 ${previewBuilt.mergedDuplicateInSheet}건`
+          : '';
+        summaryEl.textContent = `${state.hourlyInsurancePendingFileName || '미리보기'} · 적용 예정 ${applyCount}명 · ${applyAmount.toLocaleString('ko-KR')}원${mergeNote}`;
       }
-      pendingBody.innerHTML = state.hourlyInsurancePendingRows.map(row => {
+      pendingBody.innerHTML = previewRows.map(row => {
         let applyLabel = row.matchStatusLabel || '-';
-        let statusCls = row.matchStatus === 'matched' ? 'text-success' : 'text-danger';
+        let statusCls = (row.matchStatus === 'matched' || row.matchStatus === 'manual')
+          ? 'text-success'
+          : (row.matchStatus === 'duplicate' ? 'text-warning' : 'text-danger');
         const driverId = String(row.driverId || '').trim();
-        if (row.matchStatus === 'matched' && driverId) {
+        const mergeCount = Number(row.mergeCount || 1);
+        if ((row.matchStatus === 'matched' || row.matchStatus === 'manual') && driverId) {
           if (appliedDriverIds.has(driverId)) {
-            applyLabel = '이미 적용';
+            applyLabel = mergeCount > 1 ? `합산(${mergeCount})·추가적용` : '추가적용';
             statusCls = 'text-warning';
-          } else if (pendingSeen.has(driverId)) {
-            applyLabel = '시트 중복';
-            statusCls = 'text-warning';
-          } else {
-            pendingSeen.add(driverId);
+          } else if (mergeCount > 1) {
+            applyLabel = `합산(${mergeCount})`;
+            statusCls = 'text-success';
           }
         }
         return `
           <tr>
-            <td>${row.rowNumber}</td>
+            <td>${escapeHtml(String(row.rowNumber || '-'))}</td>
             <td>${escapeHtml(row.platformId || '-')}</td>
             <td>${formatMoney(row.hourlyInsurance)}</td>
             <td>${escapeHtml(row.driverName || '-')}</td>
@@ -1975,7 +1983,7 @@
     }
 
     if (!state.hourlyInsurancePendingRows.length && !state.hourlyInsuranceAppliedBatches.length && summaryEl) {
-      summaryEl.textContent = '주정산서 업로드 → 미리보기 → 적용하기 (기사당 1회만, 정산서 여러 장 가능)';
+      summaryEl.textContent = '주정산서 업로드 → 미리보기 → 적용하기 (시트·파일 중복은 금액 합산)';
     }
 
     renderBulkMatchIssuePanels({

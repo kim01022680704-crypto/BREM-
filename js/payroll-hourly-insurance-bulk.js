@@ -287,39 +287,99 @@
   }
 
   /**
-   * 월말 쪼개진 정산서 대응: 같은 기사는 금액을 합산.
-   * - 시트 내 중복 → 한 행으로 합산
-   * - 이미 적용된 기사 → 제외하지 않고 추가 적용(배치 합산)
+   * 매칭된 행을 ERP 기사(driverId) 기준으로 합산.
+   * 한 시트에 같은 기사가 여러 번(다른 ID/0원 행 포함) 나와도 금액 합산.
    */
-  function filterRowsForApply(rows, appliedDriverIds) {
-    const applied = appliedDriverIds instanceof Set ? appliedDriverIds : collectAppliedDriverIds(appliedDriverIds);
+  function aggregateMatchedRowsByDriver(rows) {
     const byDriver = new Map();
     let mergedDuplicateInSheet = 0;
-    let mergedAlreadyApplied = 0;
 
     (Array.isArray(rows) ? rows : []).forEach(row => {
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
       const driverId = String(row.driverId || '').trim();
+      if (!driverId) return;
       const amount = Number(row.hourlyInsurance || 0);
-      if (!driverId || !(amount > 0)) return;
 
       if (byDriver.has(driverId)) {
         const prev = byDriver.get(driverId);
         prev.hourlyInsurance = Number(prev.hourlyInsurance || 0) + amount;
+        prev.mergeCount = Number(prev.mergeCount || 1) + 1;
+        const nextId = normalizePlatformId(row.platformId);
+        if (nextId && prev.platformId && nextId !== prev.platformId) {
+          const parts = String(prev.platformId).split('+');
+          if (!parts.includes(nextId)) prev.platformId = `${prev.platformId}+${nextId}`;
+          prev.matchedPlatformId = prev.platformId;
+        }
+        const rowNums = String(prev.rowNumber || '').split(',');
+        if (!rowNums.includes(String(row.rowNumber))) {
+          prev.rowNumber = `${prev.rowNumber},${row.rowNumber}`;
+        }
         mergedDuplicateInSheet += 1;
         return;
       }
 
-      if (applied.has(driverId)) mergedAlreadyApplied += 1;
-      byDriver.set(driverId, { ...row, hourlyInsurance: amount });
+      byDriver.set(driverId, {
+        ...row,
+        hourlyInsurance: amount,
+        mergeCount: 1
+      });
     });
 
     return {
-      toApply: [...byDriver.values()],
+      rows: [...byDriver.values()],
+      mergedDuplicateInSheet
+    };
+  }
+
+  /**
+   * 월말 쪼개진 정산서·시트 내 중복 대응: 같은 기사는 금액을 합산.
+   * 이미 적용된 기사 → 제외하지 않고 추가 적용(배치 합산)
+   */
+  function filterRowsForApply(rows, appliedDriverIds) {
+    const applied = appliedDriverIds instanceof Set ? appliedDriverIds : collectAppliedDriverIds(appliedDriverIds);
+    const aggregated = aggregateMatchedRowsByDriver(rows);
+    let mergedAlreadyApplied = 0;
+    const toApply = [];
+
+    aggregated.rows.forEach(row => {
+      if (!(Number(row.hourlyInsurance || 0) > 0)) return;
+      const driverId = String(row.driverId || '').trim();
+      if (applied.has(driverId)) mergedAlreadyApplied += 1;
+      toApply.push(row);
+    });
+
+    return {
+      toApply,
       skippedAlreadyApplied: 0,
       skippedDuplicateInSheet: 0,
-      mergedDuplicateInSheet,
+      mergedDuplicateInSheet: aggregated.mergedDuplicateInSheet,
       mergedAlreadyApplied
+    };
+  }
+
+  /** 미리보기용: 매칭 행은 기사별 합산, 미매칭 등은 원본 유지 */
+  function buildPreviewRows(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const unmatched = list.filter(row =>
+      row.matchStatus !== 'matched' && row.matchStatus !== 'manual'
+    );
+    const aggregated = aggregateMatchedRowsByDriver(list);
+    const matched = aggregated.rows.map(row => {
+      const mergeCount = Number(row.mergeCount || 1);
+      if (mergeCount <= 1) return row;
+      return {
+        ...row,
+        matchStatusLabel: `합산(${mergeCount})`,
+        error: ''
+      };
+    });
+    return {
+      rows: [...matched, ...unmatched].sort((a, b) => {
+        const aNum = Number(String(a.rowNumber || '').split(',')[0]) || 0;
+        const bNum = Number(String(b.rowNumber || '').split(',')[0]) || 0;
+        return aNum - bNum;
+      }),
+      mergedDuplicateInSheet: aggregated.mergedDuplicateInSheet
     };
   }
 
@@ -402,7 +462,9 @@
     summarizeRows,
     buildHourlyInsuranceBulkMap,
     collectAppliedDriverIds,
+    aggregateMatchedRowsByDriver,
     filterRowsForApply,
+    buildPreviewRows,
     aggregateAppliedBatches,
     summarizeAppliedBatches,
     getUnmatchedLines,
