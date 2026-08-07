@@ -251,10 +251,18 @@
     }
     const map = new Map();
     (Array.isArray(bulkRows) ? bulkRows : []).forEach(row => {
-      if (row.matchStatus !== 'matched' || !row.driverId) return;
-      if (map.has(row.driverId)) return;
-      map.set(row.driverId, {
-        hourlyInsurance: parseMoney(row.hourlyInsurance),
+      if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
+      const driverId = String(row.driverId || '').trim();
+      if (!driverId) return;
+      const amount = parseMoney(row.hourlyInsurance);
+      if (!(amount > 0)) return;
+      const prev = map.get(driverId);
+      if (prev) {
+        prev.hourlyInsurance += amount;
+        return;
+      }
+      map.set(driverId, {
+        hourlyInsurance: amount,
         platformId: row.platformId || ''
       });
     });

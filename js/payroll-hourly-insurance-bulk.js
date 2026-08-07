@@ -256,10 +256,17 @@
     const map = new Map();
     (Array.isArray(bulkRows) ? bulkRows : []).forEach(row => {
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
-      if (!row.driverId) return;
-      if (map.has(row.driverId)) return;
-      map.set(row.driverId, {
-        hourlyInsurance: parseMoney(row.hourlyInsurance),
+      const driverId = String(row.driverId || '').trim();
+      if (!driverId) return;
+      const amount = parseMoney(row.hourlyInsurance);
+      if (!(amount > 0)) return;
+      const prev = map.get(driverId);
+      if (prev) {
+        prev.hourlyInsurance += amount;
+        return;
+      }
+      map.set(driverId, {
+        hourlyInsurance: amount,
         platformId: row.platformId || '',
         matchPlatformLabel: row.matchPlatformLabel || '-',
         matchedPlatformId: row.matchedPlatformId || '-'
@@ -279,48 +286,63 @@
     return ids;
   }
 
-  /** 기사당 1회만 — 시트 내 중복·이미 적용된 기사 제외 */
+  /**
+   * 월말 쪼개진 정산서 대응: 같은 기사는 금액을 합산.
+   * - 시트 내 중복 → 한 행으로 합산
+   * - 이미 적용된 기사 → 제외하지 않고 추가 적용(배치 합산)
+   */
   function filterRowsForApply(rows, appliedDriverIds) {
     const applied = appliedDriverIds instanceof Set ? appliedDriverIds : collectAppliedDriverIds(appliedDriverIds);
-    const seenInBatch = new Set();
-    const toApply = [];
-    let skippedAlreadyApplied = 0;
-    let skippedDuplicateInSheet = 0;
+    const byDriver = new Map();
+    let mergedDuplicateInSheet = 0;
+    let mergedAlreadyApplied = 0;
 
     (Array.isArray(rows) ? rows : []).forEach(row => {
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
-      if (!row.driverId || !Number(row.hourlyInsurance || 0)) return;
-      const driverId = String(row.driverId).trim();
-      if (applied.has(driverId)) {
-        skippedAlreadyApplied += 1;
+      const driverId = String(row.driverId || '').trim();
+      const amount = Number(row.hourlyInsurance || 0);
+      if (!driverId || !(amount > 0)) return;
+
+      if (byDriver.has(driverId)) {
+        const prev = byDriver.get(driverId);
+        prev.hourlyInsurance = Number(prev.hourlyInsurance || 0) + amount;
+        mergedDuplicateInSheet += 1;
         return;
       }
-      if (seenInBatch.has(driverId)) {
-        skippedDuplicateInSheet += 1;
-        return;
-      }
-      seenInBatch.add(driverId);
-      toApply.push(row);
+
+      if (applied.has(driverId)) mergedAlreadyApplied += 1;
+      byDriver.set(driverId, { ...row, hourlyInsurance: amount });
     });
 
-    return { toApply, skippedAlreadyApplied, skippedDuplicateInSheet };
+    return {
+      toApply: [...byDriver.values()],
+      skippedAlreadyApplied: 0,
+      skippedDuplicateInSheet: 0,
+      mergedDuplicateInSheet,
+      mergedAlreadyApplied
+    };
   }
 
+  /** 여러 배치·시트에 걸친 같은 기사 시간제보험을 합산한 행 목록 */
   function aggregateAppliedBatches(batches) {
     const list = Array.isArray(batches) ? batches : [];
-    const rows = [];
-    const seen = new Set();
+    const byDriver = new Map();
     list.forEach(batch => {
       (Array.isArray(batch.rows) ? batch.rows : []).forEach(row => {
         if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
-        if (!row.driverId) return;
-        const id = String(row.driverId).trim();
-        if (seen.has(id)) return;
-        seen.add(id);
-        rows.push(row);
+        const id = String(row.driverId || '').trim();
+        if (!id) return;
+        const amount = parseMoney(row.hourlyInsurance);
+        if (!(amount > 0)) return;
+        const prev = byDriver.get(id);
+        if (prev) {
+          prev.hourlyInsurance = Number(prev.hourlyInsurance || 0) + amount;
+          return;
+        }
+        byDriver.set(id, { ...row, hourlyInsurance: amount });
       });
     });
-    return rows;
+    return [...byDriver.values()];
   }
 
   function summarizeAppliedBatches(batches) {

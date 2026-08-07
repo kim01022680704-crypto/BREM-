@@ -1808,12 +1808,7 @@
     const toApply = filtered.toApply;
 
     if (!toApply.length) {
-      const parts = [];
-      if (filtered.skippedAlreadyApplied) parts.push(`이미 적용 ${filtered.skippedAlreadyApplied}명`);
-      if (filtered.skippedDuplicateInSheet) parts.push(`시트 중복 ${filtered.skippedDuplicateInSheet}명`);
-      showToast(parts.length
-        ? `새로 적용할 기사가 없습니다. (${parts.join(' · ')})`
-        : '적용할 매칭된 시간제보험 데이터가 없습니다.');
+      showToast('적용할 매칭된 시간제보험 데이터가 없습니다.');
       return;
     }
 
@@ -1825,8 +1820,8 @@
       rows: toApply.map(row => ({ ...row })),
       matchedCount: summary.matched,
       totalAmount: summary.hourlyInsuranceTotal,
-      skippedAlreadyApplied: filtered.skippedAlreadyApplied,
-      skippedDuplicateInSheet: filtered.skippedDuplicateInSheet
+      mergedAlreadyApplied: filtered.mergedAlreadyApplied || 0,
+      mergedDuplicateInSheet: filtered.mergedDuplicateInSheet || 0
     };
 
     state.hourlyInsuranceAppliedBatches.push(batch);
@@ -1840,12 +1835,12 @@
       renderPreview();
     }
 
-    const skipParts = [];
-    if (filtered.skippedAlreadyApplied) skipParts.push(`이미적용 제외 ${filtered.skippedAlreadyApplied}명`);
-    if (filtered.skippedDuplicateInSheet) skipParts.push(`중복 제외 ${filtered.skippedDuplicateInSheet}명`);
-    const skipText = skipParts.length ? ` · ${skipParts.join(' · ')}` : '';
+    const mergeParts = [];
+    if (filtered.mergedAlreadyApplied) mergeParts.push(`기존기사 합산 ${filtered.mergedAlreadyApplied}명`);
+    if (filtered.mergedDuplicateInSheet) mergeParts.push(`시트내 합산 ${filtered.mergedDuplicateInSheet}건`);
+    const mergeText = mergeParts.length ? ` · ${mergeParts.join(' · ')}` : '';
     showToast(
-      `시간제보험 적용 ${summary.matched}명 ${summary.hourlyInsuranceTotal.toLocaleString('ko-KR')}원${skipText} (전체 ${applied.matchedDrivers}명)`
+      `시간제보험 적용 ${summary.matched}명 ${summary.hourlyInsuranceTotal.toLocaleString('ko-KR')}원${mergeText} (합산 후 ${applied.matchedDrivers}명 · ${applied.hourlyInsuranceTotal.toLocaleString('ko-KR')}원)`
     );
   }
 
@@ -1961,7 +1956,7 @@
     }
     if (appliedSummaryEl) {
       appliedSummaryEl.textContent = state.hourlyInsuranceAppliedBatches.length
-        ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 (기사당 1회) · 합계 ${applied.hourlyInsuranceTotal.toLocaleString('ko-KR')}원`
+        ? `적용 ${applied.batchCount}회 · 기사 ${applied.matchedDrivers}명 (월말 쪼개짐 합산) · 합계 ${applied.hourlyInsuranceTotal.toLocaleString('ko-KR')}원`
         : '아직 적용된 정산서가 없습니다';
     }
     if (appliedBody) {
