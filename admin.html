@@ -5331,11 +5331,11 @@
               </div>
               <div class="promotion-form-grid promotion-delivery-fee-grid">
                 <label>
-                  쿠팡 배달처리비 비밀번호
+                  쿠팡 주정산서 비밀번호
                   <input type="text" id="promotionApplyDeliveryFeePassword-combined-coupang" placeholder="쿠팡 엑셀 열람 비밀번호" autocomplete="off" spellcheck="false">
                 </label>
                 <label>
-                  쿠팡 배달처리비 정산서 (.xlsx)
+                  쿠팡 주정산서 (.xlsx) — 배달처리비 포함
                   <input type="file" id="promotionApplyDeliveryFeeFile-combined-coupang" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                 </label>
                 <label>
@@ -5347,7 +5347,7 @@
                   <input type="file" id="promotionApplyDeliveryFeeFile-combined-baemin" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
                 </label>
               </div>
-              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined">단가보장 조건이 있으면 <strong>쿠팡·배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 보장 단가 구간을 고르고, 쿠팡은 3시트 오더별 상세 <strong>B열 이름·Y열 정산금액</strong>, 배민은 <strong>K열 User ID·AH열</strong>로 보장액을 각각 계산합니다. 파일명 기간은 각 주정산서와 같아야 합니다.</p>
+              <p class="form-help" id="promotionApplyDeliveryFeeHint-combined">단가보장 조건이 있으면 <strong>쿠팡 주정산서(배달현황_…_YYYYMMDD)</strong>와 <strong>배민 배달처리비</strong>를 업로드하세요. 합산 콜수로 구간을 고르고, 쿠팡은 3시트 오더별 상세 <strong>B열·Y열</strong>, 배민은 <strong>K열·AH열</strong>로 보장액을 각각 계산합니다.</p>
               <p class="form-help" id="promotionApplyDeliveryFeeHint-combined-coupang" hidden></p>
               <p class="form-help" id="promotionApplyDeliveryFeeHint-combined-baemin" hidden></p>
               <div class="promotion-form-section">
@@ -7783,15 +7783,15 @@
   <script src="js/weekly-settlement.js?v=20260806p"></script>
   <script src="js/weekly-settlement-admin.js?v=20260806p"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
-  <script src="js/coupang-delivery-fee.js?v=20260807a"></script>
+  <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
     <script src="js/baemin-delivery-status-admin.js?v=20260805c"></script>
     <script src="js/coupang-status-admin.js?v=20260805n"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260806s"></script>
     <script src="js/contribution-admin.js?v=20260805e"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>
-  <script src="js/promotion-apply.js?v=20260807b"></script>
-  <script src="js/promotion-apply-admin.js?v=20260807b"></script>
+  <script src="js/promotion-apply.js?v=20260807c"></script>
+  <script src="js/promotion-apply-admin.js?v=20260807c"></script>
   <script src="js/data-backup-admin.js?v=20260620h"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/lease-profit.js?v=20260630l"></script>

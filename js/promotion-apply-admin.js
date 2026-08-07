@@ -421,7 +421,7 @@ const BremPromotionApplyAdmin = (function () {
 
     if (!file) {
       hintEl.innerHTML = platformKey === 'combined'
-        ? '단가보장 조건이 있으면 <strong>쿠팡·배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 구간을 고르고, 쿠팡은 <strong>B열 이름·Y열</strong>, 배민은 <strong>K열·AH열</strong>로 보장액을 각각 계산합니다.'
+        ? '단가보장 조건이 있으면 <strong>쿠팡 주정산서(배달현황)</strong>·<strong>배민 배달처리비</strong>를 모두 업로드하세요. 합산 콜수로 구간을 고르고, 쿠팡은 3시트 <strong>B열·Y열</strong>, 배민은 <strong>K열·AH열</strong>로 보장액을 각각 계산합니다.'
         : '단가보장(미션 배정) 시 <strong>배달처리비_팀명_YYYYMMDD_YYYYMMDD</strong> 파일을 업로드하세요. <strong>K열 User ID</strong> 매칭 · <strong>U·V·AH 중 하나라도 빈칸/0이면 해당 행 전체 무효</strong> · 세 열 모두 유효한 행만 집계';
       return;
     }
@@ -464,7 +464,7 @@ const BremPromotionApplyAdmin = (function () {
 
     if (mainHint) {
       mainHint.innerHTML = parts.join(' · ')
-        + '<br>단가보장 시 합산 콜수로 구간을 고르고, 쿠팡(B·Y)·배민(K·AH) 보장액을 각각 적용합니다.';
+        + '<br>쿠팡은 <strong>배달현황_…_YYYYMMDD</strong> 주정산서(3시트 B·Y), 배민은 <strong>배달처리비_…_시작_종료</strong>(K·AH)입니다.';
     }
   }
 
