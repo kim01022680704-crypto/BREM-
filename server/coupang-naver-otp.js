@@ -7,9 +7,13 @@ const path = require('path');
 const fs = require('fs');
 
 const NAVER_MAIL_URL = 'https://mail.naver.com';
+/** 쿠팡 인증메일은 받은메일함이 아니라 전체메일(프로모션)에 옴 */
+const NAVER_MAIL_ALL_URL = 'https://mail.naver.com/v2/folders/-1';
 const NAVER_LOGIN_URL = 'https://nid.naver.com/nidlogin.login';
 const DEFAULT_PROFILE = path.join(process.cwd(), '.naver-playwright-profile');
 const OTP_PATTERNS = [
+  /인증\s*번호\s*([0-9]{4,8})/i,
+  /인증번호\s*([0-9]{4,8})/i,
   /인증\s*번호[:\s]*([0-9]{4,8})/i,
   /인증번호[:\s]*([0-9]{4,8})/i,
   /verification\s*code[:\s]*([0-9]{4,8})/i,
@@ -277,13 +281,68 @@ async function openNaverMailForLogin() {
   };
 }
 
+async function openNaverAllMailFolder(page) {
+  // 1) 전체메일 URL (folder -1)
+  await page.goto(NAVER_MAIL_ALL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+
+  // 2) 사이드바 「전체메일」 클릭 (받은메일함만 보는 문제 방지)
+  const allMailTab = page.getByText('전체메일', { exact: true }).first();
+  if (await allMailTab.count().catch(() => 0)) {
+    await allMailTab.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.waitForTimeout(1000);
+  } else {
+    await page.evaluate(() => {
+      const nodes = Array.from(document.querySelectorAll('a, button, span, div, li'));
+      const target = nodes.find(el => (el.textContent || '').replace(/\s+/g, ' ').trim() === '전체메일');
+      if (target) target.click();
+    }).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+}
+
+async function openLatestCoupangVerifyMail(page) {
+  // 제목: [프로모션] [쿠팡] 이메일 인증번호가 도착하였습니다.
+  const selectors = [
+    'text=[쿠팡] 이메일 인증번호가 도착하였습니다',
+    'text=이메일 인증번호가 도착하였습니다',
+    'a:has-text("이메일 인증번호")',
+    'a:has-text("[쿠팡]")',
+    '[class*="mail"]:has-text("인증번호")',
+    '[class*="subject"]:has-text("쿠팡")',
+    'span:has-text("이메일 인증번호")',
+    'div:has-text("[쿠팡] 이메일 인증번호")'
+  ];
+  for (const selector of selectors) {
+    const loc = page.locator(selector).first();
+    if (!(await loc.count().catch(() => 0))) continue;
+    if (!(await loc.isVisible().catch(() => false))) continue;
+    await loc.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.waitForTimeout(1200);
+    return true;
+  }
+
+  // 목록에서 쿠팡+인증번호 행 클릭
+  return page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('a, tr, li, div[role="row"], .mail_item, [class*="mail"]'));
+    const target = rows.find((el) => {
+      const t = (el.textContent || '').replace(/\s+/g, ' ');
+      return /쿠팡/.test(t) && /인증번호|인증\s*번호/.test(t);
+    });
+    if (!target) return false;
+    target.click();
+    return true;
+  }).catch(() => false);
+}
+
 /**
- * 최근 수신 메일에서 쿠팡/인증 OTP를 찾는다.
+ * 전체메일에서 쿠팡 인증 OTP를 찾는다.
+ * (받은메일함에는 안 오고 [프로모션] 전체메일에만 오는 경우가 많음)
  * @param {{ timeoutMs?: number, sinceMs?: number, headless?: boolean }} options
  */
 async function waitForCoupangOtp(options = {}) {
   const timeoutMs = Math.max(15000, Number(options.timeoutMs || 120000));
-  const sinceMs = Number(options.sinceMs || Date.now() - 5 * 60 * 1000);
+  const sinceMs = Number(options.sinceMs || Date.now() - 10 * 60 * 1000);
   recovering = true;
   try {
     const context = await ensureNaverContext({ headless: options.headless === true });
@@ -298,33 +357,40 @@ async function waitForCoupangOtp(options = {}) {
       };
     }
 
+    console.log('[NAVER] 전체메일에서 쿠팡 인증번호 메일 검색…');
     const deadline = Date.now() + timeoutMs;
     let lastError = '';
     while (Date.now() < deadline) {
       try {
-        await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-        await page.waitForTimeout(1200);
+        await openNaverAllMailFolder(page);
+        const opened = await openLatestCoupangVerifyMail(page);
+        await page.waitForTimeout(800);
 
-        // 최신 메일 클릭 시도 (쿠팡/인증 키워드)
-        const mailLink = page.locator(
-          'a:has-text("쿠팡"), a:has-text("Coupang"), a:has-text("인증"), [class*="mail_title"]:has-text("쿠팡"), [class*="mail_title"]:has-text("인증")'
-        ).first();
-        if (await mailLink.count().catch(() => 0)) {
-          await mailLink.click({ timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(1000);
-        }
-
+        // 읽기 화면 URL이면 본문 우선
         const text = await page.evaluate(() => document.body?.innerText || '');
-        const lower = text.toLowerCase();
-        const looksRelevant = /coupang|쿠팡|인증|otp|verification|eats/.test(lower);
-        if (looksRelevant) {
+        const looksRelevant = /쿠팡|coupang|인증번호|인증\s*번호|판매자\s*2단계|이메일\s*인증\s*코드/i.test(text);
+        if (looksRelevant || opened) {
           const otp = extractOtpFromText(text);
           if (otp) {
-            return { ok: true, otp, source: 'naver_mail_dom', sinceMs };
+            console.log(`[NAVER] 전체메일에서 OTP 추출 성공 (${String(otp).length}자리)`);
+            return { ok: true, otp, source: 'naver_all_mail', sinceMs };
           }
         }
 
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+        // 검색창이 있으면 제목 검색
+        const search = page.locator('input[placeholder*="메일검색"], input[placeholder*="검색"], input[type="search"]').first();
+        if (await search.isVisible().catch(() => false)) {
+          await search.fill('').catch(() => {});
+          await search.fill('쿠팡 인증번호').catch(() => {});
+          await page.keyboard.press('Enter').catch(() => {});
+          await page.waitForTimeout(1500);
+          await openLatestCoupangVerifyMail(page);
+          const searchedText = await page.evaluate(() => document.body?.innerText || '');
+          const otp = extractOtpFromText(searchedText);
+          if (otp) {
+            return { ok: true, otp, source: 'naver_all_mail_search', sinceMs };
+          }
+        }
       } catch (error) {
         lastError = error?.message || String(error);
       }
@@ -334,8 +400,8 @@ async function waitForCoupangOtp(options = {}) {
       ok: false,
       error: 'OTP_TIMEOUT',
       message: lastError
-        ? `네이버 메일에서 인증번호를 찾지 못했습니다. (${lastError})`
-        : '네이버 메일에서 인증번호를 찾지 못했습니다. 이메일 인증코드 전송 여부를 확인하세요.'
+        ? `전체메일에서 쿠팡 인증번호를 찾지 못했습니다. (${lastError})`
+        : '전체메일([프로모션] 쿠팡 인증번호)에서 OTP를 찾지 못했습니다. 받은메일함이 아니라 전체메일을 확인하세요.'
     };
   } finally {
     recovering = false;
