@@ -1,6 +1,7 @@
 /**
- * 쿠팡 파트너 자동 로그인 + 네이버 메일 OTP
+ * 쿠팡 파트너 자동 로그인 + 이메일 2FA + 네이버 메일 OTP
  * env: COUPANG_LOGIN_ID, COUPANG_LOGIN_PASSWORD
+ *      NAVER_LOGIN_ID, NAVER_LOGIN_PASSWORD
  */
 const naverOtp = require('./coupang-naver-otp');
 const { isCoupangLoginLikeUrl } = require('./crawl-session-auth');
@@ -78,19 +79,109 @@ async function fillLoginForm(page, id, password) {
   return { ok: true };
 }
 
+async function isTwoFactorPage(page) {
+  if (!page) return false;
+  const url = String(page.url() || '').toLowerCase();
+  if (/authenticate|login-actions|otp|2fa|mfa|verify/.test(url)) return true;
+  const text = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+  return /2단계\s*인증|인증코드\s*전송|이메일로\s*인증|휴대전화로\s*인증/.test(text);
+}
+
+/**
+ * 쿠팡 2FA: 이메일 탭 선택 → 인증코드 전송
+ */
+async function switchToEmailAuthAndSendCode(page) {
+  if (!page) return { ok: false, message: '페이지 없음' };
+
+  // 이미 OTP 입력칸이 있으면 전송 생략(재시도)
+  const otpInputReady = await page.locator(
+    'input[autocomplete="one-time-code"], input[name*="otp" i], input[placeholder*="인증"], input[placeholder*="코드"]'
+  ).first().isVisible().catch(() => false);
+
+  // 「이메일로 인증」 탭/버튼
+  const emailTabCandidates = [
+    'text=이메일로 인증',
+    'button:has-text("이메일로 인증")',
+    'a:has-text("이메일로 인증")',
+    '[role="tab"]:has-text("이메일")',
+    'label:has-text("이메일로 인증")',
+    'li:has-text("이메일로 인증")'
+  ];
+  let switched = false;
+  for (const selector of emailTabCandidates) {
+    const loc = page.locator(selector).first();
+    if (!(await loc.count().catch(() => 0))) continue;
+    if (!(await loc.isVisible().catch(() => false))) continue;
+    await loc.click({ timeout: 5000 }).catch(() => {});
+    switched = true;
+    await page.waitForTimeout(800);
+    break;
+  }
+
+  // 클릭이 안 되면 evaluate로 텍스트 노드 탐색
+  if (!switched) {
+    switched = await page.evaluate(() => {
+      const nodes = Array.from(document.querySelectorAll('button, a, li, span, div, label, [role="tab"]'));
+      const target = nodes.find(el => /이메일로\s*인증/.test((el.textContent || '').trim()));
+      if (!target) return false;
+      target.click();
+      return true;
+    }).catch(() => false);
+    if (switched) await page.waitForTimeout(800);
+  }
+
+  if (otpInputReady) {
+    return { ok: true, skippedSend: true, switched };
+  }
+
+  // 「인증코드 전송」
+  const sendCandidates = [
+    'button:has-text("인증코드 전송")',
+    'button:has-text("인증 코드 전송")',
+    'button:has-text("코드 전송")',
+    'button:has-text("전송")'
+  ];
+  let sent = false;
+  for (const selector of sendCandidates) {
+    const loc = page.locator(selector).first();
+    if (!(await loc.count().catch(() => 0))) continue;
+    if (!(await loc.isVisible().catch(() => false))) continue;
+    await loc.click({ timeout: 5000 }).catch(() => {});
+    sent = true;
+    await page.waitForTimeout(1500);
+    break;
+  }
+  if (!sent) {
+    sent = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+      const target = buttons.find(el => /인증\s*코드\s*전송|코드\s*전송/.test((el.textContent || el.value || '').trim()));
+      if (!target) return false;
+      target.click();
+      return true;
+    }).catch(() => false);
+  }
+
+  if (!sent && !switched) {
+    return { ok: false, message: '이메일 인증 탭/코드 전송 버튼을 찾지 못했습니다.' };
+  }
+  return { ok: true, switched, sent };
+}
+
 async function waitForOtpOrLoggedIn(page, timeoutMs = 20000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (await pageLooksLoggedIn(page)) return { state: 'logged_in' };
+    if (await isTwoFactorPage(page)) return { state: 'otp' };
     const otpVisible = await page.locator(
       'input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i], input[placeholder*="인증"]'
     ).first().isVisible().catch(() => false);
     if (otpVisible) return { state: 'otp' };
     const url = String(page.url() || '').toLowerCase();
-    if (/otp|verify|인증|2fa|mfa/.test(url)) return { state: 'otp' };
+    if (/otp|verify|인증|2fa|mfa|authenticate/.test(url)) return { state: 'otp' };
     await page.waitForTimeout(1000);
   }
   if (await pageLooksLoggedIn(page)) return { state: 'logged_in' };
+  if (await isTwoFactorPage(page)) return { state: 'otp' };
   return { state: 'unknown' };
 }
 
@@ -118,38 +209,55 @@ async function autoLoginCoupang(page, options = {}) {
       return { ok: true, alreadyLoggedIn: true };
     }
 
-    await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    // 이미 2FA 화면이면 비밀번호 로그인 생략
+    let needPasswordLogin = !(await isTwoFactorPage(page));
 
-    if (await pageLooksLoggedIn(page)) {
-      if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
-      return { ok: true, alreadyLoggedIn: true };
+    if (needPasswordLogin) {
+      await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+
+      if (await pageLooksLoggedIn(page)) {
+        if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
+        return { ok: true, alreadyLoggedIn: true };
+      }
+
+      if (!(await isTwoFactorPage(page))) {
+        if (!isCoupangLoginLikeUrl(page.url())) {
+          await page.goto(`${origin}/login`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+          await page.waitForTimeout(1000);
+        }
+        if (!(await isTwoFactorPage(page))) {
+          const filled = await fillLoginForm(page, creds.id, creds.password);
+          if (!filled.ok) return filled;
+        }
+      }
     }
-
-    // 로그인 페이지로 유도
-    if (!isCoupangLoginLikeUrl(page.url())) {
-      await page.goto(`${origin}/login`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-      await page.waitForTimeout(1000);
-    }
-
-    const filled = await fillLoginForm(page, creds.id, creds.password);
-    if (!filled.ok) return filled;
 
     const afterLogin = await waitForOtpOrLoggedIn(page, 25000);
     if (afterLogin.state === 'logged_in') {
       if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
-      // 대시보드 한 번 열어 JWT 유도
       await page.goto(`${origin}/page/rider-performance`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
       if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
       return { ok: true, via: 'password' };
     }
 
-    // OTP 필요 → 네이버 메일
+    // 2FA: 이메일 인증으로 전환 + 코드 전송
+    const emailAuth = await switchToEmailAuthAndSendCode(page);
+    if (!emailAuth.ok) {
+      return {
+        ok: false,
+        error: 'EMAIL_AUTH_SWITCH_FAILED',
+        message: emailAuth.message || '이메일 인증으로 전환하지 못했습니다.'
+      };
+    }
+
+    // 메일 도착 약간 대기 후 네이버에서 OTP
+    await page.waitForTimeout(3000);
     const otpResult = await naverOtp.waitForCoupangOtp({ timeoutMs: 150000, headless: false });
     if (!otpResult.ok) {
       return {
         ok: false,
-        error: 'OTP_TIMEOUT',
+        error: otpResult.error || 'OTP_TIMEOUT',
         message: otpResult.message || '네이버 메일에서 쿠팡 인증번호를 찾지 못했습니다.'
       };
     }
@@ -164,7 +272,7 @@ async function autoLoginCoupang(page, options = {}) {
     if (typeof options.onTokenScan === 'function') await options.onTokenScan(page);
 
     if (await pageLooksLoggedIn(page)) {
-      return { ok: true, via: 'password+otp', otp: true };
+      return { ok: true, via: 'password+email-otp', otp: true };
     }
     return {
       ok: false,
@@ -179,5 +287,7 @@ async function autoLoginCoupang(page, options = {}) {
 module.exports = {
   getCoupangCredentials,
   autoLoginCoupang,
-  pageLooksLoggedIn
+  pageLooksLoggedIn,
+  switchToEmailAuthAndSendCode,
+  isTwoFactorPage
 };
