@@ -217,37 +217,49 @@ async function ensureNaverLoggedIn(page, options = {}) {
   const filled = await fillNaverLoginForm(page, creds.id, creds.password);
   if (!filled.ok) return filled;
 
-  // 로그인 버튼이 안 눌린 경우를 대비해 수동 클릭 대기(최대 2분)
-  const waitMs = Math.max(20000, Number(options.manualWaitMs || 120000));
+  // 자동 클릭은 최대 2회만. 이후에는 손을 대지 않고 사람 클릭을 기다린다.
+  // (계속 자동 클릭/입력하면 사람이 버튼을 못 누르는 것처럼 보임)
+  await page.waitForTimeout(1200);
+  if (/nidlogin|nid\.naver\.com/.test(page.url())) {
+    await clickNaverLoginButton(page).catch(() => {});
+  }
+
+  console.log('[NAVER] ========================================');
+  console.log('[NAVER] 자동 클릭을 멈췄습니다.');
+  console.log('[NAVER] 이 창에서 녹색 「로그인」 버튼을 직접 한 번 눌러 주세요.');
+  console.log('[NAVER] (로그인 상태 유지 체크 추천)');
+  console.log('[NAVER] ========================================');
+
+  const waitMs = Math.max(30000, Number(options.manualWaitMs || 180000));
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
-    // 기기등록/보안 팝업 닫기
-    for (const label of ['등록안함', '다음에', '닫기', '취소', '확인']) {
+    // 팝업만 정리 (로그인 폼은 건드리지 않음)
+    for (const label of ['등록안함', '다음에', '닫기', '취소']) {
       const btn = page.locator(`button:has-text("${label}"), a:has-text("${label}")`).first();
       if (await btn.isVisible().catch(() => false)) {
         await btn.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(400);
       }
     }
 
     if (await pageLooksLoggedIntoNaver(page)) {
-      return { ok: true, via: 'password' };
+      console.log('[NAVER] 로그인 확인됨');
+      return { ok: true, via: 'password+manual' };
     }
 
-    // 아직 nid 로그인 화면이면 로그인 버튼 재클릭 + 안내
-    if (/nidlogin|nid\.naver\.com/.test(page.url())) {
-      await clickNaverLoginButton(page).catch(() => {});
-    } else if (!/mail\.naver\.com/.test(page.url())) {
+    // 로그인 성공 후 다른 페이지로 넘어간 경우 메일로 이동
+    const url = String(page.url() || '');
+    if (url && !/nidlogin|nid\.naver\.com/.test(url) && !/mail\.naver\.com/.test(url)) {
       await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2500);
   }
 
   return {
     ok: false,
     error: 'NAVER_LOGIN_FAILED',
-    message: '네이버 로그인 화면에서 녹색 「로그인」 버튼을 한 번 눌러 주세요. (이후엔 자동 유지)'
+    message: '네이버 녹색 「로그인」을 직접 눌러 주세요. 자동 입력이 버튼을 가로채지 않도록 대기만 합니다.'
   };
 }
 
