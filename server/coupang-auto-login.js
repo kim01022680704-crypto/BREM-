@@ -87,66 +87,126 @@ async function isTwoFactorPage(page) {
   return /2단계\s*인증|인증코드\s*전송|이메일로\s*인증|휴대전화로\s*인증/.test(text);
 }
 
-/**
- * 쿠팡 2FA: 이메일 탭 선택 → 인증코드 전송
- */
-async function switchToEmailAuthAndSendCode(page) {
-  if (!page) return { ok: false, message: '페이지 없음' };
+async function readTwoFactorMode(page) {
+  const text = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+  const placeholder = await page.evaluate(() => {
+    const input = document.querySelector('input[placeholder*="인증"], input[placeholder*="코드"], input[type="tel"], input[type="text"]');
+    return String(input?.placeholder || '');
+  }).catch(() => '');
+  const blob = `${text}\n${placeholder}`;
+  const emailMode = /이메일로\s*발송|이메일\s*주소|이메일로\s*발송된|메일로\s*발송|@/.test(blob)
+    && !/핸드폰으로\s*발송|휴대폰\s*번호/.test(placeholder);
+  const phoneMode = /핸드폰으로\s*발송|휴대폰\s*번호|휴대전화로\s*인증/.test(blob)
+    && /핸드폰|휴대폰|휴대전화/.test(placeholder || text);
+  return {
+    emailMode: Boolean(emailMode) || (/이메일로\s*발송된|이메일\s*주소/.test(blob)),
+    phoneMode: Boolean(phoneMode),
+    placeholder,
+    textSample: text.slice(0, 240)
+  };
+}
 
-  // 이미 OTP 입력칸이 있으면 전송 생략(재시도)
-  const otpInputReady = await page.locator(
-    'input[autocomplete="one-time-code"], input[name*="otp" i], input[placeholder*="인증"], input[placeholder*="코드"]'
-  ).first().isVisible().catch(() => false);
+async function clickEmailAuthTab(page) {
+  // 1) Playwright getByText
+  try {
+    const byText = page.getByText('이메일로 인증', { exact: true }).first();
+    if (await byText.count().catch(() => 0)) {
+      await byText.click({ timeout: 5000, force: true });
+      await page.waitForTimeout(1000);
+      return true;
+    }
+  } catch { /* continue */ }
 
-  // 「이메일로 인증」 탭/버튼
   const emailTabCandidates = [
     'text=이메일로 인증',
     'button:has-text("이메일로 인증")',
     'a:has-text("이메일로 인증")',
+    '[role="tab"]:has-text("이메일로 인증")',
     '[role="tab"]:has-text("이메일")',
     'label:has-text("이메일로 인증")',
-    'li:has-text("이메일로 인증")'
+    'li:has-text("이메일로 인증")',
+    'span:has-text("이메일로 인증")',
+    'div:has-text("이메일로 인증")'
   ];
-  let switched = false;
   for (const selector of emailTabCandidates) {
     const loc = page.locator(selector).first();
     if (!(await loc.count().catch(() => 0))) continue;
     if (!(await loc.isVisible().catch(() => false))) continue;
-    await loc.click({ timeout: 5000 }).catch(() => {});
-    switched = true;
-    await page.waitForTimeout(800);
-    break;
+    await loc.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.waitForTimeout(1000);
+    return true;
   }
 
-  // 클릭이 안 되면 evaluate로 텍스트 노드 탐색
-  if (!switched) {
-    switched = await page.evaluate(() => {
-      const nodes = Array.from(document.querySelectorAll('button, a, li, span, div, label, [role="tab"]'));
-      const target = nodes.find(el => /이메일로\s*인증/.test((el.textContent || '').trim()));
-      if (!target) return false;
-      target.click();
-      return true;
-    }).catch(() => false);
-    if (switched) await page.waitForTimeout(800);
+  // 2) DOM 탐색: 텍스트가 정확히 "이메일로 인증" 인 가장 안쪽 요소 클릭
+  return page.evaluate(() => {
+    const all = Array.from(document.querySelectorAll('button, a, li, span, div, label, p, [role="tab"]'));
+    const exact = all.find(el => (el.textContent || '').replace(/\s+/g, ' ').trim() === '이메일로 인증');
+    const loose = all.find(el => /^이메일로\s*인증$/.test((el.textContent || '').replace(/\s+/g, ' ').trim()));
+    const target = exact || loose;
+    if (!target) return false;
+    target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    target.click();
+    return true;
+  }).catch(() => false);
+}
+
+/**
+ * 쿠팡 2FA: 반드시 이메일 탭 선택 → (확인 후) 인증코드 전송
+ * 주의: 휴대폰 탭에도 인증번호 input이 있어서 "input 있으면 skip" 하면 안 됨
+ */
+async function switchToEmailAuthAndSendCode(page) {
+  if (!page) return { ok: false, message: '페이지 없음' };
+
+  let switched = false;
+  let emailReady = false;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const modeBefore = await readTwoFactorMode(page);
+    if (modeBefore.emailMode && !/핸드폰으로\s*발송/.test(modeBefore.placeholder || '')) {
+      emailReady = true;
+      switched = true;
+      break;
+    }
+    const clicked = await clickEmailAuthTab(page);
+    switched = switched || clicked;
+    await page.waitForTimeout(900);
+    const modeAfter = await readTwoFactorMode(page);
+    if (modeAfter.emailMode || /이메일/.test(modeAfter.placeholder || '')) {
+      emailReady = true;
+      break;
+    }
   }
 
-  if (otpInputReady) {
-    return { ok: true, skippedSend: true, switched };
+  if (!emailReady) {
+    // 최후: 탭 클릭 후에도 휴대폰 placeholder면 실패로 알림 (수동 클릭 유도)
+    const mode = await readTwoFactorMode(page);
+    if (/핸드폰|휴대폰/.test(mode.placeholder || '')) {
+      return {
+        ok: false,
+        switched,
+        message: '이메일 인증 탭 전환 실패 — 화면에서 「이메일로 인증」을 한 번 눌러 주세요.'
+      };
+    }
   }
 
-  // 「인증코드 전송」
+  // 이메일 탭에서 전송/재요청
   const sendCandidates = [
     'button:has-text("인증코드 전송")',
     'button:has-text("인증 코드 전송")',
-    'button:has-text("코드 전송")',
-    'button:has-text("전송")'
+    'button:has-text("인증 재요청")',
+    'button:has-text("재요청")',
+    'button:has-text("코드 전송")'
   ];
   let sent = false;
   for (const selector of sendCandidates) {
     const loc = page.locator(selector).first();
     if (!(await loc.count().catch(() => 0))) continue;
     if (!(await loc.isVisible().catch(() => false))) continue;
-    await loc.click({ timeout: 5000 }).catch(() => {});
+    // 타이머 중 재요청 비활성일 수 있음
+    const disabled = await loc.isDisabled().catch(() => false);
+    if (disabled) continue;
+    await loc.click({ timeout: 5000, force: true }).catch(() => {});
     sent = true;
     await page.waitForTimeout(1500);
     break;
@@ -154,17 +214,29 @@ async function switchToEmailAuthAndSendCode(page) {
   if (!sent) {
     sent = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-      const target = buttons.find(el => /인증\s*코드\s*전송|코드\s*전송/.test((el.textContent || el.value || '').trim()));
+      const target = buttons.find((el) => {
+        const label = (el.textContent || el.value || '').replace(/\s+/g, ' ').trim();
+        return /인증\s*코드\s*전송|인증\s*재요청|코드\s*전송|재요청/.test(label)
+          && !el.disabled
+          && el.offsetParent !== null;
+      });
       if (!target) return false;
       target.click();
       return true;
     }).catch(() => false);
   }
 
-  if (!sent && !switched) {
-    return { ok: false, message: '이메일 인증 탭/코드 전송 버튼을 찾지 못했습니다.' };
+  const modeFinal = await readTwoFactorMode(page);
+  if (/핸드폰으로\s*발송|휴대폰\s*번호/.test(modeFinal.placeholder || '')) {
+    return {
+      ok: false,
+      switched,
+      sent,
+      message: '아직 휴대전화 인증 화면입니다. 「이메일로 인증」 탭을 눌러 주세요.'
+    };
   }
-  return { ok: true, switched, sent };
+
+  return { ok: true, switched: true, sent, emailMode: modeFinal.emailMode };
 }
 
 async function waitForOtpOrLoggedIn(page, timeoutMs = 20000) {
