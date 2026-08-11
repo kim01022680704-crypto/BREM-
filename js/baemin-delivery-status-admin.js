@@ -5496,9 +5496,13 @@
   }
 
   function startCrawlRuntimePoll() {
-    stopCrawlRuntimePoll();
+    if (state.crawlRuntimePollTimer) {
+      // 이미 돌고 있으면 타이머 재생성 없이 즉시 한 번만 갱신
+      void refreshCrawlRuntimeStatus();
+      return;
+    }
     void refreshCrawlRuntimeStatus();
-    // 대기 초 카운트다운이 보이도록 2초마다 갱신
+    // 대기 초 카운트다운이 보이도록 2초마다 갱신 (메뉴 이동해도 유지)
     state.crawlRuntimePollTimer = setInterval(() => {
       void refreshCrawlRuntimeStatus();
     }, 2000);
@@ -6817,6 +6821,8 @@
       invalidateDataCache();
     }
     state.activeSection = nextSection;
+    // 섹션 전환으로 배민 폴러가 멈춰도 탑바 크롤 태그는 유지/재개
+    if (state.crawlOperatorAllowed) startCrawlRuntimePoll();
     bindEvents();
     const dateInput = $('baeminDeliveryCaptureDate');
     if (dateInput && !dateInput.value) {
@@ -6885,10 +6891,12 @@
   }
 
   function stopPolling() {
+    // 배민 섹션 전용 폴러만 중지.
+    // 탑바 배민/쿠팡 상태태그는 메뉴 이동과 무관하게 계속 갱신되어야 함
+    // (운영자가 대시보드·다른 화면에서도 실시간으로 봐야 함).
     stopStatusPoll();
     stopLocalHealthPoll();
     stopSetupPoll();
-    stopCrawlRuntimePoll();
   }
 
   window.BremBaeminDeliveryStatusAdmin = {
