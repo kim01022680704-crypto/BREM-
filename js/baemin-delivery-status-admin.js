@@ -5527,7 +5527,7 @@
     }
     const busy = $('crawlMorningStartBtn')?.disabled || $('baeminMorningRunBtn')?.disabled;
     if (busy) return;
-    if (!window.confirm('크롤링을 시작할까요?\n배민/쿠팡 수집·자동순회 시작 (수~화)\n콜수/거절율/라이더앱 반영은 스케줄(07:00·11:30·14:00·22:00)로 확인사살합니다.')) {
+    if (!window.confirm('크롤링을 시작할까요?\n배민/쿠팡 수집·자동순회 시작 (수~화)\n주단위(라이더별 하루씩)는 라이더반영 30분 전(06:30·11:00·13:30·21:30) 자동\n콜수/거절율/라이더앱 반영은 07:00·11:30·14:00·22:00 확인사살')) {
       return;
     }
     setMorningRunButtonsBusy(true);

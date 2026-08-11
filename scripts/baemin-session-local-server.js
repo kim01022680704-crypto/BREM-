@@ -99,6 +99,7 @@ const AUTO_RESUME_STATUS_LOOP = String(process.env.BAEMIN_AUTO_RESUME_STATUS_LOO
 /** 기동 시 Playwright 배민 창을 바로 연다 (기본 ON, 끄려면 BAEMIN_AUTO_OPEN_BROWSER=0) */
 const AUTO_OPEN_BROWSER = String(process.env.BAEMIN_AUTO_OPEN_BROWSER || '1').trim() !== '0';
 let erpPublishScheduler = null;
+let weeklyRefreshScheduler = null;
 let lastCollectResult = {
   at: null,
   ok: null,
@@ -126,7 +127,9 @@ let statusLoop = {
   waitEndsAt: 0,
   lastError: '',
   startedAt: null,
-  updatedAt: null
+  updatedAt: null,
+  /** 재개 시 1회차 주단위 부트스트랩 생략 (주단위 스케줄 직후) */
+  skipBootstrap: false
 };
 let statusLoopPromise = null;
 let riderLiveSyncRunning = false;
@@ -1184,7 +1187,11 @@ async function keepAliveDuringStatusWait(ms) {
 
 async function runStatusAutoLoopInner() {
   console.log('[BREM] [현황자동수집] 시작 — 종료 API 호출 전까지 세션 서버에서 반복');
-  let isFirstRound = true;
+  let isFirstRound = !statusLoop.skipBootstrap;
+  statusLoop.skipBootstrap = false;
+  if (!isFirstRound) {
+    console.log('[BREM] [현황자동수집] skipBootstrap — 주단위 생략, 배달현황 순회부터');
+  }
 
   while (statusLoop.active && !statusLoop.stopping) {
     await detectAndMarkAuthRequired().catch(() => false);
@@ -1311,7 +1318,7 @@ async function runStatusAutoLoopInner() {
   console.log('[BREM] [현황자동수집] 종료');
 }
 
-function startStatusAutoLoop() {
+function startStatusAutoLoop(options = {}) {
   if (statusLoop.active || statusLoopPromise) {
     return { ok: true, alreadyRunning: true, statusLoop: getStatusLoopPayload() };
   }
@@ -1333,8 +1340,12 @@ function startStatusAutoLoop() {
   statusLoop.stopping = false;
   statusLoop.round = 0;
   statusLoop.lastError = '';
+  statusLoop.skipBootstrap = Boolean(options.skipBootstrap);
   statusLoop.startedAt = new Date().toISOString();
-  setStatusLoopPhase('bootstrap', '부트스트랩 준비 중…');
+  setStatusLoopPhase(
+    statusLoop.skipBootstrap ? 'collecting' : 'bootstrap',
+    statusLoop.skipBootstrap ? '배달현황 순회 재개…' : '부트스트랩 준비 중…'
+  );
 
   statusLoopPromise = runStatusAutoLoopInner()
     .catch(error => {
@@ -1362,6 +1373,70 @@ function stopStatusAutoLoop() {
   setStatusLoopPhase('idle', '사용자가 종료함');
   console.log('[BREM] [현황자동수집] 종료 요청');
   return { ok: true, stopped: true, statusLoop: getStatusLoopPayload() };
+}
+
+async function stopStatusAutoLoopAndWait(timeoutMs = 180000) {
+  const wasActive = Boolean(statusLoop.active || statusLoopPromise);
+  stopStatusAutoLoop();
+  const started = Date.now();
+  while (statusLoopPromise && Date.now() - started < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  // 수집 락이 풀릴 때까지도 대기
+  while (collectRunning && Date.now() - started < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  return { ok: !statusLoopPromise && !collectRunning, wasActive };
+}
+
+/**
+ * 라이더반영 30분 전용: 정산주 일별+라이더별(하루씩)+배달현황 수집 후 저장
+ */
+async function runBaeminWeekCollectForSchedule(options = {}) {
+  const weekRange = options.weekRange || computeThisWeekRangeForLoop();
+  const collectDate = baeminAutoCollect.todayDateStringKST();
+  const loopStop = await stopStatusAutoLoopAndWait();
+  setStatusLoopPhase('bootstrap', `주단위 스케줄 · 배달+일별+라이더(${weekRange.label})`);
+
+  const collect = await runLocalFullCollect({
+    collectDate,
+    sourceMenus: ['delivery_status', 'daily_history', 'rider_history'],
+    dailyCollectRange: {
+      fromDate: weekRange.fromDate,
+      toDate: weekRange.toDate
+    },
+    riderCollectRange: {
+      fromDate: weekRange.fromDate,
+      toDate: weekRange.toDate
+    },
+    source: 'weekly_refresh_schedule'
+  });
+
+  if (!collect.ok) {
+    if (loopStop.wasActive) startStatusAutoLoop({ skipBootstrap: true });
+    return {
+      ok: false,
+      message: collect.message || '배민 주단위 수집 실패',
+      weekRange,
+      resumedLoop: loopStop.wasActive
+    };
+  }
+
+  const apply = await applyStatusLoopToErp(collect.collectDate || collectDate);
+  if (loopStop.wasActive) {
+    startStatusAutoLoop({ skipBootstrap: true });
+  }
+
+  return {
+    ok: Boolean(apply.ok),
+    message: apply.ok
+      ? `배민 주단위 수집·저장 완료 · ${weekRange.label}`
+      : (apply.message || '배민현황 저장 실패'),
+    weekRange,
+    collect,
+    apply,
+    resumedLoop: loopStop.wasActive
+  };
 }
 
 /**
@@ -2206,9 +2281,11 @@ const server = http.createServer(async (req, res) => {
         statusLoop: true,
         morningRun: true,
         authState: true,
-        erpPublishSchedule: true
+        erpPublishSchedule: true,
+        weeklyRefreshSchedule: true
       },
       erpPublishSchedule: erpPublishScheduler?.getStatus?.() || null,
+      weeklyRefreshSchedule: weeklyRefreshScheduler?.getStatus?.() || null,
       supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
       browser,
@@ -2626,7 +2703,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/status-loop/start' && req.method === 'POST') {
-    const result = startStatusAutoLoop();
+    const body = await readJsonBody(req).catch(() => ({}));
+    const result = startStatusAutoLoop({
+      skipBootstrap: Boolean(body?.skipBootstrap)
+    });
     const status = result.ok ? 202 : (result.sessionExpired ? 409 : 409);
     return sendJsonWithCors(req, res, status, {
       ...result,
@@ -2841,6 +2921,44 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // 라이더반영 30분 전 주단위 재수집 (배민 일별/라이더별 + 쿠팡 fullWeek)
+  if (url.pathname === '/weekly-refresh/run' && req.method === 'POST') {
+    try {
+      if (!weeklyRefreshScheduler?.runNow) {
+        const { runWeeklyRefreshPipeline } = require('../server/crawl-weekly-refresh-schedule');
+        const result = await runWeeklyRefreshPipeline({
+          slot: 'manual',
+          runBaeminWeekCollect: runBaeminWeekCollectForSchedule
+        });
+        return sendJsonWithCors(req, res, result.ok ? 200 : 500, result);
+      }
+      const result = await weeklyRefreshScheduler.runNow();
+      return sendJsonWithCors(req, res, result.ok ? 200 : 500, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
+  if (url.pathname === '/weekly-refresh/run-baemin' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req).catch(() => ({}));
+      const weekRange = (body.fromDate && body.toDate)
+        ? { fromDate: body.fromDate, toDate: body.toDate, label: `${body.fromDate}~${body.toDate}` }
+        : computeThisWeekRangeForLoop();
+      const result = await runBaeminWeekCollectForSchedule({ weekRange });
+      return sendJsonWithCors(req, res, result.ok ? 200 : 500, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
+  if (url.pathname === '/weekly-refresh/status' && req.method === 'GET') {
+    return sendJsonWithCors(req, res, 200, {
+      ok: true,
+      ...(weeklyRefreshScheduler?.getStatus?.() || { enabled: false })
+    });
+  }
+
   sendJsonWithCors(req, res, 404, { ok: false, message: 'Not found' });
 });
 
@@ -2939,6 +3057,21 @@ server.listen(PORT, '127.0.0.1', async () => {
     }
   } catch (error) {
     console.warn('[BREM] ERP확인사살 스케줄 시작 실패:', formatError(error));
+  }
+
+  try {
+    const { startWeeklyRefreshScheduler } = require('../server/crawl-weekly-refresh-schedule');
+    weeklyRefreshScheduler = startWeeklyRefreshScheduler({
+      onLog: (...args) => console.log(...args),
+      runBaeminWeekCollect: runBaeminWeekCollectForSchedule
+    });
+    const wst = weeklyRefreshScheduler.getStatus();
+    if (wst.enabled) {
+      console.log(`[BREM] 주단위재수집 스케줄: ${wst.slots.join(', ')} KST (라이더반영 ${wst.offsetMin || 30}분 전)`);
+      if (wst.next) console.log(`[BREM] 다음 주단위재수집: ${wst.next.date} ${wst.next.slot}`);
+    }
+  } catch (error) {
+    console.warn('[BREM] 주단위재수집 스케줄 시작 실패:', formatError(error));
   }
 
   if (AUTO_RESUME_STATUS_LOOP) {
