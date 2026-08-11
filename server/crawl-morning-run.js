@@ -241,14 +241,22 @@ async function runMorningCrawlPipeline(options = {}) {
     }
   }
 
-  // 3) Rider publish
-  if (!options.skipPublish) {
+  // 3) Rider publish — 기본은 스케줄(07:00/11:30/14:00/22:00)에서만 수행
+  //    원버튼에서 즉시 반영하려면 { publish: true }
+  const shouldPublish = options.publish === true || options.skipPublish === false;
+  if (shouldPublish) {
     try {
       const pub = await publishRiderView();
       push('rider_publish', pub);
     } catch (error) {
       push('rider_publish', { ok: false, message: error.message || String(error) });
     }
+  } else {
+    push('rider_publish', {
+      ok: true,
+      skipped: true,
+      message: '스케줄 반영(07:00/11:30/14:00/22:00)으로 예약 — 원버튼에서는 생략'
+    });
   }
 
   const failed = steps.some(step => step.ok === false);

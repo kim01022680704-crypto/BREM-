@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260811d';
+const SERVER_VERSION = '20260811e';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -98,6 +98,7 @@ let morningRunRunning = false;
 const AUTO_RESUME_STATUS_LOOP = String(process.env.BAEMIN_AUTO_RESUME_STATUS_LOOP || '').trim() === '1';
 /** 기동 시 Playwright 배민 창을 바로 연다 (기본 ON, 끄려면 BAEMIN_AUTO_OPEN_BROWSER=0) */
 const AUTO_OPEN_BROWSER = String(process.env.BAEMIN_AUTO_OPEN_BROWSER || '1').trim() !== '0';
+let erpPublishScheduler = null;
 let lastCollectResult = {
   at: null,
   ok: null,
@@ -2196,8 +2197,10 @@ const server = http.createServer(async (req, res) => {
         applyErp: true,
         statusLoop: true,
         morningRun: true,
-        authState: true
+        authState: true,
+        erpPublishSchedule: true
       },
+      erpPublishSchedule: erpPublishScheduler?.getStatus?.() || null,
       supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
       browser,
@@ -2799,6 +2802,24 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 콜수/거절율/라이더반영 확인사살 (스케줄과 동일 파이프라인)
+  if (url.pathname === '/erp-publish/run' && req.method === 'POST') {
+    try {
+      const { runErpAndPublishPipeline } = require('../server/crawl-erp-publish-schedule');
+      const result = await runErpAndPublishPipeline({ slot: 'manual' });
+      return sendJsonWithCors(req, res, result.ok ? 200 : 500, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
+  if (url.pathname === '/erp-publish/status' && req.method === 'GET') {
+    return sendJsonWithCors(req, res, 200, {
+      ok: true,
+      ...(erpPublishScheduler?.getStatus?.() || { enabled: false })
+    });
+  }
+
   sendJsonWithCors(req, res, 404, { ok: false, message: 'Not found' });
 });
 
@@ -2871,6 +2892,20 @@ server.listen(PORT, '127.0.0.1', async () => {
   }
 
   startAutoCollectScheduler();
+
+  try {
+    const { startErpPublishScheduler } = require('../server/crawl-erp-publish-schedule');
+    erpPublishScheduler = startErpPublishScheduler({
+      onLog: (...args) => console.log(...args)
+    });
+    const st = erpPublishScheduler.getStatus();
+    if (st.enabled) {
+      console.log(`[BREM] ERP확인사살 스케줄: ${st.slots.join(', ')} KST (콜수·거절율·라이더반영)`);
+      if (st.next) console.log(`[BREM] 다음 확인사살: ${st.next.date} ${st.next.slot}`);
+    }
+  } catch (error) {
+    console.warn('[BREM] ERP확인사살 스케줄 시작 실패:', formatError(error));
+  }
 
   if (AUTO_RESUME_STATUS_LOOP) {
     console.log('[BREM] BAEMIN_AUTO_RESUME_STATUS_LOOP=1 — 현황 자동수집을 이어서 시작합니다.');

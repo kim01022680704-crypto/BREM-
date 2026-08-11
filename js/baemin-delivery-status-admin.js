@@ -5329,7 +5329,7 @@
     }
     const busy = $('crawlMorningStartBtn')?.disabled || $('baeminMorningRunBtn')?.disabled;
     if (busy) return;
-    if (!window.confirm('크롤링을 시작할까요?\n배민 1회차 수집·저장·콜수/거절율 → 쿠팡 자동로그인·7일 수집·거절율 → 라이더 반영 → 자동순회\n(수요일은 전주 수~화 포함)')) {
+    if (!window.confirm('크롤링을 시작할까요?\n배민/쿠팡 수집·자동순회 시작 (수~화)\n콜수/거절율/라이더앱 반영은 스케줄(07:00·11:30·14:00·22:00)로 확인사살합니다.')) {
       return;
     }
     setMorningRunButtonsBusy(true);
