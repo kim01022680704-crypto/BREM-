@@ -161,9 +161,99 @@ async function recoverBrowserTab(page) {
   }
 }
 
+/**
+ * SLA/등급제 안내 등 수집을 막는 모달의 「닫기」를 자동 클릭
+ */
+async function dismissBaeminBlockingModals(page) {
+  if (!page || page.isClosed()) return { ok: false, closed: 0 };
+  let closed = 0;
+  try {
+    // 1) Playwright 셀렉터로 「닫기」 버튼
+    const candidates = [
+      'button:has-text("닫기")',
+      '[role="dialog"] button:has-text("닫기")',
+      '.ant-modal button:has-text("닫기")',
+      '.ant-modal-footer button:has-text("닫기")',
+      'button:has-text("확인")',
+      'button:has-text("오늘 하루 보지 않기")',
+      'button:has-text("다시 보지 않기")'
+    ];
+    for (const selector of candidates) {
+      const loc = page.locator(selector);
+      const count = await loc.count().catch(() => 0);
+      for (let i = 0; i < Math.min(count, 4); i += 1) {
+        const btn = loc.nth(i);
+        if (!(await btn.isVisible().catch(() => false))) continue;
+        await btn.click({ timeout: 2000, force: true }).catch(() => {});
+        closed += 1;
+        await delay(300);
+      }
+    }
+
+    // 2) DOM 탐색: 안내 모달 + 닫기
+    const evalClosed = await page.evaluate(() => {
+      let n = 0;
+      const isVisible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const dialogs = Array.from(document.querySelectorAll(
+        '[role="dialog"], .ant-modal, .ant-modal-wrap, .modal, [class*="Modal"], [class*="dialog"]'
+      )).filter(isVisible);
+      const roots = dialogs.length ? dialogs : [document.body];
+      const labels = ['닫기', '확인', '오늘 하루 보지 않기', '다시 보지 않기'];
+      roots.forEach((root) => {
+        const buttons = Array.from(root.querySelectorAll('button, a, [role="button"]'));
+        buttons.forEach((btn) => {
+          const text = String(btn.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!labels.includes(text)) return;
+          if (!isVisible(btn)) return;
+          // 로그인/인증 버튼은 건드리지 않음
+          if (/로그인|인증|전송|제출/.test(text)) return;
+          try {
+            btn.click();
+            n += 1;
+          } catch {
+            /* ignore */
+          }
+        });
+      });
+      // SLA/등급제 안내 텍스트가 보이면 Escape키로도 시도
+      const bodyText = document.body?.innerText || '';
+      if (/신규\s*SLA|등급제\s*안내|SLA\/등급제/.test(bodyText) && n === 0) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      }
+      return n;
+    }).catch(() => 0);
+    closed += Number(evalClosed || 0);
+
+    if (closed > 0) {
+      await page.keyboard.press('Escape').catch(() => {});
+      await delay(200);
+    }
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, closed };
+}
+
+async function dismissBaeminBlockingModalsInContext(context) {
+  if (!context) return { ok: false, closed: 0 };
+  let closed = 0;
+  for (const page of context.pages().filter(p => !p.isClosed())) {
+    const result = await dismissBaeminBlockingModals(page);
+    closed += Number(result?.closed || 0);
+  }
+  return { ok: true, closed };
+}
+
 async function recoverAllBrowserTabs(context) {
   if (!context) return;
   for (const page of context.pages().filter(p => !p.isClosed())) {
+    await dismissBaeminBlockingModals(page).catch(() => {});
     if (isUnsafeHistorySpaUrl(page.url())) {
       await recoverBrowserTab(page);
     }
@@ -225,6 +315,7 @@ function buildProbeUrls(sourceId, dateRange, collectDate = null) {
 
 async function ensureSafeBrowserTab(page) {
   if (!page || page.isClosed()) return;
+  await dismissBaeminBlockingModals(page).catch(() => {});
   if (isDeliveryStatusSpaUrl(page.url())) return;
   if (!isUnsafeHistorySpaUrl(page.url())) return;
   console.log(`[BREM][spa-guard] recover unsafe tab | was=${page.url()}`);
@@ -332,6 +423,7 @@ async function probeApiFromBrowserTab(page, sourceId, dateRange, playwrightConte
 
 async function preparePageForCollect(page, sourceId, dateRange, collectDate = null) {
   if (!page || page.isClosed()) return null;
+  await dismissBaeminBlockingModals(page).catch(() => {});
 
   if (sourceId === 'delivery_status') {
     const { extractDataArray, readTotalPages } = require('./baemin-api-fetch');
@@ -616,6 +708,8 @@ module.exports = {
   attachSafeSpaGuard,
   recoverBrowserTab,
   recoverAllBrowserTabs,
+  dismissBaeminBlockingModals,
+  dismissBaeminBlockingModalsInContext,
   ensureSafeBrowserTab,
   preparePageForCollect,
   navigateAndCaptureApi,

@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260811e';
+const SERVER_VERSION = '20260811f';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -1129,8 +1129,16 @@ async function keepAliveDuringStatusWait(ms) {
 
   try {
     const page = await getStatusLoopPage();
+    if (page) {
+      const { dismissBaeminBlockingModals } = require('../server/baemin-page-capture');
+      const dismissed = await dismissBaeminBlockingModals(page).catch(() => null);
+      if (dismissed?.closed) {
+        console.log(`[BREM] [세션유지] 안내 팝업 자동 닫기 ${dismissed.closed}건`);
+      }
+    }
     if (page && needHop) {
       await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await require('../server/baemin-page-capture').dismissBaeminBlockingModals(page).catch(() => {});
       const landed = safePageUrlSync(page);
       if (isLoginLikeUrl(landed) || !isLoggedInDeliveryPage(landed)) {
         sessionPaused = true;
@@ -2218,6 +2226,19 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  if (url.pathname === '/browser/dismiss-modals' && req.method === 'POST') {
+    try {
+      if (!isContextAlive(activeContext)) {
+        return sendJsonWithCors(req, res, 400, { ok: false, message: '브라우저가 열려 있지 않습니다.' });
+      }
+      const { dismissBaeminBlockingModalsInContext } = require('../server/baemin-page-capture');
+      const result = await dismissBaeminBlockingModalsInContext(activeContext);
+      return sendJsonWithCors(req, res, 200, { ok: true, ...result });
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
   if (url.pathname === '/browser/open' && req.method === 'POST') {
     try {
       const opened = await ensurePlaywrightBrowser();
@@ -2892,6 +2913,19 @@ server.listen(PORT, '127.0.0.1', async () => {
   }
 
   startAutoCollectScheduler();
+
+  // SLA/등급제 안내 등 모달이 수집을 막지 않도록 주기적으로 「닫기」
+  setInterval(() => {
+    if (!isContextAlive(activeContext)) return;
+    const { dismissBaeminBlockingModalsInContext } = require('../server/baemin-page-capture');
+    void dismissBaeminBlockingModalsInContext(activeContext)
+      .then((result) => {
+        if (result?.closed) {
+          console.log(`[BREM] 안내 팝업 자동 닫기 ${result.closed}건`);
+        }
+      })
+      .catch(() => {});
+  }, 15 * 1000);
 
   try {
     const { startErpPublishScheduler } = require('../server/crawl-erp-publish-schedule');
