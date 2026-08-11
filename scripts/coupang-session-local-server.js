@@ -510,8 +510,11 @@ const statusLoop = {
   startedAt: null,
   updatedAt: null,
   waitEndsAt: 0,
-  lastSummary: null
+  lastSummary: null,
+  /** 재시작 시 겹친 루프 방지 */
+  generation: 0
 };
+let statusLoopPromise = null;
 
 function getStatusLoopPayload() {
   return {
@@ -526,6 +529,10 @@ function getStatusLoopPayload() {
     waitMs: STATUS_LOOP_WAIT_MS,
     lastSummary: statusLoop.lastSummary
   };
+}
+
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function getCurrentUrlSafe() {
@@ -634,57 +641,76 @@ async function getActivePage() {
   return pages[0] || (await context.newPage().catch(() => null));
 }
 
-async function keepAliveDuringWait(ms) {
+async function keepAliveDuringWait(ms, generation) {
   const started = Date.now();
+  const waitMs = Math.max(1000, Number(ms) || STATUS_LOOP_WAIT_MS);
   // 대기 구간당 keep-alive 최대 1회. 토큰 없음/오류/5회차마다만 페이지 터치.
-  if (!statusLoop.active || statusLoop.stopping) return;
+  if (!statusLoop.active || statusLoop.stopping || statusLoop.generation !== generation) return;
   const needHop = !latestToken || Boolean(statusLoop.lastError) || (statusLoop.round > 0 && statusLoop.round % 5 === 0);
   const url = KEEP_ALIVE_PAGES[statusLoop.round % KEEP_ALIVE_PAGES.length];
   const label = url.includes('rider-performance') ? '라이더퍼포먼스' : '피크대시보드';
   statusLoop.phase = 'waiting';
+  statusLoop.waitEndsAt = started + waitMs;
   statusLoop.message = needHop
-    ? `세션 유지 · ${label} 1회 확인 후 대기 (${Math.ceil(ms / 1000)}초)`
-    : `다음 회차 대기 · 토큰 유지 중 (${Math.ceil(ms / 1000)}초)`;
+    ? `세션 유지 · ${label} 후 대기 (${Math.ceil(waitMs / 1000)}초) · ${statusLoop.round}회차`
+    : `다음 회차 대기 (${Math.ceil(waitMs / 1000)}초) · ${statusLoop.round}회차 완료`;
   statusLoop.updatedAt = nowKstIsoOffset();
 
   if (needHop) {
     try {
       const page = await getActivePage();
       if (page) {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // goto가 永久 대기하지 않도록 상한
+        await Promise.race([
+          page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 }),
+          sleepMs(28000)
+        ]);
         await scanPageForToken(page).catch(() => {});
-        await persistToken('keepalive').catch(() => {});
+        await Promise.race([
+          persistToken('keepalive').catch(() => {}),
+          sleepMs(5000)
+        ]);
       }
     } catch (e) {
       statusLoop.lastError = e && e.message ? e.message : String(e);
     }
   } else {
-    // 가벼운 토큰 재저장만 (페이지 이동 없음)
-    await persistToken('keepalive-light').catch(() => {});
+    await Promise.race([
+      persistToken('keepalive-light').catch(() => {}),
+      sleepMs(3000)
+    ]);
   }
 
-  const remaining = ms - (Date.now() - started);
-  if (remaining > 500 && statusLoop.active && !statusLoop.stopping) {
+  if (!statusLoop.active || statusLoop.stopping || statusLoop.generation !== generation) return;
+  const remaining = waitMs - (Date.now() - started);
+  if (remaining > 500) {
     await waitLoop(remaining);
   }
 }
 
-async function runStatusAutoLoopInner() {
-  while (statusLoop.active && !statusLoop.stopping) {
+async function runStatusAutoLoopInner(generation) {
+  while (
+    statusLoop.active
+    && !statusLoop.stopping
+    && statusLoop.generation === generation
+  ) {
     if (!latestToken) {
       statusLoop.phase = 'waiting';
+      statusLoop.waitEndsAt = Date.now() + 120000;
       statusLoop.message = '토큰 없음 — 네이버 OTP 자동 복구 시도…';
       statusLoop.updatedAt = nowKstIsoOffset();
       const recovered = await tryRecoverCoupangAuthWithNaverOtp();
+      if (statusLoop.generation !== generation) break;
       if (!recovered.ok || !latestToken) {
         statusLoop.lastError = recovered.message || '쿠팡 인증 복구 실패';
-        await keepAliveDuringWait(STATUS_LOOP_WAIT_MS);
+        await keepAliveDuringWait(STATUS_LOOP_WAIT_MS, generation);
         continue;
       }
     }
     statusLoop.round += 1;
     const first = statusLoop.round === 1;
     statusLoop.phase = 'collecting';
+    statusLoop.waitEndsAt = 0;
     // 자동순회: 매 회차 라이더 퍼포먼스(rider_daily) 포함 — 기여도(0.8/1 단위 콜) 연속 반영
     statusLoop.message = first
       ? '첫 회차: 대시보드 + 라이더 퍼포먼스(정산주 전체) 수집 중…'
@@ -695,6 +721,7 @@ async function runStatusAutoLoopInner() {
       const result = first
         ? await runCollect({ fullWeek: true, includeRider: true })
         : await runCollect({ skipWeekly: true, includeRider: true });
+      if (statusLoop.generation !== generation) break;
       statusLoop.lastSummary = result && result.summary ? result.summary : null;
       statusLoop.lastError = '';
       if (result && result.status === 401) {
@@ -719,42 +746,70 @@ async function runStatusAutoLoopInner() {
         authRequired = true;
       }
     }
-    if (!statusLoop.active || statusLoop.stopping) break;
-    statusLoop.phase = 'waiting';
-    statusLoop.waitEndsAt = Date.now() + STATUS_LOOP_WAIT_MS;
-    statusLoop.message = `다음 회차 대기 · 세션 유지 + 라이더 연속수집 (${statusLoop.round}회차 완료)`;
-    statusLoop.updatedAt = nowKstIsoOffset();
-    await keepAliveDuringWait(STATUS_LOOP_WAIT_MS);
+    if (!statusLoop.active || statusLoop.stopping || statusLoop.generation !== generation) break;
+    await keepAliveDuringWait(STATUS_LOOP_WAIT_MS, generation);
   }
-  statusLoop.active = false;
-  statusLoop.stopping = false;
-  statusLoop.phase = 'idle';
-  statusLoop.message = statusLoop.round ? `중지됨 (${statusLoop.round}회차까지 수집)` : '중지됨';
-  statusLoop.waitEndsAt = 0;
-  statusLoop.updatedAt = nowKstIsoOffset();
+  if (statusLoop.generation === generation) {
+    statusLoop.active = false;
+    statusLoop.stopping = false;
+    statusLoop.phase = 'idle';
+    statusLoop.message = statusLoop.round ? `중지됨 (${statusLoop.round}회차까지 수집)` : '중지됨';
+    statusLoop.waitEndsAt = 0;
+    statusLoop.updatedAt = nowKstIsoOffset();
+  }
+}
+
+async function stopStatusAutoLoopAndWait(timeoutMs = 90000) {
+  const wasActive = Boolean(statusLoop.active || statusLoopPromise);
+  stopStatusAutoLoop();
+  const started = Date.now();
+  while (statusLoopPromise && Date.now() - started < timeoutMs) {
+    await sleepMs(200);
+  }
+  return { ok: !statusLoopPromise, wasActive };
 }
 
 function startStatusAutoLoop() {
-  if (statusLoop.active) return { ok: false, message: '이미 자동수집 중입니다.', statusLoop: getStatusLoopPayload() };
-  // 토큰 없어도 루프 시작 → 내부에서 자동로그인/OTP 복구
+  if (statusLoop.active && statusLoopPromise) {
+    return { ok: true, alreadyRunning: true, statusLoop: getStatusLoopPayload() };
+  }
+  // 좀비 루프가 남아 있으면 세대만 올려 무효화 후 재시작
+  statusLoop.generation += 1;
+  const generation = statusLoop.generation;
   statusLoop.active = true;
   statusLoop.stopping = false;
   statusLoop.round = 0;
   statusLoop.startedAt = nowKstIsoOffset();
   statusLoop.updatedAt = statusLoop.startedAt;
   statusLoop.lastError = '';
+  statusLoop.waitEndsAt = 0;
+  statusLoop.phase = 'collecting';
   statusLoop.message = latestToken
     ? '자동수집 시작…'
     : '토큰 없음 — 자동로그인 후 수집 시작…';
-  void runStatusAutoLoopInner();
+  statusLoopPromise = Promise.resolve()
+    .then(() => runStatusAutoLoopInner(generation))
+    .catch((error) => {
+      statusLoop.lastError = error?.message || String(error);
+      console.warn('[COUPANG] status-loop 오류:', statusLoop.lastError);
+    })
+    .finally(() => {
+      if (statusLoop.generation === generation) {
+        statusLoopPromise = null;
+      }
+    });
   return { ok: true, statusLoop: getStatusLoopPayload() };
 }
 
 function stopStatusAutoLoop() {
-  if (!statusLoop.active) return { ok: true, alreadyStopped: true, statusLoop: getStatusLoopPayload() };
+  if (!statusLoop.active && !statusLoopPromise) {
+    return { ok: true, alreadyStopped: true, statusLoop: getStatusLoopPayload() };
+  }
   statusLoop.stopping = true;
   statusLoop.active = false;
+  statusLoop.generation += 1; // 진행 중 keep-alive/수집 루프 무효화
   statusLoop.message = '중지 요청됨…';
+  statusLoop.waitEndsAt = 0;
   statusLoop.updatedAt = nowKstIsoOffset();
   return { ok: true, statusLoop: getStatusLoopPayload() };
 }
@@ -867,12 +922,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/status-loop/start' && req.method === 'POST') {
+    // 재시작 시 이전 루프가 끝날 때까지 기다려 이중 루프(대기중 고정) 방지
+    await stopStatusAutoLoopAndWait(60000).catch(() => null);
     const r = startStatusAutoLoop();
     return sendJson(res, r.ok ? 202 : (r.status || 400), r);
   }
 
   if (u.pathname === '/status-loop/stop' && req.method === 'POST') {
-    return sendJson(res, 200, stopStatusAutoLoop());
+    const r = await stopStatusAutoLoopAndWait(60000);
+    return sendJson(res, 200, { ...r, statusLoop: getStatusLoopPayload() });
   }
 
   if (u.pathname === '/status-loop/status' && req.method === 'GET') {

@@ -5334,28 +5334,41 @@
     el.title = status?.detail || text;
   }
 
+  function crawlWaitSeconds(loop = {}) {
+    const ends = Number(loop.waitEndsAt || 0);
+    if (!ends) return 0;
+    return Math.max(0, Math.ceil((ends - Date.now()) / 1000));
+  }
+
   function crawlPhaseLabel(platform, phase, loop = {}) {
     const msg = String(loop.message || '');
+    const round = Number(loop.round || 0);
+    const waitSec = crawlWaitSeconds(loop);
+    const roundSuffix = round > 0 ? ` · ${round}회` : '';
+    const waitSuffix = waitSec > 0 ? ` · ${waitSec}초` : '';
     const isWeekBootstrap = /부트스트랩|정산주 전체|fullWeek|일별|라이더/i.test(msg)
       || phase === 'bootstrap'
-      || (platform === 'coupang' && Number(loop.round || 0) <= 1 && /첫 회차|정산주/i.test(msg));
+      || (platform === 'coupang' && round <= 1 && /첫 회차|정산주/i.test(msg));
 
     if (platform === 'baemin') {
-      if (phase === 'bootstrap' || (isWeekBootstrap && phase === 'collecting')) return '배민주단위 수집중';
-      if (phase === 'collecting') return '배민현황 수집중';
-      if (phase === 'applying') return '배민현황 저장중';
-      if (phase === 'rider_sync') return '배민수락율 반영중';
-      if (phase === 'waiting') return '배민대기중';
-      return '배민크롤링중';
+      if (phase === 'bootstrap' || (isWeekBootstrap && phase === 'collecting')) return `배민주단위 수집중${roundSuffix}`;
+      if (phase === 'collecting') return `배민현황 수집중${roundSuffix}`;
+      if (phase === 'applying') return `배민현황 저장중${roundSuffix}`;
+      if (phase === 'rider_sync') return `배민수락율 반영중${roundSuffix}`;
+      if (phase === 'waiting') return `배민대기중${roundSuffix}${waitSuffix}`;
+      return `배민크롤링중${roundSuffix}`;
     }
 
     // coupang
-    if (isWeekBootstrap || (phase === 'collecting' && Number(loop.round || 0) <= 1 && /정산주|첫 회차/i.test(msg))) {
-      return '쿠팡주단위 수집중';
+    if (isWeekBootstrap || (phase === 'collecting' && round <= 1 && /정산주|첫 회차/i.test(msg))) {
+      return `쿠팡주단위 수집중${roundSuffix}`;
     }
-    if (phase === 'collecting') return '쿠팡현황 수집중';
-    if (phase === 'waiting') return '쿠팡대기중';
-    return '쿠팡크롤링중';
+    if (phase === 'collecting') return `쿠팡현황 수집중${roundSuffix}`;
+    if (phase === 'waiting') {
+      if (/토큰 없음|OTP|복구/i.test(msg)) return `쿠팡인증복구중${waitSuffix}`;
+      return `쿠팡대기중${roundSuffix}${waitSuffix}`;
+    }
+    return `쿠팡크롤링중${roundSuffix}`;
   }
 
   function classifyCrawlRuntime(health, platform) {
@@ -5368,30 +5381,32 @@
       };
     }
     const authState = String(health.authState || health.session?.authState || '').toLowerCase();
+    const loop = health.statusLoop || {};
+    const loopMsg = String(loop.message || '');
     if (
       authState === 'authrequired'
       || authState === 'recovering'
       || authState.includes('login')
       || authState.includes('phone')
+      || (platform === 'coupang' && health.hasToken === false && loop.active)
+      || /토큰 없음|OTP 자동 복구|인증 복구 실패/i.test(loopMsg)
     ) {
       return {
         kind: 'auth',
         text: `${label}인증필요`,
-        detail: `${label} 로그인/인증 필요 — ${health.authStateLabel || health.authRequiredReason || health.session?.message || authState}`
+        detail: `${label} 로그인/인증 필요 — ${health.authStateLabel || health.authRequiredReason || loopMsg || authState}`
       };
     }
-    const loop = health.statusLoop || {};
     if (loop.active) {
       const phase = String(loop.phase || 'collecting');
       const kind = phase === 'waiting' ? 'waiting' : 'running';
       const text = crawlPhaseLabel(platform, phase, loop);
-      const round = loop.round ? ` · ${loop.round}회차` : '';
       const msg = loop.message ? ` · ${loop.message}` : '';
       const err = loop.lastError ? ` · 최근오류: ${loop.lastError}` : '';
       return {
         kind,
         text,
-        detail: `${text}${round}${msg}${err}`
+        detail: `${text}${msg}${err}`
       };
     }
     return {
@@ -5483,9 +5498,10 @@
   function startCrawlRuntimePoll() {
     stopCrawlRuntimePoll();
     void refreshCrawlRuntimeStatus();
+    // 대기 초 카운트다운이 보이도록 2초마다 갱신
     state.crawlRuntimePollTimer = setInterval(() => {
       void refreshCrawlRuntimeStatus();
-    }, 5000);
+    }, 2000);
   }
 
   function stopCrawlRuntimePoll() {
