@@ -414,42 +414,120 @@ function isRecovering() {
 
 /**
  * 쿠팡 페이지에서 OTP 입력 필드를 찾아 값을 넣고 제출을 시도한다.
+ * 주의: 아이디 칸(disabled input[type=text])에 넣으면 타임아웃 남 — 반드시 활성 인증번호 칸만
  */
 async function fillCoupangOtpOnPage(page, otp) {
   const code = String(otp || '').trim();
   if (!page || !code) return { ok: false, message: 'OTP 또는 페이지가 없습니다.' };
 
-  const selectors = [
+  // 우선순위: placeholder/name 이 인증번호인 활성 input
+  const preferred = [
+    'input[placeholder*="인증번호"]',
+    'input[placeholder*="인증 번호"]',
+    'input[placeholder*="발송된 인증"]',
+    'input[placeholder*="이메일"]',
+    'input[placeholder*="코드"]',
+    'input[autocomplete="one-time-code"]',
     'input[name*="otp" i]',
     'input[name*="code" i]',
     'input[id*="otp" i]',
     'input[id*="code" i]',
     'input[type="tel"]',
-    'input[type="text"]',
-    'input[autocomplete="one-time-code"]',
-    'input[placeholder*="인증"]',
-    'input[placeholder*="코드"]'
+    'input[type="number"]',
+    'input[type="text"]:not([disabled])'
   ];
 
-  for (const selector of selectors) {
-    const locator = page.locator(selector).first();
+  async function tryFillLocator(locator, selector) {
     const count = await locator.count().catch(() => 0);
-    if (!count) continue;
+    if (!count) return false;
     const visible = await locator.isVisible().catch(() => false);
-    if (!visible) continue;
+    if (!visible) return false;
+    const disabled = await locator.isDisabled().catch(() => true);
+    if (disabled) return false;
+    const editable = await locator.isEditable().catch(() => false);
+    if (!editable) return false;
+
+    // 아이디 표시칸 등 value 가 이미 긴 문자열인 disabled 아닌 칸도 스킵
+    const current = String(await locator.inputValue().catch(() => '') || '');
+    const placeholder = String(await locator.getAttribute('placeholder').catch(() => '') || '');
+    const name = String(await locator.getAttribute('name').catch(() => '') || '');
+    const idAttr = String(await locator.getAttribute('id').catch(() => '') || '');
+    if (/username|userName|loginId|email/i.test(`${name} ${idAttr}`) && !/otp|code|인증/i.test(placeholder)) {
+      return false;
+    }
+    if (current && !/^\d*$/.test(current) && current.length >= 3 && !/인증|코드|otp/i.test(placeholder)) {
+      return false;
+    }
+
+    await locator.click({ force: true }).catch(() => {});
     await locator.fill('').catch(() => {});
-    await locator.fill(code);
+    await locator.fill(code).catch(async () => {
+      await page.keyboard.type(code, { delay: 30 }).catch(() => {});
+    });
+
     const submit = page.locator(
-      'button[type="submit"], button:has-text("확인"), button:has-text("인증"), button:has-text("로그인"), button:has-text("다음")'
+      'button[type="submit"]:not([disabled]), button:has-text("확인"), button:has-text("인증"), button:has-text("다음"), button:has-text("로그인")'
     ).first();
-    if (await submit.count().catch(() => 0)) {
-      await submit.click().catch(() => {});
+    if (await submit.count().catch(() => 0) && await submit.isEnabled().catch(() => false)) {
+      await submit.click({ force: true }).catch(() => {});
     } else {
       await locator.press('Enter').catch(() => {});
     }
-    return { ok: true, selector };
+    return { ok: true, selector, placeholder };
   }
-  return { ok: false, message: 'OTP 입력 필드를 찾지 못했습니다.' };
+
+  for (const selector of preferred) {
+    const locator = page.locator(selector).first();
+    const filled = await tryFillLocator(locator, selector);
+    if (filled && filled.ok) return filled;
+  }
+
+  // 모든 input 중 editable + placeholder/근처 라벨에 인증 키워드
+  const picked = await page.evaluate((otpCode) => {
+    const inputs = Array.from(document.querySelectorAll('input'));
+    const score = (el) => {
+      if (el.disabled || el.readOnly) return -1;
+      if (el.type === 'hidden' || el.type === 'password') return -1;
+      const ph = String(el.placeholder || '');
+      const name = String(el.name || '');
+      const id = String(el.id || '');
+      const aria = String(el.getAttribute('aria-label') || '');
+      const blob = `${ph} ${name} ${id} ${aria}`;
+      let s = 0;
+      if (/인증번호|인증\s*번호|otp|one-time|코드/.test(blob)) s += 10;
+      if (/email|메일/.test(blob) && /인증|코드/.test(blob)) s += 8;
+      if (el.type === 'tel' || el.type === 'number') s += 3;
+      if (el.type === 'text') s += 1;
+      if (/아이디|username|user/.test(blob)) s -= 20;
+      return s;
+    };
+    const ranked = inputs
+      .map(el => ({ el, s: score(el) }))
+      .filter(row => row.s > 0)
+      .sort((a, b) => b.s - a.s);
+    const best = ranked[0]?.el;
+    if (!best) return { ok: false };
+    best.focus();
+    best.value = '';
+    best.value = otpCode;
+    best.dispatchEvent(new Event('input', { bubbles: true }));
+    best.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true, placeholder: best.placeholder || '' };
+  }, code).catch(() => ({ ok: false }));
+
+  if (picked?.ok) {
+    const submit = page.locator(
+      'button[type="submit"]:not([disabled]), button:has-text("확인"), button:has-text("인증"), button:has-text("다음")'
+    ).first();
+    if (await submit.count().catch(() => 0)) {
+      await submit.click({ force: true }).catch(() => {});
+    } else {
+      await page.keyboard.press('Enter').catch(() => {});
+    }
+    return { ok: true, selector: 'evaluate-best-input', placeholder: picked.placeholder };
+  }
+
+  return { ok: false, message: '활성 인증번호 입력칸을 찾지 못했습니다. (아이디 칸은 제외)' };
 }
 
 module.exports = {

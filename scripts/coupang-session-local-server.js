@@ -813,6 +813,39 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, result.ok ? 200 : 400, { ...result, ...getAuthPayload(), hasToken: Boolean(latestToken) });
   }
 
+  // 메일에서 읽은 OTP를 쿠팡 2FA 화면에 직접 입력
+  if (u.pathname === '/auth/otp' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const otp = String(body.otp || body.code || '').trim();
+      if (!/^\d{4,8}$/.test(otp)) {
+        return sendJson(res, 400, { ok: false, message: 'otp 숫자(4~8자리)가 필요합니다.' });
+      }
+      await ensureBrowser();
+      const page = await getActivePage();
+      if (!page) return sendJson(res, 400, { ok: false, message: '쿠팡 브라우저 페이지가 없습니다.' });
+      const naverOtp = require('../server/coupang-naver-otp');
+      const filled = await naverOtp.fillCoupangOtpOnPage(page, otp);
+      await scanPageForToken(page).catch(() => {});
+      await persistToken(filled.ok ? 'otp_manual' : 'otp_manual_failed').catch(() => {});
+      if (filled.ok && latestToken) {
+        authRequired = false;
+        authRequiredReason = '';
+      } else if (filled.ok) {
+        authRequiredReason = 'OTP 입력 완료 — 토큰 캡처 대기 중';
+      } else {
+        authRequiredReason = filled.message || 'OTP 입력 실패';
+      }
+      return sendJson(res, filled.ok ? 200 : 400, {
+        ...filled,
+        hasToken: Boolean(latestToken),
+        ...getAuthPayload()
+      });
+    } catch (error) {
+      return sendJson(res, 500, { ok: false, message: error?.message || String(error) });
+    }
+  }
+
   if (u.pathname === '/naver/open' && req.method === 'POST') {
     try {
       const naverOtp = require('../server/coupang-naver-otp');
