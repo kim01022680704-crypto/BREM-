@@ -5272,13 +5272,20 @@
       baeminMorningRunBtn: busy
         ? '크롤링 실행 중…'
         : '출근 원버튼 (배민+쿠팡 수집·ERP·라이더반영)',
-      crawlMorningStartBtn: busy ? '크롤링 중…' : '크롤링 시작'
+      // 버튼 문구는 고정 — 상세 상태는 배민/쿠팡 태그로 표시
+      crawlMorningStartBtn: '크롤링 시작'
     };
     Object.entries(labels).forEach(([id, text]) => {
       const el = $(id);
       if (!el) return;
       el.disabled = Boolean(busy);
       el.textContent = text;
+      if (id === 'crawlMorningStartBtn') {
+        el.classList.toggle('is-running', Boolean(busy));
+        el.title = busy
+          ? '크롤링 파이프라인 실행 중 — 아래 배민/쿠팡 태그 상태를 확인하세요'
+          : '배민+쿠팡 수집/자동순회 시작. 콜수·거절율·라이더반영은 07:00/11:30/14:00/22:00 확인사살 (지정 관리자 전용)';
+      }
     });
   }
 
@@ -5318,23 +5325,45 @@
     return tokens.some(token => allowed.includes(token));
   }
 
-  function paintCrawlRuntimeTag(el, label, kind, detail) {
+  function paintCrawlRuntimeTag(el, status) {
     if (!el) return;
-    const texts = {
-      running: `${label}크롤링중`,
-      stopped: `${label}정지`,
-      auth: `${label}인증필요`,
-      unknown: `${label} · …`
-    };
-    el.textContent = texts[kind] || texts.unknown;
-    el.className = `crawl-runtime-tag crawl-runtime-tag--${kind || 'unknown'}`;
-    el.title = detail || texts[kind] || `${label} 상태`;
+    const kind = status?.kind || 'unknown';
+    const text = status?.text || '확인중';
+    el.textContent = text;
+    el.className = `crawl-runtime-tag crawl-runtime-tag--${kind}`;
+    el.title = status?.detail || text;
   }
 
-  function classifyCrawlRuntime(health, label) {
+  function crawlPhaseLabel(platform, phase, loop = {}) {
+    const msg = String(loop.message || '');
+    const isWeekBootstrap = /부트스트랩|정산주 전체|fullWeek|일별|라이더/i.test(msg)
+      || phase === 'bootstrap'
+      || (platform === 'coupang' && Number(loop.round || 0) <= 1 && /첫 회차|정산주/i.test(msg));
+
+    if (platform === 'baemin') {
+      if (phase === 'bootstrap' || (isWeekBootstrap && phase === 'collecting')) return '배민주단위 수집중';
+      if (phase === 'collecting') return '배민현황 수집중';
+      if (phase === 'applying') return '배민현황 저장중';
+      if (phase === 'rider_sync') return '배민수락율 반영중';
+      if (phase === 'waiting') return '배민대기중';
+      return '배민크롤링중';
+    }
+
+    // coupang
+    if (isWeekBootstrap || (phase === 'collecting' && Number(loop.round || 0) <= 1 && /정산주|첫 회차/i.test(msg))) {
+      return '쿠팡주단위 수집중';
+    }
+    if (phase === 'collecting') return '쿠팡현황 수집중';
+    if (phase === 'waiting') return '쿠팡대기중';
+    return '쿠팡크롤링중';
+  }
+
+  function classifyCrawlRuntime(health, platform) {
+    const label = platform === 'coupang' ? '쿠팡' : '배민';
     if (!health || !health.ok) {
       return {
         kind: 'stopped',
+        text: `${label}정지`,
         detail: `${label} 세션서버 연결 안 됨 (창이 꺼졌거나 PC에서 서버가 안 떠 있음)`
       };
     }
@@ -5347,22 +5376,27 @@
     ) {
       return {
         kind: 'auth',
+        text: `${label}인증필요`,
         detail: `${label} 로그인/인증 필요 — ${health.authStateLabel || health.authRequiredReason || health.session?.message || authState}`
       };
     }
     const loop = health.statusLoop || {};
     if (loop.active) {
-      const phase = loop.phase ? ` · ${loop.phase}` : '';
+      const phase = String(loop.phase || 'collecting');
+      const kind = phase === 'waiting' ? 'waiting' : 'running';
+      const text = crawlPhaseLabel(platform, phase, loop);
       const round = loop.round ? ` · ${loop.round}회차` : '';
       const msg = loop.message ? ` · ${loop.message}` : '';
       const err = loop.lastError ? ` · 최근오류: ${loop.lastError}` : '';
       return {
-        kind: 'running',
-        detail: `${label} 자동순회 진행 중${round}${phase}${msg}${err}`
+        kind,
+        text,
+        detail: `${text}${round}${msg}${err}`
       };
     }
     return {
       kind: 'stopped',
+      text: `${label}정지`,
       detail: loop.message
         ? `${label} 자동순회 정지 — ${loop.message}`
         : `${label} 세션서버는 켜져 있으나 자동순회가 정지됨. [크롤링 시작]으로 재개`
@@ -5412,10 +5446,14 @@
   }
 
   function renderCrawlRuntimeTags() {
-    const baemin = state.crawlRuntime.baemin || { kind: 'unknown' };
-    const coupang = state.crawlRuntime.coupang || { kind: 'unknown' };
-    paintCrawlRuntimeTag($('crawlBaeminRuntimeTag'), '배민', baemin.kind, baemin.detail);
-    paintCrawlRuntimeTag($('crawlCoupangRuntimeTag'), '쿠팡', coupang.kind, coupang.detail);
+    paintCrawlRuntimeTag($('crawlBaeminRuntimeTag'), state.crawlRuntime.baemin || {
+      kind: 'unknown',
+      text: '배민 · 확인중'
+    });
+    paintCrawlRuntimeTag($('crawlCoupangRuntimeTag'), state.crawlRuntime.coupang || {
+      kind: 'unknown',
+      text: '쿠팡 · 확인중'
+    });
   }
 
   async function refreshCrawlRuntimeStatus() {
@@ -5424,8 +5462,8 @@
       fetchBaeminHealthQuick(),
       fetchCoupangHealthQuick()
     ]);
-    state.crawlRuntime.baemin = classifyCrawlRuntime(baeminHealth, '배민');
-    state.crawlRuntime.coupang = classifyCrawlRuntime(coupangHealth, '쿠팡');
+    state.crawlRuntime.baemin = classifyCrawlRuntime(baeminHealth, 'baemin');
+    state.crawlRuntime.coupang = classifyCrawlRuntime(coupangHealth, 'coupang');
     // 배민 health는 기존 로컬상태와도 맞춤 (섹션 밖에서도 탑바 갱신)
     if (baeminHealth.ok) {
       syncStatusAutoLoopFromServer(baeminHealth);

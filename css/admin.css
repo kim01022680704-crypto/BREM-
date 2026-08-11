@@ -4428,16 +4428,16 @@ textarea {
 .crawl-runtime-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
   justify-content: flex-end;
 }
 
 .crawl-runtime-tag {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.35;
@@ -4449,6 +4449,12 @@ textarea {
   color: #052e16;
   background: #86efac;
   border-color: #22c55e;
+}
+
+.crawl-runtime-tag--waiting {
+  color: #134e4a;
+  background: #99f6e4;
+  border-color: #14b8a6;
 }
 
 .crawl-runtime-tag--stopped {
@@ -4467,6 +4473,10 @@ textarea {
   color: #3f3f46;
   background: #e4e4e7;
   border-color: #a1a1aa;
+}
+
+.crawl-morning-start-btn.is-running {
+  opacity: 0.85;
 }
 
 .rider-view-publish-btn:hover:not(:disabled),
