@@ -183,7 +183,7 @@ async function runWeeklyRefreshPipeline(options = {}) {
         });
       }
 
-      // 자동순회와 충돌 피하려고 잠시 중지 → 주단위 → 재개(부트스트랩 생략은 쿠팡 1회차가 다시 주단위를 돌 수 있음)
+      // 자동순회와 충돌 피하려고 잠시 중지 → 주단위 → 재개(1회차 fullWeek 생략)
       await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
       await sleep(800);
 
@@ -207,7 +207,9 @@ async function runWeeklyRefreshPipeline(options = {}) {
         push('coupang_erp_sync', sync);
       }
 
-      await localPost(COUPANG_PORT, '/status-loop/start', {}).catch(() => null);
+      await localPost(COUPANG_PORT, '/status-loop/start', {
+        skipFirstFullWeek: true
+      }).catch(() => null);
     } catch (error) {
       push('coupang_week_collect', { ok: false, message: error.message || String(error) });
     }

@@ -512,7 +512,9 @@ const statusLoop = {
   waitEndsAt: 0,
   lastSummary: null,
   /** 재시작 시 겹친 루프 방지 */
-  generation: 0
+  generation: 0,
+  /** true면 1회차도 fullWeek 대신 오늘(순회)만 — 직전에 주단위를 이미 돌린 경우 */
+  skipFirstFullWeek: false
 };
 let statusLoopPromise = null;
 
@@ -709,34 +711,49 @@ async function runStatusAutoLoopInner(generation) {
     }
     statusLoop.round += 1;
     const first = statusLoop.round === 1;
+    const doFullWeek = first && !statusLoop.skipFirstFullWeek;
+    if (first) statusLoop.skipFirstFullWeek = false;
     statusLoop.phase = 'collecting';
     statusLoop.waitEndsAt = 0;
     // 자동순회: 매 회차 라이더 퍼포먼스(rider_daily) 포함 — 기여도(0.8/1 단위 콜) 연속 반영
-    statusLoop.message = first
+    statusLoop.message = doFullWeek
       ? '첫 회차: 대시보드 + 라이더 퍼포먼스(정산주 전체) 수집 중…'
       : `대시보드 + 라이더 퍼포먼스(오늘) 수집 중… (${statusLoop.round}회차)`;
     statusLoop.updatedAt = nowKstIsoOffset();
     try {
       // 1회차: 정산주 수~오늘 전체 / 2회차+: 주간 생략·오늘은 라이더까지 계속
-      const result = first
+      const result = doFullWeek
         ? await runCollect({ fullWeek: true, includeRider: true })
         : await runCollect({ skipWeekly: true, includeRider: true });
       if (statusLoop.generation !== generation) break;
-      statusLoop.lastSummary = result && result.summary ? result.summary : null;
-      statusLoop.lastError = '';
-      if (result && result.status === 401) {
-        latestToken = '';
-        authRequired = true;
-      } else if (first && result?.ok) {
-        try {
-          const { syncCoupangRejections } = require('../server/coupang-erp-sync');
-          const weekStart = thisWeekStartDateKst();
-          const sync = await syncCoupangRejections({ weekStart });
-          statusLoop.message = sync.ok
-            ? `1회차 완료 · 거절율 동기화 ${Number(sync.rejectionsUpserted || 0)}건`
-            : `1회차 완료 · 거절율 동기화 실패(${sync.message || '오류'})`;
-        } catch (syncErr) {
-          statusLoop.lastError = syncErr?.message || String(syncErr);
+      if (!result?.ok) {
+        statusLoop.lastError = result?.message || '쿠팡 수집 실패';
+        // 외부 /collect 와 충돌 시 같은 회차 재시도
+        if (/이미 수집/i.test(statusLoop.lastError)) {
+          statusLoop.round = Math.max(0, statusLoop.round - 1);
+          statusLoop.message = '다른 수집과 충돌 — 5초 후 재시도';
+          statusLoop.updatedAt = nowKstIsoOffset();
+          await keepAliveDuringWait(5000, generation);
+          continue;
+        }
+        if (result?.status === 401 || /401|unauthorized|login|토큰/i.test(statusLoop.lastError)) {
+          latestToken = '';
+          authRequired = true;
+        }
+      } else {
+        statusLoop.lastSummary = result.summary || null;
+        statusLoop.lastError = '';
+        if (doFullWeek) {
+          try {
+            const { syncCoupangRejections } = require('../server/coupang-erp-sync');
+            const weekStart = thisWeekStartDateKst();
+            const sync = await syncCoupangRejections({ weekStart });
+            statusLoop.message = sync.ok
+              ? `1회차 완료 · 거절율 동기화 ${Number(sync.rejectionsUpserted || 0)}건`
+              : `1회차 완료 · 거절율 동기화 실패(${sync.message || '오류'})`;
+          } catch (syncErr) {
+            statusLoop.lastError = syncErr?.message || String(syncErr);
+          }
         }
       }
     } catch (e) {
@@ -769,7 +786,7 @@ async function stopStatusAutoLoopAndWait(timeoutMs = 90000) {
   return { ok: !statusLoopPromise, wasActive };
 }
 
-function startStatusAutoLoop() {
+function startStatusAutoLoop(options = {}) {
   if (statusLoop.active && statusLoopPromise) {
     return { ok: true, alreadyRunning: true, statusLoop: getStatusLoopPayload() };
   }
@@ -779,13 +796,14 @@ function startStatusAutoLoop() {
   statusLoop.active = true;
   statusLoop.stopping = false;
   statusLoop.round = 0;
+  statusLoop.skipFirstFullWeek = Boolean(options.skipFirstFullWeek);
   statusLoop.startedAt = nowKstIsoOffset();
   statusLoop.updatedAt = statusLoop.startedAt;
   statusLoop.lastError = '';
   statusLoop.waitEndsAt = 0;
   statusLoop.phase = 'collecting';
   statusLoop.message = latestToken
-    ? '자동수집 시작…'
+    ? (statusLoop.skipFirstFullWeek ? '자동순회 재개…' : '자동수집 시작…')
     : '토큰 없음 — 자동로그인 후 수집 시작…';
   statusLoopPromise = Promise.resolve()
     .then(() => runStatusAutoLoopInner(generation))
@@ -933,11 +951,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/status-loop/start' && req.method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
     // 재시작 시 이전 루프가 끝날 때까지 기다려 이중 루프(대기중 고정) 방지
     if (statusLoop.active || statusLoopPromise) {
       await stopStatusAutoLoopAndWait(60000).catch(() => null);
     }
-    const r = startStatusAutoLoop();
+    const r = startStatusAutoLoop({
+      skipFirstFullWeek: Boolean(body?.skipFirstFullWeek)
+    });
     return sendJson(res, r.ok ? 202 : (r.status || 400), r);
   }
 

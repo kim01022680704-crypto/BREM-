@@ -119,6 +119,36 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** 쿠팡 자동순회 1회차(주단위)가 끝날 때까지 대기 */
+async function waitCoupangFirstRound(timeoutMs = 25 * 60 * 1000) {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < timeoutMs) {
+    const health = await localGet(COUPANG_PORT, '/health', 5000).catch(error => ({ json: { error: error.message } }));
+    last = health.json;
+    const loop = last?.statusLoop || {};
+    const authState = last?.authState;
+    if (authState === 'authRequired' || authState === 'recovering') {
+      await sleep(5000);
+      continue;
+    }
+    if (!loop.active && Number(loop.round || 0) === 0) {
+      await sleep(2000);
+      continue;
+    }
+    const phase = String(loop.phase || '');
+    const round = Number(loop.round || 0);
+    if (round >= 1 && (phase === 'waiting' || phase === 'idle')) {
+      return { ok: true, statusLoop: loop, health: last };
+    }
+    if (round >= 2) {
+      return { ok: true, statusLoop: loop, health: last };
+    }
+    await sleep(3000);
+  }
+  return { ok: false, message: '쿠팡 1회차(주단위) 대기 시간 초과', health: last };
+}
+
 async function publishRiderView() {
   try {
     const riderPublish = require('./rider-publish-admin');
@@ -200,29 +230,23 @@ async function runMorningCrawlPipeline(options = {}) {
       if (!recover.json?.ok) throw new Error(recover.json?.message || '쿠팡 인증 복구 실패');
     }
 
-    // 먼저 자동순회를 켜서 태그/현황이 바로 움직이게 한 뒤, 주단위 수집
+    // 자동순회 1회차가 곧 주단위 수집이다. 별도 /collect 를 또 돌리면
+    // "이미 수집 중" 충돌로 순회가 빈 회차만 돌거나 멈춘 것처럼 보인다.
     await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
-    await sleep(400);
+    await sleep(500);
     const loop = await localPost(COUPANG_PORT, '/status-loop/start', {});
     push('coupang_loop_start', {
       ok: Boolean(loop.json?.ok) || Boolean(loop.json?.alreadyRunning),
       message: loop.json?.message,
       statusLoop: loop.json?.statusLoop
     });
+    if (!loop.json?.ok && !loop.json?.alreadyRunning && loop.status >= 400) {
+      throw new Error(loop.json?.message || '쿠팡 자동순회 시작 실패');
+    }
 
-    const collect = await localPost(COUPANG_PORT, '/collect', {
-      weekStartDate: weekRange.fromDate,
-      fullWeek: true,
-      includeRider: true
-    }, 20 * 60 * 1000);
-    push('coupang_collect', {
-      ok: Boolean(collect.json?.ok),
-      status: collect.status,
-      message: collect.json?.message || collect.json?.error,
-      summary: collect.json?.summary || null,
-      authState: collect.json?.authState
-    });
-    if (!collect.json?.ok) throw new Error(collect.json?.message || '쿠팡 주단위 수집 실패');
+    const first = await waitCoupangFirstRound(options.coupangTimeoutMs || 25 * 60 * 1000);
+    push('coupang_first_round', first);
+    if (!first.ok) throw new Error(first.message || '쿠팡 1회차 실패');
 
     const coupangSync = await syncCoupangRejections({
       weekStart: weekRange.fromDate,
@@ -231,10 +255,15 @@ async function runMorningCrawlPipeline(options = {}) {
     push('coupang_erp_sync', coupangSync);
     if (!coupangSync.ok) throw new Error(coupangSync.message || '쿠팡 거절율 동기화 실패');
 
-    // 수집 중 루프가 멈췄으면 다시 시작
     const after = await localGet(COUPANG_PORT, '/health', 5000).catch(() => ({ json: {} }));
     if (!after.json?.statusLoop?.active) {
-      await localPost(COUPANG_PORT, '/status-loop/start', {}).catch(() => null);
+      const restart = await localPost(COUPANG_PORT, '/status-loop/start', {
+        skipFirstFullWeek: true
+      }).catch(() => null);
+      push('coupang_loop_restart', {
+        ok: Boolean(restart?.json?.ok) || Boolean(restart?.json?.alreadyRunning),
+        statusLoop: restart?.json?.statusLoop
+      });
     }
   })();
 
@@ -279,6 +308,7 @@ async function runMorningCrawlPipeline(options = {}) {
 module.exports = {
   runMorningCrawlPipeline,
   waitBaeminBootstrap,
+  waitCoupangFirstRound,
   localGet,
   localPost,
   BAEMIN_PORT,
