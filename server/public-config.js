@@ -101,5 +101,7 @@ function isSupabaseConfigured() {
 
 module.exports = {
   getPublicConfig,
-  isSupabaseConfigured
+  isSupabaseConfigured,
+  getAdminLoginHints,
+  DEFAULT_ADMIN_LOGIN_HINTS
 };
