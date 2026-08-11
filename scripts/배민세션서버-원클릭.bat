@@ -75,10 +75,11 @@ if "%KILLED%"=="1" (
 echo.
 
 echo [3/3] 세션 서버 시작 ...
-echo   ▶ 준비되면 관리자 화면에서 [배민 세션 갱신]을 누르고,
-echo     새로 뜨는 Playwright 창에서 배민 BIZ 로그인 -^> /delivery/history 진입
+echo   ▶ 기동 시 Playwright 배민 창이 자동으로 열립니다.
+echo   ▶ 로그인/배달현황 확인 후 brem.kr 탑바 [크롤링 시작]
 echo   ▶ 이 창은 닫지 마세요.
 echo.
+set "BAEMIN_AUTO_OPEN_BROWSER=1"
 call npm.cmd run baemin:session-server
 
 echo.

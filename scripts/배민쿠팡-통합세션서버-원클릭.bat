@@ -74,16 +74,26 @@ ping -n 3 127.0.0.1 >nul
 echo.
 
 echo [3/3] opening Baemin + Coupang session server windows ...
-start "BREM-baemin-3939" "%BREM_DIR%\scripts\배민세션서버-원클릭.bat"
-start "BREM-coupang-3940" "%BREM_DIR%\scripts\쿠팡세션서버-원클릭.bat"
+rem 배민도 기동 시 Playwright 창을 바로 연다
+set "BAEMIN_AUTO_OPEN_BROWSER=1"
+set "COUPANG_AUTO_RESUME_STATUS_LOOP=0"
+start "BREM-baemin-3939" cmd /k "cd /d "%BREM_DIR%" && set PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers&& set BAEMIN_AUTO_OPEN_BROWSER=1&& npm.cmd run baemin:session-server"
+timeout /t 2 /nobreak >nul
+start "BREM-coupang-3940" cmd /k "cd /d "%BREM_DIR%" && set PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers&& npm.cmd run coupang:session-server"
+
+echo.
+echo waiting for Baemin browser open API ...
+ping -n 8 127.0.0.1 >nul
+curl -s -X POST "http://127.0.0.1:3939/browser/open" >nul 2>&1
+curl -s -X POST "http://127.0.0.1:3940/browser/open" >nul 2>&1
 
 echo.
 echo ========================================
 echo  Two session server windows should open.
-echo   - Baemin 3939 : Admin [Baemin session] then BIZ login
-echo   - Coupang 3940: Coupang Eats login + open dashboard once
+echo   - Baemin 3939 : Playwright 배민 창 자동 오픈
+echo   - Coupang 3940: Playwright 쿠팡 창 자동 오픈
+echo  로그인/인증 확인 후 brem.kr 탑바 [크롤링 시작]
 echo  Do not close those two windows.
-echo  This launcher window can be closed after confirm.
 echo ========================================
 echo.
 pause

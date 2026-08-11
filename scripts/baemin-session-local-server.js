@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260811c';
+const SERVER_VERSION = '20260811d';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -96,6 +96,8 @@ let shutdownRequested = false;
 let morningRunRunning = false;
 /** 부팅 후 status-loop 자동 재개 여부 (항상 켜진 운영용) */
 const AUTO_RESUME_STATUS_LOOP = String(process.env.BAEMIN_AUTO_RESUME_STATUS_LOOP || '').trim() === '1';
+/** 기동 시 Playwright 배민 창을 바로 연다 (기본 ON, 끄려면 BAEMIN_AUTO_OPEN_BROWSER=0) */
+const AUTO_OPEN_BROWSER = String(process.env.BAEMIN_AUTO_OPEN_BROWSER || '1').trim() !== '0';
 let lastCollectResult = {
   at: null,
   ok: null,
@@ -2843,25 +2845,29 @@ server.listen(PORT, '127.0.0.1', async () => {
     autoCollectRuntime.lastStatus = record.lastStatus;
     autoCollectRuntime.lastError = record.lastError;
     autoCollectRuntime.nextScheduledAt = record.nextScheduledAt;
-    if (sessionPaused) {
-      console.warn('[BREM] [자동수집] 세션 pause 상태 — 열린 브라우저로 복구 시도…');
-      // persistent 프로필에 로그인 남아 있으면 pause만 풀고 쿠키 재저장
-      void (async () => {
-        try {
-          await ensurePlaywrightBrowser().catch(() => null);
-          const recovered = await tryRecoverSessionFromOpenBrowser();
-          if (recovered.ok) {
-            console.log('[BREM] [자동수집] 세션 pause 자동 해제 완료');
-          } else {
-            console.warn('[BREM] [자동수집] 자동 복구 실패 — [배민 세션 갱신] 필요:', recovered.message);
-          }
-        } catch (recoverError) {
-          console.warn('[BREM] [자동수집] 자동 복구 오류:', formatError(recoverError));
-        }
-      })();
-    }
   } catch (error) {
     console.warn('[BREM] [자동수집] 상태 로드 실패:', error.message);
+  }
+
+  // 쿠팡과 같이 기동 직후 Playwright 배민 창을 연다 (통합 bat / 크롤링 시작 전 준비)
+  if (AUTO_OPEN_BROWSER) {
+    console.log('[BREM] BAEMIN_AUTO_OPEN_BROWSER — Playwright 배민 창을 엽니다…');
+    void (async () => {
+      try {
+        await ensurePlaywrightBrowser();
+        console.log('[BREM] Playwright 배민 창 준비됨 — 로그인/배달현황 확인 후 「크롤링 시작」');
+        const recovered = await tryRecoverSessionFromOpenBrowser().catch(() => ({ ok: false }));
+        if (recovered?.ok) {
+          console.log('[BREM] 열린 브라우저에서 세션 쿠키 동기화 완료');
+        } else if (sessionPaused) {
+          console.warn('[BREM] 세션 pause — Playwright 창에서 배민 로그인/휴대폰 인증을 완료하세요.');
+        }
+      } catch (error) {
+        console.warn('[BREM] Playwright 배민 창 열기 실패:', formatError(error));
+      }
+    })();
+  } else if (sessionPaused) {
+    console.warn('[BREM] [자동수집] 세션 pause 상태 — BAEMIN_AUTO_OPEN_BROWSER=1 로 창을 열 수 있습니다.');
   }
 
   startAutoCollectScheduler();
@@ -2873,6 +2879,6 @@ server.listen(PORT, '127.0.0.1', async () => {
       if (!started.ok) {
         console.warn('[BREM] 자동 재개 보류:', started.message);
       }
-    }, 5000);
+    }, 8000);
   }
 });
