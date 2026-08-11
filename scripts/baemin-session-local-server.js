@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260811b';
+const SERVER_VERSION = '20260811c';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -747,6 +747,20 @@ function getAuthStatePayload(browser = null) {
 async function detectAndMarkAuthRequired() {
   const auth = require('../server/crawl-session-auth');
   const browser = getBrowserHealth();
+  // 배달현황 등 업무 화면 + 로그인됨 → pause 강제 해제
+  // (URL에 phoneNumber= 쿼리가 있어도 휴대폰 인증으로 오판하지 않음)
+  if (
+    browser.sessionLoggedIn
+    && auth.isBaeminAppWorkingUrl(browser.currentUrl)
+  ) {
+    if (sessionPaused || authRequiredReason) {
+      console.log('[BREM] 배민 업무 화면 확인 — 인증대기 해제:', browser.currentUrl.slice(0, 80));
+    }
+    sessionPaused = false;
+    authRequiredReason = '';
+    authRecovering = false;
+    return false;
+  }
   if (auth.isBaeminPhoneAuthLikeUrl(browser.currentUrl) || auth.isBaeminLoginLikeUrl(browser.currentUrl)) {
     sessionPaused = true;
     authRequiredReason = auth.isBaeminPhoneAuthLikeUrl(browser.currentUrl)
@@ -762,7 +776,6 @@ async function detectAndMarkAuthRequired() {
     return true;
   }
   if (browser.sessionLoggedIn && sessionPaused) {
-    // 인증 완료로 보이면 pause 해제
     sessionPaused = false;
     authRequiredReason = '';
     authRecovering = false;

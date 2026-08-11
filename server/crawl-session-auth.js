@@ -7,21 +7,32 @@ const AUTH_OK = 'ok';
 const AUTH_REQUIRED = 'authRequired';
 const AUTH_RECOVERING = 'recovering';
 
+/** 배달현황 등 실제 업무 화면 — 인증 화면이 아님 */
+function isBaeminAppWorkingUrl(url) {
+  const value = String(url || '').toLowerCase();
+  return /deliverycenter\.baemin\.com\/(delivery|rider|store|mission|partner)/.test(value);
+}
+
 function isBaeminLoginLikeUrl(url) {
   const value = String(url || '').toLowerCase();
-  return /login|signin|sign-in|auth|oauth|member\.baemin|bizmember|passport|sms|otp|phone|인증|verify/.test(value);
+  // history?phoneNumber= 같은 쿼리에 phone 이 들어가도 로그인 화면으로 오판하지 않음
+  if (isBaeminAppWorkingUrl(value)) return false;
+  return /\/login|signin|sign-in|oauth|member\.baemin|bizmember|passport|nid\.naver/.test(value);
 }
 
 function isBaeminPhoneAuthLikeUrl(url) {
   const value = String(url || '').toLowerCase();
-  return /sms|otp|phone|휴대폰|인증번호|verify|cert|2fa|mfa/.test(value)
-    && /baemin|bizmember|passport|delivery/.test(value);
+  if (isBaeminAppWorkingUrl(value)) return false;
+  // ?phoneNumber= 필터 파라미터는 휴대폰 인증이 아님
+  if (/[?&]phonenumber=/.test(value)) return false;
+  return /휴대폰|인증번호|\/sms(?:\/|$)|\/otp(?:\/|$)|phone-auth|phoneauth|2fa|mfa|certification/.test(value)
+    && /baemin|bizmember|passport/.test(value);
 }
 
 function isCoupangLoginLikeUrl(url) {
   const value = String(url || '').toLowerCase();
   return /login|signin|sign-in|auth|oauth|otp|verify|2fa|mfa|cert/.test(value)
-    && (/coupang|partner\.coupangeats/.test(value) || !value.includes('http'));
+    && (/coupang|partner\.coupangeats|xauth\.coupang/.test(value) || !value.includes('http'));
 }
 
 function resolveBaeminAuthState({
@@ -34,6 +45,8 @@ function resolveBaeminAuthState({
   lastError = ''
 } = {}) {
   if (recovering) return AUTH_RECOVERING;
+  // 배달현황 등 업무 화면에 로그인돼 있으면 정상 (pause 잔상 무시)
+  if (sessionLoggedIn && isBaeminAppWorkingUrl(currentUrl)) return AUTH_OK;
   if (jobStatus === 'waiting_login' || jobStatus === 'waiting_phone_auth') return AUTH_REQUIRED;
   if (isBaeminLoginLikeUrl(currentUrl) || isBaeminPhoneAuthLikeUrl(currentUrl)) return AUTH_REQUIRED;
   if (sessionPaused) return AUTH_REQUIRED;
@@ -85,6 +98,7 @@ module.exports = {
   AUTH_OK,
   AUTH_REQUIRED,
   AUTH_RECOVERING,
+  isBaeminAppWorkingUrl,
   isBaeminLoginLikeUrl,
   isBaeminPhoneAuthLikeUrl,
   isCoupangLoginLikeUrl,

@@ -42,6 +42,15 @@ function testAuthLabels() {
     currentUrl: 'https://bizmember.baemin.com/login'
   }), 'authRequired');
   assert.strictEqual(auth.resolveBaeminAuthState({ recovering: true }), 'recovering');
+  // 배달현황 URL의 phoneNumber= 쿼리를 휴대폰 인증으로 오판하면 안 됨
+  const historyUrl = 'https://deliverycenter.baemin.com/delivery/history?page=0&phoneNumber=&riderStatus=';
+  assert.strictEqual(auth.isBaeminPhoneAuthLikeUrl(historyUrl), false);
+  assert.strictEqual(auth.isBaeminLoginLikeUrl(historyUrl), false);
+  assert.strictEqual(auth.resolveBaeminAuthState({
+    sessionLoggedIn: true,
+    currentUrl: historyUrl,
+    sessionPaused: true
+  }), 'ok');
   assert.strictEqual(auth.resolveCoupangAuthState({ hasToken: true }), 'ok');
   assert.strictEqual(auth.resolveCoupangAuthState({ hasToken: false }), 'authRequired');
   console.log('✓ authState labels');
