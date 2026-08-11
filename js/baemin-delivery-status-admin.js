@@ -60,6 +60,11 @@
     },
     riderLiveSyncRunning: false,
     crawlOperatorAllowed: false,
+    crawlRuntimePollTimer: null,
+    crawlRuntime: {
+      baemin: { kind: 'unknown', detail: '' },
+      coupang: { kind: 'unknown', detail: '' }
+    },
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -5279,12 +5284,15 @@
 
   function setCrawlOperatorUiVisible(allowed) {
     const show = Boolean(allowed);
-    ['crawlMorningStartBtn', 'baeminMorningRunRow'].forEach((id) => {
+    // 크롤링 관련 UI는 지정 운영자만 (탑바 버튼·상태태그 + 출근원버튼 행)
+    ['crawlOperatorTopbar', 'baeminMorningRunRow'].forEach((id) => {
       const el = $(id);
       if (!el) return;
       el.hidden = !show;
       el.classList.toggle('app-hidden', !show);
     });
+    if (show) startCrawlRuntimePoll();
+    else stopCrawlRuntimePoll();
   }
 
   function isKnownCrawlOperatorLocally() {
@@ -5305,6 +5313,145 @@
       'kim01022680704@gmail.com'
     ];
     return tokens.some(token => allowed.includes(token));
+  }
+
+  function paintCrawlRuntimeTag(el, label, kind, detail) {
+    if (!el) return;
+    const texts = {
+      running: `${label}크롤링중`,
+      stopped: `${label}정지`,
+      auth: `${label}인증필요`,
+      unknown: `${label} · …`
+    };
+    el.textContent = texts[kind] || texts.unknown;
+    el.className = `crawl-runtime-tag crawl-runtime-tag--${kind || 'unknown'}`;
+    el.title = detail || texts[kind] || `${label} 상태`;
+  }
+
+  function classifyCrawlRuntime(health, label) {
+    if (!health || !health.ok) {
+      return {
+        kind: 'stopped',
+        detail: `${label} 세션서버 연결 안 됨 (창이 꺼졌거나 PC에서 서버가 안 떠 있음)`
+      };
+    }
+    const authState = String(health.authState || health.session?.authState || '').toLowerCase();
+    if (
+      authState === 'authrequired'
+      || authState === 'recovering'
+      || authState.includes('login')
+      || authState.includes('phone')
+    ) {
+      return {
+        kind: 'auth',
+        detail: `${label} 로그인/인증 필요 — ${health.authStateLabel || health.authRequiredReason || health.session?.message || authState}`
+      };
+    }
+    const loop = health.statusLoop || {};
+    if (loop.active) {
+      const phase = loop.phase ? ` · ${loop.phase}` : '';
+      const round = loop.round ? ` · ${loop.round}회차` : '';
+      const msg = loop.message ? ` · ${loop.message}` : '';
+      const err = loop.lastError ? ` · 최근오류: ${loop.lastError}` : '';
+      return {
+        kind: 'running',
+        detail: `${label} 자동순회 진행 중${round}${phase}${msg}${err}`
+      };
+    }
+    return {
+      kind: 'stopped',
+      detail: loop.message
+        ? `${label} 자동순회 정지 — ${loop.message}`
+        : `${label} 세션서버는 켜져 있으나 자동순회가 정지됨. [크롤링 시작]으로 재개`
+    };
+  }
+
+  async function fetchBaeminHealthQuick() {
+    const urls = state.localSessionConfig?.localHealthUrls || [
+      'http://127.0.0.1:3939/health',
+      'http://localhost:3939/health'
+    ];
+    for (const url of urls) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(url, { signal: controller.signal, cache: 'no-store', mode: 'cors' });
+        clearTimeout(timer);
+        if (!res.ok) continue;
+        const json = await res.json().catch(() => null);
+        if (json && json.ok !== false) return { ok: true, ...json };
+      } catch {
+        /* try next */
+      }
+    }
+    return { ok: false };
+  }
+
+  async function fetchCoupangHealthQuick() {
+    const urls = [
+      'http://127.0.0.1:3940/health',
+      'http://localhost:3940/health'
+    ];
+    for (const url of urls) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(url, { signal: controller.signal, cache: 'no-store', mode: 'cors' });
+        clearTimeout(timer);
+        if (!res.ok) continue;
+        const json = await res.json().catch(() => null);
+        if (json && json.ok !== false) return { ok: true, ...json };
+      } catch {
+        /* try next */
+      }
+    }
+    return { ok: false };
+  }
+
+  function renderCrawlRuntimeTags() {
+    const baemin = state.crawlRuntime.baemin || { kind: 'unknown' };
+    const coupang = state.crawlRuntime.coupang || { kind: 'unknown' };
+    paintCrawlRuntimeTag($('crawlBaeminRuntimeTag'), '배민', baemin.kind, baemin.detail);
+    paintCrawlRuntimeTag($('crawlCoupangRuntimeTag'), '쿠팡', coupang.kind, coupang.detail);
+  }
+
+  async function refreshCrawlRuntimeStatus() {
+    if (!state.crawlOperatorAllowed) return;
+    const [baeminHealth, coupangHealth] = await Promise.all([
+      fetchBaeminHealthQuick(),
+      fetchCoupangHealthQuick()
+    ]);
+    state.crawlRuntime.baemin = classifyCrawlRuntime(baeminHealth, '배민');
+    state.crawlRuntime.coupang = classifyCrawlRuntime(coupangHealth, '쿠팡');
+    // 배민 health는 기존 로컬상태와도 맞춤 (섹션 밖에서도 탑바 갱신)
+    if (baeminHealth.ok) {
+      syncStatusAutoLoopFromServer(baeminHealth);
+      state.localServerRunning = true;
+    } else {
+      state.localServerRunning = false;
+      if (state.statusAutoLoop?.active) {
+        state.statusAutoLoop.active = false;
+        state.statusAutoLoop.phase = 'idle';
+        state.statusAutoLoop.message = '세션서버 연결 끊김';
+        renderStatusAutoLoopPanel();
+      }
+    }
+    renderCrawlRuntimeTags();
+  }
+
+  function startCrawlRuntimePoll() {
+    stopCrawlRuntimePoll();
+    void refreshCrawlRuntimeStatus();
+    state.crawlRuntimePollTimer = setInterval(() => {
+      void refreshCrawlRuntimeStatus();
+    }, 5000);
+  }
+
+  function stopCrawlRuntimePoll() {
+    if (state.crawlRuntimePollTimer) {
+      clearInterval(state.crawlRuntimePollTimer);
+      state.crawlRuntimePollTimer = null;
+    }
   }
 
   async function refreshCrawlOperatorAccess() {
@@ -6674,6 +6821,7 @@
     stopStatusPoll();
     stopLocalHealthPoll();
     stopSetupPoll();
+    stopCrawlRuntimePoll();
   }
 
   window.BremBaeminDeliveryStatusAdmin = {

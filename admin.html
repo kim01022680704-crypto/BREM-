@@ -154,7 +154,13 @@
             <span class="rider-app-publish-status" id="riderAppPublishStatus" aria-live="polite">반영 상태 확인 중…</span>
           </div>
           <div class="topbar-actions">
-            <button type="button" class="primary-btn crawl-morning-start-btn app-hidden" id="crawlMorningStartBtn" title="배민+쿠팡 수집/자동순회 시작. 콜수·거절율·라이더반영은 07:00/11:30/14:00/22:00 확인사살 (지정 관리자 전용)" hidden>크롤링 시작</button>
+            <div class="crawl-operator-topbar app-hidden" id="crawlOperatorTopbar" hidden>
+              <button type="button" class="primary-btn crawl-morning-start-btn" id="crawlMorningStartBtn" title="배민+쿠팡 수집/자동순회 시작. 콜수·거절율·라이더반영은 07:00/11:30/14:00/22:00 확인사살 (지정 관리자 전용)">크롤링 시작</button>
+              <div class="crawl-runtime-tags" id="crawlRuntimeTags" aria-live="polite">
+                <span class="crawl-runtime-tag crawl-runtime-tag--unknown" id="crawlBaeminRuntimeTag" title="배민 세션서버 상태">배민 · …</span>
+                <span class="crawl-runtime-tag crawl-runtime-tag--unknown" id="crawlCoupangRuntimeTag" title="쿠팡 세션서버 상태">쿠팡 · …</span>
+              </div>
+            </div>
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
             <a class="top-link topbar-link--desktop" href="drivers.html">기사등록프로그램</a>
             <a class="top-link secondary topbar-link--desktop" href="driver.html">기사 전용 페이지 열기</a>

@@ -4377,6 +4377,19 @@ textarea {
   border-color: #16a34a;
 }
 
+.crawl-operator-topbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.crawl-operator-topbar.app-hidden,
+.crawl-operator-topbar[hidden] {
+  display: none !important;
+}
+
 .crawl-morning-start-btn {
   background: #0f766e;
   border-color: #0f766e;
@@ -4390,6 +4403,50 @@ textarea {
 .crawl-morning-start-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.crawl-runtime-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.crawl-runtime-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.crawl-runtime-tag--running {
+  color: #052e16;
+  background: #86efac;
+  border-color: #22c55e;
+}
+
+.crawl-runtime-tag--stopped {
+  color: #450a0a;
+  background: #fca5a5;
+  border-color: #ef4444;
+}
+
+.crawl-runtime-tag--auth {
+  color: #451a03;
+  background: #fcd34d;
+  border-color: #f59e0b;
+}
+
+.crawl-runtime-tag--unknown {
+  color: #3f3f46;
+  background: #e4e4e7;
+  border-color: #a1a1aa;
 }
 
 .rider-view-publish-btn:hover:not(:disabled),
