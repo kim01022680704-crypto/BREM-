@@ -1708,6 +1708,19 @@ app.post('/api/admin/rider-view/publish', async (req, res) => {
   }
 });
 
+app.get('/api/admin/crawl/operator-access', async (req, res) => {
+  try {
+    const crawlOperatorAccess = require('./crawl-operator-access');
+    const result = await crawlOperatorAccess.canOperateCrawl(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error || result.message });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '크롤링 권한 확인에 실패했습니다.' });
+  }
+});
+
 app.get('/api/rider-inquiries', async (req, res) => {
   try {
     if (useSupabaseInquiries()) {

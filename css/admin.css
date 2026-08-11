@@ -4377,6 +4377,21 @@ textarea {
   border-color: #16a34a;
 }
 
+.crawl-morning-start-btn {
+  background: #0f766e;
+  border-color: #0f766e;
+}
+
+.crawl-morning-start-btn:hover:not(:disabled) {
+  background: #0d9488;
+  border-color: #0d9488;
+}
+
+.crawl-morning-start-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .rider-view-publish-btn:hover:not(:disabled),
 .rider-app-publish-btn:hover:not(:disabled) {
   background: #15803d;

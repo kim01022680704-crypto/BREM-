@@ -40,6 +40,11 @@ let collecting = false;
 let seenAnyAuthHeader = false;
 let lastTokenSource = '';
 let lastAuthSeenAt = 0;
+let lastAutoLoginAttemptAt = 0;
+let authRecovering = false;
+let authRequired = false;
+let authRequiredReason = '';
+const AUTO_RESUME_STATUS_LOOP = String(process.env.COUPANG_AUTO_RESUME_STATUS_LOOP || '').trim() === '1';
 
 /** JWT 형태(header.payload.signature, payload에 exp) 검증 */
 function looksLikeJwt(tok) {
@@ -89,14 +94,21 @@ function businessDayStartOffset(dateStr) {
   return `${dateStr}T06:00:00+09:00`;
 }
 function thisWeekStartDateKst() {
-  // 쿠팡 주: 수요일 시작. 이번 주 수요일 날짜(영업일 기준)
-  const kst = new Date(Date.now() + 9 * 3600 * 1000);
-  const h = kst.getUTCHours();
-  if (h < 6) kst.setUTCDate(kst.getUTCDate() - 1);
-  const dow = kst.getUTCDay(); // 0=일..3=수
-  const diff = (dow - 3 + 7) % 7; // 수요일로 되돌리기
-  kst.setUTCDate(kst.getUTCDate() - diff);
-  return kst.toISOString().slice(0, 10);
+  // 배민과 동일: “조회 가능 최신일(보통 어제)”이 속한 수~화 주.
+  // 수요일에 today 기준으로 잡으면 전주 화요일이 빠져 마감 수집이 누락된다.
+  try {
+    const week = require('../server/baemin-settlement-week');
+    const latest = week.latestQueryableDate(week.todayKST()) || week.todayKST();
+    return week.settlementWeekStart(latest);
+  } catch {
+    const kst = new Date(Date.now() + 9 * 3600 * 1000);
+    const h = kst.getUTCHours();
+    if (h < 6) kst.setUTCDate(kst.getUTCDate() - 1);
+    const dow = kst.getUTCDay();
+    const diff = (dow - 3 + 7) % 7;
+    kst.setUTCDate(kst.getUTCDate() - diff);
+    return kst.toISOString().slice(0, 10);
+  }
 }
 /** 특정 날짜가 속한 정산주 시작(수요일) 날짜 */
 function weekStartForDate(dateStr) {
@@ -363,7 +375,17 @@ async function collectVendorInfoForDate(seed, dateStr, summary, pushErr, httpInf
  */
 async function runCollect(options = {}) {
   if (collecting) return { ok: false, message: '이미 수집 중입니다.' };
-  if (!latestToken) return { ok: false, status: 401, message: '쿠팡 로그인 토큰이 없습니다. 브라우저에서 로그인 후 대시보드를 한 번 열어주세요.' };
+  if (!latestToken) {
+    const recovered = await tryRecoverCoupangAuthWithNaverOtp();
+    if (!recovered.ok || !latestToken) {
+      return {
+        ok: false,
+        status: 401,
+        message: recovered.message || '쿠팡 로그인 토큰이 없습니다. 자동로그인(.env) 또는 네이버 OTP를 확인하세요.',
+        authState: 'authRequired'
+      };
+    }
+  }
   collecting = true;
   const summary = { peak_realtime: 0, weekly_performance: 0, vendor_info: 0, rider_daily: 0, errors: [], diag: [] };
   const pushErr = (msg) => { if (summary.errors.length < 12) summary.errors.push(String(msg)); };
@@ -506,6 +528,85 @@ function getStatusLoopPayload() {
   };
 }
 
+function getCurrentUrlSafe() {
+  try {
+    if (!context) return '';
+    const page = context.pages()[0];
+    return page ? String(page.url() || '') : '';
+  } catch {
+    return '';
+  }
+}
+
+function getAuthPayload() {
+  const auth = require('../server/crawl-session-auth');
+  const currentUrl = getCurrentUrlSafe();
+  const authState = auth.resolveCoupangAuthState({
+    hasToken: Boolean(latestToken),
+    recovering: authRecovering || require('../server/coupang-naver-otp').isRecovering(),
+    currentUrl,
+    authRequired: authRequired || (!latestToken && Boolean(currentUrl))
+  });
+  return {
+    authState,
+    authStateLabel: auth.authStateLabel(authState),
+    authRequired,
+    authRequiredReason,
+    recovering: authRecovering,
+    currentUrl
+  };
+}
+
+async function tryRecoverCoupangAuthWithNaverOtp() {
+  const autoLogin = require('../server/coupang-auto-login');
+  if (authRecovering) {
+    return { ok: false, message: '이미 자동로그인/OTP 복구 중입니다.' };
+  }
+  lastAutoLoginAttemptAt = Date.now();
+  authRecovering = true;
+  authRequired = true;
+  authRequiredReason = '쿠팡 자동로그인 + 네이버 OTP 시도 중';
+  try {
+    await ensureBrowser();
+    const page = await getActivePage();
+    if (!page) return { ok: false, message: '쿠팡 브라우저 페이지가 없습니다.' };
+
+    const result = await autoLogin.autoLoginCoupang(page, {
+      origin: ORIGIN,
+      onTokenScan: async (p) => {
+        await scanPageForToken(p).catch(() => {});
+      }
+    });
+
+    await scanPageForToken(page).catch(() => {});
+    await persistToken(result.ok ? 'auto_login' : 'auto_login_failed').catch(() => {});
+
+    if (result.ok && latestToken) {
+      authRequired = false;
+      authRequiredReason = '';
+      return { ok: true, hasToken: true, via: result.via || 'auto_login', alreadyLoggedIn: result.alreadyLoggedIn };
+    }
+    if (result.ok && !latestToken) {
+      // 로그인은 됐는데 JWT 미캡처 → 대시보드 재진입
+      await page.goto(`${ORIGIN}/page/rider-performance`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+      await scanPageForToken(page).catch(() => {});
+      await persistToken('auto_login_rescan').catch(() => {});
+      if (latestToken) {
+        authRequired = false;
+        authRequiredReason = '';
+        return { ok: true, hasToken: true, via: 'auto_login_rescan' };
+      }
+    }
+    authRequiredReason = result.message || '쿠팡 자동로그인 실패';
+    return { ok: false, message: authRequiredReason, error: result.error };
+  } catch (error) {
+    authRequiredReason = error?.message || String(error);
+    return { ok: false, message: authRequiredReason };
+  } finally {
+    authRecovering = false;
+  }
+}
+
 function waitLoop(ms) {
   return new Promise((resolve) => {
     const step = 1000;
@@ -570,6 +671,17 @@ async function keepAliveDuringWait(ms) {
 
 async function runStatusAutoLoopInner() {
   while (statusLoop.active && !statusLoop.stopping) {
+    if (!latestToken) {
+      statusLoop.phase = 'waiting';
+      statusLoop.message = '토큰 없음 — 네이버 OTP 자동 복구 시도…';
+      statusLoop.updatedAt = nowKstIsoOffset();
+      const recovered = await tryRecoverCoupangAuthWithNaverOtp();
+      if (!recovered.ok || !latestToken) {
+        statusLoop.lastError = recovered.message || '쿠팡 인증 복구 실패';
+        await keepAliveDuringWait(STATUS_LOOP_WAIT_MS);
+        continue;
+      }
+    }
     statusLoop.round += 1;
     const first = statusLoop.round === 1;
     statusLoop.phase = 'collecting';
@@ -585,8 +697,27 @@ async function runStatusAutoLoopInner() {
         : await runCollect({ skipWeekly: true, includeRider: true });
       statusLoop.lastSummary = result && result.summary ? result.summary : null;
       statusLoop.lastError = '';
+      if (result && result.status === 401) {
+        latestToken = '';
+        authRequired = true;
+      } else if (first && result?.ok) {
+        try {
+          const { syncCoupangRejections } = require('../server/coupang-erp-sync');
+          const weekStart = thisWeekStartDateKst();
+          const sync = await syncCoupangRejections({ weekStart });
+          statusLoop.message = sync.ok
+            ? `1회차 완료 · 거절율 동기화 ${Number(sync.rejectionsUpserted || 0)}건`
+            : `1회차 완료 · 거절율 동기화 실패(${sync.message || '오류'})`;
+        } catch (syncErr) {
+          statusLoop.lastError = syncErr?.message || String(syncErr);
+        }
+      }
     } catch (e) {
       statusLoop.lastError = e && e.message ? e.message : String(e);
+      if (/401|unauthorized|login|토큰/i.test(statusLoop.lastError)) {
+        latestToken = '';
+        authRequired = true;
+      }
     }
     if (!statusLoop.active || statusLoop.stopping) break;
     statusLoop.phase = 'waiting';
@@ -605,14 +736,16 @@ async function runStatusAutoLoopInner() {
 
 function startStatusAutoLoop() {
   if (statusLoop.active) return { ok: false, message: '이미 자동수집 중입니다.', statusLoop: getStatusLoopPayload() };
-  if (!latestToken) return { ok: false, status: 401, message: '쿠팡 로그인 토큰이 없습니다. 브라우저에서 로그인 후 대시보드를 한 번 여세요.' };
+  // 토큰 없어도 루프 시작 → 내부에서 자동로그인/OTP 복구
   statusLoop.active = true;
   statusLoop.stopping = false;
   statusLoop.round = 0;
   statusLoop.startedAt = nowKstIsoOffset();
   statusLoop.updatedAt = statusLoop.startedAt;
   statusLoop.lastError = '';
-  statusLoop.message = '자동수집 시작…';
+  statusLoop.message = latestToken
+    ? '자동수집 시작…'
+    : '토큰 없음 — 자동로그인 후 수집 시작…';
   void runStatusAutoLoopInner();
   return { ok: true, statusLoop: getStatusLoopPayload() };
 }
@@ -653,17 +786,51 @@ const server = http.createServer(async (req, res) => {
     const tokenAgeSec = latestToken ? Math.round((Date.now() - latestTokenAt) / 1000) : null;
     let tokenExp = null;
     try { if (latestToken) tokenExp = new Date(JSON.parse(Buffer.from(latestToken.split('.')[1], 'base64').toString('utf8')).exp * 1000).toISOString(); } catch { /* ignore */ }
+    if (!latestToken) {
+      authRequired = true;
+      if (!authRequiredReason) authRequiredReason = '쿠팡 로그인 토큰 없음 — 로그인 또는 네이버 OTP 복구 필요';
+    } else {
+      authRequired = false;
+      authRequiredReason = '';
+    }
+    const authPayload = getAuthPayload();
     return sendJson(res, 200, {
       ok: true, port: PORT, browserOpen: Boolean(context),
       hasToken: Boolean(latestToken), tokenAgeSec, tokenExpiresAt: tokenExp,
       vendorCount: seenVendorIds.size, collecting,
       statusLoop: getStatusLoopPayload(),
-      // 토큰 포착 진단: seenAnyAuthHeader=false 면 쿠팡이 헤더로 토큰을 안 보낸다는 뜻
       tokenSource: lastTokenSource || null,
       seenAnyAuthHeader,
       lastAuthSeenAgoSec: lastAuthSeenAt ? Math.round((Date.now() - lastAuthSeenAt) / 1000) : null,
-      apiSamples: [...seenApiPaths].slice(0, 60)
+      apiSamples: [...seenApiPaths].slice(0, 60),
+      weekStart: thisWeekStartDateKst(),
+      ...authPayload
     });
+  }
+
+  if (u.pathname === '/auth/recover' && req.method === 'POST') {
+    const result = await tryRecoverCoupangAuthWithNaverOtp();
+    return sendJson(res, result.ok ? 200 : 400, { ...result, ...getAuthPayload(), hasToken: Boolean(latestToken) });
+  }
+
+  if (u.pathname === '/naver/open' && req.method === 'POST') {
+    try {
+      const naverOtp = require('../server/coupang-naver-otp');
+      const result = await naverOtp.openNaverMailForLogin();
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, 500, { ok: false, message: error?.message || String(error) });
+    }
+  }
+
+  if (u.pathname === '/erp-sync' && req.method === 'POST') {
+    try {
+      const { syncCoupangRejections } = require('../server/coupang-erp-sync');
+      const result = await syncCoupangRejections({ weekStart: thisWeekStartDateKst() });
+      return sendJson(res, result.ok ? 200 : 500, result);
+    } catch (error) {
+      return sendJson(res, 500, { ok: false, message: error?.message || String(error) });
+    }
   }
 
   if (u.pathname === '/status-loop/start' && req.method === 'POST') {
@@ -702,10 +869,31 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', async () => {
   console.log('========================================');
   console.log(`[COUPANG] 세션 서버 http://127.0.0.1:${PORT}`);
-  console.log('[COUPANG] 브라우저를 띄웁니다. 로그인 + 2차 인증 후 대시보드를 한 번 여세요.');
-  console.log('[COUPANG] 수집: POST /collect  · 상태: GET /health');
+  console.log('[COUPANG] 기동 시 자동로그인(아이디/비번+.env) + 네이버 OTP 시도');
+  console.log('[COUPANG] 수집: POST /collect  · 상태: GET /health  · 복구: POST /auth/recover');
   console.log('========================================');
   try { await ensureBrowser(); } catch (e) { console.error('[COUPANG] 브라우저 실행 실패:', e.message); }
+
+  // 기동 직후: 토큰 없으면 자동로그인
+  try {
+    const creds = require('../server/coupang-auto-login').getCoupangCredentials();
+    if (!latestToken) {
+      if (creds.configured) {
+        console.log('[COUPANG] 토큰 없음 — 자동로그인 시작…');
+        const recovered = await tryRecoverCoupangAuthWithNaverOtp();
+        console.log(recovered.ok
+          ? `[COUPANG] 자동로그인 성공 (${recovered.via || 'auto'})`
+          : `[COUPANG] 자동로그인 실패: ${recovered.message}`);
+      } else {
+        console.warn('[COUPANG] COUPANG_LOGIN_ID / COUPANG_LOGIN_PASSWORD 미설정 — 수동 로그인 필요');
+      }
+    } else {
+      console.log('[COUPANG] 기존 토큰 유지 중');
+    }
+  } catch (e) {
+    console.error('[COUPANG] 자동로그인 오류:', e.message || e);
+  }
+
   // 수동 로그인 후에도(자동순회 미실행) 토큰이 잡히도록 20초마다 활성 페이지 스토리지 스캔.
   setInterval(async () => {
     try {
@@ -713,6 +901,20 @@ server.listen(PORT, '127.0.0.1', async () => {
       if (latestToken && Date.now() - latestTokenAt < 60 * 1000) return;
       const page = context.pages()[0];
       if (page) await scanPageForToken(page).catch(() => {});
+      // 토큰 없고 자격증명 있으면 3분마다 자동로그인 재시도
+      if (!latestToken && !authRecovering && require('../server/coupang-auto-login').getCoupangCredentials().configured) {
+        if (Date.now() - lastAutoLoginAttemptAt > 3 * 60 * 1000) {
+          void tryRecoverCoupangAuthWithNaverOtp().catch(() => {});
+        }
+      }
     } catch { /* ignore */ }
   }, 20 * 1000);
+
+  if (AUTO_RESUME_STATUS_LOOP) {
+    console.log('[COUPANG] COUPANG_AUTO_RESUME_STATUS_LOOP=1 — 자동순회를 이어서 시작합니다.');
+    setTimeout(() => {
+      const started = startStatusAutoLoop();
+      if (!started.ok) console.warn('[COUPANG] 자동 재개 보류:', started.message);
+    }, 12000);
+  }
 });

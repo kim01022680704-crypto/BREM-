@@ -998,11 +998,16 @@
       el.textContent = '로컬 세션서버(3940): 꺼짐 — 바탕화면 [BREM-배민쿠팡-통합세션서버.bat]을 실행하세요.';
       return;
     }
-    const parts = ['로컬 세션서버: 실행 중'];
-    if (local.hasToken) {
+    const authState = local.authState || (local.hasToken ? 'ok' : 'authRequired');
+    const authLabel = local.authStateLabel
+      || (authState === 'ok' ? '정상' : (authState === 'recovering' ? '복구 중' : '로그인 필요'));
+    const parts = [`로컬 세션서버: 실행 중 · 세션 ${authLabel}`];
+    if (authState === 'recovering') {
+      parts.push(local.authRequiredReason || '네이버 OTP 복구 중…');
+    } else if (local.hasToken) {
       parts.push(`로그인: 완료${local.tokenSource ? ` (토큰:${local.tokenSource})` : ''}`);
     } else if (local.seenAnyAuthHeader) {
-      parts.push('로그인: 필요 (토큰 만료 · 다시 로그인)');
+      parts.push('로그인: 필요 (토큰 만료 · 네이버 OTP 복구/다시 로그인)');
     } else {
       parts.push('로그인: 필요 (브라우저 열기 → 대시보드 열기)');
     }
@@ -1050,6 +1055,9 @@
     local.loop = h.statusLoop || {};
     local.tokenSource = String(h.tokenSource || '');
     local.seenAnyAuthHeader = Boolean(h.seenAnyAuthHeader);
+    local.authState = h.authState || null;
+    local.authStateLabel = h.authStateLabel || '';
+    local.authRequiredReason = h.authRequiredReason || '';
     renderLocalStatus();
     renderLoopStatus();
     updateLocalButtons();

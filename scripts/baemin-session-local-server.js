@@ -28,7 +28,7 @@ const {
 } = require('../server/baemin-delivery-hosts');
 const LOGIN_WAIT_MS = 15 * 60 * 1000;
 const POLL_MS = 2000;
-const SERVER_VERSION = '20260729a';
+const SERVER_VERSION = '20260811b';
 const SCRIPT_PATH = __filename;
 const SCHEDULER_TICK_MS = 30 * 1000;
 const HEARTBEAT_MS = 30 * 1000;
@@ -88,9 +88,14 @@ let refreshLaunchPromise = null;
 let activeSetup = { setupId: '', setupSecret: '', apiBase: 'https://brem.kr' };
 
 let sessionPaused = false;
+let authRecovering = false;
+let authRequiredReason = '';
 let lastRunSlotKey = null;
 let collectRunning = false;
 let shutdownRequested = false;
+let morningRunRunning = false;
+/** 부팅 후 status-loop 자동 재개 여부 (항상 켜진 운영용) */
+const AUTO_RESUME_STATUS_LOOP = String(process.env.BAEMIN_AUTO_RESUME_STATUS_LOOP || '').trim() === '1';
 let lastCollectResult = {
   at: null,
   ok: null,
@@ -699,7 +704,7 @@ function getBrowserHealth() {
   // 좀비 waiting_login이 UI/상태에 남지 않게 정리
   if (
     activeJob
-    && ['opening_browser', 'waiting_login', 'saving'].includes(activeJob.status)
+    && ['opening_browser', 'waiting_login', 'waiting_phone_auth', 'saving'].includes(activeJob.status)
     && !refreshLoopRunning
   ) {
     activeJob = { status: 'idle', message: '대기 중', updatedAt: Date.now() };
@@ -716,6 +721,71 @@ function getBrowserHealth() {
     jobRunning: isJobRunning(),
     jobStatus: activeJob?.status || 'idle'
   };
+}
+
+function getAuthStatePayload(browser = null) {
+  const auth = require('../server/crawl-session-auth');
+  const b = browser || getBrowserHealth();
+  const authState = auth.resolveBaeminAuthState({
+    sessionPaused,
+    sessionLoggedIn: b.sessionLoggedIn,
+    currentUrl: b.currentUrl,
+    recovering: authRecovering,
+    jobStatus: b.jobStatus,
+    configured: true,
+    lastError: authRequiredReason || ''
+  });
+  return {
+    authState,
+    authStateLabel: auth.authStateLabel(authState),
+    authRequiredReason: authRequiredReason || '',
+    recovering: authRecovering,
+    phoneAuthLikely: auth.isBaeminPhoneAuthLikeUrl(b.currentUrl)
+  };
+}
+
+async function detectAndMarkAuthRequired() {
+  const auth = require('../server/crawl-session-auth');
+  const browser = getBrowserHealth();
+  if (auth.isBaeminPhoneAuthLikeUrl(browser.currentUrl) || auth.isBaeminLoginLikeUrl(browser.currentUrl)) {
+    sessionPaused = true;
+    authRequiredReason = auth.isBaeminPhoneAuthLikeUrl(browser.currentUrl)
+      ? '휴대폰 인증 화면 — 인증번호 입력 후 자동 재개됩니다'
+      : '로그인 화면 — 배민 로그인 후 자동 재개됩니다';
+    if (activeJob && ['waiting_login', 'idle', 'opening_browser'].includes(activeJob.status)) {
+      activeJob = {
+        status: auth.isBaeminPhoneAuthLikeUrl(browser.currentUrl) ? 'waiting_phone_auth' : 'waiting_login',
+        message: authRequiredReason,
+        updatedAt: Date.now()
+      };
+    }
+    return true;
+  }
+  if (browser.sessionLoggedIn && sessionPaused) {
+    // 인증 완료로 보이면 pause 해제
+    sessionPaused = false;
+    authRequiredReason = '';
+    authRecovering = false;
+  }
+  return false;
+}
+
+/** 로그인/휴대폰 인증 완료될 때까지 대기 후 재개 */
+async function waitForBaeminAuthResume(timeoutMs = 30 * 60 * 1000) {
+  const started = Date.now();
+  authRecovering = false;
+  while (Date.now() - started < timeoutMs && !shutdownRequested) {
+    await detectAndMarkAuthRequired();
+    const browser = getBrowserHealth();
+    if (browser.sessionLoggedIn && !require('../server/crawl-session-auth').isBaeminLoginLikeUrl(browser.currentUrl)) {
+      sessionPaused = false;
+      authRequiredReason = '';
+      authRecovering = false;
+      return { ok: true, browser };
+    }
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  return { ok: false, message: '배민 인증 대기 시간 초과' };
 }
 
 let detachSpaGuard = () => {};
@@ -1093,6 +1163,16 @@ async function runStatusAutoLoopInner() {
   let isFirstRound = true;
 
   while (statusLoop.active && !statusLoop.stopping) {
+    await detectAndMarkAuthRequired().catch(() => false);
+    if (sessionPaused) {
+      setStatusLoopPhase('waiting', authRequiredReason || '로그인/휴대폰 인증 대기 중…');
+      const resumed = await waitForBaeminAuthResume(30 * 60 * 1000);
+      if (!resumed.ok) {
+        statusLoop.lastError = resumed.message || '인증 대기 시간 초과';
+        break;
+      }
+      setStatusLoopPhase('bootstrap', '인증 완료 — 수집 재개');
+    }
     statusLoop.round += 1;
     statusLoop.lastError = '';
     const round = statusLoop.round;
@@ -1138,9 +1218,23 @@ async function runStatusAutoLoopInner() {
         const rateNote = rates.ok
           ? ` · 수락율 ${Number(rates.upserted || rates.riderCount || 0)}명`
           : ` · 수락율 실패(${rates.message || '오류'})`;
+        let erpNote = '';
+        try {
+          const { syncBaeminCallsAndRejections } = require('../server/baemin-erp-sync');
+          const erp = await syncBaeminCallsAndRejections({
+            fromDate: weekRange.fromDate,
+            toDate: weekRange.toDate,
+            mode: 'all'
+          });
+          erpNote = erp.ok
+            ? ` · 콜/거절 동기화 OK`
+            : ` · 콜/거절 동기화 실패(${erp.message || '오류'})`;
+        } catch (erpErr) {
+          erpNote = ` · 콜/거절 동기화 오류(${erpErr?.message || erpErr})`;
+        }
         setStatusLoopPhase(
           'waiting',
-          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}`
+          `${round}회차 부트스트랩 완료 · 수집 ${Number(collect.savedCount || 0)}건 · 저장 ${Number(apply.itemCount || apply.savedCount || 0)}건${rateNote}${erpNote}`
         );
         console.log(`[BREM] [현황자동수집] ${round}회차 부트스트랩 완료`);
         isFirstRound = false;
@@ -1201,7 +1295,14 @@ function startStatusAutoLoop() {
     return { ok: false, message: '다른 수집이 진행 중입니다. 끝난 뒤 시작해 주세요.' };
   }
   if (sessionPaused) {
-    return { ok: false, message: '세션 만료 — 배민 세션 갱신 후 다시 시작하세요.', sessionExpired: true };
+    const auth = getAuthStatePayload();
+    return {
+      ok: false,
+      message: authRequiredReason || '세션 만료 — 배민 로그인/휴대폰 인증 후 다시 시작하세요.',
+      sessionExpired: true,
+      authState: auth.authState,
+      authRequired: true
+    };
   }
 
   statusLoop.active = true;
@@ -2065,6 +2166,9 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    const browser = getBrowserHealth();
+    await detectAndMarkAuthRequired().catch(() => false);
+    const authPayload = getAuthStatePayload(browser);
     return sendJsonWithCors(req, res, 200, {
       ok: true,
       port: PORT,
@@ -2075,17 +2179,21 @@ const server = http.createServer(async (req, res) => {
         collectDelivery: true,
         sessionRefresh: true,
         applyErp: true,
-        statusLoop: true
+        statusLoop: true,
+        morningRun: true,
+        authState: true
       },
       supabaseConfigured: hasLocalSupabaseCredentials(),
       jobRunning: isJobRunning(),
-      browser: getBrowserHealth(),
+      browser,
+      authState: authPayload.authState,
       session: {
         ...sessionStatus,
         paused: sessionPaused,
         state: sessionPaused || sessionStatus.lastError
           ? 'expired'
-          : (sessionStatus.configured ? 'ok' : 'missing')
+          : (sessionStatus.configured ? 'ok' : 'missing'),
+        ...authPayload
       },
       statusLoop: getStatusLoopPayload(),
       autoCollect: getAutoCollectHealthPayload()
@@ -2635,6 +2743,47 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/morning-run' && req.method === 'POST') {
+    if (morningRunRunning) {
+      return sendJsonWithCors(req, res, 409, { ok: false, message: '출근 원버튼이 이미 실행 중입니다.' });
+    }
+    morningRunRunning = true;
+    try {
+      const body = await readJsonBody(req).catch(() => ({}));
+      const { runMorningCrawlPipeline } = require('../server/crawl-morning-run');
+      const result = await runMorningCrawlPipeline(body || {});
+      return sendJsonWithCors(req, res, result.ok ? 200 : 500, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, {
+        ok: false,
+        message: formatError(error, '출근 원버튼 실패')
+      });
+    } finally {
+      morningRunRunning = false;
+    }
+  }
+
+  if (url.pathname === '/auth/wait' && req.method === 'POST') {
+    const result = await waitForBaeminAuthResume();
+    return sendJsonWithCors(req, res, result.ok ? 200 : 408, result);
+  }
+
+  if (url.pathname === '/erp-sync' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req).catch(() => ({}));
+      const { syncBaeminCallsAndRejections } = require('../server/baemin-erp-sync');
+      const weekRange = computeThisWeekRangeForLoop();
+      const result = await syncBaeminCallsAndRejections({
+        fromDate: body.fromDate || weekRange.fromDate,
+        toDate: body.toDate || weekRange.toDate,
+        mode: body.mode || 'all'
+      });
+      return sendJsonWithCors(req, res, result.ok ? 200 : 500, result);
+    } catch (error) {
+      return sendJsonWithCors(req, res, 500, { ok: false, message: formatError(error) });
+    }
+  }
+
   sendJsonWithCors(req, res, 404, { ok: false, message: 'Not found' });
 });
 
@@ -2703,4 +2852,14 @@ server.listen(PORT, '127.0.0.1', async () => {
   }
 
   startAutoCollectScheduler();
+
+  if (AUTO_RESUME_STATUS_LOOP) {
+    console.log('[BREM] BAEMIN_AUTO_RESUME_STATUS_LOOP=1 — 현황 자동수집을 이어서 시작합니다.');
+    setTimeout(() => {
+      const started = startStatusAutoLoop();
+      if (!started.ok) {
+        console.warn('[BREM] 자동 재개 보류:', started.message);
+      }
+    }, 5000);
+  }
 });

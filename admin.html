@@ -17,11 +17,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260807d">
+  <link rel="stylesheet" href="css/admin.css?v=20260811b">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
-  <link rel="stylesheet" href="css/admin-mobile.css?v=20260702a">
+  <link rel="stylesheet" href="css/admin-mobile.css?v=20260811b">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -154,6 +154,7 @@
             <span class="rider-app-publish-status" id="riderAppPublishStatus" aria-live="polite">반영 상태 확인 중…</span>
           </div>
           <div class="topbar-actions">
+            <button type="button" class="primary-btn crawl-morning-start-btn app-hidden" id="crawlMorningStartBtn" title="배민+쿠팡 크롤링·콜수/거절율·라이더반영 (지정 관리자 전용)" hidden>크롤링 시작</button>
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
             <a class="top-link topbar-link--desktop" href="drivers.html">기사등록프로그램</a>
             <a class="top-link secondary topbar-link--desktop" href="driver.html">기사 전용 페이지 열기</a>
@@ -729,6 +730,12 @@
           <div id="baeminDeliverySessionStatus" class="baemin-session-status baemin-session-status--warn">세션 상태 확인 중…</div>
           <div id="baeminDeliveryAutoCollectStatus" class="baemin-auto-collect-panel">자동 수집 상태 확인 중…</div>
           <div id="baeminDeliveryMenuCollectStatus" class="baemin-menu-collect-panel">메뉴별 수집 상태 확인 중…</div>
+          <div class="form-row baemin-morning-run-row app-hidden" id="baeminMorningRunRow" hidden>
+            <button type="button" class="primary-btn" id="baeminMorningRunBtn">출근 원버튼 (배민+쿠팡 수집·ERP·라이더반영)</button>
+            <button type="button" class="small-btn" id="coupangNaverMailOpenBtn">네이버메일 열기(쿠팡 OTP용)</button>
+            <button type="button" class="small-btn" id="coupangAuthRecoverBtn">쿠팡 네이버OTP 복구</button>
+            <span id="baeminMorningRunStatus" class="form-help">탑바 「크롤링 시작」과 동일. 지정 관리자만 표시. 수요일은 전주 수~화 포함.</span>
+          </div>
           <div class="form-row baemin-collect-toolbar">
             <label>
               수집 날짜
@@ -7785,9 +7792,9 @@
   <script src="js/weekly-settlement-admin.js?v=20260807a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-    <script src="js/baemin-delivery-status-admin.js?v=20260805c"></script>
-    <script src="js/coupang-status-admin.js?v=20260805n"></script>
-    <script src="js/coupang-rider-status-admin.js?v=20260806s"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20260811b"></script>
+    <script src="js/coupang-status-admin.js?v=20260811b"></script>
+    <script src="js/coupang-rider-status-admin.js?v=20260811a"></script>
     <script src="js/contribution-admin.js?v=20260805e"></script>
     <script src="js/coupang-rejection-sync.js?v=20260806s"></script>
     <script src="js/baemin-calls-rejection-sync.js?v=20260731a"></script>

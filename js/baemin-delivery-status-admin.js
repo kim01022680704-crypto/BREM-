@@ -59,6 +59,7 @@
       timer: null
     },
     riderLiveSyncRunning: false,
+    crawlOperatorAllowed: false,
     localSessionConfig: {
       port: 3939,
       localHealthUrls: [
@@ -3518,6 +3519,10 @@
   }
 
   function isSessionExpired(config) {
+    const authState = state.localSession?.authState || state.localAuthState;
+    if (authState === 'recovering') return false;
+    if (authState === 'authRequired') return true;
+    if (authState === 'ok') return false;
     if (state.localSession?.state === 'ok' && !state.localSession?.paused) return false;
     if (state.localBrowser?.browserOpen && state.localBrowser?.sessionLoggedIn) return false;
     return Boolean(config?.sessionLastError || config?.autoCollect?.sessionExpired || config?.autoCollect?.sessionPaused);
@@ -3527,18 +3532,29 @@
     const el = $('baeminDeliverySessionStatus');
     if (!el) return;
 
-    if (isSessionExpired(config)) {
+    const authState = state.localSession?.authState || state.localAuthState || '';
+    const authLabel = state.localSession?.authStateLabel
+      || (authState === 'ok' ? '정상' : (authState === 'recovering' ? '복구 중' : (authState === 'authRequired' ? '로그인 필요' : '')));
+    const authReason = state.localSession?.authRequiredReason || '';
+
+    if (authState === 'recovering') {
+      el.className = 'baemin-session-status baemin-session-status--warn';
+      el.innerHTML = `<strong>세션 복구 중</strong> — ${escapeHtml(authReason || '로그인/휴대폰 인증 대기')}`;
+      return;
+    }
+
+    if (isSessionExpired(config) || authState === 'authRequired') {
       el.className = 'baemin-session-status baemin-session-status--error';
-      const message = config?.sessionLastError || config?.autoCollect?.lastError || '배민 로그인 만료';
-      el.innerHTML = `<strong>세션 만료 — 배민 세션 갱신 필요</strong> — ${message} · <button type="button" class="link-btn" id="baeminSessionRefreshInlineBtn">세션 갱신</button>`;
+      const message = authReason || config?.sessionLastError || config?.autoCollect?.lastError || '배민 로그인 만료';
+      el.innerHTML = `<strong>${escapeHtml(authLabel || '세션 만료')} — 배민 세션 갱신/휴대폰 인증 필요</strong> — ${escapeHtml(message)} · <button type="button" class="link-btn" id="baeminSessionRefreshInlineBtn">세션 갱신</button>`;
       $('baeminSessionRefreshInlineBtn')?.addEventListener('click', () => void startSessionRefresh());
       return;
     }
 
-    if (config?.sessionConfigured) {
+    if (config?.sessionConfigured || authState === 'ok') {
       el.className = 'baemin-session-status baemin-session-status--ok';
       el.innerHTML = `
-        <strong>배민 세션 연결됨</strong>
+        <strong>배민 세션 연결됨${authLabel ? ` · ${escapeHtml(authLabel)}` : ''}</strong>
         · 갱신: ${formatDateTime(config.sessionUpdatedAt)}
         · 확인: ${formatDateTime(config.sessionLastValidatedAt)}
       `;
@@ -4273,7 +4289,13 @@
           autoCollect: payload.autoCollect || null,
           collectProgress: payload.autoCollect?.collectProgress || payload.collectProgress || null,
           browser: payload.browser || null,
-          session: payload.session || null,
+          session: {
+            ...(payload.session || {}),
+            authState: payload.session?.authState || payload.authState || null,
+            authStateLabel: payload.session?.authStateLabel || null,
+            authRequiredReason: payload.session?.authRequiredReason || null
+          },
+          authState: payload.authState || payload.session?.authState || null,
           statusLoop: payload.statusLoop || payload.autoCollect?.statusLoop || null,
           version: payload.version || '',
           features: payload.features || null,
@@ -4293,8 +4315,12 @@
     state.localCollectProgress = local.collectProgress || local.autoCollect?.collectProgress || null;
     state.localBrowser = local.browser;
     state.localSession = local.session;
+    state.localAuthState = local.authState || local.session?.authState || null;
     syncStatusAutoLoopFromServer(local);
-    if (state.config) renderAutoCollectStatus(state.config);
+    if (state.config) {
+      renderSessionStatus(state.config);
+      renderAutoCollectStatus(state.config);
+    }
     updateActionButtons();
   }
 
@@ -5193,6 +5219,140 @@
     state.statusAutoLoop.waitEndsAt = Number(loop.waitEndsAt || 0);
     state.statusAutoLoop.lastError = loop.lastError || '';
     renderStatusAutoLoopPanel();
+  }
+
+  function setMorningRunStatus(text) {
+    const el = $('baeminMorningRunStatus');
+    if (el) el.textContent = text;
+  }
+
+  async function callCoupangLocal(pathName, options = {}) {
+    const method = options.method || 'GET';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs || 30000);
+    try {
+      const res = await fetch(`http://127.0.0.1:3940${pathName}`, {
+        method,
+        headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+        body: method === 'POST' ? JSON.stringify(options.body || {}) : undefined,
+        signal: controller.signal
+      });
+      const json = await res.json().catch(() => ({}));
+      return { ok: res.ok && json.ok !== false, status: res.status, ...json };
+    } catch (error) {
+      return { ok: false, message: error.message || '쿠팡 로컬 서버 연결 실패' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function openCoupangNaverMail() {
+    setMorningRunStatus('네이버 메일 창 여는 중…');
+    const result = await callCoupangLocal('/naver/open', { method: 'POST', timeoutMs: 90000 });
+    showToast(result.message || (result.ok ? '네이버 메일을 열었습니다.' : '네이버 메일 열기 실패'));
+    setMorningRunStatus(result.message || '네이버메일(쿠팡 OTP용) — 최초 1회 로그인하세요.');
+  }
+
+  async function recoverCoupangAuthWithNaver() {
+    setMorningRunStatus('쿠팡 네이버 OTP 복구 중…');
+    const result = await callCoupangLocal('/auth/recover', { method: 'POST', timeoutMs: 180000 });
+    showToast(result.message || (result.ok ? '쿠팡 인증 복구 완료' : '쿠팡 인증 복구 실패'));
+    setMorningRunStatus(result.ok
+      ? '쿠팡 네이버 OTP 복구 완료'
+      : (result.message || '복구 실패 — 네이버메일 로그인/OTP 확인'));
+  }
+
+  function setMorningRunButtonsBusy(busy) {
+    const labels = {
+      baeminMorningRunBtn: busy
+        ? '크롤링 실행 중…'
+        : '출근 원버튼 (배민+쿠팡 수집·ERP·라이더반영)',
+      crawlMorningStartBtn: busy ? '크롤링 중…' : '크롤링 시작'
+    };
+    Object.entries(labels).forEach(([id, text]) => {
+      const el = $(id);
+      if (!el) return;
+      el.disabled = Boolean(busy);
+      el.textContent = text;
+    });
+  }
+
+  function setCrawlOperatorUiVisible(allowed) {
+    const show = Boolean(allowed);
+    ['crawlMorningStartBtn', 'baeminMorningRunRow'].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.hidden = !show;
+      el.classList.toggle('app-hidden', !show);
+    });
+  }
+
+  async function refreshCrawlOperatorAccess() {
+    try {
+      const result = await adminApi('/api/admin/crawl/operator-access');
+      const allowed = Boolean(result?.ok && result.allowed);
+      state.crawlOperatorAllowed = allowed;
+      setCrawlOperatorUiVisible(allowed);
+      return allowed;
+    } catch {
+      state.crawlOperatorAllowed = false;
+      setCrawlOperatorUiVisible(false);
+      return false;
+    }
+  }
+
+  async function runMorningOneButton() {
+    if (!state.crawlOperatorAllowed) {
+      showToast('크롤링 권한이 없는 관리자 계정입니다.');
+      return;
+    }
+    const busy = $('crawlMorningStartBtn')?.disabled || $('baeminMorningRunBtn')?.disabled;
+    if (busy) return;
+    if (!window.confirm('크롤링을 시작할까요?\n배민 1회차 수집·저장·콜수/거절율 → 쿠팡 자동로그인·7일 수집·거절율 → 라이더 반영 → 자동순회\n(수요일은 전주 수~화 포함)')) {
+      return;
+    }
+    setMorningRunButtonsBusy(true);
+    setMorningRunStatus('크롤링 실행 중… (배민 bootstrap·인증 대기 포함, 수 분 걸릴 수 있음)');
+    showToast('크롤링 시작');
+    try {
+      const port = state.localSessionConfig?.port || 3939;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 40 * 60 * 1000);
+      let result;
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/morning-run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+          signal: controller.signal
+        });
+        result = await res.json().catch(() => ({}));
+        result.ok = res.ok && result.ok !== false;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      const weekLabel = result.weekRange?.label || '';
+      if (!result.ok) {
+        const failed = (result.steps || []).find(step => step.ok === false);
+        const msg = failed?.message || result.message || '크롤링 실패';
+        setMorningRunStatus(`실패 · ${weekLabel} · ${msg}`);
+        showToast(msg);
+        return;
+      }
+      const summary = (result.steps || []).map(step => step.name).join(' → ');
+      setMorningRunStatus(`완료 · ${weekLabel} · ${summary}`);
+      showToast(`크롤링 완료 · ${weekLabel}`);
+      await refreshLocalServerStatus();
+    } catch (error) {
+      const msg = error?.name === 'AbortError'
+        ? '크롤링 시간 초과'
+        : (error.message || '크롤링 실패');
+      setMorningRunStatus(msg);
+      showToast(msg);
+    } finally {
+      setMorningRunButtonsBusy(false);
+    }
   }
 
   function renderStatusAutoLoopPanel() {
@@ -6234,6 +6394,20 @@
       void stopStatusAutoLoop();
     });
 
+    $('baeminMorningRunBtn')?.addEventListener('click', () => {
+      void runMorningOneButton();
+    });
+    $('crawlMorningStartBtn')?.addEventListener('click', () => {
+      void runMorningOneButton();
+    });
+    $('coupangNaverMailOpenBtn')?.addEventListener('click', () => {
+      void openCoupangNaverMail();
+    });
+    $('coupangAuthRecoverBtn')?.addEventListener('click', () => {
+      void recoverCoupangAuthWithNaver();
+    });
+    void refreshCrawlOperatorAccess();
+
     $('baeminDeliveryScrubDupBtn')?.addEventListener('click', () => {
       void scrubDuplicatePartners();
     });
@@ -6514,6 +6688,11 @@
     }
   };
   bindEvents();
+  // 탑바 「크롤링 시작」은 배민 섹션 진입 전에도 권한 확인 (세션 준비 후 재확인)
+  void refreshCrawlOperatorAccess();
+  document.addEventListener('brem-admin-session-ready', () => {
+    void refreshCrawlOperatorAccess();
+  });
   // 스크립트 로드 직후(이미 세션 있는 새로고침)에도 캐시 선표시
   paintDashboardCacheInstant();
 })();

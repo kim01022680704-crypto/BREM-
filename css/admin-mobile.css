@@ -166,13 +166,15 @@
     width: 100%;
   }
 
-  .admin-app .topbar-actions .rider-app-publish-btn {
+  .admin-app .topbar-actions .rider-app-publish-btn,
+  .admin-app .topbar-actions .crawl-morning-start-btn {
     grid-column: 1 / -1;
   }
 
   .admin-app .topbar-actions .top-link,
   .admin-app .topbar-actions .primary-btn,
-  .admin-app .topbar-actions .rider-app-publish-btn {
+  .admin-app .topbar-actions .rider-app-publish-btn,
+  .admin-app .topbar-actions .crawl-morning-start-btn {
     width: 100%;
     justify-content: center;
     text-align: center;

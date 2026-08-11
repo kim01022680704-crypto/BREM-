@@ -24,7 +24,10 @@
     "baemin:playwright-install": "node node_modules/playwright/cli.js install chromium",
     "baemin:session-refresh": "node scripts/baemin-session-refresh-cli.js",
     "coupang:discovery": "node scripts/coupang-discovery.js",
-    "coupang:session-server": "node scripts/coupang-session-local-server.js"
+    "coupang:session-server": "node scripts/coupang-session-local-server.js",
+    "test:crawl-week-range": "node scripts/test-crawl-week-range.js",
+    "crawl:always-on": "scripts\\\\start-crawl-always-on.bat",
+    "crawl:morning": "node -e \"require('./server/crawl-morning-run').runMorningCrawlPipeline({}).then(r=>{console.log(JSON.stringify(r,null,2)); process.exit(r.ok?0:1)}).catch(e=>{console.error(e);process.exit(1)})\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",

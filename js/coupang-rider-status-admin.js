@@ -738,8 +738,12 @@
       el.textContent = '로컬 세션서버(3940): 꺼짐 — 바탕화면 통합 세션서버 bat을 실행하세요.';
       return;
     }
-    const parts = ['로컬 세션서버: 실행 중'];
-    parts.push(local.hasToken ? '로그인: 완료' : '로그인: 필요 (쿠팡 밴더현황에서 브라우저 열기)');
+    const authState = local.authState || (local.hasToken ? 'ok' : 'authRequired');
+    const authLabel = local.authStateLabel
+      || (authState === 'ok' ? '정상' : (authState === 'recovering' ? '복구 중' : '로그인 필요'));
+    const parts = [`로컬 세션서버: 실행 중 · 세션 ${authLabel}`];
+    parts.push(local.hasToken ? '로그인: 완료' : '로그인: 필요 (네이버 OTP 복구 / 밴더현황에서 브라우저 열기)');
+    if (local.authRequiredReason && !local.hasToken) parts.push(local.authRequiredReason);
     el.textContent = parts.join('  |  ');
   }
 
@@ -771,6 +775,9 @@
     local.running = Boolean(h.ok);
     local.hasToken = Boolean(h.hasToken);
     local.loop = h.statusLoop || {};
+    local.authState = h.authState || null;
+    local.authStateLabel = h.authStateLabel || '';
+    local.authRequiredReason = h.authRequiredReason || '';
     renderLocalStatus();
     renderLoopStatus();
     updateLoopButtons();
