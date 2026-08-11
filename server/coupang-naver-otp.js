@@ -91,38 +91,100 @@ async function pageLooksLoggedIntoNaver(page) {
   return /mail\.naver\.com/.test(url) && !/nidlogin/.test(url);
 }
 
-async function fillNaverLoginForm(page, id, password) {
-  // 네이버는 종종 일반 fill이 막혀 evaluate로 값을 넣는다
-  const filled = await page.evaluate(({ userId, userPw }) => {
-    const idEl = document.querySelector('#id, input[name="id"], input[placeholder*="아이디"]');
-    const pwEl = document.querySelector('#pw, input[name="pw"], input[type="password"]');
-    if (!idEl || !pwEl) return false;
-    idEl.focus();
-    idEl.value = userId;
-    idEl.dispatchEvent(new Event('input', { bubbles: true }));
-    pwEl.focus();
-    pwEl.value = userPw;
-    pwEl.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  }, { userId: id, userPw: password }).catch(() => false);
-
-  if (!filled) {
-    const idLoc = page.locator('#id, input[name="id"]').first();
-    const pwLoc = page.locator('#pw, input[name="pw"], input[type="password"]').first();
-    if (!(await idLoc.count().catch(() => 0)) || !(await pwLoc.count().catch(() => 0))) {
-      return { ok: false, message: '네이버 로그인 입력칸을 찾지 못했습니다.' };
+async function typeIntoNaverField(page, selectors, value) {
+  for (const selector of selectors) {
+    const loc = page.locator(selector).first();
+    if (!(await loc.count().catch(() => 0))) continue;
+    if (!(await loc.isVisible().catch(() => false))) continue;
+    await loc.click({ timeout: 5000, force: true }).catch(() => {});
+    await page.keyboard.press('Control+A').catch(() => {});
+    await page.keyboard.press('Backspace').catch(() => {});
+    // 네이버는 value= 대입이 무시되는 경우가 많아 실제 타이핑 필요
+    if (typeof loc.pressSequentially === 'function') {
+      await loc.pressSequentially(value, { delay: 40 }).catch(async () => {
+        await page.keyboard.type(value, { delay: 40 }).catch(() => {});
+      });
+    } else {
+      await page.keyboard.type(value, { delay: 40 }).catch(() => {});
     }
-    await idLoc.fill(id).catch(() => {});
-    await pwLoc.fill(password).catch(() => {});
+    return true;
+  }
+  return false;
+}
+
+async function clickNaverLoginButton(page) {
+  const candidates = [
+    '#log\\.login',
+    'button.btn_login',
+    '.btn_login',
+    'button[type="submit"]',
+    'input[type="submit"]',
+    'button:has-text("로그인")'
+  ];
+  for (const selector of candidates) {
+    const loc = page.locator(selector).first();
+    if (!(await loc.count().catch(() => 0))) continue;
+    if (!(await loc.isVisible().catch(() => false))) continue;
+    await loc.click({ timeout: 5000, force: true }).catch(() => {});
+    return true;
+  }
+  // DOM 직접
+  const clicked = await page.evaluate(() => {
+    const el = document.querySelector('#log\\.login, .btn_login, button.btn_login')
+      || Array.from(document.querySelectorAll('button, input[type="submit"]'))
+        .find(node => /로그인/.test((node.textContent || node.value || '').trim()));
+    if (!el) return false;
+    el.click();
+    return true;
+  }).catch(() => false);
+  if (!clicked) await page.keyboard.press('Enter').catch(() => {});
+  return clicked;
+}
+
+async function fillNaverLoginForm(page, id, password) {
+  // 로그인 상태 유지 ON (세션 유지에 유리)
+  const keep = page.locator('#keep, label[for="keep"], text=로그인 상태 유지').first();
+  if (await keep.count().catch(() => 0)) {
+    const checked = await page.locator('#keep').isChecked().catch(() => false);
+    if (!checked) await keep.click({ force: true }).catch(() => {});
   }
 
-  const submit = page.locator('#log\\.login, button[type="submit"], .btn_login, button:has-text("로그인")').first();
-  if (await submit.count().catch(() => 0)) {
-    await submit.click().catch(() => {});
-  } else {
-    await page.keyboard.press('Enter').catch(() => {});
+  // IP 보안 OFF 시도 (자동화 차단 완화)
+  const ipOn = page.locator('.switch_on, #switch, text=IP 보안').first();
+  if (await page.locator('.switch_on').count().catch(() => 0)) {
+    await page.locator('.switch_on').first().click({ force: true }).catch(() => {});
+  } else if (await ipOn.count().catch(() => 0)) {
+    await ipOn.click({ force: true }).catch(() => {});
   }
-  return { ok: true };
+
+  const idOk = await typeIntoNaverField(page, ['#id', 'input[name="id"]', 'input[placeholder*="아이디"]'], id);
+  const pwOk = await typeIntoNaverField(page, ['#pw', 'input[name="pw"]', 'input[type="password"]'], password);
+  if (!idOk || !pwOk) {
+    // fallback: 구방식 value 주입
+    await page.evaluate(({ userId, userPw }) => {
+      const idEl = document.querySelector('#id, input[name="id"]');
+      const pwEl = document.querySelector('#pw, input[name="pw"], input[type="password"]');
+      if (!idEl || !pwEl) return;
+      const set = (el, val) => {
+        el.focus();
+        el.value = '';
+        el.value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      set(idEl, userId);
+      set(pwEl, userPw);
+    }, { userId: id, userPw: password }).catch(() => {});
+  }
+
+  await page.waitForTimeout(400);
+  let clicked = await clickNaverLoginButton(page);
+  await page.waitForTimeout(1500);
+  // 아직 로그인 페이지면 한 번 더
+  if (/nidlogin|nid\.naver\.com/.test(page.url())) {
+    clicked = (await clickNaverLoginButton(page)) || clicked;
+  }
+  return { ok: true, clicked };
 }
 
 /**
@@ -151,41 +213,41 @@ async function ensureNaverLoggedIn(page, options = {}) {
     await page.waitForTimeout(1000);
   }
 
+  console.log('[NAVER] 로그인 폼 입력 후 로그인 버튼 클릭 시도…');
   const filled = await fillNaverLoginForm(page, creds.id, creds.password);
   if (!filled.ok) return filled;
 
-  await page.waitForTimeout(2500);
-
-  // 기기등록/보안 팝업 닫기 시도
-  for (const label of ['등록안함', '다음에', '닫기', '취소']) {
-    const btn = page.locator(`button:has-text("${label}"), a:has-text("${label}")`).first();
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.click().catch(() => {});
-      await page.waitForTimeout(800);
-    }
-  }
-
-  await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-  await page.waitForTimeout(1500);
-
-  if (await pageLooksLoggedIntoNaver(page)) {
-    return { ok: true, via: 'password' };
-  }
-
-  // 추가 인증(캡차/기기확인) 필요할 수 있음 — 잠시 대기
-  const waitMs = Math.max(10000, Number(options.manualWaitMs || 45000));
+  // 로그인 버튼이 안 눌린 경우를 대비해 수동 클릭 대기(최대 2분)
+  const waitMs = Math.max(20000, Number(options.manualWaitMs || 120000));
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
-    if (await pageLooksLoggedIntoNaver(page)) {
-      return { ok: true, via: 'password+wait' };
+    // 기기등록/보안 팝업 닫기
+    for (const label of ['등록안함', '다음에', '닫기', '취소', '확인']) {
+      const btn = page.locator(`button:has-text("${label}"), a:has-text("${label}")`).first();
+      if (await btn.isVisible().catch(() => false)) {
+        await btn.click({ force: true }).catch(() => {});
+        await page.waitForTimeout(500);
+      }
     }
+
+    if (await pageLooksLoggedIntoNaver(page)) {
+      return { ok: true, via: 'password' };
+    }
+
+    // 아직 nid 로그인 화면이면 로그인 버튼 재클릭 + 안내
+    if (/nidlogin|nid\.naver\.com/.test(page.url())) {
+      await clickNaverLoginButton(page).catch(() => {});
+    } else if (!/mail\.naver\.com/.test(page.url())) {
+      await page.goto(NAVER_MAIL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    }
+
     await page.waitForTimeout(2000);
   }
 
   return {
     ok: false,
     error: 'NAVER_LOGIN_FAILED',
-    message: '네이버 자동로그인 실패 — 캡차/추가인증이면 브라우저에서 한 번만 완료해 주세요.'
+    message: '네이버 로그인 화면에서 녹색 「로그인」 버튼을 한 번 눌러 주세요. (이후엔 자동 유지)'
   };
 }
 
