@@ -158,87 +158,95 @@ async function runMorningCrawlPipeline(options = {}) {
   const latest = latestQueryableDate(today) || today;
   const weekRange = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
 
-  // 1) Baemin status-loop restart for bootstrap
-  if (!options.skipBaemin) {
-    try {
-      await localPost(BAEMIN_PORT, '/status-loop/stop', {}).catch(() => null);
-      await sleep(800);
-      const start = await localPost(BAEMIN_PORT, '/status-loop/start', {});
-      if (!start.json?.ok && start.status >= 400) {
-        push('baemin_loop_start', { ok: false, message: start.json?.message || '배민 자동수집 시작 실패', authState: start.json?.authState });
-        return { ok: false, weekRange, steps };
-      }
-      push('baemin_loop_start', { ok: true, statusLoop: start.json?.statusLoop });
-
-      const boot = await waitBaeminBootstrap(options.baeminTimeoutMs || 25 * 60 * 1000);
-      push('baemin_bootstrap', boot);
-      if (!boot.ok) return { ok: false, weekRange, steps };
-
-      const baeminSync = await syncBaeminCallsAndRejections({
-        fromDate: weekRange.fromDate,
-        toDate: weekRange.toDate,
-        mode: 'all'
+  // 배민 부트스트랩 기다리는 동안 쿠팡이 "정지"로 보이지 않도록 병렬 진행
+  const baeminTask = (async () => {
+    if (options.skipBaemin) return;
+    await localPost(BAEMIN_PORT, '/status-loop/stop', {}).catch(() => null);
+    await sleep(800);
+    const start = await localPost(BAEMIN_PORT, '/status-loop/start', {});
+    if (!start.json?.ok && start.status >= 400) {
+      push('baemin_loop_start', {
+        ok: false,
+        message: start.json?.message || '배민 자동수집 시작 실패',
+        authState: start.json?.authState
       });
-      push('baemin_erp_sync', baeminSync);
-      if (!baeminSync.ok) return { ok: false, weekRange, steps };
-    } catch (error) {
-      push('baemin', { ok: false, message: error.message || String(error) });
-      return { ok: false, weekRange, steps };
+      throw new Error(start.json?.message || '배민 자동수집 시작 실패');
     }
-  }
+    push('baemin_loop_start', { ok: true, statusLoop: start.json?.statusLoop });
 
-  // 2) Coupang full week collect + rejection sync + start loop
-  if (!options.skipCoupang) {
-    try {
-      // 토큰 없으면 자동로그인(+네이버 OTP) 먼저
-      const health = await localGet(COUPANG_PORT, '/health', 5000).catch(() => ({ json: {} }));
-      if (!health.json?.hasToken) {
-        const recover = await localPost(COUPANG_PORT, '/auth/recover', {}, 180000);
-        push('coupang_auth_recover', {
-          ok: Boolean(recover.json?.ok),
-          message: recover.json?.message,
-          via: recover.json?.via
-        });
-        if (!recover.json?.ok) {
-          return { ok: false, weekRange, steps };
-        }
-      }
+    const boot = await waitBaeminBootstrap(options.baeminTimeoutMs || 25 * 60 * 1000);
+    push('baemin_bootstrap', boot);
+    if (!boot.ok) throw new Error(boot.message || '배민 부트스트랩 실패');
 
-      const collect = await localPost(COUPANG_PORT, '/collect', {
-        weekStartDate: weekRange.fromDate,
-        fullWeek: true,
-        includeRider: true
-      }, 20 * 60 * 1000);
-      push('coupang_collect', {
-        ok: Boolean(collect.json?.ok),
-        status: collect.status,
-        message: collect.json?.message || collect.json?.error,
-        summary: collect.json?.summary || null,
-        authState: collect.json?.authState
+    const baeminSync = await syncBaeminCallsAndRejections({
+      fromDate: weekRange.fromDate,
+      toDate: weekRange.toDate,
+      mode: 'all'
+    });
+    push('baemin_erp_sync', baeminSync);
+    if (!baeminSync.ok) throw new Error(baeminSync.message || '배민 ERP 동기화 실패');
+  })();
+
+  const coupangTask = (async () => {
+    if (options.skipCoupang) return;
+    const health = await localGet(COUPANG_PORT, '/health', 5000).catch(() => ({ json: {} }));
+    if (!health.json?.hasToken) {
+      const recover = await localPost(COUPANG_PORT, '/auth/recover', {}, 180000);
+      push('coupang_auth_recover', {
+        ok: Boolean(recover.json?.ok),
+        message: recover.json?.message,
+        via: recover.json?.via
       });
-      if (!collect.json?.ok) {
-        return { ok: false, weekRange, steps };
-      }
-
-      const coupangSync = await syncCoupangRejections({
-        weekStart: weekRange.fromDate,
-        weekEnd: weekRange.toDate
-      });
-      push('coupang_erp_sync', coupangSync);
-      if (!coupangSync.ok) return { ok: false, weekRange, steps };
-
-      await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
-      await sleep(500);
-      const loop = await localPost(COUPANG_PORT, '/status-loop/start', {});
-      push('coupang_loop_start', {
-        ok: Boolean(loop.json?.ok),
-        message: loop.json?.message,
-        statusLoop: loop.json?.statusLoop
-      });
-    } catch (error) {
-      push('coupang', { ok: false, message: error.message || String(error) });
-      return { ok: false, weekRange, steps };
+      if (!recover.json?.ok) throw new Error(recover.json?.message || '쿠팡 인증 복구 실패');
     }
+
+    // 먼저 자동순회를 켜서 태그/현황이 바로 움직이게 한 뒤, 주단위 수집
+    await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
+    await sleep(400);
+    const loop = await localPost(COUPANG_PORT, '/status-loop/start', {});
+    push('coupang_loop_start', {
+      ok: Boolean(loop.json?.ok) || Boolean(loop.json?.alreadyRunning),
+      message: loop.json?.message,
+      statusLoop: loop.json?.statusLoop
+    });
+
+    const collect = await localPost(COUPANG_PORT, '/collect', {
+      weekStartDate: weekRange.fromDate,
+      fullWeek: true,
+      includeRider: true
+    }, 20 * 60 * 1000);
+    push('coupang_collect', {
+      ok: Boolean(collect.json?.ok),
+      status: collect.status,
+      message: collect.json?.message || collect.json?.error,
+      summary: collect.json?.summary || null,
+      authState: collect.json?.authState
+    });
+    if (!collect.json?.ok) throw new Error(collect.json?.message || '쿠팡 주단위 수집 실패');
+
+    const coupangSync = await syncCoupangRejections({
+      weekStart: weekRange.fromDate,
+      weekEnd: weekRange.toDate
+    });
+    push('coupang_erp_sync', coupangSync);
+    if (!coupangSync.ok) throw new Error(coupangSync.message || '쿠팡 거절율 동기화 실패');
+
+    // 수집 중 루프가 멈췄으면 다시 시작
+    const after = await localGet(COUPANG_PORT, '/health', 5000).catch(() => ({ json: {} }));
+    if (!after.json?.statusLoop?.active) {
+      await localPost(COUPANG_PORT, '/status-loop/start', {}).catch(() => null);
+    }
+  })();
+
+  const settled = await Promise.allSettled([baeminTask, coupangTask]);
+  settled.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      const name = index === 0 ? 'baemin' : 'coupang';
+      push(name, { ok: false, message: result.reason?.message || String(result.reason) });
+    }
+  });
+  if (settled.some(result => result.status === 'rejected')) {
+    return { ok: false, weekRange, steps };
   }
 
   // 3) Rider publish — 기본은 스케줄(07:00/11:30/14:00/22:00)에서만 수행

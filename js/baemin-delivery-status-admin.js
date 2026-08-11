@@ -5376,8 +5376,8 @@
     if (!health || !health.ok) {
       return {
         kind: 'stopped',
-        text: `${label}정지`,
-        detail: `${label} 세션서버 연결 안 됨 (창이 꺼졌거나 PC에서 서버가 안 떠 있음)`
+        text: `${label}연결안됨`,
+        detail: `${label} 세션서버(localhost)에 연결 못 함. 집 PC에서 세션서버 창이 켜져 있는지, brem.kr를 그 PC 브라우저로 연는지 확인`
       };
     }
     const authState = String(health.authState || health.session?.authState || '').toLowerCase();
@@ -5426,7 +5426,7 @@
     for (const url of urls) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2500);
+        const timer = setTimeout(() => controller.abort(), 6000);
         const res = await fetch(url, { signal: controller.signal, cache: 'no-store', mode: 'cors' });
         clearTimeout(timer);
         if (!res.ok) continue;
@@ -5447,7 +5447,7 @@
     for (const url of urls) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2500);
+        const timer = setTimeout(() => controller.abort(), 6000);
         const res = await fetch(url, { signal: controller.signal, cache: 'no-store', mode: 'cors' });
         clearTimeout(timer);
         if (!res.ok) continue;

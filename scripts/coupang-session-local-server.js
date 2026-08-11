@@ -814,14 +814,21 @@ function stopStatusAutoLoop() {
   return { ok: true, statusLoop: getStatusLoopPayload() };
 }
 
-function sendJson(res, status, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(status, {
+function coupangCorsHeaders(extra = {}) {
+  return {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS'
-  });
+    'access-control-allow-headers': 'Content-Type, Access-Control-Request-Private-Network',
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    // https://brem.kr → http://127.0.0.1 태그/헬스 조회용 (Chrome Private Network Access)
+    'access-control-allow-private-network': 'true',
+    ...extra
+  };
+}
+
+function sendJson(res, status, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(status, coupangCorsHeaders());
   res.end(body);
 }
 
@@ -835,7 +842,11 @@ async function readBody(req) {
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://127.0.0.1:${PORT}`);
-  if (req.method === 'OPTIONS') return sendJson(res, 204, {});
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, coupangCorsHeaders());
+    res.end();
+    return;
+  }
 
   if (u.pathname === '/health' && req.method === 'GET') {
     const tokenAgeSec = latestToken ? Math.round((Date.now() - latestTokenAt) / 1000) : null;
@@ -923,7 +934,9 @@ const server = http.createServer(async (req, res) => {
 
   if (u.pathname === '/status-loop/start' && req.method === 'POST') {
     // 재시작 시 이전 루프가 끝날 때까지 기다려 이중 루프(대기중 고정) 방지
-    await stopStatusAutoLoopAndWait(60000).catch(() => null);
+    if (statusLoop.active || statusLoopPromise) {
+      await stopStatusAutoLoopAndWait(60000).catch(() => null);
+    }
     const r = startStatusAutoLoop();
     return sendJson(res, r.ok ? 202 : (r.status || 400), r);
   }
