@@ -275,6 +275,12 @@
     $('#adminAccountPasswordConfirmWrap').hidden = isMenuOnly;
     $('#adminAccountActiveWrap').hidden = !isCreate && !isFullEdit;
     $('#adminAccountName').readOnly = isMenuOnly;
+    const showCrawl = canEditBaeminPartnerScope();
+    if ($('#adminAccountCrawlPanel')) {
+      $('#adminAccountCrawlPanel').hidden = !showCrawl;
+    }
+    const crawlCb = $('#adminAccountCanOperateCrawl');
+    if (crawlCb) crawlCb.disabled = !showCrawl;
     const showBaemin = canEditBaeminPartnerScope() && cachedBaeminRegionItems.length > 0;
     if ($('#adminAccountBaeminPanel')) {
       $('#adminAccountBaeminPanel').hidden = !showBaemin;
@@ -677,6 +683,24 @@
     }).join(', ');
   }
 
+  function formatAccountCrawlBadge(account) {
+    return account?.canOperateCrawl
+      ? '<span class="admin-account-crawl-badge" title="크롤링 UI 노출">크롤</span>'
+      : '';
+  }
+
+  function defaultCanOperateCrawlChecked(account) {
+    if (!account) return false;
+    if (account.canOperateCrawl === true) return true;
+    if (account.canOperateCrawl === false) return false;
+    // 미설정 계정: 기존 기본 운영자면 체크된 상태로 열어 저장 시 권한 유지
+    const tokens = [account.name, account.email, account.loginName]
+      .map(v => String(v || '').trim().toLowerCase())
+      .filter(Boolean);
+    const legacy = ['김형진', 'admin.g7yfepgm@gmail.com', '관리자', 'kim01022680704@gmail.com'];
+    return tokens.some(token => legacy.includes(token));
+  }
+
   function applyAdminAccountEmailField() {
     const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
     const isCreate = state.adminAccountFormMode === 'create';
@@ -696,6 +720,7 @@
     $('#adminAccountPassword').value = '';
     $('#adminAccountPasswordConfirm').value = '';
     $('#adminAccountActive').checked = true;
+    if ($('#adminAccountCanOperateCrawl')) $('#adminAccountCanOperateCrawl').checked = false;
     $('#adminAccountStatus').textContent = '';
     $('#adminAccountFormTitle').textContent = '관리자 계정 만들기';
     $('#adminAccountPasswordLabel').textContent = '비밀번호';
@@ -746,6 +771,9 @@
     $('#adminAccountPassword').value = '';
     $('#adminAccountPasswordConfirm').value = '';
     $('#adminAccountActive').checked = account.active;
+    if ($('#adminAccountCanOperateCrawl')) {
+      $('#adminAccountCanOperateCrawl').checked = defaultCanOperateCrawlChecked(account);
+    }
     $('#adminAccountStatus').textContent = '';
     $('#adminAccountFormTitle').textContent = menuOnly
       ? `접근 메뉴 수정 · ${account.name}`
@@ -796,7 +824,7 @@
             ${isSelf ? '<span class="admin-account-self-badge">현재 로그인</span>' : ''}
           </td>
           <td><span class="${adminRoleBadgeClass(account.role)}">${escapeHtml(adminRoleLabelMap[account.role] || '팀장')}</span></td>
-          <td class="admin-account-menu-cell">${escapeHtml(menuLabels || '-')}</td>
+          <td class="admin-account-menu-cell">${escapeHtml(menuLabels || '-')}${formatAccountCrawlBadge(account)}</td>
           <td><span class="badge ${account.active ? 'work' : 'left'}">${account.active ? '사용' : '중지'}</span></td>
           <td class="admin-account-actions">
             ${canEditMenus ? `<button class="small-btn" type="button" data-edit-admin-account="${account.id}">${editLabel}</button>` : ''}
@@ -903,6 +931,7 @@
       const editableMenus = getSelectedAdminAccountEditableMenus();
       const baeminPartnerIds = getSelectedAdminAccountBaeminPartnerIds();
       const coupangVendorIds = getSelectedAdminAccountCoupangVendorIds();
+      const canOperateCrawl = Boolean($('#adminAccountCanOperateCrawl')?.checked);
       const status = $('#adminAccountStatus');
       const menuOnly = state.adminAccountFormMode === 'menu-only';
       const isProduction = BremStorage.getSupabaseConfig?.().mode === 'production';
@@ -927,7 +956,13 @@
       let result;
       if (accountId) {
         if (menuOnly) {
-          result = await BremStorage.auth.updateAdminAccount(accountId, { menus, editableMenus, baeminPartnerIds, coupangVendorIds }, { actor });
+          result = await BremStorage.auth.updateAdminAccount(accountId, {
+            menus,
+            editableMenus,
+            baeminPartnerIds,
+            coupangVendorIds,
+            canOperateCrawl
+          }, { actor });
         } else {
           if (password && password.length < minPasswordLength) {
             const message = isProduction ? '비밀번호는 6자 이상 입력하세요.' : '비밀번호는 4자 이상 입력하세요.';
@@ -943,6 +978,7 @@
             editableMenus,
             baeminPartnerIds,
             coupangVendorIds,
+            canOperateCrawl,
             active
           }, { actor });
         }
@@ -968,6 +1004,7 @@
           editableMenus,
           baeminPartnerIds,
           coupangVendorIds,
+          canOperateCrawl,
           active
         }, { actor });
       }
@@ -982,6 +1019,8 @@
       state.adminAccountFormMode = '';
       renderAdminAccountSection();
       applyAdminMenuPermissions();
+      // 크롤링 노출 변경이 현재 로그인 계정에 반영되도록 재확인
+      document.dispatchEvent(new CustomEvent('brem-admin-session-ready'));
 
       const allowedMenus = getCurrentAdminMenus();
       if (!allowedMenus.includes(state.currentSection)) {

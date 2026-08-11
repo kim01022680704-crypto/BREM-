@@ -5298,6 +5298,9 @@
   function isKnownCrawlOperatorLocally() {
     const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
     if (!account) return false;
+    if (typeof account.canOperateCrawl === 'boolean') {
+      return account.canOperateCrawl === true;
+    }
     const tokens = [
       account.id,
       account.email,
@@ -5457,7 +5460,17 @@
   async function refreshCrawlOperatorAccess() {
     try {
       const result = await adminApi('/api/admin/crawl/operator-access');
-      const allowed = Boolean(result?.ok && result.allowed) || isKnownCrawlOperatorLocally();
+      let allowed = false;
+      if (result?.ok) {
+        // 계정에 명시적으로 저장된 값은 서버 판정을 그대로 따름
+        if (result.source === 'account' || result.source === 'account-denied') {
+          allowed = Boolean(result.allowed);
+        } else {
+          allowed = Boolean(result.allowed) || isKnownCrawlOperatorLocally();
+        }
+      } else {
+        allowed = isKnownCrawlOperatorLocally();
+      }
       state.crawlOperatorAllowed = allowed;
       setCrawlOperatorUiVisible(allowed);
       return allowed;

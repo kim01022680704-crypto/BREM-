@@ -190,6 +190,7 @@ function buildTrustedAdminAccount(loginInput, userEmail, userId, registryAccount
     role: registryAccount?.role || (isInitial ? ADMIN_ROLES.CEO : ADMIN_ROLES.CEO),
     menus: registryAccount?.menus ?? null,
     editableMenus: registryAccount?.editableMenus ?? null,
+    canOperateCrawl: registryAccount?.canOperateCrawl === true,
     active: registryAccount?.active !== false
   };
 }

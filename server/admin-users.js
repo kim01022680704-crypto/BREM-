@@ -189,6 +189,7 @@ async function createAdminUser(accessToken, body = {}) {
   const { normalizeVendorIdList } = require('./coupang-admin-access');
   const baeminPartnerIds = normalizePartnerIdList(body.baeminPartnerIds);
   const coupangVendorIds = normalizeVendorIdList(body.coupangVendorIds);
+  const canOperateCrawl = body.canOperateCrawl === true;
   let email = normalizeEmail(body.email);
 
   if (!name) {
@@ -245,6 +246,7 @@ async function createAdminUser(accessToken, body = {}) {
     editableMenus,
     baeminPartnerIds,
     coupangVendorIds,
+    canOperateCrawl,
     active,
     createdAt: now,
     updatedAt: now
@@ -305,12 +307,16 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     const coupangVendorIds = body.coupangVendorIds == null
       ? (current.coupangVendorIds || [])
       : normalizeVendorIdList(body.coupangVendorIds);
+    const canOperateCrawl = body.canOperateCrawl == null
+      ? current.canOperateCrawl === true
+      : body.canOperateCrawl === true;
     const updated = {
       ...current,
       menus,
       editableMenus,
       baeminPartnerIds,
       coupangVendorIds,
+      canOperateCrawl,
       updatedAt: new Date().toISOString()
     };
     accounts[index] = updated;
@@ -338,6 +344,9 @@ async function updateAdminUser(accessToken, userId, body = {}) {
   const coupangVendorIds = body.coupangVendorIds == null
     ? (current.coupangVendorIds || [])
     : normalizeVendorIdList(body.coupangVendorIds);
+  const canOperateCrawl = body.canOperateCrawl == null
+    ? current.canOperateCrawl === true
+    : body.canOperateCrawl === true;
   const password = body.password == null ? '' : String(body.password);
 
   if (!name) {
@@ -393,6 +402,7 @@ async function updateAdminUser(accessToken, userId, body = {}) {
     editableMenus,
     baeminPartnerIds,
     coupangVendorIds,
+    canOperateCrawl,
     active,
     updatedAt: new Date().toISOString()
   };

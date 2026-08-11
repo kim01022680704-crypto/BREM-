@@ -12307,6 +12307,7 @@ const BremStorage = (function () {
       editableMenus: normalizeAdminEditableMenus(menus, raw?.editableMenus ?? menus),
       baeminPartnerIds: normalizeBaeminPartnerIdList(raw?.baeminPartnerIds),
       coupangVendorIds: normalizeCoupangVendorIdList(raw?.coupangVendorIds),
+      canOperateCrawl: raw?.canOperateCrawl === true,
       active: raw?.active !== false,
       createdAt: raw?.createdAt || now,
       updatedAt: raw?.updatedAt || now
@@ -13035,7 +13036,7 @@ const BremStorage = (function () {
       return syncAdminAccountsPromise;
     },
 
-    async createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER, email, baeminPartnerIds, coupangVendorIds } = {}, options = {}) {
+    async createAdminAccount({ name, password, menus, editableMenus, active = true, role = ADMIN_ROLES.MANAGER, email, baeminPartnerIds, coupangVendorIds, canOperateCrawl = false } = {}, options = {}) {
       const actorRole = options.actor?.role || ADMIN_ROLES.MANAGER;
       if (actorRole !== ADMIN_ROLES.CEO) {
         return { ok: false, message: '대표만 관리자 계정을 생성할 수 있습니다.' };
@@ -13067,6 +13068,7 @@ const BremStorage = (function () {
             editableMenus: normalizeAdminEditableMenus(menus, editableMenus),
             baeminPartnerIds: normalizeBaeminPartnerIdList(baeminPartnerIds),
             coupangVendorIds: normalizeCoupangVendorIdList(coupangVendorIds),
+            canOperateCrawl: canOperateCrawl === true,
             active,
             email: String(email || '').trim() || undefined
           })
@@ -13100,6 +13102,7 @@ const BremStorage = (function () {
         editableMenus: normalizeAdminEditableMenus(normalizedMenus, editableMenus),
         baeminPartnerIds: normalizeBaeminPartnerIdList(baeminPartnerIds),
         coupangVendorIds: normalizeCoupangVendorIdList(coupangVendorIds),
+        canOperateCrawl: canOperateCrawl === true,
         active,
         createdAt: now,
         updatedAt: now
@@ -13109,7 +13112,7 @@ const BremStorage = (function () {
       return { ok: true, message: '관리자 계정이 생성되었습니다.', account };
     },
 
-    async updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role, baeminPartnerIds, coupangVendorIds } = {}, options = {}) {
+    async updateAdminAccount(accountId, { name, password, menus, editableMenus, active, role, baeminPartnerIds, coupangVendorIds, canOperateCrawl } = {}, options = {}) {
       const actor = options.actor || null;
       const actorRole = actor?.role || ADMIN_ROLES.MANAGER;
       const isProduction = getSupabaseConfig().mode === 'production';
@@ -13124,6 +13127,7 @@ const BremStorage = (function () {
         if (role != null) payload.role = role;
         if (baeminPartnerIds != null) payload.baeminPartnerIds = normalizeBaeminPartnerIdList(baeminPartnerIds);
         if (coupangVendorIds != null) payload.coupangVendorIds = normalizeCoupangVendorIdList(coupangVendorIds);
+        if (canOperateCrawl != null) payload.canOperateCrawl = canOperateCrawl === true;
 
         const apiResult = await adminUsersApi(`/api/admin/users/${encodeURIComponent(accountId)}`, {
           method: 'PATCH',
@@ -13175,6 +13179,9 @@ const BremStorage = (function () {
           coupangVendorIds: coupangVendorIds == null
             ? current.coupangVendorIds
             : normalizeCoupangVendorIdList(coupangVendorIds),
+          canOperateCrawl: canOperateCrawl == null
+            ? current.canOperateCrawl === true
+            : canOperateCrawl === true,
           updatedAt: new Date().toISOString()
         }, index);
 
@@ -13243,6 +13250,9 @@ const BremStorage = (function () {
       const nextCoupangVendorIds = coupangVendorIds == null
         ? current.coupangVendorIds
         : normalizeCoupangVendorIdList(coupangVendorIds);
+      const nextCanOperateCrawl = canOperateCrawl == null
+        ? current.canOperateCrawl === true
+        : canOperateCrawl === true;
 
       const updated = normalizeAdminAccount({
         ...current,
@@ -13253,6 +13263,7 @@ const BremStorage = (function () {
         editableMenus: nextEditableMenus,
         baeminPartnerIds: nextBaeminPartnerIds,
         coupangVendorIds: nextCoupangVendorIds,
+        canOperateCrawl: nextCanOperateCrawl,
         active: nextActive,
         updatedAt: new Date().toISOString()
       }, index);

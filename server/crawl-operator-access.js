@@ -1,13 +1,16 @@
 /**
  * 크롤링 원버튼 조작 가능 관리자 판별
- * env: CRAWL_OPERATOR_ADMIN_IDS=email1,email2,로그인명,uuid
- *      (비어 있어도 기본 운영자 김형진은 허용)
+ * 1) 관리자 계정 레지스트리 canOperateCrawl === true (ERP 설정)
+ * 2) 미설정(undefined)이면 레거시 env/기본 운영자 허용
+ * 3) canOperateCrawl === false 이면 명시적 거부 (env로도 못 켬 — 계정 설정 우선)
+ *
+ * env(레거시): CRAWL_OPERATOR_ADMIN_IDS=email1,email2,로그인명,uuid
  */
 function normalizeToken(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-/** 기본 크롤 운영자 — 로그인명 + 매핑 이메일 */
+/** 기본 크롤 운영자 — 로그인명 + 매핑 이메일 (플래그 미설정 계정용 폴백) */
 const DEFAULT_CRAWL_OPERATORS = Object.freeze([
   '김형진',
   'admin.g7yfepgm@gmail.com',
@@ -26,7 +29,6 @@ function getAllowedOperatorTokens() {
   ]);
   if (bootstrapEmail) set.add(bootstrapEmail);
 
-  // 로그인명 → 이메일 힌트도 허용 목록에 합침 (김형진 → admin.g7yfepgm@...)
   try {
     const { getAdminLoginHints } = require('./public-config');
     const hints = getAdminLoginHints() || {};
@@ -43,7 +45,7 @@ function getAllowedOperatorTokens() {
   return [...set];
 }
 
-function accountMatchesOperator(account = {}) {
+function accountMatchesLegacyOperator(account = {}) {
   const allowed = getAllowedOperatorTokens();
   if (!allowed.length) return false;
   const candidates = [
@@ -58,13 +60,47 @@ function accountMatchesOperator(account = {}) {
   return candidates.some(token => allowed.includes(token));
 }
 
+function resolveCrawlAllowed(registryAccount, identity = {}) {
+  if (registryAccount && typeof registryAccount.canOperateCrawl === 'boolean') {
+    return {
+      allowed: registryAccount.canOperateCrawl === true,
+      source: registryAccount.canOperateCrawl ? 'account' : 'account-denied'
+    };
+  }
+  const legacy = accountMatchesLegacyOperator({
+    ...identity,
+    id: identity.id || registryAccount?.id,
+    email: identity.email || registryAccount?.email,
+    name: identity.name || registryAccount?.name,
+    displayName: identity.displayName || registryAccount?.name
+  });
+  return {
+    allowed: legacy,
+    source: legacy ? 'legacy' : 'none'
+  };
+}
+
 async function canOperateCrawl(accessToken) {
-  const { verifyAdminCaller } = require('./admin-users');
+  const { verifyAdminCaller, resolveActorAccount } = require('./admin-users');
+  const { getServiceClient } = require('./admin-bootstrap');
+  const { loadAdminRegistry } = require('./admin-registry');
+
   const auth = await verifyAdminCaller(accessToken);
   if (!auth.ok) return auth;
 
   const displayName = auth.profile?.display_name || '';
-  const allowed = accountMatchesOperator({
+  let registryAccount = null;
+  try {
+    const supabase = getServiceClient();
+    if (supabase) {
+      const accounts = await loadAdminRegistry(supabase, auth);
+      registryAccount = resolveActorAccount(accounts, auth);
+    }
+  } catch {
+    registryAccount = null;
+  }
+
+  const resolved = resolveCrawlAllowed(registryAccount, {
     id: auth.userId,
     email: auth.email,
     loginEmail: auth.email,
@@ -76,7 +112,9 @@ async function canOperateCrawl(accessToken) {
 
   return {
     ok: true,
-    allowed,
+    allowed: resolved.allowed,
+    source: resolved.source,
+    canOperateCrawl: registryAccount?.canOperateCrawl === true,
     adminId: auth.userId || '',
     email: auth.email || '',
     displayName,
@@ -87,6 +125,8 @@ async function canOperateCrawl(accessToken) {
 module.exports = {
   DEFAULT_CRAWL_OPERATORS,
   getAllowedOperatorTokens,
-  accountMatchesOperator,
+  accountMatchesOperator: accountMatchesLegacyOperator,
+  accountMatchesLegacyOperator,
+  resolveCrawlAllowed,
   canOperateCrawl
 };

@@ -389,6 +389,26 @@ a {
   font-weight: 900;
 }
 
+.admin-account-crawl-panel {
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.admin-account-crawl-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #042f2e;
+  background: #99f6e4;
+  vertical-align: middle;
+}
+
 .admin-account-active-field {
   display: inline-flex;
   align-items: center;
