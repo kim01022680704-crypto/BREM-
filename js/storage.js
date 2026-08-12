@@ -11479,12 +11479,24 @@ const BremStorage = (function () {
   };
 
   const directSettlementAdjustments = {
+    normalizeKind(kind) {
+      const raw = String(kind || '').trim();
+      if (raw === 'promotion') return 'promotion';
+      if (raw === 'leaseFee') return 'leaseFee';
+      if (raw === 'loanFee') return 'loanFee';
+      return 'other';
+    },
+    normalizeSource(source) {
+      if (source === 'erp') return 'erp';
+      if (source === 'manual') return 'manual';
+      return 'excel';
+    },
     getBlob() {
       const raw = storageAdapter.read(KEYS.directSettlementAdjustments, {});
       return (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     },
     getKind(kind) {
-      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const k = this.normalizeKind(kind);
       const blob = this.getBlob();
       const value = blob[k];
       return (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
@@ -11497,7 +11509,7 @@ const BremStorage = (function () {
     },
     // entries: [{ driverId, amount, baeminId, driverName, source }]
     applyEntries(kind, settlementId, entries, options = {}) {
-      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const k = this.normalizeKind(kind);
       const id = String(settlementId || '').trim();
       if (!id) return {};
       const blob = this.getBlob();
@@ -11514,7 +11526,7 @@ const BremStorage = (function () {
           baeminId: String(entry.baeminId || '').trim(),
           coupangId: String(entry.coupangId || '').trim(),
           driverName: String(entry.driverName || '').trim(),
-          source: entry.source === 'erp' ? 'erp' : 'excel',
+          source: this.normalizeSource(entry.source),
           updatedAt: now
         };
       });
@@ -11524,7 +11536,7 @@ const BremStorage = (function () {
       return existing;
     },
     removeDriver(kind, settlementId, driverId) {
-      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const k = this.normalizeKind(kind);
       const id = String(settlementId || '').trim();
       const blob = this.getBlob();
       if (blob[k] && blob[k][id]) {
@@ -11534,7 +11546,7 @@ const BremStorage = (function () {
       return (blob[k] && blob[k][id]) || {};
     },
     clearSettlement(kind, settlementId) {
-      const k = kind === 'promotion' ? 'promotion' : 'other';
+      const k = this.normalizeKind(kind);
       const id = String(settlementId || '').trim();
       const blob = this.getBlob();
       if (blob[k]) {
@@ -11545,12 +11557,18 @@ const BremStorage = (function () {
     summary(settlementId) {
       const promo = this.getSettlement('promotion', settlementId);
       const other = this.getSettlement('other', settlementId);
+      const lease = this.getSettlement('leaseFee', settlementId);
+      const loan = this.getSettlement('loanFee', settlementId);
       const sum = map => Object.values(map).reduce((acc, item) => acc + Number(item?.amount || 0), 0);
       return {
         promotionCount: Object.keys(promo).length,
         promotionTotal: sum(promo),
         otherCount: Object.keys(other).length,
-        otherTotal: sum(other)
+        otherTotal: sum(other),
+        leaseFeeCount: Object.keys(lease).length,
+        leaseFeeTotal: sum(lease),
+        loanFeeCount: Object.keys(loan).length,
+        loanFeeTotal: sum(loan)
       };
     }
   };

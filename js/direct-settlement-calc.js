@@ -173,9 +173,12 @@ const BremDirectSettlementCalc = (function () {
 
   function adjustmentMaps(settlement) {
     const store = window.BremStorage?.directSettlementAdjustments;
+    const settlementId = settlement?.id;
     return {
-      promoMap: store?.getSettlement?.('promotion', settlement.id) || {},
-      otherMap: store?.getSettlement?.('other', settlement.id) || {}
+      promoMap: store?.getSettlement?.('promotion', settlementId) || {},
+      otherMap: store?.getSettlement?.('other', settlementId) || {},
+      leaseMap: store?.getSettlement?.('leaseFee', settlementId) || {},
+      loanMap: store?.getSettlement?.('loanFee', settlementId) || {}
     };
   }
 
@@ -783,17 +786,28 @@ const BremDirectSettlementCalc = (function () {
 
       // 스필오버 배분은 플랫폼별로 이미 나뉘어 있음. 같은 플랫폼 행만 중복 방지.
       let leaseFee = 0;
+      let leaseFeeManual = false;
       const leaseDedupe = `${key || base.driverId || base.name}:lease:${platform}`;
       if (!leaseConsumed.has(leaseDedupe)) {
         leaseFee = resolveSpilloverFeeForRow(base, spill.leaseAlloc, spill.leaseIndex);
         leaseConsumed.add(leaseDedupe);
       }
+      // 정산결과 수동 override: 해당 정산서·기사만 (자동 스필오버 이후)
+      if (base.driverId && Object.prototype.hasOwnProperty.call(adj.leaseMap || {}, base.driverId)) {
+        leaseFee = Math.max(0, Math.round(Number(adj.leaseMap[base.driverId]?.amount || 0)));
+        leaseFeeManual = true;
+      }
 
       let loanFee = 0;
+      let loanFeeManual = false;
       const loanDedupe = `${key || base.driverId || base.name}:loan:${platform}`;
       if (!loanConsumed.has(loanDedupe)) {
         loanFee = resolveSpilloverFeeForRow(base, spill.loanAlloc, spill.loanIndex);
         loanConsumed.add(loanDedupe);
+      }
+      if (base.driverId && Object.prototype.hasOwnProperty.call(adj.loanMap || {}, base.driverId)) {
+        loanFee = Math.max(0, Math.round(Number(adj.loanMap[base.driverId]?.amount || 0)));
+        loanFeeManual = true;
       }
 
       const deductTotal = base.baseDeduct + dailySettlementFee + prepaid + leaseFee + loanFee;
@@ -823,6 +837,8 @@ const BremDirectSettlementCalc = (function () {
         prepaid,
         leaseFee,
         loanFee,
+        leaseFeeManual,
+        loanFeeManual,
         deductTotal,
         netPay,
         untaggedWithdrawalCount: source.untaggedCount || 0,

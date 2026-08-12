@@ -13,6 +13,7 @@ const BremSettlementResultDirect = (function () {
     viewMode: 'platform',
     retroWeekFilter: '',
     retroSearch: '',
+    finalSearch: '',
     spillFilter: 'crossed'
   };
 
@@ -347,7 +348,74 @@ const BremSettlementResultDirect = (function () {
     const classes = [`settle-col-${col.group}`];
     if (col.money !== false) classes.push('weekly-amount-cell');
     if (col.note) classes.push('settle-col-note');
+
+    // 리스차감·대여차감: 클릭해서 이번 정산서만 금액 수정/0/자동복원
+    if ((col.key === 'leaseFee' || col.key === 'loanFee') && row.driverId && row.settlementId) {
+      classes.push('settle-fee-editable');
+      const title = `${col.label} — 클릭하여 수정 (0=없앰, 자동=ERP복원)`;
+      return `<td class="${classes.join(' ')}" title="${escapeHtml(title)}"
+        data-settle-fee-edit="1"
+        data-fee-kind="${escapeHtml(col.key)}"
+        data-settlement-id="${escapeHtml(row.settlementId)}"
+        data-driver-id="${escapeHtml(row.driverId)}"
+        data-driver-name="${escapeHtml(row.name || '')}"
+        data-current-amount="${Math.max(0, Math.round(Number(row[col.key] || 0)))}"
+        style="cursor:pointer;">${value}</td>`;
+    }
+
     return `<td class="${classes.join(' ')}">${col.strong ? `<strong>${value}</strong>` : value}</td>`;
+  }
+
+  function editLeaseLoanFeeCell(cell) {
+    const kind = String(cell.getAttribute('data-fee-kind') || '').trim();
+    const settlementId = String(cell.getAttribute('data-settlement-id') || '').trim();
+    const driverId = String(cell.getAttribute('data-driver-id') || '').trim();
+    const driverName = String(cell.getAttribute('data-driver-name') || '').trim();
+    const current = Math.max(0, Math.round(Number(cell.getAttribute('data-current-amount') || 0)));
+    if ((kind !== 'leaseFee' && kind !== 'loanFee') || !settlementId || !driverId) return;
+    const store = window.BremStorage?.directSettlementAdjustments;
+    if (!store?.applyEntries || !store?.removeDriver) {
+      showToast('저장소를 불러오지 못했습니다.');
+      return;
+    }
+    const label = kind === 'leaseFee' ? '리스차감' : '대여차감';
+    const input = window.prompt(
+      `${label} (${driverName || driverId})\n`
+        + `숫자 = 이번 정산서에 적용 · 0 = 없앰 · 자동 = ERP 자동계산으로 복원\n`
+        + `현재: ${current.toLocaleString('ko-KR')}원`,
+      String(current)
+    );
+    if (input == null) return;
+    const trimmed = String(input).trim();
+    if (!trimmed || trimmed === '자동' || trimmed.toLowerCase() === 'auto') {
+      store.removeDriver(kind, settlementId, driverId);
+      void window.BremStorage.flushStorage?.();
+      showToast(`${label} 자동계산으로 복원했습니다.`);
+      if (state.viewMode === 'final') renderFinal();
+      else {
+        render();
+        if (state.viewMode === 'spillover') renderSpillover();
+      }
+      return;
+    }
+    const amount = Math.max(0, Math.round(Number(String(trimmed).replace(/,/g, ''))));
+    if (!Number.isFinite(amount)) {
+      showToast('금액을 숫자로 입력하세요. (자동복원은 「자동」)');
+      return;
+    }
+    store.applyEntries(kind, settlementId, [{
+      driverId,
+      amount,
+      driverName,
+      source: 'manual'
+    }]);
+    void window.BremStorage.flushStorage?.();
+    showToast(`${label} ${amount.toLocaleString('ko-KR')}원으로 반영했습니다.`);
+    if (state.viewMode === 'final') renderFinal();
+    else {
+      render();
+      if (state.viewMode === 'spillover') renderSpillover();
+    }
   }
 
   function exportExcel() {
@@ -886,37 +954,50 @@ const BremSettlementResultDirect = (function () {
     const summaryEl = $('#settlementFinalSummary');
     if (!body) return;
 
-    const rows = finalRows();
+    const searchEl = $('#settlementFinalSearch');
+    if (searchEl && document.activeElement !== searchEl) {
+      searchEl.value = state.finalSearch || '';
+    }
+    const q = String(state.finalSearch || '').trim().toLowerCase();
+    const allRows = finalRows();
+    const rows = q
+      ? allRows.filter(row => {
+        const name = String(row.name || '').toLowerCase();
+        const idLabel = String(row.idLabel || '').toLowerCase();
+        const driverId = String(row.driverId || '').toLowerCase();
+        return name.includes(q) || idLabel.includes(q) || driverId.includes(q);
+      })
+      : allRows;
+
     // 헤더: 기사 · 플랫폼 · ID + 정산 열들
     const cols = Calc().COLUMNS;
     if (head) {
       const lead = '<th rowspan="2">플랫폼</th>';
       head.innerHTML = Calc().theadHtml(cols, lead);
     }
-    if (!rows.length) {
+    if (!allRows.length) {
       body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">이 주에 저장된 직계약 정산서가 없습니다.</td></tr>`;
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
-    body.innerHTML = rows.map(row => {
-      const tag = row.platform === 'coupang'
-        ? '<span class="settle-platform-tag settle-platform-tag--coupang">쿠팡</span>'
-        : '<span class="settle-platform-tag settle-platform-tag--baemin">배민</span>';
-      const cells = cols.map(col => {
-        if (col.tag) return `<td class="settle-col-${col.group}"><span class="weekly-id-tag">${escapeHtml(row[col.key])}</span></td>`;
-        const value = col.money === false ? escapeHtml(row[col.key]) : formatNumber(row[col.key]);
-        const cls = [`settle-col-${col.group}`];
-        if (col.money !== false) cls.push('weekly-amount-cell');
-        return `<td class="${cls.join(' ')}">${col.strong ? `<strong>${value}</strong>` : value}</td>`;
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty">검색 결과가 없습니다.</td></tr>`;
+    } else {
+      body.innerHTML = rows.map(row => {
+        const tag = row.platform === 'coupang'
+          ? '<span class="settle-platform-tag settle-platform-tag--coupang">쿠팡</span>'
+          : '<span class="settle-platform-tag settle-platform-tag--baemin">배민</span>';
+        const cells = cols.map(col => cellHtml(col, row)).join('');
+        return `<tr><td>${tag}</td>${cells}</tr>`;
       }).join('');
-      return `<tr><td>${tag}</td>${cells}</tr>`;
-    }).join('');
+    }
 
     if (summaryEl) {
       const t = Calc().sumRows(rows);
       const coupangCount = rows.filter(r => r.platform === 'coupang').length;
       const baeminCount = rows.filter(r => r.platform === 'baemin').length;
-      summaryEl.innerHTML = `전체 <strong>${rows.length}</strong>줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})`
+      const searchNote = q ? ` · 검색 “${escapeHtml(state.finalSearch)}”` : '';
+      summaryEl.innerHTML = `표시 <strong>${rows.length}</strong>줄 / 전체 ${allRows.length}줄 (쿠팡 ${coupangCount} · 배민 ${baeminCount})${searchNote}`
         + ` · 총프로모션 <strong>${formatNumber(t.promo)}</strong>`
         + ` · 총기타지급 <strong>${formatNumber(t.other)}</strong>`
         + ` · 총선정산 <strong>${formatNumber(t.prepaid)}</strong>`
@@ -1082,6 +1163,20 @@ const BremSettlementResultDirect = (function () {
     $('#settlementResultDeleteBtn')?.addEventListener('click', () => { void deleteCurrentSettlement(); });
     $('#settlementResultDeleteWeekBtn')?.addEventListener('click', () => { void deleteWeekSettlements(); });
     $('#settlementResultBatchFixBtn')?.addEventListener('click', () => { void batchFixNegatives(); });
+    $('#settlementResultTable')?.addEventListener('click', (event) => {
+      const cell = event.target?.closest?.('[data-settle-fee-edit="1"]');
+      if (!cell || !$('#settlementResultTable')?.contains(cell)) return;
+      editLeaseLoanFeeCell(cell);
+    });
+    $('#settlementFinalTable')?.addEventListener('click', (event) => {
+      const cell = event.target?.closest?.('[data-settle-fee-edit="1"]');
+      if (!cell || !$('#settlementFinalTable')?.contains(cell)) return;
+      editLeaseLoanFeeCell(cell);
+    });
+    $('#settlementFinalSearch')?.addEventListener('input', (event) => {
+      state.finalSearch = event.target.value || '';
+      renderFinal();
+    });
     $('#settlementRetroReloadBtn')?.addEventListener('click', () => renderRetro());
     $('#settlementRetroSendBtn')?.addEventListener('click', () => { void sendSelectedToDeduction(); });
     $('#settlementRetroWeekFilter')?.addEventListener('change', event => {
