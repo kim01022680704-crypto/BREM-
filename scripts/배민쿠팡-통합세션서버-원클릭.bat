@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal EnableExtensions
 chcp 65001 >nul
 title BREM Baemin+Coupang Session Servers
@@ -79,7 +79,7 @@ set "BAEMIN_AUTO_OPEN_BROWSER=1"
 set "COUPANG_AUTO_RESUME_STATUS_LOOP=0"
 start "BREM-baemin-3939" cmd /k "cd /d "%BREM_DIR%" && set PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers&& set BAEMIN_AUTO_OPEN_BROWSER=1&& npm.cmd run baemin:session-server"
 timeout /t 2 /nobreak >nul
-start "BREM-coupang-3940" cmd /k "cd /d "%BREM_DIR%" && set PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers&& npm.cmd run coupang:session-server"
+start "BREM-coupang-3940" cmd /k "cd /d "%BREM_DIR%" && set PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers&& set NAVER_PLAYWRIGHT_PROFILE=%BREM_DIR%\.naver-playwright-profile&& npm.cmd run coupang:session-server"
 
 echo.
 echo waiting for Baemin browser open API ...

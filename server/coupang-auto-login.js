@@ -30,8 +30,12 @@ async function fillLoginForm(page, id, password) {
   const idSelectors = [
     'input[name="email"]',
     'input[name="username"]',
+    'input[name="login"]',
     'input[name="id"]',
+    'input#username',
+    'input#email',
     'input[type="email"]',
+    'input[type="text"]',
     'input[placeholder*="아이디"]',
     'input[placeholder*="이메일"]',
     'input[placeholder*="ID"]',
@@ -39,44 +43,123 @@ async function fillLoginForm(page, id, password) {
   ];
   const pwSelectors = [
     'input[name="password"]',
+    'input#password',
     'input[type="password"]',
     'input[placeholder*="비밀번호"]',
     'input[autocomplete="current-password"]'
   ];
 
-  let filledId = false;
-  for (const selector of idSelectors) {
-    const loc = page.locator(selector).first();
-    if (!(await loc.count().catch(() => 0))) continue;
-    if (!(await loc.isVisible().catch(() => false))) continue;
-    await loc.fill('');
-    await loc.fill(id);
-    filledId = true;
-    break;
-  }
-  let filledPw = false;
-  for (const selector of pwSelectors) {
-    const loc = page.locator(selector).first();
-    if (!(await loc.count().catch(() => 0))) continue;
-    if (!(await loc.isVisible().catch(() => false))) continue;
-    await loc.fill('');
-    await loc.fill(password);
-    filledPw = true;
-    break;
-  }
-  if (!filledId || !filledPw) {
-    return { ok: false, message: '쿠팡 로그인 입력칸을 찾지 못했습니다.' };
+  // xauth 폼 렌더 대기 (iframe 포함)
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    let ready = false;
+    for (const ctx of [page, ...page.frames()]) {
+      const n = await ctx.locator('input[type="password"], input[name="password"], input#password').count().catch(() => 0);
+      if (n > 0) { ready = true; break; }
+    }
+    if (ready) break;
+    await page.waitForTimeout(500).catch(() => {});
   }
 
-  const submit = page.locator(
-    'button[type="submit"], button:has-text("로그인"), button:has-text("Log in"), button:has-text("Sign in")'
-  ).first();
-  if (await submit.count().catch(() => 0)) {
-    await submit.click().catch(() => {});
-  } else {
-    await page.keyboard.press('Enter').catch(() => {});
+  async function clearThenFill(loc, value) {
+    const want = String(value || '');
+    await loc.click({ timeout: 3000, force: true }).catch(() => {});
+    await page.keyboard.press('Control+A').catch(() => {});
+    await page.keyboard.press('Delete').catch(() => {});
+    await page.keyboard.press('Backspace').catch(() => {});
+    await loc.fill('').catch(() => {});
+    await loc.evaluate((el) => {
+      el.focus();
+      el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }).catch(() => {});
+    await loc.fill(want).catch(async () => {
+      await loc.click({ force: true }).catch(() => {});
+      await page.keyboard.type(want, { delay: 25 }).catch(() => {});
+    });
+    let got = String(await loc.inputValue().catch(() => '') || '');
+    // 기존 값에 덧붙여진 경우 한 번 더 비우고 재입력
+    if (got !== want) {
+      await loc.click({ clickCount: 3, force: true }).catch(() => {});
+      await page.keyboard.press('Backspace').catch(() => {});
+      await loc.fill('').catch(() => {});
+      await loc.fill(want).catch(async () => {
+        await page.keyboard.type(want, { delay: 20 }).catch(() => {});
+      });
+    }
   }
-  return { ok: true };
+
+  async function fillInContext(ctx) {
+    let filledId = false;
+    let filledPw = false;
+    for (const selector of idSelectors) {
+      const loc = ctx.locator(selector).first();
+      if (!(await loc.count().catch(() => 0))) continue;
+      if (!(await loc.isVisible().catch(() => false))) continue;
+      // 비밀번호 칸을 아이디로 오인하지 않음
+      const typ = String(await loc.getAttribute('type').catch(() => '') || '').toLowerCase();
+      if (typ === 'password') continue;
+      await clearThenFill(loc, id);
+      filledId = true;
+      break;
+    }
+    for (const selector of pwSelectors) {
+      const loc = ctx.locator(selector).first();
+      if (!(await loc.count().catch(() => 0))) continue;
+      if (!(await loc.isVisible().catch(() => false))) continue;
+      await clearThenFill(loc, password);
+      filledPw = true;
+      break;
+    }
+    if (!filledId || !filledPw) return { ok: false };
+    const submit = ctx.locator(
+      'button[type="submit"], input[type="submit"], button:has-text("로그인"), button:has-text("Log in"), button:has-text("Sign in")'
+    ).first();
+    if (await submit.count().catch(() => 0)) {
+      await submit.click({ timeout: 5000 }).catch(() => {});
+    } else {
+      await page.keyboard.press('Enter').catch(() => {});
+    }
+    return { ok: true };
+  }
+
+  for (const ctx of [page, ...page.frames()]) {
+    const r = await fillInContext(ctx);
+    if (r.ok) return { ok: true };
+  }
+
+  // 최후: DOM에서 visible input 직접 채우기
+  const forced = await page.evaluate(({ loginId, loginPw }) => {
+    const visible = (el) => {
+      if (!el) return false;
+      const st = window.getComputedStyle(el);
+      return st && st.visibility !== 'hidden' && st.display !== 'none' && el.offsetParent !== null;
+    };
+    const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+    const pw = inputs.find((el) => el.type === 'password' || /password/i.test(el.name || el.id || ''));
+    const idInput = inputs.find((el) => el !== pw && el.type !== 'hidden' && el.type !== 'submit');
+    if (!idInput || !pw) return false;
+    const setVal = (el, val) => {
+      el.focus();
+      el.select?.();
+      el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.value = String(val || '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    setVal(idInput, loginId);
+    setVal(pw, loginPw);
+    const btn = document.querySelector('button[type="submit"], input[type="submit"]')
+      || Array.from(document.querySelectorAll('button')).find((b) => /로그인|log\s*in|sign\s*in/i.test(b.textContent || ''));
+    if (btn) btn.click();
+    return true;
+  }, { loginId: id, loginPw: password }).catch(() => false);
+
+  if (forced) return { ok: true };
+  return { ok: false, message: '쿠팡 로그인 입력칸을 찾지 못했습니다.' };
 }
 
 async function isTwoFactorPage(page) {
@@ -295,12 +378,21 @@ async function autoLoginCoupang(page, options = {}) {
 
       if (!(await isTwoFactorPage(page))) {
         if (!isCoupangLoginLikeUrl(page.url())) {
-          await page.goto(`${origin}/login`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-          await page.waitForTimeout(1000);
+          await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+          await page.waitForTimeout(1500);
         }
+        // 로그인 화면으로 튕긴 뒤 폼이 늦게 뜨는 경우 대비
+        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(1000);
         if (!(await isTwoFactorPage(page))) {
           const filled = await fillLoginForm(page, creds.id, creds.password);
-          if (!filled.ok) return filled;
+          if (!filled.ok) {
+            // 한 번 더: SSO URL 직접 진입 후 재시도
+            await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+            await page.waitForTimeout(2500);
+            const retry = await fillLoginForm(page, creds.id, creds.password);
+            if (!retry.ok) return filled;
+          }
         }
       }
     }

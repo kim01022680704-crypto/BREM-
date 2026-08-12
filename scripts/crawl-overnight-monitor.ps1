@@ -62,7 +62,7 @@ if (-not $bAuth) { $bAuth = [string]$b.session.authState }
 $cAuth = [string]$c.authState
 $cToken = [bool]$c.hasToken
 
-# 사용자가 「크롤링 시작」으로 한 번이라도 돌린 뒤에만 자동 재기동
+# Arm only after user has started crawl at least once
 if ($bActive -or $cActive) {
   if (-not $armed) {
     $armed = $true
@@ -71,9 +71,18 @@ if ($bActive -or $cActive) {
   }
 }
 
-if (-not $b) { $alerts += 'BAEMIN_HEALTH_DOWN' }
-elseif (-not $bActive) {
-  if ($armed) {
+$bWeeklyRunning = [bool]$b.weeklyRefreshSchedule.running
+$bErpRunning = [bool]$b.erpPublishSchedule.running
+$bMsg = [string]$b.statusLoop.message
+$bBusySchedule = $bWeeklyRunning -or $bErpRunning -or ($bPhase -match 'bootstrap')
+
+if (-not $b) {
+  $alerts += 'BAEMIN_HEALTH_DOWN'
+} elseif (-not $bActive) {
+  if ($bBusySchedule) {
+    # Weekly/ERP schedule temporarily stops loop - do not restart
+    $alerts += 'BAEMIN_WEEKLY_BUSY'
+  } elseif ($armed) {
     $alerts += 'BAEMIN_LOOP_STOPPED'
     try {
       Invoke-RestMethod 'http://127.0.0.1:3939/status-loop/start' -Method POST -ContentType 'application/json' -Body '{}' -TimeoutSec 60 | Out-Null
@@ -89,12 +98,31 @@ elseif (-not $bActive) {
     $alerts += 'BAEMIN_WAITING_START'
   }
 }
-if ($bAuth -match 'authRequired|recovering') { $alerts += 'BAEMIN_AUTH' }
+if ($bAuth -match 'authRequired|recovering') {
+  $alerts += 'BAEMIN_AUTH'
+  if ($armed -and $b) {
+    try {
+      Invoke-RestMethod 'http://127.0.0.1:3939/auth/recover' -Method POST -ContentType 'application/json' -Body '{}' -TimeoutSec 120 | Out-Null
+      $alerts += 'BAEMIN_AUTH_RECOVER_OK'
+      $b = Get-HealthSafe 'http://127.0.0.1:3939/health'
+      $bActive = [bool]$b.statusLoop.active
+      $bPhase = [string]$b.statusLoop.phase
+      $bRound = [int]($b.statusLoop.round)
+      $bAuth = [string]($b.authState)
+      if (-not $bAuth) { $bAuth = [string]$b.session.authState }
+    } catch {
+      $alerts += 'BAEMIN_AUTH_RECOVER_FAIL'
+    }
+  }
+}
 if ($bErr) { $alerts += "BAEMIN_ERR:$bErr" }
 
-if (-not $c) { $alerts += 'COUPANG_HEALTH_DOWN' }
-elseif (-not $cActive) {
-  if ($armed) {
+if (-not $c) {
+  $alerts += 'COUPANG_HEALTH_DOWN'
+} elseif (-not $cActive) {
+  if ($bWeeklyRunning -or ($cPhase -match 'bootstrap')) {
+    $alerts += 'COUPANG_WEEKLY_BUSY'
+  } elseif ($armed) {
     $alerts += 'COUPANG_LOOP_STOPPED'
     try {
       Invoke-RestMethod 'http://127.0.0.1:3940/status-loop/start' -Method POST -ContentType 'application/json' -Body '{}' -TimeoutSec 60 | Out-Null
@@ -110,7 +138,27 @@ elseif (-not $cActive) {
     $alerts += 'COUPANG_WAITING_START'
   }
 }
-if (-not $cToken -or $cAuth -match 'authRequired|recovering') { $alerts += 'COUPANG_AUTH' }
+if (-not $cToken -or $cAuth -match 'authRequired|recovering' -or [bool]$c.tokenExpired) {
+  $alerts += 'COUPANG_AUTH'
+  if ($armed -and $c) {
+    try {
+      Invoke-RestMethod 'http://127.0.0.1:3940/auth/recover' -Method POST -ContentType 'application/json' -Body '{}' -TimeoutSec 200 | Out-Null
+      $alerts += 'COUPANG_AUTH_RECOVER_OK'
+      $c = Get-HealthSafe 'http://127.0.0.1:3940/health'
+      $cActive = [bool]$c.statusLoop.active
+      $cPhase = [string]$c.statusLoop.phase
+      $cRound = [int]($c.statusLoop.round)
+      $cToken = [bool]$c.hasToken
+      $cAuth = [string]$c.authState
+      if (-not $cActive -and $cToken -and $cAuth -notmatch 'authRequired|recovering') {
+        Invoke-RestMethod 'http://127.0.0.1:3940/status-loop/start' -Method POST -ContentType 'application/json' -Body '{"skipFirstFullWeek":true}' -TimeoutSec 60 | Out-Null
+        $alerts += 'COUPANG_LOOP_AFTER_AUTH_OK'
+      }
+    } catch {
+      $alerts += 'COUPANG_AUTH_RECOVER_FAIL'
+    }
+  }
+}
 if ($cErr) { $alerts += "COUPANG_ERR:$cErr" }
 
 $erp = $b.erpPublishSchedule
@@ -128,13 +176,14 @@ if (-not (Test-Path -LiteralPath $dir)) {
 Add-Content -Path $LogPath -Value $line -Encoding UTF8
 
 $payload = @{
-  prompt = 'crawl overnight monitor tick: read C:\Users\user\Desktop\BREM\logs\crawl-monitor.log last 8 lines; health 3939/3940; auto-restart ONLY after armed (user started crawl once); note erp/weekly next/last; continue until 2026-08-13 13:00 KST then summarize.'
+  prompt = 'crawl overnight monitor tick: read crawl-monitor.log last 8 lines; health 3939/3940; auto-restart ONLY after armed; skip restart while weekly/ERP busy; continue until 2026-08-13 13:00 KST then summarize.'
   ts = $ts
   armed = $armed
   baemin = @{ active = $bActive; phase = $bPhase; round = $bRound; err = $bErr; auth = $bAuth }
   coupang = @{ active = $cActive; phase = $cPhase; round = $cRound; err = $cErr; auth = $cAuth; token = $cToken }
   erpNext = $erpNext
   weekNext = $weekNext
+  weekLast = $weekLast
   alerts = $alerts
 } | ConvertTo-Json -Compress
 

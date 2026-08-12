@@ -59,11 +59,14 @@ function resolveCoupangAuthState({
   hasToken = false,
   recovering = false,
   currentUrl = '',
-  authRequired = false
+  authRequired = false,
+  tokenExpired = false
 } = {}) {
   if (recovering) return AUTH_RECOVERING;
   if (authRequired) return AUTH_REQUIRED;
-  if (isCoupangLoginLikeUrl(currentUrl) && !hasToken) return AUTH_REQUIRED;
+  // 로그인/OTP URL이면 토큰이 남아 있어도 재로그인 필요 (만료 토큰 잔상)
+  if (isCoupangLoginLikeUrl(currentUrl)) return AUTH_REQUIRED;
+  if (tokenExpired) return AUTH_REQUIRED;
   if (hasToken) return AUTH_OK;
   return AUTH_REQUIRED;
 }

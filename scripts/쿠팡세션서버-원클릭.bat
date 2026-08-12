@@ -19,6 +19,7 @@ if not exist "%BREM_DIR%\scripts\coupang-session-local-server.js" (
 
 cd /d "%BREM_DIR%"
 set "PLAYWRIGHT_BROWSERS_PATH=%BREM_DIR%\.playwright-browsers"
+set "NAVER_PLAYWRIGHT_PROFILE=%BREM_DIR%\.naver-playwright-profile"
 
 echo [1/3] git pull ...
 git pull
