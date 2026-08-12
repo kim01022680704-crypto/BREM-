@@ -1,12 +1,14 @@
 /**
- * 배민Biz 자동 로그인 (아이디/비번)
- * 휴대폰 인증은 수동 — needsPhoneAuth 로 반환
+ * 배민Biz 자동 로그인 (아이디/비번) — env 자격증명이 있을 때만 사용
+ * 없으면 세션 서버가 수동 대기(페이지 미변경)
+ * 휴대폰 인증은 항상 수동 — needsPhoneAuth 로 반환
  * env: BAEMIN_BIZ_LOGIN_ID, BAEMIN_BIZ_LOGIN_PASSWORD
  */
 const { isBaeminLoginLikeUrl, isBaeminPhoneAuthLikeUrl, isBaeminAppWorkingUrl } = require('./crawl-session-auth');
 
 const BAEMIN_DELIVERY_ORIGIN = 'https://deliverycenter.baemin.com';
-const BAEMIN_BIZ_LOGIN_URL = 'https://bizmember.baemin.com/login';
+// 실제 로그인 호스트는 biz-member (하이픈). bizmember 도메인은 쓰지 않음.
+const BAEMIN_BIZ_LOGIN_URL = 'https://biz-member.baemin.com/login';
 
 function getBaeminBizCredentials() {
   const id = String(
@@ -125,7 +127,6 @@ async function autoLoginBaeminBiz(page, options = {}) {
     return { ok: false, message: '배민 브라우저 페이지가 없습니다.' };
   }
 
-  const deliveryOrigin = options.origin || BAEMIN_DELIVERY_ORIGIN;
   try {
     let url = String(page.url() || '');
     if (isBaeminAppWorkingUrl(url)) {
@@ -135,67 +136,54 @@ async function autoLoginBaeminBiz(page, options = {}) {
       return { ok: true, needsPhoneAuth: true, message: '휴대폰 인증 대기 중' };
     }
 
-    // 로그인 화면이 아니면 비즈 로그인으로 이동
-    if (!isBaeminLoginLikeUrl(url) && !/bizmember\.baemin\.com/.test(url)) {
+    // 최소 경로: 지금 떠 있는 비즈 로그인 화면을 우선 사용.
+    // 로그인 폼이 아니면 bizmember 로그인만 연다 (deliverycenter 우회 없음).
+    const onBizLogin = /biz-?member\.baemin\.com/i.test(url)
+      || isBaeminLoginLikeUrl(url)
+      || Boolean(await page.locator('input[type="password"]').count().catch(() => 0));
+    if (!onBizLogin) {
       await page.goto(BAEMIN_BIZ_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
       await page.waitForTimeout(1500);
       url = String(page.url() || '');
     }
 
-    // deliverycenter 로 갔다가 로그인 리다이렉트된 경우도 폼 대기
-    if (!isBaeminLoginLikeUrl(url) && !/bizmember|login|signin/i.test(url)) {
-      await page.goto(`${deliveryOrigin}/`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-      await page.waitForTimeout(2000);
-      url = String(page.url() || '');
-      if (isBaeminAppWorkingUrl(url)) {
-        return { ok: true, alreadyLoggedIn: true };
-      }
-      if (isBaeminPhoneAuthLikeUrl(url)) {
-        return { ok: true, needsPhoneAuth: true, message: '휴대폰 인증 대기 중' };
-      }
-      if (!isBaeminLoginLikeUrl(url)) {
-        await page.goto(BAEMIN_BIZ_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-        await page.waitForTimeout(1500);
-      }
-    }
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(500).catch(() => {});
 
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    const filled = await fillBaeminLoginForm(page, creds.id, creds.password);
+    // 아이디/비번만 채우고 로그인 클릭 → 이후 휴대폰은 수동
+    let filled = await fillBaeminLoginForm(page, creds.id, creds.password);
     if (!filled.ok) {
-      // 한 번 더 비즈 로그인 URL에서 재시도
       await page.goto(BAEMIN_BIZ_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-      await page.waitForTimeout(2000);
-      const retry = await fillBaeminLoginForm(page, creds.id, creds.password);
-      if (!retry.ok) return filled;
+      await page.waitForTimeout(1500);
+      filled = await fillBaeminLoginForm(page, creds.id, creds.password);
+      if (!filled.ok) return filled;
     }
 
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(3000);
     url = String(page.url() || '');
+    const bodyText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
 
-    if (isBaeminPhoneAuthLikeUrl(url) || /휴대폰|인증번호/i.test(await page.evaluate(() => document.body?.innerText || '').catch(() => ''))) {
+    if (
+      isBaeminPhoneAuthLikeUrl(url)
+      || /휴대폰|인증번호|인증\s*코드|SMS/i.test(bodyText)
+    ) {
       return {
         ok: true,
         needsPhoneAuth: true,
         via: 'password',
-        message: '아이디/비번 로그인 완료 — 휴대폰 인증번호를 입력해 주세요'
+        message: '아이디/비번 로그인 완료 — 휴대폰 인증번호를 직접 입력해 주세요',
+        currentUrl: url
       };
     }
     if (isBaeminAppWorkingUrl(url)) {
-      return { ok: true, via: 'password', alreadyLoggedIn: false };
+      return { ok: true, via: 'password', alreadyLoggedIn: false, currentUrl: url };
     }
-    // 로그인 직후 아직 리다이렉트 중일 수 있음
-    await page.goto(`${deliveryOrigin}/delivery-status`, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
-    await page.waitForTimeout(2000);
-    url = String(page.url() || '');
-    if (isBaeminPhoneAuthLikeUrl(url)) {
-      return { ok: true, needsPhoneAuth: true, via: 'password' };
-    }
-    if (isBaeminAppWorkingUrl(url) || (!isBaeminLoginLikeUrl(url) && /deliverycenter\.baemin\.com/.test(url))) {
-      return { ok: true, via: 'password' };
-    }
+    // 로그인 직후 화면 전환 중이면 휴대폰/업무 화면 대기 (추가 네비게이션 없음)
     return {
-      ok: false,
-      message: '배민 로그인 후에도 업무 화면으로 이동하지 못했습니다. 브라우저를 확인하세요.',
+      ok: true,
+      needsPhoneAuth: true,
+      via: 'password',
+      message: '아이디/비번 제출 완료 — 휴대폰 인증이 뜨면 직접 입력해 주세요',
       currentUrl: url
     };
   } catch (error) {

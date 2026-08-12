@@ -17,7 +17,7 @@ function isBaeminLoginLikeUrl(url) {
   const value = String(url || '').toLowerCase();
   // history?phoneNumber= 같은 쿼리에 phone 이 들어가도 로그인 화면으로 오판하지 않음
   if (isBaeminAppWorkingUrl(value)) return false;
-  return /\/login|signin|sign-in|oauth|member\.baemin|bizmember|passport|nid\.naver/.test(value);
+  return /\/login|signin|sign-in|oauth|member\.baemin|biz-?member|passport|nid\.naver/.test(value);
 }
 
 function isBaeminPhoneAuthLikeUrl(url) {

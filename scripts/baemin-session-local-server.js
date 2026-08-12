@@ -117,7 +117,7 @@ let autoCollectRuntime = {
 };
 
 /** 배민현황 자동수집 루프 (브라우저 닫아도 세션 서버에서 계속) */
-const STATUS_LOOP_WAIT_MS = 30 * 1000;
+const STATUS_LOOP_WAIT_MS = 15 * 1000;
 let statusLoop = {
   active: false,
   stopping: false,
@@ -813,29 +813,31 @@ async function waitForBaeminAuthResume(timeoutMs = 30 * 60 * 1000) {
 }
 
 /**
- * 로그아웃/로그인 화면 감지 시 비즈 아이디·비번 자동 입력.
- * 휴대폰 인증은 수동(waitForBaeminAuthResume).
+ * 로그아웃/로그인 화면 복구.
+ * - BAEMIN_BIZ_LOGIN_* 없음: 지금 떠 있는 비즈 로그인 화면에서 아이디·비번·휴대폰 전부 수동 (자동입력/이동 없음)
+ * - 있음: 아이디/비번만 자동 → 휴대폰은 수동(waitForBaeminAuthResume)
  */
 async function tryRecoverBaeminAuth() {
   const autoLogin = require('../server/baemin-auto-login');
   const auth = require('../server/crawl-session-auth');
   if (authRecovering) {
-    return { ok: false, message: '이미 배민 자동로그인 중입니다.' };
+    return { ok: false, message: '이미 배민 로그인 복구 중입니다.' };
   }
   authRecovering = true;
-  authRequiredReason = '배민 비즈 자동로그인 시도 중…';
   try {
     await ensurePlaywrightBrowser();
     const tabs = scanBrowserTabs(activeContext);
     const page = tabs?.page;
     if (!page) {
-      return { ok: false, message: '배민 브라우저 페이지가 없습니다.' };
+      sessionPaused = true;
+      authRequiredReason = '배민 브라우저 페이지가 없습니다.';
+      return { ok: false, message: authRequiredReason };
     }
     const url = String(tabs.url || safePageUrlSync(page) || '');
     if (auth.isBaeminPhoneAuthLikeUrl(url)) {
-      authRequiredReason = '휴대폰 인증 화면 — 인증번호 입력 후 자동 재개됩니다';
+      authRequiredReason = '휴대폰 인증 화면 — 인증번호를 직접 입력하면 자동 재개됩니다';
       sessionPaused = true;
-      return { ok: true, needsPhoneAuth: true, message: authRequiredReason };
+      return { ok: true, needsPhoneAuth: true, needsManualLogin: true, message: authRequiredReason };
     }
     if (auth.isBaeminAppWorkingUrl(url) && tabs.anyLoggedIn) {
       sessionPaused = false;
@@ -844,25 +846,29 @@ async function tryRecoverBaeminAuth() {
     }
 
     const creds = autoLogin.getBaeminBizCredentials();
+    // 자격증명 없음 = 수동 모드: 페이지 건드리지 않고 대기만
     if (!creds.configured) {
-      authRequiredReason = '로그인 화면 — BAEMIN_BIZ_LOGIN_ID/PASSWORD 없거나 수동 로그인 필요';
+      authRequiredReason = '비즈 로그인 화면 — 아이디/비밀번호·휴대폰 인증을 직접 입력하세요';
       sessionPaused = true;
+      console.log('[BREM] 배민 수동 로그인 대기 (자동입력 없음)');
       return {
-        ok: false,
+        ok: true,
         needsManualLogin: true,
         message: authRequiredReason
       };
     }
 
-    console.log('[BREM] 배민 비즈 자동로그인(아이디/비번) 시작…');
+    authRequiredReason = '배민 비즈 자동로그인(아이디/비번) 시도 중…';
+    console.log('[BREM] 배민 비즈 로그인 화면에서 아이디/비번 자동 입력…');
+    // 지금 떠 있는 biz 로그인 페이지를 그대로 사용 (최소 경로)
     const result = await autoLogin.autoLoginBaeminBiz(page, { origin: BAEMIN_ORIGIN });
     await detectAndMarkAuthRequired().catch(() => false);
 
     if (result.needsPhoneAuth) {
       sessionPaused = true;
-      authRequiredReason = result.message || '휴대폰 인증 화면 — 인증번호 입력 후 자동 재개됩니다';
+      authRequiredReason = result.message || '휴대폰 인증 화면 — 인증번호를 직접 입력하면 자동 재개됩니다';
       console.log('[BREM] 배민 자동로그인: 휴대폰 인증 대기');
-      return { ok: true, needsPhoneAuth: true, via: result.via, message: authRequiredReason };
+      return { ok: true, needsPhoneAuth: true, needsManualLogin: true, via: result.via, message: authRequiredReason };
     }
     if (result.ok) {
       sessionPaused = false;
@@ -871,8 +877,8 @@ async function tryRecoverBaeminAuth() {
       return { ok: true, via: result.via || 'password', alreadyLoggedIn: result.alreadyLoggedIn };
     }
     sessionPaused = true;
-    authRequiredReason = result.message || '배민 자동로그인 실패 — 브라우저에서 로그인하세요';
-    return { ok: false, message: authRequiredReason, error: result.error };
+    authRequiredReason = result.message || '배민 자동로그인 실패 — 브라우저에서 직접 로그인하세요';
+    return { ok: true, needsManualLogin: true, message: authRequiredReason, error: result.error };
   } catch (error) {
     sessionPaused = true;
     authRequiredReason = error?.message || String(error);
@@ -1272,23 +1278,40 @@ async function runStatusAutoLoopInner() {
     await detectAndMarkAuthRequired().catch(() => false);
     if (sessionPaused) {
       setStatusLoopPhase('waiting', authRequiredReason || '로그인/휴대폰 인증 대기 중…');
-      // 로그인 화면이면 아이디/비번 자동 → 휴대폰은 수동 대기
       const auth = require('../server/crawl-session-auth');
+      const autoLogin = require('../server/baemin-auto-login');
       const browserNow = getBrowserHealth();
-      if (
-        auth.isBaeminLoginLikeUrl(browserNow.currentUrl)
-        || (!auth.isBaeminPhoneAuthLikeUrl(browserNow.currentUrl) && !browserNow.sessionLoggedIn)
-      ) {
+      const onPhone = auth.isBaeminPhoneAuthLikeUrl(browserNow.currentUrl);
+      const onLogin = auth.isBaeminLoginLikeUrl(browserNow.currentUrl)
+        || (!onPhone && !browserNow.sessionLoggedIn);
+      const hasBizCreds = autoLogin.getBaeminBizCredentials().configured;
+
+      // 자격증명 없거나 휴대폰 화면 = 수동만 (자동입력/네비게이션 없음)
+      if (onPhone || (onLogin && !hasBizCreds)) {
+        setStatusLoopPhase(
+          'waiting',
+          onPhone
+            ? '휴대폰 인증 대기 — 인증번호를 직접 입력하세요'
+            : '비즈 로그인 수동 대기 — 아이디/비밀번호·휴대폰을 직접 입력하세요'
+        );
+        authRequiredReason = statusLoop.message || authRequiredReason;
+        const resumed = await waitForBaeminAuthResume(30 * 60 * 1000);
+        if (!resumed.ok) {
+          statusLoop.lastError = resumed.message || '인증 대기 시간 초과';
+          break;
+        }
+        setStatusLoopPhase('bootstrap', '인증 완료 — 수집 재개');
+      } else if (onLogin && hasBizCreds) {
         setStatusLoopPhase('waiting', '배민 비즈 자동로그인(아이디/비번)…');
         const recovered = await tryRecoverBaeminAuth();
         if (!statusLoop.active || statusLoop.stopping) break;
-        if (recovered.ok && !recovered.needsPhoneAuth && !sessionPaused) {
+        if (recovered.ok && !recovered.needsPhoneAuth && !recovered.needsManualLogin && !sessionPaused) {
           setStatusLoopPhase('bootstrap', '인증 완료 — 수집 재개');
         } else {
           setStatusLoopPhase(
             'waiting',
-            recovered.needsPhoneAuth
-              ? (recovered.message || '휴대폰 인증 대기 중…')
+            recovered.needsPhoneAuth || recovered.needsManualLogin
+              ? (recovered.message || '휴대폰/수동 로그인 대기 중…')
               : (authRequiredReason || '로그인/휴대폰 인증 대기 중…')
           );
           const resumed = await waitForBaeminAuthResume(30 * 60 * 1000);

@@ -102,8 +102,12 @@ if ($bAuth -match 'authRequired|recovering') {
   $alerts += 'BAEMIN_AUTH'
   if ($armed -and $b) {
     try {
-      Invoke-RestMethod 'http://127.0.0.1:3939/auth/recover' -Method POST -ContentType 'application/json' -Body '{}' -TimeoutSec 120 | Out-Null
-      $alerts += 'BAEMIN_AUTH_RECOVER_OK'
+      $rec = Invoke-RestMethod 'http://127.0.0.1:3939/auth/recover' -Method POST -ContentType 'application/json' -Body '{}' -TimeoutSec 120
+      if ($rec.needsManualLogin -or $rec.needsPhoneAuth) {
+        $alerts += 'BAEMIN_AUTH_MANUAL_WAIT'
+      } else {
+        $alerts += 'BAEMIN_AUTH_RECOVER_OK'
+      }
       $b = Get-HealthSafe 'http://127.0.0.1:3939/health'
       $bActive = [bool]$b.statusLoop.active
       $bPhase = [string]$b.statusLoop.phase
