@@ -1427,9 +1427,14 @@ const BremAdminLeaseMenus = (function () {
   }
 
   /**
-   * 수기 완납용 청구액. 경과일이 0이어도(차감시작 전 등) 주간청구(일×7)로 기록할 수 있게 한다.
+   * 납부확인 완납·미납 청구액.
+   * 수기납부: 계약 ② 주간청구액(일렌탈×7) 고정 — 받아야 할 주간 금액.
+   * ERP차감: 이번주 경과·운행일 × 일렌탈 (0이면 주간청구로 폴백).
    */
   function resolvePaymentConfirmCharge(contract, weekStart) {
+    if (!isContractFinalApplyEnabled(contract)) {
+      return contractRiderWeeklyCharge(contract);
+    }
     const progressive = contractPaymentConfirmCharge(contract, weekStart);
     if (progressive > 0) return progressive;
     return contractRiderWeeklyCharge(contract);
@@ -4706,9 +4711,10 @@ const BremAdminLeaseMenus = (function () {
       return false;
     }
     if (!options.skipConfirm) {
-      const chargeNote = progressive > 0
-        ? '경과 일수×일렌탈료'
-        : '경과 청구 0원 → 주간청구(일×7)로 수기 완납';
+      const manual = !isContractFinalApplyEnabled(contract);
+      const chargeNote = manual
+        ? '수기 · 주간청구액(일×7)'
+        : (progressive > 0 ? 'ERP · 경과일×일렌탈료' : 'ERP · 주간청구(일×7)');
       if (!window.confirm(
         `${formatDriverContractLabel(contract.driverName || '기사')} · ${formatArrearWeekLabel(weekStart)}\n`
         + `완납으로 확인할까요? ${formatMoney(charge)} (${chargeNote})\n`
@@ -4882,8 +4888,11 @@ const BremAdminLeaseMenus = (function () {
       renderPaymentConfirm();
       return;
     }
+    const unpaidNote = !isContractFinalApplyEnabled(contract)
+      ? `주간청구액 ${formatMoney(charge)} (일×7)`
+      : `이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})`;
     if (!window.confirm(
-      `${formatDriverContractLabel(contract.driverName || '기사')} · 이번주 청구 ${formatMoney(charge)} (${days}일×${formatMoney(daily)})\n`
+      `${formatDriverContractLabel(contract.driverName || '기사')} · ${unpaidNote}\n`
       + '미납으로 확인만 할까요?\n(차감관리·미납/회수로 보내지 않습니다. 실제 미납 처리는 주정산 후 정산결과에서 합니다.)'
     )) {
       return;
@@ -5227,7 +5236,6 @@ const BremAdminLeaseMenus = (function () {
       const weeklyCharge = contractRiderWeeklyCharge(contract);
       const progressiveCharge = contractPaymentConfirmCharge(contract, weekStart);
       const settleCharge = resolvePaymentConfirmCharge(contract, weekStart);
-      const weekToDateCharge = progressiveCharge > 0 ? progressiveCharge : settleCharge;
       // 차액 = 받아야 할 주간청구 − 회사 주간리스비(원가)
       const margin = weeklyCharge - weeklyLease;
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
@@ -5239,9 +5247,16 @@ const BremAdminLeaseMenus = (function () {
       const modeBadge = applied
         ? ' <span class="lease-status--done">ERP차감</span>'
         : ' <span class="lease-status--collecting">수기납부</span>';
-      const weekToDateHint = progressiveCharge <= 0 && settleCharge > 0
-        ? '<br><span class="muted-inline">경과0 · 주간청구 기준</span>'
-        : (settleCharge <= 0 ? '<br><span class="muted-inline">일렌탈료 없음</span>' : '');
+      // 수기: 계약 ② 주간청구액이 기준. ERP: 경과분 참고.
+      const weekToDateHint = !applied
+        ? '<br><span class="muted-inline">수기=주간청구</span>'
+        : (progressiveCharge <= 0 && settleCharge > 0
+          ? '<br><span class="muted-inline">경과0 · 주간청구</span>'
+          : (settleCharge <= 0 ? '<br><span class="muted-inline">일렌탈료 없음</span>' : ''));
+      const weekToDateDisplay = !applied ? settleCharge : (progressiveCharge > 0 ? progressiveCharge : settleCharge);
+      const weeklyChargeCell = !applied
+        ? `<strong class="lease-money--profit">${formatMoney(weeklyCharge)}</strong><br><span class="muted-inline">수기 받을 금액</span>`
+        : `<strong>${formatMoney(weeklyCharge)}</strong>`;
       return `<tr${rowSelected}>
         <td class="lease-check-col">
           <input type="checkbox" data-payment-select="${escapeHtml(contract.id)}"${checked}>
@@ -5252,8 +5267,8 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}${modeBadge}</td>
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(weeklyLease)}</td>
-        <td><strong>${formatMoney(weeklyCharge)}</strong></td>
-        <td>${formatMoney(weekToDateCharge)}${weekToDateHint}</td>
+        <td>${weeklyChargeCell}</td>
+        <td>${formatMoney(weekToDateDisplay)}${weekToDateHint}</td>
         <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
