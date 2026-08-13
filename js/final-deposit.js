@@ -467,11 +467,12 @@ const BremFinalDeposit = (function () {
   }
 
   // 입금 시트는 이체 1건=1줄. 쿠팡/배민으로 갈라진 같은 사람은 금액만 합친다.
-  function buildTransferRows(rows) {
+  // includeZero=true 이면 최종입금 0원도 포함(누락 점검용).
+  function buildTransferRows(rows, { includeZero = false } = {}) {
     const byKey = new Map();
     rows.forEach(row => {
       const info = transferInfoForRow(row);
-      if (info.netPay === 0) return;
+      if (!includeZero && info.netPay === 0) return;
       const acctKey = normalizeAccountNumber(info.accountNumber);
       const mergeKey = info.driver?.id
         ? `d:${info.driver.id}`
@@ -505,25 +506,54 @@ const BremFinalDeposit = (function () {
     ));
   }
 
+  function appendAccountTextColumn(sheet, rowCount, colIndex) {
+    for (let r = 1; r < rowCount; r += 1) {
+      const cell = sheet[window.XLSX.utils.encode_cell({ r, c: colIndex })];
+      if (cell && cell.v !== undefined && cell.v !== '') {
+        cell.t = 's';
+        cell.v = String(cell.v);
+        cell.z = '@';
+      }
+    }
+  }
+
   function exportExcel() {
-    const rows = mergedRows().filter(row => row.checked);
+    const allMerged = mergedRows();
+    const unchecked = allMerged.filter(row => !row.checked).length;
+    const rows = allMerged.filter(row => row.checked);
     if (!rows.length) {
-      showToast('체크된 기사가 없습니다.');
+      showToast('체크된 기사가 없습니다. 화면에서 기사·정산서 체크를 확인하세요.');
       return;
     }
     if (!window.XLSX) {
       showToast('엑셀 모듈을 불러오지 못했습니다.');
       return;
     }
+
+    // 사람 단위(쿠팡+배민 합산)로 전체 점검. 입금 시트는 그중 이체 가능한 것만.
+    const allPeople = buildTransferRows(rows, { includeZero: true });
+    const ready = allPeople.filter(info => info.netPay > 0 && info.complete);
+    const missing = allPeople.filter(info => info.netPay > 0 && !info.complete);
+    const zeroPay = allPeople.filter(info => info.netPay <= 0);
+    const weekLabel = formatDate(ensureWeek());
+
+    if (!window.confirm(
+      `${weekLabel}(수) 주 최종입금 엑셀\n\n`
+      + `· 화면 체크 행: ${rows.length}행 (쿠팡/배민 분리, 미체크 ${unchecked}행 제외)\n`
+      + `· 사람 합산: ${allPeople.length}명\n`
+      + `· 「입금」시트(이체용): ${ready.length}명 ← 최종입금>0 + 계좌완비\n`
+      + `· 「계좌미등록」: ${missing.length}명 ← 최종입금>0 이지만 계좌 없음\n`
+      + `· 「입금0원」: ${zeroPay.length}명 ← 공제 후 0원 이하 (이체 제외)\n\n`
+      + `※ 「입금」시트만 보면 ${ready.length}명처럼 보일 수 있습니다.\n`
+      + `전체 인원 확인은 「최종입금」·「입금0원」·「계좌미등록」시트를 함께 보세요.`
+    )) return;
+
     const cols = columns();
     const detail = [
       cols.map(col => col.label),
       ...rows.map(row => cols.map(col => row[col.key]))
     ];
-    const transferRows = buildTransferRows(rows);
-    const ready = transferRows.filter(info => info.netPay > 0 && info.complete);
-    const missing = transferRows.filter(info => info.netPay > 0 && !info.complete);
-    // 2시트: 은행 이체용(계좌 완성분만). 받는사람=예금주, 비고=ERP ID.
+    // 은행 이체용(계좌 완성분만). 받는사람=예금주, 비고=ERP ID.
     const transfer = [
       ['입금은행', '입금계좌번호', '입금액', '받는사람', '비고'],
       ...ready.map(info => [
@@ -537,15 +567,7 @@ const BremFinalDeposit = (function () {
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '최종입금');
     const transferSheet = window.XLSX.utils.aoa_to_sheet(transfer);
-    // 계좌번호가 숫자로 깨지지 않게 텍스트로 고정한다.
-    for (let r = 1; r < transfer.length; r += 1) {
-      const cell = transferSheet[window.XLSX.utils.encode_cell({ r, c: 1 })];
-      if (cell && cell.v !== undefined && cell.v !== '') {
-        cell.t = 's';
-        cell.v = String(cell.v);
-        cell.z = '@';
-      }
-    }
+    appendAccountTextColumn(transferSheet, transfer.length, 1);
     window.XLSX.utils.book_append_sheet(wb, transferSheet, '입금');
 
     if (missing.length) {
@@ -562,26 +584,50 @@ const BremFinalDeposit = (function () {
         ])
       ];
       const ms = window.XLSX.utils.aoa_to_sheet(missingSheet);
-      for (let r = 1; r < missingSheet.length; r += 1) {
-        const cell = ms[window.XLSX.utils.encode_cell({ r, c: 4 })];
-        if (cell && cell.v !== undefined && cell.v !== '') {
-          cell.t = 's';
-          cell.v = String(cell.v);
-          cell.z = '@';
-        }
-      }
+      appendAccountTextColumn(ms, missingSheet.length, 4);
       window.XLSX.utils.book_append_sheet(wb, ms, '계좌미등록');
     }
 
+    if (zeroPay.length) {
+      const zeroSheet = [
+        ['기사명', 'ERP ID', '최종입금', '입금은행', '입금계좌번호', '예금주', '비고'],
+        ...zeroPay.map(info => [
+          info.riderName,
+          info.erpId,
+          info.netPay,
+          info.bankName,
+          info.accountNumber,
+          info.accountHolder,
+          '공제 후 0원 이하 · 이체 대상 아님 (누락 점검용)'
+        ])
+      ];
+      const zs = window.XLSX.utils.aoa_to_sheet(zeroSheet);
+      appendAccountTextColumn(zs, zeroSheet.length, 4);
+      window.XLSX.utils.book_append_sheet(wb, zs, '입금0원');
+    }
+
+    // 요약 시트: 합계가 맞는지 한눈에
+    const summary = [
+      ['항목', '인원/행수', '설명'],
+      ['정산주', ensureWeek(), `${weekLabel}(수) ~`],
+      ['화면 체크 행', rows.length, '쿠팡·배민 분리 행 (미체크 제외)'],
+      ['사람 합산', allPeople.length, '같은 기사 쿠팡+배민 합친 인원'],
+      ['입금(이체)', ready.length, '최종입금>0 이고 계좌 완비'],
+      ['계좌미등록', missing.length, '최종입금>0 이지만 계좌 없음'],
+      ['입금0원', zeroPay.length, '최종입금 0원 이하'],
+      ['검증', ready.length + missing.length + zeroPay.length, '사람 합산과 같아야 함']
+    ];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summary), '인원요약');
+
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
 
-    if (missing.length) {
-      const names = missing.slice(0, 5).map(info => info.erpId || info.riderName || '?').join(', ');
-      const more = missing.length > 5 ? ` 외 ${missing.length - 5}명` : '';
-      showToast(`엑셀 저장 · 입금 ${ready.length}명 · 계좌미등록 ${missing.length}명 (${names}${more})`);
-    } else {
-      showToast(`엑셀 저장 · 입금 ${ready.length}명 (쿠팡+배민 합산)`);
-    }
+    const parts = [
+      `사람 ${allPeople.length}명`,
+      `입금 ${ready.length}`,
+      missing.length ? `계좌미등록 ${missing.length}` : '',
+      zeroPay.length ? `0원 ${zeroPay.length}` : ''
+    ].filter(Boolean);
+    showToast(`엑셀 저장 · ${parts.join(' · ')}`);
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
