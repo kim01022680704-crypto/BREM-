@@ -3599,6 +3599,8 @@ function mapDailyStatsRowToAdminItem(row, partnerId = '', catalog = null, region
       regionName: partnerInfo.regionName,
       displayName: partnerInfo.displayName,
       deliveryDate: row.delivery_date,
+      allDayComplete: row.complete_total,
+      completeTotal: row.complete_total,
       totalComplete: row.complete_total,
       morningCount: row.complete_morning,
       afternoonCount: row.complete_afternoon,
@@ -3626,6 +3628,9 @@ function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null, region
       partnerName: partnerInfo.partnerName,
       regionName: partnerInfo.regionName,
       displayName: partnerInfo.displayName,
+      // 총 배달완료 — ERP/콜수입력은 allDayComplete 우선
+      allDayComplete: row.complete_total,
+      completeTotal: row.complete_total,
       totalComplete: row.complete_total,
       morningCount: row.complete_morning,
       afternoonCount: row.complete_afternoon,
@@ -3633,7 +3638,7 @@ function mapRiderStatsRowToAdminItem(row, partnerId = '', catalog = null, region
       midnightCount: row.complete_midnight,
       ...breakdown
     },
-    raw_json: { deliveryCount: row.complete_total },
+    raw_json: { deliveryCount: row.complete_total, allDayComplete: row.complete_total },
     dedupe_key: row.dedupe_key
   };
 }

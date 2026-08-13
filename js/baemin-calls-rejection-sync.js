@@ -93,8 +93,16 @@
   }
 
   function extractMetrics(parsed = {}) {
+    // 콜수입력 기준 = 화면 「총 배달완료」(allDayComplete). SLA 합계(totalComplete)보다 우선.
+    const complete = Math.max(0, Number(
+      parsed.allDayComplete
+      ?? parsed.completeTotal
+      ?? parsed.totalComplete
+      ?? parsed.completeCount
+      ?? 0
+    ) || 0);
     return {
-      complete: Math.max(0, Number(parsed.totalComplete || parsed.completeCount || 0) || 0),
+      complete,
       foodReject: Math.max(0, Number(parsed.foodReject || 0) || 0),
       foodCancel: Math.max(0, Number(parsed.foodCancel || 0) || 0),
       foodRiderFault: Math.max(0, Number(parsed.foodRiderFault || 0) || 0)
