@@ -546,6 +546,7 @@ const BremFinalDeposit = (function () {
     }
 
     // 쿠팡/배민 합치지 않음 → 화면 행 수 = 입금 건수
+    // 0원·계좌미등록 포함 전원. 걸러내지 않음 — 필요 없으면 엑셀에서 직접 삭제.
     const allPeople = buildTransferRows(rows, { includeZero: true });
     const ready = allPeople.filter(info => info.netPay > 0 && info.complete);
     const missing = allPeople.filter(info => info.netPay > 0 && !info.complete);
@@ -556,8 +557,9 @@ const BremFinalDeposit = (function () {
     if (!window.confirm(
       `${weekLabel}(수) 주 최종입금 엑셀 — 전원 · 플랫폼별 각각 입금\n\n`
       + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
-      + `· 화면 행 = 입금 건수: ${allPeople.length}건 (쿠팡/배민 합치지 않음)\n`
+      + `· 「입금」·「입금_이체가능」: ${allPeople.length}건 (0원·계좌미등록 포함)\n`
       + `  └ 이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 입금0원 ${zeroPay.length}\n\n`
+      + `※ 0원도 입금 시트에 넣습니다. 필요 없으면 엑셀에서 직접 지우세요.\n`
       + `※ 같은 기사라도 쿠팡·배민은 각각 따로 입금됩니다.\n`
       + (excludedSettlementCount
         ? `※ 화면에서 끈 정산서 ${excludedSettlementCount}건도 엑셀에는 포함됩니다.`
@@ -584,14 +586,15 @@ const BremFinalDeposit = (function () {
         info.riderName || ''
       ])
     ];
+    // 이체용도 전원(0원 포함). 불필요한 행은 직접 삭제.
     const transferReady = [
       ['입금은행', '입금계좌번호', '입금액', '받는사람', '비고'],
-      ...ready.map(info => [
-        info.bankName,
-        info.accountNumber,
+      ...allPeople.map(info => [
+        info.bankName || '',
+        info.accountNumber || '',
         info.netPay,
-        info.accountHolder,
-        [info.platform, info.erpId].filter(Boolean).join(' · ')
+        info.accountHolder || info.riderName || '',
+        [transferStatus(info), info.platform, info.erpId].filter(Boolean).join(' · ')
       ])
     ];
 
@@ -650,16 +653,17 @@ const BremFinalDeposit = (function () {
       ['정산서 건수', weekList.length, '그 주 저장된 직계약 정산서'],
       ['파일 라이더칸 합', slotCount, '정산서별 N명 합'],
       ['화면 행', rows.length, '쿠팡·배민 분리 행'],
-      ['입금 시트(전원)', allPeople.length, '플랫폼별 각각 · 합치지 않음'],
-      ['이체가능', ready.length, '최종입금>0 + 계좌완비'],
+      ['입금 시트(전원)', allPeople.length, '플랫폼별 각각 · 0원·계좌미등록 포함'],
+      ['입금_이체가능', allPeople.length, '동일 전원(0원 포함) · 직접 삭제용'],
+      ['이체가능(참고)', ready.length, '최종입금>0 + 계좌완비'],
       ['계좌미등록', missing.length, '최종입금>0 이지만 계좌 없음'],
-      ['입금0원', zeroPay.length, '최종입금 0원 이하'],
+      ['입금0원', zeroPay.length, '최종입금 0원 이하 · 입금 시트에 포함됨'],
       ['검증', ready.length + missing.length + zeroPay.length, '화면 행·입금 시트와 같아야 함']
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summary), '인원요약');
 
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
-    showToast(`엑셀 저장 · 입금 ${allPeople.length}건 (플랫폼별 각각 · 이체가능 ${ready.length})`);
+    showToast(`엑셀 저장 · 입금 ${allPeople.length}건 (0원 ${zeroPay.length}건 포함 · 플랫폼별 각각)`);
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
