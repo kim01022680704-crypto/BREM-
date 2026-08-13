@@ -394,6 +394,40 @@ const BremWeeklySettlementAdmin = (function () {
     return record;
   }
 
+  async function ensureWeeklyMatchDataReady(channel) {
+    const ch = normChannel(channel);
+    await BremStorage.ensureSectionLoaded?.(sectionIdFor(ch));
+    await BremStorage.ensureSectionLoaded?.('settlements');
+    await BremStorage.ensureSectionLoaded?.('calls');
+
+    const driverLoad = BremStorage.awaitDriversFullyLoaded
+      ? await BremStorage.awaitDriversFullyLoaded()
+      : await BremStorage.refreshDriversForSettlementMatch?.();
+
+    if (driverLoad && driverLoad.ok === false) {
+      return { ok: false, message: driverLoad.message || '기사 목록을 불러오지 못했습니다.' };
+    }
+
+    const driverCount = Array.isArray(driverLoad)
+      ? driverLoad.length
+      : (Number(driverLoad?.count) || BremStorage.drivers?.getAll?.()?.length || 0);
+
+    if (!driverCount) {
+      return { ok: false, message: '등록된 기사가 없습니다. 기사 목록을 확인하세요.' };
+    }
+
+    // 부분 로드로 매칭하면 등록 기사도 미매칭으로 뜸 — 완료될 때까지 막는다.
+    if (driverLoad && !Array.isArray(driverLoad)
+      && (driverLoad.complete === false || driverLoad.partial)) {
+      return {
+        ok: false,
+        message: `기사 목록이 아직 ${driverCount}명만 로드됐습니다. 잠시 후 다시 업로드하세요.`
+      };
+    }
+
+    return { ok: true, count: driverCount };
+  }
+
   async function uploadAndMatch(channel, platform) {
     const ch = normChannel(channel);
     // 배민: 업로드 직전에 파일 1·2 기간으로 폼·적용주를 다시 맞춤 (주차 어긋남 방지)
@@ -415,7 +449,11 @@ const BremWeeklySettlementAdmin = (function () {
       return;
     }
     try {
-      await BremStorage.refreshDriversForSettlementMatch?.();
+      const ready = await ensureWeeklyMatchDataReady(ch);
+      if (!ready.ok) {
+        showToast(ready.message);
+        return;
+      }
       // 여러 지역 파일이면 폼 지역값을 비워 파일명 지역을 각각 쓴다
       if (platform === 'baemin' && payload.files?.length > 1) {
         const regions = new Set(
@@ -982,8 +1020,11 @@ const BremWeeklySettlementAdmin = (function () {
 
     void (async () => {
       try {
-        await BremStorage.refreshDriversForSettlementMatch?.();
-        await BremStorage.ensureSectionLoaded('weeklySettlements');
+        const ready = await ensureWeeklyMatchDataReady(ch);
+        if (!ready.ok) {
+          showToast(ready.message);
+          return;
+        }
         const result = BremStorage.settlementUnmatched.retryWeeklyMatching({
           platform,
           weekStart,

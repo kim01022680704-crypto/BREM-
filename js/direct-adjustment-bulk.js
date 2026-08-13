@@ -286,6 +286,55 @@
     return { rows, sheetName };
   }
 
+  function looksLikeMoneyCell(raw) {
+    const text = String(raw ?? '').trim();
+    if (!text) return false;
+    // 사유열(한글·날짜_문구)은 금액으로 보지 않는다.
+    if (/[가-힣]/.test(text)) return false;
+    if (!/[\d]/.test(text)) return false;
+    return /^[\d,.\s원₩+-]+$/.test(text.replace(/\s/g, ''));
+  }
+
+  /**
+   * 엑셀 복사(TSV) → [[id, amount], ...]
+   * - A·B (ID·금액)
+   * - A·(빈칸)·C (ID·금액) + 사유열 무시
+   * - 비연속 선택으로 ID·금액만 복사한 경우
+   */
+  function sheetRowsFromPasteText(text) {
+    const normalized = String(text || '')
+      .replace(/^\uFEFF/, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+    if (!normalized.trim()) return [];
+
+    const rows = [];
+    normalized.split('\n').forEach(line => {
+      if (!String(line || '').trim()) return;
+      const cells = line.includes('\t')
+        ? line.split('\t')
+        : line.split(/ {2,}/);
+
+      let idCell = '';
+      let amountCell = '';
+      for (const cell of cells) {
+        const raw = String(cell ?? '').trim();
+        if (!raw) continue;
+        if (!idCell) {
+          idCell = raw;
+          continue;
+        }
+        if (!amountCell && looksLikeMoneyCell(raw)) {
+          amountCell = raw;
+          break;
+        }
+      }
+      if (!idCell && !amountCell) return;
+      rows.push([idCell, amountCell]);
+    });
+    return rows;
+  }
+
   function templateRows(kindLabel, platform) {
     return [
       [`A ${platformIdLabel(platform)}`, `B ${kindLabel || '금액'}`],
@@ -310,6 +359,7 @@
     duplicateDriverGroups,
     summarizeRows,
     sheetRowsFromWorkbook,
+    sheetRowsFromPasteText,
     templateRows
   });
 })();

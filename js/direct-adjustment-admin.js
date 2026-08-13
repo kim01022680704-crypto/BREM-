@@ -6,6 +6,7 @@ const BremDirectAdjustmentAdmin = (function () {
       key: 'other',
       label: '기타지급',
       file: '#directOtherBulkFile',
+      paste: '#directOtherBulkPasteBtn',
       apply: '#directOtherBulkApplyBtn',
       clearPending: '#directOtherBulkClearPendingBtn',
       retry: '#directOtherBulkRetryBtn',
@@ -19,6 +20,7 @@ const BremDirectAdjustmentAdmin = (function () {
       key: 'promotion',
       label: 'BREM프로모션',
       file: '#directPromotionBulkFile',
+      paste: '#directPromotionBulkPasteBtn',
       apply: '#directPromotionBulkApplyBtn',
       clearPending: '#directPromotionBulkClearPendingBtn',
       retry: '#directPromotionBulkRetryBtn',
@@ -226,6 +228,72 @@ const BremDirectAdjustmentAdmin = (function () {
 
   // --- 엑셀 일괄등록 -------------------------------------------------------
 
+  let pasteDialogKind = 'other';
+
+  function pasteDialogEls() {
+    return {
+      dialog: $('#directAdjustPasteDialog'),
+      title: $('#directAdjustPasteTitle'),
+      help: $('#directAdjustPasteHelp'),
+      input: $('#directAdjustPasteInput'),
+      hint: $('#directAdjustPasteHint'),
+      submit: $('#directAdjustPasteSubmitBtn'),
+      cancel: $('#directAdjustPasteCancelBtn')
+    };
+  }
+
+  function openPasteDialog(kind) {
+    const cfg = KINDS[kind];
+    if (!cfg) return;
+    if (!currentSettlement()) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
+    pasteDialogKind = kind;
+    const els = pasteDialogEls();
+    if (!els.dialog) {
+      showToast('붙여넣기 창을 열 수 없습니다.');
+      return;
+    }
+    if (els.title) els.title.textContent = `${cfg.label} · 엑셀 붙여넣기`;
+    if (els.help) {
+      els.help.textContent = `엑셀에서 ${idLabel()}·금액 열을 복사한 뒤 아래에 붙여넣으세요. 빈 칸·사유 열은 자동으로 건너뜁니다. (A·B 또는 A·C 금액 모두 인식)`;
+    }
+    if (els.input) els.input.value = '';
+    if (els.hint) els.hint.textContent = '';
+    if (typeof els.dialog.showModal === 'function') els.dialog.showModal();
+    else els.dialog.setAttribute('open', '');
+    queueMicrotask(() => els.input?.focus());
+  }
+
+  function closePasteDialog() {
+    const els = pasteDialogEls();
+    if (!els.dialog) return;
+    if (typeof els.dialog.close === 'function') els.dialog.close();
+    else els.dialog.removeAttribute('open');
+  }
+
+  async function ingestSheetRows(kind, rows, sourceLabel) {
+    const cfg = KINDS[kind];
+    if (!cfg) return;
+    if (!currentSettlement()) {
+      showToast('먼저 정산서를 선택하세요.');
+      return;
+    }
+    if (!Array.isArray(rows) || !rows.length) {
+      showToast('인식된 행이 없습니다. ID·금액이 보이게 복사했는지 확인하세요.');
+      return;
+    }
+    await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
+    const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList(), state.platform);
+    state.pending[kind] = parsed;
+    const fileInput = $(cfg.file);
+    if (fileInput) fileInput.value = '';
+    renderPreview(kind);
+    const summary = window.BremDirectAdjustmentBulk.summarizeRows(parsed.rows);
+    showToast(`${cfg.label}${sourceLabel ? ` (${sourceLabel})` : ''}: ${summary.total}행 · 매칭 ${summary.matched}명 · 합계 ${formatNumber(summary.amountTotal)}원`);
+  }
+
   async function handleFileChange(kind, file) {
     if (!file) return;
     const cfg = KINDS[kind];
@@ -237,15 +305,34 @@ const BremDirectAdjustmentAdmin = (function () {
       const buffer = await file.arrayBuffer();
       const workbook = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
       const { rows } = window.BremDirectAdjustmentBulk.sheetRowsFromWorkbook(workbook);
-      await window.BremStorage?.ensureSectionLoaded?.('promotion-settlement');
-      const parsed = window.BremDirectAdjustmentBulk.parseSheetRows(rows, driversList(), state.platform);
-      state.pending[kind] = parsed;
-      renderPreview(kind);
-      const summary = window.BremDirectAdjustmentBulk.summarizeRows(parsed.rows);
-      showToast(`${cfg.label}: ${summary.total}행 · 매칭 ${summary.matched}명 · 합계 ${formatNumber(summary.amountTotal)}원`);
+      await ingestSheetRows(kind, rows, '파일');
     } catch (error) {
       console.error('[BREM] direct adjustment parse failed:', error);
       showToast(`${cfg.label} 파일을 읽지 못했습니다. (${error.message || '오류'})`);
+    }
+  }
+
+  async function handlePasteSubmit() {
+    const kind = pasteDialogKind;
+    const cfg = KINDS[kind];
+    const els = pasteDialogEls();
+    const text = String(els.input?.value || '');
+    if (!text.trim()) {
+      showToast('붙여넣을 내용을 입력하세요.');
+      return;
+    }
+    try {
+      const rows = window.BremDirectAdjustmentBulk.sheetRowsFromPasteText(text);
+      if (els.hint) {
+        els.hint.textContent = rows.length
+          ? `${rows.length}행 인식됨 · 미리보기로 이동합니다.`
+          : '행을 인식하지 못했습니다.';
+      }
+      await ingestSheetRows(kind, rows, '붙여넣기');
+      if (rows.length) closePasteDialog();
+    } catch (error) {
+      console.error('[BREM] direct adjustment paste failed:', error);
+      showToast(`${cfg.label} 붙여넣기를 처리하지 못했습니다. (${error.message || '오류'})`);
     }
   }
 
@@ -321,7 +408,7 @@ const BremDirectAdjustmentAdmin = (function () {
     }
     const parsed = state.pending[kind];
     if (!parsed || !parsed.rows.length) {
-      showToast('먼저 파일을 선택해 미리보기를 만드세요.');
+      showToast('먼저 파일 업로드 또는 엑셀 붙여넣기로 미리보기를 만드세요.');
       return;
     }
     const { toApply, mergedRows, mergedDrivers, skippedNoAmount } = window.BremDirectAdjustmentBulk.filterRowsForApply(parsed.rows);
@@ -367,7 +454,7 @@ const BremDirectAdjustmentAdmin = (function () {
   function retryMatch(kind) {
     const parsed = state.pending[kind];
     if (!parsed || !parsed.rows.length) {
-      showToast('미리보기가 없습니다. 파일을 먼저 선택하세요.');
+      showToast('미리보기가 없습니다. 파일 업로드 또는 엑셀 붙여넣기를 먼저 하세요.');
       return;
     }
     parsed.rows = window.BremDirectAdjustmentBulk.rematchRows(parsed.rows, driversList(), state.platform);
@@ -1052,10 +1139,26 @@ const BremDirectAdjustmentAdmin = (function () {
 
     Object.values(KINDS).forEach(cfg => {
       $(cfg.file)?.addEventListener('change', event => handleFileChange(cfg.key, event.target.files?.[0] || null));
+      $(cfg.paste)?.addEventListener('click', () => openPasteDialog(cfg.key));
       $(cfg.apply)?.addEventListener('click', () => applyPending(cfg.key));
       $(cfg.clearPending)?.addEventListener('click', () => clearPending(cfg.key));
       $(cfg.retry)?.addEventListener('click', () => retryMatch(cfg.key));
       if (cfg.clearAll) $(cfg.clearAll)?.addEventListener('click', () => clearAllApplied(cfg.key));
+    });
+
+    const pasteEls = pasteDialogEls();
+    pasteEls.submit?.addEventListener('click', () => { void handlePasteSubmit(); });
+    pasteEls.cancel?.addEventListener('click', () => closePasteDialog());
+    pasteEls.dialog?.addEventListener('cancel', event => {
+      event.preventDefault();
+      closePasteDialog();
+    });
+    // Ctrl/Cmd+Enter 로 바로 미리보기
+    pasteEls.input?.addEventListener('keydown', event => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        void handlePasteSubmit();
+      }
     });
 
     $('#directAdjustSettlementSelect')?.addEventListener('change', event => {

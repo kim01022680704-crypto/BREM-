@@ -482,13 +482,78 @@ const BremWeeklySettlement = (function () {
   }
 
   function normalizeCoupangLoginKey(rawName) {
-    return String(rawName || '').trim().replace(/\s+/g, '');
+    return String(rawName || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .trim()
+      .replace(/\s+/g, '');
   }
 
+  // 일정산(settlement-client)과 동일: 커스텀 쿠팡ID 우선, 없으면 이름+전화뒤4
   function makeCoupangLoginKeyForDriver(driver) {
+    if (window.BremDriverUtils?.getErpCoupangId) {
+      return normalizeCoupangLoginKey(BremDriverUtils.getErpCoupangId(driver));
+    }
+    if (window.BremDriverUtils?.makeDriverLoginId) {
+      return normalizeCoupangLoginKey(BremDriverUtils.makeDriverLoginId(driver));
+    }
     const name = String(driver?.name || '').replace(/\s/g, '');
     const phone = String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
     return `${name}${phone}`;
+  }
+
+  function makeCoupangNamePhoneKey(driver) {
+    if (window.BremDriverUtils?.makeDriverLoginId) {
+      return normalizeCoupangLoginKey(BremDriverUtils.makeDriverLoginId(driver));
+    }
+    const name = String(driver?.name || '').replace(/\s/g, '');
+    const phone = String(driver?.phone || '').replace(/[^0-9]/g, '').slice(-4);
+    return `${name}${phone}`;
+  }
+
+  // erpId·이름+뒤4 둘 다 인덱싱. 동일 키에 기사가 둘 이상이면 ambiguous.
+  function buildCoupangDriverLookup(driverList) {
+    const byKey = new Map();
+    const byName = new Map();
+    (Array.isArray(driverList) ? driverList : []).forEach(driver => {
+      if (!driver?.id) return;
+      const keys = new Set();
+      const erpKey = makeCoupangLoginKeyForDriver(driver);
+      const namePhoneKey = makeCoupangNamePhoneKey(driver);
+      if (erpKey) keys.add(erpKey);
+      if (namePhoneKey) keys.add(namePhoneKey);
+      keys.forEach(key => {
+        const prev = byKey.get(key);
+        if (!prev) byKey.set(key, driver);
+        else if (prev !== 'ambiguous' && String(prev.id) !== String(driver.id)) {
+          byKey.set(key, 'ambiguous');
+        }
+      });
+      const nameKey = normalizeCoupangName(driver.name);
+      if (!nameKey) return;
+      const list = byName.get(nameKey) || [];
+      list.push(driver);
+      byName.set(nameKey, list);
+    });
+    return { byKey, byName };
+  }
+
+  function resolveCoupangDriverFromLookup(rider, lookup) {
+    const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'coupang');
+    if (manual) return manual;
+
+    const loginKey = normalizeCoupangLoginKey(rider.coupangLoginKey || rider.originalName);
+    if (loginKey && lookup?.byKey) {
+      const hit = lookup.byKey.get(loginKey);
+      if (hit && hit !== 'ambiguous') return hit;
+    }
+
+    // 이름-only는 동명이인 1명일 때만 (쿠팡 본키는 이름+뒤4)
+    const nameKey = normalizeCoupangName(rider.riderName || rider.originalName);
+    if (nameKey && lookup?.byName) {
+      const list = lookup.byName.get(nameKey) || [];
+      if (list.length === 1) return list[0];
+    }
+    return null;
   }
 
   function pushUniqueRider(list, seen, key, rider) {
@@ -1016,18 +1081,9 @@ const BremWeeklySettlement = (function () {
     return null;
   }
 
-  function resolveCoupangDriver(rider) {
-    const manual = resolveDriverByManualMapping(rider.originalName, rider.riderName, 'coupang');
-    if (manual) return manual;
-
-    const loginKey = rider.coupangLoginKey || normalizeCoupangLoginKey(rider.originalName);
-    if (loginKey) {
-      const byLogin = BremStorage.drivers.getAll().find(driver => makeCoupangLoginKeyForDriver(driver) === loginKey);
-      if (byLogin) return byLogin;
-    }
-
-    const normalizedTarget = normalizeCoupangName(rider.riderName || rider.originalName);
-    return BremStorage.drivers.getAll().find(driver => normalizeCoupangName(driver.name) === normalizedTarget) || null;
+  function resolveCoupangDriver(rider, lookup) {
+    const index = lookup || buildCoupangDriverLookup(BremStorage.drivers.getAll());
+    return resolveCoupangDriverFromLookup(rider, index);
   }
 
   function resolveBaeminDriver(rider) {
@@ -1065,13 +1121,13 @@ const BremWeeklySettlement = (function () {
     });
   }
 
-  function resolveDriverByWeeklyRider(rider, platform) {
+  function resolveDriverByWeeklyRider(rider, platform, lookup) {
     return normalizePlatform(platform) === 'baemin'
       ? resolveBaeminDriver(rider)
-      : resolveCoupangDriver(rider);
+      : resolveCoupangDriver(rider, lookup);
   }
 
-  function findDriverInPeriodByWeeklyRider(rider, platform, driverIdsInPeriod) {
+  function findDriverInPeriodByWeeklyRider(rider, platform, driverIdsInPeriod, lookup) {
     const p = normalizePlatform(platform);
 
     if (p === 'baemin') {
@@ -1084,31 +1140,41 @@ const BremWeeklySettlement = (function () {
       return null;
     }
 
-    const loginKey = rider.coupangLoginKey || normalizeCoupangLoginKey(rider.originalName);
+    const resolved = resolveCoupangDriver(rider, lookup);
+    if (resolved && driverIdsInPeriod.has(resolved.id)) return resolved;
+
+    // period 쪽 기사만으로도 키 매칭 (전체 목록에 아직 없는 캐시 공백 대비)
+    const loginKey = normalizeCoupangLoginKey(rider.coupangLoginKey || rider.originalName);
     if (loginKey) {
       for (const driverId of driverIdsInPeriod) {
         const driver = BremStorage.drivers.getById(driverId);
-        if (driver && makeCoupangLoginKeyForDriver(driver) === loginKey) return driver;
+        if (!driver) continue;
+        if (makeCoupangLoginKeyForDriver(driver) === loginKey) return driver;
+        if (makeCoupangNamePhoneKey(driver) === loginKey) return driver;
       }
     }
     const normalizedTarget = normalizeCoupangName(rider.riderName || rider.originalName);
-    for (const driverId of driverIdsInPeriod) {
-      const driver = BremStorage.drivers.getById(driverId);
-      if (driver && normalizeCoupangName(driver.name) === normalizedTarget) return driver;
+    if (normalizedTarget) {
+      const nameHits = [];
+      for (const driverId of driverIdsInPeriod) {
+        const driver = BremStorage.drivers.getById(driverId);
+        if (driver && normalizeCoupangName(driver.name) === normalizedTarget) nameHits.push(driver);
+      }
+      if (nameHits.length === 1) return nameHits[0];
     }
     return null;
   }
 
-  function resolveDriverFromPeriodData(rider, platform, driverIdsInPeriod) {
+  function resolveDriverFromPeriodData(rider, platform, driverIdsInPeriod, lookup) {
     const p = normalizePlatform(platform);
     if (p === 'baemin') {
       return resolveBaeminDriver(rider);
     }
 
-    const inPeriod = findDriverInPeriodByWeeklyRider(rider, platform, driverIdsInPeriod);
+    const inPeriod = findDriverInPeriodByWeeklyRider(rider, platform, driverIdsInPeriod, lookup);
     if (inPeriod) return inPeriod;
 
-    const resolved = resolveDriverByWeeklyRider(rider, platform);
+    const resolved = resolveCoupangDriver(rider, lookup);
     if (resolved && driverIdsInPeriod.has(resolved.id)) return resolved;
 
     return resolved || null;
@@ -1207,9 +1273,12 @@ const BremWeeklySettlement = (function () {
     const startDate = options.startDate || '';
     const endDate = options.endDate || '';
     const driverIdsInPeriod = buildDriversInPeriod(startDate, endDate, p);
+    const coupangLookup = p === 'coupang'
+      ? buildCoupangDriverLookup(BremStorage.drivers.getAll())
+      : null;
 
     return riders.map(rider => {
-      const driver = resolveDriverFromPeriodData(rider, p, driverIdsInPeriod);
+      const driver = resolveDriverFromPeriodData(rider, p, driverIdsInPeriod, coupangLookup);
       const hasSystemData = Boolean(driver && driverIdsInPeriod.has(driver.id));
       const stats = driver && hasSystemData
         ? buildDriverCallStatsForPeriod(driver.id, startDate, endDate, p)
@@ -1527,8 +1596,14 @@ const BremWeeklySettlement = (function () {
 
     const file = files[0];
     const parsedMeta = platform === 'baemin' ? parseBaeminFileName(file.name) : {};
-    const startDate = options.startDate || parsedMeta.startDate || '';
-    const endDate = options.endDate || parsedMeta.endDate || '';
+    let startDate = options.startDate || parsedMeta.startDate || '';
+    let endDate = options.endDate || parsedMeta.endDate || '';
+    // 쿠팡: 저장 레코드와 동일하게 base~base+6 으로 일정산·콜수 period 를 잡는다.
+    if (platform === 'coupang') {
+      const dates = calculateCoupangSettlementDates(options.baseSettlementDate || startDate);
+      if (dates.startDate) startDate = dates.startDate;
+      if (dates.endDate) endDate = dates.endDate;
+    }
 
     const extracted = platform === 'coupang'
       ? await extractCoupangWeeklyRiders(file, options.password, columnConfig)

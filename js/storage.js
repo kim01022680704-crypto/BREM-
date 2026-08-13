@@ -1472,10 +1472,10 @@ const BremStorage = (function () {
     missions: [KEYS.drivers, KEYS.calls],
     'mission-results': [KEYS.drivers, KEYS.calls],
     settlements: [KEYS.drivers, KEYS.settlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.payrollDailyExcludedSettlements],
-    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls],
+    'weekly-settlement': [KEYS.drivers, KEYS.weeklySettlements, KEYS.settlementUploadLogs, KEYS.settlementUnmatched, KEYS.calls, KEYS.settlements],
     // 직계약 정산서·업로드로그·미매칭은 settings 기반이라 부트스트랩에서 일괄 로드된다.
-    // (테이블 키가 아니므로 아래 목록에 넣어도 로딩·캐시 판정에는 쓰이지 않는다.)
-    'weekly-settlement-direct': [KEYS.drivers, KEYS.calls],
+    // 쿠팡 주정산 매칭은 일정산·콜수 period 데이터가 필요하므로 settlements/calls 를 포함한다.
+    'weekly-settlement-direct': [KEYS.drivers, KEYS.calls, KEYS.settlements],
     'promotion-settlement': [KEYS.drivers, KEYS.promotionApplyResults, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions],
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
@@ -11895,8 +11895,16 @@ const BremStorage = (function () {
         };
       }
 
-      const startDate = pending[0].period;
-      const endDate = pending[0].endDate || weekEndKeyFromDate(weekKey);
+      let startDate = pending[0].period;
+      let endDate = pending[0].endDate || weekEndKeyFromDate(weekKey);
+      // 쿠팡: 업로드 매칭과 동일하게 weekStart(base)~+6일 구간으로 일정산·콜수를 본다.
+      if (p === 'coupang' && typeof BremWeeklySettlement.calculateCoupangSettlementDates === 'function') {
+        const dates = BremWeeklySettlement.calculateCoupangSettlementDates(
+          pending[0].weekStart || weekKey || startDate
+        );
+        if (dates.startDate) startDate = dates.startDate;
+        if (dates.endDate) endDate = dates.endDate;
+      }
       const riders = pending.map(item => ({
         ...(item.matchPayload || {}),
         originalName: item.rawName || item.name,
