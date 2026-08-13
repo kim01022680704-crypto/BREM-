@@ -11482,6 +11482,7 @@ const BremStorage = (function () {
     normalizeKind(kind) {
       const raw = String(kind || '').trim();
       if (raw === 'promotion') return 'promotion';
+      if (raw === 'missionPay') return 'missionPay';
       if (raw === 'leaseFee') return 'leaseFee';
       if (raw === 'loanFee') return 'loanFee';
       return 'other';
@@ -11557,6 +11558,7 @@ const BremStorage = (function () {
     summary(settlementId) {
       const promo = this.getSettlement('promotion', settlementId);
       const other = this.getSettlement('other', settlementId);
+      const mission = this.getSettlement('missionPay', settlementId);
       const lease = this.getSettlement('leaseFee', settlementId);
       const loan = this.getSettlement('loanFee', settlementId);
       const sum = map => Object.values(map).reduce((acc, item) => acc + Number(item?.amount || 0), 0);
@@ -11565,6 +11567,8 @@ const BremStorage = (function () {
         promotionTotal: sum(promo),
         otherCount: Object.keys(other).length,
         otherTotal: sum(other),
+        missionPayCount: Object.keys(mission).length,
+        missionPayTotal: sum(mission),
         leaseFeeCount: Object.keys(lease).length,
         leaseFeeTotal: sum(lease),
         loanFeeCount: Object.keys(loan).length,

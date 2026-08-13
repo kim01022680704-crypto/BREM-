@@ -5033,7 +5033,7 @@
               <input type="hidden" id="settlementResultWeek">
             </div>
           </div>
-          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 표에서 <strong>리스차감·대여차감 칸을 클릭</strong>하면 이번 정산서만 수동으로 넣거나(금액)·없애거나(0)·자동복원(「자동」)할 수 있습니다. 주중 출금가능에서 리스를 다 못 깎아도 OK입니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요. 반영 계약은 미납/회수 일괄에 넣지 않습니다(이중 방지).</p>
+          <p class="form-help">주정산서(직계약) · 선정산 · <strong>리스차감·대여차감</strong>(수~화, 「반영」분)으로 총지급액을 계산합니다. 표에서 <strong>행을 클릭</strong>하면 추가지급·기타지급·리스·대여를 이번 정산서만 조정할 수 있습니다. 리스·대여 칸만 누르면 빠른 수정(금액/0/자동)도 됩니다. 총지급이 마이너스면 「마이너스 일괄 맞추기」→「소급분 및 미납금」에서 <strong>선택해 차감관리</strong>로 보내세요.</p>
           <p class="settlement-week-range-label" id="settlementResultWeekRange"></p>
           <p class="direct-inline-stats" id="settlementResultSummary"></p>
           <div class="settlement-next-step">
@@ -5181,7 +5181,18 @@
               <input type="hidden" id="settlementFinalDetailSettlementId">
               <input type="hidden" id="settlementFinalDetailDriverId">
               <input type="hidden" id="settlementFinalDetailDriverName">
-              <p class="form-help" style="margin:0 0 0.5rem;"><strong>차감 추가/수정</strong> — 리스차감·대여차감 (0=없앰, 비우고 자동복원 클릭=ERP 자동)</p>
+              <p class="form-help" style="margin:0 0 0.5rem;"><strong>지급 조정</strong> — 추가지급(미션)·기타지급 (0 가능 · 추가지급 자동복원=주정산서 금액)</p>
+              <div class="lease-form-grid">
+                <label>
+                  추가지급(미션)
+                  <input type="number" id="settlementFinalDetailMissionPay" min="0" step="1" placeholder="0">
+                </label>
+                <label>
+                  기타지급
+                  <input type="number" id="settlementFinalDetailOtherPay" min="0" step="1" placeholder="0">
+                </label>
+              </div>
+              <p class="form-help" style="margin:0.75rem 0 0.5rem;"><strong>차감 추가/수정</strong> — 리스차감·대여차감 (0=없앰, 자동복원=ERP 자동)</p>
               <div class="lease-form-grid">
                 <label>
                   리스차감
@@ -5193,8 +5204,8 @@
                 </label>
               </div>
               <div class="promotion-form-actions" style="margin-top:0.75rem; justify-content:flex-end;">
-                <button type="button" class="small-btn" id="settlementFinalDetailAutoBtn">자동복원</button>
-                <button type="button" class="small-btn primary-btn" id="settlementFinalDetailSaveBtn">차감 저장</button>
+                <button type="button" class="small-btn" id="settlementFinalDetailAutoBtn" title="추가지급=주정산서 금액, 리스·대여=ERP 자동. 기타지급은 0으로">자동복원</button>
+                <button type="button" class="small-btn primary-btn" id="settlementFinalDetailSaveBtn">저장</button>
               </div>
             </form>
           </div>
@@ -7854,7 +7865,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260806r"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260806a"></script>
-  <script src="js/storage.js?v=20260813a"></script>
+  <script src="js/storage.js?v=20260813c"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7894,8 +7905,8 @@
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260813b"></script>
   <script src="js/direct-adjustment-admin.js?v=20260813b"></script>
-  <script src="js/direct-settlement-calc.js?v=20260812a"></script>
-  <script src="js/settlement-result-direct.js?v=20260813b"></script>
+  <script src="js/direct-settlement-calc.js?v=20260813c"></script>
+  <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260806r"></script>
   <script src="js/driver-management-admin.js?v=20260805g"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>

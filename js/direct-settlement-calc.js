@@ -139,7 +139,14 @@ const BremDirectSettlementCalc = (function () {
     const promo = driverId ? Number(adj.promoMap[driverId]?.amount || 0) : 0;
     const other = driverId ? Number(adj.otherMap[driverId]?.amount || 0) : 0;
     const deliveryFee = Number(amounts.deliveryFee || 0);
-    const missionPay = Number(amounts.missionPay || 0);
+    // 추가지급: 주정산서 금액이 기본. 수동 override(missionPay 맵)가 있으면 그 값(0 포함).
+    const missionPayExcel = Number(amounts.missionPay || 0);
+    const missionPayManual = Boolean(
+      driverId && Object.prototype.hasOwnProperty.call(adj.missionMap || {}, driverId)
+    );
+    const missionPay = missionPayManual
+      ? Math.max(0, Math.round(Number(adj.missionMap[driverId]?.amount || 0)))
+      : missionPayExcel;
     const deductionDetail = Number(amounts.deductionDetail || 0);
     const grossPay = deliveryFee + missionPay + other + promo;
 
@@ -164,7 +171,8 @@ const BremDirectSettlementCalc = (function () {
       name: driverName(driverId, rider.driverName || rider.riderName || rider.originalName),
       idLabel,
       callCount,
-      deliveryFee, missionPay, deductionDetail, other, promo, grossPay,
+      deliveryFee, missionPay, missionPayExcel, missionPayManual,
+      deductionDetail, other, promo, grossPay,
       employmentInsurance, accidentInsurance, hourlyInsurance,
       withholdingTax, promotionWithholdingTax, callFee,
       baseDeduct, capacity
@@ -177,6 +185,7 @@ const BremDirectSettlementCalc = (function () {
     return {
       promoMap: store?.getSettlement?.('promotion', settlementId) || {},
       otherMap: store?.getSettlement?.('other', settlementId) || {},
+      missionMap: store?.getSettlement?.('missionPay', settlementId) || {},
       leaseMap: store?.getSettlement?.('leaseFee', settlementId) || {},
       loanMap: store?.getSettlement?.('loanFee', settlementId) || {}
     };
@@ -823,6 +832,8 @@ const BremDirectSettlementCalc = (function () {
         callCount: base.callCount,
         deliveryFee: base.deliveryFee,
         missionPay: base.missionPay,
+        missionPayExcel: base.missionPayExcel,
+        missionPayManual: base.missionPayManual,
         deductionDetail: base.deductionDetail,
         other: base.other,
         promo: base.promo,
