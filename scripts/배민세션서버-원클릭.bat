@@ -4,7 +4,7 @@ chcp 65001 >nul
 title BREM 배민 세션서버 (원클릭 - E드라이브)
 
 rem ================================================================
-rem  더블클릭 한 번으로: git pull -> 포트 3939 정리 -> 세션서버 시작
+rem  더블클릭 한 번으로: 코드동기화 -> 포트 3939 정리 -> 세션서버 시작
 rem  로컬 폴더가 다르면 아래 BREM_DIR 값만 바꾸세요.
 rem ================================================================
 set "BREM_DIR=E:\브램로컬\BREM"
@@ -33,31 +33,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [1/3] git pull ...
-git pull
-if errorlevel 1 (
-  echo.
-  echo ================================================================
-  echo  [중단] git pull 실패 - 코드를 갱신하지 못했습니다.
-  echo ================================================================
-  echo  이대로 서버를 띄우면 옛 코드가 계속 돌아갑니다.
-  echo  관리자 화면에 아무리 배포해도 수집에는 반영되지 않습니다.
-  echo.
-  echo  --- 이 폴더에서 수정된 파일 ---
-  git -c core.quotepath=false status --short
-  echo  -------------------------------
-  echo.
-  echo  위에 파일이 보이면 그게 pull 을 막고 있습니다.
-  echo  수정 내용을 버려도 되면 아래를 실행하세요.
-  echo     cd /d "%BREM_DIR%"
-  echo     git reset --hard origin/main
-  echo.
-  echo  목록이 비어 있으면 네트워크 문제입니다. 인터넷 확인 후 다시 실행하세요.
-  echo.
-  pause
-  exit /b 1
+echo [1/3] code sync (origin/main) ...
+if exist "%BREM_DIR%\scripts\_session-git-sync.cmd" (
+  call "%BREM_DIR%\scripts\_session-git-sync.cmd"
+) else (
+  echo   [경고] _session-git-sync.cmd 없음 - sync 건너뛰고 서버만 기동
 )
-echo   코드 최신화 완료.
 echo.
 
 echo [2/3] 포트 3939 정리 ...
