@@ -152,7 +152,14 @@ const BremFinalDeposit = (function () {
     return `${base}|${row.platform}`;
   }
 
-  function mergedRows() {
+  /**
+   * @param {{ allSettlements?: boolean, allDrivers?: boolean }} [options]
+   * allSettlements: 화면에서 끈 정산서도 포함 (엑셀 전체 인원용)
+   * allDrivers: 화면에서 끈 기사도 포함
+   */
+  function mergedRows(options = {}) {
+    const allSettlements = Boolean(options.allSettlements);
+    const allDrivers = Boolean(options.allDrivers);
     const numericKeys = Calc().NUMERIC_KEYS;
     const byDriver = new Map();
 
@@ -160,6 +167,7 @@ const BremFinalDeposit = (function () {
     // consumed 로 같은 사람의 같은 플랫폼 선정산이 중복 반영되지 않게 한다.
     const week = ensureWeek();
     const weekAll = weekSettlements();
+    const sourceList = allSettlements ? weekAll : checkedSettlements();
     const allocation = Calc().allocateWeekWithdrawals(
       state.withdrawals,
       week,
@@ -173,7 +181,7 @@ const BremFinalDeposit = (function () {
       withdrawals: state.withdrawals,
       _allocation: allocation
     });
-    checkedSettlements().forEach(settlement => {
+    sourceList.forEach(settlement => {
       Calc().computeRows(settlement, {
         withdrawals: state.withdrawals,
         weekSettlements: weekAll,
@@ -211,9 +219,22 @@ const BremFinalDeposit = (function () {
       platformLabel: ['coupang', 'baemin'].filter(id => row.platforms.has(id)).map(platformLabel).join('+'),
       idLabel: [...row.idLabels].join(' / ') || '-',
       regionLabel: [...row.regions].join(', ') || '-',
-      checked: !state.excludedDriverKeys.has(row.key)
+      checked: allDrivers ? true : !state.excludedDriverKeys.has(row.key)
     }));
     return Calc().sortByName(rows);
+  }
+
+  /** 정산서에 적힌 라이더 칸 수(파일·지역 합, 같은 사람 중복 가능) */
+  function settlementRiderSlotCount(list) {
+    return (list || []).reduce((sum, record) => (
+      sum + (Array.isArray(record.riders) ? record.riders.length : 0)
+    ), 0);
+  }
+
+  function transferStatus(info) {
+    if (Number(info?.netPay || 0) <= 0) return '입금0원';
+    if (!info?.complete) return '계좌미등록';
+    return '이체가능';
   }
 
   // --- 표 ------------------------------------------------------------------
@@ -518,34 +539,45 @@ const BremFinalDeposit = (function () {
   }
 
   function exportExcel() {
-    const allMerged = mergedRows();
-    const unchecked = allMerged.filter(row => !row.checked).length;
-    const rows = allMerged.filter(row => row.checked);
-    if (!rows.length) {
-      showToast('체크된 기사가 없습니다. 화면에서 기사·정산서 체크를 확인하세요.');
-      return;
-    }
     if (!window.XLSX) {
       showToast('엑셀 모듈을 불러오지 못했습니다.');
       return;
     }
 
-    // 사람 단위(쿠팡+배민 합산)로 전체 점검. 입금 시트는 그중 이체 가능한 것만.
+    const weekList = weekSettlements();
+    if (!weekList.length) {
+      showToast('이 주에 저장된 직계약 정산서가 없습니다.');
+      return;
+    }
+
+    // 엑셀은 화면 체크와 무관하게 「그 주 정산서 전원」을 넣는다. (누락 방지)
+    const excludedSettlementCount = weekList.filter(record =>
+      state.excludedSettlementIds.has(String(record.id))
+    ).length;
+    const rows = mergedRows({ allSettlements: true, allDrivers: true });
+    if (!rows.length) {
+      showToast('정산서에 라이더가 없습니다.');
+      return;
+    }
+
     const allPeople = buildTransferRows(rows, { includeZero: true });
     const ready = allPeople.filter(info => info.netPay > 0 && info.complete);
     const missing = allPeople.filter(info => info.netPay > 0 && !info.complete);
     const zeroPay = allPeople.filter(info => info.netPay <= 0);
+    const slotCount = settlementRiderSlotCount(weekList);
     const weekLabel = formatDate(ensureWeek());
 
     if (!window.confirm(
-      `${weekLabel}(수) 주 최종입금 엑셀\n\n`
-      + `· 화면 체크 행: ${rows.length}행 (쿠팡/배민 분리, 미체크 ${unchecked}행 제외)\n`
-      + `· 사람 합산: ${allPeople.length}명\n`
-      + `· 「입금」시트(이체용): ${ready.length}명 ← 최종입금>0 + 계좌완비\n`
-      + `· 「계좌미등록」: ${missing.length}명 ← 최종입금>0 이지만 계좌 없음\n`
-      + `· 「입금0원」: ${zeroPay.length}명 ← 공제 후 0원 이하 (이체 제외)\n\n`
-      + `※ 「입금」시트만 보면 ${ready.length}명처럼 보일 수 있습니다.\n`
-      + `전체 인원 확인은 「최종입금」·「입금0원」·「계좌미등록」시트를 함께 보세요.`
+      `${weekLabel}(수) 주 최종입금 엑셀 — 전원 포함\n\n`
+      + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount} (지역·파일 중복 가능)\n`
+      + `· 화면 행(쿠팡/배민 분리): ${rows.length}행\n`
+      + `· 「입금」시트 전원: ${allPeople.length}명 (0원·계좌미등록 포함)\n`
+      + `  └ 이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 입금0원 ${zeroPay.length}\n`
+      + (excludedSettlementCount
+        ? `\n※ 화면에서 정산서 ${excludedSettlementCount}건을 꺼두었어도 엑셀에는 전부 넣습니다.\n`
+        : '\n')
+      + `※ 정산서 「N명」을 다 더하면 같은 사람이 두 번 잡힐 수 있습니다.\n`
+      + `   맞는 기준은 「입금」시트 ${allPeople.length}명입니다.`
     )) return;
 
     const cols = columns();
@@ -553,8 +585,21 @@ const BremFinalDeposit = (function () {
       cols.map(col => col.label),
       ...rows.map(row => cols.map(col => row[col.key]))
     ];
-    // 은행 이체용(계좌 완성분만). 받는사람=예금주, 비고=ERP ID.
+
+    // 「입금」= 전원. 상태 열로 구분. (이체파일용은 「입금_이체가능」)
     const transfer = [
+      ['상태', '입금은행', '입금계좌번호', '입금액', '받는사람', '비고', '기사명'],
+      ...allPeople.map(info => [
+        transferStatus(info),
+        info.bankName || '',
+        info.accountNumber || '',
+        info.netPay,
+        info.accountHolder || info.riderName || '',
+        info.erpId || '',
+        info.riderName || ''
+      ])
+    ];
+    const transferReady = [
       ['입금은행', '입금계좌번호', '입금액', '받는사람', '비고'],
       ...ready.map(info => [
         info.bankName,
@@ -564,11 +609,17 @@ const BremFinalDeposit = (function () {
         info.erpId
       ])
     ];
+
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '최종입금');
+
     const transferSheet = window.XLSX.utils.aoa_to_sheet(transfer);
-    appendAccountTextColumn(transferSheet, transfer.length, 1);
+    appendAccountTextColumn(transferSheet, transfer.length, 2);
     window.XLSX.utils.book_append_sheet(wb, transferSheet, '입금');
+
+    const readySheet = window.XLSX.utils.aoa_to_sheet(transferReady);
+    appendAccountTextColumn(readySheet, transferReady.length, 1);
+    window.XLSX.utils.book_append_sheet(wb, readySheet, '입금_이체가능');
 
     if (missing.length) {
       const missingSheet = [
@@ -598,7 +649,7 @@ const BremFinalDeposit = (function () {
           info.bankName,
           info.accountNumber,
           info.accountHolder,
-          '공제 후 0원 이하 · 이체 대상 아님 (누락 점검용)'
+          '공제 후 0원 이하'
         ])
       ];
       const zs = window.XLSX.utils.aoa_to_sheet(zeroSheet);
@@ -606,28 +657,22 @@ const BremFinalDeposit = (function () {
       window.XLSX.utils.book_append_sheet(wb, zs, '입금0원');
     }
 
-    // 요약 시트: 합계가 맞는지 한눈에
     const summary = [
       ['항목', '인원/행수', '설명'],
       ['정산주', ensureWeek(), `${weekLabel}(수) ~`],
-      ['화면 체크 행', rows.length, '쿠팡·배민 분리 행 (미체크 제외)'],
-      ['사람 합산', allPeople.length, '같은 기사 쿠팡+배민 합친 인원'],
-      ['입금(이체)', ready.length, '최종입금>0 이고 계좌 완비'],
+      ['정산서 건수', weekList.length, '그 주 저장된 직계약 정산서'],
+      ['파일 라이더칸 합', slotCount, '정산서별 N명 합(같은 사람 중복 가능)'],
+      ['화면 행', rows.length, '쿠팡·배민 분리 행'],
+      ['입금 시트(전원)', allPeople.length, '0원·계좌미등록 포함 · 쿠팡+배민 한 줄'],
+      ['이체가능', ready.length, '최종입금>0 + 계좌완비'],
       ['계좌미등록', missing.length, '최종입금>0 이지만 계좌 없음'],
       ['입금0원', zeroPay.length, '최종입금 0원 이하'],
-      ['검증', ready.length + missing.length + zeroPay.length, '사람 합산과 같아야 함']
+      ['검증', ready.length + missing.length + zeroPay.length, '입금 시트 전원과 같아야 함']
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summary), '인원요약');
 
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
-
-    const parts = [
-      `사람 ${allPeople.length}명`,
-      `입금 ${ready.length}`,
-      missing.length ? `계좌미등록 ${missing.length}` : '',
-      zeroPay.length ? `0원 ${zeroPay.length}` : ''
-    ].filter(Boolean);
-    showToast(`엑셀 저장 · ${parts.join(' · ')}`);
+    showToast(`엑셀 저장 · 입금 전원 ${allPeople.length}명 (이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 0원 ${zeroPay.length})`);
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
