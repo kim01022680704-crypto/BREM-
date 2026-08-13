@@ -1,36 +1,36 @@
 @echo off
 rem ================================================================
-rem  세션서버 원클릭용: origin/main 동기화
-rem  - stale index.lock 제거
-rem  - 로컬 수정이 있어도 pull 막히면 reset --hard 로 맞춤
-rem  - 프로필 폴더(.naver / .coupang)는 유지
-rem  - 네트워크 실패여도 exit 0 → 서버 기동은 계속
+rem  Session-server one-click: sync to origin/main
+rem  - remove stale index.lock
+rem  - reset --hard if local edits block pull
+rem  - keep login profile folders (.naver / .coupang)
+rem  - network failure => exit 0 so servers still start
 rem ================================================================
 setlocal EnableExtensions
 
 if not exist ".git" (
-  echo   [경고] .git 없음 - 동기화 건너뜀
+  echo   [WARN] .git missing - skip sync
   exit /b 0
 )
 
 if exist ".git\index.lock" (
-  echo   stale .git\index.lock 제거...
+  echo   removing stale .git\index.lock ...
   del /f /q ".git\index.lock" >nul 2>&1
 )
 
 echo   git fetch origin main ...
 git fetch origin main
 if errorlevel 1 (
-  echo   [경고] fetch 실패(네트워크). 현재 폴더 코드로 서버를 계속 띄웁니다.
+  echo   [WARN] fetch failed - starting with current local code
   exit /b 0
 )
 
-echo   origin/main 으로 맞춤 (로컬 수정 덮어씀, 로그인 프로필은 유지)...
+echo   reset --hard origin/main (keeps login profiles) ...
 git reset --hard origin/main
 if errorlevel 1 (
-  echo   [경고] reset 실패. 현재 폴더 코드로 서버를 계속 띄웁니다.
+  echo   [WARN] reset failed - starting with current local code
   exit /b 0
 )
 
-echo   코드 동기화 완료.
+echo   code sync OK
 exit /b 0
