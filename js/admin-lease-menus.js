@@ -685,8 +685,14 @@ const BremAdminLeaseMenus = (function () {
     renderPaymentPaid();
   }
 
+  /** 주차 라벨만 만든다. state.paymentWeekStart 를 바꾸지 않는다. */
   function formatPaymentWeekColumn(weekStart) {
-    const start = syncPaymentWeekUi(weekStart || currentWeekStart());
+    const start = String(
+      BremDatePicker?.applyWeekWednesday?.(weekStart)
+      || weekStart
+      || currentWeekStart()
+      || ''
+    ).slice(0, 10);
     if (!start) return '-';
     if (BremDatePicker?.formatWednesdayWeekRange) {
       return BremDatePicker.formatWednesdayWeekRange(start);
@@ -3235,19 +3241,56 @@ const BremAdminLeaseMenus = (function () {
     })();
   }
 
-  function paymentConfirmMemo(weekStart) {
-    return `${PAYMENT_CONFIRM_MEMO_PREFIX}${String(weekStart || '').slice(0, 10)}`;
+  function paymentConfirmMemo(weekStart, contractId = '') {
+    const week = String(weekStart || '').slice(0, 10);
+    const cid = String(contractId || '').trim();
+    return cid
+      ? `${PAYMENT_CONFIRM_MEMO_PREFIX}${week}:${cid}`
+      : `${PAYMENT_CONFIRM_MEMO_PREFIX}${week}`;
   }
 
-  function findWeekPaymentConfirm(vehicleId, weekStart) {
-    if (!erp() || !vehicleId || !weekStart) return null;
-    const memo = paymentConfirmMemo(weekStart);
+  function paymentConfirmMemoContractId(memo) {
+    const text = String(memo || '');
+    if (!text.startsWith(PAYMENT_CONFIRM_MEMO_PREFIX)) return '';
+    const rest = text.slice(PAYMENT_CONFIRM_MEMO_PREFIX.length);
+    const parts = rest.split(':');
+    // 납부확인:YYYY-MM-DD:contractId
+    return parts.length >= 2 ? String(parts[1] || '').trim() : '';
+  }
+
+  function findWeekPaymentConfirm(vehicleId, weekStart, contractId = '') {
+    if (!erp() || !weekStart) return null;
     const week = String(weekStart).slice(0, 10);
-    return erp().payments().getAll().find(item => {
-      if (String(item.vehicleId || '') !== String(vehicleId)) return false;
-      if (String(item.memo || '').startsWith(memo)) return true;
-      return String(item.dueDate || '').slice(0, 10) === week
-        && String(item.memo || '').includes('납부확인');
+    const cid = String(contractId || '').trim();
+    const vid = String(vehicleId || '').trim();
+    const list = erp().payments().getAll();
+
+    if (cid) {
+      const exactMemo = paymentConfirmMemo(week, cid);
+      const byContract = list.find(item => {
+        const memo = String(item.memo || '');
+        if (memo === exactMemo) return true;
+        if (!memo.startsWith(PAYMENT_CONFIRM_MEMO_PREFIX)) return false;
+        if (paymentConfirmMemoContractId(memo) !== cid) return false;
+        return String(item.dueDate || '').slice(0, 10) === week
+          || memo.startsWith(`${PAYMENT_CONFIRM_MEMO_PREFIX}${week}`);
+      });
+      if (byContract) return byContract;
+    }
+
+    if (!vid) return null;
+    // 예전 기록(메모에 계약ID 없음): 차량+주차로 매칭
+    return list.find(item => {
+      if (String(item.vehicleId || '') !== vid) return false;
+      const memo = String(item.memo || '');
+      if (!memo.startsWith(PAYMENT_CONFIRM_MEMO_PREFIX)) {
+        return String(item.dueDate || '').slice(0, 10) === week && memo.includes('납부확인');
+      }
+      // 계약ID가 다른 메모는 제외 (같은 차량 재계약 대비)
+      const memoCid = paymentConfirmMemoContractId(memo);
+      if (memoCid && cid && memoCid !== cid) return false;
+      if (memo.startsWith(`${PAYMENT_CONFIRM_MEMO_PREFIX}${week}`)) return true;
+      return String(item.dueDate || '').slice(0, 10) === week;
     }) || null;
   }
 
@@ -4406,7 +4449,7 @@ const BremAdminLeaseMenus = (function () {
 
   function paymentConfirmStatus(contract, weekStart) {
     // 납부확인 화면 상태만 본다 (미납/회수·차감관리 이관과 무관)
-    const payment = findWeekPaymentConfirm(contract.vehicleId, weekStart);
+    const payment = findWeekPaymentConfirm(contract?.vehicleId, weekStart, contract?.id);
     if (!payment) {
       return { code: 'pending', label: '확인대기', cls: 'lease-status--collecting' };
     }
@@ -4415,23 +4458,37 @@ const BremAdminLeaseMenus = (function () {
     const unpaidAmt = Math.max(0, Number(payment.unpaidAmount || 0));
     const payStatus = String(payment.paymentStatus || '').toLowerCase();
     const unpaidCode = String(BremLeaseProfit?.PAYMENT_STATUSES?.UNPAID || 'unpaid').toLowerCase();
+    const normalCode = String(BremLeaseProfit?.PAYMENT_STATUSES?.NORMAL || 'normal').toLowerCase();
     if (charge > 0 && paid >= charge) {
       return { code: 'paid', label: '완납', cls: 'lease-status--done' };
     }
     if (payStatus === unpaidCode || (charge > 0 && paid < charge) || unpaidAmt > 0) {
       return { code: 'unpaid', label: '미납', cls: 'lease-status--unpaid' };
     }
+    // 완납으로 찍혔는데 금액 필드가 비어 있던 예전 기록
+    if (payStatus === normalCode && paid > 0) {
+      return { code: 'paid', label: '완납', cls: 'lease-status--done' };
+    }
     return { code: 'pending', label: '확인대기', cls: 'lease-status--collecting' };
   }
 
-  function upsertWeekPaymentConfirm({ vehicleId, weekStart, chargeAmount, paidAmount, status }) {
-    const existing = findWeekPaymentConfirm(vehicleId, weekStart);
+  function upsertWeekPaymentConfirm({
+    vehicleId,
+    weekStart,
+    chargeAmount,
+    paidAmount,
+    status,
+    contractId = ''
+  }) {
+    const week = String(weekStart || '').slice(0, 10);
+    const cid = String(contractId || '').trim();
+    const existing = findWeekPaymentConfirm(vehicleId, week, cid);
     const charge = Math.max(0, Math.round(Number(chargeAmount) || 0));
     const paid = Math.max(0, Math.round(Number(paidAmount) || 0));
     const unpaid = Math.max(0, charge - paid);
     const payload = {
-      vehicleId,
-      dueDate: weekStart,
+      vehicleId: String(vehicleId || existing?.vehicleId || '').trim(),
+      dueDate: week,
       paidDate: paid > 0 ? (BremLeaseProfit?.todayKey?.() || new Date().toISOString().slice(0, 10)) : '',
       chargeAmount: charge,
       paidAmount: paid,
@@ -4440,7 +4497,7 @@ const BremAdminLeaseMenus = (function () {
       paymentStatus: status || (unpaid <= 0
         ? (BremLeaseProfit?.PAYMENT_STATUSES?.NORMAL || 'normal')
         : (BremLeaseProfit?.PAYMENT_STATUSES?.UNPAID || 'unpaid')),
-      memo: paymentConfirmMemo(weekStart)
+      memo: paymentConfirmMemo(week, cid || paymentConfirmMemoContractId(existing?.memo))
     };
     if (existing) return erp().payments().update(existing.id, payload);
     return erp().payments().create(payload);
@@ -4455,11 +4512,12 @@ const BremAdminLeaseMenus = (function () {
   }
 
   function markContractWeekFullyPaid(contract, weekStart) {
-    if (!contract?.vehicleId || !weekStart) return null;
+    if (!contract?.id || !weekStart) return null;
     const charge = resolvePaymentConfirmCharge(contract, weekStart);
     if (charge <= 0) return null;
     return upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
+      contractId: contract.id,
       weekStart: String(weekStart).slice(0, 10),
       chargeAmount: charge,
       paidAmount: charge,
@@ -4502,7 +4560,9 @@ const BremAdminLeaseMenus = (function () {
         const weekStart = String(payment.dueDate || '').slice(0, 10)
           || String(payment.memo || '').replace(PAYMENT_CONFIRM_MEMO_PREFIX, '').slice(0, 10);
         const vehicle = vehicles.get(payment.vehicleId);
-        const contract = resolveContractForVehicle(payment.vehicleId);
+        const memoCid = paymentConfirmMemoContractId(payment.memo);
+        const contract = (memoCid && erp().contracts().getById(memoCid))
+          || resolveContractForVehicle(payment.vehicleId);
         const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
         const weeklyCharge = Math.max(
           Number(payment.chargeAmount || 0),
@@ -4679,12 +4739,14 @@ const BremAdminLeaseMenus = (function () {
 
   function applyPaymentFullCore(contract, weekStart) {
     if (!contract) return { ok: false, charge: 0, reason: '계약 없음' };
+    if (!contract.id) return { ok: false, charge: 0, reason: '계약 ID 없음' };
     const charge = resolvePaymentConfirmCharge(contract, weekStart);
     if (charge <= 0) return { ok: false, charge: 0, reason: '일렌탈료가 없어 완납 처리할 수 없습니다' };
 
     // 납부확인 = 수금 확인 기록만. 미납/회수·차감관리는 건드리지 않음.
     upsertWeekPaymentConfirm({
       vehicleId: contract.vehicleId,
+      contractId: contract.id,
       weekStart,
       chargeAmount: charge,
       paidAmount: charge,
@@ -4740,14 +4802,13 @@ const BremAdminLeaseMenus = (function () {
     }
 
     if (!options.silent) {
-      showToast(`완납 확인 · ${formatMoney(result.charge)}`);
+      showToast(`완납 확인 · ${formatMoney(result.charge)} · 이 주 미확인에서 제외`);
       state.paymentConfirmSelectedIds.delete(String(contractId));
-      state.paymentStatusFilter = 'paid';
+      // 미확인 탭에 남아 바로 목록에서 빠지게 함 (완납 탭·완납확인에서 조회)
+      state.paymentStatusFilter = 'open';
       renderPaymentConfirm();
       renderPaymentPaid();
       refreshAfterLeaseMutation({ contract: false });
-      // 완납 확인 메뉴로만 이동 (차감/미납회수 아님)
-      if (!options.skipNavigate) setMenu('payment-paid');
     }
     return true;
   }
@@ -4759,7 +4820,7 @@ const BremAdminLeaseMenus = (function () {
       showToast('완납할 기사를 선택하세요.');
       return;
     }
-    const weekStart = syncPaymentWeekUi(currentWeekStart());
+    const weekStart = syncPaymentWeekUi(state.paymentWeekStart || currentWeekStart());
     const contracts = ids.map(id => erp().contracts().getById(id)).filter(Boolean);
     if (!contracts.length) {
       showToast('선택한 계약을 찾을 수 없습니다.');
@@ -4785,13 +4846,13 @@ const BremAdminLeaseMenus = (function () {
     }
     state.paymentConfirmSelectedIds.clear();
     updateLeaseErpUnsavedBanner();
+    state.paymentStatusFilter = 'open';
     showToast(failCount
-      ? `완납 ${okCount}건 · 실패 ${failCount}건 · 완납 확인으로 이동`
-      : `선택 ${okCount}건 완납 확인`);
+      ? `완납 ${okCount}건 · 실패 ${failCount}건`
+      : `선택 ${okCount}건 완납 · 이 주 미확인에서 제외`);
     renderPaymentConfirm();
     renderPaymentPaid();
     refreshAfterLeaseMutation({ contract: false });
-    setMenu('payment-paid');
   }
 
   function updatePaymentConfirmBulkUi() {
@@ -4900,6 +4961,7 @@ const BremAdminLeaseMenus = (function () {
     try {
       upsertWeekPaymentConfirm({
         vehicleId: contract.vehicleId,
+        contractId: contract.id,
         weekStart,
         chargeAmount: charge,
         paidAmount: 0,
@@ -4907,10 +4969,12 @@ const BremAdminLeaseMenus = (function () {
       });
       await erp().persistAll({ skipFlushStorage: true });
       updateLeaseErpUnsavedBanner();
-      state.paymentStatusFilter = 'unpaid';
+      state.paymentConfirmSelectedIds.delete(String(contractId));
+      // 미확인에 남아 바로 목록에서 빠지게 함 (미납 탭에서 조회)
+      state.paymentStatusFilter = 'open';
       renderPaymentConfirm();
       refreshAfterLeaseMutation({ contract: false });
-      showToast(`미납 확인 · ${formatMoney(charge)} (이 화면 기록만)`);
+      showToast(`미납 확인 · ${formatMoney(charge)} · 이 주 미확인에서 제외`);
     } catch (error) {
       console.error('[confirmPaymentUnpaid]', error);
       showToast(error?.message || '미납 확인에 실패했습니다.');
