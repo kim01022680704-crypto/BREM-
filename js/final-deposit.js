@@ -573,6 +573,7 @@ const BremFinalDeposit = (function () {
     ];
 
     // 「입금」= 전원 · 플랫폼별 1건. (이체파일용은 「입금_이체가능」)
+    // 비고 = ERP ID만 (플랫폼·상태 문구 넣지 않음)
     const transfer = [
       ['상태', '플랫폼', '입금은행', '입금계좌번호', '입금액', '받는사람', '비고', '기사명'],
       ...allPeople.map(info => [
@@ -582,7 +583,7 @@ const BremFinalDeposit = (function () {
         info.accountNumber || '',
         info.netPay,
         info.accountHolder || info.riderName || '',
-        [info.platform, info.erpId || info.idLabel].filter(Boolean).join(' · '),
+        info.erpId || info.idLabel || '',
         info.riderName || ''
       ])
     ];
@@ -594,7 +595,7 @@ const BremFinalDeposit = (function () {
         info.accountNumber || '',
         info.netPay,
         info.accountHolder || info.riderName || '',
-        [transferStatus(info), info.platform, info.erpId].filter(Boolean).join(' · ')
+        info.erpId || info.idLabel || ''
       ])
     ];
 
