@@ -487,44 +487,29 @@ const BremFinalDeposit = (function () {
     };
   }
 
-  // 입금 시트는 이체 1건=1줄. 쿠팡/배민으로 갈라진 같은 사람은 금액만 합친다.
-  // includeZero=true 이면 최종입금 0원도 포함(누락 점검용).
+  // 입금 1건 = 화면 1행. 같은 기사라도 쿠팡/배민은 절대 합치지 않고 각각 입금한다.
+  // includeZero=true 이면 최종입금 0원도 포함.
   function buildTransferRows(rows, { includeZero = false } = {}) {
-    const byKey = new Map();
+    const list = [];
     rows.forEach(row => {
       const info = transferInfoForRow(row);
       if (!includeZero && info.netPay === 0) return;
-      const acctKey = normalizeAccountNumber(info.accountNumber);
-      const mergeKey = info.driver?.id
-        ? `d:${info.driver.id}`
-        : (acctKey
-          ? `a:${acctKey}`
-          : (info.erpId ? `e:${info.erpId}` : `r:${row.key}`));
-      const existing = byKey.get(mergeKey);
-      if (!existing) {
-        byKey.set(mergeKey, { ...info });
-        return;
-      }
-      existing.netPay += info.netPay;
-      if (bankScore(info.driver) > bankScore(existing.driver)) {
-        existing.driver = info.driver;
-        existing.bankName = info.bankName;
-        existing.accountNumber = info.accountNumber;
-        existing.accountHolder = info.accountHolder;
-        existing.erpId = info.erpId || existing.erpId;
-        existing.riderName = info.riderName || existing.riderName;
-        existing.complete = info.complete;
-      } else {
-        if (!existing.bankName && info.bankName) existing.bankName = info.bankName;
-        if (!existing.accountNumber && info.accountNumber) existing.accountNumber = info.accountNumber;
-        if (!existing.accountHolder && info.accountHolder) existing.accountHolder = info.accountHolder;
-        if (!existing.erpId && info.erpId) existing.erpId = info.erpId;
-        existing.complete = Boolean(existing.bankName && existing.accountNumber && existing.accountHolder);
-      }
+      const platform = row.platform === 'coupang'
+        ? '쿠팡'
+        : (row.platform === 'baemin' ? '배민' : String(row.platform || row.platformLabel || ''));
+      list.push({
+        ...info,
+        platform,
+        platformLabel: platform,
+        rowKey: row.key,
+        idLabel: row.idLabel || info.erpId || ''
+      });
     });
-    return [...byKey.values()].sort((a, b) => (
-      String(a.riderName || a.erpId).localeCompare(String(b.riderName || b.erpId), 'ko-KR')
-    ));
+    return list.sort((a, b) => {
+      const byPlat = String(a.platform || '').localeCompare(String(b.platform || ''), 'ko-KR');
+      if (byPlat) return byPlat;
+      return String(a.riderName || a.erpId).localeCompare(String(b.riderName || b.erpId), 'ko-KR');
+    });
   }
 
   function appendAccountTextColumn(sheet, rowCount, colIndex) {
@@ -560,6 +545,7 @@ const BremFinalDeposit = (function () {
       return;
     }
 
+    // 쿠팡/배민 합치지 않음 → 화면 행 수 = 입금 건수
     const allPeople = buildTransferRows(rows, { includeZero: true });
     const ready = allPeople.filter(info => info.netPay > 0 && info.complete);
     const missing = allPeople.filter(info => info.netPay > 0 && !info.complete);
@@ -568,16 +554,14 @@ const BremFinalDeposit = (function () {
     const weekLabel = formatDate(ensureWeek());
 
     if (!window.confirm(
-      `${weekLabel}(수) 주 최종입금 엑셀 — 전원 포함\n\n`
-      + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount} (지역·파일 중복 가능)\n`
-      + `· 화면 행(쿠팡/배민 분리): ${rows.length}행\n`
-      + `· 「입금」시트 전원: ${allPeople.length}명 (0원·계좌미등록 포함)\n`
-      + `  └ 이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 입금0원 ${zeroPay.length}\n`
+      `${weekLabel}(수) 주 최종입금 엑셀 — 전원 · 플랫폼별 각각 입금\n\n`
+      + `· 정산서 ${weekList.length}건 · 파일 라이더칸 합 ${slotCount}\n`
+      + `· 화면 행 = 입금 건수: ${allPeople.length}건 (쿠팡/배민 합치지 않음)\n`
+      + `  └ 이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 입금0원 ${zeroPay.length}\n\n`
+      + `※ 같은 기사라도 쿠팡·배민은 각각 따로 입금됩니다.\n`
       + (excludedSettlementCount
-        ? `\n※ 화면에서 정산서 ${excludedSettlementCount}건을 꺼두었어도 엑셀에는 전부 넣습니다.\n`
-        : '\n')
-      + `※ 정산서 「N명」을 다 더하면 같은 사람이 두 번 잡힐 수 있습니다.\n`
-      + `   맞는 기준은 「입금」시트 ${allPeople.length}명입니다.`
+        ? `※ 화면에서 끈 정산서 ${excludedSettlementCount}건도 엑셀에는 포함됩니다.`
+        : '')
     )) return;
 
     const cols = columns();
@@ -586,16 +570,17 @@ const BremFinalDeposit = (function () {
       ...rows.map(row => cols.map(col => row[col.key]))
     ];
 
-    // 「입금」= 전원. 상태 열로 구분. (이체파일용은 「입금_이체가능」)
+    // 「입금」= 전원 · 플랫폼별 1건. (이체파일용은 「입금_이체가능」)
     const transfer = [
-      ['상태', '입금은행', '입금계좌번호', '입금액', '받는사람', '비고', '기사명'],
+      ['상태', '플랫폼', '입금은행', '입금계좌번호', '입금액', '받는사람', '비고', '기사명'],
       ...allPeople.map(info => [
         transferStatus(info),
+        info.platform || '',
         info.bankName || '',
         info.accountNumber || '',
         info.netPay,
         info.accountHolder || info.riderName || '',
-        info.erpId || '',
+        [info.platform, info.erpId || info.idLabel].filter(Boolean).join(' · '),
         info.riderName || ''
       ])
     ];
@@ -606,7 +591,7 @@ const BremFinalDeposit = (function () {
         info.accountNumber,
         info.netPay,
         info.accountHolder,
-        info.erpId
+        [info.platform, info.erpId].filter(Boolean).join(' · ')
       ])
     ];
 
@@ -614,7 +599,7 @@ const BremFinalDeposit = (function () {
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '최종입금');
 
     const transferSheet = window.XLSX.utils.aoa_to_sheet(transfer);
-    appendAccountTextColumn(transferSheet, transfer.length, 2);
+    appendAccountTextColumn(transferSheet, transfer.length, 3);
     window.XLSX.utils.book_append_sheet(wb, transferSheet, '입금');
 
     const readySheet = window.XLSX.utils.aoa_to_sheet(transferReady);
@@ -623,8 +608,9 @@ const BremFinalDeposit = (function () {
 
     if (missing.length) {
       const missingSheet = [
-        ['기사명', 'ERP ID', '입금액', '입금은행', '입금계좌번호', '예금주', '비고'],
+        ['플랫폼', '기사명', 'ERP ID', '입금액', '입금은행', '입금계좌번호', '예금주', '비고'],
         ...missing.map(info => [
+          info.platform,
           info.riderName,
           info.erpId,
           info.netPay,
@@ -635,14 +621,15 @@ const BremFinalDeposit = (function () {
         ])
       ];
       const ms = window.XLSX.utils.aoa_to_sheet(missingSheet);
-      appendAccountTextColumn(ms, missingSheet.length, 4);
+      appendAccountTextColumn(ms, missingSheet.length, 5);
       window.XLSX.utils.book_append_sheet(wb, ms, '계좌미등록');
     }
 
     if (zeroPay.length) {
       const zeroSheet = [
-        ['기사명', 'ERP ID', '최종입금', '입금은행', '입금계좌번호', '예금주', '비고'],
+        ['플랫폼', '기사명', 'ERP ID', '최종입금', '입금은행', '입금계좌번호', '예금주', '비고'],
         ...zeroPay.map(info => [
+          info.platform,
           info.riderName,
           info.erpId,
           info.netPay,
@@ -653,7 +640,7 @@ const BremFinalDeposit = (function () {
         ])
       ];
       const zs = window.XLSX.utils.aoa_to_sheet(zeroSheet);
-      appendAccountTextColumn(zs, zeroSheet.length, 4);
+      appendAccountTextColumn(zs, zeroSheet.length, 5);
       window.XLSX.utils.book_append_sheet(wb, zs, '입금0원');
     }
 
@@ -661,18 +648,18 @@ const BremFinalDeposit = (function () {
       ['항목', '인원/행수', '설명'],
       ['정산주', ensureWeek(), `${weekLabel}(수) ~`],
       ['정산서 건수', weekList.length, '그 주 저장된 직계약 정산서'],
-      ['파일 라이더칸 합', slotCount, '정산서별 N명 합(같은 사람 중복 가능)'],
+      ['파일 라이더칸 합', slotCount, '정산서별 N명 합'],
       ['화면 행', rows.length, '쿠팡·배민 분리 행'],
-      ['입금 시트(전원)', allPeople.length, '0원·계좌미등록 포함 · 쿠팡+배민 한 줄'],
+      ['입금 시트(전원)', allPeople.length, '플랫폼별 각각 · 합치지 않음'],
       ['이체가능', ready.length, '최종입금>0 + 계좌완비'],
       ['계좌미등록', missing.length, '최종입금>0 이지만 계좌 없음'],
       ['입금0원', zeroPay.length, '최종입금 0원 이하'],
-      ['검증', ready.length + missing.length + zeroPay.length, '입금 시트 전원과 같아야 함']
+      ['검증', ready.length + missing.length + zeroPay.length, '화면 행·입금 시트와 같아야 함']
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(summary), '인원요약');
 
     window.XLSX.writeFile(wb, `최종입금_${ensureWeek()}.xlsx`);
-    showToast(`엑셀 저장 · 입금 전원 ${allPeople.length}명 (이체가능 ${ready.length} · 계좌미등록 ${missing.length} · 0원 ${zeroPay.length})`);
+    showToast(`엑셀 저장 · 입금 ${allPeople.length}건 (플랫폼별 각각 · 이체가능 ${ready.length})`);
   }
 
   // --- 데이터 로딩 ----------------------------------------------------------
