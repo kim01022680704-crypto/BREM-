@@ -4897,14 +4897,16 @@ const BremAdminLeaseMenus = (function () {
     const payment = erp().payments().getById(paymentId);
     if (!payment) return;
     const vehicle = erp().vehicles().getById(payment.vehicleId);
-    const contract = resolveContractForVehicle(payment.vehicleId);
+    const memoCid = paymentConfirmMemoContractId(payment.memo);
+    const contract = (memoCid && erp().contracts().getById(memoCid))
+      || resolveContractForVehicle(payment.vehicleId);
     const weekStart = String(payment.dueDate || '').slice(0, 10);
     const label = [
       vehicle?.vehicleNumber || contract?.vehicleNumber || '-',
       contract?.driverName || vehicle?.renter || '-',
       formatPaymentWeekColumn(weekStart)
     ].join(' · ');
-    if (!window.confirm(`완납 내역을 삭제할까요?\n${label}\n삭제 후 납부 확인 목록에 다시 나타날 수 있습니다.`)) return;
+    if (!window.confirm(`완납 내역을 삭제할까요?\n${label}\n삭제 후 납부 확인 · 해당 주 미확인에 다시 나타납니다.`)) return;
     try {
       erp().payments().removeById(paymentId);
       await erp().persistAll({ skipFlushStorage: true });
@@ -4912,10 +4914,59 @@ const BremAdminLeaseMenus = (function () {
       renderPaymentPaid();
       renderPaymentConfirm();
       refreshAfterLeaseMutation({ contract: false });
-      showToast('완납 내역을 삭제했습니다.');
+      showToast('완납 내역을 삭제했습니다. 납부확인 미확인으로 복구됨');
     } catch (error) {
       console.error('[deletePaidPaymentConfirm]', error);
       showToast(error?.message || '완납 내역 삭제에 실패했습니다.');
+    }
+  }
+
+  /** 완납확인: 선택한 주차(수~화) 완납 기록을 전부 취소 → 납부확인 미확인으로 복구 */
+  async function bulkUndoPaidPaymentConfirmWeek() {
+    if (!erp()) {
+      showToast('리스 데이터를 아직 불러오는 중입니다.');
+      return;
+    }
+    if (state.paymentPaidSource === 'loan') {
+      showToast('대여 완납 일괄 취소는 아직 지원하지 않습니다. 리스 탭에서 사용하세요.');
+      return;
+    }
+    if (state.paymentPaidWeekAll) {
+      showToast('「전체 주」가 아니라 취소할 주차(예: 8/12)를 먼저 선택하세요.');
+      return;
+    }
+    const weekStart = syncPaymentPaidWeekUi(state.paymentPaidWeekStart || currentWeekStart());
+    const rows = listPaidPaymentConfirmRows().filter(row => row.weekStart === weekStart);
+    if (!rows.length) {
+      showToast(`${formatPaymentWeekColumn(weekStart)} 완납 내역이 없습니다.`);
+      return;
+    }
+    if (!window.confirm(
+      `${formatPaymentWeekColumn(weekStart)} 완납 ${rows.length}건을 모두 취소할까요?\n`
+      + '납부 확인 → 해당 주 미확인 목록으로 다시 돌아갑니다.\n'
+      + '(잘못 누른 주차 취소 후, 맞는 주차에서 다시 완납하세요.)'
+    )) return;
+
+    try {
+      const ids = rows.map(row => row.payment?.id).filter(Boolean);
+      if (erp().payments().removeByIds) {
+        erp().payments().removeByIds(ids, { immediate: true, allowEmpty: true, deleteOnly: true });
+      } else {
+        ids.forEach(id => erp().payments().removeById(id));
+      }
+      await erp().persistAll({ skipFlushStorage: true });
+      updateLeaseErpUnsavedBanner();
+      renderPaymentPaid();
+      renderPaymentConfirm();
+      refreshAfterLeaseMutation({ contract: false });
+      showToast(`${formatPaymentWeekColumn(weekStart)} 완납 ${ids.length}건 취소 · 납부확인 미확인으로 복구`);
+      // 복구한 주차를 납부확인에서도 바로 보이게
+      state.paymentWeekAll = false;
+      state.paymentStatusFilter = 'open';
+      syncPaymentWeekUi(weekStart);
+    } catch (error) {
+      console.error('[bulkUndoPaidPaymentConfirmWeek]', error);
+      showToast(error?.message || '이 주 완납 일괄 취소에 실패했습니다.');
     }
   }
 
@@ -5354,6 +5405,8 @@ const BremAdminLeaseMenus = (function () {
     const keyword = String(state.paymentPaidSearch || $('leasePaymentPaidSearch')?.value || '').trim().toLowerCase();
 
     if (source === 'loan') {
+      const undoBtnLoan = $('leasePaymentPaidBulkUndoBtn');
+      if (undoBtnLoan) undoBtnLoan.hidden = true;
       if (headEl) {
         headEl.innerHTML = `<tr>
           <th>기사</th><th>연락처</th><th>대여금</th><th>외부납부</th><th>시작~종료</th><th>이유</th><th>상태</th>
@@ -5415,6 +5468,13 @@ const BremAdminLeaseMenus = (function () {
     if (summaryEl) {
       const scope = state.paymentPaidWeekAll ? '전체' : formatPaymentWeekColumn(paidWeek);
       summaryEl.textContent = `리스 완납 · ${scope} ${rows.length}건`;
+    }
+    const undoBtn = $('leasePaymentPaidBulkUndoBtn');
+    if (undoBtn) {
+      undoBtn.hidden = state.paymentPaidWeekAll || !rows.length;
+      undoBtn.textContent = rows.length
+        ? `이 주 완납 일괄 취소 (${rows.length})`
+        : '이 주 완납 일괄 취소';
     }
     if (!rows.length) {
       rowsEl.innerHTML = '<tr><td colspan="12" class="empty">완납 내역이 없습니다. 납부 확인에서 완납 처리하거나 미납/회수에서 전액 회수하면 여기에 표시됩니다.</td></tr>';
@@ -6444,6 +6504,9 @@ const BremAdminLeaseMenus = (function () {
       state.paymentPaidWeekAll = true;
       syncPaymentPaidWeekUi(state.paymentPaidWeekStart || currentWeekStart());
       renderPaymentPaid();
+    });
+    $('leasePaymentPaidBulkUndoBtn')?.addEventListener('click', () => {
+      void bulkUndoPaidPaymentConfirmWeek();
     });
 
     document.querySelectorAll('[data-deduction-tab]').forEach(btn => {
