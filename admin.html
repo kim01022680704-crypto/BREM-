@@ -2915,7 +2915,7 @@
         <article class="card lease-screen-card">
           <div class="card-header">
             <h2>납부 확인</h2>
-            <p class="form-help">수금 <strong>확인만</strong> 하는 화면입니다. <strong>완납</strong>·<strong>미납</strong>을 누르면 이 목록 상태만 바뀝니다. 차감관리·미납/회수로 보내지 않습니다. 실제 미납 처리는 주정산 후 정산결과(마이너스) → 차감관리에서 합니다.</p>
+            <p class="form-help">수금 <strong>확인만</strong> 하는 화면입니다. <strong>주간청구액</strong> = 일렌탈료×7(받아야 할 돈) · <strong>이번주청구</strong> = 경과일 기준. <strong>완납</strong>·<strong>미납</strong>은 이 목록 상태만 바꿉니다. 실제 미납 처리는 주정산 후 정산결과 → 차감관리에서 합니다.</p>
           </div>
           <div class="lease-deduction-tabs" role="tablist" aria-label="납부 대상">
             <button type="button" class="lease-deduction-tab active" data-payment-source="lease" role="tab" aria-selected="true">리스</button>
@@ -2959,8 +2959,8 @@
                   <th>렌탈/리스자</th>
                   <th>연락처</th>
                   <th>주간리스비</th>
-                  <th>주간청구액</th>
-                  <th>납부액</th>
+                  <th title="일렌탈료×7 · 받아야 할 기준 금액">주간청구액</th>
+                  <th title="일렌탈료×이번주 경과일">이번주청구</th>
                   <th>차액</th>
                   <th>납부상태</th>
                   <th>관리</th>
@@ -7896,7 +7896,7 @@
   <script src="js/lease-erp.js?v=20260806b"></script>
   <script src="js/admin-lease.js?v=20260802a"></script>
   <script src="js/admin-lease-erp-panels.js?v=20260630l"></script>
-  <script src="js/admin-lease-menus.js?v=20260806k"></script>
+  <script src="js/admin-lease-menus.js?v=20260813d"></script>
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>

@@ -5054,7 +5054,8 @@ const BremAdminLeaseMenus = (function () {
       if (headEl) {
         headEl.innerHTML = `<tr>
           <th>기사</th><th>연락처</th><th>대여금</th><th>잔액</th><th>외부납부</th>
-          <th>일 차감</th><th>시작~종료</th><th>마지막날</th><th>납부상태</th><th>관리</th>
+          <th>일 차감</th><th title="받아야 할 주간 금액 = 일차감×7 (잔액보다 크면 잔액)">주간청구액</th>
+          <th>시작~종료</th><th>마지막날</th><th>납부상태</th><th>관리</th>
         </tr>`;
       }
       let loans = (window.BremStorage?.leaseLoans?.getAll?.() || []).filter(loan =>
@@ -5069,7 +5070,7 @@ const BremAdminLeaseMenus = (function () {
         summaryEl.textContent = `대여 · ${statusLabel} ${loans.length}건`;
       }
       if (!loans.length) {
-        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">해당 조건의 대여 납부 건이 없습니다.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="11" class="empty">해당 조건의 대여 납부 건이 없습니다.</td></tr>';
         updatePaymentConfirmBulkUi();
         return;
       }
@@ -5086,6 +5087,12 @@ const BremAdminLeaseMenus = (function () {
         }) || {};
         const endDate = loan.deductEndDate || schedule.deductEndDate || '-';
         const lastAmt = loan.lastDayAmount || schedule.lastDayAmount || 0;
+        const dailyDeduct = Math.max(0, Math.round(Number(loan.dailyDeduct || 0)));
+        const balance = Math.max(0, Math.round(Number(loan.balance || 0)));
+        // 받아야 할 주간 금액: 일차감×7, 잔액이 더 작으면 잔액
+        const weeklyCharge = dailyDeduct > 0
+          ? Math.min(dailyDeduct * 7, balance > 0 ? balance : dailyDeduct * 7)
+          : 0;
         const actions = status.code === 'paid'
           ? '<span class="muted-inline">완납</span>'
           : `<button type="button" class="small-btn primary-btn" data-loan-payment-full="${escapeHtml(loan.id)}">완납</button>
@@ -5104,6 +5111,7 @@ const BremAdminLeaseMenus = (function () {
           <td>${formatMoney(loan.balance)}</td>
           <td>${formatMoney(loan.externalPaid)}</td>
           <td>${formatMoney(loan.dailyDeduct)}</td>
+          <td><strong>${formatMoney(weeklyCharge)}</strong></td>
           <td>${escapeHtml(loan.deductStartDate || '-')} ~ ${escapeHtml(endDate)}</td>
           <td>${formatMoney(lastAmt)}</td>
           <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
@@ -5169,12 +5177,16 @@ const BremAdminLeaseMenus = (function () {
       return;
     }
 
-    // 미확인·미납: 납부액 컬럼 없음 (확인만 / 정확도는 주정산)
+    // 미확인·미납: 주간청구액(일×7, 받아야 할 돈) + 이번주청구(경과분)
     if (headEl) {
       headEl.innerHTML = `<tr>
         <th class="lease-check-col">선택</th>
         <th>주차(수~화)</th><th>차량번호</th><th>기종</th><th>렌탈/리스자</th><th>연락처</th>
-        <th>주간리스비</th><th>이번주청구</th><th>차액</th><th>납부상태</th><th>관리</th>
+        <th>주간리스비</th>
+        <th title="일렌탈료×7 · 이번 주에 받아야 할 기준 금액">주간청구액</th>
+        <th title="일렌탈료×이번주 경과일 · 주 중 확인용">이번주청구</th>
+        <th title="주간청구액 − 주간리스비">차액</th>
+        <th>납부상태</th><th>관리</th>
       </tr>`;
     }
 
@@ -5204,18 +5216,20 @@ const BremAdminLeaseMenus = (function () {
     });
     if (!contracts.length) {
       rowsEl.innerHTML = vehicles.length
-        ? '<tr><td colspan="11" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
-        : '<tr><td colspan="11" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
+        ? '<tr><td colspan="12" class="empty">해당 조건의 리스 납부 건이 없습니다.</td></tr>'
+        : '<tr><td colspan="12" class="empty">등록된 차량이 없습니다. 차량관리에서 먼저 등록하세요.</td></tr>';
       updatePaymentConfirmBulkUi();
       return;
     }
     rowsEl.innerHTML = contracts.map(contract => {
       const vehicle = vehicleMap.get(contract.vehicleId);
       const weeklyLease = vehicleWeeklyLeaseCost(vehicle);
+      const weeklyCharge = contractRiderWeeklyCharge(contract);
       const progressiveCharge = contractPaymentConfirmCharge(contract, weekStart);
       const settleCharge = resolvePaymentConfirmCharge(contract, weekStart);
-      const displayCharge = progressiveCharge > 0 ? progressiveCharge : settleCharge;
-      const margin = displayCharge - Math.round(weeklyLease * (Math.max(1, contractActiveDaysInWeek(contract, weekStart) || 7) / 7));
+      const weekToDateCharge = progressiveCharge > 0 ? progressiveCharge : settleCharge;
+      // 차액 = 받아야 할 주간청구 − 회사 주간리스비(원가)
+      const margin = weeklyCharge - weeklyLease;
       const marginCls = margin < 0 ? 'lease-money--deficit' : (margin > 0 ? 'lease-money--profit' : '');
       const status = paymentConfirmStatus(contract, weekStart);
       const applied = isContractFinalApplyEnabled(contract);
@@ -5225,8 +5239,8 @@ const BremAdminLeaseMenus = (function () {
       const modeBadge = applied
         ? ' <span class="lease-status--done">ERP차감</span>'
         : ' <span class="lease-status--collecting">수기납부</span>';
-      const chargeHint = progressiveCharge <= 0 && settleCharge > 0
-        ? '<br><span class="muted-inline">경과0 · 주간청구</span>'
+      const weekToDateHint = progressiveCharge <= 0 && settleCharge > 0
+        ? '<br><span class="muted-inline">경과0 · 주간청구 기준</span>'
         : (settleCharge <= 0 ? '<br><span class="muted-inline">일렌탈료 없음</span>' : '');
       return `<tr${rowSelected}>
         <td class="lease-check-col">
@@ -5238,7 +5252,8 @@ const BremAdminLeaseMenus = (function () {
         <td>${escapeHtml(formatDriverContractLabel(contract.driverName || '-'))}${modeBadge}</td>
         <td>${escapeHtml(contract.driverPhone || '-')}</td>
         <td>${formatMoney(weeklyLease)}</td>
-        <td>${formatMoney(displayCharge)}${chargeHint}</td>
+        <td><strong>${formatMoney(weeklyCharge)}</strong></td>
+        <td>${formatMoney(weekToDateCharge)}${weekToDateHint}</td>
         <td class="${marginCls}">${formatMoney(margin)}</td>
         <td><span class="${status.cls}">${escapeHtml(status.label)}</span></td>
         <td class="lease-payment-confirm-actions">
