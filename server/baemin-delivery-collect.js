@@ -376,10 +376,8 @@ async function collectFromApi(accessToken, options = {}) {
   const deliveryResult = pipelineResult.results?.delivery_status || {};
   const savedCount = Number(pipelineResult.savedTotal || deliveryResult.savedCount || 0);
   const rawItems = deliveryResult.rawItems || [];
-  const totalCompleteSum = rawItems.reduce((sum, item) => {
-    const acceptance = item?.deliveryAcceptanceCount || {};
-    return sum + Number(acceptance.totalComplete || 0);
-  }, 0);
+  const { readAllDayComplete } = require('./baemin-stats-extract');
+  const totalCompleteSum = rawItems.reduce((sum, item) => sum + readAllDayComplete(item), 0);
 
   if (savedCount <= 0) {
     const details = Object.entries(pipelineResult.results || {})

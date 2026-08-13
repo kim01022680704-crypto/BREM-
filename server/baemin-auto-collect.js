@@ -254,12 +254,11 @@ async function runAutoCollectJob(options = {}) {
   }
 
   const savedCount = Number(pipelineResult.savedTotal || deliveryResult?.savedCount || 0);
+  const { readAllDayComplete } = require('./baemin-stats-extract');
   const totalCompleteSum = Number(
     pipelineResult.summaryTotals?.completeTotal
-    || deliveryResult?.rawItems?.reduce((sum, item) => {
-      const acceptance = item?.deliveryAcceptanceCount || {};
-      return sum + Number(acceptance.totalComplete || 0);
-    }, 0) || 0
+    || deliveryResult?.rawItems?.reduce((sum, item) => sum + readAllDayComplete(item), 0)
+    || 0
   );
 
   const result = await recordSuccessfulRun({

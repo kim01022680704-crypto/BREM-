@@ -5084,7 +5084,14 @@
 
     rowsEl.innerHTML = riderRows.map(row => {
       const p = row.parsed_json || {};
-      const deliveryCount = Number(row.raw_json?.deliveryCount || p.totalComplete || 0);
+      const acc = row.raw_json?.deliveryAcceptanceCount || {};
+      const deliveryCount = Number(
+        p.allDayComplete
+        ?? acc.allDayComplete
+        ?? row.raw_json?.deliveryCount
+        ?? p.totalComplete
+        ?? 0
+      );
       const collectedCell = isViewSection()
         ? ''
         : `<td>${formatDateTime(row.collected_at)}</td>`;
@@ -5093,7 +5100,7 @@
         <td>${row.rider_name || '-'}</td>
         <td>${row.rider_user_id || '-'}</td>
         <td>${row.phone_number || '-'}</td>
-        <td>${formatNumber(p.totalComplete || deliveryCount || 0)}</td>
+        <td>${formatNumber(deliveryCount)}</td>
         ${formatServiceBreakdownCells(p)}
         <td>${formatNumber(p.morningCount || 0)}</td>
         <td>${formatNumber(p.afternoonCount || 0)}</td>

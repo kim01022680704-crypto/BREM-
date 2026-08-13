@@ -1002,8 +1002,8 @@ async function verifyPartnerMenuApiContext(page, targetId, sourceMenu = 'deliver
     return rows
       .slice(0, 8)
       .map(row => {
-        const acceptance = row?.deliveryAcceptanceCount || {};
-        const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+        const { readAllDayComplete } = require('./baemin-stats-extract');
+        const complete = readAllDayComplete(row);
         return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
       })
       .join('|');

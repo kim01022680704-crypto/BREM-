@@ -345,7 +345,11 @@ function mapItemToCollectRow(sourceId, item, collectDate, sourceUrl, collectedAt
       foodComplete: acceptance.foodComplete,
       bmartComplete: acceptance.bmartComplete,
       storeComplete: acceptance.storeComplete,
+      // 콜수입력·완료콜 = 화면 「총 배달완료」(allDayComplete). SLA합계와 다를 수 있음.
       totalComplete: acceptance.completeTotal,
+      allDayComplete: acceptance.allDayComplete,
+      slaComplete: acceptance.slaComplete,
+      slaOutComplete: acceptance.slaOutComplete,
       foodReject: acceptance.foodReject,
       bmartReject: acceptance.bmartReject,
       storeReject: acceptance.storeReject,

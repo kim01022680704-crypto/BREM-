@@ -17,7 +17,7 @@ const { fetchPaginatedApi } = require('./baemin-api-fetch');
 const { createCollectRunId } = require('./baemin-raw-api-logs');
 const { computeCollectDateRange, computeHistoryCollectRange, computeBizHistoryCollectRange, buildMenuDateRanges, buildBizMenuDateRanges, resolveHistoryMenuQueryDates, buildDateList, toSingleDayRange, addDays, todayKST } = require('./baemin-settlement-week');
 const { saveStatsForSource } = require('./baemin-stats-save');
-const { sumStats, extractStatsFromItem, pickAcceptance, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
+const { sumStats, extractStatsFromItem, pickAcceptance, readAllDayComplete, serviceBreakdownFromStats, computeItemsMetricTotals } = require('./baemin-stats-extract');
 const { discoverApiUrlViaPage } = require('./baemin-page-capture');
 const { buildCenterQueryParams, buildCenterFetchHeaders } = require('./baemin-center-context');
 const collectProgress = require('./baemin-collect-progress');
@@ -993,20 +993,18 @@ function extractCollectItemsFingerprint(sourceId, items = [], partnerId = '') {
   const bare = (() => {
     if (sourceId === 'delivery_status') {
       return rows.slice(0, 8).map(row => {
-        const acceptance = row?.deliveryAcceptanceCount || {};
-        const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+        const complete = readAllDayComplete(row);
         return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
       }).join('|');
     }
     if (sourceId === 'daily_history') {
       return rows.slice(0, 5).map(row =>
-        `${row.businessDay || row.deliveryDate || row.date}:${row.totalComplete ?? row.completeCount ?? row.deliveryCount ?? 0}`
+        `${row.businessDay || row.deliveryDate || row.date}:${readAllDayComplete(row)}`
       ).join('|');
     }
     if (sourceId === 'rider_history') {
       return rows.slice(0, 8).map(row => {
-        const acceptance = row?.deliveryAcceptanceCount || {};
-        const complete = acceptance.totalComplete ?? row.totalComplete ?? row.completeCount ?? 0;
+        const complete = readAllDayComplete(row);
         return `${row.userId || row.riderId || row.name || row.phoneNumber || ''}:${complete}`;
       }).join('|');
     }

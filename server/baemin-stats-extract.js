@@ -93,8 +93,22 @@ function pickAcceptance(item) {
   const storeReject = num(acc.storeReject);
   const totalReject = num(acc.totalReject) || (foodReject + bmartReject + storeReject);
 
+  // 화면 「총 배달완료」= allDayComplete (SLA외 포함). SLA 합계(totalComplete)와 다를 수 있음.
+  const slaComplete = num(acc.totalComplete);
+  const slaOutComplete = num(acc.slaOutComplete);
+  const allDayComplete = num(
+    acc.allDayComplete
+    ?? item?.allDayComplete
+    ?? item?.deliveryCount
+    ?? (slaComplete + slaOutComplete)
+    ?? slaComplete
+  );
+
   return {
-    completeTotal: num(acc.totalComplete),
+    completeTotal: allDayComplete,
+    allDayComplete,
+    slaComplete,
+    slaOutComplete,
     rejectTotal: totalReject,
     cancelTotal: cancelParts.total,
     foodComplete: num(acc.foodComplete),
@@ -111,6 +125,20 @@ function pickAcceptance(item) {
     storeRiderFault: riderFaultParts.store,
     riderFault: riderFaultParts.total
   };
+}
+
+/** raw deliveryAcceptanceCount 에서 완료콜(총 배달완료)만 읽을 때 */
+function readAllDayComplete(accOrItem) {
+  const acc = accOrItem?.deliveryAcceptanceCount || accOrItem?.acceptanceCount || accOrItem || {};
+  const slaComplete = num(acc.totalComplete);
+  const slaOutComplete = num(acc.slaOutComplete);
+  return num(
+    acc.allDayComplete
+    ?? accOrItem?.allDayComplete
+    ?? accOrItem?.deliveryCount
+    ?? (slaComplete + slaOutComplete)
+    ?? slaComplete
+  );
 }
 
 function extractStatsFromItem(item, collectDate = '') {
@@ -358,6 +386,7 @@ function mapToRiderStatsRow(stats, weekStart, collectedAt, sourceUrl, dedupeKey)
 
 module.exports = {
   pickAcceptance,
+  readAllDayComplete,
   extractStatsFromItem,
   sumStats,
   serviceBreakdownFromStats,
