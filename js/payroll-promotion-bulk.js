@@ -14,6 +14,47 @@
     return value;
   }
 
+  /** 엑셀 raw 숫자(앞 0 손실) · .0 꼬리 · 공백 정리 */
+  function normalizeExcelPlatformId(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(Math.trunc(value));
+    }
+    let text = String(value)
+      .trim()
+      .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+      .replace(/\s+/g, '');
+    if (/^\d+\.0+$/.test(text)) text = text.replace(/\.0+$/, '');
+    return text;
+  }
+
+  function baeminIdMatchKey(value) {
+    if (window.BremDriverUtils?.baeminIdMatchKey) {
+      return window.BremDriverUtils.baeminIdMatchKey(value);
+    }
+    if (window.BremWeeklySettlement?.baeminIdMatchKey) {
+      return window.BremWeeklySettlement.baeminIdMatchKey(value);
+    }
+    const v = normalizeExcelPlatformId(value);
+    if (!v) return '';
+    return /^\d+$/.test(v) ? (v.replace(/^0+/, '') || '0') : v.toLowerCase();
+  }
+
+  function baeminIdsEqual(a, b) {
+    const left = baeminIdMatchKey(a);
+    const right = baeminIdMatchKey(b);
+    return Boolean(left && right && left === right);
+  }
+
+  function coupangIdsEqual(a, b) {
+    const norm = window.BremDriverUtils?.normalizeCoupangMatchKey
+      ? (value => window.BremDriverUtils.normalizeCoupangMatchKey(value))
+      : (value => normalizeExcelPlatformId(value));
+    const left = norm(a);
+    const right = norm(b);
+    return Boolean(left && right && left === right);
+  }
+
   function parseMoney(value) {
     return window.BremPayrollSlipUtils?.parseMoney?.(value) ?? 0;
   }
@@ -45,15 +86,15 @@
   }
 
   function isRowEmpty(row) {
-    const baeminId = String(cellValue(row, COL.baeminId) || '').trim();
-    const coupangId = String(cellValue(row, COL.coupangId) || '').trim();
+    const baeminId = normalizeExcelPlatformId(cellValue(row, COL.baeminId));
+    const coupangId = normalizeExcelPlatformId(cellValue(row, COL.coupangId));
     const bremPromotion = parseMoney(cellValue(row, COL.bremPromotion));
     return !baeminId && !coupangId && !bremPromotion;
   }
 
   function matchPromotionBulkRow(baeminId, coupangId, drivers) {
-    const baemin = String(baeminId || '').trim();
-    const coupang = String(coupangId || '').trim().replace(/\s/g, '');
+    const baemin = normalizeExcelPlatformId(baeminId);
+    const coupang = normalizeExcelPlatformId(coupangId);
     const list = Array.isArray(drivers) ? drivers : [];
 
     if (!baemin && !coupang) {
@@ -73,8 +114,9 @@
     const candidates = list.filter(driver => {
       const driverBaemin = resolveDriverPlatformId(driver, 'baemin');
       const driverCoupang = resolveDriverPlatformId(driver, 'coupang');
-      const baeminOk = !baemin || driverBaemin === baemin;
-      const coupangOk = !coupang || driverCoupang === coupang;
+      // 배민: 앞자리 0 유무 무시 (엑셀 숫자 읽기 대응). 쿠팡: 공백 무시.
+      const baeminOk = !baemin || baeminIdsEqual(driverBaemin, baemin);
+      const coupangOk = !coupang || coupangIdsEqual(driverCoupang, coupang);
       return baeminOk && coupangOk;
     });
 
@@ -215,15 +257,20 @@
     rows.forEach((row, index) => {
       if (isHeaderRow(row) || isRowEmpty(row)) return;
 
-      const baeminId = String(cellValue(row, COL.baeminId) || '').trim();
-      const coupangId = String(cellValue(row, COL.coupangId) || '').trim().replace(/\s/g, '');
+      const baeminId = normalizeExcelPlatformId(cellValue(row, COL.baeminId));
+      const coupangId = normalizeExcelPlatformId(cellValue(row, COL.coupangId));
       const bremPromotion = parseMoney(cellValue(row, COL.bremPromotion));
       const match = matchPromotionBulkRow(baeminId, coupangId, drivers);
+
+      // 매칭되면 등록 기사 배민ID(앞 0 포함)를 우선 표시
+      const preferredBaemin = match.driver
+        ? (resolveDriverPlatformId(match.driver, 'baemin') || baeminId)
+        : baeminId;
 
       const item = rowFromMatch({
         rowNumber: index + 1,
         rowKey: `promo-bulk-${index + 1}`,
-        baeminId,
+        baeminId: preferredBaemin,
         coupangId,
         bremPromotion
       }, match);

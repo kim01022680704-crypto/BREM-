@@ -1590,6 +1590,57 @@
     return '';
   }
 
+  function resolveSavedLineDriverId(line) {
+    return String(line?.driverId || line?.rawData?.selectedDriverId || '').trim();
+  }
+
+  function resolveSavedLinePlatformIds(line) {
+    const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+    const payslip = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+    return {
+      baeminId: String(raw.matchedBaeminId || raw.baeminId || payslip.baeminId || '').trim(),
+      coupangId: String(raw.matchedCoupangId || raw.coupangId || payslip.coupangId || '').replace(/\s/g, '')
+    };
+  }
+
+  function platformIdsLooseEqual(a, b, kind) {
+    if (kind === 'baemin') {
+      const keyFn = window.BremDriverUtils?.baeminIdMatchKey
+        || window.BremWeeklySettlement?.baeminIdMatchKey
+        || (value => String(value || '').trim());
+      const left = keyFn(a);
+      const right = keyFn(b);
+      return Boolean(left && right && left === right);
+    }
+    const left = String(a || '').replace(/\s/g, '');
+    const right = String(b || '').replace(/\s/g, '');
+    return Boolean(left && right && left === right);
+  }
+
+  /** driverId 우선, 없으면 배민/쿠팡 ID 로 저장된 명세서 라인 찾기 */
+  function findSavedLineForBulk(targetLines, driverId, bulk = {}) {
+    const list = Array.isArray(targetLines) ? targetLines : [];
+    const id = String(driverId || '').trim();
+    if (id) {
+      const byId = list.find(line => resolveSavedLineDriverId(line) === id);
+      if (byId) return byId;
+    }
+
+    const bulkBaemin = bulk.baeminId || '';
+    const bulkCoupang = bulk.coupangId || '';
+    if (!bulkBaemin && !bulkCoupang) return null;
+
+    const matches = list.filter(line => {
+      const ids = resolveSavedLinePlatformIds(line);
+      const baeminOk = !bulkBaemin || platformIdsLooseEqual(ids.baeminId, bulkBaemin, 'baemin');
+      const coupangOk = !bulkCoupang || platformIdsLooseEqual(ids.coupangId, bulkCoupang, 'coupang');
+      if (bulkBaemin && bulkCoupang) return baeminOk && coupangOk;
+      if (bulkBaemin) return baeminOk;
+      return coupangOk;
+    });
+    return matches.length === 1 ? matches[0] : (matches[0] || null);
+  }
+
   async function mergePromotionIntoSavedSlips() {
     if (!canSavePayroll()) {
       showToast(state.storageStatus?.hint || '현재 환경에서는 급여명세서를 저장할 수 없습니다.');
@@ -1649,8 +1700,8 @@
     }
 
     const targetLines = weekLines.filter(line => line.uploadId === targetUploadId);
-    const matchedDrivers = [...bulkMap.keys()].filter(driverId =>
-      targetLines.some(line => String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId)
+    const matchedDrivers = [...bulkMap.entries()].filter(([driverId, bulk]) =>
+      Boolean(findSavedLineForBulk(targetLines, driverId, bulk))
     ).length;
     const unmatchedDrivers = bulkMap.size - matchedDrivers;
 
@@ -1672,9 +1723,7 @@
     bulkMap.forEach((bulk, driverId) => {
       const amount = Number(bulk.bremPromotion || 0);
       if (!(amount > 0)) return;
-      const match = targetLines.find(line =>
-        String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
-      );
+      const match = findSavedLineForBulk(targetLines, driverId, bulk);
       if (!match) {
         missedCount += 1;
         return;
@@ -1688,7 +1737,7 @@
 
     if (!updatedById.size) {
       showToast(missedCount
-        ? `저장된 명세서에서 매칭된 기사가 없습니다. (미매칭 ${missedCount}명)`
+        ? `저장된 명세서에서 매칭된 기사가 없습니다. (명세서에 없는 기사 ${missedCount}명)`
         : '반영할 항목이 없습니다.');
       return;
     }
@@ -1733,7 +1782,7 @@
       void refreshPublishStatus();
       showToast(
         `저장된 명세서에 프로모션 합산 ${updatedCount}명 · +${addedSum.toLocaleString('ko-KR')}원`
-        + (missedCount ? ` · 미매칭 ${missedCount}명` : '')
+        + (missedCount ? ` · 명세서에 없는 기사 ${missedCount}명` : '')
         + ' · 이어서 「급여명세서 반영하기」를 눌러주세요'
       );
     } catch (error) {
@@ -1847,18 +1896,12 @@
       const previewTargetCount = previewUploadId
         ? weekLinesCached.filter(line => line.uploadId === previewUploadId).length
         : weekLinesCached.length;
-      const previewMatched = previewUploadId
-        ? [...bulkMap.keys()].filter(driverId =>
-          weekLinesCached.some(line =>
-            line.uploadId === previewUploadId
-            && String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
-          )
-        ).length
-        : [...bulkMap.keys()].filter(driverId =>
-          weekLinesCached.some(line =>
-            String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
-          )
-        ).length;
+      const previewTargets = previewUploadId
+        ? weekLinesCached.filter(line => line.uploadId === previewUploadId)
+        : weekLinesCached;
+      const previewMatched = [...bulkMap.entries()].filter(([driverId, bulk]) =>
+        Boolean(findSavedLineForBulk(previewTargets, driverId, bulk))
+      ).length;
       const previewUnmatched = bulkMap.size - previewMatched;
 
       if (!weekLinesCached.length) {
@@ -1922,9 +1965,7 @@
       bulkMap.forEach((bulk, driverId) => {
         const amount = Number(bulk.otherPayment || 0);
         if (!(amount > 0)) return;
-        const match = targetLines.find(line =>
-          String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
-        );
+        const match = findSavedLineForBulk(targetLines, driverId, bulk);
         if (!match) {
           missedCount += 1;
           return;
@@ -1938,7 +1979,7 @@
 
       if (!updatedById.size) {
         showToast(missedCount
-          ? `저장된 명세서에서 매칭된 기사가 없습니다. (미매칭 ${missedCount}명)`
+          ? `저장된 명세서에서 매칭된 기사가 없습니다. (명세서에 없는 기사 ${missedCount}명)`
           : '반영할 항목이 없습니다.');
         return;
       }
@@ -1982,7 +2023,7 @@
       void refreshPublishStatus();
       showToast(
         `저장된 명세서에 기타지급 합산 ${updatedCount}명 · +${addedSum.toLocaleString('ko-KR')}원`
-        + (missedCount ? ` · 미매칭 ${missedCount}명` : '')
+        + (missedCount ? ` · 명세서에 없는 기사 ${missedCount}명` : '')
         + ' · 이어서 「급여명세서 반영하기」를 눌러주세요'
       );
     } catch (error) {
