@@ -6103,12 +6103,13 @@
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
     // 한 줄(비율+%%+태그)이면 숫자 자릿수 바뀔 때 열이 찌그러짐 → 2줄 고정
+    // 태그는 짧게(달/미) — 모바일에서 전지역 표를 한눈에 넣기 위함
     return `<td class="dashboard-baemin-qcell">
       <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
         <span class="dashboard-baemin-qcell__meta">
           <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
-          <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
+          <span class="baemin-quota-tag${statusClass}" title="${achieved ? '달성' : '미달성'}">${achieved ? '달' : '미'}</span>
         </span>
       </div>
     </td>`;

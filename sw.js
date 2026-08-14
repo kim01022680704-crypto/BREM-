@@ -1,4 +1,4 @@
-const CACHE_NAME = 'brem-pwa-v16';
+const CACHE_NAME = 'brem-pwa-v17';
 const SHELL_URLS = [
   '/home.html',
   '/driver.html',
@@ -6,7 +6,6 @@ const SHELL_URLS = [
   '/css/home.css',
   '/css/login.css',
   '/css/driver.css',
-  '/css/admin.css',
   '/assets/brand/pwa-icon-192.png',
   '/assets/brand/pwa-icon-512.png',
   '/assets/brand/pwa-icon-maskable-512.png',
@@ -17,7 +16,8 @@ const SHELL_URLS = [
 function isAdminOrScript(pathname) {
   return pathname === '/admin.html'
     || pathname.endsWith('.js')
-    || pathname.startsWith('/js/');
+    || pathname.startsWith('/js/')
+    || pathname.startsWith('/css/');
 }
 
 self.addEventListener('install', (event) => {

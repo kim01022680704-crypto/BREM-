@@ -586,16 +586,64 @@
 
   .admin-app .table-scroll:not(.brem-mobile-cards),
   .admin-app .lease-table-wrap:not(.brem-mobile-cards),
-  .admin-app .dashboard-baemin-table-wrap:not(.brem-mobile-cards),
   .admin-app .baemin-table-scroll:not(.brem-mobile-cards) {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     max-width: 100%;
   }
 
+  /* 대시보드 할당표: 가로 스크롤 금지 — PC처럼 전지역 한눈에 */
+  .admin-app .dashboard-baemin-table-wrap:not(.brem-mobile-cards),
+  .admin-app #dashboard .dashboard-baemin-table-wrap {
+    overflow-x: hidden !important;
+    max-width: 100%;
+  }
+
   .admin-app .table-scroll:not(.brem-mobile-cards) table,
   .admin-app .baemin-table-scroll:not(.brem-mobile-cards) table {
     min-width: 640px !important;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-compact-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 0.6rem !important;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-compact-table th,
+  .admin-app #dashboard .dashboard-baemin-compact-table td {
+    padding: 2px 1px !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-compact-table th {
+    font-size: 0.55rem !important;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-region-name {
+    font-size: 0.62rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.04em;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-region-meta,
+  .admin-app #dashboard .baemin-quota-cell__percent {
+    display: none !important;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-qcell__ratio {
+    font-size: 0.55rem !important;
+    letter-spacing: -0.05em;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-qcell .baemin-quota-tag {
+    min-height: 12px !important;
+    padding: 0 2px !important;
+    font-size: 0.48rem !important;
   }
 
   .admin-app .card {
