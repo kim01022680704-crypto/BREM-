@@ -1135,8 +1135,10 @@
       if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
       const id = String(row.driverId).trim();
       if (!id) return;
-      // 프로모션 일괄 파서와 동일 양식(A·B·D) — D열을 기타지급으로 사용
-      const amount = parseMoney(row.otherPayment ?? row.bremPromotion);
+      // 합산 행은 bremPromotion 이 합계. otherPayment 첫 행 잔여값보다 합계를 우선.
+      const fromPromo = parseMoney(row.bremPromotion);
+      const fromOther = parseMoney(row.otherPayment);
+      const amount = fromPromo || fromOther;
       if (!(amount > 0)) return;
       const prev = map.get(id);
       if (prev) {

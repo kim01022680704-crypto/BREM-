@@ -2043,11 +2043,18 @@
   }
 
   function mapPromotionRowsToOtherPayment(rows) {
-    return (Array.isArray(rows) ? rows : []).map(row => ({
-      ...row,
-      otherPayment: Number(row.otherPayment ?? row.bremPromotion ?? 0) || 0,
-      bremPromotion: Number(row.otherPayment ?? row.bremPromotion ?? 0) || 0
-    }));
+    return (Array.isArray(rows) ? rows : []).map(row => {
+      // 합산(aggregate) 후에는 bremPromotion 이 합계이고, otherPayment 는 첫 행 잔여값일 수 있음.
+      // 0 은 ?? 로 넘어가지 않으므로 || 로 비어 있을 때만 다른 쪽을 쓴다.
+      const fromPromo = Number(row.bremPromotion || 0) || 0;
+      const fromOther = Number(row.otherPayment || 0) || 0;
+      const amount = fromPromo || fromOther;
+      return {
+        ...row,
+        otherPayment: amount,
+        bremPromotion: amount
+      };
+    });
   }
 
   function resetOtherPaymentPending() {
@@ -2171,7 +2178,10 @@
       )
     );
     const pendingFiltered = bulkUtils.filterRowsForApply(state.otherPaymentPendingRows, appliedDriverIds);
-    const previewRows = state.otherPaymentPendingRows;
+    const previewBuilt = typeof bulkUtils.buildPreviewRows === 'function'
+      ? bulkUtils.buildPreviewRows(state.otherPaymentPendingRows)
+      : { rows: state.otherPaymentPendingRows, mergedDuplicateInSheet: 0 };
+    const previewRows = mapPromotionRowsToOtherPayment(previewBuilt.rows || []);
 
     if (pendingSection) pendingSection.hidden = !state.otherPaymentPendingRows.length;
     if (applyBtn) applyBtn.disabled = !pendingFiltered.toApply.length;
@@ -2188,25 +2198,35 @@
         summaryEl.textContent = '기타지급 엑셀 업로드 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영';
       }
     } else {
-      const applyAmount = pendingFiltered.toApply.reduce((s, r) => s + Number(r.otherPayment || r.bremPromotion || 0), 0);
+      const applyRows = mapPromotionRowsToOtherPayment(pendingFiltered.toApply || []);
+      const applyAmount = applyRows.reduce((s, r) => s + Number(r.otherPayment || 0), 0);
+      const mergeNote = previewBuilt.mergedDuplicateInSheet
+        ? ` · 시트내 합산 ${previewBuilt.mergedDuplicateInSheet}건`
+        : '';
       if (summaryEl) {
-        summaryEl.textContent = `${state.otherPaymentPendingFileName || '미리보기'} · 적용 예정 ${pendingFiltered.toApply.length}명 · ${applyAmount.toLocaleString('ko-KR')}원`;
+        summaryEl.textContent = `${state.otherPaymentPendingFileName || '미리보기'} · 적용 예정 ${applyRows.length}명 · ${applyAmount.toLocaleString('ko-KR')}원${mergeNote}`;
       }
       pendingBody.innerHTML = previewRows.map(row => {
         const amount = Number(row.otherPayment || row.bremPromotion || 0);
-        const statusCls = row.matchStatus === 'matched' || row.matchStatus === 'manual'
+        const mergeCount = Number(row.mergeCount || 1);
+        let statusLabel = row.matchStatusLabel || '-';
+        let statusCls = row.matchStatus === 'matched' || row.matchStatus === 'manual'
           ? 'text-success'
           : (row.matchStatus === 'duplicate' ? 'text-warning' : 'text-danger');
+        if ((row.matchStatus === 'matched' || row.matchStatus === 'manual') && mergeCount > 1) {
+          statusLabel = `합산(${mergeCount})`;
+          statusCls = 'text-success';
+        }
         return `
           <tr>
-            <td>${row.rowNumber || ''}</td>
+            <td>${escapeHtml(String(row.rowNumber || ''))}</td>
             <td>${escapeHtml(row.baeminId || '-')}</td>
             <td>${escapeHtml(row.coupangId || '-')}</td>
             <td>${formatMoney(amount)}</td>
             <td>${escapeHtml(row.driverName || '-')}</td>
             <td class="${statusCls}">${escapeHtml(row.matchPlatformLabel || '-')}</td>
             <td>${escapeHtml(row.matchedPlatformId || '-')}</td>
-            <td class="${statusCls}">${escapeHtml(row.matchStatusLabel || '-')}</td>
+            <td class="${statusCls}">${escapeHtml(statusLabel)}</td>
           </tr>`;
       }).join('');
     }
