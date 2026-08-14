@@ -3478,6 +3478,11 @@ textarea {
   font-weight: 700;
 }
 
+/* 현재 시간대 안내: 데스크톱 숨김, 모바일만 */
+.dashboard-baemin-current-slot {
+  display: none;
+}
+
 @media (max-width: 768px) {
   #dashboard > .dashboard-baemin-live-card {
     order: -1;
@@ -3488,29 +3493,147 @@ textarea {
     flex-direction: column;
   }
 
+  #dashboard .dashboard-baemin-live-card {
+    margin-bottom: 10px;
+  }
+
+  #dashboard .dashboard-baemin-live-card__header {
+    gap: 8px;
+  }
+
+  #dashboard .dashboard-baemin-live-card__header h2 {
+    margin: 0;
+    font-size: 1.02rem;
+  }
+
+  #dashboard .dashboard-baemin-live-help {
+    display: none;
+  }
+
+  #dashboard .dashboard-baemin-live-actions .small-btn {
+    display: none;
+  }
+
+  #dashboard .dashboard-baemin-live-actions .primary-btn {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    min-height: 36px;
+  }
+
   .dashboard-baemin-applied-time {
-    font-size: 1.15rem;
-    padding: 6px 14px 2px;
+    font-size: 0.92rem;
+    padding: 2px 12px 0;
+  }
+
+  #dashboard .dashboard-baemin-live-card .admin-table-summary {
+    font-size: 0.7rem;
+    padding: 0 12px 4px;
   }
 
   .dashboard-baemin-live-panels,
   .dashboard-baemin-week-block {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 
-  .dashboard-baemin-compact-table {
-    min-width: 580px;
+  .dashboard-baemin-current-slot {
+    display: block;
+    padding: 2px 4px 6px;
+    color: #fbbf24;
+    font-size: 0.74rem;
+    font-weight: 700;
+  }
+
+  /* 오늘 표만: 현재 시간대 1칸 (주간 표는 전체 유지) */
+  .dashboard-baemin-today-table .baemin-slot-col:not(.is-current-slot) {
+    display: none;
+  }
+
+  .dashboard-baemin-today-table {
+    min-width: 0 !important;
+    width: 100%;
+    table-layout: fixed;
     font-size: 0.78rem;
+  }
+
+  .dashboard-baemin-today-table th:nth-child(1),
+  .dashboard-baemin-today-table td:nth-child(1) {
+    width: 34%;
+  }
+
+  .dashboard-baemin-today-table th:nth-child(2),
+  .dashboard-baemin-today-table td:nth-child(2) {
+    width: 18%;
+  }
+
+  .dashboard-baemin-today-table th:nth-child(n+3),
+  .dashboard-baemin-today-table td:nth-child(n+3) {
+    width: auto;
+  }
+
+  .dashboard-baemin-table-wrap {
+    overflow-x: visible;
+  }
+
+  /* 주간 표: 가로 스크롤 없이 조밀하게 */
+  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) {
+    min-width: 0 !important;
+    width: 100%;
+    table-layout: fixed;
+    font-size: 0.62rem;
+  }
+
+  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th,
+  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) td {
+    padding: 3px 1px;
+    line-height: 1.15;
+  }
+
+  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th {
+    font-size: 0.58rem;
+    white-space: nowrap;
   }
 
   .dashboard-baemin-compact-table th,
   .dashboard-baemin-compact-table td {
-    padding: 5px 6px;
+    padding: 4px 3px;
+  }
+
+  .dashboard-baemin-region-name {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+
+  .dashboard-baemin-region-meta {
+    font-size: 0.62rem;
+  }
+
+  .dashboard-baemin-qcell__ratio {
+    font-size: 0.72rem;
   }
 
   .dashboard-baemin-qcell__meta {
-    gap: 4px;
+    gap: 2px;
+  }
+
+  .dashboard-baemin-qcell .baemin-quota-tag {
+    min-height: 14px;
+    padding: 0 3px;
+    font-size: 0.54rem;
+    border-radius: 4px;
+  }
+
+  .dashboard-baemin-week-block__head h3 {
+    font-size: 0.92rem;
+  }
+
+  .dashboard-baemin-week-region-tabs .baemin-region-tab {
+    padding: 4px 8px;
+    font-size: 0.72rem;
   }
 }
 

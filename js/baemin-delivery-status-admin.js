@@ -6095,15 +6095,19 @@
     });
   }
 
-  function renderCompactQuotaCell(actual, target) {
+  function renderCompactQuotaCell(actual, target, slotKey, currentSlotKey) {
     const prog = formatProgress(actual, target);
     const achieved = prog.target > 0 ? prog.actual >= prog.target : prog.actual > 0;
     const statusClass = achieved ? ' baemin-quota-tag--achieved' : ' baemin-quota-tag--missed';
     const percentClass = achieved
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
+    // 모바일: 현재 시간대 칸만 보이도록 슬롯 클래스 부여
+    const slotClass = slotKey
+      ? ` baemin-slot-col baemin-slot-${slotKey}${slotKey === currentSlotKey ? ' is-current-slot' : ''}`
+      : '';
     // 한 줄(비율+%%+태그)이면 숫자 자릿수 바뀔 때 열이 찌그러짐 → 2줄 고정
-    return `<td class="dashboard-baemin-qcell">
+    return `<td class="dashboard-baemin-qcell${slotClass}">
       <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
         <span class="dashboard-baemin-qcell__meta">
@@ -6114,14 +6118,42 @@
     </td>`;
   }
 
+  const DASHBOARD_SLOT_LABELS = Object.freeze({
+    morning: '아침점심',
+    afternoon: '오후',
+    evening: '저녁',
+    midnight: '심야'
+  });
+
+  /**
+   * 현재 시각(KST)·요일 기준 배민 시간대 슬롯.
+   * 수목금월화: 아침점심 06:00~13:00 / 오후 13:00~17:00 / 저녁 17:00~20:00 / 심야 20:00~05:59
+   * 토·일     : 아침점심 06:00~14:00 / 오후 14:00~17:00 / 저녁 17:00~20:00 / 심야 20:00~05:59
+   */
+  function currentBaeminSlotKey(now = new Date()) {
+    const kst = new Date(now.getTime() + 9 * 3600 * 1000);
+    const day = kst.getUTCDay(); // 0=일 .. 6=토
+    const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+    const isWeekend = day === 0 || day === 6;
+    const morningEnd = (isWeekend ? 14 : 13) * 60;
+    if (minutes >= 20 * 60 || minutes < 6 * 60) return 'midnight';
+    if (minutes < morningEnd) return 'morning';
+    if (minutes < 17 * 60) return 'afternoon';
+    if (minutes < 20 * 60) return 'evening';
+    return 'midnight';
+  }
+
   function renderDashboardTodayTable(regionRows, totals) {
+    const cur = currentBaeminSlotKey();
+    const slotHeader = (key, label) =>
+      `<th class="baemin-slot-col baemin-slot-${key}${key === cur ? ' is-current-slot' : ''}">${label}</th>`;
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
       <td><strong>전체 합계</strong></td>
       <td>${formatNumber(totals.drivingSum)}명</td>
-      ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning)}
-      ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon)}
-      ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening)}
-      ${renderCompactQuotaCell(totals.midnightSum, totals.targetMidnight)}
+      ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning, 'morning', cur)}
+      ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon, 'afternoon', cur)}
+      ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening, 'evening', cur)}
+      ${renderCompactQuotaCell(totals.midnightSum, totals.targetMidnight, 'midnight', cur)}
     </tr>`;
     const bodyRows = regionRows.map(region => `<tr>
       <td>
@@ -6129,21 +6161,22 @@
         <span class="dashboard-baemin-region-meta">${formatNumber(region.setCount)}세트</span>
       </td>
       <td>${formatNumber(region.drivingCount)}명</td>
-      ${renderCompactQuotaCell(region.morningTotal, region.targets.morning)}
-      ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon)}
-      ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening)}
-      ${renderCompactQuotaCell(region.midnightTotal, region.targets.midnight)}
+      ${renderCompactQuotaCell(region.morningTotal, region.targets.morning, 'morning', cur)}
+      ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon, 'afternoon', cur)}
+      ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening, 'evening', cur)}
+      ${renderCompactQuotaCell(region.midnightTotal, region.targets.midnight, 'midnight', cur)}
     </tr>`).join('');
     return `<div class="dashboard-baemin-table-wrap">
-      <table class="admin-table dashboard-baemin-compact-table">
+      <div class="dashboard-baemin-current-slot">현재 <strong>${DASHBOARD_SLOT_LABELS[cur] || cur}</strong> · 지역·운행·할당만</div>
+      <table class="admin-table dashboard-baemin-compact-table dashboard-baemin-today-table">
         <thead>
           <tr>
             <th>지역</th>
-            <th>운행중</th>
-            <th>아침점심</th>
-            <th>오후</th>
-            <th>저녁</th>
-            <th>심야</th>
+            <th>운행</th>
+            ${slotHeader('morning', '아침점심')}
+            ${slotHeader('afternoon', '오후')}
+            ${slotHeader('evening', '저녁')}
+            ${slotHeader('midnight', '심야')}
           </tr>
         </thead>
         <tbody>${summaryRow}${bodyRows}</tbody>
