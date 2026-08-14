@@ -6095,19 +6095,15 @@
     });
   }
 
-  function renderCompactQuotaCell(actual, target, slotKey, currentSlotKey) {
+  function renderCompactQuotaCell(actual, target) {
     const prog = formatProgress(actual, target);
     const achieved = prog.target > 0 ? prog.actual >= prog.target : prog.actual > 0;
     const statusClass = achieved ? ' baemin-quota-tag--achieved' : ' baemin-quota-tag--missed';
     const percentClass = achieved
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
-    // 모바일: 현재 시간대 칸만 보이도록 슬롯 클래스 부여
-    const slotClass = slotKey
-      ? ` baemin-slot-col baemin-slot-${slotKey}${slotKey === currentSlotKey ? ' is-current-slot' : ''}`
-      : '';
     // 한 줄(비율+%%+태그)이면 숫자 자릿수 바뀔 때 열이 찌그러짐 → 2줄 고정
-    return `<td class="dashboard-baemin-qcell${slotClass}">
+    return `<td class="dashboard-baemin-qcell">
       <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
         <span class="dashboard-baemin-qcell__meta">
@@ -6118,65 +6114,53 @@
     </td>`;
   }
 
-  const DASHBOARD_SLOT_LABELS = Object.freeze({
-    morning: '아침점심',
-    afternoon: '오후',
-    evening: '저녁',
-    midnight: '심야'
-  });
-
-  /**
-   * 현재 시각(KST)·요일 기준 배민 시간대 슬롯.
-   * 수목금월화: 아침점심 06:00~13:00 / 오후 13:00~17:00 / 저녁 17:00~20:00 / 심야 20:00~05:59
-   * 토·일     : 아침점심 06:00~14:00 / 오후 14:00~17:00 / 저녁 17:00~20:00 / 심야 20:00~05:59
-   */
-  function currentBaeminSlotKey(now = new Date()) {
-    const kst = new Date(now.getTime() + 9 * 3600 * 1000);
-    const day = kst.getUTCDay(); // 0=일 .. 6=토
-    const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
-    const isWeekend = day === 0 || day === 6;
-    const morningEnd = (isWeekend ? 14 : 13) * 60;
-    if (minutes >= 20 * 60 || minutes < 6 * 60) return 'midnight';
-    if (minutes < morningEnd) return 'morning';
-    if (minutes < 17 * 60) return 'afternoon';
-    if (minutes < 20 * 60) return 'evening';
-    return 'midnight';
+  /** 모바일·조밀표용: 지역명 뒤 4글자 (쿠팡 대시보드와 동일) */
+  function shortDashboardRegionLabel(name) {
+    let raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '-';
+    if (raw === '전체합계' || raw === '전체 합계') return '합계';
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    if (!base) return '-';
+    if (base.length <= 4) return base;
+    return base.slice(-4);
   }
 
   function renderDashboardTodayTable(regionRows, totals) {
-    const cur = currentBaeminSlotKey();
-    const slotHeader = (key, label) =>
-      `<th class="baemin-slot-col baemin-slot-${key}${key === cur ? ' is-current-slot' : ''}">${label}</th>`;
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
-      <td><strong>전체 합계</strong></td>
-      <td>${formatNumber(totals.drivingSum)}명</td>
-      ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning, 'morning', cur)}
-      ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon, 'afternoon', cur)}
-      ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening, 'evening', cur)}
-      ${renderCompactQuotaCell(totals.midnightSum, totals.targetMidnight, 'midnight', cur)}
+      <td><strong class="dashboard-baemin-region-name">합계</strong></td>
+      <td>${formatNumber(totals.drivingSum)}</td>
+      ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning)}
+      ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon)}
+      ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening)}
+      ${renderCompactQuotaCell(totals.midnightSum, totals.targetMidnight)}
     </tr>`;
-    const bodyRows = regionRows.map(region => `<tr>
+    const bodyRows = regionRows.map(region => {
+      const fullName = String(region.regionName || '').trim() || '-';
+      const shortName = shortDashboardRegionLabel(fullName);
+      return `<tr>
       <td>
-        <strong class="dashboard-baemin-region-name">${escapeHtml(region.regionName)}</strong>
+        <strong class="dashboard-baemin-region-name" title="${escapeHtml(fullName)}">${escapeHtml(shortName)}</strong>
         <span class="dashboard-baemin-region-meta">${formatNumber(region.setCount)}세트</span>
       </td>
-      <td>${formatNumber(region.drivingCount)}명</td>
-      ${renderCompactQuotaCell(region.morningTotal, region.targets.morning, 'morning', cur)}
-      ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon, 'afternoon', cur)}
-      ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening, 'evening', cur)}
-      ${renderCompactQuotaCell(region.midnightTotal, region.targets.midnight, 'midnight', cur)}
-    </tr>`).join('');
+      <td>${formatNumber(region.drivingCount)}</td>
+      ${renderCompactQuotaCell(region.morningTotal, region.targets.morning)}
+      ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon)}
+      ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening)}
+      ${renderCompactQuotaCell(region.midnightTotal, region.targets.midnight)}
+    </tr>`;
+    }).join('');
     return `<div class="dashboard-baemin-table-wrap">
-      <div class="dashboard-baemin-current-slot">현재 <strong>${DASHBOARD_SLOT_LABELS[cur] || cur}</strong> · 지역·운행·할당만</div>
       <table class="admin-table dashboard-baemin-compact-table dashboard-baemin-today-table">
         <thead>
           <tr>
             <th>지역</th>
             <th>운행</th>
-            ${slotHeader('morning', '아침점심')}
-            ${slotHeader('afternoon', '오후')}
-            ${slotHeader('evening', '저녁')}
-            ${slotHeader('midnight', '심야')}
+            <th title="아침점심">아점</th>
+            <th title="오후">오후</th>
+            <th title="저녁">저녁</th>
+            <th title="심야">심야</th>
           </tr>
         </thead>
         <tbody>${summaryRow}${bodyRows}</tbody>
@@ -6203,7 +6187,7 @@
         || partnerLabelById(partnerId)
         || partnerId;
       const active = partnerId === state.dashboardWeekPartnerId ? ' is-active' : '';
-      return `<button type="button" class="baemin-region-tab${active}" data-dashboard-week-partner="${partnerId}" aria-pressed="${partnerId === state.dashboardWeekPartnerId ? 'true' : 'false'}">${escapeHtml(regionName)}</button>`;
+      return `<button type="button" class="baemin-region-tab${active}" data-dashboard-week-partner="${partnerId}" title="${escapeHtml(regionName)}" aria-pressed="${partnerId === state.dashboardWeekPartnerId ? 'true' : 'false'}">${escapeHtml(shortDashboardRegionLabel(regionName))}</button>`;
     }).join('');
     bindDashboardWeekRegionBarClicks(ids);
   }
@@ -6217,6 +6201,7 @@
     const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === pid)?.regionName
       || partnerLabelById(pid)
       || pid;
+    const shortName = shortDashboardRegionLabel(regionName);
     const setCount = getPartnerSetCount(pid);
     const byDate = new Map();
     (items || []).forEach(row => {
@@ -6243,7 +6228,7 @@
       const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
       return `<tr>
-        <td><strong class="dashboard-baemin-region-name">${escapeHtml(regionName)}</strong></td>
+        <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(shortName)}</strong></td>
         <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
         ${renderCompactQuotaCell(actual.morning, targets.morning)}
         ${renderCompactQuotaCell(actual.afternoon, targets.afternoon)}
@@ -6253,7 +6238,7 @@
     }).join('');
 
     if (summaryEl) {
-      summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
+      summaryEl.textContent = `${shortName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
     }
     persistWeekDashboardCache();
   }

@@ -3478,9 +3478,9 @@ textarea {
   font-weight: 700;
 }
 
-/* 현재 시간대 안내: 데스크톱 숨김, 모바일만 */
+/* 현재 시간대 단독 표시는 쓰지 않음 — 전 지역·전체 시간대를 조밀하게 한눈에 */
 .dashboard-baemin-current-slot {
-  display: none;
+  display: none !important;
 }
 
 @media (max-width: 768px) {
@@ -3532,99 +3532,88 @@ textarea {
 
   .dashboard-baemin-live-panels,
   .dashboard-baemin-week-block {
-    padding-left: 8px;
-    padding-right: 8px;
-  }
-
-  .dashboard-baemin-current-slot {
-    display: block;
-    padding: 2px 4px 6px;
-    color: #fbbf24;
-    font-size: 0.74rem;
-    font-weight: 700;
-  }
-
-  /* 오늘 표만: 현재 시간대 1칸 (주간 표는 전체 유지) */
-  .dashboard-baemin-today-table .baemin-slot-col:not(.is-current-slot) {
-    display: none;
-  }
-
-  .dashboard-baemin-today-table {
-    min-width: 0 !important;
-    width: 100%;
-    table-layout: fixed;
-    font-size: 0.78rem;
-  }
-
-  .dashboard-baemin-today-table th:nth-child(1),
-  .dashboard-baemin-today-table td:nth-child(1) {
-    width: 34%;
-  }
-
-  .dashboard-baemin-today-table th:nth-child(2),
-  .dashboard-baemin-today-table td:nth-child(2) {
-    width: 18%;
-  }
-
-  .dashboard-baemin-today-table th:nth-child(n+3),
-  .dashboard-baemin-today-table td:nth-child(n+3) {
-    width: auto;
+    padding-left: 6px;
+    padding-right: 6px;
   }
 
   .dashboard-baemin-table-wrap {
     overflow-x: visible;
   }
 
-  /* 주간 표: 가로 스크롤 없이 조밀하게 */
-  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) {
+  /* PC처럼 전 지역·아점/오후/저녁/심야 전부 — 가로 스크롤 없이 조밀 */
+  #dashboard .dashboard-baemin-compact-table {
     min-width: 0 !important;
     width: 100%;
     table-layout: fixed;
     font-size: 0.62rem;
   }
 
-  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th,
-  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) td {
-    padding: 3px 1px;
-    line-height: 1.15;
+  #dashboard .dashboard-baemin-today-table th:nth-child(1),
+  #dashboard .dashboard-baemin-today-table td:nth-child(1) {
+    width: 16%;
   }
 
-  .dashboard-baemin-week-block .dashboard-baemin-compact-table:not(.dashboard-coupang-compact-table) th {
-    font-size: 0.58rem;
+  #dashboard .dashboard-baemin-today-table th:nth-child(2),
+  #dashboard .dashboard-baemin-today-table td:nth-child(2) {
+    width: 10%;
+  }
+
+  #dashboard .dashboard-baemin-today-table th:nth-child(n+3),
+  #dashboard .dashboard-baemin-today-table td:nth-child(n+3) {
+    width: 18.5%;
+  }
+
+  #dashboard .dashboard-baemin-compact-table th,
+  #dashboard .dashboard-baemin-compact-table td {
+    padding: 3px 1px;
+    line-height: 1.12;
     white-space: nowrap;
   }
 
-  .dashboard-baemin-compact-table th,
-  .dashboard-baemin-compact-table td {
-    padding: 4px 3px;
+  #dashboard .dashboard-baemin-compact-table th {
+    font-size: 0.58rem;
   }
 
-  .dashboard-baemin-region-name {
+  #dashboard .dashboard-baemin-region-name {
     display: inline-block;
     max-width: 100%;
     overflow: hidden;
-    text-overflow: ellipsis;
+    text-overflow: clip;
     white-space: nowrap;
-    font-size: 0.78rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
   }
 
-  .dashboard-baemin-region-meta {
-    font-size: 0.62rem;
+  #dashboard .dashboard-baemin-region-meta {
+    display: none;
   }
 
-  .dashboard-baemin-qcell__ratio {
-    font-size: 0.72rem;
+  #dashboard .dashboard-baemin-qcell__stack {
+    gap: 1px;
+    align-items: center;
   }
 
-  .dashboard-baemin-qcell__meta {
-    gap: 2px;
+  #dashboard .dashboard-baemin-qcell__ratio {
+    font-size: 0.58rem;
+    letter-spacing: -0.04em;
   }
 
-  .dashboard-baemin-qcell .baemin-quota-tag {
-    min-height: 14px;
-    padding: 0 3px;
-    font-size: 0.54rem;
-    border-radius: 4px;
+  #dashboard .dashboard-baemin-qcell__meta {
+    gap: 1px;
+    justify-content: center;
+  }
+
+  /* %% 숨기고 달성/미달성만 — 칸 폭 확보 */
+  #dashboard .baemin-quota-cell__percent {
+    display: none;
+  }
+
+  #dashboard .dashboard-baemin-qcell .baemin-quota-tag {
+    min-height: 13px;
+    padding: 0 2px;
+    font-size: 0.5rem;
+    border-radius: 3px;
   }
 
   .dashboard-baemin-week-block__head h3 {
