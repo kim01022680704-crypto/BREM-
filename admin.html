@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260814org">
+  <link rel="stylesheet" href="css/admin.css?v=20260814other">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -6541,6 +6541,48 @@
 
               <article class="payroll-bulk-item">
                 <div class="payroll-bulk-item-top">
+                  <h4 class="payroll-bulk-item-title">기타지급</h4>
+                  <button type="button" class="small-btn" id="payrollOtherPaymentBulkTemplateBtn">양식</button>
+                </div>
+                <div class="payroll-bulk-tags">
+                  <span>A 배민ID</span>
+                  <span>B 쿠팡ID</span>
+                  <span>D 기타지급금액</span>
+                </div>
+                <p class="payroll-bulk-note">프로모션과 <strong>같은 양식</strong>(A·B·D) · D열을 기타지급으로 넣습니다 · 이미 저장된/반영된 명세서에도 「저장된 명세서에 합산 반영」 가능 · 목록 표의 기타지급 칸에서도 직접 수정 가능</p>
+                <div class="payroll-bulk-actions">
+                  <label class="bulk-file-field payroll-bulk-file">
+                    <span class="bulk-file-label">기타지급 엑셀 선택</span>
+                    <input type="file" id="payrollOtherPaymentBulkFile" accept=".xlsx,.xls">
+                  </label>
+                  <button type="button" class="primary-btn" id="payrollOtherPaymentBulkApplyBtn" disabled>적용하기</button>
+                  <button type="button" class="primary-btn" id="payrollOtherPaymentBulkMergeSavedBtn" hidden disabled>저장된 명세서에 합산 반영</button>
+                  <button type="button" class="small-btn" id="payrollOtherPaymentBulkClearPendingBtn">미리보기 취소</button>
+                  <button type="button" class="small-btn" id="payrollOtherPaymentBulkClearBtn">전체 초기화</button>
+                </div>
+                <p class="payroll-bulk-status" id="payrollOtherPaymentBulkSummary">기타지급 엑셀 업로드 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영</p>
+                <div class="bulk-preview-wrap payroll-bulk-preview" id="payrollOtherPaymentBulkPreview" hidden>
+                  <p class="payroll-bulk-preview-title">업로드 미리보기 (적용 전)</p>
+                  <table class="bulk-preview-table">
+                    <thead>
+                      <tr>
+                        <th>행</th>
+                        <th>배민ID</th>
+                        <th>쿠팡ID</th>
+                        <th>기타지급(D)</th>
+                        <th>기사명</th>
+                        <th>플랫폼</th>
+                        <th>매칭ID</th>
+                        <th>상태</th>
+                      </tr>
+                    </thead>
+                    <tbody id="payrollOtherPaymentBulkBody"></tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="payroll-bulk-item">
+                <div class="payroll-bulk-item-top">
                   <h4 class="payroll-bulk-item-title">시간제보험</h4>
                 </div>
                 <div class="payroll-bulk-tags">
@@ -7902,7 +7944,7 @@
   <script src="js/admin-revenue.js"></script>
   <script src="js/payroll-production-riders.js?v=20260621e"></script>
   <script src="js/payroll-local-base-data.js?v=20260621h"></script>
-  <script src="js/payroll-slip-utils.js?v=20260814plat"></script>
+  <script src="js/payroll-slip-utils.js?v=20260814other"></script>
   <script src="js/payroll-promotion-bulk.js?v=20260807a"></script>
   <script src="js/payroll-hourly-insurance-bulk.js?v=20260807b"></script>
   <script src="js/direct-adjustment-bulk.js?v=20260813b"></script>
@@ -7912,7 +7954,7 @@
   <script src="js/final-deposit.js?v=20260813m"></script>
   <script src="js/driver-management-admin.js?v=20260814name"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
-  <script src="js/admin-payroll-slips.js?v=20260814plat"></script>
+  <script src="js/admin-payroll-slips.js?v=20260814other"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260803j"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>

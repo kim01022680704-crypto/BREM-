@@ -11129,6 +11129,27 @@ tr.final-deposit-row-off > td.final-deposit-check-td {
   cursor: pointer;
 }
 
+.payroll-other-edit-cell {
+  min-width: 7.5rem;
+}
+
+.payroll-inline-money {
+  width: 100%;
+  max-width: 7rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.payroll-inline-money:focus {
+  outline: 1px solid #f5c542;
+  border-color: #f5c542;
+}
+
 .payroll-payslip-daily {
   color: #93c5fd;
 }

@@ -43,7 +43,7 @@
         // 표시 라벨은 정산결과(직계약) 틀에 맞춘다. 엑셀 열(키)은 그대로다.
         { key: 'totalDeliveryFee', label: '배달비', money: true },
         { key: 'baeminMission', label: '추가지급(미션)', money: true },
-        { key: 'otherPayment', label: '기타지급', money: true },
+        { key: 'otherPayment', label: '기타지급', money: true, editable: true },
         { key: 'bremPromotion', label: 'BREM프로모션', money: true, bulkOnly: true },
         { key: 'grossPaymentTotal', label: '지급합계', money: true, emphasis: true }
       ]
@@ -90,7 +90,7 @@
       fields: [
         { key: 'totalDeliveryFee', label: '배달비', money: true },
         { key: 'baeminMission', label: '추가지급(미션)', money: true },
-        { key: 'otherPayment', label: '기타지급', money: true },
+        { key: 'otherPayment', label: '기타지급', money: true, editable: true },
         { key: 'bremPromotion', label: 'BREM프로모션', money: true, bulkOnly: true },
         { key: 'grossPaymentTotal', label: '지급합계', money: true, emphasis: true }
       ]
@@ -771,6 +771,7 @@
 
   function enrichLinesWithDrivers(lines, drivers, calls, settlementWeekStart, options = {}) {
     const bulkMap = options.promotionBulkMap || null;
+    const otherPaymentBulkMap = options.otherPaymentBulkMap || null;
     const hourlyInsuranceBulkMap = options.hourlyInsuranceBulkMap || null;
     const dailySettlementSet = options.dailySettlementSet || null;
     const dailySettlementRegionFn = options.dailySettlementRegionFn || null;
@@ -778,7 +779,8 @@
     return (Array.isArray(lines) ? lines : []).map(line => {
       const matched = applyDriverMatch(line, drivers, { selectedDriverId: line.selectedDriverId });
       const withPromotionBulk = applyPromotionBulkToLine(matched, bulkMap);
-      const withBulk = applyHourlyInsuranceBulkToLine(withPromotionBulk, hourlyInsuranceBulkMap);
+      const withOtherBulk = applyOtherPaymentBulkToLine(withPromotionBulk, otherPaymentBulkMap);
+      const withBulk = applyHourlyInsuranceBulkToLine(withOtherBulk, hourlyInsuranceBulkMap);
       const dailySettlementEnrolled = Boolean(
         withBulk.selectedDriverId
         && dailySettlementSet?.has(withBulk.selectedDriverId)
@@ -982,6 +984,174 @@
     };
   }
 
+  /**
+   * 이미 저장된 급여명세서 라인의 기타지급을 설정(절대값)하고 재계산합니다.
+   * 기사앱 재공개를 위해 riderPublishedAt 은 null 로 돌립니다.
+   */
+  function applyOtherPaymentToSavedLine(savedLine, nextOtherPayment) {
+    if (!savedLine || typeof savedLine !== 'object') {
+      return { line: savedLine, previousOther: 0, nextOther: 0, changed: false };
+    }
+
+    const raw = savedLine.rawData && typeof savedLine.rawData === 'object' ? savedLine.rawData : {};
+    const payslipPrev = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+    const hasRawOther = raw.otherPayment !== undefined
+      && raw.otherPayment !== null
+      && String(raw.otherPayment).trim() !== '';
+    const previousOther = parseMoney(hasRawOther ? raw.otherPayment : payslipPrev.otherPayment);
+    const nextOther = Math.max(0, parseMoney(nextOtherPayment));
+    if (previousOther === nextOther) {
+      return { line: savedLine, previousOther, nextOther, changed: false };
+    }
+
+    const computed = computeLine({
+      riderName: raw.riderName || savedLine.riderName || '',
+      totalDeliveryFee: raw.totalDeliveryFee ?? savedLine.basePay,
+      baeminMission: raw.baeminMission,
+      otherPayment: nextOther,
+      bremPromotion: raw.bremPromotion ?? payslipPrev.bremPromotion,
+      bremPromotionFromBulk: Boolean(raw.bremPromotionFromBulk),
+      jColumnAmount: raw.jColumnAmount,
+      excelWithholdingTax: raw.excelWithholdingTax,
+      employmentInsurance: raw.employmentInsurance,
+      industrialAccidentInsurance: raw.industrialAccidentInsurance,
+      hourlyInsurance: raw.hourlyInsurance,
+      hourlyInsuranceFromBulk: Boolean(raw.hourlyInsuranceFromBulk),
+      callFeeO: raw.callFeeO,
+      callFeeP: raw.callFeeP,
+      excelNetPay: raw.excelNetPay,
+      callCount: raw.callCount,
+      registeredCallCount: raw.registeredCallCount,
+      dailySettlementEnrolled: raw.dailySettlementEnrolled === true,
+      dailySettlementApply: raw.dailySettlementApply !== false,
+      dailySettlementRegion: raw.dailySettlementRegion || '',
+      selectedDriverId: raw.selectedDriverId || savedLine.driverId || '',
+      selectedDriverName: raw.selectedDriverName || savedLine.riderName || '',
+      matchedBaeminId: raw.matchedBaeminId || payslipPrev.baeminId,
+      matchedCoupangId: raw.matchedCoupangId || payslipPrev.coupangId,
+      baeminId: raw.baeminId || payslipPrev.baeminId,
+      coupangId: raw.coupangId || payslipPrev.coupangId
+    });
+
+    const payslip = buildPayslipRecord({
+      ...computed,
+      riderName: computed.riderName || savedLine.riderName,
+      baeminId: computed.baeminId || raw.matchedBaeminId || payslipPrev.baeminId,
+      coupangId: computed.coupangId || raw.matchedCoupangId || payslipPrev.coupangId
+    });
+
+    const now = new Date().toISOString();
+    const nextRaw = {
+      ...raw,
+      totalDeliveryFee: computed.totalDeliveryFee,
+      baeminMission: computed.baeminMission,
+      otherPayment: computed.otherPayment,
+      otherPaymentManual: true,
+      bremPromotion: computed.bremPromotion,
+      bremPromotionFromBulk: Boolean(computed.bremPromotionFromBulk),
+      grossPaymentTotal: computed.grossPaymentTotal,
+      employmentInsurance: computed.employmentInsurance,
+      industrialAccidentInsurance: computed.industrialAccidentInsurance,
+      hourlyInsurance: computed.hourlyInsurance,
+      hourlyInsuranceFromBulk: Boolean(computed.hourlyInsuranceFromBulk),
+      excelWithholdingTax: computed.excelWithholdingTax,
+      jColumnAmount: computed.jColumnAmount,
+      jWithholdingDeduction: computed.jWithholdingDeduction,
+      otherPaymentWithholdingDeduction: computed.jWithholdingDeduction,
+      withholdingTax: computed.withholdingTax,
+      promotionWithholdingTax: computed.promotionWithholdingTax,
+      callFeeO: computed.callFeeO,
+      callFeeP: computed.callFeeP,
+      callFee: computed.callFee,
+      rawCallFee: computed.rawCallFee,
+      dailySettlementEnrolled: computed.dailySettlementEnrolled,
+      dailySettlementApply: computed.dailySettlementApply,
+      dailySettlementFee: computed.dailySettlementFee,
+      adminAdjustedCallFee: computed.adminAdjustedCallFee,
+      dailySettlementRegion: computed.dailySettlementRegion,
+      paymentTotal: computed.paymentTotal,
+      deductionTotal: computed.deductionTotal,
+      calculatedNetPay: computed.calculatedNetPay,
+      excelNetPay: computed.excelNetPay,
+      netPayDiff: computed.netPayDiff,
+      payslip
+    };
+
+    return {
+      line: {
+        ...savedLine,
+        allowance: computed.baeminMission + computed.otherPayment + computed.bremPromotion,
+        grossPay: computed.paymentTotal,
+        incomeTax: computed.withholdingTax,
+        localTax: Number(savedLine.localTax || 0),
+        insurance: computed.employmentInsurance + computed.industrialAccidentInsurance,
+        otherDeduction: computed.callFee + computed.hourlyInsurance
+          + computed.promotionWithholdingTax + computed.dailySettlementFee,
+        totalDeduction: computed.deductionTotal,
+        netPay: payslip.finalNetPay,
+        riderPublishedAt: null,
+        updatedAt: now,
+        rawData: nextRaw
+      },
+      previousOther,
+      nextOther,
+      changed: true,
+      added: nextOther - previousOther
+    };
+  }
+
+  /** 저장된 명세서에 기타지급을 합산(기존 + delta). */
+  function applyOtherPaymentDeltaToSavedLine(savedLine, addAmount) {
+    const delta = parseMoney(addAmount);
+    if (!(delta > 0) || !savedLine) {
+      return { line: savedLine, added: 0, previousOther: 0, nextOther: 0, changed: false };
+    }
+    const raw = savedLine.rawData && typeof savedLine.rawData === 'object' ? savedLine.rawData : {};
+    const payslipPrev = raw.payslip && typeof raw.payslip === 'object' ? raw.payslip : {};
+    const hasRawOther = raw.otherPayment !== undefined
+      && raw.otherPayment !== null
+      && String(raw.otherPayment).trim() !== '';
+    const previousOther = parseMoney(hasRawOther ? raw.otherPayment : payslipPrev.otherPayment);
+    return applyOtherPaymentToSavedLine(savedLine, previousOther + delta);
+  }
+
+  function applyOtherPaymentBulkToLine(line, bulkMap) {
+    if (!bulkMap || !line.selectedDriverId) return line;
+    const bulk = bulkMap.get(line.selectedDriverId);
+    if (!bulk) return line;
+    const add = parseMoney(bulk.otherPayment);
+    if (!(add > 0)) return line;
+    return {
+      ...line,
+      otherPayment: parseMoney(line.otherPayment) + add,
+      otherPaymentFromBulk: true
+    };
+  }
+
+  function buildOtherPaymentBulkMap(bulkRows) {
+    const map = new Map();
+    (Array.isArray(bulkRows) ? bulkRows : []).forEach(row => {
+      if (!row.driverId) return;
+      if (row.matchStatus !== 'matched' && row.matchStatus !== 'manual') return;
+      const id = String(row.driverId).trim();
+      if (!id) return;
+      // 프로모션 일괄 파서와 동일 양식(A·B·D) — D열을 기타지급으로 사용
+      const amount = parseMoney(row.otherPayment ?? row.bremPromotion);
+      if (!(amount > 0)) return;
+      const prev = map.get(id);
+      if (prev) {
+        prev.otherPayment += amount;
+        return;
+      }
+      map.set(id, {
+        otherPayment: amount,
+        baeminId: row.baeminId || '',
+        coupangId: row.coupangId || ''
+      });
+    });
+    return map;
+  }
+
   function flattenPayslipPreviewFields(includeDetail = false) {
     const fields = PAYSLIP_PREVIEW_GROUPS.flatMap(group => group.fields);
     if (includeDetail) {
@@ -1012,6 +1182,10 @@
     applyPromotionBulkToLine,
     applyHourlyInsuranceBulkToLine,
     applyPromotionDeltaToSavedLine,
+    applyOtherPaymentToSavedLine,
+    applyOtherPaymentDeltaToSavedLine,
+    applyOtherPaymentBulkToLine,
+    buildOtherPaymentBulkMap,
     computeLine,
     validateLine,
     summarizeLines,

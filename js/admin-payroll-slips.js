@@ -29,6 +29,9 @@
     promotionPendingRows: [],
     promotionPendingFileName: '',
     promotionAppliedBatches: [],
+    otherPaymentPendingRows: [],
+    otherPaymentPendingFileName: '',
+    otherPaymentAppliedBatches: [],
     hourlyInsurancePendingRows: [],
     hourlyInsurancePendingFileName: '',
     hourlyInsuranceAppliedBatches: [],
@@ -51,6 +54,14 @@
 
   function getPromotionBulkMap() {
     return utils.buildPromotionBulkMap(getPromotionAggregatedRows());
+  }
+
+  function getOtherPaymentAggregatedRows() {
+    return state.otherPaymentAppliedBatches.flatMap(batch => batch.rows || []);
+  }
+
+  function getOtherPaymentBulkMap() {
+    return utils.buildOtherPaymentBulkMap?.(getOtherPaymentAggregatedRows()) || new Map();
   }
 
   function getHourlyInsuranceAggregatedRows() {
@@ -80,6 +91,7 @@
   function getEnrichmentOptions() {
     return {
       promotionBulkMap: getPromotionBulkMap(),
+      otherPaymentBulkMap: getOtherPaymentBulkMap(),
       hourlyInsuranceBulkMap: getHourlyInsuranceBulkMap(),
       dailySettlementSet: getDailySettlementSet(),
       dailySettlementRegionFn: getDailySettlementRegionFn()
@@ -709,7 +721,8 @@
       selectedDriverId: line.selectedDriverId
     });
     const withBulk = utils.applyPromotionBulkToLine(matched, getPromotionBulkMap());
-    const withHourlyInsurance = utils.applyHourlyInsuranceBulkToLine(withBulk, getHourlyInsuranceBulkMap());
+    const withOtherBulk = utils.applyOtherPaymentBulkToLine?.(withBulk, getOtherPaymentBulkMap()) || withBulk;
+    const withHourlyInsurance = utils.applyHourlyInsuranceBulkToLine(withOtherBulk, getHourlyInsuranceBulkMap());
     const dailySettlementSet = getDailySettlementSet();
     const dailySettlementEnrolled = Boolean(
       withHourlyInsurance.selectedDriverId && dailySettlementSet.has(withHourlyInsurance.selectedDriverId)
@@ -1267,7 +1280,13 @@
     }
 
     if (field.editable && field.key === 'otherPayment') {
-      return `<td>${formatMoney(line.otherPayment)}</td>`;
+      const value = Math.max(0, Number(line.otherPayment || 0));
+      return `<td class="payroll-other-edit-cell">
+        <input type="number" min="0" step="1" class="payroll-inline-money"
+          data-payroll-other-input="${escapeHtml(line.rowKey)}"
+          value="${value}"
+          title="기타지급 (원)">
+      </td>`;
     }
 
     const groupCls = field.emphasis ? ' payroll-payslip-emphasis' : '';
@@ -1723,6 +1742,210 @@
     }
   }
 
+  async function saveSavedLineOtherPayment(lineId, rawValue) {
+    if (!canSavePayroll()) {
+      showToast(state.storageStatus?.hint || '현재 환경에서는 급여명세서를 저장할 수 없습니다.');
+      return;
+    }
+    if (typeof utils.applyOtherPaymentToSavedLine !== 'function') {
+      showToast('급여명세서 유틸을 새로고침한 뒤 다시 시도하세요.');
+      return;
+    }
+    const id = String(lineId || '').trim();
+    if (!id) return;
+    const amount = Math.max(0, Math.round(Number(rawValue || 0)) || 0);
+    const list = lines.getAll();
+    const current = list.find(item => item.id === id);
+    if (!current) {
+      showToast('명세서를 찾을 수 없습니다.');
+      return;
+    }
+    const result = utils.applyOtherPaymentToSavedLine(current, amount);
+    if (!result.changed || !result.line) {
+      return;
+    }
+    try {
+      const nextLines = list.map(item => (item.id === id ? result.line : item));
+      await lines.persistList(nextLines, { incrementalRows: [result.line] });
+      const uploadId = result.line.uploadId;
+      if (uploadId) {
+        const uploadList = uploads.getAll();
+        const uploadIndex = uploadList.findIndex(item => item.id === uploadId);
+        if (uploadIndex >= 0) {
+          const uploadLines = nextLines.filter(line => line.uploadId === uploadId);
+          const upload = uploadList[uploadIndex];
+          const nextUpload = {
+            ...upload,
+            totalGross: uploadLines.reduce((sum, line) => sum + Number(line.grossPay || 0), 0),
+            totalDeduction: uploadLines.reduce((sum, line) => sum + Number(line.totalDeduction || 0), 0),
+            totalNet: uploadLines.reduce((sum, line) => sum + Number(line.netPay || 0), 0),
+            updatedAt: new Date().toISOString()
+          };
+          uploadList[uploadIndex] = nextUpload;
+          await uploads.persistList(uploadList, { incrementalRows: [nextUpload] });
+        }
+      }
+      await refresh({ loadRemote: true });
+      void refreshPublishStatus();
+      showToast(
+        `기타지급 ${amount.toLocaleString('ko-KR')}원 저장`
+        + ' · 「급여명세서 반영하기」를 다시 눌러 라이더앱에 공개하세요'
+      );
+    } catch (error) {
+      console.error('[payroll otherPayment save]', error);
+      showToast(error?.message || '기타지급 저장에 실패했습니다.');
+    }
+  }
+
+  async function mergeOtherPaymentIntoSavedSlips() {
+    if (!canSavePayroll()) {
+      showToast(state.storageStatus?.hint || '현재 환경에서는 급여명세서를 저장할 수 없습니다.');
+      return;
+    }
+    if (typeof utils.applyOtherPaymentDeltaToSavedLine !== 'function') {
+      showToast('급여명세서 유틸을 새로고침한 뒤 다시 시도하세요.');
+      return;
+    }
+
+    const weekStart = resolvePromotionMergeWeekStart();
+    if (!weekStart) {
+      showToast('정산주(수요일 시작)를 선택하세요.');
+      return;
+    }
+
+    const pendingBatches = state.otherPaymentAppliedBatches.filter(batch => !batch.mergedToSavedAt);
+    if (!pendingBatches.length) {
+      showToast(state.otherPaymentAppliedBatches.length
+        ? '이미 저장된 명세서에 반영된 적용 내역입니다. 빠진 기타지급 파일을 다시 「적용하기」 하세요.'
+        : '먼저 기타지급 엑셀을 「적용하기」 하세요.');
+      return;
+    }
+
+    const aggregated = pendingBatches.flatMap(batch => batch.rows || []);
+    const bulkMap = utils.buildOtherPaymentBulkMap(aggregated);
+    if (!bulkMap.size) {
+      showToast('반영할 기타지급 금액이 없습니다.');
+      return;
+    }
+
+    const addTotal = [...bulkMap.values()].reduce((sum, row) => sum + Number(row.otherPayment || 0), 0);
+    try {
+      await ensurePayrollDataLoaded();
+    } catch (error) {
+      console.error('[payroll other merge load]', error);
+      showToast(error?.message || '급여 데이터를 불러오지 못했습니다.');
+      return;
+    }
+
+    const weekLines = lines.getAll().filter(line => {
+      const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+      return String(raw.settlementWeekStart || '').slice(0, 10) === weekStart;
+    });
+    if (!weekLines.length) {
+      showToast(`${utils.formatSettlementWeekLabel(weekStart)}에 저장된 급여명세서가 없습니다.`);
+      return;
+    }
+
+    const targetUploadId = resolvePromotionMergeUploadId(weekLines);
+    if (!targetUploadId) {
+      showToast('같은 주에 업로드가 여러 건입니다. 아래 목록에서 「보기」로 대상 명세서를 선택한 뒤 다시 눌러주세요.');
+      return;
+    }
+
+    const targetLines = weekLines.filter(line => line.uploadId === targetUploadId);
+    const matchedDrivers = [...bulkMap.keys()].filter(driverId =>
+      targetLines.some(line => String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId)
+    ).length;
+    const unmatchedDrivers = bulkMap.size - matchedDrivers;
+
+    const ok = window.confirm(
+      `${utils.formatSettlementWeekLabel(weekStart)}\n`
+      + `저장된 명세서 ${targetLines.length}명에 기타지급을 합산합니다.\n`
+      + `· 추가 금액 합계 ${addTotal.toLocaleString('ko-KR')}원 · 매칭 예상 ${matchedDrivers}명`
+      + (unmatchedDrivers ? ` · 명세서에 없는 기사 ${unmatchedDrivers}명` : '')
+      + `\n\n기존 기타지급에 더합니다. (이미 넣은 금액을 포함한 전체 파일을 다시 올리면 중복됩니다)\n계속할까요?`
+    );
+    if (!ok) return;
+
+    const now = new Date().toISOString();
+    const updatedById = new Map();
+    let updatedCount = 0;
+    let addedSum = 0;
+    let missedCount = 0;
+
+    bulkMap.forEach((bulk, driverId) => {
+      const amount = Number(bulk.otherPayment || 0);
+      if (!(amount > 0)) return;
+      const match = targetLines.find(line =>
+        String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
+      );
+      if (!match) {
+        missedCount += 1;
+        return;
+      }
+      const result = utils.applyOtherPaymentDeltaToSavedLine(match, amount);
+      if (!result.changed || !result.line) return;
+      updatedById.set(result.line.id, result.line);
+      updatedCount += 1;
+      addedSum += Number(result.added || 0);
+    });
+
+    if (!updatedById.size) {
+      showToast(missedCount
+        ? `저장된 명세서에서 매칭된 기사가 없습니다. (미매칭 ${missedCount}명)`
+        : '반영할 항목이 없습니다.');
+      return;
+    }
+
+    try {
+      const allLines = lines.getAll();
+      const nextLines = allLines.map(line => updatedById.get(line.id) || line);
+      const incrementalRows = [...updatedById.values()];
+      await lines.persistList(nextLines, { incrementalRows });
+
+      const uploadLines = nextLines.filter(line => line.uploadId === targetUploadId);
+      const uploadList = uploads.getAll();
+      const uploadIndex = uploadList.findIndex(item => item.id === targetUploadId);
+      if (uploadIndex >= 0) {
+        const upload = uploadList[uploadIndex];
+        const nextUpload = {
+          ...upload,
+          totalGross: uploadLines.reduce((sum, line) => sum + Number(line.grossPay || 0), 0),
+          totalDeduction: uploadLines.reduce((sum, line) => sum + Number(line.totalDeduction || 0), 0),
+          totalNet: uploadLines.reduce((sum, line) => sum + Number(line.netPay || 0), 0),
+          updatedAt: now,
+          rawSummary: {
+            ...(upload.rawSummary && typeof upload.rawSummary === 'object' ? upload.rawSummary : {}),
+            otherPaymentMergedAt: now,
+            otherPaymentMergedAmount: addedSum,
+            otherPaymentMergedDrivers: updatedCount
+          }
+        };
+        uploadList[uploadIndex] = nextUpload;
+        await uploads.persistList(uploadList, { incrementalRows: [nextUpload] });
+      }
+
+      state.otherPaymentAppliedBatches = state.otherPaymentAppliedBatches.map(batch => (
+        batch.mergedToSavedAt
+          ? batch
+          : { ...batch, mergedToSavedAt: now }
+      ));
+      renderOtherPaymentBulkPreview();
+      syncPayrollListSearchWeekUI(weekStart);
+      syncPublishWeekUI(weekStart);
+      await refresh({ loadRemote: true });
+      void refreshPublishStatus();
+      showToast(
+        `저장된 명세서에 기타지급 합산 ${updatedCount}명 · +${addedSum.toLocaleString('ko-KR')}원`
+        + (missedCount ? ` · 미매칭 ${missedCount}명` : '')
+        + ' · 이어서 「급여명세서 반영하기」를 눌러주세요'
+      );
+    } catch (error) {
+      console.error('[payroll other merge saved]', error);
+      showToast(error?.message || '저장된 명세서 기타지급 반영에 실패했습니다.');
+    }
+  }
+
   function retryPromotionBulkMatching() {
     const bulkUtils = window.BremPayrollPromotionBulk;
     if (!bulkUtils || !state.promotionPendingRows.length) {
@@ -1802,6 +2025,198 @@
     const workbook = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(workbook, worksheet, 'BREM프로모션');
     window.XLSX.writeFile(workbook, 'BREM_BREM프로모션_일괄등록_양식.xlsx');
+  }
+
+  function downloadOtherPaymentBulkTemplate() {
+    if (!window.XLSX) {
+      showToast('엑셀 모듈을 불러오지 못했습니다.');
+      return;
+    }
+    const rows = [
+      ['배민ID', '쿠팡ID', '', '기타지급'],
+      ['baemin01', '홍길동1234', '', 30000]
+    ];
+    const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, '기타지급');
+    window.XLSX.writeFile(workbook, 'BREM_기타지급_일괄등록_양식.xlsx');
+  }
+
+  function mapPromotionRowsToOtherPayment(rows) {
+    return (Array.isArray(rows) ? rows : []).map(row => ({
+      ...row,
+      otherPayment: Number(row.otherPayment ?? row.bremPromotion ?? 0) || 0,
+      bremPromotion: Number(row.otherPayment ?? row.bremPromotion ?? 0) || 0
+    }));
+  }
+
+  function resetOtherPaymentPending() {
+    state.otherPaymentPendingRows = [];
+    state.otherPaymentPendingFileName = '';
+    const fileInput = $('payrollOtherPaymentBulkFile');
+    if (fileInput) fileInput.value = '';
+    renderOtherPaymentBulkPreview();
+  }
+
+  function resetOtherPaymentBulk() {
+    state.otherPaymentPendingRows = [];
+    state.otherPaymentPendingFileName = '';
+    state.otherPaymentAppliedBatches = [];
+    const fileInput = $('payrollOtherPaymentBulkFile');
+    if (fileInput) fileInput.value = '';
+    renderOtherPaymentBulkPreview();
+    if (state.parsedLines.length) {
+      refreshParsedLineMatches();
+      renderPreview();
+    }
+  }
+
+  function applyOtherPaymentPending() {
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    if (!bulkUtils) return;
+
+    const appliedDriverIds = new Set(
+      state.otherPaymentAppliedBatches.flatMap(batch =>
+        (batch.rows || []).map(row => String(row.driverId || '').trim()).filter(Boolean)
+      )
+    );
+    const filtered = bulkUtils.filterRowsForApply(state.otherPaymentPendingRows, appliedDriverIds);
+    const toApply = mapPromotionRowsToOtherPayment(filtered.toApply);
+
+    if (!toApply.length) {
+      showToast(filtered.skippedNoAmount
+        ? `적용할 금액이 없습니다. (금액 없음 ${filtered.skippedNoAmount}건)`
+        : '적용할 매칭된 기타지급 데이터가 없습니다.');
+      return;
+    }
+
+    const totalAmount = toApply.reduce((sum, row) => sum + Number(row.otherPayment || 0), 0);
+    const batch = {
+      id: `other-batch-${Date.now()}`,
+      fileName: state.otherPaymentPendingFileName || '기타지급.xlsx',
+      appliedAt: new Date().toISOString(),
+      rows: toApply.map(row => ({ ...row })),
+      matchedCount: toApply.length,
+      totalAmount
+    };
+
+    state.otherPaymentAppliedBatches.push(batch);
+    resetOtherPaymentPending();
+    renderOtherPaymentBulkPreview();
+
+    if (state.parsedLines.length) {
+      refreshParsedLineMatches();
+      renderPreview();
+    }
+
+    showToast(`기타지급 적용 ${toApply.length}명 ${totalAmount.toLocaleString('ko-KR')}원`);
+  }
+
+  async function parseOtherPaymentBulkBuffer(buffer) {
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    if (!bulkUtils || !window.XLSX) {
+      showToast('기타지급 일괄등록 모듈을 불러오지 못했습니다.');
+      return;
+    }
+    await ensurePayrollDataLoaded();
+    const workbook = window.XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+    const parsed = bulkUtils.parseSheetRows(rows, getMatchingDrivers());
+    state.otherPaymentPendingRows = mapPromotionRowsToOtherPayment(parsed.rows);
+    renderOtherPaymentBulkPreview();
+    if (state.parsedLines.length) {
+      refreshParsedLineMatches();
+      renderPreview();
+    }
+    if (!parsed.rows.length) {
+      showToast('기타지급 일괄등록 데이터를 찾지 못했습니다.');
+      return;
+    }
+    const total = state.otherPaymentPendingRows.reduce((sum, row) => sum + Number(row.otherPayment || 0), 0);
+    const matched = state.otherPaymentPendingRows.filter(row =>
+      row.matchStatus === 'matched' || row.matchStatus === 'manual'
+    ).length;
+    showToast(`미리보기 · 매칭 ${matched}/${state.otherPaymentPendingRows.length}건 · ${total.toLocaleString('ko-KR')}원 · 「적용하기」를 누르세요`);
+  }
+
+  async function handleOtherPaymentBulkFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    state.otherPaymentPendingFileName = file.name;
+    try {
+      const buffer = await readFileAsArrayBuffer(file);
+      await parseOtherPaymentBulkBuffer(buffer);
+    } catch (error) {
+      console.error('[payroll otherPayment bulk]', error);
+      showToast('기타지급 일괄등록 파일을 읽지 못했습니다.');
+      resetOtherPaymentPending();
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  function renderOtherPaymentBulkPreview() {
+    const pendingSection = $('payrollOtherPaymentBulkPreview');
+    const pendingBody = $('payrollOtherPaymentBulkBody');
+    const summaryEl = $('payrollOtherPaymentBulkSummary');
+    const applyBtn = $('payrollOtherPaymentBulkApplyBtn');
+    const mergeSavedBtn = $('payrollOtherPaymentBulkMergeSavedBtn');
+    const bulkUtils = window.BremPayrollPromotionBulk;
+    if (!pendingBody || !bulkUtils) return;
+
+    const appliedDriverIds = new Set(
+      state.otherPaymentAppliedBatches.flatMap(batch =>
+        (batch.rows || []).map(row => String(row.driverId || '').trim()).filter(Boolean)
+      )
+    );
+    const pendingFiltered = bulkUtils.filterRowsForApply(state.otherPaymentPendingRows, appliedDriverIds);
+    const previewRows = state.otherPaymentPendingRows;
+
+    if (pendingSection) pendingSection.hidden = !state.otherPaymentPendingRows.length;
+    if (applyBtn) applyBtn.disabled = !pendingFiltered.toApply.length;
+
+    const pendingMergeCount = state.otherPaymentAppliedBatches.filter(batch => !batch.mergedToSavedAt).length;
+    if (mergeSavedBtn) {
+      mergeSavedBtn.disabled = !pendingMergeCount || !canSavePayroll();
+      mergeSavedBtn.hidden = !state.otherPaymentAppliedBatches.length;
+    }
+
+    if (!state.otherPaymentPendingRows.length) {
+      pendingBody.innerHTML = '';
+      if (summaryEl && !state.otherPaymentAppliedBatches.length) {
+        summaryEl.textContent = '기타지급 엑셀 업로드 → 미리보기 → 적용하기 → (저장된 명세서면) 합산 반영';
+      }
+    } else {
+      const applyAmount = pendingFiltered.toApply.reduce((s, r) => s + Number(r.otherPayment || r.bremPromotion || 0), 0);
+      if (summaryEl) {
+        summaryEl.textContent = `${state.otherPaymentPendingFileName || '미리보기'} · 적용 예정 ${pendingFiltered.toApply.length}명 · ${applyAmount.toLocaleString('ko-KR')}원`;
+      }
+      pendingBody.innerHTML = previewRows.map(row => {
+        const amount = Number(row.otherPayment || row.bremPromotion || 0);
+        const statusCls = row.matchStatus === 'matched' || row.matchStatus === 'manual'
+          ? 'text-success'
+          : (row.matchStatus === 'duplicate' ? 'text-warning' : 'text-danger');
+        return `
+          <tr>
+            <td>${row.rowNumber || ''}</td>
+            <td>${escapeHtml(row.baeminId || '-')}</td>
+            <td>${escapeHtml(row.coupangId || '-')}</td>
+            <td>${formatMoney(amount)}</td>
+            <td>${escapeHtml(row.driverName || '-')}</td>
+            <td class="${statusCls}">${escapeHtml(row.matchPlatformLabel || '-')}</td>
+            <td>${escapeHtml(row.matchedPlatformId || '-')}</td>
+            <td class="${statusCls}">${escapeHtml(row.matchStatusLabel || '-')}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    if (summaryEl && state.otherPaymentAppliedBatches.length && !state.otherPaymentPendingRows.length) {
+      const total = state.otherPaymentAppliedBatches.reduce((sum, batch) => sum + Number(batch.totalAmount || 0), 0);
+      const drivers = state.otherPaymentAppliedBatches.reduce((sum, batch) => sum + Number(batch.matchedCount || 0), 0);
+      summaryEl.textContent = `적용 ${state.otherPaymentAppliedBatches.length}회 · ${drivers}명 · ${total.toLocaleString('ko-KR')}원`
+        + (pendingMergeCount ? ` · 저장 반영 대기 ${pendingMergeCount}회` : '');
+    }
   }
 
   async function parsePromotionBulkBuffer(buffer) {
@@ -2498,11 +2913,21 @@
     return 2 + groups.reduce((sum, group) => sum + group.fields.length, 0);
   }
 
-  function renderLineListCell(payslip, field, groupId) {
+  function renderLineListCell(payslip, field, groupId, item) {
     if (field.idField) {
       const value = payslip[field.key];
       const text = value && String(value).trim() && String(value).trim() !== '-' ? String(value).trim() : '-';
       return `<td class="payroll-payslip-col payroll-payslip-col--${groupId}">${escapeHtml(text)}</td>`;
+    }
+
+    if (field.editable && field.key === 'otherPayment' && item?.id) {
+      const value = Math.max(0, Number(payslip.otherPayment || 0));
+      return `<td class="payroll-payslip-col payroll-payslip-col--${groupId} payroll-other-edit-cell">
+        <input type="number" min="0" step="1" class="payroll-inline-money"
+          data-payroll-saved-other-input="${escapeHtml(item.id)}"
+          value="${value}"
+          title="기타지급 수정 후 포커스 아웃 시 저장 · 재반영 필요">
+      </td>`;
     }
 
     const emphasisCls = field.emphasis ? ' payroll-payslip-emphasis' : '';
@@ -2578,7 +3003,7 @@
 
     body.innerHTML = list.map(item => {
       const view = lineDisplay(item);
-      const cells = allFields.map(field => renderLineListCell(view, field, field.groupId)).join('');
+      const cells = allFields.map(field => renderLineListCell(view, field, field.groupId, item)).join('');
       return `
       <tr>
         <td class="payroll-payslip-rownum">${escapeHtml(formatPeriodLabel(item.payMonth))}</td>
@@ -2747,6 +3172,12 @@
     $('payrollPromotionBulkClearPendingBtn')?.addEventListener('click', resetPromotionPending);
     $('payrollPromotionBulkClearBtn')?.addEventListener('click', resetPromotionBulk);
     $('payrollPromotionRetryMatchBtn')?.addEventListener('click', retryPromotionBulkMatching);
+    $('payrollOtherPaymentBulkTemplateBtn')?.addEventListener('click', downloadOtherPaymentBulkTemplate);
+    $('payrollOtherPaymentBulkFile')?.addEventListener('change', event => { void handleOtherPaymentBulkFileChange(event); });
+    $('payrollOtherPaymentBulkApplyBtn')?.addEventListener('click', applyOtherPaymentPending);
+    $('payrollOtherPaymentBulkMergeSavedBtn')?.addEventListener('click', () => { void mergeOtherPaymentIntoSavedSlips(); });
+    $('payrollOtherPaymentBulkClearPendingBtn')?.addEventListener('click', resetOtherPaymentPending);
+    $('payrollOtherPaymentBulkClearBtn')?.addEventListener('click', resetOtherPaymentBulk);
     $('payrollPromotionAppliedBody')?.addEventListener('click', event => {
       const btn = event.target.closest('[data-promotion-remove-batch]');
       if (btn) removePromotionBatch(btn.dataset.promotionRemoveBatch);
@@ -2845,7 +3276,19 @@
         return;
       }
       const otherInput = event.target.closest('[data-payroll-other-input]');
-      if (otherInput) return;
+      if (otherInput) {
+        const rowKey = otherInput.dataset.payrollOtherInput;
+        const amount = Math.max(0, Math.round(Number(otherInput.value || 0)) || 0);
+        updateParsedLine(rowKey, { otherPayment: amount, otherPaymentManual: true });
+        renderPreview();
+      }
+    });
+
+    $('payrollLineBody')?.addEventListener('change', event => {
+      const savedOther = event.target.closest('[data-payroll-saved-other-input]');
+      if (savedOther) {
+        void saveSavedLineOtherPayment(savedOther.dataset.payrollSavedOtherInput, savedOther.value);
+      }
     });
 
     $('payrollUploadBody')?.addEventListener('click', event => {
@@ -2896,6 +3339,7 @@
     renderUploadHistory();
     renderLineList();
     renderPromotionBulkPreview();
+    renderOtherPaymentBulkPreview();
     renderHourlyInsuranceBulkPreview();
     void refreshPublishStatus();
   }
