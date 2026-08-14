@@ -1798,106 +1798,151 @@
   }
 
   async function mergeOtherPaymentIntoSavedSlips() {
-    if (!canSavePayroll()) {
-      showToast(state.storageStatus?.hint || '현재 환경에서는 급여명세서를 저장할 수 없습니다.');
-      return;
-    }
-    if (typeof utils.applyOtherPaymentDeltaToSavedLine !== 'function') {
-      showToast('급여명세서 유틸을 새로고침한 뒤 다시 시도하세요.');
+    const mergeBtn = $('payrollOtherPaymentBulkMergeSavedBtn');
+    if (mergeBtn?.dataset.merging === '1') {
+      showToast('기타지급 합산 반영을 처리 중입니다…');
       return;
     }
 
-    const weekStart = resolvePromotionMergeWeekStart();
-    if (!weekStart) {
-      showToast('정산주(수요일 시작)를 선택하세요.');
-      return;
-    }
-
-    const pendingBatches = state.otherPaymentAppliedBatches.filter(batch => !batch.mergedToSavedAt);
-    if (!pendingBatches.length) {
-      showToast(state.otherPaymentAppliedBatches.length
-        ? '이미 저장된 명세서에 반영된 적용 내역입니다. 빠진 기타지급 파일을 다시 「적용하기」 하세요.'
-        : '먼저 기타지급 엑셀을 「적용하기」 하세요.');
-      return;
-    }
-
-    const aggregated = pendingBatches.flatMap(batch => batch.rows || []);
-    const bulkMap = utils.buildOtherPaymentBulkMap(aggregated);
-    if (!bulkMap.size) {
-      showToast('반영할 기타지급 금액이 없습니다.');
-      return;
-    }
-
-    const addTotal = [...bulkMap.values()].reduce((sum, row) => sum + Number(row.otherPayment || 0), 0);
     try {
-      await ensurePayrollDataLoaded();
-    } catch (error) {
-      console.error('[payroll other merge load]', error);
-      showToast(error?.message || '급여 데이터를 불러오지 못했습니다.');
-      return;
-    }
-
-    const weekLines = lines.getAll().filter(line => {
-      const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
-      return String(raw.settlementWeekStart || '').slice(0, 10) === weekStart;
-    });
-    if (!weekLines.length) {
-      showToast(`${utils.formatSettlementWeekLabel(weekStart)}에 저장된 급여명세서가 없습니다.`);
-      return;
-    }
-
-    const targetUploadId = resolvePromotionMergeUploadId(weekLines);
-    if (!targetUploadId) {
-      showToast('같은 주에 업로드가 여러 건입니다. 아래 목록에서 「보기」로 대상 명세서를 선택한 뒤 다시 눌러주세요.');
-      return;
-    }
-
-    const targetLines = weekLines.filter(line => line.uploadId === targetUploadId);
-    const matchedDrivers = [...bulkMap.keys()].filter(driverId =>
-      targetLines.some(line => String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId)
-    ).length;
-    const unmatchedDrivers = bulkMap.size - matchedDrivers;
-
-    const ok = window.confirm(
-      `${utils.formatSettlementWeekLabel(weekStart)}\n`
-      + `저장된 명세서 ${targetLines.length}명에 기타지급을 합산합니다.\n`
-      + `· 추가 금액 합계 ${addTotal.toLocaleString('ko-KR')}원 · 매칭 예상 ${matchedDrivers}명`
-      + (unmatchedDrivers ? ` · 명세서에 없는 기사 ${unmatchedDrivers}명` : '')
-      + `\n\n기존 기타지급에 더합니다. (이미 넣은 금액을 포함한 전체 파일을 다시 올리면 중복됩니다)\n계속할까요?`
-    );
-    if (!ok) return;
-
-    const now = new Date().toISOString();
-    const updatedById = new Map();
-    let updatedCount = 0;
-    let addedSum = 0;
-    let missedCount = 0;
-
-    bulkMap.forEach((bulk, driverId) => {
-      const amount = Number(bulk.otherPayment || 0);
-      if (!(amount > 0)) return;
-      const match = targetLines.find(line =>
-        String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
-      );
-      if (!match) {
-        missedCount += 1;
+      if (!canSavePayroll()) {
+        showToast(state.storageStatus?.hint || '현재 환경에서는 급여명세서를 저장할 수 없습니다.');
         return;
       }
-      const result = utils.applyOtherPaymentDeltaToSavedLine(match, amount);
-      if (!result.changed || !result.line) return;
-      updatedById.set(result.line.id, result.line);
-      updatedCount += 1;
-      addedSum += Number(result.added || 0);
-    });
+      if (typeof utils.applyOtherPaymentDeltaToSavedLine !== 'function'
+        || typeof utils.buildOtherPaymentBulkMap !== 'function') {
+        showToast('급여명세서 유틸을 새로고침(Ctrl+F5)한 뒤 다시 시도하세요.');
+        return;
+      }
 
-    if (!updatedById.size) {
-      showToast(missedCount
-        ? `저장된 명세서에서 매칭된 기사가 없습니다. (미매칭 ${missedCount}명)`
-        : '반영할 항목이 없습니다.');
-      return;
-    }
+      const weekStart = resolvePromotionMergeWeekStart();
+      if (!weekStart) {
+        showToast('정산주(수요일 시작)를 선택하세요.');
+        return;
+      }
 
-    try {
+      const pendingBatches = state.otherPaymentAppliedBatches.filter(batch => !batch.mergedToSavedAt);
+      if (!pendingBatches.length) {
+        showToast(state.otherPaymentAppliedBatches.length
+          ? '이미 저장된 명세서에 반영된 적용 내역입니다. 빠진 기타지급 파일을 다시 「적용하기」 하세요.'
+          : '먼저 기타지급 엑셀을 「적용하기」 하세요.');
+        return;
+      }
+
+      const aggregated = pendingBatches.flatMap(batch => batch.rows || []);
+      const bulkMap = utils.buildOtherPaymentBulkMap(aggregated);
+      if (!bulkMap.size) {
+        showToast('반영할 기타지급 금액이 없습니다. 매칭·금액이 있는 행인지 확인하세요.');
+        return;
+      }
+
+      const addTotal = [...bulkMap.values()].reduce((sum, row) => sum + Number(row.otherPayment || 0), 0);
+
+      // confirm 은 await 전에 호출해야 브라우저가 클릭 제스처를 유지한다 (무반응 방지).
+      const weekLinesCached = lines.getAll().filter(line => {
+        const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+        return String(raw.settlementWeekStart || '').slice(0, 10) === weekStart;
+      });
+      const previewUploadId = resolvePromotionMergeUploadId(weekLinesCached);
+      const previewTargetCount = previewUploadId
+        ? weekLinesCached.filter(line => line.uploadId === previewUploadId).length
+        : weekLinesCached.length;
+      const previewMatched = previewUploadId
+        ? [...bulkMap.keys()].filter(driverId =>
+          weekLinesCached.some(line =>
+            line.uploadId === previewUploadId
+            && String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
+          )
+        ).length
+        : [...bulkMap.keys()].filter(driverId =>
+          weekLinesCached.some(line =>
+            String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
+          )
+        ).length;
+      const previewUnmatched = bulkMap.size - previewMatched;
+
+      if (!weekLinesCached.length) {
+        showToast(`${utils.formatSettlementWeekLabel(weekStart)}에 저장된 급여명세서가 없습니다.`);
+        return;
+      }
+      if (!previewUploadId) {
+        showToast('같은 주에 업로드가 여러 건입니다. 아래 목록에서 「보기」로 대상 명세서를 선택한 뒤 다시 눌러주세요.');
+        return;
+      }
+
+      const ok = window.confirm(
+        `${utils.formatSettlementWeekLabel(weekStart)}\n`
+        + `저장된 명세서 ${previewTargetCount}명에 기타지급을 합산합니다.\n`
+        + `· 추가 금액 합계 ${addTotal.toLocaleString('ko-KR')}원 · 매칭 예상 ${previewMatched}명`
+        + (previewUnmatched ? ` · 명세서에 없는 기사 ${previewUnmatched}명` : '')
+        + `\n\n기존 기타지급에 더합니다. (이미 넣은 금액을 포함한 전체 파일을 다시 올리면 중복됩니다)\n계속할까요?`
+      );
+      if (!ok) {
+        showToast('합산 반영을 취소했습니다.');
+        return;
+      }
+
+      if (mergeBtn) {
+        mergeBtn.dataset.merging = '1';
+        mergeBtn.disabled = true;
+        mergeBtn.textContent = '반영 중…';
+      }
+      showToast('저장된 명세서에 기타지급 합산 중…');
+
+      try {
+        await ensurePayrollDataLoaded();
+      } catch (error) {
+        console.error('[payroll other merge load]', error);
+        showToast(error?.message || '급여 데이터를 불러오지 못했습니다.');
+        return;
+      }
+
+      const weekLines = lines.getAll().filter(line => {
+        const raw = line?.rawData && typeof line.rawData === 'object' ? line.rawData : {};
+        return String(raw.settlementWeekStart || '').slice(0, 10) === weekStart;
+      });
+      if (!weekLines.length) {
+        showToast(`${utils.formatSettlementWeekLabel(weekStart)}에 저장된 급여명세서가 없습니다.`);
+        return;
+      }
+
+      const targetUploadId = resolvePromotionMergeUploadId(weekLines) || previewUploadId;
+      if (!targetUploadId) {
+        showToast('같은 주에 업로드가 여러 건입니다. 아래 목록에서 「보기」로 대상 명세서를 선택한 뒤 다시 눌러주세요.');
+        return;
+      }
+
+      const targetLines = weekLines.filter(line => line.uploadId === targetUploadId);
+      const now = new Date().toISOString();
+      const updatedById = new Map();
+      let updatedCount = 0;
+      let addedSum = 0;
+      let missedCount = 0;
+
+      bulkMap.forEach((bulk, driverId) => {
+        const amount = Number(bulk.otherPayment || 0);
+        if (!(amount > 0)) return;
+        const match = targetLines.find(line =>
+          String(line.driverId || line.rawData?.selectedDriverId || '').trim() === driverId
+        );
+        if (!match) {
+          missedCount += 1;
+          return;
+        }
+        const result = utils.applyOtherPaymentDeltaToSavedLine(match, amount);
+        if (!result?.changed || !result.line) return;
+        updatedById.set(result.line.id, result.line);
+        updatedCount += 1;
+        addedSum += Number(result.added || 0);
+      });
+
+      if (!updatedById.size) {
+        showToast(missedCount
+          ? `저장된 명세서에서 매칭된 기사가 없습니다. (미매칭 ${missedCount}명)`
+          : '반영할 항목이 없습니다.');
+        return;
+      }
+
       const allLines = lines.getAll();
       const nextLines = allLines.map(line => updatedById.get(line.id) || line);
       const incrementalRows = [...updatedById.values()];
@@ -1943,6 +1988,12 @@
     } catch (error) {
       console.error('[payroll other merge saved]', error);
       showToast(error?.message || '저장된 명세서 기타지급 반영에 실패했습니다.');
+    } finally {
+      if (mergeBtn) {
+        mergeBtn.dataset.merging = '0';
+        mergeBtn.textContent = '저장된 명세서에 합산 반영';
+        renderOtherPaymentBulkPreview();
+      }
     }
   }
 
@@ -2188,8 +2239,21 @@
 
     const pendingMergeCount = state.otherPaymentAppliedBatches.filter(batch => !batch.mergedToSavedAt).length;
     if (mergeSavedBtn) {
-      mergeSavedBtn.disabled = !pendingMergeCount || !canSavePayroll();
+      // disabled 면 primary-btn 스타일이 같아 「눌리는 것처럼 보이는데 무반응」이 된다.
+      // 항상 클릭 가능하게 두고, 불가 사유는 핸들러에서 토스트로 안내한다.
+      const busy = mergeSavedBtn.dataset.merging === '1';
       mergeSavedBtn.hidden = !state.otherPaymentAppliedBatches.length;
+      mergeSavedBtn.disabled = busy;
+      if (!busy) {
+        mergeSavedBtn.textContent = pendingMergeCount
+          ? '저장된 명세서에 합산 반영'
+          : '저장된 명세서에 합산 반영 (완료됨)';
+      }
+      mergeSavedBtn.title = !canSavePayroll()
+        ? (state.storageStatus?.hint || '저장 불가 환경')
+        : (pendingMergeCount
+          ? '적용된 기타지급을 저장된 명세서에 합산합니다'
+          : '이미 반영된 적용 내역입니다. 빠진 파일만 다시 적용하세요');
     }
 
     if (!state.otherPaymentPendingRows.length) {
@@ -3195,7 +3259,11 @@
     $('payrollOtherPaymentBulkTemplateBtn')?.addEventListener('click', downloadOtherPaymentBulkTemplate);
     $('payrollOtherPaymentBulkFile')?.addEventListener('change', event => { void handleOtherPaymentBulkFileChange(event); });
     $('payrollOtherPaymentBulkApplyBtn')?.addEventListener('click', applyOtherPaymentPending);
-    $('payrollOtherPaymentBulkMergeSavedBtn')?.addEventListener('click', () => { void mergeOtherPaymentIntoSavedSlips(); });
+    $('payrollOtherPaymentBulkMergeSavedBtn')?.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      void mergeOtherPaymentIntoSavedSlips();
+    });
     $('payrollOtherPaymentBulkClearPendingBtn')?.addEventListener('click', resetOtherPaymentPending);
     $('payrollOtherPaymentBulkClearBtn')?.addEventListener('click', resetOtherPaymentBulk);
     $('payrollPromotionAppliedBody')?.addEventListener('click', event => {

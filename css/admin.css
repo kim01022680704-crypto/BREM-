@@ -4317,7 +4317,9 @@ textarea {
   background: var(--danger);
 }
 
-.danger-btn:disabled {
+.danger-btn:disabled,
+.primary-btn:disabled,
+.small-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
