@@ -12341,6 +12341,42 @@ tr.is-week-first td {
   border-top: 1px solid #52525b;
 }
 
+.driver-org-member-panel .weekly-settlement-detail-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(1),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(1) { width: 12%; }
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(2),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(2) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(3),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(3) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(4),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(4),
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(5),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(5) { width: 12%; }
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(6),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(6) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(7),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(7) { width: 16%; }
+
+.driver-org-member-panel .weekly-settlement-detail-table tfoot td.weekly-amount-cell,
+.driver-org-member-panel .weekly-settlement-detail-table td.weekly-amount-cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.driver-org-member-panel .driver-org-total-label {
+  text-align: left;
+  color: #fbbf24;
+  font-weight: 800;
+}
+
+.driver-org-member-panel .driver-org-total-row td {
+  vertical-align: middle;
+}
+
 .driver-org-node-label {
   display: block;
   width: 100%;

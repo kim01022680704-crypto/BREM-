@@ -17,11 +17,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260811b">
+  <link rel="stylesheet" href="css/admin.css?v=20260814org">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
-  <link rel="stylesheet" href="css/admin-mobile.css?v=20260811b">
+  <link rel="stylesheet" href="css/admin-mobile.css?v=20260813m">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -159,7 +159,7 @@
                 <span class="crawl-runtime-tag crawl-runtime-tag--unknown" id="crawlBaeminRuntimeTag" title="배민 세션서버 상태">배민 · 확인중</span>
                 <span class="crawl-runtime-tag crawl-runtime-tag--unknown" id="crawlCoupangRuntimeTag" title="쿠팡 세션서버 상태">쿠팡 · 확인중</span>
               </div>
-              <button type="button" class="primary-btn crawl-morning-start-btn" id="crawlMorningStartBtn" title="배민+쿠팡 수집/자동순회 시작. 콜수·거절율·라이더반영은 07:00/11:30/14:00/22:00 확인사살 (지정 관리자 전용)">크롤링 시작</button>
+              <button type="button" class="primary-btn crawl-morning-start-btn" id="crawlMorningStartBtn" title="배민+쿠팡 최초 1회차(수집→콜수/거절율→라이더앱). 이후 주단위 06:30/11:00/13:30/21:30 · 확인사살 07:00/11:30/14:00/22:00 (지정 관리자 전용)">크롤링 시작</button>
             </div>
             <button type="button" class="primary-btn rider-app-publish-btn" id="riderAppPublishBtn" data-rider-app-publish title="콜수·거절율·장기근속을 기사 전용 앱에 일괄 반영 (월·주간 목표는 실시간)">라이더 앱 반영</button>
             <a class="top-link topbar-link--desktop" href="drivers.html">기사등록프로그램</a>
@@ -5803,7 +5803,8 @@
                       <th>구분</th>
                       <th>이름</th>
                       <th>소속박스</th>
-                      <th>콜수</th>
+                      <th>쿠팡콜수</th>
+                      <th>배민콜수</th>
                       <th>배달료</th>
                       <th>관리</th>
                     </tr>
@@ -7882,7 +7883,7 @@
   <script src="js/weekly-settlement-admin.js?v=20260813a"></script>
   <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
   <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
-    <script src="js/baemin-delivery-status-admin.js?v=20260813c"></script>
+    <script src="js/baemin-delivery-status-admin.js?v=20260814a"></script>
     <script src="js/coupang-status-admin.js?v=20260811b"></script>
     <script src="js/coupang-rider-status-admin.js?v=20260811a"></script>
     <script src="js/contribution-admin.js?v=20260805e"></script>
@@ -7909,7 +7910,7 @@
   <script src="js/direct-settlement-calc.js?v=20260813c"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260813m"></script>
-  <script src="js/driver-management-admin.js?v=20260805g"></script>
+  <script src="js/driver-management-admin.js?v=20260814org"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260807d"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
@@ -7918,7 +7919,7 @@
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
     <script src="js/admin.js?v=20260805n"></script>
-  <script src="js/mobile-table-cards.js?v=20260702a" defer></script>
+  <script src="js/mobile-table-cards.js?v=20260813m" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>

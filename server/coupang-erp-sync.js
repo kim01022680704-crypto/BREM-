@@ -1,34 +1,75 @@
 /**
  * 쿠팡 수집(coupang_collect_items) → admin_rejection_rates 서버 동기화
+ * ERP 매칭은 관리자 UI와 동일: 이름+전화뒤4 / 커스텀 쿠팡ID / 전화 유일
  */
 const { getServiceClient } = require('./admin-bootstrap');
-const { settlementWeekStart, todayKST, latestQueryableDate, settlementWeekEnd } = require('./baemin-settlement-week');
+const { settlementWeekStart, todayKST, settlementWeekEnd } = require('./baemin-settlement-week');
 
 const PROTECTED_SOURCES = new Set(['manual', 'erp-bulk', 'erp']);
 const SYNC_SOURCE = 'coupang_crawl_sync';
 
-function normalizeCoupangKey(value) {
-  return String(value || '').replace(/\s+/g, '').toLowerCase();
+function normalizePhone(value) {
+  return String(value || '').replace(/[^0-9]/g, '');
 }
 
+function normalizeCoupangKey(value) {
+  return String(value || '')
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function makeDriverLoginId(driver) {
+  const name = String(driver?.name || '').replace(/\s+/g, '');
+  const tail = normalizePhone(driver?.phone).slice(-4);
+  return name && tail ? `${name}${tail}` : '';
+}
+
+/** ERP 쿠팡ID — 커스텀 키 우선, 없으면 이름+전화뒤4 (UI getErpCoupangId 와 동일) */
 function getErpCoupangId(driver) {
   const raw = driver.raw && typeof driver.raw === 'object' ? driver.raw : {};
-  return String(
+  const custom = String(
     driver.coupangId
+    || driver.coupangLoginKey
     || raw.coupangId
     || raw.coupangLoginKey
     || driver.coupang_id
     || ''
   ).replace(/\s+/g, '');
+  if (custom) return custom;
+  return makeDriverLoginId(driver);
 }
 
 function buildCoupangLookup(drivers) {
   const byKey = new Map();
+  const byPhone = new Map();
   (drivers || []).forEach(driver => {
-    const key = normalizeCoupangKey(getErpCoupangId(driver));
-    if (key && !byKey.has(key)) byKey.set(key, driver);
+    const loginId = normalizeCoupangKey(makeDriverLoginId(driver));
+    const erpId = normalizeCoupangKey(getErpCoupangId(driver));
+    if (loginId && !byKey.has(loginId)) byKey.set(loginId, driver);
+    if (erpId && !byKey.has(erpId)) byKey.set(erpId, driver);
+
+    const phone = normalizePhone(driver.phone);
+    if (phone) {
+      if (!byPhone.has(phone)) byPhone.set(phone, []);
+      byPhone.get(phone).push(driver);
+    }
   });
-  return { byKey };
+  return { byKey, byPhone };
+}
+
+function resolveDriver(rider, lookup) {
+  const matchKey = normalizeCoupangKey(rider.matchKey || '');
+  if (matchKey && lookup.byKey.has(matchKey)) {
+    return lookup.byKey.get(matchKey);
+  }
+  const phone = normalizePhone(rider.phone || '');
+  if (phone) {
+    const cands = lookup.byPhone.get(phone) || [];
+    if (cands.length === 1) return cands[0];
+  }
+  return null;
 }
 
 function calcRejectRate(complete, reject, cancel) {
@@ -67,16 +108,18 @@ async function loadDrivers(supabase) {
       name: String(row.name || raw.name || ''),
       phone: String(row.phone || raw.phone || ''),
       coupangId: String(raw.coupangId || raw.coupangLoginKey || ''),
+      coupangLoginKey: String(raw.coupangLoginKey || ''),
       raw
     };
   }).filter(d => d.id);
 }
 
 async function loadCoupangRiderDaily(supabase, fromDate, toDate) {
+  // UI와 동일: rider_daily만 합산 (peak_realtime 중복 방지)
   const { data, error } = await supabase
     .from('coupang_collect_items')
     .select('collect_date,match_key,rider_name,phone_number,courier_id,parsed_json,source_menu')
-    .in('source_menu', ['rider_daily', 'peak_realtime', 'rider_weekly'])
+    .eq('source_menu', 'rider_daily')
     .gte('collect_date', fromDate)
     .lte('collect_date', toDate)
     .limit(20000);
@@ -91,12 +134,11 @@ async function syncCoupangRejections(options = {}) {
   }
 
   const today = todayKST();
-  const latest = latestQueryableDate(today) || today;
-  // 수요일 전주 포함: 어제(조회가능일)가 속한 주
-  const weekStart = String(options.weekStart || settlementWeekStart(latest)).slice(0, 10);
-  const weekEnd = String(options.weekEnd || settlementWeekEnd(weekStart) || latest).slice(0, 10);
+  // 쿠팡은 당일 rider_daily 수집 가능 → 배민 latestQueryable(어제)로 weekEnd를 자르지 않음
+  const weekStart = String(options.weekStart || settlementWeekStart(today)).slice(0, 10);
+  const weekEnd = settlementWeekEnd(weekStart);
   const fromDate = weekStart;
-  const toDate = latest < weekEnd ? latest : weekEnd;
+  const toDate = today < weekEnd ? today : weekEnd;
 
   const [drivers, rows] = await Promise.all([
     loadDrivers(supabase),
@@ -106,12 +148,15 @@ async function syncCoupangRejections(options = {}) {
 
   const byRider = new Map();
   rows.forEach(row => {
-    const matchKey = normalizeCoupangKey(row.match_key || row.courier_id || '');
-    if (!matchKey) return;
+    const matchKey = normalizeCoupangKey(row.match_key || '');
+    const phone = normalizePhone(row.phone_number || row.parsed_json?.phone || '');
+    const identity = matchKey || (phone ? `phone:${phone}` : '') || normalizeCoupangKey(row.courier_id || '');
+    if (!identity) return;
     const m = metricsFromParsed(row.parsed_json || {});
-    const prev = byRider.get(matchKey) || {
-      matchKey,
+    const prev = byRider.get(identity) || {
+      matchKey: matchKey || identity,
       name: row.rider_name || '',
+      phone,
       complete: 0,
       reject: 0,
       cancel: 0
@@ -120,7 +165,9 @@ async function syncCoupangRejections(options = {}) {
     prev.reject += m.reject;
     prev.cancel += m.cancel;
     if (row.rider_name) prev.name = row.rider_name;
-    byRider.set(matchKey, prev);
+    if (phone) prev.phone = phone;
+    if (matchKey) prev.matchKey = matchKey;
+    byRider.set(identity, prev);
   });
 
   const { data: existingRows, error: existingError } = await supabase
@@ -143,7 +190,7 @@ async function syncCoupangRejections(options = {}) {
       skipped += 1;
       return;
     }
-    const driver = lookup.byKey.get(rider.matchKey) || null;
+    const driver = resolveDriver(rider, lookup);
     if (!driver?.id) {
       unmatched += 1;
       return;
@@ -193,5 +240,7 @@ async function syncCoupangRejections(options = {}) {
 module.exports = {
   syncCoupangRejections,
   calcRejectRate,
-  metricsFromParsed
+  metricsFromParsed,
+  getErpCoupangId,
+  makeDriverLoginId
 };

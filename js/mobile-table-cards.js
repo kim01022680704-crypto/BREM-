@@ -4,7 +4,19 @@
 (function () {
   var DRIVER_MQ = window.matchMedia('(max-width: 430px)');
   var ADMIN_MQ = window.matchMedia('(max-width: 768px)');
-  var SKIP = '.bulk-guide-table, .bulk-preview-table, .lease-bulk-guide-table';
+  var SKIP = '.bulk-guide-table, .bulk-preview-table, .lease-bulk-guide-table, .baemin-weekday-quota-table';
+  var ADMIN_WRAP_SEL =
+    '.table-wrap, .table-scroll, .lease-table-wrap, .dashboard-baemin-table-wrap, .baemin-coverage-table-wrap, .promotion-table-wrap, .mission-assignment-table-wrap, .payroll-notices-table-wrap';
+  var ADMIN_TABLE_SEL = [
+    '.admin-app .table-wrap table',
+    '.admin-app .table-scroll table',
+    '.admin-app .lease-table-wrap table',
+    '.admin-app .dashboard-baemin-table-wrap table',
+    '.admin-app .baemin-coverage-table-wrap table',
+    '.admin-app .promotion-table-wrap table',
+    '.admin-app .mission-assignment-table-wrap table',
+    '.admin-app .payroll-notices-table-wrap table'
+  ].join(', ');
 
   function debounce(fn, ms) {
     var t;
@@ -12,6 +24,10 @@
       clearTimeout(t);
       t = setTimeout(fn, ms);
     };
+  }
+
+  function findWrap(table) {
+    return table.closest(ADMIN_WRAP_SEL) || table.parentElement;
   }
 
   function shouldSkip(table) {
@@ -22,7 +38,7 @@
 
   function labelTable(table) {
     if (!table || shouldSkip(table)) return;
-    var wrap = table.closest('.table-wrap') || table.parentElement;
+    var wrap = findWrap(table);
     var headers = [];
     table.querySelectorAll('thead th').forEach(function (th, i) {
       var labelEl = th.querySelector('.th-sort-label');
@@ -44,7 +60,7 @@
   function clearTable(table) {
     if (!table) return;
     table.classList.remove('brem-mobile-cards-ready');
-    var wrap = table.closest('.table-wrap') || table.parentElement;
+    var wrap = findWrap(table);
     if (wrap) wrap.classList.remove('brem-mobile-cards');
     table.querySelectorAll('tbody td[data-label]').forEach(function (td) {
       td.removeAttribute('data-label');
@@ -59,7 +75,7 @@
   }
 
   function processAll() {
-    processScope('.admin-app .table-wrap table', ADMIN_MQ.matches);
+    processScope(ADMIN_TABLE_SEL, ADMIN_MQ.matches);
     processScope('.driver-app .table-wrap table', DRIVER_MQ.matches);
   }
 

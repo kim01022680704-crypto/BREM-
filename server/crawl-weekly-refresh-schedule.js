@@ -12,6 +12,11 @@ const { settlementWeekStart, todayKST, latestQueryableDate } = require('./baemin
 const { computeCrawlWeekRangeFromLatest } = require('./crawl-session-auth');
 const { syncBaeminCallsAndRejections } = require('./baemin-erp-sync');
 const { syncCoupangRejections } = require('./coupang-erp-sync');
+const {
+  setWeeklyRefreshRunning,
+  isWeeklyRefreshRunning,
+  isErpPublishRunning
+} = require('./crawl-schedule-coord');
 
 const BAEMIN_PORT = Number(process.env.BAEMIN_SESSION_LOCAL_PORT || 3939);
 const COUPANG_PORT = Number(process.env.COUPANG_SESSION_LOCAL_PORT || 3940);
@@ -134,110 +139,148 @@ async function runWeeklyRefreshPipeline(options = {}) {
     steps.push({ name, ...(result && typeof result === 'object' ? result : { result }) });
   };
 
-  const today = todayKST();
-  const latest = latestQueryableDate(today) || today;
-  const weekRange = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
+  if (isWeeklyRefreshRunning() && !options.force) {
+    return {
+      ok: false,
+      skipped: true,
+      message: '주단위 재수집이 이미 실행 중',
+      steps,
+      slot: options.slot || '',
+      finishedAt: new Date().toISOString()
+    };
+  }
+  if (isErpPublishRunning()) {
+    log('[WEEKLY-REFRESH] 확인사살 진행 중 — 잠깐 대기 후 주단위 시작');
+    const waitStart = Date.now();
+    while (isErpPublishRunning() && Date.now() - waitStart < 10 * 60 * 1000) {
+      await sleep(3000);
+    }
+  }
 
-  // 1) Baemin week collect (prefer in-process hook from session server)
-  if (!options.skipBaemin) {
-    try {
-      if (typeof options.runBaeminWeekCollect === 'function') {
-        const baemin = await options.runBaeminWeekCollect({ weekRange });
-        push('baemin_week_collect', baemin);
-      } else {
-        const collect = await localPost(BAEMIN_PORT, '/weekly-refresh/run-baemin', {
-          fromDate: weekRange.fromDate,
-          toDate: weekRange.toDate
-        }, 40 * 60 * 1000);
-        push('baemin_week_collect', {
+  setWeeklyRefreshRunning(true);
+  try {
+    const today = todayKST();
+    const latest = latestQueryableDate(today) || today;
+    const weekRange = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
+
+    // 배민·쿠팡 수집 속도가 달라도 서로를 막지 않도록 병렬 수집
+    const baeminCollectTask = (async () => {
+      if (options.skipBaemin) return;
+      try {
+        if (typeof options.runBaeminWeekCollect === 'function') {
+          const baemin = await options.runBaeminWeekCollect({ weekRange });
+          push('baemin_week_collect', baemin);
+        } else {
+          const collect = await localPost(BAEMIN_PORT, '/weekly-refresh/run-baemin', {
+            fromDate: weekRange.fromDate,
+            toDate: weekRange.toDate
+          }, 40 * 60 * 1000);
+          push('baemin_week_collect', {
+            ok: Boolean(collect.json?.ok),
+            status: collect.status,
+            message: collect.json?.message,
+            ...(collect.json || {})
+          });
+        }
+      } catch (error) {
+        push('baemin_week_collect', { ok: false, message: error.message || String(error) });
+      }
+    })();
+
+    const coupangCollectTask = (async () => {
+      if (options.skipCoupang) return;
+      try {
+        const health = await new Promise((resolve) => {
+          http.get({ hostname: '127.0.0.1', port: COUPANG_PORT, path: '/health', timeout: 5000 }, res => {
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => {
+              try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
+              catch { resolve({}); }
+            });
+          }).on('error', () => resolve({}));
+        });
+
+        if (!health.hasToken) {
+          const recover = await localPost(COUPANG_PORT, '/auth/recover', {}, 180000);
+          push('coupang_auth_recover', {
+            ok: Boolean(recover.json?.ok),
+            message: recover.json?.message
+          });
+        }
+
+        // 자동순회와 충돌 피하려고 잠시 중지 → 주단위 → 재개(1회차 fullWeek 생략)
+        await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
+        await sleep(800);
+
+        const collect = await localPost(COUPANG_PORT, '/collect', {
+          weekStartDate: weekRange.fromDate,
+          fullWeek: true,
+          includeRider: true
+        }, 25 * 60 * 1000);
+        push('coupang_week_collect', {
           ok: Boolean(collect.json?.ok),
           status: collect.status,
-          message: collect.json?.message,
-          ...(collect.json || {})
+          message: collect.json?.message || collect.json?.error,
+          summary: collect.json?.summary || null
         });
-      }
-    } catch (error) {
-      push('baemin_week_collect', { ok: false, message: error.message || String(error) });
-    }
-  }
 
-  // 2) Coupang full-week
-  if (!options.skipCoupang) {
-    try {
-      const health = await new Promise((resolve) => {
-        http.get({ hostname: '127.0.0.1', port: COUPANG_PORT, path: '/health', timeout: 5000 }, res => {
-          const chunks = [];
-          res.on('data', c => chunks.push(c));
-          res.on('end', () => {
-            try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
-            catch { resolve({}); }
+        await localPost(COUPANG_PORT, '/status-loop/start', {
+          skipFirstFullWeek: true
+        }).catch(() => null);
+      } catch (error) {
+        push('coupang_week_collect', { ok: false, message: error.message || String(error) });
+      }
+    })();
+
+    await Promise.allSettled([baeminCollectTask, coupangCollectTask]);
+
+    // 수집이 끝난 뒤 ERP 동기화 (한쪽 실패해도 다른 쪽은 반영)
+    if (!options.skipBaemin) {
+      try {
+        const baeminSync = await syncBaeminCallsAndRejections({
+          fromDate: weekRange.fromDate,
+          toDate: weekRange.toDate,
+          mode: 'all'
+        });
+        push('baemin_erp_sync', baeminSync);
+      } catch (error) {
+        push('baemin_erp_sync', { ok: false, message: error.message || String(error) });
+      }
+    }
+
+    if (!options.skipCoupang) {
+      const coupangCollect = steps.find(s => s.name === 'coupang_week_collect');
+      if (!coupangCollect || coupangCollect.ok !== false) {
+        try {
+          const sync = await syncCoupangRejections({
+            weekStart: weekRange.fromDate
           });
-        }).on('error', () => resolve({}));
-      });
-
-      if (!health.hasToken) {
-        const recover = await localPost(COUPANG_PORT, '/auth/recover', {}, 180000);
-        push('coupang_auth_recover', {
-          ok: Boolean(recover.json?.ok),
-          message: recover.json?.message
+          push('coupang_erp_sync', sync);
+        } catch (error) {
+          push('coupang_erp_sync', { ok: false, message: error.message || String(error) });
+        }
+      } else {
+        push('coupang_erp_sync', {
+          ok: false,
+          skipped: true,
+          message: '쿠팡 주단위 수집 실패로 거절율 동기화 생략'
         });
       }
-
-      // 자동순회와 충돌 피하려고 잠시 중지 → 주단위 → 재개(1회차 fullWeek 생략)
-      await localPost(COUPANG_PORT, '/status-loop/stop', {}).catch(() => null);
-      await sleep(800);
-
-      const collect = await localPost(COUPANG_PORT, '/collect', {
-        weekStartDate: weekRange.fromDate,
-        fullWeek: true,
-        includeRider: true
-      }, 25 * 60 * 1000);
-      push('coupang_week_collect', {
-        ok: Boolean(collect.json?.ok),
-        status: collect.status,
-        message: collect.json?.message || collect.json?.error,
-        summary: collect.json?.summary || null
-      });
-
-      if (collect.json?.ok) {
-        const sync = await syncCoupangRejections({
-          weekStart: weekRange.fromDate,
-          weekEnd: weekRange.toDate
-        });
-        push('coupang_erp_sync', sync);
-      }
-
-      await localPost(COUPANG_PORT, '/status-loop/start', {
-        skipFirstFullWeek: true
-      }).catch(() => null);
-    } catch (error) {
-      push('coupang_week_collect', { ok: false, message: error.message || String(error) });
     }
-  }
 
-  // 3) Baemin ERP sync (콜수/거절) — 반영은 30분 뒤 publish 스케줄
-  if (!options.skipBaemin) {
-    try {
-      const baeminSync = await syncBaeminCallsAndRejections({
-        fromDate: weekRange.fromDate,
-        toDate: weekRange.toDate,
-        mode: 'all'
-      });
-      push('baemin_erp_sync', baeminSync);
-    } catch (error) {
-      push('baemin_erp_sync', { ok: false, message: error.message || String(error) });
-    }
+    const failed = steps.some(step => step.ok === false);
+    log(`[WEEKLY-REFRESH] 완료 ${failed ? 'PARTIAL/FAIL' : 'OK'} · ${weekRange.label || ''} · slot=${options.slot || ''}`);
+    return {
+      ok: !failed,
+      weekRange,
+      steps,
+      slot: options.slot || '',
+      finishedAt: new Date().toISOString()
+    };
+  } finally {
+    setWeeklyRefreshRunning(false);
   }
-
-  const failed = steps.some(step => step.ok === false);
-  log(`[WEEKLY-REFRESH] 완료 ${failed ? 'PARTIAL/FAIL' : 'OK'} · ${weekRange.label || ''} · slot=${options.slot || ''}`);
-  return {
-    ok: !failed,
-    weekRange,
-    steps,
-    slot: options.slot || '',
-    finishedAt: new Date().toISOString()
-  };
 }
 
 function startWeeklyRefreshScheduler(options = {}) {
@@ -311,5 +354,6 @@ module.exports = {
   nextSlotInfo,
   subtractMinutesHm,
   runWeeklyRefreshPipeline,
-  startWeeklyRefreshScheduler
+  startWeeklyRefreshScheduler,
+  isWeeklyRefreshRunning
 };

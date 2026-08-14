@@ -364,7 +364,8 @@ const BremDriverManagementAdmin = (function () {
     if (title) title.textContent = `「${node.label}」 소속 목록 (하위 포함)`;
 
     const entries = collectSubtreeMemberEntries(node);
-    let totalCalls = 0;
+    let totalCoupangCalls = 0;
+    let totalBaeminCalls = 0;
     let totalFee = 0;
     const countedDrivers = new Set();
     const people = entries.map(entry => {
@@ -375,7 +376,8 @@ const BremDriverManagementAdmin = (function () {
           kind: '관리자',
           name: account?.name || account?.loginId || entry.id,
           boxLabel: entry.boxLabel,
-          callCount: '-',
+          coupangCalls: '-',
+          baeminCalls: '-',
           deliveryFee: '-',
           nodeId: entry.nodeId,
           memberKind: 'admin',
@@ -383,18 +385,22 @@ const BremDriverManagementAdmin = (function () {
         };
       }
       const driver = window.BremStorage?.drivers?.getById?.(entry.id);
-      const stats = driverCallAndFee(entry.id, ensureWeek());
+      const coupang = driverCallAndFee(entry.id, ensureWeek(), 'coupang');
+      const baemin = driverCallAndFee(entry.id, ensureWeek(), 'baemin');
+      const deliveryFee = coupang.deliveryFee + baemin.deliveryFee;
       if (!countedDrivers.has(entry.id)) {
         countedDrivers.add(entry.id);
-        totalCalls += stats.callCount;
-        totalFee += stats.deliveryFee;
+        totalCoupangCalls += coupang.callCount;
+        totalBaeminCalls += baemin.callCount;
+        totalFee += deliveryFee;
       }
       return {
         kind: '기사',
         name: driver?.name || entry.id,
         boxLabel: entry.boxLabel,
-        callCount: formatNumber(stats.callCount),
-        deliveryFee: `${formatNumber(stats.deliveryFee)}원`,
+        coupangCalls: formatNumber(coupang.callCount),
+        baeminCalls: formatNumber(baemin.callCount),
+        deliveryFee: `${formatNumber(deliveryFee)}원`,
         nodeId: entry.nodeId,
         memberKind: 'driver',
         memberId: entry.id
@@ -409,7 +415,8 @@ const BremDriverManagementAdmin = (function () {
     }
 
     if (totalsEl) {
-      totalsEl.textContent = `콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`;
+      const totalCalls = totalCoupangCalls + totalBaeminCalls;
+      totalsEl.textContent = `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`;
     }
 
     rows.innerHTML = people.length
@@ -418,7 +425,8 @@ const BremDriverManagementAdmin = (function () {
           <td>${escapeHtml(person.kind)}</td>
           <td><strong>${escapeHtml(person.name)}</strong></td>
           <td>${escapeHtml(person.boxLabel)}</td>
-          <td class="weekly-amount-cell">${escapeHtml(person.callCount)}</td>
+          <td class="weekly-amount-cell">${escapeHtml(person.coupangCalls)}</td>
+          <td class="weekly-amount-cell">${escapeHtml(person.baeminCalls)}</td>
           <td class="weekly-amount-cell">${escapeHtml(person.deliveryFee)}</td>
           <td>
             <button type="button" class="small-btn danger"
@@ -427,13 +435,16 @@ const BremDriverManagementAdmin = (function () {
               data-org-unassign-id="${escapeHtml(person.memberId)}">체크해제</button>
           </td>
         </tr>`).join('')
-      : '<tr><td colspan="6" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
+      : '<tr><td colspan="7" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
 
     if (foot) {
       foot.innerHTML = people.length
-        ? `<tr>
-            <td colspan="3">총합계</td>
-            <td class="weekly-amount-cell">${formatNumber(totalCalls)}</td>
+        ? `<tr class="driver-org-total-row">
+            <td></td>
+            <td class="driver-org-total-label">총합계</td>
+            <td></td>
+            <td class="weekly-amount-cell">${formatNumber(totalCoupangCalls)}</td>
+            <td class="weekly-amount-cell">${formatNumber(totalBaeminCalls)}</td>
             <td class="weekly-amount-cell">${formatNumber(totalFee)}원</td>
             <td></td>
           </tr>`

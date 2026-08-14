@@ -578,6 +578,386 @@
   .admin-app .grid.two {
     grid-template-columns: 1fr !important;
   }
+
+  /* ── Global table min-width kill (PC는 720px 강제) ── */
+  .admin-app table {
+    min-width: 0 !important;
+  }
+
+  .admin-app .table-scroll:not(.brem-mobile-cards),
+  .admin-app .lease-table-wrap:not(.brem-mobile-cards),
+  .admin-app .dashboard-baemin-table-wrap:not(.brem-mobile-cards),
+  .admin-app .baemin-table-scroll:not(.brem-mobile-cards) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .admin-app .table-scroll:not(.brem-mobile-cards) table,
+  .admin-app .baemin-table-scroll:not(.brem-mobile-cards) table {
+    min-width: 640px !important;
+  }
+
+  .admin-app .card {
+    overflow: visible;
+  }
+
+  .admin-app .card > .card-header + *,
+  .admin-app .card > .form-help + * {
+    min-width: 0;
+  }
+
+  /* ── Compact sticky topbar (PWA) ── */
+  .admin-app .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(18, 18, 18, 0.94);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .admin-app .topbar__meta {
+    display: none;
+  }
+
+  .admin-app .topbar-actions {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .admin-app .topbar-actions .rider-app-publish-btn,
+  .admin-app .topbar-actions .crawl-morning-start-btn,
+  .admin-app .topbar-actions .top-link {
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  .admin-app .crawl-runtime-tags {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .admin-app .crawl-runtime-tag {
+    font-size: 0.68rem;
+  }
+
+  /* ── Sidebar: scrollable nav ── */
+  .admin-app .sidebar {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .admin-app .sidebar .brand {
+    flex-shrink: 0;
+    padding-bottom: 12px;
+  }
+
+  .admin-app .sidebar nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .admin-app .sidebar .nav-btn,
+  .admin-app .sidebar .driver-link {
+    min-height: 42px;
+    padding: 8px 12px;
+    font-size: 0.86rem;
+  }
+
+  .admin-app .sidebar .driver-link {
+    flex-shrink: 0;
+    margin-top: 8px;
+  }
+
+  /* ── Lease ERP: chip strip instead of tall button grid ── */
+  .admin-app .lease-erp-shell {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
+
+  .admin-app .lease-erp-nav {
+    position: sticky;
+    top: 72px;
+    z-index: 30;
+    padding: 10px 10px 8px;
+    border-radius: 12px;
+    background: rgba(16, 16, 16, 0.96);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .admin-app .lease-erp-nav__title {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+  }
+
+  .admin-app .lease-erp-nav__list {
+    display: flex !important;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .admin-app .lease-erp-nav__btn {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-height: 36px;
+    padding: 8px 12px;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #171717;
+  }
+
+  .admin-app .lease-erp-unsaved-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .admin-app .lease-erp-unsaved-banner .primary-btn {
+    width: 100%;
+  }
+
+  .admin-app .lease-list-toolbar,
+  .admin-app .lease-submenu {
+    gap: 6px;
+  }
+
+  .admin-app .lease-submenu {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-app .lease-submenu-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    min-height: 38px;
+  }
+
+  .admin-app .lease-rental-form,
+  .admin-app .lease-form-grid,
+  .admin-app .lease-contract-form .form-row,
+  .admin-app .lease-dash-week-period {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Baemin / Coupang toolbars ── */
+  .admin-app .baemin-view-nav {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .admin-app .baemin-view-delivery-toolbar,
+  .admin-app .baemin-view-rider-toolbar,
+  .admin-app .baemin-view-week,
+  .admin-app .baemin-view-rider-range {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .admin-app .baemin-view-delivery-toolbar .primary-btn,
+  .admin-app .baemin-view-delivery-toolbar .small-btn,
+  .admin-app .baemin-view-rider-toolbar .primary-btn,
+  .admin-app .baemin-view-rider-toolbar .small-btn,
+  .admin-app .baemin-view-week .primary-btn,
+  .admin-app .baemin-view-week .small-btn {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .admin-app .baemin-menu-tabs,
+  .admin-app .baemin-menu-tabs--buttons,
+  .admin-app .baemin-region-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+
+  .admin-app .baemin-menu-tabs .promotion-tab,
+  .admin-app .baemin-menu-tabs--buttons .promotion-tab,
+  .admin-app .baemin-region-tabs .baemin-region-tab {
+    flex: 0 0 auto;
+    min-height: 38px;
+    white-space: nowrap;
+  }
+
+  .admin-app .baemin-view-data-card__header,
+  .admin-app .baemin-view-meta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .admin-app .baemin-grand-totals {
+    overflow-x: auto;
+  }
+
+  /* ── Section / platform tabs: horizontal chips ── */
+  .admin-app .admin-section-tabs,
+  .admin-app .promotion-platform-tabs,
+  .admin-app .revenue-period-tabs,
+  .admin-app .revenue-sub-tabs,
+  .admin-app .promotion-rules-tabs,
+  .admin-app .promotion-apply-tabs,
+  .admin-app .promotion-apply-channel-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+
+  .admin-app .promotion-tab,
+  .admin-app .revenue-period-btn,
+  .admin-app .revenue-sub-btn,
+  .admin-app .admin-section-tabs button {
+    flex: 0 0 auto !important;
+    min-width: auto;
+    white-space: nowrap;
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* ── Forms: full-width controls ── */
+  .admin-app .admin-period-field,
+  .admin-app .admin-period-input,
+  .admin-app input[type="date"],
+  .admin-app input[type="search"],
+  .admin-app select {
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .admin-app label {
+    min-width: 0;
+  }
+
+  .admin-app .form-row label,
+  .admin-app .lease-rental-form label {
+    display: grid;
+    gap: 4px;
+  }
+
+  /* ── Settlement / final deposit / driver mgmt ── */
+  .admin-app .final-deposit-picker,
+  .admin-app .final-deposit-settlement-grid,
+  .admin-app .settlement-result-stats,
+  .admin-app .settlement-result-stats--baemin {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-app .driver-org-layout,
+  .admin-app .driver-region-rank-panels,
+  .admin-app .driver-mgmt-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-app .settlement-match-modal__dialog,
+  .admin-app .admin-schedule-detail-card {
+    width: min(100%, calc(100vw - 16px));
+    max-height: calc(100dvh - 24px);
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  /* ── Sticky secondary filter bars ── */
+  .admin-app .driver-search-bar,
+  .admin-app .rejection-week-toolbar,
+  .admin-app .payroll-toolbar {
+    position: sticky;
+    top: 68px;
+    z-index: 25;
+    background: rgba(16, 16, 16, 0.96);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* ── Typography / density ── */
+  .admin-app .section > .card,
+  .admin-app .lease-menu-panel > .card,
+  .admin-app .baemin-view-data-card {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .admin-app .form-help,
+  .admin-app .admin-table-summary {
+    font-size: 0.74rem;
+    line-height: 1.4;
+  }
+
+  .admin-app .primary-btn,
+  .admin-app .small-btn,
+  .admin-app .top-link {
+    border-radius: 10px;
+  }
+
+  /* ── PWA standalone safe areas ── */
+  @media (display-mode: standalone) {
+    .admin-app .main {
+      padding-top: max(6px, env(safe-area-inset-top));
+      padding-bottom: max(20px, env(safe-area-inset-bottom));
+      padding-left: max(10px, env(safe-area-inset-left));
+      padding-right: max(10px, env(safe-area-inset-right));
+    }
+
+    .admin-app .sidebar {
+      padding-top: max(14px, env(safe-area-inset-top));
+      padding-bottom: max(14px, env(safe-area-inset-bottom));
+    }
+  }
+}
+
+/* Very small phones */
+@media (max-width: 390px) {
+  .admin-app .stats-grid,
+  .admin-app .revenue-summary-grid,
+  .admin-app .revenue-final-stats,
+  .admin-app .lease-stats-grid,
+  .admin-app #dashboard > .stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px;
+  }
+
+  .admin-app .stat-card strong,
+  .admin-app #dashboard > .stats-grid .stat-card strong {
+    font-size: 1.02rem;
+  }
+
+  .admin-app .topbar h1 {
+    font-size: 1.05rem;
+  }
+
+  .admin-app .brem-mobile-cards tbody td {
+    font-size: 0.8rem;
+  }
 }
 
 @media (min-width: 769px) {

@@ -7,6 +7,10 @@ const { settlementWeekStart, todayKST, latestQueryableDate } = require('./baemin
 const { computeCrawlWeekRangeFromLatest } = require('./crawl-session-auth');
 const { syncBaeminCallsAndRejections } = require('./baemin-erp-sync');
 const { syncCoupangRejections } = require('./coupang-erp-sync');
+const {
+  setErpPublishRunning,
+  waitForWeeklyRefreshIdle
+} = require('./crawl-schedule-coord');
 
 const DEFAULT_SLOTS = Object.freeze(['07:00', '11:30', '14:00', '22:00']);
 
@@ -74,6 +78,7 @@ async function publishRiderView() {
 
 /**
  * 콜수/거절율 동기화 + 라이더 앱 반영 (수집은 하지 않음)
+ * 배민·쿠팡 ERP는 순차 반영 후, 라이더앱은 한 번만 공개 (한쪽만 반영되는 일 방지)
  */
 async function runErpAndPublishPipeline(options = {}) {
   const steps = [];
@@ -81,52 +86,64 @@ async function runErpAndPublishPipeline(options = {}) {
     steps.push({ name, ...(result && typeof result === 'object' ? result : { result }) });
   };
 
-  const today = todayKST();
-  const latest = latestQueryableDate(today) || today;
-  const weekRange = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
-
-  if (!options.skipBaemin) {
-    try {
-      const baeminSync = await syncBaeminCallsAndRejections({
-        fromDate: weekRange.fromDate,
-        toDate: weekRange.toDate,
-        mode: 'all'
-      });
-      push('baemin_erp_sync', baeminSync);
-    } catch (error) {
-      push('baemin_erp_sync', { ok: false, message: error.message || String(error) });
+  setErpPublishRunning(true);
+  try {
+    const wait = await waitForWeeklyRefreshIdle({
+      timeoutMs: options.waitWeeklyTimeoutMs || 45 * 60 * 1000,
+      onLog: options.onLog
+    });
+    if (wait.waitedMs > 0) {
+      push('wait_weekly_refresh', wait);
     }
-  }
 
-  if (!options.skipCoupang) {
-    try {
-      const coupangSync = await syncCoupangRejections({
-        weekStart: weekRange.fromDate,
-        weekEnd: weekRange.toDate
-      });
-      push('coupang_erp_sync', coupangSync);
-    } catch (error) {
-      push('coupang_erp_sync', { ok: false, message: error.message || String(error) });
+    const today = todayKST();
+    const latest = latestQueryableDate(today) || today;
+    const weekRange = computeCrawlWeekRangeFromLatest(latest, settlementWeekStart);
+
+    if (!options.skipBaemin) {
+      try {
+        const baeminSync = await syncBaeminCallsAndRejections({
+          fromDate: weekRange.fromDate,
+          toDate: weekRange.toDate,
+          mode: 'all'
+        });
+        push('baemin_erp_sync', baeminSync);
+      } catch (error) {
+        push('baemin_erp_sync', { ok: false, message: error.message || String(error) });
+      }
     }
-  }
 
-  if (!options.skipPublish) {
-    try {
-      const pub = await publishRiderView();
-      push('rider_publish', pub);
-    } catch (error) {
-      push('rider_publish', { ok: false, message: error.message || String(error) });
+    if (!options.skipCoupang) {
+      try {
+        const coupangSync = await syncCoupangRejections({
+          weekStart: weekRange.fromDate
+        });
+        push('coupang_erp_sync', coupangSync);
+      } catch (error) {
+        push('coupang_erp_sync', { ok: false, message: error.message || String(error) });
+      }
     }
-  }
 
-  const failed = steps.some(step => step.ok === false);
-  return {
-    ok: !failed,
-    weekRange,
-    steps,
-    slot: options.slot || '',
-    finishedAt: new Date().toISOString()
-  };
+    if (!options.skipPublish) {
+      try {
+        const pub = await publishRiderView();
+        push('rider_publish', pub);
+      } catch (error) {
+        push('rider_publish', { ok: false, message: error.message || String(error) });
+      }
+    }
+
+    const failed = steps.some(step => step.ok === false && step.name !== 'wait_weekly_refresh');
+    return {
+      ok: !failed,
+      weekRange,
+      steps,
+      slot: options.slot || '',
+      finishedAt: new Date().toISOString()
+    };
+  } finally {
+    setErpPublishRunning(false);
+  }
 }
 
 function startErpPublishScheduler(options = {}) {
@@ -153,9 +170,9 @@ function startErpPublishScheduler(options = {}) {
     if (key === lastSlotKey) return;
     lastSlotKey = key;
     running = true;
-    log(`[ERP-PUBLISH] ▶ ${key} 확인사살 시작 (콜수·거절율·라이더반영)`);
+    log(`[ERP-PUBLISH] ▶ ${key} 확인사살 시작 (콜수·거절율/라이더반영 · 주단위 끝나면)`);
     try {
-      lastResult = await runErpAndPublishPipeline({ slot });
+      lastResult = await runErpAndPublishPipeline({ slot, onLog: log });
       const okLabel = lastResult.ok ? 'OK' : 'PARTIAL/FAIL';
       log(`[ERP-PUBLISH] ■ ${key} 완료 ${okLabel} · ${lastResult.weekRange?.label || ''}`);
       if (typeof options.onDone === 'function') options.onDone(lastResult);

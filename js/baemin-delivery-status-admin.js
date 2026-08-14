@@ -5291,7 +5291,7 @@
         el.classList.toggle('is-running', Boolean(busy));
         el.title = busy
           ? '크롤링 파이프라인 실행 중 — 아래 배민/쿠팡 태그 상태를 확인하세요'
-          : '배민+쿠팡 수집/자동순회 시작. 콜수·거절율·라이더반영은 07:00/11:30/14:00/22:00 확인사살 (지정 관리자 전용)';
+          : '배민+쿠팡 최초 1회차(수집→콜수/거절율→라이더앱). 이후 주단위 06:30/11:00/13:30/21:30 · 확인사살 07:00/11:30/14:00/22:00 (지정 관리자 전용)';
       }
     });
   }
@@ -5554,7 +5554,7 @@
     }
     const busy = $('crawlMorningStartBtn')?.disabled || $('baeminMorningRunBtn')?.disabled;
     if (busy) return;
-    if (!window.confirm('크롤링을 시작할까요?\n배민/쿠팡 수집·자동순회 시작 (수~화)\n주단위(라이더별 하루씩)는 라이더반영 30분 전(06:30·11:00·13:30·21:30) 자동\n콜수/거절율/라이더앱 반영은 07:00·11:30·14:00·22:00 확인사살')) {
+    if (!window.confirm('크롤링을 시작할까요?\n배민+쿠팡 최초 1회차: 수집 → 콜수/거절율 → 라이더앱 반영\n이후 스케줄(배민·쿠팡 동일)\n· 주단위 수집 06:30·11:00·13:30·21:30\n· 확인사살(콜수/거절율/라이더앱) 07:00·11:30·14:00·22:00')) {
       return;
     }
     setMorningRunButtonsBusy(true);
@@ -5569,7 +5569,7 @@
         const res = await fetch(`http://127.0.0.1:${port}/morning-run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ publish: true }),
           signal: controller.signal
         });
         result = await res.json().catch(() => ({}));

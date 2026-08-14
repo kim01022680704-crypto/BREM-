@@ -274,13 +274,10 @@ async function runMorningCrawlPipeline(options = {}) {
       push(name, { ok: false, message: result.reason?.message || String(result.reason) });
     }
   });
-  if (settled.some(result => result.status === 'rejected')) {
-    return { ok: false, weekRange, steps };
-  }
 
-  // 3) Rider publish — 기본은 스케줄(07:00/11:30/14:00/22:00)에서만 수행
-  //    원버튼에서 즉시 반영하려면 { publish: true }
-  const shouldPublish = options.publish === true || options.skipPublish === false;
+  // 한쪽이 실패해도 성공한 쪽 ERP는 이미 저장된 상태 → 라이더앱은 둘 다 공개 시도
+  // (미반영 행만 rider_published_at 찍음)
+  const shouldPublish = options.publish !== false && options.skipPublish !== true;
   if (shouldPublish) {
     try {
       const pub = await publishRiderView();
@@ -292,7 +289,7 @@ async function runMorningCrawlPipeline(options = {}) {
     push('rider_publish', {
       ok: true,
       skipped: true,
-      message: '스케줄 반영(07:00/11:30/14:00/22:00)으로 예약 — 원버튼에서는 생략'
+      message: '라이더앱 반영 생략 — 스케줄(07:00/11:30/14:00/22:00)에서 확인사살'
     });
   }
 
