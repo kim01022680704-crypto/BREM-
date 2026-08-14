@@ -277,9 +277,12 @@
   }
 
   function detectBranchPlatform(branchName) {
-    const text = String(branchName || '').trim().toLowerCase();
+    const text = String(branchName || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!text) return '';
     if (/쿠팡|coupang/.test(text)) return 'coupang';
     if (/배민|baemin|우아한/.test(text)) return 'baemin';
+    // 팀브로 브랜드 단독(쿠팡 미포함)은 배민 소속
+    if (/팀브로|teambro/.test(text)) return 'baemin';
     return '';
   }
 

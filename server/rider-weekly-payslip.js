@@ -87,6 +87,20 @@ function normalizePlatform(value) {
   return '';
 }
 
+/**
+ * 대리점명으로 정산 플랫폼 판정.
+ * matchPlatform(기사 ID 매칭 결과)과 혼동하지 말 것 — both 는 "쿠팡·배민 ID 둘 다 있음"일 뿐.
+ */
+function detectBranchPlatform(branchName) {
+  const text = String(branchName || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!text) return '';
+  if (/쿠팡|coupang/.test(text)) return 'coupang';
+  if (/배민|baemin|우아한/.test(text)) return 'baemin';
+  // 팀브로 브랜드 단독(쿠팡 미포함)은 배민 소속
+  if (/팀브로|teambro/.test(text)) return 'baemin';
+  return '';
+}
+
 /** 정산결과(직계약)과 같은 지급·공제 키 */
 function emptyDirectBucket() {
   return {
@@ -178,20 +192,53 @@ function lineToDirectBucket(line) {
 
 function resolveLinePlatform(line) {
   const { raw, payslip } = readRawPayslip(line);
-  return normalizePlatform(
+
+  // 1) 명시 정산 플랫폼 (직계약·업로드)
+  const explicit = normalizePlatform(
     payslip.platform
     || raw.platform
-    || raw.matchPlatform
-    || payslip.matchPlatform
     || raw.branchPlatform
+    || payslip.branchPlatform
   );
+  if (explicit === 'coupang' || explicit === 'baemin') return explicit;
+
+  // 2) 대리점명 (팀브로배민 등) — 정산 소속의 1순위 힌트
+  const fromBranch = detectBranchPlatform(
+    payslip.branchName
+    || raw.branchName
+    || line?.department
+    || line?.branch_name
+    || ''
+  );
+  if (fromBranch) return fromBranch;
+
+  // 3) 파일명 힌트
+  const fileHint = String(
+    raw.fileName || raw.uploadFileName || payslip.fileName || raw.sourceFileName || ''
+  ).toLowerCase();
+  if (fileHint) {
+    const hasBaemin = /배민|baemin/.test(fileHint);
+    const hasCoupang = /쿠팡|coupang/.test(fileHint);
+    if (hasBaemin && !hasCoupang) return 'baemin';
+    if (hasCoupang && !hasBaemin) return 'coupang';
+  }
+
+  // 4) matchPlatform 은 "기사 ID 매칭" 결과.
+  //    both = 쿠팡·배민 ID가 둘 다 있다는 뜻이지, 합산 명세가 아님.
+  //    단일 플랫폼일 때만 사용한다.
+  const match = normalizePlatform(raw.matchPlatform || payslip.matchPlatform);
+  if (match === 'coupang' || match === 'baemin') return match;
+
+  // payslip.platform 이 명시적으로 both 인 경우만 both (레거시 합산 명세)
+  if (explicit === 'both') return 'both';
+  return '';
 }
 
 /**
- * 브로 한 줄에 쿠팡·배민이 섞인 경우:
- * - 추가지급(미션)=배민미션 → 배민
- * - 나머지 지급·공제 → 쿠팡
- * (대리점명이 플랫폼을 가리키면 그 플랫폼에 전액)
+ * 한 줄을 쿠팡/배민 탭으로 나눈다.
+ * - baemin/coupang 명시 → 전액 해당 탭
+ * - both(명시) → 추가지급(미션)만 배민, 나머지 쿠팡 (레거시 합산 명세)
+ * - 미지정 → ID both 착시로 쿠팡 몰아넣지 않음. 한쪽 ID만 있으면 그쪽, 아니면 배민(팀브로)
  */
 function splitLineIntoPlatforms(line) {
   const platform = resolveLinePlatform(line);
@@ -203,8 +250,8 @@ function splitLineIntoPlatforms(line) {
     addBuckets(coupang, full);
   } else if (platform === 'baemin') {
     addBuckets(baemin, full);
-  } else {
-    // both / 미지정: 배민미션만 배민, 나머지는 쿠팡
+  } else if (platform === 'both') {
+    // 레거시 합산 명세: 배민미션만 배민, 나머지 쿠팡
     baemin.missionPay = full.missionPay;
     coupang.callCount = full.callCount;
     coupang.deliveryFee = full.deliveryFee;
@@ -221,6 +268,12 @@ function splitLineIntoPlatforms(line) {
     coupang.prepaid = full.prepaid;
     coupang.leaseFee = full.leaseFee;
     coupang.loanFee = full.loanFee;
+  } else {
+    const { raw, payslip } = readRawPayslip(line);
+    const hasBaemin = Boolean(String(raw.matchedBaeminId || payslip.baeminId || '').trim());
+    const hasCoupang = Boolean(String(raw.matchedCoupangId || payslip.coupangId || '').trim());
+    if (hasCoupang && !hasBaemin) addBuckets(coupang, full);
+    else addBuckets(baemin, full);
   }
 
   return {
@@ -835,5 +888,7 @@ module.exports = {
   buildPayslipFromLines,
   buildPayslipFromMixedSources,
   lineToDirectBucket,
-  splitLineIntoPlatforms
+  splitLineIntoPlatforms,
+  resolveLinePlatform,
+  detectBranchPlatform
 };

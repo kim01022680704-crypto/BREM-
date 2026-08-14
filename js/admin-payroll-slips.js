@@ -2368,6 +2368,7 @@
           payslip,
           rowNumber: line.rowNumber,
           branchName: line.branchName,
+          branchPlatform: line.branchPlatform || window.BremPayrollSlipUtils?.detectBranchPlatform?.(line.branchName) || '',
           callCount: line.callCount,
           registeredCallCount: line.registeredCallCount,
           totalDeliveryFee: line.totalDeliveryFee,
