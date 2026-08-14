@@ -25,7 +25,8 @@ const BremDriverManagementAdmin = (function () {
     bulkCreateIndex: -1,
     bulkCreateBusy: false,
     bulkCreateSource: 'bulk',
-    crawlMatch: { rows: [], partnerId: '', label: '', busy: false }
+    crawlMatch: { rows: [], partnerId: '', label: '', busy: false },
+    statsLoadPromise: null
   };
 
   const REGION_RANKING_POLL_MS = 60 * 1000;
@@ -88,7 +89,7 @@ const BremDriverManagementAdmin = (function () {
     }
     state.weekStart = next;
     renderWeekControls();
-    if (state.tab === 'org') renderOrgMemberPanel();
+    if (state.tab === 'org') void refreshOrgMemberPanel();
     else renderRegionDetail();
   }
 
@@ -190,7 +191,10 @@ const BremDriverManagementAdmin = (function () {
     });
     if (state.tab === 'org') {
       stopRegionRankingPoll();
-      renderOrg();
+      void (async () => {
+        await ensureDriverMgmtStatsLoaded();
+        renderOrg();
+      })();
       return;
     }
     if (state.tab === 'org-list') {
@@ -248,28 +252,51 @@ const BremDriverManagementAdmin = (function () {
       })
       .reduce((sum, call) => sum + Math.max(0, Number(call.count || call.orderCount || 0)), 0);
 
-    // 같은 날 여러 번 반영된 일정산은 최신 appliedAt만 사용
-    const feeByDay = new Map();
+    // 같은 날·같은 플랫폼 중복 반영은 최신 appliedAt만. 플랫폼끼리 덮어쓰지 않음.
+    const feeByDayPlatform = new Map();
     (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
       if (String(row.driverId || '') !== id) return;
       if (!platformOk(row.platform)) return;
       const day = String(row.period || row.date || '').slice(0, 10);
       if (!day || day < start || day > end) return;
-      const prev = feeByDay.get(day);
+      const platform = String(row.platform || '').toLowerCase() || 'coupang';
+      const feeKey = `${platform}|${day}`;
+      const prev = feeByDayPlatform.get(feeKey);
       const appliedAt = String(row.appliedAt || '');
       if (!prev || appliedAt >= prev.appliedAt) {
-        feeByDay.set(day, {
+        feeByDayPlatform.set(feeKey, {
           deliveryFee: Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0)),
           appliedAt
         });
       }
     });
     let deliveryFee = 0;
-    feeByDay.forEach(day => {
+    feeByDayPlatform.forEach(day => {
       deliveryFee += day.deliveryFee;
     });
 
     return { callCount, deliveryFee };
+  }
+
+  async function ensureDriverMgmtStatsLoaded() {
+    if (state.statsLoadPromise) return state.statsLoadPromise;
+    state.statsLoadPromise = (async () => {
+      try {
+        await window.BremStorage?.ensureSectionLoaded?.('driver-management');
+      } catch (error) {
+        console.warn('[driver-mgmt] calls/settlements load failed:', error);
+      }
+    })();
+    try {
+      await state.statsLoadPromise;
+    } finally {
+      state.statsLoadPromise = null;
+    }
+  }
+
+  async function refreshOrgMemberPanel() {
+    await ensureDriverMgmtStatsLoaded();
+    renderOrgMemberPanel();
   }
 
   function buildLocalWeeklyRanking(region, weekStart, platform) {
@@ -416,7 +443,10 @@ const BremDriverManagementAdmin = (function () {
 
     if (totalsEl) {
       const totalCalls = totalCoupangCalls + totalBaeminCalls;
-      totalsEl.textContent = `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`;
+      const settlementCount = (window.BremStorage?.settlements?.getAll?.() || []).length;
+      totalsEl.textContent = settlementCount
+        ? `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`
+        : `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 0원 (일정산 데이터 로딩 중/없음)`;
     }
 
     rows.innerHTML = people.length
@@ -2488,6 +2518,7 @@ const BremDriverManagementAdmin = (function () {
     // 진입 즉시 이번 정산주(수요일)로 맞춘다. 안 맞으면 주간콜수가 빈 것처럼 보인다.
     ensureWeek();
     renderWeekControls();
+    await ensureDriverMgmtStatsLoaded();
     setTab(state.tab);
     if (state.tab === 'region') {
       await refreshRegions();
