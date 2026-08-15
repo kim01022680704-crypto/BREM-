@@ -13,6 +13,7 @@ const adminAuth = require('./admin-auth');
 const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
 const noticesAdmin = require('./notices-admin');
+const urgentMissions = require('./urgent-missions');
 const leaseErpAdmin = require('./lease-erp-admin');
 const payrollProductionRiders = require('./payroll-production-riders');
 const payrollProductionBaseData = require('./payroll-production-base-data');
@@ -288,6 +289,38 @@ app.get('/api/rider/notices', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message || '공지사항을 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/urgent-missions', async (req, res) => {
+  try {
+    const result = await urgentMissions.listRiderMissions(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      missions: result.missions
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '긴급미션을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/rider/urgent-missions/:missionId/accept', async (req, res) => {
+  try {
+    const result = await urgentMissions.acceptMission(getBearerToken(req), req.params.missionId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({
+      ok: true,
+      riderId: result.riderId,
+      mission: result.mission
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 수락에 실패했습니다.' });
   }
 });
 
@@ -1028,6 +1061,70 @@ app.delete('/api/admin/notices/:noticeId', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '공지사항 삭제에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/urgent-missions', async (req, res) => {
+  try {
+    const result = await urgentMissions.listAdminMissions(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '긴급미션 목록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/urgent-missions', async (req, res) => {
+  try {
+    const result = await urgentMissions.publishMission(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.status(201).json({ ok: true, mission: result.mission, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '긴급미션 배포에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/urgent-missions/:missionId/close', async (req, res) => {
+  try {
+    const result = await urgentMissions.closeMission(getBearerToken(req), req.params.missionId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, mission: result.mission, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 마감에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/urgent-missions/:missionId/setup-done', async (req, res) => {
+  try {
+    const result = await urgentMissions.markSetupDone(
+      getBearerToken(req),
+      req.params.missionId,
+      req.body?.acceptIds || req.body?.ids
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, mission: result.mission, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션설정완료 처리에 실패했습니다.' });
+  }
+});
+
+app.delete('/api/admin/urgent-missions/:missionId', async (req, res) => {
+  try {
+    const result = await urgentMissions.deleteMission(getBearerToken(req), req.params.missionId);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '긴급미션 정리에 실패했습니다.' });
   }
 });
 

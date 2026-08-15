@@ -16,8 +16,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816list3">
-  <link rel="stylesheet" href="css/mobile-compact.css?v=20260816body1">
+  <link rel="stylesheet" href="css/driver.css?v=20260816um1">
+  <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
 <body>
@@ -151,6 +151,7 @@
               </dl>
               <div class="profile-actions">
                 <button type="button" class="profile-edit-toggle" id="driverProfileEditToggle">정보 수정</button>
+                <button type="button" class="profile-withdrawal-btn profile-withdrawal-btn--compact" id="driverUrgentMissionBtn" title="긴급미션 수락" aria-expanded="false" aria-controls="driverUrgentMissionPanel">미션수락</button>
                 <button type="button" class="profile-withdrawal-btn profile-withdrawal-btn--compact" id="driverWithdrawalBtn" title="일정산 출금신청" aria-expanded="false" aria-controls="driverWithdrawalPanel">출금신청</button>
                 <button type="button" class="profile-payslip-btn" id="driverWeeklyPayslipBtn" aria-expanded="false" aria-controls="driverWeeklyPayslipPanel">주급명세서</button>
                 <button type="button" class="profile-region-dash-btn" id="driverRegionDashboardBtn" aria-expanded="false" aria-controls="driverRegionDashboardPanel">기사대시보드</button>
@@ -813,6 +814,21 @@
 
           </div>
 
+          <article class="panel driver-weekly-payslip-panel driver-urgent-mission-panel" id="driverUrgentMissionPanel" hidden>
+            <div class="driver-payslip-header">
+              <div class="driver-payslip-header__brand">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
+                <div>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER</p>
+                  <h2>미션수락</h2>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn driver-payslip-close" id="driverUrgentMissionCloseBtn">닫기</button>
+            </div>
+            <p class="form-help">쿠팡·배민 긴급 도움이 필요할 때 뜨는 미션입니다. 수락하면 관리자 목록에 바로 들어갑니다.</p>
+            <div id="driverUrgentMissionList"></div>
+          </article>
+
           <article class="panel driver-notice-panel" id="driverNoticePanel">
             <div class="panel-header">
               <h2>공지사항</h2>
@@ -832,6 +848,11 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12v14H6z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 9h6M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           <span>공지</span>
           <span class="driver-app-nav__badge" id="driverNoticeNavBadge" hidden>0</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="mission">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 14.2 8l4.8.7-3.5 3.4.8 4.8L12 14.6 7.7 16.9l.8-4.8L5 8.7 9.8 8 12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span>미션수락</span>
+          <span class="driver-app-nav__badge" id="driverMissionNavBadge" hidden>0</span>
         </button>
         <button type="button" class="driver-app-nav__item" data-driver-tab="withdraw">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 11h14M12 14.5h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -963,15 +984,16 @@
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260816popup1"></script>
+  <script src="js/storage.js?v=20260816um1"></script>
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816crew7"></script>
   <script src="js/driver-region-dashboard.js?v=20260816nav1"></script>
   <script src="js/driver-crew-leader.js?v=20260816nav1"></script>
   <script src="js/driver-withdrawal.js?v=20260816crew7"></script>
-  <script src="js/driver.js?v=20260816list3"></script>
-  <script src="js/driver-app-nav.js?v=20260816notice2"></script>
+  <script src="js/driver-urgent-missions.js?v=20260816um1"></script>
+  <script src="js/driver.js?v=20260816um1"></script>
+  <script src="js/driver-app-nav.js?v=20260816um1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

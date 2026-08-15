@@ -1521,6 +1521,7 @@ const BremStorage = (function () {
       KEYS.leaseLoans,
       KEYS.deductionLedger
     ],
+    'urgent-missions': [],
     'revenue-management': [],
     'admin-account': [],
     'baemin-biz-status': [],
@@ -3153,6 +3154,56 @@ const BremStorage = (function () {
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  async function fetchRiderUrgentMissionsFromServer() {
+    return riderApiFetch('/api/rider/urgent-missions', 'urgent-missions');
+  }
+
+  async function acceptRiderUrgentMissionOnServer(missionId) {
+    const id = String(missionId || '').trim();
+    if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
+    return riderApiFetch(`/api/rider/urgent-missions/${encodeURIComponent(id)}/accept`, 'urgent-mission-accept', {
+      method: 'POST',
+      body: '{}'
+    });
+  }
+
+  async function fetchAdminUrgentMissionsFromServer() {
+    return adminRidersApi('/api/admin/urgent-missions');
+  }
+
+  async function publishAdminUrgentMission(payload) {
+    return adminRidersApi('/api/admin/urgent-missions', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  }
+
+  async function closeAdminUrgentMission(missionId) {
+    const id = String(missionId || '').trim();
+    if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
+    return adminRidersApi(`/api/admin/urgent-missions/${encodeURIComponent(id)}/close`, {
+      method: 'POST',
+      body: '{}'
+    });
+  }
+
+  async function setupDoneAdminUrgentMission(missionId, acceptIds) {
+    const id = String(missionId || '').trim();
+    if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
+    return adminRidersApi(`/api/admin/urgent-missions/${encodeURIComponent(id)}/setup-done`, {
+      method: 'POST',
+      body: JSON.stringify({ acceptIds: acceptIds || [] })
+    });
+  }
+
+  async function deleteAdminUrgentMission(missionId) {
+    const id = String(missionId || '').trim();
+    if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
+    return adminRidersApi(`/api/admin/urgent-missions/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
   }
 
   async function fetchRiderWeeklyPayslipFromServer(weekStart) {
@@ -12265,6 +12316,7 @@ const BremStorage = (function () {
 
   const ALL_ADMIN_MENU_IDS = Object.freeze([
     'notices',
+    'urgent-missions',
     'rider-inquiries',
     'dashboard',
     'admin-schedule',
@@ -12331,6 +12383,10 @@ const BremStorage = (function () {
     const normalized = source
       .map(menuId => String(menuId || '').trim())
       .filter(menuId => allowed.has(menuId));
+
+    if (normalized.includes('notices') && !normalized.includes('urgent-missions')) {
+      normalized.splice(normalized.indexOf('notices') + 1, 0, 'urgent-missions');
+    }
 
     if (normalized.includes('missions') && !normalized.includes('mission-results')) {
       const dashboardIndex = normalized.indexOf('dashboard');
@@ -13990,6 +14046,13 @@ const BremStorage = (function () {
     fetchCurrentRiderFromServer,
     fetchRiderAssignedMissionsFromServer,
     fetchRiderDashboardFromServer,
+    fetchRiderUrgentMissionsFromServer,
+    acceptRiderUrgentMissionOnServer,
+    fetchAdminUrgentMissionsFromServer,
+    publishAdminUrgentMission,
+    closeAdminUrgentMission,
+    setupDoneAdminUrgentMission,
+    deleteAdminUrgentMission,
     fetchRiderWeeklyPayslipFromServer,
     fetchRiderRegionDashboardFromServer,
     fetchRiderCrewLeaderFromServer,

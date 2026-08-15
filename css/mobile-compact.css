@@ -531,4 +531,8 @@
     margin-bottom: 8px;
     border-radius: 14px;
   }
+
+  html:not(.brem-app-nav) #driverNoticePanel {
+    display: none !important;
+  }
 }

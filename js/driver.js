@@ -550,6 +550,7 @@
     window.BremDriverWeeklyPayslip?.reset?.();
     window.BremDriverRegionDashboard?.reset?.();
     window.BremDriverCrewLeader?.reset?.();
+    window.BremDriverUrgentMissions?.reset?.();
     showLoggedOut();
     window.BremLoginPrefs?.restoreIdAfterLogout?.('rider', {
       idInput: loginIdInput,
@@ -624,6 +625,7 @@
     }));
     void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
     void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
+    void window.BremDriverUrgentMissions?.refresh?.();
     window.setTimeout(() => queueNoticePopups(), 250);
   }
 
@@ -1714,6 +1716,7 @@
       window.BremDriverWeeklyPayslip?.reset?.();
       window.BremDriverRegionDashboard?.reset?.();
       window.BremDriverCrewLeader?.reset?.();
+      window.BremDriverUrgentMissions?.reset?.();
       window.BremLoginPrefs?.captureLoginPrefs?.('rider', {
         idInput: loginIdInput,
         rememberCheckbox: document.getElementById('driverRememberId'),

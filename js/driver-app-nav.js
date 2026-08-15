@@ -49,11 +49,13 @@
     window.BremDriverWeeklyPayslip?.close?.();
     window.BremDriverRegionDashboard?.close?.();
     window.BremDriverCrewLeader?.close?.();
+    window.BremDriverUrgentMissions?.close?.();
   }
 
   function openTabPanel(tab) {
     if (tab === 'notice') return;
-    if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
+    if (tab === 'mission') window.BremDriverUrgentMissions?.open?.();
+    else if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
     else if (tab === 'payslip') window.BremDriverWeeklyPayslip?.open?.();
     else if (tab === 'dash') window.BremDriverRegionDashboard?.open?.();
     else if (tab === 'crew') window.BremDriverCrewLeader?.open?.();
@@ -67,10 +69,8 @@
     }
     current = next;
     syncActive();
-    if (next === 'home' || next === 'notice') {
-      if (!options.keepPanels) closeAllPanels();
-      return true;
-    }
+    if (!options.keepPanels) closeAllPanels();
+    if (next === 'home' || next === 'notice') return true;
     openTabPanel(next);
     return true;
   }
