@@ -1570,10 +1570,10 @@ const BremDriverManagementAdmin = (function () {
           <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
           <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
           <td>
-            <select class="driver-region-mode" data-region-rider-mode="${escapeHtml(row.driver.id)}" title="기사앱: 올노출=대시보드+순위 · 대시보드만=순위 비노출">
-              <option value="full"${mode === 'full' ? ' selected' : ''}>올노출</option>
-              <option value="dashboard"${mode === 'dashboard' ? ' selected' : ''}>대시보드만</option>
-            </select>
+            <label class="driver-region-mode" title="체크=올노출(대시보드+순위) · 해제=대시보드만(순위 비노출·팀장용)">
+              <input type="checkbox" data-region-rider-mode="${escapeHtml(row.driver.id)}" ${mode === 'full' ? 'checked' : ''}>
+              <span>올노출</span>
+            </label>
           </td>
           <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(row.driver.id)}">해제</button></td>
         </tr>`;
@@ -1779,8 +1779,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」(기본)·「대시보드만」(순위 비노출·팀장용)을 고를 수 있습니다.'
-        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」(기본)·「대시보드만」(순위 비노출·팀장용)을 고를 수 있습니다.';
+        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」체크(기본)·해제=대시보드만(순위 비노출·팀장용).'
+        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」체크(기본)·해제=대시보드만(순위 비노출·팀장용).';
     }
 
     // 지역 목록·노출은 기사 전체 로드를 기다리지 않고 먼저 그린다.
@@ -2567,7 +2567,7 @@ const BremDriverManagementAdmin = (function () {
         const region = selectedRegion();
         const driverId = riderMode.dataset.regionRiderMode;
         if (!region || !driverId) return;
-        const mode = riderMode.value === 'dashboard' ? 'dashboard' : 'full';
+        const mode = riderMode.checked ? 'full' : 'dashboard';
         const prev = getDriverRegionMode(region.platform, region.key, driverId);
         void setDriverRegionMode(region, driverId, mode)
           .then(() => {
@@ -2577,7 +2577,7 @@ const BremDriverManagementAdmin = (function () {
               : '올노출 — 대시보드 + 순위 노출');
           })
           .catch(error => {
-            riderMode.value = prev;
+            riderMode.checked = prev === 'full';
             showToast(error.message || '기사 옵션 저장 실패');
           });
         return;

@@ -12087,20 +12087,30 @@ button.driver-org-node small,
 }
 
 .driver-region-mode {
-  min-width: 7.5rem;
-  max-width: 100%;
-  padding: 4px 8px;
-  border: 1px solid #52525b;
-  border-radius: 8px;
-  background: #18181b;
-  color: #f4f4f5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #e4e4e7;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.driver-region-mode input {
+  width: 16px;
+  height: 16px;
+  accent-color: #4ade80;
 }
 
 tr.is-dashboard-only .driver-region-mode {
-  border-color: #a78bfa;
-  color: #ddd6fe;
+  color: #c4b5fd;
+}
+
+tr.is-dashboard-only .driver-region-mode input {
+  accent-color: #a78bfa;
 }
 
 .driver-region-rank-panels {
