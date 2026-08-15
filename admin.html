@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260816um4">
+  <link rel="stylesheet" href="css/admin.css?v=20260816um5">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5729,38 +5729,31 @@
               <textarea id="urgentMissionContent" rows="3" placeholder="쿠팡/배민 도움 요청 내용을 입력하세요." required></textarea>
             </label>
             <div class="urgent-mission-form-grid">
-              <div class="urgent-mission-amount-field">
-                <span class="urgent-mission-field-label">미션금액</span>
-                <div class="urgent-mission-amount-input">
-                  <input type="text" inputmode="numeric" id="urgentMissionAmount" placeholder="10000" autocomplete="off" required>
+              <label>
+                미션금액
+                <span class="urgent-mission-amount-input">
+                  <input type="text" inputmode="numeric" id="urgentMissionAmount" placeholder="원하는 금액 입력" autocomplete="off" required>
                   <span>원</span>
-                </div>
-                <strong class="urgent-mission-amount-preview" id="urgentMissionAmountPreview">0원</strong>
-                <div class="urgent-mission-amount-presets" role="group" aria-label="금액 빠른 선택">
-                  <button type="button" data-um-amount="500">500</button>
-                  <button type="button" data-um-amount="1000">1천</button>
-                  <button type="button" data-um-amount="3000">3천</button>
-                  <button type="button" data-um-amount="5000">5천</button>
-                  <button type="button" data-um-amount="10000">1만</button>
-                  <button type="button" data-um-amount="30000">3만</button>
-                </div>
-              </div>
+                </span>
+              </label>
               <label>
                 미션시간
                 <input type="text" id="urgentMissionTime" placeholder="오늘 14:00~18:00" required>
               </label>
+              <fieldset class="urgent-mission-platform-field">
+                <legend>태그</legend>
+                <div class="urgent-mission-chip-row">
+                  <label class="urgent-mission-chip">
+                    <input type="radio" name="urgentMissionPlatform" value="baemin" required>
+                    <span>배민</span>
+                  </label>
+                  <label class="urgent-mission-chip urgent-mission-chip--coupang">
+                    <input type="radio" name="urgentMissionPlatform" value="coupang">
+                    <span>쿠팡</span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
-            <fieldset class="urgent-mission-platform-field">
-              <legend>태그</legend>
-              <label class="urgent-mission-chip">
-                <input type="checkbox" name="urgentMissionPlatform" value="baemin">
-                <span>배민</span>
-              </label>
-              <label class="urgent-mission-chip urgent-mission-chip--coupang">
-                <input type="checkbox" name="urgentMissionPlatform" value="coupang">
-                <span>쿠팡</span>
-              </label>
-            </fieldset>
             <div class="urgent-mission-rider-picker">
               <div class="urgent-mission-rider-picker__head">
                 <h3>대상 기사</h3>
@@ -8100,7 +8093,7 @@
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260814match1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-urgent-missions.js?v=20260816um4"></script>
+  <script src="js/admin-urgent-missions.js?v=20260816um5"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260803j"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>

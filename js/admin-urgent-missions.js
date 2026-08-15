@@ -54,15 +54,10 @@
   }
 
   function syncAmountPreview(formatInput = false) {
-    const preview = document.getElementById('urgentMissionAmountPreview');
     const amount = parseAmount(amountEl?.value);
-    if (preview) preview.textContent = formatMoney(amount);
     if (formatInput && amountEl) {
       amountEl.value = amount ? amount.toLocaleString('ko-KR') : '';
     }
-    section.querySelectorAll('[data-um-amount]').forEach((btn) => {
-      btn.classList.toggle('is-on', Number(btn.dataset.umAmount) === amount);
-    });
   }
 
   function formatDateTime(value) {
@@ -444,7 +439,7 @@
     const platforms = selectedPlatforms();
     const riders = selectedRiderPayloads();
     if (!content || !amount || !missionTime || !platforms.length) {
-      showToast('내용, 금액, 시간, 쿠팡/배민 태그를 모두 입력하세요.');
+      showToast('내용, 금액, 시간, 배민/쿠팡 중 하나를 선택하세요.');
       return;
     }
     if (!riders.length) {
@@ -534,12 +529,6 @@
   syncAmountPreview(false);
 
   section.addEventListener('click', (event) => {
-    const amountBtn = event.target.closest('[data-um-amount]');
-    if (amountBtn) {
-      if (amountEl) amountEl.value = Number(amountBtn.dataset.umAmount || 0).toLocaleString('ko-KR');
-      syncAmountPreview(true);
-      return;
-    }
     const regionBtn = event.target.closest('[data-um-region]');
     if (regionBtn) {
       state.selectedRegionKey = regionBtn.dataset.umRegion;
@@ -570,6 +559,10 @@
 
   section.addEventListener('change', (event) => {
     if (event.target?.name === 'urgentMissionPlatform') {
+      state.selectedRiders = new Map();
+      state.selectedRegionKey = '';
+      state.selectedRegionPlatform = event.target.value || '';
+      updateRiderCount();
       renderRegionList();
       return;
     }

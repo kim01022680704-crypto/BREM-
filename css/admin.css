@@ -12957,85 +12957,49 @@ tr.is-week-first td {
 
 .urgent-mission-form-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 1.1fr) minmax(200px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: 1fr 1fr 1fr;
+  align-items: end;
+  gap: 14px;
 }
 
-.urgent-mission-field-label {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 800;
-}
-
-.urgent-mission-amount-field {
+.urgent-mission-form-grid > label,
+.urgent-mission-platform-field {
   display: grid;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0;
 }
 
 .urgent-mission-amount-input {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px 0 0;
-  border: 1px solid rgba(255, 212, 0, 0.28);
-  border-radius: 12px;
+  min-height: 42px;
+  padding-right: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
   background: #111;
 }
 
 .urgent-mission-amount-input input {
   flex: 1;
   min-width: 0;
+  min-height: 42px;
   border: 0;
   background: transparent;
   color: #fff;
-  font-size: 1.35rem;
-  font-weight: 900;
-  letter-spacing: -0.03em;
+  font-size: inherit;
+  font-weight: 800;
 }
 
 .urgent-mission-amount-input span {
-  color: #facc15;
-  font-size: 1rem;
-  font-weight: 900;
-}
-
-.urgent-mission-amount-preview {
-  color: #facc15;
-  font-size: 1.05rem;
-  font-weight: 900;
-}
-
-.urgent-mission-amount-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.urgent-mission-amount-presets button {
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: #1b1b1b;
-  color: #e5e7eb;
-  font-size: 0.78rem;
+  color: var(--muted);
   font-weight: 800;
-  cursor: pointer;
 }
 
-.urgent-mission-amount-presets button.is-on {
-  border-color: rgba(250, 204, 21, 0.55);
-  background: rgba(250, 204, 21, 0.16);
-  color: #facc15;
+.urgent-mission-form-grid #urgentMissionTime {
+  min-height: 42px;
 }
 
 .urgent-mission-platform-field {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -13043,10 +13007,16 @@ tr.is-week-first td {
 
 .urgent-mission-platform-field legend {
   padding: 0;
-  margin-right: 6px;
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 800;
+}
+
+.urgent-mission-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
 }
 
 .urgent-mission-chip {
@@ -13131,10 +13101,10 @@ tr.is-week-first td {
 
 .urgent-mission-card__pay {
   color: #facc15;
-  font-size: 1.55rem;
+  font-size: 1.1rem;
   font-weight: 900;
-  letter-spacing: -0.04em;
-  line-height: 1.1;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -13207,10 +13177,6 @@ tr.is-week-first td {
   .urgent-mission-form-grid,
   .urgent-mission-rider-picker__body {
     grid-template-columns: 1fr;
-  }
-
-  .urgent-mission-card__pay {
-    font-size: 1.3rem;
   }
 }
 
