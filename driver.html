@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816nav1">
+  <link rel="stylesheet" href="css/driver.css?v=20260816notice2">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -811,13 +811,15 @@
               </div>
             </article>
 
-            <article class="panel">
-              <div class="panel-header">
-                <h2>공지사항</h2>
-              </div>
-              <div class="notice-list" id="noticeList"></div>
-            </article>
           </div>
+
+          <article class="panel driver-notice-panel" id="driverNoticePanel">
+            <div class="panel-header">
+              <h2>공지사항</h2>
+              <span class="driver-notice-count" id="driverNoticeCount"></span>
+            </div>
+            <div class="notice-list" id="noticeList"></div>
+          </article>
         </section>
       </main>
 
@@ -825,6 +827,10 @@
         <button type="button" class="driver-app-nav__item is-active" data-driver-tab="home">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
           <span>홈</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="notice">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12v14H6z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 9h6M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <span>공지</span>
         </button>
         <button type="button" class="driver-app-nav__item" data-driver-tab="withdraw">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 11h14M12 14.5h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -950,8 +956,8 @@
   <script src="js/driver-region-dashboard.js?v=20260816nav1"></script>
   <script src="js/driver-crew-leader.js?v=20260816nav1"></script>
   <script src="js/driver-withdrawal.js?v=20260816crew7"></script>
-  <script src="js/driver.js?v=20260816crew7"></script>
-  <script src="js/driver-app-nav.js?v=20260816nav1"></script>
+  <script src="js/driver.js?v=20260816notice2"></script>
+  <script src="js/driver-app-nav.js?v=20260816notice2"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

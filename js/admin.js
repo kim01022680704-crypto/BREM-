@@ -3189,7 +3189,7 @@
         }
       }
     }
-    $('#dashboardNotices').innerHTML = renderNoticeItems(notices().slice(0, 4), false);
+    $('#dashboardNotices').innerHTML = renderNoticeItems(notices(), false);
     Sort?.markScope(document.querySelector('[data-sort-table="dashboard"]'), state.dashboardSort);
     window.BremPerf?.timeEnd?.('admin.renderDashboard');
   }
@@ -3824,23 +3824,45 @@
   function renderNoticeItems(items, withActions) {
     if (!items.length) return '<div class="empty">공지사항이 없습니다.</div>';
     return items
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt.localeCompare(a.createdAt))
-      .map(notice => `
-        <article class="notice-item">
-          <h3>${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</h3>
-          <p>${escapeHtml(notice.content)}</p>
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .map((notice, index) => {
+        const open = index === 0;
+        return `
+        <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}">
+          <button type="button" class="notice-item__toggle" aria-expanded="${open ? 'true' : 'false'}">
+            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</span>
+            <time class="notice-item__date">${escapeHtml(formatDateTime(notice.createdAt || notice.updatedAt || ''))}</time>
+          </button>
+          <p class="notice-item__body"${open ? '' : ' hidden'}>${escapeHtml(notice.content)}</p>
           ${withActions ? `
-            <div class="notice-actions">
+            <div class="notice-actions"${open ? '' : ' hidden'}>
               <button class="small-btn" data-edit-notice="${notice.id}">수정</button>
               <button class="small-btn danger-btn" data-delete-notice="${notice.id}">삭제</button>
             </div>
           ` : ''}
-        </article>
-      `).join('');
+        </article>`;
+      }).join('');
+  }
+
+  function syncNoticeFormMode() {
+    const submitBtn = $('#noticeSubmit');
+    const resetBtn = $('#noticeResetBtn');
+    const editing = Boolean(state.editingNoticeId);
+    if (submitBtn) submitBtn.textContent = editing ? '수정 저장' : '공지 등록';
+    if (resetBtn) resetBtn.hidden = !editing;
+  }
+
+  function resetNoticeForm() {
+    state.editingNoticeId = '';
+    $('#noticeForm')?.reset();
+    syncNoticeFormMode();
   }
 
   function renderNotices() {
-    $('#noticeRows').innerHTML = renderNoticeItems(notices(), true);
+    const list = notices();
+    $('#noticeRows').innerHTML = renderNoticeItems(list, true);
+    const countEl = $('#noticeListCount');
+    if (countEl) countEl.textContent = list.length ? `· ${list.length}건` : '';
   }
 
   function inquiryStatusLabel(status) {
@@ -7528,15 +7550,13 @@
         try {
           if (state.editingNoticeId) {
             await BremStorage.notices.update(state.editingNoticeId, data);
-            state.editingNoticeId = '';
-            if (submitBtn) submitBtn.textContent = '공지 등록';
             showToast('공지사항이 수정되었습니다. 기사앱에 반영됩니다.');
           } else {
             await BremStorage.notices.create(data);
             showToast('공지사항이 등록되었습니다. 기사앱에 반영됩니다.');
           }
           await BremStorage.flushStorage?.().catch(() => ({}));
-          $('#noticeForm').reset();
+          resetNoticeForm();
           renderAll();
         } catch (error) {
           showToast(error.message || '공지사항 저장에 실패했습니다.');
@@ -7548,6 +7568,10 @@
           }
         }
       })();
+    });
+
+    $('#noticeResetBtn')?.addEventListener('click', () => {
+      resetNoticeForm();
     });
 
     document.addEventListener('change', event => {
@@ -7919,6 +7943,32 @@
         return;
       }
 
+      const noticeToggle = event.target.closest('.notice-item__toggle');
+      if (noticeToggle) {
+        const item = noticeToggle.closest('.notice-item');
+        const list = noticeToggle.closest('.notice-list');
+        if (item && list) {
+          const willOpen = !item.classList.contains('is-open');
+          list.querySelectorAll('.notice-item.is-open').forEach((openItem) => {
+            openItem.classList.remove('is-open');
+            openItem.querySelector('.notice-item__toggle')?.setAttribute('aria-expanded', 'false');
+            const body = openItem.querySelector('.notice-item__body');
+            const actions = openItem.querySelector('.notice-actions');
+            if (body) body.hidden = true;
+            if (actions) actions.hidden = true;
+          });
+          if (willOpen) {
+            item.classList.add('is-open');
+            noticeToggle.setAttribute('aria-expanded', 'true');
+            const body = item.querySelector('.notice-item__body');
+            const actions = item.querySelector('.notice-actions');
+            if (body) body.hidden = false;
+            if (actions) actions.hidden = false;
+          }
+        }
+        return;
+      }
+
       const editNoticeButton = event.target.closest('[data-edit-notice]');
       if (editNoticeButton) {
         const notice = notices().find(item => item.id === editNoticeButton.dataset.editNotice);
@@ -7927,7 +7977,7 @@
         $('#noticeTitle').value = notice.title;
         $('#noticeContent').value = notice.content;
         $('#noticePinned').checked = notice.pinned;
-        $('#noticeSubmit').textContent = '수정 저장';
+        syncNoticeFormMode();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
 

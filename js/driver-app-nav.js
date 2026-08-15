@@ -52,6 +52,7 @@
   }
 
   function openTabPanel(tab) {
+    if (tab === 'notice') return;
     if (tab === 'withdraw') window.BremDriverWithdrawal?.open?.();
     else if (tab === 'payslip') window.BremDriverWeeklyPayslip?.open?.();
     else if (tab === 'dash') window.BremDriverRegionDashboard?.open?.();
@@ -66,7 +67,7 @@
     }
     current = next;
     syncActive();
-    if (next === 'home') {
+    if (next === 'home' || next === 'notice') {
       if (!options.keepPanels) closeAllPanels();
       return true;
     }

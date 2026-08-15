@@ -899,23 +899,49 @@
     });
   }
 
+  function formatNoticeDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) {
+      const key = raw.slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return '';
+      const [, m, d] = key.split('-');
+      return `${Number(m)}.${Number(d)}`;
+    }
+    return `${date.getMonth() + 1}.${date.getDate()}`;
+  }
+
   function renderNoticesList(listEl, noticeList) {
     const items = noticeList
-      .map(notice => `
-        <article class="notice-item">
-          <h3>${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</h3>
-          <p>${escapeHtml(notice.content || notice.body || '')}</p>
-        </article>
-      `)
+      .map((notice, index) => {
+        const open = index === 0;
+        const when = formatNoticeDate(notice.createdAt || notice.updatedAt);
+        return `
+        <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}">
+          <button type="button" class="notice-item__toggle" aria-expanded="${open ? 'true' : 'false'}">
+            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</span>
+            ${when ? `<time class="notice-item__date">${escapeHtml(when)}</time>` : ''}
+          </button>
+          <p class="notice-item__body"${open ? '' : ' hidden'}>${escapeHtml(notice.content || notice.body || '')}</p>
+        </article>`;
+      })
       .join('');
 
     listEl.innerHTML = items || '<div class="empty-text">등록된 공지사항이 없습니다.</div>';
   }
 
+  function updateNoticeChrome(noticeList) {
+    const countEl = document.getElementById('driverNoticeCount');
+    if (countEl) countEl.textContent = noticeList.length ? `${noticeList.length}건` : '';
+  }
+
   function renderNotices() {
     const listEl = document.getElementById('noticeList');
     if (!listEl) return;
-    renderNoticesList(listEl, mergedNoticesForDriver());
+    const items = mergedNoticesForDriver();
+    renderNoticesList(listEl, items);
+    updateNoticeChrome(items);
   }
 
   async function renderPlatformMission(driver, platform, missionId, assignedMission = null) {
@@ -1675,9 +1701,28 @@
   });
 
   document.addEventListener('brem-cache-status-changed', () => {
-    const listEl = document.getElementById('noticeList');
-    if (state.currentDriver && listEl) {
-      renderNoticesList(listEl, mergedNoticesForDriver());
+    if (state.currentDriver) renderNotices();
+  });
+
+  document.addEventListener('click', (event) => {
+    const toggle = event.target.closest('.notice-item__toggle');
+    if (!toggle) return;
+    const item = toggle.closest('.notice-item');
+    const list = toggle.closest('#noticeList');
+    if (!item || !list) return;
+    const willOpen = !item.classList.contains('is-open');
+    list.querySelectorAll('.notice-item.is-open').forEach((openItem) => {
+      openItem.classList.remove('is-open');
+      const btn = openItem.querySelector('.notice-item__toggle');
+      const body = openItem.querySelector('.notice-item__body');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      if (body) body.hidden = true;
+    });
+    if (willOpen) {
+      item.classList.add('is-open');
+      toggle.setAttribute('aria-expanded', 'true');
+      const body = item.querySelector('.notice-item__body');
+      if (body) body.hidden = false;
     }
   });
 

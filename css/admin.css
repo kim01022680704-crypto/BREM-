@@ -4658,22 +4658,68 @@ textarea {
 }
 
 .notice-item h3,
+.notice-item__title,
 .mission-item h3 {
   margin: 0 0 7px;
   font-size: 1rem;
 }
 
 .notice-item p,
+.notice-item__body,
 .mission-item p {
   margin: 0;
   color: var(--muted);
   white-space: pre-wrap;
 }
 
+.notice-item__toggle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notice-item__title {
+  margin-bottom: 0;
+  min-width: 0;
+  font-weight: 800;
+}
+
+.notice-item__date {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.notice-item__body {
+  margin-top: 8px;
+}
+
 .notice-actions {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+
+.notice-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.notice-item .notice-date {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .inquiry-item .notice-item-head {
