@@ -205,7 +205,7 @@ function riderMatchesRegion(rider, region) {
     return value === region.label
       || value === region.partnerId
       || value === region.key
-      || (region.partnerId && value.includes(region.partnerId));
+      || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId));
   }
   const value = String(rider.regionCoupang || rider.raw_data?.regionCoupang || '').trim();
   if (!value) return false;
@@ -283,6 +283,11 @@ async function loadRidersForRegion(supabase, region) {
       .filter(Boolean)
       .filter((value, index, list) => list.indexOf(value) === index)
       .map(value => `raw_data->>regionBaemin.eq.${escapePostgrestValue(value)}`);
+    const partnerId = String(region.partnerId || '').trim();
+    // 클라이언트 driversInRegion 의 includes(partnerId) 와 맞춘다.
+    if (partnerId.length >= 6) {
+      parts.push(`raw_data->>regionBaemin.ilike.%${escapePostgrestValue(partnerId)}%`);
+    }
     if (parts.length) {
       result = await fetchPages(() => supabase
         .from('riders')
@@ -781,6 +786,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
       weekStart,
       weekEnd,
       region,
+      registeredCount: regionRiders.length,
       metrics: live.metrics,
       realtimeRanking: live.realtimeRanking || [],
       realtimeRankingDisabled: live.realtimeRankingDisabled === true,

@@ -1288,14 +1288,17 @@ const BremDriverManagementAdmin = (function () {
   function driversInRegion(region) {
     if (!region) return [];
     const platform = state.regionPlatform;
-    return (window.BremStorage?.drivers?.getAll?.() || []).filter(driver => {
+    const list = (typeof window.BremStorage?.drivers?.getAllKnownById === 'function'
+      ? window.BremStorage.drivers.getAllKnownById()
+      : window.BremStorage?.drivers?.getAll?.()) || [];
+    return list.filter(driver => {
       const value = driverRegionValue(driver, platform);
       if (!value) return false;
       if (platform === 'baemin') {
         return value === region.label
           || value === region.partnerId
           || value === region.key
-          || (region.partnerId && value.includes(region.partnerId));
+          || (region.partnerId && region.partnerId.length >= 6 && value.includes(region.partnerId));
       }
       return shortCoupangRegion(value) === region.key
         || shortCoupangRegion(value) === shortCoupangRegion(region.label)
@@ -1304,15 +1307,32 @@ const BremDriverManagementAdmin = (function () {
     });
   }
 
+  function driversLoadComplete() {
+    return window.BremStorage?.drivers?.isLoadComplete?.() === true;
+  }
+
+  function formatRegionHeadcount(count) {
+    const n = Math.max(0, Number(count) || 0);
+    return driversLoadComplete() ? `${n}명` : `${n}명…`;
+  }
+
   /** 서버 메모의 「지역등록 N명」을 로컬(사이드바) 집계와 같은 숫자로 맞춘다. */
-  function alignRegionRegisteredNote(sourceNote, region) {
+  function alignRegionRegisteredNote(sourceNote, region, serverCount = null) {
     const localN = region ? driversInRegion(region).length : 0;
     const base = String(sourceNote || '');
-    if (!base) return localN ? `지역등록 ${localN}명` : '';
-    if (/지역등록\s*\d+명/.test(base)) {
-      return base.replace(/지역등록\s*\d+명/, `지역등록 ${localN}명`);
+    let next = base;
+    if (!next) {
+      next = localN ? `지역등록 ${localN}명` : '';
+    } else if (/지역등록\s*\d+명/.test(next)) {
+      next = next.replace(/지역등록\s*\d+명/, `지역등록 ${localN}명`);
+    } else {
+      next = `${next} · 지역등록 ${localN}명`;
     }
-    return `${base} · 지역등록 ${localN}명`;
+    const serverN = Number(serverCount);
+    if (Number.isFinite(serverN) && serverN >= 0 && serverN !== localN && driversLoadComplete()) {
+      next = `${next} · DB ${serverN}명`;
+    }
+    return next;
   }
 
   function renderRegionCatalog() {
@@ -1333,7 +1353,7 @@ const BremDriverManagementAdmin = (function () {
         <button type="button" class="driver-region-item-main" data-region-select="${escapeHtml(region.key)}" title="${escapeHtml(sub || name)}">
           <span class="driver-region-item-name">${escapeHtml(name)}</span>
           <span class="driver-region-item-meta">${escapeHtml(sub && sub !== name ? sub : '')}</span>
-          <span class="driver-region-item-count">${count}명</span>
+          <span class="driver-region-item-count">${formatRegionHeadcount(count)}</span>
         </button>
         <label class="driver-region-expose" title="기사앱 기사대시보드 노출">
           <input type="checkbox" data-region-expose="${escapeHtml(region.key)}" ${exposed ? 'checked' : ''}>
@@ -1350,7 +1370,7 @@ const BremDriverManagementAdmin = (function () {
       const region = regionCatalog().find(item => item.key === key);
       if (!region) return;
       const countEl = el.querySelector('.driver-region-item-count');
-      if (countEl) countEl.textContent = `${driversInRegion(region).length}명`;
+      if (countEl) countEl.textContent = formatRegionHeadcount(driversInRegion(region).length);
     });
   }
 
@@ -1442,7 +1462,11 @@ const BremDriverManagementAdmin = (function () {
       if (r) r.textContent = formatNumber(metrics.remaining);
     }
     if (metricsNote) {
-      metricsNote.textContent = alignRegionRegisteredNote(metrics.sourceNote || '', selectedRegion());
+      metricsNote.textContent = alignRegionRegisteredNote(
+        metrics.sourceNote || '',
+        selectedRegion(),
+        payload?.registeredCount
+      );
     }
 
     const realtimeDisabled = payload?.realtimeRankingDisabled === true;
@@ -1477,7 +1501,11 @@ const BremDriverManagementAdmin = (function () {
         realtimeNote.textContent = payload.realtimeRankingReason
           || '쿠팡 실시간 콜수는 0.8 가중치라 기사별 순위가 불가합니다.';
       } else {
-        const note = alignRegionRegisteredNote(metrics.sourceNote || '', selectedRegion());
+        const note = alignRegionRegisteredNote(
+          metrics.sourceNote || '',
+          selectedRegion(),
+          payload?.registeredCount
+        );
         realtimeNote.textContent = realtime.length
           ? `오늘(${payload.today || ''}) 크롤링 · 지역 등록 기사만 · ${note}`
           : `오늘(${payload.today || ''}) · 지역 등록 기사와 매칭된 실시간 콜이 없습니다. 운행현황 수집·지역 등록을 확인하세요.`;
@@ -1658,10 +1686,11 @@ const BremDriverManagementAdmin = (function () {
     if (filterMeta) {
       filterMeta.textContent = ranked.length
         ? (filterKey
-          ? `검색 ${filtered.length}명 / 전체 ${ranked.length}명`
-          : `배정 ${ranked.length}명`)
-        : '';
+          ? `검색 ${filtered.length}명 / 전체 ${ranked.length}명${driversLoadComplete() ? '' : '…'}`
+          : `배정 ${formatRegionHeadcount(ranked.length)}`)
+        : (driversLoadComplete() ? '' : '기사 목록 동기화 중…');
     }
+    if (rows) rows.dataset.assignedCount = String(ranked.length);
     const filterInput = $('#driverRegionListFilter');
     if (filterInput) {
       if (document.activeElement !== filterInput && filterInput.value !== state.regionListFilter) {
@@ -2546,8 +2575,8 @@ const BremDriverManagementAdmin = (function () {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
 
-    // 기사 목록이 백그라운드로 더 채워지면 인원 수만 갱신한다.
-    // 표 전체 재생성은 "인원이 늘었을 때" 또는 "최종 완료"만 (디바운스).
+    // 기사 목록이 백그라운드로 더 채워지면 인원 수를 맞춘다.
+    // 표는 인원 변화(증가·감소)·최종 완료·표/사이드바 불일치 때 갱신.
     document.addEventListener('brem-drivers-sync-ready', event => {
       if (state.tab !== 'region') return;
       if (!isDriverManagementSectionActive()) return;
@@ -2556,11 +2585,19 @@ const BremDriverManagementAdmin = (function () {
       if (!region) return;
       const n = driversInRegion(region).length;
       const complete = event.detail?.complete === true;
-      const grew = n > state.regionDetailDriverCount;
-      if (!grew && !complete) return;
-      if (!grew && complete && n === state.regionDetailDriverCount && state.regionDetailDriverCount >= 0) {
-        return;
+      const changed = n !== state.regionDetailDriverCount;
+      const assignedShown = Number($('#driverRegionRows')?.dataset?.assignedCount);
+      const mismatch = Number.isFinite(assignedShown)
+        && assignedShown >= 0
+        && assignedShown !== n
+        && !String(state.regionListFilter || '').trim();
+      const filterMeta = $('#driverRegionListFilterMeta');
+      if (filterMeta && !String(state.regionListFilter || '').trim()) {
+        filterMeta.textContent = n
+          ? `배정 ${formatRegionHeadcount(n)}`
+          : (driversLoadComplete() ? '' : '기사 목록 동기화 중…');
       }
+      if (!changed && !complete && !mismatch) return;
       state.regionDetailDriverCount = n;
       scheduleRegionDetailSoftRefresh();
     });

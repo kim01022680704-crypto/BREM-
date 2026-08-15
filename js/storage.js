@@ -345,6 +345,8 @@ const BremStorage = (function () {
   let driversSyncPromise = null;
   let driversFetchAllPromise = null;
   let driversLoadMeta = { complete: false, supabaseTotal: 0 };
+  // 이름+전화 중복제거로 getAll()에서 빠진 id 도 조직도 등에서 이름을 찾을 수 있게 유지
+  let driversByIdIndex = new Map();
   let dataMigrationsCompleted = false;
   let normalizedDriversCache = null;
   let normalizedDriversSourceRef = null;
@@ -933,8 +935,17 @@ const BremStorage = (function () {
     }
   }
 
+  function indexDriversById(list) {
+    (Array.isArray(list) ? list : []).forEach(driver => {
+      const id = String(driver?.id || '').trim();
+      if (!id) return;
+      driversByIdIndex.set(id, driver);
+    });
+  }
+
   function setDriversCache(list) {
     invalidateDriversNormalizeCache();
+    indexDriversById(list);
     if (activeStorageAdapter.type === 'local') {
       writeLocalDevJson(KEYS.drivers, list);
       window.BremDataCache?.set?.(KEYS.drivers, list, {
@@ -971,7 +982,10 @@ const BremStorage = (function () {
   }
 
   function markDriversCache(list, meta = {}) {
-    const rows = dedupeDriversList(Array.isArray(list) ? list : []);
+    const incoming = Array.isArray(list) ? list : [];
+    // 중복제거 전에 id 인덱스를 쌓는다 (조직도 memberRefs 가 탈락 id 를 가리켜도 이름 조회 가능)
+    indexDriversById(incoming);
+    const rows = dedupeDriversList(incoming);
     const nextTotal = Number(meta.supabaseTotal ?? driversLoadMeta.supabaseTotal ?? rows.length);
     if (meta.complete === true) {
       driversLoadMeta = {
@@ -1041,6 +1055,7 @@ const BremStorage = (function () {
         });
       }
     }
+    indexDriversById(cached);
     driversLoadMeta = {
       complete: true,
       supabaseTotal: supabaseTotal || cached.length
@@ -2008,6 +2023,7 @@ const BremStorage = (function () {
 
   function clearDriversCacheHard() {
     invalidateDriversNormalizeCache();
+    driversByIdIndex = new Map();
     setDriversCache([]);
     driversLoadMeta = { complete: false, supabaseTotal: 0 };
     window.BremDataCache?.invalidate?.(KEYS.drivers);
@@ -5322,7 +5338,31 @@ const BremStorage = (function () {
     },
 
     getById(id) {
-      return drivers.getAll().find(driver => driver.id === id) || null;
+      const rid = String(id || '').trim();
+      if (!rid) return null;
+      const indexed = driversByIdIndex.get(rid);
+      if (indexed) {
+        const normalized = normalizeDrivers([indexed]);
+        return normalized[0] || indexed;
+      }
+      return drivers.getAll().find(driver => String(driver.id || '').trim() === rid) || null;
+    },
+
+    /** id 기준 전체(이름+전화 중복제거로 getAll 에서 빠진 건 포함). 지역 인원 집계용. */
+    getAllKnownById() {
+      const byId = new Map();
+      driversByIdIndex.forEach((driver, id) => {
+        if (id && driver) byId.set(id, driver);
+      });
+      drivers.getAll().forEach(driver => {
+        const id = String(driver?.id || '').trim();
+        if (id) byId.set(id, driver);
+      });
+      return normalizeDrivers(Array.from(byId.values()));
+    },
+
+    isLoadComplete() {
+      return Boolean(driversLoadMeta.complete);
     },
 
     async fetchById(id, options = {}) {
