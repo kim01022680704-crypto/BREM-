@@ -1789,15 +1789,16 @@ h3 {
 
 .notice-item p,
 .notice-item__body {
-  color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.6;
+  color: #111111;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.65;
   white-space: pre-wrap;
 }
 
 .notice-item__toggle {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   width: 100%;
@@ -1819,7 +1820,7 @@ h3 {
   transform: rotate(180deg);
 }
 
-.notice-item.is-unread .notice-item__title::after {
+.notice-item.is-unread .notice-item__name::after {
   content: "";
   display: inline-block;
   width: 7px;
@@ -1831,15 +1832,25 @@ h3 {
 }
 
 .notice-item__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 0;
   min-width: 0;
 }
 
 .notice-item__date {
   flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 700;
+  color: #111111;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.notice-item__name {
+  min-width: 0;
+  color: #111111;
+  font-weight: 800;
 }
 
 .notice-item__body {
@@ -1911,16 +1922,19 @@ html.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]):not([data-drive
 }
 
 .notice-popup__dialog h2 {
-  margin: 0 0 12px;
-  font-size: 1.18rem;
+  margin: 0 0 14px;
+  color: #111111;
+  font-size: 1.32rem;
   line-height: 1.35;
+  font-weight: 900;
 }
 
 .notice-popup__body {
   margin: 0 0 18px;
-  color: #374151;
-  font-size: 0.94rem;
-  line-height: 1.65;
+  color: #111111;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.7;
   white-space: pre-wrap;
 }
 
@@ -2495,7 +2509,9 @@ button.calendar-day:hover {
 
   .notice-item p,
   .notice-item__body {
-    font-size: 0.9rem;
+    color: #111111;
+    font-size: 1rem;
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
 

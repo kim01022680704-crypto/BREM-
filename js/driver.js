@@ -982,12 +982,15 @@
         const unread = Boolean(id && !isNoticeRead(id));
         const when = formatNoticeDate(notice.createdAt || notice.updatedAt);
         return `
-        <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}${unread ? ' is-unread' : ''}" data-notice-id="${escapeHtml(id)}">
-          <button type="button" class="notice-item__toggle" aria-expanded="${open ? 'true' : 'false'}">
-            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${notice.popup ? '<span class="notice-badge">팝업</span>' : ''}${escapeHtml(notice.title)}</span>
-            ${when ? `<time class="notice-item__date">${escapeHtml(when)}</time>` : ''}
+        <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${unread ? ' is-unread' : ''}" data-notice-id="${escapeHtml(id)}">
+          <button type="button" class="notice-item__toggle" aria-expanded="false">
+            <span class="notice-item__title">
+              ${notice.pinned ? '<span class="notice-item__pin" aria-hidden="true">📌</span>' : ''}
+              ${notice.popup ? '<span class="notice-badge">팝업</span>' : ''}
+              ${when ? `<time class="notice-item__date">${escapeHtml(when)}</time>` : ''}
+              <span class="notice-item__name">${escapeHtml(notice.title)}</span>
+            </span>
           </button>
-          <p class="notice-item__body"${open ? '' : ' hidden'}>${escapeHtml(notice.content || notice.body || '')}</p>
         </article>`;
       })
       .join('');
@@ -1043,8 +1046,24 @@
   function fillNoticePopup(notice) {
     const titleEl = document.getElementById('driverNoticePopupTitle');
     const bodyEl = document.getElementById('driverNoticePopupBody');
-    if (titleEl) titleEl.textContent = notice.title || '공지사항';
+    if (titleEl) titleEl.textContent = String(notice.title || '').trim() || '공지사항';
     if (bodyEl) bodyEl.textContent = notice.content || notice.body || '';
+  }
+
+  function setNoticePopupMode(fromList) {
+    noticePopupState.fromList = Boolean(fromList);
+    const hideBtn = document.getElementById('driverNoticePopupHideToday');
+    if (hideBtn) hideBtn.hidden = Boolean(fromList);
+  }
+
+  function openNoticePopup(notice, options = {}) {
+    const overlay = document.getElementById('driverNoticePopup');
+    if (!overlay || !notice) return;
+    noticePopupState.currentId = String(notice.id || '');
+    setNoticePopupMode(options.fromList);
+    fillNoticePopup(notice);
+    overlay.hidden = false;
+    if (notice.id) markNoticeRead(notice.id);
   }
 
   function showNextNoticePopup() {
@@ -1056,10 +1075,7 @@
     while (noticePopupState.queue.length) {
       const next = noticePopupState.queue.shift();
       if (!next?.id || isNoticePopupHiddenToday(next.id)) continue;
-      noticePopupState.currentId = next.id;
-      fillNoticePopup(next);
-      overlay.hidden = false;
-      markNoticeRead(next.id);
+      openNoticePopup(next, { fromList: false });
       return;
     }
     hideNoticePopup();
@@ -1863,26 +1879,11 @@
     if (!toggle) return;
     event.preventDefault();
     const item = toggle.closest('.notice-item');
-    const list = document.getElementById('noticeList');
-    if (!item || !list) return;
-    const willOpen = !item.classList.contains('is-open');
-    list.querySelectorAll('.notice-item.is-open').forEach((openItem) => {
-      openItem.classList.remove('is-open');
-      const btn = openItem.querySelector('.notice-item__toggle');
-      const body = openItem.querySelector('.notice-item__body');
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-      if (body) body.hidden = true;
-    });
-    if (willOpen) {
-      item.classList.add('is-open');
-      toggle.setAttribute('aria-expanded', 'true');
-      const body = item.querySelector('.notice-item__body');
-      if (body) body.hidden = false;
-      openNoticeId = String(item.dataset.noticeId || '');
-      markNoticeRead(openNoticeId);
-    } else {
-      openNoticeId = '';
-    }
+    const noticeId = String(item?.dataset.noticeId || '');
+    const notice = mergedNoticesForDriver().find(entry => String(entry.id || '') === noticeId);
+    if (!notice) return;
+    openNoticeId = noticeId;
+    openNoticePopup(notice, { fromList: true });
   });
 
   document.addEventListener('DOMContentLoaded', async () => {
