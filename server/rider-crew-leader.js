@@ -337,11 +337,13 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
   const members = riders.map(rider => {
     const id = String(rider.id || '').trim();
     const live = liveMap.get(id);
-    const todayFromCalls = calls.todayMap.get(id) || 0;
-    const weekCalls = calls.weekMap.get(id) || 0;
-    // 현재 콜: 배민 라이브 완료가 있으면 그쪽을 우선(오늘 체감), 없으면 콜수 입력 합
+    const weekBaemin = calls.weekBaemin.get(id) || 0;
+    const weekCoupang = calls.weekCoupang.get(id) || 0;
+    const weekCalls = weekBaemin + weekCoupang;
+    // 오늘 실시간: 배민 배달현황 크롤만 (쿠팡은 실시간 없음)
     const liveComplete = live?.liveComplete || 0;
-    const todayCalls = Math.max(todayFromCalls, liveComplete);
+    const todayBaemin = Math.max(calls.todayBaemin.get(id) || 0, liveComplete);
+    const todayCoupang = calls.todayCoupang.get(id) || 0;
     let operating = null;
     if (live && (live.statusDesc || live.collectedAt)) {
       operating = Boolean(live.operating);
@@ -351,13 +353,13 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
       name: String(rider.name || '').trim() || '이름 없음',
       isSelf: id === riderId,
       operating,
-      todayCalls,
+      todayCalls: todayBaemin,
+      todayBaemin,
+      todayCoupang,
+      weekBaemin,
+      weekCoupang,
       weekCalls,
-      totalCalls: weekCalls,
-      todayBaemin: Math.max(calls.todayBaemin.get(id) || 0, liveComplete),
-      todayCoupang: calls.todayCoupang.get(id) || 0,
-      weekBaemin: calls.weekBaemin.get(id) || 0,
-      weekCoupang: calls.weekCoupang.get(id) || 0
+      totalCalls: weekCalls
     };
   }).sort((a, b) => {
     if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
@@ -379,7 +381,10 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
       memberCount: members.length,
       operatingCount,
       operatingKnown: knownOps,
-      todayCalls: members.reduce((sum, m) => sum + m.todayCalls, 0),
+      todayCalls: members.reduce((sum, m) => sum + m.todayBaemin, 0),
+      todayBaemin: members.reduce((sum, m) => sum + m.todayBaemin, 0),
+      weekBaemin: members.reduce((sum, m) => sum + m.weekBaemin, 0),
+      weekCoupang: members.reduce((sum, m) => sum + m.weekCoupang, 0),
       weekCalls: members.reduce((sum, m) => sum + m.weekCalls, 0)
     },
     members

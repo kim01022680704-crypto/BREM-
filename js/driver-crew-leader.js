@@ -159,7 +159,9 @@
     const summary = result.summary || {};
     if (summaryEl) {
       summaryEl.textContent = `인원 ${formatNumber(summary.memberCount)} · 운행중 ${formatNumber(summary.operatingCount)}`
-        + ` · 오늘운행콜 ${formatNumber(summary.todayCalls)} · 주간합계 ${formatNumber(summary.weekCalls)}`;
+        + ` · 오늘배민 ${formatNumber(summary.todayBaemin ?? summary.todayCalls)}`
+        + ` · 주간 배민 ${formatNumber(summary.weekBaemin)} · 쿠팡 ${formatNumber(summary.weekCoupang)}`
+        + ` · 합계 ${formatNumber(summary.weekCalls)}`;
     }
 
     const members = Array.isArray(result.members) ? result.members : [];
@@ -174,10 +176,12 @@
               </div>
             </td>
             <td class="driver-crew-ops">${operatingTagHtml(member.operating)}</td>
-            <td class="driver-crew-num">${formatNumber(member.todayCalls)}</td>
+            <td class="driver-crew-num">${formatNumber(member.todayBaemin ?? member.todayCalls)}</td>
+            <td class="driver-crew-num">${formatNumber(member.weekBaemin)}</td>
+            <td class="driver-crew-num">${formatNumber(member.weekCoupang)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekCalls)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="4" class="empty">소속 기사가 없습니다.</td></tr>';
+        : '<tr><td colspan="6" class="empty">소속 기사가 없습니다.</td></tr>';
     }
   }
 
