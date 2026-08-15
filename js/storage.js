@@ -1521,7 +1521,7 @@ const BremStorage = (function () {
       KEYS.leaseLoans,
       KEYS.deductionLedger
     ],
-    'urgent-missions': [],
+    'urgent-missions': [KEYS.drivers],
     'revenue-management': [],
     'admin-account': [],
     'baemin-biz-status': [],

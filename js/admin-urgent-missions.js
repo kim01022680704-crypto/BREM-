@@ -9,10 +9,22 @@
   const listEl = document.getElementById('urgentMissionList');
   const emptyEl = document.getElementById('urgentMissionEmpty');
   const publishBtn = document.getElementById('urgentMissionPublishBtn');
+  const regionListEl = document.getElementById('urgentMissionRegionList');
+  const riderListEl = document.getElementById('urgentMissionRiderList');
+  const riderCountEl = document.getElementById('urgentMissionRiderCount');
+  const regionTitleEl = document.getElementById('urgentMissionRegionTitle');
+  const checkAllEl = document.getElementById('urgentMissionRiderCheckAll');
+  const searchEl = document.getElementById('urgentMissionRiderSearch');
 
   const state = {
     missions: [],
-    loading: false
+    loading: false,
+    baeminRegions: [],
+    coupangRegions: [],
+    selectedRegionKey: '',
+    selectedRegionPlatform: '',
+    selectedRiders: new Map(),
+    riderSearch: ''
   };
 
   function showToast(message) {
@@ -48,17 +60,226 @@
     }).format(date);
   }
 
+  function shortCoupangRegion(name) {
+    const helper = window.BremDriverManagementAdmin?.shortCoupangRegion;
+    if (typeof helper === 'function') return helper(name);
+    let raw = String(name || '').replace(/\s+/g, '').trim();
+    if (!raw) return '';
+    raw = raw.replace(/\(\d+\)$/g, '');
+    const hangul = raw.replace(/[^가-힣]/g, '');
+    const base = hangul || raw;
+    if (!base) return '';
+    return base.length <= 4 ? base : base.slice(-4);
+  }
+
+  function selectedPlatforms() {
+    return Array.from(section.querySelectorAll('input[name="urgentMissionPlatform"]:checked'))
+      .map(input => input.value);
+  }
+
+  function riderKey(platform, riderId) {
+    return `${platform}:${riderId}`;
+  }
+
+  function allDrivers() {
+    if (typeof window.BremStorage?.drivers?.getAllKnownById === 'function') {
+      return window.BremStorage.drivers.getAllKnownById() || [];
+    }
+    return window.BremStorage?.drivers?.getAll?.() || [];
+  }
+
+  function driverRegionValue(driver, platform) {
+    return platform === 'coupang'
+      ? String(driver?.regionCoupang || '').trim()
+      : String(driver?.regionBaemin || '').trim();
+  }
+
+  function driversInRegion(region) {
+    if (!region) return [];
+    return allDrivers().filter((driver) => {
+      const value = driverRegionValue(driver, region.platform);
+      if (!value) return false;
+      if (region.platform === 'baemin') {
+        return value === region.label
+          || value === region.partnerId
+          || value === region.key
+          || (region.partnerId && region.partnerId.length >= 6 && value.includes(region.partnerId));
+      }
+      return shortCoupangRegion(value) === region.key
+        || shortCoupangRegion(value) === shortCoupangRegion(region.label)
+        || value === region.vendorName
+        || value === region.vendorId;
+    }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+  }
+
+  function visibleRegions() {
+    const platforms = new Set(selectedPlatforms());
+    const list = [];
+    if (platforms.has('baemin')) list.push(...state.baeminRegions);
+    if (platforms.has('coupang')) list.push(...state.coupangRegions);
+    return list;
+  }
+
+  function selectedRegion() {
+    return visibleRegions().find(item => (
+      item.key === state.selectedRegionKey && item.platform === state.selectedRegionPlatform
+    )) || null;
+  }
+
+  function selectedRiderPayloads() {
+    return [...state.selectedRiders.values()];
+  }
+
+  function updateRiderCount() {
+    if (riderCountEl) riderCountEl.textContent = `${state.selectedRiders.size}명 선택`;
+  }
+
+  function renderRegionList() {
+    if (!regionListEl) return;
+    const regions = visibleRegions();
+    if (!selectedPlatforms().length) {
+      regionListEl.innerHTML = '<p class="form-help">배민/쿠팡 태그를 먼저 선택하세요.</p>';
+      if (riderListEl) riderListEl.innerHTML = '';
+      if (regionTitleEl) regionTitleEl.textContent = '지역을 선택하세요';
+      return;
+    }
+    if (!regions.length) {
+      regionListEl.innerHTML = '<p class="form-help">지역 목록을 불러오는 중이거나, 등록된 지역이 없습니다.</p>';
+      return;
+    }
+    if (!selectedRegion() && regions[0]) {
+      state.selectedRegionKey = regions[0].key;
+      state.selectedRegionPlatform = regions[0].platform;
+    }
+    regionListEl.innerHTML = regions.map((region) => {
+      const count = driversInRegion(region).length;
+      const active = region.key === state.selectedRegionKey && region.platform === state.selectedRegionPlatform;
+      const tag = region.platform === 'baemin' ? '배민' : '쿠팡';
+      return `
+        <button type="button" class="urgent-mission-region-item${active ? ' is-active' : ''}" data-um-region="${escapeHtml(region.key)}" data-um-platform="${escapeHtml(region.platform)}">
+          <span>${escapeHtml(region.label || region.key)} <small>${tag}</small></span>
+          <strong>${count}명</strong>
+        </button>
+      `;
+    }).join('');
+    renderRiderList();
+  }
+
+  function renderRiderList() {
+    if (!riderListEl) return;
+    const region = selectedRegion();
+    if (!region) {
+      riderListEl.innerHTML = '<p class="form-help">지역을 선택하세요.</p>';
+      if (regionTitleEl) regionTitleEl.textContent = '지역을 선택하세요';
+      if (checkAllEl) checkAllEl.checked = false;
+      return;
+    }
+    if (regionTitleEl) {
+      regionTitleEl.textContent = `${region.label || region.key} · ${region.platform === 'baemin' ? '배민' : '쿠팡'}`;
+    }
+    const search = String(state.riderSearch || '').replace(/\s+/g, '').toLowerCase();
+    const drivers = driversInRegion(region).filter((driver) => {
+      if (!search) return true;
+      const hay = [driver.name, driver.phone, driver.baeminId]
+        .map(value => String(value || '').replace(/\s+/g, '').toLowerCase())
+        .join('|');
+      return hay.includes(search);
+    });
+    if (!drivers.length) {
+      riderListEl.innerHTML = `<p class="form-help">${search ? '검색 결과가 없습니다.' : '이 지역에 배정된 기사가 없습니다.'}</p>`;
+      if (checkAllEl) checkAllEl.checked = false;
+      return;
+    }
+    riderListEl.innerHTML = drivers.map((driver) => {
+      const key = riderKey(region.platform, driver.id);
+      const checked = state.selectedRiders.has(key);
+      return `
+        <label class="urgent-mission-rider-item">
+          <input type="checkbox" data-um-rider="${escapeHtml(driver.id)}" data-um-platform="${escapeHtml(region.platform)}" ${checked ? 'checked' : ''}>
+          <span>${escapeHtml(driver.name || '-')}</span>
+          <small>${escapeHtml(driver.phone || '')}</small>
+        </label>
+      `;
+    }).join('');
+    if (checkAllEl) {
+      checkAllEl.checked = drivers.every(driver => state.selectedRiders.has(riderKey(region.platform, driver.id)));
+    }
+    updateRiderCount();
+  }
+
+  function toggleRider(driver, region, on) {
+    const key = riderKey(region.platform, driver.id);
+    if (on) {
+      state.selectedRiders.set(key, {
+        riderId: driver.id,
+        riderName: driver.name || '',
+        riderPhone: driver.phone || '',
+        regionKey: region.key,
+        regionLabel: region.label || region.key,
+        platform: region.platform
+      });
+    } else {
+      state.selectedRiders.delete(key);
+    }
+    updateRiderCount();
+  }
+
+  async function fetchRegions(platform) {
+    const token = await window.BremStorage?.resolveAdminAccessToken?.();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    if (platform === 'baemin') {
+      const res = await fetch('/api/admin/baemin-delivery/partner-regions', { headers, credentials: 'same-origin' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || '배민 지역을 불러오지 못했습니다.');
+      return (payload.allItems || payload.items || []).map(item => ({
+        key: String(item.partnerId || '').trim(),
+        partnerId: String(item.partnerId || '').trim(),
+        label: String(item.regionName || '').trim(),
+        platform: 'baemin'
+      })).filter(item => item.key && item.label);
+    }
+    const res = await fetch('/api/admin/coupang/vendor-regions', { headers, credentials: 'same-origin' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || '쿠팡 지역을 불러오지 못했습니다.');
+    const byShort = new Map();
+    (payload.allItems || payload.items || []).forEach((item) => {
+      const vendorId = String(item.vendorId || '').trim();
+      const vendorName = String(item.vendorName || '').trim();
+      const short = shortCoupangRegion(vendorName);
+      if (!vendorId || !short) return;
+      if (!byShort.has(short)) {
+        byShort.set(short, {
+          key: short,
+          vendorId,
+          vendorName,
+          label: short,
+          platform: 'coupang'
+        });
+      }
+    });
+    return [...byShort.values()].sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+  }
+
+  async function loadRegions() {
+    try {
+      const [baemin, coupang] = await Promise.all([
+        fetchRegions('baemin').catch(() => []),
+        fetchRegions('coupang').catch(() => [])
+      ]);
+      state.baeminRegions = baemin;
+      state.coupangRegions = coupang;
+    } catch (error) {
+      console.warn('[BREM] urgent mission regions:', error);
+    }
+    renderRegionList();
+  }
+
   function platformTags(platforms) {
     return (platforms || []).map((platform) => (
       platform === 'baemin'
         ? '<span class="urgent-mission-tag urgent-mission-tag--baemin">배민</span>'
         : '<span class="urgent-mission-tag urgent-mission-tag--coupang">쿠팡</span>'
     )).join('');
-  }
-
-  function selectedPlatforms() {
-    return Array.from(section.querySelectorAll('input[name="urgentMissionPlatform"]:checked'))
-      .map(input => input.value);
   }
 
   function selectedAcceptIds(missionId) {
@@ -69,7 +290,7 @@
   function renderTargets(mission) {
     const targets = mission.targets || [];
     if (!targets.length) {
-      return '<p class="form-help">아직 대상 기사가 없습니다. 기사관리 → 기사지역관리에서 미션을 고른 뒤 기사를 넣으세요.</p>';
+      return '<p class="form-help">대상 기사가 없습니다.</p>';
     }
     return `
       <ul class="urgent-mission-target-list">
@@ -161,9 +382,22 @@
     }).join('');
   }
 
+  function resetPicker() {
+    state.selectedRiders = new Map();
+    state.riderSearch = '';
+    if (searchEl) searchEl.value = '';
+    updateRiderCount();
+    renderRegionList();
+  }
+
   async function load() {
     if (!window.BremStorage?.fetchAdminUrgentMissionsFromServer) return;
     state.loading = true;
+    try {
+      await window.BremStorage.ensureSectionLoaded?.('urgent-missions');
+    } catch {
+      // ignore
+    }
     const result = await window.BremStorage.fetchAdminUrgentMissionsFromServer();
     state.loading = false;
     if (!result.ok) {
@@ -172,6 +406,7 @@
     }
     state.missions = result.missions || [];
     render();
+    void loadRegions();
   }
 
   async function publish(event) {
@@ -181,8 +416,13 @@
     const amount = Number(amountEl?.value || 0);
     const missionTime = String(timeEl?.value || '').trim();
     const platforms = selectedPlatforms();
+    const riders = selectedRiderPayloads();
     if (!content || !amount || !missionTime || !platforms.length) {
       showToast('내용, 금액, 시간, 쿠팡/배민 태그를 모두 입력하세요.');
+      return;
+    }
+    if (!riders.length) {
+      showToast('배포할 대상 기사를 선택하세요.');
       return;
     }
     if (publishBtn) publishBtn.disabled = true;
@@ -190,7 +430,8 @@
       content,
       amount,
       missionTime,
-      platforms
+      platforms,
+      riders
     });
     if (publishBtn) publishBtn.disabled = false;
     if (!result.ok) {
@@ -198,9 +439,10 @@
       return;
     }
     form?.reset();
+    resetPicker();
     state.missions = result.missions || [];
     render();
-    showToast('긴급미션을 배포했습니다.');
+    showToast(`긴급미션을 배포했습니다. 대상 ${riders.length}명`);
   }
 
   async function closeMission(missionId) {
@@ -261,6 +503,13 @@
   form?.addEventListener('submit', publish);
 
   section.addEventListener('click', (event) => {
+    const regionBtn = event.target.closest('[data-um-region]');
+    if (regionBtn) {
+      state.selectedRegionKey = regionBtn.dataset.umRegion;
+      state.selectedRegionPlatform = regionBtn.dataset.umPlatform;
+      renderRegionList();
+      return;
+    }
     const closeBtn = event.target.closest('[data-close-mission]');
     if (closeBtn) {
       void closeMission(closeBtn.dataset.closeMission);
@@ -283,12 +532,40 @@
   });
 
   section.addEventListener('change', (event) => {
+    if (event.target?.name === 'urgentMissionPlatform') {
+      renderRegionList();
+      return;
+    }
+    if (event.target?.id === 'urgentMissionRiderCheckAll') {
+      const region = selectedRegion();
+      if (!region) return;
+      const on = event.target.checked;
+      driversInRegion(region).forEach(driver => toggleRider(driver, region, on));
+      renderRiderList();
+      return;
+    }
+    const riderBox = event.target.closest('[data-um-rider]');
+    if (riderBox) {
+      const region = selectedRegion();
+      const driver = allDrivers().find(item => item.id === riderBox.dataset.umRider);
+      if (region && driver) toggleRider(driver, region, riderBox.checked);
+      if (checkAllEl && region) {
+        checkAllEl.checked = driversInRegion(region).every(item => state.selectedRiders.has(riderKey(region.platform, item.id)));
+      }
+      updateRiderCount();
+      return;
+    }
     const all = event.target.closest('[data-accept-all]');
     if (!all) return;
     const missionId = all.dataset.acceptAll;
     section.querySelectorAll(`[data-accept-mission="${missionId}"]`).forEach((input) => {
       input.checked = all.checked;
     });
+  });
+
+  searchEl?.addEventListener('input', () => {
+    state.riderSearch = searchEl.value;
+    renderRiderList();
   });
 
   window.BremAdminUrgentMissions = {

@@ -13137,3 +13137,104 @@ tr.is-week-first td {
   border-radius: 10px;
   background: #1b1b1b;
 }
+
+.urgent-mission-rider-picker {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255, 212, 0, 0.2);
+  border-radius: 16px;
+  background: #141414;
+}
+
+.urgent-mission-rider-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.urgent-mission-rider-picker__head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.urgent-mission-rider-picker__tools input {
+  width: 100%;
+}
+
+.urgent-mission-rider-picker__body {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 280px;
+}
+
+.urgent-mission-region-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.urgent-mission-region-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #1b1b1b;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.urgent-mission-region-item small {
+  color: var(--muted);
+}
+
+.urgent-mission-region-item.is-active {
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(250, 204, 21, 0.12);
+}
+
+.urgent-mission-rider-list-wrap {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.urgent-mission-rider-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#urgentMissionRiderList {
+  display: grid;
+  gap: 4px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.urgent-mission-rider-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #1b1b1b;
+}
+
+@media (max-width: 720px) {
+  .urgent-mission-rider-picker__body {
+    grid-template-columns: 1fr;
+  }
+}

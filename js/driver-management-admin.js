@@ -37,9 +37,7 @@ const BremDriverManagementAdmin = (function () {
     regionDetailSyncTimer: null,
     regionDetailDriverCount: -1,
     regionListFilter: '',
-    regionListFilterTimer: null,
-    regionMissionSelected: new Set(),
-    urgentMissions: []
+    regionListFilterTimer: null
   };
 
   const REGION_RANKING_POLL_MS = 120 * 1000;
@@ -244,102 +242,6 @@ const BremDriverManagementAdmin = (function () {
 
   function showToast(message) {
     document.dispatchEvent(new CustomEvent('brem-admin-toast', { detail: { message } }));
-  }
-
-  function selectedUrgentMission() {
-    const id = String($('#driverRegionMissionSelect')?.value || '').trim();
-    return (state.urgentMissions || []).find(item => item.id === id) || null;
-  }
-
-  function isDriverInSelectedMission(driverId) {
-    const mission = selectedUrgentMission();
-    if (!mission) return false;
-    return (mission.targets || []).some(item => item.riderId === driverId);
-  }
-
-  function missionSelectLabel(mission) {
-    const tags = (mission.platforms || []).map(item => (item === 'baemin' ? '배민' : '쿠팡')).join('/');
-    const amount = Number(mission.amount || 0).toLocaleString('ko-KR');
-    const title = String(mission.content || '').replace(/\s+/g, ' ').slice(0, 24);
-    return `${tags || '미션'} · ${amount}원 · ${mission.missionTime || ''} · ${title}`;
-  }
-
-  function renderRegionMissionSelect() {
-    const select = $('#driverRegionMissionSelect');
-    if (!select) return;
-    const current = String(select.value || '');
-    const openMissions = (state.urgentMissions || []).filter(item => item.status === 'open');
-    select.innerHTML = '<option value="">미션 선택</option>' + openMissions.map(mission => (
-      `<option value="${escapeHtml(mission.id)}">${escapeHtml(missionSelectLabel(mission))}</option>`
-    )).join('');
-    if (current && openMissions.some(item => item.id === current)) select.value = current;
-  }
-
-  function syncRegionMissionBar() {
-    const hasRegion = Boolean(selectedRegion());
-    ['driverRegionMissionAssignBtn', 'driverRegionMissionAssignAllBtn'].forEach((id) => {
-      const btn = $(`#${id}`);
-      if (btn && !hasRegion) btn.disabled = true;
-    });
-    renderRegionMissionSelect();
-  }
-
-  function syncRegionMissionCheckAll() {
-    const checkAll = $('#driverRegionMissionCheckAll');
-    if (!checkAll) return;
-    const boxes = $$('[data-region-mission-rider]');
-    checkAll.checked = boxes.length > 0 && boxes.every(input => input.checked);
-  }
-
-  async function loadUrgentMissions() {
-    if (!window.BremStorage?.fetchAdminUrgentMissionsFromServer) return;
-    const result = await window.BremStorage.fetchAdminUrgentMissionsFromServer();
-    if (!result.ok) return;
-    state.urgentMissions = result.missions || [];
-    renderRegionMissionSelect();
-    if (selectedRegion()) renderRegionDetail();
-  }
-
-  function selectedRegionMissionRiders(allInRegion = false) {
-    const region = selectedRegion();
-    if (!region) return [];
-    const inRegion = driversInRegion(region);
-    const ids = allInRegion
-      ? new Set(inRegion.map(driver => driver.id))
-      : state.regionMissionSelected;
-    return inRegion
-      .filter(driver => ids.has(driver.id))
-      .map(driver => ({
-        riderId: driver.id,
-        riderName: driver.name || '',
-        riderPhone: driver.phone || '',
-        regionKey: region.key,
-        regionLabel: region.label,
-        platform: region.platform
-      }));
-  }
-
-  async function assignSelectedToMission(allInRegion = false) {
-    const mission = selectedUrgentMission();
-    if (!mission) {
-      showToast('넣을 긴급미션을 선택하세요.');
-      return;
-    }
-    const riders = selectedRegionMissionRiders(allInRegion);
-    if (!riders.length) {
-      showToast(allInRegion ? '이 지역에 배정된 기사가 없습니다.' : '미션에 넣을 기사를 선택하세요.');
-      return;
-    }
-    const result = await window.BremStorage.assignAdminUrgentMissionTargets(mission.id, riders);
-    if (!result.ok) {
-      showToast(result.message || result.error || '미션에 넣지 못했습니다.');
-      return;
-    }
-    state.urgentMissions = result.missions || [];
-    state.regionMissionSelected = new Set();
-    renderRegionMissionSelect();
-    renderRegionDetail();
-    showToast(`${riders.length}명을 긴급미션에 넣었습니다.`);
   }
 
   function createId() {
@@ -2287,9 +2189,7 @@ const BremDriverManagementAdmin = (function () {
     }
     if (!rows) return;
     if (!region) {
-      rows.innerHTML = '<tr><td colspan="6" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
-      state.regionMissionSelected = new Set();
-      syncRegionMissionBar();
+      rows.innerHTML = '<tr><td colspan="5" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
       state.regionAdd.candidates = [];
       state.regionDetailDriverCount = -1;
       state.regionListFilter = '';
@@ -2301,12 +2201,10 @@ const BremDriverManagementAdmin = (function () {
       }
       const filterMeta = $('#driverRegionListFilterMeta');
       if (filterMeta) filterMeta.textContent = '';
-      ['driverRegionBulkFullBtn', 'driverRegionBulkHiddenBtn', 'driverRegionMissionAssignBtn', 'driverRegionMissionAssignAllBtn'].forEach(id => {
+      ['driverRegionBulkFullBtn', 'driverRegionBulkHiddenBtn'].forEach(id => {
         const btn = $(`#${id}`);
         if (btn) btn.disabled = true;
       });
-      const checkAll = $('#driverRegionMissionCheckAll');
-      if (checkAll) checkAll.checked = false;
       if (totalsEl) totalsEl.textContent = '';
       clearRegionRankingUi();
       return;
@@ -2314,7 +2212,7 @@ const BremDriverManagementAdmin = (function () {
     const week = ensureWeek();
     const inRegion = driversInRegion(region);
     state.regionDetailDriverCount = inRegion.length;
-    ['driverRegionBulkFullBtn', 'driverRegionBulkHiddenBtn', 'driverRegionMissionAssignBtn', 'driverRegionMissionAssignAllBtn'].forEach(id => {
+    ['driverRegionBulkFullBtn', 'driverRegionBulkHiddenBtn'].forEach(id => {
       const btn = $(`#${id}`);
       if (btn) btn.disabled = inRegion.length === 0;
     });
@@ -2367,13 +2265,8 @@ const BremDriverManagementAdmin = (function () {
           mode === 'hidden' ? 'is-dashboard-hidden' : '',
           mode === 'leader' ? 'is-region-leader' : ''
         ].filter(Boolean).join(' ');
-        const checked = state.regionMissionSelected.has(row.driver.id);
-        const inMission = isDriverInSelectedMission(row.driver.id);
         return `<tr${rowClass ? ` class="${rowClass}"` : ''}>
-          <td class="urgent-mission-check-col">
-            <input type="checkbox" data-region-mission-rider="${escapeHtml(row.driver.id)}" ${checked ? 'checked' : ''}>
-          </td>
-          <td><strong>${escapeHtml(row.driver.name)}</strong>${inMission ? ' <span class="urgent-mission-in-badge" title="선택한 긴급미션 대상">미션</span>' : ''}${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}${mode === 'leader' ? ' <span class="driver-region-leader-badge" title="팀장 — 기사앱에서 할당·실시간·주간 전원 표시">팀장</span>' : ''}${mode === 'dashboard' ? ' <span class="driver-region-dash-badge" title="자기 순위 비노출 · 남 순위+할당 열람">전체열람</span>' : ''}${mode === 'metrics' ? ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>' : ''}${mode === 'hidden' ? ' <span class="driver-region-hidden-badge" title="기사앱 대시보드만 숨김 · 집계·순위 포함">미노출</span>' : ''}</td>
+          <td><strong>${escapeHtml(row.driver.name)}</strong>${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}${mode === 'leader' ? ' <span class="driver-region-leader-badge" title="팀장 — 기사앱에서 할당·실시간·주간 전원 표시">팀장</span>' : ''}${mode === 'dashboard' ? ' <span class="driver-region-dash-badge" title="자기 순위 비노출 · 남 순위+할당 열람">전체열람</span>' : ''}${mode === 'metrics' ? ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>' : ''}${mode === 'hidden' ? ' <span class="driver-region-hidden-badge" title="기사앱 대시보드만 숨김 · 집계·순위 포함">미노출</span>' : ''}</td>
           <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
           <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
           <td>
@@ -2402,8 +2295,7 @@ const BremDriverManagementAdmin = (function () {
           <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(row.driver.id)}">해제</button></td>
         </tr>`;
       }).join('')
-      : `<tr><td colspan="6" class="empty">${ranked.length ? '검색 결과가 없습니다.' : '이 지역에 배정된 기사가 없습니다.'}</td></tr>`;
-    syncRegionMissionCheckAll();
+      : `<tr><td colspan="5" class="empty">${ranked.length ? '검색 결과가 없습니다.' : '이 지역에 배정된 기사가 없습니다.'}</td></tr>`;
 
     if (totalsEl) {
       const firstText = weeklyLocalFirst
@@ -3292,7 +3184,6 @@ const BremDriverManagementAdmin = (function () {
       if (regionBtn) {
         state.selectedRegionKey = regionBtn.dataset.regionSelect;
         state.regionListFilter = '';
-        state.regionMissionSelected = new Set();
         renderRegionCatalog();
         renderRegionDetail();
         return;
@@ -3302,7 +3193,6 @@ const BremDriverManagementAdmin = (function () {
       if (platformBtn) {
         state.regionPlatform = platformBtn.dataset.driverRegionPlatform === 'coupang' ? 'coupang' : 'baemin';
         state.selectedRegionKey = '';
-        state.regionMissionSelected = new Set();
         $$('[data-driver-region-platform]').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.driverRegionPlatform === state.regionPlatform);
         });
@@ -3401,25 +3291,6 @@ const BremDriverManagementAdmin = (function () {
     });
 
     document.addEventListener('change', event => {
-      if (event.target?.id === 'driverRegionMissionCheckAll') {
-        const on = Boolean(event.target.checked);
-        $$('[data-region-mission-rider]').forEach((input) => {
-          input.checked = on;
-          const id = input.dataset.regionMissionRider;
-          if (!id) return;
-          if (on) state.regionMissionSelected.add(id);
-          else state.regionMissionSelected.delete(id);
-        });
-        return;
-      }
-      const missionRider = event.target.closest('[data-region-mission-rider]');
-      if (missionRider) {
-        const id = missionRider.dataset.regionMissionRider;
-        if (missionRider.checked) state.regionMissionSelected.add(id);
-        else state.regionMissionSelected.delete(id);
-        syncRegionMissionCheckAll();
-        return;
-      }
       if (event.target?.id === 'driverRegionCrawlMatchCheckAll') {
         const on = Boolean(event.target.checked);
         document.querySelectorAll('[data-crawl-check]:not(:disabled)').forEach(el => {
@@ -3609,15 +3480,6 @@ const BremDriverManagementAdmin = (function () {
         renderRegionDetail();
       }, 160);
     });
-    $('#driverRegionMissionAssignBtn')?.addEventListener('click', () => {
-      void assignSelectedToMission(false);
-    });
-    $('#driverRegionMissionAssignAllBtn')?.addEventListener('click', () => {
-      void assignSelectedToMission(true);
-    });
-    $('#driverRegionMissionSelect')?.addEventListener('change', () => {
-      if (selectedRegion()) renderRegionDetail();
-    });
     $('#driverRegionBulkFullBtn')?.addEventListener('click', () => {
       void setAllDriversRegionMode('full');
     });
@@ -3667,7 +3529,6 @@ const BremDriverManagementAdmin = (function () {
     setTab(state.tab, { skipRegionLoad: true });
     if (state.tab === 'region') {
       await refreshRegions();
-      void loadUrgentMissions();
       startRegionRankingPoll();
     } else {
       stopRegionRankingPoll();

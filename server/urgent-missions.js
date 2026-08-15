@@ -194,6 +194,13 @@ async function publishMission(accessToken, payload) {
   if (!missionTime) return { ok: false, status: 400, error: '미션 시간을 입력하세요.' };
   if (!platforms.length) return { ok: false, status: 400, error: '쿠팡 또는 배민 태그를 선택하세요.' };
 
+  const targets = (Array.isArray(payload?.riders) ? payload.riders : payload?.targets || [])
+    .map(normalizeTarget)
+    .filter(Boolean);
+  if (!targets.length) {
+    return { ok: false, status: 400, error: '배포할 대상 기사를 선택하세요.' };
+  }
+
   const now = nowIso();
   const mission = {
     id: createId('um'),
@@ -204,7 +211,7 @@ async function publishMission(accessToken, payload) {
     status: 'open',
     publishedAt: now,
     closedAt: null,
-    targets: [],
+    targets,
     accepts: [],
     createdAt: now,
     updatedAt: now
