@@ -365,10 +365,14 @@ async function collectFromApi(accessToken, options = {}) {
   if (!pipelineResult.ok) {
     return {
       ok: false,
-      status: pipelineResult.sessionExpired ? 401 : 502,
-      error: pipelineResult.sessionExpired ? 'SESSION_EXPIRED' : 'COLLECT_FAILED',
+      status: pipelineResult.status || (pipelineResult.sessionExpired ? 401 : 502),
+      error: pipelineResult.busy
+        ? 'COLLECT_BUSY'
+        : (pipelineResult.sessionExpired ? 'SESSION_EXPIRED' : 'COLLECT_FAILED'),
       message: pipelineResult.message || '배민 자동 수집에 실패했습니다.',
       sessionExpired: Boolean(pipelineResult.sessionExpired),
+      busy: Boolean(pipelineResult.busy),
+      progress: pipelineResult.progress || null,
       results: pipelineResult.results || {}
     };
   }

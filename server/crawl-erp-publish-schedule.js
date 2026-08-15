@@ -52,28 +52,10 @@ function nextSlotInfo(slots = getSlots(), d = nowKst()) {
 }
 
 async function publishRiderView() {
-  try {
-    const riderPublish = require('./rider-publish-admin');
-    if (typeof riderPublish.publishRiderViewWithServiceRole === 'function') {
-      return riderPublish.publishRiderViewWithServiceRole();
-    }
-  } catch {
-    /* fall through */
-  }
-  const { getServiceClient } = require('./admin-bootstrap');
-  const supabase = getServiceClient();
-  if (!supabase) return { ok: false, message: 'publish: no supabase' };
-  const now = new Date().toISOString();
-  const [calls, rejections] = await Promise.all([
-    supabase.from('admin_calls').update({ rider_published_at: now, updated_at: now }).is('rider_published_at', null).select('id'),
-    supabase.from('admin_rejection_rates').update({ rider_published_at: now, updated_at: now }).is('rider_published_at', null).select('id')
-  ]);
-  return {
-    ok: true,
-    callsPublished: Array.isArray(calls.data) ? calls.data.length : 0,
-    rejectionsPublished: Array.isArray(rejections.data) ? rejections.data.length : 0,
-    publishedAt: now
-  };
+  const riderPublish = require('./rider-publish-admin');
+  return riderPublish.publishRiderViewWithServiceRole({
+    publishedBy: 'erp-publish-schedule'
+  });
 }
 
 /**

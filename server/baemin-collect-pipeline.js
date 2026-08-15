@@ -1929,15 +1929,28 @@ async function runFullCollectPipeline(options = {}) {
     }
   }
 
+  let progressOwned = false;
   try {
     let anySuccess = false;
     let sessionExpired = false;
     const partnerTotalEstimate = Math.max(partnersToCollect.length, 1);
-    collectProgress.startCollect({
+    const lock = collectProgress.tryStartCollect({
       collectDate,
       partnerTotal: partnerTotalEstimate,
       menuLabel: sourceDefs.map(def => def.label).join(', ')
     });
+    if (!lock.ok) {
+      return {
+        ok: false,
+        status: 409,
+        busy: true,
+        message: '이미 배민 수집이 진행 중입니다. 완료 후 다시 시도하세요.',
+        results,
+        sessionExpired: false,
+        progress: lock.progress
+      };
+    }
+    progressOwned = true;
 
     async function runForPartner(partnerContext, partnerIndex = 0, partnerTotal = 0) {
       registry.centerContext = {
@@ -2278,7 +2291,7 @@ async function runFullCollectPipeline(options = {}) {
     };
   } finally {
     detachCenterRoute();
-    if (collectProgress.getCollectProgress().active) {
+    if (progressOwned && collectProgress.getCollectProgress().active) {
       collectProgress.clearProgress();
     }
     if (playwrightContext) {

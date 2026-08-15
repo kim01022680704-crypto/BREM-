@@ -1951,6 +1951,15 @@ app.use((error, req, res, next) => {
   return next();
 });
 
+process.on('unhandledRejection', (reason) => {
+  const message = reason && reason.message ? reason.message : String(reason || 'unknown');
+  console.error('[BREM] unhandledRejection:', message);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[BREM] uncaughtException:', error && error.message ? error.message : error);
+});
+
 module.exports = app;
 
 if (require.main === module) {

@@ -5,6 +5,7 @@ const {
   settlementWeekEnd,
   defaultPaymentDateForWeekEnd
 } = require('./rider-weekly-payslip');
+const { fetchAllPages } = require('./supabase-paginate');
 
 const PUBLISH_META_KEY = 'brem_payroll_rider_publish';
 
@@ -63,18 +64,19 @@ async function updatePublishedAtByIds(supabase, table, ids, now) {
 }
 
 async function loadPayrollLines(supabase) {
-  const { data, error } = await supabase
-    .from('payroll_slip_lines')
-    .select('id,driver_id,rider_published_at,raw_data,updated_at')
-    .order('updated_at', { ascending: false })
-    .limit(5000);
-  if (error) {
+  try {
+    const lines = await fetchAllPages((offset, pageSize) => supabase
+      .from('payroll_slip_lines')
+      .select('id,driver_id,rider_published_at,raw_data,updated_at')
+      .order('updated_at', { ascending: false })
+      .range(offset, offset + pageSize - 1), { pageSize: 1000 });
+    return { ok: true, columnMissing: false, lines };
+  } catch (error) {
     if (/does not exist|relation|schema cache/i.test(error.message || '')) {
       return { ok: false, columnMissing: true, lines: [] };
     }
     throw error;
   }
-  return { ok: true, columnMissing: false, lines: data || [] };
 }
 
 async function loadPayrollNotices(supabase) {

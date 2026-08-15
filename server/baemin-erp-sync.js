@@ -5,6 +5,7 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { getRiderHistoryRangeForAdmin } = require('./baemin-collect-pipeline');
 const { settlementWeekStart, todayKST, latestQueryableDate } = require('./baemin-settlement-week');
+const { fetchAllPages, upsertInChunks } = require('./supabase-paginate');
 
 const PROTECTED_REJECTION_SOURCES = new Set(['manual', 'erp-bulk', 'erp']);
 const SYNC_SOURCE_PAST = 'baemin_biz_sync';
@@ -81,11 +82,11 @@ function resolveRiderBusinessDate(row = {}) {
 }
 
 async function loadDrivers(supabase) {
-  const { data, error } = await supabase
+  const data = await fetchAllPages((offset, pageSize) => supabase
     .from('riders')
     .select('id,name,phone,baemin_id,raw_data')
-    .limit(20000);
-  if (error) throw new Error(error.message || '기사 목록 조회 실패');
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize - 1), { pageSize: 1000 });
   return (data || []).map(row => {
     const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
     return {
@@ -97,24 +98,28 @@ async function loadDrivers(supabase) {
   }).filter(d => d.id);
 }
 
-function matchDriverByBaeminId(baeminId, drivers) {
+function buildBaeminIdDriverMap(drivers) {
+  const map = new Map();
+  (drivers || []).forEach(driver => {
+    const key = baeminIdMatchKey(driver.baeminId);
+    if (key && !map.has(key)) map.set(key, driver);
+  });
+  return map;
+}
+
+function matchDriverByBaeminId(baeminId, driversOrMap) {
   const key = baeminIdMatchKey(baeminId);
   if (!key) return null;
-  return drivers.find(driver => baeminIdMatchKey(driver.baeminId) === key) || null;
+  if (driversOrMap instanceof Map) return driversOrMap.get(key) || null;
+  return (driversOrMap || []).find(driver => baeminIdMatchKey(driver.baeminId) === key) || null;
 }
 
 async function upsertCallRows(supabase, rows) {
-  if (!rows.length) return 0;
-  const { error } = await supabase.from('admin_calls').upsert(rows, { onConflict: 'id' });
-  if (error) throw new Error(error.message || '콜수 저장 실패');
-  return rows.length;
+  return upsertInChunks(supabase, 'admin_calls', rows, { chunkSize: 400, onConflict: 'id' });
 }
 
 async function upsertRejectionRows(supabase, rows) {
-  if (!rows.length) return 0;
-  const { error } = await supabase.from('admin_rejection_rates').upsert(rows, { onConflict: 'id' });
-  if (error) throw new Error(error.message || '거절율 저장 실패');
-  return rows.length;
+  return upsertInChunks(supabase, 'admin_rejection_rates', rows, { chunkSize: 400, onConflict: 'id' });
 }
 
 async function loadProtectedRejectionMap(supabase, weekStarts) {
@@ -187,6 +192,7 @@ async function syncBaeminCallsAndRejections(options = {}) {
 
   const items = Array.isArray(fetched.items) ? fetched.items : [];
   const drivers = await loadDrivers(supabase);
+  const driverByBaeminId = buildBaeminIdDriverMap(drivers);
   const summary = {
     fromDate,
     toDate,
@@ -207,7 +213,7 @@ async function syncBaeminCallsAndRejections(options = {}) {
       const complete = extractMetrics(row.parsed_json).complete;
       if (!(complete > 0)) return;
       const baeminId = normalizeBaeminId(row.rider_user_id);
-      const driver = matchDriverByBaeminId(baeminId, drivers);
+      const driver = matchDriverByBaeminId(baeminId, driverByBaeminId);
       if (!driver?.id) {
         summary.unmatched += 1;
         return;
@@ -271,7 +277,7 @@ async function syncBaeminCallsAndRejections(options = {}) {
         summary.skipped += 1;
         return;
       }
-      const driver = matchDriverByBaeminId(entry.baeminId, drivers);
+      const driver = matchDriverByBaeminId(entry.baeminId, driverByBaeminId);
       if (!driver?.id) {
         summary.unmatched += 1;
         return;

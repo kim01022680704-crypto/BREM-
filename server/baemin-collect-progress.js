@@ -73,6 +73,18 @@ function startCollect({
   return getCollectProgress();
 }
 
+/** 이미 수집 중이면 false — 수동/자동/모닝 크롤 동시 실행 방지 */
+function tryStartCollect(options = {}) {
+  if (state.active) {
+    return { ok: false, busy: true, progress: getCollectProgress() };
+  }
+  return { ok: true, busy: false, progress: startCollect(options) };
+}
+
+function isCollectActive() {
+  return state.active === true;
+}
+
 function updatePartner({
   index = 0,
   total = 0,
@@ -206,6 +218,8 @@ function getCollectProgress() {
 
 module.exports = {
   startCollect,
+  tryStartCollect,
+  isCollectActive,
   updatePartner,
   updateMenu,
   updateDay,

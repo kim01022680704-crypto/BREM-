@@ -4,6 +4,7 @@
  */
 const { getServiceClient } = require('./admin-bootstrap');
 const { settlementWeekStart, todayKST, settlementWeekEnd } = require('./baemin-settlement-week');
+const { fetchAllPages, upsertInChunks } = require('./supabase-paginate');
 
 const PROTECTED_SOURCES = new Set(['manual', 'erp-bulk', 'erp']);
 const SYNC_SOURCE = 'coupang_crawl_sync';
@@ -96,11 +97,11 @@ function metricsFromParsed(parsed = {}) {
 }
 
 async function loadDrivers(supabase) {
-  const { data, error } = await supabase
+  const data = await fetchAllPages((offset, pageSize) => supabase
     .from('riders')
     .select('id,name,phone,baemin_id,raw_data')
-    .limit(20000);
-  if (error) throw new Error(error.message || '기사 목록 조회 실패');
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize - 1), { pageSize: 1000 });
   return (data || []).map(row => {
     const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
     return {
@@ -115,16 +116,15 @@ async function loadDrivers(supabase) {
 }
 
 async function loadCoupangRiderDaily(supabase, fromDate, toDate) {
-  // UI와 동일: rider_daily만 합산 (peak_realtime 중복 방지)
-  const { data, error } = await supabase
+  // UI와 동일: rider_daily만 합산 (peak_realtime 중복 방지) — 페이지로 전체 수집
+  return fetchAllPages((offset, pageSize) => supabase
     .from('coupang_collect_items')
     .select('collect_date,match_key,rider_name,phone_number,courier_id,parsed_json,source_menu')
     .eq('source_menu', 'rider_daily')
     .gte('collect_date', fromDate)
     .lte('collect_date', toDate)
-    .limit(20000);
-  if (error) throw new Error(error.message || '쿠팡 수집 조회 실패');
-  return data || [];
+    .order('collect_date', { ascending: true })
+    .range(offset, offset + pageSize - 1), { pageSize: 1000 });
 }
 
 async function syncCoupangRejections(options = {}) {
@@ -220,8 +220,10 @@ async function syncCoupangRejections(options = {}) {
   });
 
   if (upserts.length) {
-    const { error } = await supabase.from('admin_rejection_rates').upsert(upserts, { onConflict: 'id' });
-    if (error) throw new Error(error.message || '쿠팡 거절율 저장 실패');
+    await upsertInChunks(supabase, 'admin_rejection_rates', upserts, {
+      chunkSize: 400,
+      onConflict: 'id'
+    });
   }
 
   return {

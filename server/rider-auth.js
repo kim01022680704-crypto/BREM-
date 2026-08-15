@@ -18,6 +18,8 @@ const PROMOTION_MISSION_SELECT = 'id,name,platform,type,enabled,payload,created_
 
 const RIDER_CALLS_LOOKBACK_DAYS = Number(process.env.BREM_RIDER_CALLS_LOOKBACK_DAYS) || 540;
 const RIDER_CALLS_ROW_LIMIT = 2500;
+const RIDER_REJECTIONS_ROW_LIMIT = 400;
+const RIDER_TARGETS_ROW_LIMIT = 48;
 const RIDER_ME_CACHE_MS = 15000;
 const riderMeCache = new Map();
 
@@ -39,6 +41,30 @@ function buildRiderCallsQuery(supabase, riderId, options = {}) {
     query = query.not('rider_published_at', 'is', null);
   }
   return query;
+}
+
+/** 라이더 앱용 — 관리자 ERP 전체 조회와 별개. 최근 lookback + 상한만. */
+function buildRiderRejectionsQuery(supabase, riderId, options = {}) {
+  let query = supabase
+    .from('admin_rejection_rates')
+    .select(options.select || 'id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
+    .eq('driver_id', riderId)
+    .gte('week_start', getRiderCallsSinceDate())
+    .order('week_start', { ascending: false })
+    .limit(RIDER_REJECTIONS_ROW_LIMIT);
+  if (options.publishedOnly) {
+    query = query.not('rider_published_at', 'is', null);
+  }
+  return query;
+}
+
+function buildRiderTargetsQuery(supabase, riderId) {
+  return supabase
+    .from('admin_targets')
+    .select('id,driver_id,month,count,updated_at')
+    .eq('driver_id', riderId)
+    .order('month', { ascending: false })
+    .limit(RIDER_TARGETS_ROW_LIMIT);
 }
 
 function readCachedRiderMe(token) {
@@ -789,17 +815,8 @@ async function getRiderAppBundle(accessToken) {
     coupangOps
   ] = await Promise.all([
     buildRiderCallsQuery(supabase, riderId),
-    supabase
-      .from('admin_rejection_rates')
-      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
-      .eq('driver_id', riderId)
-      .not('rider_published_at', 'is', null)
-      .order('week_start', { ascending: false }),
-    supabase
-      .from('admin_targets')
-      .select('id,driver_id,month,count,updated_at')
-      .eq('driver_id', riderId)
-      .order('month', { ascending: false }),
+    buildRiderRejectionsQuery(supabase, riderId, { publishedOnly: true }),
+    buildRiderTargetsQuery(supabase, riderId),
     supabase
       .from('settings')
       .select('key,value')
@@ -908,12 +925,7 @@ async function getRiderSnapshot(accessToken) {
     missionsResult
   ] = await Promise.all([
     buildRiderCallsQuery(supabase, riderId, { publishedOnly: true }),
-    supabase
-      .from('admin_rejection_rates')
-      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
-      .eq('driver_id', riderId)
-      .not('rider_published_at', 'is', null)
-      .order('week_start', { ascending: false }),
+    buildRiderRejectionsQuery(supabase, riderId, { publishedOnly: true }),
     supabase
       .from('settings')
       .select('key,value')
@@ -1430,23 +1442,9 @@ async function getRiderDashboard(accessToken) {
     noticesResult,
     settingsResult
   ] = await Promise.all([
-    supabase
-      .from('admin_calls')
-      .select('id,driver_id,date,platform,count,updated_at,rider_published_at')
-      .eq('driver_id', riderId)
-      .not('rider_published_at', 'is', null)
-      .order('date', { ascending: false }),
-    supabase
-      .from('admin_rejection_rates')
-      .select('id,driver_id,week_start,platform,rate,stats,source,updated_at,rider_published_at')
-      .eq('driver_id', riderId)
-      .not('rider_published_at', 'is', null)
-      .order('week_start', { ascending: false }),
-    supabase
-      .from('admin_targets')
-      .select('id,driver_id,month,count,updated_at')
-      .eq('driver_id', riderId)
-      .order('month', { ascending: false }),
+    buildRiderCallsQuery(supabase, riderId, { publishedOnly: true }),
+    buildRiderRejectionsQuery(supabase, riderId, { publishedOnly: true }),
+    buildRiderTargetsQuery(supabase, riderId),
     supabase
       .from('notices')
       .select(NOTICE_SELECT)

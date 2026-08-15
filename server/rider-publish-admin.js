@@ -2,6 +2,8 @@ const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 
 const PUBLISH_META_KEY = 'brem_rider_view_publish';
+const PUBLISH_SELECT_BATCH = 800;
+const PUBLISH_UPDATE_CHUNK = 100;
 
 const SNAPSHOT_PAIRS = [
   ['brem_admin_long_event_catalog', 'brem_rider_published_long_event_catalog'],
@@ -43,19 +45,46 @@ async function countPendingRows(supabase, table) {
   return { count: Number(count) || 0, columnMissing: false };
 }
 
+/**
+ * 미반영 행을 배치로 공개. 전체 일괄 UPDATE + RETURNING 은 statement timeout 위험이 큼.
+ * 관리자 ERP 데이터 자체는 그대로 두고, 라이더앱 공개 스탬프만 청크로 찍는다.
+ */
 async function publishTableRows(supabase, table, now) {
-  const { data, error } = await supabase
-    .from(table)
-    .update({ rider_published_at: now, updated_at: now })
-    .is('rider_published_at', null)
-    .select('id');
-  if (error) {
-    if (/does not exist|column|rider_published_at/i.test(String(error.message || ''))) {
-      return 0;
+  let published = 0;
+  for (;;) {
+    const { data: pending, error: selectError } = await supabase
+      .from(table)
+      .select('id')
+      .is('rider_published_at', null)
+      .limit(PUBLISH_SELECT_BATCH);
+    if (selectError) {
+      if (/does not exist|column|rider_published_at/i.test(String(selectError.message || ''))) {
+        return published;
+      }
+      throw selectError;
     }
-    throw error;
+    const ids = (pending || []).map(row => row.id).filter(Boolean);
+    if (!ids.length) break;
+
+    for (let i = 0; i < ids.length; i += PUBLISH_UPDATE_CHUNK) {
+      const chunk = ids.slice(i, i + PUBLISH_UPDATE_CHUNK);
+      const { data, error } = await supabase
+        .from(table)
+        .update({ rider_published_at: now, updated_at: now })
+        .in('id', chunk)
+        .select('id');
+      if (error) {
+        if (/does not exist|column|rider_published_at/i.test(String(error.message || ''))) {
+          return published;
+        }
+        throw error;
+      }
+      published += Array.isArray(data) ? data.length : 0;
+    }
+
+    if (ids.length < PUBLISH_SELECT_BATCH) break;
   }
-  return Array.isArray(data) ? data.length : 0;
+  return published;
 }
 
 async function getRiderViewPublishStatus(accessToken) {
@@ -92,17 +121,9 @@ async function getRiderViewPublishStatus(accessToken) {
   };
 }
 
-async function publishRiderView(accessToken, options = {}) {
-  const auth = await verifyAdminCaller(accessToken);
-  if (!auth.ok) return auth;
-
-  const supabase = getServiceClient();
-  if (!supabase) {
-    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
-  }
-
+async function publishRiderViewCore(supabase, options = {}) {
   const now = new Date().toISOString();
-  const publishedBy = String(options.publishedBy || auth.displayName || auth.email || 'admin').trim();
+  const publishedBy = String(options.publishedBy || 'admin').trim();
 
   const [callsPublished, rejectionsPublished] = await Promise.all([
     publishTableRows(supabase, 'admin_calls', now),
@@ -134,7 +155,33 @@ async function publishRiderView(accessToken, options = {}) {
   };
 }
 
+async function publishRiderView(accessToken, options = {}) {
+  const auth = await verifyAdminCaller(accessToken);
+  if (!auth.ok) return auth;
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  return publishRiderViewCore(supabase, {
+    publishedBy: options.publishedBy || auth.displayName || auth.email || 'admin'
+  });
+}
+
+/** 스케줄러/크롤용 — 관리자 세션 없이 service role 로 공개 */
+async function publishRiderViewWithServiceRole(options = {}) {
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+  return publishRiderViewCore(supabase, {
+    publishedBy: options.publishedBy || 'erp-publish-schedule'
+  });
+}
+
 module.exports = {
   getRiderViewPublishStatus,
-  publishRiderView
+  publishRiderView,
+  publishRiderViewWithServiceRole
 };
