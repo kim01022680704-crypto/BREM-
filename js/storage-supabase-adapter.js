@@ -235,6 +235,7 @@ window.BremSupabaseStorageAdapter = (function () {
         keys.payrollDailyExcludedSettlements,
         keys.payrollWeekFinalized,
         keys.payrollWithdrawalPaused,
+        keys.payrollRiderPublish,
         keys.preservedUnknown,
         keys.adminAccounts,
         keys.adminCredentials,
