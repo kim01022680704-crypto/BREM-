@@ -5,7 +5,7 @@ const BremDriverManagementAdmin = (function () {
 
   const state = {
     tab: 'org',
-    org: { nodes: [] },
+    org: { nodes: [], topRepNodeId: '', topRepRegions: [] },
     selectedNodeId: '',
     memberSearch: '',
     weekStart: '',
@@ -198,6 +198,7 @@ const BremDriverManagementAdmin = (function () {
       stopRegionRankingPoll();
       void (async () => {
         await ensureDriverMgmtStatsLoaded();
+        await ensureOrgRegionsLoaded();
         renderOrg();
       })();
       return;
@@ -213,7 +214,137 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function loadOrg() {
-    state.org = window.BremStorage?.driverOrgChart?.get?.() || { nodes: [] };
+    const chart = window.BremStorage?.driverOrgChart?.get?.() || { nodes: [], topRepNodeId: '', topRepRegions: [] };
+    state.org = {
+      nodes: Array.isArray(chart.nodes) ? chart.nodes : [],
+      topRepNodeId: String(chart.topRepNodeId || '').trim(),
+      topRepRegions: Array.isArray(chart.topRepRegions) ? chart.topRepRegions : []
+    };
+  }
+
+  function resolveLeaderName(leaderRef) {
+    if (!leaderRef?.id) return '';
+    const resolved = resolveOrgMemberName(leaderRef);
+    return resolved?.name || '';
+  }
+
+  function aggregateDriverIdsStats(driverIds, weekStart = ensureWeek()) {
+    let coupangCalls = 0;
+    let baeminCalls = 0;
+    let coupangFee = 0;
+    let baeminFee = 0;
+    const seen = new Set();
+    (driverIds || []).forEach(rawId => {
+      const id = String(rawId || '').trim();
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const coupang = driverCallAndFee(id, weekStart, 'coupang');
+      const baemin = driverCallAndFee(id, weekStart, 'baemin');
+      coupangCalls += coupang.callCount;
+      baeminCalls += baemin.callCount;
+      coupangFee += coupang.deliveryFee;
+      baeminFee += baemin.deliveryFee;
+    });
+    return {
+      driverCount: seen.size,
+      coupangCalls,
+      baeminCalls,
+      coupangFee,
+      baeminFee,
+      totalCalls: coupangCalls + baeminCalls,
+      totalFee: coupangFee + baeminFee
+    };
+  }
+
+  function driversMatchingRegionSpec(region) {
+    if (!region) return [];
+    const platform = region.platform === 'coupang' ? 'coupang' : 'baemin';
+    const list = (typeof window.BremStorage?.drivers?.getAllKnownById === 'function'
+      ? window.BremStorage.drivers.getAllKnownById()
+      : window.BremStorage?.drivers?.getAll?.()) || [];
+    return list.filter(driver => {
+      const value = driverRegionValue(driver, platform);
+      if (!value) return false;
+      if (platform === 'baemin') {
+        return value === region.label
+          || value === region.partnerId
+          || value === region.key
+          || (region.partnerId && String(region.partnerId).length >= 6 && value.includes(region.partnerId));
+      }
+      return shortCoupangRegion(value) === region.key
+        || shortCoupangRegion(value) === shortCoupangRegion(region.label)
+        || value === region.vendorName
+        || value === region.vendorId;
+    });
+  }
+
+  function topRepRegionDriverIds() {
+    const byId = new Map();
+    (state.org.topRepRegions || []).forEach(region => {
+      driversMatchingRegionSpec(region).forEach(driver => {
+        if (driver?.id) byId.set(driver.id, driver);
+      });
+    });
+    return [...byId.keys()];
+  }
+
+  function isTopRepRegionSelected(platform, key) {
+    const k = String(key || '').trim();
+    return (state.org.topRepRegions || []).some(item => (
+      item.platform === platform && String(item.key || '') === k
+    ));
+  }
+
+  function toggleTopRepRegion(region) {
+    if (!region?.key) return;
+    const platform = region.platform === 'coupang' ? 'coupang' : 'baemin';
+    const key = String(region.key).trim();
+    const list = Array.isArray(state.org.topRepRegions) ? [...state.org.topRepRegions] : [];
+    const idx = list.findIndex(item => item.platform === platform && String(item.key) === key);
+    if (idx >= 0) list.splice(idx, 1);
+    else {
+      list.push({
+        platform,
+        key,
+        label: region.label || key,
+        partnerId: region.partnerId || (platform === 'baemin' ? key : ''),
+        vendorId: region.vendorId || ''
+      });
+    }
+    state.org.topRepRegions = list;
+    renderOrgMemberPanel();
+  }
+
+  async function ensureOrgRegionsLoaded() {
+    if (!state.baeminRegions.length) await fetchBaeminRegions();
+    if (!state.coupangRegions.length) await fetchCoupangRegions();
+  }
+
+  function renderTopRepRegionChecks() {
+    const baeminEl = $('#driverOrgTopRepBaeminChecks');
+    const coupangEl = $('#driverOrgTopRepCoupangChecks');
+    if (baeminEl) {
+      baeminEl.innerHTML = (state.baeminRegions || []).length
+        ? state.baeminRegions.map(region => {
+          const checked = isTopRepRegionSelected('baemin', region.key) ? ' checked' : '';
+          return `<label class="driver-org-region-check">
+            <input type="checkbox" data-org-toprep-region="baemin" data-region-key="${escapeHtml(region.key)}"${checked}>
+            <span>${escapeHtml(region.label || region.key)}${region.partnerId ? ` (${escapeHtml(region.partnerId)})` : ''}</span>
+          </label>`;
+        }).join('')
+        : '<p class="empty">배민 지역 없음 · 지역 새로고침</p>';
+    }
+    if (coupangEl) {
+      coupangEl.innerHTML = (state.coupangRegions || []).length
+        ? state.coupangRegions.map(region => {
+          const checked = isTopRepRegionSelected('coupang', region.key) ? ' checked' : '';
+          return `<label class="driver-org-region-check">
+            <input type="checkbox" data-org-toprep-region="coupang" data-region-key="${escapeHtml(region.key)}"${checked}>
+            <span>${escapeHtml(region.label || region.key)}</span>
+          </label>`;
+        }).join('')
+        : '<p class="empty">쿠팡 지역 없음 · 지역 새로고침</p>';
+    }
   }
 
   function roots() {
@@ -394,14 +525,23 @@ const BremDriverManagementAdmin = (function () {
   function renderOrgTreeHtml(nodes, isRoot = false) {
     if (!nodes.length) return '';
     const cls = isRoot ? ' class="driver-org-tree"' : '';
-    return `<ul${cls}>${nodes.map(node => `
+    return `<ul${cls}>${nodes.map(node => {
+      const isTopRep = state.org.topRepNodeId === node.id;
+      const leaderName = resolveLeaderName(node.leaderRef);
+      const badges = [
+        isTopRep ? '<span class="driver-org-badge driver-org-badge--toprep">대표</span>' : '',
+        leaderName ? `<span class="driver-org-badge driver-org-badge--crew" title="크루장">크루장 ${escapeHtml(leaderName)}</span>` : ''
+      ].filter(Boolean).join('');
+      return `
       <li>
-        <button type="button" class="driver-org-node${state.selectedNodeId === node.id ? ' is-selected' : ''}" data-org-node="${escapeHtml(node.id)}">
+        <button type="button" class="driver-org-node${state.selectedNodeId === node.id ? ' is-selected' : ''}${isTopRep ? ' is-toprep' : ''}" data-org-node="${escapeHtml(node.id)}">
           <span class="driver-org-node-label">${escapeHtml(node.label || '이름 없음')}</span>
+          ${badges ? `<span class="driver-org-node-badges">${badges}</span>` : ''}
           <small>${escapeHtml(memberSummary(node))}</small>
         </button>
         ${renderOrgTreeHtml(childrenOf(node.id), false)}
-      </li>`).join('')}</ul>`;
+      </li>`;
+    }).join('')}</ul>`;
   }
 
   function renderOrgMemberPanel() {
@@ -411,6 +551,8 @@ const BremDriverManagementAdmin = (function () {
     const title = $('#driverOrgMemberPanelTitle');
     const summary = $('#driverOrgMemberPanelSummary');
     const totalsEl = $('#driverOrgWeekTotals');
+    const topRepPanel = $('#driverOrgTopRepPanel');
+    const dualTotals = $('#driverOrgDualTotals');
     if (!panel || !rows) return;
 
     const node = selectedNode();
@@ -419,27 +561,40 @@ const BremDriverManagementAdmin = (function () {
       rows.innerHTML = '';
       if (foot) foot.innerHTML = '';
       if (totalsEl) totalsEl.textContent = '';
+      if (topRepPanel) topRepPanel.hidden = true;
       return;
     }
 
     panel.hidden = false;
     renderOrgWeekControls();
-    if (title) title.textContent = `「${node.label}」 소속 목록 (하위 포함)`;
+    const isTopRep = state.org.topRepNodeId === node.id;
+    if (title) {
+      title.textContent = isTopRep
+        ? `「${node.label}」 대표박스 · 소속 목록 (하위 포함)`
+        : `「${node.label}」 소속 목록 (하위 포함)`;
+    }
 
+    const week = ensureWeek();
     const entries = collectSubtreeMemberEntries(node);
     let totalCoupangCalls = 0;
     let totalBaeminCalls = 0;
-    let totalFee = 0;
+    let totalCoupangFee = 0;
+    let totalBaeminFee = 0;
     const countedDrivers = new Set();
     const people = entries.map(entry => {
       if (entry.kind === 'admin') {
         const resolved = resolveOrgMemberName(entry);
+        const boxNode = state.org.nodes.find(n => n.id === entry.nodeId);
+        const isCrew = boxNode?.leaderRef?.kind === 'admin' && boxNode?.leaderRef?.id === entry.id;
         return {
           kind: '관리자',
           name: resolved?.name || '관리자',
           boxLabel: entry.boxLabel,
+          crewTag: isCrew,
           coupangCalls: '-',
           baeminCalls: '-',
+          coupangFee: '-',
+          baeminFee: '-',
           deliveryFee: '-',
           nodeId: entry.nodeId,
           memberKind: 'admin',
@@ -447,21 +602,27 @@ const BremDriverManagementAdmin = (function () {
         };
       }
       const resolved = resolveOrgMemberName(entry);
-      const coupang = driverCallAndFee(entry.id, ensureWeek(), 'coupang');
-      const baemin = driverCallAndFee(entry.id, ensureWeek(), 'baemin');
+      const boxNode = state.org.nodes.find(n => n.id === entry.nodeId);
+      const isCrew = boxNode?.leaderRef?.kind === 'driver' && boxNode?.leaderRef?.id === entry.id;
+      const coupang = driverCallAndFee(entry.id, week, 'coupang');
+      const baemin = driverCallAndFee(entry.id, week, 'baemin');
       const deliveryFee = coupang.deliveryFee + baemin.deliveryFee;
       if (!countedDrivers.has(entry.id)) {
         countedDrivers.add(entry.id);
         totalCoupangCalls += coupang.callCount;
         totalBaeminCalls += baemin.callCount;
-        totalFee += deliveryFee;
+        totalCoupangFee += coupang.deliveryFee;
+        totalBaeminFee += baemin.deliveryFee;
       }
       return {
         kind: '기사',
         name: resolved?.name || '이름 없음',
         boxLabel: entry.boxLabel,
+        crewTag: isCrew,
         coupangCalls: formatNumber(coupang.callCount),
         baeminCalls: formatNumber(baemin.callCount),
+        coupangFee: `${formatNumber(coupang.deliveryFee)}원`,
+        baeminFee: `${formatNumber(baemin.deliveryFee)}원`,
         deliveryFee: `${formatNumber(deliveryFee)}원`,
         nodeId: entry.nodeId,
         memberKind: 'driver',
@@ -473,25 +634,59 @@ const BremDriverManagementAdmin = (function () {
       const driverCount = entries.filter(ref => ref.kind !== 'admin').length;
       const adminCount = entries.length - driverCount;
       const directCount = entries.filter(ref => ref.isDirect).length;
-      summary.textContent = `기사 ${driverCount}명 · 관리자 ${adminCount}명 · 직속 ${directCount}명 (하위 포함)`;
+      const crewName = resolveLeaderName(node.leaderRef);
+      summary.textContent = `기사 ${driverCount}명 · 관리자 ${adminCount}명 · 직속 ${directCount}명`
+        + (crewName ? ` · 크루장 ${crewName}` : '')
+        + (isTopRep ? ' · 대표박스' : '')
+        + ' (하위 포함)';
     }
 
+    const totalFee = totalCoupangFee + totalBaeminFee;
+    const totalCalls = totalCoupangCalls + totalBaeminCalls;
     if (totalsEl) {
-      const totalCalls = totalCoupangCalls + totalBaeminCalls;
       const settlementCount = (window.BremStorage?.settlements?.getAll?.() || []).length;
       totalsEl.textContent = settlementCount
-        ? `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 ${formatNumber(totalFee)}원`
-        : `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료합계 0원 (일정산 데이터 로딩 중/없음)`;
+        ? `조직 합계 · 쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 쿠팡배달료 ${formatNumber(totalCoupangFee)}원 · 배민배달료 ${formatNumber(totalBaeminFee)}원 · 배달료합계 ${formatNumber(totalFee)}원`
+        : `조직 합계 · 쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료 0원 (일정산 데이터 로딩 중/없음 — 쿠팡 일정산 업로드 확인)`;
+    }
+
+    if (topRepPanel) {
+      topRepPanel.hidden = !isTopRep;
+      if (isTopRep) {
+        void ensureOrgRegionsLoaded().then(() => {
+          if (state.selectedNodeId !== node.id || state.org.topRepNodeId !== node.id) return;
+          renderTopRepRegionChecks();
+        });
+        renderTopRepRegionChecks();
+        const regionStats = aggregateDriverIdsStats(topRepRegionDriverIds(), week);
+        if (dualTotals) {
+          dualTotals.innerHTML = `
+            <div class="driver-org-dual-card">
+              <strong>조직 인원 합계</strong>
+              <p>콜수 ${formatNumber(totalCalls)} (쿠팡 ${formatNumber(totalCoupangCalls)} · 배민 ${formatNumber(totalBaeminCalls)})</p>
+              <p>배달료 ${formatNumber(totalFee)}원 (쿠팡 ${formatNumber(totalCoupangFee)} · 배민 ${formatNumber(totalBaeminFee)})</p>
+              <p class="form-help">하위 포함 배정 인원</p>
+            </div>
+            <div class="driver-org-dual-card">
+              <strong>선택 지역 합계</strong>
+              <p>기사 ${formatNumber(regionStats.driverCount)}명 · 콜수 ${formatNumber(regionStats.totalCalls)} (쿠팡 ${formatNumber(regionStats.coupangCalls)} · 배민 ${formatNumber(regionStats.baeminCalls)})</p>
+              <p>배달료 ${formatNumber(regionStats.totalFee)}원 (쿠팡 ${formatNumber(regionStats.coupangFee)} · 배민 ${formatNumber(regionStats.baeminFee)})</p>
+              <p class="form-help">선택 지역 등록 기사 전원 (조직 배정과 무관)</p>
+            </div>`;
+        }
+      }
     }
 
     rows.innerHTML = people.length
       ? people.map(person => `
         <tr>
-          <td>${escapeHtml(person.kind)}</td>
+          <td>${escapeHtml(person.kind)}${person.crewTag ? ' <span class="driver-org-badge driver-org-badge--crew">크루장</span>' : ''}</td>
           <td><strong>${escapeHtml(person.name)}</strong></td>
           <td>${escapeHtml(person.boxLabel)}</td>
           <td class="weekly-amount-cell">${escapeHtml(person.coupangCalls)}</td>
           <td class="weekly-amount-cell">${escapeHtml(person.baeminCalls)}</td>
+          <td class="weekly-amount-cell">${escapeHtml(person.coupangFee)}</td>
+          <td class="weekly-amount-cell">${escapeHtml(person.baeminFee)}</td>
           <td class="weekly-amount-cell">${escapeHtml(person.deliveryFee)}</td>
           <td>
             <button type="button" class="small-btn danger"
@@ -500,7 +695,7 @@ const BremDriverManagementAdmin = (function () {
               data-org-unassign-id="${escapeHtml(person.memberId)}">체크해제</button>
           </td>
         </tr>`).join('')
-      : '<tr><td colspan="7" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
+      : '<tr><td colspan="9" class="empty">소속된 인원이 없습니다. 오른쪽에서 기사·관리자를 체크하세요.</td></tr>';
 
     if (foot) {
       foot.innerHTML = people.length
@@ -510,6 +705,8 @@ const BremDriverManagementAdmin = (function () {
             <td></td>
             <td class="weekly-amount-cell">${formatNumber(totalCoupangCalls)}</td>
             <td class="weekly-amount-cell">${formatNumber(totalBaeminCalls)}</td>
+            <td class="weekly-amount-cell">${formatNumber(totalCoupangFee)}원</td>
+            <td class="weekly-amount-cell">${formatNumber(totalBaeminFee)}원</td>
             <td class="weekly-amount-cell">${formatNumber(totalFee)}원</td>
             <td></td>
           </tr>`
@@ -524,6 +721,9 @@ const BremDriverManagementAdmin = (function () {
     const before = (node.memberRefs || []).length;
     node.memberRefs = (node.memberRefs || []).filter(ref => !(ref.kind === nextKind && ref.id === memberId));
     if (node.memberRefs.length === before) return;
+    if (node.leaderRef?.kind === nextKind && node.leaderRef?.id === memberId) {
+      node.leaderRef = null;
+    }
     try {
       await window.BremStorage.driverOrgChart.save(state.org);
       showToast('박스에서 제외했습니다.');
@@ -963,8 +1163,44 @@ const BremDriverManagementAdmin = (function () {
     editor.hidden = false;
     const title = $('#driverOrgEditorTitle');
     const labelInput = $('#driverOrgNodeLabel');
-    if (title) title.textContent = `박스 편집 · ${node.label}`;
+    if (title) {
+      title.textContent = state.org.topRepNodeId === node.id
+        ? `박스 편집 · ${node.label} (대표)`
+        : `박스 편집 · ${node.label}`;
+    }
     if (labelInput && document.activeElement !== labelInput) labelInput.value = node.label;
+
+    const leaderSelect = $('#driverOrgLeaderSelect');
+    if (leaderSelect && document.activeElement !== leaderSelect) {
+      const members = (node.memberRefs || []).map(ref => {
+        const resolved = resolveOrgMemberName(ref);
+        return {
+          kind: ref.kind,
+          id: ref.id,
+          label: resolved?.name || ref.id
+        };
+      });
+      const current = node.leaderRef
+        ? `${node.leaderRef.kind}:${node.leaderRef.id}`
+        : '';
+      leaderSelect.innerHTML = `<option value="">없음</option>${members.map(member => {
+        const value = `${member.kind}:${member.id}`;
+        return `<option value="${escapeHtml(value)}"${value === current ? ' selected' : ''}>${escapeHtml(member.label)}${member.kind === 'admin' ? ' (관리자)' : ''}</option>`;
+      }).join('')}`;
+    }
+
+    const topRepBtn = $('#driverOrgSetTopRepBtn');
+    const topRepHint = $('#driverOrgTopRepHint');
+    const isTop = state.org.topRepNodeId === node.id;
+    if (topRepBtn) {
+      topRepBtn.textContent = isTop ? '대표박스 해제' : '대표박스로 지정';
+      topRepBtn.classList.toggle('is-on', isTop);
+    }
+    if (topRepHint) {
+      topRepHint.textContent = isTop
+        ? '이 박스가 대표박스입니다. 아래에서 지역을 고르면 지역 합계가 표시됩니다.'
+        : '조직도 전체에서 대표박스는 1개입니다. 지정하면 기존 대표는 해제됩니다.';
+    }
 
     const q = String(state.memberSearch || '').trim().toLowerCase();
     const selected = new Set((node.memberRefs || []).map(ref => `${ref.kind}:${ref.id}`));
@@ -986,9 +1222,10 @@ const BremDriverManagementAdmin = (function () {
         .map(person => {
           const key = `${person.kind}:${person.id}`;
           const checked = selected.has(key);
+          const isCrew = node.leaderRef && node.leaderRef.kind === person.kind && node.leaderRef.id === person.id;
           return `<label class="${checked ? 'is-org-checked' : ''}">
             <input type="checkbox" data-org-member-kind="${person.kind}" data-org-member-id="${escapeHtml(person.id)}"${checked ? ' checked' : ''}>
-            <span>${escapeHtml(person.label)}</span>
+            <span>${escapeHtml(person.label)}${isCrew ? ' · 크루장' : ''}</span>
           </label>`;
         }).join('') || '<p class="empty">검색 결과가 없습니다.</p>';
     }
@@ -1012,6 +1249,7 @@ const BremDriverManagementAdmin = (function () {
       label: parent ? `하위 ${siblings.length + 1}` : (siblings.length ? `루트 ${siblings.length + 1}` : '루트'),
       parentId: parent,
       memberRefs: [],
+      leaderRef: null,
       sortOrder: state.org.nodes.length
     };
     state.org.nodes.push(node);
@@ -1034,6 +1272,7 @@ const BremDriverManagementAdmin = (function () {
       label: '상위',
       parentId: oldParentId,
       memberRefs: [],
+      leaderRef: null,
       sortOrder: Number.isFinite(Number(node.sortOrder)) ? Number(node.sortOrder) : state.org.nodes.length
     };
     state.org.nodes.push(parent);
@@ -1077,7 +1316,46 @@ const BremDriverManagementAdmin = (function () {
       if (item.parentId === node.id) item.parentId = node.parentId || '';
     });
     state.org.nodes = state.org.nodes.filter(item => item.id !== node.id);
+    if (state.org.topRepNodeId === node.id) state.org.topRepNodeId = '';
     state.selectedNodeId = '';
+    renderOrg();
+  }
+
+  function toggleTopRepForSelected() {
+    const node = selectedNode();
+    if (!node) {
+      showToast('박스를 먼저 선택하세요.');
+      return;
+    }
+    if (state.org.topRepNodeId === node.id) {
+      state.org.topRepNodeId = '';
+      showToast('대표박스를 해제했습니다. 「조직도 저장」을 누르세요.');
+    } else {
+      state.org.topRepNodeId = node.id;
+      showToast(`「${node.label}」을(를) 대표박스로 지정했습니다. 「조직도 저장」을 누르세요.`);
+      void ensureOrgRegionsLoaded();
+    }
+    renderOrg();
+  }
+
+  function setLeaderForSelected(value) {
+    const node = selectedNode();
+    if (!node) return;
+    const raw = String(value || '').trim();
+    if (!raw) {
+      node.leaderRef = null;
+      renderOrg();
+      return;
+    }
+    const [kindRaw, ...idParts] = raw.split(':');
+    const kind = kindRaw === 'admin' ? 'admin' : 'driver';
+    const id = idParts.join(':');
+    if (!(node.memberRefs || []).some(ref => ref.kind === kind && ref.id === id)) {
+      showToast('박스에 체크된 인원만 크루장으로 지정할 수 있습니다.');
+      renderOrgEditor();
+      return;
+    }
+    node.leaderRef = { kind, id };
     renderOrg();
   }
 
@@ -2879,9 +3157,31 @@ const BremDriverManagementAdmin = (function () {
         const next = new Map((node.memberRefs || []).map(ref => [`${ref.kind}:${ref.id}`, ref]));
         const key = `${kind}:${id}`;
         if (member.checked) next.set(key, { kind, id });
-        else next.delete(key);
+        else {
+          next.delete(key);
+          if (node.leaderRef?.kind === kind && node.leaderRef?.id === id) {
+            node.leaderRef = null;
+          }
+        }
         node.memberRefs = [...next.values()];
         renderOrg();
+        return;
+      }
+
+      const topRepRegion = event.target.closest('[data-org-toprep-region]');
+      if (topRepRegion && event.target.matches?.('input[type="checkbox"]')) {
+        const platform = topRepRegion.dataset.orgToprepRegion === 'coupang' ? 'coupang' : 'baemin';
+        const key = topRepRegion.dataset.regionKey;
+        const region = platform === 'coupang'
+          ? state.coupangRegions.find(item => item.key === key)
+          : state.baeminRegions.find(item => item.key === key);
+        if (region) toggleTopRepRegion({ ...region, platform });
+        else if (!event.target.checked) {
+          state.org.topRepRegions = (state.org.topRepRegions || []).filter(item => !(
+            item.platform === platform && String(item.key) === String(key)
+          ));
+          renderOrgMemberPanel();
+        }
       }
     });
 
@@ -2901,6 +3201,10 @@ const BremDriverManagementAdmin = (function () {
     $('#driverOrgAddParentBtn')?.addEventListener('click', () => addParentAboveSelected());
     $('#driverOrgMoveUpBtn')?.addEventListener('click', () => moveSelectedNodeUp());
     $('#driverOrgDeleteBtn')?.addEventListener('click', () => deleteSelectedNode());
+    $('#driverOrgSetTopRepBtn')?.addEventListener('click', () => toggleTopRepForSelected());
+    $('#driverOrgLeaderSelect')?.addEventListener('change', event => {
+      setLeaderForSelected(event.target.value);
+    });
     $('#driverOrgCloseBtn')?.addEventListener('click', () => {
       state.selectedNodeId = '';
       renderOrg();
@@ -2996,6 +3300,9 @@ const BremDriverManagementAdmin = (function () {
       stopRegionRankingPoll();
     }
     if (state.tab === 'org-list') renderOrgList();
+    if (state.tab === 'org' || state.tab === 'org-list') {
+      void ensureOrgRegionsLoaded();
+    }
   }
 
   return {

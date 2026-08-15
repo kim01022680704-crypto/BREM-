@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260815bulk2">
+  <link rel="stylesheet" href="css/admin.css?v=20260815crew1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5753,6 +5753,19 @@
                   <span class="field-label">박스 이름</span>
                   <input type="text" id="driverOrgNodeLabel" placeholder="예: 총괄 / 남구팀">
                 </label>
+                <div class="driver-org-crew-row">
+                  <label class="field">
+                    <span class="field-label">크루장</span>
+                    <select id="driverOrgLeaderSelect" aria-label="크루장 선택">
+                      <option value="">없음</option>
+                    </select>
+                  </label>
+                  <p class="form-help">이 박스에 체크된 인원만 크루장으로 지정할 수 있습니다.</p>
+                </div>
+                <div class="driver-org-toprep-row">
+                  <button type="button" class="small-btn" id="driverOrgSetTopRepBtn">대표박스로 지정</button>
+                  <span class="form-help" id="driverOrgTopRepHint">조직도 전체에서 대표박스는 1개입니다.</span>
+                </div>
                 <div class="driver-org-members">
                   <strong>소속 인원 (기사·관리자)</strong>
                   <p class="form-help">개별 체크 · 버튼 업로드 · <strong>왼쪽 조직도 박스에 엑셀 드래그</strong> 모두 됩니다. (ERP ID = 이름+전화뒤4 / 배민ID / 쿠팡ID)</p>
@@ -5796,6 +5809,23 @@
                 <span class="field-preview week-range-label" id="driverOrgWeekRange">수요일을 선택하면 수~화 범위가 표시됩니다</span>
               </div>
               <div class="driver-org-week-totals" id="driverOrgWeekTotals" aria-live="polite"></div>
+              <div class="driver-org-toprep-panel" id="driverOrgTopRepPanel" hidden>
+                <div class="card-header">
+                  <h4>대표박스 · 지역 집계</h4>
+                  <span class="form-help">선택 지역의 등록 기사 전원 합계 (조직 배정과 무관)</span>
+                </div>
+                <div class="driver-org-toprep-regions" id="driverOrgTopRepRegions">
+                  <div class="driver-org-toprep-region-col">
+                    <strong>배민 DP</strong>
+                    <div class="driver-org-region-checks" id="driverOrgTopRepBaeminChecks"></div>
+                  </div>
+                  <div class="driver-org-toprep-region-col">
+                    <strong>쿠팡 지역</strong>
+                    <div class="driver-org-region-checks" id="driverOrgTopRepCoupangChecks"></div>
+                  </div>
+                </div>
+                <div class="driver-org-dual-totals" id="driverOrgDualTotals" aria-live="polite"></div>
+              </div>
               <div class="driver-scroll-table table-wrap">
                 <table class="weekly-settlement-detail-table">
                   <thead>
@@ -5805,7 +5835,9 @@
                       <th>소속박스</th>
                       <th>쿠팡콜수</th>
                       <th>배민콜수</th>
-                      <th>배달료</th>
+                      <th>쿠팡배달료</th>
+                      <th>배민배달료</th>
+                      <th>배달료합계</th>
                       <th>관리</th>
                     </tr>
                   </thead>
@@ -7921,7 +7953,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260806r"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260815calls1"></script>
-  <script src="js/storage.js?v=20260815count1"></script>
+  <script src="js/storage.js?v=20260815crew1"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -7964,7 +7996,7 @@
   <script src="js/direct-settlement-calc.js?v=20260813c"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260813m"></script>
-  <script src="js/driver-management-admin.js?v=20260815leader3"></script>
+  <script src="js/driver-management-admin.js?v=20260815crew1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260814match1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

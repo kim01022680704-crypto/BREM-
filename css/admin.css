@@ -11872,6 +11872,117 @@ tr.is-selected {
   border-radius: 8px 0 0 0;
 }
 
+.driver-org-node-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}
+
+.driver-org-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.driver-org-badge--toprep {
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid #f59e0b;
+  color: #92400e;
+}
+
+.driver-org-badge--crew {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid #3b82f6;
+  color: #1e3a8a;
+}
+
+.driver-org-crew-row,
+.driver-org-toprep-row {
+  margin: 0 0 12px;
+}
+
+.driver-org-toprep-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+#driverOrgSetTopRepBtn.is-on {
+  background: rgba(245, 158, 11, 0.28);
+  border-color: #f59e0b;
+  color: #78350f;
+  font-weight: 800;
+}
+
+.driver-org-toprep-panel {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.driver-org-toprep-regions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 10px 0;
+}
+
+.driver-org-region-checks {
+  max-height: 180px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.driver-org-region-check {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.driver-org-dual-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.driver-org-dual-card {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(24, 24, 27, 0.55);
+  border: 1px solid #3f3f46;
+}
+
+.driver-org-dual-card strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.driver-org-dual-card p {
+  margin: 0 0 4px;
+}
+
+@media (max-width: 900px) {
+  .driver-org-toprep-regions,
+  .driver-org-dual-totals {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* 전역 button { color: inherit } 보다 우선해 박스 이름이 항상 잘 보이게 한다. */
 button.driver-org-node,
 .driver-org-node {
@@ -11891,6 +12002,13 @@ button.driver-org-node,
   line-height: 1.25;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+button.driver-org-node.is-toprep,
+.driver-org-node.is-toprep {
+  border-color: #d97706;
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35), 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
 button.driver-org-node.is-selected,

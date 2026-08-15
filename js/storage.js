@@ -13940,27 +13940,110 @@ const BremStorage = (function () {
       get() {
         const raw = storageAdapter.read(KEYS.driverOrgChart, null);
         const nodes = Array.isArray(raw?.nodes) ? raw.nodes : [];
-        return {
-          nodes: nodes.map((node, index) => ({
-            id: String(node.id || '').trim() || createId(),
+        const nodeIds = new Set();
+        const normalizedNodes = nodes.map((node, index) => {
+          const id = String(node.id || '').trim() || createId();
+          nodeIds.add(id);
+          const memberRefs = Array.isArray(node.memberRefs)
+            ? node.memberRefs
+              .map(ref => ({
+                kind: ref?.kind === 'admin' ? 'admin' : 'driver',
+                id: String(ref?.id || '').trim()
+              }))
+              .filter(ref => ref.id)
+            : [];
+          let leaderRef = null;
+          const rawLeader = node.leaderRef;
+          if (rawLeader && String(rawLeader.id || '').trim()) {
+            const kind = rawLeader.kind === 'admin' ? 'admin' : 'driver';
+            const lid = String(rawLeader.id || '').trim();
+            if (memberRefs.some(ref => ref.kind === kind && ref.id === lid)) {
+              leaderRef = { kind, id: lid };
+            }
+          }
+          return {
+            id,
             label: String(node.label || '').trim() || `박스 ${index + 1}`,
             parentId: node.parentId ? String(node.parentId) : '',
-            memberRefs: Array.isArray(node.memberRefs)
+            memberRefs,
+            leaderRef,
+            sortOrder: Number.isFinite(Number(node.sortOrder)) ? Number(node.sortOrder) : index
+          };
+        });
+        let topRepNodeId = String(raw?.topRepNodeId || '').trim();
+        if (topRepNodeId && !nodeIds.has(topRepNodeId)) topRepNodeId = '';
+        const topRepRegions = Array.isArray(raw?.topRepRegions)
+          ? raw.topRepRegions
+            .map(item => {
+              const platform = item?.platform === 'coupang' ? 'coupang' : 'baemin';
+              const key = String(item?.key || item?.partnerId || item?.label || '').trim();
+              if (!key) return null;
+              return {
+                platform,
+                key,
+                label: String(item?.label || key).trim() || key,
+                partnerId: String(item?.partnerId || (platform === 'baemin' ? key : '')).trim(),
+                vendorId: String(item?.vendorId || '').trim()
+              };
+            })
+            .filter(Boolean)
+          : [];
+        return {
+          nodes: normalizedNodes,
+          topRepNodeId,
+          topRepRegions
+        };
+      },
+      save(chart) {
+        const nodes = Array.isArray(chart?.nodes) ? chart.nodes : [];
+        const nodeIds = new Set(nodes.map(n => String(n?.id || '').trim()).filter(Boolean));
+        let topRepNodeId = String(chart?.topRepNodeId || '').trim();
+        if (topRepNodeId && !nodeIds.has(topRepNodeId)) topRepNodeId = '';
+        const topRepRegions = Array.isArray(chart?.topRepRegions)
+          ? chart.topRepRegions
+            .map(item => {
+              const platform = item?.platform === 'coupang' ? 'coupang' : 'baemin';
+              const key = String(item?.key || item?.partnerId || item?.label || '').trim();
+              if (!key) return null;
+              return {
+                platform,
+                key,
+                label: String(item?.label || key).trim() || key,
+                partnerId: String(item?.partnerId || (platform === 'baemin' ? key : '')).trim(),
+                vendorId: String(item?.vendorId || '').trim()
+              };
+            })
+            .filter(Boolean)
+          : [];
+        const payload = {
+          nodes: nodes.map((node, index) => {
+            const memberRefs = Array.isArray(node.memberRefs)
               ? node.memberRefs
                 .map(ref => ({
                   kind: ref?.kind === 'admin' ? 'admin' : 'driver',
                   id: String(ref?.id || '').trim()
                 }))
                 .filter(ref => ref.id)
-              : [],
-            sortOrder: Number.isFinite(Number(node.sortOrder)) ? Number(node.sortOrder) : index
-          }))
-        };
-      },
-      save(chart) {
-        const nodes = Array.isArray(chart?.nodes) ? chart.nodes : [];
-        const payload = {
-          nodes,
+              : [];
+            let leaderRef = null;
+            if (node.leaderRef && String(node.leaderRef.id || '').trim()) {
+              const kind = node.leaderRef.kind === 'admin' ? 'admin' : 'driver';
+              const lid = String(node.leaderRef.id || '').trim();
+              if (memberRefs.some(ref => ref.kind === kind && ref.id === lid)) {
+                leaderRef = { kind, id: lid };
+              }
+            }
+            return {
+              id: String(node.id || '').trim() || createId(),
+              label: String(node.label || '').trim() || `박스 ${index + 1}`,
+              parentId: node.parentId ? String(node.parentId) : '',
+              memberRefs,
+              leaderRef,
+              sortOrder: Number.isFinite(Number(node.sortOrder)) ? Number(node.sortOrder) : index
+            };
+          }),
+          topRepNodeId,
+          topRepRegions,
           updatedAt: new Date().toISOString()
         };
         return storageAdapter.write(KEYS.driverOrgChart, payload).then(() => payload);
