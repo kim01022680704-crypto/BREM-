@@ -3198,6 +3198,24 @@ const BremStorage = (function () {
     });
   }
 
+  async function assignAdminUrgentMissionTargets(missionId, riders) {
+    const id = String(missionId || '').trim();
+    if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
+    return adminRidersApi(`/api/admin/urgent-missions/${encodeURIComponent(id)}/targets`, {
+      method: 'POST',
+      body: JSON.stringify({ riders: riders || [] })
+    });
+  }
+
+  async function removeAdminUrgentMissionTargets(missionId, riderIds) {
+    const id = String(missionId || '').trim();
+    if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
+    return adminRidersApi(`/api/admin/urgent-missions/${encodeURIComponent(id)}/targets/remove`, {
+      method: 'POST',
+      body: JSON.stringify({ riderIds: riderIds || [] })
+    });
+  }
+
   async function deleteAdminUrgentMission(missionId) {
     const id = String(missionId || '').trim();
     if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
@@ -14052,6 +14070,8 @@ const BremStorage = (function () {
     publishAdminUrgentMission,
     closeAdminUrgentMission,
     setupDoneAdminUrgentMission,
+    assignAdminUrgentMissionTargets,
+    removeAdminUrgentMissionTargets,
     deleteAdminUrgentMission,
     fetchRiderWeeklyPayslipFromServer,
     fetchRiderRegionDashboardFromServer,

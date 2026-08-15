@@ -66,6 +66,23 @@
       .map(input => input.value);
   }
 
+  function renderTargets(mission) {
+    const targets = mission.targets || [];
+    if (!targets.length) {
+      return '<p class="form-help">아직 대상 기사가 없습니다. 기사관리 → 기사지역관리에서 미션을 고른 뒤 기사를 넣으세요.</p>';
+    }
+    return `
+      <ul class="urgent-mission-target-list">
+        ${targets.map((item) => `
+          <li>
+            <span>${escapeHtml(item.riderName || '-')}${item.regionLabel ? ` · ${escapeHtml(item.regionLabel)}` : ''}${item.platform === 'baemin' ? ' · 배민' : item.platform === 'coupang' ? ' · 쿠팡' : ''}</span>
+            <button type="button" class="small-btn" data-remove-target="${escapeHtml(mission.id)}" data-remove-rider="${escapeHtml(item.riderId)}">제외</button>
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  }
+
   function renderAccepts(mission) {
     const accepts = mission.accepts || [];
     if (!accepts.length) {
@@ -135,6 +152,8 @@
             <button type="button" class="small-btn" data-close-mission="${escapeHtml(mission.id)}" ${closed ? 'disabled' : ''}>미션 마감</button>
             <button type="button" class="small-btn danger-btn" data-delete-mission="${escapeHtml(mission.id)}">정리</button>
           </div>
+          <h3 class="urgent-mission-accept-title">대상 기사 <span>${(mission.targets || []).length}명</span></h3>
+          ${renderTargets(mission)}
           <h3 class="urgent-mission-accept-title">수락 리스트 <span>${(mission.accepts || []).length}명</span></h3>
           ${renderAccepts(mission)}
         </article>
@@ -212,6 +231,17 @@
     showToast('선택한 기사를 미션설정완료 했습니다.');
   }
 
+  async function removeTarget(missionId, riderId) {
+    const result = await window.BremStorage.removeAdminUrgentMissionTargets(missionId, [riderId]);
+    if (!result.ok) {
+      showToast(result.message || result.error || '대상 제외에 실패했습니다.');
+      return;
+    }
+    state.missions = result.missions || [];
+    render();
+    showToast('대상 기사에서 제외했습니다.');
+  }
+
   async function deleteMission(missionId) {
     if (!window.confirm('이 미션 기록을 정리할까요? 기사앱에서도 바로 사라집니다.')) return;
     const result = await window.BremStorage.deleteAdminUrgentMission(missionId);
@@ -244,6 +274,11 @@
     const setupBtn = event.target.closest('[data-setup-done]');
     if (setupBtn) {
       void setupDone(setupBtn.dataset.setupDone);
+      return;
+    }
+    const removeBtn = event.target.closest('[data-remove-target]');
+    if (removeBtn) {
+      void removeTarget(removeBtn.dataset.removeTarget, removeBtn.dataset.removeRider);
     }
   });
 

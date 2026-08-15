@@ -13085,3 +13085,55 @@ tr.is-week-first td {
     grid-template-columns: 1fr;
   }
 }
+
+.driver-region-mission-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 12px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 212, 0, 0.2);
+  border-radius: 14px;
+  background: #161616;
+}
+
+.driver-region-mission-bar .field {
+  min-width: min(100%, 320px);
+  flex: 1 1 240px;
+}
+
+.urgent-mission-check-col {
+  width: 36px;
+  text-align: center;
+}
+
+.urgent-mission-in-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.18);
+  color: #facc15;
+  font-size: 0.7rem;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+.urgent-mission-target-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.urgent-mission-target-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #1b1b1b;
+}

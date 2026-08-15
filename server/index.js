@@ -1100,6 +1100,38 @@ app.post('/api/admin/urgent-missions/:missionId/close', async (req, res) => {
   }
 });
 
+app.post('/api/admin/urgent-missions/:missionId/targets', async (req, res) => {
+  try {
+    const result = await urgentMissions.assignTargets(
+      getBearerToken(req),
+      req.params.missionId,
+      req.body?.riders || req.body?.targets
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, mission: result.mission, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 대상 기사 저장에 실패했습니다.' });
+  }
+});
+
+app.post('/api/admin/urgent-missions/:missionId/targets/remove', async (req, res) => {
+  try {
+    const result = await urgentMissions.removeTargets(
+      getBearerToken(req),
+      req.params.missionId,
+      req.body?.riderIds || req.body?.ids
+    );
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, mission: result.mission, missions: result.missions });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '미션 대상 기사 제외에 실패했습니다.' });
+  }
+});
+
 app.post('/api/admin/urgent-missions/:missionId/setup-done', async (req, res) => {
   try {
     const result = await urgentMissions.markSetupDone(
