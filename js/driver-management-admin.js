@@ -29,7 +29,9 @@ const BremDriverManagementAdmin = (function () {
     statsLoadPromise: null,
     regionRefreshSeq: 0,
     regionDetailSyncTimer: null,
-    regionDetailDriverCount: -1
+    regionDetailDriverCount: -1,
+    regionListFilter: '',
+    regionListFilterTimer: null
   };
 
   const REGION_RANKING_POLL_MS = 60 * 1000;
@@ -1310,7 +1312,7 @@ const BremDriverManagementAdmin = (function () {
       if (!isDriverManagementSectionActive()) return;
       // 노출 옵션·추가 입력 중이면 표 재생성 보류
       const active = document.activeElement;
-      if (active?.matches?.('[data-region-rider-mode], [data-region-expose], #driverRegionAddInput')) {
+      if (active?.matches?.('[data-region-rider-mode], [data-region-expose], #driverRegionAddInput, #driverRegionListFilter')) {
         scheduleRegionDetailSoftRefresh();
         return;
       }
@@ -1560,7 +1562,15 @@ const BremDriverManagementAdmin = (function () {
       rows.innerHTML = '<tr><td colspan="5" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
       state.regionAdd.candidates = [];
       state.regionDetailDriverCount = -1;
+      state.regionListFilter = '';
       resetRegionAddCombo();
+      const filterInput = $('#driverRegionListFilter');
+      if (filterInput) {
+        filterInput.value = '';
+        filterInput.disabled = true;
+      }
+      const filterMeta = $('#driverRegionListFilterMeta');
+      if (filterMeta) filterMeta.textContent = '';
       if (totalsEl) totalsEl.textContent = '';
       clearRegionRankingUi();
       return;
@@ -1568,19 +1578,41 @@ const BremDriverManagementAdmin = (function () {
     const week = ensureWeek();
     const inRegion = driversInRegion(region);
     state.regionDetailDriverCount = inRegion.length;
-    let totalCalls = 0;
-    let totalFee = 0;
     // 주간 콜수 기준 로컬 1등 표시(표 상단 합계와 함께)
     const ranked = inRegion.map(driver => {
       const stats = driverCallAndFee(driver.id, week, platform);
       return { driver, ...stats };
     }).sort((a, b) => b.callCount - a.callCount || String(a.driver.name || '').localeCompare(String(b.driver.name || ''), 'ko'));
     const weeklyLocalFirst = ranked.find(row => row.callCount > 0) || null;
+    let totalCalls = 0;
+    let totalFee = 0;
+    ranked.forEach(row => {
+      totalCalls += row.callCount;
+      totalFee += row.deliveryFee;
+    });
 
-    rows.innerHTML = ranked.length
-      ? ranked.map(row => {
-        totalCalls += row.callCount;
-        totalFee += row.deliveryFee;
+    const filterKey = String(state.regionListFilter || '').replace(/\s+/g, '').toLowerCase();
+    const filtered = filterKey
+      ? ranked.filter(row => regionAddSearchKey(row.driver).includes(filterKey))
+      : ranked;
+    const filterMeta = $('#driverRegionListFilterMeta');
+    if (filterMeta) {
+      filterMeta.textContent = ranked.length
+        ? (filterKey
+          ? `검색 ${filtered.length}명 / 전체 ${ranked.length}명`
+          : `배정 ${ranked.length}명`)
+        : '';
+    }
+    const filterInput = $('#driverRegionListFilter');
+    if (filterInput) {
+      if (document.activeElement !== filterInput && filterInput.value !== state.regionListFilter) {
+        filterInput.value = state.regionListFilter;
+      }
+      filterInput.disabled = false;
+    }
+
+    rows.innerHTML = filtered.length
+      ? filtered.map(row => {
         const isFirst = weeklyLocalFirst && row.driver.id === weeklyLocalFirst.driver.id;
         const mode = getDriverRegionMode(platform, region.key, row.driver.id);
         const rowClass = [
@@ -1615,7 +1647,7 @@ const BremDriverManagementAdmin = (function () {
           <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(row.driver.id)}">해제</button></td>
         </tr>`;
       }).join('')
-      : '<tr><td colspan="5" class="empty">이 지역에 배정된 기사가 없습니다.</td></tr>';
+      : `<tr><td colspan="5" class="empty">${ranked.length ? '검색 결과가 없습니다.' : '이 지역에 배정된 기사가 없습니다.'}</td></tr>`;
 
     if (totalsEl) {
       const firstText = weeklyLocalFirst
@@ -2493,6 +2525,7 @@ const BremDriverManagementAdmin = (function () {
       const regionBtn = event.target.closest('[data-region-select]');
       if (regionBtn) {
         state.selectedRegionKey = regionBtn.dataset.regionSelect;
+        state.regionListFilter = '';
         renderRegionCatalog();
         renderRegionDetail();
         return;
@@ -2746,6 +2779,14 @@ const BremDriverManagementAdmin = (function () {
     $('#driverRegionCrawlMatchBtn')?.addEventListener('click', () => { void openCrawlMatchModal(); });
     $('#driverRegionCrawlMatchApplyBtn')?.addEventListener('click', () => { void applyCrawlMatchSelection(); });
     bindRegionAddCombo();
+    $('#driverRegionListFilter')?.addEventListener('input', event => {
+      const value = String(event.target.value || '');
+      if (state.regionListFilterTimer) clearTimeout(state.regionListFilterTimer);
+      state.regionListFilterTimer = setTimeout(() => {
+        state.regionListFilter = value;
+        renderRegionDetail();
+      }, 160);
+    });
     $('#driverRegionAddBtn')?.addEventListener('click', () => {
       const id = $('#driverRegionAddSelect')?.value;
       if (!id) {

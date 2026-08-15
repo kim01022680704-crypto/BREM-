@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260815metrics1">
+  <link rel="stylesheet" href="css/admin.css?v=20260815search1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5896,6 +5896,13 @@
                   <button type="button" class="small-btn primary-btn" id="driverRegionAddBtn">추가</button>
                   <button type="button" class="small-btn" id="driverRegionCrawlMatchBtn" title="오늘 배달현황 크롤의 배민ID로 ERP 기사와 매칭">크롤링으로 지역등록</button>
                 </div>
+                <div class="driver-region-list-filter">
+                  <label class="field">
+                    <span class="field-label">배정 기사 검색</span>
+                    <input type="search" id="driverRegionListFilter" class="driver-region-list-filter__input" placeholder="이름·배민ID·연락처로 표에서 찾기" autocomplete="off">
+                  </label>
+                  <span class="driver-region-list-filter__meta" id="driverRegionListFilterMeta" aria-live="polite"></span>
+                </div>
                 <div class="driver-scroll-table table-wrap">
                   <table class="weekly-settlement-detail-table">
                     <thead>
@@ -7953,7 +7960,7 @@
   <script src="js/direct-settlement-calc.js?v=20260813c"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260813m"></script>
-  <script src="js/driver-management-admin.js?v=20260815metrics1"></script>
+  <script src="js/driver-management-admin.js?v=20260815search1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260814match1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

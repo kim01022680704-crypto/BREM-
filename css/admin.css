@@ -12348,6 +12348,31 @@ tr.is-week-first td {
 
 .driver-region-assign .field { flex: 1; }
 
+.driver-region-list-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: end;
+  margin: 0 0 12px;
+}
+
+.driver-region-list-filter .field {
+  flex: 1;
+  min-width: 220px;
+}
+
+.driver-region-list-filter__input {
+  width: 100%;
+}
+
+.driver-region-list-filter__meta {
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 600;
+  padding-bottom: 8px;
+  white-space: nowrap;
+}
+
 /* 기사 추가 — 별도 검색칸 없이 선택칸에 바로 입력해 찾는다. */
 .driver-region-combo {
   position: relative;
