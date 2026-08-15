@@ -309,46 +309,44 @@
   function renderTargets(mission) {
     const targets = mission.targets || [];
     if (!targets.length) {
-      return '<p class="form-help">대상 기사가 없습니다.</p>';
+      return '<p class="urgent-mission-empty">대상 기사가 없습니다.</p>';
     }
     return `
-      <ul class="urgent-mission-target-list">
-        ${targets.map((item) => `
-          <li>
-            <span>${escapeHtml(item.riderName || '-')}${item.regionLabel ? ` · ${escapeHtml(item.regionLabel)}` : ''}${item.platform === 'baemin' ? ' · 배민' : item.platform === 'coupang' ? ' · 쿠팡' : ''}</span>
-            <button type="button" class="small-btn" data-remove-target="${escapeHtml(mission.id)}" data-remove-rider="${escapeHtml(item.riderId)}">제외</button>
-          </li>
-        `).join('')}
-      </ul>
+      <div class="table-wrap">
+        <table class="data-table urgent-mission-mini-table">
+          <thead>
+            <tr>
+              <th>기사</th>
+              <th>지역</th>
+              <th>태그</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${targets.map((item) => `
+              <tr>
+                <td>${escapeHtml(item.riderName || '-')}</td>
+                <td>${escapeHtml(item.regionLabel || '-')}</td>
+                <td>${item.platform === 'baemin' ? '배민' : item.platform === 'coupang' ? '쿠팡' : '-'}</td>
+                <td class="urgent-mission-row-action">
+                  <button type="button" class="small-btn" data-remove-target="${escapeHtml(mission.id)}" data-remove-rider="${escapeHtml(item.riderId)}">제외</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
     `;
   }
 
   function renderAccepts(mission) {
     const accepts = mission.accepts || [];
     if (!accepts.length) {
-      return '<p class="form-help">아직 수락한 기사가 없습니다.</p>';
+      return '<p class="urgent-mission-empty">아직 수락한 기사가 없습니다.</p>';
     }
-    const rows = accepts.map((item) => `
-      <tr>
-        <td>
-          <input type="checkbox" data-accept-mission="${escapeHtml(mission.id)}" value="${escapeHtml(item.id)}">
-        </td>
-        <td>${escapeHtml(item.riderName || '-')}</td>
-        <td>${escapeHtml(item.riderPhone || '-')}</td>
-        <td>${escapeHtml(formatDateTime(item.acceptedAt))}</td>
-        <td>${item.setupDone ? '<span class="urgent-mission-status is-done">설정완료</span>' : '<span class="urgent-mission-status">수락</span>'}</td>
-      </tr>
-    `).join('');
     return `
-      <div class="urgent-mission-accept-toolbar">
-        <label class="check-label">
-          <input type="checkbox" data-accept-all="${escapeHtml(mission.id)}">
-          전체선택
-        </label>
-        <button type="button" class="primary-btn" data-setup-done="${escapeHtml(mission.id)}">미션설정완료</button>
-      </div>
       <div class="table-wrap">
-        <table class="data-table urgent-mission-accept-table">
+        <table class="data-table urgent-mission-mini-table">
           <thead>
             <tr>
               <th></th>
@@ -358,7 +356,17 @@
               <th>상태</th>
             </tr>
           </thead>
-          <tbody>${rows}</tbody>
+          <tbody>
+            ${accepts.map((item) => `
+              <tr>
+                <td><input type="checkbox" data-accept-mission="${escapeHtml(mission.id)}" value="${escapeHtml(item.id)}"></td>
+                <td>${escapeHtml(item.riderName || '-')}</td>
+                <td>${escapeHtml(item.riderPhone || '-')}</td>
+                <td>${escapeHtml(formatDateTime(item.acceptedAt))}</td>
+                <td>${item.setupDone ? '<span class="urgent-mission-status is-done">설정완료</span>' : '<span class="urgent-mission-status">수락</span>'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
         </table>
       </div>
     `;
@@ -376,28 +384,45 @@
       const closed = mission.status === 'closed';
       return `
         <article class="urgent-mission-card ${closed ? 'is-closed' : ''}" data-mission-id="${escapeHtml(mission.id)}">
-          <div class="urgent-mission-card__head">
-            <div>
+          <div class="urgent-mission-card__top">
+            <div class="urgent-mission-card__title-row">
               <div class="urgent-mission-card__tags">
                 ${platformTags(mission.platforms)}
                 <span class="urgent-mission-status ${closed ? 'is-closed' : 'is-open'}">${closed ? '마감' : '모집중'}</span>
               </div>
-              <p class="urgent-mission-card__content">${escapeHtml(mission.content)}</p>
-              <div class="urgent-mission-card__meta">
-                <span>시간 ${escapeHtml(mission.missionTime || '-')}</span>
-                <span>배포 ${escapeHtml(formatDateTime(mission.publishedAt))}</span>
-              </div>
+              <strong class="urgent-mission-card__pay">${escapeHtml(formatMoney(mission.amount))}</strong>
             </div>
-            <strong class="urgent-mission-card__pay">${escapeHtml(formatMoney(mission.amount))}</strong>
+            <p class="urgent-mission-card__content">${escapeHtml(mission.content)}</p>
+            <div class="urgent-mission-card__meta">
+              <span>시간 ${escapeHtml(mission.missionTime || '-')}</span>
+              <span>배포 ${escapeHtml(formatDateTime(mission.publishedAt))}</span>
+            </div>
+            <div class="urgent-mission-card__actions">
+              <button type="button" class="small-btn" data-close-mission="${escapeHtml(mission.id)}" ${closed ? 'disabled' : ''}>미션 마감</button>
+              <button type="button" class="small-btn danger-btn" data-delete-mission="${escapeHtml(mission.id)}">정리</button>
+            </div>
           </div>
-          <div class="urgent-mission-card__actions">
-            <button type="button" class="small-btn" data-close-mission="${escapeHtml(mission.id)}" ${closed ? 'disabled' : ''}>미션 마감</button>
-            <button type="button" class="small-btn danger-btn" data-delete-mission="${escapeHtml(mission.id)}">정리</button>
-          </div>
-          <h3 class="urgent-mission-accept-title">대상 기사 <span>${(mission.targets || []).length}명</span></h3>
-          ${renderTargets(mission)}
-          <h3 class="urgent-mission-accept-title">수락 리스트 <span>${(mission.accepts || []).length}명</span></h3>
-          ${renderAccepts(mission)}
+          <section class="urgent-mission-block">
+            <div class="urgent-mission-block__head">
+              <h3>대상 기사 <span>${(mission.targets || []).length}명</span></h3>
+            </div>
+            ${renderTargets(mission)}
+          </section>
+          <section class="urgent-mission-block">
+            <div class="urgent-mission-block__head">
+              <h3>수락 리스트 <span>${(mission.accepts || []).length}명</span></h3>
+              ${(mission.accepts || []).length ? `
+                <div class="urgent-mission-block__tools">
+                  <label class="check-label">
+                    <input type="checkbox" data-accept-all="${escapeHtml(mission.id)}">
+                    전체선택
+                  </label>
+                  <button type="button" class="primary-btn" data-setup-done="${escapeHtml(mission.id)}">미션설정완료</button>
+                </div>
+              ` : ''}
+            </div>
+            ${renderAccepts(mission)}
+          </section>
         </article>
       `;
     }).join('');
