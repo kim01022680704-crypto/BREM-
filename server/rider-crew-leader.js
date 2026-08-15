@@ -169,13 +169,24 @@ async function loadRidersByIds(supabase, driverIds) {
     const chunk = ids.slice(i, i + 80);
     const { data, error } = await supabase
       .from('riders')
-      .select('id,name,phone,baemin_id,coupang_login_id,baemin_region,coupang_region')
+      .select('id,name,phone,baemin_id,raw_data')
       .in('id', chunk);
     if (error) throw error;
     rows.push(...(data || []));
   }
   const byId = new Map(rows.map(row => [String(row.id), row]));
-  return ids.map(id => byId.get(id) || { id, name: '', phone: '', baemin_id: '', coupang_login_id: '' });
+  return ids.map(id => {
+    const row = byId.get(id);
+    if (!row) return { id, name: '', phone: '', baemin_id: '' };
+    const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
+    const baeminId = String(row.baemin_id || raw.baeminId || raw.baemin_id || '').trim();
+    return {
+      id,
+      name: String(row.name || '').trim(),
+      phone: String(row.phone || '').trim(),
+      baemin_id: baeminId
+    };
+  });
 }
 
 async function loadCallCounts(supabase, driverIds, weekStart, weekEnd, today) {
