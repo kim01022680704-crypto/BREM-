@@ -771,8 +771,11 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   if (cached) return cached;
 
   try {
+    const exposure = await readExposureMap(supabase);
     const regionRiders = await loadRidersForRegion(supabase, region);
-    const shared = { maskNames: false, regionRiders };
+    // 관리자 화면도 기사앱과 동일: 팀장·전체열람·미노출은 순위에서 제외
+    const rankingRiders = filterRankingRiders(exposure, platform, region.key, regionRiders);
+    const shared = { maskNames: false, regionRiders, rankingRiders };
     const [live, weeklyRanking] = await Promise.all([
       platform === 'coupang'
         ? buildCoupangLive(supabase, region, today, shared)
@@ -787,6 +790,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
       weekEnd,
       region,
       registeredCount: regionRiders.length,
+      rankingCount: rankingRiders.length,
       metrics: live.metrics,
       realtimeRanking: live.realtimeRanking || [],
       realtimeRankingDisabled: live.realtimeRankingDisabled === true,

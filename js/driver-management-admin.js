@@ -332,6 +332,11 @@ const BremDriverManagementAdmin = (function () {
   function buildLocalWeeklyRanking(region, weekStart, platform) {
     if (!region) return [];
     return driversInRegion(region)
+      .filter(driver => {
+        const mode = getDriverRegionMode(platform, region.key, driver.id);
+        // 올노출·할당만만 순위 노출 (팀장·전체열람·미노출 제외)
+        return mode === 'full' || mode === 'metrics';
+      })
       .map(driver => {
         const stats = driverCallAndFee(driver.id, weekStart, platform);
         return {
@@ -1229,6 +1234,18 @@ const BremDriverManagementAdmin = (function () {
       partnerId: region.partnerId || '',
       vendorId: region.vendorId || ''
     });
+    invalidateRegionRankingCache(region);
+  }
+
+  function invalidateRegionRankingCache(region = null) {
+    if (!region) {
+      state.regionRankingCache.clear();
+      return;
+    }
+    const prefix = `${region.platform}|${region.key}|`;
+    [...state.regionRankingCache.keys()].forEach(key => {
+      if (String(key).startsWith(prefix)) state.regionRankingCache.delete(key);
+    });
   }
 
   async function setAllDriversRegionMode(mode) {
@@ -1265,6 +1282,7 @@ const BremDriverManagementAdmin = (function () {
         partnerId: region.partnerId || '',
         vendorId: region.vendorId || ''
       });
+      invalidateRegionRankingCache(region);
       renderRegionDetail();
       showToast(`${label} — ${drivers.length}명 적용`);
     } catch (error) {
@@ -1670,7 +1688,12 @@ const BremDriverManagementAdmin = (function () {
       const stats = driverCallAndFee(driver.id, week, platform);
       return { driver, ...stats };
     }).sort((a, b) => b.callCount - a.callCount || String(a.driver.name || '').localeCompare(String(b.driver.name || ''), 'ko'));
-    const weeklyLocalFirst = ranked.find(row => row.callCount > 0) || null;
+    // 1등 뱃지·합계 문구도 순위 노출 대상만 (팀장·전체열람·미노출 제외)
+    const weeklyLocalFirst = ranked.find(row => {
+      if (!(row.callCount > 0)) return false;
+      const mode = getDriverRegionMode(platform, region.key, row.driver.id);
+      return mode === 'full' || mode === 'metrics';
+    }) || null;
     let totalCalls = 0;
     let totalFee = 0;
     ranked.forEach(row => {
@@ -2812,6 +2835,7 @@ const BremDriverManagementAdmin = (function () {
                 : mode === 'hidden'
                   ? '미노출 — 기사앱에서 기사대시보드가 숨겨집니다'
                   : '올노출 — 대시보드 + 순위 노출');
+            void loadRegionRanking();
           })
           .catch(error => {
             const tr = riderMode.closest('tr');
