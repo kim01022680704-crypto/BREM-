@@ -549,6 +549,7 @@
     window.BremDriverWithdrawal?.reset?.();
     window.BremDriverWeeklyPayslip?.reset?.();
     window.BremDriverRegionDashboard?.reset?.();
+    window.BremDriverCrewLeader?.reset?.();
     showLoggedOut();
     window.BremLoginPrefs?.restoreIdAfterLogout?.('rider', {
       idInput: loginIdInput,
@@ -1526,6 +1527,7 @@
       window.BremDriverWithdrawal?.reset?.();
       window.BremDriverWeeklyPayslip?.reset?.();
       window.BremDriverRegionDashboard?.reset?.();
+      window.BremDriverCrewLeader?.reset?.();
       window.BremLoginPrefs?.captureLoginPrefs?.('rider', {
         idInput: loginIdInput,
         rememberCheckbox: document.getElementById('driverRememberId'),
@@ -1538,6 +1540,8 @@
       showLoggedIn(driver);
       showToast(`${driver.name} 기사님 로그인 성공`);
       void loadDriverAppDataThenRender(driver, { refreshProfile: false });
+      void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
+      void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

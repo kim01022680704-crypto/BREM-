@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260805b">
+  <link rel="stylesheet" href="css/driver.css?v=20260816crew1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -154,6 +154,7 @@
                 <button type="button" class="profile-withdrawal-btn profile-withdrawal-btn--compact" id="driverWithdrawalBtn" title="일정산 출금신청" aria-expanded="false" aria-controls="driverWithdrawalPanel">출금신청</button>
                 <button type="button" class="profile-payslip-btn" id="driverWeeklyPayslipBtn" aria-expanded="false" aria-controls="driverWeeklyPayslipPanel">주급명세서</button>
                 <button type="button" class="profile-region-dash-btn" id="driverRegionDashboardBtn" aria-expanded="false" aria-controls="driverRegionDashboardPanel">기사대시보드</button>
+                <button type="button" class="profile-crew-btn" id="driverCrewLeaderBtn" hidden aria-expanded="false" aria-controls="driverCrewLeaderPanel">크루장 관리</button>
               </div>
             </div>
           </div>
@@ -337,6 +338,58 @@
               </section>
 
               <p class="driver-region-dash-footnote" id="driverRegionDashNote">노출 지역은 관리자가 설정한 지역만 표시됩니다.</p>
+            </div>
+          </article>
+
+          <article class="panel driver-weekly-payslip-panel driver-crew-leader-panel" id="driverCrewLeaderPanel" hidden>
+            <div class="driver-payslip-header">
+              <div class="driver-payslip-header__brand">
+                <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
+                <div>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER</p>
+                  <h2>크루장 관리</h2>
+                </div>
+              </div>
+              <button type="button" class="ghost-btn driver-payslip-close" id="driverCrewLeaderCloseBtn">닫기</button>
+            </div>
+
+            <div class="driver-crew-meta">
+              <div class="driver-crew-meta__item">
+                <span class="driver-payslip-meta__label">크루</span>
+                <strong id="driverCrewLeaderBoxLabel">-</strong>
+              </div>
+              <div class="driver-crew-meta__item">
+                <span class="driver-payslip-meta__label">정산주 (수~화)</span>
+                <div class="driver-payslip-week-nav">
+                  <button type="button" class="driver-payslip-week-btn" id="driverCrewLeaderPrevWeekBtn" aria-label="이전 주">&lt;</button>
+                  <strong id="driverCrewLeaderPeriod" class="driver-payslip-period-text">-</strong>
+                  <button type="button" class="driver-payslip-week-btn" id="driverCrewLeaderNextWeekBtn" aria-label="다음 주">&gt;</button>
+                </div>
+              </div>
+              <button type="button" class="driver-region-dash-refresh" id="driverCrewLeaderRefreshBtn" title="새로고침">↻</button>
+            </div>
+
+            <div class="driver-crew-summary" id="driverCrewLeaderSummary" aria-live="polite"></div>
+
+            <div class="driver-payslip-empty" id="driverCrewLeaderEmpty" hidden>
+              <p>크루장으로 지정된 박스가 없습니다.</p>
+              <p class="driver-payslip-empty-hint">관리자가 조직도에서 크루장을 지정하면 표시됩니다.</p>
+            </div>
+
+            <div class="driver-crew-table-wrap" id="driverCrewLeaderContent" hidden>
+              <table class="driver-crew-table">
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>운행</th>
+                    <th>현재콜</th>
+                    <th>주간콜</th>
+                    <th>콜합계</th>
+                  </tr>
+                </thead>
+                <tbody id="driverCrewLeaderRows"></tbody>
+              </table>
+              <p class="driver-crew-footnote">운행 태그는 배민 배달현황 기준입니다. 배달료는 표시되지 않습니다.</p>
             </div>
           </article>
 
@@ -851,13 +904,14 @@
   <script src="js/storage-supabase-mapper.js?v=20260729d"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260805d"></script>
+  <script src="js/storage.js?v=20260816crew1"></script>
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver-weekly-payslip.js?v=20260803i"></script>
-  <script src="js/driver-region-dashboard.js?v=20260815leader3"></script>
-  <script src="js/driver-withdrawal.js?v=20260806j"></script>
-  <script src="js/driver.js?v=20260805d"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260816crew1"></script>
+  <script src="js/driver-region-dashboard.js?v=20260816crew1"></script>
+  <script src="js/driver-crew-leader.js?v=20260816crew1"></script>
+  <script src="js/driver-withdrawal.js?v=20260816crew1"></script>
+  <script src="js/driver.js?v=20260816crew1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

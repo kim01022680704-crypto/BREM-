@@ -24,6 +24,7 @@ const riderAuth = require('./rider-auth');
 const riderWeeklyPayslip = require('./rider-weekly-payslip');
 const riderWithdrawal = require('./rider-withdrawal');
 const riderRegionDashboard = require('./rider-region-dashboard');
+const riderCrewLeader = require('./rider-crew-leader');
 const directPayslipPublish = require('./direct-payslip-publish');
 const payrollPublishAdmin = require('./payroll-publish-admin');
 const riderPublishAdmin = require('./rider-publish-admin');
@@ -451,6 +452,20 @@ app.get('/api/rider/region-dashboard', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '기사대시보드를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/crew-leader', async (req, res) => {
+  try {
+    const result = await riderCrewLeader.getCrewLeaderDashboard(getBearerToken(req), {
+      weekStart: req.query.weekStart
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '크루장 관리를 불러오지 못했습니다.' });
   }
 });
 

@@ -370,6 +370,7 @@
   function openPanel() {
     window.BremDriverWithdrawal?.close?.();
     window.BremDriverWeeklyPayslip?.close?.();
+    window.BremDriverCrewLeader?.close?.();
     state.visible = true;
     panel.hidden = false;
     openBtn.setAttribute('aria-expanded', 'true');

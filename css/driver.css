@@ -358,7 +358,8 @@ h3 {
 .profile-actions > .profile-realtime-status-btn,
 .profile-actions > .profile-withdrawal-btn,
 .profile-actions > .profile-payslip-btn,
-.profile-actions > .profile-region-dash-btn {
+.profile-actions > .profile-region-dash-btn,
+.profile-actions > .profile-crew-btn {
   width: 100%;
   min-width: 0;
   white-space: nowrap;
@@ -400,7 +401,8 @@ h3 {
 }
 
 .profile-payslip-btn,
-.profile-region-dash-btn {
+.profile-region-dash-btn,
+.profile-crew-btn {
   min-height: 36px;
   padding: 0 14px;
   border: 1px solid #111827;
@@ -418,15 +420,24 @@ h3 {
   color: var(--yellow);
 }
 
+.profile-crew-btn {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
 .profile-payslip-btn:hover,
 .profile-payslip-btn[aria-expanded="true"],
 .profile-region-dash-btn:hover,
-.profile-region-dash-btn[aria-expanded="true"] {
+.profile-region-dash-btn[aria-expanded="true"],
+.profile-crew-btn:hover,
+.profile-crew-btn[aria-expanded="true"] {
   box-shadow: 0 8px 20px rgba(17, 24, 39, 0.12);
 }
 
 .profile-payslip-btn[aria-expanded="true"],
-.profile-region-dash-btn[aria-expanded="true"] {
+.profile-region-dash-btn[aria-expanded="true"],
+.profile-crew-btn[aria-expanded="true"] {
   outline: 2px solid #111827;
   outline-offset: 2px;
 }
@@ -2732,6 +2743,123 @@ button.calendar-day:hover {
   margin-top: 8px;
   color: #64748b;
   font-size: 0.78rem;
+}
+
+/* 크루장 관리 */
+.driver-crew-leader-panel.is-loading {
+  opacity: 0.85;
+}
+
+.driver-crew-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+  margin: 0 0 12px;
+}
+
+.driver-crew-meta__item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.driver-crew-summary {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #111827;
+  color: #fde68a;
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.driver-crew-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.driver-crew-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+}
+
+.driver-crew-table th,
+.driver-crew-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.86rem;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.driver-crew-table th {
+  background: #0f172a;
+  color: #fde68a;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.driver-crew-table th:nth-child(1),
+.driver-crew-table td:nth-child(1) {
+  text-align: left;
+}
+
+.driver-crew-table td.driver-crew-num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.driver-crew-table tr.is-self td {
+  background: #fffbeb;
+}
+
+.driver-crew-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.driver-crew-tag--on {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.driver-crew-tag--off {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.driver-crew-tag--unk {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.driver-crew-tag--self {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.driver-crew-footnote {
+  margin: 10px 12px 12px;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .driver-region-dashboard-panel .driver-payslip-platform-tabs {

@@ -500,6 +500,7 @@
   function openPanel() {
     window.BremDriverWithdrawal?.close?.();
     window.BremDriverRegionDashboard?.close?.();
+    window.BremDriverCrewLeader?.close?.();
     state.visible = true;
     panel.hidden = false;
     // 메뉴를 열 때마다 가장 최근 발행된 주급명세서부터 보여준다.
