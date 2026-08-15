@@ -2773,17 +2773,19 @@ button.calendar-day:hover {
   flex: 1 1 160px;
 }
 
-.driver-crew-name-row {
+.driver-crew-title-block {
+  min-width: 0;
+}
+
+.driver-crew-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
   flex-wrap: wrap;
 }
 
-.driver-crew-name-row strong {
-  min-width: 0;
-  font-size: 1rem;
+.driver-crew-title-row h2 {
+  margin: 0;
 }
 
 .driver-crew-rename-btn {

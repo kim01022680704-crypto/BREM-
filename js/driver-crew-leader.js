@@ -113,6 +113,11 @@
       const isTop = Boolean(state.lastResult?.box?.isTopRep);
       boxLabelEl.textContent = name ? `${name}${isTop ? ' (대표)' : ''}` : '-';
     }
+    // 라이더앱 진입 버튼도 크루 이름으로 보이게
+    if (openBtn) {
+      openBtn.textContent = name || DEFAULT_TITLE;
+      openBtn.title = name ? `${name} · 크루장 관리` : DEFAULT_TITLE;
+    }
   }
 
   function closeRenameForm() {
@@ -269,6 +274,7 @@
         return false;
       }
       openBtn.hidden = false;
+      applyCrewTitle(result.box?.label || '');
       return true;
     } catch (_) {
       return true;

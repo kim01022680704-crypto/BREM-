@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816crew5">
+  <link rel="stylesheet" href="css/driver.css?v=20260816crew6">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -345,9 +345,12 @@
             <div class="driver-payslip-header">
               <div class="driver-payslip-header__brand">
                 <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
-                <div>
+                <div class="driver-crew-title-block">
                   <p class="eyebrow driver-payslip-eyebrow">BREM RIDER · 크루장 관리</p>
-                  <h2 id="driverCrewLeaderTitle">크루장 관리</h2>
+                  <div class="driver-crew-title-row">
+                    <h2 id="driverCrewLeaderTitle">크루장 관리</h2>
+                    <button type="button" class="driver-crew-rename-btn" id="driverCrewLeaderRenameBtn">이름변경</button>
+                  </div>
                 </div>
               </div>
               <button type="button" class="ghost-btn driver-payslip-close" id="driverCrewLeaderCloseBtn">닫기</button>
@@ -356,10 +359,7 @@
             <div class="driver-crew-meta">
               <div class="driver-crew-meta__item driver-crew-meta__item--name">
                 <span class="driver-payslip-meta__label">크루</span>
-                <div class="driver-crew-name-row">
-                  <strong id="driverCrewLeaderBoxLabel">-</strong>
-                  <button type="button" class="driver-crew-rename-btn" id="driverCrewLeaderRenameBtn">크루 이름변경</button>
-                </div>
+                <strong id="driverCrewLeaderBoxLabel">-</strong>
               </div>
               <div class="driver-crew-meta__item">
                 <span class="driver-payslip-meta__label">정산주 (수~화)</span>
@@ -917,14 +917,14 @@
   <script src="js/storage-supabase-mapper.js?v=20260729d"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260816crew5"></script>
+  <script src="js/storage.js?v=20260816crew6"></script>
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver-weekly-payslip.js?v=20260816crew5"></script>
-  <script src="js/driver-region-dashboard.js?v=20260816crew5"></script>
-  <script src="js/driver-crew-leader.js?v=20260816crew5"></script>
-  <script src="js/driver-withdrawal.js?v=20260816crew5"></script>
-  <script src="js/driver.js?v=20260816crew5"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260816crew6"></script>
+  <script src="js/driver-region-dashboard.js?v=20260816crew6"></script>
+  <script src="js/driver-crew-leader.js?v=20260816crew6"></script>
+  <script src="js/driver-withdrawal.js?v=20260816crew6"></script>
+  <script src="js/driver.js?v=20260816crew6"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
