@@ -1726,11 +1726,12 @@
   }
 
   .brem-logo-wrap {
-    max-height: min(42vh, 320px) !important;
+    max-height: min(36vh, 260px) !important;
   }
 
   .brem-portal-grid {
     gap: 12px;
+    margin-top: 0;
   }
 
   .brem-btn-portal {
