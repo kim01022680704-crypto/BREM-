@@ -12418,18 +12418,16 @@ tr.is-week-first td {
 }
 
 .driver-region-bulk-mode .small-btn {
-  font-weight: 800;
+  font-weight: 900;
   white-space: nowrap;
+  color: #111 !important;
+  background: var(--yellow);
 }
 
-#driverRegionBulkFullBtn {
-  border-color: #4ade80;
-  color: #bbf7d0;
-}
-
+#driverRegionBulkFullBtn,
 #driverRegionBulkHiddenBtn {
-  border-color: #a1a1aa;
-  color: #e4e4e7;
+  color: #111 !important;
+  border: 0;
 }
 
 .driver-region-list-filter__input {
