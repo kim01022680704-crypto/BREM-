@@ -197,7 +197,7 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org') {
       stopRegionRankingPoll();
       void (async () => {
-        await ensureDriverMgmtStatsLoaded();
+        await ensureDriverMgmtStatsLoaded({ force: true });
         await ensureOrgRegionsLoaded();
         renderOrg();
       })();
@@ -364,9 +364,10 @@ const BremDriverManagementAdmin = (function () {
   }
 
   /**
-   * 기사지역관리 수치 출처
+   * 기사지역관리·조직도 수치 출처
    * - 콜수: 콜수 입력(admin_calls) 우선. 없으면 일정산 orderCount 로 주간 콜수 표시
-   * - 배달료: 일정산 업로드(settlements)의 deliveryAmount만
+   * - 배달료: 일정산 업로드(daily_settlements / settlements)의 deliveryAmount
+   *   (쿠팡 기본정산 AL, 배민 건별 AH — 업로드·매칭된 금액만 합산)
    */
   function driverCallAndFee(driverId, weekStart = ensureWeek(), platformFilter = '') {
     const id = String(driverId || '').trim();
@@ -430,24 +431,68 @@ const BremDriverManagementAdmin = (function () {
     return { callCount, deliveryFee };
   }
 
-  async function ensureDriverMgmtStatsLoaded() {
-    if (state.statsLoadPromise) return state.statsLoadPromise;
-    state.statsLoadPromise = (async () => {
+  /** 선택 정산주에 올라온 일정산 건수·금액 요약 (진단용) */
+  function weekSettlementCoverage(weekStart = ensureWeek()) {
+    const start = weekStartKey(weekStart);
+    const end = weekEndKey(start);
+    const rows = window.BremStorage?.settlements?.getAll?.() || [];
+    let coupangRows = 0;
+    let baeminRows = 0;
+    let coupangFee = 0;
+    let baeminFee = 0;
+    rows.forEach(row => {
+      const day = String(row.period || row.date || '').slice(0, 10);
+      if (!day || day < start || day > end) return;
+      const fee = Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0));
+      const platform = String(row.platform || '').toLowerCase();
+      if (platform === 'baemin') {
+        baeminRows += 1;
+        baeminFee += fee;
+      } else if (platform === 'coupang') {
+        coupangRows += 1;
+        coupangFee += fee;
+      }
+    });
+    return {
+      loadedTotal: rows.length,
+      coupangRows,
+      baeminRows,
+      weekRows: coupangRows + baeminRows,
+      coupangFee,
+      baeminFee
+    };
+  }
+
+  async function ensureDriverMgmtStatsLoaded(options = {}) {
+    const force = options.force === true;
+    if (!force && state.statsLoadPromise) return state.statsLoadPromise;
+    const run = async () => {
       try {
-        await window.BremStorage?.ensureSectionLoaded?.('driver-management');
-        // 빈 배열이 캐시에 굳으면 콜수·배달료가 계속 0 → 강제 재조회
+        // 조직도/지역 배달료 = 일정산 업로드분. 캐시가 비었거나 오래되면 강제 재조회.
+        await window.BremStorage?.ensureSectionLoaded?.('driver-management', force ? { force: true } : undefined);
         const calls = window.BremStorage?.calls?.getAll?.() || [];
         const settlements = window.BremStorage?.settlements?.getAll?.() || [];
-        if (!calls.length) {
+        if (force || !calls.length) {
           await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
         }
-        if (!settlements.length) {
+        if (force || !settlements.length) {
           await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
+        }
+        // 섹션 로드만으로 settlements 키가 비어 있으면 직접 한 번 더
+        if (!(window.BremStorage?.settlements?.getAll?.() || []).length) {
+          await window.BremStorage?.refetchDataKey?.(
+            window.BremStorage?.STORAGE_KEYS?.settlements || 'brem_admin_settlements'
+          );
         }
       } catch (error) {
         console.warn('[driver-mgmt] calls/settlements load failed:', error);
       }
-    })();
+    };
+    if (force) {
+      await run();
+      return;
+    }
+    state.statsLoadPromise = run();
     try {
       await state.statsLoadPromise;
     } finally {
@@ -456,7 +501,7 @@ const BremDriverManagementAdmin = (function () {
   }
 
   async function refreshOrgMemberPanel() {
-    await ensureDriverMgmtStatsLoaded();
+    await ensureDriverMgmtStatsLoaded({ force: true });
     renderOrgMemberPanel();
   }
 
@@ -644,10 +689,19 @@ const BremDriverManagementAdmin = (function () {
     const totalFee = totalCoupangFee + totalBaeminFee;
     const totalCalls = totalCoupangCalls + totalBaeminCalls;
     if (totalsEl) {
-      const settlementCount = (window.BremStorage?.settlements?.getAll?.() || []).length;
-      totalsEl.textContent = settlementCount
-        ? `조직 합계 · 쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 쿠팡배달료 ${formatNumber(totalCoupangFee)}원 · 배민배달료 ${formatNumber(totalBaeminFee)}원 · 배달료합계 ${formatNumber(totalFee)}원`
-        : `조직 합계 · 쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)} · 배달료 0원 (일정산 데이터 로딩 중/없음 — 쿠팡 일정산 업로드 확인)`;
+      const cover = weekSettlementCoverage(week);
+      const feeLine = `쿠팡배달료 ${formatNumber(totalCoupangFee)}원 · 배민배달료 ${formatNumber(totalBaeminFee)}원 · 배달료합계 ${formatNumber(totalFee)}원`;
+      const callLine = `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)}`;
+      if (!cover.loadedTotal) {
+        totalsEl.textContent = `조직 합계 · ${callLine} · 배달료 불러오는 중… (일정산 캐시 없음 → 재조회)`;
+        void ensureDriverMgmtStatsLoaded({ force: true }).then(() => {
+          if (state.selectedNodeId === node.id) renderOrgMemberPanel();
+        });
+      } else if (cover.weekRows <= 0) {
+        totalsEl.textContent = `조직 합계 · ${callLine} · ${feeLine} · 이 주(수~화) 일정산 0건 — 해당 일 쿠팡/배민 일정산을 올리면 배달료가 채워집니다`;
+      } else {
+        totalsEl.textContent = `조직 합계 · ${callLine} · ${feeLine} · 이 주 일정산 ${formatNumber(cover.weekRows)}건(쿠팡 ${formatNumber(cover.coupangRows)} · 배민 ${formatNumber(cover.baeminRows)})`;
+      }
     }
 
     if (topRepPanel) {
