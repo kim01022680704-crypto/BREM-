@@ -1801,10 +1801,33 @@ h3 {
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  padding: 0;
+  padding: 4px 0;
   border: 0;
   background: transparent;
   text-align: left;
+}
+
+.notice-item__toggle::after {
+  content: "▾";
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #9ca3af;
+  font-size: 0.78rem;
+}
+
+.notice-item.is-open .notice-item__toggle::after {
+  transform: rotate(180deg);
+}
+
+.notice-item.is-unread .notice-item__title::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  vertical-align: middle;
 }
 
 .notice-item__title {
@@ -3703,6 +3726,7 @@ html.brem-app-nav .driver-payslip-close {
 }
 
 .driver-app-nav__item {
+  position: relative;
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -3719,6 +3743,21 @@ html.brem-app-nav .driver-payslip-close {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: -0.03em;
+}
+
+.driver-app-nav__badge {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.6rem;
+  line-height: 16px;
+  font-weight: 900;
 }
 
 .driver-app-nav__item svg {

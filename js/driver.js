@@ -917,13 +917,72 @@
     return `${date.getMonth() + 1}.${date.getDate()}`;
   }
 
+  let openNoticeId = '';
+
+  function noticeReadStorageKey() {
+    return `brem_notice_read_v1_${state.currentDriver?.id || 'anon'}`;
+  }
+
+  function readNoticeReadMap() {
+    try {
+      const raw = localStorage.getItem(noticeReadStorageKey());
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeNoticeReadMap(map) {
+    try {
+      localStorage.setItem(noticeReadStorageKey(), JSON.stringify(map || {}));
+    } catch {
+      /* ignore quota */
+    }
+  }
+
+  function isNoticeRead(noticeId) {
+    const id = String(noticeId || '').trim();
+    return Boolean(id && readNoticeReadMap()[id]);
+  }
+
+  function markNoticeRead(noticeId) {
+    const id = String(noticeId || '').trim();
+    if (!id) return;
+    const map = readNoticeReadMap();
+    if (!map[id]) {
+      map[id] = Date.now();
+      writeNoticeReadMap(map);
+    }
+    updateNoticeUnreadBadge();
+  }
+
+  function unreadNoticeCount(noticeList) {
+    return (noticeList || []).filter(notice => notice.id && !isNoticeRead(notice.id)).length;
+  }
+
+  function updateNoticeUnreadBadge(noticeList) {
+    const items = noticeList || mergedNoticesForDriver();
+    const count = unreadNoticeCount(items);
+    const badge = document.getElementById('driverNoticeNavBadge');
+    if (badge) {
+      badge.hidden = count < 1;
+      badge.textContent = count > 99 ? '99+' : String(count);
+    }
+    document.querySelectorAll('#noticeList .notice-item[data-notice-id]').forEach((item) => {
+      item.classList.toggle('is-unread', !isNoticeRead(item.dataset.noticeId));
+    });
+  }
+
   function renderNoticesList(listEl, noticeList) {
     const items = noticeList
-      .map((notice, index) => {
-        const open = index === 0;
+      .map((notice) => {
+        const id = String(notice.id || '');
+        const open = Boolean(id && id === openNoticeId);
+        const unread = Boolean(id && !isNoticeRead(id));
         const when = formatNoticeDate(notice.createdAt || notice.updatedAt);
         return `
-        <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}">
+        <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}${unread ? ' is-unread' : ''}" data-notice-id="${escapeHtml(id)}">
           <button type="button" class="notice-item__toggle" aria-expanded="${open ? 'true' : 'false'}">
             <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${notice.popup ? '<span class="notice-badge">팝업</span>' : ''}${escapeHtml(notice.title)}</span>
             ${when ? `<time class="notice-item__date">${escapeHtml(when)}</time>` : ''}
@@ -939,6 +998,7 @@
   function updateNoticeChrome(noticeList) {
     const countEl = document.getElementById('driverNoticeCount');
     if (countEl) countEl.textContent = noticeList.length ? `${noticeList.length}건` : '';
+    updateNoticeUnreadBadge(noticeList);
   }
 
   const NOTICE_POPUP_HIDE_KEY = 'brem_notice_popup_hide_v1';
@@ -999,6 +1059,7 @@
       noticePopupState.currentId = next.id;
       fillNoticePopup(next);
       overlay.hidden = false;
+      markNoticeRead(next.id);
       return;
     }
     hideNoticePopup();
@@ -1785,19 +1846,24 @@
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('#driverNoticePopupHideToday')) {
-      if (noticePopupState.currentId) hideNoticePopupToday(noticePopupState.currentId);
+      if (noticePopupState.currentId) {
+        hideNoticePopupToday(noticePopupState.currentId);
+        markNoticeRead(noticePopupState.currentId);
+      }
       showNextNoticePopup();
       return;
     }
     if (event.target.closest('[data-notice-popup-close]')) {
+      if (noticePopupState.currentId) markNoticeRead(noticePopupState.currentId);
       hideNoticePopup();
       return;
     }
 
-    const toggle = event.target.closest('.notice-item__toggle');
+    const toggle = event.target.closest('#noticeList .notice-item__toggle');
     if (!toggle) return;
+    event.preventDefault();
     const item = toggle.closest('.notice-item');
-    const list = toggle.closest('#noticeList');
+    const list = document.getElementById('noticeList');
     if (!item || !list) return;
     const willOpen = !item.classList.contains('is-open');
     list.querySelectorAll('.notice-item.is-open').forEach((openItem) => {
@@ -1812,6 +1878,10 @@
       toggle.setAttribute('aria-expanded', 'true');
       const body = item.querySelector('.notice-item__body');
       if (body) body.hidden = false;
+      openNoticeId = String(item.dataset.noticeId || '');
+      markNoticeRead(openNoticeId);
+    } else {
+      openNoticeId = '';
     }
   });
 
