@@ -1286,14 +1286,14 @@ const BremDriverManagementAdmin = (function () {
       if (state.tab !== 'region') return;
       if (!selectedRegion()) return;
       if (!isDriverManagementSectionActive()) return;
-      // 선택칸(올노출/대시보드만) 포커스 중이면 표 재생성 보류
+      // 노출 옵션·추가 입력 중이면 표 재생성 보류
       const active = document.activeElement;
       if (active?.matches?.('[data-region-rider-mode], [data-region-expose], #driverRegionAddInput')) {
         scheduleRegionDetailSoftRefresh();
         return;
       }
       renderRegionDetail();
-    }, 500);
+    }, 900);
   }
 
   function clearRegionRankingUi(message = '') {
@@ -1570,10 +1570,16 @@ const BremDriverManagementAdmin = (function () {
           <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
           <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
           <td>
-            <label class="driver-region-mode" title="체크=올노출(대시보드+순위) · 해제=대시보드만(순위 비노출·팀장용)">
-              <input type="checkbox" data-region-rider-mode="${escapeHtml(row.driver.id)}" ${mode === 'full' ? 'checked' : ''}>
-              <span>올노출</span>
-            </label>
+            <div class="driver-region-mode-group" role="group" aria-label="기사앱 노출">
+              <label class="driver-region-mode${mode === 'full' ? ' is-on' : ''}" title="대시보드 + 순위 노출">
+                <input type="radio" name="region-rider-mode-${escapeHtml(row.driver.id)}" data-region-rider-mode="${escapeHtml(row.driver.id)}" value="full" ${mode === 'full' ? 'checked' : ''}>
+                <span>올노출</span>
+              </label>
+              <label class="driver-region-mode driver-region-mode--dash${mode === 'dashboard' ? ' is-on' : ''}" title="대시보드만 · 순위 비노출(팀장용)">
+                <input type="radio" name="region-rider-mode-${escapeHtml(row.driver.id)}" data-region-rider-mode="${escapeHtml(row.driver.id)}" value="dashboard" ${mode === 'dashboard' ? 'checked' : ''}>
+                <span>대시보드만</span>
+              </label>
+            </div>
           </td>
           <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(row.driver.id)}">해제</button></td>
         </tr>`;
@@ -1779,8 +1785,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」체크(기본)·해제=대시보드만(순위 비노출·팀장용).'
-        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」체크(기본)·해제=대시보드만(순위 비노출·팀장용).';
+        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」/「대시보드만」을 고릅니다(기본=올노출).'
+        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」/「대시보드만」을 고릅니다(기본=올노출).';
     }
 
     // 지역 목록·노출은 기사 전체 로드를 기다리지 않고 먼저 그린다.
@@ -2413,19 +2419,22 @@ const BremDriverManagementAdmin = (function () {
     bindEvents.bound = true;
 
     // 기사 목록이 백그라운드로 더 채워지면 인원 수만 갱신한다.
-    // 선택 지역 인원이 늘면(부분 로드→전체) 표는 디바운스로 한 번만 다시 채운다.
+    // 표 전체 재생성은 "인원이 늘었을 때" 또는 "최종 완료"만 (디바운스).
     document.addEventListener('brem-drivers-sync-ready', event => {
       if (state.tab !== 'region') return;
       if (!isDriverManagementSectionActive()) return;
       updateRegionCatalogCounts();
       const region = selectedRegion();
-      if (region) {
-        const n = driversInRegion(region).length;
-        if (n !== state.regionDetailDriverCount || event.detail?.complete === true) {
-          state.regionDetailDriverCount = n;
-          scheduleRegionDetailSoftRefresh();
-        }
+      if (!region) return;
+      const n = driversInRegion(region).length;
+      const complete = event.detail?.complete === true;
+      const grew = n > state.regionDetailDriverCount;
+      if (!grew && !complete) return;
+      if (!grew && complete && n === state.regionDetailDriverCount && state.regionDetailDriverCount >= 0) {
+        return;
       }
+      state.regionDetailDriverCount = n;
+      scheduleRegionDetailSoftRefresh();
     });
 
     document.addEventListener('click', event => {
@@ -2567,17 +2576,31 @@ const BremDriverManagementAdmin = (function () {
         const region = selectedRegion();
         const driverId = riderMode.dataset.regionRiderMode;
         if (!region || !driverId) return;
-        const mode = riderMode.checked ? 'full' : 'dashboard';
+        const mode = riderMode.value === 'dashboard' ? 'dashboard' : 'full';
         const prev = getDriverRegionMode(region.platform, region.key, driverId);
+        if (mode === prev) return;
         void setDriverRegionMode(region, driverId, mode)
           .then(() => {
-            renderRegionDetail();
+            // 표 전체 재생성 없이 해당 행만 반영 — 스크롤·깜빡임 방지
+            const tr = riderMode.closest('tr');
+            if (tr) {
+              tr.classList.toggle('is-dashboard-only', mode === 'dashboard');
+              tr.querySelectorAll('.driver-region-mode').forEach(label => {
+                const input = label.querySelector('input[data-region-rider-mode]');
+                const on = input && input.value === mode;
+                label.classList.toggle('is-on', Boolean(on));
+                if (input) input.checked = Boolean(on);
+              });
+            }
             showToast(mode === 'dashboard'
               ? '대시보드만 — 기사앱 순위에는 안 나옵니다'
               : '올노출 — 대시보드 + 순위 노출');
           })
           .catch(error => {
-            riderMode.checked = prev === 'full';
+            const tr = riderMode.closest('tr');
+            tr?.querySelectorAll('input[data-region-rider-mode]').forEach(input => {
+              input.checked = input.value === prev;
+            });
             showToast(error.message || '기사 옵션 저장 실패');
           });
         return;
