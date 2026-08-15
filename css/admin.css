@@ -12638,35 +12638,59 @@ tr.is-week-first td {
 .driver-region-crawl-status--unregistered { color: #fca5a5; }
 
 .driver-org-member-panel {
-  margin-top: 16px;
+  margin-top: 12px;
   border-top: 1px solid #3f3f46;
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .driver-org-member-panel .card-header {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .driver-org-week-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin: 0 0 10px;
+  margin: 0 0 6px;
 }
 
 .driver-org-week-totals {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   color: #fbbf24;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.driver-org-toprep-panel {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+}
+
+.driver-org-toprep-regions {
+  margin: 6px 0;
+}
+
+.driver-org-region-checks {
+  max-height: 110px;
+}
+
+.driver-org-dual-card {
+  padding: 6px 8px;
+}
+
+.driver-org-dual-card p {
+  margin: 0 0 2px;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .driver-scroll-table {
-  max-height: 360px;
+  max-height: min(52vh, 520px);
   overflow: auto;
   border: 1px solid #3f3f46;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .driver-scroll-table thead th {
@@ -12689,22 +12713,53 @@ tr.is-week-first td {
 .driver-org-member-panel .weekly-settlement-detail-table {
   table-layout: fixed;
   width: 100%;
+  min-width: 860px;
+}
+
+.driver-org-member-panel .weekly-settlement-detail-table th,
+.driver-org-member-panel .weekly-settlement-detail-table td {
+  padding: 4px 8px;
+  line-height: 1.25;
+  font-size: 0.82rem;
+  vertical-align: middle;
+}
+
+.driver-org-member-panel .weekly-settlement-detail-table th {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.driver-org-member-panel .weekly-settlement-detail-table .small-btn {
+  padding: 3px 7px;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  line-height: 1.2;
+}
+
+.driver-org-member-panel .driver-org-badge {
+  padding: 0 5px;
+  font-size: 10px;
+  vertical-align: middle;
 }
 
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(1),
-.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(1) { width: 12%; }
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(1) { width: 10%; }
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(2),
-.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(2) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(2) { width: 12%; }
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(3),
-.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(3) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(3) { width: 12%; }
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(4),
 .driver-org-member-panel .weekly-settlement-detail-table td:nth-child(4),
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(5),
-.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(5) { width: 12%; }
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(5) { width: 9%; }
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(6),
-.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(6) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(6),
 .driver-org-member-panel .weekly-settlement-detail-table th:nth-child(7),
-.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(7) { width: 16%; }
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(7),
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(8),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(8) { width: 12%; }
+.driver-org-member-panel .weekly-settlement-detail-table th:nth-child(9),
+.driver-org-member-panel .weekly-settlement-detail-table td:nth-child(9) { width: 10%; }
 
 .driver-org-member-panel .weekly-settlement-detail-table tfoot td.weekly-amount-cell,
 .driver-org-member-panel .weekly-settlement-detail-table td.weekly-amount-cell {
@@ -12720,6 +12775,8 @@ tr.is-week-first td {
 
 .driver-org-member-panel .driver-org-total-row td {
   vertical-align: middle;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 .driver-org-node-label {
