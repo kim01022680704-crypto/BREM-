@@ -1165,9 +1165,21 @@ const BremDriverManagementAdmin = (function () {
   }
 
   function getDriverRegionMode(platform, regionKey, driverId) {
-    return normalizeDriverRegionMode(
-      state.regionExposure?.[platform]?.[regionKey]?.riders?.[driverId]?.mode
-    );
+    const id = String(driverId || '').trim();
+    if (!id) return 'full';
+    const side = state.regionExposure?.[platform] || {};
+    const region = regionCatalog().find(item => item.key === regionKey) || null;
+    const keys = [regionKey, region?.partnerId, region?.label]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .filter((value, index, list) => list.indexOf(value) === index);
+    for (const key of keys) {
+      const raw = side[key]?.riders?.[id]?.mode;
+      if (raw != null && String(raw).trim() !== '') {
+        return normalizeDriverRegionMode(raw);
+      }
+    }
+    return 'full';
   }
 
   async function loadRegionExposure() {
@@ -1262,10 +1274,18 @@ const BremDriverManagementAdmin = (function () {
     }
     const next = normalizeDriverRegionMode(mode);
     const label = next === 'hidden' ? '전체 미노출' : '전체 올노출';
+    const leaders = drivers.filter(driver => getDriverRegionMode(region.platform, region.key, driver.id) === 'leader');
+    const targets = drivers.filter(driver => getDriverRegionMode(region.platform, region.key, driver.id) !== 'leader');
+    if (!targets.length) {
+      showToast(leaders.length
+        ? `팀장 ${leaders.length}명은 유지됩니다. 변경할 기사가 없습니다.`
+        : '변경할 기사가 없습니다.');
+      return;
+    }
     const detail = next === 'hidden'
-      ? '기사앱 대시보드만 숨깁니다. 집계·순위·팀장 열람은 그대로입니다.'
-      : '전원 올노출(대시보드+순위)로 되돌립니다. 팀장·전체열람·할당만도 해제됩니다.';
-    if (!window.confirm(`${region.label || region.key} · ${drivers.length}명\n\n${label}로 일괄 설정할까요?\n${detail}`)) {
+      ? `기사앱 대시보드만 숨깁니다. 집계·순위는 유지됩니다.${leaders.length ? `\n팀장 ${leaders.length}명은 그대로 둡니다.` : ''}`
+      : `올노출(대시보드+순위)로 되돌립니다.${leaders.length ? `\n팀장 ${leaders.length}명은 유지됩니다.` : ''}`;
+    if (!window.confirm(`${region.label || region.key} · ${targets.length}명\n\n${label}로 일괄 설정할까요?\n${detail}`)) {
       return;
     }
     const fullBtn = $('#driverRegionBulkFullBtn');
@@ -1276,7 +1296,7 @@ const BremDriverManagementAdmin = (function () {
       await postRegionExposure({
         platform: region.platform,
         key: region.key,
-        driverIds: drivers.map(driver => driver.id).filter(Boolean),
+        driverIds: targets.map(driver => driver.id).filter(Boolean),
         mode: next,
         exposed: isRegionExposed(region.platform, region.key),
         label: region.label,
@@ -1285,7 +1305,9 @@ const BremDriverManagementAdmin = (function () {
       });
       invalidateRegionRankingCache(region);
       renderRegionDetail();
-      showToast(`${label} — ${drivers.length}명 적용`);
+      showToast(leaders.length
+        ? `${label} — ${targets.length}명 적용 · 팀장 ${leaders.length}명 유지`
+        : `${label} — ${targets.length}명 적용`);
     } catch (error) {
       showToast(error.message || `${label} 저장 실패`);
     } finally {

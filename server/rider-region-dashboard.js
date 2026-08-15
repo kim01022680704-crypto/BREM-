@@ -176,17 +176,47 @@ function normalizeRiderRegionMode(value) {
 function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   const id = String(driverId || '').trim();
   if (!id) return 'full';
-  const entry = exposure?.[platform]?.[regionKey]?.riders?.[id];
+  const entry = exposure?.[platform]?.[String(regionKey || '').trim()]?.riders?.[id];
   return normalizeRiderRegionMode(entry?.mode);
+}
+
+/** region 객체 기준으로 모드 조회 (key / partnerId / label 모두 시도) */
+function getRiderRegionModeForRegion(exposure, region, driverId) {
+  const id = String(driverId || '').trim();
+  if (!id || !region) return 'full';
+  const platform = normalizePlatform(region.platform || 'baemin');
+  const side = exposure?.[platform] || {};
+  const keys = [region.key, region.partnerId, region.label]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+  for (const key of keys) {
+    const entry = side[key]?.riders?.[id];
+    if (entry && entry.mode != null && String(entry.mode).trim() !== '') {
+      return normalizeRiderRegionMode(entry.mode);
+    }
+  }
+  return 'full';
 }
 
 /** 일반 순위에 올릴 기사 — 올노출·할당만·미노출 (전체열람·팀장만 제외)
  * 미노출 = 기사앱 대시보드만 숨김. 집계·순위·팀장 열람에는 그대로 포함.
+ * 팀장 = 순위에 절대 안 올림 (본인 포함).
  */
-function filterRankingRiders(exposure, platform, regionKey, riders = []) {
+function filterRankingRiders(exposure, platform, regionKey, riders = [], region = null) {
   return (riders || []).filter(rider => {
-    const mode = getRiderRegionMode(exposure, platform, regionKey, rider.id);
+    const mode = region
+      ? getRiderRegionModeForRegion(exposure, region, rider.id)
+      : getRiderRegionMode(exposure, platform, regionKey, rider.id);
     return mode === 'full' || mode === 'metrics' || mode === 'hidden';
+  });
+}
+
+/** 팀장 열람용 순위 집합 — 전원 보되 팀장(본인·다른 팀장)은 목록에서 제외 */
+function filterLeaderViewRankingRiders(exposure, region, riders = []) {
+  return (riders || []).filter(rider => {
+    const mode = getRiderRegionModeForRegion(exposure, region, rider.id);
+    return mode !== 'leader';
   });
 }
 
@@ -195,7 +225,7 @@ function filterViewerRegions(exposure, platform, riderRow, regions = []) {
   const riderId = riderRow?.id;
   return (regions || []).filter(region => {
     if (!riderMatchesRegion(riderRow, region)) return false;
-    return getRiderRegionMode(exposure, platform, region.key, riderId) !== 'hidden';
+    return getRiderRegionModeForRegion(exposure, { ...region, platform }, riderId) !== 'hidden';
   });
 }
 
@@ -656,7 +686,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     const hasAnyExposure = exposedAll.length > 0;
     const hiddenOnly = hasAnyExposure && exposedAll.some(region =>
       riderMatchesRegion(riderRow, region)
-      && getRiderRegionMode(exposure, platform, region.key, riderRow.id) === 'hidden'
+      && getRiderRegionModeForRegion(exposure, region, riderRow.id) === 'hidden'
     );
     return {
       ok: true,
@@ -691,15 +721,14 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
 
   let live = { metrics: emptyMetrics(), realtimeRanking: [] };
   let weeklyRanking = [];
-  const viewerMode = getRiderRegionMode(exposure, platform, selected.key, riderRow.id);
+  const viewerMode = getRiderRegionModeForRegion(exposure, selected, riderRow.id);
   try {
     const regionRiders = await loadRidersForRegion(supabase, selected);
-    // 팀장: 다른 기사 올노출/전체열람/미노출 설정과 무관하게 전원 순위·할당 보드를 본다.
+    // 팀장: 미노출·전체열람 포함 전원을 보되, 팀장 본인(및 다른 팀장)은 순위 목록에서 뺀다.
     // 일반: 올노출·할당만·미노출을 순위에 포함 (전체열람·팀장은 순위 비노출).
-    // 미노출 기사는 본인 앱 대시보드만 숨기고, 집계·타인/팀장 순위에는 남긴다.
     const rankingRiders = viewerMode === 'leader'
-      ? regionRiders
-      : filterRankingRiders(exposure, platform, selected.key, regionRiders);
+      ? filterLeaderViewRankingRiders(exposure, selected, regionRiders)
+      : filterRankingRiders(exposure, platform, selected.key, regionRiders, selected);
     const liveOpts = { regionRiders, rankingRiders };
     const weekOpts = { regionRiders, rankingRiders };
     [live, weeklyRanking] = await Promise.all([
@@ -777,7 +806,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
     const exposure = await readExposureMap(supabase);
     const regionRiders = await loadRidersForRegion(supabase, region);
     // 관리자 화면도 기사앱과 동일: 팀장·전체열람은 순위에서 제외 (미노출은 집계 포함)
-    const rankingRiders = filterRankingRiders(exposure, platform, region.key, regionRiders);
+    const rankingRiders = filterRankingRiders(exposure, platform, region.key, regionRiders, region);
     const shared = { maskNames: false, regionRiders, rankingRiders };
     const [live, weeklyRanking] = await Promise.all([
       platform === 'coupang'
