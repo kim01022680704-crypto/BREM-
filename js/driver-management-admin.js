@@ -27,6 +27,8 @@ const BremDriverManagementAdmin = (function () {
     bulkCreateSource: 'bulk',
     crawlMatch: { rows: [], partnerId: '', label: '', busy: false },
     statsLoadPromise: null,
+    statsLoadTried: false,
+    statsLoadError: '',
     regionRefreshSeq: 0,
     regionDetailSyncTimer: null,
     regionDetailDriverCount: -1,
@@ -197,7 +199,9 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org') {
       stopRegionRankingPoll();
       void (async () => {
-        await ensureDriverMgmtStatsLoaded();
+        state.statsLoadTried = false;
+        state.statsLoadError = '';
+        await ensureDriverMgmtStatsLoaded({ force: true });
         await ensureOrgRegionsLoaded();
         renderOrg();
       })();
@@ -463,28 +467,40 @@ const BremDriverManagementAdmin = (function () {
     };
   }
 
+  async function loadSettlementsAndCallsDirect(force = false) {
+    const settlementsKey = window.BremStorage?.STORAGE_KEYS?.settlements || 'brem_admin_settlements';
+    const callsKey = window.BremStorage?.STORAGE_KEYS?.calls || 'brem_admin_calls';
+    const needSettlements = force || !(window.BremStorage?.settlements?.getAll?.() || []).length;
+    const needCalls = force || !(window.BremStorage?.calls?.getAll?.() || []).length;
+    const tasks = [];
+    if (needSettlements && typeof window.BremStorage?.refetchDataKey === 'function') {
+      tasks.push(window.BremStorage.refetchDataKey(settlementsKey, { force: true }));
+    } else if (needSettlements) {
+      tasks.push(window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true }));
+    }
+    if (needCalls && typeof window.BremStorage?.refetchDataKey === 'function') {
+      tasks.push(window.BremStorage.refetchDataKey(callsKey, { force: true }));
+    } else if (needCalls) {
+      tasks.push(window.BremStorage?.ensureSectionLoaded?.('calls', { force: true }));
+    }
+    if (tasks.length) await Promise.all(tasks);
+  }
+
   async function ensureDriverMgmtStatsLoaded(options = {}) {
     const force = options.force === true;
     if (!force && state.statsLoadPromise) return state.statsLoadPromise;
     const run = async () => {
       try {
-        const beforeSettlements = (window.BremStorage?.settlements?.getAll?.() || []).length;
-        const beforeCalls = (window.BremStorage?.calls?.getAll?.() || []).length;
-        // 이미 일정산이 있으면 강제 재조회로 캐시를 비우지 않는다 (아까 잘 나오던 값이 0으로 굳는 원인).
         await window.BremStorage?.ensureSectionLoaded?.('driver-management');
-        const calls = window.BremStorage?.calls?.getAll?.() || [];
-        const settlements = window.BremStorage?.settlements?.getAll?.() || [];
-        if (force && !settlements.length) {
-          await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
-        } else if (!settlements.length && !beforeSettlements) {
-          await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
+        // 등록·업로드된 일정산/콜수를 키 단위로 직접 채운다 (섹션 ready 오판으로 스킵되지 않게).
+        await loadSettlementsAndCallsDirect(force);
+        if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
+          await window.BremStorage.awaitDriversFullyLoaded();
         }
-        if (force && !calls.length) {
-          await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
-        } else if (!calls.length && !beforeCalls) {
-          await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
-        }
+        state.statsLoadTried = true;
       } catch (error) {
+        state.statsLoadTried = true;
+        state.statsLoadError = error?.message || String(error);
         console.warn('[driver-mgmt] calls/settlements load failed:', error);
       }
     };
@@ -501,14 +517,10 @@ const BremDriverManagementAdmin = (function () {
   }
 
   async function refreshOrgMemberPanel() {
-    await ensureDriverMgmtStatsLoaded();
+    state.statsLoadTried = false;
+    state.statsLoadError = '';
+    await ensureDriverMgmtStatsLoaded({ force: true });
     renderOrgMemberPanel();
-    // 합계가 0이고 일정산 캐시도 비었을 때만 한 번 더 재조회
-    const cover = weekSettlementCoverage(ensureWeek());
-    if (!cover.loadedTotal) {
-      await ensureDriverMgmtStatsLoaded({ force: true });
-      renderOrgMemberPanel();
-    }
   }
 
   function isRankingVisibleMode(mode) {
@@ -698,11 +710,10 @@ const BremDriverManagementAdmin = (function () {
       const cover = weekSettlementCoverage(week);
       const feeLine = `쿠팡배달료 ${formatNumber(totalCoupangFee)}원 · 배민배달료 ${formatNumber(totalBaeminFee)}원 · 배달료합계 ${formatNumber(totalFee)}원`;
       const callLine = `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)}`;
-      if (!cover.loadedTotal) {
-        totalsEl.textContent = `조직 합계 · ${callLine} · 배달료 불러오는 중… (일정산 캐시 없음)`;
-        void ensureDriverMgmtStatsLoaded({ force: true }).then(() => {
-          if (state.selectedNodeId === node.id) renderOrgMemberPanel();
-        });
+      if (!cover.loadedTotal && !state.statsLoadTried) {
+        totalsEl.textContent = `조직 합계 · ${callLine} · 일정산·콜수 불러오는 중…`;
+      } else if (!cover.loadedTotal) {
+        totalsEl.textContent = `조직 합계 · ${callLine} · 일정산을 못 불러옴${state.statsLoadError ? ` (${state.statsLoadError})` : ''} — 일정산 메뉴에서 업로드 후 주차 이동하거나 새로고침`;
       } else if (cover.weekRows <= 0) {
         totalsEl.textContent = `조직 합계 · ${callLine} · ${feeLine} · 이 주(수~화) 일정산 0건 — 해당 일 쿠팡/배민 일정산을 올리면 배달료가 채워집니다`;
       } else {
@@ -823,7 +834,10 @@ const BremDriverManagementAdmin = (function () {
       };
     }
     const id = String(ref.id || '').trim();
-    const driver = window.BremStorage?.drivers?.getById?.(id);
+    let driver = window.BremStorage?.drivers?.getById?.(id);
+    if (!driver && typeof window.BremStorage?.drivers?.getAllKnownById === 'function') {
+      driver = (window.BremStorage.drivers.getAllKnownById() || []).find(item => String(item.id || '').trim() === id) || null;
+    }
     if (driver?.name) {
       return { kind: 'driver', name: driver.name };
     }
@@ -837,7 +851,7 @@ const BremDriverManagementAdmin = (function () {
     const settlementRow = (window.BremStorage?.settlements?.getAll?.() || [])
       .find(row => String(row.driverId || '').trim() === id);
     const settlementName = String(
-      settlementRow?.driverName || settlementRow?.rawData?.driverName || ''
+      settlementRow?.driverName || settlementRow?.name || settlementRow?.rawName || settlementRow?.rawData?.driverName || ''
     ).trim();
     if (settlementName) {
       missingOrgDriverNames.set(id, settlementName);
