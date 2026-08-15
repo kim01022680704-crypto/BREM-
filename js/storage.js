@@ -3044,12 +3044,13 @@ const BremStorage = (function () {
     });
   }
 
-  async function fetchRiderCrewLeaderFromServer({ weekStart } = {}) {
+  async function fetchRiderCrewLeaderFromServer({ weekStart, probe } = {}) {
     const params = new URLSearchParams();
     if (weekStart) params.set('weekStart', String(weekStart).slice(0, 10));
+    if (probe) params.set('probe', '1');
     const qs = params.toString() ? `?${params.toString()}` : '';
     return riderApiFetch(`/api/rider/crew-leader${qs}`, 'crew-leader', {
-      timeoutMs: REGION_DASHBOARD_TIMEOUT_MS
+      timeoutMs: probe ? Math.min(8000, REGION_DASHBOARD_TIMEOUT_MS) : REGION_DASHBOARD_TIMEOUT_MS
     });
   }
 

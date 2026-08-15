@@ -162,6 +162,7 @@
         openBtn.hidden = true;
         renderResult(result);
         if (state.visible) closePanel();
+        showToast('조직도 크루장 계정이 아닙니다.');
         return result;
       }
       openBtn.hidden = false;
@@ -182,12 +183,16 @@
 
   async function refreshEntryVisibility() {
     const seq = ++state.visibilitySeq;
+    // 검사 전에는 버튼을 보여 둔다. (숨김 기본값 때문에 크루장도 못 보는 문제 방지)
+    openBtn.hidden = false;
     try {
-      const weekStart = ensureWeekStart();
-      const result = await window.BremStorage?.fetchRiderCrewLeaderFromServer?.({ weekStart });
+      const result = await window.BremStorage?.fetchRiderCrewLeaderFromServer?.({
+        weekStart: ensureWeekStart(),
+        probe: true
+      });
       if (seq !== state.visibilitySeq) return false;
-      // 세션/네트워크 실패 시에는 숨기지 않음(초기 호출이 로그인 성공을 덮어쓰는 레이스 방지)
-      if (!result?.ok) return false;
+      // 네트워크/세션 실패 시에는 숨기지 않음 — 눌러서 다시 시도 가능
+      if (!result?.ok) return true;
       if (!result.isCrewLeader) {
         openBtn.hidden = true;
         if (state.visible) closePanel();
@@ -196,7 +201,7 @@
       openBtn.hidden = false;
       return true;
     } catch (_) {
-      return false;
+      return true;
     }
   }
 
@@ -243,7 +248,8 @@
     state.loading = false;
     stopAutoPoll();
     closePanel();
-    openBtn.hidden = true;
+    // 로그인 화면에서는 main 자체가 숨겨지므로, 여기서 버튼을 숨기지 않는다.
+    openBtn.hidden = false;
     if (boxLabelEl) boxLabelEl.textContent = '-';
     if (periodEl) periodEl.textContent = '-';
     if (summaryEl) summaryEl.textContent = '';
@@ -275,7 +281,6 @@
     }
   });
 
-  // 세션 준비 후에만 노출 재검사 (스크립트 로드 직후 토큰 없는 호출은 하지 않음)
   document.addEventListener('brem-rider-session-ready', () => {
     void refreshEntryVisibility();
   });

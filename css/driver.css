@@ -365,6 +365,11 @@ h3 {
   white-space: nowrap;
 }
 
+/* 2열 그리드에서 5번째 버튼이 한 줄 전체로 보이도록 */
+.profile-actions > .profile-crew-btn {
+  grid-column: 1 / -1;
+}
+
 .profile-realtime-status-btn {
   min-height: 40px;
   padding: 0 12px;

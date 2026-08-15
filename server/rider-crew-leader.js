@@ -294,6 +294,24 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
     };
   }
 
+  const boxMeta = {
+    id: box.id,
+    label: box.label,
+    isTopRep: chart.topRepNodeId === box.id
+  };
+
+  // 버튼 노출용 가벼운 검사 — 콜/운행 집계 생략
+  if (options.probe === true) {
+    return {
+      ok: true,
+      isCrewLeader: true,
+      probe: true,
+      box: boxMeta,
+      members: [],
+      summary: null
+    };
+  }
+
   const memberIds = collectSubtreeDriverIds(chart, box);
   const weekStart = normalizeSettlementWeekStart(options.weekStart);
   const weekEnd = settlementWeekEnd(weekStart);
@@ -342,11 +360,7 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
   return {
     ok: true,
     isCrewLeader: true,
-    box: {
-      id: box.id,
-      label: box.label,
-      isTopRep: chart.topRepNodeId === box.id
-    },
+    box: boxMeta,
     weekStart,
     weekEnd,
     today,
