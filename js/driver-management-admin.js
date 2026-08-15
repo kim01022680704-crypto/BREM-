@@ -26,7 +26,9 @@ const BremDriverManagementAdmin = (function () {
     bulkCreateBusy: false,
     bulkCreateSource: 'bulk',
     crawlMatch: { rows: [], partnerId: '', label: '', busy: false },
-    statsLoadPromise: null
+    statsLoadPromise: null,
+    regionRefreshSeq: 0,
+    regionDetailSyncTimer: null
   };
 
   const REGION_RANKING_POLL_MS = 60 * 1000;
@@ -180,7 +182,7 @@ const BremDriverManagementAdmin = (function () {
     }, REGION_RANKING_POLL_MS);
   }
 
-  function setTab(tab) {
+  function setTab(tab, options = {}) {
     const next = String(tab || 'org');
     state.tab = next === 'region' || next === 'org-list' ? next : 'org';
     $$('[data-driver-mgmt-tab]').forEach(btn => {
@@ -202,7 +204,8 @@ const BremDriverManagementAdmin = (function () {
       renderOrgList();
       return;
     }
-    void refreshRegions();
+    // refresh() 경로에서는 skipRegionLoad 로 이중 refreshRegions 를 막는다.
+    if (!options.skipRegionLoad) void refreshRegions();
     startRegionRankingPoll();
   }
 
@@ -519,6 +522,7 @@ const BremDriverManagementAdmin = (function () {
 
   const missingOrgDriverHydrate = new Set();
   const missingOrgDriverFailed = new Set();
+  const missingOrgDriverNames = new Map();
 
   function resolveOrgMemberName(ref) {
     if (!ref?.id) return null;
@@ -530,46 +534,58 @@ const BremDriverManagementAdmin = (function () {
         name: account?.name || account?.loginId || '관리자'
       };
     }
-    const driver = window.BremStorage?.drivers?.getById?.(ref.id);
+    const id = String(ref.id || '').trim();
+    const driver = window.BremStorage?.drivers?.getById?.(id);
     if (driver?.name) {
       return { kind: 'driver', name: driver.name };
     }
     if (driver) {
       return { kind: 'driver', name: makeDriverLoginId(driver) || '이름 없음' };
     }
+    if (missingOrgDriverNames.has(id)) {
+      return { kind: 'driver', name: missingOrgDriverNames.get(id) };
+    }
     // 일정산에 남은 이름 (중복제거로 drivers 목록에서 빠졌거나 세션 캐시에 없을 때)
     const settlementRow = (window.BremStorage?.settlements?.getAll?.() || [])
-      .find(row => String(row.driverId || '').trim() === String(ref.id || '').trim());
+      .find(row => String(row.driverId || '').trim() === id);
     const settlementName = String(
       settlementRow?.driverName || settlementRow?.rawData?.driverName || ''
     ).trim();
     if (settlementName) {
+      missingOrgDriverNames.set(id, settlementName);
       return { kind: 'driver', name: settlementName };
     }
-    if (missingOrgDriverFailed.has(String(ref.id || '').trim())) {
+    if (missingOrgDriverFailed.has(id)) {
       return { kind: 'driver', name: '삭제된 기사' };
     }
-    void hydrateMissingOrgDriverName(ref.id);
+    void hydrateMissingOrgDriverName(id);
     return { kind: 'driver', name: '이름 불러오는 중…' };
   }
 
   async function hydrateMissingOrgDriverName(driverId) {
     const id = String(driverId || '').trim();
-    if (!id || missingOrgDriverHydrate.has(id) || missingOrgDriverFailed.has(id)) return;
+    if (!id || missingOrgDriverHydrate.has(id) || missingOrgDriverFailed.has(id) || missingOrgDriverNames.has(id)) {
+      return;
+    }
     missingOrgDriverHydrate.add(id);
     try {
       const driver = await window.BremStorage?.drivers?.fetchById?.(id, { force: true });
-      if (driver?.id) {
-        if (state.tab === 'org' || state.tab === 'org-list') {
-          renderOrgMemberPanel();
-          if (state.tab === 'org-list') renderOrgList();
-        }
-        return;
+      const name = String(driver?.name || '').trim()
+        || (driver ? (makeDriverLoginId(driver) || '') : '');
+      if (name) {
+        // getById 가 중복제거로 비어도 이름은 캐시에 고정 — 재조회 루프 방지
+        missingOrgDriverNames.set(id, name);
+      } else {
+        missingOrgDriverFailed.add(id);
+        missingOrgDriverNames.set(id, '삭제된 기사');
       }
-      missingOrgDriverFailed.add(id);
-      if (state.tab === 'org' || state.tab === 'org-list') renderOrgMemberPanel();
+      if (state.tab === 'org' || state.tab === 'org-list') {
+        renderOrgMemberPanel();
+        if (state.tab === 'org-list') renderOrgList();
+      }
     } catch (error) {
       missingOrgDriverFailed.add(id);
+      missingOrgDriverNames.set(id, '삭제된 기사');
       console.warn('[driver-mgmt] org driver name hydrate failed:', id, error);
       if (state.tab === 'org' || state.tab === 'org-list') renderOrgMemberPanel();
     } finally {
@@ -1251,6 +1267,34 @@ const BremDriverManagementAdmin = (function () {
     }).join('');
   }
 
+  /** 기사 sync 중에는 표 전체를 다시 그리지 않고 인원 수만 갱신한다. */
+  function updateRegionCatalogCounts() {
+    $$('#driverRegionCatalog .driver-region-item').forEach(el => {
+      const key = el.dataset.regionKey;
+      const region = regionCatalog().find(item => item.key === key);
+      if (!region) return;
+      const countEl = el.querySelector('.driver-region-item-count');
+      if (countEl) countEl.textContent = `${driversInRegion(region).length}명`;
+    });
+  }
+
+  function scheduleRegionDetailSoftRefresh() {
+    if (state.regionDetailSyncTimer) clearTimeout(state.regionDetailSyncTimer);
+    state.regionDetailSyncTimer = setTimeout(() => {
+      state.regionDetailSyncTimer = null;
+      if (state.tab !== 'region') return;
+      if (!selectedRegion()) return;
+      if (!isDriverManagementSectionActive()) return;
+      // 선택칸(올노출/대시보드만) 포커스 중이면 표 재생성 보류
+      const active = document.activeElement;
+      if (active?.matches?.('[data-region-rider-mode], [data-region-expose], #driverRegionAddInput')) {
+        scheduleRegionDetailSoftRefresh();
+        return;
+      }
+      renderRegionDetail();
+    }, 500);
+  }
+
   function clearRegionRankingUi(message = '') {
     const panels = $('#driverRegionRankPanels');
     if (panels) panels.hidden = true;
@@ -1728,13 +1772,27 @@ const BremDriverManagementAdmin = (function () {
   }
 
   async function refreshRegions() {
+    const seq = ++state.regionRefreshSeq;
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
         ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」(기본)·「대시보드만」(순위 비노출·팀장용)을 고를 수 있습니다.'
         : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」(기본)·「대시보드만」(순위 비노출·팀장용)을 고를 수 있습니다.';
     }
-    // 지역 인원 수는 drivers 전체 목록 기준 — 페이지가 덜 오면 71처럼 적게 나온다.
+
+    // 지역 목록·노출은 기사 전체 로드를 기다리지 않고 먼저 그린다.
+    // (예전엔 awaitDriversFullyLoaded 동안 sync 이벤트마다 빈 목록이 깜빡였다.)
+    await loadRegionExposure();
+    if (seq !== state.regionRefreshSeq) return;
+    if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
+    else await fetchBaeminRegions();
+    if (seq !== state.regionRefreshSeq) return;
+    if (!selectedRegion() && regionCatalog()[0]) {
+      state.selectedRegionKey = regionCatalog()[0].key;
+    }
+    renderRegionCatalog();
+    renderRegionDetail();
+
     try {
       await window.BremStorage?.ensureSectionLoaded?.('driver-management');
       if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
@@ -1743,14 +1801,8 @@ const BremDriverManagementAdmin = (function () {
     } catch (error) {
       console.warn('[driver-mgmt] calls/settlements/drivers load failed:', error);
     }
-    await loadRegionExposure();
-    if (state.regionPlatform === 'coupang') await fetchCoupangRegions();
-    else await fetchBaeminRegions();
-    if (!selectedRegion() && regionCatalog()[0]) {
-      state.selectedRegionKey = regionCatalog()[0].key;
-    }
-    renderRegionCatalog();
-    renderRegionDetail();
+    if (seq !== state.regionRefreshSeq) return;
+    updateRegionCatalogCounts();
   }
 
   function matchBaeminRegion(input) {
@@ -2355,12 +2407,14 @@ const BremDriverManagementAdmin = (function () {
     if (bindEvents.bound) return;
     bindEvents.bound = true;
 
-    // 기사 목록이 백그라운드로 더 채워지면 지역 인원 수를 다시 센다.
-    document.addEventListener('brem-drivers-sync-ready', () => {
+    // 기사 목록이 백그라운드로 더 채워지면 인원 수만 갱신한다.
+    // (전체 표를 다시 그리면 올노출 셀렉트·스크롤이 계속 깜빡인다.)
+    document.addEventListener('brem-drivers-sync-ready', event => {
       if (state.tab !== 'region') return;
-      renderRegionCatalog();
-      if (selectedRegion()) {
-        renderRegionDetail();
+      if (!isDriverManagementSectionActive()) return;
+      updateRegionCatalogCounts();
+      if (event.detail?.complete === true) {
+        scheduleRegionDetailSoftRefresh();
       }
     });
 
@@ -2623,7 +2677,7 @@ const BremDriverManagementAdmin = (function () {
     ensureWeek();
     renderWeekControls();
     await ensureDriverMgmtStatsLoaded();
-    setTab(state.tab);
+    setTab(state.tab, { skipRegionLoad: true });
     if (state.tab === 'region') {
       await refreshRegions();
       startRegionRankingPoll();

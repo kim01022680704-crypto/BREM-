@@ -6909,14 +6909,19 @@
       }
     });
 
-    document.addEventListener('brem-drivers-sync-ready', () => {
+    document.addEventListener('brem-drivers-sync-ready', (event) => {
       invalidateCallStatsIndex();
       invalidateDriverSelectCache();
       invalidateSectionRenders();
+      // 기사지역관리는 모듈이 sync 를 가볍게 처리한다.
+      // 여기서 force refresh 하면 표·셀렉트가 계속 깜빡인다.
+      if (state.currentSection === 'driver-management') {
+        updateDriverSearchStatus();
+        return;
+      }
       if (state.currentSection === 'missions'
         || state.currentSection === 'mission-results'
-        || state.currentSection === 'mission-management'
-        || state.currentSection === 'driver-management') {
+        || state.currentSection === 'mission-management') {
         renderActiveSection(state.currentSection, { force: true });
       }
       updateDriverSearchStatus();
