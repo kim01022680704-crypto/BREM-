@@ -3824,13 +3824,13 @@
   function renderNoticeItems(items, withActions) {
     if (!items.length) return '<div class="empty">공지사항이 없습니다.</div>';
     return items
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .sort((a, b) => Number(b.popup) - Number(a.popup) || Number(b.pinned) - Number(a.pinned) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       .map((notice, index) => {
         const open = index === 0;
         return `
         <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}">
           <button type="button" class="notice-item__toggle" aria-expanded="${open ? 'true' : 'false'}">
-            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</span>
+            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${notice.popup ? '<span class="notice-badge notice-badge--popup">팝업</span>' : ''}${escapeHtml(notice.title)}</span>
             <time class="notice-item__date">${escapeHtml(formatDateTime(notice.createdAt || notice.updatedAt || ''))}</time>
           </button>
           <p class="notice-item__body"${open ? '' : ' hidden'}>${escapeHtml(notice.content)}</p>
@@ -7538,7 +7538,8 @@
       const data = {
         title: $('#noticeTitle').value.trim(),
         content: $('#noticeContent').value.trim(),
-        pinned: $('#noticePinned').checked
+        pinned: $('#noticePinned').checked,
+        popup: $('#noticePopup')?.checked === true
       };
       const submitBtn = $('#noticeSubmit');
       if (submitBtn) {
@@ -7977,6 +7978,7 @@
         $('#noticeTitle').value = notice.title;
         $('#noticeContent').value = notice.content;
         $('#noticePinned').checked = notice.pinned;
+        if ($('#noticePopup')) $('#noticePopup').checked = Boolean(notice.popup);
         syncNoticeFormMode();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }

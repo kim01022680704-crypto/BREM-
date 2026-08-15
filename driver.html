@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816notice2">
+  <link rel="stylesheet" href="css/driver.css?v=20260816popup1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -853,6 +853,19 @@
 
   <div class="toast" id="toast"></div>
 
+  <div class="notice-popup" id="driverNoticePopup" hidden>
+    <button type="button" class="notice-popup__backdrop" data-notice-popup-close aria-label="닫기"></button>
+    <div class="notice-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverNoticePopupTitle">
+      <p class="notice-popup__eyebrow">공지사항</p>
+      <h2 id="driverNoticePopupTitle">-</h2>
+      <p class="notice-popup__body" id="driverNoticePopupBody"></p>
+      <div class="notice-popup__actions">
+        <button type="button" class="notice-popup__hide" id="driverNoticePopupHideToday">오늘 하루 보지 않기</button>
+        <button type="button" class="notice-popup__close" data-notice-popup-close>닫기</button>
+      </div>
+    </div>
+  </div>
+
   <div class="driver-target-overlay" id="driverTargetModal" hidden>
     <button type="button" class="driver-target-overlay__backdrop" data-close-driver-target aria-label="닫기"></button>
     <div class="driver-target-dialog" role="dialog" aria-modal="true" aria-labelledby="driverTargetModalTitle">
@@ -946,17 +959,17 @@
   <script src="js/supabase-config.js?v=20260712c"></script>
   <script src="js/session-security.js?v=20260712a"></script>
   <script src="js/perf.js"></script>
-  <script src="js/storage-supabase-mapper.js?v=20260729d"></script>
+  <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260816crew7"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
+  <script src="js/storage.js?v=20260816popup1"></script>
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816crew7"></script>
   <script src="js/driver-region-dashboard.js?v=20260816nav1"></script>
   <script src="js/driver-crew-leader.js?v=20260816nav1"></script>
   <script src="js/driver-withdrawal.js?v=20260816crew7"></script>
-  <script src="js/driver.js?v=20260816notice2"></script>
+  <script src="js/driver.js?v=20260816popup1"></script>
   <script src="js/driver-app-nav.js?v=20260816notice2"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

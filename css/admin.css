@@ -4722,6 +4722,18 @@ textarea {
   font-size: 0.78rem;
 }
 
+.notice-badge--popup {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #111;
+  font-size: 0.68rem;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
 .inquiry-item .notice-item-head {
   display: flex;
   justify-content: space-between;

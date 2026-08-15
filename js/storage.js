@@ -6768,6 +6768,7 @@ const BremStorage = (function () {
         title: String(data.title || '').trim(),
         content: String(data.content || '').trim(),
         pinned: Boolean(data.pinned),
+        popup: Boolean(data.popup),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -6784,6 +6785,7 @@ const BremStorage = (function () {
         title: String(data.title != null ? data.title : existing.title).trim(),
         content: String(data.content != null ? data.content : existing.content).trim(),
         pinned: data.pinned != null ? Boolean(data.pinned) : Boolean(existing.pinned),
+        popup: data.popup != null ? Boolean(data.popup) : Boolean(existing.popup),
         updatedAt: new Date().toISOString()
       };
       return notices.persistNotice(notice);

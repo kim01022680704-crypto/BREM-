@@ -534,6 +534,7 @@ window.BremSupabaseMapper = (function () {
       title: row.raw_data?.title ?? row.title,
       content: row.raw_data?.content ?? row.content ?? row.body,
       pinned: row.raw_data?.pinned ?? Boolean(row.pinned),
+      popup: Boolean(row.raw_data?.popup ?? row.popup),
       createdAt: row.raw_data?.createdAt ?? row.created_at,
       updatedAt: row.raw_data?.updatedAt ?? row.updated_at,
       noticeKind: row.noticeKind,

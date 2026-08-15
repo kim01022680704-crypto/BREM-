@@ -12,7 +12,7 @@ const MISSION_SELECT = [
   'raw_data', 'created_at', 'updated_at'
 ].join(',');
 
-const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
+const NOTICE_SELECT = 'id,title,content,pinned,raw_data,created_at,updated_at';
 
 const PROMOTION_MISSION_SELECT = 'id,name,platform,type,enabled,payload,created_at,updated_at';
 

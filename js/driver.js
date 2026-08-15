@@ -599,6 +599,8 @@
     if (mainApp) mainApp.hidden = true;
     result.hidden = true;
     toggleProfileEditPanel(false);
+    hideNoticePopup();
+    noticePopupState.queue = [];
   }
 
   function showLoggedIn(driver) {
@@ -622,6 +624,7 @@
     }));
     void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
     void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
+    window.setTimeout(() => queueNoticePopups(), 250);
   }
 
   let driverCallIndex = null;
@@ -891,6 +894,8 @@
 
   function sortNotices(list) {
     return list.slice().sort((a, b) => {
+      const popupDiff = Number(b.popup) - Number(a.popup);
+      if (popupDiff) return popupDiff;
       const pinDiff = Number(b.pinned) - Number(a.pinned);
       if (pinDiff) return pinDiff;
       const aDate = String(a.createdAt || a.updatedAt || '');
@@ -920,7 +925,7 @@
         return `
         <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${open ? ' is-open' : ''}">
           <button type="button" class="notice-item__toggle" aria-expanded="${open ? 'true' : 'false'}">
-            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${escapeHtml(notice.title)}</span>
+            <span class="notice-item__title">${notice.pinned ? '📌 ' : ''}${notice.popup ? '<span class="notice-badge">팝업</span>' : ''}${escapeHtml(notice.title)}</span>
             ${when ? `<time class="notice-item__date">${escapeHtml(when)}</time>` : ''}
           </button>
           <p class="notice-item__body"${open ? '' : ' hidden'}>${escapeHtml(notice.content || notice.body || '')}</p>
@@ -936,12 +941,86 @@
     if (countEl) countEl.textContent = noticeList.length ? `${noticeList.length}건` : '';
   }
 
+  const NOTICE_POPUP_HIDE_KEY = 'brem_notice_popup_hide_v1';
+  const noticePopupState = { queue: [], currentId: '' };
+
+  function readNoticePopupHideMap() {
+    try {
+      const raw = localStorage.getItem(NOTICE_POPUP_HIDE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeNoticePopupHideMap(map) {
+    try {
+      localStorage.setItem(NOTICE_POPUP_HIDE_KEY, JSON.stringify(map || {}));
+    } catch {
+      /* ignore quota */
+    }
+  }
+
+  function isNoticePopupHiddenToday(noticeId) {
+    const today = dateKey(new Date());
+    const map = readNoticePopupHideMap();
+    return String(map[noticeId] || '') === today;
+  }
+
+  function hideNoticePopupToday(noticeId) {
+    const map = readNoticePopupHideMap();
+    map[noticeId] = dateKey(new Date());
+    writeNoticePopupHideMap(map);
+  }
+
+  function hideNoticePopup() {
+    const overlay = document.getElementById('driverNoticePopup');
+    if (overlay) overlay.hidden = true;
+    noticePopupState.currentId = '';
+  }
+
+  function fillNoticePopup(notice) {
+    const titleEl = document.getElementById('driverNoticePopupTitle');
+    const bodyEl = document.getElementById('driverNoticePopupBody');
+    if (titleEl) titleEl.textContent = notice.title || '공지사항';
+    if (bodyEl) bodyEl.textContent = notice.content || notice.body || '';
+  }
+
+  function showNextNoticePopup() {
+    const overlay = document.getElementById('driverNoticePopup');
+    if (!overlay || !state.currentDriver) {
+      hideNoticePopup();
+      return;
+    }
+    while (noticePopupState.queue.length) {
+      const next = noticePopupState.queue.shift();
+      if (!next?.id || isNoticePopupHiddenToday(next.id)) continue;
+      noticePopupState.currentId = next.id;
+      fillNoticePopup(next);
+      overlay.hidden = false;
+      return;
+    }
+    hideNoticePopup();
+  }
+
+  function queueNoticePopups() {
+    if (!state.currentDriver) return;
+    const items = mergedNoticesForDriver().filter(notice => notice.popup && notice.id && !isNoticePopupHiddenToday(notice.id));
+    noticePopupState.queue = items;
+    if (document.getElementById('driverNoticePopup')?.hidden === false && noticePopupState.currentId) {
+      return;
+    }
+    showNextNoticePopup();
+  }
+
   function renderNotices() {
     const listEl = document.getElementById('noticeList');
     if (!listEl) return;
     const items = mergedNoticesForDriver();
     renderNoticesList(listEl, items);
     updateNoticeChrome(items);
+    queueNoticePopups();
   }
 
   async function renderPlatformMission(driver, platform, missionId, assignedMission = null) {
@@ -1705,6 +1784,16 @@
   });
 
   document.addEventListener('click', (event) => {
+    if (event.target.closest('#driverNoticePopupHideToday')) {
+      if (noticePopupState.currentId) hideNoticePopupToday(noticePopupState.currentId);
+      showNextNoticePopup();
+      return;
+    }
+    if (event.target.closest('[data-notice-popup-close]')) {
+      hideNoticePopup();
+      return;
+    }
+
     const toggle = event.target.closest('.notice-item__toggle');
     if (!toggle) return;
     const item = toggle.closest('.notice-item');

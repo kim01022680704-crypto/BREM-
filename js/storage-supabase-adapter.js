@@ -139,7 +139,7 @@ window.BremSupabaseStorageAdapter = (function () {
     return lastResult || { error: new Error('기사 목록을 불러오지 못했습니다.') };
   }
 
-  const NOTICE_SELECT = 'id,title,content,pinned,created_at,updated_at';
+  const NOTICE_SELECT = 'id,title,content,pinned,raw_data,created_at,updated_at';
   const PROMOTION_SELECT = 'id,name,platform,type,enabled,selector_key,start_date,end_date,priority,payload,created_at,updated_at';
   const INQUIRY_SELECT = 'id,name,phone,area,inquiry_type,message,status,created_at,updated_at';
   const MISSION_SELECT = 'id,title,description,type,conditions,is_active,raw_data,created_at,updated_at';

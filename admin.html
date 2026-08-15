@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260816notice2">
+  <link rel="stylesheet" href="css/admin.css?v=20260816popup1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5637,6 +5637,11 @@
               <input type="checkbox" id="noticePinned">
               상단 고정
             </label>
+            <label class="check-label">
+              <input type="checkbox" id="noticePopup">
+              팝업으로 띄우기
+            </label>
+            <p class="form-help">팝업은 기사앱 진입 시 뜨고, 공지 목록에도 그대로 남습니다. 기사는 닫기 / 오늘 하루 보지 않기를 할 수 있습니다.</p>
             <div class="notice-form-actions">
               <button class="primary-btn" type="submit" id="noticeSubmit">공지 등록</button>
               <button class="small-btn" type="button" id="noticeResetBtn" hidden>새 공지 작성</button>
@@ -7960,10 +7965,10 @@
   <script src="js/supabase-config.js?v=20260712c"></script>
   <script src="js/data-cache.js?v=20260621n"></script>
   <script src="js/data-loading-ui.js?v=20260622f"></script>
-  <script src="js/storage-supabase-mapper.js?v=20260806r"></script>
+  <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
-  <script src="js/storage-supabase-adapter.js?v=20260816dash1"></script>
-  <script src="js/storage.js?v=20260816dash1"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
+  <script src="js/storage.js?v=20260816popup1"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -8014,7 +8019,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260816notice2"></script>
+    <script src="js/admin.js?v=20260816popup1"></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
