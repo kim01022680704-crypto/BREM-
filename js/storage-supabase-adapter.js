@@ -369,7 +369,8 @@ window.BremSupabaseStorageAdapter = (function () {
       const { table, key, label, fromRow, order } = config;
       if (!options.force && window.BremDataCache?.isValid(key)) {
         const cached = window.BremDataCache.getData(key);
-        if (Array.isArray(cached)) {
+        // 빈 [] 는 미로드로 보고 다시 받는다 (콜수 0 고착 방지)
+        if (Array.isArray(cached) && cached.length > 0) {
           setCache(key, cached);
           loadedTableKeys.add(key);
           window.BremDataCache?.logDataSource?.(label, true);
@@ -1810,7 +1811,8 @@ window.BremSupabaseStorageAdapter = (function () {
         }
 
         const cached = window.BremDataCache?.getData(key);
-        if (Array.isArray(cached)) {
+        // 빈 배열은 "로드 완료"로 보지 않음 — calls/settlements 가 []로 굳으면 콜수·배달료 0 고착
+        if (Array.isArray(cached) && cached.length > 0) {
           setCache(key, cached);
           loadedTableKeys.add(key);
           return;

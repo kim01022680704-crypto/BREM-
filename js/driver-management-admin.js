@@ -231,10 +231,9 @@ const BremDriverManagementAdmin = (function () {
   }
 
   /**
-   * 기사지역관리 수치 출처 (의도적으로 분리)
-   * - 콜수: 콜수 입력(admin_calls / BremStorage.calls)만
+   * 기사지역관리 수치 출처
+   * - 콜수: 콜수 입력(admin_calls) 우선. 없으면 일정산 orderCount 로 주간 콜수 표시
    * - 배달료: 일정산 업로드(settlements)의 deliveryAmount만
-   * (일정산 orderCount로 콜수를 덮어쓰지 않음)
    */
   function driverCallAndFee(driverId, weekStart = ensureWeek(), platformFilter = '') {
     const id = String(driverId || '').trim();
@@ -247,7 +246,7 @@ const BremDriverManagementAdmin = (function () {
       return p === 'coupang' || p === 'baemin';
     };
 
-    const callCount = (window.BremStorage?.calls?.getAll?.() || [])
+    let callCount = (window.BremStorage?.calls?.getAll?.() || [])
       .filter(call => {
         if (String(call.driverId || '') !== id) return false;
         if (!platformOk(call.platform)) return false;
@@ -258,6 +257,7 @@ const BremDriverManagementAdmin = (function () {
 
     // 같은 날·같은 플랫폼 중복 반영은 최신 appliedAt만. 플랫폼끼리 덮어쓰지 않음.
     const feeByDayPlatform = new Map();
+    const orderByDayPlatform = new Map();
     (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
       if (String(row.driverId || '') !== id) return;
       if (!platformOk(row.platform)) return;
@@ -265,11 +265,18 @@ const BremDriverManagementAdmin = (function () {
       if (!day || day < start || day > end) return;
       const platform = String(row.platform || '').toLowerCase() || 'coupang';
       const feeKey = `${platform}|${day}`;
-      const prev = feeByDayPlatform.get(feeKey);
       const appliedAt = String(row.appliedAt || '');
-      if (!prev || appliedAt >= prev.appliedAt) {
+      const prevFee = feeByDayPlatform.get(feeKey);
+      if (!prevFee || appliedAt >= prevFee.appliedAt) {
         feeByDayPlatform.set(feeKey, {
           deliveryFee: Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0)),
+          appliedAt
+        });
+      }
+      const prevOrder = orderByDayPlatform.get(feeKey);
+      if (!prevOrder || appliedAt >= prevOrder.appliedAt) {
+        orderByDayPlatform.set(feeKey, {
+          orderCount: Math.max(0, Math.round(Number(row.orderCount ?? row.callCount ?? 0))),
           appliedAt
         });
       }
@@ -278,6 +285,14 @@ const BremDriverManagementAdmin = (function () {
     feeByDayPlatform.forEach(day => {
       deliveryFee += day.deliveryFee;
     });
+    // 콜수입력이 비어 있으면 일정산 주문수(주간콜)로 채운다 — 배민은 일정산만 올리는 경우가 많음
+    if (callCount <= 0) {
+      let fromSettlement = 0;
+      orderByDayPlatform.forEach(day => {
+        fromSettlement += day.orderCount;
+      });
+      callCount = fromSettlement;
+    }
 
     return { callCount, deliveryFee };
   }
@@ -287,8 +302,12 @@ const BremDriverManagementAdmin = (function () {
     state.statsLoadPromise = (async () => {
       try {
         await window.BremStorage?.ensureSectionLoaded?.('driver-management');
-        // 빈 배열이 캐시에 굳으면 배달료가 계속 0원 → 일정산 강제 재조회
+        // 빈 배열이 캐시에 굳으면 콜수·배달료가 계속 0 → 강제 재조회
+        const calls = window.BremStorage?.calls?.getAll?.() || [];
         const settlements = window.BremStorage?.settlements?.getAll?.() || [];
+        if (!calls.length) {
+          await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
+        }
         if (!settlements.length) {
           await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
         }
@@ -1803,6 +1822,7 @@ const BremDriverManagementAdmin = (function () {
     renderRegionDetail();
 
     try {
+      await ensureDriverMgmtStatsLoaded();
       await window.BremStorage?.ensureSectionLoaded?.('driver-management');
       if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
         await window.BremStorage.awaitDriversFullyLoaded();
@@ -1811,7 +1831,7 @@ const BremDriverManagementAdmin = (function () {
       console.warn('[driver-mgmt] calls/settlements/drivers load failed:', error);
     }
     if (seq !== state.regionRefreshSeq) return;
-    // 기사 전체 로드 후 표·인원 한 번 확정 (초기 렌더는 부분 캐시라 1명만 보일 수 있음)
+    // 기사·콜수·일정산 로드 후 표·인원 한 번 확정
     renderRegionCatalog();
     renderRegionDetail();
   }
