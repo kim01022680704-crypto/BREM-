@@ -29,6 +29,10 @@ const BremDriverManagementAdmin = (function () {
     statsLoadPromise: null,
     statsLoadTried: false,
     statsLoadError: '',
+    statsLoadedWeekSince: '',
+    weekStatsIndex: null,
+    weekStatsIndexWeek: '',
+    regionMemberCache: { fingerprint: '', byKey: new Map() },
     regionRefreshSeq: 0,
     regionDetailSyncTimer: null,
     regionDetailDriverCount: -1,
@@ -36,7 +40,8 @@ const BremDriverManagementAdmin = (function () {
     regionListFilterTimer: null
   };
 
-  const REGION_RANKING_POLL_MS = 60 * 1000;
+  const REGION_RANKING_POLL_MS = 120 * 1000;
+  const DRIVER_MGMT_LOOKBACK_DAYS = 90;
 
   function localDateKey(date = new Date()) {
     return [
@@ -95,10 +100,14 @@ const BremDriverManagementAdmin = (function () {
       return;
     }
     state.weekStart = next;
+    invalidateWeekStatsIndex();
     renderWeekControls();
-    if (state.tab === 'org') void refreshOrgMemberPanel();
-    else if (state.tab === 'org-list') void refreshOrgList();
-    else renderRegionDetail();
+    if (state.tab === 'org') void refreshOrgMemberPanel({ force: false });
+    else if (state.tab === 'org-list') void refreshOrgList({ force: false });
+    else {
+      void ensureDriverMgmtStatsLoaded({ force: false });
+      renderRegionDetail();
+    }
   }
 
   function shiftWeek(deltaWeeks) {
@@ -188,7 +197,12 @@ const BremDriverManagementAdmin = (function () {
       if (state.tab !== 'region') return;
       if (!selectedRegion()) return;
       if (state.regionRankingBusy) return;
-      void loadRegionRanking();
+      const region = selectedRegion();
+      const week = ensureWeek();
+      const cacheKey = `${region.platform}|${region.key}|${week}`;
+      const cached = state.regionRankingCache.get(cacheKey);
+      // 캐시가 있으면 폴링은 실시간만 조용히 갱신 (강제 전체 재로드 없음)
+      void loadRegionRanking({ silent: Boolean(cached) });
     }, REGION_RANKING_POLL_MS);
   }
 
@@ -204,9 +218,7 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org') {
       stopRegionRankingPoll();
       void (async () => {
-        state.statsLoadTried = false;
-        state.statsLoadError = '';
-        await ensureDriverMgmtStatsLoaded({ force: true });
+        await ensureDriverMgmtStatsLoaded({ force: false });
         await ensureOrgRegionsLoaded();
         renderOrg();
       })();
@@ -214,7 +226,7 @@ const BremDriverManagementAdmin = (function () {
     }
     if (state.tab === 'org-list') {
       stopRegionRankingPoll();
-      void refreshOrgList();
+      void refreshOrgList({ force: false });
       return;
     }
     // refresh() 경로에서는 skipRegionLoad 로 이중 refreshRegions 를 막는다.
@@ -378,65 +390,110 @@ const BremDriverManagementAdmin = (function () {
    * - 배달료: 일정산 업로드(daily_settlements / settlements)의 deliveryAmount
    *   (쿠팡 기본정산 AL, 배민 건별 AH — 업로드·매칭된 금액만 합산)
    */
-  function driverCallAndFee(driverId, weekStart = ensureWeek(), platformFilter = '') {
-    const id = String(driverId || '').trim();
-    if (!id) return { callCount: 0, deliveryFee: 0 };
+  function invalidateWeekStatsIndex() {
+    state.weekStatsIndex = null;
+    state.weekStatsIndexWeek = '';
+  }
+
+  function invalidateRegionMemberCache() {
+    state.regionMemberCache = { fingerprint: '', byKey: new Map() };
+  }
+
+  function buildWeekStatsIndex(weekStart = ensureWeek()) {
     const start = weekStartKey(weekStart);
     const end = weekEndKey(start);
-    const platformOk = (platform) => {
-      const p = String(platform || '').toLowerCase();
-      if (platformFilter === 'coupang' || platformFilter === 'baemin') return p === platformFilter;
-      return p === 'coupang' || p === 'baemin';
+    if (state.weekStatsIndex && state.weekStatsIndexWeek === start) {
+      return state.weekStatsIndex;
+    }
+
+    const map = new Map();
+    const touch = (driverId, platform) => {
+      const key = `${driverId}|${platform}`;
+      let row = map.get(key);
+      if (!row) {
+        row = {
+          callCount: 0,
+          deliveryFee: 0,
+          feeByDay: new Map(),
+          orderByDay: new Map()
+        };
+        map.set(key, row);
+      }
+      return row;
     };
 
-    let callCount = (window.BremStorage?.calls?.getAll?.() || [])
-      .filter(call => {
-        if (String(call.driverId || '') !== id) return false;
-        if (!platformOk(call.platform)) return false;
-        const day = String(call.date || '').slice(0, 10);
-        return day >= start && day <= end;
-      })
-      .reduce((sum, call) => sum + Math.max(0, Number(call.count || call.orderCount || 0)), 0);
+    (window.BremStorage?.calls?.getAll?.() || []).forEach(call => {
+      const id = String(call.driverId || '').trim();
+      if (!id) return;
+      const platform = String(call.platform || '').toLowerCase();
+      if (platform !== 'coupang' && platform !== 'baemin') return;
+      const day = String(call.date || '').slice(0, 10);
+      if (!day || day < start || day > end) return;
+      touch(id, platform).callCount += Math.max(0, Number(call.count || call.orderCount || 0));
+    });
 
-    // 같은 날·같은 플랫폼 중복 반영은 최신 appliedAt만. 플랫폼끼리 덮어쓰지 않음.
-    const feeByDayPlatform = new Map();
-    const orderByDayPlatform = new Map();
     (window.BremStorage?.settlements?.getAll?.() || []).forEach(row => {
-      if (String(row.driverId || '') !== id) return;
-      if (!platformOk(row.platform)) return;
+      const id = String(row.driverId || '').trim();
+      if (!id) return;
+      const platform = String(row.platform || '').toLowerCase();
+      if (platform !== 'coupang' && platform !== 'baemin') return;
       const day = String(row.period || row.date || '').slice(0, 10);
       if (!day || day < start || day > end) return;
-      const platform = String(row.platform || '').toLowerCase() || 'coupang';
-      const feeKey = `${platform}|${day}`;
+      const bucket = touch(id, platform);
       const appliedAt = String(row.appliedAt || '');
-      const prevFee = feeByDayPlatform.get(feeKey);
+      const prevFee = bucket.feeByDay.get(day);
       if (!prevFee || appliedAt >= prevFee.appliedAt) {
-        feeByDayPlatform.set(feeKey, {
+        bucket.feeByDay.set(day, {
           deliveryFee: Math.max(0, Number(row.deliveryAmount ?? row.settlementAmount ?? 0)),
           appliedAt
         });
       }
-      const prevOrder = orderByDayPlatform.get(feeKey);
+      const prevOrder = bucket.orderByDay.get(day);
       if (!prevOrder || appliedAt >= prevOrder.appliedAt) {
-        orderByDayPlatform.set(feeKey, {
+        bucket.orderByDay.set(day, {
           orderCount: Math.max(0, Math.round(Number(row.orderCount ?? row.callCount ?? 0))),
           appliedAt
         });
       }
     });
-    let deliveryFee = 0;
-    feeByDayPlatform.forEach(day => {
-      deliveryFee += day.deliveryFee;
-    });
-    // 콜수입력이 비어 있으면 일정산 주문수(주간콜)로 채운다 — 배민은 일정산만 올리는 경우가 많음
-    if (callCount <= 0) {
-      let fromSettlement = 0;
-      orderByDayPlatform.forEach(day => {
-        fromSettlement += day.orderCount;
-      });
-      callCount = fromSettlement;
-    }
 
+    map.forEach(row => {
+      let deliveryFee = 0;
+      row.feeByDay.forEach(day => {
+        deliveryFee += day.deliveryFee;
+      });
+      row.deliveryFee = deliveryFee;
+      if (row.callCount <= 0) {
+        let fromSettlement = 0;
+        row.orderByDay.forEach(day => {
+          fromSettlement += day.orderCount;
+        });
+        row.callCount = fromSettlement;
+      }
+      delete row.feeByDay;
+      delete row.orderByDay;
+    });
+
+    state.weekStatsIndexWeek = start;
+    state.weekStatsIndex = map;
+    return map;
+  }
+
+  function driverCallAndFee(driverId, weekStart = ensureWeek(), platformFilter = '') {
+    const id = String(driverId || '').trim();
+    if (!id) return { callCount: 0, deliveryFee: 0 };
+    const index = buildWeekStatsIndex(weekStart);
+    const platforms = platformFilter === 'coupang' || platformFilter === 'baemin'
+      ? [platformFilter]
+      : ['coupang', 'baemin'];
+    let callCount = 0;
+    let deliveryFee = 0;
+    platforms.forEach(platform => {
+      const row = index.get(`${id}|${platform}`);
+      if (!row) return;
+      callCount += row.callCount;
+      deliveryFee += row.deliveryFee;
+    });
     return { callCount, deliveryFee };
   }
 
@@ -472,23 +529,66 @@ const BremDriverManagementAdmin = (function () {
     };
   }
 
-  async function loadSettlementsAndCallsDirect(force = false) {
-    const settlementsKey = window.BremStorage?.STORAGE_KEYS?.settlements || 'brem_admin_settlements';
-    const callsKey = window.BremStorage?.STORAGE_KEYS?.calls || 'brem_admin_calls';
-    const needSettlements = force || !(window.BremStorage?.settlements?.getAll?.() || []).length;
-    const needCalls = force || !(window.BremStorage?.calls?.getAll?.() || []).length;
+  function driverMgmtSinceDate(weekStart = ensureWeek()) {
+    const start = weekStartKey(weekStart);
+    const date = new Date(`${start}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      const fallback = new Date();
+      fallback.setDate(fallback.getDate() - DRIVER_MGMT_LOOKBACK_DAYS);
+      return fallback.toISOString().slice(0, 10);
+    }
+    date.setDate(date.getDate() - DRIVER_MGMT_LOOKBACK_DAYS);
+    const fromWeek = localDateKey(date);
+    const rolling = new Date();
+    rolling.setDate(rolling.getDate() - DRIVER_MGMT_LOOKBACK_DAYS);
+    const fromNow = localDateKey(rolling);
+    return fromWeek < fromNow ? fromWeek : fromNow;
+  }
+
+  function rowsCoverSince(rows, fieldNames, sinceDate) {
+    const since = String(sinceDate || '').slice(0, 10);
+    if (!since) return false;
+    if (!Array.isArray(rows) || !rows.length) return false;
+    let earliest = '';
+    rows.forEach(row => {
+      let day = '';
+      for (const field of fieldNames) {
+        day = String(row?.[field] || '').slice(0, 10);
+        if (day) break;
+      }
+      if (!day) return;
+      if (!earliest || day < earliest) earliest = day;
+    });
+    return Boolean(earliest && earliest <= since);
+  }
+
+  async function loadSettlementsAndCallsDirect(force = false, weekStart = ensureWeek()) {
+    const sinceDate = driverMgmtSinceDate(weekStart);
+    const settlements = window.BremStorage?.settlements?.getAll?.() || [];
+    const calls = window.BremStorage?.calls?.getAll?.() || [];
+    const needSettlements = force
+      || !settlements.length
+      || !rowsCoverSince(settlements, ['period', 'date'], sinceDate);
+    const needCalls = force
+      || !calls.length
+      || !rowsCoverSince(calls, ['date'], sinceDate);
+    if (!needSettlements && !needCalls) {
+      state.statsLoadedWeekSince = sinceDate;
+      return;
+    }
+
     const tasks = [];
-    if (needSettlements && typeof window.BremStorage?.refetchDataKey === 'function') {
-      tasks.push(window.BremStorage.refetchDataKey(settlementsKey, { force: true }));
-    } else if (needSettlements) {
-      tasks.push(window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true }));
+    if (needCalls && typeof window.BremStorage?.ensureCallsSinceDate === 'function') {
+      tasks.push(window.BremStorage.ensureCallsSinceDate(sinceDate, { force: force === true }));
     }
-    if (needCalls && typeof window.BremStorage?.refetchDataKey === 'function') {
-      tasks.push(window.BremStorage.refetchDataKey(callsKey, { force: true }));
-    } else if (needCalls) {
-      tasks.push(window.BremStorage?.ensureSectionLoaded?.('calls', { force: true }));
+    if (needSettlements && typeof window.BremStorage?.ensureSettlementsSinceDate === 'function') {
+      tasks.push(window.BremStorage.ensureSettlementsSinceDate(sinceDate, { force: force === true }));
     }
-    if (tasks.length) await Promise.all(tasks);
+    if (tasks.length) {
+      await Promise.all(tasks);
+      invalidateWeekStatsIndex();
+    }
+    state.statsLoadedWeekSince = sinceDate;
   }
 
   async function ensureDriverMgmtStatsLoaded(options = {}) {
@@ -496,13 +596,13 @@ const BremDriverManagementAdmin = (function () {
     if (!force && state.statsLoadPromise) return state.statsLoadPromise;
     const run = async () => {
       try {
-        await window.BremStorage?.ensureSectionLoaded?.('driver-management');
-        // 등록·업로드된 일정산/콜수를 키 단위로 직접 채운다 (섹션 ready 오판으로 스킵되지 않게).
-        await loadSettlementsAndCallsDirect(force);
+        await window.BremStorage?.ensureSectionLoaded?.('driver-management', { force: false });
+        await loadSettlementsAndCallsDirect(force, options.weekStart || ensureWeek());
         if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
           await window.BremStorage.awaitDriversFullyLoaded();
         }
         state.statsLoadTried = true;
+        invalidateRegionMemberCache();
       } catch (error) {
         state.statsLoadTried = true;
         state.statsLoadError = error?.message || String(error);
@@ -510,6 +610,7 @@ const BremDriverManagementAdmin = (function () {
       }
     };
     if (force) {
+      invalidateWeekStatsIndex();
       await run();
       return;
     }
@@ -521,10 +622,10 @@ const BremDriverManagementAdmin = (function () {
     }
   }
 
-  async function refreshOrgMemberPanel() {
+  async function refreshOrgMemberPanel(options = {}) {
     state.statsLoadTried = false;
     state.statsLoadError = '';
-    await ensureDriverMgmtStatsLoaded({ force: true });
+    await ensureDriverMgmtStatsLoaded({ force: options.force === true });
     renderOrgMemberPanel();
   }
 
@@ -1005,8 +1106,8 @@ const BremDriverManagementAdmin = (function () {
       </table>`;
   }
 
-  async function refreshOrgList() {
-    await ensureDriverMgmtStatsLoaded({ force: true });
+  async function refreshOrgList(options = {}) {
+    await ensureDriverMgmtStatsLoaded({ force: options.force === true });
     renderOrgList();
   }
 
@@ -1737,7 +1838,14 @@ const BremDriverManagementAdmin = (function () {
     const list = (typeof window.BremStorage?.drivers?.getAllKnownById === 'function'
       ? window.BremStorage.drivers.getAllKnownById()
       : window.BremStorage?.drivers?.getAll?.()) || [];
-    return list.filter(driver => {
+    const fingerprint = `${platform}|${list.length}|${driversLoadComplete() ? 1 : 0}`;
+    if (state.regionMemberCache.fingerprint !== fingerprint) {
+      state.regionMemberCache = { fingerprint, byKey: new Map() };
+    }
+    const cached = state.regionMemberCache.byKey.get(region.key);
+    if (cached) return cached;
+
+    const matched = list.filter(driver => {
       const value = driverRegionValue(driver, platform);
       if (!value) return false;
       if (platform === 'baemin') {
@@ -1751,6 +1859,8 @@ const BremDriverManagementAdmin = (function () {
         || value === region.vendorName
         || value === region.vendorId;
     });
+    state.regionMemberCache.byKey.set(region.key, matched);
+    return matched;
   }
 
   function driversLoadComplete() {
@@ -1964,7 +2074,7 @@ const BremDriverManagementAdmin = (function () {
     }
   }
 
-  async function loadRegionRanking() {
+  async function loadRegionRanking(options = {}) {
     const region = selectedRegion();
     if (!region) {
       clearRegionRankingUi();
@@ -2002,7 +2112,7 @@ const BremDriverManagementAdmin = (function () {
 
     const realtimeNote = $('#driverRegionRealtimeNote');
     const hadCachedRealtime = Boolean(cached?.metrics || cached?.realtimeRanking?.length);
-    if (realtimeNote && platform !== 'coupang' && !hadCachedRealtime) {
+    if (realtimeNote && platform !== 'coupang' && !hadCachedRealtime && !options.silent) {
       realtimeNote.textContent = '실시간 크롤링 순위 불러오는 중…';
     }
 
@@ -2377,6 +2487,7 @@ const BremDriverManagementAdmin = (function () {
       ? { regionCoupang: region.label, platformCoupang: true }
       : { regionBaemin: region.label, platformBaemin: true };
     await window.BremStorage.drivers.update(driverId, patch);
+    invalidateRegionMemberCache();
   }
 
   async function clearDriverRegion(driverId) {
@@ -2384,6 +2495,7 @@ const BremDriverManagementAdmin = (function () {
       ? { regionCoupang: '' }
       : { regionBaemin: '' };
     await window.BremStorage.drivers.update(driverId, patch);
+    invalidateRegionMemberCache();
   }
 
   async function refreshRegions() {

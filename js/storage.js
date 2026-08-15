@@ -1730,6 +1730,14 @@ const BremStorage = (function () {
     if (sectionId === 'rejections' && tableKeysWithoutManaged.includes(KEYS.rejections)) {
       loadOptions.allHistory = true;
     }
+    if (sectionId === 'driver-management') {
+      // 기사관리는 최근 90일만 — 2년치 콜/일정산 전체 로드로 탭이 끊기던 문제 완화
+      const since = new Date();
+      since.setDate(since.getDate() - 90);
+      const sinceDate = since.toISOString().slice(0, 10);
+      loadOptions[KEYS.calls] = { ...(loadOptions[KEYS.calls] || {}), sinceDate };
+      loadOptions[KEYS.settlements] = { ...(loadOptions[KEYS.settlements] || {}), sinceDate };
+    }
     if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
       const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
@@ -1842,6 +1850,28 @@ const BremStorage = (function () {
     await activeStorageAdapter.ensureKeysLoaded([KEYS.calls], {
       force: Boolean(options.force),
       [KEYS.calls]: { sinceDate: since }
+    });
+    return { ok: true };
+  }
+
+  async function ensureSettlementsSinceDate(sinceDate, options = {}) {
+    const since = String(sinceDate || '').slice(0, 10);
+    if (!since || !activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
+
+    const existing = settlements.getAll();
+    if (!options.force && existing.length) {
+      const earliest = existing.reduce((min, row) => {
+        const day = String(row?.period || row?.date || '').slice(0, 10);
+        return !day || (min && day >= min) ? min : day;
+      }, '');
+      if (!earliest || earliest <= since) {
+        return { ok: true, cached: true };
+      }
+    }
+
+    await activeStorageAdapter.ensureKeysLoaded([KEYS.settlements], {
+      force: Boolean(options.force),
+      [KEYS.settlements]: { sinceDate: since }
     });
     return { ok: true };
   }
@@ -13889,6 +13919,7 @@ const BremStorage = (function () {
     persistLeaseErpTableViaServer,
     ensureSectionLoaded,
     ensureCallsSinceDate,
+    ensureSettlementsSinceDate,
     ensureLongEventCallsLoaded,
     ensurePromotionCalculationCalls,
     isSectionCacheReady,
