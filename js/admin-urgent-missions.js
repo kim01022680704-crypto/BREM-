@@ -44,8 +44,25 @@
       .replace(/"/g, '&quot;');
   }
 
+  function parseAmount(value) {
+    const amount = Math.round(Number(String(value ?? '').replace(/[^\d]/g, '')));
+    return Number.isFinite(amount) && amount > 0 ? amount : 0;
+  }
+
   function formatMoney(value) {
     return `${Number(value || 0).toLocaleString('ko-KR')}원`;
+  }
+
+  function syncAmountPreview(formatInput = false) {
+    const preview = document.getElementById('urgentMissionAmountPreview');
+    const amount = parseAmount(amountEl?.value);
+    if (preview) preview.textContent = formatMoney(amount);
+    if (formatInput && amountEl) {
+      amountEl.value = amount ? amount.toLocaleString('ko-KR') : '';
+    }
+    section.querySelectorAll('[data-um-amount]').forEach((btn) => {
+      btn.classList.toggle('is-on', Number(btn.dataset.umAmount) === amount);
+    });
   }
 
   function formatDateTime(value) {
@@ -132,6 +149,13 @@
 
   function updateRiderCount() {
     if (riderCountEl) riderCountEl.textContent = `${state.selectedRiders.size}명 선택`;
+    const chips = document.getElementById('urgentMissionSelectedChips');
+    if (!chips) return;
+    const riders = selectedRiderPayloads();
+    chips.hidden = riders.length === 0;
+    chips.innerHTML = riders.map((item) => (
+      `<span>${escapeHtml(item.riderName || '-')}<small>${escapeHtml(item.regionLabel || '')}</small></span>`
+    )).join('');
   }
 
   function renderRegionList() {
@@ -358,17 +382,19 @@
       return `
         <article class="urgent-mission-card ${closed ? 'is-closed' : ''}" data-mission-id="${escapeHtml(mission.id)}">
           <div class="urgent-mission-card__head">
-            <div class="urgent-mission-card__tags">
-              ${platformTags(mission.platforms)}
-              <span class="urgent-mission-status ${closed ? 'is-closed' : 'is-open'}">${closed ? '마감' : '모집중'}</span>
+            <div>
+              <div class="urgent-mission-card__tags">
+                ${platformTags(mission.platforms)}
+                <span class="urgent-mission-status ${closed ? 'is-closed' : 'is-open'}">${closed ? '마감' : '모집중'}</span>
+              </div>
+              <p class="urgent-mission-card__content">${escapeHtml(mission.content)}</p>
+              <div class="urgent-mission-card__meta">
+                <span>시간 ${escapeHtml(mission.missionTime || '-')}</span>
+                <span>배포 ${escapeHtml(formatDateTime(mission.publishedAt))}</span>
+              </div>
             </div>
-            <div class="urgent-mission-card__meta">
-              <strong>${escapeHtml(formatMoney(mission.amount))}</strong>
-              <span>${escapeHtml(mission.missionTime || '-')}</span>
-              <span>배포 ${escapeHtml(formatDateTime(mission.publishedAt))}</span>
-            </div>
+            <strong class="urgent-mission-card__pay">${escapeHtml(formatMoney(mission.amount))}</strong>
           </div>
-          <p class="urgent-mission-card__content">${escapeHtml(mission.content)}</p>
           <div class="urgent-mission-card__actions">
             <button type="button" class="small-btn" data-close-mission="${escapeHtml(mission.id)}" ${closed ? 'disabled' : ''}>미션 마감</button>
             <button type="button" class="small-btn danger-btn" data-delete-mission="${escapeHtml(mission.id)}">정리</button>
@@ -413,7 +439,7 @@
     event.preventDefault();
     if (!window.BremStorage?.publishAdminUrgentMission) return;
     const content = String(contentEl?.value || '').trim();
-    const amount = Number(amountEl?.value || 0);
+    const amount = parseAmount(amountEl?.value);
     const missionTime = String(timeEl?.value || '').trim();
     const platforms = selectedPlatforms();
     const riders = selectedRiderPayloads();
@@ -440,6 +466,7 @@
     }
     form?.reset();
     resetPicker();
+    syncAmountPreview();
     state.missions = result.missions || [];
     render();
     showToast(`긴급미션을 배포했습니다. 대상 ${riders.length}명`);
@@ -502,7 +529,17 @@
 
   form?.addEventListener('submit', publish);
 
+  amountEl?.addEventListener('input', () => syncAmountPreview(false));
+  amountEl?.addEventListener('blur', () => syncAmountPreview(true));
+  syncAmountPreview(false);
+
   section.addEventListener('click', (event) => {
+    const amountBtn = event.target.closest('[data-um-amount]');
+    if (amountBtn) {
+      if (amountEl) amountEl.value = Number(amountBtn.dataset.umAmount || 0).toLocaleString('ko-KR');
+      syncAmountPreview(true);
+      return;
+    }
     const regionBtn = event.target.closest('[data-um-region]');
     if (regionBtn) {
       state.selectedRegionKey = regionBtn.dataset.umRegion;

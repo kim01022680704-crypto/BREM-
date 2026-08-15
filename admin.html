@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260816um3">
+  <link rel="stylesheet" href="css/admin.css?v=20260816um4">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5726,27 +5726,39 @@
           <form class="notice-form urgent-mission-form" id="urgentMissionForm">
             <label>
               미션내용
-              <textarea id="urgentMissionContent" rows="4" placeholder="쿠팡/배민 도움 요청 내용을 입력하세요." required></textarea>
+              <textarea id="urgentMissionContent" rows="3" placeholder="쿠팡/배민 도움 요청 내용을 입력하세요." required></textarea>
             </label>
             <div class="urgent-mission-form-grid">
-              <label>
-                미션금액
-                <input type="number" id="urgentMissionAmount" min="1" step="1000" placeholder="예: 30000" required>
-              </label>
+              <div class="urgent-mission-amount-field">
+                <span class="urgent-mission-field-label">미션금액</span>
+                <div class="urgent-mission-amount-input">
+                  <input type="text" inputmode="numeric" id="urgentMissionAmount" placeholder="10000" autocomplete="off" required>
+                  <span>원</span>
+                </div>
+                <strong class="urgent-mission-amount-preview" id="urgentMissionAmountPreview">0원</strong>
+                <div class="urgent-mission-amount-presets" role="group" aria-label="금액 빠른 선택">
+                  <button type="button" data-um-amount="500">500</button>
+                  <button type="button" data-um-amount="1000">1천</button>
+                  <button type="button" data-um-amount="3000">3천</button>
+                  <button type="button" data-um-amount="5000">5천</button>
+                  <button type="button" data-um-amount="10000">1만</button>
+                  <button type="button" data-um-amount="30000">3만</button>
+                </div>
+              </div>
               <label>
                 미션시간
-                <input type="text" id="urgentMissionTime" placeholder="예: 오늘 14:00~18:00" required>
+                <input type="text" id="urgentMissionTime" placeholder="오늘 14:00~18:00" required>
               </label>
             </div>
             <fieldset class="urgent-mission-platform-field">
               <legend>태그</legend>
-              <label class="check-label">
+              <label class="urgent-mission-chip">
                 <input type="checkbox" name="urgentMissionPlatform" value="baemin">
-                배민
+                <span>배민</span>
               </label>
-              <label class="check-label">
+              <label class="urgent-mission-chip urgent-mission-chip--coupang">
                 <input type="checkbox" name="urgentMissionPlatform" value="coupang">
-                쿠팡
+                <span>쿠팡</span>
               </label>
             </fieldset>
             <div class="urgent-mission-rider-picker">
@@ -5754,10 +5766,11 @@
                 <h3>대상 기사</h3>
                 <span id="urgentMissionRiderCount">0명 선택</span>
               </div>
-              <p class="form-help">배민/쿠팡 태그를 고르면 그 플랫폼 지역별 기사가 나옵니다. 배포할 기사를 여기서 같이 선택하세요.</p>
+              <p class="form-help">태그를 고르면 지역별 기사가 나옵니다. 배포할 기사를 여기서 선택하세요.</p>
               <div class="urgent-mission-rider-picker__tools">
                 <input type="search" id="urgentMissionRiderSearch" placeholder="이름·연락처로 찾기" autocomplete="off">
               </div>
+              <div id="urgentMissionSelectedChips" class="urgent-mission-selected-chips" hidden></div>
               <div class="urgent-mission-rider-picker__body">
                 <div id="urgentMissionRegionList" class="urgent-mission-region-list"></div>
                 <div class="urgent-mission-rider-list-wrap">
@@ -8087,7 +8100,7 @@
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260814match1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-urgent-missions.js?v=20260816um3"></script>
+  <script src="js/admin-urgent-missions.js?v=20260816um4"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260803j"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
