@@ -97,6 +97,7 @@ const BremDriverManagementAdmin = (function () {
     state.weekStart = next;
     renderWeekControls();
     if (state.tab === 'org') void refreshOrgMemberPanel();
+    else if (state.tab === 'org-list') void refreshOrgList();
     else renderRegionDetail();
   }
 
@@ -113,6 +114,8 @@ const BremDriverManagementAdmin = (function () {
     const rangeText = formatWeekRange(week);
     const orgBtn = $('#driverOrgWeekBtn');
     if (orgBtn) orgBtn.textContent = label;
+    const orgListBtn = $('#driverOrgListWeekBtn');
+    if (orgListBtn) orgListBtn.textContent = label;
     const regionBtn = $('#driverRegionWeekBtn');
     if (regionBtn) regionBtn.textContent = label;
     const orgHidden = $('#driverOrgWeek');
@@ -121,6 +124,8 @@ const BremDriverManagementAdmin = (function () {
     if (regionHidden) regionHidden.value = week;
     const orgRange = $('#driverOrgWeekRange');
     if (orgRange) orgRange.textContent = rangeText;
+    const orgListRange = $('#driverOrgListWeekRange');
+    if (orgListRange) orgListRange.textContent = rangeText;
     const regionRange = $('#driverRegionWeekRange');
     if (regionRange) regionRange.textContent = rangeText;
   }
@@ -209,7 +214,7 @@ const BremDriverManagementAdmin = (function () {
     }
     if (state.tab === 'org-list') {
       stopRegionRankingPoll();
-      renderOrgList();
+      void refreshOrgList();
       return;
     }
     // refresh() 경로에서는 skipRegionLoad 로 이중 refreshRegions 를 막는다.
@@ -895,36 +900,53 @@ const BremDriverManagementAdmin = (function () {
     }
   }
 
-  function renderOrgListNodeHtml(node) {
-    const members = (node.memberRefs || [])
-      .map(resolveOrgMemberName)
-      .filter(item => item?.name)
-      .sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind === 'admin' ? -1 : 1;
-        return String(a.name).localeCompare(String(b.name), 'ko');
+  function orgListDepth(nodeId, memo = new Map()) {
+    if (memo.has(nodeId)) return memo.get(nodeId);
+    const node = state.org.nodes.find(item => item.id === nodeId);
+    if (!node?.parentId || !state.org.nodes.some(item => item.id === node.parentId)) {
+      memo.set(nodeId, 0);
+      return 0;
+    }
+    const depth = orgListDepth(node.parentId, memo) + 1;
+    memo.set(nodeId, depth);
+    return depth;
+  }
+
+  function collectOrgListRows() {
+    const week = ensureWeek();
+    const ordered = [];
+    const walk = (nodes) => {
+      nodes.forEach(node => {
+        ordered.push(node);
+        walk(childrenOf(node.id));
       });
-    const kids = childrenOf(node.id);
-    const peopleHtml = members.length
-      ? `<ul class="driver-org-list-node__people">${members.map(person => `
-          <li class="driver-org-list-chip${person.kind === 'admin' ? ' driver-org-list-chip--admin' : ''}">
-            ${person.kind === 'admin' ? '<span class="driver-org-list-chip__kind">관리</span>' : ''}
-            <span>${escapeHtml(person.name)}</span>
-          </li>`).join('')}</ul>`
-      : '<p class="driver-org-list-node__empty-people">소속 인원 없음</p>';
-    const childrenHtml = kids.length
-      ? `<div class="driver-org-list-node__children">${kids.map(renderOrgListNodeHtml).join('')}</div>`
-      : '';
-    return `
-      <section class="driver-org-list-node">
-        <div class="driver-org-list-node__head">
-          <h3 class="driver-org-list-node__title">${escapeHtml(node.label || '이름 없음')}</h3>
-          <span class="driver-org-list-node__meta">인원 ${members.length} · 하위 ${kids.length}</span>
-        </div>
-        <div class="driver-org-list-node__body">
-          ${peopleHtml}
-          ${childrenHtml}
-        </div>
-      </section>`;
+    };
+    walk(roots());
+    return ordered.map(node => {
+      const entries = collectSubtreeMemberEntries(node);
+      const driverIds = [];
+      const seen = new Set();
+      entries.forEach(entry => {
+        if (entry.kind === 'admin') return;
+        const id = String(entry.id || '').trim();
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        driverIds.push(id);
+      });
+      const stats = aggregateDriverIdsStats(driverIds, week);
+      return {
+        id: node.id,
+        label: node.label || '이름 없음',
+        depth: orgListDepth(node.id),
+        leaderName: resolveLeaderName(node.leaderRef) || '-',
+        people: driverIds.length,
+        coupangCalls: stats.coupangCalls,
+        baeminCalls: stats.baeminCalls,
+        coupangFee: stats.coupangFee,
+        baeminFee: stats.baeminFee,
+        isTopRep: state.org.topRepNodeId === node.id
+      };
+    });
   }
 
   function renderOrgList() {
@@ -932,29 +954,60 @@ const BremDriverManagementAdmin = (function () {
     const summary = $('#driverOrgListSummary');
     if (!root) return;
     loadOrg();
+    renderWeekControls();
     const top = roots();
     if (!top.length) {
       root.innerHTML = '<p class="driver-org-list__empty">조직도 박스가 없습니다. 「조직도」에서 루트 박스를 추가하세요.</p>';
-      if (summary) summary.textContent = '박스 0 · 배정 인원 0명';
+      if (summary) summary.textContent = '박스 0';
       return;
     }
 
-    let boxCount = 0;
-    let memberCount = 0;
-    const seenMembers = new Set();
+    const rows = collectOrgListRows();
+    const totalPeople = new Set();
     state.org.nodes.forEach(node => {
-      boxCount += 1;
       (node.memberRefs || []).forEach(ref => {
-        const key = `${ref.kind}:${ref.id}`;
-        if (seenMembers.has(key)) return;
-        seenMembers.add(key);
-        memberCount += 1;
+        if (ref.kind !== 'admin' && ref.id) totalPeople.add(String(ref.id));
       });
     });
+    const totals = aggregateDriverIdsStats([...totalPeople], ensureWeek());
     if (summary) {
-      summary.textContent = `박스 ${formatNumber(boxCount)} · 배정 인원 ${formatNumber(memberCount)}명 · 루트 ${formatNumber(top.length)}`;
+      summary.textContent = `박스 ${formatNumber(rows.length)} · 배정 기사 ${formatNumber(totalPeople.size)}명 · 쿠팡콜 ${formatNumber(totals.coupangCalls)} · 배민콜 ${formatNumber(totals.baeminCalls)} · 쿠팡배달료 ${formatNumber(totals.coupangFee)}원 · 배민배달료 ${formatNumber(totals.baeminFee)}원`;
     }
-    root.innerHTML = `<div class="driver-org-list">${top.map(renderOrgListNodeHtml).join('')}</div>`;
+
+    root.innerHTML = `
+      <table class="driver-org-list-table">
+        <thead>
+          <tr>
+            <th>박스</th>
+            <th>크루장</th>
+            <th>인원</th>
+            <th>쿠팡콜</th>
+            <th>배민콜</th>
+            <th>쿠팡배달료</th>
+            <th>배민배달료</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr class="${row.isTopRep ? 'is-toprep' : ''}">
+              <td class="driver-org-list-table__box" style="padding-left:${12 + row.depth * 16}px">
+                ${row.isTopRep ? '<span class="driver-org-badge driver-org-badge--toprep">대표</span> ' : ''}
+                <strong>${escapeHtml(row.label)}</strong>
+              </td>
+              <td>${escapeHtml(row.leaderName)}</td>
+              <td class="weekly-amount-cell">${formatNumber(row.people)}</td>
+              <td class="weekly-amount-cell">${formatNumber(row.coupangCalls)}</td>
+              <td class="weekly-amount-cell">${formatNumber(row.baeminCalls)}</td>
+              <td class="weekly-amount-cell">${formatNumber(row.coupangFee)}원</td>
+              <td class="weekly-amount-cell">${formatNumber(row.baeminFee)}원</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function refreshOrgList() {
+    await ensureDriverMgmtStatsLoaded({ force: true });
+    renderOrgList();
   }
 
   function selectedNode() {
@@ -3260,10 +3313,10 @@ const BremDriverManagementAdmin = (function () {
     });
 
     $('#driverOrgListReloadBtn')?.addEventListener('click', () => {
-      loadOrg();
-      renderOrgList();
-      showToast('조직도 정리를 새로고침했습니다.');
+      void refreshOrgList().then(() => showToast('조직도 정리를 새로고침했습니다.'));
     });
+    $('#driverOrgListWeekPrevBtn')?.addEventListener('click', () => shiftWeek(-1));
+    $('#driverOrgListWeekNextBtn')?.addEventListener('click', () => shiftWeek(1));
     $('#driverOrgAddRootBtn')?.addEventListener('click', () => addNode(''));
     $('#driverOrgAddChildBtn')?.addEventListener('click', () => {
       if (!state.selectedNodeId) {

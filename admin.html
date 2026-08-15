@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260815crew4">
+  <link rel="stylesheet" href="css/admin.css?v=20260816list1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5730,7 +5730,7 @@
               <button type="button" class="revenue-sub-btn" data-driver-mgmt-tab="region">기사지역관리</button>
             </div>
           </div>
-          <p class="form-help">조직도는 박스를 자유롭게 추가·수정하고 기사·관리자를 배정합니다. 조직도 정리는 같은 구조를 이름 리스트로 보여 줍니다. 기사지역관리는 배민·쿠팡 지역으로 기사를 정리하며, 기사등록프로그램과 지역이 양방향으로 동기화됩니다.</p>
+            <p class="form-help">조직도는 박스를 추가·수정하고 기사·관리자를 배정합니다. 조직도 정리는 박스별 크루장·인원·콜수·배달료 요약입니다. 기사지역관리는 배민·쿠팡 지역으로 기사를 정리합니다.</p>
         </article>
 
         <div class="driver-mgmt-panel" data-driver-mgmt-panel="org">
@@ -5857,9 +5857,16 @@
                 <button type="button" class="small-btn" id="driverOrgListReloadBtn">새로고침</button>
               </div>
             </div>
-            <p class="form-help">조직도 박스를 기준으로 소속 이름을 계층 리스트로 정리합니다. 조직도에서 저장한 내용이 그대로 반영됩니다.</p>
+            <p class="form-help">박스별 크루장 · 인원 · 쿠팡/배민 콜수 · 배달료 요약입니다. (정산주 수~화, 하위 포함)</p>
+            <div class="driver-org-week-bar">
+              <span class="baemin-field__label">정산주 (수~화)</span>
+              <button type="button" class="small-btn" id="driverOrgListWeekPrevBtn" title="이전 주">&lt;&lt;</button>
+              <button type="button" class="week-picker-trigger admin-period-input" data-week-picker-trigger="driver-org-week" id="driverOrgListWeekBtn">이번 주(수)</button>
+              <button type="button" class="small-btn" id="driverOrgListWeekNextBtn" title="다음 주">&gt;&gt;</button>
+              <span class="field-preview week-range-label" id="driverOrgListWeekRange">수~화</span>
+            </div>
             <div class="driver-org-list-summary" id="driverOrgListSummary" aria-live="polite"></div>
-            <div class="driver-org-list" id="driverOrgListRoot"></div>
+            <div class="driver-scroll-table table-wrap" id="driverOrgListRoot"></div>
           </article>
         </div>
 

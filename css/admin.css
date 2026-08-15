@@ -12804,21 +12804,17 @@ tr.is-week-first td {
   word-break: keep-all;
 }
 
-/* 조직도 정리 — 계층 리스트 (다크) */
+/* 조직도 정리 — 간단 요약 표 */
 .driver-org-list-summary {
-  margin: 0 0 14px;
-  padding: 10px 14px;
-  border-radius: 10px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
   background: var(--black-2);
   border: 1px solid var(--line);
-  color: var(--muted);
+  color: #fbbf24;
   font-size: 13px;
-  font-weight: 600;
-}
-
-.driver-org-list {
-  display: grid;
-  gap: 12px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .driver-org-list__empty {
@@ -12831,104 +12827,54 @@ tr.is-week-first td {
   border-radius: 12px;
 }
 
-.driver-org-list-node {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #171717;
-  overflow: hidden;
+.driver-org-list-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  table-layout: auto;
 }
 
-.driver-org-list-node__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 12px;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, #222 0%, #1a1a1a 100%);
+.driver-org-list-table th,
+.driver-org-list-table td {
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line);
+  font-size: 0.86rem;
+  vertical-align: middle;
+  color: #e5e7eb;
 }
 
-.driver-org-list-node__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--text);
-  letter-spacing: -0.02em;
+.driver-org-list-table th {
+  color: var(--yellow);
+  background: #111113;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 0.8rem;
 }
 
-.driver-org-list-node__meta {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
+.driver-org-list-table th:nth-child(1),
+.driver-org-list-table th:nth-child(2),
+.driver-org-list-table td:nth-child(1),
+.driver-org-list-table td:nth-child(2) {
+  text-align: left;
 }
 
-.driver-org-list-node__body {
-  padding: 12px 14px 14px;
+.driver-org-list-table td.weekly-amount-cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.driver-org-list-node__people {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 10px;
-  padding: 0;
-  list-style: none;
+.driver-org-list-table__box {
+  white-space: nowrap;
 }
 
-.driver-org-list-node__people:last-child {
-  margin-bottom: 0;
+.driver-org-list-table tr.is-toprep td {
+  background: rgba(245, 158, 11, 0.08);
 }
 
-.driver-org-list-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(255, 212, 0, 0.1);
-  border: 1px solid rgba(255, 212, 0, 0.35);
-  color: #ffe15a;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.2;
-}
-
-.driver-org-list-chip--admin {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.45);
-  color: #fbbf24;
-}
-
-.driver-org-list-chip__kind {
-  font-size: 10px;
-  font-weight: 700;
-  opacity: 0.8;
-}
-
-.driver-org-list-node__empty-people {
-  margin: 0 0 10px;
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.driver-org-list-node__children {
-  display: grid;
-  gap: 10px;
-  margin-top: 4px;
-  padding-left: 12px;
-  border-left: 3px solid rgba(255, 212, 0, 0.45);
-}
-
-.driver-org-list-node__children .driver-org-list-node {
-  background: #141414;
-}
-
-.driver-org-list-node__children .driver-org-list-node__children {
-  border-left-color: rgba(255, 212, 0, 0.3);
-}
-
-.driver-org-list-node__children .driver-org-list-node__children .driver-org-list-node__children {
-  border-left-color: rgba(255, 212, 0, 0.2);
+.driver-org-list-table .driver-org-badge--toprep {
+  color: #92400e;
+  vertical-align: middle;
 }
 
 @media (max-width: 960px) {
