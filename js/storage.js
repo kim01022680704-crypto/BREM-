@@ -1636,6 +1636,61 @@ const BremStorage = (function () {
     });
   }
 
+  let dashboardCallsLoadedToken = '';
+
+  function monthBoundsFromWeekStart(weekStart) {
+    const start = weekStartKeyFromDate(weekStart || new Date().toISOString().slice(0, 10));
+    const end = weekEndKeyFromDate(start);
+    const month = start.slice(0, 7);
+    const monthStart = `${month}-01`;
+    const monthEndDate = new Date(`${month}-01T00:00:00`);
+    monthEndDate.setMonth(monthEndDate.getMonth() + 1);
+    monthEndDate.setDate(0);
+    const monthEnd = [
+      monthEndDate.getFullYear(),
+      String(monthEndDate.getMonth() + 1).padStart(2, '0'),
+      String(monthEndDate.getDate()).padStart(2, '0')
+    ].join('-');
+    const since = monthStart <= start ? monthStart : start;
+    const until = monthEnd >= end ? monthEnd : end;
+    return { weekStart: start, weekEnd: end, monthStart, monthEnd, since, until };
+  }
+
+  function getDashboardCallsWindow(options = {}) {
+    let basis = String(options.weekStart || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(basis)) {
+      try {
+        basis = String(adminPreferences.getDashboardWeekBasis() || '').slice(0, 10);
+      } catch {
+        basis = new Date().toISOString().slice(0, 10);
+      }
+    }
+    return monthBoundsFromWeekStart(basis || new Date().toISOString().slice(0, 10));
+  }
+
+  function isDashboardCallsWindowReady(win = getDashboardCallsWindow()) {
+    const token = `${win.since}|${win.until}`;
+    if (dashboardCallsLoadedToken === token) return true;
+    const list = window.BremDataCache?.getData?.(KEYS.calls);
+    if (!Array.isArray(list) || !list.length) return false;
+    return list.some(row => {
+      const day = String(row?.date || '').slice(0, 10);
+      return day >= win.since && day <= win.until;
+    });
+  }
+
+  /** 대시보드 주간·월간 표시에 필요한 콜수만 로드 (2년치 전체 → timeout → 0 고착 방지) */
+  async function ensureDashboardCallsLoaded(options = {}) {
+    const win = getDashboardCallsWindow(options);
+    const result = await ensureCallsSinceDate(win.since, {
+      untilDate: win.until,
+      merge: true,
+      force: options.force === true
+    });
+    dashboardCallsLoadedToken = `${win.since}|${win.until}`;
+    return result;
+  }
+
   function isSectionCacheReady(sectionId) {
     if (!activeStorageAdapter.isHydrated?.()) return false;
 
@@ -1658,6 +1713,15 @@ const BremStorage = (function () {
       }
       if (sectionKeys.includes(KEYS.drivers) && !driversLoadMeta.complete) return false;
       if (sectionKeys.includes(KEYS.missions) && !window.BremDataCache?.isValid?.(KEYS.missions)) return false;
+      if (sectionId === 'dashboard') {
+        const restReady = sectionKeys
+          .filter(key => TABLE_STORAGE_KEYS.has(key)
+            && key !== KEYS.missions
+            && key !== KEYS.drivers
+            && key !== KEYS.calls)
+          .every(key => window.BremDataCache?.isValid?.(key));
+        return restReady && isDashboardCallsWindowReady();
+      }
       return sectionKeys
         .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
         .every(key => window.BremDataCache?.isValid?.(key));
@@ -1686,6 +1750,8 @@ const BremStorage = (function () {
         && activeStorageAdapter.isKeyLoaded?.(KEYS.missions);
       if (!missionsReady) return false;
     }
+
+    if (sectionId === 'dashboard') return false;
 
     return sectionKeys
       .filter(key => TABLE_STORAGE_KEYS.has(key) && key !== KEYS.missions && key !== KEYS.drivers)
@@ -1730,15 +1796,19 @@ const BremStorage = (function () {
     if (sectionId === 'rejections' && tableKeysWithoutManaged.includes(KEYS.rejections)) {
       loadOptions.allHistory = true;
     }
-    if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
-      const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
+    // 대시보드 콜수는 월간 창만 별도 로드 (2년치 동시 로드 timeout 방지)
+    const tableKeysForBulk = sectionId === 'dashboard'
+      ? tableKeysWithoutManaged.filter(key => key !== KEYS.calls)
+      : tableKeysWithoutManaged;
+    if (tableKeysForBulk.length && activeStorageAdapter.ensureKeysLoaded) {
+      const allTableCached = !force && tableKeysForBulk.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
-        tableKeysWithoutManaged.forEach(key => {
+        tableKeysForBulk.forEach(key => {
           const label = key === KEYS.promotionRules ? 'promotions' : key;
           logDataSource(label, true, sectionId);
         });
       } else {
-        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysWithoutManaged, loadOptions));
+        tasks.push(activeStorageAdapter.ensureKeysLoaded(tableKeysForBulk, loadOptions));
       }
     }
 
@@ -1805,6 +1875,13 @@ const BremStorage = (function () {
 
     if (tasks.length) {
       await Promise.all(tasks);
+    }
+
+    if (sectionId === 'dashboard') {
+      await ensureDashboardCallsLoaded({
+        weekStart: options.weekStart,
+        force
+      });
     }
 
     // 장기근속 진행률은 시작일 이후 콜수가 필요. 기본 2년 윈도우보다 이른 시작일이 있으면 더 앞부터 로드.
@@ -13940,6 +14017,7 @@ const BremStorage = (function () {
     persistLeaseErpTableViaServer,
     ensureSectionLoaded,
     ensureCallsSinceDate,
+    ensureDashboardCallsLoaded,
     ensureSettlementsSinceDate,
     ensureLongEventCallsLoaded,
     ensurePromotionCalculationCalls,

@@ -1343,6 +1343,16 @@
     if (BremStorage.adminPreferences?.setDashboardWeekBasis) {
       await Promise.resolve(BremStorage.adminPreferences.setDashboardWeekBasis(dateValue));
     }
+    try {
+      showAdminDataLoading(true);
+      await BremStorage.ensureDashboardCallsLoaded?.({ weekStart, force: false });
+      invalidateCallStatsIndex();
+    } catch (error) {
+      console.warn('[BREM] Dashboard calls reload failed:', error);
+      showToast(error.message || '대시보드 콜수를 불러오지 못했습니다.');
+    } finally {
+      showAdminDataLoading(false);
+    }
     renderDashboard();
   }
 
