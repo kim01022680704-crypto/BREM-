@@ -12410,6 +12410,28 @@ tr.is-week-first td {
   min-width: 220px;
 }
 
+.driver-region-bulk-mode {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.driver-region-bulk-mode .small-btn {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+#driverRegionBulkFullBtn {
+  border-color: #4ade80;
+  color: #bbf7d0;
+}
+
+#driverRegionBulkHiddenBtn {
+  border-color: #a1a1aa;
+  color: #e4e4e7;
+}
+
 .driver-region-list-filter__input {
   width: 100%;
 }

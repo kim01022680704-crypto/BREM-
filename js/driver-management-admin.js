@@ -1231,6 +1231,50 @@ const BremDriverManagementAdmin = (function () {
     });
   }
 
+  async function setAllDriversRegionMode(mode) {
+    const region = selectedRegion();
+    if (!region) {
+      showToast('지역을 선택하세요.');
+      return;
+    }
+    const drivers = driversInRegion(region);
+    if (!drivers.length) {
+      showToast('이 지역에 배정된 기사가 없습니다.');
+      return;
+    }
+    const next = normalizeDriverRegionMode(mode);
+    const label = next === 'hidden' ? '전체 미노출' : '전체 올노출';
+    const detail = next === 'hidden'
+      ? '기사앱에서 전원 기사대시보드가 숨겨집니다.'
+      : '전원 올노출(대시보드+순위)로 되돌립니다. 팀장·전체열람·할당만도 해제됩니다.';
+    if (!window.confirm(`${region.label || region.key} · ${drivers.length}명\n\n${label}로 일괄 설정할까요?\n${detail}`)) {
+      return;
+    }
+    const fullBtn = $('#driverRegionBulkFullBtn');
+    const hiddenBtn = $('#driverRegionBulkHiddenBtn');
+    if (fullBtn) fullBtn.disabled = true;
+    if (hiddenBtn) hiddenBtn.disabled = true;
+    try {
+      await postRegionExposure({
+        platform: region.platform,
+        key: region.key,
+        driverIds: drivers.map(driver => driver.id).filter(Boolean),
+        mode: next,
+        exposed: isRegionExposed(region.platform, region.key),
+        label: region.label,
+        partnerId: region.partnerId || '',
+        vendorId: region.vendorId || ''
+      });
+      renderRegionDetail();
+      showToast(`${label} — ${drivers.length}명 적용`);
+    } catch (error) {
+      showToast(error.message || `${label} 저장 실패`);
+    } finally {
+      if (fullBtn) fullBtn.disabled = false;
+      if (hiddenBtn) hiddenBtn.disabled = false;
+    }
+  }
+
   function selectedRegion() {
     return regionCatalog().find(item => item.key === state.selectedRegionKey) || null;
   }
@@ -1578,6 +1622,10 @@ const BremDriverManagementAdmin = (function () {
       }
       const filterMeta = $('#driverRegionListFilterMeta');
       if (filterMeta) filterMeta.textContent = '';
+      ['driverRegionBulkFullBtn', 'driverRegionBulkHiddenBtn'].forEach(id => {
+        const btn = $(`#${id}`);
+        if (btn) btn.disabled = true;
+      });
       if (totalsEl) totalsEl.textContent = '';
       clearRegionRankingUi();
       return;
@@ -1585,6 +1633,10 @@ const BremDriverManagementAdmin = (function () {
     const week = ensureWeek();
     const inRegion = driversInRegion(region);
     state.regionDetailDriverCount = inRegion.length;
+    ['driverRegionBulkFullBtn', 'driverRegionBulkHiddenBtn'].forEach(id => {
+      const btn = $(`#${id}`);
+      if (btn) btn.disabled = inRegion.length === 0;
+    });
     // 주간 콜수 기준 로컬 1등 표시(표 상단 합계와 함께)
     const ranked = inRegion.map(driver => {
       const stats = driverCallAndFee(driver.id, week, platform);
@@ -2806,6 +2858,12 @@ const BremDriverManagementAdmin = (function () {
         state.regionListFilter = value;
         renderRegionDetail();
       }, 160);
+    });
+    $('#driverRegionBulkFullBtn')?.addEventListener('click', () => {
+      void setAllDriversRegionMode('full');
+    });
+    $('#driverRegionBulkHiddenBtn')?.addEventListener('click', () => {
+      void setAllDriversRegionMode('hidden');
     });
     $('#driverRegionAddBtn')?.addEventListener('click', () => {
       const id = $('#driverRegionAddSelect')?.value;

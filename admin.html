@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260815hide1">
+  <link rel="stylesheet" href="css/admin.css?v=20260815bulk1">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
@@ -5901,6 +5901,10 @@
                     <span class="field-label">배정 기사 검색</span>
                     <input type="search" id="driverRegionListFilter" class="driver-region-list-filter__input" placeholder="이름·배민ID·연락처로 표에서 찾기" autocomplete="off">
                   </label>
+                  <div class="driver-region-bulk-mode" role="group" aria-label="배정 기사 일괄 노출">
+                    <button type="button" class="small-btn" id="driverRegionBulkFullBtn" title="이 지역 배정 기사 전원 올노출">전체 올노출</button>
+                    <button type="button" class="small-btn" id="driverRegionBulkHiddenBtn" title="이 지역 배정 기사 전원 미노출(기사앱 대시보드 숨김)">전체 미노출</button>
+                  </div>
                   <span class="driver-region-list-filter__meta" id="driverRegionListFilterMeta" aria-live="polite"></span>
                 </div>
                 <div class="driver-scroll-table table-wrap">
@@ -7960,7 +7964,7 @@
   <script src="js/direct-settlement-calc.js?v=20260813c"></script>
   <script src="js/settlement-result-direct.js?v=20260813c"></script>
   <script src="js/final-deposit.js?v=20260813m"></script>
-  <script src="js/driver-management-admin.js?v=20260815hide1"></script>
+  <script src="js/driver-management-admin.js?v=20260815bulk1"></script>
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260814match1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>

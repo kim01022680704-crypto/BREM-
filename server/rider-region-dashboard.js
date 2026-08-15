@@ -947,24 +947,33 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
   const key = String(body.key || '').trim();
   if (!key) return { ok: false, status: 400, error: '지역 키가 없습니다.' };
 
-  // 기사별 옵션 저장 (기본=올노출). driverId 가 있으면 지역 ON/OFF 대신 모드만 갱신.
+  // 기사별 옵션 저장 (기본=올노출).
+  // - driverId: 단건
+  // - driverIds: 일괄 (전체 올노출/미노출 등)
+  const driverIdsBulk = Array.isArray(body.driverIds)
+    ? body.driverIds.map(id => String(id || '').trim()).filter(Boolean)
+    : [];
   const driverId = String(body.driverId || '').trim();
-  if (driverId) {
+  if (driverId || driverIdsBulk.length) {
     try {
       const exposure = await readExposureMap(supabase);
       const side = { ...(exposure[platform] || {}) };
       const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
       const riders = { ...(prev.riders && typeof prev.riders === 'object' ? prev.riders : {}) };
       const mode = normalizeRiderRegionMode(body.mode);
-      if (mode === 'full') {
-        // 기본값이 올노출이므로 명시 full 은 맵에서 지워 용량을 줄인다.
-        delete riders[driverId];
-      } else {
-        riders[driverId] = {
-          mode, // dashboard | metrics | leader | hidden
-          updatedAt: new Date().toISOString()
-        };
-      }
+      const targets = driverIdsBulk.length ? driverIdsBulk : [driverId];
+      const now = new Date().toISOString();
+      targets.forEach(id => {
+        if (mode === 'full') {
+          // 기본값이 올노출이므로 명시 full 은 맵에서 지워 용량을 줄인다.
+          delete riders[id];
+        } else {
+          riders[id] = {
+            mode, // dashboard | metrics | leader | hidden
+            updatedAt: now
+          };
+        }
+      });
       const wasExposed = prev.exposed === true || prev.exposed === 1
         || ((!prev.exposed && body.exposed === true));
       side[key] = {
@@ -975,7 +984,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         partnerId: String(body.partnerId || prev.partnerId || '').trim(),
         vendorId: String(body.vendorId || prev.vendorId || '').trim(),
         riders,
-        updatedAt: new Date().toISOString()
+        updatedAt: now
       };
       // 지역 미노출인데 기사 옵션만 저장해도 riders 는 유지 (나중에 지역 ON 해도 유지)
       if (!side[key].exposed && !Object.keys(riders).length) {
@@ -984,9 +993,9 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
       const next = await upsertExposureMap(supabase, {
         ...exposure,
         [platform]: side,
-        updatedAt: new Date().toISOString()
+        updatedAt: now
       });
-      return { ok: true, exposure: next };
+      return { ok: true, exposure: next, updatedCount: targets.length };
     } catch (error) {
       return { ok: false, status: 500, error: error.message || '기사 노출 옵션을 저장하지 못했습니다.' };
     }
