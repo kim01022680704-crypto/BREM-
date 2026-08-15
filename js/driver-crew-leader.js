@@ -91,12 +91,12 @@
 
   function operatingTagHtml(operating) {
     if (operating === true) {
-      return '<span class="driver-crew-tag driver-crew-tag--on">운행중</span>';
+      return '<span class="driver-crew-tag driver-crew-tag--on"><span class="driver-crew-tag__dot" aria-hidden="true"></span>운행중</span>';
     }
     if (operating === false) {
-      return '<span class="driver-crew-tag driver-crew-tag--off">미운행</span>';
+      return '<span class="driver-crew-tag driver-crew-tag--off"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미운행</span>';
     }
-    return '<span class="driver-crew-tag driver-crew-tag--unk">미확인</span>';
+    return '<span class="driver-crew-tag driver-crew-tag--unk"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미확인</span>';
   }
 
   function renderResult(result) {
@@ -124,7 +124,7 @@
     const summary = result.summary || {};
     if (summaryEl) {
       summaryEl.textContent = `인원 ${formatNumber(summary.memberCount)} · 운행중 ${formatNumber(summary.operatingCount)}`
-        + ` · 현재콜 ${formatNumber(summary.todayCalls)} · 주간콜 ${formatNumber(summary.weekCalls)}`;
+        + ` · 오늘운행콜 ${formatNumber(summary.todayCalls)} · 주간합계 ${formatNumber(summary.weekCalls)}`;
     }
 
     const members = Array.isArray(result.members) ? result.members : [];
@@ -133,15 +133,16 @@
         ? members.map(member => `
           <tr class="${member.isSelf ? 'is-self' : ''}">
             <td>
-              <strong>${escapeHtml(member.name)}</strong>
-              ${member.isSelf ? ' <span class="driver-crew-tag driver-crew-tag--self">나</span>' : ''}
+              <div class="driver-crew-name">
+                <strong class="driver-crew-name__text">${escapeHtml(member.name)}</strong>
+                ${member.isSelf ? '<span class="driver-crew-tag driver-crew-tag--self">나</span>' : ''}
+              </div>
             </td>
-            <td>${operatingTagHtml(member.operating)}</td>
+            <td class="driver-crew-ops">${operatingTagHtml(member.operating)}</td>
             <td class="driver-crew-num">${formatNumber(member.todayCalls)}</td>
             <td class="driver-crew-num">${formatNumber(member.weekCalls)}</td>
-            <td class="driver-crew-num">${formatNumber(member.totalCalls)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="5" class="empty">소속 기사가 없습니다.</td></tr>';
+        : '<tr><td colspan="4" class="empty">소속 기사가 없습니다.</td></tr>';
     }
   }
 
