@@ -12132,6 +12132,34 @@ button.driver-org-node small,
   accent-color: #a78bfa;
 }
 
+.driver-region-leader-btn {
+  border-color: #f59e0b !important;
+  color: #fde68a !important;
+  font-weight: 700;
+}
+
+.driver-region-leader-btn.is-on {
+  background: rgba(245, 158, 11, 0.22) !important;
+  color: #fff7ed !important;
+}
+
+.driver-region-leader-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid #f59e0b;
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+tr.is-region-leader {
+  background: rgba(245, 158, 11, 0.06);
+}
+
 tr.is-dashboard-only .driver-region-mode:not(.is-on) {
   opacity: 0.85;
 }

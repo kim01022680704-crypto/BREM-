@@ -157,9 +157,12 @@ function listExposedRegions(exposure, platform) {
     .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 }
 
-/** 기사 지역 옵션: full=올노출(기본), dashboard=대시보드만(순위 비노출) */
+/** 기사 지역 옵션: full=올노출(기본), dashboard=대시보드만, leader=팀장(전체 열람·순위 비노출) */
 function normalizeRiderRegionMode(value) {
-  return String(value || '').toLowerCase() === 'dashboard' ? 'dashboard' : 'full';
+  const mode = String(value || '').toLowerCase();
+  if (mode === 'dashboard') return 'dashboard';
+  if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
+  return 'full';
 }
 
 function getRiderRegionMode(exposure, platform, regionKey, driverId) {
@@ -169,6 +172,7 @@ function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   return normalizeRiderRegionMode(entry?.mode);
 }
 
+/** 일반 기사앱 순위에 올릴 기사 — 올노출만 (대시보드만·팀장 제외) */
 function filterRankingRiders(exposure, platform, regionKey, riders = []) {
   return (riders || []).filter(rider => getRiderRegionMode(exposure, platform, regionKey, rider.id) === 'full');
 }
@@ -652,10 +656,14 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
 
   let live = { metrics: emptyMetrics(), realtimeRanking: [] };
   let weeklyRanking = [];
+  const viewerMode = getRiderRegionMode(exposure, platform, selected.key, riderRow.id);
   try {
     const regionRiders = await loadRidersForRegion(supabase, selected);
-    // 기사앱 순위만 올노출(full) 기사 — 대시보드만(dashboard)은 보드 열람은 가능·순위 제외
-    const rankingRiders = filterRankingRiders(exposure, platform, selected.key, regionRiders);
+    // 팀장: 다른 기사 올노출/대시보드만 설정과 무관하게 전원 순위·할당 보드를 본다.
+    // 일반: 올노출 기사만 순위에 포함 (대시보드만·팀장은 순위 비노출).
+    const rankingRiders = viewerMode === 'leader'
+      ? regionRiders
+      : filterRankingRiders(exposure, platform, selected.key, regionRiders);
     const liveOpts = { regionRiders, rankingRiders };
     const weekOpts = { regionRiders, rankingRiders };
     [live, weeklyRanking] = await Promise.all([
@@ -677,6 +685,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     regions,
     selectedRegionKey: selected.key,
     region: selected,
+    viewerMode,
     metrics: live.metrics,
     realtimeRanking: live.realtimeRanking || [],
     realtimeRankingDisabled: live.realtimeRankingDisabled === true,
@@ -918,7 +927,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         delete riders[driverId];
       } else {
         riders[driverId] = {
-          mode: 'dashboard',
+          mode, // dashboard | leader
           updatedAt: new Date().toISOString()
         };
       }
