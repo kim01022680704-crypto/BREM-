@@ -157,10 +157,16 @@ function listExposedRegions(exposure, platform) {
     .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 }
 
-/** 기사 지역 옵션: full=올노출(기본), dashboard=대시보드만, leader=팀장(전체 열람·순위 비노출) */
+/** 기사 지역 옵션:
+ * full=올노출(기본, 순위+전체 보드)
+ * dashboard=대시보드만(순위 비노출, 보드는 봄)
+ * metrics=할당만(순위 노출, 본인 보드엔 할당만)
+ * leader=팀장(전체 열람·순위 비노출)
+ */
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
   if (mode === 'dashboard') return 'dashboard';
+  if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
   if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
   return 'full';
 }
@@ -172,9 +178,12 @@ function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   return normalizeRiderRegionMode(entry?.mode);
 }
 
-/** 일반 기사앱 순위에 올릴 기사 — 올노출만 (대시보드만·팀장 제외) */
+/** 일반 기사앱 순위에 올릴 기사 — 올노출·할당만 (대시보드만·팀장 제외) */
 function filterRankingRiders(exposure, platform, regionKey, riders = []) {
-  return (riders || []).filter(rider => getRiderRegionMode(exposure, platform, regionKey, rider.id) === 'full');
+  return (riders || []).filter(rider => {
+    const mode = getRiderRegionMode(exposure, platform, regionKey, rider.id);
+    return mode === 'full' || mode === 'metrics';
+  });
 }
 
 function riderMatchesRegion(rider, region) {
@@ -686,11 +695,17 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     selectedRegionKey: selected.key,
     region: selected,
     viewerMode,
+    // 할당만: 본인 보드에는 TOP 순위를 숨기고 할당 지표만
+    rankingsHidden: viewerMode === 'metrics',
     metrics: live.metrics,
-    realtimeRanking: live.realtimeRanking || [],
-    realtimeRankingDisabled: live.realtimeRankingDisabled === true,
-    realtimeRankingReason: live.realtimeRankingReason || '',
-    weeklyRanking,
+    realtimeRanking: viewerMode === 'metrics' ? [] : (live.realtimeRanking || []),
+    realtimeRankingDisabled: viewerMode === 'metrics'
+      ? true
+      : live.realtimeRankingDisabled === true,
+    realtimeRankingReason: viewerMode === 'metrics'
+      ? '할당만 보기 — 실시간·주간 순위는 표시하지 않습니다.'
+      : (live.realtimeRankingReason || ''),
+    weeklyRanking: viewerMode === 'metrics' ? [] : weeklyRanking,
     message: ''
   };
   writeResponseCache(cacheKey, payload);
@@ -927,7 +942,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         delete riders[driverId];
       } else {
         riders[driverId] = {
-          mode, // dashboard | leader
+          mode, // dashboard | metrics | leader
           updatedAt: new Date().toISOString()
         };
       }

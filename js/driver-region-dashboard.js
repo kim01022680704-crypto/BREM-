@@ -221,6 +221,25 @@
     if (operatingEl) operatingEl.textContent = formatNumber(metrics.operating);
     if (remainingEl) remainingEl.textContent = formatNumber(metrics.remaining);
 
+    const rankingsHidden = result?.rankingsHidden === true
+      || result?.viewerMode === 'metrics';
+    document.querySelectorAll('.driver-region-dash-rank-block').forEach(el => {
+      el.hidden = rankingsHidden;
+    });
+
+    if (rankingsHidden) {
+      renderRanking(realtimeList, [], '할당만 보기 — 순위는 표시하지 않습니다.');
+      renderRanking(weeklyList, []);
+      if (noteEl) {
+        const slot = metrics.slotLabel ? ` · ${metrics.slotLabel}` : '';
+        noteEl.textContent = [
+          metrics.sourceNote || '할당 현황만 표시됩니다',
+          '순위 보드는 숨김(본인 설정: 할당만)'
+        ].filter(Boolean).join(' · ') + (slot || '');
+      }
+      return;
+    }
+
     const realtimeDisabled = result?.realtimeRankingDisabled === true
       || result?.platform === 'coupang';
     renderRanking(
