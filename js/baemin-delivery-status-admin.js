@@ -6103,35 +6103,21 @@
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
     // 한 줄(비율+%%+태그)이면 숫자 자릿수 바뀔 때 열이 찌그러짐 → 2줄 고정
-    // 태그는 짧게(달/미) — 모바일에서 전지역 표를 한눈에 넣기 위함
     return `<td class="dashboard-baemin-qcell">
       <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
         <span class="dashboard-baemin-qcell__meta">
           <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
-          <span class="baemin-quota-tag${statusClass}" title="${achieved ? '달성' : '미달성'}">${achieved ? '달' : '미'}</span>
+          <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
         </span>
       </div>
     </td>`;
   }
 
-  /** 모바일·조밀표용: 지역명 뒤 4글자 (쿠팡 대시보드와 동일) */
-  function shortDashboardRegionLabel(name) {
-    let raw = String(name || '').replace(/\s+/g, '').trim();
-    if (!raw) return '-';
-    if (raw === '전체합계' || raw === '전체 합계') return '합계';
-    raw = raw.replace(/\(\d+\)$/g, '');
-    const hangul = raw.replace(/[^가-힣]/g, '');
-    const base = hangul || raw;
-    if (!base) return '-';
-    if (base.length <= 4) return base;
-    return base.slice(-4);
-  }
-
   function renderDashboardTodayTable(regionRows, totals) {
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
-      <td><strong class="dashboard-baemin-region-name">합계</strong></td>
-      <td>${formatNumber(totals.drivingSum)}</td>
+      <td><strong class="dashboard-baemin-region-name">전체 합계</strong></td>
+      <td>${formatNumber(totals.drivingSum)}명</td>
       ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning)}
       ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon)}
       ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening)}
@@ -6139,13 +6125,12 @@
     </tr>`;
     const bodyRows = regionRows.map(region => {
       const fullName = String(region.regionName || '').trim() || '-';
-      const shortName = shortDashboardRegionLabel(fullName);
       return `<tr>
       <td>
-        <strong class="dashboard-baemin-region-name" title="${escapeHtml(fullName)}">${escapeHtml(shortName)}</strong>
+        <strong class="dashboard-baemin-region-name" title="${escapeHtml(fullName)}">${escapeHtml(fullName)}</strong>
         <span class="dashboard-baemin-region-meta">${formatNumber(region.setCount)}세트</span>
       </td>
-      <td>${formatNumber(region.drivingCount)}</td>
+      <td>${formatNumber(region.drivingCount)}명</td>
       ${renderCompactQuotaCell(region.morningTotal, region.targets.morning)}
       ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon)}
       ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening)}
@@ -6157,11 +6142,11 @@
         <thead>
           <tr>
             <th>지역</th>
-            <th>운행</th>
-            <th title="아침점심">아점</th>
-            <th title="오후">오후</th>
-            <th title="저녁">저녁</th>
-            <th title="심야">심야</th>
+            <th>운행중</th>
+            <th>아침점심</th>
+            <th>오후</th>
+            <th>저녁</th>
+            <th>심야</th>
           </tr>
         </thead>
         <tbody>${summaryRow}${bodyRows}</tbody>
@@ -6188,7 +6173,7 @@
         || partnerLabelById(partnerId)
         || partnerId;
       const active = partnerId === state.dashboardWeekPartnerId ? ' is-active' : '';
-      return `<button type="button" class="baemin-region-tab${active}" data-dashboard-week-partner="${partnerId}" title="${escapeHtml(regionName)}" aria-pressed="${partnerId === state.dashboardWeekPartnerId ? 'true' : 'false'}">${escapeHtml(shortDashboardRegionLabel(regionName))}</button>`;
+      return `<button type="button" class="baemin-region-tab${active}" data-dashboard-week-partner="${partnerId}" title="${escapeHtml(regionName)}" aria-pressed="${partnerId === state.dashboardWeekPartnerId ? 'true' : 'false'}">${escapeHtml(regionName)}</button>`;
     }).join('');
     bindDashboardWeekRegionBarClicks(ids);
   }
@@ -6202,7 +6187,6 @@
     const regionName = state.dashboardBaeminRegions.find(r => r.partnerId === pid)?.regionName
       || partnerLabelById(pid)
       || pid;
-    const shortName = shortDashboardRegionLabel(regionName);
     const setCount = getPartnerSetCount(pid);
     const byDate = new Map();
     (items || []).forEach(row => {
@@ -6229,7 +6213,7 @@
       const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
       return `<tr>
-        <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(shortName)}</strong></td>
+        <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(regionName)}</strong></td>
         <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
         ${renderCompactQuotaCell(actual.morning, targets.morning)}
         ${renderCompactQuotaCell(actual.afternoon, targets.afternoon)}
@@ -6239,7 +6223,7 @@
     }).join('');
 
     if (summaryEl) {
-      summaryEl.textContent = `${shortName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
+      summaryEl.textContent = `${regionName} · ${weekRange.fromDate} ~ ${weekRange.toDate} · 데이터 ${formatNumber(filledDays)}/${formatNumber(dates.length)}일 · 이번주 수~오늘`;
     }
     persistWeekDashboardCache();
   }

@@ -586,16 +586,11 @@
 
   .admin-app .table-scroll:not(.brem-mobile-cards),
   .admin-app .lease-table-wrap:not(.brem-mobile-cards),
-  .admin-app .baemin-table-scroll:not(.brem-mobile-cards) {
+  .admin-app .baemin-table-scroll:not(.brem-mobile-cards),
+  .admin-app .dashboard-baemin-table-wrap,
+  .admin-app #dashboard .dashboard-baemin-table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    max-width: 100%;
-  }
-
-  /* 대시보드 할당표: 가로 스크롤 금지 — PC처럼 전지역 한눈에 */
-  .admin-app .dashboard-baemin-table-wrap:not(.brem-mobile-cards),
-  .admin-app #dashboard .dashboard-baemin-table-wrap {
-    overflow-x: hidden !important;
     max-width: 100%;
   }
 
@@ -604,46 +599,71 @@
     min-width: 640px !important;
   }
 
+  /* 대시보드 할당표: 카드 변환 금지 · PC 표 + 가로 스크롤 */
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards,
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards table,
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards thead,
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards tbody,
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards tbody tr,
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards tbody td {
+    display: revert !important;
+    width: auto !important;
+    grid-template-columns: none !important;
+    position: static !important;
+    padding: revert !important;
+    border: revert !important;
+    background: revert !important;
+    box-shadow: none !important;
+  }
+
+  .admin-app #dashboard .dashboard-baemin-table-wrap.brem-mobile-cards tbody td::before {
+    content: none !important;
+    display: none !important;
+  }
+
   .admin-app #dashboard .dashboard-baemin-compact-table {
-    min-width: 0 !important;
-    width: 100% !important;
-    table-layout: fixed !important;
-    font-size: 0.6rem !important;
+    min-width: 640px !important;
+    width: max-content !important;
+    table-layout: auto !important;
+    font-size: 0.78rem !important;
   }
 
   .admin-app #dashboard .dashboard-baemin-compact-table th,
   .admin-app #dashboard .dashboard-baemin-compact-table td {
-    padding: 2px 1px !important;
-    line-height: 1.1 !important;
+    padding: 5px 6px !important;
+    line-height: 1.25 !important;
     white-space: nowrap !important;
-    overflow: hidden;
-    text-overflow: clip;
+    overflow: visible !important;
   }
 
   .admin-app #dashboard .dashboard-baemin-compact-table th {
-    font-size: 0.55rem !important;
+    font-size: 0.72rem !important;
   }
 
   .admin-app #dashboard .dashboard-baemin-region-name {
-    font-size: 0.62rem !important;
+    font-size: 0.8rem !important;
     font-weight: 800 !important;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.02em;
   }
 
-  .admin-app #dashboard .dashboard-baemin-region-meta,
+  .admin-app #dashboard .dashboard-baemin-region-meta {
+    display: block !important;
+    font-size: 0.68rem !important;
+  }
+
   .admin-app #dashboard .baemin-quota-cell__percent {
-    display: none !important;
+    display: inline !important;
   }
 
   .admin-app #dashboard .dashboard-baemin-qcell__ratio {
-    font-size: 0.55rem !important;
-    letter-spacing: -0.05em;
+    font-size: 0.72rem !important;
+    letter-spacing: -0.02em;
   }
 
   .admin-app #dashboard .dashboard-baemin-qcell .baemin-quota-tag {
-    min-height: 12px !important;
-    padding: 0 2px !important;
-    font-size: 0.48rem !important;
+    min-height: 16px !important;
+    padding: 1px 5px !important;
+    font-size: 0.62rem !important;
   }
 
   .admin-app .card {

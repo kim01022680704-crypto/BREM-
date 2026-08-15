@@ -3478,11 +3478,6 @@ textarea {
   font-weight: 700;
 }
 
-/* 현재 시간대 단독 표시는 쓰지 않음 — 전 지역·전체 시간대를 조밀하게 한눈에 */
-.dashboard-baemin-current-slot {
-  display: none !important;
-}
-
 @media (max-width: 768px) {
   #dashboard > .dashboard-baemin-live-card {
     order: -1;
@@ -3493,136 +3488,34 @@ textarea {
     flex-direction: column;
   }
 
-  #dashboard .dashboard-baemin-live-card {
-    margin-bottom: 10px;
-  }
-
-  #dashboard .dashboard-baemin-live-card__header {
-    gap: 8px;
-  }
-
-  #dashboard .dashboard-baemin-live-card__header h2 {
-    margin: 0;
-    font-size: 1.02rem;
-  }
-
-  #dashboard .dashboard-baemin-live-help {
-    display: none;
-  }
-
-  #dashboard .dashboard-baemin-live-actions .small-btn {
-    display: none;
-  }
-
-  #dashboard .dashboard-baemin-live-actions .primary-btn {
-    padding: 8px 12px;
-    font-size: 0.78rem;
-    min-height: 36px;
-  }
-
   .dashboard-baemin-applied-time {
-    font-size: 0.92rem;
-    padding: 2px 12px 0;
-  }
-
-  #dashboard .dashboard-baemin-live-card .admin-table-summary {
-    font-size: 0.7rem;
-    padding: 0 12px 4px;
+    font-size: 1.05rem;
+    padding: 6px 14px 2px;
   }
 
   .dashboard-baemin-live-panels,
   .dashboard-baemin-week-block {
-    padding-left: 6px;
-    padding-right: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
 
   .dashboard-baemin-table-wrap {
-    overflow-x: visible;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
-  /* PC처럼 전 지역·아점/오후/저녁/심야 전부 — 가로 스크롤 없이 조밀 */
-  #dashboard .dashboard-baemin-compact-table {
-    min-width: 0 !important;
-    width: 100%;
-    table-layout: fixed;
-    font-size: 0.62rem;
+  .dashboard-baemin-compact-table {
+    min-width: 640px;
+    font-size: 0.78rem;
   }
 
-  #dashboard .dashboard-baemin-today-table th:nth-child(1),
-  #dashboard .dashboard-baemin-today-table td:nth-child(1) {
-    width: 16%;
+  .dashboard-baemin-compact-table th,
+  .dashboard-baemin-compact-table td {
+    padding: 5px 6px;
   }
 
-  #dashboard .dashboard-baemin-today-table th:nth-child(2),
-  #dashboard .dashboard-baemin-today-table td:nth-child(2) {
-    width: 10%;
-  }
-
-  #dashboard .dashboard-baemin-today-table th:nth-child(n+3),
-  #dashboard .dashboard-baemin-today-table td:nth-child(n+3) {
-    width: 18.5%;
-  }
-
-  #dashboard .dashboard-baemin-compact-table th,
-  #dashboard .dashboard-baemin-compact-table td {
-    padding: 3px 1px;
-    line-height: 1.12;
-    white-space: nowrap;
-  }
-
-  #dashboard .dashboard-baemin-compact-table th {
-    font-size: 0.58rem;
-  }
-
-  #dashboard .dashboard-baemin-region-name {
-    display: inline-block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: clip;
-    white-space: nowrap;
-    font-size: 0.68rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-  }
-
-  #dashboard .dashboard-baemin-region-meta {
-    display: none;
-  }
-
-  #dashboard .dashboard-baemin-qcell__stack {
-    gap: 1px;
-    align-items: center;
-  }
-
-  #dashboard .dashboard-baemin-qcell__ratio {
-    font-size: 0.58rem;
-    letter-spacing: -0.04em;
-  }
-
-  #dashboard .dashboard-baemin-qcell__meta {
-    gap: 1px;
-    justify-content: center;
-  }
-
-  /* %% 숨기고 달성/미달성만 — 칸 폭 확보 */
-  #dashboard .baemin-quota-cell__percent {
-    display: none;
-  }
-
-  #dashboard .dashboard-baemin-qcell .baemin-quota-tag {
-    min-height: 13px;
-    padding: 0 2px;
-    font-size: 0.5rem;
-    border-radius: 3px;
-  }
-
-  .dashboard-baemin-week-block__head h3 {
-    font-size: 0.92rem;
-  }
-
-  .dashboard-baemin-week-region-tabs .baemin-region-tab {
-    padding: 4px 8px;
-    font-size: 0.72rem;
+  .dashboard-baemin-qcell__meta {
+    gap: 4px;
   }
 }
 

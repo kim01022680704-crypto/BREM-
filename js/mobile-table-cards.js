@@ -4,14 +4,13 @@
 (function () {
   var DRIVER_MQ = window.matchMedia('(max-width: 430px)');
   var ADMIN_MQ = window.matchMedia('(max-width: 768px)');
-  var SKIP = '.bulk-guide-table, .bulk-preview-table, .lease-bulk-guide-table, .baemin-weekday-quota-table';
+  var SKIP = '.bulk-guide-table, .bulk-preview-table, .lease-bulk-guide-table, .baemin-weekday-quota-table, .dashboard-baemin-compact-table';
   var ADMIN_WRAP_SEL =
-    '.table-wrap, .table-scroll, .lease-table-wrap, .dashboard-baemin-table-wrap, .baemin-coverage-table-wrap, .promotion-table-wrap, .mission-assignment-table-wrap, .payroll-notices-table-wrap';
+    '.table-wrap, .table-scroll, .lease-table-wrap, .baemin-coverage-table-wrap, .promotion-table-wrap, .mission-assignment-table-wrap, .payroll-notices-table-wrap';
   var ADMIN_TABLE_SEL = [
     '.admin-app .table-wrap table',
     '.admin-app .table-scroll table',
     '.admin-app .lease-table-wrap table',
-    '.admin-app .dashboard-baemin-table-wrap table',
     '.admin-app .baemin-coverage-table-wrap table',
     '.admin-app .promotion-table-wrap table',
     '.admin-app .mission-assignment-table-wrap table',
@@ -33,6 +32,9 @@
   function shouldSkip(table) {
     if (table.closest('.drivers-page')) return true;
     if (table.closest('.driver-payslip-table-block')) return true;
+    // 대시보드 배민/쿠팡 할당표는 PC처럼 표+가로스크롤 유지
+    if (table.closest('.dashboard-baemin-table-wrap')) return true;
+    if (table.closest('#dashboardBaeminLiveCard, #dashboardCoupangLiveCard')) return true;
     return table.matches(SKIP);
   }
 
