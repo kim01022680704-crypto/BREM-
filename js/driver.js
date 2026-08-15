@@ -978,18 +978,17 @@
     const items = noticeList
       .map((notice) => {
         const id = String(notice.id || '');
-        const open = Boolean(id && id === openNoticeId);
         const unread = Boolean(id && !isNoticeRead(id));
         const when = formatNoticeDate(notice.createdAt || notice.updatedAt);
         return `
         <article class="notice-item${notice.pinned ? ' is-pinned' : ''}${unread ? ' is-unread' : ''}" data-notice-id="${escapeHtml(id)}">
-          <button type="button" class="notice-item__toggle" aria-expanded="false">
+          <button type="button" class="notice-item__toggle">
             <span class="notice-item__title">
               ${notice.pinned ? '<span class="notice-item__pin" aria-hidden="true">📌</span>' : ''}
               ${notice.popup ? '<span class="notice-badge">팝업</span>' : ''}
-              ${when ? `<time class="notice-item__date">${escapeHtml(when)}</time>` : ''}
               <span class="notice-item__name">${escapeHtml(notice.title)}</span>
             </span>
+            <time class="notice-item__date">${when ? escapeHtml(when) : ''}</time>
           </button>
         </article>`;
       })

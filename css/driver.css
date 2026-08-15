@@ -1781,43 +1781,22 @@ h3 {
 
 .notice-item h3,
 .notice-item__title {
-  margin-bottom: 6px;
+  margin-bottom: 0;
   color: var(--text);
   font-size: 0.94rem;
   font-weight: 800;
 }
 
-.notice-item p,
-.notice-item__body {
-  color: #111111;
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
-
 .notice-item__toggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.4em;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   width: 100%;
   padding: 4px 0;
   border: 0;
   background: transparent;
   text-align: left;
-}
-
-.notice-item__toggle::after {
-  content: "▾";
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: #9ca3af;
-  font-size: 0.78rem;
-}
-
-.notice-item.is-open .notice-item__toggle::after {
-  transform: rotate(180deg);
 }
 
 .notice-item.is-unread .notice-item__name::after {
@@ -1833,22 +1812,25 @@ h3 {
 
 .notice-item__title {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 0;
   min-width: 0;
 }
 
 .notice-item__date {
-  flex: 0 0 auto;
-  color: #111111;
+  width: 3.4em;
+  color: #6b7280;
   font-size: 0.78rem;
   font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .notice-item__name {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #111111;
   font-weight: 800;
 }
@@ -1931,11 +1913,12 @@ html.brem-app-nav[data-driver-tab]:not([data-driver-tab="home"]):not([data-drive
 
 .notice-popup__body {
   margin: 0 0 18px;
-  color: #111111;
-  font-size: 1.08rem;
-  font-weight: 700;
+  color: #000000 !important;
+  font-size: 1.2rem !important;
+  font-weight: 800 !important;
   line-height: 1.7;
   white-space: pre-wrap;
+  opacity: 1 !important;
 }
 
 .notice-popup__actions {
@@ -2509,9 +2492,9 @@ button.calendar-day:hover {
 
   .notice-item p,
   .notice-item__body {
-    color: #111111;
-    font-size: 1rem;
-    font-weight: 600;
+    color: #000000 !important;
+    font-size: 1.1rem !important;
+    font-weight: 800 !important;
     overflow-wrap: anywhere;
   }
 
