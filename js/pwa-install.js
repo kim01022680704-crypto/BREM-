@@ -14,7 +14,17 @@
       window.navigator.standalone === true;
   }
 
-  if (isStandalone()) {
+  function isNativeApp() {
+    try {
+      return !!(window.BREM_IS_NATIVE_APP
+        || (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
+          && window.Capacitor.isNativePlatform()));
+    } catch {
+      return false;
+    }
+  }
+
+  if (isStandalone() || isNativeApp()) {
     wrap.hidden = true;
     return;
   }

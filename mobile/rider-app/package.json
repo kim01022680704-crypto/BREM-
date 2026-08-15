@@ -1,0 +1,26 @@
+{
+  "name": "brem-rider-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BREM 라이더 Android 앱 (Capacitor → brem.kr/driver.html)",
+  "scripts": {
+    "sync": "npx cap sync android",
+    "open": "npx cap open android",
+    "add:android": "npx cap add android",
+    "assets": "npx @capacitor/assets generate --android --iconBackgroundColor \"#0a0a0a\" --splashBackgroundColor \"#0a0a0a\""
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.2",
+    "@capacitor/app": "^7.0.2",
+    "@capacitor/core": "^7.4.2",
+    "@capacitor/splash-screen": "^7.0.2",
+    "@capacitor/status-bar": "^7.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.4.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

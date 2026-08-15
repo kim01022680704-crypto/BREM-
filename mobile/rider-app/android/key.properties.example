@@ -1,0 +1,6 @@
+# Copy to android/key.properties (do not commit) and fill in values.
+# storeFile can be absolute path to your .jks
+storePassword=
+keyPassword=
+keyAlias=brem-rider
+storeFile=

@@ -16,3 +16,11 @@ npm-debug.log*
 
 # scripts/_preview-*.js 가 만드는 로컬 미리보기 산출물
 _preview-*.html
+
+# 라이더 앱 서명·빌드 산출물
+*.jks
+*.keystore
+mobile/rider-app/android/key.properties
+mobile/rider-app/android/app/build/
+mobile/rider-app/android/.gradle/
+mobile/rider-app/android/local.properties
