@@ -12155,6 +12155,23 @@ button.driver-org-node small,
   vertical-align: middle;
 }
 
+.driver-region-dash-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.22);
+  border: 1px solid #a78bfa;
+  color: #ddd6fe;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+tr.is-dashboard-only {
+  background: rgba(167, 139, 250, 0.05);
+}
+
 tr.is-metrics-only {
   background: rgba(56, 189, 248, 0.05);
 }

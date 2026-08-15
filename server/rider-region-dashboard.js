@@ -158,14 +158,14 @@ function listExposedRegions(exposure, platform) {
 }
 
 /** 기사 지역 옵션:
- * full=올노출(기본, 순위+전체 보드)
- * dashboard=대시보드만(순위 비노출, 보드는 봄)
+ * full=올노출(기본, 본인 순위 노출 + 전체 보드)
+ * dashboard=전체열람(자기 순위 비노출, 남 순위+할당 열람)
  * metrics=할당만(순위 노출, 본인 보드엔 할당만)
- * leader=팀장(전체 열람·순위 비노출)
+ * leader=팀장(전원 보드 열람·본인 순위 비노출)
  */
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
-  if (mode === 'dashboard') return 'dashboard';
+  if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
   if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
   if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
   return 'full';
@@ -178,7 +178,7 @@ function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   return normalizeRiderRegionMode(entry?.mode);
 }
 
-/** 일반 기사앱 순위에 올릴 기사 — 올노출·할당만 (대시보드만·팀장 제외) */
+/** 일반 기사앱 순위에 올릴 기사 — 올노출·할당만 (전체열람·팀장 제외) */
 function filterRankingRiders(exposure, platform, regionKey, riders = []) {
   return (riders || []).filter(rider => {
     const mode = getRiderRegionMode(exposure, platform, regionKey, rider.id);
@@ -397,7 +397,7 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
   }
 
   // regionRiders 를 밖에서 넘기면 riders 테이블을 한 번만 읽는다.
-  // rankingRiders 가 있으면 실시간 순위만 그 집합으로 잡는다(대시보드만 기사는 제외).
+  // rankingRiders 가 있으면 실시간 순위만 그 집합으로 잡는다(전체열람 기사는 제외).
   const snapshotPromise = loadBaeminDeliverySnapshot(supabase, partnerId, today);
   const ridersPromise = Array.isArray(options.regionRiders)
     ? Promise.resolve(options.regionRiders)
@@ -668,8 +668,8 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   const viewerMode = getRiderRegionMode(exposure, platform, selected.key, riderRow.id);
   try {
     const regionRiders = await loadRidersForRegion(supabase, selected);
-    // 팀장: 다른 기사 올노출/대시보드만 설정과 무관하게 전원 순위·할당 보드를 본다.
-    // 일반: 올노출 기사만 순위에 포함 (대시보드만·팀장은 순위 비노출).
+    // 팀장: 다른 기사 올노출/전체열람 설정과 무관하게 전원 순위·할당 보드를 본다.
+    // 일반: 올노출·할당만 기사를 순위에 포함 (전체열람·팀장은 순위 비노출).
     const rankingRiders = viewerMode === 'leader'
       ? regionRiders
       : filterRankingRiders(exposure, platform, selected.key, regionRiders);
@@ -980,7 +980,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
     const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
     const riders = prev.riders && typeof prev.riders === 'object' ? prev.riders : {};
     if (!exposed) {
-      // 지역 OFF 해도 기사별 옵션(대시보드만 등)은 유지
+      // 지역 OFF 해도 기사별 옵션(전체열람 등)은 유지
       if (Object.keys(riders).length) {
         side[key] = {
           ...prev,

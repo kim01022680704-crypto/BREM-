@@ -1148,13 +1148,19 @@ const BremDriverManagementAdmin = (function () {
     return Boolean(side[key]?.exposed);
   }
 
-  /** 기사별 옵션: full=올노출, dashboard=대시보드만, metrics=할당만, leader=팀장 */
-  function getDriverRegionMode(platform, regionKey, driverId) {
-    const mode = String(state.regionExposure?.[platform]?.[regionKey]?.riders?.[driverId]?.mode || '').toLowerCase();
-    if (mode === 'dashboard') return 'dashboard';
-    if (mode === 'metrics' || mode === 'quota') return 'metrics';
-    if (mode === 'leader' || mode === 'team_leader') return 'leader';
+  /** 기사별 옵션: full=올노출, dashboard=전체열람, metrics=할당만, leader=팀장 */
+  function normalizeDriverRegionMode(value) {
+    const mode = String(value || '').toLowerCase();
+    if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
+    if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
+    if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
     return 'full';
+  }
+
+  function getDriverRegionMode(platform, regionKey, driverId) {
+    return normalizeDriverRegionMode(
+      state.regionExposure?.[platform]?.[regionKey]?.riders?.[driverId]?.mode
+    );
   }
 
   async function loadRegionExposure() {
@@ -1216,7 +1222,7 @@ const BremDriverManagementAdmin = (function () {
       platform: region.platform,
       key: region.key,
       driverId,
-      mode: mode === 'dashboard' ? 'dashboard' : 'full',
+      mode: normalizeDriverRegionMode(mode),
       exposed: isRegionExposed(region.platform, region.key),
       label: region.label,
       partnerId: region.partnerId || '',
@@ -1622,18 +1628,18 @@ const BremDriverManagementAdmin = (function () {
           mode === 'leader' ? 'is-region-leader' : ''
         ].filter(Boolean).join(' ');
         return `<tr${rowClass ? ` class="${rowClass}"` : ''}>
-          <td><strong>${escapeHtml(row.driver.name)}</strong>${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}${mode === 'leader' ? ' <span class="driver-region-leader-badge" title="팀장 — 기사앱에서 할당·실시간·주간 전원 표시">팀장</span>' : ''}${mode === 'metrics' ? ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>' : ''}</td>
+          <td><strong>${escapeHtml(row.driver.name)}</strong>${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}${mode === 'leader' ? ' <span class="driver-region-leader-badge" title="팀장 — 기사앱에서 할당·실시간·주간 전원 표시">팀장</span>' : ''}${mode === 'dashboard' ? ' <span class="driver-region-dash-badge" title="자기 순위 비노출 · 남 순위+할당 열람">전체열람</span>' : ''}${mode === 'metrics' ? ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>' : ''}</td>
           <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
           <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
           <td>
             <div class="driver-region-mode-group" role="group" aria-label="기사앱 노출">
-              <label class="driver-region-mode${mode === 'full' ? ' is-on' : ''}" title="대시보드(할당+순위) + 순위 노출">
+              <label class="driver-region-mode${mode === 'full' ? ' is-on' : ''}" title="대시보드(할당+순위) + 본인 순위 노출">
                 <input type="radio" name="region-rider-mode-${escapeHtml(row.driver.id)}" data-region-rider-mode="${escapeHtml(row.driver.id)}" value="full" ${mode === 'full' ? 'checked' : ''}>
                 <span>올노출</span>
               </label>
-              <label class="driver-region-mode driver-region-mode--dash${mode === 'dashboard' ? ' is-on' : ''}" title="대시보드 전체 열람 · 순위 비노출">
+              <label class="driver-region-mode driver-region-mode--dash${mode === 'dashboard' ? ' is-on' : ''}" title="자기 순위는 안 나오고 · 남 순위+할당은 봄 (대시보드 전체열람)">
                 <input type="radio" name="region-rider-mode-${escapeHtml(row.driver.id)}" data-region-rider-mode="${escapeHtml(row.driver.id)}" value="dashboard" ${mode === 'dashboard' ? 'checked' : ''}>
-                <span>대시보드만</span>
+                <span>전체열람</span>
               </label>
               <label class="driver-region-mode driver-region-mode--metrics${mode === 'metrics' ? ' is-on' : ''}" title="순위는 노출 · 본인 기사대시보드엔 할당만">
                 <input type="radio" name="region-rider-mode-${escapeHtml(row.driver.id)}" data-region-rider-mode="${escapeHtml(row.driver.id)}" value="metrics" ${mode === 'metrics' ? 'checked' : ''}>
@@ -1848,8 +1854,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 「올노출」/「대시보드만」/「할당만」(순위노출·보드엔할당만)/「팀장임명」.'
-        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 「올노출」/「대시보드만」/「할당만」(순위노출·보드엔할당만)/「팀장임명」.';
+        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 「올노출」/「전체열람」(자기순위비노출·남순위+할당)/「할당만」/「팀장임명」.'
+        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 「올노출」/「전체열람」(자기순위비노출·남순위+할당)/「할당만」/「팀장임명」.';
     }
 
     // 지역 목록·노출은 기사 전체 로드를 기다리지 않고 먼저 그린다.
@@ -2665,9 +2671,7 @@ const BremDriverManagementAdmin = (function () {
         const region = selectedRegion();
         const driverId = riderMode.dataset.regionRiderMode;
         if (!region || !driverId) return;
-        const mode = riderMode.value === 'dashboard'
-          ? 'dashboard'
-          : (riderMode.value === 'metrics' ? 'metrics' : 'full');
+        const mode = normalizeDriverRegionMode(riderMode.value);
         const prev = getDriverRegionMode(region.platform, region.key, driverId);
         if (mode === prev) return;
         void setDriverRegionMode(region, driverId, mode)
@@ -2680,11 +2684,13 @@ const BremDriverManagementAdmin = (function () {
               tr.classList.remove('is-region-leader');
               tr.querySelector('.driver-region-leader-badge')?.remove();
               tr.querySelector('.driver-region-metrics-badge')?.remove();
-              if (mode === 'metrics') {
-                const nameCell = tr.querySelector('td strong');
-                if (nameCell && !tr.querySelector('.driver-region-metrics-badge')) {
-                  nameCell.insertAdjacentHTML('afterend', ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>');
-                }
+              tr.querySelector('.driver-region-dash-badge')?.remove();
+              const nameCell = tr.querySelector('td strong');
+              if (mode === 'metrics' && nameCell && !tr.querySelector('.driver-region-metrics-badge')) {
+                nameCell.insertAdjacentHTML('afterend', ' <span class="driver-region-metrics-badge" title="순위 노출 · 본인 보드엔 할당만">할당만</span>');
+              }
+              if (mode === 'dashboard' && nameCell && !tr.querySelector('.driver-region-dash-badge')) {
+                nameCell.insertAdjacentHTML('afterend', ' <span class="driver-region-dash-badge" title="자기 순위 비노출 · 남 순위+할당 열람">전체열람</span>');
               }
               const leaderBtn = tr.querySelector('[data-region-rider-leader]');
               if (leaderBtn) {
@@ -2699,7 +2705,7 @@ const BremDriverManagementAdmin = (function () {
               });
             }
             showToast(mode === 'dashboard'
-              ? '대시보드만 — 기사앱 순위에는 안 나옵니다'
+              ? '전체열람 — 자기 순위 비노출 · 남 순위+할당 열람'
               : mode === 'metrics'
                 ? '할당만 — 순위는 노출 · 본인 보드엔 할당만'
                 : '올노출 — 대시보드 + 순위 노출');
