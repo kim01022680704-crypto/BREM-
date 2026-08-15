@@ -22,7 +22,8 @@
     weekStart: '',
     lastResult: null,
     pollTimer: null,
-    requestSeq: 0
+    requestSeq: 0,
+    visibilitySeq: 0
   };
 
   function showToast(message) {
@@ -180,10 +181,14 @@
   }
 
   async function refreshEntryVisibility() {
+    const seq = ++state.visibilitySeq;
     try {
       const weekStart = ensureWeekStart();
       const result = await window.BremStorage?.fetchRiderCrewLeaderFromServer?.({ weekStart });
-      if (!result?.ok || !result.isCrewLeader) {
+      if (seq !== state.visibilitySeq) return false;
+      // 세션/네트워크 실패 시에는 숨기지 않음(초기 호출이 로그인 성공을 덮어쓰는 레이스 방지)
+      if (!result?.ok) return false;
+      if (!result.isCrewLeader) {
         openBtn.hidden = true;
         if (state.visible) closePanel();
         return false;
@@ -191,7 +196,6 @@
       openBtn.hidden = false;
       return true;
     } catch (_) {
-      openBtn.hidden = true;
       return false;
     }
   }
@@ -233,6 +237,7 @@
 
   function resetPanel() {
     state.requestSeq += 1;
+    state.visibilitySeq += 1;
     state.weekStart = settlementWeekStart(localDateKey());
     state.lastResult = null;
     state.loading = false;
@@ -270,9 +275,11 @@
     }
   });
 
-  // 로그인 후 크루장이면 버튼 노출
-  void refreshEntryVisibility();
+  // 세션 준비 후에만 노출 재검사 (스크립트 로드 직후 토큰 없는 호출은 하지 않음)
   document.addEventListener('brem-rider-session-ready', () => {
+    void refreshEntryVisibility();
+  });
+  document.addEventListener('brem-driver-data-ready', () => {
     void refreshEntryVisibility();
   });
 

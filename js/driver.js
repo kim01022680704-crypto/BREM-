@@ -617,6 +617,11 @@
     renderDriver(driver);
     startDriverSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
+    document.dispatchEvent(new CustomEvent('brem-rider-session-ready', {
+      detail: { driverId: driver.id || null }
+    }));
+    void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
+    void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
   }
 
   let driverCallIndex = null;

@@ -66,7 +66,15 @@ async function readOrgChart(supabase) {
     .eq('key', ORG_CHART_KEY)
     .maybeSingle();
   if (error) throw error;
-  const raw = data?.value && typeof data.value === 'object' ? data.value : {};
+  let raw = data?.value;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { raw = {}; }
+  }
+  if (!raw || typeof raw !== 'object') raw = {};
+  // 일부 저장 경로에서 { value: chart } 중첩
+  if (!Array.isArray(raw.nodes) && raw.value && typeof raw.value === 'object') {
+    raw = raw.value;
+  }
   const nodes = Array.isArray(raw.nodes) ? raw.nodes : [];
   return {
     nodes: nodes.map((node, index) => ({
@@ -96,7 +104,38 @@ function findCrewBoxForLeader(chart, riderId) {
   const id = String(riderId || '').trim();
   if (!id) return null;
   return (chart.nodes || []).find(node => (
-    node.leaderRef?.kind === 'driver' && node.leaderRef?.id === id
+    node.leaderRef?.kind === 'driver' && String(node.leaderRef.id || '') === id
+  )) || null;
+}
+
+async function findCrewBoxForLeaderResolved(supabase, chart, riderId, rider) {
+  const byId = findCrewBoxForLeader(chart, riderId);
+  if (byId) return byId;
+
+  const myName = String(rider?.name || '').trim();
+  if (!myName) return null;
+
+  const leaderIds = [...new Set(
+    (chart.nodes || [])
+      .filter(node => node.leaderRef?.kind === 'driver' && node.leaderRef.id)
+      .map(node => String(node.leaderRef.id))
+  )];
+  if (!leaderIds.length) return null;
+
+  const leaders = await loadRidersByIds(supabase, leaderIds);
+  const nameToIds = new Map();
+  leaders.forEach(row => {
+    const name = String(row?.name || '').trim();
+    const id = String(row?.id || '').trim();
+    if (!name || !id) return;
+    if (!nameToIds.has(name)) nameToIds.set(name, []);
+    nameToIds.get(name).push(id);
+  });
+  const matchedIds = nameToIds.get(myName) || [];
+  if (matchedIds.length !== 1) return null;
+  const matchedId = matchedIds[0];
+  return (chart.nodes || []).find(node => (
+    node.leaderRef?.kind === 'driver' && String(node.leaderRef.id || '') === matchedId
   )) || null;
 }
 
@@ -245,7 +284,7 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
 
   const supabase = getServiceClient();
   const chart = await readOrgChart(supabase);
-  const box = findCrewBoxForLeader(chart, riderId);
+  const box = await findCrewBoxForLeaderResolved(supabase, chart, riderId, me.rider);
   if (!box) {
     return {
       ok: true,
