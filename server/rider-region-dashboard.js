@@ -162,7 +162,7 @@ function listExposedRegions(exposure, platform) {
  * dashboard=전체열람(자기 순위 비노출, 남 순위+할당 열람)
  * metrics=할당만(순위 노출, 본인 보드엔 할당만)
  * leader=팀장(전원 보드 열람·본인 순위 비노출)
- * hidden=미노출(기사앱 기사대시보드 자체 숨김)
+ * hidden=미노출(기사앱 대시보드만 숨김 — 집계·순위·팀장 열람에는 포함)
  */
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
@@ -180,11 +180,13 @@ function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   return normalizeRiderRegionMode(entry?.mode);
 }
 
-/** 일반 기사앱 순위에 올릴 기사 — 올노출·할당만 (전체열람·팀장·미노출 제외) */
+/** 일반 순위에 올릴 기사 — 올노출·할당만·미노출 (전체열람·팀장만 제외)
+ * 미노출 = 기사앱 대시보드만 숨김. 집계·순위·팀장 열람에는 그대로 포함.
+ */
 function filterRankingRiders(exposure, platform, regionKey, riders = []) {
   return (riders || []).filter(rider => {
     const mode = getRiderRegionMode(exposure, platform, regionKey, rider.id);
-    return mode === 'full' || mode === 'metrics';
+    return mode === 'full' || mode === 'metrics' || mode === 'hidden';
   });
 }
 
@@ -692,8 +694,9 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   const viewerMode = getRiderRegionMode(exposure, platform, selected.key, riderRow.id);
   try {
     const regionRiders = await loadRidersForRegion(supabase, selected);
-    // 팀장: 다른 기사 올노출/전체열람 설정과 무관하게 전원 순위·할당 보드를 본다.
-    // 일반: 올노출·할당만 기사를 순위에 포함 (전체열람·팀장은 순위 비노출).
+    // 팀장: 다른 기사 올노출/전체열람/미노출 설정과 무관하게 전원 순위·할당 보드를 본다.
+    // 일반: 올노출·할당만·미노출을 순위에 포함 (전체열람·팀장은 순위 비노출).
+    // 미노출 기사는 본인 앱 대시보드만 숨기고, 집계·타인/팀장 순위에는 남긴다.
     const rankingRiders = viewerMode === 'leader'
       ? regionRiders
       : filterRankingRiders(exposure, platform, selected.key, regionRiders);
@@ -773,7 +776,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   try {
     const exposure = await readExposureMap(supabase);
     const regionRiders = await loadRidersForRegion(supabase, region);
-    // 관리자 화면도 기사앱과 동일: 팀장·전체열람·미노출은 순위에서 제외
+    // 관리자 화면도 기사앱과 동일: 팀장·전체열람은 순위에서 제외 (미노출은 집계 포함)
     const rankingRiders = filterRankingRiders(exposure, platform, region.key, regionRiders);
     const shared = { maskNames: false, regionRiders, rankingRiders };
     const [live, weeklyRanking] = await Promise.all([
