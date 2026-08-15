@@ -197,6 +197,12 @@
       regionLabelEl.textContent = result?.region?.label || selectedKey || '-';
     }
 
+    if (regions.length) {
+      setEntryVisible(true);
+    } else if (result?.dashboardHidden === true || result?.viewerMode === 'hidden') {
+      void refreshEntryVisibility();
+    }
+
     const noRegions = !regions.length;
     const message = result?.message || (noRegions ? '관리자가 노출로 설정한 지역이 없습니다.' : '');
     if (emptyEl) {
@@ -334,6 +340,33 @@
     }
   }
 
+  function setEntryVisible(visible) {
+    openBtn.hidden = !visible;
+    if (!visible) {
+      closePanel();
+    }
+  }
+
+  async function refreshEntryVisibility() {
+    if (!window.BremStorage?.fetchRiderRegionDashboardFromServer) return;
+    try {
+      const weekStart = ensureWeekStart();
+      const [baemin, coupang] = await Promise.all([
+        window.BremStorage.fetchRiderRegionDashboardFromServer({ platform: 'baemin', weekStart }),
+        window.BremStorage.fetchRiderRegionDashboardFromServer({ platform: 'coupang', weekStart })
+      ]);
+      const has = Boolean(
+        (baemin?.ok && baemin.regions?.length)
+        || (coupang?.ok && coupang.regions?.length)
+      );
+      // 둘 다 성공했는데 지역이 없으면 숨김. 한쪽만 실패하면 버튼을 남긴다.
+      const bothOk = baemin?.ok === true && coupang?.ok === true;
+      if (bothOk) setEntryVisible(has);
+    } catch {
+      /* 네트워크 실패 시 버튼 유지 */
+    }
+  }
+
   function openPanel() {
     window.BremDriverWithdrawal?.close?.();
     window.BremDriverWeeklyPayslip?.close?.();
@@ -346,7 +379,13 @@
     const stale = findBestStale();
     if (stale) renderDashboard(stale);
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    void loadDashboard({ force: false });
+    void loadDashboard({ force: false }).then(() => {
+      const result = state.lastResult;
+      if (result?.ok && !result.regions?.length) {
+        // 현재 플랫폼이 비어도 다른 플랫폼에 있을 수 있어 전체 재검사
+        void refreshEntryVisibility();
+      }
+    });
     startAutoPoll();
   }
 
@@ -414,6 +453,9 @@
     reset: resetPanel,
     invalidateCache() {
       cache.clear();
-    }
+    },
+    refreshEntryVisibility
   };
+
+  void refreshEntryVisibility();
 })();

@@ -162,12 +162,14 @@ function listExposedRegions(exposure, platform) {
  * dashboard=전체열람(자기 순위 비노출, 남 순위+할당 열람)
  * metrics=할당만(순위 노출, 본인 보드엔 할당만)
  * leader=팀장(전원 보드 열람·본인 순위 비노출)
+ * hidden=미노출(기사앱 기사대시보드 자체 숨김)
  */
 function normalizeRiderRegionMode(value) {
   const mode = String(value || '').toLowerCase();
   if (mode === 'dashboard' || mode === 'view' || mode === '전체열람') return 'dashboard';
   if (mode === 'metrics' || mode === 'quota' || mode === '할당만') return 'metrics';
   if (mode === 'leader' || mode === 'team_leader' || mode === '팀장') return 'leader';
+  if (mode === 'hidden' || mode === 'off' || mode === 'none' || mode === '미노출') return 'hidden';
   return 'full';
 }
 
@@ -178,11 +180,20 @@ function getRiderRegionMode(exposure, platform, regionKey, driverId) {
   return normalizeRiderRegionMode(entry?.mode);
 }
 
-/** 일반 기사앱 순위에 올릴 기사 — 올노출·할당만 (전체열람·팀장 제외) */
+/** 일반 기사앱 순위에 올릴 기사 — 올노출·할당만 (전체열람·팀장·미노출 제외) */
 function filterRankingRiders(exposure, platform, regionKey, riders = []) {
   return (riders || []).filter(rider => {
     const mode = getRiderRegionMode(exposure, platform, regionKey, rider.id);
     return mode === 'full' || mode === 'metrics';
+  });
+}
+
+/** 기사앱에 대시보드를 보여줄 지역 — 미노출 기사 제외 */
+function filterViewerRegions(exposure, platform, riderRow, regions = []) {
+  const riderId = riderRow?.id;
+  return (regions || []).filter(region => {
+    if (!riderMatchesRegion(riderRow, region)) return false;
+    return getRiderRegionMode(exposure, platform, region.key, riderId) !== 'hidden';
   });
 }
 
@@ -622,7 +633,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   }
 
   // 라이더 노출 ON 지역 중, 이 기사가 등록된 지역만 대시보드에 보이게 한다.
-  // (예전에는 노출만 켜면 전 기사가 해당 지역을 볼 수 있었다.)
+  // 미노출(hidden) 기사는 해당 지역 대시보드 자체를 숨긴다.
   const riderRow = mapRiderRow({
     id: me.rider?.id,
     name: me.rider?.name,
@@ -633,9 +644,13 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
     }
   });
   const exposedAll = listExposedRegions(exposure, platform);
-  const regions = exposedAll.filter(region => riderMatchesRegion(riderRow, region));
+  const regions = filterViewerRegions(exposure, platform, riderRow, exposedAll);
   if (!regions.length) {
     const hasAnyExposure = exposedAll.length > 0;
+    const hiddenOnly = hasAnyExposure && exposedAll.some(region =>
+      riderMatchesRegion(riderRow, region)
+      && getRiderRegionMode(exposure, platform, region.key, riderRow.id) === 'hidden'
+    );
     return {
       ok: true,
       platform,
@@ -645,12 +660,16 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
       regions: [],
       selectedRegionKey: '',
       region: null,
+      viewerMode: hiddenOnly ? 'hidden' : 'full',
+      dashboardHidden: hiddenOnly,
       metrics: emptyMetrics(),
       realtimeRanking: [],
       weeklyRanking: [],
-      message: hasAnyExposure
-        ? '등록된 지역에 노출된 대시보드가 없습니다. 관리자 「기사지역관리」에서 본인 지역 등록·라이더 노출을 확인하세요.'
-        : '관리자가 노출로 설정한 지역이 없습니다.'
+      message: hiddenOnly
+        ? '관리자가 이 계정의 기사대시보드를 미노출로 설정했습니다.'
+        : hasAnyExposure
+          ? '등록된 지역에 노출된 대시보드가 없습니다. 관리자 「기사지역관리」에서 본인 지역 등록·라이더 노출을 확인하세요.'
+          : '관리자가 노출로 설정한 지역이 없습니다.'
     };
   }
 
@@ -942,7 +961,7 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
         delete riders[driverId];
       } else {
         riders[driverId] = {
-          mode, // dashboard | metrics | leader
+          mode, // dashboard | metrics | leader | hidden
           updatedAt: new Date().toISOString()
         };
       }

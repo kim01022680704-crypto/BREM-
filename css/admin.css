@@ -12128,6 +12128,12 @@ button.driver-org-node small,
   background: rgba(56, 189, 248, 0.14);
 }
 
+.driver-region-mode--hidden.is-on {
+  border-color: #71717a;
+  color: #e4e4e7;
+  background: rgba(113, 113, 122, 0.2);
+}
+
 .driver-region-mode input {
   width: 15px;
   height: 15px;
@@ -12140,6 +12146,10 @@ button.driver-org-node small,
 
 .driver-region-mode--metrics input {
   accent-color: #38bdf8;
+}
+
+.driver-region-mode--hidden input {
+  accent-color: #a1a1aa;
 }
 
 .driver-region-metrics-badge {
@@ -12168,8 +12178,26 @@ button.driver-org-node small,
   vertical-align: middle;
 }
 
+.driver-region-hidden-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(113, 113, 122, 0.28);
+  border: 1px solid #a1a1aa;
+  color: #e4e4e7;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
 tr.is-dashboard-only {
   background: rgba(167, 139, 250, 0.05);
+}
+
+tr.is-dashboard-hidden {
+  background: rgba(113, 113, 122, 0.08);
+  opacity: 0.88;
 }
 
 tr.is-metrics-only {
@@ -12179,25 +12207,29 @@ tr.is-metrics-only {
 .driver-region-leader-btn {
   border-color: #f59e0b !important;
   color: #fde68a !important;
-  font-weight: 700;
+  font-weight: 800;
+  min-width: 72px;
 }
 
 .driver-region-leader-btn.is-on {
-  background: rgba(245, 158, 11, 0.22) !important;
+  background: rgba(245, 158, 11, 0.35) !important;
   color: #fff7ed !important;
+  border-color: #fbbf24 !important;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
 }
 
 .driver-region-leader-badge {
   display: inline-block;
   margin-left: 6px;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(245, 158, 11, 0.25);
-  border: 1px solid #f59e0b;
-  color: #fde68a;
-  font-size: 11px;
-  font-weight: 800;
+  background: rgba(245, 158, 11, 0.35);
+  border: 1px solid #fbbf24;
+  color: #fff7ed;
+  font-size: 12px;
+  font-weight: 900;
   vertical-align: middle;
+  letter-spacing: 0.02em;
 }
 
 tr.is-region-leader {
