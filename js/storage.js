@@ -1495,7 +1495,7 @@ const BremStorage = (function () {
     'settlement-result-direct': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
     // 최종입금은 쿠팡·배민 정산서를 한 화면에서 합치므로 정산결과와 같은 키가 필요하다.
     'final-deposit': [KEYS.drivers, KEYS.calls, KEYS.weeklySettlementsDirect, KEYS.directSettlementAdjustments, KEYS.directRetroAdjustments, KEYS.directOtherPayments, KEYS.directBremPromotions, KEYS.payrollWithdrawalRequests, KEYS.payrollDailySettlementFees, KEYS.payrollDailySettlementRoster, KEYS.deductionLedger, KEYS.leaseLoans],
-    'driver-management': [KEYS.drivers, KEYS.driverOrgChart, KEYS.calls, KEYS.settlements],
+    'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [
@@ -1730,14 +1730,6 @@ const BremStorage = (function () {
     if (sectionId === 'rejections' && tableKeysWithoutManaged.includes(KEYS.rejections)) {
       loadOptions.allHistory = true;
     }
-    if (sectionId === 'driver-management') {
-      // 기사관리는 최근 90일만 — 2년치 콜/일정산 전체 로드로 탭이 끊기던 문제 완화
-      const since = new Date();
-      since.setDate(since.getDate() - 90);
-      const sinceDate = since.toISOString().slice(0, 10);
-      loadOptions[KEYS.calls] = { ...(loadOptions[KEYS.calls] || {}), sinceDate };
-      loadOptions[KEYS.settlements] = { ...(loadOptions[KEYS.settlements] || {}), sinceDate };
-    }
     if (tableKeysWithoutManaged.length && activeStorageAdapter.ensureKeysLoaded) {
       const allTableCached = !force && tableKeysWithoutManaged.every(key => window.BremDataCache?.isValid?.(key));
       if (allTableCached) {
@@ -1835,21 +1827,36 @@ const BremStorage = (function () {
   async function ensureCallsSinceDate(sinceDate, options = {}) {
     const since = String(sinceDate || '').slice(0, 10);
     if (!since || !activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
+    const until = String(options.untilDate || '').slice(0, 10);
+    const merge = options.merge === true || Boolean(until);
 
     const existing = calls.getAll();
     if (!options.force && existing.length) {
-      const earliest = existing.reduce((min, call) => {
-        const day = String(call?.date || '').slice(0, 10);
-        return !day || (min && day >= min) ? min : day;
-      }, '');
-      if (!earliest || earliest <= since) {
-        return { ok: true, cached: true };
+      if (until) {
+        const covered = existing.some(call => {
+          const day = String(call?.date || '').slice(0, 10);
+          return day >= since && day <= until;
+        });
+        if (covered) return { ok: true, cached: true };
+      } else {
+        const earliest = existing.reduce((min, call) => {
+          const day = String(call?.date || '').slice(0, 10);
+          return !day || (min && day >= min) ? min : day;
+        }, '');
+        if (!earliest || earliest <= since) {
+          return { ok: true, cached: true };
+        }
       }
     }
 
     await activeStorageAdapter.ensureKeysLoaded([KEYS.calls], {
-      force: Boolean(options.force),
-      [KEYS.calls]: { sinceDate: since }
+      // 주간 창 로드는 기존 캐시를 지우지 않고 병합
+      force: true,
+      [KEYS.calls]: {
+        sinceDate: since,
+        untilDate: until || undefined,
+        mergeWithExisting: merge
+      }
     });
     return { ok: true };
   }
@@ -1857,21 +1864,35 @@ const BremStorage = (function () {
   async function ensureSettlementsSinceDate(sinceDate, options = {}) {
     const since = String(sinceDate || '').slice(0, 10);
     if (!since || !activeStorageAdapter?.ensureKeysLoaded) return { ok: true };
+    const until = String(options.untilDate || '').slice(0, 10);
+    const merge = options.merge === true || Boolean(until);
 
     const existing = settlements.getAll();
     if (!options.force && existing.length) {
-      const earliest = existing.reduce((min, row) => {
-        const day = String(row?.period || row?.date || '').slice(0, 10);
-        return !day || (min && day >= min) ? min : day;
-      }, '');
-      if (!earliest || earliest <= since) {
-        return { ok: true, cached: true };
+      if (until) {
+        const covered = existing.some(row => {
+          const day = String(row?.period || row?.date || '').slice(0, 10);
+          return day >= since && day <= until;
+        });
+        if (covered) return { ok: true, cached: true };
+      } else {
+        const earliest = existing.reduce((min, row) => {
+          const day = String(row?.period || row?.date || '').slice(0, 10);
+          return !day || (min && day >= min) ? min : day;
+        }, '');
+        if (!earliest || earliest <= since) {
+          return { ok: true, cached: true };
+        }
       }
     }
 
     await activeStorageAdapter.ensureKeysLoaded([KEYS.settlements], {
-      force: Boolean(options.force),
-      [KEYS.settlements]: { sinceDate: since }
+      force: true,
+      [KEYS.settlements]: {
+        sinceDate: since,
+        untilDate: until || undefined,
+        mergeWithExisting: merge
+      }
     });
     return { ok: true };
   }

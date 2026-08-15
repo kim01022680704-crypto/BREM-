@@ -410,10 +410,14 @@ window.BremSupabaseStorageAdapter = (function () {
       if (table === 'admin_calls' && !options.allHistory) {
         const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
         if (sinceDate) query = query.gte('date', sinceDate);
+        const untilDate = String(options.untilDate || '').slice(0, 10);
+        if (untilDate) query = query.lte('date', untilDate);
       }
       if (table === 'daily_settlements' && options.sinceDate) {
         const sinceDate = String(options.sinceDate || '').slice(0, 10);
         if (sinceDate) query = query.gte('period', sinceDate);
+        const untilDate = String(options.untilDate || '').slice(0, 10);
+        if (untilDate) query = query.lte('period', untilDate);
       }
       if (table === 'admin_rejection_rates' && !options.allHistory) {
         const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
@@ -428,10 +432,14 @@ window.BremSupabaseStorageAdapter = (function () {
           if (table === 'admin_calls' && !options.allHistory) {
             const sinceDate = String(options.sinceDate || getDefaultCallsSinceDate()).slice(0, 10);
             if (sinceDate) pageQuery = pageQuery.gte('date', sinceDate);
+            const untilDate = String(options.untilDate || '').slice(0, 10);
+            if (untilDate) pageQuery = pageQuery.lte('date', untilDate);
           }
           if (table === 'daily_settlements' && options.sinceDate) {
             const sinceDate = String(options.sinceDate || '').slice(0, 10);
             if (sinceDate) pageQuery = pageQuery.gte('period', sinceDate);
+            const untilDate = String(options.untilDate || '').slice(0, 10);
+            if (untilDate) pageQuery = pageQuery.lte('period', untilDate);
           }
           if (table === 'admin_rejection_rates' && !options.allHistory) {
             const sinceWeek = String(options.sinceWeek || getDefaultRejectionSinceWeek()).slice(0, 10);
@@ -447,10 +455,25 @@ window.BremSupabaseStorageAdapter = (function () {
           if (error) throw error;
           return (data || []).map(fromRow);
         })();
-      setCache(key, value);
+      let nextValue = value;
+      if (options.mergeWithExisting) {
+        const prev = getCache(key, null);
+        const cached = Array.isArray(prev) ? prev : (window.BremDataCache?.getData?.(key) || []);
+        const byId = new Map();
+        (Array.isArray(cached) ? cached : []).forEach(row => {
+          const id = String(row?.id || '').trim();
+          if (id) byId.set(id, row);
+        });
+        (value || []).forEach(row => {
+          const id = String(row?.id || '').trim();
+          if (id) byId.set(id, row);
+        });
+        nextValue = [...byId.values()];
+      }
+      setCache(key, nextValue);
       loadedTableKeys.add(key);
-      window.BremDataCache?.set?.(key, value);
-      return value;
+      window.BremDataCache?.set?.(key, nextValue);
+      return nextValue;
     }
 
     async function persistTableRowsIncremental(tableName, rows) {
@@ -1790,10 +1813,20 @@ window.BremSupabaseStorageAdapter = (function () {
       if (backed) {
         let tableOptions = options;
         if (key === keys.calls && !options.allHistory) {
-          tableOptions = { ...options, sinceDate: options.sinceDate || getDefaultCallsSinceDate() };
+          tableOptions = {
+            ...options,
+            sinceDate: options.sinceDate || getDefaultCallsSinceDate(),
+            untilDate: options.untilDate || undefined,
+            mergeWithExisting: options.mergeWithExisting === true
+          };
         }
         if (key === keys.settlements && options.sinceDate) {
-          tableOptions = { ...options, sinceDate: String(options.sinceDate).slice(0, 10) };
+          tableOptions = {
+            ...options,
+            sinceDate: String(options.sinceDate).slice(0, 10),
+            untilDate: options.untilDate ? String(options.untilDate).slice(0, 10) : undefined,
+            mergeWithExisting: options.mergeWithExisting === true
+          };
         }
         // 거절율은 예전에 여기서 무조건 allHistory=true 로 덮어써서, 대시보드 첫 로딩에도
         // 테이블 전체(수년치)를 받아왔다. 호출자 옵션을 그대로 따르고(기본 2년) 거절율 메뉴만

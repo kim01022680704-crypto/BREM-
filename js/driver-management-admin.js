@@ -41,7 +41,95 @@ const BremDriverManagementAdmin = (function () {
   };
 
   const REGION_RANKING_POLL_MS = 120 * 1000;
-  const DRIVER_MGMT_LOOKBACK_DAYS = 90;
+
+  function weekRowsCovered(rows, fieldNames, weekStart, weekEnd) {
+    const start = String(weekStart || '').slice(0, 10);
+    const end = String(weekEnd || '').slice(0, 10);
+    if (!start || !end || !Array.isArray(rows) || !rows.length) return false;
+    return rows.some(row => {
+      let day = '';
+      for (const field of fieldNames) {
+        day = String(row?.[field] || '').slice(0, 10);
+        if (day) break;
+      }
+      return day >= start && day <= end;
+    });
+  }
+
+  async function loadSettlementsAndCallsDirect(force = false, weekStart = ensureWeek()) {
+    const start = weekStartKey(weekStart);
+    const end = weekEndKey(start);
+    const settlements = window.BremStorage?.settlements?.getAll?.() || [];
+    const calls = window.BremStorage?.calls?.getAll?.() || [];
+    // 선택 정산주만 조회 — 90일/전체 로드는 statement timeout 유발
+    const needSettlements = force || !weekRowsCovered(settlements, ['period', 'date'], start, end);
+    const needCalls = force || !weekRowsCovered(calls, ['date'], start, end);
+    if (!needSettlements && !needCalls) {
+      state.statsLoadedWeekSince = start;
+      state.statsLoadError = '';
+      return;
+    }
+
+    const errors = [];
+    if (needCalls && typeof window.BremStorage?.ensureCallsSinceDate === 'function') {
+      try {
+        await window.BremStorage.ensureCallsSinceDate(start, {
+          force: true,
+          untilDate: end,
+          merge: true
+        });
+      } catch (error) {
+        errors.push(`콜수: ${error?.message || error}`);
+        console.warn('[driver-mgmt] calls week load failed:', error);
+      }
+    }
+    if (needSettlements && typeof window.BremStorage?.ensureSettlementsSinceDate === 'function') {
+      try {
+        await window.BremStorage.ensureSettlementsSinceDate(start, {
+          force: true,
+          untilDate: end,
+          merge: true
+        });
+      } catch (error) {
+        errors.push(`일정산: ${error?.message || error}`);
+        console.warn('[driver-mgmt] settlements week load failed:', error);
+      }
+    }
+    invalidateWeekStatsIndex();
+    state.statsLoadedWeekSince = start;
+    state.statsLoadError = errors.length ? errors.join(' / ') : '';
+  }
+
+  async function ensureDriverMgmtStatsLoaded(options = {}) {
+    const force = options.force === true;
+    if (!force && state.statsLoadPromise) return state.statsLoadPromise;
+    const run = async () => {
+      try {
+        await window.BremStorage?.ensureSectionLoaded?.('driver-management', { force: false });
+        await loadSettlementsAndCallsDirect(force, options.weekStart || ensureWeek());
+        if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
+          await window.BremStorage.awaitDriversFullyLoaded();
+        }
+        state.statsLoadTried = true;
+        invalidateRegionMemberCache();
+      } catch (error) {
+        state.statsLoadTried = true;
+        state.statsLoadError = error?.message || String(error);
+        console.warn('[driver-mgmt] calls/settlements load failed:', error);
+      }
+    };
+    if (force) {
+      invalidateWeekStatsIndex();
+      await run();
+      return;
+    }
+    state.statsLoadPromise = run();
+    try {
+      await state.statsLoadPromise;
+    } finally {
+      state.statsLoadPromise = null;
+    }
+  }
 
   function localDateKey(date = new Date()) {
     return [
@@ -527,99 +615,6 @@ const BremDriverManagementAdmin = (function () {
       coupangFee,
       baeminFee
     };
-  }
-
-  function driverMgmtSinceDate(weekStart = ensureWeek()) {
-    const start = weekStartKey(weekStart);
-    const date = new Date(`${start}T00:00:00`);
-    if (Number.isNaN(date.getTime())) {
-      const fallback = new Date();
-      fallback.setDate(fallback.getDate() - DRIVER_MGMT_LOOKBACK_DAYS);
-      return fallback.toISOString().slice(0, 10);
-    }
-    date.setDate(date.getDate() - DRIVER_MGMT_LOOKBACK_DAYS);
-    const fromWeek = localDateKey(date);
-    const rolling = new Date();
-    rolling.setDate(rolling.getDate() - DRIVER_MGMT_LOOKBACK_DAYS);
-    const fromNow = localDateKey(rolling);
-    return fromWeek < fromNow ? fromWeek : fromNow;
-  }
-
-  function rowsCoverSince(rows, fieldNames, sinceDate) {
-    const since = String(sinceDate || '').slice(0, 10);
-    if (!since) return false;
-    if (!Array.isArray(rows) || !rows.length) return false;
-    let earliest = '';
-    rows.forEach(row => {
-      let day = '';
-      for (const field of fieldNames) {
-        day = String(row?.[field] || '').slice(0, 10);
-        if (day) break;
-      }
-      if (!day) return;
-      if (!earliest || day < earliest) earliest = day;
-    });
-    return Boolean(earliest && earliest <= since);
-  }
-
-  async function loadSettlementsAndCallsDirect(force = false, weekStart = ensureWeek()) {
-    const sinceDate = driverMgmtSinceDate(weekStart);
-    const settlements = window.BremStorage?.settlements?.getAll?.() || [];
-    const calls = window.BremStorage?.calls?.getAll?.() || [];
-    const needSettlements = force
-      || !settlements.length
-      || !rowsCoverSince(settlements, ['period', 'date'], sinceDate);
-    const needCalls = force
-      || !calls.length
-      || !rowsCoverSince(calls, ['date'], sinceDate);
-    if (!needSettlements && !needCalls) {
-      state.statsLoadedWeekSince = sinceDate;
-      return;
-    }
-
-    const tasks = [];
-    if (needCalls && typeof window.BremStorage?.ensureCallsSinceDate === 'function') {
-      tasks.push(window.BremStorage.ensureCallsSinceDate(sinceDate, { force: force === true }));
-    }
-    if (needSettlements && typeof window.BremStorage?.ensureSettlementsSinceDate === 'function') {
-      tasks.push(window.BremStorage.ensureSettlementsSinceDate(sinceDate, { force: force === true }));
-    }
-    if (tasks.length) {
-      await Promise.all(tasks);
-      invalidateWeekStatsIndex();
-    }
-    state.statsLoadedWeekSince = sinceDate;
-  }
-
-  async function ensureDriverMgmtStatsLoaded(options = {}) {
-    const force = options.force === true;
-    if (!force && state.statsLoadPromise) return state.statsLoadPromise;
-    const run = async () => {
-      try {
-        await window.BremStorage?.ensureSectionLoaded?.('driver-management', { force: false });
-        await loadSettlementsAndCallsDirect(force, options.weekStart || ensureWeek());
-        if (typeof window.BremStorage?.awaitDriversFullyLoaded === 'function') {
-          await window.BremStorage.awaitDriversFullyLoaded();
-        }
-        state.statsLoadTried = true;
-        invalidateRegionMemberCache();
-      } catch (error) {
-        state.statsLoadTried = true;
-        state.statsLoadError = error?.message || String(error);
-        console.warn('[driver-mgmt] calls/settlements load failed:', error);
-      }
-    };
-    if (force) {
-      invalidateWeekStatsIndex();
-      await run();
-      return;
-    }
-    state.statsLoadPromise = run();
-    try {
-      await state.statsLoadPromise;
-    } finally {
-      state.statsLoadPromise = null;
-    }
   }
 
   async function refreshOrgMemberPanel(options = {}) {
