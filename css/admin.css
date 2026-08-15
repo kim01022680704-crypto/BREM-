@@ -12858,6 +12858,11 @@ tr.is-week-first td {
   text-align: left;
 }
 
+.driver-org-list-table td:nth-child(1) {
+  font-weight: 800;
+  color: #fef3c7;
+}
+
 .driver-org-list-table td.weekly-amount-cell {
   text-align: center;
   font-variant-numeric: tabular-nums;

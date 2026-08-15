@@ -900,29 +900,11 @@ const BremDriverManagementAdmin = (function () {
     }
   }
 
-  function orgListDepth(nodeId, memo = new Map()) {
-    if (memo.has(nodeId)) return memo.get(nodeId);
-    const node = state.org.nodes.find(item => item.id === nodeId);
-    if (!node?.parentId || !state.org.nodes.some(item => item.id === node.parentId)) {
-      memo.set(nodeId, 0);
-      return 0;
-    }
-    const depth = orgListDepth(node.parentId, memo) + 1;
-    memo.set(nodeId, depth);
-    return depth;
-  }
-
   function collectOrgListRows() {
     const week = ensureWeek();
-    const ordered = [];
-    const walk = (nodes) => {
-      nodes.forEach(node => {
-        ordered.push(node);
-        walk(childrenOf(node.id));
-      });
-    };
-    walk(roots());
-    return ordered.map(node => {
+    // 크루장이 지정된 박스만 — 그게 조직도 정리의 기준
+    const crewBoxes = state.org.nodes.filter(node => node.leaderRef?.id);
+    return crewBoxes.map(node => {
       const entries = collectSubtreeMemberEntries(node);
       const driverIds = [];
       const seen = new Set();
@@ -937,7 +919,6 @@ const BremDriverManagementAdmin = (function () {
       return {
         id: node.id,
         label: node.label || '이름 없음',
-        depth: orgListDepth(node.id),
         leaderName: resolveLeaderName(node.leaderRef) || '-',
         people: driverIds.length,
         coupangCalls: stats.coupangCalls,
@@ -946,7 +927,8 @@ const BremDriverManagementAdmin = (function () {
         baeminFee: stats.baeminFee,
         isTopRep: state.org.topRepNodeId === node.id
       };
-    });
+    }).sort((a, b) => String(a.leaderName).localeCompare(String(b.leaderName), 'ko')
+      || String(a.label).localeCompare(String(b.label), 'ko'));
   }
 
   function renderOrgList() {
@@ -955,31 +937,49 @@ const BremDriverManagementAdmin = (function () {
     if (!root) return;
     loadOrg();
     renderWeekControls();
-    const top = roots();
-    if (!top.length) {
+    if (!state.org.nodes.length) {
       root.innerHTML = '<p class="driver-org-list__empty">조직도 박스가 없습니다. 「조직도」에서 루트 박스를 추가하세요.</p>';
-      if (summary) summary.textContent = '박스 0';
+      if (summary) summary.textContent = '크루 0';
       return;
     }
 
     const rows = collectOrgListRows();
-    const totalPeople = new Set();
-    state.org.nodes.forEach(node => {
-      (node.memberRefs || []).forEach(ref => {
-        if (ref.kind !== 'admin' && ref.id) totalPeople.add(String(ref.id));
+    if (!rows.length) {
+      root.innerHTML = '<p class="driver-org-list__empty">크루장이 지정된 박스가 없습니다. 「조직도」에서 박스마다 크루장을 지정하세요.</p>';
+      if (summary) summary.textContent = '크루 0 · 크루장 지정 후 표시됩니다';
+      return;
+    }
+
+    const seenDrivers = new Set();
+    let sumCoupangCalls = 0;
+    let sumBaeminCalls = 0;
+    let sumCoupangFee = 0;
+    let sumBaeminFee = 0;
+    rows.forEach(row => {
+      // 크루 간 인원 중복은 합계 인원에서만 제거 — 콜/배달료는 크루별 합을 그대로 더함
+      sumCoupangCalls += row.coupangCalls;
+      sumBaeminCalls += row.baeminCalls;
+      sumCoupangFee += row.coupangFee;
+      sumBaeminFee += row.baeminFee;
+    });
+    // 인원: 크루장 박스 subtree 기사 합집합
+    rows.forEach(row => {
+      const node = state.org.nodes.find(item => item.id === row.id);
+      if (!node) return;
+      collectSubtreeMemberEntries(node).forEach(entry => {
+        if (entry.kind !== 'admin' && entry.id) seenDrivers.add(String(entry.id));
       });
     });
-    const totals = aggregateDriverIdsStats([...totalPeople], ensureWeek());
     if (summary) {
-      summary.textContent = `박스 ${formatNumber(rows.length)} · 배정 기사 ${formatNumber(totalPeople.size)}명 · 쿠팡콜 ${formatNumber(totals.coupangCalls)} · 배민콜 ${formatNumber(totals.baeminCalls)} · 쿠팡배달료 ${formatNumber(totals.coupangFee)}원 · 배민배달료 ${formatNumber(totals.baeminFee)}원`;
+      summary.textContent = `크루 ${formatNumber(rows.length)} · 기사 ${formatNumber(seenDrivers.size)}명 · 쿠팡콜 ${formatNumber(sumCoupangCalls)} · 배민콜 ${formatNumber(sumBaeminCalls)} · 쿠팡배달료 ${formatNumber(sumCoupangFee)}원 · 배민배달료 ${formatNumber(sumBaeminFee)}원`;
     }
 
     root.innerHTML = `
       <table class="driver-org-list-table">
         <thead>
           <tr>
-            <th>박스</th>
             <th>크루장</th>
+            <th>박스</th>
             <th>인원</th>
             <th>쿠팡콜</th>
             <th>배민콜</th>
@@ -990,11 +990,11 @@ const BremDriverManagementAdmin = (function () {
         <tbody>
           ${rows.map(row => `
             <tr class="${row.isTopRep ? 'is-toprep' : ''}">
-              <td class="driver-org-list-table__box" style="padding-left:${12 + row.depth * 16}px">
+              <td><strong>${escapeHtml(row.leaderName)}</strong></td>
+              <td class="driver-org-list-table__box">
                 ${row.isTopRep ? '<span class="driver-org-badge driver-org-badge--toprep">대표</span> ' : ''}
-                <strong>${escapeHtml(row.label)}</strong>
+                ${escapeHtml(row.label)}
               </td>
-              <td>${escapeHtml(row.leaderName)}</td>
               <td class="weekly-amount-cell">${formatNumber(row.people)}</td>
               <td class="weekly-amount-cell">${formatNumber(row.coupangCalls)}</td>
               <td class="weekly-amount-cell">${formatNumber(row.baeminCalls)}</td>
