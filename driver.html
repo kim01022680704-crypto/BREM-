@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816crew7">
+  <link rel="stylesheet" href="css/driver.css?v=20260816nav1">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -123,7 +123,7 @@
 
       <main>
         <section class="result" id="result" hidden>
-          <div class="profile-card">
+          <div class="profile-card driver-home-block">
             <div class="profile-card-main">
               <p class="eyebrow">기사 정보</p>
               <h2 id="driverName">-</h2>
@@ -159,7 +159,7 @@
             </div>
           </div>
 
-          <section class="live-ops-card" id="driverBaeminLiveOps" hidden>
+          <section class="live-ops-card driver-home-block" id="driverBaeminLiveOps" hidden>
             <div class="live-ops-card__head">
               <div>
                 <p class="live-ops-card__eyebrow">실시간 운행현황 (배민)</p>
@@ -216,7 +216,7 @@
             </p>
           </section>
 
-          <section class="live-ops-card" id="driverCoupangLiveOps" hidden>
+          <section class="live-ops-card driver-home-block" id="driverCoupangLiveOps" hidden>
             <div class="live-ops-card__head">
               <div>
                 <p class="live-ops-card__eyebrow">실시간 운행현황 (쿠팡)</p>
@@ -659,7 +659,7 @@
             </form>
           </article>
 
-          <section class="summary-section">
+          <section class="summary-section driver-home-block">
             <div class="summary-grid summary-grid--metrics">
               <button type="button" class="summary-card summary-card--metric summary-card--action" id="monthTargetCard" aria-label="월간 목표 설정">
                 <span class="summary-card__label">월간 목표</span>
@@ -752,7 +752,7 @@
             </div>
           </section>
 
-          <div class="content-grid">
+          <div class="content-grid driver-home-block">
             <article class="panel">
               <div class="panel-header">
                 <h2>일별 콜수</h2>
@@ -820,6 +820,29 @@
           </div>
         </section>
       </main>
+
+      <nav class="driver-app-nav" id="driverAppNav" hidden aria-label="기사앱 메뉴">
+        <button type="button" class="driver-app-nav__item is-active" data-driver-tab="home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span>홈</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="withdraw">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14v10H5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 11h14M12 14.5h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <span>출금</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="payslip">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h8l4 4v12H7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M15 4v4h4M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <span>명세서</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="dash" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6M4 18h16M7 15l3-4 3 2 4-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>대시보드</span>
+        </button>
+        <button type="button" class="driver-app-nav__item" data-driver-tab="crew" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4.5 18c.4-2.4 2.2-3.8 4.5-3.8s4.1 1.4 4.5 3.8M12.8 18c.3-1.7 1.4-2.8 3.2-2.8 1.9 0 3.1 1.2 3.5 3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <span>크루장</span>
+        </button>
+      </nav>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -906,7 +929,7 @@
     <p class="calendar-help">수요일만 선택할 수 있습니다. (수요일~화요일 기준)</p>
   </div>
 
-  <script src="js/native-app-bridge.js?v=20260816a"></script>
+  <script src="js/native-app-bridge.js?v=20260816nav1"></script>
   <script src="js/platforms.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/brem-env.js"></script>
@@ -924,10 +947,11 @@
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
   <script src="js/driver-weekly-payslip.js?v=20260816crew7"></script>
-  <script src="js/driver-region-dashboard.js?v=20260816crew7"></script>
-  <script src="js/driver-crew-leader.js?v=20260816crew7"></script>
+  <script src="js/driver-region-dashboard.js?v=20260816nav1"></script>
+  <script src="js/driver-crew-leader.js?v=20260816nav1"></script>
   <script src="js/driver-withdrawal.js?v=20260816crew7"></script>
   <script src="js/driver.js?v=20260816crew7"></script>
+  <script src="js/driver-app-nav.js?v=20260816nav1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

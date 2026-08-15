@@ -340,8 +340,15 @@
     }
   }
 
+  function notifyFeatureVisibility(visible) {
+    document.dispatchEvent(new CustomEvent('brem-driver-feature-visibility', {
+      detail: { kind: 'dash', visible: Boolean(visible) }
+    }));
+  }
+
   function setEntryVisible(visible) {
     openBtn.hidden = !visible;
+    notifyFeatureVisibility(visible);
     if (!visible) {
       closePanel();
     }
@@ -407,6 +414,7 @@
     cache.clear();
     stopAutoPoll();
     closePanel();
+    notifyFeatureVisibility(false);
     if (periodEl) periodEl.textContent = '-';
     if (regionLabelEl) regionLabelEl.textContent = '-';
     if (assignedEl) assignedEl.textContent = '-';

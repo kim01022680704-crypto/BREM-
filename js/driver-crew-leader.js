@@ -106,6 +106,12 @@
     return '<span class="driver-crew-tag driver-crew-tag--unk"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미확인</span>';
   }
 
+  function notifyFeatureVisibility(visible) {
+    document.dispatchEvent(new CustomEvent('brem-driver-feature-visibility', {
+      detail: { kind: 'crew', visible: Boolean(visible) }
+    }));
+  }
+
   function applyCrewTitle(label) {
     const name = String(label || '').trim();
     if (titleEl) titleEl.textContent = name || DEFAULT_TITLE;
@@ -239,12 +245,14 @@
       }
       if (!result.isCrewLeader) {
         openBtn.hidden = true;
+        notifyFeatureVisibility(false);
         renderResult(result);
         if (state.visible) closePanel();
         showToast('조직도 크루장 계정이 아닙니다.');
         return result;
       }
       openBtn.hidden = false;
+      notifyFeatureVisibility(true);
       renderResult(result);
       return result;
     } catch (error) {
@@ -274,10 +282,12 @@
       if (!result?.ok) return true;
       if (!result.isCrewLeader) {
         openBtn.hidden = true;
+        notifyFeatureVisibility(false);
         if (state.visible) closePanel();
         return false;
       }
       openBtn.hidden = false;
+      notifyFeatureVisibility(true);
       applyCrewTitle(result.box?.label || '');
       return true;
     } catch (_) {
@@ -332,6 +342,7 @@
     closePanel();
     // 로그인 화면에서는 main 자체가 숨겨지므로, 여기서 버튼을 숨기지 않는다.
     openBtn.hidden = false;
+    notifyFeatureVisibility(false);
     applyCrewTitle('');
     if (periodEl) periodEl.textContent = '-';
     if (summaryEl) summaryEl.textContent = '';

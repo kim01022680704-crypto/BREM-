@@ -31,6 +31,9 @@
     var wrap = document.getElementById('bremPwaInstallWrap');
     if (wrap) wrap.hidden = true;
     document.documentElement.classList.add('brem-native-app');
+    if (window.BREM_IS_NATIVE_APP) {
+      document.documentElement.classList.add('brem-capacitor-app');
+    }
   }
 
   function bindBackButton() {
@@ -40,6 +43,9 @@
 
     CapApp.addListener('backButton', function (event) {
       try {
+        if (window.BremDriverAppNav && typeof window.BremDriverAppNav.handleBack === 'function') {
+          if (window.BremDriverAppNav.handleBack()) return;
+        }
         if (window.history.length > 1) {
           window.history.back();
           return;
