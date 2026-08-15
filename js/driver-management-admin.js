@@ -197,7 +197,7 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org') {
       stopRegionRankingPoll();
       void (async () => {
-        await ensureDriverMgmtStatsLoaded({ force: true });
+        await ensureDriverMgmtStatsLoaded();
         await ensureOrgRegionsLoaded();
         renderOrg();
       })();
@@ -468,21 +468,21 @@ const BremDriverManagementAdmin = (function () {
     if (!force && state.statsLoadPromise) return state.statsLoadPromise;
     const run = async () => {
       try {
-        // 조직도/지역 배달료 = 일정산 업로드분. 캐시가 비었거나 오래되면 강제 재조회.
-        await window.BremStorage?.ensureSectionLoaded?.('driver-management', force ? { force: true } : undefined);
+        const beforeSettlements = (window.BremStorage?.settlements?.getAll?.() || []).length;
+        const beforeCalls = (window.BremStorage?.calls?.getAll?.() || []).length;
+        // 이미 일정산이 있으면 강제 재조회로 캐시를 비우지 않는다 (아까 잘 나오던 값이 0으로 굳는 원인).
+        await window.BremStorage?.ensureSectionLoaded?.('driver-management');
         const calls = window.BremStorage?.calls?.getAll?.() || [];
         const settlements = window.BremStorage?.settlements?.getAll?.() || [];
-        if (force || !calls.length) {
-          await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
-        }
-        if (force || !settlements.length) {
+        if (force && !settlements.length) {
+          await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
+        } else if (!settlements.length && !beforeSettlements) {
           await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
         }
-        // 섹션 로드만으로 settlements 키가 비어 있으면 직접 한 번 더
-        if (!(window.BremStorage?.settlements?.getAll?.() || []).length) {
-          await window.BremStorage?.refetchDataKey?.(
-            window.BremStorage?.STORAGE_KEYS?.settlements || 'brem_admin_settlements'
-          );
+        if (force && !calls.length) {
+          await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
+        } else if (!calls.length && !beforeCalls) {
+          await window.BremStorage?.ensureSectionLoaded?.('calls', { force: true });
         }
       } catch (error) {
         console.warn('[driver-mgmt] calls/settlements load failed:', error);
@@ -501,8 +501,14 @@ const BremDriverManagementAdmin = (function () {
   }
 
   async function refreshOrgMemberPanel() {
-    await ensureDriverMgmtStatsLoaded({ force: true });
+    await ensureDriverMgmtStatsLoaded();
     renderOrgMemberPanel();
+    // 합계가 0이고 일정산 캐시도 비었을 때만 한 번 더 재조회
+    const cover = weekSettlementCoverage(ensureWeek());
+    if (!cover.loadedTotal) {
+      await ensureDriverMgmtStatsLoaded({ force: true });
+      renderOrgMemberPanel();
+    }
   }
 
   function isRankingVisibleMode(mode) {
@@ -693,7 +699,7 @@ const BremDriverManagementAdmin = (function () {
       const feeLine = `쿠팡배달료 ${formatNumber(totalCoupangFee)}원 · 배민배달료 ${formatNumber(totalBaeminFee)}원 · 배달료합계 ${formatNumber(totalFee)}원`;
       const callLine = `쿠팡콜 ${formatNumber(totalCoupangCalls)} · 배민콜 ${formatNumber(totalBaeminCalls)} · 콜수합계 ${formatNumber(totalCalls)}`;
       if (!cover.loadedTotal) {
-        totalsEl.textContent = `조직 합계 · ${callLine} · 배달료 불러오는 중… (일정산 캐시 없음 → 재조회)`;
+        totalsEl.textContent = `조직 합계 · ${callLine} · 배달료 불러오는 중… (일정산 캐시 없음)`;
         void ensureDriverMgmtStatsLoaded({ force: true }).then(() => {
           if (state.selectedNodeId === node.id) renderOrgMemberPanel();
         });
