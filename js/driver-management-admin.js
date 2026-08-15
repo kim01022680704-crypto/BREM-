@@ -283,6 +283,11 @@ const BremDriverManagementAdmin = (function () {
     state.statsLoadPromise = (async () => {
       try {
         await window.BremStorage?.ensureSectionLoaded?.('driver-management');
+        // 빈 배열이 캐시에 굳으면 배달료가 계속 0원 → 일정산 강제 재조회
+        const settlements = window.BremStorage?.settlements?.getAll?.() || [];
+        if (!settlements.length) {
+          await window.BremStorage?.ensureSectionLoaded?.('settlements', { force: true });
+        }
       } catch (error) {
         console.warn('[driver-mgmt] calls/settlements load failed:', error);
       }
@@ -397,11 +402,10 @@ const BremDriverManagementAdmin = (function () {
     const countedDrivers = new Set();
     const people = entries.map(entry => {
       if (entry.kind === 'admin') {
-        const account = window.BremStorage?.auth?.getAdminAccountById?.(entry.id)
-          || (window.BremStorage?.auth?.getAdminAccounts?.() || []).find(item => item.id === entry.id);
+        const resolved = resolveOrgMemberName(entry);
         return {
           kind: '관리자',
-          name: account?.name || account?.loginId || entry.id,
+          name: resolved?.name || '관리자',
           boxLabel: entry.boxLabel,
           coupangCalls: '-',
           baeminCalls: '-',
@@ -411,7 +415,7 @@ const BremDriverManagementAdmin = (function () {
           memberId: entry.id
         };
       }
-      const driver = window.BremStorage?.drivers?.getById?.(entry.id);
+      const resolved = resolveOrgMemberName(entry);
       const coupang = driverCallAndFee(entry.id, ensureWeek(), 'coupang');
       const baemin = driverCallAndFee(entry.id, ensureWeek(), 'baemin');
       const deliveryFee = coupang.deliveryFee + baemin.deliveryFee;
@@ -423,7 +427,7 @@ const BremDriverManagementAdmin = (function () {
       }
       return {
         kind: '기사',
-        name: driver?.name || entry.id,
+        name: resolved?.name || '이름 없음',
         boxLabel: entry.boxLabel,
         coupangCalls: formatNumber(coupang.callCount),
         baeminCalls: formatNumber(baemin.callCount),
@@ -513,6 +517,9 @@ const BremDriverManagementAdmin = (function () {
     if (state.tab === 'org-list') renderOrgList();
   }
 
+  const missingOrgDriverHydrate = new Set();
+  const missingOrgDriverFailed = new Set();
+
   function resolveOrgMemberName(ref) {
     if (!ref?.id) return null;
     if (ref.kind === 'admin') {
@@ -520,14 +527,54 @@ const BremDriverManagementAdmin = (function () {
         || (window.BremStorage?.auth?.getAdminAccounts?.() || []).find(item => item.id === ref.id);
       return {
         kind: 'admin',
-        name: account?.name || account?.loginId || ref.id
+        name: account?.name || account?.loginId || '관리자'
       };
     }
     const driver = window.BremStorage?.drivers?.getById?.(ref.id);
-    return {
-      kind: 'driver',
-      name: driver?.name || (driver ? makeDriverLoginId(driver) : '') || ref.id
-    };
+    if (driver?.name) {
+      return { kind: 'driver', name: driver.name };
+    }
+    if (driver) {
+      return { kind: 'driver', name: makeDriverLoginId(driver) || '이름 없음' };
+    }
+    // 일정산에 남은 이름 (중복제거로 drivers 목록에서 빠졌거나 세션 캐시에 없을 때)
+    const settlementRow = (window.BremStorage?.settlements?.getAll?.() || [])
+      .find(row => String(row.driverId || '').trim() === String(ref.id || '').trim());
+    const settlementName = String(
+      settlementRow?.driverName || settlementRow?.rawData?.driverName || ''
+    ).trim();
+    if (settlementName) {
+      return { kind: 'driver', name: settlementName };
+    }
+    if (missingOrgDriverFailed.has(String(ref.id || '').trim())) {
+      return { kind: 'driver', name: '삭제된 기사' };
+    }
+    void hydrateMissingOrgDriverName(ref.id);
+    return { kind: 'driver', name: '이름 불러오는 중…' };
+  }
+
+  async function hydrateMissingOrgDriverName(driverId) {
+    const id = String(driverId || '').trim();
+    if (!id || missingOrgDriverHydrate.has(id) || missingOrgDriverFailed.has(id)) return;
+    missingOrgDriverHydrate.add(id);
+    try {
+      const driver = await window.BremStorage?.drivers?.fetchById?.(id, { force: true });
+      if (driver?.id) {
+        if (state.tab === 'org' || state.tab === 'org-list') {
+          renderOrgMemberPanel();
+          if (state.tab === 'org-list') renderOrgList();
+        }
+        return;
+      }
+      missingOrgDriverFailed.add(id);
+      if (state.tab === 'org' || state.tab === 'org-list') renderOrgMemberPanel();
+    } catch (error) {
+      missingOrgDriverFailed.add(id);
+      console.warn('[driver-mgmt] org driver name hydrate failed:', id, error);
+      if (state.tab === 'org' || state.tab === 'org-list') renderOrgMemberPanel();
+    } finally {
+      missingOrgDriverHydrate.delete(id);
+    }
   }
 
   function renderOrgListNodeHtml(node) {
@@ -1063,6 +1110,12 @@ const BremDriverManagementAdmin = (function () {
     return Boolean(side[key]?.exposed);
   }
 
+  /** 기사별 옵션: full=올노출(기본), dashboard=대시보드만 */
+  function getDriverRegionMode(platform, regionKey, driverId) {
+    const entry = state.regionExposure?.[platform]?.[regionKey]?.riders?.[driverId];
+    return String(entry?.mode || '').toLowerCase() === 'dashboard' ? 'dashboard' : 'full';
+  }
+
   async function loadRegionExposure() {
     try {
       const token = await window.BremStorage?.resolveAdminAccessToken?.();
@@ -1083,8 +1136,7 @@ const BremDriverManagementAdmin = (function () {
     }
   }
 
-  async function setRegionExposure(region, exposed) {
-    if (!region) return;
+  async function postRegionExposure(body) {
     const token = await window.BremStorage?.resolveAdminAccessToken?.();
     const headers = {
       'Content-Type': 'application/json',
@@ -1094,14 +1146,7 @@ const BremDriverManagementAdmin = (function () {
       method: 'POST',
       headers,
       credentials: 'same-origin',
-      body: JSON.stringify({
-        platform: region.platform,
-        key: region.key,
-        exposed: exposed === true,
-        label: region.label,
-        partnerId: region.partnerId || '',
-        vendorId: region.vendorId || ''
-      })
+      body: JSON.stringify(body)
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(payload.error || '노출 설정 저장에 실패했습니다.');
@@ -1109,6 +1154,33 @@ const BremDriverManagementAdmin = (function () {
       baemin: payload.exposure?.baemin || {},
       coupang: payload.exposure?.coupang || {}
     };
+    return payload;
+  }
+
+  async function setRegionExposure(region, exposed) {
+    if (!region) return;
+    await postRegionExposure({
+      platform: region.platform,
+      key: region.key,
+      exposed: exposed === true,
+      label: region.label,
+      partnerId: region.partnerId || '',
+      vendorId: region.vendorId || ''
+    });
+  }
+
+  async function setDriverRegionMode(region, driverId, mode) {
+    if (!region || !driverId) return;
+    await postRegionExposure({
+      platform: region.platform,
+      key: region.key,
+      driverId,
+      mode: mode === 'dashboard' ? 'dashboard' : 'full',
+      exposed: isRegionExposed(region.platform, region.key),
+      label: region.label,
+      partnerId: region.partnerId || '',
+      vendorId: region.vendorId || ''
+    });
   }
 
   function selectedRegion() {
@@ -1418,7 +1490,7 @@ const BremDriverManagementAdmin = (function () {
     }
     if (!rows) return;
     if (!region) {
-      rows.innerHTML = '<tr><td colspan="4" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
+      rows.innerHTML = '<tr><td colspan="5" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
       state.regionAdd.candidates = [];
       resetRegionAddCombo();
       if (totalsEl) totalsEl.textContent = '';
@@ -1441,14 +1513,25 @@ const BremDriverManagementAdmin = (function () {
         totalCalls += row.callCount;
         totalFee += row.deliveryFee;
         const isFirst = weeklyLocalFirst && row.driver.id === weeklyLocalFirst.driver.id;
-        return `<tr${isFirst ? ' class="is-week-first"' : ''}>
+        const mode = getDriverRegionMode(platform, region.key, row.driver.id);
+        const rowClass = [
+          isFirst ? 'is-week-first' : '',
+          mode === 'dashboard' ? 'is-dashboard-only' : ''
+        ].filter(Boolean).join(' ');
+        return `<tr${rowClass ? ` class="${rowClass}"` : ''}>
           <td><strong>${escapeHtml(row.driver.name)}</strong>${isFirst ? ' <span class="driver-region-week-crown" title="주간 콜수 1등">1등</span>' : ''}</td>
           <td class="weekly-amount-cell">${formatNumber(row.callCount)}</td>
           <td class="weekly-amount-cell">${formatNumber(row.deliveryFee)}원</td>
+          <td>
+            <select class="driver-region-mode" data-region-rider-mode="${escapeHtml(row.driver.id)}" title="기사앱: 올노출=대시보드+순위 · 대시보드만=순위 비노출">
+              <option value="full"${mode === 'full' ? ' selected' : ''}>올노출</option>
+              <option value="dashboard"${mode === 'dashboard' ? ' selected' : ''}>대시보드만</option>
+            </select>
+          </td>
           <td><button type="button" class="small-btn danger" data-region-remove="${escapeHtml(row.driver.id)}">해제</button></td>
         </tr>`;
       }).join('')
-      : '<tr><td colspan="4" class="empty">이 지역에 배정된 기사가 없습니다.</td></tr>';
+      : '<tr><td colspan="5" class="empty">이 지역에 배정된 기사가 없습니다.</td></tr>';
 
     if (totalsEl) {
       const firstText = weeklyLocalFirst
@@ -1648,8 +1731,8 @@ const BremDriverManagementAdmin = (function () {
     const hint = $('#driverRegionHint');
     if (hint) {
       hint.textContent = state.regionPlatform === 'coupang'
-        ? '쿠팡: 「라이더 노출」켜면 그 지역에 등록된 기사만 기사앱 대시보드에 보입니다. 콜수=콜수입력 · 배달료=일정산 · 실시간=크롤링.'
-        : '배민: 「라이더 노출」켜면 그 지역에 등록된 기사만 기사앱 대시보드에 보입니다. 콜수=콜수입력 · 배달료=일정산 · 실시간=크롤링.';
+        ? '쿠팡: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」(기본)·「대시보드만」(순위 비노출·팀장용)을 고를 수 있습니다.'
+        : '배민: 「라이더 노출」켜면 등록 기사가 기사앱 대시보드를 봅니다. 기사마다 「올노출」(기본)·「대시보드만」(순위 비노출·팀장용)을 고를 수 있습니다.';
     }
     // 지역 인원 수는 drivers 전체 목록 기준 — 페이지가 덜 오면 71처럼 적게 나온다.
     try {
@@ -2411,6 +2494,27 @@ const BremDriverManagementAdmin = (function () {
           .catch(error => {
             expose.checked = !checked;
             showToast(error.message || '노출 설정 저장 실패');
+          });
+        return;
+      }
+
+      const riderMode = event.target.closest('[data-region-rider-mode]');
+      if (riderMode) {
+        const region = selectedRegion();
+        const driverId = riderMode.dataset.regionRiderMode;
+        if (!region || !driverId) return;
+        const mode = riderMode.value === 'dashboard' ? 'dashboard' : 'full';
+        const prev = getDriverRegionMode(region.platform, region.key, driverId);
+        void setDriverRegionMode(region, driverId, mode)
+          .then(() => {
+            renderRegionDetail();
+            showToast(mode === 'dashboard'
+              ? '대시보드만 — 기사앱 순위에는 안 나옵니다'
+              : '올노출 — 대시보드 + 순위 노출');
+          })
+          .catch(error => {
+            riderMode.value = prev;
+            showToast(error.message || '기사 옵션 저장 실패');
           });
         return;
       }

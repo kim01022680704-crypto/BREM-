@@ -12086,6 +12086,23 @@ button.driver-org-node small,
   accent-color: #4ade80;
 }
 
+.driver-region-mode {
+  min-width: 7.5rem;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #52525b;
+  border-radius: 8px;
+  background: #18181b;
+  color: #f4f4f5;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+tr.is-dashboard-only .driver-region-mode {
+  border-color: #a78bfa;
+  color: #ddd6fe;
+}
+
 .driver-region-rank-panels {
   display: grid;
   grid-template-columns: 1fr 1fr;

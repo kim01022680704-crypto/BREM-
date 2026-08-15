@@ -157,6 +157,22 @@ function listExposedRegions(exposure, platform) {
     .sort((a, b) => a.label.localeCompare(b.label, 'ko'));
 }
 
+/** 기사 지역 옵션: full=올노출(기본), dashboard=대시보드만(순위 비노출) */
+function normalizeRiderRegionMode(value) {
+  return String(value || '').toLowerCase() === 'dashboard' ? 'dashboard' : 'full';
+}
+
+function getRiderRegionMode(exposure, platform, regionKey, driverId) {
+  const id = String(driverId || '').trim();
+  if (!id) return 'full';
+  const entry = exposure?.[platform]?.[regionKey]?.riders?.[id];
+  return normalizeRiderRegionMode(entry?.mode);
+}
+
+function filterRankingRiders(exposure, platform, regionKey, riders = []) {
+  return (riders || []).filter(rider => getRiderRegionMode(exposure, platform, regionKey, rider.id) === 'full');
+}
+
 function riderMatchesRegion(rider, region) {
   if (!rider || !region) return false;
   if (region.platform === 'baemin') {
@@ -212,6 +228,10 @@ function writeResponseCache(key, data) {
     const oldest = [...responseCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
     if (oldest) responseCache.delete(oldest[0]);
   }
+}
+
+function clearResponseCache() {
+  responseCache.clear();
 }
 
 async function loadRidersForRegion(supabase, region) {
@@ -281,9 +301,11 @@ async function loadRidersForRegion(supabase, region) {
 
 async function buildWeeklyRanking(supabase, region, weekStart, weekEnd, options = {}) {
   const mask = options.maskNames !== false;
-  const riders = Array.isArray(options.regionRiders)
-    ? options.regionRiders
-    : await loadRidersForRegion(supabase, region);
+  const riders = Array.isArray(options.rankingRiders)
+    ? options.rankingRiders
+    : (Array.isArray(options.regionRiders)
+      ? options.regionRiders
+      : await loadRidersForRegion(supabase, region));
   if (!riders.length) return [];
   const riderIds = riders.map(r => r.id);
   // PostgREST .in() URL 한도 대비 청크
@@ -362,11 +384,13 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
   }
 
   // regionRiders 를 밖에서 넘기면 riders 테이블을 한 번만 읽는다.
+  // rankingRiders 가 있으면 실시간 순위만 그 집합으로 잡는다(대시보드만 기사는 제외).
   const snapshotPromise = loadBaeminDeliverySnapshot(supabase, partnerId, today);
   const ridersPromise = Array.isArray(options.regionRiders)
     ? Promise.resolve(options.regionRiders)
     : loadRidersForRegion(supabase, region);
   const [snapshot, regionRiders] = await Promise.all([snapshotPromise, ridersPromise]);
+  const rankingRiders = Array.isArray(options.rankingRiders) ? options.rankingRiders : regionRiders;
 
   const error = snapshot.error;
   if (error) {
@@ -376,7 +400,7 @@ async function buildBaeminLive(supabase, region, today, options = {}) {
     throw error;
   }
 
-  const riderIndex = indexRegionRiders(regionRiders);
+  const riderIndex = indexRegionRiders(rankingRiders);
   const rows = snapshot.rows || [];
   const slotKey = currentBaeminSlotKey();
   const slotPeakField = {
@@ -630,8 +654,10 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   let weeklyRanking = [];
   try {
     const regionRiders = await loadRidersForRegion(supabase, selected);
-    const liveOpts = { regionRiders };
-    const weekOpts = { regionRiders };
+    // 기사앱 순위만 올노출(full) 기사 — 대시보드만(dashboard)은 보드 열람은 가능·순위 제외
+    const rankingRiders = filterRankingRiders(exposure, platform, selected.key, regionRiders);
+    const liveOpts = { regionRiders, rankingRiders };
+    const weekOpts = { regionRiders, rankingRiders };
     [live, weeklyRanking] = await Promise.all([
       platform === 'coupang'
         ? buildCoupangLive(supabase, selected, today, liveOpts)
@@ -854,6 +880,17 @@ async function getAdminRegionCrawlMatch(accessToken, query = {}) {
   };
 }
 
+async function upsertExposureMap(supabase, next) {
+  const { error } = await supabase.from('settings').upsert({
+    key: EXPOSURE_KEY,
+    value: next,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'key' });
+  if (error) throw error;
+  clearResponseCache();
+  return next;
+}
+
 async function saveAdminRegionExposure(accessToken, body = {}) {
   const { verifyAdminCaller } = require('./admin-users');
   const admin = await verifyAdminCaller(accessToken);
@@ -867,32 +904,85 @@ async function saveAdminRegionExposure(accessToken, body = {}) {
   const key = String(body.key || '').trim();
   if (!key) return { ok: false, status: 400, error: '지역 키가 없습니다.' };
 
+  // 기사별 옵션 저장 (기본=올노출). driverId 가 있으면 지역 ON/OFF 대신 모드만 갱신.
+  const driverId = String(body.driverId || '').trim();
+  if (driverId) {
+    try {
+      const exposure = await readExposureMap(supabase);
+      const side = { ...(exposure[platform] || {}) };
+      const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
+      const riders = { ...(prev.riders && typeof prev.riders === 'object' ? prev.riders : {}) };
+      const mode = normalizeRiderRegionMode(body.mode);
+      if (mode === 'full') {
+        // 기본값이 올노출이므로 명시 full 은 맵에서 지워 용량을 줄인다.
+        delete riders[driverId];
+      } else {
+        riders[driverId] = {
+          mode: 'dashboard',
+          updatedAt: new Date().toISOString()
+        };
+      }
+      const wasExposed = prev.exposed === true || prev.exposed === 1
+        || ((!prev.exposed && body.exposed === true));
+      side[key] = {
+        ...prev,
+        // 기사 옵션만 바꿀 때는 지역 노출을 끄지 않는다. (미존재 키 + body.exposed 로 ON 유지 가능)
+        exposed: wasExposed,
+        label: String(body.label || prev.label || key).trim() || key,
+        partnerId: String(body.partnerId || prev.partnerId || '').trim(),
+        vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+        riders,
+        updatedAt: new Date().toISOString()
+      };
+      // 지역 미노출인데 기사 옵션만 저장해도 riders 는 유지 (나중에 지역 ON 해도 유지)
+      if (!side[key].exposed && !Object.keys(riders).length) {
+        delete side[key];
+      }
+      const next = await upsertExposureMap(supabase, {
+        ...exposure,
+        [platform]: side,
+        updatedAt: new Date().toISOString()
+      });
+      return { ok: true, exposure: next };
+    } catch (error) {
+      return { ok: false, status: 500, error: error.message || '기사 노출 옵션을 저장하지 못했습니다.' };
+    }
+  }
+
   try {
     const exposure = await readExposureMap(supabase);
     const side = { ...(exposure[platform] || {}) };
     const exposed = body.exposed === true;
+    const prev = side[key] && typeof side[key] === 'object' ? side[key] : {};
+    const riders = prev.riders && typeof prev.riders === 'object' ? prev.riders : {};
     if (!exposed) {
-      delete side[key];
+      // 지역 OFF 해도 기사별 옵션(대시보드만 등)은 유지
+      if (Object.keys(riders).length) {
+        side[key] = {
+          ...prev,
+          exposed: false,
+          riders,
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        delete side[key];
+      }
     } else {
       side[key] = {
+        ...prev,
         exposed: true,
-        label: String(body.label || key).trim() || key,
-        partnerId: String(body.partnerId || '').trim(),
-        vendorId: String(body.vendorId || '').trim(),
+        label: String(body.label || prev.label || key).trim() || key,
+        partnerId: String(body.partnerId || prev.partnerId || '').trim(),
+        vendorId: String(body.vendorId || prev.vendorId || '').trim(),
+        riders,
         updatedAt: new Date().toISOString()
       };
     }
-    const next = {
+    const next = await upsertExposureMap(supabase, {
       ...exposure,
       [platform]: side,
       updatedAt: new Date().toISOString()
-    };
-    const { error } = await supabase.from('settings').upsert({
-      key: EXPOSURE_KEY,
-      value: next,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'key' });
-    if (error) throw error;
+    });
     return { ok: true, exposure: next };
   } catch (error) {
     return { ok: false, status: 500, error: error.message || '노출 설정을 저장하지 못했습니다.' };
