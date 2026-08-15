@@ -472,6 +472,18 @@ app.get('/api/rider/crew-leader', async (req, res) => {
   }
 });
 
+app.post('/api/rider/crew-leader/rename', async (req, res) => {
+  try {
+    const result = await riderCrewLeader.renameCrewBox(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '크루 이름 변경에 실패했습니다.' });
+  }
+});
+
 app.get('/api/admin/rider-dashboard/region-exposure', async (req, res) => {
   try {
     const result = await riderRegionDashboard.getAdminRegionExposure(getBearerToken(req));

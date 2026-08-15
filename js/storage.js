@@ -3054,6 +3054,13 @@ const BremStorage = (function () {
     });
   }
 
+  async function renameRiderCrewFromServer({ label } = {}) {
+    return riderApiFetch('/api/rider/crew-leader/rename', 'crew-rename', {
+      method: 'POST',
+      body: JSON.stringify({ label: String(label || '').trim() })
+    });
+  }
+
   async function fetchRiderWithdrawalFromServer(weekStart) {
     const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
     return riderApiFetch(`/api/rider/withdrawal${qs}`, 'withdrawal');
@@ -13856,6 +13863,7 @@ const BremStorage = (function () {
     fetchRiderWeeklyPayslipFromServer,
     fetchRiderRegionDashboardFromServer,
     fetchRiderCrewLeaderFromServer,
+    renameRiderCrewFromServer,
     fetchRiderWithdrawalFromServer,
     submitRiderWithdrawalToServer,
     fetchAdminWithdrawalRequestsFromServer,

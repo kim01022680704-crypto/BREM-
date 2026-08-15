@@ -386,7 +386,94 @@ async function getCrewLeaderDashboard(accessToken, options = {}) {
   };
 }
 
+async function readOrgChartRaw(supabase) {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('key', ORG_CHART_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  let raw = data?.value;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { raw = {}; }
+  }
+  if (!raw || typeof raw !== 'object') raw = { nodes: [] };
+  if (!Array.isArray(raw.nodes) && raw.value && typeof raw.value === 'object') {
+    raw = { ...raw.value };
+  }
+  if (!Array.isArray(raw.nodes)) raw.nodes = [];
+  return raw;
+}
+
+function normalizeCrewLabel(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
+}
+
+async function renameCrewBox(accessToken, body = {}) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+
+  const riderId = String(me.rider?.id || '').trim();
+  if (!riderId) {
+    return { ok: false, status: 401, error: '기사 정보를 확인할 수 없습니다.' };
+  }
+
+  const nextLabel = normalizeCrewLabel(body.label || body.name || body.crewName);
+  if (!nextLabel) {
+    return { ok: false, status: 400, error: '크루 이름을 입력하세요.' };
+  }
+  if (nextLabel.length < 2) {
+    return { ok: false, status: 400, error: '크루 이름은 2자 이상이어야 합니다.' };
+  }
+
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const chart = await readOrgChart(supabase);
+  const box = await findCrewBoxForLeaderResolved(supabase, chart, riderId, me.rider);
+  if (!box) {
+    return { ok: false, status: 403, error: '조직도 크루장만 크루 이름을 변경할 수 있습니다.' };
+  }
+
+  const raw = await readOrgChartRaw(supabase);
+  const targetId = String(box.id || '').trim();
+  let updated = false;
+  raw.nodes = (raw.nodes || []).map(node => {
+    const id = String(node?.id || '').trim();
+    if (id !== targetId) return node;
+    updated = true;
+    return { ...node, label: nextLabel };
+  });
+  if (!updated) {
+    return { ok: false, status: 404, error: '크루 박스를 찾을 수 없습니다.' };
+  }
+  raw.updatedAt = new Date().toISOString();
+
+  const { error } = await supabase.from('settings').upsert({
+    key: ORG_CHART_KEY,
+    value: raw,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'key' });
+  if (error) throw error;
+
+  return {
+    ok: true,
+    isCrewLeader: true,
+    box: {
+      id: targetId,
+      label: nextLabel,
+      isTopRep: chart.topRepNodeId === targetId
+    }
+  };
+}
+
 module.exports = {
   getCrewLeaderDashboard,
+  renameCrewBox,
   ORG_CHART_KEY
 };

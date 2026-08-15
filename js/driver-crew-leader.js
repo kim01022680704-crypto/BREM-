@@ -6,19 +6,26 @@
   const prevWeekBtn = document.getElementById('driverCrewLeaderPrevWeekBtn');
   const nextWeekBtn = document.getElementById('driverCrewLeaderNextWeekBtn');
   const periodEl = document.getElementById('driverCrewLeaderPeriod');
+  const titleEl = document.getElementById('driverCrewLeaderTitle');
   const boxLabelEl = document.getElementById('driverCrewLeaderBoxLabel');
   const summaryEl = document.getElementById('driverCrewLeaderSummary');
   const emptyEl = document.getElementById('driverCrewLeaderEmpty');
   const contentEl = document.getElementById('driverCrewLeaderContent');
   const rowsEl = document.getElementById('driverCrewLeaderRows');
+  const renameBtn = document.getElementById('driverCrewLeaderRenameBtn');
+  const renameForm = document.getElementById('driverCrewLeaderRenameForm');
+  const renameInput = document.getElementById('driverCrewLeaderRenameInput');
+  const renameCancelBtn = document.getElementById('driverCrewLeaderRenameCancelBtn');
 
   if (!panel || !openBtn) return;
 
+  const DEFAULT_TITLE = '크루장 관리';
   const POLL_MS = 60 * 1000;
 
   const state = {
     visible: false,
     loading: false,
+    renaming: false,
     weekStart: '',
     lastResult: null,
     pollTimer: null,
@@ -99,24 +106,47 @@
     return '<span class="driver-crew-tag driver-crew-tag--unk"><span class="driver-crew-tag__dot" aria-hidden="true"></span>미확인</span>';
   }
 
+  function applyCrewTitle(label) {
+    const name = String(label || '').trim();
+    if (titleEl) titleEl.textContent = name || DEFAULT_TITLE;
+    if (boxLabelEl) {
+      const isTop = Boolean(state.lastResult?.box?.isTopRep);
+      boxLabelEl.textContent = name ? `${name}${isTop ? ' (대표)' : ''}` : '-';
+    }
+  }
+
+  function closeRenameForm() {
+    if (renameForm) renameForm.hidden = true;
+    if (renameInput) renameInput.value = '';
+  }
+
+  function openRenameForm() {
+    const current = String(state.lastResult?.box?.label || '').trim();
+    if (renameInput) {
+      renameInput.value = current;
+      renameInput.focus();
+      renameInput.select();
+    }
+    if (renameForm) renameForm.hidden = false;
+  }
+
   function renderResult(result) {
     state.lastResult = result;
     if (!result?.ok || !result.isCrewLeader) {
-      if (boxLabelEl) boxLabelEl.textContent = '-';
+      applyCrewTitle('');
       if (summaryEl) summaryEl.textContent = '';
       if (contentEl) contentEl.hidden = true;
       if (emptyEl) emptyEl.hidden = false;
       if (rowsEl) rowsEl.innerHTML = '';
+      if (renameBtn) renameBtn.hidden = true;
+      closeRenameForm();
       return;
     }
 
     if (emptyEl) emptyEl.hidden = true;
     if (contentEl) contentEl.hidden = false;
-    if (boxLabelEl) {
-      boxLabelEl.textContent = result.box?.label
-        ? `${result.box.label}${result.box.isTopRep ? ' (대표)' : ''}`
-        : '-';
-    }
+    if (renameBtn) renameBtn.hidden = false;
+    applyCrewTitle(result.box?.label || '');
     const weekStart = result.weekStart || ensureWeekStart();
     const weekEnd = result.weekEnd || settlementWeekEnd(weekStart);
     if (periodEl) periodEl.textContent = formatWeekLabel(weekStart, weekEnd);
@@ -143,6 +173,45 @@
             <td class="driver-crew-num">${formatNumber(member.weekCalls)}</td>
           </tr>`).join('')
         : '<tr><td colspan="4" class="empty">소속 기사가 없습니다.</td></tr>';
+    }
+  }
+
+  async function submitRename(event) {
+    event?.preventDefault?.();
+    if (state.renaming) return;
+    const label = String(renameInput?.value || '').replace(/\s+/g, ' ').trim();
+    if (!label) {
+      showToast('크루 이름을 입력하세요.');
+      renameInput?.focus();
+      return;
+    }
+    if (label.length < 2) {
+      showToast('크루 이름은 2자 이상이어야 합니다.');
+      renameInput?.focus();
+      return;
+    }
+    state.renaming = true;
+    if (renameForm) renameForm.classList.add('is-saving');
+    try {
+      const result = await window.BremStorage?.renameRiderCrewFromServer?.({ label });
+      if (!result?.ok) {
+        showToast(result?.message || result?.error || '크루 이름 변경에 실패했습니다.');
+        return;
+      }
+      const nextLabel = result.box?.label || label;
+      if (state.lastResult?.box) {
+        state.lastResult.box = { ...state.lastResult.box, label: nextLabel };
+      } else {
+        state.lastResult = { ...(state.lastResult || {}), ok: true, isCrewLeader: true, box: result.box };
+      }
+      applyCrewTitle(nextLabel);
+      closeRenameForm();
+      showToast(`크루 이름이 '${nextLabel}'(으)로 변경되었습니다.`);
+    } catch (error) {
+      showToast(error?.message || '크루 이름 변경에 실패했습니다.');
+    } finally {
+      state.renaming = false;
+      if (renameForm) renameForm.classList.remove('is-saving');
     }
   }
 
@@ -237,6 +306,7 @@
   function closePanel() {
     state.visible = false;
     stopAutoPoll();
+    closeRenameForm();
     panel.hidden = true;
     openBtn.setAttribute('aria-expanded', 'false');
   }
@@ -247,16 +317,18 @@
     state.weekStart = settlementWeekStart(localDateKey());
     state.lastResult = null;
     state.loading = false;
+    state.renaming = false;
     stopAutoPoll();
     closePanel();
     // 로그인 화면에서는 main 자체가 숨겨지므로, 여기서 버튼을 숨기지 않는다.
     openBtn.hidden = false;
-    if (boxLabelEl) boxLabelEl.textContent = '-';
+    applyCrewTitle('');
     if (periodEl) periodEl.textContent = '-';
     if (summaryEl) summaryEl.textContent = '';
     if (rowsEl) rowsEl.innerHTML = '';
     if (contentEl) contentEl.hidden = true;
     if (emptyEl) emptyEl.hidden = false;
+    if (renameBtn) renameBtn.hidden = true;
   }
 
   function shiftWeek(delta) {
@@ -275,6 +347,11 @@
   refreshBtn?.addEventListener('click', () => void loadDashboard({ force: true }));
   prevWeekBtn?.addEventListener('click', () => shiftWeek(-1));
   nextWeekBtn?.addEventListener('click', () => shiftWeek(1));
+  renameBtn?.addEventListener('click', openRenameForm);
+  renameCancelBtn?.addEventListener('click', closeRenameForm);
+  renameForm?.addEventListener('submit', (event) => {
+    void submitRename(event);
+  });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && state.visible) {

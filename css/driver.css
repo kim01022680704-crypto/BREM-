@@ -2769,6 +2769,90 @@ button.calendar-day:hover {
   min-width: 0;
 }
 
+.driver-crew-meta__item--name {
+  flex: 1 1 160px;
+}
+
+.driver-crew-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.driver-crew-name-row strong {
+  min-width: 0;
+  font-size: 1rem;
+}
+
+.driver-crew-rename-btn {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.driver-crew-rename-btn:hover {
+  background: #dbeafe;
+}
+
+.driver-crew-rename-form {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.driver-crew-rename-form[hidden] {
+  display: none !important;
+}
+
+.driver-crew-rename-form label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.driver-crew-rename-form input {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.driver-crew-rename-form__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.driver-crew-rename-save {
+  min-height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 10px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .driver-crew-summary {
   margin: 0 0 12px;
   padding: 10px 12px;

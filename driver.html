@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816crew4">
+  <link rel="stylesheet" href="css/driver.css?v=20260816crew5">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623n">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -346,17 +346,20 @@
               <div class="driver-payslip-header__brand">
                 <img src="assets/brand/brem-logo-mark.png" width="72" height="52" alt="BREM" class="driver-payslip-logo">
                 <div>
-                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER</p>
-                  <h2>크루장 관리</h2>
+                  <p class="eyebrow driver-payslip-eyebrow">BREM RIDER · 크루장 관리</p>
+                  <h2 id="driverCrewLeaderTitle">크루장 관리</h2>
                 </div>
               </div>
               <button type="button" class="ghost-btn driver-payslip-close" id="driverCrewLeaderCloseBtn">닫기</button>
             </div>
 
             <div class="driver-crew-meta">
-              <div class="driver-crew-meta__item">
+              <div class="driver-crew-meta__item driver-crew-meta__item--name">
                 <span class="driver-payslip-meta__label">크루</span>
-                <strong id="driverCrewLeaderBoxLabel">-</strong>
+                <div class="driver-crew-name-row">
+                  <strong id="driverCrewLeaderBoxLabel">-</strong>
+                  <button type="button" class="driver-crew-rename-btn" id="driverCrewLeaderRenameBtn">크루 이름변경</button>
+                </div>
               </div>
               <div class="driver-crew-meta__item">
                 <span class="driver-payslip-meta__label">정산주 (수~화)</span>
@@ -368,6 +371,17 @@
               </div>
               <button type="button" class="driver-region-dash-refresh" id="driverCrewLeaderRefreshBtn" title="새로고침">↻</button>
             </div>
+
+            <form class="driver-crew-rename-form" id="driverCrewLeaderRenameForm" hidden>
+              <label>
+                <span>새 크루 이름</span>
+                <input type="text" id="driverCrewLeaderRenameInput" maxlength="40" placeholder="예: 윤우크루" autocomplete="off">
+              </label>
+              <div class="driver-crew-rename-form__actions">
+                <button type="submit" class="driver-crew-rename-save">저장</button>
+                <button type="button" class="ghost-btn" id="driverCrewLeaderRenameCancelBtn">취소</button>
+              </div>
+            </form>
 
             <div class="driver-crew-summary" id="driverCrewLeaderSummary" aria-live="polite"></div>
 
@@ -903,14 +917,14 @@
   <script src="js/storage-supabase-mapper.js?v=20260729d"></script>
   <script src="js/storage-guard.js"></script>
   <script src="js/storage-supabase-adapter.js?v=20260801f"></script>
-  <script src="js/storage.js?v=20260816crew4"></script>
+  <script src="js/storage.js?v=20260816crew5"></script>
   <script src="js/driver-utils.js?v=20260801f"></script>
   <script src="js/date-picker.js"></script>
-  <script src="js/driver-weekly-payslip.js?v=20260816crew4"></script>
-  <script src="js/driver-region-dashboard.js?v=20260816crew4"></script>
-  <script src="js/driver-crew-leader.js?v=20260816crew4"></script>
-  <script src="js/driver-withdrawal.js?v=20260816crew4"></script>
-  <script src="js/driver.js?v=20260816crew4"></script>
+  <script src="js/driver-weekly-payslip.js?v=20260816crew5"></script>
+  <script src="js/driver-region-dashboard.js?v=20260816crew5"></script>
+  <script src="js/driver-crew-leader.js?v=20260816crew5"></script>
+  <script src="js/driver-withdrawal.js?v=20260816crew5"></script>
+  <script src="js/driver.js?v=20260816crew5"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
