@@ -28,7 +28,8 @@ const BremDriverManagementAdmin = (function () {
     crawlMatch: { rows: [], partnerId: '', label: '', busy: false },
     statsLoadPromise: null,
     regionRefreshSeq: 0,
-    regionDetailSyncTimer: null
+    regionDetailSyncTimer: null,
+    regionDetailDriverCount: -1
   };
 
   const REGION_RANKING_POLL_MS = 60 * 1000;
@@ -1536,6 +1537,7 @@ const BremDriverManagementAdmin = (function () {
     if (!region) {
       rows.innerHTML = '<tr><td colspan="5" class="empty">왼쪽에서 지역을 선택하세요.</td></tr>';
       state.regionAdd.candidates = [];
+      state.regionDetailDriverCount = -1;
       resetRegionAddCombo();
       if (totalsEl) totalsEl.textContent = '';
       clearRegionRankingUi();
@@ -1543,6 +1545,7 @@ const BremDriverManagementAdmin = (function () {
     }
     const week = ensureWeek();
     const inRegion = driversInRegion(region);
+    state.regionDetailDriverCount = inRegion.length;
     let totalCalls = 0;
     let totalFee = 0;
     // 주간 콜수 기준 로컬 1등 표시(표 상단 합계와 함께)
@@ -1802,7 +1805,9 @@ const BremDriverManagementAdmin = (function () {
       console.warn('[driver-mgmt] calls/settlements/drivers load failed:', error);
     }
     if (seq !== state.regionRefreshSeq) return;
-    updateRegionCatalogCounts();
+    // 기사 전체 로드 후 표·인원 한 번 확정 (초기 렌더는 부분 캐시라 1명만 보일 수 있음)
+    renderRegionCatalog();
+    renderRegionDetail();
   }
 
   function matchBaeminRegion(input) {
@@ -2408,13 +2413,18 @@ const BremDriverManagementAdmin = (function () {
     bindEvents.bound = true;
 
     // 기사 목록이 백그라운드로 더 채워지면 인원 수만 갱신한다.
-    // (전체 표를 다시 그리면 올노출 셀렉트·스크롤이 계속 깜빡인다.)
+    // 선택 지역 인원이 늘면(부분 로드→전체) 표는 디바운스로 한 번만 다시 채운다.
     document.addEventListener('brem-drivers-sync-ready', event => {
       if (state.tab !== 'region') return;
       if (!isDriverManagementSectionActive()) return;
       updateRegionCatalogCounts();
-      if (event.detail?.complete === true) {
-        scheduleRegionDetailSoftRefresh();
+      const region = selectedRegion();
+      if (region) {
+        const n = driversInRegion(region).length;
+        if (n !== state.regionDetailDriverCount || event.detail?.complete === true) {
+          state.regionDetailDriverCount = n;
+          scheduleRegionDetailSoftRefresh();
+        }
       }
     });
 
