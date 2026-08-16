@@ -197,6 +197,7 @@
   const ADMIN_MENU_OPTIONS = [
     { id: 'notices', label: '공지사항' },
     { id: 'urgent-missions', label: '긴급미션' },
+    { id: 'rider-push', label: '앱푸쉬' },
     { id: 'rider-inquiries', label: '라이더 문의' },
     { id: 'dashboard', label: '대시보드' },
     { id: 'admin-schedule', label: '관리자 스케줄표' },
@@ -6693,6 +6694,9 @@
         break;
       case 'urgent-missions':
         window.BremAdminUrgentMissions?.refresh?.();
+        break;
+      case 'rider-push':
+        window.BremAdminRiderPush?.refresh?.();
         break;
       case 'rider-inquiries':
         renderRiderInquiries();

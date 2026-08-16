@@ -1522,6 +1522,7 @@ const BremStorage = (function () {
       KEYS.deductionLedger
     ],
     'urgent-missions': [KEYS.drivers],
+    'rider-push': [KEYS.drivers],
     'revenue-management': [],
     'admin-account': [],
     'baemin-biz-status': [],
@@ -3160,13 +3161,70 @@ const BremStorage = (function () {
     return riderApiFetch('/api/rider/urgent-missions', 'urgent-missions');
   }
 
+  const RIDER_PUSH_BIND_KEY = 'brem_rider_push_bind';
+
+  function readRiderPushBind() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RIDER_PUSH_BIND_KEY) || 'null');
+      const riderId = String(raw?.riderId || '').trim();
+      const bindKey = String(raw?.bindKey || '').trim();
+      if (riderId && bindKey) return { riderId, bindKey };
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  function writeRiderPushBind(riderId, bindKey) {
+    const id = String(riderId || '').trim();
+    const key = String(bindKey || '').trim();
+    if (!id || !key) return;
+    try {
+      localStorage.setItem(RIDER_PUSH_BIND_KEY, JSON.stringify({ riderId: id, bindKey: key }));
+    } catch {
+      // ignore
+    }
+  }
+
+  function rememberRiderPushBind(result) {
+    if (result?.ok && result.riderId && result.bindKey) {
+      writeRiderPushBind(result.riderId, result.bindKey);
+    }
+    return result;
+  }
+
   async function registerRiderPushTokenOnServer(token) {
     const value = String(token || '').trim();
     if (!value) return { ok: false, message: '푸시 토큰이 없습니다.' };
-    return riderApiFetch('/api/rider/push-token', 'push-token', {
+
+    const sessionResult = await riderApiFetch('/api/rider/push-token', 'push-token', {
       method: 'POST',
       body: JSON.stringify({ token: value })
     });
+    if (sessionResult.ok) return rememberRiderPushBind(sessionResult);
+
+    const bind = readRiderPushBind();
+    if (!bind) return sessionResult;
+
+    try {
+      const response = await fetch('/api/rider/push-token', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: value,
+          riderId: bind.riderId,
+          bindKey: bind.bindKey
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { ok: false, message: payload.error || '푸시 토큰 저장에 실패했습니다.' };
+      }
+      return rememberRiderPushBind({ ok: true, ...payload });
+    } catch (error) {
+      return { ok: false, message: error.message || '푸시 토큰 저장에 실패했습니다.' };
+    }
   }
 
   async function acceptRiderUrgentMissionOnServer(missionId) {
@@ -3230,6 +3288,17 @@ const BremStorage = (function () {
     if (!id) return { ok: false, message: '미션 ID가 없습니다.' };
     return adminRidersApi(`/api/admin/urgent-missions/${encodeURIComponent(id)}`, {
       method: 'DELETE'
+    });
+  }
+
+  async function fetchAdminRiderPushLogsFromServer() {
+    return adminRidersApi('/api/admin/rider-push');
+  }
+
+  async function sendAdminRiderPush(payload) {
+    return adminRidersApi('/api/admin/rider-push', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
     });
   }
 
@@ -12344,6 +12413,7 @@ const BremStorage = (function () {
   const ALL_ADMIN_MENU_IDS = Object.freeze([
     'notices',
     'urgent-missions',
+    'rider-push',
     'rider-inquiries',
     'dashboard',
     'admin-schedule',
@@ -12413,6 +12483,10 @@ const BremStorage = (function () {
 
     if (normalized.includes('notices') && !normalized.includes('urgent-missions')) {
       normalized.splice(normalized.indexOf('notices') + 1, 0, 'urgent-missions');
+    }
+
+    if (normalized.includes('urgent-missions') && !normalized.includes('rider-push')) {
+      normalized.splice(normalized.indexOf('urgent-missions') + 1, 0, 'rider-push');
     }
 
     if (normalized.includes('missions') && !normalized.includes('mission-results')) {
@@ -12577,9 +12651,13 @@ const BremStorage = (function () {
     const allowed = new Set(normalizedMenus);
     if (editableMenus == null) return [...normalizedMenus];
     if (!Array.isArray(editableMenus)) return [...normalizedMenus];
-    return editableMenus
+    const next = editableMenus
       .map(menuId => String(menuId || '').trim())
       .filter(menuId => allowed.has(menuId));
+    if (next.includes('urgent-missions') && allowed.has('rider-push') && !next.includes('rider-push')) {
+      next.splice(next.indexOf('urgent-missions') + 1, 0, 'rider-push');
+    }
+    return next;
   }
 
   function normalizeBaeminPartnerIdList(list) {
@@ -14083,6 +14161,8 @@ const BremStorage = (function () {
     assignAdminUrgentMissionTargets,
     removeAdminUrgentMissionTargets,
     deleteAdminUrgentMission,
+    fetchAdminRiderPushLogsFromServer,
+    sendAdminRiderPush,
     fetchRiderWeeklyPayslipFromServer,
     fetchRiderRegionDashboardFromServer,
     fetchRiderCrewLeaderFromServer,

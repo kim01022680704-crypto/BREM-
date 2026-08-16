@@ -106,6 +106,7 @@
             <nav>
         <button class="nav-btn" data-section="notices">공지사항</button>
         <button class="nav-btn" data-section="urgent-missions">긴급미션</button>
+        <button class="nav-btn" data-section="rider-push">앱푸쉬</button>
         <button class="nav-btn" data-section="rider-inquiries">라이더 문의</button>
         <button class="nav-btn active" data-section="dashboard">대시보드</button>
         <button class="nav-btn" data-section="admin-schedule">관리자 스케줄표</button>
@@ -5795,6 +5796,73 @@
         </article>
       </section>
 
+      <section class="section" id="rider-push">
+        <article class="card">
+          <div class="card-header">
+            <h2>앱푸쉬 전송</h2>
+          </div>
+          <form class="notice-form urgent-mission-form" id="riderPushForm">
+            <label>
+              제목
+              <input type="text" id="riderPushTitle" maxlength="40" placeholder="BREM" autocomplete="off">
+            </label>
+            <label>
+              내용
+              <textarea id="riderPushBody" rows="3" maxlength="400" placeholder="기사앱으로 보낼 내용을 입력하세요." required></textarea>
+            </label>
+            <fieldset class="urgent-mission-platform-field">
+              <legend>태그</legend>
+              <div class="urgent-mission-chip-row">
+                <label class="urgent-mission-chip">
+                  <input type="radio" name="riderPushPlatform" value="baemin" required>
+                  <span>배민</span>
+                </label>
+                <label class="urgent-mission-chip urgent-mission-chip--coupang">
+                  <input type="radio" name="riderPushPlatform" value="coupang">
+                  <span>쿠팡</span>
+                </label>
+              </div>
+            </fieldset>
+            <div class="urgent-mission-rider-picker">
+              <div class="urgent-mission-rider-picker__head">
+                <h3>대상 기사</h3>
+                <span id="riderPushRiderCount">0명 선택</span>
+              </div>
+              <p class="form-help">배민/쿠팡을 고르면 지역별 기사가 나옵니다. 선택한 기사에게만 갑니다. 지금 로그인 안 해도, 예전에 앱을 한 번이라도 켠 기사는 받을 수 있습니다.</p>
+              <div class="urgent-mission-rider-picker__tools">
+                <input type="search" id="riderPushRiderSearch" placeholder="이름·연락처로 찾기" autocomplete="off">
+              </div>
+              <div id="riderPushSelectedChips" class="urgent-mission-selected-chips" hidden></div>
+              <div class="urgent-mission-rider-picker__body">
+                <div id="riderPushRegionList" class="urgent-mission-region-list"></div>
+                <div class="urgent-mission-rider-list-wrap">
+                  <div class="urgent-mission-rider-list-toolbar">
+                    <label class="check-label">
+                      <input type="checkbox" id="riderPushRiderCheckAll">
+                      이 지역 전체
+                    </label>
+                    <span id="riderPushRegionTitle">지역을 선택하세요</span>
+                  </div>
+                  <div id="riderPushRiderList"></div>
+                </div>
+              </div>
+            </div>
+            <div class="notice-form-actions">
+              <button class="primary-btn" type="submit" id="riderPushSendBtn">앱푸쉬 보내기</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h2>전송 기록</h2>
+            <button class="small-btn" type="button" id="riderPushRefreshBtn">목록 새로고침</button>
+          </div>
+          <p class="form-help" id="riderPushEmpty">보낸 앱푸쉬가 없습니다.</p>
+          <div id="riderPushList"></div>
+        </article>
+      </section>
+
       <section class="section" id="rider-inquiries">
         <article class="card">
           <div class="card-header">
@@ -8046,7 +8114,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260816um3"></script>
+  <script src="js/storage.js?v=20260816push6"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -8093,12 +8161,13 @@
   <script src="js/payroll-daily-settlement-admin.js?v=20260803i"></script>
   <script src="js/admin-payroll-slips.js?v=20260814match1"></script>
   <script src="js/admin-payroll-notices.js?v=20260701b"></script>
-  <script src="js/admin-urgent-missions.js?v=20260816push4"></script>
+  <script src="js/admin-urgent-missions.js?v=20260816push6"></script>
+  <script src="js/admin-rider-push.js?v=20260816push6"></script>
   <script src="js/admin-payroll-daily-settlement.js?v=20260803j"></script>
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260816um1"></script>
+    <script src="js/admin.js?v=20260816push5"></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

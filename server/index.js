@@ -15,6 +15,7 @@ const missionsAdmin = require('./missions-admin');
 const noticesAdmin = require('./notices-admin');
 const urgentMissions = require('./urgent-missions');
 const riderPush = require('./rider-push');
+const adminRiderPush = require('./admin-rider-push');
 const leaseErpAdmin = require('./lease-erp-admin');
 const payrollProductionRiders = require('./payroll-production-riders');
 const payrollProductionBaseData = require('./payroll-production-base-data');
@@ -315,7 +316,7 @@ app.post('/api/rider/push-token', async (req, res) => {
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }
-    res.json({ ok: true });
+    res.json({ ok: true, riderId: result.riderId, bindKey: result.bindKey });
   } catch (error) {
     res.status(500).json({ error: error.message || '푸시 토큰 저장에 실패했습니다.' });
   }
@@ -1175,6 +1176,35 @@ app.delete('/api/admin/urgent-missions/:missionId', async (req, res) => {
     res.json({ ok: true, missions: result.missions });
   } catch (error) {
     res.status(500).json({ error: error.message || '긴급미션 정리에 실패했습니다.' });
+  }
+});
+
+app.get('/api/admin/rider-push', async (req, res) => {
+  try {
+    const result = await adminRiderPush.listLogs(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, logs: result.logs });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '앱푸시 기록을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/admin/rider-push', async (req, res) => {
+  try {
+    const result = await adminRiderPush.sendPush(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.status(201).json({
+      ok: true,
+      log: result.log,
+      logs: result.logs,
+      push: result.push || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '앱푸시 전송에 실패했습니다.' });
   }
 });
 

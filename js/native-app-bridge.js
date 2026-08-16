@@ -186,6 +186,7 @@
       CapApp.addListener('appStateChange', function (state) {
         if (!state || !state.isActive) return;
         syncOfflineBanner();
+        savePendingPushToken();
         try { window.BremSessionSecurity?.touchActivity?.(); } catch { /* ignore */ }
       });
     }
@@ -245,9 +246,9 @@
       savePendingPushToken();
       window.setTimeout(savePendingPushToken, 1500);
     });
-    if (document.getElementById('driverMainApp') && !document.getElementById('driverMainApp').hidden) {
-      savePendingPushToken();
-    }
+    savePendingPushToken();
+    window.setTimeout(savePendingPushToken, 1500);
+    window.setTimeout(savePendingPushToken, 4000);
   }
 
   if (document.readyState === 'loading') {
