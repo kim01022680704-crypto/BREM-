@@ -13596,6 +13596,29 @@ tr.is-week-first td {
   }
 }
 
+.payroll-search-popup-week {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: #111;
+}
+
+.payroll-search-popup-week .driver-payslip-week-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.payroll-search-popup-week .driver-payslip-week-btn:disabled {
+  opacity: 0.35;
+}
+
 .payroll-search-row {
   cursor: pointer;
 }

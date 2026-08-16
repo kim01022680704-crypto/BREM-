@@ -5,38 +5,15 @@
   const statusEl = document.getElementById('payrollSlipSearchStatus');
   const resultsEl = document.getElementById('payrollSlipSearchResults');
   const detailEl = document.getElementById('payrollSlipSearchDetail');
-  const contentEl = document.getElementById('payrollSlipSearchContent');
-  const emptyEl = document.getElementById('payrollSlipSearchEmpty');
+  const popupBody = document.getElementById('payrollSlipSearchPopupBody');
+  const popupMeta = document.getElementById('payrollSlipSearchPopupMeta');
   if (!resultsEl || !detailEl) return;
-
-  const PAY_ROWS = Object.freeze([
-    { key: 'deliveryFee', label: '배달비' },
-    { key: 'missionPay', label: '추가지급(미션)' },
-    { key: 'other', label: '기타지급' },
-    { key: 'promo', label: 'BREM프로모션' },
-    { key: 'grossPay', label: '지급합계', total: true }
-  ]);
-  const DEDUCT_ROWS = Object.freeze([
-    { key: 'deductionDetail', label: '차감내역' },
-    { key: 'employmentInsurance', label: '고용보험' },
-    { key: 'accidentInsurance', label: '산재보험' },
-    { key: 'hourlyInsurance', label: '시간제보험' },
-    { key: 'withholdingTax', label: '원천세' },
-    { key: 'promotionWithholdingTax', label: '프로모션원천세' },
-    { key: 'callFee', label: '콜수수료' },
-    { key: 'dailySettlementFee', label: '일정산수수료' },
-    { key: 'prepaid', label: '선정산(처리완료)' },
-    { key: 'leaseFee', label: '리스차감' },
-    { key: 'loanFee', label: '대여차감' },
-    { key: 'deductTotal', label: '공제합계', total: true }
-  ]);
 
   const state = {
     keyword: '',
     results: [],
     selectedKey: '',
-    weekStart: '',
-    platform: 'total'
+    weekStart: ''
   };
 
   function escapeHtml(value) {
@@ -49,11 +26,6 @@
 
   function money(value) {
     return `${Number(value || 0).toLocaleString('ko-KR')}원`;
-  }
-
-  function dashMoney(value) {
-    const n = Number(value || 0);
-    return n ? money(n) : '-';
   }
 
   function normalizeName(value) {
@@ -326,12 +298,40 @@
     if (el) el.textContent = value;
   }
 
-  function renderRow(label, amount, total) {
+  function renderPayslipCard(title, bucket = {}) {
+    const payRows = [
+      ['배달비', bucket.deliveryFee],
+      ['추가지급(미션)', bucket.missionPay],
+      ['기타지급', bucket.other],
+      ['BREM프로모션', bucket.promo],
+      ['지급합계', bucket.grossPay, 'total']
+    ];
+    const deductRows = [
+      ['차감내역', bucket.deductionDetail],
+      ['고용보험', bucket.employmentInsurance],
+      ['산재보험', bucket.accidentInsurance],
+      ['시간제보험', bucket.hourlyInsurance],
+      ['원천세', bucket.withholdingTax],
+      ['프로모션원천세', bucket.promotionWithholdingTax],
+      ['콜수수료', bucket.callFee],
+      ['일정산수수료', bucket.dailySettlementFee],
+      ['선정산(처리완료)', bucket.prepaid],
+      ['리스차감', bucket.leaseFee],
+      ['대여차감', bucket.loanFee],
+      ['공제합계', bucket.deductTotal, 'total']
+    ];
+    const line = ([label, amount, kind]) => (
+      `<p class="${kind === 'total' ? 'is-total' : ''}"><span>${escapeHtml(label)}</span><strong>${money(amount)}</strong></p>`
+    );
     return `
-      <li class="driver-payslip-line${total ? ' driver-payslip-line--total' : ''}">
-        <div class="driver-payslip-line__label"><strong>${escapeHtml(label)}</strong></div>
-        <span class="driver-payslip-line__amount">${money(amount)}</span>
-      </li>
+      <article class="inquiry-payslip-card">
+        <h3>${escapeHtml(title)}</h3>
+        <p class="inquiry-payslip-card__hint">지급 내역</p>
+        ${payRows.map(line).join('')}
+        <p class="inquiry-payslip-card__hint">공제 내역</p>
+        ${deductRows.map(line).join('')}
+        <p class="is-net"><span>총지급액</span><strong>${money(bucket.netPay)}</strong></p>
+      </article>
     `;
   }
 
@@ -357,13 +357,16 @@
     `).join('');
   }
 
+  function closeDetail() {
+    detailEl.hidden = true;
+  }
+
   function renderDetail() {
     const rider = selectedRider();
     if (!rider) {
-      detailEl.hidden = true;
+      closeDetail();
       return;
     }
-    detailEl.hidden = false;
     const weeks = rider.weeks;
     if (!state.weekStart || !weeks.includes(state.weekStart)) {
       state.weekStart = weeks[0] || '';
@@ -377,43 +380,27 @@
       ? (utils?.formatSettlementWeekLabel?.(state.weekStart) || state.weekStart)
       : '-');
     const payment = utils?.defaultPaymentDateForWeek?.(state.weekStart) || '';
-    setText('payrollSlipSearchPaymentDate', payment
-      ? payment.replace(/(\d{4})-(\d{2})-(\d{2})/, '$2. $3.')
-      : '-');
-    setText('payrollSlipSearchRiderName', rider.name || '-');
-    setText('payrollSlipSearchCoupangId', rider.coupangId || '-');
-    setText('payrollSlipSearchBaeminId', rider.baeminId || '-');
-
+    if (popupMeta) {
+      popupMeta.textContent = [
+        rider.name || '-',
+        rider.coupangId ? `쿠팡 ${rider.coupangId}` : '',
+        rider.baeminId ? `배민 ${rider.baeminId}` : '',
+        payment ? `지급일 ${payment.replace(/(\d{4})-(\d{2})-(\d{2})/, '$2. $3.')}` : ''
+      ].filter(Boolean).join(' · ');
+    }
     const platforms = buildPlatforms(rider, state.weekStart);
-    const bucket = platforms[state.platform] || platforms.total;
-    const hasData = Boolean(bucket.grossPay || bucket.deductTotal || bucket.netPay);
-    if (emptyEl) emptyEl.hidden = hasData;
-    if (contentEl) contentEl.hidden = !hasData;
-    setText('payrollSlipSearchLeaseStatus', '없음');
-    setText('payrollSlipSearchLeaseFee', dashMoney(platforms.total.leaseFee));
-    setText('payrollSlipSearchLoanFee', dashMoney(platforms.total.loanFee));
-    setText('payrollSlipSearchLeaseUnpaid', '-');
-    if (!hasData) return;
-
-    const hint = state.platform === 'coupang' ? '쿠팡' : (state.platform === 'baemin' ? '배민' : '합계');
-    setText('payrollSlipSearchPayHint', `${hint} · 지급 내역`);
-    setText('payrollSlipSearchDeductHint', `${hint} · 공제 내역`);
-    setText('payrollSlipSearchGrossTotal', money(bucket.grossPay));
-    setText('payrollSlipSearchDeductTotal', money(bucket.deductTotal));
-    setText('payrollSlipSearchNetTotal', money(bucket.netPay));
-    const payBody = document.getElementById('payrollSlipSearchPayRows');
-    const deductBody = document.getElementById('payrollSlipSearchDeductRows');
-    if (payBody) {
-      payBody.innerHTML = PAY_ROWS.map(row => renderRow(row.label, bucket[row.key], row.total)).join('');
+    const hasData = Boolean(
+      platforms.total.grossPay || platforms.total.deductTotal || platforms.total.netPay
+    );
+    if (popupBody) {
+      popupBody.innerHTML = hasData
+        ? `<div class="inquiry-payslip-grid">
+            ${renderPayslipCard('쿠팡 주급명세서', platforms.coupang)}
+            ${renderPayslipCard('배민 주급명세서', platforms.baemin)}
+          </div>`
+        : '<p class="inquiry-popup__message">선택한 정산주의 급여명세서가 없습니다.</p>';
     }
-    if (deductBody) {
-      deductBody.innerHTML = DEDUCT_ROWS.map(row => renderRow(row.label, bucket[row.key], row.total)).join('');
-    }
-    detailEl.querySelectorAll('[data-payroll-search-platform]').forEach(btn => {
-      const active = btn.dataset.payrollSearchPlatform === state.platform;
-      btn.classList.toggle('active', active);
-      btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
+    detailEl.hidden = false;
   }
 
   function search() {
@@ -422,6 +409,7 @@
     state.results = groupRiders(keyword);
     if (state.selectedKey && !state.results.some(item => item.key === state.selectedKey)) {
       state.selectedKey = '';
+      closeDetail();
     }
     if (statusEl) {
       const total = groupRiders('').length;
@@ -430,7 +418,7 @@
         : `전체 ${state.results.length}명 · 이름을 누르면 명세서가 열립니다.`;
     }
     renderResults();
-    renderDetail();
+    if (state.selectedKey && !detailEl.hidden) renderDetail();
   }
 
   function openRider(key) {
@@ -438,10 +426,8 @@
     if (!rider) return;
     state.selectedKey = key;
     state.weekStart = rider.weeks[0] || '';
-    state.platform = 'total';
     renderResults();
     renderDetail();
-    detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function shiftWeek(step) {
@@ -469,19 +455,15 @@
     const row = event.target.closest('[data-payroll-search-rider]');
     if (row) openRider(row.dataset.payrollSearchRider);
   });
-  document.getElementById('payrollSlipSearchDetailClose')?.addEventListener('click', () => {
-    state.selectedKey = '';
-    renderResults();
-    renderDetail();
+  detailEl.addEventListener('click', event => {
+    if (event.target.closest('[data-payroll-search-close]')) {
+      state.selectedKey = '';
+      renderResults();
+      closeDetail();
+    }
   });
   document.getElementById('payrollSlipSearchPrevWeekBtn')?.addEventListener('click', () => shiftWeek(-1));
   document.getElementById('payrollSlipSearchNextWeekBtn')?.addEventListener('click', () => shiftWeek(1));
-  detailEl.addEventListener('click', event => {
-    const tab = event.target.closest('[data-payroll-search-platform]');
-    if (!tab) return;
-    state.platform = tab.dataset.payrollSearchPlatform || 'total';
-    renderDetail();
-  });
 
   window.BremAdminPayrollSlipSearch = {
     async refresh() {
