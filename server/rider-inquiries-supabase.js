@@ -121,9 +121,6 @@ async function updateInquiry(id, patch = {}) {
     raw.adminRepliedAt = nowIso();
   }
   if (patch.riderAck) {
-    if (!String(raw.adminReply || '').trim()) {
-      throw new Error('관리자 답장이 아직 없습니다.');
-    }
     raw.riderAckAt = nowIso();
   }
 

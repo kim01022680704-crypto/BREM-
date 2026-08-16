@@ -77,9 +77,6 @@ function updateInquiry(id, patch = {}) {
     current.adminRepliedAt = nowIso();
   }
   if (patch.riderAck) {
-    if (!String(current.adminReply || '').trim()) {
-      throw new Error('관리자 답장이 아직 없습니다.');
-    }
     current.riderAckAt = nowIso();
   }
   let nextStatus = patch.status != null ? String(patch.status || 'new') : current.status;

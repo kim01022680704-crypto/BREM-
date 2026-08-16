@@ -63,7 +63,7 @@
       return;
     }
     listEl.innerHTML = rows.map(item => {
-      const canAck = Boolean(item.adminReply) && !item.riderAckAt && item.status !== 'done';
+      const canAck = !item.riderAckAt && item.status !== 'done';
       return `
       <article class="driver-inquiry-item">
         <div class="driver-inquiry-item__head">
@@ -76,14 +76,14 @@
           <div class="driver-inquiry-reply">
             <strong>관리자 답장</strong>
             <p>${escapeHtml(item.adminReply)}</p>
-            ${item.riderAckAt
-              ? `<p class="driver-inquiry-ack-done">확인함 · ${escapeHtml(formatWhen(item.riderAckAt))}</p>`
-              : ''}
-            ${canAck
-              ? `<button type="button" class="driver-inquiry-ack-btn" data-ack-inquiry="${escapeHtml(item.id)}">확인</button>`
-              : ''}
           </div>
         ` : ''}
+        ${item.riderAckAt
+          ? `<p class="driver-inquiry-ack-done">확인완료 · ${escapeHtml(formatWhen(item.riderAckAt))}</p>`
+          : ''}
+        ${canAck
+          ? `<button type="button" class="driver-inquiry-ack-btn" data-ack-inquiry="${escapeHtml(item.id)}">확인완료</button>`
+          : ''}
       </article>
     `;
     }).join('');
@@ -125,7 +125,7 @@
     }
     state.inquiries = result.inquiries || state.inquiries;
     renderHistory();
-    showToast('답장을 확인했습니다.');
+    showToast('확인완료 했습니다.');
   }
 
   async function submit(event) {

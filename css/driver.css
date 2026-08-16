@@ -4157,14 +4157,15 @@ html.brem-app-nav .driver-payslip-close {
 }
 
 .driver-inquiry-ack-btn {
-  justify-self: start;
-  min-height: 36px;
+  justify-self: stretch;
+  width: 100%;
+  min-height: 40px;
   padding: 0 14px;
   border: 0;
   border-radius: 10px;
   background: #111;
   color: var(--yellow);
-  font-size: 0.8rem;
+  font-size: 0.86rem;
   font-weight: 900;
   cursor: pointer;
 }
