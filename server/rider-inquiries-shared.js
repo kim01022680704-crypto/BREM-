@@ -68,7 +68,10 @@ function extraFromPayload(payload = {}) {
     riderId: String(payload.riderId || '').trim(),
     source,
     weekStart: String(payload.weekStart || '').slice(0, 10),
-    payslipSnapshot: source === 'payslip' ? sanitizePayslipSnapshot(payload.payslipSnapshot) : null
+    payslipSnapshot: source === 'payslip' ? sanitizePayslipSnapshot(payload.payslipSnapshot) : null,
+    adminReply: String(payload.adminReply || '').trim(),
+    adminRepliedAt: String(payload.adminRepliedAt || '').trim(),
+    riderAckAt: String(payload.riderAckAt || '').trim()
   };
 }
 
@@ -78,7 +81,10 @@ function enrichRecord(record, raw = {}) {
     riderId: record.riderId || raw.riderId,
     source: record.source || raw.source,
     weekStart: record.weekStart || raw.weekStart,
-    payslipSnapshot: record.payslipSnapshot || raw.payslipSnapshot
+    payslipSnapshot: record.payslipSnapshot || raw.payslipSnapshot,
+    adminReply: record.adminReply || raw.adminReply,
+    adminRepliedAt: record.adminRepliedAt || raw.adminRepliedAt,
+    riderAckAt: record.riderAckAt || raw.riderAckAt
   });
   return {
     ...record,
@@ -87,8 +93,10 @@ function enrichRecord(record, raw = {}) {
   };
 }
 
-function statusLabel(status) {
+function statusLabel(item) {
+  const status = typeof item === 'string' ? item : item?.status;
   if (status === 'done') return '처리완료';
+  if (item && typeof item === 'object' && item.riderAckAt) return '기사확인';
   if (status === 'read') return '확인중';
   return '미확인';
 }

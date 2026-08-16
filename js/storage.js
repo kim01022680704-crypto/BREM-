@@ -3325,6 +3325,13 @@ const BremStorage = (function () {
     });
   }
 
+  async function ackRiderInquiryOnServer(inquiryId) {
+    return riderApiFetch(`/api/rider/inquiries/${encodeURIComponent(inquiryId)}/ack`, 'rider-inquiry-ack', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  }
+
   async function fetchRiderRegionDashboardFromServer({ platform, regionKey, weekStart } = {}) {
     const params = new URLSearchParams();
     if (platform) params.set('platform', String(platform));
@@ -7165,12 +7172,34 @@ const BremStorage = (function () {
       return next;
     },
 
+    updateInquiry(id, patch = {}) {
+      const list = riderInquiries.getAll();
+      const next = list.map(item => {
+        if (item.id !== id) return item;
+        const row = { ...item, updatedAt: new Date().toISOString() };
+        if (patch.adminReply != null) {
+          row.adminReply = String(patch.adminReply || '').trim();
+          row.adminRepliedAt = new Date().toISOString();
+          if (row.status === 'new') row.status = 'read';
+        }
+        if (patch.riderAck) {
+          if (!String(row.adminReply || '').trim()) {
+            throw new Error('관리자 답장이 아직 없습니다.');
+          }
+          row.riderAckAt = new Date().toISOString();
+        }
+        if (patch.status != null) row.status = String(patch.status || 'new');
+        if (row.status === 'done' && String(row.adminReply || '').trim() && !row.riderAckAt) {
+          throw new Error('기사가 답장을 확인한 뒤에 처리완료할 수 있습니다.');
+        }
+        return row;
+      });
+      riderInquiries.persistList(next);
+      return next;
+    },
+
     updateStatus(id, status) {
-      const list = riderInquiries.getAll().map(item => (
-        item.id === id ? { ...item, status: String(status || 'new'), updatedAt: new Date().toISOString() } : item
-      ));
-      riderInquiries.persistList(list);
-      return list;
+      return riderInquiries.updateInquiry(id, { status });
     },
 
     removeById(id) {
@@ -14185,6 +14214,7 @@ const BremStorage = (function () {
     fetchRiderWeeklyPayslipFromServer,
     fetchRiderInquiriesFromServer,
     submitRiderInquiryToServer,
+    ackRiderInquiryOnServer,
     fetchRiderRegionDashboardFromServer,
     fetchRiderCrewLeaderFromServer,
     renameRiderCrewFromServer,

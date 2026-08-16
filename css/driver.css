@@ -356,6 +356,7 @@ h3 {
 
 .profile-actions > .profile-edit-toggle,
 .profile-actions > .profile-realtime-status-btn,
+.profile-actions > .profile-inquiry-btn,
 .profile-actions > .profile-withdrawal-btn,
 .profile-actions > .profile-payslip-btn,
 .profile-actions > .profile-region-dash-btn,
@@ -384,6 +385,7 @@ h3 {
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
+.profile-inquiry-btn,
 .profile-withdrawal-btn {
   min-height: 40px;
   padding: 0 12px;
@@ -398,7 +400,14 @@ h3 {
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
+.profile-inquiry-btn {
+  border-color: #f59e0b;
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
 .profile-realtime-status-btn--compact,
+.profile-inquiry-btn--compact,
 .profile-withdrawal-btn--compact {
   min-height: 36px;
   padding: 0 10px;
@@ -460,6 +469,15 @@ h3 {
   border-color: #0ea5e9;
   background: #bae6fd;
   box-shadow: 0 6px 16px rgba(14, 165, 233, 0.22);
+}
+
+.profile-inquiry-btn:hover,
+.profile-inquiry-btn.is-active,
+.profile-inquiry-btn[aria-expanded="true"] {
+  color: #9a3412;
+  border-color: #ea580c;
+  background: #fed7aa;
+  box-shadow: 0 6px 16px rgba(234, 88, 12, 0.22);
 }
 
 .profile-realtime-status-btn.is-active,
@@ -2442,6 +2460,7 @@ button.calendar-day:hover {
   .logout-btn,
   .profile-edit-toggle,
   .profile-realtime-status-btn,
+  .profile-inquiry-btn,
   .profile-withdrawal-btn,
   .ghost-btn,
   .target-save-btn,
@@ -3434,6 +3453,7 @@ button.calendar-day:hover {
 
   .profile-edit-toggle,
   .profile-realtime-status-btn--compact,
+  .profile-inquiry-btn--compact,
   .profile-withdrawal-btn--compact,
   .profile-payslip-btn,
   .profile-region-dash-btn {
@@ -4100,6 +4120,53 @@ html.brem-app-nav .driver-payslip-close {
 .driver-inquiry-status.is-done {
   background: #dcfce7;
   color: #166534;
+}
+
+.driver-inquiry-status.is-ack {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.driver-inquiry-status.is-reply {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.driver-inquiry-reply {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.driver-inquiry-reply strong {
+  color: #9a3412;
+  font-size: 0.76rem;
+}
+
+.driver-inquiry-reply p {
+  color: #7c2d12;
+  font-size: 0.86rem;
+}
+
+.driver-inquiry-ack-done {
+  color: #166534 !important;
+  font-size: 0.78rem !important;
+}
+
+.driver-inquiry-ack-btn {
+  justify-self: start;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #111;
+  color: var(--yellow);
+  font-size: 0.8rem;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .brem-native-offline {

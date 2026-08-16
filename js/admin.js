@@ -2685,6 +2685,7 @@
 
     startAdminSessionSecurity();
     window.BremSessionSecurity?.touchActivity?.();
+    startInquiryWatch();
 
     const loadPromise = (async () => {
       const core = await (BremStorage.hydrateAdminDataInBackground?.() || Promise.resolve({ ok: true }));
@@ -3867,14 +3868,18 @@
     if (countEl) countEl.textContent = list.length ? `· ${list.length}건` : '';
   }
 
-  function inquiryStatusLabel(status) {
+  function inquiryStatusLabel(inquiry) {
+    const status = typeof inquiry === 'string' ? inquiry : inquiry?.status;
     if (status === 'done') return '처리완료';
+    if (inquiry && typeof inquiry === 'object' && inquiry.riderAckAt) return '기사확인';
     if (status === 'read') return '확인중';
     return '미확인';
   }
 
-  function inquiryStatusClass(status) {
+  function inquiryStatusClass(inquiry) {
+    const status = typeof inquiry === 'string' ? inquiry : inquiry?.status;
     if (status === 'done') return 'inquiry-badge inquiry-badge--done';
+    if (inquiry && typeof inquiry === 'object' && inquiry.riderAckAt) return 'inquiry-badge inquiry-badge--ack';
     if (status === 'read') return 'inquiry-badge inquiry-badge--read';
     return 'inquiry-badge inquiry-badge--new';
   }
@@ -3889,8 +3894,8 @@
 
     if (summaryEl) {
       summaryEl.textContent = newCount
-        ? `미확인 문의 ${newCount}건 · 홈페이지·기사앱 접수를 클릭하면 팝업으로 확인합니다. 2주 후 자동 삭제.`
-        : '홈페이지·기사앱에서 접수된 문의를 확인합니다. 클릭하면 팝업으로 봅니다. 2주 후 자동 삭제됩니다.';
+        ? `미확인 문의 ${newCount}건 · 클릭하면 상세·주급명세서를 팝업으로 봅니다. 답장 후 기사 확인이 되면 처리완료.`
+        : '클릭하면 상세·주급명세서를 팝업으로 봅니다. 답장을 남기면 기사가 확인한 뒤 처리완료할 수 있습니다.';
     }
 
     if (!list.length) {
@@ -3902,7 +3907,7 @@
       <article class="notice-item inquiry-item" data-open-inquiry="${escapeHtml(inquiry.id)}" role="button" tabindex="0">
         <div class="notice-item-head">
           <div>
-            <span class="${inquiryStatusClass(inquiry.status)}">${escapeHtml(inquiryStatusLabel(inquiry.status))}</span>
+            <span class="${inquiryStatusClass(inquiry)}">${escapeHtml(inquiryStatusLabel(inquiry))}</span>
             <strong>${escapeHtml(inquiry.name || '-')} · ${escapeHtml(inquiry.phone || '-')}</strong>
           </div>
           <span class="notice-date">${formatDateTime(inquiry.createdAt)}</span>
@@ -3922,15 +3927,37 @@
   }
 
   function renderInquiryPayslipCard(title, bucket = {}) {
+    const payRows = [
+      ['배달비', bucket.deliveryFee],
+      ['추가지급(미션)', bucket.missionPay],
+      ['기타지급', bucket.other],
+      ['BREM프로모션', bucket.promo],
+      ['지급합계', bucket.grossPay, 'total']
+    ];
+    const deductRows = [
+      ['차감내역', bucket.deductionDetail],
+      ['고용보험', bucket.employmentInsurance],
+      ['산재보험', bucket.accidentInsurance],
+      ['시간제보험', bucket.hourlyInsurance],
+      ['원천세', bucket.withholdingTax],
+      ['프로모션원천세', bucket.promotionWithholdingTax],
+      ['콜수수료', bucket.callFee],
+      ['일정산수수료', bucket.dailySettlementFee],
+      ['선정산(처리완료)', bucket.prepaid],
+      ['리스차감', bucket.leaseFee],
+      ['대여차감', bucket.loanFee],
+      ['공제합계', bucket.deductTotal, 'total']
+    ];
+    const line = ([label, amount, kind]) => (
+      `<p class="${kind === 'total' ? 'is-total' : ''}"><span>${escapeHtml(label)}</span><strong>${inquiryMoney(amount)}</strong></p>`
+    );
     return `
       <article class="inquiry-payslip-card">
         <h3>${escapeHtml(title)}</h3>
-        <p><span>배달비</span><strong>${inquiryMoney(bucket.deliveryFee)}</strong></p>
-        <p><span>추가지급(미션)</span><strong>${inquiryMoney(bucket.missionPay)}</strong></p>
-        <p><span>기타지급</span><strong>${inquiryMoney(bucket.other)}</strong></p>
-        <p><span>BREM프로모션</span><strong>${inquiryMoney(bucket.promo)}</strong></p>
-        <p class="is-total"><span>지급합계</span><strong>${inquiryMoney(bucket.grossPay)}</strong></p>
-        <p><span>공제합계</span><strong>${inquiryMoney(bucket.deductTotal)}</strong></p>
+        <p class="inquiry-payslip-card__hint">지급 내역</p>
+        ${payRows.map(line).join('')}
+        <p class="inquiry-payslip-card__hint">공제 내역</p>
+        ${deductRows.map(line).join('')}
         <p class="is-net"><span>총지급액</span><strong>${inquiryMoney(bucket.netPay)}</strong></p>
       </article>
     `;
@@ -3956,8 +3983,8 @@
     const payslipEl = $('#adminInquiryPopupPayslip');
     const actionsEl = $('#adminInquiryPopupActions');
     if (statusEl) {
-      statusEl.className = inquiryStatusClass(inquiry.status);
-      statusEl.textContent = inquiryStatusLabel(inquiry.status);
+      statusEl.className = inquiryStatusClass(inquiry);
+      statusEl.textContent = inquiryStatusLabel(inquiry);
     }
     if (metaEl) {
       metaEl.textContent = [
@@ -3984,15 +4011,96 @@
         payslipEl.innerHTML = '';
       }
     }
+    const replyBox = $('#adminInquiryPopupReplyBox');
+    if (replyBox) {
+      replyBox.hidden = false;
+      const replyInput = $('#adminInquiryReplyInput');
+      const replyNote = $('#adminInquiryReplyNote');
+      if (replyInput) replyInput.value = inquiry.adminReply || '';
+      if (replyNote) {
+        if (inquiry.riderAckAt) {
+          replyNote.textContent = `기사가 답장을 확인했습니다. (${formatDateTime(inquiry.riderAckAt)})`;
+        } else if (inquiry.adminReply) {
+          replyNote.textContent = '답장을 보냈습니다. 기사 확인을 기다리는 중입니다.';
+        } else {
+          replyNote.textContent = '답장을 남기면 기사앱 문의내역에 표시됩니다.';
+        }
+      }
+    }
     if (actionsEl) {
+      const waitingAck = Boolean(inquiry.adminReply) && !inquiry.riderAckAt && inquiry.status !== 'done';
+      const canDone = inquiry.status !== 'done' && !waitingAck;
       actionsEl.innerHTML = `
         ${inquiry.status === 'new' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인</button>` : ''}
-        ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
+        ${inquiry.status !== 'done' ? `<button class="small-btn" data-reply-inquiry="${escapeHtml(inquiry.id)}">답장보내기</button>` : ''}
+        ${canDone ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
+        ${waitingAck ? '<span class="inquiry-popup__wait">기사 확인 후 처리완료</span>' : ''}
         <button class="small-btn danger-btn" data-delete-inquiry="${escapeHtml(inquiry.id)}">삭제</button>
         <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
       `;
     }
     popup.hidden = false;
+  }
+
+  const SEEN_INQUIRY_KEY = 'brem_seen_rider_inquiry_ids';
+
+  function readSeenInquiryIds() {
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(SEEN_INQUIRY_KEY) || '[]');
+      return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function writeSeenInquiryIds(ids) {
+    try {
+      sessionStorage.setItem(SEEN_INQUIRY_KEY, JSON.stringify([...ids]));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function closeInquiryAlertPopup() {
+    const popup = $('#adminInquiryAlertPopup');
+    if (popup) popup.hidden = true;
+  }
+
+  let lastAlertInquiryId = '';
+
+  function showInquiryAlertPopup(items) {
+    const popup = $('#adminInquiryAlertPopup');
+    const body = $('#adminInquiryAlertBody');
+    if (!popup || !body || !items.length) return;
+    lastAlertInquiryId = String(items[0].id || '');
+    body.innerHTML = items.slice(0, 5).map(item => (
+      `<p><strong>${escapeHtml(item.name || '-')}</strong> · ${escapeHtml(item.inquiryType || '문의')}<br><span>${escapeHtml(String(item.message || '').slice(0, 80))}</span></p>`
+    )).join('');
+    popup.hidden = false;
+  }
+
+  let inquiryWatchTimer = null;
+
+  function startInquiryWatch() {
+    if (inquiryWatchTimer) return;
+    void watchNewRiderInquiries({ announce: true });
+    inquiryWatchTimer = window.setInterval(() => {
+      void watchNewRiderInquiries({ announce: true });
+    }, 20000);
+  }
+
+  async function watchNewRiderInquiries({ announce = true } = {}) {
+    try {
+      const list = await loadRiderInquiries();
+      const fresh = list.filter(item => item.status === 'new');
+      const seen = readSeenInquiryIds();
+      const unseen = fresh.filter(item => !seen.has(String(item.id)));
+      fresh.forEach(item => seen.add(String(item.id)));
+      writeSeenInquiryIds(seen);
+      if (announce && unseen.length) showInquiryAlertPopup(unseen);
+    } catch {
+      /* 목록 실패는 무시 */
+    }
   }
 
   function isBaeminSettlementPlatform(platform) {
@@ -8083,18 +8191,47 @@
         closeAdminInquiryPopup();
         return;
       }
+      if (event.target.closest('[data-inquiry-alert-close]')) {
+        closeInquiryAlertPopup();
+        return;
+      }
+      if (event.target.closest('#adminInquiryAlertOpenBtn')) {
+        const inquiryId = lastAlertInquiryId;
+        closeInquiryAlertPopup();
+        void showSection('rider-inquiries');
+        if (inquiryId) void openAdminInquiryPopup(inquiryId);
+        return;
+      }
+
+      const replyInquiryButton = event.target.closest('[data-reply-inquiry]');
+      if (replyInquiryButton) {
+        const inquiryId = replyInquiryButton.dataset.replyInquiry;
+        const reply = String($('#adminInquiryReplyInput')?.value || '').trim();
+        if (!reply) {
+          showToast('답장 내용을 입력하세요.');
+          return;
+        }
+        const update = window.BremRiderInquiryApi?.updateInquiry
+          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, { adminReply: reply, status: 'read' })
+          : Promise.resolve(BremStorage.riderInquiries.updateInquiry(inquiryId, { adminReply: reply, status: 'read' }));
+        update.then(() => {
+          showToast('답장을 보냈습니다.');
+          renderRiderInquiries();
+          void openAdminInquiryPopup(inquiryId);
+        }).catch(error => {
+          showToast(error.message || '답장 전송에 실패했습니다.');
+        });
+        return;
+      }
 
       const markInquiryButton = event.target.closest('[data-mark-inquiry]');
       if (markInquiryButton) {
         const inquiryId = markInquiryButton.dataset.markInquiry;
-        const update = window.BremRiderInquiryApi?.updateStatus
-          ? window.BremRiderInquiryApi.updateStatus(
+        const update = window.BremRiderInquiryApi?.updateInquiry
+          ? window.BremRiderInquiryApi.updateInquiry(inquiryId, { status: markInquiryButton.dataset.status })
+          : Promise.resolve(BremStorage.riderInquiries.updateInquiry(
             inquiryId,
-            markInquiryButton.dataset.status
-          )
-          : Promise.resolve(BremStorage.riderInquiries.updateStatus(
-            inquiryId,
-            markInquiryButton.dataset.status
+            { status: markInquiryButton.dataset.status }
           ));
         update.then(() => {
           showToast(markInquiryButton.dataset.status === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.');
@@ -8102,6 +8239,8 @@
           if (!$('#adminInquiryPopup')?.hidden) {
             void openAdminInquiryPopup(inquiryId);
           }
+        }).catch(error => {
+          showToast(error.message || '문의 상태 변경에 실패했습니다.');
         });
         return;
       }

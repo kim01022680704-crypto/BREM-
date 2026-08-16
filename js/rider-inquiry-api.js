@@ -94,24 +94,31 @@
     throw new Error('문의 접수에 실패했습니다. 잠시 후 다시 시도해주세요.');
   }
 
-  async function updateStatus(id, status) {
+  async function updateInquiry(id, patch = {}) {
     await waitForConfig();
 
     if (await checkApi()) {
       return request(`${API_BASE}/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+        body: JSON.stringify(patch || {})
       });
     }
 
     const storage = getStorage();
-    if (storage?.riderInquiries?.updateStatus) {
-      storage.riderInquiries.updateStatus(id, status);
+    if (storage?.riderInquiries?.updateInquiry) {
+      return storage.riderInquiries.updateInquiry(id, patch);
+    }
+    if (storage?.riderInquiries?.updateStatus && patch.status) {
+      storage.riderInquiries.updateStatus(id, patch.status);
       return listFromStorage();
     }
 
     throw new Error('문의 상태 변경에 실패했습니다.');
+  }
+
+  async function updateStatus(id, status) {
+    return updateInquiry(id, { status });
   }
 
   async function remove(id) {
@@ -133,6 +140,7 @@
   window.BremRiderInquiryApi = {
     list,
     create,
+    updateInquiry,
     updateStatus,
     remove,
     ready: waitForConfig()

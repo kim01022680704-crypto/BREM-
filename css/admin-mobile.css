@@ -1033,3 +1033,27 @@
     display: none;
   }
 }
+
+@media (max-width: 768px) {
+  .inquiry-popup {
+    z-index: 160;
+    padding: 12px 10px;
+    align-items: end;
+  }
+
+  .inquiry-popup__dialog {
+    width: 100%;
+    max-height: min(88dvh, 720px);
+    padding: 18px 14px 16px;
+    border-radius: 18px 18px 12px 12px;
+  }
+
+  .inquiry-popup__actions {
+    justify-content: stretch;
+  }
+
+  .inquiry-popup__actions .small-btn {
+    flex: 1 1 calc(50% - 8px);
+    min-height: 42px;
+  }
+}

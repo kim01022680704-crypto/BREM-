@@ -101,20 +101,53 @@ async function createInquiry(payload) {
   return rowToRecord(data);
 }
 
-async function updateStatus(id, status) {
+async function updateInquiry(id, patch = {}) {
   const supabase = getClient();
   if (!supabase) throw new Error('Supabase 문의 저장소가 설정되지 않았습니다.');
+
+  const { data: row, error: readError } = await supabase
+    .from('rider_inquiries')
+    .select(INQUIRY_SELECT)
+    .eq('id', id)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row) throw new Error('문의를 찾지 못했습니다.');
+
+  const raw = row.raw_data && typeof row.raw_data === 'object' ? { ...row.raw_data } : {};
+  if (patch.adminReply != null) {
+    const reply = String(patch.adminReply || '').trim();
+    if (!reply) throw new Error('답장 내용을 입력하세요.');
+    raw.adminReply = reply;
+    raw.adminRepliedAt = nowIso();
+  }
+  if (patch.riderAck) {
+    if (!String(raw.adminReply || '').trim()) {
+      throw new Error('관리자 답장이 아직 없습니다.');
+    }
+    raw.riderAckAt = nowIso();
+  }
+
+  let nextStatus = patch.status != null ? String(patch.status || 'new') : row.status;
+  if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
+  if (nextStatus === 'done' && String(raw.adminReply || '').trim() && !raw.riderAckAt) {
+    throw new Error('기사가 답장을 확인한 뒤에 처리완료할 수 있습니다.');
+  }
 
   const { error } = await supabase
     .from('rider_inquiries')
     .update({
-      status: String(status || 'new'),
+      status: nextStatus,
+      raw_data: raw,
       updated_at: nowIso()
     })
     .eq('id', id);
 
   if (error) throw error;
   return readAll();
+}
+
+async function updateStatus(id, status) {
+  return updateInquiry(id, { status });
 }
 
 async function removeById(id) {
@@ -134,6 +167,7 @@ module.exports = {
   isEnabled,
   readAll,
   createInquiry,
+  updateInquiry,
   updateStatus,
   removeById
 };

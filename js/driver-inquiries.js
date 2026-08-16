@@ -12,7 +12,8 @@
   const state = {
     open: false,
     source: 'app',
-    inquiries: []
+    inquiries: [],
+    pollTimer: null
   };
 
   function showToast(message) {
@@ -32,15 +33,19 @@
       .replace(/"/g, '&quot;');
   }
 
-  function statusLabel(status) {
-    if (status === 'done') return '처리완료';
-    if (status === 'read') return '확인중';
+  function statusLabel(item) {
+    if (item.status === 'done') return '처리완료';
+    if (item.riderAckAt) return '확인완료';
+    if (item.adminReply) return '답장도착';
+    if (item.status === 'read') return '확인중';
     return '미확인';
   }
 
-  function statusClass(status) {
-    if (status === 'done') return 'is-done';
-    if (status === 'read') return 'is-read';
+  function statusClass(item) {
+    if (item.status === 'done') return 'is-done';
+    if (item.riderAckAt) return 'is-ack';
+    if (item.adminReply) return 'is-reply';
+    if (item.status === 'read') return 'is-read';
     return 'is-new';
   }
 
@@ -57,16 +62,31 @@
       listEl.innerHTML = '<p class="driver-inquiry-empty">최근 2주 문의 내역이 없습니다.</p>';
       return;
     }
-    listEl.innerHTML = rows.map(item => `
+    listEl.innerHTML = rows.map(item => {
+      const canAck = Boolean(item.adminReply) && !item.riderAckAt && item.status !== 'done';
+      return `
       <article class="driver-inquiry-item">
         <div class="driver-inquiry-item__head">
-          <span class="driver-inquiry-status ${statusClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
+          <span class="driver-inquiry-status ${statusClass(item)}">${escapeHtml(statusLabel(item))}</span>
           <strong>${escapeHtml(item.inquiryType || '문의')}</strong>
           <time>${escapeHtml(formatWhen(item.createdAt))}</time>
         </div>
         <p>${escapeHtml(item.message || '')}</p>
+        ${item.adminReply ? `
+          <div class="driver-inquiry-reply">
+            <strong>관리자 답장</strong>
+            <p>${escapeHtml(item.adminReply)}</p>
+            ${item.riderAckAt
+              ? `<p class="driver-inquiry-ack-done">확인함 · ${escapeHtml(formatWhen(item.riderAckAt))}</p>`
+              : ''}
+            ${canAck
+              ? `<button type="button" class="driver-inquiry-ack-btn" data-ack-inquiry="${escapeHtml(item.id)}">확인</button>`
+              : ''}
+          </div>
+        ` : ''}
       </article>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function applyMode(source) {
@@ -94,6 +114,18 @@
     }
     state.inquiries = result.inquiries || [];
     renderHistory();
+  }
+
+  async function ackInquiry(inquiryId) {
+    if (!inquiryId || !window.BremStorage?.ackRiderInquiryOnServer) return;
+    const result = await window.BremStorage.ackRiderInquiryOnServer(inquiryId);
+    if (!result?.ok) {
+      showToast(result?.message || result?.error || '확인 처리에 실패했습니다.');
+      return;
+    }
+    state.inquiries = result.inquiries || state.inquiries;
+    renderHistory();
+    showToast('답장을 확인했습니다.');
   }
 
   async function submit(event) {
@@ -131,6 +163,20 @@
     }
   }
 
+  function stopPoll() {
+    if (state.pollTimer) {
+      window.clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+  }
+
+  function startPoll() {
+    stopPoll();
+    state.pollTimer = window.setInterval(() => {
+      if (state.open) void loadHistory();
+    }, 20000);
+  }
+
   function open(source = 'app') {
     applyMode(source);
     state.open = true;
@@ -138,12 +184,14 @@
     openBtn?.setAttribute('aria-expanded', 'true');
     renderHistory();
     void loadHistory();
+    startPoll();
   }
 
   function close() {
     state.open = false;
     popup.hidden = true;
     openBtn?.setAttribute('aria-expanded', 'false');
+    stopPoll();
   }
 
   openBtn?.addEventListener('click', () => {
@@ -155,7 +203,17 @@
   });
 
   popup.addEventListener('click', (event) => {
-    if (event.target.closest('[data-inquiry-dismiss]')) close();
+    if (event.target.closest('[data-inquiry-dismiss]')) {
+      close();
+      return;
+    }
+    const ackBtn = event.target.closest('[data-ack-inquiry]');
+    if (ackBtn) {
+      ackBtn.disabled = true;
+      void ackInquiry(ackBtn.dataset.ackInquiry).finally(() => {
+        ackBtn.disabled = false;
+      });
+    }
   });
 
   formEl?.addEventListener('submit', submit);

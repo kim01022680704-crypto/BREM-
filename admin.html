@@ -17,11 +17,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/admin.css?v=20260816inq1">
+  <link rel="stylesheet" href="css/admin.css?v=20260816inq2">
   <link rel="stylesheet" href="css/data-loading.css?v=20260622f">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260623m">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623y">
-  <link rel="stylesheet" href="css/admin-mobile.css?v=20260815dash4">
+  <link rel="stylesheet" href="css/admin-mobile.css?v=20260816inq2">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -7828,7 +7828,27 @@
       <p class="inquiry-popup__meta" id="adminInquiryPopupMeta"></p>
       <p class="inquiry-popup__message" id="adminInquiryPopupMessage"></p>
       <div id="adminInquiryPopupPayslip" class="inquiry-popup__payslips" hidden></div>
+      <div class="inquiry-popup__reply" id="adminInquiryPopupReplyBox" hidden>
+        <label>
+          <span>관리자 답장</span>
+          <textarea id="adminInquiryReplyInput" rows="3" maxlength="800" placeholder="기사에게 보낼 답장을 입력하세요"></textarea>
+        </label>
+        <p class="inquiry-popup__reply-note" id="adminInquiryReplyNote"></p>
+      </div>
       <div class="inquiry-popup__actions" id="adminInquiryPopupActions"></div>
+    </div>
+  </div>
+
+  <div class="inquiry-popup" id="adminInquiryAlertPopup" hidden>
+    <button type="button" class="inquiry-popup__backdrop" data-inquiry-alert-close aria-label="닫기"></button>
+    <div class="inquiry-popup__dialog inquiry-popup__dialog--alert" role="dialog" aria-modal="true" aria-labelledby="adminInquiryAlertTitle">
+      <p class="inquiry-popup__eyebrow">라이더 문의</p>
+      <h2 id="adminInquiryAlertTitle">새 문의가 도착했습니다</h2>
+      <div id="adminInquiryAlertBody"></div>
+      <div class="inquiry-popup__actions">
+        <button type="button" class="small-btn" data-inquiry-alert-close>닫기</button>
+        <button type="button" class="small-btn" id="adminInquiryAlertOpenBtn">문의 확인</button>
+      </div>
     </div>
   </div>
 
@@ -8137,7 +8157,7 @@
   <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
   <script src="js/storage-guard.js?v=20260723y"></script>
   <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
-  <script src="js/storage.js?v=20260816inq1"></script>
+  <script src="js/storage.js?v=20260816inq3"></script>
   <script src="js/db-connection-status.js?v=20260622f"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
@@ -8190,7 +8210,7 @@
   <script src="js/mission-promotion-catalog.js?v=20260710a"></script>
   <script src="js/admin-missions.js?v=20260710a"></script>
   <script src="js/table-sort.js"></script>
-    <script src="js/admin.js?v=20260816inq1"></script>
+    <script src="js/admin.js?v=20260816inq2"></script>
   <script src="js/mobile-table-cards.js?v=20260815dash4" defer></script>
   <script src="js/pwa-register.js" defer></script>
 </body>

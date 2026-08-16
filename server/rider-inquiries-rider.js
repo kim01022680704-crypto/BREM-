@@ -61,7 +61,23 @@ async function createMine(accessToken, body = {}) {
   return { ok: true, inquiry: record };
 }
 
+async function ackMine(accessToken, inquiryId) {
+  const me = await getRiderMe(accessToken);
+  if (!me.ok) return me;
+  const list = await store().readAll();
+  const inquiry = list.find(item => String(item.id) === String(inquiryId || ''));
+  if (!inquiry || !matchesRider(inquiry, me.riderId, me.rider?.phone)) {
+    return { ok: false, status: 404, error: '문의를 찾지 못했습니다.' };
+  }
+  const next = await store().updateInquiry(inquiry.id, { riderAck: true });
+  return {
+    ok: true,
+    inquiries: next.filter(item => matchesRider(item, me.riderId, me.rider?.phone))
+  };
+}
+
 module.exports = {
   listMine,
-  createMine
+  createMine,
+  ackMine
 };

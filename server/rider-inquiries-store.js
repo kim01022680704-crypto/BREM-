@@ -65,14 +65,37 @@ function createInquiry(payload) {
   return record;
 }
 
-function updateStatus(id, status) {
-  const list = readAll().map(item => (
-    item.id === id
-      ? { ...item, status: String(status || 'new'), updatedAt: nowIso() }
-      : item
-  ));
+function updateInquiry(id, patch = {}) {
+  const list = readAll();
+  const index = list.findIndex(item => item.id === id);
+  if (index < 0) throw new Error('문의를 찾지 못했습니다.');
+  const current = { ...list[index] };
+  if (patch.adminReply != null) {
+    const reply = String(patch.adminReply || '').trim();
+    if (!reply) throw new Error('답장 내용을 입력하세요.');
+    current.adminReply = reply;
+    current.adminRepliedAt = nowIso();
+  }
+  if (patch.riderAck) {
+    if (!String(current.adminReply || '').trim()) {
+      throw new Error('관리자 답장이 아직 없습니다.');
+    }
+    current.riderAckAt = nowIso();
+  }
+  let nextStatus = patch.status != null ? String(patch.status || 'new') : current.status;
+  if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
+  if (nextStatus === 'done' && String(current.adminReply || '').trim() && !current.riderAckAt) {
+    throw new Error('기사가 답장을 확인한 뒤에 처리완료할 수 있습니다.');
+  }
+  current.status = nextStatus;
+  current.updatedAt = nowIso();
+  list[index] = current;
   writeAll(list);
   return list;
+}
+
+function updateStatus(id, status) {
+  return updateInquiry(id, { status });
 }
 
 function removeById(id) {
@@ -85,6 +108,7 @@ module.exports = {
   readAll,
   writeAll,
   createInquiry,
+  updateInquiry,
   updateStatus,
   removeById
 };

@@ -4780,6 +4780,12 @@ textarea {
   border: 1px solid rgba(34, 197, 94, 0.28);
 }
 
+.inquiry-badge--ack {
+  color: #fde68a;
+  background: rgba(234, 179, 8, 0.16);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+}
+
 .inquiry-item {
   cursor: pointer;
 }
@@ -4787,7 +4793,7 @@ textarea {
 .inquiry-popup {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 140;
   display: grid;
   place-items: center;
   padding: 20px 14px;
@@ -4891,6 +4897,66 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.inquiry-popup__wait {
+  align-self: center;
+  color: #92400e;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.inquiry-popup__reply {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.inquiry-popup__reply label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.inquiry-popup__reply textarea {
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  resize: vertical;
+  font: inherit;
+}
+
+.inquiry-popup__reply-note {
+  margin: 0;
+  color: #4b5563;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.inquiry-payslip-card__hint {
+  margin: 10px 0 6px !important;
+  color: #6b7280;
+  font-size: 0.74rem !important;
+  font-weight: 800;
+}
+
+.inquiry-popup__dialog--alert {
+  width: min(420px, 100%);
+}
+
+#adminInquiryAlertBody p {
+  margin: 0 0 10px;
+  color: #374151;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+#adminInquiryAlertBody span {
+  color: #6b7280;
+  font-size: 0.82rem;
 }
 
 @media (max-width: 720px) {

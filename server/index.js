@@ -511,6 +511,18 @@ app.post('/api/rider/inquiries', async (req, res) => {
   }
 });
 
+app.post('/api/rider/inquiries/:id/ack', async (req, res) => {
+  try {
+    const result = await riderInquiriesRider.ackMine(getBearerToken(req), req.params.id);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 확인에 실패했습니다.' });
+  }
+});
+
 app.get('/api/rider/region-dashboard', async (req, res) => {
   try {
     const result = await riderRegionDashboard.getRiderRegionDashboard(getBearerToken(req), {
@@ -1996,11 +2008,11 @@ app.post('/api/rider-inquiries', async (req, res) => {
 
 app.patch('/api/rider-inquiries/:id', async (req, res) => {
   try {
+    const patch = req.body || {};
     if (useSupabaseInquiries()) {
-      return res.json(await riderInquiriesSupabase.updateStatus(req.params.id, req.body?.status));
+      return res.json(await riderInquiriesSupabase.updateInquiry(req.params.id, patch));
     }
-    const list = riderInquiriesStore.updateStatus(req.params.id, req.body?.status);
-    res.json(list);
+    res.json(riderInquiriesStore.updateInquiry(req.params.id, patch));
   } catch (error) {
     res.status(500).json({ error: error.message || '문의 상태 변경에 실패했습니다.' });
   }
