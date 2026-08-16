@@ -3,8 +3,12 @@
  * - PWA 설치 UI 숨김
  * - 하드웨어 뒤로가기
  * - 외부 링크는 같은 WebView(_self)에서 열기
+ * - 로그인 유지(앱 전용)
+ * - 오프라인 안내
  */
 (function () {
+  var OFFLINE_ID = 'bremNativeOfflineBanner';
+
   function isCapacitorNative() {
     try {
       return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
@@ -23,6 +27,14 @@
     }
   }
 
+  function isOnline() {
+    try {
+      return navigator.onLine !== false;
+    } catch {
+      return true;
+    }
+  }
+
   window.BREM_IS_NATIVE_APP = isCapacitorNative();
   window.BREM_IS_INSTALLED_SHELL = window.BREM_IS_NATIVE_APP || isStandaloneDisplay();
 
@@ -34,6 +46,61 @@
     if (window.BREM_IS_NATIVE_APP) {
       document.documentElement.classList.add('brem-capacitor-app');
     }
+  }
+
+  function persistNativeRiderSession() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    try {
+      window.BremLoginPrefs?.setKeepLoggedIn?.('rider', true);
+    } catch {
+      /* ignore */
+    }
+    var keep = document.getElementById('driverKeepLoggedIn');
+    var keepLabel = keep && keep.closest ? keep.closest('.login-option') : null;
+    if (keep) keep.checked = true;
+    if (keepLabel) keepLabel.hidden = true;
+  }
+
+  function ensureOfflineBanner() {
+    var banner = document.getElementById(OFFLINE_ID);
+    if (banner) return banner;
+    banner = document.createElement('div');
+    banner.id = OFFLINE_ID;
+    banner.className = 'brem-native-offline';
+    banner.hidden = true;
+    banner.innerHTML = '<p>인터넷 연결을 확인해주세요.</p><button type="button">다시 시도</button>';
+    banner.querySelector('button').addEventListener('click', function () {
+      if (isOnline()) {
+        hideOfflineBanner();
+        try { window.location.reload(); } catch { /* ignore */ }
+      }
+    });
+    document.body.appendChild(banner);
+    return banner;
+  }
+
+  function showOfflineBanner() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    var banner = ensureOfflineBanner();
+    banner.hidden = false;
+  }
+
+  function hideOfflineBanner() {
+    var banner = document.getElementById(OFFLINE_ID);
+    if (banner) banner.hidden = true;
+  }
+
+  function syncOfflineBanner() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    if (isOnline()) hideOfflineBanner();
+    else showOfflineBanner();
+  }
+
+  function bindNetworkBanner() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    window.addEventListener('online', syncOfflineBanner);
+    window.addEventListener('offline', syncOfflineBanner);
+    syncOfflineBanner();
   }
 
   function bindBackButton() {
@@ -55,6 +122,23 @@
       }
       if (event && event.canGoBack) return;
       CapApp.exitApp();
+    });
+  }
+
+  function bindAppResume() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    var CapApp = window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (CapApp && typeof CapApp.addListener === 'function') {
+      CapApp.addListener('appStateChange', function (state) {
+        if (!state || !state.isActive) return;
+        syncOfflineBanner();
+        try { window.BremSessionSecurity?.touchActivity?.(); } catch { /* ignore */ }
+      });
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) return;
+      syncOfflineBanner();
+      try { window.BremSessionSecurity?.touchActivity?.(); } catch { /* ignore */ }
     });
   }
 
@@ -97,7 +181,10 @@
 
   function boot() {
     hidePwaInstallUi();
+    persistNativeRiderSession();
     bindBackButton();
+    bindAppResume();
+    bindNetworkBanner();
     bindExternalLinks();
   }
 

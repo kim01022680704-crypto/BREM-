@@ -7,20 +7,58 @@
   <style>
     html, body {
       margin: 0;
-      height: 100%;
+      min-height: 100%;
       background: #0a0a0a;
-      color: #f5f5f5;
-      font-family: system-ui, sans-serif;
+      color: #e8c547;
+      font-family: "Noto Sans KR", system-ui, sans-serif;
+    }
+    body {
       display: grid;
       place-items: center;
+      padding: 32px 20px;
+      box-sizing: border-box;
+    }
+    .box {
+      width: min(100%, 360px);
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+    }
+    p {
+      margin: 0 0 18px;
+      color: rgba(232, 197, 71, 0.78);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    button {
+      min-height: 46px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 999px;
+      background: #e8c547;
+      color: #0a0a0a;
+      font-weight: 800;
+      font-size: 0.95rem;
     }
   </style>
 </head>
 <body>
-  <p>BREM 기사앱 로딩 중…</p>
+  <div class="box">
+    <h1>연결을 확인해주세요</h1>
+    <p>인터넷이 없거나 서버에 잠시 연결되지 않았습니다. 연결 후 다시 시도해주세요.</p>
+    <button type="button" id="retryBtn">다시 시도</button>
+  </div>
   <script>
-    // Capacitor server.url 이 설정되면 실제로는 https://brem.kr/driver.html 로 이동합니다.
-    // 오프라인/설정 오류 시에만 이 페이지가 보입니다.
+    var APP_URL = 'https://brem.kr/driver.html';
+    function go() {
+      window.location.replace(APP_URL);
+    }
+    document.getElementById('retryBtn').addEventListener('click', go);
+    if (navigator.onLine !== false) {
+      setTimeout(go, 400);
+    }
   </script>
 </body>
 </html>

@@ -579,6 +579,7 @@
     if (!window.BremSessionSecurity?.start) return;
     window.BremSessionSecurity.start({
       isLoggedIn,
+      idleMs: window.BREM_IS_NATIVE_APP ? 0 : undefined,
       onIdleLogout: async (message) => {
         await logoutDriver({ idle: true, message });
       }
@@ -1913,7 +1914,8 @@
       }
     }
 
-    if (window.BremSessionSecurity?.isIdleExpired?.()
+    if (!window.BREM_IS_NATIVE_APP
+      && window.BremSessionSecurity?.isIdleExpired?.()
       && (BremStorage.auth.isDriverLoggedIn?.() || BremStorage.auth.getDriverSessionId())) {
       await logoutDriver({ idle: true });
       return;

@@ -71,9 +71,19 @@
     }
   }
 
+  function isNativeRiderApp() {
+    try {
+      return Boolean(window.BREM_IS_NATIVE_APP);
+    } catch {
+      return false;
+    }
+  }
+
   function isKeepLoggedIn(scope) {
     // 관리자: 항상 로그인 유지(명시적 로그아웃 전까지). 새로고침·브라우저 재시작에도 유지.
     if (scopeOf(scope) === SCOPES.ADMIN) return true;
+    // 네이티브 기사앱: 로그아웃 전까지 유지 (앱을 닫아도 다시 로그인하지 않음)
+    if (scopeOf(scope) === SCOPES.RIDER && isNativeRiderApp()) return true;
     try {
       return localStorage.getItem(prefKey('keepLoggedIn', scope)) === '1';
     } catch {
@@ -162,6 +172,7 @@
   function getSessionStore(scope) {
     // 관리자 세션은 항상 localStorage(영구). 로그아웃 시에만 clearPersistedSessionOnLogout로 해제.
     if (scopeOf(scope) === SCOPES.ADMIN) return localStorage;
+    if (isNativeRiderApp()) return localStorage;
     return isKeepLoggedIn(scope) ? localStorage : sessionStorage;
   }
 
@@ -182,6 +193,9 @@
       if (scopeOf(scope) === SCOPES.ADMIN) {
         keepCheckbox.checked = true;
         if (!isKeepLoggedIn(scope)) setKeepLoggedIn(scope, true);
+      } else if (isNativeRiderApp()) {
+        keepCheckbox.checked = true;
+        setKeepLoggedIn(scope, true);
       } else {
         keepCheckbox.checked = isKeepLoggedIn(scope);
       }
