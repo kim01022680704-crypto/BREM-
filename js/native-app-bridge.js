@@ -129,12 +129,18 @@
     return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
   }
 
-  function registerPush() {
-    if (!window.BREM_IS_NATIVE_APP) return;
+  var pendingPushToken = '';
+  var pushListenersBound = false;
+
+  function savePendingPushToken() {
+    if (!pendingPushToken || !window.BremStorage || !window.BremStorage.registerRiderPushTokenOnServer) return;
+    void window.BremStorage.registerRiderPushTokenOnServer(pendingPushToken);
+  }
+
+  function bindPushListeners() {
     var Push = getPushPlugin();
-    if (!Push) return;
-    if (registerPush.started) return;
-    registerPush.started = true;
+    if (!Push || pushListenersBound) return;
+    pushListenersBound = true;
 
     if (typeof Push.createChannel === 'function') {
       Push.createChannel({
@@ -147,9 +153,8 @@
     }
 
     Push.addListener('registration', function (event) {
-      var token = event && event.value;
-      if (!token || !window.BremStorage || !window.BremStorage.registerRiderPushTokenOnServer) return;
-      void window.BremStorage.registerRiderPushTokenOnServer(token);
+      pendingPushToken = event && event.value ? String(event.value) : '';
+      savePendingPushToken();
     });
 
     Push.addListener('pushNotificationReceived', function () {
@@ -162,16 +167,13 @@
         window.BremDriverAppNav.setTab('mission');
       }
     });
-
-    Push.requestPermissions().then(function (status) {
-      if (status && status.receive === 'granted') return Push.register();
-    }).catch(function () { /* ignore */ });
   }
 
-  function requestPushOnLaunch() {
+  function startPush() {
     if (!window.BREM_IS_NATIVE_APP) return;
     var Push = getPushPlugin();
-    if (!Push || typeof Push.requestPermissions !== 'function') return;
+    if (!Push) return;
+    bindPushListeners();
     Push.requestPermissions().then(function (status) {
       if (status && status.receive === 'granted') return Push.register();
     }).catch(function () { /* ignore */ });
@@ -238,10 +240,10 @@
     bindAppResume();
     bindNetworkBanner();
     bindExternalLinks();
-    requestPushOnLaunch();
-    document.addEventListener('brem-rider-session-ready', registerPush);
+    startPush();
+    document.addEventListener('brem-rider-session-ready', savePendingPushToken);
     if (document.getElementById('driverMainApp') && !document.getElementById('driverMainApp').hidden) {
-      registerPush();
+      savePendingPushToken();
     }
   }
 

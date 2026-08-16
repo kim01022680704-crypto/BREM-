@@ -489,7 +489,13 @@
     syncAmountPreview();
     state.missions = result.missions || [];
     render();
-    showToast(`긴급미션을 배포했습니다. 대상 ${riders.length}명`);
+    const push = result.push || {};
+    let pushNote = '';
+    if (push.skipped) pushNote = ' · 앱알림 미발송(서버키/토큰 확인)';
+    else if (Number(push.sent) > 0) pushNote = ` · 앱알림 ${push.sent}건`;
+    else if (push.reason === 'no-tokens') pushNote = ' · 앱알림 0건(기사앱 재로그인 필요)';
+    else if (push.failed) pushNote = ` · 앱알림 실패 ${push.failed}건`;
+    showToast(`긴급미션을 배포했습니다. 대상 ${riders.length}명${pushNote}`);
   }
 
   async function closeMission(missionId) {

@@ -60,12 +60,26 @@ async function writeStore(supabase, store) {
   if (error) throw error;
 }
 
+function parseServiceAccount(raw) {
+  let text = String(raw || '').trim().replace(/^\uFEFF/, '');
+  if (!text) return null;
+  let parsed = JSON.parse(text);
+  if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+  if (!parsed || typeof parsed !== 'object' || !parsed.private_key) {
+    throw new Error('service account JSON is incomplete');
+  }
+  return parsed;
+}
+
 function ensureFirebase() {
   if (firebaseReady) return true;
   const raw = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim();
-  if (!raw) return false;
+  if (!raw) {
+    console.warn('[BREM] FIREBASE_SERVICE_ACCOUNT_JSON is empty');
+    return false;
+  }
   try {
-    const cred = JSON.parse(raw);
+    const cred = parseServiceAccount(raw);
     if (!admin.apps.length) {
       admin.initializeApp({ credential: admin.credential.cert(cred) });
     }
@@ -113,14 +127,17 @@ async function saveRiderToken(accessToken, body = {}) {
 
 async function sendToRiders(riderIds, payload = {}) {
   if (!ensureFirebase()) {
-    return { ok: true, skipped: true };
+    return { ok: true, skipped: true, reason: 'no-firebase' };
   }
   const supabase = getServiceClient();
-  if (!supabase) return { ok: true, skipped: true };
+  if (!supabase) return { ok: true, skipped: true, reason: 'no-supabase' };
 
   const store = await readStore(supabase);
   const tokens = tokensForRiders(store, riderIds);
-  if (!tokens.length) return { ok: true, sent: 0 };
+  if (!tokens.length) {
+    console.warn('[BREM] push skipped: no tokens for', riderIds);
+    return { ok: true, sent: 0, reason: 'no-tokens', riders: (riderIds || []).length };
+  }
 
   const title = String(payload.title || 'BREM').trim() || 'BREM';
   const body = String(payload.body || '').trim();
@@ -135,12 +152,15 @@ async function sendToRiders(riderIds, payload = {}) {
     android: {
       priority: 'high',
       notification: {
-        channelId: 'brem_urgent',
         sound: 'default'
       }
     }
   });
-  return { ok: true, sent: result.successCount || 0 };
+  const failed = Number(result.failureCount || 0);
+  if (failed) {
+    console.warn('[BREM] push failures:', failed, result.responses?.filter(item => !item.success).map(item => item.error?.message));
+  }
+  return { ok: true, sent: result.successCount || 0, failed };
 }
 
 async function notifyUrgentMission(mission) {

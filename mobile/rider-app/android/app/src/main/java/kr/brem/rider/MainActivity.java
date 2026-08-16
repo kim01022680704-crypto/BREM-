@@ -1,6 +1,8 @@
 package kr.brem.rider;
 
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,6 +20,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        createUrgentChannel();
         requestNotificationPermission();
         if (getBridge() == null || getBridge().getWebView() == null) {
             return;
@@ -32,6 +35,24 @@ public class MainActivity extends BridgeActivity {
                 super.onReceivedError(view, request, error);
             }
         });
+    }
+
+    private void createUrgentChannel() {
+        if (Build.VERSION.SDK_INT < 26) {
+            return;
+        }
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            return;
+        }
+        NotificationChannel channel = new NotificationChannel(
+            "brem_urgent",
+            "긴급미션",
+            NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("BREM 긴급미션 알림");
+        channel.enableVibration(true);
+        manager.createNotificationChannel(channel);
     }
 
     private void requestNotificationPermission() {

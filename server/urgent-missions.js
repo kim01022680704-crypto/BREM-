@@ -224,9 +224,12 @@ async function publishMission(accessToken, payload) {
     mission
   }));
   if (result.ok && result.mission) {
-    void riderPush.notifyUrgentMission(result.mission).catch((error) => {
+    try {
+      result.push = await riderPush.notifyUrgentMission(result.mission);
+    } catch (error) {
       console.warn('[BREM] urgent mission push:', error.message || error);
-    });
+      result.push = { ok: false, error: error.message || 'push failed' };
+    }
   }
   return result;
 }
@@ -319,12 +322,15 @@ async function assignTargets(accessToken, missionId, riders) {
     };
   });
   if (result.ok && result.mission && (result.addedIds || []).length) {
-    void riderPush.notifyUrgentMission({
-      ...result.mission,
-      targets: (result.mission.targets || []).filter(item => result.addedIds.includes(item.riderId))
-    }).catch((error) => {
+    try {
+      result.push = await riderPush.notifyUrgentMission({
+        ...result.mission,
+        targets: (result.mission.targets || []).filter(item => result.addedIds.includes(item.riderId))
+      });
+    } catch (error) {
       console.warn('[BREM] urgent mission target push:', error.message || error);
-    });
+      result.push = { ok: false, error: error.message || 'push failed' };
+    }
   }
   return result;
 }

@@ -1095,7 +1095,12 @@ app.post('/api/admin/urgent-missions', async (req, res) => {
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }
-    res.status(201).json({ ok: true, mission: result.mission, missions: result.missions });
+    res.status(201).json({
+      ok: true,
+      mission: result.mission,
+      missions: result.missions,
+      push: result.push || null
+    });
   } catch (error) {
     res.status(500).json({ error: error.message || '긴급미션 배포에 실패했습니다.' });
   }
