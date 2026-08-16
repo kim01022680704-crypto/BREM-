@@ -2119,6 +2119,16 @@
           };
         }
 
+        if (triggerId === 'payroll-slip-search' || triggerId === 'payroll-slip-search-popup') {
+          return {
+            hiddenInput: $('#payrollSlipSearchWeekStart'),
+            labelEl: triggerId === 'payroll-slip-search' ? $('#payrollSlipSearchWeekLabel') : null,
+            onSelect(value) {
+              window.BremAdminPayrollSlipSearch?.handleWeekChange?.(value);
+            }
+          };
+        }
+
         if (triggerId === 'payroll-list') {
           return {
             hiddenInput: $('#payrollSearchSettlementWeekStart'),

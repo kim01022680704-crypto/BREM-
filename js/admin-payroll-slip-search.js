@@ -335,9 +335,41 @@
     `;
   }
 
-  function latestNet(item) {
-    if (!item.weeks[0]) return 0;
-    return buildPlatforms(item, item.weeks[0]).total.netPay;
+  function addWeek(weekStart, weeks) {
+    const base = utils?.normalizeSettlementWeekStart?.(weekStart) || String(weekStart || '').slice(0, 10);
+    if (!base) return '';
+    const date = new Date(`${base}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return '';
+    date.setDate(date.getDate() + (Number(weeks) * 7));
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  }
+
+  function latestSlipWeek() {
+    const weeks = allLines().map(lineWeek).filter(Boolean).sort();
+    return weeks[weeks.length - 1] || utils?.normalizeSettlementWeekStart?.('') || '';
+  }
+
+  function syncWeekUI(weekStart) {
+    const normalized = utils?.normalizeSettlementWeekStart?.(weekStart) || String(weekStart || '').slice(0, 10);
+    state.weekStart = normalized;
+    const hidden = document.getElementById('payrollSlipSearchWeekStart');
+    if (hidden) hidden.value = normalized;
+    const label = normalized
+      ? (utils?.formatSettlementWeekLabel?.(normalized) || normalized)
+      : '정산주 선택';
+    const labelEl = document.getElementById('payrollSlipSearchWeekLabel');
+    if (labelEl) labelEl.textContent = label;
+    setText('payrollSlipSearchPeriod', label);
+    return normalized;
+  }
+
+  function weekNet(item) {
+    if (!state.weekStart) return 0;
+    return buildPlatforms(item, state.weekStart).total.netPay;
   }
 
   function renderResults() {
@@ -351,8 +383,8 @@
         <td><strong>${escapeHtml(item.name)}</strong></td>
         <td>${escapeHtml(item.coupangId || '-')}</td>
         <td>${escapeHtml(item.baeminId || '-')}</td>
-        <td>${item.weeks[0] ? escapeHtml(utils?.formatSettlementWeekLabel?.(item.weeks[0]) || item.weeks[0]) : '-'}</td>
-        <td>${money(latestNet(item))}</td>
+        <td>${state.weekStart ? escapeHtml(utils?.formatSettlementWeekLabel?.(state.weekStart) || state.weekStart) : '-'}</td>
+        <td>${money(weekNet(item))}</td>
       </tr>
     `).join('');
   }
@@ -367,18 +399,14 @@
       closeDetail();
       return;
     }
-    const weeks = rider.weeks;
-    if (!state.weekStart || !weeks.includes(state.weekStart)) {
-      state.weekStart = weeks[0] || '';
-    }
-    const weekIndex = weeks.indexOf(state.weekStart);
+    if (!state.weekStart) syncWeekUI(latestSlipWeek());
     const prevBtn = document.getElementById('payrollSlipSearchPrevWeekBtn');
     const nextBtn = document.getElementById('payrollSlipSearchNextWeekBtn');
-    if (prevBtn) prevBtn.disabled = weekIndex < 0 || weekIndex >= weeks.length - 1;
-    if (nextBtn) nextBtn.disabled = weekIndex <= 0;
+    if (prevBtn) prevBtn.disabled = !state.weekStart;
+    if (nextBtn) nextBtn.disabled = !state.weekStart;
     setText('payrollSlipSearchPeriod', state.weekStart
       ? (utils?.formatSettlementWeekLabel?.(state.weekStart) || state.weekStart)
-      : '-');
+      : '정산주 선택');
     const payment = utils?.defaultPaymentDateForWeek?.(state.weekStart) || '';
     if (popupMeta) {
       popupMeta.textContent = [
@@ -413,9 +441,12 @@
     }
     if (statusEl) {
       const total = groupRiders('').length;
+      const weekLabel = state.weekStart
+        ? (utils?.formatSettlementWeekLabel?.(state.weekStart) || state.weekStart)
+        : '정산주 미선택';
       statusEl.textContent = keyword
-        ? `${state.results.length}명 / 전체 ${total}명 · 이름을 누르면 명세서가 열립니다.`
-        : `전체 ${state.results.length}명 · 이름을 누르면 명세서가 열립니다.`;
+        ? `${weekLabel} · ${state.results.length}명 / 전체 ${total}명 · 이름을 누르면 명세서가 열립니다.`
+        : `${weekLabel} · 전체 ${state.results.length}명 · 급여명세서(브로) 등록분`;
     }
     renderResults();
     if (state.selectedKey && !detailEl.hidden) renderDetail();
@@ -425,20 +456,21 @@
     const rider = state.results.find(item => item.key === key);
     if (!rider) return;
     state.selectedKey = key;
-    state.weekStart = rider.weeks[0] || '';
+    if (!state.weekStart) syncWeekUI(rider.weeks[0] || latestSlipWeek());
     renderResults();
     renderDetail();
   }
 
+  function handleWeekChange(weekStart) {
+    syncWeekUI(weekStart);
+    search();
+    if (state.selectedKey && !detailEl.hidden) renderDetail();
+  }
+
   function shiftWeek(step) {
-    const rider = selectedRider();
-    if (!rider) return;
-    const weeks = rider.weeks;
-    const index = weeks.indexOf(state.weekStart);
-    const next = weeks[index - step];
+    const next = addWeek(state.weekStart || latestSlipWeek(), step);
     if (!next) return;
-    state.weekStart = next;
-    renderDetail();
+    handleWeekChange(next);
   }
 
   let searchTimer = 0;
@@ -466,8 +498,10 @@
   document.getElementById('payrollSlipSearchNextWeekBtn')?.addEventListener('click', () => shiftWeek(1));
 
   window.BremAdminPayrollSlipSearch = {
+    handleWeekChange,
     async refresh() {
       await window.BremStorage?.ensureSectionLoaded?.('payroll-slip-search');
+      if (!state.weekStart) syncWeekUI(latestSlipWeek());
       search();
     }
   };

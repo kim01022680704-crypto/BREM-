@@ -13619,6 +13619,19 @@ tr.is-week-first td {
   opacity: 0.35;
 }
 
+.payroll-search-popup-week-btn {
+  min-width: 168px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .payroll-search-row {
   cursor: pointer;
 }
