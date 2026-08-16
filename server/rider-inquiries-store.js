@@ -1,5 +1,11 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  nowIso,
+  purgeList,
+  extraFromPayload,
+  enrichRecord
+} = require('./rider-inquiries-shared');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'rider_inquiries.json');
@@ -13,11 +19,10 @@ function ensureDataFile() {
   }
 }
 
-function readAll() {
+function readRaw() {
   ensureDataFile();
   try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -31,13 +36,20 @@ function writeAll(list) {
   return next;
 }
 
+function readAll() {
+  const kept = purgeList(readRaw()).map(item => enrichRecord(item, item));
+  writeAll(kept);
+  return kept;
+}
+
 function createId() {
   return `inq-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 function createInquiry(payload) {
   const list = readAll();
-  const record = {
+  const extra = extraFromPayload(payload);
+  const record = enrichRecord({
     id: createId(),
     name: String(payload.name || '').trim(),
     phone: String(payload.phone || '').trim(),
@@ -45,8 +57,9 @@ function createInquiry(payload) {
     inquiryType: String(payload.inquiryType || '라이더 지원').trim(),
     message: String(payload.message || '').trim(),
     status: 'new',
-    createdAt: new Date().toISOString()
-  };
+    createdAt: nowIso(),
+    ...extra
+  }, extra);
   list.unshift(record);
   writeAll(list);
   return record;
@@ -55,7 +68,7 @@ function createInquiry(payload) {
 function updateStatus(id, status) {
   const list = readAll().map(item => (
     item.id === id
-      ? { ...item, status: String(status || 'new'), updatedAt: new Date().toISOString() }
+      ? { ...item, status: String(status || 'new'), updatedAt: nowIso() }
       : item
   ));
   writeAll(list);

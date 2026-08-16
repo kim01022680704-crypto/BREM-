@@ -556,6 +556,14 @@
     if (emptyEl) emptyEl.hidden = false;
   }
 
+  document.getElementById('driverPayslipInquiryBtn')?.addEventListener('click', () => {
+    if (!state.lastResult?.hasPayslip) {
+      showToast('주급명세서가 없어 문의할 수 없습니다.');
+      return;
+    }
+    window.BremDriverInquiries?.open?.('payslip');
+  });
+
   window.BremDriverWeeklyPayslip = {
     open: openPanel,
     close: closePanel,
@@ -563,6 +571,23 @@
     reset: resetPanel,
     invalidateCache() {
       cache.clear();
+    },
+    getInquirySnapshot() {
+      const data = state.lastResult;
+      if (!data?.hasPayslip) return null;
+      const payslip = data.payslip || {};
+      const rider = data.rider || {};
+      return {
+        weekStart: data.settlementWeekStart || state.weekStart || '',
+        weekEnd: data.settlementWeekEnd || '',
+        weekLabel: data.settlementWeekLabel || '',
+        paymentDate: data.paymentDate || '',
+        riderName: rider.name || payslip.riderName || '',
+        coupangId: rider.coupangId || payslip.coupangId || '',
+        baeminId: rider.baeminId || payslip.baeminId || '',
+        coupang: normalizeBucket(payslip.platforms?.coupang || {}),
+        baemin: normalizeBucket(payslip.platforms?.baemin || {})
+      };
     }
   };
 })();

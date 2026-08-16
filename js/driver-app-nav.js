@@ -50,6 +50,7 @@
     window.BremDriverRegionDashboard?.close?.();
     window.BremDriverCrewLeader?.close?.();
     window.BremDriverUrgentMissions?.close?.();
+    window.BremDriverInquiries?.close?.();
   }
 
   function openTabPanel(tab) {

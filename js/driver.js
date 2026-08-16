@@ -551,6 +551,7 @@
     window.BremDriverRegionDashboard?.reset?.();
     window.BremDriverCrewLeader?.reset?.();
     window.BremDriverUrgentMissions?.reset?.();
+    window.BremDriverInquiries?.reset?.();
     showLoggedOut();
     window.BremLoginPrefs?.restoreIdAfterLogout?.('rider', {
       idInput: loginIdInput,
@@ -1718,6 +1719,7 @@
       window.BremDriverRegionDashboard?.reset?.();
       window.BremDriverCrewLeader?.reset?.();
       window.BremDriverUrgentMissions?.reset?.();
+      window.BremDriverInquiries?.reset?.();
       window.BremLoginPrefs?.captureLoginPrefs?.('rider', {
         idInput: loginIdInput,
         rememberCheckbox: document.getElementById('driverRememberId'),

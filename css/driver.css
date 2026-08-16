@@ -3989,6 +3989,108 @@ html.brem-app-nav .driver-payslip-close {
   color: var(--yellow);
 }
 
+.driver-inquiry-hint {
+  margin: 0 0 14px;
+  color: #4b5563;
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.driver-inquiry-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.driver-inquiry-field {
+  display: grid;
+  gap: 6px;
+  color: #111;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.driver-inquiry-field textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  resize: vertical;
+  color: #111;
+  font: inherit;
+  font-weight: 600;
+}
+
+.driver-inquiry-history-title {
+  margin: 0 0 10px;
+  color: #111;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.driver-inquiry-empty {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.driver-inquiry-item {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 10px 0 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.driver-inquiry-item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.driver-inquiry-item__head time {
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.driver-inquiry-item p {
+  margin: 0;
+  color: #111;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.driver-inquiry-status {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.driver-inquiry-status.is-new {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.driver-inquiry-status.is-read {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.driver-inquiry-status.is-done {
+  background: #dcfce7;
+  color: #166534;
+}
+
 .brem-native-offline {
   position: fixed;
   left: 12px;

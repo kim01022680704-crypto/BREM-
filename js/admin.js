@@ -3869,8 +3869,8 @@
 
   function inquiryStatusLabel(status) {
     if (status === 'done') return '처리완료';
-    if (status === 'read') return '확인';
-    return '신규';
+    if (status === 'read') return '확인중';
+    return '미확인';
   }
 
   function inquiryStatusClass(status) {
@@ -3889,8 +3889,8 @@
 
     if (summaryEl) {
       summaryEl.textContent = newCount
-        ? `미확인 문의 ${newCount}건 · 홈페이지에서 접수된 문의를 확인합니다.`
-        : '홈페이지에서 접수된 문의를 확인합니다.';
+        ? `미확인 문의 ${newCount}건 · 홈페이지·기사앱 접수를 클릭하면 팝업으로 확인합니다. 2주 후 자동 삭제.`
+        : '홈페이지·기사앱에서 접수된 문의를 확인합니다. 클릭하면 팝업으로 봅니다. 2주 후 자동 삭제됩니다.';
     }
 
     if (!list.length) {
@@ -3899,7 +3899,7 @@
     }
 
     rowsEl.innerHTML = list.map(inquiry => `
-      <article class="notice-item inquiry-item">
+      <article class="notice-item inquiry-item" data-open-inquiry="${escapeHtml(inquiry.id)}" role="button" tabindex="0">
         <div class="notice-item-head">
           <div>
             <span class="${inquiryStatusClass(inquiry.status)}">${escapeHtml(inquiryStatusLabel(inquiry.status))}</span>
@@ -3910,15 +3910,89 @@
         <p class="inquiry-meta">
           <span>지역: ${escapeHtml(inquiry.area || '-')}</span>
           <span>구분: ${escapeHtml(inquiry.inquiryType || '-')}</span>
+          ${inquiry.source === 'payslip' ? '<span>주급명세서 첨부</span>' : ''}
         </p>
         <p class="notice-content">${escapeHtml(inquiry.message || '')}</p>
-        <div class="notice-actions">
-          ${inquiry.status === 'new' ? `<button class="small-btn" data-mark-inquiry="${inquiry.id}" data-status="read">확인</button>` : ''}
-          ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${inquiry.id}" data-status="done">처리완료</button>` : ''}
-          <button class="small-btn danger-btn" data-delete-inquiry="${inquiry.id}">삭제</button>
-        </div>
       </article>
     `).join('');
+  }
+
+  function inquiryMoney(value) {
+    return `${Number(value || 0).toLocaleString('ko-KR')}원`;
+  }
+
+  function renderInquiryPayslipCard(title, bucket = {}) {
+    return `
+      <article class="inquiry-payslip-card">
+        <h3>${escapeHtml(title)}</h3>
+        <p><span>배달비</span><strong>${inquiryMoney(bucket.deliveryFee)}</strong></p>
+        <p><span>추가지급(미션)</span><strong>${inquiryMoney(bucket.missionPay)}</strong></p>
+        <p><span>기타지급</span><strong>${inquiryMoney(bucket.other)}</strong></p>
+        <p><span>BREM프로모션</span><strong>${inquiryMoney(bucket.promo)}</strong></p>
+        <p class="is-total"><span>지급합계</span><strong>${inquiryMoney(bucket.grossPay)}</strong></p>
+        <p><span>공제합계</span><strong>${inquiryMoney(bucket.deductTotal)}</strong></p>
+        <p class="is-net"><span>총지급액</span><strong>${inquiryMoney(bucket.netPay)}</strong></p>
+      </article>
+    `;
+  }
+
+  function closeAdminInquiryPopup() {
+    const popup = $('#adminInquiryPopup');
+    if (popup) popup.hidden = true;
+  }
+
+  async function openAdminInquiryPopup(inquiryId) {
+    const popup = $('#adminInquiryPopup');
+    if (!popup) return;
+    const list = await loadRiderInquiries();
+    const inquiry = list.find(item => String(item.id) === String(inquiryId));
+    if (!inquiry) {
+      showToast('문의를 찾지 못했습니다.');
+      return;
+    }
+    const statusEl = $('#adminInquiryPopupStatus');
+    const metaEl = $('#adminInquiryPopupMeta');
+    const messageEl = $('#adminInquiryPopupMessage');
+    const payslipEl = $('#adminInquiryPopupPayslip');
+    const actionsEl = $('#adminInquiryPopupActions');
+    if (statusEl) {
+      statusEl.className = inquiryStatusClass(inquiry.status);
+      statusEl.textContent = inquiryStatusLabel(inquiry.status);
+    }
+    if (metaEl) {
+      metaEl.textContent = [
+        `${inquiry.name || '-'} · ${inquiry.phone || '-'}`,
+        `지역 ${inquiry.area || '-'}`,
+        `구분 ${inquiry.inquiryType || '-'}`,
+        formatDateTime(inquiry.createdAt)
+      ].join(' · ');
+    }
+    if (messageEl) messageEl.textContent = inquiry.message || '';
+    const snap = inquiry.payslipSnapshot;
+    if (payslipEl) {
+      if (snap) {
+        payslipEl.hidden = false;
+        payslipEl.innerHTML = `
+          <p class="inquiry-popup__payslip-head">${escapeHtml(snap.weekLabel || `${snap.weekStart || ''} ~ ${snap.weekEnd || ''}`)} · ${escapeHtml(snap.riderName || inquiry.name || '')}</p>
+          <div class="inquiry-payslip-grid">
+            ${renderInquiryPayslipCard('쿠팡 주급명세서', snap.coupang)}
+            ${renderInquiryPayslipCard('배민 주급명세서', snap.baemin)}
+          </div>
+        `;
+      } else {
+        payslipEl.hidden = true;
+        payslipEl.innerHTML = '';
+      }
+    }
+    if (actionsEl) {
+      actionsEl.innerHTML = `
+        ${inquiry.status === 'new' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인</button>` : ''}
+        ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
+        <button class="small-btn danger-btn" data-delete-inquiry="${escapeHtml(inquiry.id)}">삭제</button>
+        <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
+      `;
+    }
+    popup.hidden = false;
   }
 
   function isBaeminSettlementPlatform(platform) {
@@ -8005,20 +8079,29 @@
         })();
       }
 
+      if (event.target.closest('[data-inquiry-popup-close]')) {
+        closeAdminInquiryPopup();
+        return;
+      }
+
       const markInquiryButton = event.target.closest('[data-mark-inquiry]');
       if (markInquiryButton) {
+        const inquiryId = markInquiryButton.dataset.markInquiry;
         const update = window.BremRiderInquiryApi?.updateStatus
           ? window.BremRiderInquiryApi.updateStatus(
-            markInquiryButton.dataset.markInquiry,
+            inquiryId,
             markInquiryButton.dataset.status
           )
           : Promise.resolve(BremStorage.riderInquiries.updateStatus(
-            markInquiryButton.dataset.markInquiry,
+            inquiryId,
             markInquiryButton.dataset.status
           ));
         update.then(() => {
-          showToast('문의 상태가 변경되었습니다.');
+          showToast(markInquiryButton.dataset.status === 'read' ? '확인중으로 표시했습니다.' : '처리완료로 변경했습니다.');
           renderRiderInquiries();
+          if (!$('#adminInquiryPopup')?.hidden) {
+            void openAdminInquiryPopup(inquiryId);
+          }
         });
         return;
       }
@@ -8030,8 +8113,15 @@
           : Promise.resolve(BremStorage.riderInquiries.removeById(deleteInquiryButton.dataset.deleteInquiry));
         remove.then(() => {
           showToast('문의가 삭제되었습니다.');
+          closeAdminInquiryPopup();
           renderRiderInquiries();
         });
+        return;
+      }
+
+      const openInquiry = event.target.closest('[data-open-inquiry]');
+      if (openInquiry) {
+        void openAdminInquiryPopup(openInquiry.dataset.openInquiry);
         return;
       }
 

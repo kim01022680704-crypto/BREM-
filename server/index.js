@@ -7,6 +7,7 @@ const multer = require('multer');
 const { parseSettlementFile, openSheetRows } = require('./settlement-parser');
 const riderInquiriesStore = require('./rider-inquiries-store');
 const riderInquiriesSupabase = require('./rider-inquiries-supabase');
+const riderInquiriesRider = require('./rider-inquiries-rider');
 const adminBootstrap = require('./admin-bootstrap');
 const adminUsers = require('./admin-users');
 const adminAuth = require('./admin-auth');
@@ -483,6 +484,30 @@ app.get('/api/rider/weekly-payslip', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '주급명세서를 불러오지 못했습니다.' });
+  }
+});
+
+app.get('/api/rider/inquiries', async (req, res) => {
+  try {
+    const result = await riderInquiriesRider.listMine(getBearerToken(req));
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 내역을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/rider/inquiries', async (req, res) => {
+  try {
+    const result = await riderInquiriesRider.createMine(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문의 접수에 실패했습니다.' });
   }
 });
 
