@@ -3894,8 +3894,8 @@
 
     if (summaryEl) {
       summaryEl.textContent = newCount
-        ? `미확인 문의 ${newCount}건 · 클릭하면 상세·주급명세서를 팝업으로 봅니다. 답장 후 기사 확인이 되면 처리완료.`
-        : '클릭하면 상세·주급명세서를 팝업으로 봅니다. 답장을 남기면 기사가 확인한 뒤 처리완료할 수 있습니다.';
+        ? `미확인 문의 ${newCount}건 · 클릭하면 상세·주급명세서를 팝업으로 봅니다. 확인중·처리완료·삭제는 기사 확인과 관계없이 가능합니다.`
+        : '클릭하면 상세·주급명세서를 팝업으로 봅니다. 확인중·처리완료·삭제는 기사 확인과 관계없이 가능합니다.';
     }
 
     if (!list.length) {
@@ -4028,13 +4028,10 @@
       }
     }
     if (actionsEl) {
-      const waitingAck = Boolean(inquiry.adminReply) && !inquiry.riderAckAt && inquiry.status !== 'done';
-      const canDone = inquiry.status !== 'done' && !waitingAck;
       actionsEl.innerHTML = `
-        ${inquiry.status === 'new' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인</button>` : ''}
+        ${inquiry.status !== 'read' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="read">확인중</button>` : ''}
         ${inquiry.status !== 'done' ? `<button class="small-btn" data-reply-inquiry="${escapeHtml(inquiry.id)}">답장보내기</button>` : ''}
-        ${canDone ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
-        ${waitingAck ? '<span class="inquiry-popup__wait">기사 확인 후 처리완료</span>' : ''}
+        ${inquiry.status !== 'done' ? `<button class="small-btn" data-mark-inquiry="${escapeHtml(inquiry.id)}" data-status="done">처리완료</button>` : ''}
         <button class="small-btn danger-btn" data-delete-inquiry="${escapeHtml(inquiry.id)}">삭제</button>
         <button class="small-btn" type="button" data-inquiry-popup-close>닫기</button>
       `;

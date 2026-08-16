@@ -126,9 +126,6 @@ async function updateInquiry(id, patch = {}) {
 
   let nextStatus = patch.status != null ? String(patch.status || 'new') : row.status;
   if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
-  if (nextStatus === 'done' && String(raw.adminReply || '').trim() && !raw.riderAckAt) {
-    throw new Error('기사가 답장을 확인한 뒤에 처리완료할 수 있습니다.');
-  }
 
   const { error } = await supabase
     .from('rider_inquiries')

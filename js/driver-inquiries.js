@@ -7,13 +7,21 @@
   const messageEl = document.getElementById('driverInquiryMessage');
   const submitBtn = document.getElementById('driverInquirySubmitBtn');
   const listEl = document.getElementById('driverInquiryHistory');
+  const alertPopup = document.getElementById('driverInquiryAlertPopup');
+  const alertTitle = document.getElementById('driverInquiryAlertTitle');
   if (!popup) return;
+
+  const HINT_APP = '문의내용 남기면 확인후 차례대로 답변이나 전화드리겠습니다.\n확인할경우 확인중이라고 테그가 바뀝니다.';
+  const ALERT_KEY = 'brem_rider_inquiry_alerts';
 
   const state = {
     open: false,
     source: 'app',
     inquiries: [],
-    pollTimer: null
+    pollTimer: null,
+    watchTimer: null,
+    watchSeeded: false,
+    alertQueue: []
   };
 
   function showToast(message) {
@@ -53,6 +61,79 @@
     const date = new Date(value || '');
     if (Number.isNaN(date.getTime())) return '-';
     return `${date.getMonth() + 1}.${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function readAlertSeen() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ALERT_KEY) || '{}');
+      return {
+        read: new Set(Array.isArray(parsed.read) ? parsed.read.map(String) : []),
+        reply: new Set(Array.isArray(parsed.reply) ? parsed.reply.map(String) : [])
+      };
+    } catch {
+      return { read: new Set(), reply: new Set() };
+    }
+  }
+
+  function writeAlertSeen(seen) {
+    try {
+      localStorage.setItem(ALERT_KEY, JSON.stringify({
+        read: [...seen.read],
+        reply: [...seen.reply]
+      }));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function replyKey(item) {
+    return `${item.id}:${String(item.adminReply || '')}:${String(item.adminRepliedAt || '')}`;
+  }
+
+  function collectAlerts(list, announce) {
+    const seen = readAlertSeen();
+    const alerts = [];
+    (list || []).forEach(item => {
+      const id = String(item.id || '');
+      if (!id) return;
+      const hasReply = Boolean(item.adminReply);
+      if (hasReply) {
+        const key = replyKey(item);
+        if (!seen.reply.has(key)) {
+          if (announce) alerts.push({ kind: 'reply', id });
+          seen.reply.add(key);
+        }
+      }
+      if (item.status === 'read' || item.status === 'done' || hasReply) {
+        if (!seen.read.has(id)) {
+          if (announce && !hasReply && item.status === 'read') {
+            alerts.push({ kind: 'read', id });
+          }
+          seen.read.add(id);
+        }
+      }
+    });
+    writeAlertSeen(seen);
+    return alerts;
+  }
+
+  function closeInquiryAlert() {
+    if (alertPopup) alertPopup.hidden = true;
+  }
+
+  function showNextInquiryAlert() {
+    if (!alertPopup || !alertTitle) return;
+    if (!alertPopup.hidden) return;
+    const next = state.alertQueue.shift();
+    if (!next) return;
+    alertTitle.textContent = next.kind === 'reply' ? '답변이왓습니다.' : '문의 확인중입니다.';
+    alertPopup.hidden = false;
+  }
+
+  function queueInquiryAlerts(alerts) {
+    if (!alerts.length) return;
+    state.alertQueue.push(...alerts);
+    showNextInquiryAlert();
   }
 
   function renderHistory() {
@@ -95,7 +176,7 @@
     if (hintEl) {
       hintEl.textContent = state.source === 'payslip'
         ? '사유를 적으면 쿠팡·배민 주급명세서가 관리자에게 함께 전달됩니다. 문의는 2주 후 삭제됩니다.'
-        : '문의내용을 남기면 확인후 답변드리겠습니다.';
+        : HINT_APP;
     }
     if (messageEl) {
       messageEl.placeholder = state.source === 'payslip'
@@ -105,15 +186,23 @@
     if (formEl) formEl.reset();
   }
 
-  async function loadHistory() {
+  async function syncInquiries({ announce = false, toastOnError = false } = {}) {
     if (!window.BremStorage?.fetchRiderInquiriesFromServer) return;
     const result = await window.BremStorage.fetchRiderInquiriesFromServer();
     if (!result?.ok) {
-      if (state.open) showToast(result?.message || '문의 내역을 불러오지 못했습니다.');
+      if (toastOnError) showToast(result?.message || '문의 내역을 불러오지 못했습니다.');
       return;
     }
     state.inquiries = result.inquiries || [];
-    renderHistory();
+    if (state.open) renderHistory();
+    const shouldAnnounce = announce && state.watchSeeded;
+    const alerts = collectAlerts(state.inquiries, shouldAnnounce);
+    if (!state.watchSeeded) state.watchSeeded = true;
+    if (shouldAnnounce) queueInquiryAlerts(alerts);
+  }
+
+  async function loadHistory() {
+    await syncInquiries({ announce: true, toastOnError: state.open });
   }
 
   async function ackInquiry(inquiryId) {
@@ -177,6 +266,22 @@
     }, 20000);
   }
 
+  function stopWatch() {
+    if (state.watchTimer) {
+      window.clearInterval(state.watchTimer);
+      state.watchTimer = null;
+    }
+  }
+
+  function startWatch() {
+    if (state.watchTimer) return;
+    void syncInquiries({ announce: false }).then(() => {
+      state.watchTimer = window.setInterval(() => {
+        void syncInquiries({ announce: true });
+      }, 15000);
+    });
+  }
+
   function open(source = 'app') {
     applyMode(source);
     state.open = true;
@@ -216,13 +321,32 @@
     }
   });
 
+  alertPopup?.addEventListener('click', (event) => {
+    if (event.target.closest('#driverInquiryAlertOpenBtn')) {
+      closeInquiryAlert();
+      open('app');
+      showNextInquiryAlert();
+      return;
+    }
+    if (event.target.closest('[data-inquiry-alert-close]')) {
+      closeInquiryAlert();
+      showNextInquiryAlert();
+    }
+  });
+
   formEl?.addEventListener('submit', submit);
 
   window.BremDriverInquiries = {
     open,
     close,
+    startWatch,
     reset() {
+      stopWatch();
+      stopPoll();
       state.inquiries = [];
+      state.watchSeeded = false;
+      state.alertQueue = [];
+      closeInquiryAlert();
       renderHistory();
       close();
     }

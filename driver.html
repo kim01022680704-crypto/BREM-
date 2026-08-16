@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
-  <link rel="stylesheet" href="css/driver.css?v=20260816inq4">
+  <link rel="stylesheet" href="css/driver.css?v=20260817inq7">
   <link rel="stylesheet" href="css/mobile-compact.css?v=20260816um1">
   <link rel="stylesheet" href="css/mobile-ui.css?v=20260623v">
 </head>
@@ -880,7 +880,8 @@
     <div class="urgent-mission-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverInquiryPopupTitle">
       <p class="urgent-mission-popup__eyebrow">라이더 문의</p>
       <h2 id="driverInquiryPopupTitle">관리자 문의하기</h2>
-      <p class="driver-inquiry-hint" id="driverInquiryPopupHint">문의내용을 남기면 확인후 답변드리겠습니다.</p>
+      <p class="driver-inquiry-hint" id="driverInquiryPopupHint">문의내용 남기면 확인후 차례대로 답변이나 전화드리겠습니다.
+확인할경우 확인중이라고 테그가 바뀝니다.</p>
       <form id="driverInquiryForm" class="driver-inquiry-form">
         <label class="driver-inquiry-field">
           <span>문의 내용</span>
@@ -893,6 +894,18 @@
       </form>
       <h3 class="driver-inquiry-history-title">문의내역</h3>
       <div id="driverInquiryHistory"></div>
+    </div>
+  </div>
+
+  <div class="urgent-mission-popup" id="driverInquiryAlertPopup" hidden>
+    <button type="button" class="urgent-mission-popup__backdrop" data-inquiry-alert-close aria-label="닫기"></button>
+    <div class="urgent-mission-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="driverInquiryAlertTitle">
+      <p class="urgent-mission-popup__eyebrow">라이더 문의</p>
+      <h2 id="driverInquiryAlertTitle">문의 확인중입니다.</h2>
+      <div class="urgent-mission-popup__actions">
+        <button type="button" class="urgent-mission-popup__reject" data-inquiry-alert-close>닫기</button>
+        <button type="button" class="urgent-mission-popup__accept" id="driverInquiryAlertOpenBtn">문의내역 보기</button>
+      </div>
     </div>
   </div>
 
@@ -1022,8 +1035,8 @@
   <script src="js/driver-crew-leader.js?v=20260816nav1"></script>
   <script src="js/driver-withdrawal.js?v=20260816crew7"></script>
   <script src="js/driver-urgent-missions.js?v=20260816um2"></script>
-  <script src="js/driver-inquiries.js?v=20260817inq5"></script>
-  <script src="js/driver.js?v=20260816inq1"></script>
+  <script src="js/driver-inquiries.js?v=20260817inq7"></script>
+  <script src="js/driver.js?v=20260817inq7"></script>
   <script src="js/driver-app-nav.js?v=20260816inq1"></script>
   <script src="js/mobile-table-cards.js?v=20260623u" defer></script>
   <script src="js/pwa-register.js" defer></script>

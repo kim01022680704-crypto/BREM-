@@ -4026,6 +4026,7 @@ html.brem-app-nav .driver-payslip-close {
   font-size: 0.86rem;
   font-weight: 700;
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 .driver-inquiry-form {

@@ -7186,9 +7186,6 @@ const BremStorage = (function () {
           row.riderAckAt = new Date().toISOString();
         }
         if (patch.status != null) row.status = String(patch.status || 'new');
-        if (row.status === 'done' && String(row.adminReply || '').trim() && !row.riderAckAt) {
-          throw new Error('기사가 답장을 확인한 뒤에 처리완료할 수 있습니다.');
-        }
         return row;
       });
       riderInquiries.persistList(next);

@@ -628,6 +628,7 @@
     void window.BremDriverCrewLeader?.refreshEntryVisibility?.();
     void window.BremDriverRegionDashboard?.refreshEntryVisibility?.();
     void window.BremDriverUrgentMissions?.refresh?.();
+    window.BremDriverInquiries?.startWatch?.();
     window.setTimeout(() => queueNoticePopups(), 250);
   }
 

@@ -81,9 +81,6 @@ function updateInquiry(id, patch = {}) {
   }
   let nextStatus = patch.status != null ? String(patch.status || 'new') : current.status;
   if (patch.adminReply != null && nextStatus === 'new') nextStatus = 'read';
-  if (nextStatus === 'done' && String(current.adminReply || '').trim() && !current.riderAckAt) {
-    throw new Error('기사가 답장을 확인한 뒤에 처리완료할 수 있습니다.');
-  }
   current.status = nextStatus;
   current.updatedAt = nowIso();
   list[index] = current;
