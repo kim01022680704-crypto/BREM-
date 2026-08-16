@@ -88,7 +88,7 @@ window.BremDriverUtils = (function () {
 
     return {
       ok: false,
-      reason: '비밀번호가 일치하지 않습니다. 기본 비밀번호 1234 또는 주민번호 뒷자리 7자리를 입력하세요.'
+      reason: '비밀번호가 일치하지 않습니다.'
     };
   }
 
