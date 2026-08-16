@@ -225,6 +225,7 @@
     { id: 'admin-account', label: '관리자 계정' },
     { id: 'revenue-management', label: '수익 관리' },
     { id: 'payroll-slips', label: '급여명세서' },
+    { id: 'payroll-slip-search', label: '급여명세서 (검색)' },
     { id: 'payroll-daily-settlement', label: '급여 일정산' },
     { id: 'data-backup', label: '데이터 백업' }
   ];
@@ -6989,6 +6990,9 @@
     }
     if (sectionId === 'payroll-slips' && window.BremAdminPayrollSlips?.refresh) {
       void window.BremAdminPayrollSlips.refresh();
+    }
+    if (sectionId === 'payroll-slip-search' && window.BremAdminPayrollSlipSearch?.refresh) {
+      void window.BremAdminPayrollSlipSearch.refresh();
     }
     if (sectionId === 'payroll-daily-settlement' && window.BremAdminPayrollDailySettlement?.refresh) {
       void window.BremAdminPayrollDailySettlement.refresh();

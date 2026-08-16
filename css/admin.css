@@ -13595,3 +13595,231 @@ tr.is-week-first td {
     grid-template-columns: 1fr;
   }
 }
+
+.payroll-search-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.payroll-search-form .payroll-field {
+  flex: 1 1 220px;
+}
+
+.payroll-search-results {
+  display: grid;
+  gap: 8px;
+}
+
+.payroll-search-result {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #141414;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.payroll-search-result strong {
+  font-size: 1rem;
+}
+
+.payroll-search-result span,
+.payroll-search-result em {
+  color: #9ca3af;
+  font-size: 0.8rem;
+  font-style: normal;
+}
+
+.payroll-search-result.is-active,
+.payroll-search-result:hover {
+  border-color: var(--yellow);
+}
+
+.payroll-search-detail {
+  margin-top: 16px;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+#payroll-slip-search .driver-payslip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#payroll-slip-search .driver-payslip-header h2,
+#payroll-slip-search .driver-payslip-eyebrow {
+  margin: 0;
+  color: #111827;
+}
+
+#payroll-slip-search .driver-payslip-eyebrow {
+  margin-bottom: 4px;
+  color: #b45309;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+#payroll-slip-search .driver-payslip-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#payroll-slip-search .driver-payslip-meta__item,
+#payroll-slip-search .driver-payslip-rider-bar div,
+#payroll-slip-search .driver-payslip-summary-card,
+#payroll-slip-search .driver-payslip-lines {
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+#payroll-slip-search .driver-payslip-meta__label,
+#payroll-slip-search .driver-payslip-rider-bar span,
+#payroll-slip-search .driver-payslip-summary-card span {
+  display: block;
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+#payroll-slip-search .driver-payslip-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#payroll-slip-search .driver-payslip-week-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#payroll-slip-search .driver-payslip-week-btn:disabled {
+  opacity: 0.35;
+}
+
+#payroll-slip-search .driver-payslip-rider-bar,
+#payroll-slip-search .driver-payslip-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+#payroll-slip-search .driver-payslip-summary-card--net {
+  color: #fff;
+  border-color: #111827;
+  background: #111827;
+}
+
+#payroll-slip-search .driver-payslip-summary-card--net span {
+  color: #cbd5e1;
+}
+
+#payroll-slip-search .driver-payslip-summary-card--net strong {
+  color: #facc15;
+}
+
+#payroll-slip-search .driver-payslip-platform-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#payroll-slip-search .driver-payslip-platform-tab {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#payroll-slip-search .driver-payslip-platform-tab.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #facc15;
+}
+
+#payroll-slip-search .driver-payslip-tables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#payroll-slip-search .driver-payslip-table-block h3 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+#payroll-slip-search .driver-payslip-table-block__hint {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+#payroll-slip-search .driver-payslip-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#payroll-slip-search .driver-payslip-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #111827;
+}
+
+#payroll-slip-search .driver-payslip-line:last-child {
+  border-bottom: 0;
+}
+
+#payroll-slip-search .driver-payslip-line--total {
+  background: #f8fafc;
+  font-weight: 900;
+}
+
+#payroll-slip-search .driver-payslip-empty {
+  padding: 28px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #64748b;
+  text-align: center;
+  background: #fff;
+}
+
+@media (max-width: 768px) {
+  #payroll-slip-search .driver-payslip-meta,
+  #payroll-slip-search .driver-payslip-rider-bar,
+  #payroll-slip-search .driver-payslip-summary,
+  #payroll-slip-search .driver-payslip-tables {
+    grid-template-columns: 1fr;
+  }
+}

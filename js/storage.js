@@ -1498,6 +1498,7 @@ const BremStorage = (function () {
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
+    'payroll-slip-search': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
     'payroll-daily-settlement': [
       KEYS.payrollDailySettlementRoster,
       KEYS.payrollDailySettlementRegions,
@@ -1785,7 +1786,7 @@ const BremStorage = (function () {
       if (payrollLocal && isPayrollStorageKey(key)) return false;
       return true;
     });
-    if (payrollLocal && sectionId === 'payroll-slips') {
+    if (payrollLocal && (sectionId === 'payroll-slips' || sectionId === 'payroll-slip-search')) {
       hydratePayrollLocalCache();
     }
     const needsDrivers = sectionKeys.includes(KEYS.drivers);
@@ -12482,6 +12483,7 @@ const BremStorage = (function () {
     'admin-account',
     'revenue-management',
     'payroll-slips',
+    'payroll-slip-search',
     'payroll-daily-settlement',
     'data-backup'
   ]);
@@ -12628,6 +12630,10 @@ const BremStorage = (function () {
       }
     }
 
+    if (normalized.includes('payroll-slips') && !normalized.includes('payroll-slip-search')) {
+      normalized.splice(normalized.indexOf('payroll-slips') + 1, 0, 'payroll-slip-search');
+    }
+
     if (isExplicitList) {
       return normalized;
     }
@@ -12757,6 +12763,9 @@ const BremStorage = (function () {
     }
     if (nextMenus.includes('payroll-slips') && !nextEditable.includes('payroll-slips')) {
       nextEditable = [...nextEditable, 'payroll-slips'];
+    }
+    if (nextMenus.includes('payroll-slip-search') && !nextEditable.includes('payroll-slip-search')) {
+      nextEditable = [...nextEditable, 'payroll-slip-search'];
     }
     if (nextMenus.includes('payroll-daily-settlement') && !nextEditable.includes('payroll-daily-settlement')) {
       nextEditable = [...nextEditable, 'payroll-daily-settlement'];
