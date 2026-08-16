@@ -168,6 +168,15 @@
     }).catch(function () { /* ignore */ });
   }
 
+  function requestPushOnLaunch() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    var Push = getPushPlugin();
+    if (!Push || typeof Push.requestPermissions !== 'function') return;
+    Push.requestPermissions().then(function (status) {
+      if (status && status.receive === 'granted') return Push.register();
+    }).catch(function () { /* ignore */ });
+  }
+
   function bindAppResume() {
     if (!window.BREM_IS_NATIVE_APP) return;
     var CapApp = window.Capacitor.Plugins && window.Capacitor.Plugins.App;
@@ -229,6 +238,7 @@
     bindAppResume();
     bindNetworkBanner();
     bindExternalLinks();
+    requestPushOnLaunch();
     document.addEventListener('brem-rider-session-ready', registerPush);
     if (document.getElementById('driverMainApp') && !document.getElementById('driverMainApp').hidden) {
       registerPush();
