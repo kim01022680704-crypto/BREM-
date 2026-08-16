@@ -95,7 +95,7 @@
     if (hintEl) {
       hintEl.textContent = state.source === 'payslip'
         ? '사유를 적으면 쿠팡·배민 주급명세서가 관리자에게 함께 전달됩니다. 문의는 2주 후 삭제됩니다.'
-        : '문의 내용을 남기면 관리자 「라이더 문의」에서 확인합니다. 문의는 2주 후 삭제됩니다.';
+        : '문의내용을 남기면 확인후 답변드리겠습니다.';
     }
     if (messageEl) {
       messageEl.placeholder = state.source === 'payslip'
