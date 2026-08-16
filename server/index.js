@@ -14,6 +14,7 @@ const ridersAdmin = require('./riders-admin');
 const missionsAdmin = require('./missions-admin');
 const noticesAdmin = require('./notices-admin');
 const urgentMissions = require('./urgent-missions');
+const riderPush = require('./rider-push');
 const leaseErpAdmin = require('./lease-erp-admin');
 const payrollProductionRiders = require('./payroll-production-riders');
 const payrollProductionBaseData = require('./payroll-production-base-data');
@@ -305,6 +306,18 @@ app.get('/api/rider/urgent-missions', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message || '긴급미션을 불러오지 못했습니다.' });
+  }
+});
+
+app.post('/api/rider/push-token', async (req, res) => {
+  try {
+    const result = await riderPush.saveRiderToken(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '푸시 토큰 저장에 실패했습니다.' });
   }
 });
 

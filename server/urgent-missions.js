@@ -1,6 +1,7 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { verifyAdminCaller } = require('./admin-users');
 const riderAuth = require('./rider-auth');
+const riderPush = require('./rider-push');
 
 const SETTINGS_KEY = 'brem_urgent_missions';
 const PLATFORMS = new Set(['baemin', 'coupang']);
@@ -217,11 +218,17 @@ async function publishMission(accessToken, payload) {
     updatedAt: now
   };
 
-  return mutateStore((store) => ({
+  const result = await mutateStore((store) => ({
     ok: true,
     missions: [mission, ...store.missions],
     mission
   }));
+  if (result.ok && result.mission) {
+    void riderPush.notifyUrgentMission(result.mission).catch((error) => {
+      console.warn('[BREM] urgent mission push:', error.message || error);
+    });
+  }
+  return result;
 }
 
 async function closeMission(accessToken, missionId) {
@@ -285,7 +292,7 @@ async function assignTargets(accessToken, missionId, riders) {
   if (!id) return { ok: false, status: 400, error: '미션 ID가 없습니다.' };
   if (!incoming.length) return { ok: false, status: 400, error: '미션에 넣을 기사를 선택하세요.' };
 
-  return mutateStore((store) => {
+  const result = await mutateStore((store) => {
     const current = store.missions.find(item => item.id === id);
     if (!current) return { ok: false, status: 404, error: '미션을 찾을 수 없습니다.' };
     if (current.status !== 'open') {
@@ -293,8 +300,10 @@ async function assignTargets(accessToken, missionId, riders) {
     }
     const now = nowIso();
     const byId = new Map((current.targets || []).map(item => [item.riderId, item]));
+    const addedIds = [];
     incoming.forEach((item) => {
       const prev = byId.get(item.riderId);
+      if (!prev) addedIds.push(item.riderId);
       byId.set(item.riderId, prev ? { ...prev, ...item, addedAt: prev.addedAt || now } : { ...item, addedAt: now });
     });
     const mission = {
@@ -305,9 +314,19 @@ async function assignTargets(accessToken, missionId, riders) {
     return {
       ok: true,
       missions: store.missions.map(item => (item.id === id ? mission : item)),
-      mission
+      mission,
+      addedIds
     };
   });
+  if (result.ok && result.mission && (result.addedIds || []).length) {
+    void riderPush.notifyUrgentMission({
+      ...result.mission,
+      targets: (result.mission.targets || []).filter(item => result.addedIds.includes(item.riderId))
+    }).catch((error) => {
+      console.warn('[BREM] urgent mission target push:', error.message || error);
+    });
+  }
+  return result;
 }
 
 async function removeTargets(accessToken, missionId, riderIds) {

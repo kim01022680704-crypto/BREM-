@@ -125,6 +125,49 @@
     });
   }
 
+  function getPushPlugin() {
+    return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+  }
+
+  function registerPush() {
+    if (!window.BREM_IS_NATIVE_APP) return;
+    var Push = getPushPlugin();
+    if (!Push) return;
+    if (registerPush.started) return;
+    registerPush.started = true;
+
+    if (typeof Push.createChannel === 'function') {
+      Push.createChannel({
+        id: 'brem_urgent',
+        name: '긴급미션',
+        importance: 5,
+        visibility: 1,
+        sound: 'default'
+      }).catch(function () { /* ignore */ });
+    }
+
+    Push.addListener('registration', function (event) {
+      var token = event && event.value;
+      if (!token || !window.BremStorage || !window.BremStorage.registerRiderPushTokenOnServer) return;
+      void window.BremStorage.registerRiderPushTokenOnServer(token);
+    });
+
+    Push.addListener('pushNotificationReceived', function () {
+      try { window.BremDriverUrgentMissions && window.BremDriverUrgentMissions.refresh && window.BremDriverUrgentMissions.refresh(); } catch { /* ignore */ }
+    });
+
+    Push.addListener('pushNotificationActionPerformed', function (action) {
+      var data = action && action.notification && action.notification.data;
+      if (data && data.type === 'urgent-mission' && window.BremDriverAppNav && window.BremDriverAppNav.setTab) {
+        window.BremDriverAppNav.setTab('mission');
+      }
+    });
+
+    Push.requestPermissions().then(function (status) {
+      if (status && status.receive === 'granted') return Push.register();
+    }).catch(function () { /* ignore */ });
+  }
+
   function bindAppResume() {
     if (!window.BREM_IS_NATIVE_APP) return;
     var CapApp = window.Capacitor.Plugins && window.Capacitor.Plugins.App;
@@ -186,6 +229,10 @@
     bindAppResume();
     bindNetworkBanner();
     bindExternalLinks();
+    document.addEventListener('brem-rider-session-ready', registerPush);
+    if (document.getElementById('driverMainApp') && !document.getElementById('driverMainApp').hidden) {
+      registerPush();
+    }
   }
 
   if (document.readyState === 'loading') {

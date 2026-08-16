@@ -99,5 +99,6 @@ gradlew.bat bundleRelease
 ## 주의
 
 - iOS는 별도 단계 (Mac 또는 CI 필요)
-- 푸시 알림(FCM)은 Firebase 프로젝트 + `google-services.json` 이 필요함 (아직 미연결)
+- 푸시: `google-services.json` 은 `android/app/` 에 두고 git에 올리지 않음
+- 서버 전송은 Vercel 환경변수 `FIREBASE_SERVICE_ACCOUNT_JSON` 필요
 - `node_modules/`, `android/app/build/`, 키스토어는 커밋하지 않음
