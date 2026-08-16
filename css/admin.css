@@ -13596,50 +13596,16 @@ tr.is-week-first td {
   }
 }
 
-.payroll-search-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.payroll-search-form .payroll-field {
-  flex: 1 1 220px;
-}
-
-.payroll-search-results {
-  display: grid;
-  gap: 8px;
-}
-
-.payroll-search-result {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #141414;
-  color: inherit;
-  text-align: left;
+.payroll-search-row {
   cursor: pointer;
 }
 
-.payroll-search-result strong {
-  font-size: 1rem;
+.payroll-search-row:hover td {
+  background: rgba(255, 212, 0, 0.06);
 }
 
-.payroll-search-result span,
-.payroll-search-result em {
-  color: #9ca3af;
-  font-size: 0.8rem;
-  font-style: normal;
-}
-
-.payroll-search-result.is-active,
-.payroll-search-result:hover {
-  border-color: var(--yellow);
+.payroll-search-row.is-active td {
+  background: rgba(255, 212, 0, 0.14);
 }
 
 .payroll-search-detail {

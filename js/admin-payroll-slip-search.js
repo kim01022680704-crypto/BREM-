@@ -1,7 +1,7 @@
 (function () {
   const utils = window.BremPayrollSlipUtils;
-  const form = document.getElementById('payrollSlipSearchForm');
   const input = document.getElementById('payrollSlipSearchInput');
+  const clearBtn = document.getElementById('payrollSlipSearchClear');
   const statusEl = document.getElementById('payrollSlipSearchStatus');
   const resultsEl = document.getElementById('payrollSlipSearchResults');
   const detailEl = document.getElementById('payrollSlipSearchDetail');
@@ -267,17 +267,25 @@
     `;
   }
 
+  function latestNet(item) {
+    if (!item.weeks[0]) return 0;
+    return buildPlatforms(item, item.weeks[0]).total.netPay;
+  }
+
   function renderResults() {
+    if (!resultsEl) return;
     if (!state.results.length) {
-      resultsEl.innerHTML = '';
+      resultsEl.innerHTML = `<tr><td colspan="5" class="empty">${state.keyword ? '검색된 기사가 없습니다.' : '저장된 급여명세서가 없습니다.'}</td></tr>`;
       return;
     }
     resultsEl.innerHTML = state.results.map(item => `
-      <button type="button" class="payroll-search-result${item.key === state.selectedKey ? ' is-active' : ''}" data-payroll-search-rider="${escapeHtml(item.key)}">
-        <strong>${escapeHtml(item.name)}</strong>
-        <span>${escapeHtml([item.coupangId, item.baeminId].filter(Boolean).join(' · ') || 'ID 없음')}</span>
-        <em>${item.weeks[0] ? escapeHtml(utils?.formatSettlementWeekLabel?.(item.weeks[0]) || item.weeks[0]) : '정산주 없음'}</em>
-      </button>
+      <tr class="payroll-search-row${item.key === state.selectedKey ? ' is-active' : ''}" data-payroll-search-rider="${escapeHtml(item.key)}" role="button" tabindex="0">
+        <td><strong>${escapeHtml(item.name)}</strong></td>
+        <td>${escapeHtml(item.coupangId || '-')}</td>
+        <td>${escapeHtml(item.baeminId || '-')}</td>
+        <td>${item.weeks[0] ? escapeHtml(utils?.formatSettlementWeekLabel?.(item.weeks[0]) || item.weeks[0]) : '-'}</td>
+        <td>${money(latestNet(item))}</td>
+      </tr>
     `).join('');
   }
 
@@ -340,29 +348,18 @@
     });
   }
 
-  function search(event) {
-    event?.preventDefault?.();
+  function search() {
     const keyword = String(input?.value || '').trim();
     state.keyword = keyword;
-    if (!keyword) {
-      if (statusEl) statusEl.textContent = '이름을 입력하고 검색하세요.';
-      state.results = [];
-      state.selectedKey = '';
-      renderResults();
-      renderDetail();
-      return;
-    }
     state.results = groupRiders(keyword);
-    if (statusEl) {
-      statusEl.textContent = state.results.length
-        ? `${state.results.length}명을 찾았습니다. 이름을 누르면 명세서가 열립니다.`
-        : '검색된 기사가 없습니다.';
-    }
-    if (state.results.length === 1) {
-      state.selectedKey = state.results[0].key;
-      state.weekStart = state.results[0].weeks[0] || '';
-    } else {
+    if (state.selectedKey && !state.results.some(item => item.key === state.selectedKey)) {
       state.selectedKey = '';
+    }
+    if (statusEl) {
+      const total = groupRiders('').length;
+      statusEl.textContent = keyword
+        ? `${state.results.length}명 / 전체 ${total}명 · 이름을 누르면 명세서가 열립니다.`
+        : `전체 ${state.results.length}명 · 이름을 누르면 명세서가 열립니다.`;
     }
     renderResults();
     renderDetail();
@@ -390,10 +387,19 @@
     renderDetail();
   }
 
-  form.addEventListener('submit', search);
-  resultsEl.addEventListener('click', event => {
-    const btn = event.target.closest('[data-payroll-search-rider]');
-    if (btn) openRider(btn.dataset.payrollSearchRider);
+  let searchTimer = 0;
+  input?.addEventListener('input', () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(search, 120);
+  });
+  clearBtn?.addEventListener('click', () => {
+    if (input) input.value = '';
+    state.selectedKey = '';
+    search();
+  });
+  resultsEl?.addEventListener('click', event => {
+    const row = event.target.closest('[data-payroll-search-rider]');
+    if (row) openRider(row.dataset.payrollSearchRider);
   });
   document.getElementById('payrollSlipSearchDetailClose')?.addEventListener('click', () => {
     state.selectedKey = '';
@@ -412,7 +418,7 @@
   window.BremAdminPayrollSlipSearch = {
     async refresh() {
       await window.BremStorage?.ensureSectionLoaded?.('payroll-slip-search');
-      if (state.keyword) search();
+      search();
     }
   };
 })();
