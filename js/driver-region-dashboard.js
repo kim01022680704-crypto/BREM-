@@ -31,8 +31,69 @@
     regionKey: '',
     weekStart: '',
     lastResult: null,
-    pollTimer: null
+    pollTimer: null,
+    slotTimer: null
   };
+
+  function kstHour(now = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul',
+      hour: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(now);
+    let hour = Number((parts.find(p => p.type === 'hour') || {}).value);
+    if (!Number.isFinite(hour)) hour = 0;
+    if (hour === 24) hour = 0;
+    return hour;
+  }
+
+  function currentBaeminSlotKey(now = new Date()) {
+    const hour = kstHour(now);
+    if (hour >= 7 && hour < 14) return 'morning';
+    if (hour >= 14 && hour < 17) return 'afternoon';
+    if (hour >= 17 && hour < 20) return 'evening';
+    return 'midnight';
+  }
+
+  function isCurrentSlotData(data) {
+    if (!data || data.platform === 'coupang') return true;
+    const slot = data.metrics?.slotKey;
+    if (!slot) return true;
+    return slot === currentBaeminSlotKey();
+  }
+
+  function msUntilNextBaeminSlot(now = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(now);
+    const map = {};
+    parts.forEach((part) => {
+      if (part.type !== 'literal') map[part.type] = part.value;
+    });
+    const hour = Number(map.hour);
+    const starts = [7, 14, 17, 20];
+    let nextHour = starts.find((item) => item > hour);
+    let addDays = 0;
+    if (nextHour == null) {
+      nextHour = 7;
+      addDays = 1;
+    }
+    const target = Date.UTC(
+      Number(map.year),
+      Number(map.month) - 1,
+      Number(map.day) + addDays,
+      nextHour - 9,
+      0,
+      0,
+      250
+    );
+    return Math.max(250, target - now.getTime());
+  }
 
   function showToast(message) {
     const el = document.getElementById('toast');
@@ -97,7 +158,7 @@
   function readMemoryCache(key = cacheKey()) {
     const hit = cache.get(key);
     if (!hit) return null;
-    if (Date.now() - hit.at > CACHE_TTL_MS) {
+    if (Date.now() - hit.at > CACHE_TTL_MS || !isCurrentSlotData(hit.data)) {
       cache.delete(key);
       return null;
     }
@@ -142,6 +203,7 @@
     if (state.regionKey && persisted.selectedRegionKey && persisted.selectedRegionKey !== state.regionKey) {
       return null;
     }
+    if (!isCurrentSlotData(persisted)) return null;
     // 같은 플랫폼의 직전 성공분이면 즉시 그려서 빈 화면을 피한다.
     return persisted;
   }
@@ -270,6 +332,25 @@
       clearInterval(state.pollTimer);
       state.pollTimer = null;
     }
+    if (state.slotTimer) {
+      clearTimeout(state.slotTimer);
+      state.slotTimer = null;
+    }
+  }
+
+  function scheduleSlotFlip() {
+    if (state.slotTimer) {
+      clearTimeout(state.slotTimer);
+      state.slotTimer = null;
+    }
+    state.slotTimer = setTimeout(() => {
+      state.slotTimer = null;
+      if (!state.visible) return;
+      cache.delete(cacheKey());
+      void loadDashboard({ silent: true, force: true }).then(() => {
+        if (state.visible) scheduleSlotFlip();
+      });
+    }, msUntilNextBaeminSlot());
   }
 
   function startAutoPoll() {
@@ -280,6 +361,7 @@
       cache.delete(cacheKey());
       void loadDashboard({ silent: true, force: true });
     }, POLL_MS);
+    scheduleSlotFlip();
   }
 
   async function loadDashboard({ silent = false, force = false } = {}) {

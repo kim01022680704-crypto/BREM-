@@ -11,7 +11,9 @@ const coupangPipeline = require('./coupang-collect-pipeline');
 const {
   SLOT_KEYS,
   SLOT_LABELS,
-  computeSlotTargets
+  computeSlotTargets,
+  currentBaeminSlotKey,
+  kstHour
 } = require('./baemin-quota');
 const { readPartnerSetCountMap } = require('./baemin-partner-set-count');
 const { readWeekdayQuotaMatrix } = require('./baemin-weekday-quota');
@@ -45,19 +47,6 @@ function baeminIdKey(value) {
 function num(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-function currentBaeminSlotKey(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    hour12: false
-  }).formatToParts(now);
-  const hour = Number((parts.find(p => p.type === 'hour') || {}).value || 0);
-  if (hour >= 7 && hour < 14) return 'morning';
-  if (hour >= 14 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 21) return 'evening';
-  return 'midnight';
 }
 
 function slotEnded(date, slotKey, today, currentSlot) {
@@ -185,15 +174,6 @@ async function loadLiveRows(supabase, date, platform) {
 
 function freezeKey(platform, riderId, slotKey) {
   return `${platform}|${riderId}|${slotKey || ''}`;
-}
-
-function kstHour(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    hour12: false
-  }).formatToParts(now);
-  return Number((parts.find(p => p.type === 'hour') || {}).value || 0);
 }
 
 function currentCoupangPeakKey(now = new Date()) {

@@ -1,23 +1,10 @@
 const { getServiceClient } = require('./admin-bootstrap');
 const { getRiderMe } = require('./rider-auth');
-const { computeSlotTargets, SLOT_LABELS } = require('./baemin-quota');
+const { computeSlotTargets, SLOT_LABELS, currentBaeminSlotKey } = require('./baemin-quota');
 const { readWeekdayQuotaMatrix } = require('./baemin-weekday-quota');
 const { readPartnerSetCountMap, normalizeSetCount } = require('./baemin-partner-set-count');
 
 const EXPOSURE_KEY = 'brem_rider_dashboard_region_exposure_v1';
-
-/** KST 기준 현재 배민 시간대 (아침점심/오후/저녁/심야) */
-function currentBaeminSlotKey(now = new Date()) {
-  const hour = Number(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    hour12: false
-  }).format(now));
-  if (hour >= 7 && hour < 14) return 'morning';
-  if (hour >= 14 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 21) return 'evening';
-  return 'midnight';
-}
 
 function isDrivingStatus(statusDesc) {
   const compact = String(statusDesc || '').replace(/\s+/g, '');
@@ -713,7 +700,7 @@ async function getRiderRegionDashboard(accessToken, query = {}) {
   const selected = regions.find(region => region.key === requestedKey)
     || regions[0];
 
-  const cacheKey = `rider|${me.riderId || riderRow.id || '-'}|${platform}|${selected.key}|${weekStart}|${today}`;
+  const cacheKey = `rider|${me.riderId || riderRow.id || '-'}|${platform}|${selected.key}|${weekStart}|${today}|${currentBaeminSlotKey()}`;
   const cached = readResponseCache(cacheKey);
   if (cached) {
     return { ...cached, regions, selectedRegionKey: selected.key, region: selected };
@@ -798,7 +785,7 @@ async function getAdminRegionRanking(accessToken, query = {}) {
   if (!region.key) region.key = region.partnerId || region.label;
   if (!region.label) region.label = region.key;
 
-  const cacheKey = `admin|${platform}|${region.key}|${weekStart}|${today}|nomask`;
+  const cacheKey = `admin|${platform}|${region.key}|${weekStart}|${today}|nomask|${currentBaeminSlotKey()}`;
   const cached = readResponseCache(cacheKey);
   if (cached) return cached;
 

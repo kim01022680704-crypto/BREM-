@@ -102,6 +102,28 @@ function computeSlotTargets(setCount, dateKey, matrix = null) {
   };
 }
 
+/** KST 시(0~23). hour12 무시되는 런타임 대비 hourCycle 고정. */
+function kstHour(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(now);
+  let hour = Number((parts.find(p => p.type === 'hour') || {}).value);
+  if (!Number.isFinite(hour)) hour = 0;
+  if (hour === 24) hour = 0;
+  return hour;
+}
+
+/** KST 기준 현재 배민 시간대. 심야=20:00~06:59 */
+function currentBaeminSlotKey(now = new Date()) {
+  const hour = kstHour(now);
+  if (hour >= 7 && hour < 14) return 'morning';
+  if (hour >= 14 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 20) return 'evening';
+  return 'midnight';
+}
+
 function formatProgress(actual, target) {
   const done = Number(actual || 0);
   const goal = Math.max(0, Number(target || 0));
@@ -129,5 +151,7 @@ module.exports = {
   weekdayGroupKst,
   normalizeSetCount,
   computeSlotTargets,
-  formatProgress
+  formatProgress,
+  kstHour,
+  currentBaeminSlotKey
 };
