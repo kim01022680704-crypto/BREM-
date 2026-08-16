@@ -1208,6 +1208,18 @@ app.post('/api/admin/rider-push', async (req, res) => {
   }
 });
 
+app.post('/api/admin/rider-push/delete', async (req, res) => {
+  try {
+    const result = await adminRiderPush.deleteLogs(getBearerToken(req), req.body || {});
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, logs: result.logs });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '앱푸시 기록 삭제에 실패했습니다.' });
+  }
+});
+
 app.post('/api/admin/lease-erp/upsert', async (req, res) => {
   try {
     const result = await leaseErpAdmin.upsertLeaseErpRows(getBearerToken(req), req.body || {});

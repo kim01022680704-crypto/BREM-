@@ -144,7 +144,30 @@ async function sendPush(accessToken, payload = {}) {
   return { ok: true, log, logs: store.logs, push };
 }
 
+async function deleteLogs(accessToken, payload = {}) {
+  const caller = await verifyAdminCaller(accessToken);
+  if (!caller.ok) return caller;
+  const supabase = getServiceClient();
+  if (!supabase) {
+    return { ok: false, status: 503, error: 'SUPABASE_SERVICE_ROLE_KEY 가 설정되지 않았습니다.' };
+  }
+
+  const all = payload.all === true;
+  const ids = new Set((Array.isArray(payload.ids) ? payload.ids : [])
+    .map(item => String(item || '').trim())
+    .filter(Boolean));
+  if (!all && !ids.size) {
+    return { ok: false, status: 400, error: '삭제할 기록을 선택하세요.' };
+  }
+
+  const store = await readStore(supabase);
+  store.logs = all ? [] : store.logs.filter(item => !ids.has(item.id));
+  await writeStore(supabase, store);
+  return { ok: true, logs: store.logs };
+}
+
 module.exports = {
   listLogs,
-  sendPush
+  sendPush,
+  deleteLogs
 };

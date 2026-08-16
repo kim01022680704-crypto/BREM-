@@ -129,6 +129,44 @@
     return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
   }
 
+  function showForegroundPush(title, body, data) {
+    var textTitle = String(title || 'BREM').trim() || 'BREM';
+    var textBody = String(body || '').trim();
+    var Notify = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BremNotify;
+    if (Notify && typeof Notify.show === 'function') {
+      Notify.show({ title: textTitle, body: textBody }).catch(function () { /* ignore */ });
+    }
+    showInAppPushBanner(textTitle, textBody, data);
+  }
+
+  function showInAppPushBanner(title, body, data) {
+    var banner = document.getElementById('bremNativePushBanner');
+    if (!banner) {
+      banner = document.createElement('button');
+      banner.id = 'bremNativePushBanner';
+      banner.type = 'button';
+      banner.className = 'brem-native-push-banner';
+      banner.hidden = true;
+      document.body.appendChild(banner);
+      banner.addEventListener('click', function () {
+        banner.hidden = true;
+        var type = banner.dataset.pushType || '';
+        if (type === 'urgent-mission' && window.BremDriverAppNav && window.BremDriverAppNav.setTab) {
+          window.BremDriverAppNav.setTab('mission');
+        }
+      });
+    }
+    banner.innerHTML = '<strong></strong><span></span>';
+    banner.querySelector('strong').textContent = title || 'BREM';
+    banner.querySelector('span').textContent = body || '';
+    banner.dataset.pushType = data && data.type ? String(data.type) : '';
+    banner.hidden = false;
+    window.clearTimeout(showInAppPushBanner.timer);
+    showInAppPushBanner.timer = window.setTimeout(function () {
+      banner.hidden = true;
+    }, 8000);
+  }
+
   var pendingPushToken = '';
   var pushListenersBound = false;
 
@@ -157,7 +195,11 @@
       savePendingPushToken();
     });
 
-    Push.addListener('pushNotificationReceived', function () {
+    Push.addListener('pushNotificationReceived', function (event) {
+      var note = event && event.notification ? event.notification : event;
+      var title = note && (note.title || (note.notification && note.notification.title)) || 'BREM';
+      var body = note && (note.body || (note.notification && note.notification.body)) || '';
+      showForegroundPush(title, body, note && note.data);
       try { window.BremDriverUrgentMissions && window.BremDriverUrgentMissions.refresh && window.BremDriverUrgentMissions.refresh(); } catch { /* ignore */ }
     });
 

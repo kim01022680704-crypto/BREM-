@@ -302,6 +302,9 @@
         <article class="urgent-mission-card">
           <div class="urgent-mission-card__top">
             <div class="urgent-mission-card__title-row">
+              <label class="check-label">
+                <input type="checkbox" data-rp-log="${escapeHtml(item.id)}" value="${escapeHtml(item.id)}">
+              </label>
               <strong>${escapeHtml(item.title || 'BREM')}</strong>
               <span class="urgent-mission-status is-open">${escapeHtml(pushNote(item.push) || '전송')}</span>
             </div>
@@ -316,6 +319,25 @@
         </article>
       `;
     }).join('');
+    const checkAll = document.getElementById('riderPushLogCheckAll');
+    if (checkAll) checkAll.checked = false;
+  }
+
+  function selectedLogIds() {
+    return Array.from(section.querySelectorAll('[data-rp-log]:checked')).map(input => input.value || input.dataset.rpLog);
+  }
+
+  async function deleteLogs(payload, confirmText) {
+    if (!window.BremStorage?.deleteAdminRiderPushLogs) return;
+    if (!window.confirm(confirmText)) return;
+    const result = await window.BremStorage.deleteAdminRiderPushLogs(payload);
+    if (!result.ok) {
+      showToast(result.message || result.error || '기록 삭제에 실패했습니다.');
+      return;
+    }
+    state.logs = result.logs || [];
+    render();
+    showToast('전송 기록을 삭제했습니다.');
   }
 
   async function load() {
@@ -368,6 +390,30 @@
 
   document.getElementById('riderPushRefreshBtn')?.addEventListener('click', () => {
     void load();
+  });
+
+  document.getElementById('riderPushDeleteSelectedBtn')?.addEventListener('click', () => {
+    const ids = selectedLogIds();
+    if (!ids.length) {
+      showToast('삭제할 기록을 선택하세요.');
+      return;
+    }
+    void deleteLogs({ ids }, `선택한 ${ids.length}건을 삭제할까요?`);
+  });
+
+  document.getElementById('riderPushDeleteAllBtn')?.addEventListener('click', () => {
+    if (!state.logs.length) {
+      showToast('삭제할 기록이 없습니다.');
+      return;
+    }
+    void deleteLogs({ all: true }, `전송 기록 ${state.logs.length}건을 모두 삭제할까요?`);
+  });
+
+  document.getElementById('riderPushLogCheckAll')?.addEventListener('change', (event) => {
+    const on = Boolean(event.target?.checked);
+    section.querySelectorAll('[data-rp-log]').forEach((input) => {
+      input.checked = on;
+    });
   });
 
   form?.addEventListener('submit', send);

@@ -3302,6 +3302,13 @@ const BremStorage = (function () {
     });
   }
 
+  async function deleteAdminRiderPushLogs(payload) {
+    return adminRidersApi('/api/admin/rider-push/delete', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  }
+
   async function fetchRiderWeeklyPayslipFromServer(weekStart) {
     const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
     return riderApiFetch(`/api/rider/weekly-payslip${qs}`, 'weekly-payslip');
@@ -14163,6 +14170,7 @@ const BremStorage = (function () {
     deleteAdminUrgentMission,
     fetchAdminRiderPushLogsFromServer,
     sendAdminRiderPush,
+    deleteAdminRiderPushLogs,
     fetchRiderWeeklyPayslipFromServer,
     fetchRiderRegionDashboardFromServer,
     fetchRiderCrewLeaderFromServer,
