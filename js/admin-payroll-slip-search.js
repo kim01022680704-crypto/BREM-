@@ -7,7 +7,7 @@
   const detailEl = document.getElementById('payrollSlipSearchDetail');
   const contentEl = document.getElementById('payrollSlipSearchContent');
   const emptyEl = document.getElementById('payrollSlipSearchEmpty');
-  if (!form || !resultsEl || !detailEl) return;
+  if (!resultsEl || !detailEl) return;
 
   const PAY_ROWS = Object.freeze([
     { key: 'deliveryFee', label: '배달비' },
@@ -199,33 +199,101 @@
     return window.BremStorage?.payrollSlipLines?.getAll?.() || [];
   }
 
-  function groupRiders(keyword) {
+  function allDrivers() {
+    return window.BremStorage?.drivers?.getAll?.() || [];
+  }
+
+  function driverIds(driver) {
+    const phone = String(driver.phone || '').replace(/[^0-9]/g, '');
+    const name = String(driver.name || '').replace(/\s/g, '');
+    return {
+      coupangId: String(driver.coupangId || '').trim() || (name && phone ? `${name}${phone.slice(-4)}` : ''),
+      baeminId: String(driver.baeminId || '').trim()
+    };
+  }
+
+  function lineMatchesDriver(line, driver) {
+    const driverId = String(driver.id || '').trim();
+    if (driverId && String(line.driverId || lineRaw(line).raw.selectedDriverId || '') === driverId) {
+      return true;
+    }
+    const name = normalizeName(driver.name);
+    if (name && normalizeName(lineName(line)) === name) return true;
+    const ids = lineIds(line);
+    const driverSide = driverIds(driver);
+    if (ids.baeminId && driverSide.baeminId && ids.baeminId === driverSide.baeminId) return true;
+    if (ids.coupangId && driverSide.coupangId && ids.coupangId === driverSide.coupangId) return true;
+    return false;
+  }
+
+  function matchesKeyword(item, keyword) {
     const needle = normalizeName(keyword);
-    const groups = new Map();
-    allLines().forEach(line => {
-      const name = lineName(line);
+    if (!needle) return true;
+    const haystack = normalizeName([
+      item.name,
+      item.phone,
+      item.coupangId,
+      item.baeminId
+    ].join(' '));
+    return haystack.includes(needle);
+  }
+
+  function groupRiders(keyword) {
+    const lines = allLines();
+    const used = new Set();
+    const groups = [];
+
+    allDrivers().forEach(driver => {
+      const name = String(driver.name || '').trim();
       if (!name) return;
-      if (needle && !normalizeName(name).includes(needle)) return;
-      const key = riderKey(line);
-      const week = lineWeek(line);
-      const ids = lineIds(line);
-      const current = groups.get(key) || {
-        key,
+      const ids = driverIds(driver);
+      const matched = lines.filter(line => lineMatchesDriver(line, driver));
+      matched.forEach(line => used.add(line));
+      const weeks = new Set();
+      matched.forEach(line => {
+        const week = lineWeek(line);
+        if (week) weeks.add(week);
+      });
+      const item = {
+        key: `id:${driver.id}`,
         name,
-        driverId: String(line.driverId || '').trim(),
+        phone: String(driver.phone || '').trim(),
+        driverId: String(driver.id || '').trim(),
         coupangId: ids.coupangId,
         baeminId: ids.baeminId,
-        weeks: new Set(),
-        lines: []
+        weeks,
+        lines: matched
       };
-      if (week) current.weeks.add(week);
-      if (ids.coupangId) current.coupangId = ids.coupangId;
-      if (ids.baeminId) current.baeminId = ids.baeminId;
-      if (!current.name && name) current.name = name;
-      current.lines.push(line);
-      groups.set(key, current);
+      if (matchesKeyword(item, keyword)) groups.push(item);
     });
-    return [...groups.values()]
+
+    lines.forEach(line => {
+      if (used.has(line)) return;
+      const name = lineName(line);
+      if (!name) return;
+      const ids = lineIds(line);
+      const key = riderKey(line);
+      let current = groups.find(item => item.key === key);
+      if (!current) {
+        current = {
+          key,
+          name,
+          phone: '',
+          driverId: String(line.driverId || '').trim(),
+          coupangId: ids.coupangId,
+          baeminId: ids.baeminId,
+          weeks: new Set(),
+          lines: []
+        };
+        groups.push(current);
+      }
+      const week = lineWeek(line);
+      if (week) current.weeks.add(week);
+      current.lines.push(line);
+    });
+
+    return groups
+      .filter(item => matchesKeyword(item, keyword))
       .map(item => ({
         ...item,
         weeks: [...item.weeks].sort().reverse()
