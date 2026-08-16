@@ -3,13 +3,20 @@
   const listEl = document.getElementById('driverUrgentMissionList');
   const badgeEl = document.getElementById('driverMissionNavBadge');
   const openBtn = document.getElementById('driverUrgentMissionBtn');
+  const popup = document.getElementById('driverUrgentMissionPopup');
+  const popupBody = document.getElementById('driverUrgentMissionPopupBody');
   if (!panel || !listEl) return;
 
   const state = {
     missions: [],
     loading: false,
-    visible: false
+    visible: false,
+    popupOpen: false
   };
+
+  function isNativeAppNav() {
+    return Boolean(window.BremDriverAppNav?.setTab);
+  }
 
   function showToast(message) {
     const toast = document.getElementById('toast');
@@ -40,8 +47,12 @@
     )).join('');
   }
 
+  function pendingMissions() {
+    return (state.missions || []).filter(item => item.status === 'open' && !item.accepted);
+  }
+
   function updateBadge() {
-    const count = (state.missions || []).filter(item => item.status === 'open' && !item.accepted).length;
+    const count = pendingMissions().length;
     if (!badgeEl) return;
     if (!count) {
       badgeEl.hidden = true;
@@ -52,7 +63,7 @@
     badgeEl.textContent = String(count);
   }
 
-  function render() {
+  function renderPanel() {
     const missions = state.missions || [];
     if (!missions.length) {
       listEl.innerHTML = '<div class="empty-text">진행 중인 긴급미션이 없습니다.</div>';
@@ -87,13 +98,49 @@
     updateBadge();
   }
 
+  function renderPopup() {
+    if (!popup || !popupBody) return;
+    const pending = pendingMissions();
+    if (!pending.length) {
+      popupBody.innerHTML = `
+        <p class="urgent-mission-popup__empty">진행 중인 긴급미션이 없습니다.</p>
+        <div class="urgent-mission-popup__actions">
+          <button type="button" class="urgent-mission-popup__reject" data-urgent-mission-dismiss>닫기</button>
+        </div>
+      `;
+      return;
+    }
+    popupBody.innerHTML = pending.map((mission) => `
+      <article class="urgent-mission-popup__card">
+        <div class="urgent-mission-card__tags">
+          ${platformTags(mission.platforms)}
+          <span class="urgent-mission-status is-open">모집중</span>
+        </div>
+        <p class="urgent-mission-card__content">${escapeHtml(mission.content)}</p>
+        <div class="urgent-mission-card__meta">
+          <strong>${escapeHtml(formatMoney(mission.amount))}</strong>
+          <span>${escapeHtml(mission.missionTime || '-')}</span>
+        </div>
+        <div class="urgent-mission-popup__actions">
+          <button type="button" class="urgent-mission-popup__reject" data-urgent-mission-dismiss>거절</button>
+          <button type="button" class="urgent-mission-popup__accept" data-accept-mission="${escapeHtml(mission.id)}">수락</button>
+        </div>
+      </article>
+    `).join('');
+  }
+
+  function render() {
+    renderPanel();
+    if (state.popupOpen) renderPopup();
+  }
+
   async function load() {
     if (!window.BremStorage?.fetchRiderUrgentMissionsFromServer) return;
     state.loading = true;
     const result = await window.BremStorage.fetchRiderUrgentMissionsFromServer();
     state.loading = false;
     if (!result.ok) {
-      if (state.visible) showToast(result.message || '긴급미션을 불러오지 못했습니다.');
+      if (state.visible || state.popupOpen) showToast(result.message || '긴급미션을 불러오지 못했습니다.');
       return;
     }
     state.missions = result.missions || [];
@@ -109,6 +156,7 @@
     }
     showToast('미션을 수락했습니다.');
     await load();
+    if (state.popupOpen && !pendingMissions().length) closePopup();
   }
 
   function openPanel() {
@@ -122,7 +170,47 @@
     panel.hidden = true;
   }
 
+  function openPopup() {
+    if (!popup) {
+      openPanel();
+      return;
+    }
+    closePanel();
+    state.popupOpen = true;
+    popup.hidden = false;
+    openBtn?.setAttribute('aria-expanded', 'true');
+    renderPopup();
+    void load();
+  }
+
+  function closePopup() {
+    state.popupOpen = false;
+    if (popup) popup.hidden = true;
+    openBtn?.setAttribute('aria-expanded', 'false');
+  }
+
+  function openMenu() {
+    if (isNativeAppNav()) {
+      window.BremDriverAppNav.setTab('mission');
+      return;
+    }
+    openPopup();
+  }
+
   listEl.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-accept-mission]');
+    if (!btn) return;
+    btn.disabled = true;
+    void accept(btn.dataset.acceptMission).finally(() => {
+      btn.disabled = false;
+    });
+  });
+
+  popup?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-urgent-mission-dismiss]')) {
+      closePopup();
+      return;
+    }
     const btn = event.target.closest('[data-accept-mission]');
     if (!btn) return;
     btn.disabled = true;
@@ -139,21 +227,19 @@
     closePanel();
   });
 
-  openBtn?.addEventListener('click', () => {
-    if (window.BremDriverAppNav?.setTab) {
-      window.BremDriverAppNav.setTab('mission');
-      return;
-    }
-    openPanel();
-  });
+  openBtn?.addEventListener('click', openMenu);
 
   window.BremDriverUrgentMissions = {
     open: openPanel,
-    close: closePanel,
+    close() {
+      closePopup();
+      closePanel();
+    },
     refresh: load,
     reset() {
       state.missions = [];
       render();
+      closePopup();
       closePanel();
     }
   };

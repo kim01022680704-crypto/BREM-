@@ -3870,6 +3870,125 @@ html.brem-app-nav .driver-payslip-close {
   padding: 0 18px;
 }
 
+.urgent-mission-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  display: grid;
+  place-items: center;
+  padding: 20px 14px calc(20px + env(safe-area-inset-bottom, 0));
+}
+
+.urgent-mission-popup[hidden] {
+  display: none !important;
+}
+
+.urgent-mission-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(17, 17, 17, 0.55);
+}
+
+.urgent-mission-popup__dialog {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: min(78vh, 640px);
+  overflow: auto;
+  padding: 22px 20px 18px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.urgent-mission-popup__eyebrow {
+  margin: 0 0 6px;
+  color: #b45309;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.urgent-mission-popup__dialog h2 {
+  margin: 0 0 14px;
+  color: #111;
+  font-size: 1.32rem;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.urgent-mission-popup__empty {
+  margin: 0 0 16px;
+  color: #374151;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.urgent-mission-popup__card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px 0 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.urgent-mission-popup__card:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.urgent-mission-popup__card .urgent-mission-card__content {
+  color: #111;
+}
+
+.urgent-mission-popup__card .urgent-mission-card__meta {
+  color: #4b5563;
+}
+
+.urgent-mission-popup__card .urgent-mission-tag--baemin {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.urgent-mission-popup__card .urgent-mission-tag--coupang {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.urgent-mission-popup__card .urgent-mission-status.is-open {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.urgent-mission-popup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.urgent-mission-popup__reject,
+.urgent-mission-popup__accept {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.urgent-mission-popup__reject {
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  color: #374151;
+}
+
+.urgent-mission-popup__accept {
+  border: 0;
+  background: #111;
+  color: var(--yellow);
+}
+
 .brem-native-offline {
   position: fixed;
   left: 12px;
