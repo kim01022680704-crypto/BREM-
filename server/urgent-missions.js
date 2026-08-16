@@ -134,7 +134,12 @@ async function mutateStore(fn) {
     };
     try {
       await writeStore(supabase, next);
-      return { ok: true, missions: next.missions, mission: result.mission || null };
+      return {
+        ok: true,
+        missions: next.missions,
+        mission: result.mission || null,
+        addedIds: result.addedIds || []
+      };
     } catch (error) {
       lastError = error;
     }

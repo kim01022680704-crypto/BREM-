@@ -484,8 +484,9 @@
       showToast(result.message || result.error || '배포에 실패했습니다.');
       return;
     }
-    form?.reset();
-    resetPicker();
+    if (contentEl) contentEl.value = '';
+    if (amountEl) amountEl.value = '';
+    if (timeEl) timeEl.value = '';
     syncAmountPreview();
     state.missions = result.missions || [];
     render();

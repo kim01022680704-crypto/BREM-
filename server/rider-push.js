@@ -1,4 +1,5 @@
-const admin = require('firebase-admin');
+const { initializeApp, getApps, cert } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 const { getServiceClient } = require('./admin-bootstrap');
 const riderAuth = require('./rider-auth');
 
@@ -80,8 +81,8 @@ function ensureFirebase() {
   }
   try {
     const cred = parseServiceAccount(raw);
-    if (!admin.apps.length) {
-      admin.initializeApp({ credential: admin.credential.cert(cred) });
+    if (!getApps().length) {
+      initializeApp({ credential: cert(cred) });
     }
     firebaseReady = true;
     return true;
@@ -145,7 +146,7 @@ async function sendToRiders(riderIds, payload = {}) {
     ? Object.fromEntries(Object.entries(payload.data).map(([key, value]) => [key, String(value ?? '')]))
     : {};
 
-  const result = await admin.messaging().sendEachForMulticast({
+  const result = await getMessaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
     data,

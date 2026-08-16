@@ -241,7 +241,10 @@
     bindNetworkBanner();
     bindExternalLinks();
     startPush();
-    document.addEventListener('brem-rider-session-ready', savePendingPushToken);
+    document.addEventListener('brem-rider-session-ready', function () {
+      savePendingPushToken();
+      window.setTimeout(savePendingPushToken, 1500);
+    });
     if (document.getElementById('driverMainApp') && !document.getElementById('driverMainApp').hidden) {
       savePendingPushToken();
     }
