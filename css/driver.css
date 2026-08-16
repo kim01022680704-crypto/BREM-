@@ -2614,6 +2614,17 @@ button.calendar-day:hover {
   font-size: 1.35rem;
 }
 
+.driver-payslip-inquiry-btn {
+  border-color: #111827;
+  background: var(--yellow);
+  color: #111827;
+}
+
+.driver-payslip-inquiry-btn:hover {
+  border-color: #111827;
+  background: #ffdc33;
+}
+
 .driver-payslip-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
