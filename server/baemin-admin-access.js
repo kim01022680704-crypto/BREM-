@@ -13,10 +13,10 @@ function canManageBaeminRegions(account) {
 
 /**
  * 배민 지역 스코프
- * - viewPartnerIds: 대시보드·배민현황
- *   · 대표/총괄 → 등록된 전체 지역
- *   · 그 외 → 관리자계정에 배정된 지역만
- * - allowedPartnerIds: BIZ 수집 미리보기 등 (동일 규칙)
+ * - viewPartnerIds: 대시보드·배민현황 (역할과 무관하게 배정 목록이 있으면 그 지역만)
+ *   · 계정에 배정된 지역이 있으면 → 그 목록 ∩ 등록 지역
+ *   · 배정이 비어 있고 대표/총괄 → 등록된 전체 지역
+ *   · 배정이 비어 있고 그 외 → 없음
  * - 지역 등록(DP) / 계정 지역 배정 UI는 대표·총괄만 (canManageRegions)
  */
 function resolveBaeminPartnerScope(account, regionMap = {}) {
@@ -27,10 +27,12 @@ function resolveBaeminPartnerScope(account, regionMap = {}) {
   const canManageRegions = canManageBaeminRegions(account);
 
   let viewPartnerIds;
-  if (canManageRegions) {
+  if (assigned.length) {
+    viewPartnerIds = assigned.filter(id => registered.includes(id));
+  } else if (canManageRegions) {
     viewPartnerIds = registered.slice();
   } else {
-    viewPartnerIds = assigned.filter(id => registered.includes(id));
+    viewPartnerIds = [];
   }
 
   const allowedPartnerIds = viewPartnerIds.slice();
@@ -39,7 +41,7 @@ function resolveBaeminPartnerScope(account, regionMap = {}) {
     canManageRegions,
     allowedPartnerIds,
     viewPartnerIds,
-    isRegionalScoped: !canManageRegions
+    isRegionalScoped: assigned.length > 0 || !canManageRegions
   };
 }
 

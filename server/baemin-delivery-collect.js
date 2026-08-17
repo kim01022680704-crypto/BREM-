@@ -879,7 +879,7 @@ async function getPartnerRegionMap(accessToken) {
   const result = await getPartnerRegionMapForAdmin();
   if (!result.ok) return result;
 
-  // 대시보드·배민현황 탭: 계정에 배정된 지역만 (대표/총괄도 동일)
+  // 대시보드·배민현황 탭: 계정에 배정된 지역만 (배정이 있으면 대표/총괄도 동일)
   const viewScope = scopeForView(actor.scope);
   const scopedItems = filterRegionItemsByScope(result.items, viewScope);
   const scopedMap = {};

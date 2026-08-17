@@ -83,6 +83,8 @@ const BremStorage = (function () {
     adminSessionEditableMenus: 'brem_admin_session_editable_menus',
     adminSessionRole: 'brem_admin_session_role',
     adminSessionName: 'brem_admin_session_name',
+    adminSessionBaeminPartnerIds: 'brem_admin_session_baemin_partners',
+    adminSessionCoupangVendorIds: 'brem_admin_session_coupang_vendors',
     driverId: 'brem_driver_logged_in_id'
   };
 
@@ -4152,6 +4154,14 @@ const BremStorage = (function () {
     );
     menuStore.setItem(SESSION_KEYS.adminSessionRole, account.role || ADMIN_ROLES.MANAGER);
     menuStore.setItem(SESSION_KEYS.adminSessionName, account.name || '');
+    menuStore.setItem(
+      SESSION_KEYS.adminSessionBaeminPartnerIds,
+      JSON.stringify(normalizeBaeminPartnerIdList(account.baeminPartnerIds))
+    );
+    menuStore.setItem(
+      SESSION_KEYS.adminSessionCoupangVendorIds,
+      JSON.stringify(normalizeCoupangVendorIdList(account.coupangVendorIds))
+    );
   }
 
   function readPersistedProductionSessionAccount(profile) {
@@ -4177,6 +4187,20 @@ const BremStorage = (function () {
         role: menuStore.getItem(SESSION_KEYS.adminSessionRole) || ADMIN_ROLES.MANAGER,
         menus,
         editableMenus: Array.isArray(editableMenus) ? editableMenus : menus,
+        baeminPartnerIds: (() => {
+          try {
+            return normalizeBaeminPartnerIdList(JSON.parse(menuStore.getItem(SESSION_KEYS.adminSessionBaeminPartnerIds) || '[]'));
+          } catch {
+            return [];
+          }
+        })(),
+        coupangVendorIds: (() => {
+          try {
+            return normalizeCoupangVendorIdList(JSON.parse(menuStore.getItem(SESSION_KEYS.adminSessionCoupangVendorIds) || '[]'));
+          } catch {
+            return [];
+          }
+        })(),
         active: true,
         menusExplicit: true
       };
@@ -4191,6 +4215,8 @@ const BremStorage = (function () {
     menuStore.removeItem(SESSION_KEYS.adminSessionEditableMenus);
     menuStore.removeItem(SESSION_KEYS.adminSessionRole);
     menuStore.removeItem(SESSION_KEYS.adminSessionName);
+    menuStore.removeItem(SESSION_KEYS.adminSessionBaeminPartnerIds);
+    menuStore.removeItem(SESSION_KEYS.adminSessionCoupangVendorIds);
   }
 
   function getStorageStatus() {
@@ -5447,7 +5473,9 @@ const BremStorage = (function () {
         SESSION_KEYS.adminSessionMenus,
         SESSION_KEYS.adminSessionEditableMenus,
         SESSION_KEYS.adminSessionRole,
-        SESSION_KEYS.adminSessionName
+        SESSION_KEYS.adminSessionName,
+        SESSION_KEYS.adminSessionBaeminPartnerIds,
+        SESSION_KEYS.adminSessionCoupangVendorIds
       ];
 
     keysToClear.forEach(key => {

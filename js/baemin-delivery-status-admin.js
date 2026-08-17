@@ -5810,7 +5810,7 @@
     }
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v4';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_baemin_cache_v5';
   const DASHBOARD_REFRESHING_SUFFIX = ' · 최신 갱신 중…';
 
   function readDashboardCache() {
@@ -5830,47 +5830,77 @@
     [
       'brem_dashboard_baemin_cache',
       'brem_dashboard_baemin_cache_v2',
-      'brem_dashboard_baemin_cache_v3'
+      'brem_dashboard_baemin_cache_v3',
+      'brem_dashboard_baemin_cache_v4'
     ].forEach(key => {
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     });
   }
 
+  function assignedBaeminIds() {
+    const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
+    return [...new Set((account?.baeminPartnerIds || [])
+      .map(id => String(id || '').trim().toUpperCase())
+      .filter(Boolean))];
+  }
+
+  function isBaeminManagerRole() {
+    const role = String(window.BremStorage?.auth?.getAdminSessionAccount?.()?.role || '').toLowerCase();
+    return role === 'ceo' || role === 'director';
+  }
+
   function buildBaeminScopeKey() {
     const account = window.BremStorage?.auth?.getAdminSessionAccount?.() || null;
     const accountId = String(account?.id || 'anon');
-    const role = String(account?.role || '').toLowerCase();
-    if (role === 'ceo' || role === 'director') return `acct:${accountId}:manage`;
-    const ids = [...new Set((account?.baeminPartnerIds || [])
-      .map(id => String(id || '').trim().toUpperCase())
-      .filter(Boolean))]
-      .sort()
-      .join('|');
-    return `acct:${accountId}:p:${ids || 'none'}`;
+    const ids = assignedBaeminIds().sort().join('|');
+    return `acct:${accountId}:p:${ids || (isBaeminManagerRole() ? 'all' : 'none')}`;
   }
 
   function currentBaeminAccountId() {
     return String(window.BremStorage?.auth?.getAdminSessionAccount?.()?.id || '').trim();
   }
 
+  function cachePartnerIds(cache) {
+    const fromMeta = (Array.isArray(cache?.regionMeta) ? cache.regionMeta : [])
+      .map(item => String(item?.partnerId || '').trim().toUpperCase())
+      .filter(Boolean);
+    const fromWeek = (Array.isArray(cache?.weekPartnerIds) ? cache.weekPartnerIds : [])
+      .map(id => String(id || '').trim().toUpperCase())
+      .filter(Boolean);
+    return [...new Set([...fromMeta, ...fromWeek])];
+  }
+
   function isBaeminCacheAllowedForSession(cache) {
     if (!cache || !cache.panelsHtml) return false;
     const accountId = currentBaeminAccountId();
-    if (!accountId) return true;
-    if (cache.accountId && cache.accountId === accountId) return true;
-    if (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return true;
-    return false;
+    if (!accountId) return false;
+    if (cache.accountId && cache.accountId !== accountId) return false;
+    if (!cache.accountId && !(cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`))) {
+      return false;
+    }
+
+    const assigned = assignedBaeminIds();
+    if (assigned.length) {
+      const allowed = new Set(assigned);
+      const cachedIds = cachePartnerIds(cache);
+      if (!cachedIds.length) return false;
+      if (cachedIds.some(id => !allowed.has(id))) return false;
+      return true;
+    }
+    return isBaeminManagerRole();
   }
 
   function restoreRegionsFromCache(cache) {
     if (state.dashboardBaeminRegions.length) return;
+    const assigned = assignedBaeminIds();
+    const allowed = assigned.length ? new Set(assigned) : null;
     const meta = Array.isArray(cache?.regionMeta) ? cache.regionMeta : [];
     const next = meta
       .map(item => ({
         partnerId: normalizePartnerId(item.partnerId),
         regionName: String(item.regionName || item.partnerId || '').trim()
       }))
-      .filter(item => item.partnerId);
+      .filter(item => item.partnerId && (!allowed || allowed.has(item.partnerId)));
     if (next.length) state.dashboardBaeminRegions = next;
   }
 
@@ -6022,8 +6052,10 @@
       }
     }
     const bar = $('dashboardBaeminWeekRegionBar');
+    const assigned = assignedBaeminIds();
+    const allowWeek = assigned.length ? new Set(assigned) : null;
     const weekPartnerIds = Array.isArray(cache.weekPartnerIds)
-      ? cache.weekPartnerIds.map(normalizePartnerId).filter(Boolean)
+      ? cache.weekPartnerIds.map(normalizePartnerId).filter(id => id && (!allowWeek || allowWeek.has(id)))
       : [];
     if (bar && cache.weekBarHtml && weekPartnerIds.length && (bar.hidden || !bar.querySelector('[data-dashboard-week-partner]'))) {
       state.dashboardWeekPartnerId = normalizePartnerId(cache.weekPartnerId) || weekPartnerIds[0];
@@ -6041,7 +6073,8 @@
     // 캐시된 마지막 결과를 즉시 표시(첫 표 렌더 전에만)
     paintDashboardCacheInstant();
 
-    if (!force && state.dashboardBaeminRegions.length) {
+    // 캐시로 지역을 복원했어도 서버 배정 목록을 받아야 비노출 지역이 남지 않는다.
+    if (!force && state.viewPartnerIds.length && state.dashboardBaeminRegions.length) {
       return;
     }
 
@@ -6067,9 +6100,9 @@
 
     if (!state.dashboardBaeminRegions.length) {
       const summary = $('dashboardBaeminLiveSummary');
-      const emptyMsg = state.canManageRegions
-        ? '등록된 배민 지역이 없습니다. 배민현황에서 지역을 등록하세요.'
-        : '계정에 배정된 배민 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.';
+      const emptyMsg = assignedBaeminIds().length || !state.canManageRegions
+        ? '계정에 배정된 배민 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.'
+        : '등록된 배민 지역이 없습니다. 배민현황에서 지역을 등록하세요.';
       if (summary) summary.textContent = emptyMsg;
       panels.innerHTML = `<p class="form-help">${emptyMsg}</p>`;
       const appliedEl = $('dashboardBaeminAppliedTime');
@@ -6352,7 +6385,27 @@
       }
     }
 
+    const assigned = assignedBaeminIds();
+    const scopedIds = (state.viewPartnerIds || []).map(normalizePartnerId).filter(Boolean);
+    const allowIds = scopedIds.length ? scopedIds : assigned.map(normalizePartnerId).filter(Boolean);
+    if (allowIds.length) {
+      const allow = new Set(allowIds);
+      state.dashboardBaeminRegions = state.dashboardBaeminRegions.filter(r => allow.has(r.partnerId));
+    } else if (!isBaeminManagerRole()) {
+      state.dashboardBaeminRegions = [];
+    }
     const partnerIds = state.dashboardBaeminRegions.map(r => r.partnerId);
+    if (!partnerIds.length) {
+      state.dashboardLiveBusy = false;
+      if (!silent) {
+        const emptyMsg = isBaeminManagerRole()
+          ? '등록된 배민 지역이 없습니다. 배민현황에서 지역을 등록하세요.'
+          : '계정에 배정된 배민 지역이 없습니다. 대표/총괄에게 지역 배정을 요청하세요.';
+        if (summary) summary.textContent = emptyMsg;
+        panelsEl.innerHTML = `<p class="form-help">${emptyMsg}</p>`;
+      }
+      return;
+    }
     const today = todayKstDate();
 
     // 표가 있으면 숫자 유지한 채 소프트 갱신만 — 로딩 문구로 표를 비우지 않음
@@ -6934,8 +6987,7 @@
     refreshDashboardBaeminLive: () => {
       if (!state.dashboardLivePollTimer) startDashboardBaeminLivePoll();
       paintDashboardCacheInstant();
-      const hadRegions = state.dashboardBaeminRegions.length > 0;
-      if (!hadRegions) {
+      if (!state.viewPartnerIds.length) {
         void initDashboardBaeminLive(false);
         return;
       }

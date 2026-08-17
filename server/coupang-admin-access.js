@@ -13,9 +13,10 @@ function canManageCoupangRegions(account) {
 
 /**
  * 쿠팡 지역(매장) 스코프
- * - viewVendorIds: 대시보드·쿠팡현황
- *   · 대표/총괄 → 수집된(카탈로그) 전체 지역
- *   · 그 외 → 관리자계정에 배정된 지역만
+ * - viewVendorIds: 대시보드·쿠팡현황 (역할과 무관하게 배정 목록이 있으면 그 지역만)
+ *   · 계정에 배정된 지역이 있으면 → 그 목록
+ *   · 배정이 비어 있고 대표/총괄 → 카탈로그 전체
+ *   · 배정이 비어 있고 그 외 → 없음
  * - 계정 지역 배정 UI는 대표·총괄만 (canManageRegions)
  */
 function resolveCoupangVendorScope(account, catalogIds = []) {
@@ -24,18 +25,19 @@ function resolveCoupangVendorScope(account, catalogIds = []) {
   const canManageRegions = canManageCoupangRegions(account);
 
   let viewVendorIds;
-  if (canManageRegions) {
+  if (assigned.length) {
+    viewVendorIds = assigned.slice();
+  } else if (canManageRegions) {
     viewVendorIds = registered.slice();
   } else {
-    // 팀장: 계정 배정 지역만 (카탈로그에 없어도 배정 ID 유지)
-    viewVendorIds = assigned.slice();
+    viewVendorIds = [];
   }
 
   return {
     canManageRegions,
     allowedVendorIds: viewVendorIds.slice(),
     viewVendorIds,
-    isRegionalScoped: !canManageRegions
+    isRegionalScoped: assigned.length > 0 || !canManageRegions
   };
 }
 

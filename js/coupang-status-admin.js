@@ -729,8 +729,20 @@
         row.peaks[pt].has = true;
       });
 
-      const regionRows = dedupeRegionRows(Array.from(vendorById.values()), todayRowActivityScore)
+      const viewIds = [...new Set([
+        ...(peakRes.viewVendorIds || []),
+        ...(vendorRes.viewVendorIds || [])
+      ].map(id => String(id || '').trim()).filter(Boolean))];
+      const assigned = assignedCoupangIds();
+      const allowIds = viewIds.length ? viewIds : assigned;
+      let regionRows = dedupeRegionRows(Array.from(vendorById.values()), todayRowActivityScore)
         .sort((a, b) => String(a.vendorName).localeCompare(String(b.vendorName), 'ko'));
+      if (allowIds.length) {
+        const allow = new Set(allowIds);
+        regionRows = regionRows.filter(row => allow.has(String(row.vendorId || '').trim()));
+      } else if (!isCoupangManagerRole()) {
+        regionRows = [];
+      }
 
       if (!regionRows.length) {
         if (!silent) {
@@ -783,6 +795,7 @@
       const summaryText = `오늘 ${today} · 지역 ${regionRows.length}곳 · 운행중 ${n(totals.drivingSum)}명 · 피크 할당 대비 · 2분마다 자동 조회`;
       if (summary) summary.textContent = summaryText;
       dash.lastActivity = nextActivity;
+      dash.lastVendorIds = regionRows.map(r => String(r.vendorId || '').trim()).filter(Boolean);
       persistTodayCache();
       if (!silent || !dash.weekCache) {
         void loadWeekQuota(regionRows.map(r => ({ vendorId: r.vendorId, vendorName: r.vendorName })));
@@ -820,7 +833,7 @@
     }, POLL_MS);
   }
 
-  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v7';
+  const DASHBOARD_CACHE_KEY = 'brem_dashboard_coupang_cache_v8';
 
   function readDashboardCache() {
     try { return JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null'); } catch { return null; }
@@ -841,32 +854,51 @@
     return String(getSessionAccount()?.id || '').trim();
   }
 
-  /** 계정+배정 지역 키 (저장용). 조회 즉시표시는 accountId 일치면 충분 */
+  function assignedCoupangIds() {
+    return [...new Set((getSessionAccount()?.coupangVendorIds || [])
+      .map(id => String(id || '').trim())
+      .filter(Boolean))];
+  }
+
+  function isCoupangManagerRole() {
+    const role = String(getSessionAccount()?.role || '').toLowerCase();
+    return role === 'ceo' || role === 'director';
+  }
+
+  /** 계정+배정 지역 키. 배정이 바뀌면 이전 전체 표 캐시를 쓰지 않는다. */
   function buildCoupangScopeKey(options = {}) {
     const account = getSessionAccount();
     const accountId = String(options.accountId || account?.id || 'anon');
-    const role = String(options.role || account?.role || '').toLowerCase();
-    const canManage = options.canManageRegions === true
-      || role === 'ceo'
-      || role === 'director';
-    if (canManage) return `acct:${accountId}:manage`;
     const rawIds = options.viewVendorIds != null
       ? options.viewVendorIds
-      : (account?.coupangVendorIds || []);
+      : assignedCoupangIds();
     const ids = [...new Set((rawIds || []).map(id => String(id || '').trim()).filter(Boolean))]
       .sort()
       .join('|');
-    return `acct:${accountId}:v:${ids || 'none'}`;
+    return `acct:${accountId}:v:${ids || (isCoupangManagerRole() ? 'all' : 'none')}`;
   }
 
-  /** 같은 계정의 마지막 스냅샷이면 즉시 표시 (저장 시점에 이미 배정 필터됨) */
+  /** 같은 계정 + 배정 지역 밖이 없는 캐시만 즉시 표시 */
   function isCacheAllowedForSession(cache) {
     if (!cache || !cache.panelsHtml) return false;
     const accountId = currentAccountId();
     if (!accountId) return false;
-    if (cache.accountId && cache.accountId === accountId) return true;
-    if (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return true;
-    return false;
+    if (cache.accountId && cache.accountId !== accountId) return false;
+    if (!cache.accountId && !(cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`))) {
+      return false;
+    }
+
+    const assigned = assignedCoupangIds();
+    if (assigned.length) {
+      const allowed = new Set(assigned);
+      const cachedIds = (Array.isArray(cache.vendorIds) ? cache.vendorIds : [])
+        .map(id => String(id || '').trim())
+        .filter(Boolean);
+      if (!cachedIds.length) return false;
+      if (cachedIds.some(id => !allowed.has(id))) return false;
+      return true;
+    }
+    return isCoupangManagerRole();
   }
 
   function purgeLegacyCoupangCaches() {
@@ -876,7 +908,8 @@
       'brem_dashboard_coupang_cache_v3',
       'brem_dashboard_coupang_cache_v4',
       'brem_dashboard_coupang_cache_v5',
-      'brem_dashboard_coupang_cache_v6'
+      'brem_dashboard_coupang_cache_v6',
+      'brem_dashboard_coupang_cache_v7'
     ].forEach(key => {
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     });
@@ -937,7 +970,8 @@
       panelsHtml: mount.innerHTML,
       summaryText: summary ? String(summary.textContent || '').replace(/\s*·\s*최신 갱신 중…$/, '') : '',
       appliedHtml: appliedEl ? appliedEl.innerHTML : '',
-      activityScore: Number(dash.lastActivity || 0)
+      activityScore: Number(dash.lastActivity || 0),
+      vendorIds: Array.isArray(dash.lastVendorIds) ? dash.lastVendorIds : []
     });
   }
 

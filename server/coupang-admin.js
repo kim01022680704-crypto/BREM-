@@ -1,7 +1,7 @@
 /**
  * 쿠팡이츠 관리자 조회 핸들러 (brem서버 /api/admin/coupang/*)
  * 인증: verifyAdminCaller (admin 계정). 데이터는 coupang_collect_items 에서 읽음.
- * 지역 스코프: 대표/총괄=전체, 팀장=계정에 배정된 coupangVendorIds 만.
+ * 지역 스코프: 계정 배정이 있으면 그 목록만. 배정이 비고 대표/총괄이면 카탈로그 전체.
  */
 const { verifyAdminCaller, resolveActorAccount } = require('./admin-users');
 const { loadAdminRegistry } = require('./admin-registry');
