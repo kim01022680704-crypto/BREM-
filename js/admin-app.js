@@ -66,6 +66,7 @@
     document.querySelectorAll('[data-admin-app-panel]').forEach(panel => {
       const on = panel.dataset.adminAppPanel === next;
       panel.classList.toggle('is-active', on);
+      panel.hidden = !on;
       if (panel.id === 'dashboard') panel.classList.toggle('active', on);
     });
     nav?.querySelectorAll('[data-admin-app-tab]').forEach(button => {

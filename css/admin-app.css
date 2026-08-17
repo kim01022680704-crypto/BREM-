@@ -66,12 +66,12 @@ html.brem-admin-app-nav [hidden] {
   font-size: 0.78rem;
 }
 
-.admin-phone-panel {
-  display: none;
+.admin-phone-app .admin-phone-panel {
+  display: none !important;
 }
 
-.admin-phone-panel.is-active {
-  display: block;
+.admin-phone-app .admin-phone-panel.is-active {
+  display: block !important;
 }
 
 .admin-phone-stats {
@@ -286,9 +286,3 @@ html.brem-admin-app-nav [hidden] {
   z-index: 80;
 }
 
-html.brem-admin-app-nav[data-admin-app-tab="home"] [data-admin-app-panel="home"],
-html.brem-admin-app-nav[data-admin-app-tab="schedule"] [data-admin-app-panel="schedule"],
-html.brem-admin-app-nav[data-admin-app-tab="payslip"] [data-admin-app-panel="payslip"],
-html.brem-admin-app-nav[data-admin-app-tab="inquiry"] [data-admin-app-panel="inquiry"] {
-  display: block;
-}
