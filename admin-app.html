@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/login.css">
   <link rel="stylesheet" href="css/admin.css?v=20260817app1">
-  <link rel="stylesheet" href="css/admin-app.css?v=20260817app1">
+  <link rel="stylesheet" href="css/admin-app.css?v=20260817app2">
 </head>
 <body>
   <section class="login-page" id="adminLoginPage">
@@ -83,7 +83,7 @@
     </header>
 
     <main class="admin-phone-main">
-      <section class="admin-phone-panel is-active" data-admin-app-panel="home">
+      <section class="admin-phone-panel is-active section active" data-admin-app-panel="home" id="dashboard">
         <div class="admin-phone-stats">
           <button type="button" class="admin-phone-stat" data-admin-app-jump="inquiry">
             <span>미확인 문의</span>
@@ -94,6 +94,84 @@
             <strong id="adminAppStatSchedule">0</strong>
           </button>
         </div>
+        <article class="card dashboard-baemin-live-card" id="dashboardBaeminLiveCard">
+          <div class="card-header dashboard-baemin-live-card__header">
+            <div>
+              <h2>오늘 배민 · 할당 달성</h2>
+              <p class="form-help dashboard-baemin-live-help">크롤 마지막 숫자 · 2분마다 갱신</p>
+            </div>
+            <button type="button" class="primary-btn" id="dashboardBaeminLiveQueryBtn">스냅샷 조회</button>
+          </div>
+          <p class="dashboard-baemin-applied-time" id="dashboardBaeminAppliedTime" aria-live="polite">적용시간 —</p>
+          <p class="admin-table-summary" id="dashboardBaeminLiveSummary" aria-live="polite">마지막 현황 불러오는 중…</p>
+          <div id="dashboardBaeminLivePanels" class="dashboard-baemin-live-panels">
+            <p class="form-help">마지막 현황 불러오는 중…</p>
+          </div>
+          <div class="dashboard-baemin-week-block" id="dashboardBaeminWeekBlock">
+            <div class="dashboard-baemin-week-block__head">
+              <h3>이번주 지역별 할당 달성</h3>
+            </div>
+            <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardBaeminWeekRegionBar" hidden></div>
+            <p class="admin-table-summary" id="dashboardBaeminWeekSummary" aria-live="polite">마지막 주간 현황 불러오는 중…</p>
+            <div class="dashboard-baemin-table-wrap">
+              <table class="admin-table dashboard-baemin-compact-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>배달일</th>
+                    <th title="아침점심">아점</th>
+                    <th>오후</th>
+                    <th>저녁</th>
+                    <th>심야</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardBaeminWeekRows">
+                  <tr><td colspan="6" class="form-help">마지막 주간 현황 불러오는 중…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+        <article class="card dashboard-baemin-live-card" id="dashboardCoupangLiveCard">
+          <div class="card-header dashboard-baemin-live-card__header">
+            <div>
+              <h2>오늘 쿠팡 · 할당 달성</h2>
+              <p class="form-help dashboard-baemin-live-help">오늘 피크 · 크롤 조회</p>
+            </div>
+            <button type="button" class="primary-btn" id="dashboardCoupangLiveQueryBtn">실시간 조회</button>
+          </div>
+          <p class="dashboard-baemin-applied-time" id="dashboardCoupangAppliedTime" aria-live="polite">조회시간 —</p>
+          <p class="admin-table-summary" id="dashboardCoupangLiveSummary" aria-live="polite">조회를 눌러 오늘 피크·운행중을 불러오세요</p>
+          <div id="dashboardCoupangCard" class="dashboard-baemin-live-panels">
+            <p class="form-help">조회 결과가 여기에 표시됩니다.</p>
+          </div>
+          <div class="dashboard-baemin-week-block" id="dashboardCoupangWeekBlock">
+            <div class="dashboard-baemin-week-block__head">
+              <h3>이번주 지역별 할당 달성</h3>
+            </div>
+            <div class="baemin-region-tabs dashboard-baemin-week-region-tabs" id="dashboardCoupangWeekRegionBar" hidden></div>
+            <p class="admin-table-summary" id="dashboardCoupangWeekSummary" aria-live="polite">오늘 조회 시 함께 불러옵니다</p>
+            <div class="dashboard-baemin-table-wrap dashboard-coupang-table-wrap">
+              <table class="admin-table dashboard-baemin-compact-table dashboard-coupang-compact-table">
+                <thead>
+                  <tr>
+                    <th>지역</th>
+                    <th>일자</th>
+                    <th title="아침">아침</th>
+                    <th title="점심피크">점피</th>
+                    <th title="점심논피크">점논</th>
+                    <th title="저녁피크">저피</th>
+                    <th title="저녁논피크">저논</th>
+                    <th>거절</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardCoupangWeekRows">
+                  <tr><td colspan="8" class="form-help">오늘 조회 시 함께 불러옵니다</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </article>
         <article class="card">
           <div class="card-header">
             <h2>이번 정산주</h2>
@@ -339,10 +417,14 @@
   <script src="js/storage.js?v=20260817pay1"></script>
   <script src="js/rider-inquiry-api.js"></script>
   <script src="js/date-picker.js?v=20260715a"></script>
+  <script src="js/baemin-delivery-fee.js?v=20260731a"></script>
+  <script src="js/coupang-delivery-fee.js?v=20260807c"></script>
+  <script src="js/baemin-delivery-status-admin.js?v=20260815dash4"></script>
+  <script src="js/coupang-status-admin.js?v=20260811b"></script>
   <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
   <script src="js/admin-schedule.js?v=20260622f"></script>
   <script src="js/admin-payroll-slip-search.js?v=20260817pay5"></script>
-  <script src="js/admin-app.js?v=20260817app1"></script>
+  <script src="js/admin-app.js?v=20260817app2"></script>
   <script src="js/pwa-register.js" defer></script>
 </body>
 </html>

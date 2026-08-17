@@ -64,7 +64,9 @@
     currentTab = next;
     document.documentElement.dataset.adminAppTab = next;
     document.querySelectorAll('[data-admin-app-panel]').forEach(panel => {
-      panel.classList.toggle('is-active', panel.dataset.adminAppPanel === next);
+      const on = panel.dataset.adminAppPanel === next;
+      panel.classList.toggle('is-active', on);
+      if (panel.id === 'dashboard') panel.classList.toggle('active', on);
     });
     nav?.querySelectorAll('[data-admin-app-tab]').forEach(button => {
       const on = button.dataset.adminAppTab === next;
@@ -74,7 +76,11 @@
     const meta = TAB_META[next] || TAB_META.home;
     if ($('adminAppTitle')) $('adminAppTitle').textContent = meta.title;
     if ($('adminAppHeroDesc')) $('adminAppHeroDesc').textContent = meta.desc;
-    if (next === 'home') void refreshHome();
+    if (next === 'home') {
+      void refreshHome();
+      window.BremBaeminDeliveryStatusAdmin?.refreshDashboardBaeminLive?.();
+      window.BremCoupangStatusAdmin?.refreshDashboardCard?.();
+    }
     if (next === 'schedule') window.BremAdminSchedule?.refresh?.();
     if (next === 'payslip') window.BremAdminPayrollSlipSearch?.refresh?.();
     if (next === 'inquiry') void renderInquiries();
