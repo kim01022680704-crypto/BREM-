@@ -5856,10 +5856,22 @@
   function isBaeminCacheAllowedForSession(cache) {
     if (!cache || !cache.panelsHtml) return false;
     const accountId = currentBaeminAccountId();
-    if (!accountId) return false;
+    if (!accountId) return true;
     if (cache.accountId && cache.accountId === accountId) return true;
     if (cache.scopeKey && String(cache.scopeKey).startsWith(`acct:${accountId}:`)) return true;
     return false;
+  }
+
+  function restoreRegionsFromCache(cache) {
+    if (state.dashboardBaeminRegions.length) return;
+    const meta = Array.isArray(cache?.regionMeta) ? cache.regionMeta : [];
+    const next = meta
+      .map(item => ({
+        partnerId: normalizePartnerId(item.partnerId),
+        regionName: String(item.regionName || item.partnerId || '').trim()
+      }))
+      .filter(item => item.partnerId);
+    if (next.length) state.dashboardBaeminRegions = next;
   }
 
   function bindDashboardWeekRegionBarClicks(partnerIds = []) {
@@ -5986,6 +5998,7 @@
       }
       return false;
     }
+    restoreRegionsFromCache(cache);
 
     // 오늘 표: 비어 있을 때만 캐시로 채움 (이미 최신이면 유지)
     if (!panelsEl.querySelector('table') && cache.panelsHtml) {
@@ -6349,29 +6362,18 @@
       if (btn) btn.textContent = '조회 중…';
       if (!hadTable && summary) summary.textContent = '오늘 스냅샷·할당 불러오는 중…';
       else card?.classList.add('is-soft-refreshing');
-    } else {
+    } else if (!hadTable) {
       card?.classList.add('is-soft-refreshing');
     }
 
     try {
-      if (silent) {
-        // 자동 폴링: 적용시각 + 오늘 스냅샷만 (세트수/요일할당은 캐시 재사용)
-        await loadViewConfig({ silent: true });
-        if (!state.partnerSetCountMap || !Object.keys(state.partnerSetCountMap).length) {
-          await loadPartnerSetCountMap();
-        }
-        if (!state.weekdayQuotaMatrix) {
-          await ensureWeekdayQuotaLoaded();
-        }
-      } else {
-        // 대시보드는 저장진단(무거운 전체 스캔)이 필요 없으므로 config는 light로.
-        // 적용시각/세트수/요일할당만 새로 불러온다(결과 동일, 속도만 개선).
-        await Promise.all([
-          loadViewConfig({ silent: true }),
-          loadPartnerSetCountMap(),
-          ensureWeekdayQuotaLoaded()
-        ]);
-      }
+      const extrasPromise = Promise.all([
+        loadViewConfig({ silent: true }),
+        (state.partnerSetCountMap && Object.keys(state.partnerSetCountMap).length)
+          ? Promise.resolve()
+          : loadPartnerSetCountMap(),
+        state.weekdayQuotaMatrix ? Promise.resolve() : ensureWeekdayQuotaLoaded()
+      ]).catch(() => {});
 
       const captureDate = state.appliedCollectDate
         || state.config?.applied?.collectDate
@@ -6407,7 +6409,9 @@
               : { ok: false, items: [], notApplied: false, message: '지역 스냅샷 없음' }
           };
         });
+        void extrasPromise;
       } else {
+        await extrasPromise;
         snapshotResults = await Promise.all(
           partnerIds.map(async partnerId => {
             const result = await adminApi(buildViewItemsQuery(captureDate, 'delivery_status', partnerId));
@@ -6415,6 +6419,7 @@
           })
         );
       }
+      if (!silent) await extrasPromise;
 
       const notAppliedHit = snapshotResults.find(entry => entry.result?.ok && entry.result.notApplied);
       if (notAppliedHit) {
@@ -6946,6 +6951,8 @@
   void refreshCrawlOperatorAccess();
   document.addEventListener('brem-admin-session-ready', () => {
     void refreshCrawlOperatorAccess();
+    paintDashboardCacheInstant();
+    window.BremBaeminDeliveryStatusAdmin?.refreshDashboardBaeminLive?.();
   });
   // 스크립트 로드 직후(이미 세션 있는 새로고침)에도 캐시 선표시
   paintDashboardCacheInstant();
