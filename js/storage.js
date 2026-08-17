@@ -3375,7 +3375,7 @@ const BremStorage = (function () {
 
   async function fetchRiderWithdrawalFromServer(weekStart) {
     const qs = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
-    return riderApiFetch(`/api/rider/withdrawal${qs}`, 'withdrawal');
+    return riderApiFetch(`/api/rider/withdrawal${qs}`, 'withdrawal', { timeoutMs: 25000 });
   }
 
   async function submitRiderWithdrawalToServer({ weekStart, amount, platform } = {}) {

@@ -31,7 +31,8 @@
     netPayByPlatform: { coupang: 0, baemin: 0 },
     enrolledPlatforms: { coupang: false, baemin: false },
     feesByPlatform: { coupang: null, baemin: null },
-    requestSeq: 0
+    requestSeq: 0,
+    confirmed: false
   };
 
   function showToast(message) {
@@ -408,27 +409,74 @@
     });
   }
 
+  function setUnconfirmedUi(message) {
+    state.confirmed = false;
+    if (availableEl) {
+      availableEl.textContent = '조회 중…';
+      availableEl.classList.remove('is-negative');
+    }
+    if (hintEl) hintEl.textContent = message || '출금가능금액을 서버에서 확인하는 중입니다.';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '금액 확인 중…';
+    }
+    if (emptyEl) emptyEl.hidden = true;
+  }
+
+  function setLoadErrorUi(message) {
+    state.confirmed = false;
+    if (availableEl) {
+      availableEl.textContent = '확인 실패';
+      availableEl.classList.remove('is-negative');
+    }
+    if (hintEl) hintEl.textContent = message || '출금가능금액을 확인하지 못했습니다. 다시 조회해 주세요.';
+    if (emptyEl) emptyEl.hidden = false;
+    if (emptyTextEl) {
+      emptyTextEl.textContent = message || '출금가능금액을 확인하지 못했습니다. 다시 조회해 주세요.';
+    }
+    if (contentEl) contentEl.hidden = true;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '다시 조회';
+    }
+  }
+
+  function isRetryableWithdrawalError(result) {
+    if (result?.ok) return false;
+    const msg = String(result?.message || result?.error || '');
+    return !msg
+      || /세션|시간|초과|실패|네트워크|불러오지|없습니다/.test(msg);
+  }
+
+  async function fetchWithdrawalWithRetry(weekStart) {
+    let last = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      last = await window.BremStorage?.fetchRiderWithdrawalFromServer?.(weekStart);
+      if (last?.ok) return last;
+      if (!isRetryableWithdrawalError(last) || attempt === 3) return last;
+      await new Promise(resolve => setTimeout(resolve, 400 * attempt));
+    }
+    return last;
+  }
+
   async function loadWithdrawal() {
     if (!state.weekStart) state.weekStart = weekStartKey(formatLocalDateKey(new Date()));
     if (periodEl) periodEl.textContent = formatPeriodSimple(state.weekStart);
 
     const seq = ++state.requestSeq;
     state.loading = true;
-    if (submitBtn) submitBtn.disabled = true;
+    setUnconfirmedUi();
 
-    const result = await window.BremStorage?.fetchRiderWithdrawalFromServer?.(state.weekStart);
+    const result = await fetchWithdrawalWithRetry(state.weekStart);
     if (seq !== state.requestSeq) return;
     state.loading = false;
-    if (submitBtn) submitBtn.disabled = false;
 
     if (!result?.ok) {
-      if (emptyEl) emptyEl.hidden = false;
-      if (contentEl) contentEl.hidden = true;
-      if (emptyTextEl) emptyTextEl.textContent = result?.message || '출금신청 정보를 불러오지 못했습니다.';
-      renderSummary({ availableAmount: 0, totalNetPay: 0, requestedTotal: 0, enrolled: false });
+      setLoadErrorUi(result?.message || '출금신청 정보를 불러오지 못했습니다.');
       return;
     }
 
+    state.confirmed = true;
     renderSummary(result);
     const showCallFee = result.showCallFee !== false;
     syncCallFeeHeader(showCallFee);
@@ -485,6 +533,11 @@
     event.preventDefault();
     const amount = Math.max(0, Math.round(Number(amountInput?.value || 0)));
     const platform = selectedPlatform();
+    if (!state.confirmed) {
+      showToast('출금가능금액을 확인한 뒤에 신청할 수 있습니다.');
+      void loadWithdrawal();
+      return;
+    }
     if (!platform) {
       showToast('출금 플랫폼(쿠팡/배민)을 선택하세요.');
       return;
@@ -566,6 +619,7 @@
     state.requestSeq += 1;
     state.weekStart = null;
     state.loading = false;
+    state.confirmed = false;
     state.availableAmount = 0;
     state.availableByPlatform = { coupang: 0, baemin: 0 };
     state.netPayByPlatform = { coupang: 0, baemin: 0 };
@@ -578,7 +632,7 @@
     if (requestList) requestList.innerHTML = '';
     if (periodEl) periodEl.textContent = '';
     if (availableEl) {
-      availableEl.textContent = formatMoney(0);
+      availableEl.textContent = '—';
       availableEl.classList.remove('is-negative');
     }
     if (hintEl) hintEl.textContent = '';
