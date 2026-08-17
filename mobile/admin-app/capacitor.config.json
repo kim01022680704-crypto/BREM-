@@ -1,0 +1,32 @@
+{
+  "appId": "kr.brem.admin",
+  "appName": "BREM 관리자앱",
+  "webDir": "www",
+  "server": {
+    "url": "https://brem.kr/admin-app.html",
+    "cleartext": false,
+    "allowNavigation": [
+      "https://brem.kr/*",
+      "https://*.supabase.co/*",
+      "https://fonts.googleapis.com/*",
+      "https://fonts.gstatic.com/*",
+      "https://cdn.jsdelivr.net/*"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0a0a0a"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "backgroundColor": "#0a0a0a",
+      "showSpinner": false,
+      "androidSplashResourceName": "splash"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0a0a0a"
+    }
+  }
+}

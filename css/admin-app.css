@@ -1,0 +1,235 @@
+html.brem-admin-app-nav,
+html.brem-admin-app-nav body {
+  margin: 0;
+  min-height: 100%;
+  background: #0a0a0a;
+}
+
+html.brem-admin-app-nav .app-hidden,
+html.brem-admin-app-nav [hidden] {
+  display: none !important;
+}
+
+.admin-phone-app {
+  min-height: 100dvh;
+  padding: max(10px, env(safe-area-inset-top)) 12px calc(86px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.admin-phone-app .hero {
+  margin-bottom: 14px;
+}
+
+.admin-phone-app .hero__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-phone-app .hero__logo {
+  width: 52px;
+  height: auto;
+}
+
+.admin-phone-app .hero__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-phone-app .eyebrow {
+  margin: 0;
+  color: #e8c547;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.admin-phone-app .hero h1 {
+  margin: 2px 0 0;
+  font-size: 1.2rem;
+}
+
+.admin-phone-app .logout-btn {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.admin-phone-app .hero-desc {
+  margin: 8px 0 0;
+  color: #9ca3af;
+  font-size: 0.78rem;
+}
+
+.admin-phone-panel {
+  display: none;
+}
+
+.admin-phone-panel.is-active {
+  display: block;
+}
+
+.admin-phone-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.admin-phone-stat {
+  padding: 14px 12px;
+  border: 1px solid rgba(255, 212, 0, 0.22);
+  border-radius: 16px;
+  background: #161616;
+  color: inherit;
+  text-align: left;
+}
+
+.admin-phone-stat span {
+  display: block;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.admin-phone-stat strong {
+  display: block;
+  margin-top: 6px;
+  color: #ffd400;
+  font-size: 1.35rem;
+}
+
+.admin-phone-week {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.admin-phone-today-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-phone-today-item {
+  padding: 10px 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  background: #141414;
+}
+
+.admin-phone-today-item strong {
+  display: block;
+}
+
+.admin-phone-today-item span {
+  color: #9ca3af;
+  font-size: 0.8rem;
+}
+
+.admin-app-nav {
+  display: flex;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 2px;
+  min-height: 58px;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0));
+  background: #111111;
+  border-top: 1px solid rgba(255, 212, 0, 0.28);
+}
+
+.admin-app-nav__item {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.admin-app-nav__item svg {
+  width: 20px;
+  height: 20px;
+}
+
+.admin-app-nav__item.is-active {
+  color: #111111;
+  background: #ffd400;
+}
+
+.admin-app-nav__badge {
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.6rem;
+  line-height: 16px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.admin-phone-app .admin-schedule-layout {
+  grid-template-columns: 1fr;
+}
+
+.admin-phone-app .lease-contract-list-head,
+.admin-phone-app .lease-list-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.admin-phone-app .lease-search-field,
+.admin-phone-app .lease-search-field input,
+.admin-phone-app .payroll-week-picker-btn,
+.admin-phone-app #payrollSlipSearchClear {
+  width: 100%;
+  min-height: 42px;
+}
+
+.admin-phone-app .lease-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-phone-app #rider-inquiries .inquiry-item {
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.inquiry-popup {
+  z-index: 80;
+}
+
+html.brem-admin-app-nav[data-admin-app-tab="home"] [data-admin-app-panel="home"],
+html.brem-admin-app-nav[data-admin-app-tab="schedule"] [data-admin-app-panel="schedule"],
+html.brem-admin-app-nav[data-admin-app-tab="payslip"] [data-admin-app-panel="payslip"],
+html.brem-admin-app-nav[data-admin-app-tab="inquiry"] [data-admin-app-panel="inquiry"] {
+  display: block;
+}

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko" class="brem-admin-app-nav" data-admin-app-tab="home">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="BREM 관리자앱">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="noindex,nofollow">
+  <title>BREM 관리자앱</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest-admin-app.webmanifest">
+  <link rel="apple-touch-icon" href="assets/brand/brem-logo-mark-transparent.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BREM 관리자앱">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/login.css">
+  <link rel="stylesheet" href="css/admin.css?v=20260817app1">
+  <link rel="stylesheet" href="css/admin-app.css?v=20260817app1">
+</head>
+<body>
+  <section class="login-page" id="adminLoginPage">
+    <div class="login-page__glow" aria-hidden="true"></div>
+    <div class="login-shell">
+      <form class="login-card" id="adminLoginForm">
+        <div class="login-card__logo">
+          <img src="assets/brand/brem-logo.png" width="640" height="360" alt="BREM PLUS DELIVERY AGENCY">
+        </div>
+        <hr class="login-card__divider" aria-hidden="true">
+        <header class="login-card__head">
+          <h1>관리자 로그인</h1>
+          <p class="login-card__subtitle">Brem 관리자앱</p>
+        </header>
+        <label class="login-field">
+          <span class="login-field__label">아이디</span>
+          <span class="login-field__control">
+            <svg class="login-field__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.6" fill="none"/>
+              <path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="adminName" autocomplete="username" placeholder="관리자" required>
+          </span>
+        </label>
+        <label class="login-field">
+          <span class="login-field__label">비밀번호</span>
+          <span class="login-field__control">
+            <svg class="login-field__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/>
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+            </svg>
+            <input type="password" id="adminPassword" autocomplete="current-password" required>
+          </span>
+        </label>
+        <div class="login-options">
+          <label class="login-option">
+            <input type="checkbox" id="adminRememberId">
+            <span>아이디 기억하기</span>
+          </label>
+          <label class="login-option">
+            <input type="checkbox" id="adminKeepLoggedIn" checked>
+            <span>로그인 유지</span>
+          </label>
+        </div>
+        <button class="login-submit" type="submit">로그인</button>
+        <p class="login-card__help" id="adminLoginHelp"></p>
+      </form>
+      <p class="login-footnote">BREM ADMIN APP</p>
+    </div>
+  </section>
+
+  <div class="admin-phone-app" id="adminApp" hidden>
+    <header class="hero">
+      <div class="hero__top">
+        <img class="hero__logo" src="assets/brand/brem-logo-mark.png" width="120" height="86" alt="BREM">
+        <div class="hero__titles">
+          <p class="eyebrow">BREM ADMIN</p>
+          <h1 id="adminAppTitle">대시보드</h1>
+        </div>
+        <button class="logout-btn" type="button" id="adminLogoutBtn">로그아웃</button>
+      </div>
+      <p class="hero-desc" id="adminAppHeroDesc">관리자앱 · 대시보드 · 스케줄 · 명세서 · 문의</p>
+    </header>
+
+    <main class="admin-phone-main">
+      <section class="admin-phone-panel is-active" data-admin-app-panel="home">
+        <div class="admin-phone-stats">
+          <button type="button" class="admin-phone-stat" data-admin-app-jump="inquiry">
+            <span>미확인 문의</span>
+            <strong id="adminAppStatInquiry">0</strong>
+          </button>
+          <button type="button" class="admin-phone-stat" data-admin-app-jump="schedule">
+            <span>오늘 일정</span>
+            <strong id="adminAppStatSchedule">0</strong>
+          </button>
+        </div>
+        <article class="card">
+          <div class="card-header">
+            <h2>이번 정산주</h2>
+          </div>
+          <p class="admin-phone-week" id="adminAppWeekLabel">정산주 확인 중…</p>
+        </article>
+        <article class="card">
+          <div class="card-header">
+            <h2>오늘 스케줄</h2>
+          </div>
+          <div id="adminAppTodaySchedule" class="admin-phone-today-list">
+            <p class="empty">오늘 등록된 일정이 없습니다.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="admin-phone-panel" data-admin-app-panel="schedule" id="admin-schedule">
+        <article class="card admin-schedule-card">
+          <div class="card-header admin-schedule-header">
+            <div>
+              <h2>관리자 스케줄표</h2>
+              <p class="form-help">날짜를 눌러 일정을 등록·수정하세요.</p>
+            </div>
+            <div class="admin-schedule-nav">
+              <div class="admin-schedule-nav__month">
+                <button type="button" class="admin-schedule-nav-btn" id="adminSchedulePrev" aria-label="이전 달">&lt;</button>
+                <strong id="adminScheduleMonthTitle">-</strong>
+                <button type="button" class="admin-schedule-nav-btn" id="adminScheduleNext" aria-label="다음 달">&gt;</button>
+              </div>
+              <div class="admin-schedule-nav__actions">
+                <button type="button" class="small-btn" id="adminScheduleToday">오늘</button>
+                <button type="button" class="small-btn" id="adminScheduleMultiToggle" aria-pressed="false">여러 날짜 선택</button>
+                <button type="button" class="small-btn" id="adminScheduleMultiClear" hidden>선택 해제</button>
+              </div>
+            </div>
+          </div>
+          <div class="admin-schedule-layout">
+            <div class="admin-schedule-calendar">
+              <div class="calendar-weekdays admin-schedule-weekdays">
+                <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+              </div>
+              <div class="admin-schedule-days" id="adminScheduleDays"></div>
+            </div>
+            <aside class="admin-schedule-panel">
+              <div class="admin-schedule-panel-head">
+                <h3 id="adminScheduleSelectedDateLabel">날짜를 선택하세요</h3>
+                <p class="form-help" id="adminScheduleSelectedCount">등록된 일정 0건</p>
+                <p class="form-help" id="adminScheduleMultiHelp" hidden>여러 날짜를 선택한 뒤 같은 일정을 한 번에 등록합니다.</p>
+                <div class="admin-schedule-list-toolbar" id="adminScheduleListToolbar" hidden>
+                  <label class="check-label admin-schedule-select-all">
+                    <input type="checkbox" id="adminScheduleSelectAll">
+                    <span>전체 선택</span>
+                  </label>
+                  <button type="button" class="small-btn danger-btn" id="adminScheduleBulkDelete" disabled>선택 삭제</button>
+                </div>
+              </div>
+              <div class="admin-schedule-day-list" id="adminScheduleDayList">
+                <div class="empty">달력에서 날짜를 클릭하세요.</div>
+              </div>
+              <form class="admin-schedule-form" id="adminScheduleForm">
+                <input type="hidden" id="adminScheduleEditId">
+                <label>등록자<input type="text" id="adminScheduleCreatedBy" placeholder="등록자 이름" required></label>
+                <label>제목<input type="text" id="adminScheduleTitle" placeholder="예: 정산 마감" required></label>
+                <label>메모<textarea id="adminScheduleMemo" rows="4" placeholder="세부 내용"></textarea></label>
+                <div class="admin-schedule-form-actions">
+                  <button type="submit" class="primary-btn" id="adminScheduleSubmit">일정 등록</button>
+                  <button type="button" class="small-btn" id="adminScheduleCancelEdit" hidden>취소</button>
+                </div>
+              </form>
+            </aside>
+          </div>
+        </article>
+        <div class="admin-schedule-detail" id="adminScheduleDetail" hidden>
+          <button type="button" class="admin-schedule-detail-backdrop" data-close-schedule-detail aria-label="닫기"></button>
+          <div class="admin-schedule-detail-card" role="dialog" aria-modal="true" aria-labelledby="adminScheduleDetailTitle">
+            <button type="button" class="admin-schedule-detail-close" data-close-schedule-detail aria-label="닫기">&times;</button>
+            <p class="admin-schedule-detail-date" id="adminScheduleDetailDate"></p>
+            <h3 id="adminScheduleDetailTitle"></h3>
+            <p class="admin-schedule-detail-creator" id="adminScheduleDetailCreator"></p>
+            <div class="admin-schedule-detail-body" id="adminScheduleDetailBody"></div>
+            <div class="admin-schedule-detail-actions">
+              <button type="button" class="small-btn" id="adminScheduleDetailEdit">수정</button>
+              <button type="button" class="small-btn" data-close-schedule-detail>닫기</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="admin-phone-panel" data-admin-app-panel="payslip" id="payroll-slip-search">
+        <article class="card">
+          <div class="card-header lease-contract-list-head">
+            <div>
+              <h2>급여명세서 검색</h2>
+              <p class="form-help" id="payrollSlipSearchStatus">정산주를 고른 뒤 이름을 누르세요.</p>
+            </div>
+            <div class="lease-list-toolbar">
+              <input type="hidden" id="payrollSlipSearchWeekStart">
+              <button type="button" class="week-picker-trigger admin-period-input payroll-week-picker-btn" data-week-picker-trigger="payroll-slip-search" id="payrollSlipSearchWeekBtn">정산주 선택</button>
+              <span class="payroll-week-label" id="payrollSlipSearchWeekLabel">정산주 선택</span>
+              <label class="driver-search-field lease-search-field">
+                <span class="sr-only">검색</span>
+                <input type="search" id="payrollSlipSearchInput" class="lease-contract-list-search" placeholder="이름 · 배민ID · 쿠팡ID" autocomplete="off">
+              </label>
+              <button type="button" class="small-btn" id="payrollSlipSearchClear">초기화</button>
+            </div>
+          </div>
+          <div class="table-wrap lease-table-wrap lease-list-scroll">
+            <table class="lease-table lease-table--compact">
+              <thead>
+                <tr>
+                  <th>성명</th>
+                  <th>쿠팡ID</th>
+                  <th>배민ID</th>
+                  <th>정산주</th>
+                  <th>총지급액</th>
+                </tr>
+              </thead>
+              <tbody id="payrollSlipSearchResults">
+                <tr><td colspan="5" class="empty">급여명세서 데이터를 불러오는 중입니다.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="admin-phone-panel" data-admin-app-panel="inquiry" id="rider-inquiries">
+        <article class="card">
+          <div class="card-header">
+            <h2>라이더 문의</h2>
+            <button class="small-btn" type="button" id="riderInquiryRefreshBtn">새로고침</button>
+          </div>
+          <p class="form-help" id="riderInquirySummary">클릭하면 상세를 봅니다.</p>
+          <div class="notice-list" id="riderInquiryRows"></div>
+        </article>
+      </section>
+    </main>
+
+    <nav class="admin-app-nav" id="adminAppNav" aria-label="관리자앱 메뉴">
+      <button type="button" class="admin-app-nav__item is-active" data-admin-app-tab="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span>대시보드</span>
+      </button>
+      <button type="button" class="admin-app-nav__item" data-admin-app-tab="schedule">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 3.5v3M16 3.5v3M4 10h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>스케줄</span>
+      </button>
+      <button type="button" class="admin-app-nav__item" data-admin-app-tab="payslip">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h8l4 4v12H7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M15 4v4h4M9 13h6M9 17h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>명세서</span>
+      </button>
+      <button type="button" class="admin-app-nav__item" data-admin-app-tab="inquiry">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v10H8l-3 3V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 10h8M8 13h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>문의</span>
+        <span class="admin-app-nav__badge" id="adminAppInquiryBadge" hidden>0</span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="inquiry-popup" id="payrollSlipSearchDetail" hidden>
+    <button type="button" class="inquiry-popup__backdrop" data-payroll-search-close aria-label="닫기"></button>
+    <div class="inquiry-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="payrollSlipSearchPopupTitle">
+      <p class="inquiry-popup__eyebrow">급여명세서</p>
+      <div class="inquiry-popup__title-row">
+        <h2 id="payrollSlipSearchPopupTitle">주급명세서</h2>
+      </div>
+      <p class="inquiry-popup__meta" id="payrollSlipSearchPopupMeta"></p>
+      <div class="driver-payslip-week-nav payroll-search-popup-week">
+        <button type="button" class="driver-payslip-week-btn" id="payrollSlipSearchPrevWeekBtn" aria-label="이전 주">&lt;</button>
+        <button type="button" class="week-picker-trigger payroll-search-popup-week-btn" data-week-picker-trigger="payroll-slip-search-popup" id="payrollSlipSearchPeriod">정산주 선택</button>
+        <button type="button" class="driver-payslip-week-btn" id="payrollSlipSearchNextWeekBtn" aria-label="다음 주">&gt;</button>
+      </div>
+      <div id="payrollSlipSearchPopupBody"></div>
+      <div class="inquiry-popup__actions">
+        <button type="button" class="small-btn" data-payroll-search-close>닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="inquiry-popup" id="adminInquiryPopup" hidden>
+    <button type="button" class="inquiry-popup__backdrop" data-inquiry-popup-close aria-label="닫기"></button>
+    <div class="inquiry-popup__dialog" role="dialog" aria-modal="true" aria-labelledby="adminInquiryPopupTitle">
+      <p class="inquiry-popup__eyebrow">라이더 문의</p>
+      <div class="inquiry-popup__title-row">
+        <h2 id="adminInquiryPopupTitle">문의 확인</h2>
+        <span class="inquiry-badge" id="adminInquiryPopupStatus">미확인</span>
+      </div>
+      <p class="inquiry-popup__meta" id="adminInquiryPopupMeta"></p>
+      <p class="inquiry-popup__message" id="adminInquiryPopupMessage"></p>
+      <div id="adminInquiryPopupPayslip" class="inquiry-popup__payslips" hidden></div>
+      <div class="inquiry-popup__reply" id="adminInquiryPopupReplyBox" hidden>
+        <label>
+          <span>관리자 답장</span>
+          <textarea id="adminInquiryReplyInput" rows="3" maxlength="800" placeholder="기사에게 보낼 답장"></textarea>
+        </label>
+        <p class="inquiry-popup__reply-note" id="adminInquiryReplyNote"></p>
+      </div>
+      <div class="inquiry-popup__actions" id="adminInquiryPopupActions"></div>
+    </div>
+  </div>
+
+  <div class="inquiry-popup" id="adminInquiryAlertPopup" hidden>
+    <button type="button" class="inquiry-popup__backdrop" data-inquiry-alert-close aria-label="닫기"></button>
+    <div class="inquiry-popup__dialog inquiry-popup__dialog--alert" role="dialog" aria-modal="true">
+      <p class="inquiry-popup__eyebrow">라이더 문의</p>
+      <h2>새 문의가 도착했습니다</h2>
+      <div id="adminInquiryAlertBody"></div>
+      <div class="inquiry-popup__actions">
+        <button type="button" class="small-btn" data-inquiry-alert-close>닫기</button>
+        <button type="button" class="small-btn" id="adminInquiryAlertOpenBtn">문의 확인</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="range-calendar wednesday-week-calendar" id="adminWeekPickerCalendar" hidden>
+    <div class="calendar-header">
+      <button type="button" id="adminWeekPickerPrev" aria-label="이전 달">&lt;</button>
+      <strong id="adminWeekPickerTitle">-</strong>
+      <button type="button" id="adminWeekPickerNext" aria-label="다음 달">&gt;</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+    </div>
+    <div class="calendar-days" id="adminWeekPickerDays"></div>
+    <div class="month-calendar-footer">
+      <button type="button" class="month-today-btn" id="adminWeekPickerThisWeek">이번 주</button>
+    </div>
+    <p class="calendar-help">수요일만 선택할 수 있습니다. (수~화)</p>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/native-app-bridge.js"></script>
+  <script src="js/brem-env.js"></script>
+  <script>window.BREM_AUTH_SCOPE = 'admin';</script>
+  <script src="js/login-preferences.js?v=20260715h"></script>
+  <script src="js/session-security.js?v=20260712a"></script>
+  <script src="js/supabase-config.js?v=20260712c"></script>
+  <script src="js/data-cache.js?v=20260621n"></script>
+  <script src="js/storage-supabase-mapper.js?v=20260816popup1"></script>
+  <script src="js/storage-guard.js?v=20260723y"></script>
+  <script src="js/storage-supabase-adapter.js?v=20260816popup1"></script>
+  <script src="js/storage.js?v=20260817pay1"></script>
+  <script src="js/rider-inquiry-api.js"></script>
+  <script src="js/date-picker.js?v=20260715a"></script>
+  <script src="js/payroll-slip-utils.js?v=20260814match1"></script>
+  <script src="js/admin-schedule.js?v=20260622f"></script>
+  <script src="js/admin-payroll-slip-search.js?v=20260817pay5"></script>
+  <script src="js/admin-app.js?v=20260817app1"></script>
+  <script src="js/pwa-register.js" defer></script>
+</body>
+</html>

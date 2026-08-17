@@ -987,6 +987,48 @@
     border-radius: 10px;
   }
 
+  #payroll-slip-search .lease-contract-list-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  #payroll-slip-search .lease-list-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  #payroll-slip-search .payroll-week-picker-btn,
+  #payroll-slip-search .lease-search-field,
+  #payroll-slip-search .lease-search-field input,
+  #payroll-slip-search #payrollSlipSearchClear {
+    min-height: 42px;
+    width: 100%;
+  }
+
+  #payroll-slip-search .payroll-week-label {
+    width: 100%;
+    font-size: 0.82rem;
+  }
+
+  #payroll-slip-search .lease-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #rider-inquiries .inquiry-item {
+    padding: 12px 12px 14px;
+    border-radius: 12px;
+  }
+
+  #rider-inquiries .inquiry-item .notice-item-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
   /* ── PWA standalone safe areas ── */
   @media (display-mode: standalone) {
     .admin-app .main {

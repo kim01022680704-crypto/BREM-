@@ -15,6 +15,7 @@ const SHELL_URLS = [
 
 function isAdminOrScript(pathname) {
   return pathname === '/admin.html'
+    || pathname === '/admin-app.html'
     || pathname.endsWith('.js')
     || pathname.startsWith('/js/')
     || pathname.startsWith('/css/');
