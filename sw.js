@@ -1,4 +1,4 @@
-const CACHE_NAME = 'brem-pwa-v18';
+const CACHE_NAME = 'brem-pwa-v19';
 const SHELL_URLS = [
   '/home.html',
   '/driver.html',
@@ -16,6 +16,7 @@ const SHELL_URLS = [
 function isAdminOrScript(pathname) {
   return pathname === '/admin.html'
     || pathname === '/admin-app.html'
+    || pathname === '/driver.html'
     || pathname.endsWith('.js')
     || pathname.startsWith('/js/')
     || pathname.startsWith('/css/');
