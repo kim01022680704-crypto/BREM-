@@ -3714,7 +3714,7 @@ button.calendar-day:hover {
   }
 }
 
-/* ── Native app bottom nav (PWA 브라우저에는 없음) ── */
+/* ── 기사 하단 메뉴 (앱 · PWA · 휴대폰) ── */
 html.brem-app-nav .driver-app-nav {
   display: flex;
   position: fixed;

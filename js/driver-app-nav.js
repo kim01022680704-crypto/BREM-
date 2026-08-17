@@ -1,10 +1,31 @@
 /**
- * 네이티브 기사앱 하단 메뉴.
- * PWA/브라우저는 기존 버튼 유지. 앱(또는 ?appnav=1)에서만 탭으로 전환.
+ * 기사 하단 메뉴.
+ * 네이티브 앱 · 설치한 PWA · 휴대폰 화면에서 탭으로 전환.
+ * PC 브라우저 큰 화면은 기존 버튼 유지. ?appnav=1 로 강제 가능.
  * 기사대시보드·크루장은 서버에서 부여된 계정만 탭을 보여 준다.
  */
 (function () {
+  function isStandalonePwa() {
+    try {
+      return window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function isPhoneViewport() {
+    try {
+      return window.matchMedia('(max-width: 900px)').matches;
+    } catch {
+      return false;
+    }
+  }
+
   const wantNav = Boolean(window.BREM_IS_NATIVE_APP)
+    || Boolean(window.BREM_IS_INSTALLED_SHELL)
+    || isStandalonePwa()
+    || isPhoneViewport()
     || /(?:^|[?&])appnav=1(?:&|$)/.test(String(location.search || ''));
   if (!wantNav) return;
 
