@@ -650,6 +650,7 @@ app.get('/api/rider/withdrawal', async (req, res) => {
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '출금신청 정보를 불러오지 못했습니다.' });

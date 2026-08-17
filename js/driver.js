@@ -722,6 +722,7 @@
         if (driverHasCoupang(readyDriver)) {
           void refreshCoupangLiveOps({ toast: false, source: 'boot' });
         }
+        void window.BremDriverWithdrawal?.prefetch?.();
         return loadResult;
       } finally {
         driverDashboardLoading = false;

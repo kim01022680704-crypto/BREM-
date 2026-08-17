@@ -3139,6 +3139,7 @@ const BremStorage = (function () {
       const response = await fetch(path, {
         method,
         credentials: 'same-origin',
+        cache: 'no-store',
         headers,
         body: options.body,
         signal: controller?.signal

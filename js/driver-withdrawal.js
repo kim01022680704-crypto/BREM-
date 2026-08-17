@@ -55,6 +55,28 @@
     ].join('-');
   }
 
+  function todayKstDateKey() {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(new Date());
+      const y = parts.find(part => part.type === 'year')?.value;
+      const m = parts.find(part => part.type === 'month')?.value;
+      const d = parts.find(part => part.type === 'day')?.value;
+      if (y && m && d) return `${y}-${m}-${d}`;
+    } catch {
+      /* fall through */
+    }
+    return formatLocalDateKey(new Date());
+  }
+
+  function currentWeekStart() {
+    return weekStartKey(todayKstDateKey());
+  }
+
   function weekStartKey(dateValue) {
     const utils = window.BremPayrollSlipUtils || window.BremDatePicker;
     if (utils?.normalizeSettlementWeekStart) return utils.normalizeSettlementWeekStart(dateValue);
@@ -410,16 +432,19 @@
   }
 
   function setUnconfirmedUi(message) {
-    state.confirmed = false;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '금액 확인 중…';
+    }
+    if (state.confirmed) {
+      if (hintEl) hintEl.textContent = message || '최신 출금가능금액을 다시 확인하는 중입니다.';
+      return;
+    }
     if (availableEl) {
       availableEl.textContent = '조회 중…';
       availableEl.classList.remove('is-negative');
     }
     if (hintEl) hintEl.textContent = message || '출금가능금액을 서버에서 확인하는 중입니다.';
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = '금액 확인 중…';
-    }
     if (emptyEl) emptyEl.hidden = true;
   }
 
@@ -460,7 +485,7 @@
   }
 
   async function loadWithdrawal() {
-    if (!state.weekStart) state.weekStart = weekStartKey(formatLocalDateKey(new Date()));
+    if (!state.weekStart) state.weekStart = currentWeekStart();
     if (periodEl) periodEl.textContent = formatPeriodSimple(state.weekStart);
 
     const seq = ++state.requestSeq;
@@ -506,7 +531,7 @@
     window.BremDriverRegionDashboard?.close?.();
     window.BremDriverCrewLeader?.close?.();
     setOpenState(true);
-    if (!state.weekStart) state.weekStart = weekStartKey(formatLocalDateKey(new Date()));
+    if (!state.weekStart) state.weekStart = currentWeekStart();
     void loadWithdrawal();
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -521,11 +546,11 @@
   });
   closeBtn?.addEventListener('click', closePanel);
   prevBtn?.addEventListener('click', () => {
-    state.weekStart = shiftWeek(state.weekStart || weekStartKey(formatLocalDateKey(new Date())), -1);
+    state.weekStart = shiftWeek(state.weekStart || currentWeekStart(), -1);
     void loadWithdrawal();
   });
   nextBtn?.addEventListener('click', () => {
-    state.weekStart = shiftWeek(state.weekStart || weekStartKey(formatLocalDateKey(new Date())), 1);
+    state.weekStart = shiftWeek(state.weekStart || currentWeekStart(), 1);
     void loadWithdrawal();
   });
 
@@ -569,6 +594,18 @@
     }
     void (async () => {
       if (submitBtn) submitBtn.disabled = true;
+      await loadWithdrawal();
+      if (!state.confirmed) {
+        showToast('출금가능금액을 다시 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      const freshPool = platformAvailableAmount(platform);
+      const freshFee = estimateFeeForAmount(amount);
+      if (freshPool < 0 || amount + freshFee > Math.max(0, freshPool)) {
+        showToast('출금가능금액이 방금 바뀌었습니다. 금액을 다시 확인해 주세요.');
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
       const result = await window.BremStorage?.submitRiderWithdrawalToServer?.({
         weekStart: state.weekStart,
         amount,
@@ -577,6 +614,7 @@
       if (submitBtn) submitBtn.disabled = false;
       if (!result?.ok) {
         showToast(result?.message || '출금신청에 실패했습니다.');
+        void loadWithdrawal();
         return;
       }
       const appliedFee = Math.max(0, Number(result.feeAmount ?? feeAmount));
@@ -654,6 +692,10 @@
     open: openPanel,
     close: closePanel,
     refresh: loadWithdrawal,
+    prefetch() {
+      if (!state.weekStart) state.weekStart = currentWeekStart();
+      return loadWithdrawal();
+    },
     reset: resetPanel
   };
 })();
