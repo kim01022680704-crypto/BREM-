@@ -184,20 +184,6 @@
     };
   }
 
-  function lineMatchesDriver(line, driver) {
-    const driverId = String(driver.id || '').trim();
-    if (driverId && String(line.driverId || lineRaw(line).raw.selectedDriverId || '') === driverId) {
-      return true;
-    }
-    const name = normalizeName(driver.name);
-    if (name && normalizeName(lineName(line)) === name) return true;
-    const ids = lineIds(line);
-    const driverSide = driverIds(driver);
-    if (ids.baeminId && driverSide.baeminId && ids.baeminId === driverSide.baeminId) return true;
-    if (ids.coupangId && driverSide.coupangId && ids.coupangId === driverSide.coupangId) return true;
-    return false;
-  }
-
   function matchesKeyword(item, keyword) {
     const needle = normalizeName(keyword);
     if (!needle) return true;
@@ -210,66 +196,56 @@
     return haystack.includes(needle);
   }
 
-  function groupRiders(keyword) {
-    const lines = allLines();
-    const used = new Set();
-    const groups = [];
-
+  function driverLookup() {
+    const byId = new Map();
+    const byName = new Map();
     allDrivers().forEach(driver => {
-      const name = String(driver.name || '').trim();
-      if (!name) return;
-      const ids = driverIds(driver);
-      const matched = lines.filter(line => lineMatchesDriver(line, driver));
-      matched.forEach(line => used.add(line));
-      const weeks = new Set();
-      matched.forEach(line => {
-        const week = lineWeek(line);
-        if (week) weeks.add(week);
-      });
-      const item = {
-        key: `id:${driver.id}`,
-        name,
-        phone: String(driver.phone || '').trim(),
-        driverId: String(driver.id || '').trim(),
-        coupangId: ids.coupangId,
-        baeminId: ids.baeminId,
-        weeks,
-        lines: matched
-      };
-      if (matchesKeyword(item, keyword)) groups.push(item);
+      const id = String(driver.id || '').trim();
+      if (id) byId.set(id, driver);
+      const name = normalizeName(driver.name);
+      if (name && !byName.has(name)) byName.set(name, driver);
     });
+    return { byId, byName };
+  }
+
+  function groupRiders(keyword) {
+    const week = state.weekStart;
+    const lines = allLines().filter(line => !week || lineWeek(line) === week);
+    const { byId, byName } = driverLookup();
+    const groups = new Map();
 
     lines.forEach(line => {
-      if (used.has(line)) return;
-      const name = lineName(line);
-      if (!name) return;
-      const ids = lineIds(line);
-      const key = riderKey(line);
-      let current = groups.find(item => item.key === key);
+      const driverId = String(line.driverId || lineRaw(line).raw.selectedDriverId || '').trim();
+      const driver = (driverId && byId.get(driverId)) || byName.get(normalizeName(lineName(line))) || null;
+      const key = driver?.id ? `id:${driver.id}` : riderKey(line);
+      let current = groups.get(key);
       if (!current) {
+        const ids = lineIds(line);
+        const driverSide = driver ? driverIds(driver) : { coupangId: '', baeminId: '' };
         current = {
           key,
-          name,
-          phone: '',
-          driverId: String(line.driverId || '').trim(),
-          coupangId: ids.coupangId,
-          baeminId: ids.baeminId,
+          name: String(driver?.name || lineName(line) || '').trim(),
+          phone: String(driver?.phone || '').trim(),
+          driverId: String(driver?.id || driverId || '').trim(),
+          coupangId: driverSide.coupangId || ids.coupangId,
+          baeminId: driverSide.baeminId || ids.baeminId,
           weeks: new Set(),
           lines: []
         };
-        groups.push(current);
+        groups.set(key, current);
       }
-      const week = lineWeek(line);
-      if (week) current.weeks.add(week);
+      const lineWeekStart = lineWeek(line);
+      if (lineWeekStart) current.weeks.add(lineWeekStart);
       current.lines.push(line);
     });
 
-    return groups
-      .filter(item => matchesKeyword(item, keyword))
+    return [...groups.values()]
       .map(item => ({
         ...item,
-        weeks: [...item.weeks].sort().reverse()
+        weeks: [...item.weeks].sort().reverse(),
+        weekNet: week ? buildPlatforms(item, week).total.netPay : 0
       }))
+      .filter(item => matchesKeyword(item, keyword))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   }
 
@@ -384,7 +360,7 @@
         <td>${escapeHtml(item.coupangId || '-')}</td>
         <td>${escapeHtml(item.baeminId || '-')}</td>
         <td>${state.weekStart ? escapeHtml(utils?.formatSettlementWeekLabel?.(state.weekStart) || state.weekStart) : '-'}</td>
-        <td>${money(weekNet(item))}</td>
+        <td>${money(item.weekNet ?? weekNet(item))}</td>
       </tr>
     `).join('');
   }
@@ -434,18 +410,18 @@
   function search() {
     const keyword = String(input?.value || '').trim();
     state.keyword = keyword;
-    state.results = groupRiders(keyword);
+    const allForWeek = groupRiders('');
+    state.results = keyword ? allForWeek.filter(item => matchesKeyword(item, keyword)) : allForWeek;
     if (state.selectedKey && !state.results.some(item => item.key === state.selectedKey)) {
       state.selectedKey = '';
       closeDetail();
     }
     if (statusEl) {
-      const total = groupRiders('').length;
       const weekLabel = state.weekStart
         ? (utils?.formatSettlementWeekLabel?.(state.weekStart) || state.weekStart)
         : '정산주 미선택';
       statusEl.textContent = keyword
-        ? `${weekLabel} · ${state.results.length}명 / 전체 ${total}명 · 이름을 누르면 명세서가 열립니다.`
+        ? `${weekLabel} · ${state.results.length}명 / 전체 ${allForWeek.length}명 · 이름을 누르면 명세서가 열립니다.`
         : `${weekLabel} · 전체 ${state.results.length}명 · 급여명세서(브로) 등록분`;
     }
     renderResults();

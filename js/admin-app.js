@@ -415,8 +415,7 @@
         keepCheckbox: $('adminKeepLoggedIn')
       });
       showApp();
-      await window.BremStorage.ensureSectionLoaded?.('admin-schedule');
-      await window.BremStorage.ensureSectionLoaded?.('payroll-slip-search');
+      void window.BremStorage.ensureSectionLoaded?.('admin-schedule');
       void refreshHome();
     } catch (error) {
       showToast(error.message || '로그인에 실패했습니다.');
@@ -524,8 +523,7 @@
       void window.BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
       showApp();
       hideBootSplash();
-      await window.BremStorage.ensureSectionLoaded?.('admin-schedule');
-      await window.BremStorage.ensureSectionLoaded?.('payroll-slip-search');
+      void window.BremStorage.ensureSectionLoaded?.('admin-schedule');
       void refreshHome();
       return;
     }

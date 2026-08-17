@@ -1498,7 +1498,7 @@ const BremStorage = (function () {
     'driver-management': [KEYS.drivers, KEYS.driverOrgChart],
     'admin-schedule': [KEYS.adminSchedules],
     'payroll-slips': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
-    'payroll-slip-search': [KEYS.payrollSlipUploads, KEYS.payrollSlipLines, KEYS.payrollNotices, KEYS.payrollDailySettlementRoster, KEYS.payrollDailySettlementRegions, KEYS.drivers, KEYS.calls],
+    'payroll-slip-search': [KEYS.payrollSlipLines],
     'payroll-daily-settlement': [
       KEYS.payrollDailySettlementRoster,
       KEYS.payrollDailySettlementRegions,
