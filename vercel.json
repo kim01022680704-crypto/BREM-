@@ -15,7 +15,8 @@
     { "src": "robots.txt", "use": "@vercel/static" },
     { "src": "sitemap.xml", "use": "@vercel/static" },
     { "src": "sw.js", "use": "@vercel/static" },
-    { "src": "*.webmanifest", "use": "@vercel/static" }
+    { "src": "*.webmanifest", "use": "@vercel/static" },
+    { "src": "downloads/**", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/admin/login", "dest": "/api/admin/login.js" },
@@ -64,6 +65,13 @@
       "headers": [
         { "key": "Content-Type", "value": "application/manifest+json" },
         { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
+    },
+    {
+      "source": "/downloads/:path*.apk",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.android.package-archive" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
   ]

@@ -282,6 +282,24 @@ html.brem-admin-app-nav [hidden] {
   border-radius: 12px;
 }
 
+.admin-app-boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #0a0a0a;
+}
+
+.admin-app-boot-splash[hidden] {
+  display: none !important;
+}
+
+.admin-app-boot-splash img {
+  width: min(78vw, 320px);
+  height: auto;
+}
+
 .inquiry-popup {
   z-index: 80;
 }

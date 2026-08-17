@@ -87,6 +87,11 @@
     if (next === 'inquiry') void renderInquiries();
   }
 
+  function hideBootSplash() {
+    const splash = $('adminAppBootSplash');
+    if (splash) splash.hidden = true;
+  }
+
   function showApp() {
     loginPage?.classList.add('app-hidden');
     if (loginPage) loginPage.hidden = true;
@@ -518,12 +523,14 @@
     if (window.BremStorage?.auth?.isAdminLoggedIn?.()) {
       void window.BremStorage.initStorage?.({ backend: 'supabase', deferHydrate: true });
       showApp();
+      hideBootSplash();
       await window.BremStorage.ensureSectionLoaded?.('admin-schedule');
       await window.BremStorage.ensureSectionLoaded?.('payroll-slip-search');
       void refreshHome();
       return;
     }
     showLogin();
+    hideBootSplash();
   }
 
   window.BremAdminAppNav = {

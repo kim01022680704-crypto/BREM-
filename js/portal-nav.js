@@ -8,7 +8,8 @@
     'portal-process.html': 'process',
     'portal-promotion.html': 'promotion',
     'portal-event.html': 'event',
-    'portal-contact.html': 'contact'
+    'portal-contact.html': 'contact',
+    'portal-files.html': 'files'
   };
 
   var current = pageMap[file] || '';
