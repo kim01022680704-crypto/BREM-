@@ -235,9 +235,133 @@ html.brem-admin-app-nav [hidden] {
   gap: 8px;
 }
 
-.admin-phone-app .dashboard-baemin-table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+.admin-phone-app .dashboard-baemin-live-card__header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.admin-phone-app .dashboard-baemin-live-help,
+.admin-phone-app .admin-table-summary {
+  font-size: 0.72rem;
+}
+
+.admin-phone-app .dashboard-baemin-applied-time {
+  font-size: 0.92rem;
+  padding: 4px 12px 0;
+}
+
+.admin-phone-app .dashboard-baemin-live-panels,
+.admin-phone-app .dashboard-baemin-week-block {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.admin-phone-app .dashboard-baemin-week-block__head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.admin-phone-app .dashboard-baemin-week-region-tabs {
+  gap: 4px;
+  padding: 0 2px 8px;
+}
+
+.admin-phone-app .dashboard-baemin-week-region-tabs .baemin-region-tab {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
+
+/* 쿠팡 대시보드와 같이: 가로 스크롤 없이 비율+달성만 */
+.admin-phone-app .dashboard-baemin-table-wrap,
+.admin-phone-app .dashboard-baemin-phone-wrap,
+.admin-phone-app .dashboard-coupang-table-wrap {
+  overflow-x: visible;
+}
+
+.admin-phone-app .dashboard-baemin-compact-table,
+.admin-phone-app .dashboard-baemin-phone-table,
+.admin-phone-app .dashboard-coupang-compact-table {
+  min-width: 0 !important;
+  width: 100% !important;
+  table-layout: fixed;
+  font-size: 0.62rem;
+}
+
+.admin-phone-app .dashboard-baemin-compact-table th,
+.admin-phone-app .dashboard-baemin-compact-table td,
+.admin-phone-app .dashboard-coupang-compact-table th,
+.admin-phone-app .dashboard-coupang-compact-table td {
+  padding: 3px 2px !important;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.admin-phone-app .dashboard-baemin-compact-table th:first-child,
+.admin-phone-app .dashboard-baemin-compact-table td:first-child,
+.admin-phone-app .dashboard-coupang-compact-table th:first-child,
+.admin-phone-app .dashboard-coupang-compact-table td:first-child {
+  text-align: left;
+}
+
+.admin-phone-app .dashboard-baemin-today-table th:nth-child(1),
+.admin-phone-app .dashboard-baemin-today-table td:nth-child(1) {
+  width: 16%;
+}
+
+.admin-phone-app .dashboard-baemin-today-table th:nth-child(2),
+.admin-phone-app .dashboard-baemin-today-table td:nth-child(2) {
+  width: 10%;
+}
+
+.admin-phone-app .dashboard-baemin-today-table th:nth-child(n+3),
+.admin-phone-app .dashboard-baemin-today-table td:nth-child(n+3) {
+  width: 18.5%;
+}
+
+.admin-phone-app .dashboard-baemin-region-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem !important;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.admin-phone-app .dashboard-baemin-region-meta,
+.admin-phone-app .baemin-quota-cell__percent {
+  display: none !important;
+}
+
+.admin-phone-app .dashboard-baemin-qcell__stack {
+  align-items: center;
+  gap: 1px;
+  width: 100%;
+}
+
+.admin-phone-app .dashboard-baemin-qcell__meta {
+  justify-content: center;
+}
+
+.admin-phone-app .dashboard-baemin-qcell__ratio {
+  font-size: 0.58rem !important;
+  letter-spacing: -0.03em;
+  text-align: center;
+}
+
+.admin-phone-app .dashboard-baemin-qcell .baemin-quota-tag {
+  min-height: 14px !important;
+  padding: 0 3px !important;
+  font-size: 0.54rem !important;
+  border-radius: 4px;
+}
+
+.admin-phone-app #dashboardBaeminWeekBlock thead th:first-child,
+.admin-phone-app #dashboardBaeminWeekBlock tbody td:first-child {
+  display: none;
 }
 
 .admin-phone-app #payroll-slip-search .card-header,

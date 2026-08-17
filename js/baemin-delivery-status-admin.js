@@ -184,6 +184,14 @@
     return wd ? `${date} (${wd})` : date;
   }
 
+  function formatDeliveryDateShort(dateKey) {
+    const date = String(dateKey || '').slice(0, 10);
+    const parts = date.split('-');
+    const md = parts.length === 3 ? `${Number(parts[1])}/${Number(parts[2])}` : date;
+    const wd = weekdayShortLabelKst(date);
+    return wd ? `${md} ${wd}` : md;
+  }
+
   function normalizeSetCount(value) {
     const num = Math.floor(Number(value));
     if (!Number.isFinite(num) || num < 1) return 1;
@@ -6141,29 +6149,36 @@
     });
   }
 
+  function isAdminPhoneApp() {
+    return Boolean(document.querySelector('.admin-phone-app'));
+  }
+
   function renderCompactQuotaCell(actual, target) {
     const prog = formatProgress(actual, target);
     const achieved = prog.target > 0 ? prog.actual >= prog.target : prog.actual > 0;
     const statusClass = achieved ? ' baemin-quota-tag--achieved' : ' baemin-quota-tag--missed';
+    const phone = isAdminPhoneApp();
+    const tagLabel = achieved ? '달성' : (phone ? '미달' : '미달성');
     const percentClass = achieved
       ? ' baemin-quota-cell__percent--over'
       : ' baemin-quota-cell__percent--missed';
-    // 한 줄(비율+%%+태그)이면 숫자 자릿수 바뀔 때 열이 찌그러짐 → 2줄 고정
     return `<td class="dashboard-baemin-qcell">
       <div class="dashboard-baemin-qcell__stack">
         <span class="dashboard-baemin-qcell__ratio">${escapeHtml(prog.label)}</span>
         <span class="dashboard-baemin-qcell__meta">
-          <span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>
-          <span class="baemin-quota-tag${statusClass}">${achieved ? '달성' : '미달성'}</span>
+          ${phone ? '' : `<span class="baemin-quota-cell__percent${percentClass}">${escapeHtml(prog.percentLabel)}</span>`}
+          <span class="baemin-quota-tag${statusClass}">${tagLabel}</span>
         </span>
       </div>
     </td>`;
   }
 
   function renderDashboardTodayTable(regionRows, totals) {
+    const phone = isAdminPhoneApp();
+    const driveText = (count) => phone ? formatNumber(count) : `${formatNumber(count)}명`;
     const summaryRow = `<tr class="dashboard-baemin-compact-table__summary">
-      <td><strong class="dashboard-baemin-region-name">전체 합계</strong></td>
-      <td>${formatNumber(totals.drivingSum)}명</td>
+      <td><strong class="dashboard-baemin-region-name">${phone ? '합계' : '전체 합계'}</strong></td>
+      <td>${driveText(totals.drivingSum)}</td>
       ${renderCompactQuotaCell(totals.morningSum, totals.targetMorning)}
       ${renderCompactQuotaCell(totals.afternoonSum, totals.targetAfternoon)}
       ${renderCompactQuotaCell(totals.eveningSum, totals.targetEvening)}
@@ -6176,20 +6191,23 @@
         <strong class="dashboard-baemin-region-name" title="${escapeHtml(fullName)}">${escapeHtml(fullName)}</strong>
         <span class="dashboard-baemin-region-meta">${formatNumber(region.setCount)}세트</span>
       </td>
-      <td>${formatNumber(region.drivingCount)}명</td>
+      <td>${driveText(region.drivingCount)}</td>
       ${renderCompactQuotaCell(region.morningTotal, region.targets.morning)}
       ${renderCompactQuotaCell(region.afternoonTotal, region.targets.afternoon)}
       ${renderCompactQuotaCell(region.eveningTotal, region.targets.evening)}
       ${renderCompactQuotaCell(region.midnightTotal, region.targets.midnight)}
     </tr>`;
     }).join('');
-    return `<div class="dashboard-baemin-table-wrap">
-      <table class="admin-table dashboard-baemin-compact-table dashboard-baemin-today-table">
+    const tableClass = phone
+      ? 'admin-table dashboard-baemin-compact-table dashboard-baemin-today-table dashboard-baemin-phone-table'
+      : 'admin-table dashboard-baemin-compact-table dashboard-baemin-today-table';
+    return `<div class="dashboard-baemin-table-wrap${phone ? ' dashboard-baemin-phone-wrap' : ''}">
+      <table class="${tableClass}">
         <thead>
           <tr>
             <th>지역</th>
-            <th>운행중</th>
-            <th>아침점심</th>
+            <th>${phone ? '운행' : '운행중'}</th>
+            <th>${phone ? '아점' : '아침점심'}</th>
             <th>오후</th>
             <th>저녁</th>
             <th>심야</th>
@@ -6255,12 +6273,16 @@
       return;
     }
 
+    const phone = isAdminPhoneApp();
     rowsEl.innerHTML = dates.map(date => {
       const actual = byDate.get(date) || { morning: 0, afternoon: 0, evening: 0, midnight: 0 };
       const targets = computeSlotTargets(setCount, date);
+      const dateLabel = phone
+        ? formatDeliveryDateShort(date)
+        : formatDeliveryDateWithWeekday(date);
       return `<tr>
         <td><strong class="dashboard-baemin-region-name" title="${escapeHtml(regionName)}">${escapeHtml(regionName)}</strong></td>
-        <td>${escapeHtml(formatDeliveryDateWithWeekday(date))}</td>
+        <td>${escapeHtml(dateLabel)}</td>
         ${renderCompactQuotaCell(actual.morning, targets.morning)}
         ${renderCompactQuotaCell(actual.afternoon, targets.afternoon)}
         ${renderCompactQuotaCell(actual.evening, targets.evening)}
