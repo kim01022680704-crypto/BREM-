@@ -92,6 +92,7 @@
       const response = await fetch(path, {
         credentials: 'same-origin',
         ...options,
+        cache: 'no-store',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -6396,8 +6397,13 @@
     const card = $('dashboardBaeminLiveCard');
     if (!panelsEl) return;
 
-    if (state.dashboardLiveBusy) return;
+    if (state.dashboardLiveBusy) {
+      const busyFor = Date.now() - Number(state.dashboardLiveStartedAt || 0);
+      if (options.resume !== true || busyFor < 20000) return;
+      state.dashboardLiveBusy = false;
+    }
     state.dashboardLiveBusy = true;
+    state.dashboardLiveStartedAt = Date.now();
 
     if (!state.dashboardBaeminRegions.length) {
       await initDashboardBaeminLive(true);
@@ -6429,6 +6435,9 @@
       return;
     }
     const today = todayKstDate();
+    if (options.resume === true) {
+      try { await loadViewConfig({ silent: true }); } catch { /* ignore */ }
+    }
 
     // 표가 있으면 숫자 유지한 채 소프트 갱신만 — 로딩 문구로 표를 비우지 않음
     const hadTable = Boolean(panelsEl.querySelector('table'));
@@ -6629,14 +6638,28 @@
     }
   }
 
+  function isDashboardHomeVisible() {
+    const dashboard = $('dashboard');
+    if (!dashboard) return false;
+    if (dashboard.hidden) return false;
+    if (dashboard.classList.contains('active') || dashboard.classList.contains('is-active')) return true;
+    const tab = document.documentElement.dataset.adminAppTab;
+    return !tab || tab === 'home';
+  }
+
+  function refreshDashboardBaeminOnResume() {
+    if (document.visibilityState === 'hidden') return;
+    if (!isDashboardHomeVisible()) return;
+    void queryDashboardBaeminLive({ silent: true, resume: true });
+  }
+
   function startDashboardBaeminLivePoll() {
     stopDashboardBaeminLivePoll();
     // 배민 BIZ 자동수집 반영용 — 2분마다 오늘 스냅샷 조용히 재조회
     const POLL_MS = 2 * 60 * 1000;
     state.dashboardLivePollTimer = setInterval(() => {
       if (document.visibilityState === 'hidden') return;
-      const dashboard = $('dashboard');
-      if (dashboard && !dashboard.classList.contains('active')) return;
+      if (!isDashboardHomeVisible()) return;
       if (state.dashboardLiveBusy) return;
       void queryDashboardBaeminLive({ silent: true });
     }, POLL_MS);
@@ -6790,12 +6813,13 @@
     // 초기 로딩 부담 완화: 파싱 시점(=로그인 화면)에는 조회하지 않는다.
     // 대시보드 렌더에서 refreshDashboardBaeminLive() 가 지역 조회와 폴러를 시작한다.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        const dashboard = $('dashboard');
-        if (dashboard?.classList.contains('active') && !state.dashboardLiveBusy) {
-          void queryDashboardBaeminLive({ silent: true });
-        }
-      }
+      if (document.visibilityState === 'visible') refreshDashboardBaeminOnResume();
+    });
+    document.addEventListener('brem-app-resume', () => {
+      refreshDashboardBaeminOnResume();
+    });
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) refreshDashboardBaeminOnResume();
     });
     $('baeminStatusAcceptRateLoadBtn')?.addEventListener('click', () => {
       void loadAcceptRateLiveData();

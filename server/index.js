@@ -1314,6 +1314,7 @@ app.get('/api/admin/baemin-delivery/dashboard-live', async (req, res) => {
         message: result.message || result.error
       });
     }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message || '대시보드 실시간 조회에 실패했습니다.' });

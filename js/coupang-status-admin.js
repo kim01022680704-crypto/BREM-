@@ -126,6 +126,7 @@
       const res = await fetch(path, {
         credentials: 'same-origin',
         ...options,
+        cache: 'no-store',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) }
       });
       const payload = await res.json().catch(() => ({}));
@@ -403,9 +404,16 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
       const dashboard = $('dashboard');
-      if (dashboard?.classList.contains('active') && !dash.busy) {
+      if ((dashboard?.classList.contains('active') || dashboard?.classList.contains('is-active')) && !dash.busy) {
         void queryDashboardCoupangLive({ silent: true });
       }
+    });
+    document.addEventListener('brem-app-resume', () => {
+      if (document.visibilityState === 'hidden') return;
+      const dashboard = $('dashboard');
+      if (dashboard?.hidden) return;
+      if (!(dashboard?.classList.contains('active') || dashboard?.classList.contains('is-active'))) return;
+      void queryDashboardCoupangLive({ silent: true });
     });
   }
 

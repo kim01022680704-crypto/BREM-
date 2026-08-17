@@ -267,6 +267,17 @@
     }).catch(function () { /* ignore */ });
   }
 
+  function emitAppResume() {
+    var now = Date.now();
+    if (now - (emitAppResume.lastAt || 0) < 800) return;
+    emitAppResume.lastAt = now;
+    try {
+      document.dispatchEvent(new CustomEvent('brem-app-resume'));
+    } catch {
+      /* ignore */
+    }
+  }
+
   function bindAppResume() {
     if (!window.BREM_IS_NATIVE_APP) return;
     var CapApp = window.Capacitor.Plugins && window.Capacitor.Plugins.App;
@@ -276,12 +287,14 @@
         syncOfflineBanner();
         savePendingPushToken();
         try { window.BremSessionSecurity?.touchActivity?.(); } catch { /* ignore */ }
+        emitAppResume();
       });
     }
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) return;
       syncOfflineBanner();
       try { window.BremSessionSecurity?.touchActivity?.(); } catch { /* ignore */ }
+      emitAppResume();
     });
   }
 
